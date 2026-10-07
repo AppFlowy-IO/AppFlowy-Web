@@ -22,6 +22,7 @@ import {
   DatabaseViewSelectors,
 } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
+import { expectViewCreationAvailable } from '../../support/view-creation-availability';
 
 test.describe('Database Chart View Basic', () => {
   test.beforeEach(async ({ page }) => {
@@ -50,6 +51,7 @@ test.describe('Database Chart View Basic', () => {
     // When: clicking "+" then "Chart" in the sidebar
     await AddPageSelectors.inlineAddButton(page).first().click({ force: true });
     await page.waitForTimeout(1000);
+    await expectViewCreationAvailable(AddPageSelectors.addChartButton(page));
     await AddPageSelectors.addChartButton(page).click({ force: true });
     await page.waitForTimeout(5000);
 

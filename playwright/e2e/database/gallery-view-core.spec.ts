@@ -30,6 +30,7 @@ import {
   itemDirectChildPageItems,
   PageSelectors,
   RowDetailSelectors,
+  TEXT_CELL_EDITOR_SELECTOR,
 } from '../../support/selectors';
 
 async function openDatabaseProperties(page: Page): Promise<void> {
@@ -307,7 +308,7 @@ test.describe('Database Gallery core interactions (Flutter desktop parity)', () 
 
     await card.hover();
     await DatabaseGallerySelectors.editButtonByRowId(page, rowId).click();
-    const editor = DatabaseGallerySelectors.titleByRowId(page, rowId).locator('textarea');
+    const editor = DatabaseGallerySelectors.titleByRowId(page, rowId).locator(TEXT_CELL_EDITOR_SELECTOR);
 
     await expect(editor).toBeVisible();
     await editor.fill('Inline Gallery title');
@@ -386,7 +387,7 @@ test.describe('Database Gallery core interactions (Flutter desktop parity)', () 
 
     await DatabaseGallerySelectors.cardByRowId(page, targetId).hover();
     await DatabaseGallerySelectors.editButtonByRowId(page, targetId).click();
-    const editor = DatabaseGallerySelectors.titleByRowId(page, targetId).locator('textarea');
+    const editor = DatabaseGallerySelectors.titleByRowId(page, targetId).locator(TEXT_CELL_EDITOR_SELECTOR);
 
     await editor.fill('Aaron');
     await editor.press('Enter');

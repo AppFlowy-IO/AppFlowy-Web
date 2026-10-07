@@ -197,7 +197,7 @@ function NotificationItem({ notification, tab, onMarkRead, onArchive, onClose }:
   const toView = useToView();
   const actionInFlightRef = useRef(false);
 
-  const blockId = notification.metadata.block_id as string | undefined;
+  const anchorId = pickText(notification.metadata, ['row_id', 'block_id']) || undefined;
 
   const handleClick = useCallback(async () => {
     if (actionInFlightRef.current) return;
@@ -205,7 +205,7 @@ function NotificationItem({ notification, tab, onMarkRead, onArchive, onClose }:
 
     try {
       if (notification.viewId) {
-        await toView(notification.viewId, blockId);
+        await toView(notification.viewId, anchorId);
       }
 
       if (!notification.isRead) {
@@ -216,7 +216,7 @@ function NotificationItem({ notification, tab, onMarkRead, onArchive, onClose }:
     } finally {
       actionInFlightRef.current = false;
     }
-  }, [notification.viewId, notification.isRead, notification.id, toView, blockId, onMarkRead, onClose]);
+  }, [notification.viewId, notification.isRead, notification.id, toView, anchorId, onMarkRead, onClose]);
 
   const handleMarkRead = useCallback(
     async (e: React.MouseEvent) => {

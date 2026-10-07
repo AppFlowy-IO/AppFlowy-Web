@@ -2,9 +2,10 @@ import React from 'react';
 import * as Y from 'yjs';
 
 import { CalculationType, FieldType, RollupDisplayMode } from '@/application/database-yjs/database.type';
-import type { FormulaType, FormulaValue } from '@/application/database-yjs/fields/formula/values';
+import type { FormulaTextRun, FormulaType, FormulaValue } from '@/application/database-yjs/fields/formula/values';
 import { NumberFormat } from '@/application/database-yjs/fields/number/number.type';
 import { RollupVisualizationOption } from '@/application/database-yjs/fields/rollup/rollup.type';
+import type { RichTextDelta } from '@/application/database-yjs/fields/text/rich-text';
 import { DateFormat, FieldId, RowId, TimeFormat } from '@/application/types';
 
 export interface Cell {
@@ -17,6 +18,13 @@ export interface Cell {
 export interface TextCell extends Cell {
   fieldType: FieldType.RichText;
   data: string;
+  /** Formatting for `data`, present only while it still describes `data`. */
+  richText?: RichTextDelta;
+  /**
+   * The formatting was saved by a newer version of AppFlowy that this one
+   * may not change: the cell is shown, never edited.
+   */
+  richTextReadOnly?: boolean;
 }
 
 export interface AICell extends Cell {
@@ -128,6 +136,8 @@ export interface FormulaCell extends Cell {
   fieldType: FieldType.Formula;
   /** Result as text, with the field's number format and the default date format. */
   data: string;
+  /** Inline styling for the formatted display text; plain text remains available to copy/export. */
+  runs?: FormulaTextRun[];
   /** The evaluated value; the cell shows its dates in the viewer's date and time formats. */
   value?: FormulaValue;
   /** Static result type of the expression: text, number, boolean, date, list<...>, empty or any. */
@@ -165,4 +175,12 @@ export interface CellProps<T extends Cell> {
   onCellUpdated?: (cell: Cell) => void;
   onTextChange?: (text: string) => void;
   isCardCell?: boolean;
+  /**
+   * The field's live type and name, from the renderer that picked the cell
+   * component (`Cell`, `Property`): it already reads the field, so a cell
+   * that needs only these takes them from here rather than observing the
+   * field once more.
+   */
+  fieldType?: FieldType;
+  fieldName?: string;
 }

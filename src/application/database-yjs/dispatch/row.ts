@@ -34,6 +34,8 @@ import { FieldType, isAttributionFieldType, RowMetaKey } from '@/application/dat
 import { useEffectiveViewFilters } from '@/application/database-yjs/effective-conditions';
 import { createCheckboxCell } from '@/application/database-yjs/fields/checkbox/utils';
 import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
+import { CellWriteIntent, checkExistingCellWrite } from '@/application/database-yjs/fields/text/rich-text-guard';
+import { notifyRichTextNewer } from '@/application/database-yjs/fields/text/rich-text-notice';
 import { getNumberGroupingCellData } from '@/application/database-yjs/group';
 import {
   createDatabaseHistoryGroup,
@@ -143,6 +145,11 @@ export function useReorderRowDispatch() {
   );
 }
 
+/** What moving a card writes into the grouping field's cell. */
+function moveCardWriteIntent(data: unknown): CellWriteIntent {
+  return { set: { [YjsDatabaseKey.data]: data }, delete: [YjsDatabaseKey.source_field_type] };
+}
+
 export function useMoveCardDispatch() {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
@@ -209,6 +216,8 @@ export function useMoveCardDispatch() {
               return;
             }
 
+            let refused = false;
+
             runDatabaseRowAction(
               rowDoc as YDoc,
               { type: 'row.move-card-cell', rowId, fieldId, fieldType, historyGroup },
@@ -235,6 +244,16 @@ export function useMoveCardDispatch() {
                   const value = finishColumnId === fieldId ? '' : policy.valueForGroup(finishColumnId);
 
                   if (value === undefined) throw new RangeError('Invalid number group');
+
+                  // A cell needing a newer client keeps its value; the card
+                  // snaps back (rich text spec R49).
+                  const check = checkExistingCellWrite(cell, moveCardWriteIntent(value));
+
+                  if (check !== 'proceed') {
+                    refused = check === 'refuse';
+                    return;
+                  }
+
                   if (!cell) {
                     cell = new Y.Map() as YDatabaseCell;
                     cells.set(fieldId, cell);
@@ -279,6 +298,13 @@ export function useMoveCardDispatch() {
                     newCellData = finishColumnId;
                   }
 
+                  const check = checkExistingCellWrite(cell, moveCardWriteIntent(newCellData));
+
+                  if (check !== 'proceed') {
+                    refused = check === 'refuse';
+                    return;
+                  }
+
                   cell.set(YjsDatabaseKey.data, newCellData);
                   setCellStoredType(cell, fieldType);
                   cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
@@ -290,6 +316,12 @@ export function useMoveCardDispatch() {
                 }
               }
             );
+
+            // The move is refused as a whole: the card stays where it was.
+            if (refused) {
+              notifyRichTextNewer();
+              return;
+            }
 
             // Sorted: `row_orders` keeps the card's manual place for when the sort is removed.
             if (!sorted) reorderRow(rowId, beforeRowId, view);

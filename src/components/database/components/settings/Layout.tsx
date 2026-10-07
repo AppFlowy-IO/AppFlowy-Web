@@ -3,12 +3,15 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED } from '@/application/constants';
-import { useDatabaseContext, useDatabaseViewId } from '@/application/database-yjs';
+import { useDatabaseViewId } from '@/application/database-yjs';
+import { useDatabaseContext } from '@/application/database-yjs/context';
 import { useUpdateDatabaseLayout } from '@/application/database-yjs/dispatch';
-import { DatabaseViewLayout } from '@/application/types';
+import { DatabaseViewLayout, ViewLayout } from '@/application/types';
 import { ReactComponent as LayoutIcon } from '@/assets/icons/layout.svg';
+import { DatabaseViewCreationHint } from '@/components/_shared/DatabaseViewCreationItem';
 import { useDashboardCreationGate } from '@/components/app/hooks/useDashboardCreationGate';
-import { useTimelineCreationDisabledReason } from '@/components/app/hooks/useTimelineCreationDisabledReason';
+import { useDatabaseViewCreation } from '@/components/app/hooks/useDatabaseViewCreation';
+import { useServerHostingMode } from '@/components/app/hooks/useServerInfo';
 import {
   DropdownMenuItem,
   DropdownMenuItemTick,
@@ -17,7 +20,6 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { getErrorMessage } from '@/utils/errors';
 
 interface LayoutOption {
@@ -29,16 +31,18 @@ interface LayoutOption {
 function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
   const { t } = useTranslation();
 
-  const viewId = useDatabaseViewId();
-  const { isDashboardWidget, getSubscriptions, workspaceId } = useDatabaseContext();
-  const updateLayout = useUpdateDatabaseLayout(viewId);
   const [open, setOpen] = useState(false);
-  // Converting to Timeline or Dashboard creates that view type, so it follows
-  // the same rules as the tab "+" menu.
-  const timelineDisabledReason = useTimelineCreationDisabledReason(getSubscriptions, {
+  const { workspaceId, getSubscriptions, isDashboardWidget } = useDatabaseContext();
+  const isSelfHosted = useServerHostingMode() === 'self-hosted';
+  const { getAction } = useDatabaseViewCreation({
     workspaceId,
-    enabled: EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED && open,
+    getSubscriptions,
+    enabled: open && EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED,
   });
+  const timelineAction = getAction(ViewLayout.Timeline);
+  const timelineDisabledReason = timelineAction.type === 'create' ? undefined : timelineAction.reason;
+  const viewId = useDatabaseViewId();
+  const updateLayout = useUpdateDatabaseLayout(viewId);
   const { available: canCreateDashboard, disabledReason: dashboardDisabledReason } = useDashboardCreationGate(
     getSubscriptions,
     { workspaceId, enabled: open }
@@ -71,10 +75,22 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
             },
           ]
         : []),
-      {
-        value: DatabaseViewLayout.Chart,
-        label: t('chart.menuName'),
-      },
+      ...(isSelfHosted || currentLayout === DatabaseViewLayout.Chart
+        ? [
+            {
+              value: DatabaseViewLayout.Chart,
+              label: t('chart.menuName'),
+            },
+          ]
+        : []),
+      ...((isSelfHosted && EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED) || currentLayout === DatabaseViewLayout.Form
+        ? [
+            {
+              value: DatabaseViewLayout.Form,
+              label: t('form.menuName'),
+            },
+          ]
+        : []),
       {
         value: DatabaseViewLayout.List,
         label: t('list.menuName'),
@@ -97,7 +113,7 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
           ]
         : []),
     ],
-    [t, currentLayout, showDashboard, timelineDisabledReason, dashboardDisabledReason]
+    [t, currentLayout, showDashboard, isSelfHosted, timelineDisabledReason, dashboardDisabledReason]
   );
 
   return (
@@ -117,9 +133,9 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
                 key={option.value}
                 className={'w-full'}
                 data-testid={`database-layout-option-${option.value}`}
-                disabled={Boolean(option.disabledReason)}
+                disabled={Boolean(option.disabledReason) || (option.value === DatabaseViewLayout.Timeline && option.value !== currentLayout && timelineAction.type !== 'create')}
                 onSelect={() => {
-                  if (option.value === currentLayout || option.disabledReason) return;
+                  if (option.value === currentLayout || option.disabledReason || (option.value === DatabaseViewLayout.Timeline && getAction(ViewLayout.Timeline).type !== 'create')) return;
                   void (async () => {
                     try {
                       await updateLayout(option.value);
@@ -134,15 +150,14 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
               </DropdownMenuItem>
             );
 
-            return option.disabledReason ? (
-              <Tooltip key={option.value}>
-                <TooltipTrigger asChild>
-                  <div>{item}</div>
-                </TooltipTrigger>
-                <TooltipContent>{option.disabledReason}</TooltipContent>
-              </Tooltip>
-            ) : (
-              item
+            return (
+              <DatabaseViewCreationHint
+                key={option.value}
+                enabled={option.value === DatabaseViewLayout.Timeline || option.value === DatabaseViewLayout.Dashboard}
+                reason={option.disabledReason}
+              >
+                {item}
+              </DatabaseViewCreationHint>
             );
           })}
         </DropdownMenuSubContent>

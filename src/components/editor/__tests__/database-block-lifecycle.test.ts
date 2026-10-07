@@ -1,6 +1,7 @@
 import type { View } from '@/application/types';
 import { ViewLayout } from '@/application/types';
 import {
+  createDatabaseBlockDeletionTracker,
   persistRecoveredDatabaseViewId,
   resolveDatabaseBlockDeletionTarget,
   resolveEmbeddedDatabaseViewId,
@@ -60,6 +61,122 @@ describe('resolveDatabaseBlockDeletionTarget', () => {
     await expect(resolveDatabaseBlockDeletionTarget('missing-view', jest.fn().mockResolvedValue(null))).resolves.toBe(
       null
     );
+  });
+});
+
+describe('database deletion history', () => {
+  function setup() {
+    const referenced = new Set<string>();
+    const context = {
+      readOnly: false,
+      loadViewMeta: jest.fn(async (viewId: string) => createView(viewId, viewId === 'grid-view'
+        ? { parent_view_id: 'database-container' }
+        : { extra: { is_database_container: true }, layout: ViewLayout.Grid })),
+      deletePage: jest.fn().mockResolvedValue(undefined),
+      restorePage: jest.fn().mockResolvedValue(undefined),
+    };
+    const onError = jest.fn();
+    const tracker = createDatabaseBlockDeletionTracker(() => context, (id) => referenced.has(id), onError);
+
+    return { context, referenced, tracker, onError };
+  }
+
+  it('restores the owning database container when history reinserts its block', async () => {
+    const { context, referenced, tracker } = setup();
+
+    await tracker.reconcile('grid-view');
+    expect(context.deletePage).toHaveBeenCalledWith('database-container');
+    referenced.add('grid-view');
+    await tracker.reconcile('grid-view');
+    expect(context.restorePage).toHaveBeenCalledWith('database-container');
+
+    referenced.clear();
+    await tracker.reconcile('grid-view');
+    expect(context.deletePage).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not restore existing references that this editor never deleted', async () => {
+    const { context, referenced, tracker } = setup();
+
+    referenced.add('grid-view');
+    await tracker.reconcile('grid-view');
+    expect(context.loadViewMeta).not.toHaveBeenCalled();
+    expect(context.deletePage).not.toHaveBeenCalled();
+    expect(context.restorePage).not.toHaveBeenCalled();
+  });
+
+  it('cancels deletion when history restores the block while metadata is loading', async () => {
+    const { context, referenced, tracker } = setup();
+    let finishMetadata!: (view: View) => void;
+
+    context.loadViewMeta.mockImplementationOnce(() => new Promise((resolve) => { finishMetadata = resolve; }));
+    const deletion = tracker.reconcile('grid-view');
+
+    await Promise.resolve();
+    referenced.add('grid-view');
+    finishMetadata(createView('grid-view'));
+    await deletion;
+    expect(context.deletePage).not.toHaveBeenCalled();
+  });
+
+  it('waits for an in-flight deletion before restoring a reinserted block', async () => {
+    const { context, referenced, tracker } = setup();
+    let finishDeletion!: () => void;
+
+    context.deletePage.mockImplementationOnce(() => new Promise<void>((resolve) => { finishDeletion = resolve; }));
+    const deletion = tracker.reconcile('grid-view');
+
+    // Resolve both child and parent metadata before the deletion starts.
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    expect(context.deletePage).toHaveBeenCalledTimes(1);
+    referenced.add('grid-view');
+    tracker.restoreReferencedViews(referenced);
+    expect(context.restorePage).not.toHaveBeenCalled();
+    finishDeletion();
+    await deletion;
+    await tracker.reconcile('grid-view');
+    expect(context.restorePage).toHaveBeenCalledTimes(1);
+    expect(context.restorePage).toHaveBeenCalledWith('database-container');
+  });
+
+  it('does not treat a failed deletion as a database that must be restored', async () => {
+    const { context, referenced, tracker, onError } = setup();
+    const error = new Error('Deletion failed');
+
+    context.deletePage.mockRejectedValueOnce(error);
+    await tracker.reconcile('grid-view');
+    expect(onError).toHaveBeenCalledWith('grid-view', error);
+    referenced.add('grid-view');
+    await tracker.reconcile('grid-view');
+    expect(context.restorePage).not.toHaveBeenCalled();
+  });
+
+  it('gates deletion and restoration when the editor becomes read-only', async () => {
+    const { context, referenced, tracker } = setup();
+
+    context.readOnly = true;
+    await tracker.reconcile('grid-view');
+    expect(context.deletePage).not.toHaveBeenCalled();
+    context.readOnly = false;
+    await tracker.reconcile('grid-view');
+    context.readOnly = true;
+    referenced.add('grid-view');
+    await tracker.reconcile('grid-view');
+    expect(context.restorePage).not.toHaveBeenCalled();
+  });
+
+  it('does not delete a database when its owner becomes inactive during metadata loading', async () => {
+    const { context, tracker } = setup();
+    let finishMetadata!: (view: View) => void;
+
+    context.loadViewMeta.mockImplementationOnce(() => new Promise((resolve) => { finishMetadata = resolve; }));
+    const deletion = tracker.reconcile('grid-view');
+
+    await Promise.resolve();
+    context.readOnly = true;
+    finishMetadata(createView('grid-view'));
+    await deletion;
+    expect(context.deletePage).not.toHaveBeenCalled();
   });
 });
 

@@ -97,6 +97,27 @@ export async function openWorkspace(workspaceId: string) {
   return executeAPIVoidRequest(() => getAxios()?.put<APIResponse>(url));
 }
 
+export interface DatabaseViewCreationStatus {
+  can_create_form: boolean;
+  can_create_chart: boolean;
+}
+
+/** Includes views outside the visible outline, including private and trashed views. */
+export async function getDatabaseViewCreationStatus(workspaceId: string): Promise<DatabaseViewCreationStatus> {
+  const status = await executeAPIRequest<DatabaseViewCreationStatus>(() =>
+    getAxios()?.get<APIResponse<DatabaseViewCreationStatus>>(
+      `/api/workspace/${workspaceId}/database-view-creation-status`
+    )
+  );
+
+  // An older server or an incomplete response is unavailable, not a free allowance.
+  if (typeof status?.can_create_form !== 'boolean' || typeof status?.can_create_chart !== 'boolean') {
+    throw new Error('Invalid database view creation status');
+  }
+
+  return status;
+}
+
 export async function updateWorkspace(workspaceId: string, payload: UpdateWorkspacePayload) {
   const url = `/api/workspace`;
 

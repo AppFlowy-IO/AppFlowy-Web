@@ -1,4 +1,4 @@
-import { useCallback, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as Y from 'yjs';
 
@@ -10,10 +10,13 @@ import { DatabaseViewLayout, ViewLayout, YDatabaseView, YjsDatabaseKey } from '@
 import { ReactComponent as ChevronDownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as CheckIcon } from '@/assets/icons/check.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
+import { DatabaseViewCreationHint, DatabaseViewProBadge } from '@/components/_shared/DatabaseViewCreationItem';
 import { MobileSheet, MobileSheetItem } from '@/components/_shared/mobile-drawer/MobileSheet';
 import { ViewIcon } from '@/components/_shared/view-icon';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { useAddDatabaseViewMenu } from '@/components/database/components/tabs/AddViewButton';
+import { Progress } from '@/components/ui/progress';
+import { isLimitedDatabaseViewLayout } from '@/utils/subscription';
 
 export interface MobileDatabaseViewPillProps {
   viewIds: string[];
@@ -135,6 +138,14 @@ export function MobileDatabaseViewPill({
     onViewAdded: handleViewAdded,
   });
   const { setMenuOpen } = addMenu;
+
+  // The shared checkout flow closes its layout menu only after checkout opens.
+  useEffect(() => {
+    if (screen === 'layouts' && !addMenu.menuOpen) {
+      setOpen(false);
+      setScreen('views');
+    }
+  }, [screen, addMenu.menuOpen]);
   const showScreen = useCallback(
     (next: SheetScreen) => {
       setScreen(next);
@@ -217,19 +228,37 @@ export function MobileDatabaseViewPill({
         ) : (
           addMenu.options
             .filter((option) => option.layout !== DatabaseViewLayout.Dashboard)
-            .map((option) => (
-              <MobileSheetItem
-                disabled={Boolean(option.disabledReason) || addMenu.addLoading}
-                icon={<ViewIcon layout={option.viewLayout} size='small' />}
-                id={`layout-${option.layout}`}
-                key={option.layout}
-                label={option.label}
-                onSelect={() => {
-                  handleOpenChange(false);
-                  void addMenu.addView(option.layout, option.label);
-                }}
-              />
-            ))
+            .map((option) => {
+              const action = addMenu.getAction(option.viewLayout);
+              const openingCheckout = addMenu.checkoutLayout === option.viewLayout;
+
+              return (
+                <DatabaseViewCreationHint
+                  key={option.layout}
+                  enabled={isLimitedDatabaseViewLayout(option.viewLayout)}
+                  reason={action.reason}
+                >
+                  <MobileSheetItem
+                    disabled={action.type === 'disabled' || addMenu.addLoading || addMenu.checkoutLayout !== null}
+                    icon={<ViewIcon layout={option.viewLayout} size='small' />}
+                    id={`layout-${option.layout}`}
+                    label={option.label}
+                    trailing={openingCheckout ? (
+                      <Progress role='progressbar' aria-label={t('databaseViewCreation.openingCheckout')} />
+                    ) : action.requiresPro ? <DatabaseViewProBadge /> : null}
+                    onSelect={() => {
+                      if (action.type === 'upgrade') {
+                        void addMenu.upgradeView(option.viewLayout);
+                        return;
+                      }
+
+                      handleOpenChange(false);
+                      void addMenu.addView(option.layout, option.label);
+                    }}
+                  />
+                </DatabaseViewCreationHint>
+              );
+            })
         )}
       </MobileSheet>
     </>

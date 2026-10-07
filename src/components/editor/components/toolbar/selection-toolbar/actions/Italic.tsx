@@ -23,6 +23,7 @@ export function Italic() {
 
   return (
     <ActionButton
+      aria-label={t('toolbar.italic')}
       onClick={onClick}
       active={isActivated}
       data-testid="toolbar-italic-button"
@@ -33,7 +34,7 @@ export function Italic() {
         </>
       }
     >
-      <ItalicSvg className='h-4 w-4' />
+      <ItalicSvg aria-hidden='true' className='h-4 w-4' />
     </ActionButton>
   );
 }

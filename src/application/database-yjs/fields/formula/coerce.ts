@@ -1,7 +1,8 @@
 import dayjs from 'dayjs';
 
 import { FormulaError, SourcePosition } from './errors';
-import { FormulaDate, FormulaValue } from './values';
+import { joinText } from './styled-text';
+import { FormulaDate, FormulaTextValue, FormulaValue, text } from './values';
 
 /**
  * Runtime coercions. The type checker rejects mismatched types before
@@ -52,17 +53,16 @@ export function asText(value: FormulaValue): string {
 }
 
 /** Charge string growth before joining nested lists or copying existing text. */
-export function asTextWithBudget(value: FormulaValue, consumeWork: (amount: number) => void): string {
+export function asTextValueWithBudget(value: FormulaValue, consumeWork: (amount: number) => void): FormulaTextValue {
   if (value.type === 'list') {
-    const parts = value.items.map((item) => asTextWithBudget(item, consumeWork));
+    const parts = value.items.map((item) => asTextValueWithBudget(item, consumeWork));
 
-    consumeWork(parts.reduce((length, part) => length + part.length, Math.max(0, parts.length - 1) * 2));
-    return parts.join(', ');
+    return joinText(parts, text(', '), consumeWork);
   }
 
-  const result = asText(value);
+  const result = value.type === 'text' ? value : text(asText(value));
 
-  consumeWork(result.length);
+  consumeWork(result.value.length + (result.runs?.length ?? 0));
   return result;
 }
 

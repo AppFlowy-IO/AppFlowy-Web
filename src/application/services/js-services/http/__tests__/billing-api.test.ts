@@ -3,10 +3,16 @@ import {
   SubscriptionInterval,
   SubscriptionPlan,
 } from '@/application/types';
+import { getConfigValue } from '@/utils/runtime-config';
+import { ServerInfoState, updateServerInfo } from '@/utils/server-info';
 
 import {
+  cancelSubscription,
+  getActiveSubscription,
   getBillingPortalLink,
   getPricingCatalog,
+  getSubscriptionLink,
+  getSubscriptions,
   getWorkspaceSubscriptionStatus,
   getWorkspaceSubscriptions,
   getWorkspaceUsage,
@@ -38,6 +44,46 @@ function deferred<T>() {
 
   return { promise, resolve };
 }
+
+beforeEach(() => {
+  mockGet.mockReset();
+  mockPost.mockReset();
+  updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), {
+    status: 'available',
+    info: { enable_page_history: true, self_hosted: false },
+  });
+});
+
+describe('hosted billing isolation', () => {
+  it.each<ServerInfoState>([
+    { status: 'available', info: { enable_page_history: true, self_hosted: true } },
+    { status: 'loading' },
+    { status: 'unavailable' },
+    { status: 'unsupported' },
+  ])('blocks every billing endpoint before HTTP with server info $status ($info)', async (state) => {
+    // The explicit self-hosted flag must override even the known cloud hostname.
+    updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), state);
+    const requests = [
+      () => getSubscriptions(),
+      () => getActiveSubscription('workspace-1'),
+      () => getWorkspaceSubscriptions('workspace-1'),
+      () => getSubscriptionLink('workspace-1', SubscriptionPlan.Pro, SubscriptionInterval.Month),
+      () => cancelSubscription('workspace-1', SubscriptionPlan.Pro),
+      () => getPricingCatalog(),
+      () => getWorkspaceSubscriptionStatus('workspace-1'),
+      () => getWorkspaceUsage('workspace-1'),
+      () => getBillingPortalLink(),
+      () => setSubscriptionRecurringInterval('workspace-1', SubscriptionPlan.Pro, SubscriptionInterval.Year),
+    ];
+
+    for (const request of requests) {
+      await expect(request()).rejects.toThrow('Hosted billing is not available on this server');
+    }
+
+    expect(mockGet).not.toHaveBeenCalled();
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+});
 
 describe('getWorkspaceSubscriptions', () => {
   it('loads active plans and subscription definitions in parallel', async () => {

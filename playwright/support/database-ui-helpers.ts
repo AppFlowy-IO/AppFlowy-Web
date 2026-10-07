@@ -8,6 +8,7 @@ import {
   GridFieldSelectors,
 } from './selectors';
 import { signInAndWaitForApp } from './auth-flow-helpers';
+import { expectViewCreationAvailable } from './view-creation-availability';
 
 export type DatabaseViewType = 'Grid' | 'Board' | 'Calendar' | 'Chart' | 'List' | 'Gallery' | 'Feed';
 
@@ -100,6 +101,7 @@ export async function createDatabaseView(
   } else if (viewType === 'Calendar') {
     await page.locator('[role="menuitem"]').filter({ hasText: 'Calendar' }).click({ force: true });
   } else if (viewType === 'Chart') {
+    await expectViewCreationAvailable(AddPageSelectors.addChartButton(page));
     await AddPageSelectors.addChartButton(page).click({ force: true });
   } else if (viewType === 'List') {
     await AddPageSelectors.addListButton(page).click({ force: true });

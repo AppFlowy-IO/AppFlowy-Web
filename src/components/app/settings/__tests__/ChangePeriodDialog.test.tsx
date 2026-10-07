@@ -4,7 +4,7 @@ import { PricingCatalog, SubscriptionInterval, SubscriptionPlan } from '@/applic
 import { resetPricingCatalogCache } from '@/components/app/hooks/usePricingCatalog';
 import { ChangePeriodDialog } from '@/components/app/settings/billing/ChangePeriodDialog';
 
-import { BillingTestProviders, catalog, translate } from './billing-test-utils';
+import { BillingTestProviders, catalog, setBillingHostingMode, translate } from './billing-test-utils';
 
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: translate }) }));
 jest.mock('@/application/services/domains', () => ({ BillingService: { getPricingCatalog: jest.fn() } }));
@@ -40,6 +40,7 @@ function tryConfirmWithoutPrice() {
 
 describe('ChangePeriodDialog price availability', () => {
   beforeEach(() => {
+    setBillingHostingMode();
     resetPricingCatalogCache();
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
   });

@@ -1,14 +1,17 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useSlateStatic } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { TableAlignType } from '@/application/types';
 import Popover from '@/components/_shared/popover/Popover';
+import { Switch } from '@/components/_shared/switch/Switch';
 import { renderColor } from '@/utils/color';
 
-import { MIN_WIDTH } from './const';
+import { resizeSimpleTable } from './SimpleTable.layout';
+import { scrollSimpleTableFromMenu } from './SimpleTable.scroll';
 import { useSimpleTableContext } from './SimpleTableContext';
+import { SimpleTableMenuIcons } from './SimpleTableMenuIcons';
 
 // Background color palette matching desktop Flutter (free tier)
 const TABLE_BG_COLORS = [
@@ -25,116 +28,15 @@ const TABLE_BG_COLORS = [
 ];
 
 // ============================================================================
-// SVG Icons matching the desktop Flutter UI
-// ============================================================================
-
-function InsertAboveIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="2" y="6" width="12" height="8" rx="1" />
-      <path d="M8 1v3M6 3h4" />
-    </svg>
-  );
-}
-
-function InsertBelowIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="2" y="2" width="12" height="8" rx="1" />
-      <path d="M8 12v3M6 13h4" />
-    </svg>
-  );
-}
-
-function InsertLeftIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="6" y="2" width="8" height="12" rx="1" />
-      <path d="M1 8h3M3 6v4" />
-    </svg>
-  );
-}
-
-function InsertRightIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="2" y="2" width="8" height="12" rx="1" />
-      <path d="M12 8h3M13 6v4" />
-    </svg>
-  );
-}
-
-function ColorIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2">
-      <rect x="3" y="3" width="10" height="10" rx="2" />
-    </svg>
-  );
-}
-
-function AlignIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
-      <path d="M3 4h10M3 8h7M3 12h10" />
-    </svg>
-  );
-}
-
-function SetToPageWidthIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 8h10M3 8l2-2M3 8l2 2M13 8l-2-2M13 8l-2 2" />
-    </svg>
-  );
-}
-
-function DistributeIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
-      <path d="M2 3v10M8 3v10M14 3v10" />
-      <rect x="3" y="5" width="4" height="6" rx="0.5" />
-      <rect x="9" y="5" width="4" height="6" rx="0.5" />
-    </svg>
-  );
-}
-
-function DuplicateIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="5" y="5" width="8" height="8" rx="1.5" />
-      <path d="M11 5V3.5A1.5 1.5 0 009.5 2h-6A1.5 1.5 0 002 3.5v6A1.5 1.5 0 003.5 11H5" />
-    </svg>
-  );
-}
-
-function ClearContentsIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M8 3L3.5 13h9L8 3z" />
-      <path d="M5.5 10h5" />
-    </svg>
-  );
-}
-
-function DeleteIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 4h10M6 4V3a1 1 0 011-1h2a1 1 0 011 1v1" />
-      <path d="M4.5 4l.5 9a1 1 0 001 1h4a1 1 0 001-1l.5-9" />
-      <path d="M6.5 7v4M9.5 7v4" />
-    </svg>
-  );
-}
-
-// ============================================================================
 // Menu components
 // ============================================================================
 
-interface MenuAction {
+export interface MenuAction {
   label: string;
   icon?: React.ReactNode;
   onClick: () => void;
   disabled?: boolean;
+  destructive?: boolean;
   divider?: boolean;
   colorPicker?: boolean;
   onSelectColor?: (colorId: string) => void;
@@ -142,13 +44,15 @@ interface MenuAction {
   alignPicker?: boolean;
   onSelectAlign?: (align: TableAlignType) => void;
   selectedAlign?: TableAlignType;
+  checked?: boolean;
+  onCheckedChange?: (checked: boolean) => void;
 }
 
 function MenuDivider() {
   return <div className="simple-table-menu-divider" />;
 }
 
-function MenuItem({ action }: { action: MenuAction }) {
+export function SimpleTableMenuItem({ action }: { action: MenuAction }) {
   if (action.colorPicker) {
     return <ColorMenuItem action={action} />;
   }
@@ -157,9 +61,31 @@ function MenuItem({ action }: { action: MenuAction }) {
     return <AlignMenuItem action={action} />;
   }
 
+  if (action.onCheckedChange) {
+    return (
+      <label className="simple-table-menu-item simple-table-menu-toggle">
+        {action.icon && <span className="simple-table-menu-item-icon">{action.icon}</span>}
+        <span>{action.label}</span>
+        <Switch
+          size="small"
+          className="simple-table-menu-switch"
+          checked={action.checked ?? false}
+          onChange={(_, checked) => action.onCheckedChange?.(checked)}
+          inputProps={{ role: 'switch', 'aria-label': action.label }}
+          sx={(theme) => ({
+            '& .MuiSwitch-track': {
+              backgroundColor: '#e0e0e0',
+              ...theme.applyStyles('dark', { backgroundColor: '#39393d' }),
+            },
+          })}
+        />
+      </label>
+    );
+  }
+
   return (
     <button
-      className="simple-table-menu-item"
+      className={`simple-table-menu-item ${action.destructive ? 'simple-table-menu-delete' : ''}`}
       onClick={action.onClick}
       disabled={action.disabled}
     >
@@ -183,9 +109,7 @@ function ColorMenuItem({ action }: { action: MenuAction }) {
       >
         {action.icon && <span className="simple-table-menu-item-icon">{action.icon}</span>}
         <span>{action.label}</span>
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="ml-auto text-text-caption">
-          <path d="M4.5 2.5l3.5 3.5-3.5 3.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+        {SimpleTableMenuIcons.submenuArrow}
       </button>
       <Popover
         open={isOpen}
@@ -267,9 +191,7 @@ function AlignMenuItem({ action }: { action: MenuAction }) {
       >
         {action.icon && <span className="simple-table-menu-item-icon">{action.icon}</span>}
         <span>{action.label}</span>
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="ml-auto text-text-caption">
-          <path d="M4.5 2.5l3.5 3.5-3.5 3.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+        {SimpleTableMenuIcons.submenuArrow}
       </button>
       <Popover
         open={isOpen}
@@ -297,52 +219,6 @@ function AlignMenuItem({ action }: { action: MenuAction }) {
       </Popover>
     </>
   );
-}
-
-// ============================================================================
-// Row/Column highlight when menu is open
-// ============================================================================
-
-function useHighlight(type: 'row' | 'column', index: number, isOpen: boolean) {
-  const context = useSimpleTableContext();
-
-  useEffect(() => {
-    if (!isOpen || !context) return;
-
-    // Find the table by walking up from any element with the blockId,
-    // or by finding the closest .simple-table ancestor
-    const blockEl = document.querySelector(`[data-block-id="${context.tableNode.blockId}"]`);
-    const tableEl = blockEl?.closest('.simple-table') || blockEl?.querySelector('.simple-table') || blockEl;
-
-    if (!tableEl) return;
-
-    if (type === 'row') {
-      const row = tableEl.querySelector(`tr[data-row-index="${index}"]`);
-
-      if (row) {
-        row.classList.add('simple-table-highlight');
-      }
-
-      return () => {
-        row?.classList.remove('simple-table-highlight');
-      };
-    } else {
-      const cells = tableEl.querySelectorAll(`td[data-cell-index="${index}"]`);
-
-      cells.forEach(cell => cell.classList.add('simple-table-highlight'));
-
-      return () => {
-        cells.forEach(cell => cell.classList.remove('simple-table-highlight'));
-      };
-    }
-  }, [isOpen, type, index, context]);
-}
-
-function getTableContainerWidth(anchor: HTMLElement | null) {
-  const rootWrapper = anchor?.closest('.simple-table-root-wrapper');
-  const scrollContainer = rootWrapper?.querySelector('.simple-table-scroll-container');
-
-  return scrollContainer instanceof HTMLElement ? scrollContainer.clientWidth : undefined;
 }
 
 // ============================================================================
@@ -399,8 +275,6 @@ export function RowActionTrigger({ rowIndex }: { rowIndex: number }) {
 
   const isOpen = Boolean(anchorEl);
 
-  useHighlight('row', rowIndex, isOpen);
-
   const handleClick = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -417,13 +291,12 @@ export function RowActionTrigger({ rowIndex }: { rowIndex: number }) {
 
   const tableBlockId = context?.tableNode.blockId ?? '';
   const rowCount = context?.rowCount ?? 0;
-  const colCount = context?.columnCount ?? 0;
 
   const actions = useMemo<MenuAction[]>(() => {
     const items: MenuAction[] = [
       {
         label: 'Insert above',
-        icon: <InsertAboveIcon />,
+        icon: SimpleTableMenuIcons.insertRowAbove,
         onClick: () => {
           CustomEditor.insertTableRow(editor, tableBlockId, rowIndex);
           handleClose();
@@ -431,16 +304,27 @@ export function RowActionTrigger({ rowIndex }: { rowIndex: number }) {
       },
       {
         label: 'Insert below',
-        icon: <InsertBelowIcon />,
+        icon: SimpleTableMenuIcons.insertRowBelow,
         onClick: () => {
           CustomEditor.insertTableRow(editor, tableBlockId, rowIndex + 1);
           handleClose();
         },
       },
       { label: '', divider: true, onClick: () => undefined },
+      ...(rowIndex === 0
+        ? [{
+            label: 'Header row',
+            icon: SimpleTableMenuIcons.headerRow,
+            checked: context?.tableNode.data.enable_header_row ?? false,
+            onCheckedChange: (checked: boolean) => {
+              CustomEditor.updateTableData(editor, tableBlockId, { enable_header_row: checked });
+            },
+            onClick: () => undefined,
+          }]
+        : []),
       {
         label: 'Color',
-        icon: <ColorIcon />,
+        icon: SimpleTableMenuIcons.color,
         colorPicker: true,
         selectedColor: (context?.tableNode.data.row_colors?.[rowIndex] as string) || '',
         onSelectColor: (colorId: string) => {
@@ -459,7 +343,7 @@ export function RowActionTrigger({ rowIndex }: { rowIndex: number }) {
       },
       {
         label: 'Align',
-        icon: <AlignIcon />,
+        icon: SimpleTableMenuIcons.align,
         alignPicker: true,
         selectedAlign: context?.tableNode.data.row_aligns?.[rowIndex],
         onSelectAlign: (align: TableAlignType) => {
@@ -474,49 +358,24 @@ export function RowActionTrigger({ rowIndex }: { rowIndex: number }) {
       { label: '', divider: true, onClick: () => undefined },
       {
         label: 'Set to page width',
-        icon: <SetToPageWidthIcon />,
+        icon: SimpleTableMenuIcons.setPageWidth,
         onClick: () => {
-          const containerWidth = getTableContainerWidth(buttonRef.current);
-
-          if (containerWidth && colCount > 0) {
-            // Set to page width: divide page width equally among all columns
-            const evenWidth = Math.max(MIN_WIDTH, Math.floor(containerWidth / colCount));
-            const newWidths: Record<string, number> = {};
-
-            for (let i = 0; i < colCount; i++) {
-              newWidths[i] = evenWidth;
-            }
-
-            CustomEditor.updateTableData(editor, tableBlockId, { column_widths: newWidths });
-          }
-
+          resizeSimpleTable(editor, tableBlockId, 'page');
           handleClose();
         },
       },
       {
         label: 'Distribute columns evenly',
-        icon: <DistributeIcon />,
+        icon: SimpleTableMenuIcons.distribute,
         onClick: () => {
-          const containerWidth = getTableContainerWidth(buttonRef.current);
-
-          if (containerWidth && colCount > 0) {
-            const evenWidth = Math.max(MIN_WIDTH, Math.floor(containerWidth / colCount));
-            const newWidths: Record<string, number> = {};
-
-            for (let i = 0; i < colCount; i++) {
-              newWidths[i] = evenWidth;
-            }
-
-            CustomEditor.updateTableData(editor, tableBlockId, { column_widths: newWidths });
-          }
-
+          resizeSimpleTable(editor, tableBlockId, 'even');
           handleClose();
         },
       },
       { label: '', divider: true, onClick: () => undefined },
       {
         label: 'Duplicate',
-        icon: <DuplicateIcon />,
+        icon: SimpleTableMenuIcons.duplicate,
         onClick: () => {
           CustomEditor.duplicateTableRow(editor, tableBlockId, rowIndex);
           handleClose();
@@ -524,7 +383,7 @@ export function RowActionTrigger({ rowIndex }: { rowIndex: number }) {
       },
       {
         label: 'Clear contents',
-        icon: <ClearContentsIcon />,
+        icon: SimpleTableMenuIcons.clearContents,
         onClick: () => {
           CustomEditor.clearTableRowContent(editor, tableBlockId, rowIndex);
           handleClose();
@@ -532,7 +391,8 @@ export function RowActionTrigger({ rowIndex }: { rowIndex: number }) {
       },
       {
         label: 'Delete',
-        icon: <DeleteIcon />,
+        icon: SimpleTableMenuIcons.deleteRow,
+        destructive: true,
         onClick: () => {
           CustomEditor.deleteTableRow(editor, tableBlockId, rowIndex);
           handleClose();
@@ -542,7 +402,7 @@ export function RowActionTrigger({ rowIndex }: { rowIndex: number }) {
     ];
 
     return items;
-  }, [editor, tableBlockId, rowIndex, rowCount, colCount, context, handleClose]);
+  }, [editor, tableBlockId, rowIndex, rowCount, context, handleClose]);
 
   if (!context || context.readOnly) return null;
 
@@ -553,6 +413,7 @@ export function RowActionTrigger({ rowIndex }: { rowIndex: number }) {
         open={isOpen}
         anchorEl={anchorEl}
         onClose={handleClose}
+        onWheel={(event) => scrollSimpleTableFromMenu(event, buttonRef.current?.closest('.simple-table') ?? null)}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
         transformOrigin={{ vertical: 'top', horizontal: 'left' }}
         slotProps={{
@@ -563,7 +424,7 @@ export function RowActionTrigger({ rowIndex }: { rowIndex: number }) {
       >
         <div className="simple-table-menu-list">
           {actions.map((action, i) =>
-            action.divider ? <MenuDivider key={i} /> : <MenuItem key={i} action={action} />,
+            action.divider ? <MenuDivider key={i} /> : <SimpleTableMenuItem key={i} action={action} />,
           )}
         </div>
       </Popover>
@@ -582,8 +443,6 @@ export function ColumnActionTrigger({ colIndex }: { colIndex: number }) {
   const buttonRef = useRef<HTMLDivElement>(null);
 
   const isOpen = Boolean(anchorEl);
-
-  useHighlight('column', colIndex, isOpen);
 
   const handleClick = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -605,7 +464,7 @@ export function ColumnActionTrigger({ colIndex }: { colIndex: number }) {
     const items: MenuAction[] = [
       {
         label: 'Insert left',
-        icon: <InsertLeftIcon />,
+        icon: SimpleTableMenuIcons.insertColumnLeft,
         onClick: () => {
           CustomEditor.insertTableColumn(editor, tableBlockId, colIndex);
           handleClose();
@@ -613,16 +472,27 @@ export function ColumnActionTrigger({ colIndex }: { colIndex: number }) {
       },
       {
         label: 'Insert right',
-        icon: <InsertRightIcon />,
+        icon: SimpleTableMenuIcons.insertColumnRight,
         onClick: () => {
           CustomEditor.insertTableColumn(editor, tableBlockId, colIndex + 1);
           handleClose();
         },
       },
       { label: '', divider: true, onClick: () => undefined },
+      ...(colIndex === 0
+        ? [{
+            label: 'Header column',
+            icon: SimpleTableMenuIcons.headerColumn,
+            checked: context?.tableNode.data.enable_header_column ?? false,
+            onCheckedChange: (checked: boolean) => {
+              CustomEditor.updateTableData(editor, tableBlockId, { enable_header_column: checked });
+            },
+            onClick: () => undefined,
+          }]
+        : []),
       {
         label: 'Color',
-        icon: <ColorIcon />,
+        icon: SimpleTableMenuIcons.color,
         colorPicker: true,
         selectedColor: (context?.tableNode.data.column_colors?.[colIndex] as string) || '',
         onSelectColor: (colorId: string) => {
@@ -641,7 +511,7 @@ export function ColumnActionTrigger({ colIndex }: { colIndex: number }) {
       },
       {
         label: 'Align',
-        icon: <AlignIcon />,
+        icon: SimpleTableMenuIcons.align,
         alignPicker: true,
         selectedAlign: context?.tableNode.data.column_aligns?.[colIndex],
         onSelectAlign: (align: TableAlignType) => {
@@ -656,48 +526,24 @@ export function ColumnActionTrigger({ colIndex }: { colIndex: number }) {
       { label: '', divider: true, onClick: () => undefined },
       {
         label: 'Set to page width',
-        icon: <SetToPageWidthIcon />,
+        icon: SimpleTableMenuIcons.setPageWidth,
         onClick: () => {
-          const containerWidth = getTableContainerWidth(buttonRef.current);
-
-          if (containerWidth && colCount > 0) {
-            const evenWidth = Math.max(MIN_WIDTH, Math.floor(containerWidth / colCount));
-            const newWidths: Record<string, number> = {};
-
-            for (let i = 0; i < colCount; i++) {
-              newWidths[i] = evenWidth;
-            }
-
-            CustomEditor.updateTableData(editor, tableBlockId, { column_widths: newWidths });
-          }
-
+          resizeSimpleTable(editor, tableBlockId, 'page');
           handleClose();
         },
       },
       {
         label: 'Distribute columns evenly',
-        icon: <DistributeIcon />,
+        icon: SimpleTableMenuIcons.distribute,
         onClick: () => {
-          const containerWidth = getTableContainerWidth(buttonRef.current);
-
-          if (containerWidth && colCount > 0) {
-            const evenWidth = Math.max(MIN_WIDTH, Math.floor(containerWidth / colCount));
-            const newWidths: Record<string, number> = {};
-
-            for (let i = 0; i < colCount; i++) {
-              newWidths[i] = evenWidth;
-            }
-
-            CustomEditor.updateTableData(editor, tableBlockId, { column_widths: newWidths });
-          }
-
+          resizeSimpleTable(editor, tableBlockId, 'even');
           handleClose();
         },
       },
       { label: '', divider: true, onClick: () => undefined },
       {
         label: 'Duplicate',
-        icon: <DuplicateIcon />,
+        icon: SimpleTableMenuIcons.duplicate,
         onClick: () => {
           CustomEditor.duplicateTableColumn(editor, tableBlockId, colIndex);
           handleClose();
@@ -705,7 +551,7 @@ export function ColumnActionTrigger({ colIndex }: { colIndex: number }) {
       },
       {
         label: 'Clear contents',
-        icon: <ClearContentsIcon />,
+        icon: SimpleTableMenuIcons.clearContents,
         onClick: () => {
           CustomEditor.clearTableColumnContent(editor, tableBlockId, colIndex);
           handleClose();
@@ -713,7 +559,8 @@ export function ColumnActionTrigger({ colIndex }: { colIndex: number }) {
       },
       {
         label: 'Delete',
-        icon: <DeleteIcon />,
+        icon: SimpleTableMenuIcons.deleteColumn,
+        destructive: true,
         onClick: () => {
           CustomEditor.deleteTableColumn(editor, tableBlockId, colIndex);
           handleClose();
@@ -734,6 +581,7 @@ export function ColumnActionTrigger({ colIndex }: { colIndex: number }) {
         open={isOpen}
         anchorEl={anchorEl}
         onClose={handleClose}
+        onWheel={(event) => scrollSimpleTableFromMenu(event, buttonRef.current?.closest('.simple-table') ?? null)}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
         transformOrigin={{ vertical: 'top', horizontal: 'center' }}
         slotProps={{
@@ -744,7 +592,7 @@ export function ColumnActionTrigger({ colIndex }: { colIndex: number }) {
       >
         <div className="simple-table-menu-list">
           {actions.map((action, i) =>
-            action.divider ? <MenuDivider key={i} /> : <MenuItem key={i} action={action} />,
+            action.divider ? <MenuDivider key={i} /> : <SimpleTableMenuItem key={i} action={action} />,
           )}
         </div>
       </Popover>

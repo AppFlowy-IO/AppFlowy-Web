@@ -24,6 +24,10 @@ import {
   createDatabaseDuplicatePlaceholderData,
   createDatabaseNodeData,
 } from '@/components/editor/components/blocks/database/utils/databaseBlockUtils';
+import { deleteBlocksWithSimpleTable } from '@/components/editor/components/blocks/simple-table/SimpleTable.convert';
+import { scrollSimpleTableFromMenu } from '@/components/editor/components/blocks/simple-table/SimpleTable.scroll';
+import { SimpleTableBlockControls } from '@/components/editor/components/blocks/simple-table/SimpleTableBlockControls';
+import { SimpleTableMenuIcons } from '@/components/editor/components/blocks/simple-table/SimpleTableMenuIcons';
 import CalloutTextColor from '@/components/editor/components/toolbar/block-controls/CalloutTextColor';
 import {
   OutlineCollapseControl,
@@ -206,6 +210,13 @@ const popoverProps: Partial<PopoverProps> = {
 
 function selectPathStartSafely(editor: YjsEditor, path: Path) {
   try {
+    const [node] = editor.node(path);
+
+    if ('type' in node && node.type === BlockType.SimpleTableBlock) {
+      Transforms.deselect(editor);
+      return;
+    }
+
     const point = editor.start(path);
 
     if (!ReactEditor.hasRange(editor, { anchor: point, focus: point })) {
@@ -244,13 +255,13 @@ function ControlsMenu({
   } = useEditorContext();
   const editor = useSlateStatic() as YjsEditor;
   const onlySingleBlockSelected = selectedBlockIds?.length === 1;
+  const selectedBlockId = selectedBlockIds?.[0];
   const node = useMemo(() => {
-    const blockId = selectedBlockIds?.[0];
+    if (!selectedBlockId) return null;
 
-    if (!blockId) return null;
-
-    return findSlateEntryByBlockId(editor, blockId);
-  }, [selectedBlockIds, editor]);
+    return findSlateEntryByBlockId(editor, selectedBlockId);
+  }, [selectedBlockId, editor]);
+  const isSimpleTable = onlySingleBlockSelected && node?.[0].type === BlockType.SimpleTableBlock;
 
   const { t } = useTranslation();
   const duplicateCopySuffix = useMemo(() => ` (${t('menuAppHeader.pageNameSuffix')})`, [t]);
@@ -534,23 +545,27 @@ function ControlsMenu({
       {
         key: 'delete',
         content: t('button.delete'),
-        icon: <DeleteIcon />,
+        icon: isSimpleTable ? SimpleTableMenuIcons.deleteRow : <DeleteIcon />,
         onClick: () => {
-          selectedBlockIds?.forEach((blockId) => {
-            CustomEditor.deleteBlock(editor, blockId);
-          });
+          const blockIds = selectedBlockIds ?? [];
+
+          if (blockIds.some((blockId) => findSlateEntryByBlockId(editor, blockId)?.[0].type === BlockType.SimpleTableBlock)) {
+            deleteBlocksWithSimpleTable(editor, blockIds);
+          } else {
+            blockIds.forEach((blockId) => CustomEditor.deleteBlock(editor, blockId));
+          }
         },
       },
       {
         key: 'duplicate',
         content: t('button.duplicate'),
-        icon: <DuplicateIcon />,
+        icon: isSimpleTable ? SimpleTableMenuIcons.duplicate : <DuplicateIcon />,
         onClick: duplicateSelectedBlocks,
       },
       onlySingleBlockSelected && {
         key: 'copyLinkToBlock',
         content: t('document.plugins.optionAction.copyLinkToBlock'),
-        icon: <CopyLinkIcon />,
+        icon: isSimpleTable ? SimpleTableMenuIcons.copyLink : <CopyLinkIcon />,
         onClick: async () => {
           const blockId = selectedBlockIds?.[0];
 
@@ -568,7 +583,7 @@ function ControlsMenu({
       icon: JSX.Element;
       onClick: () => void | Promise<void>;
     }[];
-  }, [t, duplicateSelectedBlocks, selectedBlockIds, onlySingleBlockSelected, editor]);
+  }, [t, duplicateSelectedBlocks, selectedBlockIds, onlySingleBlockSelected, editor, isSimpleTable]);
 
   return (
     <Popover
@@ -584,9 +599,14 @@ function ControlsMenu({
         onClose();
       }}
       open={open}
+      onWheel={isSimpleTable ? (event) => {
+        const entry = findSlateEntryByBlockId(editor, selectedBlockIds?.[0] ?? '');
+
+        if (entry) scrollSimpleTableFromMenu(event, ReactEditor.toDOMNode(editor, entry[0]));
+      } : undefined}
       {...popoverProps}
     >
-      <div data-testid={'controls-menu'} className={'flex w-[240px] flex-col p-2'}>
+      <div data-testid={'controls-menu'} className={`flex w-[240px] flex-col p-2 ${isSimpleTable ? 'simple-table-block-menu' : ''}`}>
         {options.map((option) => {
           return (
             <Button
@@ -595,7 +615,7 @@ function ControlsMenu({
               startIcon={option.icon}
               size={'small'}
               color={'inherit'}
-              className={'justify-start'}
+              className={`justify-start ${isSimpleTable && option.key === 'delete' ? 'simple-table-menu-delete' : ''}`}
               onClick={(e) => {
                 e.stopPropagation();
                 e.preventDefault();
@@ -609,6 +629,8 @@ function ControlsMenu({
             </Button>
           );
         })}
+
+        {isSimpleTable && selectedBlockId ? <SimpleTableBlockControls key={selectedBlockId} blockId={selectedBlockId} onClose={onClose} /> : null}
 
         {node?.[0]?.type &&
           [

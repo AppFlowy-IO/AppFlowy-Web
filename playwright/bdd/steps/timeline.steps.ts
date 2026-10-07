@@ -97,10 +97,14 @@ function before(page: Page, title: string): BarBox {
 }
 
 async function visibleCanvas(page: Page) {
-  const view = await TimelineSelectors.view(page).boundingBox();
+  const [viewport, table] = await Promise.all([
+    TimelineSelectors.view(page).locator('.appflowy-scroller').first().boundingBox(),
+    page.getByTestId('timeline-table-viewport').first().boundingBox(),
+  ]);
 
-  if (!view) throw new Error('Timeline view is not visible');
-  return { left: view.x + TIMELINE_SIDEBAR_WIDTH, right: view.x + view.width };
+  if (!viewport || !table) throw new Error('Timeline canvas is not visible');
+  // Saved field widths can make the docked table narrower than its fallback.
+  return { left: viewport.x + table.width, right: viewport.x + viewport.width };
 }
 
 Given(
@@ -138,8 +142,22 @@ Then('the timeline header marks today and draws the today line', async ({ page }
   await expect(TimelineSelectors.todayLine(page)).toBeVisible();
 });
 
-Then('the timeline title shows the current month', async ({ page }) => {
-  const month = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' });
+Then('the timeline title shows the month at the left edge', async ({ page }) => {
+  const [today, canvas] = await Promise.all([
+    TimelineSelectors.headerToday(page).boundingBox(),
+    visibleCanvas(page),
+  ]);
+
+  if (!today) throw new Error('The timeline today column is not visible');
+  // Month scale has one day per column. Today is inset from the left edge,
+  // so the title can still name the previous month at a month boundary.
+  const dayOffset = Math.floor((canvas.left - today.x) / today.width);
+  const month = await page.evaluate((offset) => {
+    const date = new Date();
+
+    date.setDate(date.getDate() + offset);
+    return date.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+  }, dayOffset);
 
   await expect(TimelineSelectors.title(page)).toHaveText(month);
 });

@@ -14,11 +14,28 @@ const mockReasonCalls: { enabled?: boolean; workspaceId?: string; requiresProMes
 let mockCreationEnabled = false;
 let mockIsDashboardWidget = false;
 let mockRequiresPro = false;
+let mockSelfHosted = false;
+let mockTimelineAllowed = true;
+const mockCreationCalls: { enabled?: boolean; workspaceId?: string }[] = [];
 
 jest.mock('@/application/constants', () => ({
   ...jest.requireActual('@/application/constants'),
   get EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED() {
     return mockCreationEnabled;
+  },
+}));
+jest.mock('@/application/database-yjs/context', () => ({ useDatabaseContext: () => ({
+  workspaceId: 'workspace-id', getSubscriptions: mockGetSubscriptions, isDashboardWidget: mockIsDashboardWidget,
+}) }));
+jest.mock('@/components/app/hooks/useServerInfo', () => ({ useServerHostingMode: () => mockSelfHosted ? 'self-hosted' : 'cloud' }));
+jest.mock('@/components/app/hooks/useDatabaseViewCreation', () => ({
+  useDatabaseViewCreation: (options: { enabled?: boolean; workspaceId?: string }) => {
+    mockCreationCalls.push(options);
+    return {
+      getAction: () => !mockRequiresPro && mockTimelineAllowed
+        ? { type: 'create' }
+        : { type: 'upgrade', reason: timelineRequiresPro },
+    };
   },
 }));
 jest.mock('sonner', () => ({ toast: { error: jest.fn() } }));
@@ -67,6 +84,9 @@ describe('database Layout', () => {
     mockIsDashboardWidget = false;
     mockRequiresPro = false;
     mockReasonCalls.length = 0;
+    mockCreationCalls.length = 0;
+    mockSelfHosted = false;
+    mockTimelineAllowed = true;
     jest.clearAllMocks();
     mockUpdateLayout.mockReset();
   });
@@ -191,7 +211,7 @@ describe('database Layout', () => {
     expect(mockReasonCalls.every(({ enabled }) => enabled === false)).toBe(true);
     fireEvent.keyDown(screen.getByTestId('database-layout-settings-trigger'), { key: 'ArrowRight' });
     await screen.findByTestId(`database-layout-option-${DatabaseViewLayout.Grid}`);
-    expect(mockReasonCalls[mockReasonCalls.length - 2]).toEqual({ workspaceId: 'workspace-id', enabled: true });
+    expect(mockCreationCalls.at(-1)).toEqual({ workspaceId: 'workspace-id', getSubscriptions: mockGetSubscriptions, enabled: true });
     expect(mockReasonCalls[mockReasonCalls.length - 1]).toEqual({
       workspaceId: 'workspace-id',
       enabled: true,
@@ -216,6 +236,39 @@ describe('database Layout', () => {
     expect(mockUpdateLayout).not.toHaveBeenCalled();
   });
 
+  it.each([DatabaseViewLayout.Timeline, DatabaseViewLayout.Dashboard])(
+    'preserves the layout %s item while its plan reason clears',
+    async (layout) => {
+      mockCreationEnabled = true;
+      mockRequiresPro = true;
+      const menu = (
+        <DropdownMenu defaultOpen>
+          <DropdownMenuTrigger>Settings</DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <Layout currentLayout={DatabaseViewLayout.Grid} />
+          </DropdownMenuContent>
+        </DropdownMenu>
+      );
+      const { rerender } = render(menu);
+
+      fireEvent.keyDown(await screen.findByTestId('database-layout-settings-trigger'), { key: 'ArrowRight' });
+      const item = await screen.findByTestId(`database-layout-option-${layout}`);
+
+      expect(item.getAttribute('aria-disabled')).toBe('true');
+      mockRequiresPro = false;
+      rerender(
+        <DropdownMenu defaultOpen>
+          <DropdownMenuTrigger>Settings</DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <Layout currentLayout={DatabaseViewLayout.Grid} />
+          </DropdownMenuContent>
+        </DropdownMenu>
+      );
+      expect(screen.getByTestId(`database-layout-option-${layout}`)).toBe(item);
+      expect(item.hasAttribute('data-disabled')).toBe(false);
+    }
+  );
+
   it('keeps the current Pro layout and other conversions available in a Free workspace', async () => {
     mockCreationEnabled = true;
     mockRequiresPro = true;
@@ -231,16 +284,37 @@ describe('database Layout', () => {
     expect(mockUpdateLayout).toHaveBeenCalledWith(DatabaseViewLayout.Board);
   });
 
-  it('shows a connection message when Chart conversion is rejected without changing the selected layout', async () => {
-    const message = 'Connect to the internet to create Form or Chart views.';
-
-    mockUpdateLayout.mockRejectedValueOnce(new Error(message));
+  it('hides hosted Form and Chart conversion while preserving other layout choices', async () => {
     await openLayout(DatabaseViewLayout.Grid);
-    fireEvent.click(screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Chart}`));
+    expect(screen.queryByTestId(`database-layout-option-${DatabaseViewLayout.Chart}`)).toBeNull();
+    expect(screen.queryByTestId(`database-layout-option-${DatabaseViewLayout.Form}`)).toBeNull();
+  });
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(message));
-    expect(mockUpdateLayout).toHaveBeenCalledTimes(1);
-    expect(mockUpdateLayout).toHaveBeenCalledWith(DatabaseViewLayout.Chart);
+  it('keeps an existing hosted Chart selected without creating another Chart', async () => {
+    const trigger = await openLayout(DatabaseViewLayout.Chart);
+
+    expect(trigger.textContent).toContain('chart.menuName');
+    fireEvent.click(screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Chart}`));
+    expect(mockUpdateLayout).not.toHaveBeenCalled();
+  });
+
+  it('blocks Timeline conversion when creation requires Pro', async () => {
+    mockCreationEnabled = true;
+    mockTimelineAllowed = false;
+    await openLayout(DatabaseViewLayout.Grid);
+    const timeline = screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Timeline}`);
+
+    expect(timeline.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(timeline);
+    expect(mockUpdateLayout).not.toHaveBeenCalled();
+  });
+
+  it.each([DatabaseViewLayout.Form, DatabaseViewLayout.Chart])('allows self-hosted conversion to %s', async (layout) => {
+    mockCreationEnabled = true;
+    mockSelfHosted = true;
+    await openLayout(DatabaseViewLayout.Grid);
+    fireEvent.click(screen.getByTestId(`database-layout-option-${layout}`));
+    expect(mockUpdateLayout).toHaveBeenCalledWith(layout);
   });
 
   describe('in a mobile context (a 390px window)', () => {

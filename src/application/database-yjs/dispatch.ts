@@ -1,6 +1,7 @@
 import dayjs from 'dayjs';
+import { t } from 'i18next';
 import { nanoid } from 'nanoid';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useMemo } from 'react';
 import * as Y from 'yjs';
 
 import { resolveUserAttributionUid, touchRowAttribution } from '@/application/database-yjs/attribution';
@@ -68,6 +69,8 @@ import { createRelationField } from '@/application/database-yjs/fields/relation/
 import { parseRollupTypeOption } from '@/application/database-yjs/fields/rollup/parse';
 import { RollupShowAsType } from '@/application/database-yjs/fields/rollup/rollup.type';
 import { createRollupField } from '@/application/database-yjs/fields/rollup/utils';
+import { checkExistingCellWrite, shouldSkipBulkRewrite } from '@/application/database-yjs/fields/text/rich-text-guard';
+import { notifyRichTextNewer } from '@/application/database-yjs/fields/text/rich-text-notice';
 import { createDateTimeField } from '@/application/database-yjs/fields/text/utils';
 import { getDefaultFilterCondition, resolveRollupFilterTargetFieldType } from '@/application/database-yjs/filter';
 import { isFormQuestionFieldType } from '@/application/database-yjs/form-field-types';
@@ -130,7 +133,6 @@ import {
   RowId,
   TimeFormat,
   UpdatePagePayload,
-  ViewLayout,
   YDatabase,
   YDatabaseBoardLayoutSetting,
   YDatabaseCalendarLayoutSetting,
@@ -162,7 +164,6 @@ import {
   YSharedRoot,
 } from '@/application/types';
 import { MetadataKey } from '@/application/user-metadata';
-import { assertViewCreationOnline, onlineViewCreationRequiredError } from '@/application/view-online-policy';
 import { getWorkspacePlanPolicy } from '@/application/workspace-plan-policy';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Log } from '@/utils/log';
@@ -2211,6 +2212,22 @@ export function useClearCellsWithFieldDispatch() {
               throw new Error(`Row orders not found`);
             }
 
+            // Clearing is refused as a whole, before any cell changes, when a
+            // cell holds formatting that needs a newer client (rich text spec R49).
+            const refused = rows.some((rowId) => {
+              const rowDoc = rowMap?.[rowId];
+              const row = rowDoc?.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as
+                | YDatabaseRow
+                | undefined;
+
+              return checkExistingCellWrite(row?.get(YjsDatabaseKey.cells)?.get(fieldId), null) === 'refuse';
+            });
+
+            if (refused) {
+              notifyRichTextNewer();
+              return;
+            }
+
             rows.forEach((rowId) => {
               const rowDoc = rowMap?.[rowId];
 
@@ -2223,6 +2240,9 @@ export function useClearCellsWithFieldDispatch() {
                 const row = rowSharedRoot.get(YjsEditorKey.database_row);
                 const cells = row.get(YjsDatabaseKey.cells);
                 const hadCell = cells.has(fieldId);
+
+                // Re-checked in the transaction that writes (R50).
+                if (checkExistingCellWrite(cells.get(fieldId), null) !== 'proceed') return;
 
                 cells.delete(fieldId);
 
@@ -2713,11 +2733,7 @@ function claimLayoutChoice(databaseDoc: YDoc, viewId: string): () => boolean {
 export function useUpdateDatabaseLayout(viewId: string) {
   const database = useDatabase();
   const sharedRoot = useSharedRoot();
-  const { workspaceId } = useDatabaseContext();
   const viewDocDeps = useDatabaseViewDocDeps();
-  const requestRevision = useRef(0);
-
-  useEffect(() => () => { requestRevision.current += 1; }, [database, viewId, workspaceId]);
 
   const enhanceCalendarLayoutByFieldExists = useEnhanceCalendarLayoutByFieldExists();
 
@@ -2728,7 +2744,6 @@ export function useUpdateDatabaseLayout(viewId: string) {
      * (WP06 §1.5). Default `'capture'`.
      */
     (layout: DatabaseViewLayout, options?: { history?: DatabaseHistoryPolicy }) => {
-      const revision = ++requestRevision.current;
       const isLatestChoice = claimLayoutChoice(viewDocDeps.databaseDoc, viewId);
       const applyLayout = () => executeOperations(
         sharedRoot,
@@ -2833,10 +2848,16 @@ export function useUpdateDatabaseLayout(viewId: string) {
 
       const planPolicy = getWorkspacePlanPolicy();
 
-      // Hosted Forms need the atomic creation endpoint to enforce the quota.
-      // Self-hosted instances retain the local layout-conversion path.
-      if (layout === DatabaseViewLayout.Form && planPolicy.requiresOnlineViewCreation(ViewLayout.Form)) {
-        return Promise.reject(new Error('Use Add view to create a Form.'));
+      // Hosted Forms and Charts need atomic server admission. A local Yjs
+      // conversion would bypass the workspace quota, even after an online read.
+      if (
+        !planPolicy.bypassesPlanLimits &&
+        (layout === DatabaseViewLayout.Form || layout === DatabaseViewLayout.Chart)
+      ) {
+        const message = 'Use Add view to create Form or Chart views.';
+
+        // Before i18next initializes, even a defaultValue can return undefined.
+        return Promise.reject(new Error(t('databaseViewCreation.useAddView', { defaultValue: message }) || message));
       }
 
       if (layout === DatabaseViewLayout.Dashboard) {
@@ -2850,27 +2871,9 @@ export function useUpdateDatabaseLayout(viewId: string) {
         );
       }
 
-      if (layout !== DatabaseViewLayout.Chart || !planPolicy.requiresOnlineViewCreation(ViewLayout.Chart)) {
-        applyLayout();
-        return;
-      }
-
-      // Layout conversion edits an existing view through realtime rather than
-      // creating a server view. Require a fresh authorized read first: cached
-      // metadata and navigator.onLine alone cannot establish server reachability.
-      return (async () => {
-        assertViewCreationOnline(ViewLayout.Chart);
-        if (!workspaceId) throw onlineViewCreationRequiredError();
-        const { getView } = await import('@/application/services/js-services/http/view-api');
-
-        await getView(workspaceId, viewId, 0);
-        assertViewCreationOnline(ViewLayout.Chart);
-        // Both guards: this hook's own later request, and a later choice made
-        // for the same view through another menu (another hook instance).
-        if (revision === requestRevision.current && isLatestChoice()) applyLayout();
-      })();
+      applyLayout();
     },
-    [database, enhanceCalendarLayoutByFieldExists, sharedRoot, viewDocDeps, viewId, workspaceId]
+    [database, enhanceCalendarLayoutByFieldExists, sharedRoot, viewDocDeps, viewId]
   );
 }
 
@@ -3020,6 +3023,10 @@ function materializeFormulaResult(
   targetType: FieldType,
   result: FormulaCellResult | undefined
 ) {
+  // A Text cell from before the switch to Formula whose formatting needs a
+  // newer client keeps its own text (rich text spec R49b).
+  if (shouldSkipBulkRewrite(existing)) return;
+
   if (!result || result.error || result.value.type === 'empty' || (result.text === '' && !result.rawDate)) {
     cells.delete(fieldId);
     return;
@@ -3445,6 +3452,12 @@ export function useSwitchPropertyType() {
 
                     const cells = row.get(YjsDatabaseKey.cells);
                     const cell = cells.get(fieldId);
+
+                    // A cell whose formatting needs a newer client is never
+                    // deleted or overwritten by a switch; it keeps its own
+                    // text (rich text spec R49b). The legacy normalizer below
+                    // skips it on its own when it would change its type.
+                    if (shouldSkipBulkRewrite(cell)) return;
 
                     // Attribution values live only on the row map. Never retain an
                     // editable cell when entering the type or materialize the actor

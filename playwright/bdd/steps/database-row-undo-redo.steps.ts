@@ -23,6 +23,7 @@ import {
   FieldType,
   GridFieldSelectors,
   RowDetailSelectors,
+  TEXT_CELL_EDITOR_SELECTOR,
 } from '../../support/selectors';
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
 import { generateRandomEmail, setupPageErrorHandling } from '../../support/test-config';
@@ -68,7 +69,7 @@ Given('a grid database row named {string} is open for undo redo', async ({ page,
   });
 
   await openRowDetail(page, 0);
-  await expect(RowDetailSelectors.titleInput(page)).toHaveValue(rowName, { timeout: 15000 });
+  await expect(RowDetailSelectors.titleInput(page)).toHaveText(rowName, { timeout: 15000 });
 });
 
 Given('a grid database is ready for cell undo redo', async ({ page, request }) => {
@@ -170,7 +171,7 @@ When('I rename the open database row to {string}', async ({ page }, title: strin
 
   await expect(titleInput).toBeVisible({ timeout: 15000 });
   await titleInput.fill(title);
-  await expect(titleInput).toHaveValue(title, { timeout: 15000 });
+  await expect(titleInput).toHaveText(title, { timeout: 15000 });
   await page.waitForTimeout(500);
 });
 
@@ -198,7 +199,7 @@ When('I edit the first grid cell to {string} without committing', async ({ page 
 
   await cell.click();
   await cell.click();
-  const input = page.locator('textarea:visible').first();
+  const input = page.locator(TEXT_CELL_EDITOR_SELECTOR).first();
 
   await input.fill(text);
   await expect(input).toBeFocused();
@@ -221,7 +222,7 @@ When('I click the empty grid background', async ({ page }) => {
   // Use the browser's pointerdown -> mousedown -> blur sequence. Blurring or
   // activating the history scope separately would hide focus ownership bugs.
   await page.mouse.click(position.x, position.y);
-  await expect(grid.locator('textarea:visible')).toHaveCount(0);
+  await expect(grid.locator(TEXT_CELL_EDITOR_SELECTOR)).toHaveCount(0);
 });
 
 When('I press the database undo shortcut without changing focus', async ({ page }) => {
@@ -246,7 +247,7 @@ When('I activate the next grid cell', async ({ page }) => {
   const nextRowId = requireStateValue(state.nextRowId, 'next row id');
 
   await page.getByTestId(`grid-cell-${nextRowId}-${primaryFieldId}`).click({ force: true });
-  await expect(page.locator('textarea:visible').first()).toBeVisible({ timeout: 8000 });
+  await expect(page.locator(TEXT_CELL_EDITOR_SELECTOR).first()).toBeVisible({ timeout: 8000 });
 });
 
 When('I trigger database row undo', async ({ page }) => {
@@ -449,7 +450,7 @@ Then('the open database row title is {string}', async ({ page }, title: string) 
   const primaryFieldId = requireStateValue(state.primaryFieldId, 'primary field id');
   const sourceRowId = requireStateValue(state.sourceRowId, 'source row id');
 
-  await expect(RowDetailSelectors.titleInput(page)).toHaveValue(title, { timeout: 15000 });
+  await expect(RowDetailSelectors.titleInput(page)).toHaveText(title, { timeout: 15000 });
   await expect.poll(() => getRowCellText(page, sourceRowId, primaryFieldId), { timeout: 15000 }).toBe(title);
 });
 
@@ -1315,6 +1316,13 @@ async function expectGridCellText(page: Page, rowId: string, fieldId: string, te
 
   if ((await activeEditor.count()) > 0) {
     await expect(activeEditor).toHaveValue(text, { timeout: 15000 });
+    return;
+  }
+
+  const richEditor = cell.getByTestId('rich-text-cell-editor');
+
+  if ((await richEditor.count()) > 0) {
+    await expect(richEditor).toHaveText(text, { timeout: 15000 });
     return;
   }
 

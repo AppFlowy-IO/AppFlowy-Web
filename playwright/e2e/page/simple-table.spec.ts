@@ -436,14 +436,37 @@ test.describe('SimpleTable', () => {
 
     const table = getTable(page);
 
-    // Enable header row
     await openRowContextMenu(page, 0);
-    // The menu item might say "Enable Header Row" — but our menu just cycles align.
-    // Actually checking our code, header toggle is not in the row menu for non-zero rows.
-    // For row 0, it's not exposed as a direct menu item in our current implementation.
-    // Skip this test for now — header toggle needs to be added to the context menu first.
-    // TODO: Add header row/column toggle to context menu
-    expect(await table.evaluate(el => el.classList.contains('enable-header-row'))).toBe(false);
+    const toggle = page.getByRole('switch', { name: 'Header row' });
+
+    await expect(toggle).not.toBeChecked();
+    await toggle.check();
+    await expect(table).toHaveClass(/enable-header-row/);
+    await expect(toggle).toBeChecked();
+    await page.keyboard.press('Escape');
+    await openRowContextMenu(page, 0);
+    await expect(toggle).toBeChecked();
+    await toggle.uncheck();
+    await expect(table).not.toHaveClass(/enable-header-row/);
+  });
+
+  test('should toggle header column via context menu', async ({ page }) => {
+    await insertTableViaSlashCommand(page);
+
+    const table = getTable(page);
+
+    await openColumnContextMenu(page, 0);
+    const toggle = page.getByRole('switch', { name: 'Header column' });
+
+    await expect(toggle).not.toBeChecked();
+    await toggle.check();
+    await expect(table).toHaveClass(/enable-header-column/);
+    await expect(toggle).toBeChecked();
+    await page.keyboard.press('Escape');
+    await openColumnContextMenu(page, 0);
+    await expect(toggle).toBeChecked();
+    await toggle.uncheck();
+    await expect(table).not.toHaveClass(/enable-header-column/);
   });
 
   // ==========================================================================

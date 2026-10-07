@@ -18,6 +18,7 @@ import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as ExpandMoreIcon } from '@/assets/icons/full_screen.svg';
 import { useAIEnabled } from '@/components/app/app.hooks';
+import { PlainTextCellEditing } from '@/components/database/components/cell/text/PlainTextCellEditing';
 import RowPropertyPrimitive from '@/components/database/components/database-row/RowPropertyPrimitive';
 import { EventTitle } from '@/components/database/fullcalendar/event/EventTitle';
 import { Button } from '@/components/ui/button';
@@ -167,6 +168,10 @@ function EventPopoverContent({
           <TooltipContent side='top'>{t('button.close')}</TooltipContent>
         </Tooltip>
       </div>
+      {/* This popover is a modal Radix layer, which blocks the rich text
+          editor's own overlays (mention panel, link editor); Text
+          properties here edit as plain text. */}
+      <PlainTextCellEditing.Provider value>
       <div className={'event-properties flex w-full flex-1 flex-col overflow-y-auto px-0.5'}>
         {primaryFieldId && (
           <EventTitle onSubmit={onSubmit} onCloseEvent={onCloseEvent} rowId={rowId} fieldId={primaryFieldId} />
@@ -186,6 +191,7 @@ function EventPopoverContent({
           );
         })}
       </div>
+      </PlainTextCellEditing.Provider>
     </div>
   );
 }

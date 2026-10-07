@@ -13,7 +13,7 @@ Feature: Timeline view interactions
   Scenario: Dated rows render as bars under a month header with today marked
     Then the timeline shows bars for "Design" and "Build"
     And the timeline header marks today and draws the today line
-    And the timeline title shows the current month
+    And the timeline title shows the month at the left edge
     And the timeline scale reads "Month"
     And the timeline table lists "Design" and "Build"
 

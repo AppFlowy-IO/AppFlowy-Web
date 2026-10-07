@@ -25,6 +25,10 @@ export class FormulaEvaluationBudget {
     const textLength = value.type === 'text' ? value.value.length : 0;
 
     this.consume(Math.max(1, textLength), position);
+    if (value.type === 'text' && value.runs) {
+      for (const run of value.runs) this.consume(1 + run.styles.length, position);
+    }
+
     if (value.type === 'list') {
       let length = Math.max(0, value.items.length - 1) * 2;
 

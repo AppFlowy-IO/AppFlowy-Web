@@ -215,8 +215,9 @@ When('I select slash command {string}', async ({ page }, command: string) => {
   const commandItem = page.getByTestId(`slash-menu-${command}`);
 
   await expect(commandItem).toBeVisible({ timeout: 10000 });
-  await commandItem.click({ force: true });
-  await page.waitForTimeout(500);
+  // Wait for the popover animation and scrolling before choosing a click target.
+  await commandItem.click();
+  await expect(page.getByTestId('slash-panel')).toBeHidden();
 });
 
 When('I choose slash command {string}', async ({ page }, command: string) => {

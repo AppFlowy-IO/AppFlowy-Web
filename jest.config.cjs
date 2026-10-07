@@ -9,8 +9,10 @@ module.exports = {
   roots: ['<rootDir>'],
   modulePaths: [compilerOptions.baseUrl],
   moduleNameMapper: {
+    '^.+\\.(css|scss)$': '<rootDir>/src/__mocks__/styleMock.ts',
     '^.+\\?worker&url$': '<rootDir>/src/__mocks__/fileMock.ts',
     '^.+\\.svg$': '<rootDir>/src/__mocks__/svgrMock.tsx',
+    '^.+\\.svg\\?url$': '<rootDir>/src/__mocks__/fileMock.ts',
     '^.+\\.(png|jpe?g|gif|webp|avif|ttf|woff2?)$': '<rootDir>/src/__mocks__/fileMock.ts',
     '^@/utils/runtime-config$': '<rootDir>/src/__mocks__/runtime-config.ts',
     ...pathsToModuleNameMapper(compilerOptions.paths),

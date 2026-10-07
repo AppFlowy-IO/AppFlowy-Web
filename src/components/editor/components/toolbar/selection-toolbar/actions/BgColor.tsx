@@ -302,7 +302,8 @@ function BgColor({
               {recentColors.map((color, index) => (
                 <ColorTile
                   key={index}
-                  value={renderColor(color)}
+                  aria-label={color}
+              value={renderColor(color)}
                   active={singleColor === color}
                   onClick={() => handlePickColor(color)}
                 />
@@ -318,6 +319,7 @@ function BgColor({
               <TooltipContent>{color.label}</TooltipContent>
               <TooltipTrigger asChild>
                 <ColorTile
+                  aria-label={color.label}
                   value={renderColor(color.color)}
                   active={singleColor === color.color}
                   onClick={() => handlePickColor(color.color)}
@@ -332,6 +334,7 @@ function BgColor({
           {customColors.map((color, index) => (
             <ColorTile
               key={index}
+              aria-label={color}
               value={renderColor(color)}
               active={singleColor === color}
               onClick={() => handlePickColor(color)}

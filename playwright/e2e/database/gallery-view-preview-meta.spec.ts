@@ -53,7 +53,7 @@ async function addImageLinkToOpenRow(page: Page, imageUrl: string): Promise<void
     await scrollContainer.evaluate((element) => element.scrollTo(0, 9999));
   }
 
-  const editor = dialog.locator('[data-testid="editor-content"], [role="textbox"][contenteditable="true"]').first();
+  const editor = dialog.locator('[data-testid="editor-content"]').first();
 
   await expect(editor).toBeVisible({ timeout: 15_000 });
   await editor.click({ force: true });

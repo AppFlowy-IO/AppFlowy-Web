@@ -111,7 +111,7 @@ When('the user edits the Gallery row title to {string}', async ({ page }, title:
 
   await expect(input).toBeVisible();
   await input.fill(title);
-  await expect(input).toHaveValue(title);
+  await expect(input).toHaveText(title);
 });
 
 When('the user closes the Gallery row detail page', async ({ page }) => {

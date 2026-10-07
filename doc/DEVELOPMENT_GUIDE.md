@@ -118,6 +118,13 @@ pnpm install
 pnpm run dev
 ```
 
+#### Server-side rendering of published pages (optional)
+
+The Docker image can server-render published pages for crawlers. It is **off by
+default**: with no configuration, published pages are served exactly as before.
+See [Published page SSR](./PUBLISH_SSR.md) for the environment variables
+(`APPFLOWY_INDEXABLE_NAMESPACES`, `APPFLOWY_SSR_KILL_SWITCH`, …) and rollout steps.
+
 ## Confluence import formats
 
 The Confluence import option accepts single-space HTML and CSV export ZIPs. Choose it from a

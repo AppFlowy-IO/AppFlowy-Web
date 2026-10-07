@@ -1,21 +1,25 @@
 import fs from 'fs';
 import path from 'path';
 
-import { fetchPublishMetadata } from './api';
+import { fetchPublishedViewRoute, fetchPublishMetadata, fetchPublishSnapshot, type SnapshotFetchResult } from './api';
+import { APP_PATHS, matchesAppPath } from './app-paths';
 import { defaultSite, distDir } from './config';
-import { renderMarketingPage, renderPublishPage } from './html';
+import { type PublishPageSsr, renderMarketingPage, renderPublishPage } from './html';
+import {
+  type IndexingDecision,
+  modeRendersBody,
+  parseNamespaceAllowlist,
+  resolvePublishRenderMode,
+} from './indexing-policy';
 import { logger } from './logger';
 import { type PublishErrorPayload } from './publish-error';
+import { resolveViewHrefs } from './publish-links';
+import { collectLinkedViewIds, extractPageDescription, serializePublishedPage } from './publish-serializer';
 import { type RequestContext } from './server';
+import { readSsrSettings, type SsrSettings } from './ssr-config';
 
 
 type RouteHandler = (context: RequestContext) => Promise<Response | undefined>;
-
-// App routes served as the SPA shell. `/auth` covers the OAuth callback
-// (`/auth/callback#access_token=...`): it must never fall through to the
-// publish-view lookup, which would serve the fallback landing page and lose
-// the login tokens.
-const APP_PATHS = ['/after-payment', '/login', '/auth', '/as-template', '/app', '/accept-invitation', '/import'];
 
 // Static file paths that should be served from dist
 const STATIC_PATHS = ['/static/', '/af_icons/', '/covers/', '/.well-known/'];
@@ -27,11 +31,6 @@ const STATIC_FILES = ['/appflowy.ico', '/appflowy.svg', '/og-image.png'];
 const IMMUTABLE_CACHE_CONTROL = 'public, max-age=31536000, immutable';
 const STATIC_CACHE_CONTROL = 'public, max-age=3600';
 const HTML_CACHE_CONTROL = 'no-cache';
-
-// Matches whole path segments: '/auth' matches '/auth' and '/auth/callback'
-// but not a publish namespace like '/authors'.
-const matchesAppPath = (pathname: string, base: string) =>
-  pathname === base || pathname.startsWith(`${base}/`);
 
 const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html',
@@ -150,6 +149,21 @@ const publishRoute = async ({ req, url, hostname }: RequestContext) => {
     });
   }
 
+  const env = process.env;
+  const ssrSettings = readSsrSettings(env);
+
+  // SSR only applies to a specific page. When the decision can already be made
+  // without metadata (i.e. the namespace is allowlisted and the kill switch is
+  // off), start the snapshot fetch now so it runs alongside the metadata fetch.
+  // A publisher opt-out in the metadata can still cancel it below; the result
+  // is then discarded. In every other case no snapshot request is made here,
+  // so default-mode pages cost exactly the same upstream calls as before.
+  const earlyDecision = publishName ? resolvePublishRenderMode({ namespace, publishName, env }) : undefined;
+  let pendingSnapshot =
+    publishName && earlyDecision && modeRendersBody(earlyDecision.mode)
+      ? startSnapshotFetch(namespace, publishName, ssrSettings.snapshotTimeoutMs)
+      : undefined;
+
   let metaData;
   let redirectAttempted = false;
   let publishError: PublishErrorPayload | null = null;
@@ -220,19 +234,150 @@ const publishRoute = async ({ req, url, hostname }: RequestContext) => {
     }
   }
 
+  // SSR is only considered for a page whose metadata loaded. Error and
+  // fallback pages keep today's response untouched.
+  let decision: IndexingDecision | undefined;
+  let ssr: PublishPageSsr | undefined;
+
+  if (metaData && publishName) {
+    decision = resolvePublishRenderMode({ namespace, publishName, publishConfig: metaData.config, env });
+
+    if (modeRendersBody(decision.mode)) {
+      // Opted in via metadata (rule 3) and not fetched early: fetch now.
+      pendingSnapshot ??= startSnapshotFetch(namespace, publishName, ssrSettings.snapshotTimeoutMs);
+      ssr = await buildSsrBody(pendingSnapshot, ssrSettings, namespace, publishName);
+    }
+
+    const level = decision.reason === 'default_off' ? 'debug' : 'info';
+
+    logger[level](
+      `Publish render namespace="${namespace}" publishName="${publishName}" mode=${decision.mode} reason=${decision.reason} ssr=${ssr ? 'rendered' : 'none'}`
+    );
+  }
+
+  // The robots directive follows the decision, not whether SSR succeeded: a
+  // page that asked for noindex keeps it even if its body fell back to the shell.
+  const robots = decision?.robots ?? null;
   const html = renderPublishPage({
     hostname,
     pathname: url.pathname,
     metaData,
     publishError,
+    ...(ssr ? { ssr } : {}),
+    ...(robots ? { robots } : {}),
   });
 
   return new Response(html, {
     headers: {
       'Content-Type': 'text/html',
       'Cache-Control': HTML_CACHE_CONTROL,
+      ...(robots ? { 'X-Robots-Tag': robots } : {}),
     },
   });
+};
+
+type PendingSnapshot = {
+  result: Promise<SnapshotFetchResult>;
+  /**
+   * When all SSR upstream work for this page must be done (`Date.now()` ms).
+   * The snapshot fetch and the link lookups that follow it share this one
+   * budget, so SSR adds at most `snapshotTimeoutMs` to the response.
+   */
+  deadline: number;
+};
+
+/**
+ * Starts the snapshot fetch, guaranteeing the returned promise never rejects,
+ * so an early (speculative) fetch that ends up unused can never surface as an
+ * unhandled rejection.
+ */
+const startSnapshotFetch = (namespace: string, publishName: string, timeoutMs: number): PendingSnapshot => ({
+  result: Promise.resolve()
+    .then(() => fetchPublishSnapshot(namespace, publishName, timeoutMs))
+    .catch((): SnapshotFetchResult => ({ ok: false, reason: 'network_error' })),
+  deadline: Date.now() + timeoutMs,
+});
+
+/**
+ * Resolves published URLs for the pages a snapshot links to.
+ *
+ * Only targets in the current namespace or in an allowlisted namespace are
+ * linked. A link hands crawlers a URL, so SSR must never become the path by
+ * which a namespace that has not opted in gets crawled. (The client app shows
+ * all these links to readers regardless; this only limits the server markup.)
+ *
+ * @returns view id → URL. Empty on any failure, so the page still renders
+ *   with plain names rather than losing SSR over its links.
+ */
+const resolveLinkHrefs = async (
+  snapshot: unknown,
+  namespace: string,
+  timeoutMs: number
+): Promise<Map<string, string>> => {
+  try {
+    const allowlist = parseNamespaceAllowlist(process.env.APPFLOWY_INDEXABLE_NAMESPACES);
+
+    return await resolveViewHrefs(collectLinkedViewIds(snapshot), {
+      fetchRoute: fetchPublishedViewRoute,
+      timeoutMs,
+      isLinkableNamespace: (target) => target === namespace || allowlist.has(target),
+    });
+  } catch (error) {
+    logger.warn(`SSR link resolution failed, rendering names without links: namespace="${namespace}" error=${error}`);
+    return new Map();
+  }
+};
+
+/**
+ * Turns a snapshot fetch into the SSR body for `renderPublishPage`.
+ *
+ * @returns The body and, when small enough, the snapshot to inline. Returns
+ *   undefined on any failure — fetch error, timeout, a snapshot the serializer
+ *   refuses (e.g. a database page), or an unexpected exception — and the caller
+ *   then serves the head-only shell. SSR is an enhancement: a failure here must
+ *   never become an error response.
+ */
+const buildSsrBody = async (
+  pending: PendingSnapshot,
+  settings: SsrSettings,
+  namespace: string,
+  publishName: string
+): Promise<PublishPageSsr | undefined> => {
+  const context = `namespace="${namespace}" publishName="${publishName}"`;
+
+  try {
+    const result = await pending.result;
+
+    if (!result.ok) {
+      logger.warn(`SSR snapshot unavailable (${result.reason}), serving shell: ${context}`);
+      return undefined;
+    }
+
+    // Links get whatever is left of the snapshot's budget; cached routes still
+    // resolve when nothing is left.
+    const viewHrefs = await resolveLinkHrefs(result.snapshot, namespace, pending.deadline - Date.now());
+    const serialized = serializePublishedPage(result.snapshot, { viewHrefs });
+
+    if (!serialized.ok) {
+      logger.warn(`SSR serializer declined (${serialized.reason}), serving shell: ${context}`);
+      return undefined;
+    }
+
+    // Inlining lets the client skip its own fetch, but the snapshot also carries
+    // the raw block data, roughly doubling large pages. Past the limit, keep the
+    // server-rendered body and let the client fetch the snapshot as it does today.
+    const snapshotJson = JSON.stringify(result.snapshot);
+    const inlineSize = Buffer.byteLength(snapshotJson, 'utf8');
+
+    return {
+      bodyHtml: serialized.html,
+      snapshotJson: inlineSize <= settings.maxInlineBytes ? snapshotJson : undefined,
+      description: extractPageDescription(result.snapshot),
+    };
+  } catch (error) {
+    logger.error(`SSR failed unexpectedly, serving shell: ${context} error=${error}`);
+    return undefined;
+  }
 };
 
 const methodNotAllowed = async ({ req }: RequestContext) => {

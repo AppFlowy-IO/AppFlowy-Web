@@ -107,6 +107,22 @@ export function MentionLeaf({ mention, text, children }: { mention: Mention; tex
 
   const ref = useRef<HTMLSpanElement>(null);
 
+  // A mention type from a newer client (database Text cells): its label, as
+  // plain text in the surrounding style, without a link (rich text spec
+  // R39). Documents never label mentions, so they render as before.
+  if (typeof mention.label === 'string' && !Object.values(MentionType).includes(type)) {
+    return (
+      <>
+        <span className={'pointer-events-none absolute bottom-0 right-0 overflow-hidden !text-transparent'}>
+          {children}
+        </span>
+        <span contentEditable={false} data-testid={'mention-label'}>
+          {mention.label}
+        </span>
+      </>
+    );
+  }
+
   return (
     <>
       <span

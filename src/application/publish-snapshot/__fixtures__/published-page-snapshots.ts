@@ -211,3 +211,131 @@ export const publishedDatabasePayload: PublishedDatabaseSnapshotPayload = {
     },
   },
 };
+
+type FixtureLeaf = { text: string } & Record<string, unknown>;
+type FixtureBlock = {
+  type: string;
+  blockId: string;
+  data: Record<string, unknown>;
+  children: Array<FixtureBlock | { type: string; textId: string; children: FixtureLeaf[] }>;
+};
+
+let fixtureBlockCounter = 0;
+
+// Builds a Slate block element in the shape the snapshot endpoint returns:
+// a text element first (when the block has text), then nested child blocks.
+function block(
+  type: string,
+  leaves: FixtureLeaf[] | null,
+  data: Record<string, unknown> = {},
+  children: FixtureBlock[] = []
+): FixtureBlock {
+  fixtureBlockCounter += 1;
+  const id = `rich-block-${fixtureBlockCounter}`;
+
+  return {
+    type,
+    blockId: id,
+    data,
+    children: [
+      ...(leaves ? [{ type: YjsEditorKey.text, textId: `${id}-text`, children: leaves }] : []),
+      ...children,
+    ],
+  };
+}
+
+const text = (value: string, marks: Record<string, unknown> = {}): FixtureLeaf => ({ text: value, ...marks });
+
+export const richDocumentChildViewId = 'rich-document-child-view-id';
+
+/**
+ * A document snapshot exercising every block family the server-side
+ * serializer handles: headings, grouped and nested lists, todo, toggle, quote,
+ * callout, code, equation, divider, media, tables, columns, sub-pages, inline
+ * marks, links and mentions.
+ */
+export const publishedRichDocumentPayload: PublishedDocumentSnapshotPayload = {
+  schemaVersion: 1,
+  kind: 'document',
+  namespace: 'published-namespace',
+  publishName: 'rich-document',
+  view: {
+    viewId: 'rich-document-view-id',
+    name: 'Rich document',
+    icon: null,
+    extra: null,
+    layout: ViewLayout.Document,
+    childViews: [
+      {
+        view_id: richDocumentChildViewId,
+        name: 'Child page',
+        icon: null,
+        extra: null,
+        layout: ViewLayout.Document,
+        created_at: '0',
+        created_by: '0',
+        last_edited_time: '0',
+        last_edited_by: '0',
+        child_views: null,
+      },
+    ],
+  },
+  document: {
+    children: [
+      block(BlockType.HeadingBlock, [text('Introduction')], { level: 1 }),
+      block(BlockType.Paragraph, [
+        text('Plain, '),
+        text('bold', { bold: true }),
+        text(', '),
+        text('bold italic', { bold: true, italic: true }),
+        text(', '),
+        text('code', { code: true }),
+        text(', '),
+        text('struck', { strikethrough: true }),
+        text(', '),
+        text('underlined', { underline: true }),
+        text(' and '),
+        text('a link', { href: 'https://appflowy.com' }),
+        text('.'),
+      ]),
+      block(BlockType.BulletedListBlock, [text('First bullet')], {}, [
+        block(BlockType.BulletedListBlock, [text('Nested bullet')]),
+      ]),
+      block(BlockType.BulletedListBlock, [text('Second bullet')]),
+      block(BlockType.NumberedListBlock, [text('Step one')], { number: 3 }),
+      block(BlockType.NumberedListBlock, [text('Step two')]),
+      block(BlockType.TodoListBlock, [text('Done task')], { checked: true }),
+      block(BlockType.TodoListBlock, [text('Open task')], { checked: false }),
+      block(BlockType.ToggleListBlock, [text('Toggle title')], { collapsed: true }, [
+        block(BlockType.Paragraph, [text('Hidden detail')]),
+      ]),
+      block(BlockType.QuoteBlock, [text('A quotation')]),
+      block(BlockType.CalloutBlock, [text('Callout body')], { icon: '💡' }),
+      block(BlockType.CodeBlock, [text('const a = 1 < 2;')], { language: 'typescript' }),
+      block(BlockType.EquationBlock, null, { formula: 'E = mc^2' }),
+      block(BlockType.DividerBlock, null),
+      block(BlockType.ImageBlock, null, { url: 'https://example.com/image.png' }),
+      block(BlockType.FileBlock, null, { url: 'https://example.com/report.pdf', name: 'Report' }),
+      block(BlockType.SimpleTableBlock, null, {}, [
+        block(BlockType.SimpleTableRowBlock, null, {}, [
+          block(BlockType.SimpleTableCellBlock, null, {}, [block(BlockType.Paragraph, [text('Cell A1')])]),
+          block(BlockType.SimpleTableCellBlock, null, {}, [block(BlockType.Paragraph, [text('Cell B1')])]),
+        ]),
+      ]),
+      block(BlockType.ColumnsBlock, null, {}, [
+        block(BlockType.ColumnBlock, null, {}, [block(BlockType.Paragraph, [text('Left column')])]),
+        block(BlockType.ColumnBlock, null, {}, [block(BlockType.Paragraph, [text('Right column')])]),
+      ]),
+      block(BlockType.SubpageBlock, null, { view_id: richDocumentChildViewId }),
+      block(BlockType.Paragraph, [
+        text('See '),
+        text('$', { mention: { type: 'page', page_id: richDocumentChildViewId } }),
+        text(' on '),
+        text('$', { mention: { type: 'date', date: '2026-09-30T10:00:00.000Z' } }),
+        text(' with '),
+        text('$', { mention: { type: 'person', person_id: 'p1', person_name: 'Ada' } }),
+        text('.'),
+      ]),
+    ],
+  },
+};

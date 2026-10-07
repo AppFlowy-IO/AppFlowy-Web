@@ -1,7 +1,7 @@
 import { NumberFormat } from '@/application/database-yjs/fields/number/number.type';
 import { RollupVisualizationOption } from '@/application/database-yjs/fields/rollup/rollup.type';
 
-import { FormulaType, FormulaValue } from './values';
+import { FormulaTextRun, FormulaType, FormulaValue } from './values';
 
 /** Persisted under `type_option["19"]` (stored keys: `expression`, `format`, `__rollup_show_as_*__`). */
 export interface FormulaTypeOption {
@@ -26,6 +26,8 @@ export interface FormulaCellResult {
   resultType: FormulaType;
   /** Display text with number/date formatting applied. */
   text: string;
+  /** Styled runs using the same display formatting as text, including nested lists. */
+  runs?: FormulaTextRun[];
   /** Number for numeric results (used by sorts, filters, Show as and Calculate). */
   rawNumeric?: number;
   /** Unix seconds start/end for date results (used by sorts and filters). */

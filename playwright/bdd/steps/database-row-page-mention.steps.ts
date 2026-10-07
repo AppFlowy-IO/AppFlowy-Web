@@ -175,7 +175,7 @@ When(
     setupPageErrorHandling(peerPage);
 
     await peerPage.goto(page.url(), { waitUntil: 'domcontentloaded' });
-    await expect(peerPage.locator('[data-slate-editor="true"]').first()).toBeVisible({ timeout: 30000 });
+    await expect(peerPage.locator('[data-testid="editor-content"]').first()).toBeVisible({ timeout: 30000 });
     await expect
       .poll(
         () =>
@@ -258,7 +258,7 @@ When(
     // Recreate the renderer from persisted collaboration state. This prevents
     // a locally inserted JavaScript object from masquerading as a sync test.
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await expect(page.locator('[data-slate-editor="true"]').first()).toBeVisible({ timeout: 30000 });
+    await expect(page.locator('[data-testid="editor-content"]').first()).toBeVisible({ timeout: 30000 });
   }
 );
 
@@ -270,7 +270,7 @@ Then('the database row mention is styled and labeled {string}', async ({ page },
   await expect(mention.locator('.mention-content')).toHaveText(title, { timeout: 15000 });
   await expect(mention.locator('.mention-icon svg')).toBeVisible();
   await expect(mention).toHaveCSS('text-decoration-line', /underline/);
-  await expect(page.locator('[data-slate-editor="true"]').first()).not.toContainText(rowPageUrl);
+  await expect(page.locator('[data-testid="editor-content"]').first()).not.toContainText(rowPageUrl);
 
   const slateMention = await getStoredMention(page, rowId);
 

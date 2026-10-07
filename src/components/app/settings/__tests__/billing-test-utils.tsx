@@ -11,8 +11,30 @@ import {
   WorkspaceUsageAndLimit,
 } from '@/application/types';
 import { AppOperationsContext, AppOperationsContextType } from '@/components/app/contexts/AppOperationsContext';
+import { getConfigValue } from '@/utils/runtime-config';
+import { ServerHostingMode, updateServerInfo } from '@/utils/server-info';
 
 export const PERIOD_END = 1_800_014_400;
+
+export function setBillingHostingMode(mode: ServerHostingMode = 'cloud') {
+  updateServerInfo(
+    getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'),
+    mode === 'unknown'
+      ? { status: 'loading' }
+      : { status: 'available', info: { enable_page_history: true, self_hosted: mode === 'self-hosted' } }
+  );
+}
+
+export function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((onResolve, onReject) => {
+    resolve = onResolve;
+    reject = onReject;
+  });
+
+  return { promise, resolve, reject };
+}
 
 export const translations: Record<string, string> = {
   'settings.billingPage.title': 'Billing',

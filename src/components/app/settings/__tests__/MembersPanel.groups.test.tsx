@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { toast } from 'sonner';
 
 import { Role, WorkspaceGroup, WorkspaceMember } from '@/application/types';
 import { MembersPanel } from '@/components/app/settings/MembersPanel';
@@ -6,6 +7,7 @@ import { MembersPanel } from '@/components/app/settings/MembersPanel';
 import type { ReactNode } from 'react';
 
 const mockGetMembers = jest.fn();
+const mockInviteMembers = jest.fn();
 const mockGetWorkspaceGroups = jest.fn();
 const mockCreateWorkspaceGroup = jest.fn();
 const mockUpdateWorkspaceGroup = jest.fn();
@@ -40,7 +42,7 @@ jest.mock('@/application/services/domains', () => ({
     addWorkspaceGroupMember: (...args: unknown[]) => mockAddWorkspaceGroupMember(...args),
     removeWorkspaceGroupMember: (...args: unknown[]) => mockRemoveWorkspaceGroupMember(...args),
     getInviteCode: jest.fn().mockResolvedValue({ code: null }),
-    inviteMembers: jest.fn(),
+    inviteMembers: (...args: unknown[]) => mockInviteMembers(...args),
     removeMembers: jest.fn(),
     createInviteCode: jest.fn(),
   },
@@ -145,6 +147,7 @@ describe('MembersPanel workspace group parity', () => {
     mockCurrentWorkspaceId = 'workspace-1';
     mockWorkspaceRole = Role.Owner;
     mockGetMembers.mockResolvedValue([workspaceMember]);
+    mockInviteMembers.mockResolvedValue(undefined);
     mockGetWorkspaceGroups.mockResolvedValue({ groups: [group] });
     mockCreateWorkspaceGroup.mockResolvedValue(group);
     mockUpdateWorkspaceGroup.mockResolvedValue(group);
@@ -415,6 +418,124 @@ describe('MembersPanel workspace group parity', () => {
 
     await waitFor(() => expect(mockRemoveWorkspaceGroup).toHaveBeenCalledWith('workspace-1', group.group_id));
     expect(screen.getByTestId('create-group-modal')).toBeTruthy();
+  });
+
+  it('rolls back all initial members when group creation reaches the server limit', async () => {
+    const members: WorkspaceMember[] = Array.from({ length: 4 }, (_, index) => ({
+      ...workspaceMember,
+      uid: `selected-${index}`,
+      name: `Selected Member ${index}`,
+      email: `selected-${index}@appflowy.io`,
+    }));
+    const message = 'Workspace groups can contain at most 2 members';
+
+    mockGetMembers.mockResolvedValue(members);
+    mockAddWorkspaceGroupMember
+      .mockResolvedValueOnce({ uid: members[0].uid })
+      .mockResolvedValueOnce({ uid: members[1].uid })
+      .mockRejectedValueOnce(new Error(message));
+    await renderGroupsPanel();
+
+    fireEvent.click(screen.getByTestId('people-create-group-button'));
+    fireEvent.change(screen.getByTestId('people-create-group-name-input'), { target: { value: 'Platform' } });
+    for (const member of members) {
+      fireEvent.change(screen.getByTestId('create-group-member-search-input'), { target: { value: member.email } });
+      fireEvent.click(await screen.findByTestId('create-group-member-search-result'));
+    }
+
+    fireEvent.click(screen.getByTestId('people-create-group-submit'));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(message));
+    expect(mockCreateWorkspaceGroup).toHaveBeenCalledWith('workspace-1', { name: 'Platform' });
+    expect(mockAddWorkspaceGroupMember).toHaveBeenCalledTimes(3);
+    members.slice(0, 3).forEach((member, index) => {
+      expect(mockAddWorkspaceGroupMember).toHaveBeenNthCalledWith(index + 1, 'workspace-1', group.group_id, {
+        uid: member.uid,
+      });
+    });
+    expect(mockRemoveWorkspaceGroup).toHaveBeenCalledTimes(1);
+    expect(mockRemoveWorkspaceGroup).toHaveBeenCalledWith('workspace-1', group.group_id);
+    expect(mockGetWorkspaceGroups).toHaveBeenCalledTimes(1);
+    expect(toast.success).not.toHaveBeenCalled();
+
+    const modal = screen.getByTestId('create-group-modal');
+    const selectedMembers = within(modal).getByTestId('create-group-member-picker');
+
+    expect(within(modal).getByTestId<HTMLInputElement>('people-create-group-name-input').value).toBe('Platform');
+    for (const member of members) {
+      expect(within(selectedMembers).getByText(member.name)).toBeTruthy();
+    }
+
+    expect(screen.getByTestId<HTMLButtonElement>('people-create-group-submit').disabled).toBe(false);
+  });
+
+  it.each([2, 20])('preserves an existing full group when the server rejects its %i-member limit', async (limit) => {
+    const currentMembers = Array.from({ length: limit }, (_, index) => ({
+      uid: `existing-${index}`,
+      name: `Existing Member ${index}`,
+      email: `existing-${index}@appflowy.io`,
+    }));
+    const message = `Workspace groups can contain at most ${limit} members`;
+
+    mockGetWorkspaceGroups.mockResolvedValue({ groups: [{ ...group, member_count: limit }] });
+    mockGetWorkspaceGroupMembers.mockResolvedValue({ members: currentMembers });
+    mockAddWorkspaceGroupMember.mockRejectedValueOnce(new Error(message));
+    await renderGroupsPanel();
+
+    fireEvent.click(groupEditButton());
+    const modal = await screen.findByTestId('group-detail-modal');
+
+    fireEvent.click(within(modal).getByRole('tab', { name: 'settings.appearance.people.membersTab' }));
+    expect(await within(modal).findAllByTestId(/^group-member-row-/)).toHaveLength(limit);
+    const input = within(modal).getByTestId<HTMLInputElement>('workspace-member-inline-search-input');
+
+    fireEvent.change(input, { target: { value: workspaceMember.email } });
+    fireEvent.click(within(modal).getByRole('button', { name: /settings\.appearance\.people\.addUser/ }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(message));
+    expect(mockAddWorkspaceGroupMember).toHaveBeenCalledTimes(1);
+    expect(mockAddWorkspaceGroupMember).toHaveBeenCalledWith('workspace-1', group.group_id, { uid: workspaceMember.uid });
+    expect(within(modal).getAllByTestId(/^group-member-row-/)).toHaveLength(limit);
+    for (const member of currentMembers) {
+      expect(within(modal).getByTestId(`group-member-row-${member.uid}`)).toBeTruthy();
+    }
+
+    expect(within(modal).queryByTestId(`group-member-row-${workspaceMember.uid}`)).toBeNull();
+    expect(input.value).toBe(workspaceMember.email);
+    expect(mockGetWorkspaceGroups).toHaveBeenCalledTimes(1);
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it('preserves a rejected eleven-email invitation batch and allows retrying with ten', async () => {
+    const emails = Array.from({ length: 11 }, (_, index) => `invite-${index}@appflowy.io`);
+    const message = 'A workspace invitation request can contain at most 10 email entries';
+
+    mockInviteMembers.mockRejectedValueOnce(new Error(message));
+    render(<MembersPanel />);
+    await screen.findByTestId(`members-row-${workspaceMember.email}`);
+
+    const input = screen.getByTestId<HTMLInputElement>('members-invite-email-input');
+    const button = screen.getByTestId('members-invite-button');
+
+    fireEvent.change(input, { target: { value: emails.join(', ') } });
+    fireEvent.click(button);
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(message));
+    expect(mockInviteMembers).toHaveBeenCalledTimes(1);
+    expect(mockInviteMembers).toHaveBeenNthCalledWith(1, 'workspace-1', emails);
+    expect(input.value).toBe(emails.join(', '));
+    expect(mockGetMembers).toHaveBeenCalledTimes(1);
+    expect(screen.getAllByTestId(/^members-row-/)).toHaveLength(1);
+    expect(toast.success).not.toHaveBeenCalled();
+
+    fireEvent.change(input, { target: { value: emails.slice(0, 10).join(', ') } });
+    fireEvent.click(button);
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('inviteMember.inviteSuccess'));
+    expect(mockInviteMembers).toHaveBeenCalledTimes(2);
+    expect(mockInviteMembers).toHaveBeenNthCalledWith(2, 'workspace-1', emails.slice(0, 10));
+    expect(input.value).toBe('');
+    expect(mockGetMembers).toHaveBeenCalledTimes(2);
   });
 
   it.each(['button', 'enter'] as const)('adds the sole matching member with %s interaction', async (interaction) => {

@@ -58,7 +58,7 @@ describe('ImportDialog document file tiles', () => {
 
   it.each([
     ['html', '.html,.htm,text/html'],
-    ['docx', '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+    ['docx', '.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
     ['pdf', '.pdf,application/pdf'],
   ])('the %s tile opens a multi-file picker restricted to its format', (format, accept) => {
     renderDialog();

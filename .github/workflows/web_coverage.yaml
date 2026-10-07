@@ -52,8 +52,11 @@ jobs:
           COVERAGE: "true"
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5.5.5
         with:
+          # Install from PyPI to avoid the CLI download endpoint TLS failure.
+          use_pypi: true
+          version: v11.3.1
           token: cf9245e0-e136-4e21-b0ee-35755fa0c493
           files: coverage/jest/lcov.info
           flags: appflowy_web

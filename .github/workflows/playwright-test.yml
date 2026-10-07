@@ -15,8 +15,10 @@ env:
   # The partial 0.18.61 publish left latest-amd64 images on incompatible schemas:
   # https://github.com/AppFlowy-IO/AppFlowy-Cloud-Premium/actions/runs/36148705160
   # Update version and revision together after all three Rust images publish.
-  CLOUD_VERSION: 0.18.60-amd64
-  CLOUD_REVISION: 69a888e2fc3dbfa99441c2dc2c01ef49ea217831
+  # 0.19.8 is the first completed release with the database view creation-status
+  # endpoint that hosted Form and Chart creation requires.
+  CLOUD_VERSION: 0.19.8-amd64
+  CLOUD_REVISION: f5f1880d74f0bd419b22d27c196d7484a41d8091
   # AI is published independently from the Rust services.
   AI_VERSION: latest-amd64
   # Public Form APIs and uploads reject plaintext requests at the backend proxy.
@@ -113,6 +115,12 @@ jobs:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     needs: build
+    env:
+      # Publish namespaces the SSR server renders (deploy/indexing-policy.ts).
+      # Both the server and the tests read it: playwright/e2e/page/publish-ssr.spec.ts
+      # moves its workspace to one of these; every other test keeps a random
+      # namespace and so the default, non-SSR response.
+      APPFLOWY_INDEXABLE_NAMESPACES: e2e-ssr-a,e2e-ssr-b,e2e-ssr-c
     strategy:
       fail-fast: false
       matrix:
@@ -126,6 +134,15 @@ jobs:
             spec: 'playwright/e2e/editor'
             description: 'Document editing and formatting'
             bdd: 'false'
+            shard: ''
+          - name: 'simple-table-bdd'
+            spec: >-
+              playwright/.features-gen/playwright/bdd/features/editor/simple-table-headers.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/editor/simple-table-block-actions.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/editor/simple-table-selection-scroll.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/editor/simple-table-add-row-scroll.feature.spec.js
+            description: 'Simple table headers, block actions, conversion undo/redo, selection, and scrolling'
+            bdd: 'true'
             shard: ''
           - name: 'database'
             spec: 'playwright/e2e/database/'
@@ -153,9 +170,15 @@ jobs:
             description: 'Database row, undo/redo, Formula, and Rollup BDD workflows'
             bdd: 'true'
             shard: ''
+          - name: 'rich-text-bdd'
+            spec: 'playwright/.features-gen/playwright/bdd/features/database/text-cell-rich-text.feature.spec.js'
+            description: 'Rich text in database Text cells and row titles: formatting, storage contract, mentions, clipboard'
+            bdd: 'true'
+            shard: ''
           - name: 'form-timeline-bdd'
             spec: >-
               playwright/.features-gen/playwright/bdd/features/form/
+              playwright/.features-gen/playwright/bdd/features/database/form-chart-quota.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/timeline.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/timeline-integration.feature.spec.js
             description: 'Form and Timeline creation and interactions'
@@ -476,6 +499,15 @@ jobs:
           TEST_BDD: ${{ matrix.test-group.bdd }}
           TEST_SHARD: ${{ matrix.test-group.shard }}
           TEST_SPEC: ${{ matrix.test-group.spec }}
+
+      - name: Capture backend logs
+        if: failure()
+        continue-on-error: true
+        working-directory: AppFlowy-Cloud-Premium
+        run: |
+          mkdir -p ../test-results
+          docker compose -f docker-compose-web-ci.yml -f ../.github/docker-compose-web-ci.override.yml \
+            logs --no-color --timestamps appflowy_cloud appflowy_worker postgres > ../test-results/backend-services.log 2>&1
 
       - name: Report failed backend duplication tasks
         if: failure()

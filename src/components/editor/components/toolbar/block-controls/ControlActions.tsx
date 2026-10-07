@@ -11,6 +11,8 @@ import { filterValidNodes, findSlateEntryByBlockId, getSelectedPaths } from '@/a
 import { BlockType } from '@/application/types';
 import { ReactComponent as DragSvg } from '@/assets/icons/drag.svg';
 import { ReactComponent as AddSvg } from '@/assets/icons/plus.svg';
+import tableDragIcon from '@/assets/icons/simple-table/drag.svg?url';
+import { SimpleTableFigmaIcon } from '@/components/editor/components/blocks/simple-table/SimpleTableFigmaIcon';
 import { useBlockDrag } from '@/components/editor/components/drag-drop/useBlockDrag';
 import { usePanelContext } from '@/components/editor/components/panels/Panels.hooks';
 import { PanelType } from '@/components/editor/components/panels/PanelsContext';
@@ -26,6 +28,13 @@ type ControlActionsProps = {
   onDraggingChange?: (dragging: boolean) => void;
 };
 
+const simpleTableDragIcon = <SimpleTableFigmaIcon
+  source={tableDragIcon}
+  inkLuminance={(0.2126 * 143 + 0.7152 * 149 + 0.0722 * 158) / 255}
+  backgroundLuminance={0.9625}
+  className="simple-table-block-drag-icon"
+/>;
+
 function ControlActions({ setOpenMenu, blockId, parentId, onDraggingChange }: ControlActionsProps) {
   const { setSelectedBlockIds } = useEditorLocalState();
   const [menuAnchorEl, setMenuAnchorEl] = useState<HTMLElement | null>(null);
@@ -33,6 +42,7 @@ function ControlActions({ setOpenMenu, blockId, parentId, onDraggingChange }: Co
   const dragHandleRef = useRef<HTMLButtonElement | null>(null);
 
   const editor = useSlateStatic() as YjsEditor;
+  const isSimpleTable = blockId && findSlateEntryByBlockId(editor, blockId)?.[0].type === BlockType.SimpleTableBlock;
   const { t } = useTranslation();
 
   const {
@@ -83,7 +93,12 @@ function ControlActions({ setOpenMenu, blockId, parentId, onDraggingChange }: Co
       }
     }
 
-    editor.select(editor.start(nodePath));
+    if (entry[0].type === BlockType.SimpleTableBlock) {
+      // The table's leading structural text node is not rendered in the DOM.
+      Transforms.deselect(editor);
+    } else {
+      editor.select(editor.start(nodePath));
+    }
 
   }, [setOpenMenu, editor, blockId, setSelectedBlockIds]);
 
@@ -95,6 +110,14 @@ function ControlActions({ setOpenMenu, blockId, parentId, onDraggingChange }: Co
     if(!entry) return;
 
     const [node, path] = entry;
+
+    if (node.type === BlockType.SimpleTableBlock) {
+      // Tables have no rendered leading text and always need a sibling block.
+      if (e.altKey) CustomEditor.addAboveBlock(editor, blockId, BlockType.Paragraph, {});
+      else CustomEditor.addBelowBlock(editor, blockId, BlockType.Paragraph, {});
+      onAdded();
+      return;
+    }
 
     const start = editor.start(path);
 
@@ -154,12 +177,12 @@ function ControlActions({ setOpenMenu, blockId, parentId, onDraggingChange }: Co
           size={'small'}
           data-testid={'drag-block'}
           onClick={onClickOptions}
-          className={`${isDragging ? 'cursor-grabbing opacity-70' : 'cursor-grab'}`}
+          className={`${isDragging ? 'cursor-grabbing opacity-70' : 'cursor-grab'} ${isSimpleTable ? 'simple-table-block-drag-button' : ''}`}
           onMouseDown={(event) => {
             event.stopPropagation();
           }}
         >
-          <DragSvg />
+          {isSimpleTable ? simpleTableDragIcon : <DragSvg />}
         </IconButton>
       </Tooltip>
       {blockId && openMenu && <ControlsMenu

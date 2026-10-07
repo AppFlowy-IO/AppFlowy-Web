@@ -68,7 +68,7 @@ function FileMediaUpload({
         newData.push([JSON.stringify(item)]);
       });
 
-      updateCell(newData);
+      void updateCell(newData);
     },
     [cell?.data, updateCell]
   );

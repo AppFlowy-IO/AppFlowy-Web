@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { type MouseEvent, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useSlateStatic } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 
+import { revealSimpleTableRow } from './SimpleTable.scroll';
 import { useSimpleTableContext } from './SimpleTableContext';
 
 function PlusIcon({ className }: { className?: string }) {
@@ -33,9 +34,22 @@ export function SimpleTableActionButtons() {
   const context = useSimpleTableContext();
   const editor = useSlateStatic() as YjsEditor;
   const containerRef = useRef<HTMLDivElement>(null);
+  const revealAddedRow = useRef(false);
+  const horizontalScrollFrame = useRef<number | null>(null);
   const [layout, setLayout] = useState<TableLayout | null>(null);
+  const tableBlockId = context?.tableNode.blockId;
+  const readOnly = context?.readOnly ?? true;
+
+  useLayoutEffect(() => {
+    if (!revealAddedRow.current) return;
+    revealAddedRow.current = false;
+    const row = containerRef.current?.closest('.simple-table-root-wrapper')?.querySelector<HTMLElement>('tbody > tr:last-child');
+
+    if (row) revealSimpleTableRow(row);
+  }, [context?.rowCount]);
 
   useEffect(() => {
+    if (readOnly || !tableBlockId) return;
     const container = containerRef.current;
 
     if (!container) return;
@@ -43,6 +57,7 @@ export function SimpleTableActionButtons() {
     const rootWrapper = container.closest('.simple-table-root-wrapper');
 
     if (!rootWrapper) return;
+    let layoutFrame: number | null = null;
 
     const updateLayout = () => {
       const scrollContainer = rootWrapper.querySelector('.simple-table-scroll-container');
@@ -58,24 +73,34 @@ export function SimpleTableActionButtons() {
       // so buttons stick to the table edge when the table is narrow
       const effectiveWidth = Math.min(scrollRect.width, tableRect.width);
 
-      setLayout({
+      const next: TableLayout = {
         scrollLeft: scrollRect.left - rootRect.left,
         scrollTop: scrollRect.top - rootRect.top,
         scrollWidth: effectiveWidth,
         scrollHeight: scrollRect.height,
         tableHeight: tableRect.height,
+      };
+
+      setLayout((previous) => previous &&
+        previous.scrollLeft === next.scrollLeft && previous.scrollTop === next.scrollTop &&
+        previous.scrollWidth === next.scrollWidth && previous.scrollHeight === next.scrollHeight &&
+        previous.tableHeight === next.tableHeight ? previous : next);
+    };
+
+    const scheduleLayout = () => {
+      if (layoutFrame !== null) return;
+      layoutFrame = requestAnimationFrame(() => {
+        layoutFrame = null;
+        updateLayout();
       });
     };
 
     updateLayout();
-
-    const observer = new MutationObserver(() => {
-      requestAnimationFrame(updateLayout);
-    });
+    const observer = new MutationObserver(scheduleLayout);
 
     observer.observe(rootWrapper, { childList: true, subtree: true, attributes: true });
 
-    const resizeObserver = new ResizeObserver(updateLayout);
+    const resizeObserver = new ResizeObserver(scheduleLayout);
 
     resizeObserver.observe(rootWrapper);
     const scrollContainer = rootWrapper.querySelector('.simple-table-scroll-container');
@@ -85,47 +110,58 @@ export function SimpleTableActionButtons() {
     return () => {
       observer.disconnect();
       resizeObserver.disconnect();
+      if (layoutFrame !== null) cancelAnimationFrame(layoutFrame);
+      if (horizontalScrollFrame.current !== null) {
+        cancelAnimationFrame(horizontalScrollFrame.current);
+        horizontalScrollFrame.current = null;
+      }
     };
-  }, [context?.tableNode]);
+  }, [tableBlockId, readOnly]);
 
-  const handleAddRow = useCallback((e: React.MouseEvent) => {
+  const handleAddRow = useCallback((e: MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!context) return;
-    CustomEditor.addTableRow(editor, context.tableNode.blockId);
-  }, [editor, context]);
+    if (!tableBlockId || editor.readOnly) return;
+    revealAddedRow.current = true;
+    CustomEditor.addTableRow(editor, tableBlockId);
+  }, [editor, tableBlockId]);
 
   const scrollToRight = useCallback(() => {
-    const container = containerRef.current;
-    const scrollContainer = container?.closest('.simple-table-root-wrapper')?.querySelector('.simple-table-scroll-container');
+    if (horizontalScrollFrame.current !== null) cancelAnimationFrame(horizontalScrollFrame.current);
+    horizontalScrollFrame.current = requestAnimationFrame(() => {
+      horizontalScrollFrame.current = null;
+      const scrollContainer = containerRef.current?.closest('.simple-table-root-wrapper')?.querySelector('.simple-table-scroll-container');
 
-    if (scrollContainer) {
-      requestAnimationFrame(() => {
-        scrollContainer.scrollTo({ left: scrollContainer.scrollWidth, behavior: 'smooth' });
-      });
-    }
+      scrollContainer?.scrollTo({ left: scrollContainer.scrollWidth, behavior: 'smooth' });
+    });
   }, []);
 
-  const handleAddCol = useCallback((e: React.MouseEvent) => {
+  const handleAddCol = useCallback((e: MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!context) return;
-    CustomEditor.addTableColumn(editor, context.tableNode.blockId);
+    if (!tableBlockId || editor.readOnly) return;
+    CustomEditor.addTableColumn(editor, tableBlockId);
     scrollToRight();
-  }, [editor, context, scrollToRight]);
+  }, [editor, tableBlockId, scrollToRight]);
 
-  const handleAddBoth = useCallback((e: React.MouseEvent) => {
+  const handleAddBoth = useCallback((e: MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!context) return;
-    CustomEditor.addTableRowAndColumn(editor, context.tableNode.blockId);
+    if (!tableBlockId || editor.readOnly) return;
+    revealAddedRow.current = true;
+    CustomEditor.addTableRowAndColumn(editor, tableBlockId);
     scrollToRight();
-  }, [editor, context, scrollToRight]);
+  }, [editor, tableBlockId, scrollToRight]);
 
   if (!context || context.readOnly) return null;
 
   return (
-    <div ref={containerRef} className="simple-table-action-buttons-container" contentEditable={false}>
+    <div
+      ref={containerRef}
+      className="simple-table-action-buttons-container"
+      contentEditable={false}
+      onMouseDown={(event) => event.preventDefault()}
+    >
       {layout && (
         <>
           {/* Add Row — horizontal bar below table, spans visible width */}

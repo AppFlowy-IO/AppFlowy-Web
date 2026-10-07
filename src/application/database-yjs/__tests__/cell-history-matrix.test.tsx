@@ -188,7 +188,9 @@ describe('committed cell production hooks use database history', () => {
     const fixture = createFixture(testCase);
     const { result } = renderHook(useCellHistory, { wrapper: createWrapper(fixture) });
 
-    act(() => result.current.updateCell(testCase.updatedValue));
+    await act(async () => {
+      await result.current.updateCell(testCase.updatedValue);
+    });
     await waitFor(() => {
       expect(getCell(fixture).get(YjsDatabaseKey.data)).toBe(testCase.updatedValue);
     });
@@ -237,7 +239,9 @@ describe('committed cell production hooks use database history', () => {
     const genericRelationData = new Y.Array<string>();
 
     genericRelationData.push(['related-row-b']);
-    act(() => result.current.updateGenericCell(genericRelationData));
+    await act(async () => {
+      await result.current.updateGenericCell(genericRelationData);
+    });
     await waitFor(() => {
       expect((getCell(fixture).get(YjsDatabaseKey.data) as Y.Array<string>).toArray()).toEqual(['related-row-b']);
     });

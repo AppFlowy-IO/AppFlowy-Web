@@ -13,6 +13,13 @@ import { normalizeRelationTypeOption, parseRelationTypeOption } from '@/applicat
 import { RelationLimit, RelationTypeOption } from '@/application/database-yjs/fields/relation/relation.type';
 import { createRelationField, setRelationTypeOptionValues } from '@/application/database-yjs/fields/relation/utils';
 import {
+  CellWriteStatus,
+  checkExistingCellWrite,
+  shouldSkipBulkRewrite,
+  writeStatusFor,
+} from '@/application/database-yjs/fields/text/rich-text-guard';
+import { notifyRichTextNewer } from '@/application/database-yjs/fields/text/rich-text-notice';
+import {
   executeDatabaseOperations as executeOperations,
   runDatabaseAction,
   runDatabaseRowAction,
@@ -62,6 +69,30 @@ function uniq(ids: RowId[]) {
 // incrementing the sync context refcount and leak owners. Caching by doc
 // instance keeps our binding to a single owner per doc.
 const boundRelatedDocs = new WeakSet<YDoc>();
+
+// Different cell hosts can edit the same source cell. Share their queue by
+// database doc and cell identity so hydration cannot reorder those edits.
+const pendingRelationWrites = new WeakMap<YDoc, Map<string, Promise<void>>>();
+
+function queueRelationCellWrite(databaseDoc: YDoc, rowId: RowId, fieldId: FieldId, write: () => Promise<void>) {
+  let pending = pendingRelationWrites.get(databaseDoc);
+
+  if (!pending) {
+    pending = new Map();
+    pendingRelationWrites.set(databaseDoc, pending);
+  }
+
+  const queue = pending;
+  const key = JSON.stringify([rowId, fieldId]);
+  const previous = queue.get(key);
+  // A failed request must release the next edit as well as a successful one.
+  const next = (previous ? previous.then(write, write) : write()).finally(() => {
+    if (queue.get(key) === next) queue.delete(key);
+  });
+
+  queue.set(key, next);
+  return next;
+}
 
 export { getRelationRowIdsFromCell };
 
@@ -160,17 +191,40 @@ export function applyRelationCellChangeset(
   };
 }
 
-function setRelationCellRowIds(rowDoc: YDoc, fieldId: FieldId, rowIds: RowId[], actorUid?: AttributionUid) {
+/**
+ * Replaces a relation cell's row ids. A cell holding formatting that needs a
+ * newer client (a Text cell before the field became a Relation) is never
+ * rewritten (rich text spec R49).
+ */
+export function setRelationCellRowIds(
+  rowDoc: YDoc,
+  fieldId: FieldId,
+  rowIds: RowId[],
+  actorUid?: AttributionUid
+): CellWriteStatus {
+  let status: CellWriteStatus = 'written';
+
   runDatabaseRowAction(rowDoc, { type: 'relation.update-cell', fieldId, fieldType: FieldType.Relation }, () => {
     const row = getRowFromDoc(rowDoc);
+    const ids = uniq(rowIds);
+    const check = checkExistingCellWrite(row?.get(YjsDatabaseKey.cells)?.get(fieldId), {
+      set: { [YjsDatabaseKey.data]: ids },
+      delete: [YjsDatabaseKey.source_field_type],
+    });
+
+    if (check !== 'proceed') {
+      status = writeStatusFor(check);
+      return;
+    }
+
     const cell = getOrCreateRelationCell(rowDoc, fieldId);
 
     if (!row || !cell) return;
 
     const data = new Y.Array<string>();
 
-    if (rowIds.length > 0) {
-      data.push(uniq(rowIds));
+    if (ids.length > 0) {
+      data.push(ids);
     }
 
     cell.set(YjsDatabaseKey.data, data);
@@ -181,6 +235,8 @@ function setRelationCellRowIds(rowDoc: YDoc, fieldId: FieldId, rowIds: RowId[], 
     cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
     touchRowAttribution(row, actorUid);
   });
+
+  return status;
 }
 
 function applyRelationCellChanges(
@@ -193,7 +249,12 @@ function applyRelationCellChanges(
   const existing = getRelationRowIdsFromCell(getRowFromDoc(rowDoc)?.get(YjsDatabaseKey.cells)?.get(fieldId));
   const result = applyRelationCellChangeset(existing, changes, limit);
 
-  setRelationCellRowIds(rowDoc, fieldId, result.nextRowIds, actorUid);
+  // A refused cell changes nothing, so its reciprocal side must not change either.
+  if (setRelationCellRowIds(rowDoc, fieldId, result.nextRowIds, actorUid) === 'refused-rich-text-newer') {
+    notifyRichTextNewer();
+    return { insertedRowIds: [], removedRowIds: [] };
+  }
+
   return result.effectiveChanges;
 }
 
@@ -421,8 +482,10 @@ async function clearRelationCells(args: {
         { type: 'relation.clear-cell', fieldId: args.fieldId, fieldType: FieldType.Relation },
         () => {
           const row = getRowFromDoc(rowDoc);
+          const cells = row?.get(YjsDatabaseKey.cells);
 
-          row?.get(YjsDatabaseKey.cells)?.delete(args.fieldId);
+          if (shouldSkipBulkRewrite(cells?.get(args.fieldId))) return;
+          cells?.delete(args.fieldId);
           if (row) touchRowAttribution(row, args.actorUid);
         }
       );
@@ -591,7 +654,7 @@ export function useUpdateRelationCellDispatch() {
   const currentUser = useCurrentUserOptional();
   const actorUid = resolveUserAttributionUid(currentUser);
 
-  return useCallback(
+  const update = useCallback(
     async (rowId: RowId, fieldId: FieldId, changes: RelationCellChanges) => {
       const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
 
@@ -607,23 +670,17 @@ export function useUpdateRelationCellDispatch() {
 
       if (!sourceRowDoc) return;
 
-      const effectiveChanges = applyRelationCellChanges(
-        sourceRowDoc,
-        fieldId,
-        changes,
-        typeOption.source_limit,
-        actorUid
-      );
-
-      if (!typeOption.is_two_way || !typeOption.database_id || !typeOption.reciprocal_field_id) {
-        return;
-      }
-
       // The template editor edits a hidden source row that never joins
       // row_orders; reciprocal links would point real rows at that phantom
       // row id. The default is applied to real rows created from the
       // template, whose reciprocals are backfilled by useNewRowDispatch.
-      if (context.templateEditingRowId === rowId) {
+      if (
+        !typeOption.is_two_way ||
+        !typeOption.database_id ||
+        !typeOption.reciprocal_field_id ||
+        context.templateEditingRowId === rowId
+      ) {
+        applyRelationCellChanges(sourceRowDoc, fieldId, changes, typeOption.source_limit, actorUid);
         return;
       }
 
@@ -644,52 +701,120 @@ export function useUpdateRelationCellDispatch() {
         ? parseRelationTypeOption(reciprocalField).source_limit
         : RelationLimit.NoLimit;
 
-      // The two sides run concurrently, so they must touch different target rows. The effective
-      // sets are NOT inherently disjoint: a changeset carrying the same id in both insertedRowIds
-      // and removedRowIds (a reinsert) puts that id in both. No current caller sends one, but if it
-      // happened the two branches would race remove-against-insert on the same reciprocal cell,
-      // with an order-dependent result. The source cell ends with the id present (removal applies
-      // first, insertion re-appends), so the reciprocal must too — drop such ids from the removal
-      // side and let the insert branch ensure presence.
-      const insertedSet = new Set(effectiveChanges.insertedRowIds);
-      const removedOnlyRowIds = effectiveChanges.removedRowIds.filter((targetRowId) => !insertedSet.has(targetRowId));
+      // Hydrate every participant before writing. Rebuild the plan after each
+      // await so remote edits during hydration cannot leave a stale plan.
+      // This also includes links displaced by a reciprocal OneOnly limit.
+      const loaded = new Map<string, YDoc | null>([[getRowKey(context.databaseDoc.guid, rowId), sourceRowDoc]]);
 
-      await Promise.all([
-        ...removedOnlyRowIds.map(async (targetRowId) => {
-          const targetRowDoc = await loadRowDoc({
-            databaseDoc: relatedDoc,
-            rowId: targetRowId,
-            createRow,
-            rowMap: relatedDoc === context.databaseDoc ? rowMap : undefined,
-          });
+      for (;;) {
+        const loading = new Map<string, Promise<void>>();
+        const plan = new Map<YDoc, Map<FieldId, RowId[]>>();
+        let unavailable = false;
+        const getRow = (databaseDoc: YDoc, id: RowId, required: boolean) => {
+          const key = getRowKey(databaseDoc.guid, id);
 
-          if (!targetRowDoc) return;
+          if (loaded.has(key)) {
+            const doc = loaded.get(key);
 
-          applyRelationCellChanges(
-            targetRowDoc,
-            typeOption.reciprocal_field_id as FieldId,
-            { removedRowIds: [rowId] },
-            reciprocalLimit,
-            actorUid
+            if (!doc && required) unavailable = true;
+            return doc;
+          }
+
+          if (!loading.has(key)) {
+            loading.set(
+              key,
+              loadRowDoc({
+                databaseDoc,
+                rowId: id,
+                createRow,
+                rowMap: databaseDoc === context.databaseDoc ? rowMap : undefined,
+              })
+                .then((doc) => {
+                  loaded.set(key, doc);
+                })
+                .catch((error: unknown) => {
+                  Log.warn('[relation] failed to load a relation participant', { rowId: id, error });
+                  loaded.set(key, null);
+                })
+            );
+          }
+
+          return null;
+        };
+
+        const stage = (doc: YDoc, id: FieldId, update: RelationCellChanges, limit: RelationLimit) => {
+          const fields = plan.get(doc) ?? new Map<FieldId, RowId[]>();
+          const existing =
+            fields.get(id) ?? getRelationRowIdsFromCell(getRowFromDoc(doc)?.get(YjsDatabaseKey.cells)?.get(id));
+          const result = applyRelationCellChangeset(existing, update, limit);
+
+          fields.set(id, result.nextRowIds);
+          plan.set(doc, fields);
+          return result.effectiveChanges;
+        };
+
+        const effective = stage(sourceRowDoc, fieldId, changes, typeOption.source_limit);
+        const inserted = new Set(effective.insertedRowIds);
+
+        for (const targetId of uniq([...effective.removedRowIds, ...effective.insertedRowIds])) {
+          // Missing old targets must not trap the source on a stale link.
+          // New links still require a writable reciprocal participant.
+          const target = getRow(relatedDoc, targetId, inserted.has(targetId));
+
+          if (!target) continue;
+          const reciprocal = stage(
+            target,
+            typeOption.reciprocal_field_id,
+            inserted.has(targetId) ? { insertedRowIds: [rowId] } : { removedRowIds: [rowId] },
+            reciprocalLimit
           );
-        }),
-        applyRelationReciprocalInserts({
-          sourceRowId: rowId,
-          sourceFieldId: fieldId,
-          insertedRowIds: effectiveChanges.insertedRowIds,
-          database,
-          databaseDoc: context.databaseDoc,
-          rowMap,
-          createRow,
-          loadView,
-          getViewIdFromDatabaseId,
-          bindViewSync,
-          actorUid,
-          relatedDoc,
-        }),
-      ]);
+
+          if (!inserted.has(targetId) || reciprocalLimit !== RelationLimit.OneOnly) continue;
+
+          for (const displacedId of reciprocal.removedRowIds) {
+            if (displacedId === rowId) continue;
+            const displaced = getRow(context.databaseDoc, displacedId, false);
+
+            if (displaced) stage(displaced, fieldId, { removedRowIds: [targetId] }, typeOption.source_limit);
+          }
+        }
+
+        if (loading.size > 0) {
+          await Promise.all(loading.values());
+          continue;
+        }
+
+        if (unavailable) return;
+
+        for (const [doc, fields] of plan) {
+          for (const [id, ids] of fields) {
+            if (
+              checkExistingCellWrite(getRowFromDoc(doc)?.get(YjsDatabaseKey.cells)?.get(id), {
+                set: { [YjsDatabaseKey.data]: ids },
+                delete: [YjsDatabaseKey.source_field_type],
+              }) === 'refuse'
+            ) {
+              notifyRichTextNewer();
+              return;
+            }
+          }
+        }
+
+        // No await between the final checks and the writes to either side.
+        for (const [doc, fields] of plan) {
+          for (const [id, ids] of fields) setRelationCellRowIds(doc, id, ids, actorUid);
+        }
+
+        return;
+      }
     },
     [actorUid, bindViewSync, context, createRow, database, getViewIdFromDatabaseId, loadView, rowMap]
+  );
+
+  return useCallback(
+    (rowId: RowId, fieldId: FieldId, changes: RelationCellChanges) =>
+      queueRelationCellWrite(context.databaseDoc, rowId, fieldId, () => update(rowId, fieldId, changes)),
+    [context.databaseDoc, update]
   );
 }
 

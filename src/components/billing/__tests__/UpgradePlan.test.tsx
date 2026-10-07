@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { ReactNode } from 'react';
+import { ButtonHTMLAttributes, ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 
 import en from '@/@types/translations/en.json';
@@ -57,11 +57,20 @@ jest.mock('@/components/billing/CancelSubscribe', () => ({
 }));
 
 jest.mock('@/components/_shared/modal', () => ({
-  NormalModal: ({ open, title, children }: { open: boolean; title?: ReactNode; children?: ReactNode }) =>
+  NormalModal: ({ open, title, children, onOk, onCancel, okButtonProps }: {
+    open: boolean;
+    title?: ReactNode;
+    children?: ReactNode;
+    onOk?: () => void;
+    onCancel?: () => void;
+    okButtonProps?: ButtonHTMLAttributes<HTMLButtonElement>;
+  }) =>
     open ? (
       <div>
         <div>{title}</div>
         {children}
+        {onOk && <button {...okButtonProps} onClick={onOk}>Confirm</button>}
+        {onCancel && <button onClick={onCancel}>Cancel</button>}
       </div>
     ) : null,
 }));
@@ -170,11 +179,11 @@ function renderModal(
     status: 'available',
     info: { enable_page_history: true, self_hosted: !isOfficialHosted },
   });
-  return render(
+  const content = (workspaceId: string) => (
     <MemoryRouter>
       <AuthInternalContext.Provider
         value={{
-          currentWorkspaceId: 'workspace-id',
+          currentWorkspaceId: workspaceId,
           isAuthenticated: true,
           onChangeWorkspace: async () => undefined,
         }}
@@ -187,10 +196,14 @@ function renderModal(
       </AuthInternalContext.Provider>
     </MemoryRouter>
   );
+  const view = render(content('workspace-id'));
+
+  return { ...view, changeWorkspace: (workspaceId: string) => view.rerender(content(workspaceId)) };
 }
 
 describe('UpgradePlan', () => {
   beforeEach(() => {
+    jest.clearAllMocks();
     mockTranslations = { ...defaultTranslations };
     resetPricingCatalogCache();
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -241,7 +254,7 @@ describe('UpgradePlan', () => {
     expect(within(freeColumn).getAllByTestId('feature-excluded')).toHaveLength(1);
     expect(within(proColumn).getAllByTestId('feature-included')).toHaveLength(1);
 
-    // Only the upgrade target has a button, and it checks out yearly.
+    // Pro opens monthly Checkout directly; Stripe offers the annual upsell.
     expect(within(freeColumn).queryByTestId('pricing-downgrade-free')).toBeNull();
     const { BillingService } = jest.requireMock('@/application/services/domains');
 
@@ -249,12 +262,98 @@ describe('UpgradePlan', () => {
     const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
 
     fireEvent.click(within(proColumn).getByTestId('pricing-upgrade-pro'));
+    expect(screen.queryByTestId('change-period-confirm')).toBeNull();
     await waitFor(() => expect(openSpy).toHaveBeenCalledWith('https://checkout.example', '_current'));
     expect(BillingService.getSubscriptionLink).toHaveBeenCalledWith(
       'workspace-id',
       SubscriptionPlan.Pro,
-      SubscriptionInterval.Year
+      SubscriptionInterval.Month
     );
+  });
+
+  it('starts one monthly checkout immediately and disables repeat clicks while it loads', async () => {
+    const { BillingService } = jest.requireMock('@/application/services/domains');
+    let resolveCheckout!: (link: string) => void;
+
+    BillingService.getSubscriptionLink.mockReturnValue(new Promise<string>((resolve) => {
+      resolveCheckout = resolve;
+    }));
+    const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
+
+    renderModal(async () => catalog);
+    const upgrade = await screen.findByTestId<HTMLButtonElement>('pricing-upgrade-pro');
+
+    fireEvent.click(upgrade);
+    fireEvent.click(upgrade);
+    expect(upgrade.disabled).toBe(true);
+    expect(BillingService.getSubscriptionLink).toHaveBeenCalledTimes(1);
+    expect(BillingService.getSubscriptionLink).toHaveBeenCalledWith(
+      'workspace-id', SubscriptionPlan.Pro, SubscriptionInterval.Month
+    );
+    expect(screen.queryByTestId('period-option-month')).toBeNull();
+    expect(screen.queryByTestId('change-period-confirm')).toBeNull();
+
+    await act(async () => resolveCheckout('https://checkout/monthly'));
+    expect(openSpy).toHaveBeenCalledWith('https://checkout/monthly', '_current');
+  });
+
+  it('shows checkout errors and allows a direct monthly retry', async () => {
+    const { BillingService } = jest.requireMock('@/application/services/domains');
+    const { notify } = jest.requireMock('@/components/_shared/notify');
+
+    BillingService.getSubscriptionLink.mockRejectedValueOnce(new Error('Checkout unavailable'))
+      .mockResolvedValueOnce('https://checkout/retry');
+    const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
+
+    renderModal(async () => catalog);
+    const upgrade = await screen.findByTestId<HTMLButtonElement>('pricing-upgrade-pro');
+
+    fireEvent.click(upgrade);
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Checkout unavailable'));
+    expect(upgrade.disabled).toBe(false);
+    expect(openSpy).not.toHaveBeenCalled();
+    fireEvent.click(upgrade);
+    await waitFor(() => expect(openSpy).toHaveBeenCalledWith('https://checkout/retry', '_current'));
+    expect(BillingService.getSubscriptionLink).toHaveBeenLastCalledWith(
+      'workspace-id', SubscriptionPlan.Pro, SubscriptionInterval.Month
+    );
+  });
+
+  it('ignores the previous workspace checkout response after switching workspaces', async () => {
+    const { BillingService } = jest.requireMock('@/application/services/domains');
+    let resolveCheckout!: (link: string) => void;
+
+    BillingService.getSubscriptionLink.mockReturnValueOnce(new Promise<string>((resolve) => {
+      resolveCheckout = resolve;
+    })).mockResolvedValueOnce('https://checkout/workspace-b');
+    const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
+    const view = renderModal(async () => catalog);
+
+    fireEvent.click(await screen.findByTestId('pricing-upgrade-pro'));
+    view.changeWorkspace('workspace-b');
+    fireEvent.click(await screen.findByTestId('pricing-upgrade-pro'));
+    await waitFor(() => expect(openSpy).toHaveBeenCalledWith('https://checkout/workspace-b', '_current'));
+    expect(BillingService.getSubscriptionLink).toHaveBeenLastCalledWith(
+      'workspace-b', SubscriptionPlan.Pro, SubscriptionInterval.Month
+    );
+    await act(async () => resolveCheckout('https://checkout/workspace-a'));
+    expect(openSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a checkout response after the comparison unmounts', async () => {
+    const { BillingService } = jest.requireMock('@/application/services/domains');
+    let resolveCheckout!: (link: string) => void;
+
+    BillingService.getSubscriptionLink.mockReturnValueOnce(new Promise<string>((resolve) => {
+      resolveCheckout = resolve;
+    }));
+    const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
+    const view = renderModal(async () => catalog);
+
+    fireEvent.click(await screen.findByTestId('pricing-upgrade-pro'));
+    view.unmount();
+    await act(async () => resolveCheckout('https://checkout/stale'));
+    expect(openSpy).not.toHaveBeenCalled();
   });
 
   it('marks Pro as current and offers a downgrade on Free for a Pro workspace', async () => {
@@ -328,11 +427,17 @@ describe('UpgradePlan', () => {
     expect(getPricingCatalog).toHaveBeenCalledTimes(2);
   });
 
-  it('hides paid plans when server-info did not confirm the official cloud', async () => {
-    renderModal(async () => catalog, { isOfficialHosted: false });
+  it('hides the dialog without fetching prices or subscriptions on self-hosted servers', () => {
+    const getPricingCatalog = jest.fn().mockResolvedValue(catalog);
+    const getSubscriptions = jest.fn().mockResolvedValue([]);
 
-    await screen.findByTestId('pricing-plan-free');
+    renderModal(getPricingCatalog, { isOfficialHosted: false, getSubscriptions });
+
+    expect(screen.queryByTestId('pricing-plan-free')).toBeNull();
     expect(screen.queryByTestId('pricing-plan-pro')).toBeNull();
+    expect(screen.queryByTestId('plan-comparison')).toBeNull();
+    expect(getPricingCatalog).not.toHaveBeenCalled();
+    expect(getSubscriptions).not.toHaveBeenCalled();
   });
 
   it('shows subscription loading and keeps actions unavailable until the current plan is known', async () => {

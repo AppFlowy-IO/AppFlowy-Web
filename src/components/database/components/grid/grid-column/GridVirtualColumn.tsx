@@ -115,11 +115,8 @@ function GridVirtualColumn({
       )}
       {isActiveCell && (
         <div
-          style={{
-            boxShadow: 'var(--fill-theme-thick) 0px 0px 0px 2px inset, var(--fill-info-light) 0px 0px 0px 1px inset',
-          }}
           className={
-            'border-info-light pointer-events-none absolute bottom-[-1px] left-0 top-[-0.5px] z-10 w-[calc(100%+1px)] rounded-[2px] border'
+            'pointer-events-none absolute bottom-[-1px] left-0 top-[-0.5px] z-10 w-[calc(100%+1px)] rounded-[2px] border-2 border-border-theme-thick'
           }
         />
       )}

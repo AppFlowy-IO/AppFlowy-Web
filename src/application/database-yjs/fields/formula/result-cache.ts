@@ -8,7 +8,7 @@ import { compileFormula } from './compile';
 import { FormulaCellResult } from './formula.type';
 import { parseFormulaTypeOption } from './parse';
 import { FormulaFieldSchema, formulaSchemaSignature, hasFormulaSchemaSource, resolveFormulaField } from './schema';
-import { FormulaType, FormulaValue } from './values';
+import { FormulaTextRun, FormulaType, FormulaValue } from './values';
 
 import type { EvaluateFormulaCellOptions } from './evaluate';
 import type { Doc } from 'yjs';
@@ -40,7 +40,7 @@ const localFieldTypes = new Set([
 const localFunctions = new Set(
   (
     'if ifs empty equal unequal and or not let lets ' +
-    'length substring contains test match replace replaceAll lower upper repeat trim split join format toNumber ' +
+    'length substring contains test match replace replaceAll lower upper repeat trim style unstyle split join format toNumber ' +
     'add subtract multiply divide mod pow abs round ceil floor sqrt cbrt exp ln log10 log2 sign ' +
     'min max sum mean median pi e formatNumber ' +
     'at first last slice concat sort reverse unique includes flat map filter find findIndex some every id'
@@ -181,9 +181,24 @@ function valueFingerprint(values: Iterable<FormulaValue>): string | undefined {
       case 'number':
         return Number.isFinite(value.value) && append(`n${Object.is(value.value, -0) ? '-0' : value.value};`);
       case 'text':
-        return (
-          value.value.length * 2 <= FORMULA_RESULT_CACHE_LIMITS.entryBytes && append(`t${JSON.stringify(value.value)};`)
-        );
+        if (
+          value.value.length * 2 > FORMULA_RESULT_CACHE_LIMITS.entryBytes ||
+          !append(`t${JSON.stringify(value.value)};`)
+        ) {
+          return false;
+        }
+
+        if (value.runs) {
+          if (!append('r[')) return false;
+          for (const run of value.runs) {
+            if (run.text.length * 2 > FORMULA_RESULT_CACHE_LIMITS.entryBytes || !append(JSON.stringify(run)))
+              return false;
+          }
+
+          if (!append(']')) return false;
+        }
+
+        return true;
       case 'date':
         return false;
       case 'list':
@@ -206,7 +221,12 @@ function valueFingerprint(values: Iterable<FormulaValue>): string | undefined {
 function cloneValue(value: FormulaValue): FormulaValue {
   if (value.type === 'list') return { type: 'list', items: value.items.map(cloneValue) };
   if (value.type === 'date') return { type: 'date', value: { ...value.value } };
+  if (value.type === 'text' && value.runs) return { ...value, runs: cloneRuns(value.runs) };
   return { ...value };
+}
+
+function cloneRuns(runs: FormulaTextRun[]): FormulaTextRun[] {
+  return runs.map((run) => ({ text: run.text, styles: [...run.styles] }));
 }
 
 function cloneType(type: FormulaType): FormulaType {
@@ -214,7 +234,12 @@ function cloneType(type: FormulaType): FormulaType {
 }
 
 function cloneResult(result: FormulaCellResult): FormulaCellResult {
-  return { ...result, value: cloneValue(result.value), resultType: cloneType(result.resultType) };
+  return {
+    ...result,
+    value: cloneValue(result.value),
+    resultType: cloneType(result.resultType),
+    ...(result.runs ? { runs: cloneRuns(result.runs) } : {}),
+  };
 }
 
 /**

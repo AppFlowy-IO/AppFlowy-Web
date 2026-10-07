@@ -7,7 +7,7 @@ import { resetPricingCatalogCache } from '@/components/app/hooks/usePricingCatal
 import { BillingPanel } from '@/components/app/settings/BillingPanel';
 import { renderDate } from '@/utils/time';
 
-import { BillingTestProviders, PERIOD_END, freeUsage, proUsage, translate, workspaceStatus } from './billing-test-utils';
+import { BillingTestProviders, PERIOD_END, freeUsage, proUsage, setBillingHostingMode, translate, workspaceStatus } from './billing-test-utils';
 
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: translate }) }));
 jest.mock('@/components/main/app.hooks', () => ({ useCurrentUserOptional: () => ({ uid: '7', metadata: {} }) }));
@@ -67,6 +67,7 @@ function renderPanel() {
 describe('BillingPanel', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    setBillingHostingMode();
     resetPricingCatalogCache();
     window.open = jest.fn();
     api.getWorkspaceSubscriptionStatus.mockResolvedValue([]);
@@ -167,6 +168,31 @@ describe('BillingPanel', () => {
     expect((await screen.findByTestId('billing-error')).textContent).toContain('billing down');
     fireEvent.click(screen.getByText('Retry'));
     expect(await screen.findByText('Personal')).toBeTruthy();
+  });
+
+  it('loads and refreshes the actual plan without requesting unused storage usage', async () => {
+    api.getWorkspaceSubscriptionStatus.mockResolvedValue([workspaceStatus(SubscriptionPlan.Pro)]);
+    api.getWorkspaceUsage.mockRejectedValue(new Error('Storage accounting is recovering'));
+    api.getBillingPortalLink.mockResolvedValue('https://portal');
+    api.setSubscriptionRecurringInterval.mockResolvedValue(undefined);
+    renderPanel();
+
+    expect(await screen.findByText('Pro')).toBeTruthy();
+    expect(screen.getByText('Annually')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('billing-edit-payment-method'));
+    await waitFor(() => expect(window.open).toHaveBeenCalledWith('https://portal', '_current'));
+
+    fireEvent.click(screen.getByTestId('billing-edit-period'));
+    await screen.findByText('$12.5');
+    fireEvent.click(screen.getByTestId(`period-option-${SubscriptionInterval.Month}`));
+    fireEvent.click(screen.getByTestId('change-period-confirm'));
+    await waitFor(() => expect(api.getWorkspaceSubscriptionStatus).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByTestId<HTMLButtonElement>('billing-edit-period').disabled).toBe(false));
+
+    expect(api.getWorkspaceUsage).not.toHaveBeenCalled();
+    expect(screen.getByText('Pro')).toBeTruthy();
+    expect(screen.queryByTestId('billing-error')).toBeNull();
+    expect(screen.getByTestId('billing-edit-payment-method')).toBeTruthy();
   });
 
   it('shows the full annual charge before confirming a switch from monthly billing', async () => {

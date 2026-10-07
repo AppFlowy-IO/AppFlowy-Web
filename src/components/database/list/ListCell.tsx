@@ -38,7 +38,7 @@ function ListCheckboxCell({ cell, fieldId, fieldName, rowId }: ListSpecialCellPr
       disabled={readOnly}
       onClick={(event) => {
         event.stopPropagation();
-        updateCell(checked ? 'No' : 'Yes');
+        void updateCell(checked ? 'No' : 'Yes');
       }}
       role='checkbox'
       type='button'

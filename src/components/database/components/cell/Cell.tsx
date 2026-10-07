@@ -227,7 +227,13 @@ export function Cell(props: CellProps<CellType>) {
         }
       : props;
 
-  const content = <Component {...cellProps} />;
+  const content = (
+    <Component
+      {...cellProps}
+      fieldType={field ? fieldType : undefined}
+      fieldName={field?.get(YjsDatabaseKey.name) as string | undefined}
+    />
+  );
 
   if (disableRelationRollupEdit) {
     return (

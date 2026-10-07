@@ -128,10 +128,24 @@ export function useHoverControls({ disabled }: { disabled: boolean }) {
         return;
       }
 
-      const blockElement = ReactEditor.toDOMNode(editor, node);
+      let blockElement = ReactEditor.toDOMNode(editor, node);
 
       if (!blockElement) return;
-      const shouldSkipParentTypes = [BlockType.TableBlock, BlockType.SimpleTableBlock];
+      const simpleTableRoot = blockElement.closest(`[data-block-type="${BlockType.SimpleTableBlock}"]`);
+
+      if (simpleTableRoot) {
+        const tableNode = ReactEditor.toSlateNode(editor, simpleTableRoot);
+
+        if (!Element.isElement(tableNode) || !tableNode.blockId) {
+          close();
+          return;
+        }
+
+        node = tableNode;
+        blockElement = simpleTableRoot as HTMLElement;
+      }
+
+      const shouldSkipParentTypes = [BlockType.TableBlock];
 
       if (shouldSkipParentTypes.some((type) => blockElement.closest(`[data-block-type="${type}"]`))) {
         close();

@@ -24,6 +24,7 @@ export function Bold() {
 
   return (
     <ActionButton
+      aria-label={t('toolbar.bold')}
       onClick={onClick}
       active={isActivated}
       data-testid="toolbar-bold-button"
@@ -34,7 +35,7 @@ export function Bold() {
         </>
       }
     >
-      <BoldSvg className='h-4 w-4' />
+      <BoldSvg aria-hidden='true' className='h-4 w-4' />
     </ActionButton>
   );
 }

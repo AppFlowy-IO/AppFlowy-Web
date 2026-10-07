@@ -15,15 +15,6 @@ const isProd = process.env.NODE_ENV === 'production';
 const isTest = process.env.NODE_ENV === 'test' || process.env.COVERAGE === 'true';
 const webClientVersion = process.env.APPFLOWY_WEB_VERSION || compatibilityPolicy.reviewed_through_client_version;
 
-// Vite only exposes `APPFLOWY*` variables from `.env` files to the app; this
-// build-time define also honours `.env`, so a local `pnpm dev` can opt in
-// without exporting the variable in every shell.
-const fileEnv = loadEnv(process.env.NODE_ENV ?? 'development', __dirname, '');
-const experimentalDatabaseViewCreationEnabled =
-  process.env.EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED ??
-  fileEnv.EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED ??
-  'false';
-
 // Namespace redirect plugin for dev mode - mirrors deploy/server.ts behavior
 function namespaceRedirectPlugin() {
   const baseURL = process.env.APPFLOWY_BASE_URL || 'http://localhost:8000';
@@ -170,8 +161,9 @@ async function isLocalGatewayRunning(): Promise<boolean> {
  * reaches them through these proxies instead; in production nginx serves all
  * of them on one domain and the client never uses the dev server.
  *
- * The API target is detected once when the dev server starts (restart it after
- * starting or stopping the gateway). APPFLOWY_DEV_API_PROXY_TARGET,
+ * General API traffic is detected once when the dev server starts. Workspace
+ * usage always goes to the gateway: Cloud does not implement that endpoint,
+ * and the gateway may start after Vite. APPFLOWY_DEV_API_PROXY_TARGET,
  * APPFLOWY_DEV_WS_PROXY_TARGET and APPFLOWY_DEV_BILLING_PROXY_TARGET override
  * the detection. WebSocket traffic always goes to the cloud unless overridden,
  * because the gateway does not proxy it. The client sends requests here only
@@ -188,6 +180,10 @@ async function localDevProxyConfig() {
   console.warn(`[local-dev] proxying /api -> ${apiTarget}, /ws -> ${wsTarget}, /billing -> ${billingTarget}`);
 
   return {
+    '^/api/workspace/[^/]+/usage-and-limit(?:\\?.*)?$': {
+      target: explicitApiTarget || LOCAL_GATEWAY_TARGET,
+      changeOrigin: true,
+    },
     '/api': { target: apiTarget, changeOrigin: true },
     '/ws': { target: wsTarget, changeOrigin: true, ws: true },
     '/billing': { target: billingTarget, changeOrigin: true },
@@ -195,13 +191,17 @@ async function localDevProxyConfig() {
 }
 
 export default defineConfig(async ({ command, mode }) => {
+  // Vite evaluates this config before loading .env files into the app environment.
+  const env = loadEnv(mode, process.cwd(), 'EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED');
   // Dev server only; `vite build` (production) and config loads in test mode skip the proxies.
   const localDevProxy = command === 'serve' && mode !== 'test' ? await localDevProxyConfig() : {};
 
   return {
     define: {
       __APPFLOWY_WEB_VERSION__: JSON.stringify(webClientVersion),
-      'process.env.EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED': JSON.stringify(experimentalDatabaseViewCreationEnabled),
+      'process.env.EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED': JSON.stringify(
+        env.EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED ?? 'false'
+      ),
     },
     plugins: [
       react(),

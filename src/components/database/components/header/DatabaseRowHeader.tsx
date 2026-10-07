@@ -10,6 +10,7 @@ import {
   useReadOnly,
   useRowMetaSelector,
 } from '@/application/database-yjs';
+import type { TextCell } from '@/application/database-yjs/cell.type';
 import { useUpdateRowMetaDispatch } from '@/application/database-yjs/dispatch';
 import { viewCoverToTemplateCover } from '@/application/database-yjs/template';
 import { rowDocumentIdFromRowId, syncRowDocumentViewName } from '@/application/row-document/lifecycle';
@@ -263,6 +264,8 @@ function DatabaseRowHeader({
         fieldId={fieldId}
         icon={meta?.icon}
         name={cell?.data as string}
+        richText={(cell as TextCell | undefined)?.richText}
+        richTextReadOnly={(cell as TextCell | undefined)?.richTextReadOnly}
         hasCover={!!cover}
         onEdited={onTitleEdited}
         templateStyle={templateStyle}

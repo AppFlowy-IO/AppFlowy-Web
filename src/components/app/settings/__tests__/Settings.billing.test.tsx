@@ -7,7 +7,7 @@ import { Workspaces } from '@/components/app/workspaces/Workspaces';
 
 import { SettingsDialog } from '../Settings';
 
-import { catalog, freeUsage } from './billing-test-utils';
+import { catalog, freeUsage, setBillingHostingMode } from './billing-test-utils';
 
 let mockIsOfficialHosted = true;
 let mockRole: string | undefined = 'Owner';
@@ -59,6 +59,7 @@ function renderSettings(withWorkspaceMenu = false, search = '') {
 describe('Settings billing menu', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    setBillingHostingMode();
     resetPricingCatalogCache();
     mockIsOfficialHosted = true;
     mockRole = 'Owner';
@@ -91,6 +92,7 @@ describe('Settings billing menu', () => {
 
   it('hides Plan and Billing on self-hosted servers', () => {
     mockIsOfficialHosted = false;
+    setBillingHostingMode('self-hosted');
     renderSettings();
 
     expect(screen.queryByTestId('settings-menu-plan')).toBeNull();
@@ -128,15 +130,21 @@ describe('Settings billing menu', () => {
   });
 
   it.each([
-    { role: 'Member', hosted: true },
-    { role: 'Owner', hosted: false },
-  ])('rejects billing deep links for role $role with official hosting $hosted', async ({ role, hosted }) => {
+    { role: 'Member', mode: 'cloud', panel: 'PLAN' },
+    { role: 'Owner', mode: 'self-hosted', panel: 'PLAN' },
+    { role: 'Owner', mode: 'self-hosted', panel: 'BILLING' },
+    { role: 'Owner', mode: 'unknown', panel: 'PLAN' },
+  ] as const)('rejects $panel deep links for role $role with $mode hosting without requests', async ({ role, mode, panel }) => {
     mockRole = role;
-    mockIsOfficialHosted = hosted;
-    renderSettings(true, '?setting=PLAN&action=change_plan');
+    mockIsOfficialHosted = mode === 'cloud';
+    setBillingHostingMode(mode);
+    renderSettings(true, `?setting=${panel}&action=change_plan`);
 
     await screen.findByTestId('settings-dialog');
     expect(screen.queryByTestId('settings-menu-plan')).toBeNull();
+    expect(screen.queryByTestId('settings-menu-billing')).toBeNull();
     expect(screen.queryByRole('dialog', { name: 'subscribe.upgradePlanTitle' })).toBeNull();
+    expect(mockGetSubscriptions).not.toHaveBeenCalled();
+    for (const method of Object.values(BillingService)) expect(method).not.toHaveBeenCalled();
   });
 });

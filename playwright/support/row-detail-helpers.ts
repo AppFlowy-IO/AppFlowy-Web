@@ -240,7 +240,7 @@ export async function typeInRowDocument(page: Page, text: string): Promise<void>
  */
 export async function clearAndTypeInRowDocument(page: Page, text: string): Promise<void> {
   const editor = RowDetailSelectors.documentArea(page)
-    .locator('[contenteditable="true"], .editor-content, .ProseMirror')
+    .locator('[data-testid="editor-content"], .ProseMirror')
     .first();
   await editor.click({ force: true });
   await page.keyboard.press('Control+A');

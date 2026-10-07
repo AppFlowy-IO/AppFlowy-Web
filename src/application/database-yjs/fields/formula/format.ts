@@ -6,7 +6,8 @@ import { DateFormat, TimeFormat } from '@/application/types';
 import { getDateFormat, getTimeFormat, renderDate } from '@/utils/time';
 
 import { formatNumberPlain } from './coerce';
-import { FormulaDate, FormulaValue } from './values';
+import { joinText } from './styled-text';
+import { FormulaDate, FormulaTextValue, FormulaValue, text } from './values';
 
 export interface FormulaFormatOptions {
   numberFormat?: NumberFormat;
@@ -53,4 +54,15 @@ export function formatFormulaValue(value: FormulaValue, options: FormulaFormatOp
     case 'list':
       return value.items.map((item) => formatFormulaValue(item, options)).join(', ');
   }
+}
+
+/** Styled cell/preview text shares exactly the plain display formatting above. */
+export function formatFormulaText(value: FormulaValue, options: FormulaFormatOptions = {}): FormulaTextValue {
+  if (value.type === 'text') return value;
+  if (value.type === 'list')
+    return joinText(
+      value.items.map((item) => formatFormulaText(item, options)),
+      text(', ')
+    );
+  return text(formatFormulaValue(value, options));
 }

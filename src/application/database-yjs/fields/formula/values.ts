@@ -21,8 +21,25 @@ export interface FormulaDate {
   includeTime: boolean;
 }
 
+export type FormulaTextColor = 'gray' | 'brown' | 'orange' | 'yellow' | 'green' | 'blue' | 'purple' | 'pink' | 'red';
+
+export type FormulaTextStyle = 'b' | 'i' | 'u' | 's' | 'c' | FormulaTextColor | `${FormulaTextColor}_background`;
+
+export interface FormulaTextRun {
+  text: string;
+  styles: FormulaTextStyle[];
+}
+
+export interface FormulaTextValue {
+  type: 'text';
+  /** Plain text remains the source for comparisons, searches and exports. */
+  value: string;
+  /** Nonempty runs cover the entire value; omitted when all text is unstyled. */
+  runs?: FormulaTextRun[];
+}
+
 export type FormulaValue =
-  | { type: 'text'; value: string }
+  | FormulaTextValue
   | { type: 'number'; value: number }
   | { type: 'boolean'; value: boolean }
   | { type: 'date'; value: FormulaDate }
@@ -31,7 +48,7 @@ export type FormulaValue =
 
 export const EMPTY: FormulaValue = { type: 'empty' };
 
-export const text = (value: string): FormulaValue => ({ type: 'text', value });
+export const text = (value: string): FormulaTextValue => ({ type: 'text', value });
 export const num = (value: number): FormulaValue => (Number.isFinite(value) ? { type: 'number', value } : EMPTY);
 export const bool = (value: boolean): FormulaValue => ({ type: 'boolean', value });
 export const date = (value: FormulaDate): FormulaValue => ({ type: 'date', value });

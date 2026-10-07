@@ -68,7 +68,7 @@ export function FileMediaCell ({
   }) => {
     const newItems = parseToFilesMediaCellData(newData);
 
-    updateCell(newItems);
+    void updateCell(newItems);
   }, [updateCell]);
 
   const onUpdateName = useCallback((file: FileMediaCellDataItem, name: string) => {
@@ -78,7 +78,7 @@ export function FileMediaCell ({
       newName: name,
     });
 
-    updateCell(newData);
+    void updateCell(newData);
   }, [value, updateCell]);
 
   const onDelete = useCallback((fileId: string) => {
@@ -87,7 +87,7 @@ export function FileMediaCell ({
       fileId,
     });
 
-    updateCell(newData);
+    void updateCell(newData);
   }, [value, updateCell]);
 
   const renderChildren = useMemo(() => {

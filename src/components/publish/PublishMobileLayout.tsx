@@ -3,6 +3,7 @@ import React, { Suspense } from 'react';
 import type { PublishedPageSnapshot } from '@/application/publish-snapshot/types';
 import { UIVariant } from '@/application/types';
 import { AFScroller } from '@/components/_shared/scroller';
+import { restoreServerRenderedScroll } from '@/components/_shared/ServerRenderedFallback';
 import PublishMain from '@/components/publish/PublishMain';
 
 const MobileTopBar = React.lazy(() => import('@/components/_shared/mobile-topbar/MobileTopBar'));
@@ -17,6 +18,7 @@ function PublishMobileLayout ({
       className={'h-screen w-screen'}
     >
       <AFScroller
+        setScrollableContainer={restoreServerRenderedScroll}
         overflowXHidden
         className={'appflowy-layout appflowy-mobile-layout appflowy-scroll-container h-full'}
       >

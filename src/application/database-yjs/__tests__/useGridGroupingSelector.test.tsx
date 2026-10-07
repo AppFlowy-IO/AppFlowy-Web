@@ -950,14 +950,18 @@ describe('useGridGroupingSelector refresh behavior', () => {
     expect(fixture.columns.toArray()).toEqual(remoteColumns);
     const groupingBeforeUnrelatedEdit = result.current.grouping;
 
-    act(() => result.current.updateRowAOtherField('after'));
+    await act(async () => {
+      await result.current.updateRowAOtherField('after');
+    });
 
     await waitFor(() => expect(locallyMutatedCells).toContain(cellKey('row-a', fixture.otherFieldId)));
     expect(result.current.grouping).toBe(groupingBeforeUnrelatedEdit);
     expect(fixture.columns.toArray()).toEqual(remoteColumns);
     expect(fixture.columns.toJSON().some(({ id }: { id: string }) => id === 'A')).toBe(false);
 
-    act(() => result.current.updateRowB('D'));
+    await act(async () => {
+      await result.current.updateRowB('D');
+    });
 
     await waitFor(() => {
       expect(fixture.columns.toJSON()).toEqual([
@@ -970,7 +974,9 @@ describe('useGridGroupingSelector refresh behavior', () => {
     expect(fixture.columns.toJSON().some(({ id }: { id: string }) => id === 'A')).toBe(false);
     expect(fixture.columns.get(2)).toBe(remoteColumns[2]);
 
-    act(() => result.current.updateRowA('E'));
+    await act(async () => {
+      await result.current.updateRowA('E');
+    });
 
     await waitFor(() => {
       expect(locallyMutatedCells).toEqual(

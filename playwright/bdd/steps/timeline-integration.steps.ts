@@ -13,6 +13,7 @@ import {
 } from '../../support/selectors';
 import { grantTestProSubscription, mockProSubscription } from '../../support/subscription-test-helpers';
 import { generateRandomEmail, setupPageErrorHandling } from '../../support/test-config';
+import { expectViewCreationAvailable } from '../../support/view-creation-availability';
 
 const { Given, When, Then, After } = createBdd();
 
@@ -46,6 +47,7 @@ After(async ({ page }) => {
 /** Sidebar `+` → Timeline; resolves once the new page renders its timeline. */
 async function addTimelinePage(page: Page) {
   await AddPageSelectors.inlineAddButton(page).first().click({ force: true });
+  await expectViewCreationAvailable(page.getByTestId('add-timeline-page-button'));
   await page.getByTestId('add-timeline-page-button').click({ force: true });
   await expect(TimelineSelectors.view(page)).toBeVisible({ timeout: 30_000 });
   await page.waitForTimeout(1500);

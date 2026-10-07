@@ -1,6 +1,7 @@
 import EventEmitter from 'events';
 
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { toast } from 'sonner';
 import * as Y from 'yjs';
 
 import { APP_EVENTS } from '@/application/constants';
@@ -27,6 +28,12 @@ const mockResidentSources = new Set<string>();
 /** Databases whose walk committed every row and still writes them to storage: held, not yet resident. */
 const mockHeldSources = new Set<string>();
 const mockResidencyListeners = new Set<() => void>();
+
+jest.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
+}));
+
+jest.mock('sonner', () => ({ toast: { error: jest.fn() } }));
 
 jest.mock('@/application/database-blob', () => ({
   getDatabaseRowDocFromSeed: jest.fn(),
@@ -493,6 +500,10 @@ describe('Database blob prefetch lifecycle', () => {
       seed.destroy();
       canonical.destroy();
     }
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   it.each([
@@ -2179,6 +2190,93 @@ describe('Database blob prefetch lifecycle', () => {
 
     expect(onOpenRowPage).toHaveBeenCalledWith('row-id');
     expect(screen.queryByTestId('database-row-modal')).toBeNull();
+
+    unmount();
+    doc.destroy();
+  });
+
+  it.each(['unavailable', 'rejected'] as const)('shows an error when row navigation is %s', async (failure) => {
+    const doc = createDatabaseDoc('database-id');
+    const onOpenRowPage = failure === 'rejected' ? jest.fn().mockRejectedValue(new Error('Request failed')) : undefined;
+    const errorLog = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { unmount } = render(
+      <Database {...databaseProps(doc)} onOpenRowPage={onOpenRowPage} readOnly variant={UIVariant.Publish} />
+    );
+
+    await act(async () => {
+      await Promise.resolve(mockDatabaseContext?.navigateToRow?.('row-id'));
+    });
+
+    expect(toast.error).toHaveBeenCalledWith('chat.openPagePreviewFailedToast');
+    expect(screen.queryByTestId('database-row-modal')).toBeNull();
+
+    unmount();
+    doc.destroy();
+    errorLog.mockRestore();
+  });
+
+  it('shows an error instead of opening a row in the wrong database when the target view fails to load', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const loadView = jest.fn().mockRejectedValue(new Error('Permission denied'));
+    const errorLog = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { unmount } = render(<Database {...databaseProps(doc)} loadView={loadView} />);
+
+    await act(async () => {
+      await Promise.resolve(mockDatabaseContext?.navigateToRow?.('related-row-id', 'related-view-id'));
+    });
+
+    expect(toast.error).toHaveBeenCalledWith('chat.openPagePreviewFailedToast');
+    expect(screen.queryByTestId('database-row-modal')).toBeNull();
+
+    unmount();
+    doc.destroy();
+    errorLog.mockRestore();
+  });
+
+  it('keeps a locked embed from falling back to the source page when its view is unavailable', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const loadView = jest.fn().mockResolvedValue(undefined);
+    const navigateToView = jest.fn().mockResolvedValue(undefined);
+    const errorLog = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { unmount } = render(
+      <Database
+        {...databaseProps(doc)}
+        isDocumentBlock
+        readOnly
+        variant={UIVariant.App}
+        loadView={loadView}
+        navigateToView={navigateToView}
+      />
+    );
+
+    await act(async () => {
+      await Promise.resolve(mockDatabaseContext?.navigateToRow?.('related-row-id', 'related-view-id'));
+    });
+
+    expect(navigateToView).not.toHaveBeenCalled();
+    expect(toast.error).toHaveBeenCalledWith('chat.openPagePreviewFailedToast');
+    expect(screen.queryByTestId('database-row-modal')).toBeNull();
+
+    unmount();
+    doc.destroy();
+    errorLog.mockRestore();
+  });
+
+  it('preserves the requested row when falling back to navigation without a loaded view', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const loadView = jest.fn().mockResolvedValue(undefined);
+    const navigateToView = jest.fn().mockResolvedValue(undefined);
+    const { unmount } = render(
+      <Database {...databaseProps(doc)} loadView={loadView} navigateToView={navigateToView} />
+    );
+
+    await act(async () => {
+      await Promise.resolve(mockDatabaseContext?.navigateToRow?.('related-row-id', 'related-view-id'));
+    });
+
+    expect(navigateToView).toHaveBeenCalledWith('related-view-id', 'related-row-id');
+    expect(screen.queryByTestId('database-row-modal')).toBeNull();
+    expect(toast.error).not.toHaveBeenCalled();
 
     unmount();
     doc.destroy();

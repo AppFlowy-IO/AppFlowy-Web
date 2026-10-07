@@ -10,6 +10,7 @@ import { type ReorderResult } from '@/components/_shared/reorder/useReorderMonit
 import GridSkeleton from '@/components/_shared/skeleton/GridSkeleton';
 import { Board } from '@/components/database/board';
 import { Chart } from '@/components/database/chart';
+import { usePreloadRichTextCellEditor } from '@/components/database/components/cell/text/rich-text/load';
 import {
   DatabaseConditionsActionsContext,
   DatabaseConditionsContext,
@@ -422,6 +423,11 @@ function PageDatabaseViews({
   const { dataSource, readOnly } = useDatabaseContext();
   const isHistory = dataSource?.type === 'history';
   const persistViewOrder = !isHistory;
+
+  // Text cells are editable at once; this warms their menus (toolbar,
+  // mentions, links) so the first edit does not wait for them either.
+  usePreloadRichTextCellEditor(!readOnly);
+
   const database = useDatabase();
   const databaseId = database?.get(YjsDatabaseKey.id) as string | undefined;
   const views = database?.get(YjsDatabaseKey.views);

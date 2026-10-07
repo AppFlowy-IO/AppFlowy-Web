@@ -3,7 +3,7 @@ import { SnackbarProvider } from 'notistack';
 import { Suspense } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 
-import { FullScreenLoading } from '@/components/_shared/FullScreenLoading';
+import { ServerRenderedFallback } from '@/components/_shared/ServerRenderedFallback';
 import CustomSnackbar from '@/components/_shared/notify/CustomSnackbar';
 import AppConfig from '@/components/main/AppConfig';
 import AppTheme from '@/components/main/AppTheme';
@@ -43,7 +43,7 @@ export default function withAppWrapper(Component: React.FC): React.FC {
             }}
           >
             <AppConfig>
-              <Suspense fallback={<FullScreenLoading label='Loading page' />}>
+              <Suspense fallback={<ServerRenderedFallback label='Loading page' />}>
                 <Component />
               </Suspense>
             </AppConfig>

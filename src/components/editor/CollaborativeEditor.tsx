@@ -11,7 +11,7 @@ import { withYjs, YjsEditor } from '@/application/slate-yjs/plugins/withYjs';
 import { ensureValidSelection } from '@/application/slate-yjs/utils/transformSelection';
 import { CollabOrigin, YDoc } from '@/application/types';
 import { FindReplaceProvider } from '@/components/editor/components/find-replace/FindReplaceContext';
-import { resolveDatabaseBlockDeletionTarget } from '@/components/editor/database-block-lifecycle';
+import { createDatabaseBlockDeletionTracker } from '@/components/editor/database-block-lifecycle';
 import EditorEditable from '@/components/editor/Editable';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { useEditorPreviewId } from '@/components/editor/EditorPreviewContext';
@@ -101,8 +101,6 @@ function CollaborativeEditor({
   const canWrite = context.canWrite ?? !readOnly;
   const viewId = context.viewId;
   const onWordCountChange = context.onWordCountChange;
-  const deletePage = context.deletePage;
-  const loadViewMeta = context.loadViewMeta;
   const [contentClock, setClock] = useState(0);
   const databaseBlocksRef = useRef<Map<string, DatabaseBlockInfo>>(new Map());
   const pendingDatabaseViewDeletionRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
@@ -167,6 +165,40 @@ function CollaborativeEditor({
     [onSelectionChange, debounceCalculateWordCount]
   );
 
+  const editor = useMemo(
+    () =>
+      doc &&
+      (withPlugins(
+        withReact(
+          withYHistory(
+            withYjs(createEditor(), doc, {
+              readOnly,
+              localOrigin: CollabOrigin.Local,
+              readSummary,
+              onContentChange,
+              uploadFile,
+              id: viewId,
+              onSelectionChange: handleSelectionChange,
+            })
+          ),
+          clipboardFormatKey
+        ),
+        () => contextRef.current
+      ) as YjsEditor),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [viewId, doc]
+  );
+
+  const databaseDeletionTracker = useMemo(() => createDatabaseBlockDeletionTracker(
+    () => ({
+      ...contextRef.current,
+      // Pending requests belong to this editor, even after navigation swaps context.
+      readOnly: contextRef.current.readOnly || !YjsEditor.connected(editor),
+    }),
+    (viewId) => Array.from(collectDatabaseBlocks(editor).values()).some((info) => info.viewIds.includes(viewId)),
+    (viewId, error) => Log.error('[CollaborativeEditor] Failed to reconcile database deletion', { viewId, error })
+  ), [collectDatabaseBlocks, editor]);
+
   const handleDatabaseBlockLifecycle = useCallback(
     (editor: YjsEditor) => {
       if (!YjsEditor.connected(editor)) return;
@@ -206,6 +238,8 @@ function CollaborativeEditor({
         pendingDatabaseViewDeletionRef.current.delete(childViewId);
       }
 
+      databaseDeletionTracker.restoreReferencedViews(referencedViewIds);
+
       const removedBlocks = Array.from(previousBlocks.values()).filter((info) => !currentBlocks.has(info.blockId));
 
       if (removedBlocks.length === 0) return;
@@ -226,58 +260,13 @@ function CollaborativeEditor({
 
           if (stillReferenced) return;
 
-          // Inline database children own a container. Linked database views
-          // are direct document children and must be deleted individually.
-          if (!loadViewMeta || !deletePage) return;
-
-          try {
-            const deletionTargetId = await resolveDatabaseBlockDeletionTarget(firstViewId, loadViewMeta);
-
-            if (!deletionTargetId) {
-              Log.warn('[CollaborativeEditor] Could not resolve the orphaned database deletion target', {
-                firstViewId,
-              });
-              return;
-            }
-
-            Log.debug('[CollaborativeEditor] Deleting orphaned database target', {
-              deletionTargetId,
-              firstViewId,
-            });
-            await deletePage(deletionTargetId);
-          } catch (err) {
-            Log.error('[CollaborativeEditor] Failed to delete orphaned database target', { firstViewId, err });
-          }
+          await databaseDeletionTracker.reconcile(firstViewId);
         }, DATABASE_VIEW_DELETION_GRACE_MS);
 
         pendingDatabaseViewDeletionRef.current.set(firstViewId, timeoutId);
       }
     },
-    [collectDatabaseBlocks, deletePage, loadViewMeta]
-  );
-
-  const editor = useMemo(
-    () =>
-      doc &&
-      (withPlugins(
-        withReact(
-          withYHistory(
-            withYjs(createEditor(), doc, {
-              readOnly,
-              localOrigin: CollabOrigin.Local,
-              readSummary,
-              onContentChange,
-              uploadFile,
-              id: viewId,
-              onSelectionChange: handleSelectionChange,
-            })
-          ),
-          clipboardFormatKey
-        ),
-        () => contextRef.current
-      ) as YjsEditor),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [viewId, doc]
+    [collectDatabaseBlocks, databaseDeletionTracker]
   );
 
   // Keep the editor instance stable across capability probes while making its

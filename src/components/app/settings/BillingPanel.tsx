@@ -5,6 +5,7 @@ import { useSearchParams } from 'react-router-dom';
 import { SubscriptionInterval, SubscriptionPlan, WorkspaceSubscriptionStatus } from '@/application/types';
 import { NormalModal } from '@/components/_shared/modal';
 import { usePricingCatalog } from '@/components/app/hooks/usePricingCatalog';
+import { useIsOfficialHosted } from '@/components/app/hooks/useServerInfo';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { findPlan } from '@/utils/pricing';
 import { findWorkspaceAddOn, isBillingPortalEnabled, isSubscriptionCanceled } from '@/utils/subscription';
@@ -41,11 +42,13 @@ interface RemoveConfirm {
 
 /** Settings > Billing: current plan, billing period, payment method and add-on subscriptions. */
 export function BillingPanel({ workspaceId }: { workspaceId: string }) {
+  const isHosted = useIsOfficialHosted();
   const { t } = useTranslation();
   const [, setSearch] = useSearchParams();
   const currentUser = useCurrentUserOptional();
   const dateFormat = userDateFormat(currentUser?.metadata);
-  const billing = useWorkspaceBilling(workspaceId);
+  // Billing uses subscription status only, including on servers without storage accounting.
+  const billing = useWorkspaceBilling(workspaceId, { loadUsage: false });
   const { catalog } = usePricingCatalog();
   const [periodEdit, setPeriodEdit] = useState<PeriodEdit | null>(null);
   const [removeConfirm, setRemoveConfirm] = useState<RemoveConfirm | null>(null);
@@ -169,6 +172,8 @@ export function BillingPanel({ workspaceId }: { workspaceId: string }) {
       </>
     );
   };
+
+  if (!isHosted) return null;
 
   return (
     <SettingsPanelShell title={t('settings.billingPage.title')} testId='billing-panel'>

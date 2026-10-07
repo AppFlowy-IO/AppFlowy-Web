@@ -325,7 +325,10 @@ export interface ImportDocumentFileResult {
  * If `signal` aborts, polling exits and the server task is cancelled best-effort.
  */
 export async function importDocumentFile(input: ImportDocumentFileInput): Promise<ImportDocumentFileResult> {
-  const { workspaceId, parentViewId, file, format, onProgress, signal } = input;
+  const { workspaceId, parentViewId, file, onProgress, signal } = input;
+  // The Word picker permits a mixed batch. Use the extension, since browsers
+  // often provide no MIME type for .doc exports, and sign each PUT accordingly.
+  const format = input.format === 'docx' && /\.doc$/i.test(file.name) ? 'doc' : input.format;
 
   throwIfAborted(signal);
   const md5_base64 = await calculateMd5(file);

@@ -2,6 +2,7 @@ import { memo, useRef } from 'react';
 
 import { useCellSelector, useReadOnly, useUpdateCellDispatch } from '@/application/database-yjs';
 import { TextCell } from '@/application/database-yjs/cell.type';
+import { notifyRichTextNewer } from '@/application/database-yjs/fields/text/rich-text-notice';
 import { Input } from '@/components/ui/input';
 
 export const EventTitle = memo(
@@ -21,25 +22,34 @@ export const EventTitle = memo(
     const value = cell?.data;
     const inputRef = useRef<HTMLInputElement | null>(null);
     const updateCell = useUpdateCellDispatch(rowId, fieldId);
+    // A title formatted by a newer version of AppFlowy is shown, never
+    // edited (rich text spec R53).
+    const requiresNewerClient = Boolean(cell?.richTextReadOnly);
 
     return (
       <div className='flex w-full items-center gap-2'>
         <Input
           data-testid='calendar-event-title-input'
-          readOnly={readOnly}
+          readOnly={readOnly || requiresNewerClient}
           autoFocus
           ref={inputRef}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
               e.stopPropagation();
               e.preventDefault();
-              updateCell((e.target as HTMLInputElement).value);
+              if (!requiresNewerClient) void updateCell((e.target as HTMLInputElement).value);
               (onSubmit ?? onCloseEvent)?.();
+              return;
             }
+
+            if (requiresNewerClient && !readOnly && e.key.length === 1) notifyRichTextNewer();
+          }}
+          onPaste={() => {
+            if (requiresNewerClient && !readOnly) notifyRichTextNewer();
           }}
           value={value ?? ''}
           onChange={(e) => {
-            updateCell(e.target.value);
+            void updateCell(e.target.value);
           }}
           placeholder='Untitled'
           variant={'ghost'}

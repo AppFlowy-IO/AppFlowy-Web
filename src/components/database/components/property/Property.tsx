@@ -98,6 +98,8 @@ export function Property ({ fieldId, rowId }: { fieldId: string; rowId: string }
         fieldId={fieldId}
         rowId={rowId}
         readOnly={isReadOnlyCell}
+        fieldType={field ? fieldType : undefined}
+        fieldName={field?.get(YjsDatabaseKey.name) as string | undefined}
       />
     </PropertyWrapper>
   );

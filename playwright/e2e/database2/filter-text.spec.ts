@@ -24,6 +24,7 @@ import {
   DatabaseFilterSelectors,
   DatabaseGridSelectors,
   RowControlsSelectors,
+  TEXT_CELL_EDITOR_SELECTOR,
 } from '../../support/selectors';
 import { addRows } from '../../support/field-type-helpers';
 
@@ -43,7 +44,7 @@ async function setupV020TestData(page: import('@playwright/test').Page, primaryF
     await cell.click();
     await cell.click(); // Double click to enter edit mode
 
-    const textarea = page.locator('textarea:visible').first();
+    const textarea = page.locator(TEXT_CELL_EDITOR_SELECTOR).first();
     await expect(textarea).toBeVisible({ timeout: 8000 });
     await textarea.clear();
     await textarea.pressSequentially(names[i], { delay: 30 });

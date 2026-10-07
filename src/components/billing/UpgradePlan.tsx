@@ -84,14 +84,15 @@ const BUTTON_LABEL_CLASS =
 const CURRENT_BADGE_CLASS =
   'bg-[#4F3F5F] text-white [[data-dark-mode=true]_&]:bg-[#E8E0FF] [[data-dark-mode=true]_&]:text-black';
 
-function UpgradeButton({ label, onClick, testId }: { label: string; onClick: () => void; testId: string }) {
+function UpgradeButton({ label, onClick, testId, disabled }: { label: string; onClick: () => void; testId: string; disabled: boolean }) {
   return (
     <div className={cn('rounded-[16px] p-[2px]', BUTTON_BORDER_GRADIENT_CLASS)}>
       <button
         type='button'
         onClick={onClick}
+        disabled={disabled}
         data-testid={testId}
-        className='flex h-9 w-[148px] items-center justify-center rounded-[14px] bg-surface-primary text-sm font-semibold hover:opacity-90'
+        className='flex h-9 w-[148px] items-center justify-center rounded-[14px] bg-surface-primary text-sm font-semibold hover:opacity-90 disabled:opacity-50'
       >
         <span className={BUTTON_LABEL_CLASS}>{label}</span>
       </button>
@@ -188,6 +189,8 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
   const currentWorkspaceId = useCurrentWorkspaceId();
   const isHosted = useIsOfficialHosted();
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [checkoutPending, setCheckoutPending] = useState(false);
+  const checkoutRequest = useRef<object>();
   const getSubscriptions = useGetSubscriptions();
   const { catalog, isLoading, hasError, reload } = usePricingCatalog({ enabled: open });
 
@@ -195,6 +198,15 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
   const action = search.get('action');
 
   useEffect(() => {
+    checkoutRequest.current = undefined;
+    setCheckoutPending(false);
+    return () => {
+      checkoutRequest.current = undefined;
+    };
+  }, [open, currentWorkspaceId, isHosted]);
+
+  useEffect(() => {
+    if (!isHosted) return;
     if (!open && action === 'change_plan') {
       onOpen();
     }
@@ -206,9 +218,10 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [action, open, setSearch]);
+  }, [action, open, setSearch, isHosted]);
 
   const loadSubscription = useCallback(async () => {
+    if (!isHosted) return;
     const request = ++subscriptionRequest.current;
 
     setSubscriptionState({ workspaceId: currentWorkspaceId, status: 'loading' });
@@ -229,7 +242,7 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
       setSubscriptionState({ workspaceId: currentWorkspaceId, status: 'error' });
       console.error(e);
     }
-  }, [currentWorkspaceId, getSubscriptions]);
+  }, [currentWorkspaceId, getSubscriptions, isHosted]);
 
   const currentPlan =
     subscriptionState.workspaceId === currentWorkspaceId && subscriptionState.status === 'ready'
@@ -239,6 +252,8 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
     subscriptionState.workspaceId === currentWorkspaceId && subscriptionState.status === 'error';
 
   const handleClose = useCallback(() => {
+    checkoutRequest.current = undefined;
+    setCheckoutPending(false);
     onClose();
     setSearch((prev) => {
       prev.delete('action');
@@ -246,10 +261,9 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
     });
   }, [onClose, setSearch]);
 
-  // Checkout is yearly like the desktop client; the billing period can be changed afterwards in Settings.
   const handleUpgrade = useCallback(
     async (planId: string) => {
-      if (!currentWorkspaceId || !currentPlan) return;
+      if (!open || !currentWorkspaceId || !currentPlan || checkoutRequest.current) return;
 
       // Self-hosted deployments have Pro features enabled by default.
       if (!isHosted) return;
@@ -258,16 +272,28 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
 
       if (!plan) return;
 
-      try {
-        const link = await BillingService.getSubscriptionLink(currentWorkspaceId, plan, SubscriptionInterval.Year);
+      const request = {};
 
+      checkoutRequest.current = request;
+      setCheckoutPending(true);
+      try {
+        // Stripe offers the annual upsell from the initial monthly Pro price.
+        const interval = plan === SubscriptionPlan.Pro ? SubscriptionInterval.Month : SubscriptionInterval.Year;
+        const link = await BillingService.getSubscriptionLink(currentWorkspaceId, plan, interval);
+
+        if (checkoutRequest.current !== request) return;
         window.open(link, '_current');
         // eslint-disable-next-line
       } catch (e: any) {
-        notify.error(e.message);
+        if (checkoutRequest.current === request) notify.error(e.message);
+      } finally {
+        if (checkoutRequest.current === request) {
+          checkoutRequest.current = undefined;
+          setCheckoutPending(false);
+        }
       }
     },
-    [currentWorkspaceId, currentPlan, isHosted]
+    [open, currentWorkspaceId, currentPlan, isHosted]
   );
 
   useEffect(() => {
@@ -293,7 +319,7 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
       const yearly = getPlanDisplayPrice(plan, SubscriptionInterval.Year);
       const monthly = getPlanDisplayPrice(plan, SubscriptionInterval.Month);
       // The published plan table shows only the annual figure ("billed annually");
-      // the monthly price stays under Billing > Edit period. An empty info hides the line.
+      // Stripe Checkout offers the annual upsell. An empty info hides the line.
       const priceInfo = free
         ? t('settings.comparePlanDialog.freePlan.priceInfo')
         : yearly
@@ -320,6 +346,8 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
 
   // Billing owns the feature order; keep labels and plan values in its array order.
   const rows: PricingComparisonRow[] = catalog?.comparison ?? [];
+
+  if (!isHosted) return null;
 
   return (
     <NormalModal
@@ -418,6 +446,7 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
                         label={t('settings.comparePlanDialog.actions.upgrade')}
                         onClick={() => void handleUpgrade(plan.id)}
                         testId={`pricing-upgrade-${plan.id}`}
+                        disabled={checkoutPending}
                       />
                     )}
                     {planAction === 'downgrade' && (

@@ -16,6 +16,7 @@ import {
   ViewActionSelectors,
 } from './selectors';
 import { getSlashMenuItemName } from './i18n-constants';
+import { expectViewCreationAvailable } from './view-creation-availability';
 
 /**
  * Expands a space in the sidebar by its name (e.g. 'General').
@@ -230,7 +231,10 @@ export async function insertLinkedDatabaseViaSlash(
           ? 'linkedDashboard'
           : 'linkedGrid';
 
-      await SlashCommandSelectors.slashMenuItem(page, getSlashMenuItemName(slashMenuKey)).first().click({ force: true });
+      const slashItem = SlashCommandSelectors.slashMenuItem(page, getSlashMenuItemName(slashMenuKey)).first();
+
+      if (layout === 'Timeline') await expectViewCreationAvailable(slashItem);
+      await slashItem.click({ force: true });
       await page.waitForTimeout(1000);
 
       await expect(page.getByText('Link to an existing database')).toBeVisible({ timeout: 10000 });

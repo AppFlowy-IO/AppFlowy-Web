@@ -351,6 +351,10 @@ export interface Mention {
   // Optional denormalized display data for mention types that cannot be
   // resolved from the outline alone, such as database rows.
   data?: Record<string, unknown>;
+
+  // The plain text the mention was saved as (database Text cells). Readers
+  // compute it for known types and show it for types they do not know.
+  label?: string;
 }
 
 export enum MentionTargetKind {
@@ -637,6 +641,9 @@ export enum YjsDatabaseKey {
   include_time = 'include_time',
   is_range = 'is_range',
   reminder_id = 'reminder_id',
+  // Text cell formatting, stored beside the plain-text `data` so Desktop,
+  // search and export keep reading `data`. See fields/text/rich-text.ts.
+  rich_text = 'rich_text',
   time_format = 'time_format_v2',
   date_format = 'date_format_v2',
   calculations = 'calculations',
@@ -852,6 +859,12 @@ export interface YDatabaseCell extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.is_range): boolean;
 
   get(key: YjsDatabaseKey.reminder_id): ReminderId;
+
+  // eslint-disable-next-line @typescript-eslint/unified-signatures
+  get(key: YjsDatabaseKey.rich_text): string | undefined;
+
+  // Preserve Y.Map's generic lookup for dynamic and future cell keys.
+  get(key: string): unknown;
 }
 
 export interface YSharedRoot extends Y.Map<unknown> {
@@ -2073,6 +2086,13 @@ export interface View {
 export interface PublishConfig {
   comments_enabled: boolean;
   duplicate_enabled: boolean;
+  /**
+   * Whether the publisher allows search engines and AI crawlers to index the
+   * page (server-rendered body, no noindex). Not yet sent by AppFlowy-Cloud;
+   * the web server treats anything other than a real boolean as "not set".
+   * See doc/PUBLISH_SSR.md.
+   */
+  indexing_enabled?: boolean;
 }
 
 export type PublishConfigPatch = Partial<PublishConfig>;
@@ -2228,6 +2248,8 @@ export interface WorkspaceUsageAndLimit {
   storage_bytes: number;
   storage_bytes_limit: number;
   storage_bytes_unlimited: boolean;
+  /** Whether storage is being metered. Older gateways omit this display-only signal. */
+  storage_usage_available?: boolean;
   single_upload_limit: number;
   single_upload_unlimited: boolean;
   ai_responses_count: number;
@@ -2257,7 +2279,7 @@ type LooseString = string & Record<never, never>;
 export type PricingPlanKind = 'workspace_plan' | 'workspace_add_on' | 'account_add_on';
 
 /** `plans[].id` values the billing pricing catalog publishes today. */
-export type PricingPlanId = SubscriptionPlan | 'ai_local' | 'vault_workspace';
+export type PricingPlanId = SubscriptionPlan | 'ai_local';
 
 /** Units a `quantity` feature value can carry. Unknown units fall back to `display`. */
 export type FeatureValueUnit =
@@ -2573,7 +2595,7 @@ export interface DatabaseCsvImportStatusResponse {
 }
 
 /** Formats accepted by `POST /api/import/{workspace_id}/document` (one file → one page). */
-export type DocumentFileImportFormat = 'html' | 'docx' | 'pdf';
+export type DocumentFileImportFormat = 'html' | 'doc' | 'docx' | 'pdf';
 
 export interface DocumentFileImportRequest {
   content_length: number;

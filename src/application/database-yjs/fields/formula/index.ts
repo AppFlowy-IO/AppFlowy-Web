@@ -16,7 +16,7 @@ export type { SourcePosition } from './errors';
 export { evaluateFormulaCell, evaluateFormulaExpression } from './evaluate';
 export type { EvaluateFormulaCellOptions, EvaluateFormulaExpressionOptions } from './evaluate';
 export { evaluateFormula } from './evaluator';
-export { formatFormulaValue, formatFormulaNumber, formatFormulaDate } from './format';
+export { formatFormulaValue, formatFormulaText, formatFormulaNumber, formatFormulaDate } from './format';
 export type { FormulaFormatOptions } from './format';
 export { FORMULA_MAX_DEPTH } from './formula.type';
 export type { FormulaTypeOption, FormulaCellResult, FormulaCellDisplayOptions } from './formula.type';
@@ -46,4 +46,13 @@ export {
 } from './schema';
 export type { FormulaFieldSchema } from './schema';
 export { isEmptyValue, isListType, typeToString, typeOfValue, typesCompatible, unifyTypes } from './values';
-export type { FormulaType, FormulaScalarType, FormulaValue, FormulaDate } from './values';
+export type {
+  FormulaType,
+  FormulaScalarType,
+  FormulaValue,
+  FormulaDate,
+  FormulaTextValue,
+  FormulaTextRun,
+  FormulaTextStyle,
+  FormulaTextColor,
+} from './values';

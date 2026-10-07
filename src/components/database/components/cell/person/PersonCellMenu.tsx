@@ -65,11 +65,11 @@ function PersonCellMenu({ open, onOpenChange, fieldId, rowId, selectedUserIds }:
       if (isSelected) {
         const newSelectedIds = selectedUserIds.filter((id) => id !== personId);
 
-        onUpdateCell(JSON.stringify(newSelectedIds));
+        void onUpdateCell(JSON.stringify(newSelectedIds));
       } else {
         const newSelectedIds = isSingleSelect ? [personId] : [...selectedUserIds, personId];
 
-        onUpdateCell(JSON.stringify(newSelectedIds));
+        void onUpdateCell(JSON.stringify(newSelectedIds));
 
         // Send notification if notifyAssignee is true
         if (notifyAssignee && workspaceId && viewId) {

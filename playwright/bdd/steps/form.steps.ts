@@ -1,9 +1,10 @@
 import { BrowserContext, expect, Page } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
+import { ViewLayout } from '../../../src/application/types';
+import { assertSuccessfulAppFlowyResponse } from '../../support/appflowy-response';
 import { signInWithPasswordViaUi } from '../../support/auth-flow-helpers';
 import { signInAndCreateDatabaseView } from '../../support/database-ui-helpers';
-import { deletePageByExactText } from '../../support/duplicate-test-helpers';
 import {
   FormFieldType,
   FormFieldTypeName,
@@ -47,7 +48,7 @@ type FormShareScenarioState = {
   evaUserId?: string;
   respondentContext?: BrowserContext;
   respondentPage?: Page;
-  temporaryDatabaseName?: string;
+  temporaryDatabase?: { workspaceId: string; pageId: string };
   workspaceName?: string;
 };
 
@@ -72,14 +73,35 @@ Before(async ({ page }) => {
   sharedState.set(page, {});
 });
 
-After(async ({ page }) => {
+After(async ({ page, request }) => {
   const state = sharedState.get(page);
 
   await state?.respondentContext?.close().catch(() => undefined);
 
-  if (state?.temporaryDatabaseName?.startsWith(`${MEMBER_FORM_DATABASE_PREFIX} `)) {
-    await page.bringToFront().catch(() => undefined);
-    await deletePageByExactText(page, state.temporaryDatabaseName).catch(() => undefined);
+  if (state?.temporaryDatabase) {
+    const { workspaceId, pageId } = state.temporaryDatabase;
+    const headers = { Authorization: `Bearer ${await readAuthToken(page)}` };
+    const workspaceUrl = `${TestConfig.apiUrl}/api/workspace/${workspaceId}`;
+
+    // Trash still occupies the Free plan's Form slot. Delete the exact fixture
+    // container permanently so retries can create a Form in this shared workspace.
+    // Use the API because a failed scenario may leave a menu or dialog open.
+    const trashed = await request.post(`${workspaceUrl}/page-view/${pageId}/move-to-trash`, { headers });
+
+    assertSuccessfulAppFlowyResponse({
+      bodyText: await trashed.text(),
+      ok: trashed.ok(),
+      status: trashed.status(),
+      operation: 'Trash form fixture',
+    });
+    const deleted = await request.delete(`${workspaceUrl}/trash/${pageId}`, { headers });
+
+    assertSuccessfulAppFlowyResponse({
+      bodyText: await deleted.text(),
+      ok: deleted.ok(),
+      status: deleted.status(),
+      operation: 'Delete form fixture',
+    });
   }
 
   sharedState.delete(page);
@@ -96,10 +118,30 @@ Given('Nathan has a Grid with a Form tab open in his workspace', async ({ page }
 
   await signInWithPasswordViaUi(page, NATHAN_EMAIL, NATHAN_PASSWORD, 2000);
   const workspaceName = await switchWorkspaceMatching(page, /nathan.*workspace/i);
+  const workspaceId = new URL(page.url()).pathname.split('/')[2];
 
   sharedState.set(page, { ...sharedState.get(page), workspaceName });
-  await createNamedGridDatabase(page, databaseName, []);
-  sharedState.set(page, { ...sharedState.get(page), temporaryDatabaseName: databaseName });
+  await Promise.all([
+    // Record the server-created container, not a possibly stale selected page.
+    page.waitForResponse((response) =>
+      new URL(response.url()).pathname === `/api/workspace/${workspaceId}/page-view` &&
+      response.request().method() === 'POST' &&
+      response.request().postDataJSON()?.layout === ViewLayout.Grid
+    ).then(async (response) => {
+      const bodyText = await response.text();
+
+      assertSuccessfulAppFlowyResponse({
+        bodyText, ok: response.ok(), status: response.status(), operation: 'Create form fixture',
+      });
+      const { data } = JSON.parse(bodyText) as { data: { view_id: string } };
+
+      sharedState.set(page, {
+        ...sharedState.get(page),
+        temporaryDatabase: { workspaceId, pageId: data.view_id },
+      });
+    }),
+    createNamedGridDatabase(page, databaseName, []),
+  ]);
   await addFormViewToTabBar(page);
 });
 
@@ -764,7 +806,7 @@ async function readAuthToken(page: Page): Promise<string> {
     }
   });
 
-  if (!accessToken) throw new Error('Eva session has no access token');
+  if (!accessToken) throw new Error('Form test session has no access token');
   return accessToken;
 }
 

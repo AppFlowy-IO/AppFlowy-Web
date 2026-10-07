@@ -23,6 +23,7 @@ export function InlineCode() {
 
   return (
     <ActionButton
+      aria-label={t('editor.embedCode')}
       onClick={onClick}
       active={isActivated}
       data-testid="toolbar-code-button"
@@ -33,7 +34,7 @@ export function InlineCode() {
         </>
       }
     >
-      <CodeSvg className='h-4 w-4' />
+      <CodeSvg aria-hidden='true' className='h-4 w-4' />
     </ActionButton>
   );
 }

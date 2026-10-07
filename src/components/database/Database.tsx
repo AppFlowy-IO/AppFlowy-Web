@@ -1,6 +1,8 @@
 import EventEmitter from 'events';
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
 import {
@@ -440,7 +442,7 @@ export interface Database2Props {
   appendBreadcrumb?: AppendBreadcrumb;
   onChangeView: (viewId: string) => void;
   onViewAdded?: (viewId: string) => void;
-  onOpenRowPage?: (rowId: string) => void;
+  onOpenRowPage?: (rowId: string) => void | Promise<void>;
   /**
    * For embedded databases: restricts which views are shown (from block data).
    * For standalone databases: should be undefined to show all non-embedded views.
@@ -517,6 +519,7 @@ export interface Database2Props {
 }
 
 function Database(props: Database2Props) {
+  const { t } = useTranslation();
   const {
     doc,
     createRow,
@@ -2033,36 +2036,40 @@ function Database(props: Database2Props) {
         source: options?.source === 'drilldown' ? 'drilldown' : isDashboardWidget ? 'dashboard_widget' : 'view',
       });
 
-      if (opening === 'readonly_page') {
-        if (viewId) {
-          void navigateToView?.(viewId, rowId);
+      try {
+        if (opening === 'readonly_page') {
+          if (viewId) {
+            if (!navigateToView) throw new Error('Row navigation is not available');
+            await navigateToView(viewId, rowId);
+            return;
+          }
+
+          if (!onOpenRowPage) throw new Error('Row navigation is not available');
+          await onOpenRowPage(rowId);
           return;
         }
 
-        onOpenRowPage?.(rowId);
-        return;
-      }
+        // Full screen (a phone) or a full page, when there is a page to go to.
+        if ((opening === 'mobile_page' || opening === 'full_page') && (viewId ? navigateToView : onOpenRowPage)) {
+          if (viewId) await navigateToView?.(viewId, rowId);
+          else await onOpenRowPage?.(rowId);
+          return;
+        }
 
-      // Full screen (a phone) or a full page, when there is a page to go to.
-      if ((opening === 'mobile_page' || opening === 'full_page') && (viewId ? navigateToView : onOpenRowPage)) {
-        if (viewId) void navigateToView?.(viewId, rowId);
-        else onOpenRowPage?.(rowId);
-        return;
-      }
+        const mode = opening === 'side_peek' ? 'side_peek' : 'center_peek';
 
-      const mode = opening === 'side_peek' ? 'side_peek' : 'center_peek';
-
-      if (viewId) {
-        try {
+        if (viewId) {
           const viewDoc = await loadView?.(viewId);
 
           if (!viewDoc) {
-            // A missing source doc cannot bypass the locked embed's local
-            // row editor by reopening the source with independent permissions.
-            if (!readOnly || !_isDocumentBlock || props.variant === UIVariant.Publish) {
-              void navigateToView?.(viewId);
+            // A missing source doc cannot bypass a locked embed's local row
+            // editor by reopening the source with independent permissions.
+            if (readOnly && _isDocumentBlock && props.variant !== UIVariant.Publish) {
+              throw new Error('Database view could not be loaded');
             }
 
+            if (!navigateToView) throw new Error('Database view could not be loaded');
+            await navigateToView(viewId, rowId);
             return;
           }
 
@@ -2081,12 +2088,13 @@ function Database(props: Database2Props) {
             mode,
           });
           return;
-        } catch (e) {
-          console.error(e);
         }
-      }
 
-      setModalState((prev) => ({ ...prev, rowId, mode }));
+        setModalState((prev) => ({ ...prev, rowId, mode }));
+      } catch (error) {
+        Log.error('[Database] Failed to open row', { rowId, viewId: viewId ?? activeViewId, error });
+        toast.error(t('chat.openPagePreviewFailedToast'));
+      }
     },
     [
       createNewRow,
@@ -2100,6 +2108,7 @@ function Database(props: Database2Props) {
       doc,
       activeViewId,
       isDashboardWidget,
+      t,
     ]
   );
 

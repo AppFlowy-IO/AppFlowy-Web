@@ -1,10 +1,12 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import * as Y from 'yjs';
 
-import { DatabaseViewLayout, YDatabaseView, YjsDatabaseKey } from '@/application/types';
+import { DatabaseViewLayout, ViewLayout, YDatabaseView, YjsDatabaseKey } from '@/application/types';
 import { MobileDatabaseViewPill } from '@/components/database/components/tabs/MobileDatabaseViewPill';
 
 const mockAddView = jest.fn();
+const mockStartCheckout = jest.fn();
+const mockGetAction = jest.fn();
 
 jest.mock('@/application/constants', () => ({
   ...jest.requireActual('@/application/constants'),
@@ -24,8 +26,12 @@ jest.mock('@/components/app/hooks/useDashboardCreationGate', () => ({
   useDashboardCreationGate: () => ({ available: true, disabledReason: undefined }),
 }));
 
-jest.mock('@/components/app/hooks/useTimelineCreationDisabledReason', () => ({
-  useTimelineCreationDisabledReason: () => undefined,
+jest.mock('@/components/app/hooks/useDatabaseViewCreation', () => ({
+  useDatabaseViewCreation: () => ({
+    getAction: mockGetAction,
+    checkCreation: (layout: ViewLayout) => mockGetAction(layout).type === 'create',
+    startCheckout: mockStartCheckout,
+  }),
 }));
 
 jest.mock('@/components/_shared/view-icon/PageIcon', () => ({
@@ -107,6 +113,8 @@ const items = () => within(screen.getByTestId('mobile-sheet')).getAllByTestId('m
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockGetAction.mockReturnValue({ type: 'create' });
+  mockStartCheckout.mockReset();
 });
 
 describe('MobileDatabaseViewPill', () => {
@@ -187,6 +195,45 @@ describe('MobileDatabaseViewPill', () => {
     expect(mockAddView).toHaveBeenCalledWith(DatabaseViewLayout.List, 'list.menuName');
     await waitFor(() => expect(onViewAdded).toHaveBeenCalledWith('new-list-view'));
     expect(screen.queryByTestId('mobile-sheet')).toBeNull();
+  });
+
+  it('blocks unavailable Chart creation while ordinary layouts remain usable', () => {
+    mockGetAction.mockImplementation((layout: ViewLayout) =>
+      layout === ViewLayout.Chart ? { type: 'disabled', reason: 'Reconnect to create a Chart.' } : { type: 'create' }
+    );
+    renderPill();
+    fireEvent.click(pill());
+    fireEvent.click(items().at(-1)!);
+    const chart = items().find((item) => item.getAttribute('data-item-id') === `layout-${DatabaseViewLayout.Chart}`)!;
+    const list = items().find((item) => item.getAttribute('data-item-id') === `layout-${DatabaseViewLayout.List}`)!;
+
+    expect(chart.hasAttribute('disabled')).toBe(true);
+    expect(list.hasAttribute('disabled')).toBe(false);
+    fireEvent.click(chart);
+    expect(mockAddView).not.toHaveBeenCalled();
+  });
+
+  it('keeps the Pro checkout progress in the sheet and never creates a denied Chart', async () => {
+    let finishCheckout!: () => void;
+
+    mockGetAction.mockImplementation((layout: ViewLayout) =>
+      layout === ViewLayout.Chart ? { type: 'upgrade', requiresPro: true, reason: 'Requires Pro' } : { type: 'create' }
+    );
+    mockStartCheckout.mockReturnValue(new Promise<void>((resolve) => { finishCheckout = resolve; }));
+    renderPill();
+    fireEvent.click(pill());
+    fireEvent.click(items().at(-1)!);
+    const chart = items().find((item) => item.getAttribute('data-item-id') === `layout-${DatabaseViewLayout.Chart}`)!;
+
+    expect(within(chart).getByLabelText('Pro')).toBeTruthy();
+    fireEvent.click(chart);
+    expect(mockStartCheckout).toHaveBeenCalledTimes(1);
+    expect(mockStartCheckout).toHaveBeenCalledWith(ViewLayout.Chart);
+    expect(screen.getByRole('progressbar')).toBeTruthy();
+    expect(items().every((item) => item.hasAttribute('disabled'))).toBe(true);
+    expect(mockAddView).not.toHaveBeenCalled();
+    await act(async () => finishCheckout());
+    await waitFor(() => expect(screen.queryByTestId('mobile-sheet')).toBeNull());
   });
 
   it('offers readers the views but no "+ New view"', () => {

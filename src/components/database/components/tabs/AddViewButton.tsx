@@ -4,16 +4,17 @@ import { toast } from 'sonner';
 
 import { EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED } from '@/application/constants';
 import { useDatabaseContext } from '@/application/database-yjs/context';
+import { DATABASE_VIEW_LAYOUT_TO_VIEW_LAYOUT } from '@/application/database-yjs/database-view-doc-ops';
 import { useAddDatabaseView } from '@/application/database-yjs/dispatch';
 import { DatabaseViewLayout, ViewLayout } from '@/application/types';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
+import { DatabaseViewCreationItem } from '@/components/_shared/DatabaseViewCreationItem';
 import { ViewIcon } from '@/components/_shared/view-icon';
 import { useDashboardCreationGate } from '@/components/app/hooks/useDashboardCreationGate';
-import { useTimelineCreationDisabledReason } from '@/components/app/hooks/useTimelineCreationDisabledReason';
+import { DatabaseViewCreationAction, useDatabaseViewCreation } from '@/components/app/hooks/useDatabaseViewCreation';
 import { Button } from '@/components/ui/button';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { getErrorMessage } from '@/utils/errors';
 
 interface AddViewButtonProps {
@@ -53,14 +54,23 @@ export function useAddDatabaseViewMenu({
   const [addLoading, setAddLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const { getSubscriptions, workspaceId } = useDatabaseContext();
-  const timelineDisabledReason = useTimelineCreationDisabledReason(getSubscriptions, {
+  const { getAction, checkCreation, startCheckout } = useDatabaseViewCreation({
+    getSubscriptions,
     workspaceId,
-    enabled: EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED && menuOpen,
+    enabled: menuOpen,
   });
   const { available: canCreateDashboard, disabledReason: dashboardDisabledReason } = useDashboardCreationGate(
     getSubscriptions,
     { workspaceId, enabled: menuOpen }
   );
+  // Keep an upgrade's item busy while checkout opens, on desktop and mobile.
+  const [checkoutLayout, setCheckoutLayout] = useState<ViewLayout | null>(null);
+  const getLayoutAction = (layout: ViewLayout): DatabaseViewCreationAction =>
+    layout === ViewLayout.Dashboard
+      ? !canCreateDashboard || dashboardDisabledReason
+        ? { type: 'disabled', reason: dashboardDisabledReason }
+        : { type: 'create' }
+      : getAction(layout);
   const mountedRef = useRef(true);
   const actionScopeRevisionRef = useRef(0);
   const completionCallbacksRef = useRef({ onAfterAddView, onViewAdded });
@@ -87,6 +97,7 @@ export function useAddDatabaseViewMenu({
   useLayoutEffect(() => {
     actionScopeRevisionRef.current += 1;
     setAddLoading(false);
+    setCheckoutLayout(null);
     setMenuOpen(false);
 
     return () => {
@@ -95,8 +106,8 @@ export function useAddDatabaseViewMenu({
   }, [databasePageId]);
 
   const handleAddView = async (layout: DatabaseViewLayout, name: string) => {
-    if (layout === DatabaseViewLayout.Timeline && timelineDisabledReason) return;
     if (layout === DatabaseViewLayout.Dashboard && (!canCreateDashboard || dashboardDisabledReason)) return;
+    if (!checkCreation(DATABASE_VIEW_LAYOUT_TO_VIEW_LAYOUT[layout], () => setMenuOpen(false))) return;
     const actionScopeRevision = actionScopeRevisionRef.current;
     const isCurrentActionScope = () => mountedRef.current && actionScopeRevisionRef.current === actionScopeRevision;
 
@@ -132,6 +143,21 @@ export function useAddDatabaseViewMenu({
     }
   };
 
+  const handleUpgrade = (viewLayout: ViewLayout) => {
+    const checkout = startCheckout(viewLayout);
+
+    if (!checkout) return;
+    const actionScopeRevision = actionScopeRevisionRef.current;
+
+    setCheckoutLayout(viewLayout);
+    void checkout.finally(() => {
+      if (!mountedRef.current || actionScopeRevisionRef.current !== actionScopeRevision) return;
+      setCheckoutLayout(null);
+      setMenuOpen(false);
+    });
+    return checkout;
+  };
+
   const options: AddViewLayoutOption[] = [
     { layout: DatabaseViewLayout.Grid, viewLayout: ViewLayout.Grid, label: t('grid.menuName') },
     { layout: DatabaseViewLayout.Board, viewLayout: ViewLayout.Board, label: t('board.menuName') },
@@ -143,7 +169,6 @@ export function useAddDatabaseViewMenu({
             viewLayout: ViewLayout.Timeline,
             label: t('timeline.menuName', { defaultValue: 'Timeline' }),
             testId: 'add-timeline-view-button',
-            disabledReason: timelineDisabledReason,
           },
         ]
       : []),
@@ -189,12 +214,21 @@ export function useAddDatabaseViewMenu({
     },
   ];
 
-  return { addLoading, menuOpen, setMenuOpen, options, addView: handleAddView };
+  return {
+    addLoading,
+    menuOpen,
+    setMenuOpen,
+    options,
+    addView: handleAddView,
+    getAction: getLayoutAction,
+    checkoutLayout,
+    upgradeView: handleUpgrade,
+  };
 }
 
 export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView, onViewAdded }: AddViewButtonProps) {
   const { t } = useTranslation();
-  const { addLoading, menuOpen, setMenuOpen, options, addView } = useAddDatabaseViewMenu({
+  const { addLoading, menuOpen, setMenuOpen, options, addView, getAction, checkoutLayout, upgradeView } = useAddDatabaseViewMenu({
     databasePageId,
     onBeforeAddView,
     onAfterAddView,
@@ -217,33 +251,28 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent side={'bottom'} align={'start'} className={'!min-w-[120px]'}>
-        {options.map((option) => {
-          const item = (
-            <DropdownMenuItem
-              data-testid={option.testId}
-              disabled={Boolean(option.disabledReason)}
-              key={option.layout}
-              onClick={() => {
-                void addView(option.layout, option.label);
-              }}
-            >
-              <ViewIcon layout={option.viewLayout} size={'small'} />
-              {option.label}
-            </DropdownMenuItem>
-          );
+        {options.map(({ layout, viewLayout, label, testId }) => (
+          <DatabaseViewCreationItem
+            key={layout}
+            layout={viewLayout}
+            action={getAction(viewLayout)}
+            loading={checkoutLayout === viewLayout}
+            disabled={checkoutLayout !== null}
+            data-testid={testId}
+            onSelect={(event) => {
+              if (getAction(viewLayout).type === 'upgrade') {
+                event.preventDefault();
+                void upgradeView(viewLayout);
+                return;
+              }
 
-          // A refused layout explains itself on hover.
-          return option.disabledReason ? (
-            <Tooltip key={option.layout}>
-              <TooltipTrigger asChild>
-                <div>{item}</div>
-              </TooltipTrigger>
-              <TooltipContent>{option.disabledReason}</TooltipContent>
-            </Tooltip>
-          ) : (
-            item
-          );
-        })}
+              void addView(layout, label);
+            }}
+          >
+            <ViewIcon layout={viewLayout} size='small' />
+            {label}
+          </DatabaseViewCreationItem>
+        ))}
       </DropdownMenuContent>
     </DropdownMenu>
   );

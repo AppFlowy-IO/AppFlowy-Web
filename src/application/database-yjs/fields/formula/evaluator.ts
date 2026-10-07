@@ -1,9 +1,10 @@
 import { FormulaNode } from './ast';
 import { FormulaEvaluationBudget } from './budget';
-import { asBoolean, asNumber, asText, asTextWithBudget } from './coerce';
+import { asBoolean, asNumber, asText, asTextValueWithBudget } from './coerce';
 import { FormulaError, SourcePosition } from './errors';
 import { getFormulaFunction } from './functions';
 import { EvalContext } from './registry';
+import { joinText } from './styled-text';
 import { bool, EMPTY, FormulaValue, list, num, text, valuesEqual } from './values';
 
 export interface EvaluateOptions {
@@ -113,7 +114,8 @@ export function evaluateFormula(root: FormulaNode, options: EvaluateOptions): Fo
             if (node.inferredType === 'text' || !numeric(left) || !numeric(right)) {
               const consumeWork = (amount: number) => budget.consume(amount, node.position);
 
-              return text(asTextWithBudget(left, consumeWork) + asTextWithBudget(right, consumeWork));
+              // Coercion has already charged both text and span copies.
+              return joinText([asTextValueWithBudget(left, consumeWork), asTextValueWithBudget(right, consumeWork)]);
             }
 
             if (left.type === 'empty' && right.type === 'empty') return EMPTY;

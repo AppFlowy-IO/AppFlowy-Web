@@ -2,9 +2,10 @@ import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
-import { SubscriptionPlan, WorkspaceUsageAndLimit } from '@/application/types';
+import { SubscriptionInterval, SubscriptionPlan, WorkspaceUsageAndLimit } from '@/application/types';
 import { ReactComponent as CheckCircleIcon } from '@/assets/icons/check_circle.svg';
 import { usePricingCatalog } from '@/components/app/hooks/usePricingCatalog';
+import { useIsOfficialHosted } from '@/components/app/hooks/useServerInfo';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
@@ -22,7 +23,7 @@ import { useWorkspaceBilling } from './billing/useWorkspaceBilling';
 const PRO_BADGE_CLASS =
   'bg-[#E8E2EE] text-[#653E8C] [[data-dark-mode=true]_&]:bg-[#653E8C] [[data-dark-mode=true]_&]:text-[#E8E2EE]';
 const PROGRESS_TRACK_CLASS =
-  'border border-[#DDF1F7] bg-fill-secondary [[data-dark-mode=true]_&]:border-[rgba(221,241,247,0.1)]';
+  'border border-[#DDF1F7] bg-[#E1FBFF] [[data-dark-mode=true]_&]:border-[rgba(221,241,247,0.1)] [[data-dark-mode=true]_&]:bg-[#363D49]';
 const GRADIENT_BUTTON_CLASS =
   'bg-[linear-gradient(135deg,#44326B,#7547C0)] hover:bg-[linear-gradient(135deg,#39285C,#6035A4)]';
 
@@ -30,6 +31,7 @@ function UsageBox({
   title,
   unlimited,
   unlimitedLabel,
+  unavailableLabel,
   label,
   ratio,
   testId,
@@ -37,6 +39,7 @@ function UsageBox({
   title: string;
   unlimited: boolean;
   unlimitedLabel: string;
+  unavailableLabel?: string;
   label: string;
   ratio: number;
   testId: string;
@@ -46,7 +49,9 @@ function UsageBox({
   return (
     <div className='flex flex-1 flex-col gap-1' data-testid={testId}>
       <div className='text-[11px] font-medium text-text-secondary'>{title}</div>
-      {unlimited ? (
+      {unavailableLabel ? (
+        <div className='text-[11px] font-medium text-text-secondary'>{unavailableLabel}</div>
+      ) : unlimited ? (
         <div className='flex items-center gap-1 text-[11px] font-medium text-text-primary'>
           <CheckCircleIcon className='h-4 w-4 text-[#9C00FB]' />
           <span>{unlimitedLabel}</span>
@@ -77,15 +82,17 @@ function UpgradeToggle({
   badge,
   onToggle,
   testId,
+  disabled,
 }: {
   label: string;
   badge: string;
   onToggle: () => void;
   testId: string;
+  disabled: boolean;
 }) {
   return (
     <div className='flex items-center' data-testid={testId}>
-      <Switch checked={false} onCheckedChange={onToggle} aria-label={label} />
+      <Switch checked={false} onCheckedChange={onToggle} aria-label={label} disabled={disabled} />
       <span className='ml-2.5 text-sm text-text-primary'>{label}</span>
       <span
         className={cn(
@@ -121,12 +128,13 @@ function usageRatio(used: number, limit: number): number {
 
 /** Settings > Plan: usage summary, Pro upgrade toggles and the current plan, mirroring the desktop page. */
 export function PlanPanel({ workspaceId }: { workspaceId: string }) {
+  const isHosted = useIsOfficialHosted();
   const { t } = useTranslation();
   const [, setSearch] = useSearchParams();
   const currentUser = useCurrentUserOptional();
   const dateFormat = userDateFormat(currentUser?.metadata);
   const billing = useWorkspaceBilling(workspaceId);
-  const { info, usage, status, error, reload } = billing;
+  const { info, usage, usageStatus, status, error, reload } = billing;
   const { catalog } = usePricingCatalog();
 
   const openChangePlan = useCallback(() => {
@@ -165,6 +173,9 @@ export function PlanPanel({ workspaceId }: { workspaceId: string }) {
         title={t('settings.planPage.planUsage.storageLabel')}
         unlimited={current.storage_bytes_unlimited}
         unlimitedLabel={t('settings.planPage.planUsage.unlimitedStorageLabel')}
+        unavailableLabel={current.storage_usage_available === false
+          ? t('settings.planPage.planUsage.storageUnavailable', { defaultValue: 'Unavailable for the moment' })
+          : undefined}
         label={fillPlaceholders(
           t('settings.planPage.planUsage.storageUsage'),
           formatStorageGb(current.storage_bytes),
@@ -190,7 +201,7 @@ export function PlanPanel({ workspaceId }: { workspaceId: string }) {
 
   const renderContent = () => {
     if (status === 'error') return <SettingsPanelError error={error} onRetry={() => void reload()} />;
-    if (!info || !usage) return <SettingsPanelLoading label={t('settings.planPage.title')} />;
+    if (!info) return <SettingsPanelLoading label={t('settings.planPage.title')} />;
 
     // A workspace that still has the retired AI Max add-on already has unlimited AI.
     const hasAiMax = findWorkspaceAddOn(info, SubscriptionPlan.AIMax) !== null;
@@ -203,23 +214,36 @@ export function PlanPanel({ workspaceId }: { workspaceId: string }) {
     return (
       <div className='flex flex-col gap-4'>
         <div className='text-base font-semibold text-text-secondary'>{t('settings.planPage.planUsage.title')}</div>
-        {renderUsage(usage)}
+        {usage ? renderUsage(usage) : usageStatus === 'error' ? (
+          <div data-testid='plan-usage-error'>
+            <SettingsPanelError
+              error={{ message: t('settings.planPage.planUsage.usageUnavailable', {
+                defaultValue: 'Usage is temporarily unavailable.',
+              }) }}
+              onRetry={() => void reload()}
+            />
+          </div>
+        ) : (
+          <SettingsPanelLoading label={t('settings.planPage.planUsage.title')} />
+        )}
         <div className='flex flex-col gap-1'>
           {info.plan === SubscriptionPlan.Free && (
             <UpgradeToggle
               label={t('settings.planPage.planUsage.memberProToggle')}
               badge={t('settings.planPage.planUsage.proBadge')}
-              onToggle={() => void billing.subscribeWorkspace(SubscriptionPlan.Pro)}
+              onToggle={() => void billing.subscribeWorkspace(SubscriptionPlan.Pro, SubscriptionInterval.Month)}
               testId='plan-toggle-pro'
+              disabled={billing.busy}
             />
           )}
           {/* Unlimited AI comes with Pro; AI Max is no longer sold. */}
-          {!hasAiMax && !usage.ai_responses_unlimited && (
+          {usage && !hasAiMax && !usage.ai_responses_unlimited && (
             <UpgradeToggle
               label={t('settings.planPage.planUsage.aiMaxToggle')}
               badge={t('settings.planPage.planUsage.proBadge')}
-              onToggle={() => void billing.subscribeWorkspace(SubscriptionPlan.Pro)}
+              onToggle={() => void billing.subscribeWorkspace(SubscriptionPlan.Pro, SubscriptionInterval.Month)}
               testId='plan-toggle-unlimited-ai'
+              disabled={billing.busy}
             />
           )}
         </div>
@@ -256,6 +280,8 @@ export function PlanPanel({ workspaceId }: { workspaceId: string }) {
       </div>
     );
   };
+
+  if (!isHosted) return null;
 
   return (
     <SettingsPanelShell title={t('settings.planPage.title')} testId='plan-panel'>

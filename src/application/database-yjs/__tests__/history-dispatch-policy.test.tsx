@@ -624,8 +624,7 @@ describe('database history production dispatch policies', () => {
 
     await act(async () => {
       hook.result.current.addOption({ id: 'cell-option', name: 'Cell option', color: 'Purple' }, historyGroup);
-      hook.result.current.updateCell('cell-option', undefined, { historyGroup });
-      await Promise.resolve();
+      await hook.result.current.updateCell('cell-option', undefined, { historyGroup });
     });
     const history = getOrCreateDatabaseHistoryManager(fixture.databaseDoc);
 
