@@ -10,9 +10,12 @@ import {
   prefetchDatabaseBlobDiff,
 } from '@/application/database-blob';
 import type { DatabaseContextState } from '@/application/database-yjs';
+import { DatabaseContext } from '@/application/database-yjs/context';
 import { dashboardLoadStats } from '@/application/database-yjs/dashboard-load-stats';
+import { useBackgroundRowDocLoader } from '@/application/database-yjs/hooks/useBackgroundRowDocLoader';
 import { getCachedRowDoc, openRowDoc } from '@/application/services/js-services/cache';
 import { DatabaseViewLayout, UIVariant, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { useChartedRowDataClock } from '@/components/database/chart/hooks/useChartedRowDataClock';
 import Database, { Database2Props } from '@/components/database/Database';
 
 const mockSeedLoadPromises: Array<Promise<YDoc | undefined>> = [];
@@ -332,6 +335,29 @@ function createHydratedRowDoc(guid: string) {
   return doc;
 }
 
+function setSalary(doc: YDoc, value: string) {
+  const row = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row);
+
+  if (!row) throw new Error('Expected a hydrated row');
+  if (!row.get(YjsDatabaseKey.cells)) row.set(YjsDatabaseKey.cells, new Y.Map());
+  const cells = row.get(YjsDatabaseKey.cells)!;
+
+  if (!cells.get('salary')) cells.set('salary', new Y.Map());
+  cells.get('salary')!.set(YjsDatabaseKey.data, value);
+}
+
+/** A sibling chart reads detached seeds, without opening any live rows itself. */
+function SeededSalaryChart() {
+  const { cachedRowDocs } = useBackgroundRowDocLoader(true, 'salary-chart');
+  const docs = Object.values(cachedRowDocs);
+  const clock = useChartedRowDataClock(docs, { fieldIds: new Set(['salary']), rowTimes: false }, true);
+  const row = cachedRowDocs['row-id'];
+  const salary = row?.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row)
+    ?.get(YjsDatabaseKey.cells)?.get('salary')?.get(YjsDatabaseKey.data);
+
+  return <output data-testid='salary-chart' data-row-guid={row?.guid ?? ''} data-clock={clock}>{salary}</output>;
+}
+
 /** The source's seeds are released (or retired by a restore): it is no longer resident. */
 function releaseResidentSource(databaseId: string) {
   mockResidentSources.delete(databaseId);
@@ -361,6 +387,112 @@ describe('Database blob prefetch lifecycle', () => {
   afterEach(() => {
     // Bindings a test left with a resident source go with it.
     Array.from(new Set([...mockResidentSources, ...mockHeldSources])).forEach(releaseResidentSource);
+  });
+
+  it.each(['before', 'after'] as const)(
+    'keeps a sibling seed-only chart mounted %s an ordinary Grid row open live',
+    async (mounted) => {
+      const doc = createDatabaseDoc(`grid-chart-${mounted}`);
+      const seed = createHydratedRowDoc(`seed-${mounted}`);
+      const canonical = createHydratedRowDoc(`canonical-${mounted}`);
+      const seedDestroyed = jest.fn();
+
+      seed.on('destroy', seedDestroyed);
+      let readable = seed;
+      const createRow = jest.fn(async () => {
+        readable = canonical;
+        return canonical;
+      });
+      const context: DatabaseContextState = {
+        activeViewId: 'view-id', databaseDoc: doc, databasePageId: 'view-id',
+        readOnly: false, rowMap: {}, workspaceId: 'workspace-id',
+        seedsReady: true, blobPrefetchComplete: true, peekRowDocFromSeed: () => readable,
+      };
+      const contents = (chartVisible: boolean) => (
+        <>
+          <Database {...databaseProps(doc)} createRow={createRow} initialRowMap={{ 'row-id': seed }} />
+          {chartVisible && <DatabaseContext.Provider value={context}><SeededSalaryChart /></DatabaseContext.Provider>}
+        </>
+      );
+
+      setSalary(seed, '185000');
+      setSalary(canonical, '185000');
+      const { rerender, unmount } = render(contents(mounted === 'before'));
+
+      try {
+        if (mounted === 'before') {
+          await waitFor(() => expect(screen.getByTestId('salary-chart').textContent).toBe('185000'));
+          expect(screen.getByTestId('salary-chart').getAttribute('data-row-guid')).toBe(seed.guid);
+        }
+
+        await act(async () => { expect(await requestEnsureRow()).toBe(canonical); });
+        if (mounted === 'after') rerender(contents(true));
+        await waitFor(() => expect(screen.getByTestId('salary-chart').getAttribute('data-row-guid')).toBe(canonical.guid));
+        const clock = Number(screen.getByTestId('salary-chart').getAttribute('data-clock'));
+
+        act(() => setSalary(canonical, '205000'));
+        await waitFor(() => expect(screen.getByTestId('salary-chart').textContent).toBe('205000'));
+        expect(Number(screen.getByTestId('salary-chart').getAttribute('data-clock'))).toBeGreaterThan(clock);
+        expect(createRow).toHaveBeenCalledTimes(1);
+        expect(seedDestroyed).not.toHaveBeenCalled();
+        rerender(contents(false));
+        rerender(contents(true));
+        await waitFor(() => expect(screen.getByTestId('salary-chart').textContent).toBe('205000'));
+        act(() => setSalary(canonical, '215000'));
+        await waitFor(() => expect(screen.getByTestId('salary-chart').textContent).toBe('215000'));
+      } finally {
+        unmount();
+        doc.destroy();
+        seed.destroy();
+        canonical.destroy();
+      }
+    }
+  );
+
+  it('does not publish a row whose Grid lifecycle ended before ensureRow settled', async () => {
+    const doc = createDatabaseDoc('obsolete-grid-chart');
+    const seed = createHydratedRowDoc('current-seed');
+    const canonical = createHydratedRowDoc('obsolete-canonical');
+    const pending = createDeferred<YDoc>();
+    const createRow = jest.fn(() => pending.promise);
+    let readable = seed;
+    const context: DatabaseContextState = {
+      activeViewId: 'view-id', databaseDoc: doc, databasePageId: 'view-id',
+      readOnly: false, rowMap: {}, workspaceId: 'workspace-id',
+      seedsReady: true, blobPrefetchComplete: true, peekRowDocFromSeed: () => readable,
+    };
+    const contents = (gridVisible: boolean) => (
+      <>
+        {gridVisible && <Database {...databaseProps(doc)} createRow={createRow} initialRowMap={{ 'row-id': seed }} />}
+        <DatabaseContext.Provider value={context}><SeededSalaryChart /></DatabaseContext.Provider>
+      </>
+    );
+
+    setSalary(seed, '185000');
+    setSalary(canonical, '205000');
+    const { rerender, unmount } = render(contents(true));
+
+    try {
+      await waitFor(() => expect(screen.getByTestId('salary-chart').textContent).toBe('185000'));
+      let ensured: Promise<YDoc | undefined> | void;
+
+      act(() => { ensured = requestEnsureRow(); });
+      expect(createRow).toHaveBeenCalledTimes(1);
+      rerender(contents(false));
+      await act(async () => {
+        readable = canonical;
+        pending.resolve(canonical);
+        expect(await ensured).toBeUndefined();
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      });
+      expect(screen.getByTestId('salary-chart').getAttribute('data-row-guid')).toBe(seed.guid);
+      expect(screen.getByTestId('salary-chart').textContent).toBe('185000');
+    } finally {
+      unmount();
+      doc.destroy();
+      seed.destroy();
+      canonical.destroy();
+    }
   });
 
   it.each([

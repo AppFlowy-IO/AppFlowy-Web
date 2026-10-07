@@ -24,6 +24,7 @@ import { dashboardLoadStats, isDashboardLoadStatsRecording } from '@/application
 import type { DashboardExtraFilter } from '@/application/database-yjs/dashboard.type';
 import { combineFilters, hasEffectiveFilters } from '@/application/database-yjs/filter';
 import { registerDatabaseHistoryRowDoc, registerDatabaseHistoryRowDocs } from '@/application/database-yjs/history';
+import { shareCanonicalRowDoc } from '@/application/database-yjs/hooks/useBackgroundRowDocLoader';
 import { readViewOpenPagesIn, resolveRecordOpening } from '@/application/database-yjs/open-pages-in';
 import { ROW_SYNC_RETRY_DELAYS_MS } from '@/application/database-yjs/row-sync';
 import { getRowKey } from '@/application/database-yjs/row_meta';
@@ -1670,7 +1671,11 @@ function Database(props: Database2Props) {
         if (rowDoc && isCurrentEnsure()) {
           scheduleRowSyncReconciliation(rowId);
 
-          if (!hasRowConditionData(rowDoc)) {
+          if (hasRowConditionData(rowDoc)) {
+            // Visible Grid and drill rows connect without a background live
+            // loader. Sibling charts must follow the same canonical document.
+            shareCanonicalRowDoc(rowId, rowDoc);
+          } else {
             if (gate.isOpen() && !residentRefreshInFlightRef.current) {
               // The local pipeline (seed cache + IndexedDB) produced no row data —
               // the delta watermark is ahead of the local store. Trigger the

@@ -289,7 +289,7 @@ function replaceSharedCachedDocs(store: LoaderStore, ready: ReadonlyMap<string, 
  * document instead of retaining a detached copy of its seed. Publish a whole
  * frame's arrivals together: a chart may connect thousands of rows.
  */
-function shareCanonicalRowDoc(rowId: string, doc: YDoc) {
+export function shareCanonicalRowDoc(rowId: string, doc: YDoc) {
   if (announcedCanonicalDocs.has(doc)) return;
   announcedCanonicalDocs.add(doc);
   pendingCanonicalDocs.set(rowId, doc);
