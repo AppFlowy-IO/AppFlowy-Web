@@ -70,6 +70,7 @@ import {
   expectWidgetsShowRowsWithin,
   firstSourceDatabases,
   leaveAndReturnInApp,
+  leaveForDocumentAndReturn,
   leaveBeforeEveryWidgetStarted,
   loadingWidgets,
   openDashboardAsReadOnlyMember,
@@ -238,8 +239,8 @@ When(
   }
 );
 
-When('I open another page and return to the dashboard within {int} seconds', async ({ page }, seconds: number) => {
-  const awayMs = await performanceOpenAction(page, () => leaveAndReturnInApp(page));
+When('I open another page and return to the dashboard within {int} seconds', async ({ page, request }, seconds: number) => {
+  const awayMs = await performanceOpenAction(page, () => leaveForDocumentAndReturn(page, request));
 
   expect(awayMs, 'ms the dashboard was gone').toBeLessThanOrEqual(seconds * 1000);
   expect(seconds * 1000, 'the return comes before the idle release').toBeLessThan(DASHBOARD_LOADING.sourceIdleReleaseMs);
@@ -423,9 +424,9 @@ Given(
 
 When(
   'I open another page and return to the dashboard within {int} seconds while the employees database loads with a delay of {int} seconds',
-  async ({ page }, within: number, delay: number) => {
+  async ({ page, request }, within: number, delay: number) => {
     await slowDownSources(page, { [EMPLOYEES]: delay * 1000 });
-    expect(await leaveAndReturnInApp(page)).toBeLessThanOrEqual(within * 1000);
+    expect(await leaveForDocumentAndReturn(page, request)).toBeLessThanOrEqual(within * 1000);
   }
 );
 

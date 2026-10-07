@@ -22,13 +22,14 @@
 import { fileURLToPath } from 'url';
 
 import { APIRequestContext, expect, Locator, Page, Request, Route } from '@playwright/test';
+// eslint-disable-next-line import/default -- Node ESM exposes this CommonJS module through its default export.
 import protobuf, { type Type as ProtobufType } from 'protobufjs';
 
 import { DASHBOARD_LOADING } from '../../src/application/database-yjs/dashboard-loading';
 import { DatabaseViewLayout, ViewLayout } from '../../src/application/types';
 
 import { mockProSubscription } from './chart-test-helpers';
-import { apiGet, browserAccessToken, clearCachedDatabaseStorage, WIDGET_TIMEOUT } from './dashboard-shared-helpers';
+import { apiGet, apiPost, browserAccessToken, clearCachedDatabaseStorage, WIDGET_TIMEOUT } from './dashboard-shared-helpers';
 import {
   addFixtureDatabases,
   AuthSession,
@@ -60,7 +61,8 @@ import {
 } from './dashboard-test-helpers';
 import { configureView, ViewConfig, waitForViewSync } from './dashboard-usecase-helpers';
 import { EMPLOYEE_FIELDS, seededEmployeesDatabase } from './employees-database';
-import { DatabaseViewSelectors } from './selectors';
+import { expandSpaceByName } from './page-utils';
+import { DatabaseViewSelectors, PageSelectors } from './selectors';
 import { grantWorkspaceProSubscription } from './subscription-test-helpers';
 
 import type { DashboardLoadStatsSnapshot } from '../../src/application/database-yjs/dashboard-load-stats';
@@ -100,6 +102,8 @@ export interface LeaveRecord {
 }
 
 export interface LoadingScenario {
+  /** A separate, empty document in the fixture space for full-page warm returns. */
+  awayDocumentId?: string;
   /** In layout order: top to bottom, left to right. */
   widgets: LoadingWidget[];
   recorder?: SourceRequestRecorder;
@@ -1359,6 +1363,48 @@ export async function leaveAndReturnInApp(page: Page, awayMs = 0): Promise<numbe
   await DatabaseViewSelectors.viewTab(viewer, dashboardViewId(page)).click();
   await expect(DashboardSelectors.view(viewer)).toBeVisible({ timeout: LOAD_TIMEOUT_MS });
   await expect(DashboardSelectors.widgets(viewer)).toHaveCount(loadingWidgets(page).length, WIDGET_TIMEOUT);
+  scenario.visibleAtOpen = new Set(await widgetsInViewport(viewer));
+  return scenario.openedAt - leftAt;
+}
+
+/** Leave the database page entirely, retaining the same browser document and its resident cache. */
+export async function leaveForDocumentAndReturn(page: Page, request: APIRequestContext, awayMs = 0): Promise<number> {
+  const scenario = loadingScenario(page);
+  const viewer = viewerOf(page);
+  const world = dashboardWorld(page);
+
+  if (!scenario.awayDocumentId) {
+    const created = await apiPost<{ view_id: string }>(
+      request,
+      world.owner.accessToken,
+      `/api/workspace/${world.workspaceId}/page-view`,
+      { parent_view_id: world.spaceId, layout: ViewLayout.Document, name: 'Warm-return destination' }
+    );
+
+    scenario.awayDocumentId = created.view_id;
+  }
+
+  await expandSpaceByName(viewer, world.spaceName);
+  const destination = PageSelectors.pageByViewId(viewer, scenario.awayDocumentId);
+
+  await expect(destination).toBeVisible(WIDGET_TIMEOUT);
+  const dashboardUrl = viewer.url();
+  const timeOrigin = await viewer.evaluate(() => performance.timeOrigin);
+
+  await destination.click();
+  await expect(DashboardSelectors.view(viewer)).toHaveCount(0, WIDGET_TIMEOUT);
+  const leftAt = Date.now();
+
+  await expect(viewer).toHaveURL(new RegExp(`/app/${world.workspaceId}/${scenario.awayDocumentId}(?:[?#]|$)`));
+  await expect(viewer.locator(`#editor-${scenario.awayDocumentId}`)).toBeVisible(WIDGET_TIMEOUT);
+  if (awayMs > 0) await viewer.waitForTimeout(awayMs);
+  await resetPageRecorder(page);
+  scenario.openedAt = Date.now();
+  await viewer.goBack();
+  await expect(viewer).toHaveURL(dashboardUrl);
+  await expect(DashboardSelectors.view(viewer)).toBeVisible({ timeout: LOAD_TIMEOUT_MS });
+  await expect(DashboardSelectors.widgets(viewer)).toHaveCount(loadingWidgets(page).length, WIDGET_TIMEOUT);
+  expect(await viewer.evaluate(() => performance.timeOrigin), 'warm return stays in the same browser document').toBe(timeOrigin);
   scenario.visibleAtOpen = new Set(await widgetsInViewport(viewer));
   return scenario.openedAt - leftAt;
 }

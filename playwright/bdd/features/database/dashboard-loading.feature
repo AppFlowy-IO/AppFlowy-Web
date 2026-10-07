@@ -131,8 +131,8 @@ Feature: A dashboard loads each source database once, two at a time, visible wid
     And the rows of every source database were loaded in one pass
 
   # M4: a source whose rows the tab still holds (the idle release has not
-  # run) is warm: its widgets skip the queue. "Another page" is the host
-  # database's grid tab, opened inside the app.
+  # run) is warm: its widgets skip the queue. "Another page" is a separate
+  # document in the workspace, reached and left without a browser reload.
   @cloud
   Scenario: Reopening the dashboard starts every widget at once and loads no rows again
     Given eight small databases each have a grid view for a dashboard widget
