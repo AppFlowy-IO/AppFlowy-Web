@@ -340,7 +340,7 @@ export function DockableOutlinePanel({ published, suppressed }: { published: boo
         </div>
         <div
           ref={listRef}
-          className='dockable-outline-list appflowy-scroller'
+          className='dockable-outline-list appflowy-visible-scrollbar'
           onMouseLeave={() => setHoveredId(undefined)}
         >
           <div className='dockable-outline-list-content'>
