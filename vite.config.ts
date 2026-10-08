@@ -188,7 +188,7 @@ async function localDevProxyConfig() {
 
 export default defineConfig(async ({ command, mode }) => {
   // Vite evaluates this config before loading .env files into the app environment.
-  const env = loadEnv(mode, process.cwd(), 'EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED');
+  const env = loadEnv(mode, process.cwd(), '');
   // Dev server only; `vite build` (production) and config loads in test mode skip the proxies.
   const localDevProxy = command === 'serve' && mode !== 'test' ? await localDevProxyConfig() : {};
 
@@ -265,7 +265,7 @@ export default defineConfig(async ({ command, mode }) => {
     clearScreen: false,
     server: {
       host: '0.0.0.0', // Listen on all network interfaces (both IPv4 and IPv6)
-      port: process.env.PORT ? parseInt(process.env.PORT) : 3000,
+      port: parseInt(process.env.PORT ?? env.PORT ?? '3000', 10),
       strictPort: true,
       watch: {
         ignored: ['node_modules'],

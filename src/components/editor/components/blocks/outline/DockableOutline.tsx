@@ -25,6 +25,7 @@ import './dockable-outline.scss';
 type DisplayMode = 'always' | 'hover';
 const ROW_HEIGHT = 28;
 const PANEL_CHROME_HEIGHT = 72;
+const HELP_BUTTON_CLEARANCE = 112;
 
 function MaskIcon({ asset, className }: { asset: string; className?: string }) {
   return (
@@ -140,15 +141,18 @@ export function DockableOutlinePanel({ published, suppressed }: { published: boo
       const rect = viewport?.getBoundingClientRect();
       const bottom = Math.min(window.innerHeight, rect?.bottom ?? window.innerHeight);
       const viewportTop = Math.max(0, rect?.top ?? 0);
-      // Keep eight rows visible when the viewport has room, with a 40px bottom gap.
+      // Keep eight rows visible when the viewport has room and leave room for the fixed help button.
       const top = Math.max(
         viewportTop + 64,
-        Math.min(viewportTop + 200, bottom - 40 - 8 * ROW_HEIGHT - PANEL_CHROME_HEIGHT)
+        Math.min(
+          viewportTop + 200,
+          bottom - HELP_BUTTON_CLEARANCE - 8 * ROW_HEIGHT - PANEL_CHROME_HEIGHT
+        )
       );
       const next = {
         top,
         right: Math.max(0, window.innerWidth - (rect?.right ?? window.innerWidth)),
-        maxHeight: Math.max(ROW_HEIGHT, bottom - top - 40),
+        maxHeight: Math.max(ROW_HEIGHT, bottom - top - HELP_BUTTON_CLEARANCE),
       };
 
       setBounds((previous) =>
