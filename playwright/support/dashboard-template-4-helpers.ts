@@ -26,8 +26,9 @@ import { execFileSync } from 'node:child_process';
 import { APIRequestContext, CDPSession, expect, Locator, Page, TestInfo } from '@playwright/test';
 import { v4 as uuidv4 } from 'uuid';
 
-import { ChartAggregationType, ChartType } from '../../src/application/database-yjs/chart-enums';
+
 import { formatChartDateLabel } from '../../src/application/database-yjs/chart-config/date-labels';
+import { ChartAggregationType, ChartType } from '../../src/application/database-yjs/chart-enums';
 import { DASHBOARD_LOADING } from '../../src/application/database-yjs/dashboard-loading';
 import { DateGroupCondition, SortCondition } from '../../src/application/database-yjs/database.type';
 import { CheckboxFilterCondition } from '../../src/application/database-yjs/fields/checkbox/checkbox.type';
@@ -38,9 +39,11 @@ import { ViewLayout } from '../../src/application/types';
 import { closeDockedPicker, newWidgetRecord } from './dashboard-add-widget-helpers';
 import { loadStats, SourceRequestRecorder } from './dashboard-loading-helpers';
 import { tabBarViewIds } from './dashboard-owned-views-helpers';
-import { clearCachedDatabaseStorage, escapeRegExp } from './dashboard-shared-helpers';
+import { clearCachedDatabaseStorage, escapeRegExp, readServerDatabaseDoc } from './dashboard-shared-helpers';
 import {
   apiGet,
+  apiPost,
+  cleanupDashboardFixture,
   chooseGlobalFilterCondition,
   closeGlobalFilterMenu,
   createDatabaseViewThroughApi,
@@ -58,6 +61,7 @@ import {
   openWidgetPicker,
   readDashboardSetting,
   readDatabaseViews,
+  registerDashboardWorld,
   signBrowserInWithSession,
   signInFixtureAccount,
   splitList,
@@ -94,6 +98,8 @@ import {
 } from './employees-database';
 import { DatabaseViewSelectors } from './selectors';
 import { grantWorkspaceProSubscription } from './subscription-test-helpers';
+
+import type { Map as YMap } from 'yjs';
 
 const WAIT = { timeout: USE_CASE_TIMEOUT };
 
@@ -1069,6 +1075,8 @@ interface SeededPeopleOps {
   database: FixtureDatabase;
   /** Row ids in fixture order. */
   rowIds: string[];
+  /** All seed-time views, including hidden baseline views, owned by this worker fixture. */
+  baselineViewIds: string[];
 }
 
 /** The worker's seeded copy (seeding 5000 rows takes minutes; a retry runs in a new worker and seeds again). */
@@ -1123,6 +1131,10 @@ async function seedPeopleOps(page: Page, request: APIRequestContext, name: strin
   const rowIds = await seedEmployeesDatabase(page);
 
   await expectEmployeesOnServer(page, rowIds);
+  const baselineViewIds = (await readDatabaseViews(page, database.databaseId)).map(({ id }) => id);
+
+  expect(baselineViewIds).toContain(database.views.Grid);
+  await expectPeopleOpsViewsOnServer(request, world.owner.accessToken, world.workspaceId, database.databaseId, baselineViewIds);
   database.fieldIds = { ...EMPLOYEE_FIELDS };
   return {
     email: ownerEmail(page),
@@ -1131,7 +1143,26 @@ async function seedPeopleOps(page: Page, request: APIRequestContext, name: strin
     spaceName: world.spaceName,
     database: { ...database, fieldIds: { ...database.fieldIds }, rowIds: {}, views: { ...database.views } },
     rowIds,
+    baselineViewIds,
   };
+}
+
+async function expectPeopleOpsViewsOnServer(
+  request: APIRequestContext,
+  token: string,
+  workspaceId: string,
+  databaseId: string,
+  viewIds: string[]
+) {
+  await expect
+    .poll(
+      () =>
+        readServerDatabaseDoc(request, { token, workspaceId }, databaseId, (database) =>
+          Array.from((database?.get('views') as YMap<unknown> | undefined)?.keys() ?? []).sort()
+        ),
+      { timeout: USE_CASE_TIMEOUT, message: 'waiting for the PeopleOps fixture view set to reach the server' }
+    )
+    .toEqual([...viewIds].sort());
 }
 
 /**
@@ -1141,8 +1172,20 @@ async function seedPeopleOps(page: Page, request: APIRequestContext, name: strin
  */
 async function adoptPeopleOps(page: Page, request: APIRequestContext, seeded: SeededPeopleOps, name: string) {
   const world = dashboardWorld(page);
+
+  // The Background made a fresh scenario space before choosing this worker cache.
+  // Dispose it under its own identity before borrowing the cached fixture.
+  await cleanupDashboardFixture(page, request);
   const owner = await signInFixtureAccount(request, seeded.email);
 
+  // Generic scenario teardown still trashes the fixture space. Restore only this
+  // worker-owned space, then remove the previous scenario's views below.
+  await apiPost<void>(
+    request,
+    owner.accessToken,
+    `/api/workspace/${seeded.workspaceId}/page-view/${seeded.spaceId}/restore-from-trash`,
+    {}
+  );
   await signBrowserInWithSession(page, owner);
   grantWorkspaceProSubscription(seeded.workspaceId);
   world.owner = owner;
@@ -1152,7 +1195,42 @@ async function adoptPeopleOps(page: Page, request: APIRequestContext, seeded: Se
   world.databases = {
     [name]: { ...seeded.database, fieldIds: { ...seeded.database.fieldIds }, views: { ...seeded.database.views } },
   };
+  // Retain this object identity: the use-case state is keyed by the same world.
+  registerDashboardWorld(page, world);
   scenarioState(page).lastViewIds[name] = seeded.database.views.Grid;
+  await openDatabasePage(page, name, seeded.database.views.Grid);
+
+  const baseline = new Set(seeded.baselineViewIds);
+  const staleViews = (await readDatabaseViews(page, seeded.database.databaseId)).filter(({ id }) => !baseline.has(id));
+
+  for (const { id } of staleViews) {
+    const tab = DatabaseViewSelectors.viewTab(page, id);
+
+    // Activate through the tab's normal client navigation before opening its
+    // menu; a full page reload here can discard the preceding pending deletion.
+    await tab.click();
+    await expect(tab).toHaveAttribute('aria-selected', 'true', WAIT);
+    await tab.click({ button: 'right' });
+    await DatabaseViewSelectors.tabActionDelete(page).click();
+    await DatabaseViewSelectors.deleteViewConfirmButton(page).click();
+    await expect(tab).toHaveCount(0, WAIT);
+    await expect
+      .poll(
+        () =>
+          readServerDatabaseDoc(request, { token: owner.accessToken, workspaceId: seeded.workspaceId }, seeded.database.databaseId, (database) => {
+            const views = database?.get('views') as YMap<unknown> | undefined;
+
+            if (!views) throw new Error('The PeopleOps database has no view map');
+            return views.has(id);
+          }),
+        { timeout: USE_CASE_TIMEOUT, message: 'waiting for the deleted PeopleOps view to leave the server' }
+      )
+      .toBe(false);
+  }
+
+  await expectPeopleOpsViewsOnServer(
+    request, owner.accessToken, seeded.workspaceId, seeded.database.databaseId, seeded.baselineViewIds
+  );
 }
 
 /** Put back the fixture cells of the rows scenarios edit, and wait until the server holds them. */
