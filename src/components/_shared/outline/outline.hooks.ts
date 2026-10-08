@@ -2,6 +2,7 @@ import { debounce } from 'lodash-es';
 import React, { useCallback, useEffect, useMemo } from 'react';
 
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
+import { getOutlineOpen, getOutlineWidth, setOutlineOpen, setOutlineWidth } from '@/utils/safe-storage';
 
 export interface OutlineProps {
   onOpenDrawer: () => void;
@@ -74,7 +75,7 @@ export function useOutlinePopover ({
 
 export function useOutlineDrawer () {
   const [drawerWidth, setDrawerWidth] = React.useState(() => {
-    return parseInt(localStorage.getItem('outline_width') || '268', 10);
+    return getOutlineWidth(268);
   });
 
   const [drawerOpened, setDrawerOpened] = React.useState(() => {
@@ -82,14 +83,17 @@ export function useOutlineDrawer () {
       return false;
     }
 
-    return localStorage.getItem('outline_open') === 'true';
+    return getOutlineOpen(false);
   });
 
   useEffect(() => {
     const onResize = () => {
       if (window.innerWidth - drawerWidth <= 768) {
         setDrawerOpened(false);
-      } else if (localStorage.getItem('outline_open') !== 'false') {
+      } else if (!getOutlineOpen(true)) {
+        // Stored value is explicitly 'false'; any unreadable storage falls back to open.
+        setDrawerOpened(false);
+      } else {
         setDrawerOpened(true);
       }
     };
@@ -104,7 +108,7 @@ export function useOutlineDrawer () {
   }, [drawerWidth]);
 
   const handleResize = useCallback((width: number) => {
-    localStorage.setItem('outline_width', width.toString());
+    setOutlineWidth(width);
     setDrawerWidth(width);
   }, []);
 
@@ -113,7 +117,7 @@ export function useOutlineDrawer () {
       handleResize(268);
     }
 
-    localStorage.setItem('outline_open', status.toString());
+    setOutlineOpen(status);
     setDrawerOpened(status);
   }, [handleResize, drawerWidth]);
 
