@@ -221,6 +221,7 @@ export function ViewMetaPreview({
           className={`relative flex w-full items-center justify-center overflow-visible`}
         >
           <h1
+            data-page-title
             style={{
               width: maxWidth || '100%',
               fontSize: layout === ViewLayout.Document ? '2.5rem' : '26px',

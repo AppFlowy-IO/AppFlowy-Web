@@ -135,6 +135,9 @@ export function DockableOutlinePanel({ published, suppressed }: { published: boo
 
     if (!root) return;
     const viewport = root.closest<HTMLElement>('.appflowy-layout') ?? root.parentElement;
+    const viewMeta = viewport?.querySelector<HTMLElement>('[data-view-meta-preview]');
+    let cover = viewMeta?.querySelector<HTMLElement>('[data-page-cover]') ?? null;
+    const pageTitle = viewMeta?.querySelector<HTMLElement>('[data-page-title]');
     let frame = 0;
 
     const update = () => {
@@ -151,7 +154,10 @@ export function DockableOutlinePanel({ published, suppressed }: { published: boo
         )
       );
       const coverBottom = cover?.getBoundingClientRect().bottom;
-      const top = Math.max(defaultTop, coverBottom === undefined ? defaultTop : coverBottom + COVER_OUTLINE_GAP);
+      const pageTitleTop = pageTitle?.getBoundingClientRect().top;
+      const coverAwareTop =
+        pageTitleTop ?? (coverBottom === undefined ? defaultTop : coverBottom + COVER_OUTLINE_GAP);
+      const top = cover ? Math.max(defaultTop, coverAwareTop) : defaultTop;
       const next = {
         top,
         right: Math.max(0, window.innerWidth - (rect?.right ?? window.innerWidth)),
@@ -170,8 +176,6 @@ export function DockableOutlinePanel({ published, suppressed }: { published: boo
     };
 
     const observer = new ResizeObserver(schedule);
-    const viewMeta = viewport?.querySelector<HTMLElement>('[data-view-meta-preview]');
-    let cover = viewMeta?.querySelector<HTMLElement>('[data-page-cover]') ?? null;
     const coverObserver = new MutationObserver(() => {
       const nextCover = viewMeta?.querySelector<HTMLElement>('[data-page-cover]') ?? null;
 
@@ -183,6 +187,7 @@ export function DockableOutlinePanel({ published, suppressed }: { published: boo
     });
 
     if (viewport) observer.observe(viewport);
+    if (viewMeta) observer.observe(viewMeta);
     if (cover) observer.observe(cover);
     if (viewMeta) coverObserver.observe(viewMeta, { childList: true, subtree: true });
     viewport?.addEventListener('scroll', schedule, { passive: true });
