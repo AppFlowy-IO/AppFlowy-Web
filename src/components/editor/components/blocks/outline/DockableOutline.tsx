@@ -26,6 +26,7 @@ type DisplayMode = 'always' | 'hover';
 const ROW_HEIGHT = 28;
 const PANEL_CHROME_HEIGHT = 72;
 const HELP_BUTTON_CLEARANCE = 112;
+const COVER_OUTLINE_GAP = 16;
 
 function MaskIcon({ asset, className }: { asset: string; className?: string }) {
   return (
@@ -142,13 +143,15 @@ export function DockableOutlinePanel({ published, suppressed }: { published: boo
       const bottom = Math.min(window.innerHeight, rect?.bottom ?? window.innerHeight);
       const viewportTop = Math.max(0, rect?.top ?? 0);
       // Keep eight rows visible when the viewport has room and leave room for the fixed help button.
-      const top = Math.max(
+      const defaultTop = Math.max(
         viewportTop + 64,
         Math.min(
           viewportTop + 200,
           bottom - HELP_BUTTON_CLEARANCE - 8 * ROW_HEIGHT - PANEL_CHROME_HEIGHT
         )
       );
+      const coverBottom = cover?.getBoundingClientRect().bottom;
+      const top = Math.max(defaultTop, coverBottom === undefined ? defaultTop : coverBottom + COVER_OUTLINE_GAP);
       const next = {
         top,
         right: Math.max(0, window.innerWidth - (rect?.right ?? window.innerWidth)),
@@ -167,13 +170,29 @@ export function DockableOutlinePanel({ published, suppressed }: { published: boo
     };
 
     const observer = new ResizeObserver(schedule);
+    const viewMeta = viewport?.querySelector<HTMLElement>('[data-view-meta-preview]');
+    let cover = viewMeta?.querySelector<HTMLElement>('[data-page-cover]') ?? null;
+    const coverObserver = new MutationObserver(() => {
+      const nextCover = viewMeta?.querySelector<HTMLElement>('[data-page-cover]') ?? null;
+
+      if (nextCover === cover) return;
+      if (cover) observer.unobserve(cover);
+      cover = nextCover;
+      if (cover) observer.observe(cover);
+      schedule();
+    });
 
     if (viewport) observer.observe(viewport);
+    if (cover) observer.observe(cover);
+    if (viewMeta) coverObserver.observe(viewMeta, { childList: true, subtree: true });
+    viewport?.addEventListener('scroll', schedule, { passive: true });
     window.addEventListener('resize', schedule);
     update();
     return () => {
       cancelAnimationFrame(frame);
+      coverObserver.disconnect();
       observer.disconnect();
+      viewport?.removeEventListener('scroll', schedule);
       window.removeEventListener('resize', schedule);
     };
   }, [getEditorElement]);

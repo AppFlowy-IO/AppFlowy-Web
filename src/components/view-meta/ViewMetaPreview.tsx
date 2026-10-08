@@ -175,7 +175,7 @@ export function ViewMetaPreview({
   }, []);
 
   return (
-    <div className={'flex w-full flex-col items-center'}>
+    <div data-view-meta-preview className={'flex w-full flex-col items-center'}>
       {cover && (
         <ViewCover
           onUpdateCover={handleUpdateCover}
