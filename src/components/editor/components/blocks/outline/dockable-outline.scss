@@ -104,6 +104,19 @@
     padding-right: 16px;
     overflow-x: hidden;
     overflow-y: auto;
+
+    &.appflowy-visible-scrollbar {
+      scrollbar-color: var(--fill-content-visible) transparent;
+
+      &::-webkit-scrollbar-thumb {
+        border-radius: 100px;
+        background-color: var(--fill-content-visible);
+      }
+
+      &:hover::-webkit-scrollbar-thumb {
+        background-color: var(--fill-content-visible-hover);
+      }
+    }
   }
   &-list-content {
     position: relative;
