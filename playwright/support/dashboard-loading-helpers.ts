@@ -627,6 +627,7 @@ async function createDashboard(page: Page, request: APIRequestContext, rows: str
     database: host,
     name: 'Dashboard',
     folderLayout: ViewLayout.Dashboard,
+    parentViewId: host === EMPLOYEES ? await employeesViewParent(page, request) : undefined,
   });
   world.dashboardHost = host;
   await openDashboard(page);
@@ -1452,7 +1453,14 @@ export async function readResult(scope: Locator): Promise<string | null> {
       const surface = element.querySelector(`[data-testid="database-${kind}"]`);
 
       if (!surface) continue;
-      if (surface.querySelector('[data-testid="gallery-loading"], [role="status"]')) return null;
+      // A full-page list keeps its load-more sentinel while offscreen rows wait
+      // for scrolling. Only initial/row loading blocks the visible-row result.
+      const loadingSelector =
+        kind === 'list'
+          ? '[role="status"]:not([aria-label="Loading more rows"])'
+          : '[data-testid="gallery-loading"], [role="status"]';
+
+      if (surface.querySelector(loadingSelector)) return null;
       const selector =
         kind === 'list' ? '[data-testid^="list-row-"][data-row-id]' : '[data-testid^="gallery-tile-"][data-row-id]';
       const rows = Array.from(surface.querySelectorAll(selector)).map(
