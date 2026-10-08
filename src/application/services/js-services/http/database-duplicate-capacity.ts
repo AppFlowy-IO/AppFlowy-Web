@@ -4,7 +4,7 @@ import * as Y from 'yjs';
 import { getDatabaseViewCount } from '@/application/database-yjs/database-view-capacity';
 import { Types, View, YDatabase, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { getDatabaseIdFromExtra, isDatabaseContainer, isDatabaseLayout } from '@/application/view-utils';
-import { getMaxDatabaseViews } from '@/utils/server-info';
+import { getMaxDashboardWidgets } from '@/utils/server-info';
 
 import { getDatabaseIdFromWorkspaceCatalog } from '../workspace-database-catalog';
 
@@ -47,7 +47,7 @@ export async function assertDatabaseDuplicateCapacity(workspaceId: string, sourc
         if (!(database?.get(YjsDatabaseKey.views) instanceof Y.Map)) throw new Error(CHECK_FAILED_MESSAGE);
         // A whole copy creates a new database with the source's view count; it does not add a
         // view to the source. Check the current server setting after the asynchronous read.
-        const limit = getMaxDatabaseViews();
+        const limit = getMaxDashboardWidgets();
 
         if (getDatabaseViewCount(doc) > limit) {
           const fallback = `This database has more than the limit of ${limit} views and cannot be duplicated. Remove views before duplicating it.`;

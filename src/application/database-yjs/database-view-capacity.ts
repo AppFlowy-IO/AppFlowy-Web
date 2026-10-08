@@ -2,7 +2,7 @@ import { t } from 'i18next';
 import { validate as isUuid, v5 as uuidv5 } from 'uuid';
 
 import { YDatabase, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
-import { getMaxDatabaseViews } from '@/utils/server-info';
+import { getMaxDashboardWidgets } from '@/utils/server-info';
 
 /** Count usable views, including hidden/embedded/primary views. Only the canonical storage view is exempt. */
 export function getDatabaseViewCount(databaseDoc: YDoc | undefined): number {
@@ -16,7 +16,7 @@ export function getDatabaseViewCount(databaseDoc: YDoc | undefined): number {
   return (views?.size ?? 0) - (internalViewId && views?.has(internalViewId) ? 1 : 0);
 }
 
-export function databaseViewLimitMessage(limit = getMaxDatabaseViews()): string {
+export function databaseViewLimitMessage(limit = getMaxDashboardWidgets()): string {
   const fallback = `This database has reached its limit of ${limit} views. Remove a view before creating another.`;
 
   return t('databaseViewCreation.viewLimitReached', { limit, defaultValue: fallback }) || fallback;
@@ -24,7 +24,7 @@ export function databaseViewLimitMessage(limit = getMaxDatabaseViews()): string 
 
 /** Execution-time preflight; the server remains authoritative for concurrent or unseen creates. */
 export function assertDatabaseViewCapacity(databaseDoc: YDoc | undefined): void {
-  const limit = getMaxDatabaseViews();
+  const limit = getMaxDashboardWidgets();
 
   if (getDatabaseViewCount(databaseDoc) >= limit) throw new Error(databaseViewLimitMessage(limit));
 }

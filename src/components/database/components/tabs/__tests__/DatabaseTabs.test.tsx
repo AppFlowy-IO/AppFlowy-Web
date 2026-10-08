@@ -158,7 +158,7 @@ describe('DatabaseTabs', () => {
       readOnly: false, showActions: true,
     } as unknown as DatabaseContextState);
     updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), {
-      status: 'available', info: { enable_page_history: true, max_database_views: 2 },
+      status: 'available', info: { enable_page_history: true, max_dashboard_widgets: 2 },
     });
     render(<DatabaseTabs databasePageId={databaseView.view_id} viewIds={[databaseView.view_id]} />);
     const duplicate = screen.getByRole('button', { name: 'Duplicate view' });

@@ -2,7 +2,7 @@ import { useCallback, useSyncExternalStore } from 'react';
 
 import { databaseViewLimitMessage, getDatabaseViewCount } from '@/application/database-yjs/database-view-capacity';
 import { YDatabase, YDatabaseViews, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
-import { getMaxDatabaseViews, subscribeToServerInfo } from '@/utils/server-info';
+import { getMaxDashboardWidgets, subscribeToServerInfo } from '@/utils/server-info';
 
 /** Observe membership only: changing rows, filters, or view settings cannot change capacity. */
 export function useDatabaseViewCapacity(databaseDoc: YDoc | undefined) {
@@ -45,7 +45,7 @@ export function useDatabaseViewCapacity(databaseDoc: YDoc | undefined) {
   );
   const snapshot = useCallback(() => getDatabaseViewCount(databaseDoc), [databaseDoc]);
   const count = useSyncExternalStore(subscribe, snapshot, snapshot);
-  const limit = useSyncExternalStore(subscribeToServerInfo, getMaxDatabaseViews, getMaxDatabaseViews);
+  const limit = useSyncExternalStore(subscribeToServerInfo, getMaxDashboardWidgets, getMaxDashboardWidgets);
 
   return { count, limit, disabledReason: count >= limit ? databaseViewLimitMessage(limit) : undefined };
 }

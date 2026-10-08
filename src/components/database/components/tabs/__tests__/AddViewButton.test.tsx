@@ -105,7 +105,7 @@ describe('AddViewButton', () => {
     views.set('primary', new Y.Map() as YDatabaseView);
     views.set('owned-hidden', new Y.Map() as YDatabaseView);
     updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), {
-      status: 'available', info: { enable_page_history: true, max_database_views: 2 },
+      status: 'available', info: { enable_page_history: true, max_dashboard_widgets: 2 },
     });
     render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><AddViewButton databasePageId='database' onViewAdded={jest.fn()} /></MemoryRouter>);
     const grid = screen.getByRole('button', { name: 'grid.menuName' });

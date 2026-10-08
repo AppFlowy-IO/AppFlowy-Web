@@ -57,7 +57,7 @@ it.each([
   for (let index = 0; index < count; index += 1) views.set(`view-${index}`, new Y.Map());
   jest.mocked(getCollab).mockResolvedValue({ data: Y.encodeStateAsUpdate(document) });
   document.destroy();
-  updateServerInfo(serverUrl, { status: 'available', info: { enable_page_history: true, max_database_views: limit } });
+  updateServerInfo(serverUrl, { status: 'available', info: { enable_page_history: true, max_dashboard_widgets: limit } });
   const get = jest.fn().mockResolvedValue(response(databaseView));
   const post = jest.fn().mockResolvedValue({ headers: {} });
 

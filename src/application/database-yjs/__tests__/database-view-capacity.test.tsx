@@ -7,12 +7,12 @@ import { createDatabaseViewInDoc, duplicateDatabaseViewInDoc } from '@/applicati
 import { DatabaseViewLayout, YDatabase, YDatabaseView, YDatabaseViews, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { useDatabaseViewCapacity } from '@/components/database/hooks/useDatabaseViewCapacity';
 import { getConfigValue } from '@/utils/runtime-config';
-import { getMaxDatabaseViews, ServerInfoState, updateServerInfo } from '@/utils/server-info';
+import { getMaxDashboardWidgets, ServerInfoState, updateServerInfo } from '@/utils/server-info';
 
 const serverUrl = getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud');
 
 function setLimit(limit?: number) {
-  updateServerInfo(serverUrl, { status: 'available', info: { enable_page_history: true, max_database_views: limit } });
+  updateServerInfo(serverUrl, { status: 'available', info: { enable_page_history: true, max_dashboard_widgets: limit } });
 }
 
 function fixture(count: number) {
@@ -45,19 +45,19 @@ describe('server database-view capacity', () => {
     'defaults absent or invalid unsigned limits (%s) to six',
     (limit) => {
       setLimit(limit);
-      expect(getMaxDatabaseViews()).toBe(6);
+      expect(getMaxDashboardWidgets()).toBe(6);
     }
   );
 
   it.each<ServerInfoState['status']>(['loading', 'unavailable', 'unsupported'])('defaults %s info to six', (status) => {
     updateServerInfo(serverUrl, { status } as ServerInfoState);
-    expect(getMaxDatabaseViews()).toBe(6);
+    expect(getMaxDashboardWidgets()).toBe(6);
   });
 
   it.each([0, 2, 9])('honors the advertised unsigned cap %s in both hosting modes', (limit) => {
     for (const self_hosted of [true, false]) {
-      updateServerInfo(serverUrl, { status: 'available', info: { enable_page_history: true, self_hosted, max_database_views: limit } });
-      expect(getMaxDatabaseViews()).toBe(limit);
+      updateServerInfo(serverUrl, { status: 'available', info: { enable_page_history: true, self_hosted, max_dashboard_widgets: limit } });
+      expect(getMaxDashboardWidgets()).toBe(limit);
     }
   });
 
