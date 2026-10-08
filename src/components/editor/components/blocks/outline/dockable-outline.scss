@@ -80,7 +80,8 @@
     padding: 4px;
     border-radius: 4px;
 
-    &:hover {
+    &:hover,
+    &[data-state='open'] {
       background: var(--fill-content-hover);
     }
   }
@@ -127,7 +128,8 @@
     line-height: 20px;
 
     &:hover,
-    &:focus-visible {
+    &:focus-visible,
+    &[aria-current='location'] {
       background: var(--outline-hover);
     }
   }

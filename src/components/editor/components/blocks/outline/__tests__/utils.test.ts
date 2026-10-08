@@ -78,4 +78,31 @@ describe('document outline headings', () => {
     expect(getActiveHeading(positions, 80, true)).toBe('third');
     expect(getActiveHeading([], 80)).toBeUndefined();
   });
+
+  it('tracks visual heading positions across columns without changing document order', () => {
+    const positions = [
+      { blockId: 'left-first', top: -112 },
+      { blockId: 'left-last', top: 920 },
+      { blockId: 'right', top: 48 },
+    ];
+    const original = positions.slice();
+
+    expect(getActiveHeading(positions, 64)).toBe('right');
+    expect(getActiveHeading(positions, -200)).toBe('left-first');
+    expect(getActiveHeading(positions, 950)).toBe('left-last');
+    expect(getActiveHeading(positions, 64, true)).toBe('left-last');
+    expect(positions).toEqual(original);
+  });
+
+  it('resolves headings at the same height consistently in document order', () => {
+    const positions = [
+      { blockId: 'left', top: 48 },
+      { blockId: 'below', top: 920 },
+      { blockId: 'right', top: 48 },
+    ];
+
+    expect(getActiveHeading(positions, 64)).toBe('right');
+    expect(getActiveHeading(positions, 0)).toBe('left');
+    expect(getActiveHeading(positions, 64, true)).toBe('below');
+  });
 });

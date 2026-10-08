@@ -68,21 +68,25 @@ export function flattenHeadings(headings: OutlineHeading[], indent = 0): Outline
   return headings.flatMap((heading) => [{ heading, indent }, ...flattenHeadings(heading.children, indent + 1)]);
 }
 
-/** The last heading above the reading line, or the first heading before scrolling. */
+/** The visually nearest heading above the reading line, or the topmost heading before scrolling. */
 export function getActiveHeading(
-  positions: { blockId: string; top: number }[],
+  positions: readonly { blockId: string; top: number }[],
   readingLine: number,
   atBottom = false
 ): string | undefined {
-  if (atBottom) return positions[positions.length - 1]?.blockId;
-  let active = positions[0]?.blockId;
+  if (!positions.length) return undefined;
+  let first = positions[0];
+  let last = first;
+  let active: (typeof positions)[number] | undefined;
 
   for (const position of positions) {
-    if (position.top > readingLine) break;
-    active = position.blockId;
+    // Column traversal order is not vertical order. Resolve ties in document order.
+    if (position.top < first.top) first = position;
+    if (position.top >= last.top) last = position;
+    if (position.top <= readingLine && (!active || position.top >= active.top)) active = position;
   }
 
-  return active;
+  return (atBottom ? last : active ?? first).blockId;
 }
 
 export function nestHeadings(headings: OutlineHeading[]): OutlineHeading[] {

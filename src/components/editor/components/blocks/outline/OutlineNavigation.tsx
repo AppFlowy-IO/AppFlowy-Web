@@ -10,25 +10,34 @@ import { ColorEnum } from '@/utils/color';
 
 import { extractHeadings, getActiveHeading } from './utils';
 
-function selectOutline(editor: Editor) {
-  const { headings, hasHeadings } = extractHeadings(editor, 6);
+function containsDocumentBlock(node: Node) {
+  return (
+    node instanceof HTMLElement &&
+    (node.hasAttribute('data-block-type') || node.querySelector('[data-block-type]') !== null)
+  );
+}
+
+function selectOutline(editor: Editor, dockable: boolean) {
   // The first inline outline supplies the document theme; its depth and collapsed state stay independent.
   const outline = Editor.nodes<OutlineNode>(editor, {
     at: [],
     match: (node) => Element.isElement(node) && node.type === BlockType.OutlineBlock,
   }).next().value?.[0];
+  // Preview and nested editors need heading labels only if they contain an inline outline.
+  const { headings, hasHeadings } =
+    dockable || outline ? extractHeadings(editor, 6) : { headings: [], hasHeadings: false };
 
   return { headings, hasHeadings, hasOutline: !!outline, color: (outline?.data?.bgColor || '') as ColorEnum };
 }
 
-function equalOutline(a: ReturnType<typeof selectOutline>, b: ReturnType<typeof selectOutline>) {
+function equalHeadings(
+  a: ReturnType<typeof selectOutline>['headings'],
+  b: ReturnType<typeof selectOutline>['headings']
+) {
   return (
-    a.color === b.color &&
-    a.hasOutline === b.hasOutline &&
-    a.hasHeadings === b.hasHeadings &&
-    a.headings.length === b.headings.length &&
-    a.headings.every((heading, index) => {
-      const other = b.headings[index];
+    a.length === b.length &&
+    a.every((heading, index) => {
+      const other = b[index];
 
       return (
         heading.blockId === other.blockId &&
@@ -36,6 +45,15 @@ function equalOutline(a: ReturnType<typeof selectOutline>, b: ReturnType<typeof 
         heading.data.text === other.data.text
       );
     })
+  );
+}
+
+function equalOutline(a: ReturnType<typeof selectOutline>, b: ReturnType<typeof selectOutline>) {
+  return (
+    a.color === b.color &&
+    a.hasOutline === b.hasOutline &&
+    a.hasHeadings === b.hasHeadings &&
+    equalHeadings(a.headings, b.headings)
   );
 }
 
@@ -59,24 +77,65 @@ export function OutlineNavigationProvider({
 }) {
   const editor = useSlateStatic();
   const previewId = useEditorPreviewId();
-  const cache = useRef<{ children: Editor['children']; version: number; result: ReturnType<typeof selectOutline> }>();
+  const [mentionVersion, setMentionVersion] = useState(0);
+  const cache = useRef<{
+    children: Editor['children'];
+    version: number;
+    mentionVersion: number;
+    dockable: boolean;
+    result: ReturnType<typeof selectOutline>;
+  }>();
   const selector = useCallback(
     (editor: Editor) => {
       // Cursor movement does not change children; avoid rescanning the document.
-      if (cache.current?.children === editor.children && cache.current.version === contentVersion)
+      if (
+        cache.current?.children === editor.children &&
+        cache.current.version === contentVersion &&
+        cache.current.mentionVersion === mentionVersion &&
+        cache.current.dockable === dockable
+      )
         return cache.current.result;
-      const result = selectOutline(editor);
+      const next = selectOutline(editor, dockable);
+      const previous = cache.current?.result;
+      const result = previous && equalOutline(previous, next) ? previous : next;
 
-      cache.current = { children: editor.children, version: contentVersion, result };
+      // Theme changes do not change the heading list or its scroll targets.
+      if (previous && result !== previous && equalHeadings(previous.headings, result.headings)) {
+        result.headings = previous.headings;
+      }
+
+      cache.current = { children: editor.children, version: contentVersion, mentionVersion, dockable, result };
       return result;
     },
-    [contentVersion]
+    [contentVersion, mentionVersion, dockable]
   );
   const outline = useSlateSelector(selector, equalOutline);
+  const trackingEnabled = outline.hasHeadings && (outline.hasOutline || (dockable && outline.headings.length > 2));
+  const headingsRef = useRef(outline.headings);
+  const scheduleScrollspyRef = useRef<() => void>();
   const [activeId, setActiveId] = useState<string>();
   const jumpFrame = useRef(0);
+  const navigating = useRef(false);
+  const navigationTimer = useRef<ReturnType<typeof setTimeout>>();
+  const finishNavigation = useCallback(() => {
+    clearTimeout(navigationTimer.current);
+    navigating.current = false;
+  }, []);
+  const deferScrollspy = useCallback(() => {
+    clearTimeout(navigationTimer.current);
+    navigating.current = true;
+    // A click remains selected after scrolling settles, even when the anchor
+    // cannot reach the reading line at the end of a short document.
+    navigationTimer.current = setTimeout(finishNavigation, 150);
+  }, [finishNavigation]);
 
-  useEffect(() => () => cancelAnimationFrame(jumpFrame.current), []);
+  useEffect(
+    () => () => {
+      cancelAnimationFrame(jumpFrame.current);
+      finishNavigation();
+    },
+    [finishNavigation]
+  );
   const getEditorElement = useCallback(() => {
     try {
       return ReactEditor.toDOMNode(editor, editor);
@@ -101,7 +160,71 @@ export function OutlineNavigationProvider({
   );
 
   useEffect(() => {
-    if ((!dockable && !outline.hasOutline) || !outline.headings.length) return;
+    // Keep long-lived scroll subscriptions current without resetting click navigation on a text edit.
+    const previous = headingsRef.current;
+
+    headingsRef.current = outline.headings;
+    if (
+      previous.length !== outline.headings.length ||
+      previous.some((heading, index) => heading.blockId !== outline.headings[index].blockId)
+    )
+      scheduleScrollspyRef.current?.();
+  }, [outline.headings]);
+
+  useEffect(() => {
+    if (!trackingEnabled) return;
+    const root = getEditorElement();
+
+    if (!root) return;
+    let frame = 0;
+    const refresh = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        setMentionVersion((version) => version + 1);
+      });
+    };
+
+    // Page names and icons resolve independently of Slate operations. Reuse
+    // their rendered labels, as the inline Outline Block does, after DOM commit.
+    const observer = new MutationObserver((records) => {
+      // A block move can preserve heading order and total editor height. Observe
+      // committed block additions/removals so it still triggers a position measurement.
+      if (
+        records.some(
+          ({ addedNodes, removedNodes }) =>
+            Array.from(addedNodes).some(containsDocumentBlock) || Array.from(removedNodes).some(containsDocumentBlock)
+        )
+      )
+        scheduleScrollspyRef.current?.();
+      if (
+        records.some(({ target, addedNodes }) => {
+          const element = target instanceof HTMLElement ? target : target.parentElement;
+
+          return (
+            element?.closest('.heading, .toggle-heading') &&
+            (element.closest('[data-mention-id]') ||
+              Array.from(addedNodes).some(
+                (node) =>
+                  node instanceof HTMLElement &&
+                  (node.matches('[data-mention-id]') || node.querySelector('[data-mention-id]'))
+              ))
+          );
+        })
+      )
+        refresh();
+    });
+
+    observer.observe(root, { subtree: true, childList: true, characterData: true });
+    refresh();
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [trackingEnabled, getEditorElement]);
+
+  useEffect(() => {
+    if (!trackingEnabled) return;
     const root = getEditorElement();
 
     if (!root) return;
@@ -109,8 +232,9 @@ export function OutlineNavigationProvider({
     let frame = 0;
     const update = () => {
       frame = 0;
+      if (navigating.current) return;
       const top = scroller instanceof HTMLElement ? scroller.getBoundingClientRect().top : 0;
-      const positions = outline.headings.flatMap((heading) => {
+      const positions = headingsRef.current.flatMap((heading) => {
         const element = getHeadingElement(heading.blockId);
 
         return element?.getClientRects().length
@@ -130,25 +254,48 @@ export function OutlineNavigationProvider({
       if (!frame) frame = requestAnimationFrame(update);
     };
 
+    scheduleScrollspyRef.current = schedule;
+    const onScroll = () => {
+      if (navigating.current) deferScrollspy();
+      else schedule();
+    };
+
+    const onKeyDown = (event: Event) => {
+      if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes((event as KeyboardEvent).key))
+        finishNavigation();
+    };
+
     const resizeObserver = new ResizeObserver(schedule);
 
     resizeObserver.observe(root);
-    scroller.addEventListener('scroll', schedule, { passive: true });
+    scroller.addEventListener('scroll', onScroll, { passive: true });
+    scroller.addEventListener('wheel', finishNavigation, { passive: true });
+    scroller.addEventListener('touchmove', finishNavigation, { passive: true });
+    scroller.addEventListener('pointerdown', finishNavigation, { passive: true });
+    scroller.addEventListener('keydown', onKeyDown);
     window.addEventListener('resize', schedule);
     schedule();
     return () => {
+      scheduleScrollspyRef.current = undefined;
       cancelAnimationFrame(frame);
+      finishNavigation();
       resizeObserver.disconnect();
-      scroller.removeEventListener('scroll', schedule);
+      scroller.removeEventListener('scroll', onScroll);
+      scroller.removeEventListener('wheel', finishNavigation);
+      scroller.removeEventListener('touchmove', finishNavigation);
+      scroller.removeEventListener('pointerdown', finishNavigation);
+      scroller.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('resize', schedule);
     };
-  }, [dockable, outline.headings, outline.hasOutline, getEditorElement, getHeadingElement]);
+  }, [trackingEnabled, getEditorElement, getHeadingElement, deferScrollspy, finishNavigation]);
 
   const jumpToHeading = useCallback(
     (heading: HeadingNode) => {
       const element = getHeadingElement(heading.blockId);
 
       if (!element) return;
+      deferScrollspy();
+      setActiveId(heading.blockId);
       const entry = Editor.nodes<Element>(editor, {
         at: [],
         match: (node) => Element.isElement(node) && node.blockId === heading.blockId,
@@ -181,7 +328,7 @@ export function OutlineNavigationProvider({
       if (revealed) jumpFrame.current = requestAnimationFrame(scroll);
       else scroll();
     },
-    [editor, getHeadingElement]
+    [editor, getHeadingElement, deferScrollspy]
   );
   const value = useMemo(
     () => ({ ...outline, activeId, jumpToHeading, getEditorElement }),

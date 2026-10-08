@@ -9,7 +9,13 @@ import moreIcon from '@/assets/icons/dockable-outline/more.svg?url';
 import { AppNavigationContext } from '@/components/app/contexts/AppNavigationContext';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { useInlineCommentPanelOptional } from '@/components/inline-comment/InlineCommentContext';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { ColorEnum, renderColor, toBlockColor } from '@/utils/color';
 
 import { useOutlineNavigation } from './OutlineNavigation';
@@ -19,14 +25,6 @@ import './dockable-outline.scss';
 type DisplayMode = 'always' | 'hover';
 const ROW_HEIGHT = 28;
 const PANEL_CHROME_HEIGHT = 72;
-
-function readDisplayMode(key: string): DisplayMode {
-  try {
-    return localStorage.getItem(key) === 'hover' ? 'hover' : 'always';
-  } catch {
-    return 'always';
-  }
-}
 
 function MaskIcon({ asset, className }: { asset: string; className?: string }) {
   return (
@@ -47,30 +45,19 @@ export const DockableOutline = memo(function DockableOutline() {
   return headings.length > 2 ? (
     <DockableOutlinePanel
       key={viewId}
-      viewId={viewId}
       published={variant === UIVariant.Publish}
       suppressed={!!navigation?.openPageModalViewId || !!comments?.isPanelOpen}
     />
   ) : null;
 });
 
-export function DockableOutlinePanel({
-  viewId,
-  published,
-  suppressed,
-}: {
-  viewId: string;
-  published: boolean;
-  suppressed: boolean;
-}) {
+export function DockableOutlinePanel({ published, suppressed }: { published: boolean; suppressed: boolean }) {
   const { t } = useTranslation();
   const panelId = useId();
   const { headings, activeId, color, jumpToHeading, getEditorElement } = useOutlineNavigation();
   const items = useMemo(() => flattenHeadings(nestHeadings(headings)), [headings]);
-  const preferenceKey = `appflowy:outline-display:${viewId}`;
-  const [displayMode, setDisplayMode] = useState<DisplayMode>(() =>
-    published ? readDisplayMode(preferenceKey) : 'hover'
-  );
+  // This reader setting lasts only while the current page is open.
+  const [displayMode, setDisplayMode] = useState<DisplayMode>('always');
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -83,7 +70,7 @@ export function DockableOutlinePanel({
   const skipTriggerFocus = useRef(false);
   const keyboardInput = useRef(true);
   const expanded =
-    !suppressed && (hovered || focused || menuOpen || (displayMode === 'always' && !temporarilyCollapsed));
+    !suppressed && (hovered || focused || menuOpen || (published && displayMode === 'always' && !temporarilyCollapsed));
   const title = t('document.plugins.outline.dockableTitle');
   const blockColor = toBlockColor(color);
   const activeIndex = Math.max(
@@ -94,6 +81,7 @@ export function DockableOutlinePanel({
     0,
     items.findIndex(({ heading }) => heading.blockId === (hoveredId ?? activeId))
   );
+  const panelHeight = Math.min(items.length * ROW_HEIGHT + PANEL_CHROME_HEIGHT, bounds?.maxHeight ?? 0);
 
   const cancelClose = useCallback(() => {
     clearTimeout(closeTimer.current);
@@ -145,7 +133,10 @@ export function DockableOutlinePanel({
 
     if (!root) return;
     const viewport = root.closest<HTMLElement>('.appflowy-layout') ?? root.parentElement;
+    let frame = 0;
+
     const update = () => {
+      frame = 0;
       const rect = viewport?.getBoundingClientRect();
       const bottom = Math.min(window.innerHeight, rect?.bottom ?? window.innerHeight);
       const viewportTop = Math.max(0, rect?.top ?? 0);
@@ -167,14 +158,19 @@ export function DockableOutlinePanel({
       );
     };
 
-    const observer = new ResizeObserver(update);
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+
+    const observer = new ResizeObserver(schedule);
 
     if (viewport) observer.observe(viewport);
-    window.addEventListener('resize', update);
+    window.addEventListener('resize', schedule);
     update();
     return () => {
+      cancelAnimationFrame(frame);
       observer.disconnect();
-      window.removeEventListener('resize', update);
+      window.removeEventListener('resize', schedule);
     };
   }, [getEditorElement]);
 
@@ -189,21 +185,16 @@ export function DockableOutlinePanel({
     if (top < list.scrollTop) list.scrollTop = top;
     else if (top + ROW_HEIGHT > list.scrollTop + list.clientHeight)
       list.scrollTop = top + ROW_HEIGHT - list.clientHeight;
-  }, [activeId, expanded]);
+  }, [activeId, activeIndex, expanded, panelHeight]);
 
-  const changeDisplayMode = (mode: DisplayMode) => {
+  const changeDisplayMode = (mode: string) => {
+    if (mode !== 'always' && mode !== 'hover') return;
     setDisplayMode(mode);
     setTemporarilyCollapsed(false);
-    try {
-      localStorage.setItem(preferenceKey, mode);
-    } catch {
-      // The display choice still works when browser storage is unavailable.
-    }
   };
 
   if (!bounds || suppressed) return null;
   const indicatorHeight = Math.min(items.length * ROW_HEIGHT, bounds.maxHeight);
-  const panelHeight = Math.min(items.length * ROW_HEIGHT + PANEL_CHROME_HEIGHT, bounds.maxHeight);
   const indicatorOffset = items.length <= 1 ? 0 : (activeIndex / (items.length - 1)) * (indicatorHeight - ROW_HEIGHT);
   const style = {
     top: bounds.top,
@@ -299,21 +290,22 @@ export function DockableOutlinePanel({
                 onMouseEnter={open}
                 onMouseLeave={scheduleClose}
               >
-                {(['always', 'hover'] as const).map((mode) => (
-                  <DropdownMenuItem
-                    key={mode}
-                    role='menuitemradio'
-                    aria-checked={displayMode === mode}
-                    onSelect={() => changeDisplayMode(mode)}
-                  >
-                    <span className='flex-1'>
-                      {t(`document.plugins.outline.${mode === 'always' ? 'alwaysShow' : 'showOnHover'}`)}
-                    </span>
-                    {displayMode === mode && (
-                      <MaskIcon asset={checkIcon} className='dockable-outline-icon text-icon-info-thick' />
-                    )}
-                  </DropdownMenuItem>
-                ))}
+                <DropdownMenuRadioGroup value={displayMode} onValueChange={changeDisplayMode}>
+                  {(['always', 'hover'] as const).map((mode) => (
+                    <DropdownMenuRadioItem
+                      key={mode}
+                      value={mode}
+                      className='cursor-pointer gap-2 rounded-[6px] data-[state=checked]:bg-fill-content-hover'
+                    >
+                      <span className='flex-1'>
+                        {t(`document.plugins.outline.${mode === 'always' ? 'alwaysShow' : 'showOnHover'}`)}
+                      </span>
+                      {displayMode === mode && (
+                        <MaskIcon asset={checkIcon} className='dockable-outline-icon text-icon-info-thick' />
+                      )}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
               </DropdownMenuContent>
             </DropdownMenu>
           )}

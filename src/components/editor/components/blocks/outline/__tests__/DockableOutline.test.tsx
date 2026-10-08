@@ -16,10 +16,11 @@ const mockNavigation = {
 };
 let mockCommentsOpen = false;
 let mockPublished = false;
+let mockViewId = 'document';
 
 jest.mock('../OutlineNavigation', () => ({ useOutlineNavigation: () => mockNavigation }));
 jest.mock('@/components/editor/EditorContext', () => ({
-  useEditorContext: () => ({ viewId: 'document', variant: mockPublished ? UIVariant.Publish : UIVariant.App }),
+  useEditorContext: () => ({ viewId: mockViewId, variant: mockPublished ? UIVariant.Publish : UIVariant.App }),
 }));
 jest.mock('@/components/inline-comment/InlineCommentContext', () => ({
   useInlineCommentPanelOptional: () => ({ isPanelOpen: mockCommentsOpen }),
@@ -28,7 +29,7 @@ jest.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) =>
       ({
-        dockableTitle: 'Table of Content',
+        dockableTitle: 'Table of contents',
         showOutline: 'Show table of contents',
         displayOptions: 'Outline display options',
         alwaysShow: 'Always show',
@@ -58,6 +59,7 @@ describe('dockable outline interaction', () => {
     localStorage.clear();
     mockCommentsOpen = false;
     mockPublished = false;
+    mockViewId = 'document';
     mockNavigation.headings = headings(6);
     mockNavigation.activeId = 'heading-1';
     mockNavigation.color = '' as ColorEnum;
@@ -168,12 +170,12 @@ describe('dockable outline interaction', () => {
   });
 
   it('hides behind comments and returns collapsed after the comment panel closes', () => {
-    const { rerender } = render(<DockableOutlinePanel viewId='document' published={false} suppressed={false} />);
+    const { rerender } = render(<DockableOutlinePanel published={false} suppressed={false} />);
 
     fireEvent.mouseEnter(screen.getByTestId('dockable-outline-trigger'));
-    rerender(<DockableOutlinePanel viewId='document' published={false} suppressed />);
+    rerender(<DockableOutlinePanel published={false} suppressed />);
     expect(screen.queryByTestId('dockable-outline')).toBeNull();
-    rerender(<DockableOutlinePanel viewId='document' published={false} suppressed={false} />);
+    rerender(<DockableOutlinePanel published={false} suppressed={false} />);
     expect(screen.getByTestId('dockable-outline').getAttribute('data-expanded')).toBe('false');
   });
 
@@ -206,16 +208,73 @@ describe('dockable outline interaction', () => {
     expect(screen.getByTestId('dockable-outline').getAttribute('data-expanded')).toBe('true');
   });
 
-  it('reads published reader preferences while editable outlines continue to use hover', () => {
+  it('defaults published pages to always show and ignores previously saved browser preferences', () => {
     localStorage.setItem('appflowy:outline-display:document', 'hover');
-    const { rerender } = render(<DockableOutlinePanel viewId='document' published suppressed={false} />);
+    const { rerender } = render(<DockableOutlinePanel published suppressed={false} />);
 
-    expect(screen.getByTestId('dockable-outline').getAttribute('data-expanded')).toBe('false');
-    rerender(<DockableOutlinePanel key='new-page' viewId='new-page' published suppressed={false} />);
     expect(screen.getByTestId('dockable-outline').getAttribute('data-expanded')).toBe('true');
     expect(screen.getByRole('button', { name: 'Outline display options' })).toBeTruthy();
-    rerender(<DockableOutlinePanel key='editable' viewId='new-page' published={false} suppressed={false} />);
+    rerender(<DockableOutlinePanel published={false} suppressed={false} />);
     expect(screen.getByTestId('dockable-outline').getAttribute('data-expanded')).toBe('false');
+    expect(screen.queryByRole('button', { name: 'Outline display options' })).toBeNull();
+  });
+
+  it('switches published display modes through the More menu without writing to browser storage', () => {
+    mockPublished = true;
+    const save = jest.spyOn(Storage.prototype, 'setItem');
+
+    render(<DockableOutline />);
+    const outline = screen.getByTestId('dockable-outline');
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Outline display options' }), { key: 'Enter' });
+    expect(screen.getByRole('menuitemradio', { name: 'Always show' }).getAttribute('aria-checked')).toBe('true');
+    fireEvent.pointerDown(screen.getByRole('menuitemradio', { name: 'Show on hover' }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Show on hover' }));
+    fireEvent.mouseLeave(outline);
+    act(() => {
+      jest.advanceTimersByTime(300);
+    });
+    expect(outline.getAttribute('data-expanded')).toBe('false');
+
+    fireEvent.mouseEnter(screen.getByTestId('dockable-outline-trigger'));
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Outline display options' }), { key: 'Enter' });
+    expect(screen.getByRole('menuitemradio', { name: 'Show on hover' }).getAttribute('aria-checked')).toBe('true');
+    fireEvent.pointerDown(screen.getByRole('menuitemradio', { name: 'Always show' }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Always show' }));
+    fireEvent.mouseLeave(outline);
+    act(() => {
+      jest.advanceTimersByTime(300);
+    });
+    expect(outline.getAttribute('data-expanded')).toBe('true');
+    expect(save).not.toHaveBeenCalled();
+    save.mockRestore();
+  });
+
+  it('keeps the choice through rerenders but resets it when opening another page or reopening the current page', () => {
+    mockPublished = true;
+    const outline = () => (
+      <AppNavigationContext.Provider value={{}}>
+        <DockableOutline />
+      </AppNavigationContext.Provider>
+    );
+    const { rerender, unmount } = render(outline());
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Outline display options' }), { key: 'Enter' });
+    fireEvent.pointerDown(screen.getByRole('menuitemradio', { name: 'Show on hover' }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Show on hover' }));
+    fireEvent.mouseLeave(screen.getByTestId('dockable-outline'));
+    act(() => {
+      jest.advanceTimersByTime(300);
+    });
+    rerender(outline());
+    expect(screen.getByTestId('dockable-outline').getAttribute('data-expanded')).toBe('false');
+    mockViewId = 'other-document';
+    rerender(outline());
+    expect(screen.getByTestId('dockable-outline').getAttribute('data-expanded')).toBe('true');
+    unmount();
+    mockViewId = 'document';
+    render(outline());
+    expect(screen.getByTestId('dockable-outline').getAttribute('data-expanded')).toBe('true');
   });
 
   it('inherits the inline outline accent and applies the annotated translucent hover fill', () => {
@@ -227,6 +286,38 @@ describe('dockable outline interaction', () => {
     expect(outline.style.getPropertyValue('--outline-hover')).toBe(
       'color-mix(in srgb, var(--block-bg-hover-color-14) 60%, transparent)'
     );
+  });
+
+  it('keeps the active item visible when a window resize reduces the panel height', () => {
+    mockNavigation.headings = headings(30);
+    mockNavigation.activeId = 'heading-20';
+    render(<DockableOutline />);
+    fireEvent.mouseEnter(screen.getByTestId('dockable-outline-trigger'));
+    const list = document.querySelector<HTMLElement>('.dockable-outline-list')!;
+    const active = screen.getByRole('button', { name: 'Section 20' });
+
+    Object.defineProperty(active, 'offsetTop', { value: 19 * 28 });
+    Object.defineProperty(list, 'clientHeight', { value: 224 });
+    list.scrollTop = 0;
+    Object.defineProperty(window, 'innerHeight', { value: 500, configurable: true });
+    fireEvent.resize(window);
+    act(() => jest.advanceTimersByTime(20));
+    expect(list.scrollTop).toBe(20 * 28 - 224);
+  });
+
+  it('coalesces resize measurements and cancels a pending measurement on unmount', () => {
+    const measure = jest.spyOn(root, 'getBoundingClientRect');
+    const { unmount } = render(<DockableOutline />);
+
+    measure.mockClear();
+    fireEvent.resize(window);
+    fireEvent.resize(window);
+    fireEvent.resize(window);
+    act(() => jest.advanceTimersByTime(20));
+    expect(measure).toHaveBeenCalledTimes(1);
+    fireEvent.resize(window);
+    unmount();
+    expect(jest.getTimerCount()).toBe(0);
   });
 
   it('cleans up delayed closes and resize observers when the document unmounts', () => {
