@@ -317,6 +317,32 @@ describe('WidgetMenu', () => {
   });
 
   // WP05 §1.4: one duplicate at a time per widget, while its view copy is being created.
+  it('disables owned duplication offline while retaining moves and removal, then updates on reconnect', () => {
+    const actions = createActions();
+    const ui = createDashboardUiValue();
+    const online = jest.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+
+    try {
+      render(withContext(createContext({ actions }), <ControlledMenu />, MOVABLE_ROWS, ui));
+      const item = () => screen.getByTestId('dashboard-widget-menu-duplicate');
+
+      expect(item().getAttribute('aria-disabled')).toBe('true');
+      expect(item().getAttribute('data-disabled-reason')).toBe('online-required');
+      expect(screen.getByTestId('dashboard-widget-menu-move-left').hasAttribute('data-disabled')).toBe(false);
+      expect(screen.getByTestId('dashboard-widget-menu-delete').hasAttribute('data-disabled')).toBe(false);
+      fireEvent.click(item());
+      expect(actions.duplicate).not.toHaveBeenCalled();
+      expect(ui.announce).toHaveBeenCalledWith('Connect to the internet to create dashboard widget views.');
+      online.mockReturnValue(true);
+      act(() => { window.dispatchEvent(new Event('online')); });
+      expect(item().getAttribute('data-disabled-reason')).toBeNull();
+      fireEvent.click(item());
+      expect(actions.duplicate).toHaveBeenCalledTimes(1);
+    } finally {
+      online.mockRestore();
+    }
+  });
+
   it('disables Duplicate while this widget\'s duplicate is in flight', () => {
     const actions = createActions();
     const ui = createDashboardUiValue();

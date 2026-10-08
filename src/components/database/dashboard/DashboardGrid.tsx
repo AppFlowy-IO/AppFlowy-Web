@@ -28,11 +28,11 @@ const GRID_BLEED_STYLE = {
   paddingRight: DASHBOARD_WIDGET_BOX_INSET,
 };
 
-type PendingAdd = Extract<AddWidgetFlowState, { kind: 'creating' }>;
+type PendingAdd = Extract<AddWidgetFlowState, { kind: 'creating' | 'choosing_existing' }>;
 
 /** The widget the add flow is creating, while it is not persisted yet. */
 export const selectPendingAdd = (state: AddWidgetFlowState): PendingAdd | null =>
-  state.kind === 'creating' ? state : null;
+  state.kind === 'creating' || state.kind === 'choosing_existing' ? state : null;
 
 /**
  * The rows with the add flow's pending widget previewed at its placement

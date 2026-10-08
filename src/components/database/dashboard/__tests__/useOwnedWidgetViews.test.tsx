@@ -3,7 +3,7 @@ import { type ReactNode } from 'react';
 import * as Y from 'yjs';
 
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs';
-import { readDashboardLayoutSetting, updateDashboardLayoutSetting } from '@/application/database-yjs/dashboard-layout';
+import { moveDashboardWidget, readDashboardLayoutSetting, removeDashboardWidget, updateDashboardLayoutSetting } from '@/application/database-yjs/dashboard-layout';
 import {
   deleteOwnedDatabaseView,
   duplicateOwnedDatabaseView,
@@ -144,6 +144,45 @@ it('keeps immediate cleanup bound to its original workspace and document after h
 });
 
 describe('useOwnedWidgetViews: duplicate (WP05 §1.4)', () => {
+  it('keeps existing widget movement and removal available offline', async () => {
+    const { doc, database } = createDoc([widgetRow('r1', 2), widgetRow('r2', 1)]);
+    const { result } = render(doc);
+    const online = jest.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+
+    try {
+      await act(async () => { result.current.updateRows((rows) => moveDashboardWidget(rows, 'r1-w0', {
+        type: 'existing_row', rowId: 'r2', index: 1,
+      })); });
+      expect(stored(database)[1].widgets.map((widget) => widget.id)).toEqual(['r2-w0', 'r1-w0']);
+      await act(async () => { result.current.updateRows((rows) => removeDashboardWidget(rows, 'r1-w0')); });
+      expect(stored(database).flatMap((row) => row.widgets.map((widget) => widget.id))).toEqual(['r1-w1', 'r2-w0']);
+      expect(duplicateMock).not.toHaveBeenCalled();
+      expect(deleteMock).not.toHaveBeenCalled();
+    } finally {
+      online.mockRestore();
+    }
+  });
+
+  it('rejects an offline duplicate with a clear message and no view or layout write', async () => {
+    const { doc, database } = createDoc([widgetRow('r1', 1)]);
+    const { result } = render(doc);
+    const before = stored(database);
+    const online = jest.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+
+    try {
+      await act(async () => result.current.ownedViews.duplicateWidget('r1-w0'));
+      expect(duplicateMock).not.toHaveBeenCalled();
+      expect(deleteMock).not.toHaveBeenCalled();
+      expect(stored(database)).toEqual(before);
+      expect(result.current.ownedViews.duplicatingWidget.get()).toBeNull();
+      expect(jest.requireMock('sonner').toast.error).toHaveBeenCalledWith(
+        'Connect to the internet to create dashboard widget views.'
+      );
+    } finally {
+      online.mockRestore();
+    }
+  });
+
   it('copies the view as an owned, numbered view and inserts the copy next to the source', async () => {
     const { doc, database } = createDoc([widgetRow('r1', 1)]);
     const { result } = render(doc);

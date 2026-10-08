@@ -111,6 +111,19 @@ function layoutRows() {
   return screen.queryAllByTestId('dashboard-widget-picker-layout-option').map((row) => row.textContent);
 }
 
+it('offers existing views offline with an online-required explanation and no creation choices', () => {
+  renderPicker({ kind: 'choosing_existing', widgetId: 'w:offline', placement: { type: 'new_row' }, spec: 'grid' });
+  expect(screen.getByRole('status').textContent).toBe('Connect to the internet to create dashboard widget views.');
+  expect(layoutRows()).toEqual([]);
+  fireEvent.click(screen.getByTestId('dashboard-widget-picker-other-sources'));
+  expect(screen.queryByTestId('dashboard-widget-picker-new-in-database')).toBeNull();
+  const option = screen.getAllByTestId('dashboard-widget-picker-option')[0];
+
+  fireEvent.click(option);
+  expect(mockDispatch).toHaveBeenCalledWith({ type: 'pick_existing', viewId: 'g', databaseId: 'host-db' });
+  expect(mockCreateInDatabase).not.toHaveBeenCalled();
+});
+
 beforeEach(() => {
   mockExperimentalDatabaseViewCreationEnabled = true;
   mockTimelineReason = undefined;

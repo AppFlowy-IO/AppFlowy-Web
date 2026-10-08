@@ -7,7 +7,6 @@ import { DatabaseViewCreationAction } from '@/components/app/hooks/useDatabaseVi
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { isLimitedDatabaseViewLayout } from '@/utils/subscription';
 
 export function DatabaseViewCreationHint({
   reason,
@@ -36,7 +35,7 @@ export function DatabaseViewProBadge() {
 
 export function DatabaseViewCreationItem({
   action,
-  layout,
+  layout: _layout,
   loading = false,
   disabled = false,
   children,
@@ -50,7 +49,7 @@ export function DatabaseViewCreationItem({
   const { t } = useTranslation();
 
   return (
-    <DatabaseViewCreationHint enabled={isLimitedDatabaseViewLayout(layout) || layout === ViewLayout.Dashboard} reason={action.reason}>
+    <DatabaseViewCreationHint reason={action.reason}>
       <DropdownMenuItem
         {...props}
         aria-busy={loading || undefined}

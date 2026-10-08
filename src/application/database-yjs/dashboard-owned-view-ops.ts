@@ -13,7 +13,7 @@ import {
   YjsEditorKey,
   YSharedRoot,
 } from '@/application/types';
-import { assertViewCreationOnline } from '@/application/view-online-policy';
+import { assertDashboardViewCreationOnline, assertViewCreationOnline } from '@/application/view-online-policy';
 import { Log } from '@/utils/log';
 
 import { seedConvertedDashboardLayout, hasDashboardWidgets } from './dashboard-convert';
@@ -74,6 +74,18 @@ async function safeLoadViewMeta(deps: Pick<DatabaseViewDocDeps, 'loadViewMeta'>,
 // ---------------------------------------------------------------------------
 
 export type DashboardOwnedViewDeps = DatabaseViewDocDeps;
+
+/** Reject a known owned copy before creating its parent; shared references need no new view. */
+export function assertKnownOwnedDashboardCopiesOnline(doc: YDoc, dashboardViewId: string): void {
+  const database = getDatabaseFromDoc(doc);
+  const views = database?.get(YjsDatabaseKey.views);
+
+  if (readStoredDashboardWidgets(database, dashboardViewId).some((widget) =>
+    readDashboardOwner(null, views?.get(widget.viewId)) === dashboardViewId
+  )) {
+    assertDashboardViewCreationOnline();
+  }
+}
 
 interface OpenedDatabaseDoc {
   doc: YDoc;
@@ -195,6 +207,7 @@ export async function createOwnedDatabaseView(
   deps: DashboardOwnedViewDeps,
   params: CreateOwnedDatabaseViewParams
 ): Promise<string> {
+  assertDashboardViewCreationOnline();
   const docs = createDatabaseDocCache(deps);
 
   try {
@@ -243,6 +256,7 @@ export async function duplicateOwnedDatabaseView(
   deps: DashboardOwnedViewDeps,
   params: DuplicateOwnedDatabaseViewParams
 ): Promise<string> {
+  assertDashboardViewCreationOnline();
   const docs = createDatabaseDocCache(deps);
 
   try {
@@ -402,6 +416,8 @@ export async function duplicateDashboardOwnedWidgets(
   params: DuplicateDashboardOwnedWidgetsParams
 ): Promise<Record<string, string>> {
   const { sourceDashboardViewId, targetDashboardViewId } = params;
+
+  assertKnownOwnedDashboardCopiesOnline(deps.databaseDoc, sourceDashboardViewId);
   const hostDatabase = getDatabaseFromDoc(deps.databaseDoc);
   const setting = hostDatabase
     ?.get(YjsDatabaseKey.views)
@@ -424,6 +440,10 @@ export async function duplicateDashboardOwnedWidgets(
         return { widget, meta, owner: await resolveWidgetOwner(docs, widget, meta) };
       })
     );
+
+    // Foreign source ownership may only become known after resolving its metadata.
+    // Refuse before any owned copy is created, even if the connection changed during lookup.
+    if (candidates.some(({ owner }) => owner === sourceDashboardViewId)) assertDashboardViewCreationOnline();
 
     for (const { widget, meta, owner } of candidates) {
       if (owner !== sourceDashboardViewId) continue;
@@ -469,12 +489,19 @@ export async function duplicateDashboardOwnedWidgets(
  * itself and, for a dashboard, its own copies of the views its widgets own
  * (WP05 §1.7). Any failure removes everything this call created.
  */
-export function duplicateDatabaseViewWithOwnedWidgets(
+export async function duplicateDatabaseViewWithOwnedWidgets(
   deps: DashboardOwnedViewDeps,
   sourceViewId: string,
   duplicatedName?: string,
   options?: Omit<DuplicateDatabaseViewOptions, 'afterCopy'>
 ): Promise<string> {
+  const source = getDatabaseFromDoc(deps.databaseDoc)?.get(YjsDatabaseKey.views)?.get(sourceViewId);
+
+  if (options?.dashboardOwner) assertDashboardViewCreationOnline();
+  if (Number(source?.get(YjsDatabaseKey.layout)) === DatabaseViewLayout.Dashboard) {
+    assertKnownOwnedDashboardCopiesOnline(deps.databaseDoc, sourceViewId);
+  }
+
   return duplicateDatabaseViewInDoc(deps, sourceViewId, duplicatedName, {
     ...options,
     afterCopy: async ({ viewId, layout }) => {
@@ -574,6 +601,8 @@ export async function convertViewToDashboard(
     applyLayout();
     return true;
   }
+
+  assertDashboardViewCreationOnline();
 
   const sourceLayout = Number(view.get(YjsDatabaseKey.layout)) as DatabaseViewLayout;
   const sourceViewLayout = DATABASE_VIEW_LAYOUT_TO_VIEW_LAYOUT[sourceLayout];

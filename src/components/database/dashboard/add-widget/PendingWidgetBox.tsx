@@ -14,6 +14,7 @@ import { useDashboardUi } from '../DashboardUiContext';
 import { getDashboardFlexBasis } from '../grid-layout';
 import { ROW_HEIGHT_CSS_VARIABLE } from '../hooks/useRowHeightResize';
 
+import { useAddWidgetFlowState } from './add-widget-api';
 import { DEFAULT_WIDGET_NAMES, DefaultWidgetSpecKind } from './add-widget-flow';
 
 /** Rows of the table skeleton of a pending Table widget. */
@@ -45,6 +46,10 @@ export const PendingWidgetBox = memo(function PendingWidgetBox({
   const { t } = useTranslation();
   const { addWidget } = useDashboardUi();
   const { dockAnchors } = addWidget;
+  const existingOnly = useAddWidgetFlowState(
+    addWidget.flow,
+    (state) => state.kind === 'choosing_existing' && state.widgetId === widgetId
+  );
   const registerAnchor = useMemo(() => dockAnchors.anchorRef(widgetId), [dockAnchors, widgetId]);
   const name = t(spec === 'chart' ? 'dashboard.picker.layout.chart' : 'dashboard.picker.layout.table', {
     defaultValue: DEFAULT_WIDGET_NAMES[spec],
@@ -52,7 +57,7 @@ export const PendingWidgetBox = memo(function PendingWidgetBox({
 
   return (
     <div
-      aria-busy='true'
+      aria-busy={!existingOnly}
       className={cn(
         'group/widget relative isolate flex min-w-0 flex-col rounded-500 bg-dash-edit-tint shadow-[inset_0_0_0_2px_var(--dash-accent)]',
         DASHBOARD_WIDGET_BOX_TRANSITION_CLASS,
@@ -82,7 +87,9 @@ export const PendingWidgetBox = memo(function PendingWidgetBox({
           style={{ height: WIDGET_HEADER_HEIGHT, padding: WIDGET_HEADER_PADDING }}
         >
           <span className='truncate rounded-600 px-2.5 py-1 text-xs font-medium leading-4 text-dash-edit-title'>
-            <span data-testid='dashboard-widget-title'>{name}</span>
+            <span data-testid='dashboard-widget-title'>
+              {existingOnly ? t('dashboard.picker.chooseExisting', { defaultValue: 'Choose an existing view' }) : name}
+            </span>
           </span>
         </div>
       ) : null}
@@ -91,7 +98,11 @@ export const PendingWidgetBox = memo(function PendingWidgetBox({
         data-editing='true'
         data-testid='dashboard-widget-body'
       >
-        {spec === 'chart' ? (
+        {existingOnly ? (
+          <p className='m-auto px-3 text-sm text-text-secondary'>
+            {t('dashboard.picker.chooseExisting', { defaultValue: 'Choose an existing view' })}
+          </p>
+        ) : spec === 'chart' ? (
           <ChartLoadingState fill />
         ) : (
           <div aria-hidden='true' className='flex flex-col gap-3 px-3 pt-3' data-testid='dashboard-widget-pending-table'>

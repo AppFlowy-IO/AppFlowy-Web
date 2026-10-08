@@ -2,6 +2,7 @@ import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
 import { ComponentType, Fragment, ReactNode, SVGProps, useCallback, useMemo, useRef, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { ONLINE_DASHBOARD_VIEW_CREATION_REQUIRED } from '@/application/view-online-policy';
 import { ReactComponent as ChevronRightIcon } from '@/assets/icons/alt_arrow_right.svg';
 import { ReactComponent as ArrowLeftIcon } from '@/assets/icons/arrow_left.svg';
 import { ReactComponent as ArrowRightIcon } from '@/assets/icons/arrow_right.svg';
@@ -22,12 +23,13 @@ import {
   DropdownMenuSubContent,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Tooltip, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 import { useDashboardLayout } from './DashboardContext';
 import { dashboardFullAnnouncement, DashboardFullTooltipContent } from './DashboardFullTooltip';
 import { useDashboardUi, useDashboardUiOptional } from './DashboardUiContext';
+import { useDashboardCreationOnline } from './hooks/useDashboardCreationOnline';
 import { WidgetMenuSheet } from './mobile/WidgetMenuSheet';
 import {
   buildWidgetMenuEntries,
@@ -234,9 +236,12 @@ function MoveToRowEntry({ entry, actions }: EntryProps) {
  * Radix-disabled, so it stays hoverable and shows the "Dashboard is full"
  * tooltip; choosing it keeps the menu open and announces the refusal.
  */
-function RefusedDuplicateEntry() {
+function RefusedDuplicateEntry({ offline = false }: { offline?: boolean }) {
   const { t } = useTranslation();
   const { announce } = useDashboardUi();
+  const onlineReason = t('databaseViewCreation.dashboardOnlineRequired', {
+    defaultValue: ONLINE_DASHBOARD_VIEW_CREATION_REQUIRED,
+  });
 
   return (
     <Tooltip>
@@ -244,18 +249,18 @@ function RefusedDuplicateEntry() {
         <DropdownMenuItem
           aria-disabled='true'
           className={cn(ITEM_CLASS, '!text-text-tertiary [&_svg]:!text-text-tertiary')}
-          data-disabled-reason='dashboard-full'
+          data-disabled-reason={offline ? 'online-required' : 'dashboard-full'}
           data-parity-id={ENTRY_PARITY_IDS.duplicate.item}
           data-testid='dashboard-widget-menu-duplicate'
           onSelect={(event) => {
             event.preventDefault();
-            announce(dashboardFullAnnouncement(t));
+            announce(offline ? onlineReason : dashboardFullAnnouncement(t));
           }}
         >
           <EntryContent id='duplicate' />
         </DropdownMenuItem>
       </TooltipTrigger>
-      <DashboardFullTooltipContent side='right' />
+      {offline ? <TooltipContent side='right'>{onlineReason}</TooltipContent> : <DashboardFullTooltipContent side='right' />}
     </Tooltip>
   );
 }
@@ -305,6 +310,7 @@ function WidgetMenuItems({ onEditView }: { onEditView: () => void }) {
   const duplicatingWidget = useDashboardUiOptional()?.ownedViews.duplicatingWidget ?? NO_DUPLICATE_IN_FLIGHT;
   const isDuplicating = useCallback(() => duplicatingWidget.get() === widgetId, [duplicatingWidget, widgetId]);
   const duplicating = useSyncExternalStore(duplicatingWidget.subscribe, isDuplicating, isDuplicating);
+  const online = useDashboardCreationOnline();
   // Effective Edit mode: in View mode every role, writers included, only views the data source.
   const editing = isEditing && canEdit;
   const entries = useMemo(
@@ -325,7 +331,11 @@ function WidgetMenuItems({ onEditView }: { onEditView: () => void }) {
         return (
           <Fragment key={entry.id}>
             {previous && previous.group !== entry.group ? <DropdownMenuSeparator className={SEPARATOR_CLASS} /> : null}
-            <MenuEntry actions={actions} entry={entry} onEditView={onEditView} />
+            {entry.id === 'duplicate' && !online ? (
+              <RefusedDuplicateEntry offline />
+            ) : (
+              <MenuEntry actions={actions} entry={entry} onEditView={onEditView} />
+            )}
           </Fragment>
         );
       })}

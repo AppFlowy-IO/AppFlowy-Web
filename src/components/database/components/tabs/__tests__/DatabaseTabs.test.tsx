@@ -1,11 +1,14 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { toast } from 'sonner';
+import * as Y from 'yjs';
 
 import { useDatabase, useDatabaseContext } from '@/application/database-yjs';
 import { DatabaseContextState } from '@/application/database-yjs/context';
 import { useDuplicateDatabaseView, useUpdateDatabaseView } from '@/application/database-yjs/dispatch';
-import { DatabaseViewLayout, UIVariant, View, ViewLayout, YjsDatabaseKey } from '@/application/types';
+import { DatabaseViewLayout, UIVariant, View, ViewLayout, YDatabase, YDatabaseView, YDatabaseViews, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { DatabaseTabs } from '@/components/database/components/tabs/DatabaseTabs';
+import { getConfigValue } from '@/utils/runtime-config';
+import { updateServerInfo } from '@/utils/server-info';
 
 jest.mock('sonner', () => ({ toast: { error: jest.fn(), success: jest.fn() } }));
 
@@ -34,16 +37,20 @@ jest.mock('@/components/database/components/tabs/DatabaseViewTabs', () => ({
     viewNameById,
     setRenameView,
     onDuplicateView,
+    duplicateDisabled,
+    duplicateDisabledReason,
   }: {
     viewNameById?: Record<string, string>;
     setRenameView: (view: View) => void;
     onDuplicateView?: (viewId: string) => void;
+    duplicateDisabled?: boolean;
+    duplicateDisabledReason?: string;
   }) => (
     <div data-testid='database-view-tabs'>
       {viewNameById?.['database-view-id'] ?? 'Yjs view name'}
       <button onClick={() => setRenameView(mockNewDatabaseView)}>Rename new view</button>
       <button onClick={() => setRenameView(mockLiveRenameView)}>Rename live view</button>
-      {onDuplicateView ? <button onClick={() => onDuplicateView(databaseView.view_id)}>Duplicate view</button> : null}
+      {onDuplicateView ? <button disabled={duplicateDisabled} title={duplicateDisabledReason} onClick={() => onDuplicateView(databaseView.view_id)}>Duplicate view</button> : null}
     </div>
   ),
 }));
@@ -126,6 +133,45 @@ describe('DatabaseTabs', () => {
     (useDatabase as jest.Mock).mockReturnValue(undefined);
     (useDuplicateDatabaseView as jest.Mock).mockReturnValue(jest.fn());
     (useUpdateDatabaseView as jest.Mock).mockReturnValue(jest.fn());
+    updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), {
+      status: 'available', info: { enable_page_history: true },
+    });
+  });
+
+  it('disables duplication at the raw view cap while preserving rename and re-enables after deletion', async () => {
+    const databaseDoc = new Y.Doc() as YDoc;
+    const database = new Y.Map() as YDatabase;
+    const views = new Y.Map() as YDatabaseViews;
+
+    databaseDoc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.database, database);
+    database.set(YjsDatabaseKey.views, views);
+    for (const id of [databaseView.view_id, 'hidden-owned-view']) {
+      views.set(id, new Y.Map() as YDatabaseView);
+    }
+
+    const duplicateView = jest.fn().mockResolvedValue('copy');
+
+    (useDatabase as jest.Mock).mockReturnValue(database);
+    (useDuplicateDatabaseView as jest.Mock).mockReturnValue(duplicateView);
+    (useDatabaseContext as jest.Mock).mockReturnValue({
+      databaseDoc, createDatabaseView: jest.fn(), loadViewMeta: jest.fn(async () => databaseContainer),
+      readOnly: false, showActions: true,
+    } as unknown as DatabaseContextState);
+    updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), {
+      status: 'available', info: { enable_page_history: true, max_database_views: 2 },
+    });
+    render(<DatabaseTabs databasePageId={databaseView.view_id} viewIds={[databaseView.view_id]} />);
+    const duplicate = screen.getByRole('button', { name: 'Duplicate view' });
+
+    expect(duplicate.hasAttribute('disabled')).toBe(true);
+    expect(duplicate.getAttribute('title')).toContain('limit of 2 views');
+    expect(screen.getByRole('button', { name: 'Rename live view' }).hasAttribute('disabled')).toBe(false);
+    fireEvent.click(duplicate);
+    expect(duplicateView).not.toHaveBeenCalled();
+    act(() => views.delete('hidden-owned-view'));
+    expect(duplicate.hasAttribute('disabled')).toBe(false);
+    fireEvent.click(duplicate);
+    await waitFor(() => expect(duplicateView).toHaveBeenCalledTimes(1));
   });
 
   it('duplicates a tab through the database-view hook and selects the returned view', async () => {

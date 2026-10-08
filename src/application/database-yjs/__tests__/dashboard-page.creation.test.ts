@@ -409,6 +409,26 @@ describe('createLinkedDatabaseDashboardView', () => {
       };
     }
 
+    it('refuses a linked dashboard copy offline before creating or modifying anything', async () => {
+      const databaseDoc = createSourceDoc();
+      const params = createDuplicateParams(databaseDoc);
+      const before = Y.encodeStateAsUpdate(databaseDoc);
+      const online = jest.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+
+      try {
+        await expect(duplicateLinkedDatabaseDashboardView(params)).rejects.toThrow(
+          'Connect to the internet to create dashboard widget views.'
+        );
+        expect(params.createDatabaseView).not.toHaveBeenCalled();
+        expect(params.loadView).toHaveBeenCalledWith(SOURCE_DASHBOARD_ID, false, false, { databaseId: DATABASE_ID });
+        expect(params.updatePage).not.toHaveBeenCalled();
+        expect(params.deletePage).not.toHaveBeenCalled();
+        expect(Y.encodeStateAsUpdate(databaseDoc)).toEqual(before);
+      } finally {
+        online.mockRestore();
+      }
+    });
+
     it('copies the whole layout and gives the copy its own copies of the owned views', async () => {
       const databaseDoc = createSourceDoc();
       const params = createDuplicateParams(databaseDoc);

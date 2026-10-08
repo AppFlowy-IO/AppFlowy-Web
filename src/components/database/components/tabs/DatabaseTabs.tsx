@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
 import { useDatabase, useDatabaseContext } from '@/application/database-yjs';
+import { assertDatabaseViewCapacity } from '@/application/database-yjs/database-view-capacity';
 import { useDuplicateDatabaseView, useUpdateDatabaseView } from '@/application/database-yjs/dispatch';
 import { View, YjsDatabaseKey } from '@/application/types';
 import {
@@ -21,6 +22,7 @@ import { DatabaseViewTabs } from '@/components/database/components/tabs/Database
 import DeleteViewConfirm from '@/components/database/components/tabs/DeleteViewConfirm';
 import { MobileDatabaseViewPill } from '@/components/database/components/tabs/MobileDatabaseViewPill';
 import { useOpenDatabaseAsPage } from '@/components/database/hooks';
+import { useDatabaseViewCapacity } from '@/components/database/hooks/useDatabaseViewCapacity';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { getErrorMessage } from '@/utils/errors';
@@ -81,6 +83,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
     const database = useDatabase();
     const views = database?.get(YjsDatabaseKey.views);
     const context = useDatabaseContext();
+    const { disabledReason: capacityDisabledReason } = useDatabaseViewCapacity(context.databaseDoc);
     const {
       loadViewMeta,
       navigateToView,
@@ -457,6 +460,13 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
     const duplicateDatabaseView = useCallback(
       async (viewId: string) => {
         if (!context.createDatabaseView || !views || duplicatingViewId) return;
+        try {
+          assertDatabaseViewCapacity(context.databaseDoc);
+        } catch (error) {
+          toast.error(getErrorMessage(error));
+          return;
+        }
+
         const duplicateScopeRevision = duplicateScopeRevisionRef.current;
         const isCurrentDuplicateScope = () =>
           mountedRef.current && duplicateScopeRevisionRef.current === duplicateScopeRevision;
@@ -491,6 +501,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
       },
       [
         context.createDatabaseView,
+        context.databaseDoc,
         duplicateView,
         duplicatingViewId,
         handleViewAdded,
@@ -618,7 +629,8 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
               setDeleteConfirmOpen={setDeleteConfirmOpen}
               setRenameView={openRenameModal}
               onDuplicateView={context.createDatabaseView ? duplicateDatabaseView : undefined}
-              duplicateDisabled={Boolean(duplicatingViewId)}
+              duplicateDisabled={Boolean(duplicatingViewId) || Boolean(capacityDisabledReason)}
+              duplicateDisabledReason={capacityDisabledReason}
               pendingScrollToViewId={pendingScrollToViewId}
               setPendingScrollToViewId={setPendingScrollToViewId}
               onReorderTabs={onReorderTabs}

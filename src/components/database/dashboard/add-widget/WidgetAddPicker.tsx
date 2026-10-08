@@ -3,11 +3,13 @@ import { useTranslation } from 'react-i18next';
 
 import { EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED } from '@/application/constants';
 import { DatabaseViewLayout } from '@/application/types';
+import { ONLINE_DASHBOARD_VIEW_CREATION_REQUIRED } from '@/application/view-online-policy';
 import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
 import { cn } from '@/lib/utils';
 
 import { useDashboardContext } from '../DashboardContext';
 import { useDashboardUi } from '../DashboardUiContext';
+import { useDashboardCreationOnline } from '../hooks/useDashboardCreationOnline';
 
 import { AddWidgetFlowState } from './add-widget-flow';
 import { DockPanelHeader } from './DockPanelHeader';
@@ -15,7 +17,7 @@ import { NEW_VIEW_LAYOUTS, WidgetPickerSections } from './picker-sections';
 import { useWidgetPickerSections } from './useWidgetPickerSections';
 import { LAYOUT_ROW_PARITY_SLUGS, movePickerFocus, WidgetSourceList } from './WidgetSourceList';
 
-type PickerFlowState = Extract<AddWidgetFlowState, { kind: 'creating' } | { kind: 'open' }>;
+type PickerFlowState = Extract<AddWidgetFlowState, { kind: 'creating' | 'choosing_existing' | 'open' }>;
 
 /** The first selectable row of the sections, in visual order (Enter in the search). */
 function firstPick(
@@ -86,8 +88,10 @@ export function WidgetAddPicker({ state }: WidgetAddPickerProps) {
   const { addWidget } = useDashboardUi();
   const { flow } = addWidget;
   const creating = state.kind === 'creating';
+  const online = useDashboardCreationOnline();
+  const existingOnly = state.kind === 'choosing_existing' || !online;
   const excludeViewIds = useMemo(() => (state.kind === 'open' ? [state.viewId] : []), [state]);
-  const picker = useWidgetPickerSections({ mode: 'add', primaryDatabaseId: hostDatabaseId, excludeViewIds });
+  const picker = useWidgetPickerSections({ mode: 'add', primaryDatabaseId: hostDatabaseId, excludeViewIds, existingOnly });
   const [target, setTarget] = useState<{ databaseId: string; name: string } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -123,7 +127,7 @@ export function WidgetAddPicker({ state }: WidgetAddPickerProps) {
     else pickLayout(pick.layout);
   };
 
-  if (target) {
+  if (target && !existingOnly) {
     return (
       <div className='flex min-h-0 flex-1 flex-col' data-testid='dashboard-widget-picker-new-in-database-page'>
         <DockPanelHeader
@@ -186,7 +190,9 @@ export function WidgetAddPicker({ state }: WidgetAddPickerProps) {
         onClose={close}
         parityPrefix='dash-widget-picker'
         testIdPrefix='dashboard-widget-picker'
-        title={t('dashboard.picker.newView', { defaultValue: 'New view' })}
+        title={existingOnly
+          ? t('dashboard.picker.chooseExisting', { defaultValue: 'Choose an existing view' })
+          : t('dashboard.picker.newView', { defaultValue: 'New view' })}
       />
       <PickerSearchField
         onChange={picker.setQuery}
@@ -194,6 +200,11 @@ export function WidgetAddPicker({ state }: WidgetAddPickerProps) {
         placeholder={t('dashboard.picker.searchPlaceholder', { defaultValue: 'Search for a view...' })}
         value={picker.query}
       />
+      {existingOnly ? (
+        <p className='px-2 py-1 text-xs text-text-secondary' role='status'>
+          {t('databaseViewCreation.dashboardOnlineRequired', { defaultValue: ONLINE_DASHBOARD_VIEW_CREATION_REQUIRED })}
+        </p>
+      ) : null}
       <WidgetSourceList
         disabled={creating}
         list={picker.list}

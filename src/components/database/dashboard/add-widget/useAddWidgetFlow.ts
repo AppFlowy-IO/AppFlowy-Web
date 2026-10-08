@@ -203,10 +203,11 @@ export function useAddWidgetFlow(options: UseAddWidgetFlowOptions): {
         case 'scroll_to':
           current.scrollToWidget(effect.widgetId);
           break;
-        case 'insert_widget': {
+        case 'insert_widget':
+        case 'insert_existing_widget': {
           const widget = createDashboardWidget(
             effect.viewId,
-            current.hostDatabaseId,
+            effect.type === 'insert_existing_widget' ? effect.databaseId : current.hostDatabaseId,
             DASHBOARD_GRID_COLUMNS,
             effect.widgetId
           );
@@ -229,7 +230,12 @@ export function useAddWidgetFlow(options: UseAddWidgetFlowOptions): {
           // Not written: the dashboard filled meanwhile (announced), or write
           // access went or the context turned mobile (nothing to announce).
           if (!written) {
-            handle?.dispatch({ type: 'insert_refused', viewId: effect.viewId, reason: full ? 'full' : 'access' });
+            if (effect.type === 'insert_widget') {
+              handle?.dispatch({ type: 'insert_refused', viewId: effect.viewId, reason: full ? 'full' : 'access' });
+            } else if (full) {
+              current.announce(dashboardFullAnnouncement(current.t));
+            }
+
             break;
           }
 
@@ -271,7 +277,7 @@ export function useAddWidgetFlow(options: UseAddWidgetFlowOptions): {
             const state = handle?.getState();
 
             // Keep the previous tile: switch back in the flow (the view itself never changed).
-            if (previous && previous.kind !== 'idle' && previous.kind !== 'creating' && state?.kind === 'configuring') {
+            if (previous && 'layout' in previous && state?.kind === 'configuring') {
               handle?.dispatch({ type: 'pick_tile', layout: previous.layout });
             }
           };
@@ -411,6 +417,11 @@ export function useAddWidgetFlow(options: UseAddWidgetFlowOptions): {
 
       // The editor started building: Edit mode stays whatever the sync brings (R-MODE).
       current.pinEditing();
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        handle.dispatch({ type: 'start', placement, widgetId, spec: 'grid', refused: null, existingOnly: true });
+        return;
+      }
+
       startingRef.current = true;
       void resolveSpec()
         .then((spec) => handle.dispatch({ type: 'start', placement, widgetId, spec, refused: null }))

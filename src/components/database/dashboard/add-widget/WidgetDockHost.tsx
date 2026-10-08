@@ -108,7 +108,7 @@ export function WidgetDockHost({ sourceWidgetId, closeSourcePanel, bindFlowView,
   const panel =
     state.kind === 'configuring'
       ? 'config'
-      : flowOpen && (state.kind === 'creating' || state.kind === 'open')
+      : flowOpen && (state.kind === 'creating' || state.kind === 'choosing_existing' || state.kind === 'open')
       ? 'picker'
       : sourceWidgetId
       ? 'source'
@@ -152,7 +152,7 @@ export function WidgetDockHost({ sourceWidgetId, closeSourcePanel, bindFlowView,
               maxHeight: placement.maxHeight,
             }}
           >
-            {panel === 'picker' && (state.kind === 'creating' || state.kind === 'open') ? (
+            {panel === 'picker' && (state.kind === 'creating' || state.kind === 'choosing_existing' || state.kind === 'open') ? (
               <WidgetAddPicker state={state} />
             ) : panel === 'config' && state.kind === 'configuring' ? (
               <NewViewConfigPanel state={state} />

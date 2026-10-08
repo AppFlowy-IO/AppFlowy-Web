@@ -13,12 +13,14 @@ import {
   YjsEditorKey,
   YSharedRoot,
 } from '@/application/types';
+import { assertDashboardViewCreationOnline } from '@/application/view-online-policy';
 import { isDatabaseContainer, isEmbeddedDatabaseViewWithoutChildren, isEmbeddedView } from '@/application/view-utils';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { Log } from '@/utils/log';
 
 import { seedDashboardLayoutSetting } from './dashboard-layout';
 import { DASHBOARD_OWNER_KEY, readDashboardOwner } from './dashboard-owned-views';
+import { assertDatabaseViewCapacity } from './database-view-capacity';
 import { normalizeCreatedDatabaseFeedView, updateCreatesExactFeedView } from './feed-layout';
 import {
   normalizeCreatedDatabaseGalleryView,
@@ -310,6 +312,8 @@ export async function createDatabaseViewInDoc(
   nameOverride?: string,
   options?: AddDatabaseViewOptions
 ): Promise<string> {
+  if (options?.dashboardOwner) assertDashboardViewCreationOnline();
+  assertDatabaseViewCapacity(deps.databaseDoc);
   // databasePageId: The main database page in folder (used as parent for new views)
   const {
     databasePageId,
@@ -449,6 +453,9 @@ export async function createDatabaseViewInDoc(
   const preRequestState = requiresIsolatedValidation ? Y.encodeStateAsUpdate(databaseDoc) : undefined;
 
   // Create new view as a child of the database container (or document for embedded linked views).
+  // A metadata lookup can overlap another client's create or a server-limit refresh.
+  assertDatabaseViewCapacity(databaseDoc);
+  if (options?.dashboardOwner) assertDashboardViewCreationOnline();
   const response = await createDatabaseView(requestViewId, {
     parent_view_id: tabsParentViewId,
     prev_view_id: prevViewId,

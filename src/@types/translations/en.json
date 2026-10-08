@@ -1,6 +1,9 @@
 {
   "databaseViewCreation": {
+    "duplicateLimitExceeded": "This database has more than the limit of {{limit}} views and cannot be duplicated. Remove views before duplicating it.",
     "onlineRequired": "Connect to the internet to create Form or Chart views.",
+    "dashboardOnlineRequired": "Connect to the internet to create dashboard widget views.",
+    "viewLimitReached": "This database has reached its limit of {{limit}} views. Remove a view before creating another.",
     "connectionRequired": "Connect to the server to create this view.",
     "checking": "Checking view availability…",
     "unavailable": "Workspace information is unavailable. Please try again.",
@@ -4768,6 +4771,7 @@
       "viewNameHint": "Renames this view"
     },
     "picker": {
+      "chooseExisting": "Choose an existing view",
       "newView": "New view",
       "thisDatabase": "This database",
       "noResults": "No views found",

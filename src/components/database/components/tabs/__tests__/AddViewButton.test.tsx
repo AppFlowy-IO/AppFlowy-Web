@@ -1,8 +1,9 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { toast } from 'sonner';
+import * as Y from 'yjs';
 
-import { DatabaseViewLayout } from '@/application/types';
+import { DatabaseViewLayout, YDatabase, YDatabaseView, YDatabaseViews, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { AddViewButton } from '@/components/database/components/tabs/AddViewButton';
 import { getConfigValue } from '@/utils/runtime-config';
 import { updateServerInfo } from '@/utils/server-info';
@@ -11,6 +12,7 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react';
 
 const mockAddView = jest.fn();
 let mockExperimentalDatabaseViewCreationEnabled = false;
+let mockDatabaseDoc: YDoc | undefined;
 
 jest.mock('@/components/app/hooks/useDatabaseViewCreation', () => ({
   useDatabaseViewCreation: () => ({
@@ -31,7 +33,7 @@ jest.mock('@/application/database-yjs/dispatch', () => ({
 }));
 
 jest.mock('@/application/database-yjs/context', () => ({
-  useDatabaseContext: () => ({ workspaceId: 'workspace-id' }),
+  useDatabaseContext: () => ({ workspaceId: 'workspace-id', databaseDoc: mockDatabaseDoc }),
 }));
 
 jest.mock('sonner', () => ({
@@ -84,12 +86,39 @@ describe('AddViewButton', () => {
       info: { enable_page_history: true, self_hosted: false },
     });
     mockExperimentalDatabaseViewCreationEnabled = false;
+    mockDatabaseDoc = undefined;
     mockAddView.mockResolvedValue('list-view-id');
     jest.spyOn(Date, 'now').mockReturnValueOnce(0).mockReturnValueOnce(300);
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  it('disables all new-view layouts at the advertised cap and enables them after a removal', async () => {
+    mockDatabaseDoc = new Y.Doc() as YDoc;
+    const database = new Y.Map() as YDatabase;
+    const views = new Y.Map() as YDatabaseViews;
+
+    mockDatabaseDoc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.database, database);
+    database.set(YjsDatabaseKey.views, views);
+    views.set('primary', new Y.Map() as YDatabaseView);
+    views.set('owned-hidden', new Y.Map() as YDatabaseView);
+    updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), {
+      status: 'available', info: { enable_page_history: true, max_database_views: 2 },
+    });
+    render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><AddViewButton databasePageId='database' onViewAdded={jest.fn()} /></MemoryRouter>);
+    const grid = screen.getByRole('button', { name: 'grid.menuName' });
+
+    expect(grid.hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: 'board.menuName' }).hasAttribute('disabled')).toBe(true);
+    fireEvent.click(grid);
+    expect(mockAddView).not.toHaveBeenCalled();
+    act(() => views.delete('owned-hidden'));
+    expect(grid.hasAttribute('disabled')).toBe(false);
+    fireEvent.click(grid);
+    await waitFor(() => expect(mockAddView).toHaveBeenCalledTimes(1));
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   it.each(['form', 'chart'])('shows one Pro upgrade message when %s creation is rejected', async (layout) => {

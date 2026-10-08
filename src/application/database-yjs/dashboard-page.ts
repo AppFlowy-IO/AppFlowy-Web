@@ -1,6 +1,7 @@
 import { seedDashboardLayoutSetting } from '@/application/database-yjs/dashboard-layout';
 import {
   copyDashboardLayoutSetting,
+  assertKnownOwnedDashboardCopiesOnline,
   duplicateDashboardOwnedWidgets,
 } from '@/application/database-yjs/dashboard-owned-view-ops';
 import { markDashboardCreatedThisSession } from '@/application/database-yjs/dashboard-session';
@@ -241,6 +242,15 @@ export async function duplicateLinkedDatabaseDashboardView(
 ): Promise<CreateDatabaseViewResponse> {
   const { bindViewSync, createDatabaseView, deletePage, loadView, loadViewMeta, scheduleDeferredCleanup, sourceViewId } =
     params;
+
+  // An offline copy can use an already cached source; do not reject an empty
+  // dashboard or shared references that do not create owned views.
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    const sourceDoc = await loadView(sourceViewId, false, false, { databaseId: params.payload.database_id });
+
+    assertKnownOwnedDashboardCopiesOnline(sourceDoc, sourceViewId);
+  }
+
   const response = await createDatabaseView(params.requestViewId, {
     ...params.payload,
     layout: ViewLayout.Dashboard,

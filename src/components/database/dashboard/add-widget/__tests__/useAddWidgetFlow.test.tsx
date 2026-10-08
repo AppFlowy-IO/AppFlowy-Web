@@ -35,6 +35,7 @@ jest.mock('@/application/workspace-plan-policy', () => ({
   getWorkspacePlanPolicy: () => ({
     requiresOnlineViewCreation: () => !mockOnline,
     hasProAccess: (plan: string | null) => plan === 'pro',
+    getUpgradeMessage: (message: string) => message,
   }),
 }));
 jest.mock('@/application/database-yjs/dashboard-owned-view-ops', () => ({
@@ -178,7 +179,98 @@ beforeEach(() => {
   mockOnline = true;
 });
 
+afterEach(() => jest.restoreAllMocks());
+
 describe('useAddWidgetFlow', () => {
+  it.each(['pro', 'free'])('adds an existing view offline on %s without creating an owned view', async (plan) => {
+    mockPlan = plan;
+    const { doc, database } = createDoc([]);
+    const { result, selectWidget } = renderFlow(doc, database);
+    const writes = jest.fn();
+
+    doc.on('update', writes);
+    jest.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    act(() => result.current.startAddWidget({ type: 'new_row' }));
+    await settle();
+
+    expect(createMock).not.toHaveBeenCalled();
+    expect(deleteMock).not.toHaveBeenCalled();
+    expect(writes).not.toHaveBeenCalled();
+    expect(result.current.api.flow.getState().kind).toBe('choosing_existing');
+    const pending = selectPendingAdd(result.current.api.flow.getState());
+
+    expect(pending).not.toBeNull();
+    expect(selectWidget).toHaveBeenCalledWith(pending!.widgetId);
+    // Creation choices cannot escape the existing-only state, including programmatic dispatches.
+    act(() => result.current.api.flow.dispatch({ type: 'pick_layout', layout: DatabaseViewLayout.Board }));
+    act(() => result.current.api.createInDatabase('other-db', 'other-grid', DatabaseViewLayout.Grid));
+    expect(result.current.api.flow.getState().kind).toBe('choosing_existing');
+    expect(writes).not.toHaveBeenCalled();
+
+    act(() => result.current.api.flow.dispatch({ type: 'pick_existing', viewId: 'shared', databaseId: 'other-db' }));
+    await settle();
+    expect(stored(database).flatMap((row) => row.widgets)).toEqual([
+      expect.objectContaining({ id: pending!.widgetId, viewId: 'shared', databaseId: 'other-db' }),
+    ]);
+    expect(createMock).not.toHaveBeenCalled();
+    expect(deleteMock).not.toHaveBeenCalled();
+    expect(result.current.api.flow.getState()).toEqual({ kind: 'idle' });
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it('dismisses an offline pending add without writing a widget or creating a view', async () => {
+    const { doc, database } = createDoc([]);
+    const { result } = renderFlow(doc, database);
+    const writes = jest.fn();
+
+    doc.on('update', writes);
+    jest.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    act(() => result.current.startAddWidget({ type: 'new_row' }));
+    act(() => result.current.api.flow.dispatch({ type: 'dismiss' }));
+    await settle();
+    expect(result.current.api.flow.getState()).toEqual({ kind: 'idle' });
+    expect(stored(database)).toEqual([]);
+    expect(writes).not.toHaveBeenCalled();
+    expect(createMock).not.toHaveBeenCalled();
+    expect(deleteMock).not.toHaveBeenCalled();
+  });
+
+  it('rechecks capacity after an offline existing-view picker opened, without deleting the shared view', async () => {
+    const { doc, database, view } = createDoc([rowOf('a', 4), rowOf('b', 4), rowOf('c', 3)]);
+    const { result, announce } = renderFlow(doc, database);
+
+    jest.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    act(() => result.current.startAddWidget({ type: 'new_row' }));
+    act(() => doc.transact(() => updateDashboardLayoutSetting(view, {
+      rows: [rowOf('a', 4), rowOf('b', 4), rowOf('c', 4)],
+    }), 'remote'));
+    act(() => result.current.api.flow.dispatch({ type: 'pick_existing', viewId: 'shared', databaseId: 'other-db' }));
+    await settle();
+    expect(stored(database).flatMap((row) => row.widgets)).toHaveLength(12);
+    expect(announce).toHaveBeenCalledWith(expect.stringContaining('Dashboard is full'));
+    expect(createMock).not.toHaveBeenCalled();
+    expect(deleteMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { code: 1012, message: 'Permission denied' },
+    { code: 1028, message: 'Storage limit exceeded' },
+    { code: 400, message: 'Dashboard is full' },
+    { code: -1, message: 'Network unavailable' },
+  ])('does not retry a rejected Chart as Table for $message', async (error) => {
+    const { doc, database } = createDoc([]);
+    const { result } = renderFlow(doc, database);
+
+    createMock.mockRejectedValue(error);
+    act(() => result.current.startAddWidget({ type: 'new_row' }));
+    await settle();
+
+    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(stored(database)).toEqual([]);
+    expect(result.current.api.flow.getState()).toEqual({ kind: 'idle' });
+    expect(toastError).toHaveBeenCalledWith(error.message);
+  });
+
   it('refuses a full dashboard before creating anything (#16)', async () => {
     const { doc, database } = createDoc([rowOf('a', 4), rowOf('b', 4), rowOf('c', 4)]);
     const { result, announce } = renderFlow(doc, database);
@@ -301,6 +393,53 @@ describe('useAddWidgetFlow', () => {
     await settle();
 
     expect(createMock.mock.calls[0][1]).toMatchObject({ layout: DatabaseViewLayout.Grid, baseName: 'Table' });
+  });
+
+  it('rechecks connectivity after resolving the default plan without creating a local fallback', async () => {
+    const { doc, database } = createDoc([]);
+    const { result } = renderFlow(doc, database);
+
+    act(() => result.current.startAddWidget({ type: 'new_row' }));
+    jest.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    await settle();
+
+    expect(createMock).not.toHaveBeenCalled();
+    expect(stored(database)).toEqual([]);
+    expect(result.current.api.flow.getState()).toEqual({ kind: 'idle' });
+    expect(toastError).toHaveBeenCalledWith('Connect to the internet to create dashboard widget views.');
+  });
+
+  it.each(['new-source-view', 'existing-source-view'])('handles an offline %s choice without creating a view', async (choice) => {
+    const { doc, database, views } = createDoc([rowOf('a', 1)]);
+    const { result } = renderFlow(doc, database);
+
+    createMock.mockImplementation(async (_deps: unknown, params: { layout: DatabaseViewLayout; baseName: string }) => {
+      addCreatedView(doc, views, 'chart-1', params.layout, params.baseName);
+      return 'chart-1';
+    });
+    act(() => result.current.startAddWidget({ type: 'new_row' }));
+    await settle();
+    const before = stored(database);
+
+    createMock.mockClear();
+    jest.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    act(() => {
+      if (choice === 'new-source-view') {
+        result.current.api.createInDatabase('other-db', 'other-anchor', DatabaseViewLayout.Board);
+      } else {
+        result.current.api.flow.dispatch({ type: 'pick_existing', viewId: 'a-v0', databaseId: DATABASE_ID });
+      }
+    });
+    await settle();
+
+    expect(createMock).not.toHaveBeenCalled();
+    if (choice === 'new-source-view') {
+      expect(stored(database)).toEqual(before);
+      expect(toastError).toHaveBeenCalledWith('Connect to the internet to create dashboard widget views.');
+    } else {
+      expect(stored(database).flatMap((row) => row.widgets).map((widget) => widget.viewId)).toEqual(['a-v0', 'a-v0']);
+      expect(toastError).not.toHaveBeenCalled();
+    }
   });
 
   it('removes the pending widget and says so when the view cannot be created', async () => {

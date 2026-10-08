@@ -36,6 +36,7 @@ export interface DatabaseTabItemProps {
   onOpenDeleteModal: (id: string) => void;
   onDuplicate?: (id: string) => void;
   duplicateDisabled?: boolean;
+  duplicateDisabledReason?: string;
   onOpenRenameModal: (view: View) => void;
   setTabRef: (id: string, el: HTMLElement | null) => void;
   /** Drag instance of the tab bar group; undefined disables reordering for this tab. */
@@ -55,6 +56,7 @@ export const DatabaseTabItem = memo(
     onOpenDeleteModal,
     onDuplicate,
     duplicateDisabled,
+    duplicateDisabledReason,
     onOpenRenameModal,
     setTabRef,
     reorderInstanceId,
@@ -212,6 +214,7 @@ export const DatabaseTabItem = memo(
                 onOpenRenameModal={onOpenRenameModal}
                 deleteDisabled={visibleViewIds.length <= 1}
                 duplicateDisabled={duplicateDisabled}
+                duplicateDisabledReason={duplicateDisabledReason}
                 view={viewForActions}
               />
             )}

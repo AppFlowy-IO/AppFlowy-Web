@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 
 import { EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED } from '@/application/constants';
 import { useDatabaseContext } from '@/application/database-yjs/context';
+import { assertDatabaseViewCapacity } from '@/application/database-yjs/database-view-capacity';
 import { DATABASE_VIEW_LAYOUT_TO_VIEW_LAYOUT } from '@/application/database-yjs/database-view-doc-ops';
 import { useAddDatabaseView } from '@/application/database-yjs/dispatch';
 import { DatabaseViewLayout, ViewLayout } from '@/application/types';
@@ -12,6 +13,7 @@ import { DatabaseViewCreationItem } from '@/components/_shared/DatabaseViewCreat
 import { ViewIcon } from '@/components/_shared/view-icon';
 import { useDashboardCreationGate } from '@/components/app/hooks/useDashboardCreationGate';
 import { DatabaseViewCreationAction, useDatabaseViewCreation } from '@/components/app/hooks/useDatabaseViewCreation';
+import { useDatabaseViewCapacity } from '@/components/database/hooks/useDatabaseViewCapacity';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
@@ -53,7 +55,8 @@ export function useAddDatabaseViewMenu({
   const onAddView = useAddDatabaseView();
   const [addLoading, setAddLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const { getSubscriptions, workspaceId } = useDatabaseContext();
+  const { getSubscriptions, workspaceId, databaseDoc } = useDatabaseContext();
+  const { disabledReason: capacityDisabledReason } = useDatabaseViewCapacity(databaseDoc);
   const { getAction, checkCreation, startCheckout } = useDatabaseViewCreation({
     getSubscriptions,
     workspaceId,
@@ -66,7 +69,9 @@ export function useAddDatabaseViewMenu({
   // Keep an upgrade's item busy while checkout opens, on desktop and mobile.
   const [checkoutLayout, setCheckoutLayout] = useState<ViewLayout | null>(null);
   const getLayoutAction = (layout: ViewLayout): DatabaseViewCreationAction =>
-    layout === ViewLayout.Dashboard
+    capacityDisabledReason
+      ? { type: 'disabled', reason: capacityDisabledReason }
+      : layout === ViewLayout.Dashboard
       ? !canCreateDashboard || dashboardDisabledReason
         ? { type: 'disabled', reason: dashboardDisabledReason }
         : { type: 'create' }
@@ -106,6 +111,13 @@ export function useAddDatabaseViewMenu({
   }, [databasePageId]);
 
   const handleAddView = async (layout: DatabaseViewLayout, name: string) => {
+    try {
+      assertDatabaseViewCapacity(databaseDoc);
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+      return;
+    }
+
     if (layout === DatabaseViewLayout.Dashboard && (!canCreateDashboard || dashboardDisabledReason)) return;
     if (!checkCreation(DATABASE_VIEW_LAYOUT_TO_VIEW_LAYOUT[layout], () => setMenuOpen(false))) return;
     const actionScopeRevision = actionScopeRevisionRef.current;

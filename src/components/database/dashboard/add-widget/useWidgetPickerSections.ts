@@ -31,6 +31,8 @@ export interface UseWidgetPickerSectionsOptions {
   primaryDatabaseId: string;
   /** Never offered (the flow's own default view). */
   excludeViewIds?: readonly string[];
+  /** An offline add only writes a reference to an already existing view. */
+  existingOnly?: boolean;
 }
 
 /** What `WidgetSourceList` renders: one object, unchanged while only the query as typed changes. */
@@ -75,6 +77,7 @@ export function useWidgetPickerSections({
   mode,
   primaryDatabaseId,
   excludeViewIds,
+  existingOnly = false,
 }: UseWidgetPickerSectionsOptions): WidgetPickerSectionsState {
   const { t } = useTranslation();
   const hostContext = useDatabaseContext();
@@ -127,7 +130,7 @@ export function useWidgetPickerSections({
 
   const timelineReason = useTimelineCreationDisabledReason(getSubscriptions, {
     workspaceId,
-    enabled: mode === 'add' && EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED,
+    enabled: mode === 'add' && !existingOnly && EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED,
   });
   const timelineCreation: PickerCreationState = !EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED
     ? 'hidden'
@@ -178,7 +181,7 @@ export function useWidgetPickerSections({
         timelineCreation,
         chartCreation: chartCreationAllowed ? 'enabled' : 'disabled',
         canCreateInOtherDatabases: Boolean(hostContext.loadView && hostContext.createDatabaseView),
-        includeNewView: mode === 'add',
+        includeNewView: mode === 'add' && !existingOnly,
         layoutLabel,
         fallbackName,
       }),
@@ -187,6 +190,7 @@ export function useWidgetPickerSections({
       chartCreationAllowed,
       dashboardViewId,
       excludeKey,
+      existingOnly,
       expandedGroups,
       fallbackName,
       hostContext.createDatabaseView,

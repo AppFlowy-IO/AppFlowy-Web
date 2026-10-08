@@ -4,6 +4,7 @@ import { View } from '@/application/types';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
+import { DatabaseViewCreationHint } from '@/components/_shared/DatabaseViewCreationItem';
 import { DropdownMenuGroup, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 
 export function DatabaseViewActions({
@@ -13,9 +14,11 @@ export function DatabaseViewActions({
   view,
   deleteDisabled,
   duplicateDisabled,
+  duplicateDisabledReason,
 }: {
   deleteDisabled: boolean;
   duplicateDisabled?: boolean;
+  duplicateDisabledReason?: string;
   view: View;
   onDuplicate?: (viewId: string) => void;
   onOpenRenameModal: (view: View) => void;
@@ -35,16 +38,18 @@ export function DatabaseViewActions({
         {t('button.rename')}
       </DropdownMenuItem>
       {onDuplicate ? (
-        <DropdownMenuItem
-          data-testid='database-view-action-duplicate'
-          disabled={duplicateDisabled}
-          onSelect={() => {
-            onDuplicate(view.view_id);
-          }}
-        >
-          <DuplicateIcon />
-          {t('button.duplicate')}
-        </DropdownMenuItem>
+        <DatabaseViewCreationHint reason={duplicateDisabledReason}>
+          <DropdownMenuItem
+            data-testid='database-view-action-duplicate'
+            disabled={duplicateDisabled}
+            onSelect={() => {
+              onDuplicate(view.view_id);
+            }}
+          >
+            <DuplicateIcon />
+            {t('button.duplicate')}
+          </DropdownMenuItem>
+        </DatabaseViewCreationHint>
       ) : null}
       <DropdownMenuItem
         data-testid='database-view-action-delete'

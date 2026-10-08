@@ -18,6 +18,7 @@ import {
   DASHBOARD_OWNER_RETRY_DELAYS_MS,
   DATABASE_VIEW_LAYOUT_TO_VIEW_LAYOUT,
   DatabaseViewDocDeps,
+  createDatabaseViewInDoc,
   deleteDatabaseViewInDoc,
   markDashboardOwnedView,
 } from '@/application/database-yjs/database-view-doc-ops';
@@ -249,6 +250,90 @@ beforeEach(() => {
 
 afterEach(() => {
   jest.restoreAllMocks();
+});
+
+describe('owned views require an online server', () => {
+  it.each(['create', 'duplicate', 'convert', 'duplicate-dashboard', 'copy-owned-widgets', 'low-level-create'])(
+    'refuses %s offline before metadata, remote creation, or collab writes',
+    async (action) => {
+      const { workspace, hostDoc, foreignDoc } = setup();
+      const deps = workspace.deps(hostDoc);
+
+      setDashboardRows(hostDoc, 'v:dash', [{ id: 'r1', height: 360, widgets: [widget('w1', 'v:board', HOST_DB)] }]);
+      getView(hostDoc, 'v:board').set(YjsDatabaseKey.dashboard_owner, 'v:dash');
+      const before = Y.encodeStateAsUpdate(hostDoc);
+      const foreignBefore = Y.encodeStateAsUpdate(foreignDoc);
+      const applyLayout = jest.fn();
+
+      jest.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+      const request = () => {
+        switch (action) {
+          case 'create':
+            return createOwnedDatabaseView(deps, {
+              databaseId: FOREIGN_DB, anchorViewId: 'v:tasks', layout: DatabaseViewLayout.Grid,
+              baseName: 'Table', owner: 'v:dash',
+            });
+          case 'duplicate':
+            return duplicateOwnedDatabaseView(deps, { sourceViewId: 'v:grid', owner: 'v:dash', name: 'Copy' });
+          case 'convert':
+            return convertViewToDashboard(deps, { viewId: 'v:grid', applyLayout });
+          case 'duplicate-dashboard':
+            return duplicateDatabaseViewWithOwnedWidgets(deps, 'v:dash');
+          case 'copy-owned-widgets':
+            return duplicateDashboardOwnedWidgets(deps, { sourceDashboardViewId: 'v:dash', targetDashboardViewId: 'v:dash' });
+          default:
+            return createDatabaseViewInDoc(deps, DatabaseViewLayout.Board, 'Board', { dashboardOwner: 'v:dash' });
+        }
+      };
+
+      await expect(request()).rejects.toThrow('Connect to the internet to create dashboard widget views.');
+      expect(workspace.createDatabaseView).not.toHaveBeenCalled();
+      expect(workspace.loadViewMeta).not.toHaveBeenCalled();
+      expect(workspace.loadView).not.toHaveBeenCalled();
+      expect(workspace.updatePage).not.toHaveBeenCalled();
+      expect(workspace.deletePage).not.toHaveBeenCalled();
+      expect(applyLayout).not.toHaveBeenCalled();
+      expect(Y.encodeStateAsUpdate(hostDoc)).toEqual(before);
+      expect(Y.encodeStateAsUpdate(foreignDoc)).toEqual(foreignBefore);
+    }
+  );
+
+  it('reopens an existing dashboard layout offline without creating an owned view', async () => {
+    const { workspace, hostDoc } = setup();
+    const applyLayout = jest.fn();
+
+    setDashboardRows(hostDoc, 'v:grid', [{ id: 'r1', height: 360, widgets: [widget('w1', 'v:board', HOST_DB)] }]);
+    jest.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    await expect(convertViewToDashboard(workspace.deps(hostDoc), { viewId: 'v:grid', applyLayout })).resolves.toBe(true);
+    expect(applyLayout).toHaveBeenCalledTimes(1);
+    expect(workspace.createDatabaseView).not.toHaveBeenCalled();
+    expect(workspace.loadViewMeta).not.toHaveBeenCalled();
+  });
+
+  it('does not gate a dashboard copy containing only shared references', async () => {
+    const { workspace, hostDoc } = setup();
+
+    setDashboardRows(hostDoc, 'v:dash', [{ id: 'r1', height: 360, widgets: [widget('w1', 'v:board', HOST_DB)] }]);
+    jest.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    const copiedId = await duplicateDatabaseViewWithOwnedWidgets(workspace.deps(hostDoc), 'v:dash');
+
+    expect(workspace.createDatabaseView).toHaveBeenCalledTimes(1);
+    expect(readDashboardLayoutSetting(getDatabase(hostDoc), copiedId).rows[0].widgets[0].viewId).toBe('v:board');
+  });
+
+  it('does not create locally or retry when the online create request loses its connection', async () => {
+    const { workspace, hostDoc } = setup();
+    const before = Y.encodeStateAsUpdate(hostDoc);
+
+    workspace.createDatabaseView.mockRejectedValueOnce(new Error('Network unavailable'));
+    await expect(createOwnedDatabaseView(workspace.deps(hostDoc), {
+      databaseId: HOST_DB, anchorViewId: 'v:dash', layout: DatabaseViewLayout.Grid,
+      baseName: 'Table', owner: 'v:dash',
+    })).rejects.toThrow('Network unavailable');
+    expect(workspace.createDatabaseView).toHaveBeenCalledTimes(1);
+    expect(workspace.updatePage).not.toHaveBeenCalled();
+    expect(Y.encodeStateAsUpdate(hostDoc)).toEqual(before);
+  });
 });
 
 describe('markDashboardOwnedView', () => {

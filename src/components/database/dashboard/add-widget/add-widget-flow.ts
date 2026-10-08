@@ -58,6 +58,13 @@ interface FlowViewState {
 export type AddWidgetFlowState =
   | { kind: 'idle' }
   | {
+      kind: 'choosing_existing';
+      widgetId: string;
+      placement: DashboardWidgetPlacement;
+      /** Geometry only: this pending slot has no owned view or stored widget. */
+      spec: 'grid';
+    }
+  | {
       kind: 'creating';
       widgetId: string;
       placement: DashboardWidgetPlacement;
@@ -78,6 +85,8 @@ export type AddWidgetFlowEvent =
       spec: DefaultWidgetSpecKind;
       /** `canAddDashboardWidget` refused the placement. */
       refused: AddWidgetRefusal | null;
+      /** Offline adds can reference existing views without creating an owned view. */
+      existingOnly?: boolean;
     }
   | { type: 'created'; viewId: string }
   | {
@@ -109,6 +118,13 @@ export type AddWidgetFlowEffect =
   | { type: 'select'; widgetId: string }
   | { type: 'scroll_to'; widgetId: string }
   | { type: 'insert_widget'; widgetId: string; viewId: string; placement: DashboardWidgetPlacement }
+  | {
+      type: 'insert_existing_widget';
+      widgetId: string;
+      viewId: string;
+      databaseId: string;
+      placement: DashboardWidgetPlacement;
+    }
   | { type: 'delete_never_referenced_view'; viewId: string }
   | { type: 'toast_create_failed' }
   | { type: 'swap_widget_view'; widgetId: string; viewId: string; databaseId: string }
@@ -158,6 +174,17 @@ export function reduceAddWidgetFlow(state: AddWidgetFlowState, event: AddWidgetF
       // One add at a time: the "+" controls wait for the default view in flight.
       if (state.kind === 'creating') return unchanged(state);
       if (event.refused) return { state, effects: [{ type: 'announce_limit', reason: event.refused }] };
+      if (event.existingOnly) {
+        return {
+          state: { kind: 'choosing_existing', widgetId: event.widgetId, placement: event.placement, spec: 'grid' },
+          effects: [
+            { type: 'pin_edit' },
+            { type: 'select', widgetId: event.widgetId },
+            { type: 'scroll_to', widgetId: event.widgetId },
+          ],
+        };
+      }
+
       return {
         state: {
           kind: 'creating',
@@ -224,6 +251,19 @@ export function reduceAddWidgetFlow(state: AddWidgetFlowState, event: AddWidgetF
       return state.kind === 'idle' ? unchanged(state) : { state: IDLE_ADD_WIDGET_FLOW, effects: [] };
 
     case 'pick_existing':
+      if (state.kind === 'choosing_existing') {
+        return {
+          state: IDLE_ADD_WIDGET_FLOW,
+          effects: [{
+            type: 'insert_existing_widget',
+            widgetId: state.widgetId,
+            placement: state.placement,
+            viewId: event.viewId,
+            databaseId: event.databaseId,
+          }],
+        };
+      }
+
       if (state.kind !== 'open') return unchanged(state);
       return {
         state: IDLE_ADD_WIDGET_FLOW,
@@ -273,6 +313,7 @@ export function reduceAddWidgetFlow(state: AddWidgetFlowState, event: AddWidgetF
       if (state.kind === 'settings') return { state: { kind: 'configuring', ...viewState(state) }, effects: [] };
       if (state.kind === 'configuring') return { state: { kind: 'open', ...viewState(state) }, effects: [] };
       if (state.kind === 'open') return { state: IDLE_ADD_WIDGET_FLOW, effects: [] };
+      if (state.kind === 'choosing_existing') return { state: IDLE_ADD_WIDGET_FLOW, effects: [] };
       return unchanged(state);
   }
 }
@@ -284,5 +325,5 @@ export function addWidgetFlowWidgetId(state: AddWidgetFlowState): string | null 
 
 /** Whether a dock panel (picker, New view panel) is shown for the flow's widget. */
 export function isAddWidgetPopoverOpen(state: AddWidgetFlowState): boolean {
-  return state.kind === 'open' || state.kind === 'configuring' || (state.kind === 'creating' && state.popoverOpen);
+  return state.kind === 'choosing_existing' || state.kind === 'open' || state.kind === 'configuring' || (state.kind === 'creating' && state.popoverOpen);
 }

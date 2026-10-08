@@ -24,7 +24,8 @@ import { seedNumberWidgetChart } from '@/application/database-yjs/dashboard-widg
 import { DashboardRow } from '@/application/database-yjs/dashboard.type';
 import { getDatabaseFromDoc } from '@/application/database-yjs/database-view-doc-ops';
 import { DatabaseViewLayout, YDoc, YjsDatabaseKey, YjsEditorKey, YSharedRoot } from '@/application/types';
-import { isWorkspaceLimitError } from '@/utils/billing-error';
+import { assertDashboardViewCreationOnline } from '@/application/view-online-policy';
+import { isInvalidSubscriptionPlanError } from '@/utils/billing-error';
 import { getErrorMessage } from '@/utils/errors';
 import { Log } from '@/utils/log';
 
@@ -279,6 +280,7 @@ export function useOwnedWidgetViews({
         throw new Error('Widgets are added in Edit mode');
       }
 
+      assertDashboardViewCreationOnline();
       return createOwnedDatabaseView(getDeps(), { ...params, owner: dashboardViewId });
     },
     [dashboardViewId, getDeps]
@@ -291,6 +293,7 @@ export function useOwnedWidgetViews({
       }
 
       try {
+        assertDashboardViewCreationOnline();
         const viewId = await createOwnedDatabaseView(getDeps(), {
           databaseId: hostDatabaseId,
           anchorViewId: dashboardViewId,
@@ -308,7 +311,7 @@ export function useOwnedWidgetViews({
 
         return viewId;
       } catch (error) {
-        if (spec === 'chart' && isWorkspaceLimitError(error)) throw new DefaultWidgetPlanError(error);
+        if (spec === 'chart' && isInvalidSubscriptionPlanError(error)) throw new DefaultWidgetPlanError(error);
         throw error;
       }
     },
@@ -334,8 +337,9 @@ export function useOwnedWidgetViews({
       const { viewId, databaseId } = location.widget;
       const deps = getDeps();
 
-      duplicatingWidget.set(widgetId);
       try {
+        assertDashboardViewCreationOnline();
+        duplicatingWidget.set(widgetId);
         const meta = await deps.loadViewMeta?.(viewId).catch(() => null);
         const doc = databaseId === hostDatabaseId ? deps.databaseDoc : latest.current.getSourceDoc(databaseId);
         const collabName = getDatabaseFromDoc(doc)?.get(YjsDatabaseKey.views)?.get(viewId)?.get(YjsDatabaseKey.name);
