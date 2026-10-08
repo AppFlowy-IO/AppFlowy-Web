@@ -118,7 +118,15 @@
         background-color: var(--outline-scrollbar-thumb-hover) !important;
       }
 
+      &::-webkit-scrollbar-thumb:active {
+        background-color: var(--outline-scrollbar-thumb-hover) !important;
+      }
+
       &:hover {
+        scrollbar-color: var(--outline-scrollbar-thumb-hover) transparent;
+      }
+
+      &:active {
         scrollbar-color: var(--outline-scrollbar-thumb-hover) transparent;
       }
     }
