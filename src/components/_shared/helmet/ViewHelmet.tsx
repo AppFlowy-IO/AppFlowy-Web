@@ -1,11 +1,22 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Helmet } from 'react-helmet';
 
 import { ViewIcon, ViewIconType } from '@/application/types';
 import { getIconBase64 } from '@/utils/emoji';
 
 function ViewHelmet({ name, icon }: { name?: string; icon?: ViewIcon }) {
+  const createdBlobUrl = useRef<string | null>(null);
+
   useEffect(() => {
+    let cancelled = false;
+
+    const revokeCreatedUrl = () => {
+      if (createdBlobUrl.current) {
+        URL.revokeObjectURL(createdBlobUrl.current);
+        createdBlobUrl.current = null;
+      }
+    };
+
     const setFavicon = async () => {
       try {
         let url = '/appflowy.svg';
@@ -17,10 +28,21 @@ function ViewHelmet({ name, icon }: { name?: string; icon?: ViewIcon }) {
             const baseUrl = 'https://raw.githubusercontent.com/googlefonts/noto-emoji/main/svg/emoji_u';
 
             const response = await fetch(`${baseUrl}${emojiCode}.svg`);
+
+            if (!response.ok) {
+              throw new Error(`Failed to load emoji favicon: ${response.status}`);
+            }
+
             const svgText = await response.text();
+
+            if (cancelled) return;
+            // Release the previous emoji favicon before replacing it so
+            // switching pages does not accumulate blob URLs.
+            revokeCreatedUrl();
             const blob = new Blob([svgText], { type: 'image/svg+xml' });
 
             url = URL.createObjectURL(blob);
+            createdBlobUrl.current = url;
 
             link.type = 'image/svg+xml';
           } else if (icon.ty === ViewIconType.Icon) {
@@ -32,6 +54,7 @@ function ViewHelmet({ name, icon }: { name?: string; icon?: ViewIcon }) {
           }
         }
 
+        if (cancelled) return;
         link.rel = 'icon';
         link.href = url;
         document.getElementsByTagName('head')[0].appendChild(link);
@@ -43,11 +66,14 @@ function ViewHelmet({ name, icon }: { name?: string; icon?: ViewIcon }) {
     void setFavicon();
 
     return () => {
+      cancelled = true;
       const link = document.querySelector("link[rel*='icon']");
 
       if (link) {
         document.getElementsByTagName('head')[0].removeChild(link);
       }
+
+      revokeCreatedUrl();
     };
   }, [icon]);
 

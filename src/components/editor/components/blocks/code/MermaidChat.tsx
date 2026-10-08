@@ -7,6 +7,10 @@ import { CustomEditor } from '@/application/slate-yjs/command';
 import { CodeNode } from '@/components/editor/editor.type';
 import { ThemeModeContext } from '@/components/main/useAppThemeMode';
 
+import { sanitizeDiagram, sanitizeMermaidSvg } from './mermaid-sanitize';
+
+export { sanitizeDiagram, sanitizeMermaidSvg };
+
 
 const lightTheme = {
   theme: 'base',
@@ -46,21 +50,6 @@ const darkTheme = {
   },
 };
 
-const sanitizeDiagram = (diagramText: string) => {
-
-  const directiveRegex = /^%%{init:.*}%%/;
-
-  if (directiveRegex.test(diagramText.trim())) {
-    return diagramText;
-  }
-
-  return diagramText
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    .replace(/\bon\w+\s*=/gi, '')
-    .replace(/(?:javascript|data|vbscript):/gi, '')
-    .replace(/<!--[\s\S]*?-->/g, '');
-};
-
 function MermaidChat ({ node }: {
   node: CodeNode
 }) {
@@ -79,15 +68,16 @@ function MermaidChat ({ node }: {
     // @ts-ignore
     mermaid.initialize({
       startOnLoad: true,
-      securityLevel: 'loose',
+      // 'strict' disables click/interaction handlers in rendered diagrams.
+      securityLevel: 'strict',
       ...theme,
     });
     try {
       await mermaid.parse(sanitizedDiagram);
-      const { svg } = await mermaid.render(`mermaid-${id}`, diagram);
+      const { svg } = await mermaid.render(`mermaid-${id}`, sanitizedDiagram);
 
       setError(null);
-      setInnerHtml(svg);
+      setInnerHtml(sanitizeMermaidSvg(svg));
     } catch (e) {
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
