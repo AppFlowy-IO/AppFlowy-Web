@@ -109,25 +109,21 @@
     &.appflowy-visible-scrollbar {
       scrollbar-color: var(--fill-content-visible) transparent;
 
+      @supports selector(::-webkit-scrollbar-thumb:hover) {
+        scrollbar-color: auto;
+      }
+
       &::-webkit-scrollbar-thumb {
         border-radius: 100px;
         background-color: var(--fill-content-visible);
       }
 
-      &:hover::-webkit-scrollbar-thumb {
+      &::-webkit-scrollbar-thumb:hover {
         background-color: var(--outline-scrollbar-thumb-hover) !important;
       }
 
       &::-webkit-scrollbar-thumb:active {
         background-color: var(--outline-scrollbar-thumb-hover) !important;
-      }
-
-      &:hover {
-        scrollbar-color: var(--outline-scrollbar-thumb-hover) transparent;
-      }
-
-      &:active {
-        scrollbar-color: var(--outline-scrollbar-thumb-hover) transparent;
       }
     }
   }
