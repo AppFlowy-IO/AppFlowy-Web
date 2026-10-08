@@ -6,6 +6,7 @@
   pointer-events: none;
   clip-path: inset(-2px -28px -2px -2px);
   color: var(--block-text-color-20);
+  --outline-scrollbar-thumb-hover: #dfdfe0;
 
   &-trigger {
     position: absolute;
@@ -114,7 +115,11 @@
       }
 
       &:hover::-webkit-scrollbar-thumb {
-        background-color: var(--fill-content-visible) !important;
+        background-color: var(--outline-scrollbar-thumb-hover) !important;
+      }
+
+      &:hover {
+        scrollbar-color: var(--outline-scrollbar-thumb-hover) transparent;
       }
     }
   }
@@ -166,6 +171,10 @@
     outline: 2px solid var(--border-theme-thick);
     outline-offset: 2px;
   }
+}
+
+:root[data-dark-mode='true'] .dockable-outline {
+  --outline-scrollbar-thumb-hover: var(--fill-content-visible);
 }
 
 @media (prefers-reduced-motion: reduce) {
