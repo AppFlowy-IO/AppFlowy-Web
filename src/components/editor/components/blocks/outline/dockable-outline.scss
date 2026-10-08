@@ -112,10 +112,6 @@
         border-radius: 100px;
         background-color: var(--fill-content-visible);
       }
-
-      &:hover::-webkit-scrollbar-thumb {
-        background-color: var(--fill-content-visible-hover);
-      }
     }
   }
   &-list-content {
