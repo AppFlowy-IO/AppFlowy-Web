@@ -6,8 +6,6 @@
   pointer-events: none;
   clip-path: inset(-2px -28px -2px -2px);
   color: var(--block-text-color-20);
-  --outline-scrollbar-thumb: #F4F4F4;
-  --outline-scrollbar-thumb-hover: #DFDFE0;
 
   &-trigger {
     position: absolute;
@@ -108,19 +106,15 @@
     overflow-y: auto;
 
     &.appflowy-visible-scrollbar {
-      scrollbar-color: var(--outline-scrollbar-thumb) transparent;
+      scrollbar-color: var(--fill-content-visible) transparent;
 
       &::-webkit-scrollbar-thumb {
         border-radius: 100px;
-        background-color: var(--outline-scrollbar-thumb);
-      }
-
-      &:hover {
-        scrollbar-color: var(--outline-scrollbar-thumb-hover) transparent;
+        background-color: var(--fill-content-visible);
       }
 
       &:hover::-webkit-scrollbar-thumb {
-        background-color: var(--outline-scrollbar-thumb-hover) !important;
+        background-color: var(--fill-content-visible) !important;
       }
     }
   }
@@ -172,11 +166,6 @@
     outline: 2px solid var(--border-theme-thick);
     outline-offset: 2px;
   }
-}
-
-:root[data-dark-mode='true'] .dockable-outline {
-  --outline-scrollbar-thumb: #0C0D0D;
-  --outline-scrollbar-thumb-hover: #191919;
 }
 
 @media (prefers-reduced-motion: reduce) {
