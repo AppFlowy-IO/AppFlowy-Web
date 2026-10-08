@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { processUrl } from '@/utils/url';
+import { isSafeHttpUrl } from '@/utils/url';
 
 export function EmbedLink({
   onDone,
@@ -34,7 +34,7 @@ export function EmbedLink({
       const value = e.target.value;
 
       setValue(value);
-      const urlValid = !!processUrl(value);
+      const urlValid = isSafeHttpUrl(value);
       const customValid = validator ? validator(value) : true;
 
       setError(!urlValid || !customValid);

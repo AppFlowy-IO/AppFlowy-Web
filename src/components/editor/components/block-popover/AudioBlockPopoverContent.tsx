@@ -12,7 +12,7 @@ import { TabPanel, ViewTab, ViewTabs } from '@/components/_shared/tabs/ViewTabs'
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { FileHandler } from '@/utils/file';
 import { createPendingUploadId } from '@/utils/pending-upload';
-import { processUrl } from '@/utils/url';
+import { requireHttpUrl } from '@/utils/url';
 
 const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.ogg', '.flac', '.aac', '.wma', '.alac', '.aiff', '.m4a'];
 const AUDIO_EXTENSION_REGEX = /\.(mp3|wav|ogg|flac|aac|wma|alac|aiff|m4a)($|\?)/i;
@@ -29,7 +29,9 @@ function getAudioName(rawUrl: string) {
 }
 
 function isAudioUrl(rawUrl: string) {
-  const url = processUrl(rawUrl) || rawUrl;
+  const url = requireHttpUrl(rawUrl);
+
+  if (!url) return false;
 
   return AUDIO_EXTENSION_REGEX.test(url);
 }
@@ -54,7 +56,9 @@ function AudioBlockPopoverContent({ blockId, onClose }: { blockId: string; onClo
 
   const handleInsertEmbedLink = useCallback(
     (rawUrl: string) => {
-      const url = processUrl(rawUrl) || rawUrl;
+      const url = requireHttpUrl(rawUrl);
+
+      if (!url) return;
 
       CustomEditor.setBlockData(editor, blockId, {
         url,
