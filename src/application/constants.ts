@@ -3,17 +3,17 @@ export const databasePrefix = 'af_database';
 export const HEADER_HEIGHT = 48;
 
 /**
- * Controls web creation menus for experimental database views (Form, Timeline
- * and Dashboard).
+ * Controls web creation menus for experimental database views (Form and Timeline).
  *
  * Desktop versions before 0.14.4 have backward-compatibility issues with Form,
- * Timeline and Dashboard views. For now, only allow creating these views from
+ * Timeline views. For now, only allow creating these views from
  * the Desktop app; keep their web creation menus disabled until that
  * compatibility constraint is resolved.
- * Existing Form, Timeline and Dashboard views still open normally regardless of
+ * Existing Form and Timeline views still open normally regardless of
  * this flag.
  * CI builds opt in with EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED=true so
- * Form, Timeline and Dashboard creation remain covered by browser tests.
+ * Form and Timeline creation remain covered by browser tests.
+ * Dashboard creation is enabled on desktop web through useDashboardCreationGate.
  */
 export const EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED =
   process.env.EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED === 'true';

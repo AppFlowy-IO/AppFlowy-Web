@@ -314,7 +314,7 @@ describe('AddViewButton', () => {
     expect(nextOnAfterAddView).not.toHaveBeenCalled();
   });
 
-  it('hides Form, Timeline and Dashboard while experimental database view creation is disabled on web', () => {
+  it('offers Dashboard while Form and Timeline creation remain experimental', () => {
     render(
       <MemoryRouter>
         <AddViewButton databasePageId='database-page-id' onViewAdded={jest.fn()} />
@@ -323,7 +323,7 @@ describe('AddViewButton', () => {
 
     expect(screen.queryByTestId('add-form-view-option')).toBeNull();
     expect(screen.queryByTestId('add-timeline-view-button')).toBeNull();
-    expect(screen.queryByTestId('add-dashboard-view-button')).toBeNull();
+    expect(screen.getByTestId('add-dashboard-view-button')).toBeTruthy();
     expect(screen.getByTestId('add-list-view-button')).toBeTruthy();
     expect(mockAddView).not.toHaveBeenCalled();
   });

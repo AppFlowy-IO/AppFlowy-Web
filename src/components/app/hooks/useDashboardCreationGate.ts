@@ -1,6 +1,5 @@
 import { useTranslation } from 'react-i18next';
 
-import { EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED } from '@/application/constants';
 import { Subscription } from '@/application/types';
 import { useMobileContext } from '@/components/_shared/hooks/useMobileContext';
 
@@ -8,8 +7,8 @@ import { useTimelineCreationDisabledReason } from './useTimelineCreationDisabled
 
 export interface DashboardCreationGate {
   /**
-   * Whether a Dashboard view can be created here at all: the feature is on and
-   * the page is not a mobile context (dashboards are view-only there, so none
+   * Whether a Dashboard view can be created here at all: the page is not a
+   * mobile context (dashboards are view-only there, so none
    * is created). When `false` the entry point hides its Dashboard option.
    */
   available: boolean;
@@ -34,7 +33,7 @@ export function useDashboardCreationGate(
 ): DashboardCreationGate {
   const { t } = useTranslation();
   const mobileContext = useMobileContext();
-  const available = EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED && !mobileContext;
+  const available = !mobileContext;
   const disabledReason = useTimelineCreationDisabledReason(getSubscriptions, {
     workspaceId,
     enabled: available && enabled,

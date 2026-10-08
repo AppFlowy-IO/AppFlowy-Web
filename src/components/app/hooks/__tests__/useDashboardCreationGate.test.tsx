@@ -70,10 +70,10 @@ describe('useDashboardCreationGate', () => {
     expect(mockReasonCalls.every((call) => call.enabled === false)).toBe(true);
   });
 
-  it('is not available while the feature is off', () => {
+  it('allows Dashboard creation without the experimental database-view flag', () => {
     mockCreationEnabled = false;
 
-    expect(renderGate(true).available).toBe(false);
-    expect(mockReasonCalls.every((call) => call.enabled === false)).toBe(true);
+    expect(renderGate(true).available).toBe(true);
+    expect(mockReasonCalls.every((call) => call.enabled === true)).toBe(true);
   });
 });

@@ -48,8 +48,8 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
     { workspaceId, enabled: open }
   );
   // Dashboards never nest, so a widget's view cannot become one. Like
-  // Timeline, an existing dashboard keeps its option while creation is off
-  // (the feature flag, or a mobile context): it still reads as one.
+  // Timeline, an existing dashboard keeps its option in a mobile context:
+  // it still reads as one even where creation is unavailable.
   const isDashboard = currentLayout === DatabaseViewLayout.Dashboard;
   const showDashboard = (canCreateDashboard || isDashboard) && !isDashboardWidget;
   const options = useMemo<LayoutOption[]>(

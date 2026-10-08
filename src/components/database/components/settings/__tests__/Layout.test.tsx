@@ -91,11 +91,11 @@ describe('database Layout', () => {
     mockUpdateLayout.mockReset();
   });
 
-  it('hides Timeline and Dashboard conversion when web creation is disabled', async () => {
+  it('offers Dashboard conversion while Timeline remains experimental', async () => {
     await openLayout(DatabaseViewLayout.Grid);
 
     expect(screen.queryByTestId(`database-layout-option-${DatabaseViewLayout.Timeline}`)).toBeNull();
-    expect(screen.queryByTestId(`database-layout-option-${DatabaseViewLayout.Dashboard}`)).toBeNull();
+    expect(screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Dashboard}`)).toBeTruthy();
   });
 
   it('keeps the current Timeline label and selected option without rewriting its layout', async () => {
@@ -108,7 +108,7 @@ describe('database Layout', () => {
     expect(mockUpdateLayout).not.toHaveBeenCalled();
   });
 
-  it('keeps the current Dashboard label and selected option while creation is disabled', async () => {
+  it('keeps the current Dashboard label and selected option without the experimental flag', async () => {
     const trigger = await openLayout(DatabaseViewLayout.Dashboard);
     const currentOption = screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Dashboard}`);
 
