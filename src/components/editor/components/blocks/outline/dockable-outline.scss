@@ -110,11 +110,17 @@
       scrollbar-color: var(--fill-content-visible) transparent;
 
       @supports selector(::-webkit-scrollbar-thumb:hover) {
+        scrollbar-width: auto;
         scrollbar-color: auto;
+
+        &::-webkit-scrollbar {
+          width: 8px;
+          height: 8px;
+        }
       }
 
       &::-webkit-scrollbar-thumb {
-        border-radius: 100px;
+        border-radius: 1000px;
         background-color: var(--fill-content-visible);
       }
 
