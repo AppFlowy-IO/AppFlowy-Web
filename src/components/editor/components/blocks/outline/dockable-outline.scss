@@ -99,6 +99,9 @@
   &-list {
     position: relative;
     min-height: 0;
+    // Let the scrollbar sit close to the panel edge while preserving the list content width.
+    margin-right: -16px;
+    padding-right: 16px;
     overflow-x: hidden;
     overflow-y: auto;
   }
