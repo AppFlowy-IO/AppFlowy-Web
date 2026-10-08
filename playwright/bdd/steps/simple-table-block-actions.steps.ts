@@ -168,7 +168,8 @@ Then('the whole simple table has the design selection effect', async ({ page, $t
   const handle = page.getByTestId('drag-block').locator('.simple-table-block-drag-icon');
 
   await expect(handle).toBeVisible();
-  await expect(handle.locator('img')).toHaveJSProperty('naturalWidth', 16);
+  await expect(handle).toHaveCSS('width', '16px');
+  await expect(handle).toHaveCSS('height', '16px');
   await $testInfo.attach('simple-table-block-menu', { body: await page.screenshot(), contentType: 'image/png' });
 });
 
