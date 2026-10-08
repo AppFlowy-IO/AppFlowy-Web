@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { type ReactNode } from 'react';
 import * as Y from 'yjs';
 
@@ -141,7 +141,10 @@ function renderSelectors(
   options?: RowOrdersSelectorOptions
 ) {
   // Rows missing from the map stay unresolved: their loads never settle.
-  const ensureRow = jest.fn(() => new Promise<YDoc | undefined>(() => undefined));
+  const pendingRequests: Array<{ rowId: string; reject: (error: Error) => void }> = [];
+  const ensureRow = jest.fn((rowId: string) => new Promise<YDoc | undefined>((_resolve, reject) => {
+    pendingRequests.push({ rowId, reject });
+  }));
   let contextValue: DatabaseContextState = {
     readOnly: false,
     databaseDoc: fixture.databaseDoc,
@@ -178,9 +181,14 @@ function renderSelectors(
     ...rendered,
     completeResults,
     ensureRow,
+    pendingRequests,
     loadReports,
     loadRows: (rowMap: Record<RowId, YDoc>) => {
       contextValue = { ...contextValue, rowMap };
+      rendered.rerender();
+    },
+    replaceSource: (databaseDoc: YDoc, rowMap: Record<RowId, YDoc>) => {
+      contextValue = { ...contextValue, databaseDoc, rowMap };
       rendered.rerender();
     },
   };
@@ -221,6 +229,119 @@ describe('useProgressiveRowOrdersSelector', () => {
     // The complete-result selector never saw a partial result.
     expect(completeResults.filter((value) => value !== undefined).every((value) => value?.length === 100)).toBe(true);
 
+    unmount();
+    destroyFixture(fixture);
+  });
+
+  it('keeps load progress across a discarded page while publishing only currently valid matches', async () => {
+    const fixture = createFixture((index) => index % 5 === 0);
+    const { result, loadRows, loadReports, unmount } = renderSelectors(fixture, pickRows(fixture, range(0, 100)));
+
+    await waitFor(() => expect(result.current.progressive.hydrating).toEqual({ ready: 100, total: TOTAL_ROWS }));
+    // A manifest restart disposes provisional docs. Only the live 22 remain;
+    // progress is cumulative for this load, but row validity is not.
+    loadRows(pickRows(fixture, range(0, 22)));
+    await waitFor(() => {
+      expect(ids(result.current.progressive.rows)).toEqual([0, 5, 10, 15, 20].map((index) => fixture.rowIds[index]));
+    });
+    expect(result.current.progressive.hydrating).toEqual({ ready: 100, total: TOTAL_ROWS });
+    expect(result.current.complete).toBeUndefined();
+    expect(Array.from(loadReports.values()).every((report) => !report.complete)).toBe(true);
+
+    loadRows(pickRows(fixture, range(0, 256)));
+    await waitFor(() => expect(result.current.progressive.hydrating).toEqual({ ready: 256, total: TOTAL_ROWS }));
+    loadRows(fixture.rowDocs);
+    const expected = fixture.rowIds.filter((_, index) => index % 5 === 0);
+
+    await waitFor(() => {
+      expect(result.current.progressive.hydrating).toBeUndefined();
+      expect(ids(result.current.progressive.rows)).toEqual(expected);
+      expect(ids(result.current.complete)).toEqual(expected);
+    });
+    expect(Array.from(loadReports.values()).every((report) => report.complete)).toBe(true);
+    unmount();
+    destroyFixture(fixture);
+  });
+
+  it('resets loading progress for a replacement source document even when its GUID is unchanged', async () => {
+    const fixture = createFixture(() => true);
+    const replacement = createFixture(() => true);
+
+    replacement.databaseDoc.guid = fixture.databaseDoc.guid;
+    const { result, replaceSource, unmount } = renderSelectors(fixture, pickRows(fixture, range(0, 100)));
+
+    await waitFor(() => expect(result.current.progressive.hydrating?.ready).toBe(100));
+    replaceSource(replacement.databaseDoc, pickRows(replacement, range(0, 22)));
+    await waitFor(() => {
+      expect(result.current.progressive.hydrating).toEqual({ ready: 22, total: TOTAL_ROWS });
+      expect(ids(result.current.progressive.rows)).toEqual(replacement.rowIds.slice(0, 22));
+    });
+    unmount();
+    destroyFixture(fixture);
+    destroyFixture(replacement);
+  });
+
+  it('starts a fresh partial load after replacing a complete source and ignores old request failures', async () => {
+    const fixture = createFixture(() => true);
+    const replacement = createFixture(() => true);
+
+    replacement.databaseDoc.guid = fixture.databaseDoc.guid;
+    const { result, loadRows, replaceSource, pendingRequests, unmount } = renderSelectors(
+      fixture, pickRows(fixture, range(0, 100))
+    );
+
+    await waitFor(() => expect(result.current.progressive.hydrating?.ready).toBe(100));
+    const oldRequests = [...pendingRequests];
+
+    expect(oldRequests.length).toBeGreaterThan(0);
+    loadRows(fixture.rowDocs);
+    await waitFor(() => expect(result.current.complete).toHaveLength(TOTAL_ROWS));
+    replaceSource(replacement.databaseDoc, pickRows(replacement, range(0, 22)));
+    await waitFor(() => {
+      expect(result.current.progressive.hydrating).toEqual({ ready: 22, total: TOTAL_ROWS });
+      expect(ids(result.current.progressive.rows)).toEqual(replacement.rowIds.slice(0, 22));
+      expect(result.current.complete).toBeUndefined();
+    });
+    await act(async () => {
+      oldRequests.forEach(({ reject }) => reject(new Error('old source closed')));
+      await Promise.resolve();
+    });
+    expect(result.current.progressive.hydrating).toEqual({ ready: 22, total: TOTAL_ROWS });
+    expect(result.current.complete).toBeUndefined();
+    loadRows(replacement.rowDocs);
+    await waitFor(() => expect(ids(result.current.complete)).toEqual(replacement.rowIds));
+    unmount();
+    destroyFixture(fixture);
+    destroyFixture(replacement);
+  });
+
+  it('resets loading progress for new conditions and a changed source row membership', async () => {
+    const fixture = createFixture((index) => index % 5 === 0);
+    const { result, loadRows, unmount } = renderSelectors(fixture, pickRows(fixture, range(0, 100)));
+
+    await waitFor(() => expect(result.current.progressive.hydrating?.ready).toBe(100));
+    loadRows(pickRows(fixture, range(0, 22)));
+    await waitFor(() => expect(result.current.progressive.rows).toHaveLength(5));
+    const database = fixture.databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+    const view = database.get(YjsDatabaseKey.views)?.get(viewId);
+    const filter = view.get(YjsDatabaseKey.filters)?.get(0);
+
+    act(() => { filter.set(YjsDatabaseKey.content, SALES); });
+    await waitFor(() => {
+      expect(result.current.progressive.hydrating).toEqual({ ready: 22, total: TOTAL_ROWS });
+      expect(result.current.progressive.rows).toHaveLength(17);
+    });
+    loadRows(pickRows(fixture, range(0, 100)));
+    await waitFor(() => expect(result.current.progressive.hydrating?.ready).toBe(100));
+    const sourceRows = view.get(YjsDatabaseKey.row_orders);
+
+    act(() => fixture.databaseDoc.transact(() => {
+      sourceRows.delete(99, 1);
+      sourceRows.insert(99, [{ id: 'replacement-row', height: 36 }]);
+    }));
+    loadRows(pickRows(fixture, range(0, 22)));
+    await waitFor(() => expect(result.current.progressive.hydrating).toEqual({ ready: 22, total: TOTAL_ROWS }));
+    expect(result.current.complete).toBeUndefined();
     unmount();
     destroyFixture(fixture);
   });

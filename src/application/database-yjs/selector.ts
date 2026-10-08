@@ -433,6 +433,10 @@ function createMissingConditionRowsRequester({
     }
 
     const requestConditionSignature = conditionSignatureRef.current;
+    const requestPendingRows = pendingConditionRowLoadsRef.current;
+    const isCurrentRequest = () =>
+      conditionSignatureRef.current === requestConditionSignature &&
+      pendingConditionRowLoadsRef.current === requestPendingRows;
 
     missingRows
       .filter(({ id: rowId }) => rowId && !pendingConditionRowLoadsRef.current.has(rowId))
@@ -454,6 +458,7 @@ function createMissingConditionRowsRequester({
               }
             }
 
+            if (!isCurrentRequest()) return;
             if (!hasRowConditionData(seededDoc)) {
               const ensuredDoc = await ensureRow?.(rowId);
               const ensuredHasConditionData = ensuredDoc ? hasRowConditionData(ensuredDoc) : false;
@@ -465,12 +470,12 @@ function createMissingConditionRowsRequester({
                 !hasRowConditionData(rowDocsForConditionsRef.current[rowId]) &&
                 (!rowDocOpenedForHydration || seedsReady || blobPrefetchComplete);
 
-              if (conditionSignatureRef.current === requestConditionSignature && shouldMarkUnavailable) {
+              if (isCurrentRequest() && shouldMarkUnavailable) {
                 markConditionRowsUnavailable([{ id: rowId, height: 0 }]);
               }
             }
           } catch (error) {
-            if (conditionSignatureRef.current === requestConditionSignature) {
+            if (isCurrentRequest()) {
               markConditionRowsUnavailable([{ id: rowId, height: 0 }]);
             }
 
@@ -478,7 +483,7 @@ function createMissingConditionRowsRequester({
               console.debug('[Database] failed to hydrate row for conditions', { rowId, error });
             }
           } finally {
-            pendingConditionRowLoadsRef.current.delete(rowId);
+            requestPendingRows.delete(rowId);
           }
         })();
       });
@@ -1920,19 +1925,21 @@ export function useRowsByGroup(groupId: string) {
 
       // A regroup that changes no column keeps the previous result, so the
       // columns and every card under them do not re-render for nothing.
-      const showResult = () =>
+      const showResult = () => {
         setGroupResult((previous) => (haveSameGroupRows(previous, groupResult) ? previous : groupResult));
+        // Readiness belongs to this result. Publishing it outside the same
+        // transition can replace the cold skeleton with the old empty grouping.
+        if ((rowsHydrated || kept) && groupingKey) {
+          setHydratedGroupingIdentity((current) =>
+            current?.databaseDoc === databaseDoc && current.groupingKey === groupingKey
+              ? current
+              : { databaseDoc, groupingKey }
+          );
+        }
+      };
 
       if (renderInTransition) startTransition(showResult);
       else showResult();
-
-      if ((rowsHydrated || kept) && groupingKey) {
-        setHydratedGroupingIdentity((current) =>
-          current?.databaseDoc === databaseDoc && current.groupingKey === groupingKey
-            ? current
-            : { databaseDoc, groupingKey }
-        );
-      }
     };
 
     onConditionsChange(regroupsShownGrouping);
@@ -2828,7 +2835,11 @@ function formulaConditionExternalReferences(
 
 /** How far a conditioned view got through reading its rows. */
 export interface RowOrdersHydration {
-  /** Rows whose data the conditions have read, or that cannot be loaded. */
+  /**
+   * Progress through the source rows. Published snapshots keep the highest
+   * progress reached in the current load across page restarts; this is not
+   * the number of currently valid docs or matching rows.
+   */
   ready: number;
   total: number;
 }
@@ -3212,6 +3223,12 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
   const [rowOrdersState, setRowOrdersState] = useState<{
     rows?: Row[];
     hydrating?: RowOrdersHydration;
+    /** Root identity fences progress across source replacement and history restore. */
+    databaseDoc?: YDoc;
+    workspaceId?: string;
+    dataSourceId?: string;
+    /** The source membership this loading progress describes, before filtering. */
+    sourceRows?: Row[];
     conditionSignature: string;
     /** The view and the (combined) filters the rows were computed for. */
     viewId?: string;
@@ -3234,7 +3251,16 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
 
     if (!derived || !kept) return { conditionSignature: '' };
     derivedRowOrdersKeyRef.current = derived.key;
-    return { rows: kept, conditionSignature: conditionStateKey, viewId, filters, query: searchQuery };
+    return {
+      rows: kept,
+      conditionSignature: conditionStateKey,
+      viewId,
+      filters,
+      query: searchQuery,
+      databaseDoc,
+      workspaceId,
+      dataSourceId: dataSource?.id,
+    };
   });
   const loadReporter = useContext(RowOrdersLoadReporterContext);
   // Identifies this result to the reporter for as long as the hook is mounted.
@@ -3253,7 +3279,7 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
     (
       rows: Row[] | undefined,
       conditionSignature: string,
-      state?: { hydrating?: RowOrdersHydration; conditioned?: boolean }
+      state?: { hydrating?: RowOrdersHydration; conditioned?: boolean; sourceRows?: Row[] }
     ) => {
       const hydrating = state?.hydrating;
 
@@ -3279,7 +3305,13 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
         : setRowOrdersState;
 
       setState((previous) => {
+        const sourceIdentity = { databaseDoc, workspaceId, dataSourceId: dataSource?.id };
+        const sameSource =
+          previous.databaseDoc === databaseDoc &&
+          previous.workspaceId === workspaceId &&
+          previous.dataSourceId === dataSource?.id;
         const sameConditions =
+          sameSource &&
           previous.conditionSignature === conditionSignature &&
           previous.viewId === viewId &&
           previous.filters === filters &&
@@ -3302,19 +3334,43 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
         const republishesPartialResult = hydrating && previous.hydrating && sameConditions;
 
         if (!republishesPartialResult) {
-          return { rows, hydrating, conditionSignature, viewId, filters, query: searchQuery };
+          return {
+            rows,
+            hydrating,
+            conditionSignature,
+            viewId,
+            filters,
+            query: searchQuery,
+            ...sourceIdentity,
+            sourceRows: state?.sourceRows,
+          };
         }
 
-        // A partial result is published again each time more rows were read.
+        // A restarted page walk discards provisional docs until their new
+        // revision arrives. Keep its displayed progress, but publish only the
+        // currently valid matches and let actual unresolved rows gate completion.
+        // A different root, conditions or source membership starts a new load.
+        const sourceRows = state?.sourceRows;
+        const sameMembership =
+          sourceRows && previous.sourceRows &&
+          sourceRows.length === previous.sourceRows.length &&
+          sourceRows.every((row, index) => row.id === previous.sourceRows?.[index].id);
+        const displayedHydration =
+          sameMembership && hydrating.total === previous.hydrating?.total
+            ? { ...hydrating, ready: Math.min(hydrating.total, Math.max(hydrating.ready, previous.hydrating.ready)) }
+            : hydrating;
+
         // Keep what did not change, so the rows already shown do not re-render.
         const sameRows = rows === previous.rows || Boolean(rows && previous.rows && haveSameRows(rows, previous.rows));
         const sameProgress =
-          hydrating.ready === previous.hydrating?.ready && hydrating.total === previous.hydrating?.total;
+          displayedHydration.ready === previous.hydrating?.ready && displayedHydration.total === previous.hydrating?.total;
 
-        if (sameRows && sameProgress) return previous;
+        if (sameRows && sameProgress && sameMembership) return previous;
         return {
           rows: sameRows ? previous.rows : rows,
-          hydrating: sameProgress ? previous.hydrating : hydrating,
+          hydrating: sameProgress ? previous.hydrating : displayedHydration,
+          ...sourceIdentity,
+          sourceRows,
           conditionSignature,
           viewId,
           filters,
@@ -3322,7 +3378,7 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
         };
       });
     },
-    [filters, loadReporter, loadSource, searchQuery, viewId]
+    [databaseDoc, workspaceId, dataSource?.id, filters, loadReporter, loadSource, searchQuery, viewId]
   );
   const [rollupWatchVersion, setRollupWatchVersion] = useState(0);
   const [conditionLoadRevision, setConditionLoadRevision] = useState(0);
@@ -3349,6 +3405,33 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
     observer: (events: unknown, transaction: Transaction) => void;
   }>());
   const handleConditionRowChangeRef = useRef<ConditionRowChangeHandler | null>(null);
+  const conditionSourceRef = useRef<{
+    databaseDoc: YDoc;
+    workspaceId?: string;
+    dataSourceId?: string;
+  } | null>(null);
+  const resetConditionLoad = useCallback((conditionStateKey: string) => {
+    const previous = conditionSourceRef.current;
+    const sourceChanged =
+      previous?.databaseDoc !== databaseDoc ||
+      previous.workspaceId !== workspaceId ||
+      previous.dataSourceId !== dataSource?.id;
+
+    if (!sourceChanged && conditionSignatureRef.current === conditionStateKey) return;
+    conditionSourceRef.current = { databaseDoc, workspaceId, dataSourceId: dataSource?.id };
+    conditionSignatureRef.current = conditionStateKey;
+    filtersAppliedRef.current = false;
+    // Replace the set so completions from the old source/condition epoch
+    // cannot mark this load unavailable or clear its pending requests.
+    pendingConditionRowLoadsRef.current = new Set();
+    unavailableConditionRowsRef.current.clear();
+    if (sourceChanged) {
+      shownResultRef.current = null;
+      publishedRef.current = null;
+      partialFilterRef.current = null;
+      partialFilterInputsRef.current = null;
+    }
+  }, [databaseDoc, workspaceId, dataSource?.id]);
 
   useEffect(() => () => {
     conditionRowObserversRef.current.forEach(({ observer }, doc) => {
@@ -3386,7 +3469,18 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
 
     return next;
   }, [cachedRowDocs, rows, isHistory, liveRowDataVersion]);
-  const rowDocsForConditions = useDeferredValue(rowDocsForConditionsRaw);
+  const conditionRowsSnapshot = useMemo(
+    () => ({ docs: rowDocsForConditionsRaw, databaseDoc, workspaceId, dataSourceId: dataSource?.id }),
+    [rowDocsForConditionsRaw, databaseDoc, workspaceId, dataSource?.id]
+  );
+  const deferredConditionRows = useDeferredValue(conditionRowsSnapshot);
+  // A restored/replaced root may reuse row ids and a GUID. Never compute its
+  // first result from the old root's deferred row docs or carry their progress.
+  const rowDocsForConditions =
+    deferredConditionRows.databaseDoc === databaseDoc &&
+    deferredConditionRows.workspaceId === workspaceId && deferredConditionRows.dataSourceId === dataSource?.id
+      ? deferredConditionRows.docs
+      : rowDocsForConditionsRaw;
   const rowDocsForConditionsRef = useRef(rowDocsForConditions);
 
   useFormulaRelationTitles(formulaConditionReferences.relations, { rows: rowDocsForConditions });
@@ -3426,19 +3520,14 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
     const conditionStateKey = `${viewId ?? ''}:${conditionSignature}${searchKey}`;
     const currentHasConditions = conditionSignature !== '' || searchKey !== '';
 
-    if (conditionSignatureRef.current !== conditionStateKey) {
-      conditionSignatureRef.current = conditionStateKey;
-      filtersAppliedRef.current = false;
-      pendingConditionRowLoadsRef.current.clear();
-      unavailableConditionRowsRef.current.clear();
-    }
+    resetConditionLoad(conditionStateKey);
 
     if (currentHasConditions) return false;
 
     filtersAppliedRef.current = false;
     publishRows(originalRowOrders, conditionStateKey);
     return true;
-  }, [fields, filters, publishRows, readVisibleRowOrders, searchKey, sorts, viewId]);
+  }, [fields, filters, publishRows, readVisibleRowOrders, resetConditionLoad, searchKey, sorts, viewId]);
 
   // Getter for relation cell text (used in sorting/filtering)
   const relationTextGetter = useCallback(
@@ -3604,12 +3693,7 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
     const conditionStateKey = `${viewId ?? ''}:${conditionSignature}${searchKey}`;
     const currentHasConditions = conditionSignature !== '' || searchKey !== '';
 
-    if (conditionSignatureRef.current !== conditionStateKey) {
-      conditionSignatureRef.current = conditionStateKey;
-      filtersAppliedRef.current = false;
-      pendingConditionRowLoadsRef.current.clear();
-      unavailableConditionRowsRef.current.clear();
-    }
+    resetConditionLoad(conditionStateKey);
 
     if (!currentHasConditions) {
       filtersAppliedRef.current = false;
@@ -3706,6 +3790,7 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
         publishRows(result.rows, conditionStateKey, {
           hydrating: partial ? result.hydrating : HYDRATING_WITHOUT_PROGRESS,
           conditioned: true,
+          sourceRows: originalRowOrders,
         });
       } else {
         // New rows cannot be filtered until their docs load, but removals are
@@ -3775,6 +3860,7 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
     rollupTextGetter,
     requestMissingConditionRows,
     publishRows,
+    resetConditionLoad,
     searchKey,
     searchQuery,
     searchTextOptions,
@@ -4020,9 +4106,12 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
   // render avoids flashing the loading state on each keystroke, which unmounts
   // every row and replays chart animations.
   const showsPublishedResult =
-    rowOrdersState.conditionSignature === liveConditionSignature ||
-    (rowOrdersState.viewId === viewId &&
-      (rowOrdersState.filters !== filters || (rowOrdersState.query ?? '') !== searchQuery));
+    rowOrdersState.databaseDoc === databaseDoc &&
+    rowOrdersState.workspaceId === workspaceId &&
+    rowOrdersState.dataSourceId === dataSource?.id &&
+    (rowOrdersState.conditionSignature === liveConditionSignature ||
+      (rowOrdersState.viewId === viewId &&
+        (rowOrdersState.filters !== filters || (rowOrdersState.query ?? '') !== searchQuery)));
   const { rows: publishedRows, hydrating: publishedHydration } = rowOrdersState;
 
   return useMemo(

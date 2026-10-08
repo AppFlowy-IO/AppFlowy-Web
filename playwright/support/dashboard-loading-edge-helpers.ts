@@ -57,8 +57,8 @@ import {
   trashFixtureDatabase,
 } from './dashboard-test-helpers';
 import { configureView, ViewConfig, waitForViewSync } from './dashboard-usecase-helpers';
-import { TestConfig } from './test-config';
 import { DatabaseViewSelectors, HeaderSelectors } from './selectors';
+import { TestConfig } from './test-config';
 
 // ---------------------------------------------------------------------------
 // Widgets by position
@@ -535,9 +535,19 @@ export async function expectCollaboratorRowsShown(page: Page, names: string[]) {
     const widget = loadingWidgets(page).find((candidate) => candidate.database === name) as LoadingWidget;
 
     expect(title, `no collaborator row was added to "${name}"`).toBeDefined();
+    await waitForWidgetData(page, [widget]);
+    const scroller = widgetLocatorOf(page, widget).locator('[data-parity-id="dash-widget-grid-scrollbar"]');
+
+    // The appended row can be below the virtual grid's mounted range. Reveal
+    // it as a viewer would, then restore the top for the source comparison.
+    await scroller.scrollIntoViewIfNeeded();
+    await scroller.hover();
+    await viewerOf(page).mouse.wheel(0, 1000);
     await expect(gridDataRows(widgetLocatorOf(page, widget)).filter({ hasText: title as string })).toHaveCount(1, {
       timeout: LOAD_TIMEOUT_MS,
     });
+    await viewerOf(page).mouse.wheel(0, -1000);
+    await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBe(0);
   }
 }
 
@@ -815,7 +825,7 @@ export async function expectNoNoDataBeforeComplete(page: Page, widgets: LoadingW
     expect(complete, `the "${widget.label}" widget never completed`).toBeDefined();
     expect(
       samples
-        .filter((sample) => sample.id === widget.id && sample.t < (complete as number) && sample.empty)
+        .filter((sample) => sample.id === widget.id && sample.t < complete && sample.empty)
         .map((s) => s.t),
       `the "${widget.label}" widget said "No data" before its rows finished loading`
     ).toEqual([]);
@@ -857,6 +867,7 @@ export async function addDatedDatabaseWithViews(page: Page, request: APIRequestC
       End: { dayOffset: offset + 1 },
     })),
   };
+
   // The server's template rows have no date: they go, so every row has a card, an event and a bar.
   await addFixtureDatabases(page, request, [DATED], { [DATED]: spec });
   const database = fixtureDatabase(page, DATED);

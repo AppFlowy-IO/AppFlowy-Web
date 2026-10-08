@@ -1,4 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
+import { useLayoutEffect } from 'react';
 import * as Y from 'yjs';
 
 import {
@@ -28,7 +29,7 @@ import {
 
 import { createCell, createRowDoc } from './test-helpers';
 
-import type React from 'react';
+import type { ReactNode } from 'react';
 
 jest.mock('@/utils/runtime-config', () => ({
   getConfigValue: (_key: string, fallback: string) => fallback,
@@ -131,7 +132,7 @@ function createBoardFixture() {
     seedsReady: false,
     workspaceId: 'workspace-id',
   };
-  const wrapper = ({ children }: { children: React.ReactNode }) => (
+  const wrapper = ({ children }: { children: ReactNode }) => (
     <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
   );
 
@@ -147,6 +148,45 @@ function createBoardFixture() {
 }
 
 describe('useRowsByGroup', () => {
+  it('publishes first grouping readiness together with the hydrated rows', async () => {
+    const fixture = createBoardFixture();
+    const hydratedRows = fixture.contextValue.rowMap;
+    const committed: { ready: boolean; rowIds: string[] }[] = [];
+
+    fixture.contextValue.rowMap = {};
+    const { result, rerender, unmount } = renderHook(
+      () => {
+        const groupedRows = useRowsByGroup(groupId);
+
+        useLayoutEffect(() => {
+          committed.push({
+            ready: groupedRows.groupRowsReady,
+            rowIds: [...groupedRows.groupResult.values()].flat().map(({ id }) => id).sort(),
+          });
+        });
+        return groupedRows;
+      },
+      { wrapper: fixture.wrapper }
+    );
+
+    expect(result.current.groupRowsReady).toBe(false);
+    fixture.contextValue.rowMap = hydratedRows;
+    rerender();
+    await waitFor(() => expect(result.current.groupRowsReady).toBe(true));
+    const readyCommits = committed.filter(({ ready }) => ready);
+
+    expect(readyCommits.length).toBeGreaterThan(0);
+    for (const { rowIds } of readyCommits) {
+      expect(rowIds).toEqual([existingDoingRowId, existingTodoRowId].sort());
+    }
+
+    unmount();
+    fixture.remoteDoingRowDoc.destroy();
+    fixture.existingDoingRowDoc.destroy();
+    fixture.existingTodoRowDoc.destroy();
+    fixture.databaseDoc.destroy();
+  });
+
   it('never reveals empty columns while a remotely ordered row is still hydrating', async () => {
     const fixture = createBoardFixture();
     const visibleColumnHistory: string[][] = [];
@@ -433,7 +473,7 @@ function createProjectsBoard({ sorted }: { sorted: boolean }) {
     workspaceId: 'workspace-id',
   };
   const query = { value: '' };
-  const wrapper = ({ children }: { children: React.ReactNode }) => (
+  const wrapper = ({ children }: { children: ReactNode }) => (
     <DatabaseContext.Provider value={contextValue}>
       <DatabaseSearchQueryContext.Provider value={query.value}>{children}</DatabaseSearchQueryContext.Provider>
     </DatabaseContext.Provider>
