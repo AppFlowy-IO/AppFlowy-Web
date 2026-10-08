@@ -6,7 +6,7 @@
   pointer-events: none;
   clip-path: inset(-2px -28px -2px -2px);
   color: var(--block-text-color-20);
-  --outline-scrollbar-thumb-hover: #dfdfe0;
+  --outline-scrollbar-thumb-hover: var(--fill-content-visible-hover);
 
   &-trigger {
     position: absolute;
