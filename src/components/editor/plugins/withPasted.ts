@@ -23,7 +23,7 @@ import { parseTSVTable } from '@/components/editor/parsers/table-parser';
 import { ParsedBlock } from '@/components/editor/parsers/types';
 import { insertBlocksAtCaret } from '@/components/editor/utils/insert-blocks-at-caret';
 import { detectMarkdown, detectTSV } from '@/components/editor/utils/markdown-detector';
-import { isSingleURLText, parseAppFlowyPageLink, processUrl, workspaceIdFromAppPathname } from '@/utils/url';
+import { isSingleURLText, parseAppFlowyPageLink, processUrl, sanitizeHref, workspaceIdFromAppPathname } from '@/utils/url';
 
 /**
  * Enhances Slate editor with improved paste handling
@@ -501,7 +501,9 @@ function dispatchPasteAsMenuEvent(editor: ReactEditor, payload: Omit<PasteAsMenu
 }
 
 function insertLinkedURLTextAndShowPasteAsMenu(editor: ReactEditor, url: string): boolean {
-  const href = processUrl(url) || url;
+  // Never turn `javascript:`/`data:` into a clickable href. Unsafe input
+  // stays as plain text with no link mark.
+  const href = sanitizeHref(url);
 
   if (!editor.selection) return false;
 
@@ -517,7 +519,7 @@ function insertLinkedURLTextAndShowPasteAsMenu(editor: ReactEditor, url: string)
 
   const insertedRange = getInsertedURLRange(editor, url, point);
 
-  if (insertedRange) {
+  if (insertedRange && href) {
     // Adding the href mark splits a URL pasted after existing text into a new
     // Slate leaf. Track the range through that split so Paste as actions still
     // target the URL instead of silently failing validation against a stale

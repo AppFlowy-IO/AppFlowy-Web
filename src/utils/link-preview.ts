@@ -1,6 +1,15 @@
 import axios from 'axios';
 
-import { processUrl } from '@/utils/url';
+import { requireHttpUrl } from '@/utils/url';
+
+/**
+ * True when a URL is safe to send to link-preview providers.
+ * Non-http(s) schemes (e.g. `javascript:`, `data:`) never hit the network;
+ * callers get static fallback data instead.
+ */
+export function shouldFetchLinkPreview(url: string): boolean {
+  return requireHttpUrl(url) !== undefined;
+}
 
 const LINK_PREVIEW_REQUEST_TIMEOUT = 10_000;
 const DESCRIPTION_MAX_LENGTH = 240;
@@ -222,7 +231,17 @@ function invalidateLinkPreviewCache() {
 }
 
 export function buildFallbackLinkPreviewData(url: string): LinkPreviewData {
-  const normalizedUrl = processUrl(url) || url;
+  const safeUrl = requireHttpUrl(url);
+
+  // Attacker schemes are never parsed as URLs; the raw text is the title.
+  if (!safeUrl) {
+    return {
+      title: url,
+      description: '',
+    };
+  }
+
+  const normalizedUrl = safeUrl;
 
   try {
     const parsed = new URL(normalizedUrl);
@@ -246,7 +265,12 @@ export function buildFallbackLinkPreviewData(url: string): LinkPreviewData {
 }
 
 export async function fetchLinkPreviewData(url: string, signal?: AbortSignal): Promise<LinkPreviewData> {
-  const normalizedUrl = processUrl(url) || url;
+  // Unsafe schemes stay local: no provider request, just fallback data.
+  const safeUrl = requireHttpUrl(url);
+
+  if (!safeUrl) return buildFallbackLinkPreviewData(url);
+
+  const normalizedUrl = safeUrl;
   const cacheKey = getLinkPreviewCacheKey(normalizedUrl);
   const cachedData = getCachedLinkPreviewData(cacheKey);
 
@@ -422,7 +446,9 @@ export function parseGitHubPreviewTarget(
   contextOrUrl: LinkPreviewProviderContext | string
 ): GitHubPreviewTarget | undefined {
   const parsed =
-    typeof contextOrUrl === 'string' ? parseUrl(processUrl(contextOrUrl) || contextOrUrl) : contextOrUrl.parsedUrl;
+    typeof contextOrUrl === 'string'
+      ? parseUrl(requireHttpUrl(contextOrUrl) ?? contextOrUrl)
+      : contextOrUrl.parsedUrl;
 
   if (!parsed) return undefined;
   if (!['github.com', 'www.github.com'].includes(parsed.hostname.toLowerCase())) return undefined;
