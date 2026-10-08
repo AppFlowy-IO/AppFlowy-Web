@@ -61,7 +61,6 @@ function ViewCover({
 
   return (
     <div
-      data-page-cover
       onMouseEnter={() => {
         if (readOnly) return;
         setShowAction(true);

@@ -26,7 +26,6 @@ type DisplayMode = 'always' | 'hover';
 const ROW_HEIGHT = 28;
 const PANEL_CHROME_HEIGHT = 72;
 const HELP_BUTTON_CLEARANCE = 112;
-const COVER_OUTLINE_GAP = 16;
 
 function MaskIcon({ asset, className }: { asset: string; className?: string }) {
   return (
@@ -136,8 +135,6 @@ export function DockableOutlinePanel({ published, suppressed }: { published: boo
     if (!root) return;
     const viewport = root.closest<HTMLElement>('.appflowy-layout') ?? root.parentElement;
     const viewMeta = viewport?.querySelector<HTMLElement>('[data-view-meta-preview]');
-    let cover = viewMeta?.querySelector<HTMLElement>('[data-page-cover]') ?? null;
-    const pageTitle = viewMeta?.querySelector<HTMLElement>('[data-page-title]');
     let frame = 0;
 
     const update = () => {
@@ -153,11 +150,8 @@ export function DockableOutlinePanel({ published, suppressed }: { published: boo
           bottom - HELP_BUTTON_CLEARANCE - 8 * ROW_HEIGHT - PANEL_CHROME_HEIGHT
         )
       );
-      const coverBottom = cover?.getBoundingClientRect().bottom;
-      const pageTitleTop = pageTitle?.getBoundingClientRect().top;
-      const coverAwareTop =
-        pageTitleTop ?? (coverBottom === undefined ? defaultTop : coverBottom + COVER_OUTLINE_GAP);
-      const top = cover ? Math.max(defaultTop, coverAwareTop) : defaultTop;
+      const contentTop = root.getBoundingClientRect().top;
+      const top = Math.max(defaultTop, contentTop);
       const next = {
         top,
         right: Math.max(0, window.innerWidth - (rect?.right ?? window.innerWidth)),
@@ -176,26 +170,15 @@ export function DockableOutlinePanel({ published, suppressed }: { published: boo
     };
 
     const observer = new ResizeObserver(schedule);
-    const coverObserver = new MutationObserver(() => {
-      const nextCover = viewMeta?.querySelector<HTMLElement>('[data-page-cover]') ?? null;
-
-      if (nextCover === cover) return;
-      if (cover) observer.unobserve(cover);
-      cover = nextCover;
-      if (cover) observer.observe(cover);
-      schedule();
-    });
 
     if (viewport) observer.observe(viewport);
     if (viewMeta) observer.observe(viewMeta);
-    if (cover) observer.observe(cover);
-    if (viewMeta) coverObserver.observe(viewMeta, { childList: true, subtree: true });
+    observer.observe(root);
     viewport?.addEventListener('scroll', schedule, { passive: true });
     window.addEventListener('resize', schedule);
     update();
     return () => {
       cancelAnimationFrame(frame);
-      coverObserver.disconnect();
       observer.disconnect();
       viewport?.removeEventListener('scroll', schedule);
       window.removeEventListener('resize', schedule);
