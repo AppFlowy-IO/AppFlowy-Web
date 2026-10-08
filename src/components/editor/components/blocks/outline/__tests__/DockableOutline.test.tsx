@@ -77,7 +77,11 @@ describe('dockable outline interaction', () => {
       y: 0,
       toJSON: () => ({}),
     });
-    mockNavigation.getEditorElement.mockReturnValue(root);
+    const editor = document.createElement('div');
+
+    editor.getBoundingClientRect = root.getBoundingClientRect;
+    root.append(editor);
+    mockNavigation.getEditorElement.mockReturnValue(editor);
     global.ResizeObserver = jest.fn().mockImplementation(() => ({ observe: jest.fn(), disconnect }));
     Object.defineProperty(window, 'innerHeight', { value: 900, configurable: true });
   });
@@ -301,7 +305,9 @@ describe('dockable outline interaction', () => {
     list.scrollTop = 0;
     Object.defineProperty(window, 'innerHeight', { value: 500, configurable: true });
     fireEvent.resize(window);
-    act(() => jest.advanceTimersByTime(20));
+    act(() => {
+      jest.advanceTimersByTime(20);
+    });
     expect(list.scrollTop).toBe(20 * 28 - 224);
   });
 
@@ -313,7 +319,9 @@ describe('dockable outline interaction', () => {
     fireEvent.resize(window);
     fireEvent.resize(window);
     fireEvent.resize(window);
-    act(() => jest.advanceTimersByTime(20));
+    act(() => {
+      jest.advanceTimersByTime(20);
+    });
     expect(measure).toHaveBeenCalledTimes(1);
     fireEvent.resize(window);
     unmount();

@@ -144,16 +144,22 @@ describe('shared outline navigation', () => {
         </OutlineNavigationProvider>
       </Slate>
     );
-    act(() => jest.advanceTimersByTime(20));
+    act(() => {
+      jest.advanceTimersByTime(20);
+    });
     expect(screen.getByTestId('active-heading').textContent).toBe('section-3');
     fireEvent.click(screen.getByRole('button', { name: 'Jump' }));
     expect(screen.getByTestId('active-heading').textContent).toBe('section-2');
     fireEvent.scroll(scroller);
-    act(() => jest.advanceTimersByTime(1000));
+    act(() => {
+      jest.advanceTimersByTime(1000);
+    });
     expect(screen.getByTestId('active-heading').textContent).toBe('section-2');
     fireEvent.click(screen.getByRole('button', { name: 'Jump first' }));
     fireEvent.scroll(scroller);
-    act(() => jest.advanceTimersByTime(1000));
+    act(() => {
+      jest.advanceTimersByTime(1000);
+    });
     expect(screen.getByTestId('active-heading').textContent).toBe('section-1');
   });
 
@@ -169,12 +175,16 @@ describe('shared outline navigation', () => {
           </OutlineNavigationProvider>
         </Slate>
       );
-      act(() => jest.advanceTimersByTime(20));
+      act(() => {
+        jest.advanceTimersByTime(20);
+      });
       fireEvent.click(screen.getByRole('button', { name: 'Jump' }));
       tops = [-700, -300, 48];
       fireEvent(scroller, input === 'keydown' ? new KeyboardEvent(input, { key: 'PageDown' }) : new Event(input));
       fireEvent.scroll(scroller);
-      act(() => jest.advanceTimersByTime(20));
+      act(() => {
+        jest.advanceTimersByTime(20);
+      });
       expect(screen.getByTestId('active-heading').textContent).toBe('section-3');
     }
   );
@@ -196,7 +206,9 @@ describe('shared outline navigation', () => {
         </OutlineNavigationProvider>
       </Slate>
     );
-    act(() => jest.advanceTimersByTime(20));
+    act(() => {
+      jest.advanceTimersByTime(20);
+    });
     const observerCount = jest.mocked(ResizeObserver).mock.calls.length;
 
     fireEvent.click(screen.getByRole('button', { name: 'Jump' }));
@@ -206,17 +218,23 @@ describe('shared outline navigation', () => {
     expect(screen.getByTestId('heading-labels').textContent).toContain('Section 2 renamed');
     expect(subscribe.mock.calls.filter(([event]) => event === 'scroll')).toHaveLength(1);
     expect(jest.mocked(ResizeObserver).mock.calls).toHaveLength(observerCount);
-    act(() => jest.advanceTimersByTime(1000));
+    act(() => {
+      jest.advanceTimersByTime(1000);
+    });
     expect(screen.getByTestId('active-heading').textContent).toBe('section-2');
     await act(async () => {
       Transforms.insertText(editor, ' again', { at: { path: [1, 0, 0], offset: 17 } });
     });
-    act(() => jest.advanceTimersByTime(20));
+    act(() => {
+      jest.advanceTimersByTime(20);
+    });
     expect(screen.getByTestId('heading-labels').textContent).toContain('Section 2 renamed again');
     expect(screen.getByTestId('active-heading').textContent).toBe('section-2');
     fireEvent.wheel(scroller);
     fireEvent.scroll(scroller);
-    act(() => jest.advanceTimersByTime(20));
+    act(() => {
+      jest.advanceTimersByTime(20);
+    });
     expect(screen.getByTestId('active-heading').textContent).toBe('section-3');
   });
 
@@ -243,7 +261,9 @@ describe('shared outline navigation', () => {
         </OutlineNavigationProvider>
       </Slate>
     );
-    act(() => jest.advanceTimersByTime(20));
+    act(() => {
+      jest.advanceTimersByTime(20);
+    });
     expect(screen.getByTestId('active-heading').textContent).toBe('section-1');
     const labels = screen.getByTestId('heading-labels').textContent;
 
@@ -253,7 +273,9 @@ describe('shared outline navigation', () => {
       root.insertBefore(headingElements[1], paragraph);
       tops[1] = 48;
     });
-    act(() => jest.advanceTimersByTime(20));
+    act(() => {
+      jest.advanceTimersByTime(20);
+    });
     expect(screen.getByTestId('active-heading').textContent).toBe('section-2');
     expect(screen.getByTestId('heading-labels').textContent).toBe(labels);
     expect(subscribe.mock.calls.filter(([event]) => event === 'scroll')).toHaveLength(1);
@@ -305,7 +327,9 @@ describe('shared outline navigation', () => {
     await act(async () => {
       Transforms.insertNodes(editor, value()[2], { at: [2] });
     });
-    act(() => jest.advanceTimersByTime(20));
+    act(() => {
+      jest.advanceTimersByTime(20);
+    });
     expect(ResizeObserver).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('active-heading').textContent).toBe('section-1');
     await act(async () => {
@@ -374,12 +398,16 @@ describe('shared outline navigation', () => {
       mentions[0].textContent = '📎Desktop guide';
       mentions[1].textContent = '✅To-dos';
     });
-    act(() => jest.advanceTimersByTime(20));
+    act(() => {
+      jest.advanceTimersByTime(20);
+    });
     expect(screen.getByTestId('heading-labels').textContent).toBe('📎Desktop guide|✅To-dos quick start|Section 3');
     await act(async () => {
       mentions[0].firstChild!.textContent = '📎Renamed desktop guide';
     });
-    act(() => jest.advanceTimersByTime(20));
+    act(() => {
+      jest.advanceTimersByTime(20);
+    });
     expect(screen.getByTestId('heading-labels').textContent).toBe(
       '📎Renamed desktop guide|✅To-dos quick start|Section 3'
     );
