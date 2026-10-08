@@ -174,7 +174,7 @@
 }
 
 :root[data-dark-mode='true'] .dockable-outline {
-  --outline-scrollbar-thumb-hover: var(--fill-content-visible);
+  --outline-scrollbar-thumb-hover: var(--fill-content-visible-hover);
 }
 
 @media (prefers-reduced-motion: reduce) {
