@@ -1912,6 +1912,385 @@ export const collab = $root.collab = (() => {
         return AccessChanged;
     })();
 
+    collab.RepairRequest = (function() {
+
+        /**
+         * Properties of a RepairRequest.
+         * @memberof collab
+         * @interface IRepairRequest
+         * @property {string|null} [requestId] RepairRequest requestId
+         * @property {Uint8Array|null} [stateVector] RepairRequest stateVector
+         * @property {string|null} [version] RepairRequest version
+         * @property {string|null} [databaseRestoreId] RepairRequest databaseRestoreId
+         * @property {number|null} [maxUpdateBytes] RepairRequest maxUpdateBytes
+         * @property {string|null} [databaseId] RepairRequest databaseId
+         */
+
+        /**
+         * Constructs a new RepairRequest.
+         * @memberof collab
+         * @classdesc Represents a RepairRequest.
+         * @implements IRepairRequest
+         * @constructor
+         * @param {collab.IRepairRequest=} [properties] Properties to set
+         */
+        function RepairRequest(properties) {
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * RepairRequest requestId.
+         * @member {string} requestId
+         * @memberof collab.RepairRequest
+         * @instance
+         */
+        RepairRequest.prototype.requestId = "";
+
+        /**
+         * RepairRequest stateVector.
+         * @member {Uint8Array} stateVector
+         * @memberof collab.RepairRequest
+         * @instance
+         */
+        RepairRequest.prototype.stateVector = $util.newBuffer([]);
+
+        /**
+         * RepairRequest version.
+         * @member {string|null|undefined} version
+         * @memberof collab.RepairRequest
+         * @instance
+         */
+        RepairRequest.prototype.version = null;
+
+        /**
+         * RepairRequest databaseRestoreId.
+         * @member {string|null|undefined} databaseRestoreId
+         * @memberof collab.RepairRequest
+         * @instance
+         */
+        RepairRequest.prototype.databaseRestoreId = null;
+
+        /**
+         * RepairRequest maxUpdateBytes.
+         * @member {number} maxUpdateBytes
+         * @memberof collab.RepairRequest
+         * @instance
+         */
+        RepairRequest.prototype.maxUpdateBytes = 0;
+
+        /**
+         * RepairRequest databaseId.
+         * @member {string|null|undefined} databaseId
+         * @memberof collab.RepairRequest
+         * @instance
+         */
+        RepairRequest.prototype.databaseId = null;
+
+        // OneOf field names bound to virtual getters and setters
+        let $oneOfFields;
+
+        /**
+         * RepairRequest _version.
+         * @member {"version"|undefined} _version
+         * @memberof collab.RepairRequest
+         * @instance
+         */
+        Object.defineProperty(RepairRequest.prototype, "_version", {
+            get: $util.oneOfGetter($oneOfFields = ["version"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
+
+        /**
+         * RepairRequest _databaseRestoreId.
+         * @member {"databaseRestoreId"|undefined} _databaseRestoreId
+         * @memberof collab.RepairRequest
+         * @instance
+         */
+        Object.defineProperty(RepairRequest.prototype, "_databaseRestoreId", {
+            get: $util.oneOfGetter($oneOfFields = ["databaseRestoreId"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
+
+        /**
+         * RepairRequest _databaseId.
+         * @member {"databaseId"|undefined} _databaseId
+         * @memberof collab.RepairRequest
+         * @instance
+         */
+        Object.defineProperty(RepairRequest.prototype, "_databaseId", {
+            get: $util.oneOfGetter($oneOfFields = ["databaseId"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
+
+        /**
+         * Creates a new RepairRequest instance using the specified properties.
+         * @function create
+         * @memberof collab.RepairRequest
+         * @static
+         * @param {collab.IRepairRequest=} [properties] Properties to set
+         * @returns {collab.RepairRequest} RepairRequest instance
+         */
+        RepairRequest.create = function create(properties) {
+            return new RepairRequest(properties);
+        };
+
+        /**
+         * Encodes the specified RepairRequest message. Does not implicitly {@link collab.RepairRequest.verify|verify} messages.
+         * @function encode
+         * @memberof collab.RepairRequest
+         * @static
+         * @param {collab.IRepairRequest} message RepairRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        RepairRequest.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.requestId != null && Object.hasOwnProperty.call(message, "requestId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.requestId);
+            if (message.stateVector != null && Object.hasOwnProperty.call(message, "stateVector"))
+                writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.stateVector);
+            if (message.version != null && Object.hasOwnProperty.call(message, "version"))
+                writer.uint32(/* id 3, wireType 2 =*/26).string(message.version);
+            if (message.databaseRestoreId != null && Object.hasOwnProperty.call(message, "databaseRestoreId"))
+                writer.uint32(/* id 4, wireType 2 =*/34).string(message.databaseRestoreId);
+            if (message.maxUpdateBytes != null && Object.hasOwnProperty.call(message, "maxUpdateBytes"))
+                writer.uint32(/* id 5, wireType 0 =*/40).uint32(message.maxUpdateBytes);
+            if (message.databaseId != null && Object.hasOwnProperty.call(message, "databaseId"))
+                writer.uint32(/* id 6, wireType 2 =*/50).string(message.databaseId);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified RepairRequest message, length delimited. Does not implicitly {@link collab.RepairRequest.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof collab.RepairRequest
+         * @static
+         * @param {collab.IRepairRequest} message RepairRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        RepairRequest.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a RepairRequest message from the specified reader or buffer.
+         * @function decode
+         * @memberof collab.RepairRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {collab.RepairRequest} RepairRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        RepairRequest.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.collab.RepairRequest();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.requestId = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.stateVector = reader.bytes();
+                        break;
+                    }
+                case 3: {
+                        message.version = reader.string();
+                        break;
+                    }
+                case 4: {
+                        message.databaseRestoreId = reader.string();
+                        break;
+                    }
+                case 5: {
+                        message.maxUpdateBytes = reader.uint32();
+                        break;
+                    }
+                case 6: {
+                        message.databaseId = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a RepairRequest message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof collab.RepairRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {collab.RepairRequest} RepairRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        RepairRequest.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a RepairRequest message.
+         * @function verify
+         * @memberof collab.RepairRequest
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        RepairRequest.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            let properties = {};
+            if (message.requestId != null && message.hasOwnProperty("requestId"))
+                if (!$util.isString(message.requestId))
+                    return "requestId: string expected";
+            if (message.stateVector != null && message.hasOwnProperty("stateVector"))
+                if (!(message.stateVector && typeof message.stateVector.length === "number" || $util.isString(message.stateVector)))
+                    return "stateVector: buffer expected";
+            if (message.version != null && message.hasOwnProperty("version")) {
+                properties._version = 1;
+                if (!$util.isString(message.version))
+                    return "version: string expected";
+            }
+            if (message.databaseRestoreId != null && message.hasOwnProperty("databaseRestoreId")) {
+                properties._databaseRestoreId = 1;
+                if (!$util.isString(message.databaseRestoreId))
+                    return "databaseRestoreId: string expected";
+            }
+            if (message.maxUpdateBytes != null && message.hasOwnProperty("maxUpdateBytes"))
+                if (!$util.isInteger(message.maxUpdateBytes))
+                    return "maxUpdateBytes: integer expected";
+            if (message.databaseId != null && message.hasOwnProperty("databaseId")) {
+                properties._databaseId = 1;
+                if (!$util.isString(message.databaseId))
+                    return "databaseId: string expected";
+            }
+            return null;
+        };
+
+        /**
+         * Creates a RepairRequest message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof collab.RepairRequest
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {collab.RepairRequest} RepairRequest
+         */
+        RepairRequest.fromObject = function fromObject(object) {
+            if (object instanceof $root.collab.RepairRequest)
+                return object;
+            let message = new $root.collab.RepairRequest();
+            if (object.requestId != null)
+                message.requestId = String(object.requestId);
+            if (object.stateVector != null)
+                if (typeof object.stateVector === "string")
+                    $util.base64.decode(object.stateVector, message.stateVector = $util.newBuffer($util.base64.length(object.stateVector)), 0);
+                else if (object.stateVector.length >= 0)
+                    message.stateVector = object.stateVector;
+            if (object.version != null)
+                message.version = String(object.version);
+            if (object.databaseRestoreId != null)
+                message.databaseRestoreId = String(object.databaseRestoreId);
+            if (object.maxUpdateBytes != null)
+                message.maxUpdateBytes = object.maxUpdateBytes >>> 0;
+            if (object.databaseId != null)
+                message.databaseId = String(object.databaseId);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a RepairRequest message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof collab.RepairRequest
+         * @static
+         * @param {collab.RepairRequest} message RepairRequest
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        RepairRequest.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            let object = {};
+            if (options.defaults) {
+                object.requestId = "";
+                if (options.bytes === String)
+                    object.stateVector = "";
+                else {
+                    object.stateVector = [];
+                    if (options.bytes !== Array)
+                        object.stateVector = $util.newBuffer(object.stateVector);
+                }
+                object.maxUpdateBytes = 0;
+            }
+            if (message.requestId != null && message.hasOwnProperty("requestId"))
+                object.requestId = message.requestId;
+            if (message.stateVector != null && message.hasOwnProperty("stateVector"))
+                object.stateVector = options.bytes === String ? $util.base64.encode(message.stateVector, 0, message.stateVector.length) : options.bytes === Array ? Array.prototype.slice.call(message.stateVector) : message.stateVector;
+            if (message.version != null && message.hasOwnProperty("version")) {
+                object.version = message.version;
+                if (options.oneofs)
+                    object._version = "version";
+            }
+            if (message.databaseRestoreId != null && message.hasOwnProperty("databaseRestoreId")) {
+                object.databaseRestoreId = message.databaseRestoreId;
+                if (options.oneofs)
+                    object._databaseRestoreId = "databaseRestoreId";
+            }
+            if (message.maxUpdateBytes != null && message.hasOwnProperty("maxUpdateBytes"))
+                object.maxUpdateBytes = message.maxUpdateBytes;
+            if (message.databaseId != null && message.hasOwnProperty("databaseId")) {
+                object.databaseId = message.databaseId;
+                if (options.oneofs)
+                    object._databaseId = "databaseId";
+            }
+            return object;
+        };
+
+        /**
+         * Converts this RepairRequest to JSON.
+         * @function toJSON
+         * @memberof collab.RepairRequest
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        RepairRequest.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for RepairRequest
+         * @function getTypeUrl
+         * @memberof collab.RepairRequest
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        RepairRequest.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/collab.RepairRequest";
+        };
+
+        return RepairRequest;
+    })();
+
     collab.CollabMessage = (function() {
 
         /**
@@ -1924,6 +2303,7 @@ export const collab = $root.collab = (() => {
          * @property {collab.IUpdate|null} [update] CollabMessage update
          * @property {collab.IAwarenessUpdate|null} [awarenessUpdate] CollabMessage awarenessUpdate
          * @property {collab.IAccessChanged|null} [accessChanged] CollabMessage accessChanged
+         * @property {collab.IRepairRequest|null} [repairRequest] CollabMessage repairRequest
          */
 
         /**
@@ -1989,17 +2369,25 @@ export const collab = $root.collab = (() => {
          */
         CollabMessage.prototype.accessChanged = null;
 
+        /**
+         * CollabMessage repairRequest.
+         * @member {collab.IRepairRequest|null|undefined} repairRequest
+         * @memberof collab.CollabMessage
+         * @instance
+         */
+        CollabMessage.prototype.repairRequest = null;
+
         // OneOf field names bound to virtual getters and setters
         let $oneOfFields;
 
         /**
          * CollabMessage data.
-         * @member {"syncRequest"|"update"|"awarenessUpdate"|"accessChanged"|undefined} data
+         * @member {"syncRequest"|"update"|"awarenessUpdate"|"accessChanged"|"repairRequest"|undefined} data
          * @memberof collab.CollabMessage
          * @instance
          */
         Object.defineProperty(CollabMessage.prototype, "data", {
-            get: $util.oneOfGetter($oneOfFields = ["syncRequest", "update", "awarenessUpdate", "accessChanged"]),
+            get: $util.oneOfGetter($oneOfFields = ["syncRequest", "update", "awarenessUpdate", "accessChanged", "repairRequest"]),
             set: $util.oneOfSetter($oneOfFields)
         });
 
@@ -2039,6 +2427,8 @@ export const collab = $root.collab = (() => {
                 $root.collab.AwarenessUpdate.encode(message.awarenessUpdate, writer.uint32(/* id 5, wireType 2 =*/42).fork()).ldelim();
             if (message.accessChanged != null && Object.hasOwnProperty.call(message, "accessChanged"))
                 $root.collab.AccessChanged.encode(message.accessChanged, writer.uint32(/* id 6, wireType 2 =*/50).fork()).ldelim();
+            if (message.repairRequest != null && Object.hasOwnProperty.call(message, "repairRequest"))
+                $root.collab.RepairRequest.encode(message.repairRequest, writer.uint32(/* id 8, wireType 2 =*/66).fork()).ldelim();
             return writer;
         };
 
@@ -2097,6 +2487,10 @@ export const collab = $root.collab = (() => {
                     }
                 case 6: {
                         message.accessChanged = $root.collab.AccessChanged.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 8: {
+                        message.repairRequest = $root.collab.RepairRequest.decode(reader, reader.uint32());
                         break;
                     }
                 default:
@@ -2179,6 +2573,16 @@ export const collab = $root.collab = (() => {
                         return "accessChanged." + error;
                 }
             }
+            if (message.repairRequest != null && message.hasOwnProperty("repairRequest")) {
+                if (properties.data === 1)
+                    return "data: multiple values";
+                properties.data = 1;
+                {
+                    let error = $root.collab.RepairRequest.verify(message.repairRequest);
+                    if (error)
+                        return "repairRequest." + error;
+                }
+            }
             return null;
         };
 
@@ -2217,6 +2621,11 @@ export const collab = $root.collab = (() => {
                 if (typeof object.accessChanged !== "object")
                     throw TypeError(".collab.CollabMessage.accessChanged: object expected");
                 message.accessChanged = $root.collab.AccessChanged.fromObject(object.accessChanged);
+            }
+            if (object.repairRequest != null) {
+                if (typeof object.repairRequest !== "object")
+                    throw TypeError(".collab.CollabMessage.repairRequest: object expected");
+                message.repairRequest = $root.collab.RepairRequest.fromObject(object.repairRequest);
             }
             return message;
         };
@@ -2261,6 +2670,11 @@ export const collab = $root.collab = (() => {
                 object.accessChanged = $root.collab.AccessChanged.toObject(message.accessChanged, options);
                 if (options.oneofs)
                     object.data = "accessChanged";
+            }
+            if (message.repairRequest != null && message.hasOwnProperty("repairRequest")) {
+                object.repairRequest = $root.collab.RepairRequest.toObject(message.repairRequest, options);
+                if (options.oneofs)
+                    object.data = "repairRequest";
             }
             return object;
         };

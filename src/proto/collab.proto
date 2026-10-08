@@ -104,6 +104,15 @@ message AccessChanged {
   int32 reason = 3;
 }
 
+message RepairRequest {
+  string request_id = 1;
+  bytes state_vector = 2;
+  optional string version = 3;
+  optional string database_restore_id = 4;
+  uint32 max_update_bytes = 5;
+  optional string database_id = 6;
+}
+
 message CollabMessage {
   // Unique collab identifier (UUID), which this message is related to.
   // We're using string here, since it's easier to represent in web browser client.
@@ -116,6 +125,7 @@ message CollabMessage {
     Update update = 4;
     AwarenessUpdate awareness_update = 5;
     AccessChanged access_changed = 6;
+    RepairRequest repair_request = 8;
   }
 }
 

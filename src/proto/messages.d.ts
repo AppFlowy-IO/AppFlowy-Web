@@ -792,6 +792,142 @@ export namespace collab {
         public static getTypeUrl(typeUrlPrefix?: string): string;
     }
 
+    /** Properties of a RepairRequest. */
+    interface IRepairRequest {
+
+        /** RepairRequest requestId */
+        requestId?: (string|null);
+
+        /** RepairRequest stateVector */
+        stateVector?: (Uint8Array|null);
+
+        /** RepairRequest version */
+        version?: (string|null);
+
+        /** RepairRequest databaseRestoreId */
+        databaseRestoreId?: (string|null);
+
+        /** RepairRequest maxUpdateBytes */
+        maxUpdateBytes?: (number|null);
+
+        /** RepairRequest databaseId */
+        databaseId?: (string|null);
+    }
+
+    /** Represents a RepairRequest. */
+    class RepairRequest implements IRepairRequest {
+
+        /**
+         * Constructs a new RepairRequest.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: collab.IRepairRequest);
+
+        /** RepairRequest requestId. */
+        public requestId: string;
+
+        /** RepairRequest stateVector. */
+        public stateVector: Uint8Array;
+
+        /** RepairRequest version. */
+        public version?: (string|null);
+
+        /** RepairRequest databaseRestoreId. */
+        public databaseRestoreId?: (string|null);
+
+        /** RepairRequest maxUpdateBytes. */
+        public maxUpdateBytes: number;
+
+        /** RepairRequest databaseId. */
+        public databaseId?: (string|null);
+
+        /** RepairRequest _version. */
+        public _version?: "version";
+
+        /** RepairRequest _databaseRestoreId. */
+        public _databaseRestoreId?: "databaseRestoreId";
+
+        /** RepairRequest _databaseId. */
+        public _databaseId?: "databaseId";
+
+        /**
+         * Creates a new RepairRequest instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns RepairRequest instance
+         */
+        public static create(properties?: collab.IRepairRequest): collab.RepairRequest;
+
+        /**
+         * Encodes the specified RepairRequest message. Does not implicitly {@link collab.RepairRequest.verify|verify} messages.
+         * @param message RepairRequest message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: collab.IRepairRequest, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified RepairRequest message, length delimited. Does not implicitly {@link collab.RepairRequest.verify|verify} messages.
+         * @param message RepairRequest message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: collab.IRepairRequest, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a RepairRequest message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns RepairRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): collab.RepairRequest;
+
+        /**
+         * Decodes a RepairRequest message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns RepairRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): collab.RepairRequest;
+
+        /**
+         * Verifies a RepairRequest message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a RepairRequest message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns RepairRequest
+         */
+        public static fromObject(object: { [k: string]: any }): collab.RepairRequest;
+
+        /**
+         * Creates a plain object from a RepairRequest message. Also converts values to other types if specified.
+         * @param message RepairRequest
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: collab.RepairRequest, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this RepairRequest to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+
+        /**
+         * Gets the default type url for RepairRequest
+         * @param [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns The default type url
+         */
+        public static getTypeUrl(typeUrlPrefix?: string): string;
+    }
+
     /** Properties of a CollabMessage. */
     interface ICollabMessage {
 
@@ -812,6 +948,9 @@ export namespace collab {
 
         /** CollabMessage accessChanged */
         accessChanged?: (collab.IAccessChanged|null);
+
+        /** CollabMessage repairRequest */
+        repairRequest?: (collab.IRepairRequest|null);
     }
 
     /** Represents a CollabMessage. */
@@ -841,8 +980,11 @@ export namespace collab {
         /** CollabMessage accessChanged. */
         public accessChanged?: (collab.IAccessChanged|null);
 
+        /** CollabMessage repairRequest. */
+        public repairRequest?: (collab.IRepairRequest|null);
+
         /** CollabMessage data. */
-        public data?: ("syncRequest"|"update"|"awarenessUpdate"|"accessChanged");
+        public data?: ("syncRequest"|"update"|"awarenessUpdate"|"accessChanged"|"repairRequest");
 
         /**
          * Creates a new CollabMessage instance using the specified properties.

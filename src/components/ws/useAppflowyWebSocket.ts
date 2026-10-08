@@ -2,9 +2,10 @@ import * as random from 'lib0/random';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import useWebSocket from 'react-use-websocket';
 
+import { parseRepairRequest, REPAIR_TIMEOUT_MS } from '@/application/collab-repair/types';
 import { refreshToken } from '@/application/services/js-services/http/gotrue';
 import { getTokenParsed, invalidToken } from '@/application/session/token';
-import { messages } from '@/proto/messages';
+import { collab, messages } from '@/proto/messages';
 import { Log } from '@/utils/log';
 import { getConfigValue } from '@/utils/runtime-config';
 
@@ -126,6 +127,8 @@ export type AppflowyWebSocketType = {
    * It is decoded from the binary format to a `messages.Message` object.
    */
   lastMessage: messages.Message | null;
+  /** Direct, bounded server-only repair notices; followers do not consume relayed requests. */
+  subscribeRepairRequests?: (listener: (message: collab.ICollabMessage) => void) => () => void;
   /**
    * Function to send a message through the WebSocket.
    * The message is encoded to binary format before sending.
@@ -191,6 +194,46 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
   const wsUrl = options.url || wsURL;
   const shouldConnect = options.connect ?? true;
   const shouldConnectRef = useRef(shouldConnect);
+  // Both immediate repair delivery and React's lastMessage consume the same native event.
+  // Weak keys release burst frames as soon as the socket library releases their events.
+  const decodedFrames = useRef(new WeakMap<MessageEvent, { message: messages.Message } | { error: unknown }>());
+  const decodeFrame = useCallback((event: MessageEvent): messages.Message => {
+    const cached = decodedFrames.current.get(event);
+
+    if (cached) {
+      if ('error' in cached) throw cached.error;
+      return cached.message;
+    }
+
+    try {
+      const message = messages.Message.decode(new Uint8Array(event.data));
+
+      decodedFrames.current.set(event, { message });
+      return message;
+    } catch (error) {
+      decodedFrames.current.set(event, { error });
+      throw error;
+    }
+  }, []);
+  const repairListeners = useRef(new Set<(message: collab.ICollabMessage) => void>());
+  const pendingRepairs = useRef<{ message: collab.ICollabMessage; receivedAt: number }[]>([]);
+
+  useLayoutEffect(() => {
+    pendingRepairs.current = [];
+  }, [options.workspaceId, options.token, shouldConnect]);
+  const subscribeRepairRequests = useCallback((listener: (message: collab.ICollabMessage) => void) => {
+    repairListeners.current.add(listener);
+    // Native onopen can precede React's OPEN commit and the donor subscription.
+    // Bound this startup gap by count and age, without retaining document bytes.
+    const pending = pendingRepairs.current;
+
+    pendingRepairs.current = [];
+    for (const notice of pending) {
+      if (Date.now() - notice.receivedAt < REPAIR_TIMEOUT_MS) listener(notice.message);
+    }
+
+    return () => { repairListeners.current.delete(listener); };
+  }, []);
   // Stable across re-renders: generate once via lazy initializer, not on every render.
   const [clientId] = useState(() => options.clientId || random.uint32());
   const [deviceId] = useState(() => options.deviceId || random.uuidv4());
@@ -218,7 +261,7 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
   // freshest session token.
   const socketUrl = useCallback(() => {
     const token = options.token || getTokenParsed()?.access_token;
-    const baseUrl = `${wsUrl}/${options.workspaceId}/?clientId=${clientId}&deviceId=${deviceId}&token=${token}&cv=0.10.0&cp=web`;
+    const baseUrl = `${wsUrl}/${options.workspaceId}/?clientId=${clientId}&deviceId=${deviceId}&token=${token}&cv=0.10.0&cp=web&background_repair=1`;
 
     return reconnectNonce > 0 ? `${baseUrl}&_rc=${reconnectNonce}` : baseUrl;
   }, [wsUrl, options.workspaceId, options.token, clientId, deviceId, reconnectNonce]);
@@ -414,6 +457,30 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
         return finalDelay;
       },
 
+      onMessage: (event) => {
+        // Process repair notices before React batches lastMessage renders. They do not enter
+        // the normal manifest/version-reset path, and only this socket's owner has listeners.
+        if (!shouldConnectRef.current || typeof event.data === 'string') return;
+        try {
+          const message = decodeFrame(event);
+
+          if (message.collabMessage?.repairRequest && parseRepairRequest(message.collabMessage)) {
+            if (repairListeners.current.size) {
+              repairListeners.current.forEach((listener) => listener(message.collabMessage!));
+            } else {
+              const now = Date.now();
+
+              pendingRepairs.current = pendingRepairs.current.filter((notice) => now - notice.receivedAt < REPAIR_TIMEOUT_MS);
+              if (pendingRepairs.current.length < 16) {
+                pendingRepairs.current.push({ message: message.collabMessage, receivedAt: now });
+              }
+            }
+          }
+        } catch (error) {
+          Log.warn('Failed to decode a background repair notice', error);
+        }
+      },
+
       // Connection event callback
       onOpen: () => {
         Log.info('✅ WebSocket connection opened');
@@ -430,6 +497,7 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
       },
 
       onClose: (event) => {
+        pendingRepairs.current = [];
         lastCloseCodeRef.current = event.code;
         Log.info('❌ WebSocket connection closed', event);
       },
@@ -550,8 +618,8 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
   }, [triggerNonceReconnect, shouldConnect, readyState]);
 
   const lastProtobufMessage = useMemo(
-    () => (lastMessage ? messages.Message.decode(new Uint8Array(lastMessage.data)) : null),
-    [lastMessage]
+    () => (lastMessage ? decodeFrame(lastMessage) : null),
+    [lastMessage, decodeFrame]
   );
 
   // Depend on the primitive fields, not the options object identity: callers
@@ -578,11 +646,12 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
     () => ({
       lastMessage: lastProtobufMessage,
       sendMessage: sendProtobufMessage,
+      subscribeRepairRequests,
       readyState: effectiveReadyState,
       options: resolvedOptions,
       reconnectAttempt,
       reconnect: manualReconnect,
     }),
-    [lastProtobufMessage, sendProtobufMessage, effectiveReadyState, resolvedOptions, reconnectAttempt, manualReconnect]
+    [lastProtobufMessage, sendProtobufMessage, subscribeRepairRequests, effectiveReadyState, resolvedOptions, reconnectAttempt, manualReconnect]
   );
 };
