@@ -34,7 +34,7 @@ export const SlashMenuNames = {
   divider: 'Divider',
   table: 'Table',
   callout: 'Callout',
-  outline: 'Outline',
+  outline: 'Table of contents',
   mathEquation: 'Math Equation',
   code: 'Code',
   toggleList: 'Toggle list',

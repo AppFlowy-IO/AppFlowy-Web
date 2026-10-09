@@ -11,8 +11,7 @@ import { filterValidNodes, findSlateEntryByBlockId, getSelectedPaths } from '@/a
 import { BlockType } from '@/application/types';
 import { ReactComponent as DragSvg } from '@/assets/icons/drag.svg';
 import { ReactComponent as AddSvg } from '@/assets/icons/plus.svg';
-import tableDragIcon from '@/assets/icons/simple-table/drag.svg?url';
-import { SimpleTableFigmaIcon } from '@/components/editor/components/blocks/simple-table/SimpleTableFigmaIcon';
+import { ReactComponent as TableDragSvg } from '@/assets/icons/simple-table/drag.svg';
 import { useBlockDrag } from '@/components/editor/components/drag-drop/useBlockDrag';
 import { usePanelContext } from '@/components/editor/components/panels/Panels.hooks';
 import { PanelType } from '@/components/editor/components/panels/PanelsContext';
@@ -28,12 +27,7 @@ type ControlActionsProps = {
   onDraggingChange?: (dragging: boolean) => void;
 };
 
-const simpleTableDragIcon = <SimpleTableFigmaIcon
-  source={tableDragIcon}
-  inkLuminance={(0.2126 * 143 + 0.7152 * 149 + 0.0722 * 158) / 255}
-  backgroundLuminance={0.9625}
-  className="simple-table-block-drag-icon"
-/>;
+const simpleTableDragIcon = <TableDragSvg className="simple-table-block-drag-icon" aria-hidden="true" />;
 
 function ControlActions({ setOpenMenu, blockId, parentId, onDraggingChange }: ControlActionsProps) {
   const { setSelectedBlockIds } = useEditorLocalState();
