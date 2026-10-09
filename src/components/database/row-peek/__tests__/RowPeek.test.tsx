@@ -1,3 +1,4 @@
+import { mockResizeObserver } from '@/__mocks__/resizeObserver';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useEffect, useState } from 'react';
 
@@ -12,6 +13,8 @@ const mockCommit = jest.fn<Promise<boolean>, []>();
 const mockDuplicateRow = jest.fn<Promise<void>, [string]>();
 const mockMount = jest.fn();
 const mockUnmount = jest.fn();
+
+mockResizeObserver();
 
 jest.mock('@/application/database-yjs', () => ({
   useDatabaseContextOptional: () => ({ workspaceId: 'workspace', databasePageId: 'database', activeViewId: 'view' }),
@@ -218,14 +221,16 @@ it('blocks repeated duplication while saving the draft and creating the copy', a
   let finishDuplicate!: () => void;
 
   mockCommit.mockImplementation(
-    () => new Promise((resolve) => {
-      finishSave = resolve;
-    })
+    () =>
+      new Promise((resolve) => {
+        finishSave = resolve;
+      })
   );
   mockDuplicateRow.mockImplementation(
-    () => new Promise((resolve) => {
-      finishDuplicate = resolve;
-    })
+    () =>
+      new Promise((resolve) => {
+        finishDuplicate = resolve;
+      })
   );
   render(<Fixture />);
   await screen.findByRole('textbox', { name: 'Draft first' });
@@ -274,24 +279,31 @@ it('allows duplication to retry after a rejected save or failed copy', async () 
   expect(screen.queryByTestId('row-detail')).toBeNull();
 });
 
-it('reacts to access changes and uses the current filtered row order', async () => {
-  const { rerender } = render(<Fixture />);
+it.each(['side', 'center'] as const)(
+  'keeps %s navigation visible and uses the current filtered row order',
+  async (mode) => {
+    const { rerender } = render(<Fixture />);
 
-  await screen.findByRole('textbox', { name: 'Draft first' });
-  expect(screen.getByTestId('row-peek-previous').hasAttribute('disabled')).toBe(true);
-  fireEvent.click(screen.getByTestId('row-peek-next'));
-  expect(mockNavigate).toHaveBeenLastCalledWith('second');
-  mockReadOnly = true;
-  mockRows = [{ id: 'third' }, { id: 'first' }];
-  rerender(<Fixture />);
-  expect(screen.queryByTestId('row-detail-more-actions')).toBeNull();
-  expect(screen.getByTestId('row-peek-next').hasAttribute('disabled')).toBe(true);
-  fireEvent.click(screen.getByTestId('row-peek-previous'));
-  expect(mockNavigate).toHaveBeenLastCalledWith('third');
-  mockReadOnly = false;
-  rerender(<Fixture />);
-  expect(within(screen.getByTestId('row-detail')).getByTestId('row-detail-more-actions')).toBeTruthy();
-});
+    await screen.findByRole('textbox', { name: 'Draft first' });
+    if (mode === 'center') await chooseMode('center');
+    expect(screen.getByRole('button', { name: 'grid.rowPage.previousRow' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'grid.rowPage.nextRow' })).toBeTruthy();
+    if (mode === 'center') expect(screen.queryByTestId('row-detail-close')).toBeNull();
+    expect(screen.getByTestId('row-peek-previous').hasAttribute('disabled')).toBe(true);
+    fireEvent.click(screen.getByTestId('row-peek-next'));
+    expect(mockNavigate).toHaveBeenLastCalledWith('second');
+    mockReadOnly = true;
+    mockRows = [{ id: 'third' }, { id: 'first' }];
+    rerender(<Fixture />);
+    expect(screen.queryByTestId('row-detail-more-actions')).toBeNull();
+    expect(screen.getByTestId('row-peek-next').hasAttribute('disabled')).toBe(true);
+    fireEvent.click(screen.getByTestId('row-peek-previous'));
+    expect(mockNavigate).toHaveBeenLastCalledWith('third');
+    mockReadOnly = false;
+    rerender(<Fixture />);
+    expect(within(screen.getByTestId('row-detail')).getByTestId('row-detail-more-actions')).toBeTruthy();
+  }
+);
 
 it('disables both directions when the current row leaves the visible results', async () => {
   const { rerender } = render(<Fixture />);

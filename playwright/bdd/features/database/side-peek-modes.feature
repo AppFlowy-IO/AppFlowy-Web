@@ -7,7 +7,7 @@ Feature: Database side peek modes
   surface reports each mode through data-peek-mode, and at 1440x900 a row
   opens in side peek by default.
 
-  On the web "Open in a new tab" is a peek header command, so the last
+  On the web "New tab" is a peek header command, so the last
   transition returns to the grid and takes it from the row's reopened peek.
 
   Scenario: Pending row edits survive every peek mode transition
@@ -41,7 +41,7 @@ Feature: Database side peek modes
     When I toggle the "Peek completed" checkbox in the peek
     And I append " full page content" to the end of the peek document
     And I set the peek title to "Full page draft"
-    And I switch the open row to "Open as full page"
+    And I switch the open row to "Full page"
     Then the full row page for "Full page draft" is open
     And the "Peek completed" checkbox on the full row page is checked
     And the full row page document contains "Side content center content full page content"
@@ -59,7 +59,7 @@ Feature: Database side peek modes
     When I toggle the "Peek completed" checkbox in the peek
     And I append " new tab content" to the end of the peek document
     And I set the peek title to "New tab draft"
-    And I switch the open row to "Open in a new tab"
+    And I switch the open row to "New tab"
     Then the current browser tab shows the full row page for "New tab draft"
     And the "Peek completed" checkbox on the full row page is unchecked
     And the full row page document contains "Side content center content full page content new tab content"

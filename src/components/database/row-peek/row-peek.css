@@ -3,8 +3,17 @@
    full row pages and templates retain their existing layout. The #body scope
    matches Tailwind's important selector so these metrics override utilities. */
 #body .row-peek {
-  --row-page-inset: 80px;
+  --row-page-inset: 64px;
   background: var(--surface-primary);
+}
+
+#body .row-peek[data-peek-mode='side'] {
+  --row-page-inset: 40px;
+  box-shadow: inset 1px 0 var(--border-primary);
+}
+
+#body .row-peek[data-peek-mode='center'] .row-peek-header {
+  padding: 16px 20px 0 64px;
 }
 
 #body .row-peek .row-peek-header {
@@ -78,18 +87,41 @@
 
 #body .row-peek .row-page-title {
   font-size: 28px;
-  font-weight: 400;
-  line-height: 34px;
-  letter-spacing: 0.07px;
+  font-weight: 600;
+  line-height: 40px;
+  letter-spacing: normal;
+}
+
+#body .row-peek .row-page-content {
+  width: 100%;
 }
 
 #body .row-peek .row-title-content {
   min-width: 0;
-  padding: 8px 0 0;
+  padding: 8px 4px 0;
 }
 
 #body .row-peek .row-banner-toolbar {
   height: 44px;
+}
+
+#body .row-peek .row-banner[data-actions-in-header='true'] .row-banner-toolbar {
+  height: 0;
+}
+
+#body .row-peek .row-banner[data-actions-in-header='true'] .row-title-content {
+  padding-top: 0;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  #body .row-peek-banner-actions > div {
+    opacity: 0;
+  }
+
+  #body .row-peek-banner-actions:hover > div,
+  #body .row-peek-banner-actions:focus-within > div {
+    opacity: 1;
+  }
 }
 
 #body .row-peek .row-banner[data-has-cover='true'] .row-banner-toolbar {
@@ -124,6 +156,51 @@
 #body .row-peek .row-header-cover > div {
   height: 280px !important;
   max-height: 280px !important;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+#body .row-peek .row-header-cover {
+  padding: 0 8px;
+}
+
+/* The side banner has its own compact geometry. Center and full-page
+   documents keep their larger cover and icon sizes. */
+#body .row-peek[data-peek-mode='side'] .row-banner-toolbar {
+  height: 48px;
+}
+
+#body .row-peek[data-peek-mode='side'] .row-banner[data-has-cover='true'] .row-banner-toolbar {
+  height: 36px;
+}
+
+#body .row-peek[data-peek-mode='side'] .row-banner[data-has-icon='true'][data-has-cover='false'] .row-banner-toolbar {
+  height: 112px;
+}
+
+#body .row-peek[data-peek-mode='side'] .row-banner[data-has-icon='true'][data-has-cover='true'] .row-banner-toolbar {
+  height: 24px;
+}
+
+#body .row-peek[data-peek-mode='side'] .row-banner[data-has-cover='false'] .row-banner-toolbar > div {
+  height: 48px;
+  padding-bottom: 4px;
+}
+
+#body .row-peek[data-peek-mode='side'] .row-banner .view-icon {
+  top: 56px;
+  width: 48px;
+  height: 48px;
+  font-size: 48px;
+}
+
+#body .row-peek[data-peek-mode='side'] .row-banner[data-has-cover='true'] .view-icon {
+  top: -32px;
+}
+
+#body .row-peek[data-peek-mode='side'] .row-header-cover > div {
+  height: 180px !important;
+  max-height: 180px !important;
 }
 
 #body .row-peek .row-properties {
@@ -140,43 +217,35 @@
 }
 
 #body .row-peek .row-property {
-  min-height: 30px;
+  min-height: 32px;
 }
 
 #body .row-peek .property-label {
   flex-shrink: 0;
   width: 160px;
   max-width: 160px;
-  min-height: 30px;
-  padding: 5px 4px;
+  min-height: 32px;
+  padding: 6px 4px;
 }
 
 #body .row-peek .row-property > .property-label + div {
   min-width: 0;
-  min-height: 30px;
-  padding-top: 5px;
-  padding-bottom: 5px;
+  min-height: 32px;
+  padding-top: 6px;
+  padding-bottom: 6px;
 }
 
 #body .row-peek .row-properties > button {
-  height: 30px;
+  height: 32px;
   margin-left: 24px;
   margin-right: 0;
-  padding-top: 5px;
-  padding-bottom: 5px;
+  padding-top: 6px;
+  padding-bottom: 6px;
   font-weight: 400;
 }
 
 #body .row-peek .row-page-body {
   gap: 20px;
-}
-
-#body .row-peek[data-peek-mode='side'] .row-properties-divider {
-  display: none;
-}
-
-#body .row-peek[data-peek-mode='side'] .row-document-divider {
-  padding: 0;
 }
 
 #body .row-peek .appflowy-scroll-container {
@@ -188,7 +257,8 @@
     --row-page-inset: 24px;
   }
 
-  #body .row-peek .row-peek-header {
+  #body .row-peek .row-peek-header,
+  #body .row-peek[data-peek-mode='center'] .row-peek-header {
     padding: 8px;
   }
 

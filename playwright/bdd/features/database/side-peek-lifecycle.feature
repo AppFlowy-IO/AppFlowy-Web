@@ -1,9 +1,9 @@
 Feature: Database side peek lifecycle
 
   How the row peek enters and leaves the page: a row deep link opens it on
-  load, "Open as full page" promotes it to the row page and browser back
+  load, "Full page" promotes it to the row page and browser back
   returns without a peek, a published database opens rows as full pages and
-  never offers the peek's "Open in a new tab" action, leaving through the
+  never offers the peek's "New tab" action, leaving through the
   sidebar saves an unsaved title, a related-row peek navigates the related
   database's rows, and an inline database inside the peeked row document
   takes over the peek once the outer title is saved.
@@ -20,11 +20,11 @@ Feature: Database side peek lifecycle
     When I navigate to the next row with the button
     Then the peek shows the title "Cedar"
 
-  Scenario: Open as full page navigates to the row page and browser back returns without a peek
+  Scenario: Full page navigates to the row page and browser back returns without a peek
     Given I am signed in for side peek testing
     And I have created a grid named "Peek Full Page" with rows "Amber, Birch, Cedar"
     When I open the row "Birch" in the peek from the grid
-    And I switch the open row to "Open as full page"
+    And I switch the open row to "Full page"
     Then the full row page for "Birch" is open
     When I go back in the browser history
     Then the database page is open without a row page

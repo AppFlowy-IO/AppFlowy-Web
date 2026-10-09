@@ -104,6 +104,7 @@ export function RowPeekSurface({
         hideBackdrop={hideBackdrop}
         aria-label={t('grid.rowPage.centerPeek')}
         PaperProps={{
+          sx: { borderRadius: '16px', boxShadow: '0 4px 32px rgb(0 0 0 / 12%)' },
           className:
             'relative flex h-[80vh] w-[1188px] max-w-[70vw] flex-col overflow-hidden max-sm:m-2 max-sm:max-w-[calc(100vw-16px)]',
         }}

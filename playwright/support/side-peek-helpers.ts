@@ -48,7 +48,7 @@ export type PeekMode = 'side' | 'center';
 export type PeekDirection = 'previous' | 'next';
 export type PeekNavigationVia = 'button' | 'shortcut';
 export type PeekCloseVia = 'button' | 'Escape' | 'backdrop';
-export type PeekMenuItem = 'Side peek' | 'Center peek' | 'Open as full page' | 'Open in a new tab';
+export type PeekMenuItem = 'Side peek' | 'Center peek' | 'Full page' | 'New tab';
 export type SidePeekFieldKind = 'text' | 'checkbox' | 'select' | 'date';
 export type SidePeekLayout = 'Grid' | 'Board' | 'Calendar' | 'Chart' | 'List' | 'Gallery' | 'Feed' | 'Timeline';
 export type SidePeekCardLayout = 'list' | 'gallery' | 'feed' | 'board' | 'timeline';
@@ -62,7 +62,7 @@ export const PEEK_SHORTCUTS: Record<PeekDirection, string> = {
 export const PEEK_MENU_TEST_IDS: Partial<Record<PeekMenuItem, string>> = {
   'Side peek': 'row-peek-mode-side',
   'Center peek': 'row-peek-mode-center',
-  'Open in a new tab': 'row-peek-new-tab',
+  'New tab': 'row-peek-new-tab',
 };
 
 const SIDE_PEEK_FIELD_TYPES: Record<SidePeekFieldKind, FieldType> = {
@@ -450,7 +450,7 @@ export async function openRowViaDeepLink(page: Page, title: string): Promise<voi
 // Header: mode menu, navigation, close
 // ---------------------------------------------------------------------------
 
-/** Pick an "Open page in" item; returns the popup for "Open in a new tab". */
+/** Pick an "Open page in" item; returns the popup for "New tab". */
 export async function choosePeekMenuItem(page: Page, item: PeekMenuItem): Promise<Page | undefined> {
   await page.getByTestId('row-peek-mode-menu').click();
   const testId = PEEK_MENU_TEST_IDS[item];
@@ -458,7 +458,7 @@ export async function choosePeekMenuItem(page: Page, item: PeekMenuItem): Promis
 
   await expect(menuItem).toBeVisible({ timeout: 10_000 });
 
-  if (item === 'Open in a new tab') {
+  if (item === 'New tab') {
     const popupPromise = page.waitForEvent('popup');
 
     await menuItem.click();
@@ -473,7 +473,7 @@ export async function choosePeekMenuItem(page: Page, item: PeekMenuItem): Promis
   await menuItem.click();
   if (item === 'Side peek') await expectPeekOpen(page, 'side');
   if (item === 'Center peek') await expectPeekOpen(page, 'center');
-  if (item === 'Open as full page') await expectFullRowPage(page);
+  if (item === 'Full page') await expectFullRowPage(page);
   return undefined;
 }
 

@@ -48,7 +48,7 @@ export function DatabaseRow({
       rowId={rowId}
       style={{ '--row-page-inset': compact ? '44px' : undefined } as CSSProperties}
     >
-      <div className={cn('relative flex w-[952px] min-w-0 max-w-full flex-col gap-4')}>
+      <div className={cn('row-page-content relative flex w-[952px] min-w-0 max-w-full flex-col gap-4')}>
         <DatabaseRowHeader appendBreadcrumb={appendBreadcrumb} rowId={rowId} />
 
         <div className={'row-page-body flex w-full flex-1 flex-col gap-4'}>

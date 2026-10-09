@@ -64,7 +64,7 @@ Feature: Database side peek in a locked document
     Then the peek is editable
     And the peek document contains "Unlocked document"
 
-  # "Open as full page" leaves the locked document for the source database's own
+  # "Full page" leaves the locked document for the source database's own
   # row page (?r=), whose access follows that database page, not the document
   # lock; the peek inside the document is what the lock keeps read-only.
   Scenario: Opening a locked document's embedded grid row as a full page follows the source database's access
@@ -77,7 +77,7 @@ Feature: Database side peek in a locked document
     And I lock the current page from the header
     And I open the row "Amber" in the peek from the grid
     Then the peek is read-only
-    When I switch the open row to "Open as full page"
+    When I switch the open row to "Full page"
     Then the full row page for "Amber" is open
     And the full row page document contains "Protected document"
     And the full row page is editable

@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ErrorBoundary } from 'react-error-boundary';
 import { useTranslation } from 'react-i18next';
 
@@ -10,6 +11,7 @@ import { RowCoverType, ViewIconType } from '@/application/types';
 import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
 import { RichTextCellEditor } from '@/components/database/components/cell/text/rich-text/load';
 import RichTextCellContent from '@/components/database/components/cell/text/rich-text/RichTextCellContent';
+import { useRowPeekBannerActions } from '@/components/database/row-peek/RowPeekBannerActions';
 import { TextareaAutosize } from '@/components/ui/textarea-autosize';
 import AddIconCover from '@/components/view-meta/AddIconCover';
 import { cn } from '@/lib/utils';
@@ -48,6 +50,8 @@ export function Title({
 
   const updateRowMeta = useUpdateRowMetaDispatch(rowId);
   const [isHover, setIsHover] = useState(false);
+  const bannerActions = useRowPeekBannerActions();
+  const headerSlot = !icon && !hasCover && !templateStyle ? bannerActions?.slot : null;
 
   const handleUpdateIcon = useCallback(
     ({ value }: { value: string; ty: ViewIconType }) => {
@@ -123,6 +127,30 @@ export function Title({
     />
   );
 
+  const actions = !readOnly ? (
+    <AddIconCover
+      iconTabs={['emoji']}
+      defaultIconTab={'emoji'}
+      visible={!!headerSlot || isHover}
+      hasIcon={!!icon}
+      hasCover={hasCover}
+      onUpdateIcon={handleUpdateIcon}
+      onAddCover={() => {
+        updateRowMeta(
+          RowMetaKey.CoverId,
+          JSON.stringify({
+            cover_type: RowCoverType.AssetCover,
+            data: 1,
+          })
+        );
+      }}
+      onUploadFile={onUploadFile}
+      contentClassName={
+        headerSlot ? 'px-0' : templateStyle ? 'px-[60px] max-sm:px-6' : 'px-[var(--row-page-inset,96px)] max-sm:px-6'
+      }
+    />
+  ) : null;
+
   const toolbarHeight = templateStyle
     ? icon
       ? hasCover
@@ -146,29 +174,10 @@ export function Title({
       className={'row-banner relative flex w-full flex-col'}
       data-has-icon={!!icon}
       data-has-cover={hasCover}
+      data-actions-in-header={!!headerSlot}
     >
       <div className={cn('row-banner-toolbar relative flex w-full justify-center', toolbarHeight)}>
-        {!readOnly ? (
-          <AddIconCover
-            iconTabs={['emoji']}
-            defaultIconTab={'emoji'}
-            visible={isHover}
-            hasIcon={!!icon}
-            hasCover={hasCover}
-            onUpdateIcon={handleUpdateIcon}
-            onAddCover={() => {
-              updateRowMeta(
-                RowMetaKey.CoverId,
-                JSON.stringify({
-                  cover_type: RowCoverType.AssetCover,
-                  data: 1,
-                })
-              );
-            }}
-            onUploadFile={onUploadFile}
-            contentClassName={templateStyle ? 'px-[60px] max-sm:px-6' : 'px-[var(--row-page-inset,96px)] max-sm:px-6'}
-          />
-        ) : null}
+        {headerSlot ? createPortal(actions, headerSlot) : actions}
         {templateStyle && icon ? (
           <div className={cn('absolute left-[60px] z-10 max-sm:left-6', hasCover ? 'bottom-0' : 'bottom-10')}>
             {renderIcon(true)}

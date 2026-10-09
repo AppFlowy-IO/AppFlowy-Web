@@ -1,3 +1,4 @@
+import { mockResizeObserver } from '@/__mocks__/resizeObserver';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useState } from 'react';
 import * as Y from 'yjs';
@@ -7,6 +8,8 @@ import { YDoc, YjsEditorKey } from '@/application/types';
 import OpenAction from '@/components/database/components/database-row/OpenAction';
 import DatabaseRowModal from '@/components/database/DatabaseRowModal';
 import { RowPeekLayout } from '@/components/database/row-peek/RowPeekLayout';
+
+mockResizeObserver();
 
 jest.mock('@/application/database-yjs', () => jest.requireActual('@/application/database-yjs/context'));
 jest.mock('@/application/database-yjs/dispatch', () => ({
@@ -75,7 +78,7 @@ it.each([false, true])('keeps mode choices temporary and reopens in side peek (r
   expect(editor.value).toBe('Keep my draft');
   await chooseMode('side');
   await chooseMode('center');
-  fireEvent.click(screen.getByTestId('row-detail-close'));
+  fireEvent.keyDown(document, { key: 'Escape' });
   await waitFor(() => expect(screen.queryByTestId('row-detail')).toBeNull());
   fireEvent.click(screen.getByRole('button', { name: 'Reopen row' }));
   await waitFor(() => expect(screen.getByTestId('row-detail').getAttribute('data-peek-mode')).toBe('side'));

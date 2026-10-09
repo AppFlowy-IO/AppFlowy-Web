@@ -90,6 +90,10 @@ export async function openRowDetailViaCell(
 
 /** Close either row peek mode using its explicit close button. */
 export async function closeRowDetail(page: Page): Promise<void> {
+  if (await RowDetailSelectors.modal(page).getAttribute('data-peek-mode') === 'center') {
+    await closeRowDetailWithEscape(page);
+    return;
+  }
   await RowDetailSelectors.closeButton(page).click();
   await expect(RowDetailSelectors.modal(page)).toHaveCount(0);
 }

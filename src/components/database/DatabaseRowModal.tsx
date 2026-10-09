@@ -11,6 +11,7 @@ import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { AFScroller } from '@/components/_shared/scroller';
 import { useDatabaseRestoreNotice } from '@/components/app/DatabaseRestoreNotice';
 import { DatabaseRow } from '@/components/database/DatabaseRow';
+import { RowPeekBannerActionsProvider } from '@/components/database/row-peek/RowPeekBannerActions';
 import { RowPeekHeader } from '@/components/database/row-peek/RowPeekHeader';
 import { useRowPeekLayout } from '@/components/database/row-peek/RowPeekLayout';
 import {
@@ -140,86 +141,88 @@ function DatabaseRowModal({
       closeImmediately={closeImmediately}
     >
       <RowPeekNavigationContext.Provider value={navigation}>
-        <div
-          ref={contentRef}
-          data-testid='row-detail'
-          data-peek-mode={side ? 'side' : 'center'}
-          className='row-peek flex h-full min-h-0 w-full flex-col'
-        >
-          <RowPeekHeader
-            rowId={rowId}
-            side={side}
-            canShowSide={layout?.canShow === true && !openPageModalViewId}
-            nested={!!openPageModalViewId}
-            onClose={close}
-            onModeChange={setMode}
-            onOpenFullPage={openPage ? () => void openFullPage() : undefined}
-            onOpenNewTab={canOpenNewTab ? openNewTab : undefined}
-            prepare={prepare}
-            shareUrl={rowUrl?.toString()}
+        <RowPeekBannerActionsProvider side={side}>
+          <div
+            ref={contentRef}
+            data-testid='row-detail'
+            data-peek-mode={side ? 'side' : 'center'}
+            className='row-peek flex h-full min-h-0 w-full flex-col'
           >
-            {!readOnly ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    size='icon'
-                    variant='ghost'
-                    className='row-peek-icon-button'
-                    data-testid='row-detail-more-actions'
-                    aria-label={t('grid.rowPage.moreRowActions')}
-                  >
-                    <MoreIcon className='h-5 w-5' />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className='w-fit min-w-fit'>
-                  <DropdownMenuGroup>
-                    <DropdownMenuItem
-                      data-testid='row-detail-duplicate'
-                      disabled={duplicateLoading}
-                      onSelect={async () => {
-                        if (duplicatePending.current) return;
-                        duplicatePending.current = true;
-                        setDuplicateLoading(true);
-                        try {
+            <RowPeekHeader
+              rowId={rowId}
+              side={side}
+              canShowSide={layout?.canShow === true && !openPageModalViewId}
+              nested={!!openPageModalViewId}
+              onClose={close}
+              onModeChange={setMode}
+              onOpenFullPage={openPage ? () => void openFullPage() : undefined}
+              onOpenNewTab={canOpenNewTab ? openNewTab : undefined}
+              prepare={prepare}
+              shareUrl={rowUrl?.toString()}
+            >
+              {!readOnly ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      size='icon'
+                      variant='ghost'
+                      className='row-peek-icon-button'
+                      data-testid='row-detail-more-actions'
+                      aria-label={t('grid.rowPage.moreRowActions')}
+                    >
+                      <MoreIcon className='h-5 w-5' />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className='w-fit min-w-fit'>
+                    <DropdownMenuGroup>
+                      <DropdownMenuItem
+                        data-testid='row-detail-duplicate'
+                        disabled={duplicateLoading}
+                        onSelect={async () => {
+                          if (duplicatePending.current) return;
+                          duplicatePending.current = true;
+                          setDuplicateLoading(true);
+                          try {
+                            if (!(await prepare()) || currentRow.current !== rowId) return;
+                            await duplicateRow?.(rowId);
+                            if (currentRow.current === rowId) closeImmediately();
+                          } catch (error) {
+                            toast.error(error instanceof Error ? error.message : t('error.generalError'));
+                          } finally {
+                            duplicatePending.current = false;
+                            setDuplicateLoading(false);
+                          }
+                        }}
+                      >
+                        {duplicateLoading ? <Progress variant='primary' /> : <DuplicateIcon className='h-5 w-5' />}
+                        {t('grid.row.duplicate')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        variant='destructive'
+                        data-testid='row-detail-delete'
+                        onSelect={async () => {
                           if (!(await prepare()) || currentRow.current !== rowId) return;
-                          await duplicateRow?.(rowId);
-                          if (currentRow.current === rowId) closeImmediately();
-                        } catch (error) {
-                          toast.error(error instanceof Error ? error.message : t('error.generalError'));
-                        } finally {
-                          duplicatePending.current = false;
-                          setDuplicateLoading(false);
-                        }
-                      }}
-                    >
-                      {duplicateLoading ? <Progress variant='primary' /> : <DuplicateIcon className='h-5 w-5' />}
-                      {t('grid.row.duplicate')}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      variant='destructive'
-                      data-testid='row-detail-delete'
-                      onSelect={async () => {
-                        if (!(await prepare()) || currentRow.current !== rowId) return;
-                        try {
-                          await deleteRows([rowId]);
-                          if (currentRow.current === rowId) closeImmediately();
-                        } catch (error) {
-                          toast.error(error instanceof Error ? error.message : t('error.generalError'));
-                        }
-                      }}
-                    >
-                      <DeleteIcon className='h-5 w-5' />
-                      {t('grid.row.delete')}
-                    </DropdownMenuItem>
-                  </DropdownMenuGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : null}
-          </RowPeekHeader>
-          <AFScroller overflowXHidden className='appflowy-scroll-container w-full flex-1'>
-            <DatabaseRow key={rowId} rowId={rowId} compact={side} />
-          </AFScroller>
-        </div>
+                          try {
+                            await deleteRows([rowId]);
+                            if (currentRow.current === rowId) closeImmediately();
+                          } catch (error) {
+                            toast.error(error instanceof Error ? error.message : t('error.generalError'));
+                          }
+                        }}
+                      >
+                        <DeleteIcon className='h-5 w-5' />
+                        {t('grid.row.delete')}
+                      </DropdownMenuItem>
+                    </DropdownMenuGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null}
+            </RowPeekHeader>
+            <AFScroller overflowXHidden className='appflowy-scroll-container w-full flex-1'>
+              <DatabaseRow key={rowId} rowId={rowId} />
+            </AFScroller>
+          </div>
+        </RowPeekBannerActionsProvider>
       </RowPeekNavigationContext.Provider>
     </RowPeekSurface>
   );

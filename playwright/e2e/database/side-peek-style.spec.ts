@@ -9,7 +9,7 @@ import { getVisibleDataRowIds, openRowDetail } from '../../support/row-detail-he
 import { RowDetailSelectors } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
 
-test('matches desktop peek typography, icon placement and toolbar reveal across modes', async ({
+test('matches Figma peek typography, icon placement and toolbar reveal across modes', async ({
   page,
   request,
 }, testInfo) => {
@@ -27,7 +27,8 @@ test('matches desktop peek typography, icon placement and toolbar reveal across 
 
   await expect(detail).toHaveAttribute('data-peek-mode', 'side');
   await expect(title).toHaveCSS('font-size', '28px');
-  await expect(title).toHaveCSS('font-weight', '400');
+  await expect(title).toHaveCSS('font-weight', '600');
+  await expect(title).toHaveCSS('line-height', '40px');
   await expect(close).toHaveCSS('width', '32px');
   await expect(close.locator('svg')).toHaveCSS('width', '20px');
   await expect(detail.locator('.property-label').first()).toHaveCSS('width', '160px');
@@ -46,16 +47,24 @@ test('matches desktop peek typography, icon placement and toolbar reveal across 
   await expect(controls).toHaveCSS('opacity', '1');
   await close.hover();
   await detail.getByTestId('row-peek-mode-menu').click();
+  await expect(page.getByRole('menu')).toHaveCSS('width', '320px');
   await page.getByTestId('row-peek-mode-center').hover();
   await expect(controls).toHaveCSS('opacity', '1');
   await page.keyboard.press('Escape');
+
+  await detail.getByTestId('row-peek-mode-menu').click();
+  await page.getByTestId('row-peek-mode-center').click();
+  await expect(detail.locator('.row-banner')).toHaveAttribute('data-actions-in-header', 'true');
+  await page.screenshot({ path: testInfo.outputPath('center-peek-default.png'), animations: 'disabled' });
+  await detail.getByTestId('row-peek-mode-menu').click();
+  await page.getByTestId('row-peek-mode-side').click();
 
   // Exercise all banner states without changing any installed-app settings.
   await setGalleryRowMetaDirect(page, rowId, { icon: '🚀' });
   const icon = detail.locator('.view-icon');
 
-  await expect(icon).toHaveCSS('font-size', '64px');
-  await expect(icon).toHaveCSS('width', '88px');
+  await expect(icon).toHaveCSS('font-size', '48px');
+  await expect(icon).toHaveCSS('width', '48px');
   await expect
     .poll(async () => {
       const [image, heading] = await Promise.all([icon.boundingBox(), title.boundingBox()]);
@@ -64,15 +73,32 @@ test('matches desktop peek typography, icon placement and toolbar reveal across 
     })
     .toBe(true);
   await setGalleryRowMetaDirect(page, rowId, { cover: { data: '1' } });
-  await expect(detail.locator('.row-header-cover > div')).toHaveCSS('height', '280px');
+  await expect(detail.locator('.row-header-cover > div')).toHaveCSS('height', '180px');
+  await expect(detail.locator('.row-header-cover > div')).toHaveCSS('border-radius', '12px');
+  await expect(detail.locator('.row-properties-divider')).toBeVisible();
   await close.hover();
   await page.screenshot({ path: testInfo.outputPath('side-peek-desktop-style.png'), animations: 'disabled' });
+
+  await setGalleryRowMetaDirect(page, rowId, { icon: '' });
+  await expect(detail.locator('.row-banner-toolbar')).toHaveCSS('height', '36px');
+  await setGalleryRowMetaDirect(page, rowId, { icon: '🚀' });
 
   await detail.getByTestId('row-peek-mode-menu').click();
   await page.getByTestId('row-peek-mode-center').click();
   await expect(detail).toHaveAttribute('data-peek-mode', 'center');
   await expect(title).toHaveCSS('font-size', '28px');
-  await expect(title).toHaveCSS('font-weight', '400');
+  await expect(title).toHaveCSS('font-weight', '600');
+  await expect(detail.getByTestId('row-detail-close')).toHaveCount(0);
+  await expect(detail.getByTestId('row-peek-previous')).toBeVisible();
+  await expect(detail.getByTestId('row-peek-next')).toBeVisible();
+  await expect(detail.locator('.row-header-cover > div')).toHaveCSS('height', '280px');
+  await expect
+    .poll(async () => {
+      const [panel, heading] = await Promise.all([detail.boundingBox(), title.boundingBox()]);
+
+      return Math.round(heading!.x - panel!.x);
+    })
+    .toBe(68);
   await page.screenshot({ path: testInfo.outputPath('center-peek-desktop-style.png'), animations: 'disabled' });
 
   await page.setViewportSize({ width: 390, height: 844 });

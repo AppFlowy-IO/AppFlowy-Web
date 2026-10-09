@@ -218,11 +218,11 @@ Then('no peek is open', async ({ page }) => {
   await expectNoPeek(activeSidePeekPage(page));
 });
 
-/** Items: Side peek, Center peek, Open as full page, Open in a new tab. */
+/** Items: Side peek, Center peek, Full page, New tab. */
 When('I switch the open row to {string}', async ({ page }, item: string) => {
   const popup = await choosePeekMenuItem(
     activeSidePeekPage(page),
-    assertOneOf<PeekMenuItem>(item, ['Side peek', 'Center peek', 'Open as full page', 'Open in a new tab'], 'Menu item')
+    assertOneOf<PeekMenuItem>(item, ['Side peek', 'Center peek', 'Full page', 'New tab'], 'Menu item')
   );
 
   if (popup) trackTab(page, popup);

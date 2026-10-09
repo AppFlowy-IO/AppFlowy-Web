@@ -1,3 +1,4 @@
+import { mockResizeObserver } from '@/__mocks__/resizeObserver';
 import EventEmitter from 'events';
 
 import { Dialog as MuiDialog } from '@mui/material';
@@ -9,6 +10,8 @@ import { Types, YDocWithMeta } from '@/application/types';
 import { DatabaseRestoreNoticeProvider, useDatabaseRestoreNotice } from '@/components/app/DatabaseRestoreNotice';
 import { RevertedDialog } from '@/components/app/RevertedDialog';
 import DatabaseRowModal from '@/components/database/DatabaseRowModal';
+
+mockResizeObserver();
 
 jest.mock('@/application/database-yjs', () => ({
   useDatabaseContextOptional: () => ({

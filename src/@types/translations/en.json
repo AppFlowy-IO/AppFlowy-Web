@@ -2028,6 +2028,8 @@
       "centerPeek": "Center peek",
       "switchPeekMode": "Switch peek mode",
       "openPageIn": "Open page in",
+      "fullPage": "Full page",
+      "newTab": "New tab",
       "resizeSidePeek": "Resize side peek",
       "previousRow": "Previous row",
       "nextRow": "Next row"

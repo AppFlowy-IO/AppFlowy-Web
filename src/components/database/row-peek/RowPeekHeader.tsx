@@ -20,6 +20,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 import { RowPeekDocumentActions } from './RowPeekDocumentActions';
+import { useRowPeekBannerActions } from './RowPeekBannerActions';
 import { RowPeekRowNavigation } from './RowPeekRowNavigation';
 
 import type { RowPeekMode } from './RowPeekSurface';
@@ -56,6 +57,7 @@ export function RowPeekHeader({
 }) {
   const { t } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
+  const bannerActions = useRowPeekBannerActions();
   const promote = onOpenFullPage ? (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -86,8 +88,8 @@ export function RowPeekHeader({
           {side ? <SidePeekIcon className='h-5 w-5' /> : <CenterPeekIcon className='h-5 w-5' />}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align='start' className='w-60 rounded-xl'>
-        <DropdownMenuLabel className='text-xs font-normal text-text-secondary'>
+      <DropdownMenuContent align='start' className='w-80 max-w-[calc(100vw-16px)] rounded-xl'>
+        <DropdownMenuLabel className='text-xs font-medium leading-[18px] tracking-[0.1px] text-text-tertiary'>
           {t('grid.rowPage.openPageIn')}
         </DropdownMenuLabel>
         <DropdownMenuItem disabled={!canShowSide} data-testid='row-peek-mode-side' onSelect={() => onModeChange('side')}>
@@ -103,13 +105,13 @@ export function RowPeekHeader({
         {onOpenFullPage ? (
           <DropdownMenuItem onSelect={onOpenFullPage}>
             <FullPageIcon className='h-5 w-5' />
-            {t('grid.rowPage.openAsFullPage')}
+            {t('grid.rowPage.fullPage')}
           </DropdownMenuItem>
         ) : null}
         {onOpenNewTab ? (
           <DropdownMenuItem data-testid='row-peek-new-tab' onSelect={onOpenNewTab}>
             <TabIcon className='h-5 w-5' />
-            {t('disclosureAction.openNewTab')}
+            {t('grid.rowPage.newTab')}
           </DropdownMenuItem>
         ) : null}
       </DropdownMenuContent>
@@ -118,22 +120,24 @@ export function RowPeekHeader({
 
   return (
     <div data-testid='row-detail-header' className='row-peek-header'>
-      <div className='row-peek-left-cluster flex items-center gap-1' data-menu-open={menuOpen}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant='ghost'
-              size='icon'
-              className='row-peek-icon-button'
-              data-testid='row-detail-close'
-              aria-label={t('button.close')}
-              onClick={onClose}
-            >
-              {nested ? <ArrowLeftIcon className='h-5 w-5' /> : <CloseIcon className='h-5 w-5' />}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{t('button.close')}</TooltipContent>
-        </Tooltip>
+      <div className='row-peek-left-cluster flex min-w-0 flex-1 items-center gap-1' data-menu-open={menuOpen}>
+        {side || nested ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant='ghost'
+                size='icon'
+                className='row-peek-icon-button'
+                data-testid='row-detail-close'
+                aria-label={t('button.close')}
+                onClick={onClose}
+              >
+                {nested ? <ArrowLeftIcon className='h-5 w-5' /> : <CloseIcon className='h-5 w-5' />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t('button.close')}</TooltipContent>
+          </Tooltip>
+        ) : null}
         <div className='row-peek-optional-actions'>
           {side ? (
             <>
@@ -143,10 +147,9 @@ export function RowPeekHeader({
               <ToolbarDivider />
             </>
           ) : null}
-          <div hidden={!side}>
-            <RowPeekRowNavigation rowId={rowId} />
-          </div>
+          {side ? <RowPeekRowNavigation rowId={rowId} /> : null}
         </div>
+        {!side ? <div ref={bannerActions?.headerRef} className='row-peek-banner-actions h-8 min-w-0 flex-1' /> : null}
       </div>
       <div className='row-peek-right-cluster flex min-w-0 items-center gap-1'>
         <RowPeekDocumentActions rowId={rowId} prepare={prepare} shareUrl={shareUrl}>
@@ -155,6 +158,8 @@ export function RowPeekHeader({
               {promote}
               <ToolbarDivider />
               {modeMenu}
+              <ToolbarDivider />
+              <RowPeekRowNavigation rowId={rowId} />
               <ToolbarDivider />
             </>
           ) : null}
