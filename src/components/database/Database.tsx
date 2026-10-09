@@ -1762,6 +1762,7 @@ function Database(props: Database2Props) {
       {modalState.rowId && modalContextValue && (
         <DatabaseContextProvider value={modalContextValue}>
           <DatabaseRowModal
+            key={`${modalContextValue.databaseDoc.guid}:${modalState.rowId}`}
             rowId={modalState.rowId}
             open={Boolean(modalState.rowId)}
             openPage={onOpenRowPage || (modalState.databaseDoc && navigateToView) ? handleOpenPeekAsPage : undefined}

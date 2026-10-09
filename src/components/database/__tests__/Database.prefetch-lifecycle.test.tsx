@@ -41,13 +41,29 @@ jest.mock('@/components/database/DatabaseRow', () => ({
 }));
 
 jest.mock('@/components/database/DatabaseRowModal', () => {
+  const React = jest.requireActual<typeof import('react')>('react');
   const { useDatabaseContext } = jest.requireActual<typeof import('@/application/database-yjs/context')>(
     '@/application/database-yjs/context'
   );
 
-  return function MockRowModal({ open }: { open: boolean }) {
+  return function MockRowModal({
+    open,
+    rowId,
+    onOpenChange,
+  }: {
+    open: boolean;
+    rowId: string;
+    onOpenChange: (open: boolean) => void;
+  }) {
+    const [mode, setMode] = React.useState('side');
+
     mockPeekContext = useDatabaseContext();
-    return open ? <div data-testid='database-row-modal' /> : null;
+    return open ? (
+      <div data-testid='database-row-modal' data-peek-mode={mode} data-row-id={rowId}>
+        <button onClick={() => setMode('center')}>Center peek</button>
+        <button onClick={() => onOpenChange(false)}>Close peek</button>
+      </div>
+    ) : null;
   };
 });
 jest.mock('@/components/database/DatabaseContext', () => {
@@ -1125,6 +1141,32 @@ describe('Database blob prefetch lifecycle', () => {
 
     expect(screen.getByTestId('database-row-modal')).not.toBeNull();
     expect(onOpenRowPage).not.toHaveBeenCalled();
+
+    unmount();
+    doc.destroy();
+  });
+
+  it('starts each newly opened row in side peek after a temporary center choice', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const { unmount } = render(<Database {...databaseProps(doc)} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open row' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Center peek' }));
+    expect(screen.getByTestId('database-row-modal').getAttribute('data-peek-mode')).toBe('center');
+
+    await act(async () => {
+      await Promise.resolve(mockPeekContext?.navigateToRow?.('next-row'));
+    });
+    expect(screen.getByTestId('database-row-modal').getAttribute('data-row-id')).toBe('next-row');
+    expect(screen.getByTestId('database-row-modal').getAttribute('data-peek-mode')).toBe('side');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Center peek' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close peek' }));
+    expect(screen.queryByTestId('database-row-modal')).toBeNull();
+    await act(async () => {
+      await Promise.resolve(mockDatabaseContext?.navigateToRow?.('next-row'));
+    });
+    expect(screen.getByTestId('database-row-modal').getAttribute('data-peek-mode')).toBe('side');
 
     unmount();
     doc.destroy();
