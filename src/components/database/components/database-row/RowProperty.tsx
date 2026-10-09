@@ -32,7 +32,7 @@ function RowProperty(props: {
     <DragItem
       dragHandleVisibility={'hover'}
       id={fieldId}
-      className={props.templateStyle ? 'items-start pb-2 pr-0' : 'items-start pb-4 pr-5'}
+      className={props.templateStyle ? 'items-start pb-2 pr-0' : 'row-property-draggable items-start pb-4 pr-5'}
       dragIcon={
         <Tooltip>
           <TooltipTrigger

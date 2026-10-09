@@ -101,6 +101,8 @@ export interface DatabaseContextState {
   embeddedHeight?: number;
   // use different view id to navigate to row
   navigateToRow?: (rowId: string, viewId?: string) => void;
+  /** Reuse this peek for an embedded database without inheriting the host's permissions. */
+  openRowInHostPeek?: (rowId: string, viewId: string, permissions: DatabaseRowPermissions) => void;
   loadView?: LoadView;
   bindViewSync?: BindViewSync;
   scheduleDeferredCleanup?: (objectId: string, delayMs?: number) => void;
@@ -155,6 +157,8 @@ export interface DatabaseContextState {
   // Close row detail modal (when in modal context)
   closeRowDetailModal?: () => void;
 }
+
+export type DatabaseRowPermissions = Pick<DatabaseContextState, 'readOnly' | 'canWrite' | 'canComment' | 'canShare'>;
 
 export const DatabaseContext = createContext<DatabaseContextState | null>(null);
 

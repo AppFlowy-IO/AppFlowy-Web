@@ -1,15 +1,17 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useNavigateToRow, useRowOrdersSelector } from '@/application/database-yjs';
 import { usePublishedRowOrders } from '@/application/database-yjs/row-orders-store';
 import type { Row } from '@/application/database-yjs/selector';
-import { ReactComponent as UpIcon } from '@/assets/icons/arrow_up.svg';
-import { ReactComponent as DownIcon } from '@/assets/icons/arrow_down.svg';
+import { ReactComponent as DownIcon } from '@/assets/icons/alt_arrow_down.svg';
+import { ReactComponent as UpIcon } from '@/assets/icons/alt_arrow_up.svg';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 import { hasRowPeekOverlay } from './RowPeekNavigation';
+
+const RowPeekCardOrders = lazy(() => import('./RowPeekCardOrders'));
 
 export function RowPeekRowNavigation({ rowId }: { rowId: string }) {
   const snapshot = usePublishedRowOrders();
@@ -19,7 +21,17 @@ export function RowPeekRowNavigation({ rowId }: { rowId: string }) {
   // publish its initial (possibly loading) orders before starting a fallback.
   useLayoutEffect(() => setMounted(true), []);
 
-  if (snapshot || !mounted) return <RowNavigation rowId={rowId} rows={snapshot?.rows} />;
+  if (snapshot?.published || !mounted) return <RowNavigation rowId={rowId} rows={snapshot?.rows} />;
+  if (snapshot?.presentation) {
+    return (
+      <Suspense fallback={<RowNavigation rowId={rowId} rows={snapshot.rows} />}>
+        <RowPeekCardOrders presentation={snapshot.presentation}>
+          {(rows) => <RowNavigation rowId={rowId} rows={rows} />}
+        </RowPeekCardOrders>
+      </Suspense>
+    );
+  }
+
   return <IndependentRowNavigation rowId={rowId} />;
 }
 
@@ -43,7 +55,7 @@ function RowNavigation({ rowId, rows }: { rowId: string; rows: Row[] | undefined
     if (!navigate) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing || !(event.metaKey || event.ctrlKey) || !event.shiftKey) return;
-      const target = event.key.toLowerCase() === 'k' ? previous : event.key.toLowerCase() === 'j' ? next : undefined;
+      const target = event.key.toLowerCase() === 'p' ? previous : event.key.toLowerCase() === 'n' ? next : undefined;
 
       if (!target || hasRowPeekOverlay(toolbar.current)) return;
       event.preventDefault();
@@ -70,6 +82,7 @@ function RowNavigation({ rowId, rows }: { rowId: string; rows: Row[] | undefined
             <Button
               variant='ghost'
               size='icon'
+              className='row-peek-icon-button'
               aria-label={label}
               data-testid={testId}
               disabled={!id}

@@ -1152,6 +1152,59 @@ describe('Database blob prefetch lifecycle', () => {
     doc.destroy();
   });
 
+  it('preserves embedded database permissions in the host peek and while navigating its rows', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const nestedDoc = createDatabaseDoc('nested-database-id', 'nested-database-id');
+    const nestedRowDoc = createHydratedRowDoc('nested-row');
+    const permissions = { readOnly: true, canWrite: false, canComment: true, canShare: false };
+    const host = render(
+      <Database
+        {...databaseProps(doc)}
+        canWrite
+        canShare
+        modalRowId='row-id'
+        loadView={jest.fn().mockResolvedValue(nestedDoc)}
+        createRow={jest.fn().mockResolvedValue(nestedRowDoc)}
+      />
+    );
+    const hostContext = mockDatabaseContext;
+    const openRowInHostPeek = mockPeekContext?.openRowInHostPeek;
+
+    expect(openRowInHostPeek).toEqual(expect.any(Function));
+    const nested = render(
+      <Database
+        {...databaseProps(nestedDoc)}
+        {...permissions}
+        activeViewId='nested-view'
+        isDocumentBlock
+        openRowInHostPeek={openRowInHostPeek}
+      />
+    );
+
+    await act(async () => {
+      await Promise.resolve(mockDatabaseContext?.navigateToRow?.('nested-row'));
+    });
+    await waitFor(() => expect(mockPeekContext?.databaseDoc).toBe(nestedDoc));
+    expect(mockPeekContext).toMatchObject(permissions);
+    expect(screen.getAllByTestId('database-row-modal')).toHaveLength(1);
+
+    // The originating embedded database unmounts when its row replaces the host row.
+    nested.unmount();
+    await act(async () => {
+      await Promise.resolve(mockPeekContext?.navigateToRow?.('nested-neighbor'));
+    });
+    expect(mockPeekContext).toMatchObject({ ...permissions, activeViewId: 'nested-view' });
+
+    await act(async () => {
+      await Promise.resolve(hostContext?.navigateToRow?.('row-id'));
+    });
+    expect(mockPeekContext).toMatchObject({ readOnly: false, canWrite: true, canComment: false, canShare: true });
+    expect(mockPeekContext?.databaseDoc).toBe(doc);
+
+    host.unmount();
+    [doc, nestedDoc, nestedRowDoc].forEach((document) => document.destroy());
+  });
+
   it('loads and navigates related rows in their database, then restores the source context for a grid row', async () => {
     const doc = createDatabaseDoc('database-id');
     const relatedDoc = createDatabaseDoc('related-database-id', 'related-database-id');

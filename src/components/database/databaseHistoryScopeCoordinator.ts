@@ -96,7 +96,7 @@ export function useIsDatabaseHistoryScopeActive(scopeId: string) {
  * Attach `data-database-history-scope={historyScopeId}` to the layout root and
  * to any portaled editor owned by that layout.
  */
-export function useDatabaseHistoryScope({ enabled = true }: { enabled?: boolean } = {}) {
+export function useDatabaseHistoryScope({ enabled = true, rowId }: { enabled?: boolean; rowId?: string } = {}) {
   const historyScopeId = useId();
   const isHistoryScopeActive = useIsDatabaseHistoryScopeActive(historyScopeId);
   const activateHistoryScope = useCallback(() => {
@@ -106,10 +106,10 @@ export function useDatabaseHistoryScope({ enabled = true }: { enabled?: boolean 
     if (activeHistoryScopeId === historyScopeId) setActiveHistoryScope(undefined);
   }, [historyScopeId]);
 
-  useDatabaseRowHistoryHotkeys(undefined, {
+  useDatabaseRowHistoryHotkeys(rowId, {
     enabled: enabled && isHistoryScopeActive,
     ignoreInput: true,
-    useLatest: true,
+    useLatest: !rowId,
   });
 
   return {

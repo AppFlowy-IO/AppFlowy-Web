@@ -14,7 +14,7 @@ const isImageSource = (value?: string) => {
   return /^https?:\/\//i.test(value) || value.startsWith('data:') || value.startsWith('blob:');
 };
 
-export function Users({ viewId }: { viewId?: string }) {
+export function Users({ viewId, maxVisibleUsers = 4 }: { viewId?: string; maxVisibleUsers?: number }) {
   const { t } = useTranslation();
   const awareness = useAppAwareness(viewId);
 
@@ -26,10 +26,9 @@ export function Users({ viewId }: { viewId?: string }) {
 
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
 
-  const MAX_VISIBLE_USERS = 4;
-  const visibleUsers = users.slice(0, MAX_VISIBLE_USERS);
-  const remainingUsers = users.slice(MAX_VISIBLE_USERS);
-  const hasMoreUsers = users.length > MAX_VISIBLE_USERS;
+  const visibleUsers = users.slice(0, maxVisibleUsers);
+  const remainingUsers = users.slice(maxVisibleUsers);
+  const hasMoreUsers = users.length > maxVisibleUsers;
 
   return (
     <div className='*:data-[slot=avatar]:ring-background flex -space-x-2 *:data-[slot=avatar]:ring-2 *:data-[slot=avatar]:grayscale'>

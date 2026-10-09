@@ -75,6 +75,7 @@ export function DatabaseRowProperties({ rowId, templateStyle = false }: { rowId:
     <DragContext.Provider value={dragContentValue}>
       <div
         ref={setDom}
+        data-read-only={readOnly}
         className={cn(
           'row-properties flex w-full flex-col py-2',
           readOnly

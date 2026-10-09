@@ -9,6 +9,7 @@ let mockReadOnly = false;
 let mockRows = [{ id: 'first' }, { id: 'second' }, { id: 'third' }];
 const mockNavigate = jest.fn();
 const mockCommit = jest.fn<Promise<boolean>, []>();
+const mockDuplicateRow = jest.fn<Promise<void>, [string]>();
 const mockMount = jest.fn();
 const mockUnmount = jest.fn();
 
@@ -19,10 +20,13 @@ jest.mock('@/application/database-yjs', () => ({
   useNavigateToRow: () => mockNavigate,
 }));
 jest.mock('@/application/database-yjs/dispatch', () => ({
-  useDuplicateRowDispatch: () => jest.fn(),
+  useDuplicateRowDispatch: () => mockDuplicateRow,
   useTrashAwareDeleteRowsDispatch: () => jest.fn(),
 }));
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+jest.mock('@/components/database/row-peek/RowPeekDocumentActions', () => ({
+  RowPeekDocumentActions: ({ children }: { children?: import('react').ReactNode }) => <>{children}</>,
+}));
 jest.mock('@/components/database/DatabaseRow', () => ({
   DatabaseRow: function RowEditor({ rowId }: { rowId: string }) {
     const [draft, setDraft] = useState(rowId);
@@ -74,6 +78,7 @@ beforeEach(() => {
   mockRows = [{ id: 'first' }, { id: 'second' }, { id: 'third' }];
   jest.clearAllMocks();
   mockCommit.mockResolvedValue(true);
+  mockDuplicateRow.mockReset().mockResolvedValue(undefined);
 });
 
 afterEach(() => jest.restoreAllMocks());
@@ -111,14 +116,16 @@ it.each(['side', 'center'] as const)(
   }
 );
 
-it('lets an open menu handle Escape without closing the peek', async () => {
+it.each(['side', 'center'] as const)('lets an open menu handle Escape without closing the %s peek', async (mode) => {
   render(<Fixture />);
   await screen.findByRole('textbox', { name: 'Draft first' });
+  if (mode === 'center') await chooseMode('center');
   fireEvent.keyDown(screen.getByTestId('row-peek-mode-menu'), { key: 'Enter' });
   await screen.findByRole('menu');
+  // The center shell is a MUI dialog: its own Escape handling must stay off.
   fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
   await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
-  expect(screen.getByTestId('row-detail')).toBeTruthy();
+  expect(screen.getByTestId('row-detail').getAttribute('data-peek-mode')).toBe(mode);
   expect(mockCommit).not.toHaveBeenCalled();
 });
 
@@ -206,6 +213,67 @@ it('waits for the accepted save before closing', async () => {
   await waitFor(() => expect(screen.queryByTestId('row-detail')).toBeNull());
 });
 
+it('blocks repeated duplication while saving the draft and creating the copy', async () => {
+  let finishSave!: (saved: boolean) => void;
+  let finishDuplicate!: () => void;
+
+  mockCommit.mockImplementation(
+    () => new Promise((resolve) => {
+      finishSave = resolve;
+    })
+  );
+  mockDuplicateRow.mockImplementation(
+    () => new Promise((resolve) => {
+      finishDuplicate = resolve;
+    })
+  );
+  render(<Fixture />);
+  await screen.findByRole('textbox', { name: 'Draft first' });
+  fireEvent.keyDown(screen.getByTestId('row-detail-more-actions'), { key: 'Enter' });
+  fireEvent.click(await screen.findByTestId('row-detail-duplicate'));
+  await waitFor(() => expect(mockCommit).toHaveBeenCalledTimes(1));
+
+  fireEvent.keyDown(screen.getByTestId('row-detail-more-actions'), { key: 'Enter' });
+  const duplicate = await screen.findByTestId('row-detail-duplicate');
+
+  expect(duplicate.getAttribute('aria-disabled')).toBe('true');
+  fireEvent.click(duplicate);
+  expect(mockDuplicateRow).not.toHaveBeenCalled();
+  await act(async () => {
+    finishSave(true);
+  });
+  expect(mockDuplicateRow).toHaveBeenCalledTimes(1);
+  expect(mockDuplicateRow).toHaveBeenCalledWith('first');
+  expect(duplicate.getAttribute('aria-disabled')).toBe('true');
+  fireEvent.click(duplicate);
+  expect(mockDuplicateRow).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    finishDuplicate();
+  });
+  expect(screen.queryByTestId('row-detail')).toBeNull();
+});
+
+it('allows duplication to retry after a rejected save or failed copy', async () => {
+  mockCommit.mockResolvedValueOnce(false);
+  mockDuplicateRow.mockRejectedValueOnce(new Error('Copy failed'));
+  render(<Fixture />);
+  await screen.findByRole('textbox', { name: 'Draft first' });
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    fireEvent.keyDown(screen.getByTestId('row-detail-more-actions'), { key: 'Enter' });
+    const duplicate = await screen.findByTestId('row-detail-duplicate');
+
+    expect(duplicate.getAttribute('aria-disabled')).not.toBe('true');
+    await act(async () => {
+      fireEvent.click(duplicate);
+    });
+    expect(mockCommit).toHaveBeenCalledTimes(attempt + 1);
+    expect(mockDuplicateRow).toHaveBeenCalledTimes(attempt);
+  }
+
+  expect(screen.queryByTestId('row-detail')).toBeNull();
+});
+
 it('reacts to access changes and uses the current filtered row order', async () => {
   const { rerender } = render(<Fixture />);
 
@@ -233,7 +301,7 @@ it('disables both directions when the current row leaves the visible results', a
   rerender(<Fixture />);
   expect(screen.getByTestId<HTMLButtonElement>('row-peek-previous').disabled).toBe(true);
   expect(screen.getByTestId<HTMLButtonElement>('row-peek-next').disabled).toBe(true);
-  for (const key of ['j', 'k']) fireEvent.keyDown(document, { key, ctrlKey: true, shiftKey: true });
+  for (const key of ['n', 'p']) fireEvent.keyDown(document, { key, ctrlKey: true, shiftKey: true });
   expect(mockNavigate).not.toHaveBeenCalled();
 });
 
@@ -242,7 +310,7 @@ it.each(['ctrlKey', 'metaKey'])(
   async (modifier) => {
     const { unmount } = render(<Fixture rowId='second' />);
     const editor = await screen.findByRole('textbox', { name: 'Draft second' });
-    const shortcut = { key: 'J', [modifier]: true, shiftKey: true };
+    const shortcut = { key: 'N', [modifier]: true, shiftKey: true };
 
     fireEvent.keyDown(editor, { ...shortcut, isComposing: true });
     expect(mockNavigate).not.toHaveBeenCalled();
@@ -256,7 +324,7 @@ it.each(['ctrlKey', 'metaKey'])(
     fireEvent.keyDown(editor, shortcut);
     expect(mockNavigate).toHaveBeenCalledTimes(1);
     expect(mockNavigate).toHaveBeenLastCalledWith('third');
-    fireEvent.keyDown(editor, { ...shortcut, key: 'K' });
+    fireEvent.keyDown(editor, { ...shortcut, key: 'P' });
     expect(mockNavigate).toHaveBeenCalledTimes(2);
     expect(mockNavigate).toHaveBeenLastCalledWith('first');
 

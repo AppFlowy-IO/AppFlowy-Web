@@ -97,7 +97,9 @@ export function RowPeekLayout({
           data-testid='database-side-peek'
           aria-label={t('grid.rowPage.sidePeek')}
           hidden={!visible}
-          className='fixed bottom-0 top-12 z-[60] border-l border-border-primary bg-background-primary shadow-lg'
+          // Above the page, below every body-level overlay (MUI modals and Radix
+          // menus are z-50), so editor panels and the peek's own menus stay on top.
+          className='fixed bottom-0 top-12 z-40 bg-surface-primary'
           style={{ right: rightOffset, width }}
         >
           <div
@@ -109,11 +111,12 @@ export function RowPeekLayout({
             aria-valuemax={Math.round(clampSidePeekWidth(Number.MAX_VALUE, available))}
             aria-valuenow={Math.round(width)}
             data-testid='row-peek-resizer'
-            className='absolute -left-1 top-0 z-10 h-full w-2 cursor-col-resize touch-none hover:bg-fill-theme-thick focus-visible:bg-fill-theme-thick focus-visible:outline-none'
+            className='row-peek-resizer absolute -left-1 top-0 z-10 h-full w-2 cursor-col-resize touch-none select-none focus-visible:outline-none'
             onPointerDown={(event) => {
               if (event.button !== 0) return;
               event.preventDefault();
               drag.current = { x: event.clientX, width };
+              event.currentTarget.setAttribute('data-dragging', 'true');
               event.currentTarget.setPointerCapture(event.pointerId);
             }}
             onPointerMove={(event) => {
@@ -122,11 +125,13 @@ export function RowPeekLayout({
             }}
             onPointerUp={(event) => {
               drag.current = null;
+              event.currentTarget.removeAttribute('data-dragging');
               if (event.currentTarget.hasPointerCapture(event.pointerId))
                 event.currentTarget.releasePointerCapture(event.pointerId);
             }}
-            onLostPointerCapture={() => {
+            onLostPointerCapture={(event) => {
               drag.current = null;
+              event.currentTarget.removeAttribute('data-dragging');
             }}
             onKeyDown={(event) => {
               const next =

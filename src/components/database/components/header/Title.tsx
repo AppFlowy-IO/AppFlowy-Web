@@ -99,7 +99,7 @@ export function Title({
   };
 
   const titleClassName = cn(
-    'h-full w-full rounded-none px-0 text-3xl font-semibold',
+    'row-page-title h-full w-full rounded-none px-0 text-3xl font-semibold',
     templateStyle && 'text-[28px] font-normal leading-[34px]'
   );
 
@@ -143,9 +143,11 @@ export function Title({
         if (readOnly) return;
         setIsHover(false);
       }}
-      className={'flex w-full flex-col'}
+      className={'row-banner relative flex w-full flex-col'}
+      data-has-icon={!!icon}
+      data-has-cover={hasCover}
     >
-      <div className={cn('relative flex w-full justify-center', toolbarHeight)}>
+      <div className={cn('row-banner-toolbar relative flex w-full justify-center', toolbarHeight)}>
         {!readOnly ? (
           <AddIconCover
             iconTabs={['emoji']}
@@ -181,7 +183,7 @@ export function Title({
       >
         <div className={'flex w-full gap-2'}>
           {!templateStyle ? renderIcon() : null}
-          <div className={cn('w-full py-2', templateStyle && 'pb-0 pt-2')}>
+          <div className={cn('row-title-content w-full py-2', templateStyle && 'pb-0 pt-2')}>
             {templateStyle && !readOnly && !richTextReadOnly ? (
               // Row templates store plain values, so the template title is
               // edited as plain text (formatting there would be dropped when

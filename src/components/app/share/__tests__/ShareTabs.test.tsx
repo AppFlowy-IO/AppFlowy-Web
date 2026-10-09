@@ -113,6 +113,15 @@ describe('ShareTabs publish availability', () => {
     );
   });
 
+  it('passes the row URL and omits actions that would publish or export the containing database', () => {
+    const shareUrl = 'https://app.test/app/workspace/database?v=board&r=row';
+
+    render(<ShareTabs opened viewId='database-container' hidePublish hideExport shareUrl={shareUrl} onClose={() => undefined} />);
+    expect(screen.queryByTestId('publish-tab')).toBeNull();
+    expect(screen.queryByRole('tab', { name: 'shareAction.exportAsTab' })).toBeNull();
+    expect(mockSharePanelProps).toHaveBeenCalledWith(expect.objectContaining({ shareUrl }));
+  });
+
   it('keeps access on the container while publishing the active database child', () => {
     render(<ShareTabs opened viewId='database-container' publishViewId='board-view' onClose={() => undefined} />);
 

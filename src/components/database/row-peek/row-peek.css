@@ -1,0 +1,203 @@
+/* Desktop references: RowPeekPanelHeader, RowBanner, RowPropertyList and
+   DatabasePluginWidgetBuilderSize.peekPanel. Scope these metrics to peeks;
+   full row pages and templates retain their existing layout. The #body scope
+   matches Tailwind's important selector so these metrics override utilities. */
+#body .row-peek {
+  --row-page-inset: 80px;
+  background: var(--surface-primary);
+}
+
+#body .row-peek .row-peek-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+  padding: 8px 16px;
+  gap: 8px;
+}
+
+#body .row-peek .row-peek-icon-button {
+  width: 32px;
+  height: 32px;
+  padding: 6px;
+  border-radius: 8px;
+}
+
+#body .row-peek .row-peek-icon-button:focus-visible {
+  outline: 2px solid var(--border-theme-thick);
+  outline-offset: 2px;
+}
+
+#body .row-peek .row-peek-toolbar-divider {
+  flex-shrink: 0;
+  width: 1px;
+  height: 20px;
+  margin: 0 8px;
+  background: var(--border-primary);
+}
+
+#body .row-peek .row-peek-optional-actions {
+  display: flex;
+  align-items: center;
+  transition: opacity 150ms ease-in-out;
+}
+
+/* Keep the desktop hover reveal reachable by keyboard and touch. A portaled
+   mode menu holds the controls visible while the pointer moves into it. */
+@media (hover: hover) and (pointer: fine) {
+  #body .row-peek[data-peek-mode='side'] .row-peek-optional-actions {
+    opacity: 0;
+  }
+
+  #body .row-peek[data-peek-mode='side'] .row-peek-left-cluster:hover .row-peek-optional-actions,
+  #body .row-peek[data-peek-mode='side'] .row-peek-left-cluster:focus-within .row-peek-optional-actions,
+  #body .row-peek[data-peek-mode='side'] .row-peek-left-cluster[data-menu-open='true'] .row-peek-optional-actions {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #body .row-peek .row-peek-optional-actions {
+    transition: none;
+  }
+}
+
+#body .row-peek-resizer::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 4px;
+  width: 2px;
+}
+
+#body .row-peek-resizer:hover::after,
+#body .row-peek-resizer:focus-visible::after,
+#body .row-peek-resizer[data-dragging='true']::after {
+  background: var(--fill-theme-thick);
+}
+
+#body .row-peek .row-page-title {
+  font-size: 28px;
+  font-weight: 400;
+  line-height: 34px;
+  letter-spacing: 0.07px;
+}
+
+#body .row-peek .row-title-content {
+  min-width: 0;
+  padding: 8px 0 0;
+}
+
+#body .row-peek .row-banner-toolbar {
+  height: 44px;
+}
+
+#body .row-peek .row-banner[data-has-cover='true'] .row-banner-toolbar {
+  height: 36px;
+}
+
+#body .row-peek .row-banner[data-has-icon='true'][data-has-cover='false'] .row-banner-toolbar {
+  height: 164px;
+}
+
+#body .row-peek .row-banner[data-has-icon='true'][data-has-cover='true'] .row-banner-toolbar {
+  height: 44px;
+}
+
+#body .row-peek .row-banner .view-icon {
+  position: absolute;
+  top: 40px;
+  left: var(--row-page-inset, 96px);
+  width: 88px;
+  height: 88px;
+  border-radius: 6px;
+  padding: 0;
+  font-size: 64px;
+  line-height: 1;
+}
+
+#body .row-peek .row-banner[data-has-cover='true'] .view-icon {
+  top: -44px;
+  z-index: 1;
+}
+
+#body .row-peek .row-header-cover > div {
+  height: 280px !important;
+  max-height: 280px !important;
+}
+
+#body .row-peek .row-properties {
+  padding: 0 var(--row-page-inset, 96px) 0 max(8px, calc(var(--row-page-inset, 96px) - 26px));
+}
+
+#body .row-peek .row-property-draggable {
+  padding: 0 0 8px;
+}
+
+#body .row-peek .row-properties[data-read-only='true'] > .row-property {
+  padding-left: 24px;
+  margin-bottom: 8px;
+}
+
+#body .row-peek .row-property {
+  min-height: 30px;
+}
+
+#body .row-peek .property-label {
+  flex-shrink: 0;
+  width: 160px;
+  max-width: 160px;
+  min-height: 30px;
+  padding: 5px 4px;
+}
+
+#body .row-peek .row-property > .property-label + div {
+  min-width: 0;
+  min-height: 30px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
+#body .row-peek .row-properties > button {
+  height: 30px;
+  margin-left: 24px;
+  margin-right: 0;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  font-weight: 400;
+}
+
+#body .row-peek .row-page-body {
+  gap: 20px;
+}
+
+#body .row-peek[data-peek-mode='side'] .row-properties-divider {
+  display: none;
+}
+
+#body .row-peek[data-peek-mode='side'] .row-document-divider {
+  padding: 0;
+}
+
+#body .row-peek .appflowy-scroll-container {
+  overscroll-behavior: contain;
+}
+
+@media (max-width: 639px) {
+  #body .row-peek {
+    --row-page-inset: 24px;
+  }
+
+  #body .row-peek .row-peek-header {
+    padding: 8px;
+  }
+
+  #body .row-peek .row-peek-right-cluster {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  #body .row-peek .row-peek-toolbar-divider {
+    margin: 0 4px;
+  }
+}

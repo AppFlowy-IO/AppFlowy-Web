@@ -26,6 +26,7 @@ import {
   DatabaseViewSelectors,
   FieldType,
   PropertyMenuSelectors,
+  RowDetailSelectors,
 } from '../../support/selectors';
 import { generateRandomEmail, setupPageErrorHandling, TestConfig } from '../../support/test-config';
 
@@ -104,10 +105,9 @@ async function createRowAndGetId(page: Page, create: () => Promise<void>): Promi
     .not.toBe('');
 
   // Template-backed creation opens the new row after its document has been
-  // materialized. The dialog can mount just after the grid row appears, so an
-  // immediate isVisible() check races it and leaves the modal over the next
-  // template action.
-  await expect(page.locator('.MuiDialog-paper').last()).toBeVisible({ timeout: 30000 });
+  // materialized. Wait for the peek before closing it so the next template
+  // action starts after row detail has finished opening.
+  await expect(RowDetailSelectors.modal(page)).toBeVisible({ timeout: 30000 });
   await closeRowDetailWithEscape(page);
 
   return createdId;
@@ -116,7 +116,7 @@ async function createRowAndGetId(page: Page, create: () => Promise<void>): Promi
 async function openRowWithDatabaseBlock(page: Page, rowId: string): Promise<{ editor: Locator; block: Locator }> {
   for (let attempt = 0; attempt < 10; attempt++) {
     await openRowDetailByRowId(page, rowId);
-    const modal = page.locator('.MuiDialog-paper').last();
+    const modal = RowDetailSelectors.modal(page);
     const editor = modal.getByTestId('editor-content').first();
     const block = databaseBlocks(editor).first();
 
@@ -248,7 +248,7 @@ async function createDefaultTemplateRowFromView(
 
   await expect(newButton).toBeVisible({ timeout: 30000 });
   await newButton.click();
-  const rowDialog = page.locator('.MuiDialog-paper').last();
+  const rowDialog = RowDetailSelectors.modal(page);
 
   // Some layouts finish toolbar creation without mounting row detail even
   // though openAfterCreate is requested. The scenario verifies the durable
@@ -369,7 +369,7 @@ async function setDefaultTemplate(page: Page, name: string): Promise<void> {
 
 async function expectRowCover(page: Page, rowId: string): Promise<void> {
   await openRowDetailByRowId(page, rowId);
-  const rowDialog = page.locator('.MuiDialog-paper').last();
+  const rowDialog = RowDetailSelectors.modal(page);
 
   await expect(rowDialog.locator('.row-header-cover img')).toBeVisible({ timeout: 15000 });
   await closeRowDetailWithEscape(page);
@@ -600,7 +600,7 @@ test.describe('Database row templates (Desktop parity)', () => {
 
     await expect(copiedRow).toContainText(renamed);
     await openRowDetailByRowId(page, copiedRowId);
-    const copiedRowEditor = page.locator('.MuiDialog-paper').last().getByTestId('editor-content').first();
+    const copiedRowEditor = RowDetailSelectors.modal(page).getByTestId('editor-content').first();
 
     await expect(copiedRowEditor).toContainText(copiedTemplateBody, { timeout: 30000 });
     await closeRowDetailWithEscape(page);

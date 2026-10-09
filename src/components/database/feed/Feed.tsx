@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useDatabaseContext, useFieldsSelector, usePrimaryFieldId, useReadOnly } from '@/application/database-yjs';
 import type { Row } from '@/application/database-yjs';
+import { usePublishRowOrders } from '@/application/database-yjs/row-orders-store';
 import { useDatabaseSearch } from '@/components/database/components/conditions/DatabaseSearchContext';
 import { cn } from '@/lib/utils';
 
@@ -24,6 +25,10 @@ export function Feed() {
   const { rowOrders, cachedRowDocs } = useFeedRowData(Boolean(query.trim()));
   const matchingRows = useFeedSearch({ rows: rowOrders, fields, primaryFieldId, cachedRowDocs, query });
   const { activeViewId, isDocumentBlock, onRendered, paddingEnd, paddingStart } = useDatabaseContext();
+
+  // The row peek's previous/next follow the cards as shown: newest-first and
+  // narrowed by the search, not the raw view order.
+  usePublishRowOrders(matchingRows, true, { layout: 'feed', query });
   const paginationScope = JSON.stringify([activeViewId, isDocumentBlock, query]);
   const [pagination, setPagination] = useState({ scope: paginationScope, limit: FEED_INITIAL_ROW_LIMIT });
 

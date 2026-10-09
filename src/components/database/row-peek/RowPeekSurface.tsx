@@ -94,6 +94,9 @@ export function RowPeekSurface({
         open={open && !side}
         data-row-peek-open={open && !side}
         onClose={onClose}
+        // The row's document-level Escape handler closes either shell and lets
+        // open menus own the key; MUI's own handler would ignore them.
+        disableEscapeKeyDown
         fullWidth
         keepMounted
         transitionDuration={side ? 0 : undefined}

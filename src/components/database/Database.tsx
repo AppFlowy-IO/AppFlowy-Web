@@ -13,6 +13,7 @@ import {
   retainDatabaseRowDocSeedCache,
 } from '@/application/database-blob';
 import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
+import type { DatabaseContextState, DatabaseRowPermissions } from '@/application/database-yjs/context';
 import { hasEffectiveFilters } from '@/application/database-yjs/filter';
 import { registerDatabaseHistoryRowDoc, registerDatabaseHistoryRowDocs } from '@/application/database-yjs/history';
 import { ROW_SYNC_RETRY_DELAYS_MS } from '@/application/database-yjs/row-sync';
@@ -182,6 +183,12 @@ export interface Database2Props {
   onViewAdded?: (viewId: string) => void;
   onOpenRowPage?: (rowId: string) => void | Promise<void>;
   /**
+   * For a database nested in a peeked row's document: that host peek shows the
+   * rows itself (replacing the peeked row, like desktop) instead of this
+   * database stacking a second peek.
+   */
+  openRowInHostPeek?: DatabaseContextState['openRowInHostPeek'];
+  /**
    * For embedded databases: restricts which views are shown (from block data).
    * For standalone databases: should be undefined to show all non-embedded views.
    */
@@ -261,6 +268,7 @@ function Database(props: Database2Props) {
     onChangeView,
     onViewAdded,
     onOpenRowPage,
+    openRowInHostPeek,
     appendBreadcrumb,
     readOnly = true,
     canComment = false,
@@ -1382,6 +1390,7 @@ function Database(props: Database2Props) {
     viewId: string | null;
     databaseDoc: YDoc | null;
     rowMap: Record<RowId, YDoc> | null;
+    permissions?: DatabaseRowPermissions;
   }>(() => ({
     rowId: modalRowId || null,
     viewId: modalRowId ? activeViewId : null,
@@ -1403,7 +1412,12 @@ function Database(props: Database2Props) {
   );
 
   const handleOpenRow = useCallback(
-    async (rowId: string, viewId?: string) => {
+    async (rowId: string, viewId?: string, permissions?: DatabaseRowPermissions) => {
+      if (openRowInHostPeek) {
+        openRowInHostPeek(rowId, viewId || activeViewId, permissions ?? { readOnly, canWrite, canComment, canShare });
+        return;
+      }
+
       const request = ++rowOpenRequest.current;
 
       if (prepareRowNavigation.current && !(await prepareRowNavigation.current())) return;
@@ -1456,26 +1470,43 @@ function Database(props: Database2Props) {
             viewId,
             databaseDoc: viewDoc,
             rowMap: { ...(previous.databaseDoc === viewDoc ? previous.rowMap : {}), [rowId]: rowDoc },
+            permissions,
           }));
           return;
         }
 
-        setModalState({ rowId, viewId: viewId || activeViewId, databaseDoc: null, rowMap: null });
+        setModalState({ rowId, viewId: viewId || activeViewId, databaseDoc: null, rowMap: null, permissions });
       } catch (error) {
         Log.error('[Database] Failed to open row', { rowId, viewId: viewId ?? activeViewId, error });
         toast.error(t('chat.openPagePreviewFailedToast'));
       }
     },
-    [activeViewId, createNewRow, doc, loadView, navigateToView, onOpenRowPage, props.variant, readOnly, t]
+    [
+      activeViewId,
+      canComment,
+      canShare,
+      canWrite,
+      createNewRow,
+      doc,
+      loadView,
+      navigateToView,
+      onOpenRowPage,
+      openRowInHostPeek,
+      props.variant,
+      readOnly,
+      t,
+    ]
   );
 
   // The main database can change tabs while the nonmodal peek stays open.
   // Navigation inside the peek continues to use the view that opened it.
   const handleNavigateInPeek = useCallback(
     (rowId: string, viewId?: string) => {
-      return handleOpenRow(rowId, viewId || modalState.viewId || undefined);
+      const permissions = !viewId || viewId === modalState.viewId ? modalState.permissions : undefined;
+
+      return handleOpenRow(rowId, viewId || modalState.viewId || undefined, permissions);
     },
-    [handleOpenRow, modalState.viewId]
+    [handleOpenRow, modalState.permissions, modalState.viewId]
   );
 
   const ensurePeekRow = useCallback(
@@ -1662,6 +1693,7 @@ function Database(props: Database2Props) {
       modalState.rowId
         ? {
             ...sharedContextProps,
+            ...modalState.permissions,
             databaseDoc: modalState.databaseDoc || doc,
             databasePageId: modalState.databaseDoc ? modalState.viewId || databasePageId : databasePageId,
             activeViewId: modalState.viewId || activeViewId,
@@ -1672,6 +1704,7 @@ function Database(props: Database2Props) {
             bindRowSync: modalState.databaseDoc ? undefined : bindRowSync,
             isDatabaseRowPage: false,
             navigateToRow: handleNavigateInPeek,
+            openRowInHostPeek: handleOpenRow,
             closeRowDetailModal: handleCloseRowModal,
           }
         : null,
@@ -1680,6 +1713,7 @@ function Database(props: Database2Props) {
       modalState.databaseDoc,
       modalState.viewId,
       modalState.rowMap,
+      modalState.permissions,
       sharedContextProps,
       doc,
       databasePageId,
@@ -1690,6 +1724,7 @@ function Database(props: Database2Props) {
       peekRowDocFromSeed,
       bindRowSync,
       handleNavigateInPeek,
+      handleOpenRow,
       handleCloseRowModal,
     ]
   );

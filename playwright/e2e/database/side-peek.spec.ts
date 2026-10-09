@@ -74,7 +74,7 @@ test.describe('Database side peek', () => {
     await expect(title).toHaveText('First task');
     await page.getByTestId('row-peek-next').click();
     await expect(title).toHaveText('Updated second task');
-    await page.keyboard.press('ControlOrMeta+Shift+K');
+    await page.keyboard.press('ControlOrMeta+Shift+P');
     await expect(title).toHaveText('First task');
 
     await title.fill('Draft retained across modes');
@@ -174,7 +174,7 @@ test.describe('Database side peek', () => {
     await page.getByTestId('row-peek-next').click();
     await expect(title).toHaveText('Birch');
     await editEmptyNotes(page, 'Saved by previous shortcut');
-    await page.keyboard.press('ControlOrMeta+Shift+K');
+    await page.keyboard.press('ControlOrMeta+Shift+P');
     await expect(title).toHaveText('Amber');
     await expect(RowDetailSelectors.modal(page)).toContainText('Saved by next button');
 
@@ -219,13 +219,13 @@ test.describe('Database side peek', () => {
     await page.getByTestId('row-peek-next').click();
     await expect(title).toHaveText('Cedar');
     await expect(page.getByTestId('row-peek-next')).toBeDisabled();
-    await page.keyboard.press('ControlOrMeta+Shift+K');
+    await page.keyboard.press('ControlOrMeta+Shift+P');
     await expect(title).toHaveText('Amber');
 
     // Change the underlying data while the peek stays open, as a background edit or sync would.
     await setCellDirect(page, birch, notes, FieldType.RichText, 'visible');
     await expect.poll(() => getVisibleDataRowIds(page)).toEqual([amber, birch, cedar]);
-    await page.keyboard.press('ControlOrMeta+Shift+J');
+    await page.keyboard.press('ControlOrMeta+Shift+N');
     await expect(title).toHaveText('Birch');
     await setSortsDirect(page, [{ fieldId: primary, condition: SortCondition.Descending }]);
     await expect.poll(() => getVisibleDataRowIds(page)).toEqual([cedar, birch, amber]);
@@ -236,8 +236,8 @@ test.describe('Database side peek', () => {
     await expect.poll(() => getVisibleDataRowIds(page)).toEqual([birch, amber]);
     await expect(page.getByTestId('row-peek-previous')).toBeDisabled();
     await expect(page.getByTestId('row-peek-next')).toBeDisabled();
-    await page.keyboard.press('ControlOrMeta+Shift+J');
-    await page.keyboard.press('ControlOrMeta+Shift+K');
+    await page.keyboard.press('ControlOrMeta+Shift+N');
+    await page.keyboard.press('ControlOrMeta+Shift+P');
     await expect(title).toHaveText('Cedar');
 
     await closeRowDetail(page);

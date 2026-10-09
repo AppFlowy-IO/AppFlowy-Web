@@ -49,7 +49,7 @@ function RowPropertyPrimitive({
       : fieldName;
 
   return (
-    <div className={cn('flex min-h-[36px] w-full items-start gap-2', templateStyle && 'min-h-[30px]')}>
+    <div className={cn('row-property flex min-h-[36px] w-full items-start gap-2', templateStyle && 'min-h-[30px]')}>
       <PropertyMenu
         open={isActive}
         onOpenChange={(status) => {

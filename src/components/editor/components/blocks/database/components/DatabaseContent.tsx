@@ -32,6 +32,7 @@ interface DatabaseContentProps {
   loadView?: LoadView;
   navigateToView?: (viewId: string, rowId?: string) => Promise<void>;
   onOpenRowPage: (rowId: string) => Promise<void>;
+  openRowInHostPeek?: DatabaseContextState['openRowInHostPeek'];
   loadViewMeta: LoadViewMeta;
   databaseName: string;
   visibleViewIds: string[];
@@ -62,6 +63,7 @@ export const DatabaseContent = ({
   loadView,
   navigateToView,
   onOpenRowPage,
+  openRowInHostPeek,
   loadViewMeta,
   databaseName,
   visibleViewIds,
@@ -102,6 +104,7 @@ export const DatabaseContent = ({
           loadView={loadView}
           navigateToView={navigateToView}
           onOpenRowPage={onOpenRowPage}
+          openRowInHostPeek={openRowInHostPeek}
           loadViewMeta={loadViewMeta}
           databaseName={databaseName}
           visibleViewIds={visibleViewIds}

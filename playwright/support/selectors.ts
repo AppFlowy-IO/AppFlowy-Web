@@ -825,6 +825,8 @@ export const RowDetailSelectors = {
   modalContent: (page: Page) => page.getByTestId('row-detail').locator('.appflowy-scroll-container'),
   modalTitle: (page: Page) => page.getByTestId('row-detail-header'),
   closeButton: (page: Page) => page.getByTestId('row-detail-close'),
+  /** Promotes the peek to a full row page (?r= URL); rendered only when the row can be opened as a page. */
+  openFullPageButton: (page: Page) => page.getByTestId('row-detail-open-full-page'),
   moreActionsButton: (page: Page) => page.getByTestId('row-detail-more-actions'),
   documentArea: (page: Page) => page.getByTestId('row-detail').locator('.appflowy-scroll-container'),
   duplicateMenuItem: (page: Page) => page.locator('[role="menuitem"]').filter({ hasText: /duplicate/i }),

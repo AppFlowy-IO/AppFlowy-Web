@@ -4,7 +4,13 @@ import { useDatabaseContextOptional } from '@/application/database-yjs/context';
 import type { Row } from '@/application/database-yjs/selector';
 import type { YDoc } from '@/application/types';
 
-type RowOrdersSnapshot = { rows: Row[] | undefined };
+export type RowOrdersPresentation = { layout: 'feed' | 'gallery'; query: string };
+
+type RowOrdersSnapshot = {
+  rows: Row[] | undefined;
+  published: boolean;
+  presentation?: RowOrdersPresentation;
+};
 
 function createRowOrdersSource() {
   const publishers = new Map<symbol, RowOrdersSnapshot>();
@@ -14,7 +20,14 @@ function createRowOrdersSource() {
   const notify = () => {
     // Several view features can compute orders. Follow one mounted owner so
     // their independent updates cannot make the peek oscillate between them.
-    const next = publishers.values().next().value as RowOrdersSnapshot | undefined;
+    let next = publishers.values().next().value as RowOrdersSnapshot | undefined;
+
+    // An open peek keeps the source view's search and layout when its tab
+    // unmounts. Its fallback can then recompute live orders with the same rules.
+    // Retain only plain row orders/settings, and release them with the last peek.
+    if (!next && listeners.size > 0 && snapshot?.presentation) {
+      next = snapshot.published ? { ...snapshot, published: false } : snapshot;
+    }
 
     if (snapshot === next) return;
     snapshot = next;
@@ -27,11 +40,22 @@ function createRowOrdersSource() {
       listeners.add(listener);
       return () => {
         listeners.delete(listener);
+        notify();
       };
     },
-    publish: (owner: symbol, rows: Row[] | undefined) => {
-      if (publishers.has(owner) && publishers.get(owner)?.rows === rows) return;
-      publishers.set(owner, { rows });
+    publish: (owner: symbol, rows: Row[] | undefined, presentation?: RowOrdersPresentation) => {
+      const previous = publishers.get(owner);
+
+      if (
+        previous &&
+        previous.rows === rows &&
+        previous.presentation?.layout === presentation?.layout &&
+        previous.presentation?.query === presentation?.query
+      ) {
+        return;
+      }
+
+      publishers.set(owner, { rows, published: true, presentation });
       notify();
     },
     remove: (owner: symbol) => {
@@ -76,14 +100,16 @@ function useRowOrdersSource() {
   return context.rowOrdersStore?.get(context.databaseDoc, context.activeViewId || context.databasePageId);
 }
 
-export function usePublishRowOrders(rows: Row[] | undefined, enabled: boolean) {
+export function usePublishRowOrders(rows: Row[] | undefined, enabled: boolean, presentation?: RowOrdersPresentation) {
   const availableSource = useRowOrdersSource();
   const source = enabled ? availableSource : undefined;
   const owner = useRef(Symbol('row-orders-owner')).current;
+  const layout = presentation?.layout;
+  const query = presentation?.query;
 
   useLayoutEffect(() => {
-    source?.publish(owner, rows);
-  }, [source, owner, rows]);
+    source?.publish(owner, rows, layout ? { layout, query: query ?? '' } : undefined);
+  }, [source, owner, rows, layout, query]);
   useLayoutEffect(() => () => source?.remove(owner), [source, owner]);
 }
 
