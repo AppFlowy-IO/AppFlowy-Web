@@ -359,11 +359,9 @@ describe('workspace database view creation', () => {
     await waitFor(() => expect(subscriptions).toHaveBeenCalledTimes(3));
   });
 
-  it('shares in-flight billing reads across menus and reuses them on reopen until expiry', async () => {
+  it('shares in-flight billing reads across menus and refreshes billing on every reopen', async () => {
     const pending = deferred<Subscription[]>();
-    const now = Date.now();
 
-    jest.spyOn(Date, 'now').mockReturnValue(now);
     subscriptions.mockReturnValueOnce(pending.promise);
     const first = mount();
     const second = mount();
@@ -375,11 +373,42 @@ describe('workspace database view creation', () => {
     second.rerender({ open: false });
     second.rerender({ open: true });
     await waitFor(() => expect(quota).toHaveBeenCalledTimes(3));
-    expect(subscriptions).toHaveBeenCalledTimes(1);
-    jest.mocked(Date.now).mockReturnValue(now + 30_001);
+    await waitFor(() => expect(subscriptions).toHaveBeenCalledTimes(2));
     second.rerender({ open: false });
     second.rerender({ open: true });
+    await waitFor(() => expect(subscriptions).toHaveBeenCalledTimes(3));
+  });
+
+  it('keeps the cached Timeline state while the menu closes', async () => {
+    subscriptions.mockResolvedValueOnce([subscription(SubscriptionPlan.Pro)]);
+    const { result, rerender } = mount();
+
+    await waitFor(() => expect(result.current.getAction(ViewLayout.Timeline).type).toBe('create'));
+    rerender({ open: false });
+    expect(result.current.getAction(ViewLayout.Timeline).type).toBe('create');
+    expect(subscriptions).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['close', 'unmount'])('caches a billing response that finishes after menu %s', async (action) => {
+    const pending = deferred<Subscription[]>();
+
+    subscriptions.mockReturnValueOnce(pending.promise);
+    const first = mount();
+
+    await waitFor(() => expect(subscriptions).toHaveBeenCalledTimes(1));
+    if (action === 'close') first.rerender({ open: false });
+    else first.unmount();
+    await act(async () => pending.resolve([subscription(SubscriptionPlan.Pro)]));
+    const refresh = deferred<Subscription[]>();
+
+    subscriptions.mockReturnValueOnce(refresh.promise);
+    if (action === 'close') first.rerender({ open: true });
+    const reopened = action === 'close' ? first : mount();
+
+    expect(reopened.result.current.getAction(ViewLayout.Timeline).type).toBe('create');
     await waitFor(() => expect(subscriptions).toHaveBeenCalledTimes(2));
+    await act(async () => refresh.resolve([]));
+    expect(reopened.result.current.getAction(ViewLayout.Timeline).type).toBe('upgrade');
   });
 
   it('keeps confirmed allowances and crowns during a background refresh, without another billing read', async () => {

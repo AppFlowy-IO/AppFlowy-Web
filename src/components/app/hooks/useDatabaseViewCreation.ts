@@ -35,7 +35,7 @@ const upgradeReasonKey = (layout?: ViewLayout) =>
     ? 'databaseViewCreation.upgradeForm'
     : 'databaseViewCreation.upgradeChart';
 const PLAN_CACHE_TTL_MS = 30_000;
-const planCache = new Map<string, { expiresAt: number; promise: Promise<SubscriptionPlan | null> }>();
+const planCache = new Map<string, { expiresAt: number; pending: boolean; promise: Promise<SubscriptionPlan | null> }>();
 const MAX_CREATION_CACHE_ENTRIES = 50;
 
 interface CreationSnapshot {
@@ -81,18 +81,20 @@ function clearCreationCache(key: string) {
 
 // Billing changes much less often than the database inventory. Share requests
 // across menus; confirmed values remain visible while quotas refresh in the background.
-function loadPlan(key: string, getSubscriptions?: () => Promise<Subscription[] | undefined>) {
+function loadPlan(key: string, getSubscriptions?: () => Promise<Subscription[] | undefined>, revalidate = false) {
   if (!getSubscriptions) return Promise.resolve(null);
   const cached = planCache.get(key);
 
-  if (cached && cached.expiresAt > Date.now()) return cached.promise;
+  if (cached && cached.expiresAt > Date.now() && (!revalidate || cached.pending)) return cached.promise;
   for (const [cacheKey, entry] of planCache) {
     if (entry.expiresAt <= Date.now()) planCache.delete(cacheKey);
   }
 
   // A pending read also expires, so a request that never settles cannot pin every menu to "checking".
+  const cacheRevision = ++requestRevision;
   const entry = {
     expiresAt: Date.now() + PLAN_CACHE_TTL_MS,
+    pending: true,
     promise: Promise.resolve()
       .then(getSubscriptions)
       .then((subscriptions) => (subscriptions ? getProAccessPlanFromSubscriptions(subscriptions) : null)),
@@ -103,8 +105,15 @@ function loadPlan(key: string, getSubscriptions?: () => Promise<Subscription[] |
 
   planCache.set(key, entry);
   void entry.promise.then((plan) => {
+    // The request owns the confirmed value even if its menu closed or unmounted.
+    // Invalidated requests cannot restore a previous account/connection's result.
+    if (planCache.get(key) !== entry) return;
+    entry.pending = false;
     if (plan === null) evict();
-    else entry.expiresAt = Date.now() + PLAN_CACHE_TTL_MS;
+    else {
+      entry.expiresAt = Date.now() + PLAN_CACHE_TTL_MS;
+      updateCreationCache(key, { plan, planRevision: cacheRevision });
+    }
   }, evict);
   return entry.promise;
 }
@@ -202,6 +211,7 @@ export function useDatabaseViewCreation({
     let active = true;
     let revision = 0;
     let running = false;
+    let firstRead = true;
 
     const refresh = async () => {
       revision += 1;
@@ -216,8 +226,10 @@ export function useDatabaseViewCreation({
       do {
         requestedRevision = revision;
         const cacheRevision = ++requestRevision;
+        const revalidatePlan = firstRead;
         const isCurrent = () => active && requestedRevision === revision;
 
+        firstRead = false;
         await Promise.all([
           getDatabaseViewCreationStatus(workspaceId).then(
             (quota) => {
@@ -228,12 +240,11 @@ export function useDatabaseViewCreation({
             }
           ),
           Promise.resolve()
-            .then(() => loadPlan(planCacheKey, getSubscriptions))
+            // Every menu opening checks billing; folder refreshes can reuse its short TTL.
+            .then(() => loadPlan(planCacheKey, getSubscriptions, revalidatePlan))
             .then(
               (plan) => {
-                if (!isCurrent()) return;
-                if (plan !== null) updateCreationCache(planCacheKey, { plan, planRevision: cacheRevision });
-                else setStatus((prev) => ({ ...prev, scope, planState: 'failed' }));
+                if (isCurrent() && plan === null) setStatus((prev) => ({ ...prev, scope, planState: 'failed' }));
               },
               () => {
                 // Keep the last confirmed plan when a background refresh fails.
@@ -279,8 +290,9 @@ export function useDatabaseViewCreation({
       if (!connected || !readConnection())
         return { type: 'disabled', reason: t('databaseViewCreation.connectionRequired') };
 
-      const current = status.scope === scope && enabled ? status : undefined;
-      const cached = enabled ? snapshot : EMPTY_SNAPSHOT;
+      const current = status.scope === scope ? status : undefined;
+      // Menu visibility controls requests, not the last confirmed display state.
+      const cached = snapshot;
       const checking: DatabaseViewCreationAction = { type: 'disabled', reason: t('databaseViewCreation.checking') };
       const unavailable: DatabaseViewCreationAction = {
         type: 'disabled',
@@ -307,7 +319,7 @@ export function useDatabaseViewCreation({
       if (quota) return allowed ? CREATE : requiresPro;
       return current?.quotaState === 'failed' ? unavailable : checking;
     },
-    [hostingMode, workspaceId, authenticated, connected, readConnection, status, scope, enabled, snapshot, isOwner, t]
+    [hostingMode, workspaceId, authenticated, connected, readConnection, status, scope, snapshot, isOwner, t]
   );
   const pendingCheckout = useRef<Promise<void> | null>(null);
   const [, setSearch] = useSearchParams();

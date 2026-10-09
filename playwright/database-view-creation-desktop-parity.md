@@ -18,7 +18,7 @@ when disconnected. Workspace permissions still apply normally.
 | Confirmed allowances and crowns survive background refreshes and failures; disconnect clears the snapshot | `useDatabaseViewCreation.test.tsx`; `DatabaseViewCreationAccess.test.tsx` |
 | Blocked attempts toast the reason and refetch status; per-layout owner upgrade messages | `useDatabaseViewCreation.test.tsx` |
 | Upgrade menus hand off to plan comparison without checkout; clicking Pro starts monthly checkout directly without a billing-period dialog | `DatabaseViewCreationAccess.test.tsx`; `bdd/features/database/form-chart-quota.feature` |
-| Reopened and remounted menus show cached plan/quota values immediately, then apply background refreshes; e2e helpers wait for an enabled, crown-free item | `useDatabaseViewCreation.test.tsx`; `support/view-creation-availability.ts` |
+| Every opening rechecks billing and quotas; reopened and remounted menus immediately show cached values while requests run; completed billing requests populate the cache even after a menu closes | `useDatabaseViewCreation.test.tsx`; `DatabaseViewCreationAccess.test.tsx` |
 | Self-hosted creation online/offline, beyond hosted allowances, with no billing/quota reads | `DatabaseViewCreationAccess.test.tsx` |
 | Self-hosted local Form/Chart conversion; hosted conversion cannot bypass server admission | `Layout.test.tsx`; `useAddDatabaseView.test.tsx` |
 | Shared billing requests/TTL, event invalidation, no idle polling, account/workspace isolation | `useDatabaseViewCreation.test.tsx` |
