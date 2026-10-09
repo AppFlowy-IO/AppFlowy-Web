@@ -83,6 +83,11 @@ debug Cloud server (`debug_assertions` enabled); a release Cloud server still en
 Production-policy tests explicitly disable the development bypass.
 
 
+### Background collaboration repair
+
+See [background collab repair](COLLAB_BACKGROUND_REPAIR.md) for the persisted
+Yjs donor, protocol contract, generation fences, resource limits and component tests.
+
 ## 🚀 Production Mode Setup
 
 **Best for:** Production deployments, staging environments, and containerized setups.
