@@ -21,7 +21,6 @@ env:
   # Public Form APIs and uploads reject plaintext requests at the backend proxy.
   APPFLOWY_BASE_URL: https://localhost
   APPFLOWY_ENABLE_RELATION_ROLLUP_EDIT: 'true'
-  EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED: 'true'
   NODE_VERSION: '24'
   PNPM_VERSION: '10.9.0'
 

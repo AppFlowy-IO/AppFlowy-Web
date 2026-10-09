@@ -5,7 +5,6 @@ import { useTranslation } from 'react-i18next';
 import { Editor, Element, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
-import { EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED } from '@/application/constants';
 import { isDatabaseBlockType } from '@/application/database-block';
 import { createDatabaseFeedPageViaGrid, createLinkedDatabaseFeedView } from '@/application/database-yjs/feed-layout';
 import {
@@ -1416,7 +1415,6 @@ export function SlashPanel({
         label: t('document.slashMenu.name.timeline', { defaultValue: 'Timeline' }),
         key: 'timeline',
         creationLayout: ViewLayout.Timeline,
-        disabled: !EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED,
         icon: <TimelineIcon />,
         group: SlashMenuGroupKey.Database,
         keywords: ['timeline', 'gantt', 'date', 'database', 'schedule'],
@@ -1429,7 +1427,6 @@ export function SlashPanel({
         label: t('document.slashMenu.name.linkedTimeline', { defaultValue: 'Linked Timeline' }),
         key: 'linkedTimeline',
         creationLayout: ViewLayout.Timeline,
-        disabled: !EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED,
         icon: <TimelineIcon />,
         group: SlashMenuGroupKey.Database,
         keywords: ['linked', 'timeline', 'gantt', 'date', 'database'],
