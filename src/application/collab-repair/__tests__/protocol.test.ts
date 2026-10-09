@@ -64,3 +64,29 @@ test('rejects unsupported objects, unbounded requests and ambiguous database pro
 
   for (const message of cases) expect(parseRepairRequest(message)).toBeUndefined();
 });
+
+test.each([0, 1, 4])('correlated repair update and ACK stay distinct from ordinary updates for type %i', (type) => {
+  const frame = collab.CollabMessage.encode({
+    objectId, collabType: type,
+    repairUpdate: { requestId, update: {
+      flags: 0, payload: new Uint8Array([1, 2, 3]), beforeStateVector: new Uint8Array([0]),
+      version: requestId, databaseRestoreId: type === 0 ? undefined : NIL_RESTORE_ID,
+    } },
+  }).finish();
+  const decoded = collab.CollabMessage.decode(frame);
+
+  expect(decoded.data).toBe('repairUpdate');
+  expect(decoded.update).toBeNull();
+  expect(decoded.repairUpdate?.requestId).toBe(requestId);
+  expect(decoded.repairUpdate?.update?.databaseRestoreId).toBe(type === 0 ? null : NIL_RESTORE_ID);
+  expect(decoded.repairUpdate?.update?.version).toBe(requestId);
+  const ack = collab.CollabMessage.decode(collab.CollabMessage.encode({
+    objectId, collabType: type,
+    repairAck: { requestId, messageId: { timestamp: 42, counter: 7 } },
+  }).finish());
+
+  expect(ack.data).toBe('repairAck');
+  expect(ack.update).toBeNull();
+  expect(ack.repairAck?.requestId).toBe(requestId);
+  expect(ack.repairAck?.messageId?.counter).toBe(7);
+});

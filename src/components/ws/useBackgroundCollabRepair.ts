@@ -2,7 +2,7 @@ import { useLayoutEffect } from 'react';
 
 import { BackgroundRepairDonor } from '@/application/collab-repair/donor';
 import { parseRepairRequest } from '@/application/collab-repair/types';
-import { enqueueOutboxUpdate, getCurrentOutboxSession } from '@/application/sync-outbox';
+import { getCurrentOutboxSession } from '@/application/sync-outbox';
 
 import type { AppflowyWebSocketType } from './useAppflowyWebSocket';
 
@@ -13,23 +13,24 @@ export function useBackgroundCollabRepair(
   userId: string | null,
   workspaceId: string | null | undefined
 ): void {
-  const { subscribeRepairRequests, readyState } = socket;
+  const { subscribeRepairRequests, captureRepairSender, readyState } = socket;
 
   useLayoutEffect(() => {
-    if (!canSendToServer || readyState !== 1 || !userId || !workspaceId || !subscribeRepairRequests) return;
+    if (!canSendToServer || readyState !== 1 || !userId || !workspaceId || !subscribeRepairRequests || !captureRepairSender) return;
     const donor = new BackgroundRepairDonor();
     let active = true;
     const unsubscribe = subscribeRepairRequests((message) => {
       const request = parseRepairRequest(message);
+      const send = captureRepairSender();
 
-      if (!request) return;
+      if (!request || !send) return;
       void donor.submit(request, async (update) => {
         const session = getCurrentOutboxSession(workspaceId);
 
         if (!active || session?.userId !== userId) return false;
-        // The ordinary outbox preserves session ownership, restore guards, frame limits and the
-        // HTTP slow lane. A repair notice never overwrites local state or binds an editor context.
-        return enqueueOutboxUpdate(update, { broadcast: false });
+        // The captured connection, exact persisted provenance and correlated ACK keep donation
+        // independent from recent HTTP sync and the foreground edit outbox.
+        return send(request, update);
       });
     });
 
@@ -38,5 +39,5 @@ export function useBackgroundCollabRepair(
       unsubscribe();
       donor.dispose();
     };
-  }, [canSendToServer, readyState, userId, workspaceId, subscribeRepairRequests]);
+  }, [canSendToServer, readyState, userId, workspaceId, subscribeRepairRequests, captureRepairSender]);
 }

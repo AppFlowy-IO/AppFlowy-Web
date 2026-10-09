@@ -113,6 +113,16 @@ message RepairRequest {
   optional string database_id = 6;
 }
 
+message RepairUpdate {
+  string request_id = 1;
+  Update update = 2;
+}
+
+message RepairAck {
+  string request_id = 1;
+  Rid message_id = 2;
+}
+
 message CollabMessage {
   // Unique collab identifier (UUID), which this message is related to.
   // We're using string here, since it's easier to represent in web browser client.
@@ -126,6 +136,8 @@ message CollabMessage {
     AwarenessUpdate awareness_update = 5;
     AccessChanged access_changed = 6;
     RepairRequest repair_request = 8;
+    RepairUpdate repair_update = 9;
+    RepairAck repair_ack = 10;
   }
 }
 

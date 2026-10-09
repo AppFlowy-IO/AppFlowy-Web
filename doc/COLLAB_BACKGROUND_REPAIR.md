@@ -13,7 +13,9 @@ native OPEN-to-React subscription gap; it expires after three seconds and is
 cleared when connection ownership, workspace or connection changes. Follower tabs do not perform
 repair reads. `useBackgroundCollabRepair` disposes the donor on disconnect,
 leadership loss, account/workspace switch or unmount and checks the current outbox
-session immediately before enqueueing. The server remains responsible for
+session immediately before sending. A sender captured when the notice arrives
+also checks the exact native socket, connection epoch and current ownership, and
+never buffers a donation across reconnect. The server remains responsible for
 permission checks and for deciding whether a candidate actually resolves pending
 CRDT dependencies.
 
@@ -26,11 +28,13 @@ CRDT dependencies.
 - `donor.ts` owns a shared two-reader admission limit, 16 waiting requests, a
   three-second cancellation deadline, request-ID/object deduplication, and a
   finite 128-attempt budget per workspace connection.
-- `useBackgroundCollabRepair.ts` routes candidates through the ordinary durable
-  outbox with their locally captured version and restore generation. It disables
-  sibling broadcasts. Candidates are ordinary updates, not replacement manifest
-  snapshots: a persisted copy may lag a newer queued manifest and must not delete
-  that manifest during outbox compaction.
+- `useBackgroundCollabRepair.ts` sends candidates directly using the correlated
+  `RepairUpdate` message (tag 9), with the request ID and their locally captured
+  version and restore generation. `RepairAck` (tag 10) is consumed outside normal
+  collab handling. Neither donation nor its ACK enters the durable edit outbox,
+  HTTP reconciliation, editor sync state or sibling broadcasts. Newer queued
+  foreground edits and manifest snapshots remain owned by normal synchronization.
+  The server owns bounded repair retries; a failed send is not retried by the client.
 
 The reader reconstructs a temporary Y.Doc from at most 4,096 persisted updates and
 8 MiB of encoded source data, then encodes a response capped at the lower of the
@@ -58,7 +62,7 @@ sources, mismatching versions/generations, changed storage, queue exhaustion,
 cancellation and missing local copies produce no reply. A reconstructed donor with
 pending structs or a pending delete set is skipped, because it cannot supply a
 self-contained repair. Its response is still only a repair candidate;
-successful send/queueing is not evidence of recovery. The server must
+successful send or repair ACK is not evidence of recovery. The server must
 replay and persist a valid, pending-free state before considering recovery
 complete. Delete-only updates are preserved even when state vectors match.
 
@@ -79,4 +83,8 @@ roots/rows, missing storage, explicit and untracked generations, row parent and
 version fences, missing predecessors, rejected pending structs/delete sets, delete-only
 updates, changed epochs, source/response limits and cancellation. Queue tests
 exercise shared admission and finite attempts; hook/transport tests exercise
-session changes, leadership and bursts delivered without React `lastMessage`.
+session changes, leadership, native connection replacement, isolated repair ACKs,
+and bursts delivered without React `lastMessage`. The existing outbox suite uses
+its controlled storage adapter to assert that newer foreground records survive
+a delayed donor; the storage reader suite separately exercises IndexedDB itself.
+Live browser/server proof remains deferred and must use Chrome DevTools MCP.

@@ -2,7 +2,7 @@ import * as random from 'lib0/random';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import useWebSocket from 'react-use-websocket';
 
-import { parseRepairRequest, REPAIR_TIMEOUT_MS } from '@/application/collab-repair/types';
+import { parseRepairRequest, REPAIR_MAX_UPDATE_BYTES, REPAIR_TIMEOUT_MS, type RepairRequest, type RepairUpdate } from '@/application/collab-repair/types';
 import { refreshToken } from '@/application/services/js-services/http/gotrue';
 import { getTokenParsed, invalidToken } from '@/application/session/token';
 import { collab, messages } from '@/proto/messages';
@@ -129,6 +129,8 @@ export type AppflowyWebSocketType = {
   lastMessage: messages.Message | null;
   /** Direct, bounded server-only repair notices; followers do not consume relayed requests. */
   subscribeRepairRequests?: (listener: (message: collab.ICollabMessage) => void) => () => void;
+  /** Captures this connection for a read-only donation; never queues or enters the edit outbox. */
+  captureRepairSender?: () => ((request: RepairRequest, update: RepairUpdate) => boolean) | undefined;
   /**
    * Function to send a message through the WebSocket.
    * The message is encoded to binary format before sending.
@@ -217,9 +219,11 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
   }, []);
   const repairListeners = useRef(new Set<(message: collab.ICollabMessage) => void>());
   const pendingRepairs = useRef<{ message: collab.ICollabMessage; receivedAt: number }[]>([]);
+  const repairConnectionEpoch = useRef(0);
 
   useLayoutEffect(() => {
     pendingRepairs.current = [];
+    repairConnectionEpoch.current++;
   }, [options.workspaceId, options.token, shouldConnect]);
   const subscribeRepairRequests = useCallback((listener: (message: collab.ICollabMessage) => void) => {
     repairListeners.current.add(listener);
@@ -483,6 +487,7 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
 
       // Connection event callback
       onOpen: () => {
+        repairConnectionEpoch.current++;
         Log.info('✅ WebSocket connection opened');
         setAutomaticRetryScheduled(false);
         setReconnectAttempt(0);
@@ -497,6 +502,7 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
       },
 
       onClose: (event) => {
+        repairConnectionEpoch.current++;
         pendingRepairs.current = [];
         lastCloseCodeRef.current = event.code;
         Log.info('❌ WebSocket connection closed', event);
@@ -601,6 +607,41 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
     [sendMessage]
   );
 
+  const captureRepairSender = useCallback(() => {
+    const websocket = getWebSocket();
+    const epoch = repairConnectionEpoch.current;
+
+    if (!shouldConnectRef.current || websocket?.readyState !== 1) return;
+    return (request: RepairRequest, update: RepairUpdate): boolean => {
+      if (!shouldConnectRef.current || repairConnectionEpoch.current !== epoch ||
+          getWebSocket() !== websocket || websocket.readyState !== 1 ||
+          update.objectId !== request.objectId || update.collabType !== request.collabType ||
+          update.version !== request.version || update.databaseRestoreId !== request.databaseRestoreId ||
+          !update.payload.length || update.payload.length > Math.min(request.maxUpdateBytes, REPAIR_MAX_UPDATE_BYTES)) return false;
+      // ACKs for this variant are correlated by request ID. The normal outbox, HTTP retry
+      // lifecycle and newer foreground edits never depend on this best-effort donation.
+      const frame = messages.Message.encode({
+        collabMessage: {
+          objectId: update.objectId,
+          collabType: update.collabType,
+          repairUpdate: {
+            requestId: request.requestId,
+            update: {
+              flags: 0,
+              payload: update.payload,
+              version: update.version,
+              databaseRestoreId: update.databaseRestoreId,
+              beforeStateVector: update.beforeStateVector,
+            },
+          },
+        },
+      }).finish();
+
+      sendMessage(frame, false);
+      return true;
+    };
+  }, [getWebSocket, sendMessage]);
+
   const manualReconnect = useCallback(() => {
     if (!shouldConnect || readyState !== WS_READY_STATE_CLOSED) return;
     if (retryScheduledRef.current) {
@@ -617,10 +658,15 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
     triggerNonceReconnect('manual', true);
   }, [triggerNonceReconnect, shouldConnect, readyState]);
 
-  const lastProtobufMessage = useMemo(
-    () => (lastMessage ? decodeFrame(lastMessage) : null),
-    [lastMessage, decodeFrame]
-  );
+  const lastProtobufMessage = useMemo(() => {
+    if (!lastMessage) return null;
+    const message = decodeFrame(lastMessage);
+
+    // Repair notices have their direct bounded subscriber. Repair ACKs acknowledge only that
+    // donation; neither belongs to editor reconciliation, BroadcastChannel, or edit retirement.
+    if (message.collabMessage?.repairRequest || message.collabMessage?.repairAck) return null;
+    return message;
+  }, [lastMessage, decodeFrame]);
 
   // Depend on the primitive fields, not the options object identity: callers
   // typically pass an inline object literal, which would defeat the memo.
@@ -647,11 +693,12 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
       lastMessage: lastProtobufMessage,
       sendMessage: sendProtobufMessage,
       subscribeRepairRequests,
+      captureRepairSender,
       readyState: effectiveReadyState,
       options: resolvedOptions,
       reconnectAttempt,
       reconnect: manualReconnect,
     }),
-    [lastProtobufMessage, sendProtobufMessage, subscribeRepairRequests, effectiveReadyState, resolvedOptions, reconnectAttempt, manualReconnect]
+    [lastProtobufMessage, sendProtobufMessage, subscribeRepairRequests, captureRepairSender, effectiveReadyState, resolvedOptions, reconnectAttempt, manualReconnect]
   );
 };

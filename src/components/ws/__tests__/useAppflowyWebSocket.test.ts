@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 
 import { getTokenParsed } from '@/application/session/token';
+import type { RepairRequest, RepairUpdate } from '@/application/collab-repair/types';
 import { messages } from '@/proto/messages';
 
 import { useAppflowyWebSocket, Options } from '../useAppflowyWebSocket';
@@ -8,7 +9,7 @@ import { useAppflowyWebSocket, Options } from '../useAppflowyWebSocket';
 // Stable return value: useWebSocket must hand back the same object/functions
 // across renders, like the real library does for an unchanged connection.
 const stableSendMessage = jest.fn();
-const stableGetWebSocket = jest.fn(() => null);
+const stableGetWebSocket = jest.fn<WebSocket | null, []>(() => null);
 let mockReadyState = 1;
 let mockLastMessage: MessageEvent | null = null;
 const mockUseWebSocket = jest.fn(() => ({
@@ -63,6 +64,7 @@ const lastSocketOptions = () => {
     string,
     {
       onMessage?: (event: MessageEvent) => void;
+      onOpen?: () => void;
       onClose?: (event: CloseEvent) => void;
       shouldReconnect?: (event: CloseEvent) => boolean;
       reconnectInterval?: (attemptNumber: number) => number;
@@ -82,6 +84,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockReadyState = 1;
   mockLastMessage = null;
+  stableGetWebSocket.mockReturnValue(null);
   setStoredToken('token-A');
 });
 
@@ -371,6 +374,89 @@ test('mixed bursts decode each native event once and preserve repair order befor
   rerender();
   expect(decode).toHaveBeenCalledTimes(4);
   expect(listener.mock.calls.map(([message]) => message.repairRequest.requestId)).toEqual([first, second]);
-  expect(result.current.lastMessage?.collabMessage?.repairRequest?.requestId).toBe(second);
+  expect(result.current.lastMessage).toBeNull();
+  unsubscribe();
+});
+
+const repairRequest: RepairRequest = {
+  requestId: '22222222-2222-2222-2222-222222222222',
+  objectId: '11111111-1111-1111-1111-111111111111',
+  collabType: 0,
+  stateVector: new Uint8Array([0]),
+  version: undefined,
+  databaseId: undefined,
+  databaseRestoreId: undefined,
+  maxUpdateBytes: 1024,
+};
+const repairUpdate: RepairUpdate = {
+  objectId: repairRequest.objectId,
+  collabType: 0,
+  payload: new Uint8Array([1, 2, 3]),
+  version: undefined,
+  databaseRestoreId: undefined,
+  beforeStateVector: new Uint8Array([0]),
+};
+
+test('captured repair sender emits the correlated variant without socket buffering', () => {
+  stableGetWebSocket.mockReturnValue({ readyState: 1 } as WebSocket);
+  const { result } = renderHook(() => useAppflowyWebSocket(baseOptions));
+  const send = result.current.captureRepairSender!()!;
+
+  expect(send(repairRequest, repairUpdate)).toBe(true);
+  expect(stableSendMessage).toHaveBeenCalledTimes(1);
+  const [frame, keep] = stableSendMessage.mock.calls[0];
+  const message = messages.Message.decode(frame).collabMessage!;
+
+  expect(keep).toBe(false);
+  expect(message.update).toBeNull();
+  expect(message.repairUpdate?.requestId).toBe(repairRequest.requestId);
+  expect(new Uint8Array(message.repairUpdate!.update!.payload!)).toEqual(repairUpdate.payload);
+  expect(new Uint8Array(message.repairUpdate!.update!.beforeStateVector!)).toEqual(repairRequest.stateVector);
+});
+
+test.each(['replacement', 'close', 'reopen', 'leadership', 'workspace', 'token'])('repair send is fenced on %s', (change) => {
+  stableGetWebSocket.mockReturnValue({ readyState: 1 } as WebSocket);
+  const { result, rerender } = renderHook((options) => useAppflowyWebSocket(options), { initialProps: baseOptions });
+  const send = result.current.captureRepairSender!()!;
+
+  act(() => {
+    if (change === 'replacement') stableGetWebSocket.mockReturnValue({ readyState: 1 } as WebSocket);
+    if (change === 'close') lastSocketOptions().onClose?.({ code: 1000 } as CloseEvent);
+    if (change === 'reopen') lastSocketOptions().onOpen?.();
+    if (change === 'leadership') rerender({ ...baseOptions, connect: false });
+    if (change === 'workspace') rerender({ ...baseOptions, workspaceId: 'next-workspace' });
+    if (change === 'token') rerender({ ...baseOptions, token: 'replacement' });
+  });
+  expect(send(repairRequest, repairUpdate)).toBe(false);
+  expect(stableSendMessage).not.toHaveBeenCalled();
+});
+
+test('repair send rejects changed identity, provenance and response limits', () => {
+  stableGetWebSocket.mockReturnValue({ readyState: 1 } as WebSocket);
+  const { result } = renderHook(() => useAppflowyWebSocket(baseOptions));
+  const send = result.current.captureRepairSender!()!;
+
+  for (const patch of [
+    { objectId: 'different-object' }, { collabType: 1 }, { version: 'different-version' },
+    { databaseRestoreId: 'different-generation' }, { payload: new Uint8Array(1025) }, { payload: new Uint8Array() },
+  ]) expect(send(repairRequest, { ...repairUpdate, ...patch })).toBe(false);
+  expect(stableSendMessage).not.toHaveBeenCalled();
+});
+
+test('repair ACKs never enter ordinary collab handling or request listeners', () => {
+  const { result, rerender } = renderHook(() => useAppflowyWebSocket(baseOptions));
+  const listener = jest.fn();
+  const unsubscribe = result.current.subscribeRepairRequests!(listener);
+  const event = { data: messages.Message.encode({ collabMessage: {
+    objectId: repairRequest.objectId, collabType: 0,
+    repairAck: { requestId: repairRequest.requestId, messageId: { timestamp: 42, counter: 1 } },
+  } }).finish() } as MessageEvent;
+
+  act(() => lastSocketOptions().onMessage?.(event));
+  mockLastMessage = event;
+  rerender();
+  expect(result.current.lastMessage).toBeNull();
+  expect(listener).not.toHaveBeenCalled();
+  expect(stableSendMessage).not.toHaveBeenCalled();
   unsubscribe();
 });

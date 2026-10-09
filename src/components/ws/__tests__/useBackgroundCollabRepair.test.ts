@@ -34,6 +34,7 @@ const update: RepairUpdate = {
 const mockRead = jest.mocked(readPersistedRepairUpdate);
 const mockEnqueue = jest.mocked(enqueueOutboxUpdate);
 const mockSession = jest.mocked(getCurrentOutboxSession);
+const mockSend = jest.fn();
 let listeners: Set<(message: collab.ICollabMessage) => void>;
 let socket: AppflowyWebSocketType;
 
@@ -53,9 +54,11 @@ beforeEach(() => {
         listeners.delete(listener);
       };
     },
+    captureRepairSender: () => mockSend,
   };
   mockRead.mockResolvedValue(update);
   mockEnqueue.mockResolvedValue(true);
+  mockSend.mockReturnValue(true);
   mockSession.mockReturnValue({ userId: 'user', workspaceId: 'workspace' });
 });
 
@@ -63,15 +66,16 @@ function emit() {
   listeners.forEach((listener) => listener(notice));
 }
 
-test('the connected leader donates a closed object through the ordinary session-bound outbox once', async () => {
+test('the connected leader donates once through the captured repair transport without enqueueing', async () => {
   renderHook(() => useBackgroundCollabRepair(socket, true, 'user', 'workspace'));
   act(() => {
     emit();
     emit();
   });
-  await waitFor(() => expect(mockEnqueue).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(mockSend).toHaveBeenCalledTimes(1));
   expect(mockRead).toHaveBeenCalledTimes(1);
-  expect(mockEnqueue).toHaveBeenCalledWith(update, { broadcast: false });
+  expect(mockSend).toHaveBeenCalledWith(expect.objectContaining({ requestId: notice.repairRequest!.requestId }), update);
+  expect(mockEnqueue).not.toHaveBeenCalled();
   expect(mockSession).toHaveBeenCalledWith('workspace');
 });
 
@@ -114,6 +118,7 @@ test.each(['workspace', 'leadership', 'logout', 'unmount'])('cancels a pending d
   });
   expect(signal.aborted).toBe(true);
   expect(mockEnqueue).not.toHaveBeenCalled();
+  expect(mockSend).not.toHaveBeenCalled();
 });
 
 test('a session replaced outside React cannot enqueue a donor from the previous account', async () => {
@@ -130,5 +135,14 @@ test('a session replaced outside React cannot enqueue a donor from the previous 
   await act(async () => {
     complete(update);
   });
+  expect(mockEnqueue).not.toHaveBeenCalled();
+  expect(mockSend).not.toHaveBeenCalled();
+});
+
+test('a missing native connection declines before reading storage', () => {
+  socket.captureRepairSender = () => undefined;
+  renderHook(() => useBackgroundCollabRepair(socket, true, 'user', 'workspace'));
+  act(emit);
+  expect(mockRead).not.toHaveBeenCalled();
   expect(mockEnqueue).not.toHaveBeenCalled();
 });
