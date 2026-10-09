@@ -141,18 +141,6 @@ export async function pickerNewViewTypes(page: Page): Promise<string[]> {
 }
 
 /**
- * The New view types WP06 lists, as this build offers them: Timeline only
- * while the build's `EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED` is on (the
- * one allowed web divergence). The tests read the flag from the same
- * environment (and `.env`) the app is built with.
- */
-export function expectedNewViewTypes(expected: string[]): string[] {
-  const timelineCreation = process.env.EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED === 'true';
-
-  return timelineCreation ? expected : expected.filter((label) => label !== 'Timeline');
-}
-
-/**
  * "Choose a new view type" in the docked picker: the widget's own view
  * switches in place and the New view panel replaces the list.
  */

@@ -7,7 +7,6 @@ import { createBdd } from 'playwright-bdd';
 import {
   chooseNewViewType,
   closeDockedPicker,
-  expectedNewViewTypes,
   layoutOf,
   newWidget,
   newWidgetRecord,
@@ -369,7 +368,7 @@ Then('the picker lists {string} before the new view types', async ({ page }, tit
 });
 
 Then("the picker's new view types are {string}", async ({ page }, labels: string) => {
-  const expected = expectedNewViewTypes(splitList(labels));
+  const expected = splitList(labels);
 
   await expect.poll(() => pickerNewViewTypes(page), WIDGET_TIMEOUT).toEqual(expected);
 });

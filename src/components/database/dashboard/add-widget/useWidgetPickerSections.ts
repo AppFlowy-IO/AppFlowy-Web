@@ -1,7 +1,6 @@
 import { useCallback, useDeferredValue, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED } from '@/application/constants';
 import { useDatabase, useDatabaseContext } from '@/application/database-yjs';
 import { DatabaseViewLayout, UIVariant, ViewLayout } from '@/application/types';
 import { getWorkspacePlanPolicy } from '@/application/workspace-plan-policy';
@@ -130,13 +129,9 @@ export function useWidgetPickerSections({
 
   const timelineReason = useTimelineCreationDisabledReason(getSubscriptions, {
     workspaceId,
-    enabled: mode === 'add' && !existingOnly && EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED,
+    enabled: mode === 'add' && !existingOnly,
   });
-  const timelineCreation: PickerCreationState = !EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED
-    ? 'hidden'
-    : timelineReason
-    ? 'disabled'
-    : 'enabled';
+  const timelineCreation: PickerCreationState = timelineReason ? 'disabled' : 'enabled';
   const chartCreationAllowed =
     !getWorkspacePlanPolicy().requiresOnlineViewCreation(ViewLayout.Chart) ||
     (typeof navigator === 'undefined' ? true : navigator.onLine);

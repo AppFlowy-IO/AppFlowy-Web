@@ -7,6 +7,7 @@ import {
   useDispatchCursorAwareness,
   useDispatchUserAwareness,
 } from '@/application/awareness';
+import { CollabService } from '@/application/services/domains';
 import { YjsEditor } from '@/application/slate-yjs';
 import { appendFirstEmptyParagraph } from '@/application/slate-yjs/utils/yjs';
 import { ViewComponentProps, YjsEditorKey, YSharedRoot } from '@/application/types';
@@ -16,7 +17,6 @@ import { useAppAwareness } from '@/components/app/app.hooks';
 import { useCurrentUserWorkspaceAvatar } from '@/components/app/useWorkspaceMemberProfile';
 import { Editor } from '@/components/editor';
 import { useCurrentUser } from '@/components/main/app.hooks';
-import { CollabService } from '@/application/services/domains';
 import ViewMetaPreview from '@/components/view-meta/ViewMetaPreview';
 
 export type DocumentProps = ViewComponentProps & {
@@ -174,6 +174,7 @@ export const Document = (props: DocumentProps) => {
         <div className={'relative flex w-full justify-center'}>
           <Editor
             viewId={viewMeta.viewId}
+            dockableOutline={!isTemplateThumb}
             readSummary={isTemplateThumb}
             jumpBlockId={blockId}
             onJumpedBlockId={onJumpedBlockId}

@@ -359,11 +359,9 @@ describe('workspace database view creation', () => {
     await waitFor(() => expect(subscriptions).toHaveBeenCalledTimes(3));
   });
 
-  it('shares in-flight billing reads across menus and reuses them on reopen until expiry', async () => {
+  it('shares in-flight billing reads across menus and refreshes billing on every reopen', async () => {
     const pending = deferred<Subscription[]>();
-    const now = Date.now();
 
-    jest.spyOn(Date, 'now').mockReturnValue(now);
     subscriptions.mockReturnValueOnce(pending.promise);
     const first = mount();
     const second = mount();
@@ -375,14 +373,45 @@ describe('workspace database view creation', () => {
     second.rerender({ open: false });
     second.rerender({ open: true });
     await waitFor(() => expect(quota).toHaveBeenCalledTimes(3));
-    expect(subscriptions).toHaveBeenCalledTimes(1);
-    jest.mocked(Date.now).mockReturnValue(now + 30_001);
+    await waitFor(() => expect(subscriptions).toHaveBeenCalledTimes(2));
     second.rerender({ open: false });
     second.rerender({ open: true });
-    await waitFor(() => expect(subscriptions).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(subscriptions).toHaveBeenCalledTimes(3));
   });
 
-  it('keeps known crowns but not stale allowances during a background refresh, without another billing read', async () => {
+  it('keeps the cached Timeline state while the menu closes', async () => {
+    subscriptions.mockResolvedValueOnce([subscription(SubscriptionPlan.Pro)]);
+    const { result, rerender } = mount();
+
+    await waitFor(() => expect(result.current.getAction(ViewLayout.Timeline).type).toBe('create'));
+    rerender({ open: false });
+    expect(result.current.getAction(ViewLayout.Timeline).type).toBe('create');
+    expect(subscriptions).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['close', 'unmount'])('caches a billing response that finishes after menu %s', async (action) => {
+    const pending = deferred<Subscription[]>();
+
+    subscriptions.mockReturnValueOnce(pending.promise);
+    const first = mount();
+
+    await waitFor(() => expect(subscriptions).toHaveBeenCalledTimes(1));
+    if (action === 'close') first.rerender({ open: false });
+    else first.unmount();
+    await act(async () => pending.resolve([subscription(SubscriptionPlan.Pro)]));
+    const refresh = deferred<Subscription[]>();
+
+    subscriptions.mockReturnValueOnce(refresh.promise);
+    if (action === 'close') first.rerender({ open: true });
+    const reopened = action === 'close' ? first : mount();
+
+    expect(reopened.result.current.getAction(ViewLayout.Timeline).type).toBe('create');
+    await waitFor(() => expect(subscriptions).toHaveBeenCalledTimes(2));
+    await act(async () => refresh.resolve([]));
+    expect(reopened.result.current.getAction(ViewLayout.Timeline).type).toBe('upgrade');
+  });
+
+  it('keeps confirmed allowances and crowns during a background refresh, without another billing read', async () => {
     const pending = deferred<typeof allowed>();
     const { result } = mount();
 
@@ -391,10 +420,7 @@ describe('workspace database view creation', () => {
     act(() => {
       emitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED);
     });
-    expect(result.current.getAction(ViewLayout.Form)).toMatchObject({
-      type: 'disabled',
-      reason: 'databaseViewCreation.checking',
-    });
+    expect(result.current.getAction(ViewLayout.Form).type).toBe('create');
     expect(result.current.getAction(ViewLayout.Timeline).type).toBe('upgrade');
     await act(async () => pending.resolve({ can_create_form: false, can_create_chart: true }));
     expect(result.current.getAction(ViewLayout.Form)).toMatchObject({ type: 'upgrade', requiresPro: true });
@@ -402,7 +428,7 @@ describe('workspace database view creation', () => {
     expect(subscriptions).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps a confirmed crown after a failed refresh while the stale allowance stays unavailable', async () => {
+  it('keeps confirmed allowances and crowns after a failed background refresh', async () => {
     quota.mockResolvedValueOnce({ can_create_form: true, can_create_chart: false });
     const { result } = mount();
 
@@ -412,10 +438,7 @@ describe('workspace database view creation', () => {
       emitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED);
     });
     expect(result.current.getAction(ViewLayout.Chart)).toMatchObject({ type: 'upgrade', requiresPro: true });
-    expect(result.current.getAction(ViewLayout.Form)).toMatchObject({
-      type: 'disabled',
-      reason: 'databaseViewCreation.unavailable',
-    });
+    expect(result.current.getAction(ViewLayout.Form).type).toBe('create');
   });
 
   it('uses the Desktop upgrade message for each limited layout', async () => {
@@ -429,9 +452,9 @@ describe('workspace database view creation', () => {
     expect(result.current.getAction(ViewLayout.Timeline).reason).toBe('databaseViewCreation.upgradeTimeline');
   });
 
-  it('does not trust a remembered allowance when the menu reopens, but keeps known crowns', async () => {
+  it('shows cached allowances and crowns on the first reopened render, then applies the refreshed quotas', async () => {
     quota.mockResolvedValueOnce({ can_create_form: true, can_create_chart: false });
-    // Record every render: an effect could hide a stale first frame from result.current.
+    // Record every render so a loading flash cannot hide behind an effect.
     const rendered: Array<{ open: boolean; form: string; chart: string }> = [];
     const { result, rerender } = renderHook(
       ({ open }) => {
@@ -455,9 +478,73 @@ describe('workspace database view creation', () => {
     rendered.length = 0;
     rerender({ open: true });
     expect(rendered.length).toBeGreaterThan(0);
-    for (const frame of rendered) expect(frame).toEqual({ open: true, form: 'disabled', chart: 'upgrade' });
-    await act(async () => pending.resolve({ can_create_form: true, can_create_chart: false }));
-    expect(result.current.getAction(ViewLayout.Form).type).toBe('create');
+    for (const frame of rendered) expect(frame).toEqual({ open: true, form: 'create', chart: 'upgrade' });
+    await act(async () => pending.resolve({ can_create_form: false, can_create_chart: true }));
+    expect(result.current.getAction(ViewLayout.Form).type).toBe('upgrade');
+    expect(result.current.getAction(ViewLayout.Chart).type).toBe('create');
+  });
+
+  it('reuses cached quotas and an expired plan after remounting while both refresh in the background', async () => {
+    const now = Date.now();
+
+    jest.spyOn(Date, 'now').mockReturnValue(now);
+    subscriptions.mockResolvedValueOnce([subscription(SubscriptionPlan.Pro)]);
+    const first = mount();
+
+    await waitFor(() => expect(first.result.current.getAction(ViewLayout.Timeline).type).toBe('create'));
+    await waitFor(() => expect(first.result.current.getAction(ViewLayout.Form).type).toBe('create'));
+    first.unmount();
+    jest.mocked(Date.now).mockReturnValue(now + 30_001);
+    const pendingQuota = deferred<typeof allowed>();
+    const pendingPlan = deferred<Subscription[]>();
+
+    quota.mockReturnValueOnce(pendingQuota.promise);
+    subscriptions.mockReturnValueOnce(pendingPlan.promise);
+    const second = mount();
+
+    expect(second.result.current.getAction(ViewLayout.Form).type).toBe('create');
+    expect(second.result.current.getAction(ViewLayout.Timeline).type).toBe('create');
+    expect(second.result.current.checkCreation(ViewLayout.Form)).toBe(true);
+    await waitFor(() => expect(subscriptions).toHaveBeenCalledTimes(2));
+    expect(quota).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      pendingQuota.resolve({ can_create_form: false, can_create_chart: true });
+      pendingPlan.resolve([]);
+    });
+    expect(second.result.current.getAction(ViewLayout.Form).type).toBe('upgrade');
+    expect(second.result.current.getAction(ViewLayout.Chart).type).toBe('create');
+    expect(second.result.current.getAction(ViewLayout.Timeline).type).toBe('upgrade');
+  });
+
+  it('keeps a cached plan after billing revalidation fails in a remounted menu', async () => {
+    subscriptions.mockResolvedValueOnce([subscription(SubscriptionPlan.Pro)]);
+    const first = mount();
+
+    await waitFor(() => expect(first.result.current.getAction(ViewLayout.Timeline).type).toBe('create'));
+    first.unmount();
+    window.dispatchEvent(new Event('focus'));
+    subscriptions.mockRejectedValueOnce(new Error('Billing unavailable'));
+    const second = mount();
+
+    expect(second.result.current.getAction(ViewLayout.Timeline).type).toBe('create');
+    await waitFor(() => expect(subscriptions).toHaveBeenCalledTimes(2));
+    expect(second.result.current.getAction(ViewLayout.Timeline).type).toBe('create');
+  });
+
+  it('shares updated quotas across menus and ignores an older menu response', async () => {
+    const pending = deferred<typeof allowed>();
+
+    quota.mockReturnValueOnce(pending.promise);
+    const first = mount();
+
+    quota.mockResolvedValueOnce({ can_create_form: false, can_create_chart: true });
+    const second = mount();
+
+    await waitFor(() => expect(second.result.current.getAction(ViewLayout.Form).type).toBe('upgrade'));
+    expect(first.result.current.getAction(ViewLayout.Form).type).toBe('upgrade');
+    await act(async () => pending.resolve(allowed));
+    expect(first.result.current.getAction(ViewLayout.Form).type).toBe('upgrade');
+    expect(second.result.current.getAction(ViewLayout.Form).type).toBe('upgrade');
   });
 
   it('clears the quota snapshot when the connection drops', async () => {

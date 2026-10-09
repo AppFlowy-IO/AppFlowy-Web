@@ -7,14 +7,7 @@ const getSubscriptions = jest.fn();
 const mockReasonCalls: { enabled?: boolean; workspaceId?: string; requiresProMessage?: string }[] = [];
 let mockMobileContext = false;
 let mockRequiresPro = false;
-let mockCreationEnabled = true;
 
-jest.mock('@/application/constants', () => ({
-  ...jest.requireActual('@/application/constants'),
-  get EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED() {
-    return mockCreationEnabled;
-  },
-}));
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key }),
 }));
@@ -39,7 +32,6 @@ describe('useDashboardCreationGate', () => {
     mockReasonCalls.length = 0;
     mockMobileContext = false;
     mockRequiresPro = false;
-    mockCreationEnabled = true;
   });
 
   it('allows creation on a desktop page of a Pro workspace', () => {
@@ -70,9 +62,7 @@ describe('useDashboardCreationGate', () => {
     expect(mockReasonCalls.every((call) => call.enabled === false)).toBe(true);
   });
 
-  it('allows Dashboard creation without the experimental database-view flag', () => {
-    mockCreationEnabled = false;
-
+  it('allows Dashboard creation when the menu is open', () => {
     expect(renderGate(true).available).toBe(true);
     expect(mockReasonCalls.every((call) => call.enabled === true)).toBe(true);
   });

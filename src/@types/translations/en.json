@@ -2450,7 +2450,7 @@
         "divider": "Divider",
         "table": "Table",
         "callout": "Callout",
-        "outline": "Outline",
+        "outline": "Table of contents",
         "mathEquation": "Math Equation",
         "code": "Code",
         "toggleList": "Toggle list",
@@ -2645,7 +2645,13 @@
         }
       },
       "outline": {
-        "outlineBlock": "Table of Contents",
+        "dockableTitle": "Table of contents",
+        "showOutline": "Show table of contents",
+        "displayOptions": "Outline display options",
+        "alwaysShow": "Always show",
+        "showOnHover": "Show on hover",
+        "untitledHeading": "Untitled heading",
+        "outlineBlock": "Table of contents",
         "addHeadingToCreateOutline": "Add headings to create a table of contents.",
         "noMatchHeadings": "No matching headings found.",
         "outlineColor": "Custom color",
@@ -2746,7 +2752,7 @@
       }
     },
     "outlineBlock": {
-      "placeholder": "Table of Contents"
+      "placeholder": "Table of contents"
     },
     "textBlock": {
       "placeholder": "Type '/' for commands"

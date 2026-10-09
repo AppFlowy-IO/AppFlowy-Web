@@ -35,22 +35,66 @@ const upgradeReasonKey = (layout?: ViewLayout) =>
     ? 'databaseViewCreation.upgradeForm'
     : 'databaseViewCreation.upgradeChart';
 const PLAN_CACHE_TTL_MS = 30_000;
-const planCache = new Map<string, { expiresAt: number; promise: Promise<SubscriptionPlan | null> }>();
+const planCache = new Map<string, { expiresAt: number; pending: boolean; promise: Promise<SubscriptionPlan | null> }>();
+const MAX_CREATION_CACHE_ENTRIES = 50;
+
+interface CreationSnapshot {
+  quota?: DatabaseViewCreationStatus;
+  quotaRevision?: number;
+  plan?: SubscriptionPlan;
+  planRevision?: number;
+}
+
+const EMPTY_SNAPSHOT: CreationSnapshot = {};
+const creationCache = new Map<string, CreationSnapshot>();
+const cacheListeners = new Set<() => void>();
+let requestRevision = 0;
+
+function subscribeCreationCache(listener: () => void) {
+  cacheListeners.add(listener);
+  return () => cacheListeners.delete(listener);
+}
+
+function updateCreationCache(key: string, update: CreationSnapshot) {
+  const previous = creationCache.get(key);
+
+  // A slower menu must not overwrite a newer response from another menu.
+  if (
+    (update.quotaRevision !== undefined && update.quotaRevision < (previous?.quotaRevision ?? 0)) ||
+    (update.planRevision !== undefined && update.planRevision < (previous?.planRevision ?? 0))
+  )
+    return;
+  creationCache.delete(key);
+  creationCache.set(key, { ...previous, ...update });
+  if (creationCache.size > MAX_CREATION_CACHE_ENTRIES) {
+    const oldestKey = creationCache.keys().next().value;
+
+    if (oldestKey !== undefined) creationCache.delete(oldestKey);
+  }
+
+  cacheListeners.forEach((listener) => listener());
+}
+
+function clearCreationCache(key: string) {
+  if (creationCache.delete(key)) cacheListeners.forEach((listener) => listener());
+}
 
 // Billing changes much less often than the database inventory. Share requests
-// across menus without caching quota decisions or turning idle menus into pollers.
-function loadPlan(key: string, getSubscriptions?: () => Promise<Subscription[] | undefined>) {
+// across menus; confirmed values remain visible while quotas refresh in the background.
+function loadPlan(key: string, getSubscriptions?: () => Promise<Subscription[] | undefined>, revalidate = false) {
   if (!getSubscriptions) return Promise.resolve(null);
   const cached = planCache.get(key);
 
-  if (cached && cached.expiresAt > Date.now()) return cached.promise;
+  if (cached && cached.expiresAt > Date.now() && (!revalidate || cached.pending)) return cached.promise;
   for (const [cacheKey, entry] of planCache) {
     if (entry.expiresAt <= Date.now()) planCache.delete(cacheKey);
   }
 
   // A pending read also expires, so a request that never settles cannot pin every menu to "checking".
+  const cacheRevision = ++requestRevision;
   const entry = {
     expiresAt: Date.now() + PLAN_CACHE_TTL_MS,
+    pending: true,
     promise: Promise.resolve()
       .then(getSubscriptions)
       .then((subscriptions) => (subscriptions ? getProAccessPlanFromSubscriptions(subscriptions) : null)),
@@ -61,8 +105,15 @@ function loadPlan(key: string, getSubscriptions?: () => Promise<Subscription[] |
 
   planCache.set(key, entry);
   void entry.promise.then((plan) => {
+    // The request owns the confirmed value even if its menu closed or unmounted.
+    // Invalidated requests cannot restore a previous account/connection's result.
+    if (planCache.get(key) !== entry) return;
+    entry.pending = false;
     if (plan === null) evict();
-    else entry.expiresAt = Date.now() + PLAN_CACHE_TTL_MS;
+    else {
+      entry.expiresAt = Date.now() + PLAN_CACHE_TTL_MS;
+      updateCreationCache(key, { plan, planRevision: cacheRevision });
+    }
   }, evict);
   return entry.promise;
 }
@@ -110,6 +161,8 @@ export function useDatabaseViewCreation({
   const connected = useSyncExternalStore(subscribeConnection, readConnection, readConnection);
   const authenticated = auth?.isAuthenticated === true && auth.currentWorkspaceId === workspaceId;
   const planCacheKey = JSON.stringify([serverUrl, userId, workspaceId]);
+  const readSnapshot = useCallback(() => creationCache.get(planCacheKey) ?? EMPTY_SNAPSHOT, [planCacheKey]);
+  const snapshot = useSyncExternalStore(subscribeCreationCache, readSnapshot, readSnapshot);
   // A new identity is unavailable immediately, even before effect cleanup. Never
   // display a previous workspace/account's successful response for one render.
   // Like Desktop, a lost connection also clears the snapshot.
@@ -128,13 +181,17 @@ export function useDatabaseViewCreation({
   );
   const [status, setStatus] = useState<{
     scope: object;
-    // Last confirmed allowance. A refresh keeps it so known denials keep their
-    // crowns, but a stale allowance cannot enable creation (Desktop parity).
-    quota?: DatabaseViewCreationStatus;
-    quotaState?: 'pending' | 'fresh' | 'failed';
-    plan?: SubscriptionPlan | null;
+    quotaState?: 'pending' | 'failed';
+    planState?: 'pending' | 'failed';
   }>({ scope });
   const refreshRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    if (!authenticated || !connected || hostingMode !== 'cloud') {
+      clearCreationCache(planCacheKey);
+      planCache.delete(planCacheKey);
+    }
+  }, [authenticated, connected, hostingMode, planCacheKey]);
 
   useEffect(() => {
     if (hostingMode !== 'cloud') return;
@@ -154,10 +211,11 @@ export function useDatabaseViewCreation({
     let active = true;
     let revision = 0;
     let running = false;
+    let firstRead = true;
 
     const refresh = async () => {
       revision += 1;
-      setStatus((prev) => ({ ...(prev.scope === scope ? prev : { scope }), quotaState: 'pending' }));
+      setStatus({ scope, quotaState: 'pending', planState: 'pending' });
       if (running) return;
       running = true;
 
@@ -167,26 +225,30 @@ export function useDatabaseViewCreation({
 
       do {
         requestedRevision = revision;
+        const cacheRevision = ++requestRevision;
+        const revalidatePlan = firstRead;
         const isCurrent = () => active && requestedRevision === revision;
 
+        firstRead = false;
         await Promise.all([
           getDatabaseViewCreationStatus(workspaceId).then(
             (quota) => {
-              if (isCurrent()) setStatus((prev) => ({ ...prev, scope, quota, quotaState: 'fresh' }));
+              if (isCurrent()) updateCreationCache(planCacheKey, { quota, quotaRevision: cacheRevision });
             },
             () => {
               if (isCurrent()) setStatus((prev) => ({ ...prev, scope, quotaState: 'failed' }));
             }
           ),
           Promise.resolve()
-            .then(() => loadPlan(planCacheKey, getSubscriptions))
+            // Every menu opening checks billing; folder refreshes can reuse its short TTL.
+            .then(() => loadPlan(planCacheKey, getSubscriptions, revalidatePlan))
             .then(
               (plan) => {
-                if (isCurrent()) setStatus((prev) => ({ ...prev, scope, plan }));
+                if (isCurrent() && plan === null) setStatus((prev) => ({ ...prev, scope, planState: 'failed' }));
               },
               () => {
-                // A plan that already loaded survives a failed refresh, as on Desktop.
-                if (isCurrent()) setStatus((prev) => ({ ...prev, scope, plan: prev.plan ?? null }));
+                // Keep the last confirmed plan when a background refresh fails.
+                if (isCurrent()) setStatus((prev) => ({ ...prev, scope, planState: 'failed' }));
               }
             ),
         ]);
@@ -208,9 +270,6 @@ export function useDatabaseViewCreation({
     window.addEventListener('focus', onChange);
     return () => {
       active = false;
-      // A reopened menu must not show an allowance confirmed before it closed,
-      // even for the render before its refresh starts. Known denials keep crowns.
-      setStatus((prev) => (prev.quotaState === 'fresh' ? { ...prev, quotaState: 'pending' } : prev));
       if (refreshRef.current === onChange) refreshRef.current = null;
       eventEmitter?.off(APP_EVENTS.FOLDER_OUTLINE_CHANGED, onChange);
       eventEmitter?.off(APP_EVENTS.FOLDER_VIEW_CHANGED, onChange);
@@ -231,7 +290,9 @@ export function useDatabaseViewCreation({
       if (!connected || !readConnection())
         return { type: 'disabled', reason: t('databaseViewCreation.connectionRequired') };
 
-      const current = status.scope === scope && enabled ? status : undefined;
+      const current = status.scope === scope ? status : undefined;
+      // Menu visibility controls requests, not the last confirmed display state.
+      const cached = snapshot;
       const checking: DatabaseViewCreationAction = { type: 'disabled', reason: t('databaseViewCreation.checking') };
       const unavailable: DatabaseViewCreationAction = {
         type: 'disabled',
@@ -246,20 +307,19 @@ export function useDatabaseViewCreation({
         : { type: 'disabled', requiresPro: false, reason: t('databaseViewCreation.askOwner') };
 
       if (layout === ViewLayout.Timeline) {
-        if (current?.plan === undefined) return checking;
-        if (current.plan === null) return unavailable;
-        return current.plan === SubscriptionPlan.Pro ? CREATE : requiresPro;
+        if (cached.plan === undefined) return current?.planState === 'failed' ? unavailable : checking;
+        return cached.plan === SubscriptionPlan.Pro ? CREATE : requiresPro;
       }
 
-      const quota = current?.quota;
+      const quota = cached.quota;
       const allowed = layout === ViewLayout.Form ? quota?.can_create_form : quota?.can_create_chart;
 
-      // A confirmed denial keeps its crown during slow or failed refreshes.
-      if (quota && !allowed) return requiresPro;
-      if (allowed && current?.quotaState === 'fresh') return CREATE;
+      // Reuse confirmed values during refreshes, including across menu remounts.
+      // The creation endpoint remains authoritative if an allowance changed meanwhile.
+      if (quota) return allowed ? CREATE : requiresPro;
       return current?.quotaState === 'failed' ? unavailable : checking;
     },
-    [hostingMode, workspaceId, authenticated, connected, readConnection, status, scope, enabled, isOwner, t]
+    [hostingMode, workspaceId, authenticated, connected, readConnection, status, scope, snapshot, isOwner, t]
   );
   const pendingCheckout = useRef<Promise<void> | null>(null);
   const [, setSearch] = useSearchParams();

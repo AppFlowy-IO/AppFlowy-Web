@@ -1,7 +1,6 @@
 import { KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED } from '@/application/constants';
 import { useDatabase } from '@/application/database-yjs';
 import { DatabaseViewLayout } from '@/application/types';
 import { ReactComponent as ChevronRightIcon } from '@/assets/icons/alt_arrow_right.svg';
@@ -96,10 +95,6 @@ export function NewViewConfigPanel({ state }: { state: ConfiguringState }) {
     }
   };
 
-  const tiles = CONFIG_TILE_LAYOUTS.filter(
-    (layout) => layout !== DatabaseViewLayout.Timeline || EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED
-  );
-
   return (
     <div className='flex min-h-0 flex-1 flex-col'>
       <DockPanelHeader
@@ -134,7 +129,7 @@ export function NewViewConfigPanel({ state }: { state: ConfiguringState }) {
         />
       </div>
       <div className='grid grid-cols-3 gap-2 px-1 pb-2' role='radiogroup'>
-        {tiles.map((layout) => {
+        {CONFIG_TILE_LAYOUTS.map((layout) => {
           const selected = layout === state.layout;
 
           return (
@@ -150,7 +145,6 @@ export function NewViewConfigPanel({ state }: { state: ConfiguringState }) {
               data-testid='dashboard-widget-new-view-panel-tile'
               key={layout}
               onClick={() => {
-                if (layout === DatabaseViewLayout.Timeline && !EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED) return;
                 flow.dispatch({ type: 'pick_tile', layout });
               }}
               role='radio'

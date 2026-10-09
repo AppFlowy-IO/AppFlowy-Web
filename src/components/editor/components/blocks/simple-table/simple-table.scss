@@ -535,22 +535,16 @@
   display: inline-block;
   width: 16px;
   height: 16px;
-  background-color: currentColor;
-  mask-position: center;
-  mask-repeat: no-repeat;
-}
-
-.simple-table-image-icon {
-  background: none;
-  color: var(--icon-primary);
-}
-
-.simple-table-block-drag-icon.simple-table-image-icon {
   color: #8f959e;
 
   :root[data-dark-mode=true] & {
     color: var(--icon-secondary);
   }
+}
+
+.simple-table-image-icon {
+  background: none;
+  color: var(--icon-primary);
 }
 
 .MuiIconButton-root.simple-table-block-drag-button {

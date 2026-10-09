@@ -147,8 +147,7 @@ async function cloudApi<T>(page: Page, path: string, data?: unknown): Promise<T>
 
 /**
  * Creates a Dashboard view of an open database through the Cloud API, the way
- * the web's tab bar does, and returns its id. (The web's own creation menu is
- * behind EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED.)
+ * the web's tab bar does, and returns its id.
  */
 async function createDashboardView(page: Page, database: OpenDatabase) {
   type FolderView = { parent_view_id?: string; extra?: unknown };

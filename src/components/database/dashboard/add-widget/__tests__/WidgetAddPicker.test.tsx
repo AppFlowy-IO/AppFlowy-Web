@@ -9,20 +9,12 @@ import { AddWidgetFlowEvent, AddWidgetFlowState } from '../add-widget-flow';
 import { HostViewEntry } from '../picker-sections';
 import { WidgetAddPicker } from '../WidgetAddPicker';
 
-let mockExperimentalDatabaseViewCreationEnabled = false;
 let mockHostViews: HostViewEntry[] = [];
 let mockCatalog: WorkspaceDatabaseWithViews[] = [];
 let mockTimelineReason: string | undefined;
 const mockCatalogEnabled = jest.fn();
 const mockDispatch = jest.fn<void, [AddWidgetFlowEvent]>();
 const mockCreateInDatabase = jest.fn();
-
-jest.mock('@/application/constants', () => ({
-  ...jest.requireActual('@/application/constants'),
-  get EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED() {
-    return mockExperimentalDatabaseViewCreationEnabled;
-  },
-}));
 
 jest.mock('@/application/database-yjs', () => ({
   useDatabase: () => undefined,
@@ -125,7 +117,6 @@ it('offers existing views offline with an online-required explanation and no cre
 });
 
 beforeEach(() => {
-  mockExperimentalDatabaseViewCreationEnabled = true;
   mockTimelineReason = undefined;
   mockHostViews = [
     hostView('g', 'Grid'),
@@ -289,30 +280,28 @@ describe('WidgetAddPicker', () => {
   });
 });
 
-// The four Timeline gate cases of the old picker (`WidgetPickerContent.test.tsx`).
 describe('WidgetAddPicker creation gate', () => {
   beforeEach(() => {
-    mockExperimentalDatabaseViewCreationEnabled = false;
     mockHostViews = [hostView('host-timeline', 'Project timeline', ViewLayout.Timeline)];
   });
 
-  it('keeps existing Timeline views selectable while experimental creation is disabled', () => {
+  it('keeps existing Timeline views selectable when the plan blocks creation', () => {
+    mockTimelineReason = 'Creating a Timeline view requires a Pro workspace.';
     renderPicker();
 
     fireEvent.click(screen.getByTestId('dashboard-widget-picker-option'));
     expect(mockDispatch).toHaveBeenCalledWith({ type: 'pick_existing', viewId: 'host-timeline', databaseId: 'host-db' });
   });
 
-  it('hides Timeline creation while allowing supported layouts when the gate is disabled', () => {
+  it('offers Timeline alongside the other supported layouts', () => {
     renderPicker();
 
-    expect(layoutRows()).not.toContain('Timeline');
+    expect(layoutRows()).toContain('Timeline');
     fireEvent.click(screen.getAllByTestId('dashboard-widget-picker-layout-option')[0]);
     expect(mockDispatch).toHaveBeenCalledWith({ type: 'pick_layout', layout: DatabaseViewLayout.Grid });
   });
 
-  it('creates Timeline views when experimental creation is enabled', () => {
-    mockExperimentalDatabaseViewCreationEnabled = true;
+  it('creates Timeline views by default', () => {
     renderPicker();
     const timeline = screen
       .getAllByTestId('dashboard-widget-picker-layout-option')
@@ -322,14 +311,18 @@ describe('WidgetAddPicker creation gate', () => {
     expect(mockDispatch).toHaveBeenCalledWith({ type: 'pick_layout', layout: DatabaseViewLayout.Timeline });
   });
 
-  it('rejects a Timeline creation when the gate is disabled after rendering', () => {
-    mockExperimentalDatabaseViewCreationEnabled = true;
-    renderPicker();
+  it('rejects Timeline creation after the workspace plan changes', () => {
+    const { rerender } = renderPicker();
     const timeline = screen
       .getAllByTestId('dashboard-widget-picker-layout-option')
       .find((row) => row.textContent === 'Timeline') as HTMLElement;
 
-    mockExperimentalDatabaseViewCreationEnabled = false;
+    mockTimelineReason = 'Creating a Timeline view requires a Pro workspace.';
+    rerender(
+      <TooltipProvider>
+        <WidgetAddPicker state={OPEN as Extract<AddWidgetFlowState, { kind: 'open' }>} />
+      </TooltipProvider>
+    );
     act(() => {
       fireEvent.click(timeline);
     });

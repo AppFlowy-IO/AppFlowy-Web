@@ -24,7 +24,6 @@ env:
   # Public Form APIs and uploads reject plaintext requests at the backend proxy.
   APPFLOWY_BASE_URL: https://localhost
   APPFLOWY_ENABLE_RELATION_ROLLUP_EDIT: 'true'
-  EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED: 'true'
   NODE_VERSION: '24'
   PNPM_VERSION: '10.9.0'
 
@@ -142,6 +141,11 @@ jobs:
               playwright/.features-gen/playwright/bdd/features/editor/simple-table-selection-scroll.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/editor/simple-table-add-row-scroll.feature.spec.js
             description: 'Simple table headers, block actions, conversion undo/redo, selection, and scrolling'
+            bdd: 'true'
+            shard: ''
+          - name: 'dockable-outline-bdd'
+            spec: 'playwright/.features-gen/playwright/bdd/features/editor/dockable-outline.feature.spec.js'
+            description: 'Dockable document outline, scroll tracking, themes, comments, and published display modes'
             bdd: 'true'
             shard: ''
           - name: 'database'

@@ -8,10 +8,6 @@ const mockAddView = jest.fn();
 const mockStartCheckout = jest.fn();
 const mockGetAction = jest.fn();
 
-jest.mock('@/application/constants', () => ({
-  ...jest.requireActual('@/application/constants'),
-  EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED: true,
-}));
 
 jest.mock('@/application/database-yjs/dispatch', () => ({
   useAddDatabaseView: () => mockAddView,

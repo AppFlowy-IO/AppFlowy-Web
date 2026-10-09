@@ -1,7 +1,6 @@
 import { KeyboardEvent, useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED } from '@/application/constants';
 import { DatabaseViewLayout } from '@/application/types';
 import { ONLINE_DASHBOARD_VIEW_CREATION_REQUIRED } from '@/application/view-online-policy';
 import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
@@ -101,8 +100,6 @@ export function WidgetAddPicker({ state }: WidgetAddPickerProps) {
   );
   const pickLayout = useCallback(
     (layout: DatabaseViewLayout) => {
-      // The creation flag is read at the click: a Timeline row rendered before it turned off creates nothing.
-      if (layout === DatabaseViewLayout.Timeline && !EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED) return;
       flow.dispatch({ type: 'pick_layout', layout });
     },
     [flow]
@@ -169,7 +166,6 @@ export function WidgetAddPicker({ state }: WidgetAddPickerProps) {
                 key={layout}
                 onClick={() => {
                   if (disabled || !anchorViewId) return;
-                  if (layout === DatabaseViewLayout.Timeline && !EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED) return;
                   addWidget.createInDatabase(target.databaseId, anchorViewId, layout);
                 }}
                 type='button'

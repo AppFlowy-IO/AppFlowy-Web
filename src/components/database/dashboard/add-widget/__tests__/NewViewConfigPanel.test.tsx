@@ -5,17 +5,10 @@ import { DatabaseViewLayout, ViewLayout } from '@/application/types';
 import { AddWidgetFlowEvent, AddWidgetFlowState } from '../add-widget-flow';
 import { NewViewConfigPanel } from '../NewViewConfigPanel';
 
-let mockExperimentalDatabaseViewCreationEnabled = true;
 let mockViewName = 'Board';
 const mockDispatch = jest.fn<void, [AddWidgetFlowEvent]>();
 const mockOpenSourcePanel = jest.fn();
 
-jest.mock('@/application/constants', () => ({
-  ...jest.requireActual('@/application/constants'),
-  get EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED() {
-    return mockExperimentalDatabaseViewCreationEnabled;
-  },
-}));
 jest.mock('@/application/database-yjs', () => ({ useDatabase: () => undefined }));
 jest.mock('../../DashboardContext', () => ({
   useDashboardContext: () => ({ hostDatabaseId: 'host-db', dashboardViewId: 'dash' }),
@@ -46,7 +39,6 @@ function tiles() {
 }
 
 beforeEach(() => {
-  mockExperimentalDatabaseViewCreationEnabled = true;
   mockViewName = 'Board';
   mockDispatch.mockClear();
   mockOpenSourcePanel.mockClear();
@@ -73,11 +65,10 @@ describe('NewViewConfigPanel', () => {
     ).toEqual(['Board']);
   });
 
-  it('leaves Timeline out while its creation flag is off', () => {
-    mockExperimentalDatabaseViewCreationEnabled = false;
+  it('offers Timeline by default', () => {
     render(<NewViewConfigPanel state={state(DatabaseViewLayout.Board)} />);
 
-    expect(tiles().map((tile) => tile.textContent)).not.toContain('Timeline');
+    expect(tiles().map((tile) => tile.textContent)).toContain('Timeline');
   });
 
   it('switches the view from a tile', () => {

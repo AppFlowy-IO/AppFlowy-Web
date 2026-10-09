@@ -11,19 +11,12 @@ const mockGetSubscriptions = jest.fn();
 const timelineRequiresPro = 'Creating a Timeline view requires a Pro workspace.';
 const dashboardRequiresPro = 'Creating a Dashboard view requires a Pro workspace.';
 const mockReasonCalls: { enabled?: boolean; workspaceId?: string; requiresProMessage?: string }[] = [];
-let mockCreationEnabled = false;
 let mockIsDashboardWidget = false;
 let mockRequiresPro = false;
 let mockSelfHosted = false;
 let mockTimelineAllowed = true;
 const mockCreationCalls: { enabled?: boolean; workspaceId?: string }[] = [];
 
-jest.mock('@/application/constants', () => ({
-  ...jest.requireActual('@/application/constants'),
-  get EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED() {
-    return mockCreationEnabled;
-  },
-}));
 jest.mock('@/application/database-yjs/context', () => ({ useDatabaseContext: () => ({
   workspaceId: 'workspace-id', getSubscriptions: mockGetSubscriptions, isDashboardWidget: mockIsDashboardWidget,
 }) }));
@@ -80,7 +73,6 @@ async function openLayout(currentLayout: DatabaseViewLayout) {
 
 describe('database Layout', () => {
   beforeEach(() => {
-    mockCreationEnabled = false;
     mockIsDashboardWidget = false;
     mockRequiresPro = false;
     mockReasonCalls.length = 0;
@@ -91,10 +83,10 @@ describe('database Layout', () => {
     mockUpdateLayout.mockReset();
   });
 
-  it('offers Dashboard conversion while Timeline remains experimental', async () => {
+  it('offers Dashboard and Timeline conversion by default', async () => {
     await openLayout(DatabaseViewLayout.Grid);
 
-    expect(screen.queryByTestId(`database-layout-option-${DatabaseViewLayout.Timeline}`)).toBeNull();
+    expect(screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Timeline}`)).toBeTruthy();
     expect(screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Dashboard}`)).toBeTruthy();
   });
 
@@ -108,7 +100,7 @@ describe('database Layout', () => {
     expect(mockUpdateLayout).not.toHaveBeenCalled();
   });
 
-  it('keeps the current Dashboard label and selected option without the experimental flag', async () => {
+  it('keeps the current Dashboard label and selected option', async () => {
     const trigger = await openLayout(DatabaseViewLayout.Dashboard);
     const currentOption = screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Dashboard}`);
 
@@ -125,16 +117,14 @@ describe('database Layout', () => {
     expect(mockUpdateLayout).toHaveBeenCalledWith(DatabaseViewLayout.Grid);
   });
 
-  it('allows Timeline conversion when web creation is enabled', async () => {
-    mockCreationEnabled = true;
+  it('allows Timeline conversion by default', async () => {
     await openLayout(DatabaseViewLayout.Grid);
     fireEvent.click(screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Timeline}`));
 
     expect(mockUpdateLayout).toHaveBeenCalledWith(DatabaseViewLayout.Timeline);
   });
 
-  it('allows Dashboard conversion when web creation is enabled', async () => {
-    mockCreationEnabled = true;
+  it('allows Dashboard conversion by default', async () => {
     await openLayout(DatabaseViewLayout.Grid);
     const option = screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Dashboard}`);
 
@@ -146,7 +136,6 @@ describe('database Layout', () => {
   it('awaits the asynchronous Dashboard conversion and reports when creating its copy fails', async () => {
     let rejectConversion!: (error: Error) => void;
 
-    mockCreationEnabled = true;
     // Converting creates the view's owned copy on the server first (WP05 §1.6).
     mockUpdateLayout.mockImplementationOnce(
       () =>
@@ -178,7 +167,6 @@ describe('database Layout', () => {
       );
     });
 
-    mockCreationEnabled = true;
     await openLayout(DatabaseViewLayout.Grid);
     fireEvent.click(screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Dashboard}`));
     resolveConversion();
@@ -188,7 +176,6 @@ describe('database Layout', () => {
   });
 
   it('never offers the Dashboard layout inside a dashboard widget', async () => {
-    mockCreationEnabled = true;
     mockIsDashboardWidget = true;
     await openLayout(DatabaseViewLayout.Grid);
 
@@ -197,7 +184,6 @@ describe('database Layout', () => {
   });
 
   it('checks the workspace plan only while the layout menu is open', async () => {
-    mockCreationEnabled = true;
     render(
       <DropdownMenu defaultOpen>
         <DropdownMenuTrigger>Settings</DropdownMenuTrigger>
@@ -223,7 +209,6 @@ describe('database Layout', () => {
     [DatabaseViewLayout.Timeline, timelineRequiresPro],
     [DatabaseViewLayout.Dashboard, dashboardRequiresPro],
   ])('greys out conversion to layout %s with the Pro reason in a Free workspace', async (layout, message) => {
-    mockCreationEnabled = true;
     mockRequiresPro = true;
     await openLayout(DatabaseViewLayout.Grid);
     const option = screen.getByTestId(`database-layout-option-${layout}`);
@@ -239,7 +224,6 @@ describe('database Layout', () => {
   it.each([DatabaseViewLayout.Timeline, DatabaseViewLayout.Dashboard])(
     'preserves the layout %s item while its plan reason clears',
     async (layout) => {
-      mockCreationEnabled = true;
       mockRequiresPro = true;
       const menu = (
         <DropdownMenu defaultOpen>
@@ -270,7 +254,6 @@ describe('database Layout', () => {
   );
 
   it('keeps the current Pro layout and other conversions available in a Free workspace', async () => {
-    mockCreationEnabled = true;
     mockRequiresPro = true;
     await openLayout(DatabaseViewLayout.Dashboard);
 
@@ -299,7 +282,6 @@ describe('database Layout', () => {
   });
 
   it('blocks Timeline conversion when creation requires Pro', async () => {
-    mockCreationEnabled = true;
     mockTimelineAllowed = false;
     await openLayout(DatabaseViewLayout.Grid);
     const timeline = screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Timeline}`);
@@ -310,7 +292,6 @@ describe('database Layout', () => {
   });
 
   it.each([DatabaseViewLayout.Form, DatabaseViewLayout.Chart])('allows self-hosted conversion to %s', async (layout) => {
-    mockCreationEnabled = true;
     mockSelfHosted = true;
     await openLayout(DatabaseViewLayout.Grid);
     fireEvent.click(screen.getByTestId(`database-layout-option-${layout}`));
@@ -328,8 +309,7 @@ describe('database Layout', () => {
       Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: initialWidth });
     });
 
-    it('offers no Dashboard conversion, whatever the creation flag', async () => {
-      mockCreationEnabled = true;
+    it('offers no Dashboard conversion', async () => {
       await openLayout(DatabaseViewLayout.Grid);
 
       expect(screen.queryByTestId(`database-layout-option-${DatabaseViewLayout.Dashboard}`)).toBeNull();
@@ -338,7 +318,6 @@ describe('database Layout', () => {
     });
 
     it('still reads Dashboard for a Dashboard view', async () => {
-      mockCreationEnabled = true;
       const trigger = await openLayout(DatabaseViewLayout.Dashboard);
       const currentOption = screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Dashboard}`);
 

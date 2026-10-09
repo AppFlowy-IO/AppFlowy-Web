@@ -2,7 +2,6 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import { EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED } from '@/application/constants';
 import { useDatabaseContext } from '@/application/database-yjs/context';
 import { assertDatabaseViewCapacity } from '@/application/database-yjs/database-view-capacity';
 import { DATABASE_VIEW_LAYOUT_TO_VIEW_LAYOUT } from '@/application/database-yjs/database-view-doc-ops';
@@ -174,16 +173,12 @@ export function useAddDatabaseViewMenu({
     { layout: DatabaseViewLayout.Grid, viewLayout: ViewLayout.Grid, label: t('grid.menuName') },
     { layout: DatabaseViewLayout.Board, viewLayout: ViewLayout.Board, label: t('board.menuName') },
     { layout: DatabaseViewLayout.Calendar, viewLayout: ViewLayout.Calendar, label: t('calendar.menuName') },
-    ...(EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED
-      ? [
-          {
-            layout: DatabaseViewLayout.Timeline,
-            viewLayout: ViewLayout.Timeline,
-            label: t('timeline.menuName', { defaultValue: 'Timeline' }),
-            testId: 'add-timeline-view-button',
-          },
-        ]
-      : []),
+    {
+      layout: DatabaseViewLayout.Timeline,
+      viewLayout: ViewLayout.Timeline,
+      label: t('timeline.menuName', { defaultValue: 'Timeline' }),
+      testId: 'add-timeline-view-button',
+    },
     ...(canCreateDashboard
       ? [
           {
@@ -196,16 +191,12 @@ export function useAddDatabaseViewMenu({
         ]
       : []),
     { layout: DatabaseViewLayout.Chart, viewLayout: ViewLayout.Chart, label: t('chart.menuName') },
-    ...(EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED
-      ? [
-          {
-            layout: DatabaseViewLayout.Form,
-            viewLayout: ViewLayout.Form,
-            label: t('form.builderName', { defaultValue: 'Form builder' }),
-            testId: 'add-form-view-option',
-          },
-        ]
-      : []),
+    {
+      layout: DatabaseViewLayout.Form,
+      viewLayout: ViewLayout.Form,
+      label: t('form.builderName', { defaultValue: 'Form builder' }),
+      testId: 'add-form-view-option',
+    },
     {
       layout: DatabaseViewLayout.List,
       viewLayout: ViewLayout.List,

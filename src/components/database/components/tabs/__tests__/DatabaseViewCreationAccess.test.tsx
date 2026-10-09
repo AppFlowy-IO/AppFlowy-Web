@@ -25,10 +25,6 @@ const emitter: AppEventEmitter = new EventEmitter();
 emitter.webSocketReadyState = 1;
 let mockWorkspaceId = '';
 
-jest.mock('@/application/constants', () => ({
-  ...jest.requireActual('@/application/constants'),
-  EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED: true,
-}));
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key }),
 }));
@@ -122,10 +118,10 @@ describe.each(['page', 'view'] as const)('Database %s creation menu', (surface) 
     jest.clearAllMocks();
     mockRole = Role.Member;
     emitter.webSocketReadyState = 1;
-    mockGetSubscriptions.mockResolvedValue([]);
+    mockGetSubscriptions.mockReset().mockResolvedValue([]);
     mockAddPage.mockReset().mockResolvedValue({ view_id: 'created-page' });
     mockAddView.mockReset().mockResolvedValue('created-view');
-    mockQuota.mockResolvedValue({ can_create_form: true, can_create_chart: true });
+    mockQuota.mockReset().mockResolvedValue({ can_create_form: true, can_create_chart: true });
     mockCheckout.mockResolvedValue('https://checkout.example/pro');
     updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), {
       status: 'available',
@@ -214,6 +210,34 @@ describe.each(['page', 'view'] as const)('Database %s creation menu', (surface) 
   );
 
   if (surface === 'view') {
+    it('reuses the Timeline result immediately while checking billing again on every open', async () => {
+      mockWorkspaceId = 'view-reopen-billing-cache';
+      mockRole = Role.Owner;
+      mockGetSubscriptions.mockResolvedValue([
+        { plan: SubscriptionPlan.Pro, currency: 'USD', price_cents: 1000, recurring_interval: SubscriptionInterval.Month },
+      ]);
+      openMenu();
+      await waitFor(() => expect(item('timeline').hasAttribute('data-disabled')).toBe(false));
+      expect(within(item('timeline')).queryByLabelText('Pro')).toBeNull();
+
+      for (let opening = 2; opening <= 3; opening += 1) {
+        fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+        await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+        let resolve!: (value: unknown[]) => void;
+
+        mockGetSubscriptions.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
+        fireEvent.keyDown(screen.getByTestId('add-view-button'), { key: 'ArrowDown' });
+        expect(item('timeline').hasAttribute('data-disabled')).toBe(false);
+        expect(within(item('timeline')).queryByLabelText('Pro')).toBeNull();
+        expect(screen.queryByText('databaseViewCreation.checking')).toBeNull();
+        await waitFor(() => expect(mockGetSubscriptions).toHaveBeenCalledTimes(opening));
+        await act(async () => resolve(opening === 3 ? [] : [{ plan: SubscriptionPlan.Pro }]));
+      }
+
+      expect(within(item('timeline')).getByLabelText('Pro')).toBeTruthy();
+      expect(mockAddView).not.toHaveBeenCalled();
+    });
+
     it('keeps plan comparison open when the add button unmounts before the handoff settles', async () => {
       mockWorkspaceId = 'view-plan-comparison-unmount';
       mockRole = Role.Owner;
@@ -318,10 +342,9 @@ describe.each(['page', 'view'] as const)('Database %s creation menu', (surface) 
     act(() => {
       emitter.emit(APP_EVENTS.FOLDER_OUTLINE_CHANGED);
     });
-    // Desktop parity: the known Form crown survives the refresh, while the stale
-    // Chart allowance stays disabled until the server confirms it again.
+    // Keep the confirmed menu state visible while the new quotas load.
     expect(within(form).getByLabelText('Pro')).toBeTruthy();
-    expect(chart.hasAttribute('data-disabled')).toBe(true);
+    expect(chart.hasAttribute('data-disabled')).toBe(false);
     await waitFor(() => expect(within(chart).getByLabelText('Pro')).toBeTruthy());
     expect(within(form).queryByLabelText('Pro')).toBeNull();
     expect(mockGetSubscriptions).toHaveBeenCalledTimes(initialSubscriptionReads);
