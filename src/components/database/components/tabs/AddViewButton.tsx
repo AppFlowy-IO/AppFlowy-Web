@@ -2,7 +2,6 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import { EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED } from '@/application/constants';
 import { useDatabaseContext } from '@/application/database-yjs/context';
 import { useAddDatabaseView } from '@/application/database-yjs/dispatch';
 import { DatabaseViewLayout, ViewLayout } from '@/application/types';
@@ -125,27 +124,19 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
     { layout: DatabaseViewLayout.Grid, viewLayout: ViewLayout.Grid, name: t('grid.menuName') },
     { layout: DatabaseViewLayout.Board, viewLayout: ViewLayout.Board, name: t('board.menuName') },
     { layout: DatabaseViewLayout.Calendar, viewLayout: ViewLayout.Calendar, name: t('calendar.menuName') },
-    ...(EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED
-      ? [
-          {
-            layout: DatabaseViewLayout.Timeline,
-            viewLayout: ViewLayout.Timeline,
-            name: t('timeline.menuName', { defaultValue: 'Timeline' }),
-            testId: 'add-timeline-view-button',
-          },
-        ]
-      : []),
+    {
+      layout: DatabaseViewLayout.Timeline,
+      viewLayout: ViewLayout.Timeline,
+      name: t('timeline.menuName', { defaultValue: 'Timeline' }),
+      testId: 'add-timeline-view-button',
+    },
     { layout: DatabaseViewLayout.Chart, viewLayout: ViewLayout.Chart, name: t('chart.menuName') },
-    ...(EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED
-      ? [
-          {
-            layout: DatabaseViewLayout.Form,
-            viewLayout: ViewLayout.Form,
-            name: t('form.builderName', { defaultValue: 'Form builder' }),
-            testId: 'add-form-view-option',
-          },
-        ]
-      : []),
+    {
+      layout: DatabaseViewLayout.Form,
+      viewLayout: ViewLayout.Form,
+      name: t('form.builderName', { defaultValue: 'Form builder' }),
+      testId: 'add-form-view-option',
+    },
     {
       layout: DatabaseViewLayout.List,
       viewLayout: ViewLayout.List,

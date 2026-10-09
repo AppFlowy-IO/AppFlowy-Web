@@ -200,9 +200,6 @@ export default defineConfig(async ({ command, mode }) => {
   return {
     define: {
       __APPFLOWY_WEB_VERSION__: JSON.stringify(webClientVersion),
-      'process.env.EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED': JSON.stringify(
-        env.EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED ?? 'false'
-      ),
     },
     plugins: [
       react(),

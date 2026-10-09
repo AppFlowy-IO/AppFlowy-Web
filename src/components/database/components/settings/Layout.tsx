@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import { EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED } from '@/application/constants';
 import { useDatabaseViewId } from '@/application/database-yjs';
 import { useDatabaseContext } from '@/application/database-yjs/context';
 import { useUpdateDatabaseLayout } from '@/application/database-yjs/dispatch';
@@ -30,7 +29,7 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
   const { getAction } = useDatabaseViewCreation({
     workspaceId,
     getSubscriptions,
-    enabled: open && EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED,
+    enabled: open,
   });
   const timelineAction = getAction(ViewLayout.Timeline);
   const viewId = useDatabaseViewId();
@@ -49,14 +48,10 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
         value: DatabaseViewLayout.Calendar,
         label: t('calendar.menuName'),
       },
-      ...(EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED || currentLayout === DatabaseViewLayout.Timeline
-        ? [
-            {
-              value: DatabaseViewLayout.Timeline,
-              label: t('timeline.menuName', { defaultValue: 'Timeline' }),
-            },
-          ]
-        : []),
+      {
+        value: DatabaseViewLayout.Timeline,
+        label: t('timeline.menuName', { defaultValue: 'Timeline' }),
+      },
       ...(isSelfHosted || currentLayout === DatabaseViewLayout.Chart
         ? [
             {
@@ -65,7 +60,7 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
             },
           ]
         : []),
-      ...((isSelfHosted && EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED) || currentLayout === DatabaseViewLayout.Form
+      ...(isSelfHosted || currentLayout === DatabaseViewLayout.Form
         ? [
             {
               value: DatabaseViewLayout.Form,

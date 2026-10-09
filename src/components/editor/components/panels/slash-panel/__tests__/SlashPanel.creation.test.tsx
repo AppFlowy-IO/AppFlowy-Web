@@ -27,10 +27,6 @@ const mockEditorContext = {
   createDatabaseView: mockCreateDatabaseView,
 };
 
-jest.mock('@/application/constants', () => ({
-  ...jest.requireActual('@/application/constants'),
-  EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED: true,
-}));
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: mockTranslate }) }));
 jest.mock('slate-react', () => ({
   ...jest.requireActual('slate-react'),

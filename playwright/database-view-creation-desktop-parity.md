@@ -15,10 +15,10 @@ when disconnected. Workspace permissions still apply normally.
 | Chart/Timeline and linked variants preserve slash text and editor content on click/Enter | Same BDD scenario; `SlashPanel.creation.test.tsx` |
 | Owner crowns; members/guests disabled without crowns | `DatabaseViewCreationAccess.test.tsx`; `useDatabaseViewCreation.test.tsx` |
 | Loading/error state has no crown; quotas update while the menu remains open | Same menu and hook tests |
-| Known crowns survive slow/failed refreshes; stale allowances stay disabled until confirmed; disconnect clears the snapshot | `useDatabaseViewCreation.test.tsx`; `DatabaseViewCreationAccess.test.tsx` |
+| Confirmed allowances and crowns survive background refreshes and failures; disconnect clears the snapshot | `useDatabaseViewCreation.test.tsx`; `DatabaseViewCreationAccess.test.tsx` |
 | Blocked attempts toast the reason and refetch status; per-layout owner upgrade messages | `useDatabaseViewCreation.test.tsx` |
 | Upgrade menus hand off to plan comparison without checkout; clicking Pro starts monthly checkout directly without a billing-period dialog | `DatabaseViewCreationAccess.test.tsx`; `bdd/features/database/form-chart-quota.feature` |
-| A reopened menu never trusts a remembered allowance; e2e helpers wait for an enabled, crown-free item | `useDatabaseViewCreation.test.tsx`; `support/view-creation-availability.ts` |
+| Reopened and remounted menus show cached plan/quota values immediately, then apply background refreshes; e2e helpers wait for an enabled, crown-free item | `useDatabaseViewCreation.test.tsx`; `support/view-creation-availability.ts` |
 | Self-hosted creation online/offline, beyond hosted allowances, with no billing/quota reads | `DatabaseViewCreationAccess.test.tsx` |
 | Self-hosted local Form/Chart conversion; hosted conversion cannot bypass server admission | `Layout.test.tsx`; `useAddDatabaseView.test.tsx` |
 | Shared billing requests/TTL, event invalidation, no idle polling, account/workspace isolation | `useDatabaseViewCreation.test.tsx` |
@@ -49,13 +49,12 @@ substitutes mocked quotas or silently skips those checks.
 
 ## Run
 
-Use a Web build with `EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED=true` and a
-hosted-mode test server that implements the creation-status endpoint and enforces
+Use a hosted-mode test server that implements the creation-status endpoint and enforces
 the Form/Chart allowances. Existing auth helper credentials and API URLs apply.
 For an isolated dev server, without modifying a running instance:
 
 ```sh
-EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED=true pnpm exec vite --port 3011 --strictPort
+pnpm exec vite --port 3011 --strictPort
 ```
 
 In another terminal:

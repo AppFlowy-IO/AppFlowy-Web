@@ -10,20 +10,12 @@ import { updateServerInfo } from '@/utils/server-info';
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 
 const mockAddView = jest.fn();
-let mockExperimentalDatabaseViewCreationEnabled = false;
 
 jest.mock('@/components/app/hooks/useDatabaseViewCreation', () => ({
   useDatabaseViewCreation: () => ({
     getAction: () => ({ type: 'create' }),
     checkCreation: () => true,
   }),
-}));
-
-jest.mock('@/application/constants', () => ({
-  ...jest.requireActual('@/application/constants'),
-  get EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED() {
-    return mockExperimentalDatabaseViewCreationEnabled;
-  },
 }));
 
 jest.mock('@/application/database-yjs/dispatch', () => ({
@@ -82,7 +74,6 @@ describe('AddViewButton', () => {
       status: 'available',
       info: { enable_page_history: true, self_hosted: false },
     });
-    mockExperimentalDatabaseViewCreationEnabled = false;
     mockAddView.mockResolvedValue('list-view-id');
     jest.spyOn(Date, 'now').mockReturnValueOnce(0).mockReturnValueOnce(300);
   });
@@ -95,7 +86,6 @@ describe('AddViewButton', () => {
     const onViewAdded = jest.fn();
     const onAfterAddView = jest.fn();
 
-    mockExperimentalDatabaseViewCreationEnabled = true;
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
     mockAddView.mockRejectedValueOnce({ code: 1076, message: 'Workspace limit reached' });
     render(
@@ -119,7 +109,6 @@ describe('AddViewButton', () => {
     const onAfterAddView = jest.fn();
     const message = 'Creating a Timeline view requires an active Pro plan for this workspace.';
 
-    mockExperimentalDatabaseViewCreationEnabled = true;
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
     mockAddView.mockRejectedValueOnce({ code: 1090, message });
     render(
@@ -268,23 +257,22 @@ describe('AddViewButton', () => {
     expect(nextOnAfterAddView).not.toHaveBeenCalled();
   });
 
-  it('hides Form and Timeline while experimental database view creation is disabled on web', () => {
+  it('shows Form and Timeline creation options by default', () => {
     render(
       <MemoryRouter>
         <AddViewButton databasePageId='database-page-id' onViewAdded={jest.fn()} />
       </MemoryRouter>
     );
 
-    expect(screen.queryByTestId('add-form-view-option')).toBeNull();
-    expect(screen.queryByTestId('add-timeline-view-button')).toBeNull();
+    expect(screen.getByTestId('add-form-view-option')).toBeTruthy();
+    expect(screen.getByTestId('add-timeline-view-button')).toBeTruthy();
     expect(screen.getByTestId('add-list-view-button')).toBeTruthy();
     expect(mockAddView).not.toHaveBeenCalled();
   });
 
-  it('creates a Form without checking a workspace subscription once form creation is enabled', async () => {
+  it('creates a Form view and selects it', async () => {
     const onViewAdded = jest.fn();
 
-    mockExperimentalDatabaseViewCreationEnabled = true;
     mockAddView.mockResolvedValue('form-view-id');
     render(
       <MemoryRouter>

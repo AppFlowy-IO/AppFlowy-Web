@@ -6,16 +6,9 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/compon
 import Layout from '../Layout';
 
 const mockUpdateLayout = jest.fn();
-let mockCreationEnabled = false;
 let mockSelfHosted = false;
 let mockTimelineAllowed = true;
 
-jest.mock('@/application/constants', () => ({
-  ...jest.requireActual('@/application/constants'),
-  get EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED() {
-    return mockCreationEnabled;
-  },
-}));
 jest.mock('@/application/database-yjs/context', () => ({ useDatabaseContext: () => ({ workspaceId: 'workspace' }) }));
 jest.mock('@/components/app/hooks/useServerInfo', () => ({ useServerHostingMode: () => mockSelfHosted ? 'self-hosted' : 'cloud' }));
 jest.mock('@/components/app/hooks/useDatabaseViewCreation', () => ({ useDatabaseViewCreation: () => ({
@@ -46,17 +39,10 @@ async function openLayout(currentLayout: DatabaseViewLayout) {
 
 describe('database Layout', () => {
   beforeEach(() => {
-    mockCreationEnabled = false;
     mockSelfHosted = false;
     mockTimelineAllowed = true;
     jest.clearAllMocks();
     mockUpdateLayout.mockReset();
-  });
-
-  it('hides Timeline conversion when web creation is disabled', async () => {
-    await openLayout(DatabaseViewLayout.Grid);
-
-    expect(screen.queryByTestId(`database-layout-option-${DatabaseViewLayout.Timeline}`)).toBeNull();
   });
 
   it('keeps the current Timeline label and selected option without rewriting its layout', async () => {
@@ -76,8 +62,7 @@ describe('database Layout', () => {
     expect(mockUpdateLayout).toHaveBeenCalledWith(DatabaseViewLayout.Grid);
   });
 
-  it('allows Timeline conversion when web creation is enabled', async () => {
-    mockCreationEnabled = true;
+  it('allows Timeline conversion by default', async () => {
     await openLayout(DatabaseViewLayout.Grid);
     fireEvent.click(screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Timeline}`));
 
@@ -99,7 +84,6 @@ describe('database Layout', () => {
   });
 
   it('blocks Timeline conversion when creation requires Pro', async () => {
-    mockCreationEnabled = true;
     mockTimelineAllowed = false;
     await openLayout(DatabaseViewLayout.Grid);
     const timeline = screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Timeline}`);
@@ -110,7 +94,6 @@ describe('database Layout', () => {
   });
 
   it.each([DatabaseViewLayout.Form, DatabaseViewLayout.Chart])('allows self-hosted conversion to %s', async (layout) => {
-    mockCreationEnabled = true;
     mockSelfHosted = true;
     await openLayout(DatabaseViewLayout.Grid);
     fireEvent.click(screen.getByTestId(`database-layout-option-${layout}`));

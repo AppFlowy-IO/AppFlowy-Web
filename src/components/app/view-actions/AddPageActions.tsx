@@ -2,7 +2,6 @@ import { ReactNode, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import { EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED } from '@/application/constants';
 import { createDatabaseFeedPageViaGrid } from '@/application/database-yjs/feed-layout';
 import { createDatabaseGalleryPageViaGrid } from '@/application/database-yjs/gallery-layout';
 import { createDatabaseListPageViaGrid } from '@/application/database-yjs/list-layout';
@@ -230,19 +229,15 @@ function AddPageActions({ view, onImportClick, onClose }: {
           void handleAddPage(ViewLayout.Calendar, t('document.plugins.database.newDatabase'));
         },
       },
-      ...(EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED
-        ? [
-            {
-              label: t('timeline.menuName', { defaultValue: 'Timeline' }),
-              icon: <ViewIcon layout={ViewLayout.Timeline} size={'medium'} />,
-              testId: 'add-timeline-page-button',
-              layout: ViewLayout.Timeline,
-              onSelect: () => {
-                void handleAddPage(ViewLayout.Timeline, t('document.plugins.database.newDatabase'));
-              },
-            },
-          ]
-        : []),
+      {
+        label: t('timeline.menuName', { defaultValue: 'Timeline' }),
+        icon: <ViewIcon layout={ViewLayout.Timeline} size={'medium'} />,
+        testId: 'add-timeline-page-button',
+        layout: ViewLayout.Timeline,
+        onSelect: () => {
+          void handleAddPage(ViewLayout.Timeline, t('document.plugins.database.newDatabase'));
+        },
+      },
       ...(aiEnabled
         ? [
             {
@@ -264,17 +259,13 @@ function AddPageActions({ view, onImportClick, onClose }: {
           void handleAddPage(ViewLayout.Chart, t('document.plugins.database.newDatabase'));
         },
       },
-      ...(EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED
-        ? [
-            {
-              label: t('form.menuName'),
-              icon: <ViewIcon layout={ViewLayout.Form} size={'small'} />,
-              testId: 'add-form-button',
-              layout: ViewLayout.Form,
-              onSelect: () => handleAddPage(ViewLayout.Form, t('document.plugins.database.newDatabase')),
-            },
-          ]
-        : []),
+      {
+        label: t('form.menuName'),
+        icon: <ViewIcon layout={ViewLayout.Form} size={'small'} />,
+        testId: 'add-form-button',
+        layout: ViewLayout.Form,
+        onSelect: () => handleAddPage(ViewLayout.Form, t('document.plugins.database.newDatabase')),
+      },
       {
         label: t('list.menuName'),
         icon: <ViewIcon layout={ViewLayout.List} size={'small'} />,

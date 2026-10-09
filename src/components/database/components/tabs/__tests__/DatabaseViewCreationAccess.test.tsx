@@ -25,10 +25,6 @@ const emitter: AppEventEmitter = new EventEmitter();
 emitter.webSocketReadyState = 1;
 let mockWorkspaceId = '';
 
-jest.mock('@/application/constants', () => ({
-  ...jest.requireActual('@/application/constants'),
-  EXPERIMENTAL_DATABASE_VIEW_CREATION_ENABLED: true,
-}));
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key }),
 }));
@@ -312,10 +308,9 @@ describe.each(['page', 'view'] as const)('Database %s creation menu', (surface) 
     act(() => {
       emitter.emit(APP_EVENTS.FOLDER_OUTLINE_CHANGED);
     });
-    // Desktop parity: the known Form crown survives the refresh, while the stale
-    // Chart allowance stays disabled until the server confirms it again.
+    // Keep the confirmed menu state visible while the new quotas load.
     expect(within(form).getByLabelText('Pro')).toBeTruthy();
-    expect(chart.hasAttribute('data-disabled')).toBe(true);
+    expect(chart.hasAttribute('data-disabled')).toBe(false);
     await waitFor(() => expect(within(chart).getByLabelText('Pro')).toBeTruthy());
     expect(within(form).queryByLabelText('Pro')).toBeNull();
     expect(mockGetSubscriptions).toHaveBeenCalledTimes(1);
