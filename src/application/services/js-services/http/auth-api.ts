@@ -31,6 +31,8 @@ export interface ServerInfo {
   self_hosted?: boolean;
   /** Maximum raw Yjs update accepted by the realtime WebSocket fast lane. */
   max_update_bytes?: number;
+  /** Maximum actual views in one database, including its primary and dashboard-owned views. */
+  max_dashboard_widgets?: number;
   /**
    * Maximum raw Yjs update accepted by the opt-in HTTP slow lane.
    * Older servers omit this field, which keeps the slow lane disabled.

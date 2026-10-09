@@ -1,0 +1,335 @@
+{
+  "fixture": "layouts/unknown-keys",
+  "version": 1,
+  "encoding": {
+    "bigint": "{\"$bigint\": \"<decimal>\"} is an integer written by a native client (yrs Any::BigInt). A plain JSON number is a JS number (Any::Number). Readers accept both, and every comparison is by numeric value.",
+    "ignoreOnCompare": ["chartType", "xFieldId", "showEmptyValues", "aggregationType", "yFieldId", "dateCondition"],
+    "stored": "The layout-settings map as another (newer) client left it.",
+    "parsed": "Optional. The typed projection every client must read from stored, in the persisted snake_case shape.",
+    "write": "The typed value this client submits for the named top-level keys, in the persisted shape. Each client parses it into its own typed model before writing.",
+    "writtenKeys": "Exactly the top-level keys the write may touch, after removing ignoreOnCompare keys.",
+    "expected": "The stored map after the write. Key order is irrelevant."
+  },
+  "dashboardCases": [
+    {
+      "name": "row, widget and top-level extras survive a width change",
+      "stored": {
+        "rows": [
+          { "id": "r:1", "height": { "$bigint": "360" }, "zz_parity_probe": { "row": "r:1" }, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": { "$bigint": "8" }, "zz_parity_probe": { "widget": "w:1" } },
+            { "id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 4 }
+          ] }
+        ],
+        "global_filters": [],
+        "show_widget_titles": true,
+        "zz_parity_probe": { "from": "newer-app", "version": 99, "list": ["a", "b"], "nested": { "flag": true } }
+      },
+      "write": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 6 },
+            { "id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 6 }
+          ] }
+        ]
+      },
+      "writtenKeys": ["rows"],
+      "expected": {
+        "rows": [
+          { "id": "r:1", "height": 360, "zz_parity_probe": { "row": "r:1" }, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 6, "zz_parity_probe": { "widget": "w:1" } },
+            { "id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 6 }
+          ] }
+        ],
+        "global_filters": [],
+        "show_widget_titles": true,
+        "zz_parity_probe": { "from": "newer-app", "version": 99, "list": ["a", "b"], "nested": { "flag": true } }
+      }
+    },
+    {
+      "name": "widget extras follow the widget into another row and rows keep theirs when reordered",
+      "stored": {
+        "rows": [
+          { "id": "r:1", "height": 360, "zz_parity_probe": { "row": "r:1" }, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 6, "zz_parity_probe": { "widget": "w:1" } },
+            { "id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 6 }
+          ] },
+          { "id": "r:2", "height": 480, "zz_parity_probe": { "row": "r:2" }, "widgets": [
+            { "id": "w:3", "view_id": "v:3", "database_id": "db:2", "width": 12, "zz_parity_probe": { "widget": "w:3" } }
+          ] }
+        ]
+      },
+      "write": {
+        "rows": [
+          { "id": "r:2", "height": 480, "widgets": [
+            { "id": "w:3", "view_id": "v:3", "database_id": "db:2", "width": 6 },
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 6 }
+          ] },
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 12 }
+          ] }
+        ]
+      },
+      "writtenKeys": ["rows"],
+      "expected": {
+        "rows": [
+          { "id": "r:2", "height": 480, "zz_parity_probe": { "row": "r:2" }, "widgets": [
+            { "id": "w:3", "view_id": "v:3", "database_id": "db:2", "width": 6, "zz_parity_probe": { "widget": "w:3" } },
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 6, "zz_parity_probe": { "widget": "w:1" } }
+          ] },
+          { "id": "r:1", "height": 360, "zz_parity_probe": { "row": "r:1" }, "widgets": [
+            { "id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 12 }
+          ] }
+        ]
+      }
+    },
+    {
+      "name": "a removed row takes its extras with it and a new row starts without any",
+      "stored": {
+        "rows": [
+          { "id": "r:1", "height": 360, "zz_parity_probe": { "row": "r:1" }, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 12 }
+          ] },
+          { "id": "r:2", "height": 360, "zz_parity_probe": { "row": "r:2" }, "widgets": [
+            { "id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 12, "zz_parity_probe": { "widget": "w:2" } }
+          ] }
+        ]
+      },
+      "write": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 12 }
+          ] },
+          { "id": "r:9", "height": 360, "widgets": [
+            { "id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 12 }
+          ] }
+        ]
+      },
+      "writtenKeys": ["rows"],
+      "expected": {
+        "rows": [
+          { "id": "r:1", "height": 360, "zz_parity_probe": { "row": "r:1" }, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 12 }
+          ] },
+          { "id": "r:9", "height": 360, "widgets": [
+            { "id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 12, "zz_parity_probe": { "widget": "w:2" } }
+          ] }
+        ]
+      }
+    },
+    {
+      "name": "entries without ids carry over through their positional ids",
+      "stored": {
+        "rows": [
+          { "height": 360, "zz_parity_probe": { "row": "r:0" }, "widgets": [
+            { "view_id": "v:1", "database_id": "db:1", "width": 12, "zz_parity_probe": { "widget": "w:0:0" } }
+          ] }
+        ]
+      },
+      "parsed": {
+        "rows": [
+          { "id": "r:0", "height": 360, "widgets": [
+            { "id": "w:0:0", "view_id": "v:1", "database_id": "db:1", "width": 12 }
+          ] }
+        ],
+        "global_filters": [],
+        "show_widget_titles": true
+      },
+      "write": {
+        "rows": [
+          { "id": "r:0", "height": 480, "widgets": [
+            { "id": "w:0:0", "view_id": "v:1", "database_id": "db:1", "width": 12 }
+          ] }
+        ]
+      },
+      "writtenKeys": ["rows"],
+      "expected": {
+        "rows": [
+          { "id": "r:0", "height": 480, "zz_parity_probe": { "row": "r:0" }, "widgets": [
+            { "id": "w:0:0", "view_id": "v:1", "database_id": "db:1", "width": 12, "zz_parity_probe": { "widget": "w:0:0" } }
+          ] }
+        ]
+      }
+    },
+    {
+      "name": "known keys always come from the writer, never from the stored object",
+      "stored": {
+        "rows": [
+          { "id": "r:1", "height": "tall", "zz_parity_probe": { "row": "r:1" }, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": "wide", "zz_parity_probe": { "widget": "w:1" } }
+          ] }
+        ]
+      },
+      "parsed": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 12 }
+          ] }
+        ],
+        "global_filters": [],
+        "show_widget_titles": true
+      },
+      "write": {
+        "rows": [
+          { "id": "r:1", "height": 400, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 12 }
+          ] }
+        ]
+      },
+      "writtenKeys": ["rows"],
+      "expected": {
+        "rows": [
+          { "id": "r:1", "height": 400, "zz_parity_probe": { "row": "r:1" }, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 12, "zz_parity_probe": { "widget": "w:1" } }
+          ] }
+        ]
+      }
+    },
+    {
+      "name": "global filter extras survive a condition change; a new filter has none; a deleted filter's go",
+      "stored": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 12 }
+          ] }
+        ],
+        "global_filters": [
+          { "id": "gf:1", "name": "Done", "ty": { "$bigint": "5" }, "condition": { "$bigint": "1" }, "content": "", "targets": { "db:1": "f:done" }, "target_order": ["db:1"], "zz_parity_probe": { "filter": "gf:1" } },
+          { "id": "gf:2", "name": "Stage", "ty": 3, "condition": 0, "content": "opt:a", "targets": { "db:1": "f:stage" }, "target_order": ["db:1"], "zz_parity_probe": { "filter": "gf:2" } }
+        ]
+      },
+      "write": {
+        "global_filters": [
+          { "id": "gf:1", "name": "Done", "ty": 5, "condition": 0, "content": "", "targets": { "db:1": "f:done" }, "target_order": ["db:1"] },
+          { "id": "gf:3", "name": "Urgent", "ty": 5, "condition": 0, "content": "", "targets": { "db:1": "f:urgent" }, "target_order": ["db:1"] }
+        ]
+      },
+      "writtenKeys": ["global_filters"],
+      "expected": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 12 }
+          ] }
+        ],
+        "global_filters": [
+          { "id": "gf:1", "name": "Done", "ty": 5, "condition": 0, "content": "", "targets": { "db:1": "f:done" }, "target_order": ["db:1"], "zz_parity_probe": { "filter": "gf:1" } },
+          { "id": "gf:3", "name": "Urgent", "ty": 5, "condition": 0, "content": "", "targets": { "db:1": "f:urgent" }, "target_order": ["db:1"] }
+        ]
+      }
+    },
+    {
+      "name": "a write equal to the stored value writes nothing",
+      "stored": {
+        "rows": [
+          { "id": "r:1", "height": { "$bigint": "360" }, "zz_parity_probe": { "row": "r:1" }, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": { "$bigint": "12" }, "zz_parity_probe": { "widget": "w:1" } }
+          ] }
+        ],
+        "global_filters": [
+          { "id": "gf:1", "name": "Done", "ty": 5, "condition": 1, "content": "", "targets": { "db:1": "f:done" }, "target_order": ["db:1"], "zz_parity_probe": { "filter": "gf:1" } }
+        ],
+        "show_widget_titles": false,
+        "zz_parity_probe": { "from": "newer-app", "version": 99, "list": ["a", "b"], "nested": { "flag": true } }
+      },
+      "write": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 12 }
+          ] }
+        ],
+        "global_filters": [
+          { "id": "gf:1", "name": "Done", "ty": 5, "condition": 1, "content": "", "targets": { "db:1": "f:done" }, "target_order": ["db:1"] }
+        ],
+        "show_widget_titles": false
+      },
+      "writtenKeys": [],
+      "expected": {
+        "rows": [
+          { "id": "r:1", "height": 360, "zz_parity_probe": { "row": "r:1" }, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 12, "zz_parity_probe": { "widget": "w:1" } }
+          ] }
+        ],
+        "global_filters": [
+          { "id": "gf:1", "name": "Done", "ty": 5, "condition": 1, "content": "", "targets": { "db:1": "f:done" }, "target_order": ["db:1"], "zz_parity_probe": { "filter": "gf:1" } }
+        ],
+        "show_widget_titles": false,
+        "zz_parity_probe": { "from": "newer-app", "version": 99, "list": ["a", "b"], "nested": { "flag": true } }
+      }
+    },
+    {
+      "name": "absent keys read as defaults and a title toggle writes only its own key",
+      "stored": {
+        "zz_parity_probe": { "from": "newer-app", "version": 99, "list": ["a", "b"], "nested": { "flag": true } }
+      },
+      "parsed": { "rows": [], "global_filters": [], "show_widget_titles": true },
+      "write": { "show_widget_titles": false },
+      "writtenKeys": ["show_widget_titles"],
+      "expected": {
+        "zz_parity_probe": { "from": "newer-app", "version": 99, "list": ["a", "b"], "nested": { "flag": true } },
+        "show_widget_titles": false
+      }
+    }
+  ],
+  "chartCases": [
+    {
+      "name": "unknown chart keys and unknown enum strings survive a chart type change",
+      "stored": {
+        "chart_type": { "$bigint": "0" },
+        "x_field_id": "f:stage",
+        "show_empty_values": true,
+        "aggregation_type": { "$bigint": "0" },
+        "y_field_id": "",
+        "date_condition": { "$bigint": "3" },
+        "cumulative": false,
+        "numberFormat": "auto",
+        "titleText": "",
+        "zz_parity_probe": { "from": "newer-app", "version": 99, "list": ["a", "b"], "nested": { "flag": true } },
+        "zz_parity_enum": "neon"
+      },
+      "write": { "chart_type": 3 },
+      "writtenKeys": ["chart_type"],
+      "expected": {
+        "chart_type": 3,
+        "x_field_id": "f:stage",
+        "show_empty_values": true,
+        "aggregation_type": 0,
+        "y_field_id": "",
+        "date_condition": 3,
+        "cumulative": false,
+        "numberFormat": "auto",
+        "titleText": "",
+        "zz_parity_probe": { "from": "newer-app", "version": 99, "list": ["a", "b"], "nested": { "flag": true } },
+        "zz_parity_enum": "neon"
+      }
+    },
+    {
+      "name": "an unknown numberFormat string is not rewritten by an unrelated change",
+      "stored": {
+        "chart_type": { "$bigint": "4" },
+        "x_field_id": "",
+        "show_empty_values": true,
+        "aggregation_type": { "$bigint": "1" },
+        "y_field_id": "f:amount",
+        "date_condition": { "$bigint": "3" },
+        "cumulative": false,
+        "numberFormat": "scientific",
+        "titleText": "Revenue",
+        "zz_parity_probe": { "from": "newer-app", "version": 99, "list": ["a", "b"], "nested": { "flag": true } }
+      },
+      "parsed": { "chart_type": 4, "aggregation_type": 1, "numberFormat": "auto", "titleText": "Revenue" },
+      "write": { "titleText": "Revenue 2026" },
+      "writtenKeys": ["titleText"],
+      "expected": {
+        "chart_type": 4,
+        "x_field_id": "",
+        "show_empty_values": true,
+        "aggregation_type": 1,
+        "y_field_id": "f:amount",
+        "date_condition": 3,
+        "cumulative": false,
+        "numberFormat": "scientific",
+        "titleText": "Revenue 2026",
+        "zz_parity_probe": { "from": "newer-app", "version": 99, "list": ["a", "b"], "nested": { "flag": true } }
+      }
+    }
+  ]
+}

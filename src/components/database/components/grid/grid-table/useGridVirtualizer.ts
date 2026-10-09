@@ -5,10 +5,21 @@ import { PADDING_END, useDatabaseContext } from '@/application/database-yjs';
 import { RenderColumn } from '@/components/database/components/grid/grid-column';
 import { GridColumnType } from '@/components/database/components/grid/grid-column/useRenderFields';
 import { getRenderRowKey, RenderRow, RenderRowType } from '@/components/database/components/grid/grid-row';
+import {
+  DEFAULT_GRID_COLUMN_OVERSCAN,
+  DEFAULT_GRID_ROW_OVERSCAN,
+  useGridOptions,
+} from '@/components/database/grid/useGridContext';
 import { getScrollParent } from '@/components/global-comment/utils';
 import { getPlatform } from '@/utils/platform';
 
 const MIN_HEIGHT = 36;
+/**
+ * A data row measured with its 1px divider (`rowMeasure: 'row'`, a dashboard
+ * widget): a one-line row is 37px, so its measurement matches the estimate and
+ * changes nothing, instead of re-laying out the widget for every row it mounts.
+ */
+const ROW_PITCH_WITH_DIVIDER = MIN_HEIGHT + 1;
 
 export const PADDING_INLINE = getPlatform().isMobile ? 21 : 96;
 
@@ -18,6 +29,11 @@ const logDebug = (..._args: Parameters<typeof console.debug>) => {
 
 export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[]; data: RenderRow[] }) {
   const { isDocumentBlock, paddingStart, paddingEnd } = useDatabaseContext();
+  const {
+    rowMeasure,
+    rowOverscan = DEFAULT_GRID_ROW_OVERSCAN,
+    columnOverscan = DEFAULT_GRID_COLUMN_OVERSCAN,
+  } = useGridOptions();
   const parentRef = useRef<HTMLDivElement | null>(null);
   const parentOffsetRef = useRef<number | null>(null);
   const [parentOffset, setParentOffset] = useState(0);
@@ -143,17 +159,24 @@ export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[];
     updateParentOffset();
   }, [updateParentOffset, data.length]); // Watch data.length for view changes
 
+  // The virtualizer rebuilds every item when `getItemKey` is a new function, and
+  // a new item re-renders its row: keep both key getters stable between renders.
+  const getRowKey = useCallback((index: number) => getRenderRowKey(data[index]), [data]);
   const virtualizer = useVirtualizer({
     count: data.length,
     estimateSize: (index) => {
-      if (data[index]?.type === RenderRowType.GroupHeader) return 44;
-      if (data[index]?.type === RenderRowType.GroupSeparator) return 12;
+      const type = data[index]?.type;
+
+      if (type === RenderRowType.GroupHeader) return 44;
+      if (type === RenderRowType.GroupSeparator) return 12;
+      // Index 0 is the header or a group header: a data row always has its divider.
+      if (rowMeasure === 'row' && type === RenderRowType.Row && index > 0) return ROW_PITCH_WITH_DIVIDER;
       return MIN_HEIGHT;
     },
-    overscan: 10,
+    overscan: rowOverscan,
     scrollMargin: parentOffset,
     getScrollElement,
-    getItemKey: (index) => getRenderRowKey(data[index]),
+    getItemKey: getRowKey,
     paddingStart: 0,
     paddingEnd: isDocumentBlock ? 0 : PADDING_END,
   });
@@ -253,15 +276,16 @@ export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[];
     [getColumn, shouldFill, fillWidth, lastIndex]
   );
 
+  const getColumnKey = useCallback((index: number) => columns[index].fieldId || columns[index].type, [columns]);
   const columnVirtualizer = useVirtualizer({
     horizontal: true,
     count: columns.length,
     getScrollElement: () => parentRef.current,
     estimateSize: getColumnWidth,
-    overscan: 5,
+    overscan: columnOverscan,
     paddingStart: effectivePaddingStart,
     paddingEnd: effectivePaddingEnd,
-    getItemKey: (index) => columns[index].fieldId || columns[index].type,
+    getItemKey: getColumnKey,
   });
 
   return {

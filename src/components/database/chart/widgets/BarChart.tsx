@@ -1,156 +1,191 @@
-import { memo, useMemo, useState } from 'react';
-import {
-  BarChart as RechartsBarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  ResponsiveContainer,
-  Cell,
-  LabelList,
-} from 'recharts';
+import { memo, useMemo } from 'react';
+import { BarChart as RechartsBarChart, CartesianGrid, Customized, ReferenceLine, Tooltip, XAxis, YAxis } from 'recharts';
 
-import { ChartDataItem } from '@/application/database-yjs/chart.type';
+import { CHART_GRID_DASH, ChartDataItem, ChartSeriesData, ChartType } from '@/application/database-yjs/chart.type';
+import { DASHBOARD_CHART_GEOMETRY } from '@/application/database-yjs/dashboard-geometry';
+import { groupedBarWidth } from '@/components/database/chart/hooks/chartSeries';
 
-import { ChartTooltip } from './ChartTooltip';
-import {
-  TooltipState,
-  INITIAL_TOOLTIP_STATE,
-  calculateBarWidth,
-  chartDataEqual,
-  computeValueAxis,
-  formatValue,
-} from './chartUtils';
+import { layoutVerticalCartesian } from './cartesianLayout';
+import { CategoryAnchors, CategoryTick, ValueTick } from './ChartAxisParts';
+import { ChartFrame } from './ChartFrame';
+import { useChartMeasure } from './measureText';
+import { CartesianPlotProps, useCartesianChartModel } from './useCartesianChartModel';
+import { useChartAnimation } from './useReducedMotion';
+import { useSeriesBars } from './useSeriesBars';
 
 interface BarChartWidgetProps {
-  data: ChartDataItem[];
-  onBarClick?: (item: ChartDataItem) => void;
+  /** The series build (WP12): one `__all__` series without a Group by. */
+  data: ChartSeriesData;
+  /** Opens the drill-down of the clicked segment or category band. */
+  onItemClick?: (item: ChartDataItem) => void;
+  /** Fill a dashboard widget card instead of the standalone 400px height. */
+  fill?: boolean;
 }
 
+const { axis, hoverBandRadius } = DASHBOARD_CHART_GEOMETRY;
+
+// Module constants, so Recharts sees the same props on every render.
+const HOVER_BAND = { fill: 'var(--chart-hover-band)', stroke: 'none', radius: hoverBandRadius };
+const renderNoTooltip = () => null;
+/** The 2px gap between grouped bars (WP12 §2.3). */
+const GROUPED_BAR_GAP = 2;
+
 /**
- * Vertical bar chart widget using Recharts
+ * The Recharts tree of the vertical bar chart. Memoized: it renders when the
+ * data, the frame size or the hover band changes, never for a pointer move.
+ * The layout, the tick elements, the segment shapes, the labels and the
+ * margin keep their identity between those renders, so Recharts does not
+ * rebuild its axes.
  */
-function BarChartWidgetImpl({ data, onBarClick }: BarChartWidgetProps) {
-  const [tooltip, setTooltip] = useState<TooltipState>(INITIAL_TOOLTIP_STATE);
-
-  // Y-axis: zero-anchored [min, max] domain + nice ticks. Shared across
-  // BarChart / LineChart / HorizontalBarChart via `computeValueAxis`.
-  const { domain: yAxisDomain, ticks: yAxisTicks } = useMemo(() => computeValueAxis(data), [data]);
-
-  // Calculate bar width based on data count
-  const barWidth = useMemo(() => calculateBarWidth(data.length), [data.length]);
-
-  const handleClick = (item: ChartDataItem) => {
-    if (onBarClick) {
-      onBarClick(item);
-    }
-  };
-
-  const handleMouseEnter = (data: ChartDataItem, index: number, e: React.MouseEvent) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const containerRect = e.currentTarget.closest('.recharts-wrapper')?.getBoundingClientRect();
-
-    if (containerRect) {
-      setTooltip({
-        active: true,
-        item: data,
-        // Center horizontally on the bar
-        x: rect.left + rect.width / 2 - containerRect.left,
-        // Position above the bar top (with offset for value label)
-        y: rect.top - containerRect.top - 20,
-      });
-    }
-  };
-
-  const handleMouseLeave = () => {
-    setTooltip(INITIAL_TOOLTIP_STATE);
-  };
+const BarPlot = memo(function BarPlot({
+  data,
+  items,
+  chartRows,
+  seriesStyle,
+  fills,
+  categoryFills,
+  formatValue,
+  labels,
+  width,
+  height,
+  domain,
+  formatAxis,
+  valueAxisWidth,
+  dataLabelTexts,
+  hoverActive,
+  tooltipTrigger,
+  clickable,
+  animate,
+  onClick,
+  onSegmentClick,
+  onMouseMove,
+  onMouseLeave,
+}: CartesianPlotProps & { valueAxisWidth: number }) {
+  const { measure12 } = useChartMeasure();
+  // No animation while the widget box resizes, nor after it until the data changes (W21).
+  const animation = useChartAnimation(chartRows);
+  const layout = useMemo(
+    () => layoutVerticalCartesian(items, { width, height }, valueAxisWidth, dataLabelTexts, measure12),
+    [items, width, height, valueAxisWidth, dataLabelTexts, measure12]
+  );
+  const margin = useMemo(() => ({ top: layout.marginTop, right: 0, bottom: 0, left: 0 }), [layout.marginTop]);
+  const categoryTick = useMemo(
+    () => <CategoryTick orientation='bottom' rotated={layout.rotated} ticks={layout.ticks} />,
+    [layout.rotated, layout.ticks]
+  );
+  const valueTick = useMemo(() => <ValueTick format={formatAxis} orientation='left' />, [formatAxis]);
+  const anchors = useMemo(() => <CategoryAnchors rects={layout.anchors} />, [layout.anchors]);
+  const barSize = seriesStyle === 'grouped' ? groupedBarWidth(layout.slot, data.series.length) : layout.barWidth;
+  const { bars, stackLabels } = useSeriesBars({
+    data,
+    categoryFills,
+    seriesStyle,
+    fills,
+    labels,
+    visibleLabels: layout.dataLabels,
+    orientation: 'vertical',
+    barSize,
+    clickable,
+    animate: animate && animation,
+    onSegmentClick,
+    formatValue,
+  });
 
   return (
-    <div data-testid='bar-chart-widget' className='relative w-full' style={{ height: '400px' }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <RechartsBarChart
-          data={data}
-          margin={{ top: 24, right: 0, left: 0, bottom: 40 }}
-        >
-          <CartesianGrid
-            vertical={false}
-            stroke="var(--border-primary)"
-            strokeOpacity={0.5}
-          />
-          <XAxis
-            dataKey="label"
-            tick={{ fontSize: 12, fill: 'var(--text-secondary)' }}
-            tickLine={false}
-            axisLine={{ stroke: 'var(--border-primary)' }}
-            interval={0}
-            tickFormatter={(label) => label.length > 15 ? `${label.substring(0, 15)}...` : label}
-          />
-          <YAxis
-            domain={yAxisDomain}
-            ticks={yAxisTicks}
-            tick={{ fontSize: 12, fill: 'var(--text-secondary)' }}
-            tickLine={false}
-            axisLine={{ stroke: 'var(--border-primary)' }}
-            width={40}
-          />
-          <Bar
-            dataKey="value"
-            radius={[4, 4, 0, 0]}
-            cursor="pointer"
-            onClick={(data) => handleClick(data as ChartDataItem)}
-            maxBarSize={barWidth}
-            activeBar={false}
-            onMouseLeave={handleMouseLeave}
-          >
-            {data.map((entry, index) => (
-              <Cell
-                key={`cell-${index}`}
-                fill={entry.color}
-                onMouseEnter={(e) => handleMouseEnter(entry, index, e as unknown as React.MouseEvent)}
-              />
-            ))}
-            <LabelList
-              dataKey="value"
-              position="top"
-              formatter={formatValue}
-              style={{
-                fontSize: 12,
-                fontWeight: 600,
-                fill: 'var(--text-primary)',
-              }}
-            />
-          </Bar>
-        </RechartsBarChart>
-      </ResponsiveContainer>
+    <RechartsBarChart
+      barCategoryGap={0}
+      barGap={GROUPED_BAR_GAP}
+      data={chartRows}
+      height={height}
+      margin={margin}
+      onClick={onClick}
+      onMouseLeave={onMouseLeave}
+      onMouseMove={onMouseMove}
+      stackOffset='sign'
+      width={width}
+    >
+      <CartesianGrid
+        data-parity-id='dash-chart-grid-line'
+        stroke='var(--chart-grid)'
+        strokeDasharray={CHART_GRID_DASH}
+        vertical={false}
+      />
+      <XAxis
+        axisLine={false}
+        dataKey='__key'
+        height={layout.xAxisHeight}
+        interval={0}
+        tick={categoryTick}
+        tickLine={false}
+        tickMargin={4}
+        tickSize={0}
+      />
+      <YAxis
+        allowDataOverflow
+        axisLine={false}
+        domain={domain.domain}
+        interval={0}
+        tick={valueTick}
+        tickLine={false}
+        // The gap `computeYAxisWidth` reserved between the tick text and the plot.
+        tickMargin={axis.tickGap}
+        tickSize={0}
+        ticks={domain.ticks}
+        type='number'
+        width={valueAxisWidth}
+      />
+      <ReferenceLine stroke='var(--chart-grid)' y={0} />
+      <Tooltip
+        active={hoverActive ? undefined : false}
+        content={renderNoTooltip}
+        cursor={HOVER_BAND}
+        isAnimationActive={false}
+        trigger={tooltipTrigger}
+      />
+      {bars}
+      {stackLabels ? <Customized component={stackLabels} /> : null}
+      <Customized component={anchors} />
+    </RechartsBarChart>
+  );
+});
 
-      {/* Fixed position tooltip above the bar */}
-      {tooltip.active && tooltip.item && (
-        <div
-          className="absolute pointer-events-none z-10"
-          style={{
-            left: tooltip.x,
-            top: tooltip.y,
-            transform: 'translate(-50%, -100%)',
-          }}
-        >
-          <ChartTooltip
-            label={tooltip.item.label}
-            value={tooltip.item.value}
-            color={tooltip.item.color}
-          />
-        </div>
+/**
+ * Vertical bar chart (WP10 §2.1, WP12 §2.3): measured value axis with nice
+ * ticks and no axis line, dotted grid and a solid zero line, thin bars with a
+ * 2px value-end radius, fitted category labels, data labels, a hover band and
+ * a portal tooltip. With a Group by the bars stack (series 0 at the top),
+ * stand side by side, or fill the axis as percentages.
+ */
+function BarChartWidgetImpl({ data, onItemClick, fill = false }: BarChartWidgetProps) {
+  const model = useCartesianChartModel(data, ChartType.Bar, onItemClick);
+
+  return (
+    <ChartFrame
+      fill={fill}
+      frameHandlers={model.frameHandlers}
+      legend={model.legend}
+      pointer={model.pointer}
+      rootAttributes={model.rootAttributes}
+      rows={model.rows}
+      testId='bar-chart-widget'
+      tooltip={model.tooltip}
+      truncationCount={model.truncationCount}
+    >
+      {(size) => (
+        <BarPlot
+          {...model.plot}
+          dataLabelTexts={model.dataLabelTexts}
+          height={size.height}
+          valueAxisWidth={model.valueAxisWidth}
+          width={size.width}
+        />
       )}
-    </div>
+    </ChartFrame>
   );
 }
 
-// Memoized with a content-equality comparator so Yjs hydration micro-batches
-// that produce the same final chart don't rebuild the recharts SVG tree.
-// `onBarClick` is `useCallback`-stable in `ChartProvider`, so reference
-// equality is sufficient there.
-export const BarChartWidget = memo(BarChartWidgetImpl, (prev, next) => {
-  return prev.onBarClick === next.onBarClick && chartDataEqual(prev.data, next.data);
-});
+// `useChartData` hands over a new build only when the content changed and
+// `ChartProvider` a stable `onItemClick`, so the default shallow comparison is enough.
+export const BarChartWidget = memo(BarChartWidgetImpl);
 
 export default BarChartWidget;

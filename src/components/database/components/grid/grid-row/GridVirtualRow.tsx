@@ -8,7 +8,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useReadOnly, useRowData, useSortsSelector } from '@/application/database-yjs';
 import { YjsDatabaseKey } from '@/application/types';
 import { DropRowIndicator } from '@/components/database/components/drag-and-drop/DropRowIndicator';
-import { HoverControls } from '@/components/database/components/grid/controls/HoverControls';
+import { HOVER_CONTROLS_WIDTH, HoverControls } from '@/components/database/components/grid/controls/HoverControls';
 import {
   GridDragState,
   ItemState,
@@ -23,15 +23,21 @@ import { ClearSortingConfirm } from '@/components/database/components/sorts/Clea
 import {
   useGridContext,
   useGridInteractionActions,
+  useGridOptions,
   useIsGridRowActive,
 } from '@/components/database/grid/useGridContext';
 import { cn } from '@/lib/utils';
 
 const idleState: ItemState = { type: GridDragState.IDLE };
 
+/**
+ * One row of the grid. It takes its index and its own render row, not the
+ * virtualizer's item or the whole stream: both are new whenever rows are
+ * added, and a row that did not change keeps its render then.
+ */
 function GridVirtualRow({
-  row,
-  data,
+  rowIndex,
+  rowData,
   columns,
   columnItems,
   totalSize,
@@ -40,19 +46,18 @@ function GridVirtualRow({
 }: {
   isSticky?: boolean;
   columnItems: VirtualItem[];
-  row: VirtualItem;
+  rowIndex: number;
+  rowData: RenderRow;
   totalSize: number;
-  data: RenderRow[];
   columns: RenderColumn[];
   onResizeColumnStart?: (fieldId: string, element: HTMLElement) => void;
 }) {
   const { registerRow, rowInstanceId: instanceId } = useGridDragContext();
-  const rowIndex = row.index;
-  const rowData = data[rowIndex];
   const rowId = rowData.rowId as string;
   const rowKey = getRenderRowKey(rowData);
   const rowType = rowData.type;
   const { isGrouped, rowResizeStore } = useGridContext();
+  const { rowMeasure } = useGridOptions();
   const { setHoverRowKey } = useGridInteractionActions();
   const hasActiveCell = useIsGridRowActive(rowKey);
   const databaseRow = useRowData(rowId);
@@ -147,64 +152,71 @@ function GridVirtualRow({
         <GridVirtualColumn
           key={column.key}
           columns={columns}
-          data={data}
-          row={row}
+          rowIndex={rowIndex}
+          rowData={rowData}
           column={column}
           onResizeColumnStart={onResizeColumnStart}
         />
       );
     });
-  }, [columnItems, columns, data, row, onResizeColumnStart]);
+  }, [columnItems, columns, rowIndex, rowData, onResizeColumnStart]);
 
-  const onResize = useCallback(() => {
+  const measureRow = useCallback(() => {
     const row = rowRef.current;
-    const cells = row?.querySelectorAll('.grid-cell');
+    // `row`: the reported size includes the row's 1px divider, so the pitch is
+    // the 37px the row draws (addendum A5.2) and rows never overlap.
+    const cells = row?.querySelectorAll(rowMeasure === 'row' ? '.grid-row-cell' : '.grid-cell');
 
-    if (!cells || !rowId) return;
-    const maxCellHeight = Array.from(cells).reduce((acc, cell) => {
+    if (!cells || !rowId) return undefined;
+    return Array.from(cells).reduce((acc, cell) => {
       const cellHeight = cell.getBoundingClientRect().height;
 
       return Math.max(acc, cellHeight, 35); // Ensure minimum height
     }, 0);
+  }, [rowMeasure, rowId]);
 
-    rowResizeStore.report(rowKey, maxCellHeight);
-  }, [rowId, rowKey, rowResizeStore]);
+  // Inside a ResizeObserver callback the layout is clean, so the row reads it at once.
+  const onResize = useCallback(() => {
+    const maxCellHeight = measureRow();
 
+    if (maxCellHeight !== undefined) rowResizeStore.report(rowKey, maxCellHeight);
+  }, [measureRow, rowKey, rowResizeStore]);
+
+  // Anywhere else a read would force a layout per row: the grid measures every
+  // row that asked in one pass at the next frame (W18).
+  const scheduleResize = useCallback(
+    () => rowResizeStore.schedule(rowKey, measureRow),
+    [measureRow, rowKey, rowResizeStore]
+  );
+
+  // The grid's one ResizeObserver, not one per row (W15).
   useEffect(() => {
     const el = innerRef.current;
 
     if (!el) return;
 
-    const observer = new ResizeObserver(onResize);
-
-    observer.observe(el);
-
-    return () => {
-      observer.disconnect();
-    };
-  }, [onResize]);
+    return rowResizeStore.observe(el, onResize);
+  }, [onResize, rowResizeStore]);
 
   useEffect(() => {
     if (!cells || !cellsCount) return;
 
     if (isRegularRow && cells) {
-      onResize();
+      scheduleResize();
     }
 
-    cells.observeDeep(onResize);
+    cells.observeDeep(scheduleResize);
 
     return () => {
-      cells.unobserveDeep(onResize);
+      cells.unobserveDeep(scheduleResize);
     };
-  }, [isRegularRow, onResize, cells, cellsCount]);
+  }, [isRegularRow, scheduleResize, cells, cellsCount]);
+
+  // Every cell of the row reads it: a new object would re-render them all.
+  const rowContextValue = useMemo(() => ({ isSticky, resizeRow: scheduleResize }), [isSticky, scheduleResize]);
 
   return (
-    <GridRowProvider
-      value={{
-        isSticky,
-        resizeRow: onResize,
-      }}
-    >
+    <GridRowProvider value={rowContextValue}>
       <div
         onMouseMove={() => setHoverRowKey(rowKey)}
         onMouseLeave={() => setHoverRowKey(undefined)}
@@ -214,11 +226,12 @@ function GridVirtualRow({
         <div style={{ width: `${before}px` }}>
           {isRegularRow && !readOnly && (
             <HoverControls
+              compact={before < HOVER_CONTROLS_WIDTH}
               state={state}
               dragHandleRef={(el) => {
                 dragHandleRef.current = el;
               }}
-              rowId={data[row.index].rowId as string}
+              rowId={rowId}
               rowKey={rowKey}
               groupFieldId={rowData.groupFieldId}
               groupId={rowData.groupId}
@@ -230,6 +243,13 @@ function GridVirtualRow({
           ref={rowRef}
           data-testid={`grid-row-${rowId}`}
           data-row-key={rowKey}
+          data-parity-id={
+            rowType === RenderRowType.Header
+              ? 'dash-widget-grid-header'
+              : isRegularRow
+              ? 'dash-widget-grid-row'
+              : undefined
+          }
           className={cn(
             'grid-table-row-content relative flex min-h-[36px]',
             state.type === GridDragState.DRAGGING && 'opacity-40'

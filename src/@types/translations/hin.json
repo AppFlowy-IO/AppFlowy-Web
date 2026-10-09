@@ -440,7 +440,11 @@
       "editProperty": "डेटा का प्रकार संपादित करें",
       "newProperty": "नया डेटा का प्रकार",
       "deleteFieldPromptMessage": "क्या आप निश्चित हैं? यह डेटा का प्रकार हटा दी जाएगी",
-      "newColumn": "नया कॉलम"
+      "newColumn": "नया कॉलम",
+      "person": {
+        "searchForMore_one": "{{count}} और व्यक्ति को ढूँढने के लिए खोजें",
+        "searchForMore_other": "{{count}} और लोगों को ढूँढने के लिए खोजें"
+      }
     },
     "sort": {
       "ascending": "असेंडिंग",
@@ -455,10 +459,12 @@
       "textPlaceholder": "रिक्त",
       "copyProperty": "डेटा के प्रकार को क्लिपबोर्ड पर कॉपी किया गया",
       "count": "गिनती",
-      "newRow": "नई पंक्ति",
+      "newRow": "नया पेज",
       "action": "कार्रवाई",
       "add": "नीचे जोड़ें पर क्लिक करें",
-      "drag": "स्थानांतरित करने के लिए खींचें"
+      "drag": "स्थानांतरित करने के लिए खींचें",
+      "loadingRowsProgress": "पंक्तियाँ लोड हो रही हैं… {{loaded}}/{{total}}",
+      "rowsNotLoadedYet": "कुछ पंक्तियाँ अभी लोड नहीं हुई हैं"
     },
     "selectOption": {
       "create": "बनाएँ",
@@ -485,7 +491,24 @@
       "submitNewTask": "बनाएँ"
     },
     "menuName": "ग्रिड",
-    "referencedGridPrefix": "का दृश्य"
+    "referencedGridPrefix": "का दृश्य",
+    "calculationTypeLabel": {
+      "countChecked": "चेक किया गया",
+      "countUnchecked": "अनचेक किया हुआ"
+    },
+    "dateFilter": {
+      "is": "है"
+    },
+    "openPagesIn": {
+      "title": "पेज इसमें खोलें",
+      "sidePeek": "साइड पीक",
+      "centerPeek": "सेंटर पीक",
+      "fullPage": "पूरा पेज"
+    },
+    "rowPage": {
+      "openInCenterPeek": "सेंटर पीक में खोलें",
+      "resizeSidePeek": "साइड पीक का आकार बदलें"
+    }
   },
   "document": {
     "menuName": "दस्तावेज़ ",
@@ -655,7 +678,11 @@
   },
   "board": {
     "column": {
-      "createNewCard": "नया"
+      "createNewCard": "नया",
+      "calculate": "गणना करें",
+      "calculationTooltip": "{{property}} का {{calculation}}",
+      "colorColumns": "कॉलम रंगें",
+      "properties": "गुण"
     },
     "menuName": "बोर्ड",
     "referencedBoardPrefix": "का दृश्य"
@@ -735,5 +762,422 @@
       "nature": "प्रकृति",
       "frequentlyUsed": "अक्सर उपयोग किया जाता है"
     }
+  },
+  "chart": {
+    "a11y": {
+      "table": "चार्ट डेटा"
+    },
+    "agg": {
+      "average": "औसत",
+      "countAll": "सभी गिनें",
+      "countEmpty": "खाली गिनें",
+      "countUnique": "अद्वितीय मान गिनें",
+      "countValues": "मान गिनें",
+      "dateRange": "तिथि सीमा",
+      "earliest": "सबसे पहला",
+      "latest": "सबसे नया",
+      "max": "अधिकतम",
+      "median": "माध्यिका",
+      "min": "न्यूनतम",
+      "percentChecked": "चेक किए गए का प्रतिशत",
+      "percentEmpty": "खाली का प्रतिशत",
+      "percentNotEmpty": "भरे हुए का प्रतिशत",
+      "percentUnchecked": "अनचेक का प्रतिशत",
+      "range": "सीमा",
+      "sum": "योग"
+    },
+    "aggregation": "एकत्रीकरण",
+    "barChart": "बार",
+    "chartType": "चार्ट प्रकार",
+    "checked": "चेक किया गया",
+    "color": {
+      "auto": "ऑटो",
+      "blue": "नीला",
+      "colorful": "रंगीन",
+      "colorless": "रंगहीन",
+      "green": "हरा",
+      "orange": "नारंगी",
+      "pink": "गुलाबी",
+      "purple": "बैंगनी",
+      "red": "लाल",
+      "teal": "हरा-नीला",
+      "yellow": "पीला"
+    },
+    "cumulative": "संचयी",
+    "dateCondition": "तिथि समूहन",
+    "dateGrouping": {
+      "day": "दिन",
+      "month": "महीना",
+      "relative": "सापेक्ष",
+      "week": "सप्ताह",
+      "year": "वर्ष"
+    },
+    "decimalPlaces": {
+      "auto": "ऑटो"
+    },
+    "donutChart": "डोनट",
+    "emptyState": {
+      "description": "चार्ट देखने के लिए डेटा वाली पंक्तियाँ जोड़ें",
+      "noField": "समूहन के लिए कोई फ़ील्ड उपलब्ध नहीं",
+      "noFieldDescription": "चार्ट दृश्य का उपयोग करने के लिए चुनाव, बहु चुनाव, चेकबॉक्स या दिनांक फ़ील्ड बनाएँ।",
+      "title": "दिखाने के लिए कोई डेटा नहीं"
+    },
+    "emptyValue": "रिक्त",
+    "groups": {
+      "count": "{{count}} समूह",
+      "hideAll": "सभी छिपाएँ",
+      "hideGroup": "समूह छिपाएँ",
+      "noGroups": "कोई समूह नहीं",
+      "showAll": "सभी दिखाएँ",
+      "showGroup": "समूह दिखाएँ",
+      "unknownPerson": "अज्ञात व्यक्ति",
+      "unknownUser": "अज्ञात उपयोगकर्ता",
+      "untitled": "शीर्षकहीन",
+      "visibleOfTotal": "{{total}} में से {{visible}}"
+    },
+    "horizontalBarChart": "क्षैतिज बार",
+    "legend": {
+      "auto": "ऑटो",
+      "bottom": "नीचे",
+      "nextPage": "अगला पेज",
+      "off": "बंद",
+      "page": "{{page}}/{{count}}",
+      "previousPage": "पिछला पेज"
+    },
+    "lineChart": "लाइन",
+    "menuName": "चार्ट",
+    "noFieldValue": "कोई {} नहीं",
+    "noGroupableFields": "समूह बनाने योग्य कोई फ़ील्ड उपलब्ध नहीं",
+    "number": {
+      "calculate": "गणना करें",
+      "countAll": "सभी गिनें",
+      "emptyState": "कोई डेटा नहीं",
+      "format": "फ़ॉर्मेट",
+      "formatAuto": "ऑटो",
+      "formatCompact": "संक्षिप्त",
+      "formatPercent": "प्रतिशत",
+      "property": "गुण",
+      "title": "शीर्षक",
+      "titleOf": "{{field}} का {{aggregation}}",
+      "titlePlaceholder": "डिफ़ॉल्ट शीर्षक"
+    },
+    "numberChart": "संख्या",
+    "numberColor": {
+      "addRule": "नियम जोड़ें",
+      "blue": "नीला",
+      "brown": "भूरा",
+      "default": "डिफ़ॉल्ट",
+      "deleteRule": "नियम हटाएं",
+      "dynamic": "गतिशील",
+      "dynamicColor": "गतिशील रंग",
+      "else": "अन्यथा",
+      "equal": "बराबर",
+      "gray": "ग्रे",
+      "greaterThan": "इससे अधिक",
+      "greaterThanOrEqual": "इससे अधिक या बराबर",
+      "green": "हरा",
+      "ifValue": "यदि मान",
+      "lessThan": "इससे कम",
+      "lessThanOrEqual": "इससे कम या बराबर",
+      "notEqual": "बराबर नहीं",
+      "orange": "नारंगी",
+      "pink": "गुलाबी",
+      "purple": "बैंगनी",
+      "red": "लाल",
+      "sameAsColor": "रंग के समान",
+      "yellow": "पीला"
+    },
+    "settings": {
+      "auto": "ऑटो",
+      "back": "पीछे",
+      "calculate": "गणना करें",
+      "chartSettings": "चार्ट सेटिंग्स",
+      "chartTitle": "चार्ट शीर्षक",
+      "chartType": "चार्ट प्रकार",
+      "color": "रंग",
+      "count": "गिनती",
+      "cumulative": "संचयी",
+      "data": "डेटा",
+      "dataLabels": "डेटा लेबल",
+      "dateGrouping": "तिथि समूहन",
+      "decimalPlaces": "दशमलव स्थान",
+      "default": "डिफ़ॉल्ट",
+      "donut": "डोनट",
+      "eachSliceRepresents": "हर टुकड़ा दर्शाता है",
+      "endAt": "अंत",
+      "exactValue": "सटीक मान",
+      "firstLetter": "पहला अक्षर",
+      "format": "फ़ॉर्मेट",
+      "groupBy": "इसके अनुसार समूह बनाएँ",
+      "groupByNone": "कोई नहीं",
+      "groupByText": "टेक्स्ट के अनुसार समूह",
+      "groupStyle": "समूह शैली",
+      "groupStyleGrouped": "समूहित",
+      "groupStylePercent": "प्रतिशत",
+      "groupStyleStacked": "स्टैक्ड",
+      "groups": "समूह",
+      "horizontalBar": "क्षैतिज बार",
+      "legend": "लेजेंड",
+      "line": "लाइन",
+      "moreOptions": "अधिक विकल्प",
+      "moreSeries": "+{{n}} और",
+      "noResults": "कोई परिणाम नहीं",
+      "number": "संख्या",
+      "onlyShowingFirstGroups": "केवल पहले {{n}} समूह दिखाए जा रहे हैं",
+      "percent": "प्रतिशत",
+      "rangeSize": "सीमा आकार",
+      "ranges": "सीमाएँ",
+      "rangesPreview": "{{from}} से {{to}} तक {{count}} सीमाएँ",
+      "searchProperty": "गुण खोजें…",
+      "size": "आकार {{size}}",
+      "sortBy": "इसके अनुसार क्रमबद्ध करें",
+      "startAt": "शुरुआत",
+      "style": "शैली",
+      "verticalBar": "लंबवत बार",
+      "viewSettings": "दृश्य सेटिंग्स",
+      "whatToShow": "क्या दिखाना है",
+      "xAxis": "X अक्ष",
+      "yAxis": "Y अक्ष"
+    },
+    "showEmptyValues": "खाली मान दिखाएँ",
+    "sort": {
+      "default": "डिफ़ॉल्ट",
+      "labelAsc": "अ → ज्ञ",
+      "labelDesc": "ज्ञ → अ",
+      "manual": "मैन्युअल",
+      "valueAsc": "मान: कम → अधिक",
+      "valueDesc": "मान: अधिक → कम"
+    },
+    "state": {
+      "error": "यह चार्ट लोड नहीं हो सका",
+      "noData": "कोई डेटा नहीं",
+      "preparing": "आपका चार्ट तैयार हो रहा है",
+      "retry": "फिर से कोशिश करें"
+    },
+    "style": {
+      "color": "रंग",
+      "dataLabels": "डेटा लेबल",
+      "decimalPlaces": "दशमलव स्थान",
+      "legend": "लेजेंड",
+      "title": "शैली"
+    },
+    "tooltip": {
+      "average": "औसत",
+      "clickToView": "डेटा देखने के लिए क्लिक करें",
+      "count": "गिनती",
+      "countValues": "मान गिनें",
+      "max": "अधिकतम",
+      "median": "माध्यिका",
+      "min": "न्यूनतम",
+      "rows": "{{count}} पंक्तियाँ",
+      "sum": "योग",
+      "tapAgainToView": "डेटा देखने के लिए फिर से टैप करें"
+    },
+    "total": "कुल",
+    "unchecked": "अनचेक किया हुआ",
+    "upgradeRequired": "अपग्रेड आवश्यक",
+    "upgradeToProForChartTypes": "क्षैतिज बार, लाइन और डोनट चार्ट का उपयोग करने के लिए Pro प्लान में अपग्रेड करें",
+    "value": {
+      "days_one": "{{count}} दिन",
+      "days_other": "{{count}} दिन"
+    },
+    "xAxis": "X-अक्ष",
+    "yAxis": "Y-अक्ष",
+    "drilldown": {
+      "ariaLabel": "टेबल डेटा पूर्वावलोकन",
+      "search": "खोजें",
+      "dismiss": "बंद करें",
+      "more": "और",
+      "saveAsView": "दृश्य के रूप में सेव करें…",
+      "openDatabase": "{{database}} खोलें",
+      "selectedRows": "चुनी गई पंक्तियाँ ({{count}})",
+      "cannotSaveSelectedRows": "चुनी गई पंक्तियों को दृश्य के रूप में सेव नहीं किया जा सकता",
+      "open": "खोलें",
+      "fromDashboardFilter": "डैशबोर्ड फ़िल्टर से",
+      "rowCount_one": "{{count}} पंक्ति",
+      "rowCount_other": "{{count}} पंक्तियाँ"
+    }
+  },
+  "dashboard": {
+    "addWidget": "विजेट जोड़ें",
+    "creationRequiresPro": "डैशबोर्ड दृश्य बनाने के लिए Pro वर्कस्पेस आवश्यक है।",
+    "done": "किया",
+    "edit": "संपादित करें",
+    "empty": {
+      "editDashboard": "डैशबोर्ड संपादित करें",
+      "newView": "नया दृश्य",
+      "text": "चार्ट, टेबल, सूचियाँ जोड़ें"
+    },
+    "globalFilters": {
+      "addAnother": "एक और जोड़ें",
+      "addToFilter": "फ़िल्टर में जोड़ें",
+      "appliesTo": "यह फ़िल्टर नीचे चुने गए {{type}} गुणों पर लागू होगा",
+      "button": "फ़िल्टर",
+      "delete": "फ़िल्टर हटाएँ",
+      "done": "किया",
+      "endDate": "अंतिम तिथि",
+      "filterBy": "इसके अनुसार फ़िल्टर करें…",
+      "isChecked": "चेक किया गया है",
+      "isUnchecked": "अनचेक है",
+      "more": "{{count}} और",
+      "moreActions": "और कार्रवाइयाँ",
+      "multipleSourcesIntro": "एक ऐसा फ़िल्टर बनाएँ जो कई स्रोतों के गुणों पर लागू हो",
+      "name": "फ़िल्टर का नाम",
+      "noResults": "कोई परिणाम नहीं",
+      "op": {
+        "after": "के बाद",
+        "before": "से पहले",
+        "between": "के बीच",
+        "checked": "चेक किया गया",
+        "complete": "पूर्ण",
+        "doesNotContain": "इसमें शामिल नहीं है",
+        "endsWith": "के साथ समाप्त होता है",
+        "incomplete": "अपूर्ण",
+        "is": "है",
+        "isEmpty": "खाली है",
+        "isNot": "नहीं है",
+        "isNotEmpty": "खाली नहीं है",
+        "onOrAfter": "उस दिन या उसके बाद",
+        "onOrBefore": "उस दिन या उससे पहले",
+        "startsWith": "से प्रारंभ होता है",
+        "unchecked": "अनचेक किया हुआ"
+      },
+      "people_one": "{{count}} व्यक्ति",
+      "people_other": "{{count}} लोग",
+      "relative": {
+        "amount": "मात्रा",
+        "next": "अगला",
+        "past": "पिछला",
+        "summaryNext_one": "अगला {{unit}}",
+        "summaryNext_other": "अगले {{count}} {{unit}}",
+        "summaryPast_one": "पिछला {{unit}}",
+        "summaryPast_other": "पिछले {{count}} {{unit}}",
+        "summaryThis": "यह {{unit}}",
+        "this": "यह"
+      },
+      "relativeHint": "फ़िल्टर वर्तमान तिथि के साथ अपडेट होगा",
+      "relativeToToday": "आज के सापेक्ष है",
+      "remove": "निकालें",
+      "reset": "रीसेट करें",
+      "sourceLine": "{{source}} में {{property}}",
+      "startDate": "प्रारंभ तिथि",
+      "title": "कई स्रोतों को फ़िल्टर करें",
+      "units": {
+        "day_one": "दिन",
+        "day_other": "दिन",
+        "month_one": "महीना",
+        "month_other": "महीने",
+        "week_one": "सप्ताह",
+        "week_other": "सप्ताह",
+        "year_one": "वर्ष",
+        "year_other": "वर्ष"
+      },
+      "viewCount_one": "{{count}} दृश्य",
+      "viewCount_other": "{{count}} दृश्य"
+    },
+    "historyPreviewUnavailable": "संस्करण इतिहास में डैशबोर्ड का पूर्वावलोकन नहीं होता।",
+    "limit": {
+      "fullHint": "नया दृश्य जोड़ने के लिए कोई दृश्य हटाएं",
+      "fullTitle": "डैशबोर्ड भर गया है"
+    },
+    "menuName": "डैशबोर्ड",
+    "picker": {
+      "back": "पीछे",
+      "changeViewTitle": "दृश्य बदलें",
+      "close": "बंद करें",
+      "createFailed": "दृश्य नहीं बनाया जा सका",
+      "editChart": "चार्ट संपादित करें",
+      "layout": {
+        "board": "बोर्ड",
+        "calendar": "कैलेंडर",
+        "chart": "चार्ट",
+        "feed": "फ़ीड",
+        "gallery": "गैलरी",
+        "list": "सूची",
+        "table": "टेबल",
+        "timeline": "टाइमलाइन"
+      },
+      "loadFailed": "डेटाबेस लोड नहीं हो सके",
+      "newView": "नया दृश्य",
+      "newViewIn": "{{database}} में नया दृश्य",
+      "noResults": "कोई दृश्य नहीं मिला",
+      "otherSources": "अन्य डेटा स्रोत",
+      "searchPlaceholder": "कोई दृश्य खोजें...",
+      "showMore": "{{count}} और दिखाएँ",
+      "source": "स्रोत",
+      "thisDatabase": "यह डेटाबेस",
+      "viewName": "दृश्य का नाम",
+      "viewsOn": "{{database}} के दृश्य",
+      "viewsOnThisDatabase": "इस डेटाबेस के दृश्य"
+    },
+    "private": {
+      "reset": "रीसेट करें",
+      "resetAll": "सभी बदलाव रीसेट करें",
+      "saveForEveryone": "सभी के लिए सेव करें",
+      "saveOptions": "सेव करने के और विकल्प",
+      "saved": "बदलाव सभी के लिए सेव हो गए।",
+      "undo": "अनडू",
+      "unsaved": "बिना सेव किए बदलाव"
+    },
+    "referencedDashboardPrefix": "दृश्य",
+    "row": {
+      "addToNewRow": "नई पंक्ति में जोड़ें",
+      "addToRow": "पंक्ति में जोड़ें",
+      "moveDown": "नीचे ले जाएँ",
+      "moveUp": "ऊपर ले जाएँ",
+      "movedDown": "पंक्ति नीचे ले जाई गई",
+      "movedUp": "पंक्ति ऊपर ले जाई गई"
+    },
+    "rowLimit": "एक पंक्ति में अधिकतम {{count}} विजेट हो सकते हैं।",
+    "settings": {
+      "name": "डैशबोर्ड सेटिंग्स",
+      "showIconsInHeading": "हेडिंग में आइकन दिखाएँ",
+      "showWidgetTitles": "विजेट शीर्षक दिखाएँ"
+    },
+    "toolbar": {
+      "openAsFullPage": "पूरे पेज के रूप में खोलें",
+      "settings": "सेटिंग्स"
+    },
+    "widget": {
+      "changeView": "दृश्य बदलें",
+      "close": "बंद करें",
+      "createRowAbove": "ऊपर नई पंक्ति बनाएँ",
+      "createRowBelow": "नीचे नई पंक्ति बनाएँ",
+      "delete": "हटाएं",
+      "dragHandle": "ले जाने के लिए ड्रैग करें",
+      "duplicate": "डुप्लिकेट",
+      "editView": "दृश्य संपादित करें",
+      "filters": "फ़िल्टर",
+      "loading": "लोड हो रहा है…",
+      "menu": "विजेट विकल्प",
+      "moveLeft": "बाएँ ले जाएँ",
+      "moveRight": "दाएँ ले जाएँ",
+      "moveToRow": "पंक्ति में ले जाएँ",
+      "noAccess": "आपके पास इस डेटाबेस की पहुँच नहीं है",
+      "notFound": "यह दृश्य अब मौजूद नहीं है",
+      "offline": "ऑनलाइन वापस आने पर उपलब्ध होगा",
+      "openFailed": "दृश्य नहीं खुल सका",
+      "remove": "विजेट निकालें",
+      "resizeHeight": "पंक्ति की ऊँचाई बदलने के लिए ड्रैग करें",
+      "resizeHeightValue": "{{height}} पिक्सेल",
+      "resizeWidth": "आकार बदलने के लिए ड्रैग करें",
+      "resizeWidthValue": "12 में से {{columns}} कॉलम",
+      "settings": "सेटिंग्स",
+      "sorts": "क्रम",
+      "source": "स्रोत",
+      "unsupported": "डैशबोर्ड को किसी डैशबोर्ड के अंदर नहीं दिखाया जा सकता",
+      "viewDataSource": "डेटा स्रोत देखें",
+      "viewNameHint": "इस दृश्य का नाम बदलता है",
+      "viewSettings": "दृश्य सेटिंग्स"
+    },
+    "mobile": {
+      "viewCount_one": "{{count}} दृश्य",
+      "viewCount_other": "{{count}} दृश्य"
+    }
+  },
+  "databaseSearch": {
+    "clearSearch": "खोज साफ़ करें",
+    "noResults": "कोई परिणाम नहीं",
+    "placeholder": "खोजने के लिए लिखें..."
   }
 }

@@ -137,18 +137,8 @@ function renderColumns({
       <DatabaseContext.Provider value={createDatabaseContext()}>
         <GridContext.Provider value={gridContextValue}>
           <GridInteractionContext.Provider value={interactionContextValue}>
-            <GridVirtualColumn
-              columns={columns}
-              data={rows}
-              row={virtualItem(0, rows[0].key!)}
-              column={virtualItem(0, 'tags')}
-            />
-            <GridVirtualColumn
-              columns={columns}
-              data={rows}
-              row={virtualItem(1, rows[1].key!)}
-              column={virtualItem(0, 'tags')}
-            />
+            <GridVirtualColumn columns={columns} rowIndex={0} rowData={rows[0]} column={virtualItem(0, 'tags')} />
+            <GridVirtualColumn columns={columns} rowIndex={1} rowData={rows[1]} column={virtualItem(0, 'tags')} />
           </GridInteractionContext.Provider>
         </GridContext.Provider>
       </DatabaseContext.Provider>

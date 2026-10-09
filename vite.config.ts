@@ -6,7 +6,6 @@ import { defineConfig, loadEnv, type ViteDevServer } from 'vite';
 import istanbul from 'vite-plugin-istanbul';
 import svgr from 'vite-plugin-svgr';
 import { totalBundleSize } from 'vite-plugin-total-bundle-size';
-import { stripTestIdPlugin } from './vite-plugin-strip-testid';
 import { VITE_DEDUPED_DEPENDENCIES, VITE_OPTIMIZED_DEPENDENCIES } from './vite.dependencies';
 import compatibilityPolicy from './src/application/compatibility/web-server-compatibility.json';
 
@@ -205,8 +204,6 @@ export default defineConfig(async ({ command, mode }) => {
       react(),
       isDev ? namespaceRedirectPlugin() : undefined,
       isDev ? linkPreviewApiPlugin() : undefined,
-      // Strip data-testid attributes in production builds
-      isProd ? stripTestIdPlugin() : undefined,
       svgr({
         svgrOptions: {
           prettier: false,

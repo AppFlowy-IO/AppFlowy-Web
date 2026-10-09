@@ -621,11 +621,17 @@
       "deleteFieldPromptMessage": "ئایا دڵنیایت لە سڕدنەوەی ئەم تایبەتمەندییە؟",
       "newColumn": "ستوونی نوێ",
       "format": "فۆرمات",
-      "reminderOnDateTooltip": "ئەم خانەیە بیرخستنەوەیەکی بەرنامە بۆ داڕێژراوی هەیە"
+      "reminderOnDateTooltip": "ئەم خانەیە بیرخستنەوەیەکی بەرنامە بۆ داڕێژراوی هەیە",
+      "person": {
+        "searchForMore_one": "بگەڕێ بۆ دۆزینەوەی {{count}} کەسی تر",
+        "searchForMore_other": "بگەڕێ بۆ دۆزینەوەی {{count}} کەسی تر"
+      }
     },
     "rowPage": {
       "newField": "خانەیێکی نوێ زیاد بکە",
-      "fieldDragElementTooltip": "بۆ کردنەوەی مێنۆ کرتە بکە"
+      "fieldDragElementTooltip": "بۆ کردنەوەی مێنۆ کرتە بکە",
+      "openInCenterPeek": "کردنەوە لە پەنجەرەی ناوەڕاست",
+      "resizeSidePeek": "گۆڕینی قەبارەی پانێڵی لاتەنیشت"
     },
     "sort": {
       "ascending": "هەڵکشاو",
@@ -640,10 +646,12 @@
       "textPlaceholder": "بەتاڵ",
       "copyProperty": "تایبەتمەندی کۆپی کرا بۆ کلیپبۆرد",
       "count": "سەرژمێرکردن",
-      "newRow": "ڕیزی نوێ",
+      "newRow": "Rûpela nû",
       "action": "کردەوە",
       "drag": "ڕاکێشان بۆ جوڵە",
-      "dragAndClick": "بۆ جوڵاندن ڕابکێشە، کلیک بکە بۆ کردنەوەی مێنۆ"
+      "dragAndClick": "بۆ جوڵاندن ڕابکێشە، کلیک بکە بۆ کردنەوەی مێنۆ",
+      "loadingRowsProgress": "بارکردنی ڕیزەکان… {{loaded}}/{{total}}",
+      "rowsNotLoadedYet": "هەندێک ڕیز هێشتا بار نەکراون"
     },
     "selectOption": {
       "create": "دروستکردن",
@@ -682,7 +690,9 @@
       "max": "زۆر",
       "median": "ناوەند",
       "min": "کەم",
-      "sum": "کۆ"
+      "sum": "کۆ",
+      "countChecked": "نیشانکراو",
+      "countUnchecked": "نیشاننەکراو"
     },
     "singleSelectOptionFilter": {
       "is": "هەیە",
@@ -695,6 +705,12 @@
       "doesNotContain": "لەخۆناگرێت",
       "isEmpty": "به‌تاڵه‌",
       "isNotEmpty": "بەتاڵ نییە"
+    },
+    "openPagesIn": {
+      "title": "لاپەڕەکان بکرێنەوە لە",
+      "sidePeek": "پانێڵی لاتەنیشت",
+      "centerPeek": "پەنجەرەی ناوەڕاست",
+      "fullPage": "لاپەڕەی تەواو"
     }
   },
   "document": {
@@ -865,7 +881,11 @@
   },
   "board": {
     "column": {
-      "createNewCard": "دروست کردنی نوێ"
+      "createNewCard": "دروست کردنی نوێ",
+      "calculate": "هەژمارکردن",
+      "calculationTooltip": "{{calculation}}ی {{property}}",
+      "colorColumns": "ڕەنگکردنی ستوونەکان",
+      "properties": "تایبەتمەندییەکان"
     },
     "menuName": "تەختە",
     "referencedBoardPrefix": "دیمەنی...",
@@ -949,5 +969,422 @@
       "nature": "سروشت",
       "frequentlyUsed": "زۆرجار بەکارت هێناوە"
     }
+  },
+  "chart": {
+    "a11y": {
+      "table": "داتای چارت"
+    },
+    "agg": {
+      "average": "تێکڕا",
+      "countAll": "ژماردنی هەموو",
+      "countEmpty": "ژماردنی بەتاڵەکان",
+      "countUnique": "ژماردنی بەها بێهاوتاکان",
+      "countValues": "ژماردنی بەهاکان",
+      "dateRange": "مەودای بەروار",
+      "earliest": "کۆنترین",
+      "latest": "نوێترین",
+      "max": "زۆرترین",
+      "median": "ناوەند",
+      "min": "کەمترین",
+      "percentChecked": "ڕێژەی نیشانکراو",
+      "percentEmpty": "ڕێژەی بەتاڵ",
+      "percentNotEmpty": "ڕێژەی نابەتاڵ",
+      "percentUnchecked": "ڕێژەی نیشاننەکراو",
+      "range": "مەودا",
+      "sum": "کۆ"
+    },
+    "aggregation": "کۆکردنەوە",
+    "barChart": "شریتی",
+    "chartType": "جۆری چارت",
+    "checked": "نیشانکراو",
+    "color": {
+      "auto": "خۆکار",
+      "blue": "شین",
+      "colorful": "ڕەنگاوڕەنگ",
+      "colorless": "بێڕەنگ",
+      "green": "سەوز",
+      "orange": "پرتەقاڵی",
+      "pink": "پەمەیی",
+      "purple": "مۆر",
+      "red": "سوور",
+      "teal": "شینی سەوزباو",
+      "yellow": "زەرد"
+    },
+    "cumulative": "کەڵەکەبوو",
+    "dateCondition": "گروپکردنی بەروار",
+    "dateGrouping": {
+      "day": "ڕۆژ",
+      "month": "مانگ",
+      "relative": "ڕێژەیی",
+      "week": "هەفتە",
+      "year": "ساڵ"
+    },
+    "decimalPlaces": {
+      "auto": "خۆکار"
+    },
+    "donutChart": "دۆنات",
+    "emptyState": {
+      "description": "ڕیزی داتادار زیاد بکە بۆ بینینی چارتەکە",
+      "noField": "هیچ خانەیەک بۆ گروپکردن بەردەست نییە",
+      "noFieldDescription": "خانەیەکی تاک‌هەڵبژاردن، فرە‌هەڵبژاردن، چوارگۆشەی نیشانە یان بەروار دروست بکە بۆ بەکارهێنانی دیمەنی چارت.",
+      "title": "هیچ داتایەک نییە بۆ پیشاندان"
+    },
+    "emptyValue": "بەتاڵ",
+    "groups": {
+      "count": "{{count}} گروپ",
+      "hideAll": "شاردنەوەی هەموو",
+      "hideGroup": "شاردنەوەی گروپ",
+      "noGroups": "هیچ گروپێک نییە",
+      "showAll": "پیشاندانی هەموو",
+      "showGroup": "پیشاندانی گروپ",
+      "unknownPerson": "کەسی نەناسراو",
+      "unknownUser": "بەکارهێنەری نەناسراو",
+      "untitled": "بێ ناونیشان",
+      "visibleOfTotal": "{{visible}} لە {{total}}"
+    },
+    "horizontalBarChart": "شریتی ئاسۆیی",
+    "legend": {
+      "auto": "خۆکار",
+      "bottom": "خوارەوە",
+      "nextPage": "لاپەڕەی دواتر",
+      "off": "کوژاوە",
+      "page": "{{page}}/{{count}}",
+      "previousPage": "لاپەڕەی پێشوو"
+    },
+    "lineChart": "هێڵی",
+    "menuName": "چارت",
+    "noFieldValue": "بێ {}",
+    "noGroupableFields": "هیچ خانەیەکی گروپکراو بەردەست نییە",
+    "number": {
+      "calculate": "هەژمارکردن",
+      "countAll": "ژماردنی هەموو",
+      "emptyState": "داتا نییە",
+      "format": "فۆرمات",
+      "formatAuto": "خۆکار",
+      "formatCompact": "کورتکراوە",
+      "formatPercent": "ڕێژەی سەدی",
+      "property": "تایبەتمەندی",
+      "title": "ناونیشان",
+      "titleOf": "{{aggregation}}ی {{field}}",
+      "titlePlaceholder": "ناونیشانی بنەڕەت"
+    },
+    "numberChart": "ژمارە",
+    "numberColor": {
+      "addRule": "زیادکردنی یاسا",
+      "blue": "شین",
+      "brown": "قاوەیی",
+      "default": "بنەڕەت",
+      "deleteRule": "سڕینەوەی یاسا",
+      "dynamic": "گۆڕاو",
+      "dynamicColor": "ڕەنگی گۆڕاو",
+      "else": "ئەگەر نا",
+      "equal": "یەکسانە بە",
+      "gray": "خۆڵەمێشی",
+      "greaterThan": "گەورەترە لە",
+      "greaterThanOrEqual": "گەورەترە یان یەکسانە بە",
+      "green": "سەوز",
+      "ifValue": "ئەگەر بەها",
+      "lessThan": "بچووکترە لە",
+      "lessThanOrEqual": "بچووکترە یان یەکسانە بە",
+      "notEqual": "یەکسان نییە بە",
+      "orange": "پرتەقاڵی",
+      "pink": "پەمەیی",
+      "purple": "مۆر",
+      "red": "سوور",
+      "sameAsColor": "وەک ڕەنگ",
+      "yellow": "زەرد"
+    },
+    "settings": {
+      "auto": "خۆکار",
+      "back": "گەڕانەوە",
+      "calculate": "هەژمارکردن",
+      "chartSettings": "ڕێکخستنەکانی چارت",
+      "chartTitle": "ناونیشانی چارت",
+      "chartType": "جۆری چارت",
+      "color": "ڕەنگ",
+      "count": "ژمارە",
+      "cumulative": "کەڵەکەبوو",
+      "data": "داتا",
+      "dataLabels": "نیشانەکانی داتا",
+      "dateGrouping": "گروپکردنی بەروار",
+      "decimalPlaces": "شوێنی دەیی",
+      "default": "بنەڕەت",
+      "donut": "دۆنات",
+      "eachSliceRepresents": "هەر پارچەیەک نوێنەرایەتی دەکات",
+      "endAt": "کۆتایی لە",
+      "exactValue": "بەهای ورد",
+      "firstLetter": "یەکەم پیت",
+      "format": "فۆرمات",
+      "groupBy": "گروپکردن بەپێی",
+      "groupByNone": "هیچ",
+      "groupByText": "گروپکردنی دەق",
+      "groupStyle": "شێوازی گروپ",
+      "groupStyleGrouped": "گروپکراو",
+      "groupStylePercent": "ڕێژەی سەدی",
+      "groupStyleStacked": "کەڵەکەکراو",
+      "groups": "گروپەکان",
+      "horizontalBar": "شریتی ئاسۆیی",
+      "legend": "ڕێبەر",
+      "line": "هێڵی",
+      "moreOptions": "هەڵبژاردەی زیاتر",
+      "moreSeries": "+{{n}} زیاتر",
+      "noResults": "هیچ ئەنجامێک نییە",
+      "number": "ژمارە",
+      "onlyShowingFirstGroups": "تەنها یەکەم {{n}} گروپ پیشان دەدرێن",
+      "percent": "ڕێژەی سەدی",
+      "rangeSize": "قەبارەی مەودا",
+      "ranges": "مەوداکان",
+      "rangesPreview": "{{count}} مەودا لە {{from}} تا {{to}}",
+      "searchProperty": "گەڕان بۆ تایبەتمەندییەک…",
+      "size": "قەبارە {{size}}",
+      "sortBy": "ڕیزکردن بەپێی",
+      "startAt": "دەستپێک لە",
+      "style": "شێواز",
+      "verticalBar": "شریتی ستوونی",
+      "viewSettings": "ڕێکخستنەکانی دیمەن",
+      "whatToShow": "چی پیشان بدرێت",
+      "xAxis": "تەوەری X",
+      "yAxis": "تەوەری Y"
+    },
+    "showEmptyValues": "پیشاندانی بەها بەتاڵەکان",
+    "sort": {
+      "default": "بنەڕەت",
+      "labelAsc": "ئا ← ی",
+      "labelDesc": "ی ← ئا",
+      "manual": "دەستی",
+      "valueAsc": "بەها: کەم بۆ زۆر",
+      "valueDesc": "بەها: زۆر بۆ کەم"
+    },
+    "state": {
+      "error": "نەتوانرا ئەم چارتە باربکرێت",
+      "noData": "داتا نییە",
+      "preparing": "چارتەکەت ئامادە دەکرێت",
+      "retry": "دووبارە هەوڵدانەوە"
+    },
+    "style": {
+      "color": "ڕەنگ",
+      "dataLabels": "نیشانەکانی داتا",
+      "decimalPlaces": "شوێنی دەیی",
+      "legend": "ڕێبەر",
+      "title": "شێواز"
+    },
+    "tooltip": {
+      "average": "تێکڕا",
+      "clickToView": "کرتە بکە بۆ بینینی داتا",
+      "count": "ژمارە",
+      "countValues": "ژماردنی بەهاکان",
+      "max": "زۆرترین",
+      "median": "ناوەند",
+      "min": "کەمترین",
+      "rows": "{{count}} ڕیز",
+      "sum": "کۆ",
+      "tapAgainToView": "دووبارە دەست لێبدە بۆ بینینی داتا"
+    },
+    "total": "کۆی گشتی",
+    "unchecked": "نیشاننەکراو",
+    "upgradeRequired": "بەرزکردنەوە پێویستە",
+    "upgradeToProForChartTypes": "بۆ بەکارهێنانی چارتی شریتی ئاسۆیی، هێڵی و دۆنات، بۆ پلانی Pro بەرزی بکەرەوە",
+    "value": {
+      "days_one": "{{count}} ڕۆژ",
+      "days_other": "{{count}} ڕۆژ"
+    },
+    "xAxis": "تەوەری X",
+    "yAxis": "تەوەری Y",
+    "drilldown": {
+      "ariaLabel": "پیشاندانی پێشوەختەی داتای خشتە",
+      "search": "گەڕان",
+      "dismiss": "داخستن",
+      "more": "زیاتر",
+      "saveAsView": "پاشەکەوتکردن وەک دیمەن…",
+      "openDatabase": "کردنەوەی {{database}}",
+      "selectedRows": "ڕیزە هەڵبژێردراوەکان ({{count}})",
+      "cannotSaveSelectedRows": "ڕیزە هەڵبژێردراوەکان ناتوانرێن وەک دیمەن پاشەکەوت بکرێن",
+      "open": "کردنەوە",
+      "fromDashboardFilter": "لە فیلتێری داشبۆردەوە",
+      "rowCount_one": "{{count}} ڕیز",
+      "rowCount_other": "{{count}} ڕیز"
+    }
+  },
+  "dashboard": {
+    "addWidget": "زیادکردنی ویجێت",
+    "creationRequiresPro": "دروستکردنی دیمەنی داشبۆرد شوێنی کارکردنی Pro پێویستە.",
+    "done": "ئەنجامدرا",
+    "edit": "دەستکاری",
+    "empty": {
+      "editDashboard": "دەستکاریکردنی داشبۆرد",
+      "newView": "دیمەنی نوێ",
+      "text": "چارت، خشتە، لیست زیاد بکە"
+    },
+    "globalFilters": {
+      "addAnother": "زیادکردنی یەکێکی تر",
+      "addToFilter": "زیادکردن بۆ فیلتێر",
+      "appliesTo": "ئەم فیلتێرە لەسەر ئەو تایبەتمەندییانەی {{type}} جێبەجێ دەبێت کە لە خوارەوە هەڵبژێردراون",
+      "button": "فیلتێر",
+      "delete": "سڕینەوەی فیلتێر",
+      "done": "ئەنجامدرا",
+      "endDate": "بەرواری کۆتایی",
+      "filterBy": "فیلتێرکردن بەپێی…",
+      "isChecked": "نیشانکراوە",
+      "isUnchecked": "نیشاننەکراوە",
+      "more": "{{count}} زیاتر",
+      "moreActions": "کرداری زیاتر",
+      "multipleSourcesIntro": "فیلتێرێک دروست بکە کە لەسەر تایبەتمەندییەکانی چەند سەرچاوەیەک جێبەجێ بێت",
+      "name": "ناوی فیلتێر",
+      "noResults": "هیچ ئەنجامێک نییە",
+      "op": {
+        "after": "دوای",
+        "before": "پێش",
+        "between": "لە نێوان",
+        "checked": "نیشانکراو",
+        "complete": "تەواوە",
+        "doesNotContain": "لەخۆناگرێت",
+        "endsWith": "کۆتایی دێت بە",
+        "incomplete": "ناتەواوە",
+        "is": "هەیە",
+        "isEmpty": "بەتاڵە",
+        "isNot": "نییە",
+        "isNotEmpty": "بەتاڵ نییە",
+        "onOrAfter": "لە یان دوای",
+        "onOrBefore": "لە یان پێش",
+        "startsWith": "دەست پێدەکات بە",
+        "unchecked": "نیشاننەکراو"
+      },
+      "people_one": "{{count}} کەس",
+      "people_other": "{{count}} کەس",
+      "relative": {
+        "amount": "بڕ",
+        "next": "داهاتوو",
+        "past": "ڕابردوو",
+        "summaryNext_one": "{{unit}}ی داهاتوو",
+        "summaryNext_other": "{{count}} {{unit}}ی داهاتوو",
+        "summaryPast_one": "{{unit}}ی ڕابردوو",
+        "summaryPast_other": "{{count}} {{unit}}ی ڕابردوو",
+        "summaryThis": "{{unit}}ی ئێستا",
+        "this": "ئێستا"
+      },
+      "relativeHint": "فیلتێرەکە لەگەڵ بەرواری ئێستادا نوێ دەبێتەوە",
+      "relativeToToday": "بە بەراورد بە ئەمڕۆ",
+      "remove": "لابردن",
+      "reset": "ڕێکخستنەوە",
+      "sourceLine": "{{property}} لە {{source}}",
+      "startDate": "بەرواری دەستپێک",
+      "title": "فیلتێرکردنی چەند سەرچاوەیەک",
+      "units": {
+        "day_one": "ڕۆژ",
+        "day_other": "ڕۆژ",
+        "month_one": "مانگ",
+        "month_other": "مانگ",
+        "week_one": "هەفتە",
+        "week_other": "هەفتە",
+        "year_one": "ساڵ",
+        "year_other": "ساڵ"
+      },
+      "viewCount_one": "{{count}} دیمەن",
+      "viewCount_other": "{{count}} دیمەن"
+    },
+    "historyPreviewUnavailable": "داشبۆردەکان لە مێژووی وەشانەکاندا پیشان نادرێن.",
+    "limit": {
+      "fullHint": "دیمەنێک بسڕەوە بۆ زیادکردنی دیمەنێکی نوێ",
+      "fullTitle": "داشبۆرد پڕە"
+    },
+    "menuName": "داشبۆرد",
+    "picker": {
+      "back": "گەڕانەوە",
+      "changeViewTitle": "گۆڕینی دیمەن",
+      "close": "داخستن",
+      "createFailed": "نەتوانرا دیمەنەکە دروست بکرێت",
+      "editChart": "دەستکاریکردنی چارت",
+      "layout": {
+        "board": "تەختە",
+        "calendar": "ساڵنامە",
+        "chart": "چارت",
+        "feed": "فید",
+        "gallery": "پێشانگا",
+        "list": "لیست",
+        "table": "خشتە",
+        "timeline": "هێڵی کات"
+      },
+      "loadFailed": "نەتوانرا بنکەدراوەکان باربکرێن",
+      "newView": "دیمەنی نوێ",
+      "newViewIn": "دیمەنی نوێ لە {{database}}",
+      "noResults": "هیچ دیمەنێک نەدۆزرایەوە",
+      "otherSources": "سەرچاوەکانی تری داتا",
+      "searchPlaceholder": "گەڕان بۆ دیمەنێک...",
+      "showMore": "پیشاندانی {{count}} زیاتر",
+      "source": "سەرچاوە",
+      "thisDatabase": "ئەم بنکەدراوەیە",
+      "viewName": "ناوی دیمەن",
+      "viewsOn": "دیمەنەکانی {{database}}",
+      "viewsOnThisDatabase": "دیمەنەکانی ئەم بنکەدراوەیە"
+    },
+    "private": {
+      "reset": "ڕێکخستنەوە",
+      "resetAll": "ڕێکخستنەوەی هەموو گۆڕانکارییەکان",
+      "saveForEveryone": "پاشەکەوتکردن بۆ هەمووان",
+      "saveOptions": "هەڵبژاردەی زیاتری پاشەکەوتکردن",
+      "saved": "گۆڕانکارییەکان بۆ هەمووان پاشەکەوت کران.",
+      "undo": "پاشەکشە",
+      "unsaved": "گۆڕانکاریی پاشەکەوتنەکراو"
+    },
+    "referencedDashboardPrefix": "دیمەنی",
+    "row": {
+      "addToNewRow": "زیادکردن بۆ ڕیزێکی نوێ",
+      "addToRow": "زیادکردن بۆ ڕیز",
+      "moveDown": "بردن بۆ خوارەوە",
+      "moveUp": "بردن بۆ سەرەوە",
+      "movedDown": "ڕیزەکە بۆ خوارەوە برا",
+      "movedUp": "ڕیزەکە بۆ سەرەوە برا"
+    },
+    "rowLimit": "هەر ڕیزێک تا {{count}} ویجێت لەخۆ دەگرێت.",
+    "settings": {
+      "name": "ڕێکخستنەکانی داشبۆرد",
+      "showIconsInHeading": "پیشاندانی ئایکۆنەکان لە سەردێڕدا",
+      "showWidgetTitles": "پیشاندانی ناونیشانی ویجێتەکان"
+    },
+    "toolbar": {
+      "openAsFullPage": "کردنەوە وەک لاپەڕەی تەواو",
+      "settings": "ڕێکخستنەکان"
+    },
+    "widget": {
+      "changeView": "گۆڕینی دیمەن",
+      "close": "داخستن",
+      "createRowAbove": "دروستکردنی ڕیزی نوێ لە سەرەوە",
+      "createRowBelow": "دروستکردنی ڕیزی نوێ لە خوارەوە",
+      "delete": "سڕینەوە",
+      "dragHandle": "ڕایبکێشە بۆ جوڵاندن",
+      "duplicate": "دووبارەکردنەوە",
+      "editView": "دەستکاری دیمەن",
+      "filters": "فیلتێرەکان",
+      "loading": "بارکردن…",
+      "menu": "هەڵبژاردەکانی ویجێت",
+      "moveLeft": "بردن بۆ چەپ",
+      "moveRight": "بردن بۆ ڕاست",
+      "moveToRow": "بردن بۆ ڕیز",
+      "noAccess": "دەستت بەم بنکەدراوەیە ناگات",
+      "notFound": "ئەم دیمەنە چیتر بوونی نییە",
+      "offline": "کاتێک دەگەڕێیتەوە سەرهێڵ بەردەست دەبێت",
+      "openFailed": "نەتوانرا دیمەنەکە بکرێتەوە",
+      "remove": "لابردنی ویجێت",
+      "resizeHeight": "ڕایبکێشە بۆ گۆڕینی بەرزی ڕیز",
+      "resizeHeightValue": "{{height}} پیکسڵ",
+      "resizeWidth": "ڕایبکێشە بۆ گۆڕینی قەبارە",
+      "resizeWidthValue": "{{columns}} لە 12 ستوون",
+      "settings": "ڕێکخستنەکان",
+      "sorts": "ڕیزکردنەکان",
+      "source": "سەرچاوە",
+      "unsupported": "داشبۆرد ناتوانرێت لەناو داشبۆردێکدا پیشان بدرێت",
+      "viewDataSource": "بینینی سەرچاوەی داتا",
+      "viewNameHint": "ناوی ئەم دیمەنە دەگۆڕێت",
+      "viewSettings": "ڕێکخستنەکانی دیمەن"
+    },
+    "mobile": {
+      "viewCount_one": "{{count}} دیمەن",
+      "viewCount_other": "{{count}} دیمەن"
+    }
+  },
+  "databaseSearch": {
+    "clearSearch": "پاککردنەوەی گەڕان",
+    "noResults": "هیچ ئەنجامێک نییە",
+    "placeholder": "بنووسە بۆ گەڕان..."
   }
 }

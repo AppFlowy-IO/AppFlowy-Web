@@ -3,9 +3,12 @@ import { memo, useCallback, useMemo } from 'react';
 import { Row, useReadOnly } from '@/application/database-yjs';
 import CardList, { CardType, RenderCard } from '@/components/database/components/board/column/CardList';
 import ColumnHeaderPrimitive from '@/components/database/components/board/column/ColumnHeaderPrimitive';
-import { useCardsDrag } from '@/components/database/components/board/column/useCardsDrag';
+import { StateType as CardDropState, useCardsDrag } from '@/components/database/components/board/column/useCardsDrag';
 import { StateType, useColumnHeaderDrag } from '@/components/database/components/board/column/useColumnHeaderDrag';
+import { useBoardColumnTint } from '@/components/database/components/board/column/useRenderColumn';
 import { DropColumnIndicator } from '@/components/database/components/board/drag-and-drop/DropColumnIndicator';
+import { useBoardColumnDisplay } from '@/components/database/components/board/group/board-display-context';
+import { cn } from '@/lib/utils';
 
 import { ColumnDragContext } from '../drag-and-drop/column-context';
 
@@ -64,7 +67,11 @@ export const Column = memo(
     }, [rows, readOnly]);
 
     const { columnRef, headerRef, state, isDragging } = useColumnHeaderDrag(id);
-    const { contextValue, columnInnerRef } = useCardsDrag(id, rows);
+    const { contextValue, columnInnerRef, state: cardDropState } = useCardsDrag(id, rows);
+    const { sorted } = useBoardColumnDisplay();
+    const tint = useBoardColumnTint(id, fieldId);
+    // A sorted board drops a card on the column, never between cards (WP09 §1.4).
+    const dropHighlighted = sorted && cardDropState.type === CardDropState.IS_CARD_OVER;
 
     const getCards = useCallback(
       (_columnId: string): Row[] => {
@@ -77,9 +84,16 @@ export const Column = memo(
       <ColumnDragContext.Provider value={contextValue}>
         <div
           data-column-id={id}
+          data-drop-highlighted={dropHighlighted ? 'true' : undefined}
           data-testid={'board-column'}
-          className={'relative flex h-full min-h-0 w-[256px]'}
+          data-tint={tint?.index}
+          className={cn(
+            'relative flex h-full min-h-0 w-[256px]',
+            (tint || dropHighlighted) && 'rounded-200',
+            dropHighlighted && 'bg-fill-content-hover'
+          )}
           ref={columnInnerRef}
+          style={tint && !dropHighlighted ? { backgroundColor: tint.background } : undefined}
         >
           <div
             style={{

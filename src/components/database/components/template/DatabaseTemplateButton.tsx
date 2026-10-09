@@ -32,6 +32,7 @@ import { getCachedProviderDoc } from '@/application/db';
 import { rowDocumentIdFromRowId } from '@/application/row-document/lifecycle';
 import { getCachedRowSubDoc } from '@/application/services/js-services/cache';
 import { ViewIconType, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { ReactComponent as ChevronDownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as CheckCircleFilledIcon } from '@/assets/icons/database-template/check-circle-filled.svg';
 import { ReactComponent as CheckCircleOutlinedIcon } from '@/assets/icons/database-template/check-circle-outlined.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/database-template/details-horizontal.svg';
@@ -211,7 +212,24 @@ function DatabaseTemplateEditor({
   );
 }
 
-export function DatabaseTemplateButton({ compact = false }: { compact?: boolean }) {
+/**
+ * How the split button looks: `default` ("New ▾" in a page toolbar), `compact`
+ * (a 24px tall toolbar) or `icon` (a dashboard widget header, WP09 §1.3: a 24
+ * tall accent `+ ▾` with a 24×24 `+`, a 1×12 divider and a 20×24 chevron).
+ */
+export type DatabaseTemplateButtonVariant = 'default' | 'compact' | 'icon';
+
+export function DatabaseTemplateButton({
+  variant: variantProp,
+  compact = false,
+}: {
+  variant?: DatabaseTemplateButtonVariant;
+  /** Alias of `variant='compact'`. */
+  compact?: boolean;
+}) {
+  const variant: DatabaseTemplateButtonVariant = variantProp ?? (compact ? 'compact' : 'default');
+  const small = variant !== 'default';
+  const iconVariant = variant === 'icon';
   const { t } = useTranslation();
   const readOnly = useReadOnly();
   const database = useDatabase();
@@ -561,34 +579,72 @@ export function DatabaseTemplateButton({ compact = false }: { compact?: boolean 
     <>
       <div
         aria-busy={busy}
-        className={`flex items-stretch ${compact ? 'h-6' : 'h-7'}`}
+        className={
+          iconVariant
+            ? 'flex h-6 items-center overflow-hidden rounded-200 bg-dash-accent text-text-on-fill'
+            : `flex items-stretch ${small ? 'h-6' : 'h-7'}`
+        }
+        data-parity-id={iconVariant ? 'dash-widget-tool-new' : undefined}
         data-testid='database-template-split-button'
+        data-variant={variant}
+        onClick={iconVariant ? (event) => event.stopPropagation() : undefined}
       >
-        <Button
-          className={`${compact ? 'h-6' : 'h-7'} rounded-r-none px-1.5 text-xs font-normal leading-3`}
-          disabled={busy}
-          loading={busy}
-          onClick={() =>
-            void runBusyAction('Failed to create database row', () =>
-              createNewRow({ tailing: true, openAfterCreate: true })
-            )
-          }
-          data-testid='database-new-row-button'
-        >
-          {busy ? <LoaderCircle aria-hidden='true' className='h-4 w-4 animate-spin' /> : null}
-          {t('grid.createView', { defaultValue: 'New' })}
-        </Button>
+        {iconVariant ? (
+          <>
+            <Button
+              aria-label={t('grid.createView', { defaultValue: 'New' })}
+              className='h-6 w-6 shrink-0 rounded-none bg-transparent p-1 text-text-on-fill hover:bg-fill-theme-thick-hover [&_svg]:h-4 [&_svg]:w-4'
+              disabled={busy}
+              onClick={() =>
+                void runBusyAction('Failed to create database row', () =>
+                  createNewRow({ tailing: true, openAfterCreate: true })
+                )
+              }
+              data-testid='database-new-row-button'
+            >
+              {busy ? (
+                <LoaderCircle aria-hidden='true' className='h-4 w-4 animate-spin' />
+              ) : (
+                <PlusIcon aria-hidden='true' data-parity-id='dash-widget-tool-new__icon' />
+              )}
+            </Button>
+            <span aria-hidden='true' className='h-3 w-px shrink-0 bg-white/30' />
+          </>
+        ) : (
+          <Button
+            className={`${small ? 'h-6' : 'h-7'} rounded-r-none px-1.5 text-xs font-normal leading-3`}
+            disabled={busy}
+            loading={busy}
+            onClick={() =>
+              void runBusyAction('Failed to create database row', () =>
+                createNewRow({ tailing: true, openAfterCreate: true })
+              )
+            }
+            data-testid='database-new-row-button'
+          >
+            {busy ? <LoaderCircle aria-hidden='true' className='h-4 w-4 animate-spin' /> : null}
+            {t('grid.createView', { defaultValue: 'New' })}
+          </Button>
+        )}
         <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenuTrigger asChild>
             <Button
               aria-label='Open database templates'
-              className={`relative ${
-                compact ? 'h-6 w-6' : 'h-7 w-7'
-              } rounded-l-none p-0 before:absolute before:left-0 before:top-1/2 before:h-4 before:w-px before:-translate-y-1/2 before:bg-white/30`}
+              className={
+                iconVariant
+                  ? 'h-6 w-5 shrink-0 rounded-none bg-transparent p-0 text-text-on-fill hover:bg-fill-theme-thick-hover data-[state=open]:bg-fill-theme-thick-hover [&_svg]:h-4 [&_svg]:w-4'
+                  : `relative ${
+                      small ? 'h-6 w-6' : 'h-7 w-7'
+                    } rounded-l-none p-0 before:absolute before:left-0 before:top-1/2 before:h-4 before:w-px before:-translate-y-1/2 before:bg-white/30`
+              }
               disabled={busy}
               data-testid='database-template-menu-trigger'
             >
-              <ChevronDown aria-hidden='true' className='h-4 w-4' />
+              {iconVariant ? (
+                <ChevronDownIcon aria-hidden='true' data-parity-id='dash-widget-tool-new__chevron' />
+              ) : (
+                <ChevronDown aria-hidden='true' className='h-4 w-4' />
+              )}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent

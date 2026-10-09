@@ -1,0 +1,517 @@
+{
+  "fixture": "layouts/over-limit",
+  "version": 1,
+  "encoding": {
+    "bigint": "{\"$bigint\": \"<decimal>\"} is an integer written by a native client (yrs Any::BigInt). A plain JSON number is a JS number (Any::Number). Readers accept both, and every comparison is by numeric value.",
+    "rows": "A layout another client saved beyond this client's limits (12 widgets, 4 per row, row heights 240 to 1200). Readers show the first 12 widgets in stored order, split a row of more than 4 into rows of at most 4 (spill ids \"<row id>:<n>\") and clamp heights. Writers never drop a stored widget: the widgets beyond the first 12 stay stored after the written rows, each in its stored row object with only its hidden widgets; a row whose first widgets are shown keeps its hidden rest under \"<row id>:rest\".",
+    "stored": "The layout-settings map as another client left it.",
+    "parsed": "Optional. What every client reads from stored, in the persisted snake_case shape.",
+    "write": "The typed value this client submits for the named top-level keys, in the persisted shape (the rows it shows, after an edit). Each client parses it into its own typed model before writing.",
+    "writtenKeys": "Exactly the top-level keys the write may touch.",
+    "expected": "The stored map after the write. Key order is irrelevant."
+  },
+  "dashboardCases": [
+    {
+      "name": "14 widgets in rows of 4, 4, 4, 2: the first 12 are read, and a move writes them with the 2 hidden ones kept after them",
+      "stored": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3 },
+            { "id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3 },
+            { "id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3 },
+            { "id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:2", "height": 360, "widgets": [
+            { "id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 3 },
+            { "id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 3 },
+            { "id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 3 },
+            { "id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:3", "height": 360, "widgets": [
+            { "id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 3 },
+            { "id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 3 },
+            { "id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 3 },
+            { "id": "w:12", "view_id": "v:12", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:4", "height": 360, "widgets": [
+            { "id": "w:13", "view_id": "v:13", "database_id": "db:1", "width": 6 },
+            { "id": "w:14", "view_id": "v:14", "database_id": "db:1", "width": 6 }
+          ] }
+        ],
+        "global_filters": [],
+        "show_widget_titles": true
+      },
+      "parsed": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3 },
+            { "id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3 },
+            { "id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3 },
+            { "id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:2", "height": 360, "widgets": [
+            { "id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 3 },
+            { "id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 3 },
+            { "id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 3 },
+            { "id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:3", "height": 360, "widgets": [
+            { "id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 3 },
+            { "id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 3 },
+            { "id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 3 },
+            { "id": "w:12", "view_id": "v:12", "database_id": "db:1", "width": 3 }
+          ] }
+        ]
+      },
+      "write": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3 },
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3 },
+            { "id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3 },
+            { "id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:2", "height": 360, "widgets": [
+            { "id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 3 },
+            { "id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 3 },
+            { "id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 3 },
+            { "id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:3", "height": 360, "widgets": [
+            { "id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 3 },
+            { "id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 3 },
+            { "id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 3 },
+            { "id": "w:12", "view_id": "v:12", "database_id": "db:1", "width": 3 }
+          ] }
+        ]
+      },
+      "writtenKeys": ["rows"],
+      "expected": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3 },
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3 },
+            { "id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3 },
+            { "id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:2", "height": 360, "widgets": [
+            { "id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 3 },
+            { "id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 3 },
+            { "id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 3 },
+            { "id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:3", "height": 360, "widgets": [
+            { "id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 3 },
+            { "id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 3 },
+            { "id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 3 },
+            { "id": "w:12", "view_id": "v:12", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:4", "height": 360, "widgets": [
+            { "id": "w:13", "view_id": "v:13", "database_id": "db:1", "width": 6 },
+            { "id": "w:14", "view_id": "v:14", "database_id": "db:1", "width": 6 }
+          ] }
+        ],
+        "global_filters": [],
+        "show_widget_titles": true
+      }
+    },
+    {
+      "name": "deleting a shown widget of an over-limit layout keeps every hidden widget stored",
+      "stored": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3 },
+            { "id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3 },
+            { "id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3 },
+            { "id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:2", "height": 360, "widgets": [
+            { "id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 3 },
+            { "id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 3 },
+            { "id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 3 },
+            { "id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:3", "height": 360, "widgets": [
+            { "id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 3 },
+            { "id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 3 },
+            { "id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 3 },
+            { "id": "w:12", "view_id": "v:12", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:4", "height": 360, "widgets": [
+            { "id": "w:13", "view_id": "v:13", "database_id": "db:1", "width": 6 },
+            { "id": "w:14", "view_id": "v:14", "database_id": "db:1", "width": 6 }
+          ] }
+        ],
+        "global_filters": [],
+        "show_widget_titles": true
+      },
+      "write": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3 },
+            { "id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3 },
+            { "id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3 },
+            { "id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:2", "height": 360, "widgets": [
+            { "id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 3 },
+            { "id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 3 },
+            { "id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 3 },
+            { "id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:3", "height": 360, "widgets": [
+            { "id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 4 },
+            { "id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 4 },
+            { "id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 4 }
+          ] }
+        ]
+      },
+      "writtenKeys": ["rows"],
+      "expected": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3 },
+            { "id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3 },
+            { "id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3 },
+            { "id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:2", "height": 360, "widgets": [
+            { "id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 3 },
+            { "id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 3 },
+            { "id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 3 },
+            { "id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:3", "height": 360, "widgets": [
+            { "id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 4 },
+            { "id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 4 },
+            { "id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 4 }
+          ] },
+          { "id": "r:4", "height": 360, "widgets": [
+            { "id": "w:13", "view_id": "v:13", "database_id": "db:1", "width": 6 },
+            { "id": "w:14", "view_id": "v:14", "database_id": "db:1", "width": 6 }
+          ] }
+        ],
+        "global_filters": [],
+        "show_widget_titles": true
+      }
+    },
+    {
+      "name": "once there is room the first hidden widget is read again, and writing what is read writes nothing",
+      "stored": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3 },
+            { "id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3 },
+            { "id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3 },
+            { "id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:2", "height": 360, "widgets": [
+            { "id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 3 },
+            { "id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 3 },
+            { "id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 3 },
+            { "id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:3", "height": 360, "widgets": [
+            { "id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 4 },
+            { "id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 4 },
+            { "id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 4 }
+          ] },
+          { "id": "r:4", "height": 360, "widgets": [
+            { "id": "w:13", "view_id": "v:13", "database_id": "db:1", "width": 6 },
+            { "id": "w:14", "view_id": "v:14", "database_id": "db:1", "width": 6 }
+          ] }
+        ],
+        "global_filters": []
+      },
+      "parsed": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3 },
+            { "id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3 },
+            { "id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3 },
+            { "id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:2", "height": 360, "widgets": [
+            { "id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 3 },
+            { "id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 3 },
+            { "id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 3 },
+            { "id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:3", "height": 360, "widgets": [
+            { "id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 4 },
+            { "id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 4 },
+            { "id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 4 }
+          ] },
+          { "id": "r:4", "height": 360, "widgets": [
+            { "id": "w:13", "view_id": "v:13", "database_id": "db:1", "width": 12 }
+          ] }
+        ]
+      },
+      "write": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3 },
+            { "id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3 },
+            { "id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3 },
+            { "id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:2", "height": 360, "widgets": [
+            { "id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 3 },
+            { "id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 3 },
+            { "id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 3 },
+            { "id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:3", "height": 360, "widgets": [
+            { "id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 4 },
+            { "id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 4 },
+            { "id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 4 }
+          ] },
+          { "id": "r:4", "height": 360, "widgets": [
+            { "id": "w:13", "view_id": "v:13", "database_id": "db:1", "width": 12 }
+          ] }
+        ]
+      },
+      "writtenKeys": [],
+      "expected": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3 },
+            { "id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3 },
+            { "id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3 },
+            { "id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:2", "height": 360, "widgets": [
+            { "id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 3 },
+            { "id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 3 },
+            { "id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 3 },
+            { "id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:3", "height": 360, "widgets": [
+            { "id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 4 },
+            { "id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 4 },
+            { "id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 4 }
+          ] },
+          { "id": "r:4", "height": 360, "widgets": [
+            { "id": "w:13", "view_id": "v:13", "database_id": "db:1", "width": 6 },
+            { "id": "w:14", "view_id": "v:14", "database_id": "db:1", "width": 6 }
+          ] }
+        ],
+        "global_filters": []
+      }
+    },
+    {
+      "name": "the hidden rest of a partly read row is kept under its own id when the rows are rewritten",
+      "stored": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3 },
+            { "id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3 },
+            { "id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3 },
+            { "id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:2", "height": 360, "widgets": [
+            { "id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 3 },
+            { "id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 3 },
+            { "id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 3 },
+            { "id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:3", "height": 360, "widgets": [
+            { "id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 4 },
+            { "id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 4 },
+            { "id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 4 }
+          ] },
+          { "id": "r:4", "height": 360, "widgets": [
+            { "id": "w:12", "view_id": "v:12", "database_id": "db:1", "width": 4 },
+            { "id": "w:13", "view_id": "v:13", "database_id": "db:1", "width": 4 },
+            { "id": "w:14", "view_id": "v:14", "database_id": "db:1", "width": 4 }
+          ] }
+        ],
+        "global_filters": []
+      },
+      "parsed": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3 },
+            { "id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3 },
+            { "id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3 },
+            { "id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:2", "height": 360, "widgets": [
+            { "id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 3 },
+            { "id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 3 },
+            { "id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 3 },
+            { "id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:3", "height": 360, "widgets": [
+            { "id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 4 },
+            { "id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 4 },
+            { "id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 4 }
+          ] },
+          { "id": "r:4", "height": 360, "widgets": [
+            { "id": "w:12", "view_id": "v:12", "database_id": "db:1", "width": 12 }
+          ] }
+        ]
+      },
+      "write": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3 },
+            { "id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3 },
+            { "id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3 },
+            { "id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:2", "height": 360, "widgets": [
+            { "id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 3 },
+            { "id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 3 },
+            { "id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 3 },
+            { "id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:4", "height": 360, "widgets": [
+            { "id": "w:12", "view_id": "v:12", "database_id": "db:1", "width": 12 }
+          ] },
+          { "id": "r:3", "height": 360, "widgets": [
+            { "id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 4 },
+            { "id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 4 },
+            { "id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 4 }
+          ] }
+        ]
+      },
+      "writtenKeys": ["rows"],
+      "expected": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3 },
+            { "id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3 },
+            { "id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3 },
+            { "id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:2", "height": 360, "widgets": [
+            { "id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 3 },
+            { "id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 3 },
+            { "id": "w:7", "view_id": "v:7", "database_id": "db:1", "width": 3 },
+            { "id": "w:8", "view_id": "v:8", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:4", "height": 360, "widgets": [
+            { "id": "w:12", "view_id": "v:12", "database_id": "db:1", "width": 12 }
+          ] },
+          { "id": "r:3", "height": 360, "widgets": [
+            { "id": "w:9", "view_id": "v:9", "database_id": "db:1", "width": 4 },
+            { "id": "w:10", "view_id": "v:10", "database_id": "db:1", "width": 4 },
+            { "id": "w:11", "view_id": "v:11", "database_id": "db:1", "width": 4 }
+          ] },
+          { "id": "r:4:rest", "height": 360, "widgets": [
+            { "id": "w:13", "view_id": "v:13", "database_id": "db:1", "width": 4 },
+            { "id": "w:14", "view_id": "v:14", "database_id": "db:1", "width": 4 }
+          ] }
+        ],
+        "global_filters": []
+      }
+    },
+    {
+      "name": "a stored row of 6 widgets is read as rows of 4 and 2 and written back as those two rows",
+      "stored": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 2 },
+            { "id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 2 },
+            { "id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 2 },
+            { "id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 2 },
+            { "id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 2 },
+            { "id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 2 }
+          ] }
+        ]
+      },
+      "parsed": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3 },
+            { "id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3 },
+            { "id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3 },
+            { "id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:1:1", "height": 360, "widgets": [
+            { "id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 6 },
+            { "id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 6 }
+          ] }
+        ]
+      },
+      "write": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3 },
+            { "id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3 },
+            { "id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3 },
+            { "id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:1:1", "height": 360, "widgets": [
+            { "id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 6 },
+            { "id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 6 }
+          ] }
+        ]
+      },
+      "writtenKeys": ["rows"],
+      "expected": {
+        "rows": [
+          { "id": "r:1", "height": 360, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 3 },
+            { "id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 3 },
+            { "id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 3 },
+            { "id": "w:4", "view_id": "v:4", "database_id": "db:1", "width": 3 }
+          ] },
+          { "id": "r:1:1", "height": 360, "widgets": [
+            { "id": "w:6", "view_id": "v:6", "database_id": "db:1", "width": 6 },
+            { "id": "w:5", "view_id": "v:5", "database_id": "db:1", "width": 6 }
+          ] }
+        ]
+      }
+    },
+    {
+      "name": "heights outside 240 to 1200 are read clamped and stay stored as they are while other keys are written",
+      "stored": {
+        "rows": [
+          { "id": "r:1", "height": {"$bigint": "10"}, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 12 }
+          ] },
+          { "id": "r:2", "height": {"$bigint": "99999"}, "widgets": [
+            { "id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 12 }
+          ] },
+          { "id": "r:3", "height": 365, "widgets": [
+            { "id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 12 }
+          ] }
+        ],
+        "show_widget_titles": false
+      },
+      "parsed": {
+        "rows": [
+          { "id": "r:1", "height": 240, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 12 }
+          ] },
+          { "id": "r:2", "height": 1200, "widgets": [
+            { "id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 12 }
+          ] },
+          { "id": "r:3", "height": 365, "widgets": [
+            { "id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 12 }
+          ] }
+        ]
+      },
+      "write": {
+        "show_widget_titles": true
+      },
+      "writtenKeys": ["show_widget_titles"],
+      "expected": {
+        "rows": [
+          { "id": "r:1", "height": {"$bigint": "10"}, "widgets": [
+            { "id": "w:1", "view_id": "v:1", "database_id": "db:1", "width": 12 }
+          ] },
+          { "id": "r:2", "height": {"$bigint": "99999"}, "widgets": [
+            { "id": "w:2", "view_id": "v:2", "database_id": "db:1", "width": 12 }
+          ] },
+          { "id": "r:3", "height": 365, "widgets": [
+            { "id": "w:3", "view_id": "v:3", "database_id": "db:1", "width": 12 }
+          ] }
+        ],
+        "show_widget_titles": true
+      }
+    }
+  ]
+}

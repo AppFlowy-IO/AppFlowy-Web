@@ -1,9 +1,11 @@
 import EventEmitter from 'events';
 
 import { AxiosInstance } from 'axios';
-import { createContext, useContext, useEffect, useState, useSyncExternalStore } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 
+import type { DashboardExtraFilter } from '@/application/database-yjs/dashboard.type';
 import { retainDatabaseHistoryRow } from '@/application/database-yjs/history-row-store';
+import { getOverlayTarget } from '@/application/database-yjs/view-conditions-overlay';
 import {
   BindViewSync,
   CreateDatabaseViewPayload,
@@ -33,9 +35,16 @@ import {
   YjsDatabaseKey,
   YjsEditorKey,
   YSharedRoot,
+  YDatabaseView,
 } from '@/application/types';
 import { DefaultTimeSetting, MetadataKey } from '@/application/user-metadata';
 import { useCurrentUser } from '@/components/main/app.hooks';
+
+/** Where a record is opened from, for the "Open pages in" resolver (WP13 §3.8). */
+export interface NavigateToRowOptions {
+  /** A chart drill-down: records open in a side peek by default, even on a standalone chart page. */
+  source?: 'drilldown';
+}
 
 export interface DatabaseContextState {
   readOnly: boolean;
@@ -88,16 +97,44 @@ export interface DatabaseContextState {
   markCellLocalMutation?: (rowId: string, fieldId: string) => void;
   getCellLocalMutationRevision?: (fieldId: string) => string;
   subscribeToCellLocalMutations?: (fieldId: string, onStoreChange: () => void) => () => void;
+  /**
+   * True once the row walk finished. A database that serves `getRowPassState`
+   * keeps it there and leaves this field unset: read it through
+   * `useRowPassState`, which falls back to this field for a static provider.
+   */
   blobPrefetchComplete?: boolean;
-  /** True as soon as row seeds are cached (before IndexedDB persist completes). */
+  /** True as soon as row seeds are cached (before IndexedDB persist completes). See `blobPrefetchComplete`. */
   seedsReady?: boolean;
+  /**
+   * `blobPrefetchComplete` and `seedsReady` as a subscription. Only the row
+   * loaders read them; as context state, each change would re-render every
+   * cell of the view, and every widget of a dashboard reading that database.
+   */
+  getRowPassState?: () => RowPassState;
+  subscribeToRowPassState?: (onStoreChange: () => void) => () => void;
+  /**
+   * Revision of the row seeds readable through `peekRowDocFromSeed` before
+   * `seedsReady`: 0 until a page of a blob walk still in flight was staged,
+   * then it changes with each staged page (and when a restart drops them).
+   */
+  getSeedsRevision?: () => number;
+  subscribeToSeedsProgress?: (onStoreChange: () => void) => () => void;
   isDatabaseRowPage?: boolean;
   paddingStart?: number;
   paddingEnd?: number;
   isDocumentBlock?: boolean;
   embeddedHeight?: number;
+  /**
+   * Set when this database renders inside a dashboard widget. `DatabaseViews`
+   * then renders the widget's own composition (`WidgetDatabaseViews`: the
+   * widget header instead of the tabs, conditions in popovers, the card as
+   * the viewport) and `DatabaseActions` the widget's tools (`WidgetTools`).
+   * The few components that differ inside a widget (the grid, the chart, the
+   * layout settings) read it too.
+   */
+  isDashboardWidget?: boolean;
   // use different view id to navigate to row
-  navigateToRow?: (rowId: string, viewId?: string) => void;
+  navigateToRow?: (rowId: string, viewId?: string, options?: NavigateToRowOptions) => void;
   loadView?: LoadView;
   bindViewSync?: BindViewSync;
   scheduleDeferredCleanup?: (objectId: string, delayMs?: number) => void;
@@ -154,6 +191,37 @@ export interface DatabaseContextState {
 }
 
 export const DatabaseContext = createContext<DatabaseContextState | null>(null);
+
+/**
+ * Dashboard global filters resolved for this database (plain filter nodes in
+ * the persisted view-filter shape). They are AND-ed with the view's own
+ * filters by `useRowOrdersSelector`; a widget without a mapped property
+ * receives none. Kept out of `DatabaseContext` so a filter change only
+ * re-renders the row selectors, not every database context consumer.
+ */
+export const DatabaseExtraFiltersContext = createContext<DashboardExtraFilter[] | undefined>(undefined);
+
+/**
+ * A viewer's local stand-in for the active view (see
+ * `view-conditions-overlay.ts`): its filters and sorts are a private copy,
+ * everything else is the real view. Set by a dashboard widget in View mode.
+ */
+export const DatabaseViewOverlayContext = createContext<YDatabaseView | undefined>(undefined);
+
+/**
+ * The committed (debounced, trimmed) row search of the view instance (WP09
+ * §1.2): a session-only term the row selectors AND into the effective rows.
+ * `''` is no search. Kept out of `DatabaseContext` so typing only re-renders
+ * the row selectors. Gallery and Feed keep their card-level search and leave
+ * it empty (`DatabaseSearchProvider` `applyToRows`).
+ */
+export const DatabaseSearchQueryContext = createContext<string>('');
+
+export const useDatabaseSearchQuery = () => useContext(DatabaseSearchQueryContext);
+
+export const useDatabaseViewOverlay = () => useContext(DatabaseViewOverlayContext);
+
+export const useDatabaseExtraFilters = () => useContext(DatabaseExtraFiltersContext);
 
 export const useDatabaseContext = () => {
   const context = useContext(DatabaseContext);
@@ -300,6 +368,43 @@ export const useNavigateToRow = () => {
   return useDatabaseContext().navigateToRow;
 };
 
+export interface RowPassState {
+  blobPrefetchComplete: boolean;
+  seedsReady: boolean;
+}
+
+const noRowPassSubscription = () => () => undefined;
+const NO_ROW_PASS: RowPassState = Object.freeze({ blobPrefetchComplete: false, seedsReady: false });
+
+/**
+ * `blobPrefetchComplete` and `seedsReady` of the given database context,
+ * re-rendering only the caller when they change. A provider without
+ * `getRowPassState` (a history preview, a published page) gives them as plain
+ * context fields.
+ *
+ * @param enabled - False for a caller that reads nothing now (an inactive row
+ *   loader): it gets both false and is not re-rendered when they change.
+ */
+export function useRowPassState(
+  context: Pick<
+    DatabaseContextState,
+    'blobPrefetchComplete' | 'seedsReady' | 'getRowPassState' | 'subscribeToRowPassState'
+  >,
+  enabled = true
+): RowPassState {
+  const { getRowPassState, subscribeToRowPassState } = context;
+  const blobPrefetchComplete = Boolean(context.blobPrefetchComplete);
+  const seedsReady = Boolean(context.seedsReady);
+  const fieldState = useMemo(() => ({ blobPrefetchComplete, seedsReady }), [blobPrefetchComplete, seedsReady]);
+  const getSnapshot = useCallback(
+    () => (enabled ? getRowPassState?.() ?? fieldState : NO_ROW_PASS),
+    [enabled, getRowPassState, fieldState]
+  );
+  const subscribe = enabled && subscribeToRowPassState ? subscribeToRowPassState : noRowPassSubscription;
+
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
 export const useRowMap = () => {
   return useDatabaseContext().rowMap;
 };
@@ -431,12 +536,28 @@ export const useReadOnly = () => {
   return context?.readOnly === undefined ? true : context?.readOnly;
 };
 
+/**
+ * Read-only for the filter / sort controls. A view overlay makes them
+ * editable for everyone: the changes stay with the viewer (Notion lets
+ * view-only users use a dashboard widget's filters and sorts).
+ */
+export const useConditionsReadOnly = () => {
+  const readOnly = useReadOnly();
+  const overlay = useDatabaseViewOverlay();
+
+  return readOnly && !overlay;
+};
+
 export const useDatabaseView = () => {
   const database = useDatabase();
   const viewId = useDatabaseViewId();
+  const overlay = useDatabaseViewOverlay();
   const views = database?.get(YjsDatabaseKey.views);
+  const view = viewId ? views?.get(viewId) : undefined;
 
-  return viewId ? views?.get(viewId) : undefined;
+  // Only the view the overlay stands in for: a nested context (the calendar's
+  // draft doc, another database) reads its own view.
+  return overlay && view && getOverlayTarget(overlay) === view ? overlay : view;
 };
 
 export function useDatabaseFields() {

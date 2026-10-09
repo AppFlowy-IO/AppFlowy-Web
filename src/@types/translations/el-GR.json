@@ -574,7 +574,7 @@
       "isNotEmpty": "Δεν είναι κενό"
     },
     "dateFilter": {
-      "is": "Is",
+      "is": "Είναι",
       "before": "Is before",
       "after": "Is after",
       "onOrBefore": "Is on or before",
@@ -651,7 +651,11 @@
       "newColumn": "New Column",
       "format": "Format",
       "reminderOnDateTooltip": "This cell has a scheduled reminder",
-      "optionAlreadyExist": "Option already exists"
+      "optionAlreadyExist": "Option already exists",
+      "person": {
+        "searchForMore_one": "Κάντε αναζήτηση για να βρείτε {{count}} ακόμη άτομο",
+        "searchForMore_other": "Κάντε αναζήτηση για να βρείτε {{count}} ακόμη άτομα"
+      }
     },
     "rowPage": {
       "newField": "Add a new field",
@@ -665,7 +669,9 @@
         "one": "Απόκρυψη {{count}} κρυφού πεδίου",
         "many": "Απόκρυψη {{count}} κρυφών πεδίων",
         "other": "Απόκρυψη {{count}} κρυφών πεδίων"
-      }
+      },
+      "openInCenterPeek": "Άνοιγμα σε κεντρική προεπισκόπηση",
+      "resizeSidePeek": "Αλλαγή μεγέθους πλευρικής προεπισκόπησης"
     },
     "sort": {
       "ascending": "Αύξουσα",
@@ -685,13 +691,15 @@
       "textPlaceholder": "Άδειο",
       "copyProperty": "Copied property to clipboard",
       "count": "Count",
-      "newRow": "Νέα γραμμή",
+      "newRow": "Νέα σελίδα",
       "action": "Action",
       "add": "Click add to below",
       "drag": "Σύρετε για μετακίνηση",
       "dragAndClick": "Drag to move, click to open menu",
       "insertRecordAbove": "Εισαγωγή εγγραφής επάνω",
-      "insertRecordBelow": "Εισαγωγή εγγραφής κάτω"
+      "insertRecordBelow": "Εισαγωγή εγγραφής κάτω",
+      "loadingRowsProgress": "Φόρτωση γραμμών… {{loaded}}/{{total}}",
+      "rowsNotLoadedYet": "Ορισμένες γραμμές δεν έχουν φορτωθεί ακόμη"
     },
     "selectOption": {
       "create": "Δημιουργία",
@@ -749,7 +757,15 @@
       "countEmpty": "Count empty",
       "countEmptyShort": "EMPTY",
       "countNonEmpty": "Count not empty",
-      "countNonEmptyShort": "FILLED"
+      "countNonEmptyShort": "FILLED",
+      "countChecked": "Επιλεγμένο",
+      "countUnchecked": "Μη επιλεγμένο"
+    },
+    "openPagesIn": {
+      "title": "Άνοιγμα σελίδων σε",
+      "sidePeek": "Πλευρική προεπισκόπηση",
+      "centerPeek": "Κεντρική προεπισκόπηση",
+      "fullPage": "Πλήρης σελίδα"
     }
   },
   "document": {
@@ -995,7 +1011,11 @@
       "hideColumn": "Hide",
       "newGroup": "New Group",
       "deleteColumn": "Delete",
-      "deleteColumnConfirmation": "This will delete this group and all the cards in it.\nAre you sure you want to continue?"
+      "deleteColumnConfirmation": "This will delete this group and all the cards in it.\nAre you sure you want to continue?",
+      "calculate": "Υπολογισμός",
+      "calculationTooltip": "{{calculation}} ({{property}})",
+      "colorColumns": "Χρωματισμός στηλών",
+      "properties": "Ιδιότητες"
     },
     "hiddenGroupSection": {
       "sectionTitle": "Hidden Groups",
@@ -1402,5 +1422,422 @@
         "language": "Language"
       }
     }
+  },
+  "chart": {
+    "a11y": {
+      "table": "Δεδομένα γραφήματος"
+    },
+    "agg": {
+      "average": "Μέσος όρος",
+      "countAll": "Καταμέτρηση όλων",
+      "countEmpty": "Καταμέτρηση κενών",
+      "countUnique": "Καταμέτρηση μοναδικών τιμών",
+      "countValues": "Καταμέτρηση τιμών",
+      "dateRange": "Εύρος ημερομηνιών",
+      "earliest": "Νωρίτερη",
+      "latest": "Πιο πρόσφατη",
+      "max": "Μέγιστο",
+      "median": "Διάμεσος",
+      "min": "Ελάχιστο",
+      "percentChecked": "Ποσοστό επιλεγμένων",
+      "percentEmpty": "Ποσοστό κενών",
+      "percentNotEmpty": "Ποσοστό μη κενών",
+      "percentUnchecked": "Ποσοστό μη επιλεγμένων",
+      "range": "Εύρος",
+      "sum": "Άθροισμα"
+    },
+    "aggregation": "Συνάθροιση",
+    "barChart": "Ράβδοι",
+    "chartType": "Τύπος γραφήματος",
+    "checked": "Επιλεγμένο",
+    "color": {
+      "auto": "Αυτόματο",
+      "blue": "Μπλε",
+      "colorful": "Πολύχρωμο",
+      "colorless": "Άχρωμο",
+      "green": "Πράσινο",
+      "orange": "Πορτοκαλί",
+      "pink": "Ροζ",
+      "purple": "Μωβ",
+      "red": "Κόκκινο",
+      "teal": "Γαλαζοπράσινο",
+      "yellow": "Κίτρινο"
+    },
+    "cumulative": "Αθροιστικό",
+    "dateCondition": "Ομαδοποίηση ημερομηνιών",
+    "dateGrouping": {
+      "day": "Ημέρα",
+      "month": "Μήνας",
+      "relative": "Σχετική",
+      "week": "Εβδομάδα",
+      "year": "Έτος"
+    },
+    "decimalPlaces": {
+      "auto": "Αυτόματο"
+    },
+    "donutChart": "Δακτύλιος",
+    "emptyState": {
+      "description": "Προσθέστε γραμμές με δεδομένα για να δείτε το γράφημα",
+      "noField": "Δεν υπάρχουν διαθέσιμα πεδία για ομαδοποίηση",
+      "noFieldDescription": "Δημιουργήστε ένα πεδίο μονής επιλογής, πολλαπλής επιλογής, πλαισίου ελέγχου ή ημερομηνίας για να χρησιμοποιήσετε την προβολή γραφήματος.",
+      "title": "Δεν υπάρχουν δεδομένα για εμφάνιση"
+    },
+    "emptyValue": "Κενό",
+    "groups": {
+      "count": "{{count}} ομάδες",
+      "hideAll": "Απόκρυψη όλων",
+      "hideGroup": "Απόκρυψη ομάδας",
+      "noGroups": "Καμία ομάδα",
+      "showAll": "Εμφάνιση όλων",
+      "showGroup": "Εμφάνιση ομάδας",
+      "unknownPerson": "Άγνωστο άτομο",
+      "unknownUser": "Άγνωστος χρήστης",
+      "untitled": "Χωρίς τίτλο",
+      "visibleOfTotal": "{{visible}} από {{total}}"
+    },
+    "horizontalBarChart": "Οριζόντιες ράβδοι",
+    "legend": {
+      "auto": "Αυτόματο",
+      "bottom": "Κάτω",
+      "nextPage": "Επόμενη σελίδα",
+      "off": "Ανενεργό",
+      "page": "{{page}}/{{count}}",
+      "previousPage": "Προηγούμενη σελίδα"
+    },
+    "lineChart": "Γραμμή",
+    "menuName": "Γράφημα",
+    "noFieldValue": "Χωρίς {}",
+    "noGroupableFields": "Δεν υπάρχουν διαθέσιμα πεδία ομαδοποίησης",
+    "number": {
+      "calculate": "Υπολογισμός",
+      "countAll": "Καταμέτρηση όλων",
+      "emptyState": "Δεν υπάρχουν δεδομένα",
+      "format": "Μορφή",
+      "formatAuto": "Αυτόματο",
+      "formatCompact": "Συμπτυγμένο",
+      "formatPercent": "Ποσοστό",
+      "property": "Ιδιότητα",
+      "title": "Τίτλος",
+      "titleOf": "{{aggregation}} ({{field}})",
+      "titlePlaceholder": "Προεπιλεγμένος τίτλος"
+    },
+    "numberChart": "Αριθμός",
+    "numberColor": {
+      "addRule": "Προσθήκη κανόνα",
+      "blue": "Μπλε",
+      "brown": "Καφέ",
+      "default": "Προεπιλογή",
+      "deleteRule": "Διαγραφή κανόνα",
+      "dynamic": "Δυναμικό",
+      "dynamicColor": "Δυναμικό χρώμα",
+      "else": "Διαφορετικά",
+      "equal": "Ίσο",
+      "gray": "Γκρι",
+      "greaterThan": "Μεγαλύτερο από",
+      "greaterThanOrEqual": "Μεγαλύτερο ή ίσο",
+      "green": "Πράσινο",
+      "ifValue": "Αν η τιμή",
+      "lessThan": "Μικρότερο από",
+      "lessThanOrEqual": "Μικρότερο ή ίσο",
+      "notEqual": "Διάφορο",
+      "orange": "Πορτοκαλί",
+      "pink": "Ροζ",
+      "purple": "Μωβ",
+      "red": "Κόκκινο",
+      "sameAsColor": "Ίδιο με το χρώμα",
+      "yellow": "Κίτρινο"
+    },
+    "settings": {
+      "auto": "Αυτόματο",
+      "back": "Πίσω",
+      "calculate": "Υπολογισμός",
+      "chartSettings": "Ρυθμίσεις γραφήματος",
+      "chartTitle": "Τίτλος γραφήματος",
+      "chartType": "Τύπος γραφήματος",
+      "color": "Χρώμα",
+      "count": "Πλήθος",
+      "cumulative": "Αθροιστικό",
+      "data": "Δεδομένα",
+      "dataLabels": "Ετικέτες δεδομένων",
+      "dateGrouping": "Ομαδοποίηση ημερομηνιών",
+      "decimalPlaces": "Δεκαδικά ψηφία",
+      "default": "Προεπιλογή",
+      "donut": "Δακτύλιος",
+      "eachSliceRepresents": "Κάθε τμήμα αντιπροσωπεύει",
+      "endAt": "Λήξη στο",
+      "exactValue": "Ακριβής τιμή",
+      "firstLetter": "Πρώτο γράμμα",
+      "format": "Μορφή",
+      "groupBy": "Ομαδοποίηση κατά",
+      "groupByNone": "Καμία",
+      "groupByText": "Ομαδοποίηση κατά κείμενο",
+      "groupStyle": "Στυλ ομάδων",
+      "groupStyleGrouped": "Ομαδοποιημένο",
+      "groupStylePercent": "Ποσοστιαίο",
+      "groupStyleStacked": "Στοιβαγμένο",
+      "groups": "Ομάδες",
+      "horizontalBar": "Οριζόντιες ράβδοι",
+      "legend": "Υπόμνημα",
+      "line": "Γραμμή",
+      "moreOptions": "Περισσότερες επιλογές",
+      "moreSeries": "+{{n}} ακόμη",
+      "noResults": "Κανένα αποτέλεσμα",
+      "number": "Αριθμός",
+      "onlyShowingFirstGroups": "Εμφανίζονται μόνο οι πρώτες {{n}} ομάδες",
+      "percent": "Ποσοστό",
+      "rangeSize": "Μέγεθος εύρους",
+      "ranges": "Εύρη",
+      "rangesPreview": "{{count}} εύρη από {{from}} έως {{to}}",
+      "searchProperty": "Αναζήτηση ιδιότητας…",
+      "size": "Μέγεθος {{size}}",
+      "sortBy": "Ταξινόμηση κατά",
+      "startAt": "Έναρξη από",
+      "style": "Στυλ",
+      "verticalBar": "Κάθετες ράβδοι",
+      "viewSettings": "Ρυθμίσεις προβολής",
+      "whatToShow": "Τι θα εμφανίζεται",
+      "xAxis": "Άξονας X",
+      "yAxis": "Άξονας Y"
+    },
+    "showEmptyValues": "Εμφάνιση κενών τιμών",
+    "sort": {
+      "default": "Προεπιλογή",
+      "labelAsc": "Α → Ω",
+      "labelDesc": "Ω → Α",
+      "manual": "Χειροκίνητα",
+      "valueAsc": "Τιμή χαμηλή → υψηλή",
+      "valueDesc": "Τιμή υψηλή → χαμηλή"
+    },
+    "state": {
+      "error": "Δεν ήταν δυνατή η φόρτωση αυτού του γραφήματος",
+      "noData": "Δεν υπάρχουν δεδομένα",
+      "preparing": "Προετοιμασία του γραφήματος",
+      "retry": "Δοκιμάστε ξανά"
+    },
+    "style": {
+      "color": "Χρώμα",
+      "dataLabels": "Ετικέτες δεδομένων",
+      "decimalPlaces": "Δεκαδικά ψηφία",
+      "legend": "Υπόμνημα",
+      "title": "Στυλ"
+    },
+    "tooltip": {
+      "average": "Μέσος όρος",
+      "clickToView": "Κάντε κλικ για προβολή δεδομένων",
+      "count": "Πλήθος",
+      "countValues": "Καταμέτρηση τιμών",
+      "max": "Μέγιστο",
+      "median": "Διάμεσος",
+      "min": "Ελάχιστο",
+      "rows": "{{count}} γραμμές",
+      "sum": "Άθροισμα",
+      "tapAgainToView": "Πατήστε ξανά για προβολή δεδομένων"
+    },
+    "total": "Σύνολο",
+    "unchecked": "Μη επιλεγμένο",
+    "upgradeRequired": "Απαιτείται αναβάθμιση",
+    "upgradeToProForChartTypes": "Αναβαθμίστε στο πρόγραμμα Pro για να χρησιμοποιήσετε γραφήματα οριζόντιων ράβδων, γραμμών και δακτυλίου",
+    "value": {
+      "days_one": "{{count}} ημέρα",
+      "days_other": "{{count}} ημέρες"
+    },
+    "xAxis": "Άξονας X",
+    "yAxis": "Άξονας Y",
+    "drilldown": {
+      "ariaLabel": "Προεπισκόπηση δεδομένων πίνακα",
+      "search": "Αναζήτηση",
+      "dismiss": "Κλείσιμο",
+      "more": "Περισσότερα",
+      "saveAsView": "Αποθήκευση ως προβολή…",
+      "openDatabase": "Άνοιγμα {{database}}",
+      "selectedRows": "Επιλεγμένες γραμμές ({{count}})",
+      "cannotSaveSelectedRows": "Οι επιλεγμένες γραμμές δεν μπορούν να αποθηκευτούν ως προβολή",
+      "open": "ΑΝΟΙΓΜΑ",
+      "fromDashboardFilter": "Από φίλτρο πίνακα εργαλείων",
+      "rowCount_one": "{{count}} γραμμή",
+      "rowCount_other": "{{count}} γραμμές"
+    }
+  },
+  "dashboard": {
+    "addWidget": "Προσθήκη γραφικού στοιχείου",
+    "creationRequiresPro": "Η δημιουργία προβολής πίνακα εργαλείων απαιτεί χώρο εργασίας Pro.",
+    "done": "Τέλος",
+    "edit": "Επεξεργασία",
+    "empty": {
+      "editDashboard": "Επεξεργασία πίνακα εργαλείων",
+      "newView": "Νέα προβολή",
+      "text": "Προσθέστε γραφήματα, πίνακες, λίστες"
+    },
+    "globalFilters": {
+      "addAnother": "Προσθήκη άλλου",
+      "addToFilter": "Προσθήκη στο φίλτρο",
+      "appliesTo": "Αυτό το φίλτρο θα εφαρμοστεί στις ιδιότητες τύπου {{type}} που έχουν επιλεγεί παρακάτω",
+      "button": "Φίλτρο",
+      "delete": "Διαγραφή φίλτρου",
+      "done": "Τέλος",
+      "endDate": "Ημερομηνία λήξης",
+      "filterBy": "Φιλτράρισμα κατά…",
+      "isChecked": "Είναι επιλεγμένο",
+      "isUnchecked": "Δεν είναι επιλεγμένο",
+      "more": "{{count}} ακόμη",
+      "moreActions": "Περισσότερες ενέργειες",
+      "multipleSourcesIntro": "Δημιουργήστε ένα φίλτρο που εφαρμόζεται σε ιδιότητες από πολλές πηγές",
+      "name": "Όνομα φίλτρου",
+      "noResults": "Κανένα αποτέλεσμα",
+      "op": {
+        "after": "Μετά",
+        "before": "Πριν",
+        "between": "Μεταξύ",
+        "checked": "Επιλεγμένο",
+        "complete": "Ολοκληρωμένο",
+        "doesNotContain": "Δεν περιέχει",
+        "endsWith": "Τελειώνει με",
+        "incomplete": "Μη ολοκληρωμένο",
+        "is": "Είναι",
+        "isEmpty": "Είναι κενό",
+        "isNot": "Δεν είναι",
+        "isNotEmpty": "Δεν είναι κενό",
+        "onOrAfter": "Από και μετά",
+        "onOrBefore": "Έως και",
+        "startsWith": "Ξεκινά με",
+        "unchecked": "Μη επιλεγμένο"
+      },
+      "people_one": "{{count}} άτομο",
+      "people_other": "{{count}} άτομα",
+      "relative": {
+        "amount": "Πλήθος",
+        "next": "Επόμενο",
+        "past": "Προηγούμενο",
+        "summaryNext_one": "Επόμ. {{unit}}",
+        "summaryNext_other": "Επόμ. {{count}} {{unit}}",
+        "summaryPast_one": "Προηγ. {{unit}}",
+        "summaryPast_other": "Προηγ. {{count}} {{unit}}",
+        "summaryThis": "Τρέχ. {{unit}}",
+        "this": "Τρέχον"
+      },
+      "relativeHint": "Το φίλτρο θα ενημερώνεται με την τρέχουσα ημερομηνία",
+      "relativeToToday": "Σχετικά με σήμερα",
+      "remove": "Αφαίρεση",
+      "reset": "Επαναφορά",
+      "sourceLine": "{{property}} ({{source}})",
+      "startDate": "Ημερομηνία έναρξης",
+      "title": "Φιλτράρισμα πολλών πηγών",
+      "units": {
+        "day_one": "ημέρα",
+        "day_other": "ημέρες",
+        "month_one": "μήνας",
+        "month_other": "μήνες",
+        "week_one": "εβδομάδα",
+        "week_other": "εβδομάδες",
+        "year_one": "έτος",
+        "year_other": "έτη"
+      },
+      "viewCount_one": "{{count}} προβολή",
+      "viewCount_other": "{{count}} προβολές"
+    },
+    "historyPreviewUnavailable": "Οι πίνακες εργαλείων δεν εμφανίζονται σε προεπισκόπηση στο ιστορικό εκδόσεων.",
+    "limit": {
+      "fullHint": "Διαγράψτε μια προβολή για να προσθέσετε νέα",
+      "fullTitle": "Ο πίνακας εργαλείων είναι πλήρης"
+    },
+    "menuName": "Πίνακας εργαλείων",
+    "picker": {
+      "back": "Πίσω",
+      "changeViewTitle": "Αλλαγή προβολής",
+      "close": "Κλείσιμο",
+      "createFailed": "Δεν ήταν δυνατή η δημιουργία της προβολής",
+      "editChart": "Επεξεργασία γραφήματος",
+      "layout": {
+        "board": "Πίνακας Kanban",
+        "calendar": "Ημερολόγιο",
+        "chart": "Γράφημα",
+        "feed": "Ροή",
+        "gallery": "Συλλογή",
+        "list": "Λίστα",
+        "table": "Πίνακας",
+        "timeline": "Χρονολόγιο"
+      },
+      "loadFailed": "Δεν ήταν δυνατή η φόρτωση των βάσεων δεδομένων",
+      "newView": "Νέα προβολή",
+      "newViewIn": "Νέα προβολή στη βάση {{database}}",
+      "noResults": "Δεν βρέθηκαν προβολές",
+      "otherSources": "Άλλες πηγές δεδομένων",
+      "searchPlaceholder": "Αναζήτηση προβολής...",
+      "showMore": "Εμφάνιση {{count}} ακόμη",
+      "source": "Πηγή",
+      "thisDatabase": "Αυτή η βάση δεδομένων",
+      "viewName": "Όνομα προβολής",
+      "viewsOn": "Προβολές της βάσης {{database}}",
+      "viewsOnThisDatabase": "Προβολές αυτής της βάσης δεδομένων"
+    },
+    "private": {
+      "reset": "Επαναφορά",
+      "resetAll": "Επαναφορά όλων των αλλαγών",
+      "saveForEveryone": "Αποθήκευση για όλους",
+      "saveOptions": "Περισσότερες επιλογές αποθήκευσης",
+      "saved": "Οι αλλαγές αποθηκεύτηκαν για όλους.",
+      "undo": "Αναίρεση",
+      "unsaved": "Μη αποθηκευμένες αλλαγές"
+    },
+    "referencedDashboardPrefix": "Προβολή του",
+    "row": {
+      "addToNewRow": "Προσθήκη σε νέα γραμμή",
+      "addToRow": "Προσθήκη σε γραμμή",
+      "moveDown": "Μετακίνηση κάτω",
+      "moveUp": "Μετακίνηση πάνω",
+      "movedDown": "Η γραμμή μετακινήθηκε κάτω",
+      "movedUp": "Η γραμμή μετακινήθηκε πάνω"
+    },
+    "rowLimit": "Μια γραμμή χωράει έως {{count}} γραφικά στοιχεία.",
+    "settings": {
+      "name": "Ρυθμίσεις πίνακα εργαλείων",
+      "showIconsInHeading": "Εμφάνιση εικονιδίων στην επικεφαλίδα",
+      "showWidgetTitles": "Εμφάνιση τίτλων γραφικών στοιχείων"
+    },
+    "toolbar": {
+      "openAsFullPage": "Άνοιγμα ως πλήρης σελίδα",
+      "settings": "Ρυθμίσεις"
+    },
+    "widget": {
+      "changeView": "Αλλαγή προβολής",
+      "close": "Κλείσιμο",
+      "createRowAbove": "Δημιουργία νέας γραμμής από πάνω",
+      "createRowBelow": "Δημιουργία νέας γραμμής από κάτω",
+      "delete": "Διαγραφή",
+      "dragHandle": "Σύρετε για μετακίνηση",
+      "duplicate": "Δημιουργία διπλότυπου",
+      "editView": "Επεξεργασία προβολής",
+      "filters": "Φίλτρα",
+      "loading": "Φόρτωση…",
+      "menu": "Επιλογές γραφικού στοιχείου",
+      "moveLeft": "Μετακίνηση αριστερά",
+      "moveRight": "Μετακίνηση δεξιά",
+      "moveToRow": "Μετακίνηση σε γραμμή",
+      "noAccess": "Δεν έχετε πρόσβαση σε αυτή τη βάση δεδομένων",
+      "notFound": "Αυτή η προβολή δεν υπάρχει πλέον",
+      "offline": "Διαθέσιμο όταν συνδεθείτε ξανά",
+      "openFailed": "Δεν ήταν δυνατό το άνοιγμα της προβολής",
+      "remove": "Αφαίρεση γραφικού στοιχείου",
+      "resizeHeight": "Σύρετε για αλλαγή ύψους γραμμής",
+      "resizeHeightValue": "{{height}} εικονοστοιχεία",
+      "resizeWidth": "Σύρετε για αλλαγή μεγέθους",
+      "resizeWidthValue": "{{columns}} από 12 στήλες",
+      "settings": "Ρυθμίσεις",
+      "sorts": "Ταξινομήσεις",
+      "source": "Πηγή",
+      "unsupported": "Ένας πίνακας εργαλείων δεν μπορεί να εμφανιστεί μέσα σε πίνακα εργαλείων",
+      "viewDataSource": "Προβολή πηγής δεδομένων",
+      "viewNameHint": "Μετονομάζει αυτή την προβολή",
+      "viewSettings": "Ρυθμίσεις προβολής"
+    },
+    "mobile": {
+      "viewCount_one": "{{count}} προβολή",
+      "viewCount_other": "{{count}} προβολές"
+    }
+  },
+  "databaseSearch": {
+    "clearSearch": "Εκκαθάριση αναζήτησης",
+    "noResults": "Κανένα αποτέλεσμα",
+    "placeholder": "Πληκτρολογήστε για αναζήτηση..."
   }
 }

@@ -13,6 +13,7 @@ const testDir = defineBddConfig({
 function optInSuites(): RegExp | undefined {
   const skipped = [
     ...(process.env.RUN_LARGE_DATABASE ? [] : ['@large-database']),
+    ...(process.env.RUN_DASHBOARD_PERF ? [] : ['@dashboard-perf']),
     ...(process.env.RUN_NATHAN_EMPLOYEES ? [] : ['@nathan-employees']),
   ];
 

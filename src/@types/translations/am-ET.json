@@ -467,7 +467,11 @@
       "editProperty": "የጊዜ ቅርጸት",
       "newProperty": "የተሳሳተ ቅርጸት",
       "deleteFieldPromptMessage": "12 ሰዓት",
-      "newColumn": "24 ሰዓት"
+      "newColumn": "24 ሰዓት",
+      "person": {
+        "searchForMore_one": "ተጨማሪ {{count}} ሰው ለማግኘት ይፈልጉ",
+        "searchForMore_other": "ተጨማሪ {{count}} ሰዎችን ለማግኘት ይፈልጉ"
+      }
     },
     "rowPage": {
       "newField": "ግልጽ ቀን",
@@ -481,7 +485,9 @@
         "one": "የተደበቁ {} ፊልዶችን ይደብቁ",
         "many": "የተደበቁ {} ፊልዶችን ይደብቁ",
         "other": "የተደበቁ {} ፊልዶችን ይደብቁ"
-      }
+      },
+      "openInCenterPeek": "በመሃል መስኮት ክፈት",
+      "resizeSidePeek": "የጎን ፓነሉን መጠን ቀይር"
     },
     "sort": {
       "ascending": "ኧረይህ ንብረት ይሰረዛል",
@@ -496,10 +502,12 @@
       "textPlaceholder": "ተጠናቅቋል",
       "copyProperty": "ያልተሟላ ነው",
       "count": "ደብቅ",
-      "newRow": "አሳይ",
+      "newRow": "አዲስ ገጽ",
       "action": "ግራ ያስገቡ",
       "add": "ቀኝ ያስገቡ",
-      "drag": "የተባዛ"
+      "drag": "የተባዛ",
+      "loadingRowsProgress": "ረድፎች በመጫን ላይ… {{loaded}}/{{total}}",
+      "rowsNotLoadedYet": "አንዳንድ ረድፎች ገና አልተጫኑም"
     },
     "selectOption": {
       "create": "ሰርዝ",
@@ -526,7 +534,20 @@
       "submitNewTask": "ሰርዝ"
     },
     "menuName": "ጽሑፍ",
-    "referencedGridPrefix": "አመልካች ሳጥን"
+    "referencedGridPrefix": "አመልካች ሳጥን",
+    "calculationTypeLabel": {
+      "countChecked": "ምልክት የተደረገባቸው",
+      "countUnchecked": "ምልክት ያልተደረገባቸው"
+    },
+    "dateFilter": {
+      "is": "ነው"
+    },
+    "openPagesIn": {
+      "title": "ገጾችን ክፈት በ",
+      "sidePeek": "የጎን ፓነል",
+      "centerPeek": "የመሃል መስኮት",
+      "fullPage": "ሙሉ ገጽ"
+    }
   },
   "document": {
     "menuName": "ሰነድ",
@@ -716,7 +737,11 @@
   },
   "board": {
     "column": {
-      "createNewCard": "አዲስ"
+      "createNewCard": "አዲስ",
+      "calculate": "አስላ",
+      "calculationTooltip": "የ{{property}} {{calculation}}",
+      "colorColumns": "ዓምዶችን ቀልም",
+      "properties": "ንብረቶች"
     },
     "menuName": "ቦርድ",
     "referencedBoardPrefix": "እይታ"
@@ -855,5 +880,422 @@
     "replaceAll": "የገቢ መልእክት ሳጥን",
     "noResult": "ምንም ውጤቶች የሉም",
     "caseSensitive": "መጪ"
+  },
+  "chart": {
+    "a11y": {
+      "table": "የገበታ ውሂብ"
+    },
+    "agg": {
+      "average": "አማካይ",
+      "countAll": "ሁሉንም ቁጠር",
+      "countEmpty": "ባዶዎችን ቁጠር",
+      "countUnique": "ልዩ እሴቶችን ቁጠር",
+      "countValues": "እሴቶችን ቁጠር",
+      "dateRange": "የቀን ክልል",
+      "earliest": "የመጀመሪያው",
+      "latest": "የመጨረሻው",
+      "max": "ከፍተኛ",
+      "median": "መካከለኛ",
+      "min": "ዝቅተኛ",
+      "percentChecked": "ምልክት የተደረገባቸው መቶኛ",
+      "percentEmpty": "የባዶዎች መቶኛ",
+      "percentNotEmpty": "ባዶ ያልሆኑት መቶኛ",
+      "percentUnchecked": "ምልክት ያልተደረገባቸው መቶኛ",
+      "range": "ክልል",
+      "sum": "ድምር"
+    },
+    "aggregation": "ማጠቃለያ",
+    "barChart": "አሞሌ",
+    "chartType": "የገበታ ዓይነት",
+    "checked": "ምልክት የተደረገበት",
+    "color": {
+      "auto": "ራስ-ሰር",
+      "blue": "ሰማያዊ",
+      "colorful": "ባለቀለም",
+      "colorless": "ቀለም አልባ",
+      "green": "አረንጓዴ",
+      "orange": "ብርቱካናማ",
+      "pink": "ሮዝ",
+      "purple": "ሐምራዊ",
+      "red": "ቀይ",
+      "teal": "ሰማያዊ አረንጓዴ",
+      "yellow": "ቢጫ"
+    },
+    "cumulative": "ተደማሪ",
+    "dateCondition": "በቀን መቧደን",
+    "dateGrouping": {
+      "day": "ቀን",
+      "month": "ወር",
+      "relative": "አንጻራዊ",
+      "week": "ሳምንት",
+      "year": "ዓመት"
+    },
+    "decimalPlaces": {
+      "auto": "ራስ-ሰር"
+    },
+    "donutChart": "ዶናት",
+    "emptyState": {
+      "description": "ገበታውን ለማየት ውሂብ ያላቸውን ረድፎች ያክሉ",
+      "noField": "ለመቧደን የሚገኝ መስክ የለም",
+      "noFieldDescription": "የገበታ እይታን ለመጠቀም ነጠላ ምርጫ፣ ብዙ ምርጫ፣ አመልካች ሳጥን ወይም የቀን መስክ ይፍጠሩ።",
+      "title": "የሚታይ ውሂብ የለም"
+    },
+    "emptyValue": "ባዶ",
+    "groups": {
+      "count": "{{count}} ቡድኖች",
+      "hideAll": "ሁሉንም ደብቅ",
+      "hideGroup": "ቡድኑን ደብቅ",
+      "noGroups": "ምንም ቡድን የለም",
+      "showAll": "ሁሉንም አሳይ",
+      "showGroup": "ቡድኑን አሳይ",
+      "unknownPerson": "ያልታወቀ ሰው",
+      "unknownUser": "ያልታወቀ ተጠቃሚ",
+      "untitled": "ርዕስ አልባ",
+      "visibleOfTotal": "{{visible}} ከ{{total}}"
+    },
+    "horizontalBarChart": "አግድም አሞሌ",
+    "legend": {
+      "auto": "ራስ-ሰር",
+      "bottom": "ታች",
+      "nextPage": "ቀጣይ ገጽ",
+      "off": "ጠፍቷል",
+      "page": "{{page}}/{{count}}",
+      "previousPage": "ቀዳሚ ገጽ"
+    },
+    "lineChart": "መስመር",
+    "menuName": "ገበታ",
+    "noFieldValue": "{} የለም",
+    "noGroupableFields": "ሊቧደን የሚችል መስክ የለም",
+    "number": {
+      "calculate": "አስላ",
+      "countAll": "ሁሉንም ቁጠር",
+      "emptyState": "ውሂብ የለም",
+      "format": "ቅርጸት",
+      "formatAuto": "ራስ-ሰር",
+      "formatCompact": "የታመቀ",
+      "formatPercent": "መቶኛ",
+      "property": "ንብረት",
+      "title": "ርዕስ",
+      "titleOf": "የ{{field}} {{aggregation}}",
+      "titlePlaceholder": "ነባሪ ርዕስ"
+    },
+    "numberChart": "ቁጥር",
+    "numberColor": {
+      "addRule": "ደንብ ያክሉ",
+      "blue": "ሰማያዊ",
+      "brown": "ቡናማ",
+      "default": "ነባሪ",
+      "deleteRule": "ደንብ ሰርዝ",
+      "dynamic": "ተለዋዋጭ",
+      "dynamicColor": "ተለዋዋጭ ቀለም",
+      "else": "ካልሆነ",
+      "equal": "እኩል ነው",
+      "gray": "ግራጫ",
+      "greaterThan": "ይበልጣል",
+      "greaterThanOrEqual": "ይበልጣል ወይም እኩል ነው",
+      "green": "አረንጓዴ",
+      "ifValue": "እሴቱ ከሆነ",
+      "lessThan": "ያንሳል",
+      "lessThanOrEqual": "ያንሳል ወይም እኩል ነው",
+      "notEqual": "እኩል አይደለም",
+      "orange": "ብርቱካናማ",
+      "pink": "ሮዝ",
+      "purple": "ሐምራዊ",
+      "red": "ቀይ",
+      "sameAsColor": "ከቀለሙ ጋር ተመሳሳይ",
+      "yellow": "ቢጫ"
+    },
+    "settings": {
+      "auto": "ራስ-ሰር",
+      "back": "ተመለስ",
+      "calculate": "አስላ",
+      "chartSettings": "የገበታ ቅንብሮች",
+      "chartTitle": "የገበታ ርዕስ",
+      "chartType": "የገበታ ዓይነት",
+      "color": "ቀለም",
+      "count": "ብዛት",
+      "cumulative": "ተደማሪ",
+      "data": "ውሂብ",
+      "dataLabels": "የውሂብ መለያዎች",
+      "dateGrouping": "በቀን መቧደን",
+      "decimalPlaces": "የአስርዮሽ ቦታዎች",
+      "default": "ነባሪ",
+      "donut": "ዶናት",
+      "eachSliceRepresents": "እያንዳንዱ ቁራጭ የሚወክለው",
+      "endAt": "የሚያበቃው በ",
+      "exactValue": "ትክክለኛ እሴት",
+      "firstLetter": "የመጀመሪያ ፊደል",
+      "format": "ቅርጸት",
+      "groupBy": "መቧደን በ",
+      "groupByNone": "ምንም",
+      "groupByText": "ጽሑፍን መቧደን",
+      "groupStyle": "የቡድን ቅጥ",
+      "groupStyleGrouped": "የተቧደነ",
+      "groupStylePercent": "መቶኛ",
+      "groupStyleStacked": "የተደራረበ",
+      "groups": "ቡድኖች",
+      "horizontalBar": "አግድም አሞሌ",
+      "legend": "መግለጫ",
+      "line": "መስመር",
+      "moreOptions": "ተጨማሪ አማራጮች",
+      "moreSeries": "+{{n}} ተጨማሪ",
+      "noResults": "ምንም ውጤት የለም",
+      "number": "ቁጥር",
+      "onlyShowingFirstGroups": "የመጀመሪያዎቹ {{n}} ቡድኖች ብቻ ይታያሉ",
+      "percent": "መቶኛ",
+      "rangeSize": "የክልል መጠን",
+      "ranges": "ክልሎች",
+      "rangesPreview": "ከ{{from}} እስከ {{to}} {{count}} ክልሎች",
+      "searchProperty": "ንብረት ይፈልጉ…",
+      "size": "መጠን {{size}}",
+      "sortBy": "ደርድር በ",
+      "startAt": "የሚጀምረው በ",
+      "style": "ቅጥ",
+      "verticalBar": "ቋሚ አሞሌ",
+      "viewSettings": "የእይታ ቅንብሮች",
+      "whatToShow": "ምን ይታይ",
+      "xAxis": "X ዘንግ",
+      "yAxis": "Y ዘንግ"
+    },
+    "showEmptyValues": "ባዶ እሴቶችን አሳይ",
+    "sort": {
+      "default": "ነባሪ",
+      "labelAsc": "ሀ → ፐ",
+      "labelDesc": "ፐ → ሀ",
+      "manual": "በእጅ",
+      "valueAsc": "እሴት ከዝቅተኛ ወደ ከፍተኛ",
+      "valueDesc": "እሴት ከከፍተኛ ወደ ዝቅተኛ"
+    },
+    "state": {
+      "error": "ይህን ገበታ መጫን አልተቻለም",
+      "noData": "ውሂብ የለም",
+      "preparing": "ገበታዎ እየተዘጋጀ ነው",
+      "retry": "እንደገና ሞክር"
+    },
+    "style": {
+      "color": "ቀለም",
+      "dataLabels": "የውሂብ መለያዎች",
+      "decimalPlaces": "የአስርዮሽ ቦታዎች",
+      "legend": "መግለጫ",
+      "title": "ቅጥ"
+    },
+    "tooltip": {
+      "average": "አማካይ",
+      "clickToView": "ውሂቡን ለማየት ጠቅ ያድርጉ",
+      "count": "ብዛት",
+      "countValues": "እሴቶችን ቁጠር",
+      "max": "ከፍተኛ",
+      "median": "መካከለኛ",
+      "min": "ዝቅተኛ",
+      "rows": "{{count}} ረድፎች",
+      "sum": "ድምር",
+      "tapAgainToView": "ውሂቡን ለማየት እንደገና መታ ያድርጉ"
+    },
+    "total": "ጠቅላላ",
+    "unchecked": "ምልክት ያልተደረገበት",
+    "upgradeRequired": "ማሻሻል ያስፈልጋል",
+    "upgradeToProForChartTypes": "አግድም አሞሌ፣ መስመር እና ዶናት ገበታዎችን ለመጠቀም ወደ Pro ዕቅድ ያሻሽሉ",
+    "value": {
+      "days_one": "{{count}} ቀን",
+      "days_other": "{{count}} ቀናት"
+    },
+    "xAxis": "X ዘንግ",
+    "yAxis": "Y ዘንግ",
+    "drilldown": {
+      "ariaLabel": "የሰንጠረዥ ውሂብ ቅድመ እይታ",
+      "search": "ፈልግ",
+      "dismiss": "አሰናብት",
+      "more": "ተጨማሪ",
+      "saveAsView": "እንደ እይታ አስቀምጥ…",
+      "openDatabase": "{{database}} ክፈት",
+      "selectedRows": "የተመረጡ ረድፎች ({{count}})",
+      "cannotSaveSelectedRows": "የተመረጡ ረድፎች እንደ እይታ ሊቀመጡ አይችሉም",
+      "open": "ክፈት",
+      "fromDashboardFilter": "ከዳሽቦርድ ማጣሪያ",
+      "rowCount_one": "{{count}} ረድፍ",
+      "rowCount_other": "{{count}} ረድፎች"
+    }
+  },
+  "dashboard": {
+    "addWidget": "ዊጀት ያክሉ",
+    "creationRequiresPro": "የዳሽቦርድ እይታ መፍጠር የPro የስራ ቦታ ይፈልጋል።",
+    "done": "ተከናውኗል",
+    "edit": "አርትዕ",
+    "empty": {
+      "editDashboard": "ዳሽቦርድ አርትዕ",
+      "newView": "አዲስ እይታ",
+      "text": "ገበታዎችን፣ ሰንጠረዦችን፣ ዝርዝሮችን ያክሉ"
+    },
+    "globalFilters": {
+      "addAnother": "ሌላ ያክሉ",
+      "addToFilter": "ወደ ማጣሪያ ያክሉ",
+      "appliesTo": "ይህ ማጣሪያ ከታች በተመረጡት የ{{type}} ንብረቶች ላይ ይተገበራል",
+      "button": "ማጣሪያ",
+      "delete": "ማጣሪያ ሰርዝ",
+      "done": "ተከናውኗል",
+      "endDate": "የማብቂያ ቀን",
+      "filterBy": "አጣራ በ…",
+      "isChecked": "ምልክት ተደርጎበታል",
+      "isUnchecked": "ምልክት አልተደረገበትም",
+      "more": "{{count}} ተጨማሪ",
+      "moreActions": "ተጨማሪ እርምጃዎች",
+      "multipleSourcesIntro": "ከብዙ ምንጮች በሚመጡ ንብረቶች ላይ የሚተገበር ማጣሪያ ይፍጠሩ",
+      "name": "የማጣሪያ ስም",
+      "noResults": "ምንም ውጤት የለም",
+      "op": {
+        "after": "በኋላ",
+        "before": "በፊት",
+        "between": "መካከል",
+        "checked": "ምልክት የተደረገበት",
+        "complete": "የተጠናቀቀ",
+        "doesNotContain": "አይይዝም",
+        "endsWith": "የሚያበቃው በ",
+        "incomplete": "ያልተጠናቀቀ",
+        "is": "ነው",
+        "isEmpty": "ባዶ ነው",
+        "isNot": "አይደለም",
+        "isNotEmpty": "ባዶ አይደለም",
+        "onOrAfter": "በዕለቱ ወይም በኋላ",
+        "onOrBefore": "በዕለቱ ወይም በፊት",
+        "startsWith": "የሚጀምረው በ",
+        "unchecked": "ምልክት ያልተደረገበት"
+      },
+      "people_one": "{{count}} ሰው",
+      "people_other": "{{count}} ሰዎች",
+      "relative": {
+        "amount": "መጠን",
+        "next": "ቀጣይ",
+        "past": "ያለፈ",
+        "summaryNext_one": "የሚቀጥለው {{unit}}",
+        "summaryNext_other": "የሚቀጥሉት {{count}} {{unit}}",
+        "summaryPast_one": "ያለፈው {{unit}}",
+        "summaryPast_other": "ያለፉት {{count}} {{unit}}",
+        "summaryThis": "ይህ {{unit}}",
+        "this": "ይህ"
+      },
+      "relativeHint": "ማጣሪያው ከአሁኑ ቀን ጋር ይዘምናል",
+      "relativeToToday": "ከዛሬ አንጻር ነው",
+      "remove": "አስወግድ",
+      "reset": "ዳግም አስጀምር",
+      "sourceLine": "{{property}} በ{{source}}",
+      "startDate": "የመጀመሪያ ቀን",
+      "title": "ብዙ ምንጮችን አጣራ",
+      "units": {
+        "day_one": "ቀን",
+        "day_other": "ቀናት",
+        "month_one": "ወር",
+        "month_other": "ወራት",
+        "week_one": "ሳምንት",
+        "week_other": "ሳምንታት",
+        "year_one": "ዓመት",
+        "year_other": "ዓመታት"
+      },
+      "viewCount_one": "{{count}} እይታ",
+      "viewCount_other": "{{count}} እይታዎች"
+    },
+    "historyPreviewUnavailable": "ዳሽቦርዶች በስሪት ታሪክ ውስጥ ቅድመ እይታ አይደረግባቸውም።",
+    "limit": {
+      "fullHint": "አዲስ ለማከል አንድ እይታ ይሰርዙ",
+      "fullTitle": "ዳሽቦርዱ ሞልቷል"
+    },
+    "menuName": "ዳሽቦርድ",
+    "picker": {
+      "back": "ተመለስ",
+      "changeViewTitle": "እይታ ቀይር",
+      "close": "ዝጋ",
+      "createFailed": "እይታውን መፍጠር አልተቻለም",
+      "editChart": "ገበታ አርትዕ",
+      "layout": {
+        "board": "ቦርድ",
+        "calendar": "የቀን መቁጠሪያ",
+        "chart": "ገበታ",
+        "feed": "ፊድ",
+        "gallery": "ማዕከለ-ስዕላት",
+        "list": "ዝርዝር",
+        "table": "ሰንጠረዥ",
+        "timeline": "የጊዜ መስመር"
+      },
+      "loadFailed": "የመረጃ ቋቶችን መጫን አልተቻለም",
+      "newView": "አዲስ እይታ",
+      "newViewIn": "በ{{database}} ውስጥ አዲስ እይታ",
+      "noResults": "ምንም እይታ አልተገኘም",
+      "otherSources": "ሌሎች የውሂብ ምንጮች",
+      "searchPlaceholder": "እይታ ይፈልጉ...",
+      "showMore": "{{count}} ተጨማሪ አሳይ",
+      "source": "ምንጭ",
+      "thisDatabase": "ይህ የመረጃ ቋት",
+      "viewName": "የእይታ ስም",
+      "viewsOn": "የ{{database}} እይታዎች",
+      "viewsOnThisDatabase": "የዚህ የመረጃ ቋት እይታዎች"
+    },
+    "private": {
+      "reset": "ዳግም አስጀምር",
+      "resetAll": "ሁሉንም ለውጦች ዳግም አስጀምር",
+      "saveForEveryone": "ለሁሉም አስቀምጥ",
+      "saveOptions": "ተጨማሪ የማስቀመጫ አማራጮች",
+      "saved": "ለውጦቹ ለሁሉም ተቀምጠዋል።",
+      "undo": "ቀልብስ",
+      "unsaved": "ያልተቀመጡ ለውጦች"
+    },
+    "referencedDashboardPrefix": "እይታ ከ",
+    "row": {
+      "addToNewRow": "ወደ አዲስ ረድፍ ያክሉ",
+      "addToRow": "ወደ ረድፍ ያክሉ",
+      "moveDown": "ወደ ታች አንቀሳቅስ",
+      "moveUp": "ወደ ላይ አንቀሳቅስ",
+      "movedDown": "ረድፉ ወደ ታች ተንቀሳቅሷል",
+      "movedUp": "ረድፉ ወደ ላይ ተንቀሳቅሷል"
+    },
+    "rowLimit": "አንድ ረድፍ እስከ {{count}} ዊጀቶች ይይዛል።",
+    "settings": {
+      "name": "የዳሽቦርድ ቅንብሮች",
+      "showIconsInHeading": "በርዕሱ ውስጥ አዶዎችን አሳይ",
+      "showWidgetTitles": "የዊጀት ርዕሶችን አሳይ"
+    },
+    "toolbar": {
+      "openAsFullPage": "እንደ ሙሉ ገጽ ክፈት",
+      "settings": "ቅንብሮች"
+    },
+    "widget": {
+      "changeView": "እይታ ቀይር",
+      "close": "ዝጋ",
+      "createRowAbove": "ከላይ አዲስ ረድፍ ፍጠር",
+      "createRowBelow": "ከታች አዲስ ረድፍ ፍጠር",
+      "delete": "ሰርዝ",
+      "dragHandle": "ለማንቀሳቀስ ይጎትቱ",
+      "duplicate": "አባዛ",
+      "editView": "እይታ አርትዕ",
+      "filters": "ማጣሪያዎች",
+      "loading": "በመጫን ላይ…",
+      "menu": "የዊጀት አማራጮች",
+      "moveLeft": "ወደ ግራ አንቀሳቅስ",
+      "moveRight": "ወደ ቀኝ አንቀሳቅስ",
+      "moveToRow": "ወደ ረድፍ አንቀሳቅስ",
+      "noAccess": "ይህን የመረጃ ቋት የመድረስ ፈቃድ የለዎትም",
+      "notFound": "ይህ እይታ ከአሁን በኋላ የለም",
+      "offline": "ተመልሰው መስመር ላይ ሲሆኑ ይገኛል",
+      "openFailed": "እይታውን መክፈት አልተቻለም",
+      "remove": "ዊጀት አስወግድ",
+      "resizeHeight": "የረድፍ ቁመትን ለመቀየር ይጎትቱ",
+      "resizeHeightValue": "{{height}} ፒክሰሎች",
+      "resizeWidth": "መጠኑን ለመቀየር ይጎትቱ",
+      "resizeWidthValue": "ከ12 ዓምዶች {{columns}}",
+      "settings": "ቅንብሮች",
+      "sorts": "ድርደራዎች",
+      "source": "ምንጭ",
+      "unsupported": "ዳሽቦርድ በዳሽቦርድ ውስጥ ሊታይ አይችልም",
+      "viewDataSource": "የውሂብ ምንጭን ይመልከቱ",
+      "viewNameHint": "ይህን እይታ እንደገና ይሰይማል",
+      "viewSettings": "የእይታ ቅንብሮች"
+    },
+    "mobile": {
+      "viewCount_one": "{{count}} እይታ",
+      "viewCount_other": "{{count}} እይታዎች"
+    }
+  },
+  "databaseSearch": {
+    "clearSearch": "ፍለጋን አጽዳ",
+    "noResults": "ምንም ውጤት የለም",
+    "placeholder": "ለመፈለግ ይተይቡ..."
   }
 }

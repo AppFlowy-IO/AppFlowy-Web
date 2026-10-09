@@ -1,0 +1,40 @@
+{
+  "locale": "ga-IE",
+  "terms": {
+    "dashboard": "deais",
+    "widget": "giuirléid",
+    "chart": "cairt",
+    "view": "amharc",
+    "row": "ró",
+    "property": "airí",
+    "database": "bunachar sonraí",
+    "source": "foinse",
+    "page": "leathanach",
+    "done": "Déanta",
+    "edit": "Cuir in eagar",
+    "delete": "Scrios",
+    "duplicate": "Dúblaigh",
+    "save": "Sábháil",
+    "cancel": "Cealaigh",
+    "close": "Dún",
+    "back": "Siar",
+    "settings": "Socruithe",
+    "title": "Teideal",
+    "filter": "Scagaire",
+    "sort": "Sórtáil",
+    "search": "Cuardaigh",
+    "undo": "Cealaigh",
+    "redo": "Athdhéan",
+    "reset": "Athshocraigh",
+    "untitled": "Gan teideal",
+    "day": "Lá",
+    "week": "Seachtain",
+    "month": "Mí",
+    "year": "Bliain"
+  },
+  "untranslated_ok": [
+    "chart.legend.page",
+    "chart.sort.labelAsc",
+    "chart.sort.labelDesc"
+  ]
+}

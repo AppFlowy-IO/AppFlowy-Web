@@ -4,6 +4,12 @@
       "showGroup": "Hiển thị nhóm",
       "showGroupContent": "Bạn có chắc chắn muốn hiển thị nhóm này trên bảng không?",
       "failedToLoad": "Không tải được chế độ xem bảng"
+    },
+    "column": {
+      "calculate": "Tính toán",
+      "calculationTooltip": "{{calculation}} của {{property}}",
+      "colorColumns": "Tô màu cột",
+      "properties": "Thuộc tính"
     }
   },
   "document": {
@@ -17,6 +23,441 @@
           "embed": "Nhúng"
         }
       }
+    }
+  },
+  "chart": {
+    "a11y": {
+      "table": "Dữ liệu biểu đồ"
+    },
+    "agg": {
+      "average": "Trung bình",
+      "countAll": "Đếm tất cả",
+      "countEmpty": "Đếm ô trống",
+      "countUnique": "Đếm giá trị duy nhất",
+      "countValues": "Đếm giá trị",
+      "dateRange": "Khoảng ngày",
+      "earliest": "Sớm nhất",
+      "latest": "Muộn nhất",
+      "max": "Tối đa",
+      "median": "Trung vị",
+      "min": "Tối thiểu",
+      "percentChecked": "Phần trăm đã chọn",
+      "percentEmpty": "Phần trăm trống",
+      "percentNotEmpty": "Phần trăm không trống",
+      "percentUnchecked": "Phần trăm không chọn",
+      "range": "Khoảng",
+      "sum": "Tổng"
+    },
+    "aggregation": "Tổng hợp",
+    "barChart": "Biểu đồ cột",
+    "chartType": "Loại biểu đồ",
+    "checked": "Đã chọn",
+    "color": {
+      "auto": "Tự động",
+      "blue": "Xanh dương",
+      "colorful": "Nhiều màu",
+      "colorless": "Không màu",
+      "green": "Xanh lá",
+      "orange": "Cam",
+      "pink": "Hồng",
+      "purple": "Tím",
+      "red": "Đỏ",
+      "teal": "Xanh mòng két",
+      "yellow": "Vàng"
+    },
+    "cumulative": "Lũy kế",
+    "dateCondition": "Nhóm theo ngày",
+    "dateGrouping": {
+      "day": "Ngày",
+      "month": "Tháng",
+      "relative": "Tương đối",
+      "week": "Tuần",
+      "year": "Năm"
+    },
+    "decimalPlaces": {
+      "auto": "Tự động"
+    },
+    "donutChart": "Biểu đồ vành khuyên",
+    "emptyState": {
+      "description": "Thêm hàng có dữ liệu để xem biểu đồ",
+      "noField": "Không có trường nào để nhóm",
+      "noFieldDescription": "Tạo trường Lựa chọn, Chọn nhiều, Hộp kiểm hoặc Ngày để dùng chế độ xem biểu đồ.",
+      "title": "Không có dữ liệu để hiển thị"
+    },
+    "emptyValue": "Trống",
+    "groups": {
+      "count": "{{count}} nhóm",
+      "hideAll": "Ẩn tất cả",
+      "hideGroup": "Ẩn nhóm",
+      "noGroups": "Không có nhóm",
+      "showAll": "Hiện tất cả",
+      "showGroup": "Hiện nhóm",
+      "unknownPerson": "Người không xác định",
+      "unknownUser": "Người dùng không xác định",
+      "untitled": "Không tiêu đề",
+      "visibleOfTotal": "{{visible}}/{{total}}"
+    },
+    "horizontalBarChart": "Biểu đồ thanh ngang",
+    "legend": {
+      "auto": "Tự động",
+      "bottom": "Dưới cùng",
+      "nextPage": "Trang sau",
+      "off": "Tắt",
+      "page": "{{page}}/{{count}}",
+      "previousPage": "Trang trước"
+    },
+    "lineChart": "Biểu đồ đường",
+    "menuName": "Biểu đồ",
+    "noFieldValue": "Không có {}",
+    "noGroupableFields": "Không có trường nào có thể nhóm",
+    "number": {
+      "calculate": "Tính toán",
+      "countAll": "Đếm tất cả",
+      "emptyState": "Không có dữ liệu",
+      "format": "Định dạng",
+      "formatAuto": "Tự động",
+      "formatCompact": "Rút gọn",
+      "formatPercent": "Phần trăm",
+      "property": "Thuộc tính",
+      "title": "Tiêu đề",
+      "titleOf": "{{aggregation}} của {{field}}",
+      "titlePlaceholder": "Tiêu đề mặc định"
+    },
+    "numberChart": "Số",
+    "numberColor": {
+      "addRule": "Thêm quy tắc",
+      "blue": "Xanh dương",
+      "brown": "Nâu",
+      "default": "Mặc định",
+      "deleteRule": "Xóa quy tắc",
+      "dynamic": "Động",
+      "dynamicColor": "Màu động",
+      "else": "Ngược lại",
+      "equal": "Bằng",
+      "gray": "Xám",
+      "greaterThan": "Lớn hơn",
+      "greaterThanOrEqual": "Lớn hơn hoặc bằng",
+      "green": "Xanh lá",
+      "ifValue": "Nếu giá trị",
+      "lessThan": "Nhỏ hơn",
+      "lessThanOrEqual": "Nhỏ hơn hoặc bằng",
+      "notEqual": "Không bằng",
+      "orange": "Cam",
+      "pink": "Hồng",
+      "purple": "Tím",
+      "red": "Đỏ",
+      "sameAsColor": "Giống màu",
+      "yellow": "Vàng"
+    },
+    "settings": {
+      "auto": "Tự động",
+      "back": "Quay lại",
+      "calculate": "Tính toán",
+      "chartSettings": "Cài đặt biểu đồ",
+      "chartTitle": "Tiêu đề biểu đồ",
+      "chartType": "Loại biểu đồ",
+      "color": "Màu",
+      "count": "Số lượng",
+      "cumulative": "Lũy kế",
+      "data": "Dữ liệu",
+      "dataLabels": "Nhãn dữ liệu",
+      "dateGrouping": "Nhóm theo ngày",
+      "decimalPlaces": "Số chữ số thập phân",
+      "default": "Mặc định",
+      "donut": "Vành khuyên",
+      "eachSliceRepresents": "Mỗi lát thể hiện",
+      "endAt": "Kết thúc tại",
+      "exactValue": "Giá trị chính xác",
+      "firstLetter": "Chữ cái đầu",
+      "format": "Định dạng",
+      "groupBy": "Nhóm theo",
+      "groupByNone": "Không có",
+      "groupByText": "Nhóm theo văn bản",
+      "groupStyle": "Kiểu nhóm",
+      "groupStyleGrouped": "Cạnh nhau",
+      "groupStylePercent": "Phần trăm",
+      "groupStyleStacked": "Xếp chồng",
+      "groups": "Nhóm",
+      "horizontalBar": "Thanh ngang",
+      "legend": "Chú giải",
+      "line": "Đường",
+      "moreOptions": "Thêm tùy chọn",
+      "moreSeries": "+{{n}} mục khác",
+      "noResults": "Không có kết quả",
+      "number": "Số",
+      "onlyShowingFirstGroups": "Chỉ hiển thị {{n}} nhóm đầu tiên",
+      "percent": "Phần trăm",
+      "rangeSize": "Kích thước khoảng",
+      "ranges": "Các khoảng",
+      "rangesPreview": "{{count}} khoảng từ {{from}} đến {{to}}",
+      "searchProperty": "Tìm thuộc tính…",
+      "size": "Kích thước {{size}}",
+      "sortBy": "Sắp xếp theo",
+      "startAt": "Bắt đầu tại",
+      "style": "Kiểu",
+      "verticalBar": "Cột dọc",
+      "viewSettings": "Cài đặt chế độ xem",
+      "whatToShow": "Nội dung hiển thị",
+      "xAxis": "Trục X",
+      "yAxis": "Trục Y"
+    },
+    "showEmptyValues": "Hiện giá trị trống",
+    "sort": {
+      "default": "Mặc định",
+      "labelAsc": "A → Z",
+      "labelDesc": "Z → A",
+      "manual": "Thủ công",
+      "valueAsc": "Giá trị thấp → cao",
+      "valueDesc": "Giá trị cao → thấp"
+    },
+    "state": {
+      "error": "Không thể tải biểu đồ này",
+      "noData": "Không có dữ liệu",
+      "preparing": "Đang chuẩn bị biểu đồ",
+      "retry": "Thử lại"
+    },
+    "style": {
+      "color": "Màu",
+      "dataLabels": "Nhãn dữ liệu",
+      "decimalPlaces": "Số chữ số thập phân",
+      "legend": "Chú giải",
+      "title": "Kiểu"
+    },
+    "tooltip": {
+      "average": "Trung bình",
+      "clickToView": "Nhấp để xem dữ liệu",
+      "count": "Số lượng",
+      "countValues": "Đếm giá trị",
+      "max": "Tối đa",
+      "median": "Trung vị",
+      "min": "Tối thiểu",
+      "rows": "{{count}} hàng",
+      "sum": "Tổng",
+      "tapAgainToView": "Chạm lần nữa để xem dữ liệu"
+    },
+    "total": "Tổng cộng",
+    "unchecked": "Không chọn",
+    "upgradeRequired": "Cần nâng cấp",
+    "upgradeToProForChartTypes": "Nâng cấp lên gói Pro để dùng biểu đồ thanh ngang, biểu đồ đường và biểu đồ vành khuyên",
+    "value": {
+      "days_other": "{{count}} ngày"
+    },
+    "xAxis": "Trục X",
+    "yAxis": "Trục Y",
+    "drilldown": {
+      "ariaLabel": "Xem trước dữ liệu bảng",
+      "search": "Tìm kiếm",
+      "dismiss": "Đóng",
+      "more": "Thêm",
+      "saveAsView": "Lưu thành chế độ xem…",
+      "openDatabase": "Mở {{database}}",
+      "selectedRows": "Hàng đã chọn ({{count}})",
+      "cannotSaveSelectedRows": "Không thể lưu các hàng đã chọn thành chế độ xem",
+      "open": "MỞ",
+      "fromDashboardFilter": "Từ bộ lọc bảng điều khiển",
+      "rowCount_other": "{{count}} hàng"
+    }
+  },
+  "dashboard": {
+    "addWidget": "Thêm tiện ích",
+    "creationRequiresPro": "Cần không gian làm việc Pro để tạo chế độ xem Bảng điều khiển.",
+    "done": "Xong",
+    "edit": "Chỉnh sửa",
+    "empty": {
+      "editDashboard": "Chỉnh sửa bảng điều khiển",
+      "newView": "Chế độ xem mới",
+      "text": "Thêm biểu đồ, bảng, danh sách"
+    },
+    "globalFilters": {
+      "addAnother": "Thêm mục khác",
+      "addToFilter": "Thêm vào bộ lọc",
+      "appliesTo": "Bộ lọc này sẽ áp dụng cho các thuộc tính {{type}} được chọn bên dưới",
+      "button": "Bộ lọc",
+      "delete": "Xóa bộ lọc",
+      "done": "Xong",
+      "endDate": "Ngày kết thúc",
+      "filterBy": "Lọc theo…",
+      "isChecked": "Đã chọn",
+      "isUnchecked": "Không chọn",
+      "more": "{{count}} mục khác",
+      "moreActions": "Thêm thao tác",
+      "multipleSourcesIntro": "Tạo bộ lọc áp dụng cho các thuộc tính từ nhiều nguồn dữ liệu",
+      "name": "Tên bộ lọc",
+      "noResults": "Không có kết quả",
+      "op": {
+        "after": "Sau",
+        "before": "Trước",
+        "between": "Trong khoảng",
+        "checked": "Đã chọn",
+        "complete": "Hoàn thành",
+        "doesNotContain": "Không chứa",
+        "endsWith": "Kết thúc bằng",
+        "incomplete": "Chưa hoàn thành",
+        "is": "Là",
+        "isEmpty": "Trống",
+        "isNot": "Không phải",
+        "isNotEmpty": "Không trống",
+        "onOrAfter": "Vào hoặc sau",
+        "onOrBefore": "Vào hoặc trước",
+        "startsWith": "Bắt đầu bằng",
+        "unchecked": "Không chọn"
+      },
+      "people_other": "{{count}} người",
+      "relative": {
+        "amount": "Số lượng",
+        "next": "Sắp tới",
+        "past": "Đã qua",
+        "summaryNext_other": "{{count}} {{unit}} tới",
+        "summaryPast_other": "{{count}} {{unit}} qua",
+        "summaryThis": "{{unit}} hiện tại",
+        "this": "Hiện tại"
+      },
+      "relativeHint": "Bộ lọc sẽ cập nhật theo ngày hiện tại",
+      "relativeToToday": "Tương đối với hôm nay",
+      "remove": "Gỡ bỏ",
+      "reset": "Đặt lại",
+      "sourceLine": "{{property}} trong {{source}}",
+      "startDate": "Ngày bắt đầu",
+      "title": "Lọc nhiều nguồn dữ liệu",
+      "units": {
+        "day_other": "ngày",
+        "month_other": "tháng",
+        "week_other": "tuần",
+        "year_other": "năm"
+      },
+      "viewCount_other": "{{count}} chế độ xem"
+    },
+    "historyPreviewUnavailable": "Bảng điều khiển không được xem trước trong lịch sử phiên bản.",
+    "limit": {
+      "fullHint": "Xóa một chế độ xem để thêm chế độ xem mới",
+      "fullTitle": "Bảng điều khiển đã đầy"
+    },
+    "menuName": "Bảng điều khiển",
+    "picker": {
+      "back": "Quay lại",
+      "changeViewTitle": "Đổi chế độ xem",
+      "close": "Đóng",
+      "createFailed": "Không thể tạo chế độ xem",
+      "editChart": "Chỉnh sửa biểu đồ",
+      "layout": {
+        "board": "Bảng Kanban",
+        "calendar": "Lịch",
+        "chart": "Biểu đồ",
+        "feed": "Bảng tin",
+        "gallery": "Thư viện",
+        "list": "Danh sách",
+        "table": "Bảng",
+        "timeline": "Dòng thời gian"
+      },
+      "loadFailed": "Không thể tải cơ sở dữ liệu",
+      "newView": "Chế độ xem mới",
+      "newViewIn": "Chế độ xem mới trong {{database}}",
+      "noResults": "Không tìm thấy chế độ xem nào",
+      "otherSources": "Nguồn dữ liệu khác",
+      "searchPlaceholder": "Tìm chế độ xem...",
+      "showMore": "Hiện thêm {{count}}",
+      "source": "Nguồn dữ liệu",
+      "thisDatabase": "Cơ sở dữ liệu này",
+      "viewName": "Tên chế độ xem",
+      "viewsOn": "Chế độ xem của {{database}}",
+      "viewsOnThisDatabase": "Chế độ xem của cơ sở dữ liệu này"
+    },
+    "private": {
+      "reset": "Đặt lại",
+      "resetAll": "Đặt lại mọi thay đổi",
+      "saveForEveryone": "Lưu cho mọi người",
+      "saveOptions": "Thêm tùy chọn lưu",
+      "saved": "Đã lưu thay đổi cho mọi người.",
+      "undo": "Hoàn tác",
+      "unsaved": "Thay đổi chưa lưu"
+    },
+    "referencedDashboardPrefix": "Chế độ xem của",
+    "row": {
+      "addToNewRow": "Thêm vào hàng mới",
+      "addToRow": "Thêm vào hàng",
+      "moveDown": "Di chuyển xuống",
+      "moveUp": "Di chuyển lên",
+      "movedDown": "Đã chuyển hàng xuống",
+      "movedUp": "Đã chuyển hàng lên"
+    },
+    "rowLimit": "Mỗi hàng chứa tối đa {{count}} tiện ích.",
+    "settings": {
+      "name": "Cài đặt bảng điều khiển",
+      "showIconsInHeading": "Hiện biểu tượng trong tiêu đề",
+      "showWidgetTitles": "Hiện tiêu đề tiện ích"
+    },
+    "toolbar": {
+      "openAsFullPage": "Mở dưới dạng trang đầy đủ",
+      "settings": "Cài đặt"
+    },
+    "widget": {
+      "changeView": "Đổi chế độ xem",
+      "close": "Đóng",
+      "createRowAbove": "Tạo hàng mới phía trên",
+      "createRowBelow": "Tạo hàng mới phía dưới",
+      "delete": "Xóa",
+      "dragHandle": "Kéo để di chuyển",
+      "duplicate": "Nhân bản",
+      "editView": "Chỉnh sửa chế độ xem",
+      "filters": "Bộ lọc",
+      "loading": "Đang tải…",
+      "menu": "Tùy chọn tiện ích",
+      "moveLeft": "Di chuyển sang trái",
+      "moveRight": "Di chuyển sang phải",
+      "moveToRow": "Di chuyển đến hàng",
+      "noAccess": "Bạn không có quyền truy cập cơ sở dữ liệu này",
+      "notFound": "Chế độ xem này không còn tồn tại",
+      "offline": "Khả dụng khi bạn trực tuyến trở lại",
+      "openFailed": "Không thể mở chế độ xem",
+      "remove": "Gỡ tiện ích",
+      "resizeHeight": "Kéo để thay đổi chiều cao hàng",
+      "resizeHeightValue": "{{height}} pixel",
+      "resizeWidth": "Kéo để đổi kích thước",
+      "resizeWidthValue": "{{columns}}/12 cột",
+      "settings": "Cài đặt",
+      "sorts": "Sắp xếp",
+      "source": "Nguồn dữ liệu",
+      "unsupported": "Không thể hiển thị bảng điều khiển bên trong bảng điều khiển",
+      "viewDataSource": "Xem nguồn dữ liệu",
+      "viewNameHint": "Đổi tên chế độ xem này",
+      "viewSettings": "Cài đặt chế độ xem"
+    },
+    "mobile": {
+      "viewCount_other": "{{count}} chế độ xem"
+    }
+  },
+  "databaseSearch": {
+    "clearSearch": "Xóa tìm kiếm",
+    "noResults": "Không có kết quả",
+    "placeholder": "Nhập để tìm kiếm..."
+  },
+  "grid": {
+    "calculationTypeLabel": {
+      "countChecked": "Đã chọn",
+      "countUnchecked": "Không chọn"
+    },
+    "dateFilter": {
+      "is": "Là"
+    },
+    "field": {
+      "person": {
+        "searchForMore_other": "Tìm kiếm để thấy thêm {{count}} người"
+      }
+    },
+    "row": {
+      "loadingRowsProgress": "Đang tải hàng… {{loaded}}/{{total}}",
+      "newRow": "Trang mới",
+      "rowsNotLoadedYet": "Một số hàng chưa được tải"
+    },
+    "openPagesIn": {
+      "title": "Mở trang trong",
+      "sidePeek": "Xem nhanh bên cạnh",
+      "centerPeek": "Xem nhanh ở giữa",
+      "fullPage": "Toàn trang"
+    },
+    "rowPage": {
+      "openInCenterPeek": "Mở trong chế độ xem nhanh ở giữa",
+      "resizeSidePeek": "Đổi kích thước xem nhanh bên cạnh"
     }
   }
 }

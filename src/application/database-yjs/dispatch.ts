@@ -5,27 +5,37 @@ import { useCallback, useMemo } from 'react';
 import * as Y from 'yjs';
 
 import { resolveUserAttributionUid, touchRowAttribution } from '@/application/database-yjs/attribution';
-import { calculateFieldValue } from '@/application/database-yjs/calculation';
 import { CalendarLayoutUpdate, updateCalendarLayoutSetting } from '@/application/database-yjs/calendar-layout';
-import {
-  initializeTimelineLayoutSetting,
-  TimelineLayoutUpdate,
-  updateTimelineLayoutSetting,
-} from '@/application/database-yjs/timeline-layout';
 import { cloneDatabaseCell } from '@/application/database-yjs/cell.clone';
 import { normalizeLegacyCellFieldType } from '@/application/database-yjs/cell.field-type';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
+import type { ChartExtendedSettingsUpdate } from '@/application/database-yjs/chart-extended-settings';
+import { applyChartLayoutUpdate, type ChartLayoutSetting } from '@/application/database-yjs/chart.type';
 import { DEFAULT_FIELD_WRAP } from '@/application/database-yjs/const';
 import {
   useDatabase,
   useDatabaseContext,
   useDatabaseFields,
+  useDatabaseSelectedView,
   useDatabaseView,
   useDatabaseViewId,
-  useRowMap,
   useReadOnly,
+  useRowMap,
   useSharedRoot,
 } from '@/application/database-yjs/context';
+import { initializeDashboardLayoutSetting, updateDashboardLayoutSetting } from '@/application/database-yjs/dashboard-layout';
+import {
+  convertViewToDashboard,
+  duplicateDatabaseViewWithOwnedWidgets,
+} from '@/application/database-yjs/dashboard-owned-view-ops';
+import { markDashboardCreatedThisSession } from '@/application/database-yjs/dashboard-session';
+import { DashboardLayoutUpdate } from '@/application/database-yjs/dashboard.type';
+import {
+  AddDatabaseViewOptions,
+  createDatabaseViewInDoc,
+  DatabaseViewDocDeps,
+  deleteDatabaseViewInDoc,
+} from '@/application/database-yjs/database-view-doc-ops';
 import {
   AITranslateLanguage,
   CalculationType,
@@ -40,7 +50,6 @@ import {
 } from '@/application/database-yjs/database.type';
 import { deleteReciprocalRelationField } from '@/application/database-yjs/dispatch/relation';
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch/row';
-import { normalizeCreatedDatabaseFeedView, updateCreatesExactFeedView } from '@/application/database-yjs/feed-layout';
 import {
   collectFormulaExternalReferences,
   evaluateFormulaCell,
@@ -65,14 +74,10 @@ import { notifyRichTextNewer } from '@/application/database-yjs/fields/text/rich
 import { createDateTimeField } from '@/application/database-yjs/fields/text/utils';
 import { getDefaultFilterCondition, resolveRollupFilterTargetFieldType } from '@/application/database-yjs/filter';
 import { isFormQuestionFieldType } from '@/application/database-yjs/form-field-types';
-import { isDatabaseHistoryDocumentImmutable } from '@/application/database-yjs/immutable';
 import { attachNewFormQuestion } from '@/application/database-yjs/form-writer';
-import { getWorkspacePlanPolicy } from '@/application/workspace-plan-policy';
 import { observeFormulaRelatedDocuments, resolveFormulaRowContext } from '@/application/database-yjs/formula/materialize';
 import {
   initializeGalleryLayoutSetting,
-  normalizeCreatedDatabaseGalleryView,
-  updateCreatesExactGalleryView as updateCreatesExactDatabaseView,
 } from '@/application/database-yjs/gallery-layout';
 import {
   getGroupColumns,
@@ -93,11 +98,10 @@ import {
   registerDatabaseHistoryRowDoc,
   runDatabaseRowAction,
 } from '@/application/database-yjs/history';
-import type { DatabaseHistoryAction } from '@/application/database-yjs/history';
+import type { DatabaseHistoryAction, DatabaseHistoryPolicy } from '@/application/database-yjs/history';
+import { isDatabaseHistoryDocumentImmutable } from '@/application/database-yjs/immutable';
 import {
   initializeListLayoutSetting,
-  normalizeCreatedDatabaseListView,
-  removeCreatedDatabaseView,
 } from '@/application/database-yjs/list-layout';
 import {
   createNumberGroupingPolicy,
@@ -112,9 +116,13 @@ import {
   migrateRollupFilters, migrateRollupsForRelation,
   rollupResultType,
 } from '@/application/database-yjs/rollup/filter';
-import { getInlineViewRowOrders, materializeVisibleRowOrders } from '@/application/database-yjs/row-order-visibility';
 import { waitForDatabaseRowHydration } from '@/application/database-yjs/row.hydration';
-import { useCalculationFieldType, useCalendarLayoutSetting, useFieldType } from '@/application/database-yjs/selector';
+import { useCalendarLayoutSetting, useFieldType } from '@/application/database-yjs/selector';
+import {
+  initializeTimelineLayoutSetting,
+  TimelineLayoutUpdate,
+  updateTimelineLayoutSetting,
+} from '@/application/database-yjs/timeline-layout';
 import { deleteCollabDB } from '@/application/db';
 import { deleteOutboxByObjectId } from '@/application/sync-outbox';
 import {
@@ -125,12 +133,8 @@ import {
   RowId,
   TimeFormat,
   UpdatePagePayload,
-  View,
-  ViewLayout,
   YDatabase,
   YDatabaseBoardLayoutSetting,
-  YDatabaseCalculation,
-  YDatabaseCalculations,
   YDatabaseCalendarLayoutSetting,
   YDatabaseCell,
   YDatabaseCells,
@@ -150,7 +154,6 @@ import {
   YDatabaseListLayoutSetting,
   YDatabaseTimelineLayoutSetting,
   YDatabaseRow,
-  YDatabaseRowOrders,
   YDatabaseSort,
   YDatabaseSorts,
   YDatabaseView,
@@ -161,8 +164,7 @@ import {
   YSharedRoot,
 } from '@/application/types';
 import { MetadataKey } from '@/application/user-metadata';
-import { isDatabaseContainer, isEmbeddedDatabaseViewWithoutChildren, isEmbeddedView } from '@/application/view-utils';
-import { applyYDoc } from '@/application/ydoc/apply';
+import { getWorkspacePlanPolicy } from '@/application/workspace-plan-policy';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Log } from '@/utils/log';
 
@@ -328,6 +330,9 @@ function generateGroupByField(field: YDatabaseField) {
 
 export function useGroupByFieldDispatch() {
   const view = useDatabaseView();
+  // Grouping writes the shared view; in a View-mode dashboard widget `view`
+  // is the viewer's overlay for filters, so the filter cleanup reads the real one.
+  const sharedView = useDatabaseSelectedView(useDatabaseViewId());
   const database = useDatabase();
   const sharedRoot = useSharedRoot();
 
@@ -366,7 +371,7 @@ export function useGroupByFieldDispatch() {
             if (!supportsOptionalGrouping) {
               // Board keeps its existing behavior: a field cannot simultaneously
               // act as the grouping source and as a filter.
-              const filters = view.get(YjsDatabaseKey.filters);
+              const filters = (sharedView ?? view).get(YjsDatabaseKey.filters);
               const filterIndex = filters
                 ?.toArray()
                 .findIndex((filter) => filter.get(YjsDatabaseKey.field_id) === fieldId);
@@ -403,7 +408,7 @@ export function useGroupByFieldDispatch() {
         'groupByField'
       );
     },
-    [database, sharedRoot, view]
+    [database, sharedRoot, sharedView, view]
   );
 }
 
@@ -1470,118 +1475,10 @@ export function useBulkDeleteRowDispatch() {
   );
 }
 
-export function useCalculateFieldDispatch(fieldId: string) {
-  const view = useDatabaseView();
-  const sharedRoot = useSharedRoot();
-  const fieldType = useCalculationFieldType(fieldId);
-
-  return useCallback(
-    (cells: Map<string, unknown>) => {
-      const calculations = view?.get(YjsDatabaseKey.calculations);
-      const index = (calculations?.toArray() || []).findIndex((calculation) => {
-        return calculation.get(YjsDatabaseKey.field_id) === fieldId;
-      });
-
-      if (index === -1 || !calculations) {
-        return;
-      }
-
-      const cellValues = Array.from(cells.values());
-
-      const item = calculations.get(index);
-      const type = Number(item.get(YjsDatabaseKey.type)) as CalculationType;
-      const oldValue = item.get(YjsDatabaseKey.calculation_value) as string | number;
-
-      const newValue = calculateFieldValue({
-        fieldType,
-        calculationType: type,
-        cellValues,
-      });
-
-      if (newValue !== null && newValue !== oldValue) {
-        executeOperations(
-          sharedRoot,
-          [
-            () => {
-              item.set(YjsDatabaseKey.calculation_value, newValue);
-            },
-          ],
-          'calculateFieldDispatch',
-          { type: 'database.calculate-field-value', policy: 'skip' }
-        );
-      }
-    },
-    [view, fieldId, fieldType, sharedRoot]
-  );
-}
-
-export function useUpdateCalculate(fieldId: string) {
-  const sharedRoot = useSharedRoot();
-  const view = useDatabaseView();
-
-  return useCallback(
-    (type: CalculationType) => {
-      if (!view) return;
-      executeOperations(
-        sharedRoot,
-        [
-          () => {
-            let calculations = view?.get(YjsDatabaseKey.calculations);
-
-            if (!calculations) {
-              calculations = new Y.Array() as YDatabaseCalculations;
-              view.set(YjsDatabaseKey.calculations, calculations);
-            }
-
-            let item = calculations.toArray().find((calculation) => {
-              return calculation.get(YjsDatabaseKey.field_id) === fieldId;
-            });
-
-            if (!item) {
-              item = new Y.Map() as YDatabaseCalculation;
-              item.set(YjsDatabaseKey.id, nanoid(6));
-              item.set(YjsDatabaseKey.field_id, fieldId);
-              calculations.push([item]);
-            }
-
-            item.set(YjsDatabaseKey.type, type);
-          },
-        ],
-        'updateCalculate'
-      );
-    },
-    [fieldId, sharedRoot, view]
-  );
-}
-
-export function useClearCalculate(fieldId: string) {
-  const sharedRoot = useSharedRoot();
-  const view = useDatabaseView();
-
-  return useCallback(() => {
-    executeOperations(
-      sharedRoot,
-      [
-        () => {
-          const calculations = view?.get(YjsDatabaseKey.calculations);
-
-          if (!calculations) {
-            throw new Error(`Calculations not found`);
-          }
-
-          const index = calculations.toArray().findIndex((calculation) => {
-            return calculation.get(YjsDatabaseKey.field_id) === fieldId;
-          });
-
-          if (index !== -1) {
-            calculations.delete(index);
-          }
-        },
-      ],
-      'clearCalculate'
-    );
-  }, [fieldId, sharedRoot, view]);
-}
+// One implementation of the footer calculation hooks: this module shadows
+// `dispatch/index.ts` in Vite, so the dashboard-widget guard (WP07 P0-5) must
+// live in the one copy both bundler paths reach.
+export { useCalculateFieldDispatch, useUpdateCalculate, useClearCalculate } from './dispatch/calculation';
 
 export function useUpdatePropertyNameDispatch(fieldId: string) {
   const database = useDatabase();
@@ -2730,22 +2627,13 @@ function useEnhanceCalendarLayoutByFieldExists() {
   );
 }
 
-/**
- * Hook to add a new database view (Grid, Board, or Calendar tab).
- * Creates a new view tab as a child of the main database page.
- */
-interface AddDatabaseViewOptions {
-  /** Place the new folder child immediately before this existing database view. */
-  insertBeforeViewId?: string;
-  /** Validate the returned child in an isolated Y.Doc before applying its update. */
-  requireExactCreatedView?: boolean;
-}
+// The view operations that need no hook live in `database-view-doc-ops.ts`
+// (create, duplicate, delete, the owner marker). The layout table and the
+// types of the hooks below stay importable from here.
+export { DATABASE_VIEW_LAYOUT_TO_VIEW_LAYOUT } from '@/application/database-yjs/database-view-doc-ops';
+export type { AddDatabaseViewOptions, DatabaseViewDocDeps } from '@/application/database-yjs/database-view-doc-ops';
 
-export const FORM_VIEW_CREATION_REQUIRES_WRITE_PERMISSION =
-  'Edit access is required to create or duplicate a Form view.';
-
-export function useAddDatabaseView() {
-  // databasePageId: The main database page in folder (used as parent for new views)
+function useDatabaseViewDocDeps(): DatabaseViewDocDeps {
   const {
     databasePageId,
     activeViewId,
@@ -2753,313 +2641,42 @@ export function useAddDatabaseView() {
     databaseDoc,
     deletePage,
     loadViewMeta,
+    updatePage,
+    loadView,
+    bindViewSync,
+    scheduleDeferredCleanup,
     isDocumentBlock,
     readOnly,
     canWrite,
   } = useDatabaseContext();
-  const sharedRoot = useSharedRoot();
 
-  const database = useMemo(() => {
-    const dataSection = sharedRoot || (databaseDoc.getMap(YjsEditorKey.data_section) as YSharedRoot | undefined);
-
-    return dataSection?.get(YjsEditorKey.database) as YDatabase | undefined;
-  }, [databaseDoc, sharedRoot]);
-
-  const databaseId = useMemo(() => {
-    return database?.get(YjsDatabaseKey.id);
-  }, [database]);
-
-  return useCallback(
-    async (layout: DatabaseViewLayout, nameOverride?: string, options?: AddDatabaseViewOptions) => {
-      if (layout === DatabaseViewLayout.Form && (readOnly || canWrite === false)) {
-        throw new Error(FORM_VIEW_CREATION_REQUIRES_WRITE_PERMISSION);
-      }
-
-      if (!createDatabaseView) {
-        throw new Error('createDatabaseView not found');
-      }
-
-      if (!databasePageId) {
-        throw new Error('databasePageId not found');
-      }
-
-      const requestViewId = activeViewId || databasePageId;
-
-      if (!databaseId) {
-        throw new Error('databaseId not found');
-      }
-
-      const layoutToViewLayout: Record<DatabaseViewLayout, ViewLayout> = {
-        [DatabaseViewLayout.Grid]: ViewLayout.Grid,
-        [DatabaseViewLayout.Board]: ViewLayout.Board,
-        [DatabaseViewLayout.Calendar]: ViewLayout.Calendar,
-        [DatabaseViewLayout.Chart]: ViewLayout.Chart,
-        [DatabaseViewLayout.List]: ViewLayout.List,
-        [DatabaseViewLayout.Gallery]: ViewLayout.Gallery,
-        [DatabaseViewLayout.Feed]: ViewLayout.Feed,
-        [DatabaseViewLayout.Form]: ViewLayout.Form,
-        [DatabaseViewLayout.Timeline]: ViewLayout.Timeline,
-      };
-      const layoutToName: Record<DatabaseViewLayout, string> = {
-        [DatabaseViewLayout.Grid]: 'Grid',
-        [DatabaseViewLayout.Board]: 'Board',
-        [DatabaseViewLayout.Calendar]: 'Calendar',
-        [DatabaseViewLayout.Chart]: 'Chart',
-        [DatabaseViewLayout.List]: 'List',
-        [DatabaseViewLayout.Gallery]: 'Gallery',
-        [DatabaseViewLayout.Feed]: 'Feed',
-        [DatabaseViewLayout.Form]: 'Form builder',
-        [DatabaseViewLayout.Timeline]: 'Timeline',
-      };
-      const viewLayout = layoutToViewLayout[layout];
-      const name = layoutToName[layout];
-
-      const getLastChildViewId = (view: View | null | undefined): string | undefined => {
-        const children = view?.children ?? [];
-
-        return children.length > 0 ? children[children.length - 1].view_id : undefined;
-      };
-
-      const getInsertionPrevViewId = (view: View | null | undefined, fallbackViewId?: string): string | undefined => {
-        const insertBeforeViewId = options?.insertBeforeViewId;
-        const children = view?.children ?? [];
-
-        if (insertBeforeViewId) {
-          const insertBeforeIndex = children.findIndex((child) => child.view_id === insertBeforeViewId);
-
-          if (insertBeforeIndex >= 0) {
-            return insertBeforeIndex > 0 ? children[insertBeforeIndex - 1].view_id : undefined;
-          }
-        }
-
-        return getLastChildViewId(view) ?? fallbackViewId;
-      };
-
-      const { tabsParentViewId, prevViewId, embedded } = await (async (): Promise<{
-        tabsParentViewId: string;
-        prevViewId?: string;
-        embedded: boolean;
-      }> => {
-        // Best-effort: fall back to previous behavior if meta lookup isn't available.
-        if (!loadViewMeta) {
-          return { tabsParentViewId: databasePageId, embedded: isDocumentBlock ?? false };
-        }
-
-        const safeLoadViewMeta = async (viewId: string): Promise<View | null> => {
-          try {
-            return await loadViewMeta(viewId);
-          } catch {
-            return null;
-          }
-        };
-
-        // A child lookup can fail while the page's container is still available.
-        // Resolve that known identity before falling back to presentation state.
-        const currentMeta =
-          (await safeLoadViewMeta(requestViewId)) ??
-          (requestViewId !== databasePageId ? await safeLoadViewMeta(databasePageId) : null);
-
-        // Scope belongs to the saved container, even when an embedded database
-        // is opened full-page or a standalone database is shown in a document.
-        // Legacy linked leaves may carry a container marker without children.
-        if (isDatabaseContainer(currentMeta) && !isEmbeddedDatabaseViewWithoutChildren(currentMeta)) {
-          return {
-            tabsParentViewId: currentMeta.view_id,
-            prevViewId: getInsertionPrevViewId(currentMeta),
-            embedded: isEmbeddedView(currentMeta),
-          };
-        }
-
-        const parentId = currentMeta?.parent_view_id;
-        const embedded = isEmbeddedView(currentMeta) || (isDocumentBlock ?? false);
-
-        if (!parentId) {
-          return { tabsParentViewId: databasePageId, embedded };
-        }
-
-        // If parent is a database container, attach under the container (Scenario 4).
-        const parentMeta = await safeLoadViewMeta(parentId);
-
-        if (isDatabaseContainer(parentMeta)) {
-          return {
-            tabsParentViewId: parentId,
-            prevViewId: getInsertionPrevViewId(parentMeta),
-            embedded: isEmbeddedView(parentMeta),
-          };
-        }
-
-        // Embedded databases without a container attach under the document (Scenario 3).
-        if (embedded) {
-          return {
-            tabsParentViewId: parentId,
-            prevViewId: getInsertionPrevViewId(parentMeta, currentMeta?.view_id),
-            embedded,
-          };
-        }
-
-        // Backward-compatible fallback: attach under the current database view.
-        const databasePageMeta =
-          currentMeta?.view_id === databasePageId ? currentMeta : await safeLoadViewMeta(databasePageId);
-
-        return {
-          tabsParentViewId: databasePageId,
-          prevViewId: getInsertionPrevViewId(databasePageMeta),
-          embedded,
-        };
-      })();
-
-      const existingViewIds = new Set(database?.get(YjsDatabaseKey.views)?.keys() ?? []);
-      const requiresIsolatedValidation =
-        layout === DatabaseViewLayout.Gallery ||
-        layout === DatabaseViewLayout.Feed ||
-        options?.requireExactCreatedView === true;
-      const preRequestState = requiresIsolatedValidation ? Y.encodeStateAsUpdate(databaseDoc) : undefined;
-
-      // Create new view as a child of the database container (or document for embedded linked views).
-      const response = await createDatabaseView(requestViewId, {
-        parent_view_id: tabsParentViewId,
-        prev_view_id: prevViewId,
-        database_id: databaseId,
-        layout: viewLayout,
-        name: nameOverride ?? name,
-        embedded,
-      });
-
-      if (requiresIsolatedValidation) {
-        const returnedViewWasNew = Boolean(response.view_id) && !existingViewIds.has(response.view_id);
-        const databaseUpdate = response.database_update;
-        const hasExactDatabaseUpdate =
-          Boolean(response.view_id) &&
-          response.database_id === databaseId &&
-          preRequestState !== undefined &&
-          databaseUpdate !== undefined &&
-          databaseUpdate.length > 0 &&
-          (layout === DatabaseViewLayout.Feed ? updateCreatesExactFeedView : updateCreatesExactDatabaseView)({
-            databaseId,
-            existingViewIds,
-            preRequestState,
-            update: databaseUpdate,
-            viewId: response.view_id,
-          });
-
-        if (!hasExactDatabaseUpdate) {
-          if (response.view_id && returnedViewWasNew) {
-            try {
-              await deletePage?.(response.view_id);
-            } catch (error) {
-              Log.warn('[useAddDatabaseView] failed to compensate an invalid database view', {
-                viewId: response.view_id,
-                layout,
-                error,
-              });
-            }
-          }
-
-          throw new Error(`The server did not return the requested ${name} database view`);
-        }
-      }
-
-      if (response.database_update?.length) {
-        applyYDoc(databaseDoc, new Uint8Array(response.database_update));
-      }
-
-      if (layout === DatabaseViewLayout.List) {
-        const createdView = database?.get(YjsDatabaseKey.views)?.get(response.view_id);
-        const createdViewWasNew = !existingViewIds.has(response.view_id);
-        const isExactReturnedView =
-          Boolean(response.view_id) &&
-          createdViewWasNew &&
-          response.database_id === databaseId &&
-          Boolean(createdView?.get(YjsDatabaseKey.field_orders));
-
-        if (
-          !isExactReturnedView ||
-          normalizeCreatedDatabaseListView(databaseDoc, response.view_id) !== response.view_id
-        ) {
-          if (response.view_id && createdViewWasNew) {
-            removeCreatedDatabaseView(databaseDoc, response.view_id);
-
-            try {
-              await deletePage?.(response.view_id);
-            } catch (error) {
-              Log.warn('[useAddDatabaseView] failed to roll back an invalid List view', {
-                viewId: response.view_id,
-                error,
-              });
-            }
-          }
-
-          throw new Error('The server did not return the requested List database view');
-        }
-      }
-
-      if (layout === DatabaseViewLayout.Gallery) {
-        const createdView = database?.get(YjsDatabaseKey.views)?.get(response.view_id);
-        const isExactReturnedView =
-          Boolean(response.view_id) &&
-          !existingViewIds.has(response.view_id) &&
-          Boolean(createdView?.get(YjsDatabaseKey.field_orders));
-
-        if (
-          !isExactReturnedView ||
-          normalizeCreatedDatabaseGalleryView(databaseDoc, response.view_id) !== response.view_id
-        ) {
-          if (response.view_id && !existingViewIds.has(response.view_id)) {
-            removeCreatedDatabaseView(databaseDoc, response.view_id);
-
-            try {
-              await deletePage?.(response.view_id);
-            } catch (error) {
-              Log.warn('[useAddDatabaseView] failed to roll back an invalid Gallery view', {
-                viewId: response.view_id,
-                error,
-              });
-            }
-          }
-
-          throw new Error('The server did not return the requested Gallery database view');
-        }
-      }
-
-      if (layout === DatabaseViewLayout.Feed) {
-        const createdView = database?.get(YjsDatabaseKey.views)?.get(response.view_id);
-        const isExactReturnedView =
-          Boolean(response.view_id) &&
-          !existingViewIds.has(response.view_id) &&
-          Boolean(createdView?.get(YjsDatabaseKey.field_orders));
-
-        if (
-          !isExactReturnedView ||
-          normalizeCreatedDatabaseFeedView(databaseDoc, response.view_id) !== response.view_id
-        ) {
-          if (response.view_id && !existingViewIds.has(response.view_id)) {
-            removeCreatedDatabaseView(databaseDoc, response.view_id);
-
-            try {
-              await deletePage?.(response.view_id);
-            } catch (error) {
-              Log.warn('[useAddDatabaseView] failed to roll back an invalid Feed view', {
-                viewId: response.view_id,
-                error,
-              });
-            }
-          }
-
-          throw new Error('The server did not return the requested Feed database view');
-        }
-      }
-
-      return response.view_id;
-    },
-    [
-      createDatabaseView,
-      database,
-      databaseDoc,
+  return useMemo(
+    () => ({
       databasePageId,
-      databaseId,
       activeViewId,
+      createDatabaseView,
+      databaseDoc,
       deletePage,
       loadViewMeta,
+      updatePage,
+      loadView,
+      bindViewSync,
+      scheduleDeferredCleanup,
+      isDocumentBlock,
+      readOnly,
+      canWrite,
+    }),
+    [
+      databasePageId,
+      activeViewId,
+      createDatabaseView,
+      databaseDoc,
+      deletePage,
+      loadViewMeta,
+      updatePage,
+      loadView,
+      bindViewSync,
+      scheduleDeferredCleanup,
       isDocumentBlock,
       readOnly,
       canWrite,
@@ -3067,170 +2684,67 @@ export function useAddDatabaseView() {
   );
 }
 
-const DUPLICATED_DATABASE_VIEW_CONFIGURATION_KEYS = [
-  YjsDatabaseKey.field_orders,
-  YjsDatabaseKey.field_settings,
-  YjsDatabaseKey.form_field_settings,
-  YjsDatabaseKey.filters,
-  YjsDatabaseKey.groups,
-  YjsDatabaseKey.layout_settings,
-  YjsDatabaseKey.sorts,
-  YjsDatabaseKey.calculations,
-] as const;
+/**
+ * Hook to add a new database view (Grid, Board, or Calendar tab).
+ * Creates a new view tab as a child of the main database page.
+ */
+export function useAddDatabaseView() {
+  const deps = useDatabaseViewDocDeps();
 
-function cloneDatabaseViewConfigurationValue(value: unknown): unknown {
-  if (value instanceof Y.Map) {
-    const clone = new Y.Map<unknown>();
+  return useCallback(
+    async (layout: DatabaseViewLayout, nameOverride?: string, options?: AddDatabaseViewOptions) => {
+      const viewId = await createDatabaseViewInDoc(deps, layout, nameOverride, options);
 
-    value.forEach((childValue, key) => {
-      clone.set(key, cloneDatabaseViewConfigurationValue(childValue));
-    });
-    return clone;
-  }
-
-  if (value instanceof Y.Array) {
-    const clone = new Y.Array<unknown>();
-
-    clone.push(value.toArray().map(cloneDatabaseViewConfigurationValue));
-    return clone;
-  }
-
-  if (value instanceof Uint8Array) return value.slice();
-  if (Array.isArray(value)) return value.map(cloneDatabaseViewConfigurationValue);
-
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([key, childValue]) => [
-        key,
-        cloneDatabaseViewConfigurationValue(childValue),
-      ])
-    );
-  }
-
-  return value;
+      // R-MODE: a dashboard created here opens in Edit mode on its first load.
+      if (layout === DatabaseViewLayout.Dashboard) markDashboardCreatedThisSession(viewId);
+      return viewId;
+    },
+    [deps]
+  );
 }
 
-export function copyDatabaseViewConfiguration(
-  source: YDatabaseView,
-  target: YDatabaseView,
-  canonicalRowOrders?: YDatabaseRowOrders
-) {
-  const sourceMap = source as unknown as Y.Map<unknown>;
-  const targetMap = target as unknown as Y.Map<unknown>;
+/** Duplicate a database tab (see `duplicateDatabaseViewWithOwnedWidgets`). */
+export function useDuplicateDatabaseView() {
+  const deps = useDatabaseViewDocDeps();
 
-  DUPLICATED_DATABASE_VIEW_CONFIGURATION_KEYS.forEach((key) => {
-    const value = sourceMap.get(key);
-
-    if (value === undefined) {
-      targetMap.delete(key);
-      return;
-    }
-
-    targetMap.set(key, cloneDatabaseViewConfigurationValue(value));
-  });
-
-  const sourceRowOrders = source.get(YjsDatabaseKey.row_orders);
-
-  if (!sourceRowOrders) {
-    targetMap.delete(YjsDatabaseKey.row_orders);
-    return;
-  }
-
-  const visibleRowOrders = materializeVisibleRowOrders(sourceRowOrders.toJSON(), canonicalRowOrders?.toJSON()) ?? [];
-  const copiedRowOrders = new Y.Array() as YDatabaseRowOrders;
-
-  copiedRowOrders.push(
-    visibleRowOrders.map((rowOrder) => cloneDatabaseViewConfigurationValue(rowOrder)) as Array<{
-      id: RowId;
-      height: number;
-      is_deleted?: boolean;
-    }>
+  return useCallback(
+    (sourceViewId: string, duplicatedName?: string) =>
+      duplicateDatabaseViewWithOwnedWidgets(deps, sourceViewId, duplicatedName),
+    [deps]
   );
-  target.set(YjsDatabaseKey.row_orders, copiedRowOrders);
 }
 
 /**
- * Duplicate a database tab while retaining the source database and rows.
- * The server creates the new child view/folder entry; the client then copies
- * the source's per-view configuration into that exact returned view.
+ * The latest layout choice per database view, across every menu that makes
+ * one. A pending Dashboard conversion applies only while no later choice was
+ * made, and keeps running after the menu that started it closes.
  */
-export function useDuplicateDatabaseView() {
-  const database = useDatabase();
-  const sharedRoot = useSharedRoot();
-  const { databaseDoc, deletePage } = useDatabaseContext();
-  const addDatabaseView = useAddDatabaseView();
+const layoutChoiceRevisions = new WeakMap<YDoc, Map<string, number>>();
 
-  return useCallback(
-    async (sourceViewId: string, duplicatedName?: string) => {
-      const views = database.get(YjsDatabaseKey.views);
-      const sourceView = views?.get(sourceViewId);
+function claimLayoutChoice(databaseDoc: YDoc, viewId: string): () => boolean {
+  const revisions = layoutChoiceRevisions.get(databaseDoc) ?? new Map<string, number>();
+  const revision = (revisions.get(viewId) ?? 0) + 1;
 
-      if (!views || !sourceView) throw new Error('Database view not found');
-
-      const layout = Number(sourceView.get(YjsDatabaseKey.layout)) as DatabaseViewLayout;
-      const targetName = duplicatedName?.trim() || `${sourceView.get(YjsDatabaseKey.name) || 'View'} (Copy)`;
-      const existingViewIds = new Set(views.keys());
-      let duplicatedViewId: string | undefined;
-      let duplicatedViewWasNew = false;
-
-      try {
-        duplicatedViewId = await addDatabaseView(layout, targetName, {
-          insertBeforeViewId: sourceViewId,
-          requireExactCreatedView: true,
-        });
-        duplicatedViewWasNew = Boolean(duplicatedViewId) && !existingViewIds.has(duplicatedViewId);
-
-        if (!duplicatedViewId || !duplicatedViewWasNew) {
-          throw new Error('The server did not return a new duplicated database view');
-        }
-
-        const duplicatedView = views.get(duplicatedViewId);
-        const exactDuplicatedViewId = (duplicatedView as unknown as Y.Map<unknown> | undefined)?.get(YjsDatabaseKey.id);
-
-        if (!duplicatedView || exactDuplicatedViewId !== duplicatedViewId) {
-          throw new Error('Duplicated database view not found');
-        }
-
-        const canonicalRowOrders = getInlineViewRowOrders(database);
-
-        executeOperations(
-          sharedRoot,
-          [() => copyDatabaseViewConfiguration(sourceView, duplicatedView, canonicalRowOrders)],
-          'duplicateDatabaseView',
-          { type: 'view.duplicate', policy: 'skip' }
-        );
-      } catch (error) {
-        if (!duplicatedViewId || !duplicatedViewWasNew) throw error;
-
-        removeCreatedDatabaseView(databaseDoc, duplicatedViewId);
-
-        try {
-          await deletePage?.(duplicatedViewId);
-        } catch (rollbackError) {
-          Log.warn('[useDuplicateDatabaseView] failed to roll back duplicated view', {
-            viewId: duplicatedViewId,
-            error: rollbackError,
-          });
-        }
-
-        throw error;
-      }
-
-      if (!duplicatedViewId) throw new Error('Duplicated database view not found');
-
-      return duplicatedViewId;
-    },
-    [addDatabaseView, database, databaseDoc, deletePage, sharedRoot]
-  );
+  revisions.set(viewId, revision);
+  layoutChoiceRevisions.set(databaseDoc, revisions);
+  return () => layoutChoiceRevisions.get(databaseDoc)?.get(viewId) === revision;
 }
 
 export function useUpdateDatabaseLayout(viewId: string) {
   const database = useDatabase();
   const sharedRoot = useSharedRoot();
+  const viewDocDeps = useDatabaseViewDocDeps();
+
   const enhanceCalendarLayoutByFieldExists = useEnhanceCalendarLayoutByFieldExists();
 
   return useCallback(
-    (layout: DatabaseViewLayout) => {
+    /**
+     * `history: 'skip'` keeps the switch out of the undo history: the add
+     * flow's "New view" type pick is part of creating the widget's view
+     * (WP06 §1.5). Default `'capture'`.
+     */
+    (layout: DatabaseViewLayout, options?: { history?: DatabaseHistoryPolicy }) => {
+      const isLatestChoice = claimLayoutChoice(viewDocDeps.databaseDoc, viewId);
       const applyLayout = () => executeOperations(
         sharedRoot,
         [
@@ -3300,6 +2814,10 @@ export function useUpdateDatabaseLayout(viewId: string) {
               initializeGalleryLayoutSetting(view);
             }
 
+            if (layout === DatabaseViewLayout.Dashboard) {
+              initializeDashboardLayoutSetting(view);
+            }
+
             if (
               currentLayout === DatabaseViewLayout.Board &&
               (layout === DatabaseViewLayout.Grid || layout === DatabaseViewLayout.Feed)
@@ -3322,7 +2840,8 @@ export function useUpdateDatabaseLayout(viewId: string) {
             view.set(YjsDatabaseKey.layout, layout);
           },
         ],
-        'updateDatabaseLayout'
+        'updateDatabaseLayout',
+        { type: 'database.updateDatabaseLayout', policy: options?.history ?? 'capture' }
       );
 
       if (Number(database.get(YjsDatabaseKey.views)?.get(viewId)?.get(YjsDatabaseKey.layout)) === layout) return;
@@ -3341,9 +2860,20 @@ export function useUpdateDatabaseLayout(viewId: string) {
         return Promise.reject(new Error(t('databaseViewCreation.useAddView', { defaultValue: message }) || message));
       }
 
+      if (layout === DatabaseViewLayout.Dashboard) {
+        // Converting keeps the view: an owned copy of it becomes the dashboard's
+        // first widget (WP05 §1.6). A view converted before keeps its rows.
+        return convertViewToDashboard(viewDocDeps, { viewId, applyLayout, isCurrent: isLatestChoice }).then(
+          (converted) => {
+            // R-MODE: a dashboard made here opens in Edit mode on its first load.
+            if (converted) markDashboardCreatedThisSession(viewId);
+          }
+        );
+      }
+
       applyLayout();
     },
-    [database, enhanceCalendarLayoutByFieldExists, sharedRoot, viewId]
+    [database, enhanceCalendarLayoutByFieldExists, sharedRoot, viewDocDeps, viewId]
   );
 }
 
@@ -3412,42 +2942,11 @@ export function useUpdateDatabaseView() {
 }
 
 export function useDeleteView() {
-  const database = useDatabase();
-  const sharedRoot = useSharedRoot();
-  const { deletePage } = useDatabaseContext();
+  const { databaseDoc, deletePage } = useDatabaseContext();
 
   return useCallback(
-    async (viewId: string) => {
-      // Attempt to remove the view from the folder (move to trash).
-      // This is a secondary cleanup — the primary operation is the Yjs deletion below.
-      // Database views may not exist in the folder (created via collab sync without a
-      // corresponding folder entry), or the folder's space ancestry may be broken.
-      // In either case we log the failure and proceed with the Yjs deletion so the
-      // user is never stuck with an undeletable view tab.
-      try {
-        await deletePage?.(viewId);
-      } catch (e) {
-        Log.warn('[useDeleteView] Failed to move view to trash, proceeding with Yjs deletion:', e);
-      }
-
-      executeOperations(
-        sharedRoot,
-        [
-          () => {
-            const view = database.get(YjsDatabaseKey.views)?.get(viewId);
-
-            if (!view) {
-              throw new Error(`View not found`);
-            }
-
-            database.get(YjsDatabaseKey.views)?.delete(viewId);
-          },
-        ],
-        'deleteView',
-        { type: 'view.delete', policy: 'skip' }
-      );
-    },
-    [database, deletePage, sharedRoot]
+    (viewId: string) => deleteDatabaseViewInDoc({ databaseDoc, deletePage }, viewId),
+    [databaseDoc, deletePage]
   );
 }
 
@@ -5346,6 +4845,27 @@ export function useUpdateTimelineSetting() {
   );
 }
 
+/**
+ * Patch the dashboard view's layout setting (rows, global filters, widget
+ * titles). Rows are normalized before they are written.
+ */
+export function useUpdateDashboardSetting() {
+  const viewId = useDatabaseViewId();
+  const readOnly = useReadOnly();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback(
+    (update: DashboardLayoutUpdate) => {
+      const database = sharedRoot.get(YjsEditorKey.database);
+      const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+
+      if (readOnly || !view) return;
+      executeOperations(sharedRoot, [() => updateDashboardLayoutSetting(view, update)], 'updateDashboardSetting');
+    },
+    [sharedRoot, viewId, readOnly]
+  );
+}
+
 // Re-export advanced filter hooks from modular dispatch
 export {
   useEnterAdvancedMode,
@@ -5361,22 +4881,20 @@ export {
   useUpdateAdvancedFilterAndRebuild,
 } from './dispatch/sort-filter';
 
-export interface ChartLayoutSetting {
-  chartType?: number;
-  xFieldId?: string;
-  showEmptyValues?: boolean;
-  aggregationType?: number;
-  yFieldId?: string;
-  cumulative?: boolean;
-  dateCondition?: number;
-}
+export type { ChartLayoutSetting } from '@/application/database-yjs/chart.type';
 
+/**
+ * Write chart settings: the base fields in `settings` and the
+ * `chart-extended-settings.ts` fields in `extended` (`null` resets one), in one
+ * undoable operation. Only the fields passed in are written, and unchanged
+ * values are skipped (see `applyChartLayoutUpdate`).
+ */
 export function useUpdateChartSetting() {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
 
   return useCallback(
-    (settings: Partial<ChartLayoutSetting>) => {
+    (settings: Partial<ChartLayoutSetting>, extended?: ChartExtendedSettingsUpdate) => {
       executeOperations(
         sharedRoot,
         [
@@ -5399,33 +4917,7 @@ export function useUpdateChartSetting() {
               layoutSettings.set('3', layoutSetting as unknown as YDatabaseChartLayoutSetting);
             }
 
-            if (settings.chartType !== undefined) {
-              layoutSetting.set('chartType', settings.chartType);
-            }
-
-            if (settings.xFieldId !== undefined) {
-              layoutSetting.set('xFieldId', settings.xFieldId);
-            }
-
-            if (settings.showEmptyValues !== undefined) {
-              layoutSetting.set('showEmptyValues', settings.showEmptyValues);
-            }
-
-            if (settings.aggregationType !== undefined) {
-              layoutSetting.set('aggregationType', settings.aggregationType);
-            }
-
-            if (settings.yFieldId !== undefined) {
-              layoutSetting.set('yFieldId', settings.yFieldId);
-            }
-
-            if (settings.cumulative !== undefined) {
-              layoutSetting.set('cumulative', settings.cumulative);
-            }
-
-            if (settings.dateCondition !== undefined) {
-              layoutSetting.set('dateCondition', settings.dateCondition);
-            }
+            applyChartLayoutUpdate(layoutSetting, settings, extended);
           },
         ],
         'updateChartSetting'

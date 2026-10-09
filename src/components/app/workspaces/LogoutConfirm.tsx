@@ -4,6 +4,7 @@ import { NormalModal } from '@/components/_shared/modal';
 import { HIDDEN_BUTTON_PROPS, MODAL_CLASSES, MODAL_PAPER_PROPS } from '@/components/app/workspaces/modal-props';
 import { Button } from '@/components/ui/button';
 
+/** The Log out confirmation; `onConfirm` signs out (`signOutCurrentUser`) and navigates. */
 export function LogoutConfirm({
   open,
   onClose,

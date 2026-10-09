@@ -21,7 +21,7 @@ import {
   View,
   ViewLayout,
 } from '@/application/types';
-import { isDatabaseLayout, isEmbeddedView } from '@/application/view-utils';
+import { isDashboardOwnedView, isDatabaseLayout, isEmbeddedView } from '@/application/view-utils';
 import { ReactComponent as DateIcon } from '@/assets/icons/date.svg';
 import { ReactComponent as ArrowIcon } from '@/assets/icons/forward_arrow.svg';
 import { ReactComponent as GridIcon } from '@/assets/icons/grid.svg';
@@ -120,7 +120,8 @@ function getMentionablePageViews(views: View[] = []) {
   const collectMentionable = (items: View[], parentIsDatabase: boolean) => {
     items.forEach((view) => {
       const isDatabase = isDatabaseLayout(view.layout);
-      const skip = view.extra?.is_space || parentIsDatabase || isEmbeddedView(view);
+      // A dashboard-owned view is widget data, hidden like an embedded one.
+      const skip = view.extra?.is_space || parentIsDatabase || isEmbeddedView(view) || isDashboardOwnedView(view);
 
       if (!skip) {
         mentionable.push(view);

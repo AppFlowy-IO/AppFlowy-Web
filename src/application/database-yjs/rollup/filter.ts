@@ -3,7 +3,7 @@ import { YDatabase, YDatabaseField, YDatabaseFilter, YjsDatabaseKey } from '@/ap
 
 import { CalculationType, FieldType, RollupDisplayMode } from '../database.type';
 import { ChecklistFilterCondition } from '../fields/checklist/checklist.type';
-import { DateFilterCondition } from '../fields/date/date.type';
+import { isEndDateCondition as isExplicitEndDateCondition } from '../fields/date/relativeDate';
 import { RelationFilterCondition } from '../fields/relation/relation.type';
 import { parseRollupTypeOption } from '../fields/rollup/parse';
 import { RollupFilterMetadata, RollupFilterMode, RollupTypeOption } from '../fields/rollup/rollup.type';
@@ -207,11 +207,9 @@ export function rollupHasEndDate(meta?: RollupFilterMetadata) {
     : meta?.target_field_type === FieldType.DateTime;
 }
 
+/** End-date conditions (an explicit set: 28 is a start condition, 29 an end one). */
 export function isEndDateCondition(condition: number) {
-  return (
-    (condition >= DateFilterCondition.DateEndsOn && condition <= DateFilterCondition.DateEndIsNotEmpty) ||
-    condition >= DateFilterCondition.DateEndsToday
-  );
+  return isExplicitEndDateCondition(condition);
 }
 
 export function rollupConfigurationMatches(a?: RollupFilterMetadata, b?: RollupFilterMetadata) {

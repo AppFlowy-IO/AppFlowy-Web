@@ -6,12 +6,14 @@ import {
   FieldVisibility,
   isAIFieldType,
   useDatabaseContext,
+  useDatabaseSearchQuery,
   useFieldsSelector,
   useReadOnly,
 } from '@/application/database-yjs';
 import type { Row } from '@/application/database-yjs';
 import { useReorderRowDispatch } from '@/application/database-yjs/dispatch';
 import { useAIEnabled } from '@/components/app/app.hooks';
+import { DatabaseSearchEmptyState } from '@/components/database/components/conditions/DatabaseSearchEmptyState';
 import { cn } from '@/lib/utils';
 
 import {
@@ -59,6 +61,7 @@ function ListContent() {
   const [groupLimits, setGroupLimits] = useState<Record<string, number>>({});
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const reorderRow = useReorderRowDispatch();
+  const searchQuery = useDatabaseSearchQuery();
 
   useEffect(() => {
     setVisibleRowLimit(LIST_INITIAL_ROW_LIMIT);
@@ -159,6 +162,15 @@ function ListContent() {
     return (
       <div className={containerClassName} data-testid='database-list' ref={scrollContainerRef}>
         <ListLoadingIndicator fillAvailable={!isDocumentBlock} />
+      </div>
+    );
+  }
+
+  // A settled search with no match replaces the rows and the new row (WP09 §1.2).
+  if (searchQuery !== '' && rowOrders.length === 0) {
+    return (
+      <div className={containerClassName} data-testid='database-list' ref={scrollContainerRef}>
+        <DatabaseSearchEmptyState />
       </div>
     );
   }

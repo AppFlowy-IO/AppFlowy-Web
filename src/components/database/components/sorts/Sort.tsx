@@ -1,5 +1,5 @@
 
-import { useReadOnly, useSortSelector } from '@/application/database-yjs';
+import { useConditionsReadOnly, useSortSelector } from '@/application/database-yjs';
 import { useRemoveSort } from '@/application/database-yjs/dispatch';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import SortCondition from '@/components/database/components/sorts/SortCondition';
@@ -10,7 +10,7 @@ import { FieldDisplay } from 'src/components/database/components/field';
 function Sort ({ sortId }: { sortId: string }) {
   const sort = useSortSelector(sortId);
 
-  const readOnly = useReadOnly();
+  const readOnly = useConditionsReadOnly();
   const deleteSort = useRemoveSort();
 
   if (!sort) return null;

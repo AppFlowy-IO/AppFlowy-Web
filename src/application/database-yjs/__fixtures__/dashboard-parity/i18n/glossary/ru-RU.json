@@ -1,0 +1,37 @@
+{
+  "locale": "ru-RU",
+  "terms": {
+    "dashboard": "дашборд",
+    "widget": "виджет",
+    "chart": "диаграмма",
+    "view": "вид",
+    "row": "строка",
+    "property": "свойство",
+    "database": "база данных",
+    "source": "источник",
+    "page": "страница",
+    "done": "Готово",
+    "edit": "Редактировать",
+    "delete": "Удалить",
+    "duplicate": "Дублировать",
+    "save": "Сохранить",
+    "cancel": "Отмена",
+    "close": "Закрыть",
+    "back": "Назад",
+    "settings": "Настройки",
+    "filter": "Фильтр",
+    "sort": "Сортировка",
+    "search": "Поиск",
+    "undo": "Отменить",
+    "redo": "Повторить",
+    "reset": "Сбросить",
+    "untitled": "Без названия",
+    "day": "День",
+    "week": "Неделя",
+    "month": "Месяц",
+    "year": "Год"
+  },
+  "untranslated_ok": [
+    "chart.legend.page"
+  ]
+}

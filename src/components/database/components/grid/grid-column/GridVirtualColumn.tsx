@@ -15,21 +15,20 @@ import {
 import { isFieldEditingDisabled } from '@/components/database/utils/field-editing';
 import { cn } from '@/lib/utils';
 
+/** One cell of a grid row; like the row, it takes the row's index and render row, not the whole stream. */
 function GridVirtualColumn({
-  data,
+  rowIndex,
+  rowData,
   columns,
-  row,
   column,
   onResizeColumnStart,
 }: {
-  data: RenderRow[];
+  rowIndex: number;
+  rowData: RenderRow;
   columns: RenderColumn[];
-  row: VirtualItem;
   column: VirtualItem;
   onResizeColumnStart?: (fieldId: string, element: HTMLElement) => void;
 }) {
-  const rowIndex = row.index;
-  const rowData = useMemo(() => data[rowIndex], [data, rowIndex]);
   const rowKey = getRenderRowKey(rowData);
   const { setActiveCell } = useGridInteractionActions();
   const readOnly = useReadOnly();
@@ -60,6 +59,9 @@ function GridVirtualColumn({
     <div
       data-column-id={columnData.fieldId}
       data-row-key={rowKey}
+      data-parity-id={
+        rowType === RenderRowType.Header && column.index === 0 ? 'dash-widget-grid-first-column' : undefined
+      }
       data-active-cell={isActiveCell || undefined}
       data-hover-row={isHoverRow || undefined}
       key={column.key}
@@ -99,10 +101,10 @@ function GridVirtualColumn({
       }}
     >
       <GridCell
-        rowIndex={row.index}
+        rowIndex={rowIndex}
+        rowData={rowData}
         columnIndex={column.index}
         columns={columns}
-        data={data}
         onResizeColumnStart={onResizeColumnStart}
       />
 

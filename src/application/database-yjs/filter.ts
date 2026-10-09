@@ -17,11 +17,14 @@ import {
   ChecklistFilterCondition,
   DateFilter,
   DateFilterCondition,
+  isEndDateCondition,
+  isParameterizedRelativeCondition,
   isRelativeDateCondition,
   NumberFilter,
   NumberFilterCondition,
   parseChecklistFlexible,
   parseSelectOptionTypeOptions,
+  parseRelativeDateSpec,
   PersonFilterCondition,
   RelationFilterCondition,
   resolveRelativeDates,
@@ -61,7 +64,13 @@ import {
   YjsDatabaseKey,
 } from '@/application/types';
 import { canonicalizeUserUid } from '@/application/user-uid';
-import { isAfterOneDay, isTimestampBefore, isTimestampBetweenRange, isTimestampInSameDay } from '@/utils/time';
+import {
+  isAfterOneDay,
+  isTimestampBefore,
+  isTimestampBetweenDays,
+  isTimestampBetweenRange,
+  isTimestampInSameDay,
+} from '@/utils/time';
 
 export function parseFilter(storedFieldType: FieldType, filter: YDatabaseFilter, fields?: YDatabaseFields) {
   const fieldId = filter.get(YjsDatabaseKey.field_id);
@@ -112,6 +121,18 @@ export function parseFilter(storedFieldType: FieldType, filter: YDatabaseFilter,
     case FieldType.DateTime:
     case FieldType.CreatedTime:
     case FieldType.LastEditedTime:
+      // "Is relative to today": the content is the spec, read with its defaults.
+      if (isParameterizedRelativeCondition(condition)) {
+        const spec = parseRelativeDateSpec(content);
+
+        return {
+          ...value,
+          relative_direction: spec.direction,
+          relative_amount: spec.amount,
+          relative_unit: spec.unit,
+        } as DateFilter;
+      }
+
       if (
         condition === DateFilterCondition.DateStartIsEmpty ||
         condition === DateFilterCondition.DateStartIsNotEmpty ||
@@ -165,6 +186,108 @@ function wrapPlainObjectAsFilter(obj: Record<string, unknown>): YDatabaseFilter 
   return {
     get: (key: string) => obj[key],
   } as unknown as YDatabaseFilter;
+}
+
+type FilterObserver = Parameters<YDatabaseFilters['observeDeep']>[0];
+
+/**
+ * The read-only part of a filter list the evaluators and selectors use. A
+ * view's `Y.Array` of filters satisfies it, and so do the lists built from
+ * plain nodes (`createVirtualFilters`, `combineFilters`), which have nothing
+ * else of a `Y.Array`: code that reads a filter list is typed against this, so
+ * it cannot reach for a member the built lists do not have.
+ */
+export interface FilterList {
+  readonly length: number;
+  get(index: number): YDatabaseFilter | undefined;
+  toArray(): YDatabaseFilter[];
+  toJSON(): unknown[];
+  forEach(callback: (value: YDatabaseFilter, index: number) => void): void;
+  map<T>(callback: (value: YDatabaseFilter, index: number) => T): T[];
+  slice(start?: number, end?: number): YDatabaseFilter[];
+  observeDeep(callback: FilterObserver): void;
+  unobserveDeep(callback: FilterObserver): void;
+}
+
+/**
+ * A read-only filter list built from plain filter nodes (for example dashboard
+ * global filters). It never changes, so observing it is a no-op.
+ */
+export function createVirtualFilters(nodes: readonly object[]): FilterList {
+  const wrapped = nodes.map((node) => wrapPlainObjectAsFilter(node as Record<string, unknown>));
+
+  return {
+    length: wrapped.length,
+    get: (index) => wrapped[index],
+    toArray: () => wrapped,
+    toJSON: () => nodes.map((node) => ({ ...node })),
+    forEach: (callback) => wrapped.forEach(callback),
+    map: (callback) => wrapped.map(callback),
+    slice: (start, end) => wrapped.slice(start, end),
+    observeDeep: () => undefined,
+    unobserveDeep: () => undefined,
+  };
+}
+
+/**
+ * Whether an injected node still fits its field: its condition and content are
+ * encoded for the type it was made for (`ty`), so once the field changes type
+ * the same condition number means something else and the node must not apply.
+ * Unknown fields are kept; the evaluators skip them anyway.
+ */
+function injectedNodeMatchesField(node: object, fields: YDatabaseFields | undefined) {
+  const expected = (node as { ty?: unknown }).ty;
+
+  if (!fields || expected === undefined || expected === null) return true;
+  const field = fields.get(String((node as { field_id?: unknown }).field_id ?? ''));
+
+  if (!field) return true;
+  return Number(field.get(YjsDatabaseKey.type)) === Number(expected);
+}
+
+/**
+ * The view's own filters plus dashboard-injected ones, AND-ed at the top level
+ * (`filterBy` ANDs top-level entries). Returns the original array untouched
+ * when there is nothing to add so identity-based memoisation keeps working.
+ *
+ * The combined list reads `viewFilters` (and, when given, the field types) on
+ * every access: callers memoise it on the Y.Array / Y.Map identities, which
+ * survive in-place edits. Observers are forwarded to the real array, since the
+ * injected nodes never change in place (new global filters produce a new
+ * combined list) and field changes are observed by the caller.
+ */
+export function combineFilters(
+  viewFilters: YDatabaseFilters | undefined,
+  extraNodes: readonly object[] | undefined,
+  fields?: YDatabaseFields
+): FilterList | undefined {
+  if (!extraNodes || extraNodes.length === 0) return viewFilters;
+  const wrapped = extraNodes.map((node) => ({
+    node,
+    filter: wrapPlainObjectAsFilter(node as Record<string, unknown>),
+  }));
+  const applicable = () => wrapped.filter(({ node }) => injectedNodeMatchesField(node, fields));
+  const extra = () => applicable().map(({ filter }) => filter);
+  const viewLength = () => viewFilters?.length ?? 0;
+  const all = (): YDatabaseFilter[] => [...(viewFilters?.toArray() ?? []), ...extra()];
+
+  return {
+    get length() {
+      return viewLength() + applicable().length;
+    },
+    get: (index) => {
+      const baseLength = viewLength();
+
+      return index < baseLength ? viewFilters?.get(index) : extra()[index - baseLength];
+    },
+    toArray: all,
+    toJSON: () => [...(viewFilters?.toJSON() ?? []), ...applicable().map(({ node }) => ({ ...node }))],
+    forEach: (callback) => all().forEach(callback),
+    map: (callback) => all().map(callback),
+    slice: (start, end) => all().slice(start, end),
+    observeDeep: (callback) => viewFilters?.observeDeep(callback),
+    unobserveDeep: (callback) => viewFilters?.unobserveDeep(callback),
+  };
 }
 
 export function normalizeFilterNode(node: unknown): YDatabaseFilter | null {
@@ -301,17 +424,20 @@ function isDataFilterEffective(filter: YDatabaseFilter, field: YDatabaseField, f
         isRelativeDateCondition(condition)
       )
         return true;
-      if (actualType !== FieldType.Rollup) return hasTextFilterContent(content);
+      if (actualType !== FieldType.Rollup && !hasTextFilterContent(content)) return false;
       try {
         const date = JSON.parse(content || '{}');
         const valid = (value: unknown) =>
           value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value));
 
+        // Like desktop's `get_strategy`, a filter without its date (a cleared
+        // picker writes `{"timestamp":null}`) or half a range does not narrow rows.
         return [DateFilterCondition.DateStartsBetween, DateFilterCondition.DateEndsBetween].includes(condition)
           ? valid(date.start) && valid(date.end)
           : valid(date.timestamp);
       } catch {
-        return false;
+        // Malformed view-filter content falls back to "starts on today" in parseFilter.
+        return actualType !== FieldType.Rollup;
       }
 
     case FieldType.Checkbox:
@@ -362,7 +488,7 @@ function getEffectiveFilterSnapshot(
   };
 }
 
-export function getEffectiveFiltersSnapshot(filters?: YDatabaseFilters, fields?: YDatabaseFields) {
+export function getEffectiveFiltersSnapshot(filters?: FilterList, fields?: YDatabaseFields) {
   if (!filters || !fields) return [];
 
   return filters
@@ -371,7 +497,7 @@ export function getEffectiveFiltersSnapshot(filters?: YDatabaseFilters, fields?:
     .filter((snapshot): snapshot is EffectiveFilterSnapshot => snapshot !== null);
 }
 
-export function hasEffectiveFilters(filters?: YDatabaseFilters, fields?: YDatabaseFields) {
+export function hasEffectiveFilters(filters?: FilterList, fields?: YDatabaseFields) {
   return getEffectiveFiltersSnapshot(filters, fields).length > 0;
 }
 
@@ -380,7 +506,7 @@ export function hasEffectiveFilters(filters?: YDatabaseFilters, fields?: YDataba
  * (root node is an And/Or group) rather than a flat list of Data filters.
  * Handles both Yjs maps and plain objects arriving from desktop sync.
  */
-export function hasAdvancedFilterRoot(filters?: YDatabaseFilters): boolean {
+export function hasAdvancedFilterRoot(filters?: FilterList): boolean {
   if (!filters || filters.length === 0) return false;
 
   const root = normalizeFilterNode(filters.get(0));
@@ -820,7 +946,7 @@ function personFilterCheckWithIds(data: string, filterIds: string[] | null, cond
 
 export function filterBy(
   rows: Row[],
-  filters: YDatabaseFilters,
+  filters: FilterList,
   fields: YDatabaseFields,
   rowMetas: Record<RowId, YDoc>,
   options?: FilterOptions
@@ -1021,10 +1147,12 @@ export function textFilterCheck(data: string, content: string, condition: TextFi
       return data.toLocaleLowerCase().includes(content.toLocaleLowerCase());
     case TextFilterCondition.TextDoesNotContain:
       return !data.toLocaleLowerCase().includes(content.toLocaleLowerCase());
+    // Case-insensitive like desktop (`cell_filter.rs`), so a text drill-down
+    // matches the same rows on both clients (WP13 decision 12).
     case TextFilterCondition.TextIs:
-      return data === content;
+      return data.toLocaleLowerCase() === content.toLocaleLowerCase();
     case TextFilterCondition.TextIsNot:
-      return data !== content;
+      return data.toLocaleLowerCase() !== content.toLocaleLowerCase();
     case TextFilterCondition.TextIsEmpty:
       return data === '';
     case TextFilterCondition.TextIsNotEmpty:
@@ -1091,12 +1219,24 @@ export function checklistFilterCheck(data: unknown, content: string, condition: 
   return percentage !== 1;
 }
 
+/**
+ * Date filter values as strings. Persisted content may hold `null` for a
+ * missing date, which a destructuring default would not replace.
+ */
+function dateFilterValues(filter: DateFilter) {
+  const text = (value: number | string | null | undefined) =>
+    value === null || value === undefined ? '' : String(value);
+
+  return { end: text(filter.end), start: text(filter.start), timestamp: text(filter.timestamp) };
+}
+
 export function rowTimeFilterCheck(data: string, filter: DateFilter) {
   if (isRelativeDateCondition(filter.condition)) {
     return relativeDateRangeMatches(data, filter);
   }
 
-  const { condition, end = '', start = '', timestamp = '' } = filter;
+  const { condition } = filter;
+  const { end, start, timestamp } = dateFilterValues(filter);
 
   switch (condition) {
     case DateFilterCondition.DateStartIsEmpty:
@@ -1119,7 +1259,7 @@ export function rowTimeFilterCheck(data: string, filter: DateFilter) {
       return isTimestampBefore(timestamp.toString(), data) || isTimestampInSameDay(timestamp.toString(), data);
     case DateFilterCondition.DateStartsBetween:
       if (!data) return false;
-      return isTimestampBetweenRange(data, start.toString(), end.toString());
+      return isTimestampBetweenDays(data, start.toString(), end.toString());
     default:
       return false;
   }
@@ -1128,9 +1268,9 @@ export function rowTimeFilterCheck(data: string, filter: DateFilter) {
 // Resolves a relative-date filter to a concrete [start, end] range and tests whether
 // the cell's relevant timestamp (start for "DateStarts*", end for "DateEnds*") falls in it.
 function relativeDateRangeMatches(data: string, filter: DateFilter, endTimestamp?: string): boolean {
-  // Mirrors desktop: DateStarts* relatives match against cell.start; DateEnds* match against cell.end.
-  const isEndCondition = filter.condition >= DateFilterCondition.DateEndsToday;
-  const target = isEndCondition ? endTimestamp ?? '' : data;
+  // Mirrors desktop: DateStarts* relatives match against cell.start; DateEnds* match against
+  // cell.end, falling back to cell.start when the cell has no end (Rust `end_timestamp.or(timestamp)`).
+  const target = isEndDateCondition(filter.condition) ? endTimestamp || data : data;
 
   if (!target) return false;
 
@@ -1152,7 +1292,8 @@ function relativeDateRangeMatches(data: string, filter: DateFilter, endTimestamp
 }
 
 export function dateFilterCheck(cell: DateTimeCell | null, filter: DateFilter) {
-  const { condition, end = '', start = '', timestamp = '' } = filter;
+  const { condition } = filter;
+  const { end, start, timestamp } = dateFilterValues(filter);
 
   const { data = '', endTimestamp = '' } = cell || {};
 
@@ -1203,12 +1344,14 @@ export function dateFilterCheck(cell: DateTimeCell | null, filter: DateFilter) {
       return (
         isTimestampBefore(timestamp.toString(), endTimestamp) || isTimestampInSameDay(timestamp.toString(), endTimestamp)
       );
+    // "Is between" counts both of its days, as the desktop does: the window's dates are
+    // midnights, while a cell's date may carry a time of its day.
     case DateFilterCondition.DateStartsBetween:
       if (!data) return false;
-      return isTimestampBetweenRange(data, start.toString(), end.toString());
+      return isTimestampBetweenDays(data, start.toString(), end.toString());
     case DateFilterCondition.DateEndsBetween:
       if (!endTimestamp) return false;
-      return isTimestampBetweenRange(endTimestamp, start.toString(), end.toString());
+      return isTimestampBetweenDays(endTimestamp, start.toString(), end.toString());
     default:
       return false;
   }
@@ -1329,28 +1472,35 @@ export function dateFilterFillData(filter: YDatabaseFilter): {
   // timestamp and always pre-fill from the resolved range so the new row
   // satisfies the filter.
   if (isRelativeDateCondition(condition)) {
+    const isEnd = isEndDateCondition(condition);
+
+    // Today lies in every "relative to today" range.
+    if (isParameterizedRelativeCondition(condition)) {
+      return isEnd ? { data: today, endTimestamp: today, isRange: true } : { data: today, isRange: false };
+    }
+
     const resolved = resolveRelativeDates({
       condition,
       timestamp: undefined,
       start: undefined,
       end: undefined,
     } as DateFilter);
-    const isEnd = condition >= DateFilterCondition.DateEndsToday;
     const fill = (resolved.timestamp ?? resolved.start ?? Number(today)).toString();
 
     return isEnd ? { data: fill, endTimestamp: fill, isRange: true } : { data: fill, isRange: false };
   }
 
   try {
-    const {
-      timestamp = today,
-      start = '',
-      end = '',
-    } = (JSON.parse(content) as {
-      timestamp?: string;
-      start?: string;
-      end?: string;
-    }) || {};
+    const parsed =
+      (JSON.parse(content) as {
+        timestamp?: string | null;
+        start?: string | null;
+        end?: string | null;
+      } | null) || {};
+    // A cleared picker stores `null`, which destructuring defaults would keep.
+    const timestamp = parsed.timestamp ?? today;
+    const start = parsed.start ?? '';
+    const end = parsed.end ?? '';
 
     const beforeTimestamp = dayjs.unix(Number(timestamp)).subtract(1, 'day').startOf('day').unix().toString();
     const afterTimestamp = dayjs.unix(Number(timestamp)).add(1, 'day').startOf('day').unix().toString();

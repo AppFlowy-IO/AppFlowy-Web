@@ -1,0 +1,110 @@
+{
+  "fixture": "layouts/converted-seed",
+  "version": 1,
+  "encoding": {
+    "seed": "seedConvertedDashboardRows(view_id, database_id): the rows a converted view starts with, one full-width widget showing its owned copy. Row and widget ids are random; check each against idPatterns, then compare with the id replaced by its mask.",
+    "cases": "Converting a view to Dashboard with the copy as seed. stored is the view's Dashboard layout map before the switch (null: none). seeded tells whether the seed is written: only when the stored rows are absent or parse to no widget. expected is the map after the switch; the seed writes rows, and global_filters only when absent, key by key.",
+    "numbers": "A plain JSON number and {\"$bigint\": \"<decimal>\"} compare by numeric value."
+  },
+  "idPatterns": { "<row-id>": "^r:[A-Za-z0-9_-]{8}$", "<widget-id>": "^w:[A-Za-z0-9_-]{8}$" },
+  "seed": {
+    "view_id": "v:copy",
+    "database_id": "db:host",
+    "rows": [
+      { "id": "<row-id>", "height": 360, "widgets": [
+        { "id": "<widget-id>", "view_id": "v:copy", "database_id": "db:host", "width": 12 }
+      ] }
+    ]
+  },
+  "cases": [
+    {
+      "name": "no stored setting seeds the rows and empty global filters",
+      "stored": null,
+      "seeded": true,
+      "expected": {
+        "rows": [
+          { "id": "<row-id>", "height": 360, "widgets": [
+            { "id": "<widget-id>", "view_id": "v:copy", "database_id": "db:host", "width": 12 }
+          ] }
+        ],
+        "global_filters": []
+      }
+    },
+    {
+      "name": "empty rows are seeded and every other key is kept",
+      "stored": { "rows": [], "show_widget_titles": false, "zz_parity_probe": { "from": "newer-app" } },
+      "seeded": true,
+      "expected": {
+        "rows": [
+          { "id": "<row-id>", "height": 360, "widgets": [
+            { "id": "<widget-id>", "view_id": "v:copy", "database_id": "db:host", "width": 12 }
+          ] }
+        ],
+        "global_filters": [],
+        "show_widget_titles": false,
+        "zz_parity_probe": { "from": "newer-app" }
+      }
+    },
+    {
+      "name": "missing rows are seeded and existing global filters are kept",
+      "stored": {
+        "global_filters": [
+          { "id": "gf:1", "name": "Status", "ty": 3, "condition": 0, "content": "", "targets": { "db:host": "f:status" }, "target_order": ["db:host"] }
+        ]
+      },
+      "seeded": true,
+      "expected": {
+        "rows": [
+          { "id": "<row-id>", "height": 360, "widgets": [
+            { "id": "<widget-id>", "view_id": "v:copy", "database_id": "db:host", "width": 12 }
+          ] }
+        ],
+        "global_filters": [
+          { "id": "gf:1", "name": "Status", "ty": 3, "condition": 0, "content": "", "targets": { "db:host": "f:status" }, "target_order": ["db:host"] }
+        ]
+      }
+    },
+    {
+      "name": "rows without a valid widget count as empty",
+      "stored": {
+        "rows": [
+          { "id": "r:old", "height": 360, "widgets": [
+            { "id": "w:old", "view_id": "v:gone" }
+          ] }
+        ],
+        "global_filters": []
+      },
+      "seeded": true,
+      "expected": {
+        "rows": [
+          { "id": "<row-id>", "height": 360, "widgets": [
+            { "id": "<widget-id>", "view_id": "v:copy", "database_id": "db:host", "width": 12 }
+          ] }
+        ],
+        "global_filters": []
+      }
+    },
+    {
+      "name": "a dashboard that already has widgets is never reseeded",
+      "stored": {
+        "rows": [
+          { "id": "r:1", "height": { "$bigint": "480" }, "widgets": [
+            { "id": "w:1", "view_id": "v:board", "database_id": "db:host", "width": { "$bigint": "12" } }
+          ] }
+        ],
+        "global_filters": [],
+        "show_widget_titles": true
+      },
+      "seeded": false,
+      "expected": {
+        "rows": [
+          { "id": "r:1", "height": 480, "widgets": [
+            { "id": "w:1", "view_id": "v:board", "database_id": "db:host", "width": 12 }
+          ] }
+        ],
+        "global_filters": [],
+        "show_widget_titles": true
+      }
+    }
+  ]
+}

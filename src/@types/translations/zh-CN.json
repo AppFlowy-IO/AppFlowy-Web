@@ -1137,7 +1137,10 @@
       "format": "格式",
       "reminderOnDateTooltip": "此单元格有预定的提醒",
       "optionAlreadyExist": "选项已存在",
-      "wrap": "自动换行"
+      "wrap": "自动换行",
+      "person": {
+        "searchForMore_other": "搜索以查找另外 {{count}} 人"
+      }
     },
     "rowPage": {
       "newField": "添加新字段",
@@ -1151,7 +1154,9 @@
         "one": "隐藏 {{count}} 个隐藏字段",
         "many": "隐藏 {{count}} 个隐藏字段",
         "other": "隐藏 {{count}} 个隐藏字段"
-      }
+      },
+      "openInCenterPeek": "在居中预览中打开",
+      "resizeSidePeek": "调整侧边预览大小"
     },
     "sort": {
       "ascending": "升序",
@@ -1171,14 +1176,16 @@
       "textPlaceholder": "空",
       "copyProperty": "复制列",
       "{{count}}": "数量",
-      "newRow": "添加一行",
+      "newRow": "新页面",
       "action": "执行",
       "add": "点击添加到下方",
       "drag": "拖动以移动",
       "deleteRowPrompt": "您确定要删除此行吗？此操作无法撤消",
       "dragAndClick": "拖拽移动，点击打开菜单",
       "insertRecordAbove": "在上方插入记录",
-      "insertRecordBelow": "点击添加到下方"
+      "insertRecordBelow": "点击添加到下方",
+      "loadingRowsProgress": "正在加载行… {{loaded}}/{{total}}",
+      "rowsNotLoadedYet": "部分行尚未加载"
     },
     "selectOption": {
       "create": "新建",
@@ -1226,7 +1233,9 @@
       "max": "最大限度",
       "median": "中位数",
       "min": "分钟",
-      "sum": "和"
+      "sum": "和",
+      "countChecked": "已勾选",
+      "countUnchecked": "未勾选"
     },
     "media": {
       "rename": "重命名",
@@ -1245,6 +1254,12 @@
       "doesNotContain": "不包含",
       "isEmpty": "为空",
       "isNotEmpty": "不为空"
+    },
+    "openPagesIn": {
+      "title": "页面打开方式",
+      "sidePeek": "侧边预览",
+      "centerPeek": "居中预览",
+      "fullPage": "整页"
     }
   },
   "document": {
@@ -1568,7 +1583,11 @@
       "newGroup": "新建组",
       "deleteColumn": "删除",
       "deleteColumnConfirmation": "这将删除该组及其中的所有卡片。你确定你要继续吗？",
-      "groupActions": "组操作"
+      "groupActions": "组操作",
+      "calculate": "计算",
+      "calculationTooltip": "{{property}}的{{calculation}}",
+      "colorColumns": "列着色",
+      "properties": "属性"
     },
     "hiddenGroupSection": {
       "sectionTitle": "隐藏组",
@@ -2020,5 +2039,411 @@
     "ago": "前",
     "yesterday": "昨天",
     "today": "今天"
+  },
+  "chart": {
+    "a11y": {
+      "table": "图表数据"
+    },
+    "agg": {
+      "average": "平均值",
+      "countAll": "全部计数",
+      "countEmpty": "空值计数",
+      "countUnique": "唯一值计数",
+      "countValues": "值计数",
+      "dateRange": "日期范围",
+      "earliest": "最早",
+      "latest": "最晚",
+      "max": "最大值",
+      "median": "中位数",
+      "min": "最小值",
+      "percentChecked": "已勾选百分比",
+      "percentEmpty": "空值百分比",
+      "percentNotEmpty": "非空百分比",
+      "percentUnchecked": "未勾选百分比",
+      "range": "范围",
+      "sum": "求和"
+    },
+    "aggregation": "聚合方式",
+    "barChart": "柱状图",
+    "chartType": "图表类型",
+    "checked": "已勾选",
+    "color": {
+      "auto": "自动",
+      "blue": "蓝色",
+      "colorful": "多彩",
+      "colorless": "无色",
+      "green": "绿色",
+      "orange": "橙色",
+      "pink": "粉色",
+      "purple": "紫色",
+      "red": "红色",
+      "teal": "青色",
+      "yellow": "黄色"
+    },
+    "cumulative": "累计",
+    "dateCondition": "日期分组",
+    "dateGrouping": {
+      "day": "日",
+      "month": "月",
+      "relative": "相对",
+      "week": "周",
+      "year": "年"
+    },
+    "decimalPlaces": {
+      "auto": "自动"
+    },
+    "donutChart": "环形图",
+    "emptyState": {
+      "description": "添加包含数据的行即可查看图表",
+      "noField": "没有可用于分组的字段",
+      "noFieldDescription": "创建单选、多选、勾选框或日期字段即可使用图表视图。",
+      "title": "暂无可显示的数据"
+    },
+    "emptyValue": "空",
+    "groups": {
+      "count": "{{count}} 个分组",
+      "hideAll": "全部隐藏",
+      "hideGroup": "隐藏分组",
+      "noGroups": "没有分组",
+      "showAll": "全部显示",
+      "showGroup": "显示分组",
+      "unknownPerson": "未知人员",
+      "unknownUser": "未知用户",
+      "untitled": "无标题",
+      "visibleOfTotal": "{{visible}}/{{total}}"
+    },
+    "horizontalBarChart": "条形图",
+    "legend": {
+      "auto": "自动",
+      "bottom": "底部",
+      "nextPage": "下一页",
+      "off": "关闭",
+      "page": "{{page}}/{{count}}",
+      "previousPage": "上一页"
+    },
+    "lineChart": "折线图",
+    "menuName": "图表",
+    "noFieldValue": "无{}",
+    "noGroupableFields": "没有可分组的字段",
+    "number": {
+      "calculate": "计算",
+      "countAll": "全部计数",
+      "emptyState": "无数据",
+      "format": "格式",
+      "formatAuto": "自动",
+      "formatCompact": "紧凑",
+      "formatPercent": "百分比",
+      "property": "属性",
+      "title": "标题",
+      "titleOf": "{{field}}的{{aggregation}}",
+      "titlePlaceholder": "默认标题"
+    },
+    "numberChart": "数字",
+    "numberColor": {
+      "addRule": "添加规则",
+      "blue": "蓝色",
+      "brown": "棕色",
+      "default": "默认",
+      "deleteRule": "删除规则",
+      "dynamic": "动态",
+      "dynamicColor": "动态颜色",
+      "else": "否则",
+      "equal": "等于",
+      "gray": "灰色",
+      "greaterThan": "大于",
+      "greaterThanOrEqual": "大于或等于",
+      "green": "绿色",
+      "ifValue": "如果值",
+      "lessThan": "小于",
+      "lessThanOrEqual": "小于或等于",
+      "notEqual": "不等于",
+      "orange": "橙色",
+      "pink": "粉色",
+      "purple": "紫色",
+      "red": "红色",
+      "sameAsColor": "与颜色相同",
+      "yellow": "黄色"
+    },
+    "settings": {
+      "auto": "自动",
+      "back": "返回",
+      "calculate": "计算",
+      "chartSettings": "图表设置",
+      "chartTitle": "图表标题",
+      "chartType": "图表类型",
+      "color": "颜色",
+      "count": "计数",
+      "cumulative": "累计",
+      "data": "数据",
+      "dataLabels": "数据标签",
+      "dateGrouping": "日期分组",
+      "decimalPlaces": "小数位数",
+      "default": "默认",
+      "donut": "环形图",
+      "eachSliceRepresents": "每个扇区代表",
+      "endAt": "结束于",
+      "exactValue": "精确值",
+      "firstLetter": "首字母",
+      "format": "格式",
+      "groupBy": "分组依据",
+      "groupByNone": "无",
+      "groupByText": "文本分组方式",
+      "groupStyle": "分组样式",
+      "groupStyleGrouped": "并排",
+      "groupStylePercent": "百分比",
+      "groupStyleStacked": "堆叠",
+      "groups": "分组",
+      "horizontalBar": "条形图",
+      "legend": "图例",
+      "line": "折线图",
+      "moreOptions": "更多选项",
+      "moreSeries": "还有 {{n}} 项",
+      "noResults": "无结果",
+      "number": "数字",
+      "onlyShowingFirstGroups": "仅显示前 {{n}} 个分组",
+      "percent": "百分比",
+      "rangeSize": "区间大小",
+      "ranges": "区间",
+      "rangesPreview": "从 {{from}} 到 {{to}} 共 {{count}} 个区间",
+      "searchProperty": "搜索属性…",
+      "size": "大小 {{size}}",
+      "sortBy": "排序方式",
+      "startAt": "开始于",
+      "style": "样式",
+      "verticalBar": "柱状图",
+      "viewSettings": "视图设置",
+      "whatToShow": "显示内容",
+      "xAxis": "X 轴",
+      "yAxis": "Y 轴"
+    },
+    "showEmptyValues": "显示空值",
+    "sort": {
+      "default": "默认",
+      "labelAsc": "A → Z",
+      "labelDesc": "Z → A",
+      "manual": "手动",
+      "valueAsc": "数值从低到高",
+      "valueDesc": "数值从高到低"
+    },
+    "state": {
+      "error": "无法加载此图表",
+      "noData": "无数据",
+      "preparing": "正在准备图表",
+      "retry": "重试"
+    },
+    "style": {
+      "color": "颜色",
+      "dataLabels": "数据标签",
+      "decimalPlaces": "小数位数",
+      "legend": "图例",
+      "title": "样式"
+    },
+    "tooltip": {
+      "average": "平均值",
+      "clickToView": "点击查看数据",
+      "count": "计数",
+      "countValues": "值计数",
+      "max": "最大值",
+      "median": "中位数",
+      "min": "最小值",
+      "rows": "{{count}} 行",
+      "sum": "求和",
+      "tapAgainToView": "再次点按以查看数据"
+    },
+    "total": "总计",
+    "unchecked": "未勾选",
+    "upgradeRequired": "需要升级",
+    "upgradeToProForChartTypes": "升级至专业版即可使用条形图、折线图和环形图",
+    "value": {
+      "days_other": "{{count}} 天"
+    },
+    "xAxis": "X 轴",
+    "yAxis": "Y 轴",
+    "drilldown": {
+      "ariaLabel": "表格数据预览",
+      "search": "搜索",
+      "dismiss": "关闭",
+      "more": "更多",
+      "saveAsView": "另存为视图…",
+      "openDatabase": "打开 {{database}}",
+      "selectedRows": "已选行 ({{count}})",
+      "cannotSaveSelectedRows": "所选行无法另存为视图",
+      "open": "打开",
+      "fromDashboardFilter": "来自仪表板筛选",
+      "rowCount_other": "{{count}} 行"
+    }
+  },
+  "dashboard": {
+    "addWidget": "添加组件",
+    "creationRequiresPro": "创建仪表板视图需要专业版工作区。",
+    "done": "完成",
+    "edit": "编辑",
+    "empty": {
+      "editDashboard": "编辑仪表板",
+      "newView": "新建视图",
+      "text": "添加图表、表格、列表"
+    },
+    "globalFilters": {
+      "addAnother": "再添加一个",
+      "addToFilter": "添加到筛选",
+      "appliesTo": "此筛选将应用于下方所选的{{type}}属性",
+      "button": "筛选",
+      "delete": "删除筛选",
+      "done": "完成",
+      "endDate": "结束日期",
+      "filterBy": "筛选条件…",
+      "isChecked": "已勾选",
+      "isUnchecked": "未勾选",
+      "more": "还有 {{count}} 个",
+      "moreActions": "更多操作",
+      "multipleSourcesIntro": "创建一个应用于多个数据源属性的筛选",
+      "name": "筛选名称",
+      "noResults": "无结果",
+      "op": {
+        "after": "晚于",
+        "before": "早于",
+        "between": "介于",
+        "checked": "已勾选",
+        "complete": "已完成",
+        "doesNotContain": "不包含",
+        "endsWith": "结尾是",
+        "incomplete": "未完成",
+        "is": "是",
+        "isEmpty": "为空",
+        "isNot": "不是",
+        "isNotEmpty": "不为空",
+        "onOrAfter": "不早于",
+        "onOrBefore": "不晚于",
+        "startsWith": "开头是",
+        "unchecked": "未勾选"
+      },
+      "people_other": "{{count}} 人",
+      "relative": {
+        "amount": "数量",
+        "next": "未来",
+        "past": "过去",
+        "summaryNext_other": "未来 {{count}} {{unit}}",
+        "summaryPast_other": "过去 {{count}} {{unit}}",
+        "summaryThis": "这{{unit}}",
+        "this": "当前"
+      },
+      "relativeHint": "筛选将随当前日期自动更新",
+      "relativeToToday": "相对于今天",
+      "remove": "移除",
+      "reset": "重置",
+      "sourceLine": "{{source}} 中的 {{property}}",
+      "startDate": "开始日期",
+      "title": "筛选多个数据源",
+      "units": {
+        "day_other": "天",
+        "month_other": "个月",
+        "week_other": "周",
+        "year_other": "年"
+      },
+      "viewCount_other": "{{count}} 个视图"
+    },
+    "historyPreviewUnavailable": "版本历史中不提供仪表板预览。",
+    "limit": {
+      "fullHint": "删除一个视图后才能添加新视图",
+      "fullTitle": "仪表板已满"
+    },
+    "menuName": "仪表板",
+    "picker": {
+      "back": "返回",
+      "changeViewTitle": "更换视图",
+      "close": "关闭",
+      "createFailed": "无法创建视图",
+      "editChart": "编辑图表",
+      "layout": {
+        "board": "看板",
+        "calendar": "日历",
+        "chart": "图表",
+        "feed": "动态",
+        "gallery": "图库",
+        "list": "列表",
+        "table": "表格",
+        "timeline": "时间线"
+      },
+      "loadFailed": "无法加载数据库",
+      "newView": "新建视图",
+      "newViewIn": "在 {{database}} 中新建视图",
+      "noResults": "未找到视图",
+      "otherSources": "其他数据源",
+      "searchPlaceholder": "搜索视图...",
+      "showMore": "再显示 {{count}} 个",
+      "source": "数据源",
+      "thisDatabase": "此数据库",
+      "viewName": "视图名称",
+      "viewsOn": "{{database}} 的视图",
+      "viewsOnThisDatabase": "此数据库的视图"
+    },
+    "private": {
+      "reset": "重置",
+      "resetAll": "重置所有更改",
+      "saveForEveryone": "为所有人保存",
+      "saveOptions": "更多保存选项",
+      "saved": "已为所有人保存更改。",
+      "undo": "撤销",
+      "unsaved": "未保存的更改"
+    },
+    "referencedDashboardPrefix": "视图",
+    "row": {
+      "addToNewRow": "添加到新行",
+      "addToRow": "添加到行",
+      "moveDown": "下移",
+      "moveUp": "上移",
+      "movedDown": "行已下移",
+      "movedUp": "行已上移"
+    },
+    "rowLimit": "每行最多容纳 {{count}} 个组件。",
+    "settings": {
+      "name": "仪表板设置",
+      "showIconsInHeading": "在标题中显示图标",
+      "showWidgetTitles": "显示组件标题"
+    },
+    "toolbar": {
+      "openAsFullPage": "以整页打开",
+      "settings": "设置"
+    },
+    "widget": {
+      "changeView": "更换视图",
+      "close": "关闭",
+      "createRowAbove": "在上方新建行",
+      "createRowBelow": "在下方新建行",
+      "delete": "删除",
+      "dragHandle": "拖动以移动",
+      "duplicate": "复制",
+      "editView": "编辑视图",
+      "filters": "筛选",
+      "loading": "加载中…",
+      "menu": "组件选项",
+      "moveLeft": "左移",
+      "moveRight": "右移",
+      "moveToRow": "移至行",
+      "noAccess": "你没有此数据库的访问权限",
+      "notFound": "此视图已不存在",
+      "offline": "恢复联网后可用",
+      "openFailed": "无法打开视图",
+      "remove": "移除组件",
+      "resizeHeight": "拖动以更改行高",
+      "resizeHeightValue": "{{height}} 像素",
+      "resizeWidth": "拖动以调整大小",
+      "resizeWidthValue": "12 列中的 {{columns}} 列",
+      "settings": "设置",
+      "sorts": "排序",
+      "source": "数据源",
+      "unsupported": "仪表板中无法显示仪表板",
+      "viewDataSource": "查看数据源",
+      "viewNameHint": "重命名此视图",
+      "viewSettings": "视图设置"
+    },
+    "mobile": {
+      "viewCount_other": "{{count}} 个视图"
+    }
+  },
+  "databaseSearch": {
+    "clearSearch": "清除搜索",
+    "noResults": "无结果",
+    "placeholder": "输入以搜索..."
   }
 }

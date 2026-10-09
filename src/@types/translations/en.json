@@ -1,6 +1,9 @@
 {
   "databaseViewCreation": {
+    "duplicateLimitExceeded": "This database has more than the limit of {{limit}} views and cannot be duplicated. Remove views before duplicating it.",
     "onlineRequired": "Connect to the internet to create Form or Chart views.",
+    "dashboardOnlineRequired": "Connect to the internet to create dashboard widget views.",
+    "viewLimitReached": "This database has reached its limit of {{limit}} views. Remove a view before creating another.",
     "connectionRequired": "Connect to the server to create this view.",
     "checking": "Checking view availability…",
     "unavailable": "Workspace information is unavailable. Please try again.",
@@ -1896,7 +1899,7 @@
       "isNotEmpty": "Is not empty"
     },
     "dateFilter": {
-      "is": "Is on",
+      "is": "Is",
       "before": "Is before",
       "after": "Is after",
       "onOrBefore": "Is on or before",
@@ -1970,7 +1973,9 @@
       "personFieldName": "Person",
       "person": {
         "notifyAssignee": "Notify assignee",
-        "noMatches": "No matches found"
+        "noMatches": "No matches found",
+        "searchForMore_one": "Search to find {{count}} more person",
+        "searchForMore_other": "Search to find {{count}} more people"
       },
       "translateTo": "Translate to",
       "numberFormat": "Number format",
@@ -2023,7 +2028,15 @@
       "hideHiddenFields_many": "Hide {{count}} hidden fields",
       "hideHiddenFields_other": "Hide {{count}} hidden fields",
       "openAsFullPage": "Open as full page",
-      "moreRowActions": "More row actions"
+      "moreRowActions": "More row actions",
+      "openInCenterPeek": "Open in center peek",
+      "resizeSidePeek": "Resize side peek"
+    },
+    "openPagesIn": {
+      "title": "Open pages in",
+      "sidePeek": "Side peek",
+      "centerPeek": "Center peek",
+      "fullPage": "Full page"
     },
     "sort": {
       "ascending": "Ascending",
@@ -2046,8 +2059,11 @@
       "textPlaceholder": "Empty",
       "copyProperty": "Copied property to clipboard",
       "count": "Count",
-      "newRow": "New row",
+      "newRow": "New page",
       "loadMore": "Load more",
+      "loadingRows": "Loading rows…",
+      "loadingRowsProgress": "Loading rows… {{loaded}}/{{total}}",
+    "rowsNotLoadedYet": "Some rows haven't loaded yet",
       "action": "Action",
       "add": "Click add to below",
       "drag": "Drag to move",
@@ -2209,9 +2225,9 @@
       "countEmptyShort": "EMPTY",
       "countNonEmpty": "Count not empty",
       "countNonEmptyShort": "FILLED",
-      "countChecked": "Count checked",
+      "countChecked": "Checked",
       "countCheckedShort": "CHECKED",
-      "countUnchecked": "Count unchecked",
+      "countUnchecked": "Unchecked",
       "countUncheckedShort": "UNCHECKED",
       "countUncompleted": "Count uncompleted",
       "countUncompletedShort": "UNCOMPLETED",
@@ -2449,7 +2465,9 @@
         "continueWriting": "Continue Writing",
         "askAIAnything": "Ask AI Anything",
         "feed": "Feed",
-        "linkedFeed": "Linked Feed"
+        "linkedFeed": "Linked Feed",
+        "dashboard": "Dashboard",
+        "linkedDashboard": "Linked Dashboard"
       },
       "linkedDatabase": {
         "title": "Link to an existing database",
@@ -2873,7 +2891,11 @@
       "deleteColumn": "Delete",
       "deleteCards": "This will delete all the cards in this group. Are you sure you want to continue?",
       "deleteOptionAndCards": "This will delete this option and all the cards in it. Are you sure you want to continue?",
-      "deleteColumnConfirmation": "This will delete this group and all the cards in it. Are you sure you want to continue?"
+      "deleteColumnConfirmation": "This will delete this group and all the cards in it. Are you sure you want to continue?",
+      "colorColumns": "Color columns",
+      "calculate": "Calculate",
+      "calculationTooltip": "{{calculation}} of {{property}}",
+      "properties": "Properties"
     },
     "hiddenGroupSection": {
       "sectionTitle": "Hidden Groups",
@@ -2995,6 +3017,11 @@
     "howToFixFallbackHint1": "We're sorry for the inconvenience! Submit an issue on our ",
     "howToFixFallbackHint2": " page that describes your error.",
     "github": "View on GitHub"
+  },
+  "databaseSearch": {
+    "noResults": "No results",
+    "clearSearch": "Clear search",
+    "placeholder": "Type to search..."
   },
   "search": {
     "label": "Search",
@@ -4395,6 +4422,10 @@
     "cumulative": "Cumulative",
     "dateCondition": "Date grouping",
     "noGroupableFields": "No groupable fields available",
+    "emptyValue": "Empty",
+    "noFieldValue": "No {}",
+    "checked": "Checked",
+    "unchecked": "Unchecked",
     "emptyState": {
       "title": "No data to display",
       "description": "Add rows with data to see the chart",
@@ -4410,13 +4441,197 @@
       "median": "Median",
       "countValues": "Count values",
       "rows": "{{count}} rows",
-      "clickToView": "Click to view data"
+      "clickToView": "Click to view data",
+      "tapAgainToView": "Tap again to view data"
     },
     "drilldown": {
-      "title": "Rows in \"{{category}}\"",
-      "close": "Close",
-      "rowCount": "{{count}} rows",
-      "noRows": "No rows in this category"
+      "rowCount_one": "{{count}} row",
+      "rowCount_other": "{{count}} rows",
+      "ariaLabel": "Table data preview",
+      "search": "Search",
+      "dismiss": "Dismiss",
+      "more": "More",
+      "saveAsView": "Save as view…",
+      "openDatabase": "Open {{database}}",
+      "selectedRows": "Selected rows ({{count}})",
+      "cannotSaveSelectedRows": "Selected rows can't be saved as a view",
+      "open": "OPEN",
+      "fromDashboardFilter": "From dashboard filter"
+    },
+    "numberChart": "Number",
+    "number": {
+      "calculate": "Calculate",
+      "property": "Property",
+      "countAll": "Count all",
+      "format": "Format",
+      "formatAuto": "Auto",
+      "formatCompact": "Compact",
+      "formatPercent": "Percent",
+      "emptyState": "No data",
+      "title": "Title",
+      "titleOf": "{{aggregation}} of {{field}}",
+      "titlePlaceholder": "Default title"
+    },
+    "total": "Total",
+    "state": {
+      "preparing": "Preparing your chart",
+      "noData": "No data",
+      "error": "Couldn't load this chart",
+      "retry": "Retry"
+    },
+    "style": {
+      "title": "Style",
+      "color": "Color",
+      "dataLabels": "Data labels",
+      "legend": "Legend",
+      "decimalPlaces": "Decimal places"
+    },
+    "color": {
+      "auto": "Auto",
+      "colorful": "Colorful",
+      "colorless": "Colorless",
+      "blue": "Blue",
+      "yellow": "Yellow",
+      "green": "Green",
+      "purple": "Purple",
+      "teal": "Teal",
+      "orange": "Orange",
+      "pink": "Pink",
+      "red": "Red"
+    },
+    "legend": {
+      "auto": "Auto",
+      "off": "Off",
+      "bottom": "Bottom",
+      "page": "{{page}}/{{count}}",
+      "previousPage": "Previous page",
+      "nextPage": "Next page"
+    },
+    "decimalPlaces": {
+      "auto": "Auto"
+    },
+    "value": {
+      "days_one": "{{count}} day",
+      "days_other": "{{count}} days"
+    },
+    "a11y": {
+      "table": "Chart data"
+    },
+    "settings": {
+      "chartSettings": "Chart settings",
+      "viewSettings": "View settings",
+      "chartType": "Chart type",
+      "verticalBar": "Vertical bar",
+      "horizontalBar": "Horizontal bar",
+      "line": "Line",
+      "donut": "Donut",
+      "number": "Number",
+      "xAxis": "X axis",
+      "yAxis": "Y axis",
+      "data": "Data",
+      "style": "Style",
+      "whatToShow": "What to show",
+      "eachSliceRepresents": "Each slice represents",
+      "dateGrouping": "Date grouping",
+      "groupByText": "Group by text",
+      "exactValue": "Exact value",
+      "firstLetter": "First letter",
+      "ranges": "Ranges",
+      "rangeSize": "Range size",
+      "startAt": "Start at",
+      "endAt": "End at",
+      "auto": "Auto",
+      "rangesPreview": "{{count}} ranges from {{from}} to {{to}}",
+      "size": "Size {{size}}",
+      "sortBy": "Sort by",
+      "groups": "Groups",
+      "calculate": "Calculate",
+      "count": "Count",
+      "percent": "Percent",
+      "moreOptions": "More options",
+      "decimalPlaces": "Decimal places",
+      "cumulative": "Cumulative",
+      "color": "Color",
+      "dataLabels": "Data labels",
+      "legend": "Legend",
+      "chartTitle": "Chart title",
+      "format": "Format",
+      "searchProperty": "Search for a property…",
+      "noResults": "No results",
+      "back": "Back",
+      "default": "Default",
+      "groupBy": "Group by",
+      "groupByNone": "None",
+      "groupStyle": "Group style",
+      "groupStyleStacked": "Stacked",
+      "groupStyleGrouped": "Grouped",
+      "groupStylePercent": "Percent",
+      "onlyShowingFirstGroups": "Only showing the first {{n}} groups",
+      "moreSeries": "+{{n}} more"
+    },
+    "sort": {
+      "default": "Default",
+      "manual": "Manual",
+      "labelAsc": "A → Z",
+      "labelDesc": "Z → A",
+      "valueDesc": "Value high → low",
+      "valueAsc": "Value low → high"
+    },
+    "agg": {
+      "countAll": "Count all",
+      "sum": "Sum",
+      "average": "Average",
+      "min": "Min",
+      "max": "Max",
+      "median": "Median",
+      "countUnique": "Count unique values",
+      "countValues": "Count values",
+      "countEmpty": "Count empty",
+      "percentEmpty": "Percent empty",
+      "percentNotEmpty": "Percent not empty",
+      "percentChecked": "Percent checked",
+      "percentUnchecked": "Percent unchecked",
+      "earliest": "Earliest",
+      "latest": "Latest",
+      "dateRange": "Date range",
+      "range": "Range"
+    },
+    "numberColor": {
+      "default": "Default",
+      "gray": "Gray",
+      "brown": "Brown",
+      "orange": "Orange",
+      "yellow": "Yellow",
+      "green": "Green",
+      "blue": "Blue",
+      "purple": "Purple",
+      "pink": "Pink",
+      "red": "Red",
+      "dynamicColor": "Dynamic color",
+      "dynamic": "Dynamic",
+      "ifValue": "If value",
+      "addRule": "Add rule",
+      "deleteRule": "Delete rule",
+      "else": "Else",
+      "sameAsColor": "Same as Color",
+      "greaterThan": "Greater than",
+      "greaterThanOrEqual": "Greater than or equal",
+      "lessThan": "Less than",
+      "lessThanOrEqual": "Less than or equal",
+      "equal": "Equal",
+      "notEqual": "Not equal"
+    },
+    "groups": {
+      "count": "{{count}} groups",
+      "visibleOfTotal": "{{visible}} of {{total}}",
+      "hideAll": "Hide all",
+      "showAll": "Show all",
+      "hideGroup": "Hide group",
+      "showGroup": "Show group",
+      "noGroups": "No groups",
+      "unknownPerson": "Unknown person",
+      "unknownUser": "Unknown user",
+      "untitled": "Untitled"
     }
   },
   "list": {
@@ -4507,5 +4722,183 @@
       "remove": "Remove dependency"
     },
     "openRow": "Open"
+  },
+  "dashboard": {
+    "menuName": "Dashboard",
+    "creationRequiresPro": "Creating a Dashboard view requires a Pro workspace.",
+    "referencedDashboardPrefix": "View of",
+    "edit": "Edit",
+    "done": "Done",
+    "addWidget": "Add widget",
+    "historyPreviewUnavailable": "Dashboards are not previewed in version history.",
+    "rowLimit": "A row holds up to {{count}} widgets.",
+    "row": {
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "addToRow": "Add to row",
+      "addToNewRow": "Add to new row",
+      "movedUp": "Row moved up",
+      "movedDown": "Row moved down"
+    },
+    "limit": {
+      "fullTitle": "Dashboard is full",
+      "fullHint": "Delete a view to add a new one"
+    },
+    "widget": {
+      "changeView": "Change view",
+      "editView": "Edit view",
+      "moveToRow": "Move to row",
+      "createRowAbove": "Create new row above",
+      "createRowBelow": "Create new row below",
+      "viewDataSource": "View data source",
+      "duplicate": "Duplicate",
+      "delete": "Delete",
+      "moveLeft": "Move left",
+      "moveRight": "Move right",
+      "notFound": "This view no longer exists",
+      "noAccess": "You don't have access to this database",
+      "loading": "Loading…",
+      "remove": "Remove widget",
+      "menu": "Widget options",
+      "dragHandle": "Drag to move",
+      "resizeWidth": "Drag to resize",
+      "resizeHeight": "Drag to change row height",
+      "unsupported": "A dashboard can't be shown inside a dashboard",
+      "resizeWidthValue": "{{columns}} of 12 columns",
+      "resizeHeightValue": "{{height}} pixels",
+      "settings": "Settings",
+      "viewSettings": "View settings",
+      "source": "Source",
+      "filters": "Filters",
+      "sorts": "Sorts",
+      "close": "Close",
+      "offline": "Available when you're back online",
+      "openFailed": "Could not open the view",
+      "viewNameHint": "Renames this view"
+    },
+    "picker": {
+      "chooseExisting": "Choose an existing view",
+      "newView": "New view",
+      "thisDatabase": "This database",
+      "noResults": "No views found",
+      "changeViewTitle": "Change view",
+      "loadFailed": "Could not load databases",
+      "createFailed": "Could not create the view",
+      "back": "Back",
+      "close": "Close",
+      "searchPlaceholder": "Search for a view...",
+      "viewsOn": "Views on {{database}}",
+      "viewsOnThisDatabase": "Views on this database",
+      "showMore": "Show {{count}} more",
+      "otherSources": "Other data sources",
+      "newViewIn": "New view in {{database}}",
+      "viewName": "View name",
+      "source": "Source",
+      "editChart": "Edit chart",
+      "layout": {
+        "table": "Table",
+        "board": "Board",
+        "gallery": "Gallery",
+        "list": "List",
+        "chart": "Chart",
+        "timeline": "Timeline",
+        "feed": "Feed",
+        "calendar": "Calendar"
+      }
+    },
+    "globalFilters": {
+      "button": "Filter",
+      "title": "Filter multiple sources",
+      "appliesTo": "This filter will apply across {{type}} properties selected below",
+      "remove": "Remove",
+      "delete": "Delete filter",
+      "done": "Done",
+      "reset": "Reset",
+      "name": "Filter name",
+      "isChecked": "Is checked",
+      "isUnchecked": "Is unchecked",
+      "filterBy": "Filter by…",
+      "viewCount_one": "{{count}} view",
+      "viewCount_other": "{{count}} views",
+      "more": "{{count}} more",
+      "noResults": "No results",
+      "multipleSourcesIntro": "Create a filter that applies across properties from multiple sources",
+      "addToFilter": "Add to filter",
+      "addAnother": "Add another",
+      "moreActions": "More actions",
+      "sourceLine": "{{property}} in {{source}}",
+      "people_one": "{{count}} person",
+      "people_other": "{{count}} people",
+      "startDate": "Start date",
+      "endDate": "End date",
+      "relativeToToday": "Is relative to today",
+      "relativeHint": "Filter will update with the current date",
+      "relative": {
+        "past": "Past",
+        "this": "This",
+        "next": "Next",
+        "amount": "Amount",
+        "summaryThis": "This {{unit}}",
+        "summaryPast_one": "Past {{unit}}",
+        "summaryPast_other": "Past {{count}} {{unit}}",
+        "summaryNext_one": "Next {{unit}}",
+        "summaryNext_other": "Next {{count}} {{unit}}"
+      },
+      "units": {
+        "day_one": "day",
+        "day_other": "days",
+        "week_one": "week",
+        "week_other": "weeks",
+        "month_one": "month",
+        "month_other": "months",
+        "year_one": "year",
+        "year_other": "years"
+      },
+      "op": {
+        "is": "Is",
+        "isNot": "Is not",
+        "doesNotContain": "Does not contain",
+        "startsWith": "Starts with",
+        "endsWith": "Ends with",
+        "isEmpty": "Is empty",
+        "isNotEmpty": "Is not empty",
+        "before": "Before",
+        "after": "After",
+        "onOrBefore": "On or before",
+        "onOrAfter": "On or after",
+        "between": "Between",
+        "checked": "Checked",
+        "unchecked": "Unchecked",
+        "complete": "Complete",
+        "incomplete": "Incomplete"
+      }
+    },
+    "private": {
+      "reset": "Reset",
+      "saveForEveryone": "Save for everyone",
+      "saveOptions": "More save options",
+      "resetAll": "Reset all changes",
+      "saved": "Changes saved for everyone.",
+      "undo": "Undo",
+      "unsaved": "Unsaved changes"
+    },
+    "settings": {
+      "name": "Dashboard settings",
+      "showWidgetTitles": "Show widget titles",
+      "showIconsInHeading": "Show icons in heading"
+    },
+    "toolbar": {
+      "settings": "Settings",
+      "openAsFullPage": "Open as full page"
+    },
+    "empty": {
+      "text": "Add charts, tables, lists",
+      "editDashboard": "Edit dashboard",
+      "newView": "New view"
+    },
+    "mobile": {
+      "viewCount_one": "{{count}} view",
+      "viewCount_other": "{{count}} views"
+    }
   }
 }

@@ -363,7 +363,11 @@
       "addOption": "Gehitu aukera",
       "editProperty": "Editatu propietatea",
       "newProperty": "Zutabe berria",
-      "deleteFieldPromptMessage": "Ziur al zaude? Propietate hau ezabatu egingo da"
+      "deleteFieldPromptMessage": "Ziur al zaude? Propietate hau ezabatu egingo da",
+      "person": {
+        "searchForMore_one": "Bilatu beste {{count}} pertsona aurkitzeko",
+        "searchForMore_other": "Bilatu beste {{count}} pertsona aurkitzeko"
+      }
     },
     "sort": {
       "ascending": "Gorarantz",
@@ -377,8 +381,10 @@
       "textPlaceholder": "Hutsik",
       "copyProperty": "Propietatea arbelean kopiatu da",
       "count": "Kontatu",
-      "newRow": "Errenkada berria",
-      "action": "Ekintza"
+      "newRow": "Orrialde berria",
+      "action": "Ekintza",
+      "loadingRowsProgress": "Errenkadak kargatzen… {{loaded}}/{{total}}",
+      "rowsNotLoadedYet": "Errenkada batzuk ez dira oraindik kargatu"
     },
     "selectOption": {
       "create": "Sortu",
@@ -400,7 +406,24 @@
       "addNew": "Gehitu elementu bat"
     },
     "menuName": "Sareta",
-    "referencedGridPrefix": "-ren ikuspegia"
+    "referencedGridPrefix": "-ren ikuspegia",
+    "calculationTypeLabel": {
+      "countChecked": "Markatuta",
+      "countUnchecked": "Markatu gabe"
+    },
+    "dateFilter": {
+      "is": "Da"
+    },
+    "openPagesIn": {
+      "title": "Ireki orriak hemen:",
+      "sidePeek": "Alboko aurrebista",
+      "centerPeek": "Erdiko aurrebista",
+      "fullPage": "Orri osoa"
+    },
+    "rowPage": {
+      "openInCenterPeek": "Ireki erdiko aurrebistan",
+      "resizeSidePeek": "Aldatu alboko aurrebistaren tamaina"
+    }
   },
   "document": {
     "menuName": "Dokumentua",
@@ -556,7 +579,11 @@
   },
   "board": {
     "column": {
-      "createNewCard": "Berria"
+      "createNewCard": "Berria",
+      "calculate": "Kalkulatu",
+      "calculationTooltip": "{{calculation}} ({{property}})",
+      "colorColumns": "Koloreztatu zutabeak",
+      "properties": "Propietateak"
     },
     "menuName": "Kontseilua",
     "referencedBoardPrefix": "-ren ikuspegia",
@@ -608,5 +635,422 @@
   "views": {
     "deleteContentTitle": "Ziur {pageType} ezabatu nahi duzula?",
     "deleteContentCaption": "{pageType} hau ezabatzen baduzu, zaborrontzitik leheneratu dezakezu."
+  },
+  "chart": {
+    "a11y": {
+      "table": "Grafikoaren datuak"
+    },
+    "agg": {
+      "average": "Batez bestekoa",
+      "countAll": "Zenbatu guztiak",
+      "countEmpty": "Zenbatu hutsak",
+      "countUnique": "Zenbatu balio bakarrak",
+      "countValues": "Zenbatu balioak",
+      "dateRange": "Data-tartea",
+      "earliest": "Zaharrena",
+      "latest": "Berriena",
+      "max": "Gehienekoa",
+      "median": "Mediana",
+      "min": "Gutxienekoa",
+      "percentChecked": "Markatuen ehunekoa",
+      "percentEmpty": "Hutsen ehunekoa",
+      "percentNotEmpty": "Ez-hutsen ehunekoa",
+      "percentUnchecked": "Markatu gabeen ehunekoa",
+      "range": "Heina",
+      "sum": "Batura"
+    },
+    "aggregation": "Agregazioa",
+    "barChart": "Barrak",
+    "chartType": "Grafiko mota",
+    "checked": "Markatuta",
+    "color": {
+      "auto": "Automatikoa",
+      "blue": "Urdina",
+      "colorful": "Koloretsua",
+      "colorless": "Kolorerik gabe",
+      "green": "Berdea",
+      "orange": "Laranja",
+      "pink": "Arrosa",
+      "purple": "Morea",
+      "red": "Gorria",
+      "teal": "Urdin-berdea",
+      "yellow": "Horia"
+    },
+    "cumulative": "Metatua",
+    "dateCondition": "Data bidezko taldekatzea",
+    "dateGrouping": {
+      "day": "Eguna",
+      "month": "Hilabetea",
+      "relative": "Erlatiboa",
+      "week": "Astea",
+      "year": "Urtea"
+    },
+    "decimalPlaces": {
+      "auto": "Automatikoa"
+    },
+    "donutChart": "Eraztuna",
+    "emptyState": {
+      "description": "Gehitu datuak dituzten errenkadak grafikoa ikusteko",
+      "noField": "Ez dago taldekatzeko eremurik",
+      "noFieldDescription": "Sortu hautapen bakarreko, hautapen anitzeko, kontrol-laukiko edo data motako eremu bat grafiko-ikuspegia erabiltzeko.",
+      "title": "Ez dago erakusteko daturik"
+    },
+    "emptyValue": "Hutsik",
+    "groups": {
+      "count": "{{count}} talde",
+      "hideAll": "Ezkutatu guztiak",
+      "hideGroup": "Ezkutatu taldea",
+      "noGroups": "Talderik ez",
+      "showAll": "Erakutsi guztiak",
+      "showGroup": "Erakutsi taldea",
+      "unknownPerson": "Pertsona ezezaguna",
+      "unknownUser": "Erabiltzaile ezezaguna",
+      "untitled": "Izengabea",
+      "visibleOfTotal": "{{visible}}/{{total}}"
+    },
+    "horizontalBarChart": "Barra horizontalak",
+    "legend": {
+      "auto": "Automatikoa",
+      "bottom": "Behean",
+      "nextPage": "Hurrengo orria",
+      "off": "Desaktibatuta",
+      "page": "{{page}}/{{count}}",
+      "previousPage": "Aurreko orria"
+    },
+    "lineChart": "Lerroa",
+    "menuName": "Grafikoa",
+    "noFieldValue": "{} gabe",
+    "noGroupableFields": "Ez dago taldeka daitekeen eremurik",
+    "number": {
+      "calculate": "Kalkulatu",
+      "countAll": "Zenbatu guztiak",
+      "emptyState": "Daturik ez",
+      "format": "Formatua",
+      "formatAuto": "Automatikoa",
+      "formatCompact": "Trinkoa",
+      "formatPercent": "Ehunekoa",
+      "property": "Propietatea",
+      "title": "Izenburua",
+      "titleOf": "{{aggregation}} ({{field}})",
+      "titlePlaceholder": "Izenburu lehenetsia"
+    },
+    "numberChart": "Zenbakia",
+    "numberColor": {
+      "addRule": "Gehitu araua",
+      "blue": "Urdina",
+      "brown": "Marroia",
+      "default": "Lehenetsia",
+      "deleteRule": "Ezabatu araua",
+      "dynamic": "Dinamikoa",
+      "dynamicColor": "Kolore dinamikoa",
+      "else": "Bestela",
+      "equal": "Berdin",
+      "gray": "Grisa",
+      "greaterThan": "Handiagoa",
+      "greaterThanOrEqual": "Handiagoa edo berdina",
+      "green": "Berdea",
+      "ifValue": "Balioa hau bada",
+      "lessThan": "Txikiagoa",
+      "lessThanOrEqual": "Txikiagoa edo berdina",
+      "notEqual": "Ez berdina",
+      "orange": "Laranja",
+      "pink": "Arrosa",
+      "purple": "Morea",
+      "red": "Gorria",
+      "sameAsColor": "Kolorearen berdina",
+      "yellow": "Horia"
+    },
+    "settings": {
+      "auto": "Automatikoa",
+      "back": "Atzera",
+      "calculate": "Kalkulatu",
+      "chartSettings": "Grafikoaren ezarpenak",
+      "chartTitle": "Grafikoaren izenburua",
+      "chartType": "Grafiko mota",
+      "color": "Kolorea",
+      "count": "Kopurua",
+      "cumulative": "Metatua",
+      "data": "Datuak",
+      "dataLabels": "Datu-etiketak",
+      "dateGrouping": "Data bidezko taldekatzea",
+      "decimalPlaces": "Hamartarrak",
+      "default": "Lehenetsia",
+      "donut": "Eraztuna",
+      "eachSliceRepresents": "Zati bakoitzak hau adierazten du",
+      "endAt": "Amaiera",
+      "exactValue": "Balio zehatza",
+      "firstLetter": "Lehen letra",
+      "format": "Formatua",
+      "groupBy": "Taldekatu honen arabera",
+      "groupByNone": "Bat ere ez",
+      "groupByText": "Taldekatu testuaren arabera",
+      "groupStyle": "Taldeen estiloa",
+      "groupStyleGrouped": "Taldekatua",
+      "groupStylePercent": "Ehunekoa",
+      "groupStyleStacked": "Pilatua",
+      "groups": "Taldeak",
+      "horizontalBar": "Barra horizontalak",
+      "legend": "Legenda",
+      "line": "Lerroa",
+      "moreOptions": "Aukera gehiago",
+      "moreSeries": "+{{n}} gehiago",
+      "noResults": "Emaitzarik ez",
+      "number": "Zenbakia",
+      "onlyShowingFirstGroups": "Lehen {{n}} taldeak soilik erakusten dira",
+      "percent": "Ehunekoa",
+      "rangeSize": "Tartearen tamaina",
+      "ranges": "Tarteak",
+      "rangesPreview": "{{count}} tarte, {{from}} eta {{to}} artean",
+      "searchProperty": "Bilatu propietate bat…",
+      "size": "Tamaina: {{size}}",
+      "sortBy": "Ordenatu honen arabera",
+      "startAt": "Hasiera",
+      "style": "Estiloa",
+      "verticalBar": "Barra bertikalak",
+      "viewSettings": "Ikuspegiaren ezarpenak",
+      "whatToShow": "Zer erakutsi",
+      "xAxis": "X ardatza",
+      "yAxis": "Y ardatza"
+    },
+    "showEmptyValues": "Erakutsi balio hutsak",
+    "sort": {
+      "default": "Lehenetsia",
+      "labelAsc": "A → Z",
+      "labelDesc": "Z → A",
+      "manual": "Eskuz",
+      "valueAsc": "Balioa: txikitik handira",
+      "valueDesc": "Balioa: handitik txikira"
+    },
+    "state": {
+      "error": "Ezin izan da grafiko hau kargatu",
+      "noData": "Daturik ez",
+      "preparing": "Grafikoa prestatzen",
+      "retry": "Saiatu berriro"
+    },
+    "style": {
+      "color": "Kolorea",
+      "dataLabels": "Datu-etiketak",
+      "decimalPlaces": "Hamartarrak",
+      "legend": "Legenda",
+      "title": "Estiloa"
+    },
+    "tooltip": {
+      "average": "Batez bestekoa",
+      "clickToView": "Egin klik datuak ikusteko",
+      "count": "Kopurua",
+      "countValues": "Zenbatu balioak",
+      "max": "Gehienekoa",
+      "median": "Mediana",
+      "min": "Gutxienekoa",
+      "rows": "{{count}} errenkada",
+      "sum": "Batura",
+      "tapAgainToView": "Sakatu berriro datuak ikusteko"
+    },
+    "total": "Guztira",
+    "unchecked": "Markatu gabe",
+    "upgradeRequired": "Plana hobetu behar da",
+    "upgradeToProForChartTypes": "Hobetu Pro planera barra horizontaleko, lerroko eta eraztuneko grafikoak erabiltzeko",
+    "value": {
+      "days_one": "{{count}} egun",
+      "days_other": "{{count}} egun"
+    },
+    "xAxis": "X ardatza",
+    "yAxis": "Y ardatza",
+    "drilldown": {
+      "ariaLabel": "Taulako datuen aurrebista",
+      "search": "Bilatu",
+      "dismiss": "Itxi",
+      "more": "Gehiago",
+      "saveAsView": "Gorde ikuspegi gisa…",
+      "openDatabase": "Ireki {{database}}",
+      "selectedRows": "Hautatutako errenkadak ({{count}})",
+      "cannotSaveSelectedRows": "Hautatutako errenkadak ezin dira ikuspegi gisa gorde",
+      "open": "IREKI",
+      "fromDashboardFilter": "Aginte-panelaren iragazkitik",
+      "rowCount_one": "{{count}} errenkada",
+      "rowCount_other": "{{count}} errenkada"
+    }
+  },
+  "dashboard": {
+    "addWidget": "Gehitu trepeta",
+    "creationRequiresPro": "Aginte-panel ikuspegi bat sortzeko Pro lan-eremu bat behar da.",
+    "done": "Eginda",
+    "edit": "Editatu",
+    "empty": {
+      "editDashboard": "Editatu aginte-panela",
+      "newView": "Ikuspegi berria",
+      "text": "Gehitu grafikoak, taulak, zerrendak"
+    },
+    "globalFilters": {
+      "addAnother": "Gehitu beste bat",
+      "addToFilter": "Gehitu iragazkira",
+      "appliesTo": "Iragazki hau behean hautatutako {{type}} motako propietateei aplikatuko zaie",
+      "button": "Iragazkia",
+      "delete": "Ezabatu iragazkia",
+      "done": "Eginda",
+      "endDate": "Amaiera-data",
+      "filterBy": "Iragazi honen arabera…",
+      "isChecked": "Markatuta dago",
+      "isUnchecked": "Ez dago markatuta",
+      "more": "{{count}} gehiago",
+      "moreActions": "Ekintza gehiago",
+      "multipleSourcesIntro": "Sortu iturri anitzetako propietateei aplikatzen zaien iragazki bat",
+      "name": "Iragazkiaren izena",
+      "noResults": "Emaitzarik ez",
+      "op": {
+        "after": "Ondoren",
+        "before": "Aurretik",
+        "between": "Artean",
+        "checked": "Markatuta",
+        "complete": "Osatuta",
+        "doesNotContain": "Ez dauka",
+        "endsWith": "Honela amaitzen da",
+        "incomplete": "Osatu gabe",
+        "is": "Da",
+        "isEmpty": "Hutsik dago",
+        "isNot": "Ez da",
+        "isNotEmpty": "Ez dago hutsik",
+        "onOrAfter": "Egun horretan edo ondoren",
+        "onOrBefore": "Egun horretan edo aurretik",
+        "startsWith": "Honela hasten da",
+        "unchecked": "Markatu gabe"
+      },
+      "people_one": "{{count}} pertsona",
+      "people_other": "{{count}} pertsona",
+      "relative": {
+        "amount": "Kopurua",
+        "next": "Hurrengo",
+        "past": "Azken",
+        "summaryNext_one": "Hurrengo {{unit}}",
+        "summaryNext_other": "Hurrengo {{count}} {{unit}}",
+        "summaryPast_one": "Azken {{unit}}",
+        "summaryPast_other": "Azken {{count}} {{unit}}",
+        "summaryThis": "{{unit}} hau",
+        "this": "Uneko"
+      },
+      "relativeHint": "Iragazkia uneko datarekin eguneratuko da",
+      "relativeToToday": "Gaurko egunarekiko erlatiboa",
+      "remove": "Kendu",
+      "reset": "Berrezarri",
+      "sourceLine": "{{property}} ({{source}})",
+      "startDate": "Hasiera-data",
+      "title": "Iragazi iturri anitz",
+      "units": {
+        "day_one": "egun",
+        "day_other": "egun",
+        "month_one": "hilabete",
+        "month_other": "hilabete",
+        "week_one": "aste",
+        "week_other": "aste",
+        "year_one": "urte",
+        "year_other": "urte"
+      },
+      "viewCount_one": "{{count}} ikuspegi",
+      "viewCount_other": "{{count}} ikuspegi"
+    },
+    "historyPreviewUnavailable": "Aginte-panelak ez dira bertsioen historian aurrebistan erakusten.",
+    "limit": {
+      "fullHint": "Ezabatu ikuspegi bat berri bat gehitzeko",
+      "fullTitle": "Aginte-panela beteta dago"
+    },
+    "menuName": "Aginte-panela",
+    "picker": {
+      "back": "Atzera",
+      "changeViewTitle": "Aldatu ikuspegia",
+      "close": "Itxi",
+      "createFailed": "Ezin izan da ikuspegia sortu",
+      "editChart": "Editatu grafikoa",
+      "layout": {
+        "board": "Arbela",
+        "calendar": "Egutegia",
+        "chart": "Grafikoa",
+        "feed": "Jarioa",
+        "gallery": "Galeria",
+        "list": "Zerrenda",
+        "table": "Taula",
+        "timeline": "Denbora-lerroa"
+      },
+      "loadFailed": "Ezin izan dira datu-baseak kargatu",
+      "newView": "Ikuspegi berria",
+      "newViewIn": "Ikuspegi berria {{database}} datu-basean",
+      "noResults": "Ez da ikuspegirik aurkitu",
+      "otherSources": "Beste datu-iturri batzuk",
+      "searchPlaceholder": "Bilatu ikuspegi bat...",
+      "showMore": "Erakutsi beste {{count}}",
+      "source": "Iturria",
+      "thisDatabase": "Datu-base hau",
+      "viewName": "Ikuspegiaren izena",
+      "viewsOn": "{{database}} datu-baseko ikuspegiak",
+      "viewsOnThisDatabase": "Datu-base honetako ikuspegiak"
+    },
+    "private": {
+      "reset": "Berrezarri",
+      "resetAll": "Berrezarri aldaketa guztiak",
+      "saveForEveryone": "Gorde denentzat",
+      "saveOptions": "Gordetzeko aukera gehiago",
+      "saved": "Aldaketak denentzat gorde dira.",
+      "undo": "Desegin",
+      "unsaved": "Gorde gabeko aldaketak"
+    },
+    "referencedDashboardPrefix": "Ikuspegia:",
+    "row": {
+      "addToNewRow": "Gehitu errenkada berrira",
+      "addToRow": "Gehitu errenkadara",
+      "moveDown": "Mugitu behera",
+      "moveUp": "Mugitu gora",
+      "movedDown": "Errenkada behera mugitu da",
+      "movedUp": "Errenkada gora mugitu da"
+    },
+    "rowLimit": "Errenkada batek gehienez {{count}} trepeta izan ditzake.",
+    "settings": {
+      "name": "Aginte-panelaren ezarpenak",
+      "showIconsInHeading": "Erakutsi ikonoak goiburuan",
+      "showWidgetTitles": "Erakutsi trepeten izenburuak"
+    },
+    "toolbar": {
+      "openAsFullPage": "Ireki orri oso gisa",
+      "settings": "Ezarpenak"
+    },
+    "widget": {
+      "changeView": "Aldatu ikuspegia",
+      "close": "Itxi",
+      "createRowAbove": "Sortu errenkada berria gainean",
+      "createRowBelow": "Sortu errenkada berria azpian",
+      "delete": "Ezabatu",
+      "dragHandle": "Arrastatu mugitzeko",
+      "duplicate": "Bikoiztu",
+      "editView": "Editatu ikuspegia",
+      "filters": "Iragazkiak",
+      "loading": "Kargatzen…",
+      "menu": "Trepetaren aukerak",
+      "moveLeft": "Mugitu ezkerrera",
+      "moveRight": "Mugitu eskuinera",
+      "moveToRow": "Mugitu errenkadara",
+      "noAccess": "Ez duzu datu-base honetarako sarbiderik",
+      "notFound": "Ikuspegi hau jada ez dago",
+      "offline": "Erabilgarri berriro linean zaudenean",
+      "openFailed": "Ezin izan da ikuspegia ireki",
+      "remove": "Kendu trepeta",
+      "resizeHeight": "Arrastatu errenkadaren altuera aldatzeko",
+      "resizeHeightValue": "{{height}} pixel",
+      "resizeWidth": "Arrastatu tamaina aldatzeko",
+      "resizeWidthValue": "12 zutabetik {{columns}}",
+      "settings": "Ezarpenak",
+      "sorts": "Ordenazioak",
+      "source": "Iturria",
+      "unsupported": "Aginte-panel bat ezin da beste aginte-panel baten barruan erakutsi",
+      "viewDataSource": "Ikusi datu-iturria",
+      "viewNameHint": "Ikuspegi honi izena aldatzen dio",
+      "viewSettings": "Ikuspegiaren ezarpenak"
+    },
+    "mobile": {
+      "viewCount_one": "{{count}} ikuspegi",
+      "viewCount_other": "{{count}} ikuspegi"
+    }
+  },
+  "databaseSearch": {
+    "clearSearch": "Garbitu bilaketa",
+    "noResults": "Emaitzarik ez",
+    "placeholder": "Idatzi bilatzeko..."
   }
 }

@@ -1,0 +1,39 @@
+{
+  "locale": "ckb-KU",
+  "terms": {
+    "dashboard": "داشبۆرد",
+    "widget": "ویجێت",
+    "chart": "چارت",
+    "view": "دیمەن",
+    "row": "ڕیز",
+    "property": "تایبەتمەندی",
+    "field": "خانە",
+    "database": "بنکەدراوە",
+    "source": "سەرچاوە",
+    "page": "لاپەڕە",
+    "workspace": "شوێنی کارکردن",
+    "done": "ئەنجامدرا",
+    "edit": "دەستکاری",
+    "delete": "سڕینەوە",
+    "duplicate": "دووبارەکردنەوە",
+    "save": "پاشەکەوتکردن",
+    "cancel": "ڕەتکردنەوە",
+    "close": "داخستن",
+    "back": "گەڕانەوە",
+    "settings": "ڕێکخستنەکان",
+    "filter": "فیلتێر",
+    "sort": "ڕیزکردن",
+    "search": "گەڕان",
+    "undo": "پاشەکشە",
+    "redo": "گەڕاندنەوە",
+    "reset": "ڕێکخستنەوە",
+    "untitled": "بێ ناونیشان",
+    "day": "ڕۆژ",
+    "week": "هەفتە",
+    "month": "مانگ",
+    "year": "ساڵ"
+  },
+  "untranslated_ok": [
+    "chart.legend.page"
+  ]
+}

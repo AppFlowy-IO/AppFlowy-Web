@@ -365,7 +365,11 @@
       "addOption": "Opció hozzáadása",
       "editProperty": "Tulajdonság szerkesztése",
       "newProperty": "Új tulajdonság",
-      "deleteFieldPromptMessage": "Biztos ebben? Ez a tulajdonság törlésre kerül"
+      "deleteFieldPromptMessage": "Biztos ebben? Ez a tulajdonság törlésre kerül",
+      "person": {
+        "searchForMore_one": "Keressen további {{count}} személy megtalálásához",
+        "searchForMore_other": "Keressen további {{count}} személy megtalálásához"
+      }
     },
     "sort": {
       "ascending": "Emelkedő",
@@ -379,8 +383,10 @@
       "textPlaceholder": "Üres",
       "copyProperty": "Tulajdonság a vágólapra másolva",
       "count": "Számol",
-      "newRow": "Új sor",
-      "action": "Akció"
+      "newRow": "Új oldal",
+      "action": "Akció",
+      "loadingRowsProgress": "Sorok betöltése… {{loaded}}/{{total}}",
+      "rowsNotLoadedYet": "Néhány sor még nem töltődött be"
     },
     "selectOption": {
       "create": "Teremt",
@@ -402,7 +408,24 @@
       "addNew": "Adjon hozzá egy elemet"
     },
     "menuName": "Táblázat",
-    "referencedGridPrefix": "Nézet"
+    "referencedGridPrefix": "Nézet",
+    "calculationTypeLabel": {
+      "countChecked": "Bejelölve",
+      "countUnchecked": "Nincs bejelölve"
+    },
+    "dateFilter": {
+      "is": "Ezen a napon"
+    },
+    "openPagesIn": {
+      "title": "Oldalak megnyitása itt:",
+      "sidePeek": "Oldalsó előnézet",
+      "centerPeek": "Középső előnézet",
+      "fullPage": "Teljes oldal"
+    },
+    "rowPage": {
+      "openInCenterPeek": "Megnyitás középső előnézetben",
+      "resizeSidePeek": "Oldalsó előnézet átméretezése"
+    }
   },
   "document": {
     "menuName": "Dokumentum",
@@ -554,7 +577,11 @@
   },
   "board": {
     "column": {
-      "createNewCard": "Új"
+      "createNewCard": "Új",
+      "calculate": "Számítás",
+      "calculationTooltip": "{{calculation}} ({{property}})",
+      "colorColumns": "Oszlopok színezése",
+      "properties": "Tulajdonságok"
     },
     "menuName": "Feladat Tábla",
     "referencedBoardPrefix": "Nézet",
@@ -606,5 +633,422 @@
   "views": {
     "deleteContentTitle": "Biztosan törli a következőt: {pageType}?",
     "deleteContentCaption": "ha törli ezt a {pageType} oldalt, visszaállíthatja a kukából."
+  },
+  "chart": {
+    "a11y": {
+      "table": "Diagramadatok"
+    },
+    "agg": {
+      "average": "Átlag",
+      "countAll": "Összes számlálása",
+      "countEmpty": "Üresek számlálása",
+      "countUnique": "Egyedi értékek számlálása",
+      "countValues": "Értékek számlálása",
+      "dateRange": "Dátumtartomány",
+      "earliest": "Legkorábbi",
+      "latest": "Legkésőbbi",
+      "max": "Maximum",
+      "median": "Medián",
+      "min": "Minimum",
+      "percentChecked": "Bejelöltek aránya",
+      "percentEmpty": "Üresek aránya",
+      "percentNotEmpty": "Nem üresek aránya",
+      "percentUnchecked": "Nem bejelöltek aránya",
+      "range": "Terjedelem",
+      "sum": "Összeg"
+    },
+    "aggregation": "Összesítés",
+    "barChart": "Oszlop",
+    "chartType": "Diagramtípus",
+    "checked": "Bejelölve",
+    "color": {
+      "auto": "Automatikus",
+      "blue": "Kék",
+      "colorful": "Színes",
+      "colorless": "Színtelen",
+      "green": "Zöld",
+      "orange": "Narancs",
+      "pink": "Rózsaszín",
+      "purple": "Lila",
+      "red": "Piros",
+      "teal": "Kékeszöld",
+      "yellow": "Sárga"
+    },
+    "cumulative": "Kumulatív",
+    "dateCondition": "Dátum szerinti csoportosítás",
+    "dateGrouping": {
+      "day": "Nap",
+      "month": "Hónap",
+      "relative": "Relatív",
+      "week": "Hét",
+      "year": "Év"
+    },
+    "decimalPlaces": {
+      "auto": "Automatikus"
+    },
+    "donutChart": "Fánk",
+    "emptyState": {
+      "description": "Adjon hozzá adatokat tartalmazó sorokat a diagram megtekintéséhez",
+      "noField": "Nincs csoportosításra alkalmas mező",
+      "noFieldDescription": "Hozzon létre egy egyszeres választás, többszörös választás, jelölőnégyzet vagy dátum típusú mezőt a diagramnézet használatához.",
+      "title": "Nincs megjeleníthető adat"
+    },
+    "emptyValue": "Üres",
+    "groups": {
+      "count": "{{count}} csoport",
+      "hideAll": "Összes elrejtése",
+      "hideGroup": "Csoport elrejtése",
+      "noGroups": "Nincsenek csoportok",
+      "showAll": "Összes megjelenítése",
+      "showGroup": "Csoport megjelenítése",
+      "unknownPerson": "Ismeretlen személy",
+      "unknownUser": "Ismeretlen felhasználó",
+      "untitled": "Névtelen",
+      "visibleOfTotal": "{{total}} közül {{visible}}"
+    },
+    "horizontalBarChart": "Vízszintes sáv",
+    "legend": {
+      "auto": "Automatikus",
+      "bottom": "Lent",
+      "nextPage": "Következő oldal",
+      "off": "Ki",
+      "page": "{{page}}/{{count}}",
+      "previousPage": "Előző oldal"
+    },
+    "lineChart": "Vonal",
+    "menuName": "Diagram",
+    "noFieldValue": "Nincs {}",
+    "noGroupableFields": "Nincs csoportosítható mező",
+    "number": {
+      "calculate": "Számítás",
+      "countAll": "Összes számlálása",
+      "emptyState": "Nincs adat",
+      "format": "Formátum",
+      "formatAuto": "Automatikus",
+      "formatCompact": "Tömör",
+      "formatPercent": "Százalék",
+      "property": "Tulajdonság",
+      "title": "Cím",
+      "titleOf": "{{aggregation}} ({{field}})",
+      "titlePlaceholder": "Alapértelmezett cím"
+    },
+    "numberChart": "Szám",
+    "numberColor": {
+      "addRule": "Szabály hozzáadása",
+      "blue": "Kék",
+      "brown": "Barna",
+      "default": "Alapértelmezett",
+      "deleteRule": "Szabály törlése",
+      "dynamic": "Dinamikus",
+      "dynamicColor": "Dinamikus szín",
+      "else": "Egyébként",
+      "equal": "Egyenlő",
+      "gray": "Szürke",
+      "greaterThan": "Nagyobb mint",
+      "greaterThanOrEqual": "Nagyobb vagy egyenlő",
+      "green": "Zöld",
+      "ifValue": "Ha az érték",
+      "lessThan": "Kisebb mint",
+      "lessThanOrEqual": "Kisebb vagy egyenlő",
+      "notEqual": "Nem egyenlő",
+      "orange": "Narancs",
+      "pink": "Rózsaszín",
+      "purple": "Lila",
+      "red": "Piros",
+      "sameAsColor": "A színnel azonos",
+      "yellow": "Sárga"
+    },
+    "settings": {
+      "auto": "Automatikus",
+      "back": "Vissza",
+      "calculate": "Számítás",
+      "chartSettings": "Diagrambeállítások",
+      "chartTitle": "Diagram címe",
+      "chartType": "Diagramtípus",
+      "color": "Szín",
+      "count": "Darabszám",
+      "cumulative": "Kumulatív",
+      "data": "Adatok",
+      "dataLabels": "Adatfeliratok",
+      "dateGrouping": "Dátum szerinti csoportosítás",
+      "decimalPlaces": "Tizedesjegyek",
+      "default": "Alapértelmezett",
+      "donut": "Fánk",
+      "eachSliceRepresents": "Minden szelet jelentése",
+      "endAt": "Vége",
+      "exactValue": "Pontos érték",
+      "firstLetter": "Kezdőbetű",
+      "format": "Formátum",
+      "groupBy": "Csoportosítás",
+      "groupByNone": "Nincs",
+      "groupByText": "Csoportosítás szöveg szerint",
+      "groupStyle": "Csoportstílus",
+      "groupStyleGrouped": "Csoportosított",
+      "groupStylePercent": "Százalékos",
+      "groupStyleStacked": "Halmozott",
+      "groups": "Csoportok",
+      "horizontalBar": "Vízszintes sáv",
+      "legend": "Jelmagyarázat",
+      "line": "Vonal",
+      "moreOptions": "További lehetőségek",
+      "moreSeries": "+{{n}} további",
+      "noResults": "Nincs találat",
+      "number": "Szám",
+      "onlyShowingFirstGroups": "Csak az első {{n}} csoport látható",
+      "percent": "Százalék",
+      "rangeSize": "Tartományméret",
+      "ranges": "Tartományok",
+      "rangesPreview": "{{count}} tartomány: {{from}} – {{to}}",
+      "searchProperty": "Tulajdonság keresése…",
+      "size": "Méret: {{size}}",
+      "sortBy": "Rendezés",
+      "startAt": "Kezdete",
+      "style": "Stílus",
+      "verticalBar": "Függőleges oszlop",
+      "viewSettings": "Nézetbeállítások",
+      "whatToShow": "Megjelenítendő adat",
+      "xAxis": "X tengely",
+      "yAxis": "Y tengely"
+    },
+    "showEmptyValues": "Üres értékek megjelenítése",
+    "sort": {
+      "default": "Alapértelmezett",
+      "labelAsc": "A → Z",
+      "labelDesc": "Z → A",
+      "manual": "Kézi",
+      "valueAsc": "Érték: alacsony → magas",
+      "valueDesc": "Érték: magas → alacsony"
+    },
+    "state": {
+      "error": "Nem sikerült betölteni a diagramot",
+      "noData": "Nincs adat",
+      "preparing": "Diagram előkészítése",
+      "retry": "Újra"
+    },
+    "style": {
+      "color": "Szín",
+      "dataLabels": "Adatfeliratok",
+      "decimalPlaces": "Tizedesjegyek",
+      "legend": "Jelmagyarázat",
+      "title": "Stílus"
+    },
+    "tooltip": {
+      "average": "Átlag",
+      "clickToView": "Kattintson az adatok megtekintéséhez",
+      "count": "Darabszám",
+      "countValues": "Értékek számlálása",
+      "max": "Maximum",
+      "median": "Medián",
+      "min": "Minimum",
+      "rows": "{{count}} sor",
+      "sum": "Összeg",
+      "tapAgainToView": "Koppintson újra az adatok megtekintéséhez"
+    },
+    "total": "Összesen",
+    "unchecked": "Nincs bejelölve",
+    "upgradeRequired": "Csomagváltás szükséges",
+    "upgradeToProForChartTypes": "Váltson Pro csomagra a vízszintes sáv-, vonal- és fánkdiagramok használatához",
+    "value": {
+      "days_one": "{{count}} nap",
+      "days_other": "{{count}} nap"
+    },
+    "xAxis": "X tengely",
+    "yAxis": "Y tengely",
+    "drilldown": {
+      "ariaLabel": "Táblázatadatok előnézete",
+      "search": "Keresés",
+      "dismiss": "Bezárás",
+      "more": "Továbbiak",
+      "saveAsView": "Mentés nézetként…",
+      "openDatabase": "{{database}} megnyitása",
+      "selectedRows": "Kijelölt sorok ({{count}})",
+      "cannotSaveSelectedRows": "A kijelölt sorok nem menthetők nézetként",
+      "open": "MEGNYITÁS",
+      "fromDashboardFilter": "Az irányítópult szűrőjéből",
+      "rowCount_one": "{{count}} sor",
+      "rowCount_other": "{{count}} sor"
+    }
+  },
+  "dashboard": {
+    "addWidget": "Widget hozzáadása",
+    "creationRequiresPro": "Irányítópult-nézet létrehozásához Pro munkaterület szükséges.",
+    "done": "Kész",
+    "edit": "Szerkesztés",
+    "empty": {
+      "editDashboard": "Irányítópult szerkesztése",
+      "newView": "Új nézet",
+      "text": "Diagramok, táblázatok, listák hozzáadása"
+    },
+    "globalFilters": {
+      "addAnother": "Újabb hozzáadása",
+      "addToFilter": "Hozzáadás a szűrőhöz",
+      "appliesTo": "A szűrő az alább kiválasztott {{type}} tulajdonságokra vonatkozik",
+      "button": "Szűrő",
+      "delete": "Szűrő törlése",
+      "done": "Kész",
+      "endDate": "Befejező dátum",
+      "filterBy": "Szűrés…",
+      "isChecked": "Be van jelölve",
+      "isUnchecked": "Nincs bejelölve",
+      "more": "{{count}} további",
+      "moreActions": "További műveletek",
+      "multipleSourcesIntro": "Hozzon létre egy szűrőt, amely több forrás tulajdonságaira vonatkozik",
+      "name": "Szűrő neve",
+      "noResults": "Nincs találat",
+      "op": {
+        "after": "Utána",
+        "before": "Előtte",
+        "between": "Között",
+        "checked": "Bejelölve",
+        "complete": "Kész",
+        "doesNotContain": "Nem tartalmazza",
+        "endsWith": "Ezzel végződik",
+        "incomplete": "Nincs kész",
+        "is": "Egyenlő",
+        "isEmpty": "Üres",
+        "isNot": "Nem egyenlő",
+        "isNotEmpty": "Nem üres",
+        "onOrAfter": "Aznap vagy utána",
+        "onOrBefore": "Aznap vagy előtte",
+        "startsWith": "Ezzel kezdődik",
+        "unchecked": "Nincs bejelölve"
+      },
+      "people_one": "{{count}} személy",
+      "people_other": "{{count}} személy",
+      "relative": {
+        "amount": "Mennyiség",
+        "next": "Következő",
+        "past": "Elmúlt",
+        "summaryNext_one": "Következő {{unit}}",
+        "summaryNext_other": "Következő {{count}} {{unit}}",
+        "summaryPast_one": "Elmúlt {{unit}}",
+        "summaryPast_other": "Elmúlt {{count}} {{unit}}",
+        "summaryThis": "Aktuális {{unit}}",
+        "this": "Aktuális"
+      },
+      "relativeHint": "A szűrő az aktuális dátummal együtt frissül",
+      "relativeToToday": "A mai naphoz viszonyítva",
+      "remove": "Eltávolítás",
+      "reset": "Visszaállítás",
+      "sourceLine": "{{property}} ({{source}})",
+      "startDate": "Kezdő dátum",
+      "title": "Szűrés több forrásban",
+      "units": {
+        "day_one": "nap",
+        "day_other": "nap",
+        "month_one": "hónap",
+        "month_other": "hónap",
+        "week_one": "hét",
+        "week_other": "hét",
+        "year_one": "év",
+        "year_other": "év"
+      },
+      "viewCount_one": "{{count}} nézet",
+      "viewCount_other": "{{count}} nézet"
+    },
+    "historyPreviewUnavailable": "Az irányítópultok nem jelennek meg előnézetben a verzióelőzményekben.",
+    "limit": {
+      "fullHint": "Töröljön egy nézetet egy új hozzáadásához",
+      "fullTitle": "Az irányítópult megtelt"
+    },
+    "menuName": "Irányítópult",
+    "picker": {
+      "back": "Vissza",
+      "changeViewTitle": "Nézet módosítása",
+      "close": "Bezárás",
+      "createFailed": "Nem sikerült létrehozni a nézetet",
+      "editChart": "Diagram szerkesztése",
+      "layout": {
+        "board": "Tábla",
+        "calendar": "Naptár",
+        "chart": "Diagram",
+        "feed": "Hírfolyam",
+        "gallery": "Galéria",
+        "list": "Lista",
+        "table": "Táblázat",
+        "timeline": "Idővonal"
+      },
+      "loadFailed": "Nem sikerült betölteni az adatbázisokat",
+      "newView": "Új nézet",
+      "newViewIn": "Új nézet itt: {{database}}",
+      "noResults": "Nem található nézet",
+      "otherSources": "Egyéb adatforrások",
+      "searchPlaceholder": "Nézet keresése...",
+      "showMore": "{{count}} további megjelenítése",
+      "source": "Forrás",
+      "thisDatabase": "Ez az adatbázis",
+      "viewName": "Nézet neve",
+      "viewsOn": "Nézetek itt: {{database}}",
+      "viewsOnThisDatabase": "Az adatbázis nézetei"
+    },
+    "private": {
+      "reset": "Visszaállítás",
+      "resetAll": "Minden módosítás visszaállítása",
+      "saveForEveryone": "Mentés mindenkinek",
+      "saveOptions": "További mentési lehetőségek",
+      "saved": "A módosítások mindenki számára mentve.",
+      "undo": "Visszavonás",
+      "unsaved": "Nem mentett módosítások"
+    },
+    "referencedDashboardPrefix": "Nézet",
+    "row": {
+      "addToNewRow": "Hozzáadás új sorhoz",
+      "addToRow": "Hozzáadás sorhoz",
+      "moveDown": "Mozgatás lefelé",
+      "moveUp": "Mozgatás felfelé",
+      "movedDown": "Sor lejjebb mozgatva",
+      "movedUp": "Sor feljebb mozgatva"
+    },
+    "rowLimit": "Egy sorban legfeljebb {{count}} widget lehet.",
+    "settings": {
+      "name": "Irányítópult beállításai",
+      "showIconsInHeading": "Ikonok megjelenítése a címsorban",
+      "showWidgetTitles": "Widgetcímek megjelenítése"
+    },
+    "toolbar": {
+      "openAsFullPage": "Megnyitás teljes oldalként",
+      "settings": "Beállítások"
+    },
+    "widget": {
+      "changeView": "Nézet módosítása",
+      "close": "Bezárás",
+      "createRowAbove": "Új sor létrehozása fölötte",
+      "createRowBelow": "Új sor létrehozása alatta",
+      "delete": "Törlés",
+      "dragHandle": "Húzza az áthelyezéshez",
+      "duplicate": "Duplikálás",
+      "editView": "Nézet szerkesztése",
+      "filters": "Szűrők",
+      "loading": "Betöltés…",
+      "menu": "Widget beállításai",
+      "moveLeft": "Mozgatás balra",
+      "moveRight": "Mozgatás jobbra",
+      "moveToRow": "Áthelyezés sorba",
+      "noAccess": "Nincs hozzáférése ehhez az adatbázishoz",
+      "notFound": "Ez a nézet már nem létezik",
+      "offline": "Akkor érhető el, amikor újra online lesz",
+      "openFailed": "Nem sikerült megnyitni a nézetet",
+      "remove": "Widget eltávolítása",
+      "resizeHeight": "Húzza a sormagasság módosításához",
+      "resizeHeightValue": "{{height}} képpont",
+      "resizeWidth": "Húzza az átméretezéshez",
+      "resizeWidthValue": "12 oszlopból {{columns}}",
+      "settings": "Beállítások",
+      "sorts": "Rendezések",
+      "source": "Forrás",
+      "unsupported": "Irányítópult nem jeleníthető meg irányítópulton belül",
+      "viewDataSource": "Adatforrás megtekintése",
+      "viewNameHint": "Átnevezi ezt a nézetet",
+      "viewSettings": "Nézetbeállítások"
+    },
+    "mobile": {
+      "viewCount_one": "{{count}} nézet",
+      "viewCount_other": "{{count}} nézet"
+    }
+  },
+  "databaseSearch": {
+    "clearSearch": "Keresés törlése",
+    "noResults": "Nincs találat",
+    "placeholder": "Írjon a kereséshez..."
   }
 }

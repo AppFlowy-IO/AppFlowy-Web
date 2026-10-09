@@ -10,6 +10,7 @@ const mockUseViewActionPermissions = jest.fn();
 let mockCanShare = true;
 let mockHasLoadedPermission = true;
 let mockIsLoadingPermission = false;
+let mockIsLoadingPeople = false;
 let mockOutlineViewAvailable = true;
 
 jest.mock('react-i18next', () => ({
@@ -39,7 +40,7 @@ jest.mock('@/components/app/share/useShareAccessDetails', () => ({
   useShareAccessDetails: () => ({
     people: [],
     groups: [],
-    isLoadingPeople: false,
+    isLoadingPeople: mockIsLoadingPeople,
     loadPeople: jest.fn(),
     removePersonFromAccessList: jest.fn(),
     updateGroupInAccessList: mockUpdateGroupInAccessList,
@@ -90,6 +91,7 @@ describe('ShareTabs publish availability', () => {
     mockCanShare = true;
     mockHasLoadedPermission = true;
     mockIsLoadingPermission = false;
+    mockIsLoadingPeople = false;
     mockOutlineViewAvailable = true;
   });
 
@@ -192,6 +194,18 @@ describe('ShareTabs publish availability', () => {
         canShare: false,
         shareDetailsLoading: true,
       })
+    );
+  });
+
+  it('allows publishing with canonical permission while the people and group list is still loading', () => {
+    mockIsLoadingPeople = true;
+
+    renderShareTabs(false);
+    expect(mockSharePanelProps).toHaveBeenCalledWith(expect.objectContaining({ isLoadingPeople: true }));
+    fireEvent.mouseDown(screen.getByTestId('publish-tab'), { button: 0, ctrlKey: false });
+
+    expect(mockPublishPanelProps).toHaveBeenCalledWith(
+      expect.objectContaining({ canShare: true, shareDetailsLoading: false })
     );
   });
 });

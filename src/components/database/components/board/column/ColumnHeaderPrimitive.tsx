@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Row, useReadOnly } from '@/application/database-yjs';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
+import { BoardColumnAggregate } from '@/components/database/components/board/column/BoardColumnAggregate';
 import { ColumnMenu } from '@/components/database/components/board/column/ColumnMenu';
 import { useRenderColumn } from '@/components/database/components/board/column/useRenderColumn';
 import { Button } from '@/components/ui/button';
@@ -30,7 +31,7 @@ function ColumnHeaderPrimitive(
   } & React.HTMLAttributes<HTMLDivElement>,
   ref: React.Ref<HTMLDivElement>
 ) {
-  const { header, renameEnabled, deleteEnabled, hideEnabled } = useRenderColumn(id, fieldId);
+  const { header, tint, renameEnabled, deleteEnabled, hideEnabled } = useRenderColumn(id, fieldId);
   const { t } = useTranslation();
   const readOnly = useReadOnly();
 
@@ -45,7 +46,7 @@ function ColumnHeaderPrimitive(
     >
       <div className={'flex flex-1 items-center gap-2'}>
         <div data-testid={'board-column-name'} className={'w-auto max-w-[170px] overflow-hidden'}>{header}</div>
-        <span className={'text-xs text-text-secondary'}>{rowCount}</span>
+        <BoardColumnAggregate columnId={id} rowCount={rowCount} tint={tint} />
       </div>
       {!readOnly && (
         <div className={'flex items-center'}>
@@ -58,7 +59,12 @@ function ColumnHeaderPrimitive(
             hideEnabled={hideEnabled}
             getCards={getCards}
           >
-            <Button variant={'ghost'} size={'icon-sm'} className={'text-icon-secondary'}>
+            <Button
+              variant={'ghost'}
+              size={'icon-sm'}
+              className={'text-icon-secondary'}
+              data-testid={'board-column-menu-trigger'}
+            >
               <MoreIcon className={'h-5 w-5'} />
             </Button>
           </ColumnMenu>

@@ -8,13 +8,15 @@ import GridFieldMenu from '@/components/database/components/grid/grid-column/Gri
 import GridNewProperty from '@/components/database/components/grid/grid-column/GridNewProperty';
 import { GridColumnType, RenderColumn } from '@/components/database/components/grid/grid-column/useRenderFields';
 import { useGridRowContext } from '@/components/database/components/grid/grid-row/GridRowContext';
-import { useGridContext } from '@/components/database/grid/useGridContext';
+import { useGridContext, useGridOptions } from '@/components/database/grid/useGridContext';
 import { isFieldEditingDisabled } from '@/components/database/utils/field-editing';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 import { FieldDisplay } from 'src/components/database/components/field/FieldDisplay';
 
 import { ResizeHandle } from './ResizeHandle';
+
+const DASHBOARD_HEADER_ICON_CLASS = '!h-4 !w-4 shrink-0 text-dash-tool-icon';
 
 export function GridHeaderColumn({
   column,
@@ -24,6 +26,9 @@ export function GridHeaderColumn({
   onResizeColumnStart?: (fieldId: string, element: HTMLElement) => void;
 }) {
   const readOnly = useReadOnly();
+  // A dashboard widget's grid draws its header glyphs as dashboard chrome:
+  // 16px in the tool-icon colour, the same as desktop.
+  const iconClassName = useGridOptions().headerIcons === 'dashboard' ? DASHBOARD_HEADER_ICON_CLASS : undefined;
   const fieldId = column.fieldId || '';
   const { t } = useTranslation();
 
@@ -56,6 +61,7 @@ export function GridHeaderColumn({
           fieldId={fieldId}
           showRelationDatabaseName
           className={'flex-1 justify-start gap-[10px] overflow-hidden text-left'}
+          iconClassName={iconClassName}
         />
         {isAIField && <AIIndicatorSvg className={'h-5 w-5 text-text-featured'} />}
       </>
@@ -80,13 +86,7 @@ export function GridHeaderColumn({
         )}
       </div>
     );
-  }, [
-    fieldId,
-    isAIField,
-    onResizeColumnStart,
-    readOnly,
-    tooltipContent,
-  ]);
+  }, [fieldId, iconClassName, isAIField, onResizeColumnStart, readOnly, tooltipContent]);
 
   const displayMenu = useMemo(() => {
     if (!showStickyHeader && isSticky) return false;

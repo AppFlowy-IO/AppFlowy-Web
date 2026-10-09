@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
-import type { Page } from '@playwright/test';
+
+import type { BrowserContext, Page } from '@playwright/test';
 
 /**
  * Centralized test configuration for Playwright E2E tests
@@ -40,6 +41,24 @@ export const TestConfig = {
   adminEmail: process.env.GOTRUE_ADMIN_EMAIL || 'admin@example.com',
   adminPassword: process.env.GOTRUE_ADMIN_PASSWORD || 'password',
 } as const;
+
+/** Point an immutable build at a test server through the app's runtime config. */
+export async function installRuntimeTestConfig(context: BrowserContext) {
+  if (process.env.APPFLOWY_TEST_RUNTIME_CONFIG !== '1') return;
+  const config = {
+    APPFLOWY_BASE_URL: process.env.APPFLOWY_BASE_URL,
+    APPFLOWY_GOTRUE_BASE_URL: process.env.APPFLOWY_GOTRUE_BASE_URL,
+    APPFLOWY_WS_BASE_URL: process.env.APPFLOWY_WS_BASE_URL,
+  };
+
+  for (const [key, value] of Object.entries(config)) {
+    if (!value) throw new Error(`${key} must be explicit when APPFLOWY_TEST_RUNTIME_CONFIG=1`);
+  }
+
+  await context.addInitScript((runtime) => {
+    window.__APP_CONFIG__ = runtime;
+  }, config);
+}
 
 /**
  * Logs test environment configuration
@@ -101,10 +120,7 @@ const SUPPRESSED_ERROR_PATTERNS = [
  */
 export function setupPageErrorHandling(page: Page): void {
   page.on('pageerror', (err) => {
-    if (
-      err.name === 'NotAllowedError' ||
-      SUPPRESSED_ERROR_PATTERNS.some((pattern) => err.message.includes(pattern))
-    ) {
+    if (err.name === 'NotAllowedError' || SUPPRESSED_ERROR_PATTERNS.some((pattern) => err.message.includes(pattern))) {
       return;
     }
   });

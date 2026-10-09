@@ -3,12 +3,16 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { useDatabaseContext } from '@/application/database-yjs/context';
+import { assertDatabaseViewCapacity } from '@/application/database-yjs/database-view-capacity';
+import { DATABASE_VIEW_LAYOUT_TO_VIEW_LAYOUT } from '@/application/database-yjs/database-view-doc-ops';
 import { useAddDatabaseView } from '@/application/database-yjs/dispatch';
 import { DatabaseViewLayout, ViewLayout } from '@/application/types';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { DatabaseViewCreationItem } from '@/components/_shared/DatabaseViewCreationItem';
 import { ViewIcon } from '@/components/_shared/view-icon';
-import { useDatabaseViewCreation } from '@/components/app/hooks/useDatabaseViewCreation';
+import { useDashboardCreationGate } from '@/components/app/hooks/useDashboardCreationGate';
+import { DatabaseViewCreationAction, useDatabaseViewCreation } from '@/components/app/hooks/useDatabaseViewCreation';
+import { useDatabaseViewCapacity } from '@/components/database/hooks/useDatabaseViewCapacity';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
@@ -21,20 +25,56 @@ interface AddViewButtonProps {
   onViewAdded: (viewId: string) => void;
 }
 
-export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView, onViewAdded }: AddViewButtonProps) {
+/** One layout a new view can have, as the "+" menu and the phone's view list offer it. */
+export interface AddViewLayoutOption {
+  layout: DatabaseViewLayout;
+  /** The icon's layout. */
+  viewLayout: ViewLayout;
+  /** The menu label, also the new view's name. */
+  label: string;
+  testId?: string;
+  /** Shown disabled with this reason (the workspace plan, or its check still running). */
+  disabledReason?: string;
+}
+
+/**
+ * Adding a view to a database: the layouts offered (`options`, in menu
+ * order), the creation with its spinner, and the open state of the menu that
+ * lists them, whose opening starts the plan checks. Dashboard is offered only
+ * where one can be created (never in a mobile context). Shared by the tab
+ * bar's "+" menu and the phone's view list (`MobileDatabaseViewPill`).
+ */
+export function useAddDatabaseViewMenu({
+  databasePageId,
+  onBeforeAddView,
+  onAfterAddView,
+  onViewAdded,
+}: AddViewButtonProps) {
   const { t } = useTranslation();
   const onAddView = useAddDatabaseView();
   const [addLoading, setAddLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const { getSubscriptions, workspaceId } = useDatabaseContext();
+  const { getSubscriptions, workspaceId, databaseDoc } = useDatabaseContext();
+  const { disabledReason: capacityDisabledReason } = useDatabaseViewCapacity(databaseDoc);
   const { getAction, checkCreation, startCheckout } = useDatabaseViewCreation({
     getSubscriptions,
     workspaceId,
     enabled: menuOpen,
   });
-  // Desktop parity: an upgrade keeps this menu open with progress on the clicked
-  // item until checkout opens. Every other item waits for it.
+  const { available: canCreateDashboard, disabledReason: dashboardDisabledReason } = useDashboardCreationGate(
+    getSubscriptions,
+    { workspaceId, enabled: menuOpen }
+  );
+  // Keep an upgrade's item busy while checkout opens, on desktop and mobile.
   const [checkoutLayout, setCheckoutLayout] = useState<ViewLayout | null>(null);
+  const getLayoutAction = (layout: ViewLayout): DatabaseViewCreationAction =>
+    capacityDisabledReason
+      ? { type: 'disabled', reason: capacityDisabledReason }
+      : layout === ViewLayout.Dashboard
+      ? !canCreateDashboard || dashboardDisabledReason
+        ? { type: 'disabled', reason: dashboardDisabledReason }
+        : { type: 'create' }
+      : getAction(layout);
   const mountedRef = useRef(true);
   const actionScopeRevisionRef = useRef(0);
   const completionCallbacksRef = useRef({ onAfterAddView, onViewAdded });
@@ -69,8 +109,16 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
     };
   }, [databasePageId]);
 
-  const handleAddView = async (layout: DatabaseViewLayout, viewLayout: ViewLayout, name: string) => {
-    if (!checkCreation(viewLayout, () => setMenuOpen(false))) return;
+  const handleAddView = async (layout: DatabaseViewLayout, name: string) => {
+    try {
+      assertDatabaseViewCapacity(databaseDoc);
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+      return;
+    }
+
+    if (layout === DatabaseViewLayout.Dashboard && (!canCreateDashboard || dashboardDisabledReason)) return;
+    if (!checkCreation(DATABASE_VIEW_LAYOUT_TO_VIEW_LAYOUT[layout], () => setMenuOpen(false))) return;
     const actionScopeRevision = actionScopeRevisionRef.current;
     const isCurrentActionScope = () => mountedRef.current && actionScopeRevisionRef.current === actionScopeRevision;
 
@@ -118,44 +166,77 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
       setCheckoutLayout(null);
       setMenuOpen(false);
     });
+    return checkout;
   };
 
-  const options = [
-    { layout: DatabaseViewLayout.Grid, viewLayout: ViewLayout.Grid, name: t('grid.menuName') },
-    { layout: DatabaseViewLayout.Board, viewLayout: ViewLayout.Board, name: t('board.menuName') },
-    { layout: DatabaseViewLayout.Calendar, viewLayout: ViewLayout.Calendar, name: t('calendar.menuName') },
+  const options: AddViewLayoutOption[] = [
+    { layout: DatabaseViewLayout.Grid, viewLayout: ViewLayout.Grid, label: t('grid.menuName') },
+    { layout: DatabaseViewLayout.Board, viewLayout: ViewLayout.Board, label: t('board.menuName') },
+    { layout: DatabaseViewLayout.Calendar, viewLayout: ViewLayout.Calendar, label: t('calendar.menuName') },
     {
       layout: DatabaseViewLayout.Timeline,
       viewLayout: ViewLayout.Timeline,
-      name: t('timeline.menuName', { defaultValue: 'Timeline' }),
+      label: t('timeline.menuName', { defaultValue: 'Timeline' }),
       testId: 'add-timeline-view-button',
     },
-    { layout: DatabaseViewLayout.Chart, viewLayout: ViewLayout.Chart, name: t('chart.menuName') },
+    ...(canCreateDashboard
+      ? [
+          {
+            layout: DatabaseViewLayout.Dashboard,
+            viewLayout: ViewLayout.Dashboard,
+            label: t('dashboard.menuName', { defaultValue: 'Dashboard' }),
+            testId: 'add-dashboard-view-button',
+            disabledReason: dashboardDisabledReason,
+          },
+        ]
+      : []),
+    { layout: DatabaseViewLayout.Chart, viewLayout: ViewLayout.Chart, label: t('chart.menuName') },
     {
       layout: DatabaseViewLayout.Form,
       viewLayout: ViewLayout.Form,
-      name: t('form.builderName', { defaultValue: 'Form builder' }),
+      label: t('form.builderName', { defaultValue: 'Form builder' }),
       testId: 'add-form-view-option',
     },
     {
       layout: DatabaseViewLayout.List,
       viewLayout: ViewLayout.List,
-      name: t('list.menuName'),
+      label: t('list.menuName'),
       testId: 'add-list-view-button',
     },
     {
       layout: DatabaseViewLayout.Gallery,
       viewLayout: ViewLayout.Gallery,
-      name: t('gallery.menuName'),
+      label: t('gallery.menuName'),
       testId: 'add-gallery-view-button',
     },
     {
       layout: DatabaseViewLayout.Feed,
       viewLayout: ViewLayout.Feed,
-      name: t('feed.menuName'),
+      label: t('feed.menuName'),
       testId: 'add-feed-view-button',
     },
   ];
+
+  return {
+    addLoading,
+    menuOpen,
+    setMenuOpen,
+    options,
+    addView: handleAddView,
+    getAction: getLayoutAction,
+    checkoutLayout,
+    upgradeView: handleUpgrade,
+  };
+}
+
+export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView, onViewAdded }: AddViewButtonProps) {
+  const { t } = useTranslation();
+  const { addLoading, menuOpen, setMenuOpen, options, addView, getAction, checkoutLayout, upgradeView } = useAddDatabaseViewMenu({
+    databasePageId,
+    onBeforeAddView,
+    onAfterAddView,
+    onViewAdded,
+  });
 
   return (
     <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
@@ -173,7 +254,7 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent side={'bottom'} align={'start'} className={'!min-w-[120px]'}>
-        {options.map(({ layout, viewLayout, name, testId }) => (
+        {options.map(({ layout, viewLayout, label, testId }) => (
           <DatabaseViewCreationItem
             key={layout}
             layout={viewLayout}
@@ -183,17 +264,16 @@ export function AddViewButton({ databasePageId, onBeforeAddView, onAfterAddView,
             data-testid={testId}
             onSelect={(event) => {
               if (getAction(viewLayout).type === 'upgrade') {
-                // Keep the menu open to show checkout progress on this item.
                 event.preventDefault();
-                handleUpgrade(viewLayout);
+                void upgradeView(viewLayout);
                 return;
               }
 
-              void handleAddView(layout, viewLayout, name);
+              void addView(layout, label);
             }}
           >
             <ViewIcon layout={viewLayout} size='small' />
-            {name}
+            {label}
           </DatabaseViewCreationItem>
         ))}
       </DropdownMenuContent>

@@ -1,15 +1,16 @@
 import { execFileSync } from 'node:child_process';
 
+import { mockServerInfoPreservingCapabilities } from './server-info-helpers';
+
 import type { Page } from '@playwright/test';
 
-import { mockServerInfo } from './server-info-helpers';
 
 /**
  * Pro feature fixtures explicitly model an official cloud server, independent
  * of CI's localhost URL, and provide its active plans and subscription details.
  */
 export async function mockProSubscription(page: Page): Promise<void> {
-  await mockServerInfo(page, { self_hosted: false });
+  await mockServerInfoPreservingCapabilities(page, { self_hosted: false });
   await page.route('**/billing/api/v1/active-subscription/**', async (route) => {
     await route.fulfill({
       status: 200,
@@ -38,24 +39,29 @@ export async function mockProSubscription(page: Page): Promise<void> {
 }
 
 /**
- * Hosted release servers check the database before allowing Timeline creation.
- * Browser billing mocks only enable its menu, so give this fixture workspace
- * the same active Pro entitlement used by the backend's Timeline tests.
- * CI supplies its disposable Postgres container ID; local debug/self-hosted
- * servers do not enforce this plan and need no database setup.
+ * Hosted release servers check the database before allowing Timeline and
+ * Dashboard creation. Browser billing mocks only enable their menus, so give
+ * this fixture workspace the same active Pro entitlement used by the backend's
+ * Timeline tests. CI supplies its disposable Postgres container ID; local
+ * debug/self-hosted servers do not enforce this plan and need no database setup.
  */
 export function grantTestProSubscription(page: Page): void {
-  const container = process.env.APPFLOWY_TEST_POSTGRES_CONTAINER;
-
-  if (!container) {
-    if (process.env.CI) throw new Error('CI must provide APPFLOWY_TEST_POSTGRES_CONTAINER for Timeline fixtures');
-    return;
-  }
-
   const workspaceId = new URL(page.url()).pathname.split('/')[2];
 
   if (!workspaceId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(workspaceId)) {
     throw new Error('Open a test workspace before granting its Pro subscription');
+  }
+
+  grantWorkspaceProSubscription(workspaceId);
+}
+
+/** `grantTestProSubscription` for a workspace the fixture already knows by id. */
+export function grantWorkspaceProSubscription(workspaceId: string): void {
+  const container = process.env.APPFLOWY_TEST_POSTGRES_CONTAINER;
+
+  if (!container) {
+    if (process.env.CI) throw new Error('CI must provide APPFLOWY_TEST_POSTGRES_CONTAINER for Pro fixtures');
+    return;
   }
 
   execFileSync(

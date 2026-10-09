@@ -229,6 +229,13 @@ function getIdentifierGroupIds(rowId: RowId, rowMetas: Record<RowId, YDoc>, fiel
   return normalizeGroupIdentifiers(data);
 }
 
+/**
+ * The group ids of a Person, Created by / Last edited by (canonical uid) or
+ * Relation cell: the board's identifier grouping, also read by chart
+ * categories (WP11).
+ */
+export const getRowIdentifierGroupIds = getIdentifierGroupIds;
+
 export function groupByIdentifier(rows: Row[], rowMetas: Record<RowId, YDoc>, field: YDatabaseField) {
   const fieldId = field.get(YjsDatabaseKey.id);
   const result = new Map<string, Row[]>([[fieldId, []]]);

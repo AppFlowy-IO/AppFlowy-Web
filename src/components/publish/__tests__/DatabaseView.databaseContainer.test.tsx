@@ -3,7 +3,7 @@ import { render } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import * as Y from 'yjs';
 
-import { View, ViewLayout, ViewMetaProps, YDoc, YjsEditorKey } from '@/application/types';
+import { View, ViewLayout, ViewMetaProps, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import DatabaseView from '@/components/publish/DatabaseView';
 
 declare global {
@@ -42,14 +42,17 @@ jest.mock('src/components/view-meta/ViewMetaPreview', () => (props: unknown) => 
   return null;
 });
 
-function createDatabaseDoc(databaseViewIds: string[] = []): YDoc {
+function createDatabaseDoc(databaseViewIds: string[] = [], owners: Record<string, string> = {}): YDoc {
   const doc = new Y.Doc() as unknown as YDoc;
   const sharedRoot = doc.getMap(YjsEditorKey.data_section);
   const database = new Y.Map();
   const views = new Y.Map();
 
   for (const viewId of databaseViewIds) {
-    views.set(viewId, new Y.Map());
+    const view = new Y.Map();
+
+    if (owners[viewId]) view.set(YjsDatabaseKey.dashboard_owner, owners[viewId]);
+    views.set(viewId, view);
   }
 
   database.set('views', views);
@@ -185,5 +188,55 @@ describe('published DatabaseView database container', () => {
     expect(databaseProps?.databaseName).toBe('03_epics');
     expect(databaseProps?.databasePageId).toBe(containerView.view_id);
     expect(databaseProps?.activeViewId).toBe(childView.view_id);
+  });
+
+  describe('dashboard-owned views', () => {
+    function renderPublished(viewMeta: ViewMetaProps, doc: YDoc) {
+      render(
+        <MemoryRouter
+          initialEntries={['/published/database']}
+          future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
+        >
+          <DatabaseView doc={doc} workspaceId='workspace-id' viewMeta={viewMeta} />
+        </MemoryRouter>
+      );
+      return global.__publishDatabaseViewTestState?.capturedDatabaseProps as
+        | { activeViewId?: string; visibleViewIds?: string[] }
+        | undefined;
+    }
+
+    const containerMeta: ViewMetaProps = {
+      viewId: 'container-id',
+      name: 'Published Database',
+      layout: ViewLayout.Grid,
+      icon: undefined,
+      extra: { is_database_container: true },
+      workspaceId: 'workspace-id',
+      visibleViewIds: ['grid-view-id', 'owned-board-id', 'dashboard-view-id'],
+    };
+
+    it('keeps them in the snapshot for widgets but not as published tabs', () => {
+      const databaseProps = renderPublished(
+        containerMeta,
+        createDatabaseDoc(['grid-view-id', 'owned-board-id', 'dashboard-view-id'], {
+          'owned-board-id': 'dashboard-view-id',
+        })
+      );
+
+      expect(databaseProps?.visibleViewIds).toEqual(['grid-view-id', 'dashboard-view-id']);
+      expect(databaseProps?.activeViewId).toBe('grid-view-id');
+    });
+
+    it('publishes an owned view opened directly as its only tab', () => {
+      const databaseProps = renderPublished(
+        { ...containerMeta, viewId: 'owned-board-id', extra: {} },
+        createDatabaseDoc(['grid-view-id', 'owned-board-id', 'dashboard-view-id'], {
+          'owned-board-id': 'dashboard-view-id',
+        })
+      );
+
+      expect(databaseProps?.visibleViewIds).toEqual(['owned-board-id']);
+      expect(databaseProps?.activeViewId).toBe('owned-board-id');
+    });
   });
 });

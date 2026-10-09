@@ -3,6 +3,7 @@ import * as Y from 'yjs';
 
 import { DatabaseContext, type DatabaseContextState, useDatabaseHistoryManager } from '@/application/database-yjs';
 import { DatabaseViewLayout, type YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { WidgetCompositionProvider } from '@/components/database/dashboard/WidgetCompositionProvider';
 import DatabaseViews from '@/components/database/DatabaseViews';
 
 import type { ReactNode } from 'react';
@@ -46,7 +47,23 @@ jest.mock('@/components/database/gallery', () => ({
 }));
 
 jest.mock('@/components/database/grid', () => ({
-  Grid: () => <button data-testid='grid-layout'>Grid</button>,
+  Grid: () => <input data-testid='grid-layout' defaultValue='' />,
+}));
+
+jest.mock('@/components/database/dashboard/WidgetHeader', () => ({
+  __esModule: true,
+  default: function WidgetHeaderProbe() {
+    const { useConditionsContext } = jest.requireActual<
+      typeof import('@/components/database/components/conditions/context')
+    >('@/components/database/components/conditions/context');
+    const conditions = useConditionsContext();
+
+    return (
+      <button data-testid='toggle-conditions' onClick={conditions?.toggleExpanded}>
+        Toggle
+      </button>
+    );
+  },
 }));
 
 jest.mock('@/components/database/grid/GridGroupingContext', () => ({
@@ -95,7 +112,7 @@ function createDatabaseDoc(layout: DatabaseViewLayout): YDoc {
   return doc;
 }
 
-function renderDatabaseViews(layout: DatabaseViewLayout) {
+function renderDatabaseViews(layout: DatabaseViewLayout, isDashboardWidget = false) {
   const databaseDoc = createDatabaseDoc(layout);
   const contextValue: DatabaseContextState = {
     activeViewId: 'view-id',
@@ -104,17 +121,23 @@ function renderDatabaseViews(layout: DatabaseViewLayout) {
     readOnly: false,
     rowMap: {},
     workspaceId: 'workspace-id',
+    isDashboardWidget,
+    isDocumentBlock: isDashboardWidget,
+    embeddedHeight: isDashboardWidget ? 360 : undefined,
   };
   const rendered = render(
     <>
-      <DatabaseContext.Provider value={contextValue}>
-        <DatabaseViews
-          activeViewId='view-id'
-          databasePageId='view-id'
-          onChangeView={jest.fn()}
-          visibleViewIds={['view-id']}
-        />
-      </DatabaseContext.Provider>
+      <WidgetCompositionProvider>
+        <DatabaseContext.Provider value={contextValue}>
+          <DatabaseViews
+            fixedHeight={contextValue.embeddedHeight}
+            activeViewId='view-id'
+            databasePageId='view-id'
+            onChangeView={jest.fn()}
+            visibleViewIds={['view-id']}
+          />
+        </DatabaseContext.Provider>
+      </WidgetCompositionProvider>
       <button data-testid='outside-database'>Outside database</button>
     </>
   );
@@ -149,6 +172,23 @@ describe('DatabaseViews history scope', () => {
       redo,
       undo,
     } as unknown as ReturnType<typeof useDatabaseHistoryManager>);
+  });
+
+  it('keeps the widget viewport mounted when opening and closing conditions', async () => {
+    const { databaseDoc, unmount } = renderDatabaseViews(DatabaseViewLayout.Grid, true);
+    const grid = await screen.findByTestId('grid-layout');
+    const toggle = await screen.findByTestId('toggle-conditions');
+
+    fireEvent.change(grid, { target: { value: 'widget draft' } });
+    fireEvent.click(toggle);
+    expect(screen.getByTestId('grid-layout')).toBe(grid);
+    expect(grid.value).toBe('widget draft');
+    fireEvent.click(toggle);
+    expect(screen.getByTestId('grid-layout')).toBe(grid);
+    expect(grid.value).toBe('widget draft');
+
+    unmount();
+    databaseDoc.destroy();
   });
 
   it.each([

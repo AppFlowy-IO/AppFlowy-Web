@@ -120,6 +120,26 @@ export async function closeRowDetail(page: Page): Promise<void> {
  * Falls back to clicking the MUI backdrop if Escape doesn't work.
  */
 export async function closeRowDetailWithEscape(page: Page): Promise<void> {
+  // A record opened from a dashboard opens in a side peek (WP13 §3.9). It may
+  // sit above a chart drill-down dialog, which must stay open: close the peek
+  // alone and return before the dialog loop below.
+  const sidePeek = page.getByTestId('row-side-peek');
+
+  if (await sidePeek.isVisible().catch(() => false)) {
+    const header = sidePeek.getByTestId('row-side-peek-header');
+    const box = await header.boundingBox();
+
+    // Defocus an active editor on the header's empty middle (away from its buttons).
+    if (box) {
+      await header.click({ force: true, position: { x: Math.round(box.width / 2), y: Math.round(box.height / 2) } });
+    }
+
+    await page.waitForTimeout(300);
+    await page.keyboard.press('Escape');
+    await expect(sidePeek).toHaveCount(0, { timeout: 10000 });
+    return;
+  }
+
   // Defocus any active Slate editor by clicking the left side of the title bar
   // (away from the expand/more-actions buttons on the right).
   const dialogTitle = page.locator('.MuiDialogTitle-root');

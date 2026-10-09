@@ -1,0 +1,2585 @@
+{
+  "fixture": "add-widget",
+  "version": 1,
+  "encoding": {
+    "default_number_chart": "WP06 §1.3. required: the keys the new Number widget's chart map (layout_settings[\"3\"]) must hold after the seed, compared by value (a native integer equals the same JS number). parsed: what every reader parses from that map, in the persisted snake_case shape; number_format is the numberFormat key, title_text the titleText key, and y_field_id null means no Y field (desktop reads it as \"\"). Writers may add other default keys (desktop also writes x_field_id, y_field_id, cumulative and titleText); the raw map bytes are not compared.",
+    "default_widget_spec": "WP06 §1.2. resolveDefaultWidgetSpec({chart_creation_allowed, number_chart_allowed}) -> expect {layout, name}: a Number chart named \"Chart\" only when both are allowed, else a Grid view named \"Table\" (the picker label of the Grid layout).",
+    "picker_sections": "WP06 §1.4, WP05 §1.9. buildWidgetPickerSections(input) for one picker state. input: the host (primary) database and its views in host order (embedded views are offered only when host_tab_view_ids lists them, or when this dashboard owns them; host_tab_view_ids null means every view is a tab), owned = view id -> owning dashboard view id (absent = not owned), the catalog of the other workspace databases in catalog order (views with is_container are never offered; the host's catalog entry is skipped: the host is listed from its live doc), the search query, whether Other data sources is expanded, the database ids whose Show more was clicked, the Timeline and Chart creation states (enabled, disabled = shown but not selectable, hidden = not listed) and whether a view can be created in another database. Never offered: the dashboard view, the flow's own default view, Dashboard layouts, views owned by another dashboard. Search: normalizeDashboardText (text-normalize.json) of the query is a substring of the view name, its database name or a new view type label (picker_layout_labels). expect.host: null when the section has no rows, else its title (\"Views on {name}\", \"Views on this database\" without a name), the listed view ids and the hidden count behind Show {n} more (first 5 per group; no truncation for a non-empty query or a database in show_all). expect.other: expanded (clicked or a non-empty query) and its groups in catalog order (database id, name, view ids, more, whether the trailing New view in {database} row shows); empty groups are left out. expect.new_view: the New view rows in Notion order, new_view_disabled the ones listed but not selectable. expect.no_results: a non-empty query matched nothing.",
+    "picker_layout_labels": "The English label of each New view row, matched by the search (clients use their translated label).",
+    "docked_popover_side": "WP06 §1.6. dockedPopoverSide(anchor_right_x, viewport_right_x, width = 300, gap = 8, padding = 16): right when anchor_right_x + gap + width <= viewport_right_x - padding, else left. The anchor is the widget box's top-right corner; the picker, the New view panel and the widget settings host all use it.",
+    "flow": "WP06 §1.5. reduceAddWidgetFlow(state, event) -> {state, effects}, applied to the events in order starting from {kind: idle}; expect_states[i] and expect_effects[i] follow events[i]. The start event carries what the client resolved before it: the placement, the pre-generated widget id, the default spec (chart or grid, default_widget_spec) and refused (the canAddDashboardWidget verdict: null, dashboard or row). States: idle; creating {widget_id, placement, spec, popover_open}; open, configuring and settings {widget_id, view_id, layout, auto_named} (settings also back_to). auto_named stays true until the user renames the view; rename_if_auto is only emitted while it is true, and the client renames the view to nextViewName(label of layout, the database's other view names). A start while creating is ignored (one add at a time). Effects are objects keyed by type; layouts use the layout names of picker_sections."
+  },
+  "default_number_chart": {
+    "required": {
+      "chart_type": 4,
+      "aggregation_type": 0,
+      "numberFormat": "compact",
+      "show_title": true,
+      "show_empty_values": true,
+      "date_condition": 3
+    },
+    "parsed": {
+      "chart_type": 4,
+      "aggregation_type": 0,
+      "number_format": "compact",
+      "show_title": true,
+      "x_field_id": "",
+      "y_field_id": null,
+      "cumulative": false,
+      "title_text": ""
+    }
+  },
+  "default_widget_spec": [
+    {
+      "chart_creation_allowed": true,
+      "number_chart_allowed": true,
+      "expect": {
+        "layout": "chart",
+        "name": "Chart"
+      }
+    },
+    {
+      "chart_creation_allowed": true,
+      "number_chart_allowed": false,
+      "expect": {
+        "layout": "grid",
+        "name": "Table"
+      }
+    },
+    {
+      "chart_creation_allowed": false,
+      "number_chart_allowed": true,
+      "expect": {
+        "layout": "grid",
+        "name": "Table"
+      }
+    },
+    {
+      "chart_creation_allowed": false,
+      "number_chart_allowed": false,
+      "expect": {
+        "layout": "grid",
+        "name": "Table"
+      }
+    }
+  ],
+  "picker_layout_labels": {
+    "grid": "Table",
+    "board": "Board",
+    "gallery": "Gallery",
+    "list": "List",
+    "chart": "Chart",
+    "timeline": "Timeline",
+    "feed": "Feed",
+    "calendar": "Calendar"
+  },
+  "picker_sections": [
+    {
+      "name": "seven host views truncate to five",
+      "input": {
+        "host_database": {
+          "id": "db1",
+          "name": "Projects"
+        },
+        "host_views": [
+          {
+            "id": "g",
+            "name": "Grid",
+            "layout": "grid"
+          },
+          {
+            "id": "a",
+            "name": "Alpha",
+            "layout": "board"
+          },
+          {
+            "id": "b",
+            "name": "Beta",
+            "layout": "list"
+          },
+          {
+            "id": "c",
+            "name": "Gamma",
+            "layout": "gallery"
+          },
+          {
+            "id": "d",
+            "name": "Delta",
+            "layout": "calendar"
+          },
+          {
+            "id": "e",
+            "name": "Epsilon",
+            "layout": "grid"
+          },
+          {
+            "id": "f",
+            "name": "Zeta",
+            "layout": "grid"
+          },
+          {
+            "id": "dash1",
+            "name": "Dashboard",
+            "layout": "dashboard"
+          },
+          {
+            "id": "c1",
+            "name": "Chart",
+            "layout": "chart"
+          },
+          {
+            "id": "x9",
+            "name": "Other board",
+            "layout": "board"
+          }
+        ],
+        "host_tab_view_ids": null,
+        "owned": {
+          "c1": "dash1",
+          "x9": "dash2"
+        },
+        "dashboard_view_id": "dash1",
+        "flow_view_id": "c1",
+        "catalog": [],
+        "query": "",
+        "other_expanded": false,
+        "show_all": [],
+        "timeline_creation": "enabled",
+        "chart_creation": "enabled",
+        "can_create_in_other_databases": true
+      },
+      "expect": {
+        "host": {
+          "title": "Views on Projects",
+          "view_ids": [
+            "g",
+            "a",
+            "b",
+            "c",
+            "d"
+          ],
+          "more": 2
+        },
+        "other": {
+          "expanded": false,
+          "groups": []
+        },
+        "new_view": [
+          "grid",
+          "board",
+          "gallery",
+          "list",
+          "chart",
+          "timeline",
+          "feed",
+          "calendar"
+        ],
+        "new_view_disabled": [],
+        "no_results": false
+      }
+    },
+    {
+      "name": "query opens other sources and filters new view types",
+      "input": {
+        "host_database": {
+          "id": "db1",
+          "name": "Projects"
+        },
+        "host_views": [
+          {
+            "id": "g",
+            "name": "Grid",
+            "layout": "grid"
+          },
+          {
+            "id": "a",
+            "name": "Alpha",
+            "layout": "board"
+          }
+        ],
+        "host_tab_view_ids": null,
+        "owned": {},
+        "dashboard_view_id": "dash1",
+        "flow_view_id": null,
+        "catalog": [
+          {
+            "id": "db2",
+            "name": "Tasks",
+            "views": [
+              {
+                "id": "t0",
+                "name": "Tasks",
+                "layout": "grid",
+                "is_container": true
+              },
+              {
+                "id": "t1",
+                "name": "Grid",
+                "layout": "grid"
+              },
+              {
+                "id": "t2",
+                "name": "Board",
+                "layout": "board"
+              }
+            ]
+          },
+          {
+            "id": "db3",
+            "name": "Notes",
+            "views": [
+              {
+                "id": "n1",
+                "name": "Grid",
+                "layout": "grid"
+              }
+            ]
+          }
+        ],
+        "query": "Tasks",
+        "other_expanded": false,
+        "show_all": [],
+        "timeline_creation": "enabled",
+        "chart_creation": "enabled",
+        "can_create_in_other_databases": true
+      },
+      "expect": {
+        "host": null,
+        "other": {
+          "expanded": true,
+          "groups": [
+            {
+              "database_id": "db2",
+              "name": "Tasks",
+              "view_ids": [
+                "t1",
+                "t2"
+              ],
+              "more": 0,
+              "new_in_database": true
+            }
+          ]
+        },
+        "new_view": [],
+        "new_view_disabled": [],
+        "no_results": false
+      }
+    },
+    {
+      "name": "a query matches view names and new view type labels",
+      "input": {
+        "host_database": {
+          "id": "db1",
+          "name": "Projects"
+        },
+        "host_views": [
+          {
+            "id": "g",
+            "name": "Grid",
+            "layout": "grid"
+          },
+          {
+            "id": "a",
+            "name": "Board pipeline",
+            "layout": "board"
+          }
+        ],
+        "host_tab_view_ids": null,
+        "owned": {},
+        "dashboard_view_id": "dash1",
+        "flow_view_id": null,
+        "catalog": [
+          {
+            "id": "db2",
+            "name": "Tasks",
+            "views": [
+              {
+                "id": "t1",
+                "name": "Grid",
+                "layout": "grid"
+              },
+              {
+                "id": "t2",
+                "name": "Board",
+                "layout": "board"
+              }
+            ]
+          }
+        ],
+        "query": "bo",
+        "other_expanded": false,
+        "show_all": [],
+        "timeline_creation": "enabled",
+        "chart_creation": "enabled",
+        "can_create_in_other_databases": true
+      },
+      "expect": {
+        "host": {
+          "title": "Views on Projects",
+          "view_ids": [
+            "a"
+          ],
+          "more": 0
+        },
+        "other": {
+          "expanded": true,
+          "groups": [
+            {
+              "database_id": "db2",
+              "name": "Tasks",
+              "view_ids": [
+                "t2"
+              ],
+              "more": 0,
+              "new_in_database": true
+            }
+          ]
+        },
+        "new_view": [
+          "board"
+        ],
+        "new_view_disabled": [],
+        "no_results": false
+      }
+    },
+    {
+      "name": "views owned by another dashboard are hidden",
+      "input": {
+        "host_database": {
+          "id": "db1",
+          "name": "Projects"
+        },
+        "host_views": [
+          {
+            "id": "g",
+            "name": "Grid",
+            "layout": "grid"
+          },
+          {
+            "id": "o1",
+            "name": "Board",
+            "layout": "board",
+            "embedded": true
+          },
+          {
+            "id": "o2",
+            "name": "Calendar",
+            "layout": "calendar"
+          },
+          {
+            "id": "e1",
+            "name": "Inline grid",
+            "layout": "grid",
+            "embedded": true
+          },
+          {
+            "id": "e2",
+            "name": "Linked grid",
+            "layout": "grid",
+            "embedded": true
+          }
+        ],
+        "host_tab_view_ids": [
+          "g",
+          "e2"
+        ],
+        "owned": {
+          "o1": "dash1",
+          "o2": "dash2",
+          "t3": "dash2",
+          "t4": "dash1"
+        },
+        "dashboard_view_id": "dash1",
+        "flow_view_id": null,
+        "catalog": [
+          {
+            "id": "db1",
+            "name": "Projects",
+            "views": [
+              {
+                "id": "g",
+                "name": "Grid",
+                "layout": "grid"
+              }
+            ]
+          },
+          {
+            "id": "db2",
+            "name": "Tasks",
+            "views": [
+              {
+                "id": "t1",
+                "name": "Grid",
+                "layout": "grid"
+              },
+              {
+                "id": "t3",
+                "name": "Board",
+                "layout": "board"
+              },
+              {
+                "id": "t4",
+                "name": "List",
+                "layout": "list"
+              },
+              {
+                "id": "t5",
+                "name": "Tasks dashboard",
+                "layout": "dashboard"
+              },
+              {
+                "id": "t6",
+                "name": "Form",
+                "layout": "form"
+              }
+            ]
+          }
+        ],
+        "query": "",
+        "other_expanded": true,
+        "show_all": [],
+        "timeline_creation": "enabled",
+        "chart_creation": "enabled",
+        "can_create_in_other_databases": false
+      },
+      "expect": {
+        "host": {
+          "title": "Views on Projects",
+          "view_ids": [
+            "g",
+            "o1",
+            "e2"
+          ],
+          "more": 0
+        },
+        "other": {
+          "expanded": true,
+          "groups": [
+            {
+              "database_id": "db2",
+              "name": "Tasks",
+              "view_ids": [
+                "t1",
+                "t4",
+                "t6"
+              ],
+              "more": 0,
+              "new_in_database": false
+            }
+          ]
+        },
+        "new_view": [
+          "grid",
+          "board",
+          "gallery",
+          "list",
+          "chart",
+          "timeline",
+          "feed",
+          "calendar"
+        ],
+        "new_view_disabled": [],
+        "no_results": false
+      }
+    },
+    {
+      "name": "diacritics and case are ignored",
+      "input": {
+        "host_database": {
+          "id": "db1",
+          "name": "Projects"
+        },
+        "host_views": [
+          {
+            "id": "g",
+            "name": "Grid",
+            "layout": "grid"
+          },
+          {
+            "id": "cb",
+            "name": "Café board",
+            "layout": "board"
+          }
+        ],
+        "host_tab_view_ids": null,
+        "owned": {},
+        "dashboard_view_id": "dash1",
+        "flow_view_id": null,
+        "catalog": [
+          {
+            "id": "db2",
+            "name": "Café notes",
+            "views": [
+              {
+                "id": "n1",
+                "name": "Grid",
+                "layout": "grid"
+              }
+            ]
+          }
+        ],
+        "query": "CAFÉ",
+        "other_expanded": false,
+        "show_all": [],
+        "timeline_creation": "enabled",
+        "chart_creation": "enabled",
+        "can_create_in_other_databases": true
+      },
+      "expect": {
+        "host": {
+          "title": "Views on Projects",
+          "view_ids": [
+            "cb"
+          ],
+          "more": 0
+        },
+        "other": {
+          "expanded": true,
+          "groups": [
+            {
+              "database_id": "db2",
+              "name": "Café notes",
+              "view_ids": [
+                "n1"
+              ],
+              "more": 0,
+              "new_in_database": true
+            }
+          ]
+        },
+        "new_view": [],
+        "new_view_disabled": [],
+        "no_results": false
+      }
+    },
+    {
+      "name": "timeline hidden by the creation flag (web)",
+      "input": {
+        "host_database": {
+          "id": "db1",
+          "name": ""
+        },
+        "host_views": [
+          {
+            "id": "g",
+            "name": "Grid",
+            "layout": "grid"
+          }
+        ],
+        "host_tab_view_ids": null,
+        "owned": {},
+        "dashboard_view_id": "dash1",
+        "flow_view_id": null,
+        "catalog": [],
+        "query": "",
+        "other_expanded": false,
+        "show_all": [],
+        "timeline_creation": "hidden",
+        "chart_creation": "enabled",
+        "can_create_in_other_databases": true
+      },
+      "expect": {
+        "host": {
+          "title": "Views on this database",
+          "view_ids": [
+            "g"
+          ],
+          "more": 0
+        },
+        "other": {
+          "expanded": false,
+          "groups": []
+        },
+        "new_view": [
+          "grid",
+          "board",
+          "gallery",
+          "list",
+          "chart",
+          "feed",
+          "calendar"
+        ],
+        "new_view_disabled": [],
+        "no_results": false
+      }
+    },
+    {
+      "name": "timeline disabled with a reason (desktop)",
+      "input": {
+        "host_database": {
+          "id": "db1",
+          "name": "Projects"
+        },
+        "host_views": [
+          {
+            "id": "g",
+            "name": "Grid",
+            "layout": "grid"
+          }
+        ],
+        "host_tab_view_ids": null,
+        "owned": {},
+        "dashboard_view_id": "dash1",
+        "flow_view_id": null,
+        "catalog": [],
+        "query": "",
+        "other_expanded": false,
+        "show_all": [],
+        "timeline_creation": "disabled",
+        "chart_creation": "enabled",
+        "can_create_in_other_databases": true
+      },
+      "expect": {
+        "host": {
+          "title": "Views on Projects",
+          "view_ids": [
+            "g"
+          ],
+          "more": 0
+        },
+        "other": {
+          "expanded": false,
+          "groups": []
+        },
+        "new_view": [
+          "grid",
+          "board",
+          "gallery",
+          "list",
+          "chart",
+          "timeline",
+          "feed",
+          "calendar"
+        ],
+        "new_view_disabled": [
+          "timeline"
+        ],
+        "no_results": false
+      }
+    },
+    {
+      "name": "chart creation not allowed disables the chart row",
+      "input": {
+        "host_database": {
+          "id": "db1",
+          "name": "Projects"
+        },
+        "host_views": [
+          {
+            "id": "g",
+            "name": "Grid",
+            "layout": "grid"
+          }
+        ],
+        "host_tab_view_ids": null,
+        "owned": {},
+        "dashboard_view_id": "dash1",
+        "flow_view_id": null,
+        "catalog": [],
+        "query": "",
+        "other_expanded": false,
+        "show_all": [],
+        "timeline_creation": "enabled",
+        "chart_creation": "disabled",
+        "can_create_in_other_databases": true
+      },
+      "expect": {
+        "host": {
+          "title": "Views on Projects",
+          "view_ids": [
+            "g"
+          ],
+          "more": 0
+        },
+        "other": {
+          "expanded": false,
+          "groups": []
+        },
+        "new_view": [
+          "grid",
+          "board",
+          "gallery",
+          "list",
+          "chart",
+          "timeline",
+          "feed",
+          "calendar"
+        ],
+        "new_view_disabled": [
+          "chart"
+        ],
+        "no_results": false
+      }
+    },
+    {
+      "name": "show more reveals a whole group",
+      "input": {
+        "host_database": {
+          "id": "db1",
+          "name": "Projects"
+        },
+        "host_views": [
+          {
+            "id": "g",
+            "name": "Grid",
+            "layout": "grid"
+          },
+          {
+            "id": "a",
+            "name": "Alpha",
+            "layout": "board"
+          },
+          {
+            "id": "b",
+            "name": "Beta",
+            "layout": "list"
+          },
+          {
+            "id": "c",
+            "name": "Gamma",
+            "layout": "gallery"
+          },
+          {
+            "id": "d",
+            "name": "Delta",
+            "layout": "calendar"
+          },
+          {
+            "id": "e",
+            "name": "Epsilon",
+            "layout": "grid"
+          },
+          {
+            "id": "f",
+            "name": "Zeta",
+            "layout": "grid"
+          }
+        ],
+        "host_tab_view_ids": null,
+        "owned": {},
+        "dashboard_view_id": "dash1",
+        "flow_view_id": null,
+        "catalog": [
+          {
+            "id": "db2",
+            "name": "Tasks",
+            "views": [
+              {
+                "id": "t1",
+                "name": "Task view 1",
+                "layout": "grid"
+              },
+              {
+                "id": "t2",
+                "name": "Task view 2",
+                "layout": "grid"
+              },
+              {
+                "id": "t3",
+                "name": "Task view 3",
+                "layout": "grid"
+              },
+              {
+                "id": "t4",
+                "name": "Task view 4",
+                "layout": "grid"
+              },
+              {
+                "id": "t5",
+                "name": "Task view 5",
+                "layout": "grid"
+              },
+              {
+                "id": "t6",
+                "name": "Task view 6",
+                "layout": "grid"
+              }
+            ]
+          },
+          {
+            "id": "db3",
+            "name": "Notes",
+            "views": [
+              {
+                "id": "n1",
+                "name": "Note view 1",
+                "layout": "list"
+              },
+              {
+                "id": "n2",
+                "name": "Note view 2",
+                "layout": "list"
+              },
+              {
+                "id": "n3",
+                "name": "Note view 3",
+                "layout": "list"
+              },
+              {
+                "id": "n4",
+                "name": "Note view 4",
+                "layout": "list"
+              },
+              {
+                "id": "n5",
+                "name": "Note view 5",
+                "layout": "list"
+              },
+              {
+                "id": "n6",
+                "name": "Note view 6",
+                "layout": "list"
+              }
+            ]
+          }
+        ],
+        "query": "",
+        "other_expanded": true,
+        "show_all": [
+          "db1",
+          "db2"
+        ],
+        "timeline_creation": "enabled",
+        "chart_creation": "enabled",
+        "can_create_in_other_databases": true
+      },
+      "expect": {
+        "host": {
+          "title": "Views on Projects",
+          "view_ids": [
+            "g",
+            "a",
+            "b",
+            "c",
+            "d",
+            "e",
+            "f"
+          ],
+          "more": 0
+        },
+        "other": {
+          "expanded": true,
+          "groups": [
+            {
+              "database_id": "db2",
+              "name": "Tasks",
+              "view_ids": [
+                "t1",
+                "t2",
+                "t3",
+                "t4",
+                "t5",
+                "t6"
+              ],
+              "more": 0,
+              "new_in_database": true
+            },
+            {
+              "database_id": "db3",
+              "name": "Notes",
+              "view_ids": [
+                "n1",
+                "n2",
+                "n3",
+                "n4",
+                "n5"
+              ],
+              "more": 1,
+              "new_in_database": true
+            }
+          ]
+        },
+        "new_view": [
+          "grid",
+          "board",
+          "gallery",
+          "list",
+          "chart",
+          "timeline",
+          "feed",
+          "calendar"
+        ],
+        "new_view_disabled": [],
+        "no_results": false
+      }
+    },
+    {
+      "name": "a query never truncates",
+      "input": {
+        "host_database": {
+          "id": "db1",
+          "name": "Projects"
+        },
+        "host_views": [
+          {
+            "id": "g",
+            "name": "Grid",
+            "layout": "grid"
+          },
+          {
+            "id": "a",
+            "name": "Alpha",
+            "layout": "board"
+          },
+          {
+            "id": "b",
+            "name": "Beta",
+            "layout": "list"
+          },
+          {
+            "id": "c",
+            "name": "Gamma",
+            "layout": "gallery"
+          },
+          {
+            "id": "d",
+            "name": "Delta",
+            "layout": "calendar"
+          },
+          {
+            "id": "e",
+            "name": "Epsilon",
+            "layout": "grid"
+          },
+          {
+            "id": "f",
+            "name": "Zeta",
+            "layout": "grid"
+          }
+        ],
+        "host_tab_view_ids": null,
+        "owned": {},
+        "dashboard_view_id": "dash1",
+        "flow_view_id": null,
+        "catalog": [],
+        "query": "a",
+        "other_expanded": false,
+        "show_all": [],
+        "timeline_creation": "enabled",
+        "chart_creation": "enabled",
+        "can_create_in_other_databases": true
+      },
+      "expect": {
+        "host": {
+          "title": "Views on Projects",
+          "view_ids": [
+            "a",
+            "b",
+            "c",
+            "d",
+            "f"
+          ],
+          "more": 0
+        },
+        "other": {
+          "expanded": true,
+          "groups": []
+        },
+        "new_view": [
+          "grid",
+          "board",
+          "gallery",
+          "chart",
+          "calendar"
+        ],
+        "new_view_disabled": [],
+        "no_results": false
+      }
+    },
+    {
+      "name": "nothing matches",
+      "input": {
+        "host_database": {
+          "id": "db1",
+          "name": "Projects"
+        },
+        "host_views": [
+          {
+            "id": "g",
+            "name": "Grid",
+            "layout": "grid"
+          }
+        ],
+        "host_tab_view_ids": null,
+        "owned": {},
+        "dashboard_view_id": "dash1",
+        "flow_view_id": null,
+        "catalog": [
+          {
+            "id": "db2",
+            "name": "Tasks",
+            "views": [
+              {
+                "id": "t1",
+                "name": "Grid",
+                "layout": "grid"
+              }
+            ]
+          }
+        ],
+        "query": "zzz",
+        "other_expanded": false,
+        "show_all": [],
+        "timeline_creation": "enabled",
+        "chart_creation": "enabled",
+        "can_create_in_other_databases": true
+      },
+      "expect": {
+        "host": null,
+        "other": {
+          "expanded": true,
+          "groups": []
+        },
+        "new_view": [],
+        "new_view_disabled": [],
+        "no_results": true
+      }
+    },
+    {
+      "name": "no host views leaves only the new view types",
+      "input": {
+        "host_database": {
+          "id": "db1",
+          "name": "Projects"
+        },
+        "host_views": [
+          {
+            "id": "dash1",
+            "name": "Dashboard",
+            "layout": "dashboard"
+          }
+        ],
+        "host_tab_view_ids": null,
+        "owned": {},
+        "dashboard_view_id": "dash1",
+        "flow_view_id": null,
+        "catalog": [],
+        "query": "",
+        "other_expanded": false,
+        "show_all": [],
+        "timeline_creation": "enabled",
+        "chart_creation": "enabled",
+        "can_create_in_other_databases": true
+      },
+      "expect": {
+        "host": null,
+        "other": {
+          "expanded": false,
+          "groups": []
+        },
+        "new_view": [
+          "grid",
+          "board",
+          "gallery",
+          "list",
+          "chart",
+          "timeline",
+          "feed",
+          "calendar"
+        ],
+        "new_view_disabled": [],
+        "no_results": false
+      }
+    }
+  ],
+  "docked_popover_side": [
+    {
+      "anchor_right_x": 900,
+      "viewport_right_x": 1440,
+      "expect": "right"
+    },
+    {
+      "anchor_right_x": 1116,
+      "viewport_right_x": 1440,
+      "expect": "right"
+    },
+    {
+      "anchor_right_x": 1117,
+      "viewport_right_x": 1440,
+      "expect": "left"
+    },
+    {
+      "anchor_right_x": 1340,
+      "viewport_right_x": 1440,
+      "expect": "left"
+    },
+    {
+      "anchor_right_x": 400,
+      "viewport_right_x": 800,
+      "expect": "right"
+    },
+    {
+      "anchor_right_x": 500,
+      "viewport_right_x": 800,
+      "expect": "left"
+    }
+  ],
+  "flow": [
+    {
+      "name": "refused when full",
+      "events": [
+        {
+          "type": "start",
+          "placement": {
+            "type": "new_row"
+          },
+          "widget_id": "w:p1",
+          "spec": "chart",
+          "refused": "dashboard"
+        }
+      ],
+      "expect_states": [
+        {
+          "kind": "idle"
+        }
+      ],
+      "expect_effects": [
+        [
+          {
+            "type": "announce_limit",
+            "reason": "dashboard"
+          }
+        ]
+      ]
+    },
+    {
+      "name": "a full row refuses the row add",
+      "events": [
+        {
+          "type": "start",
+          "placement": {
+            "type": "existing_row",
+            "row_id": "r:1",
+            "index": 4
+          },
+          "widget_id": "w:p1",
+          "spec": "chart",
+          "refused": "row"
+        }
+      ],
+      "expect_states": [
+        {
+          "kind": "idle"
+        }
+      ],
+      "expect_effects": [
+        [
+          {
+            "type": "announce_limit",
+            "reason": "row"
+          }
+        ]
+      ]
+    },
+    {
+      "name": "add then dismiss keeps the number widget",
+      "events": [
+        {
+          "type": "start",
+          "placement": {
+            "type": "new_row"
+          },
+          "widget_id": "w:p1",
+          "spec": "chart",
+          "refused": null
+        },
+        {
+          "type": "created",
+          "view_id": "v1"
+        },
+        {
+          "type": "dismiss"
+        }
+      ],
+      "expect_states": [
+        {
+          "kind": "creating",
+          "widget_id": "w:p1",
+          "placement": {
+            "type": "new_row"
+          },
+          "spec": "chart",
+          "popover_open": true
+        },
+        {
+          "kind": "open",
+          "widget_id": "w:p1",
+          "view_id": "v1",
+          "layout": "chart",
+          "auto_named": true
+        },
+        {
+          "kind": "idle"
+        }
+      ],
+      "expect_effects": [
+        [
+          {
+            "type": "pin_edit"
+          },
+          {
+            "type": "create_default_view",
+            "spec": "chart"
+          },
+          {
+            "type": "select",
+            "widget_id": "w:p1"
+          },
+          {
+            "type": "scroll_to",
+            "widget_id": "w:p1"
+          }
+        ],
+        [
+          {
+            "type": "insert_widget",
+            "widget_id": "w:p1",
+            "view_id": "v1",
+            "placement": {
+              "type": "new_row"
+            }
+          }
+        ],
+        []
+      ]
+    },
+    {
+      "name": "pick existing swaps and enqueues the default view",
+      "events": [
+        {
+          "type": "start",
+          "placement": {
+            "type": "new_row"
+          },
+          "widget_id": "w:p1",
+          "spec": "chart",
+          "refused": null
+        },
+        {
+          "type": "created",
+          "view_id": "v1"
+        },
+        {
+          "type": "pick_existing",
+          "view_id": "g",
+          "database_id": "db1"
+        }
+      ],
+      "expect_states": [
+        {
+          "kind": "creating",
+          "widget_id": "w:p1",
+          "placement": {
+            "type": "new_row"
+          },
+          "spec": "chart",
+          "popover_open": true
+        },
+        {
+          "kind": "open",
+          "widget_id": "w:p1",
+          "view_id": "v1",
+          "layout": "chart",
+          "auto_named": true
+        },
+        {
+          "kind": "idle"
+        }
+      ],
+      "expect_effects": [
+        [
+          {
+            "type": "pin_edit"
+          },
+          {
+            "type": "create_default_view",
+            "spec": "chart"
+          },
+          {
+            "type": "select",
+            "widget_id": "w:p1"
+          },
+          {
+            "type": "scroll_to",
+            "widget_id": "w:p1"
+          }
+        ],
+        [
+          {
+            "type": "insert_widget",
+            "widget_id": "w:p1",
+            "view_id": "v1",
+            "placement": {
+              "type": "new_row"
+            }
+          }
+        ],
+        [
+          {
+            "type": "swap_widget_view",
+            "widget_id": "w:p1",
+            "view_id": "g",
+            "database_id": "db1"
+          },
+          {
+            "type": "enqueue_owned_view_deletion",
+            "view_id": "v1"
+          }
+        ]
+      ]
+    },
+    {
+      "name": "pick layout switches in place and renames an untouched name",
+      "events": [
+        {
+          "type": "start",
+          "placement": {
+            "type": "new_row"
+          },
+          "widget_id": "w:p1",
+          "spec": "chart",
+          "refused": null
+        },
+        {
+          "type": "created",
+          "view_id": "v1"
+        },
+        {
+          "type": "pick_layout",
+          "layout": "board"
+        },
+        {
+          "type": "pick_tile",
+          "layout": "board"
+        },
+        {
+          "type": "pick_tile",
+          "layout": "calendar"
+        }
+      ],
+      "expect_states": [
+        {
+          "kind": "creating",
+          "widget_id": "w:p1",
+          "placement": {
+            "type": "new_row"
+          },
+          "spec": "chart",
+          "popover_open": true
+        },
+        {
+          "kind": "open",
+          "widget_id": "w:p1",
+          "view_id": "v1",
+          "layout": "chart",
+          "auto_named": true
+        },
+        {
+          "kind": "configuring",
+          "widget_id": "w:p1",
+          "view_id": "v1",
+          "layout": "board",
+          "auto_named": true
+        },
+        {
+          "kind": "configuring",
+          "widget_id": "w:p1",
+          "view_id": "v1",
+          "layout": "board",
+          "auto_named": true
+        },
+        {
+          "kind": "configuring",
+          "widget_id": "w:p1",
+          "view_id": "v1",
+          "layout": "calendar",
+          "auto_named": true
+        }
+      ],
+      "expect_effects": [
+        [
+          {
+            "type": "pin_edit"
+          },
+          {
+            "type": "create_default_view",
+            "spec": "chart"
+          },
+          {
+            "type": "select",
+            "widget_id": "w:p1"
+          },
+          {
+            "type": "scroll_to",
+            "widget_id": "w:p1"
+          }
+        ],
+        [
+          {
+            "type": "insert_widget",
+            "widget_id": "w:p1",
+            "view_id": "v1",
+            "placement": {
+              "type": "new_row"
+            }
+          }
+        ],
+        [
+          {
+            "type": "switch_view_layout",
+            "view_id": "v1",
+            "layout": "board"
+          },
+          {
+            "type": "rename_if_auto",
+            "view_id": "v1",
+            "layout": "board"
+          }
+        ],
+        [],
+        [
+          {
+            "type": "switch_view_layout",
+            "view_id": "v1",
+            "layout": "calendar"
+          },
+          {
+            "type": "rename_if_auto",
+            "view_id": "v1",
+            "layout": "calendar"
+          }
+        ]
+      ]
+    },
+    {
+      "name": "renamed view keeps its name on a later layout switch",
+      "events": [
+        {
+          "type": "start",
+          "placement": {
+            "type": "new_row"
+          },
+          "widget_id": "w:p1",
+          "spec": "grid",
+          "refused": null
+        },
+        {
+          "type": "created",
+          "view_id": "v1"
+        },
+        {
+          "type": "pick_layout",
+          "layout": "grid"
+        },
+        {
+          "type": "rename",
+          "name": "Pipeline"
+        },
+        {
+          "type": "pick_tile",
+          "layout": "board"
+        }
+      ],
+      "expect_states": [
+        {
+          "kind": "creating",
+          "widget_id": "w:p1",
+          "placement": {
+            "type": "new_row"
+          },
+          "spec": "grid",
+          "popover_open": true
+        },
+        {
+          "kind": "open",
+          "widget_id": "w:p1",
+          "view_id": "v1",
+          "layout": "grid",
+          "auto_named": true
+        },
+        {
+          "kind": "configuring",
+          "widget_id": "w:p1",
+          "view_id": "v1",
+          "layout": "grid",
+          "auto_named": true
+        },
+        {
+          "kind": "configuring",
+          "widget_id": "w:p1",
+          "view_id": "v1",
+          "layout": "grid",
+          "auto_named": false
+        },
+        {
+          "kind": "configuring",
+          "widget_id": "w:p1",
+          "view_id": "v1",
+          "layout": "board",
+          "auto_named": false
+        }
+      ],
+      "expect_effects": [
+        [
+          {
+            "type": "pin_edit"
+          },
+          {
+            "type": "create_default_view",
+            "spec": "grid"
+          },
+          {
+            "type": "select",
+            "widget_id": "w:p1"
+          },
+          {
+            "type": "scroll_to",
+            "widget_id": "w:p1"
+          }
+        ],
+        [
+          {
+            "type": "insert_widget",
+            "widget_id": "w:p1",
+            "view_id": "v1",
+            "placement": {
+              "type": "new_row"
+            }
+          }
+        ],
+        [],
+        [
+          {
+            "type": "rename_view",
+            "view_id": "v1",
+            "name": "Pipeline"
+          }
+        ],
+        [
+          {
+            "type": "switch_view_layout",
+            "view_id": "v1",
+            "layout": "board"
+          }
+        ]
+      ]
+    },
+    {
+      "name": "filled while creating deletes the created view",
+      "events": [
+        {
+          "type": "start",
+          "placement": {
+            "type": "new_row"
+          },
+          "widget_id": "w:p1",
+          "spec": "chart",
+          "refused": null
+        },
+        {
+          "type": "created",
+          "view_id": "v1"
+        },
+        {
+          "type": "insert_refused",
+          "view_id": "v1"
+        }
+      ],
+      "expect_states": [
+        {
+          "kind": "creating",
+          "widget_id": "w:p1",
+          "placement": {
+            "type": "new_row"
+          },
+          "spec": "chart",
+          "popover_open": true
+        },
+        {
+          "kind": "open",
+          "widget_id": "w:p1",
+          "view_id": "v1",
+          "layout": "chart",
+          "auto_named": true
+        },
+        {
+          "kind": "idle"
+        }
+      ],
+      "expect_effects": [
+        [
+          {
+            "type": "pin_edit"
+          },
+          {
+            "type": "create_default_view",
+            "spec": "chart"
+          },
+          {
+            "type": "select",
+            "widget_id": "w:p1"
+          },
+          {
+            "type": "scroll_to",
+            "widget_id": "w:p1"
+          }
+        ],
+        [
+          {
+            "type": "insert_widget",
+            "widget_id": "w:p1",
+            "view_id": "v1",
+            "placement": {
+              "type": "new_row"
+            }
+          }
+        ],
+        [
+          {
+            "type": "delete_never_referenced_view",
+            "view_id": "v1"
+          },
+          {
+            "type": "announce_limit",
+            "reason": "dashboard"
+          }
+        ]
+      ]
+    },
+    {
+      "name": "chart plan error retries as grid",
+      "events": [
+        {
+          "type": "start",
+          "placement": {
+            "type": "new_row"
+          },
+          "widget_id": "w:p1",
+          "spec": "chart",
+          "refused": null
+        },
+        {
+          "type": "create_failed",
+          "plan_error": true
+        },
+        {
+          "type": "created",
+          "view_id": "v1"
+        }
+      ],
+      "expect_states": [
+        {
+          "kind": "creating",
+          "widget_id": "w:p1",
+          "placement": {
+            "type": "new_row"
+          },
+          "spec": "chart",
+          "popover_open": true
+        },
+        {
+          "kind": "creating",
+          "widget_id": "w:p1",
+          "placement": {
+            "type": "new_row"
+          },
+          "spec": "grid",
+          "popover_open": true
+        },
+        {
+          "kind": "open",
+          "widget_id": "w:p1",
+          "view_id": "v1",
+          "layout": "grid",
+          "auto_named": true
+        }
+      ],
+      "expect_effects": [
+        [
+          {
+            "type": "pin_edit"
+          },
+          {
+            "type": "create_default_view",
+            "spec": "chart"
+          },
+          {
+            "type": "select",
+            "widget_id": "w:p1"
+          },
+          {
+            "type": "scroll_to",
+            "widget_id": "w:p1"
+          }
+        ],
+        [
+          {
+            "type": "create_default_view",
+            "spec": "grid"
+          }
+        ],
+        [
+          {
+            "type": "insert_widget",
+            "widget_id": "w:p1",
+            "view_id": "v1",
+            "placement": {
+              "type": "new_row"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "name": "a grid failure ends the flow with a toast",
+      "events": [
+        {
+          "type": "start",
+          "placement": {
+            "type": "new_row"
+          },
+          "widget_id": "w:p1",
+          "spec": "grid",
+          "refused": null
+        },
+        {
+          "type": "create_failed",
+          "plan_error": true
+        }
+      ],
+      "expect_states": [
+        {
+          "kind": "creating",
+          "widget_id": "w:p1",
+          "placement": {
+            "type": "new_row"
+          },
+          "spec": "grid",
+          "popover_open": true
+        },
+        {
+          "kind": "idle"
+        }
+      ],
+      "expect_effects": [
+        [
+          {
+            "type": "pin_edit"
+          },
+          {
+            "type": "create_default_view",
+            "spec": "grid"
+          },
+          {
+            "type": "select",
+            "widget_id": "w:p1"
+          },
+          {
+            "type": "scroll_to",
+            "widget_id": "w:p1"
+          }
+        ],
+        [
+          {
+            "type": "toast_create_failed"
+          }
+        ]
+      ]
+    },
+    {
+      "name": "another failure ends the flow with a toast",
+      "events": [
+        {
+          "type": "start",
+          "placement": {
+            "type": "new_row"
+          },
+          "widget_id": "w:p1",
+          "spec": "chart",
+          "refused": null
+        },
+        {
+          "type": "create_failed",
+          "plan_error": false
+        }
+      ],
+      "expect_states": [
+        {
+          "kind": "creating",
+          "widget_id": "w:p1",
+          "placement": {
+            "type": "new_row"
+          },
+          "spec": "chart",
+          "popover_open": true
+        },
+        {
+          "kind": "idle"
+        }
+      ],
+      "expect_effects": [
+        [
+          {
+            "type": "pin_edit"
+          },
+          {
+            "type": "create_default_view",
+            "spec": "chart"
+          },
+          {
+            "type": "select",
+            "widget_id": "w:p1"
+          },
+          {
+            "type": "scroll_to",
+            "widget_id": "w:p1"
+          }
+        ],
+        [
+          {
+            "type": "toast_create_failed"
+          }
+        ]
+      ]
+    },
+    {
+      "name": "dismiss while creating still inserts, no popover",
+      "events": [
+        {
+          "type": "start",
+          "placement": {
+            "type": "new_row"
+          },
+          "widget_id": "w:p1",
+          "spec": "chart",
+          "refused": null
+        },
+        {
+          "type": "dismiss"
+        },
+        {
+          "type": "created",
+          "view_id": "v1"
+        }
+      ],
+      "expect_states": [
+        {
+          "kind": "creating",
+          "widget_id": "w:p1",
+          "placement": {
+            "type": "new_row"
+          },
+          "spec": "chart",
+          "popover_open": true
+        },
+        {
+          "kind": "creating",
+          "widget_id": "w:p1",
+          "placement": {
+            "type": "new_row"
+          },
+          "spec": "chart",
+          "popover_open": false
+        },
+        {
+          "kind": "idle"
+        }
+      ],
+      "expect_effects": [
+        [
+          {
+            "type": "pin_edit"
+          },
+          {
+            "type": "create_default_view",
+            "spec": "chart"
+          },
+          {
+            "type": "select",
+            "widget_id": "w:p1"
+          },
+          {
+            "type": "scroll_to",
+            "widget_id": "w:p1"
+          }
+        ],
+        [],
+        [
+          {
+            "type": "insert_widget",
+            "widget_id": "w:p1",
+            "view_id": "v1",
+            "placement": {
+              "type": "new_row"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "name": "leaving Edit mode while creating still inserts, no popover",
+      "events": [
+        {
+          "type": "start",
+          "placement": {
+            "type": "new_row"
+          },
+          "widget_id": "w:p1",
+          "spec": "chart",
+          "refused": null
+        },
+        {
+          "type": "mode_left"
+        },
+        {
+          "type": "created",
+          "view_id": "v1"
+        }
+      ],
+      "expect_states": [
+        {
+          "kind": "creating",
+          "widget_id": "w:p1",
+          "placement": {
+            "type": "new_row"
+          },
+          "spec": "chart",
+          "popover_open": true
+        },
+        {
+          "kind": "creating",
+          "widget_id": "w:p1",
+          "placement": {
+            "type": "new_row"
+          },
+          "spec": "chart",
+          "popover_open": false
+        },
+        {
+          "kind": "idle"
+        }
+      ],
+      "expect_effects": [
+        [
+          {
+            "type": "pin_edit"
+          },
+          {
+            "type": "create_default_view",
+            "spec": "chart"
+          },
+          {
+            "type": "select",
+            "widget_id": "w:p1"
+          },
+          {
+            "type": "scroll_to",
+            "widget_id": "w:p1"
+          }
+        ],
+        [],
+        [
+          {
+            "type": "insert_widget",
+            "widget_id": "w:p1",
+            "view_id": "v1",
+            "placement": {
+              "type": "new_row"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "name": "picks and another add are ignored while creating",
+      "events": [
+        {
+          "type": "start",
+          "placement": {
+            "type": "new_row"
+          },
+          "widget_id": "w:p1",
+          "spec": "chart",
+          "refused": null
+        },
+        {
+          "type": "pick_existing",
+          "view_id": "g",
+          "database_id": "db1"
+        },
+        {
+          "type": "pick_layout",
+          "layout": "board"
+        },
+        {
+          "type": "start",
+          "placement": {
+            "type": "new_row"
+          },
+          "widget_id": "w:p2",
+          "spec": "chart",
+          "refused": null
+        }
+      ],
+      "expect_states": [
+        {
+          "kind": "creating",
+          "widget_id": "w:p1",
+          "placement": {
+            "type": "new_row"
+          },
+          "spec": "chart",
+          "popover_open": true
+        },
+        {
+          "kind": "creating",
+          "widget_id": "w:p1",
+          "placement": {
+            "type": "new_row"
+          },
+          "spec": "chart",
+          "popover_open": true
+        },
+        {
+          "kind": "creating",
+          "widget_id": "w:p1",
+          "placement": {
+            "type": "new_row"
+          },
+          "spec": "chart",
+          "popover_open": true
+        },
+        {
+          "kind": "creating",
+          "widget_id": "w:p1",
+          "placement": {
+            "type": "new_row"
+          },
+          "spec": "chart",
+          "popover_open": true
+        }
+      ],
+      "expect_effects": [
+        [
+          {
+            "type": "pin_edit"
+          },
+          {
+            "type": "create_default_view",
+            "spec": "chart"
+          },
+          {
+            "type": "select",
+            "widget_id": "w:p1"
+          },
+          {
+            "type": "scroll_to",
+            "widget_id": "w:p1"
+          }
+        ],
+        [],
+        [],
+        []
+      ]
+    },
+    {
+      "name": "edit chart then back returns to the config panel",
+      "events": [
+        {
+          "type": "start",
+          "placement": {
+            "type": "new_row"
+          },
+          "widget_id": "w:p1",
+          "spec": "chart",
+          "refused": null
+        },
+        {
+          "type": "created",
+          "view_id": "v1"
+        },
+        {
+          "type": "pick_layout",
+          "layout": "chart"
+        },
+        {
+          "type": "edit_chart"
+        },
+        {
+          "type": "back"
+        },
+        {
+          "type": "back"
+        },
+        {
+          "type": "back"
+        }
+      ],
+      "expect_states": [
+        {
+          "kind": "creating",
+          "widget_id": "w:p1",
+          "placement": {
+            "type": "new_row"
+          },
+          "spec": "chart",
+          "popover_open": true
+        },
+        {
+          "kind": "open",
+          "widget_id": "w:p1",
+          "view_id": "v1",
+          "layout": "chart",
+          "auto_named": true
+        },
+        {
+          "kind": "configuring",
+          "widget_id": "w:p1",
+          "view_id": "v1",
+          "layout": "chart",
+          "auto_named": true
+        },
+        {
+          "kind": "settings",
+          "widget_id": "w:p1",
+          "view_id": "v1",
+          "layout": "chart",
+          "auto_named": true,
+          "back_to": "configuring"
+        },
+        {
+          "kind": "configuring",
+          "widget_id": "w:p1",
+          "view_id": "v1",
+          "layout": "chart",
+          "auto_named": true
+        },
+        {
+          "kind": "open",
+          "widget_id": "w:p1",
+          "view_id": "v1",
+          "layout": "chart",
+          "auto_named": true
+        },
+        {
+          "kind": "idle"
+        }
+      ],
+      "expect_effects": [
+        [
+          {
+            "type": "pin_edit"
+          },
+          {
+            "type": "create_default_view",
+            "spec": "chart"
+          },
+          {
+            "type": "select",
+            "widget_id": "w:p1"
+          },
+          {
+            "type": "scroll_to",
+            "widget_id": "w:p1"
+          }
+        ],
+        [
+          {
+            "type": "insert_widget",
+            "widget_id": "w:p1",
+            "view_id": "v1",
+            "placement": {
+              "type": "new_row"
+            }
+          }
+        ],
+        [],
+        [
+          {
+            "type": "open_settings",
+            "widget_id": "w:p1"
+          }
+        ],
+        [],
+        [],
+        []
+      ]
+    },
+    {
+      "name": "edit chart is ignored for a view that is not a chart",
+      "events": [
+        {
+          "type": "start",
+          "placement": {
+            "type": "new_row"
+          },
+          "widget_id": "w:p1",
+          "spec": "chart",
+          "refused": null
+        },
+        {
+          "type": "created",
+          "view_id": "v1"
+        },
+        {
+          "type": "pick_layout",
+          "layout": "board"
+        },
+        {
+          "type": "edit_chart"
+        }
+      ],
+      "expect_states": [
+        {
+          "kind": "creating",
+          "widget_id": "w:p1",
+          "placement": {
+            "type": "new_row"
+          },
+          "spec": "chart",
+          "popover_open": true
+        },
+        {
+          "kind": "open",
+          "widget_id": "w:p1",
+          "view_id": "v1",
+          "layout": "chart",
+          "auto_named": true
+        },
+        {
+          "kind": "configuring",
+          "widget_id": "w:p1",
+          "view_id": "v1",
+          "layout": "board",
+          "auto_named": true
+        },
+        {
+          "kind": "configuring",
+          "widget_id": "w:p1",
+          "view_id": "v1",
+          "layout": "board",
+          "auto_named": true
+        }
+      ],
+      "expect_effects": [
+        [
+          {
+            "type": "pin_edit"
+          },
+          {
+            "type": "create_default_view",
+            "spec": "chart"
+          },
+          {
+            "type": "select",
+            "widget_id": "w:p1"
+          },
+          {
+            "type": "scroll_to",
+            "widget_id": "w:p1"
+          }
+        ],
+        [
+          {
+            "type": "insert_widget",
+            "widget_id": "w:p1",
+            "view_id": "v1",
+            "placement": {
+              "type": "new_row"
+            }
+          }
+        ],
+        [
+          {
+            "type": "switch_view_layout",
+            "view_id": "v1",
+            "layout": "board"
+          },
+          {
+            "type": "rename_if_auto",
+            "view_id": "v1",
+            "layout": "board"
+          }
+        ],
+        []
+      ]
+    },
+    {
+      "name": "creating in another database swaps to the new view",
+      "events": [
+        {
+          "type": "start",
+          "placement": {
+            "type": "new_row"
+          },
+          "widget_id": "w:p1",
+          "spec": "chart",
+          "refused": null
+        },
+        {
+          "type": "created",
+          "view_id": "v1"
+        },
+        {
+          "type": "create_in_database",
+          "database_id": "db2",
+          "layout": "board"
+        }
+      ],
+      "expect_states": [
+        {
+          "kind": "creating",
+          "widget_id": "w:p1",
+          "placement": {
+            "type": "new_row"
+          },
+          "spec": "chart",
+          "popover_open": true
+        },
+        {
+          "kind": "open",
+          "widget_id": "w:p1",
+          "view_id": "v1",
+          "layout": "chart",
+          "auto_named": true
+        },
+        {
+          "kind": "idle"
+        }
+      ],
+      "expect_effects": [
+        [
+          {
+            "type": "pin_edit"
+          },
+          {
+            "type": "create_default_view",
+            "spec": "chart"
+          },
+          {
+            "type": "select",
+            "widget_id": "w:p1"
+          },
+          {
+            "type": "scroll_to",
+            "widget_id": "w:p1"
+          }
+        ],
+        [
+          {
+            "type": "insert_widget",
+            "widget_id": "w:p1",
+            "view_id": "v1",
+            "placement": {
+              "type": "new_row"
+            }
+          }
+        ],
+        [
+          {
+            "type": "create_owned_view",
+            "database_id": "db2",
+            "layout": "board",
+            "widget_id": "w:p1",
+            "replaces_view_id": "v1"
+          }
+        ]
+      ]
+    },
+    {
+      "name": "another add while the picker is open starts a new widget",
+      "events": [
+        {
+          "type": "start",
+          "placement": {
+            "type": "new_row"
+          },
+          "widget_id": "w:p1",
+          "spec": "chart",
+          "refused": null
+        },
+        {
+          "type": "created",
+          "view_id": "v1"
+        },
+        {
+          "type": "start",
+          "placement": {
+            "type": "new_row"
+          },
+          "widget_id": "w:p2",
+          "spec": "chart",
+          "refused": null
+        }
+      ],
+      "expect_states": [
+        {
+          "kind": "creating",
+          "widget_id": "w:p1",
+          "placement": {
+            "type": "new_row"
+          },
+          "spec": "chart",
+          "popover_open": true
+        },
+        {
+          "kind": "open",
+          "widget_id": "w:p1",
+          "view_id": "v1",
+          "layout": "chart",
+          "auto_named": true
+        },
+        {
+          "kind": "creating",
+          "widget_id": "w:p2",
+          "placement": {
+            "type": "new_row"
+          },
+          "spec": "chart",
+          "popover_open": true
+        }
+      ],
+      "expect_effects": [
+        [
+          {
+            "type": "pin_edit"
+          },
+          {
+            "type": "create_default_view",
+            "spec": "chart"
+          },
+          {
+            "type": "select",
+            "widget_id": "w:p1"
+          },
+          {
+            "type": "scroll_to",
+            "widget_id": "w:p1"
+          }
+        ],
+        [
+          {
+            "type": "insert_widget",
+            "widget_id": "w:p1",
+            "view_id": "v1",
+            "placement": {
+              "type": "new_row"
+            }
+          }
+        ],
+        [
+          {
+            "type": "pin_edit"
+          },
+          {
+            "type": "create_default_view",
+            "spec": "chart"
+          },
+          {
+            "type": "select",
+            "widget_id": "w:p2"
+          },
+          {
+            "type": "scroll_to",
+            "widget_id": "w:p2"
+          }
+        ]
+      ]
+    },
+    {
+      "name": "losing write access closes the config panel and keeps the widget",
+      "events": [
+        {
+          "type": "start",
+          "placement": {
+            "type": "new_row"
+          },
+          "widget_id": "w:p1",
+          "spec": "chart",
+          "refused": null
+        },
+        {
+          "type": "created",
+          "view_id": "v1"
+        },
+        {
+          "type": "pick_layout",
+          "layout": "board"
+        },
+        {
+          "type": "access_lost"
+        }
+      ],
+      "expect_states": [
+        {
+          "kind": "creating",
+          "widget_id": "w:p1",
+          "placement": {
+            "type": "new_row"
+          },
+          "spec": "chart",
+          "popover_open": true
+        },
+        {
+          "kind": "open",
+          "widget_id": "w:p1",
+          "view_id": "v1",
+          "layout": "chart",
+          "auto_named": true
+        },
+        {
+          "kind": "configuring",
+          "widget_id": "w:p1",
+          "view_id": "v1",
+          "layout": "board",
+          "auto_named": true
+        },
+        {
+          "kind": "idle"
+        }
+      ],
+      "expect_effects": [
+        [
+          {
+            "type": "pin_edit"
+          },
+          {
+            "type": "create_default_view",
+            "spec": "chart"
+          },
+          {
+            "type": "select",
+            "widget_id": "w:p1"
+          },
+          {
+            "type": "scroll_to",
+            "widget_id": "w:p1"
+          }
+        ],
+        [
+          {
+            "type": "insert_widget",
+            "widget_id": "w:p1",
+            "view_id": "v1",
+            "placement": {
+              "type": "new_row"
+            }
+          }
+        ],
+        [
+          {
+            "type": "switch_view_layout",
+            "view_id": "v1",
+            "layout": "board"
+          },
+          {
+            "type": "rename_if_auto",
+            "view_id": "v1",
+            "layout": "board"
+          }
+        ],
+        []
+      ]
+    }
+  ]
+}

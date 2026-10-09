@@ -129,7 +129,9 @@ export function PersonCell({
         isEmpty && placeholder ? 'text-text-tertiary' : '',
         wrap
           ? 'flex-wrap overflow-x-hidden'
-          : 'appflowy-hidden-scroller h-full w-full flex-nowrap overflow-x-auto overflow-y-hidden'
+          : // Scrollable only while hovered or focused (or on touch screens): a
+            // scroll container at rest costs Chrome two compositor layers per cell.
+            'appflowy-hidden-scroller h-full w-full flex-nowrap overflow-x-hidden overflow-y-hidden hover:overflow-x-auto focus-within:overflow-x-auto [@media(hover:none)]:overflow-x-auto'
       )}
     >
       {isEmpty ? placeholder || null : renderedEntries}

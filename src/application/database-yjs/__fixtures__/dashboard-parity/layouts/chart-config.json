@@ -1,0 +1,461 @@
+{
+  "fixture": "layouts/chart-config",
+  "version": 1,
+  "encoding": {
+    "format": "The layouts/unknown-keys chart case format: {\"$bigint\": \"N\"} is a native integer, plain numbers are JS numbers, readers compare numbers by value.",
+    "parsed": "The configuration keys as readers normalize them: an absent bucket bound and an absent conditional color read as null; number_conditional_color lists only the known keys of the object and its rules.",
+    "write": "The keys the client submits, in the persisted shape. The three bucket keys are written together, null meaning auto. number_conditional_color is replaced as a whole and keeps the unknown keys of the stored object and of each stored rule with the same id.",
+    "effectiveAggregation": "When given, effectiveChartAggregation(parsed aggregation_type, yFieldType); the stored value is not rewritten."
+  },
+  "chartCases": [
+    {
+      "name": "every chart configuration key parses and survives an unrelated write with its unknown keys",
+      "stored": {
+        "chart_type": {"$bigint": "0"},
+        "x_field_id": "f:stage",
+        "show_empty_values": true,
+        "aggregation_type": {"$bigint": "0"},
+        "y_field_id": "",
+        "date_condition": {"$bigint": "3"},
+        "x_sort": "manual",
+        "x_manual_order": ["o:c", "o:a", "o:b"],
+        "hidden_groups": ["o:b"],
+        "x_number_bucket_size": 10,
+        "x_number_bucket_min": 0,
+        "x_number_bucket_max": 100,
+        "x_text_grouping": "first_letter",
+        "show_title": false,
+        "number_color": "green",
+        "number_conditional_color": {
+          "enabled": true,
+          "rules": [
+            {"id": "ncr:1", "operator": "gt", "value": 30, "color": "green", "zz_rule_note": "keep"},
+            {"id": "ncr:2", "operator": "approx", "value": 10, "color": "yellow"}
+          ],
+          "else_color": "red",
+          "zz_future": {"v": 2}
+        },
+        "zz_parity_probe": {"from": "newer-app"}
+      },
+      "parsed": {
+        "aggregation_type": 0,
+        "x_sort": "manual",
+        "x_manual_order": ["o:c", "o:a", "o:b"],
+        "hidden_groups": ["o:b"],
+        "x_number_bucket_size": 10,
+        "x_number_bucket_min": 0,
+        "x_number_bucket_max": 100,
+        "x_text_grouping": "first_letter",
+        "show_title": false,
+        "number_color": "green",
+        "number_conditional_color": {
+          "enabled": true,
+          "rules": [
+            {"id": "ncr:1", "operator": "gt", "value": 30, "color": "green"},
+            {"id": "ncr:2", "operator": "approx", "value": 10, "color": "yellow"}
+          ],
+          "else_color": "red"
+        }
+      },
+      "write": {"cumulative": true},
+      "writtenKeys": ["cumulative"],
+      "expected": {
+        "chart_type": 0,
+        "x_field_id": "f:stage",
+        "show_empty_values": true,
+        "aggregation_type": 0,
+        "y_field_id": "",
+        "date_condition": 3,
+        "x_sort": "manual",
+        "x_manual_order": ["o:c", "o:a", "o:b"],
+        "hidden_groups": ["o:b"],
+        "x_number_bucket_size": 10,
+        "x_number_bucket_min": 0,
+        "x_number_bucket_max": 100,
+        "x_text_grouping": "first_letter",
+        "show_title": false,
+        "number_color": "green",
+        "number_conditional_color": {
+          "enabled": true,
+          "rules": [
+            {"id": "ncr:1", "operator": "gt", "value": 30, "color": "green", "zz_rule_note": "keep"},
+            {"id": "ncr:2", "operator": "approx", "value": 10, "color": "yellow"}
+          ],
+          "else_color": "red",
+          "zz_future": {"v": 2}
+        },
+        "zz_parity_probe": {"from": "newer-app"},
+        "cumulative": true
+      }
+    },
+    {
+      "name": "hiding a group writes hidden_groups alone",
+      "stored": {
+        "chart_type": {"$bigint": "0"},
+        "x_field_id": "f:stage",
+        "show_empty_values": true,
+        "aggregation_type": {"$bigint": "0"},
+        "y_field_id": "",
+        "date_condition": {"$bigint": "3"},
+        "x_sort": "manual",
+        "x_manual_order": ["o:c", "o:a", "o:b"],
+        "hidden_groups": ["o:b"],
+        "x_number_bucket_size": 10,
+        "x_number_bucket_min": 0,
+        "x_number_bucket_max": 100,
+        "x_text_grouping": "first_letter",
+        "show_title": false,
+        "number_color": "green",
+        "number_conditional_color": {
+          "enabled": true,
+          "rules": [
+            {"id": "ncr:1", "operator": "gt", "value": 30, "color": "green", "zz_rule_note": "keep"},
+            {"id": "ncr:2", "operator": "approx", "value": 10, "color": "yellow"}
+          ],
+          "else_color": "red",
+          "zz_future": {"v": 2}
+        },
+        "zz_parity_probe": {"from": "newer-app"}
+      },
+      "write": {"hidden_groups": ["o:a", "o:b"]},
+      "writtenKeys": ["hidden_groups"],
+      "expected": {
+        "chart_type": 0,
+        "x_field_id": "f:stage",
+        "show_empty_values": true,
+        "aggregation_type": 0,
+        "y_field_id": "",
+        "date_condition": 3,
+        "x_sort": "manual",
+        "x_manual_order": ["o:c", "o:a", "o:b"],
+        "hidden_groups": ["o:a", "o:b"],
+        "x_number_bucket_size": 10,
+        "x_number_bucket_min": 0,
+        "x_number_bucket_max": 100,
+        "x_text_grouping": "first_letter",
+        "show_title": false,
+        "number_color": "green",
+        "number_conditional_color": {
+          "enabled": true,
+          "rules": [
+            {"id": "ncr:1", "operator": "gt", "value": 30, "color": "green", "zz_rule_note": "keep"},
+            {"id": "ncr:2", "operator": "approx", "value": 10, "color": "yellow"}
+          ],
+          "else_color": "red",
+          "zz_future": {"v": 2}
+        },
+        "zz_parity_probe": {"from": "newer-app"}
+      }
+    },
+    {
+      "name": "dropping a group writes the manual sort and the new order together",
+      "stored": {
+        "chart_type": {"$bigint": "0"},
+        "x_field_id": "f:stage",
+        "show_empty_values": true,
+        "aggregation_type": {"$bigint": "0"},
+        "y_field_id": "",
+        "date_condition": {"$bigint": "3"},
+        "x_sort": "auto",
+        "hidden_groups": []
+      },
+      "write": {"x_sort": "manual", "x_manual_order": ["o:b", "o:a"]},
+      "writtenKeys": ["x_manual_order", "x_sort"],
+      "expected": {
+        "chart_type": 0,
+        "x_field_id": "f:stage",
+        "show_empty_values": true,
+        "aggregation_type": 0,
+        "y_field_id": "",
+        "date_condition": 3,
+        "x_sort": "manual",
+        "hidden_groups": [],
+        "x_manual_order": ["o:b", "o:a"]
+      }
+    },
+    {
+      "name": "a conditional color rule edit keeps the rule's and the object's unknown keys",
+      "stored": {
+        "chart_type": {"$bigint": "0"},
+        "x_field_id": "f:stage",
+        "show_empty_values": true,
+        "aggregation_type": {"$bigint": "0"},
+        "y_field_id": "",
+        "date_condition": {"$bigint": "3"},
+        "x_sort": "manual",
+        "x_manual_order": ["o:c", "o:a", "o:b"],
+        "hidden_groups": ["o:b"],
+        "x_number_bucket_size": 10,
+        "x_number_bucket_min": 0,
+        "x_number_bucket_max": 100,
+        "x_text_grouping": "first_letter",
+        "show_title": false,
+        "number_color": "green",
+        "number_conditional_color": {
+          "enabled": true,
+          "rules": [
+            {"id": "ncr:1", "operator": "gt", "value": 30, "color": "green", "zz_rule_note": "keep"},
+            {"id": "ncr:2", "operator": "approx", "value": 10, "color": "yellow"}
+          ],
+          "else_color": "red",
+          "zz_future": {"v": 2}
+        },
+        "zz_parity_probe": {"from": "newer-app"}
+      },
+      "write": {
+        "number_conditional_color": {
+          "enabled": true,
+          "rules": [
+            {"id": "ncr:1", "operator": "gte", "value": 30, "color": "green"},
+            {"id": "ncr:2", "operator": "approx", "value": 10, "color": "yellow"}
+          ],
+          "else_color": "red"
+        }
+      },
+      "writtenKeys": ["number_conditional_color"],
+      "expected": {
+        "chart_type": 0,
+        "x_field_id": "f:stage",
+        "show_empty_values": true,
+        "aggregation_type": 0,
+        "y_field_id": "",
+        "date_condition": 3,
+        "x_sort": "manual",
+        "x_manual_order": ["o:c", "o:a", "o:b"],
+        "hidden_groups": ["o:b"],
+        "x_number_bucket_size": 10,
+        "x_number_bucket_min": 0,
+        "x_number_bucket_max": 100,
+        "x_text_grouping": "first_letter",
+        "show_title": false,
+        "number_color": "green",
+        "number_conditional_color": {
+          "enabled": true,
+          "rules": [
+            {"id": "ncr:1", "operator": "gte", "value": 30, "color": "green", "zz_rule_note": "keep"},
+            {"id": "ncr:2", "operator": "approx", "value": 10, "color": "yellow"}
+          ],
+          "else_color": "red",
+          "zz_future": {"v": 2}
+        },
+        "zz_parity_probe": {"from": "newer-app"}
+      },
+      "reparsed": {
+        "number_conditional_color": {
+          "enabled": true,
+          "rules": [
+            {"id": "ncr:1", "operator": "gte", "value": 30, "color": "green"},
+            {"id": "ncr:2", "operator": "approx", "value": 10, "color": "yellow"}
+          ],
+          "else_color": "red"
+        }
+      }
+    },
+    {
+      "name": "turning dynamic color on writes the whole object",
+      "stored": {
+        "chart_type": {"$bigint": "0"},
+        "x_field_id": "f:stage",
+        "show_empty_values": true,
+        "aggregation_type": {"$bigint": "0"},
+        "y_field_id": "",
+        "date_condition": {"$bigint": "3"}
+      },
+      "write": {
+        "number_conditional_color": {"enabled": true, "rules": [{"id": "ncr:new", "operator": "gt", "value": 0, "color": "green"}]}
+      },
+      "writtenKeys": ["number_conditional_color"],
+      "expected": {
+        "chart_type": 0,
+        "x_field_id": "f:stage",
+        "show_empty_values": true,
+        "aggregation_type": 0,
+        "y_field_id": "",
+        "date_condition": 3,
+        "number_conditional_color": {"enabled": true, "rules": [{"id": "ncr:new", "operator": "gt", "value": 0, "color": "green"}]}
+      },
+      "reparsed": {
+        "number_conditional_color": {"enabled": true, "rules": [{"id": "ncr:new", "operator": "gt", "value": 0, "color": "green"}]}
+      }
+    },
+    {
+      "name": "clearing the buckets writes null for all three keys",
+      "stored": {
+        "chart_type": {"$bigint": "0"},
+        "x_field_id": "f:stage",
+        "show_empty_values": true,
+        "aggregation_type": {"$bigint": "0"},
+        "y_field_id": "",
+        "date_condition": {"$bigint": "3"},
+        "x_number_bucket_size": 10,
+        "x_number_bucket_min": 0,
+        "x_number_bucket_max": 100
+      },
+      "write": {"x_number_bucket_size": null, "x_number_bucket_min": null, "x_number_bucket_max": null},
+      "writtenKeys": ["x_number_bucket_max", "x_number_bucket_min", "x_number_bucket_size"],
+      "expected": {
+        "chart_type": 0,
+        "x_field_id": "f:stage",
+        "show_empty_values": true,
+        "aggregation_type": 0,
+        "y_field_id": "",
+        "date_condition": 3,
+        "x_number_bucket_size": null,
+        "x_number_bucket_min": null,
+        "x_number_bucket_max": null
+      },
+      "reparsed": {"x_number_bucket_size": null, "x_number_bucket_min": null, "x_number_bucket_max": null}
+    },
+    {
+      "name": "changing one bucket bound writes the three bucket keys",
+      "stored": {
+        "chart_type": {"$bigint": "0"},
+        "x_field_id": "f:stage",
+        "show_empty_values": true,
+        "aggregation_type": {"$bigint": "0"},
+        "y_field_id": "",
+        "date_condition": {"$bigint": "3"},
+        "x_number_bucket_size": 10,
+        "x_number_bucket_min": 0,
+        "x_number_bucket_max": 100
+      },
+      "write": {"x_number_bucket_size": 10, "x_number_bucket_min": 0, "x_number_bucket_max": 50},
+      "writtenKeys": ["x_number_bucket_max", "x_number_bucket_min", "x_number_bucket_size"],
+      "expected": {
+        "chart_type": 0,
+        "x_field_id": "f:stage",
+        "show_empty_values": true,
+        "aggregation_type": 0,
+        "y_field_id": "",
+        "date_condition": 3,
+        "x_number_bucket_size": 10,
+        "x_number_bucket_min": 0,
+        "x_number_bucket_max": 50
+      }
+    },
+    {
+      "name": "Percent unchecked round-trips as aggregation_type 12",
+      "stored": {
+        "chart_type": {"$bigint": "0"},
+        "x_field_id": "f:stage",
+        "show_empty_values": true,
+        "aggregation_type": {"$bigint": "0"},
+        "y_field_id": "f:urgent",
+        "date_condition": {"$bigint": "3"}
+      },
+      "write": {"aggregation_type": 12},
+      "writtenKeys": ["aggregation_type"],
+      "expected": {
+        "chart_type": 0,
+        "x_field_id": "f:stage",
+        "show_empty_values": true,
+        "aggregation_type": 12,
+        "y_field_id": "f:urgent",
+        "date_condition": 3
+      },
+      "reparsed": {"aggregation_type": 12}
+    },
+    {
+      "name": "a legacy desktop Min over a date field reads as Earliest without a rewrite",
+      "stored": {
+        "chart_type": {"$bigint": "0"},
+        "x_field_id": "f:stage",
+        "show_empty_values": true,
+        "aggregation_type": {"$bigint": "3"},
+        "y_field_id": "f:due",
+        "date_condition": {"$bigint": "3"}
+      },
+      "parsed": {"aggregation_type": 3},
+      "yFieldType": "DateTime",
+      "effectiveAggregation": 13,
+      "write": {"x_sort": "label_asc"},
+      "writtenKeys": ["x_sort"],
+      "expected": {
+        "chart_type": 0,
+        "x_field_id": "f:stage",
+        "show_empty_values": true,
+        "aggregation_type": 3,
+        "y_field_id": "f:due",
+        "date_condition": 3,
+        "x_sort": "label_asc"
+      }
+    },
+    {
+      "name": "unknown sort, text grouping and color strings read as defaults and are never rewritten",
+      "stored": {
+        "chart_type": {"$bigint": "0"},
+        "x_field_id": "f:stage",
+        "show_empty_values": true,
+        "aggregation_type": {"$bigint": "0"},
+        "y_field_id": "",
+        "date_condition": {"$bigint": "3"},
+        "x_sort": "by_magic",
+        "x_text_grouping": "by_word",
+        "number_color": "neon"
+      },
+      "parsed": {"x_sort": "auto", "x_text_grouping": "exact", "number_color": "default"},
+      "write": {"show_title": false},
+      "writtenKeys": ["show_title"],
+      "expected": {
+        "chart_type": 0,
+        "x_field_id": "f:stage",
+        "show_empty_values": true,
+        "aggregation_type": 0,
+        "y_field_id": "",
+        "date_condition": 3,
+        "x_sort": "by_magic",
+        "x_text_grouping": "by_word",
+        "number_color": "neon",
+        "show_title": false
+      }
+    },
+    {
+      "name": "wrong types read as defaults",
+      "stored": {
+        "x_manual_order": "o:a",
+        "hidden_groups": {"o:a": true},
+        "x_number_bucket_size": -5,
+        "x_number_bucket_min": "0",
+        "x_number_bucket_max": true,
+        "show_title": "no",
+        "number_conditional_color": "on"
+      },
+      "parsed": {
+        "x_manual_order": [],
+        "hidden_groups": [],
+        "x_number_bucket_size": null,
+        "x_number_bucket_min": null,
+        "x_number_bucket_max": null,
+        "show_title": true,
+        "number_conditional_color": null
+      }
+    },
+    {
+      "name": "web-written JS numbers read the same",
+      "stored": {"aggregation_type": 16, "x_number_bucket_size": 2.5, "x_number_bucket_min": -10},
+      "parsed": {
+        "aggregation_type": 16,
+        "x_number_bucket_size": 2.5,
+        "x_number_bucket_min": -10,
+        "x_number_bucket_max": null
+      }
+    },
+    {
+      "name": "absent keys read as the defaults",
+      "stored": {},
+      "parsed": {
+        "aggregation_type": 0,
+        "x_sort": "auto",
+        "x_manual_order": [],
+        "hidden_groups": [],
+        "x_number_bucket_size": null,
+        "x_number_bucket_min": null,
+        "x_number_bucket_max": null,
+        "x_text_grouping": "exact",
+        "show_title": true,
+        "number_color": "default",
+        "number_conditional_color": null
+      }
+    }
+  ]
+}

@@ -12,6 +12,7 @@
  * - Scenario 4: Tab bar add view → NO container, adds to existing container
  */
 
+import { readDashboardOwner } from './database-yjs/dashboard-owned-views';
 import { View, ViewLayout } from './types';
 
 /**
@@ -39,7 +40,8 @@ export function isDatabaseLayout(layout: ViewLayout): boolean {
     layout === ViewLayout.Gallery ||
     layout === ViewLayout.Feed ||
     layout === ViewLayout.Form ||
-    layout === ViewLayout.Timeline
+    layout === ViewLayout.Timeline ||
+    layout === ViewLayout.Dashboard
   );
 }
 
@@ -51,6 +53,22 @@ export function isDatabaseLayout(layout: ViewLayout): boolean {
  */
 export function isEmbeddedView(view: View | null | undefined): boolean {
   return view?.extra?.embedded === true;
+}
+
+/**
+ * The dashboard view that owns this view as one of its widgets (folder
+ * `extra.dashboard_owner`, WP05 §1.1), or `null`.
+ */
+export function getDashboardOwner(view: View | null | undefined): string | null {
+  return readDashboardOwner(view);
+}
+
+/**
+ * Check if a view belongs to a dashboard. Owned views are widget data: they
+ * are never listed as tabs of their database's container, nor in the sidebar.
+ */
+export function isDashboardOwnedView(view: View | null | undefined): boolean {
+  return getDashboardOwner(view) !== null;
 }
 
 /**
@@ -262,9 +280,16 @@ export function canReorderWithinParent(view: View | null | undefined, parentView
  * - Database containers can have both non-embedded "display views" and embedded views.
  * - Embedded views should not appear as tabs when viewing the source database container.
  * - When navigating directly to an embedded child view from the sidebar, show only that view.
+ * - Dashboard-owned views are never tabs; opening one shows it as the only tab.
  */
 export function getDatabaseTabViewIds(currentViewId: string, containerView: View): string[] {
-  const children = containerView.children ?? [];
+  const allChildren = containerView.children ?? [];
+
+  if (allChildren.some((child) => child.view_id === currentViewId && isDashboardOwnedView(child))) {
+    return [currentViewId];
+  }
+
+  const children = allChildren.filter((child) => !isDashboardOwnedView(child));
   const childViewIds = children.map((child) => child.view_id);
 
   if (childViewIds.length === 0) {

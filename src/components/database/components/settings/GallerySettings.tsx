@@ -18,6 +18,17 @@ import { cn } from '@/lib/utils';
 
 import type { ReactNode } from 'react';
 
+/** The Gallery settings rows; also rendered by a dashboard widget's settings host. */
+export function GallerySettingsItems() {
+  return (
+    <>
+      <Properties />
+      <Layout currentLayout={DatabaseViewLayout.Gallery} />
+      <GalleryLayoutSettings />
+    </>
+  );
+}
+
 export function GallerySettings({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
   const settingsLabel = t('settings.title');
@@ -39,9 +50,7 @@ export function GallerySettings({ children }: { children: ReactNode }) {
         side='bottom'
       >
         <DropdownMenuGroup>
-          <Properties />
-          <Layout currentLayout={DatabaseViewLayout.Gallery} />
-          <GalleryLayoutSettings />
+          <GallerySettingsItems />
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>

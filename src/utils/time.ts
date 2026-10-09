@@ -64,6 +64,21 @@ export function isTimestampBetweenRange(timestamp: string, startTimestamp: strin
   return dateUnix >= startUnix && dateUnix <= endUnix;
 }
 
+/**
+ * Check if the day of `timestamp` lies within the days of startTimestamp and endTimestamp, both
+ * included: a date filter window counts its whole last day, whatever time its dates carry (as the
+ * desktop's `DateFilterStrategy::DateBetween` compares calendar days).
+ * @param {string} timestamp - The timestamp to check (in seconds or milliseconds)
+ * @param {string} startTimestamp - A timestamp on the first day (in seconds or milliseconds)
+ * @param {string} endTimestamp - A timestamp on the last day (in seconds or milliseconds)
+ */
+export function isTimestampBetweenDays(timestamp: string, startTimestamp: string, endTimestamp: string) {
+  const dayOf = (value: string) => (value.length > 10 ? dayjs(Number(value)) : dayjs.unix(Number(value))).startOf('day');
+  const day = dayOf(timestamp);
+
+  return !day.isBefore(dayOf(startTimestamp)) && !day.isAfter(dayOf(endTimestamp));
+}
+
 export function getTimeFormat(timeFormat?: TimeFormat) {
   switch (timeFormat) {
     case TimeFormat.TwelveHour:

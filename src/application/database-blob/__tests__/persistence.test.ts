@@ -1,7 +1,14 @@
 import { parse as uuidParse } from 'uuid';
 import * as Y from 'yjs';
 
-import { clearDatabaseRowDocSeedCache, prefetchDatabaseBlobDiff } from '@/application/database-blob';
+import {
+  clearDatabaseRowDocSeedCache,
+  peekDatabaseRowDocSeed,
+  prefetchDatabaseBlobDiff,
+  releaseDatabaseRowDocSeedCache,
+  retainDatabaseRowDocSeedCache,
+} from '@/application/database-blob';
+import { DASHBOARD_MAX_WIDGETS } from '@/application/database-yjs/dashboard.type';
 import { db, openRowCollabDBWithProvider } from '@/application/db';
 import { getCachedRowDoc } from '@/application/services/js-services/cache';
 import { databaseBlobDiff } from '@/application/services/js-services/http/http_api';
@@ -92,4 +99,32 @@ test.each([false, true])('a required reload waits until a row write commits with
   expect(settled).toBe(true);
   await row?.provider.destroy();
   row?.doc.destroy();
+});
+
+test('keeps the seeds of every source of the dashboard just left', async () => {
+  // A full dashboard: one source database per widget, plus the database that hosts it.
+  const sources = Array.from({ length: DASHBOARD_MAX_WIDGETS + 1 }, (_, index) => `database-dashboard-source-${index}`);
+  const hasSeeds = (source: string) => peekDatabaseRowDocSeed(`${source}_rows_${rowId}`) !== null;
+  const open = async () => {
+    for (const source of sources) {
+      retainDatabaseRowDocSeedCache(source);
+      await prefetchDatabaseBlobDiff('workspace', source, { forceFullSync: true });
+    }
+  };
+
+  try {
+    await open();
+    const walks = jest.mocked(databaseBlobDiff).mock.calls.length;
+
+    // Leaving the dashboard unmounts every widget at once.
+    sources.forEach(releaseDatabaseRowDocSeedCache);
+    expect(sources.filter((source) => !hasSeeds(source))).toEqual([]);
+
+    // Coming back within the idle time: every widget reuses its settled walk.
+    await open();
+    expect(jest.mocked(databaseBlobDiff)).toHaveBeenCalledTimes(walks);
+  } finally {
+    sources.forEach(releaseDatabaseRowDocSeedCache);
+    sources.forEach(clearDatabaseRowDocSeedCache);
+  }
 });

@@ -9,6 +9,7 @@ export const DATABASE_BLOCK_TYPES = [
   BlockType.DatabaseGalleryBlock,
   BlockType.FeedBlock,
   BlockType.TimelineBlock,
+  BlockType.DashboardBlock,
 ] as const;
 
 export type DatabaseBlockType = (typeof DATABASE_BLOCK_TYPES)[number];
@@ -37,6 +38,8 @@ export function getDatabaseLayoutFromBlockType(type: unknown): ViewLayout | unde
       return ViewLayout.Feed;
     case BlockType.TimelineBlock:
       return ViewLayout.Timeline;
+    case BlockType.DashboardBlock:
+      return ViewLayout.Dashboard;
     default:
       return undefined;
   }

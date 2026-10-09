@@ -799,19 +799,28 @@ describe('configuration production hooks use database history', () => {
     );
     const getChartSetting = () => fixture.layoutSettings.get('3') as unknown as Y.Map<unknown> | undefined;
 
+    expect(getChartSetting()?.get('chart_type')).toBe(2);
+    expect(getChartSetting()?.get('x_field_id')).toBe(textFieldId);
+    expect(getChartSetting()?.get('y_field_id')).toBe(numberFieldId);
+    expect(getChartSetting()?.get('cumulative')).toBe(true);
+    // The legacy camelCase keys are kept in sync for older web builds.
     expect(getChartSetting()?.get('chartType')).toBe(2);
     expect(getChartSetting()?.get('xFieldId')).toBe(textFieldId);
-    expect(getChartSetting()?.get('yFieldId')).toBe(numberFieldId);
-    expect(getChartSetting()?.get('cumulative')).toBe(true);
 
     act(() => result.current.history.undo());
     expect(getChartSetting()).toBeUndefined();
 
     act(() => result.current.history.redo());
-    expect(getChartSetting()?.get('chartType')).toBe(2);
-    expect(getChartSetting()?.get('aggregationType')).toBe(4);
-    expect(getChartSetting()?.get('showEmptyValues')).toBe(true);
+    expect(getChartSetting()?.get('chart_type')).toBe(2);
+    expect(getChartSetting()?.get('aggregation_type')).toBe(4);
+    expect(getChartSetting()?.get('show_empty_values')).toBe(true);
     expect(fixture.layoutSettings.get('2').get(YjsDatabaseKey.field_id)).toBe(numberFieldId);
+
+    // Re-selecting the stored values writes nothing, so it records no undo step.
+    act(() => result.current.history.clear());
+    act(() => result.current.updateChartSetting({ chartType: 2, aggregationType: 4, cumulative: true }));
+    expect(result.current.history.canUndo).toBe(false);
+    expect(getChartSetting()?.get('chart_type')).toBe(2);
   });
 
   it('updates visibility, wrapping, and width with an undo/redo round trip for each field-display setting', () => {

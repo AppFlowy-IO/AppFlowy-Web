@@ -1,0 +1,133 @@
+{
+  "fixture": "chart-geometry",
+  "version": 1,
+  "about": "Chart scales, label fitting, donut geometry, legend layout and colors (WP10 §1.3–§1.5). Texts are measured with the fake measurer below (characters × px). Chart types are ChartTypePB ints (Bar 0, Line 1, HorizontalBar 2, Donut 3, Number 4). Coordinates are rounded to 2 decimals and numbers to 6; compare within 0.01. Donut slices start at 12 o'clock and run clockwise. Colors index the non-empty categories in display order; single-hue ramps are composited over the light card background #FFFFFF, each channel round(c·a + bg·(1−a)), half up.",
+  "measurer": { "px12PerChar": 6, "px10PerChar": 5 },
+  "niceTicks": [
+    { "min": 0, "max": 1404000, "maxTicks": 5, "integerOnly": false, "expected": [0, 500000, 1000000, 1500000] },
+    { "min": 0, "max": 690000, "maxTicks": 5, "integerOnly": false, "expected": [0, 200000, 400000, 600000, 800000] },
+    { "min": 0, "max": 1, "maxTicks": 5, "integerOnly": false, "expected": [0, 0.25, 0.5, 0.75, 1] },
+    { "min": -1716, "max": 1416, "maxTicks": 5, "integerOnly": false, "expected": [-2000, -1000, 0, 1000, 2000] },
+    { "min": 0, "max": 5.4, "maxTicks": 5, "integerOnly": true, "expected": [0, 2, 4, 6] },
+    { "min": 0, "max": 3.24, "maxTicks": 5, "integerOnly": true, "expected": [0, 1, 2, 3, 4] },
+    { "min": 0, "max": 0.054, "maxTicks": 5, "integerOnly": false, "expected": [0, 0.02, 0.04, 0.06] },
+    { "min": 0, "max": 100, "maxTicks": 5, "integerOnly": false, "expected": [0, 25, 50, 75, 100] },
+    { "min": -7.56, "max": 0, "maxTicks": 5, "integerOnly": false, "expected": [-8, -6, -4, -2, 0] },
+    { "min": 0, "max": 0, "maxTicks": 5, "integerOnly": false, "expected": [0, 1] }
+  ],
+  "valueDomain": [
+    { "values": [48500, 1300000, 690000], "integerOnly": false, "ticks": [0, 500000, 1000000, 1500000], "domain": [0, 1500000] },
+    { "values": [800, 1200, 6.5, -1500], "integerOnly": false, "ticks": [-2000, -1000, 0, 1000, 2000], "domain": [-2000, 2000] },
+    { "values": [2, 5, 3, 2], "integerOnly": true, "ticks": [0, 2, 4, 6], "domain": [0, 6] },
+    { "values": [0, 0], "integerOnly": false, "ticks": [0, 1], "domain": [0, 1] },
+    { "values": [0.25, 0.75], "integerOnly": false, "ticks": [0, 0.25, 0.5, 0.75, 1], "domain": [0, 1] },
+    { "values": [-3, -7], "integerOnly": false, "ticks": [-8, -6, -4, -2, 0], "domain": [-8, 0] },
+    { "values": [3, 2, 4, 3], "integerOnly": true, "ticks": [0, 2, 4, 6], "domain": [0, 6] },
+    { "values": [48500, 2300000, 690000], "integerOnly": false, "ticks": [0, 1000000, 2000000, 3000000], "domain": [0, 3000000] },
+    { "values": [], "integerOnly": true, "ticks": [0, 1], "domain": [0, 1] }
+  ],
+  "yAxisWidth": [
+    { "ticks": ["$0", "$500K", "$1M", "$1.5M"], "expected": 38 },
+    { "ticks": ["-2K", "-1K", "0", "1K", "2K"], "expected": 26 },
+    { "ticks": ["0", "2", "4", "6"], "expected": 14 }
+  ],
+  "barWidth": [
+    { "plotLength": 900, "count": 3, "expected": 16 },
+    { "plotLength": 300, "count": 12, "expected": 8.75 },
+    { "plotLength": 200, "count": 30, "expected": 5.333333 },
+    { "plotLength": 600, "count": 20, "expected": 10.5 },
+    { "plotLength": 40, "count": 50, "expected": 1 },
+    { "plotLength": 300, "count": 0, "expected": 0 }
+  ],
+  "thin": [
+    { "count": 30, "step": 2, "expected": [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 29] },
+    { "count": 10, "step": 4, "expected": [0, 4, 9] },
+    { "count": 12, "step": 3, "expected": [0, 3, 6, 9, 11] },
+    { "count": 2, "step": 5, "expected": [0, 1] },
+    { "count": 1, "step": 5, "expected": [0] },
+    { "count": 5, "step": 1, "expected": [0, 1, 2, 3, 4] }
+  ],
+  "fitCategoryLabels": [
+    { "name": "30 labels in 10px slots thin to every second one and the last", "widths": [60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60], "slot": 10, "mode": "rotated", "shown": [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 29] },
+    { "name": "short names that fit stay horizontal", "widths": [30, 18, 30], "slot": 100, "mode": "horizontal", "shown": [0, 1, 2] },
+    { "name": "a label must leave 4px of its slot free", "widths": [30, 26], "slot": 30, "mode": "rotated", "shown": [0, 1] },
+    { "name": "slots of 24px or more rotate every label", "widths": [108, 108, 90], "slot": 24, "mode": "rotated", "shown": [0, 1, 2] },
+    { "name": "20px slots rotate and keep every label", "widths": [90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90], "slot": 20, "mode": "rotated", "shown": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] },
+    { "name": "7px slots keep every third label and the last", "widths": [90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90], "slot": 7, "mode": "rotated", "shown": [0, 3, 6, 9, 11] },
+    { "name": "the last label replaces a kept label closer than half a step", "widths": [90, 90, 90, 90, 90, 90, 90, 90, 90, 90], "slot": 5, "mode": "rotated", "shown": [0, 4, 9] },
+    { "name": "no categories", "widths": [], "slot": 100, "mode": "horizontal", "shown": [] }
+  ],
+  "truncate": [
+    { "text": "North America East", "maxWidth": 80, "expected": "North Americ…" },
+    { "text": "Bob", "maxWidth": 80, "expected": "Bob" },
+    { "text": "Southeast Asia Pacific", "maxWidth": 40, "expected": "South…" },
+    { "text": "Lead", "maxWidth": 24, "expected": "Lead" },
+    { "text": "Proposal", "maxWidth": 3, "expected": "…" }
+  ],
+  "xAxisHeight": [
+    { "mode": "horizontal", "widestLabel": 108, "expected": 24 },
+    { "mode": "rotated", "widestLabel": 108, "expected": 76 },
+    { "mode": "rotated", "widestLabel": 40, "expected": 48 }
+  ],
+  "horizontalLabelWidth": [
+    { "widths": [18, 30, 24], "innerWidth": 300, "expected": 30 },
+    { "widths": [200], "innerWidth": 600, "expected": 160 },
+    { "widths": [10], "innerWidth": 300, "expected": 24 },
+    { "widths": [120], "innerWidth": 200, "expected": 70 }
+  ],
+  "donutGeometry": [
+    { "width": 300, "height": 264, "legendHeight": 28, "labelsWanted": true, "expected": { "outer": 88, "thickness": 12.32, "inner": 75.68, "labelsOn": true, "totalFont": 39.6, "showCaption": true, "showTotal": true }},
+    { "width": 240, "height": 200, "legendHeight": 48, "labelsWanted": true, "expected": { "outer": 70, "thickness": 9.8, "inner": 60.2, "labelsOn": false, "totalFont": 31.5, "showCaption": true, "showTotal": true }},
+    { "width": 800, "height": 400, "legendHeight": 28, "labelsWanted": true, "expected": { "outer": 140, "thickness": 19.6, "inner": 120.4, "labelsOn": true, "totalFont": 56, "showCaption": true, "showTotal": true }},
+    { "width": 100, "height": 100, "legendHeight": 0, "labelsWanted": true, "expected": { "outer": 48, "thickness": 6.72, "inner": 41.28, "labelsOn": false, "totalFont": 24, "showCaption": true, "showTotal": true }},
+    { "width": 60, "height": 60, "legendHeight": 0, "labelsWanted": false, "expected": { "outer": 28, "thickness": 6, "inner": 22, "labelsOn": false, "totalFont": 24, "showCaption": false, "showTotal": true }},
+    { "width": 40, "height": 40, "legendHeight": 0, "labelsWanted": false, "expected": { "outer": 18, "thickness": 6, "inner": 12, "labelsOn": false, "totalFont": 24, "showCaption": false, "showTotal": false }}
+  ],
+  "donutLabels": [
+    { "name": "Amount share: the 2.4% slice gets no label", "box": { "width": 400, "height": 300 }, "geometry": { "cx": 200, "cy": 150, "outer": 100, "inner": 86, "labelsOn": true }, "slices": [{ "name": "Alice", "value": 48500, "valueText": "$48.5K" }, { "name": "Bob", "value": 1300000, "valueText": "$1.3M" }, { "name": "Carol", "value": 690000, "valueText": "$690K" }], "expected": [{ "visible": false, "side": "right", "text": "", "textX": 220.36, "textY": 38.31, "leader": [{ "x": 207.62, "y": 48.28 }, { "x": 208.36, "y": 38.31 }, { "x": 216.36, "y": 38.31 }], "anchor": { "x": 206.94, "y": 57.26 }}, { "visible": true, "side": "right", "text": "Bob $1.3M (63.8%)", "textX": 305.55, "textY": 211.58, "leader": [{ "x": 285.2, "y": 206.08 }, { "x": 293.55, "y": 211.58 }, { "x": 301.55, "y": 211.58 }], "anchor": { "x": 277.68, "y": 201.13 }}, { "visible": true, "side": "left", "text": "Car… $690K (33.8%)", "textX": 90.11, "textY": 95.58, "leader": [{ "x": 110.85, "y": 100.44 }, { "x": 102.11, "y": 95.58 }, { "x": 94.11, "y": 95.58 }], "anchor": { "x": 118.72, "y": 104.81 }}] },
+    { "name": "labels off: every slice keeps its anchor and no label", "box": { "width": 400, "height": 300 }, "geometry": { "cx": 200, "cy": 150, "outer": 100, "inner": 86, "labelsOn": false }, "slices": [{ "name": "Lead", "value": 3, "valueText": "3" }, { "name": "Lost", "value": 3, "valueText": "3" }, { "name": "Proposal", "value": 2, "valueText": "2" }, { "name": "Won", "value": 4, "valueText": "4" }], "expected": [{ "visible": false, "side": "right", "text": "", "textX": 291.2, "textY": 70.8, "leader": [{ "x": 272.12, "y": 77.88 }, { "x": 279.2, "y": 70.8 }, { "x": 287.2, "y": 70.8 }], "anchor": { "x": 265.76, "y": 84.24 }}, { "visible": false, "side": "right", "text": "", "textX": 291.2, "textY": 229.2, "leader": [{ "x": 272.12, "y": 222.12 }, { "x": 279.2, "y": 229.2 }, { "x": 287.2, "y": 229.2 }], "anchor": { "x": 265.76, "y": 215.76 }}, { "visible": false, "side": "left", "text": "", "textX": 132, "textY": 246.99, "leader": [{ "x": 149, "y": 238.33 }, { "x": 144, "y": 246.99 }, { "x": 136, "y": 246.99 }], "anchor": { "x": 153.5, "y": 230.54 }}, { "visible": false, "side": "left", "text": "", "textX": 91.01, "textY": 94, "leader": [{ "x": 111.67, "y": 99 }, { "x": 103.01, "y": 94 }, { "x": 95.01, "y": 94 }], "anchor": { "x": 119.46, "y": 103.5 }}] },
+    { "name": "a narrow box truncates names and hides labels with less than 40px", "box": { "width": 300, "height": 260 }, "geometry": { "cx": 130, "cy": 130, "outer": 80, "inner": 68.8, "labelsOn": true }, "slices": [{ "name": "Sub-Saharan Africa", "value": 5, "valueText": "5" }, { "name": "North America East", "value": 5, "valueText": "5" }], "expected": [{ "visible": true, "side": "right", "text": "Sub-… 5 (50%)", "textX": 234, "textY": 130, "leader": [{ "x": 212, "y": 130 }, { "x": 222, "y": 130 }, { "x": 230, "y": 130 }], "anchor": { "x": 204.4, "y": 130 }}, { "visible": false, "side": "left", "text": "", "textX": 26, "textY": 130, "leader": [{ "x": 48, "y": 130 }, { "x": 38, "y": 130 }, { "x": 30, "y": 130 }], "anchor": { "x": 55.6, "y": 130 }}] },
+    { "name": "a label that cannot keep one character of its name is hidden", "box": { "width": 360, "height": 300 }, "geometry": { "cx": 180, "cy": 150, "outer": 100, "inner": 86, "labelsOn": true }, "slices": [{ "name": "North", "value": 1, "valueText": "$1, 234, 567" }, { "name": "South", "value": 1, "valueText": "1" }], "expected": [{ "visible": false, "side": "right", "text": "", "textX": 304, "textY": 150, "leader": [{ "x": 282, "y": 150 }, { "x": 292, "y": 150 }, { "x": 300, "y": 150 }], "anchor": { "x": 273, "y": 150 }}, { "visible": true, "side": "left", "text": "So… 1 (50%)", "textX": 56, "textY": 150, "leader": [{ "x": 78, "y": 150 }, { "x": 68, "y": 150 }, { "x": 60, "y": 150 }], "anchor": { "x": 87, "y": 150 }}] },
+    { "name": "labels closer than 14px on one side hide the later ones", "box": { "width": 600, "height": 400 }, "geometry": { "cx": 300, "cy": 200, "outer": 120, "inner": 103.2, "labelsOn": true }, "slices": [{ "name": "A", "value": 4, "valueText": "4" }, { "name": "B", "value": 4, "valueText": "4" }, { "name": "C", "value": 4, "valueText": "4" }, { "name": "D", "value": 4, "valueText": "4" }, { "name": "E", "value": 84, "valueText": "84" }], "expected": [{ "visible": true, "side": "right", "text": "A 4 (4%)", "textX": 328.54, "textY": 69.04, "leader": [{ "x": 315.29, "y": 78.96 }, { "x": 316.54, "y": 69.04 }, { "x": 324.54, "y": 69.04 }], "anchor": { "x": 313.99, "y": 89.28 }}, { "visible": false, "side": "right", "text": "", "textX": 360.59, "textY": 77.27, "leader": [{ "x": 344.91, "y": 86.57 }, { "x": 348.59, "y": 77.27 }, { "x": 356.59, "y": 77.27 }], "anchor": { "x": 341.08, "y": 96.24 }}, { "visible": true, "side": "right", "text": "C 4 (4%)", "textX": 389.59, "textY": 93.21, "leader": [{ "x": 371.71, "y": 101.3 }, { "x": 377.59, "y": 93.21 }, { "x": 385.59, "y": 93.21 }], "anchor": { "x": 365.6, "y": 109.71 }}, { "visible": true, "side": "right", "text": "D 4 (4%)", "textX": 413.71, "textY": 115.86, "leader": [{ "x": 394, "y": 122.23 }, { "x": 401.71, "y": 115.86 }, { "x": 409.71, "y": 115.86 }], "anchor": { "x": 385.99, "y": 128.86 }}, { "visible": true, "side": "left", "text": "E 84 (84%)", "textX": 224.41, "textY": 315.67, "leader": [{ "x": 241.23, "y": 306.91 }, { "x": 236.41, "y": 315.67 }, { "x": 228.41, "y": 315.67 }], "anchor": { "x": 246.24, "y": 297.8 }}] }
+  ],
+  "legend": [
+    { "name": "12 region items at 260px page by two lines", "labels": ["North America East", "North America West", "Central America", "South America", "Western Europe", "Northern Europe", "Eastern Europe", "Middle East", "North Africa", "Sub-Saharan Africa", "South Asia", "Southeast Asia Pacific"], "glyph": "square", "width": 260, "itemWidths": [122, 122, 104, 92, 98, 104, 98, 80, 86, 122, 74, 146], "expected": { "pages": [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11]], "lines": 2, "height": 64 }},
+    { "name": "6 items at 150px show one item per page", "labels": ["Lead", "Proposal", "Won", "Lost", "Alice", "Bob"], "glyph": "square", "width": 150, "itemWidths": [38, 62, 32, 38, 44, 32], "expected": { "pages": [[0], [1], [2], [3], [4], [5]], "lines": 1, "height": 44 }},
+    { "name": "three owners fit one line", "labels": ["Alice", "Bob", "Carol"], "glyph": "square", "width": 300, "itemWidths": [44, 32, 44], "expected": { "pages": [[0, 1, 2]], "lines": 1, "height": 24 }},
+    { "name": "a line series uses the 12px glyph", "labels": ["Count all"], "glyph": "line", "width": 200, "itemWidths": [72], "expected": { "pages": [[0]], "lines": 1, "height": 24 }},
+    { "name": "two lines stay on one page", "labels": ["Lead", "Proposal", "Won", "Lost", "No Stage"], "glyph": "square", "width": 200, "itemWidths": [38, 62, 32, 38, 62], "expected": { "pages": [[0, 1, 2, 3, 4]], "lines": 2, "height": 44 }},
+    { "name": "a label is at most 160px wide", "labels": ["A very long category name that keeps going"], "glyph": "square", "width": 400, "itemWidths": [174], "expected": { "pages": [[0]], "lines": 1, "height": 24 }},
+    { "name": "no items", "labels": [], "glyph": "square", "width": 300, "itemWidths": [], "expected": { "pages": [], "lines": 0, "height": 0 }}
+  ],
+  "colors": [
+    { "name": "auto uses the option colors of a select X", "theme": "auto", "xFieldKind": "select", "isDark": false, "items": [{ "key": "lead", "optionColor": "Blue" }, { "key": "lost", "optionColor": "Pink" }, { "key": "proposal", "optionColor": "Yellow" }, { "key": "won", "optionColor": "Green" }], "expected": ["#5E9FE8", "#DF84A8", "#EAC26B", "#72BC8F"] },
+    { "name": "colorful ignores option colors", "theme": "colorful", "xFieldKind": "select", "isDark": false, "items": [{ "key": "lead", "optionColor": "Blue" }, { "key": "lost", "optionColor": "Pink" }, { "key": "proposal", "optionColor": "Yellow" }, { "key": "won", "optionColor": "Green" }], "expected": ["#5E9FE8", "#EAC26B", "#72BC8F", "#BF8EDA"] },
+    { "name": "blue shades categories in display order and wraps after five", "theme": "blue", "xFieldKind": "select", "isDark": false, "items": [{ "key": "lead", "optionColor": "Blue" }, { "key": "lost", "optionColor": "Pink" }, { "key": "proposal", "optionColor": "Yellow" }, { "key": "won", "optionColor": "Green" }, { "key": "e" }, { "key": "f" }], "expected": ["#5E9FE8", "#8EBCEF", "#AFCFF4", "#C7DDF7", "#DFECFA", "#5E9FE8"] },
+    { "name": "colorless ramp", "theme": "colorless", "xFieldKind": "other", "isDark": false, "items": [{ "key": "a" }, { "key": "b" }, { "key": "c" }, { "key": "d" }, { "key": "e" }], "expected": ["#908D8C", "#B1AFAF", "#C8C6C6", "#D8D7D7", "#E9E8E8"] },
+    { "name": "green ramp", "theme": "green", "xFieldKind": "other", "isDark": false, "items": [{ "key": "a" }, { "key": "b" }, { "key": "c" }, { "key": "d" }, { "key": "e" }], "expected": ["#72BC8F", "#9CD0B1", "#B9DEC7", "#CEE8D8", "#E3F2E9"] },
+    { "name": "the empty category is gray and does not take a palette slot", "theme": "auto", "xFieldKind": "date", "isDark": false, "items": [{ "key": "2026-01" }, { "key": "__empty__", "isEmptyCategory": true }, { "key": "2026-02" }], "expected": ["#5E9FE8", "#F1F1EF", "#EAC26B"] },
+    { "name": "auto checkbox colors", "theme": "auto", "xFieldKind": "checkbox", "isDark": false, "items": [{ "key": "checked", "checkboxState": "checked" }, { "key": "unchecked", "checkboxState": "unchecked" }], "expected": ["#72BC8F", "#C7C6C4"] },
+    { "name": "auto falls back to the palette for an option without a color", "theme": "auto", "xFieldKind": "select", "isDark": false, "items": [{ "key": "a" }, { "key": "b", "optionColor": "Purple" }, { "key": "c" }], "expected": ["#5E9FE8", "#BF8EDA", "#72BC8F"] },
+    { "name": "the empty category is gray in every theme", "theme": "blue", "xFieldKind": "select", "isDark": false, "items": [{ "key": "a", "optionColor": "Pink" }, { "key": "__empty__", "isEmptyCategory": true }, { "key": "b", "optionColor": "Pink" }], "expected": ["#5E9FE8", "#F1F1EF", "#8EBCEF"] },
+    { "name": "the palette is the same in dark mode, the empty fill is translucent", "theme": "colorful", "xFieldKind": "other", "isDark": true, "items": [{ "key": "a" }, { "key": "__empty__", "isEmptyCategory": true }], "expected": ["#5E9FE8", "#FFFFFF1A"] },
+    { "name": "nine palette colors, then they repeat", "theme": "auto", "xFieldKind": "other", "isDark": false, "items": [{ "key": "k0" }, { "key": "k1" }, { "key": "k2" }, { "key": "k3" }, { "key": "k4" }, { "key": "k5" }, { "key": "k6" }, { "key": "k7" }, { "key": "k8" }, { "key": "k9" }], "expected": ["#5E9FE8", "#EAC26B", "#72BC8F", "#BF8EDA", "#DE9255", "#DF84A8", "#4FB9C9", "#E97366", "#C7C6C4", "#5E9FE8"] }
+  ],
+  "seriesColors": [
+    { "theme": "auto", "isDark": false, "count": 10, "expected": ["#5E9FE8", "#EAC26B", "#72BC8F", "#BF8EDA", "#DE9255", "#DF84A8", "#4FB9C9", "#E97366", "#C7C6C4", "#5E9FE8"] },
+    { "theme": "colorful", "isDark": false, "count": 3, "expected": ["#5E9FE8", "#EAC26B", "#72BC8F"] },
+    { "theme": "blue", "isDark": false, "count": 6, "expected": ["#5E9FE8", "#8EBCEF", "#AFCFF4", "#C7DDF7", "#DFECFA", "#5E9FE8"] },
+    { "theme": "colorless", "isDark": false, "count": 2, "expected": ["#908D8C", "#B1AFAF"] }
+  ],
+  "resolveLegend": [
+    { "chartType": 0, "seriesCount": 1, "position": "auto", "expected": null },
+    { "chartType": 2, "seriesCount": 1, "position": "auto", "expected": null },
+    { "chartType": 1, "seriesCount": 1, "position": "auto", "expected": { "content": "series", "glyph": "line" }},
+    { "chartType": 3, "seriesCount": 1, "position": "auto", "expected": { "content": "categories", "glyph": "square" }},
+    { "chartType": 0, "seriesCount": 2, "position": "auto", "expected": { "content": "series", "glyph": "square" }},
+    { "chartType": 0, "seriesCount": 1, "position": "bottom", "expected": { "content": "categories", "glyph": "square" }},
+    { "chartType": 3, "seriesCount": 1, "position": "off", "expected": null },
+    { "chartType": 1, "seriesCount": 1, "position": "off", "expected": null },
+    { "chartType": 4, "seriesCount": 1, "position": "bottom", "expected": null },
+    { "chartType": 2, "seriesCount": 3, "position": "bottom", "expected": { "content": "series", "glyph": "square" }}
+  ]
+}

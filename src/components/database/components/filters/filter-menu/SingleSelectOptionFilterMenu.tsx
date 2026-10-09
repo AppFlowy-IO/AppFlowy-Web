@@ -5,16 +5,17 @@ import {
   SelectOptionFilter,
   SelectOptionFilterCondition,
   useFieldSelector,
-  useReadOnly,
+  useConditionsReadOnly,
 } from '@/application/database-yjs';
 import { useUpdateFilter } from '@/application/database-yjs/dispatch';
 import ClearSelectionItem from '@/components/database/components/filters/filter-menu/ClearSelectionItem';
 import FieldMenuTitle from '@/components/database/components/filters/filter-menu/FieldMenuTitle';
 import { SelectOptionList } from '@/components/database/components/filters/filter-menu/SelectOptionList';
 import SingleSelectFilterConditionsSelect from '@/components/database/components/filters/filter-menu/SingleSelectOptionFilterConditionsSelect';
+import { toggleSelectOptionContent } from '@/components/database/components/filters/value-controls/filter-value';
 
 function SingleSelectOptionFilterMenu({ filter }: { filter: SelectOptionFilter }) {
-  const readOnly = useReadOnly();
+  const readOnly = useConditionsReadOnly();
   const { field } = useFieldSelector(filter.fieldId);
   const displaySelectOptionList = useMemo(() => {
     return ![SelectOptionFilterCondition.OptionIsEmpty, SelectOptionFilterCondition.OptionIsNotEmpty].includes(
@@ -26,24 +27,13 @@ function SingleSelectOptionFilterMenu({ filter }: { filter: SelectOptionFilter }
   const handleToggleSelectOption = useCallback(
     (id: string) => {
       if (readOnly) return;
-      const selectedIds = new Set(filter.optionIds);
-
-      if (selectedIds.has(id)) {
-        selectedIds.delete(id);
-      } else {
-        selectedIds.add(id);
-      }
-
       // Desktop parity: persist the selection in field option order.
       const typeOption = field ? parseSelectOptionTypeOptions(field) : null;
-      const orderedIds = typeOption
-        ? typeOption.options.filter((option) => option && selectedIds.has(option.id)).map((option) => option.id)
-        : [...selectedIds];
 
       updateFilter({
         filterId: filter.id,
         fieldId: filter.fieldId,
-        content: orderedIds.filter((id) => id !== '').join(','),
+        content: toggleSelectOptionContent(filter.optionIds, id, typeOption?.options),
       });
     },
     [field, filter, readOnly, updateFilter]

@@ -8,6 +8,8 @@ import {
   isReferencedDatabaseView,
   getFirstChildView,
   getDatabaseTabViewIds,
+  getDashboardOwner,
+  isDashboardOwnedView,
   resolveActiveDatabaseViewId,
   isLinkedDatabaseViewUnderDocument,
   canBeMoved,
@@ -72,6 +74,10 @@ describe('view-utils', () => {
 
     it('should return true for Timeline layout', () => {
       expect(isDatabaseLayout(ViewLayout.Timeline)).toBe(true);
+    });
+
+    it('should return true for Dashboard layout', () => {
+      expect(isDatabaseLayout(ViewLayout.Dashboard)).toBe(true);
     });
 
     it('should return false for Document layout', () => {
@@ -607,6 +613,63 @@ describe('view-utils', () => {
           embeddedBoardView.view_id,
         ]);
       });
+
+      describe('dashboard-owned views', () => {
+        const gridView = createMockView({
+          view_id: 'grid-view',
+          layout: ViewLayout.Grid,
+          extra: { is_space: false, database_id: 'db-1' },
+        });
+        const dashboardView = createMockView({
+          view_id: 'dashboard-view',
+          layout: ViewLayout.Dashboard,
+          extra: { is_space: false, database_id: 'db-1' },
+        });
+        const ownedBoardView = createMockView({
+          view_id: 'owned-board-view',
+          layout: ViewLayout.Board,
+          extra: { is_space: false, database_id: 'db-1', dashboard_owner: 'dashboard-view' },
+        });
+        const container = createMockView({
+          view_id: 'container',
+          layout: ViewLayout.Grid,
+          extra: { is_space: false, is_database_container: true, database_id: 'db-1' },
+          children: [gridView, ownedBoardView, dashboardView],
+        });
+
+        it('are never container tabs', () => {
+          expect(getDatabaseTabViewIds(gridView.view_id, container)).toEqual([gridView.view_id, dashboardView.view_id]);
+          expect(getDatabaseTabViewIds(container.view_id, container)).toEqual([gridView.view_id, dashboardView.view_id]);
+        });
+
+        it('show as the only tab when opened directly', () => {
+          expect(getDatabaseTabViewIds(ownedBoardView.view_id, container)).toEqual([ownedBoardView.view_id]);
+        });
+
+        it('fall back to the opened view when every child is owned', () => {
+          const onlyOwned = { ...container, children: [ownedBoardView] };
+
+          expect(getDatabaseTabViewIds(container.view_id, onlyOwned)).toEqual([container.view_id]);
+        });
+      });
+    });
+
+    describe('getDashboardOwner / isDashboardOwnedView', () => {
+      it('read the folder extra marker', () => {
+        const owned = createMockView({ extra: { is_space: false, dashboard_owner: 'dashboard-view' } });
+
+        expect(getDashboardOwner(owned)).toBe('dashboard-view');
+        expect(isDashboardOwnedView(owned)).toBe(true);
+      });
+
+      it('treat a missing, empty or non-string marker as not owned', () => {
+        expect(getDashboardOwner(undefined)).toBeNull();
+        expect(getDashboardOwner(createMockView())).toBeNull();
+        expect(isDashboardOwnedView(createMockView({ extra: { is_space: false, dashboard_owner: '' } }))).toBe(false);
+        expect(
+          isDashboardOwnedView(createMockView({ extra: { is_space: false, dashboard_owner: 7 as unknown as string } }))
+        ).toBe(false);
+      });
     });
 
     describe('resolveActiveDatabaseViewId', () => {
@@ -838,6 +901,7 @@ describe('view-utils', () => {
         ViewLayout.Feed,
         ViewLayout.Form,
         ViewLayout.Timeline,
+        ViewLayout.Dashboard,
       ];
       const parentView = createMockView({
         view_id: 'parent-doc',

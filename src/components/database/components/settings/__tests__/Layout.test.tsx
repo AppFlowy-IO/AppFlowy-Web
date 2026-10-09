@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { toast } from 'sonner';
 
 import { DatabaseViewLayout } from '@/application/types';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -6,16 +7,49 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/compon
 import Layout from '../Layout';
 
 const mockUpdateLayout = jest.fn();
+const mockGetSubscriptions = jest.fn();
+const timelineRequiresPro = 'Creating a Timeline view requires a Pro workspace.';
+const dashboardRequiresPro = 'Creating a Dashboard view requires a Pro workspace.';
+const mockReasonCalls: { enabled?: boolean; workspaceId?: string; requiresProMessage?: string }[] = [];
+let mockIsDashboardWidget = false;
+let mockRequiresPro = false;
 let mockSelfHosted = false;
 let mockTimelineAllowed = true;
+const mockCreationCalls: { enabled?: boolean; workspaceId?: string }[] = [];
 
-jest.mock('@/application/database-yjs/context', () => ({ useDatabaseContext: () => ({ workspaceId: 'workspace' }) }));
-jest.mock('@/components/app/hooks/useServerInfo', () => ({ useServerHostingMode: () => mockSelfHosted ? 'self-hosted' : 'cloud' }));
-jest.mock('@/components/app/hooks/useDatabaseViewCreation', () => ({ useDatabaseViewCreation: () => ({
-  getAction: () => mockTimelineAllowed ? { type: 'create' } : { type: 'upgrade', reason: 'Requires Pro' },
+jest.mock('@/application/database-yjs/context', () => ({ useDatabaseContext: () => ({
+  workspaceId: 'workspace-id', getSubscriptions: mockGetSubscriptions, isDashboardWidget: mockIsDashboardWidget,
 }) }));
+jest.mock('@/components/app/hooks/useServerInfo', () => ({ useServerHostingMode: () => mockSelfHosted ? 'self-hosted' : 'cloud' }));
+jest.mock('@/components/app/hooks/useDatabaseViewCreation', () => ({
+  useDatabaseViewCreation: (options: { enabled?: boolean; workspaceId?: string }) => {
+    mockCreationCalls.push(options);
+    return {
+      getAction: () => !mockRequiresPro && mockTimelineAllowed
+        ? { type: 'create' }
+        : { type: 'upgrade', reason: timelineRequiresPro },
+    };
+  },
+}));
 jest.mock('sonner', () => ({ toast: { error: jest.fn() } }));
-jest.mock('@/application/database-yjs', () => ({ useDatabaseViewId: () => 'view-id' }));
+jest.mock('@/application/database-yjs', () => ({
+  useDatabaseContext: () => ({
+    isDashboardWidget: mockIsDashboardWidget,
+    getSubscriptions: mockGetSubscriptions,
+    workspaceId: 'workspace-id',
+  }),
+  useDatabaseViewId: () => 'view-id',
+}));
+jest.mock('@/components/app/hooks/useTimelineCreationDisabledReason', () => ({
+  useTimelineCreationDisabledReason: (
+    getSubscriptions: unknown,
+    options: { enabled?: boolean; workspaceId?: string; requiresProMessage?: string }
+  ) => {
+    mockReasonCalls.push(options);
+    if (getSubscriptions !== mockGetSubscriptions || !mockRequiresPro) return undefined;
+    return options.requiresProMessage ?? timelineRequiresPro;
+  },
+}));
 jest.mock('@/application/database-yjs/dispatch', () => ({ useUpdateDatabaseLayout: () => mockUpdateLayout }));
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key }),
@@ -39,10 +73,21 @@ async function openLayout(currentLayout: DatabaseViewLayout) {
 
 describe('database Layout', () => {
   beforeEach(() => {
+    mockIsDashboardWidget = false;
+    mockRequiresPro = false;
+    mockReasonCalls.length = 0;
+    mockCreationCalls.length = 0;
     mockSelfHosted = false;
     mockTimelineAllowed = true;
     jest.clearAllMocks();
     mockUpdateLayout.mockReset();
+  });
+
+  it('offers Dashboard and Timeline conversion by default', async () => {
+    await openLayout(DatabaseViewLayout.Grid);
+
+    expect(screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Timeline}`)).toBeTruthy();
+    expect(screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Dashboard}`)).toBeTruthy();
   });
 
   it('keeps the current Timeline label and selected option without rewriting its layout', async () => {
@@ -50,6 +95,16 @@ describe('database Layout', () => {
     const currentOption = screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Timeline}`);
 
     expect(trigger.textContent).toContain('Timeline');
+    expect(currentOption.querySelector('[data-slot="dropdown-menu-tick"]')).not.toBeNull();
+    fireEvent.click(currentOption);
+    expect(mockUpdateLayout).not.toHaveBeenCalled();
+  });
+
+  it('keeps the current Dashboard label and selected option', async () => {
+    const trigger = await openLayout(DatabaseViewLayout.Dashboard);
+    const currentOption = screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Dashboard}`);
+
+    expect(trigger.textContent).toContain('Dashboard');
     expect(currentOption.querySelector('[data-slot="dropdown-menu-tick"]')).not.toBeNull();
     fireEvent.click(currentOption);
     expect(mockUpdateLayout).not.toHaveBeenCalled();
@@ -69,7 +124,150 @@ describe('database Layout', () => {
     expect(mockUpdateLayout).toHaveBeenCalledWith(DatabaseViewLayout.Timeline);
   });
 
-  it('hides hosted Form and Chart conversion while preserving the selected Chart', async () => {
+  it('allows Dashboard conversion by default', async () => {
+    await openLayout(DatabaseViewLayout.Grid);
+    const option = screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Dashboard}`);
+
+    expect(option.textContent).toContain('Dashboard');
+    fireEvent.click(option);
+    expect(mockUpdateLayout).toHaveBeenCalledWith(DatabaseViewLayout.Dashboard);
+  });
+
+  it('awaits the asynchronous Dashboard conversion and reports when creating its copy fails', async () => {
+    let rejectConversion!: (error: Error) => void;
+
+    // Converting creates the view's owned copy on the server first (WP05 §1.6).
+    mockUpdateLayout.mockImplementationOnce(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectConversion = reject;
+        })
+    );
+    await openLayout(DatabaseViewLayout.Grid);
+    fireEvent.click(screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Dashboard}`));
+
+    expect(mockUpdateLayout).toHaveBeenCalledWith(DatabaseViewLayout.Dashboard);
+    expect(toast.error).not.toHaveBeenCalled();
+    rejectConversion(new Error('Upgrade to Pro'));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Upgrade to Pro'));
+    expect(mockUpdateLayout).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports nothing when the asynchronous Dashboard conversion succeeds', async () => {
+    let resolveConversion!: () => void;
+    const settled = new Promise<void>((resolve) => {
+      mockUpdateLayout.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolveLayout) => {
+            resolveConversion = () => {
+              resolveLayout();
+              resolve();
+            };
+          })
+      );
+    });
+
+    await openLayout(DatabaseViewLayout.Grid);
+    fireEvent.click(screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Dashboard}`));
+    resolveConversion();
+    await settled;
+    await waitFor(() => expect(mockUpdateLayout).toHaveBeenCalledWith(DatabaseViewLayout.Dashboard));
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('never offers the Dashboard layout inside a dashboard widget', async () => {
+    mockIsDashboardWidget = true;
+    await openLayout(DatabaseViewLayout.Grid);
+
+    expect(screen.queryByTestId(`database-layout-option-${DatabaseViewLayout.Dashboard}`)).toBeNull();
+    expect(screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Timeline}`)).toBeTruthy();
+  });
+
+  it('checks the workspace plan only while the layout menu is open', async () => {
+    render(
+      <DropdownMenu defaultOpen>
+        <DropdownMenuTrigger>Settings</DropdownMenuTrigger>
+        <DropdownMenuContent>
+          <Layout currentLayout={DatabaseViewLayout.Grid} />
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+    await screen.findByTestId('database-layout-settings-trigger');
+
+    expect(mockReasonCalls.every(({ enabled }) => enabled === false)).toBe(true);
+    fireEvent.keyDown(screen.getByTestId('database-layout-settings-trigger'), { key: 'ArrowRight' });
+    await screen.findByTestId(`database-layout-option-${DatabaseViewLayout.Grid}`);
+    expect(mockCreationCalls.at(-1)).toEqual({ workspaceId: 'workspace-id', getSubscriptions: mockGetSubscriptions, enabled: true });
+    expect(mockReasonCalls[mockReasonCalls.length - 1]).toEqual({
+      workspaceId: 'workspace-id',
+      enabled: true,
+      requiresProMessage: dashboardRequiresPro,
+    });
+  });
+
+  it.each([
+    [DatabaseViewLayout.Timeline, timelineRequiresPro],
+    [DatabaseViewLayout.Dashboard, dashboardRequiresPro],
+  ])('greys out conversion to layout %s with the Pro reason in a Free workspace', async (layout, message) => {
+    mockRequiresPro = true;
+    await openLayout(DatabaseViewLayout.Grid);
+    const option = screen.getByTestId(`database-layout-option-${layout}`);
+
+    expect(option.getAttribute('aria-disabled')).toBe('true');
+    // The disabled item ignores pointer events; its wrapper must receive hover.
+    fireEvent.pointerMove(option.parentElement!, { pointerType: 'mouse' });
+    await waitFor(() => expect(screen.getByRole('tooltip').textContent).toBe(message));
+    fireEvent.click(option);
+    expect(mockUpdateLayout).not.toHaveBeenCalled();
+  });
+
+  it.each([DatabaseViewLayout.Timeline, DatabaseViewLayout.Dashboard])(
+    'preserves the layout %s item while its plan reason clears',
+    async (layout) => {
+      mockRequiresPro = true;
+      const menu = (
+        <DropdownMenu defaultOpen>
+          <DropdownMenuTrigger>Settings</DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <Layout currentLayout={DatabaseViewLayout.Grid} />
+          </DropdownMenuContent>
+        </DropdownMenu>
+      );
+      const { rerender } = render(menu);
+
+      fireEvent.keyDown(await screen.findByTestId('database-layout-settings-trigger'), { key: 'ArrowRight' });
+      const item = await screen.findByTestId(`database-layout-option-${layout}`);
+
+      expect(item.getAttribute('aria-disabled')).toBe('true');
+      mockRequiresPro = false;
+      rerender(
+        <DropdownMenu defaultOpen>
+          <DropdownMenuTrigger>Settings</DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <Layout currentLayout={DatabaseViewLayout.Grid} />
+          </DropdownMenuContent>
+        </DropdownMenu>
+      );
+      expect(screen.getByTestId(`database-layout-option-${layout}`)).toBe(item);
+      expect(item.hasAttribute('data-disabled')).toBe(false);
+    }
+  );
+
+  it('keeps the current Pro layout and other conversions available in a Free workspace', async () => {
+    mockRequiresPro = true;
+    await openLayout(DatabaseViewLayout.Dashboard);
+
+    expect(
+      screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Dashboard}`).hasAttribute('data-disabled')
+    ).toBe(false);
+    expect(
+      screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Timeline}`).getAttribute('aria-disabled')
+    ).toBe('true');
+    fireEvent.click(screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Board}`));
+    expect(mockUpdateLayout).toHaveBeenCalledWith(DatabaseViewLayout.Board);
+  });
+
+  it('hides hosted Form and Chart conversion while preserving other layout choices', async () => {
     await openLayout(DatabaseViewLayout.Grid);
     expect(screen.queryByTestId(`database-layout-option-${DatabaseViewLayout.Chart}`)).toBeNull();
     expect(screen.queryByTestId(`database-layout-option-${DatabaseViewLayout.Form}`)).toBeNull();
@@ -98,5 +296,33 @@ describe('database Layout', () => {
     await openLayout(DatabaseViewLayout.Grid);
     fireEvent.click(screen.getByTestId(`database-layout-option-${layout}`));
     expect(mockUpdateLayout).toHaveBeenCalledWith(layout);
+  });
+
+  describe('in a mobile context (a 390px window)', () => {
+    const initialWidth = window.innerWidth;
+
+    beforeEach(() => {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 390 });
+    });
+
+    afterEach(() => {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: initialWidth });
+    });
+
+    it('offers no Dashboard conversion', async () => {
+      await openLayout(DatabaseViewLayout.Grid);
+
+      expect(screen.queryByTestId(`database-layout-option-${DatabaseViewLayout.Dashboard}`)).toBeNull();
+      expect(screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Timeline}`)).toBeTruthy();
+      expect(screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Board}`)).toBeTruthy();
+    });
+
+    it('still reads Dashboard for a Dashboard view', async () => {
+      const trigger = await openLayout(DatabaseViewLayout.Dashboard);
+      const currentOption = screen.getByTestId(`database-layout-option-${DatabaseViewLayout.Dashboard}`);
+
+      expect(trigger.textContent).toContain('Dashboard');
+      expect(currentOption.querySelector('[data-slot="dropdown-menu-tick"]')).not.toBeNull();
+    });
   });
 });

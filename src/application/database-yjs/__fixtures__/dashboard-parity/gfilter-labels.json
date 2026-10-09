@@ -1,0 +1,971 @@
+{
+  "fixture": "gfilter-labels",
+  "version": 1,
+  "encoding": {
+    "input": "filter is a global filter (persisted shape: name, ty, condition, content). type_name is the field type's display name, primary_field_name the primary target's property name (absent when unknown), merged_names the names of the selected merged options (§1.9), people the display names of the selected people, active whether the filter narrows rows (computed elsewhere), date_format a dayjs / intl pattern.",
+    "rule": "getGlobalFilterPillLabel: name = filter.name trimmed, else primary_field_name, else type_name. Inactive -> name. Active -> name + ': ' + summary, where the default operator of a type (text and URL contains, number equals, single select is, multi select contains, person contains, date is) is omitted and every other operator is its short word (op.*) followed by the value.",
+    "values": "Select: merged_names joined with ', ', else '(n)' with n the number of ids. Person: people joined with ', ', else 'n people' / '1 person'. Date: unix seconds at 12:00 UTC formatted with date_format in local time; between joins start and end with ' – '. Relative (28/29): 'This {unit}', 'Past {unit}' / 'Next {unit}' for 1, 'Past {n} {units}' / 'Next {n} {units}' otherwise (relative-dates.json defaults). Presets 16-27: Today, Yesterday, Tomorrow, This week, Last week, Next week."
+  },
+  "labels": [
+    {
+      "name": "text contains omits the operator",
+      "filter": {
+        "name": "Name",
+        "ty": 0,
+        "condition": 2,
+        "content": "launch"
+      },
+      "type_name": "Text",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Name: launch"
+    },
+    {
+      "name": "text is",
+      "filter": {
+        "name": "Name",
+        "ty": 0,
+        "condition": 0,
+        "content": "launch"
+      },
+      "type_name": "Text",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Name: Is launch"
+    },
+    {
+      "name": "text is not",
+      "filter": {
+        "name": "Name",
+        "ty": 0,
+        "condition": 1,
+        "content": "launch"
+      },
+      "type_name": "Text",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Name: Is not launch"
+    },
+    {
+      "name": "text does not contain",
+      "filter": {
+        "name": "Name",
+        "ty": 0,
+        "condition": 3,
+        "content": "launch"
+      },
+      "type_name": "Text",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Name: Does not contain launch"
+    },
+    {
+      "name": "text starts with",
+      "filter": {
+        "name": "Name",
+        "ty": 0,
+        "condition": 4,
+        "content": "launch"
+      },
+      "type_name": "Text",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Name: Starts with launch"
+    },
+    {
+      "name": "text ends with",
+      "filter": {
+        "name": "Name",
+        "ty": 0,
+        "condition": 5,
+        "content": "launch"
+      },
+      "type_name": "Text",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Name: Ends with launch"
+    },
+    {
+      "name": "text is empty",
+      "filter": {
+        "name": "Name",
+        "ty": 0,
+        "condition": 6,
+        "content": ""
+      },
+      "type_name": "Text",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Name: Is empty"
+    },
+    {
+      "name": "text is not empty",
+      "filter": {
+        "name": "Name",
+        "ty": 0,
+        "condition": 7,
+        "content": ""
+      },
+      "type_name": "Text",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Name: Is not empty"
+    },
+    {
+      "name": "an inactive filter shows its name",
+      "filter": {
+        "name": "Name",
+        "ty": 0,
+        "condition": 2,
+        "content": ""
+      },
+      "type_name": "Text",
+      "active": false,
+      "date_format": "MMM D, YYYY",
+      "expected": "Name"
+    },
+    {
+      "name": "url contains",
+      "filter": {
+        "name": "Website",
+        "ty": 6,
+        "condition": 2,
+        "content": "acme.com"
+      },
+      "type_name": "URL",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Website: acme.com"
+    },
+    {
+      "name": "url is not empty",
+      "filter": {
+        "name": "Website",
+        "ty": 6,
+        "condition": 7,
+        "content": ""
+      },
+      "type_name": "URL",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Website: Is not empty"
+    },
+    {
+      "name": "number equals omits the operator",
+      "filter": {
+        "name": "Amount",
+        "ty": 1,
+        "condition": 0,
+        "content": "5"
+      },
+      "type_name": "Number",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Amount: 5"
+    },
+    {
+      "name": "number does not equal",
+      "filter": {
+        "name": "Amount",
+        "ty": 1,
+        "condition": 1,
+        "content": "5"
+      },
+      "type_name": "Number",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Amount: ≠ 5"
+    },
+    {
+      "name": "number greater than",
+      "filter": {
+        "name": "Amount",
+        "ty": 1,
+        "condition": 2,
+        "content": "5"
+      },
+      "type_name": "Number",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Amount: > 5"
+    },
+    {
+      "name": "number less than",
+      "filter": {
+        "name": "Amount",
+        "ty": 1,
+        "condition": 3,
+        "content": "5"
+      },
+      "type_name": "Number",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Amount: < 5"
+    },
+    {
+      "name": "number greater than or equal",
+      "filter": {
+        "name": "Amount",
+        "ty": 1,
+        "condition": 4,
+        "content": "5"
+      },
+      "type_name": "Number",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Amount: ≥ 5"
+    },
+    {
+      "name": "number less than or equal",
+      "filter": {
+        "name": "Amount",
+        "ty": 1,
+        "condition": 5,
+        "content": "5"
+      },
+      "type_name": "Number",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Amount: ≤ 5"
+    },
+    {
+      "name": "number is empty",
+      "filter": {
+        "name": "Amount",
+        "ty": 1,
+        "condition": 6,
+        "content": ""
+      },
+      "type_name": "Number",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Amount: Is empty"
+    },
+    {
+      "name": "number is not empty",
+      "filter": {
+        "name": "Amount",
+        "ty": 1,
+        "condition": 7,
+        "content": ""
+      },
+      "type_name": "Number",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Amount: Is not empty"
+    },
+    {
+      "name": "single select is omits the operator",
+      "filter": {
+        "name": "Status",
+        "ty": 3,
+        "condition": 0,
+        "content": "o-doing"
+      },
+      "type_name": "Single select",
+      "merged_names": [
+        "Doing"
+      ],
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Status: Doing"
+    },
+    {
+      "name": "single select is, two options",
+      "filter": {
+        "name": "Status",
+        "ty": 3,
+        "condition": 0,
+        "content": "o-doing,o-done"
+      },
+      "type_name": "Single select",
+      "merged_names": [
+        "Doing",
+        "Done"
+      ],
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Status: Doing, Done"
+    },
+    {
+      "name": "single select is not",
+      "filter": {
+        "name": "Status",
+        "ty": 3,
+        "condition": 1,
+        "content": "o-doing"
+      },
+      "type_name": "Single select",
+      "merged_names": [
+        "Doing"
+      ],
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Status: Is not Doing"
+    },
+    {
+      "name": "single select without resolved names",
+      "filter": {
+        "name": "Status",
+        "ty": 3,
+        "condition": 0,
+        "content": "o-1,o-2"
+      },
+      "type_name": "Single select",
+      "merged_names": [],
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Status: (2)"
+    },
+    {
+      "name": "single select is empty",
+      "filter": {
+        "name": "Status",
+        "ty": 3,
+        "condition": 4,
+        "content": ""
+      },
+      "type_name": "Single select",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Status: Is empty"
+    },
+    {
+      "name": "single select is not empty",
+      "filter": {
+        "name": "Status",
+        "ty": 3,
+        "condition": 5,
+        "content": ""
+      },
+      "type_name": "Single select",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Status: Is not empty"
+    },
+    {
+      "name": "multi select contains omits the operator",
+      "filter": {
+        "name": "Tags",
+        "ty": 4,
+        "condition": 2,
+        "content": "o-urgent"
+      },
+      "type_name": "Multi-select",
+      "merged_names": [
+        "Urgent"
+      ],
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Tags: Urgent"
+    },
+    {
+      "name": "multi select does not contain",
+      "filter": {
+        "name": "Tags",
+        "ty": 4,
+        "condition": 3,
+        "content": "o-urgent"
+      },
+      "type_name": "Multi-select",
+      "merged_names": [
+        "Urgent"
+      ],
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Tags: Does not contain Urgent"
+    },
+    {
+      "name": "multi select is empty",
+      "filter": {
+        "name": "Tags",
+        "ty": 4,
+        "condition": 4,
+        "content": ""
+      },
+      "type_name": "Multi-select",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Tags: Is empty"
+    },
+    {
+      "name": "multi select is not empty",
+      "filter": {
+        "name": "Tags",
+        "ty": 4,
+        "condition": 5,
+        "content": ""
+      },
+      "type_name": "Multi-select",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Tags: Is not empty"
+    },
+    {
+      "name": "person contains omits the operator",
+      "filter": {
+        "name": "Owner",
+        "ty": 15,
+        "condition": 0,
+        "content": "[\"u-ana\",\"u-leo\"]"
+      },
+      "type_name": "Person",
+      "people": [
+        "Ana",
+        "Leo"
+      ],
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Owner: Ana, Leo"
+    },
+    {
+      "name": "person does not contain",
+      "filter": {
+        "name": "Owner",
+        "ty": 15,
+        "condition": 1,
+        "content": "[\"u-ana\"]"
+      },
+      "type_name": "Person",
+      "people": [
+        "Ana"
+      ],
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Owner: Does not contain Ana"
+    },
+    {
+      "name": "people without names are counted",
+      "filter": {
+        "name": "Owner",
+        "ty": 15,
+        "condition": 0,
+        "content": "[\"u-1\",\"u-2\"]"
+      },
+      "type_name": "Person",
+      "people": [],
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Owner: 2 people"
+    },
+    {
+      "name": "one person without a name",
+      "filter": {
+        "name": "Owner",
+        "ty": 15,
+        "condition": 0,
+        "content": "[\"u-1\"]"
+      },
+      "type_name": "Person",
+      "people": [],
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Owner: 1 person"
+    },
+    {
+      "name": "person is empty",
+      "filter": {
+        "name": "Owner",
+        "ty": 15,
+        "condition": 2,
+        "content": ""
+      },
+      "type_name": "Person",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Owner: Is empty"
+    },
+    {
+      "name": "person is not empty",
+      "filter": {
+        "name": "Owner",
+        "ty": 15,
+        "condition": 3,
+        "content": ""
+      },
+      "type_name": "Person",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Owner: Is not empty"
+    },
+    {
+      "name": "created by contains",
+      "filter": {
+        "name": "Created by",
+        "ty": 17,
+        "condition": 0,
+        "content": "[\"u-ana\"]"
+      },
+      "type_name": "Created by",
+      "people": [
+        "Ana"
+      ],
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Created by: Ana"
+    },
+    {
+      "name": "last edited by does not contain",
+      "filter": {
+        "name": "Edited by",
+        "ty": 18,
+        "condition": 1,
+        "content": "[\"u-leo\"]"
+      },
+      "type_name": "Last edited by",
+      "people": [
+        "Leo"
+      ],
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Edited by: Does not contain Leo"
+    },
+    {
+      "name": "checkbox checked",
+      "filter": {
+        "name": "Done",
+        "ty": 5,
+        "condition": 0,
+        "content": ""
+      },
+      "type_name": "Checkbox",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Done: Checked"
+    },
+    {
+      "name": "checkbox unchecked",
+      "filter": {
+        "name": "Done",
+        "ty": 5,
+        "condition": 1,
+        "content": ""
+      },
+      "type_name": "Checkbox",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Done: Unchecked"
+    },
+    {
+      "name": "checklist complete",
+      "filter": {
+        "name": "Steps",
+        "ty": 7,
+        "condition": 0,
+        "content": ""
+      },
+      "type_name": "Checklist",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Steps: Complete"
+    },
+    {
+      "name": "checklist incomplete",
+      "filter": {
+        "name": "Steps",
+        "ty": 7,
+        "condition": 1,
+        "content": ""
+      },
+      "type_name": "Checklist",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Steps: Incomplete"
+    },
+    {
+      "name": "date is omits the operator",
+      "filter": {
+        "name": "Due",
+        "ty": 2,
+        "condition": 0,
+        "content": "{\"timestamp\":1772625600}"
+      },
+      "type_name": "Date",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Due: Mar 4, 2026"
+    },
+    {
+      "name": "date before",
+      "filter": {
+        "name": "Due",
+        "ty": 2,
+        "condition": 1,
+        "content": "{\"timestamp\":1772625600}"
+      },
+      "type_name": "Date",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Due: Before Mar 4, 2026"
+    },
+    {
+      "name": "date after",
+      "filter": {
+        "name": "Start Date",
+        "ty": 2,
+        "condition": 2,
+        "content": "{\"timestamp\":1772366400}"
+      },
+      "type_name": "Date",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Start Date: After Mar 1, 2026"
+    },
+    {
+      "name": "date on or before",
+      "filter": {
+        "name": "Due",
+        "ty": 2,
+        "condition": 3,
+        "content": "{\"timestamp\":1772625600}"
+      },
+      "type_name": "Date",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Due: On or before Mar 4, 2026"
+    },
+    {
+      "name": "date on or after",
+      "filter": {
+        "name": "Due",
+        "ty": 2,
+        "condition": 4,
+        "content": "{\"timestamp\":1772625600}"
+      },
+      "type_name": "Date",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Due: On or after Mar 4, 2026"
+    },
+    {
+      "name": "date between",
+      "filter": {
+        "name": "Due",
+        "ty": 2,
+        "condition": 5,
+        "content": "{\"start\":1772366400,\"end\":1772625600}"
+      },
+      "type_name": "Date",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Due: Between Mar 1, 2026 – Mar 4, 2026"
+    },
+    {
+      "name": "date is empty",
+      "filter": {
+        "name": "Due",
+        "ty": 2,
+        "condition": 6,
+        "content": ""
+      },
+      "type_name": "Date",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Due: Is empty"
+    },
+    {
+      "name": "date is not empty",
+      "filter": {
+        "name": "Due",
+        "ty": 2,
+        "condition": 7,
+        "content": ""
+      },
+      "type_name": "Date",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Due: Is not empty"
+    },
+    {
+      "name": "an end-date condition reads like its start-date pair",
+      "filter": {
+        "name": "Due",
+        "ty": 2,
+        "condition": 9,
+        "content": "{\"timestamp\":1772625600}"
+      },
+      "type_name": "Date",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Due: Before Mar 4, 2026"
+    },
+    {
+      "name": "end date is",
+      "filter": {
+        "name": "Due",
+        "ty": 2,
+        "condition": 8,
+        "content": "{\"timestamp\":1772625600}"
+      },
+      "type_name": "Date",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Due: Mar 4, 2026"
+    },
+    {
+      "name": "date today",
+      "filter": {
+        "name": "Due",
+        "ty": 2,
+        "condition": 16,
+        "content": ""
+      },
+      "type_name": "Date",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Due: Today"
+    },
+    {
+      "name": "date yesterday",
+      "filter": {
+        "name": "Due",
+        "ty": 2,
+        "condition": 17,
+        "content": ""
+      },
+      "type_name": "Date",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Due: Yesterday"
+    },
+    {
+      "name": "date tomorrow",
+      "filter": {
+        "name": "Due",
+        "ty": 2,
+        "condition": 18,
+        "content": ""
+      },
+      "type_name": "Date",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Due: Tomorrow"
+    },
+    {
+      "name": "date this week",
+      "filter": {
+        "name": "Due",
+        "ty": 2,
+        "condition": 19,
+        "content": ""
+      },
+      "type_name": "Date",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Due: This week"
+    },
+    {
+      "name": "date last week",
+      "filter": {
+        "name": "Due",
+        "ty": 2,
+        "condition": 20,
+        "content": ""
+      },
+      "type_name": "Date",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Due: Last week"
+    },
+    {
+      "name": "date next week",
+      "filter": {
+        "name": "Due",
+        "ty": 2,
+        "condition": 21,
+        "content": ""
+      },
+      "type_name": "Date",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Due: Next week"
+    },
+    {
+      "name": "end date today",
+      "filter": {
+        "name": "Due",
+        "ty": 2,
+        "condition": 22,
+        "content": ""
+      },
+      "type_name": "Date",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Due: Today"
+    },
+    {
+      "name": "relative past 7 days",
+      "filter": {
+        "name": "Due",
+        "ty": 2,
+        "condition": 28,
+        "content": "{\"relative_direction\":\"past\",\"relative_amount\":7,\"relative_unit\":\"day\"}"
+      },
+      "type_name": "Date",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Due: Past 7 days"
+    },
+    {
+      "name": "relative past 1 day",
+      "filter": {
+        "name": "Due",
+        "ty": 2,
+        "condition": 28,
+        "content": "{\"relative_direction\":\"past\",\"relative_amount\":1,\"relative_unit\":\"day\"}"
+      },
+      "type_name": "Date",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Due: Past day"
+    },
+    {
+      "name": "relative next 3 months",
+      "filter": {
+        "name": "Due",
+        "ty": 2,
+        "condition": 28,
+        "content": "{\"relative_direction\":\"next\",\"relative_amount\":3,\"relative_unit\":\"month\"}"
+      },
+      "type_name": "Date",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Due: Next 3 months"
+    },
+    {
+      "name": "relative this month",
+      "filter": {
+        "name": "Due",
+        "ty": 2,
+        "condition": 28,
+        "content": "{\"relative_direction\":\"this\",\"relative_amount\":1,\"relative_unit\":\"month\"}"
+      },
+      "type_name": "Date",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Due: This month"
+    },
+    {
+      "name": "relative end next week",
+      "filter": {
+        "name": "Due",
+        "ty": 2,
+        "condition": 29,
+        "content": "{\"relative_direction\":\"next\",\"relative_amount\":1,\"relative_unit\":\"week\"}"
+      },
+      "type_name": "Date",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Due: Next week"
+    },
+    {
+      "name": "relative this ignores the amount",
+      "filter": {
+        "name": "Due",
+        "ty": 2,
+        "condition": 28,
+        "content": "{\"relative_direction\":\"this\",\"relative_amount\":4,\"relative_unit\":\"year\"}"
+      },
+      "type_name": "Date",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Due: This year"
+    },
+    {
+      "name": "relative unreadable content is this week",
+      "filter": {
+        "name": "Due",
+        "ty": 2,
+        "condition": 28,
+        "content": "{bad"
+      },
+      "type_name": "Date",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Due: This week"
+    },
+    {
+      "name": "created time is",
+      "filter": {
+        "name": "Created",
+        "ty": 9,
+        "condition": 0,
+        "content": "{\"timestamp\":1772625600}"
+      },
+      "type_name": "Created time",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Created: Mar 4, 2026"
+    },
+    {
+      "name": "last edited time relative",
+      "filter": {
+        "name": "Edited",
+        "ty": 8,
+        "condition": 28,
+        "content": "{\"relative_direction\":\"past\",\"relative_amount\":2,\"relative_unit\":\"week\"}"
+      },
+      "type_name": "Last edited time",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Edited: Past 2 weeks"
+    },
+    {
+      "name": "the name is trimmed",
+      "filter": {
+        "name": "  Status ",
+        "ty": 3,
+        "condition": 0,
+        "content": "o-doing"
+      },
+      "type_name": "Single select",
+      "merged_names": [
+        "Doing"
+      ],
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Status: Doing"
+    },
+    {
+      "name": "a blank name falls back to the primary property",
+      "filter": {
+        "name": "  ",
+        "ty": 3,
+        "condition": 0,
+        "content": ""
+      },
+      "type_name": "Single select",
+      "primary_field_name": "Stage",
+      "active": false,
+      "date_format": "MMM D, YYYY",
+      "expected": "Stage"
+    },
+    {
+      "name": "without a primary property the type name is used",
+      "filter": {
+        "name": "",
+        "ty": 3,
+        "condition": 0,
+        "content": ""
+      },
+      "type_name": "Single select",
+      "active": false,
+      "date_format": "MMM D, YYYY",
+      "expected": "Single select"
+    },
+    {
+      "name": "an active filter with a fallback name",
+      "filter": {
+        "name": "",
+        "ty": 1,
+        "condition": 2,
+        "content": "5"
+      },
+      "type_name": "Number",
+      "primary_field_name": "Points",
+      "active": true,
+      "date_format": "MMM D, YYYY",
+      "expected": "Points: > 5"
+    }
+  ]
+}

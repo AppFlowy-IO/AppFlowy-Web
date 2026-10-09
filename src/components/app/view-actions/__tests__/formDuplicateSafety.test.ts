@@ -30,6 +30,28 @@ function createContainer(children: View[]): View {
 }
 
 describe('generic Form deep-duplicate safety', () => {
+  it('blocks known owned descendants offline before preflight but leaves ordinary pages eligible', async () => {
+    const online = jest.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    const ordinary = createView('ordinary');
+    const loadFreshView = jest.fn().mockResolvedValue(ordinary);
+
+    try {
+      await expect(assertGenericDeepDuplicateIsSafe({
+        workspaceId: 'ws', viewId: 'parent', loadFreshView,
+        knownView: createView('parent', { children: [createView('owned', {
+          layout: ViewLayout.Grid, extra: { dashboard_owner: 'dashboard' },
+        })] }),
+      })).rejects.toThrow('Connect to the internet to create dashboard widget views.');
+      expect(loadFreshView).not.toHaveBeenCalled();
+      await expect(assertGenericDeepDuplicateIsSafe({
+        workspaceId: 'ws', viewId: 'ordinary', knownView: ordinary, loadFreshView,
+      })).resolves.toBeUndefined();
+      expect(loadFreshView).toHaveBeenCalledTimes(1);
+    } finally {
+      online.mockRestore();
+    }
+  });
+
   it('identifies both a Form page and a database container with a Form child', () => {
     const form = createView('form-id', { layout: ViewLayout.Form });
     const document = createView('document-id', {

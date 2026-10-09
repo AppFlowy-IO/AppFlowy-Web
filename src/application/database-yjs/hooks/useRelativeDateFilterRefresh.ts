@@ -1,13 +1,13 @@
 import dayjs from 'dayjs';
 import { useEffect } from 'react';
 
-import { YDatabaseFields, YDatabaseFilters } from '@/application/types';
+import { YDatabaseFields } from '@/application/types';
 
 import { isRelativeDateCondition } from '../fields/date/relativeDate';
-import { getEffectiveFiltersSnapshot } from '../filter';
+import { type FilterList, getEffectiveFiltersSnapshot } from '../filter';
 
 export function useRelativeDateFilterRefresh(
-  filters: YDatabaseFilters | undefined,
+  filters: FilterList | undefined,
   fields: YDatabaseFields | undefined,
   refresh: () => void
 ) {

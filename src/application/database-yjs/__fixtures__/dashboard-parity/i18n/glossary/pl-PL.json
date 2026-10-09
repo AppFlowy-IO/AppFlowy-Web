@@ -1,0 +1,39 @@
+{
+  "locale": "pl-PL",
+  "terms": {
+    "dashboard": "Pulpit",
+    "widget": "Widżet",
+    "chart": "Wykres",
+    "view": "Widok",
+    "row": "Wiersz",
+    "property": "Właściwość",
+    "database": "Baza danych",
+    "workspace": "Obszar roboczy",
+    "done": "Gotowe",
+    "edit": "Edytuj",
+    "delete": "Usuń",
+    "duplicate": "Duplikuj",
+    "save": "Zapisz",
+    "cancel": "Anuluj",
+    "close": "Zamknij",
+    "back": "Wstecz",
+    "remove": "Usuń",
+    "filter": "Filtr",
+    "sort": "Sortuj",
+    "search": "Szukaj",
+    "settings": "Ustawienia",
+    "undo": "Cofnij",
+    "redo": "Ponów",
+    "group": "Grupa",
+    "source": "Źródło",
+    "checked": "Zaznaczony",
+    "unchecked": "Odznaczony"
+  },
+  "untranslated_ok": [
+    "chart.legend.page",
+    "chart.number.format",
+    "chart.settings.format",
+    "chart.sort.labelAsc",
+    "chart.sort.labelDesc"
+  ]
+}

@@ -1543,7 +1543,11 @@
       "newColumn": "Neue Spalte",
       "format": "Format",
       "reminderOnDateTooltip": "Diese Zeile hat eine terminierte Erinnerung",
-      "optionAlreadyExist": "Einstellung existiert bereits"
+      "optionAlreadyExist": "Einstellung existiert bereits",
+      "person": {
+        "searchForMore_one": "Suche, um {{count}} weitere Person zu finden",
+        "searchForMore_other": "Suche, um {{count}} weitere Personen zu finden"
+      }
     },
     "rowPage": {
       "newField": "Ein neues Feld hinzufügen",
@@ -1559,7 +1563,9 @@
         "other": "Blende {{count}} versteckte Felder aus"
       },
       "openAsFullPage": "Als ganze Seite öffnen",
-      "moreRowActions": "Weitere Zeilenaktionen"
+      "moreRowActions": "Weitere Zeilenaktionen",
+      "openInCenterPeek": "In zentrierter Vorschau öffnen",
+      "resizeSidePeek": "Größe der seitlichen Vorschau ändern"
     },
     "sort": {
       "ascending": "Aufsteigend",
@@ -1580,7 +1586,7 @@
       "textPlaceholder": "Leer",
       "copyProperty": "Eigenschaft in die Zwischenablage kopiert",
       "count": "Zählen",
-      "newRow": "Neue Zeile",
+      "newRow": "Neue Seite",
       "loadMore": "Mehr laden",
       "action": "Aktion",
       "add": "Klicken, um unten hinzuzufügen",
@@ -1593,7 +1599,9 @@
       "noContent": "Kein Inhalt",
       "reorderRowDescription": "Zeile neu anordnen",
       "createRowAboveDescription": "Erstelle oben eine Zeile",
-      "createRowBelowDescription": "Unten eine Zeile einfügen"
+      "createRowBelowDescription": "Unten eine Zeile einfügen",
+      "loadingRowsProgress": "Zeilen werden geladen… {{loaded}}/{{total}}",
+      "rowsNotLoadedYet": "Einige Zeilen wurden noch nicht geladen"
     },
     "selectOption": {
       "create": "Erstellen",
@@ -1653,7 +1661,9 @@
       "countEmpty": "Zahl leer",
       "countEmptyShort": "leer",
       "countNonEmpty": "Zahl nicht leer",
-      "countNonEmptyShort": "nicht leer"
+      "countNonEmptyShort": "nicht leer",
+      "countChecked": "Angehakt",
+      "countUnchecked": "Nicht angehakt"
     },
     "media": {
       "rename": "Umbenennen",
@@ -1672,6 +1682,12 @@
       "setAsCover": "Als Cover festlegen",
       "openInBrowser": "Im Browser öffnen",
       "embedLink": "Dateilink einbetten"
+    },
+    "openPagesIn": {
+      "title": "Seiten öffnen in",
+      "sidePeek": "Seitliche Vorschau",
+      "centerPeek": "Zentrierte Vorschau",
+      "fullPage": "Ganze Seite"
     }
   },
   "document": {
@@ -2102,7 +2118,11 @@
       "newGroup": "Neue Gruppe",
       "deleteColumn": "Löschen",
       "deleteColumnConfirmation": "Das wird diese Gruppe und alle enthaltenen Karten löschen.\nSicher, dass du fortsetzen möchtest?",
-      "groupActions": "Gruppenaktion"
+      "groupActions": "Gruppenaktion",
+      "calculate": "Berechnen",
+      "calculationTooltip": "{{calculation}} von {{property}}",
+      "colorColumns": "Spalten einfärben",
+      "properties": "Eigenschaften"
     },
     "hiddenGroupSection": {
       "sectionTitle": "Versteckte Gruppen",
@@ -2872,5 +2892,422 @@
     "fileNotFound": "Datei nicht gefunden",
     "permissionDenied": "Keine Berechtigung zum Öffnen dieser Datei",
     "unknownError": "Öffnen der Datei fehlgeschlagen"
+  },
+  "chart": {
+    "a11y": {
+      "table": "Diagrammdaten"
+    },
+    "agg": {
+      "average": "Durchschnitt",
+      "countAll": "Alle zählen",
+      "countEmpty": "Leere zählen",
+      "countUnique": "Eindeutige Werte zählen",
+      "countValues": "Werte zählen",
+      "dateRange": "Datumsbereich",
+      "earliest": "Frühestes",
+      "latest": "Spätestes",
+      "max": "Maximum",
+      "median": "Median",
+      "min": "Minimum",
+      "percentChecked": "Prozent angehakt",
+      "percentEmpty": "Prozent leer",
+      "percentNotEmpty": "Prozent nicht leer",
+      "percentUnchecked": "Prozent nicht angehakt",
+      "range": "Spannweite",
+      "sum": "Summe"
+    },
+    "aggregation": "Berechnung",
+    "barChart": "Balken",
+    "chartType": "Diagrammtyp",
+    "checked": "Angehakt",
+    "color": {
+      "auto": "Automatisch",
+      "blue": "Blau",
+      "colorful": "Bunt",
+      "colorless": "Farblos",
+      "green": "Grün",
+      "orange": "Orange",
+      "pink": "Rosa",
+      "purple": "Lila",
+      "red": "Rot",
+      "teal": "Türkis",
+      "yellow": "Gelb"
+    },
+    "cumulative": "Kumulativ",
+    "dateCondition": "Datumsgruppierung",
+    "dateGrouping": {
+      "day": "Tag",
+      "month": "Monat",
+      "relative": "Relativ",
+      "week": "Woche",
+      "year": "Jahr"
+    },
+    "decimalPlaces": {
+      "auto": "Automatisch"
+    },
+    "donutChart": "Ring",
+    "emptyState": {
+      "description": "Füge Zeilen mit Daten hinzu, um das Diagramm zu sehen",
+      "noField": "Keine Felder zum Gruppieren verfügbar",
+      "noFieldDescription": "Erstelle ein Einfachauswahl-, Mehrfachauswahl-, Kontrollkästchen- oder Datumsfeld, um die Diagrammansicht zu verwenden.",
+      "title": "Keine Daten zum Anzeigen"
+    },
+    "emptyValue": "Leer",
+    "groups": {
+      "count": "{{count}} Gruppen",
+      "hideAll": "Alle ausblenden",
+      "hideGroup": "Gruppe ausblenden",
+      "noGroups": "Keine Gruppen",
+      "showAll": "Alle einblenden",
+      "showGroup": "Gruppe einblenden",
+      "unknownPerson": "Unbekannte Person",
+      "unknownUser": "Unbekannter Benutzer",
+      "untitled": "Unbenannt",
+      "visibleOfTotal": "{{visible}} von {{total}}"
+    },
+    "horizontalBarChart": "Horizontale Balken",
+    "legend": {
+      "auto": "Automatisch",
+      "bottom": "Unten",
+      "nextPage": "Nächste Seite",
+      "off": "Aus",
+      "page": "{{page}}/{{count}}",
+      "previousPage": "Vorherige Seite"
+    },
+    "lineChart": "Linie",
+    "menuName": "Diagramm",
+    "noFieldValue": "Ohne {}",
+    "noGroupableFields": "Keine gruppierbaren Felder verfügbar",
+    "number": {
+      "calculate": "Berechnen",
+      "countAll": "Alle zählen",
+      "emptyState": "Keine Daten",
+      "format": "Format",
+      "formatAuto": "Automatisch",
+      "formatCompact": "Kompakt",
+      "formatPercent": "Prozent",
+      "property": "Eigenschaft",
+      "title": "Titel",
+      "titleOf": "{{aggregation}} von {{field}}",
+      "titlePlaceholder": "Standardtitel"
+    },
+    "numberChart": "Zahl",
+    "numberColor": {
+      "addRule": "Regel hinzufügen",
+      "blue": "Blau",
+      "brown": "Braun",
+      "default": "Standard",
+      "deleteRule": "Regel löschen",
+      "dynamic": "Dynamisch",
+      "dynamicColor": "Dynamische Farbe",
+      "else": "Sonst",
+      "equal": "Gleich",
+      "gray": "Grau",
+      "greaterThan": "Größer als",
+      "greaterThanOrEqual": "Größer als oder gleich",
+      "green": "Grün",
+      "ifValue": "Wenn Wert",
+      "lessThan": "Kleiner als",
+      "lessThanOrEqual": "Kleiner als oder gleich",
+      "notEqual": "Ungleich",
+      "orange": "Orange",
+      "pink": "Rosa",
+      "purple": "Lila",
+      "red": "Rot",
+      "sameAsColor": "Wie Farbe",
+      "yellow": "Gelb"
+    },
+    "settings": {
+      "auto": "Automatisch",
+      "back": "Zurück",
+      "calculate": "Berechnen",
+      "chartSettings": "Diagrammeinstellungen",
+      "chartTitle": "Diagrammtitel",
+      "chartType": "Diagrammtyp",
+      "color": "Farbe",
+      "count": "Anzahl",
+      "cumulative": "Kumulativ",
+      "data": "Daten",
+      "dataLabels": "Datenbeschriftungen",
+      "dateGrouping": "Datumsgruppierung",
+      "decimalPlaces": "Dezimalstellen",
+      "default": "Standard",
+      "donut": "Ring",
+      "eachSliceRepresents": "Jedes Segment steht für",
+      "endAt": "Endet bei",
+      "exactValue": "Exakter Wert",
+      "firstLetter": "Erster Buchstabe",
+      "format": "Format",
+      "groupBy": "Gruppieren nach",
+      "groupByNone": "Keine",
+      "groupByText": "Nach Text gruppieren",
+      "groupStyle": "Gruppenstil",
+      "groupStyleGrouped": "Gruppiert",
+      "groupStylePercent": "Prozent",
+      "groupStyleStacked": "Gestapelt",
+      "groups": "Gruppen",
+      "horizontalBar": "Horizontale Balken",
+      "legend": "Legende",
+      "line": "Linie",
+      "moreOptions": "Weitere Optionen",
+      "moreSeries": "+{{n}} weitere",
+      "noResults": "Keine Ergebnisse",
+      "number": "Zahl",
+      "onlyShowingFirstGroups": "Nur die ersten {{n}} Gruppen werden angezeigt",
+      "percent": "Prozent",
+      "rangeSize": "Bereichsgröße",
+      "ranges": "Bereiche",
+      "rangesPreview": "{{count}} Bereiche von {{from}} bis {{to}}",
+      "searchProperty": "Nach einer Eigenschaft suchen…",
+      "size": "Größe {{size}}",
+      "sortBy": "Sortieren nach",
+      "startAt": "Beginnt bei",
+      "style": "Stil",
+      "verticalBar": "Vertikale Balken",
+      "viewSettings": "Ansichtseinstellungen",
+      "whatToShow": "Was angezeigt wird",
+      "xAxis": "X-Achse",
+      "yAxis": "Y-Achse"
+    },
+    "showEmptyValues": "Leere Werte anzeigen",
+    "sort": {
+      "default": "Standard",
+      "labelAsc": "A → Z",
+      "labelDesc": "Z → A",
+      "manual": "Manuell",
+      "valueAsc": "Wert niedrig → hoch",
+      "valueDesc": "Wert hoch → niedrig"
+    },
+    "state": {
+      "error": "Dieses Diagramm konnte nicht geladen werden",
+      "noData": "Keine Daten",
+      "preparing": "Dein Diagramm wird vorbereitet",
+      "retry": "Erneut versuchen"
+    },
+    "style": {
+      "color": "Farbe",
+      "dataLabels": "Datenbeschriftungen",
+      "decimalPlaces": "Dezimalstellen",
+      "legend": "Legende",
+      "title": "Stil"
+    },
+    "tooltip": {
+      "average": "Durchschnitt",
+      "clickToView": "Klicken, um Daten anzuzeigen",
+      "count": "Anzahl",
+      "countValues": "Werte zählen",
+      "max": "Maximum",
+      "median": "Median",
+      "min": "Minimum",
+      "rows": "{{count}} Zeilen",
+      "sum": "Summe",
+      "tapAgainToView": "Erneut tippen, um Daten anzuzeigen"
+    },
+    "total": "Gesamt",
+    "unchecked": "Nicht angehakt",
+    "upgradeRequired": "Upgrade erforderlich",
+    "upgradeToProForChartTypes": "Führe ein Upgrade auf den Pro-Plan durch, um horizontale Balken-, Linien- und Ringdiagramme zu verwenden",
+    "value": {
+      "days_one": "{{count}} Tag",
+      "days_other": "{{count}} Tage"
+    },
+    "xAxis": "X-Achse",
+    "yAxis": "Y-Achse",
+    "drilldown": {
+      "ariaLabel": "Tabellendatenvorschau",
+      "search": "Suchen",
+      "dismiss": "Schließen",
+      "more": "Mehr",
+      "saveAsView": "Als Ansicht speichern…",
+      "openDatabase": "{{database}} öffnen",
+      "selectedRows": "Ausgewählte Zeilen ({{count}})",
+      "cannotSaveSelectedRows": "Ausgewählte Zeilen können nicht als Ansicht gespeichert werden",
+      "open": "ÖFFNEN",
+      "fromDashboardFilter": "Aus dem Dashboard-Filter",
+      "rowCount_one": "{{count}} Zeile",
+      "rowCount_other": "{{count}} Zeilen"
+    }
+  },
+  "dashboard": {
+    "addWidget": "Widget hinzufügen",
+    "creationRequiresPro": "Zum Erstellen einer Dashboard-Ansicht ist ein Pro-Arbeitsbereich erforderlich.",
+    "done": "Fertig",
+    "edit": "Bearbeiten",
+    "empty": {
+      "editDashboard": "Dashboard bearbeiten",
+      "newView": "Neue Ansicht",
+      "text": "Füge Diagramme, Tabellen und Listen hinzu"
+    },
+    "globalFilters": {
+      "addAnother": "Weiteren hinzufügen",
+      "addToFilter": "Zum Filter hinzufügen",
+      "appliesTo": "Dieser Filter gilt für die unten ausgewählten {{type}}-Eigenschaften",
+      "button": "Filter",
+      "delete": "Filter löschen",
+      "done": "Fertig",
+      "endDate": "Enddatum",
+      "filterBy": "Filtern nach…",
+      "isChecked": "Ist angehakt",
+      "isUnchecked": "Ist nicht angehakt",
+      "more": "{{count}} weitere",
+      "moreActions": "Weitere Aktionen",
+      "multipleSourcesIntro": "Erstelle einen Filter, der für Eigenschaften aus mehreren Quellen gilt",
+      "name": "Filtername",
+      "noResults": "Keine Ergebnisse",
+      "op": {
+        "after": "Nach",
+        "before": "Vor",
+        "between": "Zwischen",
+        "checked": "Angehakt",
+        "complete": "Abgeschlossen",
+        "doesNotContain": "Enthält nicht",
+        "endsWith": "Endet mit",
+        "incomplete": "Nicht abgeschlossen",
+        "is": "Ist",
+        "isEmpty": "Ist leer",
+        "isNot": "Ist nicht",
+        "isNotEmpty": "Ist nicht leer",
+        "onOrAfter": "Am oder nach",
+        "onOrBefore": "Am oder vor",
+        "startsWith": "Beginnt mit",
+        "unchecked": "Nicht angehakt"
+      },
+      "people_one": "{{count}} Person",
+      "people_other": "{{count}} Personen",
+      "relative": {
+        "amount": "Anzahl",
+        "next": "Nächste",
+        "past": "Letzte",
+        "summaryNext_one": "1 {{unit}} ab heute",
+        "summaryNext_other": "Nächste {{count}} {{unit}}",
+        "summaryPast_one": "1 {{unit}} bis heute",
+        "summaryPast_other": "Letzte {{count}} {{unit}}",
+        "summaryThis": "{{unit}} (aktuell)",
+        "this": "Aktuell"
+      },
+      "relativeHint": "Der Filter wird mit dem aktuellen Datum aktualisiert",
+      "relativeToToday": "Ist relativ zu heute",
+      "remove": "Entfernen",
+      "reset": "Zurücksetzen",
+      "sourceLine": "{{property}} aus {{source}}",
+      "startDate": "Startdatum",
+      "title": "Mehrere Quellen filtern",
+      "units": {
+        "day_one": "Tag",
+        "day_other": "Tage",
+        "month_one": "Monat",
+        "month_other": "Monate",
+        "week_one": "Woche",
+        "week_other": "Wochen",
+        "year_one": "Jahr",
+        "year_other": "Jahre"
+      },
+      "viewCount_one": "{{count}} Ansicht",
+      "viewCount_other": "{{count}} Ansichten"
+    },
+    "historyPreviewUnavailable": "Dashboards werden im Versionsverlauf nicht als Vorschau angezeigt.",
+    "limit": {
+      "fullHint": "Lösche eine Ansicht, um eine neue hinzuzufügen",
+      "fullTitle": "Das Dashboard ist voll"
+    },
+    "menuName": "Dashboard",
+    "picker": {
+      "back": "Zurück",
+      "changeViewTitle": "Ansicht ändern",
+      "close": "Schließen",
+      "createFailed": "Die Ansicht konnte nicht erstellt werden",
+      "editChart": "Diagramm bearbeiten",
+      "layout": {
+        "board": "Board",
+        "calendar": "Kalender",
+        "chart": "Diagramm",
+        "feed": "Feed",
+        "gallery": "Galerie",
+        "list": "Liste",
+        "table": "Tabelle",
+        "timeline": "Zeitleiste"
+      },
+      "loadFailed": "Datenbanken konnten nicht geladen werden",
+      "newView": "Neue Ansicht",
+      "newViewIn": "Neue Ansicht in {{database}}",
+      "noResults": "Keine Ansichten gefunden",
+      "otherSources": "Andere Datenquellen",
+      "searchPlaceholder": "Nach einer Ansicht suchen...",
+      "showMore": "{{count}} weitere anzeigen",
+      "source": "Quelle",
+      "thisDatabase": "Diese Datenbank",
+      "viewName": "Name der Ansicht",
+      "viewsOn": "Ansichten von {{database}}",
+      "viewsOnThisDatabase": "Ansichten dieser Datenbank"
+    },
+    "private": {
+      "reset": "Zurücksetzen",
+      "resetAll": "Alle Änderungen zurücksetzen",
+      "saveForEveryone": "Für alle speichern",
+      "saveOptions": "Weitere Speicheroptionen",
+      "saved": "Änderungen für alle gespeichert.",
+      "undo": "Rückgängig",
+      "unsaved": "Nicht gespeicherte Änderungen"
+    },
+    "referencedDashboardPrefix": "Sicht von",
+    "row": {
+      "addToNewRow": "Zu neuer Zeile hinzufügen",
+      "addToRow": "Zur Zeile hinzufügen",
+      "moveDown": "Nach unten verschieben",
+      "moveUp": "Nach oben verschieben",
+      "movedDown": "Zeile nach unten verschoben",
+      "movedUp": "Zeile nach oben verschoben"
+    },
+    "rowLimit": "Eine Zeile fasst bis zu {{count}} Widgets.",
+    "settings": {
+      "name": "Dashboard-Einstellungen",
+      "showIconsInHeading": "Symbole in der Überschrift anzeigen",
+      "showWidgetTitles": "Widget-Titel anzeigen"
+    },
+    "toolbar": {
+      "openAsFullPage": "Als ganze Seite öffnen",
+      "settings": "Einstellungen"
+    },
+    "widget": {
+      "changeView": "Ansicht ändern",
+      "close": "Schließen",
+      "createRowAbove": "Neue Zeile darüber erstellen",
+      "createRowBelow": "Neue Zeile darunter erstellen",
+      "delete": "Löschen",
+      "dragHandle": "Ziehen zum Verschieben",
+      "duplicate": "Duplizieren",
+      "editView": "Ansicht bearbeiten",
+      "filters": "Filter",
+      "loading": "Wird geladen…",
+      "menu": "Widget-Optionen",
+      "moveLeft": "Nach links verschieben",
+      "moveRight": "Nach rechts verschieben",
+      "moveToRow": "In Zeile verschieben",
+      "noAccess": "Du hast keinen Zugriff auf diese Datenbank",
+      "notFound": "Diese Ansicht existiert nicht mehr",
+      "offline": "Verfügbar, sobald du wieder online bist",
+      "openFailed": "Die Ansicht konnte nicht geöffnet werden",
+      "remove": "Widget entfernen",
+      "resizeHeight": "Ziehen, um die Zeilenhöhe zu ändern",
+      "resizeHeightValue": "{{height}} Pixel",
+      "resizeWidth": "Ziehen, um die Größe zu ändern",
+      "resizeWidthValue": "{{columns}} von 12 Spalten",
+      "settings": "Einstellungen",
+      "sorts": "Sortierungen",
+      "source": "Quelle",
+      "unsupported": "Ein Dashboard kann nicht in einem Dashboard angezeigt werden",
+      "viewDataSource": "Datenquelle anzeigen",
+      "viewNameHint": "Benennt diese Ansicht um",
+      "viewSettings": "Ansichtseinstellungen"
+    },
+    "mobile": {
+      "viewCount_one": "{{count}} Ansicht",
+      "viewCount_other": "{{count}} Ansichten"
+    }
+  },
+  "databaseSearch": {
+    "clearSearch": "Suche löschen",
+    "noResults": "Keine Ergebnisse",
+    "placeholder": "Tippe, um zu suchen..."
   }
 }

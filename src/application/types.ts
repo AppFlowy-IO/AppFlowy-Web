@@ -39,6 +39,7 @@ export enum BlockType {
   BoardBlock = 'board',
   CalendarBlock = 'calendar',
   TimelineBlock = 'timeline',
+  DashboardBlock = 'dashboard',
   ListBlock = 'list',
   ChartBlock = 'chart',
   DatabaseGalleryBlock = 'gallery',
@@ -520,6 +521,9 @@ export enum ViewLayout {
   /// Folder-side layout value for timeline views. Matches
   /// `ViewLayout::Timeline = 10` in `libs/collab/src/folder/view.rs`.
   Timeline = 10,
+  /// Folder-side layout value for dashboard views. Matches
+  /// `ViewLayout::Dashboard = 11` in `libs/collab/src/folder/view.rs`.
+  Dashboard = 11,
 }
 
 export enum YjsEditorKey {
@@ -697,6 +701,58 @@ export enum YjsDatabaseKey {
   avoid_weekends = 'avoid_weekends',
   /// Timeline layout setting: properties shown as columns of the docked table.
   table_field_ids = 'table_field_ids',
+  /// Dashboard layout setting: rows of widgets (`{ id, height, widgets: [{ id, view_id, database_id, width }] }`).
+  dashboard_rows = 'rows',
+  /// Dashboard layout setting: global filters applied across widgets (`{ id, name, ty, condition, content, targets }`).
+  dashboard_global_filters = 'global_filters',
+  /// Dashboard layout setting: whether widget names render above each widget in View mode.
+  show_widget_titles = 'show_widget_titles',
+  /// Dashboard layout setting: whether widget titles show their view icon (bool, absent = false; WP03).
+  show_icons_in_heading = 'show_icons_in_heading',
+  // Chart layout setting keys of `chart-extended-settings.ts` (ARCHITECTURE §3.2). Absent reads as the
+  // default; string enums keep an unknown value unread and unwritten.
+  /// Chart: decimals of formatted values, 0–5 (absent or null = auto; WP10).
+  decimal_places = 'decimal_places',
+  /// Chart: "auto" | "colorful" | "colorless" | a single hue (absent = "auto"; WP10).
+  color_theme = 'color_theme',
+  /// Chart: whether values are drawn on the marks (absent = true; WP10).
+  show_data_labels = 'show_data_labels',
+  /// Chart: "auto" | "off" | "bottom"; "side" reads as "bottom" (absent = "auto"; WP10).
+  legend_position = 'legend_position',
+  /// Chart: X axis order, "auto" | "manual" | "label_asc" | "label_desc" | "value_desc" | "value_asc" (WP11).
+  x_sort = 'x_sort',
+  /// Chart: group keys in manual order (string[], absent = []; WP11).
+  x_manual_order = 'x_manual_order',
+  /// Chart: group keys left out of the chart (string[], absent = []; WP11).
+  hidden_groups = 'hidden_groups',
+  /// Chart: Number X axis bucket size > 0 (absent = auto; WP11).
+  x_number_bucket_size = 'x_number_bucket_size',
+  /// Chart: Number X axis lower bucket bound (absent = data min; WP11).
+  x_number_bucket_min = 'x_number_bucket_min',
+  /// Chart: Number X axis upper bucket bound (absent = data max; WP11).
+  x_number_bucket_max = 'x_number_bucket_max',
+  /// Chart: text X axis grouping, "exact" | "first_letter" (absent = "exact"; WP11).
+  x_text_grouping = 'x_text_grouping',
+  /// Chart: whether the Number card shows its title (absent = true; WP11).
+  show_title = 'show_title',
+  /// Chart: Number card value color name (absent = "default"; WP11).
+  number_color = 'number_color',
+  /// Chart: Number card rules `{ enabled, rules: [{ id, operator, value, color }], else_color? }` (absent; WP11).
+  number_conditional_color = 'number_conditional_color',
+  /// Chart: sub-group field (absent or "" = no sub-groups; WP12).
+  group_by_field_id = 'group_by_field_id',
+  /// Chart: `DateGroupCondition` of a date sub-group field (absent = Month; WP12).
+  group_by_date_condition = 'group_by_date_condition',
+  /// Chart: "stacked" | "grouped" | "percent" (absent = "stacked"; WP12).
+  group_style = 'group_style',
+  /// Board layout setting: whether columns are tinted with their option color (absent = false; WP09).
+  show_color_columns = 'show_color_columns',
+  /// Board layout setting: the column aggregate `{ type: CalculationType, field_id }` (absent = Count; WP09).
+  group_calculation = 'group_calculation',
+  /// Database view: the dashboard view that owns this widget view (mirror of the folder extra; WP05).
+  dashboard_owner = 'dashboard_owner',
+  /// Database view: "side_peek" | "center_peek" | "full_page" (absent = by where the record opens; WP13).
+  open_pages_in = 'open_pages_in',
   icon = 'icon',
   is_inline = 'is_inline',
   embedded = 'embedded',
@@ -941,6 +997,9 @@ export enum DatabaseViewLayout {
   /// Matches `DatabaseLayout::Timeline = 8` in
   /// `libs/collab/src/database/views/layout.rs`.
   Timeline = 8,
+  /// Matches `DatabaseLayout::Dashboard = 9` in
+  /// `libs/collab/src/database/views/layout.rs`.
+  Dashboard = 9,
 }
 
 export interface YDatabaseView extends Y.Map<unknown> {
@@ -982,6 +1041,9 @@ export interface YDatabaseView extends Y.Map<unknown> {
 
   // eslint-disable-next-line @typescript-eslint/unified-signatures
   get(key: YjsDatabaseKey.embedded): boolean;
+
+  /// Absent unless the view is a dashboard-owned widget view (WP05) or chose how records open (WP13).
+  get(key: YjsDatabaseKey.dashboard_owner | YjsDatabaseKey.open_pages_in): string | undefined;
 }
 
 export type YDatabaseFieldOrders = Y.Array<{ id: FieldId }>; // [ { id: FieldId } ]
@@ -1025,6 +1087,9 @@ export interface YDatabaseLayoutSettings extends Y.Map<unknown> {
 
   // DatabaseViewLayout.Timeline
   get(key: '8'): YDatabaseTimelineLayoutSetting;
+
+  // DatabaseViewLayout.Dashboard
+  get(key: '9'): YDatabaseDashboardLayoutSetting;
 }
 
 export interface YDatabaseGridLayoutSetting extends Y.Map<unknown> {
@@ -1036,6 +1101,10 @@ export interface YDatabaseBoardLayoutSetting extends Y.Map<unknown> {
     key: YjsDatabaseKey.hide_ungrouped_column | YjsDatabaseKey.hide_empty_groups | YjsDatabaseKey.collapse_hidden_groups
   ): boolean;
   get(key: YjsDatabaseKey.shown_empty_group_ids): string[];
+  /// Written by desktop too; absent means false.
+  get(key: YjsDatabaseKey.show_color_columns): boolean | undefined;
+  /// `{ type, field_id }`, parsed by its reader.
+  get(key: YjsDatabaseKey.group_calculation): unknown;
 }
 
 export interface YDatabaseCalendarLayoutSetting extends Y.Map<unknown> {
@@ -1073,10 +1142,55 @@ export interface YDatabaseTimelineLayoutSetting extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.table_field_ids | YjsDatabaseKey.dependency_links): unknown;
 }
 
+/// Dashboard state: `rows` and `global_filters` are plain JSON values (arrays of
+/// objects) so Yrs reads them as nested `Any`; see `dashboard-layout.ts`.
+export interface YDatabaseDashboardLayoutSetting extends Y.Map<unknown> {
+  get(key: YjsDatabaseKey.dashboard_rows | YjsDatabaseKey.dashboard_global_filters): unknown;
+  get(key: YjsDatabaseKey.show_widget_titles | YjsDatabaseKey.show_icons_in_heading): boolean | undefined;
+}
+
+/// Chart state uses collab's snake_case keys; charts saved by earlier web
+/// builds carry the camelCase ones instead (see `chart.type.ts`).
 export interface YDatabaseChartLayoutSetting extends Y.Map<unknown> {
-  get(key: 'chartType' | 'aggregationType' | 'dateCondition'): string;
-  get(key: 'xFieldId' | 'yFieldId'): string | undefined;
-  get(key: 'showEmptyValues' | 'cumulative'): boolean;
+  get(
+    key: 'chart_type' | 'aggregation_type' | 'date_condition' | 'chartType' | 'aggregationType' | 'dateCondition'
+  ): number | bigint | undefined;
+  // The enum keys below are those of `chart-extended-settings.ts`; readers validate every value (`layout-codec.ts`).
+  get(
+    key:
+      | 'x_field_id'
+      | 'y_field_id'
+      | 'xFieldId'
+      | 'yFieldId'
+      | 'numberFormat'
+      | 'titleText'
+      | YjsDatabaseKey.color_theme
+      | YjsDatabaseKey.legend_position
+      | YjsDatabaseKey.x_sort
+      | YjsDatabaseKey.x_text_grouping
+      | YjsDatabaseKey.number_color
+      | YjsDatabaseKey.group_by_field_id
+      | YjsDatabaseKey.group_style
+  ): string | undefined;
+  get(
+    key:
+      | 'show_empty_values'
+      | 'showEmptyValues'
+      | 'cumulative'
+      | YjsDatabaseKey.show_data_labels
+      | YjsDatabaseKey.show_title
+  ): boolean | undefined;
+  get(
+    key:
+      | YjsDatabaseKey.decimal_places
+      | YjsDatabaseKey.x_number_bucket_size
+      | YjsDatabaseKey.x_number_bucket_min
+      | YjsDatabaseKey.x_number_bucket_max
+      | YjsDatabaseKey.group_by_date_condition
+  ): number | bigint | null | undefined;
+  get(
+    key: YjsDatabaseKey.x_manual_order | YjsDatabaseKey.hidden_groups | YjsDatabaseKey.number_conditional_color
+  ): unknown;
 }
 
 export interface YDatabaseListLayoutSetting extends Y.Map<unknown> {
@@ -1346,6 +1460,7 @@ export const layoutMap = {
   [ViewLayout.Feed]: 'feed',
   [ViewLayout.Form]: 'form',
   [ViewLayout.Timeline]: 'timeline',
+  [ViewLayout.Dashboard]: 'dashboard',
 };
 
 export const databaseLayoutMap = {
@@ -1358,6 +1473,7 @@ export const databaseLayoutMap = {
   [DatabaseViewLayout.Feed]: 'feed',
   [DatabaseViewLayout.Form]: 'form',
   [DatabaseViewLayout.Timeline]: 'timeline',
+  [DatabaseViewLayout.Dashboard]: 'dashboard',
 };
 
 export enum FontLayout {
@@ -1879,6 +1995,13 @@ export interface DatabaseViewExtra {
    * Aligned with Desktop/Flutter and server-side `EXTRA_KEY_EMBEDDED`.
    */
   embedded?: boolean;
+
+  /**
+   * The dashboard view that owns this view as one of its widgets. Owned views
+   * are hidden from the database's view tabs; this folder extra is the
+   * authoritative copy, mirrored on the database view map (WP05).
+   */
+  dashboard_owner?: string;
 }
 
 /**

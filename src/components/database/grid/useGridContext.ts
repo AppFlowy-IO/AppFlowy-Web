@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useSyncExternalStore } from 'react';
 
-import type { Row } from '@/application/database-yjs';
+import type { Row, RowOrdersHydration } from '@/application/database-yjs';
 import type { RenderRow } from '@/components/database/components/grid/grid-row';
 
 export type GridActiveCell = {
@@ -129,23 +129,85 @@ export function useIsGridCellActive(rowKey: string, fieldId: string) {
 
 type GridRowResizeListener = (rowKey: string, maxCellHeight: number) => void;
 
+/** Reads a row's height from the DOM; `undefined` when the row has nothing to measure. */
+export type GridRowMeasure = () => number | undefined;
+
 export type GridRowResizeStore = {
   report: (rowKey: string, maxCellHeight: number) => void;
+  /**
+   * Measures the row at the next animation frame and reports the height. The
+   * rows scheduled for one frame are read in one pass and reported after it,
+   * so a frame forces at most one layout however many rows changed (W18).
+   * A row scheduled twice in a frame is measured once, with its last measure.
+   */
+  schedule: (rowKey: string, measure: GridRowMeasure) => void;
+  /**
+   * Calls `onResize` when the element's size changes, and once when it starts
+   * being observed, as a ResizeObserver of its own would. Every row of the grid
+   * shares one observer (W15). Returns the function that stops observing.
+   */
+  observe: (element: Element, onResize: () => void) => () => void;
   subscribe: (listener: GridRowResizeListener) => () => void;
 };
+
+function requestFrame(callback: () => void) {
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(callback);
+  } else {
+    setTimeout(callback, 0);
+  }
+}
 
 export function createGridRowResizeStore(): GridRowResizeStore {
   const listeners = new Set<GridRowResizeListener>();
   const pending = new Map<string, number>();
+  const scheduled = new Map<string, GridRowMeasure>();
+  let frameRequested = false;
+  const resizeCallbacks = new Map<Element, () => void>();
+  let resizeObserver: ResizeObserver | null = null;
+
+  const report = (rowKey: string, maxCellHeight: number) => {
+    if (listeners.size === 0) {
+      pending.set(rowKey, maxCellHeight);
+      return;
+    }
+
+    listeners.forEach((listener) => listener(rowKey, maxCellHeight));
+  };
+
+  const measureScheduled = () => {
+    frameRequested = false;
+    const measures = Array.from(scheduled);
+
+    scheduled.clear();
+    // Every read first: reporting only notifies, but the reads stay together.
+    const heights = measures.map(([rowKey, measure]) => [rowKey, measure()] as const);
+
+    heights.forEach(([rowKey, height]) => {
+      if (height !== undefined) report(rowKey, height);
+    });
+  };
 
   return {
-    report: (rowKey, maxCellHeight) => {
-      if (listeners.size === 0) {
-        pending.set(rowKey, maxCellHeight);
-        return;
-      }
-
-      listeners.forEach((listener) => listener(rowKey, maxCellHeight));
+    report,
+    schedule: (rowKey, measure) => {
+      scheduled.set(rowKey, measure);
+      if (frameRequested) return;
+      frameRequested = true;
+      requestFrame(measureScheduled);
+    },
+    observe: (element, onResize) => {
+      if (typeof ResizeObserver === 'undefined') return () => undefined;
+      resizeObserver ??= new ResizeObserver((entries) => {
+        entries.forEach((entry) => resizeCallbacks.get(entry.target)?.());
+      });
+      resizeCallbacks.set(element, onResize);
+      resizeObserver.observe(element);
+      return () => {
+        if (resizeCallbacks.get(element) !== onResize) return;
+        resizeCallbacks.delete(element);
+        resizeObserver?.unobserve(element);
+      };
     },
     subscribe: (listener) => {
       listeners.add(listener);
@@ -175,6 +237,66 @@ export type GridContextType = {
 };
 
 export const GridContext = createContext<GridContextType | undefined>(undefined);
+
+/**
+ * How far an ungrouped grid still reading its rows got. Kept out of
+ * `GridContext` and the render rows: it changes as rows load, and only the
+ * loading row shows it. A tick that only moves the progress re-renders `Grid`
+ * and the provider (the grouping object is new), but `GridContext` keeps its
+ * value and `GridVirtualizer` is memoized, so of the grid only the loading row
+ * renders again.
+ */
+export const GridHydrationContext = createContext<RowOrdersHydration | undefined>(undefined);
+
+export function useGridHydration() {
+  return useContext(GridHydrationContext);
+}
+
+/**
+ * What the host of a grid asks of it, so the rows and cells never ask who the
+ * host is. `Grid` sets it once for the view it renders.
+ */
+export type GridOptions = {
+  /**
+   * What a row's height is measured on: its cells (`cell`), or its cells with
+   * their 1px divider (`row`), so the pitch is the height the row draws. A
+   * dashboard widget uses `row` (addendum A5.2): its rows never overlap.
+   */
+  rowMeasure: 'cell' | 'row';
+  /**
+   * The field icons of the header: the field's own (`field`), or dashboard
+   * chrome, 16px in the tool-icon colour like desktop (`dashboard`).
+   */
+  headerIcons: 'field' | 'dashboard';
+  /** Rows mounted beyond each edge of the viewport; 10 when unset. */
+  rowOverscan?: number;
+  /** Columns mounted beyond each edge of the viewport; 5 when unset. */
+  columnOverscan?: number;
+};
+
+export const DEFAULT_GRID_ROW_OVERSCAN = 10;
+export const DEFAULT_GRID_COLUMN_OVERSCAN = 5;
+
+export const DEFAULT_GRID_OPTIONS: GridOptions = Object.freeze({ rowMeasure: 'cell', headerIcons: 'field' });
+
+/**
+ * The grid of a dashboard widget: dashboard chrome, the divider-inclusive row
+ * pitch, and a small overscan, since a widget shows 6 to 9 rows and a few
+ * columns (W18: rows mounted are at most the visible rows plus 6, cells per
+ * row at most the visible columns plus 4).
+ */
+export const DASHBOARD_WIDGET_GRID_OPTIONS: GridOptions = Object.freeze({
+  rowMeasure: 'row',
+  headerIcons: 'dashboard',
+  rowOverscan: 3,
+  columnOverscan: 2,
+});
+
+export const GridOptionsContext = createContext<GridOptions>(DEFAULT_GRID_OPTIONS);
+
+export function useGridOptions() {
+  return useContext(GridOptionsContext);
+}
 
 export function useGridContext() {
   const context = useContext(GridContext);

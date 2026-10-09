@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- Yjs values read inside page.evaluate are untyped. */
 /**
  * The "5000 employees" large-database fixture.
  *
@@ -13,13 +14,18 @@
  * large-database suite runs against a fresh account on any server.
  */
 import { createHash } from 'crypto';
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { gunzipSync } from 'zlib';
 
-import { expect, type Page } from '@playwright/test';
+import { expect, type APIRequestContext, type Page } from '@playwright/test';
+import * as Y from 'yjs';
 
+import { Types } from '../../src/application/types';
+
+import { signInAndWaitForApp } from './auth-flow-helpers';
+import { loginAndCreateGrid } from './field-type-helpers';
 import { DatabaseGridSelectors } from './selectors';
-import { TestConfig } from './test-config';
+import { generateRandomEmail, TestConfig } from './test-config';
 
 export const EMPLOYEES_FIXTURE_URL = new URL('../fixtures/database/afdb/employees_v3.afdb.gz', import.meta.url);
 /** SHA-256 of the uncompressed export; the same value the desktop oracle pins. */
@@ -386,4 +392,212 @@ export async function expectEmployeesOnServer(page: Page, rowIds: string[], samp
   const sample = rowIds.filter((_id, index) => index % step === 0 || index === rowIds.length - 1);
 
   await expectRowsOnServer(page, sample, SERVER_CONFIRM_TIMEOUT_MS);
+}
+
+// ---------------------------------------------------------------------------
+// The seeded database, shared by the scenarios of one worker
+// ---------------------------------------------------------------------------
+
+export interface SeededEmployeesDatabase {
+  apiUrl: string;
+  baseUrl: string;
+  email: string;
+  url: string;
+  /** Row ids in fixture order. */
+  rowIds: string[];
+}
+
+let seededEmployees: SeededEmployeesDatabase | undefined;
+
+interface EditedEmployeeCell {
+  databaseId: string;
+  rowId: string;
+  fieldId: string;
+  original: Record<string, unknown>;
+}
+
+const editedCells = new WeakMap<Page, EditedEmployeeCell[]>();
+
+/** Save the original before an input commits, so a failing scenario can restore its shared cache. */
+export async function rememberEmployeeCell(page: Page, databaseId: string, rowId: string, fieldId: string) {
+  const remembered = editedCells.get(page) ?? [];
+
+  if (remembered.some((cell) => cell.rowId === rowId && cell.fieldId === fieldId)) return;
+  const original = await page.evaluate(
+    async ({ databaseId, rowId, fieldId }) => {
+      const ctx = (window as any).__DASHBOARD_TEST__?.byDatabase(databaseId);
+      const rowDoc = ctx?.rowMap?.[rowId] ?? (await ctx?.ensureRow?.(rowId));
+      const cell = rowDoc?.getMap('data').get('data')?.get('cells')?.get(fieldId);
+
+      if (!cell) throw new Error(`Cannot remember employees cell ${rowId}/${fieldId}`);
+      return cell.toJSON() as Record<string, unknown>;
+    },
+    { databaseId, rowId, fieldId }
+  );
+
+  remembered.push({ databaseId, rowId, fieldId, original });
+  editedCells.set(page, remembered);
+}
+
+/** Restore only cells this scenario edited, then confirm their exact values in the server row docs. */
+export async function restoreEmployeeCells(page: Page) {
+  const remembered = editedCells.get(page);
+
+  if (!remembered?.length) return;
+  await page.goto(seededEmployeesDatabase().url, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean((window as any).__TEST_DATABASE_CONTEXT__), null, { timeout: 120_000 });
+  const access = await serverHandles(page);
+
+  await page.evaluate(async (cells) => {
+    const ctx = (window as any).__TEST_DATABASE_CONTEXT__;
+
+    for (const { databaseId, rowId, fieldId, original } of cells) {
+      const actualId = ctx.databaseDoc.getMap('data').get('database').get('id') || ctx.databaseDoc.guid;
+
+      if (actualId !== databaseId) throw new Error('Employees cleanup opened the wrong database');
+      const rowDoc = ctx.rowMap?.[rowId] ?? (await ctx.ensureRow(rowId));
+      const cell = rowDoc?.getMap('data').get('data')?.get('cells')?.get(fieldId);
+
+      if (!cell) throw new Error(`Cannot restore employees cell ${rowId}/${fieldId}`);
+      rowDoc.transact(() => {
+        for (const key of Array.from<string>(cell.keys())) if (!(key in original)) cell.delete(key);
+        for (const [key, value] of Object.entries(original)) cell.set(key, value);
+      });
+    }
+  }, remembered);
+
+  for (const cell of remembered) {
+    await expect
+      .poll(
+        async () => {
+          const url = new URL(`/api/workspace/v1/${access.workspaceId}/collab/${cell.rowId}`, TestConfig.apiUrl);
+
+          url.searchParams.set('collab_type', String(Types.DatabaseRow));
+          const response = await page.request.get(url.toString(), {
+            headers: { Authorization: `Bearer ${access.token}` },
+          });
+          const body = await response.json();
+
+          if (!response.ok() || body.code !== 0 || !body.data?.doc_state) return null;
+          const doc = new Y.Doc();
+
+          try {
+            Y.applyUpdate(doc, new Uint8Array(body.data.doc_state));
+            return (doc.getMap('data').get('data') as any)?.get('cells')?.get(cell.fieldId)?.toJSON();
+          } finally {
+            doc.destroy();
+          }
+        },
+        {
+          timeout: SERVER_CONFIRM_TIMEOUT_MS,
+          message: `restored employees cell ${cell.rowId}/${cell.fieldId} persisted`,
+        }
+      )
+      .toEqual(cell.original);
+  }
+
+  editedCells.delete(page);
+}
+
+/** `EMPLOYEES_ROW_LIMIT`: seed only the first N rows (quick local runs). */
+export function employeesRowLimit(): number | undefined {
+  const limit = Number(process.env.EMPLOYEES_ROW_LIMIT);
+
+  return Number.isFinite(limit) && limit > 0 ? limit : undefined;
+}
+
+function appBaseUrl(): string {
+  return process.env.BASE_URL || 'http://localhost:3000';
+}
+
+/** A seeded account from `LARGE_DATABASE_CACHE`, when it was seeded on this server with the same row count. */
+function readCachedEmployeesDatabase(): SeededEmployeesDatabase | undefined {
+  const file = process.env.LARGE_DATABASE_CACHE;
+
+  if (!file || !existsSync(file)) return undefined;
+  const cached = JSON.parse(readFileSync(file, 'utf8')) as SeededEmployeesDatabase;
+  const expectedRows = employeesRowLimit() ?? loadEmployeesFixture().rows.length;
+
+  if (cached.apiUrl !== TestConfig.apiUrl || cached.baseUrl !== appBaseUrl() || cached.rowIds.length !== expectedRows) {
+    return undefined;
+  }
+
+  return cached;
+}
+
+/**
+ * Sign in to the worker's employees database and open its grid, seeding a
+ * fresh account the first time (`EMPLOYEES_ROW_LIMIT` rows, kept in
+ * `LARGE_DATABASE_CACHE` when that is set).
+ */
+export async function openSeededEmployeesDatabase(
+  page: Page,
+  request: APIRequestContext
+): Promise<SeededEmployeesDatabase> {
+  seededEmployees ??= readCachedEmployeesDatabase();
+
+  if (seededEmployees) {
+    await signInAndWaitForApp(page, page.request, seededEmployees.email);
+    await page.goto(seededEmployees.url);
+    await page.waitForFunction(() => Boolean((window as any).__TEST_DATABASE_CONTEXT__), null, { timeout: 120000 });
+    await expect(page.getByTestId('database-grid')).toBeVisible({ timeout: 120000 });
+    return seededEmployees;
+  }
+
+  const email = generateRandomEmail();
+
+  await loginAndCreateGrid(page, request, email);
+  const rowIds = await seedEmployeesDatabase(page, { rowLimit: employeesRowLimit() });
+
+  await expectEmployeesOnServer(page, rowIds);
+  seededEmployees = { apiUrl: TestConfig.apiUrl, baseUrl: appBaseUrl(), email, url: page.url(), rowIds };
+  if (process.env.LARGE_DATABASE_CACHE) {
+    writeFileSync(process.env.LARGE_DATABASE_CACHE, JSON.stringify(seededEmployees));
+  }
+
+  return seededEmployees;
+}
+
+/** The employees database this worker opened last. */
+export function seededEmployeesDatabase(): SeededEmployeesDatabase {
+  if (!seededEmployees) throw new Error('The employees database is not seeded');
+  return seededEmployees;
+}
+
+/** Removes the properties, filters, sorts and calculations a scenario may have added, in every view. */
+export async function resetEmployeesDatabaseSettings(page: Page) {
+  await page.evaluate(
+    (fieldIds) => {
+      const ctx = (window as any).__TEST_DATABASE_CONTEXT__;
+      const doc = ctx.databaseDoc;
+      const database = doc.getMap('data').get('database');
+      const fields = database.get('fields');
+      const keep = new Set(fieldIds);
+
+      doc.transact(() => {
+        Array.from(fields.keys() as Iterable<string>)
+          .filter((id) => !keep.has(id))
+          .forEach((id) => fields.delete(id));
+        database.get('views').forEach((view: any) => {
+          const orders = view.get('field_orders');
+
+          for (let index = orders.length - 1; index >= 0; index -= 1) {
+            if (!keep.has(orders.get(index).id)) orders.delete(index, 1);
+          }
+
+          const settings = view.get('field_settings');
+
+          Array.from((settings?.keys() ?? []) as Iterable<string>)
+            .filter((id) => !keep.has(id))
+            .forEach((id) => settings.delete(id));
+          ['filters', 'sorts', 'calculations'].forEach((key) => {
+            const list = view.get(key);
+
+            if (list?.length) list.delete(0, list.length);
+          });
+        });
+      });
+    },
+    loadEmployeesFixture().fields.map((field) => field.id)
+  );
 }

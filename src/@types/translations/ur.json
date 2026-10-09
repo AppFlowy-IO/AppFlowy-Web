@@ -438,7 +438,11 @@
             "editProperty": "خاصیت میں ترمیم کریں",
             "newProperty": "نیا پراپرٹی",
             "deleteFieldPromptMessage": "کیا آپ یقینی ہیں؟ یہ پراپرٹی حذف کر دی جائے گی",
-            "newColumn": "نیا کالم"
+            "newColumn": "نیا کالم",
+            "person": {
+                "searchForMore_one": "مزید {{count}} شخص تلاش کریں",
+                "searchForMore_other": "مزید {{count}} افراد تلاش کریں"
+            }
         },
         "sort": {
             "ascending": "چڑھائی",
@@ -453,8 +457,10 @@
             "textPlaceholder": "خالی",
             "copyProperty": "خاصیت کو کلپ بورڈ پر کاپی کر دیا گیا",
             "{{count}}": "گِنتی",
-            "newRow": "نیا سطر",
-            "action": "عمل"
+            "newRow": "نیا صفحہ",
+            "action": "عمل",
+            "loadingRowsProgress": "قطاریں لوڈ ہو رہی ہیں… {{loaded}}/{{total}}",
+            "rowsNotLoadedYet": "کچھ قطاریں ابھی لوڈ نہیں ہوئیں"
         },
         "selectOption": {
             "create": "بنائیں",
@@ -481,7 +487,24 @@
             "submitNewTask": "بنائیں"
         },
         "menuName": "گرِڈ",
-        "referencedGridPrefix": "کا نظارہ"
+        "referencedGridPrefix": "کا نظارہ",
+        "calculationTypeLabel": {
+            "countChecked": "چیک شدہ",
+            "countUnchecked": "غیر چیک شدہ"
+        },
+        "dateFilter": {
+            "is": "ہے"
+        },
+        "openPagesIn": {
+            "title": "صفحات کہاں کھلیں",
+            "sidePeek": "سائیڈ پینل",
+            "centerPeek": "درمیانی پینل",
+            "fullPage": "پورا صفحہ"
+        },
+        "rowPage": {
+            "openInCenterPeek": "درمیانی پینل میں کھولیں",
+            "resizeSidePeek": "سائیڈ پینل کا سائز بدلیں"
+        }
     },
     "document": {
         "menuName": "دستایز",
@@ -648,7 +671,11 @@
     },
     "board": {
         "column": {
-            "createNewCard": "نواں"
+            "createNewCard": "نواں",
+            "calculate": "حساب کریں",
+            "calculationTooltip": "{{property}} کا {{calculation}}",
+            "colorColumns": "کالموں کو رنگ دیں",
+            "properties": "خصوصیات"
         },
         "menuName": "بورڈ",
         "referencedBoardPrefix": "کے نظارہ"
@@ -727,5 +754,422 @@
             "nature": "فطرت",
             "frequentlyUsed": "کثرت سے استعمال ہونے والے"
         }
+    },
+    "chart": {
+        "a11y": {
+            "table": "چارٹ کا ڈیٹا"
+        },
+        "agg": {
+            "average": "اوسط",
+            "countAll": "سب گنیں",
+            "countEmpty": "خالی گنیں",
+            "countUnique": "منفرد اقدار گنیں",
+            "countValues": "اقدار گنیں",
+            "dateRange": "تاریخ کی حد",
+            "earliest": "قدیم ترین",
+            "latest": "تازہ ترین",
+            "max": "زیادہ سے زیادہ",
+            "median": "وسطانیہ",
+            "min": "کم سے کم",
+            "percentChecked": "چیک شدہ فیصد",
+            "percentEmpty": "خالی فیصد",
+            "percentNotEmpty": "غیر خالی فیصد",
+            "percentUnchecked": "غیر چیک شدہ فیصد",
+            "range": "حد",
+            "sum": "مجموعہ"
+        },
+        "aggregation": "تجمیع",
+        "barChart": "بار",
+        "chartType": "چارٹ کی قسم",
+        "checked": "چیک شدہ",
+        "color": {
+            "auto": "خودکار",
+            "blue": "نیلا",
+            "colorful": "رنگین",
+            "colorless": "بے رنگ",
+            "green": "سبز",
+            "orange": "نارنجی",
+            "pink": "گلابی",
+            "purple": "جامنی",
+            "red": "سرخ",
+            "teal": "فیروزی",
+            "yellow": "پیلا"
+        },
+        "cumulative": "مجموعی",
+        "dateCondition": "تاریخ کی گروپ بندی",
+        "dateGrouping": {
+            "day": "دن",
+            "month": "مہینہ",
+            "relative": "نسبتی",
+            "week": "ہفتہ",
+            "year": "سال"
+        },
+        "decimalPlaces": {
+            "auto": "خودکار"
+        },
+        "donutChart": "ڈونٹ",
+        "emptyState": {
+            "description": "چارٹ دیکھنے کے لیے ڈیٹا والی قطاریں شامل کریں",
+            "noField": "گروپ بندی کے لیے کوئی فیلڈ دستیاب نہیں",
+            "noFieldDescription": "چارٹ ویو استعمال کرنے کے لیے سنگل سلیکٹ، ملٹی سلیکٹ، چیک باکس یا تاریخ فیلڈ بنائیں۔",
+            "title": "دکھانے کے لیے کوئی ڈیٹا نہیں"
+        },
+        "emptyValue": "خالی",
+        "groups": {
+            "count": "{{count}} گروپس",
+            "hideAll": "سب چھپائیں",
+            "hideGroup": "گروپ چھپائیں",
+            "noGroups": "کوئی گروپ نہیں",
+            "showAll": "سب دکھائیں",
+            "showGroup": "گروپ دکھائیں",
+            "unknownPerson": "نامعلوم شخص",
+            "unknownUser": "نامعلوم صارف",
+            "untitled": "بلا عنوان",
+            "visibleOfTotal": "{{total}} میں سے {{visible}}"
+        },
+        "horizontalBarChart": "افقی بار",
+        "legend": {
+            "auto": "خودکار",
+            "bottom": "نیچے",
+            "nextPage": "اگلا صفحہ",
+            "off": "بند",
+            "page": "{{page}}/{{count}}",
+            "previousPage": "پچھلا صفحہ"
+        },
+        "lineChart": "لائن",
+        "menuName": "چارٹ",
+        "noFieldValue": "کوئی {} نہیں",
+        "noGroupableFields": "گروپ بندی کے قابل کوئی فیلڈ دستیاب نہیں",
+        "number": {
+            "calculate": "حساب کریں",
+            "countAll": "سب گنیں",
+            "emptyState": "کوئی ڈیٹا نہیں",
+            "format": "فارمیٹ",
+            "formatAuto": "خودکار",
+            "formatCompact": "مختصر",
+            "formatPercent": "فیصد",
+            "property": "خاصیت",
+            "title": "عنوان",
+            "titleOf": "{{field}} کا {{aggregation}}",
+            "titlePlaceholder": "طے شدہ عنوان"
+        },
+        "numberChart": "نمبر",
+        "numberColor": {
+            "addRule": "اصول شامل کریں",
+            "blue": "نیلا",
+            "brown": "بھورا",
+            "default": "طے شدہ",
+            "deleteRule": "اصول حذف کریں",
+            "dynamic": "متحرک",
+            "dynamicColor": "متحرک رنگ",
+            "else": "ورنہ",
+            "equal": "برابر",
+            "gray": "سرمئی",
+            "greaterThan": "سے زیادہ",
+            "greaterThanOrEqual": "سے زیادہ یا برابر",
+            "green": "سبز",
+            "ifValue": "اگر قدر",
+            "lessThan": "سے کم",
+            "lessThanOrEqual": "سے کم یا برابر",
+            "notEqual": "برابر نہیں",
+            "orange": "نارنجی",
+            "pink": "گلابی",
+            "purple": "جامنی",
+            "red": "سرخ",
+            "sameAsColor": "رنگ کے مطابق",
+            "yellow": "پیلا"
+        },
+        "settings": {
+            "auto": "خودکار",
+            "back": "واپس",
+            "calculate": "حساب کریں",
+            "chartSettings": "چارٹ کی ترتیبات",
+            "chartTitle": "چارٹ کا عنوان",
+            "chartType": "چارٹ کی قسم",
+            "color": "رنگ",
+            "count": "تعداد",
+            "cumulative": "مجموعی",
+            "data": "ڈیٹا",
+            "dataLabels": "ڈیٹا لیبلز",
+            "dateGrouping": "تاریخ کی گروپ بندی",
+            "decimalPlaces": "اعشاریہ مقامات",
+            "default": "طے شدہ",
+            "donut": "ڈونٹ",
+            "eachSliceRepresents": "ہر ٹکڑا ظاہر کرتا ہے",
+            "endAt": "اختتام",
+            "exactValue": "عین قدر",
+            "firstLetter": "پہلا حرف",
+            "format": "فارمیٹ",
+            "groupBy": "گروپ بندی بلحاظ",
+            "groupByNone": "کوئی نہیں",
+            "groupByText": "متن کی گروپ بندی",
+            "groupStyle": "گروپ کا انداز",
+            "groupStyleGrouped": "گروپ شدہ",
+            "groupStylePercent": "فیصد",
+            "groupStyleStacked": "تہہ دار",
+            "groups": "گروپس",
+            "horizontalBar": "افقی بار",
+            "legend": "لیجنڈ",
+            "line": "لائن",
+            "moreOptions": "مزید اختیارات",
+            "moreSeries": "+{{n}} مزید",
+            "noResults": "کوئی نتیجہ نہیں",
+            "number": "نمبر",
+            "onlyShowingFirstGroups": "صرف پہلے {{n}} گروپس دکھائے جا رہے ہیں",
+            "percent": "فیصد",
+            "rangeSize": "حد کا سائز",
+            "ranges": "حدود",
+            "rangesPreview": "{{from}} سے {{to}} تک {{count}} حدود",
+            "searchProperty": "خاصیت تلاش کریں…",
+            "size": "سائز {{size}}",
+            "sortBy": "ترتیب بلحاظ",
+            "startAt": "آغاز",
+            "style": "انداز",
+            "verticalBar": "عمودی بار",
+            "viewSettings": "ویو کی ترتیبات",
+            "whatToShow": "کیا دکھانا ہے",
+            "xAxis": "X محور",
+            "yAxis": "Y محور"
+        },
+        "showEmptyValues": "خالی اقدار دکھائیں",
+        "sort": {
+            "default": "طے شدہ",
+            "labelAsc": "ا ← ے",
+            "labelDesc": "ے ← ا",
+            "manual": "دستی",
+            "valueAsc": "قدر: کم سے زیادہ",
+            "valueDesc": "قدر: زیادہ سے کم"
+        },
+        "state": {
+            "error": "یہ چارٹ لوڈ نہیں ہو سکا",
+            "noData": "کوئی ڈیٹا نہیں",
+            "preparing": "آپ کا چارٹ تیار ہو رہا ہے",
+            "retry": "دوبارہ کوشش کریں"
+        },
+        "style": {
+            "color": "رنگ",
+            "dataLabels": "ڈیٹا لیبلز",
+            "decimalPlaces": "اعشاریہ مقامات",
+            "legend": "لیجنڈ",
+            "title": "انداز"
+        },
+        "tooltip": {
+            "average": "اوسط",
+            "clickToView": "ڈیٹا دیکھنے کے لیے کلک کریں",
+            "count": "تعداد",
+            "countValues": "اقدار گنیں",
+            "max": "زیادہ سے زیادہ",
+            "median": "وسطانیہ",
+            "min": "کم سے کم",
+            "rows": "{{count}} قطاریں",
+            "sum": "مجموعہ",
+            "tapAgainToView": "ڈیٹا دیکھنے کے لیے دوبارہ ٹیپ کریں"
+        },
+        "total": "کل",
+        "unchecked": "غیر چیک شدہ",
+        "upgradeRequired": "اپ گریڈ درکار ہے",
+        "upgradeToProForChartTypes": "افقی بار، لائن اور ڈونٹ چارٹس استعمال کرنے کے لیے Pro پلان پر اپ گریڈ کریں",
+        "value": {
+            "days_one": "{{count}} دن",
+            "days_other": "{{count}} دن"
+        },
+        "xAxis": "X محور",
+        "yAxis": "Y محور",
+        "drilldown": {
+            "ariaLabel": "ٹیبل ڈیٹا کا پیش منظر",
+            "search": "تلاش",
+            "dismiss": "برخاست کریں",
+            "more": "مزید",
+            "saveAsView": "بطور ویو محفوظ کریں…",
+            "openDatabase": "{{database}} کھولیں",
+            "selectedRows": "منتخب قطاریں ({{count}})",
+            "cannotSaveSelectedRows": "منتخب قطاروں کو بطور ویو محفوظ نہیں کیا جا سکتا",
+            "open": "کھولیں",
+            "fromDashboardFilter": "ڈیش بورڈ فلٹر سے",
+            "rowCount_one": "{{count}} قطار",
+            "rowCount_other": "{{count}} قطاریں"
+        }
+    },
+    "dashboard": {
+        "addWidget": "ویجٹ شامل کریں",
+        "creationRequiresPro": "ڈیش بورڈ ویو بنانے کے لیے Pro ورک اسپیس درکار ہے۔",
+        "done": "ہو گیا",
+        "edit": "ترمیم کریں",
+        "empty": {
+            "editDashboard": "ڈیش بورڈ میں ترمیم کریں",
+            "newView": "نیا ویو",
+            "text": "چارٹس، ٹیبلز، فہرستیں شامل کریں"
+        },
+        "globalFilters": {
+            "addAnother": "ایک اور شامل کریں",
+            "addToFilter": "فلٹر میں شامل کریں",
+            "appliesTo": "یہ فلٹر نیچے منتخب کردہ {{type}} خصوصیات پر لاگو ہوگا",
+            "button": "فلٹر",
+            "delete": "فلٹر حذف کریں",
+            "done": "ہو گیا",
+            "endDate": "اختتامی تاریخ",
+            "filterBy": "فلٹر بلحاظ…",
+            "isChecked": "چیک شدہ ہے",
+            "isUnchecked": "غیر چیک شدہ ہے",
+            "more": "{{count}} مزید",
+            "moreActions": "مزید کارروائیاں",
+            "multipleSourcesIntro": "ایسا فلٹر بنائیں جو متعدد ماخذوں کی خصوصیات پر لاگو ہو",
+            "name": "فلٹر کا نام",
+            "noResults": "کوئی نتیجہ نہیں",
+            "op": {
+                "after": "کے بعد",
+                "before": "سے پہلے",
+                "between": "کے درمیان",
+                "checked": "چیک شدہ",
+                "complete": "مکمل",
+                "doesNotContain": "شامل نہیں ہے",
+                "endsWith": "پر ختم ہوتا ہے",
+                "incomplete": "نامکمل",
+                "is": "ہے",
+                "isEmpty": "خالی ہے",
+                "isNot": "نہیں ہے",
+                "isNotEmpty": "خالی نہیں ہے",
+                "onOrAfter": "اس دن یا بعد",
+                "onOrBefore": "اس دن یا پہلے",
+                "startsWith": "سے شروع ہوتا ہے",
+                "unchecked": "غیر چیک شدہ"
+            },
+            "people_one": "{{count}} شخص",
+            "people_other": "{{count}} افراد",
+            "relative": {
+                "amount": "مقدار",
+                "next": "اگلا",
+                "past": "پچھلا",
+                "summaryNext_one": "اگلا {{unit}}",
+                "summaryNext_other": "اگلے {{count}} {{unit}}",
+                "summaryPast_one": "پچھلا {{unit}}",
+                "summaryPast_other": "پچھلے {{count}} {{unit}}",
+                "summaryThis": "یہ {{unit}}",
+                "this": "موجودہ"
+            },
+            "relativeHint": "فلٹر موجودہ تاریخ کے ساتھ اپ ڈیٹ ہوگا",
+            "relativeToToday": "آج کے لحاظ سے",
+            "remove": "ہٹائیں",
+            "reset": "ری سیٹ کریں",
+            "sourceLine": "{{source}} میں {{property}}",
+            "startDate": "آغاز کی تاریخ",
+            "title": "متعدد ماخذ فلٹر کریں",
+            "units": {
+                "day_one": "دن",
+                "day_other": "دن",
+                "month_one": "مہینہ",
+                "month_other": "مہینے",
+                "week_one": "ہفتہ",
+                "week_other": "ہفتے",
+                "year_one": "سال",
+                "year_other": "سال"
+            },
+            "viewCount_one": "{{count}} ویو",
+            "viewCount_other": "{{count}} ویوز"
+        },
+        "historyPreviewUnavailable": "ورژن ہسٹری میں ڈیش بورڈز کا پیش منظر نہیں دکھایا جاتا۔",
+        "limit": {
+            "fullHint": "نیا ویو شامل کرنے کے لیے کوئی ویو حذف کریں",
+            "fullTitle": "ڈیش بورڈ بھر گیا ہے"
+        },
+        "menuName": "ڈیش بورڈ",
+        "picker": {
+            "back": "واپس",
+            "changeViewTitle": "ویو تبدیل کریں",
+            "close": "بند کریں",
+            "createFailed": "ویو نہیں بن سکا",
+            "editChart": "چارٹ میں ترمیم کریں",
+            "layout": {
+                "board": "بورڈ",
+                "calendar": "کیلنڈر",
+                "chart": "چارٹ",
+                "feed": "فیڈ",
+                "gallery": "گیلری",
+                "list": "فہرست",
+                "table": "ٹیبل",
+                "timeline": "ٹائم لائن"
+            },
+            "loadFailed": "ڈیٹابیس لوڈ نہیں ہو سکے",
+            "newView": "نیا ویو",
+            "newViewIn": "{{database}} میں نیا ویو",
+            "noResults": "کوئی ویو نہیں ملا",
+            "otherSources": "دیگر ڈیٹا ماخذ",
+            "searchPlaceholder": "ویو تلاش کریں...",
+            "showMore": "{{count}} مزید دکھائیں",
+            "source": "ماخذ",
+            "thisDatabase": "یہ ڈیٹابیس",
+            "viewName": "ویو کا نام",
+            "viewsOn": "{{database}} کے ویوز",
+            "viewsOnThisDatabase": "اس ڈیٹابیس کے ویوز"
+        },
+        "private": {
+            "reset": "ری سیٹ کریں",
+            "resetAll": "تمام تبدیلیاں ری سیٹ کریں",
+            "saveForEveryone": "سب کے لیے محفوظ کریں",
+            "saveOptions": "محفوظ کرنے کے مزید اختیارات",
+            "saved": "تبدیلیاں سب کے لیے محفوظ ہو گئیں۔",
+            "undo": "کالعدم کریں",
+            "unsaved": "غیر محفوظ تبدیلیاں"
+        },
+        "referencedDashboardPrefix": "ویو برائے",
+        "row": {
+            "addToNewRow": "نئی قطار میں شامل کریں",
+            "addToRow": "قطار میں شامل کریں",
+            "moveDown": "نیچے منتقل کریں",
+            "moveUp": "اوپر منتقل کریں",
+            "movedDown": "قطار نیچے منتقل ہو گئی",
+            "movedUp": "قطار اوپر منتقل ہو گئی"
+        },
+        "rowLimit": "ایک قطار میں زیادہ سے زیادہ {{count}} ویجٹس آ سکتے ہیں۔",
+        "settings": {
+            "name": "ڈیش بورڈ کی ترتیبات",
+            "showIconsInHeading": "سرخی میں آئیکنز دکھائیں",
+            "showWidgetTitles": "ویجٹ کے عنوانات دکھائیں"
+        },
+        "toolbar": {
+            "openAsFullPage": "پورے صفحے کے طور پر کھولیں",
+            "settings": "ترتیبات"
+        },
+        "widget": {
+            "changeView": "ویو تبدیل کریں",
+            "close": "بند کریں",
+            "createRowAbove": "اوپر نئی قطار بنائیں",
+            "createRowBelow": "نیچے نئی قطار بنائیں",
+            "delete": "حذف کریں",
+            "dragHandle": "منتقل کرنے کے لیے گھسیٹیں",
+            "duplicate": "ڈپلیکیٹ کریں",
+            "editView": "ویو میں ترمیم کریں",
+            "filters": "فلٹرز",
+            "loading": "لوڈ ہو رہا ہے…",
+            "menu": "ویجٹ کے اختیارات",
+            "moveLeft": "بائیں منتقل کریں",
+            "moveRight": "دائیں منتقل کریں",
+            "moveToRow": "قطار میں منتقل کریں",
+            "noAccess": "آپ کو اس ڈیٹابیس تک رسائی حاصل نہیں",
+            "notFound": "یہ ویو اب موجود نہیں ہے",
+            "offline": "آن لائن واپس آنے پر دستیاب ہوگا",
+            "openFailed": "ویو نہیں کھل سکا",
+            "remove": "ویجٹ ہٹائیں",
+            "resizeHeight": "قطار کی اونچائی بدلنے کے لیے گھسیٹیں",
+            "resizeHeightValue": "{{height}} پکسلز",
+            "resizeWidth": "سائز بدلنے کے لیے گھسیٹیں",
+            "resizeWidthValue": "12 میں سے {{columns}} کالم",
+            "settings": "ترتیبات",
+            "sorts": "ترتیبیں",
+            "source": "ماخذ",
+            "unsupported": "ڈیش بورڈ کو ڈیش بورڈ کے اندر نہیں دکھایا جا سکتا",
+            "viewDataSource": "ڈیٹا کا ماخذ دیکھیں",
+            "viewNameHint": "اس ویو کا نام بدلتا ہے",
+            "viewSettings": "ویو کی ترتیبات"
+        },
+        "mobile": {
+            "viewCount_one": "{{count}} ویو",
+            "viewCount_other": "{{count}} ویوز"
+        }
+    },
+    "databaseSearch": {
+        "clearSearch": "تلاش صاف کریں",
+        "noResults": "کوئی نتیجہ نہیں",
+        "placeholder": "تلاش کے لیے ٹائپ کریں..."
     }
 }

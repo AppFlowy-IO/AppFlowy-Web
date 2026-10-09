@@ -9,6 +9,7 @@
  */
 import { expect, test } from '@playwright/test';
 
+import { openChartPanelRow } from '../../support/chart-settings-helpers';
 import {
   addChartViewTab,
   mockProSubscription,
@@ -65,33 +66,29 @@ test.describe('Chart settings — Persistence', () => {
     await expect(page.locator('.recharts-line')).toBeVisible({ timeout: 15000 });
   });
 
-  test('aggregation type survives a page reload', async ({ page, request }) => {
+  test('the property and its calculation survive a page reload', async ({ page, request }) => {
     const testEmail = generateRandomEmail();
 
     await signInAndCreateDatabaseView(page, request, testEmail, 'Grid');
     await addChartViewTab(page);
     await waitForChartReady(page);
 
-    // Switch aggregation to Sum
+    // "What to show" becomes the Done checkbox, calculated as Count values
     await openChartSettings(page);
-    await selectAggregation(page, 'Sum');
+    await selectAggregation(page, 'Count values', 'Done');
 
     // Reload
     await page.reload();
     await waitForChartReady(page);
 
-    // Re-open chart settings and verify Sum still has the tick
+    // Re-open chart settings and verify the property and Count values are still picked
     await openChartSettings(page);
-    await expect(
-      ChartSettingsSelectors.aggregationItem(page, 'Sum').locator('svg')
-    ).toBeVisible({ timeout: 5000 });
-    await expect(
-      ChartSettingsSelectors.aggregationItem(page, 'Count').locator('svg')
-    ).toHaveCount(0);
-    // Y-Axis section also re-renders (matches `aggregationNeedsY` rule)
-    await expect(ChartSettingsSelectors.yAxisLabel(page)).toBeVisible();
-
-    // Suppress unused-variable warning for ChartSelectors import not yet used
-    void ChartSelectors;
+    await expect(ChartSettingsSelectors.row(page, 'y_what')).toContainText('Done', { timeout: 5000 });
+    await expect(ChartSettingsSelectors.row(page, 'y_calculate')).toContainText('Count values');
+    await openChartPanelRow(page, 'y_calculate');
+    await expect(ChartSettingsSelectors.aggItem(page, 7)).toHaveAttribute('aria-checked', 'true');
+    await expect(ChartSettingsSelectors.aggItem(page, 0)).toHaveAttribute('aria-checked', 'false');
+    // The chart still renders after the reload.
+    await expect(ChartSelectors.chart(page)).toBeVisible();
   });
 });

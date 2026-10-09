@@ -18,19 +18,38 @@ export interface DatabaseViewportStyleInput extends DatabaseViewportLayoutInput 
   layout?: DatabaseViewLayout | null;
 }
 
+/** Embedded layouts whose viewport shrinks to their content, capped at the embedded height. */
+const AUTO_SHRINK_LAYOUTS = new Set<DatabaseViewLayout>([
+  DatabaseViewLayout.Grid,
+  DatabaseViewLayout.List,
+  DatabaseViewLayout.Gallery,
+  DatabaseViewLayout.Feed,
+]);
+
+/** Auto-shrinking layouts whose viewport also scrolls (the grid scrolls itself). */
+const SCROLL_EMBEDDED_LAYOUTS = new Set<DatabaseViewLayout>([
+  DatabaseViewLayout.List,
+  DatabaseViewLayout.Gallery,
+  DatabaseViewLayout.Feed,
+]);
+
+function isLayoutIn(layouts: Set<DatabaseViewLayout>, layout: DatabaseViewLayout | null | undefined) {
+  return layout !== null && layout !== undefined && layouts.has(layout);
+}
+
+/**
+ * Whether an embedded viewport is capped (`max-height`) instead of fixed.
+ *
+ * Board, Calendar, Chart, Timeline and Dashboard always get the full embedded
+ * height. A Dashboard in particular renders its own scroll container around
+ * the widget grid, so it must never be auto-shrunk or scrolled from outside.
+ */
 export function shouldAutoShrinkDatabaseViewport({
   embeddedHeight,
   isDocumentBlock,
   layout,
 }: DatabaseViewportStyleInput) {
-  return (
-    embeddedHeight !== undefined &&
-    isDocumentBlock === true &&
-    (layout === DatabaseViewLayout.Grid ||
-      layout === DatabaseViewLayout.List ||
-      layout === DatabaseViewLayout.Gallery ||
-      layout === DatabaseViewLayout.Feed)
-  );
+  return embeddedHeight !== undefined && isDocumentBlock === true && isLayoutIn(AUTO_SHRINK_LAYOUTS, layout);
 }
 
 export function shouldScrollEmbeddedDatabaseViewport({
@@ -38,13 +57,7 @@ export function shouldScrollEmbeddedDatabaseViewport({
   isDocumentBlock,
   layout,
 }: DatabaseViewportStyleInput) {
-  return (
-    embeddedHeight !== undefined &&
-    isDocumentBlock === true &&
-    (layout === DatabaseViewLayout.List ||
-      layout === DatabaseViewLayout.Gallery ||
-      layout === DatabaseViewLayout.Feed)
-  );
+  return embeddedHeight !== undefined && isDocumentBlock === true && isLayoutIn(SCROLL_EMBEDDED_LAYOUTS, layout);
 }
 
 export function getDatabaseViewportStyle(input: DatabaseViewportStyleInput) {

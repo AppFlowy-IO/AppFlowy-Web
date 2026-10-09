@@ -5,9 +5,8 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
-import { clearRedirectTo } from '@/application/session/sign_in';
-import { invalidToken } from '@/application/session/token';
 import { UserService } from '@/application/services/domains';
+import { signOutCurrentUser } from '@/application/session/sign-out';
 import { DateFormat, TimeFormat } from '@/application/types';
 import { MetadataKey } from '@/application/user-metadata';
 import { ReactComponent as ChevronDownIcon } from '@/assets/icons/alt_arrow_down.svg';
@@ -223,8 +222,7 @@ export function AccountAppPanel() {
   );
 
   const handleSignOut = useCallback(() => {
-    clearRedirectTo();
-    invalidToken();
+    signOutCurrentUser(currentUserRef.current?.uid);
     navigate('/login?force=true');
   }, [navigate]);
 
@@ -240,8 +238,8 @@ export function AccountAppPanel() {
       await UserService.deleteAccount();
       success = true;
       toast.success(t('settings.accountPage.deleteAccount.success'));
-      clearRedirectTo();
-      invalidToken();
+      // A deleted account is signed out explicitly: its device-local state goes too.
+      signOutCurrentUser(currentUserRef.current?.uid);
       navigate('/login?force=true');
     } catch (e) {
       toast.error(getErrorMessage(e, t('settings.accountPage.deleteAccount.failed')));

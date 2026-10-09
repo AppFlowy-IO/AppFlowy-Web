@@ -1,0 +1,607 @@
+{
+  "fixture": "layouts/global-filters",
+  "version": 1,
+  "encoding": {
+    "format": "The layouts/unknown-keys dashboard case format (stored, parsed, write, writtenKeys, expected).",
+    "option_names": "global_filters[].option_names: the names of the option ids in content, same order. Read only when every item is a string (otherwise absent). Written only for SingleSelect (3) and MultiSelect (4) filters and only when non-empty; it is a known key, so a writer that omits it clears it.",
+    "unknownTypeFilterIds": "Filters whose ty is not a field type of every client (here 99). A client may leave them out of its parsed model, but every write keeps them, with their extras, in their place: after the stored filter that preceded them, or first. The write lists them as a client that models them sends them.",
+    "relative": "Condition 28/29 content is relative date JSON (see relative-dates.json); it round-trips as a string."
+  },
+  "cases": [
+    {
+      "name": "option names, a relative date filter, a stale target and filter extras round trip",
+      "stored": {
+        "rows": [],
+        "global_filters": [
+          {
+            "id": "gf:region",
+            "name": "Region",
+            "ty": 3,
+            "condition": 0,
+            "content": "o-eu,o-us",
+            "targets": {"db:sales": "f:region", "db:stale": "f:gone"},
+            "target_order": ["db:sales", "db:stale"],
+            "option_names": ["Europe", "United States"],
+            "future_key": {"from": "newer-app"}
+          },
+          {
+            "id": "gf:due",
+            "name": "Due",
+            "ty": 2,
+            "condition": 28,
+            "content": "{\"relative_direction\":\"past\",\"relative_amount\":7,\"relative_unit\":\"day\"}",
+            "targets": {"db:sales": "f:due"},
+            "target_order": ["db:sales"],
+            "future_key": 7
+          },
+          {
+            "id": "gf:later",
+            "name": "Later",
+            "ty": 99,
+            "condition": 3,
+            "content": "x",
+            "targets": {"db:sales": "f:later"},
+            "target_order": ["db:sales"],
+            "future_key": "kept"
+          }
+        ],
+        "show_widget_titles": true
+      },
+      "parsed": {
+        "rows": [],
+        "global_filters": [
+          {
+            "id": "gf:region",
+            "name": "Region",
+            "ty": 3,
+            "condition": 0,
+            "content": "o-eu,o-us",
+            "targets": {"db:sales": "f:region", "db:stale": "f:gone"},
+            "target_order": ["db:sales", "db:stale"],
+            "option_names": ["Europe", "United States"]
+          },
+          {
+            "id": "gf:due",
+            "name": "Due",
+            "ty": 2,
+            "condition": 28,
+            "content": "{\"relative_direction\":\"past\",\"relative_amount\":7,\"relative_unit\":\"day\"}",
+            "targets": {"db:sales": "f:due"},
+            "target_order": ["db:sales"]
+          }
+        ],
+        "show_widget_titles": true
+      },
+      "unknownTypeFilterIds": ["gf:later"],
+      "write": {
+        "global_filters": [
+          {
+            "id": "gf:region",
+            "name": "Region",
+            "ty": 3,
+            "condition": 1,
+            "content": "o-eu,o-us",
+            "targets": {"db:sales": "f:region", "db:stale": "f:gone"},
+            "target_order": ["db:sales", "db:stale"],
+            "option_names": ["Europe", "United States"]
+          },
+          {
+            "id": "gf:due",
+            "name": "Due",
+            "ty": 2,
+            "condition": 28,
+            "content": "{\"relative_direction\":\"past\",\"relative_amount\":7,\"relative_unit\":\"day\"}",
+            "targets": {"db:sales": "f:due"},
+            "target_order": ["db:sales"]
+          },
+          {
+            "id": "gf:later",
+            "name": "Later",
+            "ty": 99,
+            "condition": 3,
+            "content": "x",
+            "targets": {"db:sales": "f:later"},
+            "target_order": ["db:sales"]
+          }
+        ]
+      },
+      "writtenKeys": ["global_filters"],
+      "expected": {
+        "rows": [],
+        "global_filters": [
+          {
+            "id": "gf:region",
+            "name": "Region",
+            "ty": 3,
+            "condition": 1,
+            "content": "o-eu,o-us",
+            "targets": {"db:sales": "f:region", "db:stale": "f:gone"},
+            "target_order": ["db:sales", "db:stale"],
+            "option_names": ["Europe", "United States"],
+            "future_key": {"from": "newer-app"}
+          },
+          {
+            "id": "gf:due",
+            "name": "Due",
+            "ty": 2,
+            "condition": 28,
+            "content": "{\"relative_direction\":\"past\",\"relative_amount\":7,\"relative_unit\":\"day\"}",
+            "targets": {"db:sales": "f:due"},
+            "target_order": ["db:sales"],
+            "future_key": 7
+          },
+          {
+            "id": "gf:later",
+            "name": "Later",
+            "ty": 99,
+            "condition": 3,
+            "content": "x",
+            "targets": {"db:sales": "f:later"},
+            "target_order": ["db:sales"],
+            "future_key": "kept"
+          }
+        ],
+        "show_widget_titles": true
+      }
+    },
+    {
+      "name": "option names are written only for select filters and only when there are names",
+      "stored": {
+        "rows": [],
+        "global_filters": [
+          {
+            "id": "gf:tier",
+            "name": "Tier",
+            "ty": 3,
+            "condition": 0,
+            "content": "o-gold",
+            "targets": {"db:sales": "f:tier"},
+            "target_order": ["db:sales"],
+            "option_names": ["Gold"],
+            "future_key": "tier"
+          },
+          {
+            "id": "gf:done",
+            "name": "Done",
+            "ty": 5,
+            "condition": 0,
+            "content": "",
+            "targets": {"db:sales": "f:done"},
+            "target_order": ["db:sales"]
+          }
+        ],
+        "show_widget_titles": true
+      },
+      "parsed": {
+        "rows": [],
+        "global_filters": [
+          {
+            "id": "gf:tier",
+            "name": "Tier",
+            "ty": 3,
+            "condition": 0,
+            "content": "o-gold",
+            "targets": {"db:sales": "f:tier"},
+            "target_order": ["db:sales"],
+            "option_names": ["Gold"]
+          },
+          {
+            "id": "gf:done",
+            "name": "Done",
+            "ty": 5,
+            "condition": 0,
+            "content": "",
+            "targets": {"db:sales": "f:done"},
+            "target_order": ["db:sales"]
+          }
+        ],
+        "show_widget_titles": true
+      },
+      "write": {
+        "global_filters": [
+          {
+            "id": "gf:tier",
+            "name": "Tier",
+            "ty": 3,
+            "condition": 0,
+            "content": "",
+            "targets": {"db:sales": "f:tier"},
+            "target_order": ["db:sales"],
+            "option_names": []
+          },
+          {
+            "id": "gf:done",
+            "name": "Done",
+            "ty": 5,
+            "condition": 1,
+            "content": "",
+            "targets": {"db:sales": "f:done"},
+            "target_order": ["db:sales"],
+            "option_names": ["ignored"]
+          }
+        ]
+      },
+      "writtenKeys": ["global_filters"],
+      "expected": {
+        "rows": [],
+        "global_filters": [
+          {
+            "id": "gf:tier",
+            "name": "Tier",
+            "ty": 3,
+            "condition": 0,
+            "content": "",
+            "targets": {"db:sales": "f:tier"},
+            "target_order": ["db:sales"],
+            "future_key": "tier"
+          },
+          {
+            "id": "gf:done",
+            "name": "Done",
+            "ty": 5,
+            "condition": 1,
+            "content": "",
+            "targets": {"db:sales": "f:done"},
+            "target_order": ["db:sales"]
+          }
+        ],
+        "show_widget_titles": true
+      }
+    },
+    {
+      "name": "option names of another shape read as absent",
+      "stored": {
+        "rows": [],
+        "global_filters": [
+          {
+            "id": "gf:mixed",
+            "name": "Tags",
+            "ty": 4,
+            "condition": 2,
+            "content": "o-a,o-b",
+            "targets": {"db:sales": "f:tags"},
+            "target_order": ["db:sales"],
+            "option_names": ["A", 2]
+          },
+          {
+            "id": "gf:text",
+            "name": "Stage",
+            "ty": 3,
+            "condition": 0,
+            "content": "o-a",
+            "targets": {"db:sales": "f:stage"},
+            "target_order": ["db:sales"],
+            "option_names": "A"
+          }
+        ],
+        "show_widget_titles": true
+      },
+      "parsed": {
+        "rows": [],
+        "global_filters": [
+          {
+            "id": "gf:mixed",
+            "name": "Tags",
+            "ty": 4,
+            "condition": 2,
+            "content": "o-a,o-b",
+            "targets": {"db:sales": "f:tags"},
+            "target_order": ["db:sales"]
+          },
+          {
+            "id": "gf:text",
+            "name": "Stage",
+            "ty": 3,
+            "condition": 0,
+            "content": "o-a",
+            "targets": {"db:sales": "f:stage"},
+            "target_order": ["db:sales"]
+          }
+        ],
+        "show_widget_titles": true
+      }
+    },
+    {
+      "name": "a filter of an unknown type keeps its place when the filter before it is deleted",
+      "stored": {
+        "rows": [],
+        "global_filters": [
+          {
+            "id": "gf:a",
+            "name": "Archived",
+            "ty": 5,
+            "condition": 0,
+            "content": "",
+            "targets": {"db:sales": "f:archived"},
+            "target_order": ["db:sales"]
+          },
+          {
+            "id": "gf:later",
+            "name": "Later",
+            "ty": 99,
+            "condition": 3,
+            "content": "x",
+            "targets": {"db:sales": "f:later"},
+            "target_order": ["db:sales"],
+            "future_key": "kept"
+          },
+          {
+            "id": "gf:b",
+            "name": "Billable",
+            "ty": 5,
+            "condition": 1,
+            "content": "",
+            "targets": {"db:sales": "f:billable"},
+            "target_order": ["db:sales"]
+          }
+        ],
+        "show_widget_titles": true
+      },
+      "parsed": {
+        "rows": [],
+        "global_filters": [
+          {
+            "id": "gf:a",
+            "name": "Archived",
+            "ty": 5,
+            "condition": 0,
+            "content": "",
+            "targets": {"db:sales": "f:archived"},
+            "target_order": ["db:sales"]
+          },
+          {
+            "id": "gf:b",
+            "name": "Billable",
+            "ty": 5,
+            "condition": 1,
+            "content": "",
+            "targets": {"db:sales": "f:billable"},
+            "target_order": ["db:sales"]
+          }
+        ],
+        "show_widget_titles": true
+      },
+      "unknownTypeFilterIds": ["gf:later"],
+      "write": {
+        "global_filters": [
+          {
+            "id": "gf:later",
+            "name": "Later",
+            "ty": 99,
+            "condition": 3,
+            "content": "x",
+            "targets": {"db:sales": "f:later"},
+            "target_order": ["db:sales"]
+          },
+          {
+            "id": "gf:b",
+            "name": "Billable",
+            "ty": 5,
+            "condition": 1,
+            "content": "",
+            "targets": {"db:sales": "f:billable"},
+            "target_order": ["db:sales"]
+          }
+        ]
+      },
+      "writtenKeys": ["global_filters"],
+      "expected": {
+        "rows": [],
+        "global_filters": [
+          {
+            "id": "gf:later",
+            "name": "Later",
+            "ty": 99,
+            "condition": 3,
+            "content": "x",
+            "targets": {"db:sales": "f:later"},
+            "target_order": ["db:sales"],
+            "future_key": "kept"
+          },
+          {
+            "id": "gf:b",
+            "name": "Billable",
+            "ty": 5,
+            "condition": 1,
+            "content": "",
+            "targets": {"db:sales": "f:billable"},
+            "target_order": ["db:sales"]
+          }
+        ],
+        "show_widget_titles": true
+      }
+    },
+    {
+      "name": "a filter of an unknown type keeps its place when a filter is added",
+      "stored": {
+        "rows": [],
+        "global_filters": [
+          {
+            "id": "gf:later",
+            "name": "Later",
+            "ty": 99,
+            "condition": 3,
+            "content": "x",
+            "targets": {"db:sales": "f:later"},
+            "target_order": ["db:sales"],
+            "future_key": "kept"
+          },
+          {
+            "id": "gf:a",
+            "name": "Archived",
+            "ty": 5,
+            "condition": 0,
+            "content": "",
+            "targets": {"db:sales": "f:archived"},
+            "target_order": ["db:sales"]
+          }
+        ],
+        "show_widget_titles": true
+      },
+      "parsed": {
+        "rows": [],
+        "global_filters": [
+          {
+            "id": "gf:a",
+            "name": "Archived",
+            "ty": 5,
+            "condition": 0,
+            "content": "",
+            "targets": {"db:sales": "f:archived"},
+            "target_order": ["db:sales"]
+          }
+        ],
+        "show_widget_titles": true
+      },
+      "unknownTypeFilterIds": ["gf:later"],
+      "write": {
+        "global_filters": [
+          {
+            "id": "gf:later",
+            "name": "Later",
+            "ty": 99,
+            "condition": 3,
+            "content": "x",
+            "targets": {"db:sales": "f:later"},
+            "target_order": ["db:sales"]
+          },
+          {
+            "id": "gf:a",
+            "name": "Archived",
+            "ty": 5,
+            "condition": 0,
+            "content": "",
+            "targets": {"db:sales": "f:archived"},
+            "target_order": ["db:sales"]
+          },
+          {
+            "id": "gf:new",
+            "name": "New",
+            "ty": 5,
+            "condition": 0,
+            "content": "",
+            "targets": {"db:sales": "f:new"},
+            "target_order": ["db:sales"]
+          }
+        ]
+      },
+      "writtenKeys": ["global_filters"],
+      "expected": {
+        "rows": [],
+        "global_filters": [
+          {
+            "id": "gf:later",
+            "name": "Later",
+            "ty": 99,
+            "condition": 3,
+            "content": "x",
+            "targets": {"db:sales": "f:later"},
+            "target_order": ["db:sales"],
+            "future_key": "kept"
+          },
+          {
+            "id": "gf:a",
+            "name": "Archived",
+            "ty": 5,
+            "condition": 0,
+            "content": "",
+            "targets": {"db:sales": "f:archived"},
+            "target_order": ["db:sales"]
+          },
+          {
+            "id": "gf:new",
+            "name": "New",
+            "ty": 5,
+            "condition": 0,
+            "content": "",
+            "targets": {"db:sales": "f:new"},
+            "target_order": ["db:sales"]
+          }
+        ],
+        "show_widget_titles": true
+      }
+    },
+    {
+      "name": "a write equal to the stored filters writes nothing",
+      "stored": {
+        "rows": [],
+        "global_filters": [
+          {
+            "id": "gf:region",
+            "name": "Region",
+            "ty": 3,
+            "condition": 0,
+            "content": "o-eu,o-us",
+            "targets": {"db:sales": "f:region", "db:stale": "f:gone"},
+            "target_order": ["db:sales", "db:stale"],
+            "option_names": ["Europe", "United States"],
+            "future_key": {"from": "newer-app"}
+          },
+          {
+            "id": "gf:later",
+            "name": "Later",
+            "ty": 99,
+            "condition": 3,
+            "content": "x",
+            "targets": {"db:sales": "f:later"},
+            "target_order": ["db:sales"],
+            "future_key": "kept"
+          }
+        ],
+        "show_widget_titles": true
+      },
+      "unknownTypeFilterIds": ["gf:later"],
+      "write": {
+        "global_filters": [
+          {
+            "id": "gf:region",
+            "name": "Region",
+            "ty": 3,
+            "condition": 0,
+            "content": "o-eu,o-us",
+            "targets": {"db:sales": "f:region", "db:stale": "f:gone"},
+            "target_order": ["db:sales", "db:stale"],
+            "option_names": ["Europe", "United States"]
+          },
+          {
+            "id": "gf:later",
+            "name": "Later",
+            "ty": 99,
+            "condition": 3,
+            "content": "x",
+            "targets": {"db:sales": "f:later"},
+            "target_order": ["db:sales"]
+          }
+        ]
+      },
+      "writtenKeys": [],
+      "expected": {
+        "rows": [],
+        "global_filters": [
+          {
+            "id": "gf:region",
+            "name": "Region",
+            "ty": 3,
+            "condition": 0,
+            "content": "o-eu,o-us",
+            "targets": {"db:sales": "f:region", "db:stale": "f:gone"},
+            "target_order": ["db:sales", "db:stale"],
+            "option_names": ["Europe", "United States"],
+            "future_key": {"from": "newer-app"}
+          },
+          {
+            "id": "gf:later",
+            "name": "Later",
+            "ty": 99,
+            "condition": 3,
+            "content": "x",
+            "targets": {"db:sales": "f:later"},
+            "target_order": ["db:sales"],
+            "future_key": "kept"
+          }
+        ],
+        "show_widget_titles": true
+      }
+    }
+  ]
+}

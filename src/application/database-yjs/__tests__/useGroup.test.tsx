@@ -28,6 +28,7 @@ import {
   useToggleHideUnGrouped,
   useUpdateDatabaseLayout,
 } from '@/application/database-yjs/dispatch';
+import { useSetBoardGroupCalculation, useToggleBoardColorColumns } from '@/application/database-yjs/dispatch/board';
 import { useGroupByFieldDispatch as useGroupByFieldDispatchCompatibility } from '@/application/database-yjs/dispatch/group';
 import { getOrCreateDatabaseHistoryManager, runDatabaseAction } from '@/application/database-yjs/history';
 import { generateListFieldSettings } from '@/application/database-yjs/list-layout';
@@ -1449,5 +1450,106 @@ describe('useGroup', () => {
     const columns = groups.get(0).get(YjsDatabaseKey.groups) as Y.Array<{ id: string; visible: boolean }>;
 
     expect(columns.toJSON()).toEqual([{ id: emptyGroupId, visible: false }]);
+  });
+});
+
+describe('useBoardLayoutSettings: color columns and column calculation (WP09)', () => {
+  const fieldId = 'field-id';
+  const groupId = 'group-id';
+  const viewId = 'board-view-id';
+
+  function boardLayout(databaseDoc: YDoc) {
+    return databaseDoc
+      .getMap(YjsEditorKey.data_section)
+      .get(YjsEditorKey.database)
+      ?.get(YjsDatabaseKey.views)
+      ?.get(viewId)
+      ?.get(YjsDatabaseKey.layout_settings)
+      ?.get('1') as Y.Map<unknown>;
+  }
+
+  function addNumberField(databaseDoc: YDoc, id: string) {
+    const fields = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database)?.get(YjsDatabaseKey.fields);
+    const field = new Y.Map();
+
+    field.set(YjsDatabaseKey.id, id);
+    field.set(YjsDatabaseKey.name, 'Estimate');
+    field.set(YjsDatabaseKey.type, FieldType.Number);
+    fields?.set(id, field as never);
+    return field;
+  }
+
+  it('reads show_color_columns as on only when it is stored as true, and the default card count', async () => {
+    const databaseDoc = createDatabaseDoc({ fieldId, groupId, groupColumns: [], viewId });
+    const { result } = renderHook(() => useBoardLayoutSettings(), { wrapper: createWrapper(databaseDoc, viewId) });
+
+    expect(result.current.showColorColumns).toBe(false);
+    expect(result.current.groupCalculation).toBeUndefined();
+    act(() => {
+      boardLayout(databaseDoc).set(YjsDatabaseKey.show_color_columns, 'true');
+    });
+    expect(result.current.showColorColumns).toBe(false);
+    act(() => {
+      boardLayout(databaseDoc).set(YjsDatabaseKey.show_color_columns, true);
+    });
+    await waitFor(() => expect(result.current.showColorColumns).toBe(true));
+  });
+
+  it('reads a stored calculation against the fields and falls back to the card count when it cannot', async () => {
+    const databaseDoc = createDatabaseDoc({ fieldId, groupId, groupColumns: [], viewId });
+    const estimate = addNumberField(databaseDoc, 'estimate');
+    const { result } = renderHook(() => useBoardLayoutSettings(), { wrapper: createWrapper(databaseDoc, viewId) });
+
+    act(() => {
+      boardLayout(databaseDoc).set(YjsDatabaseKey.group_calculation, { type: 4, field_id: 'estimate' });
+    });
+    await waitFor(() => expect(result.current.groupCalculation).toEqual({ type: 4, fieldId: 'estimate' }));
+    // The field changes type: a text field has no Sum, so the column shows its count again.
+    act(() => {
+      estimate.set(YjsDatabaseKey.type, FieldType.RichText);
+    });
+    await waitFor(() => expect(result.current.groupCalculation).toBeUndefined());
+    act(() => {
+      estimate.set(YjsDatabaseKey.type, FieldType.Number);
+    });
+    await waitFor(() => expect(result.current.groupCalculation).toEqual({ type: 4, fieldId: 'estimate' }));
+    act(() => {
+      boardLayout(databaseDoc).set(YjsDatabaseKey.group_calculation, { type: 5, field_id: '' });
+    });
+    await waitFor(() => expect(result.current.groupCalculation).toBeUndefined());
+  });
+
+  it('writes color columns and the calculation key by key, keeping every other board key', async () => {
+    const databaseDoc = createDatabaseDoc({ fieldId, groupId, groupColumns: [], viewId });
+
+    addNumberField(databaseDoc, 'estimate');
+    boardLayout(databaseDoc).set('future_board_key', { x: 1 });
+    const { result } = renderHook(
+      () => ({
+        settings: useBoardLayoutSettings(),
+        toggleColorColumns: useToggleBoardColorColumns(),
+        setCalculation: useSetBoardGroupCalculation(),
+      }),
+      { wrapper: createWrapper(databaseDoc, viewId) }
+    );
+
+    act(() => {
+      result.current.toggleColorColumns(true);
+    });
+    act(() => {
+      result.current.setCalculation({ type: 4, fieldId: 'estimate' });
+    });
+    await waitFor(() => expect(result.current.settings.groupCalculation).toEqual({ type: 4, fieldId: 'estimate' }));
+    expect(boardLayout(databaseDoc).toJSON()).toEqual({
+      hide_empty_groups: false,
+      future_board_key: { x: 1 },
+      show_color_columns: true,
+      group_calculation: { type: 4, field_id: 'estimate' },
+    });
+    act(() => {
+      result.current.setCalculation(null);
+    });
+    expect(boardLayout(databaseDoc).get(YjsDatabaseKey.group_calculation)).toEqual({ type: 5, field_id: '' });
+    expect(boardLayout(databaseDoc).get('future_board_key')).toEqual({ x: 1 });
   });
 });

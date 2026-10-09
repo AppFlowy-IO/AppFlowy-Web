@@ -1488,7 +1488,10 @@
       "newColumn": "คอลัมน์ใหม่",
       "format": "รูปแบบ",
       "reminderOnDateTooltip": "เซลล์นี้มีการตั้งค่าการเตือนในวันที่กำหนด",
-      "optionAlreadyExist": "ตัวเลือกมีอยู่แล้ว"
+      "optionAlreadyExist": "ตัวเลือกมีอยู่แล้ว",
+      "person": {
+        "searchForMore_other": "ค้นหาเพื่อดูอีก {{count}} คน"
+      }
     },
     "rowPage": {
       "newField": "เพิ่มฟิลด์ใหม่",
@@ -1504,7 +1507,9 @@
         "other": "ซ่อนฟิลด์ที่ซ่อนอยู่ {{count}} ฟิลด์"
       },
       "openAsFullPage": "เปิดแบบเต็มหน้า",
-      "moreRowActions": "การดำเนินการแถวเพิ่มเติม"
+      "moreRowActions": "การดำเนินการแถวเพิ่มเติม",
+      "openInCenterPeek": "เปิดแบบแสดงตรงกลาง",
+      "resizeSidePeek": "ปรับขนาดการแสดงด้านข้าง"
     },
     "sort": {
       "ascending": "เรียงลำดับจากน้อยไปมาก",
@@ -1526,7 +1531,7 @@
       "textPlaceholder": "ว่างเปล่า",
       "copyProperty": "คัดลอกคุณสมบัติไปยังคลิปบอร์ด",
       "count": "จำนวน",
-      "newRow": "แถวใหม่",
+      "newRow": "หน้าใหม่",
       "action": "การดำเนินการ",
       "add": "คลิกเพิ่มด้านล่าง",
       "drag": "ลากเพื่อย้าย",
@@ -1538,7 +1543,9 @@
       "noContent": "ไม่มีเนื้อหา",
       "reorderRowDescription": "เรียงลำดับแถวใหม่",
       "createRowAboveDescription": "สร้างแถวด้านบน",
-      "createRowBelowDescription": "สร้างแถวด้านล่าง"
+      "createRowBelowDescription": "สร้างแถวด้านล่าง",
+      "loadingRowsProgress": "กำลังโหลดแถว… {{loaded}}/{{total}}",
+      "rowsNotLoadedYet": "บางแถวยังโหลดไม่เสร็จ"
     },
     "selectOption": {
       "create": "สร้าง",
@@ -1598,7 +1605,9 @@
       "countEmpty": "นับที่ว่าง",
       "countEmptyShort": "ว่างเปล่า",
       "countNonEmpty": "นับที่ไม่ว่าง",
-      "countNonEmptyShort": "เติมแล้ว"
+      "countNonEmptyShort": "เติมแล้ว",
+      "countChecked": "เลือกแล้ว",
+      "countUnchecked": "ไม่ได้เลือก"
     },
     "media": {
       "rename": "เปลี่ยนชื่อ",
@@ -1617,6 +1626,12 @@
       "setAsCover": "ตั้งเป็นปก",
       "openInBrowser": "เปิดในเบราว์เซอร์",
       "embedLink": "ฝังลิงค์ไฟล์"
+    },
+    "openPagesIn": {
+      "title": "เปิดหน้าใน",
+      "sidePeek": "แสดงด้านข้าง",
+      "centerPeek": "แสดงตรงกลาง",
+      "fullPage": "เต็มหน้า"
     }
   },
   "document": {
@@ -2045,7 +2060,11 @@
       "newGroup": "กลุ่มใหม่",
       "deleteColumn": "ลบ",
       "deleteColumnConfirmation": "การดำเนินการนี้จะลบกลุ่มนี้และการ์ดทั้งหมดในกลุ่ม\nคุณแน่ใจหรือไม่ว่าต้องการดำเนินการต่อ?",
-      "groupActions": "กลุ่มการดำเนินการ"
+      "groupActions": "กลุ่มการดำเนินการ",
+      "calculate": "คำนวณ",
+      "calculationTooltip": "{{calculation}}ของ {{property}}",
+      "colorColumns": "ระบายสีคอลัมน์",
+      "properties": "คุณสมบัติ"
     },
     "hiddenGroupSection": {
       "sectionTitle": "กลุ่มที่ซ่อนไว้",
@@ -2918,5 +2937,411 @@
     "favoriteDisabledHint": "ไม่สามารถเพิ่มมุมมองนี้เป็นรายการโปรดได้",
     "pinTab": "ปักหมุด",
     "unpinTab": "ยกเลิกการปักหมุด"
+  },
+  "chart": {
+    "a11y": {
+      "table": "ข้อมูลแผนภูมิ"
+    },
+    "agg": {
+      "average": "ค่าเฉลี่ย",
+      "countAll": "นับทั้งหมด",
+      "countEmpty": "นับค่าว่าง",
+      "countUnique": "นับค่าที่ไม่ซ้ำ",
+      "countValues": "นับค่า",
+      "dateRange": "ช่วงวันที่",
+      "earliest": "เร็วที่สุด",
+      "latest": "ล่าสุด",
+      "max": "สูงสุด",
+      "median": "มัธยฐาน",
+      "min": "ต่ำสุด",
+      "percentChecked": "เปอร์เซ็นต์ที่เลือกแล้ว",
+      "percentEmpty": "เปอร์เซ็นต์ที่ว่าง",
+      "percentNotEmpty": "เปอร์เซ็นต์ที่ไม่ว่าง",
+      "percentUnchecked": "เปอร์เซ็นต์ที่ไม่ได้เลือก",
+      "range": "ช่วง",
+      "sum": "ผลรวม"
+    },
+    "aggregation": "การรวมข้อมูล",
+    "barChart": "แผนภูมิแท่ง",
+    "chartType": "ประเภทแผนภูมิ",
+    "checked": "เลือกแล้ว",
+    "color": {
+      "auto": "อัตโนมัติ",
+      "blue": "สีน้ำเงิน",
+      "colorful": "หลากสี",
+      "colorless": "ไม่มีสี",
+      "green": "สีเขียว",
+      "orange": "สีส้ม",
+      "pink": "สีชมพู",
+      "purple": "สีม่วง",
+      "red": "สีแดง",
+      "teal": "สีเขียวอมฟ้า",
+      "yellow": "สีเหลือง"
+    },
+    "cumulative": "สะสม",
+    "dateCondition": "การจัดกลุ่มวันที่",
+    "dateGrouping": {
+      "day": "วัน",
+      "month": "เดือน",
+      "relative": "สัมพัทธ์",
+      "week": "สัปดาห์",
+      "year": "ปี"
+    },
+    "decimalPlaces": {
+      "auto": "อัตโนมัติ"
+    },
+    "donutChart": "แผนภูมิโดนัท",
+    "emptyState": {
+      "description": "เพิ่มแถวที่มีข้อมูลเพื่อดูแผนภูมิ",
+      "noField": "ไม่มีฟิลด์ที่ใช้จัดกลุ่มได้",
+      "noFieldDescription": "สร้างฟิลด์แบบเลือกรายการเดียว เลือกหลายรายการ กล่องกาเครื่องหมาย หรือวันที่ เพื่อใช้มุมมองแผนภูมิ",
+      "title": "ไม่มีข้อมูลที่จะแสดง"
+    },
+    "emptyValue": "ว่างเปล่า",
+    "groups": {
+      "count": "{{count}} กลุ่ม",
+      "hideAll": "ซ่อนทั้งหมด",
+      "hideGroup": "ซ่อนกลุ่ม",
+      "noGroups": "ไม่มีกลุ่ม",
+      "showAll": "แสดงทั้งหมด",
+      "showGroup": "แสดงกลุ่ม",
+      "unknownPerson": "บุคคลที่ไม่รู้จัก",
+      "unknownUser": "ผู้ใช้ที่ไม่รู้จัก",
+      "untitled": "ไม่มีชื่อ",
+      "visibleOfTotal": "{{visible}} จาก {{total}}"
+    },
+    "horizontalBarChart": "แผนภูมิแท่งแนวนอน",
+    "legend": {
+      "auto": "อัตโนมัติ",
+      "bottom": "ด้านล่าง",
+      "nextPage": "หน้าถัดไป",
+      "off": "ปิด",
+      "page": "{{page}}/{{count}}",
+      "previousPage": "หน้าก่อนหน้า"
+    },
+    "lineChart": "แผนภูมิเส้น",
+    "menuName": "แผนภูมิ",
+    "noFieldValue": "ไม่มี {}",
+    "noGroupableFields": "ไม่มีฟิลด์ที่จัดกลุ่มได้",
+    "number": {
+      "calculate": "คำนวณ",
+      "countAll": "นับทั้งหมด",
+      "emptyState": "ไม่มีข้อมูล",
+      "format": "รูปแบบ",
+      "formatAuto": "อัตโนมัติ",
+      "formatCompact": "แบบย่อ",
+      "formatPercent": "เปอร์เซ็นต์",
+      "property": "คุณสมบัติ",
+      "title": "ชื่อ",
+      "titleOf": "{{aggregation}}ของ {{field}}",
+      "titlePlaceholder": "ชื่อเริ่มต้น"
+    },
+    "numberChart": "ตัวเลข",
+    "numberColor": {
+      "addRule": "เพิ่มกฎ",
+      "blue": "สีน้ำเงิน",
+      "brown": "สีน้ำตาล",
+      "default": "ค่าเริ่มต้น",
+      "deleteRule": "ลบกฎ",
+      "dynamic": "ไดนามิก",
+      "dynamicColor": "สีแบบไดนามิก",
+      "else": "มิฉะนั้น",
+      "equal": "เท่ากับ",
+      "gray": "สีเทา",
+      "greaterThan": "มากกว่า",
+      "greaterThanOrEqual": "มากกว่าหรือเท่ากับ",
+      "green": "สีเขียว",
+      "ifValue": "ถ้าค่า",
+      "lessThan": "น้อยกว่า",
+      "lessThanOrEqual": "น้อยกว่าหรือเท่ากับ",
+      "notEqual": "ไม่เท่ากับ",
+      "orange": "สีส้ม",
+      "pink": "สีชมพู",
+      "purple": "สีม่วง",
+      "red": "สีแดง",
+      "sameAsColor": "เหมือนกับสี",
+      "yellow": "สีเหลือง"
+    },
+    "settings": {
+      "auto": "อัตโนมัติ",
+      "back": "กลับ",
+      "calculate": "คำนวณ",
+      "chartSettings": "การตั้งค่าแผนภูมิ",
+      "chartTitle": "ชื่อแผนภูมิ",
+      "chartType": "ประเภทแผนภูมิ",
+      "color": "สี",
+      "count": "จำนวน",
+      "cumulative": "สะสม",
+      "data": "ข้อมูล",
+      "dataLabels": "ป้ายข้อมูล",
+      "dateGrouping": "การจัดกลุ่มวันที่",
+      "decimalPlaces": "ตำแหน่งทศนิยม",
+      "default": "ค่าเริ่มต้น",
+      "donut": "โดนัท",
+      "eachSliceRepresents": "แต่ละส่วนแสดงถึง",
+      "endAt": "สิ้นสุดที่",
+      "exactValue": "ค่าที่แน่นอน",
+      "firstLetter": "ตัวอักษรแรก",
+      "format": "รูปแบบ",
+      "groupBy": "จัดกลุ่มตาม",
+      "groupByNone": "ไม่มี",
+      "groupByText": "การจัดกลุ่มข้อความ",
+      "groupStyle": "รูปแบบกลุ่ม",
+      "groupStyleGrouped": "เรียงข้างกัน",
+      "groupStylePercent": "เปอร์เซ็นต์",
+      "groupStyleStacked": "แบบซ้อน",
+      "groups": "กลุ่ม",
+      "horizontalBar": "แท่งแนวนอน",
+      "legend": "คำอธิบายสัญลักษณ์",
+      "line": "เส้น",
+      "moreOptions": "ตัวเลือกเพิ่มเติม",
+      "moreSeries": "+อีก {{n}} รายการ",
+      "noResults": "ไม่พบผลลัพธ์",
+      "number": "ตัวเลข",
+      "onlyShowingFirstGroups": "แสดงเฉพาะ {{n}} กลุ่มแรก",
+      "percent": "เปอร์เซ็นต์",
+      "rangeSize": "ขนาดช่วง",
+      "ranges": "ช่วง",
+      "rangesPreview": "{{count}} ช่วง ตั้งแต่ {{from}} ถึง {{to}}",
+      "searchProperty": "ค้นหาคุณสมบัติ…",
+      "size": "ขนาด {{size}}",
+      "sortBy": "เรียงลำดับตาม",
+      "startAt": "เริ่มที่",
+      "style": "สไตล์",
+      "verticalBar": "แท่งแนวตั้ง",
+      "viewSettings": "การตั้งค่ามุมมอง",
+      "whatToShow": "สิ่งที่จะแสดง",
+      "xAxis": "แกน X",
+      "yAxis": "แกน Y"
+    },
+    "showEmptyValues": "แสดงค่าว่าง",
+    "sort": {
+      "default": "ค่าเริ่มต้น",
+      "labelAsc": "A → Z",
+      "labelDesc": "Z → A",
+      "manual": "กำหนดเอง",
+      "valueAsc": "ค่าจากน้อยไปมาก",
+      "valueDesc": "ค่าจากมากไปน้อย"
+    },
+    "state": {
+      "error": "ไม่สามารถโหลดแผนภูมินี้ได้",
+      "noData": "ไม่มีข้อมูล",
+      "preparing": "กำลังเตรียมแผนภูมิ",
+      "retry": "ลองอีกครั้ง"
+    },
+    "style": {
+      "color": "สี",
+      "dataLabels": "ป้ายข้อมูล",
+      "decimalPlaces": "ตำแหน่งทศนิยม",
+      "legend": "คำอธิบายสัญลักษณ์",
+      "title": "สไตล์"
+    },
+    "tooltip": {
+      "average": "ค่าเฉลี่ย",
+      "clickToView": "คลิกเพื่อดูข้อมูล",
+      "count": "จำนวน",
+      "countValues": "นับค่า",
+      "max": "สูงสุด",
+      "median": "มัธยฐาน",
+      "min": "ต่ำสุด",
+      "rows": "{{count}} แถว",
+      "sum": "ผลรวม",
+      "tapAgainToView": "แตะอีกครั้งเพื่อดูข้อมูล"
+    },
+    "total": "รวมทั้งหมด",
+    "unchecked": "ไม่ได้เลือก",
+    "upgradeRequired": "ต้องอัปเกรด",
+    "upgradeToProForChartTypes": "อัปเกรดเป็นแผน Pro เพื่อใช้แผนภูมิแท่งแนวนอน แผนภูมิเส้น และแผนภูมิโดนัท",
+    "value": {
+      "days_other": "{{count}} วัน"
+    },
+    "xAxis": "แกน X",
+    "yAxis": "แกน Y",
+    "drilldown": {
+      "ariaLabel": "ตัวอย่างข้อมูลตาราง",
+      "search": "ค้นหา",
+      "dismiss": "ปิด",
+      "more": "เพิ่มเติม",
+      "saveAsView": "บันทึกเป็นมุมมอง…",
+      "openDatabase": "เปิด {{database}}",
+      "selectedRows": "แถวที่เลือก ({{count}})",
+      "cannotSaveSelectedRows": "ไม่สามารถบันทึกแถวที่เลือกเป็นมุมมองได้",
+      "open": "เปิด",
+      "fromDashboardFilter": "จากตัวกรองแดชบอร์ด",
+      "rowCount_other": "{{count}} แถว"
+    }
+  },
+  "dashboard": {
+    "addWidget": "เพิ่มวิดเจ็ต",
+    "creationRequiresPro": "การสร้างมุมมองแดชบอร์ดต้องใช้พื้นที่ทำงาน Pro",
+    "done": "เสร็จแล้ว",
+    "edit": "แก้ไข",
+    "empty": {
+      "editDashboard": "แก้ไขแดชบอร์ด",
+      "newView": "มุมมองใหม่",
+      "text": "เพิ่มแผนภูมิ ตาราง รายการ"
+    },
+    "globalFilters": {
+      "addAnother": "เพิ่มอีก",
+      "addToFilter": "เพิ่มในตัวกรอง",
+      "appliesTo": "ตัวกรองนี้จะใช้กับคุณสมบัติประเภท {{type}} ที่เลือกไว้ด้านล่าง",
+      "button": "ตัวกรอง",
+      "delete": "ลบตัวกรอง",
+      "done": "เสร็จแล้ว",
+      "endDate": "วันที่สิ้นสุด",
+      "filterBy": "กรองตาม…",
+      "isChecked": "เลือกแล้ว",
+      "isUnchecked": "ไม่ได้เลือก",
+      "more": "อีก {{count}} รายการ",
+      "moreActions": "การดำเนินการเพิ่มเติม",
+      "multipleSourcesIntro": "สร้างตัวกรองที่ใช้กับคุณสมบัติจากหลายแหล่งข้อมูล",
+      "name": "ชื่อตัวกรอง",
+      "noResults": "ไม่พบผลลัพธ์",
+      "op": {
+        "after": "หลัง",
+        "before": "ก่อน",
+        "between": "ระหว่าง",
+        "checked": "เลือกแล้ว",
+        "complete": "เสร็จสมบูรณ์",
+        "doesNotContain": "ไม่ประกอบด้วย",
+        "endsWith": "ลงท้ายด้วย",
+        "incomplete": "ไม่เสร็จสมบูรณ์",
+        "is": "เป็น",
+        "isEmpty": "ว่างเปล่า",
+        "isNot": "ไม่เป็น",
+        "isNotEmpty": "ไม่ว่างเปล่า",
+        "onOrAfter": "ตรงกับหรือหลัง",
+        "onOrBefore": "ตรงกับหรือก่อน",
+        "startsWith": "ขึ้นต้นด้วย",
+        "unchecked": "ไม่ได้เลือก"
+      },
+      "people_other": "{{count}} คน",
+      "relative": {
+        "amount": "จำนวน",
+        "next": "ถัดไป",
+        "past": "ที่ผ่านมา",
+        "summaryNext_other": "{{count}} {{unit}}ถัดไป",
+        "summaryPast_other": "{{count}} {{unit}}ที่ผ่านมา",
+        "summaryThis": "{{unit}}นี้",
+        "this": "ปัจจุบัน"
+      },
+      "relativeHint": "ตัวกรองจะอัปเดตตามวันที่ปัจจุบัน",
+      "relativeToToday": "สัมพันธ์กับวันนี้",
+      "remove": "นำออก",
+      "reset": "รีเซ็ต",
+      "sourceLine": "{{property}} ใน {{source}}",
+      "startDate": "วันที่เริ่มต้น",
+      "title": "กรองหลายแหล่งข้อมูล",
+      "units": {
+        "day_other": "วัน",
+        "month_other": "เดือน",
+        "week_other": "สัปดาห์",
+        "year_other": "ปี"
+      },
+      "viewCount_other": "{{count}} มุมมอง"
+    },
+    "historyPreviewUnavailable": "ไม่มีการแสดงตัวอย่างแดชบอร์ดในประวัติเวอร์ชัน",
+    "limit": {
+      "fullHint": "ลบมุมมองหนึ่งรายการเพื่อเพิ่มมุมมองใหม่",
+      "fullTitle": "แดชบอร์ดเต็มแล้ว"
+    },
+    "menuName": "แดชบอร์ด",
+    "picker": {
+      "back": "กลับ",
+      "changeViewTitle": "เปลี่ยนมุมมอง",
+      "close": "ปิด",
+      "createFailed": "ไม่สามารถสร้างมุมมองได้",
+      "editChart": "แก้ไขแผนภูมิ",
+      "layout": {
+        "board": "กระดาน",
+        "calendar": "ปฏิทิน",
+        "chart": "แผนภูมิ",
+        "feed": "ฟีด",
+        "gallery": "แกลเลอรี",
+        "list": "รายการ",
+        "table": "ตาราง",
+        "timeline": "ไทม์ไลน์"
+      },
+      "loadFailed": "ไม่สามารถโหลดฐานข้อมูลได้",
+      "newView": "มุมมองใหม่",
+      "newViewIn": "มุมมองใหม่ใน {{database}}",
+      "noResults": "ไม่พบมุมมอง",
+      "otherSources": "แหล่งข้อมูลอื่น",
+      "searchPlaceholder": "ค้นหามุมมอง...",
+      "showMore": "แสดงอีก {{count}} รายการ",
+      "source": "แหล่งข้อมูล",
+      "thisDatabase": "ฐานข้อมูลนี้",
+      "viewName": "ชื่อมุมมอง",
+      "viewsOn": "มุมมองของ {{database}}",
+      "viewsOnThisDatabase": "มุมมองของฐานข้อมูลนี้"
+    },
+    "private": {
+      "reset": "รีเซ็ต",
+      "resetAll": "รีเซ็ตการเปลี่ยนแปลงทั้งหมด",
+      "saveForEveryone": "บันทึกสำหรับทุกคน",
+      "saveOptions": "ตัวเลือกการบันทึกเพิ่มเติม",
+      "saved": "บันทึกการเปลี่ยนแปลงสำหรับทุกคนแล้ว",
+      "undo": "เลิกทำ",
+      "unsaved": "การเปลี่ยนแปลงที่ยังไม่ได้บันทึก"
+    },
+    "referencedDashboardPrefix": "มุมมองของ",
+    "row": {
+      "addToNewRow": "เพิ่มในแถวใหม่",
+      "addToRow": "เพิ่มในแถว",
+      "moveDown": "เลื่อนลง",
+      "moveUp": "เลื่อนขึ้น",
+      "movedDown": "เลื่อนแถวลงแล้ว",
+      "movedUp": "เลื่อนแถวขึ้นแล้ว"
+    },
+    "rowLimit": "แต่ละแถวมีวิดเจ็ตได้สูงสุด {{count}} รายการ",
+    "settings": {
+      "name": "การตั้งค่าแดชบอร์ด",
+      "showIconsInHeading": "แสดงไอคอนในหัวเรื่อง",
+      "showWidgetTitles": "แสดงชื่อวิดเจ็ต"
+    },
+    "toolbar": {
+      "openAsFullPage": "เปิดแบบเต็มหน้า",
+      "settings": "การตั้งค่า"
+    },
+    "widget": {
+      "changeView": "เปลี่ยนมุมมอง",
+      "close": "ปิด",
+      "createRowAbove": "สร้างแถวใหม่ด้านบน",
+      "createRowBelow": "สร้างแถวใหม่ด้านล่าง",
+      "delete": "ลบ",
+      "dragHandle": "ลากเพื่อย้าย",
+      "duplicate": "ทำสำเนา",
+      "editView": "แก้ไขมุมมอง",
+      "filters": "ตัวกรอง",
+      "loading": "กำลังโหลด…",
+      "menu": "ตัวเลือกวิดเจ็ต",
+      "moveLeft": "ย้ายไปทางซ้าย",
+      "moveRight": "ย้ายไปทางขวา",
+      "moveToRow": "ย้ายไปยังแถว",
+      "noAccess": "คุณไม่มีสิทธิ์เข้าถึงฐานข้อมูลนี้",
+      "notFound": "มุมมองนี้ไม่มีอยู่แล้ว",
+      "offline": "ใช้ได้เมื่อคุณกลับมาออนไลน์",
+      "openFailed": "ไม่สามารถเปิดมุมมองได้",
+      "remove": "นำวิดเจ็ตออก",
+      "resizeHeight": "ลากเพื่อเปลี่ยนความสูงของแถว",
+      "resizeHeightValue": "{{height}} พิกเซล",
+      "resizeWidth": "ลากเพื่อปรับขนาด",
+      "resizeWidthValue": "{{columns}} จาก 12 คอลัมน์",
+      "settings": "การตั้งค่า",
+      "sorts": "การเรียงลำดับ",
+      "source": "แหล่งข้อมูล",
+      "unsupported": "ไม่สามารถแสดงแดชบอร์ดภายในแดชบอร์ดได้",
+      "viewDataSource": "ดูแหล่งข้อมูล",
+      "viewNameHint": "เปลี่ยนชื่อมุมมองนี้",
+      "viewSettings": "การตั้งค่ามุมมอง"
+    },
+    "mobile": {
+      "viewCount_other": "{{count}} มุมมอง"
+    }
+  },
+  "databaseSearch": {
+    "clearSearch": "ล้างการค้นหา",
+    "noResults": "ไม่พบผลลัพธ์",
+    "placeholder": "พิมพ์เพื่อค้นหา..."
   }
 }

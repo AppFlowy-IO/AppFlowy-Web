@@ -1,683 +1,674 @@
-import dayjs, { Dayjs } from 'dayjs';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useTranslation } from 'react-i18next';
 
-import { useDatabaseContext, useDatabaseFields, useRowMap, useRowOrdersSelector } from '@/application/database-yjs';
-import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
+import { buildIdentifierLabels, useDatabaseContext, useRowMap, useRowOrdersSelector } from '@/application/database-yjs';
+import {
+  ChartGroupNameLookup,
+  ChartGroupSummary,
+  EMPTY_GROUP_KEY,
+  sortChartGroups,
+} from '@/application/database-yjs/chart-config';
+import { ChartFormatYField, formatChartValue } from '@/application/database-yjs/chart-format';
 import {
   ChartAggregationType,
   ChartDataItem,
   ChartLayoutSettings,
-  isDateGroupableFieldType,
-  isGroupableFieldType,
+  ChartSeriesData,
+  ChartType,
+  EMPTY_CHART_SERIES_DATA,
+  resolveChartStyle,
 } from '@/application/database-yjs/chart.type';
-import { getCell } from '@/application/database-yjs/const';
 import { DateGroupCondition, FieldType } from '@/application/database-yjs/database.type';
-import { parseSelectOptionTypeOptions, SelectOption } from '@/application/database-yjs/fields';
-import { safeParseTimestamp } from '@/application/database-yjs/fields/date/utils';
 import {
-  YjsDatabaseKey,
-  YjsEditorKey,
-  YDatabaseField,
-  YDatabaseFields,
-  YDatabaseRow,
-  RowId,
-  YDoc,
-} from '@/application/types';
-
-import { useChartColors, UseChartColorsReturn } from './useChartColors';
-
-interface GroupedData {
-  label: string;
-  optionId?: string;
-  rowIds: RowId[];
-  isEmptyCategory: boolean;
-  /** Lexicographically sortable key for chronological ordering of date buckets */
-  sortKey?: string;
-}
-
-interface GroupValue {
-  label: string;
-  /** Used to merge buckets across rows (e.g., date bucket key like "2026-03"). */
-  groupKey: string;
-  /** Chronological sort hint for date buckets. */
-  sortKey?: string;
-}
-
-function bucketDate(date: Dayjs, condition: DateGroupCondition): GroupValue {
-  switch (condition) {
-    case DateGroupCondition.Day: {
-      const key = date.format('YYYY-MM-DD');
-
-      return { label: key, groupKey: key, sortKey: key };
-    }
-
-    case DateGroupCondition.Week: {
-      // Week of year (ISO-style): start on Monday
-      const monday = date.day() === 0 ? date.subtract(6, 'day') : date.subtract(date.day() - 1, 'day');
-      const key = monday.format('YYYY-MM-DD');
-
-      return { label: `Week of ${key}`, groupKey: key, sortKey: key };
-    }
-
-    case DateGroupCondition.Month: {
-      const key = date.format('YYYY-MM');
-
-      return { label: date.format('MMM YYYY'), groupKey: key, sortKey: key };
-    }
-
-    case DateGroupCondition.Year: {
-      const key = date.format('YYYY');
-
-      return { label: key, groupKey: key, sortKey: key };
-    }
-
-    case DateGroupCondition.Relative:
-    default: {
-      const now = dayjs();
-      const startOfDay = date.startOf('day');
-      const today = now.startOf('day');
-      const diffDays = startOfDay.diff(today, 'day');
-
-      if (diffDays === 0) return { label: 'Today', groupKey: 'rel-0', sortKey: '01' };
-      if (diffDays === -1) return { label: 'Yesterday', groupKey: 'rel--1', sortKey: '00' };
-      if (diffDays === 1) return { label: 'Tomorrow', groupKey: 'rel-1', sortKey: '02' };
-      if (diffDays >= -7 && diffDays < -1) return { label: 'Last 7 days', groupKey: 'rel-last7', sortKey: '00a' };
-      if (diffDays > 1 && diffDays <= 7) return { label: 'Next 7 days', groupKey: 'rel-next7', sortKey: '03' };
-      // Fallback: month bucket
-      const key = date.format('YYYY-MM');
-
-      return { label: date.format('MMM YYYY'), groupKey: key, sortKey: key };
-    }
-  }
-}
-
-/**
- * Get cell value for grouping (x-axis field)
- */
-function getCellGroupValue(
-  rowId: string,
-  field: YDatabaseField,
-  rowMetas: Record<RowId, YDoc>,
-  dateCondition: DateGroupCondition
-): GroupValue[] {
-  const fieldId = field.get(YjsDatabaseKey.id);
-  const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
-  const rowDoc = rowMetas[rowId];
-  const dataSection = rowDoc?.getMap(YjsEditorKey.data_section);
-  const databaseRow = dataSection?.get(YjsEditorKey.database_row) as YDatabaseRow | undefined;
-  const cells = databaseRow?.get(YjsDatabaseKey.cells);
-  const cell = cells?.get(fieldId);
-  const data = cell ? parseYDatabaseCellToCell(cell, field).data : undefined;
-
-  switch (fieldType) {
-    case FieldType.SingleSelect: {
-      if (typeof data === 'string' && data.length > 0) {
-        return [{ label: data, groupKey: data }];
-      }
-
-      return [];
-    }
-
-    case FieldType.MultiSelect: {
-      if (typeof data === 'string' && data.length > 0) {
-        return data
-          .split(',')
-          .filter(Boolean)
-          .map((id) => ({ label: id, groupKey: id }));
-      }
-
-      return [];
-    }
-
-    case FieldType.Checkbox: {
-      if (data === 'Yes' || data === true) {
-        return [{ label: 'Checked', groupKey: 'Checked' }];
-      }
-
-      return [{ label: 'Unchecked', groupKey: 'Unchecked' }];
-    }
-
-    case FieldType.DateTime:
-    case FieldType.LastEditedTime:
-    case FieldType.CreatedTime: {
-      // For DateTime, the timestamp lives in the cell's `data`. For
-      // CreatedTime / LastEditedTime there's no per-field cell — newly
-      // created rows have no entry in `cells` at all. The timestamp is
-      // stored on the row itself, the same way `useRowTimeString` reads it.
-      let raw: string | undefined;
-
-      if (fieldType === FieldType.DateTime) {
-        if (typeof data === 'string' && data.length > 0) raw = data;
-      } else {
-        // YDatabaseRow has overloaded `.get` per key, so the lookup must use
-        // a literal `YjsDatabaseKey` member rather than a computed variable.
-        const v =
-          fieldType === FieldType.CreatedTime
-            ? databaseRow?.get(YjsDatabaseKey.created_at)
-            : databaseRow?.get(YjsDatabaseKey.last_modified);
-
-        raw = v !== undefined && v !== null ? String(v) : undefined;
-      }
-
-      if (!raw) return [];
-
-      const date = safeParseTimestamp(raw);
-
-      if (!date.isValid()) return [];
-
-      return [bucketDate(date, dateCondition)];
-    }
-
-    default:
-      return [];
-  }
-}
-
-/**
- * Get numeric value for aggregation (y-axis field). Mirrors desktop's
- * `_yValueFromCell` in chart_bloc.dart: Number is parsed directly, Checkbox
- * yields 0/1, and date-typed fields yield "days since epoch" so Min/Max/Avg
- * make sense on a human scale.
- */
-function getCellNumericValue(rowId: string, field: YDatabaseField, rowMetas: Record<RowId, YDoc>): number | null {
-  const fieldId = field.get(YjsDatabaseKey.id);
-  const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
-  const cell = getCell(rowId, fieldId, rowMetas);
-  const data = cell ? parseYDatabaseCellToCell(cell, field).data : undefined;
-
-  switch (fieldType) {
-    case FieldType.Checkbox: {
-      if (data === null || data === undefined || data === '') return 0;
-      return data === 'Yes' || data === true ? 1 : 0;
-    }
-
-    case FieldType.DateTime:
-    case FieldType.LastEditedTime:
-    case FieldType.CreatedTime: {
-      if (data === null || data === undefined || data === '') return null;
-      const parsed = safeParseTimestamp(String(data));
-
-      if (!parsed.isValid()) return null;
-
-      // Seconds → days since epoch (matches desktop's `timestamp / 86400`).
-      return parsed.unix() / (24 * 60 * 60);
-    }
-
-    case FieldType.Number:
-    default: {
-      if (data === null || data === undefined || data === '') return null;
-      const num = typeof data === 'number' ? data : parseFloat(String(data));
-
-      return isNaN(num) || !isFinite(num) ? null : num;
-    }
-  }
-}
-
-/**
- * Compute aggregation on an array of values
- */
-function computeAggregation(values: number[], aggregationType: ChartAggregationType): number {
-  if (values.length === 0) {
-    return 0;
-  }
-
-  switch (aggregationType) {
-    case ChartAggregationType.Count:
-      return values.length;
-    case ChartAggregationType.Sum:
-      return values.reduce((acc, val) => acc + val, 0);
-    case ChartAggregationType.Average:
-      return values.reduce((acc, val) => acc + val, 0) / values.length;
-    case ChartAggregationType.Min: {
-      // Single-pass loop avoids `Math.min(...values)` spread-arg overflow on
-      // large arrays (RangeError around ~100k elements on V8).
-      let min = values[0];
-
-      for (let i = 1; i < values.length; i++) if (values[i] < min) min = values[i];
-      return min;
-    }
-
-    case ChartAggregationType.Max: {
-      let max = values[0];
-
-      for (let i = 1; i < values.length; i++) if (values[i] > max) max = values[i];
-      return max;
-    }
-
-    case ChartAggregationType.Median: {
-      const sorted = [...values].sort((a, b) => a - b);
-      const mid = Math.floor(sorted.length / 2);
-
-      return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
-    }
-
-    case ChartAggregationType.CountValues:
-      return new Set(values).size;
-    default:
-      return values.length;
-  }
-}
-
-interface ComputeChartDataInput {
-  settings: ChartLayoutSettings | null;
-  resolvedXFieldId: string | null;
-  rowOrders: ReadonlyArray<{ id: string }> | null | undefined;
-  rowMetas: Record<RowId, YDoc> | null | undefined;
-  xAxisField: YDatabaseField | null;
-  fieldType: FieldType | null;
-  fields: YDatabaseFields | undefined;
-  optionIdToName: Map<string, string>;
-  colors: UseChartColorsReturn;
-}
-
-/**
- * Pure transform: rowOrders + rowMetas + chart settings → ChartDataItem[].
- * Side-effect free so the consumer can keep it inside a `useMemo` without
- * fighting React's data flow.
- */
-function computeChartData({
-  settings,
-  resolvedXFieldId,
-  rowOrders,
-  rowMetas,
-  xAxisField,
-  fieldType,
-  fields,
-  optionIdToName,
-  colors,
-}: ComputeChartDataInput): ChartDataItem[] {
-  if (!rowOrders || !rowMetas || !xAxisField || !resolvedXFieldId || !fieldType) {
-    return [];
-  }
-
-  const {
-    yFieldId,
-    aggregationType,
-    showEmptyValues = true,
-    cumulative = false,
-    dateCondition = DateGroupCondition.Month,
-  } = settings ?? {
-    aggregationType: ChartAggregationType.Count,
-  };
-
-  const isDateBucketed = isDateGroupableFieldType(fieldType);
-  const groups = new Map<string, GroupedData>();
-  const emptyGroup: GroupedData = {
-    label: `No ${xAxisField.get(YjsDatabaseKey.name) || 'Value'}`,
-    rowIds: [],
-    isEmptyCategory: true,
-  };
-
-  rowOrders.forEach((row) => {
-    const rowId = row.id;
-    const groupValues = getCellGroupValue(rowId, xAxisField, rowMetas, dateCondition);
-
-    if (groupValues.length === 0) {
-      emptyGroup.rowIds.push(rowId);
-    } else {
-      groupValues.forEach((gv) => {
-        let label = gv.label;
-        let optionId: string | undefined;
-
-        if (fieldType === FieldType.SingleSelect || fieldType === FieldType.MultiSelect) {
-          optionId = gv.groupKey;
-          label = optionIdToName.get(gv.groupKey) || gv.label;
-        }
-
-        const key = gv.groupKey;
-
-        if (!groups.has(key)) {
-          groups.set(key, {
-            label,
-            optionId,
-            rowIds: [],
-            isEmptyCategory: false,
-            sortKey: gv.sortKey,
-          });
-        }
-
-        groups.get(key)!.rowIds.push(rowId);
-      });
-    }
-  });
-
-  if (showEmptyValues && emptyGroup.rowIds.length > 0) {
-    groups.set(`__empty__${emptyGroup.label}`, emptyGroup);
-  }
-
-  const yField = yFieldId && fields ? fields.get(yFieldId) : undefined;
-
-  const data: ChartDataItem[] = [];
-  let colorIndex = 0;
-
-  groups.forEach((group) => {
-    let value: number;
-
-    if (aggregationType === ChartAggregationType.Count) {
-      value = group.rowIds.length;
-    } else if (yFieldId) {
-      const numericValues = yField
-        ? group.rowIds
-            .map((rowId) => getCellNumericValue(rowId, yField, rowMetas))
-            .filter((v): v is number => v !== null)
-        : [];
-
-      value = computeAggregation(numericValues, aggregationType);
-    } else {
-      value = group.rowIds.length;
-    }
-
-    const color = group.isEmptyCategory
-      ? colors.emptyColor
-      : colors.getColorForCategory(group.label, group.optionId, colorIndex);
-
-    data.push({
-      label: group.label,
-      value,
-      rowIds: group.rowIds,
-      color,
-      isEmptyCategory: group.isEmptyCategory,
-    });
-
-    if (!group.isEmptyCategory) {
-      colorIndex++;
-    }
-  });
-
-  // Pre-build a label → sortKey map so the comparator below is O(1) per
-  // call instead of scanning `groups.values()` every comparison.
-  const sortKeyByLabel = isDateBucketed ? new Map<string, string>() : null;
-
-  if (sortKeyByLabel) {
-    groups.forEach((g) => {
-      if (!sortKeyByLabel.has(g.label)) sortKeyByLabel.set(g.label, g.sortKey ?? g.label);
-    });
-  }
-
-  data.sort((a, b) => {
-    if (a.isEmptyCategory) return 1;
-    if (b.isEmptyCategory) return -1;
-    if (sortKeyByLabel) {
-      const ak = sortKeyByLabel.get(a.label) ?? a.label;
-      const bk = sortKeyByLabel.get(b.label) ?? b.label;
-
-      return ak.localeCompare(bk);
-    }
-
-    return a.label.localeCompare(b.label);
-  });
-
-  if (cumulative) {
-    let runningTotal = 0;
-
-    for (const item of data) {
-      if (item.isEmptyCategory) continue;
-      runningTotal += item.value;
-      item.value = runningTotal;
-    }
-  }
-
-  return data;
-}
+  ensureRelationGroupLabel,
+  getRelationGroupLabelRevision,
+  readRelationGroupLabel,
+  retainRelationGroupLabels,
+  subscribeRelationGroupLabels,
+} from '@/application/database-yjs/relation/cache';
+import { RowId, YDatabaseField, YDoc, YjsDatabaseKey } from '@/application/types';
+import { useMentionableUsersWithAutoFetch } from '@/components/database/components/cell/person/useMentionableUsers';
+import { useAppLocale } from '@/i18n/useAppLocale';
+
+import { chartDataEqual } from '../widgets/chartUtils';
+
+import {
+  ChartFactGroup,
+  ChartGroupAxis,
+  ChartRowDocs,
+  ChartWatchedRowData,
+  computeChartFacts,
+  computeNumberChartData,
+  EMPTY_CHART_FACTS,
+  readsRowAttributes,
+} from './chartCompute';
+import { createChartLabels } from './chartGrouping';
+import { buildChartSeriesWithGroups, chartSeriesDataEqual, ChartSeriesFieldKind } from './chartSeries';
+import { useChartedRowDataClock } from './useChartedRowDataClock';
+import { useChartFields } from './useChartFields';
+import { resolveChartRowDoc, useChartRowHydration } from './useChartRowHydration';
 
 export interface UseChartDataOptions {
   settings: ChartLayoutSettings | null;
 }
 
-export interface GroupableField {
-  id: string;
-  name: string;
-  type: FieldType;
-}
-
 export interface UseChartDataReturn {
-  chartData: ChartDataItem[];
+  /** What bar, line and donut charts draw (WP12); empty for the Number chart. */
+  seriesData: ChartSeriesData;
+  /** The Number chart's value over every row; `null` while there is none (or for other charts). */
+  numberItem: ChartDataItem | null;
+  /** The effective Group by property, or `null`. */
+  groupByField: YDatabaseField | null;
   isLoading: boolean;
   xAxisField: YDatabaseField | null;
-  selectOptions: SelectOption[];
   fieldType: FieldType | null;
-  /** All fields that can be used for grouping (SingleSelect, MultiSelect, Checkbox) */
-  groupableFields: GroupableField[];
-  /** Whether there are any groupable fields in the database */
+  /** Whether the database has a field a chart can group by (`CHART_X_FIELD_TYPES`). */
   hasGroupableFields: boolean;
+  /** What the chart computes, formats and titles (`effectiveChartAggregation`). */
+  effectiveAggregation: ChartAggregationType;
+  /** Every group in its sorted order, hidden ones included (the panel's Groups page). */
+  allGroups: ChartGroupSummary[];
+  /** Current name of the Y field (empty when the chart counts rows), kept fresh across renames. */
+  yFieldName: string;
+  /** The Y field's kind and format as R-FORMAT needs them; null when the chart counts rows. */
+  yFormatField: ChartFormatYField | null;
+  /** The rows failed to load and the chart has none to show. */
+  loadError: boolean;
+  /** Load the rows that failed again */
+  retry: () => void;
 }
 
-const EMPTY_CHART_DATA: ChartDataItem[] = [];
+/** The docs the chart reads, in row order, and the same docs by row id. */
+interface ChartedRows {
+  docs: YDoc[];
+  byId: ChartRowDocs;
+  /** The row set the docs were collected for (`stableRowOrders`). */
+  rows: ReadonlyArray<{ id: string }> | undefined;
+}
+
+const EMPTY_GROUPS: ChartGroupSummary[] = [];
+const NO_CHARTED_ROWS: ChartedRows = { docs: [], byId: {}, rows: undefined };
+const PEOPLE_TYPES: ReadonlySet<FieldType> = new Set([FieldType.Person, FieldType.CreatedBy, FieldType.LastEditedBy]);
+const noSubscription = () => () => undefined;
 
 /**
- * Grace period before declaring a chart "empty" when `rowOrders` is `[]` at
- * mount. Yjs typically delivers an empty array first and then populates rows
- * from the server; without this delay the chart briefly flashes "No data"
- * before the bars appear on a populated grid.
+ * How long the chart keeps reading the docs it has when only their identity
+ * changed: the loader connects the live doc of a seeded row a batch at a time
+ * (`useBackgroundRowDocLoader`), and each batch would otherwise regroup every
+ * row and re-observe every doc.
  */
-const EMPTY_ROW_ORDERS_GRACE_MS = 300;
+const DOC_SWAP_SETTLE_MS = 250;
 
 /**
- * Cap on concurrent `ensureRow` calls. An unbounded `Promise.all` over a
- * large database (5k+ rows) floods the WebSocket layer with messages, which
- * surfaces a render-loop in `react-use-websocket`'s `setLastMessage` and
- * stalls the main thread. A small worker pool keeps the pipeline saturated
- * without the burst.
+ * The charted rows the transform reads. A new row set, or a doc for a row that
+ * had none (a row loaded behind the chart), is taken at once. New docs for the
+ * same rows (a seed replaced by its live doc, a doc replaced by its canonical
+ * copy; the values are the same) are taken on a trailing throttle, so a
+ * connect pass of n / batch commits costs a few regroups, not one per batch.
+ * A cell edit in the meantime reaches the docs that are read.
  */
-const ROW_LOAD_CONCURRENCY = 16;
+function useSettledChartedRows(rows: ChartedRows): ChartedRows {
+  const [settled, setSettled] = useState(rows);
+  const latestRef = useRef(rows);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Each doc belongs to one row: the same rows with as many docs are the same rows with other docs.
+  const isDocSwap = rows !== settled && rows.rows === settled.rows && rows.docs.length === settled.docs.length;
 
-/**
- * Hook for computing chart data from database rows. The transform is pure and
- * lives in `useMemo`, so React re-derives only when its inputs actually
- * change — no `useState` / `useEffect` / `setTimeout` round-trip.
- */
-export function useChartData({ settings }: UseChartDataOptions): UseChartDataReturn {
-  const fields = useDatabaseFields();
-  const rowOrders = useRowOrdersSelector();
-  const rowMetas = useRowMap();
-  const { ensureRow, dataSource } = useDatabaseContext();
-  const isHistory = dataSource?.type === 'history';
+  // A new row set: adjusted while rendering, no extra commit.
+  if (rows !== settled && !isDocSwap) setSettled(rows);
 
-  // Yjs mutates the `fields` Y.Map in place when fields are added, renamed,
-  // or have their type changed, so its reference identity is a stale
-  // dependency for downstream useMemos. Bump a clock on observed mutations
-  // to invalidate them.
-  const [fieldsClock, setFieldsClock] = useState(0);
+  useLayoutEffect(() => {
+    latestRef.current = rows;
+  }, [rows]);
 
   useEffect(() => {
-    if (!fields) return;
-    const onChange = () => setFieldsClock((c) => c + 1);
+    if (!isDocSwap || timerRef.current !== null) return;
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      setSettled(latestRef.current);
+    }, DOC_SWAP_SETTLE_MS);
+  }, [isDocSwap, rows]);
 
-    fields.observeDeep(onChange);
-    return () => fields.unobserveDeep(onChange);
-  }, [fields]);
+  useEffect(
+    () => () => {
+      if (timerRef.current !== null) clearTimeout(timerRef.current);
+    },
+    []
+  );
+
+  return isDocSwap ? settled : rows;
+}
+
+/** The display-name lookup of a people or Relation property's groups; `null` when its groups are named by key. */
+function groupNameLookup(fieldType: FieldType | null, names: ChartGroupNameLookup | undefined) {
+  if (!names) return null;
+  if (fieldType === FieldType.Person) return names.person ?? null;
+  if (fieldType === FieldType.CreatedBy || fieldType === FieldType.LastEditedBy) return names.user ?? null;
+  if (fieldType === FieldType.Relation) return names.relation ?? null;
+  return null;
+}
+
+/**
+ * The groups of a people or Relation property with their display names: the
+ * workspace members and the related rows' titles arrive after the rows were
+ * grouped, and only relabel them (the keys never change, so hidden and manual
+ * groups hold). A group whose name is unknown keeps the placeholder of the
+ * facts. The same array comes back when no label changes.
+ */
+function nameChartGroups(
+  groups: ChartFactGroup[],
+  fieldType: FieldType | null,
+  names: ChartGroupNameLookup | undefined
+): ChartFactGroup[] {
+  const lookup = groupNameLookup(fieldType, names);
+
+  if (!lookup) return groups;
+  let changed = false;
+  const named = groups.map((group) => {
+    const raw = group.isEmpty ? undefined : lookup(group.key);
+    const name = fieldType === FieldType.Relation ? raw?.trim() : raw;
+
+    if (!name || name === group.label) return group;
+    changed = true;
+    return { ...group, label: name };
+  });
+
+  return changed ? named : groups;
+}
+
+function sameGroupSummaries(a: readonly ChartGroupSummary[], b: readonly ChartGroupSummary[]) {
+  return (
+    a.length === b.length &&
+    a.every((group, index) => {
+      const other = b[index];
+
+      return (
+        group.key === other.key &&
+        group.label === other.label &&
+        group.count === other.count &&
+        group.hidden === other.hidden &&
+        group.optionColor === other.optionColor &&
+        group.checkboxState === other.checkboxState
+      );
+    })
+  );
+}
+
+type GroupedField = { field: YDatabaseField | null; fieldType: FieldType | null };
+
+function isPeopleType(fieldType: FieldType | null) {
+  return fieldType !== null && PEOPLE_TYPES.has(fieldType);
+}
+
+/**
+ * Names of the groups of people, users and related rows, for the X axis and
+ * the Group by property: the workspace members (fetched only for a people
+ * property), the Person type option, and the related rows' titles, which
+ * load in the background and relabel the groups as they arrive
+ * (`nameChartGroups`: the keys do not change, so hidden and manual groups
+ * hold, and the rows are not regrouped). `watchedFieldsClock` is the X and
+ * Group by fields' clock: Yjs mutates the Person type option in place.
+ */
+function useChartGroupNames(
+  x: GroupedField,
+  sub: GroupedField,
+  isHistory: boolean,
+  watchedFieldsClock: number
+): { x: ChartGroupNameLookup | undefined; sub: ChartGroupNameLookup | undefined } {
+  const needsMembers = isPeopleType(x.fieldType) || isPeopleType(sub.fieldType);
+  const needsRelations = !isHistory && (x.fieldType === FieldType.Relation || sub.fieldType === FieldType.Relation);
+  const { users } = useMentionableUsersWithAutoFetch(needsMembers);
+  const relationRevision = useSyncExternalStore(
+    needsRelations ? subscribeRelationGroupLabels : noSubscription,
+    needsRelations ? getRelationGroupLabelRevision : () => 0
+  );
+  const { field: xField, fieldType: xType } = x;
+  const { field: subField, fieldType: subType } = sub;
+  // Person fallback names come from type options that Yjs mutates in place.
+  const personOptionsRevision = xType === FieldType.Person || subType === FieldType.Person ? watchedFieldsClock : 0;
+
+  return useMemo(() => {
+    void relationRevision;
+    void personOptionsRevision;
+    const lookup = (field: YDatabaseField | null, fieldType: FieldType | null): ChartGroupNameLookup | undefined => {
+      if (!field || fieldType === null) return undefined;
+      if (isPeopleType(fieldType)) {
+        const labels = buildIdentifierLabels({ fieldType, field, mentionableUsers: users });
+
+        return { person: (id) => labels.get(id), user: (id) => labels.get(id) };
+      }
+
+      if (fieldType === FieldType.Relation && !isHistory) {
+        return { relation: (id) => readRelationGroupLabel({ relationField: field, relatedRowId: id }) };
+      }
+
+      return undefined;
+    };
+
+    return { x: lookup(xField, xType), sub: lookup(subField, subType) };
+  }, [xField, xType, subField, subType, isHistory, users, relationRevision, personOptionsRevision]);
+}
+
+/** What a property is for colours: option colours apply to selects, checkbox colours to checkboxes. */
+function seriesFieldKind(fieldType: FieldType | null): ChartSeriesFieldKind {
+  if (fieldType === FieldType.SingleSelect || fieldType === FieldType.MultiSelect) return 'select';
+  if (fieldType === FieldType.Checkbox) return 'checkbox';
+  return 'other';
+}
+
+/** The ids of the related rows a Relation property's groups show (their titles load in the background). */
+function relatedRowIdsOf(fieldType: FieldType | null, groups: readonly ChartFactGroup[] | null): string[] {
+  if (fieldType !== FieldType.Relation || !groups) return [];
+  return groups.filter((group) => group.key !== EMPTY_GROUP_KEY).map((group) => group.key);
+}
+
+const NO_AUTO_BUCKETS = { size: null, min: null, max: null };
+
+/** Keeps the titles of the related rows the chart shows loaded (a Relation X axis outside history). */
+function useChartRelationTitles(xAxisField: YDatabaseField | null, enabled: boolean, relatedRowIds: readonly string[]) {
+  const { loadView, createRow, getViewIdFromDatabaseId } = useDatabaseContext();
+  const key = enabled && xAxisField ? relatedRowIds.join('\n') : '';
+
+  useEffect(() => {
+    if (!xAxisField || !key) return;
+    const ids = key.split('\n');
+    const release = retainRelationGroupLabels(ids.map((relatedRowId) => ({ relationField: xAxisField, relatedRowId })));
+
+    ids.forEach((relatedRowId) =>
+      ensureRelationGroupLabel({ relationField: xAxisField, relatedRowId, loadView, createRow, getViewIdFromDatabaseId })
+    );
+    return release;
+  }, [key, xAxisField, loadView, createRow, getViewIdFromDatabaseId]);
+}
+
+function isFieldId(value: string | null | undefined): value is string {
+  return Boolean(value);
+}
+
+/**
+ * Chart data from the database rows. It composes five parts:
+ *
+ * 1. `useChartFields`: the X, Y and Group by fields, the effective
+ *    aggregation and the Y format, kept current while Yjs mutates the schema
+ *    in place.
+ * 2. `useChartRowHydration`: the row docs. Shared detached seeds supply the
+ *    initial render while the background loader connects live rows through
+ *    `ensureRow`; the chart loads until every row has its initial doc. The
+ *    live docs replace the seeds a few at a time (`useSettledChartedRows`).
+ * 3. `useChartedRowDataClock`: observers on the charted rows, so an edit to a
+ *    cell the chart reads recomputes it.
+ * 4. `computeChartFacts`: the cells the chart reads, one fact per row (the
+ *    expensive half, inside `useMemo`).
+ * 5. `buildChartSeries` (WP12): aggregation, sort, hidden groups, cumulative,
+ *    percent shares, colours and the caps, over the facts, with the display
+ *    names of people and related rows applied to the groups.
+ *
+ * The transform's inputs keep their identity while their content is the same
+ * (row orders by id, row docs by object, settings by field), so unrelated
+ * database changes do not regroup the rows; nor does a change to a field the
+ * chart does not read (`watchedFieldsClock`).
+ */
+export function useChartData({ settings }: UseChartDataOptions): UseChartDataReturn {
+  const rowOrders = useRowOrdersSelector();
+  const liveRows = useRowMap();
+  const { dataSource } = useDatabaseContext();
+  const isHistory = dataSource?.type === 'history';
+  const {
+    hasGroupableFields,
+    resolvedXFieldId,
+    xAxisField,
+    fieldType,
+    options,
+    optionIdToColor,
+    xNumberFormat,
+    effectiveAggregation,
+    yAxisField,
+    yFieldId,
+    yFieldName,
+    yFormatField,
+    watchedFieldsClock,
+    groupByFieldId,
+    groupByField,
+    groupByFieldType,
+    groupByOptions,
+    groupByOptionIdToColor,
+    groupByNumberFormat,
+  } = useChartFields(settings);
 
   // Stable string representation of the row order. Yjs often returns a fresh
   // array reference even when the contents are unchanged, so we depend on the
   // joined ids in effects instead of the array identity.
   const rowIdsKey = useMemo(() => rowOrders?.map((r) => r.id).join(',') ?? '', [rowOrders]);
-
-  const loadedRowIdsRef = useRef<Set<string>>(new Set());
-  // Always start in the loading state. The effect below decides when to
-  // transition to `true` — either after rows are ensured (populated grid)
-  // or after a short grace period in which no rows arrived (empty grid).
-  // Without the grace period an empty `rowOrders` at mount would flash
-  // "No data" before Yjs syncs the actual rows.
-  const [rowsLoaded, setRowsLoaded] = useState<boolean>(false);
-
   // Boolean view of whether `rowOrders` has been observed at all. Needed
-  // because `rowIdsKey` is `''` for both `undefined` and `[]`, so the
-  // `undefined → []` transition wouldn't re-trigger the effect on its own.
+  // because `rowIdsKey` is `''` for both `undefined` and `[]`.
   const rowOrdersReady = !!rowOrders;
+  // The same ids keep the same array: filtered and sorted views re-emit
+  // `rowOrders` after unrelated changes, and cell edits bump `rowDataClock`.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const stableRowOrders = useMemo(() => rowOrders, [rowOrdersReady, rowIdsKey]);
 
-  // Lazily request row docs that haven't been loaded yet.
-  useEffect(() => {
-    if (isHistory) {
-      setRowsLoaded(Boolean(rowOrders));
-      return;
+  const isNumberChart = settings?.chartType === ChartType.Number;
+  // A Number chart that counts rows only needs `rowOrders.length`, so it
+  // skips row hydration entirely.
+  const needsRowDocs = !isNumberChart || effectiveAggregation !== ChartAggregationType.Count;
+
+  const { rowsLoaded, hasFailedRows, retry, cachedRowDocs } = useChartRowHydration({
+    rowOrders: stableRowOrders,
+    rowIdsKey,
+    liveRows,
+    needsRowDocs,
+  });
+
+  // The row docs the chart reads. The live row map is a new object whenever
+  // any row doc of the database arrives or is canonicalised, and the loader
+  // publishes its docs in batches, so the previous object is kept while every
+  // charted doc is the same: the observers then stay attached, and the
+  // transform below does not regroup the rows.
+  // Nothing reads the docs while the rows load, so the walk waits until then.
+  // History snapshots are immutable and decode rows through a bounded cache,
+  // so they are never collected (which would pin every decoded doc).
+  const collectsRowDocs = needsRowDocs && !isHistory;
+  const chartedRowsRef = useRef<ChartedRows>(NO_CHARTED_ROWS);
+  const chartedRows = useMemo(() => {
+    const previous = chartedRowsRef.current;
+
+    if (!collectsRowDocs) {
+      chartedRowsRef.current = NO_CHARTED_ROWS;
+      return NO_CHARTED_ROWS;
     }
 
-    if (!rowOrders || !ensureRow) {
-      // Inputs not yet available — keep the loading indicator up.
-      return;
-    }
+    if (!rowsLoaded || !stableRowOrders) return previous;
 
-    if (rowOrders.length === 0) {
-      // Defer the "no data" determination. Yjs often delivers an empty
-      // `rowOrders` first and then populates it from the server; if rows
-      // arrive within the grace window this effect re-runs (rowIdsKey
-      // changes) and the timer is cancelled.
-      const timer = setTimeout(() => setRowsLoaded(true), EMPTY_ROW_ORDERS_GRACE_MS);
+    const docs: YDoc[] = [];
+    const byId: Record<RowId, YDoc> = {};
 
-      return () => clearTimeout(timer);
-    }
+    stableRowOrders.forEach((row) => {
+      const doc = resolveChartRowDoc(row.id, liveRows, cachedRowDocs);
 
-    const rowsToLoad = rowOrders.filter((row) => !loadedRowIdsRef.current.has(row.id));
-
-    if (rowsToLoad.length === 0) {
-      setRowsLoaded(true);
-      return;
-    }
-
-    setRowsLoaded(false);
-
-    let cancelled = false;
-    const loadAll = async () => {
-      // Only mark a row as loaded *after* `ensureRow` resolves — otherwise a
-      // failed load would permanently skip the row on subsequent effect fires.
-      let cursor = 0;
-      const worker = async () => {
-        while (!cancelled) {
-          const idx = cursor++;
-
-          if (idx >= rowsToLoad.length) return;
-          const row = rowsToLoad[idx];
-
-          try {
-            await ensureRow(row.id);
-            loadedRowIdsRef.current.add(row.id);
-          } catch (e) {
-            console.error('chart: failed to load row', row.id, e);
-          }
-        }
-      };
-
-      const workerCount = Math.min(ROW_LOAD_CONCURRENCY, rowsToLoad.length);
-
-      await Promise.all(Array.from({ length: workerCount }, worker));
-
-      if (!cancelled) setRowsLoaded(true);
-    };
-
-    void loadAll();
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rowOrdersReady, rowIdsKey, ensureRow, isHistory]);
-
-  // Find all groupable fields
-  const groupableFields = useMemo<GroupableField[]>(() => {
-    if (!fields) return [];
-    const result: GroupableField[] = [];
-
-    fields.forEach((field, fieldId) => {
-      const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
-
-      if (isGroupableFieldType(fieldType)) {
-        result.push({
-          id: fieldId,
-          name: String(field.get(YjsDatabaseKey.name) || ''),
-          type: fieldType,
-        });
-      }
+      if (!doc) return;
+      docs.push(doc);
+      byId[row.id] = doc;
     });
-    return result;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fields, fieldsClock]);
 
-  const hasGroupableFields = groupableFields.length > 0;
-
-  // Resolve x-axis field: settings.xFieldId if valid, otherwise first groupable.
-  const resolvedXFieldId = useMemo<string | null>(() => {
-    if (!hasGroupableFields) return null;
-
-    if (settings?.xFieldId) {
-      const isValidGroupableField = groupableFields.some((f) => f.id === settings.xFieldId);
-
-      if (isValidGroupableField) return settings.xFieldId;
+    // Each doc belongs to one row, so the same docs in the same order are the same rows.
+    if (previous.docs.length === docs.length && previous.docs.every((doc, index) => doc === docs[index])) {
+      return previous;
     }
 
-    return groupableFields[0].id;
-  }, [settings?.xFieldId, groupableFields, hasGroupableFields]);
+    const next: ChartedRows = { docs, byId, rows: stableRowOrders };
 
-  const xAxisField = resolvedXFieldId && fields ? fields.get(resolvedXFieldId) ?? null : null;
-  const fieldType = xAxisField ? (Number(xAxisField.get(YjsDatabaseKey.type)) as FieldType) : null;
+    chartedRowsRef.current = next;
+    return next;
+  }, [collectsRowDocs, rowsLoaded, stableRowOrders, liveRows, cachedRowDocs]);
+  const settledRows = useSettledChartedRows(chartedRows);
 
-  const selectOptions = useMemo<SelectOption[]>(() => {
-    if (!xAxisField) return [];
-    if (fieldType !== FieldType.SingleSelect && fieldType !== FieldType.MultiSelect) {
-      return [];
-    }
+  // A history chart reads its snapshot rows straight from the row map.
+  const rowDocs = isHistory ? liveRows : settledRows.byId;
 
-    return parseSelectOptionTypeOptions(xAxisField)?.options ?? [];
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [xAxisField, fieldType, fieldsClock]);
+  // Only the cells the chart reads recompute it.
+  const xFieldType = isNumberChart ? null : fieldType;
+  const watchedXFieldId = isNumberChart ? null : resolvedXFieldId;
+  const subFieldType = isNumberChart ? null : groupByFieldType;
+  const watchedSubFieldId = isNumberChart ? null : groupByFieldId;
+  const yAxisType = yAxisField ? (Number(yAxisField.get(YjsDatabaseKey.type)) as FieldType) : null;
+  const watched = useMemo<ChartWatchedRowData>(
+    () => ({
+      fieldIds: new Set([watchedXFieldId, watchedSubFieldId, yFieldId].filter(isFieldId)),
+      // Created / edited time and by read the row's own attributes.
+      rowTimes: readsRowAttributes(xFieldType) || readsRowAttributes(subFieldType) || readsRowAttributes(yAxisType),
+    }),
+    [watchedXFieldId, watchedSubFieldId, yFieldId, xFieldType, subFieldType, yAxisType]
+  );
+  const rowDataClock = useChartedRowDataClock(settledRows.docs, watched, collectsRowDocs && rowsLoaded);
 
-  const colors = useChartColors({ fieldType, selectOptions });
+  // Rows go back to `undefined` while a newly applied filter hydrates them:
+  // show the loading state, not an empty chart.
+  const isLoading = !rowsLoaded || !rowOrdersReady;
+  // A chart that has rows keeps showing them; the failed rows are retried.
+  const loadError = rowsLoaded && hasFailedRows && chartedRows.docs.length === 0;
 
-  const optionIdToName = useMemo(() => {
-    const map = new Map<string, string>();
+  // The Number chart depends only on the aggregation, the Y field and the rows
+  // (row docs only when it aggregates the Y field), so title / number format /
+  // x-axis edits leave it alone. The item keeps its identity while the value
+  // and row ids are unchanged, which lets the memoized NumberChart skip renders.
+  const numberRowDocs = needsRowDocs ? rowDocs : null;
+  const numberItemRef = useRef<ChartDataItem | null>(null);
+  const numberItem = useMemo<ChartDataItem | null>(() => {
+    // Yjs mutates field maps (Y field renamed or retyped) and row docs in place.
+    void watchedFieldsClock;
+    void rowDataClock;
 
-    selectOptions.forEach((opt) => {
-      map.set(opt.id, opt.name);
-    });
-    return map;
-  }, [selectOptions]);
+    if (!isNumberChart || !rowsLoaded) return null;
+    const next =
+      computeNumberChartData({
+        aggregation: effectiveAggregation,
+        rowOrders: stableRowOrders,
+        rowDocs: numberRowDocs,
+        yField: yAxisField,
+      })[0] ?? null;
+    const previous = numberItemRef.current;
 
-  // === Render-time derivation ===
-  const isLoading = !rowsLoaded;
+    if (previous && next && chartDataEqual([previous], [next])) return previous;
+    numberItemRef.current = next;
+    return next;
+  }, [
+    isNumberChart,
+    rowsLoaded,
+    effectiveAggregation,
+    yAxisField,
+    stableRowOrders,
+    numberRowDocs,
+    watchedFieldsClock,
+    rowDataClock,
+  ]);
 
-  // Pure derivation. Yjs hydrates row docs in micro-batches, so this can
-  // recompute many times during a single page load — but downstream chart
-  // widgets are wrapped in `React.memo(..., chartDataEqual)`, so re-renders
-  // are skipped when the resulting bars are unchanged.
-  const chartData = useMemo<ChartDataItem[]>(() => {
-    // Yjs mutates field maps in place, so their identity cannot invalidate this
-    // memo after a schema-only field-type switch.
-    void fieldsClock;
+  const { t } = useTranslation();
+  // `t` changes only with the language, which re-translates the categories.
+  const labels = useMemo(() => createChartLabels(t), [t]);
+  // The app locale writes the date and number-range labels; the keys, and so the order, never depend on it.
+  const locale = useAppLocale();
+  const axisFormatter = useCallback(
+    (numberFormat: number | null) => (value: number) =>
+      formatChartValue(value, {
+        aggregation: ChartAggregationType.Sum,
+        yField: { type: 'number', numberFormat: numberFormat ?? 0 },
+        mode: 'axis',
+        locale,
+      }),
+    [locale]
+  );
+  const formatXAxis = useMemo(() => axisFormatter(xNumberFormat), [axisFormatter, xNumberFormat]);
+  const formatSubAxis = useMemo(() => axisFormatter(groupByNumberFormat), [axisFormatter, groupByNumberFormat]);
+  const names = useChartGroupNames(
+    { field: isNumberChart ? null : xAxisField, fieldType: xFieldType },
+    { field: isNumberChart ? null : groupByField, fieldType: subFieldType },
+    isHistory,
+    watchedFieldsClock
+  );
 
-    if (!rowsLoaded) return EMPTY_CHART_DATA;
+  // Only these settings regroup the rows: `settings` is a new object after any
+  // chart write, style keys included, so the transform depends on the fields.
+  const config = resolveChartStyle(settings);
+  const dateCondition = settings?.dateCondition ?? DateGroupCondition.Month;
+  const textGrouping = config.xTextGrouping;
+  const bucketSize = config.xNumberBucketSize;
+  const bucketMin = config.xNumberBucketMin;
+  const bucketMax = config.xNumberBucketMax;
+  const groupByDateCondition = config.groupByDateCondition;
 
-    return computeChartData({
-      settings,
-      resolvedXFieldId,
-      rowOrders,
-      rowMetas,
-      xAxisField,
+  const xAxis = useMemo<ChartGroupAxis | null>(() => {
+    if (isNumberChart || !xAxisField || fieldType === null) return null;
+    return {
+      field: xAxisField,
       fieldType,
-      fields,
-      optionIdToName,
-      colors,
+      dateCondition,
+      textGrouping,
+      buckets: { size: bucketSize, min: bucketMin, max: bucketMax },
+      options,
+      optionIdToColor,
+      formatAxis: formatXAxis,
+    };
+  }, [
+    isNumberChart,
+    xAxisField,
+    fieldType,
+    dateCondition,
+    textGrouping,
+    bucketSize,
+    bucketMin,
+    bucketMax,
+    options,
+    optionIdToColor,
+    formatXAxis,
+  ]);
+  // The Group by property buckets numbers automatically and groups text exactly (WP12 decision 11).
+  const subAxis = useMemo<ChartGroupAxis | null>(() => {
+    if (isNumberChart || !groupByField || groupByFieldType === null) return null;
+    return {
+      field: groupByField,
+      fieldType: groupByFieldType,
+      dateCondition: groupByDateCondition,
+      textGrouping: 'exact',
+      buckets: NO_AUTO_BUCKETS,
+      options: groupByOptions,
+      optionIdToColor: groupByOptionIdToColor,
+      formatAxis: formatSubAxis,
+    };
+  }, [
+    isNumberChart,
+    groupByField,
+    groupByFieldType,
+    groupByDateCondition,
+    groupByOptions,
+    groupByOptionIdToColor,
+    formatSubAxis,
+  ]);
+
+  // The cells: the expensive half, rerun only when the rows, the fields it
+  // reads or the grouping keys change. The display names of people and
+  // related rows are applied in the series step, so a name that arrives late
+  // only relabels.
+  const facts = useMemo(() => {
+    // Yjs mutates field maps and row docs in place, so their identity cannot
+    // invalidate this memo after a schema-only change or a cell edit.
+    void watchedFieldsClock;
+    void rowDataClock;
+
+    if (isNumberChart || !rowsLoaded) return EMPTY_CHART_FACTS;
+
+    return computeChartFacts({
+      aggregation: effectiveAggregation,
+      yField: yAxisField,
+      rowOrders: stableRowOrders,
+      rowDocs,
+      labels,
+      locale,
+      x: xAxis,
+      sub: subAxis,
     });
   }, [
     rowsLoaded,
-    settings,
-    resolvedXFieldId,
-    rowOrders,
-    rowMetas,
-    xAxisField,
+    isNumberChart,
+    effectiveAggregation,
+    yAxisField,
+    stableRowOrders,
+    rowDocs,
+    watchedFieldsClock,
+    rowDataClock,
+    labels,
+    locale,
+    xAxis,
+    subAxis,
+  ]);
+
+  useChartRelationTitles(xAxisField, fieldType === FieldType.Relation && !isHistory, relatedRowIdsOf(fieldType, facts.xGroups));
+  useChartRelationTitles(
+    groupByField,
+    groupByFieldType === FieldType.Relation && !isHistory,
+    relatedRowIdsOf(groupByFieldType, facts.subGroups)
+  );
+
+  // The series (WP12): sort, hidden groups, cumulative, percent shares,
+  // colours and the caps re-present the same facts without reading a cell.
+  // The previous build is kept while the content is the same, so a chart
+  // never re-renders for an unchanged build.
+  const showEmptyValues = settings?.showEmptyValues ?? true;
+  const cumulative = settings?.cumulative ?? false;
+  const chartType = settings?.chartType ?? ChartType.Bar;
+  const { xSort, xManualOrder, hiddenGroups, groupStyle, colorTheme } = config;
+  const seriesDataRef = useRef<ChartSeriesData>(EMPTY_CHART_SERIES_DATA);
+  const allGroupsRef = useRef<ChartGroupSummary[]>(EMPTY_GROUPS);
+  const built = useMemo(() => {
+    if (isNumberChart || !rowsLoaded || facts === EMPTY_CHART_FACTS) {
+      return { data: EMPTY_CHART_SERIES_DATA, all: EMPTY_GROUPS };
+    }
+
+    // WP11's candidate order; the builder applies a value sort itself.
+    const isValueSort = xSort === 'value_desc' || xSort === 'value_asc';
+    const next = buildChartSeriesWithGroups({
+      chartType,
+      aggregation: effectiveAggregation,
+      groupStyle,
+      cumulative,
+      showEmptyValues,
+      hiddenGroups,
+      xSort,
+      colorTheme,
+      xField: {
+        kind: seriesFieldKind(fieldType),
+        groups: sortChartGroups(
+          nameChartGroups(facts.xGroups, fieldType, names.x),
+          isValueSort ? 'auto' : xSort,
+          xManualOrder
+        ),
+      },
+      subField: facts.subGroups
+        ? {
+            kind: seriesFieldKind(groupByFieldType),
+            groups: sortChartGroups(nameChartGroups(facts.subGroups, groupByFieldType, names.sub), 'auto'),
+          }
+        : null,
+      rows: facts.rows,
+    });
+    const data = chartSeriesDataEqual(seriesDataRef.current, next.data) ? seriesDataRef.current : next.data;
+    const all = sameGroupSummaries(allGroupsRef.current, next.groups) ? allGroupsRef.current : next.groups;
+
+    seriesDataRef.current = data;
+    allGroupsRef.current = all;
+    return { data, all };
+  }, [
+    facts,
+    isNumberChart,
+    rowsLoaded,
+    chartType,
+    effectiveAggregation,
+    groupStyle,
+    cumulative,
+    showEmptyValues,
+    hiddenGroups,
+    xSort,
+    xManualOrder,
+    colorTheme,
     fieldType,
-    fields,
-    fieldsClock,
-    optionIdToName,
-    colors,
+    groupByFieldType,
+    names.x,
+    names.sub,
   ]);
 
   return {
-    chartData,
+    seriesData: built.data,
+    numberItem,
+    groupByField: isNumberChart ? null : groupByField,
+    allGroups: built.all,
     isLoading,
     xAxisField,
-    selectOptions,
     fieldType,
-    groupableFields,
     hasGroupableFields,
+    effectiveAggregation,
+    yFieldName,
+    yFormatField,
+    loadError,
+    retry,
   };
 }
 

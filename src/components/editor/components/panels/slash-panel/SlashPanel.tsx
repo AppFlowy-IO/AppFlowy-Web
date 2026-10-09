@@ -1,17 +1,16 @@
 import { Button } from '@mui/material';
 import { PopoverOrigin } from '@mui/material/Popover/Popover';
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type FC, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Editor, Element, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
 import { isDatabaseBlockType } from '@/application/database-block';
-import { createDatabaseFeedPageViaGrid, createLinkedDatabaseFeedView } from '@/application/database-yjs/feed-layout';
-import {
-  createDatabaseGalleryPageViaGrid,
-  createLinkedDatabaseGalleryView,
-} from '@/application/database-yjs/gallery-layout';
-import { createDatabaseListPageViaGrid, createLinkedDatabaseListView } from '@/application/database-yjs/list-layout';
+import { createDatabaseDashboardPageViaGrid } from '@/application/database-yjs/dashboard-page';
+import { createDatabaseFeedPageViaGrid } from '@/application/database-yjs/feed-layout';
+import { createDatabaseGalleryPageViaGrid } from '@/application/database-yjs/gallery-layout';
+import { createLinkedDatabaseViewForLayout } from '@/application/database-yjs/linked-view-creation';
+import { createDatabaseListPageViaGrid } from '@/application/database-yjs/list-layout';
 import {
   databaseCatalogViewToView,
   getDatabaseContainerEntries,
@@ -56,10 +55,10 @@ import { ReactComponent as AudioIcon } from '@/assets/icons/audio.svg';
 import { ReactComponent as BoardIcon } from '@/assets/icons/board.svg';
 import { ReactComponent as BulletedListIcon } from '@/assets/icons/bulleted_list.svg';
 import { ReactComponent as CalendarIcon } from '@/assets/icons/calendar.svg';
-import { ReactComponent as TimelineIcon } from '@/assets/icons/timeline.svg';
 import { ReactComponent as CalloutIcon } from '@/assets/icons/callout.svg';
 import { ReactComponent as ChartIcon } from '@/assets/icons/chart.svg';
 import { ReactComponent as ContinueWritingIcon } from '@/assets/icons/continue_writing.svg';
+import { ReactComponent as DashboardIcon } from '@/assets/icons/dashboard.svg';
 import { ReactComponent as DateIcon } from '@/assets/icons/date.svg';
 import { ReactComponent as DividerIcon } from '@/assets/icons/divider.svg';
 import { ReactComponent as OutlineIcon } from '@/assets/icons/doc.svg';
@@ -82,6 +81,7 @@ import { ReactComponent as QuoteIcon } from '@/assets/icons/quote.svg';
 import { ReactComponent as RefDocumentIcon } from '@/assets/icons/ref_page.svg';
 import { ReactComponent as SimpleTableIcon } from '@/assets/icons/table.svg';
 import { ReactComponent as TextIcon } from '@/assets/icons/text.svg';
+import { ReactComponent as TimelineIcon } from '@/assets/icons/timeline.svg';
 import { ReactComponent as TodoListIcon } from '@/assets/icons/todo.svg';
 import { ReactComponent as ToggleHeading1Icon } from '@/assets/icons/toggle_h1.svg';
 import { ReactComponent as ToggleHeading2Icon } from '@/assets/icons/toggle_h2.svg';
@@ -94,7 +94,8 @@ import { notify } from '@/components/_shared/notify';
 import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { useAIEnabled } from '@/components/app/app.hooks';
-import { useDatabaseViewCreation } from '@/components/app/hooks/useDatabaseViewCreation';
+import { useDashboardCreationGate } from '@/components/app/hooks/useDashboardCreationGate';
+import { DatabaseViewCreationAction, useDatabaseViewCreation } from '@/components/app/hooks/useDatabaseViewCreation';
 import { useAIWriter } from '@/components/chat';
 import { SearchInput } from '@/components/chat/components/ui/search-input';
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
@@ -127,8 +128,10 @@ type DatabaseOption = {
 
 interface SlashMenuOption extends SlashMenuOptionBase {
   creationLayout?: ViewLayout;
-  icon: React.ReactNode;
+  icon: ReactNode;
   onClick?: () => void;
+  /** Keeps the option visible but not selectable, with this reason as its tooltip. */
+  disabledReason?: string;
 }
 
 const AI_MEETING_BLOCK_TYPES = new Set<BlockType>([
@@ -163,7 +166,7 @@ function filterViewsByDatabases(views: View[], allowedIds: Set<string>, keyword:
   return filter(views);
 }
 
-const DatabaseTreeItem: React.FC<{
+const DatabaseTreeItem: FC<{
   view: View;
   allowedIds: Set<string>;
   onSelect: (view: View) => void;
@@ -270,6 +273,7 @@ export function SlashPanel({
     updatePage,
     getMoreAIContext,
     createDatabaseView,
+    getSubscriptions,
   } = useEditorContext();
   const editorContext = useEditorContext();
   const [viewName, setViewName] = useState('');
@@ -288,15 +292,19 @@ export function SlashPanel({
 
   const { t } = useTranslation();
   const optionsRef = useRef<HTMLDivElement>(null);
-  const [selectedOption, setSelectedOption] = React.useState<string | null>(null);
-  const [transformOrigin, setTransformOrigin] = React.useState<PopoverOrigin | undefined>(undefined);
-  const selectedOptionRef = React.useRef<string | null>(null);
+  const [selectedOption, setSelectedOption] = useState<string | null>(null);
+  const [transformOrigin, setTransformOrigin] = useState<PopoverOrigin | undefined>(undefined);
+  const selectedOptionRef = useRef<string | null>(null);
   const { openPopover } = usePopoverContext();
 
   const open = useMemo(() => {
     return isPanelOpen(PanelType.Slash);
   }, [isPanelOpen]);
 
+  const { available: canCreateDashboard, disabledReason: dashboardDisabledReason } = useDashboardCreationGate(
+    getSubscriptions,
+    { workspaceId, enabled: open || linkedPicker?.layout === ViewLayout.Dashboard }
+  );
   const checkCreationRef = useRef<ReturnType<typeof useDatabaseViewCreation>['checkCreation']>(() => false);
 
   const getIsInsideAIMeeting = useCallback(() => {
@@ -513,6 +521,23 @@ export function SlashPanel({
                   updatePage,
                 });
               })()
+            : layout === ViewLayout.Dashboard
+            ? await (() => {
+                if (!loadView || !bindViewSync || !deletePage || !createDatabaseView) {
+                  throw new Error('Dashboard creation is not available right now');
+                }
+
+                return createDatabaseDashboardPageViaGrid({
+                  parentViewId: documentId,
+                  name,
+                  addPage,
+                  loadView,
+                  bindViewSync,
+                  createDatabaseView,
+                  deletePage,
+                  scheduleDeferredCleanup,
+                });
+              })()
             : layout === ViewLayout.Feed
             ? await (() => {
                 if (!loadView || !bindViewSync || !deletePage || !scheduleDeferredCleanup) {
@@ -586,6 +611,7 @@ export function SlashPanel({
     [
       addPage,
       bindViewSync,
+      createDatabaseView,
       deletePage,
       documentId,
       editor,
@@ -739,6 +765,10 @@ export function SlashPanel({
               return t('timeline.referencedTimelinePrefix', {
                 defaultValue: 'View of',
               });
+            case ViewLayout.Dashboard:
+              return t('dashboard.referencedDashboardPrefix', {
+                defaultValue: 'View of',
+              });
             default:
               return '';
           }
@@ -746,62 +776,23 @@ export function SlashPanel({
         const referencedName = prefix ? `${prefix} ${baseName}` : baseName;
         const sourceViewId = option.sourceViewId;
 
-        const response =
-          linkedPicker.layout === ViewLayout.List
-            ? await createLinkedDatabaseListView({
-                requestViewId: documentId,
-                sourceViewId,
-                payload: {
-                  parent_view_id: documentId,
-                  database_id: databaseId,
-                  name: referencedName,
-                  embedded: true,
-                },
-                createDatabaseView,
-                loadView,
-                bindViewSync,
-                deletePage,
-                scheduleDeferredCleanup,
-              })
-            : linkedPicker.layout === ViewLayout.Gallery
-            ? await createLinkedDatabaseGalleryView({
-                requestViewId: documentId,
-                sourceViewId,
-                payload: {
-                  parent_view_id: documentId,
-                  database_id: databaseId,
-                  name: referencedName,
-                  embedded: true,
-                },
-                createDatabaseView,
-                loadView,
-                bindViewSync,
-                deletePage,
-                scheduleDeferredCleanup,
-              })
-            : linkedPicker.layout === ViewLayout.Feed
-            ? await createLinkedDatabaseFeedView({
-                requestViewId: documentId,
-                sourceViewId,
-                payload: {
-                  parent_view_id: documentId,
-                  database_id: databaseId,
-                  name: referencedName,
-                  embedded: true,
-                },
-                createDatabaseView,
-                loadView,
-                bindViewSync,
-                deletePage,
-                scheduleDeferredCleanup,
-              })
-            : await createDatabaseView(documentId, {
-                parent_view_id: documentId,
-                database_id: databaseId,
-                layout: linkedPicker.layout,
-                name: referencedName,
-                embedded: true,
-              });
+        // A new linked dashboard starts empty; List, Gallery and Feed start from the picked view.
+        const { response, databaseUpdatePending } = await createLinkedDatabaseViewForLayout(linkedPicker.layout, {
+          requestViewId: documentId,
+          sourceViewId,
+          duplicate: false,
+          payload: {
+            parent_view_id: documentId,
+            database_id: databaseId,
+            name: referencedName,
+            embedded: true,
+          },
+          createDatabaseView,
+          loadView,
+          bindViewSync,
+          deletePage,
+          scheduleDeferredCleanup,
+        });
 
         Log.debug('[SlashPanel] {} created linked database', {
           documentId,
@@ -810,13 +801,7 @@ export function SlashPanel({
           referencedName,
         });
 
-        if (
-          linkedPicker.layout !== ViewLayout.List &&
-          linkedPicker.layout !== ViewLayout.Gallery &&
-          linkedPicker.layout !== ViewLayout.Feed &&
-          response.database_update?.length &&
-          loadView
-        ) {
+        if (databaseUpdatePending && response.database_update?.length && loadView) {
           try {
             const databaseDoc = await loadView(response.view_id, false, false, {
               databaseId: response.database_id || databaseId,
@@ -1436,6 +1421,32 @@ export function SlashPanel({
         },
       },
       {
+        label: t('document.slashMenu.name.dashboard', { defaultValue: 'Dashboard' }),
+        key: 'dashboard',
+        creationLayout: ViewLayout.Dashboard,
+        disabled: !canCreateDashboard,
+        icon: <DashboardIcon />,
+        group: SlashMenuGroupKey.Database,
+        keywords: ['dashboard', 'dash', 'widgets', 'overview', 'kpi', 'database'],
+        aliases: ['dashboard view', 'dash'],
+        onClick: () => {
+          void createInlineDatabase(ViewLayout.Dashboard);
+        },
+      },
+      {
+        label: t('document.slashMenu.name.linkedDashboard', { defaultValue: 'Linked Dashboard' }),
+        key: 'linkedDashboard',
+        creationLayout: ViewLayout.Dashboard,
+        disabled: !canCreateDashboard,
+        icon: <DashboardIcon />,
+        group: SlashMenuGroupKey.Database,
+        keywords: ['linked', 'dashboard', 'widgets', 'overview', 'database'],
+        aliases: ['link to dashboard', 'referenced dashboard'],
+        onClick: () => {
+          void handleOpenLinkedDatabasePicker(ViewLayout.Dashboard);
+        },
+      },
+      {
         label: t('list.menuName'),
         key: 'list',
         icon: <ListIcon />,
@@ -1829,6 +1840,7 @@ export function SlashPanel({
     editor,
     getIsInsideAIMeeting,
     getIsInsideSimpleTableCell,
+    canCreateDashboard,
   ]);
 
   const optionGroups = useMemo(() => groupSlashMenuOptions(options), [options]);
@@ -1846,12 +1858,29 @@ export function SlashPanel({
     getSubscriptions: editorContext.getSubscriptions,
     enabled: showsLimitedOption || creationCheckLatched || isLimitedDatabaseViewLayout(linkedPicker?.layout),
   });
-  const linkedAction = linkedPicker ? getAction(linkedPicker.layout) : undefined;
+  const getCreationAction = (layout?: ViewLayout): DatabaseViewCreationAction =>
+    layout === ViewLayout.Dashboard
+      ? !canCreateDashboard || dashboardDisabledReason
+        ? { type: 'disabled', reason: dashboardDisabledReason }
+        : { type: 'create' }
+      : getAction(layout);
+  const linkedAction = linkedPicker ? getCreationAction(linkedPicker.layout) : undefined;
 
   // Updating availability must not reattach the editor's keyboard listener.
   useLayoutEffect(() => {
-    checkCreationRef.current = checkCreation;
-  }, [checkCreation]);
+    checkCreationRef.current = (layout, closeMenu) => {
+      if (layout === ViewLayout.Dashboard) {
+        if (!canCreateDashboard || dashboardDisabledReason) {
+          if (dashboardDisabledReason) notify.error(dashboardDisabledReason);
+          return false;
+        }
+
+        return true;
+      }
+
+      return checkCreation(layout, closeMenu);
+    };
+  }, [checkCreation, canCreateDashboard, dashboardDisabledReason]);
 
   useEffect(() => {
     selectedOptionRef.current = selectedOption;
@@ -1993,12 +2022,12 @@ export function SlashPanel({
               <div key={group} className={'flex flex-col gap-1'}>
                 <div className={'px-2 py-1 text-xs font-medium text-text-secondary'}>{groupLabels[group]}</div>
                 {groupOptions.map((option) => {
-                  const action = getAction(option.creationLayout);
+                  const action = getCreationAction(option.creationLayout);
 
                   return (
                     <DatabaseViewCreationHint
                       key={option.key}
-                      enabled={isLimitedDatabaseViewLayout(option.creationLayout)}
+                      enabled={isLimitedDatabaseViewLayout(option.creationLayout) || option.creationLayout === ViewLayout.Dashboard}
                       reason={action.reason}
                     >
                       <Button
@@ -2008,6 +2037,7 @@ export function SlashPanel({
                         data-testid={`slash-menu-${option.key}`}
                         data-option-key={option.key}
                         aria-disabled={action.type === 'disabled'}
+                        disabled={option.creationLayout === ViewLayout.Dashboard && action.type === 'disabled'}
                         onClick={() => executeOption(option)}
                         className={`w-full scroll-m-2 justify-start hover:bg-fill-content-hover ${
                           selectedOption === option.key ? 'bg-fill-content-hover' : ''

@@ -6,6 +6,7 @@ import { ViewLayout } from '@/application/types';
 import {
   getDatabaseContainerEntries,
   getDatabaseIdFromWorkspaceCatalog,
+  getDatabasePrimaryView,
   getCachedWorkspaceDatabaseCatalog,
   getWorkspaceDatabaseCatalog,
   getViewIdFromWorkspaceCatalog,
@@ -162,6 +163,52 @@ describe('workspace database catalog', () => {
       { databaseId: database.database_id, container: database.views[0], primaryView: database.views[1] },
       { databaseId: legacy.database_id, container: feed, primaryView: feed },
     ]);
+  });
+
+  it('never uses a dashboard view as the primary view relations and linked databases target', () => {
+    const dashboard = {
+      ...database.views[1],
+      view_id: 'dashboard-1',
+      layout: ViewLayout.Dashboard,
+      name: 'Dashboard',
+    };
+    const dashboardFirst = { ...database, views: [database.views[0], dashboard, database.views[1]] };
+    const dashboardOnly = { ...database, database_id: 'dashboard-only', views: [database.views[0], dashboard] };
+
+    expect(getDatabasePrimaryView(dashboardFirst)).toBe(database.views[1]);
+    expect(getDatabasePrimaryView(dashboardOnly)).toBeUndefined();
+    expect(getDatabaseContainerEntries([dashboardFirst, dashboardOnly])).toEqual([
+      { databaseId: database.database_id, container: database.views[0], primaryView: database.views[1] },
+    ]);
+  });
+
+  it('opens a database through its regular view, falling back to a dashboard only when it has no other view', async () => {
+    const dashboard = {
+      ...database.views[1],
+      view_id: 'dashboard-1',
+      layout: ViewLayout.Dashboard,
+      name: 'Dashboard',
+    };
+
+    jest.mocked(listWorkspaceDatabases).mockResolvedValue([
+      { ...database, views: [database.views[0], dashboard, database.views[1]] },
+      { ...database, database_id: 'dashboard-only', views: [database.views[0], dashboard] },
+    ]);
+
+    await expect(getViewIdFromWorkspaceCatalog('workspace-1', 'database-1')).resolves.toBe('grid-1');
+    await expect(getViewIdFromWorkspaceCatalog('workspace-1', 'dashboard-only')).resolves.toBe('dashboard-1');
+  });
+
+  it('skips a cached dashboard view when resolving the view to open a database', async () => {
+    readDatabaseRecords.mockResolvedValue([
+      { view_order: 0, view: database.views[0] },
+      { view_order: 1, view: { ...database.views[1], view_id: 'dashboard-1', layout: ViewLayout.Dashboard } },
+      { view_order: 2, view: database.views[1] },
+    ]);
+
+    await expect(getViewIdFromWorkspaceCatalog('workspace-1', 'database-1')).resolves.toBe('grid-1');
+
+    expect(listWorkspaceDatabases).not.toHaveBeenCalled();
   });
 
   it('refreshes and atomically replaces IndexedDB records after a cache miss', async () => {

@@ -1,11 +1,14 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { toast } from 'sonner';
+import * as Y from 'yjs';
 
 import { useDatabase, useDatabaseContext } from '@/application/database-yjs';
 import { DatabaseContextState } from '@/application/database-yjs/context';
 import { useDuplicateDatabaseView, useUpdateDatabaseView } from '@/application/database-yjs/dispatch';
-import { DatabaseViewLayout, UIVariant, View, ViewLayout, YjsDatabaseKey } from '@/application/types';
+import { DatabaseViewLayout, UIVariant, View, ViewLayout, YDatabase, YDatabaseView, YDatabaseViews, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { DatabaseTabs } from '@/components/database/components/tabs/DatabaseTabs';
+import { getConfigValue } from '@/utils/runtime-config';
+import { updateServerInfo } from '@/utils/server-info';
 
 jest.mock('sonner', () => ({ toast: { error: jest.fn(), success: jest.fn() } }));
 
@@ -34,17 +37,43 @@ jest.mock('@/components/database/components/tabs/DatabaseViewTabs', () => ({
     viewNameById,
     setRenameView,
     onDuplicateView,
+    duplicateDisabled,
+    duplicateDisabledReason,
   }: {
     viewNameById?: Record<string, string>;
     setRenameView: (view: View) => void;
     onDuplicateView?: (viewId: string) => void;
+    duplicateDisabled?: boolean;
+    duplicateDisabledReason?: string;
   }) => (
     <div data-testid='database-view-tabs'>
       {viewNameById?.['database-view-id'] ?? 'Yjs view name'}
       <button onClick={() => setRenameView(mockNewDatabaseView)}>Rename new view</button>
       <button onClick={() => setRenameView(mockLiveRenameView)}>Rename live view</button>
-      {onDuplicateView ? <button onClick={() => onDuplicateView(databaseView.view_id)}>Duplicate view</button> : null}
+      {onDuplicateView ? <button disabled={duplicateDisabled} title={duplicateDisabledReason} onClick={() => onDuplicateView(databaseView.view_id)}>Duplicate view</button> : null}
     </div>
+  ),
+}));
+
+// The phone's view switcher (tested with `MobileDatabaseViewPill`): its props are what matters here.
+jest.mock('@/components/database/components/tabs/MobileDatabaseViewPill', () => ({
+  MobileDatabaseViewPill: ({
+    viewIds,
+    selectedViewId,
+    readOnly,
+    onViewAdded,
+  }: {
+    viewIds: string[];
+    selectedViewId?: string;
+    readOnly: boolean;
+    onViewAdded?: (viewId: string) => void;
+  }) => (
+    <div
+      data-can-add={String(!readOnly && Boolean(onViewAdded))}
+      data-selected={selectedViewId}
+      data-testid='database-view-pill'
+      data-view-ids={viewIds.join(',')}
+    />
   ),
 }));
 
@@ -104,6 +133,45 @@ describe('DatabaseTabs', () => {
     (useDatabase as jest.Mock).mockReturnValue(undefined);
     (useDuplicateDatabaseView as jest.Mock).mockReturnValue(jest.fn());
     (useUpdateDatabaseView as jest.Mock).mockReturnValue(jest.fn());
+    updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), {
+      status: 'available', info: { enable_page_history: true },
+    });
+  });
+
+  it('disables duplication at the raw view cap while preserving rename and re-enables after deletion', async () => {
+    const databaseDoc = new Y.Doc() as YDoc;
+    const database = new Y.Map() as YDatabase;
+    const views = new Y.Map() as YDatabaseViews;
+
+    databaseDoc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.database, database);
+    database.set(YjsDatabaseKey.views, views);
+    for (const id of [databaseView.view_id, 'hidden-owned-view']) {
+      views.set(id, new Y.Map() as YDatabaseView);
+    }
+
+    const duplicateView = jest.fn().mockResolvedValue('copy');
+
+    (useDatabase as jest.Mock).mockReturnValue(database);
+    (useDuplicateDatabaseView as jest.Mock).mockReturnValue(duplicateView);
+    (useDatabaseContext as jest.Mock).mockReturnValue({
+      databaseDoc, createDatabaseView: jest.fn(), loadViewMeta: jest.fn(async () => databaseContainer),
+      readOnly: false, showActions: true,
+    } as unknown as DatabaseContextState);
+    updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), {
+      status: 'available', info: { enable_page_history: true, max_dashboard_widgets: 2 },
+    });
+    render(<DatabaseTabs databasePageId={databaseView.view_id} viewIds={[databaseView.view_id]} />);
+    const duplicate = screen.getByRole('button', { name: 'Duplicate view' });
+
+    expect(duplicate.hasAttribute('disabled')).toBe(true);
+    expect(duplicate.getAttribute('title')).toContain('limit of 2 views');
+    expect(screen.getByRole('button', { name: 'Rename live view' }).hasAttribute('disabled')).toBe(false);
+    fireEvent.click(duplicate);
+    expect(duplicateView).not.toHaveBeenCalled();
+    act(() => views.delete('hidden-owned-view'));
+    expect(duplicate.hasAttribute('disabled')).toBe(false);
+    fireEvent.click(duplicate);
+    await waitFor(() => expect(duplicateView).toHaveBeenCalledTimes(1));
   });
 
   it('duplicates a tab through the database-view hook and selects the returned view', async () => {
@@ -282,6 +350,30 @@ describe('DatabaseTabs', () => {
     });
   });
 
+  it('marks the whole tab row, view tabs and toolbar, as the visual parity content column', async () => {
+    (useDatabaseContext as jest.Mock).mockReturnValue({
+      loadViewMeta: jest.fn(async () => null),
+      readOnly: false,
+      showActions: true,
+    } as DatabaseContextState);
+
+    const { container } = render(
+      <DatabaseTabs
+        databasePageId={databaseView.view_id}
+        selectedViewId={databaseView.view_id}
+        viewIds={[databaseView.view_id]}
+      />
+    );
+
+    const columns = container.querySelectorAll('[data-parity-id="dash-content-column"]');
+
+    expect(columns).toHaveLength(1);
+    // Same box as desktop's TabBarHeader: the strip and the toolbar beside it.
+    expect(columns[0].contains(screen.getByTestId('database-view-tabs'))).toBe(true);
+    expect(columns[0].contains(screen.getByTestId('database-actions-container'))).toBe(true);
+    await waitFor(() => expect(screen.getByTestId('database-actions-mock')).toBeTruthy());
+  });
+
   it('passes outline names for views loaded in Yjs (folder names are the source of truth, like desktop)', async () => {
     // Desktop renames only update the folder view; the database collab keeps
     // its creation-time layout default ("Grid"). The outline name must win
@@ -414,6 +506,61 @@ describe('DatabaseTabs', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('rename-modal').textContent).toBe('Live Grid');
+    });
+  });
+
+  // WP14 W-11: below 768px a view pill replaces the tab strip; the toolbar stays at the right.
+  describe('in a mobile context (a 390px window)', () => {
+    const initialWidth = window.innerWidth;
+
+    beforeEach(() => {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 390 });
+    });
+
+    afterEach(() => {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: initialWidth });
+    });
+
+    it('renders the view pill instead of the tabs, and keeps the actions', () => {
+      (useDatabaseContext as jest.Mock).mockReturnValue({
+        createDatabaseView: jest.fn(),
+        isDocumentBlock: false,
+        loadViewMeta: jest.fn(async () => databaseContainer),
+        readOnly: false,
+        showActions: true,
+      } as unknown as DatabaseContextState);
+
+      render(
+        <DatabaseTabs
+          databasePageId={databaseView.view_id}
+          selectedViewId='view-b'
+          setSelectedViewId={jest.fn()}
+          viewIds={['view-a', 'view-b']}
+        />
+      );
+
+      const pill = screen.getByTestId('database-view-pill');
+
+      expect(screen.queryByTestId('database-view-tabs')).toBeNull();
+      expect(pill.getAttribute('data-view-ids')).toBe('view-a,view-b');
+      expect(pill.getAttribute('data-selected')).toBe('view-b');
+      expect(pill.getAttribute('data-can-add')).toBe('true');
+      expect(screen.getByTestId('database-actions-mock')).toBeTruthy();
+    });
+
+    it('keeps the tab strip at 768px', () => {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 768 });
+      (useDatabaseContext as jest.Mock).mockReturnValue({
+        isDocumentBlock: false,
+        loadViewMeta: jest.fn(async () => databaseContainer),
+        readOnly: false,
+        showActions: true,
+      } as unknown as DatabaseContextState);
+
+      render(<DatabaseTabs databasePageId={databaseView.view_id} viewIds={[databaseView.view_id]} />);
+
+      expect(screen.getByTestId('database-view-tabs')).toBeTruthy();
+      expect(screen.queryByTestId('database-view-pill')).toBeNull();
     });
   });
 });

@@ -1,7 +1,6 @@
 import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
 import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
 import { reorder } from '@atlaskit/pragmatic-drag-and-drop/reorder';
-import { autoScrollForElements } from '@atlaskit/pragmatic-drag-and-drop-auto-scroll/element';
 import { triggerPostMoveFlash } from '@atlaskit/pragmatic-drag-and-drop-flourish/trigger-post-move-flash';
 import { extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { getReorderDestinationIndex } from '@atlaskit/pragmatic-drag-and-drop-hitbox/util/get-reorder-destination-index';
@@ -11,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useDatabaseViewId, useReadOnly } from '@/application/database-yjs';
 import { useReorderColumnDispatch, useReorderRowDispatch } from '@/application/database-yjs/dispatch';
+import { autoScrollForSharedElement } from '@/components/database/components/drag-and-drop/autoScrollForSharedElement';
 import {
   getColumnRegistry,
   getRowRegistry,
@@ -161,10 +161,7 @@ export function useGridDndRow(virtualizer: Virtualizer<Element, Element>) {
           });
         },
       }),
-      autoScrollForElements({
-        canScroll: canRespond,
-        element: scrollContainer,
-      })
+      autoScrollForSharedElement(scrollContainer, canRespond)
     );
 
     cleanupRef.current = cleanup;
@@ -310,10 +307,7 @@ export function useGridDndColumn(data: RenderColumn[], virtualizer: Virtualizer<
           });
         },
       }),
-      autoScrollForElements({
-        canScroll: canRespond,
-        element: scrollContainer,
-      })
+      autoScrollForSharedElement(scrollContainer, canRespond)
     );
 
     cleanupRef.current = cleanup;

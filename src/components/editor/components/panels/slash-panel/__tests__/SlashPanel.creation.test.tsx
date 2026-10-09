@@ -8,6 +8,7 @@ import { SlashPanel } from '../SlashPanel';
 
 let mockAction: DatabaseViewCreationAction;
 let mockSearch = '';
+let mockDashboardReason: string | undefined;
 const mockRemoveContent = jest.fn();
 const mockClosePanel = jest.fn();
 const mockAddPage = jest.fn();
@@ -64,6 +65,9 @@ jest.mock('@/application/services/domains/view', () => ({
     children: [],
   }),
 }));
+jest.mock('@/components/app/hooks/useDashboardCreationGate', () => ({
+  useDashboardCreationGate: () => ({ available: true, disabledReason: mockDashboardReason }),
+}));
 jest.mock('@/components/app/hooks/useDatabaseViewCreation', () => ({
   useDatabaseViewCreation: (options: unknown) => {
     mockCreationOptions(options);
@@ -89,9 +93,28 @@ describe('slash database view admission', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockSearch = '';
+    mockDashboardReason = undefined;
     mockAction = { type: 'upgrade', requiresPro: true, reason: 'Requires Pro' };
     mockAddPage.mockResolvedValue({ view_id: 'created', database_id: 'database' });
     mockLoadCatalog.mockResolvedValue([]);
+  });
+
+  it.each(['dashboard', 'linkedDashboard'])('%s preserves its own Pro gate before touching the editor', (key) => {
+    mockSearch = key;
+    mockAction = { type: 'create' };
+    mockDashboardReason = 'Creating a Dashboard view requires a Pro workspace.';
+    render(<SlashPanel setEmojiPosition={jest.fn()} />);
+    const item = screen.getByTestId(`slash-menu-${key}`);
+
+    expect(item.hasAttribute('disabled')).toBe(true);
+    fireEvent.click(item);
+    fireEvent.keyDown(mockEditorDom, { key: 'Enter' });
+    expect(mockRemoveContent).not.toHaveBeenCalled();
+    expect(mockEditor.flushLocalChanges).not.toHaveBeenCalled();
+    expect(mockAddPage).not.toHaveBeenCalled();
+    expect(mockLoadCatalog).not.toHaveBeenCalled();
+    expect(mockCreateDatabaseView).not.toHaveBeenCalled();
+    expect(mockCheckout).not.toHaveBeenCalled();
   });
 
   it('does not request creation status for a search containing only ordinary blocks', () => {

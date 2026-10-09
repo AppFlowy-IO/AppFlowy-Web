@@ -1,6 +1,6 @@
 import * as Y from 'yjs';
 
-import { copyDatabaseViewConfiguration } from '@/application/database-yjs/dispatch';
+import { copyDatabaseViewConfiguration } from '@/application/database-yjs/database-view-doc-ops';
 import {
   DatabaseViewLayout,
   YDatabaseFilter,
@@ -183,5 +183,23 @@ describe('copyDatabaseViewConfiguration', () => {
 
     expect(sourceQuestion.get('required')).toBe(true);
     expect(targetQuestion?.get('description')).toBe('Source description');
+  });
+
+  it('copies how the view opens records (open_pages_in, WP13 §3.8), and clears a stale one', () => {
+    const doc = new Y.Doc();
+    const views = doc.getMap<YDatabaseView>('views');
+    const source = createView('source-view-id', 'Grid');
+    const target = createView('target-view-id', 'Grid (Copy)');
+
+    views.set('source-view-id', source);
+    views.set('target-view-id', target);
+    source.set(YjsDatabaseKey.open_pages_in, 'full_page');
+
+    copyDatabaseViewConfiguration(source, target);
+    expect(target.get(YjsDatabaseKey.open_pages_in)).toBe('full_page');
+
+    source.delete(YjsDatabaseKey.open_pages_in);
+    copyDatabaseViewConfiguration(source, target);
+    expect(target.get(YjsDatabaseKey.open_pages_in)).toBeUndefined();
   });
 });

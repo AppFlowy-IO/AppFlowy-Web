@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
 import { useDatabase, useDatabaseContext } from '@/application/database-yjs';
+import { assertDatabaseViewCapacity } from '@/application/database-yjs/database-view-capacity';
 import { useDuplicateDatabaseView, useUpdateDatabaseView } from '@/application/database-yjs/dispatch';
 import { View, YjsDatabaseKey } from '@/application/types';
 import {
@@ -12,13 +13,16 @@ import {
   isEmbeddedDatabaseViewWithoutChildren,
 } from '@/application/view-utils';
 import { ReactComponent as RelationIcon } from '@/assets/icons/relation.svg';
+import { useMobileContext } from '@/components/_shared/hooks/useMobileContext';
 import { findView } from '@/components/_shared/outline/utils';
 import { type ReorderResult } from '@/components/_shared/reorder/useReorderMonitor';
 import RenameModal from '@/components/app/view-actions/RenameModal';
 import { DatabaseActions } from '@/components/database/components/conditions';
 import { DatabaseViewTabs } from '@/components/database/components/tabs/DatabaseViewTabs';
 import DeleteViewConfirm from '@/components/database/components/tabs/DeleteViewConfirm';
+import { MobileDatabaseViewPill } from '@/components/database/components/tabs/MobileDatabaseViewPill';
 import { useOpenDatabaseAsPage } from '@/components/database/hooks';
+import { useDatabaseViewCapacity } from '@/components/database/hooks/useDatabaseViewCapacity';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { getErrorMessage } from '@/utils/errors';
@@ -79,6 +83,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
     const database = useDatabase();
     const views = database?.get(YjsDatabaseKey.views);
     const context = useDatabaseContext();
+    const { disabledReason: capacityDisabledReason } = useDatabaseViewCapacity(context.databaseDoc);
     const {
       loadViewMeta,
       navigateToView,
@@ -89,6 +94,8 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
     } = context;
     const updateDatabaseView = useUpdateDatabaseView();
     const duplicateView = useDuplicateDatabaseView();
+    // Below 768px (or on a mobile browser) a view pill replaces the tab strip (WP14 W-11).
+    const mobileContext = useMobileContext();
     const [meta, setMeta] = useState<View | null>(null);
     const [pendingEmbeddedName, setPendingEmbeddedName] = useState<{ viewId: string; name: string } | null>(null);
     const scrollLeftPadding = context.paddingStart;
@@ -107,13 +114,17 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
       []
     );
 
+    // A duplicate belongs to the page it started on: only another page (or
+    // unmounting) invalidates it. The duplicate callback itself is rebuilt as
+    // the context's callbacks change, which the copy's own arrival triggers,
+    // so keying the scope on it would drop the copy's selection every time.
     useLayoutEffect(() => {
       duplicateScopeRevisionRef.current += 1;
 
       return () => {
         duplicateScopeRevisionRef.current += 1;
       };
-    }, [databasePageId, duplicateView]);
+    }, [databasePageId]);
 
     // Used to trigger a scroll in the child component
     const [pendingScrollToViewId, setPendingScrollToViewId] = useState<string | null>(null);
@@ -449,6 +460,13 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
     const duplicateDatabaseView = useCallback(
       async (viewId: string) => {
         if (!context.createDatabaseView || !views || duplicatingViewId) return;
+        try {
+          assertDatabaseViewCapacity(context.databaseDoc);
+        } catch (error) {
+          toast.error(getErrorMessage(error));
+          return;
+        }
+
         const duplicateScopeRevision = duplicateScopeRevisionRef.current;
         const isCurrentDuplicateScope = () =>
           mountedRef.current && duplicateScopeRevisionRef.current === duplicateScopeRevision;
@@ -483,6 +501,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
       },
       [
         context.createDatabaseView,
+        context.databaseDoc,
         duplicateView,
         duplicatingViewId,
         handleViewAdded,
@@ -574,29 +593,52 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
             </div>
           </h3>
         ) : null}
-        <div className={`database-tabs flex w-full items-center gap-1.5 overflow-hidden border-b border-border-primary`}>
-          <DatabaseViewTabs
-            viewIds={viewIds}
-            selectedViewId={selectedViewId}
-            setSelectedViewId={setSelectedViewId}
-            databasePageId={databasePageId}
-            viewNameById={viewNameById}
-            views={views}
-            readOnly={!!readOnly}
-            visibleViewIds={viewIds}
-            menuViewId={menuViewId}
-            setMenuViewId={setMenuViewId}
-            setDeleteConfirmOpen={setDeleteConfirmOpen}
-            setRenameView={openRenameModal}
-            onDuplicateView={context.createDatabaseView ? duplicateDatabaseView : undefined}
-            duplicateDisabled={Boolean(duplicatingViewId)}
-            pendingScrollToViewId={pendingScrollToViewId}
-            setPendingScrollToViewId={setPendingScrollToViewId}
-            onReorderTabs={onReorderTabs}
-            onBeforeViewAdded={onBeforeViewAddedToDatabase}
-            onAfterViewAdded={onAfterViewAddedToDatabase}
-            onViewAdded={handleViewAdded}
-          />
+        {/* The full tab row (view tabs and toolbar) is the page content column
+            that dashboard cards align with (visual parity reference box). */}
+        <div
+          data-parity-id='dash-content-column'
+          className={`database-tabs flex w-full items-center gap-1.5 overflow-hidden border-b border-border-primary`}
+        >
+          {mobileContext ? (
+            <div className='flex min-w-0 flex-1 items-center py-1.5'>
+              <MobileDatabaseViewPill
+                viewIds={viewIds}
+                selectedViewId={selectedViewId}
+                setSelectedViewId={setSelectedViewId}
+                databasePageId={databasePageId}
+                viewNameById={viewNameById}
+                views={views}
+                readOnly={!!readOnly}
+                onBeforeViewAdded={onBeforeViewAddedToDatabase}
+                onAfterViewAdded={onAfterViewAddedToDatabase}
+                onViewAdded={handleViewAdded}
+              />
+            </div>
+          ) : (
+            <DatabaseViewTabs
+              viewIds={viewIds}
+              selectedViewId={selectedViewId}
+              setSelectedViewId={setSelectedViewId}
+              databasePageId={databasePageId}
+              viewNameById={viewNameById}
+              views={views}
+              readOnly={!!readOnly}
+              visibleViewIds={viewIds}
+              menuViewId={menuViewId}
+              setMenuViewId={setMenuViewId}
+              setDeleteConfirmOpen={setDeleteConfirmOpen}
+              setRenameView={openRenameModal}
+              onDuplicateView={context.createDatabaseView ? duplicateDatabaseView : undefined}
+              duplicateDisabled={Boolean(duplicatingViewId) || Boolean(capacityDisabledReason)}
+              duplicateDisabledReason={capacityDisabledReason}
+              pendingScrollToViewId={pendingScrollToViewId}
+              setPendingScrollToViewId={setPendingScrollToViewId}
+              onReorderTabs={onReorderTabs}
+              onBeforeViewAdded={onBeforeViewAddedToDatabase}
+              onAfterViewAdded={onAfterViewAddedToDatabase}
+              onViewAdded={handleViewAdded}
+            />
+          )}
 
           <div
             className='mb-1 ml-auto'

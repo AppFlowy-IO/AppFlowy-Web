@@ -155,6 +155,11 @@ function AppPage() {
     ) : null;
   }, [rendered, view]);
   const [doc, setDoc] = React.useState<YDoc | undefined>(undefined);
+  // Every view of a database shares the canonical database Y.Doc, and loadView
+  // relabels it (`view_id`) in place. Opening another view of the database this
+  // page already shows (a dashboard widget's own view) hands back the doc held
+  // here, so `setDoc` bails out. This tick re-renders the page with the new label.
+  const [, setDocRelabelTick] = React.useState(0);
   const [error, setError] = React.useState<AppError | null>(null);
 
   // Clear stale error when navigating to a different view so a failed load
@@ -241,7 +246,10 @@ function AppPage() {
 
         // Set doc state - sync binding happens in separate effect after render
         // No flushSync needed since WebSocket sync starts AFTER render
+        const relabelled = loadedDoc === docRef.current;
+
         setDoc(loadedDoc);
+        if (relabelled) setDocRelabelTick((tick) => tick + 1);
 
         // Clear the attempt after successful load
         if (loadAttemptRef.current?.viewId === targetViewId) {
@@ -515,9 +523,12 @@ function AppPage() {
   }, [objectPermission, outline, view, viewId]);
   const canShare = objectPermission.can_share;
 
+  // The doc's label is read on every render: a shared database doc can be relabelled in place.
+  const docViewId = getDocViewId(doc);
+
   const viewDom = useMemo(() => {
     // Check if doc belongs to current viewId (handles race condition when doc from old view arrives after navigation)
-    const docForCurrentView = doc && getDocViewId(doc) === viewId ? doc : undefined;
+    const docForCurrentView = doc && docViewId === viewId ? doc : undefined;
 
     if (layout === ViewLayout.AIChat && !aiEnabled) {
       return <div data-testid='ai-chat-disabled-view' className='h-full w-full' />;
@@ -643,6 +654,7 @@ function AppPage() {
     );
   }, [
     doc,
+    docViewId,
     layout,
     viewId,
     viewMeta,
@@ -667,7 +679,6 @@ function AppPage() {
     setWordCount,
     handleUploadFile,
     scheduleDeferredCleanup,
-    getDocViewId,
     aiEnabled,
     operations,
     getMentionUser,

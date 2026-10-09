@@ -6,7 +6,11 @@ import { toggleFilterId } from '@/application/database-yjs/dispatch/filter-updat
 import { CheckboxFilter, CheckboxFilterCondition } from '@/application/database-yjs/fields/checkbox/checkbox.type';
 import { ChecklistFilterCondition } from '@/application/database-yjs/fields/checklist/checklist.type';
 import { DateFilter, DateFilterCondition } from '@/application/database-yjs/fields/date/date.type';
-import { isRelativeDateCondition } from '@/application/database-yjs/fields/date/relativeDate';
+import {
+  isParameterizedRelativeCondition,
+  isRelativeDateCondition,
+  toEndDateCondition,
+} from '@/application/database-yjs/fields/date/relativeDate';
 import { NumberFilter, NumberFilterCondition } from '@/application/database-yjs/fields/number/number.type';
 import { PersonFilter, PersonFilterCondition } from '@/application/database-yjs/fields/person/person.type';
 import { RelationFilterCondition } from '@/application/database-yjs/fields/relation/relation.type';
@@ -20,16 +24,16 @@ import { isEndDateCondition } from '@/application/database-yjs/rollup/filter';
 import { isNumericRollupField } from '@/application/database-yjs/rollup/utils';
 import { useFieldSelector } from '@/application/database-yjs/selector';
 import { YDatabaseField, YjsDatabaseKey } from '@/application/types';
-import { canonicalizeUserUid } from '@/application/user-uid';
 import { ReactComponent as ArrowDownSvg } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
 import { Tag } from '@/components/_shared/tag';
 import { SelectOptionColorMap, SelectOptionFgColorMap } from '@/components/database/components/cell/cell.const';
-import { useMentionableUsersWithAutoFetch } from '@/components/database/components/cell/person/useMentionableUsers';
 import RelationCellMenuContent from '@/components/database/components/cell/relation/RelationCellMenuContent';
 import { FilterSearchInput } from '@/components/database/components/filters/filter-menu/FilterSearchInput';
 import { SelectOptionList } from '@/components/database/components/filters/filter-menu/SelectOptionList';
 import { useDebouncedFilterInput } from '@/components/database/components/filters/hooks/useDebouncedFilterInput';
+import { PersonFilterMoreHint } from '@/components/database/components/filters/value-controls/PersonFilterList';
+import { usePersonFilterOptions } from '@/components/database/components/filters/value-controls/usePersonFilterOptions';
 import { useRelationData } from '@/components/database/components/property/relation/useRelationData';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -79,7 +83,7 @@ export function ConditionSelector({
   const baseConditions = useConditionsForFieldType(fieldType, t, field);
   const isEnd = fieldType === FieldType.DateTime && isEndDateCondition(filter.condition);
   const conditions = isEnd
-    ? baseConditions.map((item) => ({ ...item, value: item.value >= 16 ? item.value + 6 : item.value + 8 }))
+    ? baseConditions.map((item) => ({ ...item, value: toEndDateCondition(item.value) }))
     : baseConditions;
 
   const selectedCondition = useMemo(() => {
@@ -209,6 +213,7 @@ function useConditionsForFieldType(
         { value: DateFilterCondition.DateStartsOnOrBefore, text: t('grid.dateFilter.onOrBefore') },
         { value: DateFilterCondition.DateStartsOnOrAfter, text: t('grid.dateFilter.onOrAfter') },
         { value: DateFilterCondition.DateStartsBetween, text: t('grid.dateFilter.between') },
+        { value: DateFilterCondition.DateStartsRelative, text: t('dashboard.globalFilters.relativeToToday') },
         { value: DateFilterCondition.DateStartsToday, text: t('relativeDates.today') },
         { value: DateFilterCondition.DateStartsYesterday, text: t('relativeDates.yesterday') },
         { value: DateFilterCondition.DateStartsTomorrow, text: t('relativeDates.tomorrow') },
@@ -505,8 +510,10 @@ function NumberValueInput({ filter, disabled }: { filter: NumberFilter; disabled
 
 // Date Value Input - uses the existing DateTimeFilterDatePicker
 function DateValueInput({ filter, disabled }: { filter: DateFilter; disabled?: boolean }) {
-  // Don't show input for isEmpty/isNotEmpty or relative date conditions (Today, This week, …)
+  // Don't show input for isEmpty/isNotEmpty or the date presets (Today, This week, …);
+  // "Is relative to today" shows its direction, amount and unit instead.
   const showInput = useMemo(() => {
+    if (isParameterizedRelativeCondition(filter.condition)) return true;
     if (isRelativeDateCondition(filter.condition)) return false;
 
     return ![
@@ -680,19 +687,6 @@ function PersonValueInput({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
 
-  // Use cached mentionable users - only fetch when popover is open
-  const { users: mentionableUsers, loading } = useMentionableUsersWithAutoFetch(open);
-  const isAttributionField = fieldType === FieldType.CreatedBy || fieldType === FieldType.LastEditedBy;
-  const mentionableUserOptions = useMemo(
-    () =>
-      mentionableUsers.flatMap((user) => {
-        const identifier = isAttributionField ? canonicalizeUserUid(user.uid) : user.person_id;
-
-        return identifier ? [{ identifier, user }] : [];
-      }),
-    [isAttributionField, mentionableUsers]
-  );
-
   // Don't show input for isEmpty/isNotEmpty conditions
   const showInput = useMemo(() => {
     return ![PersonFilterCondition.PersonIsEmpty, PersonFilterCondition.PersonIsNotEmpty].includes(filter.condition);
@@ -701,18 +695,14 @@ function PersonValueInput({
   const selectedUserIds = useMemo(() => {
     return filter.userIds || [];
   }, [filter.userIds]);
-  const unknownUserIds = useMemo(() => {
-    const knownIds = new Set(mentionableUserOptions.map(({ identifier }) => identifier));
-
-    return selectedUserIds.filter((id) => !knownIds.has(id));
-  }, [mentionableUserOptions, selectedUserIds]);
-  const normalizedSearch = search.trim().toLocaleLowerCase();
-  const visibleUsers = mentionableUserOptions.filter(({ user }) =>
-    `${user.name ?? ''} ${user.email ?? ''}`.toLocaleLowerCase().includes(normalizedSearch)
-  );
-  const visibleUnknownUserIds = unknownUserIds.filter((id) =>
-    `${t('grid.person.unknownUser')} ${id}`.toLocaleLowerCase().includes(normalizedSearch)
-  );
+  // The people list is the one of every person filter editor; it is fetched only while the popover is open.
+  const {
+    loading,
+    members: mentionableUserOptions,
+    users: visibleUsers,
+    unknownIds: visibleUnknownUserIds,
+    hiddenCount,
+  } = usePersonFilterOptions({ fieldType, selectedIds: selectedUserIds, search, enabled: open });
   const handleOpenChange = useCallback((nextOpen: boolean) => {
     setOpen(nextOpen);
     if (nextOpen) setSearch('');
@@ -828,6 +818,7 @@ function PersonValueInput({
                 <CheckIcon className='h-4 w-4 shrink-0 text-text-action' />
               </button>
             ))}
+            {hiddenCount > 0 && <PersonFilterMoreHint count={hiddenCount} />}
           </div>
         </PopoverContent>
       </Popover>

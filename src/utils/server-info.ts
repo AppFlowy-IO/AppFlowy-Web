@@ -6,6 +6,7 @@ export type ServerInfoState =
   | { status: 'available'; info: ServerInfo };
 
 export const SERVER_INFO_LOADING: ServerInfoState = { status: 'loading' };
+export const DEFAULT_MAX_DASHBOARD_WIDGETS = 6;
 export type ServerHostingMode = 'unknown' | 'cloud' | 'self-hosted';
 
 const listeners = new Set<() => void>();
@@ -28,6 +29,15 @@ export function updateServerInfo(serverUrl: string, state: ServerInfoState): voi
 export function subscribeToServerInfo(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+/** Server widget-creation budget, counted as usable views per database in both hosting modes. */
+export function getMaxDashboardWidgets(serverInfo: ServerInfoState = getServerInfoSnapshot()): number {
+  const limit = serverInfo.info?.max_dashboard_widgets;
+
+  return typeof limit === 'number' && Number.isSafeInteger(limit) && limit >= 0
+    ? limit
+    : DEFAULT_MAX_DASHBOARD_WIDGETS;
 }
 
 /**

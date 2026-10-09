@@ -1,0 +1,688 @@
+{
+  "fixture": "gfilter-picker",
+  "version": 1,
+  "encoding": {
+    "model": "buildGlobalFilterPickerModel({sources, rows, query, expanded, mode, fieldType?, excludeDatabaseIds?, canEdit}) -> {flat, groups: [{databaseId, viewCount, fieldIds, more}], showFooter, empty}.",
+    "sources": "The loaded source databases with their properties (primary first, then column order). Field types: 0 RichText, 1 Number, 2 DateTime, 3 SingleSelect, 4 MultiSelect, 5 Checkbox, 6 URL, 7 Checklist, 9 CreatedTime, 10 Relation, 11 Summary, 13 Time, 14 Media, 15 Person, 16 Rollup. Only global filter types count (Relation, Rollup, Formula, Time, Media, Summary and Translate do not); a source without one is left out.",
+    "rows": "The dashboard rows, each a list of widgets {database_id, view_id}. Groups follow the order of first appearance; a database with no loaded source is skipped. viewCount is the number of widgets of the database.",
+    "modes": "toolbar: flat (one group, no header) when exactly one source is listed, otherwise grouped; the footer ('Filter multiple sources') shows for writers (can_edit) with 2+ listed sources. multi: always grouped, no footer. add-another: grouped, only fields of fieldType, sources in excludeDatabaseIds left out, no footer.",
+    "cutoff": "Without a query a flat list shows 8 fields and a group 5; more is the number of hidden fields, 0 once the group's databaseId is in expanded. A non-empty query (trimmed, compared with normalizeDashboardText as a substring of the field name) shows every match, hides groups without a match and sets more to 0. empty: no group is left."
+  },
+  "scenarios": [
+    {
+      "name": "one source",
+      "sources": [
+        {
+          "databaseId": "db-inventory",
+          "name": "Inventory",
+          "fields": [
+            {
+              "id": "f-name",
+              "name": "Name",
+              "type": 0
+            },
+            {
+              "id": "f-sku",
+              "name": "SKU",
+              "type": 0
+            },
+            {
+              "id": "f-stock",
+              "name": "Stock",
+              "type": 1
+            },
+            {
+              "id": "f-kind",
+              "name": "Kind",
+              "type": 3
+            },
+            {
+              "id": "f-tags",
+              "name": "Tags",
+              "type": 4
+            },
+            {
+              "id": "f-supplier",
+              "name": "Supplier",
+              "type": 10
+            },
+            {
+              "id": "f-active",
+              "name": "Active",
+              "type": 5
+            },
+            {
+              "id": "f-arrived",
+              "name": "Arrived",
+              "type": 2
+            },
+            {
+              "id": "f-buyer",
+              "name": "Buyer",
+              "type": 15
+            },
+            {
+              "id": "f-link",
+              "name": "Link",
+              "type": 6
+            },
+            {
+              "id": "f-checks",
+              "name": "Checks",
+              "type": 7
+            },
+            {
+              "id": "f-photo",
+              "name": "Photo",
+              "type": 14
+            }
+          ]
+        }
+      ],
+      "rows": [
+        [
+          {
+            "database_id": "db-inventory",
+            "view_id": "v-inventory-grid"
+          }
+        ],
+        [
+          {
+            "database_id": "db-inventory",
+            "view_id": "v-inventory-board"
+          }
+        ]
+      ],
+      "cases": [
+        {
+          "name": "a single source is a flat list of 8 and a more row",
+          "mode": "toolbar",
+          "can_edit": true,
+          "query": "",
+          "expanded": [],
+          "expected": {
+            "flat": true,
+            "groups": [
+              {
+                "databaseId": "db-inventory",
+                "viewCount": 2,
+                "fieldIds": [
+                  "f-name",
+                  "f-sku",
+                  "f-stock",
+                  "f-kind",
+                  "f-tags",
+                  "f-active",
+                  "f-arrived",
+                  "f-buyer"
+                ],
+                "more": 2
+              }
+            ],
+            "showFooter": false,
+            "empty": false
+          }
+        },
+        {
+          "name": "the more row expands the flat list",
+          "mode": "toolbar",
+          "can_edit": true,
+          "query": "",
+          "expanded": [
+            "db-inventory"
+          ],
+          "expected": {
+            "flat": true,
+            "groups": [
+              {
+                "databaseId": "db-inventory",
+                "viewCount": 2,
+                "fieldIds": [
+                  "f-name",
+                  "f-sku",
+                  "f-stock",
+                  "f-kind",
+                  "f-tags",
+                  "f-active",
+                  "f-arrived",
+                  "f-buyer",
+                  "f-link",
+                  "f-checks"
+                ],
+                "more": 0
+              }
+            ],
+            "showFooter": false,
+            "empty": false
+          }
+        },
+        {
+          "name": "the multiple sources picker always groups",
+          "mode": "multi",
+          "can_edit": true,
+          "query": "",
+          "expanded": [],
+          "expected": {
+            "flat": false,
+            "groups": [
+              {
+                "databaseId": "db-inventory",
+                "viewCount": 2,
+                "fieldIds": [
+                  "f-name",
+                  "f-sku",
+                  "f-stock",
+                  "f-kind",
+                  "f-tags"
+                ],
+                "more": 5
+              }
+            ],
+            "showFooter": false,
+            "empty": false
+          }
+        },
+        {
+          "name": "a query shows every match of the flat list",
+          "mode": "toolbar",
+          "can_edit": true,
+          "query": "S",
+          "expanded": [],
+          "expected": {
+            "flat": true,
+            "groups": [
+              {
+                "databaseId": "db-inventory",
+                "viewCount": 2,
+                "fieldIds": [
+                  "f-sku",
+                  "f-stock",
+                  "f-tags",
+                  "f-checks"
+                ],
+                "more": 0
+              }
+            ],
+            "showFooter": false,
+            "empty": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "three sources",
+      "sources": [
+        {
+          "databaseId": "db-notes",
+          "name": "Notes",
+          "fields": [
+            {
+              "id": "n-name",
+              "name": "Name",
+              "type": 0
+            },
+            {
+              "id": "n-words",
+              "name": "Words",
+              "type": 1
+            },
+            {
+              "id": "n-time",
+              "name": "Time spent",
+              "type": 13
+            }
+          ]
+        },
+        {
+          "databaseId": "db-archive",
+          "name": "Archive",
+          "fields": [
+            {
+              "id": "a-summary",
+              "name": "Summary",
+              "type": 11
+            },
+            {
+              "id": "a-files",
+              "name": "Files",
+              "type": 14
+            }
+          ]
+        },
+        {
+          "databaseId": "db-tasks",
+          "name": "Tasks",
+          "fields": [
+            {
+              "id": "t-name",
+              "name": "Name",
+              "type": 0
+            },
+            {
+              "id": "t-stage",
+              "name": "Stage",
+              "type": 3
+            },
+            {
+              "id": "t-points",
+              "name": "Points",
+              "type": 1
+            },
+            {
+              "id": "t-deadline",
+              "name": "Deadline",
+              "type": 2
+            },
+            {
+              "id": "t-blocked",
+              "name": "Blocked",
+              "type": 5
+            },
+            {
+              "id": "t-area",
+              "name": "Area",
+              "type": 3
+            },
+            {
+              "id": "t-total",
+              "name": "Total",
+              "type": 16
+            }
+          ]
+        },
+        {
+          "databaseId": "db-projects",
+          "name": "Projects",
+          "fields": [
+            {
+              "id": "p-name",
+              "name": "Name",
+              "type": 0
+            },
+            {
+              "id": "p-status",
+              "name": "Status",
+              "type": 3
+            },
+            {
+              "id": "p-estimate",
+              "name": "Estimate",
+              "type": 1
+            },
+            {
+              "id": "p-due",
+              "name": "Due",
+              "type": 2
+            },
+            {
+              "id": "p-tasks",
+              "name": "Tasks",
+              "type": 10
+            },
+            {
+              "id": "p-urgent",
+              "name": "Urgent",
+              "type": 5
+            },
+            {
+              "id": "p-region",
+              "name": "Region",
+              "type": 3
+            }
+          ]
+        }
+      ],
+      "rows": [
+        [
+          {
+            "database_id": "db-projects",
+            "view_id": "v-projects-grid"
+          },
+          {
+            "database_id": "db-tasks",
+            "view_id": "v-tasks-grid"
+          }
+        ],
+        [
+          {
+            "database_id": "db-unloaded",
+            "view_id": "v-unloaded"
+          },
+          {
+            "database_id": "db-tasks",
+            "view_id": "v-tasks-board"
+          },
+          {
+            "database_id": "db-archive",
+            "view_id": "v-archive"
+          }
+        ],
+        [
+          {
+            "database_id": "db-notes",
+            "view_id": "v-notes-grid"
+          }
+        ]
+      ],
+      "cases": [
+        {
+          "name": "each source shows five properties and a more row, in widget order",
+          "mode": "toolbar",
+          "can_edit": true,
+          "query": "",
+          "expanded": [],
+          "expected": {
+            "flat": false,
+            "groups": [
+              {
+                "databaseId": "db-projects",
+                "viewCount": 1,
+                "fieldIds": [
+                  "p-name",
+                  "p-status",
+                  "p-estimate",
+                  "p-due",
+                  "p-urgent"
+                ],
+                "more": 1
+              },
+              {
+                "databaseId": "db-tasks",
+                "viewCount": 2,
+                "fieldIds": [
+                  "t-name",
+                  "t-stage",
+                  "t-points",
+                  "t-deadline",
+                  "t-blocked"
+                ],
+                "more": 1
+              },
+              {
+                "databaseId": "db-notes",
+                "viewCount": 1,
+                "fieldIds": [
+                  "n-name",
+                  "n-words"
+                ],
+                "more": 0
+              }
+            ],
+            "showFooter": true,
+            "empty": false
+          }
+        },
+        {
+          "name": "an expanded group shows every property",
+          "mode": "toolbar",
+          "can_edit": true,
+          "query": "",
+          "expanded": [
+            "db-projects"
+          ],
+          "expected": {
+            "flat": false,
+            "groups": [
+              {
+                "databaseId": "db-projects",
+                "viewCount": 1,
+                "fieldIds": [
+                  "p-name",
+                  "p-status",
+                  "p-estimate",
+                  "p-due",
+                  "p-urgent",
+                  "p-region"
+                ],
+                "more": 0
+              },
+              {
+                "databaseId": "db-tasks",
+                "viewCount": 2,
+                "fieldIds": [
+                  "t-name",
+                  "t-stage",
+                  "t-points",
+                  "t-deadline",
+                  "t-blocked"
+                ],
+                "more": 1
+              },
+              {
+                "databaseId": "db-notes",
+                "viewCount": 1,
+                "fieldIds": [
+                  "n-name",
+                  "n-words"
+                ],
+                "more": 0
+              }
+            ],
+            "showFooter": true,
+            "empty": false
+          }
+        },
+        {
+          "name": "the search ignores case and accents and hides groups without a match",
+          "mode": "toolbar",
+          "can_edit": true,
+          "query": "DÉAD",
+          "expanded": [],
+          "expected": {
+            "flat": false,
+            "groups": [
+              {
+                "databaseId": "db-tasks",
+                "viewCount": 2,
+                "fieldIds": [
+                  "t-deadline"
+                ],
+                "more": 0
+              }
+            ],
+            "showFooter": true,
+            "empty": false
+          }
+        },
+        {
+          "name": "a trimmed query lists every match without a cut-off",
+          "mode": "toolbar",
+          "can_edit": true,
+          "query": " a ",
+          "expanded": [],
+          "expected": {
+            "flat": false,
+            "groups": [
+              {
+                "databaseId": "db-projects",
+                "viewCount": 1,
+                "fieldIds": [
+                  "p-name",
+                  "p-status",
+                  "p-estimate"
+                ],
+                "more": 0
+              },
+              {
+                "databaseId": "db-tasks",
+                "viewCount": 2,
+                "fieldIds": [
+                  "t-name",
+                  "t-stage",
+                  "t-deadline",
+                  "t-area"
+                ],
+                "more": 0
+              },
+              {
+                "databaseId": "db-notes",
+                "viewCount": 1,
+                "fieldIds": [
+                  "n-name"
+                ],
+                "more": 0
+              }
+            ],
+            "showFooter": true,
+            "empty": false
+          }
+        },
+        {
+          "name": "a query without a match is empty",
+          "mode": "toolbar",
+          "can_edit": true,
+          "query": "zzz",
+          "expanded": [],
+          "expected": {
+            "flat": false,
+            "groups": [],
+            "showFooter": true,
+            "empty": true
+          }
+        },
+        {
+          "name": "readers get no footer",
+          "mode": "toolbar",
+          "can_edit": false,
+          "query": "",
+          "expanded": [],
+          "expected": {
+            "flat": false,
+            "groups": [
+              {
+                "databaseId": "db-projects",
+                "viewCount": 1,
+                "fieldIds": [
+                  "p-name",
+                  "p-status",
+                  "p-estimate",
+                  "p-due",
+                  "p-urgent"
+                ],
+                "more": 1
+              },
+              {
+                "databaseId": "db-tasks",
+                "viewCount": 2,
+                "fieldIds": [
+                  "t-name",
+                  "t-stage",
+                  "t-points",
+                  "t-deadline",
+                  "t-blocked"
+                ],
+                "more": 1
+              },
+              {
+                "databaseId": "db-notes",
+                "viewCount": 1,
+                "fieldIds": [
+                  "n-name",
+                  "n-words"
+                ],
+                "more": 0
+              }
+            ],
+            "showFooter": false,
+            "empty": false
+          }
+        },
+        {
+          "name": "the multiple sources picker has no footer",
+          "mode": "multi",
+          "can_edit": true,
+          "query": "",
+          "expanded": [
+            "db-tasks"
+          ],
+          "expected": {
+            "flat": false,
+            "groups": [
+              {
+                "databaseId": "db-projects",
+                "viewCount": 1,
+                "fieldIds": [
+                  "p-name",
+                  "p-status",
+                  "p-estimate",
+                  "p-due",
+                  "p-urgent"
+                ],
+                "more": 1
+              },
+              {
+                "databaseId": "db-tasks",
+                "viewCount": 2,
+                "fieldIds": [
+                  "t-name",
+                  "t-stage",
+                  "t-points",
+                  "t-deadline",
+                  "t-blocked",
+                  "t-area"
+                ],
+                "more": 0
+              },
+              {
+                "databaseId": "db-notes",
+                "viewCount": 1,
+                "fieldIds": [
+                  "n-name",
+                  "n-words"
+                ],
+                "more": 0
+              }
+            ],
+            "showFooter": false,
+            "empty": false
+          }
+        },
+        {
+          "name": "add another offers only same-type properties of sources not mapped yet",
+          "mode": "add-another",
+          "can_edit": true,
+          "query": "",
+          "expanded": [],
+          "fieldType": 3,
+          "excludeDatabaseIds": [
+            "db-projects"
+          ],
+          "expected": {
+            "flat": false,
+            "groups": [
+              {
+                "databaseId": "db-tasks",
+                "viewCount": 2,
+                "fieldIds": [
+                  "t-stage",
+                  "t-area"
+                ],
+                "more": 0
+              }
+            ],
+            "showFooter": false,
+            "empty": false
+          }
+        },
+        {
+          "name": "add another with nothing left is empty",
+          "mode": "add-another",
+          "can_edit": true,
+          "query": "",
+          "expanded": [],
+          "fieldType": 5,
+          "excludeDatabaseIds": [
+            "db-projects",
+            "db-tasks"
+          ],
+          "expected": {
+            "flat": false,
+            "groups": [],
+            "showFooter": false,
+            "empty": true
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+  # Nightly: the dashboard scenarios over the seeded large database (@large-database), too slow for every push.
+  schedule:
+    - cron: '0 3 * * *'
 
 env:
   # Keep the migration owner (Cloud) and its workers on one completed release.
@@ -25,12 +28,13 @@ env:
   PNPM_VERSION: '10.9.0'
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'schedule' && 'nightly' || github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   connections:
     name: 'Connections (Chromium, Firefox, WebKit)'
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -107,6 +111,7 @@ jobs:
           retention-days: 1
 
   test:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     needs: build
     env:
@@ -181,6 +186,86 @@ jobs:
               playwright/.features-gen/playwright/bdd/features/database/timeline.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/timeline-integration.feature.spec.js
             description: 'Form and Timeline creation and interactions'
+            bdd: 'true'
+            shard: ''
+          # One scenario list in two shards: Playwright splits its tests between them.
+          # Keep it in step with package.json's test:e2e:bdd:dashboard. Not listed on
+          # purpose: dashboard-visual-parity.feature is the L2 measurement probe of
+          # VISUAL-PARITY.md, run on demand (DASHBOARD_PARITY_REPORT) so that
+          # scripts/dashboard-parity/compare-visual-parity.mjs can compare its reports
+          # with the desktop's; dashboard-large-source.feature and the hr-headcount
+          # use case are @large-database and run in the nightly job below.
+          - name: 'dashboard-bdd'
+            spec: >-
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-creation.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-widgets.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-layout.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-modes.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-private-conditions.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-save-history.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-global-filters.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-number-chart.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-integration.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-edit-mode.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-compatibility.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-owned-views.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-chart-render.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-grid.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-widget-chrome.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-widget-content.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-interaction-sweep.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-loading.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-loading-edge.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-chart-series.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-add-widget.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-localization.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-mobile.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-drilldown.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-arrange.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-limits.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-chart-config.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-global-filter-picker.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-unsaved-changes.feature.spec.js
+            description: 'Dashboard creation, layout, widgets, loading and the control sweep (shard 1 of 2)'
+            bdd: 'true'
+            shard: '1/2'
+          - name: 'dashboard-bdd-2'
+            spec: >-
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-creation.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-widgets.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-layout.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-modes.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-private-conditions.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-save-history.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-global-filters.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-number-chart.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-integration.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-edit-mode.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-compatibility.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-owned-views.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-chart-render.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-grid.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-widget-chrome.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-widget-content.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-interaction-sweep.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-loading.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-loading-edge.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-chart-series.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-add-widget.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-localization.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-mobile.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-drilldown.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-arrange.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-limits.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-chart-config.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-global-filter-picker.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/dashboard-unsaved-changes.feature.spec.js
+            description: 'Dashboard creation, layout, widgets, loading and the control sweep (shard 2 of 2)'
+            bdd: 'true'
+            shard: '2/2'
+          - name: 'dashboard-usecase-bdd'
+            spec: 'playwright/.features-gen/playwright/bdd/features/database/dashboard-usecases/'
+            description: 'Real-world dashboard scenarios modelled on Notion templates'
             bdd: 'true'
             shard: ''
           - name: 'gallery-bdd'
@@ -503,6 +588,284 @@ jobs:
         uses: ./.github/actions/upload-test-artifact
         with:
           name: playwright-traces-${{ matrix.test-group.name }}
+          path: test-results/
+          retention-days: 3
+
+      - name: Cleanup
+        if: always()
+        run: |
+          if [ -f ssr-server.pid ]; then
+            kill $(cat ssr-server.pid) 2>/dev/null || true
+          fi
+          pkill -f "bun deploy/server.ts" 2>/dev/null || true
+
+          cd AppFlowy-Cloud-Premium && docker compose down || true
+
+  # The @large-database dashboard scenarios (dashboard-loading, dashboard-large-source):
+  # seeding the employees database takes minutes, so they run nightly and on demand.
+  dashboard-large-database:
+    name: 'dashboard-large-database (nightly)'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 240
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Checkout AppFlowy-Cloud-Premium
+        uses: actions/checkout@v4
+        with:
+          repository: AppFlowy-IO/AppFlowy-Cloud-Premium
+          ref: ${{ env.CLOUD_REVISION }}
+          token: ${{ secrets.CI_TOKEN }}
+          path: AppFlowy-Cloud-Premium
+
+      - name: Setup AppFlowy Cloud
+        working-directory: AppFlowy-Cloud-Premium
+        env:
+          OPENAI_KEY: ${{ secrets.CI_OPENAI_API_KEY }}
+        run: |
+          cp deploy.env .env
+          sed -i 's/GOTRUE_EXTERNAL_GOOGLE_ENABLED=.*/GOTRUE_EXTERNAL_GOOGLE_ENABLED=true/' .env
+          sed -i 's|GOTRUE_MAILER_AUTOCONFIRM=.*|GOTRUE_MAILER_AUTOCONFIRM=true|' .env
+          sed -i 's|API_EXTERNAL_URL=.*|API_EXTERNAL_URL=http://localhost|' .env
+          sed -i "s|AI_OPENAI_API_KEY=.*|AI_OPENAI_API_KEY=${OPENAI_KEY}|" .env
+          sed -i 's|APPFLOWY_SPAM_DETECT_ENABLED=.*|APPFLOWY_SPAM_DETECT_ENABLED=false|' .env
+          echo '' >> .env
+          echo 'APPFLOWY_PAGE_HISTORY_ENABLE=true' >> .env
+
+          # Replace the repository's expired example certificate with a short-lived
+          # localhost certificate. Node trusts this certificate; Chromium pins its
+          # public key so separate respondent contexts can use the same HTTPS API.
+          openssl req -x509 -newkey rsa:2048 -nodes -days 2 \
+            -subj '/CN=localhost' \
+            -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' \
+            -keyout nginx/ssl/private_key.key \
+            -out nginx/ssl/certificate.crt
+          echo "NODE_EXTRA_CA_CERTS=$PWD/nginx/ssl/certificate.crt" >> "$GITHUB_ENV"
+          test_tls_spki=$(openssl x509 -in nginx/ssl/certificate.crt -pubkey -noout | \
+            openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | openssl base64 -A)
+          echo "APPFLOWY_TEST_TLS_SPKI=$test_tls_spki" >> "$GITHUB_ENV"
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+
+      # Overlap Docker pull (network I/O) with pnpm install + Playwright browser install
+      - name: Install deps and pull Docker images (parallel)
+        env:
+          APPFLOWY_CLOUD_VERSION: ${{ env.CLOUD_VERSION }}
+          APPFLOWY_AI_VERSION: ${{ env.AI_VERSION }}
+          APPFLOWY_WORKER_VERSION: ${{ env.CLOUD_VERSION }}
+          APPFLOWY_SEARCH_VERSION: ${{ env.CLOUD_VERSION }}
+        run: |
+          # Start Docker pull in background
+          (cd AppFlowy-Cloud-Premium && docker compose pull appflowy_cloud gotrue ai appflowy_worker appflowy_search) &
+          DOCKER_PID=$!
+
+          # Get pnpm store path and install deps concurrently
+          pnpm install --frozen-lockfile
+
+          # Wait for Docker pull to complete
+          wait $DOCKER_PID
+
+      - name: Verify backend image revisions
+        run: |
+          for service in appflowy_cloud appflowy_worker appflowy_search; do
+            image="appflowyinc/${service}_premium:${CLOUD_VERSION}"
+            revision=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")
+            if [ "$revision" != "$CLOUD_REVISION" ]; then
+              echo "::error::$image was built from $revision; expected $CLOUD_REVISION"
+              exit 1
+            fi
+          done
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('**/pnpm-lock.yaml') }}
+
+      - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Install Playwright deps (cached browsers)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: pnpm exec playwright install-deps chromium
+
+      - name: Setup environment
+        run: cp deploy.env .env
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-dist
+          path: dist/
+
+      - name: Start Docker services
+        working-directory: AppFlowy-Cloud-Premium
+        env:
+          APPFLOWY_CLOUD_VERSION: ${{ env.CLOUD_VERSION }}
+          APPFLOWY_AI_VERSION: ${{ env.AI_VERSION }}
+          APPFLOWY_WORKER_VERSION: ${{ env.CLOUD_VERSION }}
+          APPFLOWY_SEARCH_VERSION: ${{ env.CLOUD_VERSION }}
+          RUST_LOG: appflowy_cloud=info
+        run: |
+          docker compose \
+            -f docker-compose-web-ci.yml \
+            -f ../.github/docker-compose-web-ci.override.yml \
+            up -d
+
+          echo "Waiting for backend services..."
+          timeout 180 bash -c 'until curl --cacert nginx/ssl/certificate.crt -sf https://localhost/api/health > /dev/null 2>&1; do
+            echo "Waiting for backend... ($(date +%T))"
+            sleep 5
+          done' && echo "Backend is ready" || (
+            echo "Backend failed to start after 3 minutes"
+            echo "Docker container status:"
+            docker compose -f docker-compose-web-ci.yml ps
+            echo "Docker logs:"
+            docker compose -f docker-compose-web-ci.yml logs --tail=50
+            exit 1
+          )
+
+          # Timeline fixtures seed a Pro entitlement in this job's temporary DB.
+          test_postgres_container=$(docker compose -f docker-compose-web-ci.yml ps -q postgres)
+          test -n "$test_postgres_container"
+          echo "APPFLOWY_TEST_POSTGRES_CONTAINER=$test_postgres_container" >> "$GITHUB_ENV"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          # Bun 1.4.0 corrupts this pnpm-managed package.json during the
+          # temporary SSR dependency install below. Keep CI on the last
+          # known-good release until that upstream regression is resolved.
+          bun-version: '1.3.14'
+
+      - name: Install Bun SSR dependencies
+        run: bun install cheerio pino pino-pretty
+
+      - name: Start SSR server
+        run: |
+          pnpm run dev:server &
+          echo $! > ssr-server.pid
+
+          timeout 60 bash -c 'until curl -sf http://localhost:3000 > /dev/null 2>&1; do
+            echo "Waiting for SSR server... ($(date +%T))"
+            sleep 2
+          done' && echo "SSR server is ready" || (echo "SSR server failed to start" && exit 1)
+
+      - name: Generate BDD tests
+        run: pnpm exec bddgen test -c playwright.bdd.config.ts
+
+      - name: Run dashboard-large-database tests
+        shell: bash
+        # One worker: the scenarios measure load timings and share one seeded account.
+        # The hr-headcount use case seeds the whole 5,000-row fixture whatever
+        # EMPLOYEES_ROW_LIMIT says (its totals are those of the full fixture).
+        run: |
+          pnpm exec playwright test -c playwright.bdd.config.ts --workers=1 --grep @large-database \
+            playwright/.features-gen/playwright/bdd/features/database/dashboard-loading.feature.spec.js \
+            playwright/.features-gen/playwright/bdd/features/database/dashboard-large-source.feature.spec.js \
+            playwright/.features-gen/playwright/bdd/features/database/dashboard-usecases/hr-headcount.feature.spec.js
+        env:
+          CI: true
+          BASE_URL: http://localhost:3000
+          RUN_LARGE_DATABASE: '1'
+          # The 2,000 rows of the loading measurements (LOADING-DESIGN 4.2).
+          EMPLOYEES_ROW_LIMIT: '2000'
+
+      - name: Report failed backend duplication tasks
+        if: failure()
+        continue-on-error: true
+        working-directory: AppFlowy-Cloud-Premium
+        run: |
+          docker compose -f docker-compose-web-ci.yml -f ../.github/docker-compose-web-ci.override.yml images
+
+          # The synchronous duplicate-document API returns only a generic 1017
+          # error. Preserve the Worker failure reason before CI deletes its DB.
+          docker compose -f docker-compose-web-ci.yml -f ../.github/docker-compose-web-ci.override.yml exec -T postgres \
+            sh -c 'psql -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}" -v ON_ERROR_STOP=1' <<'SQL'
+          SELECT task_id, workspace_id, status, left(error, 2000) AS error, created_at
+          FROM af_duplicate_task
+          WHERE error IS NOT NULL
+          ORDER BY created_at DESC
+          LIMIT 20;
+          SQL
+
+      - name: Test summary
+        if: always()
+        run: |
+          if [ ! -f playwright-report/report.json ]; then
+            echo "## dashboard-large-database — no report generated" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+          node -e "
+            const r = require('./playwright-report/report.json');
+            const s = r.stats || {};
+            const passed = s.expected || 0;
+            const failed = s.unexpected || 0;
+            const flaky  = s.flaky || 0;
+            const skipped = s.skipped || 0;
+            const dur = ((s.duration || 0) / 1000).toFixed(1);
+            const icon = failed > 0 ? '❌' : '✅';
+
+            const lines = [];
+            lines.push('## ' + icon + ' dashboard-large-database — ' + passed + ' passed, ' + failed + ' failed' + (flaky ? ', ' + flaky + ' flaky' : '') + ' (' + dur + 's)');
+            lines.push('');
+
+            // collect failures from nested suites
+            const failures = [];
+            function walk(suites, path) {
+              for (const s of suites) {
+                const p = path ? path + ' > ' + s.title : s.title;
+                for (const spec of s.specs || []) {
+                  if (!spec.ok) failures.push({ suite: p, title: spec.title, file: spec.file });
+                }
+                walk(s.suites || [], p);
+              }
+            }
+            walk(r.suites || [], '');
+
+            if (failures.length) {
+              lines.push('### Failed Tests');
+              lines.push('');
+              for (const f of failures) {
+                lines.push('- **' + f.title + '** — _' + f.suite + '_');
+              }
+            }
+            process.stdout.write(lines.join('\n') + '\n');
+          " >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload test results
+        if: always()
+        uses: ./.github/actions/upload-test-artifact
+        with:
+          name: playwright-report-dashboard-large-database
+          path: playwright-report/
+          retention-days: 7
+
+      - name: Upload test traces
+        if: failure()
+        uses: ./.github/actions/upload-test-artifact
+        with:
+          name: playwright-traces-dashboard-large-database
           path: test-results/
           retention-days: 3
 

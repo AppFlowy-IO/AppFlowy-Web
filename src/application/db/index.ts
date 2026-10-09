@@ -597,6 +597,29 @@ async function readSharedCollabRecordsForSync(name: string): Promise<{
   });
 }
 
+/**
+ * Whether shared collab storage (where every database keeps its rows) holds a
+ * snapshot or an update of any of the given objects. Storage that cannot be
+ * read holds none.
+ */
+export async function hasSharedCollabData(objectIds: string[]): Promise<boolean> {
+  if (objectIds.length === 0) return false;
+
+  try {
+    return await db.transaction('r', db.collab_snapshots, db.collab_updates, async () => {
+      for (const objectId of objectIds) {
+        if (await db.collab_snapshots.get(objectId)) return true;
+        if (await db.collab_updates.where('objectId').equals(objectId).first()) return true;
+      }
+
+      return false;
+    });
+  } catch (error) {
+    Log.warn('[DB] failed to read shared collab storage', { error });
+    return false;
+  }
+}
+
 /** Resolve rows owned by another tab without opening a provider or binding sync. */
 export async function readDatabaseIdFromRowCache(rowId: string): Promise<string | undefined> {
   const { snapshot, updates } = await readSharedCollabRecordsForSync(rowId);

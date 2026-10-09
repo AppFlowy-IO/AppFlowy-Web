@@ -146,7 +146,7 @@ test.describe('Embedded Database View Isolation', () => {
     // Select Board view type from dropdown
     const viewMenu = page.locator('[data-slot="dropdown-menu-content"]');
     await expect(viewMenu).toBeVisible({ timeout: 5000 });
-    await viewMenu.locator('[role="menuitem"]').filter({ hasText: 'Board' }).click({ force: true });
+    await viewMenu.locator('[role="menuitem"]').filter({ hasText: /^Board$/ }).click({ force: true });
     await page.waitForTimeout(3000);
 
     // Step 12: Verify second view was created (now 2 tabs in the embedded database)
@@ -187,7 +187,7 @@ test.describe('Embedded Database View Isolation', () => {
     // Select Board view type from dropdown
     const standaloneViewMenu = page.locator('[data-slot="dropdown-menu-content"]');
     await expect(standaloneViewMenu).toBeVisible({ timeout: 5000 });
-    await standaloneViewMenu.locator('[role="menuitem"]').filter({ hasText: 'Board' }).click({ force: true });
+    await standaloneViewMenu.locator('[role="menuitem"]').filter({ hasText: /^Board$/ }).click({ force: true });
     await page.waitForTimeout(3000);
 
     // Step 15: Verify tab count in standalone database (at least 2: original Grid + new Board)

@@ -315,7 +315,8 @@ async function addViewToDatabase(page: Page, viewType: 'Board' | 'Calendar' | 'G
   const menu = page.locator('[data-slot="dropdown-menu-content"]');
 
   await expect(menu).toBeVisible({ timeout: 5000 });
-  await menu.locator('[role="menuitem"]').filter({ hasText: viewType }).click({ force: true });
+  // Exact match: the "Dashboard" entry also contains "Board".
+  await menu.locator('[role="menuitem"]').filter({ hasText: new RegExp(`^${viewType}$`) }).click({ force: true });
 }
 
 async function switchToDatabaseView(page: Page, viewType: string) {

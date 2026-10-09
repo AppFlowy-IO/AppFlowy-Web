@@ -473,7 +473,8 @@
       "onOrAfter": "Està activat o després",
       "between": "Està entre",
       "empty": "Està buit",
-      "notEmpty": "No està buit"
+      "notEmpty": "No està buit",
+      "is": "És"
     },
     "field": {
       "hide": "Amaga",
@@ -523,11 +524,18 @@
       "deleteFieldPromptMessage": "Estàs segur? Aquesta propietat se suprimirà",
       "newColumn": "Nova columna",
       "format": "Format",
-      "reminderOnDateTooltip": "Aquesta cel·la té un recordatori programat"
+      "reminderOnDateTooltip": "Aquesta cel·la té un recordatori programat",
+      "person": {
+        "searchForMore_one": "Cerca per trobar {{count}} persona més",
+        "searchForMore_many": "Cerca per trobar {{count}} persones més",
+        "searchForMore_other": "Cerca per trobar {{count}} persones més"
+      }
     },
     "rowPage": {
       "newField": "Afegeix un camp nou",
-      "fieldDragElementTooltip": "Feu clic per obrir el menú"
+      "fieldDragElementTooltip": "Feu clic per obrir el menú",
+      "openInCenterPeek": "Obre en vista prèvia centrada",
+      "resizeSidePeek": "Canvia la mida de la vista prèvia lateral"
     },
     "sort": {
       "ascending": "Ascendent",
@@ -542,9 +550,11 @@
       "textPlaceholder": "Buit",
       "copyProperty": "S'ha copiat la propietat al porta-retalls",
       "count": "Compte",
-      "newRow": "Nova fila",
+      "newRow": "Pàgina nova",
       "action": "Acció",
-      "drag": "Arrossegueu per moure's"
+      "drag": "Arrossegueu per moure's",
+      "loadingRowsProgress": "S'estan carregant les files… {{loaded}}/{{total}}",
+      "rowsNotLoadedYet": "Algunes files encara no s'han carregat"
     },
     "selectOption": {
       "create": "Crear",
@@ -571,7 +581,17 @@
       "copy": "Copia l'URL"
     },
     "menuName": "Quadrícula",
-    "referencedGridPrefix": "Vista de"
+    "referencedGridPrefix": "Vista de",
+    "calculationTypeLabel": {
+      "countChecked": "Marcats",
+      "countUnchecked": "Sense marcar"
+    },
+    "openPagesIn": {
+      "title": "Obre les pàgines en",
+      "sidePeek": "Vista prèvia lateral",
+      "centerPeek": "Vista prèvia centrada",
+      "fullPage": "Pàgina completa"
+    }
   },
   "document": {
     "menuName": "Document",
@@ -767,7 +787,11 @@
   },
   "board": {
     "column": {
-      "createNewCard": "Nou"
+      "createNewCard": "Nou",
+      "calculate": "Calcula",
+      "calculationTooltip": "{{calculation}} de {{property}}",
+      "colorColumns": "Acoloreix les columnes",
+      "properties": "Propietats"
     },
     "menuName": "Pissarra",
     "referencedBoardPrefix": "Vista de",
@@ -819,5 +843,433 @@
   "views": {
     "deleteContentTitle": "Esteu segur que voleu suprimir {pageType}?",
     "deleteContentCaption": "si suprimiu aquest {pageType}, podeu restaurar-lo des de la paperera."
+  },
+  "chart": {
+    "a11y": {
+      "table": "Dades del gràfic"
+    },
+    "agg": {
+      "average": "Mitjana",
+      "countAll": "Compta-ho tot",
+      "countEmpty": "Compta els buits",
+      "countUnique": "Compta els valors únics",
+      "countValues": "Compta els valors",
+      "dateRange": "Interval de dates",
+      "earliest": "Més antic",
+      "latest": "Més recent",
+      "max": "Màxim",
+      "median": "Mediana",
+      "min": "Mínim",
+      "percentChecked": "Percentatge marcat",
+      "percentEmpty": "Percentatge buit",
+      "percentNotEmpty": "Percentatge no buit",
+      "percentUnchecked": "Percentatge sense marcar",
+      "range": "Rang",
+      "sum": "Suma"
+    },
+    "aggregation": "Agregació",
+    "barChart": "Barres",
+    "chartType": "Tipus de gràfic",
+    "checked": "Marcat",
+    "color": {
+      "auto": "Automàtic",
+      "blue": "Blau",
+      "colorful": "Multicolor",
+      "colorless": "Sense color",
+      "green": "Verd",
+      "orange": "Taronja",
+      "pink": "Rosa",
+      "purple": "Porpra",
+      "red": "Vermell",
+      "teal": "Verd blavós",
+      "yellow": "Groc"
+    },
+    "cumulative": "Acumulatiu",
+    "dateCondition": "Agrupació per data",
+    "dateGrouping": {
+      "day": "Dia",
+      "month": "Mes",
+      "relative": "Relatiu",
+      "week": "Setmana",
+      "year": "Any"
+    },
+    "decimalPlaces": {
+      "auto": "Automàtic"
+    },
+    "donutChart": "Anell",
+    "emptyState": {
+      "description": "Afegeix files amb dades per veure el gràfic",
+      "noField": "No hi ha cap propietat disponible per agrupar",
+      "noFieldDescription": "Crea una propietat Selecció, Selecció múltiple, Casella de selecció o Data per utilitzar la vista de gràfic.",
+      "title": "No hi ha dades per mostrar"
+    },
+    "emptyValue": "Buit",
+    "groups": {
+      "count": "{{count}} grups",
+      "hideAll": "Amaga-ho tot",
+      "hideGroup": "Amaga el grup",
+      "noGroups": "Cap grup",
+      "showAll": "Mostra-ho tot",
+      "showGroup": "Mostra el grup",
+      "unknownPerson": "Persona desconeguda",
+      "unknownUser": "Usuari desconegut",
+      "untitled": "Sense títol",
+      "visibleOfTotal": "{{visible}} de {{total}}"
+    },
+    "horizontalBarChart": "Barres horitzontals",
+    "legend": {
+      "auto": "Automàtica",
+      "bottom": "A baix",
+      "nextPage": "Pàgina següent",
+      "off": "Desactivada",
+      "page": "{{page}}/{{count}}",
+      "previousPage": "Pàgina anterior"
+    },
+    "lineChart": "Línies",
+    "menuName": "Gràfic",
+    "noFieldValue": "Sense {}",
+    "noGroupableFields": "No hi ha cap propietat agrupable disponible",
+    "number": {
+      "calculate": "Calcula",
+      "countAll": "Compta-ho tot",
+      "emptyState": "Sense dades",
+      "format": "Format",
+      "formatAuto": "Automàtic",
+      "formatCompact": "Compacte",
+      "formatPercent": "Percentatge",
+      "property": "Propietat",
+      "title": "Títol",
+      "titleOf": "{{aggregation}} de {{field}}",
+      "titlePlaceholder": "Títol per defecte"
+    },
+    "numberChart": "Nombre",
+    "numberColor": {
+      "addRule": "Afegeix una regla",
+      "blue": "Blau",
+      "brown": "Marró",
+      "default": "Per defecte",
+      "deleteRule": "Suprimeix la regla",
+      "dynamic": "Dinàmic",
+      "dynamicColor": "Color dinàmic",
+      "else": "Si no",
+      "equal": "Igual a",
+      "gray": "Gris",
+      "greaterThan": "Més gran que",
+      "greaterThanOrEqual": "Més gran o igual que",
+      "green": "Verd",
+      "ifValue": "Si el valor",
+      "lessThan": "Més petit que",
+      "lessThanOrEqual": "Més petit o igual que",
+      "notEqual": "Diferent de",
+      "orange": "Taronja",
+      "pink": "Rosa",
+      "purple": "Porpra",
+      "red": "Vermell",
+      "sameAsColor": "Igual que el color",
+      "yellow": "Groc"
+    },
+    "settings": {
+      "auto": "Automàtic",
+      "back": "Enrere",
+      "calculate": "Calcula",
+      "chartSettings": "Configuració del gràfic",
+      "chartTitle": "Títol del gràfic",
+      "chartType": "Tipus de gràfic",
+      "color": "Color",
+      "count": "Recompte",
+      "cumulative": "Acumulatiu",
+      "data": "Dades",
+      "dataLabels": "Etiquetes de dades",
+      "dateGrouping": "Agrupació per data",
+      "decimalPlaces": "Decimals",
+      "default": "Per defecte",
+      "donut": "Anell",
+      "eachSliceRepresents": "Cada porció representa",
+      "endAt": "Acaba a",
+      "exactValue": "Valor exacte",
+      "firstLetter": "Primera lletra",
+      "format": "Format",
+      "groupBy": "Agrupa per",
+      "groupByNone": "Cap",
+      "groupByText": "Agrupa el text per",
+      "groupStyle": "Estil del grup",
+      "groupStyleGrouped": "Agrupat",
+      "groupStylePercent": "Percentatge",
+      "groupStyleStacked": "Apilat",
+      "groups": "Grups",
+      "horizontalBar": "Barres horitzontals",
+      "legend": "Llegenda",
+      "line": "Línies",
+      "moreOptions": "Més opcions",
+      "moreSeries": "+{{n}} més",
+      "noResults": "Cap resultat",
+      "number": "Nombre",
+      "onlyShowingFirstGroups": "Només es mostren els {{n}} primers grups",
+      "percent": "Percentatge",
+      "rangeSize": "Mida de l'interval",
+      "ranges": "Intervals",
+      "rangesPreview": "{{count}} intervals de {{from}} a {{to}}",
+      "searchProperty": "Cerca una propietat…",
+      "size": "Mida {{size}}",
+      "sortBy": "Ordena per",
+      "startAt": "Comença a",
+      "style": "Estil",
+      "verticalBar": "Barres verticals",
+      "viewSettings": "Configuració de la vista",
+      "whatToShow": "Què cal mostrar",
+      "xAxis": "Eix X",
+      "yAxis": "Eix Y"
+    },
+    "showEmptyValues": "Mostra els valors buits",
+    "sort": {
+      "default": "Per defecte",
+      "labelAsc": "A → Z",
+      "labelDesc": "Z → A",
+      "manual": "Manual",
+      "valueAsc": "Valor baix → alt",
+      "valueDesc": "Valor alt → baix"
+    },
+    "state": {
+      "error": "No s'ha pogut carregar aquest gràfic",
+      "noData": "Sense dades",
+      "preparing": "S'està preparant el gràfic",
+      "retry": "Torna-ho a provar"
+    },
+    "style": {
+      "color": "Color",
+      "dataLabels": "Etiquetes de dades",
+      "decimalPlaces": "Decimals",
+      "legend": "Llegenda",
+      "title": "Estil"
+    },
+    "tooltip": {
+      "average": "Mitjana",
+      "clickToView": "Fes clic per veure les dades",
+      "count": "Recompte",
+      "countValues": "Recompte de valors",
+      "max": "Màxim",
+      "median": "Mediana",
+      "min": "Mínim",
+      "rows": "{{count}} files",
+      "sum": "Suma",
+      "tapAgainToView": "Toca de nou per veure les dades"
+    },
+    "total": "Total",
+    "unchecked": "Sense marcar",
+    "upgradeRequired": "Cal actualitzar el pla",
+    "upgradeToProForChartTypes": "Passa al pla Pro per utilitzar gràfics de barres horitzontals, de línies i d'anell",
+    "value": {
+      "days_one": "{{count}} dia",
+      "days_many": "{{count}} dies",
+      "days_other": "{{count}} dies"
+    },
+    "xAxis": "Eix X",
+    "yAxis": "Eix Y",
+    "drilldown": {
+      "ariaLabel": "Previsualització de les dades de la taula",
+      "search": "Cerca",
+      "dismiss": "Tanca",
+      "more": "Més",
+      "saveAsView": "Desa com a vista…",
+      "openDatabase": "Obre {{database}}",
+      "selectedRows": "Files seleccionades ({{count}})",
+      "cannotSaveSelectedRows": "Les files seleccionades no es poden desar com a vista",
+      "open": "OBRE",
+      "fromDashboardFilter": "Del filtre del tauler",
+      "rowCount_one": "{{count}} fila",
+      "rowCount_many": "{{count}} files",
+      "rowCount_other": "{{count}} files"
+    }
+  },
+  "dashboard": {
+    "addWidget": "Afegeix un giny",
+    "creationRequiresPro": "Per crear una vista de Tauler cal un espai de treball Pro.",
+    "done": "Fet",
+    "edit": "Edita",
+    "empty": {
+      "editDashboard": "Edita el tauler",
+      "newView": "Vista nova",
+      "text": "Afegeix gràfics, taules, llistes"
+    },
+    "globalFilters": {
+      "addAnother": "Afegeix-ne un altre",
+      "addToFilter": "Afegeix al filtre",
+      "appliesTo": "Aquest filtre s'aplicarà a les propietats de tipus {{type}} seleccionades a continuació",
+      "button": "Filtra",
+      "delete": "Suprimeix el filtre",
+      "done": "Fet",
+      "endDate": "Data de finalització",
+      "filterBy": "Filtra per…",
+      "isChecked": "Està marcat",
+      "isUnchecked": "No està marcat",
+      "more": "{{count}} més",
+      "moreActions": "Més accions",
+      "multipleSourcesIntro": "Crea un filtre que s'apliqui a propietats de diverses fonts",
+      "name": "Nom del filtre",
+      "noResults": "Cap resultat",
+      "op": {
+        "after": "Després de",
+        "before": "Abans de",
+        "between": "Entre",
+        "checked": "Marcat",
+        "complete": "Completat",
+        "doesNotContain": "No conté",
+        "endsWith": "Acaba amb",
+        "incomplete": "Incomplet",
+        "is": "És",
+        "isEmpty": "Està buit",
+        "isNot": "No és",
+        "isNotEmpty": "No està buit",
+        "onOrAfter": "El mateix dia o després",
+        "onOrBefore": "El mateix dia o abans",
+        "startsWith": "Comença amb",
+        "unchecked": "Sense marcar"
+      },
+      "people_one": "{{count}} persona",
+      "people_many": "{{count}} persones",
+      "people_other": "{{count}} persones",
+      "relative": {
+        "amount": "Quantitat",
+        "next": "Següent",
+        "past": "Anterior",
+        "summaryNext_one": "{{unit}} següent",
+        "summaryNext_many": "{{count}} {{unit}} següents",
+        "summaryNext_other": "{{count}} {{unit}} següents",
+        "summaryPast_one": "{{unit}} anterior",
+        "summaryPast_many": "{{count}} {{unit}} anteriors",
+        "summaryPast_other": "{{count}} {{unit}} anteriors",
+        "summaryThis": "{{unit}} actual",
+        "this": "Actual"
+      },
+      "relativeHint": "El filtre s'actualitzarà amb la data actual",
+      "relativeToToday": "És relatiu a avui",
+      "remove": "Elimina",
+      "reset": "Restableix",
+      "sourceLine": "{{property}} a {{source}}",
+      "startDate": "Data d'inici",
+      "title": "Filtra diverses fonts",
+      "units": {
+        "day_one": "dia",
+        "day_many": "dies",
+        "day_other": "dies",
+        "month_one": "mes",
+        "month_many": "mesos",
+        "month_other": "mesos",
+        "week_one": "setmana",
+        "week_many": "setmanes",
+        "week_other": "setmanes",
+        "year_one": "any",
+        "year_many": "anys",
+        "year_other": "anys"
+      },
+      "viewCount_one": "{{count}} vista",
+      "viewCount_many": "{{count}} vistes",
+      "viewCount_other": "{{count}} vistes"
+    },
+    "historyPreviewUnavailable": "Els taulers no tenen previsualització a l'historial de versions.",
+    "limit": {
+      "fullHint": "Suprimeix una vista per afegir-ne una de nova",
+      "fullTitle": "El tauler és ple"
+    },
+    "menuName": "Tauler",
+    "picker": {
+      "back": "Enrere",
+      "changeViewTitle": "Canvia la vista",
+      "close": "Tanca",
+      "createFailed": "No s'ha pogut crear la vista",
+      "editChart": "Edita el gràfic",
+      "layout": {
+        "board": "Pissarra",
+        "calendar": "Calendari",
+        "chart": "Gràfic",
+        "feed": "Canal",
+        "gallery": "Galeria",
+        "list": "Llista",
+        "table": "Taula",
+        "timeline": "Cronologia"
+      },
+      "loadFailed": "No s'han pogut carregar les bases de dades",
+      "newView": "Vista nova",
+      "newViewIn": "Vista nova a {{database}}",
+      "noResults": "No s'ha trobat cap vista",
+      "otherSources": "Altres fonts de dades",
+      "searchPlaceholder": "Cerca una vista...",
+      "showMore": "Mostra'n {{count}} més",
+      "source": "Font",
+      "thisDatabase": "Aquesta base de dades",
+      "viewName": "Nom de la vista",
+      "viewsOn": "Vistes de {{database}}",
+      "viewsOnThisDatabase": "Vistes d'aquesta base de dades"
+    },
+    "private": {
+      "reset": "Restableix",
+      "resetAll": "Restableix tots els canvis",
+      "saveForEveryone": "Desa per a tothom",
+      "saveOptions": "Més opcions de desament",
+      "saved": "S'han desat els canvis per a tothom.",
+      "undo": "Desfés",
+      "unsaved": "Canvis sense desar"
+    },
+    "referencedDashboardPrefix": "Vista de",
+    "row": {
+      "addToNewRow": "Afegeix a una fila nova",
+      "addToRow": "Afegeix a la fila",
+      "moveDown": "Mou avall",
+      "moveUp": "Mou amunt",
+      "movedDown": "S'ha mogut la fila avall",
+      "movedUp": "S'ha mogut la fila amunt"
+    },
+    "rowLimit": "Una fila pot contenir fins a {{count}} ginys.",
+    "settings": {
+      "name": "Configuració del tauler",
+      "showIconsInHeading": "Mostra les icones a la capçalera",
+      "showWidgetTitles": "Mostra els títols dels ginys"
+    },
+    "toolbar": {
+      "openAsFullPage": "Obre com a pàgina completa",
+      "settings": "Configuració"
+    },
+    "widget": {
+      "changeView": "Canvia la vista",
+      "close": "Tanca",
+      "createRowAbove": "Crea una fila nova a sobre",
+      "createRowBelow": "Crea una fila nova a sota",
+      "delete": "Suprimeix",
+      "dragHandle": "Arrossega per moure",
+      "duplicate": "Duplica",
+      "editView": "Edita la vista",
+      "filters": "Filtres",
+      "loading": "S'està carregant…",
+      "menu": "Opcions del giny",
+      "moveLeft": "Mou a l'esquerra",
+      "moveRight": "Mou a la dreta",
+      "moveToRow": "Mou a la fila",
+      "noAccess": "No tens accés a aquesta base de dades",
+      "notFound": "Aquesta vista ja no existeix",
+      "offline": "Disponible quan tornis a estar en línia",
+      "openFailed": "No s'ha pogut obrir la vista",
+      "remove": "Elimina el giny",
+      "resizeHeight": "Arrossega per canviar l'alçada de la fila",
+      "resizeHeightValue": "{{height}} píxels",
+      "resizeWidth": "Arrossega per canviar la mida",
+      "resizeWidthValue": "{{columns}} de 12 columnes",
+      "settings": "Configuració",
+      "sorts": "Ordenacions",
+      "source": "Font",
+      "unsupported": "Un tauler no es pot mostrar dins d'un altre tauler",
+      "viewDataSource": "Mostra la font de dades",
+      "viewNameHint": "Canvia el nom d'aquesta vista",
+      "viewSettings": "Configuració de la vista"
+    },
+    "mobile": {
+      "viewCount_one": "{{count}} vista",
+      "viewCount_many": "{{count}} vistes",
+      "viewCount_other": "{{count}} vistes"
+    }
+  },
+  "databaseSearch": {
+    "clearSearch": "Esborra la cerca",
+    "noResults": "Cap resultat",
+    "placeholder": "Escriu per cercar..."
   }
 }

@@ -1,6 +1,7 @@
 import { getView } from '@/application/services/js-services/http/view-api';
 import { View, ViewLayout } from '@/application/types';
-import { isDatabaseContainer } from '@/application/view-utils';
+import { assertDashboardViewCreationOnline } from '@/application/view-online-policy';
+import { getDashboardOwner, isDatabaseContainer } from '@/application/view-utils';
 
 export const FORM_DEEP_DUPLICATE_UNAVAILABLE_MESSAGE =
   'This page contains a Form and cannot be duplicated yet because its Form settings would not be preserved.';
@@ -11,6 +12,20 @@ export const FORM_DEEP_DUPLICATE_CHECK_FAILED_MESSAGE =
 const FORM_DEEP_DUPLICATE_PREFLIGHT_DEPTH = 50;
 
 type LoadDuplicateSubtree = (workspaceId: string, viewId: string, depth: number) => Promise<View>;
+
+function assertOwnedDescendantsOnline(view: View | null | undefined): void {
+  const pending = view ? [view] : [];
+  const visited = new Set<string>();
+
+  while (pending.length > 0) {
+    const current = pending.pop();
+
+    if (!current || visited.has(current.view_id)) continue;
+    visited.add(current.view_id);
+    if (getDashboardOwner(current)) assertDashboardViewCreationOnline();
+    pending.push(...current.children);
+  }
+}
 
 /**
  * Generic page duplication is server-driven and currently rejects Form views
@@ -46,6 +61,7 @@ export async function assertGenericDeepDuplicateIsSafe({
   knownView?: View | null;
   loadFreshView?: LoadDuplicateSubtree;
 }): Promise<void> {
+  assertOwnedDescendantsOnline(knownView);
   if (isUnsafeFormDeepDuplicate(knownView)) {
     throw new Error(FORM_DEEP_DUPLICATE_UNAVAILABLE_MESSAGE);
   }
@@ -64,6 +80,8 @@ export async function assertGenericDeepDuplicateIsSafe({
   if (isUnsafeFormDeepDuplicate(freshView)) {
     throw new Error(FORM_DEEP_DUPLICATE_UNAVAILABLE_MESSAGE);
   }
+
+  assertOwnedDescendantsOnline(freshView);
 
   // Every database has at least one view. An empty container response means the
   // safety check did not receive the child metadata it needs, so fail closed.
