@@ -6,6 +6,8 @@ import DatabaseRowModal from '@/components/database/DatabaseRowModal';
 jest.mock('@/application/database-yjs', () => ({
   useDatabaseContextOptional: jest.fn(() => ({})),
   useReadOnly: jest.fn(),
+  useRowOrdersSelector: () => [],
+  useNavigateToRow: () => undefined,
 }));
 
 jest.mock('@/application/database-yjs/dispatch', () => ({

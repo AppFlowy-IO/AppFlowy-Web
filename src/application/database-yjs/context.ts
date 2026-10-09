@@ -4,6 +4,7 @@ import { AxiosInstance } from 'axios';
 import { createContext, useContext, useEffect, useState, useSyncExternalStore } from 'react';
 
 import { retainDatabaseHistoryRow } from '@/application/database-yjs/history-row-store';
+import type { RowOrdersStore } from '@/application/database-yjs/row-orders-store';
 import {
   BindViewSync,
   CreateDatabaseViewPayload,
@@ -65,6 +66,8 @@ export interface DatabaseContextState {
    */
   activeViewId: string;
   rowMap: Record<RowId, YDoc> | null;
+  /** Mounted view orders shared with row peeks in this database component. */
+  rowOrdersStore?: RowOrdersStore;
   /**
    * Set while the row-template editor edits its hidden source row. That row
    * never joins `row_orders`, so relation edits on it must not write

@@ -16,6 +16,7 @@ import { hasRowConditionData } from '@/application/database-yjs/condition-value-
 import { hasEffectiveFilters } from '@/application/database-yjs/filter';
 import { registerDatabaseHistoryRowDoc, registerDatabaseHistoryRowDocs } from '@/application/database-yjs/history';
 import { ROW_SYNC_RETRY_DELAYS_MS } from '@/application/database-yjs/row-sync';
+import { createRowOrdersStore } from '@/application/database-yjs/row-orders-store';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { getCachedRowDoc, openRowDoc } from '@/application/services/js-services/cache';
 import {
@@ -293,6 +294,7 @@ function Database(props: Database2Props) {
   });
 
   const [rowMap, setRowMap] = useState<Record<RowId, YDoc>>(() => props.initialRowMap ?? {});
+  const [rowOrdersStore] = useState(createRowOrdersStore);
   const rowMapRef = useRef(rowMap);
   const pendingRowDocsRef = useRef<Map<RowId, Promise<YDoc | undefined>>>(new Map());
   const prefetchPromisesRef = useRef<Map<string, Promise<void>>>(new Map());
@@ -1387,15 +1389,32 @@ function Database(props: Database2Props) {
     rowMap: null,
   }));
 
+  const prepareRowNavigation = useRef<(() => Promise<boolean>) | null>(null);
+  const rowOpenRequest = useRef(0);
+  const registerRowPrepare = useCallback((prepare: (() => Promise<boolean>) | null) => {
+    prepareRowNavigation.current = prepare;
+  }, []);
+
+  useEffect(
+    () => () => {
+      rowOpenRequest.current += 1;
+    },
+    [doc, workspaceId]
+  );
+
   const handleOpenRow = useCallback(
     async (rowId: string, viewId?: string) => {
+      const request = ++rowOpenRequest.current;
+
+      if (prepareRowNavigation.current && !(await prepareRowNavigation.current())) return;
+      if (request !== rowOpenRequest.current) return;
       // A locked document's embedded database must keep the row detail inside
       // this Database context so the row editor inherits the document's
       // read-only permission. Navigating to the source database would reopen
       // the same row with that page's independent (usually editable) context.
       // Published databases still use route-based row pages because their row
       // documents are loaded through the publish navigation/cache path.
-      const shouldNavigateReadonlyRow = readOnly && (!_isDocumentBlock || props.variant === UIVariant.Publish);
+      const shouldNavigateReadonlyRow = readOnly && props.variant === UIVariant.Publish;
 
       try {
         if (shouldNavigateReadonlyRow) {
@@ -1410,8 +1429,12 @@ function Database(props: Database2Props) {
           return;
         }
 
-        if (viewId) {
+        const database = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase | undefined;
+
+        if (viewId && !database?.get(YjsDatabaseKey.views)?.has(viewId)) {
           const viewDoc = await loadView?.(viewId);
+
+          if (request !== rowOpenRequest.current) return;
 
           if (!viewDoc) {
             if (!navigateToView) throw new Error('Database view could not be loaded');
@@ -1421,30 +1444,60 @@ function Database(props: Database2Props) {
 
           const rowDoc = await createNewRow(getRowKey(viewDoc.guid, rowId));
 
+          if (request !== rowOpenRequest.current) return;
+
           if (!rowDoc) {
             throw new Error('Row document not found');
           }
 
           // Update all modal state in a single setState call
-          setModalState({
+          setModalState((previous) => ({
             rowId,
             viewId,
             databaseDoc: viewDoc,
-            rowMap: { [rowId]: rowDoc },
-          });
+            rowMap: { ...(previous.databaseDoc === viewDoc ? previous.rowMap : {}), [rowId]: rowDoc },
+          }));
           return;
         }
 
-        setModalState((prev) => ({ ...prev, rowId }));
+        setModalState({ rowId, viewId: viewId || activeViewId, databaseDoc: null, rowMap: null });
       } catch (error) {
         Log.error('[Database] Failed to open row', { rowId, viewId: viewId ?? activeViewId, error });
         toast.error(t('chat.openPagePreviewFailedToast'));
       }
     },
-    [activeViewId, createNewRow, loadView, navigateToView, onOpenRowPage, props.variant, readOnly, _isDocumentBlock, t]
+    [activeViewId, createNewRow, doc, loadView, navigateToView, onOpenRowPage, props.variant, readOnly, t]
+  );
+
+  // The main database can change tabs while the nonmodal peek stays open.
+  // Navigation inside the peek continues to use the view that opened it.
+  const handleNavigateInPeek = useCallback(
+    (rowId: string, viewId?: string) => {
+      return handleOpenRow(rowId, viewId || modalState.viewId || undefined);
+    },
+    [handleOpenRow, modalState.viewId]
+  );
+
+  const ensurePeekRow = useCallback(
+    async (rowId: string) => {
+      const targetDoc = modalState.databaseDoc;
+
+      if (!targetDoc) return ensureRow(rowId);
+      // Related peeks have their own row map. Loading through the source view's
+      // seed/ensure functions would mix databases and use the wrong filter data.
+      const rowDoc = await createNewRow(getRowKey(targetDoc.guid, rowId));
+
+      setModalState((previous) => {
+        if (previous.databaseDoc !== targetDoc || previous.rowMap?.[rowId] === rowDoc) return previous;
+        return { ...previous, rowMap: { ...previous.rowMap, [rowId]: rowDoc } };
+      });
+      return rowDoc;
+    },
+    [createNewRow, ensureRow, modalState.databaseDoc]
   );
 
   const handleCloseRowModal = useCallback(() => {
+    rowOpenRequest.current += 1;
     setModalState({
       rowId: null,
       viewId: null,
@@ -1452,6 +1505,17 @@ function Database(props: Database2Props) {
       rowMap: null,
     });
   }, []);
+
+  const handleOpenPeekAsPage = useCallback(
+    async (rowId: string) => {
+      if (modalState.viewId && navigateToView && (modalState.databaseDoc || modalState.viewId !== activeViewId)) {
+        await navigateToView(modalState.viewId, rowId);
+      } else {
+        await onOpenRowPage?.(rowId);
+      }
+    },
+    [activeViewId, modalState.databaseDoc, modalState.viewId, navigateToView, onOpenRowPage]
+  );
 
   // Memoized callback for modal open change to avoid inline function in JSX
   const handleModalOpenChange = useCallback(
@@ -1470,6 +1534,7 @@ function Database(props: Database2Props) {
   // Shared context properties - extracted to reduce duplication between main and modal contexts
   const sharedContextProps = useMemo(
     () => ({
+      rowOrdersStore,
       readOnly,
       canComment,
       canWrite,
@@ -1523,6 +1588,7 @@ function Database(props: Database2Props) {
       generateAITranslateForRow,
     }),
     [
+      rowOrdersStore,
       readOnly,
       canComment,
       canWrite,
@@ -1597,10 +1663,15 @@ function Database(props: Database2Props) {
         ? {
             ...sharedContextProps,
             databaseDoc: modalState.databaseDoc || doc,
-            databasePageId: modalState.viewId || databasePageId,
+            databasePageId: modalState.databaseDoc ? modalState.viewId || databasePageId : databasePageId,
             activeViewId: modalState.viewId || activeViewId,
             rowMap: modalState.rowMap || rowMap,
+            ensureRow: ensurePeekRow,
+            loadRowFromSeed: modalState.databaseDoc ? undefined : loadRowFromSeed,
+            peekRowDocFromSeed: modalState.databaseDoc ? undefined : peekRowDocFromSeed,
+            bindRowSync: modalState.databaseDoc ? undefined : bindRowSync,
             isDatabaseRowPage: false,
+            navigateToRow: handleNavigateInPeek,
             closeRowDetailModal: handleCloseRowModal,
           }
         : null,
@@ -1614,6 +1685,11 @@ function Database(props: Database2Props) {
       databasePageId,
       activeViewId,
       rowMap,
+      ensurePeekRow,
+      loadRowFromSeed,
+      peekRowDocFromSeed,
+      bindRowSync,
+      handleNavigateInPeek,
       handleCloseRowModal,
     ]
   );
@@ -1653,8 +1729,9 @@ function Database(props: Database2Props) {
           <DatabaseRowModal
             rowId={modalState.rowId}
             open={Boolean(modalState.rowId)}
-            openPage={onOpenRowPage}
+            openPage={onOpenRowPage || (modalState.databaseDoc && navigateToView) ? handleOpenPeekAsPage : undefined}
             onOpenChange={handleModalOpenChange}
+            onRegisterPrepare={registerRowPrepare}
           />
         </DatabaseContextProvider>
       )}

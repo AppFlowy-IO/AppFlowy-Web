@@ -14,6 +14,7 @@ import Database, { Database2Props } from '@/components/database/Database';
 const mockSeedLoadPromises: Array<Promise<YDoc | undefined>> = [];
 const mockEnsureRowPromises: Array<Promise<YDoc | undefined> | void> = [];
 let mockDatabaseContext: DatabaseContextState | undefined;
+let mockPeekContext: DatabaseContextState | undefined;
 let mockLoadSeedOnLifecycleChange = false;
 
 jest.mock('react-i18next', () => ({
@@ -39,12 +40,16 @@ jest.mock('@/components/database/DatabaseRow', () => ({
   DatabaseRow: () => null,
 }));
 
-jest.mock(
-  '@/components/database/DatabaseRowModal',
-  () =>
-    ({ open }: { open: boolean }) =>
-      open ? <div data-testid='database-row-modal' /> : null
-);
+jest.mock('@/components/database/DatabaseRowModal', () => {
+  const { useDatabaseContext } = jest.requireActual<typeof import('@/application/database-yjs/context')>(
+    '@/application/database-yjs/context'
+  );
+
+  return function MockRowModal({ open }: { open: boolean }) {
+    mockPeekContext = useDatabaseContext();
+    return open ? <div data-testid='database-row-modal' /> : null;
+  };
+});
 jest.mock('@/components/database/DatabaseContext', () => {
   const React = jest.requireActual<typeof import('react')>('react');
   const { DatabaseContext } = jest.requireActual<typeof import('@/application/database-yjs/context')>(
@@ -329,6 +334,7 @@ describe('Database blob prefetch lifecycle', () => {
     mockSeedLoadPromises.length = 0;
     mockEnsureRowPromises.length = 0;
     mockDatabaseContext = undefined;
+    mockPeekContext = undefined;
     mockLoadSeedOnLifecycleChange = false;
     mockedPeekSeed.mockReset();
     mockedGetCachedRowDoc.mockReset();
@@ -1102,11 +1108,17 @@ describe('Database blob prefetch lifecycle', () => {
     transportRowDoc.destroy();
   });
 
-  it('keeps a readonly embedded App row in a modal that inherits the document permission', () => {
+  it.each([true, false])('keeps a readonly App row in its permission context (embedded=%s)', (isDocumentBlock) => {
     const doc = createDatabaseDoc('database-id');
     const onOpenRowPage = jest.fn();
     const { unmount } = render(
-      <Database {...databaseProps(doc)} isDocumentBlock onOpenRowPage={onOpenRowPage} readOnly variant={UIVariant.App} />
+      <Database
+        {...databaseProps(doc)}
+        isDocumentBlock={isDocumentBlock}
+        onOpenRowPage={onOpenRowPage}
+        readOnly
+        variant={UIVariant.App}
+      />
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Open row' }));
@@ -1138,6 +1150,47 @@ describe('Database blob prefetch lifecycle', () => {
 
     unmount();
     doc.destroy();
+  });
+
+  it('loads and navigates related rows in their database, then restores the source context for a grid row', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const relatedDoc = createDatabaseDoc('related-database-id', 'related-database-id');
+    const rowDoc = createHydratedRowDoc('source-row');
+    const relatedRowDoc = createHydratedRowDoc('related-row');
+    const loadView = jest.fn().mockResolvedValue(relatedDoc);
+    const createRow = jest.fn().mockResolvedValue(relatedRowDoc);
+    const { unmount } = render(
+      <Database
+        {...databaseProps(doc)}
+        createRow={createRow}
+        loadView={loadView}
+        initialRowMap={{ 'row-id': rowDoc }}
+      />
+    );
+
+    await act(async () => {
+      await Promise.resolve(mockDatabaseContext?.navigateToRow?.('related-row', 'related-view'));
+    });
+    expect(mockPeekContext?.databaseDoc).toBe(relatedDoc);
+    await act(async () => {
+      await mockPeekContext?.ensureRow?.('related-neighbor');
+    });
+    expect(createRow).toHaveBeenCalledWith('related-database-id_rows_related-neighbor');
+    await act(async () => {
+      await Promise.resolve(mockPeekContext?.navigateToRow?.('related-neighbor'));
+    });
+    expect(loadView).toHaveBeenLastCalledWith('related-view');
+
+    await act(async () => {
+      await Promise.resolve(mockDatabaseContext?.navigateToRow?.('row-id'));
+    });
+    expect(mockPeekContext?.databaseDoc).toBe(doc);
+    expect(mockPeekContext?.activeViewId).toBe('view-id');
+    expect(mockPeekContext?.rowMap?.['row-id']).toBe(rowDoc);
+    expect(mockDatabaseContext?.rowMap?.['related-neighbor']).toBeUndefined();
+
+    unmount();
+    [doc, relatedDoc, rowDoc, relatedRowDoc].forEach((document) => document.destroy());
   });
 
   it.each(['unavailable', 'rejected'] as const)('shows an error when row navigation is %s', async (failure) => {

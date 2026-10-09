@@ -164,7 +164,7 @@ export function Title({
               );
             }}
             onUploadFile={onUploadFile}
-            contentClassName={templateStyle ? 'px-[60px] max-sm:px-6' : undefined}
+            contentClassName={templateStyle ? 'px-[60px] max-sm:px-6' : 'px-[var(--row-page-inset,96px)] max-sm:px-6'}
           />
         ) : null}
         {templateStyle && icon ? (
@@ -173,7 +173,12 @@ export function Title({
           </div>
         ) : null}
       </div>
-      <div className={cn('flex w-full items-center px-24 max-sm:px-6', templateStyle && 'px-[60px] max-sm:px-6')}>
+      <div
+        className={cn(
+          'flex w-full items-center px-[var(--row-page-inset,96px)] max-sm:px-6',
+          templateStyle && 'px-[60px] max-sm:px-6'
+        )}
+      >
         <div className={'flex w-full gap-2'}>
           {!templateStyle ? renderIcon() : null}
           <div className={cn('w-full py-2', templateStyle && 'pb-0 pt-2')}>

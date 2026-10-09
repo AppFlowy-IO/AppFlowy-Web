@@ -1,4 +1,5 @@
-import { Suspense } from 'react';
+import { Suspense, useCallback, useRef } from 'react';
+import type { CSSProperties } from 'react';
 
 import { useReadOnly } from '@/application/database-yjs';
 import { AppendBreadcrumb } from '@/application/types';
@@ -11,12 +12,30 @@ import DatabaseRowHeader from '@/components/database/components/header/DatabaseR
 import { FeedMembersProvider } from '@/components/database/feed/FeedMembersContext';
 import { FeedRowReactions } from '@/components/database/feed/FeedRowReactions';
 import { useDatabaseRowHistoryHotkeys } from '@/components/database/hooks/useDatabaseRowHistoryHotkeys';
+import { useRowPeekNavigationGuard } from '@/components/database/row-peek/RowPeekNavigation';
 import { cn } from '@/lib/utils';
 
 import { Separator } from '../ui/separator';
 
-export function DatabaseRow({ appendBreadcrumb, rowId }: { rowId: string; appendBreadcrumb?: AppendBreadcrumb }) {
+export function DatabaseRow({
+  appendBreadcrumb,
+  rowId,
+  compact = false,
+}: {
+  rowId: string;
+  appendBreadcrumb?: AppendBreadcrumb;
+  compact?: boolean;
+}) {
   const readOnly = useReadOnly();
+  const flushDocumentMeta = useRef<(() => void) | null>(null);
+  const registerMetaFlush = useCallback((flush: (() => void) | null) => {
+    flushDocumentMeta.current = flush;
+  }, []);
+
+  useRowPeekNavigationGuard(() => {
+    flushDocumentMeta.current?.();
+    return true;
+  });
 
   useDatabaseRowHistoryHotkeys(rowId, { enabled: !readOnly });
   // The title and Text properties are editable at once; this warms their
@@ -24,7 +43,10 @@ export function DatabaseRow({ appendBreadcrumb, rowId }: { rowId: string; append
   usePreloadRichTextCellEditor(!readOnly);
 
   return (
-    <div className={'flex w-full justify-center'}>
+    <div
+      className={'flex w-full justify-center'}
+      style={{ '--row-page-inset': compact ? '24px' : undefined } as CSSProperties}
+    >
       <div className={cn('relative flex w-[952px] min-w-0 max-w-full flex-col gap-4')}>
         <DatabaseRowHeader appendBreadcrumb={appendBreadcrumb} rowId={rowId} />
 
@@ -32,14 +54,14 @@ export function DatabaseRow({ appendBreadcrumb, rowId }: { rowId: string; append
           <Suspense fallback={<TableSkeleton columns={2} rows={4} />}>
             <DatabaseRowProperties rowId={rowId} />
           </Suspense>
-          <div className={'px-24 max-sm:px-6'}>
+          <div className={'px-[var(--row-page-inset,96px)] max-sm:px-6'}>
             <Separator />
           </div>
 
           <Suspense
             fallback={<div className={'px-24 py-4 text-center text-sm text-text-tertiary max-sm:px-6'}>...</div>}
           >
-            <div className={'px-24 max-sm:px-6'}>
+            <div className={'px-[var(--row-page-inset,96px)] max-sm:px-6'}>
               <FeedMembersProvider>
                 <FeedRowReactions rowId={rowId} testIdPrefix='detail' showAddReaction={false} />
               </FeedMembersProvider>
@@ -47,13 +69,13 @@ export function DatabaseRow({ appendBreadcrumb, rowId }: { rowId: string; append
             </div>
           </Suspense>
 
-          <div className={'px-24 max-sm:px-6'}>
+          <div className={'px-[var(--row-page-inset,96px)] max-sm:px-6'}>
             <Separator />
           </div>
 
           <Suspense fallback={<EditorSkeleton />}>
             <div className={'min-h-[300px]'}>
-              <RowSubDocument rowId={rowId} />
+              <RowSubDocument rowId={rowId} onRegisterPendingMetaFlush={registerMetaFlush} />
             </div>
           </Suspense>
         </div>

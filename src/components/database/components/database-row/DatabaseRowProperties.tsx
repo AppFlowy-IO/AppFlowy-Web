@@ -77,7 +77,9 @@ export function DatabaseRowProperties({ rowId, templateStyle = false }: { rowId:
         ref={setDom}
         className={cn(
           'row-properties flex w-full flex-col py-2',
-          readOnly ? 'px-24 max-sm:px-6' : 'px-[70px] max-sm:px-2',
+          readOnly
+            ? 'px-[var(--row-page-inset,96px)] max-sm:px-6'
+            : 'px-[max(8px,calc(var(--row-page-inset,96px)-26px))] max-sm:px-2',
           templateStyle && 'px-0 py-0'
         )}
       >

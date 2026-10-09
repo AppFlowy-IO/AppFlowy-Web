@@ -16,6 +16,8 @@ jest.mock('@/application/database-yjs', () => ({
     databaseDoc: { guid: 'related-database' },
   }),
   useReadOnly: () => false,
+  useRowOrdersSelector: () => [],
+  useNavigateToRow: () => undefined,
 }));
 
 jest.mock('@/application/database-yjs/dispatch', () => ({

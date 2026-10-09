@@ -1,15 +1,14 @@
 import { Dialog, DialogContent, DialogTitle } from '@mui/material';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useFieldSelector, usePrimaryFieldId, useRowMap } from '@/application/database-yjs';
+import { useFieldSelector, useNavigateToRow, usePrimaryFieldId, useRowMap } from '@/application/database-yjs';
 import { ChartDataItem } from '@/application/database-yjs/chart.type';
 import { getCell } from '@/application/database-yjs/const';
 import { decodeCellToText } from '@/application/database-yjs/decode';
 import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { useChartContext } from '@/components/database/chart/useChartContext';
-import DatabaseRowModal from '@/components/database/DatabaseRowModal';
 import { Button } from '@/components/ui/button';
 
 interface ChartRowListPopupProps {
@@ -40,7 +39,7 @@ export function ChartRowListPopup({ open, onClose, item }: ChartRowListPopupProp
 
   const xAxisName = xAxisField ? String(xAxisField.get(YjsDatabaseKey.name) || '') : '';
 
-  const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
+  const navigateToRow = useNavigateToRow();
 
   const rows = useMemo<RowItem[]>(() => {
     void primaryFieldClock;
@@ -122,7 +121,10 @@ export function ChartRowListPopup({ open, onClose, item }: ChartRowListPopupProp
                 <button
                   type='button'
                   key={row.id}
-                  onClick={() => setSelectedRowId(row.id)}
+                  onClick={() => {
+                    onClose();
+                    void navigateToRow?.(row.id);
+                  }}
                   className='flex w-full cursor-pointer items-center gap-3 border-b border-border-primary px-4 py-3 text-left transition-colors hover:bg-fill-content-hover'
                 >
                   <span className='flex-1 truncate text-sm text-text-primary'>
@@ -134,17 +136,6 @@ export function ChartRowListPopup({ open, onClose, item }: ChartRowListPopupProp
           </div>
         </DialogContent>
       </Dialog>
-
-      {/* Row detail modal */}
-      {selectedRowId && (
-        <DatabaseRowModal
-          open={!!selectedRowId}
-          onOpenChange={(opened) => {
-            if (!opened) setSelectedRowId(null);
-          }}
-          rowId={selectedRowId}
-        />
-      )}
     </>
   );
 }

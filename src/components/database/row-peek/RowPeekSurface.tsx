@@ -1,0 +1,116 @@
+import { Dialog } from '@mui/material';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
+
+import { useRowPeekLayout } from './RowPeekLayout';
+
+export type RowPeekMode = 'side' | 'center';
+
+/** The portal target stays the same when shells change, so editors never remount. */
+export function RowPeekSurface({
+  children,
+  mode,
+  open,
+  hideBackdrop,
+  onClose,
+  prepare,
+  closeImmediately,
+}: {
+  children: ReactNode;
+  mode: RowPeekMode;
+  open: boolean;
+  hideBackdrop?: boolean;
+  onClose: () => void;
+  prepare: () => Promise<boolean>;
+  closeImmediately: () => void;
+}) {
+  const { t } = useTranslation();
+  const layout = useRowPeekLayout();
+  const canShow = layout?.canShow === true && !hideBackdrop;
+  const side = mode === 'side' && canShow;
+  const [id] = useState(() => Symbol('row-peek'));
+  const [content] = useState(() => document.createElement('div'));
+  const [center, setCenter] = useState<HTMLDivElement | null>(null);
+  const [attached, setAttached] = useState(false);
+  const callbacks = useRef({ prepare, closeImmediately });
+
+  useLayoutEffect(() => {
+    callbacks.current = { prepare, closeImmediately };
+  });
+
+  const claim = layout?.claim;
+  const release = layout?.release;
+
+  useLayoutEffect(() => {
+    if (!open || !side || !claim || !release) return;
+    let current = true;
+
+    void claim(
+      {
+        id,
+        prepare: () => callbacks.current.prepare(),
+        close: () => callbacks.current.closeImmediately(),
+      },
+      () => current
+    ).then((accepted) => {
+      if (current && !accepted) callbacks.current.closeImmediately();
+    });
+
+    return () => {
+      current = false;
+      release(id);
+    };
+  }, [claim, id, open, release, side]);
+
+  const destination = side && layout?.owner === id ? layout.container : !side ? center : null;
+
+  useLayoutEffect(() => {
+    content.className = 'flex h-full min-h-0 w-full flex-col';
+    if (!destination) return;
+    destination.appendChild(content);
+    setAttached(true);
+    return () => {
+      content.remove();
+    };
+  }, [content, destination]);
+
+  useLayoutEffect(() => {
+    if (side) {
+      content.setAttribute('role', 'dialog');
+      content.setAttribute('aria-label', t('grid.rowPage.sidePeek'));
+    } else {
+      content.removeAttribute('role');
+      content.removeAttribute('aria-label');
+    }
+  }, [content, side, t]);
+
+  const centerRef = useCallback((node: HTMLDivElement | null) => setCenter(node), []);
+
+  return (
+    <>
+      <Dialog
+        open={open && !side}
+        data-row-peek-open={open && !side}
+        onClose={onClose}
+        fullWidth
+        keepMounted
+        transitionDuration={side ? 0 : undefined}
+        disableRestoreFocus
+        hideBackdrop={hideBackdrop}
+        aria-label={t('grid.rowPage.centerPeek')}
+        PaperProps={{
+          className:
+            'relative flex h-[80vh] w-[1188px] max-w-[70vw] flex-col overflow-hidden max-sm:m-2 max-sm:max-w-[calc(100vw-16px)]',
+        }}
+      >
+        <div ref={centerRef} className='flex h-full min-h-0 w-full flex-col'>
+          {/* Keep the portal in the dialog's React tree so its focus trap recognizes
+              menus portaled by the row editors, even though the DOM target moves. */}
+          {open && attached ? createPortal(children, content) : null}
+        </div>
+      </Dialog>
+    </>
+  );
+}

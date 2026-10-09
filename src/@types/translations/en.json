@@ -2023,7 +2023,14 @@
       "hideHiddenFields_many": "Hide {{count}} hidden fields",
       "hideHiddenFields_other": "Hide {{count}} hidden fields",
       "openAsFullPage": "Open as full page",
-      "moreRowActions": "More row actions"
+      "moreRowActions": "More row actions",
+      "sidePeek": "Side peek",
+      "centerPeek": "Center peek",
+      "switchPeekMode": "Switch peek mode",
+      "openPageIn": "Open page in",
+      "resizeSidePeek": "Resize side peek",
+      "previousRow": "Previous row",
+      "nextRow": "Next row"
     },
     "sort": {
       "ascending": "Ascending",

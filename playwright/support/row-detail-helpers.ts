@@ -63,12 +63,10 @@ export async function openRowDetailByRowId(page: Page, rowId: string): Promise<v
   await expect(row).toBeVisible({ timeout: 10000 });
   await row.scrollIntoViewIfNeeded();
   await row.hover();
-  await page.waitForTimeout(500);
 
-  const expandButton = page.getByTestId('row-expand-button').first();
+  const expandButton = row.getByTestId('row-expand-button');
   await expect(expandButton).toBeVisible({ timeout: 5000 });
-  await expandButton.click({ force: true });
-  await page.waitForTimeout(1000);
+  await expandButton.click();
 
   await expect(RowDetailSelectors.modal(page)).toBeVisible();
 }
@@ -90,66 +88,17 @@ export async function openRowDetailViaCell(
   await page.waitForTimeout(1000);
 }
 
-/**
- * Close row detail modal by clicking the MUI backdrop.
- *
- * Note: The row-detail dialog has NO close button — only an expand button and
- * a more-actions dropdown in the title bar.  RowDetailSelectors.closeButton
- * actually matches the expand button, so we must NOT use it to close the dialog
- * (it would navigate to the full row page instead of closing).
- */
+/** Close either row peek mode using its explicit close button. */
 export async function closeRowDetail(page: Page): Promise<void> {
-  const modalCount = await page.locator('.MuiDialog-paper').count();
-  if (modalCount > 0) {
-    // Click the MUI backdrop (overlay behind the dialog) to trigger onClose
-    const backdrop = page.locator('.MuiBackdrop-root');
-    if ((await backdrop.count()) > 0) {
-      await backdrop.click({ force: true });
-    } else {
-      await page.keyboard.press('Escape');
-    }
-  }
-  await page.waitForTimeout(500);
+  await RowDetailSelectors.closeButton(page).click();
+  await expect(RowDetailSelectors.modal(page)).toHaveCount(0);
 }
 
-/**
- * Close row detail by pressing Escape.
- *
- * First defocuses any active Slate editor by clicking the dialog title bar,
- * then presses Escape (which MUI Dialog handles to call onClose).
- * Falls back to clicking the MUI backdrop if Escape doesn't work.
- */
+/** Defocus the editor, then verify that Escape closes the row peek. */
 export async function closeRowDetailWithEscape(page: Page): Promise<void> {
-  // Defocus any active Slate editor by clicking the left side of the title bar
-  // (away from the expand/more-actions buttons on the right).
-  const dialogTitle = page.locator('.MuiDialogTitle-root');
-  if ((await dialogTitle.count()) > 0) {
-    await dialogTitle.click({ force: true, position: { x: 5, y: 5 } });
-    await page.waitForTimeout(300);
-  }
-
-  for (let attempt = 0; attempt < 3; attempt++) {
-    await page.keyboard.press('Escape');
-    await page.waitForTimeout(500);
-    const dialogCount = await page.locator('.MuiDialog-paper').count();
-    if (dialogCount === 0) break;
-  }
-
-  // If Escape didn't close the dialog, click the dialog container outside the paper instead.
-  // MUI wires backdrop-close handling to the container click event; the Backdrop
-  // element itself is a sibling, so clicking `.MuiBackdrop-root` can be a no-op.
-  // NEVER click a title-bar button — the first button is expand-to-page.
-  if ((await page.locator('.MuiDialog-paper').count()) > 0) {
-    const dialogContainer = page.locator('.MuiDialog-container');
-    if ((await dialogContainer.count()) > 0) {
-      await dialogContainer.last().click({ force: true, position: { x: 5, y: 5 } });
-    } else {
-      await page.mouse.click(10, 10);
-    }
-    await page.waitForTimeout(500);
-  }
-
-  await expect(page.locator('.MuiDialog-paper')).toHaveCount(0, { timeout: 10000 });
+  await RowDetailSelectors.modalTitle(page).click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('Escape');
+  await expect(RowDetailSelectors.modal(page)).toHaveCount(0);
 }
 
 /**
@@ -181,7 +130,7 @@ export async function assertRowDetailClosed(page: Page): Promise<void> {
  */
 export async function typeInRowDocument(page: Page, text: string): Promise<void> {
   // Scroll the dialog scroll-container to the bottom so the editor is visible
-  const scrollContainer = page.locator('.MuiDialog-paper .appflowy-scroll-container');
+  const scrollContainer = RowDetailSelectors.documentArea(page);
   if ((await scrollContainer.count()) > 0) {
     await scrollContainer.evaluate(el => el.scrollTo(0, 9999));
     await page.waitForTimeout(1000);

@@ -1,4 +1,4 @@
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { type ReactNode, useEffect } from 'react';
 import * as Y from 'yjs';
 
@@ -24,6 +24,8 @@ import * as databaseFilter from '@/application/database-yjs/filter';
 import { DatabaseHistoryRowStore } from '@/application/database-yjs/history-row-store';
 import * as rollupCache from '@/application/database-yjs/rollup/cache';
 import * as rowOrderVisibility from '@/application/database-yjs/row-order-visibility';
+import { createRowOrdersStore } from '@/application/database-yjs/row-orders-store';
+import { RowPeekRowNavigation } from '@/components/database/row-peek/RowPeekRowNavigation';
 import {
   RowId,
   YDatabase,
@@ -180,6 +182,111 @@ describe('useRowOrdersSelector', () => {
 
   afterEach(() => {
     jest.useRealTimers();
+  });
+
+  it('reuses mounted view orders in a peek and filters each row edit only once', () => {
+    const fixture = createDatabaseFixture();
+
+    fixture.filters.push([createTextFilter('match')]);
+    const navigateToRow = jest.fn();
+    const wrapper = createWrapper(fixture, { rowOrdersStore: createRowOrdersStore(), navigateToRow });
+    const filterSpy = jest.spyOn(databaseFilter, 'filterBy');
+    const rowRoot = fixture.rowMap['row-b'].getMap(YjsEditorKey.data_section);
+    const observeSpy = jest.spyOn(rowRoot, 'observeDeep');
+    const unobserveSpy = jest.spyOn(rowRoot, 'unobserveDeep');
+    const view = renderHook(() => useRowOrdersSelector(), { wrapper });
+    const peek = render(<RowPeekRowNavigation rowId='row-a' />, { wrapper });
+
+    expect(filterSpy).toHaveBeenCalledTimes(1);
+    expect(observeSpy.mock.calls.length - unobserveSpy.mock.calls.length).toBe(1);
+    fireEvent.click(screen.getByTestId('row-peek-next'));
+    expect(navigateToRow).toHaveBeenCalledWith('row-b');
+
+    filterSpy.mockClear();
+    act(() => {
+      const row = rowRoot.get(YjsEditorKey.database_row) as YDatabaseRow;
+
+      row.get(YjsDatabaseKey.cells)?.get(fieldId)?.set(YjsDatabaseKey.data, 'no longer included');
+      jest.advanceTimersByTime(250);
+    });
+
+    expect(filterSpy).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId<HTMLButtonElement>('row-peek-next').disabled).toBe(true);
+    peek.unmount();
+    expect(observeSpy.mock.calls.length - unobserveSpy.mock.calls.length).toBe(1);
+    view.unmount();
+    expect(observeSpy.mock.calls.length).toBe(unobserveSpy.mock.calls.length);
+    filterSpy.mockRestore();
+    observeSpy.mockRestore();
+    unobserveSpy.mockRestore();
+  });
+
+  it('takes over orders when the background view closes and releases them when it returns', () => {
+    const fixture = createDatabaseFixture();
+
+    fixture.filters.push([createTextFilter('match')]);
+    const wrapper = createWrapper(fixture, { rowOrdersStore: createRowOrdersStore(), navigateToRow: jest.fn() });
+    const rowRoot = fixture.rowMap['row-a'].getMap(YjsEditorKey.data_section);
+    const observeSpy = jest.spyOn(rowRoot, 'observeDeep');
+    const unobserveSpy = jest.spyOn(rowRoot, 'unobserveDeep');
+    const view = renderHook(() => useRowOrdersSelector(), { wrapper });
+    const peek = render(<RowPeekRowNavigation rowId='row-a' />, { wrapper });
+
+    view.unmount();
+    expect(observeSpy.mock.calls.length - unobserveSpy.mock.calls.length).toBe(1);
+    expect(screen.getByTestId<HTMLButtonElement>('row-peek-next').disabled).toBe(false);
+
+    const returnedView = renderHook(() => useRowOrdersSelector(), { wrapper });
+
+    expect(observeSpy.mock.calls.length - unobserveSpy.mock.calls.length).toBe(1);
+    peek.unmount();
+    returnedView.unmount();
+    expect(observeSpy.mock.calls.length).toBe(unobserveSpy.mock.calls.length);
+    observeSpy.mockRestore();
+    unobserveSpy.mockRestore();
+  });
+
+  it('does not start a second filter pass when the view and peek mount together', () => {
+    const fixture = createDatabaseFixture();
+
+    fixture.filters.push([createTextFilter('match')]);
+    const filterSpy = jest.spyOn(databaseFilter, 'filterBy');
+    const wrapper = createWrapper(fixture, { rowOrdersStore: createRowOrdersStore(), navigateToRow: jest.fn() });
+
+    function ViewRows() {
+      useRowOrdersSelector();
+      return null;
+    }
+
+    const { unmount } = render(
+      <>
+        <ViewRows />
+        <RowPeekRowNavigation rowId='row-a' />
+      </>,
+      { wrapper }
+    );
+
+    expect(filterSpy).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId<HTMLButtonElement>('row-peek-next').disabled).toBe(false);
+    unmount();
+    filterSpy.mockRestore();
+  });
+
+  it('does not reuse another database document with the same view id', () => {
+    const fixture = createDatabaseFixture();
+    const related = createDatabaseFixture();
+    const rowOrdersStore = createRowOrdersStore();
+
+    fixture.filters.push([createTextFilter('match')]);
+    related.filters.push([createTextFilter('skip')]);
+    const view = renderHook(() => useRowOrdersSelector(), { wrapper: createWrapper(fixture, { rowOrdersStore }) });
+    const peek = render(<RowPeekRowNavigation rowId='row-a' />, {
+      wrapper: createWrapper(related, { rowOrdersStore, navigateToRow: jest.fn() }),
+    });
+
+    expect(screen.getByTestId<HTMLButtonElement>('row-peek-next').disabled).toBe(true);
+    peek.unmount();
+    view.unmount();
   });
 
   it('filters and sorts every historical row without retaining a full row observer map', async () => {
