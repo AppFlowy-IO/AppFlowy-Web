@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import { loadSidePeekWidth, saveSidePeekWidth } from './side-peek-width';
 
-import type { CSSProperties, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 
 export const MIN_SIDE_PEEK_WIDTH = 560;
 const MIN_PAGE_WIDTH = 320;
@@ -112,10 +112,7 @@ export function RowPeekLayout({
 
   return (
     <RowPeekLayoutContext.Provider value={value}>
-      <div
-        className='h-screen w-screen'
-        style={{ '--database-side-peek-width': `${visible ? width : 0}px` } as CSSProperties}
-      >
+      <div className='h-screen w-screen'>
         {children}
         <aside
           data-testid='database-side-peek'
@@ -123,7 +120,7 @@ export function RowPeekLayout({
           hidden={!visible}
           // Above the page, below every body-level overlay (MUI modals and Radix
           // menus are z-50), so editor panels and the peek's own menus stay on top.
-          className='fixed bottom-0 top-12 z-40 bg-surface-primary'
+          className='database-side-peek fixed bottom-0 top-12 z-40 bg-surface-primary'
           style={{ right: rightOffset, width }}
         >
           <div

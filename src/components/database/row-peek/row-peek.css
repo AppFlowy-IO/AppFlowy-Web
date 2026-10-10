@@ -2,6 +2,19 @@
    DatabasePluginWidgetBuilderSize.peekPanel. Scope these metrics to peeks;
    full row pages and templates retain their existing layout. The #body scope
    matches Tailwind's important selector so these metrics override utilities. */
+@keyframes database-side-peek-enter {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+#body .database-side-peek:not([hidden]) {
+  animation: database-side-peek-enter 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 #body .row-peek {
   --row-page-inset: 64px;
   background: var(--surface-primary);
@@ -92,6 +105,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  #body .database-side-peek:not([hidden]) {
+    animation: none;
+  }
+
   #body .row-peek .row-peek-optional-actions {
     transition: none;
   }

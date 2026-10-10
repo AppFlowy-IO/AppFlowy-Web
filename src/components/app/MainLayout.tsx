@@ -77,7 +77,7 @@ function MainLayoutContent() {
           overflowYHidden={false}
           style={{
             transform: drawerOpened ? `translateX(${drawerWidth}px)` : 'none',
-            width: `calc(100% - ${contentOffset}px - var(--database-side-peek-width, 0px))`,
+            width: `calc(100% - ${contentOffset}px)`,
             transition: 'width 0.2s ease-in-out, transform 0.2s ease-in-out',
           }}
           className={'appflowy-layout appflowy-scroll-container flex h-full transform flex-col bg-background-primary'}
