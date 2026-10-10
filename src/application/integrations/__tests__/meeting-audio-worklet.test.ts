@@ -36,15 +36,18 @@ describe('meeting PCM audio packets', () => {
     // Audio rendering supplies 128-frame blocks; packet boundaries must retain
     // leftover samples across calls and keep the same duration after each send.
     const frames = Math.ceil((rate * 0.3) / 128);
+    const captured = Float32Array.from({ length: frames * 128 }, (_, index) => ((index % 9) - 4) / 4);
 
     for (let index = 0; index < frames; index++) {
-      expect(processor?.process([[new Float32Array(128).fill(0.5)]])).toBe(true);
+      expect(processor?.process([[captured.subarray(index * 128, (index + 1) * 128)]])).toBe(true);
     }
 
     expect(packets).toHaveLength(3);
-    for (const packet of packets) {
+    const expected = Int16Array.from(captured, (sample) => (sample < 0 ? sample * 32768 : sample * 32767));
+
+    for (const [index, packet] of packets.entries()) {
       expect(packet).toHaveLength(rate / 10);
-      expect(packet.every((sample) => sample === 16383)).toBe(true);
+      expect(packet).toEqual(expected.subarray((index * rate) / 10, ((index + 1) * rate) / 10));
     }
   });
 });

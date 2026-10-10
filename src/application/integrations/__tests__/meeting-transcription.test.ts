@@ -48,6 +48,7 @@ describe('browser meeting transcription resource lifecycle', () => {
   const getUserMedia = jest.fn();
   const getDisplayMedia = jest.fn();
   const closeContext = jest.fn();
+  const connectSource = jest.fn();
   const disconnect = jest.fn();
   const callbacks = {
     onState: jest.fn(),
@@ -77,10 +78,23 @@ describe('browser meeting transcription resource lifecycle', () => {
     Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia, getDisplayMedia } });
     Object.assign(globalThis, {
       AudioContext: class {
-        sampleRate = contextSampleRate;
+        sampleRate: number;
         audioWorklet = { addModule: jest.fn().mockResolvedValue(undefined) };
         destination = {};
-        createMediaStreamSource = () => ({ connect: jest.fn() });
+        constructor(options?: AudioContextOptions) {
+          this.sampleRate = options?.sampleRate ?? contextSampleRate;
+        }
+        createMediaStreamSource = () => {
+          // Firefox rejects captured audio when the context uses another rate.
+          if (this.sampleRate !== contextSampleRate) {
+            throw new DOMException(
+              'Connecting captured audio to a context at a different sample rate is not supported',
+              'NotSupportedError'
+            );
+          }
+
+          return { connect: connectSource };
+        };
         resume = async () => undefined;
         close = closeContext;
       },
@@ -133,7 +147,23 @@ describe('browser meeting transcription resource lifecycle', () => {
     expect(api.getMeetingStreamingToken).not.toHaveBeenCalled();
   });
 
-  it.each([44_100, 48_000])('advertises %i Hz capture and allows up to five seconds of queued PCM16', async (rate) => {
+  it.each([
+    [44_100, 'microphone'],
+    [48_000, 'microphone'],
+    [44_100, 'meeting'],
+    [48_000, 'meeting'],
+  ] as const)('connects %i Hz %s capture without a Firefox sample-rate mismatch', async (rate, mode) => {
+    contextSampleRate = rate;
+
+    await session.start(mode);
+
+    expect(callbacks.onState).toHaveBeenLastCalledWith('recording');
+    expect(connectSource).toHaveBeenCalledTimes(mode === 'meeting' ? 2 : 1);
+    expect(new URL(FakeSocket.last.url).searchParams.get('sample_rate')).toBe(String(rate));
+    expect(callbacks.onError).not.toHaveBeenCalled();
+  });
+
+  it.each([24_000, 44_100, 48_000])('advertises %i Hz capture and allows up to five seconds of queued PCM16', async (rate) => {
     contextSampleRate = rate;
     await session.start('microphone');
     const socket = FakeSocket.last;
@@ -141,7 +171,7 @@ describe('browser meeting transcription resource lifecycle', () => {
     expect(new URL(socket.url).searchParams.get('sample_rate')).toBe(String(rate));
     const audio = new ArrayBuffer(Math.round(rate / 10) * 2);
 
-    socket.bufferedAmount = rate * 2 * 4;
+    socket.bufferedAmount = rate * 2 * 5;
     processorPort.onmessage?.({ data: audio } as MessageEvent<ArrayBuffer>);
     expect(socket.send).toHaveBeenCalledWith(audio);
     expect(callbacks.onError).not.toHaveBeenCalled();
@@ -151,6 +181,8 @@ describe('browser meeting transcription resource lifecycle', () => {
     await session.stop();
     expect(callbacks.onError).toHaveBeenCalledWith(expect.objectContaining({ code: 'connectionFailed' }));
     expect(microphone.audio.stop).toHaveBeenCalled();
+    expect(closeContext).toHaveBeenCalled();
+    expect(disconnect).toHaveBeenCalled();
   });
 
   it('accepts the finalized last turn after preserving partial speech during stop', async () => {
