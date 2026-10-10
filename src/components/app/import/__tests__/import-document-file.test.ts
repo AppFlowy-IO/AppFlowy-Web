@@ -246,7 +246,7 @@ describe('importDocumentFiles', () => {
     expect(result).toEqual({
       items: [
         { fileName: 'a.html', viewId: 'view-task-a.html' },
-        { fileName: 'b.html', error: 'not html' },
+        { fileName: 'b.html', error: 'Something went wrong. Contact support if this keeps happening.' },
         { fileName: 'c.html', viewId: 'view-task-c.html' },
       ],
       aborted: false,
@@ -276,7 +276,7 @@ describe('importDocumentFiles', () => {
     expect(result.aborted).toBe(false);
     expect(result.items).toEqual([
       { fileName: 'a.docx', viewId: 'view-1' },
-      { fileName: 'b.docx', error: '3 import tasks are pending', code: 1046 },
+      { fileName: 'b.docx', error: 'Other imports are in progress. Wait for one to finish.', code: 1046 },
     ]);
     expect(createTask).toHaveBeenCalledTimes(2);
   });
@@ -299,7 +299,7 @@ describe('importDocumentFiles', () => {
         format: 'pdf',
       });
 
-      expect(result).toEqual({ items: [{ fileName: 'a.pdf', error: message, code: 1028 }], aborted: false });
+      expect(result).toEqual({ items: [{ fileName: 'a.pdf', error: 'This workspace has reached its storage limit.', code: 1028 }], aborted: false });
       expect(createTask).toHaveBeenCalledTimes(1);
       expect(upload).toHaveBeenCalledTimes(stage === 'request' ? 0 : 1);
     }
@@ -323,7 +323,7 @@ describe('importDocumentFiles', () => {
     });
 
     expect(result.items).toEqual([
-      { fileName: 'a.docx', error: 'Attachment exceeds 7 MiB', code: 1037 },
+      { fileName: 'a.docx', error: 'This file is too large to upload. Choose a smaller one.', code: 1037 },
       { fileName: 'b.docx', viewId: 'view-b' },
     ]);
     expect(createTask).toHaveBeenCalledTimes(2);

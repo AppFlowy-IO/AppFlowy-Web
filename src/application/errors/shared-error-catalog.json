@@ -1,0 +1,723 @@
+{
+  "schema_version": 1,
+  "reasons": {
+    "ACTION_PROBLEM": "Something went wrong. Contact support if this keeps happening.",
+    "CONTENT_UNAVAILABLE": "We couldn't find this content.",
+    "ALREADY_EXISTS": "This item already exists. Check it before creating another.",
+    "CONTENT_DELETED": "This content was deleted.",
+    "SERVICE_BUSY": "Please try again later.",
+    "EMAIL_FORMAT": "Enter a valid email address, like name@example.com.",
+    "PASSWORD_REQUIREMENTS": "This password doesn't meet the password requirements.",
+    "SIGN_IN_PROBLEM": "We couldn't sign you in. Try signing in again.",
+    "REQUEST_INCOMPLETE": "Some information is missing, so we can't continue.",
+    "DATA_SERVICE_PROBLEM": "There was a problem processing data.",
+    "OPEN_PROBLEM": "We couldn't open this item.",
+    "URL_FORMAT": "Enter a full web address, starting with https://.",
+    "REQUEST_PROBLEM": "This request isn't valid.",
+    "SIGN_IN_METHOD_UNAVAILABLE": "This sign-in method isn't supported.",
+    "SIGN_IN_REQUIRED": "Sign in to continue.",
+    "PERMISSION_REQUIRED": "You don't have permission to do this.",
+    "SERVICE_STORAGE_FULL": "There isn't enough storage for this action.",
+    "REQUEST_TOO_LARGE": "This request contains too much data.",
+    "FILE_SERVICE_PROBLEM": "There was a problem reading or writing a file.",
+    "RESPONSE_PROBLEM": "We couldn't read or prepare the data for this action.",
+    "CONNECTION_UNAVAILABLE": "There was a network connection problem.",
+    "WORKSPACE_LIMIT_REACHED": "You've reached the workspace limit for this account.",
+    "MEMBER_LIMIT_REACHED": "This workspace has reached its member limit.",
+    "WORKSPACE_STORAGE_FULL": "This workspace has reached its storage limit.",
+    "CONTENT_CHANGED": "This change conflicts with the existing data.",
+    "SITE_ADDRESS_REQUIRED": "Enter a site address before publishing.",
+    "SITE_ADDRESS_TAKEN": "This site address is already in use. Choose another one.",
+    "AI_UNAVAILABLE": "AI isn't available right now. Try again later.",
+    "AI_RESPONSE_LIMIT_REACHED": "This workspace has reached its AI response limit.",
+    "TEXT_TOO_LONG": "This text is too long. Make it shorter.",
+    "FILE_FORMAT_UNSUPPORTED": "This file type isn't supported.",
+    "UPLOAD_TOO_LARGE": "This file is too large to upload. Choose a smaller one.",
+    "ACCOUNT_DISCONNECT_PROBLEM": "We couldn't disconnect this sign-in account.",
+    "PUBLISH_CONTENT_PROBLEM": "The published page structure isn't valid.",
+    "PAGE_OPEN_PROBLEM": "We couldn't open this page.",
+    "INVITATION_ACCOUNT_MISMATCH": "This invitation is for another account. Sign in with that account.",
+    "ACCESS_REQUEST_PENDING": "An access request already exists for this page.",
+    "SITE_PLAN_REQUIRED": "Your workspace plan doesn't include a custom site address.",
+    "SITE_ADDRESS_UNAVAILABLE": "You can't use this site address. Choose a different one.",
+    "IMPORT_BUSY": "Other imports are in progress. Wait for one to finish.",
+    "SITE_ADDRESS_TOO_SHORT": "This site address is too short. Choose a longer one.",
+    "SITE_ADDRESS_TOO_LONG": "This site address is too long. Choose a shorter one.",
+    "PUBLISH_NAME_TAKEN": "This page address is already in use. Choose a different one.",
+    "PUBLISH_NAME_CHARACTERS": "This page address contains characters that aren't allowed.",
+    "PUBLISH_NAME_TOO_LONG": "This page address is too long. Choose a shorter one.",
+    "SITE_ADDRESS_CHARACTERS": "This site address contains characters that aren't allowed.",
+    "SERVICE_UNAVAILABLE": "AppFlowy isn't available right now. Try again later.",
+    "SYNC_PROBLEM": "There was a problem syncing this content.",
+    "OUTCOME_UNKNOWN": "We couldn't confirm whether this action finished. Check the result before trying again.",
+    "AI_IMAGE_LIMIT_REACHED": "This workspace has reached its AI image limit.",
+    "EMAIL_DELIVERY_PROBLEM": "We couldn't send the email.",
+    "LICENSE_PROBLEM": "There was a problem with your AppFlowy license.",
+    "AI_PLAN_REQUIRED": "This feature requires AI Max.",
+    "MEMBER_UNAVAILABLE": "We couldn't find this workspace member.",
+    "AI_RESPONSE_PROBLEM": "There was a problem with the AI response.",
+    "FEATURE_UNAVAILABLE": "You can't use this feature here.",
+    "INVITATION_UNAVAILABLE": "This invitation can't be used.",
+    "ALREADY_WORKSPACE_MEMBER": "This person is already a workspace member. You don't need to invite them as a guest.",
+    "GUEST_LIMIT_REACHED": "This workspace has reached its guest limit.",
+    "BILLING_PROBLEM": "There was a problem with this billing action.",
+    "EXPORT_BUSY": "Other exports are in progress. Wait for one to finish.",
+    "PLAN_RESTRICTION": "This subscription plan isn't valid for this action.",
+    "ALREADY_SUBSCRIBED": "You already have this subscription.",
+    "BILLING_ACCOUNT_REQUIRED": "This user doesn't have a billing customer account.",
+    "RATE_LIMITED": "Too many requests were made. Please wait before trying again.",
+    "LICENSE_EXPIRED": "Your AppFlowy license has expired.",
+    "LICENSE_INACTIVE": "Your AppFlowy license has been deleted.",
+    "LICENSE_LIMIT_REACHED": "Your AppFlowy license has reached a limit.",
+    "IMPORT_PROBLEM": "We couldn't finish the import.",
+    "EXPORT_PROBLEM": "We couldn't finish the export.",
+    "UPLOAD_MISSING": "We couldn't find this upload.",
+    "UPLOAD_EXPIRED": "This upload has expired.",
+    "UPGRADE_REQUIREMENT": "An upgrade is required for this action.",
+    "ARCHIVE_PROBLEM": "We couldn't extract this ZIP file.",
+    "WORKSPACE_OPEN_PROBLEM": "We couldn't open this workspace.",
+    "BACKGROUND_SERVICE_PROBLEM": "There was a problem with this background task.",
+    "FILE_SERVICE_UNAVAILABLE": "We can't access files right now. Try again later.",
+    "PRESENCE_UNAVAILABLE": "There was a problem updating live collaborator information.",
+    "SYNC_CONNECTING": "The initial sync information is required.",
+    "EDIT_ACCESS_REQUIRED": "You don't have permission to edit this content.",
+    "READ_ACCESS_REQUIRED": "You don't have permission to view this content.",
+    "SYNC_IDENTITY_PROBLEM": "We couldn't identify the user for this sync session.",
+    "SYNC_CONTENT_UNAVAILABLE": "The content needed for syncing isn't available.",
+    "WORKSPACE_MISMATCH": "This content belongs to a different workspace.",
+    "SYNC_BUSY": "Too many sync messages were sent. Please wait before trying again.",
+    "SYNC_DISCONNECTED": "The sync connection was interrupted.",
+    "VERSION_SAVE_PROBLEM": "We couldn't save a version of this content.",
+    "VERSION_LOAD_PROBLEM": "We couldn't load the latest version of this content.",
+    "WORKSPACE_PROFILE_PROBLEM": "The workspace profile information isn't valid.",
+    "ACCESS_ALREADY_APPROVED": "This access request has already been approved.",
+    "ACCESS_ALREADY_DENIED": "This access request was already declined.",
+    "LICENSE_DEVICE_LIMIT_REACHED": "Your AppFlowy license has reached its device limit.",
+    "PROFILE_LOAD_PROBLEM": "We couldn't load this profile.",
+    "MEETING_TEMPLATE_PROBLEM": "There was a problem with this meeting template.",
+    "TRANSCRIPTION_PROBLEM": "There was a problem transcribing this recording.",
+    "TRANSCRIPTION_START_PROBLEM": "We couldn't get authorization to start live transcription.",
+    "TRANSCRIPTION_LIMIT_REACHED": "This workspace has reached its transcription limit.",
+    "WORKSPACE_UNAVAILABLE": "We couldn't find this workspace.",
+    "GUEST_APPROVAL_REQUIRED": "A workspace administrator needs to approve this guest invitation.",
+    "WORKSPACE_STORAGE_MAINTENANCE": "This workspace's storage needs maintenance before this action can continue. Contact your administrator.",
+    "AI_REQUEST_PROBLEM": "The request sent to the AI service isn't valid.",
+    "AI_CONFIGURATION_REQUIRED": "AppFlowy couldn't sign in to the AI service.",
+    "AI_RATE_LIMITED": "The AI service received too many requests. Please wait before trying again.",
+    "WORKSPACE_PLAN_REQUIRED": "Your workspace plan doesn't include this feature.",
+    "SPACE_OWNER_REQUIRED": "This space needs at least one owner. Choose another owner before removing this person.",
+    "COMMENT_DOCUMENT_SYNC_REQUIRED": "Wait for this page to finish syncing before adding a comment.",
+    "APP_UPDATE_REQUIRED": "Update AppFlowy to use this feature.",
+    "SIGN_IN_CREDENTIALS": "These sign-in details don't match. Check your email or username and password.",
+    "VERIFICATION_EXPIRED": "This code or link is invalid or has expired. Request a new one.",
+    "PASSWORD_INVALID": "This password isn't valid.",
+    "IDENTIFIER_INVALID": "An item identifier in this request is invalid.",
+    "DATA_PREPARATION_PROBLEM": "We couldn't prepare the data for this action.",
+    "INVALID_REPLACEMENT_DATA": "The replacement data isn't valid.",
+    "CONTENT_TYPE_UNSUPPORTED": "This content type isn't supported.",
+    "SITE_ADDRESS_RESERVED": "This site address is reserved. Choose another one.",
+    "SYNC_DATA_READ_PROBLEM": "We couldn't read the sync data.",
+    "SYNC_APPLY_PROBLEM": "We couldn't apply the sync update.",
+    "ACTION_TIMEOUT": "This action timed out.",
+    "PAGE_DATA_INVALID": "This page contains invalid data.",
+    "BLOCK_DATA_INVALID": "This block contains invalid data.",
+    "REQUEST_TIMEOUT": "The request timed out.",
+    "FREE_GUEST_LIMIT_REACHED": "This workspace has reached the guest limit for its free plan.",
+    "PAID_GUEST_LIMIT_REACHED": "This workspace has reached the guest limit for its paid plan.",
+    "COMMERCIAL_SERVICE_PROBLEM": "There was a problem with the commercial service.",
+    "SIGN_IN_TOKEN_PROBLEM": "There was a problem with your sign-in session.",
+    "BACKGROUND_TASK_QUEUE_MISSING": "We couldn't find the queue for this background task.",
+    "SYNC_PROTOCOL_PROBLEM": "There was a problem with how sync data was exchanged.",
+    "SYNC_DATA_UNEXPECTED": "Sync received unexpected data.",
+    "SYNC_USER_NOT_FOUND": "We couldn't find the user for this sync session.",
+    "SYNC_SESSION_NOT_FOUND": "We couldn't find this sync session.",
+    "SYNC_CONTENT_READ_PROBLEM": "We couldn't load the content needed to start syncing.",
+    "SYNC_CONTENT_MISSING": "Information needed to sync this content is missing.",
+    "LOCK_TIMEOUT": "AppFlowy timed out waiting for access to this content.",
+    "SYNC_STREAM_PROBLEM": "There was a problem sending or receiving sync updates.",
+    "SYNC_SESSION_CREATE_PROBLEM": "We couldn't start a sync session for this content.",
+    "SYNC_FORMAT_PROBLEM": "The sync data doesn't match the expected format.",
+    "SYNC_ACCESS_PROBLEM": "We couldn't reserve temporary access for syncing.",
+    "SYNC_SEND_PROBLEM": "We couldn't send a live sync message.",
+    "SEARCH_QUEUE_MISSING": "We couldn't find the queue for search updates.",
+    "NEW_PASSWORD_UNCHANGED": "Your new password must be different from your current password.",
+    "NEW_PASSWORD_TOO_WEAK": "Your new password is too weak.",
+    "EMAIL_ALREADY_REGISTERED": "There's already an account with this email. Sign in or reset your password.",
+    "EMAIL_CONFIRMATION_REQUIRED": "Confirm your email address using the link in your email, then sign in.",
+    "RESPONSE_TIMEOUT": "The response timed out.",
+    "CONNECTION_CANCELLED": "The connection was cancelled.",
+    "SIGN_UP_DISABLED": "Sign-ups are disabled. Contact your administrator to request access.",
+    "ACCOUNT_SUSPENDED": "Your account is suspended. Contact support for help.",
+    "CURRENT_PASSWORD_INCORRECT": "Your current password is incorrect. Try again."
+  },
+  "codes": {
+    "-5": {
+      "name": "RetryLater",
+      "reason": "SERVICE_BUSY"
+    },
+    "-4": {
+      "name": "RecordDeleted",
+      "reason": "CONTENT_DELETED"
+    },
+    "-3": {
+      "name": "RecordAlreadyExists",
+      "reason": "ALREADY_EXISTS"
+    },
+    "-2": {
+      "name": "RecordNotFound",
+      "reason": "CONTENT_UNAVAILABLE"
+    },
+    "-1": {
+      "name": "Unhandled",
+      "reason": "ACTION_PROBLEM"
+    },
+    "0": {
+      "name": "Ok",
+      "reason": null
+    },
+    "1001": {
+      "name": "InvalidEmail",
+      "reason": "EMAIL_FORMAT"
+    },
+    "1002": {
+      "name": "InvalidPassword",
+      "reason": "PASSWORD_INVALID"
+    },
+    "1003": {
+      "name": "OAuthError",
+      "reason": "SIGN_IN_PROBLEM"
+    },
+    "1004": {
+      "name": "MissingPayload",
+      "reason": "REQUEST_INCOMPLETE"
+    },
+    "1005": {
+      "name": "DBError",
+      "reason": "DATA_SERVICE_PROBLEM"
+    },
+    "1006": {
+      "name": "OpenError",
+      "reason": "OPEN_PROBLEM"
+    },
+    "1007": {
+      "name": "InvalidUrl",
+      "reason": "URL_FORMAT"
+    },
+    "1008": {
+      "name": "InvalidRequest",
+      "reason": "REQUEST_PROBLEM"
+    },
+    "1009": {
+      "name": "InvalidOAuthProvider",
+      "reason": "SIGN_IN_METHOD_UNAVAILABLE"
+    },
+    "1011": {
+      "name": "NotLoggedIn",
+      "reason": "SIGN_IN_REQUIRED"
+    },
+    "1012": {
+      "name": "NotEnoughPermissions",
+      "reason": "PERMISSION_REQUIRED"
+    },
+    "1015": {
+      "name": "StorageSpaceNotEnough",
+      "reason": "SERVICE_STORAGE_FULL"
+    },
+    "1016": {
+      "name": "PayloadTooLarge",
+      "reason": "REQUEST_TOO_LARGE"
+    },
+    "1017": {
+      "name": "Internal",
+      "reason": "ACTION_PROBLEM"
+    },
+    "1018": {
+      "name": "UuidError",
+      "reason": "IDENTIFIER_INVALID"
+    },
+    "1019": {
+      "name": "IOError",
+      "reason": "FILE_SERVICE_PROBLEM"
+    },
+    "1020": {
+      "name": "SqlxError",
+      "reason": "DATA_SERVICE_PROBLEM"
+    },
+    "1021": {
+      "name": "S3ResponseError",
+      "reason": "FILE_SERVICE_PROBLEM"
+    },
+    "1022": {
+      "name": "SerdeError",
+      "reason": "RESPONSE_PROBLEM"
+    },
+    "1023": {
+      "name": "NetworkError",
+      "reason": "CONNECTION_UNAVAILABLE"
+    },
+    "1024": {
+      "name": "UserUnAuthorized",
+      "reason": "SIGN_IN_REQUIRED"
+    },
+    "1025": {
+      "name": "NoRequiredData",
+      "reason": "REQUEST_INCOMPLETE"
+    },
+    "1026": {
+      "name": "WorkspaceLimitExceeded",
+      "reason": "WORKSPACE_LIMIT_REACHED"
+    },
+    "1027": {
+      "name": "WorkspaceMemberLimitExceeded",
+      "reason": "MEMBER_LIMIT_REACHED"
+    },
+    "1028": {
+      "name": "FileStorageLimitExceeded",
+      "reason": "WORKSPACE_STORAGE_FULL"
+    },
+    "1029": {
+      "name": "OverrideWithIncorrectData",
+      "reason": "INVALID_REPLACEMENT_DATA"
+    },
+    "1030": {
+      "name": "PublishNamespaceNotSet",
+      "reason": "SITE_ADDRESS_REQUIRED"
+    },
+    "1031": {
+      "name": "PublishNamespaceAlreadyTaken",
+      "reason": "SITE_ADDRESS_TAKEN"
+    },
+    "1032": {
+      "name": "AIServiceUnavailable",
+      "reason": "AI_UNAVAILABLE"
+    },
+    "1033": {
+      "name": "AIResponseLimitExceeded",
+      "reason": "AI_RESPONSE_LIMIT_REACHED"
+    },
+    "1034": {
+      "name": "StringLengthLimitReached",
+      "reason": "TEXT_TOO_LONG"
+    },
+    "1035": {
+      "name": "SqlxArgEncodingError",
+      "reason": "DATA_PREPARATION_PROBLEM"
+    },
+    "1036": {
+      "name": "InvalidContentType",
+      "reason": "CONTENT_TYPE_UNSUPPORTED"
+    },
+    "1037": {
+      "name": "SingleUploadLimitExceeded",
+      "reason": "UPLOAD_TOO_LARGE"
+    },
+    "1038": {
+      "name": "AppleRevokeTokenError",
+      "reason": "ACCOUNT_DISCONNECT_PROBLEM"
+    },
+    "1039": {
+      "name": "InvalidPublishedOutline",
+      "reason": "PUBLISH_CONTENT_PROBLEM"
+    },
+    "1040": {
+      "name": "InvalidFolderView",
+      "reason": "PAGE_OPEN_PROBLEM"
+    },
+    "1041": {
+      "name": "NotInviteeOfWorkspaceInvitation",
+      "reason": "INVITATION_ACCOUNT_MISMATCH"
+    },
+    "1042": {
+      "name": "MissingView",
+      "reason": "CONTENT_UNAVAILABLE"
+    },
+    "1043": {
+      "name": "AccessRequestAlreadyExists",
+      "reason": "ACCESS_REQUEST_PENDING"
+    },
+    "1044": {
+      "name": "CustomNamespaceDisabled",
+      "reason": "SITE_PLAN_REQUIRED"
+    },
+    "1045": {
+      "name": "CustomNamespaceDisallowed",
+      "reason": "SITE_ADDRESS_UNAVAILABLE"
+    },
+    "1046": {
+      "name": "TooManyImportTask",
+      "reason": "IMPORT_BUSY"
+    },
+    "1047": {
+      "name": "CustomNamespaceTooShort",
+      "reason": "SITE_ADDRESS_TOO_SHORT"
+    },
+    "1048": {
+      "name": "CustomNamespaceTooLong",
+      "reason": "SITE_ADDRESS_TOO_LONG"
+    },
+    "1049": {
+      "name": "CustomNamespaceReserved",
+      "reason": "SITE_ADDRESS_RESERVED"
+    },
+    "1050": {
+      "name": "PublishNameAlreadyExists",
+      "reason": "PUBLISH_NAME_TAKEN"
+    },
+    "1051": {
+      "name": "PublishNameInvalidCharacter",
+      "reason": "PUBLISH_NAME_CHARACTERS"
+    },
+    "1052": {
+      "name": "PublishNameTooLong",
+      "reason": "PUBLISH_NAME_TOO_LONG"
+    },
+    "1053": {
+      "name": "CustomNamespaceInvalidCharacter",
+      "reason": "SITE_ADDRESS_CHARACTERS"
+    },
+    "1054": {
+      "name": "ServiceTemporaryUnavailable",
+      "reason": "SERVICE_UNAVAILABLE"
+    },
+    "1055": {
+      "name": "DecodeUpdateError",
+      "reason": "SYNC_DATA_READ_PROBLEM"
+    },
+    "1056": {
+      "name": "ApplyUpdateError",
+      "reason": "SYNC_APPLY_PROBLEM"
+    },
+    "1057": {
+      "name": "ActionTimeout",
+      "reason": "ACTION_TIMEOUT"
+    },
+    "1058": {
+      "name": "AIImageResponseLimitExceeded",
+      "reason": "AI_IMAGE_LIMIT_REACHED"
+    },
+    "1059": {
+      "name": "MailerError",
+      "reason": "EMAIL_DELIVERY_PROBLEM"
+    },
+    "1060": {
+      "name": "LicenseError",
+      "reason": "LICENSE_PROBLEM"
+    },
+    "1061": {
+      "name": "AIMaxRequired",
+      "reason": "AI_PLAN_REQUIRED"
+    },
+    "1062": {
+      "name": "InvalidPageData",
+      "reason": "PAGE_DATA_INVALID"
+    },
+    "1063": {
+      "name": "MemberNotFound",
+      "reason": "MEMBER_UNAVAILABLE"
+    },
+    "1064": {
+      "name": "InvalidBlock",
+      "reason": "BLOCK_DATA_INVALID"
+    },
+    "1065": {
+      "name": "RequestTimeout",
+      "reason": "REQUEST_TIMEOUT"
+    },
+    "1066": {
+      "name": "AIResponseError",
+      "reason": "AI_RESPONSE_PROBLEM"
+    },
+    "1067": {
+      "name": "FeatureNotAvailable",
+      "reason": "FEATURE_UNAVAILABLE"
+    },
+    "1068": {
+      "name": "InvalidInvitationCode",
+      "reason": "INVITATION_UNAVAILABLE"
+    },
+    "1069": {
+      "name": "InvalidGuest",
+      "reason": "ALREADY_WORKSPACE_MEMBER"
+    },
+    "1070": {
+      "name": "FreePlanGuestLimitExceeded",
+      "reason": "FREE_GUEST_LIMIT_REACHED"
+    },
+    "1071": {
+      "name": "PaidPlanGuestLimitExceeded",
+      "reason": "PAID_GUEST_LIMIT_REACHED"
+    },
+    "1072": {
+      "name": "CommercialError",
+      "reason": "COMMERCIAL_SERVICE_PROBLEM"
+    },
+    "1073": {
+      "name": "TooManyExportTask",
+      "reason": "EXPORT_BUSY"
+    },
+    "1076": {
+      "name": "InvalidSubscriptionPlan",
+      "reason": "PLAN_RESTRICTION"
+    },
+    "1077": {
+      "name": "AlreadySubscribed",
+      "reason": "ALREADY_SUBSCRIBED"
+    },
+    "1078": {
+      "name": "UserIsNotCustomer",
+      "reason": "BILLING_ACCOUNT_REQUIRED"
+    },
+    "1079": {
+      "name": "TooManyRequests",
+      "reason": "RATE_LIMITED"
+    },
+    "1081": {
+      "name": "JsonWebTokenError",
+      "reason": "SIGN_IN_TOKEN_PROBLEM"
+    },
+    "1082": {
+      "name": "LicenseExpired",
+      "reason": "LICENSE_EXPIRED"
+    },
+    "1083": {
+      "name": "LicenseDeleted",
+      "reason": "LICENSE_INACTIVE"
+    },
+    "1084": {
+      "name": "LicenseReachLimit",
+      "reason": "LICENSE_LIMIT_REACHED"
+    },
+    "1085": {
+      "name": "ImportError",
+      "reason": "IMPORT_PROBLEM"
+    },
+    "1086": {
+      "name": "ExportError",
+      "reason": "EXPORT_PROBLEM"
+    },
+    "1087": {
+      "name": "UploadFileNotFound",
+      "reason": "UPLOAD_MISSING"
+    },
+    "1088": {
+      "name": "UploadFileExpired",
+      "reason": "UPLOAD_EXPIRED"
+    },
+    "1089": {
+      "name": "UploadFileTooLarge",
+      "reason": "UPLOAD_TOO_LARGE"
+    },
+    "1090": {
+      "name": "UpgradeRequired",
+      "reason": "UPGRADE_REQUIREMENT"
+    },
+    "1091": {
+      "name": "UnzipError",
+      "reason": "ARCHIVE_PROBLEM"
+    },
+    "1092": {
+      "name": "CannotOpenWorkspace",
+      "reason": "WORKSPACE_OPEN_PROBLEM"
+    },
+    "1093": {
+      "name": "StreamGroupNotExist",
+      "reason": "BACKGROUND_TASK_QUEUE_MISSING"
+    },
+    "1094": {
+      "name": "S3ServiceUnavailable",
+      "reason": "FILE_SERVICE_UNAVAILABLE"
+    },
+    "1095": {
+      "name": "ImportCollabError",
+      "reason": "IMPORT_PROBLEM"
+    },
+    "1096": {
+      "name": "RealtimeProtocolError",
+      "reason": "SYNC_PROTOCOL_PROBLEM"
+    },
+    "1097": {
+      "name": "CollabAwarenessError",
+      "reason": "PRESENCE_UNAVAILABLE"
+    },
+    "1098": {
+      "name": "RealtimeDecodingError",
+      "reason": "SYNC_DATA_READ_PROBLEM"
+    },
+    "1099": {
+      "name": "UnexpectedRealtimeData",
+      "reason": "SYNC_DATA_UNEXPECTED"
+    },
+    "1100": {
+      "name": "ExpectInitSync",
+      "reason": "SYNC_CONNECTING"
+    },
+    "1101": {
+      "name": "CollabError",
+      "reason": "SYNC_PROBLEM"
+    },
+    "1102": {
+      "name": "NotEnoughPermissionToWrite",
+      "reason": "EDIT_ACCESS_REQUIRED"
+    },
+    "1103": {
+      "name": "NotEnoughPermissionToRead",
+      "reason": "READ_ACCESS_REQUIRED"
+    },
+    "1104": {
+      "name": "RealtimeUserNotFound",
+      "reason": "SYNC_USER_NOT_FOUND"
+    },
+    "1105": {
+      "name": "GroupNotFound",
+      "reason": "SYNC_SESSION_NOT_FOUND"
+    },
+    "1106": {
+      "name": "CreateGroupWorkspaceIdMismatch",
+      "reason": "WORKSPACE_MISMATCH"
+    },
+    "1107": {
+      "name": "CreateGroupCannotGetCollabData",
+      "reason": "SYNC_CONTENT_READ_PROBLEM"
+    },
+    "1108": {
+      "name": "NoRequiredCollabData",
+      "reason": "SYNC_CONTENT_MISSING"
+    },
+    "1109": {
+      "name": "TooManyRealtimeMessages",
+      "reason": "SYNC_BUSY"
+    },
+    "1110": {
+      "name": "LockTimeout",
+      "reason": "LOCK_TIMEOUT"
+    },
+    "1111": {
+      "name": "CollabStreamError",
+      "reason": "SYNC_STREAM_PROBLEM"
+    },
+    "1112": {
+      "name": "CannotCreateGroup",
+      "reason": "SYNC_SESSION_CREATE_PROBLEM"
+    },
+    "1113": {
+      "name": "BincodeCollabError",
+      "reason": "SYNC_DATA_READ_PROBLEM"
+    },
+    "1114": {
+      "name": "CreateSnapshotFailed",
+      "reason": "VERSION_SAVE_PROBLEM"
+    },
+    "1115": {
+      "name": "GetLatestSnapshotFailed",
+      "reason": "VERSION_LOAD_PROBLEM"
+    },
+    "1116": {
+      "name": "CollabSchemaError",
+      "reason": "SYNC_FORMAT_PROBLEM"
+    },
+    "1117": {
+      "name": "LeaseError",
+      "reason": "SYNC_ACCESS_PROBLEM"
+    },
+    "1118": {
+      "name": "SendWSMessageFailed",
+      "reason": "SYNC_SEND_PROBLEM"
+    },
+    "1119": {
+      "name": "IndexerStreamGroupNotExist",
+      "reason": "SEARCH_QUEUE_MISSING"
+    },
+    "1120": {
+      "name": "LicenseLimitHit",
+      "reason": "LICENSE_LIMIT_REACHED"
+    },
+    "1121": {
+      "name": "InvalidWorkspaceProfile",
+      "reason": "WORKSPACE_PROFILE_PROBLEM"
+    },
+    "1122": {
+      "name": "AccessRequestAlreadyApproved",
+      "reason": "ACCESS_ALREADY_APPROVED"
+    },
+    "1123": {
+      "name": "AccessRequestAlreadyDenied",
+      "reason": "ACCESS_ALREADY_DENIED"
+    },
+    "1124": {
+      "name": "LicenseBindDeviceLimitHit",
+      "reason": "LICENSE_DEVICE_LIMIT_REACHED"
+    },
+    "1125": {
+      "name": "UserMetadataError",
+      "reason": "PROFILE_LOAD_PROBLEM"
+    },
+    "1126": {
+      "name": "AIMeetingTemplateError",
+      "reason": "MEETING_TEMPLATE_PROBLEM"
+    },
+    "1127": {
+      "name": "AIMeetingTranscriptionError",
+      "reason": "TRANSCRIPTION_PROBLEM"
+    },
+    "1128": {
+      "name": "AIMeetingEphemeralKeyError",
+      "reason": "TRANSCRIPTION_START_PROBLEM"
+    },
+    "1129": {
+      "name": "AIMeetingTranscriptionLimitExceeded",
+      "reason": "TRANSCRIPTION_LIMIT_REACHED"
+    },
+    "1130": {
+      "name": "WorkspaceNotFound",
+      "reason": "WORKSPACE_UNAVAILABLE"
+    },
+    "1131": {
+      "name": "GuestInviteRequiresAdminApproval",
+      "reason": "GUEST_APPROVAL_REQUIRED"
+    },
+    "1132": {
+      "name": "WorkspaceStorageMaintenanceRequired",
+      "reason": "WORKSPACE_STORAGE_MAINTENANCE"
+    }
+  },
+  "http_codes": {
+    "401": "SIGN_IN_REQUIRED",
+    "403": "PERMISSION_REQUIRED",
+    "404": "CONTENT_UNAVAILABLE",
+    "408": "REQUEST_TIMEOUT",
+    "413": "REQUEST_TOO_LARGE",
+    "429": "RATE_LIMITED",
+    "504": "RESPONSE_TIMEOUT"
+  },
+  "http_server_error_reason": "SERVICE_UNAVAILABLE",
+  "gotrue_codes": {
+    "same_password": "NEW_PASSWORD_UNCHANGED",
+    "weak_password": "NEW_PASSWORD_TOO_WEAK",
+    "invalid_credentials": "SIGN_IN_CREDENTIALS",
+    "invalid_grant": "SIGN_IN_CREDENTIALS",
+    "email_not_confirmed": "EMAIL_CONFIRMATION_REQUIRED",
+    "email_exists": "EMAIL_ALREADY_REGISTERED",
+    "user_already_exists": "EMAIL_ALREADY_REGISTERED",
+    "signup_disabled": "SIGN_UP_DISABLED",
+    "user_banned": "ACCOUNT_SUSPENDED",
+    "bad_jwt": "SIGN_IN_REQUIRED",
+    "no_authorization": "SIGN_IN_REQUIRED",
+    "session_not_found": "SIGN_IN_REQUIRED",
+    "otp_expired": "VERIFICATION_EXPIRED",
+    "flow_state_expired": "VERIFICATION_EXPIRED",
+    "over_email_send_rate_limit": "RATE_LIMITED",
+    "over_request_rate_limit": "RATE_LIMITED",
+    "over_sms_send_rate_limit": "RATE_LIMITED",
+    "current_password_mismatch": "CURRENT_PASSWORD_INCORRECT"
+  },
+  "gotrue_legacy_messages": {
+    "New password should be different from the old password.": "NEW_PASSWORD_UNCHANGED",
+    "Invalid login credentials": "SIGN_IN_CREDENTIALS",
+    "Email not confirmed": "EMAIL_CONFIRMATION_REQUIRED",
+    "Email already registered": "EMAIL_ALREADY_REGISTERED",
+    "Signups not allowed for this instance": "SIGN_UP_DISABLED",
+    "Token has expired or is invalid": "VERIFICATION_EXPIRED",
+    "Email link is invalid or has expired": "VERIFICATION_EXPIRED",
+    "Incorrect current password": "CURRENT_PASSWORD_INCORRECT"
+  }
+}

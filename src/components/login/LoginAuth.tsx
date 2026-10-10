@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@/utils/errors';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -28,7 +29,7 @@ function LoginAuth () {
         // eslint-disable-next-line
       } catch (e: any) {
         Log.error('[Auth] LoginAuth: login failed', { code: e.code, message: e.message });
-        setError(e.message);
+        setError(getErrorMessage(e));
         setModalOpened(true);
       } finally {
         setLoading(false);

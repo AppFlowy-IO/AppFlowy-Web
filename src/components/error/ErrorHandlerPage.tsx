@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 
+import { getErrorMessage } from '@/utils/errors';
+
 import { ErrorModal } from './ErrorModal';
 
 export const ErrorHandlerPage = ({ error }: { error: Error }) => {
   const [displayError, setDisplayError] = useState(true);
-  const [errorMessage, setErrorMessage] = useState(error.message);
+  const [errorMessage, setErrorMessage] = useState(() => getErrorMessage(error));
 
   const hideError = () => {
     setDisplayError(false);
@@ -17,7 +19,7 @@ export const ErrorHandlerPage = ({ error }: { error: Error }) => {
 
   useEffect(() => {
     if (error) {
-      showError(error.message);
+      showError(getErrorMessage(error));
     } else {
       setDisplayError(false);
     }

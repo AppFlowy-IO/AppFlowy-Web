@@ -90,22 +90,93 @@ describe('http_api client (unit)', () => {
     const payload = { code: 1076, message: 'Form limit reached', retry_after_secs: 5 };
     const expected = {
       code: 1076,
-      message: 'Upgrade this workspace to Pro to use this feature or increase its limits.',
+      message: expect.stringContaining('Upgrade this workspace to Pro to use this feature or increase its limits.'),
       retryAfterSecs: 5,
     };
 
     mockAxiosInstance.post.mockResolvedValue({ status: 200, data: payload });
-    await expect(core.executeAPIRequest(() => core.getAxios()?.post('/form'))).rejects.toEqual(expected);
-    await expect(core.executeAPIVoidRequest(() => core.getAxios()?.post('/publish'))).rejects.toEqual(expected);
+    await expect(core.executeAPIRequest(() => core.getAxios()?.post('/form'))).rejects.toMatchObject({ ...expected, sourceDomain: 'appflowy.server', diagnosticMessage: payload.message });
+    await expect(core.executeAPIVoidRequest(() => core.getAxios()?.post('/publish'))).rejects.toMatchObject({ ...expected, sourceDomain: 'appflowy.server', diagnosticMessage: payload.message });
 
     mockAxiosInstance.post.mockRejectedValue({
       isAxiosError: true,
       response: { status: 403, data: payload, headers: { 'retry-after': '5' } },
     });
-    await expect(core.executeAPIRequest(() => core.getAxios()?.post('/space'))).rejects.toEqual({
+    await expect(core.executeAPIRequest(() => core.getAxios()?.post('/space'))).rejects.toMatchObject({
       ...expected,
       httpStatus: 403,
     });
+  });
+
+  it.each([200, 400, 503])('retains future Cloud codes and public metadata under HTTP %s', async (status) => {
+    const core = await import('../core');
+    core.initAPIService(baseConfig);
+    const payload = {
+      code: 9001,
+      message: 'SQLSTATE: private database diagnostic',
+      user_error: { schema_version: 1, reason: 'NEW_CONDITION', message: 'Contact the workspace owner.' },
+      retry_after_secs: 17,
+    };
+    const response = { status, data: payload, headers: { 'x-request-id': 'future-123' } };
+
+    if (status === 200) mockAxiosInstance.post.mockResolvedValue(response);
+    else mockAxiosInstance.post.mockRejectedValue({ isAxiosError: true, response });
+
+    for (const execute of [core.executeAPIRequest, core.executeAPIVoidRequest]) {
+      await expect(execute(() => core.getAxios()?.post('/future'))).rejects.toMatchObject({
+        code: 9001,
+        sourceDomain: 'appflowy.server',
+        httpStatus: status,
+        diagnosticMessage: payload.message,
+        message: 'Error 9001: Contact the workspace owner.',
+        user_error: payload.user_error,
+        retryAfterSecs: 17,
+        requestId: 'future-123',
+      });
+    }
+  });
+
+  it.each([undefined, { schema_version: 2, reason: 'FUTURE', message: 'private diagnostic' }])(
+    'keeps legacy/future failures generic when optional metadata is unsupported: %j', async (user_error) => {
+      const core = await import('../core');
+      core.initAPIService(baseConfig);
+      mockAxiosInstance.post.mockResolvedValue({
+        status: 200, data: { code: 9001, message: 'private diagnostic', user_error },
+      });
+
+      await expect(core.executeAPIRequest(() => core.getAxios()?.post('/future'))).rejects.toMatchObject({
+        code: 9001, diagnosticMessage: 'private diagnostic',
+        message: 'Error 9001: Something went wrong. Contact support if this keeps happening.',
+      });
+    }
+  );
+
+  it('preserves diagnostics across repeated normalization without duplicating upgrade guidance', async () => {
+    const { handleAPIError } = await import('../core');
+    const original = { code: 1037, message: 'private quota diagnostic' };
+    const normalized = handleAPIError(original);
+
+    expect(handleAPIError(normalized)).toEqual(normalized);
+    expect(original.message).toBe('private quota diagnostic');
+    expect(normalized.diagnosticMessage).toBe(original.message);
+    expect(normalized.message).toContain('file');
+    expect(normalized.message.match(/Upgrade/g)).toHaveLength(1);
+  });
+
+  it.each([
+    { error: { code: -1, sourceDomain: 'appflowy.server', message: 'Unhandled' }, retries: false },
+    { error: { code: 503, sourceDomain: 'appflowy.server', message: 'Future Cloud code' }, retries: false },
+    { error: { isAxiosError: true, code: 'ERR_CANCELED', message: 'cancelled' }, retries: false },
+    { error: { isAxiosError: true, code: 'ERR_NETWORK', message: 'offline' }, retries: true },
+    { error: { code: 1017, httpStatus: 503, sourceDomain: 'appflowy.server', message: 'Internal' }, retries: true },
+  ])('keeps retry classification separate from presentation: $error', async ({ error, retries }) => {
+    const { withRetry } = await import('../core');
+    const operation = jest.fn<() => Promise<string>>().mockRejectedValueOnce(error).mockResolvedValue('ok');
+    const result = withRetry(operation, { delays: [0] });
+
+    if (retries) await expect(result).resolves.toBe('ok');
+    else await expect(result).rejects.toBe(error);
+    expect(operation).toHaveBeenCalledTimes(retries ? 2 : 1);
   });
 
   it.each(['https://selfhost.example.com', 'http://localhost:8000'])(
@@ -120,14 +191,17 @@ describe('http_api client (unit)', () => {
       const { uploadFile } = await import('../file-api');
 
       core.initAPIService({ ...baseConfig, baseURL: baseUrl });
-      const payload = { code: 1037, message: 'Your administrator limits files to 100 MB' };
+      const payload = { code: 1037, message: 'private quota diagnostic',
+        user_error: { schema_version: 1, reason: 'ADMIN_UPLOAD_LIMIT', message: 'Your administrator limits files to 100 MB' },
+      };
+      const expected = { code: 1037, message: 'Error 1037: Your administrator limits files to 100 MB', diagnosticMessage: payload.message, user_error: payload.user_error };
 
       mockAxiosInstance.post.mockResolvedValue({ status: 200, data: payload });
-      await expect(core.executeAPIRequest(() => core.getAxios()?.post('/upload'))).rejects.toMatchObject(payload);
-      await expect(core.executeAPIVoidRequest(() => core.getAxios()?.post('/upload'))).rejects.toMatchObject(payload);
+      await expect(core.executeAPIRequest(() => core.getAxios()?.post('/upload'))).rejects.toMatchObject(expected);
+      await expect(core.executeAPIVoidRequest(() => core.getAxios()?.post('/upload'))).rejects.toMatchObject(expected);
 
       mockAxiosInstance.put.mockRejectedValue({ isAxiosError: true, response: { status: 413, data: payload } });
-      await expect(uploadFile('workspace-id', 'view-id', new File(['abc'], 'test.txt'))).rejects.toMatchObject(payload);
+      await expect(uploadFile('workspace-id', 'view-id', new File(['abc'], 'test.txt'))).rejects.toMatchObject(expected);
 
       mockAxiosInstance.put.mockRejectedValue({ isAxiosError: true, response: { status: 413, data: '' } });
       await expect(uploadFile('workspace-id', 'view-id', new File(['abc'], 'test.txt'))).rejects.toMatchObject({
@@ -152,7 +226,7 @@ describe('http_api client (unit)', () => {
 
     await expect(getViewPdfBlob('workspace-id', 'view-id')).rejects.toMatchObject({
       code: 1076,
-      message: 'Upgrade this workspace to Pro to use this feature or increase its limits.',
+      message: expect.stringContaining('Upgrade this workspace to Pro to use this feature or increase its limits.'),
     });
   });
 
@@ -181,7 +255,7 @@ describe('http_api client (unit)', () => {
 
     await expect(uploadFile('workspace-id', 'view-id', new File(['abc'], 'test.txt'))).rejects.toMatchObject({
       code: 1037,
-      message: 'Upgrade this workspace to Pro to use this feature or increase its limits.',
+      message: expect.stringContaining('Upgrade this workspace to Pro to use this feature or increase its limits.'),
     });
   });
 
@@ -195,7 +269,7 @@ describe('http_api client (unit)', () => {
       workspaceId: 'workspace-id', viewId: 'view-id', file: new File(['abc'], 'test.txt'),
     })).rejects.toMatchObject({
       code: 1037,
-      message: 'Upgrade this workspace to Pro to use this feature or increase its limits.',
+      message: expect.stringContaining('Upgrade this workspace to Pro to use this feature or increase its limits.'),
     });
     expect(mockAxiosInstance.put).not.toHaveBeenCalled();
   });
@@ -233,7 +307,8 @@ describe('http_api client (unit)', () => {
 
     await expect(uploadFileMultipart({ workspaceId: 'workspace-id', viewId: 'view-id', file })).rejects.toMatchObject({
       code: 1028,
-      message: hosted ? 'Upgrade this workspace to Pro to use this feature or increase its limits.' : 'Storage limit reached',
+      message: hosted ? expect.stringContaining('Upgrade this workspace to Pro to use this feature or increase its limits.') : 'This workspace has reached its storage limit.',
+      diagnosticMessage: 'Storage limit reached',
     });
     expect(mockAxiosInstance.put).toHaveBeenCalledTimes(phase === 'part' ? 1 : 2);
   });
@@ -740,9 +815,10 @@ describe('http_api client (unit)', () => {
       },
     });
 
-    await expect(auth.signInWithLdap(credentials.username, credentials.password)).rejects.toEqual({
+    await expect(auth.signInWithLdap(credentials.username, credentials.password)).rejects.toMatchObject({
       code: -1,
-      message: 'No response data received',
+      diagnosticMessage: 'No response data received',
+      message: 'Error -1: Something went wrong. Contact support if this keeps happening.',
     });
 
     const serializedLogs = JSON.stringify([...debugSpy.mock.calls, ...errorSpy.mock.calls]);

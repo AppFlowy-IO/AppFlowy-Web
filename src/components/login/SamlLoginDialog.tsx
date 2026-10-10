@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@/utils/errors';
 import { useCallback, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -88,7 +89,7 @@ function SamlLoginDialog({ open, onOpenChange, onSubmit }: SamlLoginDialogProps)
     } catch (e: unknown) {
       const err = e as { message?: string };
 
-      setError(err?.message || t('web.signInError'));
+      setError(getErrorMessage(err, t('web.signInError')));
       submittingRef.current = false;
       setLoading(false);
     }

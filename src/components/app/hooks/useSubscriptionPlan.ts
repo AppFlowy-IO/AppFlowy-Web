@@ -1,3 +1,4 @@
+import { getErrorDiagnostic } from '@/utils/errors';
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { Subscription, SubscriptionPlan } from '@/application/types';
@@ -51,12 +52,13 @@ function planFromSubscriptions(subscriptions: Subscription[] | undefined): Subsc
 }
 
 function reportSubscriptionError(errorValue: unknown): void {
+  const diagnostic = getErrorDiagnostic(errorValue);
   const error = errorValue as { code?: number; message?: string };
   const isExpectedError =
     error?.code === -1 &&
-    (error?.message === 'No response data received' ||
-      error?.message === 'No response received from server' ||
-      error?.message === 'API service not initialized');
+    (diagnostic === 'No response data received' ||
+      diagnostic === 'No response received from server' ||
+      diagnostic === 'API service not initialized');
 
   if (!isExpectedError) {
     console.error(errorValue);

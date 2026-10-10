@@ -1,10 +1,12 @@
 import { TFunction } from 'i18next';
 
 import { ERROR_CODE } from '@/application/constants';
+import { ErrorIdentity, supportedPublicError } from '@/application/errors/error-message';
 import { getWorkspacePlanPolicy } from '@/application/workspace-plan-policy';
 import { determineErrorType, ErrorType } from '@/application/utils/error-utils';
+import { getErrorMessage } from '@/utils/errors';
 
-export interface LandingPageError {
+export interface LandingPageError extends Partial<ErrorIdentity> {
   code?: number;
   message?: string;
 }
@@ -14,32 +16,20 @@ export interface LandingPageErrorContent {
   description: string;
 }
 
-const GENERIC_ERROR_MESSAGES = new Set(['Request failed', 'Unknown error occurred']);
-
-function getServerMessage(error?: LandingPageError) {
-  const message = error?.message?.trim();
-
-  if (!message || GENERIC_ERROR_MESSAGES.has(message)) return undefined;
-
-  return message;
-}
-
 export function getLandingPageErrorContent(error: LandingPageError | undefined, t: TFunction): LandingPageErrorContent {
-  const serverMessage = getServerMessage(error);
+  const guidance = getErrorMessage(error);
   const content = (titleKey: string, fallbackTitle: string, descriptionKey: string, fallbackDescription: string) => ({
     title: t(titleKey, fallbackTitle),
-    description: serverMessage || t(descriptionKey, fallbackDescription),
+    description: guidance || t(descriptionKey, fallbackDescription),
   });
 
-  const quotaContent = (titleKey: string, fallbackTitle: string, descriptionKey: string, fallbackDescription: string) =>
-    getWorkspacePlanPolicy().usesHostedBilling
-      ? content(titleKey, fallbackTitle, descriptionKey, fallbackDescription)
-      : content(
-          titleKey,
-          fallbackTitle,
-          'landingPage.error.administratorLimitDescription',
-          'The server rejected this request because a configured limit was reached. Contact your workspace administrator.'
-        );
+  const quotaContent = (titleKey: string, fallbackTitle: string, descriptionKey: string, fallbackDescription: string) => {
+    const result = content(titleKey, fallbackTitle, descriptionKey, fallbackDescription);
+
+    return getWorkspacePlanPolicy().usesHostedBilling || supportedPublicError(error?.user_error)
+      ? result
+      : { ...result, description: `${result.description} ${t('landingPage.error.contactAdministrator', 'Contact your workspace administrator for help.')}` };
+  };
 
   if (!error) {
     return content(
@@ -111,6 +101,8 @@ export function getLandingPageErrorContent(error: LandingPageError | undefined, 
   const appError = determineErrorType(error);
 
   switch (appError.type) {
+    case ErrorType.AlreadyExists:
+      return content('landingPage.error.alreadyExistsTitle', 'Item already exists', 'userError.ALREADY_EXISTS', guidance);
     case ErrorType.PageNotFound:
       return content(
         'landingPage.pageNotFound.title',

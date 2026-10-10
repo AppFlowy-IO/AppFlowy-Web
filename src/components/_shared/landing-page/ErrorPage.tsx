@@ -2,6 +2,7 @@ import { ReactNode, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
+import { userErrorSupportDetails } from '@/application/errors/error-message';
 import { ReactComponent as ErrorLogo } from '@/assets/icons/warning_logo.svg';
 import { getLandingPageErrorContent, LandingPageError } from '@/components/_shared/landing-page/errorContent';
 import LandingPage from '@/components/_shared/landing-page/LandingPage';
@@ -27,7 +28,7 @@ export function ErrorPage({ onRetry, error, title, description }: ErrorPageProps
   const handleCopyError = useCallback(async () => {
     if (!error) return;
 
-    const errorText = error.code ? `Error: ${error.message}\nCode: ${error.code}` : `Error: ${error.message}`;
+    const errorText = userErrorSupportDetails(error);
 
     try {
       await navigator.clipboard.writeText(errorText);

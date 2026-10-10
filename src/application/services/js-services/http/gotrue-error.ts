@@ -1,9 +1,11 @@
+import { errorCodeNumber, ErrorIdentity, readErrorIdentity, userFriendlyErrorMessage } from '@/application/errors/error-message';
+
 /**
  * GoTrue Error Parser
  * Handles various error formats from GoTrue authentication service
  */
 
-export interface GoTrueError {
+export interface GoTrueError extends Partial<ErrorIdentity> {
   code: number;
   message: string;
   originalError?: string;
@@ -57,13 +59,6 @@ export function parseGoTrueErrorFromUrl(url: string): GoTrueError | null {
     const hash = urlObj.hash;
     const hashParams = hash ? new URLSearchParams(hash.slice(1)) : new URLSearchParams();
 
-    // Log for debugging (remove in production)
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[GoTrue Error Parser] URL:', url);
-      console.log('[GoTrue Error Parser] Search params:', Array.from(searchParams.entries()));
-      console.log('[GoTrue Error Parser] Hash params:', Array.from(hashParams.entries()));
-    }
-
     // Check all possible error parameter locations and names
     const error =
       searchParams.get('error') ||
@@ -112,115 +107,63 @@ export function parseGoTrueErrorFromUrl(url: string): GoTrueError | null {
 export function parseGoTrueError(errorData: {
   error?: string | null;
   errorDescription?: string | null;
-  errorCode?: string | null;
+  error_description?: string;
+  errorCode?: string | number | null;
+  error_code?: string;
   message?: string;
   msg?: string;
   code?: number | string;
   status?: number;
+  user_error?: unknown;
 }): GoTrueError {
-  // Get the most descriptive error message available
-  const errorMessage =
-    errorData.errorDescription ||
-    errorData.message ||
-    errorData.msg ||
-    errorData.error ||
-    'Authentication failed';
+  const originalError = [errorData.errorDescription, errorData.error_description, errorData.msg, errorData.message, errorData.error]
+    .find((value): value is string => typeof value === 'string' && Boolean(value.trim())) ?? 'Authentication failed';
+  const numericStatus = [errorData.status, errorData.code, errorData.errorCode]
+    .map(errorCodeNumber).find((value) => value !== undefined && value >= 100 && value <= 599);
+  const symbolicCode = errorData.error_code ||
+    (typeof errorData.errorCode === 'string' && errorCodeNumber(errorData.errorCode) === undefined ? errorData.errorCode : undefined) ||
+    errorData.error || undefined;
+  const identity: GoTrueError = {
+    code: numericStatus ?? GoTrueErrorCode.UNKNOWN,
+    sourceDomain: 'gotrue',
+    httpStatus: numericStatus,
+    errorCode: symbolicCode,
+    diagnosticMessage: originalError,
+    originalError,
+    user_error: errorData.user_error,
+    message: '',
+  };
 
-  // Parse error code from various sources
-  let code = GoTrueErrorCode.UNKNOWN;
+  return { ...identity, message: userFriendlyErrorMessage(identity) };
+}
 
-  // Try to get code from explicit field
-  if (errorData.code) {
-    code = typeof errorData.code === 'number' ? errorData.code : parseInt(errorData.code);
-  } else if (errorData.errorCode) {
-    code = parseInt(errorData.errorCode);
-  } else if (errorData.status) {
-    code = errorData.status;
+/** Keep GoTrue's HTTP namespace and transport failures distinct from Cloud codes. */
+export function parseGoTrueFailure(error: unknown): GoTrueError {
+  const candidate = error && typeof error === 'object' ? error as Record<string, unknown> : {};
+  const response = candidate.response && typeof candidate.response === 'object'
+    ? candidate.response as { status?: number; data?: unknown; headers?: Record<string, unknown> } : undefined;
+
+  if (response) {
+    const body = response.data && typeof response.data === 'object' ? response.data : {};
+    const parsed = parseGoTrueError({ ...body, status: response.status });
+    const requestId = response.headers?.['x-request-id'];
+
+    return { ...parsed, ...(typeof requestId === 'string' ? { requestId } : {}) };
   }
 
-  // Try to extract code from message format like "422: Signups not allowed"
-  if (code === GoTrueErrorCode.UNKNOWN && errorMessage) {
-    const codeMatch = errorMessage.match(/^(\d{3}):/);
+  const parsed = readErrorIdentity(error);
+  const identity = { ...parsed, code: parsed.code ?? GoTrueErrorCode.UNKNOWN };
 
-    if (codeMatch) {
-      code = parseInt(codeMatch[1]);
-    }
-  }
-
-  // Clean up the message - remove error codes and clean up formatting
-  const cleanMessage = errorMessage
-    .replace(/^\d{3}:\s*/, '') // Remove "422: " prefix
-    .replace(/\+/g, ' ') // Replace + with spaces (URL encoding)
-    .replace(/%20/g, ' ') // Replace %20 with spaces
-    .trim();
-
-  // Return the actual error message from GoTrue (don't replace it)
   return {
-    code,
-    message: cleanMessage,
-    originalError: errorMessage,
+    ...identity,
+    message: userFriendlyErrorMessage(identity),
+    originalError: identity.diagnosticMessage,
   };
 }
 
-/**
- * Enhance error messages to be more user-friendly (optional)
- * You can use this function if you want to provide custom user-friendly messages
- * while keeping the original error available for debugging
- */
+/** Backward-compatible entry point, using the same reviewed catalog as requests. */
 export function enhanceErrorMessage(message: string, errorType?: string | null, code?: number): string {
-  const lowerMessage = message.toLowerCase();
-
-  // Signup disabled errors
-  if (lowerMessage.includes('signups not allowed') ||
-      lowerMessage.includes('signup disabled') ||
-      errorType === GoTrueErrorType.SIGNUP_DISABLED ||
-      code === GoTrueErrorCode.UNPROCESSABLE_ENTITY) {
-    return 'Sign-ups are currently disabled. Please contact your administrator to request access.';
-  }
-
-  // Invalid credentials
-  if (lowerMessage.includes('invalid login credentials') ||
-      lowerMessage.includes('incorrect password') ||
-      errorType === GoTrueErrorType.INVALID_GRANT) {
-    return 'Invalid email or password. Please try again.';
-  }
-
-  // Email not confirmed
-  if (lowerMessage.includes('email not confirmed') ||
-      errorType === GoTrueErrorType.EMAIL_NOT_CONFIRMED) {
-    return 'Please confirm your email address before signing in.';
-  }
-
-  // User banned
-  if (lowerMessage.includes('user banned') ||
-      errorType === GoTrueErrorType.USER_BANNED) {
-    return 'Your account has been suspended. Please contact support.';
-  }
-
-  // Rate limiting
-  if (lowerMessage.includes('too many requests') ||
-      code === GoTrueErrorCode.TOO_MANY_REQUESTS) {
-    return 'Too many attempts. Please try again later.';
-  }
-
-  // Access denied
-  if (errorType === GoTrueErrorType.ACCESS_DENIED) {
-    return 'Access denied. You do not have permission to perform this action.';
-  }
-
-  // Session expired
-  if (lowerMessage.includes('session expired') ||
-      lowerMessage.includes('token expired')) {
-    return 'Your session has expired. Please sign in again.';
-  }
-
-  // Network or server errors
-  if (code === GoTrueErrorCode.INTERNAL_SERVER_ERROR) {
-    return 'A server error occurred. Please try again later.';
-  }
-
-  // Default - return the cleaned message as-is
-  return message;
+  return parseGoTrueError({ message, errorCode: errorType, status: code }).message;
 }
 
 /**
@@ -236,10 +179,5 @@ export function hasGoTrueError(url: string): boolean {
  * Format GoTrue error for display
  */
 export function formatGoTrueError(error: GoTrueError): string {
-  if (process.env.NODE_ENV === 'development' && error.originalError) {
-    // In development, show more details
-    return `${error.message}\n\n[Debug] Original: ${error.originalError} (Code: ${error.code})`;
-  }
-
-  return error.message;
+  return userFriendlyErrorMessage(error);
 }

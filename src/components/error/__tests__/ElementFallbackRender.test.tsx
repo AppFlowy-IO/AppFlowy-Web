@@ -51,7 +51,8 @@ describe('ElementFallbackRender', () => {
     it('should render the error message', () => {
       render(<ElementFallbackRender {...defaultProps} />);
 
-      expect(screen.getByText('Test error message')).toBeTruthy();
+      expect(screen.getByText('Something went wrong. Contact support if this keeps happening.')).toBeTruthy();
+      expect(screen.queryByText('Test error message')).toBeNull();
     });
 
     it('should render description when provided', () => {
@@ -94,7 +95,8 @@ describe('ElementFallbackRender', () => {
     it('should still render error message', () => {
       render(<ElementFallbackRender {...defaultProps} />);
 
-      expect(screen.getByText('Test error message')).toBeTruthy();
+      expect(screen.getByText('Something went wrong. Contact support if this keeps happening.')).toBeTruthy();
+      expect(screen.queryByText('Test error message')).toBeNull();
     });
 
     it('should still render description when provided', () => {
@@ -137,8 +139,9 @@ describe('ElementFallbackRender', () => {
 
       render(<ElementFallbackRender error={specialError} resetErrorBoundary={mockResetErrorBoundary} />);
 
-      // Message should be rendered as text, not HTML
-      expect(screen.getByText('<script>alert("xss")</script>')).toBeTruthy();
+      // Arbitrary diagnostics are not eligible for default display
+      expect(screen.queryByText('<script>alert("xss")</script>')).toBeNull();
+      expect(screen.getByRole('alert').textContent).toContain('Something went wrong.');
     });
 
     it('should handle very long error messages', () => {
@@ -147,7 +150,8 @@ describe('ElementFallbackRender', () => {
 
       render(<ElementFallbackRender error={longError} resetErrorBoundary={mockResetErrorBoundary} />);
 
-      expect(screen.getByText(longMessage)).toBeTruthy();
+      expect(screen.queryByText(longMessage)).toBeNull();
+      expect(screen.getByRole('alert').textContent).toContain('Something went wrong.');
     });
   });
 });

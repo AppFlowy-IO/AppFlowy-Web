@@ -51,7 +51,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
-import { getErrorMessage, isUnsupportedRouteError } from '@/utils/errors';
+import { getErrorDiagnostic, getErrorMessage, isUnsupportedRouteError } from '@/utils/errors';
 
 import type { TFunction } from 'i18next';
 import type { KeyboardEvent } from 'react';
@@ -214,7 +214,7 @@ function workspaceRoleLabel(role: Role | undefined, t: TFunction): string | null
 function manageSpaceErrorMessage(error: unknown, fallback: string, t: TFunction): string {
   const message = getErrorMessage(error, fallback);
 
-  return message.toLowerCase().includes(LAST_EXPLICIT_OWNER_ERROR)
+  return getErrorDiagnostic(error).toLowerCase().includes(LAST_EXPLICIT_OWNER_ERROR)
     ? t('space.permissionManager.lastOwnerRequired')
     : message;
 }

@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@/utils/errors';
 import { ComponentProps, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -240,7 +241,7 @@ function RecordNotFound({
           <EmbeddedLandingPage
             Logo={ErrorIcon}
             title={t('landingPage.unknown.title')}
-            description={t('landingPage.unknown.description')}
+            description={error ? getErrorMessage(error) : t('landingPage.unknown.description')}
             primaryAction={{
               onClick: handleRetry,
               label: retrying ? (

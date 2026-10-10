@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@/utils/errors';
 import { useRef, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
@@ -51,7 +52,7 @@ function CheckEmailResetPassword({ email, redirectTo }: { email: string; redirec
       if (e.code === 403) {
         setError(t('invalidOTPCode'));
       } else {
-        setError(e.message);
+        setError(getErrorMessage(e));
       }
     } finally {
       submittingRef.current = false;

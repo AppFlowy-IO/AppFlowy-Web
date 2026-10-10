@@ -97,7 +97,7 @@ describe('AddViewButton', () => {
     fireEvent.click(layout === 'form' ? screen.getByTestId('add-form-view-option') : screen.getByText('chart.menuName'));
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(
-      'Upgrade this workspace to Pro to use this feature or increase its limits.'
+      "This subscription plan isn't valid for this action. Upgrade this workspace to Pro to use this feature or increase its limits."
     ));
     expect(toast.error).toHaveBeenCalledTimes(1);
     expect(onViewAdded).not.toHaveBeenCalled();
@@ -123,7 +123,7 @@ describe('AddViewButton', () => {
 
     fireEvent.click(screen.getByTestId('add-timeline-view-button'));
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(message));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('An upgrade is required for this action.'));
     expect(onViewAdded).not.toHaveBeenCalled();
     expect(onAfterAddView).toHaveBeenCalledTimes(1);
   });

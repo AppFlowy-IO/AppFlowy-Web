@@ -48,7 +48,7 @@ it.each(['writer', 'chat'])(
     const view = surface === 'writer' ? <WriterError /> : <AssistantMessage id={2} isHovered={false} />;
     const { rerender } = render(view);
 
-    expect(await screen.findByText(mockError.message)).toBeTruthy();
+    expect(await screen.findByText('This workspace has reached its AI response limit.')).toBeTruthy();
     expect(screen.queryByText(/responseLimit/)).toBeNull();
 
     mockOfficialHosted = true;
@@ -65,7 +65,7 @@ it.each(['writer', 'chat'])(
     mockError.message = '';
     render(surface === 'writer' ? <WriterError /> : <AssistantMessage id={2} isHovered={false} />);
 
-    expect(await screen.findByText('chat.errors.responseUnavailable')).toBeTruthy();
+    expect(await screen.findByText('This workspace has reached its AI response limit.')).toBeTruthy();
     expect(screen.queryByText(/responseLimit/)).toBeNull();
   }
 );

@@ -1,6 +1,6 @@
-import axios from 'axios';
-
 import { ERROR_CODE } from '@/application/constants';
+import { ErrorIdentity, readErrorIdentity } from '@/application/errors/error-message';
+import { getErrorMessage } from '@/utils/errors';
 
 /**
  * Error types based on server HTTP status codes and selective error codes
@@ -40,8 +40,11 @@ export enum ErrorType {
   /** 400 with code 1068 - Invalid invitation/link */
   InvalidLink = 'INVALID_LINK',
 
-  /** 409 with code 1073 - User already joined/exists */
+  /** Cloud 1069 - This person is already a workspace member. */
   AlreadyJoined = 'ALREADY_JOINED',
+
+  /** An existing resource conflicts with this operation. */
+  AlreadyExists = 'ALREADY_EXISTS',
 
   /** 403 with code 1041 - Not invitee of invitation */
   NotInvitee = 'NOT_INVITEE',
@@ -62,11 +65,11 @@ export enum ErrorType {
 /**
  * Structured error object with type, message, and optional code/status
  */
-export interface AppError {
+export interface AppError extends Partial<ErrorIdentity> {
   /** Determined error type for UI handling */
   type: ErrorType;
 
-  /** Human-readable error message from server */
+  /** Reviewed localized guidance; raw details remain in diagnosticMessage. */
   message: string;
 
   /** Server error code (e.g., 1068, 1073, 1041) */
@@ -108,17 +111,14 @@ export interface AppError {
 
 /**
  * Maps a server error code (from the APIResponse `code` field) to an ErrorType.
- * Returns undefined if the code is not recognized — caller should fall back to
- * HTTP status mapping or Unknown.
+ * Returns undefined if the code is not recognized; callers keep Unknown rather
+ * than interpreting the same number in a different namespace.
  *
  * This is the single source of truth for error-code-to-UI-type mapping.
  * Both the AxiosError path and the normalized APIError path delegate here.
  */
 function mapErrorCodeToType(code: number | undefined): ErrorType | undefined {
   if (code === undefined) return undefined;
-
-  // Network error (code -1 from handleAPIError)
-  if (code === -1) return ErrorType.NetworkError;
 
   // Not found
   if (code === ERROR_CODE.RECORD_NOT_FOUND || code === ERROR_CODE.WORKSPACE_NOT_FOUND) {
@@ -146,9 +146,8 @@ function mapErrorCodeToType(code: number | undefined): ErrorType | undefined {
   if (code === ERROR_CODE.INVALID_LINK) return ErrorType.InvalidLink;
 
   // Already joined / exists
-  if (code === ERROR_CODE.ALREADY_JOINED || code === ERROR_CODE.RECORD_ALREADY_EXISTS) {
-    return ErrorType.AlreadyJoined;
-  }
+  if (code === ERROR_CODE.INVALID_GUEST) return ErrorType.AlreadyJoined;
+  if (code === ERROR_CODE.RECORD_ALREADY_EXISTS) return ErrorType.AlreadyExists;
 
   // Not invitee
   if (code === ERROR_CODE.NOT_INVITEE_OF_INVITATION) return ErrorType.NotInvitee;
@@ -180,15 +179,14 @@ function mapErrorCodeToType(code: number | undefined): ErrorType | undefined {
     code === ERROR_CODE.WORKSPACE_MEMBER_LIMIT_EXCEEDED ||
     code === ERROR_CODE.AI_RESPONSE_LIMIT_EXCEEDED ||
     code === ERROR_CODE.AI_IMAGE_RESPONSE_LIMIT_EXCEEDED ||
-    code === ERROR_CODE.FEATURE_NOT_AVAILABLE ||
-    code === ERROR_CODE.INVALID_GUEST
+    code === ERROR_CODE.FEATURE_NOT_AVAILABLE
   ) {
     return ErrorType.Forbidden;
   }
 
-  // Access request conflicts
+  // Handled access requests do not establish workspace membership.
   if (code === ERROR_CODE.ACCESS_REQUEST_ALREADY_APPROVED || code === ERROR_CODE.ACCESS_REQUEST_ALREADY_DENIED) {
-    return ErrorType.AlreadyJoined;
+    return ErrorType.Unknown;
   }
 
   // Invalid view
@@ -204,7 +202,7 @@ function mapHttpStatusToType(status: number): ErrorType {
   if (status === 404) return ErrorType.PageNotFound;
   if (status === 401) return ErrorType.Unauthorized;
   if (status === 403) return ErrorType.Forbidden;
-  if (status === 408) return ErrorType.Timeout;
+  if (status === 408 || status === 504) return ErrorType.Timeout;
   if (status === 410) return ErrorType.Gone;
   if (status === 429) return ErrorType.RateLimited;
   if (status >= 500 && status < 600) return ErrorType.ServerError;
@@ -212,63 +210,23 @@ function mapHttpStatusToType(status: number): ErrorType {
 }
 
 export function determineErrorType(error: unknown): AppError {
-  // Network error (no response from server)
-  if (axios.isAxiosError(error) && !error.response) {
-    return {
-      type: ErrorType.NetworkError,
-      message: error.message || 'Network connection failed. Please check your internet connection.',
-    };
+  const identity = readErrorIdentity(error);
+  let type: ErrorType;
+
+  if (identity.sourceDomain === 'transport') {
+    type = identity.transportFailure === 'timeout' ? ErrorType.Timeout :
+      identity.transportFailure === 'cancelled' ? ErrorType.Unknown : ErrorType.NetworkError;
+  } else if (identity.sourceDomain === 'appflowy.server') {
+    // Cloud -1 is Unhandled, and 1073 is export contention. Neither identifies
+    // a network outage or an existing workspace membership.
+    type = mapErrorCodeToType(identity.code) ?? ErrorType.Unknown;
+  } else if (identity.sourceDomain === 'http' || identity.sourceDomain === 'gotrue') {
+    type = mapHttpStatusToType(identity.httpStatus ?? identity.code ?? 0);
+  } else {
+    type = ErrorType.Unknown;
   }
 
-  // HTTP error (server responded with error status)
-  if (axios.isAxiosError(error) && error.response) {
-    const status = error.response.status;
-    const data = error.response.data as { code?: number; message?: string } | undefined;
-    const code = data?.code;
-    const message = data?.message || error.message || 'An unexpected error occurred';
-
-    // Priority 1: Map by server error code
-    const typeFromCode = mapErrorCodeToType(code);
-
-    if (typeFromCode) {
-      return { type: typeFromCode, message, code, statusCode: status };
-    }
-
-    // Priority 2: Map by HTTP status code
-    return { type: mapHttpStatusToType(status), message, code, statusCode: status };
-  }
-
-  // Normalized APIError from executeAPIRequest / executeAPIVoidRequest / handleAPIError.
-  // These are plain { code: number, message: string } objects — not AxiosError instances.
-  if (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    typeof (error as { code: unknown }).code === 'number'
-  ) {
-    const apiError = error as { code: number; message?: string };
-    const code = apiError.code;
-    const message = apiError.message || 'Request failed';
-
-    // Priority 1: Map by server error code
-    const typeFromCode = mapErrorCodeToType(code);
-
-    if (typeFromCode) {
-      return { type: typeFromCode, message, code };
-    }
-
-    // Priority 2: Treat the code as an HTTP status (fallback for errors
-    // where handleAPIError used response.status as the code value)
-    return { type: mapHttpStatusToType(code), message, statusCode: code };
-  }
-
-  // Non-axios error (e.g., thrown exception, logic error)
-  const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-
-  return {
-    type: ErrorType.Unknown,
-    message: errorMessage,
-  };
+  return { ...identity, type, message: getErrorMessage(error), statusCode: identity.httpStatus };
 }
 
 /**
@@ -281,11 +239,9 @@ export function determineErrorType(error: unknown): AppError {
 export function isPermissionDeniedError(error: unknown): boolean {
   const appError = determineErrorType(error);
 
-  if (appError.code !== undefined) {
-    return appError.code === ERROR_CODE.NOT_HAS_PERMISSION || appError.code === 403;
-  }
-
-  return appError.statusCode === 403;
+  return appError.sourceDomain === 'appflowy.server'
+    ? appError.code === ERROR_CODE.NOT_HAS_PERMISSION
+    : appError.sourceDomain === 'http' && (appError.statusCode ?? appError.code) === 403;
 }
 
 /**
@@ -308,7 +264,7 @@ export function formatErrorForLogging(error: unknown): string {
   const appError = determineErrorType(error);
   const parts = [
     `[${appError.type}]`,
-    appError.message,
+    appError.diagnosticMessage || appError.message,
   ];
 
   if (appError.statusCode) {
