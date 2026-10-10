@@ -654,7 +654,12 @@ export async function readPeekWidth(page: Page): Promise<number> {
 
 /** Drag the separator; a negative delta moves it left, which widens the peek. */
 export async function dragPeekResizer(page: Page, deltaX: number): Promise<void> {
-  const bounds = await peekResizer(page).boundingBox();
+  const resizer = peekResizer(page);
+
+  // Wait for the opening animation to settle before measuring drag coordinates.
+  // Raw mouse events do not perform Playwright's stability/actionability checks.
+  await resizer.hover();
+  const bounds = await resizer.boundingBox();
 
   if (!bounds) throw new Error('The side peek resizer has no layout box');
   const x = bounds.x + bounds.width / 2;
