@@ -1,6 +1,6 @@
 import { ERROR_CODE } from '@/application/constants';
 import { getBillingErrorMessage } from '@/utils/billing-error';
-import { getErrorMessage } from '@/utils/errors';
+import { getErrorDiagnostic, getErrorMessage } from '@/utils/errors';
 import { updateServerInfo } from '@/utils/server-info';
 
 const upgradeMessage = 'Upgrade this workspace to Pro to use this feature or increase its limits.';
@@ -23,12 +23,13 @@ describe('billing error messages', () => {
       updateServerInfo(baseUrl, { status: 'available', info: { enable_page_history: true, self_hosted: true } });
       const error = {
         code: ERROR_CODE.SINGLE_UPLOAD_LIMIT_EXCEEDED,
-        message: 'Your administrator limits files to 100 MB',
+        message: 'private quota diagnostic',
+        user_error: { schema_version: 1, reason: 'ADMIN_UPLOAD_LIMIT', message: 'Your administrator limits files to 100 MB' },
       };
 
       expect(getBillingErrorMessage(error)).toBeUndefined();
       expect(getBillingErrorMessage({ response: { data: error } })).toBeUndefined();
-      expect(getErrorMessage(error)).toBe(error.message);
+      expect(getErrorMessage(error)).toBe(`Error ${error.code}: ${error.user_error.message}`);
     }
   );
 
@@ -39,14 +40,17 @@ describe('billing error messages', () => {
     ERROR_CODE.CUSTOM_NAMESPACE_DISABLED,
     ERROR_CODE.FREE_PLAN_GUEST_LIMIT_EXCEEDED,
   ])('adds actionable workspace upgrade guidance for error %s', (code) => {
-    expect(getErrorMessage({ code, message: 'Limit exceeded' })).toBe(upgradeMessage);
-    expect(getErrorMessage({ response: { data: { code, message: 'Limit exceeded' } } })).toBe(upgradeMessage);
+    expect(getErrorMessage({ code, message: 'Limit exceeded' })).toContain(upgradeMessage);
+    expect(getErrorMessage({ code, message: 'Limit exceeded' })).not.toBe(upgradeMessage);
+    expect(getErrorMessage({ response: { data: { code, message: 'Limit exceeded' } } })).toBe(getErrorMessage({ code, message: 'Limit exceeded' }));
   });
 
   it('keeps the form limit and upgrade explanation from the server', () => {
     const message = 'Free workspaces can have one form. Upgrade this workspace to Pro to create more forms.';
 
-    expect(getErrorMessage({ code: ERROR_CODE.INVALID_SUBSCRIPTION_PLAN, message })).toBe(message);
+    expect(getErrorMessage({ code: ERROR_CODE.INVALID_SUBSCRIPTION_PLAN, message: 'private diagnostic',
+      user_error: { schema_version: 1, reason: 'FORM_COUNT_LIMIT', message },
+    })).toBe(`Error 1076: ${message}`);
   });
 
   it.each([
@@ -57,11 +61,21 @@ describe('billing error messages', () => {
     [1129, 'Your monthly transcription limit has been reached'],
     [ERROR_CODE.PAID_PLAN_GUEST_LIMIT_EXCEEDED, 'Paid workspace guest limit reached'],
     [ERROR_CODE.PAYLOAD_TOO_LARGE, 'Metadata request too large'],
-  ])('preserves errors whose remedy is not a Pro upgrade (%s)', (code, message) => {
+  ])('keeps diagnostics and avoids Pro guidance for unrelated errors (%s)', (code, message) => {
     const error = { code, message };
 
     expect(getBillingErrorMessage(error)).toBeUndefined();
-    expect(getErrorMessage(error)).toBe(message);
+    expect(getErrorMessage(error)).not.toContain(upgradeMessage);
+    expect(getErrorDiagnostic(error)).toBe(message);
+    expect(getErrorMessage(error)).not.toBe(message);
+  });
+
+  it('does not display arbitrary legacy diagnostics that mention Pro', () => {
+    const message = 'SQLSTATE: Pro /private/path';
+    const error = { code: ERROR_CODE.INVALID_SUBSCRIPTION_PLAN, message };
+
+    expect(getErrorMessage(error)).not.toContain(message);
+    expect(getErrorDiagnostic(error)).toBe(message);
   });
 
   it('does not infer billing restrictions from HTTP 403 or text alone', () => {

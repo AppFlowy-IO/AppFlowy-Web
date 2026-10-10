@@ -140,7 +140,7 @@ describe('PlanPanel', () => {
     api.getWorkspaceSubscriptionStatus.mockRejectedValueOnce(new Error('billing unavailable'));
     renderPanel();
 
-    expect((await screen.findByTestId('billing-error')).textContent).toContain('billing unavailable');
+    expect((await screen.findByTestId('billing-error')).textContent).toContain('Something went wrong. Contact support if this keeps happening.');
     expect(screen.queryByTestId('current-plan-box')).toBeNull();
     expect(screen.queryByTestId('plan-usage-storage')).toBeNull();
     expect(screen.queryByTestId('plan-toggle-pro')).toBeNull();
@@ -285,7 +285,7 @@ describe('PlanPanel', () => {
     const button = (await screen.findByTestId('plan-toggle-pro')).querySelector('button')!;
 
     fireEvent.click(button);
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Checkout unavailable'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
     expect(button.disabled).toBe(false);
     expect(window.open).not.toHaveBeenCalled();
     fireEvent.click(button);

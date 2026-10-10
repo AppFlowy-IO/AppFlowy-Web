@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@/utils/errors';
 import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -120,12 +121,12 @@ export function SignUpPassword({ redirectTo }: { redirectTo: string }) {
           type: 'signup',
         });
         return;
-      } else if (error.code === 422) {
+      } else if (error.errorCode === 'email_exists' || error.errorCode === 'user_already_exists') {
         setEmailError(t('signUp.emailAlreadyRegistered'));
       } else if (error.code === 429) {
         toast.error(t('tooManyRequests'));
       } else {
-        setError(error.message || t('signUp.signUpFailed'));
+        setError(getErrorMessage(error, t('signUp.signUpFailed')));
       }
     } finally {
       submittingRef.current = false;

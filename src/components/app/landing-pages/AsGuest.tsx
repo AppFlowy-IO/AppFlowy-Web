@@ -88,7 +88,7 @@ export function AsGuest() {
       if (e.code === ERROR_CODE.INVALID_LINK) {
         setInvalidMessage(e.message);
         setIsInvalid(true);
-      } else if (e.code === ERROR_CODE.ALREADY_JOINED) {
+      } else if (e.code === ERROR_CODE.INVALID_GUEST) {
         // do nothing
       } else if (e.code === ERROR_CODE.NOT_INVITEE_OF_INVITATION) {
         setNotInvitee(true);

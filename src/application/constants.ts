@@ -1,3 +1,5 @@
+import { serverErrorCodes } from '@/application/errors/shared-error-codes';
+
 export const databasePrefix = 'af_database';
 
 export const HEADER_HEIGHT = 48;
@@ -11,55 +13,55 @@ export const HEADER_HEIGHT = 48;
  */
 export const ERROR_CODE = {
   // General
-  RECORD_NOT_FOUND: -2,
-  RECORD_ALREADY_EXISTS: -3,
-  RECORD_DELETED: -4,
-  RETRY_LATER: -5,
-  INVALID_REQUEST: 1008,
+  RECORD_NOT_FOUND: serverErrorCodes.RecordNotFound,
+  RECORD_ALREADY_EXISTS: serverErrorCodes.RecordAlreadyExists,
+  RECORD_DELETED: serverErrorCodes.RecordDeleted,
+  RETRY_LATER: serverErrorCodes.RetryLater,
+  INVALID_REQUEST: serverErrorCodes.InvalidRequest,
 
   // Auth & permissions
-  NOT_LOGGED_IN: 1011,
-  NOT_HAS_PERMISSION: 1012,
-  USER_UNAUTHORIZED: 1024,
+  NOT_LOGGED_IN: serverErrorCodes.NotLoggedIn,
+  NOT_HAS_PERMISSION: serverErrorCodes.NotEnoughPermissions,
+  USER_UNAUTHORIZED: serverErrorCodes.UserUnAuthorized,
 
   // Storage & limits
-  STORAGE_SPACE_NOT_ENOUGH: 1015,
-  PAYLOAD_TOO_LARGE: 1016,
-  FILE_STORAGE_LIMIT_EXCEEDED: 1028,
-  SINGLE_UPLOAD_LIMIT_EXCEEDED: 1037,
-  WORKSPACE_LIMIT_EXCEEDED: 1026,
-  WORKSPACE_MEMBER_LIMIT_EXCEEDED: 1027,
-  INVALID_SUBSCRIPTION_PLAN: 1076,
-  CUSTOM_NAMESPACE_DISABLED: 1044,
+  STORAGE_SPACE_NOT_ENOUGH: serverErrorCodes.StorageSpaceNotEnough,
+  PAYLOAD_TOO_LARGE: serverErrorCodes.PayloadTooLarge,
+  FILE_STORAGE_LIMIT_EXCEEDED: serverErrorCodes.FileStorageLimitExceeded,
+  SINGLE_UPLOAD_LIMIT_EXCEEDED: serverErrorCodes.SingleUploadLimitExceeded,
+  WORKSPACE_LIMIT_EXCEEDED: serverErrorCodes.WorkspaceLimitExceeded,
+  WORKSPACE_MEMBER_LIMIT_EXCEEDED: serverErrorCodes.WorkspaceMemberLimitExceeded,
+  INVALID_SUBSCRIPTION_PLAN: serverErrorCodes.InvalidSubscriptionPlan,
+  CUSTOM_NAMESPACE_DISABLED: serverErrorCodes.CustomNamespaceDisabled,
 
   // AI
-  AI_SERVICE_UNAVAILABLE: 1032,
-  AI_RESPONSE_LIMIT_EXCEEDED: 1033,
-  AI_IMAGE_RESPONSE_LIMIT_EXCEEDED: 1058,
-  AI_MEETING_TRANSCRIPTION_LIMIT_EXCEEDED: 1129,
+  AI_SERVICE_UNAVAILABLE: serverErrorCodes.AIServiceUnavailable,
+  AI_RESPONSE_LIMIT_EXCEEDED: serverErrorCodes.AIResponseLimitExceeded,
+  AI_IMAGE_RESPONSE_LIMIT_EXCEEDED: serverErrorCodes.AIImageResponseLimitExceeded,
+  AI_MEETING_TRANSCRIPTION_LIMIT_EXCEEDED: serverErrorCodes.AIMeetingTranscriptionLimitExceeded,
 
   // Invitations & sharing
-  NOT_INVITEE_OF_INVITATION: 1041,
-  INVALID_LINK: 1068,
-  INVALID_GUEST: 1069,
-  FREE_PLAN_GUEST_LIMIT_EXCEEDED: 1070,
-  PAID_PLAN_GUEST_LIMIT_EXCEEDED: 1071,
-  ALREADY_JOINED: 1073,
+  NOT_INVITEE_OF_INVITATION: serverErrorCodes.NotInviteeOfWorkspaceInvitation,
+  INVALID_LINK: serverErrorCodes.InvalidInvitationCode,
+  INVALID_GUEST: serverErrorCodes.InvalidGuest,
+  FREE_PLAN_GUEST_LIMIT_EXCEEDED: serverErrorCodes.FreePlanGuestLimitExceeded,
+  PAID_PLAN_GUEST_LIMIT_EXCEEDED: serverErrorCodes.PaidPlanGuestLimitExceeded,
+  TOO_MANY_EXPORT_TASK: serverErrorCodes.TooManyExportTask,
 
   // Access requests
-  ACCESS_REQUEST_ALREADY_APPROVED: 1122,
-  ACCESS_REQUEST_ALREADY_DENIED: 1123,
+  ACCESS_REQUEST_ALREADY_APPROVED: serverErrorCodes.AccessRequestAlreadyApproved,
+  ACCESS_REQUEST_ALREADY_DENIED: serverErrorCodes.AccessRequestAlreadyDenied,
 
   // Service
-  MAILER_ERROR: 1059,
-  SERVICE_TEMPORARY_UNAVAILABLE: 1054,
-  REQUEST_TIMEOUT: 1065,
-  FEATURE_NOT_AVAILABLE: 1067,
-  TOO_MANY_REQUESTS: 1079,
+  MAILER_ERROR: serverErrorCodes.MailerError,
+  SERVICE_TEMPORARY_UNAVAILABLE: serverErrorCodes.ServiceTemporaryUnavailable,
+  REQUEST_TIMEOUT: serverErrorCodes.RequestTimeout,
+  FEATURE_NOT_AVAILABLE: serverErrorCodes.FeatureNotAvailable,
+  TOO_MANY_REQUESTS: serverErrorCodes.TooManyRequests,
 
   // Workspace
-  WORKSPACE_NOT_FOUND: 1130,
-  INVALID_FOLDER_VIEW: 1040,
+  WORKSPACE_NOT_FOUND: serverErrorCodes.WorkspaceNotFound,
+  INVALID_FOLDER_VIEW: serverErrorCodes.InvalidFolderView,
 } as const;
 
 export const APP_EVENTS = {

@@ -58,7 +58,7 @@ describe('InviteCode hosting', () => {
 
   it.each([
     [false, 'landingPage.inviteCode.memberLimitDescription: Test workspace'],
-    [true, 'landingPage.error.administratorLimitDescription'],
+    [true, 'This workspace has reached its member limit. landingPage.error.contactAdministrator'],
   ])('loads standalone invitation guidance with self_hosted=%s', async (selfHosted, expectedDescription) => {
     let resolveServerInfo!: (info: ServerInfo) => void;
 

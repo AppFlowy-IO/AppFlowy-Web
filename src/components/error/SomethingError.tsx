@@ -2,6 +2,7 @@ import { Alert } from '@mui/material';
 
 import { ReactComponent as WarningIcon } from '@/assets/icons/close.svg';
 import emptyImageSrc from '@/assets/images/empty.png';
+import { getErrorMessage } from '@/utils/errors';
 
 function SomethingError({ error }: { error: Error }) {
   return (
@@ -11,7 +12,7 @@ function SomethingError({ error }: { error: Error }) {
         SomethingError
       </div>
       <Alert className={'max-w-[90%] whitespace-pre-wrap break-words px-6 '} severity={'error'}>
-        {error.message}
+        {getErrorMessage(error)}
       </Alert>
       <div className={'mt-4 whitespace-pre text-center text-lg text-text-primary opacity-50'}>
         {`We're sorry for inconvenience\n`}

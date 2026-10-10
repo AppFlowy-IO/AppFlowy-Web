@@ -720,7 +720,7 @@ describe('ManageSpace ACL management', () => {
       fireEvent.click(visibilityOption(SpaceVisibility.Custom));
       confirmPending();
 
-      await waitFor(() => expect(toast.error).toHaveBeenCalledWith('save failed'));
+      await waitFor(() => expect(toast.error).toHaveBeenCalledWith('space.error.updateSpace'));
       expect(screen.getByRole('tab', { name: 'space.permissionManager.generalTab' }).getAttribute('aria-selected')).toBe(
         'true'
       );

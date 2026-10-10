@@ -249,7 +249,7 @@ describe('DatabaseTabs', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Duplicate view' }));
 
     await waitFor(() => expect(duplicateView).toHaveBeenCalledWith(databaseView.view_id, 'Timeline (Copy)'));
-    expect(toast.error).toHaveBeenCalledWith(message);
+    expect(toast.error).toHaveBeenCalledWith('An upgrade is required for this action.');
     expect(toast.success).not.toHaveBeenCalled();
     expect(onBeforeViewAddedToDatabase).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(onAfterViewAddedToDatabase).toHaveBeenCalledTimes(1));

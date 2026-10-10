@@ -11,7 +11,7 @@ import {
   isIntegrationProvider,
 } from '@/application/integrations/types';
 import * as IntegrationService from '@/application/services/domains/integration';
-import { getErrorMessage, isAPIErrorCode } from '@/utils/errors';
+import { getErrorDiagnostic, getErrorMessage, isAPIErrorCode } from '@/utils/errors';
 
 export function useConnections(workspaceId: string) {
   const { t } = useTranslation();
@@ -96,7 +96,7 @@ export function useConnections(workspaceId: string) {
         if (!controller.signal.aborted) {
           if (
             isAPIErrorCode(error, 1008) &&
-            getErrorMessage(error, '').endsWith(`provider ${provider} is not configured`)
+            getErrorDiagnostic(error).endsWith(`provider ${provider} is not configured`)
           ) {
             // Configuration can change after the panel loads. Disable further attempts
             // until the user refreshes, and show the same setup guidance as on startup.

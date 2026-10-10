@@ -2,6 +2,8 @@ import { Alert } from '@mui/material';
 import { FallbackProps } from 'react-error-boundary';
 import i18n from 'i18next';
 
+import { getErrorMessage } from '@/utils/errors';
+
 export function ElementFallbackRender({
   error,
   description,
@@ -15,7 +17,7 @@ export function ElementFallbackRender({
   return (
     <Alert severity={'error'} variant={'standard'} contentEditable={false} className={'my-2 overflow-hidden'}>
       <p>{errorLabel}:</p>
-      <pre className={'truncate'}>{error.message}</pre>
+      <pre className={'truncate'}>{getErrorMessage(error)}</pre>
       {description && <pre>{description}</pre>}
     </Alert>
   );

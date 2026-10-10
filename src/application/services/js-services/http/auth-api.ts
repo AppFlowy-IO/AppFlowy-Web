@@ -7,9 +7,10 @@ import {
   LoginProviderId,
   LoginProviders,
 } from '@/application/types';
+import { getErrorDiagnostic } from '@/utils/errors';
 import { Log } from '@/utils/log';
 
-import { APIError, APIResponse, executeAPIRequest, getAxios } from './core';
+import { APIResponse, executeAPIRequest, getAxios } from './core';
 import { verifyAndRefreshGoTrueToken } from './gotrue';
 import { parseGoTrueErrorFromUrl } from './gotrue-error';
 
@@ -51,10 +52,7 @@ export async function signInWithUrl(url: string) {
       code: gotrueError.code,
       message: gotrueError.message,
     });
-    return Promise.reject({
-      code: gotrueError.code,
-      message: gotrueError.message,
-    });
+    return Promise.reject(gotrueError);
   }
 
   // No errors found, proceed with normal token extraction
@@ -269,7 +267,7 @@ export async function getAuthProviders(): Promise<LoginProviders> {
     // sharing a key.
     return { providers: [...new Set(providers)], customProviders, ldapProviders };
   } catch (error) {
-    const message = (error as APIError)?.message;
+    const message = getErrorDiagnostic(error);
 
     console.warn('Auth providers API returned error:', message);
     console.error('Failed to fetch auth providers:', error);

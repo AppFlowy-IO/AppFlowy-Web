@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@/utils/errors';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
@@ -39,7 +40,7 @@ export function ForgotPassword({ redirectTo, email: initialEmail }: { redirectTo
       if (e.code === 429 || e.response?.status === 429) {
         toast.error(t('tooManyRequests'));
       } else {
-        toast.error(e.message);
+        toast.error(getErrorMessage(e));
       }
     } finally {
       submittingRef.current = false;

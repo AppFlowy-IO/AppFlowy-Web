@@ -166,7 +166,7 @@ describe('AI meeting recording attempts', () => {
       ));
     } else {
       expect(screen.getByRole('alert').textContent).toBe(
-        source === 'server' ? serverMessage : 'document.aiMeeting.recordingErrors.quotaExceeded'
+        source === 'server' ? 'This workspace has reached its transcription limit.' : 'document.aiMeeting.recordingErrors.quotaExceeded'
       );
     }
 
@@ -184,10 +184,10 @@ describe('AI meeting recording attempts', () => {
     mount();
     await start();
 
-    expect(screen.getByRole('alert').textContent).toBe(serverMessage);
+    expect(screen.getByRole('alert').textContent).toBe('This workspace has reached its transcription limit.');
     if (kind === 'self-hosted') expect(mockGetSubscriptions).not.toHaveBeenCalled();
     else await waitFor(() => expect(errorLog).toHaveBeenCalled());
-    expect(screen.getByRole('alert').textContent).toBe(serverMessage);
+    expect(screen.getByRole('alert').textContent).toBe('This workspace has reached its transcription limit.');
     errorLog.mockRestore();
   });
 
@@ -252,7 +252,7 @@ describe('AI meeting recording attempts', () => {
     jest.mocked(getMeetingStreamingToken).mockRejectedValueOnce(new Error('Token unavailable'));
     mount();
     await start();
-    expect(screen.getByRole('alert').textContent).toContain('Token unavailable');
+    expect(screen.getByRole('alert').textContent).toContain('document.aiMeeting.recordingFailed');
     expect(microphone.audio.stop).toHaveBeenCalled();
     await start();
     expect(screen.getByRole('status').textContent).toBe('document.aiMeeting.recordingState.recording');

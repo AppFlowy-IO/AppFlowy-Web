@@ -79,7 +79,7 @@ describe('realtime storage refusal', () => {
       storageLimitExceeded: { objectId: 'object', code: ERROR_CODE.FILE_STORAGE_LIMIT_EXCEEDED, message },
     }, null, new EventEmitter()));
 
-    expect(toast.error).toHaveBeenCalledWith(message, { id: 'workspace-storage-limit-exceeded' });
+    expect(toast.error).toHaveBeenCalledWith('This workspace has reached its storage limit.', { id: 'workspace-storage-limit-exceeded' });
     expect(deleteOutboxByObjectId).not.toHaveBeenCalled();
     expect(deleteCollabDB).not.toHaveBeenCalled();
     unmount();

@@ -445,7 +445,7 @@ describe('MembersPanel workspace group parity', () => {
 
     fireEvent.click(screen.getByTestId('people-create-group-submit'));
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(message));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('settings.appearance.people.addGroupMemberFailed'));
     expect(mockCreateWorkspaceGroup).toHaveBeenCalledWith('workspace-1', { name: 'Platform' });
     expect(mockAddWorkspaceGroupMember).toHaveBeenCalledTimes(3);
     members.slice(0, 3).forEach((member, index) => {
@@ -492,7 +492,7 @@ describe('MembersPanel workspace group parity', () => {
     fireEvent.change(input, { target: { value: workspaceMember.email } });
     fireEvent.click(within(modal).getByRole('button', { name: /settings\.appearance\.people\.addUser/ }));
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(message));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('settings.appearance.people.addGroupMemberFailed'));
     expect(mockAddWorkspaceGroupMember).toHaveBeenCalledTimes(1);
     expect(mockAddWorkspaceGroupMember).toHaveBeenCalledWith('workspace-1', group.group_id, { uid: workspaceMember.uid });
     expect(within(modal).getAllByTestId(/^group-member-row-/)).toHaveLength(limit);
@@ -520,7 +520,7 @@ describe('MembersPanel workspace group parity', () => {
     fireEvent.change(input, { target: { value: emails.join(', ') } });
     fireEvent.click(button);
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(message));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
     expect(mockInviteMembers).toHaveBeenCalledTimes(1);
     expect(mockInviteMembers).toHaveBeenNthCalledWith(1, 'workspace-1', emails);
     expect(input.value).toBe(emails.join(', '));

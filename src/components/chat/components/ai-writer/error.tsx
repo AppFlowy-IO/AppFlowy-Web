@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@/utils/errors';
 import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
@@ -34,7 +35,7 @@ export function Error() {
         ) : error?.code === ERROR_CODE_NO_LIMIT && isOfficialHosted ? (
           t('chat.writer.errors.responseLimit')
         ) : (
-          error?.message || t('chat.errors.responseUnavailable')
+          getErrorMessage(error, t('chat.errors.responseUnavailable'))
         )}
       </div>
     </div>

@@ -3,6 +3,7 @@ const mockGrantClient = {
     baseURL: '',
   },
   interceptors: {
+    response: { use: jest.fn() },
     request: {
       use: jest.fn(),
     },
@@ -19,6 +20,7 @@ jest.mock('axios', () => ({
   __esModule: true,
   default: {
     create: mockAxiosCreate,
+    isAxiosError: (error: unknown) => Boolean((error as { isAxiosError?: boolean })?.isAxiosError),
   },
   create: mockAxiosCreate,
 }));
@@ -69,6 +71,19 @@ describe('GoTrue login token completion', () => {
     mockGrantClient.post.mockReset();
     localStorage.clear();
     initGrantService('http://localhost/gotrue');
+  });
+
+  it('tags the endpoint without losing the Axios response used for session recovery', async () => {
+    const reject = mockGrantClient.interceptors.response.use.mock.calls.at(-1)?.[1];
+    const response = { status: 401, data: { code: 401, msg: 'private authentication diagnostic' } };
+    const authError = { isAxiosError: true, response, message: 'Request failed' };
+    const networkError = { isAxiosError: true, code: 'ERR_NETWORK', message: 'offline' };
+
+    await expect(reject(authError)).rejects.toBe(authError);
+    expect(authError).toMatchObject({ sourceDomain: 'gotrue', response });
+    await expect(reject(networkError)).rejects.toBe(networkError);
+    expect(networkError).toMatchObject({ sourceDomain: 'transport' });
+    expect(invalidToken).not.toHaveBeenCalled();
   });
 
   it('refreshes and saves the token after AppFlowy Cloud verifies the password login token', async () => {
@@ -184,7 +199,7 @@ describe('GoTrue login token completion', () => {
         message: 'Backend says no [request-id]',
       });
 
-      await expect(runAuthVariant(variant, initialToken)).rejects.toEqual(expectedVerifyError(variant));
+      await expect(runAuthVariant(variant, initialToken)).rejects.toMatchObject({ code: 401, sourceDomain: 'http', diagnosticMessage: 'Backend says no [request-id]', message: 'Sign in to continue.' });
       expect(refreshTokenCalls()).toHaveLength(0);
       expect(saveGoTrueAuth).not.toHaveBeenCalled();
     }
@@ -228,9 +243,9 @@ describe('GoTrue recovery session consistency', () => {
   it('does not invalidate an existing session when password recovery fails', async () => {
     mockGrantClient.post.mockRejectedValueOnce(new Error('Recovery service unavailable'));
 
-    await expect(forgotPassword({ email: 'admin@example.com' })).rejects.toEqual({
-      code: -1,
-      message: 'Recovery service unavailable',
+    await expect(forgotPassword({ email: 'admin@example.com' })).rejects.toMatchObject({
+      code: -1, sourceDomain: 'client', diagnosticMessage: 'Recovery service unavailable',
+      message: 'Error -1: Something went wrong. Contact support if this keeps happening.',
     });
     expect(invalidToken).not.toHaveBeenCalled();
   });
@@ -242,9 +257,9 @@ describe('GoTrue recovery session consistency', () => {
       response: { status: 503, data: { msg: 'Server unavailable' } },
     });
 
-    await expect(changePassword({ password: 'new-password' })).rejects.toEqual({
-      code: -1,
-      message: 'Server unavailable',
+    await expect(changePassword({ password: 'new-password' })).rejects.toMatchObject({
+      code: 503, httpStatus: 503, sourceDomain: 'gotrue', diagnosticMessage: 'Server unavailable',
+      message: "AppFlowy isn't available right now. Try again later.",
     });
     expect(invalidToken).not.toHaveBeenCalled();
   });
@@ -256,9 +271,9 @@ describe('GoTrue recovery session consistency', () => {
       response: { status: 401, data: { msg: 'Unauthorized' } },
     });
 
-    await expect(changePassword({ password: 'new-password' })).rejects.toEqual({
-      code: -1,
-      message: 'Unauthorized',
+    await expect(changePassword({ password: 'new-password' })).rejects.toMatchObject({
+      code: 401, httpStatus: 401, sourceDomain: 'gotrue', diagnosticMessage: 'Unauthorized',
+      message: 'Sign in to continue.',
     });
     expect(invalidToken).toHaveBeenCalledTimes(1);
   });
@@ -333,17 +348,6 @@ function queueRefreshResponse(token: ReturnType<typeof createToken>) {
 
 function refreshTokenCalls() {
   return mockGrantClient.post.mock.calls.filter(([url]) => url === '/token?grant_type=refresh_token');
-}
-
-function expectedVerifyError(variant: AuthVariant) {
-  switch (variant) {
-    case 'password':
-      return { code: 401, message: 'Backend says no' };
-    case 'oauth':
-      return { code: 401, message: 'Verify token failed' };
-    case 'otp':
-      return { code: 401, message: 'Failed to create user account' };
-  }
 }
 
 function runAuthVariant(variant: AuthVariant, token: ReturnType<typeof createToken>) {

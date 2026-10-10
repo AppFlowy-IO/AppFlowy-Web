@@ -217,9 +217,9 @@ export function PlanPanel({ workspaceId }: { workspaceId: string }) {
         {usage ? renderUsage(usage) : usageStatus === 'error' ? (
           <div data-testid='plan-usage-error'>
             <SettingsPanelError
-              error={{ message: t('settings.planPage.planUsage.usageUnavailable', {
+              message={t('settings.planPage.planUsage.usageUnavailable', {
                 defaultValue: 'Usage is temporarily unavailable.',
-              }) }}
+              })}
               onRetry={() => void reload()}
             />
           </div>

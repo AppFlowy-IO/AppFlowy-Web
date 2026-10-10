@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@/utils/errors';
 import { Dialog, InputBase } from '@mui/material';
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -33,11 +34,6 @@ function getFallbackAIChatParent(outline: View[] | undefined) {
   return outline.find(isSpaceView) || outline[0];
 }
 
-function getErrorMessage(error: unknown) {
-  if (error instanceof Error) return error.message;
-  if (typeof error === 'string') return error;
-  return 'Something went wrong';
-}
 
 export function Search() {
   const [open, setOpen] = useState<boolean>(false);
