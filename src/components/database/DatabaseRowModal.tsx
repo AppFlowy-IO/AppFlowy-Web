@@ -173,7 +173,7 @@ function DatabaseRowModal({
                       <MoreIcon className='h-5 w-5' />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent className='w-fit min-w-fit'>
+                  <DropdownMenuContent align='end' className='row-peek-menu w-60 rounded-xl'>
                     <DropdownMenuGroup>
                       <DropdownMenuItem
                         data-testid='row-detail-duplicate'

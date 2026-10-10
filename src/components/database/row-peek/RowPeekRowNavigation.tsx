@@ -7,7 +7,8 @@ import type { Row } from '@/application/database-yjs/selector';
 import { ReactComponent as DownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as UpIcon } from '@/assets/icons/alt_arrow_up.svg';
 import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipShortcut, TooltipTrigger } from '@/components/ui/tooltip';
+import { getModifier } from '@/utils/hotkeys';
 
 import { hasRowPeekOverlay } from './RowPeekNavigation';
 
@@ -55,7 +56,9 @@ function RowNavigation({ rowId, rows }: { rowId: string; rows: Row[] | undefined
     if (!navigate) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing || !(event.metaKey || event.ctrlKey) || !event.shiftKey) return;
-      const target = event.key.toLowerCase() === 'p' ? previous : event.key.toLowerCase() === 'n' ? next : undefined;
+      const key = event.key.toLowerCase();
+      // Match Desktop/Figma; retain the original Web shortcuts as aliases.
+      const target = key === 'k' || key === 'p' ? previous : key === 'j' || key === 'n' ? next : undefined;
 
       if (!target || hasRowPeekOverlay(toolbar.current)) return;
       event.preventDefault();
@@ -74,9 +77,9 @@ function RowNavigation({ rowId, rows }: { rowId: string; rows: Row[] | undefined
   return (
     <div ref={toolbar} className='flex items-center gap-1'>
       {[
-        { id: previous, label: t('grid.rowPage.previousRow'), Icon: UpIcon, testId: 'row-peek-previous' },
-        { id: next, label: t('grid.rowPage.nextRow'), Icon: DownIcon, testId: 'row-peek-next' },
-      ].map(({ id, label, Icon, testId }) => (
+        { id: previous, label: t('grid.rowPage.previousRow'), Icon: UpIcon, testId: 'row-peek-previous', key: 'K' },
+        { id: next, label: t('grid.rowPage.nextRow'), Icon: DownIcon, testId: 'row-peek-next', key: 'J' },
+      ].map(({ id, label, Icon, testId, key }) => (
         <Tooltip key={testId}>
           <TooltipTrigger asChild>
             <Button
@@ -84,6 +87,7 @@ function RowNavigation({ rowId, rows }: { rowId: string; rows: Row[] | undefined
               size='icon'
               className='row-peek-icon-button'
               aria-label={label}
+              aria-keyshortcuts={`Control+Shift+${key} Meta+Shift+${key}`}
               data-testid={testId}
               disabled={!id}
               onClick={() => id && navigate(id)}
@@ -91,7 +95,12 @@ function RowNavigation({ rowId, rows }: { rowId: string; rows: Row[] | undefined
               <Icon className='h-5 w-5' />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>{label}</TooltipContent>
+          <TooltipContent className='rounded-lg'>
+            {label}
+            <TooltipShortcut className='text-text-tertiary'>
+              {getModifier()} + Shift + {key}
+            </TooltipShortcut>
+          </TooltipContent>
         </Tooltip>
       ))}
     </div>

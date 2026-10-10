@@ -2023,6 +2023,8 @@
       "hideHiddenFields_many": "Hide {{count}} hidden fields",
       "hideHiddenFields_other": "Hide {{count}} hidden fields",
       "openAsFullPage": "Open as full page",
+      "openAsSidePeekPanel": "Open as side peek",
+      "openAsCenterPeekPanel": "Open as center peek",
       "moreRowActions": "More row actions",
       "sidePeek": "Side peek",
       "centerPeek": "Center peek",
@@ -3802,6 +3804,7 @@
     "anonymous": "Anonymous"
   },
   "rowComment": {
+    "commentPlaceholder": "Comment or mention with @ …",
     "comments": "Comments",
     "addComment": "Add a comment...",
     "noComments": "No comments yet",

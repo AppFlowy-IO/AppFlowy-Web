@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as ArrowLeftIcon } from '@/assets/icons/arrow_left.svg';
 import { ReactComponent as CenterPeekIcon } from '@/assets/icons/center_peek.svg';
-import { ReactComponent as CheckIcon } from '@/assets/icons/check.svg';
+import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
 import { ReactComponent as PromoteIcon } from '@/assets/icons/database_fullscreen.svg';
 import { ReactComponent as CloseIcon } from '@/assets/icons/double_arrow_right.svg';
 import { ReactComponent as FullPageIcon } from '@/assets/icons/full_page.svg';
@@ -72,24 +72,31 @@ export function RowPeekHeader({
           <PromoteIcon className='h-5 w-5' />
         </Button>
       </TooltipTrigger>
-      <TooltipContent>{t('grid.rowPage.openAsFullPage')}</TooltipContent>
+      <TooltipContent className='rounded-lg'>{t('grid.rowPage.openAsFullPage')}</TooltipContent>
     </Tooltip>
   ) : null;
   const modeMenu = (
     <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant='ghost'
-          size='icon'
-          className='row-peek-icon-button'
-          data-testid='row-peek-mode-menu'
-          aria-label={t('grid.rowPage.switchPeekMode')}
-        >
-          {side ? <SidePeekIcon className='h-5 w-5' /> : <CenterPeekIcon className='h-5 w-5' />}
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align='start' className='w-80 max-w-[calc(100vw-16px)] rounded-xl'>
-        <DropdownMenuLabel className='text-xs font-medium leading-[18px] tracking-[0.1px] text-text-tertiary'>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant='ghost'
+              size='icon'
+              className='row-peek-icon-button'
+              data-testid='row-peek-mode-menu'
+              aria-label={t('grid.rowPage.switchPeekMode')}
+            >
+              {side ? <SidePeekIcon className='h-5 w-5' /> : <CenterPeekIcon className='h-5 w-5' />}
+            </Button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent className='rounded-lg' onEscapeKeyDown={onClose}>
+          {t('grid.rowPage.switchPeekMode')}
+        </TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent align='start' className='row-peek-menu w-[360px] max-w-[calc(100vw-16px)] rounded-xl'>
+        <DropdownMenuLabel className='min-h-0 py-1.5 text-xs font-medium leading-[18px] tracking-[0.1px] text-text-tertiary'>
           {t('grid.rowPage.openPageIn')}
         </DropdownMenuLabel>
         <DropdownMenuItem disabled={!canShowSide} data-testid='row-peek-mode-side' onSelect={() => onModeChange('side')}>
@@ -135,7 +142,7 @@ export function RowPeekHeader({
                 {nested ? <ArrowLeftIcon className='h-5 w-5' /> : <CloseIcon className='h-5 w-5' />}
               </Button>
             </TooltipTrigger>
-            <TooltipContent>{t('button.close')}</TooltipContent>
+            <TooltipContent className='rounded-lg'>{t('button.close')}</TooltipContent>
           </Tooltip>
         ) : null}
         <div className='row-peek-optional-actions'>

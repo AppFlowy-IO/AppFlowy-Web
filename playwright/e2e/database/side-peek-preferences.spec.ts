@@ -59,11 +59,11 @@ test('adjacent-row shortcuts start each row in side peek', async ({ page, reques
   await openRowDetailByRowId(page, first);
   await page.getByTestId('row-title-input').fill('First row');
   await chooseMode(page, 'center');
-  await page.keyboard.press('ControlOrMeta+Shift+N');
+  await page.keyboard.press('ControlOrMeta+Shift+J');
   await expect(page.getByTestId('row-title-input')).toHaveText('Second row');
   await expect(page.getByTestId('row-detail')).toHaveAttribute('data-peek-mode', 'side');
   await chooseMode(page, 'center');
-  await page.keyboard.press('ControlOrMeta+Shift+P');
+  await page.keyboard.press('ControlOrMeta+Shift+K');
   await expect(page.getByTestId('row-title-input')).toHaveText('First row');
   await expect(page.getByTestId('row-detail')).toHaveAttribute('data-peek-mode', 'side');
   expect(await storedMode(page, first)).toBeUndefined();

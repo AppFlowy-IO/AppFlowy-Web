@@ -94,14 +94,14 @@ function DocumentActions({
 
   return (
     <>
-      {documentId ? <Users viewId={documentId} maxVisibleUsers={3} /> : null}
+      {documentId ? <Users viewId={documentId} maxVisibleUsers={3} className='row-peek-collaborators' /> : null}
       {/* Access is inherited from the database; the copied link opens this row. */}
       <ShareButton
         viewId={databasePageId}
         hidePublish
         hideExport
         shareUrl={shareUrl}
-        className='row-peek-share mx-0 ml-2 h-8'
+        className='row-peek-share mx-0 ml-2 h-8 rounded-[6px] font-medium'
       />
       {children}
       {databaseId && documentId && row && fieldId ? (

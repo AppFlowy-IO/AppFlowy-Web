@@ -38,12 +38,12 @@ function ViewCoverActions(
         <div
           ref={ref}
           className={cn(
-            `absolute bottom-4 right-0 items-center space-x-2 p-2`,
+            `view-cover-actions absolute bottom-4 right-0 items-center space-x-2 p-2`,
             show ? 'flex' : 'opacity-0',
             fullWidth && 'pr-6'
           )}
         >
-          <div className={'flex items-center space-x-2'}>
+          <div className={'view-cover-action-buttons flex items-center space-x-2'}>
             <CoverPopover
               onUpdateCover={onUpdateCover}
               open={showPopover}
@@ -68,6 +68,7 @@ function ViewCoverActions(
                     'bg-surface-primary text-text-primary hover:bg-surface-primary-hover hover:text-icon-error-thick'
                   }
                   size={'icon'}
+                  aria-label={t('document.plugins.cover.removeCover')}
                   onClick={(e) => {
                     e.stopPropagation();
                     onRemove();

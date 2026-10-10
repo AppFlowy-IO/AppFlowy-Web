@@ -107,7 +107,7 @@ function GridVirtualColumn({
       />
 
       {showActions && (
-        <div className={'absolute right-2 top-1.5 z-10 min-w-0 transform '}>
+        <div className={'absolute right-2 top-1/2 z-10 min-w-0 -translate-y-1/2'}>
           <OpenAction rowId={rowData.rowId!} />
         </div>
       )}

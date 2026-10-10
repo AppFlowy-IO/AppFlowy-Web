@@ -38,6 +38,25 @@
   outline-offset: 2px;
 }
 
+#body .row-peek .row-peek-icon-button > svg {
+  width: 20px;
+  height: 20px;
+}
+
+#body .row-peek .row-peek-collaborators > * {
+  margin: 0;
+}
+
+#body .row-peek .row-peek-collaborators > button + button {
+  margin-left: -12px;
+}
+
+#body .row-peek .row-peek-collaborators > .collaborators-overflow {
+  order: -1;
+  margin-right: -12px;
+  z-index: 4;
+}
+
 #body .row-peek .row-peek-toolbar-divider {
   flex-shrink: 0;
   width: 1px;
@@ -49,7 +68,13 @@
 #body .row-peek .row-peek-optional-actions {
   display: flex;
   align-items: center;
+  gap: 4px;
   transition: opacity 150ms ease-in-out;
+}
+
+/* Menus are portaled outside the panel, so they carry their own scope. */
+#body .row-peek-menu [data-slot='dropdown-menu-item'] {
+  border-radius: 6px;
 }
 
 /* Keep the desktop hover reveal reachable by keyboard and touch. A portaled
@@ -94,6 +119,7 @@
 
 #body .row-peek .row-page-content {
   width: 100%;
+  gap: 12px;
 }
 
 #body .row-peek .row-title-content {
@@ -249,6 +275,7 @@
   max-width: 160px;
   min-height: 32px;
   padding: 6px 4px;
+  border-radius: 6px;
 }
 
 #body .row-peek .row-property > .property-label + div {
@@ -269,6 +296,99 @@
 
 #body .row-peek .row-page-body {
   gap: 20px;
+}
+
+/* The empty comment prompt is inline in Figma. Keep the full thread and
+   expanded editor styles for composing, attachments and existing replies. */
+#body .row-peek .row-comments [data-empty='true'] {
+  gap: 8px;
+}
+
+#body .row-peek .row-comments [data-empty='true'] > h3 {
+  padding-left: 6px;
+}
+
+#body .row-peek .row-comments [data-empty='true'] .row-comment-root-composer {
+  padding: 8px 0 8px 6px;
+  gap: 8px;
+}
+
+#body .row-peek .row-comments [data-empty='true'] .row-comment-avatar {
+  width: 20px;
+  margin: 0;
+}
+
+#body .row-peek .row-comments [data-empty='true'] .row-comment-avatar-image {
+  padding: 0;
+}
+
+#body .row-peek .row-comments [data-empty='true'] [data-slot='avatar'] {
+  height: 20px;
+  font-size: 10px;
+}
+
+#body .row-peek .row-comments [data-empty='true'] .comment-composer-placeholder {
+  height: 20px;
+  border: 0;
+  padding: 0;
+}
+
+#body .row-peek .comment-composer-placeholder:focus-visible {
+  outline: 2px solid var(--border-theme-thick);
+  outline-offset: 2px;
+}
+
+#body .row-peek .view-cover-actions {
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  padding: 4px;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 60%);
+  backdrop-filter: blur(4px);
+  box-shadow: 0 2px 16px rgb(0 0 0 / 12%);
+}
+
+#body .row-peek .view-cover-actions:focus-within {
+  opacity: 1;
+}
+
+#body .row-peek .view-cover-action-buttons {
+  gap: 8px;
+}
+
+#body .row-peek .view-cover-action-buttons > button {
+  height: 28px;
+  margin: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: white;
+}
+
+#body .row-peek .view-cover-action-buttons > button:hover {
+  background: rgb(255 255 255 / 15%);
+}
+
+#body .row-peek .view-cover-action-buttons > button:first-child {
+  position: relative;
+  padding: 4px 6px;
+  font-weight: 500;
+}
+
+#body .row-peek .view-cover-action-buttons > button:first-child::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  right: -4px;
+  width: 1px;
+  height: 16px;
+  background: rgb(255 255 255 / 30%);
+}
+
+@media (hover: none) {
+  #body .row-peek .view-cover-actions {
+    opacity: 1;
+  }
 }
 
 #body .row-peek .appflowy-scroll-container {

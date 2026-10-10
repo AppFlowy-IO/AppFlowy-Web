@@ -9,15 +9,18 @@ interface CommentListOptions {
   includeResolved?: boolean;
 }
 
-const RowCommentListInner = memo(function RowCommentListInner({
-  includeResolved = false,
-}: CommentListOptions) {
+const RowCommentListInner = memo(function RowCommentListInner({ includeResolved = false }: CommentListOptions) {
   const { t } = useTranslation();
   const { comments, openComments, loading } = useRowCommentData();
   const visibleComments = includeResolved ? comments : openComments;
 
   return (
-    <div data-testid={'row-comment-section'} className={'flex flex-col gap-3'} aria-live={'polite'}>
+    <div
+      data-testid={'row-comment-section'}
+      data-empty={!loading && visibleComments.length === 0}
+      className={'flex flex-col gap-3'}
+      aria-live={'polite'}
+    >
       {/* Header */}
       <h3 className={'text-sm font-medium text-text-tertiary'}>{t('rowComment.comments')}</h3>
 
