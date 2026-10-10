@@ -129,6 +129,7 @@ export function Title({
 
   const actions = !readOnly ? (
     <AddIconCover
+      variant={bannerActions ? 'peek' : 'default'}
       iconTabs={['emoji']}
       defaultIconTab={'emoji'}
       visible={!!headerSlot || isHover}

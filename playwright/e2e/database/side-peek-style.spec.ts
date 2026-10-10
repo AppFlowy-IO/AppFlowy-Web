@@ -55,6 +55,27 @@ test('matches Figma peek typography, icon placement and toolbar reveal across mo
   await detail.getByTestId('row-peek-mode-menu').click();
   await page.getByTestId('row-peek-mode-center').click();
   await expect(detail.locator('.row-banner')).toHaveAttribute('data-actions-in-header', 'true');
+  const bannerActions = detail.locator('.row-peek-banner-actions');
+
+  await bannerActions.hover();
+  await expect(bannerActions.getByRole('button')).toHaveText(['Add cover', 'Add icon']);
+  const addIcon = bannerActions.getByTestId('add-icon-button');
+
+  await expect(addIcon).toHaveCSS('font-size', '14px');
+  await expect(addIcon).toHaveCSS('line-height', '20px');
+  await expect(addIcon).toHaveCSS('font-weight', '500');
+  await expect(addIcon).toHaveCSS('height', '28px');
+  await expect(addIcon.locator('svg')).toHaveCSS('width', '20px');
+  // Desktop docks banner actions at an 800px dialog width, independently of
+  // how much room is left beside Share, collaborators and navigation.
+  await page.setViewportSize({ width: 1130, height: 900 });
+  await expect.poll(async () => (await detail.boundingBox())!.width).toBeLessThan(800);
+  await expect.soft(detail.locator('.row-banner')).toHaveAttribute('data-actions-in-header', 'false', { timeout: 1000 });
+  await page.setViewportSize({ width: 1160, height: 900 });
+  await expect.poll(async () => (await detail.boundingBox())!.width).toBeGreaterThanOrEqual(800);
+  await expect(detail.locator('.row-banner')).toHaveAttribute('data-actions-in-header', 'true');
+  await expect(title).toHaveText('Plan the next release');
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.screenshot({ path: testInfo.outputPath('center-peek-default.png'), animations: 'disabled' });
   await detail.getByTestId('row-peek-mode-menu').click();
   await page.getByTestId('row-peek-mode-side').click();
@@ -65,6 +86,10 @@ test('matches Figma peek typography, icon placement and toolbar reveal across mo
 
   await expect(icon).toHaveCSS('font-size', '48px');
   await expect(icon).toHaveCSS('width', '48px');
+  await expect.soft(icon).toHaveCSS('border-radius', '12px', { timeout: 1000 });
+  await expect
+    .poll(async () => (await icon.boundingBox())!.x - (await detail.boundingBox())!.x)
+    .toBe(40);
   await expect
     .poll(async () => {
       const [image, heading] = await Promise.all([icon.boundingBox(), title.boundingBox()]);
@@ -75,6 +100,9 @@ test('matches Figma peek typography, icon placement and toolbar reveal across mo
   await setGalleryRowMetaDirect(page, rowId, { cover: { data: '1' } });
   await expect(detail.locator('.row-header-cover > div')).toHaveCSS('height', '180px');
   await expect(detail.locator('.row-header-cover > div')).toHaveCSS('border-radius', '12px');
+  await expect
+    .poll(async () => (await detail.locator('.row-header-cover > div').boundingBox())!.x - (await detail.boundingBox())!.x)
+    .toBe(8);
   await expect(detail.locator('.row-properties-divider')).toBeVisible();
   await close.hover();
   await page.screenshot({ path: testInfo.outputPath('side-peek-desktop-style.png'), animations: 'disabled' });
@@ -92,6 +120,13 @@ test('matches Figma peek typography, icon placement and toolbar reveal across mo
   await expect(detail.getByTestId('row-peek-previous')).toBeVisible();
   await expect(detail.getByTestId('row-peek-next')).toBeVisible();
   await expect(detail.locator('.row-header-cover > div')).toHaveCSS('height', '280px');
+  await expect.soft(icon).toHaveCSS('font-size', '60px', { timeout: 1000 });
+  await expect(icon).toHaveCSS('width', '88px');
+  await expect.soft(icon).toHaveCSS('border-radius', '12px', { timeout: 1000 });
+  expect.soft((await icon.boundingBox())!.x - (await detail.boundingBox())!.x).toBe(44);
+  expect
+    .soft((await detail.locator('.row-header-cover > div').boundingBox())!.x - (await detail.boundingBox())!.x)
+    .toBe(12);
   await expect
     .poll(async () => {
       const [panel, heading] = await Promise.all([detail.boundingBox(), title.boundingBox()]);

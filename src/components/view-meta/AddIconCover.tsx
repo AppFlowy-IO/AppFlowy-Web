@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { ViewIconType } from '@/application/types';
 import { ReactComponent as AddIcon } from '@/assets/icons/emoji.svg';
 import { ReactComponent as AddCover } from '@/assets/icons/image.svg';
+import { ReactComponent as SmileIcon } from '@/assets/icons/smile.svg';
 import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
 import { cn } from '@/lib/utils';
 
@@ -18,6 +19,7 @@ function AddIconCover({
   iconTabs,
   defaultIconTab,
   contentClassName,
+  variant = 'default',
 }: {
   visible: boolean;
   hasIcon: boolean;
@@ -29,8 +31,14 @@ function AddIconCover({
   iconTabs?: ['emoji' | 'icon' | 'upload'];
   defaultIconTab?: 'emoji' | 'icon' | 'upload';
   contentClassName?: string;
+  variant?: 'default' | 'peek';
 }) {
   const { t } = useTranslation();
+  const addCover = !hasCover ? (
+    <Button size='small' color='inherit' onClick={onAddCover} startIcon={<AddCover />}>
+      {t('document.plugins.cover.addCover')}
+    </Button>
+  ) : null;
 
   return (
     <div
@@ -40,9 +48,11 @@ function AddIconCover({
       }}
       className={cn(
         'flex h-full min-w-0 max-w-full items-end justify-start gap-2 px-24 max-sm:hidden max-sm:px-6',
+        variant === 'peek' && 'row-peek-banner-controls',
         contentClassName
       )}
     >
+      {variant === 'peek' ? addCover : null}
       {!hasIcon && (
         <CustomIconPopover
           tabs={iconTabs}
@@ -67,16 +77,17 @@ function AddIconCover({
           }}
           onUploadFile={onUploadFile}
         >
-          <Button data-testid='add-icon-button' color='inherit' size='small' startIcon={<AddIcon />}>
+          <Button
+            data-testid='add-icon-button'
+            color='inherit'
+            size='small'
+            startIcon={variant === 'peek' ? <SmileIcon /> : <AddIcon />}
+          >
             {t('document.plugins.cover.addIcon')}
           </Button>
         </CustomIconPopover>
       )}
-      {!hasCover && (
-        <Button size='small' color='inherit' onClick={onAddCover} startIcon={<AddCover />}>
-          {t('document.plugins.cover.addCover')}
-        </Button>
-      )}
+      {variant === 'default' ? addCover : null}
     </div>
   );
 }

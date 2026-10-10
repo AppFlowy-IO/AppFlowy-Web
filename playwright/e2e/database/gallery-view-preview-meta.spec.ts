@@ -156,7 +156,7 @@ test.describe('Database Gallery previews and row metadata (Flutter desktop parit
 
     await expect(rowDetail.locator('.row-header-cover img')).toHaveCount(0);
     await rowDetail.getByTestId('row-title-input').hover();
-    const addCover = rowDetail.getByRole('button', { name: 'Add Cover', exact: true });
+    const addCover = rowDetail.getByRole('button', { name: 'Add cover', exact: true });
 
     await expect(addCover).toBeVisible();
     await addCover.click();

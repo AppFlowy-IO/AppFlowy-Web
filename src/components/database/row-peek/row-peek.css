@@ -113,6 +113,24 @@
   padding-top: 0;
 }
 
+#body .row-peek .row-peek-banner-controls .MuiButton-root {
+  min-width: 76px;
+  height: 28px;
+  padding: 4px 8px;
+  gap: 6px;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+#body .row-peek .row-peek-banner-controls .MuiButton-startIcon {
+  margin: 0;
+  color: var(--icon-primary);
+}
+
 @media (hover: hover) and (pointer: fine) {
   #body .row-peek-banner-actions > div {
     opacity: 0;
@@ -139,12 +157,12 @@
 #body .row-peek .row-banner .view-icon {
   position: absolute;
   top: 40px;
-  left: var(--row-page-inset, 96px);
+  left: max(0px, calc(var(--row-page-inset, 96px) - 20px));
   width: 88px;
   height: 88px;
-  border-radius: 6px;
+  border-radius: 12px;
   padding: 0;
-  font-size: 64px;
+  font-size: 60px;
   line-height: 1;
 }
 
@@ -161,7 +179,7 @@
 }
 
 #body .row-peek .row-header-cover {
-  padding: 0 8px;
+  padding: 0 12px;
 }
 
 /* The side banner has its own compact geometry. Center and full-page
@@ -189,6 +207,7 @@
 
 #body .row-peek[data-peek-mode='side'] .row-banner .view-icon {
   top: 56px;
+  left: var(--row-page-inset, 40px);
   width: 48px;
   height: 48px;
   font-size: 48px;
@@ -201,6 +220,10 @@
 #body .row-peek[data-peek-mode='side'] .row-header-cover > div {
   height: 180px !important;
   max-height: 180px !important;
+}
+
+#body .row-peek[data-peek-mode='side'] .row-header-cover {
+  padding: 0 8px;
 }
 
 #body .row-peek .row-properties {

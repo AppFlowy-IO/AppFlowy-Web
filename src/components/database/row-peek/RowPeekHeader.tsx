@@ -119,7 +119,7 @@ export function RowPeekHeader({
   );
 
   return (
-    <div data-testid='row-detail-header' className='row-peek-header'>
+    <div ref={bannerActions?.headerRef} data-testid='row-detail-header' className='row-peek-header'>
       <div className='row-peek-left-cluster flex min-w-0 flex-1 items-center gap-1' data-menu-open={menuOpen}>
         {side || nested ? (
           <Tooltip>
@@ -149,7 +149,7 @@ export function RowPeekHeader({
           ) : null}
           {side ? <RowPeekRowNavigation rowId={rowId} /> : null}
         </div>
-        {!side ? <div ref={bannerActions?.headerRef} className='row-peek-banner-actions h-8 min-w-0 flex-1' /> : null}
+        {!side ? <div ref={bannerActions?.slotRef} className='row-peek-banner-actions h-8 min-w-0 flex-1' /> : null}
       </div>
       <div className='row-peek-right-cluster flex min-w-0 items-center gap-1'>
         <RowPeekDocumentActions rowId={rowId} prepare={prepare} shareUrl={shareUrl}>

@@ -355,7 +355,7 @@ async function addTemplateEmoji(page: Page, editor: Locator): Promise<string> {
 
 async function addTemplateCover(editor: Locator): Promise<void> {
   await editor.getByTestId('row-title-input').hover();
-  const addCover = editor.getByRole('button', { name: 'Add Cover', exact: true });
+  const addCover = editor.getByRole('button', { name: 'Add cover', exact: true });
 
   await expect(addCover).toBeVisible();
   await addCover.click();
