@@ -11,6 +11,7 @@ import { isSameUserUid } from '@/application/user-uid';
 import { notify } from '@/components/_shared/notify';
 import { useLoadMentionableUsers, useGetSubscriptions, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { useIsOfficialHosted } from '@/components/app/hooks/useServerInfo';
+import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
 import { CopyLink } from '@/components/app/share/CopyLink';
 import { GeneralAccess } from '@/components/app/share/GeneralAccess';
 import { InviteGuest } from '@/components/app/share/InviteGuest';
@@ -18,12 +19,12 @@ import { PeopleWithAccess } from '@/components/app/share/PeopleWithAccess';
 import { ShareSectionType } from '@/components/app/share/shareSectionType';
 import { UpgradeBanner } from '@/components/app/share/UpgradeBanner';
 import { useCurrentUser } from '@/components/main/app.hooks';
-import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
 
 import type { ShareAccessRefreshResult } from './useShareAccessDetails';
 
 function SharePanel({
   viewId,
+  shareUrl,
   people,
   groups,
   editableGroupIds,
@@ -39,6 +40,7 @@ function SharePanel({
   sectionType,
 }: {
   viewId: string;
+  shareUrl?: string;
   people: IPeopleWithAccessType[];
   groups: WorkspaceGroupViewPermission[];
   editableGroupIds: ReadonlySet<string>;
@@ -159,7 +161,7 @@ function SharePanel({
           sectionType={sectionType}
         />
         <GeneralAccess sectionType={sectionType} accessLevel={generalAccessLevel} />
-        <CopyLink />
+      <CopyLink url={shareUrl} />
       </div>
     </div>
   );

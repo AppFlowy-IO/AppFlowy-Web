@@ -5,7 +5,7 @@ import { Element, Transforms } from 'slate';
 import { ReactEditor, useReadOnly, useSlateStatic } from 'slate-react';
 
 import { getDatabaseLayoutFromBlockType } from '@/application/database-block';
-import { DatabaseContextState } from '@/application/database-yjs';
+import { DatabaseContextState, useDatabaseContextOptional } from '@/application/database-yjs';
 import { UIVariant, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { useEmbeddedVisibleViewIds } from '@/components/database/hooks';
 import {
@@ -55,6 +55,10 @@ function DatabaseBlockBody({ node, children, editor, forwardedRef, readOnly, ...
   const databaseId = typeof node.data?.database_id === 'string' ? node.data.database_id : undefined;
   const preferredLayout = getDatabaseLayoutFromBlockType(node.type);
   const context = useEditorContext();
+  const hostDatabase = useDatabaseContextOptional();
+  // The host peek shows this block's rows using the embedded database's permissions.
+  // A second peek would close the host and unmount this block with it.
+  const openRowInHostPeek = hostDatabase?.openRowInHostPeek;
   const workspaceId = context.workspaceId;
   const recoveryKey = parentViewId && databaseId ? `${parentViewId}:${databaseId}` : '';
   const [recoveredView, setRecoveredView] = useState<{ key: string; viewId: string } | null>(null);
@@ -363,6 +367,7 @@ function DatabaseBlockBody({ node, children, editor, forwardedRef, readOnly, ...
               loadView={loadView}
               navigateToView={navigateToView}
               onOpenRowPage={handleNavigateToRow}
+              openRowInHostPeek={openRowInHostPeek}
               loadViewMeta={loadViewMeta}
               databaseName={databaseName}
               visibleViewIds={visibleViewIds}
@@ -370,6 +375,12 @@ function DatabaseBlockBody({ node, children, editor, forwardedRef, readOnly, ...
               onViewAdded={onViewAdded}
               onRendered={handleRendered}
               onViewIdsChanged={handleViewIdsChanged}
+              permissionSource={{
+                sourceViewId: viewId,
+                sourceDatabaseId: databaseCollabId,
+                inheritedReadOnly: readOnly,
+                variant: context.variant,
+              }}
               databaseReadOnly={databasePermissions.readOnly}
               databaseCanWrite={databasePermissions.canWrite}
               databaseCanShare={databasePermissions.canShare}

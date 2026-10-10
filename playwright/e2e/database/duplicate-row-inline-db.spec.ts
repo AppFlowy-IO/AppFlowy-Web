@@ -3,15 +3,12 @@ import { generateRandomEmail, setupPageErrorHandling } from '../../support/test-
 import { signUpAndLoginWithPasswordViaUi } from '../../support/auth-flow-helpers';
 import {
   openRowDetail,
-  closeRowDetailWithEscape,
   duplicateRowFromDetail,
   getVisibleDataRowIds,
   openRowDetailByRowId,
 } from '../../support/row-detail-helpers';
 import { createDatabaseView, waitForGridReady } from '../../support/database-ui-helpers';
-import {
-  DatabaseGridSelectors,
-} from '../../support/selectors';
+import { DatabaseGridSelectors, RowDetailSelectors } from '../../support/selectors';
 
 /**
  * Count data rows in the main grid.
@@ -40,8 +37,7 @@ test.describe('Duplicate row with inline database', () => {
 
     // Open first row and expand to full page mode
     await openRowDetail(page, 0);
-    const dialogTitle = page.locator('.MuiDialogTitle-root');
-    await dialogTitle.locator('button').first().click({ force: true });
+    await RowDetailSelectors.openFullPageButton(page).click();
     await page.waitForTimeout(2000);
 
     // Now we're on a full page — find the visible editor
@@ -76,7 +72,8 @@ test.describe('Duplicate row with inline database', () => {
 
     await openRowDetail(page, 0);
     await duplicateRowFromDetail(page);
-    await closeRowDetailWithEscape(page);
+    // duplicateRowFromDetail auto-closes the row peek; ensure it's closed
+    await expect(RowDetailSelectors.modal(page)).toHaveCount(0, { timeout: 10000 });
 
     // Navigate back to grid if needed
     const gridVisible = await DatabaseGridSelectors.grid(page).isVisible().catch(() => false);
@@ -97,8 +94,7 @@ test.describe('Duplicate row with inline database', () => {
 
     // Open the duplicated row in full page mode to verify
     await openRowDetailByRowId(page, duplicatedRowId!);
-    const dialogTitle2 = page.locator('.MuiDialogTitle-root');
-    await dialogTitle2.locator('button').first().click({ force: true });
+    await RowDetailSelectors.openFullPageButton(page).click();
     await page.waitForTimeout(2000);
 
     // Wait for the server worker to duplicate the document and sync back.
@@ -117,8 +113,7 @@ test.describe('Duplicate row with inline database', () => {
       await page.waitForTimeout(3000);
       await waitForGridReady(page);
       await openRowDetailByRowId(page, duplicatedRowId!);
-      const dt = page.locator('.MuiDialogTitle-root');
-      await dt.locator('button').first().click({ force: true });
+      await RowDetailSelectors.openFullPageButton(page).click();
       await page.waitForTimeout(2000);
     }
     expect(foundContent).toBe(true);
@@ -151,8 +146,7 @@ test.describe('Duplicate row with inline database', () => {
 
     // Open the original row (index 0) in full page mode
     await openRowDetail(page, 0);
-    const dialogTitle3 = page.locator('.MuiDialogTitle-root');
-    await dialogTitle3.locator('button').first().click({ force: true });
+    await RowDetailSelectors.openFullPageButton(page).click();
     await page.waitForTimeout(2000);
 
     const origEditor = page.locator('[id^="editor-"]').first();

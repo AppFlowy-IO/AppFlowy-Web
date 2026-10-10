@@ -115,6 +115,7 @@ import {
   subscribeRollupCache,
 } from '@/application/database-yjs/rollup/cache';
 import { getInlineViewRowOrders, materializeVisibleRowOrders } from '@/application/database-yjs/row-order-visibility';
+import { usePublishRowOrders } from '@/application/database-yjs/row-orders-store';
 import { getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
 import { subscribeSharedYjsDeep } from '@/application/database-yjs/shared-yjs-observer';
 import { sortBy } from '@/application/database-yjs/sort';
@@ -2299,7 +2300,7 @@ function formulaConditionExternalReferences(
  * - Applying sorts and filters to row orders
  * - Observing data changes to trigger re-computation
  */
-export function useRowOrdersSelector() {
+export function useRowOrdersSelector({ publish = true }: { publish?: boolean } = {}) {
   const rows = useRowMap();
   const view = useDatabaseView();
   const rowOrders = view?.get(YjsDatabaseKey.row_orders);
@@ -2900,8 +2901,10 @@ export function useRowOrdersSelector() {
   useRelativeDateFilterRefresh(filters, fields, onConditionsChange);
 
   const liveConditionSignature = `${viewId ?? ''}:${getConditionSignature(sorts, filters, fields)}`;
+  const visibleRows = rowOrdersState.conditionSignature === liveConditionSignature ? rowOrdersState.rows : undefined;
 
-  return rowOrdersState.conditionSignature === liveConditionSignature ? rowOrdersState.rows : undefined;
+  usePublishRowOrders(visibleRows, publish);
+  return visibleRows;
 }
 
 export function useRowDataSelector(rowId: string) {

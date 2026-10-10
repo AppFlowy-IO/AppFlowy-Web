@@ -1,0 +1,433 @@
+/* Desktop references: RowPeekPanelHeader, RowBanner, RowPropertyList and
+   DatabasePluginWidgetBuilderSize.peekPanel. Scope these metrics to peeks;
+   full row pages and templates retain their existing layout. The #body scope
+   matches Tailwind's important selector so these metrics override utilities. */
+@keyframes database-side-peek-enter {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+#body .database-side-peek:not([hidden]) {
+  animation: database-side-peek-enter 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+#body .row-peek {
+  --row-page-inset: 64px;
+  background: var(--surface-primary);
+}
+
+#body .row-peek[data-peek-mode='side'] {
+  --row-page-inset: 40px;
+  box-shadow: inset 1px 0 var(--border-primary);
+}
+
+#body .row-peek[data-peek-mode='center'] .row-peek-header {
+  padding: 16px 20px 0 64px;
+}
+
+#body .row-peek .row-peek-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+  padding: 8px 16px;
+  gap: 8px;
+}
+
+#body .row-peek .row-peek-icon-button {
+  width: 32px;
+  height: 32px;
+  padding: 6px;
+  border-radius: 8px;
+}
+
+#body .row-peek .row-peek-icon-button:focus-visible {
+  outline: 2px solid var(--border-theme-thick);
+  outline-offset: 2px;
+}
+
+#body .row-peek .row-peek-icon-button > svg {
+  width: 20px;
+  height: 20px;
+}
+
+#body .row-peek .row-peek-collaborators > * {
+  margin: 0;
+}
+
+#body .row-peek .row-peek-collaborators > button + button {
+  margin-left: -12px;
+}
+
+#body .row-peek .row-peek-collaborators > .collaborators-overflow {
+  order: -1;
+  margin-right: -12px;
+  z-index: 4;
+}
+
+#body .row-peek .row-peek-toolbar-divider {
+  flex-shrink: 0;
+  width: 1px;
+  height: 20px;
+  margin: 0 8px;
+  background: var(--border-primary);
+}
+
+#body .row-peek .row-peek-optional-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: opacity 150ms ease-in-out;
+}
+
+/* Menus are portaled outside the panel, so they carry their own scope. */
+#body .row-peek-menu [data-slot='dropdown-menu-item'] {
+  border-radius: 6px;
+}
+
+/* Keep the desktop hover reveal reachable by keyboard and touch. A portaled
+   mode menu holds the controls visible while the pointer moves into it. */
+@media (hover: hover) and (pointer: fine) {
+  #body .row-peek[data-peek-mode='side'] .row-peek-optional-actions {
+    opacity: 0;
+  }
+
+  #body .row-peek[data-peek-mode='side'] .row-peek-left-cluster:hover .row-peek-optional-actions,
+  #body .row-peek[data-peek-mode='side'] .row-peek-left-cluster:focus-within .row-peek-optional-actions,
+  #body .row-peek[data-peek-mode='side'] .row-peek-left-cluster[data-menu-open='true'] .row-peek-optional-actions {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #body .database-side-peek:not([hidden]) {
+    animation: none;
+  }
+
+  #body .row-peek .row-peek-optional-actions {
+    transition: none;
+  }
+}
+
+#body .row-peek-resizer::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 4px;
+  width: 2px;
+}
+
+#body .row-peek-resizer:hover::after,
+#body .row-peek-resizer:focus-visible::after,
+#body .row-peek-resizer[data-dragging='true']::after {
+  background: var(--fill-theme-thick);
+}
+
+#body .row-peek .row-page-title {
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 40px;
+  letter-spacing: normal;
+}
+
+#body .row-peek .row-page-content {
+  width: 100%;
+  gap: 12px;
+}
+
+#body .row-peek .row-title-content {
+  min-width: 0;
+  padding: 8px 4px 0;
+}
+
+#body .row-peek .row-banner-toolbar {
+  height: 44px;
+}
+
+#body .row-peek .row-banner[data-actions-in-header='true'] .row-banner-toolbar {
+  height: 0;
+}
+
+#body .row-peek .row-banner[data-actions-in-header='true'] .row-title-content {
+  padding-top: 0;
+}
+
+#body .row-peek .row-peek-banner-controls .MuiButton-root {
+  min-width: 76px;
+  height: 28px;
+  padding: 4px 8px;
+  gap: 6px;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+#body .row-peek .row-peek-banner-controls .MuiButton-startIcon {
+  margin: 0;
+  color: var(--icon-primary);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  #body .row-peek-banner-actions > div {
+    opacity: 0;
+  }
+
+  #body .row-peek-banner-actions:hover > div,
+  #body .row-peek-banner-actions:focus-within > div {
+    opacity: 1;
+  }
+}
+
+#body .row-peek .row-banner[data-has-cover='true'] .row-banner-toolbar {
+  height: 36px;
+}
+
+#body .row-peek .row-banner[data-has-icon='true'][data-has-cover='false'] .row-banner-toolbar {
+  height: 164px;
+}
+
+#body .row-peek .row-banner[data-has-icon='true'][data-has-cover='true'] .row-banner-toolbar {
+  height: 44px;
+}
+
+#body .row-peek .row-banner .view-icon {
+  position: absolute;
+  top: 40px;
+  left: max(0px, calc(var(--row-page-inset, 96px) - 20px));
+  width: 88px;
+  height: 88px;
+  border-radius: 12px;
+  padding: 0;
+  font-size: 60px;
+  line-height: 1;
+}
+
+#body .row-peek .row-banner[data-has-cover='true'] .view-icon {
+  top: -44px;
+  z-index: 1;
+}
+
+#body .row-peek .row-header-cover > div {
+  height: 280px !important;
+  max-height: 280px !important;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+#body .row-peek .row-header-cover {
+  padding: 0 12px;
+}
+
+/* The side banner has its own compact geometry. Center and full-page
+   documents keep their larger cover and icon sizes. */
+#body .row-peek[data-peek-mode='side'] .row-banner-toolbar {
+  height: 48px;
+}
+
+#body .row-peek[data-peek-mode='side'] .row-banner[data-has-cover='true'] .row-banner-toolbar {
+  height: 36px;
+}
+
+#body .row-peek[data-peek-mode='side'] .row-banner[data-has-icon='true'][data-has-cover='false'] .row-banner-toolbar {
+  height: 112px;
+}
+
+#body .row-peek[data-peek-mode='side'] .row-banner[data-has-icon='true'][data-has-cover='true'] .row-banner-toolbar {
+  height: 24px;
+}
+
+#body .row-peek[data-peek-mode='side'] .row-banner[data-has-cover='false'] .row-banner-toolbar > div {
+  height: 48px;
+  padding-bottom: 4px;
+}
+
+#body .row-peek[data-peek-mode='side'] .row-banner .view-icon {
+  top: 56px;
+  left: var(--row-page-inset, 40px);
+  width: 48px;
+  height: 48px;
+  font-size: 48px;
+}
+
+#body .row-peek[data-peek-mode='side'] .row-banner[data-has-cover='true'] .view-icon {
+  top: -32px;
+}
+
+#body .row-peek[data-peek-mode='side'] .row-header-cover > div {
+  height: 180px !important;
+  max-height: 180px !important;
+}
+
+#body .row-peek[data-peek-mode='side'] .row-header-cover {
+  padding: 0 8px;
+}
+
+#body .row-peek .row-properties {
+  padding: 0 var(--row-page-inset, 96px) 0 max(8px, calc(var(--row-page-inset, 96px) - 26px));
+}
+
+#body .row-peek .row-property-draggable {
+  padding: 0 0 8px;
+}
+
+#body .row-peek .row-properties[data-read-only='true'] > .row-property {
+  padding-left: 24px;
+  margin-bottom: 8px;
+}
+
+#body .row-peek .row-property {
+  min-height: 32px;
+}
+
+#body .row-peek .property-label {
+  flex-shrink: 0;
+  width: 160px;
+  max-width: 160px;
+  min-height: 32px;
+  padding: 6px 4px;
+  border-radius: 6px;
+}
+
+#body .row-peek .row-property > .property-label + div {
+  min-width: 0;
+  min-height: 32px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+#body .row-peek .row-properties > button {
+  height: 32px;
+  margin-left: 24px;
+  margin-right: 0;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  font-weight: 400;
+}
+
+#body .row-peek .row-page-body {
+  gap: 20px;
+}
+
+/* The empty comment prompt is inline in Figma. Keep the full thread and
+   expanded editor styles for composing, attachments and existing replies. */
+#body .row-peek .row-comments [data-empty='true'] {
+  gap: 8px;
+}
+
+#body .row-peek .row-comments [data-empty='true'] > h3 {
+  padding-left: 6px;
+}
+
+#body .row-peek .row-comments [data-empty='true'] .row-comment-root-composer {
+  padding: 8px 0 8px 6px;
+  gap: 8px;
+}
+
+#body .row-peek .row-comments [data-empty='true'] .row-comment-avatar {
+  width: 20px;
+  margin: 0;
+}
+
+#body .row-peek .row-comments [data-empty='true'] .row-comment-avatar-image {
+  padding: 0;
+}
+
+#body .row-peek .row-comments [data-empty='true'] [data-slot='avatar'] {
+  height: 20px;
+  font-size: 10px;
+}
+
+#body .row-peek .row-comments [data-empty='true'] .comment-composer-placeholder {
+  height: 20px;
+  border: 0;
+  padding: 0;
+}
+
+#body .row-peek .comment-composer-placeholder:focus-visible {
+  outline: 2px solid var(--border-theme-thick);
+  outline-offset: 2px;
+}
+
+#body .row-peek .view-cover-actions {
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  padding: 4px;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 60%);
+  backdrop-filter: blur(4px);
+  box-shadow: 0 2px 16px rgb(0 0 0 / 12%);
+}
+
+#body .row-peek .view-cover-actions:focus-within {
+  opacity: 1;
+}
+
+#body .row-peek .view-cover-action-buttons {
+  gap: 8px;
+}
+
+#body .row-peek .view-cover-action-buttons > button {
+  height: 28px;
+  margin: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: white;
+}
+
+#body .row-peek .view-cover-action-buttons > button:hover {
+  background: rgb(255 255 255 / 15%);
+}
+
+#body .row-peek .view-cover-action-buttons > button:first-child {
+  position: relative;
+  padding: 4px 6px;
+  font-weight: 500;
+}
+
+#body .row-peek .view-cover-action-buttons > button:first-child::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  right: -4px;
+  width: 1px;
+  height: 16px;
+  background: rgb(255 255 255 / 30%);
+}
+
+@media (hover: none) {
+  #body .row-peek .view-cover-actions {
+    opacity: 1;
+  }
+}
+
+#body .row-peek .appflowy-scroll-container {
+  overscroll-behavior: contain;
+}
+
+@media (max-width: 639px) {
+  #body .row-peek {
+    --row-page-inset: 24px;
+  }
+
+  #body .row-peek .row-peek-header,
+  #body .row-peek[data-peek-mode='center'] .row-peek-header {
+    padding: 8px;
+  }
+
+  #body .row-peek .row-peek-right-cluster {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  #body .row-peek .row-peek-toolbar-divider {
+    margin: 0 4px;
+  }
+}

@@ -57,7 +57,7 @@ Given('a nested inline database in a database row page is open', async ({ page, 
   await expect(dataRows(parentGrid).first()).toBeVisible({ timeout: 30000 });
 
   await openRowDetail(page, 0);
-  await RowDetailSelectors.modalTitle(page).locator('button').first().click({ force: true });
+  await RowDetailSelectors.openFullPageButton(page).click();
 
   await expect
     .poll(() => currentViewIdFromUrl(page), {

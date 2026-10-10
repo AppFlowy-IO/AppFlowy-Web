@@ -189,7 +189,7 @@ export function CommentComposer({
       {collapsed ? (
         <button
           type='button'
-          className='h-8 w-full cursor-text rounded-lg border border-border-primary px-3 text-left text-sm text-text-tertiary'
+          className='comment-composer-placeholder h-8 w-full cursor-text rounded-lg border border-border-primary px-3 text-left text-sm text-text-tertiary'
           data-testid={testIds.collapsed}
           onClick={() => setFocused(true)}
         >

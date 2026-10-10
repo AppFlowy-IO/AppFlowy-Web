@@ -2023,7 +2023,18 @@
       "hideHiddenFields_many": "Hide {{count}} hidden fields",
       "hideHiddenFields_other": "Hide {{count}} hidden fields",
       "openAsFullPage": "Open as full page",
-      "moreRowActions": "More row actions"
+      "openAsSidePeekPanel": "Open as side peek",
+      "openAsCenterPeekPanel": "Open as center peek",
+      "moreRowActions": "More row actions",
+      "sidePeek": "Side peek",
+      "centerPeek": "Center peek",
+      "switchPeekMode": "Switch peek mode",
+      "openPageIn": "Open page in",
+      "fullPage": "Full page",
+      "newTab": "New tab",
+      "resizeSidePeek": "Resize side peek",
+      "previousRow": "Previous row",
+      "nextRow": "Next row"
     },
     "sort": {
       "ascending": "Ascending",
@@ -2544,7 +2555,7 @@
         "images": "Images",
         "clearAll": "Clear All",
         "abstract": "Abstract",
-        "addCover": "Add Cover",
+        "addCover": "Add cover",
         "addLocalImage": "Add local image",
         "invalidImageUrl": "Invalid image URL",
         "failedToAddImageToGallery": "Failed to add image to gallery",
@@ -3799,6 +3810,7 @@
     "anonymous": "Anonymous"
   },
   "rowComment": {
+    "commentPlaceholder": "Comment or mention with @ …",
     "comments": "Comments",
     "addComment": "Add a comment...",
     "noComments": "No comments yet",

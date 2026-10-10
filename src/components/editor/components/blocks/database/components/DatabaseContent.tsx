@@ -1,7 +1,7 @@
 import CircularProgress from '@mui/material/CircularProgress';
 import { useTranslation } from 'react-i18next';
 
-import { DatabaseContextState } from '@/application/database-yjs';
+import { DatabaseContextState, DatabaseRowPeekSource } from '@/application/database-yjs';
 import { getPublishedDatabaseRenderRowMap } from '@/application/publish-snapshot/database-yjs-render-bridge';
 import { LoadView, LoadViewMeta, UIVariant, YDoc } from '@/application/types';
 import { Database } from '@/components/database';
@@ -32,6 +32,7 @@ interface DatabaseContentProps {
   loadView?: LoadView;
   navigateToView?: (viewId: string, rowId?: string) => Promise<void>;
   onOpenRowPage: (rowId: string) => Promise<void>;
+  openRowInHostPeek?: DatabaseContextState['openRowInHostPeek'];
   loadViewMeta: LoadViewMeta;
   databaseName: string;
   visibleViewIds: string[];
@@ -39,6 +40,7 @@ interface DatabaseContentProps {
   onViewAdded?: (viewId: string) => void;
   onViewIdsChanged?: (viewIds: string[]) => void;
   context: DatabaseContextState;
+  permissionSource?: DatabaseRowPeekSource['permissionSource'];
   databaseReadOnly: boolean;
   databaseCanWrite: boolean;
   databaseCanShare: boolean;
@@ -62,6 +64,7 @@ export const DatabaseContent = ({
   loadView,
   navigateToView,
   onOpenRowPage,
+  openRowInHostPeek,
   loadViewMeta,
   databaseName,
   visibleViewIds,
@@ -69,6 +72,7 @@ export const DatabaseContent = ({
   onViewAdded,
   onViewIdsChanged,
   context,
+  permissionSource,
   databaseReadOnly,
   databaseCanWrite,
   databaseCanShare,
@@ -90,6 +94,7 @@ export const DatabaseContent = ({
       >
         <Database
           {...context}
+          embeddedPermissionSource={permissionSource}
           readOnly={databaseReadOnly}
           canWrite={databaseCanWrite}
           canShare={databaseCanShare}
@@ -102,6 +107,7 @@ export const DatabaseContent = ({
           loadView={loadView}
           navigateToView={navigateToView}
           onOpenRowPage={onOpenRowPage}
+          openRowInHostPeek={openRowInHostPeek}
           loadViewMeta={loadViewMeta}
           databaseName={databaseName}
           visibleViewIds={visibleViewIds}

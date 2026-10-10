@@ -41,6 +41,7 @@ import {
 import { notify } from '@/components/_shared/notify';
 import { findView } from '@/components/_shared/outline/utils';
 import { isDatabaseHistoryHotkey } from '@/components/database/hooks/useDatabaseRowHistoryHotkeys';
+import { useRowPeekNavigationGuard } from '@/components/database/row-peek/RowPeekNavigation';
 import { Leaf } from '@/components/editor/components/leaf/Leaf';
 import { useNotifyPersonMention } from '@/components/editor/components/panels/mention-panel/useNotifyPersonMention';
 import { usePanelContext } from '@/components/editor/components/panels/Panels.hooks';
@@ -52,7 +53,13 @@ import { isDevelopmentOrTestEnvironment } from '@/utils/runtime-config';
 
 import { attachCellMentionLedger, CellMentionLedger } from './cell-mention-ledger';
 import { RICH_TEXT_CELL_OVERLAY_ATTR, RichTextCellEditorControls } from './editor-ui';
-import { getCachedPageName, isPageNameLoading, isPageNameUnavailable, loadPageNames, setCachedPageName } from './page-name-cache';
+import {
+  getCachedPageName,
+  isPageNameLoading,
+  isPageNameUnavailable,
+  loadPageNames,
+  setCachedPageName,
+} from './page-name-cache';
 import { richTextToSlateValue, slateValueToRichText, toggleEquation, withRichTextCell } from './rich-text-slate';
 import RichTextCellContext from './RichTextCellContext';
 
@@ -575,6 +582,13 @@ function RichTextCellEditorInner({
       onExit?.();
     });
   }, [commit, onExit]);
+
+  useRowPeekNavigationGuard(async () => {
+    if (crashedRef.current) return false;
+    const saved = await commit();
+
+    return saved && !dirtyRef.current;
+  });
 
   // The listeners below are attached once and read the latest of these.
   const commitRef = useRef(commit);

@@ -8,7 +8,7 @@ import {
   openRowDetailByRowId,
 } from '../../support/row-detail-helpers';
 import { createDatabaseView, waitForGridReady } from '../../support/database-ui-helpers';
-import { DatabaseGridSelectors } from '../../support/selectors';
+import { DatabaseGridSelectors, RowDetailSelectors } from '../../support/selectors';
 
 test.describe('Duplicate row preserves document content', () => {
   test.beforeEach(async ({ page }) => {
@@ -33,8 +33,7 @@ test.describe('Duplicate row preserves document content', () => {
     // Full-page editors have a more stable Yjs connection than the dialog's
     // lazy sub-document, so content persists more reliably.
     await openRowDetail(page, 0);
-    const dialogTitle = page.locator('.MuiDialogTitle-root');
-    await dialogTitle.locator('button').first().click({ force: true }); // expand to full page
+    await RowDetailSelectors.openFullPageButton(page).click(); // expand to full page
     await page.waitForTimeout(3000);
 
     // Type content into the full-page editor
@@ -61,8 +60,8 @@ test.describe('Duplicate row preserves document content', () => {
 
     await openRowDetail(page, 0);
     await duplicateRowFromDetail(page);
-    // duplicateRowFromDetail auto-closes the dialog; ensure it's closed
-    await expect(page.locator('.MuiDialog-paper')).toHaveCount(0, { timeout: 10000 });
+    // duplicateRowFromDetail auto-closes the row peek; ensure it's closed
+    await expect(RowDetailSelectors.modal(page)).toHaveCount(0, { timeout: 10000 });
     await page.waitForTimeout(3000);
 
     // Verify 4 rows (3 default + 1 duplicate)
@@ -77,8 +76,7 @@ test.describe('Duplicate row preserves document content', () => {
     // provider creates a fresh connection on each attempt.  The dialog's
     // lazy sub-document loading can miss updates; full-page mode is reliable.
     await openRowDetailByRowId(page, duplicatedRowId!);
-    const dialogTitle2 = page.locator('.MuiDialogTitle-root');
-    await dialogTitle2.locator('button').first().click({ force: true });
+    await RowDetailSelectors.openFullPageButton(page).click();
     await page.waitForTimeout(2000);
 
     // Poll for the duplicated document content.  Reload the full-page view

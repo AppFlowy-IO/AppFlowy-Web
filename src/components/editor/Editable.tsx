@@ -72,7 +72,8 @@ const EditorEditable = () => {
   const { decorateState } = useEditorLocalState();
   const { getMatchDecorations } = useFindReplaceDecorations();
   const editor = useSlate();
-  const contentPaddingClassName = contentPadding === 'template' ? 'px-[60px] max-sm:px-6' : 'px-24 max-sm:px-6';
+  const contentPaddingClassName =
+    contentPadding === 'template' ? 'px-[60px] max-sm:px-6' : 'px-[var(--row-page-inset,96px)] max-sm:px-6';
 
   const codeDecorate = useDecorate(editor);
 

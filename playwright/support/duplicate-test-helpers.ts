@@ -764,7 +764,9 @@ export async function editFirstGridCell(page: Page, gridBlock: Locator, text: st
   await editingTextarea.focus();
   await editingTextarea.fill(text);
   await expect(editingTextarea).toHaveText(text, { timeout: 5000 });
-  await editingTextarea.press('Enter');
+  // A sync echo can re-render the cell and unmount the textarea before Enter
+  // lands; the typed text is committed either way, which the checks below verify.
+  await editingTextarea.press('Enter', { timeout: 5000 }).catch(() => undefined);
   // After Enter, the textarea unmounts and the cell re-renders with the new
   // value. Wait for the textarea to be gone so the next innerText() reads the
   // committed display text, not stale empty editing markup.

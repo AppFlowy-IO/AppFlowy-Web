@@ -13,6 +13,7 @@ import { AppHeader } from '@/components/app/header';
 import { GoogleCalendarIntegration } from '@/components/app/integrations/GoogleCalendarIntegration';
 import Main from '@/components/app/Main';
 import SideBar from '@/components/app/SideBar';
+import { RowPeekLayout } from '@/components/database/row-peek/RowPeekLayout';
 import DeletedPageComponent from '@/components/error/PageHasBeenDeleted';
 import RecordNotFound from '@/components/error/RecordNotFound';
 import SomethingError from '@/components/error/SomethingError';
@@ -39,18 +40,13 @@ function MainLayoutContent() {
     }
 
     if (noAccess) {
-      return (
-        <RecordNotFound
-          viewId={viewId}
-          error={{ type: ErrorType.Forbidden, message: t('requestAccess.title') }}
-        />
-      );
+      return <RecordNotFound viewId={viewId} error={{ type: ErrorType.Forbidden, message: t('requestAccess.title') }} />;
     }
 
     return notFound ? <RecordNotFound isViewNotFound viewId={viewId} /> : <Main />;
   }, [deleted, noAccess, notFound, t, viewId]);
 
-  const width = useMemo(() => {
+  const contentOffset = useMemo(() => {
     let diff = 0;
 
     if (drawerOpened) {
@@ -65,63 +61,69 @@ function MainLayoutContent() {
       diff += INLINE_COMMENT_DRAWER_WIDTH;
     }
 
-    return `calc(100% - ${diff}px)`;
+    return diff;
   }, [chatViewDrawerOpen, drawerOpened, drawerWidth, isPanelOpen, openViewDrawerWidth]);
 
   return (
     <div className={'h-screen w-screen'}>
       <GoogleCalendarIntegration />
-      <AFScroller
-        overflowXHidden
-        overflowYHidden={false}
-        style={{
-          transform: drawerOpened ? `translateX(${drawerWidth}px)` : 'none',
-          width,
-          transition: 'width 0.2s ease-in-out, transform 0.2s ease-in-out',
-        }}
-        className={'appflowy-layout appflowy-scroll-container flex h-full transform flex-col bg-background-primary'}
+      <RowPeekLayout
+        leftOffset={drawerOpened ? drawerWidth : 0}
+        rightOffset={(chatViewDrawerOpen ? openViewDrawerWidth : 0) + (isPanelOpen ? INLINE_COMMENT_DRAWER_WIDTH : 0)}
+        disabled={!!openPageModalViewId}
       >
-        <AppHeader
-          onOpenDrawer={() => {
-            toggleOpenDrawer(true);
+        <AFScroller
+          overflowXHidden
+          overflowYHidden={false}
+          style={{
+            transform: drawerOpened ? `translateX(${drawerWidth}px)` : 'none',
+            width: `calc(100% - ${contentOffset}px)`,
+            transition: 'width 0.2s ease-in-out, transform 0.2s ease-in-out',
           }}
-          drawerWidth={drawerWidth}
-          onCloseDrawer={() => {
-            toggleOpenDrawer(false);
-          }}
-          openDrawer={drawerOpened}
-        />
-        <ConnectBanner />
-        <ClientCompatibilityBanner />
-
-        {!openPageModalViewId && (
-          <div
-            className={'sticky-header-overlay'}
-            style={{
-              width: '100%',
-              position: 'sticky',
-              top: 48,
-              left: 0,
-              right: 0,
-              zIndex: 50,
+          className={'appflowy-layout appflowy-scroll-container flex h-full transform flex-col bg-background-primary'}
+        >
+          <AppHeader
+            onOpenDrawer={() => {
+              toggleOpenDrawer(true);
             }}
+            drawerWidth={drawerWidth}
+            onCloseDrawer={() => {
+              toggleOpenDrawer(false);
+            }}
+            openDrawer={drawerOpened}
           />
-        )}
+          <ConnectBanner />
+          <ClientCompatibilityBanner />
 
-        <ErrorBoundary FallbackComponent={SomethingError}>{main}</ErrorBoundary>
-      </AFScroller>
-      <SideBar
-        onResizeDrawerWidth={setDrawerWidth}
-        drawerWidth={drawerWidth}
-        drawerOpened={drawerOpened}
-        toggleOpenDrawer={toggleOpenDrawer}
-      />
-      <InlineCommentSidebar
-        // The page modal is a MUI dialog: the panel has to sit above it to stay
-        // usable while commenting on a page opened in the modal.
-        elevated={!!openPageModalViewId}
-        rightOffset={chatViewDrawerOpen ? openViewDrawerWidth : 0}
-      />
+          {!openPageModalViewId && (
+            <div
+              className={'sticky-header-overlay'}
+              style={{
+                width: '100%',
+                position: 'sticky',
+                top: 48,
+                left: 0,
+                right: 0,
+                zIndex: 50,
+              }}
+            />
+          )}
+
+          <ErrorBoundary FallbackComponent={SomethingError}>{main}</ErrorBoundary>
+        </AFScroller>
+        <SideBar
+          onResizeDrawerWidth={setDrawerWidth}
+          drawerWidth={drawerWidth}
+          drawerOpened={drawerOpened}
+          toggleOpenDrawer={toggleOpenDrawer}
+        />
+        <InlineCommentSidebar
+          // The page modal is a MUI dialog: the panel has to sit above it to stay
+          // usable while commenting on a page opened in the modal.
+          elevated={!!openPageModalViewId}
+          rightOffset={chatViewDrawerOpen ? openViewDrawerWidth : 0}
+        />
+      </RowPeekLayout>
     </div>
   );
 }

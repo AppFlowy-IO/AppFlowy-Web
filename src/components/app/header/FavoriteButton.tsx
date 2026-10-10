@@ -8,10 +8,12 @@ import { ReactComponent as FilledStarIcon } from '@/assets/icons/filled_star.svg
 import { ReactComponent as StarIcon } from '@/assets/icons/star.svg';
 import { useAppFavorites, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 export function FavoriteButton({
   viewId,
   beforeToggle,
+  className,
 }: {
   viewId: string;
   /**
@@ -19,6 +21,7 @@ export function FavoriteButton({
    * row-document view and push its title. Throwing aborts the toggle.
    */
   beforeToggle?: () => Promise<void>;
+  className?: string;
 }) {
   const { t } = useTranslation();
   const workspaceId = useCurrentWorkspaceId();
@@ -77,7 +80,7 @@ export function FavoriteButton({
         aria-label={isFavorite ? t('disclosureAction.unfavorite') : t('disclosureAction.favorite')}
         size={'icon'}
         variant={'ghost'}
-        className={'text-icon-secondary'}
+        className={cn('text-icon-secondary', className)}
         disabled={submitting || !favoritesLoaded}
         onClick={handleToggle}
       >

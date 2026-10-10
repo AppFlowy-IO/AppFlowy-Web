@@ -1,5 +1,5 @@
 import { Dialog, InputBase } from '@mui/material';
-import { useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { View, ViewLayout } from '@/application/types';
@@ -18,12 +18,14 @@ import {
   useCurrentWorkspaceId,
   useToView,
 } from '@/components/app/app.hooks';
-import BestMatch from '@/components/app/search/BestMatch';
 import RecentViews from '@/components/app/search/RecentViews';
+import ViewList from '@/components/app/search/ViewList';
 import { findAncestors } from '@/components/chat/lib/views';
 import { dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { createHotkey, createHotKeyLabel, HOT_KEY_NAME } from '@/utils/hotkeys';
+
+const BestMatch = lazy(() => import('@/components/app/search/BestMatch'));
 
 function getFallbackAIChatParent(outline: View[] | undefined) {
   if (!outline?.length) return;
@@ -219,7 +221,9 @@ export function Search() {
         {!searchValue ? (
           <RecentViews loading={loadingRecentViews} recentViews={recentViews} onClose={handleClose} />
         ) : (
-          <BestMatch askingAI={askingAI} searchValue={searchValue} onAskAI={handleAskAI} onClose={handleClose} />
+          <Suspense fallback={<ViewList loading title={t('commandPalette.bestMatches')} onClose={handleClose} />}>
+            <BestMatch askingAI={askingAI} searchValue={searchValue} onAskAI={handleAskAI} onClose={handleClose} />
+          </Suspense>
         )}
       </Dialog>
     </>

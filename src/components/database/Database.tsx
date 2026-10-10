@@ -13,8 +13,14 @@ import {
   retainDatabaseRowDocSeedCache,
 } from '@/application/database-blob';
 import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
+import type {
+  DatabaseContextState,
+  DatabaseRowPermissions,
+  DatabaseRowPeekSource,
+} from '@/application/database-yjs/context';
 import { hasEffectiveFilters } from '@/application/database-yjs/filter';
 import { registerDatabaseHistoryRowDoc, registerDatabaseHistoryRowDocs } from '@/application/database-yjs/history';
+import { createRowOrdersStore } from '@/application/database-yjs/row-orders-store';
 import { ROW_SYNC_RETRY_DELAYS_MS } from '@/application/database-yjs/row-sync';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { getCachedRowDoc, openRowDoc } from '@/application/services/js-services/cache';
@@ -50,6 +56,7 @@ import { DatabaseRow } from '@/components/database/DatabaseRow';
 import DatabaseRowModal from '@/components/database/DatabaseRowModal';
 import DatabaseViews from '@/components/database/DatabaseViews';
 import { shouldUseFixedDatabaseViewport } from '@/components/database/layout';
+import { EmbeddedDatabasePermissionsResolver } from '@/components/editor/components/blocks/database/hooks/useEmbeddedDatabasePermissions';
 import { cn } from '@/lib/utils';
 import { Log } from '@/utils/log';
 
@@ -181,6 +188,13 @@ export interface Database2Props {
   onViewAdded?: (viewId: string) => void;
   onOpenRowPage?: (rowId: string) => void | Promise<void>;
   /**
+   * For a database nested in a peeked row's document: that host peek shows the
+   * rows itself (replacing the peeked row, like desktop) instead of this
+   * database stacking a second peek.
+   */
+  openRowInHostPeek?: DatabaseContextState['openRowInHostPeek'];
+  embeddedPermissionSource?: DatabaseRowPeekSource['permissionSource'];
+  /**
    * For embedded databases: restricts which views are shown (from block data).
    * For standalone databases: should be undefined to show all non-embedded views.
    */
@@ -260,6 +274,7 @@ function Database(props: Database2Props) {
     onChangeView,
     onViewAdded,
     onOpenRowPage,
+    openRowInHostPeek,
     appendBreadcrumb,
     readOnly = true,
     canComment = false,
@@ -293,6 +308,7 @@ function Database(props: Database2Props) {
   });
 
   const [rowMap, setRowMap] = useState<Record<RowId, YDoc>>(() => props.initialRowMap ?? {});
+  const [rowOrdersStore] = useState(createRowOrdersStore);
   const rowMapRef = useRef(rowMap);
   const pendingRowDocsRef = useRef<Map<RowId, Promise<YDoc | undefined>>>(new Map());
   const prefetchPromisesRef = useRef<Map<string, Promise<void>>>(new Map());
@@ -1380,6 +1396,8 @@ function Database(props: Database2Props) {
     viewId: string | null;
     databaseDoc: YDoc | null;
     rowMap: Record<RowId, YDoc> | null;
+    permissions?: DatabaseRowPermissions;
+    source?: DatabaseRowPeekSource;
   }>(() => ({
     rowId: modalRowId || null,
     viewId: modalRowId ? activeViewId : null,
@@ -1387,17 +1405,62 @@ function Database(props: Database2Props) {
     rowMap: null,
   }));
 
+  const prepareRowNavigation = useRef<(() => Promise<boolean>) | null>(null);
+  const rowOpenRequest = useRef(0);
+  const releasePeekSource = useRef<(() => void) | undefined>();
+
+  useEffect(() => () => releasePeekSource.current?.(), []);
+  const registerRowPrepare = useCallback((prepare: (() => Promise<boolean>) | null) => {
+    prepareRowNavigation.current = prepare;
+  }, []);
+
+  useEffect(
+    () => () => {
+      rowOpenRequest.current += 1;
+    },
+    [doc, workspaceId]
+  );
+
   const handleOpenRow = useCallback(
-    async (rowId: string, viewId?: string) => {
+    async (rowId: string, viewId?: string, permissions?: DatabaseRowPermissions, source?: DatabaseRowPeekSource) => {
+      const peekSource = source ?? {
+        rowOrdersSource: rowOrdersStore.get(doc, viewId || activeViewId),
+        permissionSource: !viewId || viewId === activeViewId ? props.embeddedPermissionSource : undefined,
+      };
+
+      if (openRowInHostPeek) {
+        openRowInHostPeek(
+          rowId,
+          viewId || activeViewId,
+          permissions ?? { readOnly, canWrite, canComment, canShare },
+          peekSource
+        );
+        return;
+      }
+
+      const request = ++rowOpenRequest.current;
+
+      // Retain before awaiting draft commits/loading, then transfer this lease to
+      // the peek. Row-keyed remounts and embedded publisher cleanup cannot erase it.
+      const releaseSource = peekSource.rowOrdersSource?.subscribe(() => undefined);
+      let transferred = false;
+      const transferSource = () => {
+        releasePeekSource.current?.();
+        releasePeekSource.current = releaseSource;
+        transferred = true;
+      };
+
       // A locked document's embedded database must keep the row detail inside
       // this Database context so the row editor inherits the document's
       // read-only permission. Navigating to the source database would reopen
       // the same row with that page's independent (usually editable) context.
       // Published databases still use route-based row pages because their row
       // documents are loaded through the publish navigation/cache path.
-      const shouldNavigateReadonlyRow = readOnly && (!_isDocumentBlock || props.variant === UIVariant.Publish);
+      const shouldNavigateReadonlyRow = readOnly && props.variant === UIVariant.Publish;
 
       try {
+        if (prepareRowNavigation.current && !(await prepareRowNavigation.current())) return;
+        if (request !== rowOpenRequest.current) return;
         if (shouldNavigateReadonlyRow) {
           if (viewId) {
             if (!navigateToView) throw new Error('Row navigation is not available');
@@ -1410,8 +1473,12 @@ function Database(props: Database2Props) {
           return;
         }
 
-        if (viewId) {
+        const database = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase | undefined;
+
+        if (viewId && !database?.get(YjsDatabaseKey.views)?.has(viewId)) {
           const viewDoc = await loadView?.(viewId);
+
+          if (request !== rowOpenRequest.current) return;
 
           if (!viewDoc) {
             if (!navigateToView) throw new Error('Database view could not be loaded');
@@ -1421,30 +1488,98 @@ function Database(props: Database2Props) {
 
           const rowDoc = await createNewRow(getRowKey(viewDoc.guid, rowId));
 
+          if (request !== rowOpenRequest.current) return;
+
           if (!rowDoc) {
             throw new Error('Row document not found');
           }
 
+          transferSource();
           // Update all modal state in a single setState call
-          setModalState({
+          setModalState((previous) => ({
             rowId,
             viewId,
             databaseDoc: viewDoc,
-            rowMap: { [rowId]: rowDoc },
-          });
+            rowMap: { ...(previous.databaseDoc === viewDoc ? previous.rowMap : {}), [rowId]: rowDoc },
+            permissions,
+            source: peekSource,
+          }));
           return;
         }
 
-        setModalState((prev) => ({ ...prev, rowId }));
+        transferSource();
+        setModalState({
+          rowId,
+          viewId: viewId || activeViewId,
+          databaseDoc: null,
+          rowMap: null,
+          permissions,
+          source: peekSource,
+        });
       } catch (error) {
         Log.error('[Database] Failed to open row', { rowId, viewId: viewId ?? activeViewId, error });
         toast.error(t('chat.openPagePreviewFailedToast'));
+      } finally {
+        if (!transferred) releaseSource?.();
       }
     },
-    [activeViewId, createNewRow, loadView, navigateToView, onOpenRowPage, props.variant, readOnly, _isDocumentBlock, t]
+    [
+      activeViewId,
+      canComment,
+      canShare,
+      canWrite,
+      createNewRow,
+      doc,
+      loadView,
+      navigateToView,
+      onOpenRowPage,
+      openRowInHostPeek,
+      props.variant,
+      props.embeddedPermissionSource,
+      rowOrdersStore,
+      readOnly,
+      t,
+    ]
+  );
+
+  // The main database can change tabs while the nonmodal peek stays open.
+  // Navigation inside the peek continues to use the view that opened it.
+  const handleNavigateInPeek = useCallback(
+    (rowId: string, viewId?: string) => {
+      const permissions = !viewId || viewId === modalState.viewId ? modalState.permissions : undefined;
+
+      return handleOpenRow(
+        rowId,
+        viewId || modalState.viewId || undefined,
+        permissions,
+        !viewId || viewId === modalState.viewId ? modalState.source : undefined
+      );
+    },
+    [handleOpenRow, modalState.permissions, modalState.viewId, modalState.source]
+  );
+
+  const ensurePeekRow = useCallback(
+    async (rowId: string) => {
+      const targetDoc = modalState.databaseDoc;
+
+      if (!targetDoc) return ensureRow(rowId);
+      // Related peeks have their own row map. Loading through the source view's
+      // seed/ensure functions would mix databases and use the wrong filter data.
+      const rowDoc = await createNewRow(getRowKey(targetDoc.guid, rowId));
+
+      setModalState((previous) => {
+        if (previous.databaseDoc !== targetDoc || previous.rowMap?.[rowId] === rowDoc) return previous;
+        return { ...previous, rowMap: { ...previous.rowMap, [rowId]: rowDoc } };
+      });
+      return rowDoc;
+    },
+    [createNewRow, ensureRow, modalState.databaseDoc]
   );
 
   const handleCloseRowModal = useCallback(() => {
+    rowOpenRequest.current += 1;
+    releasePeekSource.current?.();
+    releasePeekSource.current = undefined;
     setModalState({
       rowId: null,
       viewId: null,
@@ -1452,6 +1587,17 @@ function Database(props: Database2Props) {
       rowMap: null,
     });
   }, []);
+
+  const handleOpenPeekAsPage = useCallback(
+    async (rowId: string) => {
+      if (modalState.viewId && navigateToView && (modalState.databaseDoc || modalState.viewId !== activeViewId)) {
+        await navigateToView(modalState.viewId, rowId);
+      } else {
+        await onOpenRowPage?.(rowId);
+      }
+    },
+    [activeViewId, modalState.databaseDoc, modalState.viewId, navigateToView, onOpenRowPage]
+  );
 
   // Memoized callback for modal open change to avoid inline function in JSX
   const handleModalOpenChange = useCallback(
@@ -1470,6 +1616,7 @@ function Database(props: Database2Props) {
   // Shared context properties - extracted to reduce duplication between main and modal contexts
   const sharedContextProps = useMemo(
     () => ({
+      rowOrdersStore,
       readOnly,
       canComment,
       canWrite,
@@ -1523,6 +1670,7 @@ function Database(props: Database2Props) {
       generateAITranslateForRow,
     }),
     [
+      rowOrdersStore,
       readOnly,
       canComment,
       canWrite,
@@ -1596,11 +1744,19 @@ function Database(props: Database2Props) {
       modalState.rowId
         ? {
             ...sharedContextProps,
+            ...modalState.permissions,
+            rowOrdersSource: modalState.source?.rowOrdersSource,
             databaseDoc: modalState.databaseDoc || doc,
-            databasePageId: modalState.viewId || databasePageId,
+            databasePageId: modalState.databaseDoc ? modalState.viewId || databasePageId : databasePageId,
             activeViewId: modalState.viewId || activeViewId,
             rowMap: modalState.rowMap || rowMap,
+            ensureRow: ensurePeekRow,
+            loadRowFromSeed: modalState.databaseDoc ? undefined : loadRowFromSeed,
+            peekRowDocFromSeed: modalState.databaseDoc ? undefined : peekRowDocFromSeed,
+            bindRowSync: modalState.databaseDoc ? undefined : bindRowSync,
             isDatabaseRowPage: false,
+            navigateToRow: handleNavigateInPeek,
+            openRowInHostPeek: handleOpenRow,
             closeRowDetailModal: handleCloseRowModal,
           }
         : null,
@@ -1609,11 +1765,19 @@ function Database(props: Database2Props) {
       modalState.databaseDoc,
       modalState.viewId,
       modalState.rowMap,
+      modalState.permissions,
+      modalState.source,
       sharedContextProps,
       doc,
       databasePageId,
       activeViewId,
       rowMap,
+      ensurePeekRow,
+      loadRowFromSeed,
+      peekRowDocFromSeed,
+      bindRowSync,
+      handleNavigateInPeek,
+      handleOpenRow,
       handleCloseRowModal,
     ]
   );
@@ -1649,17 +1813,50 @@ function Database(props: Database2Props) {
         )}
       </DatabaseContextProvider>
       {modalState.rowId && modalContextValue && (
-        <DatabaseContextProvider value={modalContextValue}>
+        <PeekContextProvider value={modalContextValue} source={modalState.source}>
           <DatabaseRowModal
+            key={`${modalContextValue.databaseDoc.guid}:${modalState.rowId}`}
             rowId={modalState.rowId}
             open={Boolean(modalState.rowId)}
-            openPage={onOpenRowPage}
+            openPage={onOpenRowPage || (modalState.databaseDoc && navigateToView) ? handleOpenPeekAsPage : undefined}
             onOpenChange={handleModalOpenChange}
+            onRegisterPrepare={registerRowPrepare}
           />
-        </DatabaseContextProvider>
+        </PeekContextProvider>
       )}
     </div>
   );
+}
+
+function PeekContextProvider({
+  value,
+  source,
+  children,
+}: {
+  value: DatabaseContextState;
+  source?: DatabaseRowPeekSource;
+  children: React.ReactNode;
+}) {
+  const ordersSource = value.rowOrdersSource ?? value.rowOrdersStore?.get(value.databaseDoc, value.activeViewId);
+
+  // This owner survives the row-keyed modal, including peeks opened by URL.
+  useLayoutEffect(() => ordersSource?.subscribe(() => undefined), [ordersSource]);
+
+  if (source?.permissionSource) {
+    return (
+      <EmbeddedDatabasePermissionsResolver
+        {...source.permissionSource}
+        publishCanWrite={value.canWrite}
+        publishCanShare={value.canShare}
+      >
+        {(permissions) => (
+          <DatabaseContextProvider value={{ ...value, ...permissions }}>{children}</DatabaseContextProvider>
+        )}
+      </EmbeddedDatabasePermissionsResolver>
+    );
+  }
+
+  return <DatabaseContextProvider value={value}>{children}</DatabaseContextProvider>;
 }
 
 export default Database;

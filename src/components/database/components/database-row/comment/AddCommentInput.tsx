@@ -25,13 +25,13 @@ function AddCommentInput({
 
   return (
     <div
-      className='flex gap-3 px-2 py-2'
+      className={cn('flex gap-3 px-2 py-2', !parentCommentId && 'row-comment-root-composer')}
       data-testid={parentCommentId ? `row-comment-reply-composer-${parentCommentId}` : 'row-comment-root-composer'}
     >
       {!parentCommentId && (
-        <div className='-my-2 flex w-8 shrink-0 flex-col items-center'>
+        <div className='row-comment-avatar -my-2 flex w-8 shrink-0 flex-col items-center'>
           <div className={cn('w-px flex-1', showThreadLine ? 'bg-border-primary' : 'bg-transparent')} />
-          <div className='shrink-0 py-1'>
+          <div className='row-comment-avatar-image shrink-0 py-1'>
             <MemberAvatar uid={currentUserId} size='md' />
           </div>
           <div className='w-px flex-1 bg-transparent' />
@@ -40,7 +40,7 @@ function AddCommentInput({
       <CommentComposer
         active={active}
         initiallyExpanded={Boolean(parentCommentId)}
-        placeholder={t('rowComment.addReply')}
+        placeholder={t(parentCommentId ? 'rowComment.addReply' : 'rowComment.commentPlaceholder')}
         members={mentionableUsers}
         testIds={{
           collapsed: 'row-comment-collapsed-input',

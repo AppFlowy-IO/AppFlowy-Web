@@ -1,5 +1,5 @@
 import { debounce } from 'lodash-es';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { SearchService, ViewService } from '@/application/services/domains';
@@ -15,8 +15,12 @@ import { findView } from '@/components/_shared/outline/utils';
 import { isSpaceView } from '@/components/ai-chat/rag-scope';
 import type { AIChatRagSource } from '@/components/ai-chat/rag-scope';
 import { useAIEnabled, useAppOutline, useCurrentWorkspaceId } from '@/components/app/app.hooks';
-import { SearchAIOverview, SearchOverviewSource } from '@/components/app/search/SearchAIOverview';
+import type { SearchOverviewSource } from '@/components/app/search/SearchAIOverview';
 import ViewList, { SearchViewListItem } from '@/components/app/search/ViewList';
+
+const SearchAIOverview = lazy(() =>
+  import('@/components/app/search/SearchAIOverview').then(({ SearchAIOverview }) => ({ default: SearchAIOverview }))
+);
 
 function findViewByDatabaseId(views: View[], databaseId?: string | null): View | undefined {
   if (!databaseId) return;
@@ -140,14 +144,19 @@ function BestMatch({
   askingAI: boolean;
   onAskAI: (query: string, sources?: AIChatRagSource[]) => void;
 }) {
-  const [items, setItems] = useState<SearchViewListItem[] | undefined>(undefined);
   const [searchResults, setSearchResults] = useState<SearchDocumentResponseItem[]>([]);
+  const [resultViews, setResultViews] = useState<Map<string, View>>(() => new Map());
   const [summary, setSummary] = useState<SearchSummary | null>(null);
   const [summarySourceViews, setSummarySourceViews] = useState<Map<string, View>>(() => new Map());
   const [hasMore, setHasMore] = useState(false);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const { t } = useTranslation();
   const outline = useAppOutline();
+  const outlineRef = useRef(outline);
+
+  useLayoutEffect(() => {
+    outlineRef.current = outline;
+  }, [outline]);
   const [loading, setLoading] = useState<boolean>(false);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -156,59 +165,69 @@ function BestMatch({
   const searchSeqRef = useRef(0);
   const [keywordSearchStreamId] = useState(() => createSearchStreamId('best-match-keyword'));
 
-  const buildSearchItems = useCallback(
+  // Metadata helps route results but is not a search input. Read the latest
+  // outline when resolving a response without restarting requests on renames.
+  const loadResultViews = useCallback(
     async (results: SearchDocumentResponseItem[]) => {
-      if (!outline || !currentWorkspaceId) return [];
+      const views = new Map<string, View>();
 
-      const seenTargets = new Set<string>();
-      const items: SearchViewListItem[] = [];
+      if (!currentWorkspaceId) return views;
       const resolvedViews = await Promise.all(
         results.map(
-          async (item) => resolveSearchResultView(outline, item) || loadSearchResultView(item, currentWorkspaceId)
+          async (item) =>
+            resolveSearchResultView(outlineRef.current || [], item) || loadSearchResultView(item, currentWorkspaceId)
         )
       );
 
       for (const [index, item] of results.entries()) {
         const view = resolvedViews[index];
-        const rowId = item.database_row_id || undefined;
 
-        if (!view || isSpaceView(view)) continue;
-
-        const viewName = view.name.trim() || t('menuAppHeader.defaultNewPageName');
-        const contentPreview = previewLines(item.content || item.preview);
-        const targetId = `${view.view_id}:${rowId || ''}`;
-
-        if (seenTargets.has(targetId)) continue;
-
-        seenTargets.add(targetId);
-        items.push({
-          id: targetId,
-          view,
-          rowId,
-          title: rowId
-            ? `${t('document.grid.referencedGridPrefix', { defaultValue: 'View of' })} ${viewName}`
-            : undefined,
-          preview: contentPreview,
-        });
+        if (view) views.set(searchResultKey(item), view);
       }
 
-      return items;
+      return views;
     },
-    [currentWorkspaceId, outline, t]
+    [currentWorkspaceId]
   );
+
+  const items = useMemo<SearchViewListItem[]>(() => {
+    const seenTargets = new Set<string>();
+    const items: SearchViewListItem[] = [];
+
+    for (const item of searchResults) {
+      const view = resolveSearchResultView(outline || [], item) || resultViews.get(searchResultKey(item));
+      const rowId = item.database_row_id || undefined;
+
+      if (!view || isSpaceView(view)) continue;
+      const targetId = `${view.view_id}:${rowId || ''}`;
+
+      if (seenTargets.has(targetId)) continue;
+      seenTargets.add(targetId);
+      const viewName = view.name.trim() || t('menuAppHeader.defaultNewPageName');
+
+      items.push({
+        id: targetId,
+        view,
+        rowId,
+        title: rowId ? `${t('document.grid.referencedGridPrefix', { defaultValue: 'View of' })} ${viewName}` : undefined,
+        preview: previewLines(item.content || item.preview),
+      });
+    }
+
+    return items;
+  }, [outline, resultViews, searchResults, t]);
 
   const handleSearch = useCallback(
     async (searchTerm: string) => {
-      if (!outline) return;
       if (!currentWorkspaceId) return;
       const searchSeq = searchSeqRef.current + 1;
 
       searchSeqRef.current = searchSeq;
       setSummary(null);
       setSummarySourceViews(new Map());
+      setResultViews(new Map());
       setSummaryLoading(false);
       if (!searchTerm) {
-        setItems([]);
         setSearchResults([]);
         setHasMore(false);
         setNextOffset(null);
@@ -219,7 +238,6 @@ function BestMatch({
 
       setLoading(true);
       setLoadingMore(false);
-      setItems(undefined);
       setSearchResults([]);
       setHasMore(false);
       setNextOffset(null);
@@ -240,12 +258,12 @@ function BestMatch({
 
         const res = mergeSearchResults([], page.items || []);
         const shouldGenerateSummary = summaryRequest !== null;
-        const searchItems = await buildSearchItems(res);
+        const views = await loadResultViews(res);
 
         if (searchSeqRef.current !== searchSeq) return;
 
         setSearchResults(res);
-        setItems(searchItems);
+        setResultViews(views);
         setHasMore(canLoadMoreSearchResults(page, 0));
         setNextOffset(page.next_offset ?? null);
         setSummaryLoading(shouldGenerateSummary);
@@ -258,7 +276,7 @@ function BestMatch({
 
           const nextSummary = summaryResult?.summaries[0] || null;
           const sourceViews = nextSummary
-            ? await loadSummarySourceViews(outline, currentWorkspaceId, nextSummary.sources, res)
+            ? await loadSummarySourceViews(outlineRef.current || [], currentWorkspaceId, nextSummary.sources, res)
             : new Map<string, View>();
 
           if (searchSeqRef.current !== searchSeq) return;
@@ -272,7 +290,6 @@ function BestMatch({
         if (searchSeqRef.current !== searchSeq) return;
         notify.error(e.message);
         setSearchResults([]);
-        setItems([]);
         setSummary(null);
         setSummaryLoading(false);
         setHasMore(false);
@@ -284,7 +301,7 @@ function BestMatch({
         }
       }
     },
-    [aiEnabled, buildSearchItems, currentWorkspaceId, keywordSearchStreamId, outline]
+    [aiEnabled, loadResultViews, currentWorkspaceId, keywordSearchStreamId]
   );
 
   const handleLoadMore = useCallback(async () => {
@@ -305,12 +322,12 @@ function BestMatch({
       if (searchSeqRef.current !== searchSeq) return;
 
       const mergedResults = mergeSearchResults(searchResults, page.items || []);
-      const searchItems = await buildSearchItems(mergedResults);
+      const views = await loadResultViews(page.items || []);
 
       if (searchSeqRef.current !== searchSeq) return;
 
       setSearchResults(mergedResults);
-      setItems(searchItems);
+      setResultViews((previous) => new Map([...previous, ...views]));
       setHasMore(canLoadMoreSearchResults(page, nextOffset));
       setNextOffset(page.next_offset ?? null);
       // eslint-disable-next-line
@@ -323,7 +340,7 @@ function BestMatch({
       }
     }
   }, [
-    buildSearchItems,
+    loadResultViews,
     currentWorkspaceId,
     hasMore,
     keywordSearchStreamId,
@@ -343,11 +360,14 @@ function BestMatch({
 
     return () => {
       debounceSearch.cancel();
+      // Ignore old responses immediately, including during the next debounce
+      // interval and after the search dialog has unmounted.
+      searchSeqRef.current += 1;
     };
   }, [searchValue, debounceSearch]);
 
   const overviewSources = useMemo<SearchOverviewSource[]>(() => {
-    if (!summary || !outline) return [];
+    if (!summary) return [];
 
     const resultByObjectId = new Map(searchResults.map((item) => [item.object_id, item]));
     const resultByRowId = new Map(
@@ -358,9 +378,11 @@ function BestMatch({
     return summary.sources.reduce<SearchOverviewSource[]>((sources, sourceId) => {
       const result = resultByObjectId.get(sourceId) || resultByRowId.get(sourceId);
       const view =
-        findView(outline, sourceId) ||
+        findView(outline || [], sourceId) ||
         summarySourceViews.get(sourceId) ||
-        (result ? resolveSearchResultView(outline, result) : undefined);
+        (result
+          ? resolveSearchResultView(outline || [], result) || resultViews.get(searchResultKey(result))
+          : undefined);
 
       if (!result && !view) return sources;
 
@@ -387,14 +409,14 @@ function BestMatch({
 
       return sources;
     }, []);
-  }, [outline, searchResults, summary, summarySourceViews, t]);
+  }, [outline, resultViews, searchResults, summary, summarySourceViews, t]);
 
   const summarySourceCount = new Set(summary?.sources || []).size;
   const canAskFollowUp = summarySourceCount > 0 && overviewSources.length === summarySourceCount;
 
   return (
     <ViewList
-      items={items}
+      items={loading ? undefined : items}
       loading={loading}
       query={searchValue}
       title={t('commandPalette.bestMatches')}
@@ -404,16 +426,18 @@ function BestMatch({
       onLoadMore={handleLoadMore}
       header={
         aiEnabled ? (
-          <SearchAIOverview
-            askingAI={askingAI}
-            loading={loading || summaryLoading}
-            query={searchValue}
-            sources={overviewSources}
-            summary={summary}
-            canAskFollowUp={canAskFollowUp}
-            onClose={onClose}
-            onAskAI={(sources) => onAskAI(searchValue, sources)}
-          />
+          <Suspense fallback={null}>
+            <SearchAIOverview
+              askingAI={askingAI}
+              loading={loading || summaryLoading}
+              query={searchValue}
+              sources={overviewSources}
+              summary={summary}
+              canAskFollowUp={canAskFollowUp}
+              onClose={onClose}
+              onAskAI={(sources) => onAskAI(searchValue, sources)}
+            />
+          </Suspense>
         ) : undefined
       }
     />

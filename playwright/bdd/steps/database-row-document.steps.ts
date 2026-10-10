@@ -490,7 +490,7 @@ async function closeCardRowPage(page: Page) {
 }
 
 async function focusRowDocumentEditor(page: Page) {
-  const dialog = page.locator('[role="dialog"]');
+  const dialog = RowDetailSelectors.modal(page);
   const scrollContainer = dialog.locator('.appflowy-scroll-container');
 
   if ((await scrollContainer.count()) > 0) {
@@ -575,7 +575,7 @@ function getDocumentViewId(page: Page): string {
 
 async function openFirstRowAsFullRowPage(page: Page): Promise<void> {
   await openRowDetail(page, 0);
-  await page.locator('.MuiDialogTitle-root').locator('button').first().click({ force: true });
+  await RowDetailSelectors.openFullPageButton(page).click();
   await page.waitForTimeout(2000);
 
   const editor = page.locator('[id^="editor-"]').first();

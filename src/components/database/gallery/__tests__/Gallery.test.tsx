@@ -8,8 +8,10 @@ import {
   useReadOnly,
   useRowOrdersSelector,
 } from '@/application/database-yjs';
+import { usePublishRowOrders } from '@/application/database-yjs/row-orders-store';
 import { GalleryCardPreview, GalleryCardSize } from '@/application/types';
 import { useDatabaseSearch } from '@/components/database/components/conditions/DatabaseSearchContext';
+import { useFeedSearch } from '@/components/database/feed/useFeedSearch';
 
 import { Gallery } from '../Gallery';
 
@@ -32,8 +34,12 @@ jest.mock('@/application/database-yjs', () => ({
   useRowOrdersSelector: jest.fn(),
 }));
 jest.mock('@/application/database-yjs/dispatch', () => ({ useReorderRowDispatch: () => jest.fn() }));
+jest.mock('@/application/database-yjs/row-orders-store', () => ({ usePublishRowOrders: jest.fn() }));
 jest.mock('@/components/database/components/conditions/DatabaseSearchContext', () => ({
   useDatabaseSearch: jest.fn(),
+}));
+jest.mock('@/components/database/feed/useFeedSearch', () => ({
+  useFeedSearch: jest.fn(({ rows }: { rows: unknown }) => rows),
 }));
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -62,6 +68,8 @@ const mockUseGalleryLayoutSettings = useGalleryLayoutSettings as jest.MockedFunc
 const mockUseReadOnly = useReadOnly as jest.MockedFunction<typeof useReadOnly>;
 const mockUseRowOrdersSelector = useRowOrdersSelector as jest.MockedFunction<typeof useRowOrdersSelector>;
 const mockUseDatabaseSearch = useDatabaseSearch as jest.MockedFunction<typeof useDatabaseSearch>;
+const mockUseFeedSearch = useFeedSearch as jest.MockedFunction<typeof useFeedSearch>;
+const mockUsePublishRowOrders = usePublishRowOrders as jest.MockedFunction<typeof usePublishRowOrders>;
 
 const rows = Array.from({ length: 100 }, (_, index) => ({ height: 36, id: `row-${index}` }));
 
@@ -177,10 +185,30 @@ describe('Gallery pagination lifecycle', () => {
   it('searches every row instead of limiting candidates to the current page', () => {
     scrollHeight = 2_000;
     mockUseDatabaseSearch.mockReturnValue({ query: 'only in row 99', setQuery: jest.fn() });
+    mockUseFeedSearch.mockReturnValue([rows[99]]);
 
     render(<Gallery />);
 
-    expect(screen.getAllByTestId(/^mock-gallery-card-/)).toHaveLength(rows.length);
+    expect(mockUseFeedSearch).toHaveBeenLastCalledWith(expect.objectContaining({ rows }));
+    expect(screen.getAllByTestId(/^mock-gallery-card-/)).toHaveLength(1);
+    expect(screen.getByTestId('mock-gallery-card-row-99')).toBeTruthy();
+  });
+
+  it('publishes the search-narrowed order for the row peek instead of the raw view order', () => {
+    const matching = [rows[0], rows[99]];
+
+    mockUseDatabaseSearch.mockReturnValue({ query: 'row', setQuery: jest.fn() });
+    mockUseFeedSearch.mockReturnValue(matching);
+
+    render(<Gallery />);
+
+    expect(mockUseRowOrdersSelector).toHaveBeenCalledWith({ publish: false });
+    expect(mockUseFeedSearch).toHaveBeenLastCalledWith(expect.objectContaining({ rows, query: 'row' }));
+    expect(mockUsePublishRowOrders).toHaveBeenLastCalledWith(matching, true, { layout: 'gallery', query: 'row' });
+    expect(screen.getAllByTestId(/^mock-gallery-card-/).map((card) => card.dataset.testid)).toEqual([
+      'mock-gallery-card-row-0',
+      'mock-gallery-card-row-99',
+    ]);
   });
 
   it('keeps an explicit zero inset and excludes the preserved grouping field', () => {
