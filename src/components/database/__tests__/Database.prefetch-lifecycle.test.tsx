@@ -21,6 +21,12 @@ jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
+let mockSourceCanWrite = false;
+
+jest.mock('@/components/app/view-actions/useViewActionPermissions', () => ({
+  useViewActionPermissions: () => ({ canWrite: mockSourceCanWrite, canShare: mockSourceCanWrite }),
+}));
+
 jest.mock('sonner', () => ({ toast: { error: jest.fn() } }));
 
 jest.mock('@/application/database-blob', () => ({
@@ -398,11 +404,7 @@ describe('Database blob prefetch lifecycle', () => {
     );
     const scheduleDeferredCleanup = jest.fn();
     const { unmount } = render(
-      <Database
-        {...databaseProps(doc)}
-        createRow={createRow}
-        scheduleDeferredCleanup={scheduleDeferredCleanup}
-      />
+      <Database {...databaseProps(doc)} createRow={createRow} scheduleDeferredCleanup={scheduleDeferredCleanup} />
     );
 
     try {
@@ -1194,6 +1196,104 @@ describe('Database blob prefetch lifecycle', () => {
     doc.destroy();
   });
 
+  it.each(['feed', 'gallery'] as const)(
+    'retains %s presentation across background tab switches and row remounts',
+    async (layout) => {
+      const doc = createDatabaseDoc('database-id');
+      const host = render(<Database {...databaseProps(doc)} />);
+      const source = mockDatabaseContext!.rowOrdersStore!.get(doc, 'view-id');
+      const owner = Symbol();
+      const presentation = { layout, query: layout === 'gallery' ? 'match' : '' };
+      const rows = [
+        { id: 'row-id', height: 44 },
+        { id: 'next-row', height: 44 },
+      ];
+
+      act(() => source.publish(owner, rows, presentation));
+      await act(async () => {
+        await Promise.resolve(mockDatabaseContext?.navigateToRow?.('row-id'));
+      });
+      host.rerender(<Database {...databaseProps(doc)} activeViewId='other-view' />);
+      act(() => source.remove(owner));
+      fireEvent.click(screen.getByRole('button', { name: 'Center peek' }));
+      await act(async () => {
+        await Promise.resolve(mockPeekContext?.navigateToRow?.('next-row'));
+      });
+      expect(screen.getByTestId('database-row-modal').getAttribute('data-peek-mode')).toBe('side');
+      expect(mockPeekContext?.rowOrdersSource?.getSnapshot()).toEqual({ rows, presentation, published: false });
+      fireEvent.click(screen.getByRole('button', { name: 'Close peek' }));
+      expect(source.getSnapshot()).toBeUndefined();
+      host.unmount();
+      doc.destroy();
+    }
+  );
+
+  it.each(['feed', 'gallery'] as const)(
+    'hands off embedded %s orders and resolves permissions after loading',
+    async (layout) => {
+      const doc = createDatabaseDoc('database-id');
+      const nestedDoc = createDatabaseDoc('nested-database-id');
+      const rowDoc = createHydratedRowDoc('nested-row');
+      const loaded = createDeferred<YDoc>();
+
+      mockSourceCanWrite = false;
+      const host = render(
+        <Database
+          {...databaseProps(doc)}
+          modalRowId='row-id'
+          loadView={jest.fn(() => loaded.promise)}
+          createRow={jest.fn().mockResolvedValue(rowDoc)}
+        />
+      );
+      const openRowInHostPeek = mockPeekContext?.openRowInHostPeek;
+      const nested = render(
+        <Database
+          {...databaseProps(nestedDoc)}
+          activeViewId='nested-view'
+          readOnly
+          canWrite={false}
+          openRowInHostPeek={openRowInHostPeek}
+          embeddedPermissionSource={{
+            sourceViewId: 'nested-view',
+            sourceDatabaseId: nestedDoc.guid,
+            inheritedReadOnly: false,
+          }}
+        />
+      );
+      const source = mockDatabaseContext!.rowOrdersStore!.get(nestedDoc, 'nested-view');
+      const owner = Symbol();
+      const presentation = { layout, query: layout === 'gallery' ? 'match' : '' };
+      const rows = [
+        { id: 'nested-row', height: 44 },
+        { id: 'neighbor', height: 44 },
+      ];
+
+      act(() => source.publish(owner, rows, presentation));
+      await act(async () => {
+        mockDatabaseContext?.navigateToRow?.('nested-row');
+      });
+      // Permission resolution and publisher removal both happen while loadView is pending.
+      mockSourceCanWrite = true;
+      nested.unmount();
+      act(() => source.remove(owner));
+      await act(async () => {
+        loaded.resolve(nestedDoc);
+      });
+      await waitFor(() => expect(mockPeekContext?.databaseDoc).toBe(nestedDoc));
+      expect(mockPeekContext).toMatchObject({ readOnly: false, canWrite: true });
+      expect(mockPeekContext?.rowOrdersSource?.getSnapshot()).toEqual({ rows, presentation, published: false });
+      mockSourceCanWrite = false;
+      await act(async () => {
+        await Promise.resolve(mockPeekContext?.navigateToRow?.('neighbor'));
+      });
+      expect(mockPeekContext).toMatchObject({ readOnly: true, canWrite: false });
+      expect(mockPeekContext?.rowOrdersSource?.getSnapshot()?.presentation).toEqual(presentation);
+      host.unmount();
+      expect(source.getSnapshot()).toBeUndefined();
+      [doc, nestedDoc, rowDoc].forEach((item) => item.destroy());
+    }
+  );
+
   it('preserves embedded database permissions in the host peek and while navigating its rows', async () => {
     const doc = createDatabaseDoc('database-id');
     const nestedDoc = createDatabaseDoc('nested-database-id', 'nested-database-id');
@@ -1255,12 +1355,7 @@ describe('Database blob prefetch lifecycle', () => {
     const loadView = jest.fn().mockResolvedValue(relatedDoc);
     const createRow = jest.fn().mockResolvedValue(relatedRowDoc);
     const { unmount } = render(
-      <Database
-        {...databaseProps(doc)}
-        createRow={createRow}
-        loadView={loadView}
-        initialRowMap={{ 'row-id': rowDoc }}
-      />
+      <Database {...databaseProps(doc)} createRow={createRow} loadView={loadView} initialRowMap={{ 'row-id': rowDoc }} />
     );
 
     await act(async () => {
@@ -1330,9 +1425,7 @@ describe('Database blob prefetch lifecycle', () => {
     const doc = createDatabaseDoc('database-id');
     const loadView = jest.fn().mockResolvedValue(undefined);
     const navigateToView = jest.fn().mockResolvedValue(undefined);
-    const { unmount } = render(
-      <Database {...databaseProps(doc)} loadView={loadView} navigateToView={navigateToView} />
-    );
+    const { unmount } = render(<Database {...databaseProps(doc)} loadView={loadView} navigateToView={navigateToView} />);
 
     await act(async () => {
       await Promise.resolve(mockDatabaseContext?.navigateToRow?.('related-row-id', 'related-view-id'));

@@ -90,6 +90,8 @@ export function createRowOrdersStore() {
   };
 }
 
+export type RowOrdersSource = ReturnType<typeof createRowOrdersSource>;
+
 export type RowOrdersStore = ReturnType<typeof createRowOrdersStore>;
 
 function useRowOrdersSource() {
@@ -97,7 +99,10 @@ function useRowOrdersSource() {
 
   // Historical scopes must always derive orders from their own immutable rows.
   if (!context || context.dataSource?.type === 'history') return;
-  return context.rowOrdersStore?.get(context.databaseDoc, context.activeViewId || context.databasePageId);
+  return (
+    context.rowOrdersSource ??
+    context.rowOrdersStore?.get(context.databaseDoc, context.activeViewId || context.databasePageId)
+  );
 }
 
 export function usePublishRowOrders(rows: Row[] | undefined, enabled: boolean, presentation?: RowOrdersPresentation) {

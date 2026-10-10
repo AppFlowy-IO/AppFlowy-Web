@@ -1,7 +1,7 @@
-import { mockResizeObserver } from '@/__mocks__/resizeObserver';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useEffect, useState } from 'react';
 
+import { mockResizeObserver } from '@/__mocks__/resizeObserver';
 import DatabaseRowModal from '@/components/database/DatabaseRowModal';
 import { RowPeekLayout } from '@/components/database/row-peek/RowPeekLayout';
 import { useRowPeekNavigationGuard } from '@/components/database/row-peek/RowPeekNavigation';
@@ -13,8 +13,15 @@ const mockCommit = jest.fn<Promise<boolean>, []>();
 const mockDuplicateRow = jest.fn<Promise<void>, [string]>();
 const mockMount = jest.fn();
 const mockUnmount = jest.fn();
+const mockLoadWidth = jest.fn<Promise<number | undefined>, []>();
+const mockSaveWidth = jest.fn<Promise<void>, [number]>();
 
 mockResizeObserver();
+
+jest.mock('@/components/database/row-peek/side-peek-width', () => ({
+  loadSidePeekWidth: () => mockLoadWidth(),
+  saveSidePeekWidth: (width: number) => mockSaveWidth(width),
+}));
 
 jest.mock('@/application/database-yjs', () => ({
   useDatabaseContextOptional: () => ({ workspaceId: 'workspace', databasePageId: 'database', activeViewId: 'view' }),
@@ -82,6 +89,8 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockCommit.mockResolvedValue(true);
   mockDuplicateRow.mockReset().mockResolvedValue(undefined);
+  mockLoadWidth.mockReset().mockResolvedValue(undefined);
+  mockSaveWidth.mockReset().mockResolvedValue(undefined);
 });
 
 afterEach(() => jest.restoreAllMocks());
@@ -148,12 +157,14 @@ it('keeps the same editor and draft across center/side transitions and viewport 
   fireEvent.change(editor, { target: { value: 'Uncommitted draft' } });
   await chooseMode('center');
   await waitFor(() => expect(screen.getByTestId('row-detail').getAttribute('data-peek-mode')).toBe('center'));
+  expect(screen.getByTestId('database-side-peek').hidden).toBe(true);
   expect(screen.getByRole('textbox', { name: 'Draft first' })).toBe(editor);
   expect(editor.value).toBe('Uncommitted draft');
   await chooseMode('side');
   await waitFor(() => expect(screen.getByTestId('row-detail').getAttribute('data-peek-mode')).toBe('side'));
   rerender(<Fixture leftOffset={800} />);
   await waitFor(() => expect(screen.getByTestId('row-detail').getAttribute('data-peek-mode')).toBe('center'));
+  expect(screen.getByTestId('database-side-peek').hidden).toBe(true);
   expect(screen.getByRole('textbox', { name: 'Draft first' })).toBe(editor);
   expect(editor.value).toBe('Uncommitted draft');
   expect(mockMount).toHaveBeenCalledTimes(1);
@@ -173,6 +184,64 @@ it('resizes with the keyboard within the space remaining beside other panels', a
   fireEvent.keyDown(resizer, { key: 'Home' });
   expect(resizer.getAttribute('aria-valuenow')).toBe('560');
   expect(screen.getByTestId('database-side-peek').style.right).toBe('100px');
+  expect(mockSaveWidth.mock.calls.map(([width]) => width)).toEqual([592, (1100 * 2) / 3, 560]);
+});
+
+it('restores the preferred width and preserves it while neighboring panels constrain the available space', async () => {
+  mockLoadWidth.mockResolvedValue(720);
+  const { rerender } = render(<Fixture />);
+
+  await waitFor(() => expect(screen.getByRole('separator').getAttribute('aria-valuenow')).toBe('720'));
+  rerender(<Fixture rightOffset={250} />);
+  expect(Number(screen.getByRole('separator').getAttribute('aria-valuenow'))).toBeLessThan(720);
+  rerender(<Fixture leftOffset={800} />);
+  await waitFor(() => expect(screen.getByTestId('row-detail').getAttribute('data-peek-mode')).toBe('center'));
+  rerender(<Fixture />);
+  await waitFor(() => expect(screen.getByRole('separator').getAttribute('aria-valuenow')).toBe('720'));
+  expect(mockLoadWidth).toHaveBeenCalledTimes(1);
+  expect(mockSaveWidth).not.toHaveBeenCalled();
+});
+
+it('does not let a delayed stored width overwrite a new user resize', async () => {
+  let finishLoad!: (width: number) => void;
+
+  mockLoadWidth.mockReturnValue(new Promise((resolve) => {
+    finishLoad = resolve;
+  }));
+  render(<Fixture />);
+  await screen.findByRole('textbox', { name: 'Draft first' });
+  const resizer = screen.getByRole('separator');
+
+  fireEvent.keyDown(resizer, { key: 'ArrowLeft' });
+  await act(async () => finishLoad(720));
+  expect(resizer.getAttribute('aria-valuenow')).toBe('592');
+  expect(mockSaveWidth).toHaveBeenLastCalledWith(592);
+});
+
+it('writes the final drag width once on release, without writing each pointer move', async () => {
+  render(<Fixture />);
+  await screen.findByRole('textbox', { name: 'Draft first' });
+  const resizer = screen.getByRole('separator');
+
+  resizer.setPointerCapture = jest.fn();
+  resizer.hasPointerCapture = jest.fn(() => true);
+  resizer.releasePointerCapture = jest.fn();
+  // jsdom lacks PointerEvent; browser coverage exercises native pointer capture.
+  const pointer = (type: string, clientX: number) =>
+    fireEvent(resizer, new MouseEvent(type, { bubbles: true, button: 0, clientX }));
+
+  pointer('pointerdown', 800);
+  pointer('pointermove', 740);
+  pointer('pointermove', 680);
+  expect(resizer.getAttribute('aria-valuenow')).toBe('680');
+  expect(mockSaveWidth).not.toHaveBeenCalled();
+  pointer('pointerup', 680);
+  fireEvent.lostPointerCapture(resizer);
+  expect(mockSaveWidth).toHaveBeenCalledTimes(1);
+  expect(mockSaveWidth).toHaveBeenCalledWith(680);
+  pointer('pointerdown', 680);
+  pointer('pointerup', 680);
+  expect(mockSaveWidth).toHaveBeenCalledTimes(1);
 });
 
 it('retains an invalid draft on close and refuses another database until saved', async () => {
@@ -194,6 +263,40 @@ it('retains an invalid draft on close and refuses another database until saved',
   await screen.findByRole('textbox', { name: 'Draft second' });
   expect(screen.queryByRole('textbox', { name: 'Draft first' })).toBeNull();
   expect(screen.getAllByTestId('row-detail')).toHaveLength(1);
+});
+
+it.each([false, true])('keeps replacement authorization through viewport fallback (saved=%s)', async (saved) => {
+  let finish!: (saved: boolean) => void;
+
+  mockCommit.mockImplementation(
+    () => new Promise((resolve) => {
+      finish = resolve;
+    })
+  );
+  const { rerender } = render(<Fixture />);
+  const editor = await screen.findByRole<HTMLInputElement>('textbox', { name: 'Draft first' });
+
+  fireEvent.change(editor, { target: { value: 'Pending draft' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Another database' }));
+  await waitFor(() => expect(mockCommit).toHaveBeenCalledTimes(1));
+  rerender(<Fixture leftOffset={800} />);
+  expect(screen.queryByRole('textbox', { name: 'Draft second' })).toBeNull();
+  expect(screen.getAllByTestId('row-detail')).toHaveLength(1);
+  expect(screen.getByRole('textbox', { name: 'Draft first' })).toBe(editor);
+  expect(editor.value).toBe('Pending draft');
+  rerender(<Fixture />);
+  expect(screen.queryByRole('textbox', { name: 'Draft second' })).toBeNull();
+  rerender(<Fixture leftOffset={800} />);
+
+  await act(async () => finish(saved));
+  expect(screen.getAllByTestId('row-detail')).toHaveLength(1);
+  expect(screen.getByRole('textbox', { name: saved ? 'Draft second' : 'Draft first' })).toBeTruthy();
+  expect(screen.queryByRole('textbox', { name: saved ? 'Draft first' : 'Draft second' })).toBeNull();
+  rerender(<Fixture />);
+  await waitFor(() => expect(screen.getByTestId('row-detail').getAttribute('data-peek-mode')).toBe('side'));
+  expect(screen.getAllByTestId('row-detail')).toHaveLength(1);
+  expect(screen.getByTestId('database-side-peek').hidden).toBe(false);
+  expect(mockCommit).toHaveBeenCalledTimes(1);
 });
 
 it('waits for the accepted save before closing', async () => {

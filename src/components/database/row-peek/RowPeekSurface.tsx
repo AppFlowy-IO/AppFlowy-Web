@@ -1,10 +1,11 @@
 import { Dialog } from '@mui/material';
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
 import { useRowPeekLayout } from './RowPeekLayout';
+
+import type { ReactNode } from 'react';
 
 export type RowPeekMode = 'side' | 'center';
 
@@ -34,6 +35,9 @@ export function RowPeekSurface({
   const [content] = useState(() => document.createElement('div'));
   const [center, setCenter] = useState<HTMLDivElement | null>(null);
   const [attached, setAttached] = useState(false);
+  // A page-modal peek has its own shell. Other peeks retain their page claim
+  // for their lifetime, even while resizing or changing modes hides the side slot.
+  const [requiresClaim] = useState(() => Boolean(layout && !hideBackdrop));
   const callbacks = useRef({ prepare, closeImmediately });
 
   useLayoutEffect(() => {
@@ -42,9 +46,11 @@ export function RowPeekSurface({
 
   const claim = layout?.claim;
   const release = layout?.release;
+  const showSide = layout?.showSide;
+  const authorized = !requiresClaim || layout?.owner === id;
 
   useLayoutEffect(() => {
-    if (!open || !side || !claim || !release) return;
+    if (!open || !requiresClaim || !claim || !release) return;
     let current = true;
 
     void claim(
@@ -62,9 +68,13 @@ export function RowPeekSurface({
       current = false;
       release(id);
     };
-  }, [claim, id, open, release, side]);
+  }, [claim, id, open, release, requiresClaim]);
 
-  const destination = side && layout?.owner === id ? layout.container : !side ? center : null;
+  useLayoutEffect(() => {
+    if (requiresClaim && authorized) showSide?.(id, open && side);
+  }, [authorized, id, open, requiresClaim, showSide, side]);
+
+  const destination = authorized ? (side ? layout?.container : center) : null;
 
   useLayoutEffect(() => {
     content.className = 'flex h-full min-h-0 w-full flex-col';
@@ -91,8 +101,8 @@ export function RowPeekSurface({
   return (
     <>
       <Dialog
-        open={open && !side}
-        data-row-peek-open={open && !side}
+        open={open && authorized && !side}
+        data-row-peek-open={open && authorized && !side}
         onClose={onClose}
         // The row's document-level Escape handler closes either shell and lets
         // open menus own the key; MUI's own handler would ignore them.
@@ -112,7 +122,7 @@ export function RowPeekSurface({
         <div ref={centerRef} className='flex h-full min-h-0 w-full flex-col'>
           {/* Keep the portal in the dialog's React tree so its focus trap recognizes
               menus portaled by the row editors, even though the DOM target moves. */}
-          {open && attached ? createPortal(children, content) : null}
+          {open && authorized && attached ? createPortal(children, content) : null}
         </div>
       </Dialog>
     </>

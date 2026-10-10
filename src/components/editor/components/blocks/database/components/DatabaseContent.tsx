@@ -1,7 +1,7 @@
 import CircularProgress from '@mui/material/CircularProgress';
 import { useTranslation } from 'react-i18next';
 
-import { DatabaseContextState } from '@/application/database-yjs';
+import { DatabaseContextState, DatabaseRowPeekSource } from '@/application/database-yjs';
 import { getPublishedDatabaseRenderRowMap } from '@/application/publish-snapshot/database-yjs-render-bridge';
 import { LoadView, LoadViewMeta, UIVariant, YDoc } from '@/application/types';
 import { Database } from '@/components/database';
@@ -40,6 +40,7 @@ interface DatabaseContentProps {
   onViewAdded?: (viewId: string) => void;
   onViewIdsChanged?: (viewIds: string[]) => void;
   context: DatabaseContextState;
+  permissionSource?: DatabaseRowPeekSource['permissionSource'];
   databaseReadOnly: boolean;
   databaseCanWrite: boolean;
   databaseCanShare: boolean;
@@ -71,6 +72,7 @@ export const DatabaseContent = ({
   onViewAdded,
   onViewIdsChanged,
   context,
+  permissionSource,
   databaseReadOnly,
   databaseCanWrite,
   databaseCanShare,
@@ -92,6 +94,7 @@ export const DatabaseContent = ({
       >
         <Database
           {...context}
+          embeddedPermissionSource={permissionSource}
           readOnly={databaseReadOnly}
           canWrite={databaseCanWrite}
           canShare={databaseCanShare}

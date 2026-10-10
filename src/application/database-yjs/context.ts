@@ -4,7 +4,7 @@ import { AxiosInstance } from 'axios';
 import { createContext, useContext, useEffect, useState, useSyncExternalStore } from 'react';
 
 import { retainDatabaseHistoryRow } from '@/application/database-yjs/history-row-store';
-import type { RowOrdersStore } from '@/application/database-yjs/row-orders-store';
+import type { RowOrdersSource, RowOrdersStore } from '@/application/database-yjs/row-orders-store';
 import {
   BindViewSync,
   CreateDatabaseViewPayload,
@@ -68,6 +68,7 @@ export interface DatabaseContextState {
   rowMap: Record<RowId, YDoc> | null;
   /** Mounted view orders shared with row peeks in this database component. */
   rowOrdersStore?: RowOrdersStore;
+  rowOrdersSource?: RowOrdersSource;
   /**
    * Set while the row-template editor edits its hidden source row. That row
    * never joins `row_orders`, so relation edits on it must not write
@@ -102,7 +103,12 @@ export interface DatabaseContextState {
   // use different view id to navigate to row
   navigateToRow?: (rowId: string, viewId?: string) => void;
   /** Reuse this peek for an embedded database without inheriting the host's permissions. */
-  openRowInHostPeek?: (rowId: string, viewId: string, permissions: DatabaseRowPermissions) => void;
+  openRowInHostPeek?: (
+    rowId: string,
+    viewId: string,
+    permissions: DatabaseRowPermissions,
+    source?: DatabaseRowPeekSource
+  ) => void;
   loadView?: LoadView;
   bindViewSync?: BindViewSync;
   scheduleDeferredCleanup?: (objectId: string, delayMs?: number) => void;
@@ -156,6 +162,16 @@ export interface DatabaseContextState {
   openPageModalViewId?: string;
   // Close row detail modal (when in modal context)
   closeRowDetailModal?: () => void;
+}
+
+export interface DatabaseRowPeekSource {
+  rowOrdersSource?: RowOrdersSource;
+  permissionSource?: {
+    sourceViewId: string;
+    sourceDatabaseId?: string;
+    inheritedReadOnly: boolean;
+    variant?: UIVariant;
+  };
 }
 
 export type DatabaseRowPermissions = Pick<DatabaseContextState, 'readOnly' | 'canWrite' | 'canComment' | 'canShare'>;

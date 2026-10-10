@@ -1,6 +1,9 @@
-import { createContext, useCallback, useContext, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import type { CSSProperties, ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { loadSidePeekWidth, saveSidePeekWidth } from './side-peek-width';
+
+import type { CSSProperties, ReactNode } from 'react';
 
 export const MIN_SIDE_PEEK_WIDTH = 560;
 const MIN_PAGE_WIDTH = 320;
@@ -28,13 +31,14 @@ interface RowPeekLayoutState {
   owner: symbol | null;
   claim: (owner: PeekOwner, isCurrent: () => boolean) => Promise<boolean>;
   release: (owner: symbol) => void;
+  showSide: (owner: symbol, visible: boolean) => void;
 }
 
 const RowPeekLayoutContext = createContext<RowPeekLayoutState | null>(null);
 
 export const useRowPeekLayout = () => useContext(RowPeekLayoutContext);
 
-/** One side slot per page, shared by standalone and embedded databases. */
+/** One page peek owner, independent of its side or center presentation. */
 export function RowPeekLayout({
   children,
   leftOffset = 0,
@@ -56,12 +60,26 @@ export function RowPeekLayout({
   const canShow = !disabled && viewport >= 1024 && available >= MIN_SIDE_PEEK_WIDTH + MIN_PAGE_WIDTH;
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
   const [owner, setOwner] = useState<symbol | null>(null);
+  const [sideOwner, setSideOwner] = useState<symbol | null>(null);
   const active = useRef<PeekOwner | null>(null);
   const claimRevision = useRef(0);
   const [preferredWidth, setPreferredWidth] = useState(MIN_SIDE_PEEK_WIDTH);
+  const widthTouched = useRef(false);
   const width = clampSidePeekWidth(preferredWidth, available);
-  const visible = owner !== null && canShow;
-  const drag = useRef<{ x: number; width: number } | null>(null);
+  const visible = owner !== null && sideOwner === owner && canShow;
+  const drag = useRef<{ x: number; width: number; nextWidth?: number } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void loadSidePeekWidth().then((stored) => {
+      // A slow read must not undo a resize already started in this session.
+      if (!cancelled && !widthTouched.current && stored !== undefined) setPreferredWidth(stored);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const claim = useCallback(async (next: PeekOwner, isCurrent: () => boolean) => {
     const revision = ++claimRevision.current;
@@ -79,11 +97,17 @@ export function RowPeekLayout({
     if (active.current?.id !== id) return;
     active.current = null;
     setOwner(null);
+    setSideOwner(null);
+  }, []);
+
+  const showSide = useCallback((id: symbol, visible: boolean) => {
+    if (active.current?.id !== id) return;
+    setSideOwner(visible ? id : null);
   }, []);
 
   const value = useMemo(
-    () => ({ container, canShow, owner, claim, release }),
-    [container, canShow, owner, claim, release]
+    () => ({ container, canShow, owner, claim, release, showSide }),
+    [container, canShow, owner, claim, release, showSide]
   );
 
   return (
@@ -115,19 +139,27 @@ export function RowPeekLayout({
             onPointerDown={(event) => {
               if (event.button !== 0) return;
               event.preventDefault();
+              widthTouched.current = true;
               drag.current = { x: event.clientX, width };
               event.currentTarget.setAttribute('data-dragging', 'true');
               event.currentTarget.setPointerCapture(event.pointerId);
             }}
             onPointerMove={(event) => {
               if (!drag.current) return;
-              setPreferredWidth(clampSidePeekWidth(drag.current.width + drag.current.x - event.clientX, available));
+              const next = clampSidePeekWidth(drag.current.width + drag.current.x - event.clientX, available);
+
+              drag.current.nextWidth = next;
+              setPreferredWidth(next);
             }}
             onPointerUp={(event) => {
+              const next = drag.current?.nextWidth;
+
               drag.current = null;
               event.currentTarget.removeAttribute('data-dragging');
               if (event.currentTarget.hasPointerCapture(event.pointerId))
                 event.currentTarget.releasePointerCapture(event.pointerId);
+              // Persist explicit resizes, not previews or automatic viewport clamping.
+              if (next !== undefined) void saveSidePeekWidth(next);
             }}
             onLostPointerCapture={(event) => {
               drag.current = null;
@@ -147,7 +179,11 @@ export function RowPeekLayout({
 
               if (next === undefined) return;
               event.preventDefault();
-              setPreferredWidth(clampSidePeekWidth(next, available));
+              widthTouched.current = true;
+              const resized = clampSidePeekWidth(next, available);
+
+              setPreferredWidth(resized);
+              void saveSidePeekWidth(resized);
             }}
           />
           <div ref={setContainer} className='flex h-full min-h-0 flex-col' />

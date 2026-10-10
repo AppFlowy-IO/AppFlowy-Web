@@ -375,6 +375,12 @@ function DatabaseBlockBody({ node, children, editor, forwardedRef, readOnly, ...
               onViewAdded={onViewAdded}
               onRendered={handleRendered}
               onViewIdsChanged={handleViewIdsChanged}
+              permissionSource={{
+                sourceViewId: viewId,
+                sourceDatabaseId: databaseCollabId,
+                inheritedReadOnly: readOnly,
+                variant: context.variant,
+              }}
               databaseReadOnly={databasePermissions.readOnly}
               databaseCanWrite={databasePermissions.canWrite}
               databaseCanShare={databasePermissions.canShare}
