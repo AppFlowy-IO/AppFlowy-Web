@@ -1,8 +1,8 @@
-import { mockResizeObserver } from '@/__mocks__/resizeObserver';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useState } from 'react';
 import * as Y from 'yjs';
 
+import { mockResizeObserver } from '@/__mocks__/resizeObserver';
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs/context';
 import { YDoc, YjsEditorKey } from '@/application/types';
 import OpenAction from '@/components/database/components/database-row/OpenAction';
@@ -44,13 +44,7 @@ function Fixture({ readOnly = false, leftOffset = 240 }) {
       <RowPeekLayout leftOffset={leftOffset}>
         <OpenAction rowId='first' />
         <button onClick={() => setOpen(true)}>Reopen row</button>
-        {open ? (
-          <DatabaseRowModal
-            rowId='first'
-            open
-            onOpenChange={setOpen}
-          />
-        ) : null}
+        {open ? <DatabaseRowModal rowId='first' open onOpenChange={setOpen} /> : null}
       </RowPeekLayout>
     </DatabaseContext.Provider>
   );
@@ -101,7 +95,7 @@ it.each(['CenterPeek', 'FullPage', 'NewTab'])('ignores legacy %s without rewriti
   expect(updates).not.toHaveBeenCalled();
 });
 
-it('uses a temporary center fallback when the viewport is too narrow', async () => {
+it('keeps the narrow-window fallback centered until the user switches or reopens', async () => {
   const updates = jest.fn();
 
   doc.on('update', updates);
@@ -109,6 +103,8 @@ it('uses a temporary center fallback when the viewport is too narrow', async () 
 
   await waitFor(() => expect(screen.getByTestId('row-detail').getAttribute('data-peek-mode')).toBe('center'));
   rerender(<Fixture leftOffset={240} />);
-  await waitFor(() => expect(screen.getByTestId('row-detail').getAttribute('data-peek-mode')).toBe('side'));
+  await waitFor(() => expect(screen.getByTestId('row-detail').getAttribute('data-peek-mode')).toBe('center'));
+  await chooseMode('side');
+  expect(screen.getByTestId('row-detail').getAttribute('data-peek-mode')).toBe('side');
   expect(updates).not.toHaveBeenCalled();
 });

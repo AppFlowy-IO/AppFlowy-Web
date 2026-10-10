@@ -617,7 +617,9 @@ export async function choosePeekDate(page: Page, name: string, value: string): P
   await DateTimeSelectors.dateTimeDateInput(page).fill(value);
   await page.keyboard.press('Enter');
   await expect(peekPropertyValue(page, name)).toContainText(value);
-  await page.keyboard.press('Escape');
+  // Enter blurs this input. Target the picker explicitly so the dismiss key
+  // cannot be sent to the row while popup focus is being restored.
+  await DateTimeSelectors.dateTimeDateInput(page).press('Escape');
   await expect(popover).toHaveCount(0, { timeout: 10_000 });
   await expectPeekOpen(page);
 }

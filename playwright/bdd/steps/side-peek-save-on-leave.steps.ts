@@ -3,15 +3,17 @@ import { createBdd } from 'playwright-bdd';
 
 import { insertLinkedGridViaSlash } from '../../support/duplicate-test-helpers';
 import { currentViewIdFromUrl } from '../../support/page-utils';
-import { BlockSelectors, DatabaseGridSelectors } from '../../support/selectors';
+import { BlockSelectors, DatabaseGridSelectors, DateTimeSelectors } from '../../support/selectors';
 import {
   activeSidePeekPage,
   expectPeekOpen,
+  fieldByName,
   peek,
   peekNavigationButton,
   peekPropertyValue,
   peekTitle,
   PEEK_SHORTCUTS,
+  rowIdByTitle,
   type PeekDirection,
   type PeekNavigationVia,
 } from '../../support/side-peek-helpers';
@@ -40,7 +42,9 @@ function titleOfLength(length: number): string {
 
 /** A row of any grid on the page by its primary cell text; titles are unique across grids. */
 function linkedGridRow(page: Page, title: string): Locator {
-  return DatabaseGridSelectors.dataRows(page).filter({ has: page.getByText(title, { exact: true }) }).first();
+  return DatabaseGridSelectors.dataRows(page)
+    .filter({ has: page.getByText(title, { exact: true }) })
+    .first();
 }
 
 /** Hover the row and click its expand control without asserting what the peek does with it. */
@@ -104,6 +108,70 @@ When(
     await expect(editor).toBeFocused();
   }
 );
+
+When(
+  'I type the time {string} into the {string} property of the peek without leaving it',
+  async ({ page }, time: string, name: string) => {
+    const active = activeSidePeekPage(page);
+
+    await peekPropertyValue(active, name).click();
+    const picker = DateTimeSelectors.dateTimePickerPopover(active);
+    const includeTime = picker
+      .locator('div')
+      .filter({ has: active.getByText('Include time', { exact: true }) })
+      .filter({ has: active.getByRole('switch') })
+      .last()
+      .getByRole('switch');
+
+    await includeTime.setChecked(true);
+    const input = DateTimeSelectors.dateTimeTimeInput(active);
+    const twelveHour = /am|pm/i.test(await input.inputValue());
+    const [hours, minutes] = time.split(':').map(Number);
+    const value = twelveHour
+      ? `${hours % 12 || 12}:${String(minutes).padStart(2, '0')} ${hours < 12 ? 'AM' : 'PM'}`
+      : time;
+
+    await input.fill(value);
+    await expect(input).toBeFocused();
+    // This editor is portaled outside the row-detail DOM subtree.
+    expect(await input.evaluate((element) => element.closest('[data-testid="row-detail"]') === null)).toBe(true);
+  }
+);
+
+Then(
+  'the stored time of the {string} property of row {string} is {string}',
+  async ({ page }, name: string, title: string, expected: string) => {
+    const active = activeSidePeekPage(page);
+    const rowId = await rowIdByTitle(active, title);
+    const { id: fieldId } = await fieldByName(active, name);
+
+    await expect
+      .poll(() =>
+        active.evaluate(
+          async ({ rowId, fieldId }) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const ctx = (window as any).__TEST_DATABASE_CONTEXT__;
+            const rowDoc = ctx.rowMap?.[rowId] ?? (await ctx.ensureRow(rowId));
+            const cell = rowDoc.getMap('data').get('data').get('cells').get(fieldId);
+
+            if (!cell?.get('include_time')) return '';
+            const date = new Date(Number(cell.get('data')) * 1000);
+
+            return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+          },
+          { rowId, fieldId }
+        )
+      )
+      .toBe(expected);
+  }
+);
+
+When('I delete the row from the peek menu', async ({ page }) => {
+  const active = activeSidePeekPage(page);
+
+  await active.getByTestId('row-detail-more-actions').click();
+  await active.getByTestId('row-detail-delete').click();
+});
 
 /** The title saves as it is typed, so an oversized one is rejected right here. */
 When('I replace the peek title with {int} characters', async ({ page }, length: number) => {

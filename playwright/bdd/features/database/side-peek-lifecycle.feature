@@ -8,6 +8,24 @@ Feature: Database side peek lifecycle
   database's rows, and an inline database inside the peeked row document
   takes over the peek once the outer title is saved.
 
+  # Apply row-order updates outside the peek, as a synchronized database update
+  # would. A deleted row must close even if its local draft cannot be saved.
+  Scenario Outline: An external <deletion> closes a <mode> peek with a rejected draft
+    Given I am signed in for side peek testing
+    And I have created a grid named "Peek external deletion" with rows "Amber, Birch, Cedar"
+    When I open the row "Amber" in the peek from the grid
+    And I switch the open row to "<mode> peek"
+    And I replace the peek title with 10001 characters
+    Then the title is rejected as too long to save
+    When the row "Amber" receives a <deletion> outside the peek
+    Then no peek is open
+    And the visible rows are "Birch, Cedar"
+
+    Examples:
+      | mode   | deletion  |
+      | Side   | removal   |
+      | Center | tombstone |
+
   Scenario: A row deep link opens the row as a side peek on load
     Given I am signed in for side peek testing
     And I have created a grid named "Peek Deep Link" with rows "Amber, Birch, Cedar"

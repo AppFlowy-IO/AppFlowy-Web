@@ -2,9 +2,9 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import { useDatabaseContextOptional, useReadOnly } from '@/application/database-yjs';
+import { useDatabase, useDatabaseContextOptional, useDatabaseView, useReadOnly } from '@/application/database-yjs';
 import { useDuplicateRowDispatch, useTrashAwareDeleteRowsDispatch } from '@/application/database-yjs/dispatch';
-import { UIVariant } from '@/application/types';
+import { DatabaseViewLayout, UIVariant, YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
@@ -20,6 +20,7 @@ import {
   RowPeekNavigationContext,
 } from '@/components/database/row-peek/RowPeekNavigation';
 import { RowPeekMode, RowPeekSurface } from '@/components/database/row-peek/RowPeekSurface';
+import { useRowPeekRowDeletion } from '@/components/database/row-peek/useRowPeekRowDeletion';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -45,6 +46,8 @@ function DatabaseRowModal({
   onRegisterPrepare?: (prepare: (() => Promise<boolean>) | null) => void;
 }) {
   const context = useDatabaseContextOptional();
+  const database = useDatabase();
+  const view = useDatabaseView();
   const layout = useRowPeekLayout();
   const openPageModalViewId = context?.openPageModalViewId;
   const readOnly = useReadOnly();
@@ -53,13 +56,22 @@ function DatabaseRowModal({
   const deleteRows = useTrashAwareDeleteRowsDispatch();
   const [duplicateLoading, setDuplicateLoading] = useState(false);
   const duplicatePending = useRef(false);
-  const [mode, setMode] = useState<RowPeekMode>('side');
-  const side = mode === 'side' && layout?.canShow === true && !openPageModalViewId;
+  const [selectedMode, setMode] = useState<RowPeekMode>();
+  const sourceLayout = Number(view?.get(YjsDatabaseKey.layout));
+  const defaultMode =
+    sourceLayout === DatabaseViewLayout.Calendar || sourceLayout === DatabaseViewLayout.Timeline ? 'center' : 'side';
+  const mode = selectedMode ?? defaultMode;
+  const canShowSide = layout?.canShow === true && !openPageModalViewId;
+  const side = mode === 'side' && canShowSide;
   const contentRef = useRef<HTMLDivElement>(null);
   const [navigation] = useState(createRowPeekNavigation);
   const prepare = useCallback(() => navigation.prepare(contentRef.current), [navigation]);
   const currentRow = useRef<string | null>(rowId);
 
+  useLayoutEffect(() => {
+    // A fallback is a mode change for this opening; widening must not undo it.
+    if (!canShowSide) setMode('center');
+  }, [canShowSide]);
   useLayoutEffect(() => {
     currentRow.current = rowId;
     return () => {
@@ -72,6 +84,8 @@ function DatabaseRowModal({
   }, [onRegisterPrepare, prepare]);
 
   const closeImmediately = useCallback(() => onOpenChange(false), [onOpenChange]);
+
+  useRowPeekRowDeletion(database, open ? view : undefined, rowId, closeImmediately);
   const close = useCallback(() => {
     const closingRow = rowId;
 
@@ -80,20 +94,23 @@ function DatabaseRowModal({
     });
   }, [closeImmediately, prepare, rowId]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (event: KeyboardEvent) => {
+  const onEscapeKeyDown = useCallback(
+    (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return;
       // Portaled editors live outside the center dialog's React event tree.
       // Handle Escape in either shell, while allowing visible overlays to own it.
       if (hasRowPeekOverlay(contentRef.current)) return;
       event.preventDefault();
       close();
-    };
+    },
+    [close]
+  );
 
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [close, open]);
+  useEffect(() => {
+    if (!open) return;
+    document.addEventListener('keydown', onEscapeKeyDown);
+    return () => document.removeEventListener('keydown', onEscapeKeyDown);
+  }, [onEscapeKeyDown, open]);
 
   const openFullPage = async () => {
     if (!openPage || !(await prepare()) || currentRow.current !== rowId) return;
@@ -144,6 +161,7 @@ function DatabaseRowModal({
         <RowPeekBannerActionsProvider side={side}>
           <div
             ref={contentRef}
+            onFocusCapture={(event) => navigation.trackFocusedEditor(event.target)}
             data-testid='row-detail'
             data-peek-mode={side ? 'side' : 'center'}
             className='row-peek flex h-full min-h-0 w-full flex-col'
@@ -151,9 +169,10 @@ function DatabaseRowModal({
             <RowPeekHeader
               rowId={rowId}
               side={side}
-              canShowSide={layout?.canShow === true && !openPageModalViewId}
+              canShowSide={canShowSide}
               nested={!!openPageModalViewId}
               onClose={close}
+              onEscapeKeyDown={onEscapeKeyDown}
               onModeChange={setMode}
               onOpenFullPage={openPage ? () => void openFullPage() : undefined}
               onOpenNewTab={canOpenNewTab ? openNewTab : undefined}
@@ -201,7 +220,10 @@ function DatabaseRowModal({
                         variant='destructive'
                         data-testid='row-detail-delete'
                         onSelect={async () => {
-                          if (!(await prepare()) || currentRow.current !== rowId) return;
+                          // Drain pending writes, but a rejected draft must not
+                          // prevent the user's explicit request to discard its row.
+                          await prepare();
+                          if (currentRow.current !== rowId) return;
                           try {
                             await deleteRows([rowId]);
                             if (currentRow.current === rowId) closeImmediately();
