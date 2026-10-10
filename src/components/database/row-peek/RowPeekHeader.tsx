@@ -36,6 +36,7 @@ export function RowPeekHeader({
   canShowSide,
   nested,
   onClose,
+  onEscapeKeyDown,
   onModeChange,
   onOpenFullPage,
   onOpenNewTab,
@@ -48,6 +49,7 @@ export function RowPeekHeader({
   canShowSide: boolean;
   nested: boolean;
   onClose: () => void;
+  onEscapeKeyDown: (event: KeyboardEvent) => void;
   onModeChange: (mode: RowPeekMode) => void;
   onOpenFullPage?: () => void;
   onOpenNewTab?: () => void;
@@ -91,7 +93,7 @@ export function RowPeekHeader({
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
-        <TooltipContent className='rounded-lg' onEscapeKeyDown={onClose}>
+        <TooltipContent className='rounded-lg' onEscapeKeyDown={onEscapeKeyDown}>
           {t('grid.rowPage.switchPeekMode')}
         </TooltipContent>
       </Tooltip>

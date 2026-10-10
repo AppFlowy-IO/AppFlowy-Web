@@ -1,7 +1,7 @@
 Feature: Database side peek entry points
 
-  Every layout opens its rows in the same nonmodal side peek
-  (data-peek-mode="side") showing the row that was picked. Mirrors desktop
+  Rows open in a nonmodal side peek, except calendar and timeline rows which
+  start centered. Each shows the row that was picked. Mirrors desktop
   SP6 (list, gallery and feed rows) and covers the entry points desktop has
   no hover control for: board cards and keyboard selection, the calendar
   event popover and No Date list, the chart drill-down, timeline bars and
@@ -40,21 +40,25 @@ Feature: Database side peek entry points
     And I select the board card "Birch" with the arrow keys and press Enter
     Then the peek is open in side mode showing "Birch"
 
-  Scenario: A calendar event expands from its popover into the side peek
+  Scenario: A calendar event expands from its popover into the center peek
     Given I am signed in for side peek testing
     And I have created a calendar named "Peek Calendar" with events "Launch, Review"
     When I open the row "Launch" in the peek from its calendar event
+    Then the peek is open in center mode showing "Launch"
+    When I switch the open row to "Side peek"
     Then the peek is open in side mode showing "Launch"
-    And the peek has no backdrop
+    When I close the peek with the close button
+    And I open the row "Launch" in the peek from its calendar event
+    Then the peek is open in center mode showing "Launch"
 
-  Scenario: A calendar No Date row opens the side peek
+  Scenario: A calendar No Date row opens the center peek
     Given I am signed in for side peek testing
     And I have created a calendar named "Peek No Date" with events "Launch"
     And the calendar has an undated row "Backlog"
     When I open the No Date list
     Then the No Date list shows 1 undated row
     When I open the undated row "Backlog" from the No Date list
-    Then the peek is open in side mode showing "Backlog"
+    Then the peek is open in center mode showing "Backlog"
 
   # One category keeps bar 1 unambiguous; the empty category is only drawn
   # for rows without an option.
@@ -70,16 +74,15 @@ Feature: Database side peek entry points
     And the chart drill-down popup is closed
 
   # Timeline creation is Pro-gated on hosted servers, like the timeline suite.
-  Scenario: A timeline bar opens the side peek from a click and from Enter
+  Scenario: A timeline bar opens the center peek from a click and from Enter
     Given I am signed in for side peek testing with a Pro subscription
     And I have created a calendar named "Peek Timeline" with events "Design, Build"
     When I open a new Timeline view of the database
     And I click the timeline bar "Build"
-    Then the peek is open in side mode showing "Build"
-    And the peek has no backdrop
-    When I close the peek with the close button
+    Then the peek is open in center mode showing "Build"
+    When I close the peek by clicking the backdrop
     And I focus the "Design" bar and press Enter
-    Then the peek is open in side mode showing "Design"
+    Then the peek is open in center mode showing "Design"
 
   # The related database carries a property the source grid lacks, and the
   # peek's prev/next order follows the related database's rows.

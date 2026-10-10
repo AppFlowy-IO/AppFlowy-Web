@@ -77,8 +77,8 @@ function RowNavigation({ rowId, rows }: { rowId: string; rows: Row[] | undefined
   return (
     <div ref={toolbar} className='flex items-center gap-1'>
       {[
-        { id: previous, label: t('grid.rowPage.previousRow'), Icon: UpIcon, testId: 'row-peek-previous', key: 'K' },
-        { id: next, label: t('grid.rowPage.nextRow'), Icon: DownIcon, testId: 'row-peek-next', key: 'J' },
+        { id: previous, label: t('grid.rowPage.previousRow'), Icon: UpIcon, testId: 'row-peek-previous', key: 'P' },
+        { id: next, label: t('grid.rowPage.nextRow'), Icon: DownIcon, testId: 'row-peek-next', key: 'N' },
       ].map(({ id, label, Icon, testId, key }) => (
         <Tooltip key={testId}>
           <TooltipTrigger asChild>

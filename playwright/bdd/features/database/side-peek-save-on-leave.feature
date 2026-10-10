@@ -5,7 +5,7 @@ Feature: Database side peek saves edits before leaving a row
   row: a property editor that is still focused, and values chosen in the
   select and date popovers. A draft that cannot be saved keeps the row open,
   reports why, and holds the one side slot of the page against another
-  database until it is corrected.
+  database until it is corrected or the user explicitly deletes the row.
 
   # Property editors commit on blur. Header controls and shortcuts leave focus
   # in the property, so the row handoff itself has to commit the edit.
@@ -71,6 +71,43 @@ Feature: Database side peek saves edits before leaving a row
     And the grid cell "Due" of row "Amber" contains "03/14/2026"
     When I reload the database page
     Then the grid cell "Due" of row "Amber" contains "03/14/2026"
+
+  Scenario Outline: A focused time draft survives navigation from a <mode> peek
+    Given I am signed in for side peek testing
+    And I have created a grid named "Peek time draft" with rows "Amber, Birch, Cedar"
+    And the grid has a date property named "Due"
+    When I open the row "Amber" in the peek from the grid
+    And I switch the open row to "<mode> peek"
+    And I choose the date "03/14/2026" for the "Due" property in the peek
+    And I type the time "18:45" into the "Due" property of the peek without leaving it
+    And I navigate to the next row with the button
+    Then the peek shows the title "Birch"
+    When I close the peek with Escape
+    And I reload the database page
+    Then the stored time of the "Due" property of row "Amber" is "18:45"
+
+    Examples:
+      | mode   |
+      | Side   |
+      | Center |
+
+  Scenario Outline: An explicit delete discards a rejected title in a <mode> peek
+    Given I am signed in for side peek testing
+    And I have created a grid named "Peek discard draft" with rows "Amber, Birch, Cedar"
+    When I open the row "Amber" in the peek from the grid
+    And I switch the open row to "<mode> peek"
+    And I replace the peek title with 10001 characters
+    Then the title is rejected as too long to save
+    When I delete the row from the peek menu
+    Then no peek is open
+    And the visible rows are "Birch, Cedar"
+    When I reload the database page
+    Then the visible rows are "Birch, Cedar"
+
+    Examples:
+      | mode   |
+      | Side   |
+      | Center |
 
   # The title saves as it is typed, so the rejection shows at once; every way
   # of leaving the row is then refused while the draft is still too long.

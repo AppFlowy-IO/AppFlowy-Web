@@ -73,7 +73,7 @@ Feature: Database side peek layout and close
     When I close the peek by clicking the backdrop
     Then no peek is open
 
-  Scenario: Shrinking the viewport moves an open side peek to center and growing it back restores side
+  Scenario: Shrinking the viewport centers the peek until the user explicitly switches back
     Given I am signed in for side peek testing
     And I have created a grid named "Peek Viewport" with rows "Amber, Birch, Cedar"
     When I open the row "Amber" in the peek from the grid
@@ -84,6 +84,9 @@ Feature: Database side peek layout and close
     Then the peek is open in center mode showing "Amber draft"
     And the peek title editor was not recreated
     When I set the viewport to 1440x900
+    Then the peek is open in center mode showing "Amber draft"
+    And the peek title editor was not recreated
+    When I switch the open row to "Side peek"
     Then the peek is open in side mode showing "Amber draft"
     And the peek has no backdrop
     And the peek title editor was not recreated
@@ -148,4 +151,6 @@ Feature: Database side peek layout and close
     Then the peek is open in center mode showing "Amber"
     When I close the comments panel
     Then the comments panel is closed
-    And the peek is open in side mode showing "Amber"
+    And the peek is open in center mode showing "Amber"
+    When I switch the open row to "Side peek"
+    Then the peek is open in side mode showing "Amber"

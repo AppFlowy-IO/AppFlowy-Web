@@ -33,6 +33,7 @@ import {
   HeaderSelectors,
   RowDetailSelectors,
 } from '../../support/selectors';
+import { dragPeekResizer } from '../../support/side-peek-helpers';
 import { generateRandomEmail } from '../../support/test-config';
 
 async function chooseMode(page: Page, mode: 'side' | 'center') {
@@ -59,12 +60,14 @@ test.describe('Database side peek', () => {
   }, testInfo) => {
     await loginAndCreateGrid(page, request, generateRandomEmail());
     const fieldId = await getPrimaryFieldId(page);
+
     await typeTextIntoCell(page, fieldId, 0, 'First task');
     await typeTextIntoCell(page, fieldId, 1, 'Second task');
     await openRowDetail(page);
 
     const detail = RowDetailSelectors.modal(page);
     const title = detail.getByTestId('row-title-input');
+
     await expect(detail).toHaveAttribute('data-peek-mode', 'side');
     await expect(page.locator('.MuiBackdrop-root:visible')).toHaveCount(0);
     await expect(page.getByTestId('row-peek-previous')).toBeDisabled();
@@ -87,19 +90,17 @@ test.describe('Database side peek', () => {
 
     const resizer = page.getByTestId('row-peek-resizer');
     const before = Number(await resizer.getAttribute('aria-valuenow'));
-    const bounds = await resizer.boundingBox();
-    expect(bounds).not.toBeNull();
-    await page.mouse.move(bounds!.x + bounds!.width / 2, bounds!.y + 100);
-    await page.mouse.down();
-    await page.mouse.move(bounds!.x - 70, bounds!.y + 100, { steps: 8 });
-    await page.mouse.up();
+
+    await dragPeekResizer(page, -70);
     await expect.poll(async () => Number(await resizer.getAttribute('aria-valuenow'))).toBeGreaterThan(before);
 
     await page.setViewportSize({ width: 900, height: 900 });
     await expect(detail).toHaveAttribute('data-peek-mode', 'center');
     await expect(title).toHaveAttribute('data-editor-instance', 'original');
     await page.setViewportSize({ width: 1440, height: 900 });
-    await expect(detail).toHaveAttribute('data-peek-mode', 'side');
+    await expect(detail).toHaveAttribute('data-peek-mode', 'center');
+    await chooseMode(page, 'side');
+    await expect(title).toHaveAttribute('data-editor-instance', 'original');
     await expect(title).toHaveText('Draft retained across modes');
     await page.screenshot({ path: testInfo.outputPath('side-peek.png') });
 
@@ -120,6 +121,7 @@ test.describe('Database side peek', () => {
     const detail = RowDetailSelectors.modal(page);
     const title = detail.getByTestId('row-title-input');
     const oversized = 'x'.repeat(10_001);
+
     await title.fill(oversized);
     await page.getByTestId('row-detail-close').click();
     await expect(title).toHaveText(oversized);
@@ -138,13 +140,16 @@ test.describe('Database side peek', () => {
     await loginAndCreateGrid(page, request, generateRandomEmail());
     await openRowDetail(page);
     const detail = RowDetailSelectors.modal(page);
+
     await detail.getByTestId('row-title-input').fill('Peek navigation task');
     await typeInRowDocument(page, 'Document edited in side peek');
 
     await page.getByTestId('row-peek-mode-menu').click();
     const popupPromise = page.waitForEvent('popup');
+
     await page.getByTestId('row-peek-new-tab').click();
     const popup = await popupPromise;
+
     await expect(popup).toHaveURL(/\?v=.+&r=.+/);
     await expect(popup.getByTestId('row-title-input')).toHaveText('Peek navigation task');
     await expect(popup.getByTestId('editor-content')).toContainText('Document edited in side peek');

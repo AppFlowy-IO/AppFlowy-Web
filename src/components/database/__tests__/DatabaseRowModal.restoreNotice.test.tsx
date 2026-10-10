@@ -1,10 +1,10 @@
-import { mockResizeObserver } from '@/__mocks__/resizeObserver';
 import EventEmitter from 'events';
 
 import { Dialog as MuiDialog } from '@mui/material';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import translations from '@/@types/translations/en.json';
+import { mockResizeObserver } from '@/__mocks__/resizeObserver';
 import { APP_EVENTS } from '@/application/constants';
 import { Types, YDocWithMeta } from '@/application/types';
 import { DatabaseRestoreNoticeProvider, useDatabaseRestoreNotice } from '@/components/app/DatabaseRestoreNotice';
@@ -19,6 +19,8 @@ jest.mock('@/application/database-yjs', () => ({
     databaseDoc: { guid: 'related-database' },
   }),
   useReadOnly: () => false,
+  useDatabase: () => undefined,
+  useDatabaseView: () => undefined,
   useRowOrdersSelector: () => [],
   useNavigateToRow: () => undefined,
 }));

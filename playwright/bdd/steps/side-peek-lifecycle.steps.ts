@@ -57,6 +57,35 @@ After(async ({ page }) => {
   states.delete(page);
 });
 
+When('the row {string} receives a {word} outside the peek', async ({ page }, title: string, deletion: string) => {
+  expect(['removal', 'tombstone']).toContain(deletion);
+  const active = activeSidePeekPage(page);
+  const rowId = await rowIdByTitle(active, title);
+
+  await active.evaluate(
+    ({ rowId, deletion }) => {
+      // Change the raw database orders, without calling the peek's delete action.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ctx = (window as any).__TEST_DATABASE_CONTEXT__;
+      const views = ctx.databaseDoc.getMap('data').get('database').get('views');
+
+      ctx.databaseDoc.transact(() => {
+        for (const view of views.values()) {
+          const orders = view.get('row_orders');
+          const index = orders.toArray().findIndex((row: { id: string }) => row.id === rowId);
+
+          if (index < 0) continue;
+          const row = orders.get(index);
+
+          orders.delete(index, 1);
+          if (deletion === 'tombstone') orders.insert(index, [{ ...row, is_deleted: true }]);
+        }
+      });
+    },
+    { rowId, deletion }
+  );
+});
+
 /** The inline database block rendered inside the peeked row document. */
 function inlineGridInPeek(page: Page): Locator {
   return databaseBlocks(peek(page)).first();

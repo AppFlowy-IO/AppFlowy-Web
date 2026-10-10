@@ -17,8 +17,13 @@ export function hasRowPeekOverlay(container: HTMLElement | null) {
 export function createRowPeekNavigation() {
   const guards = new Set<NavigationGuard>();
   let pending: Promise<boolean> | undefined;
+  let focusedEditor: EventTarget | null = null;
 
   return {
+    // React focus events include portaled descendants, unlike DOM containment.
+    trackFocusedEditor(target: EventTarget | null) {
+      focusedEditor = target;
+    },
     register(guard: NavigationGuard) {
       guards.add(guard);
       return () => {
@@ -33,7 +38,9 @@ export function createRowPeekNavigation() {
       const current = Array.from(guards);
       const focused = document.activeElement;
 
-      if (focused instanceof HTMLElement && container?.contains(focused)) focused.blur();
+      if (focused instanceof HTMLElement && (container?.contains(focused) || focused === focusedEditor)) {
+        focused.blur();
+      }
 
       pending = Promise.resolve()
         .then(() => Promise.all(current.map((guard) => guard())))

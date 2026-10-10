@@ -1,6 +1,6 @@
-import { mockResizeObserver } from '@/__mocks__/resizeObserver';
 import { render, screen } from '@testing-library/react';
 
+import { mockResizeObserver } from '@/__mocks__/resizeObserver';
 import { useReadOnly } from '@/application/database-yjs';
 import DatabaseRowModal from '@/components/database/DatabaseRowModal';
 
@@ -8,6 +8,8 @@ mockResizeObserver();
 
 jest.mock('@/application/database-yjs', () => ({
   useDatabaseContextOptional: jest.fn(() => ({})),
+  useDatabase: () => undefined,
+  useDatabaseView: () => undefined,
   useReadOnly: jest.fn(),
   useRowOrdersSelector: () => [],
   useNavigateToRow: () => undefined,

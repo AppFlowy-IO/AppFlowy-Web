@@ -1,7 +1,9 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useEffect, useState } from 'react';
+import * as Y from 'yjs';
 
 import { mockResizeObserver } from '@/__mocks__/resizeObserver';
+import { DatabaseViewLayout, YDatabase, YDatabaseRowOrders, YDatabaseView, YjsDatabaseKey } from '@/application/types';
 import DatabaseRowModal from '@/components/database/DatabaseRowModal';
 import { RowPeekLayout } from '@/components/database/row-peek/RowPeekLayout';
 import { useRowPeekNavigationGuard } from '@/components/database/row-peek/RowPeekNavigation';
@@ -10,6 +12,10 @@ let mockReadOnly = false;
 let mockRows = [{ id: 'first' }, { id: 'second' }, { id: 'third' }];
 const mockNavigate = jest.fn();
 const mockCommit = jest.fn<Promise<boolean>, []>();
+let mockView: YDatabaseView;
+let mockDatabase: YDatabase;
+let mockViewDoc: Y.Doc;
+const mockDeleteRows = jest.fn<Promise<void>, [string[]]>();
 const mockDuplicateRow = jest.fn<Promise<void>, [string]>();
 const mockMount = jest.fn();
 const mockUnmount = jest.fn();
@@ -26,12 +32,14 @@ jest.mock('@/components/database/row-peek/side-peek-width', () => ({
 jest.mock('@/application/database-yjs', () => ({
   useDatabaseContextOptional: () => ({ workspaceId: 'workspace', databasePageId: 'database', activeViewId: 'view' }),
   useReadOnly: () => mockReadOnly,
+  useDatabaseView: () => mockView,
+  useDatabase: () => mockDatabase,
   useRowOrdersSelector: () => mockRows,
   useNavigateToRow: () => mockNavigate,
 }));
 jest.mock('@/application/database-yjs/dispatch', () => ({
   useDuplicateRowDispatch: () => mockDuplicateRow,
-  useTrashAwareDeleteRowsDispatch: () => jest.fn(),
+  useTrashAwareDeleteRowsDispatch: () => mockDeleteRows,
 }));
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 jest.mock('@/components/database/row-peek/RowPeekDocumentActions', () => ({
@@ -87,13 +95,24 @@ beforeEach(() => {
   mockReadOnly = false;
   mockRows = [{ id: 'first' }, { id: 'second' }, { id: 'third' }];
   jest.clearAllMocks();
+  mockViewDoc = new Y.Doc();
+  mockDatabase = mockViewDoc.getMap('database') as YDatabase;
+  mockView = new Y.Map() as YDatabaseView;
+  mockDatabase.set(YjsDatabaseKey.views, new Y.Map([['view', mockView]]));
+  mockView.set(YjsDatabaseKey.layout, DatabaseViewLayout.Grid);
+  mockView.set(YjsDatabaseKey.row_orders, new Y.Array() as YDatabaseRowOrders);
+  mockView.get(YjsDatabaseKey.row_orders).push(mockRows.map((row) => ({ ...row, height: 36 })));
+  mockDeleteRows.mockReset().mockResolvedValue(undefined);
   mockCommit.mockResolvedValue(true);
   mockDuplicateRow.mockReset().mockResolvedValue(undefined);
   mockLoadWidth.mockReset().mockResolvedValue(undefined);
   mockSaveWidth.mockReset().mockResolvedValue(undefined);
 });
 
-afterEach(() => jest.restoreAllMocks());
+afterEach(() => {
+  mockViewDoc.destroy();
+  jest.restoreAllMocks();
+});
 
 it('opens beside an interactive page by default and closes with Escape', async () => {
   render(<Fixture />);
@@ -197,6 +216,8 @@ it('restores the preferred width and preserves it while neighboring panels const
   rerender(<Fixture leftOffset={800} />);
   await waitFor(() => expect(screen.getByTestId('row-detail').getAttribute('data-peek-mode')).toBe('center'));
   rerender(<Fixture />);
+  expect(screen.getByTestId('row-detail').getAttribute('data-peek-mode')).toBe('center');
+  await chooseMode('side');
   await waitFor(() => expect(screen.getByRole('separator').getAttribute('aria-valuenow')).toBe('720'));
   expect(mockLoadWidth).toHaveBeenCalledTimes(1);
   expect(mockSaveWidth).not.toHaveBeenCalled();
@@ -205,9 +226,11 @@ it('restores the preferred width and preserves it while neighboring panels const
 it('does not let a delayed stored width overwrite a new user resize', async () => {
   let finishLoad!: (width: number) => void;
 
-  mockLoadWidth.mockReturnValue(new Promise((resolve) => {
-    finishLoad = resolve;
-  }));
+  mockLoadWidth.mockReturnValue(
+    new Promise((resolve) => {
+      finishLoad = resolve;
+    })
+  );
   render(<Fixture />);
   await screen.findByRole('textbox', { name: 'Draft first' });
   const resizer = screen.getByRole('separator');
@@ -269,9 +292,10 @@ it.each([false, true])('keeps replacement authorization through viewport fallbac
   let finish!: (saved: boolean) => void;
 
   mockCommit.mockImplementation(
-    () => new Promise((resolve) => {
-      finish = resolve;
-    })
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
   );
   const { rerender } = render(<Fixture />);
   const editor = await screen.findByRole<HTMLInputElement>('textbox', { name: 'Draft first' });
@@ -293,9 +317,9 @@ it.each([false, true])('keeps replacement authorization through viewport fallbac
   expect(screen.getByRole('textbox', { name: saved ? 'Draft second' : 'Draft first' })).toBeTruthy();
   expect(screen.queryByRole('textbox', { name: saved ? 'Draft first' : 'Draft second' })).toBeNull();
   rerender(<Fixture />);
-  await waitFor(() => expect(screen.getByTestId('row-detail').getAttribute('data-peek-mode')).toBe('side'));
+  await waitFor(() => expect(screen.getByTestId('row-detail').getAttribute('data-peek-mode')).toBe('center'));
   expect(screen.getAllByTestId('row-detail')).toHaveLength(1);
-  expect(screen.getByTestId('database-side-peek').hidden).toBe(false);
+  expect(screen.getByTestId('database-side-peek').hidden).toBe(true);
   expect(mockCommit).toHaveBeenCalledTimes(1);
 });
 
@@ -500,7 +524,7 @@ it('keeps the editor mounted until a delayed full-page navigation completes', as
   await waitFor(() => expect(screen.queryByTestId('row-detail')).toBeNull());
 });
 
-it.each(['close', 'full page'])('does not let a stale %s save dismiss a replacement row', async (action) => {
+it.each(['close', 'full page', 'delete'])('does not let a stale %s save dismiss a replacement row', async (action) => {
   let finish!: (saved: boolean) => void;
   const openPage = jest.fn();
 
@@ -513,7 +537,13 @@ it.each(['close', 'full page'])('does not let a stale %s save dismiss a replacem
   const { rerender } = render(<Fixture openPage={openPage} />);
 
   await screen.findByRole('textbox', { name: 'Draft first' });
-  fireEvent.click(screen.getByTestId(action === 'close' ? 'row-detail-close' : 'row-detail-open-full-page'));
+  if (action === 'delete') {
+    fireEvent.keyDown(screen.getByTestId('row-detail-more-actions'), { key: 'Enter' });
+    fireEvent.click(await screen.findByTestId('row-detail-delete'));
+  } else {
+    fireEvent.click(screen.getByTestId(action === 'close' ? 'row-detail-close' : 'row-detail-open-full-page'));
+  }
+
   await waitFor(() => expect(mockCommit).toHaveBeenCalledTimes(1));
   rerender(<Fixture rowId='second' openPage={openPage} />);
   await screen.findByRole('textbox', { name: 'Draft second' });
@@ -522,6 +552,7 @@ it.each(['close', 'full page'])('does not let a stale %s save dismiss a replacem
   });
   expect(screen.getByRole('textbox', { name: 'Draft second' })).toBeTruthy();
   expect(openPage).not.toHaveBeenCalled();
+  expect(mockDeleteRows).not.toHaveBeenCalled();
 });
 
 it.each([true, false])('reserves a new tab synchronously and waits for save acceptance (%s)', async (saved) => {
@@ -559,4 +590,153 @@ it.each([true, false])('reserves a new tab synchronously and waits for save acce
 
   expect(screen.getByRole('textbox', { name: 'Draft first' })).toBeTruthy();
   expect(mockUnmount).not.toHaveBeenCalled();
+});
+
+it.each([DatabaseViewLayout.Calendar, DatabaseViewLayout.Timeline])(
+  'opens layout %s centered and still allows an explicit side choice',
+  async (layout) => {
+    mockView.set(YjsDatabaseKey.layout, layout);
+    render(<Fixture />);
+    await screen.findByRole('textbox', { name: 'Draft first' });
+    expect(screen.getByTestId('row-detail').getAttribute('data-peek-mode')).toBe('center');
+    await chooseMode('side');
+    expect(screen.getByTestId('row-detail').getAttribute('data-peek-mode')).toBe('side');
+  }
+);
+
+it('keeps an automatic center fallback after widening, with the same editor and draft', async () => {
+  const { rerender } = render(<Fixture />);
+  const editor = await screen.findByRole<HTMLInputElement>('textbox', { name: 'Draft first' });
+
+  fireEvent.change(editor, { target: { value: 'Keep this draft' } });
+  rerender(<Fixture leftOffset={800} />);
+  expect(screen.getByTestId('row-detail').getAttribute('data-peek-mode')).toBe('center');
+  rerender(<Fixture />);
+  expect(screen.getByTestId('row-detail').getAttribute('data-peek-mode')).toBe('center');
+  expect(screen.getByRole('textbox', { name: 'Draft first' })).toBe(editor);
+  expect(editor.value).toBe('Keep this draft');
+  await chooseMode('side');
+  expect(screen.getByTestId('row-detail').getAttribute('data-peek-mode')).toBe('side');
+});
+
+it('does not let a mode tooltip close the row when another popup owns Escape', async () => {
+  render(<Fixture />);
+  await screen.findByRole('textbox', { name: 'Draft first' });
+  act(() => screen.getByTestId('row-peek-mode-menu').focus());
+  await screen.findByRole('tooltip');
+  const popup = document.createElement('div');
+
+  popup.setAttribute('role', 'menu');
+  document.body.append(popup);
+  try {
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await act(async () => undefined);
+    expect(screen.getByTestId('row-detail')).toBeTruthy();
+    expect(mockCommit).not.toHaveBeenCalled();
+  } finally {
+    popup.remove();
+  }
+});
+
+it.each(['side', 'center'] as const)('allows deleting a rejected draft in %s peek', async (mode) => {
+  render(<Fixture />);
+  await screen.findByRole('textbox', { name: 'Draft first' });
+  if (mode === 'center') await chooseMode('center');
+  mockCommit.mockResolvedValue(false);
+  fireEvent.keyDown(screen.getByTestId('row-detail-more-actions'), { key: 'Enter' });
+  fireEvent.click(await screen.findByTestId('row-detail-delete'));
+  await waitFor(() => expect(mockDeleteRows).toHaveBeenCalledWith(['first']));
+  await waitFor(() => expect(screen.queryByTestId('row-detail')).toBeNull());
+});
+
+it.each(['side', 'center'] as const)(
+  'closes %s peek when its row is externally deleted despite a rejected draft',
+  async (mode) => {
+    render(<Fixture />);
+    await screen.findByRole('textbox', { name: 'Draft first' });
+    if (mode === 'center') await chooseMode('center');
+    mockCommit.mockClear().mockResolvedValue(false);
+    act(() => mockView.get(YjsDatabaseKey.row_orders).delete(0, 1));
+    await waitFor(() => expect(screen.queryByTestId('row-detail')).toBeNull());
+    expect(mockCommit).not.toHaveBeenCalled();
+    expect(mockDeleteRows).not.toHaveBeenCalled();
+  }
+);
+
+it('closes a peek when its row is tombstoned', async () => {
+  render(<Fixture />);
+  await screen.findByRole('textbox', { name: 'Draft first' });
+  act(() =>
+    mockViewDoc.transact(() => {
+      const orders = mockView.get(YjsDatabaseKey.row_orders);
+
+      orders.delete(0, 1);
+      orders.insert(0, [{ id: 'first', height: 36, is_deleted: true }]);
+    })
+  );
+  await waitFor(() => expect(screen.queryByTestId('row-detail')).toBeNull());
+});
+
+it('uses the inline view tombstone when a linked view still contains the row', async () => {
+  const canonical = new Y.Map() as YDatabaseView;
+
+  mockDatabase.get(YjsDatabaseKey.views).set('inline', canonical);
+  canonical.set(YjsDatabaseKey.is_inline, true);
+  canonical.set(YjsDatabaseKey.row_orders, new Y.Array());
+  canonical.get(YjsDatabaseKey.row_orders).push([{ id: 'first', height: 36 }]);
+  render(<Fixture />);
+  await screen.findByRole('textbox', { name: 'Draft first' });
+  act(() =>
+    mockViewDoc.transact(() => {
+      const orders = canonical.get(YjsDatabaseKey.row_orders);
+
+      orders.delete(0, 1);
+      orders.insert(0, [{ id: 'first', height: 36, is_deleted: true }]);
+    })
+  );
+  await waitFor(() => expect(screen.queryByTestId('row-detail')).toBeNull());
+  expect(mockView.get(YjsDatabaseKey.row_orders).get(0).is_deleted).toBeUndefined();
+});
+
+it('keeps a linked-view peek open if its stale tombstone is overridden by the inline view', async () => {
+  const canonical = new Y.Map() as YDatabaseView;
+
+  mockDatabase.get(YjsDatabaseKey.views).set('inline', canonical);
+  canonical.set(YjsDatabaseKey.is_inline, true);
+  canonical.set(YjsDatabaseKey.row_orders, new Y.Array());
+  canonical.get(YjsDatabaseKey.row_orders).push([{ id: 'first', height: 36 }]);
+  mockView.get(YjsDatabaseKey.row_orders).delete(0, 1);
+  mockView.get(YjsDatabaseKey.row_orders).insert(0, [{ id: 'first', height: 36, is_deleted: true }]);
+  render(<Fixture />);
+  await screen.findByRole('textbox', { name: 'Draft first' });
+  expect(screen.getByTestId('row-detail')).toBeTruthy();
+});
+
+it('keeps the peek open while filtering or reordering its row and detaches deletion listeners on close', async () => {
+  const { rerender, unmount } = render(<Fixture />);
+  const editor = await screen.findByRole('textbox', { name: 'Draft first' });
+
+  mockRows = [{ id: 'second' }];
+  rerender(<Fixture />);
+  act(() =>
+    mockViewDoc.transact(() => {
+      const orders = mockView.get(YjsDatabaseKey.row_orders);
+      const first = orders.get(0);
+
+      orders.delete(0, 1);
+      orders.push([first]);
+    })
+  );
+  expect(screen.getByRole('textbox', { name: 'Draft first' })).toBe(editor);
+  const stopObserving = jest.spyOn(mockDatabase, 'unobserveDeep');
+
+  unmount();
+  expect(stopObserving).toHaveBeenCalled();
+});
+
+it('advertises the P/N shortcuts supported by the row navigation buttons', async () => {
+  render(<Fixture rowId='second' />);
+  await screen.findByRole('textbox', { name: 'Draft second' });
+  expect(screen.getByTestId('row-peek-previous').getAttribute('aria-keyshortcuts')).toBe('Control+Shift+P Meta+Shift+P');
+  expect(screen.getByTestId('row-peek-next').getAttribute('aria-keyshortcuts')).toBe('Control+Shift+N Meta+Shift+N');
 });
