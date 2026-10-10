@@ -10,6 +10,7 @@ const api = jest.mocked({ getMeetingStreamingToken, reportMeetingDuration });
 const flush = async () => {
   for (let index = 0; index < 20; index++) await Promise.resolve();
 };
+
 const track = () => ({ stop: jest.fn(), addEventListener: jest.fn() });
 const stream = (hasAudio = true) => {
   const audio = track();
@@ -34,7 +35,7 @@ class FakeSocket {
     this.readyState = 3;
     this.onclose?.();
   });
-  constructor() {
+  constructor(readonly url: string) {
     FakeSocket.last = this;
     void Promise.resolve().then(() => this.message({ type: 'Begin' }));
   }
@@ -47,6 +48,7 @@ describe('browser meeting transcription resource lifecycle', () => {
   const getUserMedia = jest.fn();
   const getDisplayMedia = jest.fn();
   const closeContext = jest.fn();
+  const connectSource = jest.fn();
   const disconnect = jest.fn();
   const callbacks = {
     onState: jest.fn(),
@@ -58,12 +60,16 @@ describe('browser meeting transcription resource lifecycle', () => {
   let session: MeetingTranscription;
   let microphone: ReturnType<typeof stream>;
   let display: ReturnType<typeof stream>;
+  let contextSampleRate: number;
+  let processorPort: { onmessage: ((event: MessageEvent<ArrayBuffer>) => void) | null };
 
   beforeEach(() => {
     jest.useFakeTimers().setSystemTime(new Date('2026-09-21T08:00:00Z'));
     jest.clearAllMocks();
     microphone = stream();
     display = stream();
+    contextSampleRate = 48_000;
+    processorPort = { onmessage: null };
     getUserMedia.mockResolvedValue(microphone);
     getDisplayMedia.mockResolvedValue(display);
     api.getMeetingStreamingToken.mockResolvedValue({ token: 'temporary-token', expires_in_seconds: 60 });
@@ -72,14 +78,28 @@ describe('browser meeting transcription resource lifecycle', () => {
     Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia, getDisplayMedia } });
     Object.assign(globalThis, {
       AudioContext: class {
+        sampleRate: number;
         audioWorklet = { addModule: jest.fn().mockResolvedValue(undefined) };
         destination = {};
-        createMediaStreamSource = () => ({ connect: jest.fn() });
+        constructor(options?: AudioContextOptions) {
+          this.sampleRate = options?.sampleRate ?? contextSampleRate;
+        }
+        createMediaStreamSource = () => {
+          // Firefox rejects captured audio when the context uses another rate.
+          if (this.sampleRate !== contextSampleRate) {
+            throw new DOMException(
+              'Connecting captured audio to a context at a different sample rate is not supported',
+              'NotSupportedError'
+            );
+          }
+
+          return { connect: connectSource };
+        };
         resume = async () => undefined;
         close = closeContext;
       },
       AudioWorkletNode: class {
-        port = { onmessage: null };
+        port = processorPort;
         connect = jest.fn();
         disconnect = disconnect;
       },
@@ -125,6 +145,44 @@ describe('browser meeting transcription resource lifecycle', () => {
     expect(display.video.stop).toHaveBeenCalled();
     expect(getUserMedia).not.toHaveBeenCalled();
     expect(api.getMeetingStreamingToken).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [44_100, 'microphone'],
+    [48_000, 'microphone'],
+    [44_100, 'meeting'],
+    [48_000, 'meeting'],
+  ] as const)('connects %i Hz %s capture without a Firefox sample-rate mismatch', async (rate, mode) => {
+    contextSampleRate = rate;
+
+    await session.start(mode);
+
+    expect(callbacks.onState).toHaveBeenLastCalledWith('recording');
+    expect(connectSource).toHaveBeenCalledTimes(mode === 'meeting' ? 2 : 1);
+    expect(new URL(FakeSocket.last.url).searchParams.get('sample_rate')).toBe(String(rate));
+    expect(callbacks.onError).not.toHaveBeenCalled();
+  });
+
+  it.each([24_000, 44_100, 48_000])('advertises %i Hz capture and allows up to five seconds of queued PCM16', async (rate) => {
+    contextSampleRate = rate;
+    await session.start('microphone');
+    const socket = FakeSocket.last;
+
+    expect(new URL(socket.url).searchParams.get('sample_rate')).toBe(String(rate));
+    const audio = new ArrayBuffer(Math.round(rate / 10) * 2);
+
+    socket.bufferedAmount = rate * 2 * 5;
+    processorPort.onmessage?.({ data: audio } as MessageEvent<ArrayBuffer>);
+    expect(socket.send).toHaveBeenCalledWith(audio);
+    expect(callbacks.onError).not.toHaveBeenCalled();
+
+    socket.bufferedAmount = rate * 2 * 5 + 1;
+    processorPort.onmessage?.({ data: audio } as MessageEvent<ArrayBuffer>);
+    await session.stop();
+    expect(callbacks.onError).toHaveBeenCalledWith(expect.objectContaining({ code: 'connectionFailed' }));
+    expect(microphone.audio.stop).toHaveBeenCalled();
+    expect(closeContext).toHaveBeenCalled();
+    expect(disconnect).toHaveBeenCalled();
   });
 
   it('accepts the finalized last turn after preserving partial speech during stop', async () => {
