@@ -85,7 +85,7 @@ function RightMenu() {
       <Users viewId={routeViewId} />
       {/* Access control belongs to the database container, but Desktop publishes the active child view. */}
       {actionViewId ? (
-        <ShareButton viewId={actionViewId} publishViewId={routeViewId} hidePublish={hasRowPageRoute} />
+        <ShareButton viewId={actionViewId} publishViewId={activeViewId} hidePublish={hasRowPageRoute} />
       ) : null}
       <InlineCommentToggleButton />
       {favoriteViewId && (

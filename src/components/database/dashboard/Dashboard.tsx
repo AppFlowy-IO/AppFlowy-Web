@@ -55,11 +55,18 @@ const isFlowActive = (state: AddWidgetFlowState) => state.kind !== 'idle';
 
 /** The Dashboard layout: global filters, then the widget grid (or its empty state). */
 export function Dashboard() {
-  const { paddingStart, paddingEnd, workspaceId, variant, databaseDoc, updatePage } = useDatabaseContext();
+  const { paddingStart, paddingEnd, workspaceId, variant, databaseDoc, updatePage, onRendered } = useDatabaseContext();
   const { isEditing, canEdit, canEnterEdit, pinEditing, updateRows, hostDatabaseId, ownedViews } = useDashboardContext();
   const { rows } = useDashboardLayout();
   const { registerSourceDoc, registerSourceName } = useDashboardSourceRegistry();
   const hostServices = useDashboardHostServices();
+
+  // The page header (including Share) waits for its layout to commit. Widgets
+  // load independently and do not report readiness for this dashboard shell.
+  useEffect(() => {
+    onRendered?.();
+  }, [onRendered]);
+
   const editing = isEditing && canEdit;
   const [dndInstanceId] = useState(() => Symbol('dashboard'));
   // The arrange feedback stores (drop line, drag ghost, row focus): created once.

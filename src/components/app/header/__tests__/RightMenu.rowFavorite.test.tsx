@@ -183,6 +183,29 @@ describe('RightMenu row-page actions', () => {
     expect(screen.getByTestId('share-button').getAttribute('data-publish-hidden')).toBe('false');
   });
 
+  it('publishes the dashboard selected on a database container route', () => {
+    const container = createDatabaseContainer();
+    const dashboard: View = {
+      ...container.children[0],
+      view_id: 'dashboard-view',
+      name: 'Dashboard',
+      layout: ViewLayout.Dashboard,
+    };
+
+    container.children.push(dashboard);
+    mockRouteView = container;
+    mockOutline = [container];
+
+    render(
+      <MemoryRouter initialEntries={['/app/workspace-1/database-container?v=dashboard-view']}>
+        <RightMenu />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByTestId('share-button').getAttribute('data-view-id')).toBe('database-container');
+    expect(screen.getByTestId('share-button').getAttribute('data-publish-view-id')).toBe('dashboard-view');
+  });
+
   it('keeps database sharing on the container while publishing the active child', () => {
     const containerViewId = 'database-container';
 

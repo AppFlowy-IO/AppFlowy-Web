@@ -180,7 +180,7 @@ function createDatabaseDoc(rows: DashboardRow[]) {
 
 function renderDashboard(
   rows: DashboardRow[],
-  { readOnly = false, extra }: { readOnly?: boolean; extra?: ReactNode } = {}
+  { readOnly = false, extra, onRendered }: { readOnly?: boolean; extra?: ReactNode; onRendered?: () => void } = {}
 ) {
   const { doc, database, view, views } = createDatabaseDoc(rows);
   let updates = 0;
@@ -196,6 +196,7 @@ function renderDashboard(
       activeViewId: VIEW_ID,
       rowMap: {},
       workspaceId: 'workspace-id',
+      onRendered,
       deletePage: jest.fn().mockResolvedValue(undefined),
     };
 
@@ -351,6 +352,26 @@ describe('Dashboard', () => {
     mockDeleteView.mockReset();
     mockDeleteView.mockResolvedValue(undefined);
     mockAnnounce.mockClear();
+  });
+
+  it.each([
+    { name: 'empty', rows: [] },
+    {
+      name: 'with an external database widget that has not loaded',
+      rows: [{ id: 'row', height: 360, widgets: [{ ...widget('external'), databaseId: 'other-database' }] }],
+    },
+  ])('reports the $name dashboard shell ready so the page can show Share', ({ rows }) => {
+    const onRendered = jest.fn(() => {
+      // Readiness belongs to the committed page shell, even when the nested
+      // widget component has not reported any rows or finished loading.
+      expect(screen.getByTestId('dashboard-view')).toBeTruthy();
+      expect(screen.queryAllByTestId('dashboard-widget')).toHaveLength(rows.length);
+    });
+    const rendered = renderDashboard(rows, { readOnly: true, onRendered });
+
+    expect(onRendered).toHaveBeenCalledTimes(1);
+    rendered.setReadOnly(false);
+    expect(onRendered).toHaveBeenCalledTimes(1);
   });
 
   describe('an empty dashboard', () => {

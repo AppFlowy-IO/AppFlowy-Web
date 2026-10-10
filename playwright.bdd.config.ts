@@ -15,6 +15,7 @@ function optInSuites(): RegExp | undefined {
     ...(process.env.RUN_LARGE_DATABASE ? [] : ['@large-database']),
     ...(process.env.RUN_DASHBOARD_PERF ? [] : ['@dashboard-perf']),
     ...(process.env.RUN_NATHAN_EMPLOYEES ? [] : ['@nathan-employees']),
+    ...(process.env.RUN_DASHBOARD_PUBLISH_FIXTURE === '1' ? [] : ['@dashboard-publish-fixture']),
   ];
 
   return skipped.length > 0 ? new RegExp(skipped.join('|')) : undefined;
@@ -37,7 +38,8 @@ export default defineConfig({
   use: {
     baseURL: process.env.BASE_URL || 'http://localhost:3000',
     viewport: { width: 1440, height: 900 },
-    trace: 'on-first-retry',
+    // The saved dashboard suite signs in with owner credentials. Never record its login or token headers.
+    trace: process.env.RUN_DASHBOARD_PUBLISH_FIXTURE === '1' ? 'off' : 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'off',
     actionTimeout: 15000,
