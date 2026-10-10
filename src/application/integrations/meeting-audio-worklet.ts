@@ -2,11 +2,13 @@ declare abstract class AudioWorkletProcessor {
   readonly port: MessagePort;
 }
 declare function registerProcessor(name: string, processor: typeof AudioWorkletProcessor): void;
+declare const sampleRate: number;
 
-// Web Audio resamples sources into the context's 24 kHz mono stream. Send
+// Web Audio mixes sources into the context's native-rate mono stream. Send
 // 100 ms PCM16 chunks and output silence so meeting audio is never echoed.
 class MeetingAudioProcessor extends AudioWorkletProcessor {
-  private samples = new Int16Array(2400);
+  private readonly chunkSize = Math.round(sampleRate / 10);
+  private samples = new Int16Array(this.chunkSize);
   private offset = 0;
 
   process(inputs: Float32Array[][]) {
@@ -21,7 +23,7 @@ class MeetingAudioProcessor extends AudioWorkletProcessor {
       this.samples[this.offset++] = sample < 0 ? sample * 32768 : sample * 32767;
       if (this.offset === this.samples.length) {
         this.port.postMessage(this.samples.buffer, [this.samples.buffer]);
-        this.samples = new Int16Array(2400);
+        this.samples = new Int16Array(this.chunkSize);
         this.offset = 0;
       }
     }
