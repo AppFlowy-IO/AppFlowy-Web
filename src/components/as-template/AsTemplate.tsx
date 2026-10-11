@@ -1,7 +1,8 @@
 import { Button, CircularProgress, InputLabel, Paper, Switch } from '@mui/material';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { TemplateService } from '@/application/services/domains';
 import { UploadTemplatePayload } from '@/application/template.type';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as WebsiteIcon } from '@/assets/icons/earth.svg';
@@ -12,27 +13,31 @@ import Categories from '@/components/as-template/category/Categories';
 import Creator from '@/components/as-template/creator/Creator';
 import DeleteTemplate from '@/components/as-template/DeleteTemplate';
 import { useLoadTemplate } from '@/components/as-template/hooks';
+import { slugify } from '@/components/as-template/utils';
 
 import './template.scss';
-import { slugify } from '@/components/as-template/utils';
-import { TemplateService } from '@/application/services/domains';
 
 function AsTemplate({ viewName, viewUrl, viewId }: { viewName: string; viewUrl: string; viewId: string }) {
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
+  const [primaryCategoryId, setPrimaryCategoryId] = useState<string | undefined>();
+  const selectedPrimaryCategoryId = selectedCategoryIds.includes(primaryCategoryId ?? '')
+    ? primaryCategoryId
+    : undefined;
   const [selectedCreatorId, setSelectedCreatorId] = useState<string | undefined>(undefined);
   const { t } = useTranslation();
-  const [isNewTemplate, setIsNewTemplate] = React.useState(false);
-  const [isFeatured, setIsFeatured] = React.useState(false);
-  const [deleteModalOpen, setDeleteModalOpen] = React.useState(false);
+  const [isNewTemplate, setIsNewTemplate] = useState(false);
+  const [isFeatured, setIsFeatured] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const { template, loadTemplate, loading } = useLoadTemplate(viewId);
 
   const handleSubmit = useCallback(
     async (data: AsTemplateFormValue) => {
-      if (!selectedCreatorId || selectedCategoryIds.length === 0) return;
+      if (!selectedCreatorId || !selectedPrimaryCategoryId) return;
       const formData: UploadTemplatePayload = {
         ...data,
         view_id: viewId,
         category_ids: selectedCategoryIds,
+        primary_category_id: selectedPrimaryCategoryId,
         creator_id: selectedCreatorId,
         is_new_template: isNewTemplate,
         is_featured: isFeatured,
@@ -55,9 +60,19 @@ function AsTemplate({ viewName, viewUrl, viewId }: { viewName: string; viewUrl: 
         notify.error(error.toString());
       }
     },
-    [selectedCreatorId, selectedCategoryIds, isNewTemplate, isFeatured, viewId, viewUrl, template, loadTemplate]
+    [
+      selectedCreatorId,
+      selectedCategoryIds,
+      selectedPrimaryCategoryId,
+      isNewTemplate,
+      isFeatured,
+      viewId,
+      viewUrl,
+      template,
+      loadTemplate,
+    ]
   );
-  const submitRef = React.useRef<HTMLInputElement>(null);
+  const submitRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     void loadTemplate();
@@ -66,6 +81,7 @@ function AsTemplate({ viewName, viewUrl, viewId }: { viewName: string; viewUrl: 
   useEffect(() => {
     if (!template) return;
     setSelectedCategoryIds(template.categories.map((category) => category.id));
+    setPrimaryCategoryId(template.primary_category_id ?? undefined);
     setSelectedCreatorId(template.creator.id);
     setIsNewTemplate(template.is_new_template);
     setIsFeatured(template.is_featured);
@@ -98,7 +114,11 @@ function AsTemplate({ viewName, viewUrl, viewId }: { viewName: string; viewUrl: 
             onClick={() => {
               const templateUrl = `${window.location.origin}/templates`;
 
-              window.open(`${templateUrl}/${slugify(template.categories[0].name)}/${template.view_id}`);
+              const category =
+                template.categories.find((item) => item.id === template.primary_category_id) ??
+                [...template.categories].sort((a, b) => a.name.localeCompare(b.name))[0];
+
+              if (category) window.open(`${templateUrl}/${slugify(category.name)}/${template.view_id}`);
             }}
             color={'primary'}
           >
@@ -125,6 +145,7 @@ function AsTemplate({ viewName, viewUrl, viewId }: { viewName: string; viewUrl: 
             }}
             variant={'contained'}
             color={'primary'}
+            disabled={!selectedCreatorId || !selectedPrimaryCategoryId || loading}
           >
             {t('button.save')}
           </Button>
@@ -147,7 +168,12 @@ function AsTemplate({ viewName, viewUrl, viewId }: { viewName: string; viewUrl: 
           </AFScroller>
         </Paper>
         <div className={'flex w-[25%] flex-col gap-4'}>
-          <Categories value={selectedCategoryIds} onChange={setSelectedCategoryIds} />
+          <Categories
+            value={selectedCategoryIds}
+            onChange={setSelectedCategoryIds}
+            primaryCategoryId={selectedPrimaryCategoryId}
+            onPrimaryCategoryChange={setPrimaryCategoryId}
+          />
           <Creator value={selectedCreatorId} onChange={setSelectedCreatorId} />
           <div className={'flex items-center gap-2'}>
             <InputLabel>{t('template.isNewTemplate')}</InputLabel>

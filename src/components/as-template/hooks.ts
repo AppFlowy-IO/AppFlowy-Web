@@ -1,8 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
 
+import { TemplateService } from '@/application/services/domains';
 import { Template, TemplateCategory, TemplateCreator, TemplateSummary } from '@/application/template.type';
 import { notify } from '@/components/_shared/notify';
-import { TemplateService } from '@/application/services/domains';
 
 export function useLoadCategoryTemplates () {
   const [loading, setLoading] = useState(false);
@@ -83,6 +83,7 @@ export function useLoadCategories (props?: {
 
   return {
     categories: filteredCategories,
+    allCategories: categories,
     loadCategories,
     loading,
   };
