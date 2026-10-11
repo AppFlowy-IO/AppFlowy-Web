@@ -20,6 +20,8 @@ export interface ErrorMessageOptions {
   fallback?: string;
   operation?: 'action' | 'mutation';
   t?: TFunction;
+  /** Defaults to the application's selected language. */
+  locale?: string;
   /** Omit hosted plan names when deployment capabilities are unknown or self-hosted. */
   hostedBilling?: boolean;
 }
@@ -104,7 +106,7 @@ export function getErrorDiagnostic(error: unknown): string {
 
 export function supportedPublicError(
   value: unknown
-): { reason: string; message: string; maxChars?: number } | undefined {
+): { reason: string; message: string; locale?: string; maxChars?: number } | undefined {
   const envelope = record(value);
 
   if (
@@ -116,7 +118,9 @@ export function supportedPublicError(
     envelope.message.length > 1024 ||
     // Explicitly reject control characters in server-declared public copy.
     // eslint-disable-next-line no-control-regex
-    /[\x00-\x1f\x7f-\x9f]/.test(envelope.message)
+    /[\x00-\x1f\x7f-\x9f]/.test(envelope.message) ||
+    (envelope.locale !== undefined && envelope.locale !== null &&
+      (typeof envelope.locale !== 'string' || !/^[a-zA-Z0-9-]{1,64}$/.test(envelope.locale)))
   )
     return undefined;
   const max = record(envelope.parameters)?.max_chars;
@@ -124,6 +128,7 @@ export function supportedPublicError(
   return {
     reason: envelope.reason,
     message: envelope.message,
+    locale: typeof envelope.locale === 'string' ? envelope.locale : undefined,
     maxChars: typeof max === 'number' && Number.isInteger(max) && max > 0 && max <= 2147483647 ? max : undefined,
   };
 }
@@ -223,7 +228,17 @@ function resolveReason(error: ErrorIdentity): string | undefined {
 export function userFriendlyErrorMessage(error: unknown, options: ErrorMessageOptions = {}): string {
   const identity = readErrorIdentity(error);
   const publicError = supportedPublicError(identity.user_error);
+  const locale = (options.locale ?? i18next.resolvedLanguage ?? i18next.language ?? 'en').replace(/_/g, '-').toLowerCase();
+  const serverLocale = publicError?.locale?.toLowerCase();
+  const matchesLocale = serverLocale === locale ||
+    (serverLocale !== undefined && !serverLocale.includes('-') && locale.startsWith(`${serverLocale}-`));
+  // Untagged schema-1 metadata keeps its original localized-reason behavior.
+  const serverMessage = matchesLocale ? publicError?.message : undefined;
   let reason = publicError?.reason ?? resolveReason(identity);
+
+  if (serverLocale !== undefined && !matchesLocale && !lookup(catalog.reasons, reason)) {
+    reason = resolveReason(identity);
+  }
 
   if (!publicError && options.hostedBilling === false &&
     (reason === 'FREE_GUEST_LIMIT_REACHED' || reason === 'PAID_GUEST_LIMIT_REACHED')) {
@@ -240,7 +255,7 @@ export function userFriendlyErrorMessage(error: unknown, options: ErrorMessageOp
   const guidance = (key: string) =>
     localized(`userError.${key}`, lookup(catalog.reasons, key) ?? catalog.reasons.ACTION_PROBLEM);
 
-  if (reason === 'PUBLISH_NAME_TOO_LONG' && publicError?.maxChars) {
+  if (!serverMessage && reason === 'PUBLISH_NAME_TOO_LONG' && publicError?.maxChars) {
     return localized(
       'userErrorDetail.publishNameTooLong',
       `Keep the page address to ${publicError.maxChars} characters or fewer.`,
@@ -251,10 +266,11 @@ export function userFriendlyErrorMessage(error: unknown, options: ErrorMessageOp
   if (!reason || reason === 'ACTION_PROBLEM' || !lookup(catalog.reasons, reason)) {
     const generic =
       options.operation === 'mutation' ? guidance('OUTCOME_UNKNOWN') : options.fallback || guidance('ACTION_PROBLEM');
-    const message = publicError
+    const publicMessage = serverMessage ?? (serverLocale === undefined ? publicError?.message : undefined);
+    const message = publicMessage
       ? options.operation === 'mutation'
-        ? `${generic}\n${publicError.message}`
-        : publicError.message
+        ? `${generic}\n${publicMessage}`
+        : publicMessage
       : generic;
 
     return identity.code === undefined
@@ -262,7 +278,7 @@ export function userFriendlyErrorMessage(error: unknown, options: ErrorMessageOp
       : localized('userErrorDetail.withCode', `Error ${identity.code}: ${message}`, { code: identity.code, message });
   }
 
-  const message = guidance(reason);
+  const message = serverMessage ?? guidance(reason);
 
   if (
     options.operation === 'mutation' &&

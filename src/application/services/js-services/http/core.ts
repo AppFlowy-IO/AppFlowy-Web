@@ -1,5 +1,6 @@
 import axios, { AxiosError, AxiosInstance, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import dayjs from 'dayjs';
+import i18next from 'i18next';
 
 import { errorCodeNumber, ErrorSource, readErrorIdentity, TransportFailure } from '@/application/errors/error-message';
 import { AFCloudConfig } from '@/application/services/services.type';
@@ -569,6 +570,9 @@ export function initAPIService(config: AFCloudConfig) {
 
   // Request: attach stored ETag as If-None-Match
   axiosInstance.interceptors.request.use((config) => {
+    const locale = i18next.resolvedLanguage ?? i18next.language;
+
+    if (locale) config.headers.set('Accept-Language', locale.replace(/_/g, '-'));
     const cacheKey = getEtagCacheKey(config);
 
     if (cacheKey) {

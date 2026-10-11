@@ -14,6 +14,39 @@ import { readErrorIdentity, userErrorSupportDetails, userFriendlyErrorMessage } 
 const diagnostic = 'SQLSTATE 23505: /private/server/data; private auth diagnostic';
 
 describe('shared error presentation', () => {
+  it('lets localized server copy override known reasons without changing error identity', () => {
+    const error = Object.freeze({
+      code: 1073, message: diagnostic, retryAfterSecs: 17,
+      user_error: { schema_version: 1, reason: 'EXPORT_BUSY', message: 'An export is running. Wait for it to finish.', locale: 'en' },
+    });
+    expect(userFriendlyErrorMessage(error, { locale: 'en-US' })).toBe(error.user_error.message);
+    expect(userFriendlyErrorMessage(error, { locale: 'de' })).toBe('Other exports are in progress. Wait for one to finish.');
+    expect(error.code).toBe(1073);
+    expect(error.retryAfterSecs).toBe(17);
+    expect(userErrorSupportDetails(error)).toContain(diagnostic);
+  });
+
+  it('falls back for unsupported locales and malformed optional locale metadata', () => {
+    for (const locale of ['fr', 'en\nUS', 42]) {
+      expect(userFriendlyErrorMessage({ code: 1073, message: diagnostic,
+        user_error: { schema_version: 1, reason: 'EXPORT_BUSY', message: 'Server copy', locale },
+      }, { locale: 'en' })).toBe('Other exports are in progress. Wait for one to finish.');
+    }
+    expect(userFriendlyErrorMessage({ code: 9001, user_error: {
+      schema_version: 1, reason: 'FUTURE_REASON', message: 'Foreign copy', locale: 'de',
+    } }, { locale: 'en' })).not.toContain('Foreign copy');
+    expect(userFriendlyErrorMessage({ code: 1073, user_error: {
+      schema_version: 1, reason: 'FUTURE_REASON', message: 'Foreign copy', locale: 'de',
+    } }, { locale: 'en' })).toBe('Other exports are in progress. Wait for one to finish.');
+  });
+
+  it('retains uncertain mutation guidance when the server controls the wording', () => {
+    expect(userFriendlyErrorMessage({ code: 1017, user_error: {
+      schema_version: 1, reason: 'REQUEST_TIMEOUT', message: 'The operation took too long.', locale: 'en',
+    } }, { locale: 'en', operation: 'mutation' })).toBe(
+      "The operation took too long.\nWe couldn't confirm whether this action finished. Check the result before trying again."
+    );
+  });
   it.each([
     [-1, 'Error -1: Something went wrong. Contact support if this keeps happening.'],
     [1002, "This password isn't valid."],

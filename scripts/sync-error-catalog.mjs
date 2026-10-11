@@ -36,7 +36,7 @@ for (const section of ['http_codes', 'gotrue_codes', 'gotrue_legacy_messages']) 
 if (!catalog.reasons[catalog.http_server_error_reason]) fail('Missing HTTP server-error reason');
 
 const manifest = {
-  source: 'AppFlowy-IO/AppFlowy-Premium/frontend/resources/error_messages/shared.json',
+  source: 'AppFlowy-IO/AppFlowy-Cloud-Preminum/libs/app-error/resources/error_messages.json',
   sha256: digest,
 };
 const codes =
@@ -56,7 +56,9 @@ const codesPath = resolve(root, 'src/application/errors/shared-error-codes.ts');
 
 if (check) {
   if (!readFileSync(target).equals(bytes)) fail('Web catalog differs from --source; sync the shared catalog');
-  if (JSON.parse(readFileSync(manifestPath, 'utf8')).sha256 !== digest)
+  const recorded = JSON.parse(readFileSync(manifestPath, 'utf8'));
+
+  if (recorded.sha256 !== digest || recorded.source !== manifest.source)
     fail('Catalog checksum changed; sync from the source');
   if (readFileSync(codesPath, 'utf8') !== codes) fail('Regenerate shared-error-codes.ts');
   if (JSON.stringify(translations.userError) !== JSON.stringify(catalog.reasons)) fail('Regenerate error translations');
