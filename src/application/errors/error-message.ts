@@ -85,7 +85,8 @@ export function readErrorIdentity(error: unknown): ErrorIdentity {
     httpStatus,
     sourceDomain,
     diagnosticMessage:
-      text(body.diagnosticMessage) ??
+      // An empty retained diagnostic must not fall through to normalized UI copy.
+      (typeof body.diagnosticMessage === 'string' ? body.diagnosticMessage : undefined) ??
       text(body.originalError) ??
       text(body.error_description) ??
       text(body.msg) ??

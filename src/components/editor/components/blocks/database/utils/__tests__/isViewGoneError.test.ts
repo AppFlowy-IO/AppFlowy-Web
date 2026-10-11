@@ -1,3 +1,5 @@
+import { handleAPIError } from '@/application/services/js-services/http/core';
+
 import { isViewGoneError } from '../databaseBlockUtils';
 
 describe('isViewGoneError', () => {
@@ -18,5 +20,15 @@ describe('isViewGoneError', () => {
     expect(isViewGoneError({ code: 1012, message: 'Not enough permissions', httpStatus: 403 })).toBe(false);
     expect(isViewGoneError(undefined)).toBe(false);
     expect(isViewGoneError('not found')).toBe(false);
+  });
+
+  it('uses retained diagnostics instead of public wording for legacy view detection', () => {
+    expect(isViewGoneError(handleAPIError({ code: -1, message: 'View not found' }))).toBe(true);
+    expect(isViewGoneError(handleAPIError({
+      code: 1017,
+      message: 'Worker unavailable',
+      user_error: { schema_version: 1, reason: 'ACTION_PROBLEM', message: 'A worker was not found. Try again later.', locale: 'en' },
+    }))).toBe(false);
+    expect(isViewGoneError({ code: -1, diagnosticMessage: '', message: 'View not found' })).toBe(false);
   });
 });

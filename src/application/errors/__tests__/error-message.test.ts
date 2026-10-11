@@ -9,7 +9,7 @@ import {
 } from '@/application/services/js-services/http/gotrue-error';
 import { determineErrorType, ErrorType, isPermissionDeniedError } from '@/application/utils/error-utils';
 
-import { readErrorIdentity, userErrorSupportDetails, userFriendlyErrorMessage } from '../error-message';
+import { getErrorDiagnostic, readErrorIdentity, userErrorSupportDetails, userFriendlyErrorMessage } from '../error-message';
 
 const diagnostic = 'SQLSTATE 23505: /private/server/data; private auth diagnostic';
 
@@ -195,6 +195,14 @@ describe('shared error presentation', () => {
     expect(userFriendlyErrorMessage(error)).not.toContain(diagnostic);
     expect(userErrorSupportDetails(error)).toContain(diagnostic);
     expect(readErrorIdentity(error).sourceDomain).toBe('client');
+  });
+
+  it('keeps an explicitly empty diagnostic separate from normalized public copy', () => {
+    const error = { code: 1008, diagnosticMessage: '', message: 'space must keep at least one explicit owner' };
+
+    expect(getErrorDiagnostic(error)).toBe('');
+    expect(userFriendlyErrorMessage(error)).not.toContain('Choose another owner');
+    expect(getErrorDiagnostic({ message: 'Legacy diagnostic' })).toBe('Legacy diagnostic');
   });
 });
 

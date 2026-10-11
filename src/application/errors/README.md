@@ -25,7 +25,9 @@ Use `getErrorMessage(error)` at UI boundaries. HTTP adapters also populate safe
 `httpStatus`, request reference, and retry data remain available. Use
 `getErrorDiagnostic` for existing recovery checks and logs, and
 `userErrorSupportDetails` only for explicit copying. Do not display those details
-in toasts or dialogs.
+in toasts or dialogs. Publishing retries and legacy missing-route/view checks use
+the retained diagnostics, including an explicitly empty diagnostic, so translated
+or server-controlled display wording cannot change recovery decisions.
 
 Adapters select `sourceDomain` so Cloud `-1` (Unhandled), local network `-1`,
 HTTP statuses, and GoTrue numeric statuses do not collide. In particular, 1073
@@ -41,10 +43,15 @@ selected language takes precedence, including wording for known reasons. The
 request adapter sends `Accept-Language`. Current Cloud copy is English; other
 languages retain client translations. Untagged schema-1 metadata keeps the prior
 behavior: known reasons localize and unknown reasons use bounded public copy.
-Mismatched-language unknown reasons use the local generic fallback. Malformed or
+Mismatched-language unknown reasons use the local code mapping, then the generic
+fallback when the code is unknown. Malformed or
 future metadata falls back to existing mappings. Metadata does not control
 authorization or retries. Hosted upgrade hints apply only to known Pro remedies;
 self-hosted and unknown deployments keep neutral quota guidance.
+
+`userFriendlyErrorMessage` can append uncertain-outcome guidance when callers
+explicitly pass `operation: 'mutation'`. Existing Web UI callers currently use
+the default action mode; this guidance is not automatically added to every write.
 
 The regression tests cover real HTTP adapter paths under 200/400/503, namespace
 collisions, old password responses, unknown metadata, request references,
