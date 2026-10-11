@@ -36,7 +36,7 @@ for (const section of ['http_codes', 'gotrue_codes', 'gotrue_legacy_messages']) 
 if (!catalog.reasons[catalog.http_server_error_reason]) fail('Missing HTTP server-error reason');
 
 const manifest = {
-  source: 'AppFlowy-IO/AppFlowy-Cloud-Preminum/libs/app-error/resources/error_messages.json',
+  source: 'AppFlowy-IO/AppFlowy-Cloud-Premium/libs/app-error/resources/error_messages.json',
   sha256: digest,
 };
 const codes =

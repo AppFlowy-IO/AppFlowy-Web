@@ -1,7 +1,7 @@
 # Shared error presentation
 
 `shared-error-catalog.json` is a byte-identical snapshot of
-`AppFlowy-Cloud-Preminum/libs/app-error/resources/error_messages.json`. That canonical
+`AppFlowy-Cloud-Premium/libs/app-error/resources/error_messages.json`. That canonical
 file owns existing Cloud codes, HTTP statuses, GoTrue reasons/legacy messages,
 and reviewed English guidance. Desktop's overlapping FFI codes remain in its
 separate `desktop.json`; do not use FFI numbers as Cloud numbers.
@@ -9,8 +9,8 @@ separate `desktop.json`; do not use FFI numbers as Cloud numbers.
 From this Web checkout:
 
 ```sh
-pnpm error-catalog:sync --source /path/to/AppFlowy-Cloud-Preminum/libs/app-error/resources/error_messages.json
-pnpm error-catalog:check --source /path/to/AppFlowy-Cloud-Preminum/libs/app-error/resources/error_messages.json
+pnpm error-catalog:sync --source /path/to/AppFlowy-Cloud-Premium/libs/app-error/resources/error_messages.json
+pnpm error-catalog:check --source /path/to/AppFlowy-Cloud-Premium/libs/app-error/resources/error_messages.json
 ```
 
 Sync generates the named constants, English `userError` translations, and a
