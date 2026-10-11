@@ -1,7 +1,7 @@
 import { TFunction } from 'i18next';
 
 import { ERROR_CODE } from '@/application/constants';
-import { ErrorIdentity, supportedPublicError } from '@/application/errors/error-message';
+import { ErrorIdentity, hasServerErrorPresentation } from '@/application/errors/error-message';
 import { getWorkspacePlanPolicy } from '@/application/workspace-plan-policy';
 import { determineErrorType, ErrorType } from '@/application/utils/error-utils';
 import { getErrorMessage } from '@/utils/errors';
@@ -26,7 +26,7 @@ export function getLandingPageErrorContent(error: LandingPageError | undefined, 
   const quotaContent = (titleKey: string, fallbackTitle: string, descriptionKey: string, fallbackDescription: string) => {
     const result = content(titleKey, fallbackTitle, descriptionKey, fallbackDescription);
 
-    return getWorkspacePlanPolicy().usesHostedBilling || supportedPublicError(error?.user_error)
+    return getWorkspacePlanPolicy().usesHostedBilling || hasServerErrorPresentation(error)
       ? result
       : { ...result, description: `${result.description} ${t('landingPage.error.contactAdministrator', 'Contact your workspace administrator for help.')}` };
   };

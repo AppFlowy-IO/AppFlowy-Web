@@ -7,6 +7,7 @@ import { ReactComponent as ErrorLogo } from '@/assets/icons/warning_logo.svg';
 import { getLandingPageErrorContent, LandingPageError } from '@/components/_shared/landing-page/errorContent';
 import LandingPage from '@/components/_shared/landing-page/LandingPage';
 import { useServerHostingMode } from '@/components/app/hooks/useServerInfo';
+import { useErrorCatalogRevision } from '@/components/main/hooks/useServerErrorCatalog';
 import { Progress } from '@/components/ui/progress';
 
 interface ErrorPageProps {
@@ -22,6 +23,7 @@ export function ErrorPage({ onRetry, error, title, description }: ErrorPageProps
 
   // Re-evaluate quota guidance when deployment capabilities resolve or change.
   useServerHostingMode();
+  useErrorCatalogRevision();
 
   const [loading, setLoading] = useState(false);
   const errorContent = getLandingPageErrorContent(error, t);

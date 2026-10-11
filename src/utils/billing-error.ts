@@ -1,5 +1,5 @@
 import { ERROR_CODE } from '@/application/constants';
-import { readErrorIdentity, supportedPublicError } from '@/application/errors/error-message';
+import { hasServerErrorPresentation, readErrorIdentity } from '@/application/errors/error-message';
 import { getWorkspacePlanPolicy } from '@/application/workspace-plan-policy';
 
 // Only include errors whose remedy is a Pro workspace. AI Max, paid-plan
@@ -21,11 +21,9 @@ export function isWorkspaceLimitError(error: unknown): boolean {
 
 /** Add actionable upgrade guidance without replacing more specific server guidance. */
 export function getBillingErrorMessage(error: unknown): string | undefined {
-  const identity = readErrorIdentity(error);
-
   // Preserve explicit public guidance. Legacy diagnostics containing "Pro" are
   // not reviewed copy and must not bypass the shared presentation boundary.
-  return isWorkspaceLimitError(error) && !supportedPublicError(identity.user_error)
+  return isWorkspaceLimitError(error) && !hasServerErrorPresentation(error)
     ? getWorkspacePlanPolicy().getUpgradeMessage(undefined)
     : undefined;
 }

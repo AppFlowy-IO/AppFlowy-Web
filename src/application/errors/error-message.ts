@@ -1,6 +1,7 @@
 import i18next, { TFunction } from 'i18next';
 
 import catalog from './shared-error-catalog.json';
+import { getServerErrorCatalog } from './server-error-catalog';
 
 export type ErrorSource = 'appflowy.server' | 'http' | 'gotrue' | 'transport' | 'client';
 export type TransportFailure = 'network' | 'timeout' | 'cancelled';
@@ -225,19 +226,57 @@ function resolveReason(error: ErrorIdentity): string | undefined {
   return undefined;
 }
 
+function selectedErrorLocale(locale?: string): string {
+  return (locale ?? i18next.resolvedLanguage ?? i18next.language ?? 'en').replace(/_/g, '-').toLowerCase();
+}
+
+function serverCatalogPresentation(identity: ErrorIdentity, locale: string) {
+  // Only Cloud identities may consume Cloud's numeric code mapping. HTTP,
+  // GoTrue, transport and local validation errors retain their own namespaces.
+  const remoteCatalog = identity.sourceDomain === 'appflowy.server' ? getServerErrorCatalog(locale) : undefined;
+  const catalogMatchesLocale = remoteCatalog?.locale === locale ||
+    (remoteCatalog !== undefined && !remoteCatalog.locale.includes('-') && locale.startsWith(`${remoteCatalog.locale}-`));
+  const remoteReason = remoteCatalog ? lookup(remoteCatalog.codes, identity.code) : undefined;
+  // Reviewed legacy diagnostics distinguish overloaded Cloud codes. Keep that
+  // specificity, then let the server catalog own the selected reason's wording.
+  const reason = identity.sourceDomain === 'appflowy.server' ? legacyCloudReason(identity) ?? remoteReason : undefined;
+  const copy = (key: string | undefined) =>
+    catalogMatchesLocale && remoteCatalog ? lookup(remoteCatalog.reasons, key) : undefined;
+
+  return { reason, copy, mappedReason: remoteReason };
+}
+
+/** Do not append local billing remedies to explicit public server guidance. */
+export function hasServerErrorPresentation(error: unknown): boolean {
+  const identity = readErrorIdentity(error);
+
+  if (supportedPublicError(identity.user_error)) return true;
+  const remote = serverCatalogPresentation(identity, selectedErrorLocale());
+
+  return remote.copy(remote.reason ?? resolveReason(identity)) !== undefined ||
+    // A supported server remapping still owns the remedy when its known reason
+    // uses the app's translation instead of foreign-language server copy.
+    (remote.mappedReason !== undefined && remote.reason === remote.mappedReason && lookup(catalog.reasons, remote.reason) !== undefined);
+}
+
 /** A display boundary: wire codes and diagnostics never authorize public text. */
 export function userFriendlyErrorMessage(error: unknown, options: ErrorMessageOptions = {}): string {
   const identity = readErrorIdentity(error);
   const publicError = supportedPublicError(identity.user_error);
-  const locale = (options.locale ?? i18next.resolvedLanguage ?? i18next.language ?? 'en').replace(/_/g, '-').toLowerCase();
+  const locale = selectedErrorLocale(options.locale);
   const serverLocale = publicError?.locale?.toLowerCase();
   const matchesLocale = serverLocale === locale ||
     (serverLocale !== undefined && !serverLocale.includes('-') && locale.startsWith(`${serverLocale}-`));
+  const { reason: cloudReason, copy: remoteCopy } = serverCatalogPresentation(identity, locale);
   // Untagged schema-1 metadata keeps its original localized-reason behavior.
   const serverMessage = matchesLocale ? publicError?.message : undefined;
-  let reason = publicError?.reason ?? resolveReason(identity);
+  let reason = publicError?.reason ?? cloudReason ?? resolveReason(identity);
 
-  if (serverLocale !== undefined && !matchesLocale && !lookup(catalog.reasons, reason)) {
+  if (serverLocale !== undefined && !matchesLocale && !lookup(catalog.reasons, reason) && !remoteCopy(reason)) {
+    reason = cloudReason ?? resolveReason(identity);
+  }
+
+  if (!publicError && !lookup(catalog.reasons, reason) && !remoteCopy(reason)) {
     reason = resolveReason(identity);
   }
 
@@ -254,7 +293,7 @@ export function userFriendlyErrorMessage(error: unknown, options: ErrorMessageOp
   };
 
   const guidance = (key: string) =>
-    localized(`userError.${key}`, lookup(catalog.reasons, key) ?? catalog.reasons.ACTION_PROBLEM);
+    remoteCopy(key) ?? localized(`userError.${key}`, lookup(catalog.reasons, key) ?? catalog.reasons.ACTION_PROBLEM);
 
   if (!serverMessage && reason === 'PUBLISH_NAME_TOO_LONG' && publicError?.maxChars) {
     return localized(
@@ -264,10 +303,10 @@ export function userFriendlyErrorMessage(error: unknown, options: ErrorMessageOp
     );
   }
 
-  if (!reason || reason === 'ACTION_PROBLEM' || !lookup(catalog.reasons, reason)) {
+  if (!reason || reason === 'ACTION_PROBLEM' || (!lookup(catalog.reasons, reason) && !remoteCopy(reason))) {
     const generic =
       options.operation === 'mutation' ? guidance('OUTCOME_UNKNOWN') : options.fallback || guidance('ACTION_PROBLEM');
-    const publicMessage = serverMessage ?? (serverLocale === undefined ? publicError?.message : undefined);
+    const publicMessage = serverMessage ?? (serverLocale === undefined ? publicError?.message : undefined) ?? remoteCopy(reason);
     const message = publicMessage
       ? options.operation === 'mutation'
         ? `${generic}\n${publicMessage}`

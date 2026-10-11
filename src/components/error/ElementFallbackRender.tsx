@@ -3,6 +3,7 @@ import { FallbackProps } from 'react-error-boundary';
 import i18n from 'i18next';
 
 import { getErrorMessage } from '@/utils/errors';
+import { useErrorCatalogRevision } from '@/components/main/hooks/useServerErrorCatalog';
 
 export function ElementFallbackRender({
   error,
@@ -10,6 +11,7 @@ export function ElementFallbackRender({
 }: FallbackProps & {
   description?: string;
 }) {
+  useErrorCatalogRevision();
   // Use i18n.t directly instead of useTranslation hook to avoid context dependency
   // This prevents crashes when error boundary renders outside of I18nextProvider
   const errorLabel = i18n.isInitialized ? i18n.t('error.generalError') : 'Something went wrong';

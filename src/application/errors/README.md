@@ -16,7 +16,8 @@ pnpm error-catalog:check --source /path/to/AppFlowy-Cloud-Premium/libs/app-error
 Sync generates the named constants, English `userError` translations, and a
 source checksum. Commit those outputs together. Regular `pnpm lint` verifies the
 snapshot and generated files without a Cloud checkout. The optional `--source`
-check also compares the two repositories. Runtime never fetches the catalog.
+check also compares the two repositories. The bundled snapshot is an offline
+fallback; runtime public copy comes from the standalone endpoint described below.
 Edit the canonical file, not this snapshot. Protocol/SDK fixes still belong in
 the server repository; this file changes presentation only.
 
@@ -47,11 +48,42 @@ selected language takes precedence, including wording for known reasons. The
 request adapter sends `Accept-Language`. Current Cloud copy is English; other
 languages retain client translations. Untagged schema-1 metadata keeps the prior
 behavior: known reasons localize and unknown reasons use bounded public copy.
-Mismatched-language unknown reasons use the local code mapping, then the generic
-fallback when the code is unknown. Malformed or
+Mismatched-language unknown reasons use a supported server or local code mapping,
+then the generic fallback when the code is unknown. Malformed or
 future metadata falls back to existing mappings. Metadata does not control
 authorization or retries. Hosted upgrade hints apply only to known Pro remedies;
 self-hosted and unknown deployments keep neutral quota guidance.
+
+New Web clients also load public copy from the configured Cloud's standalone
+`GET /api/error-messages?schema_version=1&platform=web&client_version=<web-version>&locale=<selected-language>`.
+The explicit schema, platform and actual bundled client version identify this
+new-client request; no server-info discovery field or minimum release number is
+needed. A successful response is `{code:0,data:{schema_version:1,locale,reasons,codes}}`,
+where `reasons` contains reviewed public strings and `codes` maps Cloud numeric
+error codes to reason names. The endpoint provides no diagnostics or matching
+rules. Per-response metadata remains strongest; reviewed legacy classifications
+preserve overloaded-code specificity, then server code mappings precede bundled
+mappings. Server copy precedes bundled copy only when its response locale matches
+the selected app language. Code-to-reason mappings remain useful across languages,
+so new codes can use existing app translations until Cloud provides that language.
+HTTP, GoTrue, transport and local validation identities keep their existing
+namespaces and do not consume Cloud's remote code or reason tables. Server quota
+instructions are not amended with client-authored Pro or administrator remedies.
+
+`AppConfig` starts the optional catalog owner before sign-in. Owners share one
+in-memory server/locale-scoped session with a five-minute refresh, focus/online
+revalidation, a ten-second request deadline, and cancellation on configuration
+change or disposal. Requests use a fixed URL, omit credentials, reject redirects
+and avoid browser storage and normal error interceptors. Reading stops at 256 KiB;
+the schema allows at most 512 reason entries and 512 code entries, bounded public
+strings, valid locale/reason identifiers and referenced signed 32-bit error codes.
+Cloud returns 204 when its public-message operator flag is disabled or the request
+is unsupported. Disabled/legacy endpoints, malformed/future catalogs and network
+failures clear optional remote copy and retain reviewed local fallbacks. Shared
+React error pages subscribe to catalog revisions, so displayed server wording can
+refresh without a new client bundle. Standalone public forms and SSR retain local
+fallbacks. Catalog data changes presentation only: codes, diagnostics, retry
+headers and recovery checks are preserved.
 
 `userFriendlyErrorMessage` can append uncertain-outcome guidance when callers
 explicitly pass `operation: 'mutation'`. Existing Web UI callers currently use
@@ -71,7 +103,7 @@ Failed PDF import tasks from older workers retain OCR guidance through an exact,
 reviewed legacy diagnostic match. Other task diagnostics still use safe mappings;
 supported optional task `user_error` metadata takes precedence.
 
-Cloud emission requires both `APPFLOWY_PUBLIC_ERROR_MESSAGES_ENABLED=true` and
+Per-response Cloud metadata requires both `APPFLOWY_PUBLIC_ERROR_MESSAGES_ENABLED=true` and
 an explicit schema-1 offer. Native clients use `X-AppFlowy-Error-Schema: 1`;
 Web appends `application/json; appflowy-error-schema=1` to its existing `Accept`
 media ranges only after its configured server's Web `/api/server-info` advertises
@@ -94,6 +126,8 @@ future error metadata, successful requests after failures, unchanged retry
 details and mutation request counts.
 
 Keep legacy codes, statuses, messages and retry semantics unchanged. Roll back
-by turning emission off. Merge Cloud first, wait for generated Client sync,
-then update Desktop SDK pins; Web has no SDK dependency. This repository's
-catalog is a fallback snapshot, not a second editable source.
+by turning emission off. The standalone catalog works with the current Desktop
+SDK pin and has no generated Client dependency. Native per-response metadata
+opt-in still requires merging Cloud, waiting for generated Client sync, and then
+updating Desktop SDK pins. Web has no SDK dependency. This repository's catalog
+is a fallback snapshot, not a second editable source.
