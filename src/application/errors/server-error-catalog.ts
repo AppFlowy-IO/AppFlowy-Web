@@ -7,6 +7,7 @@ export const ERROR_CATALOG_REFRESH_MS = 5 * 60_000;
 export const ERROR_CATALOG_TIMEOUT_MS = 10_000;
 const REVALIDATE_MIN_AGE_MS = 30_000;
 const MAX_ENTRIES = 512;
+const MAX_ETAG_LENGTH = 256;
 
 export interface ServerErrorCatalog {
   readonly schema_version: 1;
@@ -58,11 +59,16 @@ export function parseServerErrorCatalog(value: unknown): ServerErrorCatalog | un
   });
 }
 
+interface CachedCatalog {
+  catalog: ServerErrorCatalog;
+  etag?: string;
+}
+
 interface CatalogSession {
   serverUrl: string;
   locale: string;
   owners: number;
-  catalog?: ServerErrorCatalog;
+  cache?: CachedCatalog;
   controller?: AbortController;
   timer?: ReturnType<typeof setTimeout>;
   lastAttemptAt: number;
@@ -94,12 +100,21 @@ export function getServerErrorCatalog(
   serverUrl = getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud')
 ): ServerErrorCatalog | undefined {
   const requestedLocale = normalizeLocale(locale);
-  const catalog = session?.catalog;
+  const catalog = session?.cache?.catalog;
 
   if (!catalog || session?.serverUrl !== serverUrl || session.locale !== requestedLocale) return undefined;
   // Code identity is language-independent; the display boundary decides whether
   // the server's copy matches the user's selected language.
   return catalog;
+}
+
+// A bounded, single ASCII entity tag is safe to reflect in a request header.
+// Reject lists, wildcards and controls; unsupported tags simply disable caching.
+function validatedEtag(value: string | null): string | undefined {
+  if (value === null || value.length > MAX_ETAG_LENGTH) return undefined;
+  const match = /^(?:W\/)?"[\x21\x23-\x7e]*"$/.exec(value);
+
+  return match?.[0] === value ? value : undefined;
 }
 
 async function readCatalog(response: Response, signal: AbortSignal): Promise<ServerErrorCatalog | undefined> {
@@ -164,14 +179,16 @@ async function refresh(current: CatalogSession): Promise<void> {
 
   current.controller = controller;
   const timeout = setTimeout(() => controller.abort(), ERROR_CATALOG_TIMEOUT_MS);
-  let next: ServerErrorCatalog | undefined;
+  const cached = current.cache;
+  const requestEtag = cached?.etag;
+  let next: CachedCatalog | undefined;
 
   try {
     // Public, fixed endpoint: no authentication, storage access, interceptors, or
     // redirects. Catalog failures must never enter normal error normalization.
     const response = await fetch(catalogUrl(current), {
       signal: controller.signal, credentials: 'omit', redirect: 'error', cache: 'no-store',
-      headers: { Accept: 'application/json' },
+      headers: { Accept: 'application/json', ...(requestEtag ? { 'If-None-Match': requestEtag } : {}) },
     });
 
     if (controller.signal.aborted || session !== current) {
@@ -179,9 +196,20 @@ async function refresh(current: CatalogSession): Promise<void> {
       return;
     }
 
-    const catalog = await readCatalog(response, controller.signal);
+    const etag = validatedEtag(response.headers.get('etag'));
 
-    if (!controller.signal.aborted) next = catalog;
+    if (response.status === 304) {
+      void response.body?.cancel().catch(() => undefined);
+      // Weak comparison checks the opaque value, never a prefix or substring.
+      // Without both the matching validator and its body, use local fallback.
+      if (cached && requestEtag && etag && requestEtag.replace(/^W\//, '') === etag.replace(/^W\//, '')) {
+        next = { catalog: cached.catalog, etag };
+      }
+    } else {
+      const catalog = await readCatalog(response, controller.signal);
+
+      if (!controller.signal.aborted && catalog) next = { catalog, etag };
+    }
   } catch {
     // Old servers, unavailable transport and malformed optional catalogs all use
     // the bundled fallback. A 204 also clears previously loaded server wording.
@@ -189,8 +217,10 @@ async function refresh(current: CatalogSession): Promise<void> {
     clearTimeout(timeout);
     current.controller = undefined;
     if (session === current) {
-      current.catalog = next;
-      publish();
+      const changed = current.cache?.catalog !== next?.catalog;
+
+      current.cache = next;
+      if (changed) publish();
       current.timer = setTimeout(() => void refresh(current), ERROR_CATALOG_REFRESH_MS);
     }
   }
@@ -198,6 +228,7 @@ async function refresh(current: CatalogSession): Promise<void> {
 
 function dispose(current: CatalogSession): void {
   current.controller?.abort();
+  current.cache = undefined;
   if (current.timer) clearTimeout(current.timer);
   current.disposeEvents();
 }

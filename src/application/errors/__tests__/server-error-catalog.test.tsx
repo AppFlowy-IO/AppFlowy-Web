@@ -21,6 +21,7 @@ import {
   ERROR_CATALOG_MAX_BYTES,
   ERROR_CATALOG_REFRESH_MS,
   ERROR_CATALOG_TIMEOUT_MS,
+  getErrorCatalogRevision,
   getServerErrorCatalog,
   retainServerErrorCatalog,
 } from '../server-error-catalog';
@@ -42,7 +43,7 @@ function catalogEnvelope(message = 'Wait for the current server export to finish
   };
 }
 
-function responseBody(chunks: Uint8Array[], status = 200, contentLength?: string) {
+function responseBody(chunks: Uint8Array[], status = 200, contentLength?: string, etag?: string) {
   const cancel = jest.fn();
   let index = 0;
   const body = new ReadableStream<Uint8Array>({
@@ -54,14 +55,18 @@ function responseBody(chunks: Uint8Array[], status = 200, contentLength?: string
   });
   const response = {
     status, body,
-    headers: { get: (name: string) => name === 'content-length' ? contentLength ?? null : null },
+    headers: { get: (name: string) => ({ 'content-length': contentLength, etag }[name] ?? null) },
   } as unknown as Response;
 
   return { response, cancel };
 }
 
-function jsonResponse(value: unknown, status = 200): Response {
-  return responseBody([new TextEncoder().encode(JSON.stringify(value))], status).response;
+function jsonResponse(value: unknown, status = 200, etag?: string): Response {
+  return responseBody([new TextEncoder().encode(JSON.stringify(value))], status, undefined, etag).response;
+}
+
+function notModified(etag?: string): Response {
+  return { status: 304, body: null, headers: { get: (name: string) => name === 'etag' ? etag ?? null : null } } as Response;
 }
 
 function retain(locale = 'en', url = serverUrl): () => void {
@@ -135,17 +140,98 @@ it('updates an existing React fallback when server wording changes without chang
   const originalCopy = localCatalog.reasons.EXPORT_BUSY;
   const error = Object.freeze({ code: 1073, message: 'private export diagnostic', retryAfterSecs: 17 });
 
+  fetchMock.mockResolvedValueOnce(jsonResponse(catalogEnvelope(), 200, 'W/"v1"'));
   retain();
   await settle();
   render(<ElementFallbackRender error={error} resetErrorBoundary={jest.fn()} />);
   expect(screen.getByRole('alert').textContent).toContain('Wait for the current server export to finish.');
 
-  fetchMock.mockResolvedValue(jsonResponse(catalogEnvelope('This server now allows only one export at a time.')));
+  fetchMock.mockResolvedValueOnce(jsonResponse(catalogEnvelope('This server now allows only one export at a time.'), 200, 'W/"v2"'));
   await revalidate();
+  expect(fetchMock.mock.calls[1][1]?.headers).toEqual({ Accept: 'application/json', 'If-None-Match': 'W/"v1"' });
+  expect(screen.getByRole('alert').textContent).toContain('This server now allows only one export at a time.');
+  fetchMock.mockResolvedValueOnce(notModified('W/"v2"'));
+  await revalidate();
+  expect(fetchMock.mock.calls[2][1]?.headers).toEqual({ Accept: 'application/json', 'If-None-Match': 'W/"v2"' });
   expect(screen.getByRole('alert').textContent).toContain('This server now allows only one export at a time.');
   expect(screen.queryByText(/private export diagnostic/)).toBeNull();
   expect(localCatalog.reasons.EXPORT_BUSY).toBe(originalCopy);
   expect(error).toEqual({ code: 1073, message: 'private export diagnostic', retryAfterSecs: 17 });
+});
+
+it.each([
+  ['W/"v1"', '"v1"'],
+  ['"v1"', 'W/"v1"'],
+  [`"${'x'.repeat(254)}"`, `"${'x'.repeat(254)}"`],
+])('revalidates %s without downloading or republishing unchanged copy', async (initialEtag, responseEtag) => {
+  fetchMock.mockResolvedValueOnce(jsonResponse(catalogEnvelope(), 200, initialEtag));
+  retain();
+  await settle();
+  const catalog = getServerErrorCatalog('en');
+  const revision = getErrorCatalogRevision();
+
+  fetchMock.mockResolvedValueOnce(notModified(responseEtag));
+  await revalidate();
+  expect(fetchMock.mock.calls[1][1]?.headers).toEqual({ Accept: 'application/json', 'If-None-Match': initialEtag });
+  expect(getServerErrorCatalog('en')).toBe(catalog);
+  expect(getErrorCatalogRevision()).toBe(revision);
+  window.dispatchEvent(new Event('online'));
+  await settle();
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  fetchMock.mockResolvedValueOnce(notModified(responseEtag));
+  await act(async () => { await jest.advanceTimersByTimeAsync(ERROR_CATALOG_REFRESH_MS); });
+  expect(fetchMock.mock.calls[2][1]?.headers).toEqual({ Accept: 'application/json', 'If-None-Match': responseEtag });
+  expect(getServerErrorCatalog('en')).toBe(catalog);
+  expect(getErrorCatalogRevision()).toBe(revision);
+});
+
+it.each([undefined, '*', 'unquoted', '"one", "two"', 'w/"v1"', '"line\nbreak"', '"v1"\n', '"ü"', `"${'x'.repeat(255)}"`])(
+  'uses valid 200 copy without reflecting an unsupported ETag %j', async (etag) => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(catalogEnvelope(), 200, etag));
+    retain();
+    await settle();
+    expect(getServerErrorCatalog('en')).toBeDefined();
+    await revalidate();
+    expect(fetchMock.mock.calls[1][1]?.headers).toEqual({ Accept: 'application/json' });
+  }
+);
+
+it.each([undefined, '"different"', '"v1-more"', '*', 'W/"v1", "other"', '"v1"\r\n', `"${'x'.repeat(255)}"`])(
+  'clears the body and validator after an unverifiable 304 ETag %j', async (etag) => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(catalogEnvelope(), 200, 'W/"v1"'));
+    retain();
+    await settle();
+    fetchMock.mockResolvedValueOnce(notModified(etag));
+    await revalidate();
+    expect(getServerErrorCatalog('en')).toBeUndefined();
+    expect(userFriendlyErrorMessage({ code: 1073 })).toBe(localCatalog.reasons.EXPORT_BUSY);
+    await revalidate();
+    expect(fetchMock.mock.calls[2][1]?.headers).toEqual({ Accept: 'application/json' });
+    expect(getServerErrorCatalog('en')).toBeDefined();
+  }
+);
+
+it('does not accept a 304 without a validated cached body or retry in a loop', async () => {
+  fetchMock.mockResolvedValueOnce(notModified('W/"v1"'));
+  retain();
+  await settle();
+  expect(getServerErrorCatalog('en')).toBeUndefined();
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(fetchMock.mock.calls[0][1]?.headers).toEqual({ Accept: 'application/json' });
+  await revalidate();
+  expect(fetchMock.mock.calls[1][1]?.headers).toEqual({ Accept: 'application/json' });
+  expect(getServerErrorCatalog('en')).toBeDefined();
+});
+
+it('replaces an old validator when a valid changed 200 has no ETag', async () => {
+  fetchMock.mockResolvedValueOnce(jsonResponse(catalogEnvelope(), 200, 'W/"v1"'));
+  retain();
+  await settle();
+  fetchMock.mockResolvedValueOnce(jsonResponse(catalogEnvelope('Updated copy without a validator.')));
+  await revalidate();
+  expect(getServerErrorCatalog('en')?.reasons.EXPORT_BUSY).toBe('Updated copy without a validator.');
+  await revalidate();
+  expect(fetchMock.mock.calls[2][1]?.headers).toEqual({ Accept: 'application/json' });
 });
 
 it('keeps server quota instructions without appending conflicting Pro or administrator remedies', async () => {
@@ -236,10 +322,10 @@ it('keeps specific legacy Cloud diagnoses ahead of the full catalog generic code
 });
 
 it('preserves HTTP identity and diagnostic-driven recovery when catalog copy mentions something else', async () => {
-  fetchMock.mockResolvedValue(jsonResponse({
+  fetchMock.mockResolvedValueOnce(jsonResponse({
     code: 0,
     data: { schema_version: 1, locale: 'en', reasons: { REQUEST_PROBLEM: 'Contact the page owner.' }, codes: { '-1': 'REQUEST_PROBLEM' } },
-  }));
+  }, 200, 'W/"recovery"'));
   retain();
   await settle();
   const error = handleAPIResponseError({
@@ -250,16 +336,42 @@ it('preserves HTTP identity and diagnostic-driven recovery when catalog copy men
   expect(error).toMatchObject({ code: -1, httpStatus: 400, retryAfterSecs: 7, requestId: 'view-123', message: 'Contact the page owner.' });
   expect(getErrorDiagnostic(error)).toBe('View not found');
   expect(isViewGoneError(error)).toBe(true);
+  fetchMock.mockResolvedValueOnce(notModified('W/"recovery"'));
+  await revalidate();
+  expect(userFriendlyErrorMessage(error)).toBe('Contact the page owner.');
+  expect(error).toMatchObject({ code: -1, httpStatus: 400, retryAfterSecs: 7, requestId: 'view-123' });
+  expect(getErrorDiagnostic(error)).toBe('View not found');
+  expect(isViewGoneError(error)).toBe(true);
 });
 
 it.each([204, 404, 500])('clears loaded copy and leaves rendering usable when the catalog responds %s', async (status) => {
+  fetchMock.mockResolvedValueOnce(jsonResponse(catalogEnvelope(), 200, 'W/"v1"'));
   retain();
   await settle();
   render(<ElementFallbackRender error={{ code: 1073 }} resetErrorBoundary={jest.fn()} />);
-  fetchMock.mockResolvedValue(jsonResponse(undefined, status));
+  fetchMock.mockResolvedValueOnce(jsonResponse(undefined, status, 'W/"do-not-cache"'));
   await revalidate();
   expect(getServerErrorCatalog('en')).toBeUndefined();
   expect(screen.getByRole('alert').textContent).toContain(localCatalog.reasons.EXPORT_BUSY);
+  await revalidate();
+  expect(fetchMock.mock.calls[2][1]?.headers).toEqual({ Accept: 'application/json' });
+  expect(getServerErrorCatalog('en')).toBeDefined();
+});
+
+it.each(['network', 'schema', 'malformed JSON'])('drops a previous validator after a %s failure', async (failure) => {
+  fetchMock.mockResolvedValueOnce(jsonResponse(catalogEnvelope(), 200, 'W/"v1"'));
+  retain();
+  await settle();
+  if (failure === 'network') fetchMock.mockRejectedValueOnce(new TypeError('Network unavailable'));
+  else if (failure === 'schema') {
+    const envelope = catalogEnvelope();
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ ...envelope, data: { ...envelope.data, schema_version: 2 } }, 200, 'W/"v2"'));
+  } else fetchMock.mockResolvedValueOnce(responseBody([new TextEncoder().encode('{broken')], 200, undefined, 'W/"v2"').response);
+  await revalidate();
+  expect(getServerErrorCatalog('en')).toBeUndefined();
+  await revalidate();
+  expect(fetchMock.mock.calls[2][1]?.headers).toEqual({ Accept: 'application/json' });
 });
 
 it('treats an offline catalog fetch as an optional failure', async () => {
@@ -329,13 +441,14 @@ it('accepts an exactly bounded catalog with UTF-8 characters split across stream
 });
 
 it('deduplicates owners, refreshes on schedule, and removes timers and event work on final disposal', async () => {
+  fetchMock.mockResolvedValueOnce(jsonResponse(catalogEnvelope(), 200, 'W/"v1"'));
   const releaseFirst = retain();
   const releaseSecond = retain();
 
   await settle();
   expect(fetchMock).toHaveBeenCalledTimes(1);
   releaseFirst();
-  fetchMock.mockResolvedValue(jsonResponse(catalogEnvelope('Refreshed copy')));
+  fetchMock.mockResolvedValueOnce(jsonResponse(catalogEnvelope('Refreshed copy'), 200, 'W/"v2"'));
   await act(async () => { await jest.advanceTimersByTimeAsync(ERROR_CATALOG_REFRESH_MS); });
   expect(fetchMock).toHaveBeenCalledTimes(2);
   expect(getServerErrorCatalog('en')?.reasons.EXPORT_BUSY).toBe('Refreshed copy');
@@ -345,6 +458,9 @@ it('deduplicates owners, refreshes on schedule, and removes timers and event wor
   window.dispatchEvent(new Event('focus'));
   await act(async () => { await jest.advanceTimersByTimeAsync(ERROR_CATALOG_REFRESH_MS); });
   expect(fetchMock).toHaveBeenCalledTimes(2);
+  retain();
+  await settle();
+  expect(fetchMock.mock.calls[2][1]?.headers).toEqual({ Accept: 'application/json' });
 });
 
 it.each([
@@ -366,6 +482,35 @@ it.each([
   releaseOld();
   expect(getServerErrorCatalog(locale, url)?.reasons.EXPORT_BUSY).toBe('New configuration copy.');
   expect(getServerErrorCatalog('en', url === serverUrl ? serverUrl : 'https://unrelated.example.com')).toBeUndefined();
+});
+
+it.each([
+  { locale: 'de', url: serverUrl },
+  { locale: 'en', url: 'https://other.example.com' },
+])('does not carry a validator or late 304 across a server/locale transition: %j', async ({ locale, url }) => {
+  fetchMock.mockResolvedValueOnce(jsonResponse(catalogEnvelope(), 200, 'W/"old"'));
+  const releaseOld = retain();
+
+  await settle();
+  let resolveOld!: (response: Response) => void;
+
+  fetchMock.mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve; }));
+  await revalidate();
+  expect(fetchMock.mock.calls[1][1]?.headers).toEqual({ Accept: 'application/json', 'If-None-Match': 'W/"old"' });
+  const oldSignal = fetchMock.mock.calls[1][1]?.signal;
+
+  fetchMock.mockResolvedValueOnce(jsonResponse(catalogEnvelope('New configuration copy.', locale), 200, 'W/"new"'));
+  retain(locale, url);
+  await settle();
+  expect(fetchMock.mock.calls[2][1]?.headers).toEqual({ Accept: 'application/json' });
+  expect(oldSignal?.aborted).toBe(true);
+  resolveOld(notModified('W/"old"'));
+  await settle();
+  releaseOld();
+  fetchMock.mockResolvedValueOnce(notModified('W/"new"'));
+  await revalidate();
+  expect(fetchMock.mock.calls[3][1]?.headers).toEqual({ Accept: 'application/json', 'If-None-Match': 'W/"new"' });
+  expect(getServerErrorCatalog(locale, url)?.reasons.EXPORT_BUSY).toBe('New configuration copy.');
 });
 
 it('aborts a stalled request at the deadline and remains usable for the next refresh', async () => {

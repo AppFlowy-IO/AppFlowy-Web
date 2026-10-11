@@ -77,13 +77,26 @@ change or disposal. Requests use a fixed URL, omit credentials, reject redirects
 and avoid browser storage and normal error interceptors. Reading stops at 256 KiB;
 the schema allows at most 512 reason entries and 512 code entries, bounded public
 strings, valid locale/reason identifiers and referenced signed 32-bit error codes.
-Cloud returns 204 when its public-message operator flag is disabled or the request
-is unsupported. Disabled/legacy endpoints, malformed/future catalogs and network
+The endpoint is available without an operator flag; unsupported requests return
+204. Unsupported/legacy endpoints, malformed/future catalogs and network
 failures clear optional remote copy and retain reviewed local fallbacks. Shared
 React error pages subscribe to catalog revisions, so displayed server wording can
 refresh without a new client bundle. Standalone public forms and SSR retain local
 fallbacks. Catalog data changes presentation only: codes, diagnostics, retry
 headers and recovery checks are preserved.
+
+The validated body and its optional ETag stay together in that in-memory session.
+Refreshes send `If-None-Match` only while both are available. An empty 304 with a
+matching ETag keeps the body, resets the refresh schedule and avoids notifying
+React subscribers. Tags use weak comparison of the complete opaque value and
+are limited to one quoted ASCII validator of at most 256 characters. A valid 200
+replaces both body and validator; missing or unsupported ETags still allow public
+copy but disable conditional requests. An unverifiable 304 clears the cache and
+uses local fallback until the next unconditional refresh. Other failed responses
+also clear both values. Server or language changes and final owner disposal drop
+the pair. Fetch uses `cache: 'no-store'` so this explicit cache controls reuse.
+Cloud responds with `Cache-Control: private, no-cache`; cross-origin deployments
+must allow `If-None-Match` and expose `ETag` on both 200 and 304 responses.
 
 `userFriendlyErrorMessage` can append uncertain-outcome guidance when callers
 explicitly pass `operation: 'mutation'`. Existing Web UI callers currently use
@@ -103,8 +116,8 @@ Failed PDF import tasks from older workers retain OCR guidance through an exact,
 reviewed legacy diagnostic match. Other task diagnostics still use safe mappings;
 supported optional task `user_error` metadata takes precedence.
 
-Per-response Cloud metadata requires both `APPFLOWY_PUBLIC_ERROR_MESSAGES_ENABLED=true` and
-an explicit schema-1 offer. Native clients use `X-AppFlowy-Error-Schema: 1`;
+Per-response Cloud metadata requires an explicit schema-1 offer; it has no
+environment switch. Native clients use `X-AppFlowy-Error-Schema: 1`;
 Web appends `application/json; appflowy-error-schema=1` to its existing `Accept`
 media ranges only after its configured server's Web `/api/server-info` advertises
 `supported_error_schema_version: 1`. Older servers, unavailable discovery and
@@ -125,9 +138,9 @@ offer scope, preserved media ranges, absent/invalid discovery, server rollback, 
 future error metadata, successful requests after failures, unchanged retry
 details and mutation request counts.
 
-Keep legacy codes, statuses, messages and retry semantics unchanged. Roll back
-by turning emission off. The standalone catalog works with the current Desktop
-SDK pin and has no generated Client dependency. Native per-response metadata
+Keep legacy codes, statuses, messages and retry semantics unchanged. Clients that
+do not opt in continue receiving the legacy envelope. The standalone catalog
+works with the current Desktop SDK pin and has no generated Client dependency. Native per-response metadata
 opt-in still requires merging Cloud, waiting for generated Client sync, and then
 updating Desktop SDK pins. Web has no SDK dependency. This repository's catalog
 is a fallback snapshot, not a second editable source.
