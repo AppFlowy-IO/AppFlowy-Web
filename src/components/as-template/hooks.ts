@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
 import { TemplateService } from '@/application/services/domains';
 import { Template, TemplateCategory, TemplateCreator, TemplateSummary } from '@/application/template.type';
@@ -35,17 +35,20 @@ export function useLoadCategoryTemplates () {
 export function useLoadTemplate (id: string) {
   const [loading, setLoading] = useState(false);
   const [template, setTemplate] = useState<Template | null>(null);
+  const latestLoad = useRef(0);
   const loadTemplate = useCallback(async () => {
+    const request = ++latestLoad.current;
+
     try {
       setLoading(true);
       const data = await TemplateService.getById(id);
 
-      if (!data) return;
+      if (!data || request !== latestLoad.current) return;
       setTemplate(data);
     } catch (error) {
       // don't show error notification
     } finally {
-      setLoading(false);
+      if (request === latestLoad.current) setLoading(false);
     }
   }, [id]);
 
@@ -69,6 +72,7 @@ export function useLoadCategories (props?: {
 
       if (!data) throw new Error('Failed to fetch categories');
       setCategories(data);
+      return data;
     } catch (error) {
       notify.error('Failed to fetch categories');
       return Promise.reject(error);

@@ -13,7 +13,7 @@ import Categories from '@/components/as-template/category/Categories';
 import Creator from '@/components/as-template/creator/Creator';
 import DeleteTemplate from '@/components/as-template/DeleteTemplate';
 import { useLoadTemplate } from '@/components/as-template/hooks';
-import { slugify } from '@/components/as-template/utils';
+import { getTemplatePath } from '@/components/as-template/utils';
 
 import './template.scss';
 
@@ -28,11 +28,16 @@ function AsTemplate({ viewName, viewUrl, viewId }: { viewName: string; viewUrl: 
   const [isNewTemplate, setIsNewTemplate] = useState(false);
   const [isFeatured, setIsFeatured] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const savingRef = useRef(false);
   const { template, loadTemplate, loading } = useLoadTemplate(viewId);
 
   const handleSubmit = useCallback(
     async (data: AsTemplateFormValue) => {
-      if (!selectedCreatorId || !selectedPrimaryCategoryId) return;
+      if (!selectedCreatorId || !selectedPrimaryCategoryId || loading || savingRef.current) return;
+      // Keep the write and reload together so a second full-payload save cannot race them.
+      savingRef.current = true;
+      setIsSaving(true);
       const formData: UploadTemplatePayload = {
         ...data,
         view_id: viewId,
@@ -58,6 +63,9 @@ function AsTemplate({ viewName, viewUrl, viewId }: { viewName: string; viewUrl: 
         // eslint-disable-next-line
         // @ts-ignore
         notify.error(error.toString());
+      } finally {
+        savingRef.current = false;
+        setIsSaving(false);
       }
     },
     [
@@ -70,6 +78,7 @@ function AsTemplate({ viewName, viewUrl, viewId }: { viewName: string; viewUrl: 
       viewUrl,
       template,
       loadTemplate,
+      loading,
     ]
   );
   const submitRef = useRef<HTMLInputElement>(null);
@@ -112,13 +121,9 @@ function AsTemplate({ viewName, viewUrl, viewId }: { viewName: string; viewUrl: 
             startIcon={<WebsiteIcon />}
             variant={'text'}
             onClick={() => {
-              const templateUrl = `${window.location.origin}/templates`;
+              const path = getTemplatePath(template);
 
-              const category =
-                template.categories.find((item) => item.id === template.primary_category_id) ??
-                [...template.categories].sort((a, b) => a.name.localeCompare(b.name))[0];
-
-              if (category) window.open(`${templateUrl}/${slugify(category.name)}/${template.view_id}`);
+              if (path) window.open(`${window.location.origin}${path}`);
             }}
             color={'primary'}
           >
@@ -130,6 +135,7 @@ function AsTemplate({ viewName, viewUrl, viewId }: { viewName: string; viewUrl: 
             <Button
               startIcon={<DeleteIcon />}
               color={'error'}
+              disabled={isSaving}
               onClick={() => {
                 setDeleteModalOpen(true);
               }}
@@ -145,13 +151,17 @@ function AsTemplate({ viewName, viewUrl, viewId }: { viewName: string; viewUrl: 
             }}
             variant={'contained'}
             color={'primary'}
-            disabled={!selectedCreatorId || !selectedPrimaryCategoryId || loading}
+            disabled={!selectedCreatorId || !selectedPrimaryCategoryId || loading || isSaving}
           >
             {t('button.save')}
           </Button>
         </div>
       </div>
-      <div className={'flex flex-1 gap-20 overflow-hidden'}>
+      <div
+        {...(isSaving ? { inert: '' } : {})}
+        aria-busy={isSaving}
+        className={'flex flex-1 gap-20 overflow-hidden'}
+      >
         <Paper className={'flex h-full w-full flex-1 justify-center overflow-hidden'}>
           <AFScroller className={'flex h-full w-full justify-center'} overflowXHidden>
             {loading ? (
@@ -173,8 +183,9 @@ function AsTemplate({ viewName, viewUrl, viewId }: { viewName: string; viewUrl: 
             onChange={setSelectedCategoryIds}
             primaryCategoryId={selectedPrimaryCategoryId}
             onPrimaryCategoryChange={setPrimaryCategoryId}
+            disabled={isSaving}
           />
-          <Creator value={selectedCreatorId} onChange={setSelectedCreatorId} />
+          <Creator value={selectedCreatorId} onChange={setSelectedCreatorId} disabled={isSaving} />
           <div className={'flex items-center gap-2'}>
             <InputLabel>{t('template.isNewTemplate')}</InputLabel>
             <Switch checked={isNewTemplate} onChange={() => setIsNewTemplate(!isNewTemplate)} />

@@ -1,7 +1,7 @@
 import { beforeEach, expect, jest, test } from '@jest/globals';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-import type { Template, UploadTemplatePayload } from '@/application/template.type';
+import type { Template, TemplateCategory, UploadTemplatePayload } from '@/application/template.type';
 import { TemplateCategoryType, TemplateIcon } from '@/application/template.type';
 
 import AsTemplate from './AsTemplate';
@@ -12,7 +12,7 @@ let mockTemplate: Template | null = null;
 const mockLoadTemplate = jest.fn<() => Promise<void>>().mockResolvedValue(undefined);
 const mockCreate = jest.fn<(payload: UploadTemplatePayload) => Promise<void>>().mockResolvedValue(undefined);
 const mockUpdate = jest.fn<(id: string, payload: UploadTemplatePayload) => Promise<void>>().mockResolvedValue(undefined);
-const mockLoadCategories = jest.fn<() => Promise<void>>().mockResolvedValue(undefined);
+const mockLoadCategories = jest.fn<() => Promise<TemplateCategory[] | undefined>>();
 const mockCategories = [
   { id: 'docs', name: 'Docs', icon: TemplateIcon.docs },
   { id: 'engineering', name: 'Engineering', icon: TemplateIcon.engineering },
@@ -24,6 +24,7 @@ const mockCategories = [
   category_type: TemplateCategoryType.ByUseCase,
   priority: 0,
 }));
+let mockAvailableCategories = mockCategories;
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -37,8 +38,8 @@ jest.mock('@/application/services/domains', () => ({
 jest.mock('@/components/as-template/hooks', () => ({
   useLoadTemplate: () => ({ template: mockTemplate, loadTemplate: mockLoadTemplate, loading: false }),
   useLoadCategories: ({ searchText = '' }: { searchText?: string }) => ({
-    categories: mockCategories.filter((category) => category.name.toLowerCase().includes(searchText.toLowerCase())),
-    allCategories: mockCategories,
+    categories: mockAvailableCategories.filter((category) => category.name.toLowerCase().includes(searchText.toLowerCase())),
+    allCategories: mockAvailableCategories,
     loadCategories: mockLoadCategories,
     loading: false,
   }),
@@ -57,8 +58,18 @@ jest.mock('@/components/_shared/popover', () => ({
 jest.mock('@/components/as-template/category/AddCategory', () => ({ __esModule: true, default: () => null }));
 jest.mock('@/components/as-template/category/CategoryItem', () => ({
   __esModule: true,
-  default: ({ category, onClick }: { category: { name: string }; onClick: () => void }) => (
-    <button onClick={onClick}>Toggle {category.name} category</button>
+  default: ({ category, onClick, reloadCategories }: {
+    category: { id: string; name: string };
+    onClick: () => void;
+    reloadCategories: () => Promise<unknown>;
+  }) => (
+    <>
+      <button onClick={onClick}>Toggle {category.name} category</button>
+      <button onClick={() => {
+        mockAvailableCategories = mockAvailableCategories.filter((item) => item.id !== category.id);
+        void reloadCategories();
+      }}>Delete {category.name} category</button>
+    </>
   ),
 }));
 jest.mock('@/components/as-template/creator/Creator', () => ({
@@ -69,6 +80,10 @@ jest.mock('@/components/as-template/creator/Creator', () => ({
 beforeEach(() => {
   mockTemplate = null;
   jest.clearAllMocks();
+  mockAvailableCategories = mockCategories;
+  mockLoadCategories.mockImplementation(async () => mockAvailableCategories);
+  mockLoadTemplate.mockReset().mockResolvedValue(undefined);
+  mockUpdate.mockReset().mockResolvedValue(undefined);
 });
 
 function existingTemplate(): Template {
@@ -167,6 +182,7 @@ test('editing preserves the saved primary and requires a replacement when its ca
       existingPayload()
     )
   );
+  await waitFor(() => expect(save.hasAttribute('disabled')).toBe(false));
   fireEvent.click(screen.getByPlaceholderText('template.category.typeToSearch'));
   fireEvent.click(screen.getByText('Toggle Engineering category'));
   expect(save.hasAttribute('disabled')).toBe(true);
@@ -205,4 +221,71 @@ test.each([undefined, null])('assigning a primary to a legacy template (%s) pres
   fireEvent.click(screen.getByRole('button', { name: 'Use Engineering as primary category' }));
   fireEvent.click(save);
   await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith('template-id', existingPayload()));
+});
+
+test('deleting a selected category requires a replacement and excludes the deleted ID from saves', async () => {
+  mockTemplate = existingTemplate();
+  render(<AsTemplate viewId='template-id' viewName='Template' viewUrl='https://example.com/published' />);
+  fireEvent.click(screen.getByPlaceholderText('template.category.typeToSearch'));
+  fireEvent.click(screen.getByText('Delete Engineering category'));
+  const save = screen.getByRole('button', { name: 'button.save' });
+
+  await waitFor(() => expect(save.hasAttribute('disabled')).toBe(true));
+  expect(screen.queryByRole('button', { name: 'Use Engineering as primary category' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Use Docs as primary category' }));
+  fireEvent.click(save);
+  await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith('template-id', {
+    ...existingPayload(), category_ids: ['docs'], primary_category_id: 'docs',
+  }));
+});
+
+test('serializes submissions through the write and reload without discarding the metadata form', async () => {
+  let finishWrite!: () => void;
+
+  let finishReload!: () => void;
+
+  const write = new Promise<void>((resolve) => { finishWrite = resolve; });
+  const reload = new Promise<void>((resolve) => { finishReload = resolve; });
+
+  mockTemplate = existingTemplate();
+  mockUpdate.mockReturnValueOnce(write);
+  mockLoadTemplate.mockResolvedValueOnce(undefined).mockReturnValueOnce(reload);
+  render(<AsTemplate viewId='template-id' viewName='Template' viewUrl='https://example.com/published' />);
+  const description = screen.getByRole('textbox', { name: /template.description/ });
+  const form = description.closest('form')!;
+  const save = screen.getByRole('button', { name: 'button.save' });
+
+  fireEvent.change(description, { target: { value: 'Edited description' } });
+  fireEvent.click(save);
+  await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+  expect(save.hasAttribute('disabled')).toBe(true);
+  expect(description.closest('[inert]')).not.toBeNull();
+  expect(screen.getByRole('button', { name: 'template.deleteTemplate' }).hasAttribute('disabled')).toBe(true);
+  await act(async () => { fireEvent.submit(form); });
+  expect(mockUpdate).toHaveBeenCalledTimes(1);
+  await act(async () => { finishWrite(); });
+  expect(mockLoadTemplate).toHaveBeenCalledTimes(2);
+  expect(save.hasAttribute('disabled')).toBe(true);
+  await act(async () => { finishReload(); });
+  await waitFor(() => expect(save.hasAttribute('disabled')).toBe(false));
+  expect(description.closest('[inert]')).toBeNull();
+  expect(description.value).toBe('Edited description');
+});
+
+test('a failed save retains edited metadata and allows retrying', async () => {
+  mockTemplate = existingTemplate();
+  mockUpdate.mockRejectedValueOnce(new Error('Save failed'));
+  render(<AsTemplate viewId='template-id' viewName='Template' viewUrl='https://example.com/published' />);
+  const description = screen.getByRole('textbox', { name: /template.description/ });
+  const save = screen.getByRole('button', { name: 'button.save' });
+
+  fireEvent.change(description, { target: { value: 'Keep this draft' } });
+  fireEvent.click(save);
+  await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(save.hasAttribute('disabled')).toBe(false));
+  expect(description.value).toBe('Keep this draft');
+  fireEvent.click(save);
+  await waitFor(() => expect(mockUpdate).toHaveBeenLastCalledWith('template-id', {
+    ...existingPayload(), description: 'Keep this draft',
+  }));
 });
