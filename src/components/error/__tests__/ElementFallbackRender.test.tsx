@@ -1,5 +1,6 @@
 import { expect, describe, it, beforeEach, afterEach } from '@jest/globals';
 import { render, screen } from '@testing-library/react';
+import { ErrorBoundary } from 'react-error-boundary';
 
 import { ElementFallbackRender } from '../ElementFallbackRender';
 
@@ -34,6 +35,31 @@ describe('ElementFallbackRender', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsInitialized = true;
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it.each(['getter', 'getItem'] as const)('contains a rendering failure when the storage %s is denied', (access) => {
+    const denyStorage = () => {
+      throw new DOMException('Storage access denied', 'SecurityError');
+    };
+
+    if (access === 'getter') jest.spyOn(window, 'localStorage', 'get').mockImplementation(denyStorage);
+    else jest.spyOn(Storage.prototype, 'getItem').mockImplementation(denyStorage);
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    function BrokenChild(): JSX.Element {
+      throw new Error('Underlying rendering failure');
+    }
+
+    render(
+      <ErrorBoundary FallbackComponent={ElementFallbackRender}>
+        <BrokenChild />
+      </ErrorBoundary>
+    );
+
+    expect(screen.getByRole('alert').textContent).toContain('Something went wrong. Contact support');
+    expect(screen.queryByText('Underlying rendering failure')).toBeNull();
   });
 
   describe('when i18n is initialized', () => {

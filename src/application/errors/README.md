@@ -28,6 +28,10 @@ Use `getErrorMessage(error)` at UI boundaries. HTTP adapters also populate safe
 in toasts or dialogs. Publishing retries and legacy missing-route/view checks use
 the retained diagnostics, including an explicitly empty diagnostic, so translated
 or server-controlled display wording cannot change recovery decisions.
+Form-sharing bootstrap retries use the same retained diagnostics for older servers.
+Error rendering tolerates denied browser storage access and retains authoritative
+server hosting flags. Pass reviewed, locally authored landing-page guidance through
+the explicit `description` prop; raw server diagnostics still go through `error`.
 
 Adapters select `sourceDomain` so Cloud `-1` (Unhandled), local network `-1`,
 HTTP statuses, and GoTrue numeric statuses do not collide. In particular, 1073
@@ -67,8 +71,29 @@ Failed PDF import tasks from older workers retain OCR guidance through an exact,
 reviewed legacy diagnostic match. Other task diagnostics still use safe mappings;
 supported optional task `user_error` metadata takes precedence.
 
-Cloud emission is opt-in (`APPFLOWY_PUBLIC_ERROR_MESSAGES_ENABLED=true`). Keep
-legacy codes, statuses, messages and retry semantics unchanged. Roll back by
-turning emission off. Merge Cloud first, wait for generated Client sync, then
-update Desktop SDK pins; Web has no SDK dependency. This repository's catalog is
-a fallback snapshot, not a second editable source.
+Cloud emission requires both `APPFLOWY_PUBLIC_ERROR_MESSAGES_ENABLED=true` and
+an explicit schema-1 offer. Native clients use `X-AppFlowy-Error-Schema: 1`;
+Web appends `application/json; appflowy-error-schema=1` to its existing `Accept`
+media ranges only after its configured server's Web `/api/server-info` advertises
+`supported_error_schema_version: 1`. Older servers, unavailable discovery and
+unknown schema versions keep the original request headers and local fallbacks;
+the safelisted `Accept` offer also works through existing proxies whose CORS
+allowlist lacks the native custom header. Existing binary media ranges are
+preserved, repeated offers are collapsed, and requests that would exceed the
+128-byte safelisted `Accept` limit keep their original value. Capability state is
+scoped to the configured server URL. Discovery requests never opt in, allowing
+the existing refresh loop to discover a server rollback even with stale state.
+
+The opted-in Axios transport covers Cloud authentication verification,
+publishing and binary download adapters. The offer is limited to that server's
+`/api/` path; GoTrue, billing, signed storage requests and other origins do not
+receive it. Standalone public forms and SSR retain their existing legacy error
+handling without negotiating metadata. Request-level regression tests exercise
+offer scope, preserved media ranges, absent/invalid discovery, server rollback, legacy and malformed or
+future error metadata, successful requests after failures, unchanged retry
+details and mutation request counts.
+
+Keep legacy codes, statuses, messages and retry semantics unchanged. Roll back
+by turning emission off. Merge Cloud first, wait for generated Client sync,
+then update Desktop SDK pins; Web has no SDK dependency. This repository's
+catalog is a fallback snapshot, not a second editable source.

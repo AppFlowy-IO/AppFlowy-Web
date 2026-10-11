@@ -13,6 +13,7 @@ interface ErrorPageProps {
   onRetry?: () => Promise<void>;
   error?: LandingPageError;
   title?: ReactNode;
+  /** Reviewed local guidance; server error messages must go through `error`. */
   description?: ReactNode;
 }
 

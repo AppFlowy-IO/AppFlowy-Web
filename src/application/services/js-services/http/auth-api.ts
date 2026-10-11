@@ -17,6 +17,8 @@ import { parseGoTrueErrorFromUrl } from './gotrue-error';
 export { verifyToken } from './cloud-auth';
 
 export interface ServerInfo {
+  /** Absent on older servers that do not implement error schema negotiation. */
+  supported_error_schema_version?: number;
   /** Missing on older web server-info responses; never interpret absence as an old version. */
   version?: string;
   /** Web uses a separate release line from the native min_client_version field. */

@@ -43,12 +43,6 @@ export function ApproveConversion() {
     setError(undefined);
 
     if (!workspaceId || !code) {
-      setError({
-        message: t(
-          'landingPage.error.invalidInvitationUrl',
-          'This invitation link is missing required information. Please ask the sender for a new link.'
-        ),
-      });
       setIsError(true);
       setLoading(false);
       return;
@@ -91,7 +85,7 @@ export function ApproveConversion() {
     } finally {
       setLoading(false);
     }
-  }, [workspaceId, code, t]);
+  }, [workspaceId, code]);
 
   const AvatarLogo = useCallback(
     (props: HTMLAttributes<HTMLDivElement>) => {
@@ -110,12 +104,6 @@ export function ApproveConversion() {
     setError(undefined);
 
     if (!workspaceId || !code) {
-      setError({
-        message: t(
-          'landingPage.error.invalidInvitationUrl',
-          'This invitation link is missing required information. Please ask the sender for a new link.'
-        ),
-      });
       setIsError(true);
       setLoading(false);
       return;
@@ -137,7 +125,7 @@ export function ApproveConversion() {
     } finally {
       setLoading(false);
     }
-  }, [workspaceId, code, t]);
+  }, [workspaceId, code]);
 
   useEffect(() => {
     void loadConversion();
@@ -176,7 +164,20 @@ export function ApproveConversion() {
   }
 
   if (isError) {
-    return <ErrorPage onRetry={handleApprove} error={error} />;
+    return (
+      <ErrorPage
+        onRetry={handleApprove}
+        error={error}
+        description={
+          !workspaceId || !code
+            ? t(
+                'landingPage.error.invalidInvitationUrl',
+                'This invitation link is missing required information. Please ask the sender for a new link.'
+              )
+            : undefined
+        }
+      />
+    );
   }
 
   return (

@@ -8,6 +8,7 @@ import { getTokenParsed, invalidToken } from '@/application/session/token';
 import { getErrorMessage } from '@/utils/errors';
 import { Log } from '@/utils/log';
 
+import { applyErrorCapability } from './error-capability';
 import { initGrantService, refreshToken } from './gotrue';
 import { resolveLocalApiBaseURL } from './local-dev-origins';
 
@@ -457,6 +458,7 @@ export function initAPIService(config: AFCloudConfig) {
   // requests to the dev server, whose proxies reach the local gateway or cloud
   // and the billing service without CORS. Production keeps the configured URL.
   const baseURL = resolveLocalApiBaseURL(config.baseURL);
+  const configuredBaseURL = config.baseURL;
 
   if (baseURL !== config.baseURL) {
     console.info(`[local-dev] API requests go through ${baseURL} (configured base: ${config.baseURL})`);
@@ -571,6 +573,7 @@ export function initAPIService(config: AFCloudConfig) {
 
   // Request: attach stored ETag as If-None-Match
   axiosInstance.interceptors.request.use((config) => {
+    applyErrorCapability(config, configuredBaseURL, baseURL);
     const locale = i18next.resolvedLanguage ?? i18next.language;
 
     if (locale) config.headers.set('Accept-Language', locale.replace(/_/g, '-'));

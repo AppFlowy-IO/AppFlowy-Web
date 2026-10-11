@@ -47,12 +47,6 @@ export function AsGuest() {
     setError(undefined);
 
     if (!workspaceId || !code) {
-      setError({
-        message: t(
-          'landingPage.error.invalidInvitationUrl',
-          'This invitation link is missing required information. Please ask the sender for a new link.'
-        ),
-      });
       setIsError(true);
       setLoading(false);
       return;
@@ -99,7 +93,7 @@ export function AsGuest() {
     } finally {
       setLoading(false);
     }
-  }, [code, t, workspaceId]);
+  }, [code, workspaceId]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -116,7 +110,20 @@ export function AsGuest() {
   }
 
   if (isError) {
-    return <ErrorPage onRetry={loadInvitation} error={error} />;
+    return (
+      <ErrorPage
+        onRetry={loadInvitation}
+        error={error}
+        description={
+          !workspaceId || !code
+            ? t(
+                'landingPage.error.invalidInvitationUrl',
+                'This invitation link is missing required information. Please ask the sender for a new link.'
+              )
+            : undefined
+        }
+      />
+    );
   }
 
   return (
