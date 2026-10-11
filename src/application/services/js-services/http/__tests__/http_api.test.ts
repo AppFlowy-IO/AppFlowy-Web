@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { TextDecoder, TextEncoder } from 'util';
 
 import { WEB_CLIENT_VERSION } from '@/application/compatibility/client-version';
 import {
@@ -245,6 +246,109 @@ describe('http_api client (unit)', () => {
     });
     await expect(getViewPdfBlob('workspace-id', 'view-id')).resolves.toEqual({ blob, filename: 'page.pdf' });
     expect(readText).not.toHaveBeenCalled();
+  });
+
+  it.each([200, 400, 503])('preserves Cloud errors returned as history ArrayBuffers under HTTP %s', async (status) => {
+    global.TextDecoder = TextDecoder as typeof global.TextDecoder;
+    const core = await import('../core');
+    const { previewDatabaseVersion, getDatabaseHistoryRows } = await import('../database-history-api');
+
+    core.initAPIService(baseConfig);
+    for (const user_error of [undefined, { schema_version: 1, reason: 'EXPORT_BUSY', message: 'Wait for the current export.', locale: 'en' }]) {
+      const payload = { code: 1073, message: 'Private database history diagnostic', user_error, retry_after_secs: 17 };
+      const response = { status, data: new Uint8Array(new TextEncoder().encode(JSON.stringify(payload))).buffer,
+        headers: { 'content-type': 'application/json', 'x-request-id': 'history-123', 'retry-after': '11' } };
+
+      if (status === 200) mockAxiosInstance.get.mockResolvedValue(response);
+      else mockAxiosInstance.get.mockRejectedValue({ isAxiosError: true, response });
+
+      for (const request of [previewDatabaseVersion, getDatabaseHistoryRows]) {
+        await expect(request('workspace', 'database', 'version')).rejects.toMatchObject({
+          code: 1073, sourceDomain: 'appflowy.server', httpStatus: status,
+          diagnosticMessage: payload.message, requestId: 'history-123', retryAfterSecs: 11,
+          message: user_error?.message ?? 'Other exports are in progress. Wait for one to finish.',
+          ...(user_error ? { user_error } : {}),
+        });
+      }
+    }
+  });
+
+  it.each([200, 400])('normalizes binary publishing failures under HTTP %s', async (status) => {
+    global.TextEncoder = TextEncoder;
+    const core = await import('../core');
+    const { publishCollabs } = await import('../publish-api');
+
+    core.initAPIService(baseConfig);
+    for (const user_error of [undefined, { schema_version: 1, reason: 'EXPORT_BUSY', message: 'Wait for the current export.', locale: 'en' }]) {
+      const payload = { code: 1073, message: 'Private publication diagnostic', user_error };
+      const response = { status, data: payload, headers: { 'x-request-id': 'publish-123' } };
+
+      if (status === 200) mockAxiosInstance.post.mockResolvedValue(response);
+      else mockAxiosInstance.post.mockRejectedValue({ isAxiosError: true, response });
+      await expect(publishCollabs('workspace', [])).rejects.toMatchObject({
+        code: 1073, httpStatus: status, requestId: 'publish-123', diagnosticMessage: payload.message,
+        message: user_error?.message ?? 'Other exports are in progress. Wait for one to finish.',
+      });
+    }
+  });
+
+  it('keeps history binary success and bare HTTP failures compatible', async () => {
+    const core = await import('../core');
+    const { previewDatabaseVersion } = await import('../database-history-api');
+
+    core.initAPIService(baseConfig);
+    const bytes = new Uint8Array([1, 2, 3]);
+
+    mockAxiosInstance.get.mockResolvedValue({ status: 200, data: bytes.buffer,
+      headers: { 'content-type': 'application/octet-stream' } });
+    await expect(previewDatabaseVersion('w', 'd', 'v')).resolves.toEqual(bytes);
+
+    const error = { isAxiosError: true, response: { status: 404, data: new Uint8Array(new TextEncoder().encode('Not Found')).buffer,
+      headers: { 'content-type': 'text/plain', 'x-request-id': 'legacy-404' } } };
+
+    mockAxiosInstance.get.mockRejectedValue(error);
+    await expect(previewDatabaseVersion('w', 'd', 'v')).rejects.toEqual(core.handleAPIError(error));
+  });
+
+  it('rejects malformed or oversized JSON on binary endpoints without buffering large bodies', async () => {
+    const core = await import('../core');
+    const { getViewPdfBlob } = await import('../export-api');
+
+    core.initAPIService(baseConfig);
+    const malformed = new Blob(['{not json'], { type: 'application/json' });
+    const oversized = new Blob(['x'.repeat(64 * 1024 + 1)], { type: 'application/json' });
+    const readOversized = jest.fn();
+
+    Object.defineProperty(malformed, 'text', { value: async () => '{not json' });
+    Object.defineProperty(oversized, 'text', { value: readOversized });
+    for (const blob of [malformed, oversized]) {
+      mockAxiosInstance.post.mockResolvedValue({ status: 200, data: blob, headers: { 'content-type': 'application/json' } });
+      await expect(getViewPdfBlob('workspace', 'view')).rejects.toMatchObject({
+        code: -1, message: 'Error -1: Something went wrong. Contact support if this keeps happening.',
+      });
+    }
+
+    expect(readOversized).not.toHaveBeenCalled();
+  });
+
+  it('retains response references and retry metadata when a PDF export returns a JSON error', async () => {
+    const core = await import('../core');
+    const { getViewPdfBlob } = await import('../export-api');
+
+    core.initAPIService(baseConfig);
+    const json = JSON.stringify({ code: 1073, message: 'Private export diagnostic',
+      user_error: { schema_version: 1, reason: 'EXPORT_BUSY', message: 'Wait for the current export.', locale: 'en' } });
+    const blob = new Blob([json], { type: 'application/json' });
+
+    Object.defineProperty(blob, 'text', { value: async () => json });
+    mockAxiosInstance.post.mockRejectedValue({ isAxiosError: true, response: {
+      status: 503, data: blob,
+      headers: { 'content-type': 'application/json', 'x-request-id': 'pdf-123', 'retry-after': '11' },
+    } });
+    await expect(getViewPdfBlob('workspace', 'view')).rejects.toMatchObject({
+      code: 1073, httpStatus: 503, requestId: 'pdf-123', retryAfterSecs: 11,
+      message: 'Wait for the current export.', diagnosticMessage: 'Private export diagnostic',
+    });
   });
 
   it('preserves single-upload upgrade errors in successful HTTP envelopes', async () => {

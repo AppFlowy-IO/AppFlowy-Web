@@ -1,6 +1,9 @@
+import axios from 'axios';
+
 import type { DatabaseHistoryCursor, DatabaseHistoryVersion, DatabaseRestoreJob } from '@/application/database-history.type';
 import { database_blob } from '@/proto/database_blob';
 
+import { readBinaryErrorResponse } from './binary-error';
 import { APIResponse, executeAPIRequest, getAxios, handleAPIError } from './core';
 
 const historyPath = (workspaceId: string, databaseId: string) =>
@@ -29,14 +32,18 @@ async function getBinary(url: string, signal?: AbortSignal, params?: Record<stri
     const response = await client.get<ArrayBuffer>(url, { responseType: 'arraybuffer', signal, params });
 
     // Failed API envelopes must never be interpreted as historical Yjs/protobuf data.
-    if (String(response.headers?.['content-type']).includes('application/json')) {
-      const envelope = JSON.parse(new TextDecoder().decode(response.data)) as APIResponse;
+    const apiError = await readBinaryErrorResponse(response);
 
-      throw new Error(envelope.message || 'Database history is unavailable');
-    }
+    if (apiError) throw apiError;
 
     return new Uint8Array(response.data);
   } catch (error) {
+    if (axios.isAxiosError(error) && error.response) {
+      const apiError = await readBinaryErrorResponse(error.response);
+
+      if (apiError) throw apiError;
+    }
+
     throw handleAPIError(error);
   }
 }

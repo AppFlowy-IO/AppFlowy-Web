@@ -117,7 +117,7 @@ export function ChangePassword({ email, redirectTo }: { email: string; redirectT
   };
 
   const hasPasswordErrors = passwordErrors.length > 0;
-  const hasConfirmError = error?.includes('match');
+  const hasConfirmError = Boolean(error) && newPassword !== confirmPassword;
   const isFormValid = newPassword && confirmPassword && !hasPasswordErrors && newPassword === confirmPassword;
 
   return (

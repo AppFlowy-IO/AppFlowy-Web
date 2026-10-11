@@ -176,7 +176,7 @@ export function handleAPIError(error: unknown): APIError {
     }
 
     // Server responded with error status
-    return responseError(error.response);
+    return handleAPIResponseError(error.response);
   }
 
   // Normalized APIError (plain { code, message } from executeAPIRequest/executeAPIVoidRequest)
@@ -206,7 +206,8 @@ function presentAPIError(error: APIError): APIError {
   return { ...preserved, message: getErrorMessage(preserved) };
 }
 
-function responseError(response: Pick<AxiosResponse, 'data' | 'status' | 'headers'>): APIError {
+/** Normalize an error response after its transport-specific body has been decoded. */
+export function handleAPIResponseError(response: Pick<AxiosResponse, 'data' | 'status' | 'headers'>): APIError {
   const body = response.data && typeof response.data === 'object' ? response.data : {};
   const code = errorCodeNumber(body.code);
   const hasCloudCode = code !== undefined && code !== 0;
@@ -293,7 +294,7 @@ export async function executeAPIRequest<TResponseData = unknown>(
     }
 
     // Server returned an error response
-    return Promise.reject(responseError(response));
+    return Promise.reject(handleAPIResponseError(response));
   } catch (error) {
     return Promise.reject(handleAPIError(error));
   }
@@ -339,13 +340,13 @@ export async function executeAPIVoidRequest(
 
         if (data.code === 0) return;
 
-        return Promise.reject(responseError(response));
+        return Promise.reject(handleAPIResponseError(response));
       }
 
       return;
     }
 
-    return Promise.reject(responseError(response));
+    return Promise.reject(handleAPIResponseError(response));
   } catch (error) {
     return Promise.reject(handleAPIError(error));
   }

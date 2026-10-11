@@ -70,6 +70,7 @@
     "LICENSE_INACTIVE": "Your AppFlowy license has been deleted.",
     "LICENSE_LIMIT_REACHED": "Your AppFlowy license has reached a limit.",
     "IMPORT_PROBLEM": "We couldn't finish the import.",
+    "IMPORT_PDF_NEEDS_OCR": "This PDF has no selectable text. Run OCR on it before importing.",
     "EXPORT_PROBLEM": "We couldn't finish the export.",
     "UPLOAD_MISSING": "We couldn't find this upload.",
     "UPLOAD_EXPIRED": "This upload has expired.",

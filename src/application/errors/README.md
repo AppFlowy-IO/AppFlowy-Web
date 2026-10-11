@@ -57,6 +57,15 @@ The regression tests cover real HTTP adapter paths under 200/400/503, namespace
 collisions, old password responses, unknown metadata, request references,
 unchanged diagnostics, retry classification, and auth session recovery. These
 are controlled response tests, not a live old-server acceptance run.
+History and PDF endpoints decode JSON error bodies with the same resolver even
+when the request expects binary data; decoding is limited to 64 KiB and leaves
+successful binary responses untouched. Binary publishing also uses the shared
+response resolver. Password confirmation errors come from the entered values,
+so changing server wording or the selected language cannot mark matching
+passwords as different.
+Failed PDF import tasks from older workers retain OCR guidance through an exact,
+reviewed legacy diagnostic match. Other task diagnostics still use safe mappings;
+supported optional task `user_error` metadata takes precedence.
 
 Cloud emission is opt-in (`APPFLOWY_PUBLIC_ERROR_MESSAGES_ENABLED=true`). Keep
 legacy codes, statuses, messages and retry semantics unchanged. Roll back by

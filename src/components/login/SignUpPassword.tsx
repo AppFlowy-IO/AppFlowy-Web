@@ -145,7 +145,7 @@ export function SignUpPassword({ redirectTo }: { redirectTo: string }) {
   };
 
   const hasPasswordErrors = passwordErrors.length > 0;
-  const hasConfirmError = error?.includes('match');
+  const hasConfirmError = Boolean(error) && password !== confirmPassword;
   const hasEmailError = !!emailError;
   const isFormValid =
     email && password && confirmPassword && !hasPasswordErrors && !hasEmailError && password === confirmPassword;
