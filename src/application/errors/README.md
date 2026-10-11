@@ -98,10 +98,6 @@ the pair. Fetch uses `cache: 'no-store'` so this explicit cache controls reuse.
 Cloud responds with `Cache-Control: private, no-cache`; cross-origin deployments
 must allow `If-None-Match` and expose `ETag` on both 200 and 304 responses.
 
-`userFriendlyErrorMessage` can append uncertain-outcome guidance when callers
-explicitly pass `operation: 'mutation'`. Existing Web UI callers currently use
-the default action mode; this guidance is not automatically added to every write.
-
 The regression tests cover real HTTP adapter paths under 200/400/503, namespace
 collisions, old password responses, unknown metadata, request references,
 unchanged diagnostics, retry classification, and auth session recovery. These
@@ -140,7 +136,8 @@ details and mutation request counts.
 
 Keep legacy codes, statuses, messages and retry semantics unchanged. Clients that
 do not opt in continue receiving the legacy envelope. The standalone catalog
-works with the current Desktop SDK pin and has no generated Client dependency. Native per-response metadata
-opt-in still requires merging Cloud, waiting for generated Client sync, and then
-updating Desktop SDK pins. Web has no SDK dependency. This repository's catalog
-is a fallback snapshot, not a second editable source.
+works with the current Desktop SDK pin and has no generated Client dependency.
+Native per-response metadata opt-in still requires merging Cloud, waiting for
+generated Client sync, updating Desktop SDK pins, and explicitly mapping the SDK's
+typed `UserError` into Desktop's protobuf error context. Web has no SDK dependency.
+This repository's catalog is a fallback snapshot, not a second editable source.

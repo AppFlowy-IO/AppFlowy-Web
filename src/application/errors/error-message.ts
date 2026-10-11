@@ -19,7 +19,6 @@ export interface ErrorIdentity {
 
 export interface ErrorMessageOptions {
   fallback?: string;
-  operation?: 'action' | 'mutation';
   t?: TFunction;
   /** Defaults to the application's selected language. */
   locale?: string;
@@ -304,37 +303,16 @@ export function userFriendlyErrorMessage(error: unknown, options: ErrorMessageOp
   }
 
   if (!reason || reason === 'ACTION_PROBLEM' || (!lookup(catalog.reasons, reason) && !remoteCopy(reason))) {
-    const generic =
-      options.operation === 'mutation' ? guidance('OUTCOME_UNKNOWN') : options.fallback || guidance('ACTION_PROBLEM');
+    const generic = options.fallback || guidance('ACTION_PROBLEM');
     const publicMessage = serverMessage ?? (serverLocale === undefined ? publicError?.message : undefined) ?? remoteCopy(reason);
-    const message = publicMessage
-      ? options.operation === 'mutation'
-        ? `${generic}\n${publicMessage}`
-        : publicMessage
-      : generic;
+    const message = publicMessage ?? generic;
 
     return identity.code === undefined
       ? message
       : localized('userErrorDetail.withCode', `Error ${identity.code}: ${message}`, { code: identity.code, message });
   }
 
-  const message = serverMessage ?? guidance(reason);
-
-  if (
-    options.operation === 'mutation' &&
-    [
-      'CONNECTION_UNAVAILABLE',
-      'CONNECTION_CANCELLED',
-      'SERVICE_UNAVAILABLE',
-      'RESPONSE_PROBLEM',
-      'REQUEST_TIMEOUT',
-      'RESPONSE_TIMEOUT',
-      'ACTION_TIMEOUT',
-      'LOCK_TIMEOUT',
-    ].includes(reason)
-  )
-    return `${message}\n${guidance('OUTCOME_UNKNOWN')}`;
-  return message;
+  return serverMessage ?? guidance(reason);
 }
 
 export function userErrorSupportDetails(error: unknown): string {

@@ -26,29 +26,6 @@ export enum GoTrueErrorCode {
 }
 
 /**
- * Known GoTrue error types
- */
-export enum GoTrueErrorType {
-  ACCESS_DENIED = 'access_denied',
-  UNAUTHORIZED_CLIENT = 'unauthorized_client',
-  INVALID_REQUEST = 'invalid_request',
-  INVALID_GRANT = 'invalid_grant',
-  UNSUPPORTED_GRANT_TYPE = 'unsupported_grant_type',
-  SIGNUP_DISABLED = 'signup_disabled',
-  USER_BANNED = 'user_banned',
-  EMAIL_NOT_CONFIRMED = 'email_not_confirmed',
-  BAD_JSON = 'bad_json',
-  BAD_JWT = 'bad_jwt',
-  NOT_ADMIN = 'not_admin',
-  NO_AUTHORIZATION = 'no_authorization',
-  USER_NOT_FOUND = 'user_not_found',
-  SESSION_NOT_FOUND = 'session_not_found',
-  FLOW_STATE_NOT_FOUND = 'flow_state_not_found',
-  FLOW_STATE_EXPIRED = 'flow_state_expired',
-  PKCE_VERIFIER_NOT_FOUND = 'pkce_verifier_not_found',
-}
-
-/**
  * Parse GoTrue error from URL parameters
  * Handles multiple formats that GoTrue might use in callbacks
  */
@@ -159,25 +136,4 @@ export function parseGoTrueFailure(error: unknown): GoTrueError {
     message: userFriendlyErrorMessage(identity),
     originalError: identity.diagnosticMessage,
   };
-}
-
-/** Backward-compatible entry point, using the same reviewed catalog as requests. */
-export function enhanceErrorMessage(message: string, errorType?: string | null, code?: number): string {
-  return parseGoTrueError({ message, errorCode: errorType, status: code }).message;
-}
-
-/**
- * Check if a URL contains GoTrue error parameters
- */
-export function hasGoTrueError(url: string): boolean {
-  const error = parseGoTrueErrorFromUrl(url);
-
-  return error !== null;
-}
-
-/**
- * Format GoTrue error for display
- */
-export function formatGoTrueError(error: GoTrueError): string {
-  return userFriendlyErrorMessage(error);
 }

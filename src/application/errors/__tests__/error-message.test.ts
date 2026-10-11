@@ -2,7 +2,6 @@ import i18next from 'i18next';
 
 import { ERROR_CODE } from '@/application/constants';
 import {
-  enhanceErrorMessage,
   parseGoTrueError,
   parseGoTrueErrorFromUrl,
   parseGoTrueFailure,
@@ -40,13 +39,6 @@ describe('shared error presentation', () => {
     } }, { locale: 'en' })).toBe('Other exports are in progress. Wait for one to finish.');
   });
 
-  it('retains uncertain mutation guidance when the server controls the wording', () => {
-    expect(userFriendlyErrorMessage({ code: 1017, user_error: {
-      schema_version: 1, reason: 'REQUEST_TIMEOUT', message: 'The operation took too long.', locale: 'en',
-    } }, { locale: 'en', operation: 'mutation' })).toBe(
-      "The operation took too long.\nWe couldn't confirm whether this action finished. Check the result before trying again."
-    );
-  });
   it.each([
     [-1, 'Error -1: Something went wrong. Contact support if this keeps happening.'],
     [1002, "This password isn't valid."],
@@ -178,17 +170,6 @@ describe('shared error presentation', () => {
     ).toBe('Wait for this page to finish syncing before adding a comment.');
   });
 
-  it('retains a known mutation failure cause alongside uncertain completion', () => {
-    expect(
-      userFriendlyErrorMessage(
-        { code: -1, sourceDomain: 'transport', transportFailure: 'timeout' },
-        { operation: 'mutation' }
-      )
-    ).toBe(
-      "The request timed out.\nWe couldn't confirm whether this action finished. Check the result before trying again."
-    );
-  });
-
   it('never treats a raw exception as public copy', () => {
     const error = new Error(diagnostic);
 
@@ -224,7 +205,7 @@ describe('GoTrue namespace and legacy responses', () => {
     expect(parseGoTrueError({ status: 422, error_code: 'weak_password', msg: diagnostic }).message).toBe(
       'Your new password is too weak.'
     );
-    expect(enhanceErrorMessage(diagnostic, undefined, 422)).toMatch(/^Error 422: Something went wrong/);
+    expect(parseGoTrueError({ message: diagnostic, status: 422 }).message).toMatch(/^Error 422: Something went wrong/);
     expect(
       parseGoTrueError({
         status: 422,
