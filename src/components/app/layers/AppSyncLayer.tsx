@@ -24,6 +24,7 @@ import {
 } from '@/application/sync-outbox';
 import type { AppEventEmitter } from '@/components/app/contexts/AppEventEmitterContext';
 import { useSync, useWorkspaceRealtimeTransport } from '@/components/ws';
+import { useBackgroundCollabRepair } from '@/components/ws/useBackgroundCollabRepair';
 import { notification } from '@/proto/messages';
 import { isDevelopmentOrTestEnvironment } from '@/utils/runtime-config';
 
@@ -319,6 +320,8 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
     (item: SlowSyncOutboxItem, signal: AbortSignal) => slowSyncRef.current(item, signal),
     []
   );
+
+  useBackgroundCollabRepair(webSocket, canSendToServer, currentUserId, currentWorkspaceId);
 
   useLayoutEffect(() => {
     if (currentUserId && currentWorkspaceId) {
