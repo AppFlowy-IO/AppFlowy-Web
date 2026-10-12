@@ -3726,6 +3726,7 @@ export function useSwitchPropertyType() {
               // Check if the field type is supported for type options
               if (
                 [
+                  FieldType.RichText,
                   FieldType.Number,
                   FieldType.SingleSelect,
                   FieldType.MultiSelect,
