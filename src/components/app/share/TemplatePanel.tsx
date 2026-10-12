@@ -1,7 +1,8 @@
 import { Button, Skeleton } from '@mui/material';
-import React, { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { TemplateService } from '@/application/services/domains';
 import { Template } from '@/application/template.type';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
@@ -10,14 +11,13 @@ import LinkPreview from '@/components/app/share/LinkPreview';
 import { useLoadPublishInfo } from '@/components/app/share/publish.hooks';
 import AsTemplateButton from '@/components/as-template/AsTemplateButton';
 import DeleteTemplate from '@/components/as-template/DeleteTemplate';
-import { slugify } from '@/components/as-template/utils';
-import { TemplateService } from '@/application/services/domains';
+import { getTemplatePath } from '@/components/as-template/utils';
 
 function TemplatePanel({ viewId }: { viewId: string }) {
   const view = useAppView(viewId);
-  const [loading, setLoading] = React.useState(false);
-  const [deleteModalOpen, setDeleteModalOpen] = React.useState(false);
-  const [template, setTemplateInfo] = React.useState<Template>();
+  const [loading, setLoading] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [template, setTemplateInfo] = useState<Template>();
   const loadTemplateInfo = useCallback(async() => {
     if(!view?.view_id) return;
     setLoading(true);
@@ -37,11 +37,8 @@ function TemplatePanel({ viewId }: { viewId: string }) {
     url: publishUrl,
   } = useLoadPublishInfo(viewId);
 
-  const url = useMemo(() => {
-    const templateUrl = `${window.location.origin}/templates`;
-
-    return template ? `${templateUrl}/${slugify(template.categories[0].name)}/${template.view_id}` : '';
-  }, [template]);
+  const path = template ? getTemplatePath(template) : '';
+  const url = path ? `${window.location.origin}${path}` : '';
 
   useEffect(() => {
     void loadTemplateInfo();
