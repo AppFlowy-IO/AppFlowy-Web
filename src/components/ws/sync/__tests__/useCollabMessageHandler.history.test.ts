@@ -3,18 +3,18 @@ import EventEmitter from 'events';
 import { act, renderHook } from '@testing-library/react';
 import * as Y from 'yjs';
 
-import { deleteCollabDB } from '@/application/db';
+import { closeCollabDB, deleteCollabDB } from '@/application/db';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import { Types, YDoc } from '@/application/types';
 
-import { useSyncRefs } from '../syncRefs';
 import { DatabaseRestoreTracker } from '../databaseRestoreState';
+import { useSyncRefs } from '../syncRefs';
 import { useCollabMessageHandler } from '../useCollabMessageHandler';
 
-jest.mock('@/application/db', () => ({ deleteCollabDB: jest.fn(async () => true) }));
+jest.mock('@/application/db', () => ({ deleteCollabDB: jest.fn(async () => true), closeCollabDB: jest.fn(async () => undefined) }));
 jest.mock('@/application/database-blob', () => ({ invalidateDatabaseRowDocSeed: jest.fn() }));
 jest.mock('@/application/services/js-services/cache', () => ({ cacheCanonicalRowDoc: jest.fn() }));
-jest.mock('@/application/sync-outbox', () => ({ shouldRouteUpdateThroughOutbox: () => false }));
+jest.mock('@/application/sync-outbox', () => ({ shouldRouteUpdateThroughOutbox: () => false, getCurrentOutboxSession: () => ({ workspaceId: 'workspace' }), blockPermissionSync: jest.fn(async () => undefined) }));
 
 const objectId = '11111111-1111-4111-8111-111111111111';
 const version = '22222222-2222-4222-8222-222222222222';
@@ -51,8 +51,9 @@ test.each([Types.Database, Types.DatabaseRow])(
     });
 
     expect(beforeApply).not.toHaveBeenCalled();
-    expect(discardPendingUpdates).toHaveBeenCalledTimes(1);
-    expect(deleteCollabDB).toHaveBeenCalledWith(objectId, { destroyDoc: false });
+    expect(discardPendingUpdates).not.toHaveBeenCalled();
+    expect(deleteCollabDB).not.toHaveBeenCalled();
+    expect(closeCollabDB).toHaveBeenCalledWith(objectId);
     expect(destroyed).toHaveBeenCalledTimes(1);
     expect(context.flush).toBeUndefined();
     expect(flush).not.toHaveBeenCalled();

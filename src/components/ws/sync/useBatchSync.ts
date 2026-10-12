@@ -8,6 +8,7 @@ import {
   openCollabDBWithProvider,
   openRowCollabDBWithProvider,
 } from '@/application/db';
+import { assertCollabStorageCurrent } from '@/application/db/collab-storage-scope';
 import {
   getCachedRowSubDoc,
   getCachedRowSubDocIds,
@@ -16,7 +17,7 @@ import {
 } from '@/application/services/js-services/cache';
 import { handleAPIError, withRetry } from '@/application/services/js-services/http/core';
 import { collabFullSyncBatch, createOrphanedView, checkIfCollabExists } from '@/application/services/js-services/http/http_api';
-import { waitForDrain } from '@/application/sync-outbox';
+import { blockPermissionSync, captureSyncAuthorization, mayUploadCollab, waitForDrain } from '@/application/sync-outbox';
 import { Types, YDatabase, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { Log } from '@/utils/log';
@@ -99,12 +100,14 @@ export function useBatchSync(
 
   databaseHistoryEnabledRef.current = options?.databaseHistoryEnabled;
   const guardedBatchSync = useCallback(async (workspaceId: string, items: Parameters<typeof collabFullSyncBatch>[1]) => {
+    const isCurrent = captureSyncAuthorization(workspaceId);
     const beforeSend = beforeSendRef.current;
     const historyEnabled = databaseHistoryEnabledRef.current;
 
     // Concurrent guards share the tracker's in-flight check for each database,
     // while every row still verifies the generation captured with its bytes.
     const checkedItems = await Promise.all(items.map(async (item) => {
+      if (!await mayUploadCollab(item.objectId, item.collabType, workspaceId)) return null;
       const marker = item.databaseRestoreId ??
         (item.collabType === Types.Database || item.collabType === Types.DatabaseRow
           ? '00000000-0000-0000-0000-000000000000' : undefined);
@@ -114,7 +117,17 @@ export function useBatchSync(
     }));
     const admitted = checkedItems.filter((item): item is typeof items[number] => item !== null);
 
-    return admitted.length ? collabFullSyncBatch(workspaceId, admitted) : [];
+    if (!admitted.length || !isCurrent()) return [];
+    const results = await collabFullSyncBatch(workspaceId, admitted);
+
+    if (!isCurrent()) return [];
+    for (const result of results) {
+      if (result.error?.toLowerCase().includes('permission_denied')) {
+        await blockPermissionSync(result.objectId, workspaceId);
+      }
+    }
+
+    return isCurrent() ? results : [];
   }, []);
   const batchSyncAbortRef = useRef<AbortController | null>(null);
   const backgroundHttpSyncAbortRef = useRef<AbortController | null>(null);
@@ -196,6 +209,7 @@ export function useBatchSync(
       if (!doc || collabType === undefined || !ids.has(doc.guid)) return;
       if (!BACKGROUND_HTTP_SYNC_TYPES.has(collabType)) return;
 
+      assertCollabStorageCurrent(doc);
       items.push({
         objectId: doc.guid,
         collabType,
@@ -494,6 +508,7 @@ export function useBatchSync(
         registeredObjectIds.add(doc.guid);
 
         // Encode the document state and state vector
+        assertCollabStorageCurrent(doc);
         const docState = Y.encodeStateAsUpdate(doc);
         const stateVector = Y.encodeStateVector(doc);
 
@@ -580,6 +595,7 @@ export function useBatchSync(
                   unregisteredRowDocumentIds.add(rowDocumentId);
                 }
 
+                assertCollabStorageCurrent(rowDoc);
                 const docState = Y.encodeStateAsUpdate(rowDoc);
                 const stateVector = Y.encodeStateVector(rowDoc);
 
@@ -638,6 +654,7 @@ export function useBatchSync(
             continue;
           }
 
+          assertCollabStorageCurrent(rowDocument);
           const docState = Y.encodeStateAsUpdate(rowDocument);
           const stateVector = Y.encodeStateVector(rowDocument);
 

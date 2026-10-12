@@ -16,6 +16,7 @@ import { isSpaceView } from '@/components/ai-chat/rag-scope';
 import type { AIChatRagSource } from '@/components/ai-chat/rag-scope';
 import { useAIEnabled, useAppOutline, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import type { SearchOverviewSource } from '@/components/app/search/SearchAIOverview';
+import { useSearchAccessScope } from '@/components/app/search/useSearchAccessScope';
 import ViewList, { SearchViewListItem } from '@/components/app/search/ViewList';
 
 const SearchAIOverview = lazy(() =>
@@ -50,13 +51,17 @@ function getSearchResultViewIdCandidates(item: SearchDocumentResponseItem): stri
 
 async function loadSearchResultView(
   item: SearchDocumentResponseItem,
-  currentWorkspaceId: string
+  currentWorkspaceId: string,
+  isCurrent: () => boolean,
+  signal: AbortSignal
 ): Promise<View | undefined> {
   const workspaceId = item.workspace_id || currentWorkspaceId;
 
+  if (workspaceId !== currentWorkspaceId) return;
   for (const viewId of getSearchResultViewIdCandidates(item)) {
+    if (!isCurrent()) return;
     try {
-      return await ViewService.get(workspaceId, viewId);
+      return await ViewService.get(workspaceId, viewId, signal);
     } catch {
       // Search can return database/object ids that are not view ids. Try the next candidate.
     }
@@ -67,7 +72,8 @@ async function loadSummarySourceViews(
   outline: View[],
   currentWorkspaceId: string,
   sourceIds: string[],
-  searchResults: SearchDocumentResponseItem[]
+  searchResults: SearchDocumentResponseItem[],
+  signal: AbortSignal
 ): Promise<Map<string, View>> {
   const resultSourceIds = new Set(
     searchResults.flatMap((item) => [item.object_id, item.database_row_id].filter(Boolean) as string[])
@@ -79,7 +85,7 @@ async function loadSummarySourceViews(
   if (unresolvedSourceIds.length === 0) return new Map();
 
   try {
-    const views = await ViewService.getMultiple(currentWorkspaceId, unresolvedSourceIds, 0);
+    const views = await ViewService.getMultiple(currentWorkspaceId, unresolvedSourceIds, 0, signal);
 
     return new Map(views.filter((view) => !isSpaceView(view)).map((view) => [view.view_id, view]));
   } catch {
@@ -162,20 +168,24 @@ function BestMatch({
   const [loadingMore, setLoadingMore] = useState(false);
   const aiEnabled = useAIEnabled();
   const currentWorkspaceId = useCurrentWorkspaceId();
+  const { scope, isCurrent } = useSearchAccessScope(currentWorkspaceId);
+  const [responseScope, setResponseScope] = useState(scope);
+  const responseIsCurrent = responseScope === scope;
   const searchSeqRef = useRef(0);
+  const requestController = useRef<AbortController>();
   const [keywordSearchStreamId] = useState(() => createSearchStreamId('best-match-keyword'));
 
   // Metadata helps route results but is not a search input. Read the latest
   // outline when resolving a response without restarting requests on renames.
   const loadResultViews = useCallback(
-    async (results: SearchDocumentResponseItem[]) => {
+    async (results: SearchDocumentResponseItem[], signal: AbortSignal) => {
       const views = new Map<string, View>();
 
       if (!currentWorkspaceId) return views;
       const resolvedViews = await Promise.all(
         results.map(
           async (item) =>
-            resolveSearchResultView(outlineRef.current || [], item) || loadSearchResultView(item, currentWorkspaceId)
+            resolveSearchResultView(outlineRef.current || [], item) || loadSearchResultView(item, currentWorkspaceId, isCurrent, signal)
         )
       );
 
@@ -187,7 +197,7 @@ function BestMatch({
 
       return views;
     },
-    [currentWorkspaceId]
+    [currentWorkspaceId, isCurrent]
   );
 
   const items = useMemo<SearchViewListItem[]>(() => {
@@ -219,15 +229,20 @@ function BestMatch({
 
   const handleSearch = useCallback(
     async (searchTerm: string) => {
-      if (!currentWorkspaceId) return;
+      if (!currentWorkspaceId || !isCurrent()) return;
       const searchSeq = searchSeqRef.current + 1;
 
       searchSeqRef.current = searchSeq;
+      requestController.current?.abort();
+      const controller = new AbortController();
+
+      requestController.current = controller;
+      setResponseScope(scope);
       setSummary(null);
       setSummarySourceViews(new Map());
       setResultViews(new Map());
       setSummaryLoading(false);
-      if (!searchTerm) {
+      if (!searchTerm || !navigator.onLine) {
         setSearchResults([]);
         setHasMore(false);
         setNextOffset(null);
@@ -243,7 +258,7 @@ function BestMatch({
       setNextOffset(null);
 
       const summaryRequest = aiEnabled
-        ? SearchService.generateSearchSummary(currentWorkspaceId, searchTerm).catch(() => null)
+        ? SearchService.generateSearchSummary(currentWorkspaceId, searchTerm, controller.signal).catch(() => null)
         : null;
 
       try {
@@ -251,16 +266,17 @@ function BestMatch({
           currentWorkspaceId,
           searchTerm,
           0,
-          keywordSearchStreamId
+          keywordSearchStreamId,
+          controller.signal
         );
 
-        if (searchSeqRef.current !== searchSeq) return;
+        if (!isCurrent() || searchSeqRef.current !== searchSeq) return;
 
         const res = mergeSearchResults([], page.items || []);
         const shouldGenerateSummary = summaryRequest !== null;
-        const views = await loadResultViews(res);
+        const views = await loadResultViews(res, controller.signal);
 
-        if (searchSeqRef.current !== searchSeq) return;
+        if (!isCurrent() || searchSeqRef.current !== searchSeq) return;
 
         setSearchResults(res);
         setResultViews(views);
@@ -272,14 +288,14 @@ function BestMatch({
         if (shouldGenerateSummary) {
           const summaryResult = await summaryRequest;
 
-          if (searchSeqRef.current !== searchSeq) return;
+          if (!isCurrent() || searchSeqRef.current !== searchSeq) return;
 
           const nextSummary = summaryResult?.summaries[0] || null;
           const sourceViews = nextSummary
-            ? await loadSummarySourceViews(outlineRef.current || [], currentWorkspaceId, nextSummary.sources, res)
+            ? await loadSummarySourceViews(outlineRef.current || [], currentWorkspaceId, nextSummary.sources, res, controller.signal)
             : new Map<string, View>();
 
-          if (searchSeqRef.current !== searchSeq) return;
+          if (!isCurrent() || searchSeqRef.current !== searchSeq) return;
 
           setSummarySourceViews(sourceViews);
           setSummary(nextSummary);
@@ -287,7 +303,7 @@ function BestMatch({
         }
         // eslint-disable-next-line
       } catch (e: any) {
-        if (searchSeqRef.current !== searchSeq) return;
+        if (!isCurrent() || searchSeqRef.current !== searchSeq) return;
         notify.error(e.message);
         setSearchResults([]);
         setSummary(null);
@@ -295,19 +311,25 @@ function BestMatch({
         setHasMore(false);
         setNextOffset(null);
       } finally {
-        if (searchSeqRef.current === searchSeq) {
+        if (isCurrent() && searchSeqRef.current === searchSeq) {
           setLoading(false);
           setLoadingMore(false);
         }
       }
     },
-    [aiEnabled, loadResultViews, currentWorkspaceId, keywordSearchStreamId]
+    [aiEnabled, loadResultViews, currentWorkspaceId, keywordSearchStreamId, scope, isCurrent]
   );
 
   const handleLoadMore = useCallback(async () => {
-    if (!currentWorkspaceId || !searchValue || loading || loadingMore || !hasMore || nextOffset === null) return;
+    if (
+      !isCurrent() || !responseIsCurrent || !currentWorkspaceId || !searchValue ||
+      loading || loadingMore || !hasMore || nextOffset === null
+    ) return;
 
     const searchSeq = searchSeqRef.current;
+    const signal = requestController.current?.signal;
+
+    if (!signal || signal.aborted) return;
 
     setLoadingMore(true);
 
@@ -316,15 +338,16 @@ function BestMatch({
         currentWorkspaceId,
         searchValue,
         nextOffset,
-        keywordSearchStreamId
+        keywordSearchStreamId,
+        signal
       );
 
-      if (searchSeqRef.current !== searchSeq) return;
+      if (!isCurrent() || searchSeqRef.current !== searchSeq) return;
 
       const mergedResults = mergeSearchResults(searchResults, page.items || []);
-      const views = await loadResultViews(page.items || []);
+      const views = await loadResultViews(page.items || [], signal);
 
-      if (searchSeqRef.current !== searchSeq) return;
+      if (!isCurrent() || searchSeqRef.current !== searchSeq) return;
 
       setSearchResults(mergedResults);
       setResultViews((previous) => new Map([...previous, ...views]));
@@ -332,10 +355,10 @@ function BestMatch({
       setNextOffset(page.next_offset ?? null);
       // eslint-disable-next-line
     } catch (e: any) {
-      if (searchSeqRef.current !== searchSeq) return;
+      if (!isCurrent() || searchSeqRef.current !== searchSeq) return;
       notify.error(e.message);
     } finally {
-      if (searchSeqRef.current === searchSeq) {
+      if (isCurrent() && searchSeqRef.current === searchSeq) {
         setLoadingMore(false);
       }
     }
@@ -349,6 +372,8 @@ function BestMatch({
     nextOffset,
     searchResults,
     searchValue,
+    isCurrent,
+    responseIsCurrent,
   ]);
 
   const debounceSearch = useMemo(() => {
@@ -360,6 +385,7 @@ function BestMatch({
 
     return () => {
       debounceSearch.cancel();
+      requestController.current?.abort();
       // Ignore old responses immediately, including during the next debounce
       // interval and after the search dialog has unmounted.
       searchSeqRef.current += 1;
@@ -416,11 +442,11 @@ function BestMatch({
 
   return (
     <ViewList
-      items={loading ? undefined : items}
-      loading={loading}
+      items={loading || !responseIsCurrent ? undefined : items}
+      loading={loading || !responseIsCurrent}
       query={searchValue}
       title={t('commandPalette.bestMatches')}
-      hasMore={hasMore}
+      hasMore={responseIsCurrent && hasMore}
       loadingMore={loadingMore}
       onClose={onClose}
       onLoadMore={handleLoadMore}
@@ -429,13 +455,15 @@ function BestMatch({
           <Suspense fallback={null}>
             <SearchAIOverview
               askingAI={askingAI}
-              loading={loading || summaryLoading}
+              loading={loading || summaryLoading || !responseIsCurrent}
               query={searchValue}
-              sources={overviewSources}
-              summary={summary}
-              canAskFollowUp={canAskFollowUp}
+              sources={responseIsCurrent ? overviewSources : []}
+              summary={responseIsCurrent ? summary : null}
+              canAskFollowUp={responseIsCurrent && canAskFollowUp}
               onClose={onClose}
-              onAskAI={(sources) => onAskAI(searchValue, sources)}
+              onAskAI={(sources) => {
+                if (isCurrent() && responseIsCurrent) onAskAI(searchValue, sources);
+              }}
             />
           </Suspense>
         ) : undefined

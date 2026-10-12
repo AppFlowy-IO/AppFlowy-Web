@@ -1,3 +1,6 @@
+jest.mock('@/components/app/hooks/useWorkspaceCreationCapability', () => ({
+  useWorkspaceCreationCapability: () => ({ status: 'ready', canCreate: true, refresh: jest.fn(), isCurrent: () => true, scopeKey: 'server:user' }),
+}));
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useState } from 'react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
@@ -39,6 +42,7 @@ jest.mock('@/components/app/app.hooks', () => ({
 }));
 
 jest.mock('@/components/main/app.hooks', () => ({
+  useAuthenticatedUserIdOptional: () => 'user',
   useCurrentUser: () => ({ uid: mockCurrentUserUid }),
   useCurrentUserOptional: () => ({ uid: mockCurrentUserUid }),
   useIsAuthenticatedOptional: () => true,
@@ -126,6 +130,7 @@ describe('Settings workspace import', () => {
     expect(mockImportFile).toHaveBeenCalledWith(file, {
       taskType: FileService.CreateImportTaskType.Confluence,
       onProgress: expect.any(Function),
+        signal: expect.any(AbortSignal),
     });
     expect(mockExportWorkspace).not.toHaveBeenCalled();
   });

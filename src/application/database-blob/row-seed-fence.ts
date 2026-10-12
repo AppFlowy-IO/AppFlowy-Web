@@ -1,14 +1,17 @@
+import { captureCollabStorageScope, ScopedCollabMap } from '@/application/db/collab-storage-scope';
 import { type DatabaseStorageFence, isDatabaseStorageFenceCurrent } from '@/application/db/database-storage-fence';
 
 export type DatabaseRowDocSeed = {
   bytes: Uint8Array;
   encoderVersion: number;
   rowId?: string;
+  scopeKey?: string;
+  scopeGeneration?: number;
   generation?: number;
   storageFence?: DatabaseStorageFence;
 };
 
-const rowSeedGenerations = new Map<string, number>();
+const rowSeedGenerations = new ScopedCollabMap<number>();
 
 export function createDatabaseRowDocSeed(
   rowId: string,
@@ -17,6 +20,8 @@ export function createDatabaseRowDocSeed(
   return {
     ...state,
     rowId,
+    scopeKey: captureCollabStorageScope().key,
+    scopeGeneration: captureCollabStorageScope().generation,
     generation: rowSeedGenerations.get(rowId) ?? 0,
   };
 }
@@ -27,6 +32,8 @@ export function invalidateDatabaseRowDocSeedGeneration(rowId: string) {
 
 /** Unfenced seeds remain valid for callers outside the blob prefetch path. */
 export function isDatabaseRowDocSeedCurrent(seed: DatabaseRowDocSeed) {
+  if (seed.scopeGeneration !== undefined && seed.scopeGeneration !== captureCollabStorageScope().generation) return false;
+  if (seed.scopeKey !== undefined && seed.scopeKey !== captureCollabStorageScope().key) return false;
   if (seed.storageFence && !isDatabaseStorageFenceCurrent(seed.storageFence)) return false;
   if (!seed.rowId || seed.generation === undefined) return true;
   return seed.generation === (rowSeedGenerations.get(seed.rowId) ?? 0);

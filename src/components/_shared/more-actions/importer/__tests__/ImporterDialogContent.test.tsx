@@ -1,3 +1,6 @@
+jest.mock('@/components/app/hooks/useWorkspaceCreationCapability', () => ({
+  useWorkspaceCreationCapability: () => mockCreation,
+}));
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { FileService } from '@/application/services/domains';
@@ -23,6 +26,7 @@ jest.mock('@/application/services/domains', () => ({
 }));
 
 const importFile = FileService.importFile as jest.MockedFunction<typeof FileService.importFile>;
+const mockCreation = { status: 'ready', canCreate: true, refresh: jest.fn(), isCurrent: () => true, scopeKey: 'server:user' };
 
 function uploadVisibleFile(file: File) {
   const input = screen.getByTestId('file-dropzone').querySelector('input');
@@ -34,6 +38,7 @@ function uploadVisibleFile(file: File) {
 describe('ImporterDialogContent', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockCreation.canCreate = true;
     importFile.mockResolvedValue(undefined);
   });
 
@@ -51,6 +56,7 @@ describe('ImporterDialogContent', () => {
       expect(importFile).toHaveBeenCalledWith(file, {
         taskType,
         onProgress: expect.any(Function),
+        signal: expect.any(AbortSignal),
       });
     });
   });
@@ -69,6 +75,7 @@ describe('ImporterDialogContent', () => {
     expect(importFile).toHaveBeenCalledWith(file, {
       taskType: FileService.CreateImportTaskType.Confluence,
       onProgress: expect.any(Function),
+        signal: expect.any(AbortSignal),
     });
     expect(importFile).toHaveBeenCalledTimes(1);
     expect(importFile.mock.calls[0][0]).toBe(file);
@@ -89,6 +96,7 @@ describe('ImporterDialogContent', () => {
     expect(importFile).toHaveBeenCalledWith(file, {
       taskType: FileService.CreateImportTaskType.Confluence,
       onProgress: expect.any(Function),
+        signal: expect.any(AbortSignal),
     });
     expect(importFile.mock.calls[0][0]).toBe(file);
     expect(clearData).toHaveBeenCalledTimes(1);
@@ -144,5 +152,30 @@ describe('ImporterDialogContent', () => {
     await act(async () => resolveImport?.());
     expect(onSuccess).toHaveBeenCalledTimes(1);
     expectControlsDisabled(false);
+  });
+
+  it('retains the selected ZIP after admission is denied and retries it only after regrant', async () => {
+    const file = new File(['draft'], 'retained.zip', { type: 'application/zip' });
+    const onSuccess = jest.fn();
+
+    importFile.mockRejectedValueOnce(new Error('workspaceCreation.denied'));
+    const { rerender } = render(<ImporterDialogContent source='notion' onSuccess={onSuccess} />);
+
+    uploadVisibleFile(file);
+    await waitFor(() => expect(mockCreation.refresh).toHaveBeenCalled());
+    mockCreation.canCreate = false;
+    rerender(<ImporterDialogContent source='notion' onSuccess={onSuccess} />);
+    expect(screen.getByText('retained.zip')).toBeTruthy();
+    expect(screen.getByText('workspaceCreation.denied')).toBeTruthy();
+    const retry = screen.getAllByRole('button', { name: 'button.retry' }).find((button) => (button as HTMLButtonElement).disabled);
+
+    expect(retry).toBeTruthy();
+    fireEvent.click(retry!);
+    expect(importFile).toHaveBeenCalledTimes(1);
+    mockCreation.canCreate = true;
+    rerender(<ImporterDialogContent source='notion' onSuccess={onSuccess} />);
+    fireEvent.click(screen.getByRole('button', { name: 'button.retry' }));
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
+    expect(importFile.mock.calls[1][0]).toBe(file);
   });
 });

@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { validate as uuidValidate } from 'uuid';
 
 import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
-import { deleteCollabDB } from '@/application/db';
+import { closeCollabDB } from '@/application/db';
 import { AccessService, ViewService, WorkspaceService } from '@/application/services/domains';
 import {
   captureWorkspaceViewMetadataAccessToken,
@@ -2134,7 +2134,7 @@ export function useWorkspaceData() {
           const collabIds = new Set([changedViewId, databaseId].filter((id): id is string => Boolean(id)));
 
           collabIds.forEach((collabId) => {
-            void deleteCollabDB(collabId, { destroyDoc: true });
+            void closeCollabDB(collabId);
           });
           eventEmitter?.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: changedViewId });
         });
@@ -2971,8 +2971,8 @@ export function useWorkspaceData() {
     return cached && !isStaleWorkspaceRequest(cached.workspaceId, cached.revision) ? cached.value : undefined;
   }, [isStaleWorkspaceRequest]);
 
-  const selectedWorkspaceId = userWorkspaceInfo?.selectedWorkspace.id;
-  const databaseStorageId = userWorkspaceInfo?.selectedWorkspace.databaseStorageId;
+  const selectedWorkspaceId = userWorkspaceInfo?.selectedWorkspace?.id;
+  const databaseStorageId = userWorkspaceInfo?.selectedWorkspace?.databaseStorageId;
 
   // Internal helper to fetch and update database relations
   const fetchAndUpdateDatabaseRelations = useCallback(

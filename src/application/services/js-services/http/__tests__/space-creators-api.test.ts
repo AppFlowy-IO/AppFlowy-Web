@@ -1,0 +1,123 @@
+import {
+  getWorkspaceSpaceCreationCapabilities,
+  listWorkspaceSpaceCreators,
+  setWorkspaceSpaceCreationPolicy,
+  setWorkspaceSpaceCreator,
+} from '../space-creators-api';
+
+const mockGet = jest.fn();
+const mockPost = jest.fn();
+const mockPut = jest.fn();
+const mockDelete = jest.fn();
+
+jest.mock('../core', () => ({
+  getAxios: () => ({ get: mockGet, post: mockPost, put: mockPut, delete: mockDelete }),
+  executeAPIRequest: async (request: () => Promise<{ data: { data: unknown } }>) => (await request()).data.data,
+  executeAPIVoidRequest: async (request: () => Promise<unknown>) => {
+    await request();
+  },
+}));
+
+const workspaceId = '1053b770-ef6d-4e8f-8485-a795a359d13c';
+const principalId = 'cbde8f6b-7751-442b-9076-a2752f583be7';
+const revision = { epoch: '9007199254740993', counter: '9223372036854775807' };
+const capability = {
+  workspace_id: workspaceId,
+  policy: 'owners_and_selected_members',
+  revision,
+  selected_creators_supported: true,
+  group_selection_supported: true,
+  can_create_space: false,
+  can_manage_space_creators: false,
+  can_grant_creator_groups: false,
+};
+
+describe('selected space creator transport', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('retains exact revisions and distinguishes supported from permitted', async () => {
+    mockGet.mockResolvedValue({ data: { data: capability } });
+    await expect(getWorkspaceSpaceCreationCapabilities(workspaceId)).resolves.toEqual(capability);
+    expect(mockGet).toHaveBeenCalledWith(`/api/workspace/${workspaceId}/space-creation-capabilities`);
+  });
+
+  it.each([
+    undefined,
+    {},
+    { ...capability, workspace_id: principalId },
+    { ...capability, policy: 'unknown_future_mode' },
+    { ...capability, revision: { epoch: 9007199254740993, counter: '1' } },
+    { ...capability, revision: { epoch: '1', counter: '9223372036854775808' } },
+    { ...capability, revision: { epoch: '-1', counter: '1' } },
+    { ...capability, can_manage_space_creators: undefined },
+    { ...capability, can_create_space: 'true' },
+  ])('rejects unavailable, foreign, unknown, or malformed capabilities: %p', async (value) => {
+    mockGet.mockResolvedValue({ data: { data: value } });
+    await expect(getWorkspaceSpaceCreationCapabilities(workspaceId)).rejects.toThrow(
+      'Invalid space creation capabilities'
+    );
+  });
+
+  it('preserves an older server error without inventing permissive defaults', async () => {
+    mockGet.mockRejectedValue(new Error('Not found'));
+    await expect(getWorkspaceSpaceCreationCapabilities(workspaceId)).rejects.toThrow('Not found');
+  });
+
+  it('sends only the changed policy so other settings and retained selections survive', async () => {
+    mockPost.mockResolvedValue({ data: { data: { space_creation_policy: 'owners_only' } } });
+    await setWorkspaceSpaceCreationPolicy(workspaceId, 'owners_only');
+    expect(mockPost).toHaveBeenCalledWith(`/api/workspace/${workspaceId}/settings`, {
+      space_creation_policy: 'owners_only',
+    });
+  });
+
+  it('rejects an ignored policy update even when an older server reports success', async () => {
+    mockPost.mockResolvedValue({ data: { data: { space_creation_policy: 'members_and_owners' } } });
+    await expect(setWorkspaceSpaceCreationPolicy(workspaceId, 'owners_only')).rejects.toThrow('Space creation policy was not confirmed');
+  });
+
+  it.each(['user', 'group'] as const)('keeps a %s selection inactive and returns the cursor unchanged', async (kind) => {
+    const row = {
+      principal: { type: kind, id: principalId },
+      name: 'Retained selection',
+      granted_by: null,
+      granted_at: '2026-10-11T12:00:00Z',
+      revoked_at: '2026-10-11T13:00:00Z',
+      eligible: false,
+    };
+    const result = { selections: [row], next_cursor: '9223372036854775806' };
+
+    mockGet.mockResolvedValue({ data: { data: result } });
+    await expect(
+      listWorkspaceSpaceCreators(workspaceId, { kind, after: result.next_cursor, limit: 1 })
+    ).resolves.toEqual(result);
+    expect(mockGet).toHaveBeenCalledWith(`/api/workspace/${workspaceId}/space-creators`, {
+      params: { kind, after: result.next_cursor, limit: 1 },
+    });
+  });
+
+  it('rejects a numeric principal instead of rounding a server UID', async () => {
+    const principal = { type: 'user' as const, id: 9007199254740993 as unknown as string };
+
+    await expect(setWorkspaceSpaceCreator(workspaceId, principal, true)).rejects.toThrow(
+      'Invalid space creator principal'
+    );
+    expect(mockPut).not.toHaveBeenCalled();
+  });
+
+  it('grants/revokes one UUID with no submitted actor or replace-all roster', async () => {
+    const result = { changed: true, revision };
+
+    mockPut.mockResolvedValue({ data: { data: result } });
+    mockDelete.mockResolvedValue({ data: { data: { ...result, changed: false } } });
+    await expect(setWorkspaceSpaceCreator(workspaceId, { type: 'user', id: principalId }, true)).resolves.toEqual(
+      result
+    );
+    await expect(setWorkspaceSpaceCreator(workspaceId, { type: 'group', id: principalId }, false)).resolves.toEqual({
+      ...result,
+      changed: false,
+    });
+    expect(mockPut).toHaveBeenCalledWith(`/api/workspace/${workspaceId}/space-creators/users/${principalId}`);
+    expect(mockDelete).toHaveBeenCalledWith(`/api/workspace/${workspaceId}/space-creators/groups/${principalId}`);
+  });
+});

@@ -115,6 +115,9 @@ jest.mock('@/application/sync-outbox', () => {
       for (const id of ids) drain(id);
       return true;
     }),
+    blockPermissionSync: jest.fn(async () => undefined),
+    mayUploadCollab: jest.fn(async () => true),
+    captureSyncAuthorization: () => () => true,
     shouldRouteUpdateThroughOutbox: jest.fn(() => false),
     configureDrain: jest.fn((config: DrainConfig) => {
       ctx.config = config;

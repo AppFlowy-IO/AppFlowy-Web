@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 import LoadingDots from '@/components/_shared/LoadingDots';
-import { findView } from '@/components/_shared/outline/utils';
 import { notify } from '@/components/_shared/notify';
+import { findView } from '@/components/_shared/outline/utils';
 import { AppOverlayContext } from '@/components/app/app-overlay/AppOverlayContext';
-import { useAppOperations, useAppOutline } from '@/components/app/app.hooks';
+import { useAppOperations, useAppOutline, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import DeletePageConfirm from '@/components/app/view-actions/DeletePageConfirm';
 import DeleteSpaceConfirm from '@/components/app/view-actions/DeleteSpaceConfirm';
 import RenameModal from '@/components/app/view-actions/RenameModal';
@@ -52,6 +52,7 @@ export function AppOverlayProvider ({
 }: {
   children: React.ReactNode;
 }) {
+  const workspaceId = useCurrentWorkspaceId();
   const [renameViewId, setRenameViewId] = useState<string | null>(null);
   const [deleteViewId, setDeleteViewId] = useState<string | null>(null);
   const [manageSpaceId, setManageSpaceId] = useState<string | null>(null);
@@ -168,7 +169,7 @@ export function AppOverlayProvider ({
       {createSpaceModalOpen ? (
         CreateSpaceModal ? (
           <CreateSpaceModal
-            onCreated={closeCreateSpaceModal}
+            key={workspaceId}
             open
             onClose={closeCreateSpaceModal}
           />

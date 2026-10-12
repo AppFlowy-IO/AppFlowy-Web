@@ -183,6 +183,8 @@ export interface Database2Props {
   databaseName: string;
   rowId?: string;
   modalRowId?: string;
+  /** Persist only navigation so permission denial may safely unmount all row content. */
+  onRowPeekChange?: (rowId: string | null, viewId?: string) => void;
   appendBreadcrumb?: AppendBreadcrumb;
   onChangeView: (viewId: string) => void;
   onViewAdded?: (viewId: string) => void;
@@ -288,6 +290,7 @@ function Database(props: Database2Props) {
     duplicateRowDocument,
     navigateToView,
     modalRowId,
+    onRowPeekChange,
     isDocumentBlock: _isDocumentBlock,
     embeddedHeight,
     onViewIdsChanged,
@@ -1504,6 +1507,7 @@ function Database(props: Database2Props) {
             permissions,
             source: peekSource,
           }));
+          onRowPeekChange?.(rowId, viewId);
           return;
         }
 
@@ -1516,6 +1520,7 @@ function Database(props: Database2Props) {
           permissions,
           source: peekSource,
         });
+        onRowPeekChange?.(rowId, viewId || activeViewId);
       } catch (error) {
         Log.error('[Database] Failed to open row', { rowId, viewId: viewId ?? activeViewId, error });
         toast.error(t('chat.openPagePreviewFailedToast'));
@@ -1533,6 +1538,7 @@ function Database(props: Database2Props) {
       loadView,
       navigateToView,
       onOpenRowPage,
+      onRowPeekChange,
       openRowInHostPeek,
       props.variant,
       props.embeddedPermissionSource,
@@ -1586,7 +1592,8 @@ function Database(props: Database2Props) {
       databaseDoc: null,
       rowMap: null,
     });
-  }, []);
+    onRowPeekChange?.(null);
+  }, [onRowPeekChange]);
 
   const handleOpenPeekAsPage = useCallback(
     async (rowId: string) => {

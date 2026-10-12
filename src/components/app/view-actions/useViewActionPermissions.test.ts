@@ -45,4 +45,13 @@ describe('canonical object capabilities for view actions', () => {
     expect(canUsePageHistoryAction({ objectPermission: unreadable })).toBe(false);
     expect(canUseChildViewCreationActions({ objectPermission: unreadable })).toBe(false);
   });
+
+  it('narrows direct-space child creation without replacing content Write or ordinary nested-page access', () => {
+    const writable = { ...readOnly, can_write: true };
+
+    expect(canUseChildViewCreationActions({ objectPermission: writable, spaceSidebar: { canEdit: false } })).toBe(false);
+    expect(canUseChildViewCreationActions({ objectPermission: readOnly, spaceSidebar: { canEdit: true } })).toBe(false);
+    expect(canUseChildViewCreationActions({ objectPermission: writable, spaceSidebar: { canEdit: true } })).toBe(true);
+    expect(canUseChildViewCreationActions({ objectPermission: writable })).toBe(true);
+  });
 });

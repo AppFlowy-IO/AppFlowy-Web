@@ -10,9 +10,11 @@ import { notify } from '@/components/_shared/notify';
 import {
   useAppOperations,
   useAppOutline,
+  useCurrentWorkspaceId,
   useEnsureViewVisibleInOutline,
   useOpenPageModal,
 } from '@/components/app/app.hooks';
+import { useSpaceCreationCapability } from '@/components/app/hooks/useSpaceCreationCapability';
 import SpaceList from '@/components/publish/header/duplicate/SpaceList';
 import { dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
@@ -61,6 +63,8 @@ function CreateSpaceLoading({
 function NewPage() {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
+  const workspaceId = useCurrentWorkspaceId();
+  const creationPermission = useSpaceCreationCapability(workspaceId, open);
   const [loading, setLoading] = useState(false);
   const [createSpaceOpen, setCreateSpaceOpen] = useState(false);
   const [CreateSpaceModal, setCreateSpaceModal] = useState<CreateSpaceModalType | null>(null);
@@ -136,10 +140,10 @@ function NewPage() {
   );
 
   const openCreateSpace = useCallback(() => {
-    if (addingPageRef.current) return;
+    if (addingPageRef.current || !creationPermission.canCreateSpace) return;
     invalidatePendingPageOpen();
     setCreateSpaceOpen(true);
-  }, [invalidatePendingPageOpen]);
+  }, [creationPermission.canCreateSpace, invalidatePendingPageOpen]);
 
   useEffect(() => {
     if (!open || !createSpaceOpen || CreateSpaceModal) return;
@@ -164,8 +168,6 @@ function NewPage() {
     async (_spaceId: string, initialPageId?: string) => {
       const pageOpenSequence = ++pageOpenSequenceRef.current;
 
-      setCreateSpaceOpen(false);
-      setOpen(false);
       if (!initialPageId) return;
 
       // The creation response can arrive before the folder projection reaches
@@ -229,7 +231,8 @@ function NewPage() {
               {` ${t('web.or')} `}
               <Button
                 data-testid='new-page-create-space-button'
-                disabled={loading}
+                disabled={loading || !creationPermission.canCreateSpace}
+                title={!creationPermission.canCreateSpace ? t(creationPermission.status === 'ready' ? 'workspacePermissions.denied' : 'workspacePermissions.loading') : undefined}
                 onClick={openCreateSpace}
                 size='small'
                 className='mx-1 text-sm'
@@ -243,6 +246,7 @@ function NewPage() {
       {open && createSpaceOpen ? (
         CreateSpaceModal ? (
           <CreateSpaceModal
+            key={creationPermission.scopeKey}
             open
             initialPage={CREATE_SPACE_INITIAL_PAGE}
             onClose={closeFlow}

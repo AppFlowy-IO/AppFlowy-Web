@@ -1,7 +1,8 @@
 import { expect } from '@jest/globals';
 import * as Y from 'yjs';
 
-import { captureDatabaseStorageFence, deleteCollabDB, openCollabDB, openCollabDBWithProvider } from '@/application/db';
+import { captureDatabaseStorageFence, closeCollabDB, deleteCollabDB, openCollabDB, openCollabDBWithProvider } from '@/application/db';
+import { collabStorageKey } from '@/application/db/collab-storage-scope';
 import { getOrCreateRowSubDoc } from '@/application/services/js-services/cache';
 import { invalidateViewCache } from '@/application/services/js-services/cached-api';
 import { fetchDatabaseCollab, fetchPageCollab, fetchRowDocumentCollab } from '@/application/services/js-services/fetch';
@@ -13,6 +14,7 @@ jest.mock('@/application/db', () => ({
   openCollabDB: jest.fn(),
   openCollabDBWithProvider: jest.fn(),
   deleteCollabDB: jest.fn(),
+  closeCollabDB: jest.fn().mockResolvedValue(undefined),
   captureDatabaseStorageFence: jest.fn(),
 }));
 
@@ -124,7 +126,7 @@ describe('view-loader database cache identity', () => {
 
     mockOpenCollabDBWithProvider.mockImplementation(async (name) => {
       if (name === databaseId) return createProvider(canonicalDoc) as never;
-      if (scenario === 'restore during open') localStorage.setItem(`af_database_blob_epoch:${databaseId}`, 'restore-new');
+      if (scenario === 'restore during open') localStorage.setItem(`af_database_blob_epoch:${collabStorageKey(databaseId)}`, 'restore-new');
       return createProvider(legacyDoc) as never;
     });
 
@@ -359,7 +361,8 @@ describe('view-loader permission error cache eviction', () => {
     });
 
     expect(mockFetchPageCollab).toHaveBeenCalledTimes(1);
-    expect(mockDeleteCollabDB).toHaveBeenCalledWith(databaseId, { destroyDoc: true });
+    expect(closeCollabDB).toHaveBeenCalledWith(databaseId);
+    expect(mockDeleteCollabDB).not.toHaveBeenCalled();
     expect(mockInvalidateViewCache).toHaveBeenCalledWith('workspace-id', viewId);
   });
 
@@ -455,7 +458,8 @@ describe('view-loader row document retry policy', () => {
     await rejection;
 
     expect(mockFetchRowDocumentCollab).toHaveBeenCalledTimes(1);
-    expect(mockDeleteCollabDB).toHaveBeenCalledWith(documentId, { destroyDoc: true });
+    expect(closeCollabDB).toHaveBeenCalledWith(documentId);
+    expect(mockDeleteCollabDB).not.toHaveBeenCalled();
     expect(jest.getTimerCount()).toBe(0);
   });
 });

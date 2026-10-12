@@ -1,14 +1,22 @@
-import { renderHook, waitFor } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import EventEmitter from 'events';
 
+import { act, renderHook, waitFor } from '@testing-library/react';
+
+
+import { APP_EVENTS } from '@/application/constants';
 import { AccessLevel, type CollabObjectPermission, Types, type View, ViewLayout } from '@/application/types';
 import { AppNavigationContext } from '@/components/app/contexts/AppNavigationContext';
 import { useViewActionPermissions } from '@/components/app/view-actions/useViewActionPermissions';
 
+import type { ReactNode } from 'react';
+
 const mockGetObjectPermission = jest.fn();
 const mockGetView = jest.fn();
+const mockGetSpacePermission = jest.fn();
+const mockEventEmitter = new EventEmitter();
 
 jest.mock('@/application/services/domains', () => ({
+  WorkspaceService: { getSpacePermission: (...args: unknown[]) => mockGetSpacePermission(...args) },
   AccessService: {
     getObjectPermission: (...args: unknown[]) => mockGetObjectPermission(...args),
   },
@@ -19,6 +27,7 @@ jest.mock('@/application/services/domains', () => ({
 
 jest.mock('@/components/app/app.hooks', () => ({
   useCurrentWorkspaceId: () => 'workspace-id',
+  useEventEmitter: () => mockEventEmitter,
 }));
 
 function createView(overrides: Partial<View> = {}): View {
@@ -53,6 +62,8 @@ describe('useViewActionPermissions', () => {
   beforeEach(() => {
     mockGetObjectPermission.mockReset();
     mockGetView.mockReset();
+    mockGetSpacePermission.mockReset();
+    mockEventEmitter.removeAllListeners();
   });
 
   it('resolves action gates from the object-permission endpoint', async () => {
@@ -69,6 +80,32 @@ describe('useViewActionPermissions', () => {
     expect(result.current.canUsePageHistory).toBe(true);
     expect(result.current.canManageViewActions).toBe(false);
   });
+
+  it('re-probes an open action menu after a broad change and discards an older positive result', async () => {
+    let resolveOld!: (permission: CollabObjectPermission) => void;
+
+    mockGetObjectPermission.mockReturnValueOnce(new Promise<CollabObjectPermission>((resolve) => { resolveOld = resolve; }))
+      .mockResolvedValue(createPermission({ can_write: false }));
+    const { result } = renderHook(() => useViewActionPermissions(createView(), true));
+
+    act(() => { mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {}); });
+    await waitFor(() => expect(result.current.hasLoadedViewActionPermissions).toBe(true));
+    await act(async () => { resolveOld(createPermission()); });
+    expect(result.current.canCreateViewActions).toBe(false);
+    expect(result.current.canWrite).toBe(false);
+  });
+
+  it.each([[true, false, false], [false, true, false], [true, true, true]])(
+    'requires both direct-child Write (%s) and sidebar authority (%s)', async (canWrite, canEditSidebar, allowed) => {
+      mockGetObjectPermission.mockResolvedValue(createPermission({ can_write: canWrite }));
+      mockGetSpacePermission.mockResolvedValue({ can_manage_space: false, can_edit_sidebar: canEditSidebar });
+      const { result } = renderHook(() => useViewActionPermissions(createView({ is_space: true }), true));
+
+      await waitFor(() => expect(result.current.hasLoadedViewActionPermissions).toBe(true));
+      expect(result.current.canCreateViewActions).toBe(allowed);
+      expect(result.current.canWrite).toBe(canWrite);
+    }
+  );
 
   it('uses the canonical database collab identity', async () => {
     mockGetObjectPermission.mockResolvedValue(

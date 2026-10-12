@@ -94,9 +94,9 @@ jest.mock('@/components/app/hooks/useViewObjectPermission', () => ({
 
 jest.mock('@/components/app/hooks/useViewOperations', () => ({
   getViewCanCommentStatus: () => true,
-  getViewCanWriteStatus: () => true,
+  getViewCanWriteStatus: (_id: string, _outline: unknown, _view: unknown, permission: { can_write?: boolean }) => permission.can_write === true,
   useViewOperations: () => ({
-    getViewReadOnlyStatus: () => false,
+    getViewReadOnlyStatus: (_id: string, _outline: unknown, _view: unknown, permission: { can_write?: boolean }) => permission.can_write !== true,
   }),
 }));
 
@@ -223,6 +223,27 @@ describe('ViewModal permission cleanup', () => {
 
     await waitFor(() => expect(mockLoadView).toHaveBeenCalledWith(childViewId, false, true));
     await screen.findByText('database-child-doc');
+  });
+
+  it('downgrades, hides protected content, and reloads after regrant without closing the modal', async () => {
+    mockLoadView.mockResolvedValueOnce(new Y.Doc({ guid: 'before-revoke' }))
+      .mockResolvedValueOnce(new Y.Doc({ guid: 'after-regrant' }));
+    const { rerender } = render(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+
+    await screen.findByText('before-revoke');
+    mockObjectPermissions[modalViewId] = createMockPermission(modalViewId, { can_write: false });
+    rerender(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+    expect(mockRenderedViewProps).toHaveBeenLastCalledWith(expect.objectContaining({ canWrite: false, readOnly: true }));
+    mockObjectPermissions[modalViewId] = createMockPermission(modalViewId, { can_read: false, can_write: false });
+    rerender(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+    expect(screen.queryByText('before-revoke')).toBeNull();
+    expect(screen.queryByText('Modal page')).toBeNull();
+    expect(screen.getByRole('status').textContent).toBe('publish.noAccessToVisit');
+    expect(mockNoop).not.toHaveBeenCalled();
+    mockObjectPermissions[modalViewId] = createMockPermission(modalViewId);
+    rerender(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+    await screen.findByText('after-regrant');
+    expect(mockLoadView).toHaveBeenCalledTimes(2);
   });
 
   it('drops a loaded Y.Doc when a security close bypasses handleClose', async () => {

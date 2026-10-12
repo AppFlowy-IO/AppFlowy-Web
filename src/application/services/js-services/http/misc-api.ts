@@ -59,7 +59,8 @@ export async function searchWorkspaceDocumentPage(
   workspaceId: string,
   query: string,
   offset = 0,
-  requestStreamId?: string
+  requestStreamId?: string,
+  signal?: AbortSignal
 ) {
   const url = `/api/search/${workspaceId}/page`;
   const headers: Record<string, string> = { 'x-request-time': Date.now().toString() };
@@ -79,6 +80,7 @@ export async function searchWorkspaceDocumentPage(
         score: SEARCH_SCORE_THRESHOLD,
       },
       headers,
+      ...(signal ? { signal } : {}),
     })
   );
 }
@@ -89,7 +91,7 @@ export async function searchWorkspace(workspaceId: string, query: string) {
   return payload.map((item) => item.object_id);
 }
 
-export async function generateSearchSummary(workspaceId: string, query: string) {
+export async function generateSearchSummary(workspaceId: string, query: string, signal?: AbortSignal) {
   const url = `/api/search/${workspaceId}/summary`;
   const payload = {
     query,
@@ -100,6 +102,7 @@ export async function generateSearchSummary(workspaceId: string, query: string) 
   return executeAPIRequest<SearchSummaryResult>(() =>
     getAxios()?.post<APIResponse<SearchSummaryResult>>(url, payload, {
       headers,
+      ...(signal ? { signal } : {}),
     })
   );
 }

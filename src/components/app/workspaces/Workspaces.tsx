@@ -19,11 +19,14 @@ import {
   useRefreshUserWorkspaceInfo,
   useUserWorkspaceInfo,
 } from '@/components/app/app.hooks';
+import { useWorkspaceCreationAttempt } from '@/components/app/hooks/useWorkspaceCreationAttempt';
+import { useWorkspaceCreationCapability } from '@/components/app/hooks/useWorkspaceCreationCapability';
 import { SettingsDialog } from '@/components/app/settings';
 import CurrentWorkspace from '@/components/app/workspaces/CurrentWorkspace';
 import DeleteWorkspace from '@/components/app/workspaces/DeleteWorkspace';
 import EditWorkspace from '@/components/app/workspaces/EditWorkspace';
 import LeaveWorkspace from '@/components/app/workspaces/LeaveWorkspace';
+import { WorkspaceCreationNotice } from '@/components/app/workspaces/WorkspaceCreationNotice';
 import WorkspaceList from '@/components/app/workspaces/WorkspaceList';
 import UpgradePlan from '@/components/billing/UpgradePlan';
 import { useCurrentUser } from '@/components/main/app.hooks';
@@ -64,6 +67,8 @@ export function Workspaces() {
   const [openDeleteWorkspace, setOpenDeleteWorkspace] = useState<Workspace | null>(null);
   const [openLeaveWorkspace, setOpenLeaveWorkspace] = useState<Workspace | null>(null);
   const [openSettings, setOpenSettings] = useState(false);
+  const creation = useWorkspaceCreationCapability();
+  const attempt = useWorkspaceCreationAttempt(creation.scopeKey);
 
   const canManageBilling = canManageWorkspaceBilling(currentWorkspace, currentUser?.uid, isHosted);
 
@@ -89,24 +94,32 @@ export function Workspaces() {
 
   const handleOpenImport = useCallback(
     (source: 'notion' | 'appflowy' | 'confluence') => {
+      if (!creation.canCreate) return;
       setSearchParams((prev) => {
         prev.set('action', 'import');
         prev.set('source', source);
         return prev;
       });
     },
-    [setSearchParams]
+    [setSearchParams, creation.canCreate]
   );
 
   const handleCreateWorkspace = useCallback(
     async (name: string) => {
-      const workspaceId = await WorkspaceService.create({
-        workspace_name: name,
-      });
+      try {
+        if (!creation.isCurrent()) throw new Error(t('workspaceCreation.contextChanged'));
+        if (!creation.canCreate && !attempt.draft) throw new Error(t('workspaceCreation.denied'));
+        const workspaceId = await attempt.create(name);
 
-      await handleSelectedWorkspace?.(workspaceId);
+        if (!creation.isCurrent()) throw new Error(t('workspaceCreation.contextChanged'));
+        await handleSelectedWorkspace?.(workspaceId);
+        if (creation.isCurrent()) attempt.complete(workspaceId);
+      } catch (error) {
+        if (creation.isCurrent()) void creation.refresh();
+        throw error;
+      }
     },
-    [handleSelectedWorkspace]
+    [handleSelectedWorkspace, creation, attempt, t]
   );
 
   const handleUpdateWorkspace = useCallback(
@@ -189,6 +202,7 @@ export function Workspaces() {
               </div>
             </DropdownMenuGroup>
             <DropdownMenuItem
+              disabled={Boolean(attempt.error) || (!creation.canCreate && !attempt.draft)}
               onSelect={() => {
                 setOpenCreateWorkspace(true);
               }}
@@ -196,12 +210,13 @@ export function Workspaces() {
               <div className={'flex h-5 w-5 items-center justify-center rounded-100 border border-border-primary'}>
                 <AddIcon className={'!h-4 !w-4'} />
               </div>
-              {t('workspace.create')}
+              {t(attempt.draft ? 'workspaceCreation.resume' : 'workspace.create')}
             </DropdownMenuItem>
+            <WorkspaceCreationNotice capability={creation} />
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuSub>
-                <DropdownMenuSubTrigger data-testid='import-workspace-trigger'>
+                <DropdownMenuSubTrigger data-testid='import-workspace-trigger' disabled={!creation.canCreate}>
                   <ImportIcon />
                   <div className={'flex-1 text-left'}>{t('web.importWorkspace')}</div>
                 </DropdownMenuSubTrigger>
@@ -271,12 +286,18 @@ export function Workspaces() {
       <Import />
       {openCreateWorkspace && (
         <EditWorkspace
+          key={creation.scopeKey}
           onOk={handleCreateWorkspace}
-          okText={t('button.create')}
-          defaultName={`${currentUser?.name}'s Workspace`}
+          canSubmit={!attempt.error && (creation.canCreate || Boolean(attempt.draft))}
+          nameReadOnly={Boolean(attempt.draft)}
+          okText={t(attempt.draft ? 'workspaceCreation.resume' : 'button.create')}
+          defaultName={attempt.draft?.name ?? `${currentUser?.name}'s Workspace`}
           open={openCreateWorkspace}
           openOnChange={setOpenCreateWorkspace}
-        />
+        ><WorkspaceCreationNotice capability={creation} showOwnership />
+          {attempt.draft && <p role='status'>{t('workspaceCreation.retryOriginal')}</p>}
+          {attempt.error && <p role='alert'>{attempt.error}</p>}
+        </EditWorkspace>
       )}
 
       {openRenameWorkspace && (

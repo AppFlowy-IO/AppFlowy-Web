@@ -9,6 +9,7 @@ import { getOrCreateDatabaseHistoryManager } from '@/application/database-yjs/hi
 import { invalidateDatabaseDependenciesAfterRestore } from '@/application/database-yjs/restore-dependencies';
 import { captureDatabaseStorageFence, db, deleteCollabDB, matchesDatabaseStorageFence, openCollabDB, openRowCollabDBWithProvider,
   readDatabaseIdFromRowCache } from '@/application/db';
+import { captureCollabStorageScope } from '@/application/db/collab-storage-scope';
 import { DATABASE_RESTORE_MARKER_PREFIX } from '@/application/db/database-storage-fence';
 import { getDatabaseRestoreState } from '@/application/services/domains/database-history';
 import { cacheCanonicalRowDoc, getCachedDatabaseRowIds, getCachedRowDatabaseId,
@@ -78,7 +79,9 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
     const user = refs.latestUserRef.current;
 
     if (!user || refs.isDisposedRef.current) throw new Error('Database restore session is unavailable');
+    const scope = captureCollabStorageScope();
     const assertSession = () => {
+      scope.assertCurrent();
       if (refs.isDisposedRef.current || latest.current.workspaceId !== workspaceId || latest.current.userId !== user.uuid) {
         throw new Error('Database restore session changed');
       }
@@ -88,7 +91,7 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
     let plan = resetPlans.current.get(planKey);
 
     if (!plan) {
-      const persistedRows = await db.rows.where('row_key').startsWith(`${databaseId}_rows_`).toArray();
+      const persistedRows = await db.rows.where('row_key').startsWith(scope.storageKey(`${databaseId}_rows_`)).toArray();
 
       assertSession();
       // Capture active consumers after the asynchronous cache lookup, so a row
@@ -294,6 +297,8 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
   ), [deps.workspaceId, userId, resetDatabase]);
 
   const resolveDatabase = useCallback(async (objectId: string, type: Types): Promise<string | undefined> => {
+    const scope = captureCollabStorageScope();
+
     if (type === Types.Database) return objectId;
     if (type !== Types.DatabaseRow) return undefined;
     const known = rowDatabases.current.get(objectId) || getCachedRowDatabaseId(objectId);
@@ -304,16 +309,18 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
     let databaseId = row?.get(YjsDatabaseKey.database_id) as string | undefined;
 
     if (!databaseId) {
-      // Older caches have only row_key as an index. Cache the reverse mapping
-      // once; newly opened rows populate getCachedRowDatabaseId directly.
-      const record = await db.rows.filter((item) => item.row_id === objectId).first();
+      // Retain unknown-origin legacy records, but never adopt their identity.
+      const prefix = scope.storageKey('');
+      const record = await db.rows.filter((item) => item.row_id === objectId && item.row_key.startsWith(prefix)).first();
 
-      databaseId = record?.row_key.split('_rows_')[0];
+      scope.assertCurrent();
+      databaseId = record?.row_key.slice(prefix.length).split('_rows_')[0];
     }
 
     // Modern rows need not have a legacy row_key index. A socket owner or a
     // restarted tab can recover their parent from the shared snapshot and tail.
     if (!databaseId) databaseId = await readDatabaseIdFromRowCache(objectId);
+    scope.assertCurrent();
     if (databaseId) rowDatabases.current.set(objectId, databaseId);
     return databaseId;
   }, []);

@@ -210,7 +210,11 @@ export const useSync = (
   // Dispatches server-pushed workspace events (permission changes, section updates,
   // profile changes, etc.) to the app-wide EventEmitter.  Handles both direct
   // WebSocket notifications and cross-tab BroadcastChannel relays.
-  useWorkspaceNotifications(wsNotification, bcNotification, eventEmitter);
+  useWorkspaceNotifications(wsNotification, bcNotification, eventEmitter, {
+    workspaceId,
+    userId: currentUser?.uuid,
+    serverUrl: ws.options?.url ?? '',
+  });
 
   // ── Batch sync utilities ─────────────────────────────────────────────
   // flushAllSync: drain buffered local updates to WebSocket for every registered doc.

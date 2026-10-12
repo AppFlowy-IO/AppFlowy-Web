@@ -1,6 +1,10 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import EventEmitter from 'events';
 
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+
+import { APP_EVENTS } from '@/application/constants';
 import { RAG_SOURCE_OWNERS_METADATA_KEY } from '@/components/ai-chat/rag-scope';
+import { AppEventEmitterContext } from '@/components/app/contexts/AppEventEmitterContext';
 import { Search } from '@/components/app/search/Search';
 
 import type { ChangeEvent, ReactNode } from 'react';
@@ -11,9 +15,12 @@ const mockGetViewNavigation = jest.fn();
 const mockFetchCompleteView = jest.fn();
 const mockUpdateChatSettings = jest.fn();
 const mockChatRequest = jest.fn();
+const mockLoadRecentViews = jest.fn();
 
 jest.mock('@mui/material', () => ({
-  Dialog: ({ children, open }: { children: ReactNode; open: boolean }) => (open ? <div>{children}</div> : null),
+  Dialog: ({ children, open, onClose }: { children: ReactNode; open: boolean; onClose: () => void }) => (
+    open ? <div><button onClick={onClose}>Close search</button>{children}</div> : null
+  ),
   InputBase: ({ onChange, value }: { onChange: (event: ChangeEvent<HTMLInputElement>) => void; value: string }) => (
     <input aria-label='search-input' onChange={onChange} value={value} />
   ),
@@ -27,16 +34,22 @@ jest.mock('@/components/app/app.hooks', () => ({
   useAIEnabled: () => true,
   useAppOperations: () => ({ addPage: mockAddPage }),
   useAppOutline: () => [],
-  useAppRecent: () => ({ recentViews: [], loadRecentViews: jest.fn() }),
+  useAppRecent: () => ({ recentViews: [], loadRecentViews: mockLoadRecentViews }),
   useAppViewId: () => 'current-page-id',
   useCurrentWorkspaceId: () => 'workspace-id',
   useToView: () => mockToView,
 }));
 
+jest.mock('@/components/main/app.hooks', () => ({
+  useAuthenticatedUserIdOptional: () => 'user-id',
+  useIsAuthenticatedOptional: () => true,
+}));
+
 jest.mock('@/components/app/search/BestMatch', () => ({
   __esModule: true,
-  default: ({ onAskAI, searchValue }: { onAskAI: (query: string, sources: unknown[]) => void; searchValue: string }) => (
+  default: ({ onAskAI, searchValue, askingAI }: { onAskAI: (query: string, sources: unknown[]) => void; searchValue: string; askingAI: boolean }) => (
     <button
+      disabled={askingAI}
       onClick={() =>
         onAskAI(searchValue, [
           {
@@ -54,7 +67,7 @@ jest.mock('@/components/app/search/BestMatch', () => ({
 
 jest.mock('@/components/app/search/RecentViews', () => ({
   __esModule: true,
-  default: () => null,
+  default: ({ recentViews }: { recentViews: Array<{ name: string }> }) => <div>{recentViews.map((view) => view.name).join(',')}</div>,
 }));
 
 jest.mock('@/components/app/search/ViewList', () => ({
@@ -117,6 +130,7 @@ jest.mock('@/utils/hotkeys', () => ({
 describe('Search AI chat creation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockLoadRecentViews.mockResolvedValue([]);
     const currentPage = {
       view_id: 'current-page-id',
       name: 'Current page',
@@ -169,6 +183,77 @@ describe('Search AI chat creation', () => {
     );
   });
 
+  it('clears recent names on revocation and keeps them hidden after a failed refresh', async () => {
+    const emitter = new EventEmitter();
+
+    mockLoadRecentViews.mockResolvedValueOnce([{ view_id: 'secret', name: 'Protected recent page' }]);
+    const { unmount } = render(<AppEventEmitterContext.Provider value={emitter}><Search /></AppEventEmitterContext.Provider>);
+
+    fireEvent.click(screen.getByText('button.search'));
+    await screen.findByText('Protected recent page');
+    mockLoadRecentViews.mockRejectedValueOnce(new Error('Permission unavailable'));
+    act(() => { emitter.emit(APP_EVENTS.PERMISSION_CHANGED, {}); });
+    expect(screen.queryByText('Protected recent page')).toBeNull();
+    await waitFor(() => expect(mockLoadRecentViews).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText('Protected recent page')).toBeNull();
+    mockLoadRecentViews.mockResolvedValueOnce([{ view_id: 'secret', name: 'Protected recent page' }]);
+    act(() => { window.dispatchEvent(new Event('focus')); });
+    await screen.findByText('Protected recent page');
+    unmount();
+    expect(emitter.listenerCount(APP_EVENTS.PERMISSION_CHANGED)).toBe(0);
+  });
+
+  it('ignores an old recent response after permission refresh', async () => {
+    let resolveOld!: (value: unknown) => void;
+    const emitter = new EventEmitter();
+
+    mockLoadRecentViews.mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve; }));
+    render(<AppEventEmitterContext.Provider value={emitter}><Search /></AppEventEmitterContext.Provider>);
+    fireEvent.click(screen.getByText('button.search'));
+    await act(async () => {
+      emitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+      resolveOld([{ view_id: 'secret', name: 'Late recent page' }]);
+    });
+    expect(screen.queryByText('Late recent page')).toBeNull();
+    await waitFor(() => expect(mockLoadRecentViews).toHaveBeenCalledTimes(2));
+  });
+
+  it('does not create a chat after permission changes during parent resolution', async () => {
+    let resolveParent!: (value: unknown) => void;
+    const emitter = new EventEmitter();
+
+    mockFetchCompleteView.mockImplementationOnce(() => new Promise((resolve) => { resolveParent = resolve; }));
+    render(<AppEventEmitterContext.Provider value={emitter}><Search /></AppEventEmitterContext.Provider>);
+    fireEvent.click(screen.getByText('button.search'));
+    fireEvent.change(screen.getByLabelText('search-input'), { target: { value: 'launch' } });
+    fireEvent.click(await screen.findByText('Ask AI'));
+    await waitFor(() => expect(mockFetchCompleteView).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      emitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+      resolveParent({ view_id: 'space-id', children: [] });
+    });
+    expect(mockAddPage).not.toHaveBeenCalled();
+    expect(mockToView).not.toHaveBeenCalled();
+  });
+
+  it('does not attach old sources or navigate after a delayed create acknowledgement', async () => {
+    let resolveCreate!: (value: unknown) => void;
+    const emitter = new EventEmitter();
+
+    mockAddPage.mockImplementationOnce(() => new Promise((resolve) => { resolveCreate = resolve; }));
+    render(<AppEventEmitterContext.Provider value={emitter}><Search /></AppEventEmitterContext.Provider>);
+    fireEvent.click(screen.getByText('button.search'));
+    fireEvent.change(screen.getByLabelText('search-input'), { target: { value: 'launch' } });
+    fireEvent.click(await screen.findByText('Ask AI'));
+    await waitFor(() => expect(mockAddPage).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      emitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+      resolveCreate({ view_id: 'chat-id' });
+    });
+    expect(mockUpdateChatSettings).not.toHaveBeenCalled();
+    expect(mockToView).not.toHaveBeenCalled();
+  });
+
   it('uses authoritative navigation and persists row ownership before navigating', async () => {
     render(<Search />);
 
@@ -199,5 +284,86 @@ describe('Search AI chat creation', () => {
       },
     });
     expect(mockUpdateChatSettings.mock.invocationCallOrder[0]).toBeLessThan(mockToView.mock.invocationCallOrder[0]);
+  });
+
+  it('coalesces a stalled recent read and repeated permission hints into one follow-up', async () => {
+    let resolveOld!: (value: unknown) => void;
+    const emitter = new EventEmitter();
+
+    mockLoadRecentViews.mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve; }));
+    render(<AppEventEmitterContext.Provider value={emitter}><Search /></AppEventEmitterContext.Provider>);
+    fireEvent.click(screen.getByText('button.search'));
+    for (let i = 0; i < 20; i += 1) {
+      act(() => { emitter.emit(APP_EVENTS.PERMISSION_CHANGED, {}); });
+    }
+
+    expect(mockLoadRecentViews).toHaveBeenCalledTimes(1);
+    await act(async () => { resolveOld([{ view_id: 'secret', name: 'Obsolete recent' }]); });
+    await waitFor(() => expect(mockLoadRecentViews).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText('Obsolete recent')).toBeNull();
+    fireEvent.change(screen.getByLabelText('search-input'), { target: { value: 'query' } });
+    act(() => { emitter.emit(APP_EVENTS.PERMISSION_CHANGED, {}); });
+    expect(mockLoadRecentViews).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a replacement AI attempt busy when the old attempt finally settles', async () => {
+    let resolveFirst!: (value: unknown) => void;
+    let resolveSecond!: (value: unknown) => void;
+    const emitter = new EventEmitter();
+
+    mockFetchCompleteView
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve; }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveSecond = resolve; }));
+    render(<AppEventEmitterContext.Provider value={emitter}><Search /></AppEventEmitterContext.Provider>);
+    fireEvent.click(screen.getByText('button.search'));
+    fireEvent.change(screen.getByLabelText('search-input'), { target: { value: 'query' } });
+    const button = await screen.findByText('Ask AI');
+
+    fireEvent.click(button);
+    await waitFor(() => expect(mockFetchCompleteView).toHaveBeenCalledTimes(1));
+    expect(button.disabled).toBe(true);
+    act(() => { emitter.emit(APP_EVENTS.PERMISSION_CHANGED, {}); });
+    expect(button.disabled).toBe(false);
+    fireEvent.click(button);
+    await waitFor(() => expect(mockFetchCompleteView).toHaveBeenCalledTimes(2));
+    await act(async () => { resolveFirst({ view_id: 'space-id', children: [] }); });
+    expect(button.disabled).toBe(true);
+    expect(mockAddPage).not.toHaveBeenCalled();
+    await act(async () => { resolveSecond({ view_id: 'space-id', children: [] }); });
+    expect(mockAddPage).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not resume an AI workflow into a reopened search dialog', async () => {
+    let resolveParent!: (value: unknown) => void;
+
+    mockFetchCompleteView.mockImplementationOnce(() => new Promise((resolve) => { resolveParent = resolve; }));
+    render(<Search />);
+    fireEvent.click(screen.getByText('button.search'));
+    fireEvent.change(screen.getByLabelText('search-input'), { target: { value: 'old query' } });
+    fireEvent.click(await screen.findByText('Ask AI'));
+    await waitFor(() => expect(mockFetchCompleteView).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByText('Close search'));
+    fireEvent.click(screen.getByText('button.search'));
+    fireEvent.change(screen.getByLabelText('search-input'), { target: { value: 'replacement query' } });
+    await act(async () => { resolveParent({ view_id: 'space-id', children: [] }); });
+    expect(mockAddPage).not.toHaveBeenCalled();
+    expect(mockUpdateChatSettings).not.toHaveBeenCalled();
+    expect(mockToView).not.toHaveBeenCalled();
+    expect((screen.getByLabelText('search-input')).value).toBe('replacement query');
+    expect((screen.getByText('Ask AI')).disabled).toBe(false);
+  });
+
+  it('keeps closed-dialog recent responses out of a reopened dialog', async () => {
+    let resolveFirst!: (value: unknown) => void;
+
+    mockLoadRecentViews.mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve; }));
+    render(<Search />);
+    fireEvent.click(screen.getByText('button.search'));
+    fireEvent.click(screen.getByText('Close search'));
+    fireEvent.click(screen.getByText('button.search'));
+    expect(mockLoadRecentViews).toHaveBeenCalledTimes(1);
+    await act(async () => { resolveFirst([{ view_id: 'old', name: 'Closed dialog recent' }]); });
+    await waitFor(() => expect(mockLoadRecentViews).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText('Closed dialog recent')).toBeNull();
   });
 });

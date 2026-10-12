@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
@@ -16,6 +16,9 @@ function EditWorkspace({
   onOk,
   okText,
   title,
+  canSubmit = true,
+  nameReadOnly = false,
+  children,
 }: {
   defaultName?: string;
   open?: boolean;
@@ -23,31 +26,39 @@ function EditWorkspace({
   onOk?: (name: string) => Promise<void>;
   okText?: string;
   title?: string;
+  canSubmit?: boolean;
+  nameReadOnly?: boolean;
+  children?: ReactNode;
 }) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
+  const mounted = useRef(true);
   const currentUser = useCurrentUser();
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   const [name, setName] = useState(defaultName || `${currentUser?.name}'s Workspace`);
 
   const handleCreate = useCallback(async () => {
+    if (!canSubmit || loading || !name.trim()) return;
     setLoading(true);
     try {
       await onOk?.(name);
-      openOnChange?.(false);
+      if (mounted.current) openOnChange?.(false);
       // eslint-disable-next-line
     } catch (e: any) {
-      toast.error(e.message);
+      if (mounted.current) toast.error(e.message);
     } finally {
-      setLoading(false);
+      if (mounted.current) setLoading(false);
     }
-  }, [name, openOnChange, onOk]);
+  }, [name, openOnChange, onOk, canSubmit, loading]);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    if (!open) {
-      setName('');
-    }
+    if (!open) setName(defaultName || '');
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -64,6 +75,7 @@ function EditWorkspace({
       cancelButtonProps={HIDDEN_BUTTON_PROPS}
     >
       <div className='grid gap-4'>
+        {children}
         <div className='grid gap-3'>
           <Label htmlFor='name'>{t('workspace.workspaceName')}</Label>
           <Input
@@ -72,6 +84,7 @@ function EditWorkspace({
             autoFocus
             value={name}
             autoComplete='off'
+            readOnly={nameReadOnly}
             ref={(input: HTMLInputElement) => {
               if (!input) return;
               if (!inputRef.current) {
@@ -97,7 +110,7 @@ function EditWorkspace({
           {t('button.cancel')}
         </Button>
         <Button
-          disabled={!name.trim()}
+          disabled={!name.trim() || !canSubmit || loading}
           loading={loading}
           onClick={() => void handleCreate()}
         >

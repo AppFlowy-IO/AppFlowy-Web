@@ -31,6 +31,7 @@ import { ReactComponent as DocumentIcon } from '@/assets/icons/page.svg';
 import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 import { ReactComponent as ReminderIcon } from '@/assets/icons/reminder_clock.svg';
 import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
+import { useSearchAccessScope } from '@/components/app/search/useSearchAccessScope';
 import { usePanelContext } from '@/components/editor/components/panels/Panels.hooks';
 import { PanelType } from '@/components/editor/components/panels/PanelsContext';
 import { useEditorContext } from '@/components/editor/EditorContext';
@@ -39,14 +40,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Switch } from '@/components/ui/switch';
 
 import { useSendMentionNotification } from './mention-notification-preference';
-import {
-  getCachedMentionSections,
-  isMentionSearchRetryLater,
-  markMentionSearchRetryLater,
-  mentionSearchRetryLaterRemainingMs,
-  setCachedMentionSections,
-  startMentionSearchRefresh,
-} from './mentionSearchCache';
+import { isMentionSearchRetryLater, MentionSearchCache, MentionSearchRead } from './mentionSearchCache';
 import {
   buildMentionSearchRequests,
   buildMentionSearchRequestsCacheKey,
@@ -70,6 +64,7 @@ interface Option {
 const MENTION_SEARCH_LIMIT = 20;
 const DATABASE_ROW_SEARCH_RETRY_DELAY_MS = 500;
 const PAGE_RESULT_COLLAPSE_LIMIT = 4;
+const EMPTY_FALLBACK_VIEWS: View[] = [];
 
 type MentionPanelOption =
   | {
@@ -97,6 +92,7 @@ interface MentionPanelResultSection {
 }
 
 interface MentionSectionsFetchResult {
+  read: MentionSearchRead;
   sections: MentionSearchSection[];
   databaseRowResponse?: MentionSearchResponse;
 }
@@ -396,7 +392,16 @@ export function MentionPanel({
   onPersonPicked,
 }: { notifyOnInsert?: boolean; onPersonPicked?: (personId: string, requireNotification: boolean) => void } = {}) {
   const { isPanelOpen, panelPosition, closePanel, searchText, removeContent, activePanel } = usePanelContext();
-  const { workspaceId, viewId, searchMentions, mentionContext, loadViews, addPage, openPageModal, enableReminderMentions } = useEditorContext();
+  const {
+    workspaceId,
+    viewId,
+    searchMentions,
+    mentionContext,
+    loadViews,
+    addPage,
+    openPageModal,
+    enableReminderMentions,
+  } = useEditorContext();
   const currentUser = useCurrentUserOptional();
   const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
@@ -406,17 +411,59 @@ export function MentionPanel({
   const selectedOptionRef = useRef<Option | null>(null);
   const [selectedOption, setSelectedOption] = useState<Option | null>(null);
   const editor = useSlateStatic() as YjsEditor;
-  const [mentionSections, setMentionSections] = useState<MentionSearchSection[]>([]);
+  const { scope: accessScope, isCurrent: isAccessCurrent } = useSearchAccessScope(workspaceId);
+  const currentMentionCache = useRef<MentionSearchCache>();
+  const mentionCache = useMemo(() => {
+    // A closed picker cannot lend its cached snapshot or pending reads to the next opening.
+    const cache: MentionSearchCache = new MentionSearchCache(
+      () => open && currentMentionCache.current === cache && isAccessCurrent()
+    );
+
+    return cache;
+  }, [isAccessCurrent, open]);
+  const [remoteResult, setRemoteResult] = useState<{ cache: MentionSearchCache; sections: MentionSearchSection[] }>();
+  const mentionSections = remoteResult?.cache === mentionCache && isAccessCurrent() ? remoteResult.sections : [];
+  const setMentionSections = useCallback(
+    (sections: MentionSearchSection[]) => {
+      setRemoteResult({ cache: mentionCache, sections });
+    },
+    [mentionCache]
+  );
   const [mentionSearchLoading, setMentionSearchLoading] = useState(false);
   const [mentionSearchFailed, setMentionSearchFailed] = useState(false);
   const [mentionSearchDeferred, setMentionSearchDeferred] = useState(false);
   const [showMorePages, setShowMorePages] = useState(false);
-  const [localFallbackViews, setLocalFallbackViews] = useState<View[]>([]);
+  const [localResult, setLocalResult] = useState<{ cache: MentionSearchCache; views: View[] }>();
+
+  currentMentionCache.current = mentionCache;
+  useEffect(() => {
+    currentMentionCache.current = mentionCache;
+    return () => {
+      if (currentMentionCache.current === mentionCache) currentMentionCache.current = undefined;
+    };
+  }, [mentionCache]);
+  const isMentionScopeCurrent = useCallback(
+    () =>
+      currentMentionCache.current === mentionCache &&
+      (!(searchMentions || accessScope.authenticated) || isAccessCurrent()),
+    [accessScope.authenticated, isAccessCurrent, mentionCache, searchMentions]
+  );
+  const localFallbackViews =
+    localResult?.cache === mentionCache && isMentionScopeCurrent() ? localResult.views : EMPTY_FALLBACK_VIEWS;
+  const setLocalFallbackViews = useCallback(
+    (views: View[]) => {
+      setLocalResult({ cache: mentionCache, views });
+    },
+    [mentionCache]
+  );
   const mentionSearchRequestIdRef = useRef(0);
   const hasMentionSearchQuery = Boolean(searchText?.trim());
-  const mentionInclude = activePanel === PanelType.PageReference
-    ? PAGE_REFERENCE_INCLUDE
-    : enableReminderMentions === false ? MENTION_INCLUDE_WITHOUT_REMINDERS : DEFAULT_MENTION_INCLUDE;
+  const mentionInclude =
+    activePanel === PanelType.PageReference
+      ? PAGE_REFERENCE_INCLUDE
+      : enableReminderMentions === false
+      ? MENTION_INCLUDE_WITHOUT_REMINDERS
+      : DEFAULT_MENTION_INCLUDE;
   const mentionSearchRequest = useMemo(
     () => ({
       query: searchText ?? '',
@@ -471,14 +518,15 @@ export function MentionPanel({
   }, [activePanel, mentionableFallbackViews, searchText, t, useLocalMentionFallback]);
   const sourceMentionSections = useLocalMentionFallback ? localFallbackMentionSections : mentionSections;
   const pickerMentionSections = useMemo(
-    () => normalizeMentionSearchSectionsForPicker(
-      enableReminderMentions === false
-        ? sourceMentionSections.map((section) => ({
-            ...section,
-            items: section.items.filter((item) => item.kind !== MentionTargetKind.Reminder),
-          }))
-        : sourceMentionSections
-    ),
+    () =>
+      normalizeMentionSearchSectionsForPicker(
+        enableReminderMentions === false
+          ? sourceMentionSections.map((section) => ({
+              ...section,
+              items: section.items.filter((item) => item.kind !== MentionTargetKind.Reminder),
+            }))
+          : sourceMentionSections
+      ),
     [sourceMentionSections, enableReminderMentions]
   );
 
@@ -495,7 +543,7 @@ export function MentionPanel({
   }, [mentionSearchCacheKey]);
 
   useEffect(() => {
-    if (!open || !searchMentions) {
+    if (!open || !searchMentions || !isAccessCurrent()) {
       if (useLocalMentionFallback) return;
 
       setMentionSections([]);
@@ -512,7 +560,7 @@ export function MentionPanel({
     let cancelled = false;
     let timer: number | undefined;
     const requestId = mentionSearchRequestIdRef.current + 1;
-    const cachedSections = getCachedMentionSections(mentionSearchCacheKey);
+    const cachedSections = mentionCache.getSections(mentionSearchCacheKey);
 
     mentionSearchRequestIdRef.current = requestId;
 
@@ -522,28 +570,30 @@ export function MentionPanel({
       setMentionSearchDeferred(false);
       setMentionSearchLoading(false);
 
-      if (mentionSearchRetryLaterRemainingMs(mentionSearchCacheKey) === 0) {
+      if (mentionCache.retryLaterRemainingMs(mentionSearchCacheKey) === 0) {
         // Tracks whether our own refresh callback applied the results. When a
         // refresh for this key is already in flight, startMentionSearchRefresh
         // joins it without invoking our callback, so we re-read the cache once
         // the shared refresh settles.
         let applied = false;
 
-        void startMentionSearchRefresh(mentionSearchCacheKey, async () => {
-          const result = await fetchMentionSections();
+        void mentionCache
+          .startRefresh(mentionSearchCacheKey, async () => {
+            const result = await fetchMentionSections();
 
-          cacheMentionSections(result);
+            if (!result.read.isCurrent()) return;
+            cacheMentionSections(result);
 
-          if (isCurrentRequest()) {
-            applied = true;
-            setMentionSections(result.sections);
-            setMentionSearchFailed(false);
-          }
-        })
+            if (isCurrentRequest()) {
+              applied = true;
+              setMentionSections(result.sections);
+              setMentionSearchFailed(false);
+            }
+          })
           .then(() => {
             if (applied || !isCurrentRequest()) return;
 
-            const refreshedSections = getCachedMentionSections(mentionSearchCacheKey);
+            const refreshedSections = mentionCache.getSections(mentionSearchCacheKey);
 
             if (refreshedSections) {
               setMentionSections(refreshedSections);
@@ -551,17 +601,23 @@ export function MentionPanel({
             }
           })
           .catch((error) => {
+            if (!isCurrentRequest()) return;
+            setMentionSections([]);
             if (isMentionSearchRetryLater(error)) {
-              markMentionSearchRetryLater(mentionSearchCacheKey, error);
+              deferSearch(error);
+              scheduleSearch(mentionCache.retryLaterRemainingMs(mentionSearchCacheKey));
               return;
             }
 
+            mentionCache.forget(mentionSearchCacheKey);
+            setMentionSearchFailed(true);
             console.error(error);
           });
       }
 
       return () => {
         cancelled = true;
+        window.clearTimeout(timer);
       };
     }
 
@@ -570,16 +626,25 @@ export function MentionPanel({
     setMentionSearchDeferred(false);
 
     function isCurrentRequest() {
-      return !cancelled && mentionSearchRequestIdRef.current === requestId;
+      return !cancelled && isAccessCurrent() && mentionSearchRequestIdRef.current === requestId;
+    }
+
+    function deferSearch(error: Parameters<MentionSearchCache['markRetryLater']>[1]) {
+      if (!isCurrentRequest()) return;
+      mentionCache.markRetryLater(mentionSearchCacheKey, error);
+      setMentionSections([]);
+      setMentionSearchDeferred(true);
+      setMentionSearchFailed(false);
     }
 
     function cacheMentionSections(result: MentionSectionsFetchResult) {
       if (shouldCacheMentionSearchSections(mentionSearchRequests, result.databaseRowResponse, hasMentionSearchQuery)) {
-        setCachedMentionSections(mentionSearchCacheKey, result.sections);
+        result.read.setSections(result.sections);
       }
     }
 
     async function fetchMentionSections() {
+      const read = mentionCache.beginRead(mentionSearchCacheKey);
       const settledResponses = await Promise.allSettled(
         mentionSearchRequests.map(async (request) => ({
           request,
@@ -605,7 +670,8 @@ export function MentionPanel({
 
         if (request && isDatabaseRowOnlyRequest(request)) {
           if (isMentionSearchRetryLater(result.reason)) {
-            markMentionSearchRetryLater(mentionSearchCacheKey, result.reason);
+            if (read.isCurrent()) deferSearch(result.reason);
+            blockingError = blockingError ?? result.reason;
           } else {
             console.error(result.reason);
           }
@@ -636,7 +702,7 @@ export function MentionPanel({
           await delay(DATABASE_ROW_SEARCH_RETRY_DELAY_MS);
 
           if (!isCurrentRequest()) {
-            return { sections, databaseRowResponse } satisfies MentionSectionsFetchResult;
+            return { sections, databaseRowResponse, read } satisfies MentionSectionsFetchResult;
           }
 
           try {
@@ -649,7 +715,8 @@ export function MentionPanel({
             sections = mergeMentionSearchResponses([...nonRowResponses, rowRetryResponse]).sections ?? [];
           } catch (error) {
             if (isMentionSearchRetryLater(error)) {
-              markMentionSearchRetryLater(mentionSearchCacheKey, error);
+              if (read.isCurrent()) deferSearch(error);
+              throw error;
             } else {
               console.error(error);
             }
@@ -657,7 +724,7 @@ export function MentionPanel({
         }
       }
 
-      return { sections, databaseRowResponse } satisfies MentionSectionsFetchResult;
+      return { sections, databaseRowResponse, read } satisfies MentionSectionsFetchResult;
     }
 
     function scheduleSearch(delayMs: number) {
@@ -668,7 +735,7 @@ export function MentionPanel({
     function runSearch() {
       void fetchMentionSections()
         .then((result) => {
-          if (!isCurrentRequest()) return;
+          if (!isCurrentRequest() || !result.read.isCurrent()) return;
 
           cacheMentionSections(result);
           setMentionSections(result.sections);
@@ -679,19 +746,8 @@ export function MentionPanel({
           if (!isCurrentRequest()) return;
 
           if (isMentionSearchRetryLater(error)) {
-            markMentionSearchRetryLater(mentionSearchCacheKey, error);
-            const fallbackSections = getCachedMentionSections(mentionSearchCacheKey);
-
-            if (fallbackSections) {
-              setMentionSections(fallbackSections);
-              setMentionSearchFailed(false);
-              setMentionSearchDeferred(false);
-              return;
-            }
-
-            setMentionSearchDeferred(true);
-            setMentionSearchFailed(false);
-            scheduleSearch(mentionSearchRetryLaterRemainingMs(mentionSearchCacheKey));
+            deferSearch(error);
+            scheduleSearch(mentionCache.retryLaterRemainingMs(mentionSearchCacheKey));
             return;
           }
 
@@ -707,7 +763,7 @@ export function MentionPanel({
         });
     }
 
-    const retryLaterMs = mentionSearchRetryLaterRemainingMs(mentionSearchCacheKey);
+    const retryLaterMs = mentionCache.retryLaterRemainingMs(mentionSearchCacheKey);
 
     if (retryLaterMs > 0) {
       setMentionSearchDeferred(true);
@@ -724,6 +780,9 @@ export function MentionPanel({
     };
   }, [
     hasMentionSearchQuery,
+    isAccessCurrent,
+    mentionCache,
+    setMentionSections,
     mentionSearchCacheKey,
     mentionSearchRequests,
     open,
@@ -732,7 +791,7 @@ export function MentionPanel({
   ]);
 
   useEffect(() => {
-    if (!useLocalMentionFallback || !loadViews) return;
+    if (!useLocalMentionFallback || !loadViews || !isMentionScopeCurrent()) return;
 
     let cancelled = false;
 
@@ -744,20 +803,20 @@ export function MentionPanel({
 
     void loadViews()
       .then((views) => {
-        if (cancelled) return;
+        if (cancelled || !isMentionScopeCurrent()) return;
 
         setLocalFallbackViews(views ?? []);
         setMentionSearchFailed(false);
       })
       .catch((error) => {
-        if (cancelled) return;
+        if (cancelled || !isMentionScopeCurrent()) return;
 
         console.error(error);
         setLocalFallbackViews([]);
         setMentionSearchFailed(true);
       })
       .finally(() => {
-        if (cancelled) return;
+        if (cancelled || !isMentionScopeCurrent()) return;
 
         setMentionSearchLoading(false);
       });
@@ -765,13 +824,13 @@ export function MentionPanel({
     return () => {
       cancelled = true;
     };
-  }, [loadViews, useLocalMentionFallback]);
+  }, [isMentionScopeCurrent, loadViews, setLocalFallbackViews, useLocalMentionFallback]);
 
   useEffect(() => {
     if (useLocalMentionFallback) return;
 
     setLocalFallbackViews([]);
-  }, [useLocalMentionFallback]);
+  }, [setLocalFallbackViews, useLocalMentionFallback]);
 
   useEffect(() => {
     if (!useLocalMentionFallback) return;
@@ -878,6 +937,7 @@ export function MentionPanel({
 
   const handleAddMention = useCallback(
     (mention: Mention) => {
+      if (!isMentionScopeCurrent()) return false;
       removeContent();
       closePanel();
       editor.flushLocalChanges();
@@ -911,12 +971,12 @@ export function MentionPanel({
 
       return true;
     },
-    [closePanel, removeContent, editor]
+    [closePanel, removeContent, editor, isMentionScopeCurrent]
   );
 
   const handleAddPage = useCallback(
     async (type: MentionType.childPage | MentionType.PageRef = MentionType.PageRef) => {
-      if (!addPage || !viewId) return;
+      if (!addPage || !viewId || !isMentionScopeCurrent()) return;
 
       try {
         const response = await addPage(viewId, { name: searchText, layout: ViewLayout.Document });
@@ -928,7 +988,7 @@ export function MentionPanel({
         console.error(error);
       }
     },
-    [addPage, handleAddMention, openPageModal, searchText, viewId]
+    [addPage, handleAddMention, isMentionScopeCurrent, openPageModal, searchText, viewId]
   );
 
   const notifyPersonMention = useNotifyPersonMention();
@@ -936,6 +996,7 @@ export function MentionPanel({
 
   const handleSelectedSearchResult = useCallback(
     (result: MentionPanelSearchResult) => {
+      if (searchMentions && !isAccessCurrent()) return;
       const selectedBlockId = getSelectedBlockId(editor);
       const mention =
         result.mention.type === MentionType.Person
@@ -954,6 +1015,8 @@ export function MentionPanel({
     },
     [
       editor,
+      isAccessCurrent,
+      searchMentions,
       handleAddMention,
       mentionContext?.row_id,
       mentionContext?.view_id,

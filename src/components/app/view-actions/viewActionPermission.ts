@@ -20,8 +20,11 @@ export function canUsePageHistoryAction({
 
 export function canUseChildViewCreationActions({
   objectPermission,
+  spaceSidebar,
 }: {
   objectPermission?: ViewActionCapabilities | null;
+  /** Only direct space children use this policy. Ordinary nested pages keep their own Write check. */
+  spaceSidebar?: { canEdit: boolean };
 }) {
-  return objectPermission?.can_read === true && objectPermission.can_write;
+  return objectPermission?.can_read === true && objectPermission.can_write && (!spaceSidebar || spaceSidebar.canEdit);
 }

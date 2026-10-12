@@ -1150,9 +1150,11 @@ describe('Database blob prefetch lifecycle', () => {
 
   it('starts each newly opened row in side peek after a temporary center choice', async () => {
     const doc = createDatabaseDoc('database-id');
-    const { unmount } = render(<Database {...databaseProps(doc)} />);
+    const onRowPeekChange = jest.fn();
+    const { unmount } = render(<Database {...databaseProps(doc)} onRowPeekChange={onRowPeekChange} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Open row' }));
+    expect(onRowPeekChange).toHaveBeenLastCalledWith('row-id', 'view-id');
     fireEvent.click(screen.getByRole('button', { name: 'Center peek' }));
     expect(screen.getByTestId('database-row-modal').getAttribute('data-peek-mode')).toBe('center');
 
@@ -1164,6 +1166,7 @@ describe('Database blob prefetch lifecycle', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Center peek' }));
     fireEvent.click(screen.getByRole('button', { name: 'Close peek' }));
+    expect(onRowPeekChange).toHaveBeenLastCalledWith(null);
     expect(screen.queryByTestId('database-row-modal')).toBeNull();
     await act(async () => {
       await Promise.resolve(mockDatabaseContext?.navigateToRow?.('next-row'));
@@ -1171,6 +1174,7 @@ describe('Database blob prefetch lifecycle', () => {
     expect(screen.getByTestId('database-row-modal').getAttribute('data-peek-mode')).toBe('side');
 
     unmount();
+    expect(onRowPeekChange).toHaveBeenLastCalledWith('next-row', 'view-id');
     doc.destroy();
   });
 

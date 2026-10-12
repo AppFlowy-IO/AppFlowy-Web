@@ -13,6 +13,7 @@ import {
   openCollabDBWithProvider,
   openRowCollabDBWithProvider,
 } from '@/application/db';
+import { collabStorageKey, ScopedCollabMap } from '@/application/db/collab-storage-scope';
 import {
   DatabaseStorageGenerationChangedError,
   type DatabaseStorageFence,
@@ -108,10 +109,10 @@ const BLOB_DIFF_MAX_RESTARTS = 2;
 
 const readyStatus = database_blob.DiffStatus.READY;
 const pendingStatus = database_blob.DiffStatus.PENDING;
-const sharedPrefetchEntries = new Map<string, SharedPrefetchEntry>();
+const sharedPrefetchEntries = new ScopedCollabMap<SharedPrefetchEntry>();
 
 function ridCacheKey(databaseId: string) {
-  return `${RID_CACHE_PREFIX}${databaseId}`;
+  return `${RID_CACHE_PREFIX}${collabStorageKey(databaseId)}`;
 }
 
 function sharedPrefetchKey(workspaceId: string, databaseId: string) {
@@ -265,11 +266,11 @@ function cursorKey(cursor: Uint8Array) {
   return cursor.join(',');
 }
 
-const rowDocSeedCache = new Map<string, DatabaseRowDocSeed>();
-const rowDocSeedLookup = new Map<string, DatabaseRowDocSeed>();
-const rowDocSeedDocCache = new Map<string, YDoc>();
+const rowDocSeedCache = new ScopedCollabMap<DatabaseRowDocSeed>();
+const rowDocSeedLookup = new ScopedCollabMap<DatabaseRowDocSeed>();
+const rowDocSeedDocCache = new ScopedCollabMap<YDoc>();
 const seedDocumentFences = new WeakMap<YDoc, DatabaseStorageFence>();
-const rowDocSeedCacheRetainCounts = new Map<string, number>();
+const rowDocSeedCacheRetainCounts = new ScopedCollabMap<number>();
 const ROW_KEY_SEPARATOR = '_rows_';
 
 function clearRowDocSeeds(databaseId: string, rowId: string) {

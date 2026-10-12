@@ -11,7 +11,8 @@ jest.mock('@/application/session/event', () => ({
 }));
 
 jest.mock('@/application/sync-outbox', () => ({
-  purgeAllOutbox: jest.fn(() => Promise.resolve()),
+  clearDrainConfig: jest.fn(),
+  setCurrentSession: jest.fn(),
 }));
 
 const emitMock = jest.mocked(emit);

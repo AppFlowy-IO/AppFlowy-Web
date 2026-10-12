@@ -13,12 +13,15 @@ import type { AppflowyWebSocketType } from '@/components/ws/useAppflowyWebSocket
 import type { BroadcastChannelType } from '@/components/ws/useBroadcastChannel';
 import type { messages } from '@/proto/messages';
 
+jest.mock('../../PendingPermissionEdits', () => ({ PendingPermissionEdits: () => null }));
+
 jest.mock('@/components/ws', () => ({
   useSync: jest.fn(),
   useWorkspaceRealtimeTransport: jest.fn(),
 }));
 
 jest.mock('@/application/services/domains', () => ({
+  AccessService: { getObjectPermission: jest.fn() },
   CollabService: {
     getClientId: jest.fn(() => 7),
     getDeviceId: jest.fn(() => 'device-1'),
@@ -41,6 +44,7 @@ jest.mock('@/application/session/token', () => ({
 jest.mock('@/application/sync-outbox', () => ({
   clearDrainConfig: jest.fn(),
   configureDrain: jest.fn(),
+  invalidateOutboxPermissions: jest.fn(),
   resumePermissionBlockedSync: jest.fn(),
   setCurrentSession: jest.fn(),
   startDrainAll: jest.fn(),
@@ -292,7 +296,7 @@ describe('AppSyncLayer per-message churn', () => {
     renderLayer();
     latestEventEmitter?.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'object-1' });
 
-    expect(outboxMock.resumePermissionBlockedSync).toHaveBeenCalledWith('object-1');
+    expect(outboxMock.resumePermissionBlockedSync).toHaveBeenCalledWith();
   });
 
   it.each([false, true])(

@@ -17,7 +17,15 @@ message WorkspaceNotification {
         CommentChanged comment_changed = 11;
         DatabaseRestored database_restored = 12;
         StorageLimitExceeded storage_limit_exceeded = 13;
+        WorkspacePermissionsChanged workspace_permissions_changed = 14;
     }
+}
+
+// Reload authoritative permissions. This hint neither grants access nor deletes local edits.
+message WorkspacePermissionsChanged {
+    string workspace_id = 1;
+    string epoch = 2;
+    string counter = 3;
 }
 
 // A hint to reload the authoritative aggregate generation before replaying local edits.

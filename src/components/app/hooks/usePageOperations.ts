@@ -1,4 +1,4 @@
-import { MutableRefObject, useCallback, useRef } from 'react';
+import { MutableRefObject, useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
 
 import { BillingService, FileService, PageService, PublishService, ViewService } from '@/application/services/domains';
@@ -99,8 +99,16 @@ export function usePageOperations({
   loadTrash?: (workspaceId: string, options?: { ensureFreshAfterInFlight?: boolean }) => Promise<void>;
 }) {
   const { currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
-  const role = userWorkspaceInfo?.selectedWorkspace.role;
+  const role = userWorkspaceInfo?.selectedWorkspace?.role;
   const pendingPublishesRef = useRef(new Map<string, Promise<void>>());
+  const workspaceScope = useMemo(() => ({ currentWorkspaceId }), [currentWorkspaceId]);
+  const currentWorkspaceScope = useRef<typeof workspaceScope | null>(workspaceScope);
+
+  currentWorkspaceScope.current = workspaceScope;
+  useLayoutEffect(() => {
+    currentWorkspaceScope.current = workspaceScope;
+    return () => { if (currentWorkspaceScope.current === workspaceScope) currentWorkspaceScope.current = null; };
+  }, [workspaceScope]);
 
   // Add a new page
   const addPage = useCallback(
@@ -404,7 +412,9 @@ export function usePageOperations({
       }
 
       try {
-        const res = await PageService.createSpaceWithInitialPage(currentWorkspaceId, payload);
+        const res = await PageService.createSpaceWithInitialPage(currentWorkspaceId, payload, () => {
+          if (currentWorkspaceScope.current !== workspaceScope) throw new Error('Space creation context changed');
+        });
 
         void loadOutline?.(currentWorkspaceId, false);
         return res;
@@ -412,7 +422,7 @@ export function usePageOperations({
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, loadOutline]
+    [currentWorkspaceId, loadOutline, workspaceScope]
   );
 
   // Update space

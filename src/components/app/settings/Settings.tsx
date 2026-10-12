@@ -23,6 +23,9 @@ const PlanPanel = lazy(() =>
 const BillingPanel = lazy(() =>
   import('@/components/app/settings/BillingPanel').then((module) => ({ default: module.BillingPanel }))
 );
+const WorkspacePermissionsPanel = lazy(() =>
+  import('@/components/app/settings/WorkspacePermissionsPanel').then((module) => ({ default: module.WorkspacePermissionsPanel }))
+);
 
 interface SettingsDialogProps {
   open: boolean;
@@ -91,6 +94,11 @@ export function SettingsDialog({ open, onClose, onRequestOpen }: SettingsDialogP
         {selectedItem === SettingMenuItem.ACCOUNT && <AccountAppPanel />}
         {selectedItem === SettingMenuItem.PROFILE && <ProfilePanel />}
         {selectedItem === SettingMenuItem.MEMBERS && <MembersPanel />}
+        {open && selectedItem === SettingMenuItem.PERMISSIONS && workspaceId && (
+          <Suspense fallback={<PanelFallback label={t('workspacePermissions.loading')} />}>
+            <WorkspacePermissionsPanel key={workspaceId} workspaceId={workspaceId} />
+          </Suspense>
+        )}
         {selectedItem === SettingMenuItem.MANAGE_DATA && <ManageDataPanel onImport={handleImport} />}
         {open && selectedItem === SettingMenuItem.CONNECTIONS && workspaceId && (
           <Suspense

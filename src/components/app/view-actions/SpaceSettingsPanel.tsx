@@ -2,7 +2,7 @@ import { Check, ChevronDown, Globe2, LockKeyhole, Settings2, Shield, UserRound, 
 import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { AccessLevel, Role, SpacePermissionSettings, SpaceVisibility } from '@/application/types';
+import { AccessLevel, Role, SpacePermissionSettings, SpaceSidebarEditPolicy, SpaceVisibility } from '@/application/types';
 import { NormalModal } from '@/components/_shared/modal';
 import SpaceIconButton from '@/components/app/view-actions/SpaceIconButton';
 import { spaceVisibilityDescription, spaceVisibilityLabel } from '@/components/app/view-actions/spaceVisibilityOptions';
@@ -81,11 +81,13 @@ export interface SpaceSettingsPanelProps {
   onVisibilitySelect: (visibility: SpaceVisibility) => void;
   onMembersAccessChange: (value: AccessLevel | null) => void;
   onEveryoneElseAccessChange: (value: AccessLevel | null) => void;
+  onSidebarEditPolicyChange: (value: SpaceSidebarEditPolicy) => void;
   showActions?: boolean;
   primaryActionText?: ReactNode;
   primaryActionLoading?: boolean;
   primaryActionDisabled?: boolean;
   onPrimaryAction?: () => void;
+  notice?: ReactNode;
   overlay?: ReactNode;
 }
 
@@ -521,11 +523,13 @@ function SpaceSettingsPanel({
   onVisibilitySelect,
   onMembersAccessChange,
   onEveryoneElseAccessChange,
+  onSidebarEditPolicyChange,
   showActions = false,
   primaryActionText,
   primaryActionLoading = false,
   primaryActionDisabled = false,
   onPrimaryAction,
+  notice,
   overlay,
 }: SpaceSettingsPanelProps) {
   const { t } = useTranslation();
@@ -558,6 +562,7 @@ function SpaceSettingsPanel({
         'data-testid': modalTestId,
       }}
     >
+      {notice}
       <Tabs
         value={activeTab}
         onValueChange={(value) => onTabChange(value as SpaceSettingsTab)}
@@ -652,6 +657,26 @@ function SpaceSettingsPanel({
               )}
 
               {showAccessDetails && draftIsPrivate && <PrivateAccessCard />}
+
+              {showAccessDetails && !draftIsPrivate && (
+                <section className='flex flex-col gap-2'>
+                  <label htmlFor={`${modalTestId}-sidebar-policy`} className='text-sm font-semibold text-text-primary'>
+                    {t('workspacePermissions.sidebarPolicy')}
+                  </label>
+                  <p className='text-xs text-text-secondary'>{t('workspacePermissions.sidebarExplanation')}</p>
+                  <select
+                    id={`${modalTestId}-sidebar-policy`}
+                    data-testid='space-sidebar-policy'
+                    value={permissionSettings.sidebar_edit_policy}
+                    disabled={permissionSettingsDisabled || loadingSettings}
+                    onChange={(event) => onSidebarEditPolicyChange(event.target.value as SpaceSidebarEditPolicy)}
+                    className='rounded border border-border-primary bg-surface-primary p-2 text-sm'
+                  >
+                    <option value={SpaceSidebarEditPolicy.OwnersOnly}>{t('workspacePermissions.sidebarOwners')}</option>
+                    <option value={SpaceSidebarEditPolicy.MembersAndOwners}>{t('workspacePermissions.sidebarMembers')}</option>
+                  </select>
+                </section>
+              )}
 
               {showAccessDetails && !draftIsPublic && !draftIsCustom && !draftIsPrivate && (
                 <div

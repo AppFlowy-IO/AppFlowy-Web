@@ -82,7 +82,7 @@ function ChartLayoutSettings() {
   // Pro-plan gating: lock premium chart types for free-tier hosted users.
   // `useSubscriptionPlan` returns `isPro = true` for self-hosted instances.
   const userWorkspaceInfo = useUserWorkspaceInfo();
-  const currentWorkspaceId = userWorkspaceInfo?.selectedWorkspace.id;
+  const currentWorkspaceId = userWorkspaceInfo?.selectedWorkspace?.id;
   const getSubscriptions = useCallback(async (): Promise<Subscription[] | undefined> => {
     if (!currentWorkspaceId) return undefined;
     return BillingService.getWorkspaceSubscriptions(currentWorkspaceId);

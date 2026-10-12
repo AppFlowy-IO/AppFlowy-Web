@@ -12,7 +12,8 @@
 
 import * as Y from 'yjs';
 
-import { captureDatabaseStorageFence, deleteCollabDB, openCollabDB, openCollabDBWithProvider } from '@/application/db';
+import { captureDatabaseStorageFence, closeCollabDB, openCollabDB, openCollabDBWithProvider } from '@/application/db';
+import { assertCollabStorageCurrent, captureCollabStorageScope } from '@/application/db/collab-storage-scope';
 import { isDatabaseStorageFenceCurrent, withDatabaseStorageFence } from '@/application/db/database-storage-fence';
 import { getOrCreateRowSubDoc, hasCollabCache } from '@/application/services/js-services/cache';
 import { invalidateViewCache } from '@/application/services/js-services/cached-api';
@@ -276,6 +277,7 @@ async function fetchAndApply(
     fetchDurationMs: Date.now() - fetchStartedAt,
   });
 
+  assertCollabStorageCurrent(doc);
   applyYDoc(doc, data);
 }
 
@@ -298,6 +300,7 @@ async function fetchRowDocumentAndApply(
     fetchDurationMs: Date.now() - fetchStartedAt,
   });
 
+  assertCollabStorageCurrent(doc);
   applyYDoc(doc, data);
 }
 
@@ -325,6 +328,7 @@ export async function openView(
   layout?: ViewLayout,
   options: OpenViewOptions = {}
 ): Promise<ViewLoaderResult> {
+  const scope = captureCollabStorageScope();
   const startedAt = Date.now();
 
   Log.debug('[ViewLoader] openView start', { workspaceId, viewId, layout, databaseId: options.databaseId });
@@ -404,20 +408,19 @@ export async function openView(
         await fetchAndApply(workspaceId, viewId, doc, options);
         break;
       } catch (e) {
-        // Permission denials are permanent for this attempt — retrying cannot
-        // succeed. Evict every local copy keyed to this load before rethrowing:
-        // a cached collab (or the positive view-meta cache) would otherwise pin
-        // the failure and suppress the refetch after the server grants access.
+        // Close the denied document so the UI cannot reuse it, while retaining
+        // its durable bytes for explicit recovery after access is restored.
         // (404s must keep retrying: they cover the post-duplication race.)
+        scope.assertCurrent();
         if (determineErrorType(e).type === ErrorType.Forbidden) {
           const docKey = options.databaseId ?? viewId;
 
-          Log.debug('[ViewLoader] permission denial — evicting local caches', {
+          Log.debug('[ViewLoader] permission denial — closing local providers, retaining saved data', {
             viewId,
             docKey,
           });
           invalidateViewCache(workspaceId, viewId);
-          await deleteCollabDB(docKey, { destroyDoc: true }).catch(() => undefined);
+          await closeCollabDB(docKey).catch(() => undefined);
           throw e;
         }
 
@@ -443,6 +446,7 @@ export async function openView(
     totalDurationMs: Date.now() - startedAt,
   });
 
+  scope.assertCurrent();
   return { doc, fromCache, collabType };
 }
 
@@ -486,6 +490,7 @@ export async function openRowSubDocument(
   documentId: string,
   options: LoadRowDocumentOptions = {}
 ): Promise<ViewLoaderResult> {
+  const scope = captureCollabStorageScope();
   const startedAt = Date.now();
 
   Log.debug('[ViewLoader] openRowSubDocument start', { workspaceId, documentId });
@@ -550,13 +555,13 @@ export async function openRowSubDocument(
         break;
       } catch (e) {
         // A permission denial cannot be repaired by retrying or by creating the
-        // row document. Remove the authoritative local copy before propagating
-        // the original error so the UI can render a terminal no-access state.
+        // row document. Close its live provider and retain durable local edits.
+        scope.assertCurrent();
         if (isPermissionDeniedError(e)) {
-          Log.debug('[ViewLoader] rowSubDoc permission denial — evicting local cache', {
+          Log.debug('[ViewLoader] rowSubDoc permission denial — closing local provider, retaining saved data', {
             documentId,
           });
-          await deleteCollabDB(documentId, { destroyDoc: true }).catch(() => undefined);
+          await closeCollabDB(documentId).catch(() => undefined);
           throw e;
         }
 
@@ -584,5 +589,6 @@ export async function openRowSubDocument(
     totalDurationMs: Date.now() - startedAt,
   });
 
+  scope.assertCurrent();
   return { doc, fromCache, collabType: Types.Document };
 }

@@ -1,4 +1,50 @@
 {
+  "spaceCreation": {
+    "retained": "Cette demande envoyée est enregistrée. Réessayer vérifie l’espace d’origine. Vous pouvez fermer cette fenêtre et reprendre la création plus tard.",
+    "resume": "Reprendre la création de l’espace",
+    "invalidRecovery": "La demande de création enregistrée ne peut pas être lue. Ses données sont conservées.",
+    "pendingRecovery": "Reprenez la demande de création existante avant d’en commencer une autre."
+  },
+  "workspacePermissions": {
+    "sidebarPolicy": "Qui peut ajouter et organiser des pages ?",
+    "sidebarOwners": "Propriétaires de l’espace uniquement",
+    "sidebarMembers": "Membres et propriétaires de l’espace",
+    "sidebarExplanation": "Les membres doivent aussi avoir le droit de modification pour ajouter ou organiser des pages directement dans cet espace. Les pages imbriquées suivent leurs propres autorisations. Ce paramètre ne permet pas de créer des espaces ou des espaces de travail.",
+    "title": "Autorisations de l’espace de travail",
+    "createSpaces": "Création d’espaces",
+    "loading": "Vérification des autorisations…",
+    "unsupported": "Ce serveur ne prend pas en charge ces contrôles. Demandez à votre administrateur de le mettre à jour.",
+    "loadError": "Impossible de vérifier les autorisations. Connectez-vous à Internet et réessayez.",
+    "explanation": "Choisissez qui peut créer des espaces dans cet espace de travail. La personne qui crée un espace en devient propriétaire, sans changer de rôle dans l’espace de travail.",
+    "allowed": "Vous pouvez créer des espaces ici.",
+    "denied": "Vous ne pouvez pas créer de nouveaux espaces ici.",
+    "ownerRequired": "Seuls les propriétaires de l’espace de travail peuvent modifier ces paramètres.",
+    "whoCanCreate": "Qui peut créer des espaces ?",
+    "policies": {
+      "members_and_owners": "Membres et propriétaires",
+      "owners_only": "Propriétaires uniquement",
+      "owners_and_selected_members": "Propriétaires et membres sélectionnés"
+    },
+    "retainedSelections": "Les sélections sont conservées lorsqu’un autre mode est actif. Les invités ne sont jamais éligibles. La sélection d’un groupe ne concerne que ses membres actifs dans cet espace de travail.",
+    "users": "Membres",
+    "groups": "Groupes",
+    "groupEntitlement": "L’ajout de groupes nécessite la fonctionnalité de groupes d’autorisations. Les sélections existantes peuvent toujours être supprimées.",
+    "directoryError": "Impossible de charger les personnes ou les groupes. Réessayez pour actualiser la liste.",
+    "search": "Rechercher : {{kind}}",
+    "select": "Sélectionner : {{kind}}",
+    "add": "Sélectionner",
+    "noSelections": "Aucune sélection.",
+    "active": "Active",
+    "inactive": "Inactive",
+    "remove": "Supprimer la sélection",
+    "selectAgain": "Sélectionner à nouveau",
+    "loadMore": "Charger plus",
+    "pendingEdits": "Les modifications locales sont en attente sur {{count}} élément(s).",
+    "pendingEditsDescription": "Vos modifications sont conservées sur cet appareil. Une fois l’accès en modification rétabli, réessayez pour les envoyer. Sans cet accès, elles restent en attente.",
+    "pendingEditsRetryError": "Impossible de réessayer les modifications enregistrées. Réessayez.",
+    "retryPendingEdits": "Réessayer les modifications",
+    "legacyPendingEdits": "Les anciennes modifications locales sont conservées sur cet appareil. Leur serveur d’origine n’a pas pu être vérifié ; l’envoi automatique est donc suspendu."
+  },
   "appName": "AppFlowy",
   "defaultUsername": "Moi",
   "welcomeText": "Bienvenue sur @:appName",
@@ -2623,7 +2669,26 @@
     "manageSpace": "Gérer l'espace",
     "renameSpace": "Renommer l'espace",
     "mSpaceIconColor": "Couleur de l'icône de l'espace",
-    "mSpaceIcon": "Icône de l'espace"
+    "mSpaceIcon": "Icône de l'espace",
+    "memberOverride": {
+      "label": "Accès",
+      "accessFor": "Accès de {{name}}",
+      "inherit": "Hériter",
+      "unknown": "Indisponible",
+      "defaultAccess": "Accès par défaut de l’espace : {{level}}",
+      "assignmentAccess": "Accès de cette attribution : {{level}}",
+      "explanation": "Les membres héritent de l’accès par défaut, sauf dérogation explicite. D’autres autorisations peuvent maintenir l’accès et les restrictions des pages restent applicables. Le droit de modification ne donne pas de droits de gestion.",
+      "unsupported": "Ce serveur ne prend pas en charge les dérogations individuelles d’accès.",
+      "unavailable": "Cette attribution ne peut plus être modifiée. Actualisez les autorisations et réessayez.",
+      "contextChanged": "Le contexte des autorisations a changé. Actualisez puis réessayez.",
+      "identityUnavailable": "L’identité exacte de ce membre est indisponible. Actualisez la liste avant de modifier l’accès.",
+      "updateFailed": "Impossible de modifier l’accès du membre.",
+      "inheritedNoAccess": "Les attributions héritées ne donnent actuellement aucun accès. Les dérogations explicites et les autorisations indépendantes peuvent toutefois accorder un accès."
+    },
+    "permissionManager": {
+      "memberRoleDescription": "Hérite de l’accès par défaut des membres, sauf si une dérogation explicite est configurée.",
+      "fullAccessMembersDescription": "Les membres héritant de ce niveau pourront gérer cet espace, ses membres et ses autorisations."
+    }
   },
   "publish": {
     "hasNotBeenPublished": "Cette page n'a pas encore été publiée",
@@ -2951,5 +3016,40 @@
     "noAppToOpenFile": "Aucune application pour ouvrir ce fichier",
     "permissionDenied": "Aucune autorisation d'ouvrir ce fichier",
     "unknownError": "Échec de l'ouverture du fichier"
+  },
+  "workspaceCreation": {
+    "loading": "Vérification du droit de créer un espace de travail…",
+    "denied": "Votre administrateur n’a pas activé la création d’espaces de travail pour votre compte. Vous pouvez toujours vous connecter et rejoindre les espaces auxquels vous êtes invité.",
+    "unsupported": "Ce serveur ne peut pas indiquer le droit de créer un espace de travail. Demandez à votre administrateur de le mettre à jour.",
+    "unavailable": "Impossible de vérifier le droit de créer un espace de travail. Reconnectez-vous et réessayez.",
+    "ownership": "Vous serez le propriétaire du nouvel espace de travail.",
+    "contextChanged": "Votre compte ou votre serveur a changé. Réessayez avec le compte actuel.",
+    "invalidResponse": "Le serveur a renvoyé un droit de création d’espace de travail invalide.",
+    "noWorkspaceTitle": "Vous êtes connecté",
+    "noWorkspaceDescription": "Vous ne faites pas encore partie d’un espace de travail. Ouvrez un lien d’invitation pour rejoindre un espace existant ou demandez à un propriétaire de vous inviter.",
+    "refreshWorkspaces": "Actualiser les espaces de travail",
+    "signOut": "Se déconnecter",
+    "receiptUnsupported": "Ce serveur ne permet pas de reprendre la création en toute sécurité. Demandez une mise à jour à votre administrateur, puis reprenez cette demande.",
+    "invalidDraft": "La demande de création enregistrée ne peut pas être lue. Elle a été conservée.",
+    "immutableDraft": "Reprenez la demande de création d’origine avant d’en démarrer une autre.",
+    "resume": "Reprendre la création de l’espace",
+    "retryOriginal": "Cette demande est enregistrée dans cet onglet. La reprise utilise le nom et la demande d’origine pour éviter les doublons après une réponse perdue."
+  },
+  "groupSpaceAccess": {
+    "title": "Accès des groupes aux espaces",
+    "scope": "Choisissez Lecture ou Modification pour un groupe dans les espaces Publics et Personnalisés actuels et futurs. Les espaces Privés sont exclus et les restrictions des pages restent applicables.",
+    "independent": "La modification ne donne pas de droits de gestion. Désactiver cette option retire uniquement cette autorisation ; les autres accès peuvent subsister. Rien n’est activé avant l’enregistrement du choix pour un groupe.",
+    "loading": "Chargement des accès des groupes…",
+    "unsupported": "Ce serveur ne prend pas en charge l’accès des groupes à tous les espaces.",
+    "unavailable": "Impossible de vérifier les accès des groupes. Reconnectez-vous et actualisez.",
+    "ownerRequired": "Seul un propriétaire de l’espace de travail peut configurer cet accès.",
+    "empty": "Créez ou synchronisez un groupe pour configurer son accès.",
+    "search": "Rechercher les accès des groupes",
+    "levelFor": "Accès aux espaces pour {{name}}",
+    "unknown": "Indisponible",
+    "off": "Désactivé",
+    "refresh": "Actualiser les accès des groupes",
+    "invalidResponse": "Le serveur a renvoyé une réponse d’accès de groupe invalide.",
+    "contextChanged": "Les autorisations ont changé pendant l’enregistrement. Actualisez les accès actuels et réessayez."
   }
 }

@@ -22,7 +22,7 @@ jest.mock('@/application/services/js-services/http/http_api', () => ({ collabFul
 jest.mock('@/application/services/js-services/http/core', () => ({
   withRetry: jest.fn((fn: () => Promise<unknown>) => fn()), handleAPIError: jest.fn(),
 }));
-jest.mock('@/application/sync-outbox', () => ({ waitForDrain: async () => true }));
+jest.mock('@/application/sync-outbox', () => ({ waitForDrain: async () => true, mayUploadCollab: jest.fn(async () => true), blockPermissionSync: jest.fn(async () => undefined), captureSyncAuthorization: () => () => true }));
 
 beforeEach(() => {
   jest.clearAllMocks();

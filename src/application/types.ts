@@ -1457,7 +1457,7 @@ export interface Workspace {
 
 export interface UserWorkspaceInfo {
   userId: string;
-  selectedWorkspace: Workspace;
+  selectedWorkspace: Workspace | null;
   workspaces: Workspace[];
 }
 
@@ -1727,6 +1727,8 @@ export interface SpacePermissionResponse {
   can_invite_members: boolean;
   can_edit_sidebar: boolean;
   explicit_member_count: number;
+  /** Missing on older servers; permission to manage members remains independent. */
+  member_access_overrides_supported?: boolean;
 }
 
 export interface SpaceListItem {
@@ -1745,10 +1747,13 @@ export interface Spaces {
 
 export interface SpaceMember {
   uid: string;
+  user_uuid?: string;
   email?: string | null;
   name?: string | null;
   role: SpaceMemberRole;
   access_level: AccessLevel;
+  access_level_override?: SpaceMemberAccessOverride;
+  effective_access_level?: AccessLevel | null;
   source: string;
   /** The member's workspace role, shown under the name ("Workspace owner"). */
   workspace_role?: Role;
@@ -1759,6 +1764,8 @@ export interface WorkspaceGroupSpacePermission {
   name: string;
   role: SpaceMemberRole;
   access_level: AccessLevel;
+  access_level_override?: SpaceMemberAccessOverride;
+  effective_access_level?: AccessLevel | null;
   member_count: number;
   source: string;
 }
@@ -1780,16 +1787,27 @@ export interface AddSpaceMemberPayload {
   uid: string;
   role: SpaceMemberRole;
   access_level: AccessLevel;
+  access_level_override?: SpaceMemberAccessOverride;
+}
+
+/** Null means inherit; absence in a PATCH preserves the existing explicit override. */
+export type SpaceMemberAccessOverride = AccessLevel.ReadOnly | AccessLevel.ReadAndComment | AccessLevel.ReadAndWrite | null;
+
+export interface AddSpaceMemberByUuidPayload {
+  role: SpaceMemberRole;
+  access_level_override?: SpaceMemberAccessOverride;
 }
 
 export interface UpdateSpaceMemberPayload {
   role?: SpaceMemberRole;
   access_level?: AccessLevel;
+  access_level_override?: SpaceMemberAccessOverride;
 }
 
 export interface AddSpaceGroupPermissionPayload {
   role: SpaceMemberRole;
-  access_level: AccessLevel;
+  access_level?: AccessLevel;
+  access_level_override?: SpaceMemberAccessOverride;
 }
 
 export interface WorkspaceGroup {
@@ -1798,7 +1816,12 @@ export interface WorkspaceGroup {
   member_count: number;
   /** `scim` groups are owned by the external directory and are read-only. */
   source?: string;
+  space_coverage_supported?: boolean;
+  space_coverage_access_level?: GroupSpaceCoverageLevel;
+  can_manage_space_coverage?: boolean;
 }
+
+export type GroupSpaceCoverageLevel = AccessLevel.ReadOnly | AccessLevel.ReadAndWrite | null;
 
 export interface WorkspaceGroups {
   groups: WorkspaceGroup[];
@@ -2054,6 +2077,8 @@ export enum Role {
 
 export interface WorkspaceMember {
   uid?: string;
+  /** UUID used by focused grant APIs; older servers and pending invitations may omit it. */
+  user_uuid?: string;
   name: string;
   email: string;
   avatar_url: string;
@@ -2575,6 +2600,7 @@ export enum SettingMenuItem {
   PROFILE = 'PROFILE',
   WORKSPACE = 'WORKSPACE',
   MEMBERS = 'MEMBERS',
+  PERMISSIONS = 'PERMISSIONS',
   MANAGE_DATA = 'MANAGE_DATA',
   CONNECTIONS = 'CONNECTIONS',
   SITES = 'SITES',

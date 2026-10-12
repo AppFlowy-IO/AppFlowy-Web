@@ -3,10 +3,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { v4 as uuidv4 } from 'uuid';
 
-import type { KeyboardEvent } from 'react';
 
-import { ERROR_CODE } from '@/application/constants';
-import { PageService, WorkspaceService } from '@/application/services/domains';
+import { WorkspaceService } from '@/application/services/domains';
+import { captureApiContext } from '@/application/services/js-services/http/request-context';
+import { SpaceCreationIntent, SpaceCreationIntentStore } from '@/application/services/js-services/space-creation-intent';
+import { recoverSpaceCreation } from '@/application/services/js-services/space-creation-recovery';
 import {
   AccessLevel,
   CreatePagePayload,
@@ -18,12 +19,15 @@ import {
 } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
 import { useAppOperations, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { useSpaceCreationCapability } from '@/components/app/hooks/useSpaceCreationCapability';
+import { useSpaceCreationIntent } from '@/components/app/hooks/useSpaceCreationIntent';
 import {
   getWorkspaceMemberUid,
   useAddableWorkspaceMembers,
   WorkspaceMemberInlineSearch,
   workspaceMemberDisplayName,
 } from '@/components/app/share/WorkspaceMemberInlineSearch';
+import { SpaceCreationNotice } from '@/components/app/view-actions/SpaceCreationNotice';
 import SpaceSettingsPanel, { SpaceSettingsTab } from '@/components/app/view-actions/SpaceSettingsPanel';
 import {
   defaultEveryoneElseAccessLevel,
@@ -36,6 +40,8 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { getErrorMessage } from '@/utils/errors';
 
+import type { KeyboardEvent } from 'react';
+
 const DEFAULT_SPACE_VISIBILITY = SpaceVisibility.Public;
 const DRAFT_EXCLUDED_ROLES = [Role.Owner];
 
@@ -46,98 +52,9 @@ type CommittedSpace = {
 
 type QueuedMember = {
   uid: string;
+  userUuid?: string;
   accessLevel: AccessLevel;
 };
-
-function isMissingOrDeletedResource(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null) return false;
-  const candidate = error as {
-    code?: unknown;
-    httpStatus?: unknown;
-    response?: { status?: unknown; data?: { code?: unknown } };
-  };
-  const code = candidate.code ?? candidate.response?.data?.code;
-  const httpStatus = candidate.httpStatus ?? candidate.response?.status;
-
-  return (
-    code === ERROR_CODE.RECORD_NOT_FOUND ||
-    code === ERROR_CODE.RECORD_DELETED ||
-    httpStatus === 404 ||
-    httpStatus === 410
-  );
-}
-
-function mayHaveCommittedCreate(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null) return true;
-  const candidate = error as {
-    code?: unknown;
-    clientGeneratedCleanupSucceeded?: unknown;
-    httpStatus?: unknown;
-    response?: { status?: unknown; data?: { code?: unknown } };
-  };
-
-  if (candidate.clientGeneratedCleanupSucceeded === true) return false;
-  if (candidate.clientGeneratedCleanupSucceeded === false) return true;
-  const code = candidate.code ?? candidate.response?.data?.code;
-  const explicitHttpStatus = candidate.httpStatus ?? candidate.response?.status;
-  const httpStatus =
-    typeof explicitHttpStatus === 'number'
-      ? explicitHttpStatus
-      : typeof code === 'number' && code >= 100 && code <= 599
-      ? code
-      : undefined;
-
-  // `-1` is the HTTP layer's network/malformed-response sentinel. Timeouts,
-  // conflicts for a client-owned ID, and server failures can likewise arrive
-  // after the server committed the mutation. Ordinary 4xx/application errors
-  // are authoritative rejections and must leave the draft editable.
-  return (
-    (code === undefined && httpStatus === undefined) ||
-    code === -1 ||
-    httpStatus === 408 ||
-    httpStatus === 409 ||
-    (httpStatus !== undefined && httpStatus >= 500 && httpStatus <= 599)
-  );
-}
-
-function clientGeneratedCleanupWasConfirmed(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    (error as { clientGeneratedCleanupSucceeded?: unknown }).clientGeneratedCleanupSucceeded === true
-  );
-}
-
-async function discardClientOwnedDraftSpace(workspaceId: string, spaceId: string): Promise<void> {
-  let inactiveConfirmed = false;
-
-  try {
-    await PageService.moveToTrash(workspaceId, spaceId);
-    inactiveConfirmed = true;
-  } catch (error) {
-    if (isMissingOrDeletedResource(error)) {
-      inactiveConfirmed = true;
-    } else {
-      // A lost move response may still have committed. A successful permanent
-      // delete can reconcile that outcome; otherwise preserve the stable ID.
-      try {
-        await PageService.deleteTrash(workspaceId, spaceId);
-        return;
-      } catch {
-        throw error;
-      }
-    }
-  }
-
-  try {
-    await PageService.deleteTrash(workspaceId, spaceId);
-  } catch (error) {
-    // A confirmed move already removed the space from the active outline.
-    // Permanent deletion is best-effort and must not reopen or hand off the
-    // trashed ID.
-    if (!inactiveConfirmed && !isMissingOrDeletedResource(error)) throw error;
-  }
-}
 
 function permissionSettingsForCreation(settings: SpacePermissionSettings): SpacePermissionSettings {
   return {
@@ -147,43 +64,55 @@ function permissionSettingsForCreation(settings: SpacePermissionSettings): Space
   };
 }
 
-function CreateSpaceModal({
-  open,
-  onClose,
-  onCreated,
-  initialPage,
-}: {
+type CreateSpaceModalProps = {
   open: boolean;
   onClose: () => void;
-  onCreated?: (spaceId: string, initialPageId?: string) => void;
+  onCreated?: (spaceId: string, initialPageId?: string) => void | Promise<void>;
   initialPage?: CreatePagePayload;
+};
+
+function CreateSpaceModal(props: CreateSpaceModalProps) {
+  const workspaceId = useCurrentWorkspaceId();
+  const recovery = useSpaceCreationIntent(workspaceId);
+
+  return <CreateSpaceDraft key={recovery.store.scopeKey} {...props} recovery={recovery} />;
+}
+
+function CreateSpaceDraft({
+  open, onClose, onCreated, initialPage: requestedInitialPage, recovery,
+}: CreateSpaceModalProps & {
+  recovery: { store: SpaceCreationIntentStore; intent?: SpaceCreationIntent; error?: string };
 }) {
+  const [restored] = useState(() => recovery.intent);
+  const initialPage = restored ? restored.initialPage : requestedInitialPage;
+  const intentStore = recovery.store;
   const { t } = useTranslation();
   const { createSpace, createSpaceWithInitialPage } = useAppOperations();
   const workspaceId = useCurrentWorkspaceId();
+  const creationPermission = useSpaceCreationCapability(workspaceId, open);
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const currentUser = useCurrentUserOptional();
   const [tab, setTab] = useState<SpaceSettingsTab>('general');
-  const [spaceName, setSpaceName] = useState('');
-  const [spaceIcon, setSpaceIcon] = useState('');
-  const [spaceIconColor, setSpaceIconColor] = useState('');
+  const [spaceName, setSpaceName] = useState(restored?.payload.name ?? '');
+  const [spaceIcon, setSpaceIcon] = useState(restored?.payload.space_icon ?? '');
+  const [spaceIconColor, setSpaceIconColor] = useState(restored?.payload.space_icon_color ?? '');
   const [permissionSettings, setPermissionSettings] = useState<SpacePermissionSettings>(() =>
-    defaultSpacePermissionSettings(DEFAULT_SPACE_VISIBILITY)
+    restored?.payload.permission ?? defaultSpacePermissionSettings(DEFAULT_SPACE_VISIBILITY)
   );
   const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>([]);
   const [loadedWorkspaceMemberDirectoryId, setLoadedWorkspaceMemberDirectoryId] = useState<string | null>(null);
   const [loadingWorkspaceMembers, setLoadingWorkspaceMembers] = useState(false);
-  const [selectedMembers, setSelectedMembers] = useState<WorkspaceMember[]>([]);
+  const [selectedMembers, setSelectedMembers] = useState<WorkspaceMember[]>(restored?.selectedMembers ?? []);
   const [memberSearch, setMemberSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [committedSpace, setCommittedSpace] = useState<CommittedSpace | null>(null);
-  const [hasAmbiguousCreation, setHasAmbiguousCreation] = useState(false);
+  const [hasAmbiguousCreation, setHasAmbiguousCreation] = useState(Boolean(restored));
   const creatingRef = useRef(false);
-  const draftSpaceIdRef = useRef(uuidv4());
-  const draftInitialPageIdRef = useRef(uuidv4());
+  const draftSpaceIdRef = useRef(restored?.payload.view_id ?? uuidv4());
+  const draftInitialPageIdRef = useRef(restored?.initialPage?.view_id ?? uuidv4());
   const committedSpaceRef = useRef<CommittedSpace | null>(null);
-  const queuedMembersRef = useRef<QueuedMember[]>([]);
-  const appliedMemberUidsRef = useRef(new Set<string>());
+  const queuedMembersRef = useRef<QueuedMember[]>(restored?.members ?? []);
+  const appliedMemberUidsRef = useRef(new Set<string>(restored?.appliedMemberUids ?? []));
 
   const currentWorkspace = useMemo(() => {
     const workspaces = userWorkspaceInfo?.workspaces ?? [];
@@ -258,14 +187,27 @@ function CreateSpaceModal({
   const applyQueuedMembers = useCallback(
     async (spaceId: string) => {
       if (!workspaceId || queuedMembersRef.current.length === 0) return;
+      intentStore.assertCurrent();
+      const requestContext = captureApiContext();
+      const assignmentPermission = await WorkspaceService.getSpacePermission(workspaceId, spaceId);
+
+      intentStore.assertCurrent();
+      requestContext.assertCurrent();
+      const supportsOverrides = assignmentPermission.member_access_overrides_supported === true;
       const pending = queuedMembersRef.current.filter(({ uid }) => !appliedMemberUidsRef.current.has(uid));
       const results = await Promise.allSettled(
-        pending.map(async ({ uid, accessLevel }) => {
-          await WorkspaceService.addSpaceMember(workspaceId, spaceId, {
-            uid,
-            role: SpaceMemberRole.Member,
-            access_level: accessLevel,
-          });
+        pending.map(async ({ uid, userUuid, accessLevel }) => {
+          intentStore.assertCurrent();
+          requestContext.assertCurrent();
+          if (supportsOverrides) {
+            if (!userUuid) throw new Error(t('space.memberOverride.identityUnavailable'));
+            await WorkspaceService.addSpaceMemberByUuid(workspaceId, spaceId, userUuid, { role: SpaceMemberRole.Member });
+          } else {
+            await WorkspaceService.addSpaceMember(workspaceId, spaceId, { uid, role: SpaceMemberRole.Member, access_level: accessLevel });
+          }
+
+          requestContext.assertCurrent();
+          intentStore.memberApplied(spaceId, uid);
           appliedMemberUidsRef.current.add(uid);
         })
       );
@@ -273,7 +215,7 @@ function CreateSpaceModal({
 
       if (failure) throw failure.reason;
     },
-    [workspaceId]
+    [workspaceId, t, intentStore]
   );
 
   const resetDraft = useCallback(() => {
@@ -293,16 +235,18 @@ function CreateSpaceModal({
     draftInitialPageIdRef.current = uuidv4();
   }, []);
 
-  const finishCreation = useCallback(() => {
+  const finishCreation = useCallback(async () => {
     const committed = committedSpaceRef.current;
 
     if (!committed) return;
-    const { spaceId, initialPageId } = committed;
-
+    intentStore.assertCurrent();
+    // The full roster is committed before handoff. Keep recovery available if
+    // navigation/hydration rejects, and never clear another account's intent.
+    await onCreated?.(committed.spaceId, committed.initialPageId);
+    intentStore.complete(committed);
     resetDraft();
     onClose();
-    onCreated?.(spaceId, initialPageId);
-  }, [onClose, onCreated, resetDraft]);
+  }, [onClose, onCreated, resetDraft, intentStore]);
 
   const finishCommittedClose = useCallback(async () => {
     const committed = committedSpaceRef.current;
@@ -311,7 +255,9 @@ function CreateSpaceModal({
     const hasPendingRoster = queuedMembersRef.current.some(({ uid }) => !appliedMemberUidsRef.current.has(uid));
 
     if (!hasPendingRoster) {
-      finishCreation();
+      try { await finishCreation(); }
+      catch (error) { notify.error(getErrorMessage(error)); }
+
       return;
     }
 
@@ -329,96 +275,11 @@ function CreateSpaceModal({
       setLoading(false);
     }
 
-    if (completed) finishCreation();
+    if (completed) {
+      try { await finishCreation(); }
+      catch (error) { notify.error(getErrorMessage(error)); }
+    }
   }, [applyQueuedMembers, finishCreation]);
-
-  const resolveAmbiguousClose = useCallback(async () => {
-    if (!workspaceId || creatingRef.current) return;
-    const clientOwnedSpaceId = draftSpaceIdRef.current;
-    let resolution: 'committed' | 'discarded' | null = null;
-
-    creatingRef.current = true;
-    setLoading(true);
-    try {
-      if (initialPage) {
-        if (!createSpaceWithInitialPage) throw new Error('Create space service is unavailable');
-        const result = await createSpaceWithInitialPage({
-          name: spaceName.trim(),
-          space_icon: spaceIcon,
-          space_icon_color: spaceIconColor,
-          view_id: clientOwnedSpaceId,
-          client_generated_view_id: true,
-          permission: permissionSettingsForCreation(permissionSettings),
-          initial_page: {
-            ...initialPage,
-            view_id: initialPage.view_id ?? draftInitialPageIdRef.current,
-          },
-        });
-        const committed = { spaceId: result.space.view_id, initialPageId: result.page.view_id };
-
-        committedSpaceRef.current = committed;
-        setCommittedSpace(committed);
-        await applyQueuedMembers(committed.spaceId);
-        resolution = 'committed';
-      } else {
-        let spaceExists = false;
-
-        try {
-          await WorkspaceService.getSpacePermission(workspaceId, clientOwnedSpaceId);
-          spaceExists = true;
-        } catch (error) {
-          if (!isMissingOrDeletedResource(error)) throw error;
-          await discardClientOwnedDraftSpace(workspaceId, clientOwnedSpaceId);
-          resolution = 'discarded';
-        }
-
-        if (spaceExists) {
-          const committed = { spaceId: clientOwnedSpaceId };
-
-          committedSpaceRef.current = committed;
-          setCommittedSpace(committed);
-          await applyQueuedMembers(clientOwnedSpaceId);
-          resolution = 'committed';
-        }
-      }
-    } catch (error) {
-      if (
-        initialPage &&
-        typeof error === 'object' &&
-        error !== null &&
-        (error as { clientGeneratedCleanupSucceeded?: unknown }).clientGeneratedCleanupSucceeded === true
-      ) {
-        resolution = 'discarded';
-      } else {
-        // Keep the exact client-owned ID and frozen payload in this mounted
-        // draft. A later Retry or Close can safely reconcile the same request;
-        // silently resetting here could orphan a committed space.
-        notify.error(getErrorMessage(error));
-      }
-    } finally {
-      creatingRef.current = false;
-      setLoading(false);
-    }
-
-    if (resolution === 'committed') {
-      finishCreation();
-    } else if (resolution === 'discarded') {
-      resetDraft();
-      onClose();
-    }
-  }, [
-    applyQueuedMembers,
-    createSpaceWithInitialPage,
-    finishCreation,
-    initialPage,
-    onClose,
-    permissionSettings,
-    resetDraft,
-    spaceIcon,
-    spaceIconColor,
-    spaceName,
-    workspaceId,
-  ]);
 
   const handleClose = useCallback(() => {
     if (creatingRef.current) return;
@@ -430,13 +291,14 @@ function CreateSpaceModal({
     }
 
     if (hasAmbiguousCreation) {
-      void resolveAmbiguousClose();
+      // Leave the draft retained; the explicit Retry action performs recovery.
+      onClose();
       return;
     }
 
     resetDraft();
     onClose();
-  }, [finishCommittedClose, hasAmbiguousCreation, onClose, resetDraft, resolveAmbiguousClose]);
+  }, [finishCommittedClose, hasAmbiguousCreation, onClose, resetDraft]);
 
   const handleSpaceIconChange = useCallback((icon: string, color: string) => {
     setSpaceIcon(icon);
@@ -502,7 +364,7 @@ function CreateSpaceModal({
   }, []);
 
   const handleCreate = useCallback(async () => {
-    if (creatingRef.current) return;
+    if (creatingRef.current || !workspaceId) return;
     const trimmedName = spaceName.trim();
 
     if (!trimmedName) {
@@ -518,6 +380,37 @@ function CreateSpaceModal({
       let committed = committedSpaceRef.current;
 
       if (!committed) {
+        // A possibly committed stable ID must still be reconciled. A fresh draft rechecks before
+        // any writes; denial leaves its name, icon, permission choices and queued people intact.
+        if (!hasAmbiguousCreation) {
+          const current = await creationPermission.refresh();
+
+          if (!current?.can_create_space) {
+            notify.error(t(current ? 'workspacePermissions.denied' : 'workspacePermissions.loadError'));
+            return;
+          }
+        }
+
+        const saved = intentStore.snapshot();
+
+        if (saved) {
+          const recovered = await recoverSpaceCreation(workspaceId, saved, () => intentStore.assertCurrent());
+
+          if (recovered) {
+            committedSpaceRef.current = recovered;
+            setCommittedSpace(recovered);
+            intentStore.committed(recovered);
+            await applyQueuedMembers(recovered.spaceId);
+            await finishCreation();
+            return;
+          }
+
+          const current = await creationPermission.refresh();
+
+          intentStore.assertCurrent();
+          if (!current?.can_create_space) throw new Error(t('workspacePermissions.denied'));
+        }
+
         const visibility = permissionSettings.visibility;
         const spacePayload = {
           name: trimmedName,
@@ -534,11 +427,23 @@ function CreateSpaceModal({
             ? selectedMembers.flatMap((member) => {
                 const uid = getWorkspaceMemberUid(member);
 
-                return uid ? [{ uid, accessLevel: memberAccessLevel }] : [];
+                return uid ? [{ uid, userUuid: member.user_uuid, accessLevel: memberAccessLevel }] : [];
               })
             : [];
         appliedMemberUidsRef.current.clear();
 
+        const savedInitialPage = initialPage ? {
+          ...initialPage, view_id: initialPage.view_id ?? draftInitialPageIdRef.current,
+        } : undefined;
+
+        intentStore.begin({
+          payload: spacePayload, initialPage: savedInitialPage,
+          selectedMembers, members: queuedMembersRef.current,
+          appliedMemberUids: [...appliedMemberUidsRef.current],
+        });
+        // Persisted intent is uncertain until the complete authoritative result
+        // and queued roster have been handed off, including on browser reload.
+        setHasAmbiguousCreation(true);
         if (initialPage) {
           if (!createSpaceWithInitialPage) return;
           const result = await createSpaceWithInitialPage({
@@ -558,52 +463,35 @@ function CreateSpaceModal({
         // Record the committed identity before any queued member POST. A retry
         // after a partial failure can only target this space and cannot create
         // a duplicate.
+        intentStore.assertCurrent();
+        intentStore.committed(committed);
         committedSpaceRef.current = committed;
         setCommittedSpace(committed);
         setHasAmbiguousCreation(false);
       }
 
       await applyQueuedMembers(committed.spaceId);
-      finishCreation();
+      await finishCreation();
     } catch (error) {
-      if (!committedSpaceRef.current) {
-        if (!mayHaveCommittedCreate(error)) {
-          const cleanupConfirmed = clientGeneratedCleanupWasConfirmed(error);
+      // Once submitted, even a later denial cannot resolve an earlier write.
+      // Storage remains untouched; an unsent draft was never persisted.
+      try { intentStore.assertCurrent(); } catch { return; }
 
-          // A definitive rejection only proves that this attempt did not
-          // commit. If an earlier attempt is still ambiguous, keep the frozen
-          // ID and roster until that earlier request is reconciled. Confirmed
-          // cleanup is the stronger signal that makes the whole sequence safe
-          // to reset and edit again.
-          if (!hasAmbiguousCreation || cleanupConfirmed) {
-            setHasAmbiguousCreation(false);
-            queuedMembersRef.current = [];
-            appliedMemberUidsRef.current.clear();
-          }
-
-          if (cleanupConfirmed) {
-            // The previous IDs now refer to trash/tombstones. Preserve the
-            // user's draft fields but rotate both resource identities before
-            // the next editable Create attempt.
-            draftSpaceIdRef.current = uuidv4();
-            draftInitialPageIdRef.current = uuidv4();
-          }
-        } else {
-          setHasAmbiguousCreation(true);
-        }
-      }
-
+      if (intentStore.snapshot()) setHasAmbiguousCreation(true);
       notify.error(getErrorMessage(error));
     } finally {
       creatingRef.current = false;
       setLoading(false);
     }
   }, [
+    intentStore,
+    workspaceId,
     applyQueuedMembers,
     createSpace,
     createSpaceWithInitialPage,
     finishCreation,
     hasAmbiguousCreation,
+    creationPermission,
     initialPage,
     permissionSettings,
     selectedMembers,
@@ -706,10 +594,16 @@ function CreateSpaceModal({
       onVisibilitySelect={handleVisibilitySelect}
       onMembersAccessChange={handleMembersAccessChange}
       onEveryoneElseAccessChange={handleEveryoneElseAccessChange}
+      onSidebarEditPolicyChange={(sidebar_edit_policy) => {
+        if (!committedSpaceRef.current) setPermissionSettings((current) => ({ ...current, sidebar_edit_policy }));
+      }}
       showActions
       primaryActionText={committedSpace || hasAmbiguousCreation ? t('button.retry') : t('button.create')}
       primaryActionLoading={loading}
-      primaryActionDisabled={loading || !spaceName.trim()}
+      primaryActionDisabled={loading || Boolean(recovery.error) || !spaceName.trim() || (!committedSpace && !hasAmbiguousCreation && !creationPermission.canCreateSpace)}
+      notice={recovery.error ? <p role='alert'>{recovery.error}</p> : committedSpace || hasAmbiguousCreation ? (
+        <p role='status'>{t('spaceCreation.retained')}</p>
+      ) : <SpaceCreationNotice permission={creationPermission} />}
       onPrimaryAction={() => void handleCreate()}
       overlay={
         loading ? (

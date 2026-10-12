@@ -10,6 +10,7 @@ interface LoadedSpaceActionPermissions {
   workspaceId: string;
   viewId: string;
   canOpenManageSpace: boolean;
+  canEditSidebar: boolean;
 }
 
 function isSpaceView(view: View | null | undefined): boolean {
@@ -63,6 +64,7 @@ export function useSpaceActionPermissions(view: View | null | undefined, opened:
           workspaceId,
           viewId,
           canOpenManageSpace: permission.can_manage_space === true,
+          canEditSidebar: permission.can_edit_sidebar === true,
         });
       })
       .catch((error) => {
@@ -73,6 +75,7 @@ export function useSpaceActionPermissions(view: View | null | undefined, opened:
           workspaceId,
           viewId,
           canOpenManageSpace: false,
+          canEditSidebar: false,
         });
       })
       .finally(() => {
@@ -89,6 +92,7 @@ export function useSpaceActionPermissions(view: View | null | undefined, opened:
 
   return {
     canOpenManageSpace: hasLoadedSpaceActionPermissions && loadedPermissions?.canOpenManageSpace === true,
+    canEditSidebar: hasLoadedSpaceActionPermissions && loadedPermissions?.canEditSidebar === true,
     hasLoadedSpaceActionPermissions,
     isLoadingSpaceActionPermissions,
   };

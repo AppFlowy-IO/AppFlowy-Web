@@ -23,6 +23,10 @@ import ManageSpace from '@/components/app/view-actions/ManageSpace';
 
 import type { ReactNode } from 'react';
 
+const mockSetOverride = jest.fn();
+const mockAddSpaceMemberByUuid = jest.fn();
+const mockUpdateSpaceMemberByUuid = jest.fn();
+const mockRemoveSpaceMemberByUuid = jest.fn();
 const mockUpdateSpace = jest.fn();
 const mockGetSpacePermission = jest.fn();
 const mockUpdateStructuredSpace = jest.fn();
@@ -59,6 +63,10 @@ jest.mock('sonner', () => ({
   },
 }));
 
+jest.mock('@/application/services/js-services/space-member-assignment', () => ({
+  setSpaceMemberAccessOverride: (...args: unknown[]) => mockSetOverride(...args),
+}));
+
 jest.mock('@/application/services/domains', () => ({
   WorkspaceService: {
     getSpacePermission: (...args: unknown[]) => mockGetSpacePermission(...args),
@@ -67,6 +75,9 @@ jest.mock('@/application/services/domains', () => ({
     getMembers: (...args: unknown[]) => mockGetMembers(...args),
     getWorkspaceGroups: (...args: unknown[]) => mockGetWorkspaceGroups(...args),
     addSpaceMember: (...args: unknown[]) => mockAddSpaceMember(...args),
+    addSpaceMemberByUuid: (...args: unknown[]) => mockAddSpaceMemberByUuid(...args),
+    updateSpaceMemberByUuid: (...args: unknown[]) => mockUpdateSpaceMemberByUuid(...args),
+    removeSpaceMemberByUuid: (...args: unknown[]) => mockRemoveSpaceMemberByUuid(...args),
     updateSpaceMember: (...args: unknown[]) => mockUpdateSpaceMember(...args),
     removeSpaceMember: (...args: unknown[]) => mockRemoveSpaceMember(...args),
     addSpaceGroupPermission: (...args: unknown[]) => mockAddSpaceGroupPermission(...args),
@@ -88,6 +99,7 @@ jest.mock('@/components/app/app.hooks', () => ({
 }));
 
 jest.mock('@/components/main/app.hooks', () => ({
+  useAuthenticatedUserIdOptional: () => 'actor',
   useCurrentUserOptional: () => ({
     name: 'Nathan',
     email: 'nathan@appflowy.io',
@@ -444,11 +456,85 @@ describe('ManageSpace ACL management', () => {
     mockGetMembers.mockResolvedValue([workspaceCandidate]);
     mockGetWorkspaceGroups.mockResolvedValue({ groups: [engineeringWorkspaceGroup] });
     mockAddSpaceMember.mockResolvedValue(undefined);
+    mockAddSpaceMemberByUuid.mockResolvedValue(undefined);
+    mockUpdateSpaceMemberByUuid.mockResolvedValue(undefined);
+    mockSetOverride.mockResolvedValue(undefined);
     mockUpdateSpaceMember.mockResolvedValue(undefined);
     mockRemoveSpaceMember.mockResolvedValue(undefined);
     mockAddSpaceGroupPermission.mockResolvedValue(undefined);
     mockUpdateSpaceGroupPermission.mockResolvedValue(undefined);
     mockRemoveSpaceGroupPermission.mockResolvedValue(undefined);
+  });
+
+  describe('ordinary member access overrides', () => {
+    const memberUuid = '12345678-1234-4123-8123-123456789abc';
+
+    it('keeps Inherit separate from explicit equal-to-default Edit and preserves role controls', async () => {
+      const member = { ...manualMember(), user_uuid: memberUuid, access_level_override: null, effective_access_level: 30 };
+
+      mockGetSpacePermission.mockResolvedValue({ ...permissionResponse({ permission: customPermission }), member_access_overrides_supported: true });
+      mockGetSpaceMembers.mockResolvedValue({ members: [member], groups: [] });
+      mockSetOverride.mockImplementation(async (_workspace, _space, _principal, override) => {
+        mockGetSpaceMembers.mockResolvedValue({ members: [{ ...member, access_level_override: override }], groups: [] });
+      });
+      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+      await waitForSettingsLoaded();
+      fireEvent.click(screen.getByRole('tab', { name: 'space.permissionManager.membersTab' }));
+      const control = await screen.findByRole('combobox', { name: /space.memberOverride.accessFor/ });
+
+      expect((control as HTMLSelectElement).value).toBe('inherit');
+      expect(screen.getByText('space.memberOverride.defaultAccess:{"level":"shareAction.canEdit"}')).toBeTruthy();
+      expect(screen.getByText('space.memberOverride.assignmentAccess:{"level":"shareAction.canEdit"}')).toBeTruthy();
+      fireEvent.change(control, { target: { value: '30' } });
+      await waitFor(() => expect(mockSetOverride).toHaveBeenCalledWith('workspace-1', 'space-1', { type: 'user', uuid: memberUuid }, 30, expect.any(Function)));
+      await waitFor(() => expect((control as HTMLSelectElement).value).toBe('30'));
+      fireEvent.change(control, { target: { value: 'inherit' } });
+      await waitFor(() => expect(mockSetOverride).toHaveBeenLastCalledWith('workspace-1', 'space-1', { type: 'user', uuid: memberUuid }, null, expect.any(Function)));
+      expect(mockUpdateSpaceMember).not.toHaveBeenCalled();
+      expect(mockUpdateSpaceMemberByUuid).not.toHaveBeenCalled();
+    });
+
+    it('shows group assignment access including No access and uses the group override path', async () => {
+      const assigned = { ...group('group-1', 'Engineering'), access_level_override: null, effective_access_level: null };
+
+      mockGetSpacePermission.mockResolvedValue({ ...permissionResponse({ permission: { ...customPermission, member_default_access_level: null } }), member_access_overrides_supported: true });
+      mockGetSpaceMembers.mockResolvedValue({ members: [], groups: [assigned] });
+      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+      await waitForSettingsLoaded();
+      fireEvent.click(screen.getByRole('tab', { name: 'space.permissionManager.membersTab' }));
+      const control = await screen.findByRole('combobox', { name: /space.memberOverride.accessFor/ });
+
+      expect(screen.getByText('space.memberOverride.assignmentAccess:{"level":"space.permissionManager.noAccess"}')).toBeTruthy();
+      fireEvent.change(control, { target: { value: '20' } });
+      await waitFor(() => expect(mockSetOverride).toHaveBeenCalledWith('workspace-1', 'space-1', { type: 'group', uuid: 'group-1' }, 20, expect.any(Function)));
+    });
+
+    it('does not infer an override from an old server access_level', async () => {
+      mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: customPermission }));
+      mockGetSpaceMembers.mockResolvedValue({ members: [manualMember()], groups: [] });
+      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+      await waitForSettingsLoaded();
+      fireEvent.click(screen.getByRole('tab', { name: 'space.permissionManager.membersTab' }));
+      expect(screen.queryByRole('combobox', { name: /space.memberOverride.accessFor/ })).toBeNull();
+      expect(screen.getByText('space.memberOverride.unsupported')).toBeTruthy();
+      expect(mockSetOverride).not.toHaveBeenCalled();
+    });
+
+    it('keeps missing UUIDs unavailable and never offers an Owner override', async () => {
+      mockGetSpacePermission.mockResolvedValue({ ...permissionResponse({ permission: customPermission }), member_access_overrides_supported: true });
+      mockGetSpaceMembers.mockResolvedValue({ members: [
+        { ...manualMember(), access_level_override: null, effective_access_level: 30 },
+        { ...creatorMember(), access_level_override: null, effective_access_level: 50 },
+      ], groups: [] });
+      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+      await waitForSettingsLoaded();
+      fireEvent.click(screen.getByRole('tab', { name: 'space.permissionManager.membersTab' }));
+      const controls = await screen.findAllByRole('combobox', { name: /space.memberOverride.accessFor/ });
+
+      expect(controls).toHaveLength(1);
+      expect((controls[0] as HTMLSelectElement).disabled).toBe(true);
+      expect(within(controls[0]).queryByRole('option', { name: 'shareAction.fullAccess' })).toBeNull();
+    });
   });
 
   describe('space type switcher', () => {
@@ -1055,6 +1141,24 @@ describe('ManageSpace ACL management', () => {
       })
     );
     expect(mockUpdateStructuredSpace.mock.calls[0][2]).not.toHaveProperty('permission');
+  });
+
+  it('preserves a loaded sidebar policy on open/rename and changes it only through its selector', async () => {
+    const permission = { ...privatePermission, visibility: SpaceVisibility.Custom, sidebar_edit_policy: SpaceSidebarEditPolicy.MembersAndOwners };
+
+    mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission }));
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+    await waitForSettingsLoaded();
+    expect((screen.getByTestId('space-sidebar-policy')).value).toBe(SpaceSidebarEditPolicy.MembersAndOwners);
+    expect(mockUpdateStructuredSpace).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByPlaceholderText('space.spaceNamePlaceholder'), { target: { value: 'Rename only' } });
+    fireEvent.blur(screen.getByPlaceholderText('space.spaceNamePlaceholder'));
+    await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledWith('workspace-1', 'space-1', { name: 'Rename only' }));
+    await waitFor(() => expect((screen.getByTestId('space-sidebar-policy')).disabled).toBe(false));
+    fireEvent.change(screen.getByTestId('space-sidebar-policy'), { target: { value: SpaceSidebarEditPolicy.OwnersOnly } });
+    await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledWith('workspace-1', 'space-1', {
+      permission: { ...permission, sidebar_edit_policy: SpaceSidebarEditPolicy.OwnersOnly },
+    }));
   });
 
   it('serializes overlapping renames and rolls failed edits back to server-confirmed metadata', async () => {

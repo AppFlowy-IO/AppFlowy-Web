@@ -5,7 +5,7 @@ import { type ReactNode } from 'react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 
 import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
-import { deleteCollabDB } from '@/application/db';
+import { closeCollabDB } from '@/application/db';
 import { AccessService, ViewService } from '@/application/services/domains';
 import {
   invalidateWorkspaceViewMetadata,
@@ -63,7 +63,7 @@ jest.mock('@/application/services/domains', () => ({
 }));
 
 jest.mock('@/application/db', () => ({
-  deleteCollabDB: jest.fn(),
+  closeCollabDB: jest.fn(),
 }));
 
 jest.mock('@/application/services/js-services/workspace-view-metadata', () => ({
@@ -202,7 +202,7 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     );
     (ViewService.getTrashCached as jest.Mock).mockResolvedValue([]);
     (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
-    (deleteCollabDB as jest.Mock).mockResolvedValue(undefined);
+    (closeCollabDB as jest.Mock).mockResolvedValue(undefined);
   });
 
   it('invalidates cached access details for every remote share change', async () => {
@@ -1531,8 +1531,8 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     });
 
     await waitFor(() => {
-      expect(deleteCollabDB).toHaveBeenCalledWith(databaseView.view_id, { destroyDoc: true });
-      expect(deleteCollabDB).toHaveBeenCalledWith('database-collab-id', { destroyDoc: true });
+      expect(closeCollabDB).toHaveBeenCalledWith(databaseView.view_id);
+      expect(closeCollabDB).toHaveBeenCalledWith('database-collab-id');
     });
     expect(ViewService.getCachedFromDisk).toHaveBeenCalledWith(workspaceId, databaseView.view_id);
     expect(ViewService.invalidateCache).toHaveBeenCalledWith(workspaceId, databaseView.view_id);
@@ -1579,8 +1579,8 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     });
 
     await waitFor(() => {
-      expect(deleteCollabDB).toHaveBeenCalledWith(databaseView.view_id, { destroyDoc: true });
-      expect(deleteCollabDB).toHaveBeenCalledWith('memory-only-database-collab-id', { destroyDoc: true });
+      expect(closeCollabDB).toHaveBeenCalledWith(databaseView.view_id);
+      expect(closeCollabDB).toHaveBeenCalledWith('memory-only-database-collab-id');
     });
     expect(ViewService.invalidateWorkspaceMemoryCache).toHaveBeenCalledWith(workspaceId);
     expect(ViewService.getCachedFromDisk).not.toHaveBeenCalled();
@@ -1611,7 +1611,7 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     await waitFor(() => {
       expect(restoredListener).toHaveBeenCalledWith({ viewId: sharedView.view_id });
     });
-    expect(deleteCollabDB).not.toHaveBeenCalled();
+    expect(closeCollabDB).not.toHaveBeenCalled();
   });
 
   it('ignores an older grant response after a newer revocation', async () => {
@@ -1694,7 +1694,7 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     });
 
     expect(revokedListener).not.toHaveBeenCalled();
-    expect(deleteCollabDB).not.toHaveBeenCalled();
+    expect(closeCollabDB).not.toHaveBeenCalled();
   });
 
   it('hydrates missing selected view path from navigation context', async () => {

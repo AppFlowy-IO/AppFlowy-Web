@@ -1,9 +1,9 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { ViewLayout } from '@/application/types';
+import type { CreatePagePayload } from '@/application/types';
 import NewPage from '@/components/app/view-actions/NewPage';
 
-import type { CreatePagePayload } from '@/application/types';
 import type { ReactNode } from 'react';
 
 const mockAddPage = jest.fn();
@@ -11,6 +11,11 @@ const mockCreateSpaceWithInitialPage = jest.fn();
 const mockOpenPageModal = jest.fn();
 const mockEnsureViewVisibleInOutline = jest.fn();
 const mockNotifyError = jest.fn();
+let mockCanCreateSpace = true;
+
+jest.mock('@/components/app/hooks/useSpaceCreationCapability', () => ({
+  useSpaceCreationCapability: () => ({ status: 'ready', canCreateSpace: mockCanCreateSpace, scopeKey: 'workspace-1' }),
+}));
 let mockCreateSpaceModuleLoads = 0;
 let mockCreateSpaceModuleError: Error | null = null;
 let mockOutline: Array<{
@@ -26,7 +31,7 @@ let lastCreateSpaceProps:
   | {
       initialPage?: CreatePagePayload;
       onClose: () => void;
-      onCreated?: (spaceId: string, pageId?: string) => void;
+      onCreated?: (spaceId: string, pageId?: string) => void | Promise<void>;
     }
   | undefined;
 
@@ -83,6 +88,7 @@ jest.mock('@/components/_shared/notify', () => ({
 }));
 
 jest.mock('@/components/app/app.hooks', () => ({
+  useCurrentWorkspaceId: () => 'workspace-1',
   useAppOperations: () => ({
     addPage: mockAddPage,
     createSpaceWithInitialPage: mockCreateSpaceWithInitialPage,
@@ -119,7 +125,7 @@ jest.mock('@/components/app/view-actions/CreateSpaceModal', () => {
       open: boolean;
       initialPage?: CreatePagePayload;
       onClose: () => void;
-      onCreated?: (spaceId: string, pageId?: string) => void;
+      onCreated?: (spaceId: string, pageId?: string) => void | Promise<void>;
     }) => {
       lastCreateSpaceProps = { initialPage, onClose, onCreated };
 
@@ -130,7 +136,10 @@ jest.mock('@/components/app/view-actions/CreateSpaceModal', () => {
           </button>
           <button
             data-testid='create-space-draft-complete'
-            onClick={() => onCreated?.(mockCreatedSpaceId, mockCreatedPageId)}
+            onClick={async () => {
+              await onCreated?.(mockCreatedSpaceId, mockCreatedPageId);
+              onClose();
+            }}
           >
             complete draft
           </button>
@@ -143,6 +152,7 @@ jest.mock('@/components/app/view-actions/CreateSpaceModal', () => {
 describe('NewPage create-space flow', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockCanCreateSpace = true;
     mockOutline = [];
     mockCreatedSpaceId = 'space-created';
     mockCreatedPageId = 'page-created';
@@ -156,6 +166,15 @@ describe('NewPage create-space flow', () => {
     fireEvent.click(screen.getByTestId('new-page-create-space-button'));
     await screen.findByTestId('create-space-draft-panel');
   }
+
+  it('denies new spaces without disabling creation inside an existing authorized space', async () => {
+    mockCanCreateSpace = false;
+    render(<NewPage />);
+    fireEvent.click(screen.getByTestId('new-page-button'));
+    expect((screen.getByTestId('new-page-create-space-button')).disabled).toBe(true);
+    fireEvent.click(screen.getByTestId('select-existing-space'));
+    expect((screen.getByTestId('new-page-modal-ok')).disabled).toBe(false);
+  });
 
   it('keeps lazy loading dismissible and retries the Create Space import after a failure', async () => {
     render(<NewPage />);

@@ -2,6 +2,7 @@ import {
   AccessLevel,
   AddSpaceGroupPermissionPayload,
   AddSpaceMemberPayload,
+  AddSpaceMemberByUuidPayload,
   AddWorkspaceGroupMemberPayload,
   CreateWorkspaceGroupPayload,
   CreateWorkspacePayload,
@@ -34,6 +35,8 @@ import {
 import { canonicalizeUserUid } from '@/application/user-uid';
 
 import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from './core';
+import { captureApiContext } from './request-context';
+import { ensureCanCreateWorkspace, getWorkspaceCreationCapability } from './workspace-creation-api';
 
 const UID_FIELD_REGEX = /"uid"\s*:\s*(\d{16,})/g;
 
@@ -52,7 +55,9 @@ function stringifyAddSpaceMemberPayload(payload: AddSpaceMemberPayload) {
     throw new Error('Space member uid must be a numeric string');
   }
 
-  return `{"uid":${payload.uid},"role":${JSON.stringify(payload.role)},"access_level":${payload.access_level}}`;
+  const { uid, ...fields } = payload;
+
+  return `{"uid":${uid},${JSON.stringify(fields).slice(1)}`;
 }
 
 function stringifyAddWorkspaceGroupMemberPayload(payload: AddWorkspaceGroupMemberPayload) {
@@ -129,12 +134,26 @@ export async function updateWorkspace(workspaceId: string, payload: UpdateWorksp
   );
 }
 
-export async function createWorkspace(payload: CreateWorkspacePayload) {
-  const url = '/api/workspace';
+export type WorkspaceCreationReceipt = { requestId: string; replay: boolean };
 
-  return executeAPIRequest<{ workspace_id: string }>(() =>
-    getAxios()?.post<APIResponse<{ workspace_id: string }>>(url, payload)
-  ).then((data) => data.workspace_id);
+export async function createWorkspace(payload: CreateWorkspacePayload, receipt?: WorkspaceCreationReceipt) {
+  const scope = captureApiContext();
+
+  // An existing request can recover its original owned result after policy
+  // denial. The distinct endpoint performs that receipt lookup before admission.
+  if (receipt?.replay) await getWorkspaceCreationCapability();
+  else await ensureCanCreateWorkspace();
+  scope.assertCurrent();
+  const url = receipt ? '/api/workspace/create-with-request-id' : '/api/workspace';
+  const body = receipt ? { ...payload, request_id: receipt.requestId } : payload;
+
+  const data = await executeAPIRequest<{ workspace_id: string }>(() => {
+    scope.assertCurrent();
+    return scope.client?.post<APIResponse<{ workspace_id: string }>>(url, body);
+  });
+
+  scope.assertCurrent();
+  return data.workspace_id;
 }
 
 export async function getWorkspaces(): Promise<Workspace[]> {
@@ -310,6 +329,36 @@ export async function updateSpaceMember(
 
 export async function removeSpaceMember(workspaceId: string, spaceId: string, uid: string) {
   const url = `/api/workspace/${workspaceId}/spaces/${spaceId}/members/${uid}`;
+
+  return executeAPIVoidRequest(() => getAxios()?.delete<APIResponse>(url));
+}
+
+function spaceMemberUuidUrl(workspaceId: string, spaceId: string, memberUuid: string) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(memberUuid)) {
+    throw new Error('A valid member UUID is required');
+  }
+
+  return `/api/workspace/${encodeURIComponent(workspaceId)}/spaces/${encodeURIComponent(spaceId)}/members/users/${memberUuid}`;
+}
+
+export async function addSpaceMemberByUuid(workspaceId: string, spaceId: string, memberUuid: string, payload: AddSpaceMemberByUuidPayload) {
+  const url = spaceMemberUuidUrl(workspaceId, spaceId, memberUuid);
+
+  return executeAPIRequest<SpaceMember>(() => getAxios()?.post<APIResponse<SpaceMember>>(url, payload, {
+    transformResponse: [parseResponseWithExactUid],
+  }));
+}
+
+export async function updateSpaceMemberByUuid(workspaceId: string, spaceId: string, memberUuid: string, payload: UpdateSpaceMemberPayload) {
+  const url = spaceMemberUuidUrl(workspaceId, spaceId, memberUuid);
+
+  return executeAPIRequest<SpaceMember>(() => getAxios()?.patch<APIResponse<SpaceMember>>(url, payload, {
+    transformResponse: [parseResponseWithExactUid],
+  }));
+}
+
+export async function removeSpaceMemberByUuid(workspaceId: string, spaceId: string, memberUuid: string) {
+  const url = spaceMemberUuidUrl(workspaceId, spaceId, memberUuid);
 
   return executeAPIVoidRequest(() => getAxios()?.delete<APIResponse>(url));
 }

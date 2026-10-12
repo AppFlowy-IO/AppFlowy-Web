@@ -3,6 +3,12 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { View, ViewLayout } from '@/application/types';
 import MoreSpaceActions from '@/components/app/view-actions/MoreSpaceActions';
 
+jest.mock('@/components/app/hooks/useSpaceCreationCapability', () => ({
+  useSpaceCreationCapability: () => ({
+    status: 'ready', canCreateSpace: true, refresh: async () => ({ can_create_space: true }),
+  }),
+}));
+
 import type { ReactNode } from 'react';
 
 const mockDuplicate = jest.fn();

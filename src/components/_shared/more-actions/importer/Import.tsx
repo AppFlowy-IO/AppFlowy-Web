@@ -1,18 +1,22 @@
-import React from 'react';
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as CheckedIcon } from '@/assets/icons/check_circle.svg';
 import { NormalModal } from '@/components/_shared/modal';
-import ImporterModal from '@/components/_shared/more-actions/importer/ImporterModal';
+import { ImporterModal } from '@/components/_shared/more-actions/importer/ImporterModal';
 import { useImport } from '@/components/_shared/more-actions/importer/useImport.hook';
 import { LoginModal } from '@/components/login';
+import { useAuthenticatedUserIdOptional } from '@/components/main/app.hooks';
+import { getConfigValue } from '@/utils/runtime-config';
 
 function Import({ disableClose, onSuccessfulImport }: { disableClose?: boolean; onSuccessfulImport?: () => void }) {
   const { open, handleImportClose, handleLoginClose, loginOpen, url, source } = useImport();
-  const [openSuccess, setOpenSuccess] = React.useState(false);
+  const [openSuccess, setOpenSuccess] = useState(false);
   const { t } = useTranslation();
+  const userId = useAuthenticatedUserIdOptional();
+  const serverUrl = getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud');
 
-  const handleSuccess = React.useCallback(() => {
+  const handleSuccess = useCallback(() => {
     setOpenSuccess(true);
   }, []);
 
@@ -21,6 +25,7 @@ function Import({ disableClose, onSuccessfulImport }: { disableClose?: boolean; 
       <LoginModal redirectTo={url} open={loginOpen} onClose={handleLoginClose} />
       {open && (
         <ImporterModal
+          key={`${serverUrl}:${userId ?? ''}`}
           open={open}
           disableClose={disableClose}
           source={source || undefined}

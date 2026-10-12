@@ -1,5 +1,5 @@
 import { Dialog, InputBase } from '@mui/material';
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { View, ViewLayout } from '@/application/types';
@@ -19,6 +19,8 @@ import {
   useToView,
 } from '@/components/app/app.hooks';
 import RecentViews from '@/components/app/search/RecentViews';
+import { useSearchAccessScope } from '@/components/app/search/useSearchAccessScope';
+import { useSearchRecentViews } from '@/components/app/search/useSearchRecentViews';
 import ViewList from '@/components/app/search/ViewList';
 import { findAncestors } from '@/components/chat/lib/views';
 import { dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
@@ -41,31 +43,42 @@ function getErrorMessage(error: unknown) {
 
 export function Search() {
   const [open, setOpen] = useState<boolean>(false);
+  const dialogGeneration = useRef(0);
   const { t } = useTranslation();
   const [searchValue, setSearchValue] = useState<string>('');
-  const [askingAI, setAskingAI] = useState<boolean>(false);
+  const [asking, setAsking] = useState<{ scope: object; attempt: object }>();
   const outline = useAppOutline();
   const currentViewId = useAppViewId();
   const currentWorkspaceId = useCurrentWorkspaceId();
+  const { scope, isCurrent } = useSearchAccessScope(currentWorkspaceId);
+  const askingAI = asking?.scope === scope;
   const aiEnabled = useAIEnabled();
   const { addPage } = useAppOperations();
   const toView = useToView();
   const handleClose = useCallback(() => {
+    dialogGeneration.current += 1;
+    setAsking(undefined);
     setOpen(false);
     setSearchValue('');
   }, []);
 
   const handleAskAI = useCallback(
     async (query: string, sources?: AIChatRagSource[]) => {
-      if (!aiEnabled || !addPage || !currentWorkspaceId) return;
+      if (!isCurrent() || !aiEnabled || !addPage || !currentWorkspaceId) return;
 
-      setAskingAI(true);
+      const generation = dialogGeneration.current;
+      const isCurrentAttempt = () => isCurrent() && dialogGeneration.current === generation;
+      const attempt = {};
+
+      setAsking({ scope, attempt });
       try {
         const [{ ChatRequest }, { getAxiosInstance }] = await Promise.all([
           import('@/components/chat/request'),
           import('@/application/services/js-services/http'),
         ]);
         const axiosInstance = getAxiosInstance();
+
+        if (!isCurrentAttempt()) return;
 
         if (!axiosInstance) {
           throw new Error('Missing axios instance');
@@ -76,6 +89,8 @@ export function Search() {
 
         if (currentViewId) {
           const navigation = await scopeRequest.getViewNavigation(currentViewId);
+
+          if (!isCurrentAttempt()) return;
           const currentPath = findAncestors([navigation], currentViewId);
 
           // Shared/private navigation can intentionally omit inaccessible space
@@ -92,11 +107,15 @@ export function Search() {
         }
 
         const scopedParent = await scopeRequest.fetchCompleteView(parentViewId, true);
+
+        if (!isCurrentAttempt()) return;
         const created = await addPage(scopedParent.view_id, {
           layout: ViewLayout.AIChat,
           name: query || t('chat.newChat', { defaultValue: 'New chat' }),
           prev_view_id: scopedParent.children?.[scopedParent.children.length - 1]?.view_id,
         });
+
+        if (!isCurrentAttempt()) return;
         let settingsError: unknown;
 
         try {
@@ -110,6 +129,7 @@ export function Search() {
           settingsError = error;
         }
 
+        if (!isCurrentAttempt()) return;
         if (settingsError) {
           notify.error(
             t('search.updateAIChatSettingsFailed', {
@@ -119,14 +139,14 @@ export function Search() {
         }
 
         await toView(created.view_id);
-        handleClose();
+        if (isCurrentAttempt()) handleClose();
       } catch (error) {
-        notify.error(getErrorMessage(error));
+        if (isCurrentAttempt()) notify.error(getErrorMessage(error));
       } finally {
-        setAskingAI(false);
+        setAsking((current) => current?.attempt === attempt ? undefined : current);
       }
     },
-    [addPage, aiEnabled, currentViewId, currentWorkspaceId, handleClose, outline, t, toView]
+    [addPage, aiEnabled, currentViewId, currentWorkspaceId, handleClose, outline, t, toView, isCurrent, scope]
   );
 
   const onKeyDown = useCallback((e: KeyboardEvent) => {
@@ -147,17 +167,8 @@ export function Search() {
     };
   }, [onKeyDown]);
 
-  const { recentViews, loadRecentViews } = useAppRecent();
-  const [loadingRecentViews, setLoadingRecentViews] = useState<boolean>(false);
-
-  useEffect(() => {
-    if (!open) return;
-    void (async () => {
-      setLoadingRecentViews(true);
-      await loadRecentViews?.();
-      setLoadingRecentViews(false);
-    })();
-  }, [loadRecentViews, open]);
+  const { loadRecentViews } = useAppRecent();
+  const recent = useSearchRecentViews(open && !searchValue, scope, isCurrent, loadRecentViews);
 
   return (
     <>
@@ -219,7 +230,11 @@ export function Search() {
           </div>
         </div>
         {!searchValue ? (
-          <RecentViews loading={loadingRecentViews} recentViews={recentViews} onClose={handleClose} />
+          <RecentViews
+            loading={recent.loading}
+            recentViews={recent.views}
+            onClose={handleClose}
+          />
         ) : (
           <Suspense fallback={<ViewList loading title={t('commandPalette.bestMatches')} onClose={handleClose} />}>
             <BestMatch askingAI={askingAI} searchValue={searchValue} onAskAI={handleAskAI} onClose={handleClose} />

@@ -26,7 +26,7 @@ export function GoogleCalendarIntegration() {
   const workspaceId = useCurrentWorkspaceId();
   const aiEnabled = useAIEnabled();
   const workspace = useUserWorkspaceInfo();
-  const enabled = aiEnabled && workspace?.selectedWorkspace.role !== Role.Guest;
+  const enabled = aiEnabled && workspace?.selectedWorkspace?.role !== Role.Guest;
 
   return enabled && workspaceId ? <WorkspaceCalendar key={workspaceId} workspaceId={workspaceId} /> : null;
 }

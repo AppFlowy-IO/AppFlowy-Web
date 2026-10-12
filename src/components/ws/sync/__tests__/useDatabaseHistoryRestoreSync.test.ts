@@ -8,6 +8,7 @@ import translations from '@/@types/translations/en.json';
 import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import { invalidateDatabaseBlobAfterRestore, prefetchDatabaseBlobDiff } from '@/application/database-blob';
 import { captureDatabaseStorageFence, db, deleteCollabDB, matchesDatabaseStorageFence, openCollabDB, openRowCollabDBWithProvider } from '@/application/db';
+import { captureCollabStorageScope } from '@/application/db/collab-storage-scope';
 import { getDatabaseRestoreState } from '@/application/services/domains/database-history';
 import { getCachedRowDatabaseId } from '@/application/services/js-services/cache';
 import { getCollab } from '@/application/services/js-services/http/collab-api';
@@ -135,6 +136,32 @@ beforeEach(() => {
 });
 
 afterEach(() => jest.useRealTimers());
+
+test.each(['legacy', 'other-account', 'current'])('row identity lookup isolates %s metadata', async (origin) => {
+  const f = fixture();
+  const scope = captureCollabStorageScope();
+  const rowKey = origin === 'current' ? scope.storageKey('database_rows_row')
+    : origin === 'legacy' ? 'database_rows_row' : 'af_collab:v2:other-account:database_rows_row';
+
+  f.contexts.clear();
+  jest.mocked(getCachedRowDatabaseId).mockReturnValue(undefined);
+  jest.mocked(db.rows.filter).mockImplementation((predicate) => ({
+    first: async () => predicate({ row_id: 'row', row_key: rowKey, version: 1 })
+      ? { row_id: 'row', row_key: rowKey, version: 1 } : undefined,
+  }) as never);
+  jest.mocked(getDatabaseRestoreState).mockResolvedValue({ database_restore_id: null, version: null });
+  const { result, unmount } = renderHook(() => useDatabaseHistoryRestoreSync({
+    refs: f.refs, workspaceId: 'workspace', userId: 'user', enabled: true, capabilityLoaded: true,
+    eventEmitter: new EventEmitter(), register: f.register, unregister: f.unregister,
+    scheduleDeferredCleanup: jest.fn(),
+  }));
+
+  await result.current.ensureDatabaseRestoreCurrent('row', Types.DatabaseRow);
+  if (origin === 'current') expect(getDatabaseRestoreState).toHaveBeenCalledWith('workspace', 'database');
+  else expect(getDatabaseRestoreState).not.toHaveBeenCalled();
+  expect(deleteCollabDB).not.toHaveBeenCalled();
+  unmount();
+});
 
 test.each([null, 'restore-current'])('verifies an unopened follower row in generation %s using its durable parent', async (marker) => {
   const f = fixture();

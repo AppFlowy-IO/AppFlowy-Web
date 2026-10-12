@@ -24,6 +24,7 @@ import {
   useRefreshOutline,
 } from '@/components/app/app.hooks';
 import { DATABASE_TAB_VIEW_ID_QUERY_PARAM } from '@/components/app/hooks/resolveSidebarSelectedViewId';
+import { useRowPeekRoute } from '@/components/app/hooks/useRowPeekRoute';
 import { Database } from '@/components/database';
 import { useContainerVisibleViewIds } from '@/components/database/hooks';
 import { Button } from '@/components/ui/button';
@@ -257,6 +258,7 @@ function DatabaseView(props: DatabaseViewProps) {
     (rowId: string) => {
       setSearch((prev) => {
         prev.set('r', rowId);
+        prev.delete('r-modal');
         return prev;
       });
     },
@@ -264,7 +266,7 @@ function DatabaseView(props: DatabaseViewProps) {
   );
 
   const rowId = search.get('r') || undefined;
-  const modalRowId = search.get('r-modal') || undefined;
+  const { modalRowId, onRowPeekChange } = useRowPeekRoute(props.isRouteView === true, activeViewId);
   const resolvedParentView = outlineParentView || breadcrumbParentView;
   const hasKnownNonDatabaseParent =
     parentViewId === workspaceId ||
@@ -558,6 +560,7 @@ function DatabaseView(props: DatabaseViewProps) {
           onChangeView={handleChangeView}
           onOpenRowPage={handleNavigateToRow}
           modalRowId={modalRowId}
+          onRowPeekChange={onRowPeekChange}
           visibleViewIds={restoredVisibleViewIds}
           onReorderViews={handleReorderViews}
         />

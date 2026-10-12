@@ -1,4 +1,50 @@
 {
+  "spaceCreation": {
+    "retained": "This submitted request is saved. Retry checks the original space. Closing keeps it available under Resume space creation.",
+    "resume": "Resume space creation",
+    "invalidRecovery": "The saved space request could not be read. Its data has been retained.",
+    "pendingRecovery": "Resume the existing space request before starting another."
+  },
+  "workspacePermissions": {
+    "sidebarPolicy": "Who can add and arrange pages?",
+    "sidebarOwners": "Space Owners only",
+    "sidebarMembers": "Space Members and Owners",
+    "sidebarExplanation": "Space members also need Edit access to add or arrange pages directly in this space. Nested pages follow their own permissions. This setting does not allow creating spaces or workspaces.",
+    "title": "Workspace permissions",
+    "createSpaces": "Space creation",
+    "loading": "Checking permissions…",
+    "unsupported": "This server does not support space creation controls. Ask your administrator to update it.",
+    "loadError": "Unable to check permissions. Connect to the internet and try again.",
+    "explanation": "Choose who may create spaces in this workspace. Creating a space makes the creator its Space Owner and does not change their workspace role.",
+    "allowed": "You can create spaces in this workspace.",
+    "denied": "You cannot create new spaces in this workspace.",
+    "ownerRequired": "Only workspace Owners can change these settings.",
+    "whoCanCreate": "Who can create spaces?",
+    "policies": {
+      "members_and_owners": "Members and Owners",
+      "owners_only": "Owners only",
+      "owners_and_selected_members": "Owners and selected Members"
+    },
+    "retainedSelections": "Selections are retained when another mode is active. Guests are never eligible. A group selection applies only to its active workspace Members.",
+    "users": "Members",
+    "groups": "Groups",
+    "groupEntitlement": "Adding group selections requires the permission-groups entitlement. Existing selections can still be removed.",
+    "directoryError": "Unable to load people or groups. Retry to refresh the list.",
+    "search": "Search {{kind}}",
+    "select": "Select {{kind}}",
+    "add": "Select",
+    "noSelections": "No selections.",
+    "active": "Active",
+    "inactive": "Inactive",
+    "remove": "Remove selection",
+    "selectAgain": "Select again",
+    "loadMore": "Load more",
+    "pendingEdits": "Local changes are paused on {{count}} item(s).",
+    "pendingEditsDescription": "Your changes are saved on this device. After edit access is restored, retry to send them. Changes without current edit access stay paused.",
+    "pendingEditsRetryError": "Could not retry saved changes. Please try again.",
+    "retryPendingEdits": "Retry saved changes",
+    "legacyPendingEdits": "Older local changes are preserved on this device. Their original server could not be verified, so automatic upload is paused."
+  },
   "databaseViewCreation": {
     "onlineRequired": "Connect to the internet to create Form or Chart views.",
     "connectionRequired": "Connect to the server to create this view.",
@@ -3532,7 +3578,7 @@
       "membersDescription": "Default access for members added to this space",
       "publicMembersDescription": "Default access for all workspace members",
       "ownerRoleDescription": "Full access. Can manage this space, its members, and its permissions.",
-      "memberRoleDescription": "Receives the access configured for Space members in General.",
+      "memberRoleDescription": "Receives the space member default, unless an explicit access override is configured.",
       "remove": "Remove",
       "inheritedAccessManagedFromGeneral": "This member is included by General settings. Set workspace fallback access to No access or make the space private to remove default members.",
       "searchMembers": "Search members",
@@ -3589,7 +3635,7 @@
       "confirmToPrivateDescription": "Other Space owners, Space members, and Workspace members will lose access to this Space.",
       "confirmToPrivateAction": "Make Private",
       "fullAccessMembersTitle": "Give Space members Full access?",
-      "fullAccessMembersDescription": "All Space members will be able to manage this Space, its members, and its permissions.",
+      "fullAccessMembersDescription": "Members inheriting this default will be able to manage this Space, its members, and its permissions.",
       "fullAccessEveryoneElseTitle": "Give everyone else Full access?",
       "fullAccessEveryoneElseDescription": "Workspace members not included in this Space will be able to manage the Space, its members, and its permissions.",
       "fullAccessWorkspaceMembersTitle": "Give workspace members Full access?",
@@ -3614,7 +3660,22 @@
     "manageSpace": "Manage space",
     "renameSpace": "Rename space",
     "mSpaceIconColor": "Space icon color",
-    "mSpaceIcon": "Space icon"
+    "mSpaceIcon": "Space icon",
+    "memberOverride": {
+      "label": "Access",
+      "accessFor": "Access for {{name}}",
+      "inherit": "Inherit",
+      "unknown": "Unavailable",
+      "defaultAccess": "Space default: {{level}}",
+      "assignmentAccess": "Assignment access: {{level}}",
+      "explanation": "Members inherit the space default unless you choose an override. Other grants may still provide access, and page restrictions still apply. Edit access does not grant management rights.",
+      "unsupported": "This server does not support individual member access overrides.",
+      "unavailable": "This assignment can no longer be changed. Refresh its current permissions and try again.",
+      "contextChanged": "The permission context changed. Refresh and try again.",
+      "identityUnavailable": "This member’s exact identity is unavailable. Refresh the roster before changing access.",
+      "updateFailed": "Could not update member access.",
+      "inheritedNoAccess": "Inherited memberships currently grant no access. Explicit overrides and independent grants can still provide access."
+    }
   },
   "publish": {
     "hasNotBeenPublished": "This page hasn't been published yet",
@@ -4519,5 +4580,40 @@
       "remove": "Remove dependency"
     },
     "openRow": "Open"
+  },
+  "workspaceCreation": {
+    "loading": "Checking workspace creation access…",
+    "denied": "Your administrator has not enabled workspace creation for your account. You can still sign in and join workspaces you are invited to.",
+    "unsupported": "This server cannot report workspace creation access. Ask your administrator to update it.",
+    "unavailable": "Workspace creation access could not be checked. Reconnect and try again.",
+    "ownership": "You will be the owner of the new workspace.",
+    "contextChanged": "Your account or server changed. Please try again in the current account.",
+    "invalidResponse": "The server returned an invalid workspace creation capability.",
+    "noWorkspaceTitle": "You are signed in",
+    "noWorkspaceDescription": "You do not belong to a workspace yet. Open an invitation link to join an existing workspace, or ask a workspace owner to invite you.",
+    "refreshWorkspaces": "Refresh workspaces",
+    "signOut": "Sign out",
+    "receiptUnsupported": "This server cannot safely recover workspace creation. Ask your administrator to update it, then resume this request.",
+    "invalidDraft": "The saved workspace creation request could not be read. Your pending request has been retained.",
+    "immutableDraft": "Resume the original workspace creation request before starting another.",
+    "resume": "Resume workspace creation",
+    "retryOriginal": "This request is saved in this tab. Resume uses the original name and request so a lost response cannot create a duplicate workspace."
+  },
+  "groupSpaceAccess": {
+    "title": "Group access to spaces",
+    "scope": "Choose View or Edit for a group across current and future Public and Custom spaces. Private spaces are excluded, and page restrictions still apply.",
+    "independent": "Edit does not grant management rights. Turning this off removes only this grant; other access can remain. Nothing is enabled until you save a group’s selection.",
+    "loading": "Loading group access…",
+    "unsupported": "This server does not support group access across spaces.",
+    "unavailable": "Group access could not be checked. Reconnect and refresh.",
+    "ownerRequired": "Only a workspace Owner can configure this access.",
+    "empty": "Create or sync a workspace group to configure its access.",
+    "search": "Search group access",
+    "levelFor": "Space access for {{name}}",
+    "unknown": "Unavailable",
+    "off": "Off",
+    "refresh": "Refresh group access",
+    "invalidResponse": "The server returned an invalid group access response.",
+    "contextChanged": "Permissions changed while saving. Refresh the current access and try again."
   }
 }

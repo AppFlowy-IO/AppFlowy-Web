@@ -1,4 +1,5 @@
 import { collabIndexedDBExists } from '@/application/db';
+import { collabStorageKey } from '@/application/db/collab-storage-scope';
 
 const originalIndexedDB = globalThis.indexedDB;
 
@@ -12,7 +13,7 @@ function installIndexedDBMock(indexedDBMock: Partial<IDBFactory>) {
 function createSuccessfulOpenRequest(database: IDBDatabase) {
   const request = { result: database } as IDBOpenDBRequest;
 
-  Promise.resolve().then(() => {
+  void Promise.resolve().then(() => {
     request.onsuccess?.({} as Event);
   });
 
@@ -22,7 +23,7 @@ function createSuccessfulOpenRequest(database: IDBDatabase) {
 function createNewDatabaseOpenRequest(database: IDBDatabase) {
   const request = { result: database } as IDBOpenDBRequest;
 
-  Promise.resolve().then(() => {
+  void Promise.resolve().then(() => {
     request.onupgradeneeded?.({} as IDBVersionChangeEvent);
     request.onsuccess?.({} as Event);
   });
@@ -33,7 +34,7 @@ function createNewDatabaseOpenRequest(database: IDBDatabase) {
 function createSuccessfulDeleteRequest() {
   const request = {} as IDBOpenDBRequest;
 
-  Promise.resolve().then(() => {
+  void Promise.resolve().then(() => {
     request.onsuccess?.({} as Event);
   });
 
@@ -62,7 +63,7 @@ describe('collabIndexedDBExists', () => {
 
     await expect(collabIndexedDBExists('legacy-row-db')).resolves.toBe(true);
 
-    expect(open).toHaveBeenCalledWith('legacy-row-db');
+    expect(open).toHaveBeenCalledWith(collabStorageKey('legacy-row-db'));
     expect(database.close).toHaveBeenCalledTimes(1);
     expect(deleteDatabase).not.toHaveBeenCalled();
   });
@@ -76,9 +77,9 @@ describe('collabIndexedDBExists', () => {
 
     await expect(collabIndexedDBExists('missing-row-db')).resolves.toBe(false);
 
-    expect(open).toHaveBeenCalledWith('missing-row-db');
+    expect(open).toHaveBeenCalledWith(collabStorageKey('missing-row-db'));
     expect(database.close).toHaveBeenCalledTimes(1);
-    expect(deleteDatabase).toHaveBeenCalledWith('missing-row-db');
+    expect(deleteDatabase).toHaveBeenCalledWith(collabStorageKey('missing-row-db'));
   });
 
   it('falls back to probing when database enumeration fails', async () => {
@@ -91,6 +92,6 @@ describe('collabIndexedDBExists', () => {
     await expect(collabIndexedDBExists('blocked-enumeration-row-db')).resolves.toBe(true);
 
     expect(databases).toHaveBeenCalledTimes(1);
-    expect(open).toHaveBeenCalledWith('blocked-enumeration-row-db');
+    expect(open).toHaveBeenCalledWith(collabStorageKey('blocked-enumeration-row-db'));
   });
 });

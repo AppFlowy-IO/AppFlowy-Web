@@ -1,0 +1,12 @@
+{
+  "extends": "../tsconfig.json",
+  "include": [
+    "../playwright.permissions.config.ts",
+    "../src/vite-env.d.ts",
+    "../src/@types/**/*.d.ts",
+    "support/space-group-permission-lifecycle.ts",
+    "e2e/app/space-group-permission-*.spec.ts",
+    "bdd/steps/space-group-permission-resolution.steps.ts"
+  ],
+  "references": []
+}

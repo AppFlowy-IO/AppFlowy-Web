@@ -1,0 +1,286 @@
+{
+  "captures": [
+    {
+      "file": "historical-sidebar-policy.png",
+      "original_capture": "web-owner.png",
+      "sha256": "814231444b08940fcaa05cd57b8a2bbb63cbb0f7aac1ec21a981e14744d14855",
+      "qualification": "historical UI capture; not the current document lifecycle run"
+    },
+    {
+      "file": "historical-account-only.png",
+      "original_capture": "web-empty.png",
+      "sha256": "6f76c9afa3b552ef4aea86f848f9637bb2c108e51de72e389f61af7ea7520e53",
+      "qualification": "historical UI capture; not the current document lifecycle run"
+    },
+    {
+      "file": "historical-body-search-allowed.png",
+      "original_capture": "web-search-body-keyword-positive.png",
+      "sha256": "546de25480a04adb5e75197d4e119eabac30479e6b84416643998cbfc6070966",
+      "qualification": "historical UI capture; not the current document lifecycle run"
+    },
+    {
+      "file": "historical-body-search-late-denied.png",
+      "original_capture": "web-search-body-keyword-late-response-hidden.png",
+      "sha256": "52e1c86c012f76babe69a8ba4761dd5ee044da5892eaffea6f97d9bfa0fe0a33",
+      "qualification": "historical UI capture; not the current document lifecycle run"
+    },
+    {
+      "file": "initial-view-primary.png",
+      "original_capture": "initial-view-primary.png",
+      "sha256": "e4418b7288682e401096247dbbc679d7f8feb2070c26888424ec28b67543c44d",
+      "qualification": "passed connected document lifecycle",
+      "run_id": "cc3e83eb-a782-45bb-b834-3b6c1cf16f7f"
+    },
+    {
+      "file": "explicit-edit-primary-title-focused.png",
+      "original_capture": "explicit-edit-primary-title-focused.png",
+      "sha256": "7e24928056064a2c601c886dc4353cf0d6bca3d17e9bce3a40582dbcf4b9f10d",
+      "qualification": "passed connected document lifecycle",
+      "run_id": "cc3e83eb-a782-45bb-b834-3b6c1cf16f7f"
+    },
+    {
+      "file": "grant-removed-primary.png",
+      "original_capture": "grant-removed-primary.png",
+      "sha256": "45b076df0ac44922379e8ac352e180b5670c9d08339b321d354e178ea6ca3a12",
+      "qualification": "passed connected document lifecycle",
+      "run_id": "cc3e83eb-a782-45bb-b834-3b6c1cf16f7f"
+    },
+    {
+      "file": "grant-removed-direct.png",
+      "original_capture": "grant-removed-direct.png",
+      "sha256": "96e2853b49f555ce77f19c813fd49342fb1aeffd53934a9250f69f7f67f3eed6",
+      "qualification": "passed connected document lifecycle",
+      "run_id": "cc3e83eb-a782-45bb-b834-3b6c1cf16f7f"
+    },
+    {
+      "file": "grant-removed-second.png",
+      "original_capture": "grant-removed-second.png",
+      "sha256": "4884975dbdc4be37e96f5434c3485dd87e824d0747cf08fed5d4b10dfb1665c3",
+      "qualification": "passed connected document lifecycle",
+      "run_id": "cc3e83eb-a782-45bb-b834-3b6c1cf16f7f"
+    },
+    {
+      "file": "grant-removed-follower.png",
+      "original_capture": "grant-removed-follower.png",
+      "sha256": "45b076df0ac44922379e8ac352e180b5670c9d08339b321d354e178ea6ca3a12",
+      "qualification": "passed connected document lifecycle",
+      "run_id": "cc3e83eb-a782-45bb-b834-3b6c1cf16f7f"
+    },
+    {
+      "file": "final-recovered-view-primary.png",
+      "original_capture": "final-recovered-view-primary.png",
+      "sha256": "a18da05b6ec8fc0a8e3afdb350f94e9eefae473e0cb8afbe1d4964153e622ce1",
+      "qualification": "passed connected document lifecycle",
+      "run_id": "cc3e83eb-a782-45bb-b834-3b6c1cf16f7f"
+    },
+    {
+      "file": "owner-group-view-assignment.png",
+      "original_capture": "owner-group-view-assignment.png",
+      "sha256": "db135247df2a6dee342cfadbb588c2e62607b638db9ce1215e03c776d0dbe392",
+      "qualification": "passed connected document lifecycle",
+      "run_id": "cc3e83eb-a782-45bb-b834-3b6c1cf16f7f"
+    },
+    {
+      "file": "owner-space-creator-settings.png",
+      "original_capture": "owner-space-creator-settings.png",
+      "sha256": "0802d5ed6e1fec7ec82e04b676069f647cc076ce7effd8fe0a3ec475708cab73",
+      "qualification": "passed connected document lifecycle",
+      "run_id": "cc3e83eb-a782-45bb-b834-3b6c1cf16f7f"
+    },
+    {
+      "file": "owner-space-creator-group-settings.png",
+      "original_capture": "owner-space-creator-group-settings.png",
+      "sha256": "efa44e51ee961b371812429be5820533d57e89bf484bd47fc71e66f14a7a9d8c",
+      "qualification": "passed connected document lifecycle",
+      "run_id": "cc3e83eb-a782-45bb-b834-3b6c1cf16f7f"
+    },
+    {
+      "file": "owner-group-coverage-settings.png",
+      "original_capture": "owner-group-coverage-settings.png",
+      "sha256": "f62568d97274e6b979ec0edc400470432462bc1f440f468522f469eaa7a00c32",
+      "qualification": "passed connected document lifecycle",
+      "run_id": "cc3e83eb-a782-45bb-b834-3b6c1cf16f7f"
+    },
+    {
+      "file": "historical-body-search-revoked.png",
+      "original_capture": "web-search-body-keyword-revoked.png",
+      "sha256": "63a398a7ded504f33a8e7c85c1c0d41f3ff09338fbefc63b2fe0a41d8a0a8831",
+      "qualification": "historical separate passed connected reader run; not rerun for draft PR",
+      "run_id": "e589fbf2-943d-458c-aa13-377b2934b129",
+      "result_sha256": "97415a594fe1f5c008adaf10079a77b7619c79634e2b1281f17d7f1fd3189daa"
+    },
+    {
+      "file": "historical-body-search-regranted.png",
+      "original_capture": "web-search-body-keyword-regranted.png",
+      "sha256": "0b3e38911732b5da5885e42688fd1a2c46f83bf636807c697f1393445c2c9d4c",
+      "qualification": "historical separate passed connected reader run; not rerun for draft PR",
+      "run_id": "e589fbf2-943d-458c-aa13-377b2934b129",
+      "result_sha256": "97415a594fe1f5c008adaf10079a77b7619c79634e2b1281f17d7f1fd3189daa"
+    },
+    {
+      "file": "historical-recent-positive.png",
+      "original_capture": "web-search-recent-positive.png",
+      "sha256": "c308b64c762b8f433b41ac142ddcecee22b7ec3cd0daf9f05b8c25404b208fbf",
+      "qualification": "historical separate passed connected reader run; not rerun for draft PR",
+      "run_id": "8b91758c-b947-4751-9a36-78419e967464",
+      "result_sha256": "5ab41f1c81d718e9e4862e49288f6978ed99dcb87a7ecd31b28db2cf0458a9f9"
+    },
+    {
+      "file": "historical-recent-revoked.png",
+      "original_capture": "web-search-recent-revoked.png",
+      "sha256": "e81c4bd0ef9dd7d8b22980a0905ae3de6c5639d0a59f5a008bd5610dbf90a8aa",
+      "qualification": "historical separate passed connected reader run; not rerun for draft PR",
+      "run_id": "8b91758c-b947-4751-9a36-78419e967464",
+      "result_sha256": "5ab41f1c81d718e9e4862e49288f6978ed99dcb87a7ecd31b28db2cf0458a9f9"
+    },
+    {
+      "file": "historical-recent-regranted.png",
+      "original_capture": "web-search-recent-regranted.png",
+      "sha256": "54acdd52d33ca7ad107bc22197253836f32b893ad6f2fa653104b57d6aa1884e",
+      "qualification": "historical separate passed connected reader run; not rerun for draft PR",
+      "run_id": "8b91758c-b947-4751-9a36-78419e967464",
+      "result_sha256": "5ab41f1c81d718e9e4862e49288f6978ed99dcb87a7ecd31b28db2cf0458a9f9"
+    },
+    {
+      "file": "historical-recent-late-response-hidden.png",
+      "original_capture": "web-search-recent-late-response-hidden.png",
+      "sha256": "e81c4bd0ef9dd7d8b22980a0905ae3de6c5639d0a59f5a008bd5610dbf90a8aa",
+      "qualification": "historical separate passed connected reader run; not rerun for draft PR",
+      "run_id": "8b91758c-b947-4751-9a36-78419e967464",
+      "result_sha256": "5ab41f1c81d718e9e4862e49288f6978ed99dcb87a7ecd31b28db2cf0458a9f9"
+    },
+    {
+      "file": "review-current-creator-controls.png",
+      "label": "Current space creator policy and retained inactive selection; no policy changes",
+      "sha256": "2764dc997f4db69138ed3265ee3803a1eb80ce967a5b303d7c8c14d45d675c50",
+      "qualification": "fresh connected read-only UI capture; coverage View/Edit are unsaved drafts",
+      "captured_at": "2026-10-12T07:41:45.478Z"
+    },
+    {
+      "file": "review-coverage-off.png",
+      "label": "Optional current/future Public and Custom coverage starts Off",
+      "sha256": "2f8722728a25ddc91b6f05397539de3c8e732362b22a11934df76a38c2d585da",
+      "qualification": "fresh connected read-only UI capture; coverage View/Edit are unsaved drafts",
+      "captured_at": "2026-10-12T07:41:45.478Z"
+    },
+    {
+      "file": "review-coverage-view-draft.png",
+      "label": "Unsaved view coverage draft; Save enabled while server remains Off",
+      "sha256": "b3bb6b60aebe84eb45bb9fe387400bac69a7efdbef84359432c68b9d6b85b760",
+      "qualification": "fresh connected read-only UI capture; coverage View/Edit are unsaved drafts",
+      "captured_at": "2026-10-12T07:41:45.478Z"
+    },
+    {
+      "file": "review-coverage-edit-draft.png",
+      "label": "Unsaved edit coverage draft; Save enabled while server remains Off",
+      "sha256": "7bbe9674c35c2d624aec69b24d45a15d2538f96e6618034a9015ce4bc04f559a",
+      "qualification": "fresh connected read-only UI capture; coverage View/Edit are unsaved drafts",
+      "captured_at": "2026-10-12T07:41:45.478Z"
+    },
+    {
+      "file": "review-account-only.png",
+      "label": "Existing signed-in account-only state; create/import disabled, invitation guidance available",
+      "sha256": "6f76c9afa3b552ef4aea86f848f9637bb2c108e51de72e389f61af7ea7520e53",
+      "qualification": "fresh connected read-only UI capture; coverage View/Edit are unsaved drafts",
+      "captured_at": "2026-10-12T07:41:45.478Z"
+    }
+  ],
+  "current_document_lifecycle": {
+    "run_id": "cc3e83eb-a782-45bb-b834-3b6c1cf16f7f",
+    "status": "passed",
+    "fixture_run_id": "59dc5582-c54d-4f03-8203-e35d551b6eea",
+    "checks": 44,
+    "restoration": "passed",
+    "result_sha256": "7d3683f70f1ad91186d04872d893424a640ce1985de11e5629818351657b52ef",
+    "requalification_sha256": "cbc2b264a7ca1b55e4087c8f4900cf41129b7b9be3159e839679e3c3b73cb0f8",
+    "server_source_sha256": "c7f1ccfc7bb1de19d40f06adb46850a70a02faf8c88f391b1c7e2114d2e0fadc",
+    "web_source_sha256": "8e8a601ab4ee88339f0c0223937cafd2a21679355aa5d6625f71fe18699d1891",
+    "stale_response": {
+      "phase": "stale-allow-response",
+      "object": "a4345b3c-14f5-5cbe-a6d5-22a74b36d802",
+      "response_sha256": "9403b2da09fcbcd2a39fb0c1c0f70749d3da53fcb90de2563fbe5a83d80670e9",
+      "fulfilled": true,
+      "request_finished": true,
+      "cancelled": false
+    },
+    "limitations": [
+      "Document UI state and controls; no CRDT edit or grid/row claim",
+      "Owner API calls drove lifecycle mutations; settings captures were read-only",
+      "Fresh existing-actor API sign-in; not login UI qualification",
+      "Historical four captures belong to separate earlier evidence"
+    ],
+    "harness_source_hashes": {
+      "playwright.permissions.config.ts": "4a0e73f4bd0fbf7410ea122ac21b85f88cadb36a1e091c838e95946324fb4ce0",
+      "playwright/support/space-group-permission-lifecycle.ts": "dd5cd7d0979ca3a8d1dd0041783071ea2ca84af76b520182a56127dd4cea600a",
+      "playwright/support/space-group-permission-guard.py": "c17c689c44a92d592ca65cb9585ef0a208068046c609877b2b2a4d3dd6c6bc53",
+      "playwright/e2e/app/space-group-permission-lifecycle.spec.ts": "e4933601d9cdb320787360bc9c59d71fd203fa20f0e6bab4efde66bb5cb41da7"
+    }
+  },
+  "draft_pr_read_only_capture": {
+    "captured_at": "2026-10-12T07:41:45.478Z",
+    "kind": "read-only connected UI and unsaved coverage drafts",
+    "checks": [
+      "Coverage remains Off before, during both unsaved drafts, and after reset; Save is disabled again.",
+      "Existing account-only fixture has no workspace and both creation actions disabled."
+    ],
+    "captures": [
+      {
+        "file": "review-current-creator-controls.png",
+        "label": "Current space creator policy and retained inactive selection; no policy changes",
+        "sha256": "2764dc997f4db69138ed3265ee3803a1eb80ce967a5b303d7c8c14d45d675c50"
+      },
+      {
+        "file": "review-coverage-off.png",
+        "label": "Optional current/future Public and Custom coverage starts Off",
+        "sha256": "2f8722728a25ddc91b6f05397539de3c8e732362b22a11934df76a38c2d585da"
+      },
+      {
+        "file": "review-coverage-view-draft.png",
+        "label": "Unsaved view coverage draft; Save enabled while server remains Off",
+        "sha256": "b3bb6b60aebe84eb45bb9fe387400bac69a7efdbef84359432c68b9d6b85b760"
+      },
+      {
+        "file": "review-coverage-edit-draft.png",
+        "label": "Unsaved edit coverage draft; Save enabled while server remains Off",
+        "sha256": "7bbe9674c35c2d624aec69b24d45a15d2538f96e6618034a9015ce4bc04f559a"
+      },
+      {
+        "file": "review-account-only.png",
+        "label": "Existing signed-in account-only state; create/import disabled, invitation guidance available",
+        "sha256": "6f76c9afa3b552ef4aea86f848f9637bb2c108e51de72e389f61af7ea7520e53"
+      }
+    ],
+    "blocked_writes": [
+      {
+        "method": "POST",
+        "path": "/api/user/update"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/workspace/5cbcff36-8019-4c38-94f3-c4791361ed6b/open"
+      },
+      {
+        "method": "POST",
+        "path": "/api/workspace/5cbcff36-8019-4c38-94f3-c4791361ed6b/add-recent-pages"
+      },
+      {
+        "method": "POST",
+        "path": "/api/user/update"
+      }
+    ],
+    "page_errors": [],
+    "limitations": [
+      "Live server binaries predate the final four Rust review fixes; these images do not qualify those fixes.",
+      "API sign-in of existing synthetic accounts, not login UI qualification.",
+      "Coverage selections are local unsaved drafts; no policy, membership, document or coverage mutation is allowed."
+    ],
+    "web_source_sha256": "76020995f9d686a130290b5b3d620d080f49a0c3d59785ef806b4c2447483a31",
+    "status": "passed",
+    "harness_sha256": "3ff6386c0ef430f25791ded2dca279cc9bf4b91e7fee4e3affe889b5bfaae114",
+    "earlier_attempts": "Two harness attempts did not complete: wrong search label, then initial settings-menu rerender. Their local logs remain separate; only the final passed attempt supplies these five captures."
+  },
+  "packet_limits": [
+    "The 44-check lifecycle predates the final four server review fixes. No current-server-source end-to-end claim.",
+    "Historical keyword/recent reader and fresh settings captures are separate runs, not added to the 44-check count."
+  ]
+}

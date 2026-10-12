@@ -1,8 +1,11 @@
 import * as awarenessProtocol from 'y-protocols/awareness';
 import * as Y from 'yjs';
 
-import { deleteCollabDB } from '@/application/db';
+import { closeCollabDB } from '@/application/db';
+import { isCollabStorageCurrent } from '@/application/db/collab-storage-scope';
 import {
+  blockPermissionSync,
+  getCurrentOutboxSession,
   deleteOutboxByObjectId,
   enqueueOutboxUpdate,
   shouldRouteUpdateThroughOutbox,
@@ -96,6 +99,7 @@ export const bindSyncContext = (ctx: SyncContext): void => {
     throw new Error('SyncContext must have a Y.Doc instance.');
   }
 
+  if (!isCollabStorageCurrent(doc)) return;
   Log.debug('[sync] binding context with manifest exchange', {
     objectId: doc.guid,
     collabType,
@@ -130,6 +134,8 @@ export const bindSyncContext = (ctx: SyncContext): void => {
 
 const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void => {
   const { doc, emit } = ctx;
+
+  if (!isCollabStorageCurrent(doc)) return;
   const stateVector = message.stateVector && message.stateVector.length > 0 ? message.stateVector : undefined;
   const update = Y.encodeStateAsUpdate(doc, stateVector);
 
@@ -192,19 +198,21 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
 };
 
 const handleAccessChanged = (ctx: SyncContext, message: collab.IAccessChanged): void => {
+  if (!isCollabStorageCurrent(ctx.doc)) return;
+  if (message.canRead === false || message.canWrite === false) {
+    const session = getCurrentOutboxSession();
+
+    // Revocation pauses both incremental edits and reconstructed manifests.
+    // A later grant must not imply consent to upload retained offline work.
+    if (session) void blockPermissionSync(ctx.doc.guid, session.workspaceId)
+      .catch((error) => Log.error('[sync] Could not persist permission quarantine', error));
+  }
+
   if (message.canRead === false) {
-    //FIXME: we should not only destroy the doc, but also remove it from the persistent storage.
-    // Access revoked: drop any queued outbox rows so we do not replay local
-    // edits against a doc the user no longer has permission on. The discard
-    // runs async — to prevent the destroy handler's subsequent unregister
-    // from firing a flush that races with the delete, synchronously null
-    // out ctx.flush first. The drain also gates on `suppressedObjects`
-    // (set synchronously by discardPendingUpdates), so any new drain
-    // iteration aborts before sending.
-    void ctx.discardPendingUpdates?.();
+    // Destroying an active consumer hides its content, but does not discard
+    // the saved local state. Version replacement has a separate explicit API.
     ctx.flush = undefined;
-    ctx.discardPendingUpdates = undefined;
-    void deleteCollabDB(ctx.doc.guid, { destroyDoc: false });
+    void closeCollabDB(ctx.doc.guid).catch((error) => Log.warn('[sync] Could not close revoked provider', error));
     ctx.doc.destroy();
   }
 };
@@ -286,7 +294,7 @@ export const initSync = (ctx: SyncContext) => {
   ctx.discardPendingUpdates = (options) => deleteOutboxByObjectId(doc.guid, options);
 
   const onUpdate = (update: Uint8Array, origin: string, _doc: Y.Doc, transaction: Y.Transaction) => {
-    if (origin === CollabOrigin.Remote) return;
+    if (origin === CollabOrigin.Remote || !isCollabStorageCurrent(doc)) return;
 
     if (origin === CollabOrigin.InlineCommentAuthorized) {
       // Read-and-comment anchors use their narrowly authorized HTTP endpoint,
@@ -312,17 +320,7 @@ export const initSync = (ctx: SyncContext) => {
     ctx.onLocalUpdate?.(doc.guid);
   };
 
-  const onDestroy = () => {
-    // when switching versions, we destroy previous instance of the document
-    // at this point all stashed updates are no longer valid. Fire-and-forget
-    // is acceptable here: the unregister path that sets `skipFlushOnDestroy`
-    // will also trigger its own discard, and callers that need to observe
-    // completion go through the await path in useCollab{Message,Version}Revert.
-    void ctx.discardPendingUpdates?.();
-  };
-
   doc.on('update', onUpdate);
-  doc.on('destroy', onDestroy);
 
   if (awareness) {
     onAwarenessChange = ({ added, updated, removed }: AwarenessEvent, _: string) => {
@@ -353,7 +351,6 @@ export const initSync = (ctx: SyncContext) => {
   // discardPendingUpdates() (version reset/revert paths only).
   const cleanup = () => {
     doc.off('update', onUpdate);
-    doc.off('destroy', onDestroy);
     if (awareness && onAwarenessChange) {
       awareness.off('change', onAwarenessChange);
     }
@@ -384,6 +381,7 @@ export const getCollabMessageVersion = (message: collab.ICollabMessage): string 
 export const handleMessage = (ctx: SyncContext, message: collab.ICollabMessage): void => {
   const doc = ctx.doc || ctx.awareness?.doc;
 
+  if (!isCollabStorageCurrent(doc)) return;
   if (message.objectId !== doc.guid) {
     throw new Error(`collab message mismatch - expected objectId ${message.objectId}, got ${doc.guid}`);
   }

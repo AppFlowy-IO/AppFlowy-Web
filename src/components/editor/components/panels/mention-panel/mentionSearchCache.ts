@@ -6,43 +6,111 @@ const MENTION_SEARCH_CACHE_LIMIT = 50;
 const DEFAULT_MENTION_SEARCH_RETRY_LATER_MS = 3000;
 
 interface MentionSearchCacheEntry {
+  owner: MentionSearchCache;
   sections: MentionSearchSection[];
   cachedAt?: number;
   retryLaterUntil?: number;
   refreshPromise?: Promise<void>;
+  read?: object;
+}
+
+export interface MentionSearchRead {
+  isCurrent: () => boolean;
+  setSections: (sections: MentionSearchSection[]) => void;
 }
 
 const mentionSearchCache = new Map<string, MentionSearchCacheEntry>();
 
-function setMentionSearchCacheEntry(key: string, entry: MentionSearchCacheEntry) {
-  if (mentionSearchCache.has(key)) {
-    // Re-insert so Map iteration order tracks recency (LRU eviction).
-    mentionSearchCache.delete(key);
-  } else if (mentionSearchCache.size >= MENTION_SEARCH_CACHE_LIMIT) {
-    const oldestKey = mentionSearchCache.keys().next().value;
+/** One cache lifetime belongs to one permission/session scope. Object identity deliberately
+ * prevents a remounted panel from reusing an earlier scope's entries, even for the same account.
+ * The shared map bounds retained entries across all panels; invalidated async work cannot fill it.
+ */
+export class MentionSearchCache {
+  constructor(private readonly isCurrent: () => boolean) {}
 
-    if (oldestKey !== undefined) {
-      mentionSearchCache.delete(oldestKey);
-    }
+  private entry(key: string) {
+    if (!this.isCurrent()) return undefined;
+    const entry = mentionSearchCache.get(key);
+
+    return entry?.owner === this ? entry : undefined;
   }
 
-  mentionSearchCache.set(key, entry);
-}
+  private setEntry(key: string, entry: Omit<MentionSearchCacheEntry, 'owner'>) {
+    if (!this.isCurrent()) return;
+    if (mentionSearchCache.has(key)) {
+      mentionSearchCache.delete(key);
+    } else if (mentionSearchCache.size >= MENTION_SEARCH_CACHE_LIMIT) {
+      const oldestKey = mentionSearchCache.keys().next().value;
 
-export function getCachedMentionSections(key: string): MentionSearchSection[] | undefined {
-  const entry = mentionSearchCache.get(key);
+      if (oldestKey !== undefined) mentionSearchCache.delete(oldestKey);
+    }
 
-  return entry?.cachedAt ? entry.sections : undefined;
-}
+    mentionSearchCache.set(key, { ...entry, owner: this });
+  }
 
-export function setCachedMentionSections(key: string, sections: MentionSearchSection[]) {
-  const previous = mentionSearchCache.get(key);
+  getSections(key: string): MentionSearchSection[] | undefined {
+    const entry = this.entry(key);
 
-  setMentionSearchCacheEntry(key, {
-    ...previous,
-    sections,
-    cachedAt: Date.now(),
-  });
+    return entry?.cachedAt !== undefined ? entry.sections : undefined;
+  }
+
+  /** A newer read or RetryLater retires this attempt, even within an unchanged access scope. */
+  beginRead(key: string): MentionSearchRead {
+    const read = {};
+    const previous = this.entry(key);
+
+    this.setEntry(key, { ...previous, sections: previous?.sections ?? [], read });
+    const isCurrent = () => this.entry(key)?.read === read;
+
+    return {
+      isCurrent,
+      setSections: (sections) => {
+        if (isCurrent()) this.setEntry(key, { ...this.entry(key), sections, cachedAt: Date.now() });
+      },
+    };
+  }
+
+  markRetryLater(key: string, error?: APIError) {
+    const previous = this.entry(key);
+
+    this.setEntry(key, {
+      refreshPromise: previous?.refreshPromise,
+      // RetryLater can signal changed/dirty authority before a notification arrives.
+      // Its cooldown is not evidence that previously returned suggestions remain readable.
+      sections: [],
+      retryLaterUntil: Date.now() + mentionSearchRetryLaterDelayMs(error),
+    });
+  }
+
+  forget(key: string) {
+    if (this.entry(key)) mentionSearchCache.delete(key);
+  }
+
+  retryLaterRemainingMs(key: string): number {
+    const until = this.entry(key)?.retryLaterUntil;
+
+    return until ? Math.max(until - Date.now(), 0) : 0;
+  }
+
+  startRefresh(key: string, refresh: () => Promise<void>) {
+    if (!this.isCurrent()) return Promise.resolve();
+    const previous = this.entry(key);
+
+    if (previous?.refreshPromise) return previous.refreshPromise;
+    const refreshPromise = refresh().finally(() => {
+      const current = this.entry(key);
+
+      // A stale completion must not clear another scope's in-flight refresh.
+      if (current?.refreshPromise === refreshPromise) {
+        this.setEntry(key, { ...current, refreshPromise: undefined });
+      }
+    });
+
+    const started = this.entry(key);
+
+    this.setEntry(key, { ...started, sections: started?.sections ?? [], refreshPromise });
+    return refreshPromise;
+  }
 }
 
 export function isMentionSearchRetryLater(error: unknown): error is APIError {
@@ -58,61 +126,6 @@ export function mentionSearchRetryLaterDelayMs(error?: APIError): number {
   const retryAfterMs = error?.retryAfterSecs ? error.retryAfterSecs * 1000 : DEFAULT_MENTION_SEARCH_RETRY_LATER_MS;
 
   return Math.max(retryAfterMs, 1000);
-}
-
-export function markMentionSearchRetryLater(key: string, error?: APIError) {
-  const previous = mentionSearchCache.get(key);
-
-  setMentionSearchCacheEntry(key, {
-    sections: previous?.sections ?? [],
-    cachedAt: previous?.cachedAt,
-    refreshPromise: previous?.refreshPromise,
-    retryLaterUntil: Date.now() + mentionSearchRetryLaterDelayMs(error),
-  });
-}
-
-export function mentionSearchRetryLaterRemainingMs(key: string): number {
-  const entry = mentionSearchCache.get(key);
-  const retryLaterUntil = entry?.retryLaterUntil;
-
-  if (!retryLaterUntil) return 0;
-
-  const remainingMs = retryLaterUntil - Date.now();
-
-  if (remainingMs > 0) return remainingMs;
-
-  mentionSearchCache.set(key, {
-    ...entry,
-    retryLaterUntil: undefined,
-  });
-  return 0;
-}
-
-export function startMentionSearchRefresh(key: string, refresh: () => Promise<void>) {
-  const existing = mentionSearchCache.get(key)?.refreshPromise;
-
-  if (existing) return existing;
-
-  const refreshPromise = refresh().finally(() => {
-    const current = mentionSearchCache.get(key);
-
-    if (current?.refreshPromise === refreshPromise) {
-      mentionSearchCache.set(key, {
-        ...current,
-        refreshPromise: undefined,
-      });
-    }
-  });
-  const previous = mentionSearchCache.get(key);
-
-  setMentionSearchCacheEntry(key, {
-    sections: previous?.sections ?? [],
-    cachedAt: previous?.cachedAt,
-    retryLaterUntil: previous?.retryLaterUntil,
-    refreshPromise,
-  });
-
-  return refreshPromise;
 }
 
 export function clearMentionSearchCacheForTests() {

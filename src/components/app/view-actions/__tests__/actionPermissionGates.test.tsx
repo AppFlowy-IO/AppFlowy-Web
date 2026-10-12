@@ -11,6 +11,11 @@ import type { ReactNode } from 'react';
 
 const mockUseViewActionPermissions = jest.fn();
 const mockUseSpaceActionPermissions = jest.fn();
+let mockCanCreateSpace = true;
+
+jest.mock('@/components/app/hooks/useSpaceCreationCapability', () => ({
+  useSpaceCreationCapability: () => ({ status: 'ready', canCreateSpace: mockCanCreateSpace }),
+}));
 const mockDocumentView: View = {
   children: [],
   extra: null,
@@ -133,6 +138,7 @@ jest.mock('@/components/app/view-actions/useSpaceActionPermissions', () => ({
 
 describe('view action permission gates', () => {
   beforeEach(() => {
+    mockCanCreateSpace = true;
     mockCurrentView = mockDocumentView;
     mockUseViewActionPermissions.mockReset();
     mockUseSpaceActionPermissions.mockReset();
@@ -259,6 +265,14 @@ describe('view action permission gates', () => {
 
     expect(duplicate.hasAttribute('disabled')).toBe(true);
     expect(duplicate.textContent).toContain('form.duplicateUnavailable');
+  });
+
+  it('keeps management available while denying new space duplication', () => {
+    mockCanCreateSpace = false;
+    render(<MoreSpaceActions view={mockSpaceView} onClose={jest.fn()} canManageActions
+      canOpenManageActions isLoadingActions={false} />);
+    expect(screen.getByTestId('space-action-manage')).toBeTruthy();
+    expect(screen.getByTestId('space-action-duplicate').getAttribute('disabled')).not.toBeNull();
   });
 
   it('hides the space more trigger when no menu action is permitted while keeping Add independent', () => {

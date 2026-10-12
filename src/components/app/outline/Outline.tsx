@@ -81,7 +81,7 @@ export function Outline({ width }: { width: number }) {
   const eventEmitter = useEventEmitter();
   const selectedViewId = useSidebarSelectedViewId();
   const userWorkspaceInfo = useUserWorkspaceInfo();
-  const canReorderSpaces = userWorkspaceInfo?.selectedWorkspace.role === Role.Owner;
+  const canReorderSpaces = userWorkspaceInfo?.selectedWorkspace?.role === Role.Owner;
   const spaceListRef = useRef<HTMLDivElement>(null);
   const [pageTreeScopeId] = useState(() => Symbol('sidebar-page-tree-scope'));
 

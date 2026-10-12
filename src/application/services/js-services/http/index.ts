@@ -4,6 +4,7 @@ export * from './gotrue';
 export * from './auth-api';
 export * from './user-api';
 export * from './workspace-api';
+export * from './space-creators-api';
 export * from './view-api';
 export * from './page-api';
 export * from './collab-api';

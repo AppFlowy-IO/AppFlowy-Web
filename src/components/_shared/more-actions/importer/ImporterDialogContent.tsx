@@ -1,11 +1,13 @@
 import LinearProgress from '@mui/material/LinearProgress';
-import React, { useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { FileService } from '@/application/services/domains';
 import FileDropzone from '@/components/_shared/file-dropzone/FileDropzone';
 import { notify } from '@/components/_shared/notify';
 import { TabPanel, ViewTab, ViewTabs } from '@/components/_shared/tabs/ViewTabs';
+import { useWorkspaceCreationCapability } from '@/components/app/hooks/useWorkspaceCreationCapability';
+import { WorkspaceCreationNotice } from '@/components/app/workspaces/WorkspaceCreationNotice';
 
 const ZIP_ACCEPT = '.zip,application/zip,application/x-zip,application/x-zip-compressed';
 
@@ -31,39 +33,56 @@ type ImportSource = keyof typeof IMPORT_SOURCES;
 
 function ImporterDialogContent({ source, onSuccess }: { source?: string; onSuccess: () => void }) {
   const { t } = useTranslation();
-  const [value, setValue] = React.useState<ImportSource>(
-    source === 'appflowy' || source === 'confluence' ? source : 'notion'
+  const [value, setValue] = useState<ImportSource>(source === 'appflowy' || source === 'confluence' ? source : 'notion');
+  const [progress, setProgress] = useState<number>(0);
+  const [isError, setIsError] = useState<boolean>(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [files, setFiles] = useState<Partial<Record<ImportSource, File>>>({});
+  const creation = useWorkspaceCreationCapability();
+  const uploadScope = useMemo(
+    () => ({ key: creation.scopeKey, controller: undefined as AbortController | undefined }),
+    [creation.scopeKey]
   );
-  const [progress, setProgress] = React.useState<number>(0);
-  const [isError, setIsError] = React.useState<boolean>(false);
-  const [isUploading, setIsUploading] = React.useState(false);
+
+  useEffect(() => () => uploadScope.controller?.abort(), [uploadScope]);
 
   const handleUpload = useCallback(
     async (file: File) => {
-      if (isUploading) return;
+      if (isUploading || !creation.canCreate) return;
+      const controller = new AbortController();
+
+      uploadScope.controller = controller;
+      setFiles((previous) => ({ ...previous, [value]: file }));
       setIsUploading(true);
       setProgress(0);
       setIsError(false);
       try {
         await FileService.importFile(file, {
           taskType: IMPORT_SOURCES[value].taskType,
-          onProgress: setProgress,
+          signal: controller.signal,
+          onProgress: (progress) => {
+            if (creation.isCurrent()) setProgress(progress);
+          },
         });
+        if (!creation.isCurrent()) return;
         onSuccess();
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (e: any) {
+        if (!creation.isCurrent()) return;
         notify.error(e.message);
         setIsError(true);
+        void creation.refresh();
       } finally {
-        setIsUploading(false);
+        if (creation.isCurrent()) setIsUploading(false);
       }
     },
-    [isUploading, onSuccess, value]
+    [isUploading, onSuccess, value, creation, uploadScope]
   );
 
   return (
     <div className={'flex flex-col gap-8'}>
       <p className='text-sm text-text-secondary'>{t('web.importCreatesWorkspace')}</p>
+      <WorkspaceCreationNotice capability={creation} showOwnership />
       <ViewTabs
         className={'border-b border-border-primary'}
         onChange={(_e, newValue) => setValue(newValue)}
@@ -91,10 +110,28 @@ function ImporterDialogContent({ source, onSuccess }: { source?: string; onSucce
                 if (!files.length) return;
                 void handleUpload(files[0]);
               }}
-              disabled={isUploading}
+              disabled={isUploading || !creation.canCreate}
               placeholder={t(config.placeholder)}
               loading={isUploading}
             />
+            {files[source as ImportSource] && (
+              <div className='text-sm'>
+                <p>{files[source as ImportSource]?.name}</p>
+                {isError && (
+                  <button
+                    type='button'
+                    disabled={isUploading || !creation.canCreate}
+                    onClick={() => {
+                      const file = files[source as ImportSource];
+
+                      if (file) void handleUpload(file);
+                    }}
+                  >
+                    {t('button.retry')}
+                  </button>
+                )}
+              </div>
+            )}
             {progress > 0 && (
               <LinearProgress
                 variant='determinate'

@@ -1,6 +1,5 @@
 import * as Y from 'yjs';
 
-import { withDatabaseStorageFence } from '@/application/db/database-storage-fence';
 import {
   __dbTestUtils,
   db,
@@ -10,6 +9,8 @@ import {
   getCachedRowProvider,
   rotateDatabaseStorageFence,
 } from '@/application/db';
+import { collabStorageKey } from '@/application/db/collab-storage-scope';
+import { withDatabaseStorageFence, publishDatabaseCacheEpoch } from '@/application/db/database-storage-fence';
 import { type CollabSnapshotRecord, type CollabUpdateRecord } from '@/application/db/tables/collab_storage';
 import { type YDoc } from '@/application/types';
 
@@ -142,6 +143,7 @@ describe('collab IndexedDB persistence internals', () => {
 
   it('prevents an old tab provider from persisting after an authoritative epoch change', async () => {
     let epoch: string | null = null;
+
     jest
       .mocked(db.collab_custom.get)
       .mockImplementation(async () =>
@@ -180,7 +182,7 @@ describe('collab IndexedDB persistence internals', () => {
       return {
         objectId,
         key: '__storage_epoch',
-        value: objectId.startsWith('database-blob-epoch:') ? 'new-database-epoch' : 'current-row-epoch',
+        value: objectId === collabStorageKey('database-blob-epoch:database') ? 'new-database-epoch' : 'current-row-epoch',
       };
     });
     jest
@@ -202,6 +204,7 @@ describe('collab IndexedDB persistence internals', () => {
     expect(add).not.toHaveBeenCalled();
     doc.destroy();
 
+    publishDatabaseCacheEpoch('database', 'new-database-epoch');
     const fresh = new Y.Doc({ guid: 'newly-discovered-row' }) as YDoc;
     const freshProvider = new __dbTestUtils.SharedIndexeddbPersistence(fresh.guid, fresh);
 
@@ -227,7 +230,7 @@ describe('collab IndexedDB persistence internals', () => {
     await expect(publishWithDatabaseStorageFence(fence, publish)).resolves.toBe(true);
     expect(publish).toHaveBeenCalledTimes(1);
     await expect(captureDatabaseStorageFence('ordinary-database', { required: true })).rejects.toThrow('unavailable');
-    localStorage.setItem('af_database_blob_epoch:ordinary-database', 'restore-epoch');
+    localStorage.setItem(`af_database_blob_epoch:${collabStorageKey('ordinary-database')}`, 'restore-epoch');
     await expect(captureDatabaseStorageFence('ordinary-database')).rejects.toThrow('unavailable');
     await expect(publishWithDatabaseStorageFence(fence, publish)).rejects.toThrow('unavailable');
     expect(publish).toHaveBeenCalledTimes(1);
@@ -237,6 +240,7 @@ describe('collab IndexedDB persistence internals', () => {
     const transaction = jest
       .spyOn(db, 'transaction')
       .mockImplementation((async (...args: unknown[]) => (args[args.length - 1] as () => Promise<unknown>)()) as never);
+
     jest
       .mocked(db.collab_custom.get)
       .mockResolvedValue({ objectId: 'database-blob-epoch:database', key: '__storage_epoch', value: 'restored' });
@@ -249,7 +253,7 @@ describe('collab IndexedDB persistence internals', () => {
     ).resolves.toBe(false);
     expect(publish).not.toHaveBeenCalled();
     expect(transaction).toHaveBeenCalledWith('rw', db.collab_custom, expect.any(Function));
-    localStorage.setItem('af_database_blob_epoch:database', 'restored');
+    localStorage.setItem(`af_database_blob_epoch:${collabStorageKey('database')}`, 'restored');
     await expect(
       publishWithDatabaseStorageFence({ databaseId: 'database', epoch: 'restored', cacheEpoch: 'restored' }, publish)
     ).resolves.toBe(true);
@@ -258,6 +262,7 @@ describe('collab IndexedDB persistence internals', () => {
 
   it('shares a stable epoch across tabs restoring the same version and rejects a delayed older head', async () => {
     let epoch: string | null = null;
+
     jest
       .spyOn(db, 'transaction')
       .mockImplementation((async (...args: unknown[]) => (args[args.length - 1] as () => Promise<unknown>)()) as never);
@@ -273,6 +278,7 @@ describe('collab IndexedDB persistence internals', () => {
 
     await rotateDatabaseStorageFence('database', 'R1', null);
     const firstTabFence = await captureDatabaseStorageFence('database');
+
     await rotateDatabaseStorageFence('database', 'R1', null);
     expect(await captureDatabaseStorageFence('database')).toEqual(firstTabFence);
     expect(put).toHaveBeenCalledTimes(1);
@@ -282,12 +288,14 @@ describe('collab IndexedDB persistence internals', () => {
       name: 'DatabaseStorageGenerationChangedError',
     });
     expect(epoch).toBe('R2');
-    expect(localStorage.getItem('af_database_blob_epoch:database')).toBe('R2');
+    expect(localStorage.getItem(`af_database_blob_epoch:${collabStorageKey('database')}`)).toBe('R2');
   });
 
   it('preserves hydrated row data and its active provider when a second tab clears the same restore', async () => {
     Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: {} });
-    const epochs = new Map<string, string>([['database-blob-epoch:database', 'R']]);
+    publishDatabaseCacheEpoch('database', 'R');
+    const epochs = new Map<string, string>([[collabStorageKey('database-blob-epoch:database'), 'R']]);
+
     jest.mocked(db.collab_custom.get).mockImplementation(async (key) => {
       const [objectId] = key as string[];
       const value = epochs.get(objectId);
@@ -302,10 +310,11 @@ describe('collab IndexedDB persistence internals', () => {
       .spyOn(db, 'transaction')
       .mockImplementation((async (...args: unknown[]) => (args[args.length - 1] as () => Promise<unknown>)()) as never);
     const deletion = jest.spyOn(db.collab_snapshots, 'delete').mockResolvedValue(undefined);
+
     jest.spyOn(db.collab_snapshots, 'get').mockResolvedValue(undefined);
-    jest.spyOn(db.collab_custom, 'where').mockReturnValue({ equals: () => ({ delete: async () => {} }) } as never);
+    jest.spyOn(db.collab_custom, 'where').mockReturnValue({ equals: () => ({ delete: async () => undefined }) } as never);
     jest.spyOn(db.collab_updates, 'where').mockReturnValue({
-      equals: () => ({ delete: async () => {} }),
+      equals: () => ({ delete: async () => undefined }),
       between: () => ({ toArray: async () => [] }),
     } as never);
     const add = jest.spyOn(db.collab_updates, 'add').mockResolvedValue(1);
@@ -313,7 +322,7 @@ describe('collab IndexedDB persistence internals', () => {
 
     await expect(__dbTestUtils.deleteSharedCollabData('row', fence, 'R')).resolves.toBe(true);
     const doc = new Y.Doc({ guid: 'row' }) as YDoc;
-    const provider = new __dbTestUtils.SharedIndexeddbPersistence('row', doc);
+    const provider = new __dbTestUtils.SharedIndexeddbPersistence(collabStorageKey('row'), doc);
 
     await provider.whenSynced;
     withDatabaseStorageFence(doc, fence, () => doc.getMap('row').set('title', 'first tab edit'));
@@ -322,8 +331,8 @@ describe('collab IndexedDB persistence internals', () => {
     await provider.destroy();
     expect(deletion).toHaveBeenCalledTimes(1);
     expect(add).toHaveBeenCalledTimes(2);
-    expect(epochs.get('row')).toBe('R');
-    epochs.set('database-blob-epoch:database', 'R2');
+    expect(epochs.get(collabStorageKey('row'))).toBe('R');
+    epochs.set(collabStorageKey('database-blob-epoch:database'), 'R2');
     await expect(__dbTestUtils.deleteSharedCollabData('row', fence, 'R')).resolves.toBe(false);
     expect(deletion).toHaveBeenCalledTimes(1);
     doc.destroy();

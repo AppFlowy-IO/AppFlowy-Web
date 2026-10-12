@@ -13,6 +13,7 @@ import { Log } from '@/utils/log';
 import { getConfigValue } from '@/utils/runtime-config';
 
 import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from './core';
+import { ensureCanCreateWorkspace } from './workspace-creation-api';
 
 export interface ImportPartPresignedUrl {
   part_number: number;
@@ -59,11 +60,13 @@ function toImportUploadTask(data: CreateImportTaskRaw): ImportUploadTask {
 }
 
 export async function createImportTask(file: File, taskType: CreateImportTaskType): Promise<ImportUploadTask> {
+  const assertCurrent = await ensureCanCreateWorkspace();
   const url = `/api/import/create`;
   const fileName = file.name.split('.').slice(0, -1).join('.') || crypto.randomUUID();
 
-  return executeAPIRequest<CreateImportTaskRaw>(() =>
-    getAxios()?.post<APIResponse<CreateImportTaskRaw>>(
+  return executeAPIRequest<CreateImportTaskRaw>(() => {
+    assertCurrent();
+    return getAxios()?.post<APIResponse<CreateImportTaskRaw>>(
       url,
       {
         workspace_name: fileName,
@@ -75,8 +78,11 @@ export async function createImportTask(file: File, taskType: CreateImportTaskTyp
           'X-Host': getConfigValue('APPFLOWY_BASE_URL', ''),
         },
       }
-    )
-  ).then(toImportUploadTask);
+    );
+  }).then((data) => {
+    assertCurrent();
+    return toImportUploadTask(data);
+  });
 }
 
 export async function createNotionImportTask(
@@ -153,7 +159,8 @@ export async function uploadImportFileMultipart(
   file: File,
   multipart: ImportMultipartUploadInfo,
   onProgress: (progress: number) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  beforeComplete?: () => void
 ) {
   const MAX_CONCURRENCY = 5;
   const partCount = multipart.part_presigned_urls.length;
@@ -238,7 +245,8 @@ export async function uploadImportFileMultipart(
         upload_id: multipart.upload_id,
         parts: completedParts.sort((a, b) => a.part_number - b.part_number),
       },
-      uploadController.signal
+      uploadController.signal,
+      beforeComplete
     );
   } catch (error) {
     abortUpload();
@@ -263,11 +271,15 @@ async function completeImportMultipart(
     upload_id: string;
     parts: { e_tag: string; part_number: number }[];
   },
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  beforeComplete?: () => void
 ) {
   const url = `/api/import/complete-multipart`;
 
-  return executeAPIVoidRequest(() => getAxios()?.post<APIResponse>(url, data, { signal }));
+  return executeAPIVoidRequest(() => {
+    beforeComplete?.();
+    return getAxios()?.post<APIResponse>(url, data, { signal });
+  });
 }
 
 export async function createDatabaseCsvImportTask(

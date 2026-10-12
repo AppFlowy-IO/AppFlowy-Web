@@ -14,7 +14,11 @@ interface MockSyncOutboxRecord {
   createdAt: number;
   beforeStateVector?: Uint8Array;
   source?: 'manifest';
+  permissionBlocked?: boolean;
+  serverUrl?: string;
 }
+
+const mockPermissionBlocks = new Map<string, {revision: string}>();
 
 let mockRecords: MockSyncOutboxRecord[] = [];
 let mockNextId = 1;
@@ -36,12 +40,28 @@ function mockMatchesIndex(index: string, key: unknown[], record: MockSyncOutboxR
   throw new Error(`Unsupported mock index: ${index}`);
 }
 
+function mockCollection(predicate: (record: MockSyncOutboxRecord) => boolean) {
+  return {
+    count: async () => mockRecords.filter(predicate).length,
+    modify: async (patch: Partial<MockSyncOutboxRecord>) => { mockRecords.filter(predicate).forEach((row) => Object.assign(row, patch)); },
+    delete: async () => { mockRecords = mockRecords.filter((record) => !predicate(record)); },
+    filter: (next: (record: MockSyncOutboxRecord) => boolean) => mockCollection((record) => predicate(record) && next(record)),
+    each: async (callback: (record: MockSyncOutboxRecord) => void) => { mockRecords.filter(predicate).forEach(callback); },
+    sortBy: async (field: keyof MockSyncOutboxRecord) => mockRecords.filter(predicate).slice().sort((a,b) => Number(a[field] ?? 0) - Number(b[field] ?? 0)),
+    limit: (count: number) => ({toArray: async () => mockRecords.filter(predicate).slice().sort((a,b) => Number(a.id ?? 0) - Number(b.id ?? 0)).slice(0,count)}),
+  };
+}
+
 const mockSyncOutboxTable = {
   add: jest.fn(async (row: Omit<MockSyncOutboxRecord, 'id'>) => {
     const id = mockNextId++;
 
     mockRecords.push({ ...row, id });
     return id;
+  }),
+  update: jest.fn(async (id: number, patch: Partial<MockSyncOutboxRecord>) => {
+    const row = mockRecords.find((record) => record.id === id);
+    if (row) Object.assign(row, patch);
   }),
   bulkDelete: jest.fn(async (ids: number[]) => {
     const idsToDelete = new Set(ids);
@@ -52,35 +72,8 @@ const mockSyncOutboxTable = {
     mockRecords = [];
   }),
   where: jest.fn((index: string) => ({
-    equals: (key: unknown[]) => ({
-      count: async () => mockRecords.filter((record) => mockMatchesIndex(index, key, record)).length,
-      delete: async () => {
-        mockRecords = mockRecords.filter((record) => !mockMatchesIndex(index, key, record));
-      },
-      filter: (predicate: (record: MockSyncOutboxRecord) => boolean) => ({
-        delete: async () => {
-          mockRecords = mockRecords.filter((record) => !mockMatchesIndex(index, key, record) || !predicate(record));
-        },
-      }),
-      each: async (callback: (record: MockSyncOutboxRecord) => void) => {
-        mockRecords.filter((record) => mockMatchesIndex(index, key, record)).forEach(callback);
-      },
-      sortBy: async (field: keyof MockSyncOutboxRecord) =>
-        mockRecords
-          .filter((record) => mockMatchesIndex(index, key, record))
-          .slice()
-          .sort((a, b) => Number(a[field] ?? 0) - Number(b[field] ?? 0)),
-    }),
-    between: (lower: unknown[]) => ({
-      limit: (count: number) => ({
-        toArray: async () =>
-          mockRecords
-            .filter((record) => mockMatchesIndex(index, lower, record))
-            .slice()
-            .sort((a, b) => Number(a.id ?? 0) - Number(b.id ?? 0))
-            .slice(0, count),
-      }),
-    }),
+    equals: (key: unknown[]) => mockCollection((record) => mockMatchesIndex(index, key, record)),
+    between: (lower: unknown[]) => mockCollection((record) => mockMatchesIndex(index, lower, record)),
   })),
 };
 
@@ -97,6 +90,13 @@ jest.mock('@/application/db', () => ({
   matchesDatabaseStorageFence: jest.fn(async () => true),
   db: {
     sync_outbox: mockSyncOutboxTable,
+    sync_permission_blocks: {
+      get: async (key: string[]) => mockPermissionBlocks.get(JSON.stringify(key)),
+      put: async (row: {serverUrl: string; userId: string; workspaceId: string; objectId: string; revision: string}) => {
+        mockPermissionBlocks.set(JSON.stringify([row.serverUrl, row.userId, row.workspaceId, row.objectId]), row);
+      },
+      delete: async (key: string[]) => { mockPermissionBlocks.delete(JSON.stringify(key)); },
+    },
     collab_custom: {},
     transaction: mockTransaction,
   },
@@ -119,6 +119,8 @@ import {
   getCurrentOutboxSession,
   purgeAllOutbox,
   resumePermissionBlockedSync,
+  retryPermissionBlockedSync,
+  mayUploadCollab,
   setCurrentSession,
   shouldRouteUpdateThroughOutbox,
   startDrainAll,
@@ -137,7 +139,7 @@ function makeUpdate(value: string) {
 }
 
 async function flushPromises() {
-  for (let i = 0; i < 12; i += 1) {
+  for (let i = 0; i < 40; i += 1) {
     await Promise.resolve();
   }
 }
@@ -156,6 +158,7 @@ describe('sync outbox live send', () => {
     jest.clearAllMocks();
     jest.mocked(matchesDatabaseStorageFence).mockResolvedValue(true);
     mockRecords = [];
+    mockPermissionBlocks.clear();
     mockNextId = 1;
     mockTransactionQueue = Promise.resolve();
     clearDrainConfig();
@@ -619,7 +622,6 @@ describe('sync outbox live send', () => {
     });
 
     expect(send).toHaveBeenCalledTimes(1);
-    expect(mockRecords).toHaveLength(1);
 
     await flushPromises();
 
@@ -901,7 +903,6 @@ describe('sync outbox live send', () => {
     });
 
     expect(send).not.toHaveBeenCalled();
-    expect(mockRecords).toHaveLength(1);
 
     await flushPromises();
 
@@ -1508,15 +1509,18 @@ describe('sync outbox live send', () => {
       maxUpdateBytes: 0,
     });
 
+    const writes: Promise<boolean>[] = [];
+
     for (let index = 0; index < 65; index += 1) {
-      enqueueOutboxUpdate({
+      writes.push(enqueueOutboxUpdate({
         objectId,
         collabType: Types.Document,
         version: null,
         payload: makeUpdate(`queued-${index}`),
-      });
+      }));
     }
 
+    await Promise.all(writes);
     await flushPromises();
     ready = true;
     startDrainAll();
@@ -1560,7 +1564,76 @@ describe('sync outbox live send', () => {
     expect(mockRecords).toHaveLength(1);
   });
 
-  it('retries a permission-blocked oversized update after access changes', async () => {
+  it('keeps denied small updates through transport rebuild and broad regrant until explicit retry', async () => {
+    const send = jest.fn();
+    const broadcast = jest.fn();
+    const checkPermission = jest.fn(async () => 'denied' as 'denied' | 'allowed');
+    const config = { userId, workspaceId, send, broadcast, isReady: () => true, checkPermission };
+
+    configureDrain(config);
+    const payload = makeUpdate('retain this draft');
+
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload });
+    await flushPromises();
+    expect(send).not.toHaveBeenCalled();
+    expect(broadcast).not.toHaveBeenCalled();
+    expect(mockRecords).toHaveLength(1);
+    expect(mockRecords[0]).toMatchObject({ payload, permissionBlocked: true });
+    clearDrainConfig();
+    configureDrain(config);
+    checkPermission.mockResolvedValue('allowed');
+    await resumePermissionBlockedSync();
+    startDrainAll();
+    await flushPromises();
+    expect(send).not.toHaveBeenCalled();
+    expect(await mayUploadCollab(objectId, Types.Document, workspaceId)).toBe(false);
+    await retryPermissionBlockedSync();
+    await flushPromises();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(mockRecords).toHaveLength(0);
+  });
+
+  it('never replays another API origin or ambiguous legacy rows with matching user and workspace IDs', async () => {
+    const payload = makeUpdate('server A draft');
+    const send = jest.fn();
+    const checkPermission = jest.fn(async () => 'allowed' as const);
+
+    mockRecords.push({ id: mockNextId++, userId, workspaceId, objectId, collabType: Types.Document, payload, createdAt: 0 });
+    setCurrentSession({ userId, workspaceId, serverUrl: 'https://a.example' });
+    configureDrain({ userId, workspaceId, serverUrl: 'https://a.example', send, checkPermission, isReady: () => false });
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload });
+    await flushPromises();
+    setCurrentSession({ userId, workspaceId, serverUrl: 'https://b.example' });
+    configureDrain({ userId, workspaceId, serverUrl: 'https://b.example', send, checkPermission, isReady: () => true });
+    startDrainAll();
+    await flushPromises();
+    expect(send).not.toHaveBeenCalled();
+    expect(mockRecords).toHaveLength(2);
+    setCurrentSession({ userId, workspaceId, serverUrl: 'https://a.example' });
+    configureDrain({ userId, workspaceId, serverUrl: 'https://a.example', send, checkPermission, isReady: () => true });
+    startDrainAll();
+    await flushPromises();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(mockRecords).toHaveLength(1);
+    expect(mockRecords[0].serverUrl).toBeUndefined();
+  });
+
+  it('a manifest cannot replace quarantined recovery bytes', async () => {
+    const checkPermission = jest.fn(async () => 'denied' as const);
+
+    configureDrain({ userId, workspaceId, send: jest.fn(), checkPermission, isReady: () => true });
+    const original = makeUpdate('recoverable manifest');
+
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: original }, { source: 'manifest' });
+    await flushPromises();
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('new manifest') }, { source: 'manifest' });
+    await flushPromises();
+    expect(mockRecords).toHaveLength(2);
+    expect(mockRecords[0].payload).toEqual(original);
+    expect(mockRecords.every((record) => record.permissionBlocked)).toBe(true);
+  });
+
+  it('retries a permission-blocked oversized update only after fresh authority and explicit user retry', async () => {
     const payload = makeUpdate('permission restored');
     const slowSync = jest
       .fn()
@@ -1575,6 +1648,7 @@ describe('sync outbox live send', () => {
       maxUpdateBytes: payload.byteLength - 1,
       maxSlowSyncUpdateBytes: payload.byteLength + 1_024,
       slowSync,
+      checkPermission: jest.fn(async () => 'allowed' as const),
     });
 
     await enqueueOutboxUpdate({
@@ -1588,7 +1662,11 @@ describe('sync outbox live send', () => {
     expect(slowSync).toHaveBeenCalledTimes(1);
     expect(mockRecords).toHaveLength(1);
 
-    resumePermissionBlockedSync(objectId);
+    await resumePermissionBlockedSync(objectId);
+    await flushPromises();
+    expect(slowSync).toHaveBeenCalledTimes(1);
+    expect(mockRecords[0].permissionBlocked).toBe(true);
+    await retryPermissionBlockedSync();
     await flushPromises();
 
     expect(slowSync).toHaveBeenCalledTimes(2);

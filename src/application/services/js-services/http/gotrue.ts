@@ -10,6 +10,7 @@ import { GoTrueErrorCode, parseGoTrueError } from './gotrue-error';
 export * from './gotrue-error';
 
 let axiosInstance: AxiosInstance | null = null;
+let grantBaseUrl: string | undefined;
 
 interface VerifyAndRefreshGoTrueTokenParams {
   accessToken: string;
@@ -21,13 +22,14 @@ interface VerifyAndRefreshGoTrueTokenParams {
 }
 
 export function initGrantService(baseURL: string) {
-  if (axiosInstance) {
+  if (axiosInstance && grantBaseUrl === baseURL) {
     return;
   }
 
   axiosInstance = axios.create({
     baseURL,
   });
+  grantBaseUrl = baseURL;
 
   axiosInstance.interceptors.request.use((config) => {
     const headers: Record<string, string> = {
@@ -50,15 +52,16 @@ interface RefreshedToken {
   user: GoTrueAuthUser;
 }
 
-// In-flight refreshes shared by concurrent callers with the same refresh token
+// In-flight refreshes shared by concurrent callers with the same server and refresh token
 // (axios request interceptor, 401 retry handler, WebSocket reconnect). This
-// must be keyed by token: different sessions/tokens may refresh concurrently,
+// must be keyed by server and token: different sessions may refresh concurrently,
 // but duplicate requests for one rotating refresh token must join the same
 // promise or the later request can consume an already-used token.
 const refreshInFlightByToken = new Map<string, Promise<RefreshedToken>>();
 
 export async function refreshToken(refresh_token: string) {
-  const inFlight = refreshInFlightByToken.get(refresh_token);
+  const requestKey = JSON.stringify([grantBaseUrl, refresh_token]);
+  const inFlight = refreshInFlightByToken.get(requestKey);
 
   if (inFlight) {
     Log.debug('[Auth] refreshToken: joining in-flight refresh');
@@ -66,13 +69,24 @@ export async function refreshToken(refresh_token: string) {
   }
 
   Log.info('[Auth] refreshToken: requesting new token');
+  const client = axiosInstance;
+  const originalSession = getTokenParsed();
+  const sameSession = () => {
+    const current = getTokenParsed();
+
+    return axiosInstance === client && current?.access_token === originalSession?.access_token &&
+      current?.refresh_token === originalSession?.refresh_token && current?.user?.id === originalSession?.user?.id;
+  };
 
   const promise = (async (): Promise<RefreshedToken> => {
-    const response = await axiosInstance?.post<RefreshedToken>('/token?grant_type=refresh_token', {
+    const response = await client?.post<RefreshedToken>('/token?grant_type=refresh_token', {
       refresh_token,
     });
 
     const newToken = response?.data;
+
+    // Logout, a new sign-in, or a server switch must not be undone by a late refresh.
+    if (!sameSession()) throw new Error('The authentication context changed during token refresh');
 
     if (newToken) {
       Log.info('[Auth] refreshToken: success, saving token');
@@ -87,13 +101,13 @@ export async function refreshToken(refresh_token: string) {
     return newToken;
   })();
 
-  refreshInFlightByToken.set(refresh_token, promise);
+  refreshInFlightByToken.set(requestKey, promise);
 
   try {
     return await promise;
   } finally {
-    if (refreshInFlightByToken.get(refresh_token) === promise) {
-      refreshInFlightByToken.delete(refresh_token);
+    if (refreshInFlightByToken.get(requestKey) === promise) {
+      refreshInFlightByToken.delete(requestKey);
     }
   }
 }

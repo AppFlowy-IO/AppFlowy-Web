@@ -1,12 +1,20 @@
+import { expect } from '@jest/globals';
 import * as Y from 'yjs';
+
 import {
   createDatabaseRowDocSeed,
   invalidateDatabaseRowDocSeedGeneration,
 } from '@/application/database-blob/row-seed-fence';
 import { FieldType } from '@/application/database-yjs/database.type';
-import { Types, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
-import { withTestingYDoc } from '@/application/slate-yjs/__tests__/withTestingYjsEditor';
-import { expect } from '@jest/globals';
+import {
+  openCollabDB,
+  openCollabDBWithProvider,
+  openRowCollabDBWithProvider,
+  collabIndexedDBExists,
+  db,
+  deleteCollabDB,
+} from '@/application/db';
+import { collabStorageKey } from '@/application/db/collab-storage-scope';
 import {
   cacheCanonicalRowDoc,
   collabTypeToDBType,
@@ -17,16 +25,10 @@ import {
   mergeLegacyRowDocIfExists,
   openRowDoc,
 } from '@/application/services/js-services/cache';
-import { applyYDoc } from '@/application/ydoc/apply';
-import {
-  openCollabDB,
-  openCollabDBWithProvider,
-  openRowCollabDBWithProvider,
-  collabIndexedDBExists,
-  db,
-  deleteCollabDB,
-} from '@/application/db';
 import { StrategyType } from '@/application/services/js-services/cache/types';
+import { withTestingYDoc } from '@/application/slate-yjs/__tests__/withTestingYjsEditor';
+import { Types, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { applyYDoc } from '@/application/ydoc/apply';
 
 jest.mock('@/application/ydoc/apply', () => ({
   applyYDoc: jest.fn(),
@@ -35,8 +37,8 @@ jest.mock('@/application/ydoc/apply', () => ({
 jest.mock('@/application/db', () => ({
   captureDatabaseStorageFence: jest.fn(async (databaseId: string) => ({
     databaseId,
-    epoch: localStorage.getItem(`af_database_blob_epoch:${databaseId}`),
-    cacheEpoch: localStorage.getItem(`af_database_blob_epoch:${databaseId}`),
+    epoch: localStorage.getItem(`af_database_blob_epoch:${collabStorageKey(databaseId)}`),
+    cacheEpoch: localStorage.getItem(`af_database_blob_epoch:${collabStorageKey(databaseId)}`),
   })),
   openCollabDB: jest.fn(),
   openCollabDBWithProvider: jest.fn(),
@@ -172,6 +174,7 @@ describe('Cache functions', () => {
 
       mockFetcher.mockResolvedValue({ metadata: { view: { id: '1' }, child_views: [], ancestor_views: [] } });
       const meta = await runGetPublishViewMetaWithStrategy(StrategyType.CACHE_ONLY);
+
       expect(openCollabDB).toBeCalledTimes(0);
       expect(meta).toBeDefined();
 
@@ -219,7 +222,7 @@ describe('database row legacy cache migration', () => {
     expect(getCellData(sharedDoc, 'legacy-field')).toBe('legacy-value');
     expect(db.collab_custom.put).toHaveBeenCalledWith(
       expect.objectContaining({
-        objectId: rowId,
+        objectId: collabStorageKey(rowId),
         key: `legacy-row-backfill:${rowKey}`,
       })
     );
@@ -254,7 +257,7 @@ describe('database row legacy cache migration', () => {
     expect(getCellData(sharedDoc, 'legacy-field')).toBe('legacy-value');
     expect(db.collab_custom.put).toHaveBeenCalledWith(
       expect.objectContaining({
-        objectId: rowId,
+        objectId: collabStorageKey(rowId),
         key: `legacy-row-backfill:${rowKey}`,
       })
     );
@@ -281,7 +284,7 @@ describe('database row legacy cache migration', () => {
     expect(getCellData(sharedDoc, 'same-field')).toBe('legacy-local-value');
     expect(db.collab_custom.put).toHaveBeenCalledWith(
       expect.objectContaining({
-        objectId: rowId,
+        objectId: collabStorageKey(rowId),
         key: `legacy-row-backfill:${rowKey}`,
       })
     );
@@ -310,7 +313,8 @@ describe('database row legacy cache migration', () => {
     const databaseId = 'restored-database';
     const rowId = 'row';
     const row = createRowDoc(rowId, databaseId, { field: 'current' });
-    localStorage.setItem(`af_database_blob_epoch:${databaseId}`, 'R');
+
+    localStorage.setItem(`af_database_blob_epoch:${collabStorageKey(databaseId)}`, 'R');
 
     await expect(
       mergeLegacyRowDocIfExists(`${databaseId}_rows_${rowId}`, rowId, row, { legacyExists: true })
@@ -325,8 +329,9 @@ describe('database row legacy cache migration', () => {
     const rowId = 'row';
     const row = createRowDoc(rowId, databaseId, { field: 'current' });
     const legacy = createRowDoc(rowId, databaseId, { field: 'stale legacy' });
+
     mockedOpenCollabDBWithProvider.mockImplementationOnce(async () => {
-      localStorage.setItem(`af_database_blob_epoch:${databaseId}`, 'R');
+      localStorage.setItem(`af_database_blob_epoch:${collabStorageKey(databaseId)}`, 'R');
       return { doc: legacy, provider: { destroy: jest.fn() } } as never;
     });
 
