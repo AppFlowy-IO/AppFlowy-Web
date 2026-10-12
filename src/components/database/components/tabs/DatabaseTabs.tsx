@@ -448,7 +448,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
 
     const duplicateDatabaseView = useCallback(
       async (viewId: string) => {
-        if (!context.createDatabaseView || !views || duplicatingViewId) return;
+        if (readOnly || context.canWrite === false || !context.workspaceId || !views || duplicatingViewId) return;
         const duplicateScopeRevision = duplicateScopeRevisionRef.current;
         const isCurrentDuplicateScope = () =>
           mountedRef.current && duplicateScopeRevisionRef.current === duplicateScopeRevision;
@@ -482,7 +482,9 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
         }
       },
       [
-        context.createDatabaseView,
+        readOnly,
+        context.canWrite,
+        context.workspaceId,
         duplicateView,
         duplicatingViewId,
         handleViewAdded,
@@ -588,7 +590,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
             setMenuViewId={setMenuViewId}
             setDeleteConfirmOpen={setDeleteConfirmOpen}
             setRenameView={openRenameModal}
-            onDuplicateView={context.createDatabaseView ? duplicateDatabaseView : undefined}
+            onDuplicateView={!readOnly && context.canWrite !== false && context.workspaceId ? duplicateDatabaseView : undefined}
             duplicateDisabled={Boolean(duplicatingViewId)}
             pendingScrollToViewId={pendingScrollToViewId}
             setPendingScrollToViewId={setPendingScrollToViewId}

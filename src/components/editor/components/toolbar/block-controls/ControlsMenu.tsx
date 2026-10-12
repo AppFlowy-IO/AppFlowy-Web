@@ -1,27 +1,26 @@
 import { Button, Divider } from '@mui/material';
 import { PopoverProps } from '@mui/material/Popover';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Path, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
 import { prefetchDatabaseBlobDiff } from '@/application/database-blob';
-import { createLinkedDatabaseFeedView } from '@/application/database-yjs/feed-layout';
-import { createLinkedDatabaseGalleryView } from '@/application/database-yjs/gallery-layout';
-import { createLinkedDatabaseListView } from '@/application/database-yjs/list-layout';
+import { createLinkedDefaultDatabaseView } from '@/application/database-yjs/creation/create-linked-default-view';
 import { ViewService } from '@/application/services/domains';
 import { getAxios, executeAPIRequest, APIResponse } from '@/application/services/js-services/http/core';
 import { getView } from '@/application/services/js-services/http/view-api';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
-import { BlockType, CreateDatabaseViewResponse, View, ViewLayout } from '@/application/types';
+import { BlockType, DatabaseViewLayout, View, ViewLayout } from '@/application/types';
 import { getDatabaseIdFromExtra } from '@/application/view-utils';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as CopyLinkIcon } from '@/assets/icons/link.svg';
 import { notify } from '@/components/_shared/notify';
 import { Popover } from '@/components/_shared/popover';
+import { AppOutlineContext } from '@/components/app/contexts/AppOutlineContext';
 import {
   createDatabaseDuplicatePlaceholderData,
   createDatabaseNodeData,
@@ -244,14 +243,17 @@ function ControlsMenu({
 }) {
   const { selectedBlockIds } = useEditorLocalState();
   const editorContext = useEditorContext();
+  const outline = useContext(AppOutlineContext);
+  const creationRef = useRef({ context: editorContext, outline, mounted: true });
+
+  creationRef.current = { context: editorContext, outline, mounted: true };
+  useEffect(() => () => { creationRef.current.mounted = false; }, []);
   const {
     workspaceId,
     loadViewMeta,
     loadView,
     bindViewSync,
     scheduleDeferredCleanup,
-    createDatabaseView,
-    deletePage,
     duplicatePage,
   } = useEditorContext();
   const editor = useSlateStatic() as YjsEditor;
@@ -290,7 +292,7 @@ function ControlsMenu({
         throw new Error(t('document.plugins.subPage.errors.failedDuplicateFindView'));
       }
 
-      if (!loadViewMeta || !createDatabaseView) {
+      if (!loadViewMeta || editor.firstBody || editorContext.readOnly || editorContext.canWrite === false) {
         throw new Error(t('document.plugins.subPage.errors.failedDuplicatePage'));
       }
 
@@ -324,65 +326,41 @@ function ControlsMenu({
               throw new Error(t('document.plugins.subPage.errors.failedDuplicateFindView'));
             }
 
-            let response: CreateDatabaseViewResponse;
+            if (!workspaceId || editor.firstBody) throw new Error('Linked Database creation is unavailable');
+            const layouts: Partial<Record<ViewLayout, DatabaseViewLayout>> = {
+              [ViewLayout.Grid]: DatabaseViewLayout.Grid, [ViewLayout.Board]: DatabaseViewLayout.Board,
+              [ViewLayout.Calendar]: DatabaseViewLayout.Calendar, [ViewLayout.Chart]: DatabaseViewLayout.Chart,
+              [ViewLayout.List]: DatabaseViewLayout.List, [ViewLayout.Gallery]: DatabaseViewLayout.Gallery,
+              [ViewLayout.Feed]: DatabaseViewLayout.Feed, [ViewLayout.Form]: DatabaseViewLayout.Form,
+              [ViewLayout.Timeline]: DatabaseViewLayout.Timeline,
+            };
+            const requestedLayout = layouts[layout];
+            const assertCurrent = () => {
+              const current = creationRef.current;
 
-            if (layout === ViewLayout.List) {
-              response = await createLinkedDatabaseListView({
-                requestViewId: parentId,
-                sourceViewId: sourceView?.view_id ?? sourceViewIds[i],
-                payload: {
-                  parent_view_id: parentId,
-                  database_id: databaseId,
-                  name: sourceView?.name,
-                  embedded: true,
-                },
-                createDatabaseView,
-                loadView,
-                bindViewSync,
-                deletePage,
-                scheduleDeferredCleanup,
-              });
-            } else if (layout === ViewLayout.Gallery) {
-              response = await createLinkedDatabaseGalleryView({
-                requestViewId: parentId,
-                sourceViewId: sourceView?.view_id ?? sourceViewIds[i],
-                payload: {
-                  parent_view_id: parentId,
-                  database_id: databaseId,
-                  name: sourceView?.name,
-                  embedded: true,
-                },
-                createDatabaseView,
-                loadView,
-                bindViewSync,
-                deletePage,
-                scheduleDeferredCleanup,
-              });
-            } else if (layout === ViewLayout.Feed) {
-              response = await createLinkedDatabaseFeedView({
-                requestViewId: parentId,
-                sourceViewId: sourceView?.view_id ?? sourceViewIds[i],
-                payload: {
-                  parent_view_id: parentId,
-                  database_id: databaseId,
-                  name: sourceView?.name,
-                  embedded: true,
-                },
-                createDatabaseView,
-                loadView,
-                bindViewSync,
-                deletePage,
-                scheduleDeferredCleanup,
-              });
-            } else {
-              response = await createDatabaseView(parentId, {
-                parent_view_id: parentId,
-                database_id: databaseId,
-                layout,
-                name: sourceView?.name,
-                embedded: true,
-              });
-            }
+              if (!current.mounted || current.context.workspaceId !== workspaceId ||
+                current.context.viewId !== editorContext.viewId || editor.firstBody) {
+                throw new Error('Linked Database creation owner changed');
+              }
+            };
+
+            if (requestedLayout === undefined) throw new Error('Unsupported Database view layout');
+            const response = await createLinkedDefaultDatabaseView({
+              workspaceId, requestViewId: parentId, sourceViewId: sourceView?.view_id ?? sourceViewIds[i],
+              layout: requestedLayout,
+              payload: { parent_view_id: parentId, database_id: databaseId, name: sourceView?.name, embedded: true },
+              loadView, bindViewSync, scheduleDeferredCleanup, assertCurrent,
+              activate: async (id) => {
+                const ensure = creationRef.current.outline?.ensureViewVisibleInOutline;
+
+                if (!ensure) throw new Error('The sidebar creation owner is unavailable');
+                assertCurrent();
+                const ancestors = await ensure(id);
+
+                assertCurrent();
+                if (ancestors.length === 0) throw new Error('Created view is absent from the sidebar');
+              },
+            });
 
             return response.view_id;
           })
@@ -522,9 +500,11 @@ function ControlsMenu({
       });
     },
     [
+      editor.firstBody,
+      editorContext.viewId,
+      editorContext.readOnly,
+      editorContext.canWrite,
       bindViewSync,
-      createDatabaseView,
-      deletePage,
       duplicateCopySuffix,
       duplicatePage,
       loadView,

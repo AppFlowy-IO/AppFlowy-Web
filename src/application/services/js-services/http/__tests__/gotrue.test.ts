@@ -24,6 +24,7 @@ jest.mock('axios', () => ({
 }));
 
 jest.mock('@/application/session/token', () => ({
+  captureTokenSession: jest.fn(() => ({ generation: 1, userId: null })),
   getTokenParsed: jest.fn(),
   invalidToken: jest.fn(),
   saveGoTrueAuth: jest.fn(() => true),
@@ -101,7 +102,7 @@ describe('GoTrue login token completion', () => {
       refresh_token: loginToken.refresh_token,
     });
     expect(saveGoTrueAuth).toHaveBeenCalledTimes(1);
-    expect(saveGoTrueAuth).toHaveBeenCalledWith(JSON.stringify(refreshedToken));
+    expect(saveGoTrueAuth).toHaveBeenCalledWith(JSON.stringify(refreshedToken), { generation: 1, userId: null });
   });
 
   it('rejects the refresh when the new token cannot be persisted', async () => {
@@ -115,7 +116,7 @@ describe('GoTrue login token completion', () => {
     saveGoTrueAuth.mockReturnValueOnce(false);
 
     await expect(refreshToken('stored-refresh-token')).rejects.toThrow('Failed to persist refreshed token');
-    expect(saveGoTrueAuth).toHaveBeenCalledWith(JSON.stringify(refreshedToken));
+    expect(saveGoTrueAuth).toHaveBeenCalledWith(JSON.stringify(refreshedToken), { generation: 1, userId: null });
   });
 
   it('uses the same verify-refresh-save flow for OAuth callback tokens', async () => {
@@ -137,7 +138,7 @@ describe('GoTrue login token completion', () => {
       refresh_token: 'oauth-refresh-token',
     });
     expect(saveGoTrueAuth).toHaveBeenCalledTimes(1);
-    expect(saveGoTrueAuth).toHaveBeenCalledWith(JSON.stringify(refreshedToken));
+    expect(saveGoTrueAuth).toHaveBeenCalledWith(JSON.stringify(refreshedToken), { generation: 1, userId: null });
   });
 
   it('uses the same verify-refresh-save flow for email OTP tokens', async () => {
@@ -170,7 +171,7 @@ describe('GoTrue login token completion', () => {
       refresh_token: otpToken.refresh_token,
     });
     expect(saveGoTrueAuth).toHaveBeenCalledTimes(1);
-    expect(saveGoTrueAuth).toHaveBeenCalledWith(JSON.stringify(refreshedToken));
+    expect(saveGoTrueAuth).toHaveBeenCalledWith(JSON.stringify(refreshedToken), { generation: 1, userId: null });
   });
 
   it.each<AuthVariant>(['password', 'oauth', 'otp'])(

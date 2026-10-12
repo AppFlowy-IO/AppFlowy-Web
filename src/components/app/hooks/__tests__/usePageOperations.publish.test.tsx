@@ -4,7 +4,7 @@ import { PageService, PublishService, ViewService } from '@/application/services
 import { clearPublishViewInfoCache } from '@/application/services/js-services/cached-api';
 import { publishCollabs } from '@/application/services/js-services/http/publish-api';
 import { gatherDatabasePublishData } from '@/application/services/js-services/publish-database-data';
-import { View, ViewLayout } from '@/application/types';
+import { View, ViewLayout, CreateSpaceWithInitialPagePayload } from '@/application/types';
 import { AuthInternalContext, AuthInternalContextType } from '@/components/app/contexts/AuthInternalContext';
 
 import { usePageOperations } from '../usePageOperations';
@@ -16,7 +16,7 @@ jest.mock('@/application/services/domains', () => ({
   FileService: {},
   PageService: {
     add: jest.fn(),
-    createDatabaseView: jest.fn(),
+    createSpaceWithInitialPage: jest.fn(),
     moveToTrash: jest.fn(),
   },
   PublishService: {
@@ -73,14 +73,16 @@ function deferredPublish() {
 }
 
 function renderUsePageOperations(options?: {
+  auth?: AuthInternalContextType;
   outlineRef?: MutableRefObject<View[] | undefined>;
   loadOutline?: (workspaceId: string, force?: boolean) => Promise<void>;
   getDatabaseIdForViewId?: (viewId: string) => Promise<string | null | undefined>;
+  ensureViewVisibleInOutline?: (id: string) => Promise<string[]>;
   flushAllSync?: () => Promise<boolean>;
   syncAllToServer?: (workspaceId: string) => Promise<void>;
 }) {
   const workspaceId = 'workspace-id';
-  const authContextValue: AuthInternalContextType = {
+  const authContextValue: AuthInternalContextType = options?.auth ?? {
     currentWorkspaceId: workspaceId,
     isAuthenticated: true,
     onChangeWorkspace: () => Promise.resolve(),
@@ -96,6 +98,7 @@ function renderUsePageOperations(options?: {
         getDatabaseIdForViewId: options?.getDatabaseIdForViewId,
         flushAllSync: options?.flushAllSync,
         syncAllToServer: options?.syncAllToServer,
+        ensureViewVisibleInOutline: options?.ensureViewVisibleInOutline,
       }),
     {
       wrapper: ({ children }) => (
@@ -545,6 +548,47 @@ describe('usePageOperations addPage', () => {
     jest.clearAllMocks();
   });
 
+  it('refuses default creation without an outline owner before any mutation', async () => {
+    const { result } = renderUsePageOperations();
+
+    await expect(result.current.addPage('parent', { layout: ViewLayout.Document })).rejects.toThrow('navigation');
+    expect(PageService.add).not.toHaveBeenCalled();
+  });
+
+  it('waits for current sidebar membership before completing a default creation', async () => {
+    const outlineRef: MutableRefObject<View[] | undefined> = { current: [] };
+    const held = deferredPublish();
+    const ensureVisible = jest.fn(async () => {
+      await held.promise;
+      outlineRef.current = [createView({ view_id: 'created' })];
+      return ['created'];
+    });
+
+    jest.mocked(PageService.add).mockImplementationOnce(async (_workspace, _parent, _payload, activation) => {
+      await activation?.activate?.({ view_id: 'created' });
+      return { view_id: 'created' };
+    });
+    const { result, loadOutline } = renderUsePageOperations({ outlineRef, ensureViewVisibleInOutline: ensureVisible });
+    let completed = false;
+    const creation = result.current.addPage('parent', { layout: ViewLayout.Document }).then(() => { completed = true; });
+
+    await waitFor(() => expect(ensureVisible).toHaveBeenCalledWith('created'));
+    expect(completed).toBe(false);
+    await act(async () => { held.resolve(); await creation; });
+    expect(completed).toBe(true);
+    expect(loadOutline).not.toHaveBeenCalled();
+  });
+
+  it('retains failure when a navigation response does not install the created page', async () => {
+    jest.mocked(PageService.add).mockImplementationOnce(async (_workspace, _parent, _payload, activation) => {
+      await activation?.activate?.({ view_id: 'created' });
+      return { view_id: 'created' };
+    });
+    const { result } = renderUsePageOperations({ ensureViewVisibleInOutline: async () => [] });
+
+    await expect(result.current.addPage('parent', { layout: ViewLayout.Document })).rejects.toThrow('navigation');
+  });
+
   it('does not refresh the sidebar outline when creation fails', async () => {
     const createError = new Error('create failed');
 
@@ -561,60 +605,6 @@ describe('usePageOperations addPage', () => {
     });
 
     expect(loadOutline).not.toHaveBeenCalled();
-  });
-
-  it('refreshes the shared catalog after creating a database view', async () => {
-    jest.mocked(PageService.createDatabaseView).mockResolvedValue({
-      view_id: 'linked-view-id',
-      database_id: 'database-id',
-    });
-    jest.mocked(ViewService.refreshWorkspaceDatabaseCatalog).mockResolvedValue([]);
-    const { result, workspaceId } = renderUsePageOperations();
-    const payload = {
-      parent_view_id: 'parent-view-id',
-      database_id: 'database-id',
-      layout: ViewLayout.Grid,
-    };
-
-    await act(async () => {
-      await result.current.createDatabaseView('request-view-id', payload);
-    });
-
-    expect(PageService.createDatabaseView).toHaveBeenCalledWith(workspaceId, 'request-view-id', payload);
-    expect(ViewService.invalidateDatabaseCatalog).toHaveBeenCalledWith(workspaceId);
-    expect(ViewService.refreshWorkspaceDatabaseCatalog).toHaveBeenCalledWith(workspaceId);
-    expect(jest.mocked(ViewService.invalidateDatabaseCatalog).mock.invocationCallOrder[0]).toBeLessThan(
-      jest.mocked(ViewService.refreshWorkspaceDatabaseCatalog).mock.invocationCallOrder[0]
-    );
-  });
-
-  it('returns a created database view without waiting for the outline refresh', async () => {
-    const response = {
-      view_id: 'linked-view-id',
-      database_id: 'database-id',
-    };
-    const pendingOutline = new Promise<void>(() => undefined);
-
-    jest.mocked(PageService.createDatabaseView).mockResolvedValue(response);
-    jest.mocked(ViewService.refreshWorkspaceDatabaseCatalog).mockResolvedValue([]);
-    const { result, loadOutline, workspaceId } = renderUsePageOperations({
-      loadOutline: () => pendingOutline,
-    });
-    const payload = {
-      parent_view_id: 'parent-view-id',
-      database_id: 'database-id',
-      layout: ViewLayout.Form,
-    };
-    const creation = result.current.createDatabaseView('request-view-id', payload);
-
-    await waitFor(() => {
-      expect(loadOutline).toHaveBeenCalledWith(workspaceId, false);
-    });
-
-    const stillPending = Symbol('outline refresh still pending');
-    const outcome = await Promise.race([creation, Promise.resolve(stillPending)]);
-
-    expect(outcome).toEqual(response);
   });
 
   it('refreshes the shared catalog after moving a database view to trash', async () => {
@@ -641,5 +631,71 @@ describe('usePageOperations addPage', () => {
     expect(jest.mocked(ViewService.invalidateDatabaseCatalog).mock.invocationCallOrder[0]).toBeLessThan(
       jest.mocked(ViewService.refreshWorkspaceDatabaseCatalog).mock.invocationCallOrder[0]
     );
+  });
+});
+
+describe('structured space atomic initial Document activation', () => {
+  const payload: CreateSpaceWithInitialPagePayload = {
+    name: 'Space', permission: {} as never, initial_page: { layout: ViewLayout.Document, view_id: 'created' },
+  };
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it('holds the initial page result until its current sidebar membership is installed', async () => {
+    const outlineRef: MutableRefObject<View[] | undefined> = { current: [] };
+    const held = deferredPublish();
+    const ensureVisible = jest.fn(async () => {
+      await held.promise;
+      outlineRef.current = [createView({ view_id: 'created' })];
+      return ['space'];
+    });
+
+    jest.mocked(PageService.createSpaceWithInitialPage).mockImplementationOnce(async (_workspace, _payload, activation) => {
+      await activation?.activate?.({ view_id: 'created' });
+      return { space: { view_id: 'space' }, page: { view_id: 'created' } };
+    });
+    const { result, loadOutline } = renderUsePageOperations({ outlineRef, ensureViewVisibleInOutline: ensureVisible });
+    let completed = false;
+    const creation = result.current.createSpaceWithInitialPage(payload).then(() => { completed = true; });
+
+    await waitFor(() => expect(ensureVisible).toHaveBeenCalledWith('created'));
+    expect(completed).toBe(false);
+    await act(async () => { held.resolve(); await creation; });
+    expect(completed).toBe(true);
+    expect(loadOutline).not.toHaveBeenCalled();
+  });
+
+  it.each(['workspace', 'account'])('refuses a late initial-page result after the owning %s changes', async (changed) => {
+    const held = deferredPublish();
+    const auth: AuthInternalContextType = { currentWorkspaceId: 'workspace-id', isAuthenticated: true,
+      onChangeWorkspace: jest.fn().mockResolvedValue(undefined) };
+    const outlineRef: MutableRefObject<View[] | undefined> = { current: [createView({ view_id: 'created' })] };
+
+    jest.mocked(PageService.createSpaceWithInitialPage).mockImplementationOnce(async (_workspace, _payload, activation) => {
+      await held.promise;
+      await activation?.activate?.({ view_id: 'created' });
+      return { space: { view_id: 'space' }, page: { view_id: 'created' } };
+    });
+    const ensureVisible = jest.fn(async () => ['space']);
+    const { result, rerender, loadOutline } = renderUsePageOperations({ auth, outlineRef, ensureViewVisibleInOutline: ensureVisible });
+    const creation = result.current.createSpaceWithInitialPage(payload);
+    const rejected = expect(creation).rejects.toThrow('workspace changed');
+
+    if (changed === 'workspace') auth.currentWorkspaceId = 'replacement-workspace';
+    else auth.userWorkspaceInfo = { userId: 'replacement-user', selectedWorkspace: { role: 1 } } as never;
+    rerender();
+    await act(async () => { held.resolve(); await rejected; });
+    expect(ensureVisible).not.toHaveBeenCalled();
+    expect(loadOutline).not.toHaveBeenCalled();
+  });
+
+  it('keeps the existing authored initial-page refresh path', async () => {
+    jest.mocked(PageService.createSpaceWithInitialPage).mockResolvedValueOnce({ space: { view_id: 'space' }, page: { view_id: 'created' } });
+    const authored = { ...payload, initial_page: { ...payload.initial_page, page_data: { children: [] } } };
+    const { result, loadOutline } = renderUsePageOperations();
+
+    await result.current.createSpaceWithInitialPage(authored);
+    expect(PageService.createSpaceWithInitialPage).toHaveBeenCalledWith('workspace-id', authored, undefined);
+    expect(loadOutline).toHaveBeenCalledWith('workspace-id', false);
   });
 });

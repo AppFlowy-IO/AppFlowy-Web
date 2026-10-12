@@ -27,8 +27,6 @@ import { getCachedRowDoc, openRowDoc } from '@/application/services/js-services/
 import {
   AppendBreadcrumb,
   BindViewSync,
-  CreateDatabaseViewPayload,
-  CreateDatabaseViewResponse,
   DuplicatePageOperationOptions,
   CreatePagePayload,
   CreatePageResponse,
@@ -216,7 +214,6 @@ export interface Database2Props {
   paddingStart?: number;
   paddingEnd?: number;
   showActions?: boolean;
-  createDatabaseView?: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
   loadDatabaseRelations?: (options?: { refresh?: boolean }) => Promise<DatabaseRelations | undefined>;
   getSubscriptions?: () => Promise<Subscription[]>;
@@ -1651,7 +1648,6 @@ function Database(props: Database2Props) {
       workspaceId,
       addPage,
       openPageModal,
-      createDatabaseView: props.createDatabaseView,
       updatePage: props.updatePage,
       deletePage: props.deletePage,
       restorePage: props.restorePage,
@@ -1705,7 +1701,6 @@ function Database(props: Database2Props) {
       workspaceId,
       addPage,
       openPageModal,
-      props.createDatabaseView,
       props.updatePage,
       props.deletePage,
       props.restorePage,

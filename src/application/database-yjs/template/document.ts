@@ -73,6 +73,26 @@ export function encodeTemplateDocument(doc: Y.Doc): string {
   return toBase64(Y.encodeStateAsUpdate(doc));
 }
 
+/** A materialized empty template has a server body but no authored content. */
+export function readTemplateDocumentEmptiness(doc: Y.Doc): boolean | undefined {
+  const body = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.document);
+  const blocks = body instanceof Y.Map ? body.get(YjsEditorKey.blocks) : undefined;
+  const meta = body instanceof Y.Map ? body.get(YjsEditorKey.meta) : undefined;
+  const texts = meta instanceof Y.Map ? meta.get(YjsEditorKey.text_map) : undefined;
+
+  if (!(body instanceof Y.Map) || !(blocks instanceof Y.Map) || !(texts instanceof Y.Map)) return undefined;
+  for (const [id, block] of blocks.entries()) {
+    if (!(block instanceof Y.Map)) return undefined;
+    if (id === body.get(YjsEditorKey.page_id)) continue;
+    const text = texts.get(block.get(YjsEditorKey.block_external_id));
+
+    if (!TEXT_BLOCKS.has(block.get(YjsEditorKey.block_type)) ||
+      (text instanceof Y.Text && text.toString().trim().length > 0)) return false;
+  }
+
+  return true;
+}
+
 /** Stored Desktop snapshots take precedence over a stale/missing orphan view. */
 export function decodeTemplateDocumentSnapshot(bytes?: number[]):
   | {

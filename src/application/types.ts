@@ -2349,7 +2349,6 @@ export interface ViewComponentProps {
   getMentionUser?: (uuid: string) => Promise<MentionablePerson | undefined>;
   searchMentions?: SearchMentions;
   mentionContext?: MentionSearchContext;
-  createDatabaseView?: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
 }
 
 export interface CreatePagePayload {

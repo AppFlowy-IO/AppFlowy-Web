@@ -1,9 +1,11 @@
+import { TextEncoder } from 'util';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
 import { useDatabase, useDatabaseContextOptional, useRowData, useRowMetaSelector } from '@/application/database-yjs';
 import { RowMetaKey } from '@/application/database-yjs/database.type';
 import { useUpdateRowMetaDispatch } from '@/application/database-yjs/dispatch';
+import { hasPendingAtomicRowFirstBody, prepareAtomicRowFirstBody } from '@/application/row-document/atomic-first-body';
 import { openCollabDB } from '@/application/db';
 import { getCachedRowSubDoc, getOrCreateRowSubDoc } from '@/application/services/js-services/cache';
 import { CollabOrigin, YDatabase, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
@@ -11,6 +13,9 @@ import { useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 
 import { DatabaseRowSubDocument } from '../DatabaseRowSubDocument';
+
+Object.assign(globalThis, { TextEncoder });
+let mockRenderedDoc: YDoc | null = null;
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -22,6 +27,11 @@ jest.mock('@/application/database-yjs', () => ({
   useDatabaseContextOptional: jest.fn(),
   useRowData: jest.fn(),
   useRowMetaSelector: jest.fn(),
+}));
+
+jest.mock('@/application/row-document/atomic-first-body', () => ({
+  hasPendingAtomicRowFirstBody: jest.fn(),
+  prepareAtomicRowFirstBody: jest.fn(),
 }));
 
 jest.mock('@/application/database-yjs/dispatch', () => ({
@@ -61,6 +71,7 @@ jest.mock('@/components/editor', () => {
       readOnly,
       canComment,
       canWrite,
+      addPage,
       contentPadding,
       onEditorConnected,
     }: {
@@ -69,9 +80,11 @@ jest.mock('@/components/editor', () => {
       readOnly: boolean;
       canComment?: boolean;
       canWrite?: boolean;
+      addPage?: unknown;
       contentPadding?: string;
       onEditorConnected?: (editor: { children: unknown[] }) => void;
     }) => {
+      mockRenderedDoc = doc as YDoc;
       React.useEffect(() => {
         onEditorConnected?.({ children: [] });
       }, [onEditorConnected]);
@@ -84,6 +97,7 @@ jest.mock('@/components/editor', () => {
           data-read-only={String(readOnly)}
           data-can-comment={String(canComment)}
           data-can-write={String(canWrite)}
+          data-can-add-page={String(Boolean(addPage))}
           data-content-padding={contentPadding}
         />
       );
@@ -210,6 +224,8 @@ function configureRowDocumentTest({
 describe('DatabaseRowSubDocument', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (hasPendingAtomicRowFirstBody as jest.Mock).mockResolvedValue(false);
+    (prepareAtomicRowFirstBody as jest.Mock).mockRejectedValue(new Error('first-body admission unavailable'));
   });
 
   afterEach(() => {
@@ -385,7 +401,7 @@ describe('DatabaseRowSubDocument', () => {
     expect(screen.getByTestId('row-document-editor').getAttribute('data-view-id')).toBe('ready-document');
   });
 
-  it('reads an empty document that appears before a failed creation is retried', async () => {
+  it('reads an empty document that appears after first-body admission failed', async () => {
     jest.useFakeTimers();
 
     const rowId = 'row-id';
@@ -407,7 +423,7 @@ describe('DatabaseRowSubDocument', () => {
     });
     render(<DatabaseRowSubDocument rowId={rowId} />);
     await act(flushAsyncWork);
-    expect(createRowDocument).toHaveBeenCalledTimes(1);
+    expect(createRowDocument).not.toHaveBeenCalled();
 
     await act(async () => {
       await jest.advanceTimersByTimeAsync(2000);
@@ -416,10 +432,10 @@ describe('DatabaseRowSubDocument', () => {
 
     expect(screen.getByTestId('row-document-editor')).not.toBeNull();
     expect(loadRowDocument).toHaveBeenCalledTimes(1);
-    expect(createRowDocument).toHaveBeenCalledTimes(1);
+    expect(createRowDocument).not.toHaveBeenCalled();
   });
 
-  it('creates a nonempty row document only after missing-document retries are exhausted', async () => {
+  it('never creates a blank replacement when a nonempty row body remains missing', async () => {
     jest.useFakeTimers();
 
     const rowId = 'row-id';
@@ -451,39 +467,57 @@ describe('DatabaseRowSubDocument', () => {
       await flushAsyncWork();
     });
 
-    expect(screen.getByTestId('row-document-editor')).not.toBeNull();
-    expect(createRowDocument).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('row-document-load-error')).not.toBeNull();
+    expect(createRowDocument).not.toHaveBeenCalled();
+    expect(loadRowDocument).toHaveBeenCalledTimes(4);
     expect(jest.getTimerCount()).toBe(0);
   });
 
-  it('waits for server creation before binding an empty row that exists only locally', async () => {
-    const rowId = 'row-id';
-    const documentId = 'document-id';
+  it('opens a detached empty draft and binds only after its first body activates', async () => {
+    const rowId = '11111111-1111-4111-8111-111111111111';
+    const documentId = '6e91148b-e42a-56b1-b9a0-58fbaa31552d';
     const cachedDoc = new Y.Doc({ guid: documentId }) as YDoc;
-
-    Y.applyUpdate(cachedDoc, createRowDocumentState(documentId));
-    const creation = createDeferred<Uint8Array>();
+    const creation = createDeferred<YDoc>();
+    const publish = jest.fn(() => creation.promise);
     const loadRowDocument = jest.fn().mockResolvedValue(cachedDoc);
-    const createRowDocument = jest.fn().mockReturnValue(creation.promise);
+    const createRowDocument = jest.fn();
+    const bindViewSync = jest.fn();
 
     configureRowDocumentTest({
-      documentIds: { [rowId]: documentId },
-      cachedDocs: new Map([[documentId, cachedDoc]]),
-      loadRowDocument,
-      createRowDocument,
-      checkIfRowDocumentExists: jest.fn().mockResolvedValue(false),
-      isEmptyDocument: true,
+      documentIds: { [rowId]: documentId }, cachedDocs: new Map([[documentId, cachedDoc]]),
+      loadRowDocument, createRowDocument, checkIfRowDocumentExists: jest.fn().mockResolvedValue(false), isEmptyDocument: true,
     });
+    mockUseDatabaseContextOptional.mockReturnValue({ ...mockUseDatabaseContextOptional(), bindViewSync, addPage: jest.fn() } as ReturnType<typeof useDatabaseContextOptional>);
+    (prepareAtomicRowFirstBody as jest.Mock).mockResolvedValue({ owner: { assertCurrent: jest.fn() }, admit: jest.fn(), dispose: jest.fn(), publish });
     render(<DatabaseRowSubDocument rowId={rowId} />);
-    await waitFor(() => expect(createRowDocument).toHaveBeenCalledTimes(1));
-    expect(screen.queryByTestId('row-document-editor')).toBeNull();
-    expect(loadRowDocument).not.toHaveBeenCalled();
+    await screen.findByTestId('row-document-editor');
+    expect(createRowDocument).not.toHaveBeenCalled();
+    expect(publish).not.toHaveBeenCalled();
+    expect(bindViewSync).not.toHaveBeenCalled();
+    expect(mockRenderedDoc).not.toBe(cachedDoc);
+    expect(cachedDoc.getMap(YjsEditorKey.data_section).size).toBe(0);
+    expect(screen.getByTestId('row-document-editor').getAttribute('data-can-add-page')).toBe('false');
 
     await act(async () => {
-      creation.resolve(createRowDocumentState(documentId));
+      const body = mockRenderedDoc!.getMap(YjsEditorKey.data_section).get('document');
+      const texts = body.get('meta').get('text_map') as Y.Map<Y.Text>;
+
+      Array.from(texts.values())[0].insert(0, 'first authored body');
       await flushAsyncWork();
     });
-    expect(await screen.findByTestId('row-document-editor')).not.toBeNull();
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(bindViewSync).not.toHaveBeenCalled();
+    expect(mockUseUpdateRowMetaDispatch()).not.toHaveBeenCalled();
+    expect(screen.getByTestId('row-document-editor').getAttribute('data-read-only')).toBe('false');
+    expect(screen.getByTestId('row-document-creation-pending')).toBeTruthy();
+    await act(async () => {
+      Y.applyUpdate(cachedDoc, createRowDocumentState(documentId));
+      creation.resolve(cachedDoc);
+      await flushAsyncWork();
+    });
+    expect(bindViewSync).toHaveBeenCalledWith(cachedDoc);
+    expect(screen.getByTestId('row-document-editor').getAttribute('data-read-only')).toBe('false');
+    expect(screen.getByTestId('row-document-editor').getAttribute('data-can-add-page')).toBe('true');
   });
 
   it('reads an existing row document without creation', async () => {
@@ -581,7 +615,7 @@ describe('DatabaseRowSubDocument', () => {
     }
   );
 
-  it('shows no access without retrying when empty row document creation is forbidden', async () => {
+  it('shows no access without retrying when first-body admission is forbidden', async () => {
     jest.useFakeTimers();
 
     const rowId = 'row-id';
@@ -602,12 +636,13 @@ describe('DatabaseRowSubDocument', () => {
       isEmptyDocument: true,
     });
 
+    (prepareAtomicRowFirstBody as jest.Mock).mockRejectedValue({ code: 1012, message: 'user is not allowed to access this view' });
     render(<DatabaseRowSubDocument rowId={rowId} />);
 
     await act(flushAsyncWork);
 
     expect(screen.getByTestId('row-document-no-access')).not.toBeNull();
-    expect(createRowDocument).toHaveBeenCalledTimes(1);
+    expect(createRowDocument).not.toHaveBeenCalled();
     expect(loadRowDocument).not.toHaveBeenCalled();
     expect(checkIfRowDocumentExists).toHaveBeenCalledTimes(1);
     expect(jest.getTimerCount()).toBe(0);
@@ -617,63 +652,37 @@ describe('DatabaseRowSubDocument', () => {
       await flushAsyncWork();
     });
 
-    expect(createRowDocument).toHaveBeenCalledTimes(1);
+    expect(createRowDocument).not.toHaveBeenCalled();
   });
 
-  it('ignores a stale creation response after switching rows', async () => {
-    const firstRowId = 'row-a';
-    const secondRowId = 'row-b';
+  it('ignores a stale recovery response after switching rows', async () => {
     const firstDocumentId = 'document-a';
     const secondDocumentId = 'document-b';
     const firstCachedDoc = new Y.Doc({ guid: firstDocumentId }) as YDoc;
     const secondCachedDoc = new Y.Doc({ guid: secondDocumentId }) as YDoc;
-    const cachedDocs = new Map([
-      [firstDocumentId, firstCachedDoc],
-      [secondDocumentId, secondCachedDoc],
-    ]);
-    const firstCreation = createDeferred<Uint8Array | null>();
-    const loadRowDocument = jest.fn();
-    const createRowDocument = jest.fn((documentId: string) => {
-      if (documentId === firstDocumentId) return firstCreation.promise;
-      return Promise.resolve(createRowDocumentState(documentId));
-    });
-    const checkIfRowDocumentExists = jest.fn().mockResolvedValue(false);
+
+    Y.applyUpdate(secondCachedDoc, createRowDocumentState(secondDocumentId));
+    const recovery = createDeferred<YDoc>();
+    const dispose = jest.fn();
+    const createRowDocument = jest.fn();
 
     configureRowDocumentTest({
-      documentIds: {
-        [firstRowId]: firstDocumentId,
-        [secondRowId]: secondDocumentId,
-      },
-      cachedDocs,
-      loadRowDocument,
-      createRowDocument,
-      checkIfRowDocumentExists,
-      isEmptyDocument: true,
+      documentIds: { 'row-a': firstDocumentId, 'row-b': secondDocumentId },
+      cachedDocs: new Map([[firstDocumentId, firstCachedDoc], [secondDocumentId, secondCachedDoc]]),
+      loadRowDocument: jest.fn().mockResolvedValue(secondCachedDoc), createRowDocument,
+      checkIfRowDocumentExists: jest.fn().mockResolvedValue(true), isEmptyDocument: true,
     });
+    (hasPendingAtomicRowFirstBody as jest.Mock).mockResolvedValueOnce(true).mockResolvedValue(false);
+    (prepareAtomicRowFirstBody as jest.Mock).mockResolvedValue({ pending: () => recovery.promise, dispose });
+    const { rerender } = render(<DatabaseRowSubDocument rowId='row-a' />);
 
-    const { rerender } = render(<DatabaseRowSubDocument rowId={firstRowId} />);
-
-    await waitFor(() => expect(createRowDocument).toHaveBeenCalledWith(firstDocumentId, expect.any(Object)));
-
-    rerender(<DatabaseRowSubDocument rowId={secondRowId} />);
-
-    await waitFor(() => {
-      const editor = screen.getByTestId('row-document-editor');
-
-      expect(editor.getAttribute('data-view-id')).toBe(secondDocumentId);
-      expect(editor.getAttribute('data-doc-id')).toBe(secondDocumentId);
-    });
-
-    await act(async () => {
-      firstCreation.resolve(createRowDocumentState(firstDocumentId));
-      await flushAsyncWork();
-    });
-
-    const editor = screen.getByTestId('row-document-editor');
-
-    expect(editor.getAttribute('data-view-id')).toBe(secondDocumentId);
-    expect(editor.getAttribute('data-doc-id')).toBe(secondDocumentId);
-    expect(firstCachedDoc.getMap(YjsEditorKey.data_section).has(YjsEditorKey.document)).toBe(false);
+    await waitFor(() => expect(prepareAtomicRowFirstBody).toHaveBeenCalledTimes(1));
+    rerender(<DatabaseRowSubDocument rowId='row-b' />);
+    await waitFor(() => expect(screen.getByTestId('row-document-editor').getAttribute('data-view-id')).toBe(secondDocumentId));
+    await act(async () => { recovery.resolve(firstCachedDoc); await flushAsyncWork(); });
+    expect(screen.getByTestId('row-document-editor').getAttribute('data-doc-id')).toBe(secondDocumentId);
+    expect(createRowDocument).not.toHaveBeenCalled();
+    expect(dispose).toHaveBeenCalledTimes(1);
   });
 
   it('ignores a stale read denial after switching rows', async () => {

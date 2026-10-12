@@ -1,11 +1,14 @@
+import { t } from 'i18next';
 import { Element, Node } from 'slate';
 import { ReactEditor } from 'slate-react';
 
+import { isDatabaseBlockType } from '@/application/database-block';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { SOFT_BREAK_TYPES } from '@/application/slate-yjs/command/const';
 import { findSlateEntryByBlockId, getBlockEntry, isInsideSimpleTableCell } from '@/application/slate-yjs/utils/editor';
 import { BlockType, FieldURLType, FileBlockData, ImageBlockData, ImageType, YjsEditorKey } from '@/application/types';
+import { notify } from '@/components/_shared/notify';
 import { extractAppFlowyClipboardFragment } from '@/components/editor/clipboard/appflowy-fragment';
 import { stripInlineCommentIds } from '@/components/editor/clipboard/inline-comment-metadata';
 import { containsSimpleTableBlocks, extractTSVFromTableFragment } from '@/components/editor/clipboard/table-fragment';
@@ -14,6 +17,7 @@ import {
   insertBlocksAtCaret,
   shouldMergeFirstFragmentNodeInline,
 } from '@/components/editor/utils/insert-blocks-at-caret';
+import { insertFirstBodyFiles } from '@/components/editor/plugins/insert-first-body-files';
 import { FileHandler } from '@/utils/file';
 import { Log } from '@/utils/log';
 import { createPendingUploadId } from '@/utils/pending-upload';
@@ -21,12 +25,22 @@ import { isSingleURLText } from '@/utils/url';
 
 type BlockElement = Element & { blockId?: string };
 
+function containsOwnedPage(nodes: Node[]): boolean {
+  return nodes.some(
+    (node) =>
+      Element.isElement(node) &&
+      (isDatabaseBlockType(node.type) || node.type === BlockType.SubpageBlock || containsOwnedPage(node.children))
+  );
+}
+
 export const withInsertData = (editor: ReactEditor) => {
   const { insertData } = editor;
 
   const e = editor as YjsEditor;
 
   editor.insertData = (data: DataTransfer) => {
+    if (e.firstBody && !e.firstBody.allowSlateMutation()) return;
+    if (e.firstBody && insertFirstBodyFiles(editor, Array.from(data.files ?? []))) return;
     const entry = getBlockEntry(e);
 
     // Internal copies also carry rich fragments. Code blocks must consume the
@@ -96,6 +110,11 @@ export const withInsertData = (editor: ReactEditor) => {
     }
 
     if (richFragment) {
+      if (e.firstBody && containsOwnedPage(richFragment.fragment)) {
+        notify.error(t('atomicCreation.finishRowPageFirst'));
+        return;
+      }
+
       const newFragment = convertSlateFragmentTo(stripInlineCommentIds(richFragment.fragment));
 
       if (insertFragmentAsSiblings(e, newFragment)) return;
@@ -110,6 +129,11 @@ export const withInsertData = (editor: ReactEditor) => {
       const parsed = decodeSlateFragment(rawFragment);
 
       if (parsed) {
+        if (e.firstBody && containsOwnedPage(parsed)) {
+          notify.error(t('atomicCreation.finishRowPageFirst'));
+          return;
+        }
+
         const newFragment = convertSlateFragmentTo(stripInlineCommentIds(parsed));
 
         // Slate's default insertFragment nests pasted blocks under the current

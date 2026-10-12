@@ -191,6 +191,11 @@ export function getCurrentOutboxSession(expectedWorkspaceId?: string): SyncOutbo
   return { userId: currentUserId, workspaceId: currentWorkspaceId };
 }
 
+/** Read-only lifetime witness for commands prepared by the currently mounted workspace. */
+export function getCurrentOutboxSessionGeneration(): number {
+  return lifecycleGeneration;
+}
+
 /** Resolves true only after the update has been written to IndexedDB. */
 export function enqueueOutboxUpdate(
   record: Omit<SyncOutboxRecord, 'id' | 'createdAt' | 'workspaceId' | 'userId' | 'source'>,

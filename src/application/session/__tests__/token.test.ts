@@ -146,3 +146,29 @@ describe('GoTrue token storage', () => {
     setItem.mockRestore();
   });
 });
+
+describe('captured token session lifetime', () => {
+  it('preserves token rotation but invalidates a new login even for the same user', async () => {
+    const { captureTokenSession, isTokenSessionCurrent } = await import('../token');
+
+    saveGoTrueAuth(JSON.stringify(createToken()));
+    const session = captureTokenSession();
+
+    expect(saveGoTrueAuth(JSON.stringify(createToken({ access_token: 'rotated' })), session)).toBe(true);
+    expect(isTokenSessionCurrent(session)).toBe(true);
+    saveGoTrueAuth(JSON.stringify(createToken()));
+    expect(isTokenSessionCurrent(session)).toBe(false);
+  });
+
+  it('cannot publish an old refresh into a different account or invalidate that account', async () => {
+    const { captureTokenSession, invalidTokenForSession } = await import('../token');
+
+    saveGoTrueAuth(JSON.stringify(createToken()));
+    const session = captureTokenSession();
+
+    saveGoTrueAuth(JSON.stringify(createToken({ user: { id: 'other-user' } })));
+    expect(saveGoTrueAuth(JSON.stringify(createToken({ access_token: 'late' })), session)).toBe(false);
+    invalidTokenForSession(session);
+    expect(getTokenParsed()?.user.id).toBe('other-user');
+  });
+});
