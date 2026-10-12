@@ -2,9 +2,12 @@ import { Alert } from '@mui/material';
 
 import { ReactComponent as WarningIcon } from '@/assets/icons/close.svg';
 import emptyImageSrc from '@/assets/images/empty.png';
+import { useErrorCatalogRevision } from '@/components/main/hooks/useServerErrorCatalog';
 import { getErrorMessage } from '@/utils/errors';
 
 function SomethingError({ error }: { error: Error }) {
+  useErrorCatalogRevision();
+
   return (
     <div className={'flex h-full w-full flex-col items-center justify-center'}>
       <div className={'flex items-center gap-4 text-2xl font-bold text-text-primary opacity-70'}>

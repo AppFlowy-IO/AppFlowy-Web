@@ -1,29 +1,16 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 
+import { useErrorCatalogRevision } from '@/components/main/hooks/useServerErrorCatalog';
 import { getErrorMessage } from '@/utils/errors';
 
 import { ErrorModal } from './ErrorModal';
 
 export const ErrorHandlerPage = ({ error }: { error: Error }) => {
-  const [displayError, setDisplayError] = useState(true);
-  const [errorMessage, setErrorMessage] = useState(() => getErrorMessage(error));
+  const [dismissedError, setDismissedError] = useState<Error>();
 
-  const hideError = () => {
-    setDisplayError(false);
-  };
+  useErrorCatalogRevision();
 
-  const showError = useCallback((msg: string) => {
-    setErrorMessage(msg);
-    setDisplayError(true);
-  }, []);
-
-  useEffect(() => {
-    if (error) {
-      showError(getErrorMessage(error));
-    } else {
-      setDisplayError(false);
-    }
-  }, [error, showError]);
-
-  return displayError ? <ErrorModal message={errorMessage} onClose={hideError}></ErrorModal> : <></>;
+  return error && error !== dismissedError
+    ? <ErrorModal message={getErrorMessage(error)} onClose={() => setDismissedError(error)} />
+    : null;
 };

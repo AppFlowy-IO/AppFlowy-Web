@@ -1,14 +1,18 @@
-import { act, cleanup, render, renderHook, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, renderHook, screen } from '@testing-library/react';
 import i18next, { TFunction } from 'i18next';
 import { ReactNode } from 'react';
 import { I18nextProvider } from 'react-i18next';
 import { ReadableStream } from 'stream/web';
 import { TextDecoder, TextEncoder } from 'util';
 
+import enTranslations from '@/@types/translations/en.json';
 import { WEB_CLIENT_VERSION } from '@/application/compatibility/client-version';
 import { ERROR_CODE } from '@/application/constants';
 import { handleAPIResponseError } from '@/application/services/js-services/http/core';
+import { SettingsPanelError } from '@/components/app/settings/billing/SettingsPanelShell';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
+import { ErrorHandlerPage } from '@/components/error/ErrorHandlerPage';
+import SomethingError from '@/components/error/SomethingError';
 import { isViewGoneError } from '@/components/editor/components/blocks/database/utils/databaseBlockUtils';
 import { useServerErrorCatalog } from '@/components/main/hooks/useServerErrorCatalog';
 import { getLandingPageErrorContent } from '@/components/_shared/landing-page/errorContent';
@@ -159,6 +163,81 @@ it('updates an existing React fallback when server wording changes without chang
   expect(error).toEqual({ code: 1073, message: 'private export diagnostic', retryAfterSecs: 17 });
 });
 
+it.each(['settings panel', 'error modal', 'app fallback'] as const)(
+  'updates a mounted %s on catalog arrival, refresh, and invalidation', async (surface) => {
+    const i18n = i18next.createInstance();
+
+    await i18n.init({ lng: 'en', resources: { en: { translation: {} } } });
+    let resolveCatalog!: (response: Response) => void;
+
+    fetchMock.mockReturnValueOnce(new Promise((resolve) => { resolveCatalog = resolve; }));
+    retain();
+    const error = Object.assign(new Error('private export diagnostic'), { code: 1073 });
+    const element = surface === 'settings panel'
+      ? <SettingsPanelError error={error} onRetry={jest.fn()} />
+      : surface === 'error modal'
+      ? <ErrorHandlerPage error={error} />
+      : <SomethingError error={error} />;
+
+    render(<I18nextProvider i18n={i18n}>{element}</I18nextProvider>);
+    expect(screen.getByText(localCatalog.reasons.EXPORT_BUSY)).toBeTruthy();
+
+    resolveCatalog(jsonResponse(catalogEnvelope('Wait for this server to finish the export.'), 200, 'W/"v1"'));
+    await settle();
+    expect(screen.getByText('Wait for this server to finish the export.')).toBeTruthy();
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(catalogEnvelope('Exports are paused. Contact your administrator.'), 200, 'W/"v2"'));
+    await revalidate();
+    expect(screen.getByText('Exports are paused. Contact your administrator.')).toBeTruthy();
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(undefined, 204));
+    await revalidate();
+    expect(screen.getByText(localCatalog.reasons.EXPORT_BUSY)).toBeTruthy();
+    expect(error.message).toBe('private export diagnostic');
+  }
+);
+
+it('keeps a dismissed error modal closed across catalog updates and opens for a new error', async () => {
+  const i18n = i18next.createInstance();
+
+  await i18n.init({ lng: 'en', resources: { en: { translation: {} } } });
+  retain();
+  await settle();
+  const error = Object.assign(new Error('private export diagnostic'), { code: 1073 });
+  const { rerender } = render(
+    <I18nextProvider i18n={i18n}><ErrorHandlerPage error={error} /></I18nextProvider>
+  );
+
+  fireEvent.click(screen.getByRole('button', { name: '' }));
+  expect(screen.queryByText('Wait for the current server export to finish.')).toBeNull();
+  fetchMock.mockResolvedValueOnce(jsonResponse(catalogEnvelope('Updated export guidance.')));
+  await revalidate();
+  expect(screen.queryByText('Updated export guidance.')).toBeNull();
+
+  const newError = Object.assign(new Error('another export diagnostic'), { code: 1073 });
+
+  rerender(<I18nextProvider i18n={i18n}><ErrorHandlerPage error={newError} /></I18nextProvider>);
+  expect(screen.getByText('Updated export guidance.')).toBeTruthy();
+});
+
+it.each(['FUTURE_REASON', 'ACTION_PROBLEM'])('renders %s public copy as literal text without HTML entities', async (reason) => {
+  const i18n = i18next.createInstance();
+
+  await i18n.init({ lng: 'en', resources: { en: { translation: enTranslations } }, initImmediate: false });
+  Object.assign(i18next, { isInitialized: true });
+  jest.spyOn(i18next, 't').mockImplementation(i18n.t);
+  const message = "We couldn't reach R&D <b>today</b>. Try again later.";
+  const error = {
+    code: 9001, message: 'private diagnostic',
+    user_error: { schema_version: 1, reason, message, locale: 'en' },
+  };
+  const { container } = render(<ElementFallbackRender error={error} resetErrorBoundary={jest.fn()} />);
+
+  expect(screen.getByRole('alert').textContent).toContain(`Error 9001: ${message}`);
+  expect(container.querySelector('b')).toBeNull();
+  expect(screen.queryByText(/private diagnostic/)).toBeNull();
+});
+
 it.each([
   ['W/"v1"', '"v1"'],
   ['"v1"', 'W/"v1"'],
@@ -254,6 +333,58 @@ it('keeps server quota instructions without appending conflicting Pro or adminis
   const t = ((_key: string, fallback: string) => fallback) as TFunction;
 
   expect(getLandingPageErrorContent(error, t).description).toBe(message);
+});
+
+it.each([
+  { code: ERROR_CODE.FREE_PLAN_GUEST_LIMIT_EXCEEDED, reason: 'FREE_GUEST_LIMIT_REACHED' },
+  { code: ERROR_CODE.PAID_PLAN_GUEST_LIMIT_EXCEEDED, reason: 'PAID_GUEST_LIMIT_REACHED' },
+])('preserves server guest guidance for $code before hosting resolves and on self-hosted deployments', async ({ code, reason }) => {
+  const message = 'Guest invitations are paused by your administrator. Contact the workspace owner.';
+  const data = { schema_version: 1, locale: 'en', reasons: { [reason]: message }, codes: { [String(code)]: reason } };
+
+  fetchMock.mockResolvedValueOnce(jsonResponse({ code: 0, data }));
+  retain();
+  await settle();
+  const error = { code, message: 'private quota diagnostic' };
+  const t = ((_key: string, fallback: string) => fallback) as TFunction;
+
+  expect(getErrorMessage(error)).toBe(message);
+  updateServerInfo(serverUrl, { status: 'available', info: { enable_page_history: true, self_hosted: true } });
+  expect(getLandingPageErrorContent(error, t).description).toBe(message);
+
+  // Servers may override wording without supplying a new numeric-code mapping.
+  fetchMock.mockResolvedValueOnce(jsonResponse({ code: 0, data: { ...data, codes: {} } }));
+  await revalidate();
+  expect(getErrorMessage(error)).toBe(message);
+
+  fetchMock.mockResolvedValueOnce(jsonResponse(undefined, 204));
+  await revalidate();
+  expect(getErrorMessage(error)).toBe(localCatalog.reasons.GUEST_LIMIT_REACHED);
+});
+
+it('keeps supported guest mappings across locales and neutralizes unsupported mappings', async () => {
+  const code = ERROR_CODE.FREE_PLAN_GUEST_LIMIT_EXCEEDED;
+  const reason = 'FREE_GUEST_LIMIT_REACHED';
+  const data = {
+    schema_version: 1, locale: 'en', reasons: { [reason]: 'Server guest guidance.' }, codes: { [String(code)]: reason },
+  };
+
+  fetchMock.mockResolvedValueOnce(jsonResponse({ code: 0, data }));
+  retain('de');
+  await settle();
+  const t = ((key: string, options: { defaultValue: string }) =>
+    key === `userError.${reason}` ? 'Lokalisierter Hinweis zum Gästelimit.' : options.defaultValue) as TFunction;
+
+  expect(userFriendlyErrorMessage({ code }, { locale: 'de', hostedBilling: false, t }))
+    .toBe('Lokalisierter Hinweis zum Gästelimit.');
+
+  fetchMock.mockResolvedValueOnce(jsonResponse({
+    code: 0,
+    data: { ...data, reasons: { FUTURE_REASON: 'Foreign server copy.' }, codes: { [String(code)]: 'FUTURE_REASON' } },
+  }));
+  await revalidate();
+  expect(userFriendlyErrorMessage({ code }, { locale: 'de', hostedBilling: false, t }))
+    .toBe(localCatalog.reasons.GUEST_LIMIT_REACHED);
 });
 
 it('does not append an old quota remedy when a server code remapping uses an app translation', async () => {

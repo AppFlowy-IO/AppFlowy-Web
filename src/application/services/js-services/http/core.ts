@@ -188,8 +188,17 @@ export function handleAPIError(error: unknown): APIError {
     typeof (error as { code: unknown }).code === 'number'
   ) {
     const apiError = error as APIError;
+    // Error.message (and potentially retained diagnostics) is non-enumerable.
+    // Read the original instance before spreading its remaining API metadata.
+    const identity = readErrorIdentity(apiError);
 
-    return presentAPIError({ ...apiError, sourceDomain: apiError.sourceDomain ?? readErrorIdentity(apiError).sourceDomain });
+    return presentAPIError({
+      ...apiError,
+      code: apiError.code,
+      message: apiError.message,
+      diagnosticMessage: identity.diagnosticMessage,
+      sourceDomain: identity.sourceDomain,
+    });
   }
 
   const identity = readErrorIdentity(error);
@@ -574,7 +583,7 @@ export function initAPIService(config: AFCloudConfig) {
   // Request: attach stored ETag as If-None-Match
   axiosInstance.interceptors.request.use((config) => {
     applyErrorCapability(config, configuredBaseURL, baseURL);
-    const locale = i18next.resolvedLanguage ?? i18next.language;
+    const locale = i18next.language || i18next.resolvedLanguage;
 
     if (locale) config.headers.set('Accept-Language', locale.replace(/_/g, '-'));
     const cacheKey = getEtagCacheKey(config);

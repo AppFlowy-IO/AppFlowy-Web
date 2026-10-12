@@ -226,7 +226,7 @@ function resolveReason(error: ErrorIdentity): string | undefined {
 }
 
 function selectedErrorLocale(locale?: string): string {
-  return (locale ?? i18next.resolvedLanguage ?? i18next.language ?? 'en').replace(/_/g, '-').toLowerCase();
+  return (locale ?? (i18next.language || i18next.resolvedLanguage || 'en')).replace(/_/g, '-').toLowerCase();
 }
 
 function serverCatalogPresentation(identity: ErrorIdentity, locale: string) {
@@ -279,14 +279,17 @@ export function userFriendlyErrorMessage(error: unknown, options: ErrorMessageOp
     reason = resolveReason(identity);
   }
 
-  if (!publicError && options.hostedBilling === false &&
+  // Neutralize only bundled plan wording; supported server mappings and copy
+  // still own the guidance on self-hosted or unresolved deployments.
+  if (!publicError && options.hostedBilling === false && cloudReason !== reason && remoteCopy(reason) === undefined &&
     (reason === 'FREE_GUEST_LIMIT_REACHED' || reason === 'PAID_GUEST_LIMIT_REACHED')) {
     reason = 'GUEST_LIMIT_REACHED';
   }
 
   const translate = options.t ?? (i18next.isInitialized ? i18next.t.bind(i18next) : undefined);
   const localized = (key: string, fallback: string, args: Record<string, string | number> = {}) => {
-    const result = translate?.(key, { defaultValue: fallback, ...args });
+    // Return plain text. React escapes it at the rendering boundary.
+    const result = translate?.(key, { defaultValue: fallback, ...args, interpolation: { escapeValue: false } });
 
     return typeof result === 'string' && result.trim() && result !== key ? result : fallback;
   };

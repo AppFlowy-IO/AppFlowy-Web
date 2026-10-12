@@ -10,6 +10,7 @@ import { RequestAccessError } from '@/components/app/hooks/useWorkspaceData';
 import { AccessService } from '@/application/services/domains';
 import { getLandingPageErrorContent, LandingPageError } from '@/components/_shared/landing-page/errorContent';
 import { useCurrentUser } from '@/components/main/app.hooks';
+import { useErrorCatalogRevision } from '@/components/main/hooks/useServerErrorCatalog';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 
@@ -27,6 +28,9 @@ export function RequestAccessContent({
   error: _error,
 }: RequestAccessContentProps) {
   const { t } = useTranslation();
+
+  useErrorCatalogRevision();
+
   const currentWorkspaceId = useCurrentWorkspaceId();
   const appViewId = useAppViewId();
   const [searchParams] = useSearchParams();

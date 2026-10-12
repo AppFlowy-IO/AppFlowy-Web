@@ -164,6 +164,49 @@ describe('http_api client (unit)', () => {
     expect(normalized.message.match(/Upgrade/g)).toHaveLength(1);
   });
 
+  it.each([429, 503, 1017])('retains non-enumerable Error diagnostics and retry metadata for code %s', async (code) => {
+    const { handleAPIError } = await import('../core');
+    const { getErrorDiagnostic } = await import('@/utils/errors');
+    const original = Object.assign(new Error(`Batch sync rate-limited (${code})`), {
+      code, retryAfterSecs: 17, requestId: 'batch-sync-123',
+    });
+    const normalized = handleAPIError(original);
+
+    expect(normalized).toMatchObject({ code, retryAfterSecs: 17, requestId: 'batch-sync-123' });
+    expect(getErrorDiagnostic(normalized)).toBe(original.message);
+    expect(normalized.message).not.toContain(original.message);
+    expect(handleAPIError(normalized)).toEqual(normalized);
+    expect(original.message).toBe(`Batch sync rate-limited (${code})`);
+  });
+
+  it('retains an explicitly empty non-enumerable diagnostic instead of generated display text', async () => {
+    const { handleAPIError } = await import('../core');
+    const { getErrorDiagnostic } = await import('@/utils/errors');
+    const original = Object.assign(new Error('space must keep at least one explicit owner'), { code: 1008 });
+
+    Object.defineProperty(original, 'diagnosticMessage', { value: '', enumerable: false });
+    const normalized = handleAPIError(original);
+
+    expect(getErrorDiagnostic(normalized)).toBe('');
+    expect(normalized.message).not.toContain('Choose another owner');
+    expect(getErrorDiagnostic(handleAPIError(normalized))).toBe('');
+  });
+
+  it('preserves explicit client validation guidance through repeated HTTP normalization', async () => {
+    const { handleAPIError } = await import('../core');
+    const { ClientValidationError, clientValidationMessages } = await import('@/application/errors/client-validation-error');
+    const { getErrorDiagnostic, getErrorMessage } = await import('@/utils/errors');
+    const error = new ClientValidationError('FORM_DEEP_DUPLICATE_UNAVAILABLE');
+    const normalized = handleAPIError(error);
+
+    expect(getErrorMessage(error)).toBe(clientValidationMessages.FORM_DEEP_DUPLICATE_UNAVAILABLE);
+    expect(normalized.sourceDomain).toBe('client');
+    expect(getErrorMessage(normalized)).toContain(clientValidationMessages.FORM_DEEP_DUPLICATE_UNAVAILABLE);
+    expect(getErrorDiagnostic(normalized)).toBe(error.message);
+    expect(handleAPIError(normalized)).toEqual(normalized);
+    expect(getErrorMessage(new Error(error.message))).not.toContain(error.message);
+  });
+
   it.each([
     { error: { code: -1, sourceDomain: 'appflowy.server', message: 'Unhandled' }, retries: false },
     { error: { code: 503, sourceDomain: 'appflowy.server', message: 'Future Cloud code' }, retries: false },

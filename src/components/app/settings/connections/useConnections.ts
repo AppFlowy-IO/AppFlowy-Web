@@ -11,10 +11,14 @@ import {
   isIntegrationProvider,
 } from '@/application/integrations/types';
 import * as IntegrationService from '@/application/services/domains/integration';
+import { useErrorCatalogRevision } from '@/components/main/hooks/useServerErrorCatalog';
 import { getErrorDiagnostic, getErrorMessage, isAPIErrorCode } from '@/utils/errors';
 
 export function useConnections(workspaceId: string) {
   const { t } = useTranslation();
+
+  useErrorCatalogRevision();
+
   const [connections, setConnections] = useState<IntegrationConnection[]>([]);
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [configuredProviders, setConfiguredProviders] = useState<readonly IntegrationProvider[]>(integrationProviders);

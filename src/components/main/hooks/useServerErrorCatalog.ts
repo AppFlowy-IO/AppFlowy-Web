@@ -6,7 +6,8 @@ import { getErrorCatalogRevision, retainServerErrorCatalog, subscribeToErrorCata
 /** Public copy can load before authentication without delaying sign-in or startup. */
 export function useServerErrorCatalog(serverUrl: string): void {
   const { i18n } = useTranslation();
-  const locale = i18n.resolvedLanguage ?? i18n.language ?? 'en';
+  // A missing UI translation bundle must not replace the user's server locale.
+  const locale = i18n.language || i18n.resolvedLanguage || 'en';
 
   useEffect(() => retainServerErrorCatalog(serverUrl, locale), [serverUrl, locale]);
 }

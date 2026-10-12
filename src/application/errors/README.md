@@ -34,6 +34,13 @@ Error rendering tolerates denied browser storage access and retains authoritativ
 server hosting flags. Pass reviewed, locally authored landing-page guidance through
 the explicit `description` prop; raw server diagnostics still go through `error`.
 
+Locally authored validation guidance that is thrown through shared error handlers
+uses `ClientValidationError` with a named reason from `clientValidationMessages`.
+This opts reviewed client copy into `user_error` without treating arbitrary
+`Error.message` strings as public. Form duplication and its safety preflight use
+these client reasons. Numeric-code `Error` instances retain their original
+diagnostics before normalization spreads the remaining API metadata.
+
 Adapters select `sourceDomain` so Cloud `-1` (Unhandled), local network `-1`,
 HTTP statuses, and GoTrue numeric statuses do not collide. In particular, 1073
 is export contention; 1069 is an existing workspace member. HTTP 422 alone says
@@ -45,8 +52,9 @@ without server changes. Unknown codes remain failures with a nonempty explanatio
 and their available code; arbitrary diagnostics never become default UI text.
 Supported optional `user_error` schema 1 with a `locale` matching the app's
 selected language takes precedence, including wording for known reasons. The
-request adapter sends `Accept-Language`. Current Cloud copy is English; other
-languages retain client translations. Untagged schema-1 metadata keeps the prior
+request adapter sends `Accept-Language`. Current per-response Cloud middleware copy
+is English; other languages use the matching server catalog or client translations.
+Untagged schema-1 metadata keeps the prior
 behavior: known reasons localize and unknown reasons use bounded public copy.
 Mismatched-language unknown reasons use a supported server or local code mapping,
 then the generic fallback when the code is unknown. Malformed or
@@ -64,7 +72,11 @@ error codes to reason names. The endpoint provides no diagnostics or matching
 rules. Per-response metadata remains strongest; reviewed legacy classifications
 preserve overloaded-code specificity, then server code mappings precede bundled
 mappings. Server copy precedes bundled copy only when its response locale matches
-the selected app language. Code-to-reason mappings remain useful across languages,
+the selected app language. Discovery and presentation use `i18next.language`
+before `resolvedLanguage`, so a missing French UI bundle cannot replace the user's
+French preference with English. A saved profile language precedes browser language.
+Cloud returns actual locale `fr` for `fr`, `fr-FR` and `fr-CA`; unsupported languages
+receive English. Code-to-reason mappings remain useful across languages,
 so new codes can use existing app translations until Cloud provides that language.
 HTTP, GoTrue, transport and local validation identities keep their existing
 namespaces and do not consume Cloud's remote code or reason tables. Server quota

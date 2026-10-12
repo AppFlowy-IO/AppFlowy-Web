@@ -5,12 +5,15 @@ import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
 import { useIsOfficialHosted } from '@/components/app/app.hooks';
 import { ERROR_CODE_NO_LIMIT } from '@/components/chat/lib/const';
 import { useWriterContext } from '@/components/chat/writer/context';
+import { useErrorCatalogRevision } from '@/components/main/hooks/useServerErrorCatalog';
 
 export function Error() {
   const { t } = useTranslation();
   const isOfficialHosted = useIsOfficialHosted();
 
   const { error, rewrite } = useWriterContext();
+
+  useErrorCatalogRevision();
 
   return (
     <div
