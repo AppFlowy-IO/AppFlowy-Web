@@ -51,6 +51,7 @@ import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { Log } from '@/utils/log';
+import { setLastViewId } from '@/utils/safe-storage';
 
 const ViewHelmet = lazy(() => import('@/components/_shared/helmet/ViewHelmet'));
 
@@ -704,10 +705,8 @@ function AppPage() {
 
   useEffect(() => {
     if (!viewId || !workspaceId || !currentUser?.uuid) return;
-    // Use workspace and user specific key to avoid cross-user/workspace conflicts
-    const key = `last_view_id_${workspaceId}_${currentUser.uuid}`;
-
-    localStorage.setItem(key, viewId);
+    // Best-effort: never throws in private mode / blocked storage.
+    setLastViewId(workspaceId, currentUser.uuid, viewId);
   }, [viewId, workspaceId, currentUser?.uuid]);
 
   useEffect(() => {

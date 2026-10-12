@@ -33,7 +33,7 @@ export function downloadBlob(blob: Blob, filename: string): void {
   download(blob, filename);
 }
 
-export async function downloadFile(url: string, filename?: string): Promise<void> {
+export async function downloadFile(url: string, filename?: string): Promise<boolean> {
   try {
     const response = await fetchFile(url);
 
@@ -44,8 +44,10 @@ export async function downloadFile(url: string, filename?: string): Promise<void
     const blob = await response.blob();
 
     download(blob, filename);
+    return true;
   } catch (error) {
     console.error(error);
+    return false;
   }
 }
 
@@ -54,17 +56,17 @@ export async function downloadFile(url: string, filename?: string): Promise<void
  * file routes. A direct `window.open` cannot attach Authorization and would
  * turn accepted public-form attachments into a 401 page.
  */
-export async function openFileUrl(url: string, target = '_blank', filename?: string): Promise<void> {
+export async function openFileUrl(url: string, target = '_blank', filename?: string): Promise<boolean> {
   if (!isAppFlowyAuthenticatedFileUrl(url)) {
     await openUrl(url, target, target === '_blank' ? 'noopener,noreferrer' : undefined);
-    return;
+    return true;
   }
 
   // Open synchronously from the click event so popup blockers do not reject
   // the eventual blob navigation after the authenticated fetch completes.
   const popup = window.open('', target);
 
-  if (!popup) return;
+  if (!popup) return false;
   const ownsPopup = target === '_blank';
 
   // A subsequently-loaded document must never retain a reference to the app.
@@ -83,7 +85,7 @@ export async function openFileUrl(url: string, target = '_blank', filename?: str
     if (!canOpenBlobInline(blob)) {
       if (ownsPopup) popup.close();
       downloadInertBlob(blob, filename);
-      return;
+      return true;
     }
 
     const blobUrl = URL.createObjectURL(blob);
@@ -92,9 +94,11 @@ export async function openFileUrl(url: string, target = '_blank', filename?: str
     // Keep the capability alive long enough for the new tab to consume it,
     // while still releasing the potentially large blob deterministically.
     window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+    return true;
   } catch (error) {
     if (ownsPopup) popup.close();
     console.error(error);
+    return false;
   }
 }
 
