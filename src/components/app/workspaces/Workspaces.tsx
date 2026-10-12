@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
 import { WorkspaceService } from '@/application/services/domains';
-import { Workspace } from '@/application/types';
+import { SubscriptionPlan, Workspace } from '@/application/types';
 import { ReactComponent as ChevronDownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as TipIcon } from '@/assets/icons/help.svg';
 import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
@@ -15,10 +15,12 @@ import { notify } from '@/components/_shared/notify';
 import {
   useAppOperations,
   useCurrentWorkspaceId,
+  useGetSubscriptions,
   useIsOfficialHosted,
   useRefreshUserWorkspaceInfo,
   useUserWorkspaceInfo,
 } from '@/components/app/app.hooks';
+import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
 import { SettingsDialog } from '@/components/app/settings';
 import CurrentWorkspace from '@/components/app/workspaces/CurrentWorkspace';
 import DeleteWorkspace from '@/components/app/workspaces/DeleteWorkspace';
@@ -65,7 +67,9 @@ export function Workspaces() {
   const [openLeaveWorkspace, setOpenLeaveWorkspace] = useState<Workspace | null>(null);
   const [openSettings, setOpenSettings] = useState(false);
 
-  const canManageBilling = canManageWorkspaceBilling(currentWorkspace, currentUser?.uid, isHosted);
+  const canManageBilling =
+    currentWorkspace?.id === currentWorkspaceId &&
+    canManageWorkspaceBilling(currentWorkspace, currentUser?.uid, isHosted);
 
   useEffect(() => {
     setCurrentWorkspace(userWorkspaceInfo?.workspaces.find((workspace) => workspace.id === currentWorkspaceId));
@@ -240,19 +244,13 @@ export function Workspaces() {
                 <div className={'flex-1 text-left'}>{t('web.settings')}</div>
               </DropdownMenuItem>
             </DropdownMenuGroup>
-            {canManageBilling && (
-              <DropdownMenuGroup>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onSelect={() => {
-                    setOpenUpgradePlan(true);
-                    setOpen(false);
-                  }}
-                >
-                  <UpgradeIcon />
-                  {t('subscribe.changePlan')}
-                </DropdownMenuItem>
-              </DropdownMenuGroup>
+            {open && canManageBilling && (
+              <WorkspaceUpgradeMenuItem
+                onSelect={() => {
+                  setOpenUpgradePlan(true);
+                  setOpen(false);
+                }}
+              />
             )}
           </DropdownMenuContent>
         </DropdownMenu>
@@ -314,6 +312,25 @@ export function Workspaces() {
         onRequestOpen={() => setOpenSettings(true)}
       />
     </>
+  );
+}
+
+// Mount on each menu opening to refresh the plan after returning from checkout.
+function WorkspaceUpgradeMenuItem({ onSelect }: { onSelect: () => void }) {
+  const { t } = useTranslation();
+  const getSubscriptions = useGetSubscriptions();
+  const { activeSubscriptionPlan } = useSubscriptionPlan(getSubscriptions);
+
+  if (!getSubscriptions || activeSubscriptionPlan !== SubscriptionPlan.Free) return null;
+
+  return (
+    <DropdownMenuGroup>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem onSelect={onSelect}>
+        <UpgradeIcon />
+        {t('subscribe.changePlan')}
+      </DropdownMenuItem>
+    </DropdownMenuGroup>
   );
 }
 
