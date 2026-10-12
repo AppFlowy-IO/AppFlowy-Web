@@ -2,6 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 
 import { PageService, PublishService, ViewService } from '@/application/services/domains';
 import { clearPublishViewInfoCache } from '@/application/services/js-services/cached-api';
+import { handleAPIError } from '@/application/services/js-services/http/core';
 import { publishCollabs } from '@/application/services/js-services/http/publish-api';
 import { gatherDatabasePublishData } from '@/application/services/js-services/publish-database-data';
 import { View, ViewLayout } from '@/application/types';
@@ -254,14 +255,17 @@ describe('usePageOperations publish', () => {
     }
   });
 
-  it('retries document publishing while the folder projection is pending', async () => {
+  it.each([
+    undefined,
+    { schema_version: 1, reason: 'CONTENT_NOT_FOUND', message: 'This page is still syncing.', locale: 'en' },
+  ])('retries document publishing after presentation normalizes a pending projection error: %j', async (user_error) => {
     jest.useFakeTimers();
 
     const syncAllToServer = jest.fn(async () => undefined);
 
     jest
       .mocked(PublishService.publish)
-      .mockRejectedValueOnce({ code: -2, message: 'Record not found: view is not projected yet' })
+      .mockRejectedValueOnce(handleAPIError({ code: -2, message: 'Record not found: view is not projected yet', user_error }))
       .mockResolvedValueOnce(undefined);
 
     try {

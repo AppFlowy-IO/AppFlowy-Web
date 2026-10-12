@@ -35,7 +35,7 @@ describe('publishing configuration wire contract', () => {
   it.each([undefined, true, false])(
     'encodes comments=%s atomically with binary publication content',
     async (enabled) => {
-      const post = jest.fn().mockResolvedValue({ data: { code: 0 } });
+      const post = jest.fn().mockResolvedValue({ data: { code: 0, data: null } });
 
       jest.mocked(getAxios).mockReturnValue({ post } as never);
       const meta: PublishCollabMetadata = {
@@ -61,7 +61,7 @@ describe('publishing configuration wire contract', () => {
       };
       const data = new Uint8Array([1, 2, 3]);
 
-      await publishCollabs('workspace', [{ meta, data }]);
+      await expect(publishCollabs('workspace', [{ meta, data }])).resolves.toBeUndefined();
 
       const body = post.mock.calls[0][1] as Uint8Array;
       const frame = new DataView(body.buffer, body.byteOffset, body.byteLength);

@@ -369,7 +369,7 @@ describe('AddPageActions', () => {
     renderActions(view({ view_id: 'parent-id' }));
     fireEvent.click(screen.getByTestId('add-list-button'));
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('temporary Grid could not be moved to trash'));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Failed to create page'));
 
     const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
     const databaseViews = database?.get(YjsDatabaseKey.views);
@@ -405,7 +405,7 @@ describe('AddPageActions', () => {
     renderActions(view({ view_id: 'parent-id' }));
     fireEvent.click(screen.getByTestId('add-list-button'));
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('The new List database could not be persisted'));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Failed to create page'));
 
     const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
 
@@ -439,7 +439,7 @@ describe('AddPageActions', () => {
     renderActions(view({ view_id: 'parent-id' }));
     fireEvent.click(screen.getByTestId('add-list-button'));
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('permanent cleanup unavailable'));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Failed to create page'));
 
     expect(mockDeletePage.mock.calls).toEqual([['grid-view-id'], ['list-container-id']]);
     expect(mockDeleteTrash.mock.calls).toEqual([['grid-view-id'], ['list-container-id']]);
@@ -474,7 +474,7 @@ describe('AddPageActions', () => {
     renderActions(view({ view_id: 'parent-id' }));
     fireEvent.click(screen.getByTestId('add-list-button'));
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('The temporary Grid cleanup could not be persisted'));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Failed to create page'));
 
     expect(mockDeletePage.mock.calls).toEqual([['grid-view-id'], ['list-container-id']]);
     expect(mockDeleteTrash.mock.calls).toEqual([['grid-view-id'], ['list-container-id']]);
@@ -563,7 +563,7 @@ describe('AddPageActions', () => {
     fireEvent.click(screen.getByTestId(`add-${layout}-button`));
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(
-      'Upgrade this workspace to Pro to use this feature or increase its limits.'
+      "This subscription plan isn't valid for this action. Upgrade this workspace to Pro to use this feature or increase its limits."
     ));
     expect(toast.error).toHaveBeenCalledTimes(1);
     expect(toast.dismiss).toHaveBeenCalled();
@@ -578,7 +578,7 @@ describe('AddPageActions', () => {
     renderActions(view({ view_id: 'space-id', extra: { is_space: true } }));
     fireEvent.click(screen.getByTestId('add-timeline-page-button'));
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(message));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('An upgrade is required for this action.'));
     expect(toast.dismiss).toHaveBeenCalled();
     expect(mockToView).not.toHaveBeenCalled();
     expect(mockOpenPageModal).not.toHaveBeenCalled();
@@ -590,7 +590,7 @@ describe('AddPageActions', () => {
     renderActions(view({ view_id: 'space-id', extra: { is_space: true } }));
     fireEvent.click(screen.getByTestId('add-ai-chat-button'));
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('create failed'));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Failed to create page'));
 
     expect(mockChatRequest).not.toHaveBeenCalled();
     expect(mockUpdateChatSettings).not.toHaveBeenCalled();

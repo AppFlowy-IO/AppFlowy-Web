@@ -2,6 +2,7 @@ import axios from 'axios';
 
 import { getConfigValue } from '@/utils/runtime-config';
 
+import { readBinaryErrorResponse } from './binary-error';
 import { APIError, APIResponse, executeAPIRequest, getAxios, handleAPIError } from './core';
 
 export interface ExportPdfOptions {
@@ -88,7 +89,7 @@ export async function getViewPdfBlob(
 
     // The gateway uses HTTP 200 JSON envelopes for some plan denials. A blob
     // response must be checked before it can be offered as a PDF download.
-    const apiError = await readPdfError(response.data, response.headers?.['content-type']);
+    const apiError = await readBinaryErrorResponse(response);
 
     if (apiError) throw apiError;
 
@@ -99,37 +100,13 @@ export async function getViewPdfBlob(
     return { blob: response.data, filename };
   } catch (error) {
     if (axios.isAxiosError(error) && error.response?.data instanceof Blob) {
-      const apiError = await readPdfError(error.response.data, error.response.headers?.['content-type']);
+      const apiError = await readBinaryErrorResponse(error.response);
 
-      if (apiError) {
-        apiError.httpStatus = error.response.status;
-        throw apiError;
-      }
+      if (apiError) throw apiError;
     }
 
     throw handleAPIError(error);
   }
-}
-
-async function readPdfError(blob: Blob, contentType: unknown): Promise<APIError | undefined> {
-  const type = typeof contentType === 'string' ? contentType : blob.type;
-
-  if (!type.includes('json')) return undefined;
-  // Error envelopes are small. Never read a large or malformed response into
-  // a string just to display it in a toast.
-  if (blob.size > 64 * 1024) return { code: -1, message: 'PDF export failed' };
-
-  try {
-    const payload: unknown = JSON.parse(await blob.text());
-
-    if (typeof payload === 'object' && payload !== null && 'code' in payload) {
-      return handleAPIError(payload);
-    }
-  } catch {
-    // A malformed JSON error is still not a PDF download.
-  }
-
-  return { code: -1, message: 'PDF export failed' };
 }
 
 /**

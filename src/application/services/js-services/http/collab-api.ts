@@ -5,6 +5,7 @@ import { getOrCreateDeviceId } from '@/application/services/js-services/device-i
 import { RowDocumentSourcePayload, RowId, Types, User, View } from '@/application/types';
 import { database_blob } from '@/proto/database_blob';
 import { collab } from '@/proto/messages';
+import { getErrorDiagnostic } from '@/utils/errors';
 import { Log } from '@/utils/log';
 
 import { APIResponse, APIError, executeAPIRequest, executeAPIVoidRequest, getAxios, parseRetryAfterSecs } from './core';
@@ -428,7 +429,7 @@ export async function duplicateRowDocument(
       if (
         delay === undefined ||
         apiError?.code !== ERROR_CODE.INVALID_REQUEST ||
-        !apiError.message?.includes(`new_row_id ${newRowId} does not belong to database ${databaseId}`)
+        !getErrorDiagnostic(apiError).includes(`new_row_id ${newRowId} does not belong to database ${databaseId}`)
       ) {
         throw error;
       }

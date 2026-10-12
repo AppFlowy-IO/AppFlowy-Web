@@ -1,11 +1,14 @@
 import axios, { AxiosError, AxiosInstance, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import dayjs from 'dayjs';
+import i18next from 'i18next';
 
+import { errorCodeNumber, ErrorSource, readErrorIdentity, TransportFailure } from '@/application/errors/error-message';
 import { AFCloudConfig } from '@/application/services/services.type';
 import { getTokenParsed, invalidToken } from '@/application/session/token';
-import { getBillingErrorMessage } from '@/utils/billing-error';
+import { getErrorMessage } from '@/utils/errors';
 import { Log } from '@/utils/log';
 
+import { applyErrorCapability } from './error-capability';
 import { initGrantService, refreshToken } from './gotrue';
 import { resolveLocalApiBaseURL } from './local-dev-origins';
 
@@ -110,6 +113,8 @@ export interface APIResponse<T = unknown> {
   data?: T;
   message: string;
   retry_after_secs?: number;
+  user_error?: unknown;
+  request_id?: string;
 }
 
 /**
@@ -118,6 +123,13 @@ export interface APIResponse<T = unknown> {
 export interface APIError {
   code: number;
   message: string;
+  /** Untouched diagnostics for recovery and explicit support copying only. */
+  diagnosticMessage?: string;
+  sourceDomain?: ErrorSource;
+  errorCode?: string;
+  transportFailure?: TransportFailure;
+  user_error?: unknown;
+  requestId?: string;
   /** HTTP response status when the error came from the transport layer. */
   httpStatus?: number;
   /** Server-suggested retry delay parsed from the HTTP Retry-After header (seconds). */
@@ -155,22 +167,17 @@ export function handleAPIError(error: unknown): APIError {
   if (axios.isAxiosError(error)) {
     // Network error (no response from server)
     if (!error.response) {
-      return {
+      return presentAPIError({
         code: -1,
         message: error.message || 'Network error',
-      };
+        sourceDomain: 'transport',
+        transportFailure: error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT' ? 'timeout' :
+          error.code === 'ERR_CANCELED' ? 'cancelled' : 'network',
+      });
     }
 
     // Server responded with error status
-    const errorData = error.response.data as { code?: number; message?: string } | undefined;
-    const retryAfterSecs = parseRetryAfterSecs(error.response.headers);
-
-    return {
-      code: errorData?.code ?? error.response.status,
-      message: getBillingErrorMessage(errorData) || errorData?.message || error.message || 'Request failed',
-      httpStatus: error.response.status,
-      retryAfterSecs,
-    };
+    return handleAPIResponseError(error.response);
   }
 
   // Normalized APIError (plain { code, message } from executeAPIRequest/executeAPIVoidRequest)
@@ -181,20 +188,49 @@ export function handleAPIError(error: unknown): APIError {
     typeof (error as { code: unknown }).code === 'number'
   ) {
     const apiError = error as APIError;
+    // Error.message (and potentially retained diagnostics) is non-enumerable.
+    // Read the original instance before spreading its remaining API metadata.
+    const identity = readErrorIdentity(apiError);
 
-    return {
+    return presentAPIError({
+      ...apiError,
       code: apiError.code,
-      message: getBillingErrorMessage(apiError) || apiError.message || 'Request failed',
-      httpStatus: apiError.httpStatus,
-      retryAfterSecs: apiError.retryAfterSecs,
-    };
+      message: apiError.message,
+      diagnosticMessage: identity.diagnosticMessage,
+      sourceDomain: identity.sourceDomain,
+    });
   }
 
-  // Non-axios error
-  return {
-    code: -1,
-    message: error instanceof Error ? error.message : 'Unknown error occurred',
-  };
+  const identity = readErrorIdentity(error);
+
+  return presentAPIError({
+    ...identity,
+    code: identity.code ?? -1,
+    message: identity.diagnosticMessage || 'Unknown error occurred',
+  });
+}
+
+function presentAPIError(error: APIError): APIError {
+  const preserved = { ...error, diagnosticMessage: error.diagnosticMessage ?? error.message };
+
+  return { ...preserved, message: getErrorMessage(preserved) };
+}
+
+/** Normalize an error response after its transport-specific body has been decoded. */
+export function handleAPIResponseError(response: Pick<AxiosResponse, 'data' | 'status' | 'headers'>): APIError {
+  const body = response.data && typeof response.data === 'object' ? response.data : {};
+  const code = errorCodeNumber(body.code);
+  const hasCloudCode = code !== undefined && code !== 0;
+
+  return presentAPIError({
+    code: hasCloudCode ? code : response.status,
+    sourceDomain: hasCloudCode ? 'appflowy.server' : 'http',
+    message: typeof body.message === 'string' && body.message.trim() ? body.message : 'Request failed',
+    httpStatus: response.status,
+    user_error: body.user_error,
+    requestId: response.headers?.['x-request-id'] ?? body.request_id,
+    retryAfterSecs: parseRetryAfterSecs(response.headers) ?? body.retry_after_secs,
+  });
 }
 
 /**
@@ -207,19 +243,21 @@ export async function executeAPIRequest<TResponseData = unknown>(
 ): Promise<TResponseData> {
   try {
     if (!axiosInstance) {
-      return Promise.reject({
+      return Promise.reject(presentAPIError({
         code: -1,
         message: 'API service not initialized',
-      });
+        sourceDomain: 'client',
+      }));
     }
 
     const response = await request();
 
     if (!response) {
-      return Promise.reject({
+      return Promise.reject(presentAPIError({
         code: -1,
         message: 'No response received from server',
-      });
+        sourceDomain: 'client',
+      }));
     }
 
     // Get the actual URL that was requested
@@ -253,10 +291,11 @@ export async function executeAPIRequest<TResponseData = unknown>(
             }
           : response
       );
-      return Promise.reject({
+      return Promise.reject(presentAPIError({
         code: -1,
         message: 'No response data received',
-      });
+        sourceDomain: 'client',
+      }));
     }
 
     if (response.data.code === 0) {
@@ -265,11 +304,7 @@ export async function executeAPIRequest<TResponseData = unknown>(
     }
 
     // Server returned an error response
-    return Promise.reject({
-      code: response.data.code,
-      message: getBillingErrorMessage(response.data) || response.data.message || 'Request failed',
-      retryAfterSecs: response.data.retry_after_secs,
-    });
+    return Promise.reject(handleAPIResponseError(response));
   } catch (error) {
     return Promise.reject(handleAPIError(error));
   }
@@ -284,19 +319,21 @@ export async function executeAPIVoidRequest(
 ): Promise<void> {
   try {
     if (!axiosInstance) {
-      return Promise.reject({
+      return Promise.reject(presentAPIError({
         code: -1,
         message: 'API service not initialized',
-      });
+        sourceDomain: 'client',
+      }));
     }
 
     const response = await request();
 
     if (!response) {
-      return Promise.reject({
+      return Promise.reject(presentAPIError({
         code: -1,
         message: 'No response received from server',
-      });
+        sourceDomain: 'client',
+      }));
     }
 
     // Many "void" endpoints return 204 or a 2xx with an empty body. Treat any 2xx as success
@@ -307,27 +344,19 @@ export async function executeAPIVoidRequest(
       if (
         responseData &&
         typeof responseData === 'object' &&
-        'code' in responseData &&
-        typeof (responseData as { code?: unknown }).code === 'number'
+        'code' in responseData
       ) {
         const data = responseData as APIResponse;
 
         if (data.code === 0) return;
 
-        return Promise.reject({
-          code: data.code,
-          message: getBillingErrorMessage(data) || data.message || 'Request failed',
-          retryAfterSecs: data.retry_after_secs,
-        });
+        return Promise.reject(handleAPIResponseError(response));
       }
 
       return;
     }
 
-    return Promise.reject({
-      code: response.status,
-      message: response.statusText || 'Request failed',
-    });
+    return Promise.reject(handleAPIResponseError(response));
   } catch (error) {
     return Promise.reject(handleAPIError(error));
   }
@@ -373,9 +402,9 @@ export async function withRetry<T>(
       // HTTP 5xx range is retryable; treating every value above 500 as a
       // transport failure makes permanent denials wait through all backoffs.
       const httpStatus =
-        normalized.httpStatus ?? (normalized.code >= 100 && normalized.code <= 599 ? normalized.code : undefined);
+        normalized.httpStatus ?? (normalized.sourceDomain === 'http' ? normalized.code : undefined);
       const isRetryable =
-        normalized.code === -1 ||
+        (normalized.sourceDomain === 'transport' && normalized.transportFailure !== 'cancelled') ||
         httpStatus === 429 ||
         (httpStatus !== undefined && httpStatus >= 500 && httpStatus <= 599);
 
@@ -438,6 +467,7 @@ export function initAPIService(config: AFCloudConfig) {
   // requests to the dev server, whose proxies reach the local gateway or cloud
   // and the billing service without CORS. Production keeps the configured URL.
   const baseURL = resolveLocalApiBaseURL(config.baseURL);
+  const configuredBaseURL = config.baseURL;
 
   if (baseURL !== config.baseURL) {
     console.info(`[local-dev] API requests go through ${baseURL} (configured base: ${config.baseURL})`);
@@ -552,6 +582,10 @@ export function initAPIService(config: AFCloudConfig) {
 
   // Request: attach stored ETag as If-None-Match
   axiosInstance.interceptors.request.use((config) => {
+    applyErrorCapability(config, configuredBaseURL, baseURL);
+    const locale = i18next.language || i18next.resolvedLanguage;
+
+    if (locale) config.headers.set('Accept-Language', locale.replace(/_/g, '-'));
     const cacheKey = getEtagCacheKey(config);
 
     if (cacheKey) {

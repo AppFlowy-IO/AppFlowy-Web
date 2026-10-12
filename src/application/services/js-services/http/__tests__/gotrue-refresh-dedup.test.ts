@@ -1,5 +1,6 @@
 const mockGrantClient = {
   interceptors: {
+    response: { use: jest.fn() },
     request: {
       use: jest.fn(),
     },

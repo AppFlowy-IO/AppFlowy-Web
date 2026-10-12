@@ -140,7 +140,7 @@ describe('importCsvFilesAsDatabases', () => {
     expect(result.aborted).toBe(false);
     expect(result.items).toEqual([
       { fileName: 'one.csv', viewId: 'view-task-one' },
-      { fileName: 'two.csv', error: 'file too large', code: -1 },
+      { fileName: 'two.csv', error: 'Error -1: Something went wrong. Contact support if this keeps happening.', code: -1 },
       { fileName: 'three.csv', viewId: 'view-task-three' },
     ]);
   });
@@ -168,12 +168,12 @@ describe('importCsvFilesAsDatabases', () => {
 
     expect(result.items).toEqual([
       { fileName: 'one.csv', viewId: 'view-task-one' },
-      { fileName: 'two.csv', error: 'bad header' },
+      { fileName: 'two.csv', error: 'Something went wrong. Contact support if this keeps happening.' },
     ]);
     expect(cancelTask).toHaveBeenCalledWith(WORKSPACE_ID, 'task-two');
   });
 
-  it('leaves the message empty when the rejection carries none, so the caller can translate', async () => {
+  it('uses the localized generic explanation and code when a rejection has no message', async () => {
     stubHappyPath();
     createTask.mockRejectedValue({ code: -1 });
 
@@ -183,8 +183,8 @@ describe('importCsvFilesAsDatabases', () => {
       files: [csvFile('one.csv')],
     });
 
-    // Never an English string baked in here — `ImportDialog` supplies the translated wording.
-    expect(result.items).toEqual([{ fileName: 'one.csv', error: '', code: -1 }]);
+    // The shared presenter supplies localized guidance even without server text.
+    expect(result.items).toEqual([{ fileName: 'one.csv', error: 'Error -1: Something went wrong. Contact support if this keeps happening.', code: -1 }]);
   });
 
   it('stops the batch when the pending-task cap trips, instead of failing every remaining file', async () => {
@@ -205,7 +205,7 @@ describe('importCsvFilesAsDatabases', () => {
     // Only the file that actually hit the cap is reported; the rest were never attempted, so
     // they are neither blamed nor retried a round trip at a time.
     expect(result.items).toEqual([
-      { fileName: 'one.csv', error: '3 import tasks are pending. Please wait until they are completed', code: 1046 },
+      { fileName: 'one.csv', error: 'Other imports are in progress. Wait for one to finish.', code: 1046 },
     ]);
     expect(createTask).toHaveBeenCalledTimes(1);
   });
@@ -227,7 +227,7 @@ describe('importCsvFilesAsDatabases', () => {
 
     // Only the cap is batch-fatal — a bad file must not cut the batch short.
     expect(result.items).toEqual([
-      { fileName: 'one.csv', error: 'file too large', code: 1004 },
+      { fileName: 'one.csv', error: "Some information is missing, so we can't continue.", code: 1004 },
       { fileName: 'two.csv', viewId: 'view-task-two' },
     ]);
   });

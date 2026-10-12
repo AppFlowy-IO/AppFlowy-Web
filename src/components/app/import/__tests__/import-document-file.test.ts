@@ -34,6 +34,7 @@ import {
   importDocumentFiles,
 } from '@/components/app/import/import-service';
 import { calculateMd5 } from '@/utils/md5';
+import { getErrorDiagnostic, getErrorMessage } from '@/utils/errors';
 
 const createTask = createDocumentFileImportTask as jest.Mock;
 const upload = uploadDocumentFileImportFile as jest.Mock;
@@ -42,6 +43,8 @@ const cancelTask = cancelImportTask as jest.Mock;
 
 const WORKSPACE_ID = 'workspace-1';
 const PARENT_VIEW_ID = 'parent-view-1';
+const OCR_DIAGNOSTIC = 'this PDF has no selectable text on its 1 page(s); run OCR on it before importing';
+const OCR_GUIDANCE = 'This PDF has no selectable text. Run OCR on it before importing.';
 
 function file(name: string, type = 'application/pdf', size = 10): File {
   const f = new File(['x'.repeat(size)], name, { type });
@@ -114,6 +117,23 @@ describe('importDocumentFile', () => {
         format: 'pdf',
       })
     ).rejects.toThrow('run OCR on it before importing');
+    expect(cancelTask).toHaveBeenCalledWith('task-1');
+  });
+
+  it.each([
+    [undefined, OCR_DIAGNOSTIC],
+    [1085, OCR_DIAGNOSTIC],
+    [1085, `Import failed: ${OCR_DIAGNOSTIC}`],
+  ])('retains the scanned-PDF diagnostic and localizes its remedy with legacy code %s (%s)', async (error_code, diagnostic) => {
+    getStatus.mockResolvedValue({ task_id: 'task-1', status: 'Failed', error: diagnostic, error_code });
+
+    const error: unknown = await importDocumentFile({
+      workspaceId: WORKSPACE_ID, parentViewId: PARENT_VIEW_ID, file: file('scan.pdf'), format: 'pdf',
+    }).catch((error: unknown) => error);
+
+    expect(error).toMatchObject({ message: diagnostic, code: error_code });
+    expect(getErrorDiagnostic(error)).toBe(diagnostic);
+    expect(getErrorMessage(error)).toBe(OCR_GUIDANCE);
     expect(cancelTask).toHaveBeenCalledWith('task-1');
   });
 
@@ -201,6 +221,38 @@ describe('importDocumentFiles', () => {
     cancelTask.mockResolvedValue(undefined);
   });
 
+  it.each([
+    [undefined, OCR_GUIDANCE],
+    [{ schema_version: 99, reason: 'IMPORT_PDF_NEEDS_OCR', message: 'Unsupported copy' }, OCR_GUIDANCE],
+    [{ schema_version: 1, reason: 'IMPORT_PDF_NEEDS_OCR', message: 'Recognize the text in this PDF, then import it again.', locale: 'en' },
+      'Recognize the text in this PDF, then import it again.'],
+  ])('preserves the OCR remedy in batch results and prefers supported task metadata (%j)', async (user_error, expected) => {
+    getStatus.mockResolvedValue({ task_id: 'task-scan.pdf', status: 'Failed', error: OCR_DIAGNOSTIC, error_code: 1085, user_error });
+
+    const result = await importDocumentFiles({
+      workspaceId: WORKSPACE_ID, parentViewId: PARENT_VIEW_ID, files: [file('scan.pdf')], format: 'pdf',
+    });
+
+    expect(result.items).toEqual([{ fileName: 'scan.pdf', error: expected, code: 1085 }]);
+  });
+
+  it.each([
+    ['pdf', 'Failed', 'private database diagnostic'],
+    ['pdf', 'Failed', `${OCR_DIAGNOSTIC}; private extra details`],
+    ['docx', 'Failed', OCR_DIAGNOSTIC],
+    ['pdf', 'Expire', OCR_DIAGNOSTIC],
+  ] as const)('does not promote unrelated %s/%s diagnostics (%s)', async (format, status, error) => {
+    getStatus.mockResolvedValue({ task_id: 'task-file', status, error });
+
+    const result = await importDocumentFiles({
+      workspaceId: WORKSPACE_ID, parentViewId: PARENT_VIEW_ID, files: [file(`file.${format}`)], format,
+    });
+
+    expect(result.items).toEqual([{
+      fileName: `file.${format}`, error: 'Something went wrong. Contact support if this keeps happening.',
+    }]);
+  });
+
   it.each([1, 2])('marks a %s-file batch aborted when the last status request completes after cancellation', async (count) => {
     const controller = new AbortController();
     const files = Array.from({ length: count }, (_, index) => file(`${index}.pdf`));
@@ -246,7 +298,7 @@ describe('importDocumentFiles', () => {
     expect(result).toEqual({
       items: [
         { fileName: 'a.html', viewId: 'view-task-a.html' },
-        { fileName: 'b.html', error: 'not html' },
+        { fileName: 'b.html', error: 'Something went wrong. Contact support if this keeps happening.' },
         { fileName: 'c.html', viewId: 'view-task-c.html' },
       ],
       aborted: false,
@@ -276,7 +328,7 @@ describe('importDocumentFiles', () => {
     expect(result.aborted).toBe(false);
     expect(result.items).toEqual([
       { fileName: 'a.docx', viewId: 'view-1' },
-      { fileName: 'b.docx', error: '3 import tasks are pending', code: 1046 },
+      { fileName: 'b.docx', error: 'Other imports are in progress. Wait for one to finish.', code: 1046 },
     ]);
     expect(createTask).toHaveBeenCalledTimes(2);
   });
@@ -299,7 +351,7 @@ describe('importDocumentFiles', () => {
         format: 'pdf',
       });
 
-      expect(result).toEqual({ items: [{ fileName: 'a.pdf', error: message, code: 1028 }], aborted: false });
+      expect(result).toEqual({ items: [{ fileName: 'a.pdf', error: 'This workspace has reached its storage limit.', code: 1028 }], aborted: false });
       expect(createTask).toHaveBeenCalledTimes(1);
       expect(upload).toHaveBeenCalledTimes(stage === 'request' ? 0 : 1);
     }
@@ -323,7 +375,7 @@ describe('importDocumentFiles', () => {
     });
 
     expect(result.items).toEqual([
-      { fileName: 'a.docx', error: 'Attachment exceeds 7 MiB', code: 1037 },
+      { fileName: 'a.docx', error: 'This file is too large to upload. Choose a smaller one.', code: 1037 },
       { fileName: 'b.docx', viewId: 'view-b' },
     ]);
     expect(createTask).toHaveBeenCalledTimes(2);

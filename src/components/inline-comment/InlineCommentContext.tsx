@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@/utils/errors';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Editor, Operation, Range, RangeRef, Transforms } from 'slate';
@@ -187,13 +188,6 @@ const InlineCommentLeafContext = createContext<InlineCommentLeafContextValue | n
 const InlineCommentPanelContext = createContext<InlineCommentPanelContextValue | null>(null);
 const InlineCommentStatusContext = createContext<InlineCommentStatusContextValue | null>(null);
 
-function getErrorMessage(error: unknown): string {
-  if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
-    return error.message;
-  }
-
-  return 'The inline comment action failed.';
-}
 
 function getMentionedUserUuids(content: string): string[] {
   const mentioned = new Set<string>();

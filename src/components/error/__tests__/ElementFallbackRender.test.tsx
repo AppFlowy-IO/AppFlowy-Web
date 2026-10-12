@@ -1,5 +1,6 @@
 import { expect, describe, it, beforeEach, afterEach } from '@jest/globals';
 import { render, screen } from '@testing-library/react';
+import { ErrorBoundary } from 'react-error-boundary';
 
 import { ElementFallbackRender } from '../ElementFallbackRender';
 
@@ -36,6 +37,31 @@ describe('ElementFallbackRender', () => {
     mockIsInitialized = true;
   });
 
+  afterEach(() => jest.restoreAllMocks());
+
+  it.each(['getter', 'getItem'] as const)('contains a rendering failure when the storage %s is denied', (access) => {
+    const denyStorage = () => {
+      throw new DOMException('Storage access denied', 'SecurityError');
+    };
+
+    if (access === 'getter') jest.spyOn(window, 'localStorage', 'get').mockImplementation(denyStorage);
+    else jest.spyOn(Storage.prototype, 'getItem').mockImplementation(denyStorage);
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    function BrokenChild(): JSX.Element {
+      throw new Error('Underlying rendering failure');
+    }
+
+    render(
+      <ErrorBoundary FallbackComponent={ElementFallbackRender}>
+        <BrokenChild />
+      </ErrorBoundary>
+    );
+
+    expect(screen.getByRole('alert').textContent).toContain('Something went wrong. Contact support');
+    expect(screen.queryByText('Underlying rendering failure')).toBeNull();
+  });
+
   describe('when i18n is initialized', () => {
     beforeEach(() => {
       mockIsInitialized = true;
@@ -51,7 +77,8 @@ describe('ElementFallbackRender', () => {
     it('should render the error message', () => {
       render(<ElementFallbackRender {...defaultProps} />);
 
-      expect(screen.getByText('Test error message')).toBeTruthy();
+      expect(screen.getByText('Something went wrong. Contact support if this keeps happening.')).toBeTruthy();
+      expect(screen.queryByText('Test error message')).toBeNull();
     });
 
     it('should render description when provided', () => {
@@ -94,7 +121,8 @@ describe('ElementFallbackRender', () => {
     it('should still render error message', () => {
       render(<ElementFallbackRender {...defaultProps} />);
 
-      expect(screen.getByText('Test error message')).toBeTruthy();
+      expect(screen.getByText('Something went wrong. Contact support if this keeps happening.')).toBeTruthy();
+      expect(screen.queryByText('Test error message')).toBeNull();
     });
 
     it('should still render description when provided', () => {
@@ -137,8 +165,9 @@ describe('ElementFallbackRender', () => {
 
       render(<ElementFallbackRender error={specialError} resetErrorBoundary={mockResetErrorBoundary} />);
 
-      // Message should be rendered as text, not HTML
-      expect(screen.getByText('<script>alert("xss")</script>')).toBeTruthy();
+      // Arbitrary diagnostics are not eligible for default display
+      expect(screen.queryByText('<script>alert("xss")</script>')).toBeNull();
+      expect(screen.getByRole('alert').textContent).toContain('Something went wrong.');
     });
 
     it('should handle very long error messages', () => {
@@ -147,7 +176,8 @@ describe('ElementFallbackRender', () => {
 
       render(<ElementFallbackRender error={longError} resetErrorBoundary={mockResetErrorBoundary} />);
 
-      expect(screen.getByText(longMessage)).toBeTruthy();
+      expect(screen.queryByText(longMessage)).toBeNull();
+      expect(screen.getByRole('alert').textContent).toContain('Something went wrong.');
     });
   });
 });

@@ -81,13 +81,13 @@ describe('ForgotPassword', () => {
   });
 
   it('stays on the recovery form and reports an error when the request fails', async () => {
-    mockForgotPassword.mockRejectedValue(new Error('Network unavailable'));
+    mockForgotPassword.mockRejectedValue({ code: -1, sourceDomain: 'transport', diagnosticMessage: 'private network diagnostic' });
     renderForgotPassword();
 
     fireEvent.click(screen.getByTestId('forgot-password-submit-button'));
 
     await waitFor(() => {
-      expect(mockToastError).toHaveBeenCalledWith('Network unavailable');
+      expect(mockToastError).toHaveBeenCalledWith('There was a network connection problem.');
     });
 
     const params = new URLSearchParams(screen.getByTestId('location-search').textContent || '');

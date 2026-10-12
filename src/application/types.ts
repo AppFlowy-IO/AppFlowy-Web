@@ -2511,6 +2511,8 @@ export interface DocumentFileImportStatusResponse {
   error?: string;
   /** Stable application error code; older workers report only the message. */
   error_code?: number;
+  /** Optional public error metadata from newer workers. */
+  user_error?: unknown;
   diagnostics?: ImportDiagnostics;
 }
 

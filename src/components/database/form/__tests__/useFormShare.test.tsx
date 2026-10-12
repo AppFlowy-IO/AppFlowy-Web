@@ -1,7 +1,9 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
+import i18next from 'i18next';
 
 import { ERROR_CODE } from '@/application/constants';
 import { FormShareInfo } from '@/application/services/js-services/http';
+import { handleAPIResponseError } from '@/application/services/js-services/http/core';
 
 import { resetFormShareMutationOutboxForTesting, useFormShare } from '../useFormShare';
 
@@ -813,6 +815,90 @@ describe('useFormShare mutations', () => {
       expect(result.current.error).toBeNull();
     } finally {
       debug.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
+  it.each([
+    { locale: 'en', publicMessage: undefined },
+    { locale: 'en', publicMessage: 'Please try again shortly.' },
+    { locale: 'de', publicMessage: 'Bitte versuche es gleich erneut.' },
+  ])('recovers a legacy missing view after HTTP normalization: %j', async ({ locale, publicMessage }) => {
+    jest.useFakeTimers();
+    const debug = jest.spyOn(console, 'debug').mockImplementation(() => undefined);
+    const previousLocale = { language: i18next.language, resolvedLanguage: i18next.resolvedLanguage };
+
+    try {
+      Object.assign(i18next, { language: locale, resolvedLanguage: locale });
+      const diagnostic = 'view view-a not found';
+      const error = handleAPIResponseError({
+        status: 400,
+        headers: {},
+        data: {
+          code: 1017,
+          message: diagnostic,
+          user_error: publicMessage === undefined ? undefined : {
+            schema_version: 1, reason: 'ACTION_PROBLEM', message: publicMessage, locale,
+          },
+        },
+      });
+
+      expect(error.diagnosticMessage).toBe(diagnostic);
+      expect(error.message).not.toContain(diagnostic);
+      if (publicMessage) expect(error.message).toContain(publicMessage);
+      mockGetFormShare.mockRejectedValueOnce(error).mockResolvedValueOnce(shareInfo('view-a'));
+      const { result } = renderHook(() => useFormShare());
+
+      await act(flushMicrotasks);
+      expect(result.current.isLoading).toBe(true);
+      expect(mockGetFormShare).toHaveBeenCalledTimes(1);
+      expect(mockMintFormShare).not.toHaveBeenCalled();
+
+      await act(async () => {
+        jest.runOnlyPendingTimers();
+        await flushMicrotasks();
+      });
+
+      expect(mockGetFormShare).toHaveBeenCalledTimes(2);
+      expect(result.current.info?.token).toBe('token-view-a');
+      expect(result.current.error).toBeNull();
+      expect(result.current.isLoading).toBe(false);
+      expect(mockMintFormShare).not.toHaveBeenCalled();
+    } finally {
+      Object.assign(i18next, previousLocale);
+      debug.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
+  it('does not start a legacy retry because public metadata mentions a missing view', async () => {
+    jest.useFakeTimers();
+    const warning = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    try {
+      const publicMessage = 'View not found. Contact the workspace owner.';
+      const error = handleAPIResponseError({
+        status: 403,
+        headers: {},
+        data: {
+          code: ERROR_CODE.NOT_HAS_PERMISSION,
+          message: 'User cannot access the requested workspace',
+          user_error: { schema_version: 1, reason: 'ACTION_PROBLEM', message: publicMessage },
+        },
+      });
+
+      expect(error.message).toContain(publicMessage);
+      mockGetFormShare.mockRejectedValue(error);
+      const { result } = renderHook(() => useFormShare());
+
+      await act(flushMicrotasks);
+      expect(result.current.error).toBe(error.message);
+      expect(result.current.isLoading).toBe(false);
+      expect(mockGetFormShare).toHaveBeenCalledTimes(1);
+      expect(mockMintFormShare).not.toHaveBeenCalled();
+      expect(jest.getTimerCount()).toBe(0);
+    } finally {
+      warning.mockRestore();
       jest.useRealTimers();
     }
   });

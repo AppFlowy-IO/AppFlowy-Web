@@ -138,7 +138,7 @@ describe('Connections settings', () => {
     open.mockReturnValue(popup);
     api.connectProvider.mockRejectedValue(new Error('Network unavailable'));
     fireEvent.click(screen.getByTestId('connect-google-drive'));
-    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('Network unavailable'));
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('Unable to connect this account. Please try again.'));
     expect(popup.close).toHaveBeenCalled();
     expect(toast.error).not.toHaveBeenCalled();
   });
@@ -163,7 +163,7 @@ describe('Connections settings', () => {
       .mockRejectedValueOnce(new Error('Server unavailable'))
       .mockResolvedValueOnce(['google-drive']);
     render(<ConnectionsPanel workspaceId='workspace' />);
-    expect((await screen.findByRole('alert')).textContent).toContain('Server unavailable');
+    expect((await screen.findByRole('alert')).textContent).toContain('Unable to load connections. Please try again.');
     expect(screen.getByRole('button', { name: 'Add connection' }).disabled).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect((await screen.findByTestId('connect-google-drive')).disabled).toBe(false);

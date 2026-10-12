@@ -24,6 +24,7 @@ import {
 import { isDatabaseLayout } from '@/application/view-utils';
 import { findParentView, findView, findViewInShareWithMe } from '@/components/_shared/outline/utils';
 import { assertGenericDeepDuplicateIsSafe } from '@/components/app/view-actions/formDuplicateSafety';
+import { getErrorDiagnostic } from '@/utils/errors';
 import { Log } from '@/utils/log';
 
 import { useAuthInternal } from '../contexts/AuthInternalContext';
@@ -56,9 +57,9 @@ function isDatabaseCatalogView(view: View | null | undefined): boolean {
 function isPendingDocumentPublishData(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
 
-  const { code, message } = error as { code?: unknown; message?: unknown };
+  const { code } = error as { code?: unknown };
 
-  return code === -2 && typeof message === 'string' && /record not (?:found|exist)|view .* not found/i.test(message);
+  return code === -2 && /record not (?:found|exist)|view .* not found/i.test(getErrorDiagnostic(error));
 }
 
 async function publishDocumentWhenServerStateIsReady(
