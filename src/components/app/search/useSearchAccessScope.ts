@@ -54,6 +54,10 @@ function isBrowserOnline() {
  *   so permission hints may have been missed. Consumers re-run their reads in the background and
  *   keep showing the current snapshot until the replacement arrives.
  *
+ * `online` follows the browser's connectivity, and `onlineEpoch` increments each time it comes
+ * back online: a read that failed or was skipped before that is retried once, without retrying in
+ * a loop while the browser stays online and the server is unreachable.
+ *
  * Window focus, tab visibility, connectivity changes and routine token refreshes are neither:
  * they used to blank open results and re-issue every request on each alt-tab.
  */
@@ -65,7 +69,7 @@ export function useSearchAccessScope(workspaceId?: string) {
   const [sessionRevision, setSessionRevision] = useState(0);
   const [permissionRevision, setPermissionRevision] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [online, setOnline] = useState(isBrowserOnline);
+  const [connectivity, setConnectivity] = useState(() => ({ online: isBrowserOnline(), epoch: 0 }));
   const session = useMemo(
     () => ({ server, userId, authenticated, workspaceId, sessionRevision }),
     [server, userId, authenticated, workspaceId, sessionRevision]
@@ -140,6 +144,10 @@ export function useSearchAccessScope(workspaceId?: string) {
       setRefreshKey((value) => value + 1);
     };
 
+    const setOnline = (online: boolean) =>
+      setConnectivity((previous) =>
+        previous.online === online ? previous : { online, epoch: online ? previous.epoch + 1 : previous.epoch }
+      );
     const wentOnline = () => setOnline(true);
     const wentOffline = () => setOnline(false);
 
@@ -170,5 +178,12 @@ export function useSearchAccessScope(workspaceId?: string) {
     };
   }, [emitter]);
 
-  return { scope, isCurrent, isSessionCurrent, refreshKey, online };
+  return {
+    scope,
+    isCurrent,
+    isSessionCurrent,
+    refreshKey,
+    online: connectivity.online,
+    onlineEpoch: connectivity.epoch,
+  };
 }

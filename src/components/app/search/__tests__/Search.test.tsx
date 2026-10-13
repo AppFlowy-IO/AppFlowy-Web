@@ -652,6 +652,52 @@ describe('Search recent pages', () => {
     expect(mockLoadRecentViews).toHaveBeenCalledTimes(1);
   });
 
+  it('loads recent pages after reconnecting when the connection dropped during the read', async () => {
+    let fail!: (error: unknown) => void;
+
+    mockLoadRecentViews
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject; }))
+      .mockResolvedValueOnce([{ view_id: 'recent', name: 'Recent after reconnect' }]);
+    render(<Search />);
+    fireEvent.click(screen.getByText('button.search'));
+    await waitFor(() => expect(mockLoadRecentViews).toHaveBeenCalledTimes(1));
+    setOnline(false);
+    act(() => {
+      window.dispatchEvent(new Event('offline'));
+    });
+    await act(async () => {
+      fail({ code: -1, message: 'Network Error' });
+    });
+    expect(screen.getByText('search.offlineRecentPages')).toBeTruthy();
+    setOnline(true);
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(await screen.findByText('Recent after reconnect')).toBeTruthy();
+    expect(screen.queryByText('search.recentPagesFailed')).toBeNull();
+    expect(mockLoadRecentViews).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries recent pages that failed just before the browser reported going offline', async () => {
+    mockLoadRecentViews
+      .mockRejectedValueOnce({ code: -1, message: 'Network Error' })
+      .mockResolvedValueOnce([{ view_id: 'recent', name: 'Recent after reconnect' }]);
+    render(<Search />);
+    fireEvent.click(screen.getByText('button.search'));
+    expect(await screen.findByText('search.recentPagesFailed')).toBeTruthy();
+    setOnline(false);
+    act(() => {
+      window.dispatchEvent(new Event('offline'));
+    });
+    expect(screen.getByText('search.offlineRecentPages')).toBeTruthy();
+    setOnline(true);
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(await screen.findByText('Recent after reconnect')).toBeTruthy();
+    expect(mockLoadRecentViews).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps recent pages visible on focus and tab visibility changes', async () => {
     mockLoadRecentViews.mockResolvedValue([{ view_id: 'recent', name: 'Stable recent' }]);
     render(<Search />);

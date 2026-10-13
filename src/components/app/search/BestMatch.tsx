@@ -19,6 +19,7 @@ import type { SearchOverviewSource } from '@/components/app/search/SearchAIOverv
 import SearchStatusNotice from '@/components/app/search/SearchStatusNotice';
 import { useSearchAccessScope } from '@/components/app/search/useSearchAccessScope';
 import ViewList, { SearchViewListItem } from '@/components/app/search/ViewList';
+import { getAPIErrorCode } from '@/utils/errors';
 
 const SearchAIOverview = lazy(() =>
   import('@/components/app/search/SearchAIOverview').then(({ SearchAIOverview }) => ({ default: SearchAIOverview }))
@@ -168,11 +169,17 @@ function BestMatch({
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [revalidating, setRevalidating] = useState(false);
-  // The query skipped because the browser was offline; it runs again after reconnecting.
-  const [offlineQuery, setOfflineQuery] = useState<string>();
+  // A query whose results are missing because the connection was lost (skipped offline, or failed
+  // when it dropped). It runs again once the browser is back online after `epoch`.
+  const [reconnectRetry, setReconnectRetry] = useState<{ query: string; epoch: number }>();
   const aiEnabled = useAIEnabled();
   const currentWorkspaceId = useCurrentWorkspaceId();
-  const { scope, isCurrent, refreshKey, online } = useSearchAccessScope(currentWorkspaceId);
+  const { scope, isCurrent, refreshKey, online, onlineEpoch } = useSearchAccessScope(currentWorkspaceId);
+  const onlineEpochRef = useRef(onlineEpoch);
+
+  useLayoutEffect(() => {
+    onlineEpochRef.current = onlineEpoch;
+  }, [onlineEpoch]);
   const [responseScope, setResponseScope] = useState(scope);
   const responseIsCurrent = responseScope === scope;
   const searchSeqRef = useRef(0);
@@ -257,6 +264,7 @@ function BestMatch({
       requestController.current = controller;
       const isLatest = () => isCurrent() && searchSeqRef.current === searchSeq;
       const pageCount = background && shown ? shown.pages : 1;
+      const startedEpoch = onlineEpochRef.current;
 
       setLoadingMore(false);
       if (!background) {
@@ -273,19 +281,19 @@ function BestMatch({
       }
 
       if (!searchTerm) {
-        setOfflineQuery(undefined);
+        setReconnectRetry(undefined);
         setLoading(false);
         return;
       }
 
       if (!navigator.onLine) {
         // Offline is not "no results": retry after reconnecting.
-        setOfflineQuery(searchTerm);
+        setReconnectRetry({ query: searchTerm, epoch: startedEpoch });
         setLoading(false);
         return;
       }
 
-      setOfflineQuery(undefined);
+      setReconnectRetry(undefined);
       if (background) setRevalidating(true);
       else setLoading(true);
 
@@ -375,7 +383,13 @@ function BestMatch({
           return;
         }
 
-        notify.error(e.message);
+        const offline = !navigator.onLine;
+
+        // A dropped connection is not "no results" either: run the query again once the browser is
+        // back online. While it stays online (an unreachable server) nothing retries on its own.
+        if (offline || getAPIErrorCode(e) === -1) setReconnectRetry({ query: searchTerm, epoch: startedEpoch });
+        // The offline notice explains a failure while offline.
+        if (!offline) notify.error(e.message);
         setSearchResults([]);
         setSummary(null);
         setSummaryLoading(false);
@@ -476,7 +490,7 @@ function BestMatch({
     void runSearch(searchValueRef.current, true);
   }, [debounceSearch, refreshKey, runSearch]);
 
-  const retryAfterReconnect = online && offlineQuery !== undefined;
+  const retryAfterReconnect = online && reconnectRetry !== undefined && reconnectRetry.epoch !== onlineEpoch;
 
   useEffect(() => {
     if (!retryAfterReconnect) return;

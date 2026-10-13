@@ -17,6 +17,7 @@ const mockSearchWorkspaceDocumentPage = jest.fn();
 const mockGenerateSearchSummary = jest.fn();
 const mockGetView = jest.fn();
 const mockGetMultipleViews = jest.fn();
+const mockNotifyError = jest.fn();
 let mockAppOutline: View[] | undefined = [];
 let mockWorkspaceId = 'workspace-id';
 let mockUserId = 'user-id';
@@ -49,6 +50,10 @@ jest.mock('@/components/main/app.hooks', () => ({
 }));
 
 jest.mock('@/utils/runtime-config', () => ({ getConfigValue: () => mockServer }));
+
+jest.mock('@/components/_shared/notify', () => ({
+  notify: { error: (...args: unknown[]) => mockNotifyError(...args) },
+}));
 
 jest.mock('@/application/services/domains', () => ({
   SearchService: {
@@ -365,6 +370,63 @@ describe('BestMatch', () => {
     });
     expect(screen.queryByText('noSearchResults')).toBeNull();
     expect(await screen.findByText('Found after reconnect')).toBeTruthy();
+    expect(mockSearchWorkspaceDocumentPage).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs a query again after reconnecting when the connection dropped while it was loading', async () => {
+    let fail!: (error: unknown) => void;
+
+    mockAppOutline = [createView({ view_id: 'found', name: 'Found page' })];
+    mockSearchWorkspaceDocumentPage.mockImplementationOnce(
+      () => new Promise((_resolve, reject) => { fail = reject; })
+    );
+    renderBestMatch('budget');
+    await waitFor(() => expect(mockSearchWorkspaceDocumentPage).toHaveBeenCalledTimes(1));
+    setOnline(false);
+    act(() => {
+      window.dispatchEvent(new Event('offline'));
+    });
+    await act(async () => {
+      fail({ code: -1, message: 'Network Error' });
+    });
+    expect(screen.getByText('search.offlineResults')).toBeTruthy();
+    expect(mockNotifyError).not.toHaveBeenCalled();
+    mockSearchWorkspaceDocumentPage.mockResolvedValueOnce({ items: [{ object_id: 'found' }], has_more: false });
+    setOnline(true);
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(screen.queryByText('noSearchResults')).toBeNull();
+    expect(await screen.findByText('Found page')).toBeTruthy();
+    expect(mockSearchWorkspaceDocumentPage).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries a query that failed just before the browser reported going offline', async () => {
+    mockAppOutline = [createView({ view_id: 'found', name: 'Found page' })];
+    mockSearchWorkspaceDocumentPage.mockRejectedValueOnce({ code: -1, message: 'Network Error' });
+    renderBestMatch('budget');
+    await waitFor(() => expect(mockNotifyError).toHaveBeenCalledWith('Network Error'));
+    setOnline(false);
+    act(() => {
+      window.dispatchEvent(new Event('offline'));
+    });
+    expect(screen.getByText('search.offlineResults')).toBeTruthy();
+    mockSearchWorkspaceDocumentPage.mockResolvedValueOnce({ items: [{ object_id: 'found' }], has_more: false });
+    setOnline(true);
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(await screen.findByText('Found page')).toBeTruthy();
+    expect(mockSearchWorkspaceDocumentPage).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry a network failure on its own while the browser stays online', async () => {
+    mockSearchWorkspaceDocumentPage.mockRejectedValue({ code: -1, message: 'Network Error' });
+    renderBestMatch('budget');
+    await waitFor(() => expect(mockNotifyError).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    });
     expect(mockSearchWorkspaceDocumentPage).toHaveBeenCalledTimes(1);
   });
 

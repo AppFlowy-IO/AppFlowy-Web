@@ -20,7 +20,10 @@ import {
   useCurrentWorkspaceId,
   useToView,
 } from '@/components/app/app.hooks';
-import { isCollabObjectPermissionForTarget, resolvePermissionProbeTarget } from '@/components/app/layers/permissionProbe';
+import {
+  isCollabObjectPermissionForTarget,
+  resolvePermissionProbeTarget,
+} from '@/components/app/layers/permissionProbe';
 import RecentViews from '@/components/app/search/RecentViews';
 import SearchStatusNotice from '@/components/app/search/SearchStatusNotice';
 import { useSearchAccessScope } from '@/components/app/search/useSearchAccessScope';
@@ -104,7 +107,8 @@ export function Search() {
   const outline = useAppOutline();
   const currentViewId = useAppViewId();
   const currentWorkspaceId = useCurrentWorkspaceId();
-  const { scope, isCurrent, isSessionCurrent, refreshKey, online } = useSearchAccessScope(currentWorkspaceId);
+  const { scope, isCurrent, isSessionCurrent, refreshKey, online, onlineEpoch } =
+    useSearchAccessScope(currentWorkspaceId);
   // Busy for the attempt's whole life, so a permission hint cannot re-enable the same request.
   const askingAI = asking !== undefined;
   const aiEnabled = useAIEnabled();
@@ -296,6 +300,7 @@ export function Search() {
     load: loadRecentViews,
     refreshKey,
     online,
+    onlineEpoch,
   });
   let recentContent;
 

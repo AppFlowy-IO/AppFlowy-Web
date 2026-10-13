@@ -174,6 +174,26 @@ describe('useSearchAccessScope', () => {
     expect(result.current.scope).toBe(scope);
   });
 
+  it('counts each return online, so reads lost to a dropped connection can be retried', () => {
+    const { result } = renderScope();
+    const { scope } = result.current;
+    const initial = result.current.onlineEpoch;
+
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(result.current.onlineEpoch).toBe(initial);
+    act(() => {
+      window.dispatchEvent(new Event('offline'));
+    });
+    expect(result.current.onlineEpoch).toBe(initial);
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(result.current.onlineEpoch).toBe(initial + 1);
+    expect(result.current.scope).toBe(scope);
+  });
+
   it('retires everything on unmount', () => {
     const { result, unmount, emitter } = renderScope();
     const { isCurrent, isSessionCurrent } = result.current;

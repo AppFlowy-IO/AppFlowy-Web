@@ -10,6 +10,8 @@ interface RecentRead {
   key: object;
   refresh: number;
   retry: number;
+  /** The browser's online epoch when the read started. */
+  epoch: number;
 }
 
 interface RecentSnapshot extends RecentRead {
@@ -23,8 +25,10 @@ interface RecentRequest extends RecentRead {
   load?: () => Promise<View[] | undefined>;
 }
 
-const sameRead = (left: RecentRead | undefined, right: RecentRead) =>
+const sameList = (left: RecentRead | undefined, right: RecentRead) =>
   left?.key === right.key && left.refresh === right.refresh && left.retry === right.retry;
+const sameRead = (left: RecentRead | undefined, right: RecentRead) =>
+  sameList(left, right) && left?.epoch === right.epoch;
 
 /** Spaces are not recent pages, and the endpoint can list a page more than once. */
 function recentPages(views: View[]) {
@@ -44,9 +48,10 @@ function recentPages(views: View[]) {
  *
  * Loading, offline, failed and empty are distinct: `load` resolves the list or rejects (a resolved
  * `undefined` also counts as a failure). A socket reconnect (`refreshKey`) revalidates in the
- * background and keeps the current list until the replacement arrives. There is one active read
- * and one replaceable follow-up, even during permission-event bursts; old reads may settle, but
- * cannot publish into a reopened dialog or a replacement scope.
+ * background and keeps the current list until the replacement arrives. A read that failed or was
+ * skipped before the browser came back online (`onlineEpoch`) runs again after it. There is one
+ * active read and one replaceable follow-up, even during permission-event bursts; old reads may
+ * settle, but cannot publish into a reopened dialog or a replacement scope.
  */
 export function useSearchRecentViews({
   open,
@@ -56,6 +61,7 @@ export function useSearchRecentViews({
   load,
   refreshKey,
   online,
+  onlineEpoch,
 }: {
   open: boolean;
   /** The list is on screen (the query is empty). Reads are deferred while it is hidden. */
@@ -65,6 +71,7 @@ export function useSearchRecentViews({
   load?: () => Promise<View[] | undefined>;
   refreshKey: number;
   online: boolean;
+  onlineEpoch: number;
 }) {
   const key = useMemo(() => ({ scope, open }), [scope, open]);
   const latestKey = useRef(key);
@@ -73,8 +80,12 @@ export function useSearchRecentViews({
   const [retry, setRetry] = useState(0);
   const [snapshot, setSnapshot] = useState<RecentSnapshot>();
   const current = snapshot?.key === key ? snapshot : undefined;
-  const wanted = useMemo(() => ({ key, refresh: refreshKey, retry }), [key, refreshKey, retry]);
-  const stale = !current || !sameRead(current, wanted) || (current.status === 'offline' && online);
+  const wanted = useMemo(
+    () => ({ key, refresh: refreshKey, retry, epoch: onlineEpoch }),
+    [key, refreshKey, retry, onlineEpoch]
+  );
+  // A loaded list stays across reconnects (a socket reconnect revalidates it through refreshKey).
+  const stale = !current || (current.status === 'ready' ? !sameList(current, wanted) : !sameRead(current, wanted));
 
   latestKey.current = key;
 
@@ -104,14 +115,15 @@ export function useSearchRecentViews({
 
               result = views ? { status: 'ready', views: recentPages(views) } : { status: 'error', views: [] };
             } catch {
-              result = { status: 'error', views: [] };
+              // A read lost because the browser went offline is not a server failure.
+              result = { status: navigator.onLine ? 'error' : 'offline', views: [] };
             }
           }
 
           active.current = undefined;
           if (next.key !== latestKey.current || !next.isCurrent()) continue;
 
-          const read = { key: next.key, refresh: next.refresh, retry: next.retry };
+          const read = { key: next.key, refresh: next.refresh, retry: next.retry, epoch: next.epoch };
 
           setSnapshot((previous) =>
             // A failed background revalidation keeps names loaded under this same access scope.
