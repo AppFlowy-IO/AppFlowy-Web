@@ -13,6 +13,7 @@ import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
 import { useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { GroupSpaceCoverageCard } from '@/components/app/settings/GroupSpaceCoverageControl';
 import { PersonAvatar } from '@/components/app/share/PersonAvatar';
 import { WorkspaceGroupIcon } from '@/components/app/share/WorkspaceGroupIcon';
 import {
@@ -337,6 +338,12 @@ function MembersPanelForWorkspace({
       }
     }
   }, [applyGroups, currentWorkspaceId, isCurrentWorkspaceRequest, isOwner, t, workspaceGeneration]);
+
+  // Group dialog writes outlive a closed dialog, but never a workspace switch.
+  const isCurrentGroupScope = useCallback(
+    () => isCurrentWorkspaceRequest(currentWorkspaceId, workspaceGeneration),
+    [currentWorkspaceId, isCurrentWorkspaceRequest, workspaceGeneration]
+  );
 
   const visibleGroups = useMemo(() => {
     const normalizedGroupSearch = groupSearch.trim().toLowerCase();
@@ -849,6 +856,7 @@ function MembersPanelForWorkspace({
           onGroupChanged={refreshGroups}
           onDeleteRequested={() => requestDeleteGroup(selectedGroupForPanel)}
           workspaceMembers={members}
+          isCurrent={isCurrentGroupScope}
         />
       )}
       {isOwner && showCreateGroup && currentWorkspaceId && (
@@ -991,6 +999,8 @@ interface GroupDetailModalProps {
   onClose: () => void;
   onGroupChanged: () => Promise<void>;
   onDeleteRequested: () => void;
+  /** False once the workspace that opened the dialog is no longer current. */
+  isCurrent?: () => boolean;
 }
 
 interface CreateGroupModalProps {
@@ -1357,10 +1367,15 @@ function GroupDetailModal({
   onClose,
   onGroupChanged,
   onDeleteRequested,
+  isCurrent,
 }: GroupDetailModalProps) {
   const { t } = useTranslation();
   const readOnly = isScimManagedGroup(group);
-  const [tab, setTab] = useState<GroupDetailTab>('general');
+  // Access to all spaces is an AppFlowy setting, so directory-managed groups can still change it.
+  const coverageSupported = group.space_coverage_supported === true;
+  const showGeneralTab = !readOnly || coverageSupported;
+  const initialTab: GroupDetailTab = showGeneralTab ? 'general' : 'members';
+  const [tab, setTab] = useState<GroupDetailTab>(initialTab);
   const [groupMembers, setGroupMembers] = useState<WorkspaceGroupMember[]>([]);
   const [memberSearch, setMemberSearch] = useState('');
   const [loadingGroupMembers, setLoadingGroupMembers] = useState(false);
@@ -1372,7 +1387,7 @@ function GroupDetailModal({
 
     let cancelled = false;
 
-    setTab(readOnly ? 'members' : 'general');
+    setTab(initialTab);
     setMemberSearch('');
     setLoadingGroupMembers(true);
 
@@ -1394,7 +1409,7 @@ function GroupDetailModal({
     return () => {
       cancelled = true;
     };
-  }, [group.group_id, open, readOnly, t, workspaceId]);
+  }, [group.group_id, initialTab, open, t, workspaceId]);
 
   const groupMemberUidSet = useMemo(() => new Set(groupMembers.map((member) => member.uid)), [groupMembers]);
   const groupMemberEmailSet = useMemo(
@@ -1528,7 +1543,7 @@ function GroupDetailModal({
             className='mt-5 min-h-0 flex-1 gap-4'
           >
             <TabsList className='gap-1'>
-              {!readOnly && (
+              {showGeneralTab && (
                 <TabsTrigger
                   value='general'
                   className='h-8 min-w-0 items-center rounded-300 px-3 py-1.5 text-sm font-medium text-text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick data-[state=active]:bg-fill-content-hover data-[state=active]:text-text-primary data-[state=active]:after:hidden'
@@ -1544,27 +1559,39 @@ function GroupDetailModal({
               </TabsTrigger>
             </TabsList>
 
-            {!readOnly && (
-              <TabsContent value='general' className='outline-none'>
-                <div className='flex items-center justify-between gap-4 rounded-400 border border-border-primary p-4'>
-                  <div className='min-w-0'>
-                    <div className='text-sm font-semibold text-text-primary'>
-                      {t('settings.appearance.people.deleteGroup')}
+            {showGeneralTab && (
+              <TabsContent value='general' className='min-h-0 flex-1 outline-none'>
+                <div className='appflowy-scroller flex h-full min-h-0 flex-col gap-4 overflow-y-auto overscroll-contain'>
+                  {coverageSupported && (
+                    <GroupSpaceCoverageCard
+                      workspaceId={workspaceId}
+                      group={group}
+                      isCurrent={isCurrent}
+                      onChanged={onGroupChanged}
+                    />
+                  )}
+                  {!readOnly && (
+                    <div className='flex items-center justify-between gap-4 rounded-400 border border-border-primary p-4'>
+                      <div className='min-w-0'>
+                        <div className='text-sm font-semibold text-text-primary'>
+                          {t('settings.appearance.people.deleteGroup')}
+                        </div>
+                        <div className='mt-1 text-sm leading-5 text-text-secondary'>
+                          {t('settings.appearance.people.deleteGroupDescription')}
+                        </div>
+                      </div>
+                      <Button
+                        type='button'
+                        variant='destructive-outline'
+                        data-testid='group-detail-delete-button'
+                        onClick={onDeleteRequested}
+                        className='px-4 focus-visible:ring-1 focus-visible:ring-border-error-thick'
+                      >
+                        <DeleteIcon aria-hidden='true' className='h-4 w-4' />
+                        {t('settings.appearance.people.deleteGroup')}
+                      </Button>
                     </div>
-                    <div className='mt-1 text-sm leading-5 text-text-secondary'>
-                      {t('settings.appearance.people.deleteGroupDescription')}
-                    </div>
-                  </div>
-                  <Button
-                    type='button'
-                    variant='destructive-outline'
-                    data-testid='group-detail-delete-button'
-                    onClick={onDeleteRequested}
-                    className='px-4 focus-visible:ring-1 focus-visible:ring-border-error-thick'
-                  >
-                    <DeleteIcon aria-hidden='true' className='h-4 w-4' />
-                    {t('settings.appearance.people.deleteGroup')}
-                  </Button>
+                  )}
                 </div>
               </TabsContent>
             )}

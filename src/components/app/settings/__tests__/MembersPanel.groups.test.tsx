@@ -15,6 +15,7 @@ const mockRemoveWorkspaceGroup = jest.fn();
 const mockGetWorkspaceGroupMembers = jest.fn();
 const mockAddWorkspaceGroupMember = jest.fn();
 const mockRemoveWorkspaceGroupMember = jest.fn();
+const mockSetGroupSpaceCoverage = jest.fn();
 const mockTranslate = (key: string, values?: { count?: number }) => values?.count ?? key;
 let mockCurrentWorkspaceId = 'workspace-1';
 let mockWorkspaceRole = Role.Owner;
@@ -48,6 +49,11 @@ jest.mock('@/application/services/domains', () => ({
   },
 }));
 
+jest.mock('@/application/services/js-services/http/group-space-coverage-api', () => ({
+  isGroupSpaceCoverageLevel: (value: unknown) => value === null || value === 10 || value === 30,
+  setGroupSpaceCoverage: (...args: unknown[]) => mockSetGroupSpaceCoverage(...args),
+}));
+
 jest.mock('@/components/app/app.hooks', () => ({
   useCurrentWorkspaceId: () => mockCurrentWorkspaceId,
   useUserWorkspaceInfo: () => ({
@@ -78,6 +84,7 @@ jest.mock('@/components/ui/dropdown-menu', () => ({
       {children}
     </button>
   ),
+  DropdownMenuItemTick: () => <span>selected</span>,
   DropdownMenuTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
@@ -155,6 +162,66 @@ describe('MembersPanel workspace group parity', () => {
     mockGetWorkspaceGroupMembers.mockResolvedValue({ members: [] });
     mockAddWorkspaceGroupMember.mockResolvedValue({ uid: workspaceMember.uid });
     mockRemoveWorkspaceGroupMember.mockResolvedValue(undefined);
+    mockSetGroupSpaceCoverage.mockImplementation(async (_workspace, _group, level) => ({ access_level: level }));
+  });
+
+  it('configures access to all spaces in the General tab, also for directory-managed groups', async () => {
+    const scimGroup: WorkspaceGroup = {
+      ...group,
+      name: 'Directory Engineering',
+      source: 'scim',
+      member_count: 1,
+      space_coverage_supported: true,
+      can_manage_space_coverage: true,
+      space_coverage_access_level: null,
+    };
+
+    mockGetWorkspaceGroups.mockResolvedValue({ groups: [scimGroup] });
+    await renderGroupsPanel();
+    fireEvent.click(screen.getByTestId(`group-edit-${scimGroup.group_id}`));
+    const modal = await screen.findByTestId('group-detail-modal');
+    const card = within(modal).getByTestId('group-space-coverage-card');
+
+    // The directory owns identity and membership, so only the AppFlowy setting is offered.
+    expect(within(modal).getByRole('tab', { name: 'settings.appearance.people.generalTab' })).toBeTruthy();
+    expect(within(modal).queryByTestId('group-detail-delete-button')).toBeNull();
+    expect(within(card).getByTestId('group-space-coverage-trigger').textContent).toContain('groupSpaceAccess.off');
+    const refreshesBeforeSave = mockGetWorkspaceGroups.mock.calls.length;
+
+    fireEvent.click(within(card).getByRole('button', { name: 'shareAction.canEdit' }));
+    fireEvent.click(await screen.findByTestId('group-space-coverage-confirm'));
+    await waitFor(() =>
+      expect(mockSetGroupSpaceCoverage).toHaveBeenCalledWith('workspace-1', scimGroup.group_id, 30, expect.any(Function))
+    );
+    expect(mockSetGroupSpaceCoverage.mock.calls[0][3]()).toBe(true);
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('groupSpaceAccess.updated'));
+    await waitFor(() => expect(mockGetWorkspaceGroups.mock.calls.length).toBeGreaterThan(refreshesBeforeSave));
+  });
+
+  it('keeps the General tab for managed groups only when the server supports access to all spaces', async () => {
+    const scimGroup: WorkspaceGroup = { ...group, name: 'Directory Engineering', source: 'scim', member_count: 1 };
+
+    mockGetWorkspaceGroups.mockResolvedValue({ groups: [scimGroup] });
+    await renderGroupsPanel();
+    fireEvent.click(screen.getByTestId(`group-edit-${scimGroup.group_id}`));
+    const modal = await screen.findByTestId('group-detail-modal');
+
+    expect(within(modal).queryByRole('tab', { name: 'settings.appearance.people.generalTab' })).toBeNull();
+    expect(within(modal).queryByTestId('group-space-coverage-card')).toBeNull();
+  });
+
+  it('shows access to all spaces above Delete group for groups created in AppFlowy', async () => {
+    mockGetWorkspaceGroups.mockResolvedValue({
+      groups: [{ ...group, space_coverage_supported: true, can_manage_space_coverage: true, space_coverage_access_level: 10 }],
+    });
+    await renderGroupsPanel();
+    fireEvent.click(groupEditButton());
+    const modal = await screen.findByTestId('group-detail-modal');
+    const card = within(modal).getByTestId('group-space-coverage-card');
+    const deleteButton = within(modal).getByTestId('group-detail-delete-button');
+
+    expect(within(card).getByTestId('group-space-coverage-trigger').textContent).toContain('shareAction.canView');
+    expect(card.compareDocumentPosition(deleteButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('links the People help action to the AppFlowy guide', async () => {
