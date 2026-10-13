@@ -17,6 +17,33 @@ export type SpaceCreationIntent = {
   committed?: SpaceCreationResult;
 };
 
+/** Saved data this build cannot read. It is kept until the user discards it, never replaced. */
+export class InvalidSpaceCreationIntentError extends Error {
+  constructor() {
+    super(t('spaceCreation.invalidRecovery'));
+    this.name = 'InvalidSpaceCreationIntentError';
+  }
+}
+
+function isSpaceCreationIntent(value: unknown): value is SpaceCreationIntent {
+  if (!value || typeof value !== 'object') return false;
+  const intent = value as Partial<SpaceCreationIntent>;
+  const payload = intent.payload;
+
+  return (
+    !!payload &&
+    typeof payload.view_id === 'string' &&
+    !!payload.view_id &&
+    typeof payload.name === 'string' &&
+    !!payload.permission &&
+    Array.isArray(intent.members) &&
+    Array.isArray(intent.selectedMembers) &&
+    Array.isArray(intent.appliedMemberUids) &&
+    (!intent.initialPage || typeof intent.initialPage.view_id === 'string') &&
+    (!intent.committed || intent.committed.spaceId === payload.view_id)
+  );
+}
+
 /**
  * Persist submitted work before sending it. A missing server read cannot prove
  * a timed-out write will not commit, so recovery always keeps the original IDs.
@@ -44,18 +71,16 @@ export class SpaceCreationIntentStore {
     const serialized = sessionStorage.getItem(this.key);
 
     if (!serialized) return;
-    const value = JSON.parse(serialized) as SpaceCreationIntent;
+    let value: unknown;
 
-    if (!value?.payload || typeof value.payload.view_id !== 'string' ||
-      !value.payload.view_id || typeof value.payload.name !== 'string' ||
-      !value.payload.permission || !Array.isArray(value.members) ||
-      !Array.isArray(value.selectedMembers) || !Array.isArray(value.appliedMemberUids) ||
-      (value.initialPage && typeof value.initialPage.view_id !== 'string') ||
-      (value.committed && value.committed.spaceId !== value.payload.view_id)) {
-      // Corrupt/unknown data stays retained; never overwrite it with a new ID.
-      throw new Error(t('spaceCreation.invalidRecovery'));
+    try {
+      value = JSON.parse(serialized);
+    } catch {
+      throw new InvalidSpaceCreationIntentError();
     }
 
+    // Corrupt/unknown data stays retained until discarded; never overwrite it with a new ID.
+    if (!isSpaceCreationIntent(value)) throw new InvalidSpaceCreationIntentError();
     return value;
   }
 
@@ -80,7 +105,7 @@ export class SpaceCreationIntentStore {
 
     if (!intent || intent.payload.view_id !== result.spaceId ||
       (intent.initialPage && intent.initialPage.view_id !== result.initialPageId)) {
-      throw new Error(t('spaceCreation.invalidRecovery'));
+      throw new InvalidSpaceCreationIntentError();
     }
 
     this.write({ ...intent, committed: result });
@@ -89,7 +114,7 @@ export class SpaceCreationIntentStore {
   memberApplied(spaceId: string, uid: string): void {
     const intent = this.snapshot();
 
-    if (!intent || intent.payload.view_id !== spaceId) throw new Error(t('spaceCreation.invalidRecovery'));
+    if (!intent || intent.payload.view_id !== spaceId) throw new InvalidSpaceCreationIntentError();
     if (!intent.appliedMemberUids.includes(uid)) {
       this.write({ ...intent, appliedMemberUids: [...intent.appliedMemberUids, uid] });
     }
@@ -104,6 +129,19 @@ export class SpaceCreationIntentStore {
       throw new Error(t('spaceCreation.pendingRecovery'));
     }
 
+    this.remove();
+  }
+
+  /**
+   * Forget this tab's saved request, including unreadable data. A space that was already
+   * created is unaffected; only the local recovery record goes away.
+   */
+  discard(): void {
+    this.assertCurrent();
+    this.remove();
+  }
+
+  private remove(): void {
     sessionStorage.removeItem(this.key);
     window.dispatchEvent(new Event(SPACE_CREATION_INTENT_CHANGED));
   }

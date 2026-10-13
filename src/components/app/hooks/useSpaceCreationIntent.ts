@@ -1,11 +1,22 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
-import { SPACE_CREATION_INTENT_CHANGED, SpaceCreationIntentStore } from '@/application/services/js-services/space-creation-intent';
+import {
+  InvalidSpaceCreationIntentError,
+  SPACE_CREATION_INTENT_CHANGED,
+  SpaceCreationIntent,
+  SpaceCreationIntentStore,
+} from '@/application/services/js-services/space-creation-intent';
 import { getTokenParsed } from '@/application/session/token';
-import { getErrorMessage } from '@/utils/errors';
 import { getConfigValue } from '@/utils/runtime-config';
 
-export function useSpaceCreationIntent(workspaceId?: string) {
+export type SpaceCreationIntentState = {
+  store: SpaceCreationIntentStore;
+  intent?: SpaceCreationIntent;
+  /** Saved data this build cannot read. It blocks a new request until the user discards it. */
+  invalid: boolean;
+};
+
+export function useSpaceCreationIntent(workspaceId?: string): SpaceCreationIntentState {
   const userId = getTokenParsed()?.user?.id;
   const serverUrl = getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud');
   const scope = useMemo(() => ({ workspaceId, userId, serverUrl }), [workspaceId, userId, serverUrl]);
@@ -26,6 +37,12 @@ export function useSpaceCreationIntent(workspaceId?: string) {
     return () => window.removeEventListener(SPACE_CREATION_INTENT_CHANGED, changed);
   }, []);
 
-  try { return { store, intent: userId && workspaceId ? store.snapshot() : undefined, error: undefined }; }
-  catch (cause) { return { store, intent: undefined, error: getErrorMessage(cause) }; }
+  if (!userId || !workspaceId) return { store, invalid: false };
+  try {
+    return { store, intent: store.snapshot(), invalid: false };
+  } catch (cause) {
+    // Unreadable data is actionable (Discard). A context switch is transient: the scope
+    // changes and a new store reads the current account's request.
+    return { store, invalid: cause instanceof InvalidSpaceCreationIntentError };
+  }
 }

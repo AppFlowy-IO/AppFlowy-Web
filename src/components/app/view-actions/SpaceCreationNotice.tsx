@@ -1,35 +1,153 @@
 import { useTranslation } from 'react-i18next';
 
+import {
+  readSpaceCreationAdmission,
+  type SpaceCreationAdmission,
+} from '@/application/services/js-services/space-creation-recovery';
+import { NormalModal } from '@/components/_shared/modal';
 import { useSpaceCreationCapability } from '@/components/app/hooks/useSpaceCreationCapability';
 import { Button } from '@/components/ui/button';
 
-/** Keep a draft usable while permission is unavailable or has been revoked. */
-export function SpaceCreationNotice({ permission }: { permission: ReturnType<typeof useSpaceCreationCapability> }) {
-  const { t } = useTranslation();
+type SpaceCreationCapabilityState = ReturnType<typeof useSpaceCreationCapability>;
+export type SpaceCreationPermission = Pick<SpaceCreationCapabilityState, 'status' | 'canCreateSpace' | 'refresh'> &
+  Partial<Pick<SpaceCreationCapabilityState, 'capability'>>;
+export type SpaceCreationUnavailableReason = 'denied' | 'loadError' | 'loading';
 
-  if (permission.canCreateSpace) return null;
-  const key =
-    permission.status === 'ready'
-      ? 'denied'
-      : permission.status === 'unsupported'
-      ? 'unsupported'
-      : permission.status === 'error'
-      ? 'loadError'
-      : 'loading';
+/**
+ * Whether an entry point may start space creation: the current decision allows it, or the
+ * server predates the capability route and decides by itself (old servers stay usable).
+ */
+export function canStartSpaceCreation(permission: Pick<SpaceCreationPermission, 'status' | 'canCreateSpace'>) {
+  return permission.canCreateSpace || permission.status === 'unsupported';
+}
+
+/** The visible reason creation cannot start, or undefined when it can. */
+export function spaceCreationUnavailableReason(
+  permission: Pick<SpaceCreationPermission, 'status' | 'canCreateSpace' | 'capability'>
+): SpaceCreationUnavailableReason | undefined {
+  if (canStartSpaceCreation(permission)) return;
+  // The last confirmed decision stays authoritative for display while it is rechecked.
+  if (permission.capability) return 'denied';
+  return permission.status === 'error' ? 'loadError' : 'loading';
+}
+
+export function spaceCreationUnavailableKey(reason: SpaceCreationUnavailableReason) {
+  return `workspacePermissions.${reason}` as const;
+}
+
+/**
+ * Fresh admission before a new request. Uses the live capability read, then one direct read
+ * when that read has no answer, so a server without the capability route can still decide.
+ */
+export async function refreshSpaceCreationAdmission(
+  permission: Pick<SpaceCreationPermission, 'refresh'>,
+  workspaceId: string
+): Promise<SpaceCreationAdmission> {
+  const capability = await permission.refresh();
+
+  if (capability) return capability.can_create_space ? 'allowed' : 'denied';
+  return readSpaceCreationAdmission(workspaceId);
+}
+
+const NOTICE_CLASS =
+  'mb-3 flex items-center justify-between gap-3 rounded-400 border border-border-primary px-3 py-2 text-sm';
+
+/** Keep a draft usable while permission is unavailable or has been revoked. */
+export function SpaceCreationNotice({ permission }: { permission: SpaceCreationPermission }) {
+  const { t } = useTranslation();
+  const reason = spaceCreationUnavailableReason(permission);
+
+  if (!reason) return null;
 
   return (
-    <div role='status' className='mb-3 rounded border border-border-primary p-3 text-sm text-text-secondary'>
-      {t(`workspacePermissions.${key}`)}
-      {permission.status !== 'loading' && (
+    <div role='status' data-testid='space-creation-notice' className={`${NOTICE_CLASS} text-text-secondary`}>
+      <span className='min-w-0 flex-1'>{t(spaceCreationUnavailableKey(reason))}</span>
+      {reason === 'loadError' && (
         <Button
-          variant='ghost'
+          type='button'
+          variant='outline'
+          size='sm'
           onClick={() => {
             void permission.refresh();
           }}
         >
-          {t('button.retry')}
+          {t('spaceCreation.tryAgain')}
         </Button>
       )}
     </div>
+  );
+}
+
+type SpaceCreationRecoveryNoticeProps =
+  | { kind: 'unconfirmed' | 'invalid'; onDiscard: () => void; disabled?: boolean }
+  | { kind: 'membersPending'; count: number; onAddLater: () => void; disabled?: boolean };
+
+/** A saved request that needs a decision: check again or discard it, or finish without the rest. */
+export function SpaceCreationRecoveryNotice(props: SpaceCreationRecoveryNoticeProps) {
+  const { t } = useTranslation();
+  const message =
+    props.kind === 'membersPending'
+      ? t('spaceCreation.membersPending', { count: props.count })
+      : t(props.kind === 'unconfirmed' ? 'spaceCreation.unconfirmed' : 'spaceCreation.invalidRecovery');
+
+  return (
+    <div
+      role='status'
+      data-testid={`space-creation-recovery-${props.kind}`}
+      className={`${NOTICE_CLASS} text-text-primary`}
+    >
+      <span className='min-w-0 flex-1'>{message}</span>
+      {props.kind === 'membersPending' ? (
+        <Button
+          type='button'
+          variant='outline'
+          size='sm'
+          disabled={props.disabled}
+          onClick={props.onAddLater}
+          data-testid='space-creation-add-later'
+        >
+          {t('spaceCreation.addLater')}
+        </Button>
+      ) : (
+        <Button
+          type='button'
+          variant='outline'
+          size='sm'
+          disabled={props.disabled}
+          onClick={props.onDiscard}
+          data-testid='space-creation-discard'
+        >
+          {t('spaceCreation.discard')}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/** Discarding forgets this tab's saved request; a space that was already created remains. */
+export function DiscardSpaceRequestConfirm({
+  open,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <NormalModal
+      open={open}
+      danger
+      title={t('spaceCreation.discardTitle')}
+      okText={t('spaceCreation.discard')}
+      onOk={onConfirm}
+      onCancel={onCancel}
+      onClose={onCancel}
+      okButtonProps={{ 'data-testid': 'discard-space-request-confirm' }}
+    >
+      <p className='text-sm text-text-secondary'>{t('spaceCreation.discardDescription')}</p>
+    </NormalModal>
   );
 }
