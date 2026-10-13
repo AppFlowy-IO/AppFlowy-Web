@@ -14,12 +14,23 @@ export async function readPermissionBlock(scope: Scope, objectId: string) {
   return db.sync_permission_blocks.get(permissionBlockKey(scope, objectId));
 }
 
-export async function persistPermissionBlock(scope: Scope, objectId: string): Promise<void> {
+/**
+ * A new denial gets a new revision, so a retry that reviewed an older one cannot
+ * release it. A re-check confirming the same quarantine keeps the revision.
+ */
+export async function persistPermissionBlock(
+  scope: Scope, objectId: string, options: { keepExistingRevision?: boolean } = {}
+): Promise<void> {
   await db.transaction('rw', db.sync_outbox, db.sync_permission_blocks, async () => {
-    await db.sync_permission_blocks.put({
-      userId: scope.userId, workspaceId: scope.workspaceId,
-      serverUrl: scope.serverUrl ?? '', objectId, revision: uuidv4(),
-    });
+    const existing = options.keepExistingRevision ? await readPermissionBlock(scope, objectId) : undefined;
+
+    if (!existing) {
+      await db.sync_permission_blocks.put({
+        userId: scope.userId, workspaceId: scope.workspaceId,
+        serverUrl: scope.serverUrl ?? '', objectId, revision: uuidv4(),
+      });
+    }
+
     await db.sync_outbox.where('[userId+workspaceId+objectId]').equals([scope.userId, scope.workspaceId, objectId])
       .filter((record) => record.serverUrl === scope.serverUrl).modify({ permissionBlocked: true });
   });

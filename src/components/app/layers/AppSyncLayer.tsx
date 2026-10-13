@@ -17,6 +17,7 @@ import { getTokenParsed } from '@/application/session/token';
 import {
   clearDrainConfig,
   configureDrain,
+  expireOutboxAdmissions,
   invalidateOutboxPermissions,
   resumePermissionBlockedSync,
   setCurrentSession,
@@ -376,6 +377,7 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
       serverUrl,
       beforeSend: ensureDatabaseRestoreCurrent,
       checkPermission: uploadPermission.check,
+      peekPermission: uploadPermission.peek,
       databaseHistoryEnabled: enableDatabaseHistory,
       // Server send — gated on WS being OPEN via isReady(). `keep=false` so
       // a transient close does not silently buffer the message into
@@ -456,38 +458,47 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
     }
   }, [canSendToServer, drainWakeKey]);
 
-  // Broad group/workspace changes may not identify any collab. Invalidate the
-  // scoped probe cache synchronously and inspect all queued objects. Persisted
-  // denied edits remain quarantined until the user explicitly chooses Retry.
+  // A real permission change (an object notification or a broad workspace/group
+  // hint that may not identify any collab) discards in-flight positives, fences
+  // admission decisions made before it and re-checks every queued object. Only
+  // uploads whose fresh check is denied are cancelled; quarantined edits still
+  // wait for the user's explicit retry.
   useEffect(() => {
     const handlePermissionChange = () => {
-      invalidateOutboxPermissions();
       uploadPermission.invalidate();
+      invalidateOutboxPermissions();
+      void resumePermissionBlockedSync(undefined, { abortDenied: true });
+    };
+
+    // Focus, visibility, connectivity and socket-open events can follow a missed
+    // notification. Re-check before the next immediate send and re-probe queued
+    // objects without cancelling checks or uploads in progress, so a large
+    // upload survives alt-tabbing and socket reconnects.
+    const recheckPermissions = () => {
+      uploadPermission.expire();
+      expireOutboxAdmissions();
       void resumePermissionBlockedSync();
     };
 
     const onVisibility = () => {
-      if (document.visibilityState === 'visible') handlePermissionChange();
+      if (document.visibilityState === 'visible') recheckPermissions();
     };
 
     const onSocket = (state: number) => {
-      if (state === WS_READY_STATE_OPEN) handlePermissionChange();
-      else uploadPermission.invalidate();
+      if (state === WS_READY_STATE_OPEN) recheckPermissions();
     };
 
     eventEmitter.on(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChange);
     eventEmitter.on(APP_EVENTS.WEBSOCKET_STATUS, onSocket);
-    window.addEventListener('focus', handlePermissionChange);
-    window.addEventListener('online', handlePermissionChange);
-    window.addEventListener('offline', handlePermissionChange);
+    window.addEventListener('focus', recheckPermissions);
+    window.addEventListener('online', recheckPermissions);
     document.addEventListener('visibilitychange', onVisibility);
 
     return () => {
       eventEmitter.off(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChange);
       eventEmitter.off(APP_EVENTS.WEBSOCKET_STATUS, onSocket);
-      window.removeEventListener('focus', handlePermissionChange);
-      window.removeEventListener('online', handlePermissionChange);
-      window.removeEventListener('offline', handlePermissionChange);
+      window.removeEventListener('focus', recheckPermissions);
+      window.removeEventListener('online', recheckPermissions);
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [eventEmitter, uploadPermission]);
