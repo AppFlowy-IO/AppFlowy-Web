@@ -1,0 +1,116 @@
+import i18next, { i18n } from 'i18next';
+
+import en from '@/@types/translations/en.json';
+import fr from '@/@types/translations/fr-FR.json';
+
+/**
+ * The component tests stub `t`, so this checks the real strings behind the
+ * per-person access (A) and page creation (P) controls in Manage/Create Space.
+ */
+const SHARED_VOCABULARY: Record<string, string> = {
+  'space.memberOverride.label': 'Access',
+  'space.memberOverride.explanation':
+    'Choose what this person or group can do, or keep the space default. Sharing a page can still give access, and restricted pages stay restricted.',
+  'space.memberOverride.levels.canView': 'Can view',
+  'space.memberOverride.levels.canComment': 'Can comment',
+  'space.memberOverride.levels.canEdit': 'Can edit',
+  'space.memberOverride.levels.fullAccess': 'Full access',
+  'space.memberOverride.inheritedNoAccess':
+    'Space members get no access by default. Choose access for specific members or groups, or change the default in General.',
+  'space.memberOverride.updated': 'Access updated',
+  'workspacePermissions.sidebarPolicy': 'Who can add pages to this space',
+  'workspacePermissions.sidebarOwners': 'Only space owners',
+  'workspacePermissions.sidebarMembers': 'Anyone who can edit',
+  'workspacePermissions.sidebarExplanation':
+    'Applies to pages added directly to the space. Pages inside other pages follow their own permissions.',
+};
+
+// Every string these controls can show.
+const CONTROL_KEYS = [
+  ...Object.keys(SHARED_VOCABULARY),
+  'space.memberOverride.accessFor',
+  'space.memberOverride.unknown',
+  'space.memberOverride.unavailable',
+  'space.memberOverride.contextChanged',
+  'space.memberOverride.identityUnavailable',
+  'space.memberOverride.updateFailed',
+  'space.memberOverride.spaceDefault',
+  'space.memberOverride.defaultSuffix',
+  'space.memberOverride.levels.noAccess',
+  'space.memberOverride.sharedPagesOnly',
+  'space.memberOverride.sharedPagesReason',
+  'space.memberOverride.managedElsewhere',
+  'space.memberOverride.reloadToChange',
+  'workspacePermissions.sidebarUnknown',
+  'space.permissionManager.memberRoleDescription',
+  'space.permissionManager.memberRoleWithAccessDescription',
+  'space.permissionManager.fullAccessMembersDescription',
+];
+
+const INTERNAL_TERMS = /override|inherit|assignment|entitlement|principal|uuid|provenance|tombstone|revision|roster/i;
+
+function lookup(resources: unknown, key: string): unknown {
+  return key.split('.').reduce<unknown>((node, part) => {
+    if (node && typeof node === 'object') return (node as Record<string, unknown>)[part];
+    return undefined;
+  }, resources);
+}
+
+function placeholders(value: string): string[] {
+  return Array.from(value.matchAll(/{{\s*(\w+)\s*}}/g), (match) => match[1]).sort();
+}
+
+async function createI18n(lng: string): Promise<i18n> {
+  const instance = i18next.createInstance();
+
+  await instance.init({
+    lng,
+    fallbackLng: false,
+    resources: { en: { translation: en }, fr: { translation: fr } },
+  });
+
+  return instance;
+}
+
+describe('space access copy', () => {
+  it('uses the shared Web and Desktop vocabulary in English', () => {
+    for (const [key, expected] of Object.entries(SHARED_VOCABULARY)) {
+      expect({ key, value: lookup(en, key) }).toEqual({ key, value: expected });
+    }
+  });
+
+  it('builds the default option and trigger labels from the level names', async () => {
+    const english = await createI18n('en');
+    const french = await createI18n('fr');
+    const level = english.t('space.memberOverride.levels.canEdit');
+
+    expect(english.t('space.memberOverride.spaceDefault', { level })).toBe('Space default (Can edit)');
+    expect(english.t('space.memberOverride.defaultSuffix', { level })).toBe('Can edit · default');
+    expect(
+      french.t('space.memberOverride.defaultSuffix', { level: french.t('space.memberOverride.levels.canView') })
+    ).toBe('Lecture · par défaut');
+    expect(english.t('space.memberOverride.accessFor', { name: 'R&D', interpolation: { escapeValue: false } })).toBe(
+      'Access for R&D'
+    );
+  });
+
+  it('translates every string into French with the same placeholders', () => {
+    for (const key of CONTROL_KEYS) {
+      const english = lookup(en, key);
+      const french = lookup(fr, key);
+
+      expect({ key, english: typeof english }).toEqual({ key, english: 'string' });
+      expect({ key, french: typeof french }).toEqual({ key, french: 'string' });
+      expect({ key, placeholders: placeholders(french as string) }).toEqual({
+        key,
+        placeholders: placeholders(english as string),
+      });
+    }
+  });
+
+  it('keeps internal permission terms out of the visible copy', () => {
+    for (const key of CONTROL_KEYS) {
+      expect({ key, value: lookup(en, key) }).toEqual({ key, value: expect.not.stringMatching(INTERNAL_TERMS) });
+    }
+  });
+});
