@@ -151,10 +151,11 @@ describe('GoTrue token storage', () => {
     setItem.mockRestore();
   });
 
-  it('signs out immediately and then removes the account’s synced copies while keeping unsent edits', () => {
+  it('signs out immediately and then removes the account’s synced copies while keeping unsent edits', async () => {
     localStorage.setItem('token', JSON.stringify(createToken()));
 
     invalidToken();
+    await Promise.resolve();
 
     expect(localStorage.getItem('token')).toBeNull();
     expect(setCurrentSession).toHaveBeenCalledWith(null);
@@ -172,8 +173,9 @@ describe('GoTrue token storage', () => {
     expect(isStillSignedOut()).toBe(false);
   });
 
-  it('skips local data removal when no account was signed in', () => {
+  it('skips local data removal when no account was signed in', async () => {
     invalidToken();
+    await Promise.resolve();
 
     expect(removeSignedOutLocalData).not.toHaveBeenCalled();
     expect(emitMock).toHaveBeenCalledWith(EventType.SESSION_INVALID);

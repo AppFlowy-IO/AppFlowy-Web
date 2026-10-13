@@ -40,10 +40,12 @@ export function invalidToken() {
   // in the background, keeps unsent edits, and stops if the same account signs
   // in again meanwhile.
   if (signedOutUserId) {
-    void removeSignedOutLocalData(
-      { serverUrl: getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), userId: signedOutUserId },
-      () => getTokenParsed()?.user.id !== signedOutUserId
-    );
+    const account = { serverUrl: getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), userId: signedOutUserId };
+
+    // Never let local cleanup interfere with signing out.
+    void Promise.resolve()
+      .then(() => removeSignedOutLocalData(account, () => getTokenParsed()?.user.id !== signedOutUserId))
+      .catch(() => undefined);
   }
 }
 
