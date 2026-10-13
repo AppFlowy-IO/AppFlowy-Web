@@ -105,6 +105,56 @@ test('keeps showing released edits as saving until the socket owner uploads them
   expect(screen.queryByRole('status')).toBeNull();
 });
 
+test('forgets a released page once its edits are saved, so later ordinary edits show no notice', async () => {
+  const rerenderNotice = (rerender: (ui: React.ReactElement) => void) =>
+    rerender(<PendingPermissionEdits {...session} beforeRetry={jest.fn()} reloadPage={jest.fn()} />);
+
+  mockPending = { blocked: ['page-a'], queued: [] };
+  jest.mocked(retryPermissionBlockedSync).mockResolvedValue({ released: ['page-a'], denied: [], unknown: [] });
+  const { rerender } = renderNotice();
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'workspacePermissions.pendingEditsTryAgain' }));
+  });
+  // The live query has not seen the release yet: the page still counts as waiting.
+  rerenderNotice(rerender);
+  expect(screen.getByRole('status').textContent).toContain('workspacePermissions.pendingEdits:1');
+
+  mockPending = { blocked: [], queued: ['page-a'] };
+  rerenderNotice(rerender);
+  expect(screen.getByRole('status').textContent).toContain('workspacePermissions.pendingEditsSaving');
+
+  // The released edits are uploaded.
+  mockPending = { blocked: [], queued: [] };
+  rerenderNotice(rerender);
+  expect(screen.queryByRole('status')).toBeNull();
+
+  // Much later the page has ordinary queued edits (offline, or while a check runs).
+  mockPending = { blocked: [], queued: ['page-a'] };
+  rerenderNotice(rerender);
+  expect(screen.queryByRole('status')).toBeNull();
+});
+
+test('forgets a released page whose edits were already saved when Try again finished', async () => {
+  mockPending = { blocked: ['page-a'], queued: [] };
+  jest.mocked(retryPermissionBlockedSync).mockImplementation(async () => {
+    // The socket owner uploaded the released rows before this tab resumed.
+    mockPending = { blocked: [], queued: [] };
+    return { released: ['page-a'], denied: [], unknown: [] };
+  });
+  const { rerender } = renderNotice();
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'workspacePermissions.pendingEditsTryAgain' }));
+  });
+  rerender(<PendingPermissionEdits {...session} beforeRetry={jest.fn()} reloadPage={jest.fn()} />);
+  expect(screen.queryByRole('status')).toBeNull();
+
+  mockPending = { blocked: [], queued: ['page-a'] };
+  rerender(<PendingPermissionEdits {...session} beforeRetry={jest.fn()} reloadPage={jest.fn()} />);
+  expect(screen.queryByRole('status')).toBeNull();
+});
+
 test('Discard changes asks for confirmation, then removes the edits and the local copies', async () => {
   const reloadPage = jest.fn();
 

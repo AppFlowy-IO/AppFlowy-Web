@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
@@ -88,6 +88,18 @@ export function PendingPermissionEdits({
     });
     return { blocked: Array.from(blocked).sort(), queued: Array.from(queued).sort() };
   }, [userId, workspaceId, serverUrl], NO_PENDING_EDITS);
+
+  // A released page leaves `released` once none of its edits are queued or
+  // waiting any more (they were uploaded or discarded), so its later ordinary
+  // edits never show the saving notice. Until the live query sees the release,
+  // the page still counts as waiting and is kept.
+  useEffect(() => {
+    const present = new Set([...pending.blocked, ...pending.queued]);
+
+    if (Array.from(released).some((id) => !present.has(id))) {
+      setReleased(new Set(Array.from(released).filter((id) => present.has(id))));
+    }
+  }, [pending, released]);
 
   const blockedIds = new Set(pending.blocked);
   const saving = pending.queued.filter((id) => released.has(id) && !blockedIds.has(id));
