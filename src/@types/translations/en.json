@@ -3656,7 +3656,10 @@
       "addSpaceGroupFailed": "Failed to add group to space",
       "noAccessMembersHint": "Space members are listed but cannot access this space until their access is changed in General.",
       "everyoneElseFallback": "Everyone else in the workspace",
-      "memberRoleWithAccessDescription": "Gets the space default access unless you choose a different level in Access."
+      "memberRoleWithAccessDescription": "Gets the space default access unless you choose a different level in Access.",
+      "accessCheckFailed": "We couldn't check your access to this space. Changes are paused until we can.",
+      "accessLost": "This space is no longer available to you.",
+      "checkAgain": "Check again"
     },
     "createSpace": "Create space",
     "manageSpace": "Manage space",

@@ -2197,29 +2197,111 @@ describe('ManageSpace ACL management', () => {
     expect(screen.getByPlaceholderText('space.spaceNamePlaceholder').hasAttribute('disabled')).toBe(true);
   });
 
-  it('keeps showing the last confirmed settings but blocks changes when a background recheck fails', async () => {
-    const member = manualMember();
+  describe('when access to the dialog cannot be confirmed', () => {
+    function permissionNotice() {
+      return screen.getByTestId('manage-space-permission-notice');
+    }
 
-    mockGetSpacePermission
-      .mockResolvedValueOnce(permissionResponse({ permission: customPermission }))
-      .mockRejectedValueOnce(new Error('recheck failed'));
-    mockGetSpaceMembers.mockResolvedValue({ members: [member], groups: [] });
-    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+    function checkAgain() {
+      fireEvent.click(within(permissionNotice()).getByRole('button', { name: 'space.permissionManager.checkAgain' }));
+    }
 
-    const row = await screen.findByTestId(`space-member-row-${member.uid}`);
+    it('keeps the last confirmed settings, says why changes are paused, and checks again on request', async () => {
+      const member = manualMember();
+      const retry = deferred<ReturnType<typeof permissionResponse>>();
 
-    await waitForSettingsLoaded();
-    act(() => {
-      mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+      mockGetSpacePermission
+        .mockResolvedValueOnce(permissionResponse({ permission: customPermission }))
+        .mockRejectedValueOnce(networkApiError)
+        .mockReturnValueOnce(retry.promise);
+      mockGetSpaceMembers.mockResolvedValue({ members: [member], groups: [] });
+      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+      const row = await screen.findByTestId(`space-member-row-${member.uid}`);
+
+      await waitForSettingsLoaded();
+      expect(screen.queryByTestId('manage-space-permission-notice')).toBeNull();
+      act(() => {
+        mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+      });
+
+      await waitFor(() => expect(toast.error).toHaveBeenCalledWith('space.permissionManager.loadSpaceSettingsFailed'));
+      // A failure worth retrying keeps the confirmed data on screen but blocks changes...
+      expect(screen.getByTestId(`space-member-row-${member.uid}`)).toBe(row);
+      expectSelectedVisibility(SpaceVisibility.Custom);
+      expect(visibilityOption(SpaceVisibility.Public).disabled).toBe(true);
+      expect(within(row).getByRole('button', { name: 'space.permissionManager.member' }).hasAttribute('disabled')).toBe(true);
+      expect(screen.getByPlaceholderText('space.spaceNamePlaceholder').hasAttribute('disabled')).toBe(true);
+      expect(mockGetSpaceMembers).toHaveBeenCalledTimes(1);
+      // ...and the dialog keeps saying why after the toast is gone.
+      expect(permissionNotice().textContent).toContain('space.permissionManager.accessCheckFailed');
+
+      checkAgain();
+      await waitFor(() => expect(mockGetSpacePermission).toHaveBeenCalledTimes(3));
+      // The confirmed data stays on screen while access is checked again.
+      expect(screen.getByTestId(`space-member-row-${member.uid}`)).toBe(row);
+      expect(within(permissionNotice()).getByRole('button', { name: 'space.permissionManager.checkAgain' }).disabled).toBe(
+        true
+      );
+
+      await act(async () => {
+        retry.resolve(permissionResponse({ permission: customPermission }));
+      });
+
+      await waitFor(() => expect(screen.queryByTestId('manage-space-permission-notice')).toBeNull());
+      await waitFor(() => expect(visibilityOption(SpaceVisibility.Public).disabled).toBe(false));
+      expect(screen.getByPlaceholderText('space.spaceNamePlaceholder').hasAttribute('disabled')).toBe(false);
+      expect(screen.getByTestId(`space-member-row-${member.uid}`)).toBeTruthy();
     });
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('recheck failed'));
-    expect(screen.getByTestId(`space-member-row-${member.uid}`)).toBe(row);
-    expectSelectedVisibility(SpaceVisibility.Custom);
-    expect(visibilityOption(SpaceVisibility.Public).disabled).toBe(true);
-    expect(within(row).getByRole('button', { name: 'space.permissionManager.member' }).hasAttribute('disabled')).toBe(true);
-    expect(screen.getByPlaceholderText('space.spaceNamePlaceholder').hasAttribute('disabled')).toBe(true);
-    expect(mockGetSpaceMembers).toHaveBeenCalledTimes(1);
+    it('clears other people from the dialog when a recheck finds that access was removed', async () => {
+      const member = manualMember();
+
+      mockGetSpacePermission
+        .mockResolvedValueOnce(permissionResponse({ permission: customPermission }))
+        .mockRejectedValueOnce({ ...deniedApiError, message: `user 42 cannot read space ${SPACE_UUID}` })
+        .mockResolvedValueOnce(permissionResponse({ permission: customPermission }));
+      mockGetSpaceMembers.mockResolvedValue({ members: [member], groups: [group('group-1', 'Finance')] });
+      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+      await screen.findByTestId(`space-member-row-${member.uid}`);
+      await waitForSettingsLoaded();
+      act(() => {
+        mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+      });
+
+      await waitFor(() => expect(screen.queryByTestId(`space-member-row-${member.uid}`)).toBeNull());
+      // Nobody's name or email stays visible to someone who lost access.
+      expect(screen.queryByText('Manual member')).toBeNull();
+      expect(screen.queryByText(/manual-member@appflowy\.io/)).toBeNull();
+      expect(screen.queryByTestId('space-group-row-group-1')).toBeNull();
+      expect(permissionNotice().textContent).toContain('space.permissionManager.accessLost');
+      expect(visibilityOption(SpaceVisibility.Public).disabled).toBe(true);
+      expect(screen.getByPlaceholderText('space.spaceNamePlaceholder').hasAttribute('disabled')).toBe(true);
+      expectNoServerTextInToasts();
+
+      // Access given back: checking again loads the dialog from the server.
+      checkAgain();
+      await screen.findByTestId(`space-member-row-${member.uid}`);
+      expect(screen.queryByTestId('manage-space-permission-notice')).toBeNull();
+      await waitForSettingsLoaded();
+    });
+
+    it('explains a failed first load and loads the dialog when checked again', async () => {
+      mockGetSpacePermission
+        .mockRejectedValueOnce(networkApiError)
+        .mockResolvedValue(permissionResponse({ permission: customPermission }));
+      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+      await waitFor(() => expect(permissionNotice().textContent).toContain('space.permissionManager.accessCheckFailed'));
+      expect(visibilityOption(SpaceVisibility.Public).disabled).toBe(true);
+
+      checkAgain();
+
+      await waitForSettingsLoaded();
+      expect(screen.queryByTestId('manage-space-permission-notice')).toBeNull();
+      expect(mockGetSpacePermission).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('ignores an older permission refresh that resolves after a newer revocation', async () => {

@@ -117,6 +117,10 @@ const MAX_ADDABLE_GROUP_RESULTS = 8;
 
 type FullAccessAudience = 'space-members' | 'everyone-else' | 'workspace-members';
 
+// Why this dialog's access could not be confirmed: a failure worth checking
+// again, or an answer that the user can no longer see this space.
+type PermissionLoadFailure = 'unavailable' | 'denied';
+
 type PendingConfirmation =
   | { kind: 'visibility'; target: SpaceVisibility }
   | { kind: 'full-access'; audience: FullAccessAudience }
@@ -461,7 +465,8 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   const [loadingMembers, setLoadingMembers] = useState(false);
   const [spaceMembersLoaded, setSpaceMembersLoaded] = useState(false);
   const [permissionLoaded, setPermissionLoaded] = useState(false);
-  const [permissionLoadFailed, setPermissionLoadFailed] = useState(false);
+  const [permissionLoadFailure, setPermissionLoadFailure] = useState<PermissionLoadFailure | null>(null);
+  const permissionLoadFailed = permissionLoadFailure !== null;
   const [legacyPermissionMode, setLegacyPermissionMode] = useState(false);
   const [permissionRefreshRevision, setPermissionRefreshRevision] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -538,7 +543,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     setLoadingSettings(true);
     setLoadingMembers(false);
     setPermissionLoaded(false);
-    setPermissionLoadFailed(false);
+    setPermissionLoadFailure(null);
     setLegacyPermissionMode(false);
     setLoadedPermissionSettings(null);
     setCanManageSpace(false);
@@ -610,7 +615,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     setCanInviteMembers(false);
     setMemberOverridesSupported(false);
     setPermissionLoaded(false);
-    setPermissionLoadFailed(false);
+    setPermissionLoadFailure(null);
     setLegacyPermissionMode(false);
     setSpaceMembersLoaded(false);
     setLoadingMembers(false);
@@ -770,7 +775,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         setCanInviteMembers(permission.can_invite_members);
         setMemberOverridesSupported(permission.member_access_overrides_supported === true);
         setLegacyPermissionMode(false);
-        setPermissionLoadFailed(false);
+        setPermissionLoadFailure(null);
         setPermissionLoaded(true);
         permissionConfirmedRef.current = true;
         // Public rosters follow the workspace and are read-only, so there is
@@ -784,15 +789,19 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         shouldLoadSpaceMembers = hasEditableRoster && permission.can_manage_members;
       } catch (error) {
         if (isCurrentSettingsRequest()) {
-          if (background) {
+          const denied = isAccessDeniedError(error);
+
+          if (background && !denied) {
             // Keep the last confirmed data on screen, but fail closed: every
-            // control and mutation is blocked until a later recheck succeeds.
+            // control and mutation is blocked until a later check succeeds.
             backgroundRecheckFailed = true;
-            setPermissionLoadFailed(true);
+            setPermissionLoadFailure('unavailable');
           } else {
             // The structured capability response is the authority for this
             // dialog. An unavailable/unsupported route must never manufacture
-            // management rights from the legacy binary space model.
+            // management rights from the legacy binary space model, and someone
+            // who may no longer see the space must not keep seeing other
+            // people's names and emails.
             permissionConfirmedRef.current = false;
             setCanManageSpace(false);
             setCanEditSidebar(false);
@@ -801,7 +810,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
             setMemberOverridesSupported(false);
             setLoadedPermissionSettings(null);
             setPermissionLoaded(false);
-            setPermissionLoadFailed(true);
+            setPermissionLoadFailure(denied ? 'denied' : 'unavailable');
             setLegacyPermissionMode(false);
             setSpaceMembersLoaded(false);
             setSpaceMembers([]);
@@ -1731,6 +1740,12 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     ]
   );
 
+  // Settings already confirmed stay on screen while they are checked again.
+  const handleCheckPermissionAgain = useCallback(() => {
+    backgroundRefreshRequestedRef.current = true;
+    setPermissionRefreshRevision((revision) => revision + 1);
+  }, []);
+
   const handleMemberSearchKeyDown = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter') event.stopPropagation();
   }, []);
@@ -1851,6 +1866,32 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       ? 'space.permissionManager.memberRoleWithAccessDescription'
       : 'space.permissionManager.memberRoleDescription'
   );
+  // The one visible reason every control is disabled after a failed check.
+  const permissionNotice = permissionLoadFailure ? (
+    <div
+      role='status'
+      className='mb-3 flex items-center justify-between gap-3 rounded-300 border border-border-primary px-3 py-2 text-sm text-text-secondary'
+      data-testid='manage-space-permission-notice'
+    >
+      <span className='min-w-0'>
+        {t(
+          permissionLoadFailure === 'denied'
+            ? 'space.permissionManager.accessLost'
+            : 'space.permissionManager.accessCheckFailed'
+        )}
+      </span>
+      <Button
+        type='button'
+        variant='outline'
+        size='sm'
+        loading={loadingSettings || revalidating}
+        onClick={handleCheckPermissionAgain}
+        data-testid='manage-space-permission-check-again'
+      >
+        {t('space.permissionManager.checkAgain')}
+      </Button>
+    </div>
+  ) : null;
 
   const assignmentAccessCell = ({
     principal,
@@ -1989,6 +2030,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       onEveryoneElseAccessChange={handleEveryoneElseAccessChange}
       onSidebarEditPolicyChange={handleSidebarEditPolicyChange}
       showActions={false}
+      notice={permissionNotice}
       membersContent={
         <div className='appflowy-scroller max-h-[64vh] overflow-y-auto py-2 pr-1'>
           <div className='flex flex-col gap-4'>

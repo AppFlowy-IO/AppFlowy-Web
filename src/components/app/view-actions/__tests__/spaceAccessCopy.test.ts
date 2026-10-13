@@ -23,6 +23,7 @@ const SHARED_VOCABULARY: Record<string, string> = {
   'workspacePermissions.sidebarMembers': 'Anyone who can edit',
   'workspacePermissions.sidebarExplanation':
     'Applies to pages added directly to the space. Pages inside other pages follow their own permissions.',
+  'space.permissionManager.checkAgain': 'Check again',
 };
 
 // Every string these controls can show.
@@ -45,6 +46,8 @@ const CONTROL_KEYS = [
   'space.permissionManager.memberRoleDescription',
   'space.permissionManager.memberRoleWithAccessDescription',
   'space.permissionManager.fullAccessMembersDescription',
+  'space.permissionManager.accessCheckFailed',
+  'space.permissionManager.accessLost',
 ];
 
 const INTERNAL_TERMS = /override|inherit|assignment|entitlement|principal|uuid|provenance|tombstone|revision|roster/i;
