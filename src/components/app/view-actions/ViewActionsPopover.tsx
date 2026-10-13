@@ -4,6 +4,10 @@ import { View } from '@/application/types';
 import AddPageActions from '@/components/app/view-actions/AddPageActions';
 import MorePageActions from '@/components/app/view-actions/MorePageActions';
 import MoreSpaceActions from '@/components/app/view-actions/MoreSpaceActions';
+import {
+  allowsPageDestination,
+  useDuplicateDestinationAccess,
+} from '@/components/app/view-actions/usePageDestinationAccess';
 import { useViewActionPermissions } from '@/components/app/view-actions/useViewActionPermissions';
 import {
   DropdownMenu,
@@ -54,6 +58,13 @@ function ViewActionsPopover({
     isLoadingViewActionPermissions,
   } = useViewActionPermissions(view, Boolean(open && popoverType));
   const isResolvingViewActionPermissions = isLoadingViewActionPermissions || !hasLoadedViewActionPermissions;
+  // Duplicate places the copy beside the page, so the parent must accept a new child (P).
+  const duplicateDestination = useDuplicateDestinationAccess(
+    view,
+    Boolean(open && popoverType?.category === 'page' && popoverType.type === 'more')
+  );
+  const canDuplicateActions = canCreateViewActions && allowsPageDestination(duplicateDestination);
+  const isResolvingDuplicate = duplicateDestination.state === 'checking';
 
   const onClose = useCallback(() => {
     onOpenChange?.(false);
@@ -87,17 +98,19 @@ function ViewActionsPopover({
         <MorePageActions
           view={view}
           onClose={onClose}
-          canDuplicateActions={canCreateViewActions}
+          canDuplicateActions={canDuplicateActions}
           canEditActions={canCreateViewActions}
           canManageActions={canManageViewActions}
-          isLoadingActions={isResolvingViewActionPermissions}
+          isLoadingActions={isResolvingViewActionPermissions || isResolvingDuplicate}
         />
       );
     }
   }, [
     canCreateViewActions,
+    canDuplicateActions,
     canOpenManageSpace,
     canManageViewActions,
+    isResolvingDuplicate,
     isResolvingViewActionPermissions,
     onClose,
     popoverType,

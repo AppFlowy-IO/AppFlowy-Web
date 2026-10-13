@@ -12,7 +12,13 @@
     "discardDescription": "Si l’espace a déjà été créé, il reste dans votre barre latérale.",
     "membersPending_one": "L’espace a été créé, mais {{count}} personne n’a pas encore été ajoutée.",
     "membersPending_other": "L’espace a été créé, mais {{count}} personnes n’ont pas encore été ajoutées.",
-    "addLater": "Ajouter plus tard"
+    "addLater": "Ajouter plus tard",
+    "pageDestination": {
+      "checking": "Vérification de l’accès…",
+      "noEdit": "Vous n’avez pas le droit de modifier ici",
+      "ownersOnly": "Seuls les propriétaires de l’espace peuvent ajouter des pages ici",
+      "noneAvailable": "Vous ne pouvez ajouter de pages dans aucun espace. Demandez le droit de modification à un propriétaire d’espace."
+    }
   },
   "workspacePermissions": {
     "sidebarPolicy": "Qui peut ajouter et organiser des pages ?",

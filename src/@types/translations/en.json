@@ -12,7 +12,13 @@
     "discardDescription": "If the space was already created, it stays in your sidebar.",
     "membersPending_one": "The space was created, but {{count}} person wasn't added yet.",
     "membersPending_other": "The space was created, but {{count}} people weren't added yet.",
-    "addLater": "Add later"
+    "addLater": "Add later",
+    "pageDestination": {
+      "checking": "Checking access…",
+      "noEdit": "You don't have edit access here",
+      "ownersOnly": "Only space owners can add pages here",
+      "noneAvailable": "You can't add pages to any space here. Ask a space owner for edit access."
+    }
   },
   "workspacePermissions": {
     "sidebarPolicy": "Who can add and arrange pages?",

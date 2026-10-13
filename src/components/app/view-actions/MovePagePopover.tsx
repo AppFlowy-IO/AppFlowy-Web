@@ -8,6 +8,10 @@ import OutlineIcon from '@/components/_shared/outline/OutlineIcon';
 import { filterOutByCondition } from '@/components/_shared/outline/utils';
 import { useAppOperations, useAppOutline } from '@/components/app/app.hooks';
 import SpaceItem from '@/components/app/outline/SpaceItem';
+import {
+  pageDestinationReasonKey,
+  usePageDestinationAccess,
+} from '@/components/app/view-actions/usePageDestinationAccess';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { SearchInput } from '@/components/ui/search-input';
@@ -49,9 +53,17 @@ function MovePagePopover({
   }, []);
 
   const [selectedViewId, setSelectedViewId] = React.useState<string | null>(null);
+  // The destination must accept a new child: Write, plus sidebar authority for a space root.
+  const destination = usePageDestinationAccess(selectedViewId ?? undefined, Boolean(selectedViewId));
+  const destinationStatus =
+    destination.state === 'checking'
+      ? t('spaceCreation.pageDestination.checking')
+      : destination.state === 'denied'
+      ? t(pageDestinationReasonKey(destination.reason))
+      : null;
 
   const handleMoveTo = React.useCallback(async () => {
-    if (selectedViewId) {
+    if (selectedViewId && destination.state === 'allowed') {
       try {
         await movePage?.(viewId, selectedViewId);
         onMoved?.();
@@ -61,7 +73,7 @@ function MovePagePopover({
         toast.error(e.message);
       }
     }
-  }, [movePage, onMoved, selectedViewId, viewId]);
+  }, [destination.state, movePage, onMoved, selectedViewId, viewId]);
 
   const renderExtra = React.useCallback(
     ({ view }: { view: View }) => {
@@ -124,8 +136,19 @@ function MovePagePopover({
           </div>
 
           <Separator className={'mb-1'} />
-          <div className={'flex items-center justify-end'}>
-            <Button onClick={handleMoveTo}>{t('disclosureAction.move')}</Button>
+          <div className={'flex items-center justify-end gap-3'}>
+            {destinationStatus && (
+              <span
+                role={'status'}
+                className={'min-w-0 flex-1 text-xs text-text-tertiary'}
+                data-testid={'move-page-destination-status'}
+              >
+                {destinationStatus}
+              </span>
+            )}
+            <Button onClick={handleMoveTo} disabled={destination.state !== 'allowed'}>
+              {t('disclosureAction.move')}
+            </Button>
           </div>
         </div>
       </PopoverContent>
