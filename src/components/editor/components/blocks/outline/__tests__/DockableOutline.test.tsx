@@ -292,6 +292,76 @@ describe('dockable outline interaction', () => {
     );
   });
 
+  it.each([false, true])('reserves a heading row beneath a tall page header (published: %s)', (published) => {
+    mockPublished = published;
+    const editor = mockNavigation.getEditorElement();
+
+    editor.getBoundingClientRect = () => ({ ...root.getBoundingClientRect(), top: 372 });
+    Object.defineProperty(window, 'innerHeight', { value: 500, configurable: true });
+    render(<DockableOutline />);
+    if (!published) fireEvent.mouseEnter(screen.getByTestId('dockable-outline-trigger'));
+
+    const outline = screen.getByTestId('dockable-outline');
+    const panel = screen.getByRole('navigation', { name: 'Table of contents' });
+
+    expect(outline.style.top).toBe('288px');
+    expect(panel.style.height).toBe('100px');
+    expect(parseFloat(outline.style.top) + parseFloat(panel.style.height)).toBe(500 - 112);
+    fireEvent.click(screen.getByRole('button', { name: 'Section 1' }));
+    expect(mockNavigation.jumpToHeading).toHaveBeenCalledWith(expect.objectContaining({ blockId: 'heading-1' }));
+  });
+
+  it('keeps the outline in view when the article starts below a short viewport', () => {
+    const editor = mockNavigation.getEditorElement();
+
+    editor.getBoundingClientRect = () => ({ ...root.getBoundingClientRect(), top: 700 });
+    Object.defineProperty(window, 'innerHeight', { value: 250, configurable: true });
+    render(<DockableOutlinePanel published suppressed={false} />);
+
+    expect(screen.getByTestId('dockable-outline').style.top).toBe('38px');
+    expect(screen.getByRole('navigation', { name: 'Table of contents' }).style.height).toBe('100px');
+  });
+
+  it('respects the layout bottom when it ends above the window bottom', () => {
+    const editor = mockNavigation.getEditorElement();
+    const rect = root.getBoundingClientRect();
+
+    root.getBoundingClientRect = () => ({ ...rect, top: 80, bottom: 450, height: 370 });
+    editor.getBoundingClientRect = () => ({ ...rect, top: 372 });
+    render(<DockableOutlinePanel published suppressed={false} />);
+
+    expect(screen.getByTestId('dockable-outline').style.top).toBe('238px');
+    expect(screen.getByRole('navigation', { name: 'Table of contents' }).style.height).toBe('100px');
+  });
+
+  it('aligns with the article when space allows and readjusts after scrolling and resizing', () => {
+    const editor = mockNavigation.getEditorElement();
+    let contentTop = 372;
+
+    editor.getBoundingClientRect = () => ({ ...root.getBoundingClientRect(), top: contentTop });
+    render(<DockableOutlinePanel published suppressed={false} />);
+    const outline = screen.getByTestId('dockable-outline');
+    const panel = screen.getByRole('navigation', { name: 'Table of contents' });
+
+    expect(outline.style.top).toBe('372px');
+    expect(panel.style.height).toBe('240px');
+    Object.defineProperty(window, 'innerHeight', { value: 500, configurable: true });
+    fireEvent.resize(window);
+    act(() => {
+      jest.advanceTimersByTime(20);
+    });
+    expect(outline.style.top).toBe('288px');
+    expect(panel.style.height).toBe('100px');
+
+    contentTop = 100;
+    fireEvent.scroll(root);
+    act(() => {
+      jest.advanceTimersByTime(20);
+    });
+    expect(outline.style.top).toBe('100px');
+    expect(panel.style.height).toBe('240px');
+  });
+
   it('keeps the active item visible when a window resize reduces the panel height', () => {
     mockNavigation.headings = headings(30);
     mockNavigation.activeId = 'heading-20';
