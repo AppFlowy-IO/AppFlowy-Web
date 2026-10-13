@@ -1,6 +1,8 @@
+import { removeSignedOutLocalData } from '@/application/db';
 import { emit, EventType } from '@/application/session/event';
+import { clearDrainConfig, setCurrentSession } from '@/application/sync-outbox';
 
-import { getToken, getTokenParsed, isTokenValid, saveGoTrueAuth } from '../token';
+import { getToken, getTokenParsed, invalidToken, isTokenValid, saveGoTrueAuth } from '../token';
 
 jest.mock('@/application/session/event', () => ({
   emit: jest.fn(),
@@ -14,6 +16,8 @@ jest.mock('@/application/sync-outbox', () => ({
   clearDrainConfig: jest.fn(),
   setCurrentSession: jest.fn(),
 }));
+
+jest.mock('@/application/db', () => ({ removeSignedOutLocalData: jest.fn(async () => undefined) }));
 
 const emitMock = jest.mocked(emit);
 
@@ -43,7 +47,7 @@ function createToken(overrides: Record<string, unknown> = {}) {
 describe('GoTrue token storage', () => {
   beforeEach(() => {
     localStorage.clear();
-    emitMock.mockClear();
+    jest.clearAllMocks();
   });
 
   it('saves and emits a structurally valid opaque token with stored user identity', () => {
@@ -145,5 +149,33 @@ describe('GoTrue token storage', () => {
     expect(emitMock).not.toHaveBeenCalled();
 
     setItem.mockRestore();
+  });
+
+  it('signs out immediately and then removes the account’s synced copies while keeping unsent edits', () => {
+    localStorage.setItem('token', JSON.stringify(createToken()));
+
+    invalidToken();
+
+    expect(localStorage.getItem('token')).toBeNull();
+    expect(setCurrentSession).toHaveBeenCalledWith(null);
+    expect(clearDrainConfig).toHaveBeenCalledTimes(1);
+    expect(emitMock).toHaveBeenCalledWith(EventType.SESSION_INVALID);
+    expect(removeSignedOutLocalData).toHaveBeenCalledWith(
+      { serverUrl: 'https://test.appflowy.cloud', userId: 'user-1' },
+      expect.any(Function)
+    );
+
+    const isStillSignedOut = jest.mocked(removeSignedOutLocalData).mock.calls[0][1]!;
+
+    expect(isStillSignedOut()).toBe(true);
+    localStorage.setItem('token', JSON.stringify(createToken({ access_token: 'new-session' })));
+    expect(isStillSignedOut()).toBe(false);
+  });
+
+  it('skips local data removal when no account was signed in', () => {
+    invalidToken();
+
+    expect(removeSignedOutLocalData).not.toHaveBeenCalled();
+    expect(emitMock).toHaveBeenCalledWith(EventType.SESSION_INVALID);
   });
 });

@@ -26,7 +26,16 @@ import {
 import { YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { Log } from '@/utils/log';
 
-import { bindCollabStorageScope, captureCollabStorageScope, collabStorageKey, ScopedCollabMap, type CollabStorageScope } from './collab-storage-scope';
+import {
+  accountCollabStoragePrefix,
+  bindCollabStorageScope,
+  captureCollabStorageScope,
+  COLLAB_STORAGE_PREFIX,
+  collabStorageKey,
+  isPreScopeCollabStorageName,
+  ScopedCollabMap,
+  type CollabStorageScope,
+} from './collab-storage-scope';
 import {
   DATABASE_CACHE_EPOCH_PREFIX,
   DATABASE_RESTORE_MARKER_PREFIX,
@@ -383,26 +392,73 @@ export async function listCollabIndexedDBNames() {
   }
 }
 
-/** Detect retained pre-scope storage without opening or attributing its content. */
-export async function hasUnscopedCollabData(): Promise<boolean> {
-  if (typeof indexedDB === 'undefined') return false;
-  const factory = indexedDB as IndexedDBFactoryWithDatabases;
+type SignedOutAccount = { serverUrl: string; userId: string };
 
-  if (factory.databases) {
-    const databases = await factory.databases();
+const SIGN_OUT_DELETE_BATCH = 16;
 
-    if (databases.some(({ name }) => name && /^[0-9a-f]{8}-[0-9a-f-]{27}(?:$|[:_])/i.test(name))) return true;
+/** Pre-scope shared rows are the keys outside the scoped namespace, on either side of it. */
+async function deleteSharedRowsOutsideScopedNamespace(
+  table: { where: (index: string) => { below: (key: string) => { delete: () => Promise<unknown> }; above: (key: string) => { delete: () => Promise<unknown> } } },
+  index: string
+) {
+  await table.where(index).below(COLLAB_STORAGE_PREFIX).delete();
+  await table.where(index).above(`${COLLAB_STORAGE_PREFIX}\uffff`).delete();
+}
+
+/**
+ * Signing out removes the copies of server content that belong to the account
+ * that signed out (documents, database rows and their sync checkpoints in every
+ * workspace on that server), plus pre-scope copies that cannot be attributed to
+ * any account. Unsent edits are kept: sync outbox rows and their quarantine are
+ * owned by their exact server, account and workspace, and are uploaded only
+ * after that account signs in again and a fresh permission check allows it.
+ * Stops as soon as `isSignedOut` reports the same account signed in again.
+ */
+export async function removeSignedOutLocalData(account: SignedOutAccount, isSignedOut: () => boolean = () => true) {
+  const prefix = accountCollabStoragePrefix(account.serverUrl, account.userId);
+  const removable = (name: string) => name.startsWith(prefix) || isPreScopeCollabStorageName(name);
+
+  try {
+    const factory = typeof indexedDB === 'undefined' ? undefined : (indexedDB as IndexedDBFactoryWithDatabases);
+
+    if (factory?.databases && isSignedOut()) {
+      const names = (await factory.databases()).flatMap(({ name }) => (name && removable(name) ? [name] : []));
+
+      // A blocked delete completes once the closing tab releases its connection.
+      for (let index = 0; index < names.length; index += SIGN_OUT_DELETE_BATCH) {
+        if (!isSignedOut()) return;
+        await Promise.all(names.slice(index, index + SIGN_OUT_DELETE_BATCH).map((name) => deleteIndexedDBDatabase(name)));
+      }
+    }
+
+    if (!isSignedOut()) return;
+    await db.transaction('rw', [db.collab_snapshots, db.collab_updates, db.collab_custom, db.rows], async () => {
+      if (!isSignedOut()) return;
+      for (const table of [db.collab_snapshots, db.collab_updates, db.collab_custom]) {
+        await table.where('objectId').startsWith(prefix).delete();
+        await deleteSharedRowsOutsideScopedNamespace(table, 'objectId');
+      }
+
+      await db.rows.where('row_key').startsWith(prefix).delete();
+      await deleteSharedRowsOutsideScopedNamespace(db.rows, 'row_key');
+    });
+
+    if (!isSignedOut()) return;
+    removeLocalStorageKeys((key) =>
+      [DATABASE_BLOB_RID_PREFIX, DATABASE_CACHE_EPOCH_PREFIX].some((keyPrefix) =>
+        key.startsWith(keyPrefix) && removable(key.slice(keyPrefix.length))) ||
+      key.startsWith(`${DATABASE_RESTORE_MARKER_PREFIX}v1:${account.serverUrl}:${account.userId}:`));
+
+    const accountKey = JSON.stringify([account.serverUrl, account.userId]);
+
+    await db.app_view_cache.where('user_id').equals(accountKey).delete();
+    await db.workspace_database_catalog
+      .where('[user_id+workspace_id]')
+      .between([accountKey, BaseDexie.minKey], [accountKey, BaseDexie.maxKey])
+      .delete();
+  } catch (error) {
+    Log.warn('[DB] could not remove local data after sign-out', { error });
   }
-
-  // Two index seeks, rather than scanning all retained row payloads.
-  for (const table of [db.collab_snapshots, db.collab_updates]) {
-    const older = await table.where('objectId').below('af_collab:v2:').limit(1).count();
-    const later = await table.where('objectId').above('af_collab:v2:\uffff').limit(1).count();
-
-    if (older || later) return true;
-  }
-
-  return false;
 }
 
 async function probeCollabIndexedDBExists(name: string) {
@@ -1656,7 +1712,7 @@ export function getCachedRowProvider(name: string): SharedIndexeddbPersistence |
   return entry && !entry.disposed ? entry.provider as SharedIndexeddbPersistence : undefined;
 }
 
-function removeLocalStorageKeysByPrefix(prefix: string) {
+function removeLocalStorageKeys(matches: (key: string) => boolean) {
   if (typeof localStorage === 'undefined') return;
 
   const keysToRemove: string[] = [];
@@ -1664,12 +1720,16 @@ function removeLocalStorageKeysByPrefix(prefix: string) {
   for (let i = 0; i < localStorage.length; i += 1) {
     const key = localStorage.key(i);
 
-    if (key?.startsWith(prefix)) {
+    if (key && matches(key)) {
       keysToRemove.push(key);
     }
   }
 
   keysToRemove.forEach((key) => localStorage.removeItem(key));
+}
+
+function removeLocalStorageKeysByPrefix(prefix: string) {
+  removeLocalStorageKeys((key) => key.startsWith(prefix));
 }
 
 function clearDatabaseCheckpointsForDeletedDatabases(results: Array<{ name: string; deleted: boolean }>) {

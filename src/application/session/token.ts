@@ -1,5 +1,7 @@
+import { removeSignedOutLocalData } from '@/application/db';
 import { emit, EventType } from '@/application/session/event';
 import { clearDrainConfig, setCurrentSession } from '@/application/sync-outbox';
+import { getConfigValue } from '@/utils/runtime-config';
 
 import { getTokenParsed, memoizeParsedToken, parseAuthToken, removeStoredToken, TOKEN_STORAGE_KEY } from './token-storage';
 
@@ -25,12 +27,24 @@ export function saveGoTrueAuth(tokenData: string): boolean {
 }
 
 export function invalidToken() {
+  const signedOutUserId = getTokenParsed()?.user.id;
+
   removeStoredToken();
   // Stop uploads synchronously; retained rows already carry their exact actor,
   // server and workspace. Signing out must not erase recoverable local edits.
   setCurrentSession(null);
   clearDrainConfig();
   emit(EventType.SESSION_INVALID);
+
+  // Copies of server content are not left readable after sign-out. Removal runs
+  // in the background, keeps unsent edits, and stops if the same account signs
+  // in again meanwhile.
+  if (signedOutUserId) {
+    void removeSignedOutLocalData(
+      { serverUrl: getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), userId: signedOutUserId },
+      () => getTokenParsed()?.user.id !== signedOutUserId
+    );
+  }
 }
 
 export function isTokenValid(): boolean {

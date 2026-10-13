@@ -65,6 +65,18 @@ export function serverScopedAccountKey(userId: string): string {
   return JSON.stringify([getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), userId]);
 }
 
+/** Every collab storage name of one account on one server starts with this, whatever the workspace. */
+export function accountCollabStoragePrefix(serverUrl: string, userId: string): string {
+  return `${STORAGE_PREFIX}${JSON.stringify([serverUrl, userId]).slice(0, -1)},`;
+}
+
+/** Storage written before names carried a server/account/workspace scope. */
+export function isPreScopeCollabStorageName(name: string): boolean {
+  return !name.startsWith(STORAGE_PREFIX) && /^[0-9a-f]{8}-[0-9a-f-]{27}(?:$|[:_])/i.test(name);
+}
+
+export const COLLAB_STORAGE_PREFIX = STORAGE_PREFIX;
+
 export function collabStorageKey(objectId: string): string {
   return captureCollabStorageScope().storageKey(objectId);
 }
