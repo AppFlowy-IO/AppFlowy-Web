@@ -420,13 +420,18 @@ describe('Search AI chat creation', () => {
     expect(mockAddPage).toHaveBeenCalledWith('root-page', expect.objectContaining({ layout: 4 }));
   });
 
-  it('uses plain words when the server refuses to create the chat', async () => {
-    mockAddPage.mockRejectedValueOnce({ code: 1012, message: 'user 1 cannot manage or create children in space x' });
+  it.each([
+    ['the server refuses', { code: 1012, message: 'user 1 cannot manage or create children in space x' }],
+    // Guests and pages shared with the user are refused by the app before anything is sent.
+    ['the app refuses', Object.assign(new Error('No permission to create pages'), { code: 1012 })],
+  ])('uses plain words once when %s to create the chat', async (_case, refusal) => {
+    mockAddPage.mockRejectedValueOnce(refusal);
     render(<Search />);
     fireEvent.click(screen.getByText('button.search'));
     fireEvent.change(screen.getByLabelText('search-input'), { target: { value: 'launch' } });
     fireEvent.click(await screen.findByText('Ask AI'));
     await waitFor(() => expect(mockNotifyError).toHaveBeenCalledWith('search.aiChatParentDenied'));
+    expect(mockNotifyError).toHaveBeenCalledTimes(1);
     expect(mockToView).not.toHaveBeenCalled();
   });
 

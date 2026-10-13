@@ -668,10 +668,17 @@ describe('MentionPanel composition', () => {
   it.each([
     ['failed', new Error('Network Error'), 'document.mention.createPageFailed'],
     ['denied', { code: 1012, message: 'user cannot create children' }, 'document.mention.createPageDenied'],
+    // The app refuses guests and pages shared with the user before sending, with this error.
+    [
+      'locally refused',
+      Object.assign(new Error('No permission to create pages'), { code: ERROR_CODE.NOT_HAS_PERMISSION }),
+      'document.mention.createPageDenied',
+    ],
   ])('reports a %s page creation and lets the user try again', async (_case, failure, message) => {
     const { addPage, create, settle } = await startPageCreation(failure);
 
     await settle('failed');
+    expect(mockNotifyError).toHaveBeenCalledTimes(1);
     expect(mockNotifyError).toHaveBeenCalledWith(message);
     expect(mockAddMark).not.toHaveBeenCalled();
     expect(mockRemoveContent).not.toHaveBeenCalled();
