@@ -86,27 +86,50 @@ not latency, and the group directory response itself is still unpaginated. Group
 same-scope refresh but do not confer permission to save.
 
 Open search results, previews, AI summaries and recent-page names also have a server/account/workspace
-permission scope. Object or broad permission hints hide the old snapshot before fresh requests finish;
-late keyword, pagination, metadata and summary responses cannot restore it. The unchanged query runs
-again after the normal debounce, including after re-grant, reconnect, focus or session changes. A
-failed recent-page refresh keeps old names hidden. AI follow-up creation retains its originating scope
-through parent resolution, creation acknowledgement and source attachment/navigation. These are UI
-lifetime checks; Search and page APIs still enforce current server authorization.
+permission scope. A hard invalidation hides the old snapshot synchronously, before fresh requests
+finish: an object or broad permission hint, a share hint, sign-in or sign-out, or a different account
+or GoTrue session, also from another tab. A routine token refresh keeps the same `session_id` and so
+keeps the scope; tokens without that claim count as a new session. Late keyword, pagination, metadata
+and summary responses cannot restore an invalidated snapshot, and the unchanged query runs again after
+the normal debounce. Window focus, tab visibility and connectivity changes invalidate nothing. When the
+realtime socket reopens after a disconnect (hints may have been missed), Best matches reloads the shown
+query with every loaded page and the AI summary in the background and swaps them together, and recent
+pages revalidate the same way; a failed revalidation keeps the current results. Offline, Best matches
+and recent pages say so instead of showing empty results and Ask AI is disabled with that reason. A
+read skipped offline or lost to the dropped connection runs again once the browser is back online;
+while the browser stays online, a failed read is not retried on its own. These are UI lifetime checks;
+Search and page APIs still enforce current server authorization.
 Keyword, summary and metadata requests receive a caller-owned cancellation signal; these metadata
-reads do not join or populate shared view-cache requests. Recent-page refresh keeps one active read
-and one replaceable follow-up, and only runs while recent pages are displayed. Cross-tab token changes
-invalidate the scope even for the same account. AI busy state belongs to its scope and attempt, so an
-old completion cannot settle a replacement attempt.
+reads do not join or populate shared view-cache requests. Recent pages are read directly from
+`GET /api/workspace/{workspace_id}/recent`, because the app-wide loader cannot tell a failure from a
+request that another reader replaced. Loading, offline, failed (with "Try again") and empty ("No
+recent pages yet.") are distinct. A loaded list belongs to one dialog opening within one scope, so
+clearing the query shows it again without a request; after a hard invalidation a failed refresh keeps
+the old names hidden. Recent-page refresh keeps one active read and one replaceable follow-up, and
+only starts while recent pages are displayed. Until Ask AI sends its create request, closing the dialog
+or a permission or session change cancels the attempt (a permission change asks the user to try
+again). Once the chat page exists the attempt finishes: after a permission hint the parent is read
+again and only sources inside the fresh, permission-filtered tree are attached; if the dialog was
+closed meanwhile, a toast offers to open the chat; only a session, account, workspace or server change
+stops it silently. Ask AI stays busy for the whole attempt, so one request cannot create two chats.
 
-Mention suggestions reuse that permission/session scope. Each cache lifetime has a unique object
-identity, retired on close as well as unmount, so reopening cannot reuse an earlier
-account/workspace/server snapshot. The shared cache retains at most 50 entries. Scope changes hide results and prevent selection immediately;
-a late request cannot fill the replacement scope. Authenticated `loadViews` fallback suggestions also
-reload under that scope, while anonymous published-page fallback remains available. `RetryLater`
-discards cached and displayed suggestions even before a permission hint arrives, including when only
-the parallel row request fails. A per-key read token prevents an older success from undoing that
-invalidation. Existing request debounce and cooldowns remain; these lifetime checks do not cancel the
-underlying mention HTTP requests or replace server authorization.
+Mention suggestions reuse that permission/session scope. The cache lifetime follows the scope: within
+one scope a reopened picker shows its cached suggestions at once and revalidates them, while a
+permission or session change (also while the picker is closed) or a remount starts empty, so an
+earlier account/workspace/server snapshot is never reused. The shared cache retains at most 50
+entries, and a retired scope frees its entries. Scope changes hide results and prevent selection
+immediately; a late request cannot fill the replacement scope. Authenticated `loadViews` fallback
+suggestions also reload under that scope, while anonymous published-page fallback remains available.
+`RetryLater` discards cached and displayed suggestions even before a permission hint arrives,
+including when only the parallel row request fails: for a typed query the server returns it only when
+permissions changed or are being updated, and a parallel response may predate that change. The picker
+says "Refreshing suggestions…" and searches again after the server's cooldown. A per-key read token
+prevents an older success from undoing that invalidation. A socket reconnect refreshes suggestions in
+the background, and a dropped connection or server error during a refresh keeps them on screen. A page
+created from the picker is the user's own: it is linked when the same picker opening is still active
+and the editor is editable, otherwise a toast offers to open it, and after a session change nothing is
+shown. A refused creation shows one plain message. Existing request debounce and cooldowns remain;
+these lifetime checks do not cancel the underlying mention HTTP requests or replace server authorization.
 
 Create/Manage Space expose the existing `sidebar_edit_policy`. Direct space-child actions require both
 canonical content Write and sidebar permission. Ordinary nested pages retain their own Write check.
