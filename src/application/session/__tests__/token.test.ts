@@ -151,10 +151,26 @@ describe('GoTrue token storage', () => {
     setItem.mockRestore();
   });
 
-  it('signs out immediately and then removes the account’s synced copies while keeping unsent edits', async () => {
+  it('ends the session without removing local copies unless the user asked for it', async () => {
     localStorage.setItem('token', JSON.stringify(createToken()));
 
+    // Expired sessions, rejected refreshes and failed socket auth all land here.
+    // The copies are how edits sent just before (but never applied) reach the
+    // server once the same account signs in again.
     invalidToken();
+    await Promise.resolve();
+
+    expect(localStorage.getItem('token')).toBeNull();
+    expect(setCurrentSession).toHaveBeenCalledWith(null);
+    expect(clearDrainConfig).toHaveBeenCalledTimes(1);
+    expect(emitMock).toHaveBeenCalledWith(EventType.SESSION_INVALID);
+    expect(removeSignedOutLocalData).not.toHaveBeenCalled();
+  });
+
+  it('signs out immediately and then removes the account’s copies when the user asks for it', async () => {
+    localStorage.setItem('token', JSON.stringify(createToken()));
+
+    invalidToken({ removeLocalData: true });
     await Promise.resolve();
 
     expect(localStorage.getItem('token')).toBeNull();
@@ -174,7 +190,7 @@ describe('GoTrue token storage', () => {
   });
 
   it('skips local data removal when no account was signed in', async () => {
-    invalidToken();
+    invalidToken({ removeLocalData: true });
     await Promise.resolve();
 
     expect(removeSignedOutLocalData).not.toHaveBeenCalled();

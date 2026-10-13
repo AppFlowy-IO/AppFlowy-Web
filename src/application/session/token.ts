@@ -26,8 +26,25 @@ export function saveGoTrueAuth(tokenData: string): boolean {
   return true;
 }
 
-export function invalidToken() {
-  const signedOutUserId = getTokenParsed()?.user.id;
+export interface InvalidTokenOptions {
+  /**
+   * The user explicitly chose, while signing out, to remove this account's
+   * copies of server content from the browser.
+   */
+  removeLocalData?: boolean;
+}
+
+/**
+ * Ends the session. Copies of server content stay on this device unless the
+ * user explicitly asked to remove them: most invalidations are involuntary
+ * (an expired or rejected refresh, failed socket authentication), and the
+ * same account usually signs in again. Edits already sent over the realtime
+ * connection leave the outbox when sent, not when the server applies them, so
+ * a send lost with a dropped connection is recovered only by the next sync of
+ * that local copy.
+ */
+export function invalidToken(options: InvalidTokenOptions = {}) {
+  const signedOutUserId = options.removeLocalData === true ? getTokenParsed()?.user.id : undefined;
 
   removeStoredToken();
   // Stop uploads synchronously; retained rows already carry their exact actor,
@@ -36,9 +53,8 @@ export function invalidToken() {
   clearDrainConfig();
   emit(EventType.SESSION_INVALID);
 
-  // Copies of server content are not left readable after sign-out. Removal runs
-  // in the background, keeps unsent edits, and stops if the same account signs
-  // in again meanwhile.
+  // Removal runs in the background, keeps unsent edits, and stops if the same
+  // account signs in again meanwhile.
   if (signedOutUserId) {
     const account = { serverUrl: getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), userId: signedOutUserId };
 

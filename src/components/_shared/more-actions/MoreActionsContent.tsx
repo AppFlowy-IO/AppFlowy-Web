@@ -10,7 +10,7 @@ import { ReactComponent as LoginIcon } from '@/assets/icons/logout.svg';
 import { ReactComponent as MoonIcon } from '@/assets/icons/moon.svg';
 import { ReactComponent as SunIcon } from '@/assets/icons/sun.svg';
 import CacheClearingDialog from '@/components/_shared/modal/CacheClearingDialog';
-import LogoutConfirm from '@/components/app/workspaces/LogoutConfirm';
+import LogoutConfirm, { type LogoutOptions } from '@/components/app/workspaces/LogoutConfirm';
 import { useIsAuthenticatedOptional } from '@/components/main/app.hooks';
 import { ThemeModeContext } from '@/components/main/useAppThemeMode';
 import { openUrl } from '@/utils/url';
@@ -25,9 +25,9 @@ function MoreActionsContent({
   const { t } = useTranslation();
   const navigate = useNavigate();
 
-  const handleLogout = useCallback(() => {
+  const handleLogout = useCallback((options?: LogoutOptions) => {
     clearRedirectTo(); // Clear stored redirect URL from previous user
-    invalidToken();
+    invalidToken({ removeLocalData: options?.removeLocalData });
     // Clean up old global key for backward compatibility
     localStorage.removeItem('last_view_id');
     navigate('/login?redirectTo=' + encodeURIComponent(window.location.href));

@@ -1153,7 +1153,9 @@
       "importAppFlowyDataDescription": "Copiez les données d'un dossier de données @:appName externe et importez-les dans le dossier de données @:appName actuel",
       "importSuccess": "Importation réussie du dossier de données @:appName",
       "importFailed": "L'importation du dossier de données @:appName a échoué",
-      "importGuide": "Pour plus de détails, veuillez consulter le document référencé"
+      "importGuide": "Pour plus de détails, veuillez consulter le document référencé",
+      "logoutRemoveLocalData": "Supprimer aussi mes données de ce navigateur",
+      "logoutRemoveLocalDataDescription": "À utiliser sur un ordinateur partagé. Les modifications qui n’ont pas encore été envoyées sont conservées pour être envoyées à votre prochaine connexion."
     },
     "notifications": {
       "enableNotifications": {

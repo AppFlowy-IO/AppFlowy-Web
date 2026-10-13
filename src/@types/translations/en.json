@@ -1557,7 +1557,9 @@
       "importAppFlowyDataDescription": "Copy data from an external @:appName data folder and import it into the current AppFlowy data folder",
       "importSuccess": "Successfully imported the @:appName data folder",
       "importFailed": "Importing the @:appName data folder failed",
-      "importGuide": "For further details, please check the referenced document"
+      "importGuide": "For further details, please check the referenced document",
+      "logoutRemoveLocalData": "Also remove my data from this browser",
+      "logoutRemoveLocalDataDescription": "Use this on a shared computer. Changes that haven't been sent yet are kept so they can be sent when you sign in again."
     },
     "notifications": {
       "enableNotifications": {
