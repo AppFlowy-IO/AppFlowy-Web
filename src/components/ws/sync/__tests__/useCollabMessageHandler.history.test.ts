@@ -51,9 +51,10 @@ test.each([Types.Database, Types.DatabaseRow])(
     });
 
     expect(beforeApply).not.toHaveBeenCalled();
+    // Unsent edits stay quarantined; only the synced copy of the revoked object is removed.
     expect(discardPendingUpdates).not.toHaveBeenCalled();
-    expect(deleteCollabDB).not.toHaveBeenCalled();
-    expect(closeCollabDB).toHaveBeenCalledWith(objectId);
+    expect(deleteCollabDB).toHaveBeenCalledWith(objectId, { destroyDoc: false });
+    expect(closeCollabDB).not.toHaveBeenCalled();
     expect(destroyed).toHaveBeenCalledTimes(1);
     expect(context.flush).toBeUndefined();
     expect(flush).not.toHaveBeenCalled();
