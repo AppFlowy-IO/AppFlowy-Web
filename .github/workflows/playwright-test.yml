@@ -12,10 +12,10 @@ env:
   # The partial 0.18.61 publish left latest-amd64 images on incompatible schemas:
   # https://github.com/AppFlowy-IO/AppFlowy-Cloud-Premium/actions/runs/36148705160
   # Update version and revision together after all three Rust images publish.
-  # 0.19.8 is the first completed release with the database view creation-status
-  # endpoint that hosted Form and Chart creation requires.
-  CLOUD_VERSION: 0.19.8-amd64
-  CLOUD_REVISION: f5f1880d74f0bd419b22d27c196d7484a41d8091
+  # Atomic creation and row-page opening require the APIs in release 0.19.29.
+  # https://github.com/AppFlowy-IO/AppFlowy-Cloud-Premium/actions/runs/38420911278
+  CLOUD_VERSION: 0.19.29-amd64
+  CLOUD_REVISION: 852d87c4f7f6a6fc97fb66b0bdcbf65cfb6cdb46
   # AI is published independently from the Rust services.
   AI_VERSION: latest-amd64
   # Public Form APIs and uploads reject plaintext requests at the backend proxy.
