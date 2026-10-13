@@ -32,10 +32,15 @@ const mockMembers = jest.fn();
 const mockGroups = jest.fn();
 let current: WorkspaceSpaceCreationCapabilities;
 
+// Escape interpolated values the way i18next does unless a caller opts out.
+const escapeLikeI18next = (value: string) => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, options?: { name?: string; count?: number; group?: string }) => {
-      if (options?.name !== undefined) return `${key}:${options.name}`;
+    t: (key: string, options?: { name?: string; count?: number; interpolation?: { escapeValue?: boolean } }) => {
+      const raw = options?.interpolation?.escapeValue === false;
+
+      if (options?.name !== undefined) return `${key}:${raw ? options.name : escapeLikeI18next(options.name)}`;
       if (options?.count !== undefined) return `${key}:${options.count}`;
       return key;
     },
@@ -303,7 +308,7 @@ describe('workspace permission settings', () => {
     await waitFor(() => expect(mockMutate).toHaveBeenCalledWith(workspaceId, { type: 'user', id: aliceId }, true));
     await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('workspacePermissions.addedToast:Alice Martin'));
     expect(await screen.findByTestId(`space-creator-row-user-${aliceId}`)).toBeTruthy();
-    expect((screen.getByTestId('space-creator-search-input') as HTMLInputElement).value).toBe('');
+    expect((screen.getByTestId('space-creator-search-input')).value).toBe('');
 
     search('W_RH');
     const groupResult = await screen.findByTestId(`space-creator-candidate-group-${groupId}`);
@@ -332,6 +337,16 @@ describe('workspace permission settings', () => {
     await act(async () => options.action.onClick());
     await waitFor(() => expect(mockMutate).toHaveBeenLastCalledWith(workspaceId, { type: 'user', id: aliceId }, true));
     expect(await screen.findByTestId(`space-creator-row-user-${aliceId}`)).toBeTruthy();
+  });
+
+  it('shows names with special characters as typed in actions and toasts', async () => {
+    current.policy = 'owners_and_selected_members';
+    rosterOf([row('group', groupId, { name: 'R&D <EU>' })]);
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'workspacePermissions.removeNamed:R&D <EU>' }));
+    await waitFor(() =>
+      expect(toastSuccess).toHaveBeenCalledWith('workspacePermissions.removedToast:R&D <EU>', expect.anything())
+    );
   });
 
   it('does not offer undo when a fresh grant would be refused', async () => {
@@ -411,11 +426,11 @@ describe('workspace permission settings', () => {
       window.dispatchEvent(new Event('focus'));
     });
     expect(screen.queryByText('workspacePermissions.loading')).toBeNull();
-    expect((screen.getByTestId('space-creator-search-input') as HTMLInputElement).value).toBe('bo');
+    expect((screen.getByTestId('space-creator-search-input')).value).toBe('bo');
     expect(screen.getByTestId(`space-creator-candidate-user-${bobId}`)).toBeTruthy();
     expect(screen.getByTestId(`space-creator-row-user-${aliceId}`)).toBeTruthy();
     await act(async () => refresh.resolve(current));
-    expect((screen.getByTestId('space-creator-search-input') as HTMLInputElement).value).toBe('bo');
+    expect((screen.getByTestId('space-creator-search-input')).value).toBe('bo');
     expect(screen.getByTestId(`space-creator-row-user-${aliceId}`)).toBeTruthy();
     // Same revision: nothing to re-read, and the directory is not fetched again.
     expect(mockList).toHaveBeenCalledTimes(listCalls);

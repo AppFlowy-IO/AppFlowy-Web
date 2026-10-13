@@ -15,10 +15,18 @@ const mockSave = jest.fn();
 const mockRead = jest.fn();
 const emitter = new EventEmitter();
 
+// Escape interpolated values the way i18next does unless a caller opts out.
+const escapeLikeI18next = (value: string) => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, options?: { group?: string; count?: number }) => {
-      if (options?.group !== undefined) return `${key}:${options.group}`;
+    t: (
+      key: string,
+      options?: { group?: string; count?: number; interpolation?: { escapeValue?: boolean } }
+    ) => {
+      const raw = options?.interpolation?.escapeValue === false;
+
+      if (options?.group !== undefined) return `${key}:${raw ? options.group : escapeLikeI18next(options.group)}`;
       if (options?.count !== undefined) return `${key}:${options.count}`;
       return key;
     },
@@ -70,7 +78,7 @@ function group(overrides: Partial<WorkspaceGroup> = {}): WorkspaceGroup {
 }
 
 function trigger() {
-  return screen.getByTestId('group-space-coverage-trigger') as HTMLButtonElement;
+  return screen.getByTestId('group-space-coverage-trigger');
 }
 
 function option(level: 'off' | '10' | '30') {
@@ -113,6 +121,20 @@ describe('group access to all spaces (group dialog)', () => {
     await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('groupSpaceAccess.updated'));
     expect(onChanged).toHaveBeenCalledTimes(1);
     expect(trigger().textContent).toContain('shareAction.canView');
+  });
+
+  it('shows group names as typed in the confirmation', async () => {
+    render(<GroupSpaceCoverageCard workspaceId='workspace' group={group({ name: 'R&D <EU>' })} />);
+    fireEvent.click(option('30'));
+    const confirmation = await screen.findByTestId('group-space-coverage-confirmation');
+
+    expect(within(confirmation).getByText('groupSpaceAccess.confirmTitle:R&D <EU>')).toBeTruthy();
+    expect(within(confirmation).getByText('groupSpaceAccess.confirmEdit:R&D <EU>')).toBeTruthy();
+  });
+
+  it('names the menu by its section and current level', () => {
+    render(<GroupSpaceCoverageCard workspaceId='workspace' group={group({ space_coverage_access_level: 10 })} />);
+    expect(screen.getByRole('button', { name: 'groupSpaceAccess.title shareAction.canView' })).toBe(trigger());
   });
 
   it('raising view to edit uses the edit wording', async () => {
