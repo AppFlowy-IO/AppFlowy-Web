@@ -307,7 +307,7 @@ function NewPage() {
                 data-testid='new-page-create-space-button'
                 disabled={loading || !canOpenCreateSpace}
                 onClick={openCreateSpace}
-                className='mx-1 px-0 text-sm'
+                className='mx-1 px-0 text-sm disabled:text-text-tertiary'
               >
                 {t('space.createNewSpace')}
               </Button>
