@@ -1,6 +1,8 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import EventEmitter from 'events';
 
-import { ViewLayout } from '@/application/types';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+
+import { AccessLevel, ViewLayout } from '@/application/types';
 import type { CreatePagePayload } from '@/application/types';
 import NewPage from '@/components/app/view-actions/NewPage';
 
@@ -11,10 +13,24 @@ const mockCreateSpaceWithInitialPage = jest.fn();
 const mockOpenPageModal = jest.fn();
 const mockEnsureViewVisibleInOutline = jest.fn();
 const mockNotifyError = jest.fn();
+const mockRefreshCapability = jest.fn();
+const mockGetSpacePermission = jest.fn();
+const mockEventEmitter = new EventEmitter();
 let mockCanCreateSpace = true;
+let mockCapabilityStatus: 'loading' | 'ready' | 'unsupported' | 'error' = 'ready';
 
 jest.mock('@/components/app/hooks/useSpaceCreationCapability', () => ({
-  useSpaceCreationCapability: () => ({ status: 'ready', canCreateSpace: mockCanCreateSpace, scopeKey: 'workspace-1' }),
+  useSpaceCreationCapability: () => ({
+    status: mockCapabilityStatus,
+    canCreateSpace: mockCanCreateSpace,
+    capability: mockCapabilityStatus === 'ready' ? { can_create_space: mockCanCreateSpace } : undefined,
+    refresh: mockRefreshCapability,
+    scopeKey: 'workspace-1',
+  }),
+}));
+jest.mock('@/application/services/domains', () => ({
+  WorkspaceService: { getSpacePermission: (...args: unknown[]) => mockGetSpacePermission(...args) },
+  AccessService: { getObjectPermission: jest.fn() },
 }));
 let mockCreateSpaceModuleLoads = 0;
 let mockCreateSpaceModuleError: Error | null = null;
@@ -53,6 +69,8 @@ jest.mock('@mui/material', () => ({
     <button {...props}>{children}</button>
   ),
 }));
+jest.mock('@/components/ui/progress', () => ({ Progress: () => <span data-testid='progress' /> }));
+jest.mock('@/components/_shared/view-icon/SpaceIcon', () => ({ __esModule: true, default: () => <span /> }));
 
 jest.mock('@/components/_shared/modal', () => ({
   NormalModal: ({
@@ -89,6 +107,7 @@ jest.mock('@/components/_shared/notify', () => ({
 
 jest.mock('@/components/app/app.hooks', () => ({
   useCurrentWorkspaceId: () => 'workspace-1',
+  useEventEmitter: () => mockEventEmitter,
   useAppOperations: () => ({
     addPage: mockAddPage,
     createSpaceWithInitialPage: mockCreateSpaceWithInitialPage,
@@ -96,18 +115,6 @@ jest.mock('@/components/app/app.hooks', () => ({
   useAppOutline: () => mockOutline,
   useEnsureViewVisibleInOutline: () => mockEnsureViewVisibleInOutline,
   useOpenPageModal: () => mockOpenPageModal,
-}));
-
-jest.mock('@/components/publish/header/duplicate/SpaceList', () => ({
-  __esModule: true,
-  default: ({ title, onChange }: { title: ReactNode; onChange: (spaceId: string) => void }) => (
-    <div data-testid='space-list'>
-      {title}
-      <button data-testid='select-existing-space' onClick={() => onChange('space-existing')}>
-        select
-      </button>
-    </div>
-  ),
 }));
 
 jest.mock('@/components/app/view-actions/CreateSpaceModal', () => {
@@ -152,7 +159,13 @@ jest.mock('@/components/app/view-actions/CreateSpaceModal', () => {
 describe('NewPage create-space flow', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockEventEmitter.removeAllListeners();
     mockCanCreateSpace = true;
+    mockCapabilityStatus = 'ready';
+    mockGetSpacePermission.mockResolvedValue({
+      current_user_access_level: AccessLevel.ReadAndWrite,
+      can_edit_sidebar: true,
+    });
     mockOutline = [];
     mockCreatedSpaceId = 'space-created';
     mockCreatedPageId = 'page-created';
@@ -167,13 +180,125 @@ describe('NewPage create-space flow', () => {
     await screen.findByTestId('create-space-draft-panel');
   }
 
+  function space(viewId: string, name = viewId) {
+    return { view_id: viewId, name, extra: {} as Record<string, never>, is_private: false, children: [] as never[] };
+  }
+
+  async function selectSpace(name: string) {
+    const row = screen.getAllByTestId('space-item').find((item) => item.textContent?.includes(name));
+
+    if (!row) throw new Error(`No destination row for ${name}`);
+    fireEvent.click(row);
+    return row;
+  }
+
   it('denies new spaces without disabling creation inside an existing authorized space', async () => {
     mockCanCreateSpace = false;
+    mockOutline = [space('space-existing', 'Existing')];
     render(<NewPage />);
     fireEvent.click(screen.getByTestId('new-page-button'));
     expect((screen.getByTestId('new-page-create-space-button')).disabled).toBe(true);
-    fireEvent.click(screen.getByTestId('select-existing-space'));
+    await selectSpace('Existing');
+    await waitFor(() => expect((screen.getByTestId('new-page-modal-ok')).disabled).toBe(false));
+  });
+
+  it('offers only spaces where pages can be added directly and says why the others are unavailable', async () => {
+    mockOutline = [space('general', 'General'), space('hr', 'HR'), space('product', 'Product')];
+    mockGetSpacePermission.mockImplementation(async (_workspaceId: string, spaceId: string) => ({
+      general: { current_user_access_level: AccessLevel.ReadAndWrite, can_edit_sidebar: true },
+      hr: { current_user_access_level: AccessLevel.ReadAndWrite, can_edit_sidebar: false },
+      product: { current_user_access_level: AccessLevel.ReadOnly, can_edit_sidebar: false },
+    })[spaceId]);
+    mockAddPage.mockResolvedValue({ view_id: 'general-page' });
+    render(<NewPage />);
+    fireEvent.click(screen.getByTestId('new-page-button'));
+
+    const rows = () => screen.getAllByTestId('space-item');
+
+    await waitFor(() => expect(rows()[1].hasAttribute('disabled')).toBe(true));
+    expect(rows()[0].hasAttribute('disabled')).toBe(false);
+    expect(within(rows()[1]).getByText('spaceCreation.pageDestination.ownersOnly')).toBeTruthy();
+    await waitFor(() => expect(rows()[2].hasAttribute('disabled')).toBe(true));
+    expect(within(rows()[2]).getByText('spaceCreation.pageDestination.noEdit')).toBeTruthy();
+    expect(mockGetSpacePermission).toHaveBeenCalledTimes(3);
+
+    await selectSpace('General');
+    fireEvent.click(screen.getByTestId('new-page-modal-ok'));
+    await waitFor(() => expect(mockAddPage).toHaveBeenCalledWith('general', expect.objectContaining({ layout: ViewLayout.Document })));
+  });
+
+  it('keeps Add disabled while the selected space is still being checked', async () => {
+    const permission = deferred<{ current_user_access_level: AccessLevel; can_edit_sidebar: boolean }>();
+
+    mockOutline = [space('general', 'General')];
+    mockGetSpacePermission.mockReturnValue(permission.promise);
+    render(<NewPage />);
+    fireEvent.click(screen.getByTestId('new-page-button'));
+    await selectSpace('General');
+    expect((screen.getByTestId('new-page-modal-ok')).disabled).toBe(true);
+    expect(screen.getByTestId('new-page-destination-status').textContent).toBe('spaceCreation.pageDestination.checking');
+    await act(async () => {
+      permission.resolve({ current_user_access_level: AccessLevel.ReadAndWrite, can_edit_sidebar: true });
+      await permission.promise;
+    });
     expect((screen.getByTestId('new-page-modal-ok')).disabled).toBe(false);
+    expect(screen.queryByTestId('new-page-destination-status')).toBeNull();
+  });
+
+  it('forgets a selected space that is no longer listed instead of checking it forever', async () => {
+    mockOutline = [space('general', 'General'), space('hr', 'HR')];
+    const app = render(<NewPage />);
+    const ok = () => screen.getByTestId('new-page-modal-ok');
+    const probesSettled = () => expect(screen.queryAllByTestId('progress')).toHaveLength(0);
+
+    fireEvent.click(screen.getByTestId('new-page-button'));
+    await selectSpace('HR');
+    await waitFor(() => expect(ok().disabled).toBe(false));
+
+    // HR leaves the outline while the dialog is open (for example the member was removed).
+    mockOutline = [space('general', 'General')];
+    app.rerender(<NewPage />);
+    await waitFor(probesSettled);
+    expect(ok().disabled).toBe(true);
+    expect(screen.queryByTestId('new-page-destination-status')).toBeNull();
+
+    // Reopening never resumes the old selection or waits for a check that will not run.
+    fireEvent.click(screen.getByTestId('new-page-modal-close'));
+    fireEvent.click(screen.getByTestId('new-page-button'));
+    await waitFor(probesSettled);
+    expect(ok().disabled).toBe(true);
+    expect(screen.queryByTestId('new-page-destination-status')).toBeNull();
+    expect(screen.getAllByTestId('space-item').map((row) => row.getAttribute('aria-pressed'))).toEqual(['false']);
+
+    await selectSpace('General');
+    await waitFor(() => expect(ok().disabled).toBe(false));
+  });
+
+  it('explains when no space accepts new pages', async () => {
+    mockOutline = [space('hr', 'HR')];
+    mockGetSpacePermission.mockResolvedValue({ current_user_access_level: AccessLevel.ReadOnly, can_edit_sidebar: false });
+    render(<NewPage />);
+    fireEvent.click(screen.getByTestId('new-page-button'));
+    await waitFor(() =>
+      expect(screen.getByTestId('new-page-destination-status').textContent).toBe('spaceCreation.pageDestination.noneAvailable'));
+  });
+
+  it.each([
+    ['denied', 'ready', 'workspacePermissions.denied'],
+    ['still checking', 'loading', 'workspacePermissions.loading'],
+    ['unknown after a failed check', 'error', 'workspacePermissions.loadError'],
+  ] as const)('shows a visible reason when space creation is %s', async (_case, status, reason) => {
+    mockCanCreateSpace = false;
+    mockCapabilityStatus = status;
+    render(<NewPage />);
+    fireEvent.click(screen.getByTestId('new-page-button'));
+
+    expect((screen.getByTestId('new-page-create-space-button')).disabled).toBe(true);
+    expect(screen.getByTestId('new-page-create-space-reason').textContent).toContain(reason);
+    if (status === 'error') {
+      fireEvent.click(within(screen.getByTestId('new-page-create-space-reason')).getByRole('button'));
+      expect(mockRefreshCapability).toHaveBeenCalledTimes(1);
+    }
   });
 
   it('keeps lazy loading dismissible and retries the Create Space import after a failure', async () => {
@@ -294,19 +419,12 @@ describe('NewPage create-space flow', () => {
 
   it('adds a page to an existing space without opening the create controller', async () => {
     mockAddPage.mockResolvedValue({ view_id: 'existing-space-page' });
-    mockOutline = [
-      {
-        view_id: 'space-existing',
-        name: 'Existing',
-        extra: {},
-        is_private: false,
-        children: [],
-      },
-    ];
+    mockOutline = [space('space-existing', 'Existing')];
     render(<NewPage />);
 
     fireEvent.click(screen.getByTestId('new-page-button'));
-    fireEvent.click(screen.getByTestId('select-existing-space'));
+    await selectSpace('Existing');
+    await waitFor(() => expect((screen.getByTestId('new-page-modal-ok')).disabled).toBe(false));
     fireEvent.click(screen.getByTestId('new-page-modal-ok'));
 
     await act(async () => undefined);
@@ -323,19 +441,12 @@ describe('NewPage create-space flow', () => {
     const addition = deferred<{ view_id: string }>();
 
     mockAddPage.mockReturnValue(addition.promise);
-    mockOutline = [
-      {
-        view_id: 'space-existing',
-        name: 'Existing',
-        extra: {},
-        is_private: false,
-        children: [],
-      },
-    ];
+    mockOutline = [space('space-existing', 'Existing')];
     render(<NewPage />);
 
     fireEvent.click(screen.getByTestId('new-page-button'));
-    fireEvent.click(screen.getByTestId('select-existing-space'));
+    await selectSpace('Existing');
+    await waitFor(() => expect((screen.getByTestId('new-page-modal-ok')).disabled).toBe(false));
     fireEvent.click(screen.getByTestId('new-page-modal-ok'));
     const createButton = screen.getByTestId('new-page-create-space-button');
 
@@ -347,5 +458,17 @@ describe('NewPage create-space flow', () => {
       addition.resolve({ view_id: 'existing-space-page' });
       await addition.promise;
     });
+  });
+
+  it('keeps Create a new space available on a server without the capability route', async () => {
+    mockCanCreateSpace = false;
+    mockCapabilityStatus = 'unsupported';
+    render(<NewPage />);
+    fireEvent.click(screen.getByTestId('new-page-button'));
+
+    expect((screen.getByTestId('new-page-create-space-button')).disabled).toBe(false);
+    expect(screen.queryByTestId('new-page-create-space-reason')).toBeNull();
+    fireEvent.click(screen.getByTestId('new-page-create-space-button'));
+    await screen.findByTestId('create-space-draft-panel');
   });
 });

@@ -15,6 +15,12 @@ import {
   FORM_DEEP_DUPLICATE_UNAVAILABLE_MESSAGE,
   isUnsafeFormDeepDuplicate,
 } from '@/components/app/view-actions/formDuplicateSafety';
+import {
+  canStartSpaceCreation,
+  refreshSpaceCreationAdmission,
+  spaceCreationUnavailableKey,
+  spaceCreationUnavailableReason,
+} from '@/components/app/view-actions/SpaceCreationNotice';
 import { DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 
@@ -38,15 +44,18 @@ function MoreSpaceActions({
   const [duplicateLoading, setDuplicateLoading] = useState(false);
   const refreshOutline = useRefreshOutline();
   const formDuplicateUnavailable = isUnsafeFormDeepDuplicate(view);
+  // Duplicating a space creates a new space (B). A server without the capability route decides.
+  const canDuplicateSpace = canStartSpaceCreation(creationPermission);
+  const duplicateUnavailableReason = spaceCreationUnavailableReason(creationPermission);
 
   const handleDuplicateClick = useCallback(async () => {
-    if (!workspaceId || !canOpenManageActions || duplicateLoading || !creationPermission.canCreateSpace) return;
+    if (!workspaceId || !canOpenManageActions || duplicateLoading || !canDuplicateSpace) return;
     setDuplicateLoading(true);
     try {
-      const current = await creationPermission.refresh();
+      const admission = await refreshSpaceCreationAdmission(creationPermission, workspaceId);
 
-      if (!current?.can_create_space) {
-        toast.error(t(current ? 'workspacePermissions.denied' : 'workspacePermissions.loadError'));
+      if (admission === 'denied' || admission === 'unavailable') {
+        toast.error(t(admission === 'denied' ? 'workspacePermissions.denied' : 'workspacePermissions.loadError'));
         return;
       }
 
@@ -65,7 +74,17 @@ function MoreSpaceActions({
     } finally {
       setDuplicateLoading(false);
     }
-  }, [canOpenManageActions, creationPermission, duplicateLoading, onClose, refreshOutline, t, view, workspaceId]);
+  }, [
+    canDuplicateSpace,
+    canOpenManageActions,
+    creationPermission,
+    duplicateLoading,
+    onClose,
+    refreshOutline,
+    t,
+    view,
+    workspaceId,
+  ]);
 
   const handleManageClick = useCallback(() => {
     onClose();
@@ -84,15 +103,24 @@ function MoreSpaceActions({
         <DropdownMenuItem
           data-testid={'space-action-duplicate'}
           onSelect={formDuplicateUnavailable ? undefined : handleDuplicateClick}
-          disabled={duplicateLoading || formDuplicateUnavailable || !creationPermission.canCreateSpace}
-          title={formDuplicateUnavailable ? FORM_DEEP_DUPLICATE_UNAVAILABLE_MESSAGE : !creationPermission.canCreateSpace
-            ? t(creationPermission.status === 'ready' ? 'workspacePermissions.denied' : 'workspacePermissions.loadError') : undefined}
+          disabled={duplicateLoading || formDuplicateUnavailable || !canDuplicateSpace}
+          title={formDuplicateUnavailable ? FORM_DEEP_DUPLICATE_UNAVAILABLE_MESSAGE : undefined}
           aria-label={formDuplicateUnavailable ? FORM_DEEP_DUPLICATE_UNAVAILABLE_MESSAGE : undefined}
         >
           {duplicateLoading ? <Progress variant={'primary'} /> : <DuplicateIcon />}
-          {formDuplicateUnavailable
-            ? t('form.duplicateUnavailable', 'Duplicate unavailable for Forms')
-            : t('space.duplicate')}
+          {formDuplicateUnavailable ? (
+            t('form.duplicateUnavailable', 'Duplicate unavailable for Forms')
+          ) : (
+            <span className={'flex min-w-0 flex-col'}>
+              <span>{t('space.duplicate')}</span>
+              {/* Disabled menu items receive no hover, so the reason is shown, not a tooltip. */}
+              {duplicateUnavailableReason && (
+                <span className={'text-xs text-text-tertiary'} data-testid={'space-action-duplicate-reason'}>
+                  {t(spaceCreationUnavailableKey(duplicateUnavailableReason))}
+                </span>
+              )}
+            </span>
+          )}
         </DropdownMenuItem>
       )}
       {isLoadingActions && (

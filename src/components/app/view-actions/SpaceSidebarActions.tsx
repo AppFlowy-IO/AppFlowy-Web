@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import { View, ViewLayout } from '@/application/types';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
-import { useSpaceActionPermissions } from '@/components/app/view-actions/useSpaceActionPermissions';
 import { useViewActionPermissions } from '@/components/app/view-actions/useViewActionPermissions';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -32,23 +31,17 @@ function SpaceSidebarActions({
     if (visible) setPermissionsRequested(true);
   }, [visible]);
 
+  // One hook owns both the object and the space permission read for this row.
   const {
     canCreateViewActions,
     canManageViewActions,
+    canOpenManageSpace,
     hasLoadedViewActionPermissions,
     isLoadingViewActionPermissions,
   } = useViewActionPermissions(view, permissionsRequested);
-  const { canOpenManageSpace, hasLoadedSpaceActionPermissions, isLoadingSpaceActionPermissions } =
-    useSpaceActionPermissions(view, permissionsRequested);
-  const hasResolvedViewPermissions =
-    hasLoadedViewActionPermissions && !isLoadingViewActionPermissions;
-  const hasResolvedSpacePermissions =
-    hasLoadedSpaceActionPermissions && !isLoadingSpaceActionPermissions;
-  const canShowMore =
-    (hasResolvedViewPermissions && canManageViewActions) ||
-    (hasResolvedSpacePermissions && canOpenManageSpace);
-  const canShowAdd =
-    view.layout === ViewLayout.Document && hasResolvedViewPermissions && canCreateViewActions;
+  const hasResolvedPermissions = hasLoadedViewActionPermissions && !isLoadingViewActionPermissions;
+  const canShowMore = hasResolvedPermissions && (canManageViewActions || canOpenManageSpace);
+  const canShowAdd = view.layout === ViewLayout.Document && hasResolvedPermissions && canCreateViewActions;
 
   if (!visible || (!canShowMore && !canShowAdd)) return null;
 

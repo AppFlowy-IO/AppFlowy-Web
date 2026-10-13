@@ -81,6 +81,38 @@ describe('useViewActionPermissions', () => {
     expect(result.current.canManageViewActions).toBe(false);
   });
 
+  it.each([
+    ['offline', { code: -1, message: 'Network Error' }, true],
+    ['a server error', { code: 1017, message: 'Internal error' }, true],
+    ['a denial', { code: 1012, httpStatus: 403, message: 'Forbidden' }, false],
+  ] as const)('reports an object read that failed because of %s as unavailable only when nothing was decided', async (_case, error, unavailable) => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    mockGetObjectPermission.mockRejectedValue(error);
+    const { result } = renderHook(() => useViewActionPermissions(createView(), true));
+
+    await waitFor(() => expect(result.current.hasLoadedViewActionPermissions).toBe(true));
+    expect(result.current.canWrite).toBe(false);
+    expect(result.current.objectPermissionUnavailable).toBe(unavailable);
+    consoleError.mockRestore();
+  });
+
+  it('clears the unavailable state once the object permission is read', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    mockGetObjectPermission.mockRejectedValueOnce({ code: -1, message: 'Network Error' }).mockResolvedValue(createPermission());
+    const { result } = renderHook(() => useViewActionPermissions(createView(), true));
+
+    await waitFor(() => expect(result.current.objectPermissionUnavailable).toBe(true));
+    act(() => {
+      mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'view-id' });
+    });
+    expect(result.current.objectPermissionUnavailable).toBe(false);
+    await waitFor(() => expect(result.current.canWrite).toBe(true));
+    expect(result.current.objectPermissionUnavailable).toBe(false);
+    consoleError.mockRestore();
+  });
+
   it('re-probes an open action menu after a broad change and discards an older positive result', async () => {
     let resolveOld!: (permission: CollabObjectPermission) => void;
 
@@ -106,6 +138,18 @@ describe('useViewActionPermissions', () => {
       expect(result.current.canWrite).toBe(canWrite);
     }
   );
+
+  it('exposes space management and sidebar authority from its single space-permission read', async () => {
+    mockGetObjectPermission.mockResolvedValue(createPermission());
+    mockGetSpacePermission.mockResolvedValue({ can_manage_space: true, can_edit_sidebar: false });
+    const { result } = renderHook(() => useViewActionPermissions(createView({ is_space: true }), true));
+
+    await waitFor(() => expect(result.current.hasLoadedViewActionPermissions).toBe(true));
+    expect(result.current.canOpenManageSpace).toBe(true);
+    expect(result.current.canEditSidebar).toBe(false);
+    expect(result.current.canCreateViewActions).toBe(false);
+    expect(mockGetSpacePermission).toHaveBeenCalledTimes(1);
+  });
 
   it('uses the canonical database collab identity', async () => {
     mockGetObjectPermission.mockResolvedValue(

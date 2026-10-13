@@ -20,6 +20,10 @@ import {
 } from '@/components/app/app.hooks';
 import { useSyncInternalOptional } from '@/components/app/contexts/SyncInternalContext';
 import DocumentInfo from '@/components/app/header/DocumentInfo';
+import {
+  allowsPageDestination,
+  useDuplicateDestinationAccess,
+} from '@/components/app/view-actions/usePageDestinationAccess';
 import { useViewActionPermissions } from '@/components/app/view-actions/useViewActionPermissions';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
@@ -85,7 +89,10 @@ function PermissionedMoreActionsContent({
     hasLoadedViewActionPermissions,
     isLoadingViewActionPermissions,
   } = useViewActionPermissions(view, true, viewId);
-  const isResolvingViewActionPermissions = isLoadingViewActionPermissions || !hasLoadedViewActionPermissions;
+  // Duplicate places the copy beside the page, so the parent must accept a new child (P).
+  const duplicateDestination = useDuplicateDestinationAccess(view, true);
+  const isResolvingViewActionPermissions =
+    isLoadingViewActionPermissions || !hasLoadedViewActionPermissions || duplicateDestination.state === 'checking';
 
   return (
     <>
@@ -95,7 +102,7 @@ function PermissionedMoreActionsContent({
         itemClicked={handleClose}
         onDeleted={onDeleted}
         viewId={viewId}
-        canDuplicateActions={canCreateViewActions}
+        canDuplicateActions={canCreateViewActions && allowsPageDestination(duplicateDestination)}
         canEditActions={canCreateViewActions}
         canManageActions={canManageViewActions}
         canUsePageHistory={canUsePageHistory}

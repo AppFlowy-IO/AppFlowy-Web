@@ -62,9 +62,14 @@ administrator to update both components.
 
 Space creation uses the authenticated
 `GET /api/workspace/{workspace_id}/space-creation-capabilities` response. Support, effective permission,
-configuration authority, and group entitlement are separate fields. An unavailable endpoint, unknown
-policy, mismatched workspace, or incomplete response leaves creation unavailable. The current workspace
-role alone does not authorize it. No release-version floor has been assigned to these new controls yet.
+configuration authority, and group entitlement are separate fields. A server without that route
+(HTTP 404/405) predates these controls: Create space, Duplicate Space and the calendar meeting space stay
+available and that server's own checks decide. An unknown policy, mismatched workspace, incomplete
+response or failed read leaves Create space and Duplicate Space unavailable with a visible reason. Create
+space offers "Try again"; Duplicate Space reads the answer again each time its menu opens and when the
+window regains focus or the connection returns. Calendar transcription then lets the server decide, and a
+denial still opens the meeting without a notes page. The current workspace role alone does not authorize
+creation. No release-version floor has been assigned to these new controls yet.
 
 Settings / Workspace permissions uses the existing settings API's `space_creation_policy` field and
 checks that the response confirms the requested mode. User/group selections use focused UUID grant/revoke
@@ -109,11 +114,21 @@ invalidation. Existing request debounce and cooldowns remain; these lifetime che
 underlying mention HTTP requests or replace server authorization.
 
 Create/Manage Space expose the existing `sidebar_edit_policy`. Direct space-child actions require both
-canonical content Write and sidebar permission. Ordinary nested pages retain their own Write check.
-Changing this setting does not grant B (space creation) or D (workspace creation). Create Space keeps
-useful draft fields after a denied final check, while possibly committed retries retain their original
-identity. The full background-writer, destination-operation, offline re-grant and native-client acceptance
-matrix remains in progress in the Server repository's Oodrive plan.
+canonical content Write and sidebar permission: the sidebar "+", New Page destinations (checked per space
+when the dialog opens, with the reason shown for unavailable spaces), Duplicate (the source's parent must
+accept a new page) and Move (the selected destination is checked before Move is enabled). For New Page,
+Duplicate and Move, a check that could not run (offline, server error) is not shown as a denial: that
+destination stays available and the server decides. A New Page choice whose space is no longer listed is
+dropped. Ordinary nested pages retain their own Write check. On a server without the structured space
+routes the sidebar policy does not exist and Write alone applies. Changing this setting does not grant B
+(space creation) or D (workspace creation). Create Space keeps useful draft fields after a denied
+pre-check. A definitive rejection of a first attempt (400/403/422, validation or denial) forgets the
+saved request and leaves the draft editable with fresh identities. An ambiguous outcome (lost response,
+timeout, 409, 5xx) keeps the original identity with "Check again" and "Discard", in the dialog and in the
+sidebar. A resend from "Check again" that is refused keeps that saved request as well, because the
+earlier attempt with the same identity may still commit; only finding the space or "Discard" ends it. The
+full background-writer, offline re-grant and native-client acceptance matrix remains in progress in the
+Server repository's Oodrive plan.
 
 The opt-in `playwright.permissions.config.ts` suite uses the passed Server
 `group_permission_lifecycle.py` document fixture. It checks real open editor bodies, title controls,

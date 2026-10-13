@@ -1,9 +1,26 @@
 {
   "spaceCreation": {
-    "retained": "Cette demande envoyée est enregistrée. Réessayer vérifie l’espace d’origine. Vous pouvez fermer cette fenêtre et reprendre la création plus tard.",
     "resume": "Reprendre la création de l’espace",
-    "invalidRecovery": "La demande de création enregistrée ne peut pas être lue. Ses données sont conservées.",
-    "pendingRecovery": "Reprenez la demande de création existante avant d’en commencer une autre."
+    "invalidRecovery": "Nous n’avons pas pu lire la demande d’espace enregistrée.",
+    "pendingRecovery": "Terminez ou abandonnez d’abord la demande d’espace précédente.",
+    "unconfirmed": "Nous n’avons pas pu confirmer la création de l’espace.",
+    "checkAgain": "Vérifier à nouveau",
+    "tryAgain": "Réessayer",
+    "discard": "Abandonner",
+    "discardSaved": "Abandonner la demande d’espace enregistrée",
+    "discardTitle": "Abandonner cette demande d’espace ?",
+    "discardDescription": "Si l’espace a déjà été créé, il reste dans votre barre latérale.",
+    "membersPending_one": "L’espace a été créé, mais {{count}} personne n’a pas encore été ajoutée.",
+    "membersPending_other": "L’espace a été créé, mais {{count}} personnes n’ont pas encore été ajoutées.",
+    "addLater": "Ajouter plus tard",
+    "pageDestination": {
+      "checking": "Vérification de l’accès…",
+      "noEdit": "Vous n’avez pas le droit de modifier ici",
+      "ownersOnly": "Seuls les propriétaires de l’espace peuvent ajouter des pages ici",
+      "noneAvailable": "Vous ne pouvez ajouter de pages dans aucun espace. Demandez le droit de modification à un propriétaire d’espace."
+    },
+    "meetingNotesDenied": "Votre réunion s’est ouverte sans page de notes, car vous ne pouvez pas créer d’espaces dans cet espace de travail.",
+    "meetingNotesFailed": "Votre réunion s’est ouverte, mais sa page de notes n’a pas pu être créée."
   },
   "workspacePermissions": {
     "sidebarPolicy": "Qui peut ajouter des pages à cet espace",

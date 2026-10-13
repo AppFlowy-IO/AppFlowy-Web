@@ -1,9 +1,26 @@
 {
   "spaceCreation": {
-    "retained": "This submitted request is saved. Retry checks the original space. Closing keeps it available under Resume space creation.",
     "resume": "Resume space creation",
-    "invalidRecovery": "The saved space request could not be read. Its data has been retained.",
-    "pendingRecovery": "Resume the existing space request before starting another."
+    "invalidRecovery": "We couldn't read the saved space request.",
+    "pendingRecovery": "Finish or discard the earlier space request first.",
+    "unconfirmed": "We couldn't confirm that the space was created.",
+    "checkAgain": "Check again",
+    "tryAgain": "Try again",
+    "discard": "Discard",
+    "discardSaved": "Discard saved space request",
+    "discardTitle": "Discard this space request?",
+    "discardDescription": "If the space was already created, it stays in your sidebar.",
+    "membersPending_one": "The space was created, but {{count}} person wasn't added yet.",
+    "membersPending_other": "The space was created, but {{count}} people weren't added yet.",
+    "addLater": "Add later",
+    "pageDestination": {
+      "checking": "Checking access…",
+      "noEdit": "You don't have edit access here",
+      "ownersOnly": "Only space owners can add pages here",
+      "noneAvailable": "You can't add pages to any space here. Ask a space owner for edit access."
+    },
+    "meetingNotesDenied": "Your meeting opened without a notes page, because you can't create spaces in this workspace.",
+    "meetingNotesFailed": "Your meeting opened, but its notes page couldn't be created."
   },
   "workspacePermissions": {
     "sidebarPolicy": "Who can add pages to this space",

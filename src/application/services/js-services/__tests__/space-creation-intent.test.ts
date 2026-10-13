@@ -78,3 +78,29 @@ test('storage quota or corrupt saved data stops before replacing a request', () 
   expect(() => store.begin(draft())).toThrow();
   expect(sessionStorage.getItem(key)).toBe('{invalid');
 });
+
+test.each(['{invalid', 'null', '"text"', '42'])(
+  'unreadable saved data %s reports the translated recovery error and can be discarded',
+  (stored) => {
+    const store = new SpaceCreationIntentStore('workspace-a');
+    const key = `space-creation:v1:${store.scopeKey}`;
+
+    sessionStorage.setItem(key, stored);
+    expect(() => store.snapshot()).toThrow('spaceCreation.invalidRecovery');
+    expect(() => store.begin(draft())).toThrow('spaceCreation.invalidRecovery');
+    expect(sessionStorage.getItem(key)).toBe(stored);
+    store.discard();
+    expect(sessionStorage.getItem(key)).toBeNull();
+    expect(store.snapshot()).toBeUndefined();
+  }
+);
+
+test('discard is fenced to the scope that saved the request', () => {
+  let current = true;
+  const store = new SpaceCreationIntentStore('workspace-a', () => current);
+
+  store.begin(draft());
+  current = false;
+  expect(() => store.discard()).toThrow('workspaceCreation.contextChanged');
+  expect(new SpaceCreationIntentStore('workspace-a').snapshot()?.payload.view_id).toBe('space-a');
+});
