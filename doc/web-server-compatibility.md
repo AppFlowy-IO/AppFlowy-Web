@@ -65,10 +65,11 @@ Space creation uses the authenticated
 configuration authority, and group entitlement are separate fields. A server without that route
 (HTTP 404/405) predates these controls: Create space, Duplicate Space and the calendar meeting space stay
 available and that server's own checks decide. An unknown policy, mismatched workspace, incomplete
-response or failed read leaves Create space and Duplicate Space unavailable with a visible reason and a
-retry; calendar transcription then lets the server decide, and a denial still opens the meeting without a
-notes page. The current workspace role alone does not authorize creation. No release-version floor has
-been assigned to these new controls yet.
+response or failed read leaves Create space and Duplicate Space unavailable with a visible reason. Create
+space offers "Try again"; Duplicate Space reads the answer again each time its menu opens and when the
+window regains focus or the connection returns. Calendar transcription then lets the server decide, and a
+denial still opens the meeting without a notes page. The current workspace role alone does not authorize
+creation. No release-version floor has been assigned to these new controls yet.
 
 Settings / Workspace permissions uses the existing settings API's `space_creation_policy` field and
 checks that the response confirms the requested mode. User/group selections use focused UUID grant/revoke
