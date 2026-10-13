@@ -892,6 +892,179 @@ describe('ManageSpace ACL management', () => {
     });
   });
 
+  describe('member and group changes on servers with per-person access', () => {
+    const memberUuid = '52345678-1234-4123-8123-123456789abc';
+    const candidateUuid = '62345678-1234-4123-8123-123456789abc';
+
+    beforeEach(() => {
+      mockGetSpacePermission.mockResolvedValue({
+        ...permissionResponse({ permission: customPermission }),
+        member_access_overrides_supported: true,
+      });
+    });
+
+    it('adds a workspace member by UUID so the new member keeps the space default', async () => {
+      mockGetMembers.mockResolvedValue([{ ...workspaceCandidate, user_uuid: candidateUuid }]);
+      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+      await waitFor(() => expect(screen.getByTestId('inline-member-add').disabled).toBe(false));
+      fireEvent.click(screen.getByTestId('inline-member-add'));
+
+      await waitFor(() =>
+        expect(mockAddSpaceMemberByUuid).toHaveBeenCalledWith('workspace-1', 'space-1', candidateUuid, {
+          role: SpaceMemberRole.Member,
+        })
+      );
+      // No frozen level: neither the legacy materialized level nor a chosen one is sent.
+      expect(mockAddSpaceMemberByUuid.mock.calls[0][3]).toEqual({ role: SpaceMemberRole.Member });
+      expect(mockAddSpaceMember).not.toHaveBeenCalled();
+      await waitFor(() => expect(toast.success).toHaveBeenCalledWith('space.permissionManager.addSpaceMemberSuccess'));
+    });
+
+    it('refuses to add a candidate without a UUID instead of using the legacy route', async () => {
+      mockGetMembers.mockResolvedValue([workspaceCandidate]);
+      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+      await waitFor(() => expect(screen.getByTestId('inline-member-add').disabled).toBe(false));
+      fireEvent.click(screen.getByTestId('inline-member-add'));
+
+      await waitFor(() => expect(toast.error).toHaveBeenCalledWith('space.memberOverride.identityUnavailable'));
+      expect(mockAddSpaceMemberByUuid).not.toHaveBeenCalled();
+      expect(mockAddSpaceMember).not.toHaveBeenCalled();
+    });
+
+    it('changes a role and removes a member by UUID without sending an access level', async () => {
+      const member: SpaceMember = {
+        ...manualMember(),
+        user_uuid: memberUuid,
+        access_level_override: AccessLevel.ReadAndComment,
+        effective_access_level: AccessLevel.ReadAndComment,
+      };
+
+      mockGetSpaceMembers.mockResolvedValue({ members: [member], groups: [] });
+      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+      const row = await screen.findByTestId(`space-member-row-${member.uid}`);
+
+      // The role menu describes how a Space member's access is decided here.
+      expect(
+        within(row).getByRole('button', { name: /^space\.permissionManager\.member space\.permissionManager\.memberRoleWithAccessDescription/ })
+      ).toBeTruthy();
+      await waitFor(() =>
+        expect(within(row).getByRole('button', { name: 'space.permissionManager.member' }).hasAttribute('disabled')).toBe(
+          false
+        )
+      );
+      fireEvent.click(
+        within(row).getByRole('button', {
+          name: 'space.permissionManager.owner space.permissionManager.ownerRoleDescription',
+        })
+      );
+
+      await waitFor(() =>
+        expect(mockUpdateSpaceMemberByUuid).toHaveBeenCalledWith('workspace-1', 'space-1', memberUuid, {
+          role: SpaceMemberRole.Owner,
+        })
+      );
+      expect(mockUpdateSpaceMember).not.toHaveBeenCalled();
+      expect(mockAddSpaceMemberByUuid).not.toHaveBeenCalled();
+
+      const removeButton = within(row).getByRole('button', { name: 'space.permissionManager.remove' });
+
+      await waitFor(() => expect(removeButton.hasAttribute('disabled')).toBe(false));
+      fireEvent.click(removeButton);
+
+      await waitFor(() => expect(mockRemoveSpaceMemberByUuid).toHaveBeenCalledWith('workspace-1', 'space-1', memberUuid));
+      expect(mockRemoveSpaceMember).not.toHaveBeenCalled();
+      await waitFor(() =>
+        expect(toast.success).toHaveBeenCalledWith('space.permissionManager.removeSpaceMemberSuccess')
+      );
+    });
+
+    it('reports a missing member UUID on role change and removal without calling the server', async () => {
+      const member: SpaceMember = { ...manualMember(), access_level_override: null, effective_access_level: 30 };
+
+      mockGetSpaceMembers.mockResolvedValue({ members: [member], groups: [] });
+      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+      const row = await screen.findByTestId(`space-member-row-${member.uid}`);
+
+      await waitFor(() =>
+        expect(within(row).getByRole('button', { name: 'space.permissionManager.member' }).hasAttribute('disabled')).toBe(
+          false
+        )
+      );
+      fireEvent.click(
+        within(row).getByRole('button', {
+          name: 'space.permissionManager.owner space.permissionManager.ownerRoleDescription',
+        })
+      );
+      await waitFor(() => expect(toast.error).toHaveBeenCalledWith('space.memberOverride.identityUnavailable'));
+
+      const removeButton = within(row).getByRole('button', { name: 'space.permissionManager.remove' });
+
+      await waitFor(() => expect(removeButton.hasAttribute('disabled')).toBe(false));
+      fireEvent.click(removeButton);
+      await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(2));
+      expect(mockUpdateSpaceMemberByUuid).not.toHaveBeenCalled();
+      expect(mockAddSpaceMemberByUuid).not.toHaveBeenCalled();
+      expect(mockRemoveSpaceMemberByUuid).not.toHaveBeenCalled();
+      expect(mockUpdateSpaceMember).not.toHaveBeenCalled();
+      expect(mockRemoveSpaceMember).not.toHaveBeenCalled();
+    });
+
+    it('adds and promotes groups without sending an access level', async () => {
+      const memberGroup = { ...group('group-1', 'Design'), access_level_override: null, effective_access_level: 30 };
+      const grantedGroup = { ...group('group-engineering', 'Engineering'), access_level_override: null, effective_access_level: 30 };
+
+      mockGetSpaceMembers
+        .mockResolvedValueOnce({ members: [], groups: [memberGroup] })
+        .mockResolvedValue({ members: [], groups: [memberGroup, grantedGroup] });
+      mockAddSpaceGroupPermission.mockResolvedValue(grantedGroup);
+      mockUpdateSpaceGroupPermission.mockResolvedValue({ ...memberGroup, role: SpaceMemberRole.Owner });
+      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+      await waitFor(() => expect(screen.getByTestId('inline-member-search').disabled).toBe(false));
+      await waitFor(() => expect(mockGetWorkspaceGroups).toHaveBeenCalledWith('workspace-1'));
+      fireEvent.change(screen.getByTestId('inline-member-search'), { target: { value: 'engin' } });
+      fireEvent.click(
+        within(await screen.findByTestId('space-group-inline-search-result-group-engineering')).getByTestId(
+          'space-group-inline-search-result-add'
+        )
+      );
+
+      await waitFor(() => expect(mockAddSpaceGroupPermission).toHaveBeenCalledTimes(1));
+      expect(mockAddSpaceGroupPermission.mock.calls[0]).toEqual([
+        'workspace-1',
+        'space-1',
+        'group-engineering',
+        { role: SpaceMemberRole.Member },
+      ]);
+
+      const row = await screen.findByTestId('space-group-row-group-1');
+
+      await waitFor(() =>
+        expect(within(row).getByRole('button', { name: 'space.permissionManager.member' }).hasAttribute('disabled')).toBe(
+          false
+        )
+      );
+      fireEvent.click(
+        within(row).getByRole('button', {
+          name: 'space.permissionManager.owner space.permissionManager.ownerRoleDescription',
+        })
+      );
+      confirmPending();
+
+      await waitFor(() => expect(mockUpdateSpaceGroupPermission).toHaveBeenCalledTimes(1));
+      expect(mockUpdateSpaceGroupPermission.mock.calls[0]).toEqual([
+        'workspace-1',
+        'space-1',
+        'group-1',
+        { role: SpaceMemberRole.Owner },
+      ]);
+    });
+  });
+
   describe('space type switcher', () => {
     it('offers Public, Private and Custom cards with the PRD copy and marks the loaded type', async () => {
       mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: publicPermission }));
