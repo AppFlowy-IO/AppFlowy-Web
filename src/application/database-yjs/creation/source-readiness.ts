@@ -1,5 +1,6 @@
 import * as Y from 'yjs';
 
+import type { DatabaseStorageFence } from '@/application/db/database-storage-fence';
 import type { CollabFullSyncBatchResult } from '@/application/services/js-services/http/collab-api';
 import { Types, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
@@ -149,8 +150,27 @@ export async function waitForDatabaseViewSource(
 }
 
 /** Read the existing y-indexeddb namespace without creating a provider or writing local history. */
-export async function readPersistedDatabaseSource(doc: YDoc, signal: AbortSignal): Promise<Uint8Array> {
-  const name = doc.databaseRestoreId ? `${doc.guid}:database-restore:${doc.databaseRestoreId}` : doc.guid;
+export async function readPersistedDatabaseSource(
+  doc: YDoc,
+  signal: AbortSignal,
+  storageFence: DatabaseStorageFence
+): Promise<Uint8Array> {
+  // History-enabled sync uses the nil UUID on the wire before the first restore.
+  // Only a published cache epoch chooses a restored namespace, including an
+  // explicit nil epoch after a reset back to the original generation.
+  const restoreId = storageFence.cacheEpoch;
+
+  assertNotAborted(signal);
+  if (
+    storageFence.databaseId !== doc.guid ||
+    restoreId === undefined ||
+    storageFence.epoch !== restoreId ||
+    (doc.databaseRestoreId ?? ORIGINAL_DATABASE_RESTORE_ID) !== (restoreId ?? ORIGINAL_DATABASE_RESTORE_ID)
+  ) {
+    throw new Error('Database source storage generation changed');
+  }
+
+  const name = restoreId ? `${doc.guid}:database-restore:${restoreId}` : doc.guid;
   const connection = await new Promise<IDBDatabase>((resolve, reject) => {
     assertNotAborted(signal);
     const request = indexedDB.open(name);

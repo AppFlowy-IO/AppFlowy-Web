@@ -133,7 +133,7 @@ async function createDefaultDatabaseViewOwned(intent: DefaultDatabaseViewIntent)
   const capture = async () => {
     assertCurrent();
     const live = Y.encodeStateAsUpdate(databaseDoc);
-    const persisted = await readPersistedDatabaseSource(databaseDoc, controller.signal);
+    const persisted = await readPersistedDatabaseSource(databaseDoc, controller.signal, capturedFence);
 
     assertCurrent();
     if (!(await matchesDatabaseStorageFence(capturedFence))) throw new Error('Database storage changed');

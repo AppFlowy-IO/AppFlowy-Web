@@ -153,6 +153,11 @@ it('creates a compact Form/Responses graph and selects only after current Folder
     view: { layout: DatabaseViewLayout.Form, source_view_id: null, timezone_id: null } });
   expect(JSON.stringify(request)).not.toContain('filters');
   expect(f.folder.size).toBe(2);
+  expect(readPersistedDatabaseSource).toHaveBeenCalledWith(f.doc, expect.any(AbortSignal), {
+    databaseId: 'db',
+    epoch: null,
+    cacheEpoch: null,
+  });
   expect(collabFullSyncBatch).toHaveBeenCalledWith('workspace', expect.any(Array),
     expect.objectContaining({ atomicCreationOwner: expect.objectContaining({ assertCurrent: expect.any(Function) }) }));
   expect(f.activate).toHaveBeenCalledWith(id);

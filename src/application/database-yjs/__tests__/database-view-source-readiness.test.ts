@@ -8,6 +8,7 @@ import * as Y from 'yjs';
 
 import {
   DatabaseViewSourceRequirements,
+  ORIGINAL_DATABASE_RESTORE_ID,
   readPersistedDatabaseSource,
   remoteDatabaseCoversSource,
   waitForDatabaseViewSource,
@@ -140,14 +141,74 @@ describe('Database view source readiness', () => {
     expect(read).not.toHaveBeenCalled();
   });
 
-  it('reads existing durable bytes without replacing the live root or adding a record', async () => {
-    const live = database() as YDoc;
+  it.each([
+    [undefined, null],
+    [ORIGINAL_DATABASE_RESTORE_ID, null],
+    [ORIGINAL_DATABASE_RESTORE_ID, ORIGINAL_DATABASE_RESTORE_ID],
+    ['restore', 'restore'],
+  ])(
+    'reads durable bytes for wire marker %s and storage epoch %s without changing the live root or storage',
+    async (restoreId, storageEpoch) => {
+      const live = database() as YDoc;
 
-    live.databaseRestoreId = 'restore';
-    live.version = 'version';
-    const name = `${live.guid}:database-restore:restore`;
+      live.databaseRestoreId = restoreId ?? undefined;
+      live.version = 'version';
+      const name = storageEpoch ? `${live.guid}:database-restore:${storageEpoch}` : live.guid;
+      const connection = await new Promise<IDBDatabase>((resolve) => {
+        const request = indexedDB.open(name);
+
+        request.onupgradeneeded = () => {
+          request.result.createObjectStore('updates', { autoIncrement: true });
+          request.result.createObjectStore('custom');
+        };
+        request.onsuccess = () => resolve(request.result);
+      });
+      const durable = copy(live);
+
+      rows(durable).push(['persisted-only']);
+      await new Promise<void>((resolve) => {
+        const tx = connection.transaction(['updates', 'custom'], 'readwrite');
+
+        tx.objectStore('updates').add(Y.encodeStateAsUpdate(durable));
+        tx.objectStore('custom').put('version', `${live.guid}/version`);
+        tx.oncomplete = () => resolve();
+      });
+      const result = await readPersistedDatabaseSource(live, new AbortController().signal, {
+        databaseId: live.guid,
+        epoch: storageEpoch ?? null,
+        cacheEpoch: storageEpoch ?? null,
+      });
+      const decoded = new Y.Doc();
+
+      Y.applyUpdate(decoded, result);
+      expect(rows(decoded).toArray()).toEqual(['persisted-only']);
+      expect(rows(live).toArray()).toEqual([]);
+      const count = await new Promise<number>((resolve) => {
+        const request = connection.transaction('updates', 'readonly').objectStore('updates').count();
+
+        request.onsuccess = () => resolve(request.result);
+      });
+
+      expect(count).toBe(1);
+      expect(
+        (await indexedDB.databases())
+          .map(({ name: databaseName }) => databaseName)
+          .filter((databaseName) => databaseName?.startsWith(live.guid))
+      ).toEqual([name]);
+      connection.close();
+      await new Promise<void>((resolve, reject) => {
+        const request = indexedDB.deleteDatabase(name);
+
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+      });
+    }
+  );
+
+  it('does not fall back to the original namespace when restored storage is missing', async () => {
+    const live = database() as YDoc;
     const connection = await new Promise<IDBDatabase>((resolve) => {
-      const request = indexedDB.open(name);
+      const request = indexedDB.open(live.guid);
 
       request.onupgradeneeded = () => {
         request.result.createObjectStore('updates', { autoIncrement: true });
@@ -155,30 +216,55 @@ describe('Database view source readiness', () => {
       };
       request.onsuccess = () => resolve(request.result);
     });
-    const durable = copy(live);
 
-    rows(durable).push(['persisted-only']);
-    await new Promise<void>((resolve) => {
-      const tx = connection.transaction(['updates', 'custom'], 'readwrite');
+    try {
+      await new Promise<void>((resolve) => {
+        const tx = connection.transaction('updates', 'readwrite');
 
-      tx.objectStore('updates').add(Y.encodeStateAsUpdate(durable));
-      tx.objectStore('custom').put('version', `${live.guid}/version`);
-      tx.oncomplete = () => resolve();
-    });
-    const result = await readPersistedDatabaseSource(live, new AbortController().signal);
-    const decoded = new Y.Doc();
+        tx.objectStore('updates').add(Y.encodeStateAsUpdate(live));
+        tx.oncomplete = () => resolve();
+      });
+      live.databaseRestoreId = 'missing-restore';
+      await expect(
+        readPersistedDatabaseSource(live, new AbortController().signal, {
+          databaseId: live.guid,
+          epoch: 'missing-restore',
+          cacheEpoch: 'missing-restore',
+        })
+      ).rejects.toMatchObject({ name: 'AbortError' });
+      const names = (await indexedDB.databases()).map(({ name }) => name);
 
-    Y.applyUpdate(decoded, result);
-    expect(rows(decoded).toArray()).toEqual(['persisted-only']);
-    expect(rows(live).toArray()).toEqual([]);
-    const count = await new Promise<number>((resolve) => {
-      const request = connection.transaction('updates', 'readonly').objectStore('updates').count();
+      expect(names).toContain(live.guid);
+      expect(names).not.toContain(`${live.guid}:database-restore:missing-restore`);
+    } finally {
+      connection.close();
+      live.destroy();
+      indexedDB.deleteDatabase(live.guid);
+    }
+  });
 
-      request.onsuccess = () => resolve(request.result);
-    });
+  it.each([
+    { epoch: null, cacheEpoch: null },
+    { epoch: 'older-restore', cacheEpoch: 'older-restore' },
+    { epoch: 'current-restore', cacheEpoch: 'older-restore' },
+    { epoch: 'current-restore', cacheEpoch: undefined },
+  ])('refuses a mismatched or unavailable storage fence %j before opening IndexedDB', async (fence) => {
+    const live = database() as YDoc;
 
-    expect(count).toBe(1);
-    connection.close();
-    indexedDB.deleteDatabase(name);
+    live.databaseRestoreId = 'current-restore';
+    const open = jest.spyOn(indexedDB, 'open');
+
+    try {
+      await expect(
+        readPersistedDatabaseSource(live, new AbortController().signal, {
+          databaseId: live.guid,
+          ...fence,
+        })
+      ).rejects.toThrow('Database source storage generation changed');
+      expect(open).not.toHaveBeenCalled();
+    } finally {
+      open.mockRestore();
+      live.destroy();
+    }
   });
 });

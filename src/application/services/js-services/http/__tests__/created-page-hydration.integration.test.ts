@@ -6,7 +6,7 @@ import { deserialize, serialize } from 'v8';
 
 import { atomicRead, AtomicCreationOwner } from '@/application/atomic-creation';
 import { readPersistedDatabaseSource } from '@/application/database-yjs/creation/source-readiness';
-import { closeCollabDB, db, openCollabDBWithProvider, openRowCollabDBWithProvider } from '@/application/db';
+import { captureDatabaseStorageFence, closeCollabDB, db, openCollabDBWithProvider, openRowCollabDBWithProvider } from '@/application/db';
 import { getAxios, initAPIService } from '@/application/services/js-services/http/core';
 import { verifyCreatedPage } from '@/application/services/js-services/http/created-page-hydration';
 import { prepareDefaultPage } from '@/application/services/js-services/http/page-default-creation';
@@ -71,7 +71,9 @@ liveTest.each([ViewLayout.Document, ViewLayout.Grid])('real HTTP compact creatio
     expect(created.view_id).toBe(prepared.selectedViewId);
     if (prepared.kind === 'database') {
       expect(doc.databaseRestoreId).toBeUndefined();
-      await expect(readPersistedDatabaseSource(doc, new AbortController().signal)).resolves.toBeInstanceOf(Uint8Array);
+      const storageFence = await captureDatabaseStorageFence(doc.guid, { required: true });
+
+      await expect(readPersistedDatabaseSource(doc, new AbortController().signal, storageFence)).resolves.toBeInstanceOf(Uint8Array);
       // Default database hydration publishes seed Rows under the durable
       // database fence. Their deferred provider writes must own a separate
       // transaction and be durable before a later first-body creation uses them.
