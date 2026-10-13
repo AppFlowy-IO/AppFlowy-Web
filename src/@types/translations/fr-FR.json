@@ -2223,7 +2223,18 @@
     "sidebarSearchIcon": "Rechercher et accéder rapidement à une page",
     "placeholder": {
       "actions": "Actions de recherche..."
-    }
+    },
+    "recentPagesFailed": "Impossible de charger les pages récentes.",
+    "offlineRecentPages": "Vous êtes hors ligne. Les pages récentes se chargeront à la reconnexion.",
+    "noRecentPages": "Aucune page récente pour le moment.",
+    "offlineResults": "Vous êtes hors ligne. Les résultats s'afficheront à la reconnexion.",
+    "offlineAskAI": "Vous êtes hors ligne. L'IA est indisponible jusqu'à la reconnexion.",
+    "createAIChatFailed": "Impossible de créer un chat IA ici.",
+    "aiChatParentDenied": "Vous ne pouvez pas ajouter de pages à {{name}}, le chat IA n'a donc pas été créé.",
+    "aiChatPermissionsChanged": "Les autorisations ont été mises à jour. Réessayez.",
+    "updateAIChatSettingsFailed": "Le chat IA a été créé, mais son contexte n'a pas pu être joint.",
+    "aiChatCreated": "Chat IA créé",
+    "openAIChat": "Ouvrir"
   },
   "message": {
     "copy": {
@@ -3051,5 +3062,6 @@
     "refresh": "Actualiser les accès des groupes",
     "invalidResponse": "Le serveur a renvoyé une réponse d’accès de groupe invalide.",
     "contextChanged": "Les autorisations ont changé pendant l’enregistrement. Actualisez les accès actuels et réessayez."
-  }
+  },
+  "recentPages": "Pages récentes"
 }

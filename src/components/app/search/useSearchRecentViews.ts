@@ -1,68 +1,136 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { View } from '@/application/types';
 import { isSpaceView } from '@/components/ai-chat/rag-scope';
 
-type RecentRequest = {
+export type SearchRecentViewsStatus = 'loading' | 'ready' | 'error' | 'offline';
+
+interface RecentRead {
+  /** One dialog opening within one access scope. */
+  key: object;
+  refresh: number;
+  retry: number;
+}
+
+interface RecentSnapshot extends RecentRead {
+  status: Exclude<SearchRecentViewsStatus, 'loading'>;
+  views: View[];
+}
+
+interface RecentRequest extends RecentRead {
+  online: boolean;
+  isCurrent: () => boolean;
+  load?: () => Promise<View[] | undefined>;
+}
+
+const sameRead = (left: RecentRead | undefined, right: RecentRead) =>
+  left?.key === right.key && left.refresh === right.refresh && left.retry === right.retry;
+
+/**
+ * Recent pages for the search dialog. A loaded list belongs to one dialog opening within one access
+ * scope: clearing the query shows it again without another request, while reopening the dialog, a
+ * permission hint or a session change loads it again and never shows the previous names meanwhile.
+ *
+ * Loading, offline, failed and empty are distinct (`loadRecentViews` resolves `undefined` when the
+ * read failed). A socket reconnect (`refreshKey`) revalidates in the background and keeps the
+ * current list until the replacement arrives. There is one active read and one replaceable
+ * follow-up, even during permission-event bursts; old reads may settle, but cannot publish into a
+ * reopened dialog or a replacement scope.
+ */
+export function useSearchRecentViews({
+  open,
+  visible,
+  scope,
+  isCurrent,
+  load,
+  refreshKey,
+  online,
+}: {
+  open: boolean;
+  /** The list is on screen (the query is empty). Reads are deferred while it is hidden. */
+  visible: boolean;
   scope: object;
   isCurrent: () => boolean;
   load?: () => Promise<View[] | undefined>;
-  cancelled: boolean;
-};
-
-/** One active read and one replaceable follow-up, even during permission-event bursts.
- * Old reads may settle, but cannot publish into a reopened dialog or replacement scope.
- */
-export function useSearchRecentViews(
-  enabled: boolean,
-  scope: object,
-  isCurrent: () => boolean,
-  load?: () => Promise<View[] | undefined>
-) {
-  const active = useRef(false);
+  refreshKey: number;
+  online: boolean;
+}) {
+  const key = useMemo(() => ({ scope, open }), [scope, open]);
+  const latestKey = useRef(key);
+  const active = useRef<RecentRequest>();
   const pending = useRef<RecentRequest>();
-  const displayScope = useMemo(() => ({ scope, enabled }), [scope, enabled]);
-  const [snapshot, setSnapshot] = useState<{ scope: object; views: View[] }>();
+  const [retry, setRetry] = useState(0);
+  const [snapshot, setSnapshot] = useState<RecentSnapshot>();
+  const current = snapshot?.key === key ? snapshot : undefined;
+  const wanted = useMemo(() => ({ key, refresh: refreshKey, retry }), [key, refreshKey, retry]);
+  const stale = !current || !sameRead(current, wanted) || (current.status === 'offline' && online);
+
+  latestKey.current = key;
 
   useEffect(() => {
-    if (!enabled || !isCurrent()) return;
-    const request: RecentRequest = { scope: displayScope, isCurrent, load, cancelled: false };
+    if (!open || !visible || !stale || !isCurrent()) return;
+    if (sameRead(pending.current, wanted) || sameRead(active.current, wanted)) return;
 
-    pending.current = request;
-    const drain = async () => {
-      if (active.current) return;
-      active.current = true;
+    pending.current = { ...wanted, online, isCurrent, load };
+    if (active.current) return;
+
+    void (async () => {
       try {
         while (pending.current) {
           const next = pending.current;
 
           pending.current = undefined;
-          let views: View[] | undefined;
+          // A queued read for a closed dialog, replaced scope or unmounted search is not sent.
+          if (next.key !== latestKey.current || !next.isCurrent()) continue;
+          active.current = next;
+          let result: Pick<RecentSnapshot, 'status' | 'views'>;
 
-          try {
-            views = navigator.onLine ? await next.load?.() : undefined;
-          } catch {
-            // Failure never reuses protected names from an older snapshot.
+          if (!next.online) {
+            result = { status: 'offline', views: [] };
+          } else {
+            try {
+              const views = next.load ? await next.load() : [];
+
+              result = views
+                ? { status: 'ready', views: views.filter((view) => !isSpaceView(view)) }
+                : { status: 'error', views: [] };
+            } catch {
+              result = { status: 'error', views: [] };
+            }
           }
 
-          if (!next.cancelled && next.isCurrent()) {
-            setSnapshot({ scope: next.scope, views: views?.filter((view) => !isSpaceView(view)) ?? [] });
-          }
+          active.current = undefined;
+          if (next.key !== latestKey.current || !next.isCurrent()) continue;
+
+          const read = { key: next.key, refresh: next.refresh, retry: next.retry };
+
+          setSnapshot((previous) =>
+            // A failed background revalidation keeps names loaded under this same access scope.
+            // A new opening or scope never reuses them: its key differs.
+            previous?.key === next.key && previous.status === 'ready' && result.status !== 'ready'
+              ? { ...previous, ...read }
+              : { ...read, ...result }
+          );
         }
       } finally {
-        active.current = false;
+        active.current = undefined;
       }
-    };
+    })();
+  }, [open, visible, stale, wanted, online, isCurrent, load]);
 
-    void drain();
-    return () => {
-      request.cancelled = true;
-      if (pending.current === request) pending.current = undefined;
-    };
-  }, [enabled, displayScope, isCurrent, load]);
+  const retryLoad = useCallback(() => setRetry((value) => value + 1), []);
+  let status: SearchRecentViewsStatus;
+
+  if (current?.status === 'ready') status = 'ready';
+  else if (!online) status = 'offline';
+  else if (stale) status = 'loading';
+  else status = current?.status ?? 'loading';
 
   return {
-    loading: enabled && snapshot?.scope !== displayScope,
-    views: snapshot?.scope === displayScope ? snapshot.views : [],
+    status,
+    views: current?.status === 'ready' ? current.views : [],
+    /** A ready list is being refreshed in the background. */
+    revalidating: status === 'ready' && stale,
+    retry: retryLoad,
   };
 }

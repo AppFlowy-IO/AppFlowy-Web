@@ -28,6 +28,7 @@ let mockOverviewSources: Array<{
   ownerDatabaseId?: string;
 }> = [];
 let mockCanAskFollowUp = false;
+let mockAskingAI = false;
 const mockT = (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key;
 
 jest.mock('react-i18next', () => ({
@@ -61,9 +62,20 @@ jest.mock('@/application/services/domains', () => ({
 }));
 
 jest.mock('@/components/app/search/SearchAIOverview', () => ({
-  SearchAIOverview: ({ sources, canAskFollowUp, summary }: { sources: typeof mockOverviewSources; canAskFollowUp: boolean; summary?: { content: string } | null }) => {
+  SearchAIOverview: ({
+    sources,
+    canAskFollowUp,
+    summary,
+    askingAI,
+  }: {
+    sources: typeof mockOverviewSources;
+    canAskFollowUp: boolean;
+    summary?: { content: string } | null;
+    askingAI: boolean;
+  }) => {
     mockOverviewSources = sources;
     mockCanAskFollowUp = canAskFollowUp;
+    mockAskingAI = askingAI;
     return <div data-testid='ai-overview'>{summary?.content}</div>;
   },
 }));
@@ -74,19 +86,28 @@ jest.mock('@/components/app/search/ViewList', () => ({
     header,
     items,
     hasMore,
+    loading,
+    loadingMore,
     onLoadMore,
   }: {
     header?: ReactNode;
     items?: Array<{ id: string; view: { name: string } }>;
     hasMore?: boolean;
+    loading?: boolean;
+    loadingMore?: boolean;
     onLoadMore?: () => void;
   }) => (
-    <div data-testid='view-list'>
+    <div data-testid='view-list' data-loading={Boolean(loading)}>
       {header ? <div data-testid='search-header'>{header}</div> : null}
       {items?.map((item) => (
         <div key={item.id}>{item.view.name}</div>
       ))}
-      {hasMore && <button onClick={onLoadMore}>Load more</button>}
+      {!loading && items?.length === 0 && <div>noSearchResults</div>}
+      {hasMore && (
+        <button disabled={loadingMore} onClick={onLoadMore}>
+          Load more
+        </button>
+      )}
     </div>
   ),
 }));
@@ -105,6 +126,23 @@ function createView(overrides: Partial<View> = {}): View {
   };
 }
 
+function base64Url(value: object) {
+  return btoa(JSON.stringify(value)).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+function sessionToken(sessionId: string, rotation = 0) {
+  return JSON.stringify({
+    access_token: `${base64Url({ alg: 'HS256' })}.${base64Url({ sub: 'user-id', session_id: sessionId, n: rotation })}.sig`,
+    refresh_token: `refresh-${sessionId}-${rotation}`,
+    expires_at: 4102444800,
+    user: { id: 'user-id' },
+  });
+}
+
+function setOnline(online: boolean) {
+  Object.defineProperty(window.navigator, 'onLine', { configurable: true, get: () => online });
+}
+
 function renderBestMatch(searchValue = '') {
   return render(<BestMatch askingAI={false} searchValue={searchValue} onAskAI={jest.fn()} onClose={jest.fn()} />, {
     wrapper: ({ children }: { children: ReactNode }) => (
@@ -114,14 +152,25 @@ function renderBestMatch(searchValue = '') {
 }
 
 describe('BestMatch', () => {
+  afterAll(() => {
+    setOnline(true);
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
+    // Unconsumed one-off responses must not leak into the next case.
+    [mockSearchWorkspaceDocumentPage, mockGenerateSearchSummary, mockGetView, mockGetMultipleViews].forEach((mock) =>
+      mock.mockReset()
+    );
     mockAppOutline = [];
     mockWorkspaceId = 'workspace-id';
     mockUserId = 'user-id';
     mockServer = 'https://server-a';
     mockOverviewSources = [];
     mockCanAskFollowUp = false;
+    mockAskingAI = false;
+    setOnline(true);
+    localStorage.clear();
     mockUseAIEnabled.mockReturnValue(true);
     mockSearchWorkspaceDocumentPage.mockResolvedValue({
       has_more: false,
@@ -169,22 +218,119 @@ describe('BestMatch', () => {
     expect(screen.queryByText('Late protected page')).toBeNull();
   });
 
-  it('discards old pagination after reconnect and reloads from the first page', async () => {
-    let resolveMore!: (value: unknown) => void;
+  it('revalidates every loaded page in the background after the socket reconnects', async () => {
+    let resolveFirstPage!: (value: unknown) => void;
 
-    mockAppOutline = [createView({ view_id: 'secret', name: 'Old paginated page' })];
+    mockAppOutline = [
+      createView({ view_id: 'first', name: 'First page' }),
+      createView({ view_id: 'second', name: 'Revoked second page' }),
+    ];
     mockSearchWorkspaceDocumentPage
-      .mockResolvedValueOnce({ items: [], has_more: true, next_offset: 10 })
-      .mockImplementationOnce(() => new Promise((resolve) => { resolveMore = resolve; }));
-    renderBestMatch('query');
+      .mockResolvedValueOnce({ items: [{ object_id: 'first' }], has_more: true, next_offset: 10 })
+      .mockResolvedValueOnce({ items: [{ object_id: 'second' }], has_more: false, next_offset: null });
+    mockGenerateSearchSummary.mockResolvedValueOnce({ summaries: [{ content: 'Old summary', sources: ['first'] }] });
+    renderBestMatch('page');
+    await screen.findByText('Old summary');
     fireEvent.click(await screen.findByText('Load more'));
-    await act(async () => {
-      mockEmitter.emit(APP_EVENTS.WEBSOCKET_STATUS, true);
-      resolveMore({ items: [{ object_id: 'secret' }], has_more: false });
+    await screen.findByText('Revoked second page');
+    mockSearchWorkspaceDocumentPage
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveFirstPage = resolve; }))
+      .mockResolvedValueOnce({ items: [], has_more: false, next_offset: null });
+    mockGenerateSearchSummary.mockResolvedValueOnce({ summaries: [{ content: 'Fresh summary', sources: ['first'] }] });
+    act(() => {
+      mockEmitter.emit(APP_EVENTS.WEBSOCKET_STATUS, 3);
+      mockEmitter.emit(APP_EVENTS.WEBSOCKET_STATUS, 0);
+      mockEmitter.emit(APP_EVENTS.WEBSOCKET_STATUS, 1);
     });
-    expect(screen.queryByText('Old paginated page')).toBeNull();
     await waitFor(() => expect(mockSearchWorkspaceDocumentPage).toHaveBeenCalledTimes(3));
-    expect(mockSearchWorkspaceDocumentPage.mock.calls[2][2]).toBe(0);
+    // The current response stays on screen while its replacement loads.
+    expect(screen.getByText('First page')).toBeTruthy();
+    expect(screen.getByText('Revoked second page')).toBeTruthy();
+    expect(screen.getByText('Old summary')).toBeTruthy();
+    expect(screen.getByTestId('view-list').getAttribute('data-loading')).toBe('false');
+    await act(async () => {
+      resolveFirstPage({ items: [{ object_id: 'first' }], has_more: true, next_offset: 10 });
+    });
+    await screen.findByText('Fresh summary');
+    expect(screen.queryByText('Revoked second page')).toBeNull();
+    expect(screen.getByText('First page')).toBeTruthy();
+    expect(mockSearchWorkspaceDocumentPage.mock.calls.slice(2).map((call) => call[2])).toEqual([0, 10]);
+  });
+
+  it.each(['focus', 'visible', 'online', 'offline', 'socket'])('keeps results and the AI summary on %s', async (event) => {
+    mockAppOutline = [createView({ view_id: 'kept', name: 'Kept page' })];
+    mockSearchWorkspaceDocumentPage.mockResolvedValueOnce({ items: [{ object_id: 'kept' }], has_more: false });
+    mockGenerateSearchSummary.mockResolvedValueOnce({ summaries: [{ content: 'Kept summary', sources: ['kept'] }] });
+    renderBestMatch('budget');
+    await screen.findByText('Kept summary');
+    act(() => {
+      if (event === 'visible') document.dispatchEvent(new Event('visibilitychange'));
+      else if (event === 'socket') mockEmitter.emit(APP_EVENTS.WEBSOCKET_STATUS, 0);
+      else window.dispatchEvent(new Event(event));
+    });
+    expect(screen.getByText('Kept page')).toBeTruthy();
+    expect(screen.getByText('Kept summary')).toBeTruthy();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    });
+    expect(mockSearchWorkspaceDocumentPage).toHaveBeenCalledTimes(1);
+    expect(mockGenerateSearchSummary).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not repeat the search after a routine token refresh', async () => {
+    localStorage.setItem('token', sessionToken('session-a'));
+    mockAppOutline = [createView({ view_id: 'kept', name: 'Kept page' })];
+    mockSearchWorkspaceDocumentPage.mockResolvedValueOnce({ items: [{ object_id: 'kept' }], has_more: false });
+    renderBestMatch('budget');
+    await screen.findByText('Kept page');
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'token', newValue: sessionToken('session-a', 1) }));
+    });
+    expect(screen.getByText('Kept page')).toBeTruthy();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    });
+    expect(mockSearchWorkspaceDocumentPage).toHaveBeenCalledTimes(1);
+  });
+
+  it('says it is offline instead of showing no results, and does not offer Ask AI', async () => {
+    setOnline(false);
+    renderBestMatch('budget');
+    expect(await screen.findByText('search.offlineResults')).toBeTruthy();
+    expect(screen.queryByText('noSearchResults')).toBeNull();
+    expect(screen.queryByTestId('ai-overview')).toBeNull();
+    expect(mockSearchWorkspaceDocumentPage).not.toHaveBeenCalled();
+    expect(mockGenerateSearchSummary).not.toHaveBeenCalled();
+  });
+
+  it('runs a query typed while offline once the browser reconnects', async () => {
+    setOnline(false);
+    mockAppOutline = [createView({ view_id: 'found', name: 'Found after reconnect' })];
+    mockSearchWorkspaceDocumentPage.mockResolvedValueOnce({ items: [{ object_id: 'found' }], has_more: false });
+    renderBestMatch('budget');
+    await screen.findByText('search.offlineResults');
+    setOnline(true);
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(screen.queryByText('noSearchResults')).toBeNull();
+    expect(await screen.findByText('Found after reconnect')).toBeTruthy();
+    expect(mockSearchWorkspaceDocumentPage).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps loaded results offline and explains why Ask AI is unavailable', async () => {
+    mockAppOutline = [createView({ view_id: 'kept', name: 'Kept page' })];
+    mockSearchWorkspaceDocumentPage.mockResolvedValueOnce({ items: [{ object_id: 'kept' }], has_more: false });
+    renderBestMatch('budget');
+    await screen.findByText('Kept page');
+    expect(mockAskingAI).toBe(false);
+    setOnline(false);
+    act(() => {
+      window.dispatchEvent(new Event('offline'));
+    });
+    expect(screen.getByText('Kept page')).toBeTruthy();
+    expect(screen.getByText('search.offlineAskAI')).toBeTruthy();
+    expect(mockAskingAI).toBe(true);
   });
 
   it('fences the same workspace when the account changes', async () => {
@@ -202,6 +348,8 @@ describe('BestMatch', () => {
   it('aborts old summary work and rejects its response after same-user cross-tab session replacement', async () => {
     let resolveSummary!: (value: unknown) => void;
 
+    localStorage.setItem('token', sessionToken('original-session'));
+
     mockGenerateSearchSummary.mockImplementationOnce(() => new Promise((resolve) => { resolveSummary = resolve; }));
     const { unmount } = renderBestMatch('query');
 
@@ -209,7 +357,7 @@ describe('BestMatch', () => {
     const oldSignal = mockGenerateSearchSummary.mock.calls[0][2] as AbortSignal;
 
     await act(async () => {
-      window.dispatchEvent(new StorageEvent('storage', { key: 'token', oldValue: 'old-session', newValue: 'new-session' }));
+      window.dispatchEvent(new StorageEvent('storage', { key: 'token', newValue: sessionToken('replacement-session') }));
       resolveSummary({ summaries: [{ content: 'Old private summary', sources: [] }] });
     });
     expect(oldSignal.aborted).toBe(true);
