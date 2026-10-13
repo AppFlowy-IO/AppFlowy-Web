@@ -119,11 +119,13 @@ accept a new page) and Move (the selected destination is checked before Move is 
 pages retain their own Write check. On a server without the structured space routes the sidebar policy
 does not exist and Write alone applies. Changing this setting does not grant B (space creation) or D
 (workspace creation). Create Space keeps useful draft fields after a denied pre-check. A definitive
-rejection of the request (400/403/422, validation or denial) forgets the saved request and leaves the
-draft editable with fresh identities; an ambiguous outcome (lost response, timeout, 409, 5xx) keeps the
-original identity with "Check again" and "Discard", in the dialog and in the sidebar. The full
-background-writer, offline re-grant and native-client acceptance matrix remains in progress in the Server
-repository's Oodrive plan.
+rejection of a first attempt (400/403/422, validation or denial) forgets the saved request and leaves the
+draft editable with fresh identities. An ambiguous outcome (lost response, timeout, 409, 5xx) keeps the
+original identity with "Check again" and "Discard", in the dialog and in the sidebar. A resend from
+"Check again" that is refused keeps that saved request as well, because the earlier attempt with the same
+identity may still commit; only finding the space or "Discard" ends it. The full background-writer,
+offline re-grant and native-client acceptance matrix remains in progress in the Server repository's
+Oodrive plan.
 
 The opt-in `playwright.permissions.config.ts` suite uses the passed Server
 `group_permission_lifecycle.py` document fixture. It checks real open editor bodies, title controls,

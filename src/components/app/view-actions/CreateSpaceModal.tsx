@@ -274,9 +274,9 @@ function CreateSpaceDraft({
   }, []);
 
   const releaseRejectedRequest = useCallback(() => {
-    // A definitive rejection proves this request created nothing. Forget it, keep the fields
-    // editable, and give the next attempt fresh identities so an edited request can never be
-    // matched to the refused one.
+    // A first attempt was definitively refused, so nothing was created. Forget it, keep the
+    // fields editable, and give the next attempt fresh identities so an edited request can never
+    // be matched to the refused one.
     intentStore.discard();
     setDraftPage((current) => (current?.page ? { page: withoutSpentIdentity(current.page) } : current));
     setHasAmbiguousCreation(false);
@@ -550,8 +550,10 @@ function CreateSpaceDraft({
             return; // Unreachable: availability is checked before the request is saved.
           }
         } catch (error) {
-          // Only the request itself can prove that nothing was created.
-          if (isDefinitiveCreationRejection(error)) releaseRejectedRequest();
+          // A definitive rejection proves only that this request created nothing. A resend of a
+          // saved request says nothing about the earlier attempt with the same ID, which may
+          // still commit, so that request stays saved until it is found or discarded.
+          if (!saved && isDefinitiveCreationRejection(error)) releaseRejectedRequest();
           throw error;
         }
 
@@ -572,7 +574,7 @@ function CreateSpaceDraft({
       try { intentStore.assertCurrent(); } catch { return; }
 
       // Once submitted, even a later denial cannot resolve an earlier write. A request that was
-      // never saved, or was definitively refused, leaves an editable draft.
+      // never saved, or whose first attempt was definitively refused, leaves an editable draft.
       if (hasSavedRequest(intentStore)) setHasAmbiguousCreation(true);
       notify.error(getErrorMessage(error));
     } finally {

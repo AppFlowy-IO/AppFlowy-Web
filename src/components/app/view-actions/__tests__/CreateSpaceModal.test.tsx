@@ -935,12 +935,15 @@ describe('CreateSpaceModal draft controller', () => {
     expect(sessionStorage.length).toBe(0);
   });
 
-  it('releases a checked-again request after a definitive rejection and never reuses its identity', async () => {
+  it.each([
+    ['a validation rejection', { httpStatus: 422, message: 'validation rejected' }, 'validation rejected'],
+    ['a B revocation after the first attempt', { code: 1012, httpStatus: 403, message: 'forbidden' }, 'forbidden'],
+    ['a proxy rate limit', { httpStatus: 429, message: 'too many requests' }, 'too many requests'],
+  ])('keeps the original ID and queued roster when a checked-again resend gets %s', async (_case, rejection, message) => {
     const onClose = jest.fn();
     const onCreated = jest.fn();
-    const definitiveRetryRejection = { httpStatus: 422, message: 'validation rejected' };
 
-    mockCreateSpace.mockRejectedValueOnce(new Error('response lost')).mockRejectedValueOnce(definitiveRetryRejection);
+    mockCreateSpace.mockRejectedValueOnce(new Error('response lost')).mockRejectedValueOnce(rejection);
     render(<CreateSpaceModal open onClose={onClose} onCreated={onCreated} />);
 
     await selectCustomAndAdd(candidateOne);
@@ -948,32 +951,60 @@ describe('CreateSpaceModal draft controller', () => {
     await waitFor(() => expect(notify.error).toHaveBeenCalledWith('response lost'));
     const clientOwnedSpaceId = mockCreateSpace.mock.calls[0][0].view_id;
 
-    expect(screen.getByTestId('draft-member-search').getAttribute('disabled')).not.toBeNull();
+    // The first request has not committed yet, so the identical request is sent again.
     mockGetSpacePermission.mockRejectedValueOnce({ httpStatus: 404 });
     fireEvent.click(screen.getByTestId('create-space-submit'));
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('validation rejected'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith(message));
     expect(mockCreateSpace.mock.calls[1][0].view_id).toBe(clientOwnedSpaceId);
-    // The identical request was refused, so the draft is editable again instead of frozen.
-    expect(screen.getByTestId('draft-member-search').getAttribute('disabled')).toBeNull();
+    // A refused resend proves nothing about the first request, which may still commit.
+    expect(sessionStorage.length).toBe(1);
+    expect(screen.getByTestId('draft-member-search').getAttribute('disabled')).not.toBeNull();
     expect(screen.getByTestId('create-space-draft-member-member-1')).toBeTruthy();
-    expect(screen.getByTestId('create-space-submit').textContent).toBe('button.create');
-    expect(sessionStorage.length).toBe(0);
+    expect(screen.getByTestId('create-space-submit').textContent).toBe('spaceCreation.checkAgain');
+    expect(screen.getByTestId('space-creation-recovery-unconfirmed')).toBeTruthy();
+    expect(screen.getByTestId('space-creation-discard')).toBeTruthy();
 
+    // The first request commits later: Check again finds it and adds the queued people.
     mockGetSpacePermission.mockResolvedValue({ permission: customPermission });
     fireEvent.click(screen.getByTestId('create-space-submit'));
 
-    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
-    const nextSpaceId = mockCreateSpace.mock.calls[2][0].view_id;
-
-    expect(nextSpaceId).not.toBe(clientOwnedSpaceId);
-    expect(onCreated).toHaveBeenCalledWith(nextSpaceId, undefined);
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith(clientOwnedSpaceId, undefined));
     expect(onClose).toHaveBeenCalledTimes(1);
-    expect(mockAddSpaceMember).toHaveBeenCalledWith('workspace-1', nextSpaceId, {
+    expect(mockAddSpaceMember).toHaveBeenCalledWith('workspace-1', clientOwnedSpaceId, {
       uid: 'member-1',
       role: SpaceMemberRole.Member,
       access_level: AccessLevel.ReadAndWrite,
     });
-    expect(mockCreateSpace).toHaveBeenCalledTimes(3);
+    expect(mockCreateSpace).toHaveBeenCalledTimes(2);
+    expect(sessionStorage.length).toBe(0);
+  });
+
+  it('keeps a reloaded request when its resend is definitively rejected, so only Discard forgets it', async () => {
+    const onClose = jest.fn();
+
+    mockCreateSpace.mockRejectedValueOnce(new Error('response lost'));
+    const first = render(<CreateSpaceModal open onClose={onClose} />);
+
+    enterSpaceName('Submitted before reload');
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('response lost'));
+    const originalId = mockCreateSpace.mock.calls[0][0].view_id;
+
+    first.unmount();
+    render(<CreateSpaceModal open onClose={onClose} />);
+    mockGetSpacePermission.mockRejectedValueOnce({ httpStatus: 404 });
+    mockCreateSpace.mockRejectedValueOnce({ code: 1008, httpStatus: 400, message: 'invalid space name' });
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('invalid space name'));
+    expect(mockCreateSpace.mock.calls[1][0].view_id).toBe(originalId);
+    expect(sessionStorage.length).toBe(1);
+    expect(screen.getByTestId('space-name-input').value).toBe('Submitted before reload');
+    expect(screen.getByTestId('create-space-submit').textContent).toBe('spaceCreation.checkAgain');
+
+    fireEvent.click(screen.getByTestId('space-creation-discard'));
+    fireEvent.click(screen.getByTestId('discard-space-request-confirm'));
+    expect(sessionStorage.length).toBe(0);
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('keeps Close usable when the remaining people still cannot be added, leaving the request resumable', async () => {

@@ -19,11 +19,12 @@ const DEFINITIVE_APPLICATION_REJECTIONS: readonly number[] = [
 ];
 
 /**
- * Whether a failed create request proves that nothing was created.
+ * Whether a failed create request proves that this request created nothing.
  *
  * Validation, permission and other ordinary 4xx rejections are definitive. Lost responses,
  * timeouts (408), conflicts on the client-owned ID (409), server errors and unknown failures may
- * still commit, so their request must stay resumable.
+ * still commit, so their request must stay resumable. A definitive rejection of a resend says
+ * nothing about an earlier attempt with the same ID, which may still commit.
  */
 export function isDefinitiveCreationRejection(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;
