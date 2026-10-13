@@ -107,6 +107,18 @@ describe('useViewActionPermissions', () => {
     }
   );
 
+  it('exposes space management and sidebar authority from its single space-permission read', async () => {
+    mockGetObjectPermission.mockResolvedValue(createPermission());
+    mockGetSpacePermission.mockResolvedValue({ can_manage_space: true, can_edit_sidebar: false });
+    const { result } = renderHook(() => useViewActionPermissions(createView({ is_space: true }), true));
+
+    await waitFor(() => expect(result.current.hasLoadedViewActionPermissions).toBe(true));
+    expect(result.current.canOpenManageSpace).toBe(true);
+    expect(result.current.canEditSidebar).toBe(false);
+    expect(result.current.canCreateViewActions).toBe(false);
+    expect(mockGetSpacePermission).toHaveBeenCalledTimes(1);
+  });
+
   it('uses the canonical database collab identity', async () => {
     mockGetObjectPermission.mockResolvedValue(
       createPermission({

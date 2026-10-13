@@ -10,7 +10,6 @@ import ViewActionsPopover from '@/components/app/view-actions/ViewActionsPopover
 import type { ReactNode } from 'react';
 
 const mockUseViewActionPermissions = jest.fn();
-const mockUseSpaceActionPermissions = jest.fn();
 let mockCanCreateSpace = true;
 
 jest.mock('@/components/app/hooks/useSpaceCreationCapability', () => ({
@@ -132,21 +131,11 @@ jest.mock('@/components/app/view-actions/useViewActionPermissions', () => ({
   useViewActionPermissions: (...args: unknown[]) => mockUseViewActionPermissions(...args),
 }));
 
-jest.mock('@/components/app/view-actions/useSpaceActionPermissions', () => ({
-  useSpaceActionPermissions: (...args: unknown[]) => mockUseSpaceActionPermissions(...args),
-}));
-
 describe('view action permission gates', () => {
   beforeEach(() => {
     mockCanCreateSpace = true;
     mockCurrentView = mockDocumentView;
     mockUseViewActionPermissions.mockReset();
-    mockUseSpaceActionPermissions.mockReset();
-    mockUseSpaceActionPermissions.mockReturnValue({
-      canOpenManageSpace: false,
-      hasLoadedSpaceActionPermissions: true,
-      isLoadingSpaceActionPermissions: false,
-    });
   });
 
   it('disables generic deep duplication for a Form page with a clear explanation', () => {
@@ -279,13 +268,9 @@ describe('view action permission gates', () => {
     mockUseViewActionPermissions.mockReturnValue({
       canCreateViewActions: true,
       canManageViewActions: false,
+      canOpenManageSpace: false,
       hasLoadedViewActionPermissions: true,
       isLoadingViewActionPermissions: false,
-    });
-    mockUseSpaceActionPermissions.mockReturnValue({
-      canOpenManageSpace: false,
-      hasLoadedSpaceActionPermissions: true,
-      isLoadingSpaceActionPermissions: false,
     });
 
     render(<SpaceSidebarActions view={mockSpaceView} visible onActionClick={jest.fn()} />);
@@ -298,13 +283,9 @@ describe('view action permission gates', () => {
     mockUseViewActionPermissions.mockReturnValue({
       canCreateViewActions: false,
       canManageViewActions: false,
+      canOpenManageSpace: true,
       hasLoadedViewActionPermissions: true,
       isLoadingViewActionPermissions: false,
-    });
-    mockUseSpaceActionPermissions.mockReturnValue({
-      canOpenManageSpace: true,
-      hasLoadedSpaceActionPermissions: true,
-      isLoadingSpaceActionPermissions: false,
     });
 
     render(<SpaceSidebarActions view={mockSpaceView} visible onActionClick={jest.fn()} />);
@@ -319,13 +300,9 @@ describe('view action permission gates', () => {
       mockUseViewActionPermissions.mockReturnValue({
         canCreateViewActions: true,
         canManageViewActions: false,
+        canOpenManageSpace: false,
         hasLoadedViewActionPermissions: true,
         isLoadingViewActionPermissions: false,
-      });
-      mockUseSpaceActionPermissions.mockReturnValue({
-        canOpenManageSpace: false,
-        hasLoadedSpaceActionPermissions: true,
-        isLoadingSpaceActionPermissions: false,
       });
 
       render(
@@ -339,7 +316,7 @@ describe('view action permission gates', () => {
         </ViewActionsPopover>
       );
 
-      expect(mockUseSpaceActionPermissions).toHaveBeenCalledWith(mockSpaceView, true);
+      expect(mockUseViewActionPermissions).toHaveBeenCalledWith(mockSpaceView, true);
       expect(screen.queryByTestId('space-action-manage')).toBeNull();
       expect(screen.queryByTestId('space-action-duplicate')).toBeNull();
       expect(screen.queryByTestId('space-action-delete')).toBeNull();
@@ -350,13 +327,9 @@ describe('view action permission gates', () => {
     mockUseViewActionPermissions.mockReturnValue({
       canCreateViewActions: false,
       canManageViewActions: false,
+      canOpenManageSpace: true,
       hasLoadedViewActionPermissions: true,
       isLoadingViewActionPermissions: false,
-    });
-    mockUseSpaceActionPermissions.mockReturnValue({
-      canOpenManageSpace: true,
-      hasLoadedSpaceActionPermissions: true,
-      isLoadingSpaceActionPermissions: false,
     });
 
     render(
@@ -379,13 +352,9 @@ describe('view action permission gates', () => {
     mockUseViewActionPermissions.mockReturnValue({
       canCreateViewActions: true,
       canManageViewActions: true,
+      canOpenManageSpace: false,
       hasLoadedViewActionPermissions: true,
       isLoadingViewActionPermissions: false,
-    });
-    mockUseSpaceActionPermissions.mockReturnValue({
-      canOpenManageSpace: false,
-      hasLoadedSpaceActionPermissions: true,
-      isLoadingSpaceActionPermissions: false,
     });
 
     render(
@@ -402,7 +371,7 @@ describe('view action permission gates', () => {
     expect(screen.queryByTestId('space-action-manage')).toBeNull();
     expect(screen.queryByTestId('space-action-duplicate')).toBeNull();
     expect(screen.getByTestId('space-action-delete')).toBeTruthy();
-    expect(mockUseSpaceActionPermissions).toHaveBeenCalledWith(mockSpaceView, true);
+    expect(mockUseViewActionPermissions).toHaveBeenCalledWith(mockSpaceView, true);
   });
 
   it('does not mount add actions until effective permissions allow mutations', () => {

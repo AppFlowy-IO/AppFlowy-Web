@@ -164,6 +164,9 @@ export function useViewActionPermissions(
     canCreateViewActions,
     canManageViewActions,
     canUsePageHistory,
+    // Space-only authority from the same read, so callers never probe the space a second time.
+    canOpenManageSpace: spaceSidebar.canOpenManageSpace,
+    canEditSidebar: spaceSidebar.canEditSidebar,
     hasLoadedViewActionPermissions: hasLoadedViewActionPermissions && spaceSidebar.hasLoadedSpaceActionPermissions,
     isLoadingViewActionPermissions: isLoadingViewActionPermissions || spaceSidebar.isLoadingSpaceActionPermissions,
   };

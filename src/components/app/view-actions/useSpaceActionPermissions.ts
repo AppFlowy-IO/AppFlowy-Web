@@ -69,13 +69,16 @@ export function useSpaceActionPermissions(view: View | null | undefined, opened:
       })
       .catch((error) => {
         if (!isCurrentRequest()) return;
+        const legacyServer = isUnsupportedRouteError(error);
 
-        if (!isUnsupportedRouteError(error)) console.error(error);
+        if (!legacyServer) console.error(error);
         setLoadedPermissions({
           workspaceId,
           viewId,
+          // Management needs the structured space API. A server without it has no sidebar
+          // policy either, so direct children keep the old Write-only rule there.
           canOpenManageSpace: false,
-          canEditSidebar: false,
+          canEditSidebar: legacyServer,
         });
       })
       .finally(() => {

@@ -96,6 +96,29 @@ describe('useSpaceActionPermissions', () => {
     expect(result.current.canOpenManageSpace).toBe(false);
   });
 
+  it.each([404, 405])('keeps direct-child creation to Write alone on a server without structured spaces (HTTP %s)', async (status) => {
+    // Such servers have no sidebar policy, so the old Write-only behaviour still applies.
+    mockGetSpacePermission.mockRejectedValue({ code: status, httpStatus: status, message: 'Unsupported route' });
+    const { result } = renderHook(() => useSpaceActionPermissions(spaceView, true));
+
+    await waitFor(() => expect(result.current.hasLoadedSpaceActionPermissions).toBe(true));
+
+    expect(result.current.canEditSidebar).toBe(true);
+    expect(result.current.canOpenManageSpace).toBe(false);
+  });
+
+  it('denies sidebar authority when the space permission cannot be loaded for another reason', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    mockGetSpacePermission.mockRejectedValue({ code: -1, message: 'Network error' });
+    const { result } = renderHook(() => useSpaceActionPermissions(spaceView, true));
+
+    await waitFor(() => expect(result.current.hasLoadedSpaceActionPermissions).toBe(true));
+
+    expect(result.current.canEditSidebar).toBe(false);
+    consoleError.mockRestore();
+  });
+
   it('does not treat a payload-level not-found response as an unsupported route', async () => {
     const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
 
