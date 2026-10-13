@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { AccessLevel, Role, SpacePermissionSettings, SpaceSidebarEditPolicy, SpaceVisibility } from '@/application/types';
 import { NormalModal } from '@/components/_shared/modal';
 import SpaceIconButton from '@/components/app/view-actions/SpaceIconButton';
+import { spaceMemberAccessLabel } from '@/components/app/view-actions/SpaceMemberAccessControl';
 import { spaceVisibilityDescription, spaceVisibilityLabel } from '@/components/app/view-actions/spaceVisibilityOptions';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -96,19 +97,10 @@ export interface SpaceSettingsPanelProps {
   overlay?: ReactNode;
 }
 
+// The same level names as the Members tab and Desktop ("Can comment"). A
+// missing level is No access.
 function accessLabel(accessLevel: AccessLevel | null | undefined, t: TFunction): string {
-  switch (accessLevel) {
-    case AccessLevel.FullAccess:
-      return t('shareAction.fullAccess');
-    case AccessLevel.ReadAndWrite:
-      return t('shareAction.canEdit');
-    case AccessLevel.ReadAndComment:
-      return t('shareAction.canViewAndComment');
-    case AccessLevel.ReadOnly:
-      return t('shareAction.canView');
-    default:
-      return t('space.permissionManager.noAccess');
-  }
+  return spaceMemberAccessLabel(accessLevel ?? null, t);
 }
 
 function sidebarEditPolicyLabel(policy: SpaceSidebarEditPolicy, t: TFunction): string {
@@ -385,7 +377,7 @@ const PublicAccessCard = memo(function PublicAccessCard({
           title={t('space.permissionManager.workspaceOwners')}
           description={t('space.permissionManager.workspaceOwnersDescription')}
           testId='manage-space-workspace-owners-row'
-          trailing={<FixedAccess label={t('shareAction.fullAccess')} />}
+          trailing={<FixedAccess label={accessLabel(AccessLevel.FullAccess, t)} />}
         />
         <PermissionPrincipalRow
           icon={<Users className='h-5 w-5 text-icon-primary' />}
@@ -456,7 +448,7 @@ const CustomPermissionsCard = memo(function CustomPermissionsCard({
         title={t('space.permissionManager.owners')}
         description={t('space.permissionManager.ownersDescription')}
         testId='manage-space-custom-owners-row'
-        trailing={<FixedAccess label={t('shareAction.fullAccess')} />}
+        trailing={<FixedAccess label={accessLabel(AccessLevel.FullAccess, t)} />}
       />
       <PermissionPrincipalRow
         icon={<Users className='h-5 w-5 text-icon-primary' />}
@@ -511,7 +503,7 @@ const PrivateAccessCard = memo(function PrivateAccessCard() {
         title={t('space.permissionManager.owner')}
         description={t('space.permissionManager.privateOwnerDescription')}
         testId='manage-space-private-owner-row'
-        trailing={<FixedAccess label={t('shareAction.fullAccess')} />}
+        trailing={<FixedAccess label={accessLabel(AccessLevel.FullAccess, t)} />}
         last
       />
     </section>
@@ -759,7 +751,7 @@ function SpaceSettingsPanel({
                     icon={<Shield className='h-5 w-5 text-icon-primary' />}
                     title={t('space.permissionManager.owners')}
                     description={t('space.permissionManager.ownersDescription')}
-                    trailing={<FixedAccess label={t('shareAction.fullAccess')} />}
+                    trailing={<FixedAccess label={accessLabel(AccessLevel.FullAccess, t)} />}
                   />
 
                   <PermissionPrincipalRow

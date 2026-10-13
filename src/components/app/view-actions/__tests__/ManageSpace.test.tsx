@@ -844,8 +844,9 @@ describe('ManageSpace ACL management', () => {
       expect(screen.queryByTestId('space-member-access-header')).toBeNull();
       expect(screen.queryByTestId('space-member-access-control')).toBeNull();
       expect(screen.queryByTestId('space-member-access-fixed')).toBeNull();
-      // Old servers stay usable: no message about what the server lacks.
-      expect(screen.queryByText(/space\.memberOverride\./)).toBeNull();
+      // Old servers stay usable: no message about what the server lacks (the
+      // General tab still names access levels).
+      expect(screen.queryByText(/space\.memberOverride\.(?!levels\.)/)).toBeNull();
       expect(mockSetOverride).not.toHaveBeenCalled();
     });
 
@@ -1317,8 +1318,8 @@ describe('ManageSpace ACL management', () => {
       const customCard = screen.getByTestId('manage-space-custom-permissions-card');
 
       expect(customCard.textContent).toContain('space.permissionManager.customPermissionsTitle');
-      expect(screen.getByTestId('manage-space-custom-members-access').textContent).toContain('shareAction.canEdit');
-      expect(screen.getByTestId('manage-space-everyone-else-access').textContent).toContain('shareAction.canView');
+      expect(screen.getByTestId('manage-space-custom-members-access').textContent).toContain('space.memberOverride.levels.canEdit');
+      expect(screen.getByTestId('manage-space-everyone-else-access').textContent).toContain('space.memberOverride.levels.canView');
 
       await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
       expect(structuredUpdatePermission()).toEqual(customPermission);
@@ -1454,7 +1455,7 @@ describe('ManageSpace ACL management', () => {
 
       await waitForSettingsLoaded();
       expect(screen.getByTestId('manage-space-custom-members-access').textContent).toContain(
-        'space.permissionManager.noAccess'
+        'space.memberOverride.levels.noAccess'
       );
       fireEvent.click(visibilityOption(SpaceVisibility.Private));
       expect(confirmDialog().textContent).toContain('space.permissionManager.confirmToPrivateDescription');
@@ -1520,7 +1521,7 @@ describe('ManageSpace ACL management', () => {
       expect(screen.getByTestId('manage-space-workspace-owners-row').textContent).toContain(
         'space.permissionManager.workspaceOwnersDescription'
       );
-      expect(screen.getByTestId('manage-space-workspace-owners-row').textContent).toContain('shareAction.fullAccess');
+      expect(screen.getByTestId('manage-space-workspace-owners-row').textContent).toContain('space.memberOverride.levels.fullAccess');
       expect(screen.getByTestId('manage-space-workspace-members-row').textContent).toContain(
         'space.permissionManager.workspaceMembersDescription'
       );
@@ -1530,7 +1531,7 @@ describe('ManageSpace ACL management', () => {
       // Full access / Can edit / Can view, no "No access" on a public space.
       expect(
         screen.getAllByTestId(/^manage-space-workspace-members-access-option-/).map((el) => el.textContent)
-      ).toEqual(['shareAction.fullAccess', 'shareAction.canEditselected', 'shareAction.canView']);
+      ).toEqual(['space.memberOverride.levels.fullAccess', 'space.memberOverride.levels.canEditselected', 'space.memberOverride.levels.canView']);
 
       fireEvent.click(screen.getByTestId(`manage-space-workspace-members-access-option-${AccessLevel.ReadOnly}`));
       expect(screen.queryByTestId('manage-space-confirm-dialog')).toBeNull();
@@ -1552,10 +1553,10 @@ describe('ManageSpace ACL management', () => {
 
       expect(confirmDialog().textContent).toContain('space.permissionManager.fullAccessWorkspaceMembersTitle');
       expect(screen.getByTestId('manage-space-confirm-ok').textContent).toBe('space.permissionManager.grantFullAccess');
-      expect(screen.getByTestId('manage-space-workspace-members-access').textContent).toContain('shareAction.canEdit');
+      expect(screen.getByTestId('manage-space-workspace-members-access').textContent).toContain('space.memberOverride.levels.canEdit');
       confirmPending();
       expect(screen.getByTestId('manage-space-workspace-members-access').textContent).toContain(
-        'shareAction.fullAccess'
+        'space.memberOverride.levels.fullAccess'
       );
       await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
       expect(structuredUpdatePermission()).toEqual({
@@ -1578,7 +1579,7 @@ describe('ManageSpace ACL management', () => {
       expect(screen.getByTestId('manage-space-custom-owners-row').textContent).toContain(
         'space.permissionManager.ownersDescription'
       );
-      expect(screen.getByTestId('manage-space-custom-owners-row').textContent).toContain('shareAction.fullAccess');
+      expect(screen.getByTestId('manage-space-custom-owners-row').textContent).toContain('space.memberOverride.levels.fullAccess');
       expect(screen.getByTestId('manage-space-custom-members-row').textContent).toContain(
         'space.permissionManager.customMembersDescription'
       );
@@ -1588,21 +1589,21 @@ describe('ManageSpace ACL management', () => {
       expect(screen.getByTestId('manage-space-everyone-else-row').textContent).toContain(
         'space.permissionManager.everyoneElseDescription'
       );
-      // Every level (PRD §17/§39, including Can view and comment) plus No
-      // access, for both audiences.
+      // Every level (PRD §17/§39, including Can comment) plus No access, for
+      // both audiences, named as in the Members tab and on Desktop.
       expect(screen.getAllByTestId(/^manage-space-custom-members-access-option-/).map((el) => el.textContent)).toEqual([
-        'shareAction.fullAccess',
-        'shareAction.canEditselected',
-        'shareAction.canViewAndComment',
-        'shareAction.canView',
-        'space.permissionManager.noAccess',
+        'space.memberOverride.levels.fullAccess',
+        'space.memberOverride.levels.canEditselected',
+        'space.memberOverride.levels.canComment',
+        'space.memberOverride.levels.canView',
+        'space.memberOverride.levels.noAccess',
       ]);
       expect(screen.getAllByTestId(/^manage-space-everyone-else-access-option-/).map((el) => el.textContent)).toEqual([
-        'shareAction.fullAccess',
-        'shareAction.canEdit',
-        'shareAction.canViewAndComment',
-        'shareAction.canViewselected',
-        'space.permissionManager.noAccess',
+        'space.memberOverride.levels.fullAccess',
+        'space.memberOverride.levels.canEdit',
+        'space.memberOverride.levels.canComment',
+        'space.memberOverride.levels.canViewselected',
+        'space.memberOverride.levels.noAccess',
       ]);
     });
 
@@ -1633,14 +1634,14 @@ describe('ManageSpace ACL management', () => {
       expect(confirmDialog().textContent).toContain('space.permissionManager.fullAccessMembersTitle');
       expect(confirmDialog().textContent).toContain('space.permissionManager.fullAccessMembersDescription');
       fireEvent.click(screen.getByTestId('manage-space-confirm-dialog-cancel'));
-      expect(screen.getByTestId('manage-space-custom-members-access').textContent).toContain('shareAction.canEdit');
+      expect(screen.getByTestId('manage-space-custom-members-access').textContent).toContain('space.memberOverride.levels.canEdit');
 
       fireEvent.click(screen.getByTestId(`manage-space-everyone-else-access-option-${AccessLevel.FullAccess}`));
       expect(confirmDialog().textContent).toContain('space.permissionManager.fullAccessEveryoneElseTitle');
       expect(confirmDialog().textContent).toContain('space.permissionManager.fullAccessEveryoneElseDescription');
       expect(screen.getByTestId('manage-space-confirm-ok').textContent).toBe('space.permissionManager.grantFullAccess');
       confirmPending();
-      expect(screen.getByTestId('manage-space-everyone-else-access').textContent).toContain('shareAction.fullAccess');
+      expect(screen.getByTestId('manage-space-everyone-else-access').textContent).toContain('space.memberOverride.levels.fullAccess');
 
       await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
       expect(structuredUpdatePermission()).toEqual({
@@ -1658,7 +1659,7 @@ describe('ManageSpace ACL management', () => {
       render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
 
       await waitForSettingsLoaded();
-      expect(screen.getByTestId('manage-space-everyone-else-access').textContent).toContain('shareAction.canView');
+      expect(screen.getByTestId('manage-space-everyone-else-access').textContent).toContain('space.memberOverride.levels.canView');
       fireEvent.click(screen.getByTestId(`manage-space-custom-members-access-option-${AccessLevel.ReadOnly}`));
 
       await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
@@ -2523,7 +2524,7 @@ describe('ManageSpace ACL management', () => {
         'space.permissionManager.remove',
       ]);
       // There is no per-row access column on a custom space.
-      expect(within(memberRow).queryByText('shareAction.canEdit')).toBeNull();
+      expect(within(memberRow).queryByText('space.memberOverride.levels.canEdit')).toBeNull();
     });
 
     it('falls back to the email alone when the server omits the workspace role', async () => {

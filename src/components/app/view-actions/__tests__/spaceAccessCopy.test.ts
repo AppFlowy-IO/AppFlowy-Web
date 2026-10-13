@@ -6,6 +6,7 @@ import fr from '@/@types/translations/fr-FR.json';
 /**
  * The component tests stub `t`, so this checks the real strings behind the
  * per-person access (A) and page creation (P) controls in Manage/Create Space.
+ * The level names are also the General tab's, so both tabs use one vocabulary.
  */
 const SHARED_VOCABULARY: Record<string, string> = {
   'space.memberOverride.label': 'Access',
@@ -15,6 +16,7 @@ const SHARED_VOCABULARY: Record<string, string> = {
   'space.memberOverride.levels.canComment': 'Can comment',
   'space.memberOverride.levels.canEdit': 'Can edit',
   'space.memberOverride.levels.fullAccess': 'Full access',
+  'space.memberOverride.levels.noAccess': 'No access',
   'space.memberOverride.inheritedNoAccess':
     'Space members get no access by default. Choose access for specific members or groups, or change the default in General.',
   'space.memberOverride.updated': 'Access updated',
