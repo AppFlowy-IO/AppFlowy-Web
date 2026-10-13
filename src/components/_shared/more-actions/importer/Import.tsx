@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { ReactNode, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as CheckedIcon } from '@/assets/icons/check_circle.svg';
@@ -9,7 +9,20 @@ import { LoginModal } from '@/components/login';
 import { useAuthenticatedUserIdOptional } from '@/components/main/app.hooks';
 import { getConfigValue } from '@/utils/runtime-config';
 
-function Import({ disableClose, onSuccessfulImport }: { disableClose?: boolean; onSuccessfulImport?: () => void }) {
+/**
+ * The shared new-workspace importer. A finished upload always gets a confirmation, because the
+ * workspace appears only after the server processes the file; hosts are notified as well.
+ */
+function Import({
+  disableClose,
+  onSuccessfulImport,
+  successMessage,
+}: {
+  disableClose?: boolean;
+  onSuccessfulImport?: () => void;
+  /** Replaces the default note about finding the workspace in the switcher. */
+  successMessage?: ReactNode;
+}) {
   const { open, handleImportClose, handleLoginClose, loginOpen, url, source } = useImport();
   const [openSuccess, setOpenSuccess] = useState(false);
   const { t } = useTranslation();
@@ -18,7 +31,8 @@ function Import({ disableClose, onSuccessfulImport }: { disableClose?: boolean; 
 
   const handleSuccess = useCallback(() => {
     setOpenSuccess(true);
-  }, []);
+    onSuccessfulImport?.();
+  }, [onSuccessfulImport]);
 
   return (
     <>
@@ -30,7 +44,7 @@ function Import({ disableClose, onSuccessfulImport }: { disableClose?: boolean; 
           disableClose={disableClose}
           source={source || undefined}
           onClose={handleImportClose}
-          onSuccess={onSuccessfulImport || handleSuccess}
+          onSuccess={handleSuccess}
         />
       )}
       {openSuccess && (
@@ -53,7 +67,7 @@ function Import({ disableClose, onSuccessfulImport }: { disableClose?: boolean; 
           closable={false}
           onClose={() => setOpenSuccess(false)}
         >
-          <div className='text-text-secondary'>{t('web.importSuccessMessage')}</div>
+          <div className='text-text-secondary'>{successMessage ?? t('web.importSuccessMessage')}</div>
         </NormalModal>
       )}
     </>

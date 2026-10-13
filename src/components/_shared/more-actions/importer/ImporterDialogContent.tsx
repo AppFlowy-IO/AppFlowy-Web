@@ -8,6 +8,8 @@ import { notify } from '@/components/_shared/notify';
 import { TabPanel, ViewTab, ViewTabs } from '@/components/_shared/tabs/ViewTabs';
 import { useWorkspaceCreationCapability } from '@/components/app/hooks/useWorkspaceCreationCapability';
 import { WorkspaceCreationNotice } from '@/components/app/workspaces/WorkspaceCreationNotice';
+import { Button } from '@/components/ui/button';
+import { getErrorMessage } from '@/utils/errors';
 
 const ZIP_ACCEPT = '.zip,application/zip,application/x-zip,application/x-zip-compressed';
 
@@ -30,6 +32,10 @@ const IMPORT_SOURCES = {
 } as const;
 
 type ImportSource = keyof typeof IMPORT_SOURCES;
+
+function isAbortError(error: unknown) {
+  return typeof error === 'object' && error !== null && (error as { name?: unknown }).name === 'AbortError';
+}
 
 function ImporterDialogContent({ source, onSuccess }: { source?: string; onSuccess: () => void }) {
   const { t } = useTranslation();
@@ -66,10 +72,10 @@ function ImporterDialogContent({ source, onSuccess }: { source?: string; onSucce
         });
         if (!creation.isCurrent()) return;
         onSuccess();
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } catch (e: any) {
-        if (!creation.isCurrent()) return;
-        notify.error(e.message);
+      } catch (e) {
+        // A cancel is the user's choice, not a failure to report.
+        if (!creation.isCurrent() || isAbortError(e)) return;
+        notify.error(getErrorMessage(e));
         setIsError(true);
         void creation.refresh();
       } finally {
@@ -115,11 +121,17 @@ function ImporterDialogContent({ source, onSuccess }: { source?: string; onSucce
               loading={isUploading}
             />
             {files[source as ImportSource] && (
-              <div className='text-sm'>
-                <p>{files[source as ImportSource]?.name}</p>
+              <div className='flex items-center gap-3 text-sm'>
+                <div className='min-w-0 flex-1'>
+                  <p className='truncate text-text-primary'>{files[source as ImportSource]?.name}</p>
+                  {isError && !isUploading && (
+                    <p className='text-xs text-text-error'>{t('workspaceCreation.uploadFailed')}</p>
+                  )}
+                </div>
                 {isError && (
-                  <button
-                    type='button'
+                  <Button
+                    size='sm'
+                    variant='outline'
                     disabled={isUploading || !creation.canCreate}
                     onClick={() => {
                       const file = files[source as ImportSource];
@@ -127,8 +139,8 @@ function ImporterDialogContent({ source, onSuccess }: { source?: string; onSucce
                       if (file) void handleUpload(file);
                     }}
                   >
-                    {t('button.retry')}
-                  </button>
+                    {t('workspaceCreation.uploadAgain')}
+                  </Button>
                 )}
               </div>
             )}

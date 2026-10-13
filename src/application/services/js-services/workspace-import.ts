@@ -1,5 +1,3 @@
-import { t } from 'i18next';
-
 import { EventType, on } from '@/application/session';
 import { Log } from '@/utils/log';
 
@@ -18,6 +16,11 @@ export interface ImportFileWithUploadOptions {
   signal?: AbortSignal;
 }
 
+/** A caller cancel is not a failure; callers can ignore this error by name. */
+function cancelled() {
+  return new DOMException('The import was cancelled.', 'AbortError');
+}
+
 /** Keep task creation, upload, completion and cleanup within the admitting actor's server. */
 export async function importFileWithUpload(file: File, { taskType, onProgress, signal }: ImportFileWithUploadOptions) {
   const assertCurrent = captureWorkspaceCreationContext();
@@ -31,9 +34,10 @@ export async function importFileWithUpload(file: File, { taskType, onProgress, s
     }
   };
 
+  // A context change keeps its own error; only an abort within the same context is a cancel.
   const assertActive = () => {
     assertCurrent();
-    if (controller.signal.aborted) throw new Error(t('workspaceCreation.contextChanged'));
+    if (controller.signal.aborted) throw cancelled();
   };
 
   const removeListeners = [EventType.SESSION_VALID, EventType.SESSION_REFRESH, EventType.SESSION_INVALID].map((event) =>
@@ -65,18 +69,22 @@ export async function importFileWithUpload(file: File, { taskType, onProgress, s
     assertActive();
   } catch (error) {
     abort();
-    // Never issue cleanup with another account's client. The server owns expiry
-    // of tasks whose admitting session is no longer available.
+    let current = true;
+
     try {
       assertCurrent();
-      if (taskId)
-        void cancelImportTask(taskId).catch((cancelError) => {
-          Log.warn('[Import] Failed to cancel import task after upload error', cancelError);
-        });
     } catch {
-      /* The admitting context ended. */
+      current = false;
     }
 
+    // Never issue cleanup with another account's client. The server owns expiry
+    // of tasks whose admitting session is no longer available.
+    if (current && taskId)
+      void cancelImportTask(taskId).catch((cancelError) => {
+        Log.warn('[Import] Failed to cancel import task after upload error', cancelError);
+      });
+    // Whatever the transport reported, a cancel by the caller is reported as a cancel.
+    if (current && signal?.aborted) throw cancelled();
     throw error;
   } finally {
     removeListeners.forEach((remove) => remove());

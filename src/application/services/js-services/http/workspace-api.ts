@@ -9,6 +9,7 @@ import {
   FolderView,
   GuestConversionCodeInfo,
   GuestInvitation,
+  Invitation,
   MentionablePerson,
   MentionSearchRequest,
   MentionSearchResponse,
@@ -36,7 +37,7 @@ import { canonicalizeUserUid } from '@/application/user-uid';
 
 import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from './core';
 import { captureApiContext } from './request-context';
-import { ensureCanCreateWorkspace, getWorkspaceCreationCapability } from './workspace-creation-api';
+import { admitWorkspaceCreation } from './workspace-creation-api';
 
 const UID_FIELD_REGEX = /"uid"\s*:\s*(\d{16,})/g;
 
@@ -134,18 +135,38 @@ export async function updateWorkspace(workspaceId: string, payload: UpdateWorksp
   );
 }
 
-export type WorkspaceCreationReceipt = { requestId: string; replay: boolean };
+export interface CreateWorkspaceOptions {
+  /**
+   * Recover an earlier keyed request whose outcome is unknown. The server resolves a completed
+   * receipt before new-work admission, so this skips the client admission check and never uses the
+   * unkeyed route: a later 404 may come from an old node after the original request committed.
+   */
+  replay?: string;
+  /**
+   * Start a keyed request. Called only after fresh admission passes on a server with keyed creation,
+   * immediately before the POST; it must durably record and return a new request ID. A throw stops
+   * before sending. Without it, or on a legacy server, creation uses the original unkeyed route.
+   */
+  reserve?: () => string;
+}
 
-export async function createWorkspace(payload: CreateWorkspacePayload, receipt?: WorkspaceCreationReceipt) {
+export async function createWorkspace(payload: CreateWorkspacePayload, options: CreateWorkspaceOptions = {}) {
   const scope = captureApiContext();
+  let url = '/api/workspace';
+  let body: CreateWorkspacePayload & { request_id?: string } = payload;
 
-  // An existing request can recover its original owned result after policy
-  // denial. The distinct endpoint performs that receipt lookup before admission.
-  if (receipt?.replay) await getWorkspaceCreationCapability();
-  else await ensureCanCreateWorkspace();
-  scope.assertCurrent();
-  const url = receipt ? '/api/workspace/create-with-request-id' : '/api/workspace';
-  const body = receipt ? { ...payload, request_id: receipt.requestId } : payload;
+  if (options.replay) {
+    url = '/api/workspace/create-with-request-id';
+    body = { ...payload, request_id: options.replay };
+  } else {
+    const { legacy } = await admitWorkspaceCreation();
+
+    scope.assertCurrent();
+    if (!legacy && options.reserve) {
+      url = '/api/workspace/create-with-request-id';
+      body = { ...payload, request_id: options.reserve() };
+    }
+  }
 
   const data = await executeAPIRequest<{ workspace_id: string }>(() => {
     scope.assertCurrent();
@@ -154,6 +175,41 @@ export async function createWorkspace(payload: CreateWorkspacePayload, receipt?:
 
   scope.assertCurrent();
   return data.workspace_id;
+}
+
+function toPendingInvitation(value: unknown): Invitation | undefined {
+  if (!value || typeof value !== 'object') return;
+  const raw = value as Record<string, unknown>;
+  const text = (field: unknown) => (typeof field === 'string' ? field : '');
+
+  if (typeof raw.invite_id !== 'string' || typeof raw.workspace_id !== 'string' || raw.status !== 'Pending') return;
+  return {
+    invite_id: raw.invite_id,
+    workspace_id: raw.workspace_id,
+    workspace_name: text(raw.workspace_name),
+    inviter_name: text(raw.inviter_name),
+    inviter_email: text(raw.inviter_email),
+    inviter_icon: text(raw.inviter_icon),
+    workspace_icon: text(raw.workspace_icon),
+    member_count: typeof raw.member_count === 'number' ? raw.member_count : 0,
+    status: 'Pending',
+  };
+}
+
+/** Pending invitations addressed to the signed-in account, so it can join without the link. */
+export async function listPendingWorkspaceInvitations(): Promise<Invitation[]> {
+  const scope = captureApiContext();
+  const data = await executeAPIRequest<unknown>(() =>
+    scope.client?.get<APIResponse<unknown>>('/api/workspace/invite', { params: { status: 'Pending' } })
+  );
+
+  scope.assertCurrent();
+  if (!Array.isArray(data)) throw new Error('Invalid workspace invitation list');
+  return data.flatMap((value) => {
+    const invitation = toPendingInvitation(value);
+
+    return invitation ? [invitation] : [];
+  });
 }
 
 export async function getWorkspaces(): Promise<Workspace[]> {

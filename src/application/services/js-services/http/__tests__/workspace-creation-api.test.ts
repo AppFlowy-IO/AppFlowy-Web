@@ -1,6 +1,3 @@
-import { getServerHostingMode, getServerInfoSnapshot } from '@/utils/server-info';
-
-import { getServerInfo } from '../auth-api';
 import { createImportTask, CreateImportTaskType, createConfluenceImportTask } from '../import-api';
 import { createWorkspace } from '../workspace-api';
 import { ensureCanCreateWorkspace, getWorkspaceCreationCapability } from '../workspace-creation-api';
@@ -11,8 +8,6 @@ let mockServerUrl = 'https://server';
 
 jest.mock('@/application/session/token', () => ({ getTokenParsed: () => ({ user: { id: mockUserId } }) }));
 jest.mock('@/utils/runtime-config', () => ({ getConfigValue: () => mockServerUrl }));
-jest.mock('../auth-api', () => ({ getServerInfo: jest.fn() }));
-jest.mock('@/utils/server-info', () => ({ getServerHostingMode: jest.fn(), getServerInfoSnapshot: jest.fn() }));
 jest.mock('../core', () => ({
   getAxios: () => mockClient,
   executeAPIRequest: async (request: () => Promise<{ data: unknown }>) => (await request()).data,
@@ -32,7 +27,7 @@ beforeEach(() => {
   mockClient.post.mockResolvedValue({
     data: { workspace_id: 'new-workspace', task_id: 'task', presigned_url: 'upload' },
   });
-  jest.mocked(getServerInfoSnapshot).mockReturnValue({ status: 'available', info: { enable_page_history: false } });
+  Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
 });
 
 test.each([allowed, { ...allowed, supported: false, mode: 'unrestricted', can_create_workspace: true }])(
@@ -70,24 +65,40 @@ test('existing-workspace import uses its own destination permissions', async () 
   expect(mockClient.post).toHaveBeenCalled();
 });
 
-test.each(['cloud', 'self-hosted', 'unknown'] as const)(
-  'only verified hosted installations retain the old missing-route behavior: %s',
-  async (mode) => {
-    mockClient.get.mockRejectedValue({ code: 404 });
-    jest.mocked(getServerHostingMode).mockReturnValue(mode);
-    if (mode === 'cloud')
-      expect(await getWorkspaceCreationCapability()).toMatchObject({ supported: false, can_create_workspace: true });
-    else await expect(getWorkspaceCreationCapability()).rejects.toMatchObject({ code: 404 });
-  }
-);
+test.each([404, 405])('a server without the capability route (%s) is a legacy server, not a denial', async (status) => {
+  mockClient.get.mockRejectedValue({ code: status, httpStatus: status });
+  expect(await getWorkspaceCreationCapability()).toEqual({
+    supported: false,
+    mode: 'unrestricted',
+    revision: '0',
+    can_create_workspace: true,
+    legacy: true,
+  });
+});
 
-test('the standalone import route can positively identify a legacy hosted server', async () => {
-  mockClient.get.mockRejectedValue({ code: 404 });
-  jest.mocked(getServerInfoSnapshot).mockReturnValue({ status: 'loading' });
-  jest.mocked(getServerInfo).mockResolvedValue({ self_hosted: false, enable_page_history: false });
-  jest.mocked(getServerHostingMode).mockReturnValue('cloud');
-  expect(await getWorkspaceCreationCapability()).toMatchObject({ can_create_workspace: true });
-  expect(getServerInfo).toHaveBeenCalledTimes(1);
+test('an application error that uses HTTP 404 is not mistaken for a legacy server', async () => {
+  mockClient.get.mockRejectedValue({ code: -2, httpStatus: 404, message: 'missing' });
+  await expect(getWorkspaceCreationCapability()).rejects.toMatchObject({ code: -2 });
+});
+
+test('a server response cannot claim the client-only legacy marker', async () => {
+  mockClient.get.mockResolvedValue({ data: { ...allowed, can_create_workspace: false, legacy: true } });
+  expect(await getWorkspaceCreationCapability()).toEqual({ ...allowed, can_create_workspace: false });
+});
+
+test('a legacy server keeps new-workspace import available and lets the server decide', async () => {
+  mockClient.get.mockRejectedValue({ code: 404, httpStatus: 404 });
+  await createImportTask(new File(['draft'], 'draft.zip'), CreateImportTaskType.Notion);
+  expect(mockClient.post.mock.calls[0][0]).toBe('/api/import/create');
+});
+
+test('a legacy server creates through its original route without a request ID', async () => {
+  const reserve = jest.fn(() => 'unused');
+
+  mockClient.get.mockRejectedValue({ code: 404, httpStatus: 404 });
+  expect(await createWorkspace({ workspace_name: 'Legacy' }, { reserve })).toBe('new-workspace');
+  expect(reserve).not.toHaveBeenCalled();
+  expect(mockClient.post).toHaveBeenCalledWith('/api/workspace', { workspace_name: 'Legacy' });
 });
 
 test('a late positive cannot authorize another account or API origin', async () => {
@@ -129,25 +140,62 @@ test.each(['workspace', 'import'])('a late %s POST response cannot enter the nex
   await expect(pending).rejects.toThrow('workspaceCreation.contextChanged');
 });
 
-test('receipt replay can recover an earlier result after a fresh capability denies new creation', async () => {
+test('a replay recovers the original result without new-work admission or the legacy route', async () => {
   mockClient.get.mockResolvedValue({ data: { ...allowed, can_create_workspace: false } });
   const requestId = '2f168cc6-41dd-4c15-840a-bb8beca482ef';
 
-  expect(await createWorkspace({ workspace_name: 'Original name' }, { requestId, replay: true })).toBe('new-workspace');
-  expect(mockClient.get).toHaveBeenCalledWith('/api/user/workspace-creation-capability');
+  expect(await createWorkspace({ workspace_name: 'Original name' }, { replay: requestId })).toBe('new-workspace');
+  // The server resolves a completed receipt before admission; the client must not pre-empt it.
+  expect(mockClient.get).not.toHaveBeenCalled();
   expect(mockClient.post).toHaveBeenCalledWith('/api/workspace/create-with-request-id', {
-    workspace_name: 'Original name', request_id: requestId,
+    workspace_name: 'Original name',
+    request_id: requestId,
   });
 });
 
-test('a new keyed attempt still requires fresh admission and never falls back after an unsupported route', async () => {
-  const receipt = { requestId: '2f168cc6-41dd-4c15-840a-bb8beca482ef', replay: false };
-
-  mockClient.get.mockResolvedValueOnce({ data: { ...allowed, can_create_workspace: false } });
-  await expect(createWorkspace({ workspace_name: 'Draft' }, receipt)).rejects.toThrow('workspaceCreation.denied');
-  expect(mockClient.post).not.toHaveBeenCalled();
-  mockClient.post.mockRejectedValueOnce({ code: 404 });
-  await expect(createWorkspace({ workspace_name: 'Draft' }, receipt)).rejects.toMatchObject({ code: 404 });
+test('a replay never falls back to the legacy route after a 404', async () => {
+  mockClient.post.mockRejectedValueOnce({ code: 404, httpStatus: 404 });
+  await expect(createWorkspace({ workspace_name: 'Draft' }, { replay: 'request' })).rejects.toMatchObject({ code: 404 });
   expect(mockClient.post).toHaveBeenCalledTimes(1);
   expect(mockClient.post.mock.calls[0][0]).toBe('/api/workspace/create-with-request-id');
+});
+
+test('a new keyed attempt reserves its request ID only after fresh admission, right before sending', async () => {
+  const order: string[] = [];
+  const reserve = jest.fn(() => {
+    order.push('reserve');
+    return '2f168cc6-41dd-4c15-840a-bb8beca482ef';
+  });
+
+  mockClient.get.mockResolvedValueOnce({ data: { ...allowed, can_create_workspace: false } });
+  await expect(createWorkspace({ workspace_name: 'Draft' }, { reserve })).rejects.toThrow('workspaceCreation.denied');
+  expect(reserve).not.toHaveBeenCalled();
+  expect(mockClient.post).not.toHaveBeenCalled();
+
+  Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
+  await expect(createWorkspace({ workspace_name: 'Draft' }, { reserve })).rejects.toThrow('workspaceCreation.unavailable');
+  expect(reserve).not.toHaveBeenCalled();
+  Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
+
+  mockClient.post.mockImplementationOnce(async () => {
+    order.push('post');
+    return { data: { workspace_id: 'keyed-workspace' } };
+  });
+  expect(await createWorkspace({ workspace_name: 'Draft' }, { reserve })).toBe('keyed-workspace');
+  expect(order).toEqual(['reserve', 'post']);
+  expect(mockClient.post).toHaveBeenCalledWith('/api/workspace/create-with-request-id', {
+    workspace_name: 'Draft',
+    request_id: '2f168cc6-41dd-4c15-840a-bb8beca482ef',
+  });
+});
+
+test('a reservation failure stops before sending', async () => {
+  await expect(
+    createWorkspace({ workspace_name: 'Draft' }, {
+      reserve: () => {
+        throw new Error('Quota');
+      },
+    })
+  ).rejects.toThrow('Quota');
+  expect(mockClient.post).not.toHaveBeenCalled();
 });
