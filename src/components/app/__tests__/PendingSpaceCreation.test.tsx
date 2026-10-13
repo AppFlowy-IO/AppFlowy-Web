@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 
 import { SpaceCreationIntentStore } from '@/application/services/js-services/space-creation-intent';
@@ -20,7 +20,12 @@ jest.mock('@/components/app/app.hooks', () => ({
   useOpenPageModal: () => jest.fn(),
 }));
 jest.mock('@/components/app/view-actions/CreateSpaceModal', () => ({
-  __esModule: true, default: () => <div data-testid='resume-dialog' />,
+  __esModule: true,
+  default: ({ onClose }: { onClose: () => void }) => (
+    <div data-testid='resume-dialog'>
+      <button data-testid='resume-dialog-close' onClick={onClose}>close</button>
+    </div>
+  ),
 }));
 jest.mock('@/components/ui/button', () => ({ Button: ({ children, variant: _variant, size: _size, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: string; size?: string }) => <button {...props}>{children}</button> }));
 jest.mock('@/components/ui/tooltip', () => ({
@@ -66,6 +71,27 @@ test('Resume is reachable without an outline or creation capability and cannot f
   mockWorkspace = 'workspace-a';
   app.rerender(<PendingSpaceCreation />);
   expect(screen.getByTestId('resume-space-creation')).toBeTruthy();
+  // The switch closed the dialog; coming back offers the request without reopening it.
+  expect(screen.queryByTestId('resume-dialog')).toBeNull();
+});
+
+test('an open Resume dialog stays until it is closed, even when its saved request goes away', async () => {
+  saveRequest();
+  render(<PendingSpaceCreation />);
+
+  fireEvent.click(screen.getByTestId('resume-space-creation'));
+  expect(await screen.findByTestId('resume-dialog')).toBeTruthy();
+  // For example a released draft: the user keeps its fields until they close the dialog.
+  act(() => new SpaceCreationIntentStore('workspace-a').discard());
+  expect(screen.queryByTestId('pending-space-creation')).toBeNull();
+  expect(screen.getByTestId('resume-dialog')).toBeTruthy();
+
+  fireEvent.click(screen.getByTestId('resume-dialog-close'));
+  expect(screen.queryByTestId('resume-dialog')).toBeNull();
+  // A later saved request is offered in the sidebar but never opens by itself.
+  act(() => saveRequest());
+  expect(screen.getByTestId('resume-space-creation')).toBeTruthy();
+  expect(screen.queryByTestId('resume-dialog')).toBeNull();
 });
 
 test('a saved request can be discarded from the sidebar after confirmation', () => {
