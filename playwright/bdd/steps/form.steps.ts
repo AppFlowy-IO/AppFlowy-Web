@@ -1,7 +1,8 @@
 import { BrowserContext, expect, Page } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
-import { ViewLayout } from '../../../src/application/types';
+import type { AtomicCreationReceipt } from '../../../src/application/atomic-creation/types';
+import { DatabaseViewLayout } from '../../../src/application/types';
 import { assertSuccessfulAppFlowyResponse } from '../../support/appflowy-response';
 import { signInWithPasswordViaUi } from '../../support/auth-flow-helpers';
 import { signInAndCreateDatabaseView } from '../../support/database-ui-helpers';
@@ -124,20 +125,20 @@ Given('Nathan has a Grid with a Form tab open in his workspace', async ({ page }
   await Promise.all([
     // Record the server-created container, not a possibly stale selected page.
     page.waitForResponse((response) =>
-      new URL(response.url()).pathname === `/api/workspace/${workspaceId}/page-view` &&
+      new URL(response.url()).pathname === `/api/workspace/${workspaceId}/v2/page-view/database/default` &&
       response.request().method() === 'POST' &&
-      response.request().postDataJSON()?.layout === ViewLayout.Grid
+      response.request().postDataJSON()?.database?.layout === DatabaseViewLayout.Grid
     ).then(async (response) => {
       const bodyText = await response.text();
 
       assertSuccessfulAppFlowyResponse({
         bodyText, ok: response.ok(), status: response.status(), operation: 'Create form fixture',
       });
-      const { data } = JSON.parse(bodyText) as { data: { view_id: string } };
+      const { data } = JSON.parse(bodyText) as { data: AtomicCreationReceipt<'database'> };
 
       sharedState.set(page, {
         ...sharedState.get(page),
-        temporaryDatabase: { workspaceId, pageId: data.view_id },
+        temporaryDatabase: { workspaceId, pageId: data.result.view_id },
       });
     }),
     createNamedGridDatabase(page, databaseName, []),
