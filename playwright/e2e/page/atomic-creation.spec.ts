@@ -172,8 +172,8 @@ test('atomic creation keeps document/sidebar, database tabs and row-page content
   await expect(AddPageSelectors.addDocumentButton(page)).toBeVisible();
   await page.context().setOffline(true);
   await AddPageSelectors.addDocumentButton(page).click();
-  // This shared action presents its reviewed fallback for client-side errors.
-  await expect(page.getByText('Failed to create page', { exact: true })).toBeVisible();
+  // Connectivity is checked at the click and exposes the reviewed offline guidance.
+  await expect(page.getByText('Connect to the internet to create this item.', { exact: true })).toBeVisible();
   expect(atomicRequests).toHaveLength(beforeOffline);
   await page.keyboard.press('Escape');
   await DatabaseGridSelectors.newRowButton(page).click();
