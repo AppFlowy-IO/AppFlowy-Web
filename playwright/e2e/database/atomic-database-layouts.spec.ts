@@ -74,7 +74,9 @@ async function expectRenderedContent(page: Page, layout: DatabaseViewType, rowId
     await expect(page.locator('.database-calendar .fc-daygrid-day').first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'Today', exact: true })).toBeVisible();
   } else if (layout === 'Timeline') {
-    await expect(TimelineSelectors.sidebarRows(page)).toHaveCount(3);
+    // New Timelines intentionally start empty; adding a Timeline view to an
+    // existing database is covered separately and retains that database's rows.
+    await expect(TimelineSelectors.sidebarRows(page)).toHaveCount(rowIds.length);
     for (const id of rowIds) await expect(TimelineSelectors.sidebarRow(page, id)).toBeVisible();
     await expect(TimelineSelectors.today(page)).toBeVisible();
   } else if (layout === 'Form') {
@@ -130,6 +132,7 @@ for (const layout of layouts) {
     const container = page.getByTestId(`page-${command.container_id}`);
     const tab = DatabaseViewSelectors.viewTab(page, command.database.view_id);
     const rowIds = command.database.initial_row_ids as string[];
+    if (layout.name === 'Timeline') expect(rowIds).toEqual([]);
 
     const assertSelection = async () => {
       if (layout.name === 'Form') {
