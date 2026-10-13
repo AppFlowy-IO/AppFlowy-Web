@@ -1098,7 +1098,12 @@ export function MentionPanel({
       // The user's own new page is not a permission-sensitive suggestion, so a permission hint
       // during creation does not block the link. The picker must still be the same opening, and
       // the editor still editable.
-      if (opening && openingRef.current === opening && !readOnlyRef.current && insertMention({ page_id: pageId, type })) {
+      if (
+        opening &&
+        openingRef.current === opening &&
+        !readOnlyRef.current &&
+        insertMention({ page_id: pageId, type })
+      ) {
         openPageModal?.(pageId);
         return;
       }
