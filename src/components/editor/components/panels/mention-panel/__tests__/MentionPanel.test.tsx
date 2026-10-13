@@ -292,7 +292,7 @@ describe('MentionPanel composition', () => {
   });
 
   it.each([false, true])(
-    'keeps people and page results when only the row search asks to retry later (partial first=%s)',
+    'does not publish parallel page results after row RetryLater (partial rows first=%s)',
     async (partialFirst) => {
       let rows = 0;
       const search = jest.fn(async (request: MentionSearchRequest) => {
@@ -306,14 +306,50 @@ describe('MentionPanel composition', () => {
       mockEditorContext.searchMentions = search;
       mountPanel();
       await waitFor(() => expect(rows).toBe(partialFirst ? 2 : 1));
-      expect(await screen.findByRole('button', { name: 'Target' })).toBeTruthy();
+      await act(async () => {
+        await Promise.resolve();
+      });
+      // The page response passed its own check before the change that the row search reports.
+      expect(screen.queryByRole('button', { name: 'Target' })).toBeNull();
       expect(screen.getByText('document.mention.refreshingSuggestions')).toBeTruthy();
-      // The rows are asked again after the server's cooldown; results stay on screen meanwhile.
-      await waitFor(() => expect(rows).toBe(partialFirst ? 3 : 2), { timeout: 3000 });
-      await waitFor(() => expect(screen.queryByText('document.mention.refreshingSuggestions')).toBeNull());
-      expect(screen.getByRole('button', { name: 'Target' })).toBeTruthy();
+      // After the server's cooldown the whole search runs again and shows fresh results.
+      expect(await screen.findByRole('button', { name: 'Target' }, { timeout: 3000 })).toBeTruthy();
+      expect(rows).toBe(partialFirst ? 3 : 2);
+      expect(screen.queryByText('document.mention.refreshingSuggestions')).toBeNull();
     }
   );
+
+  // A network failure alone keeps cached suggestions; the permission signal must win over it.
+  it.each([
+    ['succeeds', async () => pageResponse('Target')],
+    [
+      'fails with a network error',
+      async (): Promise<MentionSearchResponse> => {
+        throw new Error('Network Error');
+      },
+    ],
+  ])('drops reopened suggestions when only the row refresh reports a permission change (page %s)', async (_page, page) => {
+    const search = jest.fn(async (request: MentionSearchRequest) =>
+      isRows(request) ? emptyRows : pageResponse('Target')
+    );
+
+    mockEditorContext.searchMentions = search;
+    const panel = mountPanel();
+
+    expect(await screen.findByRole('button', { name: 'Target' })).toBeTruthy();
+    mockPanelContext.isPanelOpen = () => false;
+    panel.redraw();
+    search.mockImplementation(async (request: MentionSearchRequest) => {
+      if (isRows(request)) throw rowsRetryLater;
+      return page();
+    });
+    mockPanelContext.isPanelOpen = (kind) => kind === PanelType.PageReference;
+    panel.redraw();
+    expect(screen.getByRole('button', { name: 'Target' })).toBeTruthy();
+    await waitFor(() => expect(search).toHaveBeenCalledTimes(4));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Target' })).toBeNull());
+    expect(screen.getByText('document.mention.refreshingSuggestions')).toBeTruthy();
+  });
 
   it('rejects a late old success after invalidation and a fresh successful read', async () => {
     let release!: (response: MentionSearchResponse) => void;

@@ -101,8 +101,6 @@ interface MentionSectionsFetchResult {
   read: MentionSearchRead;
   sections: MentionSearchSection[];
   databaseRowResponse?: MentionSearchResponse;
-  /** Only the row request asked to retry later. `sections` then holds the other, fresh sections. */
-  rowsRetryLater?: APIError;
 }
 
 const DEFAULT_MENTION_INCLUDE = [
@@ -641,16 +639,6 @@ export function MentionPanel({
             const result = await fetchMentionSections();
 
             if (!result.read.isCurrent()) return;
-            if (result.rowsRetryLater) {
-              mentionCache.markRetryLater(mentionSearchCacheKey, result.rowsRetryLater);
-              if (isCurrentRequest()) {
-                applied = true;
-                showWithRowsDeferred(result.sections);
-              }
-
-              return;
-            }
-
             cacheMentionSections(result);
 
             if (isCurrentRequest()) {
@@ -711,14 +699,6 @@ export function MentionPanel({
       setMentionSearchFailed(false);
     }
 
-    /** Shows the fresh people/page sections while the row search waits for its cooldown. */
-    function showWithRowsDeferred(sections: MentionSearchSection[]) {
-      setMentionSections(sections);
-      setMentionSearchFailed(false);
-      setMentionSearchDeferred(true);
-      scheduleSearch(mentionCache.retryLaterRemainingMs(mentionSearchCacheKey));
-    }
-
     function cacheMentionSections(result: MentionSectionsFetchResult) {
       if (shouldCacheMentionSearchSections(mentionSearchRequests, result.databaseRowResponse, hasMentionSearchQuery)) {
         result.read.setSections(result.sections);
@@ -735,7 +715,7 @@ export function MentionPanel({
       );
       const fulfilledResponses: Array<{ request: MentionSearchRequest; response: MentionSearchResponse }> = [];
       let databaseRowResponse: MentionSearchResponse | undefined;
-      let rowsRetryLater: APIError | undefined;
+      let retryLater: APIError | undefined;
       let blockingError: unknown;
 
       settledResponses.forEach((result, index) => {
@@ -749,38 +729,31 @@ export function MentionPanel({
           return;
         }
 
+        // For a typed query (the only case with a separate row request) RetryLater always means
+        // that permissions changed or are being updated. A parallel response that passed its own
+        // check earlier may predate that change, so nothing from this round is shown, even when
+        // only the row request reports it.
+        if (isMentionSearchRetryLater(result.reason)) {
+          retryLater = retryLater ?? result.reason;
+          return;
+        }
+
         const request = mentionSearchRequests[index];
 
         if (request && isDatabaseRowOnlyRequest(request)) {
-          // Each request carries its own authority check: a fulfilled people/page response is
-          // current even when the parallel row request must wait for a permission update.
-          if (isMentionSearchRetryLater(result.reason)) {
-            rowsRetryLater = result.reason;
-          } else {
-            console.error(result.reason);
-          }
-
+          console.error(result.reason);
           return;
         }
 
         blockingError = blockingError ?? result.reason;
       });
 
-      if (blockingError) {
-        throw blockingError;
-      }
+      // It outranks other failures: a network error alone would keep the shown suggestions.
+      if (retryLater) throw retryLater;
+      if (blockingError) throw blockingError;
 
-      const nonRowResponses = () =>
-        fulfilledResponses
-          .filter(({ request }) => !isDatabaseRowOnlyRequest(request))
-          .map(({ response }) => response);
       const initialSections =
         mergeMentionSearchResponses(fulfilledResponses.map(({ response }) => response)).sections ?? [];
-
-      if (rowsRetryLater) {
-        return { sections: initialSections, read, rowsRetryLater } satisfies MentionSectionsFetchResult;
-      }
-
       let sections = initialSections;
       const shouldCacheInitialSections = shouldCacheMentionSearchSections(
         mentionSearchRequests,
@@ -800,19 +773,15 @@ export function MentionPanel({
 
           try {
             const rowRetryResponse = await searchMentionsFn(rowRequest);
+            const nonRowResponses = fulfilledResponses
+              .filter(({ request }) => request !== rowRequest)
+              .map(({ response }) => response);
 
             databaseRowResponse = rowRetryResponse;
-            sections = mergeMentionSearchResponses([...nonRowResponses(), rowRetryResponse]).sections ?? [];
+            sections = mergeMentionSearchResponses([...nonRowResponses, rowRetryResponse]).sections ?? [];
           } catch (error) {
-            if (isMentionSearchRetryLater(error)) {
-              // Partial rows read before the permission update are dropped; the rest stays.
-              return {
-                sections: mergeMentionSearchResponses(nonRowResponses()).sections ?? [],
-                read,
-                rowsRetryLater: error,
-              } satisfies MentionSectionsFetchResult;
-            }
-
+            // Same rule: the people/page response may predate the change the row request reports.
+            if (isMentionSearchRetryLater(error)) throw error;
             console.error(error);
           }
         }
@@ -830,13 +799,6 @@ export function MentionPanel({
       void fetchMentionSections()
         .then((result) => {
           if (!isCurrentRequest() || !result.read.isCurrent()) return;
-
-          if (result.rowsRetryLater) {
-            // Retires this read and drops cached rows; the next full search runs after the cooldown.
-            mentionCache.markRetryLater(mentionSearchCacheKey, result.rowsRetryLater);
-            showWithRowsDeferred(result.sections);
-            return;
-          }
 
           cacheMentionSections(result);
           setMentionSections(result.sections);
