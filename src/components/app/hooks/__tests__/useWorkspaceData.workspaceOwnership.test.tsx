@@ -4,7 +4,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { type ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 
-import { closeCollabDB } from '@/application/db';
+import { deleteCollabDB } from '@/application/db';
 import { AccessService, ViewService, WorkspaceService } from '@/application/services/domains';
 import { Role, User, View, ViewLayout } from '@/application/types';
 import { AuthInternalContext, AuthInternalContextType } from '@/components/app/contexts/AuthInternalContext';
@@ -57,7 +57,7 @@ jest.mock('@/application/services/domains', () => ({
 }));
 
 jest.mock('@/application/db', () => ({
-  closeCollabDB: jest.fn(),
+  deleteCollabDB: jest.fn(),
 }));
 
 jest.mock('@/application/services/js-services/workspace-view-metadata', () => ({
@@ -185,7 +185,7 @@ describe('useWorkspaceData workspace ownership', () => {
     (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: [], folderRid: '1-1' });
     (ViewService.getTrashCached as jest.Mock).mockResolvedValue([]);
     (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
-    (closeCollabDB as jest.Mock).mockResolvedValue(undefined);
+    (deleteCollabDB as jest.Mock).mockResolvedValue(true);
   });
 
   it('keeps workspace B relations when workspace A resolves later', async () => {

@@ -1,13 +1,13 @@
 import * as Y from 'yjs';
 
-import { closeCollabDB } from '@/application/db';
+import { deleteCollabDB } from '@/application/db';
 import { bindCollabStorageScope, captureCollabStorageScope, setCollabStorageWorkspace } from '@/application/db/collab-storage-scope';
 import { blockPermissionSync, deleteOutboxByObjectId, enqueueOutboxUpdate } from '@/application/sync-outbox';
 import { Types } from '@/application/types';
 
 import { handleMessage, initSync, SyncContext } from '../sync-protocol';
 
-jest.mock('@/application/db', () => ({ closeCollabDB: jest.fn(async () => undefined) }));
+jest.mock('@/application/db', () => ({ deleteCollabDB: jest.fn(async () => true) }));
 jest.mock('@/application/session/token-storage', () => ({ getTokenParsed: () => ({ user: { id: 'actor' } }) }));
 jest.mock('@/utils/runtime-config', () => ({ getConfigValue: () => 'https://server' }));
 jest.mock('@/application/sync-outbox', () => ({
@@ -32,14 +32,14 @@ function context(): SyncContext {
   return ctx;
 }
 
-test('socket read revocation quarantines edits, closes the provider and never deletes saved work', () => {
+test('socket read revocation quarantines unsent edits and removes only the synced copy', () => {
   const ctx = context();
 
   ctx.doc.getText('body').insert(0, 'Retained offline edit');
   expect(enqueueOutboxUpdate).toHaveBeenCalledTimes(1);
   handleMessage(ctx, { objectId: ctx.doc.guid, accessChanged: { canRead: false, canWrite: false } });
   expect(blockPermissionSync).toHaveBeenCalledWith('document', 'workspace');
-  expect(closeCollabDB).toHaveBeenCalledWith('document');
+  expect(deleteCollabDB).toHaveBeenCalledWith('document', { destroyDoc: false });
   expect(deleteOutboxByObjectId).not.toHaveBeenCalled();
   expect(ctx.doc.destroy).toHaveBeenCalledTimes(1);
   expect(ctx.flush).toBeUndefined();
@@ -50,7 +50,7 @@ test('socket Edit to View blocks writes while preserving the readable document',
 
   handleMessage(ctx, { objectId: ctx.doc.guid, accessChanged: { canRead: true, canWrite: false } });
   expect(blockPermissionSync).toHaveBeenCalledWith('document', 'workspace');
-  expect(closeCollabDB).not.toHaveBeenCalled();
+  expect(deleteCollabDB).not.toHaveBeenCalled();
   expect(ctx.doc.destroy).not.toHaveBeenCalled();
   ctx.doc.destroy();
   expect(deleteOutboxByObjectId).not.toHaveBeenCalled();
@@ -71,7 +71,7 @@ test('a delayed revocation cannot close the replacement workspace document', () 
   setCollabStorageWorkspace({ userId: 'actor', serverUrl: 'https://server', workspaceId: 'another-workspace' });
   handleMessage(ctx, { objectId: ctx.doc.guid, accessChanged: { canRead: false, canWrite: false } });
   expect(blockPermissionSync).not.toHaveBeenCalled();
-  expect(closeCollabDB).not.toHaveBeenCalled();
+  expect(deleteCollabDB).not.toHaveBeenCalled();
   expect(ctx.doc.destroy).not.toHaveBeenCalled();
   ctx.doc.destroy();
 });

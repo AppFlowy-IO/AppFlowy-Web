@@ -5,7 +5,7 @@ import { useContext, useState, type MutableRefObject, type ReactNode } from 'rea
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
-import { closeCollabDB } from '@/application/db';
+import { deleteCollabDB } from '@/application/db';
 import { AccessService, ViewService } from '@/application/services/domains';
 import {
   getCachedWorkspaceViewMetadata,
@@ -30,7 +30,7 @@ import { AppBusinessLayer } from '../AppBusinessLayer';
 jest.mock('@/application/sync-outbox', () => ({ blockPermissionSync: jest.fn() }));
 
 jest.mock('@/application/db', () => ({
-  closeCollabDB: jest.fn(),
+  deleteCollabDB: jest.fn(),
 }));
 
 jest.mock('@/application/services/domains', () => ({
@@ -268,7 +268,7 @@ describe('AppBusinessLayer permission gates', () => {
     (resolveWorkspaceViewMetadata as jest.Mock).mockImplementation(
       (_workspaceId: string, _viewId: string, loader: () => Promise<View | null | undefined>) => loader()
     );
-    (closeCollabDB as jest.Mock).mockResolvedValue(undefined);
+    (deleteCollabDB as jest.Mock).mockResolvedValue(true);
     (AccessService.getObjectPermission as jest.Mock).mockImplementation(resolveObjectPermission());
   });
 
@@ -318,7 +318,7 @@ describe('AppBusinessLayer permission gates', () => {
       renderBusinessLayer(eventEmitter, [createView(routeViewId)]);
 
       await waitFor(() => expect(screen.getByTestId('no-access').textContent).toBe('true'));
-      expect(closeCollabDB).toHaveBeenCalledWith(routeViewId);
+      expect(deleteCollabDB).toHaveBeenCalledWith(routeViewId, { destroyDoc: true });
     }
   );
 
@@ -333,7 +333,7 @@ describe('AppBusinessLayer permission gates', () => {
       await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(1));
       expect(screen.getByTestId('no-access').textContent).toBe('false');
       expect(screen.getByTestId('object-permission').textContent).toBe('null');
-      expect(closeCollabDB).not.toHaveBeenCalled();
+      expect(deleteCollabDB).not.toHaveBeenCalled();
     }
   );
 
@@ -350,7 +350,7 @@ describe('AppBusinessLayer permission gates', () => {
     await waitFor(() => {
       expect(JSON.parse(screen.getByTestId('object-permission').textContent || 'null')).toEqual(permission);
     });
-    expect(closeCollabDB).not.toHaveBeenCalled();
+    expect(deleteCollabDB).not.toHaveBeenCalled();
   });
 
   it('loads materialized metadata through the recursively primed flat index', async () => {
@@ -587,7 +587,7 @@ describe('AppBusinessLayer permission gates', () => {
     });
     expect(ViewService.invalidateCache).toHaveBeenCalledWith(workspaceId, modalViewId);
     expect(invalidateWorkspaceViewMetadata).toHaveBeenCalledWith(workspaceId, modalViewId);
-    expect(closeCollabDB).toHaveBeenCalledWith(modalViewId);
+    expect(deleteCollabDB).toHaveBeenCalledWith(modalViewId, { destroyDoc: true });
     expect(screen.getByTestId('no-access').textContent).toBe('false');
   });
 
@@ -641,8 +641,8 @@ describe('AppBusinessLayer permission gates', () => {
     await waitFor(() => expect(JSON.parse(screen.getByTestId('effective-modal-permission').textContent || 'null')?.can_read).toBe(false));
     expect(screen.getByTestId('modal-view-id').textContent).toBe(modalViewId);
     expect(ViewService.invalidateCache).toHaveBeenCalledWith(workspaceId, effectiveModalViewId);
-    expect(closeCollabDB).toHaveBeenCalledWith(effectiveModalViewId);
-    expect(closeCollabDB).toHaveBeenCalledWith(modalDatabaseId);
+    expect(deleteCollabDB).toHaveBeenCalledWith(effectiveModalViewId, { destroyDoc: true });
+    expect(deleteCollabDB).toHaveBeenCalledWith(modalDatabaseId, { destroyDoc: true });
   });
 
   it('retains an exactly revoked modal target even when it has the route view id', async () => {
@@ -691,7 +691,7 @@ describe('AppBusinessLayer permission gates', () => {
       expect(screen.getByTestId('no-access').textContent).toBe('true');
     });
     expect(AccessService.getObjectPermission).toHaveBeenLastCalledWith(workspaceId, routeViewId, Types.Document);
-    expect(closeCollabDB).toHaveBeenCalledWith(routeViewId);
+    expect(deleteCollabDB).toHaveBeenCalledWith(routeViewId, { destroyDoc: true });
   });
 
   it('re-probes and purges the active route after a broad permission change', async () => {
@@ -717,7 +717,7 @@ describe('AppBusinessLayer permission gates', () => {
       expect(screen.getByTestId('no-access').textContent).toBe('true');
     });
     expect(ViewService.invalidateCache).toHaveBeenCalledWith(workspaceId, routeViewId);
-    expect(closeCollabDB).toHaveBeenCalledWith(routeViewId);
+    expect(deleteCollabDB).toHaveBeenCalledWith(routeViewId, { destroyDoc: true });
   });
 
   it('drops stale capabilities while a broad permission revalidation is pending', async () => {
@@ -847,7 +847,7 @@ describe('AppBusinessLayer permission gates', () => {
     });
 
     expect(screen.getByTestId('no-access').textContent).toBe('true');
-    expect(closeCollabDB).toHaveBeenCalledWith(routeViewId);
+    expect(deleteCollabDB).toHaveBeenCalledWith(routeViewId, { destroyDoc: true });
   });
 
   it('re-probes and retains an active modal target after a broad permission change', async () => {
@@ -886,7 +886,7 @@ describe('AppBusinessLayer permission gates', () => {
       expect(screen.getByTestId('modal-view-id').textContent).toBe(modalViewId);
     });
     expect(ViewService.invalidateCache).toHaveBeenCalledWith(workspaceId, modalViewId);
-    expect(closeCollabDB).toHaveBeenCalledWith(modalViewId);
+    expect(deleteCollabDB).toHaveBeenCalledWith(modalViewId, { destroyDoc: true });
     expect(screen.getByTestId('no-access').textContent).toBe('false');
   });
 
@@ -911,7 +911,7 @@ describe('AppBusinessLayer permission gates', () => {
       });
 
       expect(screen.getByTestId('no-access').textContent).toBe('false');
-      expect(closeCollabDB).not.toHaveBeenCalled();
+      expect(deleteCollabDB).not.toHaveBeenCalled();
       expect(ViewService.invalidateCache).not.toHaveBeenCalled();
     }
   );
@@ -927,7 +927,7 @@ describe('AppBusinessLayer permission gates', () => {
     await waitFor(() => {
       expect(screen.getByTestId('no-access').textContent).toBe('true');
     });
-    expect(closeCollabDB).toHaveBeenCalledWith(routeViewId);
+    expect(deleteCollabDB).toHaveBeenCalledWith(routeViewId, { destroyDoc: true });
   });
 
   it('walks breadcrumb fallback ancestors once while the route view stays unresolved across outline updates', async () => {

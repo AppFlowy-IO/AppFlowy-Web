@@ -1576,9 +1576,11 @@ export async function closeCollabDB(name: string) {
 }
 
 /**
- * Destroy any in-memory provider/doc for the object and delete its y-indexeddb
- * database. Use closeCollabDB on access revocation so unsynced data remains
- * recoverable; deletion is reserved for object deletion or explicit resets.
+ * Destroy any in-memory provider/doc for the object and delete its local copy
+ * (y-indexeddb database, restored generation and shared row data). Used for
+ * object deletion, explicit resets, discarded edits and lost read access. The
+ * sync outbox is separate: unsent edits of a revoked object stay quarantined
+ * there for the user's Try again or Discard.
  */
 export async function deleteCollabDB(
   name: string,

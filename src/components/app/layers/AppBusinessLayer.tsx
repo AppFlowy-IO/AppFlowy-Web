@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { validate as uuidValidate } from 'uuid';
 
 import { APP_EVENTS } from '@/application/constants';
-import { closeCollabDB } from '@/application/db';
+import { deleteCollabDB } from '@/application/db';
 import { AccessService, ViewService } from '@/application/services/domains';
 import {
   getCachedWorkspaceViewMetadata,
@@ -152,9 +152,10 @@ function closePermissionProbeTarget(workspaceId: string, routeViewId: string, ta
 
   // Current database caches use the canonical database id, while older web
   // releases may also have persisted a database under the folder view id.
-  // Close both identities so revoked content stops rendering while local edits remain recoverable.
+  // Remove both synced copies so revoked content is no longer readable; unsent
+  // edits stay quarantined in the outbox for Try again or Discard.
   for (const collabObjectId of getPermissionProbePurgeObjectIds(routeViewId, target)) {
-    void closeCollabDB(collabObjectId);
+    void deleteCollabDB(collabObjectId, { destroyDoc: true });
   }
 }
 
