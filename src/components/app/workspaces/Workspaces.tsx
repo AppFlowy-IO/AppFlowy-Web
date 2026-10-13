@@ -95,12 +95,12 @@ export function Workspaces() {
         await handleSelectedWorkspace?.(selectedId);
         setOpen(false);
       } catch (e) {
-        notify.error('Failed to change workspace');
+        notify.error(t('workspace.openFailed'));
       }
 
       setChangeLoading(null);
     },
-    [handleSelectedWorkspace]
+    [handleSelectedWorkspace, t]
   );
   const [, setSearchParams] = useSearchParams();
 

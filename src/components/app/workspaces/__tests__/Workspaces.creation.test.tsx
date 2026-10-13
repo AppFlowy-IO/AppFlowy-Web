@@ -8,6 +8,7 @@ const mockCreate = jest.fn();
 const mockChange = jest.fn();
 const mockRefreshWorkspaces = jest.fn();
 const mockToastError = jest.fn();
+const mockNotifyError = jest.fn();
 const mockCreation = {
   canCreate: true,
   status: 'ready',
@@ -21,6 +22,7 @@ const mockCreation = {
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 jest.mock('i18next', () => ({ t: (key: string) => key }));
 jest.mock('sonner', () => ({ toast: { error: (...args: unknown[]) => mockToastError(...args) } }));
+jest.mock('@/components/_shared/notify', () => ({ notify: { error: (...args: unknown[]) => mockNotifyError(...args) } }));
 jest.mock('@/application/session/token', () => ({
   ...jest.requireActual('@/application/session/token'),
   getTokenParsed: () => ({ user: { id: 'user' } }),
@@ -205,4 +207,11 @@ test('an unreadable saved request is explained in the dialog and cleared by Disc
   expect(sessionStorage.getItem(draftKey)).toBeNull();
   expect(screen.queryByRole('alert')).toBeNull();
   await waitFor(() => expect(screen.getByRole('button', { name: 'button.create' }).hasAttribute('disabled')).toBe(false));
+});
+
+test('a failed switch to another workspace is reported in the reader\'s language', async () => {
+  mockChange.mockRejectedValueOnce(new Error('Network Error'));
+  mount();
+  fireEvent.click(screen.getByRole('button', { name: 'Open existing' }));
+  await waitFor(() => expect(mockNotifyError).toHaveBeenCalledWith('workspace.openFailed'));
 });
