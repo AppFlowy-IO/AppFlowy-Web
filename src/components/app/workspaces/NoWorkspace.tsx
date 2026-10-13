@@ -1,4 +1,4 @@
-import { ReactNode, useId, useState } from 'react';
+import { ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -20,6 +20,10 @@ import { getErrorMessage } from '@/utils/errors';
 
 import { CreateWorkspaceDialog } from './CreateWorkspaceDialog';
 import { WorkspaceCreationCallout, WorkspaceCreationNotice } from './WorkspaceCreationNotice';
+
+/** Gaps between looks for an imported workspace, which the server creates in the background. */
+const IMPORT_POLL_FIRST_MS = 5_000;
+const IMPORT_POLL_MAX_MS = 60_000;
 
 function WorkspaceRow({
   name,
@@ -76,8 +80,13 @@ export function NoWorkspace() {
   const [creating, setCreating] = useState(false);
   const [checking, setChecking] = useState(false);
   const [pendingId, setPendingId] = useState<string>();
-  const [importReceived, setImportReceived] = useState(false);
+  // Workspaces listed when an upload was received; the import is done once another one is listed.
+  const [importBaseline, setImportBaseline] = useState<string[]>();
   const workspaces = auth.userWorkspaceInfo?.workspaces ?? [];
+  const importPending = Boolean(importBaseline && workspaces.every(({ id }) => importBaseline.includes(id)));
+  const refreshRef = useRef(auth.refreshUserWorkspaceInfo);
+
+  refreshRef.current = auth.refreshUserWorkspaceInfo;
   const busy = checking || Boolean(pendingId) || flow.submitting;
   const unconfirmed = Boolean(flow.draft && !flow.draft.workspaceId);
   const denied = creation.status === 'ready' && !creation.canCreate;
@@ -97,6 +106,35 @@ export function NoWorkspace() {
   const refreshWorkspaces = () => {
     void auth.refreshUserWorkspaceInfo?.();
   };
+
+  // The app re-reads the list only on focus, so keep looking for the imported workspace with growing
+  // gaps until it is listed. A hidden tab skips its turn.
+  useEffect(() => {
+    if (!importPending) return;
+    let delay = IMPORT_POLL_FIRST_MS;
+    let timer: number | undefined;
+    let stopped = false;
+
+    const poll = async () => {
+      if (document.visibilityState === 'visible') {
+        try {
+          await refreshRef.current?.();
+        } catch {
+          // The next turn tries again.
+        }
+      }
+
+      if (stopped) return;
+      delay = Math.min(delay * 2, IMPORT_POLL_MAX_MS);
+      timer = window.setTimeout(() => void poll(), delay);
+    };
+
+    timer = window.setTimeout(() => void poll(), delay);
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+    };
+  }, [importPending]);
 
   const checkAgain = async () => {
     setChecking(true);
@@ -305,7 +343,7 @@ export function NoWorkspace() {
           )}
 
           {creationNotice}
-          {importReceived && <WorkspaceCreationCallout>{t('workspaceCreation.importProcessing')}</WorkspaceCreationCallout>}
+          {importPending && <WorkspaceCreationCallout>{t('workspaceCreation.importProcessing')}</WorkspaceCreationCallout>}
 
           <div className='flex flex-col gap-2'>
             {showCreationActions && (
@@ -350,7 +388,7 @@ export function NoWorkspace() {
       <Import
         successMessage={t('workspaceCreation.importProcessing')}
         onSuccessfulImport={() => {
-          setImportReceived(true);
+          setImportBaseline(workspaces.map(({ id }) => id));
           refreshWorkspaces();
         }}
       />

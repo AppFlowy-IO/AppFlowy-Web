@@ -86,15 +86,15 @@ function LoginLocation() {
   return <output data-testid='login-location'>{location.pathname + location.search}</output>;
 }
 
-const mount = () =>
-  render(
-    <MemoryRouter initialEntries={['/app']} future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
-      <Routes>
-        <Route path='/app' element={<NoWorkspace />} />
-        <Route path='/login' element={<LoginLocation />} />
-      </Routes>
-    </MemoryRouter>
-  );
+const page = () => (
+  <MemoryRouter initialEntries={['/app']} future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+    <Routes>
+      <Route path='/app' element={<NoWorkspace />} />
+      <Route path='/login' element={<LoginLocation />} />
+    </Routes>
+  </MemoryRouter>
+);
+const mount = () => render(page());
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -285,4 +285,70 @@ test('a received import explains that the new workspace is still being processed
   act(() => mockImportProps.current?.onSuccessfulImport?.());
   expect(screen.getByText('workspaceCreation.importProcessing')).toBeTruthy();
   expect(mockRefresh).toHaveBeenCalledTimes(1);
+});
+
+/** Each turn schedules the next one only after its refresh settles, so fake time moves in steps. */
+async function advance(ms: number) {
+  await act(async () => {
+    jest.advanceTimersByTime(ms);
+  });
+}
+
+test('after an import the page looks for the new workspace with growing gaps until it is listed', async () => {
+  jest.useFakeTimers();
+  try {
+    mockCreation.canCreate = true;
+    mockWorkspaces = [{ id: 'existing', name: 'Existing', icon: '' }];
+    const view = mount();
+
+    act(() => mockImportProps.current?.onSuccessfulImport?.());
+    expect(mockRefresh).toHaveBeenCalledTimes(1);
+    await advance(5_000);
+    expect(mockRefresh).toHaveBeenCalledTimes(2);
+    await advance(9_999);
+    expect(mockRefresh).toHaveBeenCalledTimes(2);
+    await advance(1);
+    expect(mockRefresh).toHaveBeenCalledTimes(3);
+    // The gap grows but never beyond a minute.
+    for (const [gap, calls] of [
+      [20_000, 4],
+      [40_000, 5],
+      [60_000, 6],
+      [60_000, 7],
+    ]) {
+      await advance(gap - 1);
+      expect(mockRefresh).toHaveBeenCalledTimes(calls - 1);
+      await advance(1);
+      expect(mockRefresh).toHaveBeenCalledTimes(calls);
+    }
+
+    expect(screen.getByText('workspaceCreation.importProcessing')).toBeTruthy();
+
+    // Once the imported workspace is listed, it replaces the notice and the page stops asking.
+    mockWorkspaces = [...mockWorkspaces, { id: 'imported', name: 'Imported', icon: '' }];
+    view.rerender(page());
+    expect(screen.queryByText('workspaceCreation.importProcessing')).toBeNull();
+    expect(screen.getByRole('button', { name: 'workspaceCreation.openNamed Imported' })).toBeTruthy();
+    for (let minute = 0; minute < 10; minute += 1) await advance(60_000);
+    expect(mockRefresh).toHaveBeenCalledTimes(7);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test('the search for an imported workspace stops when the page closes', async () => {
+  jest.useFakeTimers();
+  try {
+    mockCreation.canCreate = true;
+    const view = mount();
+
+    act(() => mockImportProps.current?.onSuccessfulImport?.());
+    await advance(5_000);
+    expect(mockRefresh).toHaveBeenCalledTimes(2);
+    view.unmount();
+    for (let minute = 0; minute < 10; minute += 1) await advance(60_000);
+    expect(mockRefresh).toHaveBeenCalledTimes(2);
+  } finally {
+    jest.useRealTimers();
+  }
 });
