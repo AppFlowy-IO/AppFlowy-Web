@@ -187,6 +187,11 @@ jest.mock('@/components/app/share/WorkspaceMemberInlineSearch', () => ({
       >
         add
       </button>
+      {addableMembers.map((member) => (
+        <div key={member.uid} data-testid={`inline-member-result-${member.uid}`}>
+          {member.name}
+        </div>
+      ))}
     </div>
   ),
 }));
@@ -658,6 +663,38 @@ describe('ManageSpace ACL management', () => {
       // Only this list is revalidated; the dialog is not reloaded.
       expect(mockGetSpacePermission).toHaveBeenCalledTimes(1);
       expect(mockGetSpaceMembers).toHaveBeenCalledTimes(2);
+    });
+
+    it('shows the access the server confirmed as soon as the save returns, before the list is read again', async () => {
+      const member = assignedMember();
+      const saved = { ...member, access_level_override: AccessLevel.ReadOnly, effective_access_level: AccessLevel.ReadOnly };
+      const rosterRead = deferred<{ members: SpaceMember[]; groups: WorkspaceGroupSpacePermission[] }>();
+
+      mockGetSpacePermission.mockResolvedValue(supportedPermission());
+      mockGetSpaceMembers.mockResolvedValueOnce({ members: [member], groups: [] }).mockReturnValueOnce(rosterRead.promise);
+      mockSetOverride.mockResolvedValue(saved);
+      await openMembersTab();
+      const row = await screen.findByTestId(`space-member-row-${member.uid}`);
+      const trigger = accessTrigger(member.uid);
+
+      fireEvent.click(screen.getByTestId(`space-member-access-${member.uid}-option-${AccessLevel.ReadOnly}`));
+
+      await waitFor(() => expect(toast.success).toHaveBeenCalledWith('space.memberOverride.updated'));
+      await waitFor(() => expect(mockGetSpaceMembers).toHaveBeenCalledTimes(2));
+      // The list is still being read again, yet the row already shows the
+      // stored choice rather than the old value.
+      expect(trigger.getAttribute('aria-busy')).toBeNull();
+      expect(trigger.textContent).toBe('space.memberOverride.levels.canView');
+      expect(within(row).getByTestId('space-member-access-control').getAttribute('data-value')).toBe(
+        String(AccessLevel.ReadOnly)
+      );
+
+      await act(async () => {
+        rosterRead.resolve({ members: [saved], groups: [] });
+      });
+
+      await waitFor(() => expect(trigger.disabled).toBe(false));
+      expect(trigger.textContent).toBe('space.memberOverride.levels.canView');
     });
 
     it('restores the last confirmed access after a failed save without reloading the dialog', async () => {
@@ -2302,6 +2339,31 @@ describe('ManageSpace ACL management', () => {
       expect(screen.queryByTestId('manage-space-permission-notice')).toBeNull();
       expect(mockGetSpacePermission).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it('drops people and groups to add when a background recheck withdraws the right to add them', async () => {
+    mockGetSpacePermission
+      .mockResolvedValueOnce(permissionResponse({ permission: customPermission }))
+      .mockResolvedValueOnce(
+        permissionResponse({ permission: customPermission, canManageMembers: false, canInviteMembers: false })
+      );
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    await waitForSettingsLoaded();
+    fireEvent.change(screen.getByTestId('inline-member-search'), { target: { value: 'Eng' } });
+    await screen.findByTestId(`inline-member-result-${workspaceCandidate.uid}`);
+    expect(screen.getByTestId('space-group-inline-search-result-group-engineering')).toBeTruthy();
+
+    act(() => {
+      mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'space-1' });
+    });
+    await waitFor(() => expect(mockGetSpacePermission).toHaveBeenCalledTimes(2));
+
+    await waitFor(() => expect(screen.queryByTestId(`inline-member-result-${workspaceCandidate.uid}`)).toBeNull());
+    expect(screen.queryByTestId('space-group-inline-search-result-group-engineering')).toBeNull();
+    // Nothing is fetched for adding what this user can no longer add.
+    expect(mockGetMembers).toHaveBeenCalledTimes(1);
+    expect(mockGetWorkspaceGroups).toHaveBeenCalledTimes(1);
   });
 
   it('ignores an older permission refresh that resolves after a newer revocation', async () => {
