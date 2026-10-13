@@ -2,6 +2,7 @@ import { useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
+import { getSafeRedirectUrl } from '@/application/session/sign_in';
 import { ReactComponent as AppflowyLogo } from '@/assets/icons/appflowy.svg';
 import Import from '@/components/_shared/more-actions/importer/Import';
 import { useWorkspaceCreationCapability } from '@/components/app/hooks/useWorkspaceCreationCapability';
@@ -22,8 +23,11 @@ function ImportPage() {
   const redirectTo = search.get('redirectToImport');
   const initialSource = useRef(search.get('source'));
   const onSuccess = useCallback(() => {
-    if (redirectTo) {
-      window.location.href = redirectTo;
+    // The link is untrusted: only a page on this site may follow, never a script or another site.
+    const target = redirectTo && getSafeRedirectUrl(redirectTo);
+
+    if (target) {
+      window.location.href = target;
     }
   }, [redirectTo]);
   const openImporter = () =>
