@@ -1,4 +1,4 @@
-import BaseDexie from 'dexie';
+import BaseDexie, { type Table } from 'dexie';
 import { IndexeddbPersistence } from 'y-indexeddb';
 import * as Y from 'yjs';
 
@@ -405,20 +405,62 @@ async function deleteSharedRowsOutsideScopedNamespace(
   await table.where(index).above(`${COLLAB_STORAGE_PREFIX}\uffff`).delete();
 }
 
+// After the account prefix: the workspace (JSON string or null), then the object part.
+const ACCOUNT_STORAGE_NAME_REST = /^(null|"(?:[^"\\]|\\.)*")\]:(.*)$/s;
+const LEGACY_ROW_MARKER = '_rows_';
+
+/** `<workspace JSON>\0<objectId>` for every object of the account that still has outbox rows. */
+async function objectsWithUnsentEdits(userId: string): Promise<Set<string>> {
+  const keys = await db.sync_outbox
+    .where('[userId+workspaceId+objectId]')
+    .between([userId, BaseDexie.minKey, BaseDexie.minKey], [userId, BaseDexie.maxKey, BaseDexie.maxKey])
+    .uniqueKeys();
+
+  return new Set(keys.map((key) => {
+    const [, workspaceId, objectId] = key as unknown as [string, string, string];
+
+    return `${JSON.stringify(workspaceId)}\u0000${objectId}`;
+  }));
+}
+
 /**
- * Signing out removes the copies of server content that belong to the account
- * that signed out (documents, database rows and their sync checkpoints in every
- * workspace on that server), plus pre-scope copies that cannot be attributed to
- * any account. Unsent edits are kept: sync outbox rows and their quarantine are
- * owned by their exact server, account and workspace, and are uploaded only
- * after that account signs in again and a fresh permission check allows it.
- * Stops as soon as `isSignedOut` reports the same account signed in again.
+ * True for a storage name of the account whose object still has unsent edits:
+ * the object itself, a restored generation of it (`<id>:database-restore:<epoch>`)
+ * or, for a row, its legacy copy and row index entry (`<databaseId>_rows_<rowId>`).
+ */
+function storesObjectWithUnsentEdits(name: string, accountPrefix: string, pending: ReadonlySet<string>): boolean {
+  if (pending.size === 0 || !name.startsWith(accountPrefix)) return false;
+  const match = ACCOUNT_STORAGE_NAME_REST.exec(name.slice(accountPrefix.length));
+
+  if (!match) return false;
+  const [, workspace, rest] = match;
+  const base = rest.split(':')[0];
+  const rowMarker = base.lastIndexOf(LEGACY_ROW_MARKER);
+  const objectId = rowMarker > 0 ? base.slice(rowMarker + LEGACY_ROW_MARKER.length) : base;
+
+  return pending.has(`${workspace}\u0000${objectId}`);
+}
+
+/**
+ * Removes, at the user's request when signing out, the copies of server
+ * content that belong to that account (documents, database rows and their sync
+ * checkpoints in every workspace on that server), plus pre-scope copies that
+ * cannot be attributed to any account. Unsent edits are kept, with the copies of
+ * the objects they belong to: a queued or quarantined database row edit finds
+ * its database (for restore checks) through the row's copy. Outbox rows and
+ * their quarantine are uploaded only after that account signs in again and a
+ * fresh permission check allows it. Edits that were already sent over the
+ * realtime connection but never applied cannot be told apart and are lost with
+ * their copy. Removes nothing if the outbox cannot be read, and stops as soon as
+ * `isSignedOut` reports the same account signed in again.
  */
 export async function removeSignedOutLocalData(account: SignedOutAccount, isSignedOut: () => boolean = () => true) {
   const prefix = accountCollabStoragePrefix(account.serverUrl, account.userId);
-  const removable = (name: string) => name.startsWith(prefix) || isPreScopeCollabStorageName(name);
 
   try {
+    const pending = await objectsWithUnsentEdits(account.userId);
+    const kept = (name: string) => storesObjectWithUnsentEdits(name, prefix, pending);
+    const removable = (name: string) => (name.startsWith(prefix) && !kept(name)) || isPreScopeCollabStorageName(name);
     const factory = typeof indexedDB === 'undefined' ? undefined : (indexedDB as IndexedDBFactoryWithDatabases);
 
     if (factory?.databases && isSignedOut()) {
@@ -434,12 +476,14 @@ export async function removeSignedOutLocalData(account: SignedOutAccount, isSign
     if (!isSignedOut()) return;
     await db.transaction('rw', [db.collab_snapshots, db.collab_updates, db.collab_custom, db.rows], async () => {
       if (!isSignedOut()) return;
-      for (const table of [db.collab_snapshots, db.collab_updates, db.collab_custom]) {
-        await table.where('objectId').startsWith(prefix).delete();
+      const sharedTables: Array<Table<{ objectId: string }>> = [db.collab_snapshots, db.collab_updates, db.collab_custom];
+
+      for (const table of sharedTables) {
+        await table.where('objectId').startsWith(prefix).filter((record) => !kept(record.objectId)).delete();
         await deleteSharedRowsOutsideScopedNamespace(table, 'objectId');
       }
 
-      await db.rows.where('row_key').startsWith(prefix).delete();
+      await db.rows.where('row_key').startsWith(prefix).filter((record) => !kept(record.row_key)).delete();
       await deleteSharedRowsOutsideScopedNamespace(db.rows, 'row_key');
     });
 

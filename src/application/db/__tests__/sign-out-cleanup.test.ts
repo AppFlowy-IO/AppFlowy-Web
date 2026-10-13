@@ -13,10 +13,11 @@ type Row = Record<string, unknown>;
 
 /** Minimal in-memory stand-in for the Dexie range queries the cleanup uses. */
 function fakeTable(rows: Row[], keyField: string) {
-  const matches = (predicate: (key: string) => boolean) => ({
+  const matches = (predicate: (key: string) => boolean, keep: (row: Row) => boolean = () => true) => ({
+    filter: (next: (row: Row) => boolean) => matches(predicate, (row) => keep(row) && next(row)),
     delete: async () => {
       for (let i = rows.length - 1; i >= 0; i -= 1) {
-        if (predicate(String(rows[i][keyField]))) rows.splice(i, 1);
+        if (predicate(String(rows[i][keyField])) && keep(rows[i])) rows.splice(i, 1);
       }
     },
   });
@@ -41,6 +42,8 @@ describe('sign-out local data cleanup', () => {
   let rowIndex: Row[];
   let viewCache: Row[];
   let catalog: Row[];
+  // [userId, workspaceId, objectId] keys of rows still in the sync outbox.
+  let outboxKeys: Array<[string, string, string]>;
 
   beforeEach(() => {
     localStorage.clear();
@@ -91,7 +94,15 @@ describe('sign-out local data cleanup', () => {
       between: (lower: unknown[]) => fakeTable(catalog, 'user_id')('user_id').equals(String(lower[0])),
       index,
     })) as never);
-    jest.spyOn(db.sync_outbox, 'where');
+    outboxKeys = [];
+    jest.spyOn(db.sync_outbox, 'where').mockImplementation(((index: string) => ({
+      between: (lower: unknown[], upper: unknown[]) => ({
+        uniqueKeys: async () => {
+          expect(index).toBe('[userId+workspaceId+objectId]');
+          return outboxKeys.filter(([userId]) => userId === lower[0] && userId === upper[0]);
+        },
+      }),
+    })) as never);
     jest.spyOn(db.sync_permission_blocks, 'delete');
 
     for (const prefix of ['af_database_blob_rid:', 'af_database_blob_epoch:']) {
@@ -128,8 +139,55 @@ describe('sign-out local data cleanup', () => {
       'token-unrelated',
     ].sort());
     // Unsent edits and their quarantine are owned by their exact account and kept.
-    expect(db.sync_outbox.where).not.toHaveBeenCalled();
     expect(db.sync_permission_blocks.delete).not.toHaveBeenCalled();
+  });
+
+  it('keeps the copies that unsent edits still depend on', async () => {
+    // A queued edit to a database row (its database is found again through the
+    // row copy and the row index) and one to a document. user-2's pending row
+    // does not protect user-1's copy of the same object.
+    outboxKeys = [
+      [signedOut, 'workspace-a', 'row-a'],
+      [signedOut, 'workspace-a', 'doc-a'],
+      ['user-2', 'workspace-a', 'database-a'],
+    ];
+    snapshots.push({ objectId: scoped(signedOut, 'workspace-b', 'row-a') });
+    rowIndex.push({ row_key: scoped(signedOut, 'workspace-b', 'database-a_rows_row-a') });
+
+    await removeSignedOutLocalData({ serverUrl: server, userId: signedOut });
+
+    expect(databases).toEqual([
+      scoped(signedOut, 'workspace-a', 'doc-a'),
+      scoped('user-2', 'workspace-a', 'doc-a'),
+      'appflowy_cache',
+      'unrelated-database',
+    ]);
+    expect(snapshots).toEqual([
+      { objectId: scoped(signedOut, 'workspace-a', 'row-a') },
+      { objectId: scoped('user-2', 'workspace-a', 'row-a') },
+    ]);
+    expect(updates).toEqual([
+      { objectId: scoped(signedOut, 'workspace-a', 'row-a') },
+      { objectId: scoped('user-2', 'workspace-a', 'row-a') },
+    ]);
+    expect(rowIndex).toEqual([
+      { row_key: scoped(signedOut, 'workspace-a', 'database-a_rows_row-a') },
+      { row_key: scoped('user-2', 'workspace-a', 'database-a_rows_row-a') },
+    ]);
+    // The database of the pending row is not itself pending: its copy and cache keys go.
+    expect(localStorage.getItem(`af_database_blob_epoch:${scoped(signedOut, 'workspace-a', 'database-a')}`)).toBeNull();
+  });
+
+  it('removes nothing when it cannot tell which copies unsent edits depend on', async () => {
+    jest.spyOn(db.sync_outbox, 'where').mockImplementation((() => ({
+      between: () => ({ uniqueKeys: async () => { throw new Error('IndexedDB is closing'); } }),
+    })) as never);
+
+    await removeSignedOutLocalData({ serverUrl: server, userId: signedOut });
+
+    expect(databases).toHaveLength(8);
+    expect(snapshots).toHaveLength(3);
+    expect(rowIndex).toHaveLength(3);
   });
 
   it('stops before touching storage once the same account signs in again', async () => {
