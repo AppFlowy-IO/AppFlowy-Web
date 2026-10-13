@@ -966,6 +966,11 @@ describe('RichTextCellEditor', () => {
           });
         } else if (end === 'blur') {
           await act(async () => {
+            // Slate ignores blur while synchronizing the DOM selection after
+            // insertion. Let its zero-delay timer finish without ending the
+            // one-second notification burst.
+            await jest.advanceTimersByTimeAsync(0);
+            expect(mockNotifyPerson).not.toHaveBeenCalled();
             fireEvent.blur(editable, { relatedTarget: document.body });
           });
         } else {
