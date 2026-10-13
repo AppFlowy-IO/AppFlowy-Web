@@ -248,8 +248,13 @@ export function NoWorkspace() {
           {invitations.items.length > 0 && (
             <RowSection title={t('workspaceCreation.invitationsTitle')}>
               {invitations.items.map((invitation, index) => {
-                const name = invitation.workspace_name || invitation.workspace_id;
+                // The server may omit the name; an ID means nothing to the person invited.
+                const name = invitation.workspace_name || t('workspaceCreation.unnamedWorkspace');
                 const inviter = invitation.inviter_name || invitation.inviter_email;
+                const joinLabel =
+                  !invitation.workspace_name && inviter
+                    ? t('workspaceCreation.joinInvitedBy', { name: inviter })
+                    : t('workspaceCreation.joinNamed', { name });
 
                 return (
                   <WorkspaceRow
@@ -261,7 +266,7 @@ export function NoWorkspace() {
                       <Button
                         size='sm'
                         variant={primary === 'invitation' && index === 0 ? 'default' : 'outline'}
-                        aria-label={t('workspaceCreation.joinNamed', { name })}
+                        aria-label={joinLabel}
                         loading={pendingId === invitation.invite_id}
                         disabled={busy}
                         onClick={() => void join(invitation)}

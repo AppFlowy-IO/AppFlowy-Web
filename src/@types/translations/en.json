@@ -4613,7 +4613,9 @@
     "importPageHint": "Choose a file to import, or open AppFlowy to go to your workspaces.",
     "joinNamed": "Join {{name}}",
     "openNamed": "Open {{name}}",
-    "importWorkspace": "Import workspace"
+    "importWorkspace": "Import workspace",
+    "unnamedWorkspace": "Unnamed workspace",
+    "joinInvitedBy": "Join the workspace {{name}} invited you to"
   },
   "groupSpaceAccess": {
     "title": "Group access to spaces",

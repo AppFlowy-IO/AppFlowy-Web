@@ -3049,7 +3049,9 @@
     "importPageHint": "Choisissez un fichier à importer, ou ouvrez AppFlowy pour accéder à vos espaces de travail.",
     "joinNamed": "Rejoindre {{name}}",
     "openNamed": "Ouvrir {{name}}",
-    "importWorkspace": "Importer un espace de travail"
+    "importWorkspace": "Importer un espace de travail",
+    "unnamedWorkspace": "Espace de travail sans nom",
+    "joinInvitedBy": "Rejoindre l’espace de travail où {{name}} vous invite"
   },
   "groupSpaceAccess": {
     "title": "Accès des groupes aux espaces",

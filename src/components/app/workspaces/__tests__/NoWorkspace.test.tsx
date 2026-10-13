@@ -141,6 +141,20 @@ test('a pending invitation can be joined without permission to create workspaces
   expect(mockCreate).not.toHaveBeenCalled();
 });
 
+test.each([
+  ['its inviter', { inviter_name: 'Alice' }, 'workspaceCreation.joinInvitedBy Alice'],
+  ['no inviter either', { inviter_name: '', inviter_email: '' }, 'workspaceCreation.joinNamed workspaceCreation.unnamedWorkspace'],
+])('an invitation without a workspace name is shown in words with %s, never by its ID', async (_label, inviter, label) => {
+  mockListInvitations.mockResolvedValue([{ ...invitation, ...inviter, workspace_name: '' }]);
+  mount();
+  const join = await screen.findByRole('button', { name: label });
+
+  expect(screen.getByText('workspaceCreation.unnamedWorkspace')).toBeTruthy();
+  expect(document.body.textContent).not.toContain('demo-workspace');
+  fireEvent.click(join);
+  await waitFor(() => expect(mockChange).toHaveBeenCalledWith('demo-workspace'));
+});
+
 test('a failed join is reported and the lists are refreshed for another try', async () => {
   mockListInvitations.mockResolvedValue([invitation]);
   mockAccept.mockRejectedValueOnce({ code: 1068, message: 'This invitation is no longer valid' });
