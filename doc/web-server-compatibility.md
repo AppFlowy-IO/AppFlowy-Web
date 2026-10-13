@@ -71,8 +71,13 @@ window regains focus or the connection returns. Calendar transcription then lets
 denial still opens the meeting without a notes page. The current workspace role alone does not authorize
 creation. No release-version floor has been assigned to these new controls yet.
 
-Settings / Workspace permissions uses the existing settings API's `space_creation_policy` field and
-checks that the response confirms the requested mode. User/group selections use focused UUID grant/revoke
+Space creation settings save the policy through the existing workspace settings API. The request sets
+both `exact_space_creation_policy` and `space_creation_policy` to the chosen mode, and the change counts
+as saved only when the response's `exact_space_creation_policy` matches it. Current servers report
+"Owners and selected members" as `owners_only` in `space_creation_policy`, so clients that know only two
+modes can still read settings. The Web falls back to `space_creation_policy` only when a server predates
+`exact_space_creation_policy`; such servers report their exact policy there. Servers that know only two
+modes reject selected mode instead of ignoring it. User/group selections use focused UUID grant/revoke
 endpoints and separately paginated rosters; inactive selections remain visible. Member pickers require
 the optional `user_uuid` supplied by current servers. Numeric UIDs are not converted to grant identities.
 Guests, pending invitations and entries without a UUID cannot be selected.
