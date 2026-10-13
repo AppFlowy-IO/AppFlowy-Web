@@ -331,6 +331,27 @@ describe('workspace permission settings', () => {
     expect(await screen.findByTestId(`space-creator-row-group-${groupId}`)).toBeTruthy();
   });
 
+  it('never offers current selections, but offers removed ones again', async () => {
+    current.policy = 'owners_and_selected_members';
+    rosterOf([
+      row('user', aliceId, { name: 'Alice Martin' }),
+      row('user', bobId, { name: 'Bob Stone', revoked_at: '2026-10-12T08:00:00Z' }),
+      row('group', groupId, { name: 'W_RH_edit' }),
+    ]);
+    mount();
+    await selections();
+    await waitFor(() => expect(mockGroups).toHaveBeenCalledWith(workspaceId));
+    search('acme');
+    const results = await screen.findByTestId('space-creator-candidates');
+
+    expect(await within(results).findByText('Bob Stone')).toBeTruthy();
+    expect(within(results).queryByText('Alice Martin')).toBeNull();
+    search('W_RH');
+    // "No matches" (not the loading state) proves the loaded group was left out on purpose.
+    expect(await within(results).findByText('workspacePermissions.noMatches')).toBeTruthy();
+    expect(screen.queryByTestId(`space-creator-candidate-group-${groupId}`)).toBeNull();
+  });
+
   it('removes with an accessible icon button and offers undo', async () => {
     current.policy = 'owners_and_selected_members';
     rosterOf([row('user', aliceId, { name: 'Alice Martin' })]);
