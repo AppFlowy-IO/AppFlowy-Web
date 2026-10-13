@@ -1,9 +1,9 @@
 import dayjs from 'dayjs';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import { ERROR_CODE } from '@/application/constants';
+import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import { WorkspaceService } from '@/application/services/domains';
 import { Role, WorkspaceGroup, WorkspaceGroupMember, WorkspaceMember } from '@/application/types';
 import { isSameUserUid } from '@/application/user-uid';
@@ -13,6 +13,7 @@ import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
 import { useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { AppEventEmitterContext } from '@/components/app/contexts/AppEventEmitterContext';
 import { GroupSpaceCoverageCard } from '@/components/app/settings/GroupSpaceCoverageControl';
 import { PersonAvatar } from '@/components/app/share/PersonAvatar';
 import { WorkspaceGroupIcon } from '@/components/app/share/WorkspaceGroupIcon';
@@ -48,6 +49,7 @@ import { Progress } from '@/components/ui/progress';
 import { SearchInput } from '@/components/ui/search-input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
+import { createCoalescedRefresh } from '@/utils/coalesced-refresh';
 import { getErrorMessage, isAPIErrorCode } from '@/utils/errors';
 
 import type { TFunction } from 'i18next';
@@ -171,6 +173,7 @@ function MembersPanelForWorkspace({
   initialTab?: PeopleTab;
 }) {
   const { t } = useTranslation();
+  const emitter = useContext(AppEventEmitterContext);
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const currentUser = useCurrentUser();
   const [tab, setTab] = useState<PeopleTab>(initialTab);
@@ -194,6 +197,10 @@ function MembersPanelForWorkspace({
   const [showGroupSearch, setShowGroupSearch] = useState(false);
   const groupSearchInputRef = useRef<HTMLInputElement | null>(null);
   const removingRef = useRef(false);
+  // All group reads share one queue (one read at a time plus the latest follow-up), and only the
+  // latest request may publish, so a slow older read can't bring back a value that has changed.
+  const [queueGroupsRead] = useState(() => createCoalescedRefresh<void>());
+  const groupsRead = useRef({ request: 0, reportFailure: false });
 
   const currentWorkspace = useMemo(
     () => userWorkspaceInfo?.workspaces.find((workspace) => workspace.id === currentWorkspaceId),
@@ -240,32 +247,100 @@ function MembersPanelForWorkspace({
     }
   }, []);
 
+  /**
+   * Reads the group list. The first load and refreshes after a change report failures; background
+   * revalidation keeps the last list quietly. A read replaced before it started hands its
+   * reporting on to the read that replaced it. Every call drops reads already in flight.
+   */
+  const readGroups = useCallback(
+    (reportFailure: boolean) => {
+      if (!currentWorkspaceId) return Promise.resolve();
+      const requestedWorkspaceId = currentWorkspaceId;
+      const requestGeneration = workspaceGeneration;
+      const reads = groupsRead.current;
+      const request = ++reads.request;
+      const isCurrent = () =>
+        reads.request === request && isCurrentWorkspaceRequest(requestedWorkspaceId, requestGeneration);
+
+      if (reportFailure) reads.reportFailure = true;
+      return queueGroupsRead(async () => {
+        if (!isCurrent()) return;
+        try {
+          const result = await WorkspaceService.getWorkspaceGroups(requestedWorkspaceId);
+
+          if (!isCurrent()) return;
+          reads.reportFailure = false;
+          applyGroups(result.groups || []);
+        } catch (e) {
+          if (!isCurrent()) return;
+          const report = reads.reportFailure;
+
+          reads.reportFailure = false;
+          if (report) toast.error(getErrorMessage(e, t('settings.appearance.people.loadGroupsFailed')));
+        }
+      });
+    },
+    [applyGroups, currentWorkspaceId, isCurrentWorkspaceRequest, queueGroupsRead, t, workspaceGeneration]
+  );
+
   useEffect(() => {
+    const reads = groupsRead.current;
+
     if (!currentWorkspaceId || !canViewGroups) {
+      reads.request += 1;
+      reads.reportFailure = false;
       applyGroups([]);
       setLoadingGroups(false);
       return;
     }
 
-    let cancelled = false;
+    let active = true;
 
     setLoadingGroups(true);
-    void (async () => {
-      try {
-        const result = await WorkspaceService.getWorkspaceGroups(currentWorkspaceId);
-
-        if (!cancelled) applyGroups(result.groups || []);
-      } catch (e) {
-        if (!cancelled) toast.error(getErrorMessage(e, t('settings.appearance.people.loadGroupsFailed')));
-      } finally {
-        if (!cancelled) setLoadingGroups(false);
-      }
-    })();
+    void readGroups(true).finally(() => {
+      if (active) setLoadingGroups(false);
+    });
 
     return () => {
-      cancelled = true;
+      active = false;
+      // Nothing from an abandoned read may land or toast after the panel closes or access changes.
+      reads.request += 1;
     };
-  }, [applyGroups, canViewGroups, currentWorkspaceId, t]);
+  }, [applyGroups, canViewGroups, currentWorkspaceId, readGroups]);
+
+  // While groups are on screen, follow changes made elsewhere (another owner, hints missed while
+  // disconnected). The last list stays visible until the new one arrives.
+  const followGroupChanges = canViewGroups && (tab === 'groups' || selectedGroup !== null);
+
+  useEffect(() => {
+    if (!followGroupChanges) return;
+    const revalidate = () => {
+      void readGroups(false);
+    };
+
+    const visible = () => {
+      if (document.visibilityState === 'visible') revalidate();
+    };
+
+    const socket = (readyState: unknown) => {
+      if (readyState === WebSocket.OPEN) revalidate();
+    };
+
+    // The notification adapter follows every workspace permission hint with PERMISSION_CHANGED,
+    // so this one event covers both.
+    emitter?.on(APP_EVENTS.PERMISSION_CHANGED, revalidate);
+    emitter?.on(APP_EVENTS.WEBSOCKET_STATUS, socket);
+    window.addEventListener('focus', revalidate);
+    window.addEventListener('online', revalidate);
+    document.addEventListener('visibilitychange', visible);
+    return () => {
+      emitter?.off(APP_EVENTS.PERMISSION_CHANGED, revalidate);
+      emitter?.off(APP_EVENTS.WEBSOCKET_STATUS, socket);
+      window.removeEventListener('focus', revalidate);
+      window.removeEventListener('online', revalidate);
+      document.removeEventListener('visibilitychange', visible);
+    };
+  }, [emitter, followGroupChanges, readGroups]);
 
   useEffect(() => {
     if (!currentWorkspaceId || !isOwner) {
@@ -326,21 +401,9 @@ function MembersPanelForWorkspace({
   }, [currentWorkspaceId]);
 
   const refreshGroups = useCallback(async () => {
-    if (!currentWorkspaceId || !isOwner) return;
-    const requestedWorkspaceId = currentWorkspaceId;
-    const requestGeneration = workspaceGeneration;
-    const isCurrentRequest = () => isCurrentWorkspaceRequest(requestedWorkspaceId, requestGeneration);
-
-    try {
-      const result = await WorkspaceService.getWorkspaceGroups(requestedWorkspaceId);
-
-      if (isCurrentRequest()) applyGroups(result.groups || []);
-    } catch (e) {
-      if (isCurrentRequest()) {
-        toast.error(getErrorMessage(e, t('settings.appearance.people.loadGroupsFailed')));
-      }
-    }
-  }, [applyGroups, currentWorkspaceId, isCurrentWorkspaceRequest, isOwner, t, workspaceGeneration]);
+    if (!isOwner) return;
+    await readGroups(true);
+  }, [isOwner, readGroups]);
 
   // Group dialog writes outlive a closed dialog, but never a workspace switch.
   const isCurrentGroupScope = useCallback(

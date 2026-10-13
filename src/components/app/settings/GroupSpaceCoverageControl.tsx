@@ -1,5 +1,5 @@
 import { ChevronDown } from 'lucide-react';
-import { useCallback, useContext, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
@@ -65,10 +65,14 @@ function isPermissionDenied(error: unknown): boolean {
 
 interface GroupSpaceCoverageCardProps {
   workspaceId: string;
+  /** Keep the same object until the list delivers a new copy: any new copy replaces a confirmed save. */
   group: WorkspaceGroup;
   /** False once the account/workspace scope that opened the dialog is gone. */
   isCurrent?: () => boolean;
-  /** Reloads the owning group list after a confirmed change. */
+  /**
+   * Reloads the owning group list after a confirmed change. The host must drop list reads already
+   * in flight when this is called, so an older copy can't replace the save (MembersPanel does).
+   */
   onChanged?: () => Promise<void> | void;
 }
 
@@ -81,11 +85,17 @@ export function GroupSpaceCoverageCard({ workspaceId, group, isCurrent, onChange
   const titleId = useId();
   const levelId = useId();
   const serverLevel = group.space_coverage_access_level;
-  // A confirmed save is shown until the group list delivers a different server value.
-  const [saved, setSaved] = useState<{ basis: GroupSpaceCoverageLevel | undefined; level: GroupSpaceCoverageLevel }>();
+  // A confirmed save is shown until the list delivers any newer copy of the group. Comparing levels
+  // instead would bring the save back when another owner restores the old level.
+  const [saved, setSaved] = useState<{ source: WorkspaceGroup; level: GroupSpaceCoverageLevel }>();
   const [pending, setPending] = useState<{ level: GroupSpaceCoverageLevel }>();
   const [confirming, setConfirming] = useState<{ level: GroupSpaceCoverageLevel }>();
   const alive = useRef(true);
+  const shownGroup = useRef(group);
+
+  useLayoutEffect(() => {
+    shownGroup.current = group;
+  }, [group]);
 
   useEffect(() => {
     alive.current = true;
@@ -94,7 +104,7 @@ export function GroupSpaceCoverageCard({ workspaceId, group, isCurrent, onChange
     };
   }, []);
 
-  const confirmed = saved && saved.basis === serverLevel ? saved.level : serverLevel;
+  const confirmed = saved?.source === group ? saved.level : serverLevel;
   const known = isGroupSpaceCoverageLevel(confirmed);
   const canManage = group.can_manage_space_coverage === true;
   const shown = pending ? pending.level : confirmed;
@@ -106,14 +116,14 @@ export function GroupSpaceCoverageCard({ workspaceId, group, isCurrent, onChange
     : undefined;
 
   const save = async (level: GroupSpaceCoverageLevel) => {
-    const basis = serverLevel;
     const stillCurrent = () => isCurrent?.() ?? true;
 
     setPending({ level });
     try {
       const result = await setGroupSpaceCoverage(workspaceId, group.group_id, level, stillCurrent);
 
-      if (alive.current) setSaved({ basis, level: result.access_level });
+      // Tie the save to the copy on screen now (it may have arrived while saving, from an older read).
+      if (alive.current) setSaved({ source: shownGroup.current, level: result.access_level });
       toast.success(t('groupSpaceAccess.updated'));
       void Promise.resolve(onChanged?.()).catch(() => undefined);
     } catch (error) {

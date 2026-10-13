@@ -219,6 +219,38 @@ describe('group access to all spaces (group dialog)', () => {
     rerender(<GroupSpaceCoverageCard workspaceId='workspace' group={group({ space_coverage_access_level: 30 })} />);
     expect(trigger().textContent).toContain('groupSpaceAccess.canEdit');
   });
+
+  it('after a save, follows every newer copy of the group, even one back at the old level', async () => {
+    const { rerender } = render(<GroupSpaceCoverageCard workspaceId='workspace' group={group()} />);
+
+    fireEvent.click(option('10'));
+    fireEvent.click(await screen.findByTestId('group-space-coverage-confirm'));
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('groupSpaceAccess.updated'));
+    // Until the list catches up, the confirmed save is shown.
+    expect(trigger().textContent).toContain('groupSpaceAccess.canView');
+    rerender(<GroupSpaceCoverageCard workspaceId='workspace' group={group({ space_coverage_access_level: 10 })} />);
+    expect(trigger().textContent).toContain('groupSpaceAccess.canView');
+    // Another owner turns it off again.
+    rerender(<GroupSpaceCoverageCard workspaceId='workspace' group={group({ space_coverage_access_level: null })} />);
+    expect(trigger().textContent).toContain('groupSpaceAccess.off');
+    fireEvent.click(option('10'));
+    expect(await screen.findByTestId('group-space-coverage-confirmation')).toBeTruthy();
+  });
+
+  it('keeps a confirmed save over a copy of the group that arrived while it was saving', async () => {
+    const save = deferred<{ access_level: number | null }>();
+
+    mockSave.mockImplementationOnce(() => save.promise);
+    const { rerender } = render(<GroupSpaceCoverageCard workspaceId='workspace' group={group()} />);
+
+    fireEvent.click(option('10'));
+    fireEvent.click(await screen.findByTestId('group-space-coverage-confirm'));
+    await waitFor(() => expect(mockSave).toHaveBeenCalled());
+    // A list read that started before the save lands first, still saying Off.
+    rerender(<GroupSpaceCoverageCard workspaceId='workspace' group={group({ space_coverage_access_level: null })} />);
+    await act(async () => save.resolve({ access_level: 10 }));
+    expect(trigger().textContent).toContain('groupSpaceAccess.canView');
+  });
 });
 
 function Wrapper({ children }: { children: ReactNode }) {
