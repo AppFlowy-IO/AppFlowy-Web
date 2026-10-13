@@ -207,9 +207,7 @@
     "copyLinkToBlockSuccess": "Lien de bloc copié dans le presse-papiers",
     "copyLinkToBlockFailed": "Impossible de copier le lien du bloc dans le presse-papiers",
     "manageAllSites": "Gérer tous les sites",
-    "updatePathName": "Mettre à jour le nom du chemin",
-    "canView": "Peut afficher",
-    "canEdit": "Peut modifier"
+    "updatePathName": "Mettre à jour le nom du chemin"
   },
   "moreAction": {
     "small": "petit",
@@ -3080,7 +3078,9 @@
     "confirmView": "Les membres de {{group}} pourront afficher tous les espaces publics et personnalisés, actuels et futurs. Les espaces privés et les pages restreintes ne sont pas inclus.",
     "confirmEdit": "Les membres de {{group}} pourront modifier tous les espaces publics et personnalisés, actuels et futurs. Les espaces privés et les pages restreintes ne sont pas inclus.",
     "giveAccess": "Donner l’accès",
-    "updated": "Accès mis à jour"
+    "updated": "Accès mis à jour",
+    "canView": "Lecture",
+    "canEdit": "Modification"
   },
   "loading": "Chargement…"
 }

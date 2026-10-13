@@ -120,7 +120,7 @@ describe('group access to all spaces (group dialog)', () => {
     await waitFor(() => expect(mockSave).toHaveBeenCalledWith('workspace', groupId, 10, expect.any(Function)));
     await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('groupSpaceAccess.updated'));
     expect(onChanged).toHaveBeenCalledTimes(1);
-    expect(trigger().textContent).toContain('shareAction.canView');
+    expect(trigger().textContent).toContain('groupSpaceAccess.canView');
   });
 
   it('shows group names as typed in the confirmation', async () => {
@@ -134,7 +134,7 @@ describe('group access to all spaces (group dialog)', () => {
 
   it('names the menu by its section and current level', () => {
     render(<GroupSpaceCoverageCard workspaceId='workspace' group={group({ space_coverage_access_level: 10 })} />);
-    expect(screen.getByRole('button', { name: 'groupSpaceAccess.title shareAction.canView' })).toBe(trigger());
+    expect(screen.getByRole('button', { name: 'groupSpaceAccess.title groupSpaceAccess.canView' })).toBe(trigger());
   });
 
   it('raising view to edit uses the edit wording', async () => {
@@ -164,11 +164,11 @@ describe('group access to all spaces (group dialog)', () => {
     fireEvent.click(option('10'));
     await waitFor(() => expect(trigger().disabled).toBe(true));
     expect(trigger().getAttribute('aria-busy')).toBe('true');
-    expect(trigger().textContent).toContain('shareAction.canView');
+    expect(trigger().textContent).toContain('groupSpaceAccess.canView');
     expect(toastSuccess).not.toHaveBeenCalled();
     await act(async () => save.resolve({ access_level: 10 }));
     expect(trigger().disabled).toBe(false);
-    expect(trigger().textContent).toContain('shareAction.canView');
+    expect(trigger().textContent).toContain('groupSpaceAccess.canView');
     expect(toastSuccess).toHaveBeenCalledWith('groupSpaceAccess.updated');
   });
 
@@ -177,7 +177,7 @@ describe('group access to all spaces (group dialog)', () => {
     render(<GroupSpaceCoverageCard workspaceId='workspace' group={group({ space_coverage_access_level: 30 })} />);
     fireEvent.click(option('off'));
     await waitFor(() => expect(toastError).toHaveBeenCalledWith('Server unavailable'));
-    expect(trigger().textContent).toContain('shareAction.canEdit');
+    expect(trigger().textContent).toContain('groupSpaceAccess.canEdit');
     expect(toastSuccess).not.toHaveBeenCalled();
   });
 
@@ -217,7 +217,7 @@ describe('group access to all spaces (group dialog)', () => {
     fireEvent.click(option('off'));
     expect(mockSave).not.toHaveBeenCalled();
     rerender(<GroupSpaceCoverageCard workspaceId='workspace' group={group({ space_coverage_access_level: 30 })} />);
-    expect(trigger().textContent).toContain('shareAction.canEdit');
+    expect(trigger().textContent).toContain('groupSpaceAccess.canEdit');
   });
 });
 
@@ -246,8 +246,8 @@ describe('access to all spaces summary (Permissions panel)', () => {
     const list = await screen.findByTestId('group-space-coverage-summary');
 
     expect(within(list).getAllByRole('listitem').map((item) => item.textContent)).toEqual([
-      'CodirworkspacePermissions.groupMembers:4shareAction.canView',
-      'Super_UsersworkspacePermissions.groupMembers:12shareAction.canEdit',
+      'CodirworkspacePermissions.groupMembers:4groupSpaceAccess.canView',
+      'Super_UsersworkspacePermissions.groupMembers:12groupSpaceAccess.canEdit',
     ]);
     expect(screen.queryByText('Product')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'groupSpaceAccess.manageGroups' }));
@@ -303,10 +303,10 @@ describe('access to all spaces summary (Permissions panel)', () => {
     await act(async () => {
       emitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
     });
-    expect(screen.getByText('shareAction.canView')).toBeTruthy();
+    expect(screen.getByText('groupSpaceAccess.canView')).toBeTruthy();
     expect(screen.queryByRole('status')).toBeNull();
     await act(async () => next.resolve({ groups: [group({ space_coverage_access_level: 30 })] }));
-    expect(await screen.findByText('shareAction.canEdit')).toBeTruthy();
+    expect(await screen.findByText('groupSpaceAccess.canEdit')).toBeTruthy();
   });
 
   it('a permission burst keeps one read active and one fresh follow-up', async () => {
@@ -325,8 +325,8 @@ describe('access to all spaces summary (Permissions panel)', () => {
     await act(async () => first.resolve({ groups: [group({ space_coverage_access_level: 10 })] }));
     await waitFor(() => expect(mockRead).toHaveBeenCalledTimes(2));
     // The stale first answer is never shown; the follow-up wins.
-    expect(await screen.findByText('shareAction.canEdit')).toBeTruthy();
-    expect(screen.queryByText('shareAction.canView')).toBeNull();
+    expect(await screen.findByText('groupSpaceAccess.canEdit')).toBeTruthy();
+    expect(screen.queryByText('groupSpaceAccess.canView')).toBeNull();
   });
 
   it('unmount discards a queued read after the active one settles', async () => {

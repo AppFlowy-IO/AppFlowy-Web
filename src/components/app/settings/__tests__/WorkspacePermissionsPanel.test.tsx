@@ -573,7 +573,7 @@ describe('workspace permission settings', () => {
     const summary = await screen.findByTestId('group-space-coverage-summary');
 
     expect(within(summary).getByText('W_RH_edit')).toBeTruthy();
-    expect(within(summary).getByText('shareAction.canEdit')).toBeTruthy();
+    expect(within(summary).getByText('groupSpaceAccess.canEdit')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'groupSpaceAccess.manageGroups' }));
     expect(onOpenGroups).toHaveBeenCalledTimes(1);
   });

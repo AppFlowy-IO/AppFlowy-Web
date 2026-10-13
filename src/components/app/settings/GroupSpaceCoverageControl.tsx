@@ -50,8 +50,8 @@ function coverageKey(level: GroupSpaceCoverageLevel): string {
 }
 
 export function coverageLabel(level: GroupSpaceCoverageLevel | undefined, t: TFunction): string {
-  if (level === AccessLevel.ReadAndWrite) return t('shareAction.canEdit');
-  if (level === AccessLevel.ReadOnly) return t('shareAction.canView');
+  if (level === AccessLevel.ReadAndWrite) return t('groupSpaceAccess.canEdit');
+  if (level === AccessLevel.ReadOnly) return t('groupSpaceAccess.canView');
   if (level === null) return t('groupSpaceAccess.off');
   return t('groupSpaceAccess.unknown');
 }

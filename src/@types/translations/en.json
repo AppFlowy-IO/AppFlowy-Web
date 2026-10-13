@@ -4641,6 +4641,8 @@
     "confirmView": "Members of {{group}} will be able to view every current and future public and custom space. Private spaces and restricted pages aren't included.",
     "confirmEdit": "Members of {{group}} will be able to edit every current and future public and custom space. Private spaces and restricted pages aren't included.",
     "giveAccess": "Give access",
-    "updated": "Access updated"
+    "updated": "Access updated",
+    "canView": "Can view",
+    "canEdit": "Can edit"
   }
 }

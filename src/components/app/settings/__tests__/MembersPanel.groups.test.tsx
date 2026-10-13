@@ -196,7 +196,7 @@ describe('MembersPanel workspace group parity', () => {
     expect(within(card).getByTestId('group-space-coverage-trigger').textContent).toContain('groupSpaceAccess.off');
     const refreshesBeforeSave = mockGetWorkspaceGroups.mock.calls.length;
 
-    fireEvent.click(within(card).getByRole('button', { name: 'shareAction.canEdit' }));
+    fireEvent.click(within(card).getByRole('button', { name: 'groupSpaceAccess.canEdit' }));
     fireEvent.click(await screen.findByTestId('group-space-coverage-confirm'));
     await waitFor(() =>
       expect(mockSetGroupSpaceCoverage).toHaveBeenCalledWith('workspace-1', scimGroup.group_id, 30, expect.any(Function))
@@ -228,7 +228,7 @@ describe('MembersPanel workspace group parity', () => {
     const card = within(modal).getByTestId('group-space-coverage-card');
     const deleteButton = within(modal).getByTestId('group-detail-delete-button');
 
-    expect(within(card).getByTestId('group-space-coverage-trigger').textContent).toContain('shareAction.canView');
+    expect(within(card).getByTestId('group-space-coverage-trigger').textContent).toContain('groupSpaceAccess.canView');
     expect(card.compareDocumentPosition(deleteButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 

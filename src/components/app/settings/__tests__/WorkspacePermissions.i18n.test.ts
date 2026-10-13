@@ -15,6 +15,18 @@ const POLICIES = ['members_and_owners', 'owners_only', 'owners_and_selected_memb
 const OTHER_OWNERS = /^workspacePermissions\.(sidebar|pendingEdits|legacyPendingEdits|retryPendingEdits)/;
 // The People menu itself is not translated into French yet, so the summary must name it exactly as shown.
 const UNTRANSLATED_MENU = /^settings\.appearance\.people\./;
+// Labels the page Share menus show side by side. French must have all of them or none, never a mix.
+const SHARE_MENU_LEVELS = [
+  'readOnly',
+  'readAndWrite',
+  'canView',
+  'canComment',
+  'canViewAndComment',
+  'canEdit',
+  'fullAccess',
+  'canViewDescription',
+  'canEditDescription',
+];
 
 function lookup(dictionary: Dictionary, key: string): string | Dictionary | undefined {
   return key.split('.').reduce<string | Dictionary | undefined>(
@@ -46,23 +58,43 @@ const usedKeys = Array.from(
   ])
 ).sort();
 
+const translatedKeys = usedKeys.filter((key) => !UNTRANSLATED_MENU.test(key));
+const menuKeys = usedKeys.filter((key) => UNTRANSLATED_MENU.test(key));
+
 describe('permission settings translations', () => {
   it('finds the keys used by the permission settings', () => {
     expect(usedKeys).toEqual(
       expect.arrayContaining([
         'button.retry',
+        'groupSpaceAccess.canEdit',
+        'groupSpaceAccess.canView',
         'groupSpaceAccess.confirmTitle',
         'loading',
-        'shareAction.canEdit',
-        'shareAction.canView',
         'workspacePermissions.savedSelections',
       ])
     );
+    expect(menuKeys).toEqual(['settings.appearance.people.groupsTab', 'settings.appearance.people.label']);
   });
 
-  it.each(usedKeys)('%s exists in English and French', (key) => {
+  it.each(translatedKeys)('%s exists in English and French', (key) => {
     expect(resolves(en as Dictionary, key)).toBe(true);
-    if (!UNTRANSLATED_MENU.test(key)) expect(resolves(fr as Dictionary, key)).toBe(true);
+    expect(resolves(fr as Dictionary, key)).toBe(true);
+  });
+
+  it.each(menuKeys)('%s exists in English and names the People menu as French users see it', (key) => {
+    expect(resolves(en as Dictionary, key)).toBe(true);
+    // Until the menu is translated, French falls back to the English name, and so does the summary.
+    expect(resolves(fr as Dictionary, key)).toBe(false);
+  });
+
+  it('labels access levels with its own keys, not the shared Share menu labels', () => {
+    expect(usedKeys.filter((key) => key.startsWith('shareAction.'))).toEqual([]);
+  });
+
+  it('never translates only part of the Share menu access labels into French', () => {
+    const translated = SHARE_MENU_LEVELS.filter((key) => resolves(fr as Dictionary, `shareAction.${key}`));
+
+    expect([[], SHARE_MENU_LEVELS]).toContainEqual(translated);
   });
 
   it('translates every permission settings string into French', () => {
