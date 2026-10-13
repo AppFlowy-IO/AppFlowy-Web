@@ -110,7 +110,15 @@ describe('permission settings translations', () => {
 
     expect(owned.filter((key) => !french[key])).toEqual([]);
     expect(owned.filter((key) => french[key] === english[key])).toEqual([]);
-    expect(Object.keys(french).filter((key) => !(key in english))).toEqual([]);
+    // French has plural categories English lacks (i18next `_many`), so a French-only plural form is
+    // valid when English pluralizes the same base key; anything else is a stale French key.
+    const frenchOnlyPlural = (key: string) => {
+      const match = /^(.*)_(zero|two|few|many)$/.exec(key);
+
+      return Boolean(match && `${match[1]}_other` in english);
+    };
+
+    expect(Object.keys(french).filter((key) => !(key in english) && !frenchOnlyPlural(key))).toEqual([]);
   });
 
   it('uses plain words instead of internal terms', () => {
