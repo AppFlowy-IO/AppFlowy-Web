@@ -101,8 +101,50 @@ test('the caller can cancel before task creation', async () => {
   const controller = new AbortController();
 
   controller.abort();
-  await expect(importFileWithUpload(file, { ...options(), signal: controller.signal })).rejects.toThrow();
+  await expect(importFileWithUpload(file, { ...options(), signal: controller.signal })).rejects.toMatchObject({
+    name: 'AbortError',
+  });
   expect(createImportTask).not.toHaveBeenCalled();
+});
+
+test('a cancel while the task is being created is reported as a cancel and cleans up the task', async () => {
+  const controller = new AbortController();
+  let resolve!: (value: typeof task) => void;
+
+  jest.mocked(createImportTask).mockImplementation(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      })
+  );
+  const pending = importFileWithUpload(file, { ...options(), signal: controller.signal });
+
+  controller.abort();
+  resolve(task);
+  const error = await pending.catch((cause: unknown) => cause);
+
+  expect(error).toMatchObject({ name: 'AbortError' });
+  expect((error as Error).message).not.toBe('workspaceCreation.contextChanged');
+  expect(uploadImportFile).not.toHaveBeenCalled();
+  // The task already exists on the server, so the admitting account cancels it.
+  expect(cancelImportTask).toHaveBeenCalledWith('task');
+});
+
+test('a cancel before multipart completion is reported as a cancel', async () => {
+  const controller = new AbortController();
+  const multipart = { s3_key: 'key', upload_id: 'id', part_presigned_urls: [] };
+
+  jest.mocked(createImportTask).mockResolvedValue({ ...task, multipart });
+  jest
+    .mocked(uploadImportFileMultipart)
+    .mockImplementation(async (_file, _multipart, _progress, _signal, beforeComplete) => {
+      controller.abort();
+      beforeComplete?.();
+    });
+  await expect(importFileWithUpload(file, { ...options(), signal: controller.signal })).rejects.toMatchObject({
+    name: 'AbortError',
+  });
+  expect(cancelImportTask).toHaveBeenCalledWith('task');
 });
 
 test('multipart completion has a final context guard even when no session event was delivered', async () => {
