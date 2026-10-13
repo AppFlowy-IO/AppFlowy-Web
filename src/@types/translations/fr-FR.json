@@ -66,7 +66,8 @@
     "loadFailed": "Impossible de charger ces paramètres.",
     "offline": "Vous êtes hors ligne. Reconnectez-vous et réessayez.",
     "refreshFailed": "Impossible d’actualiser ces paramètres. Réessayez pour pouvoir les modifier.",
-    "saveFailed": "Impossible d’enregistrer cette modification. Réessayez."
+    "saveFailed": "Impossible d’enregistrer cette modification. Réessayez.",
+    "notSelected": "Non sélectionnés"
   },
   "appName": "AppFlowy",
   "defaultUsername": "Moi",

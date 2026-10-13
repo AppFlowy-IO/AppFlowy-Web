@@ -308,7 +308,7 @@ function PolicyCards({
             onClick={() => onSelect(option)}
             data-testid={`space-creation-policy-${option}`}
             className={cn(
-              'relative flex min-h-[88px] flex-col items-start gap-1.5 rounded-400 border px-3 py-3 pr-8 text-left transition-colors',
+              'relative flex flex-col items-start gap-1.5 rounded-400 border px-3 py-3 pr-8 text-left transition-colors lg:min-h-[88px]',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-theme-thick',
               'disabled:cursor-not-allowed',
               !selected && 'disabled:opacity-60',
@@ -680,10 +680,11 @@ function SelectedCreators({
       />
       {query && (
         <div
-          className='flex flex-col gap-1 border-t border-border-primary pt-2'
+          className='flex flex-col gap-2 border-y border-border-primary py-3'
           aria-live='polite'
           data-testid='space-creator-candidates'
         >
+          <div className='text-sm font-medium text-text-secondary'>{t('workspacePermissions.notSelected')}</div>
           {candidates.length === 0 && roster.directoryStatus === 'loading' ? (
             <div role='status' aria-label={t('loading')} className='flex justify-center py-2'>
               <Progress />

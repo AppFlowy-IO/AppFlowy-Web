@@ -291,6 +291,8 @@ describe('workspace permission settings', () => {
     const results = await screen.findByTestId('space-creator-candidates');
 
     await within(results).findByText('Alice Martin');
+    // Results are labelled so they read separately from the selected roster below.
+    expect(within(results).getByText('workspacePermissions.notSelected')).toBeTruthy();
     expect(within(results).getByText('alice@acme.test')).toBeTruthy();
     // Guests, Owners, pending invitations and accounts without a stable ID are never offered.
     for (const name of ['Gina Guest', 'Olivia Owner', 'Paul Pending', 'Leo Legacy']) {

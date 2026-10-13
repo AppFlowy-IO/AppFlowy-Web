@@ -66,7 +66,8 @@
     "loadFailed": "We couldn't load these settings.",
     "offline": "You're offline. Reconnect and try again.",
     "refreshFailed": "We couldn't refresh these settings. Try again to make changes.",
-    "saveFailed": "We couldn't save this change. Try again."
+    "saveFailed": "We couldn't save this change. Try again.",
+    "notSelected": "Not selected"
   },
   "databaseViewCreation": {
     "onlineRequired": "Connect to the internet to create Form or Chart views.",
