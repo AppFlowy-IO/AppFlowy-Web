@@ -1,9 +1,11 @@
 import { t } from 'i18next';
 
+import { clientValidationMessages } from '@/application/errors/client-validation-error';
+
 const messages = {
-  offline: 'Connect to the internet to create this item.',
-  serverUpgrade: 'Update the server to use this creation feature.',
-  ownerChanged: 'The account or workspace changed. Retry in the original workspace.',
+  offline: clientValidationMessages.ATOMIC_CREATION_OFFLINE,
+  serverUpgrade: clientValidationMessages.ATOMIC_CREATION_SERVER_UPGRADE,
+  ownerChanged: clientValidationMessages.ATOMIC_CREATION_OWNER_CHANGED,
   pending: 'Creation is pending. Retry the original request to finish.',
 };
 

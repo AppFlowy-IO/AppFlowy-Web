@@ -3,6 +3,7 @@ import axios, { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
 import { deserialize, serialize } from 'v8';
 
 import { db } from '@/application/db';
+import { userFriendlyErrorMessage } from '@/application/errors/error-message';
 import { postAtomicCreation } from '@/application/services/js-services/http/atomic-creation-api';
 import { getAxios, initAPIService } from '@/application/services/js-services/http/core';
 import { getTokenParsed, invalidToken, saveGoTrueAuth } from '@/application/session/token';
@@ -204,15 +205,20 @@ it.each(['offline', 'unsupported'] as const)('refuses %s before journal or netwo
   if (condition === 'offline') Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
   else
     updateServerInfo(server, { status: 'available', info: { enable_page_history: true, enable_atomic_creation: true } });
-  await expect(
-    runAtomicCreation({
-      owner: captureAtomicCreationOwner('workspace'),
-      kind: 'document',
-      request: command,
-      logicalTarget: command.view_id,
-      hydrate: async () => undefined,
-    })
-  ).rejects.toThrow();
+  const error = await runAtomicCreation({
+    owner: captureAtomicCreationOwner('workspace'),
+    kind: 'document',
+    request: command,
+    logicalTarget: command.view_id,
+    hydrate: async () => undefined,
+  }).catch((error: unknown) => error);
+
+  expect(error).toBeInstanceOf(Error);
+  expect(userFriendlyErrorMessage(error, { fallback: 'Failed to create page' })).toBe(
+    condition === 'offline'
+      ? 'Connect to the internet to create this item.'
+      : 'Update the server to use this creation feature.'
+  );
   expect(await db.atomic_creation.count()).toBe(0);
   expect(send).not.toHaveBeenCalled();
 });
