@@ -473,6 +473,38 @@ describe('MentionPanel composition', () => {
     expect(search).toHaveBeenCalledTimes(4);
   });
 
+  // Partial row results are shown but never cached, so the reconnect refresh runs a full search.
+  it.each([
+    ['keeps', 'a network failure', new Error('Network Error')],
+    ['keeps', 'a server error', { code: 502, httpStatus: 502, message: 'Bad Gateway' }],
+    ['drops', 'a permission denial', { code: ERROR_CODE.NOT_HAS_PERMISSION, message: 'denied' }],
+  ])('%s uncached suggestions when their reconnect refresh hits %s', async (outcome, _failure, error) => {
+    const search = jest.fn(async (request: MentionSearchRequest) =>
+      isRows(request) ? { ...emptyRows, partial: true } : pageResponse('Target')
+    );
+
+    mockEditorContext.searchMentions = search;
+    const panel = mountPanel(Object.assign(new EventEmitter(), { webSocketReadyState: 1 }));
+
+    expect(await screen.findByRole('button', { name: 'Target' })).toBeTruthy();
+    await waitFor(() => expect(search).toHaveBeenCalledTimes(3));
+    search.mockRejectedValue(error);
+    act(() => {
+      panel.emitter.emit(APP_EVENTS.WEBSOCKET_STATUS, 3);
+      panel.emitter.emit(APP_EVENTS.WEBSOCKET_STATUS, 1);
+    });
+    await waitFor(() => expect(search).toHaveBeenCalledTimes(5));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    if (outcome === 'keeps') {
+      expect(screen.getByRole('button', { name: 'Target' })).toBeTruthy();
+      expect(screen.queryByText('findAndReplace.noResult')).toBeNull();
+    } else {
+      expect(screen.queryByRole('button', { name: 'Target' })).toBeNull();
+    }
+  });
+
   it.each(['account', 'workspace', 'server', 'signed-out'])(
     'hides old results on %s replacement',
     async (replacement) => {

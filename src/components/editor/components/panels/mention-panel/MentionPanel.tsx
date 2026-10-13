@@ -448,6 +448,10 @@ export function MentionPanel({
   );
   const [remoteResult, setRemoteResult] = useState<{ cache: MentionSearchCache; sections: MentionSearchSection[] }>();
   const mentionSections = remoteResult?.cache === mentionCache && isAccessCurrent() ? remoteResult.sections : [];
+  // What the picker shows now, for a background re-run of the same query.
+  const shownMentionSectionsRef = useRef(mentionSections);
+
+  shownMentionSectionsRef.current = mentionSections;
   const setMentionSections = useCallback(
     (sections: MentionSearchSection[]) => {
       setRemoteResult({ cache: mentionCache, sections });
@@ -617,6 +621,9 @@ export function MentionPanel({
     const previousSearch = lastMentionSearchRef.current;
     // Re-running the same query in the same scope (a reconnect refresh) keeps what is shown.
     const sameSearch = previousSearch?.cache === mentionCache && previousSearch.key === mentionSearchCacheKey;
+    // Suggestions for this query already on screen. A dropped connection or server error during
+    // their background re-run keeps them, as on the cached path; other failures may concern access.
+    let showingSuggestions = sameSearch && shownMentionSectionsRef.current.length > 0;
 
     lastMentionSearchRef.current = { cache: mentionCache, key: mentionSearchCacheKey };
     mentionSearchRequestIdRef.current = requestId;
@@ -694,6 +701,7 @@ export function MentionPanel({
     function deferSearch(error: Parameters<MentionSearchCache['markRetryLater']>[1]) {
       if (!isCurrentRequest()) return;
       mentionCache.markRetryLater(mentionSearchCacheKey, error);
+      showingSuggestions = false;
       setMentionSections([]);
       setMentionSearchDeferred(true);
       setMentionSearchFailed(false);
@@ -801,6 +809,7 @@ export function MentionPanel({
           if (!isCurrentRequest() || !result.read.isCurrent()) return;
 
           cacheMentionSections(result);
+          showingSuggestions = result.sections.length > 0;
           setMentionSections(result.sections);
           setMentionSearchFailed(false);
           setMentionSearchDeferred(false);
@@ -815,6 +824,7 @@ export function MentionPanel({
           }
 
           console.error(error);
+          if (showingSuggestions && isTransientMentionSearchError(error)) return;
           setMentionSections([]);
           setMentionSearchFailed(true);
           setMentionSearchDeferred(false);
