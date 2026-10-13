@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
@@ -70,6 +70,7 @@ export function PendingPermissionEdits({
   reloadPage?: () => void;
 }) {
   const { t } = useTranslation();
+  const messageId = useId();
   const session = useMemo(() => ({ userId, workspaceId, serverUrl }), [userId, workspaceId, serverUrl]);
   const storageKey = dismissalStorageKey(serverUrl, userId, workspaceId);
   const [dismissed, setDismissed] = useState(() => readDismissed(storageKey));
@@ -146,13 +147,12 @@ export function PendingPermissionEdits({
     <>
       {(showBlocked || showSaving) && (
         <section
-          role='status'
-          aria-live='polite'
+          aria-labelledby={messageId}
           data-testid='pending-permission-edits'
           className='fixed bottom-24 right-6 z-30 flex w-[320px] max-w-[calc(100vw-3rem)] flex-col gap-3 rounded-400 border border-border-primary bg-surface-primary p-4 shadow-toast'
         >
           <div className='flex items-start gap-2'>
-            <p className='flex-1 text-sm font-medium text-text-primary'>
+            <p id={messageId} role='status' aria-live='polite' className='flex-1 text-sm font-medium text-text-primary'>
               {showBlocked
                 ? t('workspacePermissions.pendingEdits', { count: pending.blocked.length })
                 : t('workspacePermissions.pendingEditsSaving')}
