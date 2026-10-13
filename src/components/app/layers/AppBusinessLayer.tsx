@@ -585,8 +585,10 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
         }
 
         if (result.verdict === 'denied') {
-          // Close even if navigation was superseded. Permission denial is not
-          // deletion; persistent bytes remain available after a later grant.
+          // Close even if navigation was superseded. The synced copy is deleted
+          // so the revoked content is no longer readable on this device; only
+          // unsent edits remain, quarantined in the outbox (blockPermissionSync
+          // above). A later grant reloads the content from the server.
           closePermissionProbeTarget(workspaceId, activeViewId, result);
           if (!cancelled) {
             if (activeViewId === viewId) setNoAccessViewId(activeViewId);
