@@ -4598,7 +4598,10 @@
     "retryOriginal": "This request is saved in this tab. Resume uses the original name and request so a lost response cannot create a duplicate workspace.",
     "notConfirmed": "We couldn't confirm that the workspace was created.",
     "tryAgainLater": "Workspace creation isn't available right now. Try again later.",
-    "checkAgain": "Check again"
+    "checkAgain": "Check again",
+    "uploadAgain": "Upload again",
+    "uploadFailed": "Upload failed",
+    "importPageHint": "Choose a file to import, or open AppFlowy to go to your workspaces."
   },
   "groupSpaceAccess": {
     "title": "Group access to spaces",
