@@ -387,6 +387,31 @@ describe('collab IndexedDB persistence internals', () => {
     );
   });
 
+  it('drops account caches written under a bare account id when upgrading to version 14', async () => {
+    type UpgradeVersion = { _cfg: { version: number; contentUpgrade?: (transaction: unknown) => Promise<void> } };
+    const version = (db as unknown as { _versions: UpgradeVersion[] })._versions.find(({ _cfg }) => _cfg.version === 14);
+    const rows: Record<string, Array<{ user_id: string }>> = {
+      app_view_cache: [{ user_id: 'legacy-user' }, { user_id: '["https://server","user"]' }],
+      workspace_database_catalog: [{ user_id: '["https://server","user"]' }, { user_id: 'legacy-user' }],
+    };
+    const transaction = {
+      table: (name: string) => ({
+        filter: (predicate: (row: { user_id: string }) => boolean) => ({
+          delete: async () => {
+            rows[name] = rows[name].filter((row) => !predicate(row));
+          },
+        }),
+      }),
+    };
+
+    expect(version?._cfg.contentUpgrade).toEqual(expect.any(Function));
+    await version?._cfg.contentUpgrade?.(transaction);
+    expect(rows).toEqual({
+      app_view_cache: [{ user_id: '["https://server","user"]' }],
+      workspace_database_catalog: [{ user_id: '["https://server","user"]' }],
+    });
+  });
+
   it('clears all blob RID checkpoints when the shared collab cache database is deleted', () => {
     localStorage.setItem('af_database_blob_rid:database-1', JSON.stringify({ timestamp: 1, seqNo: 2 }));
     localStorage.setItem('af_database_blob_rid:database-2', JSON.stringify({ timestamp: 3, seqNo: 4 }));

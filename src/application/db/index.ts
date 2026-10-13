@@ -272,6 +272,28 @@ db.version(13).stores({
   ...collabStorageSchema, ...appViewCacheSchema, ...workspaceDatabaseCatalogSchema,
 });
 
+/** Server-scoped account keys are JSON arrays; earlier builds stored the bare account id. */
+function isPreScopeAccountCacheRow(record: { user_id?: unknown }): boolean {
+  return typeof record.user_id !== 'string' || !record.user_id.startsWith('[');
+}
+
+// Version 14: the app view and workspace database catalog caches are keyed by
+// a server-scoped account. Rows written under the bare account id can never be
+// read, refreshed or evicted again, so drop them (as version 9 did for its key change).
+db.version(14)
+  .stores({
+    ...viewMetasSchema, ...userSchema, ...rowSchema, ...workspaceMemberProfileSchema,
+    ...versionSchema, ...syncOutboxSchema, ...syncPermissionBlockSchema,
+    ...collabStorageSchema, ...appViewCacheSchema, ...workspaceDatabaseCatalogSchema,
+  })
+  .upgrade(async (transaction) => {
+    await Promise.all(
+      ['app_view_cache', 'workspace_database_catalog'].map((table) =>
+        transaction.table(table).filter(isPreScopeAccountCacheRow).delete()
+      )
+    );
+  });
+
 const openedSet = new Set<string>();
 const ensuredStores = new Map<string, Promise<void>>();
 
