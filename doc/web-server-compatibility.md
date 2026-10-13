@@ -115,17 +115,19 @@ underlying mention HTTP requests or replace server authorization.
 Create/Manage Space expose the existing `sidebar_edit_policy`. Direct space-child actions require both
 canonical content Write and sidebar permission: the sidebar "+", New Page destinations (checked per space
 when the dialog opens, with the reason shown for unavailable spaces), Duplicate (the source's parent must
-accept a new page) and Move (the selected destination is checked before Move is enabled). Ordinary nested
-pages retain their own Write check. On a server without the structured space routes the sidebar policy
-does not exist and Write alone applies. Changing this setting does not grant B (space creation) or D
-(workspace creation). Create Space keeps useful draft fields after a denied pre-check. A definitive
-rejection of a first attempt (400/403/422, validation or denial) forgets the saved request and leaves the
-draft editable with fresh identities. An ambiguous outcome (lost response, timeout, 409, 5xx) keeps the
-original identity with "Check again" and "Discard", in the dialog and in the sidebar. A resend from
-"Check again" that is refused keeps that saved request as well, because the earlier attempt with the same
-identity may still commit; only finding the space or "Discard" ends it. The full background-writer,
-offline re-grant and native-client acceptance matrix remains in progress in the Server repository's
-Oodrive plan.
+accept a new page) and Move (the selected destination is checked before Move is enabled). For New Page,
+Duplicate and Move, a check that could not run (offline, server error) is not shown as a denial: that
+destination stays available and the server decides. A New Page choice whose space is no longer listed is
+dropped. Ordinary nested pages retain their own Write check. On a server without the structured space
+routes the sidebar policy does not exist and Write alone applies. Changing this setting does not grant B
+(space creation) or D (workspace creation). Create Space keeps useful draft fields after a denied
+pre-check. A definitive rejection of a first attempt (400/403/422, validation or denial) forgets the
+saved request and leaves the draft editable with fresh identities. An ambiguous outcome (lost response,
+timeout, 409, 5xx) keeps the original identity with "Check again" and "Discard", in the dialog and in the
+sidebar. A resend from "Check again" that is refused keeps that saved request as well, because the
+earlier attempt with the same identity may still commit; only finding the space or "Discard" ends it. The
+full background-writer, offline re-grant and native-client acceptance matrix remains in progress in the
+Server repository's Oodrive plan.
 
 The opt-in `playwright.permissions.config.ts` suite uses the passed Server
 `group_permission_lifecycle.py` document fixture. It checks real open editor bodies, title controls,

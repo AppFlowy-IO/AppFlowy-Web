@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 
-import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
+import { APP_EVENTS } from '@/application/constants';
 import { AccessService, WorkspaceService } from '@/application/services/domains';
 import { AccessLevel, Types, View } from '@/application/types';
 import { isSpaceView } from '@/application/view-utils';
 import { useAppView, useCurrentWorkspaceId, useEventEmitter } from '@/components/app/app.hooks';
 import { useViewActionPermissions } from '@/components/app/view-actions/useViewActionPermissions';
+import { isPermissionDeniedError } from '@/components/app/view-actions/viewActionPermission';
 import { isUnsupportedRouteError } from '@/utils/errors';
 
 export type PageDestinationDeniedReason = 'noEdit' | 'ownersOnly';
@@ -14,6 +15,8 @@ export type PageDestinationAccess =
   | { state: 'none' }
   | { state: 'checking' }
   | { state: 'allowed' }
+  /** Could not be checked (offline, server error); the server decides when the page is added. */
+  | { state: 'unverified' }
   | { state: 'denied'; reason: PageDestinationDeniedReason };
 
 /** Translation key explaining why pages cannot be added to a destination. */
@@ -39,7 +42,11 @@ export function usePageDestinationAccess(viewId: string | undefined, enabled: bo
   }
 
   if (permissions.canCreateViewActions) return { state: 'allowed' };
-  return { state: 'denied', reason: permissions.canWrite && isSpaceView(view) ? 'ownersOnly' : 'noEdit' };
+  // A check that could not run is not a denial: as in New Page, the server decides.
+  if (permissions.objectPermissionUnavailable) return { state: 'unverified' };
+  if (!permissions.canWrite) return { state: 'denied', reason: 'noEdit' };
+  if (!isSpaceView(view)) return { state: 'denied', reason: 'noEdit' };
+  return permissions.spacePermissionUnavailable ? { state: 'unverified' } : { state: 'denied', reason: 'ownersOnly' };
 }
 
 /**
@@ -53,8 +60,14 @@ export function useDuplicateDestinationAccess(view: View | null | undefined, ena
   return usePageDestinationAccess(parentViewId, enabled);
 }
 
+/** A destination the UI may add a page to: confirmed, or unchecked so the server decides. */
+export function acceptsPageDestination(access: PageDestinationAccess) {
+  return access.state === 'allowed' || access.state === 'unverified';
+}
+
+/** Like acceptsPageDestination, but a view without a destination requirement ('none') is allowed. */
 export function allowsPageDestination(access: PageDestinationAccess) {
-  return access.state === 'none' || access.state === 'allowed';
+  return access.state === 'none' || acceptsPageDestination(access);
 }
 
 export type SpaceDestinationAccess =
@@ -66,12 +79,6 @@ export type SpaceDestinationAccess =
 
 const SPACE_PROBE_CONCURRENCY = 4;
 const NO_SPACE_ACCESS: Readonly<Record<string, SpaceDestinationAccess>> = Object.freeze({});
-
-function isPermissionDenied(error: unknown) {
-  const value = error as { code?: unknown; httpStatus?: unknown } | null;
-
-  return value?.httpStatus === 403 || value?.code === ERROR_CODE.NOT_HAS_PERMISSION;
-}
 
 async function canWriteSpace(workspaceId: string, spaceId: string) {
   const permission = await AccessService.getObjectPermission(workspaceId, spaceId, Types.Document);
@@ -104,7 +111,7 @@ async function probeSpaceDestination(workspaceId: string, spaceId: string): Prom
       }
     }
 
-    return isPermissionDenied(error) ? { state: 'denied', reason: 'noEdit' } : { state: 'unverified' };
+    return isPermissionDeniedError(error) ? { state: 'denied', reason: 'noEdit' } : { state: 'unverified' };
   }
 }
 

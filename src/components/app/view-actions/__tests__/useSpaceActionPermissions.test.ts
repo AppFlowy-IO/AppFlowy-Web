@@ -119,6 +119,41 @@ describe('useSpaceActionPermissions', () => {
     consoleError.mockRestore();
   });
 
+  it.each([
+    ['offline', { code: -1, message: 'Network error' }, true],
+    ['a server error', { code: 1017, message: 'Internal error' }, true],
+    ['a denial', { code: ERROR_CODE.NOT_HAS_PERMISSION, httpStatus: 403, message: 'Forbidden' }, false],
+    ['a server without structured spaces', { code: 404, httpStatus: 404, message: 'Unsupported route' }, false],
+  ] as const)('reports a failed read caused by %s as unavailable only when nothing was decided', async (_case, error, unavailable) => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    mockGetSpacePermission.mockRejectedValue(error);
+    const { result } = renderHook(() => useSpaceActionPermissions(spaceView, true));
+
+    await waitFor(() => expect(result.current.hasLoadedSpaceActionPermissions).toBe(true));
+
+    expect(result.current.spacePermissionUnavailable).toBe(unavailable);
+    consoleError.mockRestore();
+  });
+
+  it('clears the unavailable state once the space permission is read', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    mockGetSpacePermission
+      .mockRejectedValueOnce({ code: -1, message: 'Network error' })
+      .mockResolvedValueOnce(capabilities({ can_edit_sidebar: true }));
+    const { result } = renderHook(() => useSpaceActionPermissions(spaceView, true));
+
+    await waitFor(() => expect(result.current.spacePermissionUnavailable).toBe(true));
+    act(() => {
+      mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'space-1' });
+    });
+    expect(result.current.spacePermissionUnavailable).toBe(false);
+    await waitFor(() => expect(result.current.canEditSidebar).toBe(true));
+    expect(result.current.spacePermissionUnavailable).toBe(false);
+    consoleError.mockRestore();
+  });
+
   it('does not treat a payload-level not-found response as an unsupported route', async () => {
     const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
 

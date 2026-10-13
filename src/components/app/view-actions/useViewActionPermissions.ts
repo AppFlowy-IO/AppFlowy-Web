@@ -17,6 +17,7 @@ import {
   canUseChildViewCreationActions,
   canUsePageHistoryAction,
   canUseViewMutationActions,
+  isPermissionDeniedError,
 } from '@/components/app/view-actions/viewActionPermission';
 
 export function useViewActionPermissions(
@@ -37,6 +38,8 @@ export function useViewActionPermissions(
   const requestSeq = useRef(0);
   const [loadedViewId, setLoadedViewId] = useState<string | null>(null);
   const [objectPermission, setObjectPermission] = useState<CollabObjectPermission | null>(null);
+  // The view whose object permission read failed without a decision (offline, server error).
+  const [unavailableViewId, setUnavailableViewId] = useState<string | null>(null);
   const [isLoadingViewActionPermissions, setIsLoadingViewActionPermissions] = useState(false);
   const [permissionRefreshRevision, setPermissionRefreshRevision] = useState(0);
 
@@ -87,6 +90,7 @@ export function useViewActionPermissions(
       (!knownTarget || isCollabObjectPermissionForTarget(activeObjectPermission, knownTarget))
     ) {
       setObjectPermission(activeObjectPermission);
+      setUnavailableViewId(null);
       setLoadedViewId(viewId);
       setIsLoadingViewActionPermissions(false);
 
@@ -122,6 +126,7 @@ export function useViewActionPermissions(
         if (cancelled || seq !== requestSeq.current) return;
 
         setObjectPermission(isCollabObjectPermissionForTarget(permission, target) ? permission : null);
+        setUnavailableViewId(null);
         setLoadedViewId(viewId);
         setIsLoadingViewActionPermissions(false);
       })
@@ -129,6 +134,7 @@ export function useViewActionPermissions(
         if (cancelled || seq !== requestSeq.current) return;
         console.error(error);
         setObjectPermission(null);
+        setUnavailableViewId(isPermissionDeniedError(error) ? null : viewId);
         setLoadedViewId(viewId);
         setIsLoadingViewActionPermissions(false);
       });
@@ -167,6 +173,12 @@ export function useViewActionPermissions(
     // Space-only authority from the same read, so callers never probe the space a second time.
     canOpenManageSpace: spaceSidebar.canOpenManageSpace,
     canEditSidebar: spaceSidebar.canEditSidebar,
+    /**
+     * The checks could not run (offline, server error): the gates above stay closed, but this is
+     * not a denial, so callers may let the server decide instead of showing a denial reason.
+     */
+    objectPermissionUnavailable: loadedViewId === viewId && unavailableViewId === viewId,
+    spacePermissionUnavailable: spaceSidebar.spacePermissionUnavailable,
     hasLoadedViewActionPermissions: hasLoadedViewActionPermissions && spaceSidebar.hasLoadedSpaceActionPermissions,
     isLoadingViewActionPermissions: isLoadingViewActionPermissions || spaceSidebar.isLoadingSpaceActionPermissions,
   };

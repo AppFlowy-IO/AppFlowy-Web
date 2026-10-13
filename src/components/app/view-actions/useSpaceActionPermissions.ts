@@ -4,6 +4,7 @@ import { APP_EVENTS } from '@/application/constants';
 import { WorkspaceService } from '@/application/services/domains';
 import { View } from '@/application/types';
 import { useCurrentWorkspaceId, useEventEmitter } from '@/components/app/app.hooks';
+import { isPermissionDeniedError } from '@/components/app/view-actions/viewActionPermission';
 import { isUnsupportedRouteError } from '@/utils/errors';
 
 interface LoadedSpaceActionPermissions {
@@ -11,6 +12,8 @@ interface LoadedSpaceActionPermissions {
   viewId: string;
   canOpenManageSpace: boolean;
   canEditSidebar: boolean;
+  /** The read failed without a decision (offline, server error). */
+  unavailable: boolean;
 }
 
 function isSpaceView(view: View | null | undefined): boolean {
@@ -65,6 +68,7 @@ export function useSpaceActionPermissions(view: View | null | undefined, opened:
           viewId,
           canOpenManageSpace: permission.can_manage_space === true,
           canEditSidebar: permission.can_edit_sidebar === true,
+          unavailable: false,
         });
       })
       .catch((error) => {
@@ -79,6 +83,8 @@ export function useSpaceActionPermissions(view: View | null | undefined, opened:
           // policy either, so direct children keep the old Write-only rule there.
           canOpenManageSpace: false,
           canEditSidebar: legacyServer,
+          // Both stay closed, but this is not a denial: callers may let the server decide.
+          unavailable: !legacyServer && !isPermissionDeniedError(error),
         });
       })
       .finally(() => {
@@ -96,6 +102,8 @@ export function useSpaceActionPermissions(view: View | null | undefined, opened:
   return {
     canOpenManageSpace: hasLoadedSpaceActionPermissions && loadedPermissions?.canOpenManageSpace === true,
     canEditSidebar: hasLoadedSpaceActionPermissions && loadedPermissions?.canEditSidebar === true,
+    /** The space permission could not be read (offline, server error): unknown, not denied. */
+    spacePermissionUnavailable: hasLoadedSpaceActionPermissions && loadedPermissions?.unavailable === true,
     hasLoadedSpaceActionPermissions,
     isLoadingSpaceActionPermissions,
   };

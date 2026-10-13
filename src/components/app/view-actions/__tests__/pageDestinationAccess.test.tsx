@@ -112,6 +112,7 @@ let sidebarEditors: Record<string, boolean>;
 
 beforeEach(() => {
   jest.clearAllMocks();
+  jest.restoreAllMocks();
   mockEventEmitter.removeAllListeners();
   // Carol edits everything she can see; HR's sidebar is owners only.
   writable = { onboarding: true, hr: true, general: true, handbook: true, nested: true };
@@ -181,4 +182,62 @@ test('Move blocks a page destination without Write', async () => {
   await waitFor(() =>
     expect(screen.getByTestId('move-page-destination-status').textContent).toBe('spaceCreation.pageDestination.noEdit'));
   expect(screen.getByRole('button', { name: 'disclosureAction.move' }).hasAttribute('disabled')).toBe(true);
+});
+
+const offline = { code: -1, message: 'Network Error' };
+const serverError = { code: 1017, message: 'Internal error' };
+const forbidden = { code: 1012, httpStatus: 403, message: 'forbidden' };
+
+function failObjectPermission(objectId: string, error: unknown) {
+  mockGetObjectPermission.mockImplementation(async (_workspaceId: string, id: string) => {
+    if (id === objectId) throw error;
+    return objectPermission(id, writable[id] ?? false);
+  });
+}
+
+function failSpacePermission(spaceId: string, error: unknown) {
+  mockGetSpacePermission.mockImplementation(async (_workspaceId: string, id: string) => {
+    if (id === spaceId) throw error;
+    return { can_manage_space: false, can_edit_sidebar: sidebarEditors[id] ?? false };
+  });
+}
+
+test.each([
+  ['its access could not be read', () => failObjectPermission('general', offline)],
+  ['its add-page rule could not be read', () => failSpacePermission('general', serverError)],
+])('Move lets the server decide when a destination check fails because %s', async (_case, failCheck) => {
+  jest.spyOn(console, 'error').mockImplementation(() => undefined);
+  failCheck();
+  render(<MovePagePopover viewId='nested'><button type='button'>move</button></MovePagePopover>);
+
+  const move = screen.getByRole('button', { name: 'disclosureAction.move' });
+
+  fireEvent.click(screen.getByTestId('destination-general'));
+  await waitFor(() => expect(move.hasAttribute('disabled')).toBe(false));
+  // A check that could not run is not a denial, so no denial reason is shown.
+  expect(screen.queryByTestId('move-page-destination-status')).toBeNull();
+  fireEvent.click(move);
+  await waitFor(() => expect(mockMovePage).toHaveBeenCalledWith('nested', 'general'));
+});
+
+test('Move still explains a destination whose access check is refused', async () => {
+  jest.spyOn(console, 'error').mockImplementation(() => undefined);
+  failObjectPermission('handbook', forbidden);
+  render(<MovePagePopover viewId='onboarding'><button type='button'>move</button></MovePagePopover>);
+
+  fireEvent.click(screen.getByTestId('destination-handbook'));
+  await waitFor(() =>
+    expect(screen.getByTestId('move-page-destination-status').textContent).toBe('spaceCreation.pageDestination.noEdit'));
+  expect(screen.getByRole('button', { name: 'disclosureAction.move' }).hasAttribute('disabled')).toBe(true);
+});
+
+test.each([
+  ['a parent page whose access could not be read', nested, () => failObjectPermission('handbook', offline)],
+  ['a parent space whose add-page rule could not be read', page, () => failSpacePermission('hr', serverError)],
+])('offers Duplicate for %s and lets the server decide', async (_case, target, failCheck) => {
+  jest.spyOn(console, 'error').mockImplementation(() => undefined);
+  failCheck();
+  openPageMenu(target);
+
+  await waitFor(() => expect(screen.getByTestId('more-page-actions').textContent).toBe('duplicate'));
 });
