@@ -47,11 +47,9 @@
     "add": "Add",
     "noSelections": "No one is selected yet.",
     "remove": "Remove",
-    "pendingEdits": "Local changes are paused on {{count}} item(s).",
-    "pendingEditsDescription": "Your changes are saved on this device. After edit access is restored, retry to send them. Changes without current edit access stay paused.",
-    "pendingEditsRetryError": "Could not retry saved changes. Please try again.",
+    "pendingEditsDescription": "They're saved on this device. Try again once you can edit, or discard them.",
+    "pendingEditsRetryError": "We couldn't check your access. Try again later.",
     "retryPendingEdits": "Retry saved changes",
-    "legacyPendingEdits": "Older local changes are preserved on this device. Their original server could not be verified, so automatic upload is paused.",
     "policyDescriptions": {
       "members_and_owners": "All workspace owners and members. Guests can't create spaces.",
       "owners_only": "Only workspace owners can create spaces.",
@@ -85,7 +83,21 @@
     "refreshFailed": "We couldn't refresh these settings. Try again to make changes.",
     "saveFailed": "We couldn't save this change. Try again.",
     "notSelected": "Not selected",
-    "sidebarUnknown": "Other setting"
+    "sidebarUnknown": "Other setting",
+    "pendingEdits_one": "Changes to {{count}} page are waiting for edit access.",
+    "pendingEdits_other": "Changes to {{count}} pages are waiting for edit access.",
+    "pendingEditsTryAgain": "Try again",
+    "pendingEditsDiscard": "Discard changes",
+    "pendingEditsDismiss": "Dismiss",
+    "pendingEditsSaving": "Saving your changes…",
+    "pendingEditsSent": "Your changes are being saved.",
+    "pendingEditsStillWaiting_one": "You still can't edit {{count}} page. Your changes stay on this device.",
+    "pendingEditsStillWaiting_other": "You still can't edit {{count}} pages. Your changes stay on this device.",
+    "pendingEditsDiscardTitle": "Discard changes?",
+    "pendingEditsDiscardDescription_one": "Changes to {{count}} page that weren't sent will be removed from this device. This can't be undone.",
+    "pendingEditsDiscardDescription_other": "Changes to {{count}} pages that weren't sent will be removed from this device. This can't be undone.",
+    "pendingEditsDiscarded": "Changes discarded",
+    "pendingEditsDiscardError": "We couldn't discard the changes. Try again."
   },
   "databaseViewCreation": {
     "onlineRequired": "Connect to the internet to create Form or Chart views.",
@@ -1587,7 +1599,9 @@
       "importAppFlowyDataDescription": "Copy data from an external @:appName data folder and import it into the current AppFlowy data folder",
       "importSuccess": "Successfully imported the @:appName data folder",
       "importFailed": "Importing the @:appName data folder failed",
-      "importGuide": "For further details, please check the referenced document"
+      "importGuide": "For further details, please check the referenced document",
+      "logoutRemoveLocalData": "Also remove my data from this browser",
+      "logoutRemoveLocalDataDescription": "Use this on a shared computer. Changes that haven't been sent yet are kept so they can be sent when you sign in again."
     },
     "notifications": {
       "enableNotifications": {

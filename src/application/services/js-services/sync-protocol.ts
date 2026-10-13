@@ -1,7 +1,7 @@
 import * as awarenessProtocol from 'y-protocols/awareness';
 import * as Y from 'yjs';
 
-import { closeCollabDB } from '@/application/db';
+import { collectDatabaseRowIds, deleteCollabDB, deleteDatabaseLocalCopies } from '@/application/db';
 import { isCollabStorageCurrent } from '@/application/db/collab-storage-scope';
 import {
   blockPermissionSync,
@@ -209,10 +209,16 @@ const handleAccessChanged = (ctx: SyncContext, message: collab.IAccessChanged): 
   }
 
   if (message.canRead === false) {
-    // Destroying an active consumer hides its content, but does not discard
-    // the saved local state. Version replacement has a separate explicit API.
+    // No read access: hide the content and remove the synced copy so it is no
+    // longer readable on this device (for a database, with its rows, read from
+    // the open document before it is destroyed). Unsent edits stay quarantined
+    // in the outbox (above) for the user's Try again or Discard.
     ctx.flush = undefined;
-    void closeCollabDB(ctx.doc.guid).catch((error) => Log.warn('[sync] Could not close revoked provider', error));
+    const removed = ctx.collabType === Types.Database
+      ? deleteDatabaseLocalCopies(ctx.doc.guid, { destroyDoc: false, knownRowIds: collectDatabaseRowIds(ctx.doc) })
+      : deleteCollabDB(ctx.doc.guid, { destroyDoc: false });
+
+    void removed.catch((error) => Log.warn('[sync] Could not remove the revoked local copy', error));
     ctx.doc.destroy();
   }
 };

@@ -44,6 +44,7 @@ jest.mock('@/application/session/token', () => ({
 jest.mock('@/application/sync-outbox', () => ({
   clearDrainConfig: jest.fn(),
   configureDrain: jest.fn(),
+  expireOutboxAdmissions: jest.fn(),
   invalidateOutboxPermissions: jest.fn(),
   resumePermissionBlockedSync: jest.fn(),
   setCurrentSession: jest.fn(),
@@ -290,13 +291,60 @@ describe('AppSyncLayer per-message churn', () => {
     expect(leaderConfig.slowSync).toEqual(expect.any(Function));
   });
 
-  it('resumes a permission-blocked object when access changes', () => {
+  it('re-checks queued objects after a permission change and cancels only denied uploads', () => {
     const outboxMock = jest.requireMock('@/application/sync-outbox');
 
     renderLayer();
+    jest.clearAllMocks();
     latestEventEmitter?.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'object-1' });
 
+    expect(outboxMock.invalidateOutboxPermissions).toHaveBeenCalledTimes(1);
+    expect(outboxMock.resumePermissionBlockedSync).toHaveBeenCalledWith(undefined, { abortDenied: true });
+  });
+
+  it.each([
+    ['focus', () => window.dispatchEvent(new Event('focus'))],
+    ['online', () => window.dispatchEvent(new Event('online'))],
+    ['visibility', () => document.dispatchEvent(new Event('visibilitychange'))],
+    ['socket open', () => latestEventEmitter?.emit(APP_EVENTS.WEBSOCKET_STATUS, 1)],
+  ])('only re-checks access on %s without fencing checks or uploads in progress', (_name, trigger) => {
+    const outboxMock = jest.requireMock('@/application/sync-outbox');
+
+    renderLayer();
+    jest.clearAllMocks();
+    trigger();
+
+    expect(outboxMock.expireOutboxAdmissions).toHaveBeenCalledTimes(1);
     expect(outboxMock.resumePermissionBlockedSync).toHaveBeenCalledWith();
+    expect(outboxMock.invalidateOutboxPermissions).not.toHaveBeenCalled();
+  });
+
+  it('ignores offline and closed-socket transitions for permission checks', () => {
+    const outboxMock = jest.requireMock('@/application/sync-outbox');
+
+    renderLayer();
+    jest.clearAllMocks();
+    window.dispatchEvent(new Event('offline'));
+    latestEventEmitter?.emit(APP_EVENTS.WEBSOCKET_STATUS, 3);
+
+    expect(outboxMock.expireOutboxAdmissions).not.toHaveBeenCalled();
+    expect(outboxMock.invalidateOutboxPermissions).not.toHaveBeenCalled();
+    expect(outboxMock.resumePermissionBlockedSync).not.toHaveBeenCalled();
+  });
+
+  it('gives the outbox a synchronous view of fresh permission verdicts', async () => {
+    const outboxMock = jest.requireMock('@/application/sync-outbox');
+    const { AccessService } = jest.requireMock('@/application/services/domains');
+
+    AccessService.getObjectPermission.mockResolvedValue({
+      object_id: 'page-1', collab_type: 0, can_read: true, can_write: true,
+    });
+    renderLayer();
+    const config = outboxMock.configureDrain.mock.calls.at(-1)?.[0];
+
+    expect(config.peekPermission('page-1', 0)).toBeUndefined();
+    expect(await config.checkPermission('page-1', 0)).toBe('allowed');
+    expect(config.peekPermission('page-1', 0)).toBe('allowed');
   });
 
   it.each([false, true])(

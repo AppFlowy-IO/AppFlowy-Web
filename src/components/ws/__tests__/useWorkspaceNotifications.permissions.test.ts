@@ -108,6 +108,40 @@ describe('workspace permission revision notifications', () => {
     expect(changed).not.toHaveBeenCalled();
   });
 
+  it('dispatches a hint received before the current user resolves once the session is identified', () => {
+    const eventEmitter = new EventEmitter();
+    const changed = jest.fn();
+    const hint = encodeHint('7');
+    const unidentified = { ...scope, userId: undefined };
+
+    eventEmitter.on(APP_EVENTS.WORKSPACE_PERMISSIONS_CHANGED, changed);
+    const { rerender } = renderHook(
+      ({ context }) => useWorkspaceNotifications(hint, null, eventEmitter, context),
+      { initialProps: { context: unidentified as typeof scope } }
+    );
+
+    expect(changed).not.toHaveBeenCalled();
+    rerender({ context: scope });
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(changed).toHaveBeenCalledWith({ workspaceId, revision: { epoch: '9007199254740993', counter: '7' } });
+  });
+
+  it('still fences a processed message retained across an unidentified gap between sessions', () => {
+    const eventEmitter = new EventEmitter();
+    const changed = jest.fn();
+    const hint = encodeHint('8');
+
+    eventEmitter.on(APP_EVENTS.WORKSPACE_PERMISSIONS_CHANGED, changed);
+    const { rerender } = renderHook(
+      ({ context }) => useWorkspaceNotifications(hint, null, eventEmitter, context),
+      { initialProps: { context: scope } }
+    );
+
+    rerender({ context: { ...scope, userId: undefined } as unknown as typeof scope });
+    rerender({ context: { ...scope, userId: 'next-user' } });
+    expect(changed).toHaveBeenCalledTimes(1);
+  });
+
   it('continues to dispatch legacy object notifications alongside the new wire variant', () => {
     const eventEmitter = new EventEmitter();
     const changed = jest.fn();

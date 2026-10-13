@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { validate as uuidValidate } from 'uuid';
 
 import { APP_EVENTS } from '@/application/constants';
-import { closeCollabDB } from '@/application/db';
+import { deleteCollabDB, deleteDatabaseLocalCopies } from '@/application/db';
 import { AccessService, ViewService } from '@/application/services/domains';
 import {
   getCachedWorkspaceViewMetadata,
@@ -152,9 +152,15 @@ function closePermissionProbeTarget(workspaceId: string, routeViewId: string, ta
 
   // Current database caches use the canonical database id, while older web
   // releases may also have persisted a database under the folder view id.
-  // Close both identities so revoked content stops rendering while local edits remain recoverable.
+  // Remove both synced copies (a database with its rows and row pages) so
+  // revoked content is no longer readable; unsent edits stay quarantined in the
+  // outbox for Try again or Discard.
   for (const collabObjectId of getPermissionProbePurgeObjectIds(routeViewId, target)) {
-    void closeCollabDB(collabObjectId);
+    if (target.collabType === Types.Database && collabObjectId === target.collabObjectId) {
+      void deleteDatabaseLocalCopies(collabObjectId, { destroyDoc: true });
+    } else {
+      void deleteCollabDB(collabObjectId, { destroyDoc: true });
+    }
   }
 }
 
@@ -584,8 +590,10 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
         }
 
         if (result.verdict === 'denied') {
-          // Close even if navigation was superseded. Permission denial is not
-          // deletion; persistent bytes remain available after a later grant.
+          // Close even if navigation was superseded. The synced copy is deleted
+          // so the revoked content is no longer readable on this device; only
+          // unsent edits remain, quarantined in the outbox (blockPermissionSync
+          // above). A later grant reloads the content from the server.
           closePermissionProbeTarget(workspaceId, activeViewId, result);
           if (!cancelled) {
             if (activeViewId === viewId) setNoAccessViewId(activeViewId);

@@ -3,7 +3,7 @@ import EventEmitter from 'events';
 import { act, renderHook } from '@testing-library/react';
 import * as Y from 'yjs';
 
-import { closeCollabDB, deleteCollabDB } from '@/application/db';
+import { closeCollabDB, deleteCollabDB, deleteDatabaseLocalCopies } from '@/application/db';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import { Types, YDoc } from '@/application/types';
 
@@ -11,7 +11,12 @@ import { DatabaseRestoreTracker } from '../databaseRestoreState';
 import { useSyncRefs } from '../syncRefs';
 import { useCollabMessageHandler } from '../useCollabMessageHandler';
 
-jest.mock('@/application/db', () => ({ deleteCollabDB: jest.fn(async () => true), closeCollabDB: jest.fn(async () => undefined) }));
+jest.mock('@/application/db', () => ({
+  collectDatabaseRowIds: jest.fn(() => ['row-1']),
+  deleteCollabDB: jest.fn(async () => true),
+  deleteDatabaseLocalCopies: jest.fn(async () => true),
+  closeCollabDB: jest.fn(async () => undefined),
+}));
 jest.mock('@/application/database-blob', () => ({ invalidateDatabaseRowDocSeed: jest.fn() }));
 jest.mock('@/application/services/js-services/cache', () => ({ cacheCanonicalRowDoc: jest.fn() }));
 jest.mock('@/application/sync-outbox', () => ({ shouldRouteUpdateThroughOutbox: () => false, getCurrentOutboxSession: () => ({ workspaceId: 'workspace' }), blockPermissionSync: jest.fn(async () => undefined) }));
@@ -51,9 +56,18 @@ test.each([Types.Database, Types.DatabaseRow])(
     });
 
     expect(beforeApply).not.toHaveBeenCalled();
+    // Unsent edits stay quarantined; only the synced copy of the revoked object is removed
+    // (for a database, with the copies of its rows).
     expect(discardPendingUpdates).not.toHaveBeenCalled();
-    expect(deleteCollabDB).not.toHaveBeenCalled();
-    expect(closeCollabDB).toHaveBeenCalledWith(objectId);
+    if (collabType === Types.Database) {
+      expect(deleteDatabaseLocalCopies).toHaveBeenCalledWith(objectId, { destroyDoc: false, knownRowIds: ['row-1'] });
+      expect(deleteCollabDB).not.toHaveBeenCalled();
+    } else {
+      expect(deleteCollabDB).toHaveBeenCalledWith(objectId, { destroyDoc: false });
+      expect(deleteDatabaseLocalCopies).not.toHaveBeenCalled();
+    }
+
+    expect(closeCollabDB).not.toHaveBeenCalled();
     expect(destroyed).toHaveBeenCalledTimes(1);
     expect(context.flush).toBeUndefined();
     expect(flush).not.toHaveBeenCalled();

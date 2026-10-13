@@ -2,6 +2,10 @@ import { Types } from '@/application/types';
 
 import { createUploadPermissionGate, UploadPermission } from '../permission-gate';
 
+async function flushMicrotasks() {
+  for (let i = 0; i < 10; i += 1) await Promise.resolve();
+}
+
 describe('upload permission revisions', () => {
   it('coalesces current requests and bounds cached grants to ten seconds', async () => {
     let now = 0;
@@ -87,5 +91,62 @@ describe('upload permission revisions', () => {
 
     expect(await gate.check('page', Types.Document)).toBe('unknown');
     expect(await gate.check('page', Types.Document)).toBe('allowed');
+  });
+
+  it('peeks only a settled current verdict and refreshes a grant shortly before it expires', async () => {
+    let now = 0;
+    let verdict: UploadPermission = 'allowed';
+    const probe = jest.fn(async (): Promise<UploadPermission> => verdict);
+    const gate = createUploadPermissionGate(probe, () => true, () => now);
+
+    expect(gate.peek('page', Types.Document)).toBeUndefined();
+    const pending = gate.check('page', Types.Document);
+
+    expect(gate.peek('page', Types.Document)).toBeUndefined();
+    await pending;
+    expect(gate.peek('page', Types.Document)).toBe('allowed');
+    expect(probe).toHaveBeenCalledTimes(1);
+
+    // Close to expiry, a peek refreshes in the background and keeps answering.
+    now = 8_000;
+    verdict = 'denied';
+    expect(gate.peek('page', Types.Document)).toBe('allowed');
+    expect(probe).toHaveBeenCalledTimes(2);
+    await flushMicrotasks();
+    expect(gate.peek('page', Types.Document)).toBe('denied');
+    now = 18_001;
+    expect(gate.peek('page', Types.Document)).toBeUndefined();
+    gate.invalidate();
+    expect(gate.peek('page', Types.Document)).toBeUndefined();
+  });
+
+  it('keeps a valid grant when its background refresh cannot complete', async () => {
+    let now = 0;
+    const probe = jest.fn().mockResolvedValueOnce('allowed').mockRejectedValueOnce(new Error('offline'));
+    const gate = createUploadPermissionGate(probe, () => true, () => now);
+
+    await gate.check('page', Types.Document);
+    now = 9_000;
+    expect(gate.peek('page', Types.Document)).toBe('allowed');
+    await flushMicrotasks();
+    expect(gate.peek('page', Types.Document)).toBe('allowed');
+    now = 10_000;
+    expect(gate.peek('page', Types.Document)).toBeUndefined();
+  });
+
+  it('expire drops cached verdicts without discarding a check in progress', async () => {
+    let resolve!: (value: UploadPermission) => void;
+    const probe = jest.fn().mockImplementationOnce(() => new Promise<UploadPermission>((done) => { resolve = done; }))
+      .mockResolvedValue('allowed');
+    const gate = createUploadPermissionGate(probe, () => true);
+    const inFlight = gate.check('page', Types.Document);
+
+    gate.expire();
+    resolve('allowed');
+    expect(await inFlight).toBe('allowed');
+    gate.expire();
+    expect(gate.peek('page', Types.Document)).toBeUndefined();
+    expect(await gate.check('page', Types.Document)).toBe('allowed');
+    expect(probe).toHaveBeenCalledTimes(2);
   });
 });

@@ -47,11 +47,9 @@
     "add": "Ajouter",
     "noSelections": "Personne n’est encore sélectionné.",
     "remove": "Retirer",
-    "pendingEdits": "Les modifications locales sont en attente sur {{count}} élément(s).",
-    "pendingEditsDescription": "Vos modifications sont conservées sur cet appareil. Une fois l’accès en modification rétabli, réessayez pour les envoyer. Sans cet accès, elles restent en attente.",
-    "pendingEditsRetryError": "Impossible de réessayer les modifications enregistrées. Réessayez.",
+    "pendingEditsDescription": "Elles sont enregistrées sur cet appareil. Réessayez quand vous pourrez modifier, ou supprimez-les.",
+    "pendingEditsRetryError": "Impossible de vérifier votre accès. Réessayez plus tard.",
     "retryPendingEdits": "Réessayer les modifications",
-    "legacyPendingEdits": "Les anciennes modifications locales sont conservées sur cet appareil. Leur serveur d’origine n’a pas pu être vérifié ; l’envoi automatique est donc suspendu.",
     "policyDescriptions": {
       "members_and_owners": "Tous les propriétaires et membres de l’espace de travail. Les invités ne peuvent pas créer d’espaces.",
       "owners_only": "Seuls les propriétaires de l’espace de travail peuvent créer des espaces.",
@@ -85,7 +83,24 @@
     "refreshFailed": "Impossible d’actualiser ces paramètres. Réessayez pour pouvoir les modifier.",
     "saveFailed": "Impossible d’enregistrer cette modification. Réessayez.",
     "notSelected": "Non sélectionnés",
-    "sidebarUnknown": "Autre réglage"
+    "sidebarUnknown": "Autre réglage",
+    "pendingEdits_one": "Les modifications de {{count}} page attendent l’accès en modification.",
+    "pendingEdits_many": "Les modifications de {{count}} pages attendent l’accès en modification.",
+    "pendingEdits_other": "Les modifications de {{count}} pages attendent l’accès en modification.",
+    "pendingEditsTryAgain": "Réessayer",
+    "pendingEditsDiscard": "Supprimer les modifications",
+    "pendingEditsDismiss": "Fermer",
+    "pendingEditsSaving": "Enregistrement de vos modifications…",
+    "pendingEditsSent": "Vos modifications sont en cours d’enregistrement.",
+    "pendingEditsStillWaiting_one": "Vous ne pouvez toujours pas modifier {{count}} page. Vos modifications restent sur cet appareil.",
+    "pendingEditsStillWaiting_many": "Vous ne pouvez toujours pas modifier {{count}} pages. Vos modifications restent sur cet appareil.",
+    "pendingEditsStillWaiting_other": "Vous ne pouvez toujours pas modifier {{count}} pages. Vos modifications restent sur cet appareil.",
+    "pendingEditsDiscardTitle": "Supprimer les modifications ?",
+    "pendingEditsDiscardDescription_one": "Les modifications non envoyées de {{count}} page seront supprimées de cet appareil. Cette action est irréversible.",
+    "pendingEditsDiscardDescription_many": "Les modifications non envoyées de {{count}} pages seront supprimées de cet appareil. Cette action est irréversible.",
+    "pendingEditsDiscardDescription_other": "Les modifications non envoyées de {{count}} pages seront supprimées de cet appareil. Cette action est irréversible.",
+    "pendingEditsDiscarded": "Modifications supprimées",
+    "pendingEditsDiscardError": "Impossible de supprimer les modifications. Réessayez."
   },
   "appName": "AppFlowy",
   "defaultUsername": "Moi",
@@ -1181,7 +1196,9 @@
       "importAppFlowyDataDescription": "Copiez les données d'un dossier de données @:appName externe et importez-les dans le dossier de données @:appName actuel",
       "importSuccess": "Importation réussie du dossier de données @:appName",
       "importFailed": "L'importation du dossier de données @:appName a échoué",
-      "importGuide": "Pour plus de détails, veuillez consulter le document référencé"
+      "importGuide": "Pour plus de détails, veuillez consulter le document référencé",
+      "logoutRemoveLocalData": "Supprimer aussi mes données de ce navigateur",
+      "logoutRemoveLocalDataDescription": "À utiliser sur un ordinateur partagé. Les modifications qui n’ont pas encore été envoyées sont conservées pour être envoyées à votre prochaine connexion."
     },
     "notifications": {
       "enableNotifications": {

@@ -112,6 +112,10 @@ export function useWorkspaceNotifications(
     : undefined;
 
   useEffect(() => {
+    // Nothing is recorded until the session is identified: a hint that arrives
+    // while the current user is still loading belongs to the session that is
+    // about to resolve and must be dispatched then, not marked as processed.
+    if (!scopeKey || !workspaceId) return;
     const previous = processedHints.current;
     const sameScope = previous?.scope === scopeKey;
     const next: ProcessedPermissionHints = {
@@ -122,7 +126,6 @@ export function useWorkspaceNotifications(
     };
 
     processedHints.current = next;
-    if (!scopeKey || !workspaceId) return;
 
     for (const [message, previousMessage] of [[wsNotification, previous?.ws], [bcNotification, previous?.bc]]) {
       // React can retain the old transport's last message during a session/workspace switch.

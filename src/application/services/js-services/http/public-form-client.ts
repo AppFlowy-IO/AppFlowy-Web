@@ -296,7 +296,7 @@ function sameStoredToken(left: StoredRequestToken | null, right: StoredRequestTo
 }
 
 async function refreshStoredToken(token: StoredRequestToken): Promise<StoredRequestToken> {
-  const [{ initGrantService, refreshToken }, { invalidToken }] = await Promise.all([
+  const [{ initGrantService, isDefinitiveRefreshFailure, refreshToken }, { invalidToken }] = await Promise.all([
     import('./gotrue'),
     import('@/application/session/token'),
   ]);
@@ -314,8 +314,9 @@ async function refreshStoredToken(token: StoredRequestToken): Promise<StoredRequ
   } catch (error) {
     // Rotating refresh tokens are single-use. A failure for token A is
     // expected if another request/tab already saved token B; never let that
-    // stale failure delete B or purge its account-scoped outbox.
-    if (sameStoredToken(readStoredRequestToken(), token)) invalidToken();
+    // stale failure delete B. Offline, timeouts and 5xx keep the session, as
+    // in the app's request layer: only GoTrue rejecting the token ends it.
+    if (isDefinitiveRefreshFailure(error) && sameStoredToken(readStoredRequestToken(), token)) invalidToken();
     throw error;
   }
 }

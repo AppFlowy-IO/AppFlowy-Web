@@ -6,7 +6,7 @@ import { getTokenParsed, invalidToken } from '@/application/session/token';
 import { getBillingErrorMessage } from '@/utils/billing-error';
 import { Log } from '@/utils/log';
 
-import { initGrantService, refreshToken } from './gotrue';
+import { initGrantService, isAuthSessionChangedError, isDefinitiveRefreshFailure, refreshToken } from './gotrue';
 import { resolveLocalApiBaseURL } from './local-dev-origins';
 
 let axiosInstance: AxiosInstance | null = null;
@@ -474,6 +474,21 @@ export function initAPIService(config: AFCloudConfig) {
 
           access_token = newToken?.access_token || '';
         } catch (e) {
+          // A sign-out, another account or another server replaced this session
+          // while it refreshed. Never send the request with the replacement's
+          // credentials, and never sign the replacement out.
+          if (isAuthSessionChangedError(e)) throw e;
+
+          // Offline, timeouts and 5xx keep the session so a later request can
+          // refresh it. Only GoTrue rejecting the refresh token ends it.
+          if (!isDefinitiveRefreshFailure(e)) {
+            console.warn('[initAPIService][request] token refresh failed temporarily; keeping the session', {
+              url: requestUrlForLog(config.url),
+              message: (e as Error)?.message,
+            });
+            throw e;
+          }
+
           console.warn('[initAPIService][request] refresh token failed, marking token invalid', {
             url: requestUrlForLog(config.url),
             message: (e as Error)?.message,
@@ -514,11 +529,18 @@ export function initAPIService(config: AFCloudConfig) {
       try {
         await refreshToken(refresh_token);
       } catch (e) {
-        console.warn('[initAPIService][response] refresh on 401 failed, emitting invalid token', {
-          message: (e as Error)?.message,
-          url: requestUrlForLog(axiosError.config?.url),
-        });
-        invalidToken();
+        if (isAuthSessionChangedError(e) || !isDefinitiveRefreshFailure(e)) {
+          console.warn('[initAPIService][response] refresh on 401 did not complete; keeping the current session', {
+            message: (e as Error)?.message,
+            url: requestUrlForLog(axiosError.config?.url),
+          });
+        } else {
+          console.warn('[initAPIService][response] refresh on 401 failed, emitting invalid token', {
+            message: (e as Error)?.message,
+            url: requestUrlForLog(axiosError.config?.url),
+          });
+          invalidToken();
+        }
       }
     }
 

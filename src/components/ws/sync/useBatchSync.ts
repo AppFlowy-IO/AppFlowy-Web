@@ -99,15 +99,25 @@ export function useBatchSync(
   const databaseHistoryEnabledRef = useRef(options?.databaseHistoryEnabled);
 
   databaseHistoryEnabledRef.current = options?.databaseHistoryEnabled;
-  const guardedBatchSync = useCallback(async (workspaceId: string, items: Parameters<typeof collabFullSyncBatch>[1]) => {
+  const guardedBatchSync = useCallback(async (
+    workspaceId: string,
+    items: Parameters<typeof collabFullSyncBatch>[1],
+    quarantined?: Set<string>
+  ) => {
     const isCurrent = captureSyncAuthorization(workspaceId);
     const beforeSend = beforeSendRef.current;
     const historyEnabled = databaseHistoryEnabledRef.current;
 
+    // Edits waiting for edit access are never uploaded by a full sync. That
+    // check is local; the server still authorizes every other item.
     // Concurrent guards share the tracker's in-flight check for each database,
     // while every row still verifies the generation captured with its bytes.
     const checkedItems = await Promise.all(items.map(async (item) => {
-      if (!await mayUploadCollab(item.objectId, item.collabType, workspaceId)) return null;
+      if (!await mayUploadCollab(item.objectId, item.collabType, workspaceId)) {
+        quarantined?.add(item.objectId);
+        return null;
+      }
+
       const marker = item.databaseRestoreId ??
         (item.collabType === Types.Database || item.collabType === Types.DatabaseRow
           ? '00000000-0000-0000-0000-000000000000' : undefined);
@@ -732,9 +742,10 @@ export function useBatchSync(
       const dirtySeqBeforeSync = new Map(
         items.map((item) => [item.objectId, backgroundDirtyEditsRef.current.get(item.objectId)?.seq])
       );
+      const quarantined = new Set<string>();
 
       try {
-        const results = await withRetry(() => guardedBatchSync(workspaceId, items), {
+        const results = await withRetry(() => guardedBatchSync(workspaceId, items, quarantined), {
           delays: BATCH_SYNC_DELAYS,
           signal: controller.signal,
         });
@@ -752,6 +763,15 @@ export function useBatchSync(
       } catch (error) {
         Log.warn('Failed to batch sync collabs to server', { error });
         // Don't throw - we still want to attempt the duplicate
+      }
+
+      // Quarantined objects are shown to the user as paused edits; record which
+      // ones a full sync (for example before Duplicate) left out.
+      if (quarantined.size > 0) {
+        Log.warn('[sync] full sync left out changes waiting for edit access', {
+          workspaceId,
+          objectIds: Array.from(quarantined).sort(),
+        });
       }
     },
     [refs, flushAllSync, applyFullSyncResults, guardedBatchSync]
