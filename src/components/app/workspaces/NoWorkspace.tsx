@@ -314,7 +314,7 @@ export function NoWorkspace() {
                   {t('workspace.create')}
                 </Button>
                 <Button size='lg' variant='outline' disabled={!creation.canCreate || busy} onClick={openImport}>
-                  {t('web.importWorkspace')}
+                  {t('workspaceCreation.importWorkspace')}
                 </Button>
               </>
             )}

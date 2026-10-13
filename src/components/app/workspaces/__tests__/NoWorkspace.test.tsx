@@ -120,7 +120,7 @@ test('a denied account sees who is signed in and why, without dead-end creation 
   expect(screen.getByText('workspaceCreation.noWorkspaceDescription')).toBeTruthy();
   expect(screen.getByText('workspaceCreation.denied')).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'workspace.create' })).toBeNull();
-  expect(screen.queryByRole('button', { name: 'web.importWorkspace' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'workspaceCreation.importWorkspace' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'button.retry' })).toBeNull();
   expect(screen.getAllByRole('button', { name: 'workspaceCreation.checkAgain' })).toHaveLength(1);
   await waitFor(() => expect(mockListInvitations).toHaveBeenCalledTimes(1));
@@ -176,7 +176,7 @@ test('a creation access error explains itself and the page offers a single Check
   expect(screen.getByText('workspaceCreation.unavailable')).toBeTruthy();
   expect(screen.getAllByRole('button', { name: 'workspaceCreation.checkAgain' })).toHaveLength(1);
   expect((screen.getByRole('button', { name: 'workspace.create' })).disabled).toBe(true);
-  expect((screen.getByRole('button', { name: 'web.importWorkspace' })).disabled).toBe(true);
+  expect((screen.getByRole('button', { name: 'workspaceCreation.importWorkspace' })).disabled).toBe(true);
   await waitFor(() => expect(mockListInvitations).toHaveBeenCalled());
 });
 

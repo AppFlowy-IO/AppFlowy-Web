@@ -75,7 +75,7 @@ test('the importer can be opened again from the page with the original source', 
 
   fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'button.close' }));
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-  fireEvent.click(screen.getByRole('button', { name: 'web.importWorkspace' }));
+  fireEvent.click(screen.getByRole('button', { name: 'workspaceCreation.importWorkspace' }));
   const dialog = await screen.findByRole('dialog');
 
   expect(within(dialog).getByRole('tab', { name: 'web.importFromConfluence' }).getAttribute('aria-selected')).toBe('true');

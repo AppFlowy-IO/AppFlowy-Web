@@ -233,7 +233,7 @@ export function Workspaces() {
               {creationBlockedReason ? (
                 <UnavailableMenuItem
                   testId='import-workspace-trigger'
-                  label={t('web.importWorkspace')}
+                  label={t('workspaceCreation.importWorkspace')}
                   reason={creationBlockedReason}
                   icon={<ImportIcon />}
                 />
@@ -241,7 +241,7 @@ export function Workspaces() {
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger data-testid='import-workspace-trigger'>
                     <ImportIcon />
-                    <div className={'flex-1 text-left'}>{t('web.importWorkspace')}</div>
+                    <div className={'flex-1 text-left'}>{t('workspaceCreation.importWorkspace')}</div>
                   </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent>
                     <DropdownMenuItem data-testid='import-from-appflowy' onSelect={() => handleOpenImport('appflowy')}>

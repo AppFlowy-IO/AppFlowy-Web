@@ -3048,7 +3048,8 @@
     "uploadFailed": "Échec de l’envoi",
     "importPageHint": "Choisissez un fichier à importer, ou ouvrez AppFlowy pour accéder à vos espaces de travail.",
     "joinNamed": "Rejoindre {{name}}",
-    "openNamed": "Ouvrir {{name}}"
+    "openNamed": "Ouvrir {{name}}",
+    "importWorkspace": "Importer un espace de travail"
   },
   "groupSpaceAccess": {
     "title": "Accès des groupes aux espaces",

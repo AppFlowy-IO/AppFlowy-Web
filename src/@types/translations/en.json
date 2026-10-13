@@ -4612,7 +4612,8 @@
     "uploadFailed": "Upload failed",
     "importPageHint": "Choose a file to import, or open AppFlowy to go to your workspaces.",
     "joinNamed": "Join {{name}}",
-    "openNamed": "Open {{name}}"
+    "openNamed": "Open {{name}}",
+    "importWorkspace": "Import workspace"
   },
   "groupSpaceAccess": {
     "title": "Group access to spaces",

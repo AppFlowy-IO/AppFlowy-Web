@@ -108,7 +108,7 @@ test('denied entries stay keyboard reachable with their reason, and opening an e
   mockCreation.canCreate = false;
   mount();
   const create = screen.getByRole('menuitem', { name: 'workspace.create' });
-  const importEntry = screen.getByRole('menuitem', { name: 'web.importWorkspace' });
+  const importEntry = screen.getByRole('menuitem', { name: 'workspaceCreation.importWorkspace' });
 
   for (const entry of [create, importEntry]) {
     // A disabled Radix item is skipped by arrow keys, so these stay focusable and say why.

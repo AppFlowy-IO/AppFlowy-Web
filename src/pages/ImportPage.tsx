@@ -43,11 +43,11 @@ function ImportPage() {
       </header>
       <main className='flex flex-1 items-center justify-center px-6'>
         <div className='flex w-full max-w-[400px] flex-col gap-4 text-center'>
-          <h1 className='text-xl font-semibold text-text-primary'>{t('web.importWorkspace')}</h1>
+          <h1 className='text-xl font-semibold text-text-primary'>{t('workspaceCreation.importWorkspace')}</h1>
           <p className='text-sm text-text-secondary'>{t('workspaceCreation.importPageHint')}</p>
           <div className='flex flex-col gap-2'>
             <Button size='lg' onClick={openImporter}>
-              {t('web.importWorkspace')}
+              {t('workspaceCreation.importWorkspace')}
             </Button>
             <Button size='lg' variant='outline' onClick={openApp}>
               {t('invitation.openWorkspace')}
