@@ -568,6 +568,29 @@ describe('ManageSpace ACL management', () => {
       expect(screen.getAllByText('space.memberOverride.explanation')).toHaveLength(1);
     });
 
+    // jsdom has no layout, so this pins the rule that keeps the columns apart:
+    // rows are separate grids, so no track may depend on its content.
+    it('keeps the role control inside its column when the dialog is narrow', async () => {
+      const member = assignedMember();
+
+      mockGetSpacePermission.mockResolvedValue(supportedPermission());
+      mockGetSpaceMembers.mockResolvedValue({ members: [member], groups: [] });
+      await openMembersTab();
+      const row = await screen.findByTestId(`space-member-row-${member.uid}`);
+
+      // The Role track always fits its label; a narrow dialog shrinks the Name column.
+      expect(row.style.gridTemplateColumns).toBe('minmax(0, 1fr) min(196px, 32%) 144px');
+      expect(screen.getByTestId('space-member-table-header').style.gridTemplateColumns).toBe(
+        row.style.gridTemplateColumns
+      );
+      // A label wider than its column is cut short instead of covering the Access menu.
+      const roleTrigger = within(row).getByRole('button', { name: 'space.permissionManager.member' });
+
+      expect(roleTrigger.className).toContain('max-w-full');
+      expect(roleTrigger.className).not.toContain('w-fit');
+      expect(within(roleTrigger).getByText('space.permissionManager.member').className).toContain('truncate');
+    });
+
     it('keeps the space default separate from an explicit equal-to-default Edit and preserves role controls', async () => {
       const member = assignedMember();
 
@@ -2549,7 +2572,11 @@ describe('ManageSpace ACL management', () => {
       const roleTrigger = within(row).getByRole('button', { name: 'space.permissionManager.owner' });
 
       expect(removeButton.disabled).toBe(false);
-      expect(roleTrigger.className).toContain('w-fit');
+      // The trigger hugs its label but never grows past its column.
+      const roleTriggerClasses = roleTrigger.className.split(/\s+/);
+
+      expect(roleTriggerClasses).toContain('max-w-full');
+      expect(roleTriggerClasses.filter((name) => name === 'w-full' || name.startsWith('min-w-['))).toEqual([]);
       fireEvent.click(
         within(row).getByRole('button', {
           name: 'space.permissionManager.member space.permissionManager.memberRoleDescription',

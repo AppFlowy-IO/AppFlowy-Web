@@ -111,8 +111,11 @@ const INHERITED_MEMBER_SOURCES = new Set(['workspace_default', 'page_share', 'le
 const PAGE_SHARE_MEMBER_SOURCE = 'page_share';
 const LAST_EXPLICIT_OWNER_ERROR = 'space must keep at least one explicit owner';
 const MEMBER_GRID_COLUMNS = 'minmax(0, 1fr) 220px';
-// Name | Access | Role. The fixed columns shrink with the dialog on narrow screens.
-const MEMBER_ACCESS_GRID_COLUMNS = 'minmax(0, 1fr) min(196px, 32%) min(136px, 22%)';
+// Name | Access | Role. Every row is its own grid, so no track may depend on
+// its content or the columns would not line up. The Role track fits its label
+// ("Space member" plus the chevron), the Access menu truncates, and the Name
+// column absorbs a narrow dialog.
+const MEMBER_ACCESS_GRID_COLUMNS = 'minmax(0, 1fr) min(196px, 32%) 144px';
 const MAX_ADDABLE_GROUP_RESULTS = 8;
 
 type FullAccessAudience = 'space-members' | 'everyone-else' | 'workspace-members';
@@ -350,9 +353,10 @@ function RoleDropdown({
           variant='ghost'
           size='sm'
           disabled={disabled}
-          className='w-fit justify-end px-2 text-text-primary'
+          className='min-w-0 max-w-full justify-end px-2 text-text-primary'
         >
-          {roleLabel(value, t)}
+          {/* A label wider than its column is cut short instead of covering the Access menu. */}
+          <span className='truncate'>{roleLabel(value, t)}</span>
           <ChevronDown className='h-4 w-4 text-icon-tertiary' />
         </Button>
       </DropdownMenuTrigger>
