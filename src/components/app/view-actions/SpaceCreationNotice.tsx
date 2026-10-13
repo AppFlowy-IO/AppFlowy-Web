@@ -16,9 +16,14 @@ export type SpaceCreationUnavailableReason = 'denied' | 'loadError' | 'loading';
 /**
  * Whether an entry point may start space creation: the current decision allows it, or the
  * server predates the capability route and decides by itself (old servers stay usable).
+ * While a confirmed answer is rechecked in the background it stays on screen; sending a request
+ * always re-reads admission first (see refreshSpaceCreationAdmission).
  */
-export function canStartSpaceCreation(permission: Pick<SpaceCreationPermission, 'status' | 'canCreateSpace'>) {
-  return permission.canCreateSpace || permission.status === 'unsupported';
+export function canStartSpaceCreation(
+  permission: Pick<SpaceCreationPermission, 'status' | 'canCreateSpace' | 'capability'>
+) {
+  if (permission.canCreateSpace || permission.status === 'unsupported') return true;
+  return permission.status === 'loading' && permission.capability?.can_create_space === true;
 }
 
 /** The visible reason creation cannot start, or undefined when it can. */
@@ -26,8 +31,12 @@ export function spaceCreationUnavailableReason(
   permission: Pick<SpaceCreationPermission, 'status' | 'canCreateSpace' | 'capability'>
 ): SpaceCreationUnavailableReason | undefined {
   if (canStartSpaceCreation(permission)) return;
-  // The last confirmed decision stays authoritative for display while it is rechecked.
-  if (permission.capability || permission.status === 'ready') return 'denied';
+  // A confirmed denial stays visible while it is rechecked or the recheck fails.
+  const denied = permission.capability
+    ? permission.capability.can_create_space === false
+    : permission.status === 'ready';
+
+  if (denied) return 'denied';
   return permission.status === 'error' ? 'loadError' : 'loading';
 }
 
