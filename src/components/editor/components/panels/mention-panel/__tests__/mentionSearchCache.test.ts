@@ -106,6 +106,36 @@ describe('mentionSearchCache', () => {
     expect(forbidden).not.toHaveBeenCalled();
   });
 
+  it('shares entries between handles of one access scope, e.g. across a close and reopen', () => {
+    const scope = {};
+    const sections: [] = [];
+
+    new MentionSearchCache(() => true, scope).beginRead('reopened-key').setSections(sections);
+    const reopened = new MentionSearchCache(() => true, scope);
+
+    expect(reopened.getSections('reopened-key')).toBe(sections);
+    expect(new MentionSearchCache(() => true, {}).getSections('reopened-key')).toBeUndefined();
+  });
+
+  it('retires only its own scope entries from the shared map', () => {
+    const retired = new MentionSearchCache(() => true, {});
+    const kept = new MentionSearchCache(() => true, {});
+    const keptSections: [] = [];
+
+    retired.beginRead('retired-a').setSections([]);
+    retired.beginRead('retired-b').setSections([]);
+    kept.beginRead('kept').setSections(keptSections);
+    retired.retire();
+    expect(retired.getSections('retired-a')).toBeUndefined();
+    expect(kept.getSections('kept')).toBe(keptSections);
+    // Retired entries free their slots instead of waiting for eviction.
+    for (let index = 0; index < 49; index += 1) {
+      new MentionSearchCache(() => true).beginRead(`filler-${index}`).setSections([]);
+    }
+
+    expect(kept.getSections('kept')).toBe(keptSections);
+  });
+
   it('bounds retained entries to 50 across scopes and fences an evicted in-flight read', () => {
     const evicted = cache.beginRead('first');
 

@@ -2092,7 +2092,12 @@
       "deletedContent": "Ce document n'existe pas ou a été supprimé",
       "noAccess": "Pas d'accès",
       "deletedPage": "Page supprimée",
-      "trashHint": " - à la corbeille"
+      "trashHint": " - à la corbeille",
+      "refreshingSuggestions": "Actualisation des suggestions…",
+      "pageCreated": "La page {{name}} a été créée.",
+      "openPage": "Ouvrir",
+      "createPageFailed": "Impossible de créer la page. Réessayez.",
+      "createPageDenied": "Vous ne pouvez pas ajouter de pages ici."
     },
     "toolbar": {
       "resetToDefaultFont": "Réinitialiser aux valeurs par défaut"

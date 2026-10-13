@@ -2893,7 +2893,12 @@
       "noAccess": "No Access",
       "deletedPage": "Deleted page",
       "trashHint": " - in trash",
-      "morePages": "more pages"
+      "morePages": "more pages",
+      "refreshingSuggestions": "Refreshing suggestions…",
+      "pageCreated": "Page {{name}} was created.",
+      "openPage": "Open",
+      "createPageFailed": "Couldn't create the page. Try again.",
+      "createPageDenied": "You can't add pages here."
     },
     "toolbar": {
       "resetToDefaultFont": "Reset to default"
