@@ -1363,7 +1363,7 @@ describe('ManageSpace ACL management', () => {
     expect(mockUpdateStructuredSpace.mock.calls[0][2]).not.toHaveProperty('permission');
   });
 
-  it('revalidates live permissions and member groups while failing closed after sidebar access is revoked', async () => {
+  it('revalidates live permissions and member groups in the background, then fails closed after sidebar access is revoked', async () => {
     const initialGroup = group('group-1', 'Initial group');
     const refreshedGroup = group('group-2', 'Refreshed group');
     const revokedPermission = deferred<ReturnType<typeof permissionResponse>>();
@@ -1384,16 +1384,27 @@ describe('ManageSpace ACL management', () => {
       .mockResolvedValueOnce({ members: [], groups: [refreshedGroup] });
     render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
 
-    await screen.findByTestId('space-group-row-group-1');
+    const initialRow = await screen.findByTestId('space-group-row-group-1');
+
     expect(screen.getByPlaceholderText('space.spaceNamePlaceholder').hasAttribute('disabled')).toBe(false);
+    await waitFor(() =>
+      expect(within(initialRow).getByRole('button', { name: 'space.permissionManager.member' }).hasAttribute('disabled')).toBe(
+        false
+      )
+    );
 
     act(() => {
       mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'workspace-group-id' });
     });
 
     await waitFor(() => expect(mockGetSpacePermission).toHaveBeenCalledTimes(2));
-    expect(screen.getByPlaceholderText('space.spaceNamePlaceholder').hasAttribute('disabled')).toBe(true);
-    expect(screen.queryByTestId('space-group-row-group-1')).toBeNull();
+    // While authority is rechecked the last confirmed roster stays visible but
+    // cannot be changed, and the name being typed is not interrupted.
+    expect(screen.getByTestId('space-group-row-group-1')).toBeTruthy();
+    expect(within(initialRow).getByRole('button', { name: 'space.permissionManager.member' }).hasAttribute('disabled')).toBe(
+      true
+    );
+    expect(screen.getByPlaceholderText('space.spaceNamePlaceholder').hasAttribute('disabled')).toBe(false);
 
     await act(async () => {
       revokedPermission.resolve(
@@ -1411,6 +1422,31 @@ describe('ManageSpace ACL management', () => {
     expect(mockGetSpaceMembers).toHaveBeenCalledTimes(2);
     expect(screen.queryByTestId('space-group-row-group-1')).toBeNull();
     expect(screen.getByPlaceholderText('space.spaceNamePlaceholder').hasAttribute('disabled')).toBe(true);
+  });
+
+  it('keeps showing the last confirmed settings but blocks changes when a background recheck fails', async () => {
+    const member = manualMember();
+
+    mockGetSpacePermission
+      .mockResolvedValueOnce(permissionResponse({ permission: customPermission }))
+      .mockRejectedValueOnce(new Error('recheck failed'));
+    mockGetSpaceMembers.mockResolvedValue({ members: [member], groups: [] });
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    const row = await screen.findByTestId(`space-member-row-${member.uid}`);
+
+    await waitForSettingsLoaded();
+    act(() => {
+      mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+    });
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('recheck failed'));
+    expect(screen.getByTestId(`space-member-row-${member.uid}`)).toBe(row);
+    expectSelectedVisibility(SpaceVisibility.Custom);
+    expect(visibilityOption(SpaceVisibility.Public).disabled).toBe(true);
+    expect(within(row).getByRole('button', { name: 'space.permissionManager.member' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByPlaceholderText('space.spaceNamePlaceholder').hasAttribute('disabled')).toBe(true);
+    expect(mockGetSpaceMembers).toHaveBeenCalledTimes(1);
   });
 
   it('ignores an older permission refresh that resolves after a newer revocation', async () => {

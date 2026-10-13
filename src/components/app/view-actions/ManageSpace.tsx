@@ -416,6 +416,11 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   const [addingGroupId, setAddingGroupId] = useState<string | null>(null);
   const [memberSearch, setMemberSearch] = useState('');
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
+  // A notification-driven recheck of settings already on screen. Controls whose
+  // authority is being rechecked are disabled; the confirmed data stays visible.
+  const [revalidating, setRevalidating] = useState(false);
+  const backgroundRefreshRequestedRef = useRef(false);
+  const permissionConfirmedRef = useRef(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const settingsRequestSequenceRef = useRef(0);
   const permissionMutationSequenceRef = useRef(0);
@@ -463,6 +468,8 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   }, [accountId, serverUrl, open, viewId, workspaceId]);
 
   const beginPermissionRefresh = useCallback(() => {
+    permissionConfirmedRef.current = false;
+    setRevalidating(false);
     setLoadingSettings(true);
     setLoadingMembers(false);
     setPermissionLoaded(false);
@@ -523,6 +530,8 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     permissionMutationSequenceRef.current += 1;
     savingRef.current = false;
     mutatingMemberUidsRef.current = new Set();
+    backgroundRefreshRequestedRef.current = false;
+    permissionConfirmedRef.current = false;
     setTab('general');
     setSpaceName(loadedMetadata.name);
     setSpaceIcon(loadedMetadata.space_icon);
@@ -550,6 +559,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     setMemberSearch('');
     setPendingConfirmation(null);
     setSaving(false);
+    setRevalidating(false);
     inputRef.current = null;
 
     return () => {
@@ -622,7 +632,9 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         ...requestScope,
         memberRequestSequence: requestScope.memberRequestSequence + 1,
       };
-      beginPermissionRefresh();
+      // The server also sends this after the user's own changes in this
+      // dialog. Recheck in the background instead of blanking the dialog.
+      backgroundRefreshRequestedRef.current = true;
       setPermissionRefreshRevision((revision) => revision + 1);
     };
 
@@ -630,7 +642,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     return () => {
       eventEmitter.off(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChanged);
     };
-  }, [beginPermissionRefresh, eventEmitter, open]);
+  }, [eventEmitter, open]);
 
   useEffect(() => {
     if (!open || !workspaceId || !viewRef.current) return;
@@ -656,10 +668,21 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       );
     };
 
-    beginPermissionRefresh();
+    // Only a notification recheck of settings already confirmed on screen runs
+    // in the background; opening the dialog and type changes reload from blank.
+    const background = backgroundRefreshRequestedRef.current && permissionConfirmedRef.current;
+
+    backgroundRefreshRequestedRef.current = false;
+    if (background) {
+      setRevalidating(true);
+    } else {
+      beginPermissionRefresh();
+    }
+
     void (async () => {
       let shouldLoadWorkspacePrincipals = false;
       let shouldLoadSpaceMembers = false;
+      let backgroundRecheckFailed = false;
 
       try {
         const permission = await WorkspaceService.getSpacePermission(workspaceId, viewId);
@@ -678,7 +701,9 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         setCanInviteMembers(permission.can_invite_members);
         setMemberOverridesSupported(permission.member_access_overrides_supported === true);
         setLegacyPermissionMode(false);
+        setPermissionLoadFailed(false);
         setPermissionLoaded(true);
+        permissionConfirmedRef.current = true;
         // Public rosters follow the workspace and are read-only, so there is
         // nothing to add there.
         const hasEditableRoster = !isPrivateSpaceVisibility(normalizedPermission.visibility);
@@ -690,31 +715,50 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         shouldLoadSpaceMembers = hasEditableRoster && permission.can_manage_members;
       } catch (error) {
         if (isCurrentSettingsRequest()) {
-          // The structured capability response is the authority for this
-          // dialog. An unavailable/unsupported route must never manufacture
-          // management rights from the legacy binary space model.
-          setCanManageSpace(false);
-          setCanEditSidebar(false);
-          setCanManageMembers(false);
-          setCanInviteMembers(false);
-    setMemberOverridesSupported(false);
-          setLoadedPermissionSettings(null);
-          setPermissionLoaded(false);
-          setPermissionLoadFailed(true);
-          setLegacyPermissionMode(false);
-          setSpaceMembersLoaded(false);
-          setSpaceMembers([]);
-          setSpaceGroups([]);
-          setWorkspaceMembers([]);
-          setWorkspaceGroups([]);
+          if (background) {
+            // Keep the last confirmed data on screen, but fail closed: every
+            // control and mutation is blocked until a later recheck succeeds.
+            backgroundRecheckFailed = true;
+            setPermissionLoadFailed(true);
+          } else {
+            // The structured capability response is the authority for this
+            // dialog. An unavailable/unsupported route must never manufacture
+            // management rights from the legacy binary space model.
+            permissionConfirmedRef.current = false;
+            setCanManageSpace(false);
+            setCanEditSidebar(false);
+            setCanManageMembers(false);
+            setCanInviteMembers(false);
+            setMemberOverridesSupported(false);
+            setLoadedPermissionSettings(null);
+            setPermissionLoaded(false);
+            setPermissionLoadFailed(true);
+            setLegacyPermissionMode(false);
+            setSpaceMembersLoaded(false);
+            setSpaceMembers([]);
+            setSpaceGroups([]);
+            setWorkspaceMembers([]);
+            setWorkspaceGroups([]);
+          }
+
           toast.error(getErrorMessage(error, t('space.permissionManager.loadSpaceSettingsFailed')));
         }
       } finally {
-        if (isCurrentSettingsRequest()) setLoadingSettings(false);
+        if (isCurrentSettingsRequest()) {
+          setLoadingSettings(false);
+          setRevalidating(false);
+        }
       }
 
+      if (backgroundRecheckFailed) return;
+
       const loadWorkspaceMembers = async () => {
-        if (!shouldLoadWorkspacePrincipals) return;
+        if (!shouldLoadWorkspacePrincipals) {
+          // A background recheck can withdraw the right to add people.
+          if (background && isCurrentSettingsRequest()) setWorkspaceMembers([]);
+          return;
+        }
+
         try {
           const workspaceMemberList = await WorkspaceService.getMembers(workspaceId);
 
@@ -727,7 +771,11 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       };
 
       const loadWorkspaceGroups = async () => {
-        if (!shouldLoadWorkspacePrincipals) return;
+        if (!shouldLoadWorkspacePrincipals) {
+          if (background && isCurrentSettingsRequest()) setWorkspaceGroups([]);
+          return;
+        }
+
         try {
           const groups = await WorkspaceService.getWorkspaceGroups(workspaceId);
 
@@ -986,7 +1034,14 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
           });
         }
 
-        if (!isCurrentMutation()) return false;
+        if (!isCurrentMutation()) {
+          // The server sends its permission notification before this response,
+          // so a newer recheck usually owns the settings on screen by now. Leave
+          // them to it, but still confirm the change the server accepted.
+          if (spaceRequestRef.current.generation === requestGeneration) toast.success(t('space.success.updateSpace'));
+          return false;
+        }
+
         setLoadedPermissionSettings(nextPermission);
         toast.success(t('space.success.updateSpace'));
 
@@ -1566,12 +1621,15 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
 
   if (!view) return null;
 
+  // The name and icon stay editable during a background recheck: disabling a
+  // focused input would interrupt typing, and the server still enforces access.
   const metadataDisabled = loadingSettings || !permissionLoaded || permissionLoadFailed || !canEditSidebar;
   const permissionSettingsDisabled =
-    saving || loadingSettings || !permissionLoaded || permissionLoadFailed || !canManageSpace;
+    saving || loadingSettings || revalidating || !permissionLoaded || permissionLoadFailed || !canManageSpace;
   const membersDisabled =
     membersReadOnly ||
     loadingMembers ||
+    revalidating ||
     !permissionLoaded ||
     permissionLoadFailed ||
     !spaceMembersLoaded ||
@@ -1608,7 +1666,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       permissionSettings={permissionSettings}
       visibilityOptions={legacyPermissionMode ? LEGACY_SPACE_VISIBILITIES : SELECTABLE_SPACE_VISIBILITIES}
       permissionSettingsDisabled={permissionSettingsDisabled}
-      loadingSettings={loadingSettings}
+      loadingSettings={loadingSettings || revalidating}
       showAccessDetails={draftIsPrivate || !legacyPermissionMode}
       workspaceName={workspaceName}
       privateOwner={privateOwner}
@@ -1634,7 +1692,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                   unavailableTitle={t('space.permissionManager.workspaceMemberUidUnavailable')}
                   unavailableHint={t('space.permissionManager.workspaceMemberUidUnavailableHint')}
                   inputDisabled={addMembersDisabled}
-                  addButtonDisabled={addMembersDisabled || Boolean(addingUid)}
+                  addButtonDisabled={addMembersDisabled || revalidating || Boolean(addingUid)}
                   addingUid={addingUid}
                   onInputKeyDown={handleMemberSearchKeyDown}
                   onAddMember={(member) => void handleAddMember(member)}
@@ -1667,7 +1725,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                             variant='ghost'
                             aria-label={`${t('space.permissionManager.add')} ${group.name}`}
                             className='text-text-action hover:text-text-action-hover'
-                            disabled={addGroupsDisabled || Boolean(addingGroupId)}
+                            disabled={addGroupsDisabled || revalidating || Boolean(addingGroupId)}
                             loading={addingGroupId === group.group_id}
                             onClick={() => void handleAddGroup(group)}
                             data-testid='space-group-inline-search-result-add'
