@@ -19,11 +19,23 @@ import { getConfigValue } from '@/utils/runtime-config';
 type Snapshot = {
   scope: object;
   status: 'loading' | 'ready' | 'unsupported' | 'error';
+  /** Last confirmed answer for this scope. It stays visible while a refresh is in flight or failed. */
   capability?: WorkspaceSpaceCreationCapabilities;
   error?: unknown;
 };
 
-/** Live admission hints. Publication still rechecks current authority on the server. */
+/** Only the same account/server/workspace scope may keep showing an earlier answer. */
+function retained(previous: Snapshot | undefined, scope: object) {
+  return previous?.scope === scope ? previous.capability : undefined;
+}
+
+/**
+ * Live admission hints. Publication still rechecks current authority on the server.
+ *
+ * Refreshes are stale-while-revalidate for display: `capability` keeps the last confirmed answer for
+ * the same scope (and `revalidating` is true) so settings never blank or remount on a background
+ * refresh. Admission is not stale: `canCreateSpace` is true only for a fresh `ready` answer.
+ */
 export function useSpaceCreationCapability(workspaceId?: string, enabled = true) {
   const auth = useContext(AuthInternalContext);
   const eventEmitter = useContext(AppEventEmitterContext);
@@ -55,7 +67,7 @@ export function useSpaceCreationCapability(workspaceId?: string, enabled = true)
     const isCurrent = () => liveScope.current === scope && sequence.current === request;
 
     if (!scope.active || !scope.workspaceId) return Promise.resolve(undefined);
-    setSnapshot({ scope, status: 'loading' });
+    setSnapshot((previous) => ({ scope, status: 'loading', capability: retained(previous, scope) }));
     const id = scope.workspaceId;
 
     return scope.refresh(async () => {
@@ -75,7 +87,16 @@ export function useSpaceCreationCapability(workspaceId?: string, enabled = true)
         setSnapshot({ scope, status: 'ready', capability });
         return capability;
       } catch (error) {
-        if (isCurrent()) setSnapshot({ scope, status: isUnsupportedRouteError(error) ? 'unsupported' : 'error', error });
+        if (!isCurrent()) return;
+        // A missing route means there is no capability to show; any other failure keeps stale data.
+        const unsupported = isUnsupportedRouteError(error);
+
+        setSnapshot((previous) => ({
+          scope,
+          status: unsupported ? 'unsupported' : 'error',
+          capability: unsupported ? undefined : retained(previous, scope),
+          error,
+        }));
       }
     });
   }, [scope]);
@@ -127,11 +148,14 @@ export function useSpaceCreationCapability(workspaceId?: string, enabled = true)
   }, [active, eventEmitter, refresh, scope, workspaceId]);
 
   const current = active && snapshot?.scope === scope ? snapshot : undefined;
+  const status = current?.status ?? 'loading';
 
   return {
-    status: current?.status ?? 'loading',
+    status,
     capability: current?.capability,
-    canCreateSpace: current?.capability?.can_create_space === true,
+    canCreateSpace: status === 'ready' && current?.capability?.can_create_space === true,
+    /** A confirmed capability is shown while a newer answer loads. */
+    revalidating: status === 'loading' && current?.capability !== undefined,
     error: current?.error,
     refresh,
     // Dialogs with in-flight mutations can key their local draft state to this identity.

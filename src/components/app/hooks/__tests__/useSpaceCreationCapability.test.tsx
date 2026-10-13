@@ -243,6 +243,68 @@ describe('space creation capability lifecycle', () => {
     expect(mockRead).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the last confirmed capability visible while revalidating without admitting creation', async () => {
+    mockRead.mockResolvedValue(capability('1'));
+    const { result } = mount();
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    const confirmed = result.current.capability;
+    const next = deferred();
+
+    expect(result.current.revalidating).toBe(false);
+    mockRead.mockReturnValueOnce(next.promise);
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    // Settings keep rendering the last confirmed data; only admission waits for the answer.
+    expect(result.current.status).toBe('loading');
+    expect(result.current.revalidating).toBe(true);
+    expect(result.current.capability).toBe(confirmed);
+    expect(result.current.canCreateSpace).toBe(false);
+    await act(async () => next.resolve(capability('2')));
+    expect(result.current.status).toBe('ready');
+    expect(result.current.revalidating).toBe(false);
+    expect(result.current.capability?.revision.counter).toBe('2');
+    expect(result.current.canCreateSpace).toBe(true);
+  });
+
+  it('keeps stale data after a failed background refresh but drops it for an unsupported route', async () => {
+    mockRead.mockResolvedValue(capability('1'));
+    const { result } = mount();
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    mockRead.mockRejectedValueOnce({ code: 500, httpStatus: 500, message: 'Server error' });
+    await act(async () => {
+      await result.current.refresh();
+    });
+    expect(result.current.status).toBe('error');
+    expect(result.current.capability?.revision.counter).toBe('1');
+    expect(result.current.canCreateSpace).toBe(false);
+    mockRead.mockRejectedValueOnce({ httpStatus: 404 });
+    await act(async () => {
+      await result.current.refresh();
+    });
+    expect(result.current.status).toBe('unsupported');
+    expect(result.current.capability).toBeUndefined();
+  });
+
+  it('never shows the previous workspace capability while the next workspace loads', async () => {
+    mockRead.mockResolvedValueOnce(capability('1'));
+    const { result, rerender } = mount();
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    const next = deferred();
+
+    mockRead.mockReturnValueOnce(next.promise);
+    mockWorkspaceId = 'workspace-b';
+    rerender({ enabled: true });
+    expect(result.current.status).toBe('loading');
+    expect(result.current.capability).toBeUndefined();
+    expect(result.current.revalidating).toBe(false);
+    await act(async () => next.resolve(capability('7')));
+    expect(result.current.capability?.workspace_id).toBe('workspace-b');
+  });
+
   it('shares the queued promise instead of retaining an async wrapper for every hint', async () => {
     const old = deferred();
 
