@@ -710,7 +710,9 @@ export async function resumePermissionBlockedSync(objectId?: string, options: { 
     const records = await readOutboxPrefix(config.userId, config.workspaceId, id, config.serverUrl);
     const first = records[0];
 
-    if (!first) continue;
+    // Quarantined edits are released only by an explicit retry, so a re-check
+    // could not change anything for them.
+    if (!first || records.some((record) => record.permissionBlocked)) continue;
     const permission = await config.checkPermission(id, first.collabType as Types);
 
     if (drainConfig !== config || generation !== lifecycleGeneration) return;

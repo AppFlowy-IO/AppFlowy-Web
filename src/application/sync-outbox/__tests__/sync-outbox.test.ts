@@ -2134,4 +2134,19 @@ describe('sync outbox live send', () => {
     expect(mockRecords).toEqual([expect.objectContaining({ objectId: otherObjectId })]);
     expect(mockPermissionBlocks.size).toBe(0);
   });
+
+  it('does not re-check quarantined objects, which only an explicit retry can release', async () => {
+    const checkPermission = jest.fn(async () => 'denied' as const);
+
+    configureDrain({ userId, workspaceId, send: jest.fn(), isReady: () => true, checkPermission });
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('quarantined') });
+    await flushPromises();
+    checkPermission.mockClear();
+
+    await resumePermissionBlockedSync();
+    await resumePermissionBlockedSync(undefined, { abortDenied: true });
+
+    expect(checkPermission).not.toHaveBeenCalled();
+    expect(mockRecords).toEqual([expect.objectContaining({ permissionBlocked: true })]);
+  });
 });
