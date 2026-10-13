@@ -3579,7 +3579,7 @@
       "membersDescription": "Default access for members added to this space",
       "publicMembersDescription": "Default access for all workspace members",
       "ownerRoleDescription": "Full access. Can manage this space, its members, and its permissions.",
-      "memberRoleDescription": "Receives the space member default, unless an explicit access override is configured.",
+      "memberRoleDescription": "Receives the access configured for Space members in General.",
       "remove": "Remove",
       "inheritedAccessManagedFromGeneral": "This member is included by General settings. Set workspace fallback access to No access or make the space private to remove default members.",
       "searchMembers": "Search members",
@@ -3636,7 +3636,7 @@
       "confirmToPrivateDescription": "Other Space owners, Space members, and Workspace members will lose access to this Space.",
       "confirmToPrivateAction": "Make Private",
       "fullAccessMembersTitle": "Give Space members Full access?",
-      "fullAccessMembersDescription": "Members inheriting this default will be able to manage this Space, its members, and its permissions.",
+      "fullAccessMembersDescription": "Space members using the space default will be able to manage this Space, its members, and its permissions.",
       "fullAccessEveryoneElseTitle": "Give everyone else Full access?",
       "fullAccessEveryoneElseDescription": "Workspace members not included in this Space will be able to manage the Space, its members, and its permissions.",
       "fullAccessWorkspaceMembersTitle": "Give workspace members Full access?",
@@ -3655,7 +3655,8 @@
       "addSpaceGroupSuccess": "Group added to space",
       "addSpaceGroupFailed": "Failed to add group to space",
       "noAccessMembersHint": "Space members are listed but cannot access this space until their access is changed in General.",
-      "everyoneElseFallback": "Everyone else in the workspace"
+      "everyoneElseFallback": "Everyone else in the workspace",
+      "memberRoleWithAccessDescription": "Gets the space default access unless you choose a different level in Access."
     },
     "createSpace": "Create space",
     "manageSpace": "Manage space",
@@ -3665,17 +3666,27 @@
     "memberOverride": {
       "label": "Access",
       "accessFor": "Access for {{name}}",
-      "inherit": "Inherit",
       "unknown": "Unavailable",
-      "defaultAccess": "Space default: {{level}}",
-      "assignmentAccess": "Assignment access: {{level}}",
-      "explanation": "Members inherit the space default unless you choose an override. Other grants may still provide access, and page restrictions still apply. Edit access does not grant management rights.",
-      "unsupported": "This server does not support individual member access overrides.",
-      "unavailable": "This assignment can no longer be changed. Refresh its current permissions and try again.",
-      "contextChanged": "The permission context changed. Refresh and try again.",
-      "identityUnavailable": "This member’s exact identity is unavailable. Refresh the roster before changing access.",
-      "updateFailed": "Could not update member access.",
-      "inheritedNoAccess": "Inherited memberships currently grant no access. Explicit overrides and independent grants can still provide access."
+      "explanation": "Choose what this person or group can do, or keep the space default. Sharing a page can still give access, and restricted pages stay restricted.",
+      "unavailable": "This access can't be changed anymore. Someone may have changed this space's settings.",
+      "contextChanged": "Your account or workspace changed. Try again.",
+      "identityUnavailable": "We couldn't load this person's account details. Reload the page and try again.",
+      "updateFailed": "Couldn't update access. Try again.",
+      "inheritedNoAccess": "Space members get no access by default. Choose access for specific members or groups, or change the default in General.",
+      "spaceDefault": "Space default ({{level}})",
+      "defaultSuffix": "{{level}} · default",
+      "levels": {
+        "canView": "Can view",
+        "canComment": "Can comment",
+        "canEdit": "Can edit",
+        "fullAccess": "Full access",
+        "noAccess": "No access"
+      },
+      "updated": "Access updated",
+      "sharedPagesOnly": "Shared pages only",
+      "sharedPagesReason": "This person can only open pages shared with them. Manage that from each page's Share menu.",
+      "managedElsewhere": "This access comes from the space settings and can't be changed here.",
+      "reloadToChange": "This access can't be changed right now. Reload the page and try again."
     }
   },
   "publish": {

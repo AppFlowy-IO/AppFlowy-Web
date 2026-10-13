@@ -514,7 +514,8 @@ Then(
       const grant = await findSpaceGroupGrant(request, fixture, groupId);
 
       expect(grant?.access_level_override).not.toBeUndefined();
-      await expect(row.getByTestId('space-member-access-control').getByRole('combobox')).toHaveValue(
+      await expect(row.getByTestId('space-member-access-control')).toHaveAttribute(
+        'data-value',
         grant?.access_level_override === null ? 'inherit' : String(grant?.access_level_override)
       );
     }

@@ -223,6 +223,18 @@ jest.mock('@/components/ui/progress', () => ({
   Progress: () => <span data-testid='progress' />,
 }));
 
+// Tooltip text is rendered inline so the explanations can be asserted.
+jest.mock('@/components/ui/tooltip', () => ({
+  Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
+  TooltipProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+  TooltipTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
+  TooltipContent: ({ children, 'data-testid': testId }: { children: ReactNode; 'data-testid'?: string }) => (
+    <div role='tooltip' data-testid={testId}>
+      {children}
+    </div>
+  ),
+}));
+
 jest.mock('@/components/ui/tabs', () => {
   const React = jest.requireActual<typeof import('react')>('react');
   const TabsContext = React.createContext({ value: '', onValueChange: (_value: string) => undefined });
@@ -468,72 +480,415 @@ describe('ManageSpace ACL management', () => {
 
   describe('ordinary member access overrides', () => {
     const memberUuid = '12345678-1234-4123-8123-123456789abc';
+    const inheritEditLabel = 'space.memberOverride.defaultSuffix:{"level":"space.memberOverride.levels.canEdit"}';
 
-    it('keeps Inherit separate from explicit equal-to-default Edit and preserves role controls', async () => {
-      const member = { ...manualMember(), user_uuid: memberUuid, access_level_override: null, effective_access_level: 30 };
+    function supportedPermission(permission: SpacePermissionSettings = customPermission) {
+      return { ...permissionResponse({ permission }), member_access_overrides_supported: true };
+    }
 
-      mockGetSpacePermission.mockResolvedValue({ ...permissionResponse({ permission: customPermission }), member_access_overrides_supported: true });
-      mockGetSpaceMembers.mockResolvedValue({ members: [member], groups: [] });
+    function assignedMember(overrides: Partial<SpaceMember> = {}): SpaceMember {
+      return {
+        ...manualMember(),
+        user_uuid: memberUuid,
+        access_level_override: null,
+        effective_access_level: AccessLevel.ReadAndWrite,
+        ...overrides,
+      };
+    }
+
+    // The roster read after a save reflects what the server stored.
+    function storeOverridesInRoster(member: SpaceMember) {
       mockSetOverride.mockImplementation(async (_workspace, _space, _principal, override) => {
-        mockGetSpaceMembers.mockResolvedValue({ members: [{ ...member, access_level_override: override }], groups: [] });
+        const updated = {
+          ...member,
+          access_level_override: override,
+          effective_access_level: override ?? AccessLevel.ReadAndWrite,
+        };
+
+        mockGetSpaceMembers.mockResolvedValue({ members: [updated], groups: [] });
+        return updated;
       });
+    }
+
+    async function openMembersTab() {
       render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
       await waitForSettingsLoaded();
       fireEvent.click(screen.getByRole('tab', { name: 'space.permissionManager.membersTab' }));
-      const control = await screen.findByRole('combobox', { name: /space.memberOverride.accessFor/ });
+    }
 
-      expect((control as HTMLSelectElement).value).toBe('inherit');
-      expect(screen.getByText('space.memberOverride.defaultAccess:{"level":"shareAction.canEdit"}')).toBeTruthy();
-      expect(screen.getByText('space.memberOverride.assignmentAccess:{"level":"shareAction.canEdit"}')).toBeTruthy();
-      fireEvent.change(control, { target: { value: '30' } });
-      await waitFor(() => expect(mockSetOverride).toHaveBeenCalledWith('workspace-1', 'space-1', { type: 'user', uuid: memberUuid }, 30, expect.any(Function)));
-      await waitFor(() => expect((control as HTMLSelectElement).value).toBe('30'));
-      fireEvent.change(control, { target: { value: 'inherit' } });
-      await waitFor(() => expect(mockSetOverride).toHaveBeenLastCalledWith('workspace-1', 'space-1', { type: 'user', uuid: memberUuid }, null, expect.any(Function)));
+    function accessTrigger(uid: string) {
+      return screen.getByTestId(`space-member-access-${uid}`);
+    }
+
+    it('lays the table out as Name | Access | Role with one explanation in the Access header', async () => {
+      const member = assignedMember();
+
+      mockGetSpacePermission.mockResolvedValue(supportedPermission());
+      mockGetSpaceMembers.mockResolvedValue({ members: [member], groups: [] });
+      await openMembersTab();
+      await screen.findByTestId(`space-member-access-${member.uid}`);
+      const header = screen.getByTestId('space-member-table-header');
+
+      expect(header.children).toHaveLength(3);
+      expect(header.children[0].textContent).toBe('space.permissionManager.name');
+      expect(within(header.children[1] as HTMLElement).getByTestId('space-member-access-header').textContent).toBe(
+        'space.memberOverride.label'
+      );
+      expect(screen.getByTestId('space-member-access-header-hint').textContent).toBe('space.memberOverride.explanation');
+      expect(header.children[2].textContent).toBe('space.permissionManager.role');
+      // No native select and no helper lines under each row.
+      expect(document.querySelector('select')).toBeNull();
+      expect(screen.queryByTestId('space-member-overrides-description')).toBeNull();
+      expect(screen.queryByText(/space\.memberOverride\.(defaultAccess|assignmentAccess|inherit\b)/)).toBeNull();
+      expect(screen.getAllByText('space.memberOverride.explanation')).toHaveLength(1);
+    });
+
+    it('keeps the space default separate from an explicit equal-to-default Edit and preserves role controls', async () => {
+      const member = assignedMember();
+
+      mockGetSpacePermission.mockResolvedValue(supportedPermission());
+      mockGetSpaceMembers.mockResolvedValue({ members: [member], groups: [] });
+      storeOverridesInRoster(member);
+      await openMembersTab();
+      const row = await screen.findByTestId(`space-member-row-${member.uid}`);
+      const trigger = accessTrigger(member.uid);
+
+      expect(trigger.textContent).toBe(inheritEditLabel);
+      expect(within(row).getByTestId('space-member-access-control').getAttribute('data-value')).toBe('inherit');
+      expect(trigger.getAttribute('aria-label')).toContain('space.memberOverride.accessFor');
+      expect(trigger.getAttribute('aria-label')).toContain('Manual member');
+      expect(screen.getByTestId(`space-member-access-${member.uid}-option-default`).textContent).toBe(
+        'space.memberOverride.spaceDefault:{"level":"space.memberOverride.levels.canEdit"}selected'
+      );
+      expect(
+        screen.getAllByTestId(new RegExp(`^space-member-access-${member.uid}-option-`)).map((option) => option.textContent)
+      ).toEqual([
+        'space.memberOverride.spaceDefault:{"level":"space.memberOverride.levels.canEdit"}selected',
+        'space.memberOverride.levels.canView',
+        'space.memberOverride.levels.canComment',
+        'space.memberOverride.levels.canEdit',
+      ]);
+      expect(within(row).getByRole('button', { name: 'space.permissionManager.member' })).toBeTruthy();
+
+      fireEvent.click(screen.getByTestId(`space-member-access-${member.uid}-option-${AccessLevel.ReadAndWrite}`));
+      await waitFor(() =>
+        expect(mockSetOverride).toHaveBeenCalledWith(
+          'workspace-1',
+          'space-1',
+          { type: 'user', uuid: memberUuid },
+          AccessLevel.ReadAndWrite,
+          expect.any(Function)
+        )
+      );
+      await waitFor(() => expect(trigger.textContent).toBe('space.memberOverride.levels.canEdit'));
+      await waitFor(() => expect(trigger.disabled).toBe(false));
+      expect(within(row).getByTestId('space-member-access-control').getAttribute('data-value')).toBe('30');
+
+      fireEvent.click(screen.getByTestId(`space-member-access-${member.uid}-option-default`));
+      await waitFor(() =>
+        expect(mockSetOverride).toHaveBeenLastCalledWith(
+          'workspace-1',
+          'space-1',
+          { type: 'user', uuid: memberUuid },
+          null,
+          expect.any(Function)
+        )
+      );
+      await waitFor(() => expect(trigger.textContent).toBe(inheritEditLabel));
       expect(mockUpdateSpaceMember).not.toHaveBeenCalled();
       expect(mockUpdateSpaceMemberByUuid).not.toHaveBeenCalled();
     });
 
-    it('shows group assignment access including No access and uses the group override path', async () => {
-      const assigned = { ...group('group-1', 'Engineering'), access_level_override: null, effective_access_level: null };
+    it('shows the chosen access while it saves, then confirms it with a toast', async () => {
+      const member = assignedMember();
+      const save = deferred<SpaceMember>();
 
-      mockGetSpacePermission.mockResolvedValue({ ...permissionResponse({ permission: { ...customPermission, member_default_access_level: null } }), member_access_overrides_supported: true });
-      mockGetSpaceMembers.mockResolvedValue({ members: [], groups: [assigned] });
-      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
-      await waitForSettingsLoaded();
-      fireEvent.click(screen.getByRole('tab', { name: 'space.permissionManager.membersTab' }));
-      const control = await screen.findByRole('combobox', { name: /space.memberOverride.accessFor/ });
+      mockGetSpacePermission.mockResolvedValue(supportedPermission());
+      mockGetSpaceMembers.mockResolvedValue({ members: [member], groups: [] });
+      mockSetOverride.mockReturnValue(save.promise);
+      await openMembersTab();
+      const row = await screen.findByTestId(`space-member-row-${member.uid}`);
+      const trigger = accessTrigger(member.uid);
 
-      expect(screen.getByText('space.memberOverride.assignmentAccess:{"level":"space.permissionManager.noAccess"}')).toBeTruthy();
-      fireEvent.change(control, { target: { value: '20' } });
-      await waitFor(() => expect(mockSetOverride).toHaveBeenCalledWith('workspace-1', 'space-1', { type: 'group', uuid: 'group-1' }, 20, expect.any(Function)));
+      fireEvent.click(screen.getByTestId(`space-member-access-${member.uid}-option-${AccessLevel.ReadOnly}`));
+
+      // The choice does not snap back while the request is in flight.
+      await waitFor(() => expect(trigger.textContent).toBe('space.memberOverride.levels.canView'));
+      expect(trigger.getAttribute('aria-busy')).toBe('true');
+      expect(trigger.disabled).toBe(true);
+      expect(within(row).getByRole('button', { name: 'space.permissionManager.member' }).hasAttribute('disabled')).toBe(
+        true
+      );
+      // A second choice while saving is ignored.
+      fireEvent.click(screen.getByTestId(`space-member-access-${member.uid}-option-${AccessLevel.ReadAndWrite}`));
+      expect(mockSetOverride).toHaveBeenCalledTimes(1);
+      expect(toast.success).not.toHaveBeenCalled();
+
+      const saved = { ...member, access_level_override: AccessLevel.ReadOnly, effective_access_level: AccessLevel.ReadOnly };
+
+      mockGetSpaceMembers.mockResolvedValue({ members: [saved], groups: [] });
+      await act(async () => {
+        save.resolve(saved);
+      });
+
+      await waitFor(() => expect(toast.success).toHaveBeenCalledWith('space.memberOverride.updated'));
+      await waitFor(() => expect(trigger.disabled).toBe(false));
+      expect(trigger.textContent).toBe('space.memberOverride.levels.canView');
+      expect(trigger.getAttribute('aria-busy')).toBeNull();
+      // Only this list is revalidated; the dialog is not reloaded.
+      expect(mockGetSpacePermission).toHaveBeenCalledTimes(1);
+      expect(mockGetSpaceMembers).toHaveBeenCalledTimes(2);
     });
 
-    it('does not infer an override from an old server access_level', async () => {
+    it('restores the last confirmed access after a failed save without reloading the dialog', async () => {
+      const member = assignedMember();
+      const save = deferred<SpaceMember>();
+
+      mockGetSpacePermission.mockResolvedValue(supportedPermission());
+      mockGetSpaceMembers
+        .mockResolvedValueOnce({ members: [member], groups: [] })
+        .mockRejectedValueOnce(new Error('offline'));
+      mockSetOverride.mockReturnValue(save.promise);
+      await openMembersTab();
+      const trigger = await screen.findByTestId(`space-member-access-${member.uid}`);
+
+      fireEvent.click(screen.getByTestId(`space-member-access-${member.uid}-option-${AccessLevel.ReadOnly}`));
+      await waitFor(() => expect(trigger.textContent).toBe('space.memberOverride.levels.canView'));
+
+      await act(async () => {
+        save.reject(new Error('Access was changed by someone else'));
+      });
+
+      await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Access was changed by someone else'));
+      await waitFor(() => expect(trigger.textContent).toBe(inheritEditLabel));
+      await waitFor(() => expect((trigger as HTMLButtonElement).disabled).toBe(false));
+      // The roster is reconciled quietly in the background; the rows never leave the screen.
+      expect(mockGetSpaceMembers).toHaveBeenCalledTimes(2);
+      expect(screen.getByTestId(`space-member-row-${member.uid}`)).toBeTruthy();
+      expect(mockGetSpacePermission).toHaveBeenCalledTimes(1);
+      expect(toast.error).toHaveBeenCalledTimes(1);
+      expect(toast.success).not.toHaveBeenCalled();
+      expect(mockSetOverride).toHaveBeenCalledTimes(1);
+    });
+
+    it('falls back to a plain failure message when the error has no text', async () => {
+      const member = assignedMember();
+
+      mockGetSpacePermission.mockResolvedValue(supportedPermission());
+      mockGetSpaceMembers.mockResolvedValue({ members: [member], groups: [] });
+      mockSetOverride.mockRejectedValue({});
+      await openMembersTab();
+      await screen.findByTestId(`space-member-access-${member.uid}`);
+
+      fireEvent.click(screen.getByTestId(`space-member-access-${member.uid}-option-${AccessLevel.ReadAndComment}`));
+
+      await waitFor(() => expect(toast.error).toHaveBeenCalledWith('space.memberOverride.updateFailed'));
+      await waitFor(() => expect(accessTrigger(member.uid).textContent).toBe(inheritEditLabel));
+    });
+
+    it('sends nothing when the current access is chosen again', async () => {
+      const explicit = assignedMember({
+        access_level_override: AccessLevel.ReadAndComment,
+        effective_access_level: AccessLevel.ReadAndComment,
+      });
+      const inherited = {
+        ...assignedMember(),
+        uid: '6789012345678901',
+        user_uuid: '22345678-1234-4123-8123-123456789abc',
+        name: 'Second member',
+      };
+
+      mockGetSpacePermission.mockResolvedValue(supportedPermission());
+      mockGetSpaceMembers.mockResolvedValue({ members: [explicit, inherited], groups: [] });
+      await openMembersTab();
+      await screen.findByTestId(`space-member-access-${explicit.uid}`);
+
+      fireEvent.click(screen.getByTestId(`space-member-access-${explicit.uid}-option-${AccessLevel.ReadAndComment}`));
+      fireEvent.click(screen.getByTestId(`space-member-access-${inherited.uid}-option-default`));
+
+      expect(mockSetOverride).not.toHaveBeenCalled();
+      expect(toast.success).not.toHaveBeenCalled();
+    });
+
+    it('shows a group with No access by default and saves its choice through the group path', async () => {
+      const assigned = { ...group('group-1', 'Engineering'), access_level_override: null, effective_access_level: null };
+
+      mockGetSpacePermission.mockResolvedValue(supportedPermission({ ...customPermission, member_default_access_level: null }));
+      mockGetSpaceMembers.mockResolvedValue({ members: [], groups: [assigned] });
+      mockSetOverride.mockImplementation(async (_workspace, _space, _principal, override) => {
+        const updated = { ...assigned, access_level_override: override, effective_access_level: override };
+
+        mockGetSpaceMembers.mockResolvedValue({ members: [], groups: [updated] });
+        return updated;
+      });
+      await openMembersTab();
+      const trigger = (await screen.findByTestId('space-group-access-group-1'));
+
+      expect(trigger.textContent).toBe(
+        'space.memberOverride.defaultSuffix:{"level":"space.memberOverride.levels.noAccess"}'
+      );
+      expect(screen.getByTestId('space-group-access-group-1-option-default').textContent).toBe(
+        'space.memberOverride.spaceDefault:{"level":"space.memberOverride.levels.noAccess"}selected'
+      );
+      expect(screen.getByTestId('manage-space-members-no-access-hint').textContent).toBe(
+        'space.memberOverride.inheritedNoAccess'
+      );
+
+      fireEvent.click(screen.getByTestId(`space-group-access-group-1-option-${AccessLevel.ReadAndComment}`));
+      await waitFor(() =>
+        expect(mockSetOverride).toHaveBeenCalledWith(
+          'workspace-1',
+          'space-1',
+          { type: 'group', uuid: 'group-1' },
+          AccessLevel.ReadAndComment,
+          expect.any(Function)
+        )
+      );
+      await waitFor(() => expect(trigger.textContent).toBe('space.memberOverride.levels.canComment'));
+      await waitFor(() => expect(toast.success).toHaveBeenCalledWith('space.memberOverride.updated'));
+      expect(mockUpdateSpaceGroupPermission).not.toHaveBeenCalled();
+    });
+
+    it('keeps the Name | Role table and no Access column on servers without per-person access', async () => {
+      const member = manualMember();
+
       mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: customPermission }));
-      mockGetSpaceMembers.mockResolvedValue({ members: [manualMember()], groups: [] });
-      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
-      await waitForSettingsLoaded();
-      fireEvent.click(screen.getByRole('tab', { name: 'space.permissionManager.membersTab' }));
-      expect(screen.queryByRole('combobox', { name: /space.memberOverride.accessFor/ })).toBeNull();
-      expect(screen.getByText('space.memberOverride.unsupported')).toBeTruthy();
+      mockGetSpaceMembers.mockResolvedValue({ members: [member], groups: [] });
+      await openMembersTab();
+      await screen.findByTestId(`space-member-row-${member.uid}`);
+
+      expect(screen.getByTestId('space-member-table-header').children).toHaveLength(2);
+      expect(screen.queryByTestId('space-member-access-header')).toBeNull();
+      expect(screen.queryByTestId('space-member-access-control')).toBeNull();
+      expect(screen.queryByTestId('space-member-access-fixed')).toBeNull();
+      // Old servers stay usable: no message about what the server lacks.
+      expect(screen.queryByText(/space\.memberOverride\./)).toBeNull();
       expect(mockSetOverride).not.toHaveBeenCalled();
     });
 
-    it('keeps missing UUIDs unavailable and never offers an Owner override', async () => {
-      mockGetSpacePermission.mockResolvedValue({ ...permissionResponse({ permission: customPermission }), member_access_overrides_supported: true });
-      mockGetSpaceMembers.mockResolvedValue({ members: [
-        { ...manualMember(), access_level_override: null, effective_access_level: 30 },
-        { ...creatorMember(), access_level_override: null, effective_access_level: 50 },
-      ], groups: [] });
-      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
-      await waitForSettingsLoaded();
-      fireEvent.click(screen.getByRole('tab', { name: 'space.permissionManager.membersTab' }));
-      const controls = await screen.findAllByRole('combobox', { name: /space.memberOverride.accessFor/ });
+    it('explains rows whose access cannot be changed and never offers Full access', async () => {
+      const editable = assignedMember();
+      const withoutUuid: SpaceMember = {
+        ...manualMember(),
+        uid: '7890123456789012',
+        name: 'No identity',
+        access_level_override: null,
+        effective_access_level: AccessLevel.ReadAndWrite,
+      };
+      const owner = {
+        ...creatorMember(),
+        user_uuid: '32345678-1234-4123-8123-123456789abc',
+        access_level_override: null,
+        effective_access_level: AccessLevel.FullAccess,
+      };
+      const shared = {
+        ...pageShareMember(),
+        user_uuid: '42345678-1234-4123-8123-123456789abc',
+        access_level_override: null,
+        effective_access_level: AccessLevel.ReadAndWrite,
+      };
+      const ownerGroup = {
+        ...group('group-owners', 'Leads', SpaceMemberRole.Owner),
+        access_level_override: null,
+        effective_access_level: AccessLevel.FullAccess,
+      };
 
-      expect(controls).toHaveLength(1);
-      expect((controls[0] as HTMLSelectElement).disabled).toBe(true);
-      expect(within(controls[0]).queryByRole('option', { name: 'shareAction.fullAccess' })).toBeNull();
+      mockGetSpacePermission.mockResolvedValue(supportedPermission());
+      mockGetSpaceMembers.mockResolvedValue({ members: [owner, editable, withoutUuid, shared], groups: [ownerGroup] });
+      await openMembersTab();
+      const editableRow = await screen.findByTestId(`space-member-row-${editable.uid}`);
+      const withoutUuidRow = screen.getByTestId(`space-member-row-${withoutUuid.uid}`);
+      const ownerRow = screen.getByTestId(`space-member-row-${owner.uid}`);
+      const sharedRow = screen.getByTestId(`space-member-row-${shared.uid}`);
+      const ownerGroupRow = screen.getByTestId('space-group-row-group-owners');
+
+      expect(within(editableRow).getByTestId(`space-member-access-${editable.uid}`)).toBeTruthy();
+      expect(screen.queryAllByTestId(new RegExp(`^space-(member|group)-access-.*-option-${AccessLevel.FullAccess}$`))).toHaveLength(0);
+      expect(screen.getAllByTestId(new RegExp(`^space-(member|group)-access-.*-option-`))).toHaveLength(4);
+
+      // Owners have full access as plain text.
+      expect(within(ownerRow).getByTestId('space-member-access-fixed').textContent).toBe(
+        'space.memberOverride.levels.fullAccess'
+      );
+      expect(within(ownerRow).queryByRole('tooltip')).toBeNull();
+      expect(within(ownerGroupRow).getByTestId('space-member-access-fixed').textContent).toBe(
+        'space.memberOverride.levels.fullAccess'
+      );
+
+      // A row without its account identity explains how to recover instead of a silent disabled control.
+      expect(screen.queryByTestId(`space-member-access-${withoutUuid.uid}`)).toBeNull();
+      const unavailable = within(withoutUuidRow).getByTestId('space-member-access-control');
+
+      expect(unavailable.getAttribute('data-value')).toBe('inherit');
+      expect(unavailable.textContent).toContain(inheritEditLabel);
+      expect(within(unavailable).getByRole('tooltip').textContent).toBe('space.memberOverride.identityUnavailable');
+
+      // People who only have shared pages are not given a space level.
+      const sharedAccess = within(sharedRow).getByTestId('space-member-access-fixed');
+
+      expect(sharedAccess.textContent).toContain('space.memberOverride.sharedPagesOnly');
+      expect(within(sharedAccess).getByRole('tooltip').textContent).toBe('space.memberOverride.sharedPagesReason');
+      expect(within(sharedRow).getAllByText('space.memberOverride.sharedPagesReason')).toHaveLength(2);
+    });
+
+    it('keeps the member table on screen while a permission notification is rechecked', async () => {
+      const member = assignedMember();
+      const recheck = deferred<ReturnType<typeof supportedPermission>>();
+
+      mockGetSpacePermission.mockResolvedValueOnce(supportedPermission()).mockReturnValueOnce(recheck.promise);
+      mockGetSpaceMembers.mockResolvedValue({ members: [member], groups: [] });
+      await openMembersTab();
+      const trigger = (await screen.findByTestId(`space-member-access-${member.uid}`));
+
+      await waitFor(() => expect(trigger.disabled).toBe(false));
+      act(() => {
+        // The server sends this to everyone, including after the user's own change.
+        mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'space-1' });
+      });
+      await waitFor(() => expect(mockGetSpacePermission).toHaveBeenCalledTimes(2));
+
+      expect(screen.getByTestId(`space-member-row-${member.uid}`)).toBeTruthy();
+      expect(trigger.textContent).toBe(inheritEditLabel);
+      expect(trigger.disabled).toBe(true);
+      expect(screen.getByPlaceholderText('space.spaceNamePlaceholder').hasAttribute('disabled')).toBe(false);
+
+      await act(async () => {
+        recheck.resolve(supportedPermission());
+      });
+
+      await waitFor(() => expect(trigger.disabled).toBe(false));
+      expect(mockGetSpaceMembers).toHaveBeenCalledTimes(2);
+      expect(screen.getByTestId(`space-member-row-${member.uid}`)).toBeTruthy();
+    });
+
+    it('still confirms a save whose permission notification arrives before the response', async () => {
+      const member = assignedMember();
+      const save = deferred<SpaceMember>();
+
+      mockGetSpacePermission.mockResolvedValue(supportedPermission());
+      mockGetSpaceMembers.mockResolvedValue({ members: [member], groups: [] });
+      mockSetOverride.mockReturnValue(save.promise);
+      await openMembersTab();
+      const trigger = (await screen.findByTestId(`space-member-access-${member.uid}`));
+
+      fireEvent.click(screen.getByTestId(`space-member-access-${member.uid}-option-${AccessLevel.ReadOnly}`));
+      await waitFor(() => expect(mockSetOverride).toHaveBeenCalledTimes(1));
+
+      const saved = { ...member, access_level_override: AccessLevel.ReadOnly, effective_access_level: AccessLevel.ReadOnly };
+
+      mockGetSpaceMembers.mockResolvedValue({ members: [saved], groups: [] });
+      act(() => {
+        mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'space-1' });
+      });
+      await waitFor(() => expect(mockGetSpacePermission).toHaveBeenCalledTimes(2));
+      await act(async () => {
+        save.resolve(saved);
+      });
+
+      await waitFor(() => expect(toast.success).toHaveBeenCalledWith('space.memberOverride.updated'));
+      await waitFor(() => expect(trigger.disabled).toBe(false));
+      expect(trigger.textContent).toBe('space.memberOverride.levels.canView');
+      expect(toast.error).not.toHaveBeenCalled();
     });
   });
 
@@ -2152,7 +2507,9 @@ describe('ManageSpace ACL management', () => {
       await waitFor(() => expect(screen.getByTestId('inline-member-search').disabled).toBe(false));
       expect(mockGetMembers).toHaveBeenCalledWith('workspace-1');
       expect(mockGetWorkspaceGroups).toHaveBeenCalledWith('workspace-1');
-      expect(screen.getByText('space.permissionManager.inheritedAccessManagedFromGeneral')).toBeTruthy();
+      // A shared-pages row explains where that access is managed instead of pointing to General.
+      expect(within(inheritedRow).getByText('space.memberOverride.sharedPagesReason')).toBeTruthy();
+      expect(screen.queryByText('space.permissionManager.inheritedAccessManagedFromGeneral')).toBeNull();
       expect(within(inheritedRow).getByRole('button', { name: 'space.permissionManager.remove' }).disabled).toBe(true);
       expect(within(explicitRow).getByRole('button', { name: 'space.permissionManager.remove' }).disabled).toBe(false);
       expect(within(groupRow).getByRole('button', { name: 'space.permissionManager.remove' }).disabled).toBe(false);
