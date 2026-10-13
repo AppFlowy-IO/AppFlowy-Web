@@ -245,6 +245,35 @@ describe('NewPage create-space flow', () => {
     expect(screen.queryByTestId('new-page-destination-status')).toBeNull();
   });
 
+  it('forgets a selected space that is no longer listed instead of checking it forever', async () => {
+    mockOutline = [space('general', 'General'), space('hr', 'HR')];
+    const app = render(<NewPage />);
+    const ok = () => screen.getByTestId('new-page-modal-ok');
+    const probesSettled = () => expect(screen.queryAllByTestId('progress')).toHaveLength(0);
+
+    fireEvent.click(screen.getByTestId('new-page-button'));
+    await selectSpace('HR');
+    await waitFor(() => expect(ok().disabled).toBe(false));
+
+    // HR leaves the outline while the dialog is open (for example the member was removed).
+    mockOutline = [space('general', 'General')];
+    app.rerender(<NewPage />);
+    await waitFor(probesSettled);
+    expect(ok().disabled).toBe(true);
+    expect(screen.queryByTestId('new-page-destination-status')).toBeNull();
+
+    // Reopening never resumes the old selection or waits for a check that will not run.
+    fireEvent.click(screen.getByTestId('new-page-modal-close'));
+    fireEvent.click(screen.getByTestId('new-page-button'));
+    await waitFor(probesSettled);
+    expect(ok().disabled).toBe(true);
+    expect(screen.queryByTestId('new-page-destination-status')).toBeNull();
+    expect(screen.getAllByTestId('space-item').map((row) => row.getAttribute('aria-pressed'))).toEqual(['false']);
+
+    await selectSpace('General');
+    await waitFor(() => expect(ok().disabled).toBe(false));
+  });
+
   it('explains when no space accepts new pages', async () => {
     mockOutline = [space('hr', 'HR')];
     mockGetSpacePermission.mockResolvedValue({ current_user_access_level: AccessLevel.ReadOnly, can_edit_sidebar: false });

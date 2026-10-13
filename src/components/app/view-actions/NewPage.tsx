@@ -137,12 +137,15 @@ function NewPage() {
   const [loading, setLoading] = useState(false);
   const [createSpaceOpen, setCreateSpaceOpen] = useState(false);
   const [CreateSpaceModal, setCreateSpaceModal] = useState<CreateSpaceModalType | null>(null);
-  const [selectedSpaceId, setSelectedSpaceId] = useState('');
+  const [chosenSpaceId, setChosenSpaceId] = useState('');
   const addingPageRef = useRef(false);
   const pageOpenSequenceRef = useRef(0);
   const outline = useAppOutline();
   const spaces = useMemo(() => outline ?? [], [outline]);
   const spaceIds = useMemo(() => spaces.map((space) => space.view_id), [spaces]);
+  // A remembered choice counts only while that space is listed: it may have been removed, or the
+  // workspace changed, since it was chosen.
+  const selectedSpaceId = spaceIds.includes(chosenSpaceId) ? chosenSpaceId : '';
   // New pages go directly under a space: each destination needs Write plus sidebar authority.
   const destinationAccess = useSpaceDestinationAccess(spaceIds, open && !createSpaceOpen);
   const selectedAccess = selectedSpaceId ? destinationAccess[selectedSpaceId] : undefined;
@@ -346,7 +349,7 @@ function NewPage() {
                   space={space}
                   access={destinationAccess[space.view_id] ?? { state: 'checking' }}
                   selected={selectedSpaceId === space.view_id}
-                  onSelect={setSelectedSpaceId}
+                  onSelect={setChosenSpaceId}
                 />
               ))}
             </div>
