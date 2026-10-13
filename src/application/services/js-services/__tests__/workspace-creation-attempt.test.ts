@@ -128,6 +128,10 @@ test.each([
   ['HTTP 400', { code: 400, httpStatus: 400, message: 'Bad Request' }],
   ['HTTP 409', { code: 409, httpStatus: 409, message: 'Conflict' }],
   ['HTTP 422', { code: 422, httpStatus: 422, message: 'Unprocessable' }],
+  // A first request has no earlier commit to hide, so a sign-in rejection also created nothing.
+  ['an expired sign-in (HTTP 401)', { code: 401, httpStatus: 401, message: 'Unauthorized' }],
+  ['a signed-out session (1011)', { code: 1011, message: 'Not logged in' }],
+  ['an invalid session (1024)', { code: 1024, message: 'Invalid user session' }],
 ])('a definitive rejection (%s) releases the request', async (_label, error) => {
   const attempt = new WorkspaceCreationAttempt(server(error, 'created'));
 
@@ -183,6 +187,47 @@ test('a replay keeps the request after an old-node 404 and releases it after a d
   expect(attempt.snapshot()).toMatchObject({ name: 'Name' });
   // The server resolves a completed receipt before admission, so a denial means nothing was created.
   await expect(attempt.run('Name')).rejects.toThrow('workspaceCreation.denied');
+  expect(attempt.snapshot()).toBeUndefined();
+});
+
+test.each([
+  ['an expired sign-in (HTTP 401)', { code: 401, httpStatus: 401, message: 'Request failed with status code 401' }],
+  ['a proxy denial without a server code (HTTP 403)', { code: 403, httpStatus: 403, message: 'Forbidden' }],
+  ['a proxy rejection without a server code (HTTP 400)', { code: 400, httpStatus: 400, message: 'Bad Request' }],
+  ['a signed-out session (1011)', { code: 1011, message: 'Not logged in' }],
+  ['an invalid session (1024)', { code: 1024, message: 'Invalid user session' }],
+])('a replay rejected before the saved request is looked up (%s) keeps it for Check again', async (_label, error) => {
+  const create = server({ code: -1, message: 'Network Error' }, error, 'original-workspace');
+  const attempt = new WorkspaceCreationAttempt(create);
+
+  await expect(attempt.run('Name')).rejects.toThrow('workspaceCreation.notConfirmed');
+  const draft = attempt.snapshot();
+
+  // Sign-in and proxies answer before the server reads the saved request, so the first request may
+  // still have committed. Releasing here would let a new request create a second workspace.
+  await expect(attempt.run('Name')).rejects.toThrow('workspaceCreation.notConfirmed');
+  expect(attempt.snapshot()).toEqual(draft);
+  expect(await attempt.run('Name')).toBe('original-workspace');
+  expect(create.mock.calls.slice(1).map(([, options]) => options)).toEqual([
+    { replay: draft?.requestId },
+    { replay: draft?.requestId },
+  ]);
+});
+
+test.each([
+  ['a denial', { code: 1012, message: 'denied' }, 'workspaceCreation.denied'],
+  ['a denial sent with HTTP 403', { code: 1012, httpStatus: 403, message: 'denied' }, 'workspaceCreation.denied'],
+  ['an over-long name', { code: 1008, message: 'Workspace name is too long' }, 'Workspace name is too long'],
+  ['a request ID reused with another payload', { code: -3, message: 'conflict' }, 'conflict'],
+  ['a result that is no longer accessible', { code: -2, message: 'no longer accessible' }, 'no longer accessible'],
+  ['a workspace limit', { code: 1026, message: 'workspace limit' }, 'workspace limit'],
+  ['a member limit', { code: 1027, message: 'member limit' }, 'member limit'],
+  ['a seat limit', { code: 1120, message: 'seat limit' }, 'seat limit'],
+])('a replay answered after the saved request is looked up (%s) releases it', async (_label, error, message) => {
+  const attempt = new WorkspaceCreationAttempt(server({ code: -1, message: 'Network Error' }, error));
+
+  await expect(attempt.run('Name')).rejects.toThrow('workspaceCreation.notConfirmed');
+  await expect(attempt.run('Name')).rejects.toMatchObject({ message });
   expect(attempt.snapshot()).toBeUndefined();
 });
 

@@ -15,22 +15,27 @@ type Create = (payload: CreateWorkspacePayload, options: CreateWorkspaceOptions)
 const LICENSE_LIMIT_HIT = 1120;
 
 /**
- * Answers after which no workspace exists for the request ID. The server records a receipt only in
- * the transaction that creates the workspace, and resolves an existing receipt before any other
- * check, so these rejections cannot hide an earlier commit.
+ * Server codes sent only after the server looked up the request ID and found no workspace to return:
+ * a policy denial, name validation, the ID reused with another payload, a result that is no longer
+ * accessible, and seat or workspace limits. The server records a receipt only in the transaction
+ * that creates the workspace, so even a replay that gets one of these created nothing.
  */
-const DEFINITIVE_CODES = new Set<number>([
+const AFTER_LOOKUP_CODES = new Set<number>([
   ERROR_CODE.INVALID_REQUEST,
   ERROR_CODE.NOT_HAS_PERMISSION,
   ERROR_CODE.RECORD_ALREADY_EXISTS,
   ERROR_CODE.RECORD_NOT_FOUND,
-  ERROR_CODE.NOT_LOGGED_IN,
-  ERROR_CODE.USER_UNAUTHORIZED,
   ERROR_CODE.WORKSPACE_LIMIT_EXCEEDED,
   ERROR_CODE.WORKSPACE_MEMBER_LIMIT_EXCEEDED,
   LICENSE_LIMIT_HIT,
 ]);
-const DEFINITIVE_STATUSES = new Set([400, 401, 403, 409, 422]);
+/**
+ * Sign-in checks, proxies and request parsing answer before that lookup. For a first request this
+ * still means nothing was created, as there is no earlier commit to hide. For a replay it says
+ * nothing about the original request, which may have committed.
+ */
+const FIRST_SEND_CODES = new Set<number>([...AFTER_LOOKUP_CODES, ERROR_CODE.NOT_LOGGED_IN, ERROR_CODE.USER_UNAUTHORIZED]);
+const FIRST_SEND_STATUSES = new Set([400, 401, 403, 409, 422]);
 const UNREADABLE_DRAFT = 'UnreadableWorkspaceCreationDraft';
 
 /** Storage holds a saved request this version cannot read; only Discard clears it. */
@@ -62,24 +67,29 @@ function httpStatusOf(error: unknown): number | undefined {
 function settleFailure(error: unknown, firstSend: boolean): { release: boolean; error: unknown } {
   const code = getAPIErrorCode(error);
   const status = httpStatusOf(error);
+  // A bare HTTP status is copied into `code`; only a different value is a code the server sent.
+  const serverCode = code !== undefined && code !== status ? code : undefined;
+  const keep = { release: false, error: new Error(t('workspaceCreation.notConfirmed'), { cause: error }) };
 
   if (isUnsupportedRouteError(error)) {
     // A first request that reaches a node without the keyed route created nothing. A later 404 may
     // come from an old node after an earlier attempt committed on a current one.
     return firstSend
       ? { release: true, error: new Error(t('workspaceCreation.tryAgainLater'), { cause: error }) }
-      : { release: false, error: new Error(t('workspaceCreation.notConfirmed'), { cause: error }) };
+      : keep;
   }
 
-  if (code === ERROR_CODE.NOT_HAS_PERMISSION || status === 403) {
+  const definitive = firstSend
+    ? (serverCode !== undefined && FIRST_SEND_CODES.has(serverCode)) ||
+      (status !== undefined && FIRST_SEND_STATUSES.has(status))
+    : serverCode !== undefined && AFTER_LOOKUP_CODES.has(serverCode);
+
+  if (!definitive) return keep;
+  if (serverCode === ERROR_CODE.NOT_HAS_PERMISSION || status === 403) {
     return { release: true, error: new Error(t('workspaceCreation.denied'), { cause: error }) };
   }
 
-  if ((code !== undefined && DEFINITIVE_CODES.has(code)) || (status !== undefined && DEFINITIVE_STATUSES.has(status))) {
-    return { release: true, error };
-  }
-
-  return { release: false, error: new Error(t('workspaceCreation.notConfirmed'), { cause: error }) };
+  return { release: true, error };
 }
 
 /**

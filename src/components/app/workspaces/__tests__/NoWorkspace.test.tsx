@@ -219,6 +219,20 @@ test('an unconfirmed request is settled from the page: Check again replays it an
   expect(mockRefresh).toHaveBeenCalled();
 });
 
+test('Check again keeps an unconfirmed request when sign-in rejects the replay', async () => {
+  sessionStorage.setItem(draftKey, JSON.stringify({ requestId: 'request-1', name: 'Pending name' }));
+  mockCreation.canCreate = true;
+  mockCreate.mockRejectedValueOnce({ code: 401, httpStatus: 401, message: 'Request failed with status code 401' });
+  mount();
+  fireEvent.click(screen.getByRole('button', { name: 'workspaceCreation.checkAgain' }));
+  await waitFor(() => expect(mockToastError).toHaveBeenCalledWith('workspaceCreation.notConfirmed'));
+  expect(mockCreate).toHaveBeenCalledWith({ workspace_name: 'Pending name' }, { replay: 'request-1' });
+  // The original request may have committed, so a new creation is not offered.
+  expect(screen.getByText('workspaceCreation.notConfirmed')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'workspace.create' })).toBeNull();
+  expect(JSON.parse(sessionStorage.getItem(draftKey) ?? 'null')).toEqual({ requestId: 'request-1', name: 'Pending name' });
+});
+
 test('Check again finishes an unconfirmed request and opens its workspace', async () => {
   sessionStorage.setItem(draftKey, JSON.stringify({ requestId: 'request-1', name: 'Pending name' }));
   mockCreate.mockResolvedValueOnce('recovered-workspace');
