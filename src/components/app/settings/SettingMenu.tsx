@@ -1,10 +1,10 @@
-import { Shield } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { SettingMenuItem } from '@/application/types';
 import { ReactComponent as ManageDataIcon } from '@/assets/icons/database.svg';
 import { ReactComponent as ConnectionsIcon } from '@/assets/icons/link.svg';
+import { ReactComponent as PermissionsIcon } from '@/assets/icons/lock.svg';
 import { ReactComponent as ProfileIcon } from '@/assets/icons/person.svg';
 import { ReactComponent as BillingIcon } from '@/assets/icons/settings_credit_card.svg';
 import { ReactComponent as PlanIcon } from '@/assets/icons/settings_plan.svg';
@@ -46,7 +46,7 @@ function SettingMenu({ selectedItem, onSelectItem, showBilling = false }: Settin
       {
         value: SettingMenuItem.PERMISSIONS,
         label: t('workspacePermissions.title'),
-        IconComponent: Shield,
+        IconComponent: PermissionsIcon,
       },
       {
         value: SettingMenuItem.CONNECTIONS,

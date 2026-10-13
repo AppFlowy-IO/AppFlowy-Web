@@ -7,7 +7,7 @@ import { SettingMenuItem } from '@/application/types';
 import { useCurrentWorkspaceId, useIsOfficialHosted, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { AccountAppPanel } from '@/components/app/settings/AccountAppPanel';
 import { ManageDataPanel } from '@/components/app/settings/ManageDataPanel';
-import { MembersPanel } from '@/components/app/settings/MembersPanel';
+import { MembersPanel, type PeopleTab } from '@/components/app/settings/MembersPanel';
 import { ProfilePanel } from '@/components/app/settings/ProfilePanel';
 import SettingMenu from '@/components/app/settings/SettingMenu';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
@@ -41,6 +41,17 @@ export function SettingsDialog({ open, onClose, onRequestOpen }: SettingsDialogP
   const currentUser = useCurrentUserOptional();
   const isOfficialHosted = useIsOfficialHosted();
   const [selectedItem, setSelectedItem] = useState<SettingMenuItem>(SettingMenuItem.ACCOUNT);
+  // Set only when another panel links straight to a People tab (Permissions > Manage groups).
+  const [peopleTab, setPeopleTab] = useState<PeopleTab>();
+
+  const selectItem = useCallback((item: SettingMenuItem) => {
+    setPeopleTab(undefined);
+    setSelectedItem(item);
+  }, []);
+  const openGroups = useCallback(() => {
+    setPeopleTab('groups');
+    setSelectedItem(SettingMenuItem.MEMBERS);
+  }, []);
 
   const currentWorkspace = useMemo(
     () => userWorkspaceInfo?.workspaces.find((workspace) => workspace.id === workspaceId),
@@ -59,6 +70,7 @@ export function SettingsDialog({ open, onClose, onRequestOpen }: SettingsDialogP
     const item = search.get('setting') as SettingMenuItem | null;
 
     if (item) {
+      setPeopleTab(undefined);
       setSelectedItem(item);
       onRequestOpen?.();
       setSearch((prev) => {
@@ -89,14 +101,14 @@ export function SettingsDialog({ open, onClose, onRequestOpen }: SettingsDialogP
       onClose={onClose}
       PaperProps={{ 'data-testid': 'settings-dialog' }}
     >
-      <SettingMenu onSelectItem={setSelectedItem} selectedItem={selectedItem} showBilling={showBilling} />
+      <SettingMenu onSelectItem={selectItem} selectedItem={selectedItem} showBilling={showBilling} />
       <div className='flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden'>
         {selectedItem === SettingMenuItem.ACCOUNT && <AccountAppPanel />}
         {selectedItem === SettingMenuItem.PROFILE && <ProfilePanel />}
-        {selectedItem === SettingMenuItem.MEMBERS && <MembersPanel />}
+        {selectedItem === SettingMenuItem.MEMBERS && <MembersPanel initialTab={peopleTab} />}
         {open && selectedItem === SettingMenuItem.PERMISSIONS && workspaceId && (
           <Suspense fallback={<PanelFallback label={t('workspacePermissions.loading')} />}>
-            <WorkspacePermissionsPanel key={workspaceId} workspaceId={workspaceId} />
+            <WorkspacePermissionsPanel key={workspaceId} workspaceId={workspaceId} onOpenGroups={openGroups} />
           </Suspense>
         )}
         {selectedItem === SettingMenuItem.MANAGE_DATA && <ManageDataPanel onImport={handleImport} />}
