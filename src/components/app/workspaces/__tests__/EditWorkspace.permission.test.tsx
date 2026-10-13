@@ -38,3 +38,18 @@ test('a late completion cannot close a replacement account dialog', async () => 
   await act(async () => { resolve(); });
   expect(close).not.toHaveBeenCalled();
 });
+
+test('a dialog kept mounted while closed reopens with the suggested name it would show on first open', () => {
+  const { rerender } = render(<EditWorkspace open={false} openOnChange={jest.fn()} />);
+
+  rerender(<EditWorkspace open openOnChange={jest.fn()} />);
+  expect((screen.getByRole('textbox')).value).toBe("Test's Workspace");
+});
+
+test('a secondary action sits in the footer beside the dialog buttons', () => {
+  const discard = jest.fn();
+
+  render(<EditWorkspace open openOnChange={jest.fn()} secondaryAction={<button onClick={discard}>Discard</button>} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+  expect(discard).toHaveBeenCalledTimes(1);
+});

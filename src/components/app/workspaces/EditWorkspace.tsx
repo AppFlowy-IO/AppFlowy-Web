@@ -18,6 +18,7 @@ function EditWorkspace({
   title,
   canSubmit = true,
   nameReadOnly = false,
+  secondaryAction,
   children,
 }: {
   defaultName?: string;
@@ -28,6 +29,8 @@ function EditWorkspace({
   title?: string;
   canSubmit?: boolean;
   nameReadOnly?: boolean;
+  /** Shown at the start of the footer, e.g. Discard for a saved request. */
+  secondaryAction?: ReactNode;
   children?: ReactNode;
 }) {
   const { t } = useTranslation();
@@ -40,7 +43,9 @@ function EditWorkspace({
     return () => { mounted.current = false; };
   }, []);
 
-  const [name, setName] = useState(defaultName || `${currentUser?.name}'s Workspace`);
+  // A dialog kept mounted while closed must reopen with the same suggestion it first showed.
+  const initialName = defaultName || (currentUser?.name ? `${currentUser.name}'s Workspace` : '');
+  const [name, setName] = useState(initialName);
 
   const handleCreate = useCallback(async () => {
     if (!canSubmit || loading || !name.trim()) return;
@@ -58,7 +63,7 @@ function EditWorkspace({
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    if (!open) setName(defaultName || '');
+    if (!open) setName(initialName);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -105,17 +110,20 @@ function EditWorkspace({
           />
         </div>
       </div>
-      <div className='flex w-full justify-end gap-3 mt-4'>
-        <Button variant='outline' onClick={() => openOnChange?.(false)}>
-          {t('button.cancel')}
-        </Button>
-        <Button
-          disabled={!name.trim() || !canSubmit || loading}
-          loading={loading}
-          onClick={() => void handleCreate()}
-        >
-          {okText || t('workspace.create')}
-        </Button>
+      <div className='mt-4 flex w-full items-center gap-3'>
+        {secondaryAction}
+        <div className='ml-auto flex gap-3'>
+          <Button variant='outline' onClick={() => openOnChange?.(false)}>
+            {t('button.cancel')}
+          </Button>
+          <Button
+            disabled={!name.trim() || !canSubmit || loading}
+            loading={loading}
+            onClick={() => void handleCreate()}
+          >
+            {okText || t('workspace.create')}
+          </Button>
+        </div>
       </div>
     </NormalModal>
   );

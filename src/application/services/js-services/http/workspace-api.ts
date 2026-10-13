@@ -9,6 +9,7 @@ import {
   FolderView,
   GuestConversionCodeInfo,
   GuestInvitation,
+  Invitation,
   MentionablePerson,
   MentionSearchRequest,
   MentionSearchResponse,
@@ -174,6 +175,41 @@ export async function createWorkspace(payload: CreateWorkspacePayload, options: 
 
   scope.assertCurrent();
   return data.workspace_id;
+}
+
+function toPendingInvitation(value: unknown): Invitation | undefined {
+  if (!value || typeof value !== 'object') return;
+  const raw = value as Record<string, unknown>;
+  const text = (field: unknown) => (typeof field === 'string' ? field : '');
+
+  if (typeof raw.invite_id !== 'string' || typeof raw.workspace_id !== 'string' || raw.status !== 'Pending') return;
+  return {
+    invite_id: raw.invite_id,
+    workspace_id: raw.workspace_id,
+    workspace_name: text(raw.workspace_name),
+    inviter_name: text(raw.inviter_name),
+    inviter_email: text(raw.inviter_email),
+    inviter_icon: text(raw.inviter_icon),
+    workspace_icon: text(raw.workspace_icon),
+    member_count: typeof raw.member_count === 'number' ? raw.member_count : 0,
+    status: 'Pending',
+  };
+}
+
+/** Pending invitations addressed to the signed-in account, so it can join without the link. */
+export async function listPendingWorkspaceInvitations(): Promise<Invitation[]> {
+  const scope = captureApiContext();
+  const data = await executeAPIRequest<unknown>(() =>
+    scope.client?.get<APIResponse<unknown>>('/api/workspace/invite', { params: { status: 'Pending' } })
+  );
+
+  scope.assertCurrent();
+  if (!Array.isArray(data)) throw new Error('Invalid workspace invitation list');
+  return data.flatMap((value) => {
+    const invitation = toPendingInvitation(value);
+
+    return invitation ? [invitation] : [];
+  });
 }
 
 export async function getWorkspaces(): Promise<Workspace[]> {
