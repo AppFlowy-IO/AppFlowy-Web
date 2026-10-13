@@ -4,6 +4,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { ReactComponent as AppflowyLogo } from '@/assets/icons/appflowy.svg';
 import Import from '@/components/_shared/more-actions/importer/Import';
+import { useWorkspaceCreationCapability } from '@/components/app/hooks/useWorkspaceCreationCapability';
+import { WorkspaceCreationNotice } from '@/components/app/workspaces/WorkspaceCreationNotice';
 import { Button } from '@/components/ui/button';
 
 /**
@@ -14,6 +16,9 @@ function ImportPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [search, setSearch] = useSearchParams();
+  const creation = useWorkspaceCreationCapability();
+  // Before sign-in or while the answer is unknown, the importer itself explains what is possible.
+  const denied = creation.status === 'ready' && !creation.canCreate;
   const redirectTo = search.get('redirectToImport');
   const initialSource = useRef(search.get('source'));
   const onSuccess = useCallback(() => {
@@ -44,12 +49,20 @@ function ImportPage() {
       <main className='flex flex-1 items-center justify-center px-6'>
         <div className='flex w-full max-w-[400px] flex-col gap-4 text-center'>
           <h1 className='text-xl font-semibold text-text-primary'>{t('workspaceCreation.importWorkspace')}</h1>
-          <p className='text-sm text-text-secondary'>{t('workspaceCreation.importPageHint')}</p>
+          {denied ? (
+            <div className='text-left'>
+              <WorkspaceCreationNotice capability={creation} />
+            </div>
+          ) : (
+            <p className='text-sm text-text-secondary'>{t('workspaceCreation.importPageHint')}</p>
+          )}
           <div className='flex flex-col gap-2'>
-            <Button size='lg' onClick={openImporter}>
-              {t('workspaceCreation.importWorkspace')}
-            </Button>
-            <Button size='lg' variant='outline' onClick={openApp}>
+            {!denied && (
+              <Button size='lg' onClick={openImporter}>
+                {t('workspaceCreation.importWorkspace')}
+              </Button>
+            )}
+            <Button size='lg' variant={denied ? 'default' : 'outline'} onClick={openApp}>
               {t('invitation.openWorkspace')}
             </Button>
           </div>

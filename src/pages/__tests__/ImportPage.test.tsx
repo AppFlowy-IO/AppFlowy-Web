@@ -36,42 +36,51 @@ function AppLocation() {
   return <output data-testid='app-location'>{location.pathname}</output>;
 }
 
-test('a denied account can close the direct importer and continue to its workspaces', async () => {
-  render(
-    <MemoryRouter
-      initialEntries={['/import?action=import&source=notion']}
-      future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
-    >
+function mountAt(entry: string) {
+  return render(
+    <MemoryRouter initialEntries={[entry]} future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
       <Routes>
         <Route path='/import' element={<ImportPage />} />
         <Route path='/app' element={<AppLocation />} />
       </Routes>
     </MemoryRouter>
   );
+}
+
+beforeEach(() => {
+  Object.assign(mockCreation, { status: 'ready', canCreate: false });
+});
+
+test('a denied account can close the direct importer and continue to its workspaces', async () => {
+  mountAt('/import?action=import&source=notion');
 
   const dialog = await screen.findByRole('dialog');
 
   expect(within(dialog).getByText('workspaceCreation.denied')).toBeTruthy();
   fireEvent.click(within(dialog).getByRole('button', { name: 'button.close' }));
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-  // The page itself explains the choice and leads to the app instead of a blank screen.
-  expect(screen.getByText('workspaceCreation.importPageHint')).toBeTruthy();
+  // The page itself gives the reason and leads to the app instead of reopening the same dead end.
+  expect(screen.getByText('workspaceCreation.denied')).toBeTruthy();
+  expect(screen.queryByText('workspaceCreation.importPageHint')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'workspaceCreation.importWorkspace' })).toBeNull();
   fireEvent.click(screen.getAllByRole('button', { name: 'invitation.openWorkspace' }).at(-1)!);
   expect((await screen.findByTestId('app-location')).textContent).toBe('/app');
 });
 
+test.each(['loading', 'error'])(
+  'while the answer is %s, the page keeps the importer, which explains itself',
+  (status) => {
+    Object.assign(mockCreation, { status, canCreate: false });
+    mountAt('/import');
+    expect(screen.queryByText('workspaceCreation.denied')).toBeNull();
+    expect(screen.getByText('workspaceCreation.importPageHint')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'workspaceCreation.importWorkspace' })).toBeTruthy();
+  }
+);
+
 test('the importer can be opened again from the page with the original source', async () => {
   mockCreation.canCreate = true;
-  render(
-    <MemoryRouter
-      initialEntries={['/import?action=import&source=confluence']}
-      future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
-    >
-      <Routes>
-        <Route path='/import' element={<ImportPage />} />
-      </Routes>
-    </MemoryRouter>
-  );
+  mountAt('/import?action=import&source=confluence');
 
   fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'button.close' }));
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
