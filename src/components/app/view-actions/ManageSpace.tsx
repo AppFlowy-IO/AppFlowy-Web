@@ -3,7 +3,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import { APP_EVENTS } from '@/application/constants';
+import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import { WorkspaceService } from '@/application/services/domains';
 import { captureApiContext } from '@/application/services/js-services/http/request-context';
 import { setSpaceMemberAccessOverride, SpaceAssignmentPrincipal } from '@/application/services/js-services/space-member-assignment';
@@ -62,7 +62,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
-import { getErrorMessage, isUnsupportedRouteError } from '@/utils/errors';
+import { getBillingErrorMessage } from '@/utils/billing-error';
+import { getAPIErrorCode, getErrorMessage, isUnsupportedRouteError } from '@/utils/errors';
 import { getConfigValue } from '@/utils/runtime-config';
 
 import type { TFunction } from 'i18next';
@@ -226,12 +227,43 @@ function workspaceRoleLabel(role: Role | undefined, t: TFunction): string | null
   }
 }
 
-function manageSpaceErrorMessage(error: unknown, fallback: string, t: TFunction): string {
-  const message = getErrorMessage(error, fallback);
+// Answers meaning the user can no longer see or change what they acted on:
+// lost rights, a removed member or group, or a deleted space.
+const ACCESS_DENIED_CODES = new Set<number>([
+  ERROR_CODE.RECORD_NOT_FOUND,
+  ERROR_CODE.NOT_LOGGED_IN,
+  ERROR_CODE.NOT_HAS_PERMISSION,
+  ERROR_CODE.USER_UNAUTHORIZED,
+  401,
+  403,
+  404,
+]);
 
-  return message.toLowerCase().includes(LAST_EXPLICIT_OWNER_ERROR)
+function isAccessDeniedError(error: unknown): boolean {
+  if (isUnsupportedRouteError(error)) return false;
+  const code = getAPIErrorCode(error);
+  const httpStatus = typeof error === 'object' && error !== null ? (error as { httpStatus?: unknown }).httpStatus : undefined;
+
+  return (code !== undefined && ACCESS_DENIED_CODES.has(code)) || httpStatus === 401 || httpStatus === 403;
+}
+
+/**
+ * Toast copy for a failed request. Server text can name internal IDs ("user 42
+ * cannot manage members for space …"), so a server answer gets the caller's
+ * plain copy. Errors raised by this client already carry plain copy.
+ */
+function plainErrorMessage(error: unknown, fallback: string, deniedMessage = fallback): string {
+  const billingMessage = getBillingErrorMessage(error);
+
+  if (billingMessage) return billingMessage;
+  if (getAPIErrorCode(error) === undefined) return error instanceof Error && error.message ? error.message : fallback;
+  return isAccessDeniedError(error) ? deniedMessage : fallback;
+}
+
+function manageSpaceErrorMessage(error: unknown, fallback: string, t: TFunction): string {
+  return getErrorMessage(error, fallback).toLowerCase().includes(LAST_EXPLICIT_OWNER_ERROR)
     ? t('space.permissionManager.lastOwnerRequired')
-    : message;
+    : plainErrorMessage(error, fallback);
 }
 
 function displayNameForMember(member: SpaceMember, t: TFunction): string {
@@ -644,7 +676,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       // Keep an already-loaded roster interactive when only a post-mutation
       // revalidation fails. Initial loads start with this flag cleared. A
       // silent reconciliation follows an error the user was already told about.
-      if (!silent) toast.error(getErrorMessage(error, t('space.permissionManager.loadSpaceMembersFailed')));
+      if (!silent) toast.error(plainErrorMessage(error, t('space.permissionManager.loadSpaceMembersFailed')));
       return false;
     } finally {
       if (isCurrentRequest()) setLoadingMembers(false);
@@ -778,7 +810,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
             setWorkspaceGroups([]);
           }
 
-          toast.error(getErrorMessage(error, t('space.permissionManager.loadSpaceSettingsFailed')));
+          toast.error(plainErrorMessage(error, t('space.permissionManager.loadSpaceSettingsFailed')));
         }
       } finally {
         if (isCurrentSettingsRequest()) {
@@ -802,7 +834,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
           if (isCurrentSettingsRequest()) setWorkspaceMembers(workspaceMemberList);
         } catch (error) {
           if (isCurrentSettingsRequest()) {
-            toast.error(getErrorMessage(error, t('space.permissionManager.loadSpaceMembersFailed')));
+            toast.error(plainErrorMessage(error, t('space.permissionManager.loadSpaceMembersFailed')));
           }
         }
       };
@@ -821,7 +853,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
           // Groups are an optional add target; people can still be added when
           // the group listing is unavailable (e.g. an older server).
           if (isCurrentSettingsRequest() && !isUnsupportedRouteError(error)) {
-            toast.error(getErrorMessage(error, t('space.permissionManager.loadSpaceMembersFailed')));
+            toast.error(plainErrorMessage(error, t('space.permissionManager.loadSpaceMembersFailed')));
           }
         }
       };
@@ -980,7 +1012,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
             }
 
             loadedSpaceMetadataRef.current = rolledBack;
-            toast.error(getErrorMessage(error, t('space.error.updateSpace')));
+            toast.error(plainErrorMessage(error, t('space.error.updateSpace')));
           }
         });
 
@@ -1104,7 +1136,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
           // baseline and never included the rejected change; keep them.
           if (confirmedSettingsVersionRef.current === confirmedVersion) setPermissionSettings(previousPermission);
 
-          toast.error(getErrorMessage(error, t('space.error.updateSpace')));
+          toast.error(plainErrorMessage(error, t('space.error.updateSpace')));
         }
 
         return false;
@@ -1236,7 +1268,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         toast.success(t('space.permissionManager.addSpaceMemberSuccess'));
       } catch (error) {
         if (spaceRequestRef.current.generation === requestGeneration) {
-          toast.error(getErrorMessage(error, t('space.permissionManager.addSpaceMemberFailed')));
+          toast.error(plainErrorMessage(error, t('space.permissionManager.addSpaceMemberFailed')));
         }
       } finally {
         if (spaceRequestRef.current.generation === requestGeneration) setAddingUid(null);
@@ -1289,7 +1321,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         toast.success(t('space.permissionManager.addSpaceGroupSuccess'));
       } catch (error) {
         if (spaceRequestRef.current.generation === requestGeneration) {
-          toast.error(getErrorMessage(error, t('space.permissionManager.addSpaceGroupFailed')));
+          toast.error(plainErrorMessage(error, t('space.permissionManager.addSpaceGroupFailed')));
         }
       } finally {
         if (spaceRequestRef.current.generation === requestGeneration) setAddingGroupId(null);
@@ -1668,7 +1700,9 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         // Roll back to the last confirmed value, then reconcile this list with
         // the server without reloading the dialog (the outcome may be unknown).
         setAccessOverridePending(key, undefined);
-        toast.error(getErrorMessage(error, t('space.memberOverride.updateFailed')));
+        toast.error(
+          plainErrorMessage(error, t('space.memberOverride.updateFailed'), t('space.memberOverride.unavailable'))
+        );
         void refreshSpaceMembers({ silent: true });
       } finally {
         if (spaceRequestRef.current.generation === generation) {

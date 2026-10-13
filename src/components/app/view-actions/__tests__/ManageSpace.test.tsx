@@ -424,6 +424,26 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+// What the HTTP layer rejects with: the server's own text names internal IDs.
+const SPACE_UUID = '3fa85f64-5717-4562-b3fc-2c963f66afa6';
+const deniedApiError = {
+  code: 1012,
+  httpStatus: 403,
+  message: `user 42 cannot manage members for space ${SPACE_UUID}`,
+};
+const notFoundApiError = {
+  code: -2,
+  httpStatus: 404,
+  message: `Record not found:space member 42 not found in space ${SPACE_UUID}`,
+};
+const networkApiError = { code: -1, message: 'Network Error' };
+
+function expectNoServerTextInToasts() {
+  for (const [message] of [...(toast.error as jest.Mock).mock.calls, ...(toast.success as jest.Mock).mock.calls]) {
+    expect(String(message)).not.toMatch(/\b42\b|3fa85f64|Network Error|Record not found/);
+  }
+}
+
 function visibilityOption(visibility: SpaceVisibility) {
   return screen.getByTestId(`manage-space-visibility-option-${visibility}`);
 }
@@ -656,10 +676,12 @@ describe('ManageSpace ACL management', () => {
       await waitFor(() => expect(trigger.textContent).toBe('space.memberOverride.levels.canView'));
 
       await act(async () => {
-        save.reject(new Error('Access was changed by someone else'));
+        // Another owner removed this manager's rights while the save was in flight.
+        save.reject(deniedApiError);
       });
 
-      await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Access was changed by someone else'));
+      await waitFor(() => expect(toast.error).toHaveBeenCalledWith('space.memberOverride.unavailable'));
+      expectNoServerTextInToasts();
       await waitFor(() => expect(trigger.textContent).toBe(inheritEditLabel));
       await waitFor(() => expect((trigger as HTMLButtonElement).disabled).toBe(false));
       // The roster is reconciled quietly in the background; the rows never leave the screen.
@@ -683,6 +705,30 @@ describe('ManageSpace ACL management', () => {
       fireEvent.click(screen.getByTestId(`space-member-access-${member.uid}-option-${AccessLevel.ReadAndComment}`));
 
       await waitFor(() => expect(toast.error).toHaveBeenCalledWith('space.memberOverride.updateFailed'));
+      await waitFor(() => expect(accessTrigger(member.uid).textContent).toBe(inheritEditLabel));
+    });
+
+    it.each([
+      ['a lost right', deniedApiError, 'space.memberOverride.unavailable'],
+      ['a removed member', notFoundApiError, 'space.memberOverride.unavailable'],
+      ['a network failure', networkApiError, 'space.memberOverride.updateFailed'],
+      ['a server failure', { code: 500, httpStatus: 500, message: 'Internal error: pool timed out' }, 'space.memberOverride.updateFailed'],
+      // The service's own checks already speak plainly.
+      ['a stale capability', new Error('space.memberOverride.contextChanged'), 'space.memberOverride.contextChanged'],
+    ])('shows plain copy instead of server text after %s', async (_case, error, expected) => {
+      const member = assignedMember();
+
+      mockGetSpacePermission.mockResolvedValue(supportedPermission());
+      mockGetSpaceMembers.mockResolvedValue({ members: [member], groups: [] });
+      mockSetOverride.mockRejectedValue(error);
+      await openMembersTab();
+      await screen.findByTestId(`space-member-access-${member.uid}`);
+
+      fireEvent.click(screen.getByTestId(`space-member-access-${member.uid}-option-${AccessLevel.ReadOnly}`));
+
+      await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expected));
+      expect(toast.error).toHaveBeenCalledTimes(1);
+      expectNoServerTextInToasts();
       await waitFor(() => expect(accessTrigger(member.uid).textContent).toBe(inheritEditLabel));
     });
 
@@ -1746,6 +1792,39 @@ describe('ManageSpace ACL management', () => {
     await waitFor(() => expect((screen.getByTestId('space-sidebar-policy')).disabled).toBe(false));
   });
 
+  it('shows plain copy when the server rejects a settings save', async () => {
+    const permission = { ...customPermission, sidebar_edit_policy: SpaceSidebarEditPolicy.OwnersOnly };
+
+    mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission }));
+    mockUpdateStructuredSpace.mockRejectedValueOnce({
+      ...deniedApiError,
+      message: `user 42 cannot update policy for space ${SPACE_UUID}`,
+    });
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+    await waitForSettingsLoaded();
+
+    fireEvent.click(screen.getByTestId(`space-sidebar-policy-option-${SpaceSidebarEditPolicy.MembersAndOwners}`));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('space.error.updateSpace'));
+    expectNoServerTextInToasts();
+    expect(screen.getByTestId('space-sidebar-policy').textContent).toBe('workspacePermissions.sidebarOwners');
+  });
+
+  it('shows plain copy when the settings or the member list cannot be loaded', async () => {
+    mockGetSpacePermission.mockRejectedValueOnce({ ...deniedApiError, message: `user 42 cannot read space ${SPACE_UUID}` });
+    const { unmount } = render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('space.permissionManager.loadSpaceSettingsFailed'));
+    unmount();
+
+    mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: customPermission }));
+    mockGetSpaceMembers.mockRejectedValueOnce({ ...deniedApiError, message: `user 42 cannot list members for space ${SPACE_UUID}` });
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('space.permissionManager.loadSpaceMembersFailed'));
+    expectNoServerTextInToasts();
+  });
+
   // A permission notification can arrive while a save is in flight, e.g. the
   // concurrent demotion that also makes the save fail. The rejection must
   // still be reported, and the rejected value must never stay on screen.
@@ -2451,6 +2530,32 @@ describe('ManageSpace ACL management', () => {
       );
 
       await waitFor(() => expect(toast.error).toHaveBeenCalledWith('space.permissionManager.lastOwnerRequired'));
+    });
+
+    it.each([
+      ['a lost right', deniedApiError, 'space.permissionManager.updateSpaceMemberFailed'],
+      [
+        'the last owner rule',
+        { code: 1008, httpStatus: 400, message: 'Invalid request:space must keep at least one explicit owner' },
+        'space.permissionManager.lastOwnerRequired',
+      ],
+    ])('explains a rejected role change after %s without server text', async (_case, error, expected) => {
+      const member = creatorMember();
+
+      mockGetSpaceMembers.mockResolvedValue({ members: [member], groups: [] });
+      mockUpdateSpaceMember.mockRejectedValueOnce(error);
+      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+      const row = await screen.findByTestId(`space-member-row-${member.uid}`);
+
+      fireEvent.click(
+        within(row).getByRole('button', {
+          name: 'space.permissionManager.member space.permissionManager.memberRoleDescription',
+        })
+      );
+
+      await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expected));
+      expectNoServerTextInToasts();
     });
 
     it('fetches active workspace members and defensively filters pending invitations', async () => {
