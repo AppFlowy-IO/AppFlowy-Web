@@ -70,6 +70,15 @@ overlap without asserting machine-dependent latency.
 
 ## Row-page opening and content indicator
 
+An explicitly opened row (side/center peek or full page) loads through the existing
+canonical row sync owner without waiting for the database-wide seed preload. A
+Pending blob diff can defer its next batch request for five seconds; that background
+wait must not delay the selected row's metadata or document creation. Other rows
+keep the batched path, including related rows requested from the open page.
+`Database.prefetch-lifecycle.test.tsx` checks this priority, deduplication and
+workspace changes; `atomic-row-document.spec.ts` holds the bulk response while the
+user opens, edits and reopens the selected row.
+
 A missing writable row page uses `contribution: { kind: "default_schema",
 schema_version: "v1" }`. The server owns the blank schema; Web sends no document
 body or synthetic text action. Loading remains visible until the receipt, current

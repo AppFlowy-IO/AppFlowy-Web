@@ -83,6 +83,59 @@ function expectDefaultSchema(command: string) {
   expect(JSON.parse(command).contribution).toEqual({ kind: 'default_schema', schema_version: 'v1' });
 }
 
+test('side peek opens its row while the database bulk preload is still pending', async ({ page, request }) => {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let bulkRequests = 0;
+
+  await page.route('**/database/*/blob/diff', async (route) => {
+    bulkRequests++;
+    await held;
+    await route.continue();
+  });
+  try {
+    await signInAndWaitForApp(page, request, `row_peek_priority_${generateRandomEmail()}`, 0);
+    await createDatabaseView(page, 'Grid', 0);
+    await expect(DatabaseGridSelectors.dataRows(page)).toHaveCount(3);
+    const rowId = (await DatabaseGridSelectors.dataRows(page).first().getAttribute('data-testid'))!.replace(
+      'grid-row-',
+      ''
+    );
+
+    await expect.poll(() => bulkRequests).toBeGreaterThan(0);
+    await openRowDetailByRowId(page, rowId);
+    await expect(RowDetailSelectors.modal(page)).toHaveAttribute('data-peek-mode', 'side');
+    const editor = editorForRow(page);
+
+    // The clicked row must acquire its own current state. Releasing the bulk
+    // response first would hide the five-second Pending retry regression.
+    await expect(editor).toBeVisible();
+    const text = 'The opened row is ready before background preload.';
+
+    await editor.fill(text);
+    await expect(editor).toContainText(text);
+    await closeRowDetailWithEscape(page);
+    await expect(rowIcon(page, rowId)).toBeVisible();
+    release();
+    await openRowDetailByRowId(page, rowId);
+    await expect(editor).toContainText(text);
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: 'wait' });
+    const token = await page.evaluate(() => JSON.parse(localStorage.getItem('token') || '{}').access_token);
+
+    if (token) {
+      const response = await request.delete(`${TestConfig.apiUrl}/api/user`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      expect(response.ok(), 'remove the disposable side-peek test account').toBe(true);
+    }
+  }
+});
+
 test('opening an untouched row waits for the server document; body content alone controls its icon', async ({
   page,
   request,
