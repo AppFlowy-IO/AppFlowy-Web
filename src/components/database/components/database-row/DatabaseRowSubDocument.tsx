@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as Y from 'yjs';
 
+import { AtomicCreationPendingError } from '@/application/atomic-creation/journal';
 import {
   FieldType,
   getRowTimeString,
@@ -14,12 +15,12 @@ import {
 import { resolveUserAttributionUid, touchRowAttribution } from '@/application/database-yjs/attribution';
 import { getCellDataText } from '@/application/database-yjs/cell.parse';
 import { useUpdateRowMetaDispatch } from '@/application/database-yjs/dispatch';
-import { hasPendingAtomicRowFirstBody, prepareAtomicRowFirstBody } from '@/application/row-document/atomic-first-body';
-import { createFirstBodyDraft } from '@/application/row-document/first-body-actions';
-import { FirstBodyOwner } from '@/application/row-document/first-body-owner';
+import { getMetaIdMap } from '@/application/database-yjs/row_meta';
 import { deleteCollabDB, openCollabDB } from '@/application/db';
-import { getCachedRowSubDoc, trackRowDocEnsure } from '@/application/services/js-services/cache';
+import { hasPendingAtomicRowFirstBody, prepareAtomicRowFirstBody } from '@/application/row-document/atomic-first-body';
+import { getCachedRowSubDoc } from '@/application/services/js-services/cache';
 import { YjsEditor } from '@/application/slate-yjs';
+import type { YHistoryEditor } from '@/application/slate-yjs/plugins/withHistory';
 import { dataStringTOJson } from '@/application/slate-yjs/utils/yjs';
 import {
   BlockType,
@@ -38,11 +39,9 @@ import { isPermissionDeniedError } from '@/application/utils/error-utils';
 import { EditorSkeleton } from '@/components/_shared/skeleton/EditorSkeleton';
 import { useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
 import { Editor } from '@/components/editor';
+import type { EditorContentPadding } from '@/components/editor/EditorContext';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Log } from '@/utils/log';
-import { getErrorMessage } from '@/utils/errors';
-
-import type { EditorContentPadding } from '@/components/editor/EditorContext';
 
 type ContentNode = {
   type?: BlockType | string;
@@ -135,7 +134,9 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
 }: DatabaseRowSubDocumentProps) {
   const { t } = useTranslation();
   const meta = useRowMetaSelector(rowId);
-  const documentId = meta?.documentId;
+  // The document identity is deterministic even before lazy Row metadata loads.
+  // Keep the loading/error surface available when that read cannot run offline.
+  const documentId = meta?.documentId ?? getMetaIdMap(rowId).get(RowMetaKey.DocumentId);
   const database = useDatabase();
   const row = useRowData(rowId) as YDatabaseRow | undefined;
   const currentUser = useCurrentUserOptional();
@@ -161,7 +162,6 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
 
   // Row document operations from context (mode-specific implementations)
   const loadRowDocument = context?.loadRowDocument;
-  const createRowDocument = context?.createRowDocument;
   const checkIfRowDocumentExists = context?.checkIfRowDocumentExists;
   const bindViewSync = context?.bindViewSync;
   const rowDocumentSource = useMemo<RowDocumentSourcePayload | undefined>(() => {
@@ -183,7 +183,6 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
   const lastIsEmptyRef = useRef<boolean | null>(null);
   const pendingMetaUpdateRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingAttributionUpdateRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingNonEmptyRef = useRef(false);
   const docReadyRef = useRef(false); // Track if document is loaded to prevent retry timer from resetting it
   // Tracks the documentId this component currently represents, and the one the
   // loaded `doc` actually belongs to. The request-generation guard below only
@@ -192,7 +191,6 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
   // or binds the previous row's document.
   const activeDocumentIdRef = useRef<string | undefined>(documentId);
   const loadedDocumentIdRef = useRef<string | null>(null);
-  const rowDocEnsuredRef = useRef(false); // Track if row document has been ensured on server to avoid redundant API calls
 
   activeDocumentIdRef.current = documentId;
 
@@ -245,20 +243,17 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
 
   const [loading, setLoading] = useState(true);
   const [doc, setDoc] = useState<YDoc | null>(null);
-  const [firstBody, setFirstBody] = useState<FirstBodyOwner | null>(null);
-  const firstBodyRef = useRef<FirstBodyOwner | null>(null);
-  const [firstBodyBusy, setFirstBodyBusy] = useState(false);
-  const [firstBodyError, setFirstBodyError] = useState<string | null>(null);
+  const [retryAttempt, setRetryAttempt] = useState(0);
   const writableRef = useRef(!context?.readOnly && context?.canWrite !== false);
 
   writableRef.current = !context?.readOnly && context?.canWrite !== false;
   const retryLoadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const ensureDocRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadRequestGenerationRef = useRef(0);
   const deniedDocumentIdRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
   const [deniedDocumentId, setDeniedDocumentId] = useState<string | null>(null);
   const [failedDocumentId, setFailedDocumentId] = useState<string | null>(null);
+  const [offlineFailure, setOfflineFailure] = useState(false);
   const loadedDocMatchesCurrent = Boolean(doc && documentId && loadedDocumentIdRef.current === documentId);
   const noAccess = Boolean(documentId && deniedDocumentId === documentId);
 
@@ -270,8 +265,6 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
     docReadyRef.current = false;
     loadedDocumentIdRef.current = null;
     editorRef.current = null;
-    rowDocEnsuredRef.current = false;
-    pendingNonEmptyRef.current = false;
 
     if (pendingMetaUpdateRef.current) {
       clearTimeout(pendingMetaUpdateRef.current);
@@ -283,11 +276,6 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
       retryLoadTimerRef.current = null;
     }
 
-    if (ensureDocRetryTimerRef.current) {
-      clearTimeout(ensureDocRetryTimerRef.current);
-      ensureDocRetryTimerRef.current = null;
-    }
-
     setDoc(null);
     setLoading(false);
     setDeniedDocumentId(deniedId);
@@ -296,22 +284,17 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
 
   const document = loadedDocMatchesCurrent ? doc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.document) : null;
   // undefined = meta hasn't loaded from Yjs yet (wait)
-  // true = meta loaded, document is empty (open locally)
-  // false = meta loaded, document has content (load from server)
+  // Content metadata is separate from document existence: empty documents also load from the server.
   const isDocumentEmptyResolved = meta === null || meta === undefined ? undefined : meta.isEmptyDocument ?? true;
 
-  const isDocumentEmpty = useCallback(
-    (editor: YjsEditor) => {
-      // Only trust meta if it says NOT empty (false) - once content was added, it stays not-empty
-      // If meta says empty (true) or undefined, we must check actual content
-      if (meta?.isEmptyDocument === false) {
-        return false;
-      }
+  // A remote metadata transition invalidates local deduplication, but must never
+  // itself publish content state. Only accepted local document updates do that.
+  const latestIsEmptyRef = useRef(meta?.isEmptyDocument);
 
-      return !editor.children.some(hasEditorNodeContent);
-    },
-    [meta?.isEmptyDocument]
-  );
+  if (latestIsEmptyRef.current !== meta?.isEmptyDocument) {
+    lastIsEmptyRef.current = null;
+    latestIsEmptyRef.current = meta?.isEmptyDocument;
+  }
 
   const hasLocalDocContent = useCallback(
     async (documentId: string): Promise<boolean> => {
@@ -396,35 +379,8 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
           return 'retryable';
         }
 
-        // Log document state after loading
         const sharedRoot = doc.getMap(YjsEditorKey.data_section) as Y.Map<unknown>;
         const document = sharedRoot?.get(YjsEditorKey.document) as Y.Map<unknown> | undefined;
-        const docMeta = document?.get(YjsEditorKey.meta) as Y.Map<unknown> | undefined;
-        const textMap = docMeta?.get(YjsEditorKey.text_map) as Y.Map<Y.Text> | undefined;
-        const pageId = document?.get(YjsEditorKey.page_id);
-
-        let textCount = 0;
-        let sampleText = '';
-
-        if (textMap) {
-          for (const text of textMap.values()) {
-            const str = text?.toString() || '';
-
-            if (str.length > 0) {
-              textCount++;
-              if (!sampleText) sampleText = str.slice(0, 30);
-            }
-          }
-        }
-
-        Log.debug('[DatabaseRowSubDocument] handleOpenDocument loaded', {
-          rowId,
-          documentId,
-          pageId,
-          hasDocument: !!document,
-          textCount,
-          sampleText,
-        });
 
         // loadRowDocument can resolve with an empty local doc when the server
         // fetch failed (e.g. the row document doesn't exist yet). Binding to it
@@ -443,12 +399,12 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
         setDoc(doc);
         loadedDocumentIdRef.current = documentId;
         docReadyRef.current = true;
-        rowDocEnsuredRef.current = true; // Document exists on server since we loaded it successfully
         deniedDocumentIdRef.current = null;
         setDeniedDocumentId(null);
+        setLoading(false);
         return 'ready';
       } catch (e) {
-        if (isPermissionDeniedError(e)) {
+        if (isPermissionDeniedError(e instanceof AtomicCreationPendingError ? e.cause : e)) {
           // The server handles eligible legacy recovery during reads, so a final denial must
           // surface as no access instead of starting a separate create/repair request.
           if (isCurrent()) markPermissionDenied(documentId);
@@ -459,169 +415,60 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
           message: e instanceof Error ? e.message : String(e),
         });
         return 'retryable';
-      } finally {
-        if (isCurrent()) {
-          setLoading(false);
-        }
       }
     },
     [loadRowDocument, markPermissionDenied, rowDocumentSource, rowId]
   );
-  const openFirstBody = useCallback(async (isCurrent: IsCurrentRowDocumentRequest) => {
-    if (!workspaceId || !documentId || !rowDocumentSource || !context?.databaseDoc || !row?.doc || !writableRef.current) {
-      throw new Error('The row page cannot be created from this source.');
-    }
-
-    const session = await prepareAtomicRowFirstBody({
-      workspaceId, documentId, source: rowDocumentSource, databaseDoc: context.databaseDoc,
-      rowDoc: row.doc as YDoc, name: '',
-      assertWritable: () => {
-        if (!writableRef.current) throw new Error('The row page is no longer writable.');
-      },
-    });
-
-    if (!isCurrent()) { session.dispose(); return; }
-
-    if (session.pending) {
-      const current = await session.pending().finally(session.dispose);
-
-      if (!isCurrent()) return;
-      setDoc(current);
-      loadedDocumentIdRef.current = documentId;
-      docReadyRef.current = true;
-      rowDocEnsuredRef.current = true;
-      setLoading(false);
-      return;
-    }
-
-    try { session.admit(); } catch (error) { session.dispose(); throw error; }
-
-    const draft = createFirstBodyDraft(documentId);
-    const owner = new FirstBodyOwner(draft, {
-      assertCurrent: session.owner.assertCurrent,
-      assertEditable: session.admit,
-      publish: session.publish,
-      saveStaging: session.saveStaging,
-      onClosed: session.dispose,
-      onState: (_phase, error) => {
-        if (!mountedRef.current || firstBodyRef.current !== owner) return;
-        setFirstBodyBusy(owner.busy);
-        setFirstBodyError(error ? getErrorMessage(error) : null);
-      },
-      onActivated: (current) => {
-        if (!mountedRef.current || firstBodyRef.current !== owner || activeDocumentIdRef.current !== documentId) return;
-        rowDocEnsuredRef.current = true;
-        firstBodyRef.current = null;
-        setFirstBody(null);
-        setDoc(current as YDoc);
-        setFirstBodyBusy(false);
-        setFirstBodyError(null);
-        owner.detach();
-      },
-    });
-
-    firstBodyRef.current = owner;
-    setFirstBody(owner);
-    setDoc(draft);
-    loadedDocumentIdRef.current = documentId;
-    docReadyRef.current = true;
-    setLoading(false);
-  }, [context?.databaseDoc, documentId, row, rowDocumentSource, workspaceId]);
-
-  const scheduleEnsureRowDocumentExists = useCallback(() => {
-    if (
-      !documentId ||
-      activeDocumentIdRef.current !== documentId ||
-      deniedDocumentIdRef.current === documentId ||
-      ensureDocRetryTimerRef.current
-    ) {
-      return;
-    }
-
-    ensureDocRetryTimerRef.current = setTimeout(async () => {
-      ensureDocRetryTimerRef.current = null;
-
-      if (activeDocumentIdRef.current !== documentId || deniedDocumentIdRef.current === documentId) {
-        return;
+  const openCanonicalRowDocument = useCallback(
+    async (isCurrent: IsCurrentRowDocumentRequest) => {
+      if (
+        !workspaceId ||
+        !documentId ||
+        !rowDocumentSource ||
+        !context?.databaseDoc ||
+        !row?.doc ||
+        !writableRef.current
+      ) {
+        throw new Error('The row page cannot be created from this source.');
       }
+
+      const session = await prepareAtomicRowFirstBody({
+        workspaceId,
+        documentId,
+        source: rowDocumentSource,
+        databaseDoc: context.databaseDoc,
+        rowDoc: row.doc as YDoc,
+        name: '',
+        assertWritable: () => {
+          if (!writableRef.current) throw new Error('The row page is no longer writable.');
+        },
+      });
 
       try {
-        const exists = checkIfRowDocumentExists ? await checkIfRowDocumentExists(documentId) : false;
+        if (!isCurrent()) return;
+        // This also recovers a previous authored command. Never mount a detached
+        // editor: initialization, receipt hydration and persistence finish first.
+        const current = await session.createEmpty();
 
-        if (activeDocumentIdRef.current !== documentId) {
-          return;
-        }
-
-        Log.debug('[DatabaseRowSubDocument] ensureRowDocumentExists retry', {
-          rowId,
-          documentId,
-          exists,
-        });
-
-        if (!exists && createRowDocument) {
-          Log.debug('[DatabaseRowSubDocument] createRowDocument retry', {
-            rowId,
-            documentId,
-          });
-          await createRowDocument(documentId, rowDocumentSource);
-
-          if (activeDocumentIdRef.current !== documentId) {
-            return;
-          }
-        }
-
-        if (pendingNonEmptyRef.current) {
-          const editor = editorRef.current;
-
-          if (editor && !isDocumentEmpty(editor)) {
-            lastIsEmptyRef.current = false;
-            pendingNonEmptyRef.current = false;
-            Log.debug('[DatabaseRowSubDocument] applying pending non-empty meta', {
-              rowId,
-              documentId,
-            });
-            updateRowMeta(RowMetaKey.IsDocumentEmpty, false);
-            return;
-          }
-
-          pendingNonEmptyRef.current = false;
-        }
-      } catch (error) {
-        if (isPermissionDeniedError(error)) {
-          markPermissionDenied(documentId);
-          return;
-        }
-
-        // Keep retrying until the backend accepts the row document.
+        if (!isCurrent()) return;
+        setDoc(current);
+        loadedDocumentIdRef.current = documentId;
+        docReadyRef.current = true;
+        setLoading(false);
+      } finally {
+        session.dispose();
       }
-
-      scheduleEnsureRowDocumentExists();
-    }, 5000);
-  }, [
-    checkIfRowDocumentExists,
-    createRowDocument,
-    documentId,
-    isDocumentEmpty,
-    markPermissionDenied,
-    rowDocumentSource,
-    updateRowMeta,
-    rowId,
-  ]);
+    },
+    [context?.databaseDoc, documentId, row, rowDocumentSource, workspaceId]
+  );
 
   // Drop every trace of the previous document as soon as documentId changes, so
   // the editor never renders or binds the old row's doc while the new one loads.
   useEffect(() => {
-    firstBodyRef.current?.detach();
-    firstBodyRef.current = null;
-    setFirstBody(null);
-    setFirstBodyBusy(false);
-    setFirstBodyError(null);
     docReadyRef.current = false;
     loadedDocumentIdRef.current = null;
     editorRef.current = null;
     lastIsEmptyRef.current = null;
-    pendingNonEmptyRef.current = false;
-    rowDocEnsuredRef.current = false;
     deniedDocumentIdRef.current = null;
 
     if (pendingMetaUpdateRef.current) {
@@ -639,11 +486,6 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
       retryLoadTimerRef.current = null;
     }
 
-    if (ensureDocRetryTimerRef.current) {
-      clearTimeout(ensureDocRetryTimerRef.current);
-      ensureDocRetryTimerRef.current = null;
-    }
-
     setDoc(null);
     setDeniedDocumentId(null);
     setFailedDocumentId(null);
@@ -651,7 +493,7 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
   }, [documentId]);
 
   useEffect(() => {
-    if (!documentId || deniedDocumentIdRef.current === documentId) return;
+    if (!documentId || deniedDocumentIdRef.current === documentId || failedDocumentId === documentId) return;
 
     let cancelled = false;
     const requestGeneration = ++loadRequestGenerationRef.current;
@@ -666,7 +508,18 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
       }
     };
 
+    const failOpen = () => {
+      setFailedDocumentId(documentId);
+      setOfflineFailure(!navigator.onLine);
+      setLoading(false);
+    };
+
     const scheduleRetry = () => {
+      if (!navigator.onLine) {
+        failOpen();
+        return;
+      }
+
       if (retryLoadTimerRef.current || deniedDocumentIdRef.current === documentId) return;
       if (retryCount >= MAX_RETRIES) {
         Log.warn('[DatabaseRowSubDocument] max retries reached; row document was not opened', {
@@ -674,8 +527,7 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
           documentId,
           retryCount,
         });
-        setFailedDocumentId(documentId);
-        setLoading(false);
+        failOpen();
         return;
       }
 
@@ -702,6 +554,11 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
         return;
       }
 
+      if (!navigator.onLine) {
+        failOpen();
+        return;
+      }
+
       // Wait for row meta to load before making any decisions
       if (isDocumentEmptyResolved === undefined) {
         Log.debug('[DatabaseRowSubDocument] waiting for row meta to load', {
@@ -722,9 +579,12 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
         return;
       }
 
+      let creating = false;
+
       try {
-        if (workspaceId && writableRef.current && await hasPendingAtomicRowFirstBody(workspaceId, documentId)) {
-          if (isCurrentRequest()) await openFirstBody(isCurrentRequest);
+        if (workspaceId && writableRef.current && (await hasPendingAtomicRowFirstBody(workspaceId, documentId))) {
+          creating = true;
+          if (isCurrentRequest()) await openCanonicalRowDocument(isCurrentRequest);
           return;
         }
 
@@ -768,7 +628,8 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
 
           if (!isCurrentRequest()) return;
           if (localHasContent) throw new Error('The existing row-page body must finish recovering before editing.');
-          await openFirstBody(isCurrentRequest);
+          creating = true;
+          await openCanonicalRowDocument(isCurrentRequest);
           return;
         }
 
@@ -780,7 +641,7 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
       } catch (e) {
         if (!isCurrentRequest()) return;
 
-        if (isPermissionDeniedError(e)) {
+        if (isPermissionDeniedError(e instanceof AtomicCreationPendingError ? e.cause : e)) {
           markPermissionDenied(documentId);
           return;
         }
@@ -789,7 +650,8 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
           rowId,
           documentId,
         });
-        scheduleRetry();
+        if (creating) failOpen();
+        else scheduleRetry();
       }
     };
 
@@ -800,9 +662,11 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
       clearRetryTimer();
     };
   }, [
+    retryAttempt,
+    failedDocumentId,
     handleOpenDocument,
     documentId,
-    openFirstBody,
+    openCanonicalRowDocument,
     workspaceId,
     checkIfRowDocumentExists,
     isDocumentEmptyResolved,
@@ -813,7 +677,7 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
   ]);
 
   useEffect(() => {
-    if (firstBody || loading || !doc || !documentId || !loadedDocMatchesCurrent || !bindViewSync) {
+    if (loading || !doc || !documentId || !loadedDocMatchesCurrent || !bindViewSync) {
       Log.debug('[DatabaseRowSubDocument] bindViewSync skipped', {
         rowId,
         documentId,
@@ -859,101 +723,21 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
     } catch (e) {
       Log.error('[DatabaseRowSubDocument] bindViewSync error', e);
     }
-  }, [firstBody, loading, doc, documentId, loadedDocMatchesCurrent, bindViewSync, rowId]);
+  }, [loading, doc, documentId, loadedDocMatchesCurrent, bindViewSync, rowId]);
 
   const getMoreAIContext = useCallback(() => {
     return JSON.stringify(properties);
   }, [properties]);
 
-  const shouldSkipIsDocumentEmptyUpdate = useCallback(
-    (isEmpty: boolean) => {
-      // Skip update if meta already says non-empty and we're reporting empty
-      // (meta is authoritative once content was added)
-      if (meta?.isEmptyDocument === false && isEmpty) {
-        return true;
-      }
-
-      return false;
-    },
-    [meta?.isEmptyDocument]
-  );
-
   const handleEditorConnected = useCallback((editor: YjsEditor) => {
     editorRef.current = editor;
   }, []);
 
-  const ensureRowDocumentExists = useCallback(async () => {
-    if (!documentId || activeDocumentIdRef.current !== documentId || deniedDocumentIdRef.current === documentId) {
-      return false;
-    }
-
-    // Skip if we've already ensured this document exists (memoize to avoid redundant API calls)
-    if (rowDocEnsuredRef.current) {
-      return true;
-    }
-
-    let exists = false;
-
-    if (checkIfRowDocumentExists) {
-      try {
-        exists = await checkIfRowDocumentExists(documentId);
-
-        if (activeDocumentIdRef.current !== documentId) {
-          return false;
-        }
-      } catch (error) {
-        if (isPermissionDeniedError(error)) {
-          markPermissionDenied(documentId);
-          return false;
-        }
-
-        // Ignore and fall through to orphaned view creation attempt.
-      }
-    }
-
-    if (activeDocumentIdRef.current !== documentId) {
-      return false;
-    }
-
-    // If document already exists, mark as ensured and return early
-    // Don't call createRowDocument if the document is already on the server
-    if (exists) {
-      rowDocEnsuredRef.current = true;
-      return true;
-    }
-
-    // Only create orphaned view if document doesn't exist
-    if (createRowDocument) {
-      try {
-        await createRowDocument(documentId, rowDocumentSource);
-
-        if (activeDocumentIdRef.current !== documentId) {
-          return false;
-        }
-
-        rowDocEnsuredRef.current = true;
-        return true;
-      } catch (error) {
-        if (isPermissionDeniedError(error)) {
-          markPermissionDenied(documentId);
-        }
-
-        // Creation failed - don't mark as ensured so we can retry
-        return false;
-      }
-    }
-
-    return false;
-  }, [checkIfRowDocumentExists, createRowDocument, documentId, markPermissionDenied, rowDocumentSource]);
-
   useEffect(() => {
-    if (firstBody || !doc || !documentId || !loadedDocMatchesCurrent) return;
+    if (!doc || !documentId || !loadedDocMatchesCurrent) return;
 
-    // Body of the debounced meta update. Extracted so the unmount cleanup can
-    // flush it synchronously instead of cancelling pending work — otherwise a
-    // paste-then-close-card sequence loses the just-pasted content because
-    // ensureRowDocumentExists() never registers the orphan collab on the
-    // server, and the local outbox update has no doc to drain into.
+    // Read only the active editor after a local Yjs update. Flush on close so
+    // paste-then-close and clear-then-close retain their content indicator.
     const flushPendingMetaUpdate = () => {
       if (!pendingMetaUpdateRef.current) return;
       clearTimeout(pendingMetaUpdateRef.current);
@@ -961,60 +745,12 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
 
       const editor = editorRef.current;
 
-      if (!editor) {
-        return;
-      }
+      if (!editor || activeDocumentIdRef.current !== documentId) return;
+      const isEmpty = !editor.children.some(hasEditorNodeContent);
 
-      const isEmpty = isDocumentEmpty(editor);
-
-      if (lastIsEmptyRef.current === isEmpty) {
-        return;
-      }
-
-      if (shouldSkipIsDocumentEmptyUpdate(isEmpty)) {
-        return;
-      }
-
-      if (isEmpty) {
-        lastIsEmptyRef.current = isEmpty;
-        pendingNonEmptyRef.current = false;
-        Log.debug('[DatabaseRowSubDocument] row document empty -> update meta', {
-          rowId,
-          documentId,
-        });
-        updateRowMeta(RowMetaKey.IsDocumentEmpty, isEmpty);
-        return;
-      }
-
-      void (async () => {
-        lastIsEmptyRef.current = isEmpty;
-        pendingNonEmptyRef.current = false;
-        Log.debug('[DatabaseRowSubDocument] row document edited', {
-          rowId,
-          documentId,
-        });
-        Log.debug('[DatabaseRowSubDocument] row document non-empty -> update meta immediately', {
-          rowId,
-          documentId,
-        });
-        updateRowMeta(RowMetaKey.IsDocumentEmpty, isEmpty);
-
-        const ensurePromise = ensureRowDocumentExists();
-
-        // Track the in-flight creation so syncAllToServer can await it
-        // before batch-syncing. Without this, a page duplicate that runs
-        // before the server-side collab is created will silently lose the
-        // row sub-document content.
-        if (documentId) {
-          trackRowDocEnsure(documentId, ensurePromise);
-        }
-
-        const ensured = await ensurePromise;
-
-        if (!ensured) {
-          scheduleEnsureRowDocumentExists();
-        }
-      })();
+      if ((lastIsEmptyRef.current ?? latestIsEmptyRef.current) === isEmpty) return;
+      lastIsEmptyRef.current = isEmpty;
+      updateRowMeta(RowMetaKey.IsDocumentEmpty, isEmpty);
     };
 
     const flushPendingAttributionUpdate = () => {
@@ -1039,7 +775,11 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
     };
 
     const handleDocUpdate = (_update: Uint8Array, origin: unknown) => {
-      if (origin !== CollabOrigin.Local && origin !== CollabOrigin.LocalManual) {
+      const isLocalHistory =
+        origin instanceof Y.UndoManager && origin === (editorRef.current as YHistoryEditor | null)?.undoManager;
+
+      if (origin !== CollabOrigin.Local && origin !== CollabOrigin.LocalManual && !isLocalHistory) {
+        lastIsEmptyRef.current = null;
         return;
       }
 
@@ -1061,38 +801,17 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
 
     return () => {
       doc.off('update', handleDocUpdate);
-      // Flush — not cancel — so a close-card immediately after paste still
-      // marks the row non-empty and registers the orphan collab on the server.
+      // Closing an editor must not drop a pending content-state transition.
       flushPendingUpdates();
       onRegisterPendingMetaFlush?.(null);
     };
-  }, [
-    firstBody,
-    doc,
-    documentId,
-    loadedDocMatchesCurrent,
-    rowId,
-    isDocumentEmpty,
-    shouldSkipIsDocumentEmptyUpdate,
-    updateRowMeta,
-    ensureRowDocumentExists,
-    scheduleEnsureRowDocumentExists,
-    onRegisterPendingMetaFlush,
-    row,
-    actorUid,
-  ]);
+  }, [doc, documentId, loadedDocMatchesCurrent, rowId, updateRowMeta, onRegisterPendingMetaFlush, row, actorUid]);
 
   useEffect(() => {
     mountedRef.current = true;
 
     return () => {
       mountedRef.current = false;
-      firstBodyRef.current?.detach();
-
-      if (ensureDocRetryTimerRef.current) {
-        clearTimeout(ensureDocRetryTimerRef.current);
-        ensureDocRetryTimerRef.current = null;
-      }
     };
   }, []);
 
@@ -1110,7 +829,11 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
   }
 
   if (loading || (doc && documentId && !loadedDocMatchesCurrent)) {
-    return <EditorSkeleton />;
+    return (
+      <div data-testid='row-document-loading'>
+        <EditorSkeleton />
+      </div>
+    );
   }
 
   if (documentId && failedDocumentId === documentId && !loadedDocMatchesCurrent) {
@@ -1118,9 +841,19 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
       <div
         role='alert'
         data-testid='row-document-load-error'
-        className='flex min-h-[300px] w-full items-center justify-center px-8 py-10 text-center text-sm text-text-secondary'
+        className='flex min-h-[300px] w-full flex-col items-center justify-center gap-3 px-8 py-10 text-center text-sm text-text-secondary'
       >
-        {t('chat.openPagePreviewFailedToast')}
+        {t(offlineFailure ? 'atomicCreation.offline' : 'chat.openPagePreviewFailedToast')}
+        <button
+          className='rounded-md bg-fill-theme-thick px-4 py-2 text-text-on-fill'
+          onClick={() => {
+            setFailedDocumentId(null);
+            setLoading(true);
+            setRetryAttempt((attempt) => attempt + 1);
+          }}
+        >
+          {t('atomicCreation.retry')}
+        </button>
       </div>
     );
   }
@@ -1130,11 +863,6 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
   const { openPageModal: _openPageModal, ...editorContext } = context;
 
   return (
-    <>
-      {firstBodyBusy && <div role='status' data-testid='row-document-creation-pending'>{t('loading')}</div>}
-      {firstBodyError && <div role="alert" data-testid="row-document-creation-error">{firstBodyError}
-        {firstBody?.canRetry && <button onClick={() => void firstBody.retry()}>{t('atomicCreation.retry')}</button>}
-      </div>}
     <Editor
       {...editorContext}
       fullWidth
@@ -1142,16 +870,13 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
       workspaceId={workspaceId}
       viewId={documentId}
       doc={doc}
-      firstBody={firstBody ?? undefined}
-      addPage={firstBody ? undefined : editorContext.addPage}
-      readOnly={context.readOnly || (firstBody?.blocksInput ?? false)}
+      readOnly={context.readOnly}
       canComment={context.canComment ?? false}
       canWrite={context.canWrite ?? !context.readOnly}
       mentionContext={mentionContext}
       getMoreAIContext={getMoreAIContext}
       onEditorConnected={handleEditorConnected}
     />
-    </>
   );
 });
 

@@ -15,7 +15,6 @@ import { createBlock, getBlock, getChildrenArray, getText, updateBlockParent } f
 import { BlockType, DatabaseViewLayout, Types, YSharedRoot } from '@/application/types';
 
 import { compileFirstBodyActions, createFirstBodyDraft } from '../first-body-actions';
-import { templateDocumentInitialization } from '../template-document';
 
 
 // Opt in with a test-owned account/workspace. Never read the installed app's
@@ -183,12 +182,12 @@ run(
     const afterReplay = await readCollab(documentId, Types.Document);
 
     expect(afterReplay.getMap('data').toJSON()).toEqual(authored);
-    // Explicit template editing initializes the same server-owned default
-    // body before exposing block tools; ordinary empty Row opening stays lazy.
+    // Opening an ordinary or template row initializes the server-owned empty
+    // body before editing, while its content icon remains hidden.
     const blankRowId = databaseRequest.database.initial_row_ids[1];
     const blankDocumentId = getMetaIdMap(blankRowId).get(RowMetaKey.DocumentId)!;
-    const blankCommand = { ...command, request_id: uuidv4(), row_id: blankRowId,
-      contribution: templateDocumentInitialization(blankDocumentId) };
+    const blankCommand: PublishRowDocumentRequest = { ...command, request_id: uuidv4(), row_id: blankRowId,
+      contribution: { kind: 'default_schema', schema_version: 'v1' } };
     const blank = await request<AtomicCreationReceipt<'row-document'>>(
       'POST', `${workspace}/v2/page-view/row-document`, blankCommand
     );
@@ -211,7 +210,7 @@ run(
     expect((blankBody.get('blocks') as Y.Map<unknown>).size).toBeGreaterThanOrEqual(2);
     const blankRow = await readCollab(blankRowId, Types.DatabaseRow);
 
-    expect(getMetaJSON(blankRowId, blankRow.getMap('data').get('meta') as Y.Map<unknown>).isEmptyDocument).toBe(false);
+    expect(getMetaJSON(blankRowId, blankRow.getMap('data').get('meta') as Y.Map<unknown>).isEmptyDocument ?? true).toBe(true);
     const blankReplay = await request<AtomicCreationReceipt<'row-document'>>(
       'POST', `${workspace}/v2/page-view/row-document`, blankCommand
     );

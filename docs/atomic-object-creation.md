@@ -1,9 +1,9 @@
 # Atomic object creation in Web
 
-Default Document and Database pages, Database views, and the first body of an
-existing Database Row use the server atomic APIs. Ordinary Add Row keeps the
-existing client-side Yjs/sync implementation. Opening an empty row page does not
-create a server Document; its first completed editor command does.
+Default Document and Database pages, Database views, and the page of an existing
+Database Row use the server atomic APIs. Ordinary Add Row keeps the existing
+client-side Yjs/sync implementation. Opening row detail, side peek, or a full row
+page initializes a missing Document on the server before exposing its editor.
 
 Web requires connectivity and the server-info flags `enable_atomic_creation` and
 `enable_atomic_creation_defaults` to be literally `true`, including self-hosted
@@ -17,7 +17,7 @@ servers. Unsupported servers do not fall back to partial legacy creation.
 | `http/page-default-creation` | Compact page recipes and exact supplied-ID recovery | `page-default-creation.test.ts`, `page-default-creation-recovery.test.ts` |
 | `http/created-page-hydration` | Current content and Folder validation, versioned provider handoff | `created-page-hydration.test.ts`, `created-page-hydration.integration.test.ts` |
 | `database-yjs/creation` | Live and persisted source readiness, compact view recipe, restore-safe current hydration | `database-view-source-readiness.test.ts`, `default-database-view-creation.test.ts`, `linked-default-view-creation.test.ts` |
-| `row-document` first-body components | Detached draft, complete-command seal, native BlockActions compiler, staged later edits, current Row/Document hydration | `first-body-actions.test.ts`, `first-body-owner.test.ts`, `first-body-editor.test.ts`, `first-body-files.test.ts`, `first-body-staging.test.ts`, `first-body-persistence.test.ts`, `first-body-checkpoint.test.ts`, `atomic-first-body.test.ts` |
+| `row-document` initialization and recovery | Server default schema on open, shared concurrent initialization, exact pending authored-command recovery, current Row/Document hydration | `first-body-actions.test.ts`, `first-body-owner.test.ts`, `first-body-editor.test.ts`, `first-body-files.test.ts`, `first-body-staging.test.ts`, `first-body-persistence.test.ts`, `first-body-checkpoint.test.ts`, `atomic-first-body.test.ts` |
 | `row-document/template-document` | Explicit template initialization and exact pending-command recovery before exposing the editor | `template-document.test.ts`, `row-source-readiness.test.ts`, `DatabaseTemplateButton.test.tsx` |
 | App/editor callers | Selection after current navigation; explicit pending-page recovery | `PendingPageCreations.test.tsx`, `usePageOperations.publish.test.tsx`, `AddPageActions.test.tsx`, `DatabaseRowSubDocument.test.tsx` |
 
@@ -44,7 +44,9 @@ Recovery reads current state; it never replays an old receipt delta over newer
 settings or restored data. A failed or ambiguous operation keeps its exact request.
 Pending page commands have an explicit retry control in their original workspace.
 Database-view retries belong to the source operation, and row-page retries belong
-to the original row. Reconnect does not automatically submit commands.
+to the original row. Row initialization runs on opening; if reconnect remounts the
+open row, that new opening may recover its saved command. Other creation commands
+retain their explicit retry controls.
 
 Authentication refresh preserves the same-tab login lifetime. Logout, replacement
 account/workspace, retired provider and restore generation changes reject stale
@@ -66,48 +68,55 @@ deadline. Both must pass the final identity, ownership, restore and storage chec
 before the new view is selected. A barrier-based component test verifies the
 overlap without asserting machine-dependent latency.
 
-## Row-page command boundary
+## Row-page opening and content indicator
 
-The first body is edited in a detached draft, without a canonical provider or early
-Row nonempty/attribution writes. The owner flushes and seals the complete accepted
-command, including IME completion or an accepted file upload. Typing continues while
-the request is pending; later edits are saved as a separate journal attachment without
-changing the original request. The compiler preserves supported nested blocks and
-text marks and rejects owned subpage/database blocks before side effects.
+A missing writable row page uses `contribution: { kind: "default_schema",
+schema_version: "v1" }`. The server owns the blank schema; Web sends no document
+body or synthetic text action. Loading remains visible until the receipt, current
+Row/Document state, version/restore checks and provider persistence are complete.
+The editor never mounts a detached blank draft. Existing documents use the normal
+read path, and read-only or published surfaces do not initialize missing pages.
 
-Hydration checks staged edits against current canonical content before applying them.
-It preserves unrelated remote edits and retains the pending command if a touched
-value conflicts. The mounted editor keeps its identity and selection during handoff.
-Document bytes and the recovery marker commit in one transaction on the existing
-Document provider, and current Row metadata is persisted before journal cleanup.
-Provider writes own their IndexedDB transactions, even when hydration schedules them
-from another transaction. This prevents seeded rows from inheriting a transaction
-that cannot access their update table.
-Reopening a row with a saved command explicitly recovers that exact command and its
-staged edits; reconnect alone does not submit it.
+Offline opening shows an inline connectivity error with Retry. Failed creation
+retains its immutable journal command and shows Retry without an editor; permission
+denial shows no access. Reopening a row recovers a pending command before testing
+whether its document exists. Concurrent opens share the same active initialization.
 
-A newly added ordinary row may still be syncing. First-body creation waits for the
+A newly added ordinary row may still be syncing. Initialization waits for the
 server to read that Row and its source-view membership within the same 30-second
 attempt budget. It never forces an upload or changes ordinary Add Row behavior.
-Readability can precede durable storage. An explicit server `RetryLater` response
-retries the same immutable request within that budget; ambiguous transport failures
-remain in the journal for deliberate recovery.
+An explicit server `RetryLater` response retries the same immutable request within
+that budget; ambiguous transport failures retain the command for recovery.
 
-Once the command is compiled, its exact native actions are journaled before POST.
-An upload that has not completed when the browser tab closes is not yet a durable
-creation request. Existing body editing and ordinary row synchronization are unchanged.
+Document existence does not mean authored content. A blank schema preserves the
+Row's empty content state (an absent flag also means empty). Database views render
+the document icon from `is_document_empty` in their existing Row metadata; opening
+a database does not fetch row bodies to decide which icons to show. The active
+editor publishes only content-state transitions after local edits, including
+manual commands and undo/redo. Adding content shows the icon, clearing it hides
+the icon, and the Document remains available. Title/property edits, passive
+hydration and remote updates do not publish a new content flag. Pending metadata
+is flushed when closing immediately after an edit.
+
+Previously saved authored first-body commands and staged edits remain recoverable.
+Their compiler preserves supported nested blocks and text marks; hydration checks
+staged edits against current canonical content and retains conflicts for recovery.
+Document bytes and the recovery marker commit in one transaction on the existing
+Document provider, and current Row metadata is persisted before journal cleanup.
+Provider writes own their IndexedDB transactions so seeded rows cannot inherit an
+unrelated transaction that lacks access to the update table.
 
 ## Template editor initialization
 
 New Template and editing a template with no document explicitly initialize a blank
 server Document before opening the editor. This permits an embedded database as a
-template's first block. Opening an ordinary empty row remains lazy.
+template's first block. Ordinary row pages use the same initialization boundary.
 
-The existing v1 action API requires at least one action. Template initialization
-sends an empty `ApplyTextDelta` for the versioned default text identity; the server
-creates the blank schema. No encoded document body is supplied. The native server
-contract test checks the empty body, Row metadata, readable registration and exact
-replay. Pending commands are recovered before testing whether the body exists.
+Template initialization sends the same compact `default_schema` contribution.
+No encoded body or empty `ApplyTextDelta` is supplied, and initialization does not
+mark the Row nonempty. The real server contract test checks the empty body, Row
+metadata, readable registration and exact replay. Pending authored commands are
+recovered before testing whether the body exists.
 Template saves derive emptiness from the current document content. A successfully
 materialized blank body must not turn a property-only or decoration-only template
 into an authored page, or add a page-content indicator to rows created from it.
@@ -126,8 +135,8 @@ It does not migrate every authored-content workflow to the new endpoints.
 
 Run focused Jest suites with `pnpm exec jest --runInBand --no-coverage --runTestsByPath`.
 `playwright/e2e/page/atomic-creation.spec.ts` exercises real server publication,
-lost-acknowledgement recovery, sidebar/content selection, database views, row first
-body, and ordinary offline Add Row using an isolated account/browser context.
+lost-acknowledgement recovery, sidebar/content selection, database views, row-page
+initialization, and ordinary offline Add Row using an isolated account/browser context.
 
 The related browser coverage includes these separate behavior boundaries:
 
@@ -138,7 +147,7 @@ The related browser coverage includes these separate behavior boundaries:
 | `database/atomic-database-layouts` | All nine native layouts, including Timeline; matching tab, sidebar and rendered content after reload |
 | `database/atomic-database-view` | All nine added layouts, server schema before receipt delivery, held source reads, exact lost-ACK retry, sidebar/content agreement, linked view identity, offline and capability refusal |
 | Existing database view tabs/consistency/container and linked-database tests | Normal view actions, cross-layout row consistency and embedded navigation |
-| `database/atomic-row-document`, existing `database/row-document` | Immediate first-body editing on newly added rows, exact retry, offline edit refusal, continuous typing/focus, bookmark paste, row indicator, close/reopen and persistence |
+| `database/atomic-row-document`, existing `database/row-document` | Create-on-open with held acknowledgement, ordinary new rows, exact retry and reload recovery, offline refusal, empty/add/clear/undo/redo indicators, no body reads for database icons, continuous typing/focus, bookmark paste and persistence |
 | Existing row-template and database-copy tests | Template body/defaults, property-only rows, embedded and linked databases, row/document copying and reload |
 
 The authentication test helper applies explicitly supplied `APPFLOWY_BASE_URL`,

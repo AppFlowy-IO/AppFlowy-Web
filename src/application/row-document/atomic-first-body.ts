@@ -42,6 +42,9 @@ import { CollabState, decodeCurrentRowPageCollab, hasCurrentRowDocumentSource, w
 export { decodeCurrentRowPageCollab } from './row-source-readiness';
 
 const NIL = '00000000-0000-0000-0000-000000000000';
+// A side peek and a full page can open the same row concurrently. Share only
+// their active initialization; durable retries remain owned by the journal.
+const openingRowDocuments = new Map<string, Promise<YDoc>>();
 
 interface RestoreState {
   database_restore_id: string | null;
@@ -162,6 +165,7 @@ export async function prepareAtomicRowFirstBody(input: {
       throw new Error('Reopen the database after its restore completes.');
 
     let preparedRecord: AtomicCreationRecord<'row-document'> | undefined;
+    let request: PublishRowDocumentRequest | undefined;
     let stagingJson: string | undefined;
     let stagingWrites = Promise.resolve();
     let finishLiveStaging: ((doc: YDoc, assertCurrent: () => void, signal?: AbortSignal) => Promise<void>) | undefined;
@@ -238,11 +242,20 @@ export async function prepareAtomicRowFirstBody(input: {
           throw new Error('The row no longer belongs to its source view.');
         const rowRoot = requireMap(row.getMap(YjsEditorKey.data_section).get('data'));
         const meta = requireMap(row.getMap(YjsEditorKey.data_section).get('meta'));
+        const contentFlag = getMetaJSON(source.row_id, meta).isEmptyDocument;
+        // Rust RowMeta treats an absent flag as empty. Initial rows created by
+        // Desktop/server can omit the key; do not publish a new Row mutation.
+        const isEmptyDocument = contentFlag ?? true;
+        // Schema initialization does not imply authored content. A concurrent
+        // creator may also have filled the document already; retain that body.
+        const createsEmptySchema = request?.contribution.kind === 'default_schema';
 
         if (
           rowRoot.get('id') !== source.row_id ||
           rowRoot.get('database_id') !== source.database_id ||
-          getMetaJSON(source.row_id, meta).isEmptyDocument !== false
+          (createsEmptySchema
+            ? contentFlag !== undefined && typeof contentFlag !== 'boolean'
+            : contentFlag !== false)
         )
           throw new Error('The current row has not activated this body.');
         const end = await readRestore(currentOwner, signal);
@@ -328,8 +341,8 @@ export async function prepareAtomicRowFirstBody(input: {
           Y.applyUpdate(rowDoc, Y.encodeStateAsUpdate(row), CollabOrigin.Remote)
         );
         if (
-          getMetaJSON(source.row_id, requireMap(rowDoc.getMap(YjsEditorKey.data_section).get('meta')))
-            .isEmptyDocument !== false
+          (getMetaJSON(source.row_id, requireMap(rowDoc.getMap(YjsEditorKey.data_section).get('meta')))
+            .isEmptyDocument ?? true) !== isEmptyDocument
         )
           throw new Error('The live row metadata has not activated.');
         if (!('whenPersisted' in rowEntry.provider)) throw new Error('The row metadata provider cannot confirm persistence.');
@@ -349,10 +362,9 @@ export async function prepareAtomicRowFirstBody(input: {
       }
     };
 
-    let request: PublishRowDocumentRequest | undefined;
     const pending = await findPendingAtomicCreation(owner, 'row-document', documentId);
 
-    const attempt = async (record?: AtomicCreationRecord<'row-document'>): Promise<YDoc> => {
+    const runAttempt = async (record?: AtomicCreationRecord<'row-document'>): Promise<YDoc> => {
       // Start the budget when a completed command/recovery is accepted, not
       // while a user is still editing an empty card or uploading its first file.
       const controller = new AbortController();
@@ -423,6 +435,9 @@ export async function prepareAtomicRowFirstBody(input: {
               signal: controller.signal,
               onPrepared: async (record: AtomicCreationRecord<'row-document'>) => {
                 preparedRecord = record;
+                // Recovery must validate the original recipe, even if opening
+                // this page now requested an empty schema instead.
+                request = JSON.parse(record.requestJson) as PublishRowDocumentRequest;
                 stagingJson ??= record.rowDocumentStagingJson;
                 // A deliberate retry may repair a transient IndexedDB failure.
                 stagingWrites = stagingWrites.catch(() => undefined);
@@ -480,26 +495,59 @@ export async function prepareAtomicRowFirstBody(input: {
       }
     };
 
+    let activeAttempt: Promise<YDoc> | undefined;
+    const attempt = (record?: AtomicCreationRecord<'row-document'>): Promise<YDoc> => {
+      activeAttempt ??= runAttempt(record).finally(() => { activeAttempt = undefined; });
+      return activeAttempt;
+    };
+
+    const prepareRequest = (contribution: PublishRowDocumentRequest['contribution']) => {
+      request ??= {
+        request_id: uuidv4(),
+        database_id: source.database_id,
+        database_restore_id: restoreId,
+        row_id: source.row_id,
+        source_view_id: source.database_view_id,
+        name: input.name,
+        contribution,
+      };
+    };
+
     return {
       owner,
       dispose,
       pending: pending ? () => attempt(pending) : undefined,
       admit: () => assertAtomicCreationAvailable(owner),
       saveStaging,
+      createEmpty: async (): Promise<YDoc> => {
+        owner.assertCurrent();
+        const key = JSON.stringify([
+          owner.serverUrl, owner.userId, owner.workspaceId, documentId,
+          restoreId, databaseVersion, rowVersion,
+        ]);
+        let opening = openingRowDocuments.get(key);
+
+        if (!opening) {
+          // Never create a client-side blank draft or mark its Row nonempty.
+          // Existing authored commands take precedence inside attempt().
+          prepareRequest({ kind: 'default_schema', schema_version: 'v1' });
+          opening = attempt(pending).finally(() => { openingRowDocuments.delete(key); });
+          openingRowDocuments.set(key, opening);
+        }
+
+        const canonical = await opening;
+
+        owner.assertCurrent();
+        if (getCachedProviderDoc(documentId) !== canonical || getCachedProviderDoc(source.row_id) !== rowDoc)
+          throw new Error('The row-page cache provider changed before activation.');
+        return canonical;
+      },
       publish: async (
         contribution: FirstBodyContribution,
         finish?: (doc: YDoc, assertCurrent: () => void, signal?: AbortSignal) => Promise<void>
       ) => {
         finishLiveStaging = finish;
-        request ??= {
-          request_id: uuidv4(),
-          database_id: source.database_id,
-          database_restore_id: restoreId,
-          row_id: source.row_id,
-          source_view_id: source.database_view_id,
-          name: input.name,
-          contribution,
-        };
+        prepareRequest(contribution);
         return attempt();
       },
     };

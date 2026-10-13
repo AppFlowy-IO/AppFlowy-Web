@@ -68,7 +68,9 @@ export interface PublishRowDocumentRequest {
   row_id: string;
   source_view_id: string;
   name: string;
-  contribution: { kind: 'default_actions'; schema_version: 'v1'; actions: NativeBlockAction[] };
+  contribution:
+    | { kind: 'default_schema'; schema_version: 'v1' }
+    | { kind: 'default_actions'; schema_version: 'v1'; actions: NativeBlockAction[] };
 }
 export interface AtomicPageResult {
   view_id: string;

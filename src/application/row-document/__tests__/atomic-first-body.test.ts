@@ -155,6 +155,151 @@ describe('atomic row-page activation', () => {
     session.dispose();
   });
 
+  function makeRemoteBodyEmpty(f: ReturnType<typeof setup>) {
+    const texts = f.remoteDocument.getMap('data').get('document').get('meta').get('text_map') as Y.Map<Y.Text>;
+
+    for (const text of texts.values()) text.delete(0, text.length);
+    (f.remoteRow.getMap('data').get('meta') as Y.Map<unknown>)
+      .set(getMetaIdMap(ids.row).get(RowMetaKey.IsDocumentEmpty)!, true);
+  }
+
+  it('creates the server schema on open without authored actions or a local blank document', async () => {
+    const f = setup();
+
+    makeRemoteBodyEmpty(f);
+    const session = await prepareAtomicRowFirstBody(f.input);
+
+    try {
+      expect(getOrCreateRowSubDoc).not.toHaveBeenCalled();
+      await expect(session.createEmpty()).resolves.toBe(f.cached);
+      expect(atomic.runAtomicCreation).toHaveBeenCalledWith(expect.objectContaining({
+        kind: 'row-document',
+        request: expect.objectContaining({ contribution: { kind: 'default_schema', schema_version: 'v1' } }),
+      }));
+      expect(f.cached.getMap('data').toJSON()).toEqual(f.remoteDocument.getMap('data').toJSON());
+      const meta = f.input.rowDoc.getMap('data').get('meta') as Y.Map<unknown>;
+
+      expect(meta.get(getMetaIdMap(ids.row).get(RowMetaKey.IsDocumentEmpty)!)).toBe(true);
+      expect(f.rowProvider.whenPersisted).toHaveBeenCalledTimes(1);
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it('retains an existing authored document when schema creation races another client', async () => {
+    const f = setup();
+    const session = await prepareAtomicRowFirstBody(f.input);
+
+    try {
+      await expect(session.createEmpty()).resolves.toBe(f.cached);
+      expect(f.cached.getMap('data').toJSON()).toEqual(f.remoteDocument.getMap('data').toJSON());
+      const meta = f.input.rowDoc.getMap('data').get('meta') as Y.Map<unknown>;
+
+      expect(meta.get(getMetaIdMap(ids.row).get(RowMetaKey.IsDocumentEmpty)!)).toBe(false);
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it('accepts the server empty default when an initial Desktop row omits its content flag', async () => {
+    const f = setup();
+
+    makeRemoteBodyEmpty(f);
+    const emptyKey = getMetaIdMap(ids.row).get(RowMetaKey.IsDocumentEmpty)!;
+
+    (f.remoteRow.getMap('data').get('meta') as Y.Map<unknown>).delete(emptyKey);
+    const session = await prepareAtomicRowFirstBody(f.input);
+
+    try {
+      await expect(session.createEmpty()).resolves.toBe(f.cached);
+      expect((f.input.rowDoc.getMap('data').get('meta') as Y.Map<unknown>).has(emptyKey)).toBe(false);
+      expect(f.cached.getMap('data').toJSON()).toEqual(f.remoteDocument.getMap('data').toJSON());
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it('shares one initialization across simultaneous row detail and side peek opens', async () => {
+    const f = setup();
+
+    makeRemoteBodyEmpty(f);
+    const first = await prepareAtomicRowFirstBody(f.input);
+    const second = await prepareAtomicRowFirstBody(f.input);
+
+    try {
+      await expect(Promise.all([first.createEmpty(), second.createEmpty(), first.createEmpty()]))
+        .resolves.toEqual([f.cached, f.cached, f.cached]);
+      expect(atomic.runAtomicCreation).toHaveBeenCalledTimes(1);
+      expect(f.rowProvider.whenPersisted).toHaveBeenCalledTimes(1);
+    } finally {
+      first.dispose();
+      second.dispose();
+    }
+  });
+
+  it('retries schema creation with the same request after an ambiguous failure', async () => {
+    const f = setup();
+
+    makeRemoteBodyEmpty(f);
+    (atomic.runAtomicCreation as jest.Mock).mockRejectedValueOnce(new Error('response lost'));
+    const session = await prepareAtomicRowFirstBody(f.input);
+
+    try {
+      await expect(session.createEmpty()).rejects.toThrow('response lost');
+      expect(getOrCreateRowSubDoc).not.toHaveBeenCalled();
+      await expect(session.createEmpty()).resolves.toBe(f.cached);
+      const calls = (atomic.runAtomicCreation as jest.Mock).mock.calls;
+
+      expect(calls[1][0].request).toEqual(calls[0][0].request);
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it.each(['default_schema', 'default_actions'] as const)(
+    'recovers the original %s recipe when opening after a remount',
+    async (kind) => {
+      const f = setup();
+
+      makeRemoteBodyEmpty(f);
+      const record = {
+        requestJson: JSON.stringify({ contribution: { kind, schema_version: 'v1', ...(kind === 'default_actions' ? { actions: [] } : {}) } }),
+        state: 'committed',
+      };
+
+      (atomic.findPendingAtomicCreation as jest.Mock).mockResolvedValue(record);
+      (atomic.recoverAtomicCreation as jest.Mock).mockImplementation(async ({ onPrepared, hydrate, owner }) => {
+        await onPrepared(record);
+        return hydrate(f.receipt, owner);
+      });
+      const session = await prepareAtomicRowFirstBody(f.input);
+
+      try {
+        if (kind === 'default_schema') await expect(session.createEmpty()).resolves.toBe(f.cached);
+        else await expect(session.createEmpty()).rejects.toThrow('has not activated this body');
+        expect(atomic.runAtomicCreation).not.toHaveBeenCalled();
+        expect(atomic.recoverAtomicCreation).toHaveBeenCalledWith(expect.objectContaining({ record }));
+      } finally {
+        session.dispose();
+      }
+    }
+  );
+
+  it('keeps schema initialization fenced if the source is destroyed or restored', async () => {
+    for (const mode of ['destroy', 'restore']) {
+      const f = setup();
+
+      makeRemoteBodyEmpty(f);
+      const session = await prepareAtomicRowFirstBody(f.input);
+
+      if (mode === 'destroy') f.input.rowDoc.destroy();
+      else (isDatabaseStorageFenceCurrent as jest.Mock).mockReturnValue(false);
+      await expect(session.createEmpty()).rejects.toThrow('source or restore generation');
+      expect(getOrCreateRowSubDoc).not.toHaveBeenCalled();
+      session.dispose();
+    }
+  });
+
   it('waits for separately held normal Row and Database sync before publishing the first body', async () => {
     jest.useFakeTimers();
     const f = setup();

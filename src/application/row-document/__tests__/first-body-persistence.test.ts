@@ -39,9 +39,14 @@ beforeAll(() =>
 );
 afterAll(() => db.close());
 
-it.each([undefined, '22222222-2222-4222-8222-222222222222'])(
-  'reopens a published first body and current Row metadata from real IndexedDB (version=%s)',
-  async (version) => {
+it.each([
+  { version: undefined, empty: false },
+  { version: '22222222-2222-4222-8222-222222222222', empty: false },
+  { version: undefined, empty: true },
+  { version: '22222222-2222-4222-8222-222222222222', empty: true },
+])(
+  'reopens a published document and current Row metadata from real IndexedDB (version=$version, empty=$empty)',
+  async ({ version, empty }) => {
     const databaseId = uuidv4();
     const rowId = uuidv4();
     const viewId = uuidv4();
@@ -66,10 +71,10 @@ it.each([undefined, '22222222-2222-4222-8222-222222222222'])(
         ['database_id', databaseId],
       ])
     );
-    row.getMap('data').set('meta', new Y.Map([[getMetaIdMap(rowId).get(RowMetaKey.IsDocumentEmpty)!, false]]));
+    row.getMap('data').set('meta', new Y.Map([[getMetaIdMap(rowId).get(RowMetaKey.IsDocumentEmpty)!, empty]]));
     const texts = document.getMap('data').get('document').get('meta').get('text_map') as Y.Map<Y.Text>;
 
-    Array.from(texts.values())[0].insert(0, 'durable first body');
+    if (!empty) Array.from(texts.values())[0].insert(0, 'durable first body');
     row.version = version;
     document.version = version;
     const liveRow = await openRowCollabDBWithProvider(rowId, { awaitSync: true });
@@ -122,7 +127,7 @@ it.each([undefined, '22222222-2222-4222-8222-222222222222'])(
     });
 
     try {
-      const canonical = await session.publish(compileFirstBodyActions(document));
+      const canonical = await (empty ? session.createEmpty() : session.publish(compileFirstBodyActions(document)));
 
       expect(canonical.version).toBe(version);
       await closeCollabDB(documentId);
@@ -136,9 +141,10 @@ it.each([undefined, '22222222-2222-4222-8222-222222222222'])(
       expect(reopenedRow.doc.version).toBe(version);
       expect(reopened.getMap('data').toJSON()).toEqual(document.getMap('data').toJSON());
       expect(getMetaJSON(rowId, reopenedRow.doc.getMap('data').get('meta') as Y.Map<unknown>).isEmptyDocument).toBe(
-        false
+        empty
       );
       expect(await documentEntry.provider.get(`${documentId}/version`)).toBe(version);
+      if (empty) return;
 
       // Keep a separately durable staged edit beside the exact first recipe,
       // then recover it through the real Row publication after IDB reopens.
@@ -193,7 +199,9 @@ it.each([undefined, '22222222-2222-4222-8222-222222222222'])(
         assertWritable: () => undefined,
       });
 
-      await recovery.pending!();
+      // The create-on-open entry point must resume authored work from an older
+      // client instead of replacing it with the new empty-schema recipe.
+      await recovery.createEmpty();
       recovery.dispose();
       await closeCollabDB(documentId);
       const reopenedStaged = await getOrCreateRowSubDoc(documentId);

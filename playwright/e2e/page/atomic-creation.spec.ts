@@ -118,27 +118,26 @@ test('atomic creation keeps document/sidebar, database tabs and row-page content
   timings.push({ operation: 'database view click to list', elapsedMs: Date.now() - viewStarted });
   await page.getByTestId(gridTabId!).click();
 
-  // Merely opening an empty row page does not publish a body. Its first complete
-  // editor command is the atomic operation; ordinary row creation stays local.
+  // Opening creates the empty server-owned body before mounting its editor;
+  // ordinary database Row creation still uses normal client synchronization.
   const beforeBody = atomicRequests.length;
-
-  await openRowDetail(page);
-  const editor = RowDetailSelectors.modal(page).getByTestId('editor-content').first();
-
-  await expect(editor).toBeVisible();
-  expect(atomicRequests).toHaveLength(beforeBody);
   const rowStarted = Date.now();
   const rowResponse = page.waitForResponse(
     (response) => response.request().method() === 'POST' && response.url().endsWith('/v2/page-view/row-document')
   );
 
-  await editor.fill('Atomic first row body');
+  await openRowDetail(page);
   expect((await (await rowResponse).json()).code).toBe(0);
+  const editor = RowDetailSelectors.modal(page).getByTestId('editor-content').first();
+
+  await expect(editor).toBeVisible();
+  expect(atomicRequests).toHaveLength(beforeBody + 1);
+  await editor.fill('Atomic first row body');
   await expect(RowDetailSelectors.modal(page)).toContainText('Atomic first row body');
   await closeRowDetailWithEscape(page);
   await openRowDetail(page);
   await expect(RowDetailSelectors.modal(page)).toContainText('Atomic first row body');
-  timings.push({ operation: 'row body first command through reopen', elapsedMs: Date.now() - rowStarted });
+  timings.push({ operation: 'row page open through body edit and reopen', elapsedMs: Date.now() - rowStarted });
   await closeRowDetailWithEscape(page);
 
   // A newly added client Row becomes durable through normal sync. Creating its
@@ -154,14 +153,14 @@ test('atomic creation keeps document/sidebar, database tabs and row-page content
   ).find((id) => !previousRows.has(id));
 
   expect(newRowId).toBeTruthy();
+  const newRowCompletion = waitForRowBodyCompletion(page);
+
   await openRowDetailByRowId(page, newRowId!.replace('grid-row-', ''));
+  await newRowCompletion;
   const newRowEditor = RowDetailSelectors.modal(page).getByTestId('editor-content').first();
 
   await expect(newRowEditor).toBeVisible();
-  const newRowCompletion = waitForRowBodyCompletion(page);
-
   await newRowEditor.fill('First body on a newly added row');
-  await newRowCompletion;
   await expect(RowDetailSelectors.modal(page)).toContainText('First body on a newly added row');
   await closeRowDetailWithEscape(page);
 
@@ -173,7 +172,8 @@ test('atomic creation keeps document/sidebar, database tabs and row-page content
   await expect(AddPageSelectors.addDocumentButton(page)).toBeVisible();
   await page.context().setOffline(true);
   await AddPageSelectors.addDocumentButton(page).click();
-  await expect(page.getByText('Connect to the internet to create this item.', { exact: true })).toBeVisible();
+  // This shared action presents its reviewed fallback for client-side errors.
+  await expect(page.getByText('Failed to create page', { exact: true })).toBeVisible();
   expect(atomicRequests).toHaveLength(beforeOffline);
   await page.keyboard.press('Escape');
   await DatabaseGridSelectors.newRowButton(page).click();
