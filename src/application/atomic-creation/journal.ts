@@ -1,4 +1,5 @@
 import { db } from '@/application/db';
+import { ClientValidationError } from '@/application/errors/client-validation-error';
 import { postAtomicCreation } from '@/application/services/js-services/http/atomic-creation-api';
 import { captureTokenSession, isTokenSessionCurrent } from '@/application/session/token';
 import { getConfigValue } from '@/utils/runtime-config';
@@ -33,13 +34,13 @@ function publishActivity(): void {
   activityListeners.forEach((listener) => listener());
 }
 
-export class AtomicCreationPendingError extends Error {
+export class AtomicCreationPendingError extends ClientValidationError {
   readonly requestId: string;
   readonly recordId: string;
   readonly cause: unknown;
 
   constructor(record: AtomicCreationRecord, cause: unknown) {
-    super(atomicCreationMessage('pending'));
+    super('ATOMIC_CREATION_PENDING');
     this.name = 'AtomicCreationPendingError';
     this.requestId = record.requestId;
     this.recordId = record.id;

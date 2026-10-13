@@ -9,12 +9,14 @@ export const clientValidationMessages = {
   ATOMIC_CREATION_OFFLINE: 'Connect to the internet to create this item.',
   ATOMIC_CREATION_SERVER_UPGRADE: 'Update the server to use this creation feature.',
   ATOMIC_CREATION_OWNER_CHANGED: 'The account or workspace changed. Retry in the original workspace.',
+  ATOMIC_CREATION_PENDING: 'Creation is pending. Retry the original request to finish.',
 } as const;
 
 const translationKeys: Partial<Record<keyof typeof clientValidationMessages, string>> = {
   ATOMIC_CREATION_OFFLINE: 'atomicCreation.offline',
   ATOMIC_CREATION_SERVER_UPGRADE: 'atomicCreation.serverUpgrade',
   ATOMIC_CREATION_OWNER_CHANGED: 'atomicCreation.ownerChanged',
+  ATOMIC_CREATION_PENDING: 'atomicCreation.pending',
 };
 
 /**

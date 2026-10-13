@@ -155,6 +155,22 @@ it('retains staged row edits beside an immutable recipe across a lost ACK and a 
   expect(await db.atomic_creation.get(record.id)).toBeUndefined();
 });
 
+it('keeps lost-ACK recovery guidance visible without exposing the transport diagnostic', async () => {
+  const owner = captureAtomicCreationOwner('workspace');
+  send.mockRejectedValueOnce(new Error('private transport diagnostic'));
+  const error = await runAtomicCreation({
+    owner, kind: 'document', request: command, logicalTarget: command.view_id, hydrate: jest.fn(),
+  }).catch((failure: unknown) => failure);
+
+  expect(error).toMatchObject({ name: 'AtomicCreationPendingError', requestId: command.request_id });
+  expect(userFriendlyErrorMessage(error, { fallback: 'Failed to create view' })).toBe(
+    'Creation is pending. Retry the original request to finish.'
+  );
+  expect(userFriendlyErrorMessage(error)).not.toContain('private transport diagnostic');
+  expect(await findPendingAtomicCreation(owner, 'document', command.view_id)).toBeDefined();
+  expect(send).toHaveBeenCalledTimes(1);
+});
+
 it('reopens IndexedDB after lost ACK and resends identical bytes only on explicit recovery', async () => {
   const owner = captureAtomicCreationOwner('workspace');
   const hydrate = jest.fn(async () => 'active');

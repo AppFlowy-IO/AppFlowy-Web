@@ -142,6 +142,13 @@ for (const layout of [
     expect(requests.legacy).toEqual([]);
     const assertContent = async () => {
       await expect(DatabaseViewSelectors.viewTab(page, viewId)).toHaveAttribute('data-state', 'active');
+      if (layout.value === 7) {
+        // The initial Form recipe opens its setup dialog above the sidebar.
+        // Complete that UI step before testing sidebar navigation underneath it.
+        await expect(FormSelectors.autoCreateDialog(page).or(FormSelectors.addQuestionButton(page))).toBeVisible();
+        if (await FormSelectors.autoCreateDialog(page).isVisible()) await FormSelectors.autoCreateStartFromScratch(page).click();
+        await expect(FormSelectors.autoCreateDialog(page)).toBeHidden();
+      }
       await ensurePageExpandedByViewId(page, source.containerId);
       await expect(page.getByTestId(`page-${viewId}`)).toHaveAttribute('data-selected', 'true');
       if (layout.value === 0) await expect(DatabaseGridSelectors.dataRows(page)).toHaveCount(3);
@@ -159,8 +166,6 @@ for (const layout of [
         for (const rowId of source.rowIds) await expect(DatabaseGallerySelectors.cardByRowId(page, rowId)).toBeVisible();
       }
       if (layout.value === 7) {
-        await expect(FormSelectors.autoCreateDialog(page).or(FormSelectors.addQuestionButton(page))).toBeVisible();
-        if (await FormSelectors.autoCreateDialog(page).isVisible()) await FormSelectors.autoCreateStartFromScratch(page).click();
         await expect(FormSelectors.addQuestionButton(page)).toBeVisible();
         await expect(FormSelectors.previewButton(page)).toBeEnabled();
       }
