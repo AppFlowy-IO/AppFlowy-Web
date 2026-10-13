@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { ERROR_CODE } from '@/application/constants';
-import { AccessService, WorkspaceService } from '@/application/services/domains';
+import { AccessService, ViewService, WorkspaceService } from '@/application/services/domains';
 import { View, ViewLayout } from '@/application/types';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
@@ -16,7 +16,6 @@ import {
   useAIEnabled,
   useAppOperations,
   useAppOutline,
-  useAppRecent,
   useAppViewId,
   useCurrentWorkspaceId,
   useToView,
@@ -283,7 +282,12 @@ export function Search() {
     };
   }, [onKeyDown]);
 
-  const { loadRecentViews } = useAppRecent();
+  // Read straight from the endpoint: the app-wide loader also resolves nothing when another reader
+  // (the Recent page, mobile recents) replaces its request, which would look like a failure here.
+  const loadRecentViews = useCallback(async () => {
+    if (!currentWorkspaceId) throw new Error('No workspace selected');
+    return ViewService.getRecent(currentWorkspaceId);
+  }, [currentWorkspaceId]);
   const recent = useSearchRecentViews({
     open,
     visible: open && !searchValue,

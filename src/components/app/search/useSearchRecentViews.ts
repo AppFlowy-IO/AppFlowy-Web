@@ -26,16 +26,27 @@ interface RecentRequest extends RecentRead {
 const sameRead = (left: RecentRead | undefined, right: RecentRead) =>
   left?.key === right.key && left.refresh === right.refresh && left.retry === right.retry;
 
+/** Spaces are not recent pages, and the endpoint can list a page more than once. */
+function recentPages(views: View[]) {
+  const seen = new Set<string>();
+
+  return views.filter((view) => {
+    if (isSpaceView(view) || seen.has(view.view_id)) return false;
+    seen.add(view.view_id);
+    return true;
+  });
+}
+
 /**
  * Recent pages for the search dialog. A loaded list belongs to one dialog opening within one access
  * scope: clearing the query shows it again without another request, while reopening the dialog, a
  * permission hint or a session change loads it again and never shows the previous names meanwhile.
  *
- * Loading, offline, failed and empty are distinct (`loadRecentViews` resolves `undefined` when the
- * read failed). A socket reconnect (`refreshKey`) revalidates in the background and keeps the
- * current list until the replacement arrives. There is one active read and one replaceable
- * follow-up, even during permission-event bursts; old reads may settle, but cannot publish into a
- * reopened dialog or a replacement scope.
+ * Loading, offline, failed and empty are distinct: `load` resolves the list or rejects (a resolved
+ * `undefined` also counts as a failure). A socket reconnect (`refreshKey`) revalidates in the
+ * background and keeps the current list until the replacement arrives. There is one active read
+ * and one replaceable follow-up, even during permission-event bursts; old reads may settle, but
+ * cannot publish into a reopened dialog or a replacement scope.
  */
 export function useSearchRecentViews({
   open,
@@ -91,9 +102,7 @@ export function useSearchRecentViews({
             try {
               const views = next.load ? await next.load() : [];
 
-              result = views
-                ? { status: 'ready', views: views.filter((view) => !isSpaceView(view)) }
-                : { status: 'error', views: [] };
+              result = views ? { status: 'ready', views: recentPages(views) } : { status: 'error', views: [] };
             } catch {
               result = { status: 'error', views: [] };
             }

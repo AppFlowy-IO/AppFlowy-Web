@@ -16,7 +16,9 @@ const mockGetViewNavigation = jest.fn();
 const mockFetchCompleteView = jest.fn();
 const mockUpdateChatSettings = jest.fn();
 const mockChatRequest = jest.fn();
+// Recent pages from the endpoint, and the app-wide loader that other readers share.
 const mockLoadRecentViews = jest.fn();
+const mockSharedLoadRecentViews = jest.fn();
 const mockGetObjectPermission = jest.fn();
 const mockGetSpacePermission = jest.fn();
 const mockToastSuccess = jest.fn();
@@ -40,7 +42,7 @@ jest.mock('@/components/app/app.hooks', () => ({
   useAIEnabled: () => true,
   useAppOperations: () => ({ addPage: mockAddPage }),
   useAppOutline: () => [],
-  useAppRecent: () => ({ recentViews: [], loadRecentViews: mockLoadRecentViews }),
+  useAppRecent: () => ({ recentViews: [], loadRecentViews: mockSharedLoadRecentViews }),
   useAppViewId: () => 'current-page-id',
   useCurrentWorkspaceId: () => 'workspace-id',
   useToView: () => mockToView,
@@ -130,6 +132,7 @@ jest.mock('sonner', () => ({
 
 jest.mock('@/application/services/domains', () => ({
   AccessService: { getObjectPermission: (...args: unknown[]) => mockGetObjectPermission(...args) },
+  ViewService: { getRecent: (...args: unknown[]) => mockLoadRecentViews(...args) },
   WorkspaceService: { getSpacePermission: (...args: unknown[]) => mockGetSpacePermission(...args) },
 }));
 
@@ -554,6 +557,8 @@ describe('Search recent pages', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockLoadRecentViews.mockReset();
+    // What the app-wide loader returns to a call that a newer reader replaced.
+    mockSharedLoadRecentViews.mockReset().mockResolvedValue(undefined);
     setOnline(true);
   });
 
@@ -590,6 +595,26 @@ describe('Search recent pages', () => {
     fireEvent.change(screen.getByLabelText('search-input'), { target: { value: '' } });
     expect(screen.getByText('Late but current recent')).toBeTruthy();
     expect(mockLoadRecentViews).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not report a failure when another reader replaces the app-wide recent-pages load', async () => {
+    mockLoadRecentViews.mockResolvedValueOnce([{ view_id: 'recent', name: 'Recent page' }]);
+    render(<Search />);
+    fireEvent.click(screen.getByText('button.search'));
+    expect(await screen.findByText('Recent page')).toBeTruthy();
+    expect(screen.queryByText('search.recentPagesFailed')).toBeNull();
+    expect(mockLoadRecentViews).toHaveBeenCalledWith('workspace-id');
+  });
+
+  it('lists a recent page once and leaves out spaces', async () => {
+    mockLoadRecentViews.mockResolvedValueOnce([
+      { view_id: 'recent', name: 'Recent page' },
+      { view_id: 'space', name: 'A space', extra: { is_space: true } },
+      { view_id: 'recent', name: 'Recent page' },
+    ]);
+    render(<Search />);
+    fireEvent.click(screen.getByText('button.search'));
+    await waitFor(() => expect(screen.getByTestId('recent-views').textContent).toBe('Recent page'));
   });
 
   it.each(['rejected', 'unavailable'])('offers a retry when recent pages are %s', async (failure) => {
