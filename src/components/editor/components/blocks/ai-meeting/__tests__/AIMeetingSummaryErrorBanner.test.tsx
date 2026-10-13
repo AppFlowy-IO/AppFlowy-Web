@@ -68,7 +68,7 @@ describe('AI response quota upgrade action', () => {
     jest.mocked(getSubscriptionLink).mockRejectedValueOnce({ code: 500, message: 'Checkout is temporarily unavailable.' }).mockResolvedValueOnce(checkoutUrl);
     render(<AIMeetingSummaryErrorBanner {...props} />);
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Upgrade' })); });
-    expect(notify.error).toHaveBeenCalledWith('Checkout is temporarily unavailable.');
+    expect(notify.error).toHaveBeenCalledWith("AppFlowy isn't available right now. Try again later.");
     expect(screen.getByRole('alert').textContent).toContain(props.message);
     expect(screen.getByRole('button', { name: 'Upgrade' }).disabled).toBe(false);
     expect(window.open).not.toHaveBeenCalled();

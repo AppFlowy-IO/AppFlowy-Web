@@ -76,7 +76,11 @@ describe('Flutter meeting HTTP contract', () => {
   it('preserves a signed URL request failure without sending bytes to storage or the direct-upload route', async () => {
     http.onPost(signingPath).reply(200, { code: 1129, message: 'Allowance resets tomorrow' });
     await expect(uploadMeetingAudio('workspace', new File(['audio'], 'meeting.m4a')))
-      .rejects.toMatchObject({ code: 1129, message: 'Allowance resets tomorrow' });
+      .rejects.toMatchObject({
+        code: 1129,
+        message: 'This workspace has reached its transcription limit.',
+        diagnosticMessage: 'Allowance resets tomorrow',
+      });
     expect(storage.history.put).toHaveLength(0);
     expect(http.history.post).toHaveLength(1);
   });
@@ -143,10 +147,19 @@ describe('Flutter meeting HTTP contract', () => {
     await expect(deleteMeetingTranscript('work/space', 'job/id')).resolves.toBeUndefined();
   });
 
-  it('preserves quota codes and server reset guidance', async () => {
-    http.onPost('/api/meeting/workspace/v2/transcribe-audio').reply(200, { code: 1129, message: 'Allowance resets tomorrow' });
+  it('preserves quota codes and server-declared public reset guidance', async () => {
+    http.onPost('/api/meeting/workspace/v2/transcribe-audio').reply(200, {
+      code: 1129,
+      message: 'Internal quota diagnostic',
+      user_error: {
+        schema_version: 1,
+        reason: 'TRANSCRIPTION_LIMIT_REACHED',
+        locale: 'en',
+        message: 'Allowance resets tomorrow',
+      },
+    });
     await expect(submitMeetingTranscript('workspace', { audio_url: 'https://example.com/a.mp3', speaker_labels: true, speech_models: ['universal-3-pro'] }, 0))
-      .rejects.toMatchObject({ code: 1129, message: 'Allowance resets tomorrow' });
+      .rejects.toMatchObject({ code: 1129, message: 'Allowance resets tomorrow', diagnosticMessage: 'Internal quota diagnostic' });
   });
 
   it('forwards abort signals to the HTTP client', async () => {

@@ -85,13 +85,14 @@ and preserves the saved summary. A new generation can start immediately; late
 responses from the cancelled request cannot overwrite it or clear its loading state.
 Failures show a dismissible error banner, and existing summary content stays
 visible while regenerating. Network failures offer Retry. AI-response quota errors
-(`1033`) retain the server's reason and offer Click to Upgrade, which opens the
+(`1033`) use the shared error catalog or server-declared public guidance and offer Click to Upgrade, which opens the
 workspace's Stripe Pro checkout directly using the existing subscription-link API.
 The completion reader follows Flutter's handling of provider `error` frames and
 application `code`/`message` errors, including failures inside an HTTP 200 stream.
-It preserves the server's explanation and quota code, rejects interrupted or
+It retains server diagnostics and quota codes for classification, rejects interrupted or
 malformed output, and keeps partial output from replacing the saved summary.
-Responses with no content show an actionable retry message.
+UI errors use the shared message resolver; raw server diagnostics are not displayed.
+Responses with no content leave the saved summary intact and offer Retry.
 The upgrade action stays disabled while checkout loads; dismissing the banner or
 switching workspaces ignores late checkout responses. Hosted billing actions are
 hidden on self-hosted servers and read-only pages. Summary generation and speaker

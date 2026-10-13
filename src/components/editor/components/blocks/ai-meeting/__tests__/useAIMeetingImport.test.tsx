@@ -387,7 +387,16 @@ describe('Flutter quota messages and promotion eligibility', () => {
 
   it.each([SubscriptionPlan.Pro, SubscriptionPlan.Team, SubscriptionPlan.AIMax])('preserves server reset guidance for %s without a Pro promotion', async (plan) => {
     mockSubscriptions.mockResolvedValue(subscriptions(plan));
-    mocked.submitMeetingTranscript.mockRejectedValue({ code: 1129, message: 'Allowance resets on November 1' });
+    mocked.submitMeetingTranscript.mockRejectedValue({
+      code: 1129,
+      message: 'Internal quota diagnostic',
+      user_error: {
+        schema_version: 1,
+        reason: 'TRANSCRIPTION_LIMIT_REACHED',
+        locale: 'en',
+        message: 'Allowance resets on November 1',
+      },
+    });
     const { result } = fixture();
 
     await act(async () => { await result.current.importSource({ url: 'https://example.com/meeting.mp3' }); });

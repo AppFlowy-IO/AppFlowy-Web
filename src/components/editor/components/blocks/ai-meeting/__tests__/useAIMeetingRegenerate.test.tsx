@@ -502,8 +502,10 @@ describe('transcription to cited summary lifecycle', () => {
     await act(async () => { await result.current.handleRegenerateSummary(); });
     expect(result.current.isRegeneratingSummary).toBe(false);
     expect(Node.string(traverseBlock(summaryId, sharedRoot)!)).toBe('Previous summary');
-    expect(notify.error).toHaveBeenCalledWith(expect.stringContaining('Network unavailable'));
-    expect(result.current.summaryError).toBe('Failed to regenerate summary: Network unavailable');
+    const message = 'Failed to regenerate summary: Something went wrong. Contact support if this keeps happening.';
+
+    expect(notify.error).toHaveBeenCalledWith(message);
+    expect(result.current.summaryError).toBe(message);
     expect(result.current.summaryErrorCode).toBeUndefined();
     act(() => { result.current.dismissSummaryError(); });
     expect(result.current.summaryError).toBeUndefined();
@@ -543,7 +545,7 @@ describe('transcription to cited summary lifecycle', () => {
     expect(result.current.regenerateMenuOpen).toBe(false);
   });
 
-  it('preserves the server explanation for the AI response limit instead of hiding the plain API error object', async () => {
+  it('preserves the public server explanation for the AI response limit', async () => {
     const { result, summaryId, transcriptId, sharedRoot, applyTranscript } = fixture();
 
     applyTranscript();
@@ -553,7 +555,11 @@ describe('transcription to cited summary lifecycle', () => {
     const message = 'This workspace has hit the free limit for AI responses. Please ask the owner to upgrade to Pro.';
 
     jest.spyOn(console, 'error').mockImplementation(jest.fn());
-    mockFetch.mockRejectedValueOnce({ code: 1033, message });
+    mockFetch.mockRejectedValueOnce({
+      code: 1033,
+      message: 'Internal quota diagnostic',
+      user_error: { schema_version: 1, reason: 'AI_RESPONSE_LIMIT_REACHED', locale: 'en', message },
+    });
     await act(async () => { await result.current.handleRegenerateSummary(); });
     expect(result.current.summaryError).toBe(`Failed to regenerate summary: ${message}`);
     expect(result.current.summaryErrorCode).toBe(1033);

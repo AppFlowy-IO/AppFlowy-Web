@@ -182,7 +182,11 @@ describe('AI transcript summary UI with the real generation hook and Yjs documen
     const summaryBefore = traverseBlock(summaryId, sharedRoot);
     const message = 'This workspace has hit the free limit for AI responses. Please ask the owner to upgrade to Pro.';
 
-    mockFetch.mockRejectedValueOnce({ code: 1033, message });
+    mockFetch.mockRejectedValueOnce({
+      code: 1033,
+      message: 'Internal quota diagnostic',
+      user_error: { schema_version: 1, reason: 'AI_RESPONSE_LIMIT_REACHED', locale: 'en', message },
+    });
     jest.mocked(getSubscriptionLink).mockResolvedValueOnce('https://checkout.stripe.com/c/pay/test-pro-checkout');
     jest.spyOn(window, 'open').mockReturnValue(null);
     fireEvent.click(screen.getByRole('button', { name: 'Regenerate' }));
