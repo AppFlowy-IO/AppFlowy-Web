@@ -227,7 +227,9 @@ function SpaceCreationSettings({
   undoPolicy.current = (previous: WorkspaceSpaceCreationPolicy) => choosePolicy(previous, false);
 
   return (
-    <SettingsSection title={t('workspacePermissions.createSpaces')} tooltip={t('workspacePermissions.explanation')}>
+    <SettingsSection title={t('workspacePermissions.createSpaces')}>
+      {/* Page text, not a hover tooltip, so keyboard and screen reader users get it too. */}
+      <p className='text-sm text-text-secondary'>{t('workspacePermissions.explanation')}</p>
       <p role='status' className='text-sm text-text-primary'>
         {t(capability.can_create_space ? 'workspacePermissions.allowed' : 'workspacePermissions.denied')}
       </p>

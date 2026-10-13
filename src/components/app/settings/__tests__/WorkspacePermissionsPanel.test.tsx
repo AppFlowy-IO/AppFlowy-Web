@@ -210,6 +210,18 @@ describe('workspace permission settings', () => {
     expect(mockMutate).not.toHaveBeenCalled();
   });
 
+  it.each([true, false])(
+    'says that space creators keep their workspace role without needing a hover (owner=%s)',
+    async (owner) => {
+      current = { ...current, can_manage_space_creators: owner };
+      mount();
+      await screen.findByTestId('space-creation-policy-options');
+
+      // Keyboard and screen reader users can't open a hover-only tooltip, so this must be page text.
+      expect(screen.getByText('workspacePermissions.explanation').tagName).toBe('P');
+    }
+  );
+
   it('keeps the confirmed policy and reports a failed save', async () => {
     mockPolicy.mockRejectedValueOnce({ code: 1012, message: 'Only workspace owners can change this.' });
     mount();
