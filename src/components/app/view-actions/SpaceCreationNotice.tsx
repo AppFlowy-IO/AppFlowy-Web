@@ -27,7 +27,7 @@ export function spaceCreationUnavailableReason(
 ): SpaceCreationUnavailableReason | undefined {
   if (canStartSpaceCreation(permission)) return;
   // The last confirmed decision stays authoritative for display while it is rechecked.
-  if (permission.capability) return 'denied';
+  if (permission.capability || permission.status === 'ready') return 'denied';
   return permission.status === 'error' ? 'loadError' : 'loading';
 }
 
