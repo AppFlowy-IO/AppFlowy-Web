@@ -58,6 +58,7 @@ jest.mock('@/application/services/domains', () => ({
 
 jest.mock('@/application/db', () => ({
   deleteCollabDB: jest.fn(),
+  deleteDatabaseLocalCopies: jest.fn(async () => true),
 }));
 
 jest.mock('@/application/services/js-services/workspace-view-metadata', () => ({

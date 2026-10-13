@@ -3,6 +3,8 @@ import { IndexeddbPersistence } from 'y-indexeddb';
 import * as Y from 'yjs';
 
 import { databasePrefix } from '@/application/constants';
+import { metaIdFromRowId } from '@/application/database-yjs/const';
+import { RowMetaKey } from '@/application/database-yjs/database.type';
 import { appViewCacheSchema, type AppViewCacheTable } from '@/application/db/tables/app_view_cache';
 import {
   collabStorageSchema,
@@ -23,7 +25,7 @@ import {
   workspaceMemberProfileSchema,
   WorkspaceMemberProfileTable,
 } from '@/application/db/tables/workspace_member_profiles';
-import { YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { YDatabase, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { Log } from '@/utils/log';
 
 import {
@@ -1729,6 +1731,123 @@ export async function deleteCollabDB(
   }
 
   return indexedDbDeleted && sharedDataDeleted;
+}
+
+const DATABASE_COPY_DELETE_BATCH = 16;
+
+/** Row ids listed by the views of a database document. */
+export function collectDatabaseRowIds(doc: Y.Doc): string[] {
+  const database = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase | undefined;
+  const rowIds = new Set<string>();
+
+  database?.get(YjsDatabaseKey.views)?.forEach((view) => {
+    view?.get(YjsDatabaseKey.row_orders)?.forEach((row: { id?: unknown } | undefined) => {
+      if (typeof row?.id === 'string' && row.id) rowIds.add(row.id);
+    });
+  });
+  return Array.from(rowIds);
+}
+
+/** Rows listed by the database's local copy (current generation), without caching it. */
+async function readLocalDatabaseRowIds(databaseId: string, names: ReadonlySet<string>): Promise<string[]> {
+  const generationPrefix = `${databaseId}:database-restore:`;
+
+  if (!names.has(databaseId) && !Array.from(names).some((name) => name.startsWith(generationPrefix))) return [];
+
+  try {
+    const { doc, provider } = await openCollabDBWithProvider(databaseId, { skipCache: true });
+
+    try {
+      return collectDatabaseRowIds(doc);
+    } finally {
+      await provider.destroy();
+      doc.destroy();
+    }
+  } catch (error) {
+    Log.warn('[DB] could not read the rows of a revoked database', { databaseId, error });
+    return [];
+  }
+}
+
+/** Objects of the current storage scope that still have outbox rows. */
+async function scopeObjectsWithUnsentEdits(scope: CollabStorageScope): Promise<Set<string>> {
+  const [, userId, workspaceId] = JSON.parse(scope.key) as [string, string | null, string | null];
+
+  if (!userId || !workspaceId) return new Set();
+  const keys = await db.sync_outbox
+    .where('[userId+workspaceId+objectId]')
+    .between([userId, workspaceId, BaseDexie.minKey], [userId, workspaceId, BaseDexie.maxKey])
+    .uniqueKeys();
+
+  return new Set(keys.map((key) => (key as unknown as [string, string, string])[2]));
+}
+
+/**
+ * Removes the local copy of a database the user can no longer read, with the
+ * copies of its rows and row pages: deleteCollabDB(databaseId) alone leaves
+ * every cached row readable. Rows come from the database's content (in memory
+ * or its local copy), `knownRowIds` and the legacy row index. The copy of a row
+ * that still has unsent edits is kept, because those quarantined edits find
+ * their database through it after a later grant. Row removal is best effort;
+ * the database's own copy is always removed. Resolves like deleteCollabDB for
+ * the database.
+ */
+export async function deleteDatabaseLocalCopies(
+  databaseId: string,
+  options: { destroyDoc?: boolean; knownRowIds?: Iterable<string> } = {}
+): Promise<boolean> {
+  const scope = captureCollabStorageScope();
+  const rowIds = new Set(options.knownRowIds ?? []);
+  // Read an in-memory database before anything is awaited: callers destroy it next.
+  const cached = getCachedProviderDoc(databaseId);
+
+  if (cached) collectDatabaseRowIds(cached).forEach((rowId) => rowIds.add(rowId));
+  // Never removes another account's or workspace's copy after a switch, never rejects.
+  const deleteDatabase = () => scope.isCurrent()
+    ? deleteCollabDB(databaseId, { destroyDoc: options.destroyDoc }).catch((error) => {
+      Log.warn('[DB] could not remove the copy of a revoked database', { databaseId, error });
+      return false;
+    })
+    : Promise.resolve(false);
+  // The database's own copy is read below to list its rows when it is not in memory.
+  const databaseDeleted = cached ? deleteDatabase() : undefined;
+
+  try {
+    const names = await listCollabIndexedDBNames();
+    const legacyPrefix = scope.storageKey(`${databaseId}${LEGACY_ROW_MARKER}`);
+
+    (await db.rows.where('row_key').startsWith(legacyPrefix).toArray()).forEach((row) => rowIds.add(row.row_id));
+    if (!cached) (await readLocalDatabaseRowIds(databaseId, names)).forEach((rowId) => rowIds.add(rowId));
+    scope.assertCurrent();
+
+    const pending = await scopeObjectsWithUnsentEdits(scope);
+    const removableRows = Array.from(rowIds).filter((rowId) => !pending.has(rowId));
+    const rowNames = removableRows.map((rowId) => scope.storageKey(rowId));
+    const shared = new Set<string>([
+      ...(await db.collab_snapshots.where('objectId').anyOf(rowNames).primaryKeys()),
+      ...((await db.collab_updates.where('objectId').anyOf(rowNames).keys()) as string[]),
+    ]);
+    const stored = (name: string) => names.has(name) || hasCollabDocInMemory(name);
+    const targets = [
+      ...removableRows.filter((rowId) => shared.has(scope.storageKey(rowId)) || stored(rowId)),
+      ...removableRows.map((rowId) => `${databaseId}${LEGACY_ROW_MARKER}${rowId}`).filter(stored),
+      // A row page has no edits a later grant depends on; it goes with its row.
+      ...Array.from(rowIds).map((rowId) => metaIdFromRowId(rowId)(RowMetaKey.DocumentId)).filter(stored),
+    ];
+
+    for (let index = 0; index < targets.length; index += DATABASE_COPY_DELETE_BATCH) {
+      scope.assertCurrent();
+      await Promise.all(targets.slice(index, index + DATABASE_COPY_DELETE_BATCH)
+        .map((name) => deleteCollabDB(name, { destroyDoc: options.destroyDoc })));
+    }
+
+    scope.assertCurrent();
+    await db.rows.where('row_key').startsWith(legacyPrefix).filter((row) => !pending.has(row.row_id)).delete();
+  } catch (error) {
+    Log.warn('[DB] could not remove the row copies of a revoked database', { databaseId, error });
+  }
+
+  return databaseDeleted ?? deleteDatabase();
 }
 
 /**

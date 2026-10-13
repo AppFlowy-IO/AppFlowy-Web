@@ -5,7 +5,7 @@ import { useContext, useState, type MutableRefObject, type ReactNode } from 'rea
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
-import { deleteCollabDB } from '@/application/db';
+import { deleteCollabDB, deleteDatabaseLocalCopies } from '@/application/db';
 import { AccessService, ViewService } from '@/application/services/domains';
 import {
   getCachedWorkspaceViewMetadata,
@@ -31,6 +31,7 @@ jest.mock('@/application/sync-outbox', () => ({ blockPermissionSync: jest.fn() }
 
 jest.mock('@/application/db', () => ({
   deleteCollabDB: jest.fn(),
+  deleteDatabaseLocalCopies: jest.fn(),
 }));
 
 jest.mock('@/application/services/domains', () => ({
@@ -269,6 +270,7 @@ describe('AppBusinessLayer permission gates', () => {
       (_workspaceId: string, _viewId: string, loader: () => Promise<View | null | undefined>) => loader()
     );
     (deleteCollabDB as jest.Mock).mockResolvedValue(true);
+    (deleteDatabaseLocalCopies as jest.Mock).mockResolvedValue(true);
     (AccessService.getObjectPermission as jest.Mock).mockImplementation(resolveObjectPermission());
   });
 
@@ -642,7 +644,9 @@ describe('AppBusinessLayer permission gates', () => {
     expect(screen.getByTestId('modal-view-id').textContent).toBe(modalViewId);
     expect(ViewService.invalidateCache).toHaveBeenCalledWith(workspaceId, effectiveModalViewId);
     expect(deleteCollabDB).toHaveBeenCalledWith(effectiveModalViewId, { destroyDoc: true });
-    expect(deleteCollabDB).toHaveBeenCalledWith(modalDatabaseId, { destroyDoc: true });
+    // The database goes with its rows and row pages.
+    expect(deleteDatabaseLocalCopies).toHaveBeenCalledWith(modalDatabaseId, { destroyDoc: true });
+    expect(deleteCollabDB).not.toHaveBeenCalledWith(modalDatabaseId, expect.anything());
   });
 
   it('retains an exactly revoked modal target even when it has the route view id', async () => {

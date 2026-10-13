@@ -1,13 +1,17 @@
 import * as Y from 'yjs';
 
-import { deleteCollabDB } from '@/application/db';
+import { collectDatabaseRowIds, deleteCollabDB, deleteDatabaseLocalCopies } from '@/application/db';
 import { bindCollabStorageScope, captureCollabStorageScope, setCollabStorageWorkspace } from '@/application/db/collab-storage-scope';
 import { blockPermissionSync, deleteOutboxByObjectId, enqueueOutboxUpdate } from '@/application/sync-outbox';
 import { Types } from '@/application/types';
 
 import { handleMessage, initSync, SyncContext } from '../sync-protocol';
 
-jest.mock('@/application/db', () => ({ deleteCollabDB: jest.fn(async () => true) }));
+jest.mock('@/application/db', () => ({
+  collectDatabaseRowIds: jest.fn(() => ['row-1', 'row-2']),
+  deleteCollabDB: jest.fn(async () => true),
+  deleteDatabaseLocalCopies: jest.fn(async () => true),
+}));
 jest.mock('@/application/session/token-storage', () => ({ getTokenParsed: () => ({ user: { id: 'actor' } }) }));
 jest.mock('@/utils/runtime-config', () => ({ getConfigValue: () => 'https://server' }));
 jest.mock('@/application/sync-outbox', () => ({
@@ -21,11 +25,11 @@ jest.mock('@/application/sync-outbox', () => ({
 
 beforeEach(() => { jest.clearAllMocks(); setCollabStorageWorkspace({ userId: 'actor', serverUrl: 'https://server', workspaceId: 'workspace' }); });
 
-function context(): SyncContext {
-  const doc = new Y.Doc({ guid: 'document' });
+function context(collabType = Types.Document, guid = 'document'): SyncContext {
+  const doc = new Y.Doc({ guid });
 
   bindCollabStorageScope(doc, captureCollabStorageScope());
-  const ctx = { doc, collabType: Types.Document, emit: jest.fn() };
+  const ctx = { doc, collabType, emit: jest.fn() };
 
   jest.spyOn(doc, 'destroy');
   initSync(ctx);
@@ -43,6 +47,18 @@ test('socket read revocation quarantines unsent edits and removes only the synce
   expect(deleteOutboxByObjectId).not.toHaveBeenCalled();
   expect(ctx.doc.destroy).toHaveBeenCalledTimes(1);
   expect(ctx.flush).toBeUndefined();
+});
+
+test('socket read revocation of a database also removes the copies of its rows', () => {
+  const ctx = context(Types.Database, 'database');
+
+  handleMessage(ctx, { objectId: ctx.doc.guid, accessChanged: { canRead: false, canWrite: false } });
+  expect(blockPermissionSync).toHaveBeenCalledWith('database', 'workspace');
+  // The rows are read from the open database before it is destroyed.
+  expect(collectDatabaseRowIds).toHaveBeenCalledWith(ctx.doc);
+  expect(deleteDatabaseLocalCopies).toHaveBeenCalledWith('database', { destroyDoc: false, knownRowIds: ['row-1', 'row-2'] });
+  expect(deleteCollabDB).not.toHaveBeenCalled();
+  expect(ctx.doc.destroy).toHaveBeenCalledTimes(1);
 });
 
 test('socket Edit to View blocks writes while preserving the readable document', () => {

@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { validate as uuidValidate } from 'uuid';
 
 import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
-import { deleteCollabDB } from '@/application/db';
+import { deleteCollabDB, deleteDatabaseLocalCopies } from '@/application/db';
 import { AccessService, ViewService, WorkspaceService } from '@/application/services/domains';
 import {
   captureWorkspaceViewMetadataAccessToken,
@@ -2136,11 +2136,16 @@ export function useWorkspaceData() {
 
           collabIds.forEach((collabId) => {
             // No read access: unsent edits stay quarantined for Try again or
-            // Discard, while the synced copy is removed so the revoked content
-            // is no longer readable on this device.
+            // Discard, while the synced copy (a database with its rows and row
+            // pages) is removed so the revoked content is no longer readable on
+            // this device.
             void blockPermissionSync(collabId, workspaceId).catch((error) =>
               Log.warn('[Outline] could not quarantine edits after access loss', { collabId, error }));
-            void deleteCollabDB(collabId, { destroyDoc: true });
+            if (collabId === databaseId) {
+              void deleteDatabaseLocalCopies(collabId, { destroyDoc: true });
+            } else {
+              void deleteCollabDB(collabId, { destroyDoc: true });
+            }
           });
           eventEmitter?.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: changedViewId });
         });
