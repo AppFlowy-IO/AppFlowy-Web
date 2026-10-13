@@ -132,7 +132,7 @@ describe('group access to all spaces (group dialog)', () => {
     expect(within(confirmation).getByText('groupSpaceAccess.confirmEdit:R&D <EU>')).toBeTruthy();
   });
 
-  it('names the menu by its section and current level', () => {
+  it('names the access button by its section and current level', () => {
     render(<GroupSpaceCoverageCard workspaceId='workspace' group={group({ space_coverage_access_level: 10 })} />);
     expect(screen.getByRole('button', { name: 'groupSpaceAccess.title groupSpaceAccess.canView' })).toBe(trigger());
   });

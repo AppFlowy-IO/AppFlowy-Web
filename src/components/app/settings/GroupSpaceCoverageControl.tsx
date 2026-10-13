@@ -79,7 +79,7 @@ interface GroupSpaceCoverageCardProps {
 export function GroupSpaceCoverageCard({ workspaceId, group, isCurrent, onChanged }: GroupSpaceCoverageCardProps) {
   const { t } = useTranslation();
   const titleId = useId();
-  const triggerId = useId();
+  const levelId = useId();
   const serverLevel = group.space_coverage_access_level;
   // A confirmed save is shown until the group list delivers a different server value.
   const [saved, setSaved] = useState<{ basis: GroupSpaceCoverageLevel | undefined; level: GroupSpaceCoverageLevel }>();
@@ -152,24 +152,25 @@ export function GroupSpaceCoverageCard({ workspaceId, group, isCurrent, onChange
         )}
       </div>
       <DropdownMenu>
+        {/* Radix owns the trigger id: the open menu refers to it. */}
         <DropdownMenuTrigger asChild>
           <Button
-            id={triggerId}
             type='button'
             variant='ghost'
             size='sm'
             disabled={disabled}
             loading={pending !== undefined}
-            aria-labelledby={`${titleId} ${triggerId}`}
+            aria-labelledby={`${titleId} ${levelId}`}
             className='min-w-[120px] shrink-0 justify-end px-2 text-text-primary'
             data-testid='group-space-coverage-trigger'
           >
             {pending && <Progress variant='inherit' />}
-            {coverageLabel(shown, t)}
+            <span id={levelId}>{coverageLabel(shown, t)}</span>
             <ChevronDown aria-hidden='true' className='h-4 w-4 text-icon-tertiary' />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align='end'>
+        {/* The menu lists the levels of this setting, so it is named by the setting, not the current level. */}
+        <DropdownMenuContent align='end' aria-labelledby={titleId}>
           {COVERAGE_OPTIONS.map((option) => (
             <DropdownMenuItem
               key={coverageKey(option)}
