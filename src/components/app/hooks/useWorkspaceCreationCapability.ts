@@ -128,8 +128,6 @@ export function useWorkspaceCreationCapability(enabled = true) {
   return {
     status: current?.status ?? 'loading',
     canCreate: current?.status === 'ready' && current.capability?.can_create_workspace === true,
-    /** The server predates creation policy; creation uses its original route. */
-    legacy: current?.status === 'ready' && current.capability?.legacy === true,
     /** An explicit Check again is in flight. */
     checking: checking === scope,
     refresh,

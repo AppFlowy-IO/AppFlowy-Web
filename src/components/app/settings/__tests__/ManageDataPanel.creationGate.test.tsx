@@ -6,7 +6,6 @@ const mockCreation = {
   status: 'ready',
   canCreate: true,
   checking: false,
-  legacy: false,
   refresh: jest.fn(),
   isCurrent: () => true,
   scopeKey: 'server:user',
@@ -24,8 +23,8 @@ jest.mock('@/components/app/app.hooks', () => ({
 }));
 jest.mock('@/components/main/app.hooks', () => ({ useCurrentUser: () => ({ uid: '43' }) }));
 
-function setCreation(status: 'loading' | 'ready' | 'error', canCreate: boolean, legacy = false) {
-  Object.assign(mockCreation, { status, canCreate, legacy });
+function setCreation(status: 'loading' | 'ready' | 'error', canCreate: boolean) {
+  Object.assign(mockCreation, { status, canCreate });
 }
 
 beforeEach(() => {
@@ -63,13 +62,11 @@ test('an unreadable answer offers Check again; a denial does not', () => {
   expect(screen.queryByRole('button', { name: 'button.retry' })).toBeNull();
 });
 
-test.each([
-  ['an allowed account', false],
-  ['a legacy server, which decides for itself', true],
-])('%s can open the importer and is told it will own the result', (_label, legacy) => {
+// A server without the capability route is covered end to end in ManageDataPanel.legacyServer.test.
+test('an allowed account can open the importer and is told it will own the result', () => {
   const onImport = jest.fn();
 
-  setCreation('ready', true, legacy);
+  setCreation('ready', true);
   render(<ManageDataPanel onImport={onImport} />);
   fireEvent.click(screen.getByTestId('manage-data-import'));
   expect(onImport).toHaveBeenCalledTimes(1);

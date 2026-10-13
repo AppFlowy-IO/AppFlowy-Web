@@ -13,7 +13,6 @@ const mockCreation = {
   canCreate: true,
   status: 'ready',
   checking: false,
-  legacy: false,
   scopeKey: 'server:user',
   isCurrent: () => true,
   refresh: jest.fn(),

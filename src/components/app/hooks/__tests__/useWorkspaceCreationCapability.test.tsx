@@ -220,7 +220,7 @@ test('a server without the capability route stays usable through the legacy rout
   const { result } = mount();
 
   await waitFor(() => expect(result.current.canCreate).toBe(true));
-  expect(result.current.legacy).toBe(true);
+  expect(result.current.status).toBe('ready');
 });
 
 test('offline suspends a prior grant; reconnect revalidates without changing sign-in state', async () => {
