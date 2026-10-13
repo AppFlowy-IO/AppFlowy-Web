@@ -2935,7 +2935,12 @@
       "noAccess": "No Access",
       "deletedPage": "Deleted page",
       "trashHint": " - in trash",
-      "morePages": "more pages"
+      "morePages": "more pages",
+      "refreshingSuggestions": "Refreshing suggestions…",
+      "pageCreated": "Page {{name}} was created.",
+      "openPage": "Open",
+      "createPageFailed": "Couldn't create the page. Try again.",
+      "createPageDenied": "You can't add pages here."
     },
     "toolbar": {
       "resetToDefaultFont": "Reset to default"
@@ -3101,7 +3106,18 @@
     "sidebarSearchIcon": "Search and quickly jump to a page",
     "placeholder": {
       "actions": "Search actions..."
-    }
+    },
+    "recentPagesFailed": "Couldn't load recent pages.",
+    "offlineRecentPages": "You're offline. Recent pages will load when you reconnect.",
+    "noRecentPages": "No recent pages yet.",
+    "offlineResults": "You're offline. Results will appear when you reconnect.",
+    "offlineAskAI": "You're offline. Ask AI is unavailable until you reconnect.",
+    "createAIChatFailed": "Couldn't create an AI chat here.",
+    "aiChatParentDenied": "You can't add pages to {{name}}, so the AI chat wasn't created.",
+    "aiChatPermissionsChanged": "Permissions were updated. Try again.",
+    "updateAIChatSettingsFailed": "The AI chat was created, but its context couldn't be attached.",
+    "aiChatCreated": "AI chat created",
+    "openAIChat": "Open"
   },
   "message": {
     "copy": {

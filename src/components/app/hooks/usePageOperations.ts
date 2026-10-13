@@ -1,6 +1,6 @@
 import { MutableRefObject, useCallback, useLayoutEffect, useMemo, useRef } from 'react';
-import { toast } from 'sonner';
 
+import { ERROR_CODE } from '@/application/constants';
 import { BillingService, FileService, PageService, PublishService, ViewService } from '@/application/services/domains';
 import { deleteView as clearViewCache } from '@/application/services/js-services/cache';
 import { clearPublishViewInfoCache } from '@/application/services/js-services/cached-api';
@@ -120,8 +120,8 @@ export function usePageOperations({
       const shareWithMeView = findViewInShareWithMe(outlineRef.current || [], parentViewId);
 
       if (role === Role.Guest || shareWithMeView) {
-        toast.error('No permission to create pages');
-        throw new Error('No permission to create pages');
+        // Callers report a failed creation in their own words; the code marks this one as a denial.
+        throw Object.assign(new Error('No permission to create pages'), { code: ERROR_CODE.NOT_HAS_PERMISSION });
       }
 
       try {

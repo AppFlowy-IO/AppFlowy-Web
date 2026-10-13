@@ -6,7 +6,7 @@ const MENTION_SEARCH_CACHE_LIMIT = 50;
 const DEFAULT_MENTION_SEARCH_RETRY_LATER_MS = 3000;
 
 interface MentionSearchCacheEntry {
-  owner: MentionSearchCache;
+  owner: object;
   sections: MentionSearchSection[];
   cachedAt?: number;
   retryLaterUntil?: number;
@@ -21,18 +21,25 @@ export interface MentionSearchRead {
 
 const mentionSearchCache = new Map<string, MentionSearchCacheEntry>();
 
-/** One cache lifetime belongs to one permission/session scope. Object identity deliberately
- * prevents a remounted panel from reusing an earlier scope's entries, even for the same account.
- * The shared map bounds retained entries across all panels; invalidated async work cannot fill it.
+/** Entries belong to one permission/session scope object (`owner`, by identity). Handles that share
+ * it, such as one mounted picker across close and reopen, reuse each other's entries; a new scope
+ * after a permission or session change, or a remounted panel (which cannot know what changed while
+ * it was unmounted), starts empty even for the same account. Without an owner, the handle itself is
+ * the scope. The shared map bounds retained entries across all panels; invalidated async work
+ * cannot fill it, and a retired scope frees its entries at once.
  */
 export class MentionSearchCache {
-  constructor(private readonly isCurrent: () => boolean) {}
+  private readonly owner: object;
+
+  constructor(private readonly isCurrent: () => boolean, owner?: object) {
+    this.owner = owner ?? this;
+  }
 
   private entry(key: string) {
     if (!this.isCurrent()) return undefined;
     const entry = mentionSearchCache.get(key);
 
-    return entry?.owner === this ? entry : undefined;
+    return entry?.owner === this.owner ? entry : undefined;
   }
 
   private setEntry(key: string, entry: Omit<MentionSearchCacheEntry, 'owner'>) {
@@ -45,7 +52,14 @@ export class MentionSearchCache {
       if (oldestKey !== undefined) mentionSearchCache.delete(oldestKey);
     }
 
-    mentionSearchCache.set(key, { ...entry, owner: this });
+    mentionSearchCache.set(key, { ...entry, owner: this.owner });
+  }
+
+  /** Drop this scope's entries once it is replaced or its panel unmounts. */
+  retire() {
+    mentionSearchCache.forEach((entry, key) => {
+      if (entry.owner === this.owner) mentionSearchCache.delete(key);
+    });
   }
 
   getSections(key: string): MentionSearchSection[] | undefined {

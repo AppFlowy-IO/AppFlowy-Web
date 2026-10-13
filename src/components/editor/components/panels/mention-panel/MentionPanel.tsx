@@ -5,7 +5,10 @@ import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 're
 import { useTranslation } from 'react-i18next';
 import { Editor as SlateEditor, Element as SlateElement, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
+import { toast } from 'sonner';
 
+import { ERROR_CODE } from '@/application/constants';
+import type { APIError } from '@/application/services/js-services/http/core';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
@@ -30,6 +33,7 @@ import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { ReactComponent as DocumentIcon } from '@/assets/icons/page.svg';
 import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 import { ReactComponent as ReminderIcon } from '@/assets/icons/reminder_clock.svg';
+import { notify } from '@/components/_shared/notify';
 import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
 import { useSearchAccessScope } from '@/components/app/search/useSearchAccessScope';
 import { usePanelContext } from '@/components/editor/components/panels/Panels.hooks';
@@ -59,6 +63,8 @@ enum MentionTag {
 
 interface Option {
   index: number;
+  /** The highlighted option's key, so a refreshed list keeps the same suggestion highlighted. */
+  key?: string;
 }
 
 const MENTION_SEARCH_LIMIT = 20;
@@ -191,6 +197,20 @@ function getSelectedBlockId(editor: YjsEditor): string | undefined {
   });
 
   return (entry?.[0] as { blockId?: string } | undefined)?.blockId;
+}
+
+function isPermissionDenied(error: unknown) {
+  const candidate = error as { code?: unknown; httpStatus?: unknown } | null;
+
+  return candidate?.code === ERROR_CODE.NOT_HAS_PERMISSION || candidate?.httpStatus === 403;
+}
+
+/** A network failure or server error says nothing about access; any other error might. */
+function isTransientMentionSearchError(error: unknown) {
+  if (error instanceof Error) return true;
+  const candidate = error as { code?: unknown; httpStatus?: unknown } | null;
+
+  return typeof candidate?.httpStatus === 'number' ? candidate.httpStatus >= 500 : candidate?.code === -1;
 }
 
 function delay(ms: number) {
@@ -395,6 +415,7 @@ export function MentionPanel({
   const {
     workspaceId,
     viewId,
+    readOnly,
     searchMentions,
     mentionContext,
     loadViews,
@@ -411,18 +432,26 @@ export function MentionPanel({
   const selectedOptionRef = useRef<Option | null>(null);
   const [selectedOption, setSelectedOption] = useState<Option | null>(null);
   const editor = useSlateStatic() as YjsEditor;
-  const { scope: accessScope, isCurrent: isAccessCurrent } = useSearchAccessScope(workspaceId);
+  const {
+    scope: accessScope,
+    isCurrent: isAccessCurrent,
+    isSessionCurrent,
+    refreshKey,
+  } = useSearchAccessScope(workspaceId);
   const currentMentionCache = useRef<MentionSearchCache>();
-  const mentionCache = useMemo(() => {
-    // A closed picker cannot lend its cached snapshot or pending reads to the next opening.
-    const cache: MentionSearchCache = new MentionSearchCache(
-      () => open && currentMentionCache.current === cache && isAccessCurrent()
-    );
-
-    return cache;
-  }, [isAccessCurrent, open]);
+  // One cache lifetime per permission/session scope, kept across close and reopen: a reopened
+  // picker shows its cached suggestions at once and revalidates them. A permission or session
+  // change (also while closed) or a remount starts empty.
+  const mentionCache = useMemo(
+    () => new MentionSearchCache(isAccessCurrent, accessScope),
+    [accessScope, isAccessCurrent]
+  );
   const [remoteResult, setRemoteResult] = useState<{ cache: MentionSearchCache; sections: MentionSearchSection[] }>();
   const mentionSections = remoteResult?.cache === mentionCache && isAccessCurrent() ? remoteResult.sections : [];
+  // What the picker shows now, for a background re-run of the same query.
+  const shownMentionSectionsRef = useRef(mentionSections);
+
+  shownMentionSectionsRef.current = mentionSections;
   const setMentionSections = useCallback(
     (sections: MentionSearchSection[]) => {
       setRemoteResult({ cache: mentionCache, sections });
@@ -440,13 +469,35 @@ export function MentionPanel({
     currentMentionCache.current = mentionCache;
     return () => {
       if (currentMentionCache.current === mentionCache) currentMentionCache.current = undefined;
+      mentionCache.retire();
     };
   }, [mentionCache]);
+  const mountedRef = useRef(true);
+  const openingRef = useRef<object>();
+  const readOnlyRef = useRef(readOnly);
+  const creatingPageRef = useRef(false);
+
+  readOnlyRef.current = readOnly;
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  useEffect(() => {
+    // Identifies one opening of the picker; a reply that outlives it must not edit the text.
+    openingRef.current = open ? {} : undefined;
+  }, [open]);
   const isMentionScopeCurrent = useCallback(
     () =>
       currentMentionCache.current === mentionCache &&
       (!(searchMentions || accessScope.authenticated) || isAccessCurrent()),
     [accessScope.authenticated, isAccessCurrent, mentionCache, searchMentions]
+  );
+  // Same rule for work that already reached the server: only the editor and session must remain.
+  const isMentionSessionCurrent = useCallback(
+    () => mountedRef.current && (!(searchMentions || accessScope.authenticated) || isSessionCurrent()),
+    [accessScope.authenticated, isSessionCurrent, searchMentions]
   );
   const localFallbackViews =
     localResult?.cache === mentionCache && isMentionScopeCurrent() ? localResult.views : EMPTY_FALLBACK_VIEWS;
@@ -457,6 +508,7 @@ export function MentionPanel({
     [mentionCache]
   );
   const mentionSearchRequestIdRef = useRef(0);
+  const lastMentionSearchRef = useRef<{ cache: MentionSearchCache; key: string }>();
   const hasMentionSearchQuery = Boolean(searchText?.trim());
   const mentionInclude =
     activePanel === PanelType.PageReference
@@ -542,8 +594,16 @@ export function MentionPanel({
     setShowMorePages(false);
   }, [mentionSearchCacheKey]);
 
+  // A new query or access scope starts without a highlighted option. A background refresh of the
+  // same query keeps it.
+  useEffect(() => {
+    selectedOptionRef.current = null;
+    setSelectedOption(null);
+  }, [mentionCache, mentionSearchCacheKey]);
+
   useEffect(() => {
     if (!open || !searchMentions || !isAccessCurrent()) {
+      lastMentionSearchRef.current = undefined;
       if (useLocalMentionFallback) return;
 
       setMentionSections([]);
@@ -553,15 +613,19 @@ export function MentionPanel({
       return;
     }
 
-    selectedOptionRef.current = null;
-    setSelectedOption(null);
-
     const searchMentionsFn = searchMentions;
     let cancelled = false;
     let timer: number | undefined;
     const requestId = mentionSearchRequestIdRef.current + 1;
     const cachedSections = mentionCache.getSections(mentionSearchCacheKey);
+    const previousSearch = lastMentionSearchRef.current;
+    // Re-running the same query in the same scope (a reconnect refresh) keeps what is shown.
+    const sameSearch = previousSearch?.cache === mentionCache && previousSearch.key === mentionSearchCacheKey;
+    // Suggestions for this query already on screen. A dropped connection or server error during
+    // their background re-run keeps them, as on the cached path; other failures may concern access.
+    let showingSuggestions = sameSearch && shownMentionSectionsRef.current.length > 0;
 
+    lastMentionSearchRef.current = { cache: mentionCache, key: mentionSearchCacheKey };
     mentionSearchRequestIdRef.current = requestId;
 
     if (cachedSections) {
@@ -602,16 +666,19 @@ export function MentionPanel({
           })
           .catch((error) => {
             if (!isCurrentRequest()) return;
-            setMentionSections([]);
+            console.error(error);
             if (isMentionSearchRetryLater(error)) {
               deferSearch(error);
               scheduleSearch(mentionCache.retryLaterRemainingMs(mentionSearchCacheKey));
               return;
             }
 
+            // The cached suggestions belong to this unchanged access scope; a dropped connection
+            // or server error is not a reason to hide them. Other failures may concern access.
+            if (isTransientMentionSearchError(error)) return;
+            setMentionSections([]);
             mentionCache.forget(mentionSearchCacheKey);
             setMentionSearchFailed(true);
-            console.error(error);
           });
       }
 
@@ -621,9 +688,11 @@ export function MentionPanel({
       };
     }
 
-    setMentionSections([]);
-    setMentionSearchFailed(false);
-    setMentionSearchDeferred(false);
+    if (!sameSearch) {
+      setMentionSections([]);
+      setMentionSearchFailed(false);
+      setMentionSearchDeferred(false);
+    }
 
     function isCurrentRequest() {
       return !cancelled && isAccessCurrent() && mentionSearchRequestIdRef.current === requestId;
@@ -632,6 +701,7 @@ export function MentionPanel({
     function deferSearch(error: Parameters<MentionSearchCache['markRetryLater']>[1]) {
       if (!isCurrentRequest()) return;
       mentionCache.markRetryLater(mentionSearchCacheKey, error);
+      showingSuggestions = false;
       setMentionSections([]);
       setMentionSearchDeferred(true);
       setMentionSearchFailed(false);
@@ -653,6 +723,7 @@ export function MentionPanel({
       );
       const fulfilledResponses: Array<{ request: MentionSearchRequest; response: MentionSearchResponse }> = [];
       let databaseRowResponse: MentionSearchResponse | undefined;
+      let retryLater: APIError | undefined;
       let blockingError: unknown;
 
       settledResponses.forEach((result, index) => {
@@ -666,25 +737,28 @@ export function MentionPanel({
           return;
         }
 
+        // For a typed query (the only case with a separate row request) RetryLater always means
+        // that permissions changed or are being updated. A parallel response that passed its own
+        // check earlier may predate that change, so nothing from this round is shown, even when
+        // only the row request reports it.
+        if (isMentionSearchRetryLater(result.reason)) {
+          retryLater = retryLater ?? result.reason;
+          return;
+        }
+
         const request = mentionSearchRequests[index];
 
         if (request && isDatabaseRowOnlyRequest(request)) {
-          if (isMentionSearchRetryLater(result.reason)) {
-            if (read.isCurrent()) deferSearch(result.reason);
-            blockingError = blockingError ?? result.reason;
-          } else {
-            console.error(result.reason);
-          }
-
+          console.error(result.reason);
           return;
         }
 
         blockingError = blockingError ?? result.reason;
       });
 
-      if (blockingError) {
-        throw blockingError;
-      }
+      // It outranks other failures: a network error alone would keep the shown suggestions.
+      if (retryLater) throw retryLater;
+      if (blockingError) throw blockingError;
 
       const initialSections =
         mergeMentionSearchResponses(fulfilledResponses.map(({ response }) => response)).sections ?? [];
@@ -714,12 +788,9 @@ export function MentionPanel({
             databaseRowResponse = rowRetryResponse;
             sections = mergeMentionSearchResponses([...nonRowResponses, rowRetryResponse]).sections ?? [];
           } catch (error) {
-            if (isMentionSearchRetryLater(error)) {
-              if (read.isCurrent()) deferSearch(error);
-              throw error;
-            } else {
-              console.error(error);
-            }
+            // Same rule: the people/page response may predate the change the row request reports.
+            if (isMentionSearchRetryLater(error)) throw error;
+            console.error(error);
           }
         }
       }
@@ -738,6 +809,7 @@ export function MentionPanel({
           if (!isCurrentRequest() || !result.read.isCurrent()) return;
 
           cacheMentionSections(result);
+          showingSuggestions = result.sections.length > 0;
           setMentionSections(result.sections);
           setMentionSearchFailed(false);
           setMentionSearchDeferred(false);
@@ -752,6 +824,7 @@ export function MentionPanel({
           }
 
           console.error(error);
+          if (showingSuggestions && isTransientMentionSearchError(error)) return;
           setMentionSections([]);
           setMentionSearchFailed(true);
           setMentionSearchDeferred(false);
@@ -770,7 +843,7 @@ export function MentionPanel({
       setMentionSearchLoading(false);
       scheduleSearch(retryLaterMs);
     } else {
-      setMentionSearchLoading(true);
+      if (!sameSearch) setMentionSearchLoading(true);
       scheduleSearch(hasMentionSearchQuery ? 120 : 0);
     }
 
@@ -786,6 +859,7 @@ export function MentionPanel({
     mentionSearchCacheKey,
     mentionSearchRequests,
     open,
+    refreshKey,
     searchMentions,
     useLocalMentionFallback,
   ]);
@@ -917,6 +991,18 @@ export function MentionPanel({
   const mentionOptionIndexByKey = useMemo(() => {
     return new Map(mentionPanelOptions.map((option, index) => [option.key, index]));
   }, [mentionPanelOptions]);
+
+  // When a refresh reorders or removes suggestions, follow the highlighted one or clear it.
+  useEffect(() => {
+    const selected = selectedOptionRef.current;
+
+    if (!selected?.key || mentionPanelOptions[selected.index]?.key === selected.key) return;
+    const index = mentionPanelOptions.findIndex((option) => option.key === selected.key);
+    const next = index >= 0 ? { index, key: selected.key } : null;
+
+    selectedOptionRef.current = next;
+    setSelectedOption(next);
+  }, [mentionPanelOptions]);
   const showMentionSearchLoadingState =
     hasMentionPanelSource && (mentionSearchLoading || mentionSearchDeferred) && rawMentionSearchResults.length === 0;
 
@@ -935,9 +1021,8 @@ export function MentionPanel({
     });
   }, [selectedOption]);
 
-  const handleAddMention = useCallback(
+  const insertMention = useCallback(
     (mention: Mention) => {
-      if (!isMentionScopeCurrent()) return false;
       removeContent();
       closePanel();
       editor.flushLocalChanges();
@@ -971,24 +1056,63 @@ export function MentionPanel({
 
       return true;
     },
-    [closePanel, removeContent, editor, isMentionScopeCurrent]
+    [closePanel, removeContent, editor]
+  );
+
+  const handleAddMention = useCallback(
+    (mention: Mention) => {
+      // Suggestions are permission-sensitive: only insert one from the current access scope.
+      if (!isMentionScopeCurrent()) return false;
+      return insertMention(mention);
+    },
+    [insertMention, isMentionScopeCurrent]
   );
 
   const handleAddPage = useCallback(
     async (type: MentionType.childPage | MentionType.PageRef = MentionType.PageRef) => {
-      if (!addPage || !viewId || !isMentionScopeCurrent()) return;
+      if (creatingPageRef.current || !addPage || !viewId || !isMentionScopeCurrent()) return;
 
+      const opening = openingRef.current;
+      const name = searchText?.trim() || t('menuAppHeader.defaultNewPageName');
+      let pageId: string;
+
+      creatingPageRef.current = true;
       try {
-        const response = await addPage(viewId, { name: searchText, layout: ViewLayout.Document });
-
-        if (handleAddMention({ page_id: response.view_id, type })) {
-          openPageModal?.(response.view_id);
-        }
+        pageId = (await addPage(viewId, { name: searchText, layout: ViewLayout.Document })).view_id;
       } catch (error) {
         console.error(error);
+        if (isMentionSessionCurrent()) {
+          notify.error(
+            t(isPermissionDenied(error) ? 'document.mention.createPageDenied' : 'document.mention.createPageFailed')
+          );
+        }
+
+        return;
+      } finally {
+        creatingPageRef.current = false;
       }
+
+      // The page exists now. A closed editor or another session must not be touched or told.
+      if (!isMentionSessionCurrent()) return;
+
+      // The user's own new page is not a permission-sensitive suggestion, so a permission hint
+      // during creation does not block the link. The picker must still be the same opening, and
+      // the editor still editable.
+      if (
+        opening &&
+        openingRef.current === opening &&
+        !readOnlyRef.current &&
+        insertMention({ page_id: pageId, type })
+      ) {
+        openPageModal?.(pageId);
+        return;
+      }
+
+      toast.success(t('document.mention.pageCreated', { name }), {
+        action: { label: t('document.mention.openPage'), onClick: () => openPageModal?.(pageId) },
+      });
     },
-    [addPage, handleAddMention, isMentionScopeCurrent, openPageModal, searchText, viewId]
+    [addPage, insertMention, isMentionScopeCurrent, isMentionSessionCurrent, openPageModal, searchText, t, viewId]
   );
 
   const notifyPersonMention = useNotifyPersonMention();
@@ -1069,14 +1193,16 @@ export function MentionPanel({
           const current = selectedOptionRef.current;
 
           if (!current || current.index < 0 || current.index >= optionCount) {
-            setSelectedOption({ index: key === 'ArrowDown' ? 0 : optionCount - 1 });
+            const index = key === 'ArrowDown' ? 0 : optionCount - 1;
+
+            setSelectedOption({ index, key: mentionPanelOptions[index]?.key });
             break;
           }
 
           const nextIndex =
             key === 'ArrowDown' ? (current.index + 1) % optionCount : (current.index - 1 + optionCount) % optionCount;
 
-          setSelectedOption({ index: nextIndex });
+          setSelectedOption({ index: nextIndex, key: mentionPanelOptions[nextIndex]?.key });
 
           break;
         }
@@ -1209,6 +1335,11 @@ export function MentionPanel({
                   })}
                 </div>
               ))
+            )}
+            {mentionSearchDeferred && (
+              <div role={'status'} className={'px-4 py-2 text-xs text-text-secondary'}>
+                {t('document.mention.refreshingSuggestions')}
+              </div>
             )}
             {!mentionSearchLoading &&
               !mentionSearchDeferred &&

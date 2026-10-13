@@ -22,6 +22,8 @@ const mockAddMark = jest.fn();
 const mockTranslate = (key: string) => key;
 const mockLoadViews = jest.fn();
 const mockNotifyPerson = jest.fn();
+const mockToastSuccess = jest.fn();
+const mockNotifyError = jest.fn();
 const mockPanelContext = {
   activePanel: PanelType.PageReference,
   isPanelOpen: (panel: PanelType) => panel === PanelType.PageReference,
@@ -48,6 +50,10 @@ jest.mock('@/components/main/app.hooks', () => ({
   useAuthenticatedUserIdOptional: () => mockSession.userId,
   useIsAuthenticatedOptional: () => mockSession.authenticated,
 }));
+jest.mock('sonner', () => ({ toast: { success: (...args: unknown[]) => mockToastSuccess(...args) } }));
+jest.mock('@/components/_shared/notify', () => ({
+  notify: { error: (...args: unknown[]) => mockNotifyError(...args) },
+}));
 jest.mock('@/components/_shared/popover', () => ({
   Popover: ({ open, children }: { open: boolean; children: ReactNode }) =>
     open ? <div data-testid='mention-panel'>{children}</div> : null,
@@ -55,6 +61,21 @@ jest.mock('@/components/_shared/popover', () => ({
 }));
 
 const retryLater = { code: ERROR_CODE.RETRY_LATER, message: 'refresh permissions' };
+const rowsRetryLater = { code: ERROR_CODE.RETRY_LATER, message: 'refresh permissions', retryAfterSecs: 1 };
+
+function base64Url(value: object) {
+  return btoa(JSON.stringify(value)).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+function sessionToken(sessionId: string, rotation = 0) {
+  return JSON.stringify({
+    access_token: `${base64Url({ alg: 'HS256' })}.${base64Url({ sub: 'actor', session_id: sessionId, n: rotation })}.sig`,
+    refresh_token: `refresh-${sessionId}-${rotation}`,
+    expires_at: 4102444800,
+    user: { id: 'actor' },
+  });
+}
+
 const emptyRows = { sections: [{ kind: 'database_rows', items: [], status: 'ready' }] } as MentionSearchResponse;
 const isRows = (request: MentionSearchRequest) =>
   request.include?.length === 1 && request.include[0] === MentionTargetKind.DatabaseRow;
@@ -81,7 +102,7 @@ function mountPanel(emitter = new EventEmitter()) {
   const tree = () => (
     <AppEventEmitterContext.Provider value={emitter}>
       <Slate editor={editor} initialValue={[{ type: 'paragraph', children: [{ text: '@Target' }] }]}>
-        <Editable />
+        <Editable data-testid='mounted-editor' />
         <MentionPanel />
       </Slate>
     </AppEventEmitterContext.Provider>
@@ -92,6 +113,10 @@ function mountPanel(emitter = new EventEmitter()) {
 }
 
 describe('MentionPanel composition', () => {
+  beforeAll(() => {
+    Element.prototype.scrollIntoView = jest.fn();
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     clearMentionSearchCacheForTests();
@@ -175,7 +200,7 @@ describe('MentionPanel composition', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Target' })).toBeNull());
   });
 
-  it('starts a reopened mounted picker empty, without reusing its last opening', async () => {
+  it('shows a reopened picker\'s suggestions at once within the same access scope, then revalidates', async () => {
     const search = jest.fn(async (request: MentionSearchRequest) =>
       isRows(request) ? emptyRows : pageResponse('Target')
     );
@@ -186,6 +211,61 @@ describe('MentionPanel composition', () => {
     expect(await screen.findByRole('button', { name: 'Target' })).toBeTruthy();
     mockPanelContext.isPanelOpen = () => false;
     panel.redraw();
+    expect(screen.queryByTestId('mention-panel')).toBeNull();
+    search.mockImplementation(async (request: MentionSearchRequest) =>
+      isRows(request) ? emptyRows : pageResponse('Fresh')
+    );
+    mockPanelContext.isPanelOpen = (kind) => kind === PanelType.PageReference;
+    panel.redraw();
+    expect(screen.getByRole('button', { name: 'Target' })).toBeTruthy();
+    expect(screen.getByTestId('mention-panel').querySelector('[aria-busy="true"]')).toBeNull();
+    expect(await screen.findByRole('button', { name: 'Fresh' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Target' })).toBeNull();
+    expect(search).toHaveBeenCalledTimes(4);
+  });
+
+  it.each([
+    ['keeps', 'a network failure', new Error('Network Error')],
+    ['drops', 'a permission denial', { code: ERROR_CODE.NOT_HAS_PERMISSION, message: 'denied' }],
+  ])('%s reopened suggestions when the background refresh hits %s', async (outcome, _failure, error) => {
+    const search = jest.fn(async (request: MentionSearchRequest) =>
+      isRows(request) ? emptyRows : pageResponse('Target')
+    );
+
+    mockEditorContext.searchMentions = search;
+    const panel = mountPanel();
+
+    expect(await screen.findByRole('button', { name: 'Target' })).toBeTruthy();
+    mockPanelContext.isPanelOpen = () => false;
+    panel.redraw();
+    search.mockRejectedValue(error);
+    mockPanelContext.isPanelOpen = (kind) => kind === PanelType.PageReference;
+    panel.redraw();
+    await waitFor(() => expect(search).toHaveBeenCalledTimes(4));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    if (outcome === 'keeps') {
+      expect(screen.getByRole('button', { name: 'Target' })).toBeTruthy();
+    } else {
+      expect(screen.queryByRole('button', { name: 'Target' })).toBeNull();
+    }
+  });
+
+  it('does not reuse suggestions after a permission change while the picker was closed', async () => {
+    const search = jest.fn(async (request: MentionSearchRequest) =>
+      isRows(request) ? emptyRows : pageResponse('Target')
+    );
+
+    mockEditorContext.searchMentions = search;
+    const panel = mountPanel();
+
+    expect(await screen.findByRole('button', { name: 'Target' })).toBeTruthy();
+    mockPanelContext.isPanelOpen = () => false;
+    panel.redraw();
+    act(() => {
+      panel.emitter.emit(APP_EVENTS.PERMISSION_CHANGED);
+    });
     search.mockRejectedValue(retryLater);
     mockPanelContext.isPanelOpen = (kind) => kind === PanelType.PageReference;
     panel.redraw();
@@ -211,22 +291,64 @@ describe('MentionPanel composition', () => {
     expect(screen.queryByRole('button', { name: 'Target' })).toBeNull();
   });
 
-  it.each([false, true])('does not publish parallel page results after row RetryLater (retry=%s)', async (retry) => {
-    let rows = 0;
-    const search = jest.fn(async (request: MentionSearchRequest) => {
-      if (!isRows(request)) return pageResponse('Target');
-      rows += 1;
-      if (retry && rows === 1) return { ...emptyRows, partial: true };
-      throw retryLater;
-    });
+  it.each([false, true])(
+    'does not publish parallel page results after row RetryLater (partial rows first=%s)',
+    async (partialFirst) => {
+      let rows = 0;
+      const search = jest.fn(async (request: MentionSearchRequest) => {
+        if (!isRows(request)) return pageResponse('Target');
+        rows += 1;
+        if (partialFirst && rows === 1) return { ...emptyRows, partial: true };
+        if (rows <= (partialFirst ? 2 : 1)) throw rowsRetryLater;
+        return emptyRows;
+      });
+
+      mockEditorContext.searchMentions = search;
+      mountPanel();
+      await waitFor(() => expect(rows).toBe(partialFirst ? 2 : 1));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      // The page response passed its own check before the change that the row search reports.
+      expect(screen.queryByRole('button', { name: 'Target' })).toBeNull();
+      expect(screen.getByText('document.mention.refreshingSuggestions')).toBeTruthy();
+      // After the server's cooldown the whole search runs again and shows fresh results.
+      expect(await screen.findByRole('button', { name: 'Target' }, { timeout: 3000 })).toBeTruthy();
+      expect(rows).toBe(partialFirst ? 3 : 2);
+      expect(screen.queryByText('document.mention.refreshingSuggestions')).toBeNull();
+    }
+  );
+
+  // A network failure alone keeps cached suggestions; the permission signal must win over it.
+  it.each([
+    ['succeeds', async () => pageResponse('Target')],
+    [
+      'fails with a network error',
+      async (): Promise<MentionSearchResponse> => {
+        throw new Error('Network Error');
+      },
+    ],
+  ])('drops reopened suggestions when only the row refresh reports a permission change (page %s)', async (_page, page) => {
+    const search = jest.fn(async (request: MentionSearchRequest) =>
+      isRows(request) ? emptyRows : pageResponse('Target')
+    );
 
     mockEditorContext.searchMentions = search;
-    mountPanel();
-    await waitFor(() => expect(rows).toBe(retry ? 2 : 1));
-    await act(async () => {
-      await Promise.resolve();
+    const panel = mountPanel();
+
+    expect(await screen.findByRole('button', { name: 'Target' })).toBeTruthy();
+    mockPanelContext.isPanelOpen = () => false;
+    panel.redraw();
+    search.mockImplementation(async (request: MentionSearchRequest) => {
+      if (isRows(request)) throw rowsRetryLater;
+      return page();
     });
-    expect(screen.queryByRole('button', { name: 'Target' })).toBeNull();
+    mockPanelContext.isPanelOpen = (kind) => kind === PanelType.PageReference;
+    panel.redraw();
+    expect(screen.getByRole('button', { name: 'Target' })).toBeTruthy();
+    await waitFor(() => expect(search).toHaveBeenCalledTimes(4));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Target' })).toBeNull());
+    expect(screen.getByText('document.mention.refreshingSuggestions')).toBeTruthy();
   });
 
   it('rejects a late old success after invalidation and a fresh successful read', async () => {
@@ -272,9 +394,10 @@ describe('MentionPanel composition', () => {
     expect(screen.queryByRole('button', { name: 'Target' })).toBeNull();
   });
 
-  it.each(['share', 'socket', 'focus', 'online', 'offline', 'session', 'refresh', 'storage', 'visible'])(
+  it.each(['share', 'session', 'refresh', 'storage'])(
     'hides results and prevents insertion synchronously on %s invalidation',
     async (event) => {
+      localStorage.setItem(TOKEN_STORAGE_KEY, sessionToken('original'));
       mockEditorContext.searchMentions = jest.fn(async (request: MentionSearchRequest) =>
         isRows(request) ? emptyRows : pageResponse('Target')
       );
@@ -283,12 +406,9 @@ describe('MentionPanel composition', () => {
 
       act(() => {
         if (event === 'share') panel.emitter.emit(APP_EVENTS.SHARE_VIEWS_CHANGED);
-        else if (event === 'socket') panel.emitter.emit(APP_EVENTS.WEBSOCKET_STATUS);
         else if (event === 'session') emit(EventType.SESSION_INVALID);
-        else if (event === 'refresh') emit(EventType.SESSION_REFRESH);
-        else if (event === 'storage') window.dispatchEvent(new StorageEvent('storage', { key: TOKEN_STORAGE_KEY }));
-        else if (event === 'visible') document.dispatchEvent(new Event('visibilitychange'));
-        else window.dispatchEvent(new Event(event));
+        else if (event === 'refresh') emit(EventType.SESSION_REFRESH, sessionToken('replacement'));
+        else window.dispatchEvent(new StorageEvent('storage', { key: TOKEN_STORAGE_KEY, newValue: null }));
         // Selection runs before React can clean up the old effect/DOM.
         fireEvent.click(option);
       });
@@ -297,6 +417,93 @@ describe('MentionPanel composition', () => {
       expect(screen.queryByRole('button', { name: 'Target' })).toBeNull();
     }
   );
+
+  it.each(['socket', 'focus', 'online', 'offline', 'visible', 'token-refresh'])(
+    'keeps suggestions and the highlighted option on %s',
+    async (event) => {
+      localStorage.setItem(TOKEN_STORAGE_KEY, sessionToken('original'));
+      const search = jest.fn(async (request: MentionSearchRequest) =>
+        isRows(request) ? emptyRows : pageResponse('Target')
+      );
+
+      mockEditorContext.searchMentions = search;
+      const panel = mountPanel();
+      const option = await screen.findByRole('button', { name: 'Target' });
+
+      await act(async () => {
+        Transforms.select(panel.editor, Editor.end(panel.editor, []));
+      });
+      await act(async () => {
+        fireEvent.keyDown(screen.getByTestId('mounted-editor'), { key: 'ArrowDown' });
+      });
+      expect(option.getAttribute('data-selected')).toBe('true');
+      act(() => {
+        if (event === 'socket') panel.emitter.emit(APP_EVENTS.WEBSOCKET_STATUS, 0);
+        else if (event === 'visible') document.dispatchEvent(new Event('visibilitychange'));
+        else if (event === 'token-refresh') emit(EventType.SESSION_REFRESH, sessionToken('original', 1));
+        else window.dispatchEvent(new Event(event));
+      });
+      expect(screen.getByRole('button', { name: 'Target' }).getAttribute('data-selected')).toBe('true');
+      await act(async () => {
+        fireEvent.keyDown(screen.getByTestId('mounted-editor'), { key: 'Enter', keyCode: 13, which: 13 });
+      });
+      expect(mockAddMark).toHaveBeenCalledTimes(1);
+      expect(search).toHaveBeenCalledTimes(2);
+    }
+  );
+
+  it('revalidates suggestions in the background after the socket reconnects', async () => {
+    const search = jest.fn(async (request: MentionSearchRequest) =>
+      isRows(request) ? emptyRows : pageResponse('Target')
+    );
+
+    mockEditorContext.searchMentions = search;
+    const panel = mountPanel(Object.assign(new EventEmitter(), { webSocketReadyState: 1 }));
+
+    expect(await screen.findByRole('button', { name: 'Target' })).toBeTruthy();
+    search.mockImplementation(async (request: MentionSearchRequest) =>
+      isRows(request) ? emptyRows : pageResponse('Fresh')
+    );
+    act(() => {
+      panel.emitter.emit(APP_EVENTS.WEBSOCKET_STATUS, 3);
+      panel.emitter.emit(APP_EVENTS.WEBSOCKET_STATUS, 1);
+    });
+    expect(screen.getByRole('button', { name: 'Target' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Fresh' })).toBeTruthy();
+    expect(search).toHaveBeenCalledTimes(4);
+  });
+
+  // Partial row results are shown but never cached, so the reconnect refresh runs a full search.
+  it.each([
+    ['keeps', 'a network failure', new Error('Network Error')],
+    ['keeps', 'a server error', { code: 502, httpStatus: 502, message: 'Bad Gateway' }],
+    ['drops', 'a permission denial', { code: ERROR_CODE.NOT_HAS_PERMISSION, message: 'denied' }],
+  ])('%s uncached suggestions when their reconnect refresh hits %s', async (outcome, _failure, error) => {
+    const search = jest.fn(async (request: MentionSearchRequest) =>
+      isRows(request) ? { ...emptyRows, partial: true } : pageResponse('Target')
+    );
+
+    mockEditorContext.searchMentions = search;
+    const panel = mountPanel(Object.assign(new EventEmitter(), { webSocketReadyState: 1 }));
+
+    expect(await screen.findByRole('button', { name: 'Target' })).toBeTruthy();
+    await waitFor(() => expect(search).toHaveBeenCalledTimes(3));
+    search.mockRejectedValue(error);
+    act(() => {
+      panel.emitter.emit(APP_EVENTS.WEBSOCKET_STATUS, 3);
+      panel.emitter.emit(APP_EVENTS.WEBSOCKET_STATUS, 1);
+    });
+    await waitFor(() => expect(search).toHaveBeenCalledTimes(5));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    if (outcome === 'keeps') {
+      expect(screen.getByRole('button', { name: 'Target' })).toBeTruthy();
+      expect(screen.queryByText('findAndReplace.noResult')).toBeNull();
+    } else {
+      expect(screen.queryByRole('button', { name: 'Target' })).toBeNull();
+    }
+  });
 
   it.each(['account', 'workspace', 'server', 'signed-out'])(
     'hides old results on %s replacement',
@@ -345,40 +552,139 @@ describe('MentionPanel composition', () => {
     expect(screen.queryByRole('button', { name: 'Target' })).toBeNull();
   });
 
-  it.each(['permission', 'unmount'])(
-    'does not insert or navigate after a late page creation and %s',
-    async (boundary) => {
-      let release!: (view: { view_id: string }) => void;
-      const pending = new Promise<{ view_id: string }>((resolve) => {
-        release = resolve;
-      });
-      const addPage = jest.fn(() => pending);
-      const openPageModal = jest.fn();
+  async function startPageCreation(failure: unknown = { code: 1012, message: 'denied' }) {
+    let release!: (view: { view_id: string }) => void;
+    let fail!: (error: unknown) => void;
+    const pending = new Promise<{ view_id: string }>((resolve, reject) => {
+      release = resolve;
+      fail = reject;
+    });
+    const addPage = jest.fn(() => pending);
+    const openPageModal = jest.fn();
 
-      mockEditorContext.viewId = 'parent';
-      mockEditorContext.addPage = addPage;
-      mockEditorContext.openPageModal = openPageModal;
-      const panel = mountPanel();
+    mockEditorContext.viewId = 'parent';
+    mockEditorContext.addPage = addPage;
+    mockEditorContext.openPageModal = openPageModal;
+    const panel = mountPanel();
 
-      await screen.findByRole('button', { name: 'Target' });
-      const create = screen.getByRole('button', { name: /button.create.*document.slashMenu.subPage.keyword1/ });
+    await screen.findByRole('button', { name: 'Target' });
+    await act(async () => {
+      Transforms.select(panel.editor, Editor.end(panel.editor, []));
+    });
+    const create = screen.getByRole('button', { name: /button.create.*document.slashMenu.subPage.keyword1/ });
 
-      fireEvent.click(create);
-      expect(addPage).toHaveBeenCalledTimes(1);
-      if (boundary === 'unmount') panel.unmount();
-      else
-        act(() => {
-          panel.emitter.emit(APP_EVENTS.PERMISSION_CHANGED);
-        });
+    fireEvent.click(create);
+    expect(addPage).toHaveBeenCalledTimes(1);
+    const settle = async (outcome: 'created' | 'failed') => {
       await act(async () => {
-        release({ view_id: 'new-page' });
-        await pending;
+        if (outcome === 'created') release({ view_id: 'new-page' });
+        else fail(failure);
+        await pending.catch(() => undefined);
       });
-      expect(mockRemoveContent).not.toHaveBeenCalled();
-      expect(mockAddMark).not.toHaveBeenCalled();
-      expect(openPageModal).not.toHaveBeenCalled();
-    }
-  );
+    };
+
+    return { panel, addPage, openPageModal, create, settle };
+  }
+
+  it('inserts the page it created even when a permission change lands during creation', async () => {
+    const { panel, openPageModal, settle } = await startPageCreation();
+
+    act(() => {
+      panel.emitter.emit(APP_EVENTS.PERMISSION_CHANGED);
+    });
+    await settle('created');
+    expect(mockRemoveContent).toHaveBeenCalledTimes(1);
+    expect(mockClosePanel).toHaveBeenCalledTimes(1);
+    expect(mockAddMark).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ value: { page_id: 'new-page', type: 'childPage' } })
+    );
+    expect(openPageModal).toHaveBeenCalledWith('new-page');
+  });
+
+  it('inserts a created page in a host without a signed-in session', async () => {
+    mockSession.authenticated = false;
+    const { openPageModal, settle } = await startPageCreation();
+
+    await settle('created');
+    expect(mockAddMark).toHaveBeenCalledTimes(1);
+    expect(openPageModal).toHaveBeenCalledWith('new-page');
+  });
+
+  it('ignores repeated create clicks while the page is being created', async () => {
+    const { addPage, create, settle } = await startPageCreation();
+
+    fireEvent.click(create);
+    fireEvent.click(create);
+    expect(addPage).toHaveBeenCalledTimes(1);
+    await settle('created');
+    expect(mockAddMark).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers to open a page that was created after the picker closed', async () => {
+    const { panel, openPageModal, settle } = await startPageCreation();
+
+    mockPanelContext.isPanelOpen = () => false;
+    panel.redraw();
+    await settle('created');
+    expect(mockRemoveContent).not.toHaveBeenCalled();
+    expect(mockAddMark).not.toHaveBeenCalled();
+    expect(openPageModal).not.toHaveBeenCalled();
+    const [message, options] = mockToastSuccess.mock.calls[0] as [
+      string,
+      { action: { label: string; onClick: () => void } }
+    ];
+
+    expect(message).toBe('document.mention.pageCreated');
+    expect(options.action.label).toBe('document.mention.openPage');
+    options.action.onClick();
+    expect(openPageModal).toHaveBeenCalledWith('new-page');
+  });
+
+  it('does not touch an editor that closed while the page was being created', async () => {
+    const { panel, openPageModal, settle } = await startPageCreation();
+
+    panel.unmount();
+    await settle('created');
+    expect(mockRemoveContent).not.toHaveBeenCalled();
+    expect(mockAddMark).not.toHaveBeenCalled();
+    expect(openPageModal).not.toHaveBeenCalled();
+    expect(mockToastSuccess).not.toHaveBeenCalled();
+  });
+
+  it('stays silent after a session change', async () => {
+    const { openPageModal, settle } = await startPageCreation();
+
+    act(() => {
+      emit(EventType.SESSION_INVALID);
+    });
+    await settle('created');
+    expect(mockRemoveContent).not.toHaveBeenCalled();
+    expect(mockAddMark).not.toHaveBeenCalled();
+    expect(openPageModal).not.toHaveBeenCalled();
+    expect(mockToastSuccess).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['failed', new Error('Network Error'), 'document.mention.createPageFailed'],
+    ['denied', { code: 1012, message: 'user cannot create children' }, 'document.mention.createPageDenied'],
+    // The app refuses guests and pages shared with the user before sending, with this error.
+    [
+      'locally refused',
+      Object.assign(new Error('No permission to create pages'), { code: ERROR_CODE.NOT_HAS_PERMISSION }),
+      'document.mention.createPageDenied',
+    ],
+  ])('reports a %s page creation and lets the user try again', async (_case, failure, message) => {
+    const { addPage, create, settle } = await startPageCreation(failure);
+
+    await settle('failed');
+    expect(mockNotifyError).toHaveBeenCalledTimes(1);
+    expect(mockNotifyError).toHaveBeenCalledWith(message);
+    expect(mockAddMark).not.toHaveBeenCalled();
+    expect(mockRemoveContent).not.toHaveBeenCalled();
+    fireEvent.click(create);
+    expect(addPage).toHaveBeenCalledTimes(2);
+  });
 
   it('keeps anonymous published-page fallback available', async () => {
     mockSession.authenticated = false;
