@@ -18,7 +18,9 @@
       "noEdit": "You don't have edit access here",
       "ownersOnly": "Only space owners can add pages here",
       "noneAvailable": "You can't add pages to any space here. Ask a space owner for edit access."
-    }
+    },
+    "meetingNotesDenied": "Your meeting opened without a notes page, because you can't create spaces in this workspace.",
+    "meetingNotesFailed": "Your meeting opened, but its notes page couldn't be created."
   },
   "workspacePermissions": {
     "sidebarPolicy": "Who can add and arrange pages?",
