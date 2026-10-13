@@ -6,10 +6,10 @@
     "pendingRecovery": "Reprenez la demande de création existante avant d’en commencer une autre."
   },
   "workspacePermissions": {
-    "sidebarPolicy": "Qui peut ajouter et organiser des pages ?",
+    "sidebarPolicy": "Qui peut ajouter des pages à cet espace",
     "sidebarOwners": "Propriétaires de l’espace uniquement",
-    "sidebarMembers": "Membres et propriétaires de l’espace",
-    "sidebarExplanation": "Les membres doivent aussi avoir le droit de modification pour ajouter ou organiser des pages directement dans cet espace. Les pages imbriquées suivent leurs propres autorisations. Ce paramètre ne permet pas de créer des espaces ou des espaces de travail.",
+    "sidebarMembers": "Toute personne pouvant modifier",
+    "sidebarExplanation": "S’applique aux pages ajoutées directement dans l’espace. Les pages placées dans d’autres pages suivent leurs propres autorisations.",
     "title": "Autorisations de l’espace de travail",
     "createSpaces": "Création d’espaces",
     "loading": "Vérification des autorisations…",
@@ -43,7 +43,8 @@
     "pendingEditsDescription": "Vos modifications sont conservées sur cet appareil. Une fois l’accès en modification rétabli, réessayez pour les envoyer. Sans cet accès, elles restent en attente.",
     "pendingEditsRetryError": "Impossible de réessayer les modifications enregistrées. Réessayez.",
     "retryPendingEdits": "Réessayer les modifications",
-    "legacyPendingEdits": "Les anciennes modifications locales sont conservées sur cet appareil. Leur serveur d’origine n’a pas pu être vérifié ; l’envoi automatique est donc suspendu."
+    "legacyPendingEdits": "Les anciennes modifications locales sont conservées sur cet appareil. Leur serveur d’origine n’a pas pu être vérifié ; l’envoi automatique est donc suspendu.",
+    "sidebarUnknown": "Autre réglage"
   },
   "appName": "AppFlowy",
   "defaultUsername": "Moi",

@@ -1,5 +1,5 @@
-import { Check, ChevronDown, Globe2, LockKeyhole, Settings2, Shield, UserRound, Users } from 'lucide-react';
-import { memo, useState } from 'react';
+import { Check, ChevronDown, FilePlus2, Globe2, LockKeyhole, Settings2, Shield, UserRound, Users } from 'lucide-react';
+import { memo, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { AccessLevel, Role, SpacePermissionSettings, SpaceSidebarEditPolicy, SpaceVisibility } from '@/application/types';
@@ -40,6 +40,11 @@ const CUSTOM_ACCESS_OPTIONS: readonly (AccessLevel | null)[] = [
   AccessLevel.ReadAndComment,
   AccessLevel.ReadOnly,
   null,
+];
+
+const SIDEBAR_EDIT_POLICY_OPTIONS: readonly SpaceSidebarEditPolicy[] = [
+  SpaceSidebarEditPolicy.OwnersOnly,
+  SpaceSidebarEditPolicy.MembersAndOwners,
 ];
 
 const MODAL_WIDTH = 680;
@@ -103,6 +108,18 @@ function accessLabel(accessLevel: AccessLevel | null | undefined, t: TFunction):
       return t('shareAction.canView');
     default:
       return t('space.permissionManager.noAccess');
+  }
+}
+
+function sidebarEditPolicyLabel(policy: SpaceSidebarEditPolicy, t: TFunction): string {
+  switch (policy) {
+    case SpaceSidebarEditPolicy.OwnersOnly:
+      return t('workspacePermissions.sidebarOwners');
+    case SpaceSidebarEditPolicy.MembersAndOwners:
+      return t('workspacePermissions.sidebarMembers');
+    default:
+      // A policy from a newer server is shown neutrally and kept as received.
+      return t('workspacePermissions.sidebarUnknown');
   }
 }
 
@@ -241,14 +258,19 @@ function VisibilityCards({
 function PermissionPrincipalRow({
   icon,
   title,
+  titleId,
   description,
+  wrapDescription,
   trailing,
   last,
   testId,
 }: {
   icon: ReactNode;
   title: string;
+  titleId?: string;
   description: string;
+  /** Let a sentence-long description wrap instead of truncating it. */
+  wrapDescription?: boolean;
   trailing: ReactNode;
   last?: boolean;
   testId?: string;
@@ -258,15 +280,85 @@ function PermissionPrincipalRow({
       className={cn('flex items-center gap-3 px-4 py-3', !last && 'border-b border-border-primary')}
       data-testid={testId}
     >
-      <div className='flex h-8 w-8 items-center justify-center rounded-300 bg-fill-content-hover'>{icon}</div>
+      <div className='flex h-8 w-8 shrink-0 items-center justify-center rounded-300 bg-fill-content-hover'>{icon}</div>
       <div className='min-w-0 flex-1'>
-        <div className='font-medium text-text-primary'>{title}</div>
-        <div className='truncate text-sm text-text-secondary'>{description}</div>
+        <div id={titleId} className='font-medium text-text-primary'>
+          {title}
+        </div>
+        <div className={cn('text-sm text-text-secondary', wrapDescription ? 'break-words' : 'truncate')}>
+          {description}
+        </div>
       </div>
       {trailing}
     </div>
   );
 }
+
+/**
+ * P: who may add pages directly to the space. Shared by Create and Manage
+ * Space; only an actual change of the selected policy is reported.
+ */
+const SidebarEditPolicyRow = memo(function SidebarEditPolicyRow({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: SpaceSidebarEditPolicy;
+  disabled: boolean;
+  onChange: (value: SpaceSidebarEditPolicy) => void;
+}) {
+  const { t } = useTranslation();
+  const titleId = useId();
+  const valueId = useId();
+
+  return (
+    <section className='rounded-400 border border-border-primary' data-testid='space-sidebar-policy-row'>
+      <PermissionPrincipalRow
+        icon={<FilePlus2 className='h-5 w-5 text-icon-primary' />}
+        title={t('workspacePermissions.sidebarPolicy')}
+        titleId={titleId}
+        description={t('workspacePermissions.sidebarExplanation')}
+        wrapDescription
+        last
+        trailing={
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type='button'
+                variant='ghost'
+                size='sm'
+                disabled={disabled}
+                aria-labelledby={`${titleId} ${valueId}`}
+                className='min-w-0 max-w-[50%] justify-end px-2 text-text-primary'
+                data-testid='space-sidebar-policy'
+              >
+                <span id={valueId} className='truncate'>
+                  {sidebarEditPolicyLabel(value, t)}
+                </span>
+                <ChevronDown aria-hidden className='h-4 w-4 text-icon-tertiary' />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align='end'>
+              {SIDEBAR_EDIT_POLICY_OPTIONS.map((option) => (
+                <DropdownMenuItem
+                  key={option}
+                  onSelect={() => {
+                    if (option !== value) onChange(option);
+                  }}
+                  className='justify-between'
+                  data-testid={`space-sidebar-policy-option-${option}`}
+                >
+                  {sidebarEditPolicyLabel(option, t)}
+                  {option === value && <DropdownMenuItemTick />}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        }
+      />
+    </section>
+  );
+});
 
 const PublicAccessCard = memo(function PublicAccessCard({
   membersAccessLevel,
@@ -658,26 +750,6 @@ function SpaceSettingsPanel({
 
               {showAccessDetails && draftIsPrivate && <PrivateAccessCard />}
 
-              {showAccessDetails && !draftIsPrivate && (
-                <section className='flex flex-col gap-2'>
-                  <label htmlFor={`${modalTestId}-sidebar-policy`} className='text-sm font-semibold text-text-primary'>
-                    {t('workspacePermissions.sidebarPolicy')}
-                  </label>
-                  <p className='text-xs text-text-secondary'>{t('workspacePermissions.sidebarExplanation')}</p>
-                  <select
-                    id={`${modalTestId}-sidebar-policy`}
-                    data-testid='space-sidebar-policy'
-                    value={permissionSettings.sidebar_edit_policy}
-                    disabled={permissionSettingsDisabled || loadingSettings}
-                    onChange={(event) => onSidebarEditPolicyChange(event.target.value as SpaceSidebarEditPolicy)}
-                    className='rounded border border-border-primary bg-surface-primary p-2 text-sm'
-                  >
-                    <option value={SpaceSidebarEditPolicy.OwnersOnly}>{t('workspacePermissions.sidebarOwners')}</option>
-                    <option value={SpaceSidebarEditPolicy.MembersAndOwners}>{t('workspacePermissions.sidebarMembers')}</option>
-                  </select>
-                </section>
-              )}
-
               {showAccessDetails && !draftIsPublic && !draftIsCustom && !draftIsPrivate && (
                 <div
                   className='rounded-400 border border-border-primary'
@@ -709,6 +781,14 @@ function SpaceSettingsPanel({
                     last
                   />
                 </div>
+              )}
+
+              {showAccessDetails && !draftIsPrivate && (
+                <SidebarEditPolicyRow
+                  value={permissionSettings.sidebar_edit_policy}
+                  disabled={permissionSettingsDisabled || loadingSettings}
+                  onChange={onSidebarEditPolicyChange}
+                />
               )}
             </div>
           </div>

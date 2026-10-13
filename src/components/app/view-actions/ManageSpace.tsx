@@ -16,6 +16,7 @@ import {
   SpaceMemberRole,
   SpaceMemberAccessOverride,
   SpacePermissionSettings,
+  SpaceSidebarEditPolicy,
   SpaceVisibility,
   WorkspaceGroup,
   WorkspaceGroupSpacePermission,
@@ -1147,6 +1148,14 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     (value: AccessLevel | null) => requestCollectiveAccessChange('everyone_else_access_level', value),
     [requestCollectiveAccessChange]
   );
+  // Re-selecting the current policy (or closing the menu) never sends a request.
+  const handleSidebarEditPolicyChange = useCallback(
+    (sidebar_edit_policy: SpaceSidebarEditPolicy) => {
+      if (sidebar_edit_policy === permissionSettings.sidebar_edit_policy) return;
+      persistPermissionPatch({ sidebar_edit_policy });
+    },
+    [permissionSettings.sidebar_edit_policy, persistPermissionPatch]
+  );
 
   // A public space makes every workspace member an implicit space member, so
   // its roster is informational only. Gate on the loaded (server) visibility,
@@ -1673,7 +1682,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       onVisibilitySelect={requestVisibilityChange}
       onMembersAccessChange={handleMembersAccessChange}
       onEveryoneElseAccessChange={handleEveryoneElseAccessChange}
-      onSidebarEditPolicyChange={(sidebar_edit_policy) => persistPermissionPatch({ sidebar_edit_policy })}
+      onSidebarEditPolicyChange={handleSidebarEditPolicyChange}
       showActions={false}
       membersContent={
         <div className='appflowy-scroller max-h-[64vh] overflow-y-auto py-2 pr-1'>

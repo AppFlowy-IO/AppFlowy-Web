@@ -346,7 +346,7 @@ describe('CreateSpaceModal draft controller', () => {
   it('includes the explicitly chosen sidebar policy in the create payload', async () => {
     render(<CreateSpaceModal open onClose={jest.fn()} />);
     enterSpaceName('Editors can add pages');
-    fireEvent.change(screen.getByTestId('space-sidebar-policy'), { target: { value: SpaceSidebarEditPolicy.MembersAndOwners } });
+    fireEvent.click(screen.getByTestId(`space-sidebar-policy-option-${SpaceSidebarEditPolicy.MembersAndOwners}`));
     fireEvent.click(screen.getByTestId('create-space-submit'));
     await waitFor(() => expect(mockCreateSpace).toHaveBeenCalledWith(expect.objectContaining({
       permission: expect.objectContaining({ sidebar_edit_policy: SpaceSidebarEditPolicy.MembersAndOwners }),

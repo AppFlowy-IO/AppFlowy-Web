@@ -1149,16 +1149,95 @@ describe('ManageSpace ACL management', () => {
     mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission }));
     render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
     await waitForSettingsLoaded();
-    expect((screen.getByTestId('space-sidebar-policy')).value).toBe(SpaceSidebarEditPolicy.MembersAndOwners);
+    const trigger = screen.getByTestId('space-sidebar-policy');
+    const row = screen.getByTestId('space-sidebar-policy-row');
+
+    expect(trigger.textContent).toBe('workspacePermissions.sidebarMembers');
+    expect(row.textContent).toContain('workspacePermissions.sidebarPolicy');
+    expect(row.textContent).toContain('workspacePermissions.sidebarExplanation');
+    expect(document.querySelector('select')).toBeNull();
+    expect(
+      screen.getAllByTestId(/^space-sidebar-policy-option-/).map((option) => option.textContent)
+    ).toEqual(['workspacePermissions.sidebarOwners', 'workspacePermissions.sidebarMembersselected']);
     expect(mockUpdateStructuredSpace).not.toHaveBeenCalled();
     fireEvent.change(screen.getByPlaceholderText('space.spaceNamePlaceholder'), { target: { value: 'Rename only' } });
     fireEvent.blur(screen.getByPlaceholderText('space.spaceNamePlaceholder'));
     await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledWith('workspace-1', 'space-1', { name: 'Rename only' }));
-    await waitFor(() => expect((screen.getByTestId('space-sidebar-policy')).disabled).toBe(false));
-    fireEvent.change(screen.getByTestId('space-sidebar-policy'), { target: { value: SpaceSidebarEditPolicy.OwnersOnly } });
+    await waitFor(() => expect(trigger.disabled).toBe(false));
+    // Choosing the policy that is already set sends nothing.
+    fireEvent.click(screen.getByTestId(`space-sidebar-policy-option-${SpaceSidebarEditPolicy.MembersAndOwners}`));
+    expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByTestId(`space-sidebar-policy-option-${SpaceSidebarEditPolicy.OwnersOnly}`));
+    expect(trigger.textContent).toBe('workspacePermissions.sidebarOwners');
     await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledWith('workspace-1', 'space-1', {
       permission: { ...permission, sidebar_edit_policy: SpaceSidebarEditPolicy.OwnersOnly },
     }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('space.success.updateSpace'));
+  });
+
+  it('confirms a sidebar policy change whose permission notification arrives before the response', async () => {
+    const permission = { ...customPermission, sidebar_edit_policy: SpaceSidebarEditPolicy.OwnersOnly };
+    const saved = { ...permission, sidebar_edit_policy: SpaceSidebarEditPolicy.MembersAndOwners };
+    const save = deferred<{ view_id: string }>();
+
+    mockGetSpacePermission
+      .mockResolvedValueOnce(permissionResponse({ permission }))
+      .mockResolvedValue(permissionResponse({ permission: saved }));
+    mockUpdateStructuredSpace.mockReturnValueOnce(save.promise);
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+    await waitForSettingsLoaded();
+
+    fireEvent.click(screen.getByTestId(`space-sidebar-policy-option-${SpaceSidebarEditPolicy.MembersAndOwners}`));
+    await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
+    act(() => {
+      mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'space-1' });
+    });
+    await waitFor(() => expect(mockGetSpacePermission).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      save.resolve({ view_id: 'space-1' });
+    });
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('space.success.updateSpace'));
+    expect(screen.getByTestId('space-sidebar-policy').textContent).toBe('workspacePermissions.sidebarMembers');
+    await waitFor(() => expect(screen.getByTestId('space-sidebar-policy').disabled).toBe(false));
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('restores the confirmed sidebar policy when saving it fails', async () => {
+    const permission = { ...customPermission, sidebar_edit_policy: SpaceSidebarEditPolicy.OwnersOnly };
+
+    mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission }));
+    mockUpdateStructuredSpace.mockRejectedValueOnce(new Error('policy save failed'));
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+    await waitForSettingsLoaded();
+
+    fireEvent.click(screen.getByTestId(`space-sidebar-policy-option-${SpaceSidebarEditPolicy.MembersAndOwners}`));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('policy save failed'));
+    expect(screen.getByTestId('space-sidebar-policy').textContent).toBe('workspacePermissions.sidebarOwners');
+    await waitFor(() => expect((screen.getByTestId('space-sidebar-policy')).disabled).toBe(false));
+  });
+
+  it('shows a sidebar policy from a newer server neutrally and keeps it in unrelated saves', async () => {
+    const permission = {
+      ...customPermission,
+      sidebar_edit_policy: 'editors_and_owners' as SpaceSidebarEditPolicy,
+    };
+
+    mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission }));
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+    await waitForSettingsLoaded();
+
+    expect(screen.getByTestId('space-sidebar-policy').textContent).toBe('workspacePermissions.sidebarUnknown');
+    // Neither known option is ticked for a value this client does not know.
+    expect(screen.getAllByTestId(/^space-sidebar-policy-option-/).map((option) => option.textContent)).toEqual([
+      'workspacePermissions.sidebarOwners',
+      'workspacePermissions.sidebarMembers',
+    ]);
+    fireEvent.click(screen.getByTestId(`manage-space-custom-members-access-option-${AccessLevel.ReadOnly}`));
+
+    await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
+    expect(structuredUpdatePermission().sidebar_edit_policy).toBe('editors_and_owners');
   });
 
   it('serializes overlapping renames and rolls failed edits back to server-confirmed metadata', async () => {

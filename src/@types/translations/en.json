@@ -6,10 +6,10 @@
     "pendingRecovery": "Resume the existing space request before starting another."
   },
   "workspacePermissions": {
-    "sidebarPolicy": "Who can add and arrange pages?",
-    "sidebarOwners": "Space Owners only",
-    "sidebarMembers": "Space Members and Owners",
-    "sidebarExplanation": "Space members also need Edit access to add or arrange pages directly in this space. Nested pages follow their own permissions. This setting does not allow creating spaces or workspaces.",
+    "sidebarPolicy": "Who can add pages to this space",
+    "sidebarOwners": "Only space owners",
+    "sidebarMembers": "Anyone who can edit",
+    "sidebarExplanation": "Applies to pages added directly to the space. Pages inside other pages follow their own permissions.",
     "title": "Workspace permissions",
     "createSpaces": "Space creation",
     "loading": "Checking permissions…",
@@ -43,7 +43,8 @@
     "pendingEditsDescription": "Your changes are saved on this device. After edit access is restored, retry to send them. Changes without current edit access stay paused.",
     "pendingEditsRetryError": "Could not retry saved changes. Please try again.",
     "retryPendingEdits": "Retry saved changes",
-    "legacyPendingEdits": "Older local changes are preserved on this device. Their original server could not be verified, so automatic upload is paused."
+    "legacyPendingEdits": "Older local changes are preserved on this device. Their original server could not be verified, so automatic upload is paused.",
+    "sidebarUnknown": "Other setting"
   },
   "databaseViewCreation": {
     "onlineRequired": "Connect to the internet to create Form or Chart views.",
