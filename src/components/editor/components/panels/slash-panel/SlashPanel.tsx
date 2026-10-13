@@ -100,6 +100,7 @@ import { PanelType } from '@/components/editor/components/panels/PanelsContext';
 import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { createSubpage } from '@/components/editor/subpage/create-subpage';
+import { captureBlockCreationTarget, captureExistingDatabaseBlock } from '@/components/editor/utils/block-creation-target';
 import { Button as OutlineButton } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
@@ -266,10 +267,9 @@ export function SlashPanel({
   } = useEditorContext();
   const editorContext = useEditorContext();
   const outline = useContext(AppOutlineContext);
-  const creationOwnerRef = useRef({ documentId, workspaceId, outline, mounted: true });
+  const creationOwnerRef = useRef({ documentId, workspaceId, outline });
 
-  creationOwnerRef.current = { documentId, workspaceId, outline, mounted: true };
-  useEffect(() => () => { creationOwnerRef.current.mounted = false; }, []);
+  creationOwnerRef.current = { documentId, workspaceId, outline };
   const [viewName, setViewName] = useState('');
   const [linkedPicker, setLinkedPicker] = useState<{
     position: { top: number; left: number };
@@ -689,6 +689,7 @@ export function SlashPanel({
         const targetBlockId = getBlockEntry(editor)?.[0].blockId;
 
         if (!targetBlockId) throw new Error('The linked Database insertion block is unavailable');
+        const target = captureBlockCreationTarget(editor, targetBlockId);
         const layouts: Partial<Record<ViewLayout, DatabaseViewLayout>> = {
           [ViewLayout.Grid]: DatabaseViewLayout.Grid, [ViewLayout.Board]: DatabaseViewLayout.Board,
           [ViewLayout.Calendar]: DatabaseViewLayout.Calendar, [ViewLayout.Chart]: DatabaseViewLayout.Chart,
@@ -702,8 +703,8 @@ export function SlashPanel({
         const assertCurrent = () => {
           const current = creationOwnerRef.current;
 
-          if (!current.mounted || current.documentId !== documentId || current.workspaceId !== workspaceId || editor.firstBody ||
-            !findSlateEntryByBlockId(editor, targetBlockId)) {
+          target.assertCurrent();
+          if (current.documentId !== documentId || current.workspaceId !== workspaceId) {
             throw new Error('Linked Database creation owner changed');
           }
         };
@@ -712,6 +713,7 @@ export function SlashPanel({
           workspaceId, requestViewId: documentId, sourceViewId, layout,
           payload: { parent_view_id: documentId, database_id: databaseId, name: referencedName, embedded: true },
           loadView, bindViewSync, scheduleDeferredCleanup, assertCurrent,
+          findExistingActivation: (id) => captureExistingDatabaseBlock(editor, documentId, databaseId, id),
           activate: async (id) => {
             const ensure = creationOwnerRef.current.outline?.ensureViewVisibleInOutline;
 
@@ -724,9 +726,9 @@ export function SlashPanel({
               throw new Error('Created linked Database view is missing from the sidebar');
             }
 
-            if (!turnInto(blockType, createDatabaseNodeData({
+            target.replace((blockId) => turnInto(blockType, createDatabaseNodeData({
               parentId: documentId, viewIds: [id], databaseId,
-            }), targetBlockId)) throw new Error('The linked Database insertion block is unavailable');
+            }), blockId));
           },
         });
 

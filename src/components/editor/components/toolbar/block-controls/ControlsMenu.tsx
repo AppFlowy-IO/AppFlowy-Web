@@ -1,6 +1,6 @@
 import { Button, Divider } from '@mui/material';
 import { PopoverProps } from '@mui/material/Popover';
-import { useCallback, useContext, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useContext, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Path, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
@@ -36,6 +36,7 @@ import {
 } from '@/components/editor/components/toolbar/block-controls/OutlineControls';
 import { BlockNode, CalloutNode, DatabaseNode, OutlineNode } from '@/components/editor/editor.type';
 import { useEditorContext, useEditorLocalState } from '@/components/editor/EditorContext';
+import { captureBlockCreationTarget, captureExistingDatabaseBlock } from '@/components/editor/utils/block-creation-target';
 import { copyTextToClipboard } from '@/utils/copy';
 import { getErrorMessage } from '@/utils/errors';
 
@@ -244,10 +245,9 @@ function ControlsMenu({
   const { selectedBlockIds } = useEditorLocalState();
   const editorContext = useEditorContext();
   const outline = useContext(AppOutlineContext);
-  const creationRef = useRef({ context: editorContext, outline, mounted: true });
+  const creationRef = useRef({ context: editorContext, outline });
 
-  creationRef.current = { context: editorContext, outline, mounted: true };
-  useEffect(() => () => { creationRef.current.mounted = false; }, []);
+  creationRef.current = { context: editorContext, outline };
   const {
     workspaceId,
     loadViewMeta,
@@ -279,7 +279,8 @@ function ControlsMenu({
   );
 
   const resolveDuplicatedDatabaseBlockData = useCallback(
-    async (sourceNode: DatabaseNode): Promise<DatabaseNode['data']> => {
+    async (sourceNode: DatabaseNode, targetBlockId: string): Promise<DatabaseNode['data']> => {
+      const target = captureBlockCreationTarget(editor, targetBlockId);
       const parentId = sourceNode.data.parent_id;
       const sourceViewIds = sourceNode.data.view_ids?.length
         ? sourceNode.data.view_ids
@@ -298,6 +299,7 @@ function ControlsMenu({
 
       const firstSourceView = await loadViewMeta(sourceViewIds[0]);
 
+      target.assertCurrent();
       if (!firstSourceView) {
         throw new Error(t('document.plugins.subPage.errors.failedDuplicateFindView'));
       }
@@ -311,6 +313,7 @@ function ControlsMenu({
           loadViewMeta,
         });
 
+        target.assertCurrent();
         // The generic linked-view path below does not copy Form's per-view
         // settings. Reject the entire block before creating any children so a
         // mixed Grid/Form block cannot be partially duplicated or silently
@@ -338,7 +341,8 @@ function ControlsMenu({
             const assertCurrent = () => {
               const current = creationRef.current;
 
-              if (!current.mounted || current.context.workspaceId !== workspaceId ||
+              target.assertCurrent();
+              if (current.context.workspaceId !== workspaceId ||
                 current.context.viewId !== editorContext.viewId || editor.firstBody) {
                 throw new Error('Linked Database creation owner changed');
               }
@@ -350,6 +354,7 @@ function ControlsMenu({
               layout: requestedLayout,
               payload: { parent_view_id: parentId, database_id: databaseId, name: sourceView?.name, embedded: true },
               loadView, bindViewSync, scheduleDeferredCleanup, assertCurrent,
+              findExistingActivation: (id) => captureExistingDatabaseBlock(editor, parentId, databaseId, id),
               activate: async (id) => {
                 const ensure = creationRef.current.outline?.ensureViewVisibleInOutline;
 
@@ -408,6 +413,7 @@ function ControlsMenu({
         throw sourceContainerResult.reason;
       }
 
+      target.assertCurrent();
       const sourceContainerView = sourceContainerResult.value;
       const beforeParentView: View | null = parentResult.status === 'fulfilled' ? parentResult.value : null;
 
@@ -438,6 +444,7 @@ function ControlsMenu({
 
         await waitForDatabaseBlobSeeds(workspaceId, rowPageDuplicate.databaseId);
 
+        target.assertCurrent();
         return createDatabaseNodeData({
           parentId,
           viewIds: [rowPageDuplicate.viewId],
@@ -475,6 +482,7 @@ function ControlsMenu({
 
       await waitForDatabaseBlobSeeds(workspaceId, duplicatedContainer.databaseId);
 
+      target.assertCurrent();
       // Map source view IDs to their index positions within the source container,
       // then select the same positions from the duplicated container. This preserves
       // the block's tab subset (e.g., if the block only shows tabs B and C out of
@@ -500,7 +508,7 @@ function ControlsMenu({
       });
     },
     [
-      editor.firstBody,
+      editor,
       editorContext.viewId,
       editorContext.readOnly,
       editorContext.canWrite,
@@ -531,12 +539,14 @@ function ControlsMenu({
         hasDatabaseBlock = true;
 
         try {
-          const nextDatabaseBlockData = await resolveDuplicatedDatabaseBlockData(selectedNode as DatabaseNode);
+          const nextDatabaseBlockData = await resolveDuplicatedDatabaseBlockData(selectedNode as DatabaseNode, newBlockId);
 
           setDatabaseBlockData(newBlockId, nextDatabaseBlockData);
         } catch (error) {
-          for (const id of newBlockIds) {
-            CustomEditor.deleteBlock(editor, id);
+          if (YjsEditor.connected(editor) && !editor.readOnly) {
+            for (const id of newBlockIds) {
+              CustomEditor.deleteBlock(editor, id);
+            }
           }
 
           throw error;

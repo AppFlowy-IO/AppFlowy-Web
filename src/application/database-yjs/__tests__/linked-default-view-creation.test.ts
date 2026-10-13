@@ -87,3 +87,16 @@ it('preserves the original creation error and leaves authored source bytes intac
   expect(Y.encodeStateAsUpdate(doc)).toEqual(before);
   doc.destroy();
 });
+
+it('bounds completed-receipt recovery to one attempt before fresh creation', async () => {
+  const { doc, intent } = fixture();
+  const witness = jest.fn();
+
+  intent.findExistingActivation = () => witness;
+  await expect(createLinkedDefaultDatabaseView(intent)).rejects.toThrow('recovery changed');
+  expect(createDefaultDatabaseView).toHaveBeenCalledTimes(2);
+  expect(intent.activate).not.toHaveBeenCalled();
+  expect(witness).toHaveBeenCalledTimes(1);
+  expect(intent.scheduleDeferredCleanup).toHaveBeenCalledTimes(1);
+  doc.destroy();
+});
