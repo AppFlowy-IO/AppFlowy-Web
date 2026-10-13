@@ -76,9 +76,17 @@ describe('ai-meeting.summary-regenerate', () => {
       });
 
       expect(prompt).toContain('Output language: Chinese (Simplified) (zh-CN).');
-      expect(prompt).toContain('Do not output citation markers like ^1, [1], or similar.');
-      expect(prompt).toContain('1. OVERVIEW');
-      expect(prompt).toContain('5. ACTION ITEMS');
+      expect(prompt).toContain('[BLOCK:block_id]');
+      expect(prompt).toContain('{ref:block_id1,block_id2}');
+      expect(prompt).toContain('Never invent source IDs');
+      expect(prompt).toContain('1. Overview');
+      expect(prompt).toContain('5. Action items');
+      expect(prompt).toContain('Write the Overview as one cohesive paragraph');
+      expect(prompt).toContain('Use sentence case for section headings');
+      expect(prompt).toContain('AFTER its final period');
+      expect(prompt).toContain('ONLY after the FINAL sentence');
+      expect(prompt).toContain('Each block ID should only be used ONCE');
+      expect(prompt).not.toContain('1. OVERVIEW');
     });
 
     it('falls back to defaults when options are invalid', () => {
@@ -118,6 +126,10 @@ describe('ai-meeting.summary-regenerate', () => {
       expect(prompt).toContain('Meeting Type Template Prompt: Template prompt text');
       expect(prompt).toContain('Meeting Participants:');
       expect(prompt).toContain('- Lucas Xu (email: lucas.xu@appflowy.io)');
+      expect(prompt).toContain('{ref:block_id}');
+      expect(prompt).toContain('NEVER place a reference in the middle of a paragraph');
+      expect(prompt).toContain('Do not create a separate Source References or References section');
+      expect(prompt).toContain('Integrate attendees and the detected meeting type naturally');
     });
   });
 

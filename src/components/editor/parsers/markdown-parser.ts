@@ -11,6 +11,7 @@ import { MarkdownParseOptions, ParsedBlock } from './types';
 import type {
   BlockContent,
   Code,
+  DefinitionContent,
   Heading,
   List,
   ListItem,
@@ -38,7 +39,7 @@ export function parseMarkdown(markdown: string, options: MarkdownParseOptions = 
   // Pre-process: Replace • with - to support bullet character as list marker
   // We consume following whitespace (including newlines) to ensure text is on the same line
   // Support various bullet characters: • (Bullet), ◦ (White Bullet), ▪ (Black Small Square), ⁃ (Hyphen Bullet), – (En Dash), — (Em Dash)
-  const normalizedMarkdown = markdown.replace(/^[ \t]*[•◦▪⁃–—]\s*/gm, '- ');
+  const normalizedMarkdown = markdown.replace(/^([ \t]*)[•◦▪⁃–—]\s*/gm, '$1- ');
 
   const {
     gfm = true,
@@ -68,7 +69,7 @@ export function parseMarkdown(markdown: string, options: MarkdownParseOptions = 
 /**
  * Converts Markdown AST nodes to AppFlowy block structures
  */
-function convertMarkdownASTToAppFlowyBlocks(nodes: BlockContent[]): ParsedBlock[] {
+function convertMarkdownASTToAppFlowyBlocks(nodes: Array<BlockContent | DefinitionContent>): ParsedBlock[] {
   const blocks: ParsedBlock[] = [];
 
   for (const node of nodes) {
@@ -89,7 +90,7 @@ function convertMarkdownASTToAppFlowyBlocks(nodes: BlockContent[]): ParsedBlock[
 /**
  * Converts a single Markdown AST node to AppFlowy ParsedBlock
  */
-function convertMarkdownNode(node: BlockContent): ParsedBlock | ParsedBlock[] | null {
+function convertMarkdownNode(node: BlockContent | DefinitionContent): ParsedBlock | ParsedBlock[] | null {
   switch (node.type) {
     case 'heading':
       return buildHeadingBlock(node);
@@ -178,29 +179,22 @@ function buildListBlock(node: List): ParsedBlock[] {
   const children: ParsedBlock[] = [];
 
   node.children.forEach((item: ListItem, index: number) => {
-    // Check if it's a task list item
     const isTask = item.checked !== null && item.checked !== undefined;
+    const firstChild = item.children[0];
+    const paragraph = firstChild?.type === 'paragraph' ? firstChild : undefined;
 
-    if (isTask) {
-      children.push({
-        type: BlockType.TodoListBlock,
-        data: { checked: item.checked === true } as BlockData,
-        text: extractTextFromMDAST(item),
-        formats: extractInlineFormatsFromMDAST(item),
-        children: [],
-      });
-    } else {
-      children.push({
-        type,
-        data: (isOrdered ? { number: index + 1 } : {}) as BlockData,
-        text: extractTextFromMDAST(item),
-        formats: extractInlineFormatsFromMDAST(item),
-        children: [],
-      });
-    }
+    // Nested lists and additional paragraphs are child blocks, not part of
+    // the item's own text. Joining them loses bullets and formatting offsets.
+    children.push({
+      type: isTask ? BlockType.TodoListBlock : type,
+      data: (isTask ? { checked: item.checked === true } : isOrdered ? { number: (node.start ?? 1) + index } : {}) as BlockData,
+      text: paragraph ? extractTextFromMDAST(paragraph) : '',
+      formats: paragraph ? extractInlineFormatsFromMDAST(paragraph) : [],
+      children: convertMarkdownASTToAppFlowyBlocks(paragraph ? item.children.slice(1) : item.children),
+    });
   });
 
-  // Return array of flattened list items
+  // Siblings remain separate blocks while nested items retain their hierarchy.
   return children;
 }
 

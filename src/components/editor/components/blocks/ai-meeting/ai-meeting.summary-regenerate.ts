@@ -1,4 +1,3 @@
-import type { AxiosInstance } from 'axios';
 import { Element, Text } from 'slate';
 
 import { YjsEditor } from '@/application/slate-yjs';
@@ -8,6 +7,10 @@ import { BlockData, BlockType, YjsEditorKey } from '@/application/types';
 import { createInitialInstance, requestInterceptor } from '@/components/chat/lib/requets';
 import { parseMarkdown } from '@/components/editor/parsers/markdown-parser';
 import { ParsedBlock } from '@/components/editor/parsers/types';
+
+import { parseSummaryReferences } from './ai-meeting.references';
+
+import type { AxiosInstance } from 'axios';
 
 export interface SummaryTemplateOption {
   id: string;
@@ -147,6 +150,30 @@ interface RemoteSummaryTemplatePayload {
 }
 
 const FALLBACK_TEMPLATE_SECTION_TITLE = 'AI Template';
+// Matches Flutter's SummaryTemplates.buildSummaryPrompt reference contract.
+const SUMMARY_REFERENCE_INSTRUCTIONS = [
+  '## E. INLINE SOURCE REFERENCES (CRITICAL - ALWAYS APPLY)',
+  'Every key claim, decision, action item, or important statement must include an inline reference to its supporting source content.',
+  'Source paragraphs are prefixed with [BLOCK:block_id].',
+  'Reference format: {ref:block_id} or {ref:block_id1,block_id2}, with comma-separated IDs when multiple sources support the same statement.',
+  'References MUST appear at the absolute END of a complete thought, statement, or paragraph, AFTER its final period.',
+  'NEVER place a reference in the middle of a paragraph between sentences that form a continuous narrative.',
+  'Group sentences about the same topic together and place references ONLY after the FINAL sentence of that entire group.',
+  'For example: The interview covered investment and risk. Attendees discussed the outlook. This was an executive interview. {ref:block_id1,block_id2}',
+  'Include references for information from Manual Notes, including attendee lists, clarifications, and corrections. Use the supporting notes block IDs.',
+  'Use only the exact block IDs supplied in the transcript and notes. Never invent source IDs or numeric citations.',
+  'Only cite blocks that directly support the statement. Aim for at least one reference per major point.',
+  'Each block ID should only be used ONCE across the entire summary. If several statements share a source, cite it once with the most relevant complete thought.',
+  'Do not create a separate Source References or References section. All references must be inline, like footnotes at the end of complete paragraphs or thought units.',
+].join('\n');
+const SUMMARY_FORMATTING_INSTRUCTIONS = [
+  '## Summary presentation',
+  'Use sentence case for section headings, for example "Overview", rather than ALL CAPS. Preserve acronyms, proper names, and the requested output language.',
+  'Write the Overview as one cohesive paragraph covering the context, participants, purpose, and meeting type when supported by the sources.',
+  'Integrate attendees and the detected meeting type naturally into that paragraph instead of separate metadata-style lines or labels.',
+  'Use Markdown bold to emphasize meaningful phrases, such as the meeting type or key outcomes, without bolding entire paragraphs.',
+  'Use blank lines between headings, paragraphs, and lists. Retain nested bullets for supporting context and details.',
+].join('\n');
 
 export const FALLBACK_SUMMARY_REGENERATE_TEMPLATE_CONFIG: SummaryRegenerateTemplateConfig = {
   templateSections: [
@@ -301,7 +328,7 @@ export const fetchSummaryRegenerateTemplateConfig = async (
   remoteTemplateConfigRequest = (async () => {
     try {
       const axiosInstance = createTemplateRequestInstance(requestInstance);
-      const response = await axiosInstance.get<APIResponse<unknown> | unknown>('/api/meeting/summary_templates');
+      const response = await axiosInstance.get<APIResponse<unknown> | unknown>('/api/meeting/summary_templates', { timeout: 10_000 });
       const responseData = response.data;
       const payload =
         responseData &&
@@ -432,7 +459,7 @@ export const buildSummaryRegeneratePrompt = ({
       .filter(Boolean)
       .join('\n');
 
-    return prompt.replace(/\$\{LANGUAGE_CODE\}/g, normalizedLanguage.toUpperCase());
+    return `${prompt.replace(/\$\{LANGUAGE_CODE\}/g, normalizedLanguage.toUpperCase())}\n\n${SUMMARY_REFERENCE_INSTRUCTIONS}\n\n${SUMMARY_FORMATTING_INSTRUCTIONS}`;
   }
 
   return [
@@ -442,13 +469,14 @@ export const buildSummaryRegeneratePrompt = ({
     `Detail requirement: ${detailPrompt}`,
     'Use markdown headings and bullet lists to keep the summary scannable.',
     'Do not use fenced code blocks in the output.',
-    'Do not output citation markers like ^1, [1], or similar.',
+    SUMMARY_REFERENCE_INSTRUCTIONS,
+    SUMMARY_FORMATTING_INSTRUCTIONS,
     'Suggested section structure:',
-    '1. OVERVIEW',
-    '2. DISCUSSION SUMMARY',
-    '3. NEXT STEPS OR FUTURE CONSIDERATIONS',
-    '4. DECISIONS / RECOMMENDATIONS / CONCLUSIONS',
-    '5. ACTION ITEMS',
+    '1. Overview',
+    '2. Discussion summary',
+    '3. Next steps or future considerations',
+    '4. Decisions / Recommendations / Conclusions',
+    '5. Action items',
     'For action items, use bullet points and include owner/deadline only if clearly present in source content.',
     'Do not invent facts, attendees, or deadlines.',
   ].join('\n');
@@ -516,11 +544,12 @@ const parsedBlockToTextNodes = (block: ParsedBlock): Text[] => {
   return nodes;
 };
 
-const parsedBlockToSlateElement = (block: ParsedBlock): Element => {
-  const textNodes = parsedBlockToTextNodes(block);
+const parsedBlockToSlateElement = (block: ParsedBlock, references?: { blockIds: ReadonlySet<string>; counter: Map<string, number> }): Element => {
+  const formattedNodes = parsedBlockToTextNodes(block);
+  const textNodes = references ? parseSummaryReferences(formattedNodes, references.blockIds, references.counter) : formattedNodes;
   const slateChildren: Element[] = [
     { type: YjsEditorKey.text, children: textNodes } as Element,
-    ...block.children.map(parsedBlockToSlateElement),
+    ...block.children.map((child) => parsedBlockToSlateElement(child, references)),
   ];
 
   return {
@@ -555,13 +584,16 @@ export const replaceBlockChildrenWithMarkdown = ({
   editor,
   blockId,
   markdown,
+  referenceBlockIds,
 }: {
   editor: YjsEditor;
   blockId: string;
   markdown: string;
+  referenceBlockIds?: ReadonlySet<string>;
 }) => {
   const parsedBlocks = parseMarkdown(markdown);
-  const slateNodes = parsedBlocks.map(parsedBlockToSlateElement);
+  const references = referenceBlockIds ? { blockIds: referenceBlockIds, counter: new Map<string, number>() } : undefined;
+  const slateNodes = parsedBlocks.map((block) => parsedBlockToSlateElement(block, references));
   const nodesToInsert = slateNodes.length > 0 ? slateNodes : [buildFallbackParagraph()];
 
   const parentBlock = getBlock(blockId, editor.sharedRoot);

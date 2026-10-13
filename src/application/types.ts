@@ -221,6 +221,7 @@ export interface AIMeetingBlockData extends BlockData {
   summary_detail?: string;
   summary_language?: string;
   transcript_id?: string;
+  transcript_language?: string;
   transcription_type?: string;
   created_at?: string | number;
   last_modified?: string | number;

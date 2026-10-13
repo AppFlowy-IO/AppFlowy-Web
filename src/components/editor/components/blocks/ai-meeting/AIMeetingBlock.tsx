@@ -1,3 +1,5 @@
+import CircularProgress from '@mui/material/CircularProgress';
+import TextareaAutosize from '@mui/material/TextareaAutosize';
 import { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Element, Node } from 'slate';
@@ -14,11 +16,22 @@ import { useEditorContext } from '@/components/editor/EditorContext';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
+import { initializeMeetingSections } from './ai-meeting.import';
+import { buildCopyText, COPY_META, type CopyMeta, type TabKey, getBaseSpeakerId, parseSpeakerInfoMap } from './ai-meeting.utils';
+import {
+  AIMeetingErrorBanner,
+  AIMeetingImportActions,
+  AIMeetingImportProgress,
+  AIMeetingTranscriptLanguage,
+  AIMeetingUpgradeBanner,
+} from './AIMeetingImport';
+import { AIMeetingLanguageBanner } from './AIMeetingLanguageBanner';
 import { AIMeetingMoreMenu } from './AIMeetingMoreMenu';
 import { AIMeetingRecording } from './AIMeetingRecording';
-import { buildCopyText, COPY_META, type CopyMeta, type TabKey, getBaseSpeakerId, parseSpeakerInfoMap } from './ai-meeting.utils';
+import { AIMeetingSummaryErrorBanner } from './AIMeetingSummaryErrorBanner';
 import { RegenerateMenu } from './RegenerateMenu';
 import { useAIMeetingClipboard } from './useAIMeetingClipboard';
+import { useAIMeetingImport } from './useAIMeetingImport';
 import { SUMMARY_LANGUAGE_OPTIONS, useAIMeetingRegenerate } from './useAIMeetingRegenerate';
 import './ai-meeting.scss';
 
@@ -108,28 +121,91 @@ export const AIMeetingBlock = memo(
         setTitle(trimmed);
       }, [defaultTitle, displayTitle, editor, hasStoredTitle, node.blockId, readOnly, storedTitle, title]);
 
+      // --- Section nodes ---
+      const sectionNodes = useMemo(() => {
+        const childrenList = (node.children ?? []) as Array<Node & { type?: BlockType }>;
+        const summaryNode = childrenList.find((child) => child.type === BlockType.AIMeetingSummaryBlock);
+        const notesNode = childrenList.find((child) => child.type === BlockType.AIMeetingNotesBlock);
+        const transcriptNode = childrenList.find((child) => child.type === BlockType.AIMeetingTranscriptionBlock);
+
+        return { summaryNode, notesNode, transcriptNode };
+      }, [node.children]);
+      const hasSummary = useMemo(() => hasNodeContent(sectionNodes.summaryNode), [sectionNodes.summaryNode]);
+      const hasTranscript = useMemo(() => hasNodeContent(sectionNodes.transcriptNode), [sectionNodes.transcriptNode]);
+      const hasNotes = useMemo(() => hasNodeContent(sectionNodes.notesNode), [sectionNodes.notesNode]);
+      const hasSource = hasTranscript || hasNotes;
+      const needsSections = !sectionNodes.summaryNode || !sectionNodes.notesNode || !sectionNodes.transcriptNode;
+
+      useEffect(() => {
+        if (!readOnly && needsSections) {
+          initializeMeetingSections(editor, node.blockId);
+        }
+      }, [editor, needsSections, node.blockId, readOnly]);
+
+      // --- Speaker info ---
+      const speakerInfoMap = useMemo(() => parseSpeakerInfoMap(data.speaker_info_map), [data.speaker_info_map]);
+      const unknownSpeakerLabel = t('document.aiMeeting.speakerUnknown');
+      const getFallbackSpeakerLabel = useCallback(
+        (id: string) => t('document.aiMeeting.speakerFallback', { id }),
+        [t]
+      );
+      const resolveSpeakerName = useCallback(
+        (speakerId?: string) => {
+          if (!speakerId) return unknownSpeakerLabel;
+
+          const baseId = getBaseSpeakerId(speakerId);
+          const info = speakerInfoMap?.[speakerId] ?? speakerInfoMap?.[baseId];
+          const name = typeof info?.name === 'string' ? info?.name.trim() : '';
+
+          if (name) return name;
+
+          return getFallbackSpeakerLabel(baseId);
+        },
+        [getFallbackSpeakerLabel, speakerInfoMap, unknownSpeakerLabel]
+      );
+
+      // --- Regenerate hook ---
+      const regenerate = useAIMeetingRegenerate({
+        node,
+      });
+
+      const importer = useAIMeetingImport({
+        blockId: node.blockId,
+        data,
+        transcriptBlockId: (sectionNodes.transcriptNode as { blockId?: string } | undefined)?.blockId,
+        transcriptTabIndex: Number(Boolean(sectionNodes.notesNode)) + Number(hasSummary),
+        hasTranscript,
+        readOnly,
+        enabled: regenerate.isAIEnabled,
+        onFinished: () => {
+          void regenerate.handleTranscriptReady();
+        },
+      });
+      const showWelcome =
+        !importer.busy &&
+        !regenerate.isRegeneratingSummary &&
+        !data.transcript_id &&
+        !hasSummary &&
+        !hasSource;
+
       // --- Tabs ---
       const availableTabs = useMemo(() => {
-        const childrenList = (node.children ?? []) as Array<Node & { type?: BlockType }>;
-
         return TAB_DEFS.filter((tab) => {
-          const match = childrenList.find((child) => child.type === tab.type);
-
-          if (!match) return false;
-
-          if (
-            tab.type === BlockType.AIMeetingSummaryBlock ||
-            tab.type === BlockType.AIMeetingTranscriptionBlock
-          ) {
-            return hasNodeContent(match);
+          if (tab.key === 'summary') {
+            return Boolean(sectionNodes.summaryNode) &&
+              (hasSummary || regenerate.isRegeneratingSummary || (hasSource && !importer.busy && !readOnly));
           }
 
-          return true;
+          if (tab.key === 'transcript') {
+            return Boolean(sectionNodes.transcriptNode) && (hasTranscript || importer.busy || Boolean(data.transcript_id));
+          }
+
+          return Boolean(sectionNodes.notesNode);
         });
-      }, [node.children]);
+      }, [sectionNodes, importer.busy, data.transcript_id, regenerate.isRegeneratingSummary, hasSummary, hasTranscript, hasSource, readOnly]);
 
       const showNotesDirectly = Boolean(data.show_notes_directly);
-      const showTabs = !showNotesDirectly && availableTabs.length > 1;
+      const showTabs = !showWelcome && !showNotesDirectly && availableTabs.length > 1;
       const fallbackTab = availableTabs[0] ?? TAB_DEFS[1];
 
       const selectedIndex = useMemo(() => {
@@ -208,38 +284,6 @@ export const AIMeetingBlock = memo(
         [editor, node.blockId, readOnly, selectedIndex]
       );
 
-      // --- Section nodes ---
-      const sectionNodes = useMemo(() => {
-        const childrenList = (node.children ?? []) as Array<Node & { type?: BlockType }>;
-        const summaryNode = childrenList.find((child) => child.type === BlockType.AIMeetingSummaryBlock);
-        const notesNode = childrenList.find((child) => child.type === BlockType.AIMeetingNotesBlock);
-        const transcriptNode = childrenList.find((child) => child.type === BlockType.AIMeetingTranscriptionBlock);
-
-        return { summaryNode, notesNode, transcriptNode };
-      }, [node.children]);
-
-      // --- Speaker info ---
-      const speakerInfoMap = useMemo(() => parseSpeakerInfoMap(data.speaker_info_map), [data.speaker_info_map]);
-      const unknownSpeakerLabel = t('document.aiMeeting.speakerUnknown');
-      const getFallbackSpeakerLabel = useCallback(
-        (id: string) => t('document.aiMeeting.speakerFallback', { id }),
-        [t]
-      );
-      const resolveSpeakerName = useCallback(
-        (speakerId?: string) => {
-          if (!speakerId) return unknownSpeakerLabel;
-
-          const baseId = getBaseSpeakerId(speakerId);
-          const info = speakerInfoMap?.[speakerId] ?? speakerInfoMap?.[baseId];
-          const name = typeof info?.name === 'string' ? info?.name.trim() : '';
-
-          if (name) return name;
-
-          return getFallbackSpeakerLabel(baseId);
-        },
-        [getFallbackSpeakerLabel, speakerInfoMap, unknownSpeakerLabel]
-      );
-
       // --- Copy item ---
       const activeCopyItem = useMemo<CopyMeta>(() => {
         const nodeByTab: Record<TabKey, Node | undefined> = {
@@ -267,14 +311,6 @@ export const AIMeetingBlock = memo(
         resolveSpeakerName,
       });
 
-      // --- Regenerate hook ---
-      const regenerate = useAIMeetingRegenerate({
-        node,
-        sectionNodes,
-        resolveSpeakerName,
-        speakerInfoMap,
-      });
-
       // Close regenerate menu when switching away from summary tab
       const { handleRegenerateMenuClose } = regenerate;
 
@@ -285,34 +321,81 @@ export const AIMeetingBlock = memo(
       }, [activeTabKey, handleRegenerateMenuClose]);
 
       const showSummaryRegenerate = activeTabKey === 'summary' && activeCopyItem.hasContent;
+      const summaryControl = !readOnly && regenerate.isAIEnabled && !importer.busy && !regenerate.isRegeneratingSummary && (hasSource || hasSummary) ? (
+        <RegenerateMenu
+          action={hasSummary ? 'regenerate' : 'generate'}
+          isRegenerating={regenerate.isRegeneratingSummary}
+          menuOpen={regenerate.regenerateMenuOpen}
+          onMenuOpenChange={regenerate.setRegenerateMenuOpen}
+          onRegenerate={() => {
+            void regenerate.handleRegenerateSummary();
+          }}
+          onOptionSelect={regenerate.handleSummaryOptionSelect}
+          selectedTemplate={regenerate.selectedSummaryTemplate}
+          selectedDetail={regenerate.selectedSummaryDetail}
+          selectedLanguage={regenerate.selectedSummaryLanguage}
+          templateSections={regenerate.templateSections}
+          detailOptions={regenerate.detailOptions}
+          languageOptions={SUMMARY_LANGUAGE_OPTIONS}
+          getOptionLabel={regenerate.getRegenerateOptionLabel}
+        />
+      ) : null;
 
       return (
         <div
           {...attributes}
           ref={setRefs}
           data-ai-meeting-active={activeTabKey}
+          aria-busy={importer.busy || regenerate.isRegeneratingSummary}
           className={cn(
-            'ai-meeting-block my-2 overflow-hidden rounded-2xl border border-border-primary bg-fill-list-active',
+            'ai-meeting-block my-2 flex flex-col overflow-hidden rounded-xl border border-border-primary bg-[var(--block-bg-color-20)]',
+            Boolean(importer.error && data.transcript_id && !hasTranscript) && 'min-h-[300px]',
             className
           )}
         >
-          <div className="px-4 py-4" contentEditable={false}>
-            <div className="flex flex-wrap items-baseline gap-2">
-              <input
-                className="min-w-[120px] flex-1 bg-transparent text-3xl font-semibold text-text-primary outline-none"
-                value={title}
+          <div className="px-4 py-3" contentEditable={false}>
+            <div className="flex flex-wrap items-center gap-2">
+              <TextareaAutosize
+                minRows={1}
+                className="min-w-[120px] flex-1 resize-none overflow-hidden bg-transparent text-2xl font-semibold leading-9 text-text-primary outline-none placeholder:text-text-tertiary"
+                placeholder={t('document.aiMeeting.import.title')}
+                value={!hasStoredTitle && title === defaultTitle ? '' : title}
                 onChange={(event) => setTitle(event.target.value)}
                 onBlur={commitTitle}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') {
                     event.preventDefault();
                     commitTitle();
-                    (event.currentTarget as HTMLInputElement).blur();
+                    event.currentTarget.blur();
                   }
                 }}
                 disabled={readOnly}
                 aria-label={t('document.aiMeeting.titleDefault', { defaultValue: DEFAULT_TITLE })}
               />
+              {importer.busy && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-8 rounded-lg font-medium"
+                  onClick={() => {
+                    void importer.cancel();
+                  }}
+                >
+                  {t('button.cancel')}
+                </Button>
+              )}
+              {!readOnly && regenerate.isRegeneratingSummary && (
+                <Button
+                  type="button"
+                  size="lg"
+                  className="h-10 rounded-full"
+                  onClick={regenerate.handleCancelSummary}
+                >
+                  <CircularProgress size={16} thickness={5.5} sx={{ color: 'currentColor' }} aria-hidden="true" />
+                  {t('button.cancel')}
+                </Button>
+              )}
+              {!hasSummary && summaryControl}
             </div>
             {!readOnly && regenerate.isAIEnabled && workspaceId && viewId && (
               <AIMeetingRecording
@@ -322,37 +405,19 @@ export const AIMeetingBlock = memo(
                 blockId={node.blockId}
                 transcriptBlockId={(sectionNodes.transcriptNode as { blockId?: string } | undefined)?.blockId}
                 pendingDuration={data.pending_billing_duration}
+                hideStartButton
                 onFinished={() => {
-                  void regenerate.handleRegenerateSummary();
+                  void regenerate.handleTranscriptReady();
                 }}
               />
             )}
-            {!readOnly &&
-              regenerate.isAIEnabled &&
-              !hasNodeContent(sectionNodes.summaryNode) &&
-              (hasNodeContent(sectionNodes.transcriptNode) || hasNodeContent(sectionNodes.notesNode)) && (
-                <Button
-                  variant='ghost'
-                  className='mt-2'
-                  disabled={regenerate.isRegeneratingSummary}
-                  onClick={() => {
-                    void regenerate.handleRegenerateSummary();
-                  }}
-                >
-                  {t(
-                    regenerate.isRegeneratingSummary
-                      ? 'document.aiMeeting.regenerate.generating'
-                      : 'document.aiMeeting.generateSummary'
-                  )}
-                </Button>
-              )}
           </div>
 
-          <div className="mx-[0.5px] mb-[0.5px] rounded-2xl bg-bg-body">
+          <div className="flex-1 rounded-2xl bg-bg-body">
             {showTabs && (
-              <div className="ai-meeting-tabs px-4 pt-3" contentEditable={false}>
+              <div className="ai-meeting-tabs px-4 pb-2 pt-4" contentEditable={false}>
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-1">
                     {availableTabs.map((tab, index) => {
                       const isActive = index === activeIndex;
                       const Icon = tab.Icon;
@@ -364,55 +429,80 @@ export const AIMeetingBlock = memo(
                           onMouseDown={(event) => event.preventDefault()}
                           onClick={() => handleTabChange(index)}
                           className={cn(
-                            'inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                            'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
                             isActive
-                              ? 'bg-fill-list-active text-text-primary'
+                              ? 'bg-fill-content-visible text-text-primary'
                               : 'text-text-secondary hover:bg-fill-list-hover'
                           )}
                         >
-                          <Icon
-                            className={cn(
-                              tab.key === 'notes' ? 'h-4 w-4' : 'h-5 w-5',
-                              'text-current'
-                            )}
-                          />
+                          <Icon className="h-5 w-5 text-current" />
                           <span>{t(tab.labelKey)}</span>
                         </button>
                       );
                     })}
                   </div>
                   <div className="flex items-center gap-2">
-                    {showSummaryRegenerate && regenerate.isAIEnabled && !readOnly && (
-                      <RegenerateMenu
-                        isRegenerating={regenerate.isRegeneratingSummary}
-                        menuAnchor={regenerate.regenerateMenuAnchor}
-                        menuOpen={regenerate.regenerateMenuOpen}
-                        onMenuClose={regenerate.handleRegenerateMenuClose}
-                        onMenuOpen={(event) => regenerate.setRegenerateMenuAnchor(event.currentTarget)}
-                        onRegenerate={() => { void regenerate.handleRegenerateSummary(); }}
-                        onOptionSelect={regenerate.handleSummaryOptionSelect}
-                        selectedTemplate={regenerate.selectedSummaryTemplate}
-                        selectedDetail={regenerate.selectedSummaryDetail}
-                        selectedLanguage={regenerate.selectedSummaryLanguage}
-                        templateSections={regenerate.templateSections}
-                        detailOptions={regenerate.detailOptions}
-                        languageOptions={SUMMARY_LANGUAGE_OPTIONS}
-                        getOptionLabel={regenerate.getRegenerateOptionLabel}
+                    {activeTabKey === 'transcript' && !readOnly && (
+                      <AIMeetingTranscriptLanguage
+                        value={importer.language}
+                        disabled={
+                          importer.busy ||
+                          data.recording_state === 'recording' ||
+                          !importer.available ||
+                          data.transcription_type === 'audioFile' ||
+                          data.transcription_type === 'urlSource'
+                        }
+                        onChange={importer.setLanguage}
                       />
                     )}
-                    <AIMeetingMoreMenu
-                      activeCopyItem={activeCopyItem}
-                      onCopy={handleCopy}
-                    />
+                    {showSummaryRegenerate && summaryControl}
+                    <AIMeetingMoreMenu activeCopyItem={activeCopyItem} onCopy={handleCopy} />
                   </div>
                 </div>
               </div>
             )}
 
-            <div ref={contentRef} className={cn('ai-meeting-content px-4 pb-4', showTabs ? 'pt-4' : 'pt-2')}>
+            {workspaceId && (showWelcome || activeTabKey === 'transcript') && (
+              <AIMeetingLanguageBanner key={workspaceId} workspaceId={workspaceId} />
+            )}
+            {!importer.errorDismissed && (importer.error || importer.quotaExceeded) && importer.errorCode !== 'fileTooLarge' && (
+              <AIMeetingErrorBanner
+                message={importer.message}
+                onRetry={
+                  importer.canRetry && !readOnly
+                    ? () => {
+                        void importer.retry();
+                      }
+                    : undefined
+                }
+                onDismiss={data.transcript_id ? undefined : importer.dismissError}
+              />
+            )}
+            {regenerate.summaryError && (
+              <AIMeetingSummaryErrorBanner
+                message={regenerate.summaryError}
+                errorCode={regenerate.summaryErrorCode}
+                workspaceId={workspaceId}
+                readOnly={readOnly}
+                onRetry={() => { void regenerate.handleRegenerateSummary(); }}
+                onDismiss={regenerate.dismissSummaryError}
+                dismissLabel={t('document.aiMeeting.regenerate.dismissError', { defaultValue: 'Dismiss summary error' })}
+              />
+            )}
+            <AIMeetingImportActions state={importer} showWelcome={showWelcome} />
+            {importer.busy ? (
+              <AIMeetingImportProgress stage={importer.stage} progress={importer.progress} />
+            ) : regenerate.isRegeneratingSummary && activeTabKey === 'summary' ? (
+              <AIMeetingImportProgress stage={regenerate.isPreprocessingSpeakers ? 'analyzing' : 'summarizing'} />
+            ) : null}
+            <div
+              ref={contentRef}
+              className={cn('ai-meeting-content px-4 pb-4 pt-2', (showWelcome || importer.busy) && 'hidden')}
+            >
               {children}
             </div>
           </div>
+          {importer.showPromotion && <AIMeetingUpgradeBanner onDismiss={importer.dismissPromotion} />}
         </div>
       );
     }
