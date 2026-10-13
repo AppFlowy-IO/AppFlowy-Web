@@ -64,10 +64,10 @@ export function WorkspaceCreationNotice({
 
   if (capability.status === 'loading') {
     return (
-      <p role='status' className='flex items-center gap-2 text-sm text-text-secondary'>
+      <div role='status' className='flex items-center gap-2 text-sm text-text-secondary'>
         <Progress variant='primary' />
-        {t('workspaceCreation.loading')}
-      </p>
+        <span>{t('workspaceCreation.loading')}</span>
+      </div>
     );
   }
 
