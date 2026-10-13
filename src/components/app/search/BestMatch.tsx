@@ -243,6 +243,11 @@ function BestMatch({
   const runSearch = useCallback(
     async (searchTerm: string, revalidate = false) => {
       if (!currentWorkspaceId || !isCurrent()) return;
+      const shown = shownRef.current;
+      const background = revalidate && Boolean(searchTerm) && shown?.scope === scope && shown.query === searchTerm;
+
+      // A revalidation that cannot run leaves the shown response alone, including its pending summary.
+      if (background && !navigator.onLine) return;
       const searchSeq = searchSeqRef.current + 1;
 
       searchSeqRef.current = searchSeq;
@@ -251,8 +256,6 @@ function BestMatch({
 
       requestController.current = controller;
       const isLatest = () => isCurrent() && searchSeqRef.current === searchSeq;
-      const shown = shownRef.current;
-      const background = revalidate && Boolean(searchTerm) && shown?.scope === scope && shown.query === searchTerm;
       const pageCount = background && shown ? shown.pages : 1;
 
       setLoadingMore(false);
@@ -276,12 +279,9 @@ function BestMatch({
       }
 
       if (!navigator.onLine) {
-        // Offline is not "no results": keep any shown response and retry after reconnecting.
-        if (!background) {
-          setOfflineQuery(searchTerm);
-          setLoading(false);
-        }
-
+        // Offline is not "no results": retry after reconnecting.
+        setOfflineQuery(searchTerm);
+        setLoading(false);
         return;
       }
 
@@ -367,8 +367,14 @@ function BestMatch({
         setSummaryLoading(false);
         // eslint-disable-next-line
       } catch (e: any) {
-        // A failed revalidation keeps the response loaded under this same access scope.
-        if (!isLatest() || background) return;
+        if (!isLatest()) return;
+        if (background) {
+          // A failed revalidation keeps the response loaded under this same access scope. The
+          // summary that response was waiting for was cancelled for this run's, so stop waiting.
+          setSummaryLoading(false);
+          return;
+        }
+
         notify.error(e.message);
         setSearchResults([]);
         setSummary(null);

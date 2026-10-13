@@ -67,16 +67,22 @@ jest.mock('@/components/app/search/SearchAIOverview', () => ({
     canAskFollowUp,
     summary,
     askingAI,
+    loading,
   }: {
     sources: typeof mockOverviewSources;
     canAskFollowUp: boolean;
     summary?: { content: string } | null;
     askingAI: boolean;
+    loading: boolean;
   }) => {
     mockOverviewSources = sources;
     mockCanAskFollowUp = canAskFollowUp;
     mockAskingAI = askingAI;
-    return <div data-testid='ai-overview'>{summary?.content}</div>;
+    return (
+      <div data-testid='ai-overview' data-loading={String(loading)}>
+        {summary?.content}
+      </div>
+    );
   },
 }));
 
@@ -255,6 +261,50 @@ describe('BestMatch', () => {
     expect(screen.queryByText('Revoked second page')).toBeNull();
     expect(screen.getByText('First page')).toBeTruthy();
     expect(mockSearchWorkspaceDocumentPage.mock.calls.slice(2).map((call) => call[2])).toEqual([0, 10]);
+  });
+
+  it('stops waiting for the AI summary when a reconnect revalidation fails', async () => {
+    mockAppOutline = [createView({ view_id: 'kept', name: 'Kept page' })];
+    mockSearchWorkspaceDocumentPage.mockResolvedValueOnce({ items: [{ object_id: 'kept' }], has_more: false });
+    // The first summary is still being generated; aborting it rejects like a real request.
+    mockGenerateSearchSummary.mockImplementationOnce(
+      (_workspaceId: unknown, _query: unknown, signal: unknown) =>
+        new Promise((_resolve, reject) => {
+          (signal as AbortSignal).addEventListener('abort', () => reject(new Error('aborted')));
+        })
+    );
+    renderBestMatch('budget');
+    await screen.findByText('Kept page');
+    expect(screen.getByTestId('ai-overview').getAttribute('data-loading')).toBe('true');
+    // The socket reopens and the background reload fails, e.g. while the server restarts.
+    mockSearchWorkspaceDocumentPage.mockRejectedValueOnce({ code: 502, httpStatus: 502, message: 'Bad Gateway' });
+    act(() => {
+      mockEmitter.emit(APP_EVENTS.WEBSOCKET_STATUS, 3);
+      mockEmitter.emit(APP_EVENTS.WEBSOCKET_STATUS, 1);
+    });
+    await waitFor(() => expect(mockSearchWorkspaceDocumentPage).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByTestId('ai-overview').getAttribute('data-loading')).toBe('false'));
+    expect(screen.getByText('Kept page')).toBeTruthy();
+  });
+
+  it('keeps waiting for the AI summary when a reconnect revalidation cannot run offline', async () => {
+    let resolveSummary!: (value: unknown) => void;
+
+    mockAppOutline = [createView({ view_id: 'kept', name: 'Kept page' })];
+    mockSearchWorkspaceDocumentPage.mockResolvedValueOnce({ items: [{ object_id: 'kept' }], has_more: false });
+    mockGenerateSearchSummary.mockImplementationOnce(() => new Promise((resolve) => { resolveSummary = resolve; }));
+    renderBestMatch('budget');
+    await screen.findByText('Kept page');
+    setOnline(false);
+    act(() => {
+      mockEmitter.emit(APP_EVENTS.WEBSOCKET_STATUS, 3);
+      mockEmitter.emit(APP_EVENTS.WEBSOCKET_STATUS, 1);
+    });
+    await act(async () => {
+      resolveSummary({ summaries: [{ content: 'Summary still arrives', sources: ['kept'] }] });
+    });
+    expect(await screen.findByText('Summary still arrives')).toBeTruthy();
+    expect(mockSearchWorkspaceDocumentPage).toHaveBeenCalledTimes(1);
   });
 
   it.each(['focus', 'visible', 'online', 'offline', 'socket'])('keeps results and the AI summary on %s', async (event) => {
