@@ -52,7 +52,7 @@ import { getErrorMessage, isAPIErrorCode } from '@/utils/errors';
 
 import type { TFunction } from 'i18next';
 
-type PeopleTab = 'members' | 'groups';
+export type PeopleTab = 'members' | 'groups';
 type GroupDetailTab = 'general' | 'members';
 const GROUP_EXCLUDED_WORKSPACE_ROLES = [Role.Guest];
 const PEOPLE_GUIDE_URL = 'https://appflowy.com/guide/getting-started-with-appflowy';
@@ -127,7 +127,7 @@ function fallbackInitial(value: string): string {
 
 type CurrentWorkspaceId = ReturnType<typeof useCurrentWorkspaceId>;
 
-export function MembersPanel() {
+export function MembersPanel({ initialTab }: { initialTab?: PeopleTab } = {}) {
   const currentWorkspaceId = useCurrentWorkspaceId();
   const activeWorkspaceScopeRef = useRef({
     generation: 0,
@@ -154,6 +154,7 @@ export function MembersPanel() {
       currentWorkspaceId={currentWorkspaceId}
       workspaceGeneration={workspaceGeneration}
       isCurrentWorkspaceRequest={isCurrentWorkspaceRequest}
+      initialTab={initialTab}
     />
   );
 }
@@ -162,15 +163,17 @@ function MembersPanelForWorkspace({
   currentWorkspaceId,
   workspaceGeneration,
   isCurrentWorkspaceRequest,
+  initialTab = 'members',
 }: {
   currentWorkspaceId: CurrentWorkspaceId;
   workspaceGeneration: number;
   isCurrentWorkspaceRequest: (workspaceId: CurrentWorkspaceId, generation: number) => boolean;
+  initialTab?: PeopleTab;
 }) {
   const { t } = useTranslation();
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const currentUser = useCurrentUser();
-  const [tab, setTab] = useState<PeopleTab>('members');
+  const [tab, setTab] = useState<PeopleTab>(initialTab);
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [groups, setGroups] = useState<WorkspaceGroup[]>([]);
   const [groupSearch, setGroupSearch] = useState('');

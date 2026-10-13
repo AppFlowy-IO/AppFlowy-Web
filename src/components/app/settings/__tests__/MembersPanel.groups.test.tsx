@@ -165,6 +165,14 @@ describe('MembersPanel workspace group parity', () => {
     mockSetGroupSpaceCoverage.mockImplementation(async (_workspace, _group, level) => ({ access_level: level }));
   });
 
+  it('opens straight on the Groups tab when another settings panel links to it', async () => {
+    render(<MembersPanel initialTab='groups' />);
+    await waitFor(() => expect(mockGetWorkspaceGroups).toHaveBeenCalled());
+
+    expect(await screen.findByTestId('groups-table-header')).toBeTruthy();
+    expect(screen.queryByTestId('members-table-header')).toBeNull();
+  });
+
   it('configures access to all spaces in the General tab, also for directory-managed groups', async () => {
     const scimGroup: WorkspaceGroup = {
       ...group,
