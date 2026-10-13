@@ -1749,6 +1749,14 @@ export function getCachedProviderDoc(name: string): YDoc | undefined {
   return providerCache.get(name)?.doc ?? rowProviderCache.get(name)?.doc;
 }
 
+/**
+ * True while this tab holds, or is still opening, an in-memory copy of the
+ * object. Such a copy can rebuild edits that were discarded meanwhile.
+ */
+export function hasCollabDocInMemory(name: string): boolean {
+  return providerCache.has(name) || rowProviderCache.has(name) || pendingOpens.has(name) || pendingRowOpens.has(name);
+}
+
 /** The canonical row provider owns the durability result for its live document. */
 export function getCachedRowProvider(name: string): SharedIndexeddbPersistence | undefined {
   const entry = rowProviderCache.get(name);

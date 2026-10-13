@@ -1,10 +1,15 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import { db, deleteCollabDB, getCachedProviderDoc } from '@/application/db';
-import { discardPermissionBlockedEdits, retryPermissionBlockedSync } from '@/application/sync-outbox';
+import { db, deleteCollabDB, hasCollabDocInMemory } from '@/application/db';
+import {
+  discardPermissionBlockedEdits,
+  retryPermissionBlockedSync,
+  settleDiscardedEdits,
+  subscribeDiscardedEdits,
+} from '@/application/sync-outbox';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import {
   AlertDialog,
@@ -89,6 +94,33 @@ export function PendingPermissionEdits({
     return { blocked: Array.from(blocked).sort(), queued: Array.from(queued).sort() };
   }, [userId, workspaceId, serverUrl], NO_PENDING_EDITS);
 
+  const reloadPageRef = useRef(reloadPage);
+  const reloadingRef = useRef(false);
+  // This tab's own discard reloads or settles once all of it is deleted.
+  const discardingRef = useRef(false);
+
+  reloadPageRef.current = reloadPage;
+
+  // Discarded edits must not come back from a copy this tab still holds in
+  // memory (a manifest reply after a reconnect, a full sync). Whichever tab
+  // discarded them, this tab reloads the affected pages from the server, or
+  // settles the discard when it holds none of them; until then the outbox
+  // refuses those pages.
+  useEffect(() => subscribeDiscardedEdits(session, (objectIds) => {
+    if (reloadingRef.current || discardingRef.current) return;
+    const held = objectIds.filter((id) => hasCollabDocInMemory(id));
+
+    if (held.length === 0) {
+      settleDiscardedEdits(session, objectIds);
+      return;
+    }
+
+    reloadingRef.current = true;
+    // Without the local copy the reloaded tab opens these pages from the server.
+    void Promise.all(held.map((id) => deleteCollabDB(id, { destroyDoc: false }).catch(() => false)))
+      .finally(() => reloadPageRef.current());
+  }), [session]);
+
   // A released page leaves `released` once none of its edits are queued or
   // waiting any more (they were uploaded or discarded), so its later ordinary
   // edits never show the saving notice. Until the live query sees the release,
@@ -136,19 +168,27 @@ export function PendingPermissionEdits({
 
   const discard = async () => {
     setBusy('discard');
+    discardingRef.current = true;
     try {
       const discarded = await discardPermissionBlockedEdits(session);
       // The local copy still contains these edits. Reset it so they can never be
-      // reconstructed and sent later; an open page reloads from the server.
-      const open = discarded.some((id) => getCachedProviderDoc(id));
+      // reconstructed and sent later; a page held in memory reloads from the
+      // server. Other tabs do the same when they see the discard.
+      const held = discarded.filter((id) => hasCollabDocInMemory(id));
 
       await Promise.all(discarded.map((id) => deleteCollabDB(id, { destroyDoc: false }).catch(() => false)));
       setConfirmingDiscard(false);
       toast.success(t('workspacePermissions.pendingEditsDiscarded'));
-      if (open) reloadPage();
+      if (held.length > 0) {
+        reloadingRef.current = true;
+        reloadPage();
+      } else {
+        settleDiscardedEdits(session, discarded);
+      }
     } catch {
       toast.error(t('workspacePermissions.pendingEditsDiscardError'));
     } finally {
+      discardingRef.current = false;
       setBusy(null);
     }
   };

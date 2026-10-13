@@ -1,8 +1,13 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { toast } from 'sonner';
 
-import { deleteCollabDB, getCachedProviderDoc } from '@/application/db';
-import { discardPermissionBlockedEdits, retryPermissionBlockedSync } from '@/application/sync-outbox';
+import { deleteCollabDB, hasCollabDocInMemory } from '@/application/db';
+import {
+  discardPermissionBlockedEdits,
+  retryPermissionBlockedSync,
+  settleDiscardedEdits,
+  subscribeDiscardedEdits,
+} from '@/application/sync-outbox';
 
 import { PendingPermissionEdits } from '../PendingPermissionEdits';
 
@@ -18,11 +23,13 @@ jest.mock('sonner', () => ({ toast: { success: jest.fn(), error: jest.fn() } }))
 jest.mock('@/application/db', () => ({
   db: {},
   deleteCollabDB: jest.fn(async () => true),
-  getCachedProviderDoc: jest.fn(),
+  hasCollabDocInMemory: jest.fn(() => false),
 }));
 jest.mock('@/application/sync-outbox', () => ({
   retryPermissionBlockedSync: jest.fn(),
   discardPermissionBlockedEdits: jest.fn(),
+  settleDiscardedEdits: jest.fn(),
+  subscribeDiscardedEdits: jest.fn(() => () => undefined),
 }));
 
 const session = { userId: 'user', workspaceId: 'workspace', serverUrl: 'https://server' };
@@ -37,7 +44,17 @@ beforeEach(() => {
   mockPending = { blocked: ['page-a', 'page-b'], queued: [] };
   jest.mocked(retryPermissionBlockedSync).mockResolvedValue({ released: [], denied: [], unknown: [] });
   jest.mocked(discardPermissionBlockedEdits).mockResolvedValue([]);
+  jest.mocked(hasCollabDocInMemory).mockReturnValue(false);
+  jest.mocked(subscribeDiscardedEdits).mockImplementation(() => () => undefined);
 });
+
+/** The listener the notice registered for discards announced by any tab. */
+function discardListener() {
+  const calls = jest.mocked(subscribeDiscardedEdits).mock.calls;
+
+  expect(calls.at(-1)?.[0]).toEqual(session);
+  return calls.at(-1)![1];
+}
 
 test('stays hidden when no edits are waiting for edit access', () => {
   mockPending = { blocked: [], queued: ['queued-page'] };
@@ -159,7 +176,7 @@ test('Discard changes asks for confirmation, then removes the edits and the loca
   const reloadPage = jest.fn();
 
   jest.mocked(discardPermissionBlockedEdits).mockResolvedValue(['page-a', 'page-b']);
-  jest.mocked(getCachedProviderDoc).mockImplementation((id: string) => (id === 'page-b' ? ({} as never) : undefined));
+  jest.mocked(hasCollabDocInMemory).mockImplementation((id: string) => id === 'page-b');
   renderNotice({ reloadPage });
   fireEvent.click(screen.getByRole('button', { name: 'workspacePermissions.pendingEditsDiscard' }));
   expect(discardPermissionBlockedEdits).not.toHaveBeenCalled();
@@ -176,6 +193,88 @@ test('Discard changes asks for confirmation, then removes the edits and the loca
   expect(toast.success).toHaveBeenCalledWith('workspacePermissions.pendingEditsDiscarded');
   // An open page still holds the discarded edits in memory and must reload.
   expect(reloadPage).toHaveBeenCalledTimes(1);
+  expect(settleDiscardedEdits).not.toHaveBeenCalled();
+});
+
+test('a tab that holds none of the discarded pages settles the discard instead of reloading', async () => {
+  const reloadPage = jest.fn();
+
+  jest.mocked(discardPermissionBlockedEdits).mockResolvedValue(['page-a']);
+  renderNotice({ reloadPage });
+  fireEvent.click(screen.getByRole('button', { name: 'workspacePermissions.pendingEditsDiscard' }));
+  await screen.findByRole('alertdialog');
+  await act(async () => {
+    fireEvent.click(screen.getAllByRole('button', { name: 'workspacePermissions.pendingEditsDiscard' }).at(-1)!);
+  });
+
+  expect(reloadPage).not.toHaveBeenCalled();
+  expect(settleDiscardedEdits).toHaveBeenCalledWith(session, ['page-a']);
+});
+
+test('leaves a discard announced during this tab’s own discard to that discard', async () => {
+  const reloadPage = jest.fn();
+  let finishDiscard!: (ids: string[]) => void;
+
+  jest.mocked(discardPermissionBlockedEdits).mockReturnValue(new Promise((resolve) => {
+    finishDiscard = resolve;
+  }));
+  jest.mocked(hasCollabDocInMemory).mockImplementation((id: string) => id === 'page-a');
+  renderNotice({ reloadPage });
+  fireEvent.click(screen.getByRole('button', { name: 'workspacePermissions.pendingEditsDiscard' }));
+  await screen.findByRole('alertdialog');
+  await act(async () => {
+    fireEvent.click(screen.getAllByRole('button', { name: 'workspacePermissions.pendingEditsDiscard' }).at(-1)!);
+  });
+
+  // A refused upload asks for settlement while the rows are still being deleted.
+  await act(async () => {
+    discardListener()(['page-a']);
+  });
+  expect(reloadPage).not.toHaveBeenCalled();
+
+  await act(async () => {
+    finishDiscard(['page-a', 'page-b']);
+  });
+  expect(deleteCollabDB).toHaveBeenCalledWith('page-b', { destroyDoc: false });
+  expect(reloadPage).toHaveBeenCalledTimes(1);
+});
+
+test('reloads when another tab discarded edits to a page this tab still holds', async () => {
+  const reloadPage = jest.fn();
+
+  mockPending = { blocked: [], queued: [] };
+  jest.mocked(hasCollabDocInMemory).mockImplementation((id: string) => id === 'page-b');
+  renderNotice({ reloadPage });
+
+  await act(async () => {
+    discardListener()(['page-a', 'page-b']);
+  });
+
+  // The local copy goes first, so the reloaded tab opens the page from the server.
+  expect(deleteCollabDB).toHaveBeenCalledWith('page-b', { destroyDoc: false });
+  expect(deleteCollabDB).not.toHaveBeenCalledWith('page-a', expect.anything());
+  expect(reloadPage).toHaveBeenCalledTimes(1);
+  expect(settleDiscardedEdits).not.toHaveBeenCalled();
+
+  // Further notices while the reload is under way do not reload again.
+  await act(async () => {
+    discardListener()(['page-b']);
+  });
+  expect(reloadPage).toHaveBeenCalledTimes(1);
+});
+
+test('settles another tab’s discard without reloading when this tab holds none of the pages', async () => {
+  const reloadPage = jest.fn();
+
+  mockPending = { blocked: [], queued: [] };
+  renderNotice({ reloadPage });
+  await act(async () => {
+    discardListener()(['page-a']);
+  });
+
+  expect(settleDiscardedEdits).toHaveBeenCalledWith(session, ['page-a']);
+  expect(deleteCollabDB).not.toHaveBeenCalled();
+  expect(reloadPage).not.toHaveBeenCalled();
 });
 
 test('Cancel keeps the waiting edits', async () => {

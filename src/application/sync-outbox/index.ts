@@ -8,7 +8,10 @@ import { Types } from '@/application/types';
 import { collab, messages } from '@/proto/messages';
 import { Log } from '@/utils/log';
 
+import { isFencedByDiscard, recordDiscardedEdits, requestDiscardSettlement } from './discard-fence';
 import { permissionBlockKey, persistPermissionBlock, readPermissionBlock, releasePermissionBlock } from './permission-quarantine';
+
+export { settleDiscardedEdits, subscribeDiscardedEdits } from './discard-fence';
 
 // Inlined to avoid a circular import with sync-protocol. Value must match
 // UpdateFlags.Lib0v1 in sync-protocol.ts.
@@ -261,6 +264,17 @@ export function enqueueOutboxUpdate(
     return Promise.resolve(false);
   }
 
+  // These edits were discarded in another tab (or in this one, which is about
+  // to reload) while this tab still held the object in memory. Refuse anything
+  // rebuilt from that copy and have the page reloaded from the server.
+  const discardScope = { serverUrl: currentServerUrl, userId, workspaceId };
+
+  if (isFencedByDiscard(discardScope, record.objectId)) {
+    Log.warn('[outbox] enqueue dropped: the edits were discarded; reloading the page', { objectId: record.objectId });
+    requestDiscardSettlement(discardScope);
+    return Promise.resolve(false);
+  }
+
   const objectSessionKey = sessionObjectKey(userId, workspaceId, record.objectId, currentServerUrl);
   const capturedLifecycleGeneration = lifecycleGeneration;
   const capturedPermissionGeneration = permissionGeneration;
@@ -388,6 +402,12 @@ export function enqueueOutboxUpdate(
 
   return addPromise
     .then(async (id) => {
+      // Discarded in another tab after the synchronous check above.
+      if (id === null) {
+        requestDiscardSettlement(discardScope);
+        return false;
+      }
+
       if (activeConfig && checked) {
         const verdict = await admitOutboxUpdate(
           activeConfig,
@@ -483,10 +503,11 @@ export function enqueueOutboxUpdate(
         return false;
       }
 
-      // A purge (logout) or version-reset discard started while the IDB write
-      // was in flight. The synchronous guard at enqueue time passed, but the
-      // state has since changed — drop the fallback to honour the boundary.
-      if (isPurging || suppressedObjects.has(objectSessionKey)) {
+      // A purge (logout), a version-reset discard or a discard of these paused
+      // edits started while the IDB write was in flight. The synchronous guard
+      // at enqueue time passed, but the state has since changed — drop the
+      // fallback to honour the boundary.
+      if (isPurging || suppressedObjects.has(objectSessionKey) || isFencedByDiscard(discardScope, record.objectId)) {
         Log.debug('[outbox] fallback skipped: purge/discard in progress', { objectId: record.objectId });
         return false;
       }
@@ -588,8 +609,11 @@ export function enqueueOutboxUpdate(
  * IndexedDB serializes read-write transactions across tabs, so concurrent
  * manifest replies cannot both observe an empty prefix and commit duplicates.
  */
-async function persistOutboxRow(row: SyncOutboxRecord): Promise<number> {
+async function persistOutboxRow(row: SyncOutboxRecord): Promise<number | null> {
   return db.transaction('rw', db.sync_outbox, db.sync_permission_blocks, async () => {
+    // A discard commits its record before deleting rows, so a row written after
+    // that deletion sees it here and is refused (null).
+    if (isFencedByDiscard(row, row.objectId)) return null;
     if (await readPermissionBlock(row, row.objectId)) row.permissionBlocked = true;
     if (row.source !== 'manifest') return db.sync_outbox.add(row);
     const supersededIds: number[] = [];
@@ -629,6 +653,11 @@ export async function mayUploadCollab(objectId: string, collabType: Types, works
   const generation = lifecycleGeneration;
 
   if (!config || config.workspaceId !== workspaceId) return false;
+  if (isFencedByDiscard(config, objectId)) {
+    requestDiscardSettlement(config);
+    return false;
+  }
+
   if (!config.checkPermission) return true;
   const records = await readOutboxPrefix(config.userId, workspaceId, objectId, config.serverUrl);
 
@@ -908,12 +937,19 @@ export async function retryPermissionBlockedSync(expectedSession?: SyncOutboxSes
 /**
  * Permanently delete the quarantined edits shown to the user for one session,
  * with their durable denial. Edits that are not quarantined are kept.
- * Returns the objects whose edits were discarded.
+ * Returns the objects whose edits were discarded. Every tab that holds one of
+ * them in memory must reload it before it may upload it again (discard-fence).
  */
 export async function discardPermissionBlockedEdits(session: SyncOutboxSession): Promise<string[]> {
   const discarded: string[] = [];
+  const objectIds = await permissionBlockedObjectIds(session);
 
-  for (const objectId of await permissionBlockedObjectIds(session)) {
+  // Recorded first: from now on no tab that still holds one of these objects
+  // in memory can persist or upload a copy rebuilt from it, and every other tab
+  // is told to reload or settle them.
+  recordDiscardedEdits(session, objectIds);
+
+  for (const objectId of objectIds) {
     const key = sessionObjectKey(session.userId, session.workspaceId, objectId, session.serverUrl);
 
     // One transaction with the durable block: a row persisted concurrently is

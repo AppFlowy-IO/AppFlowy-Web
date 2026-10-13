@@ -126,6 +126,7 @@ import {
   retryPermissionBlockedSync,
   mayUploadCollab,
   setCurrentSession,
+  settleDiscardedEdits,
   shouldRouteUpdateThroughOutbox,
   startDrainAll,
   startDrainObject,
@@ -162,6 +163,8 @@ function createDeferred<T>() {
 describe('sync outbox live send', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
+    // Discard records are shared by tabs through localStorage.
+    localStorage.clear();
     jest.mocked(matchesDatabaseStorageFence).mockResolvedValue(true);
     mockRecords = [];
     mockPermissionBlocks.clear();
@@ -2133,6 +2136,16 @@ describe('sync outbox live send', () => {
     expect(await discardPermissionBlockedEdits({ userId, workspaceId })).toEqual([objectId]);
     expect(mockRecords).toEqual([expect.objectContaining({ objectId: otherObjectId })]);
     expect(mockPermissionBlocks.size).toBe(0);
+
+    // Until this tab reloads the page or confirms it holds no copy of it, nothing
+    // rebuilt from memory is accepted for the discarded object.
+    expect(await enqueueOutboxUpdate(
+      { objectId, collabType: Types.Document, payload: makeUpdate('discard me') }, { broadcast: false, source: 'manifest' }
+    )).toBe(false);
+    expect(await mayUploadCollab(objectId, Types.Document, workspaceId)).toBe(false);
+    expect(mockRecords).toHaveLength(1);
+    settleDiscardedEdits({ userId, workspaceId }, [objectId]);
+    expect(await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('new edit') })).toBe(true);
   });
 
   it('does not re-check quarantined objects, which only an explicit retry can release', async () => {
