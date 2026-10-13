@@ -25,7 +25,7 @@ export interface TemplateCategoryFormValues {
   icon: TemplateIcon;
   bg_color: string;
   description: string;
-  category_type: TemplateCategoryType,
+  category_type: TemplateCategoryType;
   priority: number;
 }
 
@@ -60,6 +60,7 @@ export interface UploadTemplatePayload {
   view_url: string;
   about: string;
   category_ids: string[];
+  primary_category_id?: string | null;
   creator_id: string;
   is_new_template: boolean;
   is_featured: boolean;
@@ -72,6 +73,7 @@ export interface TemplateSummary {
   description: string;
   view_url: string;
   categories: TemplateCategory[];
+  primary_category_id?: string | null;
   creator: TemplateCreator;
   is_new_template: boolean;
   is_featured: boolean;

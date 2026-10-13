@@ -1,5 +1,15 @@
-import { Chip, CircularProgress, OutlinedInput, Typography } from '@mui/material';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Chip,
+  CircularProgress,
+  FormControl,
+  FormHelperText,
+  InputLabel,
+  MenuItem,
+  OutlinedInput,
+  Select,
+  Typography,
+} from '@mui/material';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as ArrowRight } from '@/assets/icons/alt_arrow_right.svg';
@@ -8,6 +18,8 @@ import AddCategory from '@/components/as-template/category/AddCategory';
 import CategoryItem from '@/components/as-template/category/CategoryItem';
 import { useLoadCategories } from '@/components/as-template/hooks';
 import { CategoryIcon } from '@/components/as-template/icons';
+
+import type { Dispatch, SetStateAction } from 'react';
 
 const ITEM_HEIGHT = 48;
 const ITEM_PADDING_TOP = 8;
@@ -20,19 +32,45 @@ const MenuProps = {
   },
 };
 
-function Categories({ value, onChange }: { value: string[]; onChange: React.Dispatch<React.SetStateAction<string[]>> }) {
+function Categories({
+  value,
+  onChange,
+  primaryCategoryId,
+  onPrimaryCategoryChange,
+  disabled = false,
+}: {
+  value: string[];
+  onChange: Dispatch<SetStateAction<string[]>>;
+  primaryCategoryId?: string;
+  onPrimaryCategoryChange: (id: string) => void;
+  disabled?: boolean;
+}) {
   const { t } = useTranslation();
+  const primaryLabelId = useId();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const [searchText, setSearchText] = useState('');
 
-  const { categories, loading, loadCategories } = useLoadCategories({
+  const { categories, allCategories, loading, loadCategories } = useLoadCategories({
     searchText,
   });
 
   const selectedCategories = useMemo(() => {
-    return categories.filter((category) => value.includes(category.id));
-  }, [categories, value]);
+    return allCategories.filter((category) => value.includes(category.id));
+  }, [allCategories, value]);
+
+  const reloadCategories = useCallback(async () => {
+    const updated = await loadCategories();
+
+    if (!updated) return;
+    const available = new Set(updated.map((category) => category.id));
+
+    onChange((previous) => {
+      const selected = previous.filter((id) => available.has(id));
+
+      return selected.length === previous.length ? previous : selected;
+    });
+  }, [loadCategories, onChange]);
 
   const handleSelect = useCallback(
     (id: string) => {
@@ -48,8 +86,8 @@ function Categories({ value, onChange }: { value: string[]; onChange: React.Disp
   );
 
   useEffect(() => {
-    void loadCategories();
-  }, [loadCategories]);
+    void reloadCategories();
+  }, [reloadCategories]);
 
   return (
     <div className={'flex flex-col gap-4'}>
@@ -58,6 +96,7 @@ function Categories({ value, onChange }: { value: string[]; onChange: React.Disp
       </Typography>
       <div className={'flex items-center gap-2'}>
         <OutlinedInput
+          disabled={disabled}
           value={searchText}
           placeholder={t('template.category.typeToSearch')}
           onChange={(e) => setSearchText(e.target.value)}
@@ -75,7 +114,7 @@ function Categories({ value, onChange }: { value: string[]; onChange: React.Disp
           className={'flex-1 bg-background-primary'}
           ref={ref}
         />
-        <Popover {...MenuProps} open={open} anchorEl={ref.current} onClose={() => setOpen(false)}>
+        <Popover {...MenuProps} open={open && !disabled} anchorEl={ref.current} onClose={() => setOpen(false)}>
           <div
             className={'flex w-full flex-col gap-1'}
             style={{
@@ -83,7 +122,7 @@ function Categories({ value, onChange }: { value: string[]; onChange: React.Disp
               maxHeight: ITEM_HEIGHT * 10 + ITEM_PADDING_TOP,
             }}
           >
-            <AddCategory searchText={searchText} onCreated={loadCategories} />
+            <AddCategory searchText={searchText} onCreated={reloadCategories} />
 
             {categories.map((category) => (
               <CategoryItem
@@ -91,26 +130,65 @@ function Categories({ value, onChange }: { value: string[]; onChange: React.Disp
                 category={category}
                 selected={value.includes(category.id)}
                 onClick={() => handleSelect(category.id)}
-                reloadCategories={loadCategories}
+                reloadCategories={reloadCategories}
               />
             ))}
           </div>
         </Popover>
       </div>
       <div className={'flex flex-wrap gap-2'}>
-        {selectedCategories.map((category) => (
-          <Chip
-            key={category.id}
-            icon={<CategoryIcon icon={category.icon} />}
-            label={category.name}
-            style={{
-              backgroundColor: category.bg_color,
-            }}
-            className={'template-category border-transparent px-3 text-black'}
-            variant='outlined'
-          />
-        ))}
+        {selectedCategories.map((category) => {
+          const isPrimary = category.id === primaryCategoryId;
+          const primaryActionLabel = t('template.markPrimaryCategory', {
+            defaultValue: 'Use {{category}} as primary category',
+            category: category.name,
+          });
+
+          return (
+            <Chip
+              disabled={disabled}
+              key={category.id}
+              icon={<CategoryIcon icon={category.icon} />}
+              label={
+                isPrimary
+                  ? `${category.name} (${t('template.primaryCategoryShort', { defaultValue: 'Primary' })})`
+                  : category.name
+              }
+              aria-label={primaryActionLabel}
+              aria-pressed={isPrimary}
+              title={primaryActionLabel}
+              onClick={() => onPrimaryCategoryChange(category.id)}
+              style={{
+                backgroundColor: category.bg_color,
+              }}
+              className={'template-category border-transparent px-3 text-black'}
+              variant='outlined'
+            />
+          );
+        })}
       </div>
+      <FormControl size='small' disabled={disabled || selectedCategories.length === 0}>
+        <InputLabel id={primaryLabelId}>
+          {t('template.primaryCategory', { defaultValue: 'Primary category' })}
+        </InputLabel>
+        <Select
+          labelId={primaryLabelId}
+          label={t('template.primaryCategory', { defaultValue: 'Primary category' })}
+          value={selectedCategories.some((category) => category.id === primaryCategoryId) ? primaryCategoryId : ''}
+          onChange={(event) => onPrimaryCategoryChange(event.target.value)}
+        >
+          {selectedCategories.map((category) => (
+            <MenuItem key={category.id} value={category.id}>
+              {category.name}
+            </MenuItem>
+          ))}
+        </Select>
+        <FormHelperText>
+          {t('template.primaryCategoryHelp', {
+            defaultValue: 'Click a category above or choose here. Used in the template page URL.',
+          })}
+        </FormHelperText>
+      </FormControl>
     </div>
   );
 }

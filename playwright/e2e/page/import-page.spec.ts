@@ -445,7 +445,7 @@ test.describe('Feature: Import', () => {
     });
 
     await test.step("Then the server's message is shown for that file and the dialog stays open", async () => {
-      await expect(page.getByText(/run OCR on it before importing/).first()).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText(/run OCR on it before importing/i).first()).toBeVisible({ timeout: 15000 });
       await expect(ImportSelectors.dialog(page)).toBeVisible();
       await expect(ImportSelectors.pdfButton(page)).toBeEnabled({ timeout: 10000 });
     });

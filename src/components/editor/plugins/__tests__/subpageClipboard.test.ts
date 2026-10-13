@@ -7,8 +7,13 @@ import { withTestingYDoc } from '@/application/slate-yjs/__tests__/withTestingYj
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { withYHistory } from '@/application/slate-yjs/plugins/withHistory';
 import { slateContentInsertToYData, yDocToSlateContent } from '@/application/slate-yjs/utils/convert';
-import { BlockType, CollabOrigin, YjsEditorKey } from '@/application/types';
+import { BlockType, CollabOrigin, View, ViewLayout, YjsEditorKey } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
+import {
+  assertGenericDeepDuplicateIsSafe,
+  FORM_DEEP_DUPLICATE_CHECK_FAILED_MESSAGE,
+  FORM_DEEP_DUPLICATE_UNAVAILABLE_MESSAGE,
+} from '@/components/app/view-actions/formDuplicateSafety';
 import { EditorContextState } from '@/components/editor/EditorContext';
 
 import { withInsertData } from '../withInsertData';
@@ -143,6 +148,60 @@ it('preserves a leading code block when a mixed fragment includes a subpage', as
     await settle();
     expect(f.editor.children.map(Node.string)).toEqual(['AB', 'X', '']);
     expect(f.editor.children[1].type).toBe(BlockType.CodeBlock);
+  } finally {
+    f.dispose();
+  }
+});
+
+it.each(['known Form', 'fresh Form', 'failed preflight', 'empty container'] as const)(
+  'shows reviewed duplication guidance when pasting a subpage with a %s', async (failure) => {
+    const f = setup();
+    const form: View = {
+      view_id: 'form', name: 'Form', layout: ViewLayout.Form, children: [],
+      icon: null, extra: null, is_published: false, is_private: false,
+    };
+    const source: View = { ...form, view_id: 'child', layout: ViewLayout.Document, children: [form] };
+    const loadFreshView = jest.fn().mockResolvedValue(source);
+    const unavailable = failure === 'known Form' || failure === 'fresh Form';
+
+    if (failure === 'failed preflight') loadFreshView.mockRejectedValue(new Error('SQLSTATE: private diagnostic'));
+    if (failure === 'empty container') {
+      loadFreshView.mockResolvedValue({
+        ...source, layout: ViewLayout.Grid, extra: { is_database_container: true, is_space: false }, children: [],
+      });
+    }
+
+    (f.context.duplicatePage as jest.Mock).mockImplementation((viewId: string) => assertGenericDeepDuplicateIsSafe({
+      workspaceId: f.context.workspaceId,
+      viewId,
+      knownView: failure === 'known Form' ? source : undefined,
+      loadFreshView,
+    }));
+
+    try {
+      f.editor.insertData(clipboardData([block(BlockType.SubpageBlock, '', { view_id: 'child' })]));
+      await settle();
+      expect(notify.error).toHaveBeenCalledTimes(1);
+      expect(notify.error).toHaveBeenCalledWith(
+        unavailable ? FORM_DEEP_DUPLICATE_UNAVAILABLE_MESSAGE : FORM_DEEP_DUPLICATE_CHECK_FAILED_MESSAGE
+      );
+      expect(f.editor.children.map(Node.string)).toEqual(['AB']);
+      expect(f.context.deletePage).not.toHaveBeenCalled();
+    } finally {
+      f.dispose();
+    }
+  }
+);
+
+it('keeps unreviewed errors hidden when subpage duplication fails', async () => {
+  const f = setup();
+
+  (f.context.duplicatePage as jest.Mock).mockRejectedValue(new Error('SQLSTATE: private duplication diagnostic'));
+  try {
+    f.editor.insertData(clipboardData([block(BlockType.SubpageBlock, '', { view_id: 'child' })]));
+    await settle();
+    expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.');
+    expect(f.editor.children.map(Node.string)).toEqual(['AB']);
   } finally {
     f.dispose();
   }

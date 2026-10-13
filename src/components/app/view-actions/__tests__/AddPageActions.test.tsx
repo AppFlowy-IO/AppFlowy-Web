@@ -239,7 +239,7 @@ describe('AddPageActions', () => {
     mockAddPage.mockRejectedValueOnce(new Error('Creation is pending'));
     renderActions(view({ view_id: 'parent-id' }));
     fireEvent.click(screen.getByTestId('add-list-button'));
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Creation is pending'));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Failed to create page'));
     expect(mockToView).not.toHaveBeenCalled();
     expect(mockDeletePage).not.toHaveBeenCalled();
     expect(mockDeleteTrash).not.toHaveBeenCalled();
@@ -322,7 +322,7 @@ describe('AddPageActions', () => {
 
       await waitFor(() =>
         expect(toast.error).toHaveBeenCalledWith(
-          'Upgrade this workspace to Pro to use this feature or increase its limits.'
+          "This subscription plan isn't valid for this action. Upgrade this workspace to Pro to use this feature or increase its limits."
         )
       );
       expect(toast.error).toHaveBeenCalledTimes(1);
@@ -339,7 +339,7 @@ describe('AddPageActions', () => {
     renderActions(view({ view_id: 'space-id', extra: { is_space: true } }));
     fireEvent.click(screen.getByTestId('add-timeline-page-button'));
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(message));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('An upgrade is required for this action.'));
     expect(toast.dismiss).toHaveBeenCalled();
     expect(mockToView).not.toHaveBeenCalled();
     expect(mockOpenPageModal).not.toHaveBeenCalled();
@@ -351,7 +351,7 @@ describe('AddPageActions', () => {
     renderActions(view({ view_id: 'space-id', extra: { is_space: true } }));
     fireEvent.click(screen.getByTestId('add-ai-chat-button'));
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('create failed'));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Failed to create page'));
 
     expect(mockChatRequest).not.toHaveBeenCalled();
     expect(mockUpdateChatSettings).not.toHaveBeenCalled();

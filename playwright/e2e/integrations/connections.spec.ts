@@ -172,28 +172,44 @@ test('duplicate callback messages confirm the connection only once', async ({ pa
   expect(connectionApp.connections).toHaveLength(1);
 });
 
-test('failed account loading disables Connect and Retry recovers', async ({ page, context, connectionApp }) => {
-  let unavailable = true;
-  let attempts = 0;
+for (const withPublicCopy of [false, true]) {
+  test(`failed account loading disables Connect and Retry recovers (${withPublicCopy ? 'public copy' : 'legacy response'})`, async ({ page, context, connectionApp }) => {
+    let unavailable = true;
+    let attempts = 0;
 
-  await context.route('**/api/integrations/connections?**', (route) => {
-    attempts++;
-    return unavailable
-      ? route.fulfill({
-          status: 503,
-          json: { code: 503, message: 'Connections temporarily unavailable' },
-        })
-      : route.fallback();
+    await context.route('**/api/integrations/connections?**', (route) => {
+      attempts++;
+      return unavailable
+        ? route.fulfill({
+            status: 503,
+            json: {
+              code: 503,
+              message: 'Connections temporarily unavailable',
+              ...(withPublicCopy ? {
+                user_error: {
+                  schema_version: 1,
+                  reason: 'SERVICE_UNAVAILABLE',
+                  message: 'Connections are restarting. Try again shortly.',
+                  locale: 'en',
+                },
+              } : {}),
+            },
+          })
+        : route.fallback();
+    });
+    await connectionApp.open();
+    await expect(page.getByRole('alert')).toContainText(
+      withPublicCopy ? 'Connections are restarting. Try again shortly.' : 'Unable to load connections. Please try again.'
+    );
+    await expect(page.getByRole('alert')).not.toContainText('Connections temporarily unavailable');
+    expect(attempts).toBe(4); // Initial request plus the HTTP client's three bounded retries.
+    await expect(page.getByRole('button', { name: 'Add connection', exact: true })).toBeDisabled();
+    unavailable = false;
+    await page.getByRole('button', { name: 'Retry', exact: true }).click();
+    await allowConnection(await startConnection(page, 'google-drive'));
+    await expect(page.getByText('google-drive-1@example.test', { exact: true })).toBeVisible();
   });
-  await connectionApp.open();
-  await expect(page.getByRole('alert')).toContainText('Connections temporarily unavailable');
-  expect(attempts).toBe(4); // Initial request plus the HTTP client's three bounded retries.
-  await expect(page.getByRole('button', { name: 'Add connection', exact: true })).toBeDisabled();
-  unavailable = false;
-  await page.getByRole('button', { name: 'Retry', exact: true }).click();
-  await allowConnection(await startConnection(page, 'google-drive'));
-  await expect(page.getByText('google-drive-1@example.test', { exact: true })).toBeVisible();
-});
+}
 
 test('failed confirmation does not display a connected account and a fresh attempt recovers', async ({
   page,
@@ -211,7 +227,8 @@ test('failed confirmation does not display a connected account and a fresh attem
   );
   await connectionApp.open();
   await allowConnection(await startConnection(page, 'google-drive'));
-  await expect(page.getByRole('alert')).toHaveText('Authorization service temporarily unavailable');
+  await expect(page.getByRole('alert')).toHaveText('Error 503: Unable to connect this account. Please try again.');
+  await expect(page.getByRole('alert')).not.toContainText('Authorization service temporarily unavailable');
   expect(connectionApp.connections).toHaveLength(0);
   await expect(page.getByRole('table')).toBeHidden();
 
@@ -229,7 +246,7 @@ test('failed connection startup closes the blank popup and allows retry', async 
   await page.getByTestId('connect-google-drive').click();
   const popup = await opened;
 
-  await expect(page.getByRole('alert')).toContainText('Network Error');
+  await expect(page.getByRole('alert')).toContainText('There was a network connection problem.');
   expect(popup.isClosed()).toBe(true);
   expect(connectionApp.authorizations).toHaveLength(0);
   await allowConnection(await startConnection(page, 'google-drive'));
@@ -277,7 +294,8 @@ test('disconnect requires confirmation, preserves accounts on failure and remove
     { times: 1 }
   );
   await page.getByTestId('confirm-disconnect-connection').click();
-  await expect(page.getByText('Disconnect temporarily unavailable', { exact: true })).toBeVisible();
+  await expect(page.getByText('Error 503: Unable to disconnect this account. Please try again.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Disconnect temporarily unavailable', { exact: true })).toBeHidden();
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(page.getByTestId(`connection-${drive.id}`)).toBeVisible();
   await expect(page.getByTestId(`connection-${calendar.id}`)).toBeVisible();

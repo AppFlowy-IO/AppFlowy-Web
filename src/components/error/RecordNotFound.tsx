@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@/utils/errors';
 import { ComponentProps, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -9,6 +10,7 @@ import emptyImageSrc from '@/assets/images/empty.png';
 import LandingPage from '@/components/_shared/landing-page/LandingPage';
 import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { RequestAccessContent } from '@/components/app/share/RequestAccessContent';
+import { useErrorCatalogRevision } from '@/components/main/hooks/useServerErrorCatalog';
 import { Progress } from '@/components/ui/progress';
 
 // Every error state below renders inside the app shell (content area, modal,
@@ -35,6 +37,8 @@ function RecordNotFound({
   const { t } = useTranslation();
   const currentWorkspaceId = useCurrentWorkspaceId();
   const [retrying, setRetrying] = useState(false);
+
+  useErrorCatalogRevision();
 
   const goToHomepage = () => {
     window.location.href = '/app';
@@ -240,7 +244,7 @@ function RecordNotFound({
           <EmbeddedLandingPage
             Logo={ErrorIcon}
             title={t('landingPage.unknown.title')}
-            description={t('landingPage.unknown.description')}
+            description={error ? getErrorMessage(error) : t('landingPage.unknown.description')}
             primaryAction={{
               onClick: handleRetry,
               label: retrying ? (

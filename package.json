@@ -11,7 +11,7 @@
     "clean": "rm -rf dist storybook-static coverage .nyc_output node_modules/.vite node_modules/.cache",
     "type-check": "tsc --noEmit --project tsconfig.web.json",
     "type-check:watch": "tsc --build --watch",
-    "lint": "pnpm type-check && eslint --quiet --ext .js,.ts,.tsx . --ignore-path .eslintignore.web",
+    "lint": "pnpm error-catalog:check && pnpm type-check && eslint --quiet --ext .js,.ts,.tsx . --ignore-path .eslintignore.web",
     "start": "vite preview --port 3000",
     "css:variables": "node scripts/generateTailwindColors.cjs",
     "analyze": "cross-env ANALYZE_MODE=true vite build",
@@ -52,7 +52,9 @@
     "generate-tokens": "node scripts/system-token/convert-tokens.cjs",
     "generate-protobuf": "pbjs -t static-module -w es6 -o ./src/proto/messages.js ./src/proto/messages.proto && pbts -o ./src/proto/messages.d.ts ./src/proto/messages.js",
     "storybook": "storybook dev -p 6006",
-    "build-storybook": "storybook build"
+    "build-storybook": "storybook build",
+    "error-catalog:sync": "node scripts/sync-error-catalog.mjs",
+    "error-catalog:check": "node scripts/sync-error-catalog.mjs --check"
   },
   "dependencies": {
     "@appflowyinc/editor": "^0.1.13",

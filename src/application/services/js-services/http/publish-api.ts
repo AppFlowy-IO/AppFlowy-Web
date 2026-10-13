@@ -105,14 +105,10 @@ export async function publishCollabs(workspaceId: string, items: PublishCollabIt
     throw new Error('HTTP client not initialized');
   }
 
-  const response = await axios.post<APIResponse>(url, body, {
+  await executeAPIRequest<void>(() => axios.post<APIResponse<void>>(url, body, {
     // Prevent axios from JSON-serializing the binary body
     transformRequest: [(data: Uint8Array) => data],
-  });
-
-  if (response.data?.code !== 0) {
-    throw new Error(response.data?.message ?? 'Publish failed');
-  }
+  }));
 }
 
 export async function publishView(workspaceId: string, viewId: string, payload?: PublishViewPayload) {

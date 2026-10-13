@@ -31,6 +31,7 @@ import {
   DATABASE_TAB_VIEW_ID_QUERY_PARAM,
   resolveSidebarSelectedViewId,
 } from '@/components/app/hooks/resolveSidebarSelectedViewId';
+import { getErrorDiagnostic } from '@/utils/errors';
 
 import { AppContextConsumer } from '../components/AppContextConsumer';
 import { useAuthInternal } from '../contexts/AuthInternalContext';
@@ -92,22 +93,19 @@ function isRouteNotFoundError(error: unknown): boolean {
   const normalizedError = error as {
     code?: number;
     status?: number;
-    message?: string;
     response?: {
       status?: number;
       data?: {
         code?: number;
-        message?: string;
       };
     };
   };
 
   const statusCode = normalizedError.status ?? normalizedError.response?.status;
   const appCode = normalizedError.code ?? normalizedError.response?.data?.code;
-  const message = normalizedError.message || normalizedError.response?.data?.message || '';
 
   if (statusCode === 404 || appCode === 404) return true;
-  return ROUTE_NOT_FOUND_MESSAGE_PATTERN.test(message);
+  return ROUTE_NOT_FOUND_MESSAGE_PATTERN.test(getErrorDiagnostic(error));
 }
 
 async function resolvePermissionProbeTargetFromMetadata(

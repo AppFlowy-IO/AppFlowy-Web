@@ -106,20 +106,32 @@ export async function postAtomicCreation<K extends AtomicCreationKind>(
   try {
     for (let attempt = 0; ; attempt += 1) {
       submissionOwner.assertCurrent();
+      let retryLater = false;
+
       try {
         return await awaitAtomicRequest(executeAPIRequest<AtomicCreationReceipt<K>>(
-          () =>
-            getAxios()?.post<APIResponse<AtomicCreationReceipt<K>>>(
-              `/api/workspace/${owner.workspaceId}/v2/page-view/${paths[kind]}`,
-              requestJson,
-              { ...ownedRequestConfig(submissionOwner, controller.signal), timeout: Math.max(1, deadline - Date.now()),
-                transformRequest: [(data: string) => data] }
-            ),
+          async () => {
+            try {
+              const response = await getAxios()?.post<APIResponse<AtomicCreationReceipt<K>>>(
+                `/api/workspace/${owner.workspaceId}/v2/page-view/${paths[kind]}`,
+                requestJson,
+                { ...ownedRequestConfig(submissionOwner, controller.signal), timeout: Math.max(1, deadline - Date.now()),
+                  transformRequest: [(data: string) => data] }
+              );
+
+              // Error presentation accepts numeric strings. Retry admission must
+              // still require an explicit numeric code in the server response.
+              retryLater = response?.data?.code === -5;
+              return response;
+            } catch (error) {
+              retryLater = axios.isAxiosError<APIResponse>(error) && error.response?.data?.code === -5;
+              throw error;
+            }
+          },
           { suppressResponseDataLogging: true }
         ), controller.signal);
       } catch (error) {
-        if (!error || typeof error !== 'object' || !('code' in error) || error.code !== -5 ||
-          attempt + 1 >= MAX_CREATION_ATTEMPTS) throw error;
+        if (!retryLater || attempt + 1 >= MAX_CREATION_ATTEMPTS) throw error;
         // A newly synced Row can be readable from realtime cache before its
         // durable source exists. Keep the same journaled request while it settles.
         submissionOwner.assertCurrent();

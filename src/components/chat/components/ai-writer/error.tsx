@@ -1,15 +1,19 @@
+import { getErrorMessage } from '@/utils/errors';
 import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
 import { useIsOfficialHosted } from '@/components/app/app.hooks';
 import { ERROR_CODE_NO_LIMIT } from '@/components/chat/lib/const';
 import { useWriterContext } from '@/components/chat/writer/context';
+import { useErrorCatalogRevision } from '@/components/main/hooks/useServerErrorCatalog';
 
 export function Error() {
   const { t } = useTranslation();
   const isOfficialHosted = useIsOfficialHosted();
 
   const { error, rewrite } = useWriterContext();
+
+  useErrorCatalogRevision();
 
   return (
     <div
@@ -34,7 +38,7 @@ export function Error() {
         ) : error?.code === ERROR_CODE_NO_LIMIT && isOfficialHosted ? (
           t('chat.writer.errors.responseLimit')
         ) : (
-          error?.message || t('chat.errors.responseUnavailable')
+          getErrorMessage(error, t('chat.errors.responseUnavailable'))
         )}
       </div>
     </div>

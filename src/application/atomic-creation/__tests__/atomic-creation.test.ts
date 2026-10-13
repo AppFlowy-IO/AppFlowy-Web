@@ -271,7 +271,7 @@ it('guards the final adapter after an asynchronous request interceptor changes w
 
   try {
     await expect(atomicRead(owner, '/current')).rejects.toMatchObject({
-      message: 'The account or workspace changed. Retry in the original workspace.',
+      diagnosticMessage: 'The account or workspace changed. Retry in the original workspace.',
     });
   } finally {
     getAxios()!.interceptors.request.eject(id);
@@ -406,7 +406,7 @@ it('fails the first authoritative HTTP read without the ordinary GET retry polic
       data: { code: -1, message: 'unavailable' },
     });
   });
-  await expect(atomicRead(owner, '/current')).rejects.toMatchObject({ message: 'unavailable' });
+  await expect(atomicRead(owner, '/current')).rejects.toMatchObject({ diagnosticMessage: 'unavailable', httpStatus: 503 });
   expect(send).toHaveBeenCalledTimes(1);
 });
 
@@ -537,9 +537,14 @@ describe('explicit server RetryLater during atomic creation', () => {
     data: { code: -5, message: 'creation dependency has no durable source' },
   });
 
-  it('retries only the identical serialized request after an explicit RetryLater response', async () => {
+  it.each([200, 503])('retries only the identical serialized request after an explicit RetryLater response (HTTP %i)', async (status) => {
     jest.useFakeTimers();
-    send.mockImplementationOnce(async (config) => retryLater(config));
+    send.mockImplementationOnce(async (config) => {
+      const response = { ...retryLater(config), status };
+
+      if (status === 503) throw new axios.AxiosError('retry later', 'ERR_BAD_RESPONSE', config, undefined, response);
+      return response;
+    });
     const requestJson = JSON.stringify(command);
     const post = postAtomicCreation(captureAtomicCreationOwner('workspace'), 'document', requestJson);
 
@@ -666,11 +671,17 @@ describe('explicit server RetryLater during atomic creation', () => {
     }
   });
 
-  it.each(['transport', 'permission', 'string-code'] as const)('does not retry an ambiguous or unrelated %s error', async (failure) => {
+  it.each(['transport', 'permission', 'string-code', 'string-code-http'] as const)('does not retry an ambiguous or unrelated %s error', async (failure) => {
     jest.useFakeTimers();
     if (failure === 'transport') send.mockRejectedValue(new Error('connection closed after possible commit'));
-    else send.mockImplementation(async (config) => ({ ...reply(config, undefined),
-      data: { code: failure === 'permission' ? 403 : '-5', message: 'request failed' } }));
+    else send.mockImplementation(async (config) => {
+      const response = { ...reply(config, undefined),
+        status: failure === 'string-code-http' ? 503 : 200,
+        data: { code: failure === 'permission' ? 403 : '-5', message: 'request failed' } };
+
+      if (response.status === 503) throw new axios.AxiosError('request failed', 'ERR_BAD_RESPONSE', config, undefined, response);
+      return response;
+    });
 
     await expect(postAtomicCreation(captureAtomicCreationOwner('workspace'), 'document', JSON.stringify(command)))
       .rejects.toBeDefined();
