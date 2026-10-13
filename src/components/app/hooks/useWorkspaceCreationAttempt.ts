@@ -38,12 +38,24 @@ export function useWorkspaceCreationAttempt(scopeKey: string) {
         render((version) => version + 1);
       }
     },
+    // Bookkeeping after a user action must not turn a finished action into an error. A request
+    // saved under another account or server is left for that context to settle.
     complete(id: string) {
-      attempt.complete(id);
+      try {
+        attempt.complete(id);
+      } catch {
+        /* The account or server changed; its own remount re-reads the request. */
+      }
+
       render((version) => version + 1);
     },
     discard() {
-      attempt.discard();
+      try {
+        attempt.discard();
+      } catch {
+        /* The account or server changed; its own remount re-reads the request. */
+      }
+
       render((version) => version + 1);
     },
   };
