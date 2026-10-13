@@ -36,7 +36,7 @@ import { canonicalizeUserUid } from '@/application/user-uid';
 
 import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from './core';
 import { captureApiContext } from './request-context';
-import { ensureCanCreateWorkspace, getWorkspaceCreationCapability } from './workspace-creation-api';
+import { admitWorkspaceCreation } from './workspace-creation-api';
 
 const UID_FIELD_REGEX = /"uid"\s*:\s*(\d{16,})/g;
 
@@ -134,18 +134,38 @@ export async function updateWorkspace(workspaceId: string, payload: UpdateWorksp
   );
 }
 
-export type WorkspaceCreationReceipt = { requestId: string; replay: boolean };
+export interface CreateWorkspaceOptions {
+  /**
+   * Recover an earlier keyed request whose outcome is unknown. The server resolves a completed
+   * receipt before new-work admission, so this skips the client admission check and never uses the
+   * unkeyed route: a later 404 may come from an old node after the original request committed.
+   */
+  replay?: string;
+  /**
+   * Start a keyed request. Called only after fresh admission passes on a server with keyed creation,
+   * immediately before the POST; it must durably record and return a new request ID. A throw stops
+   * before sending. Without it, or on a legacy server, creation uses the original unkeyed route.
+   */
+  reserve?: () => string;
+}
 
-export async function createWorkspace(payload: CreateWorkspacePayload, receipt?: WorkspaceCreationReceipt) {
+export async function createWorkspace(payload: CreateWorkspacePayload, options: CreateWorkspaceOptions = {}) {
   const scope = captureApiContext();
+  let url = '/api/workspace';
+  let body: CreateWorkspacePayload & { request_id?: string } = payload;
 
-  // An existing request can recover its original owned result after policy
-  // denial. The distinct endpoint performs that receipt lookup before admission.
-  if (receipt?.replay) await getWorkspaceCreationCapability();
-  else await ensureCanCreateWorkspace();
-  scope.assertCurrent();
-  const url = receipt ? '/api/workspace/create-with-request-id' : '/api/workspace';
-  const body = receipt ? { ...payload, request_id: receipt.requestId } : payload;
+  if (options.replay) {
+    url = '/api/workspace/create-with-request-id';
+    body = { ...payload, request_id: options.replay };
+  } else {
+    const { legacy } = await admitWorkspaceCreation();
+
+    scope.assertCurrent();
+    if (!legacy && options.reserve) {
+      url = '/api/workspace/create-with-request-id';
+      body = { ...payload, request_id: options.reserve() };
+    }
+  }
 
   const data = await executeAPIRequest<{ workspace_id: string }>(() => {
     scope.assertCurrent();

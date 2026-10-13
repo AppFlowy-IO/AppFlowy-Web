@@ -1,3 +1,6 @@
+import { CreateWorkspacePayload } from '@/application/types';
+
+import { CreateWorkspaceOptions } from '../http/workspace-api';
 import { WorkspaceCreationAttempt } from '../workspace-creation-attempt';
 
 let mockUser = 'actor-a';
@@ -9,23 +12,41 @@ jest.mock('@/utils/runtime-config', () => ({ getConfigValue: () => mockServer })
 jest.mock('../http/core', () => ({ getAxios: () => mockClient }));
 jest.mock('i18next', () => ({ t: (key: string) => key }));
 
-beforeEach(() => { sessionStorage.clear(); mockUser = 'actor-a'; mockServer = 'https://server-a'; });
+type Create = (payload: CreateWorkspacePayload, options: CreateWorkspaceOptions) => Promise<string>;
 
-test('lost replies survive remount with the same immutable request and original payload', async () => {
-  const create = jest.fn().mockRejectedValueOnce(new Error('Lost response')).mockResolvedValue('original-workspace');
+const storageKey = () => 'workspace-creation:v1:' + JSON.stringify([mockServer, mockUser]);
+
+/** Simulates the HTTP helper: a new attempt reserves its request ID only right before sending. */
+function server(...outcomes: Array<string | object | Error>) {
+  return jest.fn<ReturnType<Create>, Parameters<Create>>(async (_payload, options) => {
+    if (!options.replay) options.reserve?.();
+    const outcome = outcomes.length > 1 ? outcomes.shift() : outcomes[0];
+
+    if (typeof outcome === 'string') return outcome;
+    throw outcome;
+  });
+}
+
+beforeEach(() => {
+  sessionStorage.clear();
+  mockUser = 'actor-a';
+  mockServer = 'https://server-a';
+});
+
+test('a lost reply survives remount with the same immutable request and original payload', async () => {
+  const create = server({ code: -1, message: 'Network Error' }, 'original-workspace');
   const first = new WorkspaceCreationAttempt(create);
 
-  await expect(first.run('Original name')).rejects.toThrow('Lost response');
+  await expect(first.run('Original name')).rejects.toThrow('workspaceCreation.notConfirmed');
   const recreated = new WorkspaceCreationAttempt(create);
+  const requestId = recreated.snapshot()?.requestId;
 
+  expect(recreated.snapshot()).toEqual({ requestId, name: 'Original name' });
   await expect(recreated.run('Changed name')).rejects.toThrow('workspaceCreation.immutableDraft');
   expect(create).toHaveBeenCalledTimes(1);
   expect(await recreated.run('Original name')).toBe('original-workspace');
-  expect(create.mock.calls[0][0]).toEqual({ workspace_name: 'Original name' });
-  expect(create.mock.calls[1]).toEqual([create.mock.calls[0][0], {
-    requestId: create.mock.calls[0][1].requestId, replay: true,
-  }]);
-  expect(create.mock.calls[0][1].replay).toBe(false);
+  expect(create.mock.calls[1]).toEqual([{ workspace_name: 'Original name' }, { replay: requestId }]);
+  // The confirmed ID is reused, so retrying navigation never sends another creation.
   expect(await new WorkspaceCreationAttempt(create).run('Original name')).toBe('original-workspace');
   expect(create).toHaveBeenCalledTimes(2);
   recreated.complete('different-workspace');
@@ -36,10 +57,16 @@ test('lost replies survive remount with the same immutable request and original 
 
 test.each(['server', 'account'])('pending %s switches cannot adopt or finish an old request', async (dimension) => {
   let resolve!: (id: string) => void;
-  const create = jest.fn(() => new Promise<string>((done) => { resolve = done; }));
+  const create = jest.fn<ReturnType<Create>, Parameters<Create>>((_payload, options) => {
+    options.reserve?.();
+    return new Promise<string>((done) => {
+      resolve = done;
+    });
+  });
   const first = new WorkspaceCreationAttempt(create);
   const response = first.run('Original name');
 
+  await Promise.resolve();
   if (dimension === 'server') mockServer = 'https://server-b';
   else mockUser = 'actor-b';
   expect(new WorkspaceCreationAttempt(create).snapshot()).toBeUndefined();
@@ -50,61 +77,207 @@ test.each(['server', 'account'])('pending %s switches cannot adopt or finish an 
   expect(new WorkspaceCreationAttempt(create).snapshot()).toMatchObject({ name: 'Original name' });
 });
 
-test('concurrent submits share the same request and unsupported old nodes never trigger a second route', async () => {
+test('concurrent submits share one request', async () => {
   let reject!: (error: unknown) => void;
-  const create = jest.fn(() => new Promise<string>((_resolve, fail) => { reject = fail; }));
+  const create = jest.fn<ReturnType<Create>, Parameters<Create>>((_payload, options) => {
+    options.reserve?.();
+    return new Promise<string>((_resolve, fail) => {
+      reject = fail;
+    });
+  });
   const attempt = new WorkspaceCreationAttempt(create);
   const first = attempt.run('Original name');
   const second = attempt.run('Original name');
 
   expect(first).toBe(second);
+  await Promise.resolve();
   expect(create).toHaveBeenCalledTimes(1);
-  reject({ code: 404 });
-  await expect(first).rejects.toThrow('workspaceCreation.receiptUnsupported');
+  reject({ code: -1 });
+  await expect(first).rejects.toThrow('workspaceCreation.notConfirmed');
   expect(create).toHaveBeenCalledTimes(1);
-  expect(attempt.snapshot()).toMatchObject({ name: 'Original name' });
 });
 
-test('storage failure prevents mutation and retains an unreadable earlier request', async () => {
-  const create = jest.fn();
-  const write = jest.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => { throw new Error('Quota'); });
+test('a failure before sending, such as a fresh denial, leaves nothing to resume', async () => {
+  const create = jest
+    .fn<ReturnType<Create>, Parameters<Create>>()
+    .mockRejectedValueOnce(new Error('workspaceCreation.denied'))
+    .mockRejectedValueOnce(new Error('workspaceCreation.unavailable'))
+    .mockImplementation(async (_payload, options) => {
+      options.reserve?.();
+      return 'created';
+    });
+  const attempt = new WorkspaceCreationAttempt(create);
 
-  await expect(new WorkspaceCreationAttempt(create).run('Original name')).rejects.toThrow('Quota');
-  expect(create).not.toHaveBeenCalled();
-  write.mockRestore();
-  const key = 'workspace-creation:v1:' + JSON.stringify([mockServer, mockUser]);
-
-  sessionStorage.setItem(key, '{malformed');
-  await expect(new WorkspaceCreationAttempt(create).run('Original name')).rejects.toThrow();
-  expect(sessionStorage.getItem(key)).toBe('{malformed');
-  expect(create).not.toHaveBeenCalled();
+  await expect(attempt.run('First name')).rejects.toThrow('workspaceCreation.denied');
+  expect(attempt.snapshot()).toBeUndefined();
+  await expect(attempt.run('Second name')).rejects.toThrow('workspaceCreation.unavailable');
+  expect(attempt.snapshot()).toBeUndefined();
+  // A different name is accepted: no stale request locks the form.
+  expect(await attempt.run('Third name')).toBe('created');
+  expect(create.mock.calls.map(([payload]) => payload.workspace_name)).toEqual([
+    'First name',
+    'Second name',
+    'Third name',
+  ]);
 });
 
-test('a commit held beyond timeout and later 404/denial keeps the original receipt across reloads', async () => {
+test.each([
+  ['an over-long name', { code: 1008, message: 'Workspace name is too long' }],
+  ['a request ID reused with another payload', { code: -3, message: 'conflict' }],
+  ['a seat limit', { code: 1120, message: 'limit' }],
+  ['HTTP 400', { code: 400, httpStatus: 400, message: 'Bad Request' }],
+  ['HTTP 409', { code: 409, httpStatus: 409, message: 'Conflict' }],
+  ['HTTP 422', { code: 422, httpStatus: 422, message: 'Unprocessable' }],
+])('a definitive rejection (%s) releases the request', async (_label, error) => {
+  const attempt = new WorkspaceCreationAttempt(server(error, 'created'));
+
+  await expect(attempt.run('A'.repeat(120))).rejects.toMatchObject({ message: error.message });
+  expect(attempt.snapshot()).toBeUndefined();
+  expect(await attempt.run('Shorter name')).toBe('created');
+});
+
+test.each([{ code: 1012, message: 'Forbidden' }, { code: 403, httpStatus: 403, message: 'Forbidden' }])(
+  'a denial after sending releases the request and explains it in plain words',
+  async (error) => {
+    const attempt = new WorkspaceCreationAttempt(server(error));
+
+    await expect(attempt.run('Name')).rejects.toThrow('workspaceCreation.denied');
+    expect(attempt.snapshot()).toBeUndefined();
+  }
+);
+
+test('a first request that reaches a node without the keyed route created nothing', async () => {
+  const create = server({ code: 404, httpStatus: 404, message: 'Not Found' });
+  const attempt = new WorkspaceCreationAttempt(create);
+
+  await expect(attempt.run('Name')).rejects.toThrow('workspaceCreation.tryAgainLater');
+  expect(attempt.snapshot()).toBeUndefined();
+  expect(create).toHaveBeenCalledTimes(1);
+});
+
+test.each([
+  ['network loss', { code: -1, message: 'Network Error' }],
+  ['a timeout', new Error('timeout of 30000ms exceeded')],
+  ['HTTP 502', { code: 502, httpStatus: 502, message: 'Bad Gateway' }],
+  ['a concurrent attempt still running', { code: -5, message: 'retry later' }],
+  ['an internal error', { code: 1017, message: 'Internal' }],
+])('an ambiguous outcome (%s) keeps the request for Check again', async (_label, error) => {
+  const create = server(error, 'original-workspace');
+  const attempt = new WorkspaceCreationAttempt(create);
+
+  await expect(attempt.run('Name')).rejects.toThrow('workspaceCreation.notConfirmed');
+  const draft = attempt.snapshot();
+
+  expect(draft).toMatchObject({ name: 'Name' });
+  expect(await attempt.run('Name')).toBe('original-workspace');
+  expect(create.mock.calls[1][1]).toEqual({ replay: draft?.requestId });
+});
+
+test('a replay keeps the request after an old-node 404 and releases it after a definitive denial', async () => {
+  const create = server({ code: -1 }, { code: 404, httpStatus: 404 }, { code: 1012, message: 'denied' });
+  const attempt = new WorkspaceCreationAttempt(create);
+
+  await expect(attempt.run('Name')).rejects.toThrow('workspaceCreation.notConfirmed');
+  // An earlier request may have committed elsewhere; a later 404 proves nothing.
+  await expect(attempt.run('Name')).rejects.toThrow('workspaceCreation.notConfirmed');
+  expect(attempt.snapshot()).toMatchObject({ name: 'Name' });
+  // The server resolves a completed receipt before admission, so a denial means nothing was created.
+  await expect(attempt.run('Name')).rejects.toThrow('workspaceCreation.denied');
+  expect(attempt.snapshot()).toBeUndefined();
+});
+
+test('a commit held beyond the client timeout is recovered with the original request', async () => {
   let release!: () => void;
-  const commitBarrier = new Promise<void>((resolve) => { release = resolve; });
+  const commitBarrier = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   const receipts = new Map<string, string>();
   let serverWrite!: Promise<void>;
-  const create = jest.fn()
-    .mockImplementationOnce(async (_payload, receipt) => {
-      serverWrite = commitBarrier.then(() => { receipts.set(receipt.requestId, 'original-workspace'); });
+  const create = jest
+    .fn<ReturnType<Create>, Parameters<Create>>()
+    .mockImplementationOnce(async (_payload, options) => {
+      const requestId = options.reserve!();
+
+      serverWrite = commitBarrier.then(() => {
+        receipts.set(requestId, 'original-workspace');
+      });
       throw new Error('timeout before commit');
     })
-    .mockRejectedValueOnce({ code: 404 })
-    .mockRejectedValueOnce({ code: 1012, message: 'now denied' })
-    .mockImplementation(async (_payload, receipt) => receipts.get(receipt.requestId));
+    .mockRejectedValueOnce({ code: 404, httpStatus: 404 })
+    .mockRejectedValueOnce({ code: -5, message: 'still in progress' })
+    .mockImplementation(async (_payload, options) => receipts.get(options.replay ?? '') ?? 'unexpected');
 
-  await expect(new WorkspaceCreationAttempt(create).run('Original')).rejects.toThrow('timeout before commit');
+  await expect(new WorkspaceCreationAttempt(create).run('Original')).rejects.toThrow('notConfirmed');
   const original = new WorkspaceCreationAttempt(create).snapshot();
 
-  expect(receipts.size).toBe(0);
-  await expect(new WorkspaceCreationAttempt(create).run('Original')).rejects.toThrow('receiptUnsupported');
-  await expect(new WorkspaceCreationAttempt(create).run('Original')).rejects.toMatchObject({ code: 1012 });
+  await expect(new WorkspaceCreationAttempt(create).run('Original')).rejects.toThrow('notConfirmed');
+  await expect(new WorkspaceCreationAttempt(create).run('Original')).rejects.toThrow('notConfirmed');
   expect(new WorkspaceCreationAttempt(create).snapshot()).toEqual(original);
   release();
   await serverWrite;
   await expect(new WorkspaceCreationAttempt(create).run('Original')).resolves.toBe('original-workspace');
   expect(receipts.size).toBe(1);
-  expect(new Set(create.mock.calls.map(([, receipt]) => receipt.requestId)).size).toBe(1);
+  expect(create.mock.calls.slice(1).every(([, options]) => options.replay === original?.requestId)).toBe(true);
   expect(create.mock.calls.every(([payload]) => payload.workspace_name === 'Original')).toBe(true);
+});
+
+test('a legacy server creates without a request ID and the result still prevents a duplicate', async () => {
+  const create = jest.fn<ReturnType<Create>, Parameters<Create>>().mockResolvedValue('legacy-workspace');
+  const attempt = new WorkspaceCreationAttempt(create);
+
+  expect(await attempt.run('Legacy')).toBe('legacy-workspace');
+  expect(attempt.snapshot()).toMatchObject({ name: 'Legacy', workspaceId: 'legacy-workspace' });
+  expect(await new WorkspaceCreationAttempt(create).run('Legacy')).toBe('legacy-workspace');
+  expect(create).toHaveBeenCalledTimes(1);
+  attempt.complete('legacy-workspace');
+  expect(attempt.snapshot()).toBeUndefined();
+});
+
+test('a legacy failure has no request to resume', async () => {
+  const create = jest.fn<ReturnType<Create>, Parameters<Create>>().mockRejectedValue({ code: -1, message: 'Network Error' });
+  const attempt = new WorkspaceCreationAttempt(create);
+
+  await expect(attempt.run('Legacy')).rejects.toMatchObject({ message: 'Network Error' });
+  expect(attempt.snapshot()).toBeUndefined();
+});
+
+test('a storage failure stops before sending', async () => {
+  const create = server('created');
+  const write = jest.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
+    throw new Error('Quota');
+  });
+
+  await expect(new WorkspaceCreationAttempt(create).run('Original name')).rejects.toThrow('Quota');
+  write.mockRestore();
+  expect(sessionStorage.getItem(storageKey())).toBeNull();
+});
+
+test.each(['{malformed', 'null', '[]', '"text"', '{"requestId":1,"name":"x"}', '{"requestId":"r","name":"x","workspaceId":3}'])(
+  'an unreadable saved request (%s) is reported in plain words and only removed by Discard',
+  async (stored) => {
+    const create = server('created');
+
+    sessionStorage.setItem(storageKey(), stored);
+    const attempt = new WorkspaceCreationAttempt(create);
+
+    expect(() => attempt.snapshot()).toThrow('workspaceCreation.invalidDraft');
+    await expect(attempt.run('Name')).rejects.toThrow('workspaceCreation.invalidDraft');
+    expect(create).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem(storageKey())).toBe(stored);
+    attempt.discard();
+    expect(attempt.snapshot()).toBeUndefined();
+    expect(await attempt.run('Name')).toBe('created');
+  }
+);
+
+test('Discard forgets an unconfirmed request so a new name can be used', async () => {
+  const create = server({ code: -1 }, 'second');
+  const attempt = new WorkspaceCreationAttempt(create);
+
+  await expect(attempt.run('First')).rejects.toThrow('notConfirmed');
+  attempt.discard();
+  expect(attempt.snapshot()).toBeUndefined();
+  expect(await attempt.run('Second')).toBe('second');
+  expect(create.mock.calls[1][0]).toEqual({ workspace_name: 'Second' });
+  expect(create.mock.calls[1][1].replay).toBeUndefined();
 });

@@ -1,9 +1,7 @@
 import { t } from 'i18next';
 
 import { isUnsupportedRouteError } from '@/utils/errors';
-import { getServerHostingMode, getServerInfoSnapshot } from '@/utils/server-info';
 
-import { getServerInfo } from './auth-api';
 import { APIResponse, executeAPIRequest } from './core';
 import { captureApiContext } from './request-context';
 
@@ -12,6 +10,12 @@ export interface WorkspaceCreationCapability {
   mode: 'unrestricted' | 'selected_users';
   revision: string;
   can_create_workspace: boolean;
+  /**
+   * Set only by this client when the server predates the capability route. Such a server has no
+   * workspace creation policy and no keyed creation route: creation stays available, uses the
+   * original route, and the server's own checks decide.
+   */
+  legacy?: true;
 }
 
 function isCapability(value: unknown): value is WorkspaceCreationCapability {
@@ -44,26 +48,27 @@ export async function getWorkspaceCreationCapability(): Promise<WorkspaceCreatio
 
     assertCurrent();
     if (!isCapability(capability)) throw new Error(t('workspaceCreation.invalidResponse'));
-    return capability;
+    // Copy the known fields so a response can never claim the client-only legacy marker.
+    return {
+      supported: capability.supported,
+      mode: capability.mode,
+      revision: capability.revision,
+      can_create_workspace: capability.can_create_workspace,
+    };
   } catch (error) {
     assertCurrent();
     if (!isUnsupportedRouteError(error)) throw error;
-    let info = getServerInfoSnapshot(scope.serverUrl);
-
-    if (info.status !== 'available') {
-      info = { status: 'available', info: await getServerInfo() };
-      assertCurrent();
-    }
-
-    // Legacy hosted servers predate this self-host policy. An absent route on
-    // an unknown/self-hosted server cannot prove unrestricted creation.
-    if (getServerHostingMode(info, scope.serverUrl) !== 'cloud') throw error;
-    return { supported: false, mode: 'unrestricted', revision: '0', can_create_workspace: true };
+    // The route and keyed creation shipped together, so an older server has neither. Keep it
+    // usable: it has no creation policy, and its existing checks still decide every request.
+    return { supported: false, mode: 'unrestricted', revision: '0', can_create_workspace: true, legacy: true };
   }
 }
 
-/** Fresh admission at the final mutation helper, including callers outside the app shell. */
-export async function ensureCanCreateWorkspace(): Promise<() => void> {
+/**
+ * Fresh admission at the final mutation helper, including callers outside the app shell. `legacy`
+ * tells the caller to use the server's original, unkeyed creation route.
+ */
+export async function admitWorkspaceCreation(): Promise<{ assertCurrent: () => void; legacy: boolean }> {
   const assertCurrent = captureWorkspaceCreationContext();
 
   if (!navigator.onLine) throw new Error(t('workspaceCreation.unavailable'));
@@ -71,5 +76,10 @@ export async function ensureCanCreateWorkspace(): Promise<() => void> {
 
   if (!capability.can_create_workspace) throw new Error(t('workspaceCreation.denied'));
   assertCurrent();
-  return assertCurrent;
+  return { assertCurrent, legacy: capability.legacy === true };
+}
+
+/** Fresh admission for new-workspace mutations that have no keyed variant, such as imports. */
+export async function ensureCanCreateWorkspace(): Promise<() => void> {
+  return (await admitWorkspaceCreation()).assertCurrent;
 }

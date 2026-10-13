@@ -3029,11 +3029,12 @@
     "noWorkspaceDescription": "Vous ne faites pas encore partie d’un espace de travail. Ouvrez un lien d’invitation pour rejoindre un espace existant ou demandez à un propriétaire de vous inviter.",
     "refreshWorkspaces": "Actualiser les espaces de travail",
     "signOut": "Se déconnecter",
-    "receiptUnsupported": "Ce serveur ne permet pas de reprendre la création en toute sécurité. Demandez une mise à jour à votre administrateur, puis reprenez cette demande.",
     "invalidDraft": "La demande de création enregistrée ne peut pas être lue. Elle a été conservée.",
     "immutableDraft": "Reprenez la demande de création d’origine avant d’en démarrer une autre.",
     "resume": "Reprendre la création de l’espace",
-    "retryOriginal": "Cette demande est enregistrée dans cet onglet. La reprise utilise le nom et la demande d’origine pour éviter les doublons après une réponse perdue."
+    "retryOriginal": "Cette demande est enregistrée dans cet onglet. La reprise utilise le nom et la demande d’origine pour éviter les doublons après une réponse perdue.",
+    "notConfirmed": "Nous n’avons pas pu confirmer la création de l’espace de travail.",
+    "tryAgainLater": "La création d’espaces de travail n’est pas disponible pour le moment. Réessayez plus tard."
   },
   "groupSpaceAccess": {
     "title": "Accès des groupes aux espaces",

@@ -4593,11 +4593,12 @@
     "noWorkspaceDescription": "You do not belong to a workspace yet. Open an invitation link to join an existing workspace, or ask a workspace owner to invite you.",
     "refreshWorkspaces": "Refresh workspaces",
     "signOut": "Sign out",
-    "receiptUnsupported": "This server cannot safely recover workspace creation. Ask your administrator to update it, then resume this request.",
     "invalidDraft": "The saved workspace creation request could not be read. Your pending request has been retained.",
     "immutableDraft": "Resume the original workspace creation request before starting another.",
     "resume": "Resume workspace creation",
-    "retryOriginal": "This request is saved in this tab. Resume uses the original name and request so a lost response cannot create a duplicate workspace."
+    "retryOriginal": "This request is saved in this tab. Resume uses the original name and request so a lost response cannot create a duplicate workspace.",
+    "notConfirmed": "We couldn't confirm that the workspace was created.",
+    "tryAgainLater": "Workspace creation isn't available right now. Try again later."
   },
   "groupSpaceAccess": {
     "title": "Group access to spaces",
