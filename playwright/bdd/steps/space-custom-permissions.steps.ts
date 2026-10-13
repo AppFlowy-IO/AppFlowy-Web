@@ -1328,7 +1328,7 @@ function accessLevelFromLabel(label: string): number | null {
       return null;
     case 'Can view':
       return ACCESS_LEVEL_READ_ONLY;
-    case 'Can view and comment':
+    case 'Can comment':
       return ACCESS_LEVEL_READ_AND_COMMENT;
     case 'Can edit':
       return ACCESS_LEVEL_READ_AND_WRITE;
@@ -1368,7 +1368,7 @@ Then('the Custom permissions {string} dropdown offers every access level', async
   const expected: Array<[string, string]> = [
     [`${triggerTestId}-option-${ACCESS_LEVEL_FULL_ACCESS}`, 'Full access'],
     [`${triggerTestId}-option-${ACCESS_LEVEL_READ_AND_WRITE}`, 'Can edit'],
-    [`${triggerTestId}-option-${ACCESS_LEVEL_READ_AND_COMMENT}`, 'Can view and comment'],
+    [`${triggerTestId}-option-${ACCESS_LEVEL_READ_AND_COMMENT}`, 'Can comment'],
     [`${triggerTestId}-option-${ACCESS_LEVEL_READ_ONLY}`, 'Can view'],
     [`${triggerTestId}-option-none`, 'No access'],
   ];

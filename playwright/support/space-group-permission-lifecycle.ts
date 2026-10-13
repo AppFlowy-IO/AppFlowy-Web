@@ -637,7 +637,7 @@ export class SpaceGroupPermissionLifecycle {
       const group = modal.getByTestId(`space-group-row-${this.fixture.owned.groups.primary}`);
 
       await expect(group).toBeVisible();
-      await expect(group.getByTestId('space-member-access-control').getByRole('combobox')).toHaveValue('10');
+      await expect(group.getByTestId('space-member-access-control')).toHaveAttribute('data-value', '10');
       await expect(group.getByRole('button', { name: 'Space member', exact: true })).toBeVisible();
       await page.screenshot({ path: this.info.outputPath('owner-group-view-assignment.png') });
       this.state.checks.push({ phase: 'owner-assignment-read-only', group: this.fixture.owned.groups.primary, role: 'member', override: 10 });

@@ -33,9 +33,17 @@ export async function setSpaceMemberAccessOverride(
   }
 
   assertCurrent();
-  const permission = await getSpacePermission(workspaceId, spaceId);
+  // Both reads are independent, so they run together; the capability result is
+  // still checked first so a lost right reports the clearer error.
+  const [permissionResult, rosterResult] = await Promise.allSettled([
+    getSpacePermission(workspaceId, spaceId),
+    getSpaceMembers(workspaceId, spaceId),
+  ]);
 
   assertCurrent();
+  if (permissionResult.status === 'rejected') throw permissionResult.reason;
+  const permission = permissionResult.value;
+
   if (
     permission.space_id !== spaceId ||
     permission.member_access_overrides_supported !== true ||
@@ -45,9 +53,8 @@ export async function setSpaceMemberAccessOverride(
     throw new Error(t('space.memberOverride.unavailable'));
   }
 
-  const roster = await getSpaceMembers(workspaceId, spaceId);
-
-  assertCurrent();
+  if (rosterResult.status === 'rejected') throw rosterResult.reason;
+  const roster = rosterResult.value;
   const assignment =
     principal.type === 'user'
       ? roster.members.find(

@@ -90,9 +90,59 @@ test.each([
   { permission: { visibility: SpaceVisibility.Public } },
 ])('fresh capability denies stale or unsupported controls: %p', async (patch) => {
   jest.mocked(getSpacePermission).mockResolvedValue(permission(patch) as never);
-  await expect(setSpaceMemberAccessOverride('workspace', 'space', principal, 20)).rejects.toThrow();
-  expect(getSpaceMembers).not.toHaveBeenCalled();
+  await expect(setSpaceMemberAccessOverride('workspace', 'space', principal, 20)).rejects.toThrow(
+    'space.memberOverride.unavailable'
+  );
   expect(updateSpaceMemberByUuid).not.toHaveBeenCalled();
+  expect(updateSpaceGroupPermission).not.toHaveBeenCalled();
+});
+
+test('reads the capability and the roster together before writing', async () => {
+  let resolvePermission!: (value: unknown) => void;
+
+  jest.mocked(getSpacePermission).mockImplementation(
+    () =>
+      new Promise((done) => {
+        resolvePermission = done as never;
+      })
+  );
+  const pending = setSpaceMemberAccessOverride('workspace', 'space', principal, 10);
+
+  // The roster read does not wait for the capability round trip.
+  expect(getSpacePermission).toHaveBeenCalledTimes(1);
+  expect(getSpaceMembers).toHaveBeenCalledTimes(1);
+  expect(updateSpaceMemberByUuid).not.toHaveBeenCalled();
+  resolvePermission(permission());
+  await pending;
+  expect(updateSpaceMemberByUuid).toHaveBeenCalledTimes(1);
+});
+
+test('reports a lost capability rather than the roster error it causes', async () => {
+  jest.mocked(getSpacePermission).mockResolvedValue(permission({ can_manage_members: false }) as never);
+  jest.mocked(getSpaceMembers).mockRejectedValue(new Error('403 forbidden'));
+  await expect(setSpaceMemberAccessOverride('workspace', 'space', principal, 20)).rejects.toThrow(
+    'space.memberOverride.unavailable'
+  );
+  expect(updateSpaceMemberByUuid).not.toHaveBeenCalled();
+});
+
+test('surfaces a capability read failure and never writes', async () => {
+  jest.mocked(getSpacePermission).mockRejectedValue(new Error('network down'));
+  await expect(setSpaceMemberAccessOverride('workspace', 'space', principal, 20)).rejects.toThrow('network down');
+  expect(updateSpaceMemberByUuid).not.toHaveBeenCalled();
+});
+
+test('surfaces a roster read failure when the capability allows the change', async () => {
+  jest.mocked(getSpaceMembers).mockRejectedValue(new Error('roster unavailable'));
+  await expect(setSpaceMemberAccessOverride('workspace', 'space', principal, 20)).rejects.toThrow('roster unavailable');
+  expect(updateSpaceMemberByUuid).not.toHaveBeenCalled();
+});
+
+test('returns the server-confirmed assignment', async () => {
+  const confirmed = { user_uuid: userUuid, access_level_override: 20, effective_access_level: 20 };
+
+  jest.mocked(updateSpaceMemberByUuid).mockResolvedValue(confirmed as never);
+  await expect(setSpaceMemberAccessOverride('workspace', 'space', principal, 20)).resolves.toBe(confirmed);
 });
 
 test.each([
@@ -125,8 +175,8 @@ test.each(['account', 'server', 'revision'])('fences a pending capability read a
   if (change === 'revision') current = false;
   resolve(permission());
   await expect(pending).rejects.toThrow();
-  expect(getSpaceMembers).not.toHaveBeenCalled();
   expect(updateSpaceMemberByUuid).not.toHaveBeenCalled();
+  expect(updateSpaceGroupPermission).not.toHaveBeenCalled();
 });
 
 test('never sends FullAccess through an ordinary-member override', async () => {

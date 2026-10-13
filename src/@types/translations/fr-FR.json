@@ -6,10 +6,10 @@
     "pendingRecovery": "Reprenez la demande de création existante avant d’en commencer une autre."
   },
   "workspacePermissions": {
-    "sidebarPolicy": "Qui peut ajouter et organiser des pages ?",
+    "sidebarPolicy": "Qui peut ajouter des pages à cet espace",
     "sidebarOwners": "Propriétaires de l’espace uniquement",
-    "sidebarMembers": "Membres et propriétaires de l’espace",
-    "sidebarExplanation": "Les membres doivent aussi avoir le droit de modification pour ajouter ou organiser des pages directement dans cet espace. Les pages imbriquées suivent leurs propres autorisations. Ce paramètre ne permet pas de créer des espaces ou des espaces de travail.",
+    "sidebarMembers": "Toute personne pouvant modifier",
+    "sidebarExplanation": "S’applique aux pages ajoutées directement dans l’espace. Les pages placées dans d’autres pages suivent leurs propres autorisations.",
     "title": "Autorisations",
     "createSpaces": "Création d’espaces",
     "loading": "Vérification des autorisations…",
@@ -67,7 +67,8 @@
     "offline": "Vous êtes hors ligne. Reconnectez-vous et réessayez.",
     "refreshFailed": "Impossible d’actualiser ces paramètres. Réessayez pour pouvoir les modifier.",
     "saveFailed": "Impossible d’enregistrer cette modification. Réessayez.",
-    "notSelected": "Non sélectionnés"
+    "notSelected": "Non sélectionnés",
+    "sidebarUnknown": "Autre réglage"
   },
   "appName": "AppFlowy",
   "defaultUsername": "Moi",
@@ -2698,21 +2699,35 @@
     "memberOverride": {
       "label": "Accès",
       "accessFor": "Accès de {{name}}",
-      "inherit": "Hériter",
       "unknown": "Indisponible",
-      "defaultAccess": "Accès par défaut de l’espace : {{level}}",
-      "assignmentAccess": "Accès de cette attribution : {{level}}",
-      "explanation": "Les membres héritent de l’accès par défaut, sauf dérogation explicite. D’autres autorisations peuvent maintenir l’accès et les restrictions des pages restent applicables. Le droit de modification ne donne pas de droits de gestion.",
-      "unsupported": "Ce serveur ne prend pas en charge les dérogations individuelles d’accès.",
-      "unavailable": "Cette attribution ne peut plus être modifiée. Actualisez les autorisations et réessayez.",
-      "contextChanged": "Le contexte des autorisations a changé. Actualisez puis réessayez.",
-      "identityUnavailable": "L’identité exacte de ce membre est indisponible. Actualisez la liste avant de modifier l’accès.",
-      "updateFailed": "Impossible de modifier l’accès du membre.",
-      "inheritedNoAccess": "Les attributions héritées ne donnent actuellement aucun accès. Les dérogations explicites et les autorisations indépendantes peuvent toutefois accorder un accès."
+      "explanation": "Choisissez ce que cette personne ou ce groupe peut faire, ou conservez l’accès par défaut de l’espace. Le partage d’une page peut quand même donner accès, et les pages restreintes restent restreintes.",
+      "unavailable": "Cet accès ne peut plus être modifié. Quelqu’un a peut-être changé les paramètres de cet espace.",
+      "contextChanged": "Votre compte ou votre espace de travail a changé. Réessayez.",
+      "identityUnavailable": "Impossible de charger les informations du compte de cette personne. Rechargez la page et réessayez.",
+      "updateFailed": "Impossible de modifier l’accès. Réessayez.",
+      "inheritedNoAccess": "Par défaut, les membres de l’espace n’ont aucun accès. Choisissez l’accès de certains membres ou groupes, ou modifiez l’accès par défaut dans les paramètres généraux.",
+      "spaceDefault": "Par défaut de l’espace ({{level}})",
+      "defaultSuffix": "{{level}} · par défaut",
+      "levels": {
+        "canView": "Lecture",
+        "canComment": "Commentaire",
+        "canEdit": "Modification",
+        "fullAccess": "Accès complet",
+        "noAccess": "Aucun accès"
+      },
+      "updated": "Accès mis à jour",
+      "sharedPagesOnly": "Pages partagées uniquement",
+      "sharedPagesReason": "Cette personne ne peut ouvrir que les pages partagées avec elle. Gérez cela depuis le menu Partager de chaque page.",
+      "managedElsewhere": "Cet accès provient des paramètres de l’espace et ne peut pas être modifié ici.",
+      "reloadToChange": "Cet accès ne peut pas être modifié pour le moment. Rechargez la page et réessayez."
     },
     "permissionManager": {
-      "memberRoleDescription": "Hérite de l’accès par défaut des membres, sauf si une dérogation explicite est configurée.",
-      "fullAccessMembersDescription": "Les membres héritant de ce niveau pourront gérer cet espace, ses membres et ses autorisations."
+      "memberRoleDescription": "Reçoit l’accès défini pour les membres de l’espace dans les paramètres généraux.",
+      "fullAccessMembersDescription": "Les membres de l’espace qui utilisent l’accès par défaut pourront gérer cet espace, ses membres et ses autorisations.",
+      "memberRoleWithAccessDescription": "Reçoit l’accès par défaut de l’espace, sauf si vous choisissez un autre niveau dans Accès.",
+      "accessCheckFailed": "Impossible de vérifier votre accès à cet espace. Les modifications sont suspendues en attendant.",
+      "accessLost": "Cet espace n’est plus disponible pour vous.",
+      "checkAgain": "Vérifier à nouveau"
     }
   },
   "publish": {
