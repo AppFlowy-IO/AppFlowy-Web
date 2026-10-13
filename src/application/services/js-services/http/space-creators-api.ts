@@ -1,3 +1,4 @@
+import { t } from 'i18next';
 import { validate as isUuid } from 'uuid';
 
 import {
@@ -24,23 +25,37 @@ export async function getWorkspaceSpaceCreationCapabilities(
 
   // Missing/older endpoints and unknown modes stay unavailable. Never infer a grant from role alone.
   if (!isWorkspaceSpaceCreationCapabilities(capability, workspaceId)) {
-    throw new Error('Invalid space creation capabilities');
+    throw new Error(t('workspacePermissions.invalidResponse'));
   }
 
   return capability;
 }
 
-export async function setWorkspaceSpaceCreationPolicy(workspaceId: string, policy: WorkspaceSpaceCreationPolicy) {
-  if (!isWorkspaceSpaceCreationPolicy(policy)) throw new Error('Invalid space creation policy');
+/**
+ * Settings report selected creators as `owners_only` in `space_creation_policy` so clients that know
+ * only two modes keep working; `exact_space_creation_policy` carries the exact policy. Servers that
+ * predate the exact field report their exact policy in `space_creation_policy`.
+ */
+interface SpaceCreationPolicySettings {
+  space_creation_policy?: unknown;
+  exact_space_creation_policy?: unknown;
+}
 
-  const settings = await executeAPIRequest<{ space_creation_policy?: unknown }>(() =>
-    getAxios()?.post<APIResponse<{ space_creation_policy?: unknown }>>(`/api/workspace/${workspaceId}/settings`, {
+export async function setWorkspaceSpaceCreationPolicy(workspaceId: string, policy: WorkspaceSpaceCreationPolicy) {
+  if (!isWorkspaceSpaceCreationPolicy(policy)) throw new Error(t('workspacePermissions.invalidRequest'));
+
+  const settings = await executeAPIRequest<SpaceCreationPolicySettings | undefined>(() =>
+    getAxios()?.post<APIResponse<SpaceCreationPolicySettings>>(`/api/workspace/${workspaceId}/settings`, {
+      // Current servers apply the exact field. Two-mode servers apply the original modes and reject
+      // selected creators instead of ignoring them.
       space_creation_policy: policy,
+      exact_space_creation_policy: policy,
     })
   );
+  const confirmed = settings?.exact_space_creation_policy ?? settings?.space_creation_policy;
 
   // A mixed-version server may ignore an unknown field. Success must confirm the requested policy.
-  if (settings?.space_creation_policy !== policy) throw new Error('Space creation policy was not confirmed');
+  if (confirmed !== policy) throw new Error(t('workspacePermissions.changeNotConfirmed'));
 }
 
 function isPrincipal(value: unknown): value is SpaceCreatorPrincipal {
@@ -79,7 +94,7 @@ export async function listWorkspaceSpaceCreators(
   const limit = query.limit ?? 50;
 
   if ((query.kind !== 'user' && query.kind !== 'group') || !Number.isInteger(limit) || limit < 1 || limit > 200) {
-    throw new Error('Invalid space creator query');
+    throw new Error(t('workspacePermissions.invalidRequest'));
   }
 
   const result = await executeAPIRequest<Partial<SpaceCreatorSelections>>(() =>
@@ -95,7 +110,7 @@ export async function listWorkspaceSpaceCreators(
     !result.selections.every((selection) => isSelection(selection, query.kind)) ||
     !(result.next_cursor === null || (typeof result.next_cursor === 'string' && result.next_cursor.length > 0))
   ) {
-    throw new Error('Invalid space creator selections');
+    throw new Error(t('workspacePermissions.invalidResponse'));
   }
 
   return result as SpaceCreatorSelections;
@@ -107,7 +122,7 @@ export async function setWorkspaceSpaceCreator(
   principal: SpaceCreatorPrincipal,
   granted: boolean
 ): Promise<SpaceCreatorMutationResult> {
-  if (!isPrincipal(principal)) throw new Error('Invalid space creator principal');
+  if (!isPrincipal(principal)) throw new Error(t('workspacePermissions.invalidRequest'));
   const kind = principal.type === 'user' ? 'users' : 'groups';
   const url = `/api/workspace/${workspaceId}/space-creators/${kind}/${principal.id}`;
   const result = await executeAPIRequest<SpaceCreatorMutationResult>(() =>
@@ -117,7 +132,7 @@ export async function setWorkspaceSpaceCreator(
   );
 
   if (!result || typeof result.changed !== 'boolean' || !isWorkspacePermissionRevision(result.revision)) {
-    throw new Error('Invalid space creator mutation result');
+    throw new Error(t('workspacePermissions.changeNotConfirmed'));
   }
 
   return result;

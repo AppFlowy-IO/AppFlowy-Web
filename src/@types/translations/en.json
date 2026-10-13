@@ -43,7 +43,10 @@
     "pendingEditsDescription": "Your changes are saved on this device. After edit access is restored, retry to send them. Changes without current edit access stay paused.",
     "pendingEditsRetryError": "Could not retry saved changes. Please try again.",
     "retryPendingEdits": "Retry saved changes",
-    "legacyPendingEdits": "Older local changes are preserved on this device. Their original server could not be verified, so automatic upload is paused."
+    "legacyPendingEdits": "Older local changes are preserved on this device. Their original server could not be verified, so automatic upload is paused.",
+    "invalidRequest": "This change couldn't be sent. Try again.",
+    "invalidResponse": "Couldn't load space creation settings. Try again.",
+    "changeNotConfirmed": "We couldn't confirm that your change was saved. Check the current settings and try again."
   },
   "databaseViewCreation": {
     "onlineRequired": "Connect to the internet to create Form or Chart views.",

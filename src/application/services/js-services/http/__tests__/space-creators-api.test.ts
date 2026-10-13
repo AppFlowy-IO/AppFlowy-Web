@@ -1,3 +1,7 @@
+import en from '@/@types/translations/en.json';
+import fr from '@/@types/translations/fr-FR.json';
+import { WorkspaceSpaceCreationPolicy } from '@/application/workspace-permissions';
+
 import {
   getWorkspaceSpaceCreationCapabilities,
   listWorkspaceSpaceCreators,
@@ -10,6 +14,7 @@ const mockPost = jest.fn();
 const mockPut = jest.fn();
 const mockDelete = jest.fn();
 
+jest.mock('i18next', () => ({ t: (key: string) => key }));
 jest.mock('../core', () => ({
   getAxios: () => ({ get: mockGet, post: mockPost, put: mockPut, delete: mockDelete }),
   executeAPIRequest: async (request: () => Promise<{ data: { data: unknown } }>) => (await request()).data.data,
@@ -54,7 +59,7 @@ describe('selected space creator transport', () => {
   ])('rejects unavailable, foreign, unknown, or malformed capabilities: %p', async (value) => {
     mockGet.mockResolvedValue({ data: { data: value } });
     await expect(getWorkspaceSpaceCreationCapabilities(workspaceId)).rejects.toThrow(
-      'Invalid space creation capabilities'
+      'workspacePermissions.invalidResponse'
     );
   });
 
@@ -63,18 +68,78 @@ describe('selected space creator transport', () => {
     await expect(getWorkspaceSpaceCreationCapabilities(workspaceId)).rejects.toThrow('Not found');
   });
 
-  it('sends only the changed policy so other settings and retained selections survive', async () => {
-    mockPost.mockResolvedValue({ data: { data: { space_creation_policy: 'owners_only' } } });
+  it('sends only the exact policy and its two-mode field so other settings and selections survive', async () => {
+    mockPost.mockResolvedValue({
+      data: { data: { space_creation_policy: 'owners_only', exact_space_creation_policy: 'owners_only' } },
+    });
     await setWorkspaceSpaceCreationPolicy(workspaceId, 'owners_only');
     expect(mockPost).toHaveBeenCalledWith(`/api/workspace/${workspaceId}/settings`, {
       space_creation_policy: 'owners_only',
+      exact_space_creation_policy: 'owners_only',
     });
   });
 
-  it('rejects an ignored policy update even when an older server reports success', async () => {
-    mockPost.mockResolvedValue({ data: { data: { space_creation_policy: 'members_and_owners' } } });
-    await expect(setWorkspaceSpaceCreationPolicy(workspaceId, 'owners_only')).rejects.toThrow('Space creation policy was not confirmed');
+  it('confirms selected creators from the exact field while the two-mode field reports owners only', async () => {
+    mockPost.mockResolvedValue({
+      data: { data: { space_creation_policy: 'owners_only', exact_space_creation_policy: 'owners_and_selected_members' } },
+    });
+    await expect(setWorkspaceSpaceCreationPolicy(workspaceId, 'owners_and_selected_members')).resolves.toBeUndefined();
+    expect(mockPost).toHaveBeenCalledWith(`/api/workspace/${workspaceId}/settings`, {
+      space_creation_policy: 'owners_and_selected_members',
+      exact_space_creation_policy: 'owners_and_selected_members',
+    });
   });
+
+  it('confirms from the two-mode field when the server predates the exact field', async () => {
+    mockPost.mockResolvedValue({ data: { data: { space_creation_policy: 'members_and_owners' } } });
+    await expect(setWorkspaceSpaceCreationPolicy(workspaceId, 'members_and_owners')).resolves.toBeUndefined();
+  });
+
+  it.each<[unknown, WorkspaceSpaceCreationPolicy]>([
+    // An older server ignored the change but still reported success.
+    [{ space_creation_policy: 'members_and_owners' }, 'owners_only'],
+    // The two-mode value alone cannot confirm Owners only while selected creators remain active.
+    [{ space_creation_policy: 'owners_only', exact_space_creation_policy: 'owners_and_selected_members' }, 'owners_only'],
+    [{ space_creation_policy: 'owners_only' }, 'owners_and_selected_members'],
+    [{ space_creation_policy: 'owners_only', exact_space_creation_policy: 'unknown_future_mode' }, 'owners_only'],
+    [undefined, 'owners_only'],
+  ])('reports an unconfirmed policy change for %p', async (settings, policy) => {
+    mockPost.mockResolvedValue({ data: { data: settings } });
+    await expect(setWorkspaceSpaceCreationPolicy(workspaceId, policy)).rejects.toThrow(
+      'workspacePermissions.changeNotConfirmed'
+    );
+  });
+
+  it('rejects malformed input before any request with translated messages', async () => {
+    await expect(
+      setWorkspaceSpaceCreationPolicy(workspaceId, 'unknown_future_mode' as WorkspaceSpaceCreationPolicy)
+    ).rejects.toThrow('workspacePermissions.invalidRequest');
+    await expect(listWorkspaceSpaceCreators(workspaceId, { kind: 'user', limit: 0 })).rejects.toThrow(
+      'workspacePermissions.invalidRequest'
+    );
+    expect(mockPost).not.toHaveBeenCalled();
+    expect(mockGet).not.toHaveBeenCalled();
+  });
+
+  it('reports malformed selections and mutation results with translated messages', async () => {
+    mockGet.mockResolvedValue({ data: { data: { selections: 'invalid', next_cursor: null } } });
+    await expect(listWorkspaceSpaceCreators(workspaceId, { kind: 'group' })).rejects.toThrow(
+      'workspacePermissions.invalidResponse'
+    );
+    mockPut.mockResolvedValue({ data: { data: { changed: 'yes', revision } } });
+    await expect(setWorkspaceSpaceCreator(workspaceId, { type: 'user', id: principalId }, true)).rejects.toThrow(
+      'workspacePermissions.changeNotConfirmed'
+    );
+  });
+
+  it.each(['invalidRequest', 'invalidResponse', 'changeNotConfirmed'])(
+    'has English and French copy for workspacePermissions.%s',
+    (key) => {
+      for (const translations of [en, fr] as Array<{ workspacePermissions: Record<string, unknown> }>) {
+        expect(typeof translations.workspacePermissions[key]).toBe('string');
+      }
+    }
+  );
 
   it.each(['user', 'group'] as const)('keeps a %s selection inactive and returns the cursor unchanged', async (kind) => {
     const row = {
@@ -100,7 +165,7 @@ describe('selected space creator transport', () => {
     const principal = { type: 'user' as const, id: 9007199254740993 as unknown as string };
 
     await expect(setWorkspaceSpaceCreator(workspaceId, principal, true)).rejects.toThrow(
-      'Invalid space creator principal'
+      'workspacePermissions.invalidRequest'
     );
     expect(mockPut).not.toHaveBeenCalled();
   });
