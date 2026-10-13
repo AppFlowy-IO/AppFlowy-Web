@@ -1746,6 +1746,93 @@ describe('ManageSpace ACL management', () => {
     await waitFor(() => expect((screen.getByTestId('space-sidebar-policy')).disabled).toBe(false));
   });
 
+  // A permission notification can arrive while a save is in flight, e.g. the
+  // concurrent demotion that also makes the save fail. The rejection must
+  // still be reported, and the rejected value must never stay on screen.
+  describe('when a permission notification arrives while a settings save is in flight', () => {
+    const permission = { ...customPermission, sidebar_edit_policy: SpaceSidebarEditPolicy.OwnersOnly };
+
+    function policyTrigger() {
+      return screen.getByTestId('space-sidebar-policy');
+    }
+
+    async function chooseAnyoneWhoCanEdit() {
+      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+      await waitForSettingsLoaded();
+      fireEvent.click(screen.getByTestId(`space-sidebar-policy-option-${SpaceSidebarEditPolicy.MembersAndOwners}`));
+      await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
+      expect(policyTrigger().textContent).toBe('workspacePermissions.sidebarMembers');
+      act(() => {
+        mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'unrelated-change' });
+      });
+      await waitFor(() => expect(mockGetSpacePermission).toHaveBeenCalledTimes(2));
+    }
+
+    it('reports the failure after the recheck has shown the server settings', async () => {
+      const save = deferred<{ view_id: string }>();
+
+      mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission }));
+      mockUpdateStructuredSpace.mockReturnValueOnce(save.promise);
+      await chooseAnyoneWhoCanEdit();
+      // The recheck reads the server's settings, which never included the change.
+      await waitFor(() => expect(policyTrigger().textContent).toBe('workspacePermissions.sidebarOwners'));
+
+      await act(async () => {
+        save.reject(new Error('policy save failed'));
+      });
+
+      expect(toast.error).toHaveBeenCalledWith('policy save failed');
+      expect(toast.success).not.toHaveBeenCalled();
+      expect(policyTrigger().textContent).toBe('workspacePermissions.sidebarOwners');
+      await waitFor(() => expect(policyTrigger().disabled).toBe(false));
+    });
+
+    it('restores the last confirmed value while the recheck is still running', async () => {
+      const save = deferred<{ view_id: string }>();
+      const recheck = deferred<ReturnType<typeof permissionResponse>>();
+
+      mockGetSpacePermission
+        .mockResolvedValueOnce(permissionResponse({ permission }))
+        .mockReturnValueOnce(recheck.promise);
+      mockUpdateStructuredSpace.mockReturnValueOnce(save.promise);
+      await chooseAnyoneWhoCanEdit();
+
+      await act(async () => {
+        save.reject(new Error('policy save failed'));
+      });
+
+      expect(toast.error).toHaveBeenCalledWith('policy save failed');
+      expect(policyTrigger().textContent).toBe('workspacePermissions.sidebarOwners');
+
+      await act(async () => {
+        recheck.resolve(permissionResponse({ permission }));
+      });
+
+      expect(policyTrigger().textContent).toBe('workspacePermissions.sidebarOwners');
+      await waitFor(() => expect(policyTrigger().disabled).toBe(false));
+    });
+
+    it('never leaves a rejected value on screen when the recheck fails too', async () => {
+      const save = deferred<{ view_id: string }>();
+
+      mockGetSpacePermission
+        .mockResolvedValueOnce(permissionResponse({ permission }))
+        .mockRejectedValueOnce(new Error('recheck failed'));
+      mockUpdateStructuredSpace.mockReturnValueOnce(save.promise);
+      await chooseAnyoneWhoCanEdit();
+      // The failed recheck blocks every change until access is confirmed again.
+      await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
+
+      await act(async () => {
+        save.reject(new Error('policy save failed'));
+      });
+
+      expect(toast.error).toHaveBeenCalledWith('policy save failed');
+      expect(policyTrigger().textContent).toBe('workspacePermissions.sidebarOwners');
+      expect(policyTrigger().disabled).toBe(true);
+    });
+  });
+
   it('shows a sidebar policy from a newer server neutrally and keeps it in unrelated saves', async () => {
     const permission = {
       ...customPermission,
@@ -2117,7 +2204,7 @@ describe('ManageSpace ACL management', () => {
     expect(screen.getByPlaceholderText('space.spaceNamePlaceholder').hasAttribute('disabled')).toBe(true);
   });
 
-  it('keeps an authoritative permission refresh when an older optimistic mutation later fails', async () => {
+  it('keeps an authoritative permission refresh but still reports an older mutation that later fails', async () => {
     const staleMutation = deferred<{ view_id: string }>();
 
     mockGetSpacePermission
@@ -2141,8 +2228,10 @@ describe('ManageSpace ACL management', () => {
       staleMutation.reject(new Error('older mutation failed'));
     });
 
+    // The refreshed settings are newer than the failed request's baseline, so
+    // they stay; the owner is still told their change did not go through.
     expectSelectedVisibility(SpaceVisibility.Public);
-    expect(toast.error).not.toHaveBeenCalledWith('older mutation failed');
+    expect(toast.error).toHaveBeenCalledWith('older mutation failed');
   });
 
   it('changes the member default without overwriting a manual member grant', async () => {

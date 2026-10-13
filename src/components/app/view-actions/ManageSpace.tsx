@@ -452,6 +452,11 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   const inputRef = useRef<HTMLInputElement | null>(null);
   const settingsRequestSequenceRef = useRef(0);
   const permissionMutationSequenceRef = useRef(0);
+  // Counts server-confirmed settings replacing what the dialog shows. A failed
+  // save restores its baseline only when nothing newer was confirmed since it
+  // started; unlike permissionMutationSequenceRef, a notification alone does
+  // not change it.
+  const confirmedSettingsVersionRef = useRef(0);
   const metadataMutationGenerationRef = useRef(0);
   const metadataFieldVersionsRef = useRef<SpaceMetadataFieldVersions>({
     name: 0,
@@ -724,6 +729,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
           Boolean(viewRef.current?.is_private)
         );
 
+        confirmedSettingsVersionRef.current += 1;
         setPermissionSettings(normalizedPermission);
         setLoadedPermissionSettings(normalizedPermission);
         setCanManageSpace(permission.can_manage_space);
@@ -1039,6 +1045,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       const visibilityChanged = previousPermission.visibility !== nextPermission.visibility;
       const mutationSequence = permissionMutationSequenceRef.current + 1;
       const requestGeneration = spaceRequestRef.current.generation;
+      const confirmedVersion = confirmedSettingsVersionRef.current;
       const isCurrentMutation = () =>
         permissionMutationSequenceRef.current === mutationSequence &&
         spaceRequestRef.current.generation === requestGeneration;
@@ -1073,6 +1080,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
           return false;
         }
 
+        confirmedSettingsVersionRef.current += 1;
         setLoadedPermissionSettings(nextPermission);
         toast.success(t('space.success.updateSpace'));
 
@@ -1088,8 +1096,14 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
 
         return true;
       } catch (error) {
-        if (isCurrentMutation()) {
-          setPermissionSettings(previousPermission);
+        // A permission notification may have superseded this request (a
+        // concurrent demotion sends one and is also why the save fails), so
+        // report every rejection while the dialog still shows this space.
+        if (spaceRequestRef.current.generation === requestGeneration) {
+          // Settings confirmed after this save started are newer than its
+          // baseline and never included the rejected change; keep them.
+          if (confirmedSettingsVersionRef.current === confirmedVersion) setPermissionSettings(previousPermission);
+
           toast.error(getErrorMessage(error, t('space.error.updateSpace')));
         }
 
