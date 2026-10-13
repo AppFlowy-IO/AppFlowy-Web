@@ -3018,13 +3018,12 @@
     "unknownError": "Échec de l'ouverture du fichier"
   },
   "workspaceCreation": {
-    "loading": "Vérification du droit de créer un espace de travail…",
-    "denied": "Votre administrateur n’a pas activé la création d’espaces de travail pour votre compte. Vous pouvez toujours vous connecter et rejoindre les espaces auxquels vous êtes invité.",
-    "unsupported": "Ce serveur ne peut pas indiquer le droit de créer un espace de travail. Demandez à votre administrateur de le mettre à jour.",
-    "unavailable": "Impossible de vérifier le droit de créer un espace de travail. Reconnectez-vous et réessayez.",
-    "ownership": "Vous serez le propriétaire du nouvel espace de travail.",
+    "loading": "Vérification de votre droit de créer des espaces de travail…",
+    "denied": "Votre administrateur ne vous a pas autorisé à créer des espaces de travail.",
+    "unavailable": "Impossible de vérifier si vous pouvez créer des espaces de travail. Vérifiez votre connexion et réessayez.",
+    "ownership": "Vous serez propriétaire du nouvel espace de travail.",
     "contextChanged": "Votre compte ou votre serveur a changé. Réessayez avec le compte actuel.",
-    "invalidResponse": "Le serveur a renvoyé un droit de création d’espace de travail invalide.",
+    "invalidResponse": "Le serveur a envoyé une réponse inattendue. Réessayez plus tard.",
     "noWorkspaceTitle": "Vous êtes connecté",
     "noWorkspaceDescription": "Vous ne faites pas encore partie d’un espace de travail. Ouvrez un lien d’invitation pour rejoindre un espace existant ou demandez à un propriétaire de vous inviter.",
     "refreshWorkspaces": "Actualiser les espaces de travail",
@@ -3034,7 +3033,8 @@
     "resume": "Reprendre la création de l’espace",
     "retryOriginal": "Cette demande est enregistrée dans cet onglet. La reprise utilise le nom et la demande d’origine pour éviter les doublons après une réponse perdue.",
     "notConfirmed": "Nous n’avons pas pu confirmer la création de l’espace de travail.",
-    "tryAgainLater": "La création d’espaces de travail n’est pas disponible pour le moment. Réessayez plus tard."
+    "tryAgainLater": "La création d’espaces de travail n’est pas disponible pour le moment. Réessayez plus tard.",
+    "checkAgain": "Vérifier à nouveau"
   },
   "groupSpaceAccess": {
     "title": "Accès des groupes aux espaces",

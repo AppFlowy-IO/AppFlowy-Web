@@ -91,7 +91,7 @@ test('fences callbacks after unmount', async () => {
   expect(isCurrent()).toBe(false);
 });
 
-test('a broad hint supersedes an older pending grant and exact decimal revisions never regress', async () => {
+test('a broad hint supersedes an older pending grant', async () => {
   const pending = deferred();
 
   mockRead.mockReturnValueOnce(pending.promise).mockResolvedValue(capability('9007199254740993', false));
@@ -103,12 +103,124 @@ test('a broad hint supersedes an older pending grant and exact decimal revisions
   await act(async () => pending.resolve(capability('9007199254740992')));
   expect(result.current.canCreate).toBe(false);
   expect(result.current.capability?.revision).toBe('9007199254740993');
-  mockRead.mockResolvedValue(capability('9007199254740992'));
+});
+
+test('a background revalidation keeps the confirmed answer instead of flashing a loading state', async () => {
+  mockRead.mockResolvedValueOnce(capability('1'));
+  const { result } = mount();
+
+  await waitFor(() => expect(result.current.canCreate).toBe(true));
+  const pending = deferred();
+
+  mockRead.mockReturnValueOnce(pending.promise);
+  await act(async () => {
+    emitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+  });
+  expect(mockRead).toHaveBeenCalledTimes(2);
+  expect(result.current.status).toBe('ready');
+  expect(result.current.canCreate).toBe(true);
+  await act(async () => pending.resolve(capability('2', false)));
+  expect(result.current.canCreate).toBe(false);
+});
+
+test('a failed background revalidation keeps the confirmed answer while online', async () => {
+  mockRead.mockResolvedValueOnce(capability('1')).mockRejectedValueOnce({ code: -1, message: 'Network Error' });
+  const { result } = mount();
+
+  await waitFor(() => expect(result.current.canCreate).toBe(true));
+  await act(async () => {
+    emitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+  });
+  expect(mockRead).toHaveBeenCalledTimes(2);
+  expect(result.current.status).toBe('ready');
+  expect(result.current.canCreate).toBe(true);
+});
+
+test('focus and visibility revalidation is throttled while the answer is fresh', async () => {
+  let now = 1_000_000;
+  const clock = jest.spyOn(Date, 'now').mockImplementation(() => now);
+
+  mockRead.mockResolvedValue(capability('1'));
+  const { result } = mount();
+
+  await waitFor(() => expect(result.current.canCreate).toBe(true));
+  await act(async () => {
+    window.dispatchEvent(new Event('focus'));
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  expect(mockRead).toHaveBeenCalledTimes(1);
+  now += 31_000;
   await act(async () => {
     window.dispatchEvent(new Event('focus'));
   });
-  expect(result.current.status).toBe('error');
+  expect(mockRead).toHaveBeenCalledTimes(2);
+  clock.mockRestore();
+});
+
+test('only an open socket triggers a revalidation', async () => {
+  mockRead.mockResolvedValue(capability('1'));
+  const { result } = mount();
+
+  await waitFor(() => expect(result.current.canCreate).toBe(true));
+  await act(async () => {
+    emitter.emit(APP_EVENTS.WEBSOCKET_STATUS, 0);
+    emitter.emit(APP_EVENTS.WEBSOCKET_STATUS, 3);
+  });
+  expect(mockRead).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    emitter.emit(APP_EVENTS.WEBSOCKET_STATUS, 1);
+  });
+  expect(mockRead).toHaveBeenCalledTimes(2);
+});
+
+test('an older revision from a background read is ignored, but Check again accepts it', async () => {
+  mockRead.mockResolvedValueOnce(capability('5', true)).mockResolvedValue(capability('4', false));
+  const { result } = mount();
+
+  await waitFor(() => expect(result.current.capability?.revision).toBe('5'));
+  await act(async () => {
+    emitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+  });
+  expect(result.current.status).toBe('ready');
+  expect(result.current.capability?.revision).toBe('5');
+  expect(result.current.canCreate).toBe(true);
+  // A restored server can legitimately report a lower revision; an explicit check must not wedge.
+  await act(async () => {
+    await result.current.refresh();
+  });
+  expect(result.current.capability?.revision).toBe('4');
   expect(result.current.canCreate).toBe(false);
+  expect(result.current.status).toBe('ready');
+});
+
+test('Check again reports progress and replaces an error', async () => {
+  mockRead.mockRejectedValueOnce({ code: -1, message: 'Network Error' });
+  const { result } = mount();
+
+  await waitFor(() => expect(result.current.status).toBe('error'));
+  const pending = deferred();
+
+  mockRead.mockReturnValueOnce(pending.promise);
+  let check!: Promise<unknown>;
+
+  act(() => {
+    check = result.current.refresh();
+  });
+  expect(result.current.checking).toBe(true);
+  await act(async () => {
+    pending.resolve(capability('1'));
+    await check;
+  });
+  expect(result.current.checking).toBe(false);
+  expect(result.current.status).toBe('ready');
+});
+
+test('a server without the capability route stays usable through the legacy route', async () => {
+  mockRead.mockResolvedValue({ ...capability('0'), supported: false, mode: 'unrestricted', legacy: true });
+  const { result } = mount();
+
+  await waitFor(() => expect(result.current.canCreate).toBe(true));
+  expect(result.current.legacy).toBe(true);
 });
 
 test('offline suspends a prior grant; reconnect revalidates without changing sign-in state', async () => {
@@ -121,9 +233,10 @@ test('offline suspends a prior grant; reconnect revalidates without changing sig
     window.dispatchEvent(new Event('offline'));
   });
   expect(result.current.canCreate).toBe(false);
+  expect(result.current.status).toBe('error');
   Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
   await act(async () => {
-    emitter.emit(APP_EVENTS.WEBSOCKET_STATUS, 'connected');
+    window.dispatchEvent(new Event('online'));
   });
   expect(result.current.canCreate).toBe(true);
   expect(mockAuthenticated).toBe(true);

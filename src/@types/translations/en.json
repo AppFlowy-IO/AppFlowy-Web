@@ -4582,13 +4582,12 @@
     "openRow": "Open"
   },
   "workspaceCreation": {
-    "loading": "Checking workspace creation access…",
-    "denied": "Your administrator has not enabled workspace creation for your account. You can still sign in and join workspaces you are invited to.",
-    "unsupported": "This server cannot report workspace creation access. Ask your administrator to update it.",
-    "unavailable": "Workspace creation access could not be checked. Reconnect and try again.",
-    "ownership": "You will be the owner of the new workspace.",
+    "loading": "Checking whether you can create workspaces…",
+    "denied": "Your administrator hasn't allowed you to create workspaces.",
+    "unavailable": "We couldn't check whether you can create workspaces. Check your connection and try again.",
+    "ownership": "You'll be the owner of the new workspace.",
     "contextChanged": "Your account or server changed. Please try again in the current account.",
-    "invalidResponse": "The server returned an invalid workspace creation capability.",
+    "invalidResponse": "The server sent an unexpected response. Try again later.",
     "noWorkspaceTitle": "You are signed in",
     "noWorkspaceDescription": "You do not belong to a workspace yet. Open an invitation link to join an existing workspace, or ask a workspace owner to invite you.",
     "refreshWorkspaces": "Refresh workspaces",
@@ -4598,7 +4597,8 @@
     "resume": "Resume workspace creation",
     "retryOriginal": "This request is saved in this tab. Resume uses the original name and request so a lost response cannot create a duplicate workspace.",
     "notConfirmed": "We couldn't confirm that the workspace was created.",
-    "tryAgainLater": "Workspace creation isn't available right now. Try again later."
+    "tryAgainLater": "Workspace creation isn't available right now. Try again later.",
+    "checkAgain": "Check again"
   },
   "groupSpaceAccess": {
     "title": "Group access to spaces",
