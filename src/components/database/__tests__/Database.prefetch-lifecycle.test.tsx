@@ -380,6 +380,56 @@ describe('Database blob prefetch lifecycle', () => {
   });
 
   it.each(['peek', 'page'] as const)(
+    'keeps the opened %s canonical row when bulk seeds finish in the same React batch',
+    async (surface) => {
+      const doc = createDatabaseDoc('database-id');
+
+      insertRemoteRowOrder(doc, 'remote-row-id');
+      const seed = createHydratedRowDoc('seed-row');
+      const canonical = createHydratedRowDoc('canonical-row');
+      const backgroundDoc = createHydratedRowDoc('background-row');
+      const pendingBackground = createDeferred<YDoc>();
+      const createRow = jest.fn(async () => canonical);
+
+      mockedPeekSeed.mockReturnValue({ bytes: new Uint8Array([1]), encoderVersion: 1 });
+      mockedOpenRowDoc.mockImplementation((key) =>
+        key.endsWith('_rows_row-id') ? Promise.resolve(seed) : pendingBackground.promise
+      );
+      const { unmount } = render(
+        <Database
+          {...databaseProps(doc)}
+          {...(surface === 'peek' ? { modalRowId: 'row-id' } : { rowId: 'row-id' })}
+          createRow={createRow}
+        />
+      );
+
+      try {
+        await act(async () => {
+          mockedPrefetch.mock.calls[0][2]?.onSeedsReady?.();
+          await Promise.resolve();
+        });
+        expect(mockedOpenRowDoc).toHaveBeenCalledWith('database-id_rows_remote-row-id', expect.anything());
+        const context = surface === 'peek' ? mockPeekContext : mockDatabaseContext;
+
+        await act(async () => {
+          expect(await context?.ensureRow?.('row-id')).toBe(canonical);
+          // The canonical state update is queued while another row keeps the bulk
+          // load pending. Finish both before React commits and updates rowMapRef.
+          pendingBackground.resolve(backgroundDoc);
+          for (let turn = 0; turn < 8; turn++) await Promise.resolve();
+        });
+        expect(mockDatabaseContext?.rowMap?.['row-id']).toBe(canonical);
+        expect(mockDatabaseContext?.rowMap?.['remote-row-id']).toBe(backgroundDoc);
+        expect(createRow).toHaveBeenCalledTimes(1);
+        expect(mockDatabaseContext?.hasCellLocalMutation?.('row-id', 'field-id')).toBe(false);
+      } finally {
+        unmount();
+        [doc, seed, canonical, backgroundDoc].forEach((document) => document.destroy());
+      }
+    }
+  );
+
+  it.each(['peek', 'page'] as const)(
     'loads only the opened %s row before pending bulk seeds and shares its canonical sync owner',
     async (surface) => {
       const doc = createDatabaseDoc('database-id');

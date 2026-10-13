@@ -884,7 +884,9 @@ function Database(props: Database2Props) {
             Object.entries(newEntries).forEach(([rowId, rowDoc]) => {
               registerRowDocWithHistory(rowId, rowDoc);
             });
-            setRowMap((prev) => ({ ...prev, ...newEntries }));
+            // Interactive sync may have queued a canonical row in this React batch
+            // before rowMapRef's layout effect runs. Seeds only fill missing entries.
+            setRowMap((prev) => ({ ...newEntries, ...prev }));
           }
 
           // Open the gate — ensureRow calls can now proceed
