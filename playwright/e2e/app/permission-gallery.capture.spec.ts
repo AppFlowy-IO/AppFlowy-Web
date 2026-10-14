@@ -166,6 +166,19 @@ test.describe('Workspace permission screenshot gallery', () => {
     await expect(page.getByTestId(`space-creator-row-group-${fixture.groups.Super_Users}`)).toBeVisible();
     await shoot(page, 'permissions-owner-selected-members.png', 'olivia');
 
+    // Add members or groups lists who can be chosen before anything is typed.
+    await page.getByRole('button', { name: 'Add members or groups' }).click();
+    const candidates = page.getByTestId('space-creator-candidates');
+
+    await expect(candidates.getByTestId(`space-creator-candidate-user-${fixture.people.sam.uuid}`)).toBeVisible();
+    await expect(candidates.getByTestId(`space-creator-candidate-group-${fixture.groups.HR}`)).toBeVisible();
+    // Alex and Super_Users are already selected.
+    await expect(candidates.getByTestId(`space-creator-candidate-user-${fixture.people.alex.uuid}`)).toHaveCount(0);
+    await expect(candidates.getByTestId(`space-creator-candidate-group-${fixture.groups.Super_Users}`)).toHaveCount(0);
+    await shoot(page, 'permissions-add-members-suggestions.png', 'olivia');
+    await page.getByTestId('space-creator-search-input').press('Escape');
+    await expect(candidates).toBeHidden();
+
     // Narrowing who can create spaces asks first; the question is cancelled.
     await page.getByTestId('space-creation-policy-owners_only').click();
     const confirmation = page.getByTestId('space-creation-restrict-confirmation');
@@ -181,6 +194,11 @@ test.describe('Workspace permission screenshot gallery', () => {
 
     await expect(page.getByTestId(`group-space-coverage-summary-${fixture.groups.Users}`)).toBeVisible();
     await expect(summary.getByTestId('group-space-coverage-manage')).toBeVisible();
+    // At the end of the panel, so its fade (shown while more is below) is gone.
+    const panel = page.getByTestId('workspace-permissions-panel');
+
+    await panel.locator('.overflow-y-auto').first().evaluate((area) => area.scrollTo({ top: area.scrollHeight }));
+    await expect(panel.getByTestId('more-below-fade')).toHaveAttribute('data-visible', 'false');
     await shoot(page, 'permissions-access-to-all-spaces-summary.png', 'olivia', summary, {
       within: page.getByTestId('workspace-permissions-panel'),
       margin: 16,
@@ -223,10 +241,24 @@ test.describe('Workspace permission screenshot gallery', () => {
 
     await waitForApp(page);
     await openManageSpace(page, fixture.spaces.HR);
-    // The General tab scrolls; bring "Who can add pages to this space" into view.
-    await page.getByTestId('space-sidebar-policy-row').scrollIntoViewIfNeeded();
+    // The dialog takes the window's height: a Custom space's General tab fits at 1440x900, so "Who can
+    // add pages to this space" is visible without scrolling and no fade says there is more.
+    const general = page.getByTestId('space-settings-general');
+
     await expect(page.getByTestId('space-sidebar-policy')).toContainText('Only space owners');
+    await expect(page.getByTestId('space-sidebar-policy-row')).toBeInViewport({ ratio: 1 });
+    await expect(general.getByTestId('more-below-fade')).toHaveAttribute('data-visible', 'false');
     await shoot(page, 'manage-space-general-page-setting.png', 'olivia');
+
+    // Changing the space type asks first, in sentence case; the question is cancelled.
+    await page.getByTestId('manage-space-visibility-option-public').click();
+    const typeChange = page.getByTestId('manage-space-confirm-dialog');
+
+    await expect(typeChange).toContainText('Make this space public?');
+    await shoot(page, 'manage-space-type-change-confirmation.png', 'olivia', typeChange);
+    await typeChange.getByRole('button', { name: 'Cancel' }).click();
+    await expect(typeChange).toBeHidden();
+    await expect(page.getByTestId('manage-space-visibility-option-custom')).toHaveAttribute('aria-pressed', 'true');
 
     await page.getByRole('tab', { name: 'Members' }).click();
     const alexAccess = page.getByTestId(`space-member-access-${fixture.people.alex.uid}`);
@@ -241,6 +273,20 @@ test.describe('Workspace permission screenshot gallery', () => {
     await page.getByTestId('space-member-access-header').hover();
     await expect(page.getByTestId('space-member-access-header-hint').first()).toBeVisible();
     await shoot(page, 'manage-space-members-access-explanation.png', 'olivia');
+
+    // Add people or groups lists who can be added before anything is typed: Sam reaches HR only
+    // through the HR group, and Product and Super_Users are not in the space. The header's tooltip
+    // covers the button until the pointer leaves.
+    // (in steps: the tooltip closes once the pointer has moved on past its grace area).
+    await page.mouse.move(700, 880, { steps: 8 });
+    await expect(page.getByTestId('space-member-access-header-hint')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Add people or groups' }).click();
+    await expect(page.getByTestId('workspace-member-inline-search-result').filter({ hasText: 'Sam Leroy' })).toBeVisible();
+    await expect(page.getByTestId(`space-group-inline-search-result-${fixture.groups.Product}`)).toBeVisible();
+    await expect(page.getByTestId(`space-group-inline-search-result-${fixture.groups.Super_Users}`)).toBeVisible();
+    await shoot(page, 'manage-space-add-suggestions.png', 'olivia');
+    await page.getByTestId('workspace-member-inline-search-input').press('Escape');
+    await expect(page.getByTestId(`space-group-inline-search-result-${fixture.groups.Product}`)).toBeHidden();
     await page.getByTestId('manage-space-modal').getByRole('button', { name: 'Close' }).click();
     await expect(page.getByTestId('space-settings-panel')).toBeHidden();
 
@@ -248,8 +294,14 @@ test.describe('Workspace permission screenshot gallery', () => {
     await openManageSpace(page, fixture.spaces.Product);
     await page.getByRole('tab', { name: 'Members' }).click();
     const ownAccess = page.getByTestId(`space-member-access-${fixture.people.olivia.uid}`);
+    const ownHint = page.getByTestId(`space-member-access-${fixture.people.olivia.uid}-extra-access`);
 
     await expect(ownAccess).toBeEnabled();
+    // With the menu closed, an info icon beside it says where the extra access comes from.
+    await expect(ownHint).toHaveAttribute('aria-label', /Product group/);
+    await ownHint.hover();
+    await expect(page.getByRole('tooltip')).toContainText('Product group');
+    await shoot(page, 'manage-space-own-access-hint.png', 'olivia');
     await ownAccess.click();
     await expect(page.getByTestId(`space-member-access-${fixture.people.olivia.uid}-note`)).toContainText('Product group');
     await shoot(page, 'manage-space-own-access-explanation.png', 'olivia');
@@ -261,7 +313,16 @@ test.describe('Workspace permission screenshot gallery', () => {
     await page.getByTestId('new-page-create-space-button').click();
     await expect(page.getByTestId('create-space-submit')).toBeVisible();
     await page.getByTestId('space-name-input').fill('Marketing');
+    // A Public space's settings are taller than the dialog at 1440x900: a fade says there is more.
+    const createGeneral = page.getByTestId('space-settings-general');
+
+    await expect(createGeneral.getByTestId('more-below-fade')).toHaveAttribute('data-visible', 'true');
     await shoot(page, 'create-space.png', 'olivia');
+    // Scrolled to the end of the tab (scrollIntoViewIfNeeded stops once the row is partly shown).
+    await createGeneral.locator('.overflow-y-auto').first().evaluate((area) => area.scrollTo({ top: area.scrollHeight }));
+    await expect(page.getByTestId('space-sidebar-policy-row')).toBeInViewport({ ratio: 1 });
+    await expect(createGeneral.getByTestId('more-below-fade')).toHaveAttribute('data-visible', 'false');
+    await shoot(page, 'create-space-page-setting.png', 'olivia');
     await context.close();
   });
 
@@ -284,6 +345,8 @@ test.describe('Workspace permission screenshot gallery', () => {
 
     await expect(page.getByText("You're not in a workspace yet")).toBeVisible({ timeout: 60000 });
     await expect(page.getByText(GALLERY_WORKSPACE_NAME, { exact: true })).toBeVisible();
+    await expect(page.getByText("Join a workspace you've been invited to below.")).toBeVisible();
+    await expect(page.getByText('Ask a workspace owner to invite you')).toHaveCount(0);
     await shoot(page, 'account-only-pending-invitation.png', 'jordan');
     await context.close();
   });
@@ -307,6 +370,8 @@ test.describe('Workspace permission screenshot gallery', () => {
       await expect.poll(async () => (await pageCapability(cfg, fixture, 'sam', 'onboarding'))?.can_read ?? false).toBe(false);
       await expect(page.getByText('No access to this page', { exact: true })).toBeVisible();
       await expect(editor).toHaveCount(0);
+      // Nothing to share, favorite or act on for a page Sam can't open.
+      await expect(page.getByTestId('share-button')).toHaveCount(0);
       await shoot(page, 'page-no-access-after-group-removed.png', 'sam');
     } finally {
       await setGroupSpaceAccess(cfg, fixture, 'HR', 'HR', 30);
@@ -314,6 +379,7 @@ test.describe('Workspace permission screenshot gallery', () => {
 
     await expect.poll(async () => (await pageCapability(cfg, fixture, 'sam', 'onboarding'))?.can_write ?? false).toBe(true);
     await expect(editor).toContainText('Welcome aboard');
+    await expect(page.getByTestId('share-button')).toBeVisible();
     expect(await page.evaluate(() => (window as Window & { __galleryMarker?: string }).__galleryMarker)).toBe(marker);
     await shoot(page, 'page-access-restored-after-regrant.png', 'sam');
     await context.close();
@@ -324,8 +390,9 @@ test.describe('Workspace permission screenshot gallery', () => {
 
     await waitForApp(page);
     await openSettings(page, 'account');
-    await page.getByRole('button', { name: 'Log out' }).click();
-    await expect(page.getByTestId('logout-remove-local-data')).toBeVisible();
+    await page.getByTestId('settings-logout-button').click();
+    await expect(page.getByRole('switch', { name: 'Also remove page copies from this browser' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Sign out', exact: true }).last()).toBeVisible();
     await shoot(page, 'sign-out-remove-data.png', 'alex');
     await context.close();
   });
