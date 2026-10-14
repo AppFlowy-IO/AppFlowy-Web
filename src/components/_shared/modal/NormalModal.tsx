@@ -71,7 +71,9 @@ export function NormalModal({
     <Dialog
       aria-labelledby={labelledBy}
       onKeyDown={(e) => {
-        if (e.key === 'Escape' && closable) {
+        // A menu, picker or confirmation inside the dialog that closes on Escape marks the key
+        // press as handled; only an unhandled Escape closes the dialog itself.
+        if (e.key === 'Escape' && closable && !e.defaultPrevented) {
           onClose?.();
         }
 

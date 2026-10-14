@@ -1,7 +1,12 @@
 import { describe, expect, it, jest } from '@jest/globals';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+
+import { mockResizeObserver } from '@/__mocks__/resizeObserver';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 import { NormalModal } from '../NormalModal';
+
+mockResizeObserver();
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -48,5 +53,50 @@ describe('NormalModal keyboard submission', () => {
     expect(screen.queryByRole('button', { name: 'button.cancel' })).toBeNull();
     expect(screen.queryByTestId('modal-ok-button')).toBeNull();
     expect(screen.getByRole('button', { name: 'button.close' })).toBeTruthy();
+  });
+});
+
+describe('NormalModal Escape', () => {
+  it('closes when Escape is pressed on one of its own controls', () => {
+    const onClose = jest.fn();
+
+    render(
+      <NormalModal open title='Manage space' onClose={onClose}>
+        <input aria-label='Space name' />
+      </NormalModal>
+    );
+
+    fireEvent.keyDown(screen.getByLabelText('Space name'), { key: 'Escape' });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays open when a menu inside it uses Escape to close itself', async () => {
+    const onClose = jest.fn();
+
+    render(
+      <NormalModal open title='Manage space' onClose={onClose}>
+        <DropdownMenu>
+          <DropdownMenuTrigger>Access</DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuItem>Can view</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </NormalModal>
+    );
+    const trigger = screen.getByRole('button', { name: 'Access' });
+
+    act(() => trigger.focus());
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+    await screen.findByRole('menu');
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+
+    // The menu used that key press; the dialog and the user's place in it stay.
+    expect(onClose).not.toHaveBeenCalled();
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+    // A second Escape, now on the dialog's own control, closes the dialog.
+    fireEvent.keyDown(trigger, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
