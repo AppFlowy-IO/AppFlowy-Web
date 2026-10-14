@@ -24,7 +24,8 @@
     "meetingNotesDenied": "Votre réunion s’est ouverte sans page de notes, car vous ne pouvez pas créer d’espaces dans cet espace de travail.",
     "meetingNotesFailed": "Votre réunion s’est ouverte, mais sa page de notes n’a pas pu être créée.",
     "firstPageElsewhere": "L’espace a été créé, mais sa première page se trouve ailleurs. Abandonnez cette demande pour continuer.",
-    "firstPageUnconfirmed": "L’espace a été créé, mais nous n’avons pas pu confirmer sa première page. Abandonnez cette demande pour continuer."
+    "firstPageUnconfirmed": "L’espace a été créé, mais nous n’avons pas pu confirmer sa première page. Abandonnez cette demande pour continuer.",
+    "deniedHint": "Demandez à un propriétaire de l’espace de travail si vous avez besoin d’un nouvel espace."
   },
   "workspacePermissions": {
     "sidebarPolicy": "Qui peut ajouter des pages à cet espace",

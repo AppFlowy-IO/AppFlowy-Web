@@ -7,7 +7,10 @@ import {
 } from '@/application/services/js-services/space-creation-recovery';
 import { NormalModal } from '@/components/_shared/modal';
 import { useSpaceCreationCapability } from '@/components/app/hooks/useSpaceCreationCapability';
+import { WorkspaceCreationCallout } from '@/components/app/workspaces/WorkspaceCreationNotice';
 import { Button } from '@/components/ui/button';
+
+import type { ReactNode } from 'react';
 
 type SpaceCreationCapabilityState = ReturnType<typeof useSpaceCreationCapability>;
 export type SpaceCreationPermission = Pick<SpaceCreationCapabilityState, 'status' | 'canCreateSpace' | 'refresh'> &
@@ -145,6 +148,30 @@ export function SpaceCreationRecoveryNotice(props: SpaceCreationRecoveryNoticePr
           {t('spaceCreation.discard')}
         </Button>
       )}
+    </div>
+  );
+}
+
+/**
+ * The space creation rule refused the request. Nothing was created and nothing is kept, so the form
+ * gives way to a summary of what was asked, the answer, and Close as the only action (like Desktop).
+ */
+export function SpaceCreationDeniedCard({ summary, onClose }: { summary?: ReactNode; onClose: () => void }) {
+  const { t } = useTranslation();
+
+  return (
+    <div className='flex flex-col gap-4 py-2' data-testid='create-space-denied'>
+      {summary}
+      <WorkspaceCreationCallout
+        actions={
+          <Button type='button' variant='outline' size='sm' onClick={onClose} data-testid='create-space-denied-close'>
+            {t('button.close')}
+          </Button>
+        }
+      >
+        <p>{t('workspacePermissions.denied')}</p>
+        <p className='mt-1 opacity-80'>{t('spaceCreation.deniedHint')}</p>
+      </WorkspaceCreationCallout>
     </div>
   );
 }

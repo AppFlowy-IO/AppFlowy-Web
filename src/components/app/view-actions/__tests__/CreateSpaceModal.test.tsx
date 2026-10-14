@@ -361,15 +361,63 @@ describe('CreateSpaceModal draft controller', () => {
     return screen.getByTestId(`manage-space-visibility-option-${visibility}`);
   }
 
-  it('keeps the draft when a fresh permission read revokes creation before submit', async () => {
+  it('replaces the form with the answer when a fresh permission read refuses creation on Create', async () => {
+    const onClose = jest.fn();
+
     mockRefreshCreationPermission.mockResolvedValue({ can_create_space: false });
-    render(<CreateSpaceModal open onClose={jest.fn()} />);
-    enterSpaceName('Keep this draft');
+    const view = render(<CreateSpaceModal open onClose={onClose} />);
+
+    enterSpaceName('Marketing');
     fireEvent.click(screen.getByTestId('create-space-submit'));
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('workspacePermissions.denied'));
+
+    const denied = await screen.findByTestId('create-space-denied');
+
+    expect(denied.textContent).toContain('workspacePermissions.denied');
+    expect(denied.textContent).toContain('spaceCreation.deniedHint');
+    // The request is summed up; the form, its Create button and the notice are gone.
+    expect(screen.getByTestId('create-space-summary').textContent).toContain('Marketing');
+    expect(screen.queryByTestId('space-name-input')).toBeNull();
+    expect(screen.queryByTestId('create-space-submit')).toBeNull();
+    expect(screen.queryByTestId('space-creation-notice')).toBeNull();
+    // Nothing was created and nothing is kept, and no toast repeats the card.
+    expect(notify.error).not.toHaveBeenCalled();
     expect(mockCreateSpace).not.toHaveBeenCalled();
     expect(mockCreateSpaceWithInitialPage).not.toHaveBeenCalled();
-    expect((screen.getByTestId('space-name-input')).value).toBe('Keep this draft');
+    expect(sessionStorage.length).toBe(0);
+
+    // Close is the only action; the draft is released, so the dialog reopens empty.
+    fireEvent.click(screen.getByTestId('create-space-denied-close'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    view.rerender(<CreateSpaceModal open={false} onClose={onClose} />);
+    view.rerender(<CreateSpaceModal open onClose={onClose} />);
+    expect(screen.queryByTestId('create-space-denied')).toBeNull();
+    expect(screen.getByTestId('space-name-input').value).toBe('');
+    expect(screen.getByTestId('create-space-submit').textContent).toBe('button.create');
+  });
+
+  it('replaces the form with the answer when the server itself refuses the request', async () => {
+    const onClose = jest.fn();
+
+    mockCreateSpace.mockRejectedValueOnce({ code: 1012, httpStatus: 403, message: 'forbidden' });
+    render(<CreateSpaceModal open onClose={onClose} />);
+
+    enterSpaceName('Refused draft');
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+
+    const denied = await screen.findByTestId('create-space-denied');
+
+    expect(denied.textContent).toContain('workspacePermissions.denied');
+    expect(denied.textContent).toContain('spaceCreation.deniedHint');
+    expect(screen.queryByTestId('space-name-input')).toBeNull();
+    expect(screen.queryByTestId('create-space-submit')).toBeNull();
+    expect(screen.queryByTestId('space-creation-recovery-unconfirmed')).toBeNull();
+    // A refusal proves that this request created nothing: no saved request, no toast repeating the card.
+    expect(sessionStorage.length).toBe(0);
+    expect(notify.error).not.toHaveBeenCalled();
+    expect(mockCreateSpace).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByTestId('create-space-denied-close'));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('includes the explicitly chosen sidebar policy in the create payload', async () => {
@@ -689,20 +737,19 @@ describe('CreateSpaceModal draft controller', () => {
     expect(mockCreateSpace.mock.calls[1][0].view_id).toBe(firstAttemptId);
   });
 
-  it.each([
-    ['a validation rejection', { code: 422, httpStatus: 422, message: 'invalid space name' }, 'invalid space name'],
-    ['a B denial that lands after the pre-check', { code: 1012, httpStatus: 403, message: 'forbidden' }, 'forbidden'],
-  ])('releases the draft for editing after %s and forgets the saved request', async (_case, rejection, message) => {
+  it('releases the draft for editing after a validation rejection and forgets the saved request', async () => {
     const onClose = jest.fn();
     const onCreated = jest.fn();
 
-    mockCreateSpace.mockRejectedValueOnce(rejection);
+    mockCreateSpace.mockRejectedValueOnce({ code: 422, httpStatus: 422, message: 'invalid space name' });
     render(<CreateSpaceModal open onClose={onClose} onCreated={onCreated} />);
 
     fireEvent.change(screen.getByTestId('space-name-input'), { target: { value: 'Rejected draft' } });
     fireEvent.click(screen.getByTestId('create-space-submit'));
 
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith(message));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('invalid space name'));
+    // The name can be fixed here: only a refusal by the space creation rule replaces the form.
+    expect(screen.queryByTestId('create-space-denied')).toBeNull();
     expect(screen.getByTestId('space-name-input').getAttribute('disabled')).toBeNull();
     expect(screen.getByTestId('space-name-input').value).toBe('Rejected draft');
     expect(screen.getByTestId('create-space-submit').textContent).toBe('button.create');
@@ -820,6 +867,8 @@ describe('CreateSpaceModal draft controller', () => {
     await waitFor(() => expect(notify.error).toHaveBeenCalledWith('workspacePermissions.loadError'));
     expect(mockCreateSpace).not.toHaveBeenCalled();
     expect(sessionStorage.length).toBe(0);
+    // Could not check, so the draft stays editable for another try; it is not an answer.
+    expect(screen.queryByTestId('create-space-denied')).toBeNull();
     expect(screen.getByTestId('space-name-input').getAttribute('disabled')).toBeNull();
   });
 

@@ -14,6 +14,7 @@ import {
 import {
   firstPageAddedUnderOtherId,
   isDefinitiveCreationRejection,
+  isSpaceCreationDenial,
   recoverSpaceCreation,
   SpaceCreationFirstPageError,
 } from '@/application/services/js-services/space-creation-recovery';
@@ -28,6 +29,7 @@ import {
   WorkspaceMember,
 } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
+import SpaceIcon from '@/components/_shared/view-icon/SpaceIcon';
 import { useAppOperations, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { useSpaceCreationCapability } from '@/components/app/hooks/useSpaceCreationCapability';
 import { SpaceCreationIntentState, useSpaceCreationIntent } from '@/components/app/hooks/useSpaceCreationIntent';
@@ -42,6 +44,7 @@ import {
   canStartSpaceCreation,
   DiscardSpaceRequestConfirm,
   refreshSpaceCreationAdmission,
+  SpaceCreationDeniedCard,
   SpaceCreationNotice,
   SpaceCreationRecoveryNotice,
 } from '@/components/app/view-actions/SpaceCreationNotice';
@@ -50,6 +53,7 @@ import {
   defaultEveryoneElseAccessLevel,
   defaultSpacePermissionSettings,
   SELECTABLE_SPACE_VISIBILITIES,
+  spaceVisibilityLabel,
 } from '@/components/app/view-actions/spaceVisibilityOptions';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -147,6 +151,8 @@ function CreateSpaceDraft({
   // A request recorded as committed was confirmed by the server; only its roster/handoff remain.
   const [committedSpace, setCommittedSpace] = useState<CommittedSpace | null>(() => restored?.committed ?? null);
   const [hasAmbiguousCreation, setHasAmbiguousCreation] = useState(Boolean(restored));
+  // The space creation rule refused a new request: the form gives way to the answer (Close only).
+  const [denied, setDenied] = useState(false);
   const [pendingMemberCount, setPendingMemberCount] = useState(
     () => restored?.members.filter(({ uid }) => !restored.appliedMemberUids.includes(uid)).length ?? 0
   );
@@ -284,6 +290,7 @@ function CreateSpaceDraft({
     setSuggestingMembers(false);
     setCommittedSpace(null);
     setHasAmbiguousCreation(false);
+    setDenied(false);
     setFirstPageProblem(undefined);
     setPendingMemberCount(0);
     setDraftPage(null);
@@ -510,8 +517,15 @@ function CreateSpaceDraft({
         if (!saved) {
           const admission = await refreshSpaceCreationAdmission(creationPermission, workspaceId);
 
-          if (admission === 'denied' || admission === 'unavailable') {
-            notify.error(t(admission === 'denied' ? 'workspacePermissions.denied' : 'workspacePermissions.loadError'));
+          // A refusal is the answer: nothing was sent, nothing is kept, and the form gives way to it.
+          // A check that could not run is not an answer: the draft stays editable for another try.
+          if (admission === 'denied') {
+            setDenied(true);
+            return;
+          }
+
+          if (admission === 'unavailable') {
+            notify.error(t('workspacePermissions.loadError'));
             return;
           }
         } else {
@@ -589,7 +603,16 @@ function CreateSpaceDraft({
           // A definitive rejection proves only that this request created nothing. A resend of a
           // saved request says nothing about the earlier attempt with the same ID, which may
           // still commit, so that request stays saved until it is found or discarded.
-          if (!saved && isDefinitiveCreationRejection(error)) releaseRejectedRequest();
+          if (!saved && isDefinitiveCreationRejection(error)) {
+            releaseRejectedRequest();
+            // The space creation rule refused this account after the pre-check: the answer
+            // replaces the form, with nothing to retry here.
+            if (isSpaceCreationDenial(error)) {
+              setDenied(true);
+              return;
+            }
+          }
+
           throw error;
         }
 
@@ -651,7 +674,30 @@ function CreateSpaceDraft({
 
   const memberControlsDisabled = loading || Boolean(committedSpace) || hasAmbiguousCreation;
   const phase = committedSpace ? 'committed' : hasAmbiguousCreation ? 'pending' : 'fresh';
-  const notice = recovery.invalid ? (
+  const trimmedName = spaceName.trim();
+  // What was asked, kept in view with the answer once the form is gone.
+  const deniedSummary = denied ? (
+    <div
+      className='flex items-center gap-3 rounded-400 border border-border-primary px-3 py-2'
+      data-testid='create-space-summary'
+    >
+      <span aria-hidden='true' className='flex shrink-0'>
+        <SpaceIcon
+          className='!h-8 !w-8 !min-w-8'
+          bgColor={spaceIconColor}
+          value={spaceIcon}
+          char={spaceIcon ? undefined : trimmedName.slice(0, 1)}
+        />
+      </span>
+      <div className='min-w-0 flex-1'>
+        <div className='truncate text-sm font-medium text-text-primary'>{trimmedName}</div>
+        <div className='truncate text-xs text-text-secondary'>
+          {spaceVisibilityLabel(permissionSettings.visibility, t)}
+        </div>
+      </div>
+    </div>
+  ) : null;
+  const notice = denied ? null : recovery.invalid ? (
     <SpaceCreationRecoveryNotice kind='invalid' disabled={loading} onDiscard={discardSavedRequest} />
   ) : phase === 'committed' ? (
     pendingMemberCount > 0 ? (
@@ -778,7 +824,8 @@ function CreateSpaceDraft({
         onSidebarEditPolicyChange={(sidebar_edit_policy) => {
           if (!committedSpaceRef.current) setPermissionSettings((current) => ({ ...current, sidebar_edit_policy }));
         }}
-        showActions
+        showActions={!denied}
+        summary={denied ? <SpaceCreationDeniedCard summary={deniedSummary} onClose={handleClose} /> : undefined}
         primaryActionText={
           phase === 'committed'
             ? t('spaceCreation.tryAgain')

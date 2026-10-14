@@ -24,7 +24,8 @@
     "meetingNotesDenied": "Your meeting opened without a notes page, because you can't create spaces in this workspace.",
     "meetingNotesFailed": "Your meeting opened, but its notes page couldn't be created.",
     "firstPageElsewhere": "The space was created, but its first page is somewhere else. Discard this request to continue.",
-    "firstPageUnconfirmed": "The space was created, but we couldn't confirm its first page. Discard this request to continue."
+    "firstPageUnconfirmed": "The space was created, but we couldn't confirm its first page. Discard this request to continue.",
+    "deniedHint": "Ask a workspace owner if you need a new space."
   },
   "workspacePermissions": {
     "sidebarPolicy": "Who can add pages to this space",

@@ -112,6 +112,11 @@ export interface SpaceSettingsPanelProps {
   onPrimaryAction?: () => void;
   notice?: ReactNode;
   overlay?: ReactNode;
+  /**
+   * Replaces the tabs once the request can no longer be changed, for example after the space creation
+   * rule refused it: a short summary of what was asked, with the answer and its action.
+   */
+  summary?: ReactNode;
 }
 
 // The same level names as the Members tab and Desktop ("Can comment"). A
@@ -787,6 +792,7 @@ function SpaceSettingsPanel({
   onPrimaryAction,
   notice,
   overlay,
+  summary,
 }: SpaceSettingsPanelProps) {
   const { t } = useTranslation();
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
@@ -831,157 +837,163 @@ function SpaceSettingsPanel({
       }}
     >
       {notice}
-      <Tabs
-        value={activeTab}
-        onValueChange={(value) => onTabChange(value as SpaceSettingsTab)}
-        aria-busy={primaryActionLoading || undefined}
-        className='min-h-0 max-w-full flex-1'
-        style={{ width: CONTENT_WIDTH }}
-        data-testid='space-settings-panel'
-      >
-        <TabsList>
-          <TabsTrigger value='general' disabled={primaryActionLoading}>
-            <TabLabel>{t('space.permissionManager.generalTab')}</TabLabel>
-          </TabsTrigger>
-          {membersTabVisible && (
-            <TabsTrigger value='members' disabled={membersTabDisabled || primaryActionLoading}>
-              <TabLabel>{t('space.permissionManager.membersTab')}</TabLabel>
+      {summary ? (
+        <div className='max-w-full' style={{ width: CONTENT_WIDTH }} data-testid='space-settings-summary'>
+          {summary}
+        </div>
+      ) : (
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => onTabChange(value as SpaceSettingsTab)}
+          aria-busy={primaryActionLoading || undefined}
+          className='min-h-0 max-w-full flex-1'
+          style={{ width: CONTENT_WIDTH }}
+          data-testid='space-settings-panel'
+        >
+          <TabsList>
+            <TabsTrigger value='general' disabled={primaryActionLoading}>
+              <TabLabel>{t('space.permissionManager.generalTab')}</TabLabel>
             </TabsTrigger>
-          )}
-        </TabsList>
+            {membersTabVisible && (
+              <TabsTrigger value='members' disabled={membersTabDisabled || primaryActionLoading}>
+                <TabLabel>{t('space.permissionManager.membersTab')}</TabLabel>
+              </TabsTrigger>
+            )}
+          </TabsList>
 
-        <TabsContent value='general' className={TAB_PANEL_CLASS} data-testid='space-settings-general'>
-          <SettingsScrollArea scrollRef={setContainer}>
-            <div className='flex flex-col gap-6 py-2'>
-              <div className='flex flex-col gap-2'>
-                {/* Both parts of the form are headed alike: the name and the access. */}
-                <div className='text-base font-semibold text-text-primary'>{t('space.spaceName')}</div>
-                <div className='flex items-center gap-3'>
-                  {container && (
-                    <SpaceIconButton
-                      container={container}
-                      spaceIcon={spaceIcon}
-                      spaceIconColor={spaceIconColor}
-                      spaceName={spaceName}
-                      onChange={onSpaceIconChange}
-                      disabled={metadataDisabled}
-                    />
-                  )}
-
-                  <Input
-                    data-testid='space-name-input'
-                    value={spaceName}
-                    autoFocus
-                    ref={nameInputRef}
-                    disabled={metadataDisabled}
-                    onChange={(event) => onSpaceNameChange(event.target.value)}
-                    onBlur={onSpaceNameBlur}
-                    onKeyDown={onSpaceNameKeyDown}
-                    size='md'
-                    placeholder={t('space.spaceNamePlaceholder')}
-                    className='flex-1'
-                  />
-                </div>
-              </div>
-
-              <section className='flex flex-col gap-3'>
-                <div className='flex items-center justify-between gap-3'>
-                  <div className='flex min-w-0 flex-col gap-1'>
-                    <div className='text-base font-semibold text-text-primary'>
-                      {t('space.permissionManager.spaceAccess')}
-                    </div>
-                    <div className='text-sm text-text-secondary'>
-                      {t('space.permissionManager.spaceAccessDescription')}
-                    </div>
-                  </div>
-                  {loadingSettings && <Progress />}
-                </div>
-
-                <VisibilityCards
-                  value={draftVisibility}
-                  options={visibilityOptions}
-                  disabled={permissionSettingsDisabled}
-                  onSelect={onVisibilitySelect}
-                />
-              </section>
-
-              {showAccessDetails && draftIsPublic && (
-                <PublicAccessCard
-                  membersAccessLevel={permissionSettings.member_default_access_level}
-                  disabled={permissionSettingsDisabled}
-                  onMembersAccessChange={onMembersAccessChange}
-                  onSwitchToCustom={() => onVisibilitySelect(SpaceVisibility.Custom)}
-                />
-              )}
-
-              {showAccessDetails && draftIsCustom && (
-                <CustomPermissionsCard
-                  workspaceName={workspaceName}
-                  membersAccessLevel={permissionSettings.member_default_access_level}
-                  everyoneElseAccessLevel={permissionSettings.everyone_else_access_level ?? null}
-                  disabled={permissionSettingsDisabled}
-                  onMembersAccessChange={onMembersAccessChange}
-                  onEveryoneElseAccessChange={onEveryoneElseAccessChange}
-                />
-              )}
-
-              {showAccessDetails && draftIsPrivate && <PrivateAccessCard />}
-
-              {showAccessDetails && !draftIsPublic && !draftIsCustom && !draftIsPrivate && (
-                <div
-                  className='rounded-400 border border-border-primary'
-                  data-testid='manage-space-fallback-access-card'
-                >
-                  <PermissionPrincipalRow
-                    icon={<Shield className='h-5 w-5 text-icon-primary' />}
-                    title={t('space.permissionManager.owners')}
-                    description={t('space.permissionManager.ownersDescription')}
-                    trailing={<FixedAccess label={accessLabel(AccessLevel.FullAccess, t)} />}
-                  />
-
-                  <PermissionPrincipalRow
-                    icon={<Users className='h-5 w-5 text-icon-primary' />}
-                    title={t('space.permissionManager.members')}
-                    titleId={fallbackMembersTitleId}
-                    description={t('space.permissionManager.membersDescription')}
-                    testId='manage-space-members-default-access-row'
-                    trailing={
-                      <AccessDropdown
-                        value={permissionSettings.member_default_access_level}
-                        options={FALLBACK_MEMBER_ACCESS_OPTIONS}
-                        disabled={permissionSettingsDisabled}
-                        testId='manage-space-members-default-access'
-                        labelledBy={fallbackMembersTitleId}
-                        onChange={(value) => {
-                          if (value !== null) onMembersAccessChange(value);
-                        }}
+          <TabsContent value='general' className={TAB_PANEL_CLASS} data-testid='space-settings-general'>
+            <SettingsScrollArea scrollRef={setContainer}>
+              <div className='flex flex-col gap-6 py-2'>
+                <div className='flex flex-col gap-2'>
+                  {/* Both parts of the form are headed alike: the name and the access. */}
+                  <div className='text-base font-semibold text-text-primary'>{t('space.spaceName')}</div>
+                  <div className='flex items-center gap-3'>
+                    {container && (
+                      <SpaceIconButton
+                        container={container}
+                        spaceIcon={spaceIcon}
+                        spaceIconColor={spaceIconColor}
+                        spaceName={spaceName}
+                        onChange={onSpaceIconChange}
+                        disabled={metadataDisabled}
                       />
-                    }
-                    last
-                  />
+                    )}
+
+                    <Input
+                      data-testid='space-name-input'
+                      value={spaceName}
+                      autoFocus
+                      ref={nameInputRef}
+                      disabled={metadataDisabled}
+                      onChange={(event) => onSpaceNameChange(event.target.value)}
+                      onBlur={onSpaceNameBlur}
+                      onKeyDown={onSpaceNameKeyDown}
+                      size='md'
+                      placeholder={t('space.spaceNamePlaceholder')}
+                      className='flex-1'
+                    />
+                  </div>
                 </div>
-              )}
 
-              {showAccessDetails && !draftIsPrivate && (
-                <SidebarEditPolicyRow
-                  value={permissionSettings.sidebar_edit_policy}
-                  visibility={draftVisibility}
-                  disabled={permissionSettingsDisabled || loadingSettings}
-                  onChange={onSidebarEditPolicyChange}
-                />
-              )}
-            </div>
-          </SettingsScrollArea>
-        </TabsContent>
+                <section className='flex flex-col gap-3'>
+                  <div className='flex items-center justify-between gap-3'>
+                    <div className='flex min-w-0 flex-col gap-1'>
+                      <div className='text-base font-semibold text-text-primary'>
+                        {t('space.permissionManager.spaceAccess')}
+                      </div>
+                      <div className='text-sm text-text-secondary'>
+                        {t('space.permissionManager.spaceAccessDescription')}
+                      </div>
+                    </div>
+                    {loadingSettings && <Progress />}
+                  </div>
 
-        {membersTabVisible && (
-          <TabsContent value='members' className={TAB_PANEL_CLASS}>
-            <SettingsScrollArea>
-              {draftIsPrivate ? <PrivateMembersContent owner={privateOwner} /> : membersContent}
+                  <VisibilityCards
+                    value={draftVisibility}
+                    options={visibilityOptions}
+                    disabled={permissionSettingsDisabled}
+                    onSelect={onVisibilitySelect}
+                  />
+                </section>
+
+                {showAccessDetails && draftIsPublic && (
+                  <PublicAccessCard
+                    membersAccessLevel={permissionSettings.member_default_access_level}
+                    disabled={permissionSettingsDisabled}
+                    onMembersAccessChange={onMembersAccessChange}
+                    onSwitchToCustom={() => onVisibilitySelect(SpaceVisibility.Custom)}
+                  />
+                )}
+
+                {showAccessDetails && draftIsCustom && (
+                  <CustomPermissionsCard
+                    workspaceName={workspaceName}
+                    membersAccessLevel={permissionSettings.member_default_access_level}
+                    everyoneElseAccessLevel={permissionSettings.everyone_else_access_level ?? null}
+                    disabled={permissionSettingsDisabled}
+                    onMembersAccessChange={onMembersAccessChange}
+                    onEveryoneElseAccessChange={onEveryoneElseAccessChange}
+                  />
+                )}
+
+                {showAccessDetails && draftIsPrivate && <PrivateAccessCard />}
+
+                {showAccessDetails && !draftIsPublic && !draftIsCustom && !draftIsPrivate && (
+                  <div
+                    className='rounded-400 border border-border-primary'
+                    data-testid='manage-space-fallback-access-card'
+                  >
+                    <PermissionPrincipalRow
+                      icon={<Shield className='h-5 w-5 text-icon-primary' />}
+                      title={t('space.permissionManager.owners')}
+                      description={t('space.permissionManager.ownersDescription')}
+                      trailing={<FixedAccess label={accessLabel(AccessLevel.FullAccess, t)} />}
+                    />
+
+                    <PermissionPrincipalRow
+                      icon={<Users className='h-5 w-5 text-icon-primary' />}
+                      title={t('space.permissionManager.members')}
+                      titleId={fallbackMembersTitleId}
+                      description={t('space.permissionManager.membersDescription')}
+                      testId='manage-space-members-default-access-row'
+                      trailing={
+                        <AccessDropdown
+                          value={permissionSettings.member_default_access_level}
+                          options={FALLBACK_MEMBER_ACCESS_OPTIONS}
+                          disabled={permissionSettingsDisabled}
+                          testId='manage-space-members-default-access'
+                          labelledBy={fallbackMembersTitleId}
+                          onChange={(value) => {
+                            if (value !== null) onMembersAccessChange(value);
+                          }}
+                        />
+                      }
+                      last
+                    />
+                  </div>
+                )}
+
+                {showAccessDetails && !draftIsPrivate && (
+                  <SidebarEditPolicyRow
+                    value={permissionSettings.sidebar_edit_policy}
+                    visibility={draftVisibility}
+                    disabled={permissionSettingsDisabled || loadingSettings}
+                    onChange={onSidebarEditPolicyChange}
+                  />
+                )}
+              </div>
             </SettingsScrollArea>
           </TabsContent>
-        )}
-      </Tabs>
+
+          {membersTabVisible && (
+            <TabsContent value='members' className={TAB_PANEL_CLASS}>
+              <SettingsScrollArea>
+                {draftIsPrivate ? <PrivateMembersContent owner={privateOwner} /> : membersContent}
+              </SettingsScrollArea>
+            </TabsContent>
+          )}
+        </Tabs>
+      )}
       {overlay}
     </NormalModal>
   );
