@@ -294,9 +294,10 @@ export const AIMeetingSelectors = {
   /** The summary options menu */
   regeneratePopover: (page: Page) =>
     page.getByRole('menu', { name: 'Summary options', exact: true }),
-  /** A template option by its accessible name */
+  /** Match the template label independently of optional emoji icons. */
   templateOption: (page: Page, label: string) =>
-    page.getByRole('menu', { name: 'Summary options', exact: true }).getByRole('menuitemradio', { name: label, exact: true }),
+    page.getByRole('menu', { name: 'Summary options', exact: true })
+      .getByRole('menuitemradio').filter({ has: page.getByText(label, { exact: true }) }),
   /** A detail option by its accessible name */
   detailOption: (page: Page, label: string) =>
     page.getByRole('menu', { name: 'Summary options', exact: true }).getByRole('menuitemradio', { name: label, exact: true }),
