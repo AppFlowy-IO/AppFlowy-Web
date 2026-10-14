@@ -31,6 +31,7 @@ import { notify } from '@/components/_shared/notify';
 import { useAppOperations, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { useSpaceCreationCapability } from '@/components/app/hooks/useSpaceCreationCapability';
 import { SpaceCreationIntentState, useSpaceCreationIntent } from '@/components/app/hooks/useSpaceCreationIntent';
+import { useSuggestionsOpen } from '@/components/app/share/useSuggestionsOpen';
 import {
   getWorkspaceMemberUid,
   useAddableWorkspaceMembers,
@@ -139,6 +140,9 @@ function CreateSpaceDraft({
   const [loadingWorkspaceMembers, setLoadingWorkspaceMembers] = useState(false);
   const [selectedMembers, setSelectedMembers] = useState<WorkspaceMember[]>(restored?.selectedMembers ?? []);
   const [memberSearch, setMemberSearch] = useState('');
+  // Add members lists everyone who can be added, so the creator need not know names.
+  const memberAddAreaRef = useRef<HTMLDivElement>(null);
+  const [suggestingMembers, setSuggestingMembers] = useSuggestionsOpen(memberAddAreaRef);
   const [loading, setLoading] = useState(false);
   // A request recorded as committed was confirmed by the server; only its roster/handoff remain.
   const [committedSpace, setCommittedSpace] = useState<CommittedSpace | null>(() => restored?.committed ?? null);
@@ -226,6 +230,7 @@ function CreateSpaceDraft({
     excludedEmails: selectedMemberEmails,
     excludedRoles: DRAFT_EXCLUDED_ROLES,
     excludePending: true,
+    listAllWhenEmpty: suggestingMembers,
   });
 
   const applyQueuedMembers = useCallback(
@@ -276,6 +281,7 @@ function CreateSpaceDraft({
     setPermissionSettings(defaultSpacePermissionSettings(DEFAULT_SPACE_VISIBILITY));
     setSelectedMembers([]);
     setMemberSearch('');
+    setSuggestingMembers(false);
     setCommittedSpace(null);
     setHasAmbiguousCreation(false);
     setFirstPageProblem(undefined);
@@ -286,7 +292,7 @@ function CreateSpaceDraft({
     appliedMemberUidsRef.current.clear();
     draftSpaceIdRef.current = uuidv4();
     draftInitialPageIdRef.current = uuidv4();
-  }, []);
+  }, [setSuggestingMembers]);
 
   const releaseRejectedRequest = useCallback(() => {
     // A first attempt was definitively refused, so nothing was created. Forget it, keep the
@@ -462,12 +468,20 @@ function CreateSpaceDraft({
     setSelectedMembers((current) => current.filter((member) => getWorkspaceMemberUid(member) !== uid));
   }, []);
 
-  const handleMemberSearchKeyDown = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
-    // NormalModal treats Enter from a plain input as its primary action. A
-    // member query must never create the space before the highlighted person
-    // is explicitly added to the local draft.
-    if (event.key === 'Enter') event.stopPropagation();
-  }, []);
+  const handleMemberSearchKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLInputElement>) => {
+      // NormalModal treats Enter from a plain input as its primary action. A
+      // member query must never create the space before the highlighted person
+      // is explicitly added to the local draft.
+      if (event.key === 'Enter') event.stopPropagation();
+      // Escape first closes the list of members to add; with the list closed it closes the dialog.
+      if (event.key === 'Escape' && suggestingMembers) {
+        event.preventDefault();
+        setSuggestingMembers(false);
+      }
+    },
+    [setSuggestingMembers, suggestingMembers]
+  );
 
   const handleCreate = useCallback(async () => {
     // Checking again can't match the first page of this space (Enter can still get here).
@@ -683,7 +697,7 @@ function CreateSpaceDraft({
                 {t('space.customPermissionDescription')}
               </div>
             ) : (
-              <div className='flex flex-col gap-4'>
+              <div ref={memberAddAreaRef} className='flex flex-col gap-4'>
                 <WorkspaceMemberInlineSearch
                   search={memberSearch}
                   onSearchChange={setMemberSearch}
@@ -698,6 +712,10 @@ function CreateSpaceDraft({
                   inputDisabled={memberControlsDisabled || loadingWorkspaceMembers}
                   addButtonDisabled={memberControlsDisabled || loadingWorkspaceMembers}
                   onInputKeyDown={handleMemberSearchKeyDown}
+                  onAddButtonClick={() => {
+                    setSuggestingMembers(true);
+                    memberAddAreaRef.current?.querySelector('input')?.focus();
+                  }}
                   onAddMember={handleAddDraftMember}
                 />
                 {loadingWorkspaceMembers && <Progress />}

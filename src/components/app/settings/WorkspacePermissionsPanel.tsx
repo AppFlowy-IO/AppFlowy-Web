@@ -26,6 +26,7 @@ import {
   SettingsSection,
 } from '@/components/app/settings/billing/SettingsPanelShell';
 import { GroupSpaceCoverageSummary } from '@/components/app/settings/GroupSpaceCoverageControl';
+import { useSuggestionsOpen } from '@/components/app/share/useSuggestionsOpen';
 import { WorkspaceGroupIcon } from '@/components/app/share/WorkspaceGroupIcon';
 import { WorkspaceMemberInlineSearchInput } from '@/components/app/share/WorkspaceMemberInlineSearch';
 import { WorkspaceCreationCallout } from '@/components/app/workspaces/WorkspaceCreationNotice';
@@ -654,20 +655,23 @@ function SelectedCreators({
   const groupsSupported = capability.group_selection_supported;
   const groupsAddable = groupsSupported && capability.can_grant_creator_groups;
   const [search, setSearch] = useState('');
+  // Add members or groups lists everyone who can be chosen, so owners need not know names.
+  const [suggesting, setSuggesting] = useSuggestionsOpen(sectionRef);
   const [pending, setPending] = useState<Record<string, true>>({});
   const pendingRef = useRef(new Set<string>());
   const query = search.trim().toLowerCase();
+  const showCandidates = Boolean(query) || suggesting;
   const rows = roster.rows;
   const selectedKeys = useMemo(() => new Set((rows ?? []).map((row) => principalKey(row.principal))), [rows]);
 
   const candidates = useMemo<Candidate[]>(() => {
-    if (!query) return [];
+    if (!showCandidates) return [];
     const members = roster.members
       .filter(isSelectableMember)
       .filter((member) => !selectedKeys.has(principalKey({ type: 'user', id: member.user_uuid })))
       .filter(
         (member) =>
-          member.name?.toLowerCase().includes(query) || member.email?.toLowerCase().includes(query)
+          !query || member.name?.toLowerCase().includes(query) || member.email?.toLowerCase().includes(query)
       )
       .slice(0, MAX_CANDIDATES)
       .map<Candidate>((member) => {
@@ -683,7 +687,7 @@ function SelectedCreators({
     const groups = groupsAddable
       ? roster.groups
           .filter((group) => !selectedKeys.has(principalKey({ type: 'group', id: group.group_id })))
-          .filter((group) => group.name.toLowerCase().includes(query))
+          .filter((group) => !query || group.name.toLowerCase().includes(query))
           .slice(0, MAX_CANDIDATES)
           .map<Candidate>((group) => ({
             principal: { type: 'group', id: group.group_id },
@@ -693,7 +697,7 @@ function SelectedCreators({
       : [];
 
     return [...members, ...groups];
-  }, [groupsAddable, query, roster.groups, roster.members, selectedKeys, t]);
+  }, [groupsAddable, query, roster.groups, roster.members, selectedKeys, showCandidates, t]);
 
   const sortedRows = useMemo(() => {
     const named = (rows ?? []).map((row) => {
@@ -837,10 +841,15 @@ function SelectedCreators({
         inputDisabled={disabled}
         addButtonDisabled={disabled}
         inputTestId='space-creator-search-input'
+        onAddButtonClick={() => {
+          setSuggesting(true);
+          focusSearch();
+        }}
         onInputKeyDown={(event) => {
           if (event.key === 'Escape') {
             event.preventDefault();
             setSearch('');
+            setSuggesting(false);
             return;
           }
 
@@ -849,7 +858,7 @@ function SelectedCreators({
           void add(candidates[0]);
         }}
       />
-      {query && (
+      {showCandidates && (
         <div
           className='flex flex-col gap-2 border-y border-border-primary py-3'
           aria-live='polite'
@@ -861,7 +870,9 @@ function SelectedCreators({
               <Progress />
             </div>
           ) : candidates.length === 0 ? (
-            <div className='py-2 text-center text-sm text-text-secondary'>{t('workspacePermissions.noMatches')}</div>
+            <div className='py-2 text-center text-sm text-text-secondary'>
+              {t(query ? 'workspacePermissions.noMatches' : 'workspacePermissions.noCandidates')}
+            </div>
           ) : (
             candidates.map((candidate) => {
               const key = principalKey(candidate.principal);

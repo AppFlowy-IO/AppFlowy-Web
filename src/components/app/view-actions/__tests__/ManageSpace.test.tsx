@@ -21,7 +21,7 @@ import {
 } from '@/application/types';
 import ManageSpace from '@/components/app/view-actions/ManageSpace';
 
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, KeyboardEventHandler, ReactNode } from 'react';
 
 const mockSetOverride = jest.fn();
 const mockFetchOwnAccessDetails = jest.fn();
@@ -173,6 +173,8 @@ jest.mock('@/components/app/share/WorkspaceMemberInlineSearch', () => ({
     search,
     onSearchChange,
     onAddMember,
+    onAddButtonClick,
+    onInputKeyDown,
   }: {
     addableMembers: WorkspaceMember[];
     inputDisabled?: boolean;
@@ -180,6 +182,8 @@ jest.mock('@/components/app/share/WorkspaceMemberInlineSearch', () => ({
     search: string;
     onSearchChange: (value: string) => void;
     onAddMember: (member: WorkspaceMember) => void;
+    onAddButtonClick?: () => void;
+    onInputKeyDown?: KeyboardEventHandler<HTMLInputElement>;
   }) => (
     <div>
       <input
@@ -187,6 +191,7 @@ jest.mock('@/components/app/share/WorkspaceMemberInlineSearch', () => ({
         disabled={inputDisabled}
         value={search}
         onChange={(event) => onSearchChange(event.target.value)}
+        onKeyDown={onInputKeyDown}
       />
       <button
         data-testid='inline-member-add'
@@ -195,6 +200,12 @@ jest.mock('@/components/app/share/WorkspaceMemberInlineSearch', () => ({
       >
         add
       </button>
+      {/* The real component's Add people or groups button. */}
+      {onAddButtonClick && (
+        <button data-testid='inline-member-browse' disabled={addButtonDisabled} onClick={onAddButtonClick}>
+          browse
+        </button>
+      )}
       {addableMembers.map((member) => (
         <div key={member.uid} data-testid={`inline-member-result-${member.uid}`}>
           {member.name}
@@ -3134,6 +3145,55 @@ describe('ManageSpace ACL management', () => {
           expect.objectContaining({ uid: workspaceCandidate.uid })
         )
       );
+    });
+
+    it('lists people and groups to add as soon as Add people or groups is pressed', async () => {
+      mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: customPermission }));
+      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+      await waitFor(() => expect(screen.getByTestId('inline-member-search').disabled).toBe(false));
+      await waitFor(() => expect(mockGetWorkspaceGroups).toHaveBeenCalledWith('workspace-1'));
+      expect(screen.queryByTestId('space-group-inline-search-result-group-engineering')).toBeNull();
+      expect(mockUseAddableWorkspaceMembers).toHaveBeenLastCalledWith(expect.objectContaining({ listAllWhenEmpty: false }));
+
+      fireEvent.click(screen.getByTestId('inline-member-browse'));
+
+      // Without typing a name: everyone who can be added, and the groups not in the space.
+      expect(mockUseAddableWorkspaceMembers).toHaveBeenLastCalledWith(
+        expect.objectContaining({ search: '', listAllWhenEmpty: true })
+      );
+      expect(await screen.findByTestId('space-group-inline-search-result-group-engineering')).toBeTruthy();
+      expect(document.activeElement).toBe(screen.getByTestId('inline-member-search'));
+
+      // Escape closes the list and is used up, so the dialog stays open.
+      expect(fireEvent.keyDown(screen.getByTestId('inline-member-search'), { key: 'Escape' })).toBe(false);
+      expect(screen.queryByTestId('space-group-inline-search-result-group-engineering')).toBeNull();
+      // With the list closed, Escape is left for the dialog.
+      expect(fireEvent.keyDown(screen.getByTestId('inline-member-search'), { key: 'Escape' })).toBe(true);
+
+      fireEvent.click(screen.getByTestId('inline-member-browse'));
+      expect(await screen.findByTestId('space-group-inline-search-result-group-engineering')).toBeTruthy();
+      fireEvent.pointerDown(document.body);
+      expect(screen.queryByTestId('space-group-inline-search-result-group-engineering')).toBeNull();
+    });
+
+    it('says so when everyone who can be added is already in the space', async () => {
+      const addable = mockUseAddableWorkspaceMembers.getMockImplementation();
+
+      mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: customPermission }));
+      mockGetWorkspaceGroups.mockResolvedValue({ groups: [] });
+      mockUseAddableWorkspaceMembers.mockImplementation(() => []);
+      try {
+        render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+        await waitFor(() => expect(screen.getByTestId('inline-member-search').disabled).toBe(false));
+        await waitFor(() => expect(mockGetMembers).toHaveBeenCalledWith('workspace-1'));
+        fireEvent.click(screen.getByTestId('inline-member-browse'));
+        expect(await screen.findByText('space.permissionManager.nothingToAdd')).toBeTruthy();
+      } finally {
+        // clearAllMocks keeps implementations; later tests need the real filter back.
+        if (addable) mockUseAddableWorkspaceMembers.mockImplementation(addable);
+      }
     });
 
     it('adds a workspace group found through the search as a Space member', async () => {

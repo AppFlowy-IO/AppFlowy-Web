@@ -413,6 +413,66 @@ describe('workspace permission settings', () => {
     expect(await screen.findByTestId(`space-creator-row-group-${groupId}`)).toBeTruthy();
   });
 
+  it('lists who can be selected as soon as Add members or groups is pressed, without typing a name', async () => {
+    current.policy = 'owners_and_selected_members';
+    rosterOf([row('user', bobId, { name: 'Bob Stone' })]);
+    mount();
+    await selections();
+    await waitFor(() => expect(mockGroups).toHaveBeenCalledWith(workspaceId));
+    fireEvent.click(screen.getByRole('button', { name: 'workspacePermissions.addMembersOrGroups' }));
+    const results = await screen.findByTestId('space-creator-candidates');
+
+    expect(await within(results).findByText('Alice Martin')).toBeTruthy();
+    expect(within(results).getByText('W_RH_edit')).toBeTruthy();
+    // Current selections, guests, owners, pending invitations and accounts without a stable ID are not offered.
+    for (const name of ['Bob Stone', 'Gina Guest', 'Olivia Owner', 'Paul Pending', 'Leo Legacy']) {
+      expect(within(results).queryByText(name)).toBeNull();
+    }
+
+    // Typing still narrows the same list.
+    expect(document.activeElement).toBe(screen.getByTestId('space-creator-search-input'));
+    search('W_RH');
+    expect(within(results).queryByText('Alice Martin')).toBeNull();
+    expect(within(results).getByText('W_RH_edit')).toBeTruthy();
+  });
+
+  it('keeps that list open to add several, and closes it with Escape or a click elsewhere', async () => {
+    current.policy = 'owners_and_selected_members';
+    mount();
+    await selections();
+    await waitFor(() => expect(mockMembers).toHaveBeenCalledWith(workspaceId));
+    const add = screen.getByRole('button', { name: 'workspacePermissions.addMembersOrGroups' });
+
+    fireEvent.click(add);
+    const results = await screen.findByTestId('space-creator-candidates');
+
+    fireEvent.click(await within(results).findByRole('button', { name: 'workspacePermissions.addNamed:Alice Martin' }));
+    expect(await screen.findByTestId(`space-creator-row-user-${aliceId}`)).toBeTruthy();
+    // Still open for the next one, without Alice.
+    expect(within(screen.getByTestId('space-creator-candidates')).queryByText('Alice Martin')).toBeNull();
+    expect(within(screen.getByTestId('space-creator-candidates')).getByText('Bob Stone')).toBeTruthy();
+
+    fireEvent.keyDown(screen.getByTestId('space-creator-search-input'), { key: 'Escape' });
+    expect(screen.queryByTestId('space-creator-candidates')).toBeNull();
+    fireEvent.click(add);
+    expect(await screen.findByTestId('space-creator-candidates')).toBeTruthy();
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByTestId('space-creator-candidates')).toBeNull();
+  });
+
+  it('says so when everyone who can be chosen is already selected', async () => {
+    current.policy = 'owners_and_selected_members';
+    rosterOf([row('user', aliceId), row('user', bobId), row('group', groupId)]);
+    mount();
+    await selections();
+    await waitFor(() => expect(mockGroups).toHaveBeenCalledWith(workspaceId));
+    await screen.findByTestId(`space-creator-row-group-${groupId}`);
+    fireEvent.click(screen.getByRole('button', { name: 'workspacePermissions.addMembersOrGroups' }));
+    const results = await screen.findByTestId('space-creator-candidates');
+
+    expect(await within(results).findByText('workspacePermissions.noCandidates')).toBeTruthy();
+  });
+
   it('never offers current selections, but offers removed ones again', async () => {
     current.policy = 'owners_and_selected_members';
     rosterOf([

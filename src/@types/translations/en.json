@@ -65,8 +65,8 @@
     "selectionsTitle": "Selected members and groups",
     "addMembersOrGroups": "Add members or groups",
     "addMembers": "Add members",
-    "searchMembersOrGroups": "Search members or groups",
-    "searchMembers": "Search members",
+    "searchMembersOrGroups": "Find members or groups to add",
+    "searchMembers": "Find members to add",
     "addNamed": "Add {{name}}",
     "noMatches": "No matching members or groups.",
     "savedSelections_one": "{{count}} saved selection applies when “Owners and selected members” is chosen.",
@@ -110,7 +110,8 @@
     "restrictMembersToOwners": "Only workspace owners will be able to create spaces. Members won't be able to create new spaces. Existing spaces aren't affected.",
     "restrictMembersToSelected": "Only workspace owners and the members and groups you select will be able to create spaces. Other members won't be able to create new spaces. Existing spaces aren't affected.",
     "restrictSelectedToOwners": "Only workspace owners will be able to create spaces. Selected members and groups won't be able to create new spaces, but your selections are saved if you switch back. Existing spaces aren't affected.",
-    "restrictConfirm": "Use {{policy}}"
+    "restrictConfirm": "Use {{policy}}",
+    "noCandidates": "Everyone who can be chosen is already selected."
   },
   "databaseViewCreation": {
     "onlineRequired": "Connect to the internet to create Form or Chart views.",
@@ -3743,7 +3744,8 @@
       "memberRoleWithAccessDescription": "Gets the space default access unless you choose a different level in Access.",
       "accessCheckFailed": "We couldn't check your access to this space. Changes are paused until we can.",
       "accessLost": "This space is no longer available to you.",
-      "checkAgain": "Check again"
+      "checkAgain": "Check again",
+      "nothingToAdd": "Everyone you can add is already in this space."
     },
     "createSpace": "Create space",
     "manageSpace": "Manage space",

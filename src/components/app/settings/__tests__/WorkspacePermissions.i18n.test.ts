@@ -95,6 +95,12 @@ describe('permission settings translations', () => {
     expect(fr.workspacePermissions.restrictConfirm).toContain('{{policy}}');
   });
 
+  it('labels the search above the selections as a way to add, not a filter for that list', () => {
+    expect(en.workspacePermissions.searchMembersOrGroups).toBe('Find members or groups to add');
+    expect(en.workspacePermissions.searchMembers).toBe('Find members to add');
+    expect(en.workspacePermissions.noCandidates).toBe('Everyone who can be chosen is already selected.');
+  });
+
   it('describes access to all spaces without understating edit access or repeating its button', () => {
     expect(en.groupSpaceAccess.summaryDescription).toBe(
       "Groups with access to every current and future public and custom space. Private spaces and restricted pages aren't included."

@@ -39,6 +39,7 @@ import {
   useEventEmitter,
   useUserWorkspaceInfo,
 } from '@/components/app/app.hooks';
+import { useSuggestionsOpen } from '@/components/app/share/useSuggestionsOpen';
 import { WorkspaceGroupIcon } from '@/components/app/share/WorkspaceGroupIcon';
 import {
   getWorkspaceMemberUid,
@@ -502,6 +503,9 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   const [addingUid, setAddingUid] = useState<string | null>(null);
   const [addingGroupId, setAddingGroupId] = useState<string | null>(null);
   const [memberSearch, setMemberSearch] = useState('');
+  // Add people or groups lists everyone who can be added, so owners need not know names.
+  const addAreaRef = useRef<HTMLDivElement>(null);
+  const [suggestingAdditions, setSuggestingAdditions] = useSuggestionsOpen(addAreaRef);
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
   // A notification-driven recheck of settings already on screen. Controls whose
   // authority is being rechecked are disabled; the confirmed data stays visible.
@@ -661,6 +665,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     setAddingUid(null);
     setAddingGroupId(null);
     setMemberSearch('');
+    setSuggestingAdditions(false);
     setPendingConfirmation(null);
     setSaving(false);
     setRevalidating(false);
@@ -674,7 +679,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       // the per-space coordinator still preserves server request ordering.
       metadataMutationGenerationRef.current += 1;
     };
-  }, [accountId, serverUrl, open, viewId, workspaceId]);
+  }, [accountId, serverUrl, open, setSuggestingAdditions, viewId, workspaceId]);
 
   const refreshSpaceMembers = useCallback(async ({ silent = false }: { silent?: boolean } = {}): Promise<boolean> => {
     if (!workspaceId || !viewId) return false;
@@ -952,16 +957,17 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     excludedUids: explicitMemberUids,
     excludedEmails: explicitMemberEmails,
     excludePending: true,
+    listAllWhenEmpty: suggestingAdditions,
   });
-  // Like people, groups only surface once the user types: the roster below
-  // stays the primary content of the tab.
+  // Like people, groups surface once the user types or presses Add people or groups: the roster
+  // below stays the primary content of the tab.
   const addableWorkspaceGroups = useMemo(() => {
-    if (!normalizedMemberSearch) return [];
+    if (!normalizedMemberSearch && !suggestingAdditions) return [];
 
     return workspaceGroups
       .filter((group) => !spaceGroupIds.has(group.group_id) && matchesGroupSearch(group, normalizedMemberSearch))
       .slice(0, MAX_ADDABLE_GROUP_RESULTS);
-  }, [normalizedMemberSearch, spaceGroupIds, workspaceGroups]);
+  }, [normalizedMemberSearch, spaceGroupIds, suggestingAdditions, workspaceGroups]);
   const showCurrentSpaceMemberList =
     !normalizedMemberSearch ||
     visibleSpaceMembers.length > 0 ||
@@ -1834,9 +1840,17 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     setPermissionRefreshRevision((revision) => revision + 1);
   }, []);
 
-  const handleMemberSearchKeyDown = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Enter') event.stopPropagation();
-  }, []);
+  const handleMemberSearchKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLInputElement>) => {
+      if (event.key === 'Enter') event.stopPropagation();
+      // Escape first closes the list of people to add; with the list closed it closes the dialog.
+      if (event.key === 'Escape' && suggestingAdditions) {
+        event.preventDefault();
+        setSuggestingAdditions(false);
+      }
+    },
+    [setSuggestingAdditions, suggestingAdditions]
+  );
 
   const closeConfirmation = useCallback(() => setPendingConfirmation(null), []);
 
@@ -2163,7 +2177,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         <div className='py-2'>
           <div className='flex flex-col gap-4'>
             {!membersReadOnly && (
-              <>
+              <div ref={addAreaRef} className='flex flex-col gap-4'>
                 <WorkspaceMemberInlineSearch
                   search={memberSearch}
                   onSearchChange={setMemberSearch}
@@ -2179,6 +2193,10 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                   addButtonDisabled={addMembersDisabled || revalidating || Boolean(addingUid)}
                   addingUid={addingUid}
                   onInputKeyDown={handleMemberSearchKeyDown}
+                  onAddButtonClick={() => {
+                    setSuggestingAdditions(true);
+                    addAreaRef.current?.querySelector('input')?.focus();
+                  }}
                   onAddMember={(member) => void handleAddMember(member)}
                 />
 
@@ -2220,7 +2238,21 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                     </div>
                   </div>
                 )}
-              </>
+
+                {/* The directory always lists you, so an empty one has not loaded yet. */}
+                {suggestingAdditions &&
+                  !normalizedMemberSearch &&
+                  workspaceMembers.length > 0 &&
+                  addableWorkspaceMembers.length === 0 &&
+                  addableWorkspaceGroups.length === 0 && (
+                    <div
+                      className='border-t border-border-primary pt-4 text-center text-sm text-text-secondary'
+                      data-testid='manage-space-nothing-to-add'
+                    >
+                      {t('space.permissionManager.nothingToAdd')}
+                    </div>
+                  )}
+              </div>
             )}
 
             {canManageMembers && showCurrentSpaceMemberList && (

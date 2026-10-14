@@ -65,8 +65,8 @@
     "selectionsTitle": "Membres et groupes sélectionnés",
     "addMembersOrGroups": "Ajouter des membres ou des groupes",
     "addMembers": "Ajouter des membres",
-    "searchMembersOrGroups": "Rechercher des membres ou des groupes",
-    "searchMembers": "Rechercher des membres",
+    "searchMembersOrGroups": "Trouver des membres ou des groupes à ajouter",
+    "searchMembers": "Trouver des membres à ajouter",
     "addNamed": "Ajouter {{name}}",
     "noMatches": "Aucun membre ni groupe ne correspond.",
     "savedSelections_one": "{{count}} sélection enregistrée s’applique lorsque « Propriétaires et membres sélectionnés » est choisi.",
@@ -113,7 +113,8 @@
     "restrictMembersToOwners": "Seuls les propriétaires de l’espace de travail pourront créer des espaces. Les membres ne pourront plus créer de nouveaux espaces. Les espaces existants ne sont pas concernés.",
     "restrictMembersToSelected": "Seuls les propriétaires de l’espace de travail et les membres et groupes que vous sélectionnez pourront créer des espaces. Les autres membres ne pourront plus créer de nouveaux espaces. Les espaces existants ne sont pas concernés.",
     "restrictSelectedToOwners": "Seuls les propriétaires de l’espace de travail pourront créer des espaces. Les membres et groupes sélectionnés ne pourront plus créer de nouveaux espaces, mais vos sélections sont conservées si vous revenez à ce choix. Les espaces existants ne sont pas concernés.",
-    "restrictConfirm": "Passer à « {{policy}} »"
+    "restrictConfirm": "Passer à « {{policy}} »",
+    "noCandidates": "Toutes les personnes et tous les groupes possibles sont déjà sélectionnés."
   },
   "appName": "AppFlowy",
   "defaultUsername": "Moi",
@@ -2822,7 +2823,8 @@
       "grantFullAccess": "Donner un accès complet",
       "groupOwnerTitle": "Rendre ce groupe propriétaire de l’espace ?",
       "groupOwnerDescription": "Tous les membres de ce groupe pourront gérer cet espace, ses membres et ses autorisations.",
-      "groupOwnerAction": "Rendre propriétaire"
+      "groupOwnerAction": "Rendre propriétaire",
+      "nothingToAdd": "Toutes les personnes et tous les groupes que vous pouvez ajouter font déjà partie de cet espace."
     }
   },
   "publish": {
