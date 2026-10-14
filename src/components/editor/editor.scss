@@ -122,26 +122,55 @@
   //@apply mx-1;
 }
 
-// Align every direct child with the callout's first line, including iconless callouts.
+// Figma's callout rows have their own spacing, without the editor's paragraph margins.
 .block-element[data-block-type="callout"] > .callout-content {
   > .text-element > .text-content,
   > .block-element > div > .text-element > .text-content {
+    --callout-text-top: 2px;
     min-width: 0;
     flex: 1;
-    padding: 2px 4px;
+    padding: var(--callout-text-top) 4px 2px;
+
+    > .text-placeholder {
+      top: var(--callout-text-top);
+      left: 4px;
+      width: calc(100% - 8px);
+      transform: none;
+    }
   }
 
   > .text-element {
-    padding-top: 2px;
+    align-items: flex-start;
+    margin-top: 0;
+    margin-bottom: 0;
+
+    > .text-content {
+      // Center the first text line on the 28px icon button, including custom font sizes.
+      --callout-text-top: max(0px, calc((28px - 1.5em) / 2));
+    }
+
+    > [data-testid="callout-icon-button"] {
+      margin-top: max(0px, calc((1.5em - 28px) / 2));
+      font-size: inherit;
+    }
   }
 
   &[data-callout-icon="removed"] > .text-element {
     padding-left: 4px;
+
+    > .text-content {
+      --callout-text-top: 4px;
+    }
   }
 
   > .block-element {
     margin-left: var(--callout-content-indent) !important;
     width: calc(100% - var(--callout-content-indent));
+  }
+
+  > .block-element[data-block-type="paragraph"] > div > .text-element {
+    margin-top: 0;
+    margin-bottom: 0;
   }
 }
 

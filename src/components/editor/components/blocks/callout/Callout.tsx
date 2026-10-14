@@ -1,4 +1,6 @@
 import { CSSProperties, forwardRef, memo } from 'react';
+import { Element } from 'slate';
+import { useSlateStatic } from 'slate-react';
 
 import { CalloutNode, EditorElementProps } from '@/components/editor/editor.type';
 import { cn } from '@/lib/utils';
@@ -9,6 +11,9 @@ import { getCalloutColors, getCalloutIcon } from './callout.utils';
 export const Callout = memo(
   forwardRef<HTMLDivElement, EditorElementProps<CalloutNode>>(({ node, children, ...attributes }, ref) => {
     const { className, style, ...restAttributes } = attributes;
+    const editor = useSlateStatic();
+    const firstLine = node.children[0];
+    const isEmpty = !Element.isElement(firstLine) || editor.isEmpty(firstLine);
     const colors = getCalloutColors(node.data);
     const hasIcon = !!getCalloutIcon(node.data);
 
@@ -20,7 +25,8 @@ export const Callout = memo(
         data-callout-icon={hasIcon ? 'visible' : 'removed'}
         className={cn(
           className,
-          'callout-content relative my-1 flex w-full min-w-0 flex-col overflow-hidden rounded-[8px] py-2 pl-3 pr-2'
+          'callout-content relative my-1 flex w-full min-w-0 flex-col overflow-hidden rounded-[8px] py-2 pr-2',
+          isEmpty ? 'pl-3' : 'pl-4'
         )}
         style={
           {

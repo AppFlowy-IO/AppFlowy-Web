@@ -50,7 +50,7 @@ function CalloutIcon({ block: node }: { block: CalloutNode; className?: string }
         contentEditable={false}
         onMouseDown={(event) => event.preventDefault()}
         className={cn(
-          'mr-2 flex h-7 w-7 shrink-0 select-none items-center justify-center rounded-[6px] text-base outline-none',
+          'mr-2 flex h-7 w-7 shrink-0 select-none items-center justify-center rounded-[6px] outline-none',
           !readOnly &&
             'hover:bg-[var(--callout-icon-hover)] focus-visible:bg-[var(--callout-icon-hover)] focus-visible:ring-2 focus-visible:ring-border-theme-thick'
         )}

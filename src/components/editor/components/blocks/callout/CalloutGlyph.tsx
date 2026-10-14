@@ -35,7 +35,7 @@ export function CalloutGlyph({ id, color }: { id: string; color: string }) {
   return (
     <span
       aria-hidden='true'
-      className='flex h-5 w-5 shrink-0 items-center justify-center [&_svg]:h-full [&_svg]:w-full'
+      className='flex h-5 w-5 shrink-0 items-center justify-center'
       style={{ color: renderColor(color) }}
       dangerouslySetInnerHTML={{ __html: cleanSvg }}
     />

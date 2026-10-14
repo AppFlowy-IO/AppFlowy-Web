@@ -27,7 +27,9 @@ async function menu(page: Page) {
 
 test.beforeEach(async ({ page }, info) => {
   await page.goto(`/iframe.html?id=editor-blocks-callout--editing&viewMode=story&theme=${info.project.name}`);
-  await expect(block(page)).toBeVisible();
+  // A fresh CI server compiles the full editor on its first story request.
+  await expect(block(page)).toBeVisible({ timeout: 30000 });
+  await expect(page.getByTestId('callout-icon-button').locator('svg')).toHaveCount(2);
   await page.evaluate(() => document.fonts.ready);
 });
 
@@ -123,6 +125,7 @@ test('read-only callouts have no interactive icon picker', async ({ page }, info
   await page.goto(`/iframe.html?id=editor-blocks-callout--read-only&viewMode=story&theme=${info.project.name}`);
   await expect(page.getByTestId('callout')).toHaveCount(10);
   await expect(block(page).getByTestId('callout-icon-button')).toBeDisabled();
+  await expect(page.getByTestId('callout-icon-button').locator('svg')).toHaveCount(10);
   await page.screenshot({ path: `test-results/callout-presets-${info.project.name}.png`, fullPage: true });
 });
 
@@ -206,4 +209,94 @@ test('Flutter: insert a callout from the slash menu', async ({ page }) => {
   await expect(inserted.getByTestId('callout-icon-button').locator('svg')).toBeVisible();
   await page.keyboard.type('New callout');
   await expect(inserted).toContainText('New callout');
+});
+
+test('Figma: icon and first text line align without extra paragraph margins', async ({ page }) => {
+  const callout = block(page);
+
+  await expect(callout.locator('svg path')).toHaveCSS('fill', await tokenColor(page, '--block-icon-color-20'));
+
+  for (const fontSize of [14, 16, 24]) {
+    await callout.evaluate((el, size) => {
+      el.style.fontSize = `${size}px`;
+    }, fontSize);
+    const geometry = await callout.evaluate((el) => {
+      const icon = el.querySelector('[data-testid="callout-icon-button"]')!.getBoundingClientRect();
+      const text = el.querySelector(':scope > .text-element > .text-content')!;
+      const style = getComputedStyle(text);
+      const textRect = text.getBoundingClientRect();
+      const glyph = el.querySelector('svg')!.getBoundingClientRect();
+      const row = getComputedStyle(el.querySelector(':scope > .text-element')!);
+
+      return {
+        iconCenter: icon.y + icon.height / 2,
+        firstLineCenter: textRect.y + parseFloat(style.paddingTop) + parseFloat(style.lineHeight) / 2,
+        glyphWidth: glyph.width,
+        glyphHeight: glyph.height,
+        rowMargin: row.marginTop,
+      };
+    });
+
+    expect(geometry.firstLineCenter).toBeCloseTo(geometry.iconCenter, 1);
+    expect(geometry.glyphWidth).toBe(14);
+    expect(geometry.glyphHeight).toBe(14);
+    expect(geometry.rowMargin).toBe('0px');
+  }
+
+  const empty = page.getByTestId('callout').nth(2);
+
+  await expect(empty).toHaveCSS('height', '44px');
+  await expect(empty.locator('.text-placeholder')).toHaveCSS('left', '4px');
+});
+
+test('body text aligns beneath the title before and after removing the icon', async ({ page }, info) => {
+  await block(page).getByText('Hello World', { exact: true }).click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await page.screenshot({ path: `test-results/callout-body-placeholder-${info.project.name}.png` });
+  await page.keyboard.type('Body text');
+  const alignment = () =>
+    block(page).evaluate((el) => {
+      const first = el.querySelector(':scope > .text-element > .text-content')!;
+      const child = el.querySelector('[data-block-type="paragraph"] .text-content')!;
+
+      return {
+        titleLeft: first.getBoundingClientRect().left,
+        bodyLeft: child.getBoundingClientRect().left,
+        textInset:
+          first.getBoundingClientRect().left +
+          parseFloat(getComputedStyle(first).paddingLeft) -
+          el.getBoundingClientRect().left,
+      };
+    });
+  const withIcon = await alignment();
+
+  expect(withIcon.titleLeft).toBe(withIcon.bodyLeft);
+  expect(withIcon.textInset).toBe(56);
+  await page.screenshot({ path: `test-results/callout-body-${info.project.name}.png` });
+  await block(page).getByTestId('callout-icon-button').click();
+  await page.getByRole('button', { name: 'Remove', exact: true }).click();
+  const withoutIcon = await alignment();
+
+  expect(withoutIcon.titleLeft).toBe(withoutIcon.bodyLeft);
+  expect(withoutIcon.textInset).toBe(24);
+  await expect(block(page).getByText('Body text')).toBeVisible();
+  await page.screenshot({ path: `test-results/callout-body-no-icon-${info.project.name}.png` });
+});
+
+test('six-dot menu removes the icon and places Background Color after Text Color', async ({ page }) => {
+  const actions = await menu(page);
+  const labels = await actions.getByRole('button').allTextContents();
+
+  // The text-color button includes an "A" swatch before its label.
+  expect(labels.indexOf('Background Color')).toBe(labels.findIndex((label) => label.endsWith('Text Color')) + 1);
+  await actions.getByRole('button', { name: 'Icon', exact: true }).click();
+  await page.getByRole('button', { name: 'Remove', exact: true }).click();
+  await expect(block(page).getByTestId('callout-icon-button')).toHaveCount(0);
+  const colors = await menu(page);
+
+  await colors.getByRole('button', { name: 'Background Color', exact: true }).click();
+  await page.getByRole('button', { name: 'Jade', exact: true }).click();
+  await expect(block(page).getByTestId('callout-icon-button')).toHaveCount(0);
+  await expect(block(page)).toHaveAttribute('data-callout-icon', 'removed');
 });
