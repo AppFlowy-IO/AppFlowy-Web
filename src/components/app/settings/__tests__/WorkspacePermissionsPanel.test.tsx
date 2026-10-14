@@ -197,7 +197,9 @@ describe('workspace permission settings', () => {
     expect(mockPolicy).toHaveBeenCalledWith(workspaceId, 'owners_and_selected_members');
     // The chosen card is shown as pending right away, and the others are locked until it saves.
     expect(policyCard('owners_and_selected_members').getAttribute('aria-pressed')).toBe('true');
-    expect((policyCard('members_and_owners') as HTMLButtonElement).disabled).toBe(true);
+    expect(policyCard('members_and_owners').getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(policyCard('members_and_owners'));
+    expect(mockPolicy).toHaveBeenCalledTimes(1);
     await act(async () => save.resolve());
     await waitFor(() =>
       expect(toastSuccess).toHaveBeenCalledWith(
@@ -740,5 +742,101 @@ describe('workspace permission settings', () => {
     expect(within(summary).getByText('groupSpaceAccess.canEdit')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'groupSpaceAccess.manageGroups' }));
     expect(onOpenGroups).toHaveBeenCalledTimes(1);
+  });
+
+  describe('with a keyboard', () => {
+    it('keeps focus on the chosen card while it saves', async () => {
+      const save = deferred<void>();
+
+      mockPolicy.mockImplementationOnce(async (_workspace, policy) => {
+        await save.promise;
+        current = { ...current, policy, revision: { epoch: '1', counter: '2' } };
+      });
+      mount();
+      const card = await screen.findByTestId('space-creation-policy-members_and_owners');
+
+      act(() => card.focus());
+      fireEvent.click(card);
+      // Browsers move focus off a disabled button, so a pending choice is marked unavailable instead.
+      expect((card as HTMLButtonElement).disabled).toBe(false);
+      expect(card.getAttribute('aria-disabled')).toBe('true');
+      expect(document.activeElement).toBe(card);
+      await act(async () => save.resolve());
+      await waitFor(() => expect(card.getAttribute('aria-disabled')).toBeNull());
+      expect(document.activeElement).toBe(card);
+    });
+
+    it('keeps focus inside the question about fewer people creating spaces', async () => {
+      current.policy = 'members_and_owners';
+      mount();
+      fireEvent.click(await screen.findByTestId('space-creation-policy-owners_only'));
+      const dialog = await screen.findByRole('alertdialog');
+
+      await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+      const cancel = within(dialog).getByRole('button', { name: 'button.cancel' });
+      const close = within(dialog).getByRole('button', { name: 'button.close' });
+
+      act(() => close.focus());
+      fireEvent.keyDown(close, { key: 'Tab' });
+      expect(document.activeElement).toBe(cancel);
+      fireEvent.keyDown(cancel, { key: 'Tab', shiftKey: true });
+      expect(document.activeElement).toBe(close);
+    });
+
+    it('goes back to the search field after adding someone', async () => {
+      current.policy = 'owners_and_selected_members';
+      mount();
+      await selections();
+      await waitFor(() => expect(mockMembers).toHaveBeenCalledWith(workspaceId));
+      search('bo');
+      const add = await screen.findByRole('button', { name: 'workspacePermissions.addNamed:Bob Stone' });
+
+      act(() => add.focus());
+      fireEvent.click(add);
+      await screen.findByTestId(`space-creator-row-user-${bobId}`);
+      await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId('space-creator-search-input')));
+    });
+
+    it('keeps focus on Add while it saves and after it fails', async () => {
+      const grant = deferred<unknown>();
+
+      current.policy = 'owners_and_selected_members';
+      mockMutate.mockReturnValueOnce(grant.promise);
+      mount();
+      await selections();
+      await waitFor(() => expect(mockMembers).toHaveBeenCalledWith(workspaceId));
+      search('bo');
+      const add = await screen.findByRole('button', { name: 'workspacePermissions.addNamed:Bob Stone' });
+
+      act(() => add.focus());
+      fireEvent.click(add);
+      expect((add as HTMLButtonElement).disabled).toBe(false);
+      expect(add.getAttribute('aria-disabled')).toBe('true');
+      fireEvent.click(add);
+      expect(mockMutate).toHaveBeenCalledTimes(1);
+      await act(async () => grant.reject({ code: 500, message: 'Server error' }));
+      await waitFor(() => expect(toastError).toHaveBeenCalled());
+      expect(document.activeElement).toBe(add);
+      expect(add.getAttribute('aria-disabled')).toBeNull();
+    });
+
+    it('moves focus to the next person after a removal, then to the search field', async () => {
+      current.policy = 'owners_and_selected_members';
+      rosterOf([row('user', aliceId, { name: 'Alice Martin' }), row('user', bobId, { name: 'Bob Stone' })]);
+      mount();
+      const list = await selections();
+      const removeAlice = await within(list).findByRole('button', { name: 'workspacePermissions.removeNamed:Alice Martin' });
+
+      act(() => removeAlice.focus());
+      fireEvent.click(removeAlice);
+      expect((removeAlice as HTMLButtonElement).disabled).toBe(false);
+      await waitFor(() => expect(screen.queryByTestId(`space-creator-row-user-${aliceId}`)).toBeNull());
+      const removeBob = within(list).getByRole('button', { name: 'workspacePermissions.removeNamed:Bob Stone' });
+
+      await waitFor(() => expect(document.activeElement).toBe(removeBob));
+      fireEvent.click(removeBob);
+      await waitFor(() => expect(screen.queryByTestId(`space-creator-row-user-${bobId}`)).toBeNull());
+      await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId('space-creator-search-input')));
+    });
   });
 });

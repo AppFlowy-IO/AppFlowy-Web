@@ -3,7 +3,7 @@ import { act, render, screen } from '@testing-library/react';
 import en from '@/@types/translations/en.json';
 import fr from '@/@types/translations/fr-FR.json';
 
-import { SettingsSection } from '../billing/SettingsPanelShell';
+import { SettingsPanelShell, SettingsSection } from '../billing/SettingsPanelShell';
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -47,5 +47,19 @@ describe('SettingsSection', () => {
 
     expect(screen.queryByRole('button')).toBeNull();
     expect(screen.getByText('Space creation')).toBeTruthy();
+  });
+});
+
+describe('SettingsPanelShell', () => {
+  it('shows a visible focus ring on every button in a settings panel', () => {
+    render(
+      <SettingsPanelShell title='Permissions' testId='panel'>
+        <button type='button'>Manage groups</button>
+      </SettingsPanelShell>
+    );
+
+    // The shared Button removes the browser outline, so the panel draws the focus ring for all of them.
+    expect(screen.getByTestId('panel').className).toContain('[&_button:focus-visible]:ring-2');
+    expect(screen.getByRole('heading', { name: 'Permissions' })).toBeTruthy();
   });
 });

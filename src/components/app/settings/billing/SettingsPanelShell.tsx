@@ -5,12 +5,17 @@ import { ReactComponent as InfoIcon } from '@/assets/icons/info.svg';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 import { getErrorMessage } from '@/utils/errors';
+
+/** Every button in a settings panel shows where keyboard focus is (the shared Button has no focus style). */
+const BUTTON_FOCUS_RING =
+  '[&_button:focus-visible]:outline-none [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-border-theme-thick';
 
 /** Header and scrollable body shared by the settings panels (same markup as the account panel). */
 export function SettingsPanelShell({ title, testId, children }: { title: string; testId?: string; children: ReactNode }) {
   return (
-    <div className='flex h-full min-h-0 flex-1 flex-col overflow-hidden' data-testid={testId}>
+    <div className={cn('flex h-full min-h-0 flex-1 flex-col overflow-hidden', BUTTON_FOCUS_RING)} data-testid={testId}>
       <div className='border-b border-border-primary px-8 py-5'>
         <h2 className='text-xl font-semibold text-text-primary'>{title}</h2>
       </div>
