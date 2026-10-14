@@ -167,15 +167,18 @@ still sends Can view for them: if the space became Public without the open dialo
 member gets exactly the space's member level (Public spaces give it to every member) instead of the
 server's Can edit default.
 
-When signed-in users open the Access menu of their own row, Web reads
-`GET /api/workspace/{workspace_id}/spaces/{space_id}/access-details`. If a group of the space, Access to
-all spaces or a share of the space page gives them more than that row, the menu adds one line naming the
-source; a group is named only when exactly one group fits. The source follows the server's decision: for
-anyone but a space owner, a share of the space page replaces what the space, its groups and Access to all
-spaces give, even when it is lower. So when the share is the final level, the line names the share, and a
-group or Access to all spaces above the final level is never named. The route explains only the caller's
-own access, so other people's rows carry no such line. A server without the route, or any failed read,
-shows no line and no error.
+When the Members tab shows signed-in users their own row with an Access menu, Web reads
+`GET /api/workspace/{workspace_id}/spaces/{space_id}/access-details` once, and again after each permission
+notification (keeping the last answer meanwhile). If a group of the space, Access to all spaces or a
+share of the space page gives them more than that row, the menu adds one line naming the source; a group
+is named only when exactly one group fits. Because the line is read ahead, it is in the menu, and
+describes it, as soon as the menu opens; a line that arrives or changes while the menu is open is read
+out through a polite live region. The source follows the server's decision: for anyone but a space
+owner, a share of the space page replaces what the space, its groups and Access to all spaces give, even
+when it is lower. So when the share is the final level, the line names the share, and a group or Access
+to all spaces above the final level is never named. The route explains only the caller's own access, so
+other people's rows carry no such line. A server without the route, or any failed read, shows no line
+and no error.
 
 `GET /api/user/workspace` sends `allow_empty=true`. Current servers return `visiting_workspace: null`
 for an account without a workspace only to callers that opt in (others get an error), and older servers

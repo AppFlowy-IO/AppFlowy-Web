@@ -524,6 +524,7 @@ describe('ManageSpace ACL management', () => {
     mockAddSpaceMemberByUuid.mockResolvedValue(undefined);
     mockUpdateSpaceMemberByUuid.mockResolvedValue(undefined);
     mockSetOverride.mockResolvedValue(undefined);
+    mockFetchOwnAccessDetails.mockResolvedValue(null);
     mockUpdateSpaceMember.mockResolvedValue(undefined);
     mockRemoveSpaceMember.mockResolvedValue(undefined);
     mockAddSpaceGroupPermission.mockResolvedValue(undefined);
@@ -566,7 +567,10 @@ describe('ManageSpace ACL management', () => {
     async function openMembersTab() {
       render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
       await waitForSettingsLoaded();
-      fireEvent.click(screen.getByRole('tab', { name: 'space.permissionManager.membersTab' }));
+      // The Members tab reads your own access explanation; let an immediate answer land in act.
+      await act(async () => {
+        fireEvent.click(screen.getByRole('tab', { name: 'space.permissionManager.membersTab' }));
+      });
     }
 
     function accessTrigger(uid: string) {
@@ -611,29 +615,51 @@ describe('ManageSpace ACL management', () => {
         };
       }
 
-      it('reads it only when you open your own access menu and names the group', async () => {
+      it('reads it once your own row is shown, so your menu already explains it when it opens', async () => {
         const other = assignedMember();
 
         mockGetSpacePermission.mockResolvedValue(supportedPermission());
         mockGetSpaceMembers.mockResolvedValue({ members: [ownMember(), other], groups: [marketingGroup()] });
         mockFetchOwnAccessDetails.mockResolvedValue(ownDetails());
-        await openMembersTab();
+        render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+        await waitForSettingsLoaded();
         await waitFor(() => expect(accessTrigger(OWN_UID).disabled).toBe(false));
+        await act(async () => undefined);
+        // Nothing is read while the General tab is shown.
         expect(mockFetchOwnAccessDetails).not.toHaveBeenCalled();
 
-        // The server only explains the signed-in user's own access.
-        fireEvent.click(accessTrigger(other.uid));
-        expect(mockFetchOwnAccessDetails).not.toHaveBeenCalled();
-        fireEvent.click(accessTrigger(OWN_UID));
-        expect(mockFetchOwnAccessDetails).toHaveBeenCalledWith('workspace-1', 'space-1', OWN_UID);
-
+        fireEvent.click(screen.getByRole('tab', { name: 'space.permissionManager.membersTab' }));
         const expected = mockTranslate('space.memberOverride.extraAccess.edit', {
           source: mockTranslate('space.memberOverride.extraAccessSource.group', { name: 'Marketing', ...noEscape }),
           ...noEscape,
         });
 
+        // The line is there before any menu opens (menus render open in these tests).
         expect((await screen.findByTestId(`space-member-access-${OWN_UID}-note`)).textContent).toBe(expected);
+        // One read, for the signed-in user: the server only explains their own access.
+        expect(mockFetchOwnAccessDetails).toHaveBeenCalledTimes(1);
+        expect(mockFetchOwnAccessDetails).toHaveBeenCalledWith('workspace-1', 'space-1', OWN_UID);
         expect(screen.queryByTestId(`space-member-access-${other.uid}-note`)).toBeNull();
+
+        // Opening menus reads nothing more.
+        fireEvent.click(accessTrigger(other.uid));
+        fireEvent.click(accessTrigger(OWN_UID));
+        await act(async () => undefined);
+        expect(mockFetchOwnAccessDetails).toHaveBeenCalledTimes(1);
+      });
+
+      it('reads nothing when your own row has no access menu', async () => {
+        mockGetSpacePermission.mockResolvedValue(supportedPermission());
+        mockGetSpaceMembers.mockResolvedValue({
+          members: [ownMember({ role: SpaceMemberRole.Owner }), assignedMember()],
+          groups: [marketingGroup()],
+        });
+        mockFetchOwnAccessDetails.mockResolvedValue(ownDetails());
+        await openMembersTab();
+        await screen.findByTestId(`space-member-access-${manualMember().uid}`);
+        await act(async () => undefined);
+
+        expect(mockFetchOwnAccessDetails).not.toHaveBeenCalled();
       });
 
       it('says Access to all spaces, naming the only group that gives it', async () => {
@@ -655,16 +681,15 @@ describe('ManageSpace ACL management', () => {
           ownDetails({ group_member_access_level: null, group_space_coverage_access_level: AccessLevel.ReadAndWrite })
         );
         await openMembersTab();
-        await waitFor(() => expect(mockGetWorkspaceGroups).toHaveBeenCalled());
-        await waitFor(() => expect(accessTrigger(OWN_UID).disabled).toBe(false));
-        fireEvent.click(accessTrigger(OWN_UID));
 
         const expected = mockTranslate('space.memberOverride.extraAccess.edit', {
           source: mockTranslate('space.memberOverride.extraAccessSource.allSpaces', { name: 'Users', ...noEscape }),
           ...noEscape,
         });
 
-        expect((await screen.findByTestId(`space-member-access-${OWN_UID}-note`)).textContent).toBe(expected);
+        await waitFor(() =>
+          expect(screen.getByTestId(`space-member-access-${OWN_UID}-note`).textContent).toBe(expected)
+        );
       });
 
       it('names a share of the space page that replaces what a group gives', async () => {
@@ -691,41 +716,46 @@ describe('ManageSpace ACL management', () => {
         expect((await screen.findByTestId(`space-member-access-${OWN_UID}-note`)).textContent).toBe(expected);
       });
 
-      it('keeps quiet when nothing gives more, or the server cannot explain', async () => {
+      it('keeps quiet when nothing gives more', async () => {
         mockGetSpacePermission.mockResolvedValue(supportedPermission());
         mockGetSpaceMembers.mockResolvedValue({
           members: [ownMember({ access_level_override: AccessLevel.ReadAndWrite, effective_access_level: AccessLevel.ReadAndWrite })],
           groups: [marketingGroup()],
         });
-        mockFetchOwnAccessDetails.mockResolvedValueOnce(ownDetails()).mockResolvedValueOnce(null);
+        mockFetchOwnAccessDetails.mockResolvedValue(ownDetails());
         await openMembersTab();
-        await waitFor(() => expect(accessTrigger(OWN_UID).disabled).toBe(false));
-
-        // The group gives Can edit, which the row already gives.
-        fireEvent.click(accessTrigger(OWN_UID));
         await waitFor(() => expect(mockFetchOwnAccessDetails).toHaveBeenCalledTimes(1));
         await act(async () => undefined);
-        expect(screen.queryByTestId(`space-member-access-${OWN_UID}-note`)).toBeNull();
 
-        // An older server without the route: the row keeps its own level, with no error.
-        fireEvent.click(accessTrigger(OWN_UID));
-        await waitFor(() => expect(mockFetchOwnAccessDetails).toHaveBeenCalledTimes(2));
+        // The group gives Can edit, which the row already gives.
+        expect(screen.queryByTestId(`space-member-access-${OWN_UID}-note`)).toBeNull();
+      });
+
+      it('keeps quiet when the server cannot explain', async () => {
+        // An older server without the route, or a failed read: the row keeps its own level.
+        mockGetSpacePermission.mockResolvedValue(supportedPermission());
+        mockGetSpaceMembers.mockResolvedValue({ members: [ownMember()], groups: [marketingGroup()] });
+        mockFetchOwnAccessDetails.mockResolvedValue(null);
+        await openMembersTab();
+        await waitFor(() => expect(mockFetchOwnAccessDetails).toHaveBeenCalledTimes(1));
         await act(async () => undefined);
+
         expect(screen.queryByTestId(`space-member-access-${OWN_UID}-note`)).toBeNull();
         expect(toast.error).not.toHaveBeenCalled();
       });
 
-      it('follows a pending choice and drops the explanation after a permission change', async () => {
+      it('follows a pending choice and reads it again after a permission change, keeping the last answer meanwhile', async () => {
         const own = ownMember({ access_level_override: null, effective_access_level: AccessLevel.ReadAndWrite });
         const save = deferred<SpaceMember>();
+        const reread = deferred<ReturnType<typeof ownDetails> | null>();
 
         mockGetSpacePermission.mockResolvedValue(supportedPermission());
         mockGetSpaceMembers.mockResolvedValue({ members: [own], groups: [marketingGroup()] });
-        mockFetchOwnAccessDetails.mockResolvedValue(ownDetails({ direct_member_access_level: AccessLevel.ReadAndWrite }));
+        mockFetchOwnAccessDetails
+          .mockResolvedValueOnce(ownDetails({ direct_member_access_level: AccessLevel.ReadAndWrite }))
+          .mockReturnValueOnce(reread.promise);
         mockSetOverride.mockReturnValue(save.promise);
         await openMembersTab();
-        await waitFor(() => expect(accessTrigger(OWN_UID).disabled).toBe(false));
-        fireEvent.click(accessTrigger(OWN_UID));
         await waitFor(() => expect(mockFetchOwnAccessDetails).toHaveBeenCalledTimes(1));
         await act(async () => undefined);
         // Can edit by default: the group adds nothing yet.
@@ -735,8 +765,16 @@ describe('ManageSpace ACL management', () => {
         fireEvent.click(screen.getByTestId(`space-member-access-${OWN_UID}-option-${AccessLevel.ReadOnly}`));
         expect(await screen.findByTestId(`space-member-access-${OWN_UID}-note`)).toBeTruthy();
 
+        // A permission change reads it again in the background; the last answer stays meanwhile.
         act(() => {
           mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'workspace-group-id' });
+        });
+        await waitFor(() => expect(mockFetchOwnAccessDetails).toHaveBeenCalledTimes(2));
+        expect(screen.getByTestId(`space-member-access-${OWN_UID}-note`)).toBeTruthy();
+
+        // The group no longer gives more, so the line goes away with the new answer.
+        await act(async () => {
+          reread.resolve(ownDetails({ access_level: AccessLevel.ReadOnly, group_member_access_level: null }));
         });
         expect(screen.queryByTestId(`space-member-access-${OWN_UID}-note`)).toBeNull();
         await act(async () => {

@@ -179,7 +179,6 @@ export function SpaceMemberAccessControl({
   testId,
   onChange,
   note,
-  onOpenChange,
 }: {
   /** `null` keeps the space default; a level is chosen for this person or group. */
   value: SpaceMemberAccessOverride;
@@ -191,9 +190,12 @@ export function SpaceMemberAccessControl({
   principalName: string;
   testId: string;
   onChange: (value: SpaceMemberAccessOverride) => void;
-  /** One plain line at the end of the menu, e.g. why more access remains whatever is chosen here. */
+  /**
+   * One plain line at the end of the menu, e.g. why more access remains whatever is chosen here.
+   * Have it ready before the menu opens: it then describes the menu. One that arrives or changes
+   * while the menu is open is read out politely instead.
+   */
   note?: string | null;
-  onOpenChange?: (open: boolean) => void;
 }) {
   const { t } = useTranslation();
   const labelId = useId();
@@ -209,7 +211,7 @@ export function SpaceMemberAccessControl({
       data-testid='space-member-access-control'
       data-value={value === null ? 'inherit' : String(value)}
     >
-      <DropdownMenu onOpenChange={onOpenChange}>
+      <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
             type='button'
@@ -256,9 +258,10 @@ export function SpaceMemberAccessControl({
               {value === level && <DropdownMenuItemTick />}
             </DropdownMenuItem>
           ))}
-          {note && (
-            <>
-              <DropdownMenuSeparator />
+          {note && <DropdownMenuSeparator />}
+          {/* Always present, so a line added while the menu is open is announced. */}
+          <div aria-live='polite' data-testid={`${testId}-note-region`}>
+            {note && (
               <p
                 id={noteId}
                 className='max-w-[260px] px-2 py-1.5 text-xs leading-5 text-text-secondary'
@@ -266,8 +269,8 @@ export function SpaceMemberAccessControl({
               >
                 {note}
               </p>
-            </>
-          )}
+            )}
+          </div>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

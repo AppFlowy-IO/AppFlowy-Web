@@ -318,6 +318,17 @@ function isMutableSpaceMember(member: SpaceMember): boolean {
   return !INHERITED_MEMBER_SOURCES.has(member.source);
 }
 
+// Whether a person's Access cell is a menu rather than static text (see memberAccessCell):
+// an ordinary row that can be changed, with a known identity and chosen access.
+function hasSpaceMemberAccessMenu(member: SpaceMember): boolean {
+  return (
+    member.role !== SpaceMemberRole.Owner &&
+    isMutableSpaceMember(member) &&
+    Boolean(member.user_uuid) &&
+    member.access_level_override !== undefined
+  );
+}
+
 function accessOverrideKey(principal: SpaceAssignmentPrincipal): string {
   return `${principal.type}:${principal.uuid}`;
 }
@@ -498,8 +509,10 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   );
   const pendingAccessOverridesRef = useRef<Map<string, SpaceMemberAccessOverride>>(new Map());
   // Why the signed-in user can do more than their own row gives them. The server only explains
-  // the caller's own access, so this is read for that row alone, each time its menu opens.
+  // the caller's own access, so this is read for that row alone: once when its Access menu is on
+  // screen and again after each permission change, so the line is ready before the menu opens.
   const [ownAccessDetails, setOwnAccessDetails] = useState<SpaceAccessDetails | null>(null);
+  const [ownAccessDetailsRevision, setOwnAccessDetailsRevision] = useState(0);
   const ownAccessRequestRef = useRef(0);
   const backgroundRefreshRequestedRef = useRef(false);
   const permissionConfirmedRef = useRef(false);
@@ -728,9 +741,9 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       // dialog. Recheck in the background instead of blanking the dialog.
       backgroundRefreshRequestedRef.current = true;
       setPermissionRefreshRevision((revision) => revision + 1);
-      // Groups, shares and access to all spaces may have changed; the next open reads them again.
-      ownAccessRequestRef.current += 1;
-      setOwnAccessDetails(null);
+      // Groups, shares and access to all spaces may have changed: read them again, keeping the
+      // last answer until the new one arrives.
+      setOwnAccessDetailsRevision((revision) => revision + 1);
     };
 
     eventEmitter.on(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChanged);
@@ -1694,21 +1707,28 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   const isOwnMember = (member: SpaceMember) =>
     Boolean((ownUuid && member.user_uuid === ownUuid) || isSameUserUid(member.uid, ownUid));
 
-  // Read lazily: only when the signed-in user opens their own access menu. Any failure (an older
-  // server without the route included) leaves the row with its own level and no explanation.
-  const handleOwnAccessMenuOpenChange = useCallback(
-    (menuOpen: boolean) => {
-      if (!menuOpen || !workspaceId) return;
-      const generation = spaceRequestRef.current.generation;
-      const request = ++ownAccessRequestRef.current;
+  // The Members tab shows the signed-in user's own row with an Access menu (Access is a column
+  // only on Custom spaces of servers with per-person access).
+  const ownAccessMenuShown =
+    open &&
+    tab === 'members' &&
+    memberOverridesSupported &&
+    loadedPermissionSettings?.visibility === SpaceVisibility.Custom &&
+    spaceMembers.some((member) => isOwnMember(member) && hasSpaceMemberAccessMenu(member));
 
-      void fetchOwnSpaceAccessDetails(workspaceId, viewId, ownUid).then((details) => {
-        if (spaceRequestRef.current.generation !== generation || ownAccessRequestRef.current !== request) return;
-        setOwnAccessDetails(details);
-      });
-    },
-    [ownUid, viewId, workspaceId]
-  );
+  // Read ahead rather than when the menu opens, so the line is in the menu, and describes it, as
+  // soon as it opens. Any failure (an older server without the route included) leaves the row with
+  // its own level and no explanation.
+  useEffect(() => {
+    if (!ownAccessMenuShown || !workspaceId) return;
+    const generation = spaceRequestRef.current.generation;
+    const request = ++ownAccessRequestRef.current;
+
+    void fetchOwnSpaceAccessDetails(workspaceId, viewId, ownUid).then((details) => {
+      if (spaceRequestRef.current.generation !== generation || ownAccessRequestRef.current !== request) return;
+      setOwnAccessDetails(details);
+    });
+  }, [ownAccessMenuShown, ownAccessDetailsRevision, ownUid, viewId, workspaceId]);
 
   const handleAccessOverrideChange = useCallback(
     async (principal: SpaceAssignmentPrincipal, override: SpaceMemberAccessOverride) => {
@@ -2010,7 +2030,6 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         testId={triggerTestId}
         onChange={(next) => void handleAccessOverrideChange(principal, next)}
         note={extraAccess ? spaceMemberExtraAccessNote(extraAccess, t) : null}
-        onOpenChange={own ? handleOwnAccessMenuOpenChange : undefined}
       />
     );
   };
