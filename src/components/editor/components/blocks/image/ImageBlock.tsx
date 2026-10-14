@@ -14,6 +14,7 @@ import { EditorElementProps, ImageBlockNode } from '@/components/editor/editor.t
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { constructFileUrl } from '@/components/editor/utils/file-url';
 import { FileHandler } from '@/utils/file';
+import { isLocalFilePath } from '@/utils/file-storage-url';
 
 import ImageEmpty from './ImageEmpty';
 import ImageRender from './ImageRender';
@@ -34,6 +35,7 @@ export const ImageBlock = memo(
     const selected = useSelected();
     const { url: dataUrl, align, pending_upload_id } = useMemo(() => data || {}, [data]);
     const url = useMemo(() => constructFileUrl(dataUrl, workspaceId, viewId), [dataUrl, workspaceId, viewId]);
+    const isDeviceLocalImage = isLocalFilePath(dataUrl);
     const localFileIdRef = useRef<string>();
     const previewRemoteUrlRef = useRef<string>();
     const previousPendingUploadIdRef = useRef(pending_upload_id);
@@ -225,7 +227,19 @@ export const ImageBlock = memo(
           contentEditable={false}
           className={`embed-block relative ${alignCss} ${hasImage ? '!rounded-none !border-none !bg-transparent' : 'p-4'}`}
         >
-          {hasImage ? (
+          {isDeviceLocalImage ? (
+            <div role='status' className='flex w-full flex-col gap-3 text-text-secondary'>
+              <div className='flex items-center gap-2'>
+                <ErrorIcon className='h-5 w-5 shrink-0' aria-hidden='true' />
+                <span>{t('editor.imageLocalFileUnavailable')}</span>
+              </div>
+              {!readOnly && (
+                <button type='button' className='self-start text-text-action hover:underline'>
+                  {t('editor.replaceImage')}
+                </button>
+              )}
+            </div>
+          ) : hasImage ? (
             <ImageRender
               showToolbar={showToolbar}
               selected={selected}

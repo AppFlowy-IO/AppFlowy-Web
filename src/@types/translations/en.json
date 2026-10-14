@@ -3333,6 +3333,8 @@
     "chooseImage": "Choose an image",
     "loading": "Loading",
     "imageLoadFailed": "Image load failed",
+    "imageLocalFileUnavailable": "This image is stored locally and isn't available on the web. Upload the original image to view it here.",
+    "replaceImage": "Replace image",
     "divider": "Divider",
     "table": "Table",
     "colAddBefore": "Add before",
