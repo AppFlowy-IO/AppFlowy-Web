@@ -28,6 +28,7 @@ import {
 import { GroupSpaceCoverageSummary } from '@/components/app/settings/GroupSpaceCoverageControl';
 import { WorkspaceGroupIcon } from '@/components/app/share/WorkspaceGroupIcon';
 import { WorkspaceMemberInlineSearchInput } from '@/components/app/share/WorkspaceMemberInlineSearch';
+import { WorkspaceCreationCallout } from '@/components/app/workspaces/WorkspaceCreationNotice';
 import {
   AlertDialog,
   AlertDialogContent,
@@ -294,9 +295,15 @@ function SpaceCreationSettings({
     <SettingsSection title={t('workspacePermissions.createSpaces')}>
       {/* Page text, not a hover tooltip, so keyboard and screen reader users get it too. */}
       <p className='text-sm text-text-secondary'>{t('workspacePermissions.explanation')}</p>
-      <p role='status' className='text-sm text-text-primary'>
-        {t(capability.can_create_space ? 'workspacePermissions.allowed' : 'workspacePermissions.denied')}
-      </p>
+      {capability.can_create_space ? (
+        <p role='status' className='text-sm text-text-primary'>
+          {t('workspacePermissions.allowed')}
+        </p>
+      ) : (
+        // A "no" is easy to miss in plain text between the explanation and the cards; it gets the
+        // callout the account-only page uses for the same kind of answer.
+        <WorkspaceCreationCallout>{t('workspacePermissions.denied')}</WorkspaceCreationCallout>
+      )}
       {stale && (
         <InlineAlert
           message={t(isOffline() ? 'workspacePermissions.offline' : 'workspacePermissions.refreshFailed')}

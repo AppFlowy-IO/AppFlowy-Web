@@ -525,6 +525,25 @@ describe('workspace permission settings', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
+  it('shows a viewer who can\'t create spaces the answer in a callout, like the account-only page', async () => {
+    current.can_create_space = false;
+    current.can_manage_space_creators = false;
+    mount();
+    const status = (await screen.findByText('workspacePermissions.denied')).closest('[role="status"]') as HTMLElement;
+
+    // An info icon on a light fill, so the answer is not lost between the explanation and the cards.
+    expect(status.className).toContain('bg-fill-content-hover');
+    expect(status.querySelector('svg')).not.toBeNull();
+  });
+
+  it('keeps a plain line for a viewer who can create spaces', async () => {
+    mount();
+    const status = await screen.findByText('workspacePermissions.allowed');
+
+    expect(status.tagName).toBe('P');
+    expect(status.getAttribute('role')).toBe('status');
+  });
+
   it('keeps typed text and loaded rows through a background capability refresh', async () => {
     current.policy = 'owners_and_selected_members';
     rosterOf([row('user', aliceId, { name: 'Alice Martin' })]);
