@@ -75,6 +75,11 @@ describe('NormalModal keyboard submission', () => {
   });
 });
 
+/**
+ * In a browser, React removes a menu that closes on Escape before the key press reaches the dialog;
+ * fireEvent runs inside act(), which keeps it mounted. A layer that handles Escape and stays open
+ * reaches the dialog in both. The dialog must ignore either.
+ */
 describe('NormalModal Escape', () => {
   it('closes when Escape is pressed on one of its own controls', () => {
     const onClose = jest.fn();

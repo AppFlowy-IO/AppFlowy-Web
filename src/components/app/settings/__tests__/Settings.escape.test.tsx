@@ -141,6 +141,11 @@ function renderSettings() {
   return onClose;
 }
 
+/**
+ * In a browser, React removes a menu or question that closes on Escape before the key press reaches
+ * Settings; fireEvent runs inside act(), which keeps it mounted. A layer that handles Escape and stays
+ * open (the saving dialog below) reaches Settings in both. Settings must ignore either.
+ */
 describe('Escape in Settings', () => {
   beforeEach(() => {
     jest.clearAllMocks();
