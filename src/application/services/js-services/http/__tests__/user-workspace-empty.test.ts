@@ -7,10 +7,18 @@ jest.mock('../core', () => ({
   executeAPIRequest: async (request: () => Promise<{ data: unknown }>) => (await request()).data,
 }));
 
+beforeEach(() => mockGet.mockReset());
+
+test('opts in to the empty-account answer, which older servers ignore', async () => {
+  mockGet.mockResolvedValue({ data: { user_profile: { uuid: 'actor' }, visiting_workspace: null, workspaces: [] } });
+  await getUserWorkspaceInfo();
+  // Servers only send `visiting_workspace: null` to callers that declare they can read it.
+  expect(mockGet).toHaveBeenCalledWith('/api/user/workspace', { params: { allow_empty: true } });
+});
+
 test('a signed-in account without a home has a successful empty workspace result', async () => {
   mockGet.mockResolvedValue({ data: { user_profile: { uuid: 'empty-actor' }, visiting_workspace: null, workspaces: [] } });
   expect(await getUserWorkspaceInfo()).toEqual({ user_id: 'empty-actor', selected_workspace: null, workspaces: [] });
-  expect(mockGet).toHaveBeenCalledWith('/api/user/workspace');
 });
 
 test('an existing selected workspace retains its normal mapped payload', async () => {

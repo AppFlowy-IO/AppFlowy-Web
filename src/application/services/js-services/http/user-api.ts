@@ -153,7 +153,11 @@ export async function getUserWorkspaceInfo(): Promise<{
       user_profile: { uuid: string };
       visiting_workspace: AFWorkspace | null;
       workspaces: AFWorkspace[];
-    }>>(url)
+    }>>(url, {
+      // An account without a workspace gets `visiting_workspace: null` only when the caller says
+      // it can read that; otherwise the server answers with an error. Older servers ignore this.
+      params: { allow_empty: true },
+    })
   ).then((payload) => ({
     user_id: payload.user_profile.uuid,
     selected_workspace: payload.visiting_workspace ? afWorkspace2Workspace(payload.visiting_workspace) : null,
