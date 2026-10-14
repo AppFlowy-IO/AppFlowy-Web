@@ -50,6 +50,15 @@ const CONTROL_KEYS = [
   'space.permissionManager.fullAccessMembersDescription',
   'space.permissionManager.accessCheckFailed',
   'space.permissionManager.accessLost',
+  'space.memberOverride.extraAccess.view',
+  'space.memberOverride.extraAccess.comment',
+  'space.memberOverride.extraAccess.edit',
+  'space.memberOverride.extraAccess.full',
+  'space.memberOverride.extraAccessSource.group',
+  'space.memberOverride.extraAccessSource.anyGroup',
+  'space.memberOverride.extraAccessSource.allSpaces',
+  'space.memberOverride.extraAccessSource.anyAllSpaces',
+  'space.memberOverride.extraAccessSource.pageShare',
 ];
 
 const INTERNAL_TERMS = /override|inherit|assignment|entitlement|principal|uuid|provenance|tombstone|revision|roster/i;
@@ -97,6 +106,31 @@ describe('space access copy', () => {
     expect(english.t('space.memberOverride.accessFor', { name: 'R&D', interpolation: { escapeValue: false } })).toBe(
       'Access for R&D'
     );
+  });
+
+  it('says in plain words where more access comes from', async () => {
+    const english = await createI18n('en');
+    const french = await createI18n('fr');
+    const noEscape = { interpolation: { escapeValue: false } };
+
+    expect(
+      english.t('space.memberOverride.extraAccess.edit', {
+        source: english.t('space.memberOverride.extraAccessSource.allSpaces', { name: 'R&D', ...noEscape }),
+        ...noEscape,
+      })
+    ).toBe('You can also edit this space through Access to all spaces (R&D).');
+    expect(
+      english.t('space.memberOverride.extraAccess.full', {
+        source: english.t('space.memberOverride.extraAccessSource.group', { name: 'Owners', ...noEscape }),
+        ...noEscape,
+      })
+    ).toBe('You also have full access to this space through the Owners group.');
+    expect(
+      french.t('space.memberOverride.extraAccess.edit', {
+        source: french.t('space.memberOverride.extraAccessSource.pageShare'),
+        ...noEscape,
+      })
+    ).toBe('Vous pouvez aussi modifier cet espace via un partage de page.');
   });
 
   it('translates every string into French with the same placeholders', () => {

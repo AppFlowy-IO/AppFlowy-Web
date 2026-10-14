@@ -158,6 +158,35 @@ earlier attempt with the same identity may still commit; only finding the space 
 full background-writer, offline re-grant and native-client acceptance matrix remains in progress in the
 Server repository's Oodrive plan.
 
+On servers with per-person access, Manage Space adds people and groups through the UUID routes. For
+Public, Private and unknown space types those routes store the level sent with the add and fall back to
+Can edit when it is missing, so Web always sends the space's member level. (Web keeps Public rosters
+read-only, and servers refuse person adds to Private spaces.) A Custom-space member keeps the space
+default until a level is chosen in the Access column, because Custom spaces ignore the level sent. Web
+still sends Can view for them: if the space became Public without the open dialog noticing, the new
+member gets exactly the space's member level (Public spaces give it to every member) instead of the
+server's Can edit default.
+
+When the Members tab shows signed-in users their own row with an Access menu, Web reads
+`GET /api/workspace/{workspace_id}/spaces/{space_id}/access-details` once, and again after each permission
+notification (keeping the last answer meanwhile). If a group of the space, Access to all spaces or a
+share of the space page gives them more than that row, the menu adds one line naming the source; a group
+is named only when exactly one group fits. Because the line is read ahead, it is in the menu, and
+describes it, as soon as the menu opens; a line that arrives or changes while the menu is open is read
+out through a polite live region. The source follows the server's decision: for anyone but a space
+owner, a share of the space page replaces what the space, its groups and Access to all spaces give, even
+when it is lower. So when the share is the final level, the line names the share, and a group or Access
+to all spaces above the final level is never named. The route explains only the caller's own access, so
+other people's rows carry no such line. A server without the route, or any failed read, shows no line
+and no error.
+
+`GET /api/user/workspace` sends `allow_empty=true`. Current servers return `visiting_workspace: null`
+for an account without a workspace only to callers that opt in (others get an error), and older servers
+ignore the parameter. An open page keeps its content while its access is re-checked: after a permission
+hint, focus, reconnect or return online the app drops the page's capability until a new probe answers.
+Both the main page and the page modal stay visible, read-only, meanwhile. Only a confirmed denial, or a
+revocation of that page, hides them.
+
 The opt-in `playwright.permissions.config.ts` suite uses the passed Server
 `group_permission_lifecycle.py` document fixture. It checks real open editor bodies, title controls,
 Slate editability, canonical Folder plus Shared with me navigation and a second tab across group View/Edit/revoke and

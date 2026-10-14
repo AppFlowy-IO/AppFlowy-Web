@@ -2,6 +2,7 @@ import { ChevronDown, LoaderCircle } from 'lucide-react';
 import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { ExtraSpaceAccess } from '@/application/services/js-services/space-member-assignment';
 import { AccessLevel, SpaceMemberAccessOverride } from '@/application/types';
 import { ReactComponent as InfoIcon } from '@/assets/icons/info.svg';
 import { Button } from '@/components/ui/button';
@@ -59,6 +60,34 @@ export function spaceMemberAssignmentLabel(
   }
 
   return spaceMemberAccessLabel(value === undefined ? effectiveAccess : value, t);
+}
+
+const EXTRA_ACCESS_KEYS = {
+  [AccessLevel.ReadOnly]: 'space.memberOverride.extraAccess.view',
+  [AccessLevel.ReadAndComment]: 'space.memberOverride.extraAccess.comment',
+  [AccessLevel.ReadAndWrite]: 'space.memberOverride.extraAccess.edit',
+  [AccessLevel.FullAccess]: 'space.memberOverride.extraAccess.full',
+} as const satisfies Record<AccessLevel, string>;
+
+/** "You can also edit this space through the Marketing group." */
+export function spaceMemberExtraAccessNote(extra: ExtraSpaceAccess, t: TFunction): string {
+  const noEscape = { interpolation: { escapeValue: false } };
+  const { source } = extra;
+  let sourceText: string;
+
+  if (source.kind === 'pageShare') {
+    sourceText = t('space.memberOverride.extraAccessSource.pageShare');
+  } else if (source.kind === 'group') {
+    sourceText = source.groupName
+      ? t('space.memberOverride.extraAccessSource.group', { name: source.groupName, ...noEscape })
+      : t('space.memberOverride.extraAccessSource.anyGroup');
+  } else {
+    sourceText = source.groupName
+      ? t('space.memberOverride.extraAccessSource.allSpaces', { name: source.groupName, ...noEscape })
+      : t('space.memberOverride.extraAccessSource.anyAllSpaces');
+  }
+
+  return t(EXTRA_ACCESS_KEYS[extra.level], { source: sourceText, ...noEscape });
 }
 
 /** Column header with the one explanation of how per-person access works. */
@@ -149,6 +178,7 @@ export function SpaceMemberAccessControl({
   principalName,
   testId,
   onChange,
+  note,
 }: {
   /** `null` keeps the space default; a level is chosen for this person or group. */
   value: SpaceMemberAccessOverride;
@@ -160,9 +190,16 @@ export function SpaceMemberAccessControl({
   principalName: string;
   testId: string;
   onChange: (value: SpaceMemberAccessOverride) => void;
+  /**
+   * One plain line at the end of the menu, e.g. why more access remains whatever is chosen here.
+   * Have it ready before the menu opens: it then describes the menu. One that arrives or changes
+   * while the menu is open is read out politely instead.
+   */
+  note?: string | null;
 }) {
   const { t } = useTranslation();
   const labelId = useId();
+  const noteId = useId();
   const label = spaceMemberAssignmentLabel(value, effectiveAccess, defaultAccess, t);
   const choose = (next: SpaceMemberAccessOverride) => {
     if (next !== value) onChange(next);
@@ -200,7 +237,7 @@ export function SpaceMemberAccessControl({
             )}
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align='end'>
+        <DropdownMenuContent align='end' aria-describedby={note ? noteId : undefined}>
           <DropdownMenuItem
             onSelect={() => choose(null)}
             className='justify-between'
@@ -221,6 +258,19 @@ export function SpaceMemberAccessControl({
               {value === level && <DropdownMenuItemTick />}
             </DropdownMenuItem>
           ))}
+          {note && <DropdownMenuSeparator />}
+          {/* Always present, so a line added while the menu is open is announced. */}
+          <div aria-live='polite' data-testid={`${testId}-note-region`}>
+            {note && (
+              <p
+                id={noteId}
+                className='max-w-[260px] px-2 py-1.5 text-xs leading-5 text-text-secondary'
+                data-testid={`${testId}-note`}
+              >
+                {note}
+              </p>
+            )}
+          </div>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

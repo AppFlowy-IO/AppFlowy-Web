@@ -1155,8 +1155,37 @@ describe('CreateSpaceModal draft controller', () => {
     await selectCustomAndAdd(candidate);
     fireEvent.click(screen.getByTestId('create-space-submit'));
     await waitFor(() => expect(onCreated).toHaveBeenCalled());
-    expect(mockAddSpaceMemberByUuid).toHaveBeenCalledWith('workspace-1', 'space-id', userUuid, { role: SpaceMemberRole.Member });
+    // No access is chosen; the Custom space ignores the level, which never exceeds Can view.
+    expect(mockAddSpaceMemberByUuid.mock.calls).toStrictEqual([
+      ['workspace-1', 'space-id', userUuid, { role: SpaceMemberRole.Member, access_level: AccessLevel.ReadOnly }],
+    ]);
     expect(mockAddSpaceMember).not.toHaveBeenCalled();
+  });
+
+  it('adds queued members at the member level the server reports when the space is no longer Custom', async () => {
+    // For example a saved request resumed after another owner made the space Public: a missing
+    // level would store the server's own default, Can edit, although the space's members comment.
+    const userUuid = '12345678-1234-4123-8123-123456789abc';
+    const candidate = { ...candidateOne, user_uuid: userUuid };
+    const onCreated = jest.fn();
+
+    mockGetMembers.mockResolvedValue([candidate]);
+    mockGetSpacePermission.mockResolvedValue({
+      permission: {
+        ...customPermission,
+        visibility: SpaceVisibility.Public,
+        member_default_access_level: AccessLevel.ReadAndComment,
+        everyone_else_access_level: null,
+      },
+      member_access_overrides_supported: true,
+    });
+    render(<CreateSpaceModal open onClose={jest.fn()} onCreated={onCreated} />);
+    await selectCustomAndAdd(candidate);
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    await waitFor(() => expect(onCreated).toHaveBeenCalled());
+    expect(mockAddSpaceMemberByUuid.mock.calls).toStrictEqual([
+      ['workspace-1', 'space-id', userUuid, { role: SpaceMemberRole.Member, access_level: AccessLevel.ReadAndComment }],
+    ]);
   });
 
   it('keeps a committed roster draft when a supported server omits the exact member identity', async () => {

@@ -148,14 +148,46 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   const probedObjectPermission = useViewObjectPermission(effectiveViewId);
   const objectPermission = probedObjectPermission ?? INITIAL_VIEW_OBJECT_CAPABILITIES;
   const canReadEffectiveView = probedObjectPermission?.can_read === true;
-  const accessDenied = probedObjectPermission?.can_read === false;
+  const probedObjectPermissionRef = useRef(probedObjectPermission);
+
+  probedObjectPermissionRef.current = probedObjectPermission;
+  // A definitive revocation of this page hides it at once instead of waiting for the next probe.
+  // It lasts until a newer answer allows reading again.
+  const [revokedAccess, setRevokedAccess] = useState<{
+    viewId: string;
+    permission: typeof probedObjectPermission;
+  } | null>(null);
+  const accessRevoked =
+    revokedAccess !== null &&
+    (revokedAccess.viewId === viewId || revokedAccess.viewId === effectiveViewId) &&
+    !(canReadEffectiveView && probedObjectPermission !== revokedAccess.permission);
+  const accessDenied = probedObjectPermission?.can_read === false || accessRevoked;
+  // AppBusinessLayer drops the permission while it re-checks it after every permission
+  // notification, focus or reconnect. A page already loaded under a confirmed read stays on screen,
+  // read-only, until the answer arrives; only a confirmed denial hides it.
+  const canShowEffectiveView = !accessDenied && (canReadEffectiveView || (!!doc && doc.id === effectiveViewId));
+
+  useEffect(() => {
+    if (!eventEmitter) return;
+    const handleViewAccessRevoked = (payload?: { viewId?: string | null }) => {
+      const revokedViewId = payload?.viewId;
+
+      if (!revokedViewId || (revokedViewId !== viewId && revokedViewId !== effectiveViewId)) return;
+      setRevokedAccess({ viewId: revokedViewId, permission: probedObjectPermissionRef.current });
+    };
+
+    eventEmitter.on(APP_EVENTS.VIEW_ACCESS_REVOKED, handleViewAccessRevoked);
+    return () => {
+      eventEmitter.off(APP_EVENTS.VIEW_ACCESS_REVOKED, handleViewAccessRevoked);
+    };
+  }, [effectiveViewId, eventEmitter, viewId]);
 
   useLayoutEffect(() => {
-    if (canReadEffectiveView) return;
+    if (!accessDenied) return;
     loadRequestRevisionRef.current += 1;
     setDoc(undefined);
     setSyncBound(false);
-  }, [canReadEffectiveView]);
+  }, [accessDenied]);
 
   useEffect(() => {
     if (!open || !viewId || !effectiveViewId) return;
@@ -234,10 +266,17 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   const hasResolvedView = !!resolvedView;
 
   useEffect(() => {
-    if (open && effectiveViewId && hasResolvedView && canReadEffectiveView && doc?.id !== effectiveViewId) {
+    if (
+      open &&
+      effectiveViewId &&
+      hasResolvedView &&
+      canReadEffectiveView &&
+      !accessRevoked &&
+      doc?.id !== effectiveViewId
+    ) {
       void loadPageDoc(effectiveViewId);
     }
-  }, [canReadEffectiveView, doc?.id, effectiveViewId, hasResolvedView, loadPageDoc, open]);
+  }, [accessRevoked, canReadEffectiveView, doc?.id, effectiveViewId, hasResolvedView, loadPageDoc, open]);
 
   const layout = resolvedView?.layout ?? ViewLayout.Document;
 
@@ -292,6 +331,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     setSyncBound(false);
     setFallbackMeta(null);
     setNotFound(false);
+    setRevokedAccess(null);
   }, [open]);
 
   useEffect(
@@ -451,7 +491,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   }, [layout]) as React.FC<ViewComponentProps>;
 
   const viewDom = useMemo(() => {
-    if (!open || !canReadEffectiveView || !doc || !viewMeta || doc.id !== viewMeta.viewId) return null;
+    if (!open || !canShowEffectiveView || !doc || !viewMeta || doc.id !== viewMeta.viewId) return null;
     return (
       <View
         requestInstance={requestInstance}
@@ -502,7 +542,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   }, [
     doc,
     open,
-    canReadEffectiveView,
+    canShowEffectiveView,
     viewMeta,
     View,
     requestInstance,
@@ -575,7 +615,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         ),
       }}
     >
-      {canReadEffectiveView ? renderModalTitle() : <IconButton aria-label={t('button.close')} onClick={handleClose} className='self-end'><CloseIcon /></IconButton>}
+      {canShowEffectiveView ? renderModalTitle() : <IconButton aria-label={t('button.close')} onClick={handleClose} className='self-end'><CloseIcon /></IconButton>}
       {accessDenied ? <div role='status' className='p-6'>{t('publish.noAccessToVisit')}</div> :
         notFound ? <RecordNotFound viewId={effectiveViewId} /> : <div className={'h-full w-full'}>{viewDom}</div>}
     </Dialog>

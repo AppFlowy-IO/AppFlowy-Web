@@ -437,6 +437,35 @@ describe('NewPage create-space flow', () => {
     expect(mockCreateSpaceWithInitialPage).not.toHaveBeenCalled();
   });
 
+  async function addToExisting() {
+    mockOutline = [space('space-existing', 'Existing')];
+    render(<NewPage />);
+    fireEvent.click(screen.getByTestId('new-page-button'));
+    await selectSpace('Existing');
+    await waitFor(() => expect((screen.getByTestId('new-page-modal-ok')).disabled).toBe(false));
+    fireEvent.click(screen.getByTestId('new-page-modal-ok'));
+    await waitFor(() => expect(mockNotifyError).toHaveBeenCalledTimes(1));
+  }
+
+  it('says in plain words when the server refuses to add the page to that space', async () => {
+    // For example access changed after the destination was checked. Server errors arrive as plain
+    // { code, message } objects, never as Error instances.
+    mockAddPage.mockRejectedValue({ code: 1012, message: 'user is not allowed to access this view', httpStatus: 403 });
+    await addToExisting();
+
+    expect(mockNotifyError).toHaveBeenCalledWith('spaceCreation.pageDestination.addDenied');
+    expect(mockOpenPageModal).not.toHaveBeenCalled();
+    // The dialog stays open so another space can be chosen.
+    expect(screen.getByTestId('new-page-modal')).toBeTruthy();
+  });
+
+  it('reports any other failure in plain words instead of the raw error', async () => {
+    mockAddPage.mockRejectedValue({ code: -1, message: 'Network error' });
+    await addToExisting();
+
+    expect(mockNotifyError).toHaveBeenCalledWith('spaceCreation.pageDestination.addFailed');
+  });
+
   it('blocks the create-draft link while adding an existing page', async () => {
     const addition = deferred<{ view_id: string }>();
 

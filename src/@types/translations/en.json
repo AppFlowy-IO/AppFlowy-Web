@@ -17,7 +17,9 @@
       "checking": "Checking access…",
       "noEdit": "You don't have edit access here",
       "ownersOnly": "Only space owners can add pages here",
-      "noneAvailable": "You can't add pages to any space here. Ask a space owner for edit access."
+      "noneAvailable": "You can't add pages to any space here. Ask a space owner for edit access.",
+      "addDenied": "You can't add pages to this space.",
+      "addFailed": "Couldn't add the page. Try again."
     },
     "meetingNotesDenied": "Your meeting opened without a notes page, because you can't create spaces in this workspace.",
     "meetingNotesFailed": "Your meeting opened, but its notes page couldn't be created."
@@ -3763,7 +3765,20 @@
       "sharedPagesOnly": "Shared pages only",
       "sharedPagesReason": "This person can only open pages shared with them. Manage that from each page's Share menu.",
       "managedElsewhere": "This access comes from the space settings and can't be changed here.",
-      "reloadToChange": "This access can't be changed right now. Reload the page and try again."
+      "reloadToChange": "This access can't be changed right now. Reload the page and try again.",
+      "extraAccess": {
+        "view": "You can also view this space through {{source}}.",
+        "comment": "You can also comment in this space through {{source}}.",
+        "edit": "You can also edit this space through {{source}}.",
+        "full": "You also have full access to this space through {{source}}."
+      },
+      "extraAccessSource": {
+        "group": "the {{name}} group",
+        "anyGroup": "a group in this space",
+        "allSpaces": "Access to all spaces ({{name}})",
+        "anyAllSpaces": "Access to all spaces",
+        "pageShare": "a page share"
+      }
     }
   },
   "publish": {

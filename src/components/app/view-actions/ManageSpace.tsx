@@ -6,12 +6,19 @@ import { toast } from 'sonner';
 import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import { WorkspaceService } from '@/application/services/domains';
 import { captureApiContext } from '@/application/services/js-services/http/request-context';
-import { setSpaceMemberAccessOverride, SpaceAssignmentPrincipal } from '@/application/services/js-services/space-member-assignment';
+import {
+  extraSpaceAccess,
+  fetchOwnSpaceAccessDetails,
+  setSpaceMemberAccessOverride,
+  SpaceAssignmentPrincipal,
+  spaceMemberAddPayload,
+} from '@/application/services/js-services/space-member-assignment';
 import {
   AccessLevel,
   legacySpacePermission,
   normalizeKnownLegacySpaceVisibility,
   Role,
+  SpaceAccessDetails,
   SpaceMember,
   SpaceMemberRole,
   SpaceMemberAccessOverride,
@@ -22,6 +29,7 @@ import {
   WorkspaceGroupSpacePermission,
   WorkspaceMember,
 } from '@/application/types';
+import { isSameUserUid } from '@/application/user-uid';
 import { NormalModal } from '@/components/_shared/modal';
 import {
   useAppOperations,
@@ -41,6 +49,7 @@ import {
   SpaceMemberAccessHeader,
   SpaceMemberAccessStatic,
   spaceMemberAssignmentLabel,
+  spaceMemberExtraAccessNote,
 } from '@/components/app/view-actions/SpaceMemberAccessControl';
 import SpaceSettingsPanel, { SpaceSettingsTab } from '@/components/app/view-actions/SpaceSettingsPanel';
 import {
@@ -309,6 +318,17 @@ function isMutableSpaceMember(member: SpaceMember): boolean {
   return !INHERITED_MEMBER_SOURCES.has(member.source);
 }
 
+// Whether a person's Access cell is a menu rather than static text (see memberAccessCell):
+// an ordinary row that can be changed, with a known identity and chosen access.
+function hasSpaceMemberAccessMenu(member: SpaceMember): boolean {
+  return (
+    member.role !== SpaceMemberRole.Owner &&
+    isMutableSpaceMember(member) &&
+    Boolean(member.user_uuid) &&
+    member.access_level_override !== undefined
+  );
+}
+
 function accessOverrideKey(principal: SpaceAssignmentPrincipal): string {
   return `${principal.type}:${principal.uuid}`;
 }
@@ -488,6 +508,12 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     () => new Map()
   );
   const pendingAccessOverridesRef = useRef<Map<string, SpaceMemberAccessOverride>>(new Map());
+  // Why the signed-in user can do more than their own row gives them. The server only explains
+  // the caller's own access, so this is read for that row alone: once when its Access menu is on
+  // screen and again after each permission change, so the line is ready before the menu opens.
+  const [ownAccessDetails, setOwnAccessDetails] = useState<SpaceAccessDetails | null>(null);
+  const [ownAccessDetailsRevision, setOwnAccessDetailsRevision] = useState(0);
+  const ownAccessRequestRef = useRef(0);
   const backgroundRefreshRequestedRef = useRef(false);
   const permissionConfirmedRef = useRef(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -636,6 +662,8 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     setSaving(false);
     setRevalidating(false);
     setPendingAccessOverrides(new Map());
+    ownAccessRequestRef.current += 1;
+    setOwnAccessDetails(null);
     inputRef.current = null;
 
     return () => {
@@ -713,6 +741,9 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       // dialog. Recheck in the background instead of blanking the dialog.
       backgroundRefreshRequestedRef.current = true;
       setPermissionRefreshRevision((revision) => revision + 1);
+      // Groups, shares and access to all spaces may have changed: read them again, keeping the
+      // last answer until the new one arrives.
+      setOwnAccessDetailsRevision((revision) => revision + 1);
     };
 
     eventEmitter.on(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChanged);
@@ -1254,6 +1285,9 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   // Explicit members receive the collective member level; the per-member value
   // only matters on servers that still honour it.
   const explicitMemberAccessLevel = permissionSettings.member_default_access_level ?? AccessLevel.ReadOnly;
+  // Adds through the UUID routes follow the space as the server last confirmed it. Ordinary
+  // members always carry a level (see spaceMemberAddPayload), even on Custom spaces, which ignore it.
+  const memberAssignmentSettings = loadedPermissionSettings ?? permissionSettings;
 
   const handleAddMember = useCallback(
     async (workspaceMember: WorkspaceMember) => {
@@ -1270,7 +1304,12 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       try {
         if (memberOverridesSupported) {
           if (!workspaceMember.user_uuid) throw new Error(t('space.memberOverride.identityUnavailable'));
-          await WorkspaceService.addSpaceMemberByUuid(workspaceId, viewId, workspaceMember.user_uuid, { role: SpaceMemberRole.Member });
+          await WorkspaceService.addSpaceMemberByUuid(
+            workspaceId,
+            viewId,
+            workspaceMember.user_uuid,
+            spaceMemberAddPayload(SpaceMemberRole.Member, memberAssignmentSettings)
+          );
         } else {
           await WorkspaceService.addSpaceMember(workspaceId, viewId, { uid, role: SpaceMemberRole.Member, access_level: explicitMemberAccessLevel });
         }
@@ -1292,6 +1331,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       canManageMembers,
       memberOverridesSupported,
       explicitMemberAccessLevel,
+      memberAssignmentSettings,
       membersReadOnly,
       permissionLoadFailed,
       permissionLoaded,
@@ -1310,10 +1350,14 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       setMemberSearch('');
       setAddingGroupId(group.group_id);
       try {
-        const granted = await WorkspaceService.addSpaceGroupPermission(workspaceId, viewId, group.group_id, {
-          role: SpaceMemberRole.Member,
-          ...(memberOverridesSupported ? {} : { access_level: explicitMemberAccessLevel }),
-        });
+        const granted = await WorkspaceService.addSpaceGroupPermission(
+          workspaceId,
+          viewId,
+          group.group_id,
+          memberOverridesSupported
+            ? spaceMemberAddPayload(SpaceMemberRole.Member, memberAssignmentSettings)
+            : { role: SpaceMemberRole.Member, access_level: explicitMemberAccessLevel }
+        );
         const currentScope = spaceRequestRef.current;
 
         if (
@@ -1344,6 +1388,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       canManageMembers,
       memberOverridesSupported,
       explicitMemberAccessLevel,
+      memberAssignmentSettings,
       membersReadOnly,
       permissionLoadFailed,
       permissionLoaded,
@@ -1375,7 +1420,14 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         if (memberOverridesSupported) {
           if (!member.user_uuid) throw new Error(t('space.memberOverride.identityUnavailable'));
           if (isMutableSpaceMember(member)) await WorkspaceService.updateSpaceMemberByUuid(workspaceId, viewId, member.user_uuid, { role });
-          else await WorkspaceService.addSpaceMemberByUuid(workspaceId, viewId, member.user_uuid, { role });
+          else {
+            await WorkspaceService.addSpaceMemberByUuid(
+              workspaceId,
+              viewId,
+              member.user_uuid,
+              spaceMemberAddPayload(role, memberAssignmentSettings)
+            );
+          }
         } else if (isMutableSpaceMember(member)) {
           await WorkspaceService.updateSpaceMember(workspaceId, viewId, member.uid, {
             role,
@@ -1405,6 +1457,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       canManageMembers,
       memberOverridesSupported,
       explicitMemberAccessLevel,
+      memberAssignmentSettings,
       membersReadOnly,
       permissionLoadFailed,
       permissionLoaded,
@@ -1648,6 +1701,34 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     },
     [loadedPermissionSettings]
   );
+
+  const ownUid = currentUser?.uid;
+  const ownUuid = currentUser?.uuid;
+  const isOwnMember = (member: SpaceMember) =>
+    Boolean((ownUuid && member.user_uuid === ownUuid) || isSameUserUid(member.uid, ownUid));
+
+  // The Members tab shows the signed-in user's own row with an Access menu (Access is a column
+  // only on Custom spaces of servers with per-person access).
+  const ownAccessMenuShown =
+    open &&
+    tab === 'members' &&
+    memberOverridesSupported &&
+    loadedPermissionSettings?.visibility === SpaceVisibility.Custom &&
+    spaceMembers.some((member) => isOwnMember(member) && hasSpaceMemberAccessMenu(member));
+
+  // Read ahead rather than when the menu opens, so the line is in the menu, and describes it, as
+  // soon as it opens. Any failure (an older server without the route included) leaves the row with
+  // its own level and no explanation.
+  useEffect(() => {
+    if (!ownAccessMenuShown || !workspaceId) return;
+    const generation = spaceRequestRef.current.generation;
+    const request = ++ownAccessRequestRef.current;
+
+    void fetchOwnSpaceAccessDetails(workspaceId, viewId, ownUid).then((details) => {
+      if (spaceRequestRef.current.generation !== generation || ownAccessRequestRef.current !== request) return;
+      setOwnAccessDetails(details);
+    });
+  }, [ownAccessMenuShown, ownAccessDetailsRevision, ownUid, viewId, workspaceId]);
 
   const handleAccessOverrideChange = useCallback(
     async (principal: SpaceAssignmentPrincipal, override: SpaceMemberAccessOverride) => {
@@ -1904,6 +1985,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     override,
     effectiveAccess,
     disabled,
+    own = false,
   }: {
     principal: SpaceAssignmentPrincipal | null;
     triggerTestId: string;
@@ -1911,6 +1993,8 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     override: SpaceMemberAccessOverride | undefined;
     effectiveAccess: AccessLevel | null | undefined;
     disabled: boolean;
+    /** The signed-in user's own row, whose menu can say where more access comes from. */
+    own?: boolean;
   }): ReactNode => {
     if (!principal || override === undefined) {
       return (
@@ -1926,17 +2010,26 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     const key = accessOverrideKey(principal);
     const pending = pendingAccessOverrides.has(key);
     const value = pending ? (pendingAccessOverrides.get(key) as SpaceMemberAccessOverride) : override;
+    const shownAccess = pending ? value ?? memberDefaultAccess : effectiveAccess;
+    const extraAccess =
+      own && ownAccessDetails
+        ? extraSpaceAccess(ownAccessDetails, shownAccess === undefined ? memberDefaultAccess : shownAccess, {
+            spaceGroups,
+            workspaceGroups,
+          })
+        : null;
 
     return (
       <SpaceMemberAccessControl
         value={value}
-        effectiveAccess={pending ? value ?? memberDefaultAccess : effectiveAccess}
+        effectiveAccess={shownAccess}
         defaultAccess={memberDefaultAccess}
         disabled={disabled}
         pending={pending}
         principalName={principalName}
         testId={triggerTestId}
         onChange={(next) => void handleAccessOverrideChange(principal, next)}
+        note={extraAccess ? spaceMemberExtraAccessNote(extraAccess, t) : null}
       />
     );
   };
@@ -1979,6 +2072,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       override: member.access_level_override,
       effectiveAccess: member.effective_access_level,
       disabled: membersDisabled || mutatingMemberUids.has(member.uid),
+      own: isOwnMember(member),
     });
   };
 

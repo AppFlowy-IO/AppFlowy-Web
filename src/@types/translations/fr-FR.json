@@ -17,7 +17,9 @@
       "checking": "Vérification de l’accès…",
       "noEdit": "Vous n’avez pas le droit de modifier ici",
       "ownersOnly": "Seuls les propriétaires de l’espace peuvent ajouter des pages ici",
-      "noneAvailable": "Vous ne pouvez ajouter de pages dans aucun espace. Demandez le droit de modification à un propriétaire d’espace."
+      "noneAvailable": "Vous ne pouvez ajouter de pages dans aucun espace. Demandez le droit de modification à un propriétaire d’espace.",
+      "addDenied": "Vous ne pouvez pas ajouter de pages dans cet espace.",
+      "addFailed": "Impossible d’ajouter la page. Réessayez."
     },
     "meetingNotesDenied": "Votre réunion s’est ouverte sans page de notes, car vous ne pouvez pas créer d’espaces dans cet espace de travail.",
     "meetingNotesFailed": "Votre réunion s’est ouverte, mais sa page de notes n’a pas pu être créée."
@@ -2772,7 +2774,20 @@
       "sharedPagesOnly": "Pages partagées uniquement",
       "sharedPagesReason": "Cette personne ne peut ouvrir que les pages partagées avec elle. Gérez cela depuis le menu Partager de chaque page.",
       "managedElsewhere": "Cet accès provient des paramètres de l’espace et ne peut pas être modifié ici.",
-      "reloadToChange": "Cet accès ne peut pas être modifié pour le moment. Rechargez la page et réessayez."
+      "reloadToChange": "Cet accès ne peut pas être modifié pour le moment. Rechargez la page et réessayez.",
+      "extraAccess": {
+        "view": "Vous pouvez aussi consulter cet espace via {{source}}.",
+        "comment": "Vous pouvez aussi commenter dans cet espace via {{source}}.",
+        "edit": "Vous pouvez aussi modifier cet espace via {{source}}.",
+        "full": "Vous avez aussi un accès complet à cet espace via {{source}}."
+      },
+      "extraAccessSource": {
+        "group": "le groupe {{name}}",
+        "anyGroup": "un groupe de cet espace",
+        "allSpaces": "l’accès à tous les espaces ({{name}})",
+        "anyAllSpaces": "l’accès à tous les espaces",
+        "pageShare": "un partage de page"
+      }
     },
     "permissionManager": {
       "memberRoleDescription": "Reçoit l’accès défini pour les membres de l’espace dans les paramètres généraux.",

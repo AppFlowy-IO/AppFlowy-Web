@@ -24,6 +24,10 @@ import ManageSpace from '@/components/app/view-actions/ManageSpace';
 import type { ReactNode } from 'react';
 
 const mockSetOverride = jest.fn();
+const mockFetchOwnAccessDetails = jest.fn();
+// The signed-in user, matched to their own roster row by UUID.
+const OWN_UID = '9000000000000001';
+const OWN_UUID = '90000000-1234-4123-8123-123456789abc';
 const mockAddSpaceMemberByUuid = jest.fn();
 const mockUpdateSpaceMemberByUuid = jest.fn();
 const mockRemoveSpaceMemberByUuid = jest.fn();
@@ -64,7 +68,9 @@ jest.mock('sonner', () => ({
 }));
 
 jest.mock('@/application/services/js-services/space-member-assignment', () => ({
+  ...jest.requireActual('@/application/services/js-services/space-member-assignment'),
   setSpaceMemberAccessOverride: (...args: unknown[]) => mockSetOverride(...args),
+  fetchOwnSpaceAccessDetails: (...args: unknown[]) => mockFetchOwnAccessDetails(...args),
 }));
 
 jest.mock('@/application/services/domains', () => ({
@@ -104,6 +110,8 @@ jest.mock('@/components/main/app.hooks', () => ({
     name: 'Nathan',
     email: 'nathan@appflowy.io',
     avatar: '',
+    uid: OWN_UID,
+    uuid: OWN_UUID,
   }),
 }));
 
@@ -201,8 +209,17 @@ jest.mock('@/components/app/view-actions/SpaceIconButton', () => ({
   default: () => <div data-testid='space-icon-button' />,
 }));
 
-jest.mock('@/components/ui/dropdown-menu', () => ({
-  DropdownMenu: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+jest.mock('@/components/ui/dropdown-menu', () => {
+  const React = jest.requireActual<typeof import('react')>('react');
+  // Menus render open; clicking a trigger reports the menu as opened to menus that listen.
+  const OpenChangeContext = React.createContext<((open: boolean) => void) | undefined>(undefined);
+
+  return {
+  DropdownMenu: ({ children, onOpenChange }: { children: ReactNode; onOpenChange?: (open: boolean) => void }) => (
+    <OpenChangeContext.Provider value={onOpenChange}>
+      <div>{children}</div>
+    </OpenChangeContext.Provider>
+  ),
   DropdownMenuContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DropdownMenuItem: ({
     children,
@@ -221,8 +238,19 @@ jest.mock('@/components/ui/dropdown-menu', () => ({
   ),
   DropdownMenuItemTick: () => <span>selected</span>,
   DropdownMenuSeparator: () => <hr />,
-  DropdownMenuTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
-}));
+  DropdownMenuTrigger: ({ children }: { children: React.ReactElement<{ onClick?: (event: unknown) => void }> }) => {
+    const onOpenChange = React.useContext(OpenChangeContext);
+
+    if (!onOpenChange) return <>{children}</>;
+    return React.cloneElement(children, {
+      onClick: (event: unknown) => {
+        children.props.onClick?.(event);
+        onOpenChange(true);
+      },
+    });
+  },
+  };
+});
 
 jest.mock('@/components/ui/progress', () => ({
   Progress: () => <span data-testid='progress' />,
@@ -496,6 +524,7 @@ describe('ManageSpace ACL management', () => {
     mockAddSpaceMemberByUuid.mockResolvedValue(undefined);
     mockUpdateSpaceMemberByUuid.mockResolvedValue(undefined);
     mockSetOverride.mockResolvedValue(undefined);
+    mockFetchOwnAccessDetails.mockResolvedValue(null);
     mockUpdateSpaceMember.mockResolvedValue(undefined);
     mockRemoveSpaceMember.mockResolvedValue(undefined);
     mockAddSpaceGroupPermission.mockResolvedValue(undefined);
@@ -538,12 +567,221 @@ describe('ManageSpace ACL management', () => {
     async function openMembersTab() {
       render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
       await waitForSettingsLoaded();
-      fireEvent.click(screen.getByRole('tab', { name: 'space.permissionManager.membersTab' }));
+      // The Members tab reads your own access explanation; let an immediate answer land in act.
+      await act(async () => {
+        fireEvent.click(screen.getByRole('tab', { name: 'space.permissionManager.membersTab' }));
+      });
     }
 
     function accessTrigger(uid: string) {
       return screen.getByTestId(`space-member-access-${uid}`);
     }
+
+    describe('where your own extra access comes from', () => {
+      const noEscape = { interpolation: { escapeValue: false } };
+
+      function ownMember(overrides: Partial<SpaceMember> = {}): SpaceMember {
+        return assignedMember({
+          uid: OWN_UID,
+          user_uuid: OWN_UUID,
+          name: 'Nathan',
+          email: 'nathan@appflowy.io',
+          access_level_override: AccessLevel.ReadOnly,
+          effective_access_level: AccessLevel.ReadOnly,
+          ...overrides,
+        });
+      }
+
+      function marketingGroup(): WorkspaceGroupSpacePermission {
+        return {
+          ...group('group-marketing', 'Marketing'),
+          access_level_override: null,
+          effective_access_level: AccessLevel.ReadAndWrite,
+        };
+      }
+
+      function ownDetails(overrides: Record<string, unknown> = {}) {
+        return {
+          space_id: 'space-1',
+          uid: OWN_UID,
+          access_level: AccessLevel.ReadAndWrite,
+          source: 'workspace_group',
+          member_default_access_level: AccessLevel.ReadAndWrite,
+          direct_member_access_level: AccessLevel.ReadOnly,
+          group_member_access_level: AccessLevel.ReadAndWrite,
+          group_space_coverage_access_level: null,
+          explicit_page_access_level: null,
+          ...overrides,
+        };
+      }
+
+      it('reads it once your own row is shown, so your menu already explains it when it opens', async () => {
+        const other = assignedMember();
+
+        mockGetSpacePermission.mockResolvedValue(supportedPermission());
+        mockGetSpaceMembers.mockResolvedValue({ members: [ownMember(), other], groups: [marketingGroup()] });
+        mockFetchOwnAccessDetails.mockResolvedValue(ownDetails());
+        render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+        await waitForSettingsLoaded();
+        await waitFor(() => expect(accessTrigger(OWN_UID).disabled).toBe(false));
+        await act(async () => undefined);
+        // Nothing is read while the General tab is shown.
+        expect(mockFetchOwnAccessDetails).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('tab', { name: 'space.permissionManager.membersTab' }));
+        const expected = mockTranslate('space.memberOverride.extraAccess.edit', {
+          source: mockTranslate('space.memberOverride.extraAccessSource.group', { name: 'Marketing', ...noEscape }),
+          ...noEscape,
+        });
+
+        // The line is there before any menu opens (menus render open in these tests).
+        expect((await screen.findByTestId(`space-member-access-${OWN_UID}-note`)).textContent).toBe(expected);
+        // One read, for the signed-in user: the server only explains their own access.
+        expect(mockFetchOwnAccessDetails).toHaveBeenCalledTimes(1);
+        expect(mockFetchOwnAccessDetails).toHaveBeenCalledWith('workspace-1', 'space-1', OWN_UID);
+        expect(screen.queryByTestId(`space-member-access-${other.uid}-note`)).toBeNull();
+
+        // Opening menus reads nothing more.
+        fireEvent.click(accessTrigger(other.uid));
+        fireEvent.click(accessTrigger(OWN_UID));
+        await act(async () => undefined);
+        expect(mockFetchOwnAccessDetails).toHaveBeenCalledTimes(1);
+      });
+
+      it('reads nothing when your own row has no access menu', async () => {
+        mockGetSpacePermission.mockResolvedValue(supportedPermission());
+        mockGetSpaceMembers.mockResolvedValue({
+          members: [ownMember({ role: SpaceMemberRole.Owner }), assignedMember()],
+          groups: [marketingGroup()],
+        });
+        mockFetchOwnAccessDetails.mockResolvedValue(ownDetails());
+        await openMembersTab();
+        await screen.findByTestId(`space-member-access-${manualMember().uid}`);
+        await act(async () => undefined);
+
+        expect(mockFetchOwnAccessDetails).not.toHaveBeenCalled();
+      });
+
+      it('says Access to all spaces, naming the only group that gives it', async () => {
+        mockGetSpacePermission.mockResolvedValue(supportedPermission());
+        mockGetSpaceMembers.mockResolvedValue({ members: [ownMember()], groups: [] });
+        mockGetWorkspaceGroups.mockResolvedValue({
+          groups: [
+            { ...engineeringWorkspaceGroup, space_coverage_supported: true, space_coverage_access_level: null },
+            {
+              group_id: 'group-users',
+              name: 'Users',
+              member_count: 40,
+              space_coverage_supported: true,
+              space_coverage_access_level: AccessLevel.ReadAndWrite,
+            },
+          ],
+        });
+        mockFetchOwnAccessDetails.mockResolvedValue(
+          ownDetails({ group_member_access_level: null, group_space_coverage_access_level: AccessLevel.ReadAndWrite })
+        );
+        await openMembersTab();
+
+        const expected = mockTranslate('space.memberOverride.extraAccess.edit', {
+          source: mockTranslate('space.memberOverride.extraAccessSource.allSpaces', { name: 'Users', ...noEscape }),
+          ...noEscape,
+        });
+
+        await waitFor(() =>
+          expect(screen.getByTestId(`space-member-access-${OWN_UID}-note`).textContent).toBe(expected)
+        );
+      });
+
+      it('names a share of the space page that replaces what a group gives', async () => {
+        // Can view on the row, Can edit through Marketing, and the space page shared at Can
+        // comment: the server lets the share replace the group, so the share is the reason.
+        mockGetSpacePermission.mockResolvedValue(supportedPermission());
+        mockGetSpaceMembers.mockResolvedValue({ members: [ownMember()], groups: [marketingGroup()] });
+        mockFetchOwnAccessDetails.mockResolvedValue(
+          ownDetails({
+            access_level: AccessLevel.ReadAndComment,
+            source: 'explicit_page_share',
+            explicit_page_access_level: AccessLevel.ReadAndComment,
+          })
+        );
+        await openMembersTab();
+        await waitFor(() => expect(accessTrigger(OWN_UID).disabled).toBe(false));
+        fireEvent.click(accessTrigger(OWN_UID));
+
+        const expected = mockTranslate('space.memberOverride.extraAccess.comment', {
+          source: mockTranslate('space.memberOverride.extraAccessSource.pageShare'),
+          ...noEscape,
+        });
+
+        expect((await screen.findByTestId(`space-member-access-${OWN_UID}-note`)).textContent).toBe(expected);
+      });
+
+      it('keeps quiet when nothing gives more', async () => {
+        mockGetSpacePermission.mockResolvedValue(supportedPermission());
+        mockGetSpaceMembers.mockResolvedValue({
+          members: [ownMember({ access_level_override: AccessLevel.ReadAndWrite, effective_access_level: AccessLevel.ReadAndWrite })],
+          groups: [marketingGroup()],
+        });
+        mockFetchOwnAccessDetails.mockResolvedValue(ownDetails());
+        await openMembersTab();
+        await waitFor(() => expect(mockFetchOwnAccessDetails).toHaveBeenCalledTimes(1));
+        await act(async () => undefined);
+
+        // The group gives Can edit, which the row already gives.
+        expect(screen.queryByTestId(`space-member-access-${OWN_UID}-note`)).toBeNull();
+      });
+
+      it('keeps quiet when the server cannot explain', async () => {
+        // An older server without the route, or a failed read: the row keeps its own level.
+        mockGetSpacePermission.mockResolvedValue(supportedPermission());
+        mockGetSpaceMembers.mockResolvedValue({ members: [ownMember()], groups: [marketingGroup()] });
+        mockFetchOwnAccessDetails.mockResolvedValue(null);
+        await openMembersTab();
+        await waitFor(() => expect(mockFetchOwnAccessDetails).toHaveBeenCalledTimes(1));
+        await act(async () => undefined);
+
+        expect(screen.queryByTestId(`space-member-access-${OWN_UID}-note`)).toBeNull();
+        expect(toast.error).not.toHaveBeenCalled();
+      });
+
+      it('follows a pending choice and reads it again after a permission change, keeping the last answer meanwhile', async () => {
+        const own = ownMember({ access_level_override: null, effective_access_level: AccessLevel.ReadAndWrite });
+        const save = deferred<SpaceMember>();
+        const reread = deferred<ReturnType<typeof ownDetails> | null>();
+
+        mockGetSpacePermission.mockResolvedValue(supportedPermission());
+        mockGetSpaceMembers.mockResolvedValue({ members: [own], groups: [marketingGroup()] });
+        mockFetchOwnAccessDetails
+          .mockResolvedValueOnce(ownDetails({ direct_member_access_level: AccessLevel.ReadAndWrite }))
+          .mockReturnValueOnce(reread.promise);
+        mockSetOverride.mockReturnValue(save.promise);
+        await openMembersTab();
+        await waitFor(() => expect(mockFetchOwnAccessDetails).toHaveBeenCalledTimes(1));
+        await act(async () => undefined);
+        // Can edit by default: the group adds nothing yet.
+        expect(screen.queryByTestId(`space-member-access-${OWN_UID}-note`)).toBeNull();
+
+        // Choosing Can view for yourself shows at once that the group still lets you edit.
+        fireEvent.click(screen.getByTestId(`space-member-access-${OWN_UID}-option-${AccessLevel.ReadOnly}`));
+        expect(await screen.findByTestId(`space-member-access-${OWN_UID}-note`)).toBeTruthy();
+
+        // A permission change reads it again in the background; the last answer stays meanwhile.
+        act(() => {
+          mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'workspace-group-id' });
+        });
+        await waitFor(() => expect(mockFetchOwnAccessDetails).toHaveBeenCalledTimes(2));
+        expect(screen.getByTestId(`space-member-access-${OWN_UID}-note`)).toBeTruthy();
+
+        // The group no longer gives more, so the line goes away with the new answer.
+        await act(async () => {
+          reread.resolve(ownDetails({ access_level: AccessLevel.ReadOnly, group_member_access_level: null }));
+        });
+        expect(screen.queryByTestId(`space-member-access-${OWN_UID}-note`)).toBeNull();
+        await act(async () => {
+          save.resolve({ ...own, access_level_override: AccessLevel.ReadOnly, effective_access_level: AccessLevel.ReadOnly });
+        });
+      });
+    });
 
     it('lays the table out as Name | Access | Role with one explanation in the Access header', async () => {
       const member = assignedMember();
@@ -1017,15 +1255,66 @@ describe('ManageSpace ACL management', () => {
       await waitFor(() => expect(screen.getByTestId('inline-member-add').disabled).toBe(false));
       fireEvent.click(screen.getByTestId('inline-member-add'));
 
-      await waitFor(() =>
-        expect(mockAddSpaceMemberByUuid).toHaveBeenCalledWith('workspace-1', 'space-1', candidateUuid, {
-          role: SpaceMemberRole.Member,
-        })
-      );
-      // No frozen level: neither the legacy materialized level nor a chosen one is sent.
-      expect(mockAddSpaceMemberByUuid.mock.calls[0][3]).toEqual({ role: SpaceMemberRole.Member });
+      await waitFor(() => expect(mockAddSpaceMemberByUuid).toHaveBeenCalledTimes(1));
+      // No access is chosen for them, and the Custom space ignores the level. Can view, not the
+      // space's Can edit, is sent: if the space became Public without this dialog noticing, the
+      // server stores the level sent, and Public spaces already give every member their level.
+      expect(mockAddSpaceMemberByUuid.mock.calls[0]).toStrictEqual([
+        'workspace-1',
+        'space-1',
+        candidateUuid,
+        { role: SpaceMemberRole.Member, access_level: AccessLevel.ReadOnly },
+      ]);
       expect(mockAddSpaceMember).not.toHaveBeenCalled();
       await waitFor(() => expect(toast.success).toHaveBeenCalledWith('space.permissionManager.addSpaceMemberSuccess'));
+    });
+
+    it('adds people and groups to a space type it does not know at the space member level, never the server default', async () => {
+      // Outside Custom spaces the server stores the level sent with the add; a missing one would
+      // become Can edit even though this space's members only view.
+      const unknownTypePermission: SpacePermissionSettings = {
+        ...customPermission,
+        visibility: 'restricted' as SpaceVisibility,
+        member_default_access_level: AccessLevel.ReadOnly,
+        everyone_else_access_level: null,
+      };
+
+      mockGetSpacePermission.mockResolvedValue({
+        ...permissionResponse({ permission: unknownTypePermission }),
+        member_access_overrides_supported: true,
+      });
+      mockGetMembers.mockResolvedValue([{ ...workspaceCandidate, user_uuid: candidateUuid }]);
+      mockAddSpaceGroupPermission.mockResolvedValue({
+        ...group('group-engineering', 'Engineering'),
+        access_level_override: null,
+        effective_access_level: AccessLevel.ReadOnly,
+      });
+      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+      await waitFor(() => expect(screen.getByTestId('inline-member-add').disabled).toBe(false));
+      fireEvent.click(screen.getByTestId('inline-member-add'));
+      await waitFor(() => expect(mockAddSpaceMemberByUuid).toHaveBeenCalledTimes(1));
+      expect(mockAddSpaceMemberByUuid.mock.calls[0]).toEqual([
+        'workspace-1',
+        'space-1',
+        candidateUuid,
+        { role: SpaceMemberRole.Member, access_level: AccessLevel.ReadOnly },
+      ]);
+
+      await waitFor(() => expect(mockGetWorkspaceGroups).toHaveBeenCalledWith('workspace-1'));
+      fireEvent.change(screen.getByTestId('inline-member-search'), { target: { value: 'engin' } });
+      fireEvent.click(
+        within(await screen.findByTestId('space-group-inline-search-result-group-engineering')).getByTestId(
+          'space-group-inline-search-result-add'
+        )
+      );
+      await waitFor(() => expect(mockAddSpaceGroupPermission).toHaveBeenCalledTimes(1));
+      expect(mockAddSpaceGroupPermission.mock.calls[0]).toEqual([
+        'workspace-1',
+        'space-1',
+        'group-engineering',
+        { role: SpaceMemberRole.Member, access_level: AccessLevel.ReadOnly },
+      ]);
     });
 
     it('refuses to add a candidate without a UUID instead of using the legacy route', async () => {
@@ -1120,7 +1409,7 @@ describe('ManageSpace ACL management', () => {
       expect(mockRemoveSpaceMember).not.toHaveBeenCalled();
     });
 
-    it('adds and promotes groups without sending an access level', async () => {
+    it('adds groups at Can view and promotes them without choosing an access level', async () => {
       const memberGroup = { ...group('group-1', 'Design'), access_level_override: null, effective_access_level: 30 };
       const grantedGroup = { ...group('group-engineering', 'Engineering'), access_level_override: null, effective_access_level: 30 };
 
@@ -1141,11 +1430,12 @@ describe('ManageSpace ACL management', () => {
       );
 
       await waitFor(() => expect(mockAddSpaceGroupPermission).toHaveBeenCalledTimes(1));
-      expect(mockAddSpaceGroupPermission.mock.calls[0]).toEqual([
+      // As for people: the Custom space ignores the level, which only guards a missed type switch.
+      expect(mockAddSpaceGroupPermission.mock.calls[0]).toStrictEqual([
         'workspace-1',
         'space-1',
         'group-engineering',
-        { role: SpaceMemberRole.Member },
+        { role: SpaceMemberRole.Member, access_level: AccessLevel.ReadOnly },
       ]);
 
       const row = await screen.findByTestId('space-group-row-group-1');
