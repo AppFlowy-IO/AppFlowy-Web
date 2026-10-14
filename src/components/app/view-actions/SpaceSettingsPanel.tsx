@@ -722,6 +722,8 @@ function SpaceSettingsPanel({
       showActions={showActions}
       overflowHidden
       PaperProps={{
+        // Covers the notice, both tabs and the footer buttons.
+        className: BUTTON_FOCUS_RING,
         style: {
           width: MODAL_WIDTH,
           maxWidth: '92vw',
@@ -734,7 +736,7 @@ function SpaceSettingsPanel({
         value={activeTab}
         onValueChange={(value) => onTabChange(value as SpaceSettingsTab)}
         aria-busy={primaryActionLoading || undefined}
-        className={cn('min-h-0 max-w-full', BUTTON_FOCUS_RING)}
+        className='min-h-0 max-w-full'
         style={{ width: CONTENT_WIDTH }}
         data-testid='space-settings-panel'
       >

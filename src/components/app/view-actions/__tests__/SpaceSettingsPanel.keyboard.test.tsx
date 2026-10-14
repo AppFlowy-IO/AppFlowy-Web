@@ -269,8 +269,10 @@ describe('Manage Space General tab with a keyboard', () => {
     await waitFor(() => expect(document.activeElement).toBe(launcher));
   });
 
-  it('shows a visible focus ring on every button in the panel', () => {
+  it('shows a visible focus ring on every button in the dialog', () => {
     render(<Harness />);
-    expect(screen.getByTestId('space-settings-panel').className).toContain('[&_button:focus-visible]:ring-2');
+    // The shared Button removes the browser outline, so the dialog draws the ring for all of them,
+    // including a notice above the tabs and the footer buttons.
+    expect(dialog().className).toContain('[&_button:focus-visible]:ring-2');
   });
 });
