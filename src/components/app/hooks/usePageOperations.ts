@@ -142,9 +142,9 @@ export function usePageOperations({
         throw new Error('No workspace or service found');
       }
 
-      const shareWithMeView = findViewInShareWithMe(outlineRef.current || [], parentViewId);
-
-      if (role === Role.Guest || shareWithMeView) {
+      // Shared-with-me placement does not remove a member's write access to the
+      // parent page. The creation request enforces its current server permissions.
+      if (role === Role.Guest) {
         toast.error('No permission to create pages');
         throw new Error('No permission to create pages');
       }
@@ -168,7 +168,7 @@ export function usePageOperations({
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, outlineRef, role, loadOutline, capturePageActivation]
+    [currentWorkspaceId, role, loadOutline, capturePageActivation]
   );
 
   // Delete a page (move to trash)
@@ -249,7 +249,8 @@ export function usePageOperations({
     [currentWorkspaceId]
   );
 
-  // Update page name (rename) - uses WebSocket notification for sidebar refresh
+  // Shared pages need a refresh because normal outline notifications exclude
+  // another user's private space, even when its descendant is shared with us.
   const updatePageName = useCallback(
     async (viewId: string, name: string) => {
       if (!currentWorkspaceId) {
@@ -259,13 +260,18 @@ export function usePageOperations({
       try {
         await PageService.updateName(currentWorkspaceId, viewId, name);
         ViewService.invalidateCache(currentWorkspaceId, viewId);
-        // Sidebar refresh is handled by WebSocket notification (FOLDER_OUTLINE_CHANGED)
+        if (findViewInShareWithMe(outlineRef.current || [], viewId)) {
+          void loadOutline?.(currentWorkspaceId, false).catch((error) => {
+            Log.warn('[Outline] Failed to refresh Shared with me after renaming a page', error);
+          });
+        }
+
         return;
       } catch (e) {
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId]
+    [currentWorkspaceId, outlineRef, loadOutline]
   );
 
   const duplicatePage = useCallback(

@@ -2,20 +2,23 @@ import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
-import { AccessLevel, View, ViewIconType } from '@/application/types';
-import { getViewUrl } from '@/application/view-utils';
+import { AccessService } from '@/application/services/domains';
+import { AccessLevel, Role, View, ViewIconType, ViewLayout } from '@/application/types';
+import { getViewUrl, isDatabaseContainer, isSpaceView } from '@/application/view-utils';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { ReactComponent as EmojiIcon } from '@/assets/icons/emoji.svg';
 import { ReactComponent as LogoutIcon } from '@/assets/icons/logout.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { ReactComponent as OpenIcon } from '@/assets/icons/open.svg';
+import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
 import { notify } from '@/components/_shared/notify';
 import { useAppOverlayContext } from '@/components/app/app-overlay/AppOverlayContext';
-import { useAppOperations, useAppViewId, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { useAppOperations, useAppViewId, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import ViewItem from '@/components/app/outline/ViewItem';
 import { RemoveAccessConfirmDialog } from '@/components/app/share/RemoveAccessConfirmDialog';
-import { AccessService } from '@/application/services/domains';
+import { useViewActionPermissions } from '@/components/app/view-actions/useViewActionPermissions';
+import ViewActionsPopover from '@/components/app/view-actions/ViewActionsPopover';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import {
@@ -35,6 +38,7 @@ export function ShareViewItem({
   toggleExpand,
   navigateToView,
   onDataRefresh,
+  onImportClick,
 }: {
   view: View;
   width: number;
@@ -42,9 +46,52 @@ export function ShareViewItem({
   toggleExpand: (id: string, isExpand: boolean) => void;
   navigateToView: (viewId: string) => void;
   onDataRefresh?: () => void;
+  onImportClick?: (view: View) => void;
+}) {
+  const renderExtra = useCallback(
+    ({ hovered, view: rowView }: { hovered: boolean; view: View }) => (
+      <SharedViewActions
+        key={rowView.view_id}
+        view={rowView}
+        visible={hovered}
+        onDataRefresh={onDataRefresh}
+        onImportClick={onImportClick}
+        onExpand={() => toggleExpand(rowView.view_id, true)}
+      />
+    ),
+    [onDataRefresh, onImportClick, toggleExpand]
+  );
+
+  return (
+    <ViewItem
+      renderExtra={renderExtra}
+      view={view}
+      width={width}
+      expandIds={expandIds}
+      toggleExpand={toggleExpand}
+      onClickView={navigateToView}
+    />
+  );
+}
+
+// ViewItem reuses renderExtra for descendants. Each row owns its action target
+// and menu state so creating a grandchild never targets the top shared page.
+function SharedViewActions({
+  view,
+  visible,
+  onDataRefresh,
+  onImportClick,
+  onExpand,
+}: {
+  view: View;
+  visible: boolean;
+  onDataRefresh?: () => void;
+  onImportClick?: (view: View) => void;
+  onExpand: () => void;
 }) {
   const { t } = useTranslation();
   const [popoverOpen, setPopoverOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
   const [showRemoveDialog, setShowRemoveDialog] = useState(false);
   const [isRemoving, setIsRemoving] = useState(false);
   const viewId = useAppViewId();
@@ -54,6 +101,17 @@ export function ShareViewItem({
   const currentWorkspaceId = useCurrentWorkspaceId();
   const { updatePage, uploadFile } = useAppOperations();
   const { openRenameModal } = useAppOverlayContext();
+  const role = useUserWorkspaceInfo()?.selectedWorkspace.role;
+  const canCreateChildren =
+    (role === Role.Member || role === Role.Owner) &&
+    view.layout === ViewLayout.Document &&
+    !isSpaceView(view) &&
+    !isDatabaseContainer(view);
+  // Resolve only the hovered/open row, never every shared page on sidebar load.
+  const { canCreateViewActions, hasLoadedViewActionPermissions, isLoadingViewActionPermissions } =
+    useViewActionPermissions(view, canCreateChildren && (visible || addOpen));
+  const showAdd =
+    canCreateChildren && hasLoadedViewActionPermissions && !isLoadingViewActionPermissions && canCreateViewActions;
 
   const canEdit = view.access_level && view.access_level > AccessLevel.ReadAndComment;
 
@@ -187,67 +245,58 @@ export function ShareViewItem({
     );
   }, [view, canEdit, handleChangeIcon, handleRemoveIcon, onUploadFile, handleRename, currentWorkspaceId, t]);
 
-  const renderExtra = useCallback(
-    ({ hovered }: { hovered: boolean; view: View }) => {
-      return (
-        <div className='mr-2'>
-          {/* Button - only visible on hover */}
-          {hovered && (
+  return (
+    <>
+      {(visible || popoverOpen || addOpen) && (
+        <div className='mr-2 flex items-center' onClick={(event) => event.stopPropagation()}>
+          <DropdownMenu open={popoverOpen} onOpenChange={setPopoverOpen}>
             <Tooltip disableHoverableContent delayDuration={500}>
               <TooltipTrigger asChild>
-                <Button
-                  variant={'ghost'}
-                  size={'icon-sm'}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-
-                    setPopoverOpen(true);
-                  }}
-                >
-                  <MoreIcon />
-                </Button>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    data-testid='shared-page-more-actions'
+                    aria-label={t('menuAppHeader.moreButtonToolTip')}
+                    variant='ghost'
+                    size='icon-sm'
+                  >
+                    <MoreIcon />
+                  </Button>
+                </DropdownMenuTrigger>
               </TooltipTrigger>
               <TooltipContent>{t('menuAppHeader.moreButtonToolTip')}</TooltipContent>
             </Tooltip>
+            {renderDropdownMenu()}
+          </DropdownMenu>
+          {showAdd && (
+            <ViewActionsPopover
+              view={view}
+              popoverType={{ category: 'page', type: 'add' }}
+              open={addOpen}
+              onOpenChange={(open) => {
+                setAddOpen(open);
+                if (open) onExpand();
+              }}
+              onImportClick={onImportClick}
+            >
+              <Button
+                data-testid='inline-add-page'
+                aria-label={t('menuAppHeader.addPageTooltip')}
+                title={t('menuAppHeader.addPageTooltip')}
+                variant='ghost'
+                size='icon-sm'
+              >
+                <PlusIcon />
+              </Button>
+            </ViewActionsPopover>
           )}
         </div>
-      );
-    },
-    [t]
-  );
-
-  return (
-    <div className='relative'>
-      <ViewItem
-        renderExtra={renderExtra}
-        view={view}
-        width={width}
-        expandIds={expandIds}
-        toggleExpand={toggleExpand}
-        onClickView={navigateToView}
-      />
-
+      )}
       <RemoveAccessConfirmDialog
         open={showRemoveDialog}
         onOpenChange={setShowRemoveDialog}
         onConfirm={handleRemoveAccess}
         loading={isRemoving}
       />
-
-      {/* Dropdown Menu - always present with absolute positioned trigger */}
-      <DropdownMenu open={popoverOpen} onOpenChange={setPopoverOpen}>
-        <DropdownMenuTrigger asChild>
-          <div
-            className='pointer-events-none absolute right-0 top-0 z-[-1] h-full w-full'
-            style={{
-              zIndex: popoverOpen ? 1 : -1,
-              pointerEvents: popoverOpen ? 'auto' : 'none',
-            }}
-          />
-        </DropdownMenuTrigger>
-        {renderDropdownMenu()}
-      </DropdownMenu>
-    </div>
+    </>
   );
 }
