@@ -802,7 +802,8 @@ function SpaceSettingsPanel({
         </TabsList>
 
         <TabsContent value='general' className='min-h-0' data-testid='space-settings-general'>
-          <div ref={setContainer} className='appflowy-scroller max-h-[64vh] overflow-y-auto pr-1'>
+          {/* The scroll area clips what is drawn outside it: 2px on the left keeps focus rings whole. */}
+          <div ref={setContainer} className='appflowy-scroller max-h-[64vh] overflow-y-auto pl-0.5 pr-1'>
             <div className='flex flex-col gap-6 py-2'>
               <div className='flex flex-col gap-2'>
                 <div className='text-sm font-medium text-text-secondary'>{t('space.spaceName')}</div>

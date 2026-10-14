@@ -377,6 +377,15 @@ describe('Manage Space General tab with a keyboard', () => {
     expect(showsKeyboardFocus(within(confirm).getByRole('button', { name: 'Switch' }))).toBe(true);
   });
 
+  it('leaves room for the focus ring of controls at the left edge of the General tab', () => {
+    render(<Harness />);
+    const icon = within(dialog()).getByRole('button', { name: 'space.changeIcon' });
+    // The tab scrolls, so it clips anything drawn outside it; the 2px ring needs 2px of padding.
+    const scroller = icon.closest('.overflow-y-auto') as HTMLElement;
+
+    expect(scroller.className).toMatch(/(^|\s)pl-0\.5(\s|$)/);
+  });
+
   it('shows a visible focus ring on every button in the dialog', () => {
     render(<Harness />);
     // The shared Button removes the browser outline, so the dialog draws the ring for all of them,
