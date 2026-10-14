@@ -655,9 +655,15 @@
         }
       },
       "login": {
-        "title": "Connexion au compte",
+        "title": "Déconnexion",
         "loginLabel": "Connexion",
-        "logoutLabel": "Déconnexion"
+        "logoutLabel": "Se déconnecter",
+        "description": "Déconnectez-vous de votre compte dans ce navigateur."
+      },
+      "password": {
+        "title": "Mot de passe",
+        "description": "Le mot de passe de votre compte, pour vous connecter.",
+        "setupButton": "Définir un mot de passe"
       }
     },
     "workspacePage": {
@@ -1211,8 +1217,9 @@
       "importSuccess": "Importation réussie du dossier de données @:appName",
       "importFailed": "L'importation du dossier de données @:appName a échoué",
       "importGuide": "Pour plus de détails, veuillez consulter le document référencé",
-      "logoutRemoveLocalData": "Supprimer aussi mes données de ce navigateur",
-      "logoutRemoveLocalDataDescription": "À utiliser sur un ordinateur partagé. Les modifications qui n’ont pas encore été envoyées sont conservées pour être envoyées à votre prochaine connexion."
+      "logoutRemoveLocalData": "Supprimer aussi les copies des pages de ce navigateur",
+      "logoutRemoveLocalDataDescription": "À utiliser sur un ordinateur partagé. Les modifications qui n’ont pas encore été envoyées restent dans ce navigateur jusqu’à votre prochaine connexion, pour ne pas être perdues.",
+      "signOut": "Se déconnecter"
     },
     "notifications": {
       "enableNotifications": {

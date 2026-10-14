@@ -1079,7 +1079,7 @@
       "password": {
         "title": "Password",
         "description": "Your account password for signing in.",
-        "setupButton": "Setup password"
+        "setupButton": "Set up password"
       },
       "general": {
         "title": "Account name & profile image",
@@ -1092,10 +1092,10 @@
         }
       },
       "login": {
-        "title": "Account login",
-        "description": "Log out from your current session.",
+        "title": "Sign out",
+        "description": "Sign out of your account in this browser.",
         "loginLabel": "Log in",
-        "logoutLabel": "Log out"
+        "logoutLabel": "Sign out"
       },
       "deleteAccount": {
         "title": "Delete account",
@@ -1570,7 +1570,7 @@
       "notifications": "Notifications",
       "open": "Open Settings",
       "logout": "Logout",
-      "logoutPrompt": "Are you sure you want to log out?",
+      "logoutPrompt": "Are you sure you want to sign out?",
       "selfEncryptionLogoutPrompt": "Are you sure you want to log out? Please ensure you have copied the encryption secret",
       "syncSetting": "Sync Setting",
       "cloudSettings": "Cloud Settings",
@@ -1614,8 +1614,9 @@
       "importSuccess": "Successfully imported the @:appName data folder",
       "importFailed": "Importing the @:appName data folder failed",
       "importGuide": "For further details, please check the referenced document",
-      "logoutRemoveLocalData": "Also remove my data from this browser",
-      "logoutRemoveLocalDataDescription": "Use this on a shared computer. Changes that haven't been sent yet are kept so they can be sent when you sign in again."
+      "logoutRemoveLocalData": "Also remove page copies from this browser",
+      "logoutRemoveLocalDataDescription": "Use this on a shared computer. Changes that haven't been sent yet stay in this browser until you sign in again, so they aren't lost.",
+      "signOut": "Sign out"
     },
     "notifications": {
       "enableNotifications": {
