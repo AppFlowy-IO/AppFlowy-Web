@@ -118,6 +118,37 @@ describe('useGroup', () => {
     expect(useGroupByFieldDispatchCompatibility).toBe(useGroupByFieldDispatch);
   });
 
+  it('keeps the column snapshot stable across unrelated view updates while observing group changes', () => {
+    const fieldId = 'field-id';
+    const groupId = 'group-id';
+    const viewId = 'board-view-id';
+    const databaseDoc = createDatabaseDoc({
+      fieldId,
+      groupId,
+      groupColumns: [{ id: 'A', visible: true, group_color: 'appflowy_tint3' }],
+      viewId,
+    });
+    const view = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database)
+      ?.get(YjsDatabaseKey.views)?.get(viewId);
+    const { result } = renderHook(() => useGroup(groupId), {
+      wrapper: createWrapper(databaseDoc, viewId),
+    });
+    const initialColumns = result.current.columns;
+
+    act(() => { view?.set(YjsDatabaseKey.name, 'Renamed board'); });
+    expect(result.current.columns).toBe(initialColumns);
+
+    act(() => {
+      const columns = view?.get(YjsDatabaseKey.groups)?.get(0)?.get(YjsDatabaseKey.groups);
+
+      columns?.delete(0, 1);
+      columns?.push([{ id: 'A', visible: false, group_color: 'appflowy_tint5' }]);
+    });
+    expect(result.current.columns).toEqual([
+      { id: 'A', visible: false, visibleExplicit: true, groupColor: 'appflowy_tint5' },
+    ]);
+  });
+
   it.each<[FieldType, string[]]>([
     [FieldType.RichText, ['field-id']],
     [FieldType.Number, [

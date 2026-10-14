@@ -2765,13 +2765,17 @@ export function useAddDatabaseView() {
     const requestViewId = activeViewId || databasePageId;
     const load = (id: string) => atomicRead<View>(owner, `/api/workspace/${workspaceId}/view/${id}`, { depth: 1 });
     const current = await load(requestViewId);
-    const parent = current.parent_view_id ? await load(current.parent_view_id) : undefined;
     let container: View;
 
     if (isDatabaseContainer(current) && !isEmbeddedDatabaseViewWithoutChildren(current)) container = current;
-    else if (isDatabaseContainer(parent)) container = parent as View;
-    else if ((isEmbeddedView(current) || isDocumentBlock) && parent) container = parent;
-    else container = current.view_id === databasePageId ? current : await load(databasePageId);
+    else {
+      const parent = current.parent_view_id ? await load(current.parent_view_id) : undefined;
+
+      if (isDatabaseContainer(parent)) container = parent as View;
+      else if ((isEmbeddedView(current) || isDocumentBlock) && parent) container = parent;
+      else container = current.view_id === databasePageId ? current : await load(databasePageId);
+    }
+
     owner.assertCurrent();
     const index = options?.insertBeforeViewId
       ? (container.children ?? []).findIndex((child) => child.view_id === options.insertBeforeViewId) : -1;

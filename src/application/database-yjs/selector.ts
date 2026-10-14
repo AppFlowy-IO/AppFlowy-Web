@@ -1125,14 +1125,21 @@ export function useGroup(groupId: string) {
       const groupFieldId = group?.get(YjsDatabaseKey.field_id) ?? (fallback?.id === groupId ? fallback.fieldId : null);
 
       setFieldId(groupFieldId);
-      if (!groupFieldId) {
-        setColumns([]);
-        return;
-      }
-
       const persistedColumns = normalizeUniqueDatabaseGroupColumns(group?.get(YjsDatabaseKey.groups)?.toArray() ?? []);
+      const nextColumns = !groupFieldId
+        ? []
+        : persistedColumns.length > 0 ? persistedColumns : getFallbackGroupColumns(fields?.get(groupFieldId));
 
-      setColumns(persistedColumns.length > 0 ? persistedColumns : getFallbackGroupColumns(fields?.get(groupFieldId)));
+      // The view observer also receives names, row orders and layout changes.
+      // Preserve the snapshot when those updates do not change its columns.
+      setColumns((current) =>
+        current.length === nextColumns.length && current.every((column, index) => {
+          const next = nextColumns[index];
+
+          return column.id === next.id && column.visible === next.visible &&
+            column.visibleExplicit === next.visibleExplicit && column.groupColor === next.groupColor;
+        }) ? current : nextColumns
+      );
     };
 
     view?.observeDeep(observerEvent);

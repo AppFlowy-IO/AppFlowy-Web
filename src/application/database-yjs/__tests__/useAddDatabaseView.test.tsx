@@ -245,6 +245,21 @@ describe('compact Database view callers', () => {
     expect(f.ensure).toHaveBeenCalledTimes(2);
   });
 
+  it('creates directly in a known container without waiting for its parent metadata', async () => {
+    const f = setup({ activeViewId: 'container' });
+
+    jest.mocked(atomicRead).mockImplementation(async (_owner, url) => {
+      if (url.endsWith('/container')) return f.container as never;
+      throw new Error('Parent metadata is unavailable');
+    });
+
+    await expect(f.result.current.add(DatabaseViewLayout.Grid)).resolves.toBe('new-view');
+    expect(atomicRead).toHaveBeenCalledTimes(1);
+    expect(createDefaultDatabaseView).toHaveBeenCalledWith(expect.objectContaining({
+      parentViewId: 'container', embedded: false,
+    }));
+  });
+
   it('duplicates current source settings through the recipe rather than copying Yjs maps', async () => {
     const f = setup();
 
