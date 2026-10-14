@@ -47,7 +47,9 @@ function SpaceIconButton({
       }}
       defaultActiveTab={'icon'}
       tabs={['icon']}
-      popoverContentProps={{ container }}
+      // In the space dialog, closing the picker gives focus back to this button (the shared
+      // popover keeps it where it was by default).
+      popoverContentProps={{ container, onCloseAutoFocus: undefined }}
     >
       {/* A real button, so the icon picker can be reached and opened with the keyboard. */}
       <Avatar
