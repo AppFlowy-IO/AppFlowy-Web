@@ -103,12 +103,21 @@ function accessLabel(accessLevel: AccessLevel | null | undefined, t: TFunction):
   return spaceMemberAccessLabel(accessLevel ?? null, t);
 }
 
-function sidebarEditPolicyLabel(policy: SpaceSidebarEditPolicy, t: TFunction): string {
+/**
+ * The server lets space owners add pages and, with "members and owners", space members who can
+ * edit. Space members are the people and groups added to a Custom space, and every workspace
+ * member (not guests) in a Public space. Private spaces have no setting: only the owner adds pages.
+ */
+function sidebarEditPolicyLabel(policy: SpaceSidebarEditPolicy, visibility: SpaceVisibility, t: TFunction): string {
   switch (policy) {
     case SpaceSidebarEditPolicy.OwnersOnly:
       return t('workspacePermissions.sidebarOwners');
     case SpaceSidebarEditPolicy.MembersAndOwners:
-      return t('workspacePermissions.sidebarMembers');
+      return t(
+        visibility === SpaceVisibility.Public
+          ? 'workspacePermissions.sidebarWorkspaceMembers'
+          : 'workspacePermissions.sidebarMembers'
+      );
     default:
       // A policy from a newer server is shown neutrally and kept as received.
       return t('workspacePermissions.sidebarUnknown');
@@ -292,10 +301,12 @@ function PermissionPrincipalRow({
  */
 const SidebarEditPolicyRow = memo(function SidebarEditPolicyRow({
   value,
+  visibility,
   disabled,
   onChange,
 }: {
   value: SpaceSidebarEditPolicy;
+  visibility: SpaceVisibility;
   disabled: boolean;
   onChange: (value: SpaceSidebarEditPolicy) => void;
 }) {
@@ -325,7 +336,7 @@ const SidebarEditPolicyRow = memo(function SidebarEditPolicyRow({
                 data-testid='space-sidebar-policy'
               >
                 <span id={valueId} className='truncate'>
-                  {sidebarEditPolicyLabel(value, t)}
+                  {sidebarEditPolicyLabel(value, visibility, t)}
                 </span>
                 <ChevronDown aria-hidden className='h-4 w-4 text-icon-tertiary' />
               </Button>
@@ -340,7 +351,7 @@ const SidebarEditPolicyRow = memo(function SidebarEditPolicyRow({
                   className='justify-between'
                   data-testid={`space-sidebar-policy-option-${option}`}
                 >
-                  {sidebarEditPolicyLabel(option, t)}
+                  {sidebarEditPolicyLabel(option, visibility, t)}
                   {option === value && <DropdownMenuItemTick />}
                 </DropdownMenuItem>
               ))}
@@ -778,6 +789,7 @@ function SpaceSettingsPanel({
               {showAccessDetails && !draftIsPrivate && (
                 <SidebarEditPolicyRow
                   value={permissionSettings.sidebar_edit_policy}
+                  visibility={draftVisibility}
                   disabled={permissionSettingsDisabled || loadingSettings}
                   onChange={onSidebarEditPolicyChange}
                 />

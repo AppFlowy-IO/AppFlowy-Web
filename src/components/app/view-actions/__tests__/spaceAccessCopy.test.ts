@@ -22,7 +22,9 @@ const SHARED_VOCABULARY: Record<string, string> = {
   'space.memberOverride.updated': 'Access updated',
   'workspacePermissions.sidebarPolicy': 'Who can add pages to this space',
   'workspacePermissions.sidebarOwners': 'Only space owners',
-  'workspacePermissions.sidebarMembers': 'Anyone who can edit',
+  // Who counts as a space member differs by space type (see policy/space.rs on the server).
+  'workspacePermissions.sidebarMembers': 'Space members who can edit',
+  'workspacePermissions.sidebarWorkspaceMembers': 'Workspace members who can edit',
   'workspacePermissions.sidebarExplanation':
     'Applies to pages added directly to the space. Pages inside other pages follow their own permissions.',
   'space.permissionManager.checkAgain': 'Check again',
