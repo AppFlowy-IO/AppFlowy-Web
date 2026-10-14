@@ -6,7 +6,11 @@ import { toast } from 'sonner';
 import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import { WorkspaceService } from '@/application/services/domains';
 import { captureApiContext } from '@/application/services/js-services/http/request-context';
-import { setSpaceMemberAccessOverride, SpaceAssignmentPrincipal } from '@/application/services/js-services/space-member-assignment';
+import {
+  setSpaceMemberAccessOverride,
+  SpaceAssignmentPrincipal,
+  spaceMemberAddPayload,
+} from '@/application/services/js-services/space-member-assignment';
 import {
   AccessLevel,
   legacySpacePermission,
@@ -1254,6 +1258,9 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   // Explicit members receive the collective member level; the per-member value
   // only matters on servers that still honour it.
   const explicitMemberAccessLevel = permissionSettings.member_default_access_level ?? AccessLevel.ReadOnly;
+  // Adds through the UUID routes follow the space as the server last confirmed it: only Custom
+  // members may leave the level out, every other type stores the level sent with the add.
+  const memberAssignmentSettings = loadedPermissionSettings ?? permissionSettings;
 
   const handleAddMember = useCallback(
     async (workspaceMember: WorkspaceMember) => {
@@ -1270,7 +1277,12 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       try {
         if (memberOverridesSupported) {
           if (!workspaceMember.user_uuid) throw new Error(t('space.memberOverride.identityUnavailable'));
-          await WorkspaceService.addSpaceMemberByUuid(workspaceId, viewId, workspaceMember.user_uuid, { role: SpaceMemberRole.Member });
+          await WorkspaceService.addSpaceMemberByUuid(
+            workspaceId,
+            viewId,
+            workspaceMember.user_uuid,
+            spaceMemberAddPayload(SpaceMemberRole.Member, memberAssignmentSettings)
+          );
         } else {
           await WorkspaceService.addSpaceMember(workspaceId, viewId, { uid, role: SpaceMemberRole.Member, access_level: explicitMemberAccessLevel });
         }
@@ -1292,6 +1304,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       canManageMembers,
       memberOverridesSupported,
       explicitMemberAccessLevel,
+      memberAssignmentSettings,
       membersReadOnly,
       permissionLoadFailed,
       permissionLoaded,
@@ -1310,10 +1323,14 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       setMemberSearch('');
       setAddingGroupId(group.group_id);
       try {
-        const granted = await WorkspaceService.addSpaceGroupPermission(workspaceId, viewId, group.group_id, {
-          role: SpaceMemberRole.Member,
-          ...(memberOverridesSupported ? {} : { access_level: explicitMemberAccessLevel }),
-        });
+        const granted = await WorkspaceService.addSpaceGroupPermission(
+          workspaceId,
+          viewId,
+          group.group_id,
+          memberOverridesSupported
+            ? spaceMemberAddPayload(SpaceMemberRole.Member, memberAssignmentSettings)
+            : { role: SpaceMemberRole.Member, access_level: explicitMemberAccessLevel }
+        );
         const currentScope = spaceRequestRef.current;
 
         if (
@@ -1344,6 +1361,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       canManageMembers,
       memberOverridesSupported,
       explicitMemberAccessLevel,
+      memberAssignmentSettings,
       membersReadOnly,
       permissionLoadFailed,
       permissionLoaded,
@@ -1375,7 +1393,14 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         if (memberOverridesSupported) {
           if (!member.user_uuid) throw new Error(t('space.memberOverride.identityUnavailable'));
           if (isMutableSpaceMember(member)) await WorkspaceService.updateSpaceMemberByUuid(workspaceId, viewId, member.user_uuid, { role });
-          else await WorkspaceService.addSpaceMemberByUuid(workspaceId, viewId, member.user_uuid, { role });
+          else {
+            await WorkspaceService.addSpaceMemberByUuid(
+              workspaceId,
+              viewId,
+              member.user_uuid,
+              spaceMemberAddPayload(role, memberAssignmentSettings)
+            );
+          }
         } else if (isMutableSpaceMember(member)) {
           await WorkspaceService.updateSpaceMember(workspaceId, viewId, member.uid, {
             role,
@@ -1405,6 +1430,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       canManageMembers,
       memberOverridesSupported,
       explicitMemberAccessLevel,
+      memberAssignmentSettings,
       membersReadOnly,
       permissionLoadFailed,
       permissionLoaded,

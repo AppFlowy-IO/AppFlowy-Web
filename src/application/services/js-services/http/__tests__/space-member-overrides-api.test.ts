@@ -28,6 +28,16 @@ test('UUID create inherits without serializing a default or an override', async 
   );
 });
 
+test('UUID create carries an explicit member level unchanged', async () => {
+  // Public and Private spaces store this level; without it the server would store Can edit.
+  await addSpaceMemberByUuid('workspace', 'space', uuid, { role: SpaceMemberRole.Member, access_level: 10 });
+  expect(mockClient.post).toHaveBeenCalledWith(
+    `/api/workspace/workspace/spaces/space/members/users/${uuid}`,
+    { role: 'member', access_level: 10 },
+    expect.any(Object)
+  );
+});
+
 test.each([{ role: SpaceMemberRole.Member }, { access_level_override: null }, { access_level_override: 20 }])(
   'preserves omission, null and explicit override: %p',
   async (patch) => {

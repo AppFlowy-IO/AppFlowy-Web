@@ -1,6 +1,12 @@
 import { t } from 'i18next';
 
-import { SpaceMemberAccessOverride, SpaceMemberRole, SpaceVisibility } from '@/application/types';
+import {
+  AccessLevel,
+  SpaceMemberAccessOverride,
+  SpaceMemberRole,
+  SpacePermissionSettings,
+  SpaceVisibility,
+} from '@/application/types';
 
 import { captureApiContext } from './http/request-context';
 import {
@@ -13,6 +19,25 @@ import {
 export type SpaceAssignmentPrincipal = { type: 'user'; uuid: string } | { type: 'group'; uuid: string };
 
 const SYNTHETIC_MEMBER_SOURCES = new Set(['workspace_default', 'page_share', 'legacy_private_owner']);
+
+/**
+ * Body for adding a person (`POST .../members/users/{uuid}`) or a group (`POST .../group/{id}`)
+ * to a space on a server with per-person access.
+ *
+ * - Owners always get the space's owner access, so no level is sent.
+ * - An ordinary member of a Custom space keeps the space default until a level is chosen for them
+ *   in Manage Space: nothing is sent and the server ignores any level for Custom spaces.
+ * - Public, Private and unknown space types store the level sent with the add. Leaving it out
+ *   would store the server's own default (Can edit) instead of the space's member level, so the
+ *   member level is always sent. A missing member level reads as Can view, like the server.
+ */
+export function spaceMemberAddPayload(
+  role: SpaceMemberRole,
+  permission: Pick<SpacePermissionSettings, 'visibility' | 'member_default_access_level'>
+): { role: SpaceMemberRole; access_level?: AccessLevel } {
+  if (role !== SpaceMemberRole.Member || permission.visibility === SpaceVisibility.Custom) return { role };
+  return { role, access_level: permission.member_default_access_level ?? AccessLevel.ReadOnly };
+}
 
 /** Revalidate assignment editing independently from invitation and space ownership controls. */
 export async function setSpaceMemberAccessOverride(

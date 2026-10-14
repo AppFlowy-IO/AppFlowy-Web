@@ -64,6 +64,7 @@ jest.mock('sonner', () => ({
 }));
 
 jest.mock('@/application/services/js-services/space-member-assignment', () => ({
+  ...jest.requireActual('@/application/services/js-services/space-member-assignment'),
   setSpaceMemberAccessOverride: (...args: unknown[]) => mockSetOverride(...args),
 }));
 
@@ -1026,6 +1027,54 @@ describe('ManageSpace ACL management', () => {
       expect(mockAddSpaceMemberByUuid.mock.calls[0][3]).toEqual({ role: SpaceMemberRole.Member });
       expect(mockAddSpaceMember).not.toHaveBeenCalled();
       await waitFor(() => expect(toast.success).toHaveBeenCalledWith('space.permissionManager.addSpaceMemberSuccess'));
+    });
+
+    it('adds people and groups to a space type it does not know at the space member level, never the server default', async () => {
+      // Outside Custom spaces the server stores the level sent with the add; a missing one would
+      // become Can edit even though this space's members only view.
+      const unknownTypePermission: SpacePermissionSettings = {
+        ...customPermission,
+        visibility: 'restricted' as SpaceVisibility,
+        member_default_access_level: AccessLevel.ReadOnly,
+        everyone_else_access_level: null,
+      };
+
+      mockGetSpacePermission.mockResolvedValue({
+        ...permissionResponse({ permission: unknownTypePermission }),
+        member_access_overrides_supported: true,
+      });
+      mockGetMembers.mockResolvedValue([{ ...workspaceCandidate, user_uuid: candidateUuid }]);
+      mockAddSpaceGroupPermission.mockResolvedValue({
+        ...group('group-engineering', 'Engineering'),
+        access_level_override: null,
+        effective_access_level: AccessLevel.ReadOnly,
+      });
+      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+      await waitFor(() => expect(screen.getByTestId('inline-member-add').disabled).toBe(false));
+      fireEvent.click(screen.getByTestId('inline-member-add'));
+      await waitFor(() => expect(mockAddSpaceMemberByUuid).toHaveBeenCalledTimes(1));
+      expect(mockAddSpaceMemberByUuid.mock.calls[0]).toEqual([
+        'workspace-1',
+        'space-1',
+        candidateUuid,
+        { role: SpaceMemberRole.Member, access_level: AccessLevel.ReadOnly },
+      ]);
+
+      await waitFor(() => expect(mockGetWorkspaceGroups).toHaveBeenCalledWith('workspace-1'));
+      fireEvent.change(screen.getByTestId('inline-member-search'), { target: { value: 'engin' } });
+      fireEvent.click(
+        within(await screen.findByTestId('space-group-inline-search-result-group-engineering')).getByTestId(
+          'space-group-inline-search-result-add'
+        )
+      );
+      await waitFor(() => expect(mockAddSpaceGroupPermission).toHaveBeenCalledTimes(1));
+      expect(mockAddSpaceGroupPermission.mock.calls[0]).toEqual([
+        'workspace-1',
+        'space-1',
+        'group-engineering',
+        { role: SpaceMemberRole.Member, access_level: AccessLevel.ReadOnly },
+      ]);
     });
 
     it('refuses to add a candidate without a UUID instead of using the legacy route', async () => {

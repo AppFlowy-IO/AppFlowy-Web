@@ -6,7 +6,7 @@ import {
   updateSpaceGroupPermission,
   updateSpaceMemberByUuid,
 } from '../http/workspace-api';
-import { setSpaceMemberAccessOverride } from '../space-member-assignment';
+import { setSpaceMemberAccessOverride, spaceMemberAddPayload } from '../space-member-assignment';
 
 const mockClient = {};
 let mockActor = 'actor';
@@ -184,4 +184,59 @@ test('never sends FullAccess through an ordinary-member override', async () => {
     setSpaceMemberAccessOverride('workspace', 'space', principal, AccessLevel.FullAccess as never)
   ).rejects.toThrow();
   expect(getSpacePermission).not.toHaveBeenCalled();
+});
+
+describe('spaceMemberAddPayload', () => {
+  // The server stores the level sent with an add for Public and Private members; a missing one
+  // becomes its own default (Can edit), so the space's member level must always be sent.
+  test.each([
+    [SpaceVisibility.Public, AccessLevel.ReadOnly],
+    [SpaceVisibility.Public, AccessLevel.ReadAndWrite],
+    [SpaceVisibility.Private, AccessLevel.ReadOnly],
+    [SpaceVisibility.Private, AccessLevel.ReadAndComment],
+  ])('a %s space adds an ordinary member at the space member level %s', (visibility, level) => {
+    expect(
+      spaceMemberAddPayload(SpaceMemberRole.Member, { visibility, member_default_access_level: level })
+    ).toStrictEqual({ role: SpaceMemberRole.Member, access_level: level });
+  });
+
+  test('a missing member level reads as Can view, like the server', () => {
+    expect(
+      spaceMemberAddPayload(SpaceMemberRole.Member, {
+        visibility: SpaceVisibility.Private,
+        member_default_access_level: null,
+      })
+    ).toStrictEqual({ role: SpaceMemberRole.Member, access_level: AccessLevel.ReadOnly });
+  });
+
+  test.each([AccessLevel.ReadAndWrite, null])(
+    'a Custom space member keeps the space default (%s): no level and no chosen access',
+    (level) => {
+      const payload = spaceMemberAddPayload(SpaceMemberRole.Member, {
+        visibility: SpaceVisibility.Custom,
+        member_default_access_level: level,
+      });
+
+      expect(payload).toStrictEqual({ role: SpaceMemberRole.Member });
+      expect(JSON.stringify(payload)).toBe('{"role":"member"}');
+    }
+  );
+
+  test('a space type this client does not know still gets an explicit member level', () => {
+    expect(
+      spaceMemberAddPayload(SpaceMemberRole.Member, {
+        visibility: 'restricted' as SpaceVisibility,
+        member_default_access_level: AccessLevel.ReadOnly,
+      })
+    ).toStrictEqual({ role: SpaceMemberRole.Member, access_level: AccessLevel.ReadOnly });
+  });
+
+  test.each([SpaceVisibility.Public, SpaceVisibility.Private, SpaceVisibility.Custom])(
+    'an owner added to a %s space gets the owner access, so no level is sent',
+    (visibility) => {
+      expect(
+        spaceMemberAddPayload(SpaceMemberRole.Owner, { visibility, member_default_access_level: AccessLevel.ReadOnly })
+      ).toStrictEqual({ role: SpaceMemberRole.Owner });
+    }
+  );
 });
