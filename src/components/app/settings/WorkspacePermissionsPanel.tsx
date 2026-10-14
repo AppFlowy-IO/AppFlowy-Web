@@ -72,7 +72,7 @@ function restrictsCreation({ from, to }: PolicyChange): boolean {
   return POLICY_REACH[to] < POLICY_REACH[from];
 }
 
-/** Who loses the ability with a narrowing change. */
+/** The new rule, who loses the ability, and (from selected members) that the selections are kept. */
 function restrictDescriptionKey({ from, to }: PolicyChange) {
   if (from === 'members_and_owners') {
     return to === SELECTED_MODE
@@ -387,8 +387,9 @@ function RestrictPolicyConfirm({
           <Button type='button' variant='outline' onClick={onCancel} data-testid='space-creation-restrict-cancel'>
             {t('button.cancel')}
           </Button>
+          {/* Names the rule it applies ("Use Owners only"), like "Give access" in the group question. */}
           <Button type='button' onClick={onConfirm} data-testid='space-creation-restrict-confirm'>
-            {t('workspacePermissions.restrictConfirm')}
+            {t('workspacePermissions.restrictConfirm', { policy: t(`workspacePermissions.policies.${change.to}`), ...RAW })}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>

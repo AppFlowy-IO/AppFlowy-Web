@@ -38,10 +38,14 @@ const escapeLikeI18next = (value: string) => value.replace(/&/g, '&amp;').replac
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, options?: { name?: string; count?: number; interpolation?: { escapeValue?: boolean } }) => {
+    t: (
+      key: string,
+      options?: { name?: string; policy?: string; count?: number; interpolation?: { escapeValue?: boolean } }
+    ) => {
       const raw = options?.interpolation?.escapeValue === false;
 
       if (options?.name !== undefined) return `${key}:${raw ? options.name : escapeLikeI18next(options.name)}`;
+      if (options?.policy !== undefined) return `${key}:${options.policy}`;
       if (options?.count !== undefined) return `${key}:${options.count}`;
       return key;
     },
@@ -239,7 +243,7 @@ describe('workspace permission settings', () => {
     ['members_and_owners', 'owners_only', 'workspacePermissions.restrictMembersToOwners'],
     ['members_and_owners', 'owners_and_selected_members', 'workspacePermissions.restrictMembersToSelected'],
     ['owners_and_selected_members', 'owners_only', 'workspacePermissions.restrictSelectedToOwners'],
-  ] as const)('asks before going from %s to the narrower %s, and saves only after Change', async (from, to, body) => {
+  ] as const)('asks before going from %s to the narrower %s, and saves only after choosing it', async (from, to, body) => {
     current.policy = from;
     mount();
     fireEvent.click(await screen.findByTestId(`space-creation-policy-${to}`));
@@ -251,7 +255,12 @@ describe('workspace permission settings', () => {
     expect(mockPolicy).not.toHaveBeenCalled();
     expect(policyCard(from).getAttribute('aria-pressed')).toBe('true');
     expect(policyCard(to).getAttribute('aria-pressed')).toBe('false');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'workspacePermissions.restrictConfirm' }));
+    // The button names the rule it applies, not just "Change".
+    fireEvent.click(
+      within(dialog).getByRole('button', {
+        name: `workspacePermissions.restrictConfirm:workspacePermissions.policies.${to}`,
+      })
+    );
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     expect(mockPolicy).toHaveBeenCalledWith(workspaceId, to);
     await waitFor(() =>

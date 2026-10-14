@@ -107,10 +107,10 @@
     "changeNotConfirmed": "We couldn't confirm that your change was saved. Check the current settings and try again.",
     "sidebarWorkspaceMembers": "Workspace members who can edit",
     "restrictTitle": "Change who can create spaces?",
-    "restrictMembersToOwners": "Members won't be able to create new spaces. Existing spaces aren't affected.",
-    "restrictMembersToSelected": "Members who aren't selected won't be able to create new spaces. Existing spaces aren't affected.",
-    "restrictSelectedToOwners": "Selected members and groups won't be able to create new spaces. Existing spaces aren't affected.",
-    "restrictConfirm": "Change"
+    "restrictMembersToOwners": "Only workspace owners will be able to create spaces. Members won't be able to create new spaces. Existing spaces aren't affected.",
+    "restrictMembersToSelected": "Only workspace owners and the members and groups you select will be able to create spaces. Other members won't be able to create new spaces. Existing spaces aren't affected.",
+    "restrictSelectedToOwners": "Only workspace owners will be able to create spaces. Selected members and groups won't be able to create new spaces, but your selections are saved if you switch back. Existing spaces aren't affected.",
+    "restrictConfirm": "Use {{policy}}"
   },
   "databaseViewCreation": {
     "onlineRequired": "Connect to the internet to create Form or Chart views.",
@@ -4738,7 +4738,7 @@
     "invalidResponse": "The server sent an unexpected response. Try again.",
     "contextChanged": "Something changed while saving. Check the current access and try again.",
     "description": "Give this group access to every current and future public and custom space. Private spaces and restricted pages aren't included. This doesn't make anyone a space member or owner.",
-    "summaryDescription": "Groups that can open every current and future public and custom space. Change this in {{location}}.",
+    "summaryDescription": "Groups with access to every current and future public and custom space. Private spaces and restricted pages aren't included.",
     "summaryEmpty": "No groups have access to all spaces.",
     "manageGroups": "Manage groups",
     "loadFailed": "We couldn't load groups.",

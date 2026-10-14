@@ -110,10 +110,10 @@
     "changeNotConfirmed": "Nous n’avons pas pu confirmer l’enregistrement de votre modification. Vérifiez les paramètres actuels et réessayez.",
     "sidebarWorkspaceMembers": "Membres de l’espace de travail pouvant modifier",
     "restrictTitle": "Modifier qui peut créer des espaces ?",
-    "restrictMembersToOwners": "Les membres ne pourront plus créer de nouveaux espaces. Les espaces existants ne sont pas concernés.",
-    "restrictMembersToSelected": "Les membres non sélectionnés ne pourront plus créer de nouveaux espaces. Les espaces existants ne sont pas concernés.",
-    "restrictSelectedToOwners": "Les membres et groupes sélectionnés ne pourront plus créer de nouveaux espaces. Les espaces existants ne sont pas concernés.",
-    "restrictConfirm": "Modifier"
+    "restrictMembersToOwners": "Seuls les propriétaires de l’espace de travail pourront créer des espaces. Les membres ne pourront plus créer de nouveaux espaces. Les espaces existants ne sont pas concernés.",
+    "restrictMembersToSelected": "Seuls les propriétaires de l’espace de travail et les membres et groupes que vous sélectionnez pourront créer des espaces. Les autres membres ne pourront plus créer de nouveaux espaces. Les espaces existants ne sont pas concernés.",
+    "restrictSelectedToOwners": "Seuls les propriétaires de l’espace de travail pourront créer des espaces. Les membres et groupes sélectionnés ne pourront plus créer de nouveaux espaces, mais vos sélections sont conservées si vous revenez à ce choix. Les espaces existants ne sont pas concernés.",
+    "restrictConfirm": "Passer à « {{policy}} »"
   },
   "appName": "AppFlowy",
   "defaultUsername": "Moi",
@@ -3197,7 +3197,7 @@
     "invalidResponse": "Le serveur a envoyé une réponse inattendue. Réessayez.",
     "contextChanged": "Quelque chose a changé pendant l’enregistrement. Vérifiez l’accès actuel et réessayez.",
     "description": "Donnez à ce groupe l’accès à tous les espaces publics et personnalisés, actuels et futurs. Les espaces privés et les pages restreintes ne sont pas inclus. Cela ne rend personne membre ou propriétaire d’un espace.",
-    "summaryDescription": "Groupes qui peuvent ouvrir tous les espaces publics et personnalisés, actuels et futurs. Modifiez ce réglage dans {{location}}.",
+    "summaryDescription": "Groupes ayant accès à tous les espaces publics et personnalisés, actuels et futurs. Les espaces privés et les pages restreintes ne sont pas inclus.",
     "summaryEmpty": "Aucun groupe n’a accès à tous les espaces.",
     "manageGroups": "Gérer les groupes",
     "loadFailed": "Impossible de charger les groupes.",
