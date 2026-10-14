@@ -40,7 +40,15 @@ for (const failure of ['offline', 'unsupported server'] as const) {
       await expect(DatabaseGridSelectors.dataRows(page)).toHaveCount(3);
       if (failure === 'unsupported server') {
         await page.route('**/api/server-info**', async (route) => {
-          const response = await route.fetch();
+          const headers = { ...route.request().headers() };
+
+          // Reconnect discovery can revalidate with an ETag. This fixture needs
+          // the full JSON body to override capabilities, including on refresh.
+          delete headers['if-none-match'];
+          delete headers['if-modified-since'];
+          const response = await route.fetch({ headers });
+
+          expect(response.status()).toBe(200);
           const info = await response.json();
 
           info.data.enable_atomic_creation = false;

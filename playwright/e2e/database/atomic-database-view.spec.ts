@@ -303,7 +303,15 @@ for (const failure of ['offline', 'unavailable capability'] as const) {
 
     if (failure === 'unavailable capability') {
       await page.route('**/api/server-info**', async (route) => {
-        const response = await route.fetch();
+        const headers = { ...route.request().headers() };
+
+        // Reconnect discovery can revalidate with an ETag. This fixture needs
+        // the full JSON body to override capabilities, including on refresh.
+        delete headers['if-none-match'];
+        delete headers['if-modified-since'];
+        const response = await route.fetch({ headers });
+
+        expect(response.status()).toBe(200);
         const body = await response.json();
 
         body.data.enable_atomic_creation = false;
