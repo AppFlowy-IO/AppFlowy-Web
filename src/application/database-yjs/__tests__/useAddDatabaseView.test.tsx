@@ -1,5 +1,5 @@
 import { expect } from '@jest/globals';
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
 import { atomicRead } from '@/application/atomic-creation';
@@ -192,7 +192,7 @@ describe('compact Database view callers', () => {
     jest.mocked(atomicRead).mockImplementation(async (_owner, url) =>
       (url.endsWith('/source') ? source : container) as never);
     const ensure = jest.fn(async (): Promise<string[]> => []);
-    const context = { databaseDoc, databasePageId: 'container', activeViewId: 'source', workspaceId: 'workspace',
+    let context = { databaseDoc, databasePageId: 'container', activeViewId: 'source', workspaceId: 'workspace',
       rowMap: {}, readOnly: false, canWrite: true, ...options };
     const hook = renderHook(() => ({ add: useAddDatabaseView(), duplicate: useDuplicateDatabaseView() }), {
       wrapper: ({ children }) => <AppOutlineContext.Provider value={{ outline: [container], ensureViewVisibleInOutline: ensure }}>
@@ -200,7 +200,12 @@ describe('compact Database view callers', () => {
       </AppOutlineContext.Provider>,
     });
 
-    return { ...hook, databaseDoc, container, source, ensure };
+    const updateContext = (next: Partial<DatabaseContextState>) => {
+      context = { ...context, ...next };
+      hook.rerender();
+    };
+
+    return { ...hook, databaseDoc, container, source, ensure, updateContext };
   }
 
   it.each([DatabaseViewLayout.Grid, DatabaseViewLayout.Board, DatabaseViewLayout.Calendar,
@@ -274,6 +279,41 @@ describe('compact Database view callers', () => {
     await expect(f.result.current.add(DatabaseViewLayout.Grid)).rejects.toThrow('Edit access');
     expect(atomicRead).not.toHaveBeenCalled();
     expect(createDefaultDatabaseView).not.toHaveBeenCalled();
+  });
+
+  it.each([{ readOnly: true }, { canWrite: false }])(
+    'rechecks write access after source metadata loads: %o', async (permissions) => {
+      const f = setup({ activeViewId: 'container' });
+      let release!: (view: View) => void;
+
+      jest.mocked(atomicRead).mockReturnValue(new Promise<View>((resolve) => { release = resolve; }) as never);
+      const pending = f.result.current.add(DatabaseViewLayout.Grid);
+
+      f.updateContext(permissions);
+      release(f.container);
+      await expect(pending).rejects.toThrow('Edit access');
+      expect(createDefaultDatabaseView).not.toHaveBeenCalled();
+    }
+  );
+
+  it('does not activate a pending view after write access is revoked', async () => {
+    const f = setup();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+
+    f.ensure.mockResolvedValue(['space', 'container']);
+    jest.mocked(createDefaultDatabaseView).mockImplementation(async (intent) => {
+      await held;
+      await intent.activate?.('created');
+      return 'created';
+    });
+    const pending = f.result.current.add(DatabaseViewLayout.Grid);
+
+    await waitFor(() => expect(createDefaultDatabaseView).toHaveBeenCalled());
+    f.updateContext({ canWrite: false });
+    release();
+    await expect(pending).rejects.toThrow('Edit access');
+    expect(f.ensure).not.toHaveBeenCalled();
   });
 
   it('does not activate a late result after the owning component unmounts', async () => {

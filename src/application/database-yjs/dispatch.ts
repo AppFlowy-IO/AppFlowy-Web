@@ -2741,8 +2741,11 @@ export function useAddDatabaseView() {
   const { databasePageId, activeViewId, databaseDoc, workspaceId, isDocumentBlock, readOnly, canWrite } = useDatabaseContext();
   const outline = useContext(AppOutlineContext);
   const outlineRef = useRef(outline);
+  const canCreate = !readOnly && canWrite !== false;
+  const canCreateRef = useRef(canCreate);
 
   outlineRef.current = outline;
+  canCreateRef.current = canCreate;
   const lifetime = useMemo(() => ({ current: true, databaseDoc, workspaceId, databasePageId }), [databaseDoc, workspaceId, databasePageId]);
 
   useEffect(() => {
@@ -2754,13 +2757,14 @@ export function useAddDatabaseView() {
   }, [lifetime, databaseDoc]);
 
   return useCallback(async (layout: DatabaseViewLayout, nameOverride?: string, options?: AddDatabaseViewOptions) => {
-    if (readOnly || canWrite === false) throw new Error(FORM_VIEW_CREATION_REQUIRES_WRITE_PERMISSION);
+    if (!canCreateRef.current) throw new Error(FORM_VIEW_CREATION_REQUIRES_WRITE_PERMISSION);
     const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase | undefined;
     const databaseId = database?.get(YjsDatabaseKey.id);
 
     if (!databaseId || !databasePageId) throw new Error('Database creation source is unavailable');
     const owner = captureAtomicCreationOwner(workspaceId, () => {
       if (!lifetime.current) throw new Error('Database creation owner changed');
+      if (!canCreateRef.current) throw new Error(FORM_VIEW_CREATION_REQUIRES_WRITE_PERMISSION);
     });
     const requestViewId = activeViewId || databasePageId;
     const load = (id: string) => atomicRead<View>(owner, `/api/workspace/${workspaceId}/view/${id}`, { depth: 1 });
@@ -2800,7 +2804,7 @@ export function useAddDatabaseView() {
         if (ancestors.length === 0) throw new Error('Created view is missing from the sidebar');
       },
     });
-  }, [databasePageId, activeViewId, databaseDoc, workspaceId, isDocumentBlock, readOnly, canWrite, lifetime]);
+  }, [databasePageId, activeViewId, databaseDoc, workspaceId, isDocumentBlock, lifetime]);
 }
 
 /** Clone current authoritative view settings in the same graph transaction as its Folder child. */
