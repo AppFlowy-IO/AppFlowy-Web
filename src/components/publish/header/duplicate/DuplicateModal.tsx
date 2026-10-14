@@ -10,6 +10,7 @@ import { notify } from '@/components/_shared/notify';
 import SelectWorkspace from '@/components/publish/header/duplicate/SelectWorkspace';
 import SpaceList from '@/components/publish/header/duplicate/SpaceList';
 import { useLoadWorkspaces } from '@/components/publish/header/duplicate/useDuplicate';
+import { isTooLargeError } from '@/utils/change-failure';
 import { downloadPage, openAppFlowySchema } from '@/utils/url';
 
 export function getCollabTypeFromViewLayout(layout: ViewLayout) {
@@ -76,7 +77,9 @@ function DuplicateModal({ open, onClose }: { open: boolean; onClose: () => void 
     } catch (e) {
       setNewViewId(undefined);
       setDatabaseMappings(undefined);
-      notify.error(t('publish.duplicateFailed'));
+      // The server copies the page and everything under it in one go, and refuses a copy over its
+      // size bound with HTTP 413 (PAYLOAD_TOO_LARGE). Server text never reaches the toast.
+      notify.error(t(isTooLargeError(e) ? 'publish.duplicateTooLarge' : 'publish.duplicateFailed'));
     } finally {
       setLoading(false);
     }

@@ -41,6 +41,16 @@ export function isGoneError(error: unknown): boolean {
 }
 
 /**
+ * The server refused because the copy is over its size bound: HTTP 413 with the AppFlowy code, or
+ * a bare 413 from a proxy that carries no code.
+ */
+export function isTooLargeError(error: unknown): boolean {
+  const code = getAPIErrorCode(error);
+
+  return code === ERROR_CODE.PAYLOAD_TOO_LARGE || code === 413 || httpStatus(error) === 413;
+}
+
+/**
  * Why a change didn't go through, in plain words, to follow the name of the change in a toast
  * ("Couldn't change access for Alex. You don't have permission to do this."). Server text can name
  * internal IDs, so an answer from the server gets reviewed copy; errors raised by this client

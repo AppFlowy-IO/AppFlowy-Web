@@ -2893,7 +2893,8 @@
       "many": "{{count}} membres",
       "other": "{{count}} membres"
     },
-    "useThisTemplate": "Utiliser le modèle"
+    "useThisTemplate": "Utiliser le modèle",
+    "duplicateTooLarge": "Cette page est trop volumineuse pour être dupliquée en une seule fois. Essayez de dupliquer une page plus petite, ou copiez-la en plusieurs parties."
   },
   "web": {
     "continue": "Continuer",

@@ -3847,7 +3847,8 @@
     "membersCount_other": "{{count}} members",
     "membersCount_many": "{{count}} members",
     "membersCount_zero": "No members",
-    "useThisTemplate": "Use the template"
+    "useThisTemplate": "Use the template",
+    "duplicateTooLarge": "This page is too large to duplicate at once. Try duplicating a smaller page, or copy it in parts."
   },
   "web": {
     "continue": "Continue",
