@@ -5,7 +5,7 @@ import { useSlateStatic } from 'slate-react';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { BlockType } from '@/application/types';
-import { ReactComponent as ChevronRightIcon } from '@/assets/icons/alt_arrow_right.svg';
+import { ReactComponent as ChevronRightIcon } from '@/assets/icons/block-menu-chevron-right.svg';
 import { ColorTile, ColorTileIcon } from '@/components/_shared/color-picker';
 import { Origins, Popover } from '@/components/_shared/popover';
 import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
@@ -27,17 +27,19 @@ const origins: Origins = {
 };
 
 function Color({ node, onSelectColor }: { node: BlockNode; onSelectColor: () => void }) {
-  const { getSubscriptions } = useEditorContext();
+  const { getSubscriptions, workspaceId } = useEditorContext();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
   const { t } = useTranslation();
   const editor = useSlateStatic() as YjsEditor;
   const blockId = node.blockId;
   const hasNonTransparentBg = [BlockType.CalloutBlock, BlockType.OutlineBlock].includes(node.type);
-  const [originalColor, setOriginalColor] = useState<string>(node.data?.bgColor || '');
-  const selectedColor = originalColor || (hasNonTransparentBg ? ColorEnum.Tint10 : '');
+  const selectedColor = node.data?.bgColor || (hasNonTransparentBg ? ColorEnum.Tint10 : '');
 
-  const { isPro } = useSubscriptionPlan(getSubscriptions);
+  const { isPro } = useSubscriptionPlan(getSubscriptions, {
+    cacheKey: workspaceId ? `block-colors:${workspaceId}` : undefined,
+    enabled: open,
+  });
 
   const builtinColors = useMemo(() => {
     const proPalette = [
@@ -81,14 +83,12 @@ function Color({ node, onSelectColor }: { node: BlockNode; onSelectColor: () => 
         CustomEditor.setBlockData(editor, blockId, {
           bgColor: null,
         });
-        setOriginalColor('');
         return;
       }
 
       CustomEditor.setBlockData(editor, blockId, {
         bgColor: bgColor || null,
       });
-      setOriginalColor(bgColor);
     },
     [blockId, editor, selectedColor]
   );
@@ -105,21 +105,28 @@ function Color({ node, onSelectColor }: { node: BlockNode; onSelectColor: () => 
         }}
       >
         <ColorTileIcon value={renderColor(selectedColor)} />
-        {t('document.plugins.optionAction.color')}
-        <ChevronRightIcon className='ml-auto h-5 w-5 text-icon-tertiary' />
+        {t(node.type === BlockType.CalloutBlock ? 'editor.backgroundColor' : 'document.plugins.table.bgColor')}
+        <ChevronRightIcon className='ml-auto h-5 w-5 text-icon-tertiary [--stroke-0:currentColor]' />
       </Button>
-      <Popover open={open} anchorEl={ref.current} onClose={() => setOpen(false)} {...origins}>
+      <Popover
+        PaperProps={node.type === BlockType.CalloutBlock ? { className: 'callout-menu-paper' } : undefined}
+        open={open}
+        anchorEl={ref.current}
+        onClose={() => setOpen(false)}
+        {...origins}
+      >
         <div className='flex w-[200px] flex-col py-1.5'>
           <div className={'px-3.5 pb-2 pt-1.5 text-xs font-medium text-text-tertiary'}>
             {t('editor.backgroundColor')}
           </div>
           <div className={'flex flex-wrap gap-2 px-3.5 pb-1.5'}>
-            {builtinColors.map((color, index) => (
-              <Tooltip key={index}>
+            {builtinColors.map((color) => (
+              <Tooltip key={color.color}>
                 <TooltipContent>{color.label}</TooltipContent>
                 <TooltipTrigger asChild>
                   <ColorTile
                     value={renderColor(color.color)}
+                    aria-label={color.label}
                     active={selectedColor === color.color}
                     onClick={() => {
                       handlePickColor(color.color);

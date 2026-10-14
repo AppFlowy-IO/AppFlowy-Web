@@ -35,11 +35,13 @@ import {
   OutlineCollapseControl,
   OutlineDepthControl,
 } from '@/components/editor/components/toolbar/block-controls/OutlineControls';
-import { BlockNode, CalloutNode, DatabaseNode, OutlineNode } from '@/components/editor/editor.type';
+import { CalloutNode, DatabaseNode, OutlineNode } from '@/components/editor/editor.type';
 import { useEditorContext, useEditorLocalState } from '@/components/editor/EditorContext';
 import { copyTextToClipboard } from '@/utils/copy';
 import { getErrorMessage } from '@/utils/errors';
 
+import { BlockTurnInto } from './BlockTurnInto';
+import { CalloutWritingActions } from './CalloutBlockActions';
 import CalloutIconControl from './CalloutIconControl';
 import CalloutQuickStyleControl from './CalloutQuickStyleControl';
 import Color from './Color';
@@ -51,6 +53,7 @@ import {
   loadDatabaseDuplicateSourceViews,
 } from './databaseDuplicateUtils';
 import { duplicateBlockSelection, finalizeDuplicatedBlockData } from './duplicateBlockSelection';
+import { useBlockMenuNode } from './useBlockMenuNode';
 
 function getViewNoCache(workspaceId: string, viewId: string, depth: number = 1): Promise<View> {
   const url = `/api/workspace/${workspaceId}/view/${viewId}?depth=${depth}&_t=${Date.now()}`;
@@ -196,6 +199,16 @@ function waitForDatabaseBlobSeeds(workspaceId: string, databaseId: string): Prom
   });
 }
 
+const simpleTextBlockTypes = new Set<BlockType>([
+  BlockType.Paragraph,
+  BlockType.HeadingBlock,
+  BlockType.BulletedListBlock,
+  BlockType.NumberedListBlock,
+  BlockType.QuoteBlock,
+  BlockType.TodoListBlock,
+  BlockType.ToggleListBlock,
+]);
+
 const popoverProps: Partial<PopoverProps> = {
   transformOrigin: {
     vertical: 'center',
@@ -257,12 +270,11 @@ function ControlsMenu({
   const editor = useSlateStatic() as YjsEditor;
   const onlySingleBlockSelected = selectedBlockIds?.length === 1;
   const selectedBlockId = selectedBlockIds?.[0];
-  const node = useMemo(() => {
-    if (!selectedBlockId) return null;
-
-    return findSlateEntryByBlockId(editor, selectedBlockId);
-  }, [selectedBlockId, editor]);
-  const isSimpleTable = onlySingleBlockSelected && node?.[0].type === BlockType.SimpleTableBlock;
+  const node = useBlockMenuNode(selectedBlockId);
+  const isSimpleTable = onlySingleBlockSelected && node?.type === BlockType.SimpleTableBlock;
+  const isSimpleTextBlock = !!node && simpleTextBlockTypes.has(node.type);
+  const isCallout = node?.type === BlockType.CalloutBlock;
+  const hasTextBlockMenu = isSimpleTextBlock || isCallout;
 
   const { t } = useTranslation();
   const duplicateCopySuffix = useMemo(() => ` (${t('menuAppHeader.pageNameSuffix')})`, [t]);
@@ -629,7 +641,7 @@ function ControlsMenu({
     <Popover
       anchorEl={anchorEl}
       onClose={() => {
-        const path = node?.[1];
+        const path = selectedBlockId ? findSlateEntryByBlockId(editor, selectedBlockId)?.[1] : undefined;
 
         if (path) {
           window.getSelection()?.removeAllRanges();
@@ -645,8 +657,21 @@ function ControlsMenu({
         if (entry) scrollSimpleTableFromMenu(event, ReactEditor.toDOMNode(editor, entry[0]));
       } : undefined}
       {...popoverProps}
+      PaperProps={
+        hasTextBlockMenu
+          ? { ...popoverProps?.PaperProps, className: 'text-block-menu-paper' }
+          : popoverProps?.PaperProps
+      }
     >
-      <div data-testid={'controls-menu'} className={`flex w-[240px] flex-col p-2 ${isSimpleTable ? 'simple-table-block-menu' : ''}`}>
+      <div
+        data-testid='controls-menu'
+        className={`flex flex-col p-2 ${hasTextBlockMenu ? 'text-block-menu w-[238px]' : 'w-[240px]'} ${isSimpleTable ? 'simple-table-block-menu' : ''} ${isCallout ? 'callout-block-menu' : ''}`}
+      >
+        {isCallout && (
+          <div className='px-2 py-1.5 text-xs font-medium leading-[18px] text-text-tertiary'>
+            {t('document.slashMenu.name.callout')}
+          </div>
+        )}
         {options.map((option) => {
           return (
             <Button
@@ -670,40 +695,34 @@ function ControlsMenu({
           );
         })}
 
+        {onlySingleBlockSelected && node && <BlockTurnInto key={node.blockId} node={node} onClose={onClose} />}
+
         {isSimpleTable && selectedBlockId ? <SimpleTableBlockControls key={selectedBlockId} blockId={selectedBlockId} onClose={onClose} /> : null}
 
-        {node?.[0]?.type &&
-          [
-            BlockType.Paragraph,
-            BlockType.HeadingBlock,
-            BlockType.BulletedListBlock,
-            BlockType.NumberedListBlock,
-            BlockType.QuoteBlock,
-            BlockType.TodoListBlock,
-            BlockType.ToggleListBlock,
-          ].includes(node?.[0]?.type as BlockType) && (
-            <>
-              <Divider className='my-2' />
-              <Color node={node[0] as BlockNode} onSelectColor={onClose} />
-            </>
-          )}
-
-        {node?.[0]?.type === BlockType.OutlineBlock && onlySingleBlockSelected && (
+        {isSimpleTextBlock && node && (
           <>
             <Divider className='my-2' />
-            <OutlineCollapseControl node={node[0] as OutlineNode} onToggle={onClose} />
-            <OutlineDepthControl node={node[0] as OutlineNode} onClose={onClose} />
-            <Color node={node[0] as BlockNode} onSelectColor={onClose} />
+            <Color node={node} onSelectColor={onClose} />
           </>
         )}
 
-        {node?.[0]?.type === BlockType.CalloutBlock && (
+        {node?.type === BlockType.OutlineBlock && onlySingleBlockSelected && (
           <>
             <Divider className='my-2' />
-            <CalloutQuickStyleControl node={node[0] as CalloutNode} onSelectStyle={onClose} />
-            <CalloutIconControl node={node[0] as CalloutNode} onSelectIcon={onClose} />
-            <Color node={node[0] as BlockNode} onSelectColor={onClose} />
-            <CalloutTextColor node={node[0] as CalloutNode} onSelectColor={onClose} />
+            <OutlineCollapseControl node={node as OutlineNode} onToggle={onClose} />
+            <OutlineDepthControl node={node as OutlineNode} onClose={onClose} />
+            <Color node={node} onSelectColor={onClose} />
+          </>
+        )}
+
+        {node?.type === BlockType.CalloutBlock && onlySingleBlockSelected && (
+          <>
+            <Divider className='my-2' />
+            <CalloutQuickStyleControl node={node as CalloutNode} onSelectStyle={onClose} />
+            <CalloutIconControl node={node as CalloutNode} onSelectIcon={onClose} />
+            <CalloutTextColor node={node as CalloutNode} onSelectColor={onClose} />
+            <Color node={node} onSelectColor={onClose} />
+            <CalloutWritingActions node={node as CalloutNode} onClose={onClose} />
           </>
         )}
       </div>

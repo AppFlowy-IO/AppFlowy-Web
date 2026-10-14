@@ -1,0 +1,98 @@
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Editor, Node, Transforms } from 'slate';
+import { ReactEditor, useSlateStatic } from 'slate-react';
+
+import { YjsEditor } from '@/application/slate-yjs';
+import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
+import { ReactComponent as AIIcon } from '@/assets/icons/ai.svg';
+import { ReactComponent as CommentIcon } from '@/assets/icons/toolbar_add_comment.svg';
+import { useAIEnabled } from '@/components/app/app.hooks';
+import { AIAssistantType, AIWriterMenu } from '@/components/chat';
+import { CalloutNode } from '@/components/editor/editor.type';
+import { useEditorContext, useEditorLocalState } from '@/components/editor/EditorContext';
+import { useInlineCommentComposeOptional } from '@/components/inline-comment/InlineCommentContext';
+import { Button } from '@/components/ui/button';
+
+export function CalloutWritingActions({ node, onClose }: { node: CalloutNode; onClose: () => void }) {
+  const { t } = useTranslation();
+  const editor = useSlateStatic() as YjsEditor;
+  const { canComment } = useEditorContext();
+  const { addDecorate } = useEditorLocalState();
+  const comments = useInlineCommentComposeOptional();
+  const aiEnabled = useAIEnabled();
+  const [open, setOpen] = useState(false);
+  const commentEnabled = canComment && comments?.active && comments.isEditorRegistered(editor);
+  const hasCommentText = !!node.children[0] && !!Node.string(node.children[0]).trim();
+  const input = node.children.map(Node.string).join('\n');
+  const selectContent = (includeChildren = false) => {
+    const entry = findSlateEntryByBlockId(editor, node.blockId);
+
+    if (!entry) return false;
+    const path = entry[1];
+
+    Transforms.select(editor, Editor.range(editor, includeChildren ? path : [...path, 0]));
+    return true;
+  };
+
+  if (!commentEnabled && !aiEnabled) return null;
+
+  return (
+    <>
+      <div className='my-2 border-t border-border-primary' />
+      {commentEnabled && (
+        <Button
+          variant='ghost'
+          className='justify-start'
+          disabled={!hasCommentText}
+          onClick={() => {
+            if (selectContent()) comments?.startComment(editor);
+            onClose();
+          }}
+        >
+          <CommentIcon className='h-5 w-5' />
+          {t('document.plugins.optionAction.comment', { defaultValue: 'Comment' })}
+        </Button>
+      )}
+      {aiEnabled && (
+        <AIWriterMenu
+          open={open}
+          onOpenChange={setOpen}
+          input={input}
+          isFilterOut={(type) => type === AIAssistantType.ContinueWriting}
+          onItemClicked={(type) => {
+            if (editor.selection) {
+              const replace = [
+                AIAssistantType.ImproveWriting,
+                AIAssistantType.FixSpelling,
+                AIAssistantType.MakeLonger,
+                AIAssistantType.MakeShorter,
+              ].includes(type);
+
+              addDecorate?.(
+                editor.selection,
+                replace ? 'line-through text-text-secondary' : 'bg-fill-theme-select',
+                'ai-writer'
+              );
+            }
+
+            ReactEditor.blur(editor);
+            onClose();
+          }}
+        >
+          <Button
+            variant='ghost'
+            className='justify-start text-ai-primary'
+            disabled={!input.trim()}
+            onClick={() => {
+              if (selectContent(true)) setOpen(true);
+            }}
+          >
+            <AIIcon className='h-5 w-5' />
+            {t('editor.askAI')}
+          </Button>
+        </AIWriterMenu>
+      )}
+    </>
+  );
+}

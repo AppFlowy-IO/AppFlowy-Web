@@ -971,7 +971,7 @@ export function getSplitBlockOperations(
 } {
   const operations: (() => void)[] = [];
 
-  if (offset === 0) {
+  if (offset === 0 && block.get(YjsEditorKey.block_type) !== BlockType.CalloutBlock) {
     operations.push(() => {
       const type = block.get(YjsEditorKey.block_type);
       const data = dataStringTOJson(block.get(YjsEditorKey.block_data));

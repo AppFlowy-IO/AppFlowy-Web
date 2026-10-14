@@ -8,7 +8,7 @@ const SANITIZE_CONFIG: DOMPurify.Config & { [key: string]: unknown } = {
   ALLOWED_TAGS: [
     // Text blocks
     'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-    'blockquote', 'pre', 'code',
+    'blockquote', 'aside', 'pre', 'code',
     // Lists
     'ul', 'ol', 'li',
     // Inline formatting

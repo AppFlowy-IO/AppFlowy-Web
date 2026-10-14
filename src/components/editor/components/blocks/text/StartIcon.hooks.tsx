@@ -4,11 +4,12 @@ import { ReactEditor, useSlate } from 'slate-react';
 
 import { BlockType } from '@/application/types';
 import { BulletedListIcon } from '@/components/editor/components/blocks/bulleted-list';
+import { getCalloutIcon } from '@/components/editor/components/blocks/callout/callout.utils';
 import CalloutIcon from '@/components/editor/components/blocks/callout/CalloutIcon';
 import { NumberListIcon } from '@/components/editor/components/blocks/numbered-list';
 import CheckboxIcon from '@/components/editor/components/blocks/todo-list/CheckboxIcon';
 import ToggleIcon from '@/components/editor/components/blocks/toggle-list/ToggleIcon';
-import { TextNode } from '@/components/editor/editor.type';
+import { CalloutNode , TextNode } from '@/components/editor/editor.type';
 
 
 export function useStartIcon (node: TextNode) {
@@ -31,7 +32,7 @@ export function useStartIcon (node: TextNode) {
       case BlockType.BulletedListBlock:
         return BulletedListIcon;
       case BlockType.CalloutBlock:
-        return CalloutIcon;
+        return getCalloutIcon((block as CalloutNode).data) ? CalloutIcon : null;
       default:
         return null;
     }
