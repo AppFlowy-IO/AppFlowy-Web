@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { ReactNode } from 'react';
 import { toast } from 'sonner';
 
+import { showsKeyboardFocus } from '@/__mocks__/keyboardFocus';
 import { APP_EVENTS } from '@/application/constants';
 import { Role, WorkspaceMember } from '@/application/types';
 import {
@@ -781,6 +782,18 @@ describe('workspace permission settings', () => {
       expect(document.activeElement).toBe(cancel);
       fireEvent.keyDown(cancel, { key: 'Tab', shiftKey: true });
       expect(document.activeElement).toBe(close);
+    });
+
+    it('shows keyboard focus on every button in the question about fewer people creating spaces', async () => {
+      current.policy = 'members_and_owners';
+      mount();
+      fireEvent.click(await screen.findByTestId('space-creation-policy-owners_only'));
+      const dialog = await screen.findByRole('alertdialog');
+      const buttons = within(dialog).getAllByRole('button');
+
+      // Close, Cancel and Change. The question opens over Settings, outside the panel's own rules.
+      expect(buttons).toHaveLength(3);
+      for (const button of buttons) expect(showsKeyboardFocus(button)).toBe(true);
     });
 
     it('goes back to the search field after adding someone', async () => {

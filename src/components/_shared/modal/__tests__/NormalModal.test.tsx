@@ -1,6 +1,7 @@
 import { describe, expect, it, jest } from '@jest/globals';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
+import { showsKeyboardFocus } from '@/__mocks__/keyboardFocus';
 import { mockResizeObserver } from '@/__mocks__/resizeObserver';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
@@ -41,6 +42,17 @@ describe('NormalModal keyboard submission', () => {
     });
 
     expect(onOk).not.toHaveBeenCalled();
+  });
+
+  it('shows keyboard focus on its footer buttons, also when it opens over another dialog', () => {
+    render(
+      <NormalModal open title='Switch space type?' okText='Switch'>
+        <div>Members keep their access.</div>
+      </NormalModal>
+    );
+
+    expect(showsKeyboardFocus(screen.getByRole('button', { name: 'button.cancel' }))).toBe(true);
+    expect(showsKeyboardFocus(screen.getByRole('button', { name: 'Switch' }))).toBe(true);
   });
 
   it('can hide its footer actions while keeping the close control', () => {

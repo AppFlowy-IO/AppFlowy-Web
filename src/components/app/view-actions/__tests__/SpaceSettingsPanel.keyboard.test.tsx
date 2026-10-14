@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ReactNode, useState } from 'react';
 
+import { showsKeyboardFocus } from '@/__mocks__/keyboardFocus';
 import { mockResizeObserver } from '@/__mocks__/resizeObserver';
 import { NormalModal } from '@/components/_shared/modal';
 import {
@@ -267,6 +268,17 @@ describe('Manage Space General tab with a keyboard', () => {
     fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByTestId('manage-space-modal')).toBeNull());
     await waitFor(() => expect(document.activeElement).toBe(launcher));
+  });
+
+  it('shows keyboard focus on the buttons of the space type confirmation', async () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByTestId(`manage-space-visibility-option-${SpaceVisibility.Custom}`));
+    const confirm = await screen.findByTestId('confirm-dialog');
+
+    // The confirmation is its own dialog on the page body, outside the space dialog's rules.
+    expect(dialog().contains(confirm)).toBe(false);
+    expect(showsKeyboardFocus(within(confirm).getByRole('button', { name: 'button.cancel' }))).toBe(true);
+    expect(showsKeyboardFocus(within(confirm).getByRole('button', { name: 'Switch' }))).toBe(true);
   });
 
   it('shows a visible focus ring on every button in the dialog', () => {
