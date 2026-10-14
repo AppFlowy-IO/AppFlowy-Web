@@ -220,7 +220,7 @@ test('failed confirmation does not display a connected account and a fresh attem
   connectionApp,
 }) => {
   await context.route(
-    `**${CALLBACK_PATH}`,
+    `**${CALLBACK_PATH}{,?**}`,
     (route) =>
       route.fulfill({
         status: 503,
