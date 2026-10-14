@@ -56,3 +56,30 @@ test('an unavailable entry is reached by arrow keys, explains why, and does noth
   expect(screen.getByRole('menu')).toBeTruthy();
   expect(document.activeElement).toBe(entry);
 });
+
+test('an unavailable entry does not look clickable: no fill under the pointer, a not-allowed cursor', async () => {
+  render(<Menu unavailable='unavailable-item' />);
+  await focusFirstItem();
+  const classes = screen.getByRole('menuitem', { name: 'Create workspace' }).className.split(/\s+/);
+
+  // Radix focuses the item under the pointer, so the focus fill is what a hover shows.
+  expect(classes).toEqual(expect.arrayContaining(['cursor-not-allowed', 'hover:bg-transparent', 'focus:bg-transparent']));
+  // Keyboard users still see where they are.
+  expect(classes).toContain('focus-visible:bg-fill-content-hover');
+});
+
+test('its reason opens beside the menu, clear of the menu border', async () => {
+  render(<Menu unavailable='unavailable-item' />);
+  fireEvent.keyDown(await focusFirstItem(), { key: 'ArrowDown' });
+  await screen.findAllByText(reason);
+
+  // jsdom lays nothing out, so the tooltip's position is just its offset from the entry: the menu's
+  // 8px padding and 1px border, and a gap.
+  await waitFor(() => {
+    const wrapper = document.querySelector('[data-slot="tooltip-content"]')?.closest<HTMLElement>(
+      '[data-radix-popper-content-wrapper]'
+    );
+
+    expect(wrapper?.style.transform).toMatch(/^translate\((1[3-9]|2\d)px, /);
+  });
+});

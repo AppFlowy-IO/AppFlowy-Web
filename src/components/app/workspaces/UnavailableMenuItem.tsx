@@ -3,9 +3,14 @@ import { ReactNode, useId } from 'react';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
+/** The menu's 8px padding and 1px border, and a gap: the reason opens clear of the menu. */
+const REASON_OFFSET = 14;
+
 /**
  * A menu entry that cannot run right now. It stays focusable so keyboard and screen reader users
- * reach the reason; a disabled Radix item would be skipped and its tooltip never shown.
+ * reach the reason; a disabled Radix item would be skipped and its tooltip never shown. Radix
+ * focuses the entry under the pointer, so only keyboard focus fills it: under the pointer it shows a
+ * not-allowed cursor and no fill, and does not look clickable.
  */
 export function UnavailableMenuItem({
   icon,
@@ -28,7 +33,7 @@ export function UnavailableMenuItem({
           aria-label={label}
           aria-disabled='true'
           aria-describedby={reasonId}
-          className='cursor-default text-text-tertiary hover:bg-transparent [&_svg]:text-text-tertiary'
+          className='cursor-not-allowed text-text-tertiary hover:bg-transparent focus:bg-transparent focus-visible:bg-fill-content-hover [&_svg]:text-text-tertiary'
           onSelect={(event) => event.preventDefault()}
         >
           {icon}
@@ -38,7 +43,7 @@ export function UnavailableMenuItem({
           </span>
         </DropdownMenuItem>
       </TooltipTrigger>
-      <TooltipContent side='right' className='break-words'>
+      <TooltipContent side='right' sideOffset={REASON_OFFSET} className='break-words'>
         {reason}
       </TooltipContent>
     </Tooltip>
