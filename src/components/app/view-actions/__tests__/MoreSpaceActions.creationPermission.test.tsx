@@ -107,3 +107,10 @@ test('a fresh denial stops duplication with a clear reason', async () => {
   await waitFor(() => expect(mockToastError).toHaveBeenCalledWith('workspacePermissions.denied'));
   expect(mockDuplicate).not.toHaveBeenCalled();
 });
+
+test('names the space menu items in sentence case', () => {
+  renderActions();
+
+  expect(screen.getByTestId('space-action-manage').textContent).toBe('space.manageSpace');
+  expect(screen.getByTestId('space-action-duplicate').textContent).toContain('space.duplicate');
+});

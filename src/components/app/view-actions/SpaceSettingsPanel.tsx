@@ -1,9 +1,10 @@
 import { Check, ChevronDown, FilePlus2, Globe2, LockKeyhole, Settings2, Shield, UserRound, Users } from 'lucide-react';
-import { memo, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { AccessLevel, Role, SpacePermissionSettings, SpaceSidebarEditPolicy, SpaceVisibility } from '@/application/types';
 import { NormalModal } from '@/components/_shared/modal';
+import { MoreBelowFade, useMoreContentBelow } from '@/components/_shared/scroller/MoreBelowFade';
 import SpaceIconButton from '@/components/app/view-actions/SpaceIconButton';
 import { spaceMemberAccessLabel } from '@/components/app/view-actions/SpaceMemberAccessControl';
 import { spaceVisibilityDescription, spaceVisibilityLabel } from '@/components/app/view-actions/spaceVisibilityOptions';
@@ -18,7 +19,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { TabLabel, Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 
 import type { TFunction } from 'i18next';
@@ -48,11 +49,24 @@ const SIDEBAR_EDIT_POLICY_OPTIONS: readonly SpaceSidebarEditPolicy[] = [
   SpaceSidebarEditPolicy.MembersAndOwners,
 ];
 
-const MODAL_WIDTH = 680;
-const CONTENT_WIDTH = 640;
+// Wide enough for the Members tab's Name | Access | Role table to keep a name and email readable.
+const MODAL_WIDTH = 760;
+const CONTENT_WIDTH = 720;
 /** Every button in the panel shows where keyboard focus is (the shared Button has no focus style). */
 const BUTTON_FOCUS_RING =
   '[&_button:focus-visible]:outline-none [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-border-theme-thick';
+/**
+ * The scroll areas and the footer reserve the same scrollbar gutter (none where scrollbars float
+ * over the content) and the same 4px, so the footer buttons end where the settings above them end.
+ */
+const SCROLLBAR_GUTTER = 'appflowy-scroller [scrollbar-gutter:stable] pr-1';
+/**
+ * The footer reserves the gutter like a scroll area that has nothing to scroll; 4px around its
+ * buttons keep their focus rings whole, and the negative margin keeps them where they were.
+ */
+const FOOTER_CLASS = `${SCROLLBAR_GUTTER} -my-1 overflow-y-auto py-1`;
+/** The open tab passes the dialog's remaining height on to its scroll area. */
+const TAB_PANEL_CLASS = 'min-h-0 data-[state=active]:flex data-[state=active]:flex-col';
 
 export type SpaceSettingsTab = 'general' | 'members';
 
@@ -125,6 +139,39 @@ function sidebarEditPolicyLabel(policy: SpaceSidebarEditPolicy, visibility: Spac
       // A policy from a newer server is shown neutrally and kept as received.
       return t('workspacePermissions.sidebarUnknown');
   }
+}
+
+/**
+ * A tab's scroll area. It takes the height the dialog has left (the dialog is limited by the window)
+ * and fades out at the bottom while more settings are below. It clips what is drawn outside it, so
+ * 2px on the left (and the gutter's 4px on the right) keep focus rings whole.
+ */
+function SettingsScrollArea({
+  children,
+  scrollRef,
+  testId,
+}: {
+  children: ReactNode;
+  scrollRef?: (element: HTMLDivElement | null) => void;
+  testId?: string;
+}) {
+  const [element, setElement] = useState<HTMLDivElement | null>(null);
+  const moreBelow = useMoreContentBelow(element);
+  const ref = useCallback(
+    (node: HTMLDivElement | null) => {
+      setElement(node);
+      scrollRef?.(node);
+    },
+    [scrollRef]
+  );
+
+  return (
+    <div ref={ref} className={cn('min-h-0 flex-1 overflow-y-auto pl-0.5', SCROLLBAR_GUTTER)} data-testid={testId}>
+      {/* One stable child, so a change in the size of the content is noticed. */}
+      <div>{children}</div>
+      <MoreBelowFade visible={moreBelow} />
+    </div>
+  );
 }
 
 function VisibilityIcon({ visibility, className }: { visibility: SpaceVisibility; className?: string }) {
@@ -254,7 +301,7 @@ function VisibilityCards({
             )}
             <div className='flex w-full items-center gap-2'>
               <VisibilityIcon visibility={option} className='h-4 w-4' />
-              <span className='font-medium text-text-primary'>{spaceVisibilityLabel(option, t)}</span>
+              <span className='text-sm font-medium text-text-primary'>{spaceVisibilityLabel(option, t)}</span>
             </div>
             <span className='text-xs leading-4 text-text-secondary'>{spaceVisibilityDescription(option, t)}</span>
           </button>
@@ -291,10 +338,10 @@ function PermissionPrincipalRow({
     >
       <div className='flex h-8 w-8 shrink-0 items-center justify-center rounded-300 bg-fill-content-hover'>{icon}</div>
       <div className='min-w-0 flex-1'>
-        <div id={titleId} className='font-medium text-text-primary'>
+        <div id={titleId} className='text-sm font-medium text-text-primary'>
           {title}
         </div>
-        <div className={cn('text-sm text-text-secondary', wrapDescription ? 'break-words' : 'truncate')}>
+        <div className={cn('text-xs text-text-secondary', wrapDescription ? 'break-words' : 'truncate')}>
           {description}
         </div>
       </div>
@@ -389,8 +436,8 @@ const PublicAccessCard = memo(function PublicAccessCard({
     <section className='flex flex-col gap-3' data-testid='manage-space-public-access-card'>
       <div className='rounded-400 border border-border-primary'>
         <div className='flex flex-col gap-1 border-b border-border-primary px-4 py-3'>
-          <div className='font-medium text-text-primary'>{t('space.permissionManager.publicAccessTitle')}</div>
-          <div className='text-sm text-text-secondary'>{t('space.permissionManager.publicAccessDescription')}</div>
+          <div className='text-sm font-medium text-text-primary'>{t('space.permissionManager.publicAccessTitle')}</div>
+          <div className='text-xs text-text-secondary'>{t('space.permissionManager.publicAccessDescription')}</div>
         </div>
         <PermissionPrincipalRow
           icon={<Shield className='h-5 w-5 text-icon-primary' />}
@@ -464,8 +511,8 @@ const CustomPermissionsCard = memo(function CustomPermissionsCard({
   return (
     <section className='rounded-400 border border-border-primary' data-testid='manage-space-custom-permissions-card'>
       <div className='flex flex-col gap-1 border-b border-border-primary px-4 py-3'>
-        <div className='font-medium text-text-primary'>{t('space.permissionManager.customPermissionsTitle')}</div>
-        <div className='text-sm text-text-secondary'>{t('space.permissionManager.customPermissionsDescription')}</div>
+        <div className='text-sm font-medium text-text-primary'>{t('space.permissionManager.customPermissionsTitle')}</div>
+        <div className='text-xs text-text-secondary'>{t('space.permissionManager.customPermissionsDescription')}</div>
       </div>
       <PermissionPrincipalRow
         icon={<Shield className='h-5 w-5 text-icon-primary' />}
@@ -523,8 +570,8 @@ const PrivateAccessCard = memo(function PrivateAccessCard() {
   return (
     <section className='rounded-400 border border-border-primary' data-testid='manage-space-private-access-card'>
       <div className='flex flex-col gap-1 border-b border-border-primary px-4 py-3'>
-        <div className='font-medium text-text-primary'>{t('space.permissionManager.privateAccessTitle')}</div>
-        <div className='text-sm text-text-secondary'>{t('space.permissionManager.privateAccessDescription')}</div>
+        <div className='text-sm font-medium text-text-primary'>{t('space.permissionManager.privateAccessTitle')}</div>
+        <div className='text-xs text-text-secondary'>{t('space.permissionManager.privateAccessDescription')}</div>
       </div>
       <PermissionPrincipalRow
         icon={<Shield className='h-5 w-5 text-icon-primary' />}
@@ -562,10 +609,7 @@ const PrivateMembersContent = memo(function PrivateMembersContent({
     .join(' · ');
 
   return (
-    <div
-      className='appflowy-scroller flex max-h-[64vh] flex-col gap-4 overflow-y-auto py-2 pr-1'
-      data-testid='private-space-members-content'
-    >
+    <div className='flex flex-col gap-4 py-2' data-testid='private-space-members-content'>
       <div
         className='rounded-300 bg-fill-content-hover px-3 py-2 text-sm text-text-secondary'
         data-testid='private-space-members-info'
@@ -577,7 +621,8 @@ const PrivateMembersContent = memo(function PrivateMembersContent({
         style={{ gridTemplateColumns: 'minmax(0, 1fr) 220px' }}
       >
         <span>{t('space.permissionManager.name')}</span>
-        <span className='text-right'>{t('space.permissionManager.role')}</span>
+        {/* The value below has 8px of padding; the header ends where the value does. */}
+        <span className='pr-2 text-right'>{t('space.permissionManager.role')}</span>
       </div>
       <div className='flex items-center gap-3 border-b border-border-primary py-3' data-testid='private-space-owner-row'>
         <Avatar size='md'>
@@ -768,9 +813,13 @@ function SpaceSettingsPanel({
       okLoading={primaryActionLoading}
       okButtonProps={{ disabled: primaryActionDisabled, 'data-testid': 'create-space-submit' }}
       title={title}
-      classes={{ container: 'items-start max-md:mt-auto max-md:items-center mt-[6%]' }}
+      // Near the top, so the dialog does not jump when a tab or a space type changes its height; the
+      // offset is padding, so the dialog's height limit leaves room for it.
+      classes={{ container: 'items-start pt-[4vh] max-md:items-center max-md:pt-0' }}
       showActions={showActions}
+      footerClassName={FOOTER_CLASS}
       overflowHidden
+      fillAvailableHeight
       PaperProps={{
         // Covers the notice, both tabs and the footer buttons.
         className: BUTTON_FOCUS_RING,
@@ -786,27 +835,27 @@ function SpaceSettingsPanel({
         value={activeTab}
         onValueChange={(value) => onTabChange(value as SpaceSettingsTab)}
         aria-busy={primaryActionLoading || undefined}
-        className='min-h-0 max-w-full'
+        className='min-h-0 max-w-full flex-1'
         style={{ width: CONTENT_WIDTH }}
         data-testid='space-settings-panel'
       >
         <TabsList>
           <TabsTrigger value='general' disabled={primaryActionLoading}>
-            {t('space.permissionManager.generalTab')}
+            <TabLabel>{t('space.permissionManager.generalTab')}</TabLabel>
           </TabsTrigger>
           {membersTabVisible && (
             <TabsTrigger value='members' disabled={membersTabDisabled || primaryActionLoading}>
-              {t('space.permissionManager.membersTab')}
+              <TabLabel>{t('space.permissionManager.membersTab')}</TabLabel>
             </TabsTrigger>
           )}
         </TabsList>
 
-        <TabsContent value='general' className='min-h-0' data-testid='space-settings-general'>
-          {/* The scroll area clips what is drawn outside it: 2px on the left keeps focus rings whole. */}
-          <div ref={setContainer} className='appflowy-scroller max-h-[64vh] overflow-y-auto pl-0.5 pr-1'>
+        <TabsContent value='general' className={TAB_PANEL_CLASS} data-testid='space-settings-general'>
+          <SettingsScrollArea scrollRef={setContainer}>
             <div className='flex flex-col gap-6 py-2'>
               <div className='flex flex-col gap-2'>
-                <div className='text-sm font-medium text-text-secondary'>{t('space.spaceName')}</div>
+                {/* Both parts of the form are headed alike: the name and the access. */}
+                <div className='text-base font-semibold text-text-primary'>{t('space.spaceName')}</div>
                 <div className='flex items-center gap-3'>
                   {container && (
                     <SpaceIconButton
@@ -838,10 +887,10 @@ function SpaceSettingsPanel({
               <section className='flex flex-col gap-3'>
                 <div className='flex items-center justify-between gap-3'>
                   <div className='flex min-w-0 flex-col gap-1'>
-                    <div className='text-sm font-semibold text-text-primary'>
+                    <div className='text-base font-semibold text-text-primary'>
                       {t('space.permissionManager.spaceAccess')}
                     </div>
-                    <div className='text-xs text-text-secondary'>
+                    <div className='text-sm text-text-secondary'>
                       {t('space.permissionManager.spaceAccessDescription')}
                     </div>
                   </div>
@@ -922,12 +971,14 @@ function SpaceSettingsPanel({
                 />
               )}
             </div>
-          </div>
+          </SettingsScrollArea>
         </TabsContent>
 
         {membersTabVisible && (
-          <TabsContent value='members' className='min-h-0'>
-            {draftIsPrivate ? <PrivateMembersContent owner={privateOwner} /> : membersContent}
+          <TabsContent value='members' className={TAB_PANEL_CLASS}>
+            <SettingsScrollArea>
+              {draftIsPrivate ? <PrivateMembersContent owner={privateOwner} /> : membersContent}
+            </SettingsScrollArea>
           </TabsContent>
         )}
       </Tabs>

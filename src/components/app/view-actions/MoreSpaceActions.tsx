@@ -96,7 +96,7 @@ function MoreSpaceActions({
       {canOpenManageActions && (
         <DropdownMenuItem data-testid={'space-action-manage'} onSelect={handleManageClick}>
           <SettingsIcon />
-          {t('space.manage')}
+          {t('space.manageSpace')}
         </DropdownMenuItem>
       )}
       {canOpenManageActions && (

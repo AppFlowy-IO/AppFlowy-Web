@@ -193,14 +193,16 @@ jest.mock('@/components/app/share/WorkspaceMemberInlineSearch', () => ({
     workspaceMembers,
     search,
     excludedUids,
+    listAllWhenEmpty,
   }: {
     workspaceMembers: WorkspaceMember[];
     search: string;
     excludedUids: Set<string>;
+    listAllWhenEmpty?: boolean;
   }) => {
     const normalized = search.trim().toLowerCase();
 
-    if (!normalized) return [];
+    if (!normalized && !listAllWhenEmpty) return [];
     return workspaceMembers.filter(
       (member) =>
         !excludedUids.has(String(member.uid)) && `${member.name} ${member.email}`.toLowerCase().includes(normalized)
@@ -213,6 +215,7 @@ jest.mock('@/components/app/share/WorkspaceMemberInlineSearch', () => ({
     onAddMember,
     inputDisabled,
     onInputKeyDown,
+    onAddButtonClick,
   }: {
     search: string;
     onSearchChange: (value: string) => void;
@@ -220,6 +223,7 @@ jest.mock('@/components/app/share/WorkspaceMemberInlineSearch', () => ({
     onAddMember: (member: WorkspaceMember) => void;
     inputDisabled?: boolean;
     onInputKeyDown?: KeyboardEventHandler<HTMLInputElement>;
+    onAddButtonClick?: () => void;
   }) => (
     <div>
       <input
@@ -229,6 +233,12 @@ jest.mock('@/components/app/share/WorkspaceMemberInlineSearch', () => ({
         onChange={(event) => onSearchChange(event.target.value)}
         onKeyDown={onInputKeyDown}
       />
+      {/* The real component's Add members button. */}
+      {onAddButtonClick && (
+        <button data-testid='draft-member-browse' onClick={onAddButtonClick}>
+          browse
+        </button>
+      )}
       {addableMembers.map((member) => (
         <button
           key={String(member.uid)}
@@ -303,6 +313,7 @@ jest.mock('@/components/ui/tabs', () => {
       return tabs.value === value ? <div>{children}</div> : null;
     },
     TabsList: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    TabLabel: ({ children }: { children: ReactNode }) => <>{children}</>,
     TabsTrigger: ({ children, disabled, value }: { children: ReactNode; disabled?: boolean; value: string }) => {
       const tabs = React.useContext(TabsContext);
 
@@ -394,6 +405,22 @@ describe('CreateSpaceModal draft controller', () => {
     fireEvent.change(screen.getByTestId('draft-member-search'), { target: { value: member.email } });
     fireEvent.click(await screen.findByTestId(`draft-member-add-${member.uid}`));
   }
+
+  it('lists the members who can be added as soon as Add members is pressed', async () => {
+    render(<CreateSpaceModal open onClose={jest.fn()} />);
+    enterSpaceName();
+    fireEvent.click(visibilityOption(SpaceVisibility.Custom));
+    await waitFor(() => expect(mockGetMembers).toHaveBeenCalledWith('workspace-1'));
+    fireEvent.click(screen.getByRole('tab', { name: 'space.permissionManager.membersTab' }));
+    expect(screen.queryByTestId('draft-member-add-member-1')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('draft-member-browse'));
+    expect(await screen.findByTestId('draft-member-add-member-1')).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByTestId('draft-member-search'));
+    // Escape closes the list and is used up, so the dialog stays open.
+    expect(fireEvent.keyDown(screen.getByTestId('draft-member-search'), { key: 'Escape' })).toBe(false);
+    expect(screen.queryByTestId('draft-member-add-member-1')).toBeNull();
+  });
 
   it('renders the shared Create Space panel and a deferred Create action', () => {
     render(<CreateSpaceModal open onClose={jest.fn()} />);

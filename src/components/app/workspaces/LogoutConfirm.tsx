@@ -2,7 +2,7 @@ import { useEffect, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { NormalModal } from '@/components/_shared/modal';
-import { HIDDEN_BUTTON_PROPS, MODAL_CLASSES, MODAL_PAPER_PROPS } from '@/components/app/workspaces/modal-props';
+import { MODAL_CLASSES, MODAL_PAPER_PROPS } from '@/components/app/workspaces/modal-props';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 
@@ -39,15 +39,15 @@ export function LogoutConfirm({
     <NormalModal
       open={open}
       onClose={onClose}
-      title={<div style={{ textAlign: 'left' }}>{t('button.logout')}</div>}
+      // "Sign out", as on the account-only page and in Account & App.
+      title={<div style={{ textAlign: 'left' }}>{t('settings.menu.signOut')}</div>}
       classes={MODAL_CLASSES}
       PaperProps={MODAL_PAPER_PROPS}
-      okButtonProps={HIDDEN_BUTTON_PROPS}
-      cancelButtonProps={HIDDEN_BUTTON_PROPS}
+      // The buttons below are the dialog's own; a hidden footer would still leave a gap under them.
+      showActions={false}
     >
-      <div className='text-text-secondary'>
-        {t('settings.menu.logoutPrompt')}
-      </div>
+      {/* The question reads first: primary text, above the option's darker label. */}
+      <div className='text-text-primary'>{t('settings.menu.logoutPrompt')}</div>
       <div className='mt-4 flex items-start gap-3'>
         <Switch
           id={switchId}
@@ -71,7 +71,7 @@ export function LogoutConfirm({
           {t('button.cancel')}
         </Button>
         <Button variant='destructive' onClick={handleLogout} data-testid='logout-confirm-button'>
-          {t('button.logout')}
+          {t('settings.menu.signOut')}
         </Button>
       </div>
     </NormalModal>

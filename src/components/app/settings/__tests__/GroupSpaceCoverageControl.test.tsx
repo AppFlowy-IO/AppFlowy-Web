@@ -282,6 +282,8 @@ describe('access to all spaces summary (Permissions panel)', () => {
       'Super_UsersworkspacePermissions.groupMembers:12groupSpaceAccess.canEdit',
     ]);
     expect(screen.queryByText('Product')).toBeNull();
+    // One short description; the Manage groups button is the way to change it.
+    expect(screen.getByText('groupSpaceAccess.summaryDescription')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'groupSpaceAccess.manageGroups' }));
     expect(onOpenGroups).toHaveBeenCalledTimes(1);
   });

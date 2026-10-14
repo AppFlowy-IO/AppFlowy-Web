@@ -1,3 +1,6 @@
+import fs from 'fs';
+import path from 'path';
+
 import i18next, { i18n } from 'i18next';
 
 import en from '@/@types/translations/en.json';
@@ -10,8 +13,9 @@ import fr from '@/@types/translations/fr-FR.json';
  */
 const SHARED_VOCABULARY: Record<string, string> = {
   'space.memberOverride.label': 'Access',
+  // A column header has no "this" person: it explains the whole column.
   'space.memberOverride.explanation':
-    'Choose what this person or group can do, or keep the space default. Sharing a page can still give access, and restricted pages stay restricted.',
+    'Choose what each person or group can do in this space, or keep the space default. Sharing a page can still give access, and restricted pages stay restricted.',
   'space.memberOverride.levels.canView': 'Can view',
   'space.memberOverride.levels.canComment': 'Can comment',
   'space.memberOverride.levels.canEdit': 'Can edit',
@@ -64,6 +68,43 @@ const CONTROL_KEYS = [
 ];
 
 const INTERNAL_TERMS = /override|inherit|assignment|entitlement|principal|uuid|provenance|tombstone|revision|roster/i;
+
+// Confirmations reached from General (type, full access, group owners), the Role menu's description
+// and the Create space callout.
+const SENTENCE_CASE_KEYS = [
+  'space.permissionManager.memberRoleDescription',
+  'space.permissionManager.switchToCustomDescription',
+  'space.permissionManager.confirmToCustomTitle',
+  'space.permissionManager.confirmPublicToCustomDescription',
+  'space.permissionManager.confirmPrivateToCustomDescription',
+  'space.permissionManager.confirmToPublicTitle',
+  'space.permissionManager.confirmToPublicDescription',
+  'space.permissionManager.confirmToPublicAction',
+  'space.permissionManager.confirmToPrivateTitle',
+  'space.permissionManager.confirmToPrivateDescription',
+  'space.permissionManager.confirmToPrivateAction',
+  'space.permissionManager.fullAccessMembersTitle',
+  'space.permissionManager.fullAccessMembersDescription',
+  'space.permissionManager.fullAccessEveryoneElseTitle',
+  'space.permissionManager.fullAccessEveryoneElseDescription',
+  'space.permissionManager.fullAccessWorkspaceMembersTitle',
+  'space.permissionManager.fullAccessWorkspaceMembersDescription',
+  'space.permissionManager.grantFullAccess',
+  'space.permissionManager.groupOwnerTitle',
+  'space.permissionManager.groupOwnerDescription',
+  'space.permissionManager.groupOwnerAction',
+];
+
+/** Capitalized permission words after the first word of a sentence, outside a quoted option name. */
+function midSentenceCapitals(value: string): string[] {
+  const unquoted = value.replace(/“[^”]*”/g, '“”');
+
+  return unquoted.split(/(?<=[.?!])\s+/).flatMap((sentence) => {
+    const rest = sentence.split(' ').slice(1).join(' ');
+
+    return Array.from(rest.matchAll(/\b(Space|Spaces|Workspace|Public|Private|Custom|Full|Grant|Can)\b/g), (m) => m[0]);
+  });
+}
 
 function lookup(resources: unknown, key: string): unknown {
   return key.split('.').reduce<unknown>((node, part) => {
@@ -147,6 +188,46 @@ describe('space access copy', () => {
         placeholders: placeholders(english as string),
       });
     }
+  });
+
+  it('describes the space types in sentence case, in English and in French', () => {
+    // The card descriptions under Public / Custom / Private in Create and Manage Space.
+    expect(lookup(en, 'space.publicPermissionDescription')).toBe('Everyone in the workspace can access');
+    expect(lookup(en, 'space.customPermissionDescription')).toBe('Choose who can access and what they can do');
+    expect(lookup(en, 'space.privatePermissionDescription')).toBe('Only you can access');
+    expect(lookup(fr, 'space.publicPermissionDescription')).toBe("Tout le monde dans l'espace de travail peut y accéder");
+  });
+
+  it('titles the space menu, its tooltip and its dialogs in sentence case, like Create space', () => {
+    for (const file of ['ManageSpace.tsx', 'MoreSpaceActions.tsx', 'SpaceSidebarActions.tsx']) {
+      const source = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+
+      expect({ file, titleCase: /'space\.manage'/.test(source) }).toEqual({ file, titleCase: false });
+      expect({ file, sentenceCase: /'space\.manageSpace'/.test(source) }).toEqual({ file, sentenceCase: true });
+    }
+
+    expect(lookup(en, 'space.manage')).toBeUndefined();
+    expect(lookup(en, 'space.manageSpace')).toBe('Manage space');
+    expect(lookup(en, 'space.createSpace')).toBe('Create space');
+    expect(lookup(en, 'space.duplicate')).toBe('Duplicate space');
+    expect(lookup(fr, 'space.manageSpace')).toBe("Gérer l'espace");
+    expect(lookup(fr, 'space.createSpace')).toBe('Créer un espace');
+    expect(lookup(fr, 'space.duplicate')).toBe("Dupliquer l'espace");
+  });
+
+  it('keeps the confirmations about space types and full access in sentence case, in English and French', () => {
+    for (const key of SENTENCE_CASE_KEYS) {
+      const english = lookup(en, key);
+      const french = lookup(fr, key);
+
+      expect({ key, english: typeof english }).toEqual({ key, english: 'string' });
+      // Option names keep their capital only when quoted as a label: “Custom”, “Can edit”.
+      expect({ key, capitals: midSentenceCapitals(english as string) }).toEqual({ key, capitals: [] });
+      expect({ key, french: typeof french }).toEqual({ key, french: 'string' });
+      expect({ key, untranslated: french === english }).toEqual({ key, untranslated: false });
+    }
+
+    expect(lookup(en, 'space.permissionManager.switchToCustomDescription')).toContain('a custom space');
   });
 
   it('keeps internal permission terms out of the visible copy', () => {

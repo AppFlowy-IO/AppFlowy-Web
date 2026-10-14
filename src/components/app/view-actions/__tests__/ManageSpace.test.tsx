@@ -21,7 +21,7 @@ import {
 } from '@/application/types';
 import ManageSpace from '@/components/app/view-actions/ManageSpace';
 
-import type { ReactNode } from 'react';
+import type { CSSProperties, KeyboardEventHandler, ReactNode } from 'react';
 
 const mockSetOverride = jest.fn();
 const mockFetchOwnAccessDetails = jest.fn();
@@ -138,11 +138,11 @@ jest.mock('@/components/_shared/modal', () => ({
     title?: ReactNode;
     okText?: ReactNode;
     okButtonProps?: { disabled?: boolean; 'data-testid'?: string };
-    PaperProps?: { 'data-testid'?: string };
+    PaperProps?: { 'data-testid'?: string; style?: CSSProperties };
     showActions?: boolean;
   }) =>
     open ? (
-      <div data-testid={PaperProps?.['data-testid']}>
+      <div data-testid={PaperProps?.['data-testid']} style={PaperProps?.style}>
         <div data-testid={`${PaperProps?.['data-testid'] ?? 'modal'}-title`}>{title}</div>
         {showActions && (
           <>
@@ -173,6 +173,8 @@ jest.mock('@/components/app/share/WorkspaceMemberInlineSearch', () => ({
     search,
     onSearchChange,
     onAddMember,
+    onAddButtonClick,
+    onInputKeyDown,
   }: {
     addableMembers: WorkspaceMember[];
     inputDisabled?: boolean;
@@ -180,6 +182,8 @@ jest.mock('@/components/app/share/WorkspaceMemberInlineSearch', () => ({
     search: string;
     onSearchChange: (value: string) => void;
     onAddMember: (member: WorkspaceMember) => void;
+    onAddButtonClick?: () => void;
+    onInputKeyDown?: KeyboardEventHandler<HTMLInputElement>;
   }) => (
     <div>
       <input
@@ -187,6 +191,7 @@ jest.mock('@/components/app/share/WorkspaceMemberInlineSearch', () => ({
         disabled={inputDisabled}
         value={search}
         onChange={(event) => onSearchChange(event.target.value)}
+        onKeyDown={onInputKeyDown}
       />
       <button
         data-testid='inline-member-add'
@@ -195,6 +200,12 @@ jest.mock('@/components/app/share/WorkspaceMemberInlineSearch', () => ({
       >
         add
       </button>
+      {/* The real component's Add people or groups button. */}
+      {onAddButtonClick && (
+        <button data-testid='inline-member-browse' disabled={addButtonDisabled} onClick={onAddButtonClick}>
+          browse
+        </button>
+      )}
       {addableMembers.map((member) => (
         <div key={member.uid} data-testid={`inline-member-result-${member.uid}`}>
           {member.name}
@@ -290,6 +301,7 @@ jest.mock('@/components/ui/tabs', () => {
     ),
     TabsContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
     TabsList: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    TabLabel: ({ children }: { children: ReactNode }) => <>{children}</>,
     TabsTrigger: ({ children, disabled, value }: { children: ReactNode; disabled?: boolean; value: string }) => {
       const tabs = React.useContext(TabsContext);
 
@@ -806,6 +818,20 @@ describe('ManageSpace ACL management', () => {
       expect(screen.getAllByText('space.memberOverride.explanation')).toHaveLength(1);
     });
 
+    it('lines the Access and Role headers up with the end of the menus below them', async () => {
+      const member = assignedMember();
+
+      mockGetSpacePermission.mockResolvedValue(supportedPermission());
+      mockGetSpaceMembers.mockResolvedValue({ members: [member], groups: [] });
+      await openMembersTab();
+      await screen.findByTestId(`space-member-access-${member.uid}`);
+      const header = screen.getByTestId('space-member-table-header');
+
+      // The menus are ghost buttons with 8px of padding after their chevron; the headers end there too.
+      expect((header.children[1] as HTMLElement).className.split(/\s+/)).toContain('pr-2');
+      expect((header.children[2] as HTMLElement).className.split(/\s+/)).toContain('pr-2');
+    });
+
     // jsdom has no layout, so this pins the rule that keeps the columns apart:
     // rows are separate grids, so no track may depend on its content.
     it('keeps the role control inside its column when the dialog is narrow', async () => {
@@ -816,8 +842,11 @@ describe('ManageSpace ACL management', () => {
       await openMembersTab();
       const row = await screen.findByTestId(`space-member-row-${member.uid}`);
 
-      // The Role track always fits its label; a narrow dialog shrinks the Name column.
-      expect(row.style.gridTemplateColumns).toBe('minmax(0, 1fr) min(196px, 32%) 144px');
+      // The Role track fits "Space member" plus its chevron, measured in a wide fallback font
+      // (DejaVu Sans needs 146px); a narrow dialog shrinks the Name column.
+      expect(row.style.gridTemplateColumns).toBe('minmax(0, 1fr) min(196px, 32%) 152px');
+      // Three columns get a dialog wide enough to keep a name's email readable next to them.
+      expect(screen.getByTestId('manage-space-modal').style.width).toBe('760px');
       expect(screen.getByTestId('space-member-table-header').style.gridTemplateColumns).toBe(
         row.style.gridTemplateColumns
       );
@@ -1984,6 +2013,19 @@ describe('ManageSpace ACL management', () => {
     });
   });
 
+  it('says which space it manages, in a sentence-case title', async () => {
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+    await waitForSettingsLoaded();
+    const title = screen.getByTestId('manage-space-modal-title');
+
+    expect(within(title).getByText('space.manageSpace')).toBeTruthy();
+    expect(within(title).getByText('Space one')).toBeTruthy();
+    // A name being typed in General is not the space's name until it is saved.
+    fireEvent.change(screen.getByTestId('space-name-input'), { target: { value: 'Renamed' } });
+    expect(within(title).getByText('Space one')).toBeTruthy();
+    expect(within(title).queryByText('Renamed')).toBeNull();
+  });
+
   it('persists Custom permission selections immediately and the name when editing finishes', async () => {
     mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: customPermission }));
     render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
@@ -2691,6 +2733,25 @@ describe('ManageSpace ACL management', () => {
     });
   });
 
+  it('shows groups with the group icon used everywhere else, not a letter like a person', async () => {
+    mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: customPermission }));
+    mockGetSpaceMembers.mockResolvedValue({ members: [creatorMember()], groups: [group('group-hr', 'HR')] });
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    await waitForSettingsLoaded();
+    fireEvent.click(screen.getByRole('tab', { name: 'space.permissionManager.membersTab' }));
+    const row = await screen.findByTestId('space-group-row-group-hr');
+
+    expect(within(row).getByTestId('workspace-group-icon-settings-row')).toBeTruthy();
+    expect(within(row).queryByText('H')).toBeNull();
+
+    fireEvent.change(screen.getByTestId('inline-member-search'), { target: { value: 'Eng' } });
+    const addable = await screen.findByTestId('space-group-inline-search-result-group-engineering');
+
+    expect(within(addable).getByTestId('workspace-group-icon-settings-row')).toBeTruthy();
+    expect(within(addable).queryByText('E')).toBeNull();
+  });
+
   it('drops people and groups to add when a background recheck withdraws the right to add them', async () => {
     mockGetSpacePermission
       .mockResolvedValueOnce(permissionResponse({ permission: customPermission }))
@@ -3084,6 +3145,55 @@ describe('ManageSpace ACL management', () => {
           expect.objectContaining({ uid: workspaceCandidate.uid })
         )
       );
+    });
+
+    it('lists people and groups to add as soon as Add people or groups is pressed', async () => {
+      mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: customPermission }));
+      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+      await waitFor(() => expect(screen.getByTestId('inline-member-search').disabled).toBe(false));
+      await waitFor(() => expect(mockGetWorkspaceGroups).toHaveBeenCalledWith('workspace-1'));
+      expect(screen.queryByTestId('space-group-inline-search-result-group-engineering')).toBeNull();
+      expect(mockUseAddableWorkspaceMembers).toHaveBeenLastCalledWith(expect.objectContaining({ listAllWhenEmpty: false }));
+
+      fireEvent.click(screen.getByTestId('inline-member-browse'));
+
+      // Without typing a name: everyone who can be added, and the groups not in the space.
+      expect(mockUseAddableWorkspaceMembers).toHaveBeenLastCalledWith(
+        expect.objectContaining({ search: '', listAllWhenEmpty: true })
+      );
+      expect(await screen.findByTestId('space-group-inline-search-result-group-engineering')).toBeTruthy();
+      expect(document.activeElement).toBe(screen.getByTestId('inline-member-search'));
+
+      // Escape closes the list and is used up, so the dialog stays open.
+      expect(fireEvent.keyDown(screen.getByTestId('inline-member-search'), { key: 'Escape' })).toBe(false);
+      expect(screen.queryByTestId('space-group-inline-search-result-group-engineering')).toBeNull();
+      // With the list closed, Escape is left for the dialog.
+      expect(fireEvent.keyDown(screen.getByTestId('inline-member-search'), { key: 'Escape' })).toBe(true);
+
+      fireEvent.click(screen.getByTestId('inline-member-browse'));
+      expect(await screen.findByTestId('space-group-inline-search-result-group-engineering')).toBeTruthy();
+      fireEvent.pointerDown(document.body);
+      expect(screen.queryByTestId('space-group-inline-search-result-group-engineering')).toBeNull();
+    });
+
+    it('says so when everyone who can be added is already in the space', async () => {
+      const addable = mockUseAddableWorkspaceMembers.getMockImplementation();
+
+      mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: customPermission }));
+      mockGetWorkspaceGroups.mockResolvedValue({ groups: [] });
+      mockUseAddableWorkspaceMembers.mockImplementation(() => []);
+      try {
+        render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+        await waitFor(() => expect(screen.getByTestId('inline-member-search').disabled).toBe(false));
+        await waitFor(() => expect(mockGetMembers).toHaveBeenCalledWith('workspace-1'));
+        fireEvent.click(screen.getByTestId('inline-member-browse'));
+        expect(await screen.findByText('space.permissionManager.nothingToAdd')).toBeTruthy();
+      } finally {
+        // clearAllMocks keeps implementations; later tests need the real filter back.
+        if (addable) mockUseAddableWorkspaceMembers.mockImplementation(addable);
+      }
     });
 
     it('adds a workspace group found through the search as a Space member', async () => {

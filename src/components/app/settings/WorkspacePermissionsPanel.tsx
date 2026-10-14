@@ -26,8 +26,10 @@ import {
   SettingsSection,
 } from '@/components/app/settings/billing/SettingsPanelShell';
 import { GroupSpaceCoverageSummary } from '@/components/app/settings/GroupSpaceCoverageControl';
+import { useSuggestionsOpen } from '@/components/app/share/useSuggestionsOpen';
 import { WorkspaceGroupIcon } from '@/components/app/share/WorkspaceGroupIcon';
 import { WorkspaceMemberInlineSearchInput } from '@/components/app/share/WorkspaceMemberInlineSearch';
+import { WorkspaceCreationCallout } from '@/components/app/workspaces/WorkspaceCreationNotice';
 import {
   AlertDialog,
   AlertDialogContent,
@@ -72,7 +74,7 @@ function restrictsCreation({ from, to }: PolicyChange): boolean {
   return POLICY_REACH[to] < POLICY_REACH[from];
 }
 
-/** Who loses the ability with a narrowing change. */
+/** The new rule, who loses the ability, and (from selected members) that the selections are kept. */
 function restrictDescriptionKey({ from, to }: PolicyChange) {
   if (from === 'members_and_owners') {
     return to === SELECTED_MODE
@@ -294,9 +296,15 @@ function SpaceCreationSettings({
     <SettingsSection title={t('workspacePermissions.createSpaces')}>
       {/* Page text, not a hover tooltip, so keyboard and screen reader users get it too. */}
       <p className='text-sm text-text-secondary'>{t('workspacePermissions.explanation')}</p>
-      <p role='status' className='text-sm text-text-primary'>
-        {t(capability.can_create_space ? 'workspacePermissions.allowed' : 'workspacePermissions.denied')}
-      </p>
+      {capability.can_create_space ? (
+        <p role='status' className='text-sm text-text-primary'>
+          {t('workspacePermissions.allowed')}
+        </p>
+      ) : (
+        // A "no" is easy to miss in plain text between the explanation and the cards; it gets the
+        // callout the account-only page uses for the same kind of answer.
+        <WorkspaceCreationCallout>{t('workspacePermissions.denied')}</WorkspaceCreationCallout>
+      )}
       {stale && (
         <InlineAlert
           message={t(isOffline() ? 'workspacePermissions.offline' : 'workspacePermissions.refreshFailed')}
@@ -387,8 +395,9 @@ function RestrictPolicyConfirm({
           <Button type='button' variant='outline' onClick={onCancel} data-testid='space-creation-restrict-cancel'>
             {t('button.cancel')}
           </Button>
+          {/* Names the rule it applies ("Use Owners only"), like "Give access" in the group question. */}
           <Button type='button' onClick={onConfirm} data-testid='space-creation-restrict-confirm'>
-            {t('workspacePermissions.restrictConfirm')}
+            {t('workspacePermissions.restrictConfirm', { policy: t(`workspacePermissions.policies.${change.to}`), ...RAW })}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -646,20 +655,23 @@ function SelectedCreators({
   const groupsSupported = capability.group_selection_supported;
   const groupsAddable = groupsSupported && capability.can_grant_creator_groups;
   const [search, setSearch] = useState('');
+  // Add members or groups lists everyone who can be chosen, so owners need not know names.
+  const [suggesting, setSuggesting] = useSuggestionsOpen(sectionRef);
   const [pending, setPending] = useState<Record<string, true>>({});
   const pendingRef = useRef(new Set<string>());
   const query = search.trim().toLowerCase();
+  const showCandidates = Boolean(query) || suggesting;
   const rows = roster.rows;
   const selectedKeys = useMemo(() => new Set((rows ?? []).map((row) => principalKey(row.principal))), [rows]);
 
   const candidates = useMemo<Candidate[]>(() => {
-    if (!query) return [];
+    if (!showCandidates) return [];
     const members = roster.members
       .filter(isSelectableMember)
       .filter((member) => !selectedKeys.has(principalKey({ type: 'user', id: member.user_uuid })))
       .filter(
         (member) =>
-          member.name?.toLowerCase().includes(query) || member.email?.toLowerCase().includes(query)
+          !query || member.name?.toLowerCase().includes(query) || member.email?.toLowerCase().includes(query)
       )
       .slice(0, MAX_CANDIDATES)
       .map<Candidate>((member) => {
@@ -675,7 +687,7 @@ function SelectedCreators({
     const groups = groupsAddable
       ? roster.groups
           .filter((group) => !selectedKeys.has(principalKey({ type: 'group', id: group.group_id })))
-          .filter((group) => group.name.toLowerCase().includes(query))
+          .filter((group) => !query || group.name.toLowerCase().includes(query))
           .slice(0, MAX_CANDIDATES)
           .map<Candidate>((group) => ({
             principal: { type: 'group', id: group.group_id },
@@ -685,7 +697,7 @@ function SelectedCreators({
       : [];
 
     return [...members, ...groups];
-  }, [groupsAddable, query, roster.groups, roster.members, selectedKeys, t]);
+  }, [groupsAddable, query, roster.groups, roster.members, selectedKeys, showCandidates, t]);
 
   const sortedRows = useMemo(() => {
     const named = (rows ?? []).map((row) => {
@@ -829,10 +841,15 @@ function SelectedCreators({
         inputDisabled={disabled}
         addButtonDisabled={disabled}
         inputTestId='space-creator-search-input'
+        onAddButtonClick={() => {
+          setSuggesting(true);
+          focusSearch();
+        }}
         onInputKeyDown={(event) => {
           if (event.key === 'Escape') {
             event.preventDefault();
             setSearch('');
+            setSuggesting(false);
             return;
           }
 
@@ -841,7 +858,7 @@ function SelectedCreators({
           void add(candidates[0]);
         }}
       />
-      {query && (
+      {showCandidates && (
         <div
           className='flex flex-col gap-2 border-y border-border-primary py-3'
           aria-live='polite'
@@ -853,7 +870,9 @@ function SelectedCreators({
               <Progress />
             </div>
           ) : candidates.length === 0 ? (
-            <div className='py-2 text-center text-sm text-text-secondary'>{t('workspacePermissions.noMatches')}</div>
+            <div className='py-2 text-center text-sm text-text-secondary'>
+              {t(query ? 'workspacePermissions.noMatches' : 'workspacePermissions.noCandidates')}
+            </div>
           ) : (
             candidates.map((candidate) => {
               const key = principalKey(candidate.principal);

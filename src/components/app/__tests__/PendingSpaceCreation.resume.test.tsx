@@ -113,6 +113,7 @@ jest.mock('@/components/ui/progress', () => ({ Progress: () => <span /> }));
 jest.mock('@/components/ui/tabs', () => ({
   Tabs: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   TabsList: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  TabLabel: ({ children }: { children: ReactNode }) => <>{children}</>,
   TabsTrigger: ({ children }: { children: ReactNode }) => <button role='tab'>{children}</button>,
   TabsContent: ({ children, value }: { children: ReactNode; value: string }) =>
     value === 'general' ? <div>{children}</div> : null,

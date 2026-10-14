@@ -94,6 +94,7 @@ const page = () => (
   </MemoryRouter>
 );
 const mount = () => render(page());
+const classes = (element: HTMLElement) => element.className.split(/\s+/);
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -124,6 +125,34 @@ test('a denied account sees who is signed in and why, without dead-end creation 
   expect(screen.getAllByRole('button', { name: 'workspaceCreation.checkAgain' })).toHaveLength(1);
   await waitFor(() => expect(mockListInvitations).toHaveBeenCalledTimes(1));
   expect(mockCreate).not.toHaveBeenCalled();
+});
+
+test('with an invitation waiting, the page asks to join it instead of asking for an invitation', async () => {
+  mockListInvitations.mockResolvedValue([invitation]);
+  mount();
+  await screen.findByRole('button', { name: 'workspaceCreation.joinNamed Demo' });
+
+  expect(screen.getByText('workspaceCreation.invitationsWaiting')).toBeTruthy();
+  expect(screen.queryByText('workspaceCreation.noWorkspaceDescription')).toBeNull();
+  // Join is the main action; Check again steps back to a text button instead of a wide outlined one.
+  expect(classes(screen.getByRole('button', { name: 'workspaceCreation.checkAgain' }))).not.toContain('border');
+});
+
+test('an account with workspaces but none open is asked to choose one, not told it has none', () => {
+  mockWorkspaces = [{ id: 'existing', name: 'Existing', icon: '' }];
+  mount();
+
+  expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('workspace.chooseWorkspace');
+  expect(screen.queryByText('workspaceCreation.noWorkspaceDescription')).toBeNull();
+  expect(classes(screen.getByRole('button', { name: 'workspaceCreation.checkAgain' }))).not.toContain('border');
+});
+
+test('with nothing else to do, Check again stays an outlined button', async () => {
+  mount();
+  await waitFor(() => expect(mockListInvitations).toHaveBeenCalledTimes(1));
+
+  expect(screen.getByText('workspaceCreation.noWorkspaceDescription')).toBeTruthy();
+  expect(classes(screen.getByRole('button', { name: 'workspaceCreation.checkAgain' }))).toContain('border');
 });
 
 test('a pending invitation can be joined without permission to create workspaces', async () => {

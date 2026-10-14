@@ -31,6 +31,7 @@ import {
 } from '@/application/types';
 import { isSameUserUid } from '@/application/user-uid';
 import { NormalModal } from '@/components/_shared/modal';
+import SpaceIcon from '@/components/_shared/view-icon/SpaceIcon';
 import {
   useAppOperations,
   useAppView,
@@ -38,6 +39,8 @@ import {
   useEventEmitter,
   useUserWorkspaceInfo,
 } from '@/components/app/app.hooks';
+import { useSuggestionsOpen } from '@/components/app/share/useSuggestionsOpen';
+import { WorkspaceGroupIcon } from '@/components/app/share/WorkspaceGroupIcon';
 import {
   getWorkspaceMemberUid,
   useAddableWorkspaceMembers,
@@ -122,9 +125,10 @@ const LAST_EXPLICIT_OWNER_ERROR = 'space must keep at least one explicit owner';
 const MEMBER_GRID_COLUMNS = 'minmax(0, 1fr) 220px';
 // Name | Access | Role. Every row is its own grid, so no track may depend on
 // its content or the columns would not line up. The Role track fits its label
-// ("Space member" plus the chevron), the Access menu truncates, and the Name
-// column absorbs a narrow dialog.
-const MEMBER_ACCESS_GRID_COLUMNS = 'minmax(0, 1fr) min(196px, 32%) 144px';
+// ("Space member" plus the chevron, 146px in a wide fallback font such as
+// DejaVu Sans), the Access menu truncates, and the Name column absorbs a narrow
+// dialog.
+const MEMBER_ACCESS_GRID_COLUMNS = 'minmax(0, 1fr) min(196px, 32%) 152px';
 const MAX_ADDABLE_GROUP_RESULTS = 8;
 
 type FullAccessAudience = 'space-members' | 'everyone-else' | 'workspace-members';
@@ -499,6 +503,9 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   const [addingUid, setAddingUid] = useState<string | null>(null);
   const [addingGroupId, setAddingGroupId] = useState<string | null>(null);
   const [memberSearch, setMemberSearch] = useState('');
+  // Add people or groups lists everyone who can be added, so owners need not know names.
+  const addAreaRef = useRef<HTMLDivElement>(null);
+  const [suggestingAdditions, setSuggestingAdditions] = useSuggestionsOpen(addAreaRef);
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
   // A notification-driven recheck of settings already on screen. Controls whose
   // authority is being rechecked are disabled; the confirmed data stays visible.
@@ -658,6 +665,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     setAddingUid(null);
     setAddingGroupId(null);
     setMemberSearch('');
+    setSuggestingAdditions(false);
     setPendingConfirmation(null);
     setSaving(false);
     setRevalidating(false);
@@ -671,7 +679,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       // the per-space coordinator still preserves server request ordering.
       metadataMutationGenerationRef.current += 1;
     };
-  }, [accountId, serverUrl, open, viewId, workspaceId]);
+  }, [accountId, serverUrl, open, setSuggestingAdditions, viewId, workspaceId]);
 
   const refreshSpaceMembers = useCallback(async ({ silent = false }: { silent?: boolean } = {}): Promise<boolean> => {
     if (!workspaceId || !viewId) return false;
@@ -949,16 +957,17 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     excludedUids: explicitMemberUids,
     excludedEmails: explicitMemberEmails,
     excludePending: true,
+    listAllWhenEmpty: suggestingAdditions,
   });
-  // Like people, groups only surface once the user types: the roster below
-  // stays the primary content of the tab.
+  // Like people, groups surface once the user types or presses Add people or groups: the roster
+  // below stays the primary content of the tab.
   const addableWorkspaceGroups = useMemo(() => {
-    if (!normalizedMemberSearch) return [];
+    if (!normalizedMemberSearch && !suggestingAdditions) return [];
 
     return workspaceGroups
       .filter((group) => !spaceGroupIds.has(group.group_id) && matchesGroupSearch(group, normalizedMemberSearch))
       .slice(0, MAX_ADDABLE_GROUP_RESULTS);
-  }, [normalizedMemberSearch, spaceGroupIds, workspaceGroups]);
+  }, [normalizedMemberSearch, spaceGroupIds, suggestingAdditions, workspaceGroups]);
   const showCurrentSpaceMemberList =
     !normalizedMemberSearch ||
     visibleSpaceMembers.length > 0 ||
@@ -1831,9 +1840,17 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     setPermissionRefreshRevision((revision) => revision + 1);
   }, []);
 
-  const handleMemberSearchKeyDown = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Enter') event.stopPropagation();
-  }, []);
+  const handleMemberSearchKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLInputElement>) => {
+      if (event.key === 'Enter') event.stopPropagation();
+      // Escape first closes the list of people to add; with the list closed it closes the dialog.
+      if (event.key === 'Escape' && suggestingAdditions) {
+        event.preventDefault();
+        setSuggestingAdditions(false);
+      }
+    },
+    [setSuggestingAdditions, suggestingAdditions]
+  );
 
   const closeConfirmation = useCallback(() => setPendingConfirmation(null), []);
 
@@ -2097,11 +2114,37 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     });
   };
 
+  // The saved name and icon, as in the sidebar: a name being typed in General is not the space's yet.
+  const titleName = view?.name || loadedSpaceMetadataRef.current.name;
+  const titleIcon = view?.extra?.space_icon || '';
+  const title = (
+    <span className='inline-flex max-w-full items-center justify-center gap-1.5 align-middle'>
+      <span className='shrink-0'>{t('space.manageSpace')}</span>
+      {titleName && (
+        <>
+          <span aria-hidden='true' className='shrink-0 text-text-tertiary'>
+            ·
+          </span>
+          <span className='sr-only'>:</span>
+          <span aria-hidden='true' className='flex shrink-0'>
+            <SpaceIcon
+              className='!h-5 !w-5 !min-w-5'
+              bgColor={view?.extra?.space_icon_color}
+              value={titleIcon}
+              char={titleIcon ? undefined : titleName.slice(0, 1)}
+            />
+          </span>
+          <span className='min-w-0 truncate'>{titleName}</span>
+        </>
+      )}
+    </span>
+  );
+
   return (
     <SpaceSettingsPanel
       open={open}
       onClose={onClose}
-      title={t('space.manage')}
+      title={title}
       modalTestId='manage-space-modal'
       activeTab={activeTab}
       onTabChange={handleTabChange}
@@ -2130,10 +2173,11 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       showActions={false}
       notice={permissionNotice}
       membersContent={
-        <div className='appflowy-scroller max-h-[64vh] overflow-y-auto py-2 pr-1'>
+        // The panel scrolls the tab and shows when more is below.
+        <div className='py-2'>
           <div className='flex flex-col gap-4'>
             {!membersReadOnly && (
-              <>
+              <div ref={addAreaRef} className='flex flex-col gap-4'>
                 <WorkspaceMemberInlineSearch
                   search={memberSearch}
                   onSearchChange={setMemberSearch}
@@ -2149,6 +2193,10 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                   addButtonDisabled={addMembersDisabled || revalidating || Boolean(addingUid)}
                   addingUid={addingUid}
                   onInputKeyDown={handleMemberSearchKeyDown}
+                  onAddButtonClick={() => {
+                    setSuggestingAdditions(true);
+                    addAreaRef.current?.querySelector('input')?.focus();
+                  }}
                   onAddMember={(member) => void handleAddMember(member)}
                 />
 
@@ -2164,9 +2212,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                           className='flex items-center gap-3 rounded-300 px-2 py-2 hover:bg-fill-content-hover'
                           data-testid={`space-group-inline-search-result-${group.group_id}`}
                         >
-                          <Avatar size='md'>
-                            <AvatarFallback name={group.name}>{group.name.slice(0, 1).toUpperCase()}</AvatarFallback>
-                          </Avatar>
+                          <WorkspaceGroupIcon variant='settings-row' />
                           <div className='min-w-0 flex-1'>
                             <div className='truncate text-sm font-medium text-text-primary'>{group.name}</div>
                             <div className='truncate text-xs text-text-secondary'>
@@ -2192,7 +2238,21 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                     </div>
                   </div>
                 )}
-              </>
+
+                {/* The directory always lists you, so an empty one has not loaded yet. */}
+                {suggestingAdditions &&
+                  !normalizedMemberSearch &&
+                  workspaceMembers.length > 0 &&
+                  addableWorkspaceMembers.length === 0 &&
+                  addableWorkspaceGroups.length === 0 && (
+                    <div
+                      className='border-t border-border-primary pt-4 text-center text-sm text-text-secondary'
+                      data-testid='manage-space-nothing-to-add'
+                    >
+                      {t('space.permissionManager.nothingToAdd')}
+                    </div>
+                  )}
+              </div>
             )}
 
             {canManageMembers && showCurrentSpaceMemberList && (
@@ -2217,7 +2277,8 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                 >
                   <span>{t('space.permissionManager.name')}</span>
                   {showAccessColumn && <SpaceMemberAccessHeader />}
-                  <span className='text-right'>{t('space.permissionManager.role')}</span>
+                  {/* Ends where the Role menus below end (their 8px of padding). */}
+                  <span className='pr-2 text-right'>{t('space.permissionManager.role')}</span>
                 </div>
 
                 {loadingMembers && spaceMembers.length === 0 && spaceGroups.length === 0 ? (
@@ -2456,9 +2517,7 @@ const SpaceGroupRowItem = memo(function SpaceGroupRowItem({
       style={{ gridTemplateColumns: gridColumns }}
     >
       <div className='flex min-w-0 items-center gap-3'>
-        <Avatar size='md'>
-          <AvatarFallback name={group.name}>{group.name.slice(0, 1).toUpperCase()}</AvatarFallback>
-        </Avatar>
+        <WorkspaceGroupIcon variant='settings-row' />
         <div className='min-w-0'>
           <div className='truncate font-medium text-text-primary'>{group.name}</div>
           <div className='truncate text-sm text-text-secondary' data-testid='space-group-subtitle'>

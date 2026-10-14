@@ -329,12 +329,11 @@ export function GroupSpaceCoverageSummary({
         group.space_coverage_access_level === AccessLevel.ReadAndWrite
     )
     .sort((left, right) => left.name.localeCompare(right.name));
-  const location = `${t('settings.appearance.people.label')} > ${t('settings.appearance.people.groupsTab')}`;
 
   return (
     <SettingsSection title={t('groupSpaceAccess.title')}>
       {supported && (
-        <p className='text-sm text-text-secondary'>{t('groupSpaceAccess.summaryDescription', { location, ...RAW })}</p>
+        <p className='text-sm text-text-secondary'>{t('groupSpaceAccess.summaryDescription')}</p>
       )}
       {!groups && state.loading && (
         <div role='status' aria-label={t('loading')} className='flex'>

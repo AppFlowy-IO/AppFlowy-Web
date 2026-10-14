@@ -59,7 +59,7 @@ function SpaceSidebarActions({
               <MoreIcon />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>{t('space.manage')}</TooltipContent>
+          <TooltipContent>{t('space.manageSpace')}</TooltipContent>
         </Tooltip>
       )}
       {canShowAdd && (

@@ -66,6 +66,20 @@ describe('SettingsPanelShell', () => {
     expect(screen.getByRole('heading', { name: 'Permissions' })).toBeTruthy();
   });
 
+  it('fades out at the bottom while more of the panel is below, so a cut-off section reads as scrollable', () => {
+    render(
+      <SettingsPanelShell title='Permissions' testId='panel'>
+        <button type='button'>Manage groups</button>
+      </SettingsPanelShell>
+    );
+    const scrollArea = screen.getByRole('button', { name: 'Manage groups' }).closest('.overflow-y-auto') as HTMLElement;
+    const fade = scrollArea.querySelector('[data-testid="more-below-fade"]');
+
+    // jsdom lays nothing out, so everything "fits" here; the fade is present and hidden.
+    expect(fade).not.toBeNull();
+    expect(fade?.getAttribute('data-visible')).toBe('false');
+  });
+
   it('sets the focus ring apart from filled buttons, which have the ring color', () => {
     render(
       <SettingsPanelShell title='Billing' testId='panel'>

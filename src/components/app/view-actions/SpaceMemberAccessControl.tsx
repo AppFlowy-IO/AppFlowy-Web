@@ -90,12 +90,15 @@ export function spaceMemberExtraAccessNote(extra: ExtraSpaceAccess, t: TFunction
   return t(EXTRA_ACCESS_KEYS[extra.level], { source: sourceText, ...noEscape });
 }
 
-/** Column header with the one explanation of how per-person access works. */
+/**
+ * Column header with the one explanation of how per-person access works. The menus below it are
+ * ghost buttons with 8px of padding after the chevron; the header ends where they do.
+ */
 export function SpaceMemberAccessHeader() {
   const { t } = useTranslation();
 
   return (
-    <div className='flex min-w-0 justify-end'>
+    <div className='flex min-w-0 justify-end pr-2'>
       <Tooltip>
         <TooltipTrigger asChild>
           <button
@@ -193,7 +196,8 @@ export function SpaceMemberAccessControl({
   /**
    * One plain line at the end of the menu, e.g. why more access remains whatever is chosen here.
    * Have it ready before the menu opens: it then describes the menu. One that arrives or changes
-   * while the menu is open is read out politely instead.
+   * while the menu is open is read out politely instead. While the menu is closed, an info icon
+   * beside it shows the same line in a tooltip.
    */
   note?: string | null;
 }) {
@@ -207,10 +211,26 @@ export function SpaceMemberAccessControl({
 
   return (
     <div
-      className='flex min-w-0 justify-end'
+      className='flex min-w-0 items-center justify-end gap-0.5'
       data-testid='space-member-access-control'
       data-value={value === null ? 'inherit' : String(value)}
     >
+      {/* The closed menu shows the level chosen here; more access from elsewhere is flagged beside it. */}
+      {note && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type='button'
+              aria-label={note}
+              className='flex h-6 w-6 shrink-0 cursor-default items-center justify-center rounded-300 text-icon-secondary outline-none focus-visible:ring-2 focus-visible:ring-border-theme-thick'
+              data-testid={`${testId}-extra-access`}
+            >
+              <InfoIcon aria-hidden className='h-4 w-4' />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent className='max-w-[280px] break-words'>{note}</TooltipContent>
+        </Tooltip>
+      )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button

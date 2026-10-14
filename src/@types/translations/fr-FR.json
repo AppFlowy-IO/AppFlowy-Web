@@ -65,8 +65,8 @@
     "selectionsTitle": "Membres et groupes sélectionnés",
     "addMembersOrGroups": "Ajouter des membres ou des groupes",
     "addMembers": "Ajouter des membres",
-    "searchMembersOrGroups": "Rechercher des membres ou des groupes",
-    "searchMembers": "Rechercher des membres",
+    "searchMembersOrGroups": "Trouver des membres ou des groupes à ajouter",
+    "searchMembers": "Trouver des membres à ajouter",
     "addNamed": "Ajouter {{name}}",
     "noMatches": "Aucun membre ni groupe ne correspond.",
     "savedSelections_one": "{{count}} sélection enregistrée s’applique lorsque « Propriétaires et membres sélectionnés » est choisi.",
@@ -110,10 +110,11 @@
     "changeNotConfirmed": "Nous n’avons pas pu confirmer l’enregistrement de votre modification. Vérifiez les paramètres actuels et réessayez.",
     "sidebarWorkspaceMembers": "Membres de l’espace de travail pouvant modifier",
     "restrictTitle": "Modifier qui peut créer des espaces ?",
-    "restrictMembersToOwners": "Les membres ne pourront plus créer de nouveaux espaces. Les espaces existants ne sont pas concernés.",
-    "restrictMembersToSelected": "Les membres non sélectionnés ne pourront plus créer de nouveaux espaces. Les espaces existants ne sont pas concernés.",
-    "restrictSelectedToOwners": "Les membres et groupes sélectionnés ne pourront plus créer de nouveaux espaces. Les espaces existants ne sont pas concernés.",
-    "restrictConfirm": "Modifier"
+    "restrictMembersToOwners": "Seuls les propriétaires de l’espace de travail pourront créer des espaces. Les membres ne pourront plus créer de nouveaux espaces. Les espaces existants ne sont pas concernés.",
+    "restrictMembersToSelected": "Seuls les propriétaires de l’espace de travail et les membres et groupes que vous sélectionnez pourront créer des espaces. Les autres membres ne pourront plus créer de nouveaux espaces. Les espaces existants ne sont pas concernés.",
+    "restrictSelectedToOwners": "Seuls les propriétaires de l’espace de travail pourront créer des espaces. Les membres et groupes sélectionnés ne pourront plus créer de nouveaux espaces, mais vos sélections sont conservées si vous revenez à ce choix. Les espaces existants ne sont pas concernés.",
+    "restrictConfirm": "Passer à « {{policy}} »",
+    "noCandidates": "Toutes les personnes et tous les groupes possibles sont déjà sélectionnés."
   },
   "appName": "AppFlowy",
   "defaultUsername": "Moi",
@@ -654,9 +655,15 @@
         }
       },
       "login": {
-        "title": "Connexion au compte",
+        "title": "Déconnexion",
         "loginLabel": "Connexion",
-        "logoutLabel": "Déconnexion"
+        "logoutLabel": "Se déconnecter",
+        "description": "Déconnectez-vous de votre compte dans ce navigateur."
+      },
+      "password": {
+        "title": "Mot de passe",
+        "description": "Le mot de passe de votre compte, pour vous connecter.",
+        "setupButton": "Définir un mot de passe"
       }
     },
     "workspacePage": {
@@ -1210,8 +1217,9 @@
       "importSuccess": "Importation réussie du dossier de données @:appName",
       "importFailed": "L'importation du dossier de données @:appName a échoué",
       "importGuide": "Pour plus de détails, veuillez consulter le document référencé",
-      "logoutRemoveLocalData": "Supprimer aussi mes données de ce navigateur",
-      "logoutRemoveLocalDataDescription": "À utiliser sur un ordinateur partagé. Les modifications qui n’ont pas encore été envoyées sont conservées pour être envoyées à votre prochaine connexion."
+      "logoutRemoveLocalData": "Supprimer aussi les copies des pages de ce navigateur",
+      "logoutRemoveLocalDataDescription": "À utiliser sur un ordinateur partagé. Les modifications qui n’ont pas encore été envoyées restent dans ce navigateur jusqu’à votre prochaine connexion, pour ne pas être perdues.",
+      "signOut": "Se déconnecter"
     },
     "notifications": {
       "enableNotifications": {
@@ -2713,7 +2721,6 @@
     "deleteConfirmationDescription": "Toutes les pages de cet espace seront supprimées et déplacées vers la corbeille, et toutes les pages publiées seront dépubliées.",
     "rename": "Renommer l'espace",
     "changeIcon": "Changer d'icône",
-    "manage": "Gérer l'espace",
     "addNewSpace": "Créer un espace",
     "collapseAllSubPages": "Réduire toutes les sous-pages",
     "createNewSpace": "Créer un nouvel espace",
@@ -2722,7 +2729,7 @@
     "spaceNamePlaceholder": "par exemple, marketing, ingénierie, ressources humaines",
     "permission": "Autorisation",
     "publicPermission": "Publique",
-    "publicPermissionDescription": "Tous les membres de l'espace de travail avec un accès complet",
+    "publicPermissionDescription": "Tout le monde dans l'espace de travail peut y accéder",
     "privatePermission": "Privé",
     "privatePermissionDescription": "Vous seul pouvez accéder à cet espace",
     "spaceIconBackground": "Couleur d'arrière-plan",
@@ -2738,7 +2745,7 @@
     "upgrade": "Mettre à jour",
     "upgradeYourSpace": "Créer plusieurs espaces",
     "quicklySwitch": "Passer rapidement à l’espace suivant",
-    "duplicate": "dupliquer l'espace ",
+    "duplicate": "Dupliquer l'espace",
     "movePageToSpace": "Déplacer la page vers l'espace",
     "cannotMovePageToDatabase": "Impossible de déplacer la page vers la base de données",
     "switchSpace": "Changer d'espace",
@@ -2755,7 +2762,7 @@
       "duplicateSpace": "Impossible de dupliquer l'espace",
       "updateSpace": "Échec de la mise à jour de l'espace"
     },
-    "createSpace": "Créer de l'espace",
+    "createSpace": "Créer un espace",
     "manageSpace": "Gérer l'espace",
     "renameSpace": "Renommer l'espace",
     "mSpaceIconColor": "Couleur de l'icône de l'espace",
@@ -2764,7 +2771,7 @@
       "label": "Accès",
       "accessFor": "Accès de {{name}}",
       "unknown": "Indisponible",
-      "explanation": "Choisissez ce que cette personne ou ce groupe peut faire, ou conservez l’accès par défaut de l’espace. Le partage d’une page peut quand même donner accès, et les pages restreintes restent restreintes.",
+      "explanation": "Choisissez ce que chaque personne ou groupe peut faire dans cet espace, ou conservez l’accès par défaut de l’espace. Le partage d’une page peut quand même donner accès, et les pages restreintes restent restreintes.",
       "unavailable": "Cet accès ne peut plus être modifié. Quelqu’un a peut-être changé les paramètres de cet espace.",
       "contextChanged": "Votre compte ou votre espace de travail a changé. Réessayez.",
       "identityUnavailable": "Impossible de charger les informations du compte de cette personne. Rechargez la page et réessayez.",
@@ -2804,7 +2811,27 @@
       "memberRoleWithAccessDescription": "Reçoit l’accès par défaut de l’espace, sauf si vous choisissez un autre niveau dans Accès.",
       "accessCheckFailed": "Impossible de vérifier votre accès à cet espace. Les modifications sont suspendues en attendant.",
       "accessLost": "Cet espace n’est plus disponible pour vous.",
-      "checkAgain": "Vérifier à nouveau"
+      "checkAgain": "Vérifier à nouveau",
+      "switchToCustomDescription": "Passez à un espace personnalisé pour donner l’accès en modification à certaines personnes ou à certains groupes, tandis que les autres peuvent consulter l’espace.",
+      "confirmToCustomTitle": "Passer cet espace en accès personnalisé ?",
+      "confirmPublicToCustomDescription": "Tous les membres actuels de l’espace de travail resteront dans cet espace. Les propriétaires de l’espace gardent un accès complet, et les autres membres restent membres de l’espace avec l’accès « Modification ». Vous pourrez ajuster leur accès après le changement.",
+      "confirmPrivateToCustomDescription": "Tous les autres membres de l’espace de travail pourront consulter cet espace. Les personnes et les groupes ajoutés comme membres de l’espace pourront le modifier. Vous pourrez changer ces autorisations après le changement.",
+      "confirmToPublicTitle": "Rendre cet espace public ?",
+      "confirmToPublicDescription": "Tout le monde dans l’espace de travail pourra accéder à cet espace. Les membres de l’espace de travail peuvent le modifier par défaut, et ses propriétaires ont un accès complet. Après le changement, vous pourrez donner aux membres l’accès « Lecture » ou « Accès complet ».",
+      "confirmToPublicAction": "Rendre public",
+      "confirmToPrivateTitle": "Rendre cet espace privé ?",
+      "confirmToPrivateDescription": "Les autres propriétaires de l’espace, les membres de l’espace et les membres de l’espace de travail perdront l’accès à cet espace.",
+      "confirmToPrivateAction": "Rendre privé",
+      "fullAccessMembersTitle": "Donner un accès complet aux membres de l’espace ?",
+      "fullAccessEveryoneElseTitle": "Donner un accès complet à tous les autres ?",
+      "fullAccessEveryoneElseDescription": "Les membres de l’espace de travail qui ne font pas partie de cet espace pourront gérer l’espace, ses membres et ses autorisations.",
+      "fullAccessWorkspaceMembersTitle": "Donner un accès complet aux membres de l’espace de travail ?",
+      "fullAccessWorkspaceMembersDescription": "Tous les membres de l’espace de travail pourront gérer cet espace, ses membres et ses autorisations.",
+      "grantFullAccess": "Donner un accès complet",
+      "groupOwnerTitle": "Rendre ce groupe propriétaire de l’espace ?",
+      "groupOwnerDescription": "Tous les membres de ce groupe pourront gérer cet espace, ses membres et ses autorisations.",
+      "groupOwnerAction": "Rendre propriétaire",
+      "nothingToAdd": "Toutes les personnes et tous les groupes que vous pouvez ajouter font déjà partie de cet espace."
     }
   },
   "publish": {
@@ -3168,7 +3195,8 @@
     "openNamed": "Ouvrir {{name}}",
     "importWorkspace": "Importer un espace de travail",
     "unnamedWorkspace": "Espace de travail sans nom",
-    "joinInvitedBy": "Rejoindre l’espace de travail où {{name}} vous invite"
+    "joinInvitedBy": "Rejoindre l’espace de travail où {{name}} vous invite",
+    "invitationsWaiting": "Rejoignez ci-dessous un espace de travail auquel vous avez été invité."
   },
   "groupSpaceAccess": {
     "title": "Accès à tous les espaces",
@@ -3179,7 +3207,7 @@
     "invalidResponse": "Le serveur a envoyé une réponse inattendue. Réessayez.",
     "contextChanged": "Quelque chose a changé pendant l’enregistrement. Vérifiez l’accès actuel et réessayez.",
     "description": "Donnez à ce groupe l’accès à tous les espaces publics et personnalisés, actuels et futurs. Les espaces privés et les pages restreintes ne sont pas inclus. Cela ne rend personne membre ou propriétaire d’un espace.",
-    "summaryDescription": "Groupes qui peuvent ouvrir tous les espaces publics et personnalisés, actuels et futurs. Modifiez ce réglage dans {{location}}.",
+    "summaryDescription": "Groupes ayant accès à tous les espaces publics et personnalisés, actuels et futurs. Les espaces privés et les pages restreintes ne sont pas inclus.",
     "summaryEmpty": "Aucun groupe n’a accès à tous les espaces.",
     "manageGroups": "Gérer les groupes",
     "loadFailed": "Impossible de charger les groupes.",

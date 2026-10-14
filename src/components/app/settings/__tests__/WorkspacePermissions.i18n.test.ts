@@ -13,7 +13,7 @@ const KEY_PATTERN = /'((?:workspacePermissions|groupSpaceAccess|shareAction|butt
 const POLICIES = ['members_and_owners', 'owners_only', 'owners_and_selected_members'];
 // Owned by other settings areas (Manage Space sidebar policy, paused edits).
 const OTHER_OWNERS = /^workspacePermissions\.(sidebar|pendingEdits|legacyPendingEdits|retryPendingEdits)/;
-// The People menu itself is not translated into French yet, so the summary must name it exactly as shown.
+// The People menu itself is not translated into French yet.
 const UNTRANSLATED_MENU = /^settings\.appearance\.people\./;
 // Labels the page Share menus show side by side. French must have all of them or none, never a mix.
 const SHARE_MENU_LEVELS = [
@@ -73,12 +73,39 @@ describe('permission settings translations', () => {
         'workspacePermissions.savedSelections',
       ])
     );
-    expect(menuKeys).toEqual(['settings.appearance.people.groupsTab', 'settings.appearance.people.label']);
+    // The summary no longer spells out "People > Groups": its Manage groups button goes there.
+    expect(menuKeys).toEqual(['settings.appearance.people.label']);
   });
 
   it.each(translatedKeys)('%s exists in English and French', (key) => {
     expect(resolves(en as Dictionary, key)).toBe(true);
     expect(resolves(fr as Dictionary, key)).toBe(true);
+  });
+
+  it('says what narrowing who can create spaces does, and that selections are kept', () => {
+    expect(en.workspacePermissions.restrictSelectedToOwners).toBe(
+      "Only workspace owners will be able to create spaces. Selected members and groups won't be able to create new spaces, but your selections are saved if you switch back. Existing spaces aren't affected."
+    );
+    expect(en.workspacePermissions.restrictMembersToOwners).toMatch(/^Only workspace owners will be able to create spaces\./);
+    expect(en.workspacePermissions.restrictMembersToSelected).toMatch(
+      /^Only workspace owners and the members and groups you select will be able to create spaces\./
+    );
+    // The button names the rule ("Use Owners only"), like "Give access" in the group question.
+    expect(en.workspacePermissions.restrictConfirm).toBe('Use {{policy}}');
+    expect(fr.workspacePermissions.restrictConfirm).toContain('{{policy}}');
+  });
+
+  it('labels the search above the selections as a way to add, not a filter for that list', () => {
+    expect(en.workspacePermissions.searchMembersOrGroups).toBe('Find members or groups to add');
+    expect(en.workspacePermissions.searchMembers).toBe('Find members to add');
+    expect(en.workspacePermissions.noCandidates).toBe('Everyone who can be chosen is already selected.');
+  });
+
+  it('describes access to all spaces without understating edit access or repeating its button', () => {
+    expect(en.groupSpaceAccess.summaryDescription).toBe(
+      "Groups with access to every current and future public and custom space. Private spaces and restricted pages aren't included."
+    );
+    expect(fr.groupSpaceAccess.summaryDescription).not.toContain('{{location}}');
   });
 
   it.each(menuKeys)('%s exists in English and names the People menu as French users see it', (key) => {
