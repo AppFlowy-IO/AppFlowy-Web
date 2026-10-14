@@ -68,6 +68,43 @@ const CONTROL_KEYS = [
 
 const INTERNAL_TERMS = /override|inherit|assignment|entitlement|principal|uuid|provenance|tombstone|revision|roster/i;
 
+// Confirmations reached from General (type, full access, group owners), the Role menu's description
+// and the Create space callout.
+const SENTENCE_CASE_KEYS = [
+  'space.permissionManager.memberRoleDescription',
+  'space.permissionManager.switchToCustomDescription',
+  'space.permissionManager.confirmToCustomTitle',
+  'space.permissionManager.confirmPublicToCustomDescription',
+  'space.permissionManager.confirmPrivateToCustomDescription',
+  'space.permissionManager.confirmToPublicTitle',
+  'space.permissionManager.confirmToPublicDescription',
+  'space.permissionManager.confirmToPublicAction',
+  'space.permissionManager.confirmToPrivateTitle',
+  'space.permissionManager.confirmToPrivateDescription',
+  'space.permissionManager.confirmToPrivateAction',
+  'space.permissionManager.fullAccessMembersTitle',
+  'space.permissionManager.fullAccessMembersDescription',
+  'space.permissionManager.fullAccessEveryoneElseTitle',
+  'space.permissionManager.fullAccessEveryoneElseDescription',
+  'space.permissionManager.fullAccessWorkspaceMembersTitle',
+  'space.permissionManager.fullAccessWorkspaceMembersDescription',
+  'space.permissionManager.grantFullAccess',
+  'space.permissionManager.groupOwnerTitle',
+  'space.permissionManager.groupOwnerDescription',
+  'space.permissionManager.groupOwnerAction',
+];
+
+/** Capitalized permission words after the first word of a sentence, outside a quoted option name. */
+function midSentenceCapitals(value: string): string[] {
+  const unquoted = value.replace(/“[^”]*”/g, '“”');
+
+  return unquoted.split(/(?<=[.?!])\s+/).flatMap((sentence) => {
+    const rest = sentence.split(' ').slice(1).join(' ');
+
+    return Array.from(rest.matchAll(/\b(Space|Spaces|Workspace|Public|Private|Custom|Full|Grant|Can)\b/g), (m) => m[0]);
+  });
+}
+
 function lookup(resources: unknown, key: string): unknown {
   return key.split('.').reduce<unknown>((node, part) => {
     if (node && typeof node === 'object') return (node as Record<string, unknown>)[part];
@@ -175,6 +212,21 @@ describe('space access copy', () => {
     expect(lookup(fr, 'space.manageSpace')).toBe("Gérer l'espace");
     expect(lookup(fr, 'space.createSpace')).toBe('Créer un espace');
     expect(lookup(fr, 'space.duplicate')).toBe("Dupliquer l'espace");
+  });
+
+  it('keeps the confirmations about space types and full access in sentence case, in English and French', () => {
+    for (const key of SENTENCE_CASE_KEYS) {
+      const english = lookup(en, key);
+      const french = lookup(fr, key);
+
+      expect({ key, english: typeof english }).toEqual({ key, english: 'string' });
+      // Option names keep their capital only when quoted as a label: “Custom”, “Can edit”.
+      expect({ key, capitals: midSentenceCapitals(english as string) }).toEqual({ key, capitals: [] });
+      expect({ key, french: typeof french }).toEqual({ key, french: 'string' });
+      expect({ key, untranslated: french === english }).toEqual({ key, untranslated: false });
+    }
+
+    expect(lookup(en, 'space.permissionManager.switchToCustomDescription')).toContain('a custom space');
   });
 
   it('keeps internal permission terms out of the visible copy', () => {

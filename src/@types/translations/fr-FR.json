@@ -2803,7 +2803,26 @@
       "memberRoleWithAccessDescription": "Reçoit l’accès par défaut de l’espace, sauf si vous choisissez un autre niveau dans Accès.",
       "accessCheckFailed": "Impossible de vérifier votre accès à cet espace. Les modifications sont suspendues en attendant.",
       "accessLost": "Cet espace n’est plus disponible pour vous.",
-      "checkAgain": "Vérifier à nouveau"
+      "checkAgain": "Vérifier à nouveau",
+      "switchToCustomDescription": "Passez à un espace personnalisé pour donner l’accès en modification à certaines personnes ou à certains groupes, tandis que les autres peuvent consulter l’espace.",
+      "confirmToCustomTitle": "Passer cet espace en accès personnalisé ?",
+      "confirmPublicToCustomDescription": "Tous les membres actuels de l’espace de travail resteront dans cet espace. Les propriétaires de l’espace gardent un accès complet, et les autres membres restent membres de l’espace avec l’accès « Modification ». Vous pourrez ajuster leur accès après le changement.",
+      "confirmPrivateToCustomDescription": "Tous les autres membres de l’espace de travail pourront consulter cet espace. Les personnes et les groupes ajoutés comme membres de l’espace pourront le modifier. Vous pourrez changer ces autorisations après le changement.",
+      "confirmToPublicTitle": "Rendre cet espace public ?",
+      "confirmToPublicDescription": "Tout le monde dans l’espace de travail pourra accéder à cet espace. Les membres de l’espace de travail peuvent le modifier par défaut, et ses propriétaires ont un accès complet. Après le changement, vous pourrez donner aux membres l’accès « Lecture » ou « Accès complet ».",
+      "confirmToPublicAction": "Rendre public",
+      "confirmToPrivateTitle": "Rendre cet espace privé ?",
+      "confirmToPrivateDescription": "Les autres propriétaires de l’espace, les membres de l’espace et les membres de l’espace de travail perdront l’accès à cet espace.",
+      "confirmToPrivateAction": "Rendre privé",
+      "fullAccessMembersTitle": "Donner un accès complet aux membres de l’espace ?",
+      "fullAccessEveryoneElseTitle": "Donner un accès complet à tous les autres ?",
+      "fullAccessEveryoneElseDescription": "Les membres de l’espace de travail qui ne font pas partie de cet espace pourront gérer l’espace, ses membres et ses autorisations.",
+      "fullAccessWorkspaceMembersTitle": "Donner un accès complet aux membres de l’espace de travail ?",
+      "fullAccessWorkspaceMembersDescription": "Tous les membres de l’espace de travail pourront gérer cet espace, ses membres et ses autorisations.",
+      "grantFullAccess": "Donner un accès complet",
+      "groupOwnerTitle": "Rendre ce groupe propriétaire de l’espace ?",
+      "groupOwnerDescription": "Tous les membres de ce groupe pourront gérer cet espace, ses membres et ses autorisations.",
+      "groupOwnerAction": "Rendre propriétaire"
     }
   },
   "publish": {
