@@ -102,6 +102,15 @@ export function NoWorkspace() {
     : showCreationActions && creation.canCreate
     ? 'create'
     : undefined;
+  // Joining or opening happens in a row; a wide outlined Check again would outweigh that button.
+  const checkAgainVariant =
+    primary === 'check' ? 'default' : primary === 'invitation' || primary === 'workspace' ? 'ghost' : 'outline';
+  // Like Desktop: only an account with nothing to open or join is asked to get an invitation.
+  const description = workspaces.length
+    ? undefined
+    : invitations.items.length
+    ? t('workspaceCreation.invitationsWaiting')
+    : t('workspaceCreation.noWorkspaceDescription');
 
   const refreshWorkspaces = () => {
     void auth.refreshUserWorkspaceInfo?.();
@@ -274,13 +283,15 @@ export function NoWorkspace() {
       <div className='flex flex-1 justify-center px-6 pb-10 pt-6 sm:items-center sm:pt-0'>
         <div className='flex w-full max-w-[400px] flex-col gap-6'>
           <div className='flex flex-col gap-2 text-center'>
-            <h1 className='text-xl font-semibold text-text-primary'>{t('workspaceCreation.noWorkspaceTitle')}</h1>
+            <h1 className='text-xl font-semibold text-text-primary'>
+              {t(workspaces.length ? 'workspace.chooseWorkspace' : 'workspaceCreation.noWorkspaceTitle')}
+            </h1>
             {currentUser?.email && (
               <p className='break-words text-sm text-text-primary'>
                 {t('workspaceCreation.signedInAs', { email: currentUser.email })}
               </p>
             )}
-            <p className='text-sm text-text-secondary'>{t('workspaceCreation.noWorkspaceDescription')}</p>
+            {description && <p className='text-sm text-text-secondary'>{description}</p>}
           </div>
 
           {invitations.items.length > 0 && (
@@ -363,7 +374,7 @@ export function NoWorkspace() {
             )}
             <Button
               size='lg'
-              variant={primary === 'check' ? 'default' : 'outline'}
+              variant={checkAgainVariant}
               loading={checking}
               disabled={busy && !checking}
               onClick={() => void checkAgain()}

@@ -4729,7 +4729,8 @@
     "openNamed": "Open {{name}}",
     "importWorkspace": "Import workspace",
     "unnamedWorkspace": "Unnamed workspace",
-    "joinInvitedBy": "Join the workspace {{name}} invited you to"
+    "joinInvitedBy": "Join the workspace {{name}} invited you to",
+    "invitationsWaiting": "Join a workspace you've been invited to below."
   },
   "groupSpaceAccess": {
     "title": "Access to all spaces",
