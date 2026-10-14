@@ -667,6 +667,30 @@ describe('ManageSpace ACL management', () => {
         expect((await screen.findByTestId(`space-member-access-${OWN_UID}-note`)).textContent).toBe(expected);
       });
 
+      it('names a share of the space page that replaces what a group gives', async () => {
+        // Can view on the row, Can edit through Marketing, and the space page shared at Can
+        // comment: the server lets the share replace the group, so the share is the reason.
+        mockGetSpacePermission.mockResolvedValue(supportedPermission());
+        mockGetSpaceMembers.mockResolvedValue({ members: [ownMember()], groups: [marketingGroup()] });
+        mockFetchOwnAccessDetails.mockResolvedValue(
+          ownDetails({
+            access_level: AccessLevel.ReadAndComment,
+            source: 'explicit_page_share',
+            explicit_page_access_level: AccessLevel.ReadAndComment,
+          })
+        );
+        await openMembersTab();
+        await waitFor(() => expect(accessTrigger(OWN_UID).disabled).toBe(false));
+        fireEvent.click(accessTrigger(OWN_UID));
+
+        const expected = mockTranslate('space.memberOverride.extraAccess.comment', {
+          source: mockTranslate('space.memberOverride.extraAccessSource.pageShare'),
+          ...noEscape,
+        });
+
+        expect((await screen.findByTestId(`space-member-access-${OWN_UID}-note`)).textContent).toBe(expected);
+      });
+
       it('keeps quiet when nothing gives more, or the server cannot explain', async () => {
         mockGetSpacePermission.mockResolvedValue(supportedPermission());
         mockGetSpaceMembers.mockResolvedValue({

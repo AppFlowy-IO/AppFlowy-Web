@@ -347,14 +347,95 @@ describe('extraSpaceAccess', () => {
     ).toBe('group');
   });
 
-  test('never reports more than the final decision, which applies page restrictions', () => {
+  // For anyone but a space owner the server lets a share of the space page replace what the
+  // space, its groups and Access to all spaces give, even when the share is lower.
+  test('names the page share, not the group, when a lower share of the space page replaces the group', () => {
+    const access = details({
+      access_level: AccessLevel.ReadAndComment,
+      source: 'explicit_page_share',
+      direct_member_access_level: AccessLevel.ReadOnly,
+      group_member_access_level: AccessLevel.ReadAndWrite,
+      explicit_page_access_level: AccessLevel.ReadAndComment,
+    });
+
+    expect(
+      extraSpaceAccess(access, AccessLevel.ReadOnly, {
+        spaceGroups: [spaceGroup('Marketing', AccessLevel.ReadAndWrite)],
+        workspaceGroups: [],
+      })
+    ).toEqual({ level: AccessLevel.ReadAndComment, source: { kind: 'pageShare' } });
+  });
+
+  test('names the page share, not Access to all spaces, when a lower share replaces it', () => {
+    const access = details({
+      access_level: AccessLevel.ReadAndComment,
+      source: 'explicit_page_share',
+      group_space_coverage_access_level: AccessLevel.ReadAndWrite,
+      explicit_page_access_level: AccessLevel.ReadAndComment,
+    });
+
+    expect(
+      extraSpaceAccess(access, AccessLevel.ReadOnly, {
+        spaceGroups: [],
+        workspaceGroups: [workspaceGroup('Users', AccessLevel.ReadAndWrite)],
+      })
+    ).toEqual({ level: AccessLevel.ReadAndComment, source: { kind: 'pageShare' } });
+  });
+
+  test('a share of the space page with one of your groups is still the page share', () => {
+    // The server reports a share addressed to a group as `workspace_group`. The share decided the
+    // access even though a group of the space gives the same level.
     expect(
       extraSpaceAccess(
-        details({ access_level: AccessLevel.ReadAndComment, group_member_access_level: AccessLevel.ReadAndWrite }),
+        details({
+          access_level: AccessLevel.ReadAndComment,
+          source: 'workspace_group',
+          group_member_access_level: AccessLevel.ReadAndComment,
+          explicit_page_access_level: AccessLevel.ReadAndComment,
+        }),
+        AccessLevel.ReadOnly,
+        { spaceGroups: [spaceGroup('Marketing', AccessLevel.ReadAndComment)], workspaceGroups: [] }
+      )
+    ).toEqual({ level: AccessLevel.ReadAndComment, source: { kind: 'pageShare' } });
+  });
+
+  test('a share below the final decision is not the reason', () => {
+    expect(
+      extraSpaceAccess(
+        details({
+          access_level: AccessLevel.ReadAndWrite,
+          group_member_access_level: AccessLevel.ReadAndWrite,
+          explicit_page_access_level: AccessLevel.ReadAndComment,
+        }),
         AccessLevel.ReadOnly,
         noGroups
       )
-    ).toEqual({ level: AccessLevel.ReadAndComment, source: { kind: 'group', groupName: undefined } });
+    ).toEqual({ level: AccessLevel.ReadAndWrite, source: { kind: 'group', groupName: undefined } });
+  });
+
+  test('follows the server when it names a page share without per-source levels', () => {
+    expect(
+      extraSpaceAccess(
+        { space_id: 'space', uid: '1', access_level: AccessLevel.ReadAndComment, source: 'explicit_page_share' },
+        AccessLevel.ReadOnly,
+        noGroups
+      )
+    ).toEqual({ level: AccessLevel.ReadAndComment, source: { kind: 'pageShare' } });
+  });
+
+  test('never names a group or Access to all spaces that gives more than the final decision', () => {
+    // Something lower decided the access; a stronger source above it explains nothing.
+    expect(
+      extraSpaceAccess(
+        details({
+          access_level: AccessLevel.ReadAndComment,
+          group_member_access_level: AccessLevel.ReadAndWrite,
+          group_space_coverage_access_level: AccessLevel.ReadAndWrite,
+        }),
+        AccessLevel.ReadOnly,
+        noGroups
+      )
+    ).toBeNull();
   });
 
   test.each([

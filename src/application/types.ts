@@ -1820,8 +1820,13 @@ export interface SpaceAccessDetails {
   space_id: string;
   /** The signed-in user; large values arrive as exact decimal strings. */
   uid: string | number;
-  /** The final decision for the space, after page restrictions; `null` is No access. */
+  /**
+   * The final decision for the space; `null` is No access. For anyone but a space owner, a share
+   * of the space page replaces what the space, its groups and Access to all spaces give, even when
+   * the share is lower.
+   */
   access_level: AccessLevel | null;
+  /** The server's reason for that decision, e.g. `explicit_page_share` or `workspace_group`. */
   source: string;
   member_default_access_level?: AccessLevel | null;
   /** What the user's own membership row gives. */
@@ -1830,7 +1835,7 @@ export interface SpaceAccessDetails {
   group_member_access_level?: AccessLevel | null;
   /** "Access to all spaces" through the user's groups. */
   group_space_coverage_access_level?: AccessLevel | null;
-  /** A share of the space page itself. */
+  /** A share of the space page, with the user or with one of their groups. */
   explicit_page_access_level?: AccessLevel | null;
   denied_reason?: string;
 }

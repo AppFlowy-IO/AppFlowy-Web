@@ -114,7 +114,7 @@ export type ExtraSpaceAccessSource =
   | { kind: 'group'; groupName?: string }
   /** "Access to all spaces" through their groups; named when only one group fits. */
   | { kind: 'allSpaces'; groupName?: string }
-  /** A share of the space page itself. */
+  /** A share of the space page, with them or with one of their groups. */
   | { kind: 'pageShare' };
 
 export interface ExtraSpaceAccess {
@@ -144,13 +144,20 @@ function onlyName<T>(candidates: readonly T[], name: (candidate: T) => string): 
 
 /**
  * Explain why the signed-in user can do more in a space than `configuredLevel`, the level their
- * own row in Manage Space gives them (`null` is No access). The strongest other source wins, in
- * the order group, Access to all spaces, page share; it is never reported above the final
- * decision, which already applies page restrictions.
+ * own row in Manage Space gives them (`null` is No access). Only the server's decision is used:
  *
- * A group is named only when it is the only candidate: the only group of this space at that
- * level, or the only group with Access to all spaces at that level. The user must belong to it,
- * because the server reports their strongest group. Otherwise the copy says "a group".
+ * - A share of the space page, with them or with one of their groups, is the reason whenever it is
+ *   the final decision. For anyone but a space owner the server lets that share replace what the
+ *   space, its groups and Access to all spaces give, even when the share is lower, so a group that
+ *   gives more is not the reason then.
+ * - Otherwise the stronger of a group of this space and Access to all spaces is the reason, the
+ *   group first on a tie. A source above the final decision explains nothing and is skipped.
+ *
+ * The per-source levels, not the server's `source`, decide the rest, because the row may show a
+ * choice the server has not saved yet. A group is named only when it is the only candidate: the
+ * only group of this space at that level, or the only group with Access to all spaces at that
+ * level. The user must belong to it, because the server reports their strongest group. Otherwise
+ * the copy says "a group".
  */
 export function extraSpaceAccess(
   details: SpaceAccessDetails,
@@ -163,6 +170,12 @@ export function extraSpaceAccess(
   const finalLevel = knownAccessLevel(details.access_level);
 
   if (finalLevel === null || (configuredLevel !== null && finalLevel <= configuredLevel)) return null;
+  const pageShareLevel = knownAccessLevel(details.explicit_page_access_level);
+  // Servers without per-source levels still say when a page share decided the access.
+  const pageShareDecides =
+    pageShareLevel !== null ? pageShareLevel === finalLevel : details.source === 'explicit_page_share';
+
+  if (pageShareDecides) return { level: finalLevel, source: { kind: 'pageShare' } };
   const groupLevel = knownAccessLevel(details.group_member_access_level);
   const allSpacesLevel = knownAccessLevel(details.group_space_coverage_access_level);
   const candidates: Array<[AccessLevel | null, () => ExtraSpaceAccessSource]> = [
@@ -186,15 +199,11 @@ export function extraSpaceAccess(
         ),
       }),
     ],
-    [knownAccessLevel(details.explicit_page_access_level), () => ({ kind: 'pageShare' })],
   ];
   let best: { level: AccessLevel; source: () => ExtraSpaceAccessSource } | null = null;
 
-  for (const [sourceLevel, source] of candidates) {
-    if (sourceLevel === null) continue;
-    const level = Math.min(sourceLevel, finalLevel) as AccessLevel;
-
-    if (configuredLevel !== null && level <= configuredLevel) continue;
+  for (const [level, source] of candidates) {
+    if (level === null || level > finalLevel || (configuredLevel !== null && level <= configuredLevel)) continue;
     if (!best || level > best.level) best = { level, source };
   }
 
