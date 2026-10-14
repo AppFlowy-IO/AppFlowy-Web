@@ -149,6 +149,14 @@ describe('space access copy', () => {
     }
   });
 
+  it('describes the space types in sentence case, in English and in French', () => {
+    // The card descriptions under Public / Custom / Private in Create and Manage Space.
+    expect(lookup(en, 'space.publicPermissionDescription')).toBe('Everyone in the workspace can access');
+    expect(lookup(en, 'space.customPermissionDescription')).toBe('Choose who can access and what they can do');
+    expect(lookup(en, 'space.privatePermissionDescription')).toBe('Only you can access');
+    expect(lookup(fr, 'space.publicPermissionDescription')).toBe("Tout le monde dans l'espace de travail peut y accéder");
+  });
+
   it('keeps internal permission terms out of the visible copy', () => {
     for (const key of CONTROL_KEYS) {
       expect({ key, value: lookup(en, key) }).toEqual({ key, value: expect.not.stringMatching(INTERNAL_TERMS) });

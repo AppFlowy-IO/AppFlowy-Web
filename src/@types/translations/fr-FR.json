@@ -2722,7 +2722,7 @@
     "spaceNamePlaceholder": "par exemple, marketing, ingénierie, ressources humaines",
     "permission": "Autorisation",
     "publicPermission": "Publique",
-    "publicPermissionDescription": "Tous les membres de l'espace de travail avec un accès complet",
+    "publicPermissionDescription": "Tout le monde dans l'espace de travail peut y accéder",
     "privatePermission": "Privé",
     "privatePermissionDescription": "Vous seul pouvez accéder à cet espace",
     "spaceIconBackground": "Couleur d'arrière-plan",

@@ -3616,7 +3616,7 @@
     "spaceNamePlaceholder": "e.g. Marketing, Engineering, HR",
     "permission": "Space permission",
     "publicPermission": "Public",
-    "publicPermissionDescription": "Everyone in the Workspace can access",
+    "publicPermissionDescription": "Everyone in the workspace can access",
     "privatePermission": "Private",
     "privatePermissionDescription": "Only you can access",
     "customPermission": "Custom",
