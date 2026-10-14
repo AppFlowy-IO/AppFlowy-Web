@@ -1,5 +1,5 @@
 import { Check, ChevronDown, FilePlus2, Globe2, LockKeyhole, Settings2, Shield, UserRound, Users } from 'lucide-react';
-import { memo, useId, useState } from 'react';
+import { memo, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { AccessLevel, Role, SpacePermissionSettings, SpaceSidebarEditPolicy, SpaceVisibility } from '@/application/types';
@@ -50,6 +50,9 @@ const SIDEBAR_EDIT_POLICY_OPTIONS: readonly SpaceSidebarEditPolicy[] = [
 
 const MODAL_WIDTH = 680;
 const CONTENT_WIDTH = 640;
+/** Every button in the panel shows where keyboard focus is (the shared Button has no focus style). */
+const BUTTON_FOCUS_RING =
+  '[&_button:focus-visible]:outline-none [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-border-theme-thick';
 
 export type SpaceSettingsTab = 'general' | 'members';
 
@@ -143,15 +146,19 @@ function AccessDropdown({
   options,
   disabled,
   testId,
+  labelledBy,
   onChange,
 }: {
   value: AccessLevel | null | undefined;
   options: readonly (AccessLevel | null)[];
   disabled?: boolean;
   testId: string;
+  /** The row title, so the button says whose access it sets ("Space members, Can edit"). */
+  labelledBy: string;
   onChange: (value: AccessLevel | null) => void;
 }) {
   const { t } = useTranslation();
+  const valueId = useId();
 
   return (
     <DropdownMenu>
@@ -161,11 +168,12 @@ function AccessDropdown({
           variant='ghost'
           size='sm'
           disabled={disabled}
+          aria-labelledby={`${labelledBy} ${valueId}`}
           className='min-w-[120px] justify-end px-2 text-text-primary'
           data-testid={testId}
         >
-          {accessLabel(value, t)}
-          <ChevronDown className='h-4 w-4 text-icon-tertiary' />
+          <span id={valueId}>{accessLabel(value, t)}</span>
+          <ChevronDown aria-hidden className='h-4 w-4 text-icon-tertiary' />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align='end'>
@@ -375,6 +383,7 @@ const PublicAccessCard = memo(function PublicAccessCard({
   onSwitchToCustom: () => void;
 }) {
   const { t } = useTranslation();
+  const membersTitleId = useId();
 
   return (
     <section className='flex flex-col gap-3' data-testid='manage-space-public-access-card'>
@@ -393,6 +402,7 @@ const PublicAccessCard = memo(function PublicAccessCard({
         <PermissionPrincipalRow
           icon={<Users className='h-5 w-5 text-icon-primary' />}
           title={t('space.permissionManager.workspaceMembers')}
+          titleId={membersTitleId}
           description={t('space.permissionManager.workspaceMembersDescription')}
           testId='manage-space-workspace-members-row'
           trailing={
@@ -401,6 +411,7 @@ const PublicAccessCard = memo(function PublicAccessCard({
               options={PUBLIC_MEMBER_ACCESS_OPTIONS}
               disabled={disabled}
               testId='manage-space-workspace-members-access'
+              labelledBy={membersTitleId}
               onChange={onMembersAccessChange}
             />
           }
@@ -447,6 +458,8 @@ const CustomPermissionsCard = memo(function CustomPermissionsCard({
   onEveryoneElseAccessChange: (value: AccessLevel | null) => void;
 }) {
   const { t } = useTranslation();
+  const membersTitleId = useId();
+  const everyoneElseTitleId = useId();
 
   return (
     <section className='rounded-400 border border-border-primary' data-testid='manage-space-custom-permissions-card'>
@@ -464,6 +477,7 @@ const CustomPermissionsCard = memo(function CustomPermissionsCard({
       <PermissionPrincipalRow
         icon={<Users className='h-5 w-5 text-icon-primary' />}
         title={t('space.permissionManager.members')}
+        titleId={membersTitleId}
         description={t('space.permissionManager.customMembersDescription')}
         testId='manage-space-custom-members-row'
         trailing={
@@ -472,6 +486,7 @@ const CustomPermissionsCard = memo(function CustomPermissionsCard({
             options={CUSTOM_ACCESS_OPTIONS}
             disabled={disabled}
             testId='manage-space-custom-members-access'
+            labelledBy={membersTitleId}
             onChange={onMembersAccessChange}
           />
         }
@@ -483,6 +498,7 @@ const CustomPermissionsCard = memo(function CustomPermissionsCard({
             ? t('space.permissionManager.everyoneElse', { workspace: workspaceName })
             : t('space.permissionManager.everyoneElseFallback')
         }
+        titleId={everyoneElseTitleId}
         description={t('space.permissionManager.everyoneElseDescription')}
         testId='manage-space-everyone-else-row'
         trailing={
@@ -491,6 +507,7 @@ const CustomPermissionsCard = memo(function CustomPermissionsCard({
             options={CUSTOM_ACCESS_OPTIONS}
             disabled={disabled}
             testId='manage-space-everyone-else-access'
+            labelledBy={everyoneElseTitleId}
             onChange={onEveryoneElseAccessChange}
           />
         }
@@ -584,6 +601,55 @@ const PrivateMembersContent = memo(function PrivateMembersContent({
   );
 });
 
+/** A natively disabled control, which browsers take keyboard focus away from. */
+function isDisabledControl(element: Element): boolean {
+  return (element as HTMLButtonElement).disabled === true;
+}
+
+/**
+ * Saving or rechecking access briefly disables the General tab's controls, and a browser then
+ * moves keyboard focus from the disabled control to the page. Keep focus in the tab while the
+ * controls are paused, and return to the control the keyboard was on once it is available again,
+ * also when a menu or a confirmation could not give focus back to it. Focus that moved to another
+ * control is left alone.
+ */
+function useKeyboardPlaceWhilePaused(container: HTMLElement | null, pausedKey: string) {
+  const lastControl = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!container) return;
+    const remember = (event: FocusEvent) => {
+      if (event.target instanceof HTMLElement && event.target !== container) lastControl.current = event.target;
+    };
+
+    container.addEventListener('focusin', remember);
+    return () => container.removeEventListener('focusin', remember);
+  }, [container]);
+
+  // Before paint, so the browser never gets to drop focus from the disabled control.
+  useLayoutEffect(() => {
+    if (!container) return;
+    const panel = container.closest<HTMLElement>('[role="tabpanel"]') ?? container;
+    const active = document.activeElement;
+
+    if (
+      active instanceof HTMLElement &&
+      active !== container &&
+      container.contains(active) &&
+      isDisabledControl(active)
+    ) {
+      panel.focus({ preventScroll: true });
+      return;
+    }
+
+    const control = lastControl.current;
+
+    if (!control?.isConnected || !container.contains(control) || isDisabledControl(control)) return;
+    // Parked in the tab, or lost to the dialog or the page: an element around the tab has focus.
+    if (!active || active.contains(container)) control.focus({ preventScroll: true });
+  }, [container, pausedKey]);
+}
+
 /**
  * Shared Space settings presentation. Creation and management deliberately
  * keep their own controllers: this component owns layout only and never calls
@@ -633,6 +699,12 @@ function SpaceSettingsPanel({
   const draftIsPublic = draftVisibility === SpaceVisibility.Public;
   const draftIsCustom = draftVisibility === SpaceVisibility.Custom;
   const draftIsPrivate = draftVisibility === SpaceVisibility.Private;
+  const fallbackMembersTitleId = useId();
+
+  useKeyboardPlaceWhilePaused(
+    container,
+    `${metadataDisabled}:${permissionSettingsDisabled}:${loadingSettings}:${primaryActionLoading}`
+  );
 
   return (
     <NormalModal
@@ -662,7 +734,7 @@ function SpaceSettingsPanel({
         value={activeTab}
         onValueChange={(value) => onTabChange(value as SpaceSettingsTab)}
         aria-busy={primaryActionLoading || undefined}
-        className='min-h-0 max-w-full'
+        className={cn('min-h-0 max-w-full', BUTTON_FOCUS_RING)}
         style={{ width: CONTENT_WIDTH }}
         data-testid='space-settings-panel'
       >
@@ -677,7 +749,7 @@ function SpaceSettingsPanel({
           )}
         </TabsList>
 
-        <TabsContent value='general' className='min-h-0'>
+        <TabsContent value='general' className='min-h-0' data-testid='space-settings-general'>
           <div ref={setContainer} className='appflowy-scroller max-h-[64vh] overflow-y-auto pr-1'>
             <div className='flex flex-col gap-6 py-2'>
               <div className='flex flex-col gap-2'>
@@ -768,6 +840,7 @@ function SpaceSettingsPanel({
                   <PermissionPrincipalRow
                     icon={<Users className='h-5 w-5 text-icon-primary' />}
                     title={t('space.permissionManager.members')}
+                    titleId={fallbackMembersTitleId}
                     description={t('space.permissionManager.membersDescription')}
                     testId='manage-space-members-default-access-row'
                     trailing={
@@ -776,6 +849,7 @@ function SpaceSettingsPanel({
                         options={FALLBACK_MEMBER_ACCESS_OPTIONS}
                         disabled={permissionSettingsDisabled}
                         testId='manage-space-members-default-access'
+                        labelledBy={fallbackMembersTitleId}
                         onChange={(value) => {
                           if (value !== null) onMembersAccessChange(value);
                         }}

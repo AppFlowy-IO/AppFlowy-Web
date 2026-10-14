@@ -1,0 +1,234 @@
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { ReactNode, useState } from 'react';
+
+import { mockResizeObserver } from '@/__mocks__/resizeObserver';
+import {
+  AccessLevel,
+  SpaceInvitePolicy,
+  SpacePermissionSettings,
+  SpaceSidebarEditPolicy,
+  SpaceVisibility,
+} from '@/application/types';
+import SpaceSettingsPanel from '@/components/app/view-actions/SpaceSettingsPanel';
+
+mockResizeObserver();
+
+jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+// The icon picker itself is not under test; the trigger is.
+jest.mock('@/components/_shared/cutsom-icon', () => ({
+  CustomIconPopover: ({ children }: { children: ReactNode }) => <>{children}</>,
+}));
+
+const basePermission: SpacePermissionSettings = {
+  visibility: SpaceVisibility.Public,
+  owner_access_level: AccessLevel.FullAccess,
+  member_default_access_level: AccessLevel.ReadAndWrite,
+  everyone_else_access_level: null,
+  invite_policy: SpaceInvitePolicy.OwnersOnly,
+  sidebar_edit_policy: SpaceSidebarEditPolicy.OwnersOnly,
+  invite_link_enabled: false,
+  security: { disable_guests: false, disable_public_links: false, disable_export: false },
+};
+
+let setBusy: (busy: boolean) => void = () => undefined;
+
+function Harness({
+  visibility = SpaceVisibility.Public,
+  disabled = false,
+  initiallyOpen = true,
+  busyOnChange = false,
+  onMembersAccessChange = jest.fn(),
+}: {
+  visibility?: SpaceVisibility;
+  disabled?: boolean;
+  initiallyOpen?: boolean;
+  /** Like Manage Space: choosing a value pauses the settings while it saves. */
+  busyOnChange?: boolean;
+  onMembersAccessChange?: (value: AccessLevel | null) => void;
+}) {
+  const [open, setOpen] = useState(initiallyOpen);
+  const [busy, setBusyState] = useState(false);
+
+  setBusy = setBusyState;
+
+  return (
+    <>
+      <button type='button' onClick={() => setOpen(true)}>
+        Open manage space
+      </button>
+      <SpaceSettingsPanel
+        open={open}
+        onClose={() => setOpen(false)}
+        title='Manage space'
+        modalTestId='manage-space-modal'
+        activeTab='general'
+        onTabChange={jest.fn()}
+        membersTabVisible
+        spaceName='Research'
+        spaceIcon=''
+        spaceIconColor=''
+        onSpaceNameChange={jest.fn()}
+        onSpaceIconChange={jest.fn()}
+        permissionSettings={{
+          ...basePermission,
+          visibility,
+          everyone_else_access_level: visibility === SpaceVisibility.Custom ? AccessLevel.ReadOnly : null,
+        }}
+        visibilityOptions={[SpaceVisibility.Public, SpaceVisibility.Custom, SpaceVisibility.Private]}
+        permissionSettingsDisabled={disabled || busy}
+        workspaceName='Acme'
+        onVisibilitySelect={jest.fn()}
+        onMembersAccessChange={(value) => {
+          onMembersAccessChange(value);
+          if (busyOnChange) setBusyState(true);
+        }}
+        onEveryoneElseAccessChange={jest.fn()}
+        onSidebarEditPolicyChange={jest.fn()}
+      />
+    </>
+  );
+}
+
+function dialog() {
+  return screen.getByTestId('manage-space-modal');
+}
+
+function tabbables(root: HTMLElement) {
+  return Array.from(root.querySelectorAll<HTMLElement>('button, input, [tabindex]')).filter(
+    (element) => element.tabIndex >= 0 && !(element as HTMLButtonElement).disabled
+  );
+}
+
+describe('Manage Space General tab with a keyboard', () => {
+  it('reaches every control, including the space icon, as named buttons and fields', () => {
+    render(<Harness />);
+    const reachable = tabbables(dialog());
+    const icon = within(dialog()).getByRole('button', { name: 'space.changeIcon' });
+
+    expect(reachable).toContain(icon);
+    expect(reachable).toContain(within(dialog()).getByPlaceholderText('space.spaceNamePlaceholder'));
+    for (const visibility of [SpaceVisibility.Public, SpaceVisibility.Custom, SpaceVisibility.Private]) {
+      expect(reachable).toContain(screen.getByTestId(`manage-space-visibility-option-${visibility}`));
+    }
+
+    expect(reachable).toContain(screen.getByTestId('manage-space-workspace-members-access'));
+    expect(reachable).toContain(screen.getByTestId('manage-space-switch-to-custom'));
+    expect(reachable).toContain(screen.getByTestId('space-sidebar-policy'));
+  });
+
+  it('enters the tabs at the current tab and moves between them with the arrow keys', async () => {
+    render(<Harness />);
+    const tablist = within(dialog()).getByRole('tablist');
+    const general = within(dialog()).getByRole('tab', { name: 'space.permissionManager.generalTab' });
+    const members = within(dialog()).getByRole('tab', { name: 'space.permissionManager.membersTab' });
+
+    // The tab list is the Tab stop and hands focus to the current tab.
+    expect(tabbables(dialog())).toContain(tablist);
+    act(() => tablist.focus());
+    expect(document.activeElement).toBe(general);
+    fireEvent.keyDown(general, { key: 'ArrowRight' });
+    await waitFor(() => expect(document.activeElement).toBe(members));
+  });
+
+  it.each([
+    [
+      SpaceVisibility.Public,
+      [
+        [
+          'manage-space-workspace-members-access',
+          'space.permissionManager.workspaceMembers space.memberOverride.levels.canEdit',
+        ],
+      ],
+    ],
+    [
+      SpaceVisibility.Custom,
+      [
+        ['manage-space-custom-members-access', 'space.permissionManager.members space.memberOverride.levels.canEdit'],
+        [
+          'manage-space-everyone-else-access',
+          'space.permissionManager.everyoneElse space.memberOverride.levels.canView',
+        ],
+      ],
+    ],
+  ])('names each access menu in a %s space by the audience it sets', (visibility, triggers) => {
+    render(<Harness visibility={visibility} />);
+    for (const [testId, name] of triggers) {
+      expect(screen.getByRole('button', { name })).toBe(screen.getByTestId(testId));
+    }
+  });
+
+  it('opens an access menu from the keyboard, chooses a level, and returns to the menu button', async () => {
+    const onMembersAccessChange = jest.fn();
+
+    render(<Harness onMembersAccessChange={onMembersAccessChange} />);
+    const trigger = screen.getByTestId('manage-space-workspace-members-access');
+
+    act(() => trigger.focus());
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+    const canView = await screen.findByTestId(`manage-space-workspace-members-access-option-${AccessLevel.ReadOnly}`);
+
+    act(() => canView.focus());
+    fireEvent.keyDown(canView, { key: 'Enter' });
+    expect(onMembersAccessChange).toHaveBeenCalledWith(AccessLevel.ReadOnly);
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+  });
+
+  it('keeps keyboard focus in the tab while the settings are paused, then returns to the same control', () => {
+    const { rerender } = render(<Harness />);
+    const trigger = screen.getByTestId('space-sidebar-policy');
+
+    act(() => trigger.focus());
+    rerender(<Harness disabled />);
+    // Browsers move focus off a disabled button to the page; it stays in the General tab instead.
+    expect((trigger as HTMLButtonElement).disabled).toBe(true);
+    expect(document.activeElement).not.toBe(trigger);
+    expect(document.activeElement).not.toBe(document.body);
+    expect(screen.getByTestId('space-settings-general').contains(document.activeElement)).toBe(true);
+    rerender(<Harness />);
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('returns to the access menu button once a choice that paused the settings has saved', async () => {
+    render(<Harness busyOnChange />);
+    const trigger = screen.getByTestId('manage-space-workspace-members-access');
+
+    act(() => trigger.focus());
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+    const canView = await screen.findByTestId(`manage-space-workspace-members-access-option-${AccessLevel.ReadOnly}`);
+
+    act(() => canView.focus());
+    fireEvent.keyDown(canView, { key: 'Enter' });
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    // The menu could not give focus back to the paused button.
+    expect(document.activeElement).not.toBe(trigger);
+    act(() => setBusy(false));
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('keeps focus inside the dialog and gives it back to the button that opened it', async () => {
+    render(<Harness initiallyOpen={false} />);
+    const launcher = screen.getByRole('button', { name: 'Open manage space' });
+
+    act(() => launcher.focus());
+    fireEvent.click(launcher);
+    const panel = await screen.findByTestId('manage-space-modal');
+    const root = panel.closest('[role="presentation"]') as HTMLElement;
+
+    // The name field takes focus when the dialog opens.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(within(panel).getByPlaceholderText('space.spaceNamePlaceholder'))
+    );
+    // Focus cannot leave the open dialog.
+    act(() => launcher.focus());
+    await waitFor(() => expect(root.contains(document.activeElement)).toBe(true));
+    expect(document.activeElement).not.toBe(launcher);
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByTestId('manage-space-modal')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(launcher));
+  });
+
+  it('shows a visible focus ring on every button in the panel', () => {
+    render(<Harness />);
+    expect(screen.getByTestId('space-settings-panel').className).toContain('[&_button:focus-visible]:ring-2');
+  });
+});
