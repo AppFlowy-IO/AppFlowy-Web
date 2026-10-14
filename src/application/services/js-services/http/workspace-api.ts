@@ -14,6 +14,7 @@ import {
   MentionSearchRequest,
   MentionSearchResponse,
   Role,
+  SpaceAccessDetails,
   SpaceMember,
   SpaceMembers,
   Spaces,
@@ -313,6 +314,17 @@ export async function getSpacePermission(workspaceId: string, spaceId: string) {
 
   return executeAPIRequest<SpacePermissionResponse>(() =>
     getAxios()?.get<APIResponse<SpacePermissionResponse>>(url)
+  );
+}
+
+/** Why the signed-in user has their access to a space. Servers without the route answer 404. */
+export async function getSpaceAccessDetails(workspaceId: string, spaceId: string) {
+  const url = `/api/workspace/${workspaceId}/spaces/${spaceId}/access-details`;
+
+  return executeAPIRequest<SpaceAccessDetails>(() =>
+    getAxios()?.get<APIResponse<SpaceAccessDetails>>(url, {
+      transformResponse: [parseResponseWithExactUid],
+    })
   );
 }
 

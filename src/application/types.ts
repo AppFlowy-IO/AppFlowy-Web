@@ -1810,6 +1810,31 @@ export interface UpdateSpaceMemberPayload {
   access_level_override?: SpaceMemberAccessOverride;
 }
 
+/**
+ * Why the signed-in user has the access they have to one space
+ * (`GET /api/workspace/{workspace}/spaces/{space}/access-details`). The server only explains the
+ * caller's own access. Older servers lack the route or the per-source levels; a missing level
+ * means that source gives nothing.
+ */
+export interface SpaceAccessDetails {
+  space_id: string;
+  /** The signed-in user; large values arrive as exact decimal strings. */
+  uid: string | number;
+  /** The final decision for the space, after page restrictions; `null` is No access. */
+  access_level: AccessLevel | null;
+  source: string;
+  member_default_access_level?: AccessLevel | null;
+  /** What the user's own membership row gives. */
+  direct_member_access_level?: AccessLevel | null;
+  /** The strongest group of this space the user belongs to. */
+  group_member_access_level?: AccessLevel | null;
+  /** "Access to all spaces" through the user's groups. */
+  group_space_coverage_access_level?: AccessLevel | null;
+  /** A share of the space page itself. */
+  explicit_page_access_level?: AccessLevel | null;
+  denied_reason?: string;
+}
+
 export interface AddSpaceGroupPermissionPayload {
   role: SpaceMemberRole;
   access_level?: AccessLevel;

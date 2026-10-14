@@ -2,14 +2,19 @@ import { t } from 'i18next';
 
 import {
   AccessLevel,
+  SpaceAccessDetails,
   SpaceMemberAccessOverride,
   SpaceMemberRole,
   SpacePermissionSettings,
   SpaceVisibility,
+  WorkspaceGroup,
+  WorkspaceGroupSpacePermission,
 } from '@/application/types';
+import { isSameUserUid } from '@/application/user-uid';
 
 import { captureApiContext } from './http/request-context';
 import {
+  getSpaceAccessDetails,
   getSpaceMembers,
   getSpacePermission,
   updateSpaceGroupPermission,
@@ -101,4 +106,121 @@ export async function setSpaceMemberAccessOverride(
 
   assertCurrent();
   return updated;
+}
+
+/** Where the signed-in user gets more access to a space than their own row gives them. */
+export type ExtraSpaceAccessSource =
+  /** A group of this space they belong to; named when only one group of the space fits. */
+  | { kind: 'group'; groupName?: string }
+  /** "Access to all spaces" through their groups; named when only one group fits. */
+  | { kind: 'allSpaces'; groupName?: string }
+  /** A share of the space page itself. */
+  | { kind: 'pageShare' };
+
+export interface ExtraSpaceAccess {
+  level: AccessLevel;
+  source: ExtraSpaceAccessSource;
+}
+
+const KNOWN_ACCESS_LEVELS = new Set<unknown>([
+  AccessLevel.ReadOnly,
+  AccessLevel.ReadAndComment,
+  AccessLevel.ReadAndWrite,
+  AccessLevel.FullAccess,
+]);
+
+function knownAccessLevel(level: unknown): AccessLevel | null {
+  return KNOWN_ACCESS_LEVELS.has(level) ? (level as AccessLevel) : null;
+}
+
+// What a space's group row gives; servers without per-person access only report the stored level.
+function assignmentAccessLevel(group: WorkspaceGroupSpacePermission): AccessLevel | null {
+  return group.effective_access_level !== undefined ? group.effective_access_level : group.access_level;
+}
+
+function onlyName<T>(candidates: readonly T[], name: (candidate: T) => string): string | undefined {
+  return candidates.length === 1 ? name(candidates[0]) || undefined : undefined;
+}
+
+/**
+ * Explain why the signed-in user can do more in a space than `configuredLevel`, the level their
+ * own row in Manage Space gives them (`null` is No access). The strongest other source wins, in
+ * the order group, Access to all spaces, page share; it is never reported above the final
+ * decision, which already applies page restrictions.
+ *
+ * A group is named only when it is the only candidate: the only group of this space at that
+ * level, or the only group with Access to all spaces at that level. The user must belong to it,
+ * because the server reports their strongest group. Otherwise the copy says "a group".
+ */
+export function extraSpaceAccess(
+  details: SpaceAccessDetails,
+  configuredLevel: AccessLevel | null,
+  groups: {
+    spaceGroups: readonly WorkspaceGroupSpacePermission[];
+    workspaceGroups: readonly WorkspaceGroup[];
+  }
+): ExtraSpaceAccess | null {
+  const finalLevel = knownAccessLevel(details.access_level);
+
+  if (finalLevel === null || (configuredLevel !== null && finalLevel <= configuredLevel)) return null;
+  const groupLevel = knownAccessLevel(details.group_member_access_level);
+  const allSpacesLevel = knownAccessLevel(details.group_space_coverage_access_level);
+  const candidates: Array<[AccessLevel | null, () => ExtraSpaceAccessSource]> = [
+    [
+      groupLevel,
+      () => ({
+        kind: 'group',
+        groupName: onlyName(
+          groups.spaceGroups.filter((group) => assignmentAccessLevel(group) === groupLevel),
+          (group) => group.name
+        ),
+      }),
+    ],
+    [
+      allSpacesLevel,
+      () => ({
+        kind: 'allSpaces',
+        groupName: onlyName(
+          groups.workspaceGroups.filter((group) => group.space_coverage_access_level === allSpacesLevel),
+          (group) => group.name
+        ),
+      }),
+    ],
+    [knownAccessLevel(details.explicit_page_access_level), () => ({ kind: 'pageShare' })],
+  ];
+  let best: { level: AccessLevel; source: () => ExtraSpaceAccessSource } | null = null;
+
+  for (const [sourceLevel, source] of candidates) {
+    if (sourceLevel === null) continue;
+    const level = Math.min(sourceLevel, finalLevel) as AccessLevel;
+
+    if (configuredLevel !== null && level <= configuredLevel) continue;
+    if (!best || level > best.level) best = { level, source };
+  }
+
+  return best ? { level: best.level, source: best.source() } : null;
+}
+
+/**
+ * Read why the signed-in user has their access to a space, for the explanation in their own
+ * row's access menu. Resolves `null` instead of failing: an older server without the route, a lost
+ * right or a network error just leaves the row with its own level. Details that describe another
+ * account or space, or arrive after the account, server or workspace changed, are dropped.
+ */
+export async function fetchOwnSpaceAccessDetails(
+  workspaceId: string,
+  spaceId: string,
+  ownUid: string | undefined
+): Promise<SpaceAccessDetails | null> {
+  if (!ownUid) return null;
+  const context = captureApiContext();
+
+  try {
+    const details = await getSpaceAccessDetails(workspaceId, spaceId);
+
+    context.assertCurrent();
+    return details && details.space_id === spaceId && isSameUserUid(details.uid, ownUid) ? details : null;
+  } catch {
+    return null;
+  }
 }

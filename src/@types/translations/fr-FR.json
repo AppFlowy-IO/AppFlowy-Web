@@ -2772,7 +2772,20 @@
       "sharedPagesOnly": "Pages partagées uniquement",
       "sharedPagesReason": "Cette personne ne peut ouvrir que les pages partagées avec elle. Gérez cela depuis le menu Partager de chaque page.",
       "managedElsewhere": "Cet accès provient des paramètres de l’espace et ne peut pas être modifié ici.",
-      "reloadToChange": "Cet accès ne peut pas être modifié pour le moment. Rechargez la page et réessayez."
+      "reloadToChange": "Cet accès ne peut pas être modifié pour le moment. Rechargez la page et réessayez.",
+      "extraAccess": {
+        "view": "Vous pouvez aussi consulter cet espace via {{source}}.",
+        "comment": "Vous pouvez aussi commenter dans cet espace via {{source}}.",
+        "edit": "Vous pouvez aussi modifier cet espace via {{source}}.",
+        "full": "Vous avez aussi un accès complet à cet espace via {{source}}."
+      },
+      "extraAccessSource": {
+        "group": "le groupe {{name}}",
+        "anyGroup": "un groupe de cet espace",
+        "allSpaces": "l’accès à tous les espaces ({{name}})",
+        "anyAllSpaces": "l’accès à tous les espaces",
+        "pageShare": "un partage de page"
+      }
     },
     "permissionManager": {
       "memberRoleDescription": "Reçoit l’accès défini pour les membres de l’espace dans les paramètres généraux.",
