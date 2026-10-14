@@ -34,6 +34,7 @@ function ViewActionsPopover({
   open,
   onOpenChange,
   onImportClick,
+  viewActionPermissions,
 }: {
   view?: View;
   popoverType?: {
@@ -45,9 +46,18 @@ function ViewActionsPopover({
   // ancestor (e.g. Outline) since this popover is unmounted as soon as the
   // dropdown closes.
   onImportClick?: (view: View) => void;
+  // A row that already resolves canonical permissions can share that result.
+  viewActionPermissions?: Pick<
+    ReturnType<typeof useViewActionPermissions>,
+    'canCreateViewActions' | 'canManageViewActions' | 'hasLoadedViewActionPermissions' | 'isLoadingViewActionPermissions'
+  >;
 } & ComponentProps<typeof DropdownMenu>) {
+  const ownViewActionPermissions = useViewActionPermissions(
+    view,
+    Boolean(open && popoverType && !viewActionPermissions)
+  );
   const { canCreateViewActions, canManageViewActions, hasLoadedViewActionPermissions, isLoadingViewActionPermissions } =
-    useViewActionPermissions(view, Boolean(open && popoverType));
+    viewActionPermissions ?? ownViewActionPermissions;
   const shouldLoadSpaceActionPermissions = Boolean(
     open && popoverType?.category === 'space' && popoverType.type === 'more'
   );

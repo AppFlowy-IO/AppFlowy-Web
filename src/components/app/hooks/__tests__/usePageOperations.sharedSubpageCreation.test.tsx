@@ -1,21 +1,22 @@
-import { renderHook } from '@testing-library/react';
+import { fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { type MutableRefObject, type ReactNode } from 'react';
 import { toast } from 'sonner';
 
 import { PageService, ViewService } from '@/application/services/domains';
-import { AccessLevel, Role, View, ViewLayout } from '@/application/types';
+import { AccessLevel, Role, View, ViewIconType, ViewLayout } from '@/application/types';
 import { findView, findViewInShareWithMe } from '@/components/_shared/outline/utils';
 import { AuthInternalContext, AuthInternalContextType } from '@/components/app/contexts/AuthInternalContext';
+import RenameModal from '@/components/app/view-actions/RenameModal';
 import { Log } from '@/utils/log';
 
 import { usePageOperations } from '../usePageOperations';
 
-jest.mock('sonner', () => ({ toast: { error: jest.fn() } }));
+jest.mock('sonner', () => ({ toast: { error: jest.fn(), warning: jest.fn() } }));
 
 jest.mock('@/application/services/domains', () => ({
   BillingService: {},
   FileService: {},
-  PageService: { add: jest.fn(), updateName: jest.fn() },
+  PageService: { add: jest.fn(), updateName: jest.fn(), update: jest.fn(), updateIcon: jest.fn() },
   PublishService: {},
   ViewService: { invalidateCache: jest.fn() },
 }));
@@ -83,7 +84,9 @@ function renderWithPage(
   const wrapper = ({ children }: { children: ReactNode }) => (
     <AuthInternalContext.Provider value={auth}>{children}</AuthInternalContext.Provider>
   );
-  const rendered = renderHook(() => usePageOperations({ outlineRef, ensureViewVisibleInOutline, loadOutline }), { wrapper });
+  const rendered = renderHook(() => usePageOperations({ outlineRef, ensureViewVisibleInOutline, loadOutline }), {
+    wrapper,
+  });
 
   return { ...rendered, outlineRef, ensureViewVisibleInOutline, loadOutline, parent };
 }
@@ -233,7 +236,118 @@ describe('renaming a page in Shared with me', () => {
       await expect(result.current.updatePageName(parent.view_id, 'Saved name')).resolves.toBeUndefined();
 
       expect(loadOutline).toHaveBeenCalledWith(WORKSPACE_ID, false);
-      expect(warn).toHaveBeenCalledWith('[Outline] Failed to refresh Shared with me after renaming a page', refreshError);
+      expect(warn).toHaveBeenCalledWith(
+        '[Outline] Failed to refresh Shared with me after updating a page',
+        refreshError
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
+describe('editing shared page metadata', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.mocked(PageService.update).mockResolvedValue(undefined);
+    jest.mocked(PageService.updateIcon).mockResolvedValue(undefined);
+  });
+
+  it.each([false, true])(
+    'refreshes after saving the sidebar rename dialog for a descendant: %s',
+    async (isDescendant) => {
+      const { result, loadOutline, parent } = renderWithPage(true);
+      const target = isDescendant
+        ? createView({ view_id: CHILD_PAGE_ID, parent_view_id: parent.view_id, name: 'Untitled' })
+        : parent;
+
+      if (isDescendant) parent.children = [target];
+      const onClose = jest.fn();
+
+      render(
+        <RenameModal
+          open
+          view={target}
+          viewId={target.view_id}
+          updatePage={result.current.updatePage}
+          onClose={onClose}
+        />
+      );
+      fireEvent.change(screen.getByTestId('rename-modal-input'), { target: { value: 'Renamed from sidebar' } });
+      fireEvent.click(screen.getByTestId('rename-modal-save'));
+
+      await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+      expect(PageService.update).toHaveBeenCalledWith(WORKSPACE_ID, target.view_id, { name: 'Renamed from sidebar' });
+      expect(PageService.updateName).not.toHaveBeenCalled();
+      expect(ViewService.invalidateCache).toHaveBeenCalledWith(WORKSPACE_ID, target.view_id);
+      expect(loadOutline).toHaveBeenCalledTimes(1);
+      expect(loadOutline).toHaveBeenCalledWith(WORKSPACE_ID, false);
+    }
+  );
+
+  it.each(['🌱', ''])('refreshes after setting the descendant sidebar icon to "%s"', async (value) => {
+    const { result, loadOutline, parent } = renderWithPage(true);
+    const child = createView({ view_id: CHILD_PAGE_ID, parent_view_id: parent.view_id });
+
+    parent.children = [child];
+    const payload = { name: child.name, icon: { ty: ViewIconType.Emoji, value }, extra: child.extra || {} };
+
+    await expect(result.current.updatePage(child.view_id, payload)).resolves.toBeUndefined();
+
+    expect(PageService.update).toHaveBeenCalledWith(WORKSPACE_ID, child.view_id, payload);
+    expect(ViewService.invalidateCache).toHaveBeenCalledWith(WORKSPACE_ID, child.view_id);
+    expect(loadOutline).toHaveBeenCalledTimes(1);
+    expect(loadOutline).toHaveBeenCalledWith(WORKSPACE_ID, false);
+  });
+
+  it('also refreshes shared metadata when the dedicated icon operation is used', async () => {
+    const { result, loadOutline, parent } = renderWithPage(true);
+    const icon = { ty: ViewIconType.Emoji, value: '🌱' };
+
+    await expect(result.current.updatePageIcon(parent.view_id, icon)).resolves.toBeUndefined();
+
+    expect(PageService.updateIcon).toHaveBeenCalledWith(WORKSPACE_ID, parent.view_id, icon);
+    expect(ViewService.invalidateCache).toHaveBeenCalledWith(WORKSPACE_ID, parent.view_id);
+    expect(loadOutline).toHaveBeenCalledWith(WORKSPACE_ID, false);
+  });
+
+  it('keeps ordinary sidebar edits on the realtime refresh path', async () => {
+    const { result, loadOutline, parent } = renderWithPage(false);
+
+    await result.current.updatePage(parent.view_id, { name: 'Renamed page' });
+    await result.current.updatePageIcon(parent.view_id, { ty: ViewIconType.Emoji, value: '🌱' });
+
+    expect(ViewService.invalidateCache).toHaveBeenCalledTimes(2);
+    expect(loadOutline).not.toHaveBeenCalled();
+  });
+
+  it('does not invalidate or refresh a rejected sidebar edit', async () => {
+    const denial = new Error('Write access was revoked');
+
+    jest.mocked(PageService.update).mockRejectedValueOnce(denial);
+    const { result, loadOutline, parent } = renderWithPage(true);
+
+    await expect(result.current.updatePage(parent.view_id, { name: 'Rejected edit' })).rejects.toBe(denial);
+
+    expect(ViewService.invalidateCache).not.toHaveBeenCalled();
+    expect(loadOutline).not.toHaveBeenCalled();
+  });
+
+  it('does not report a saved sidebar edit as failed when the background refresh fails', async () => {
+    const refreshError = new Error('Outline unavailable');
+    const warn = jest.spyOn(Log, 'warn').mockImplementation(() => undefined);
+
+    try {
+      const { result, loadOutline, parent } = renderWithPage(true);
+
+      loadOutline.mockRejectedValueOnce(refreshError);
+      await expect(result.current.updatePage(parent.view_id, { name: 'Saved edit' })).resolves.toBeUndefined();
+
+      expect(loadOutline).toHaveBeenCalledWith(WORKSPACE_ID, false);
+      expect(warn).toHaveBeenCalledWith(
+        '[Outline] Failed to refresh Shared with me after updating a page',
+        refreshError
+      );
     } finally {
       warn.mockRestore();
     }

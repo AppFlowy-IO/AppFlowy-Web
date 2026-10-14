@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
 import { AccessService } from '@/application/services/domains';
-import { AccessLevel, Role, View, ViewIconType, ViewLayout } from '@/application/types';
+import { Role, View, ViewIconType, ViewLayout } from '@/application/types';
 import { getViewUrl, isDatabaseContainer, isSpaceView } from '@/application/view-utils';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
@@ -105,20 +105,28 @@ function SharedViewActions({
   const role = useUserWorkspaceInfo()?.selectedWorkspace.role;
   const isWorkspaceMember = role === Role.Member || role === Role.Owner;
   const canCreateChildren =
-    isWorkspaceMember &&
-    view.layout === ViewLayout.Document &&
-    !isSpaceView(view) &&
-    !isDatabaseContainer(view);
+    isWorkspaceMember && view.layout === ViewLayout.Document && !isSpaceView(view) && !isDatabaseContainer(view);
   const canDeletePage = isWorkspaceMember && !isSpaceView(view);
   // Resolve only the hovered/open row, never every shared page on sidebar load.
-  const { canCreateViewActions, canManageViewActions, hasLoadedViewActionPermissions, isLoadingViewActionPermissions } =
-    useViewActionPermissions(view, (canCreateChildren || canDeletePage) && (visible || addOpen || popoverOpen));
+  // Opening the menu also resolves edit permission for guests and shared spaces.
+  const viewActionPermissions = useViewActionPermissions(
+    view,
+    popoverOpen || ((canCreateChildren || canDeletePage) && (visible || addOpen))
+  );
+  const {
+    canWrite,
+    canCreateViewActions,
+    canManageViewActions,
+    hasLoadedViewActionPermissions,
+    isLoadingViewActionPermissions,
+  } = viewActionPermissions;
   const showAdd =
     canCreateChildren && hasLoadedViewActionPermissions && !isLoadingViewActionPermissions && canCreateViewActions;
   const showDelete =
     canDeletePage && hasLoadedViewActionPermissions && !isLoadingViewActionPermissions && canManageViewActions;
 
-  const canEdit = view.access_level && view.access_level > AccessLevel.ReadAndComment;
+  // Descendants can inherit write access without their own access_level metadata.
+  const canEdit = hasLoadedViewActionPermissions && !isLoadingViewActionPermissions && canWrite;
 
   const onUploadFile = useCallback(
     async (file: File, viewId: string) => {
@@ -265,11 +273,22 @@ function SharedViewActions({
         </DropdownMenuGroup>
       </DropdownMenuContent>
     );
-  }, [view, canEdit, showDelete, openDeleteModal, handleChangeIcon, handleRemoveIcon, onUploadFile, handleRename, currentWorkspaceId, t]);
+  }, [
+    view,
+    canEdit,
+    showDelete,
+    openDeleteModal,
+    handleChangeIcon,
+    handleRemoveIcon,
+    onUploadFile,
+    handleRename,
+    currentWorkspaceId,
+    t,
+  ]);
 
   return (
     <>
-      {(visible || popoverOpen || addOpen) && (
+      {(visible || popoverOpen || addOpen || showRemoveDialog) && (
         <div className='mr-2 flex items-center' onClick={(event) => event.stopPropagation()}>
           <DropdownMenu open={popoverOpen} onOpenChange={setPopoverOpen}>
             <Tooltip disableHoverableContent delayDuration={500}>
@@ -292,6 +311,7 @@ function SharedViewActions({
           {showAdd && (
             <ViewActionsPopover
               view={view}
+              viewActionPermissions={viewActionPermissions}
               popoverType={{ category: 'page', type: 'add' }}
               open={addOpen}
               onOpenChange={(open) => {
@@ -311,14 +331,15 @@ function SharedViewActions({
               </Button>
             </ViewActionsPopover>
           )}
+          {/* Portal clicks still bubble through the React tree to the row. */}
+          <RemoveAccessConfirmDialog
+            open={showRemoveDialog}
+            onOpenChange={setShowRemoveDialog}
+            onConfirm={handleRemoveAccess}
+            loading={isRemoving}
+          />
         </div>
       )}
-      <RemoveAccessConfirmDialog
-        open={showRemoveDialog}
-        onOpenChange={setShowRemoveDialog}
-        onConfirm={handleRemoveAccess}
-        loading={isRemoving}
-      />
     </>
   );
 }
