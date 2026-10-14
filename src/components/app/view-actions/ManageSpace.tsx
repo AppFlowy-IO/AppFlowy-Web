@@ -38,6 +38,7 @@ import {
   useEventEmitter,
   useUserWorkspaceInfo,
 } from '@/components/app/app.hooks';
+import { WorkspaceGroupIcon } from '@/components/app/share/WorkspaceGroupIcon';
 import {
   getWorkspaceMemberUid,
   useAddableWorkspaceMembers,
@@ -122,9 +123,10 @@ const LAST_EXPLICIT_OWNER_ERROR = 'space must keep at least one explicit owner';
 const MEMBER_GRID_COLUMNS = 'minmax(0, 1fr) 220px';
 // Name | Access | Role. Every row is its own grid, so no track may depend on
 // its content or the columns would not line up. The Role track fits its label
-// ("Space member" plus the chevron), the Access menu truncates, and the Name
-// column absorbs a narrow dialog.
-const MEMBER_ACCESS_GRID_COLUMNS = 'minmax(0, 1fr) min(196px, 32%) 144px';
+// ("Space member" plus the chevron, 146px in a wide fallback font such as
+// DejaVu Sans), the Access menu truncates, and the Name column absorbs a narrow
+// dialog.
+const MEMBER_ACCESS_GRID_COLUMNS = 'minmax(0, 1fr) min(196px, 32%) 152px';
 const MAX_ADDABLE_GROUP_RESULTS = 8;
 
 type FullAccessAudience = 'space-members' | 'everyone-else' | 'workspace-members';
@@ -2164,9 +2166,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                           className='flex items-center gap-3 rounded-300 px-2 py-2 hover:bg-fill-content-hover'
                           data-testid={`space-group-inline-search-result-${group.group_id}`}
                         >
-                          <Avatar size='md'>
-                            <AvatarFallback name={group.name}>{group.name.slice(0, 1).toUpperCase()}</AvatarFallback>
-                          </Avatar>
+                          <WorkspaceGroupIcon variant='settings-row' />
                           <div className='min-w-0 flex-1'>
                             <div className='truncate text-sm font-medium text-text-primary'>{group.name}</div>
                             <div className='truncate text-xs text-text-secondary'>
@@ -2456,9 +2456,7 @@ const SpaceGroupRowItem = memo(function SpaceGroupRowItem({
       style={{ gridTemplateColumns: gridColumns }}
     >
       <div className='flex min-w-0 items-center gap-3'>
-        <Avatar size='md'>
-          <AvatarFallback name={group.name}>{group.name.slice(0, 1).toUpperCase()}</AvatarFallback>
-        </Avatar>
+        <WorkspaceGroupIcon variant='settings-row' />
         <div className='min-w-0'>
           <div className='truncate font-medium text-text-primary'>{group.name}</div>
           <div className='truncate text-sm text-text-secondary' data-testid='space-group-subtitle'>

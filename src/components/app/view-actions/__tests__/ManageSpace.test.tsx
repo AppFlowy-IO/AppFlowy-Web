@@ -21,7 +21,7 @@ import {
 } from '@/application/types';
 import ManageSpace from '@/components/app/view-actions/ManageSpace';
 
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 
 const mockSetOverride = jest.fn();
 const mockFetchOwnAccessDetails = jest.fn();
@@ -138,11 +138,11 @@ jest.mock('@/components/_shared/modal', () => ({
     title?: ReactNode;
     okText?: ReactNode;
     okButtonProps?: { disabled?: boolean; 'data-testid'?: string };
-    PaperProps?: { 'data-testid'?: string };
+    PaperProps?: { 'data-testid'?: string; style?: CSSProperties };
     showActions?: boolean;
   }) =>
     open ? (
-      <div data-testid={PaperProps?.['data-testid']}>
+      <div data-testid={PaperProps?.['data-testid']} style={PaperProps?.style}>
         <div data-testid={`${PaperProps?.['data-testid'] ?? 'modal'}-title`}>{title}</div>
         {showActions && (
           <>
@@ -816,8 +816,11 @@ describe('ManageSpace ACL management', () => {
       await openMembersTab();
       const row = await screen.findByTestId(`space-member-row-${member.uid}`);
 
-      // The Role track always fits its label; a narrow dialog shrinks the Name column.
-      expect(row.style.gridTemplateColumns).toBe('minmax(0, 1fr) min(196px, 32%) 144px');
+      // The Role track fits "Space member" plus its chevron, measured in a wide fallback font
+      // (DejaVu Sans needs 146px); a narrow dialog shrinks the Name column.
+      expect(row.style.gridTemplateColumns).toBe('minmax(0, 1fr) min(196px, 32%) 152px');
+      // Three columns get a dialog wide enough to keep a name's email readable next to them.
+      expect(screen.getByTestId('manage-space-modal').style.width).toBe('760px');
       expect(screen.getByTestId('space-member-table-header').style.gridTemplateColumns).toBe(
         row.style.gridTemplateColumns
       );
@@ -2689,6 +2692,25 @@ describe('ManageSpace ACL management', () => {
       expect(screen.queryByTestId('manage-space-permission-notice')).toBeNull();
       expect(mockGetSpacePermission).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it('shows groups with the group icon used everywhere else, not a letter like a person', async () => {
+    mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: customPermission }));
+    mockGetSpaceMembers.mockResolvedValue({ members: [creatorMember()], groups: [group('group-hr', 'HR')] });
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    await waitForSettingsLoaded();
+    fireEvent.click(screen.getByRole('tab', { name: 'space.permissionManager.membersTab' }));
+    const row = await screen.findByTestId('space-group-row-group-hr');
+
+    expect(within(row).getByTestId('workspace-group-icon-settings-row')).toBeTruthy();
+    expect(within(row).queryByText('H')).toBeNull();
+
+    fireEvent.change(screen.getByTestId('inline-member-search'), { target: { value: 'Eng' } });
+    const addable = await screen.findByTestId('space-group-inline-search-result-group-engineering');
+
+    expect(within(addable).getByTestId('workspace-group-icon-settings-row')).toBeTruthy();
+    expect(within(addable).queryByText('E')).toBeNull();
   });
 
   it('drops people and groups to add when a background recheck withdraws the right to add them', async () => {

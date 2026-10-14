@@ -48,8 +48,9 @@ const SIDEBAR_EDIT_POLICY_OPTIONS: readonly SpaceSidebarEditPolicy[] = [
   SpaceSidebarEditPolicy.MembersAndOwners,
 ];
 
-const MODAL_WIDTH = 680;
-const CONTENT_WIDTH = 640;
+// Wide enough for the Members tab's Name | Access | Role table to keep a name and email readable.
+const MODAL_WIDTH = 760;
+const CONTENT_WIDTH = 720;
 /** Every button in the panel shows where keyboard focus is (the shared Button has no focus style). */
 const BUTTON_FOCUS_RING =
   '[&_button:focus-visible]:outline-none [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-border-theme-thick';
