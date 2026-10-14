@@ -382,9 +382,11 @@ test.describe('Workspace permission screenshot gallery', () => {
       await expect(denied).toContainText("You can't create spaces in this workspace.");
       await expect(denied).toContainText('Ask a workspace owner if you need a new space.');
       await expect(page.getByTestId('create-space-summary')).toContainText('Marketing');
-      // The form and its Create button are gone; Close is the only action.
+      // The form and its Create button are gone; Close is the only action and has keyboard focus
+      // (pressed with the mouse here, so no focus ring shows).
       await expect(page.getByTestId('space-name-input')).toHaveCount(0);
       await expect(page.getByTestId('create-space-submit')).toHaveCount(0);
+      await expect(page.getByTestId('create-space-denied-close')).toBeFocused();
       await shoot(page, 'create-space-denied.png', 'alex');
       await page.getByTestId('create-space-denied-close').click();
       await expect(page.getByTestId('create-space-modal')).toBeHidden();

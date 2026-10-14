@@ -155,6 +155,9 @@ export function SpaceCreationRecoveryNotice(props: SpaceCreationRecoveryNoticePr
 /**
  * The space creation rule refused the request. Nothing was created and nothing is kept, so the form
  * gives way to a summary of what was asked, the answer, and Close as the only action (like Desktop).
+ * The card replaces the form while its Create button has keyboard focus, so Close takes focus as it
+ * appears: otherwise focus falls back to the dialog and a keyboard or screen reader user loses their
+ * place at the moment the answer shows.
  */
 export function SpaceCreationDeniedCard({ summary, onClose }: { summary?: ReactNode; onClose: () => void }) {
   const { t } = useTranslation();
@@ -164,7 +167,14 @@ export function SpaceCreationDeniedCard({ summary, onClose }: { summary?: ReactN
       {summary}
       <WorkspaceCreationCallout
         actions={
-          <Button type='button' variant='outline' size='sm' onClick={onClose} data-testid='create-space-denied-close'>
+          <Button
+            type='button'
+            variant='outline'
+            size='sm'
+            autoFocus
+            onClick={onClose}
+            data-testid='create-space-denied-close'
+          >
             {t('button.close')}
           </Button>
         }

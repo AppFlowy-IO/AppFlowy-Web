@@ -368,12 +368,16 @@ describe('CreateSpaceModal draft controller', () => {
     const view = render(<CreateSpaceModal open onClose={onClose} />);
 
     enterSpaceName('Marketing');
+    // Pressed from the keyboard: Create has focus when it disappears.
+    screen.getByTestId('create-space-submit').focus();
     fireEvent.click(screen.getByTestId('create-space-submit'));
 
     const denied = await screen.findByTestId('create-space-denied');
 
     expect(denied.textContent).toContain('workspacePermissions.denied');
     expect(denied.textContent).toContain('spaceCreation.deniedHint');
+    // Keyboard focus moves to Close, the only action left, instead of being lost with the button.
+    expect(document.activeElement).toBe(screen.getByTestId('create-space-denied-close'));
     // The request is summed up; the form, its Create button and the notice are gone.
     expect(screen.getByTestId('create-space-summary').textContent).toContain('Marketing');
     expect(screen.queryByTestId('space-name-input')).toBeNull();
@@ -402,12 +406,14 @@ describe('CreateSpaceModal draft controller', () => {
     render(<CreateSpaceModal open onClose={onClose} />);
 
     enterSpaceName('Refused draft');
+    screen.getByTestId('create-space-submit').focus();
     fireEvent.click(screen.getByTestId('create-space-submit'));
 
     const denied = await screen.findByTestId('create-space-denied');
 
     expect(denied.textContent).toContain('workspacePermissions.denied');
     expect(denied.textContent).toContain('spaceCreation.deniedHint');
+    expect(document.activeElement).toBe(screen.getByTestId('create-space-denied-close'));
     expect(screen.queryByTestId('space-name-input')).toBeNull();
     expect(screen.queryByTestId('create-space-submit')).toBeNull();
     expect(screen.queryByTestId('space-creation-recovery-unconfirmed')).toBeNull();
