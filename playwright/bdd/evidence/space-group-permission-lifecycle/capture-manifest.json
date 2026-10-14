@@ -32,7 +32,9 @@
       "rerun": {
         "date": "2026-10-14",
         "branch": "oodrive-fix/web-final",
-        "commit": "fde232d77eb3439a2bcee831ed2b6eeb524892b4",
+        "source_commit": "fde232d77eb3439a2bcee831ed2b6eeb524892b4",
+        "harness_commit": "3f0ef3537db9a3e4f9231b5875a756f3acc78454",
+        "provenance": "App source (the UI captured) at source_commit; the capture spec and seed whose hashes are listed under `harness` were committed in harness_commit together with the retaken images and this record, so source_commit alone does not contain them.",
         "base": "codex/oodrive-permissions-fixes at 31cb5377",
         "served_by": "vite dev server (loopback)",
         "fix_commits": [
