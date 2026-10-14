@@ -610,10 +610,10 @@ function isDisabledControl(element: Element): boolean {
  * Saving or rechecking access briefly disables the General tab's controls, and a browser then
  * moves keyboard focus from the disabled control to the page. Keep focus in the tab while the
  * controls are paused, and return to the control the keyboard was on once it is available again,
- * also when a menu or a confirmation could not give focus back to it. Focus that moved to another
- * control is left alone.
+ * also when a menu or a confirmation (`overlay`) closed without giving focus back to it. Focus that
+ * moved to another control is left alone. `stateKey` changes whenever any of that happens.
  */
-function useKeyboardPlaceWhilePaused(container: HTMLElement | null, pausedKey: string) {
+function useKeyboardPlace(container: HTMLElement | null, stateKey: string) {
   const lastControl = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
@@ -647,7 +647,7 @@ function useKeyboardPlaceWhilePaused(container: HTMLElement | null, pausedKey: s
     if (!control?.isConnected || !container.contains(control) || isDisabledControl(control)) return;
     // Parked in the tab, or lost to the dialog or the page: an element around the tab has focus.
     if (!active || active.contains(container)) control.focus({ preventScroll: true });
-  }, [container, pausedKey]);
+  }, [container, stateKey]);
 }
 
 /**
@@ -701,9 +701,9 @@ function SpaceSettingsPanel({
   const draftIsPrivate = draftVisibility === SpaceVisibility.Private;
   const fallbackMembersTitleId = useId();
 
-  useKeyboardPlaceWhilePaused(
+  useKeyboardPlace(
     container,
-    `${metadataDisabled}:${permissionSettingsDisabled}:${loadingSettings}:${primaryActionLoading}`
+    `${metadataDisabled}:${permissionSettingsDisabled}:${loadingSettings}:${primaryActionLoading}:${Boolean(overlay)}`
   );
 
   return (

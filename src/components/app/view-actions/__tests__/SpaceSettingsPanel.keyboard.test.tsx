@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { ReactNode, useState } from 'react';
 
 import { mockResizeObserver } from '@/__mocks__/resizeObserver';
+import { NormalModal } from '@/components/_shared/modal';
 import {
   AccessLevel,
   SpaceInvitePolicy,
@@ -48,6 +49,8 @@ function Harness({
 }) {
   const [open, setOpen] = useState(initiallyOpen);
   const [busy, setBusyState] = useState(false);
+  // Like Manage Space, a type switch asks first in a modal that does not restore focus itself.
+  const [confirming, setConfirming] = useState(false);
 
   setBusy = setBusyState;
 
@@ -77,13 +80,33 @@ function Harness({
         visibilityOptions={[SpaceVisibility.Public, SpaceVisibility.Custom, SpaceVisibility.Private]}
         permissionSettingsDisabled={disabled || busy}
         workspaceName='Acme'
-        onVisibilitySelect={jest.fn()}
+        onVisibilitySelect={() => setConfirming(true)}
         onMembersAccessChange={(value) => {
           onMembersAccessChange(value);
           if (busyOnChange) setBusyState(true);
         }}
         onEveryoneElseAccessChange={jest.fn()}
         onSidebarEditPolicyChange={jest.fn()}
+        overlay={
+          confirming ? (
+            <NormalModal
+              open
+              keepMounted={false}
+              disableRestoreFocus
+              title='Switch space type?'
+              okText='Switch'
+              onOk={() => {
+                setConfirming(false);
+                setBusyState(true);
+              }}
+              onCancel={() => setConfirming(false)}
+              onClose={() => setConfirming(false)}
+              PaperProps={{ 'data-testid': 'confirm-dialog' } as object}
+            >
+              Switch it?
+            </NormalModal>
+          ) : null
+        }
       />
     </>
   );
@@ -203,6 +226,25 @@ describe('Manage Space General tab with a keyboard', () => {
     expect(document.activeElement).not.toBe(trigger);
     act(() => setBusy(false));
     expect(document.activeElement).toBe(trigger);
+  });
+
+  it.each(['Cancel', 'Switch'])('returns to the space type card after its confirmation closes (%s)', async (choice) => {
+    render(<Harness />);
+    const card = screen.getByTestId(`manage-space-visibility-option-${SpaceVisibility.Custom}`);
+
+    act(() => card.focus());
+    fireEvent.click(card);
+    const confirm = await screen.findByTestId('confirm-dialog');
+
+    fireEvent.click(within(confirm).getByRole('button', { name: choice === 'Cancel' ? 'button.cancel' : 'Switch' }));
+    await waitFor(() => expect(screen.queryByTestId('confirm-dialog')).toBeNull());
+    if (choice === 'Switch') {
+      // Saving the switch pauses the settings; focus comes back when they are available again.
+      expect((card as HTMLButtonElement).disabled).toBe(true);
+      act(() => setBusy(false));
+    }
+
+    expect(document.activeElement).toBe(card);
   });
 
   it('keeps focus inside the dialog and gives it back to the button that opened it', async () => {
