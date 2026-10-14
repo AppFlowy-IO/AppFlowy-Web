@@ -1,6 +1,6 @@
 import EventEmitter from 'events';
 
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -56,7 +56,24 @@ jest.mock('@/components/app/settings/AccountAppPanel', () => ({
     );
   },
 }));
-jest.mock('@/components/app/settings/ProfilePanel', () => ({ ProfilePanel: () => null }));
+// A dialog that keeps itself open on Escape while it saves, like People > Groups > Create group.
+jest.mock('@/components/app/settings/ProfilePanel', () => ({
+  ProfilePanel: () => {
+    /* eslint-disable @typescript-eslint/no-var-requires */
+    const ui = jest.requireActual('@/components/ui/dialog') as typeof import('@/components/ui/dialog');
+    /* eslint-enable @typescript-eslint/no-var-requires */
+
+    return (
+      <ui.Dialog open>
+        <ui.DialogContent data-testid='saving-dialog' onEscapeKeyDown={(event) => event.preventDefault()}>
+          <ui.DialogTitle>Create group</ui.DialogTitle>
+          <ui.DialogDescription>Saving</ui.DialogDescription>
+          <button type='button'>Create</button>
+        </ui.DialogContent>
+      </ui.Dialog>
+    );
+  },
+}));
 jest.mock('@/components/app/settings/ManageDataPanel', () => ({ ManageDataPanel: () => null }));
 jest.mock('@/application/services/js-services/http/group-space-coverage-api', () => ({
   ...jest.requireActual('@/application/services/js-services/http/group-space-coverage-api'),
@@ -185,6 +202,20 @@ describe('Escape in Settings', () => {
 
     expect(mockSetCoverage).not.toHaveBeenCalled();
     expect(screen.getByTestId('group-dialog')).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('keeps Settings open on Escape while a dialog inside it keeps itself open to save', async () => {
+    const onClose = renderSettings();
+
+    fireEvent.click(screen.getByTestId('settings-menu-profile'));
+    const saving = await screen.findByTestId('saving-dialog');
+    const create = within(saving).getByRole('button', { name: 'Create' });
+
+    act(() => create.focus());
+    fireEvent.keyDown(create, { key: 'Escape', code: 'Escape' });
+
+    expect(screen.getByTestId('saving-dialog')).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
   });
 

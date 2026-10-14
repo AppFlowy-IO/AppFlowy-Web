@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { showsKeyboardFocus } from '@/__mocks__/keyboardFocus';
 import { mockResizeObserver } from '@/__mocks__/resizeObserver';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 import { NormalModal } from '../NormalModal';
 
@@ -110,5 +111,28 @@ describe('NormalModal Escape', () => {
     // A second Escape, now on the dialog's own control, closes the dialog.
     fireEvent.keyDown(trigger, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays open when a picker inside it keeps itself open on Escape', async () => {
+    const onClose = jest.fn();
+
+    render(
+      <NormalModal open title='Create space' onClose={onClose}>
+        <Popover open>
+          <PopoverTrigger>Change icon</PopoverTrigger>
+          {/* For example while it uploads an icon. */}
+          <PopoverContent onEscapeKeyDown={(event) => event.preventDefault()}>
+            <input aria-label='Search icons' />
+          </PopoverContent>
+        </Popover>
+      </NormalModal>
+    );
+    const search = await screen.findByRole('textbox', { name: 'Search icons' });
+
+    act(() => search.focus());
+    fireEvent.keyDown(search, { key: 'Escape' });
+
+    expect(screen.getByRole('textbox', { name: 'Search icons' })).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
