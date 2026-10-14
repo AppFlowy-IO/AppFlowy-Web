@@ -17,7 +17,9 @@
       "checking": "Vérification de l’accès…",
       "noEdit": "Vous n’avez pas le droit de modifier ici",
       "ownersOnly": "Seuls les propriétaires de l’espace peuvent ajouter des pages ici",
-      "noneAvailable": "Vous ne pouvez ajouter de pages dans aucun espace. Demandez le droit de modification à un propriétaire d’espace."
+      "noneAvailable": "Vous ne pouvez ajouter de pages dans aucun espace. Demandez le droit de modification à un propriétaire d’espace.",
+      "addDenied": "Vous ne pouvez pas ajouter de pages dans cet espace.",
+      "addFailed": "Impossible d’ajouter la page. Réessayez."
     },
     "meetingNotesDenied": "Votre réunion s’est ouverte sans page de notes, car vous ne pouvez pas créer d’espaces dans cet espace de travail.",
     "meetingNotesFailed": "Votre réunion s’est ouverte, mais sa page de notes n’a pas pu être créée."

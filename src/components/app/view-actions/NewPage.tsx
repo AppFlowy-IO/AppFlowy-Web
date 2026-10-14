@@ -28,10 +28,12 @@ import {
   type SpaceDestinationAccess,
   useSpaceDestinationAccess,
 } from '@/components/app/view-actions/usePageDestinationAccess';
+import { isPermissionDeniedError } from '@/components/app/view-actions/viewActionPermission';
 import { Button } from '@/components/ui/button';
 import { dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
+import { getBillingErrorMessage } from '@/utils/billing-error';
 import { Log } from '@/utils/log';
 
 const CREATE_SPACE_INITIAL_PAGE = { layout: ViewLayout.Document };
@@ -205,7 +207,13 @@ function NewPage() {
         setOpen(false);
       } catch (error) {
         if (pageOpenSequence !== pageOpenSequenceRef.current) return;
-        notify.error(error instanceof Error ? error.message : String(error));
+        // Server errors are plain objects whose text is not written for people. A denial usually
+        // means access changed after the destination was checked.
+        notify.error(
+          isPermissionDeniedError(error)
+            ? t('spaceCreation.pageDestination.addDenied')
+            : getBillingErrorMessage(error) || t('spaceCreation.pageDestination.addFailed')
+        );
       } finally {
         if (pageOpenSequence === pageOpenSequenceRef.current) {
           addingPageRef.current = false;
@@ -213,7 +221,7 @@ function NewPage() {
         }
       }
     },
-    [addPage, destinationAccess, openPageModal, outline]
+    [addPage, destinationAccess, openPageModal, outline, t]
   );
 
   const canOpenCreateSpace = canStartSpaceCreation(creationPermission);
