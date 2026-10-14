@@ -6,7 +6,7 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
 import { BlockData, BlockType } from '@/application/types';
-import { ReactComponent as ChevronRightIcon } from '@/assets/icons/alt_arrow_right.svg';
+import { ReactComponent as ChevronRightIcon } from '@/assets/icons/block-menu-chevron-right.svg';
 import { ReactComponent as TurnIntoIcon } from '@/assets/icons/turn_into.svg';
 import { Popover } from '@/components/_shared/popover';
 import { DEFAULT_CALLOUT_DATA } from '@/components/editor/components/blocks/callout/callout.utils';
@@ -61,7 +61,7 @@ export function BlockTurnInto({ node, onClose }: { node: BlockNode; onClose: () 
       <Button ref={ref} variant='ghost' className='justify-start' onClick={() => setOpen(true)}>
         <TurnIntoIcon className='h-5 w-5' />
         {t('document.plugins.optionAction.turnInto')}
-        <ChevronRightIcon className='ml-auto h-5 w-5 text-icon-tertiary' />
+        <ChevronRightIcon className='ml-auto h-5 w-5 text-icon-tertiary [--stroke-0:currentColor]' />
       </Button>
       <Popover
         PaperProps={{ className: 'block-turn-into-paper' }}

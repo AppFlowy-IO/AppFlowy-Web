@@ -174,12 +174,14 @@
   }
 }
 
-.callout-block-menu,
-.block-turn-into-menu {
-  button {
+// Both MUI and UI buttons are used here; keep their icon slots and row spacing identical.
+#body .text-block-menu,
+#body .block-turn-into-menu {
+  > button {
     min-height: 32px;
     border-radius: 6px;
     padding: 6px 8px;
+    font-size: 14px;
     font-weight: 400;
     line-height: 20px;
     text-transform: none;
@@ -189,7 +191,18 @@
     }
   }
 
-  button[data-testid="delete"]:hover, button[data-testid="delete"]:focus-visible {
+  > button > .MuiButton-startIcon {
+    margin-left: 0;
+    margin-right: 8px;
+  }
+
+  > .MuiDivider-root {
+    margin-left: -8px;
+    margin-right: -8px;
+    border-color: var(--border-primary);
+  }
+
+  > button[data-testid="delete"]:hover, > button[data-testid="delete"]:focus-visible {
     color: var(--text-error);
   }
 }
@@ -674,6 +687,7 @@ span[data-slate-placeholder="true"]:not(.inline-block-content) {
 
 }
 
+.text-block-menu-paper.MuiPaper-root,
 .callout-menu-paper.MuiPaper-root,
 .block-turn-into-paper.MuiPaper-root {
   border: 1px solid var(--border-primary);

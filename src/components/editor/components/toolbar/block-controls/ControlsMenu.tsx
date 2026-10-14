@@ -199,6 +199,16 @@ function waitForDatabaseBlobSeeds(workspaceId: string, databaseId: string): Prom
   });
 }
 
+const simpleTextBlockTypes = new Set<BlockType>([
+  BlockType.Paragraph,
+  BlockType.HeadingBlock,
+  BlockType.BulletedListBlock,
+  BlockType.NumberedListBlock,
+  BlockType.QuoteBlock,
+  BlockType.TodoListBlock,
+  BlockType.ToggleListBlock,
+]);
+
 const popoverProps: Partial<PopoverProps> = {
   transformOrigin: {
     vertical: 'center',
@@ -262,6 +272,9 @@ function ControlsMenu({
   const selectedBlockId = selectedBlockIds?.[0];
   const node = useBlockMenuNode(selectedBlockId);
   const isSimpleTable = onlySingleBlockSelected && node?.type === BlockType.SimpleTableBlock;
+  const isSimpleTextBlock = !!node && simpleTextBlockTypes.has(node.type);
+  const isCallout = node?.type === BlockType.CalloutBlock;
+  const hasTextBlockMenu = isSimpleTextBlock || isCallout;
 
   const { t } = useTranslation();
   const duplicateCopySuffix = useMemo(() => ` (${t('menuAppHeader.pageNameSuffix')})`, [t]);
@@ -644,10 +657,21 @@ function ControlsMenu({
         if (entry) scrollSimpleTableFromMenu(event, ReactEditor.toDOMNode(editor, entry[0]));
       } : undefined}
       {...popoverProps}
-      PaperProps={node?.type === BlockType.CalloutBlock ? { ...popoverProps?.PaperProps, className: 'callout-menu-paper' } : popoverProps?.PaperProps}
+      PaperProps={
+        hasTextBlockMenu
+          ? { ...popoverProps?.PaperProps, className: 'text-block-menu-paper' }
+          : popoverProps?.PaperProps
+      }
     >
-      <div data-testid={'controls-menu'} className={`flex w-[240px] flex-col p-2 ${isSimpleTable ? 'simple-table-block-menu' : ''} ${node?.type === BlockType.CalloutBlock ? 'callout-block-menu' : ''}`}>
-        {node?.type === BlockType.CalloutBlock && <div className='px-2 py-1.5 text-xs font-medium leading-[18px] text-text-tertiary'>{t('document.slashMenu.name.callout')}</div>}
+      <div
+        data-testid='controls-menu'
+        className={`flex flex-col p-2 ${hasTextBlockMenu ? 'text-block-menu w-[238px]' : 'w-[240px]'} ${isSimpleTable ? 'simple-table-block-menu' : ''} ${isCallout ? 'callout-block-menu' : ''}`}
+      >
+        {isCallout && (
+          <div className='px-2 py-1.5 text-xs font-medium leading-[18px] text-text-tertiary'>
+            {t('document.slashMenu.name.callout')}
+          </div>
+        )}
         {options.map((option) => {
           return (
             <Button
@@ -675,21 +699,12 @@ function ControlsMenu({
 
         {isSimpleTable && selectedBlockId ? <SimpleTableBlockControls key={selectedBlockId} blockId={selectedBlockId} onClose={onClose} /> : null}
 
-        {node?.type &&
-          [
-            BlockType.Paragraph,
-            BlockType.HeadingBlock,
-            BlockType.BulletedListBlock,
-            BlockType.NumberedListBlock,
-            BlockType.QuoteBlock,
-            BlockType.TodoListBlock,
-            BlockType.ToggleListBlock,
-          ].includes(node?.type) && (
-            <>
-              <Divider className='my-2' />
-              <Color node={node} onSelectColor={onClose} />
-            </>
-          )}
+        {isSimpleTextBlock && node && (
+          <>
+            <Divider className='my-2' />
+            <Color node={node} onSelectColor={onClose} />
+          </>
+        )}
 
         {node?.type === BlockType.OutlineBlock && onlySingleBlockSelected && (
           <>

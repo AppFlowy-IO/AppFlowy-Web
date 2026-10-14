@@ -5,7 +5,7 @@ import { useSlateStatic } from 'slate-react';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { BlockType } from '@/application/types';
-import { ReactComponent as ChevronRightIcon } from '@/assets/icons/alt_arrow_right.svg';
+import { ReactComponent as ChevronRightIcon } from '@/assets/icons/block-menu-chevron-right.svg';
 import { ColorTile, ColorTileIcon } from '@/components/_shared/color-picker';
 import { Origins, Popover } from '@/components/_shared/popover';
 import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
@@ -105,8 +105,8 @@ function Color({ node, onSelectColor }: { node: BlockNode; onSelectColor: () => 
         }}
       >
         <ColorTileIcon value={renderColor(selectedColor)} />
-        {t(node.type === BlockType.CalloutBlock ? 'editor.backgroundColor' : 'document.plugins.optionAction.color')}
-        <ChevronRightIcon className='ml-auto h-5 w-5 text-icon-tertiary' />
+        {t(node.type === BlockType.CalloutBlock ? 'editor.backgroundColor' : 'document.plugins.table.bgColor')}
+        <ChevronRightIcon className='ml-auto h-5 w-5 text-icon-tertiary [--stroke-0:currentColor]' />
       </Button>
       <Popover
         PaperProps={node.type === BlockType.CalloutBlock ? { className: 'callout-menu-paper' } : undefined}
