@@ -104,18 +104,22 @@ predates workspace creation controls and is treated as a legacy server: Create w
 workspace stay available in the workspace menu, Manage Data, the import page and the empty-account page,
 and creation uses the original `POST /api/workspace` without a `request_id`. Such a server has no
 receipt to replay, so nothing is saved for "Check again"; a lost response is reported as a failure and
-the server's own checks decide. On current servers a request ID is saved in tab storage after a fresh
-admission check, immediately before `POST /api/workspace/create-with-request-id`, and "Check again"
-replays the same ID. A definitive rejection of a first request (HTTP 400, 401, 403, 409 or 422, or a
-known server code such as a denial or a limit) releases it, and so does a first request that reaches a
-node without the keyed route; a replay is released only by codes the server sends after looking up the
-ID. A denial (`can_create_workspace = false`) disables Create workspace and new-workspace imports with
-"Your administrator hasn't allowed you to create workspaces.", and a creation request refused with HTTP
-403 or code 1012 shows the same reason; an answer that could not be read offers "Check again". The last
-confirmed answer stays visible while it is rechecked (after reconnecting, coming online or a permission
-change, and on focus or visibility once it is 30 seconds old; going offline makes it unavailable), and
-the final request is admitted again regardless. Importing into an existing workspace does not need this
-permission.
+the server's own checks decide, with its own message when it refuses. On current servers a request ID
+is saved in tab storage after a fresh admission check, immediately before
+`POST /api/workspace/create-with-request-id`, and "Check again" replays the same ID without a new
+client check: the server returns the workspace that ID created, or checks the request itself. A
+definitive rejection of a first request (HTTP 400, 401, 403, 409 or 422, or a known server code such as
+a denial or a limit) releases it, and so does a first request that reaches a node without the keyed
+route; a replay is released only by codes the server sends after looking up the ID. A denial
+(`can_create_workspace = false`) disables Create workspace and new-workspace imports with "Your
+administrator hasn't allowed you to create workspaces.", and so does a first request refused with HTTP
+403 or code 1012, or a replay refused with code 1012. A replay refused with a bare HTTP 403 (no server
+code, for example from a proxy) stays saved as not confirmed, because the first request may have
+created the workspace. An answer that could not be read offers "Check again". The last confirmed answer
+stays visible while it is rechecked (after reconnecting, coming online or a permission change, and on
+focus or visibility once it is 30 seconds old; going offline makes it unavailable), and every new
+request is admitted again right before it is sent. Importing into an existing workspace does not need
+this permission.
 
 Workspace permission notification tag 14 carries an explicit workspace UUID and decimal-string epoch
 and counter. Generated protobuf bindings and HTTP validation preserve signed 64-bit values exactly.
