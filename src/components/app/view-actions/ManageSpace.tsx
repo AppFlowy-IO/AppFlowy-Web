@@ -3,7 +3,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
+import { APP_EVENTS } from '@/application/constants';
 import { WorkspaceService } from '@/application/services/domains';
 import { captureApiContext } from '@/application/services/js-services/http/request-context';
 import {
@@ -75,6 +75,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 import { getBillingErrorMessage } from '@/utils/billing-error';
+import { changeFailureReason, isGoneError, isPermissionError, RAW } from '@/utils/change-failure';
 import { getAPIErrorCode, getErrorMessage, isUnsupportedRouteError } from '@/utils/errors';
 import { getConfigValue } from '@/utils/runtime-config';
 
@@ -249,41 +250,83 @@ function workspaceRoleLabel(role: Role | undefined, t: TFunction): string | null
 
 // Answers meaning the user can no longer see or change what they acted on:
 // lost rights, a removed member or group, or a deleted space.
-const ACCESS_DENIED_CODES = new Set<number>([
-  ERROR_CODE.RECORD_NOT_FOUND,
-  ERROR_CODE.NOT_LOGGED_IN,
-  ERROR_CODE.NOT_HAS_PERMISSION,
-  ERROR_CODE.USER_UNAUTHORIZED,
-  401,
-  403,
-  404,
-]);
-
 function isAccessDeniedError(error: unknown): boolean {
-  if (isUnsupportedRouteError(error)) return false;
-  const code = getAPIErrorCode(error);
-  const httpStatus = typeof error === 'object' && error !== null ? (error as { httpStatus?: unknown }).httpStatus : undefined;
-
-  return (code !== undefined && ACCESS_DENIED_CODES.has(code)) || httpStatus === 401 || httpStatus === 403;
+  return isPermissionError(error) || isGoneError(error);
 }
 
 /**
- * Toast copy for a failed request. Server text can name internal IDs ("user 42
+ * Toast copy for a failed read. Server text can name internal IDs ("user 42
  * cannot manage members for space …"), so a server answer gets the caller's
  * plain copy. Errors raised by this client already carry plain copy.
  */
-function plainErrorMessage(error: unknown, fallback: string, deniedMessage = fallback): string {
+function plainErrorMessage(error: unknown, fallback: string): string {
   const billingMessage = getBillingErrorMessage(error);
 
   if (billingMessage) return billingMessage;
   if (getAPIErrorCode(error) === undefined) return error instanceof Error && error.message ? error.message : fallback;
-  return isAccessDeniedError(error) ? deniedMessage : fallback;
+  return fallback;
 }
 
-function manageSpaceErrorMessage(error: unknown, fallback: string, t: TFunction): string {
-  return getErrorMessage(error, fallback).toLowerCase().includes(LAST_EXPLICIT_OWNER_ERROR)
+/** Why a change in this dialog didn't go through; the last-owner rule has its own explanation. */
+function changeReason(error: unknown, t: TFunction): string {
+  return getErrorMessage(error, '').toLowerCase().includes(LAST_EXPLICIT_OWNER_ERROR)
     ? t('space.permissionManager.lastOwnerRequired')
-    : plainErrorMessage(error, fallback);
+    : changeFailureReason(error, t);
+}
+
+type FailedChangeKey = 'changeAccessFailed' | 'changeRoleFailed' | 'addFailed' | 'removeFailed';
+type FailedSettingKey =
+  | 'changeSpaceTypeFailed'
+  | 'changeSidebarPolicyFailed'
+  | 'changeMembersAccessFailed'
+  | 'changeWorkspaceMembersAccessFailed'
+  | 'changeEveryoneElseAccessFailed'
+  | 'renameFailed'
+  | 'changeIconFailed'
+  | 'saveSettingsFailed';
+
+/** A failed change for someone: "Couldn't change access for Alex. You don't have permission to do this." */
+function failedChange(key: FailedChangeKey, name: string, error: unknown, t: TFunction): string {
+  return t(`space.permissionManager.${key}`, { name, reason: changeReason(error, t), ...RAW });
+}
+
+/** A failed space setting: "Couldn't change who can add pages. …" */
+function failedSetting(key: FailedSettingKey, error: unknown, t: TFunction): string {
+  return t(`space.permissionManager.${key}`, { reason: changeReason(error, t), ...RAW });
+}
+
+const SETTING_FIELDS = [
+  'visibility',
+  'sidebar_edit_policy',
+  'member_default_access_level',
+  'everyone_else_access_level',
+] as const;
+
+/** Which setting a rejected save was about, so the toast can name it. */
+function settingsFailureKey(previous: SpacePermissionSettings, next: SpacePermissionSettings): FailedSettingKey {
+  const changed = SETTING_FIELDS.filter((field) => previous[field] !== next[field]);
+
+  // A type change also seeds the levels the new type needs.
+  if (changed.includes('visibility')) return 'changeSpaceTypeFailed';
+  if (changed.length !== 1) return 'saveSettingsFailed';
+  switch (changed[0]) {
+    case 'sidebar_edit_policy':
+      return 'changeSidebarPolicyFailed';
+    case 'member_default_access_level':
+      return next.visibility === SpaceVisibility.Public
+        ? 'changeWorkspaceMembersAccessFailed'
+        : 'changeMembersAccessFailed';
+    default:
+      return 'changeEveryoneElseAccessFailed';
+  }
+}
+
+/** The name, the icon (chosen with its colour), or both. */
+function metadataFailureKey(patch: Partial<SpaceMetadata>): FailedSettingKey {
+  const icon = patch.space_icon !== undefined || patch.space_icon_color !== undefined;
+
+  if (patch.name === undefined) return 'changeIconFailed';
+  return icon ? 'saveSettingsFailed' : 'renameFailed';
 }
 
 function displayNameForMember(member: SpaceMember, t: TFunction): string {
@@ -1065,7 +1108,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
             }
 
             loadedSpaceMetadataRef.current = rolledBack;
-            toast.error(plainErrorMessage(error, t('space.error.updateSpace')));
+            toast.error(failedSetting(metadataFailureKey(patch), error, t));
           }
         });
 
@@ -1189,7 +1232,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
           // baseline and never included the rejected change; keep them.
           if (confirmedSettingsVersionRef.current === confirmedVersion) setPermissionSettings(previousPermission);
 
-          toast.error(plainErrorMessage(error, t('space.error.updateSpace')));
+          toast.error(failedSetting(settingsFailureKey(previousPermission, nextPermission), error, t));
         }
 
         return false;
@@ -1329,7 +1372,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         toast.success(t('space.permissionManager.addSpaceMemberSuccess'));
       } catch (error) {
         if (spaceRequestRef.current.generation === requestGeneration) {
-          toast.error(plainErrorMessage(error, t('space.permissionManager.addSpaceMemberFailed')));
+          toast.error(failedChange('addFailed', workspaceMember.name?.trim() || workspaceMember.email, error, t));
         }
       } finally {
         if (spaceRequestRef.current.generation === requestGeneration) setAddingUid(null);
@@ -1387,7 +1430,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         toast.success(t('space.permissionManager.addSpaceGroupSuccess'));
       } catch (error) {
         if (spaceRequestRef.current.generation === requestGeneration) {
-          toast.error(plainErrorMessage(error, t('space.permissionManager.addSpaceGroupFailed')));
+          toast.error(failedChange('addFailed', group.name, error, t));
         }
       } finally {
         if (spaceRequestRef.current.generation === requestGeneration) setAddingGroupId(null);
@@ -1454,7 +1497,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         await refreshSpaceMembers();
       } catch (error) {
         if (spaceRequestRef.current.generation === requestGeneration) {
-          toast.error(manageSpaceErrorMessage(error, t('space.permissionManager.updateSpaceMemberFailed'), t));
+          toast.error(failedChange('changeRoleFailed', displayNameForMember(member, t), error, t));
         }
       } finally {
         if (spaceRequestRef.current.generation === requestGeneration) {
@@ -1505,7 +1548,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         toast.success(t('space.permissionManager.removeSpaceMemberSuccess'));
       } catch (error) {
         if (spaceRequestRef.current.generation === requestGeneration) {
-          toast.error(manageSpaceErrorMessage(error, t('space.permissionManager.removeSpaceMemberFailed'), t));
+          toast.error(failedChange('removeFailed', displayNameForMember(member, t), error, t));
         }
       } finally {
         if (spaceRequestRef.current.generation === requestGeneration) {
@@ -1580,7 +1623,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         await refreshSpaceMembers();
       } catch (error) {
         if (spaceRequestRef.current.generation === requestGeneration) {
-          toast.error(manageSpaceErrorMessage(error, t('space.permissionManager.updateSpaceMemberFailed'), t));
+          toast.error(failedChange('changeRoleFailed', group.name, error, t));
         }
       } finally {
         if (spaceRequestRef.current.generation === requestGeneration) {
@@ -1639,10 +1682,10 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
 
         setSpaceGroups((current) => current.filter((currentGroup) => currentGroup.group_id !== group.group_id));
         await refreshSpaceMembers();
-        toast.success(t('shareAction.removeGroupAccessSuccess', { group: group.name }));
+        toast.success(t('shareAction.removeGroupAccessSuccess', { group: group.name, ...RAW }));
       } catch (error) {
         if (spaceRequestRef.current.generation === requestGeneration) {
-          toast.error(manageSpaceErrorMessage(error, t('shareAction.removeAccessError'), t));
+          toast.error(failedChange('removeFailed', group.name, error, t));
         }
       } finally {
         if (spaceRequestRef.current.generation === requestGeneration) {
@@ -1769,6 +1812,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       }
 
       const uid = principal.type === 'user' ? (assignment as SpaceMember).uid : undefined;
+      const name = 'group_id' in assignment ? assignment.name : displayNameForMember(assignment, t);
 
       if (uid !== undefined && !setMemberMutationPending(uid, true)) return;
       if (principal.type === 'group') setGroupMutationPending(principal.uuid, true);
@@ -1803,9 +1847,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         // Roll back to the last confirmed value, then reconcile this list with
         // the server without reloading the dialog (the outcome may be unknown).
         setAccessOverridePending(key, undefined);
-        toast.error(
-          plainErrorMessage(error, t('space.memberOverride.updateFailed'), t('space.memberOverride.unavailable'))
-        );
+        toast.error(failedChange('changeAccessFailed', name, error, t));
         void refreshSpaceMembers({ silent: true });
       } finally {
         if (spaceRequestRef.current.generation === generation) {

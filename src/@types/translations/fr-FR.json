@@ -2775,7 +2775,6 @@
       "unavailable": "Cet accès ne peut plus être modifié. Quelqu’un a peut-être changé les paramètres de cet espace.",
       "contextChanged": "Votre compte ou votre espace de travail a changé. Réessayez.",
       "identityUnavailable": "Impossible de charger les informations du compte de cette personne. Rechargez la page et réessayez.",
-      "updateFailed": "Impossible de modifier l’accès. Réessayez.",
       "inheritedNoAccess": "Par défaut, les membres de l’espace n’ont aucun accès. Choisissez l’accès de certains membres ou groupes, ou modifiez l’accès par défaut dans les paramètres généraux.",
       "spaceDefault": "Par défaut de l’espace ({{level}})",
       "defaultSuffix": "{{level}} · par défaut",
@@ -2831,7 +2830,19 @@
       "groupOwnerTitle": "Rendre ce groupe propriétaire de l’espace ?",
       "groupOwnerDescription": "Tous les membres de ce groupe pourront gérer cet espace, ses membres et ses autorisations.",
       "groupOwnerAction": "Rendre propriétaire",
-      "nothingToAdd": "Toutes les personnes et tous les groupes que vous pouvez ajouter font déjà partie de cet espace."
+      "nothingToAdd": "Toutes les personnes et tous les groupes que vous pouvez ajouter font déjà partie de cet espace.",
+      "changeAccessFailed": "Impossible de modifier l’accès de {{name}}. {{reason}}",
+      "changeRoleFailed": "Impossible de modifier le rôle de {{name}}. {{reason}}",
+      "addFailed": "Impossible d’ajouter {{name}}. {{reason}}",
+      "removeFailed": "Impossible de retirer {{name}}. {{reason}}",
+      "changeSpaceTypeFailed": "Impossible de modifier le type de l’espace. {{reason}}",
+      "changeSidebarPolicyFailed": "Impossible de modifier qui peut ajouter des pages. {{reason}}",
+      "changeMembersAccessFailed": "Impossible de modifier l’accès des membres de l’espace. {{reason}}",
+      "changeWorkspaceMembersAccessFailed": "Impossible de modifier l’accès des membres de l’espace de travail. {{reason}}",
+      "changeEveryoneElseAccessFailed": "Impossible de modifier l’accès de tous les autres. {{reason}}",
+      "renameFailed": "Impossible de renommer cet espace. {{reason}}",
+      "changeIconFailed": "Impossible de modifier l’icône de l’espace. {{reason}}",
+      "saveSettingsFailed": "Impossible d’enregistrer les paramètres de l’espace. {{reason}}"
     }
   },
   "publish": {
@@ -3219,8 +3230,14 @@
     "giveAccess": "Donner l’accès",
     "updated": "Accès mis à jour",
     "canView": "Lecture",
-    "canEdit": "Modification"
+    "canEdit": "Modification",
+    "updateFailed": "Impossible de modifier l’accès à tous les espaces de {{group}}. {{reason}}"
   },
   "loading": "Chargement…",
-  "recentPages": "Pages récentes"
+  "recentPages": "Pages récentes",
+  "changeFailure": {
+    "noPermission": "Vous n’avez pas l’autorisation de faire cela.",
+    "changedElsewhere": "Quelque chose a changé entre-temps. Vérifiez les paramètres actuels et réessayez.",
+    "unknown": "Une erreur s’est produite. Réessayez."
+  }
 }

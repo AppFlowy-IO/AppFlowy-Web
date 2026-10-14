@@ -42,7 +42,6 @@ const CONTROL_KEYS = [
   'space.memberOverride.unavailable',
   'space.memberOverride.contextChanged',
   'space.memberOverride.identityUnavailable',
-  'space.memberOverride.updateFailed',
   'space.memberOverride.spaceDefault',
   'space.memberOverride.defaultSuffix',
   'space.memberOverride.levels.noAccess',
@@ -65,6 +64,22 @@ const CONTROL_KEYS = [
   'space.memberOverride.extraAccessSource.allSpaces',
   'space.memberOverride.extraAccessSource.anyAllSpaces',
   'space.memberOverride.extraAccessSource.pageShare',
+  // Failed changes name what failed, then give a plain reason.
+  'space.permissionManager.changeAccessFailed',
+  'space.permissionManager.changeRoleFailed',
+  'space.permissionManager.addFailed',
+  'space.permissionManager.removeFailed',
+  'space.permissionManager.changeSpaceTypeFailed',
+  'space.permissionManager.changeSidebarPolicyFailed',
+  'space.permissionManager.changeMembersAccessFailed',
+  'space.permissionManager.changeWorkspaceMembersAccessFailed',
+  'space.permissionManager.changeEveryoneElseAccessFailed',
+  'space.permissionManager.renameFailed',
+  'space.permissionManager.changeIconFailed',
+  'space.permissionManager.saveSettingsFailed',
+  'changeFailure.noPermission',
+  'changeFailure.changedElsewhere',
+  'changeFailure.unknown',
 ];
 
 const INTERNAL_TERMS = /override|inherit|assignment|entitlement|principal|uuid|provenance|tombstone|revision|roster/i;

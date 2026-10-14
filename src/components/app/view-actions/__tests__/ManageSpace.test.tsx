@@ -482,6 +482,11 @@ const notFoundApiError = {
   message: `Record not found:space member 42 not found in space ${SPACE_UUID}`,
 };
 const networkApiError = { code: -1, message: 'Network Error' };
+const RAW = { interpolation: { escapeValue: false } };
+/** A failed change is reported as the named change, then a plain reason; names are not escaped. */
+const failedChange = (key: string, name: string, reason: string) =>
+  mockTranslate(`space.permissionManager.${key}`, { name, reason, ...RAW });
+const failedSetting = (key: string, reason: string) => mockTranslate(`space.permissionManager.${key}`, { reason, ...RAW });
 
 function expectNoServerTextInToasts() {
   for (const [message] of [...(toast.error as jest.Mock).mock.calls, ...(toast.success as jest.Mock).mock.calls]) {
@@ -1007,7 +1012,11 @@ describe('ManageSpace ACL management', () => {
         save.reject(deniedApiError);
       });
 
-      await waitFor(() => expect(toast.error).toHaveBeenCalledWith('space.memberOverride.unavailable'));
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith(
+          failedChange('changeAccessFailed', 'Manual member', 'changeFailure.noPermission')
+        )
+      );
       expectNoServerTextInToasts();
       await waitFor(() => expect(trigger.textContent).toBe(inheritEditLabel));
       await waitFor(() => expect((trigger as HTMLButtonElement).disabled).toBe(false));
@@ -1020,7 +1029,7 @@ describe('ManageSpace ACL management', () => {
       expect(mockSetOverride).toHaveBeenCalledTimes(1);
     });
 
-    it('falls back to a plain failure message when the error has no text', async () => {
+    it('falls back to a plain reason when the error has no text', async () => {
       const member = assignedMember();
 
       mockGetSpacePermission.mockResolvedValue(supportedPermission());
@@ -1031,18 +1040,20 @@ describe('ManageSpace ACL management', () => {
 
       fireEvent.click(screen.getByTestId(`space-member-access-${member.uid}-option-${AccessLevel.ReadAndComment}`));
 
-      await waitFor(() => expect(toast.error).toHaveBeenCalledWith('space.memberOverride.updateFailed'));
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith(failedChange('changeAccessFailed', 'Manual member', 'changeFailure.unknown'))
+      );
       await waitFor(() => expect(accessTrigger(member.uid).textContent).toBe(inheritEditLabel));
     });
 
     it.each([
-      ['a lost right', deniedApiError, 'space.memberOverride.unavailable'],
-      ['a removed member', notFoundApiError, 'space.memberOverride.unavailable'],
-      ['a network failure', networkApiError, 'space.memberOverride.updateFailed'],
-      ['a server failure', { code: 500, httpStatus: 500, message: 'Internal error: pool timed out' }, 'space.memberOverride.updateFailed'],
+      ['a lost right', deniedApiError, 'changeFailure.noPermission'],
+      ['a removed member', notFoundApiError, 'changeFailure.changedElsewhere'],
+      ['a network failure', networkApiError, 'changeFailure.unknown'],
+      ['a server failure', { code: 500, httpStatus: 500, message: 'Internal error: pool timed out' }, 'changeFailure.unknown'],
       // The service's own checks already speak plainly.
       ['a stale capability', new Error('space.memberOverride.contextChanged'), 'space.memberOverride.contextChanged'],
-    ])('shows plain copy instead of server text after %s', async (_case, error, expected) => {
+    ])('names the change and gives a plain reason instead of server text after %s', async (_case, error, expected) => {
       const member = assignedMember();
 
       mockGetSpacePermission.mockResolvedValue(supportedPermission());
@@ -1053,7 +1064,9 @@ describe('ManageSpace ACL management', () => {
 
       fireEvent.click(screen.getByTestId(`space-member-access-${member.uid}-option-${AccessLevel.ReadOnly}`));
 
-      await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expected));
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith(failedChange('changeAccessFailed', 'Manual member', expected))
+      );
       expect(toast.error).toHaveBeenCalledTimes(1);
       expectNoServerTextInToasts();
       await waitFor(() => expect(accessTrigger(member.uid).textContent).toBe(inheritEditLabel));
@@ -1353,7 +1366,11 @@ describe('ManageSpace ACL management', () => {
       await waitFor(() => expect(screen.getByTestId('inline-member-add').disabled).toBe(false));
       fireEvent.click(screen.getByTestId('inline-member-add'));
 
-      await waitFor(() => expect(toast.error).toHaveBeenCalledWith('space.memberOverride.identityUnavailable'));
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith(
+          failedChange('addFailed', 'Candidate', 'space.memberOverride.identityUnavailable')
+        )
+      );
       expect(mockAddSpaceMemberByUuid).not.toHaveBeenCalled();
       expect(mockAddSpaceMember).not.toHaveBeenCalled();
     });
@@ -1424,13 +1441,20 @@ describe('ManageSpace ACL management', () => {
           name: 'space.permissionManager.owner space.permissionManager.ownerRoleDescription',
         })
       );
-      await waitFor(() => expect(toast.error).toHaveBeenCalledWith('space.memberOverride.identityUnavailable'));
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith(
+          failedChange('changeRoleFailed', 'Manual member', 'space.memberOverride.identityUnavailable')
+        )
+      );
 
       const removeButton = within(row).getByRole('button', { name: 'space.permissionManager.remove' });
 
       await waitFor(() => expect(removeButton.hasAttribute('disabled')).toBe(false));
       fireEvent.click(removeButton);
       await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(2));
+      expect(toast.error).toHaveBeenLastCalledWith(
+        failedChange('removeFailed', 'Manual member', 'space.memberOverride.identityUnavailable')
+      );
       expect(mockUpdateSpaceMemberByUuid).not.toHaveBeenCalled();
       expect(mockAddSpaceMemberByUuid).not.toHaveBeenCalled();
       expect(mockRemoveSpaceMemberByUuid).not.toHaveBeenCalled();
@@ -1760,7 +1784,7 @@ describe('ManageSpace ACL management', () => {
       fireEvent.click(visibilityOption(SpaceVisibility.Custom));
       confirmPending();
 
-      await waitFor(() => expect(toast.error).toHaveBeenCalledWith('save failed'));
+      await waitFor(() => expect(toast.error).toHaveBeenCalledWith(failedSetting('changeSpaceTypeFailed', 'save failed')));
       expect(screen.getByRole('tab', { name: 'space.permissionManager.generalTab' }).getAttribute('aria-selected')).toBe(
         'true'
       );
@@ -2180,7 +2204,7 @@ describe('ManageSpace ACL management', () => {
 
     fireEvent.click(screen.getByTestId(`space-sidebar-policy-option-${SpaceSidebarEditPolicy.MembersAndOwners}`));
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('policy save failed'));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(failedSetting('changeSidebarPolicyFailed', 'policy save failed')));
     expect(screen.getByTestId('space-sidebar-policy').textContent).toBe('workspacePermissions.sidebarOwners');
     await waitFor(() => expect((screen.getByTestId('space-sidebar-policy')).disabled).toBe(false));
   });
@@ -2198,7 +2222,9 @@ describe('ManageSpace ACL management', () => {
 
     fireEvent.click(screen.getByTestId(`space-sidebar-policy-option-${SpaceSidebarEditPolicy.MembersAndOwners}`));
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('space.error.updateSpace'));
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(failedSetting('changeSidebarPolicyFailed', 'changeFailure.noPermission'))
+    );
     expectNoServerTextInToasts();
     expect(screen.getByTestId('space-sidebar-policy').textContent).toBe('workspacePermissions.sidebarOwners');
   });
@@ -2253,7 +2279,7 @@ describe('ManageSpace ACL management', () => {
         save.reject(new Error('policy save failed'));
       });
 
-      expect(toast.error).toHaveBeenCalledWith('policy save failed');
+      expect(toast.error).toHaveBeenCalledWith(failedSetting('changeSidebarPolicyFailed', 'policy save failed'));
       expect(toast.success).not.toHaveBeenCalled();
       expect(policyTrigger().textContent).toBe('workspacePermissions.sidebarOwners');
       await waitFor(() => expect(policyTrigger().disabled).toBe(false));
@@ -2273,7 +2299,7 @@ describe('ManageSpace ACL management', () => {
         save.reject(new Error('policy save failed'));
       });
 
-      expect(toast.error).toHaveBeenCalledWith('policy save failed');
+      expect(toast.error).toHaveBeenCalledWith(failedSetting('changeSidebarPolicyFailed', 'policy save failed'));
       expect(policyTrigger().textContent).toBe('workspacePermissions.sidebarOwners');
 
       await act(async () => {
@@ -2299,7 +2325,7 @@ describe('ManageSpace ACL management', () => {
         save.reject(new Error('policy save failed'));
       });
 
-      expect(toast.error).toHaveBeenCalledWith('policy save failed');
+      expect(toast.error).toHaveBeenCalledWith(failedSetting('changeSidebarPolicyFailed', 'policy save failed'));
       expect(policyTrigger().textContent).toBe('workspacePermissions.sidebarOwners');
       expect(policyTrigger().disabled).toBe(true);
     });
@@ -2474,6 +2500,24 @@ describe('ManageSpace ACL management', () => {
     await act(async () => {
       newerRename.resolve({ view_id: 'space-1' });
     });
+  });
+
+  it('names the change and says why when renaming the space is refused', async () => {
+    mockUpdateStructuredSpace.mockRejectedValueOnce({ ...deniedApiError, message: `user 42 cannot rename space ${SPACE_UUID}` });
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    await waitForSettingsLoaded();
+    const nameInput = screen.getByPlaceholderText('space.spaceNamePlaceholder');
+
+    fireEvent.change(nameInput, { target: { value: 'Refused name' } });
+    fireEvent.blur(nameInput);
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(failedSetting('renameFailed', 'changeFailure.noPermission'))
+    );
+    expectNoServerTextInToasts();
+    // The confirmed name comes back.
+    expect(nameInput.value).toBe('Space one');
   });
 
   it('still sends an already-queued metadata edit after the modal unmounts', async () => {
@@ -2865,7 +2909,7 @@ describe('ManageSpace ACL management', () => {
     // The refreshed settings are newer than the failed request's baseline, so
     // they stay; the owner is still told their change did not go through.
     expectSelectedVisibility(SpaceVisibility.Public);
-    expect(toast.error).toHaveBeenCalledWith('older mutation failed');
+    expect(toast.error).toHaveBeenCalledWith(failedSetting('changeSpaceTypeFailed', 'older mutation failed'));
   });
 
   it('changes the member default without overwriting a manual member grant', async () => {
@@ -3088,11 +3132,15 @@ describe('ManageSpace ACL management', () => {
         })
       );
 
-      await waitFor(() => expect(toast.error).toHaveBeenCalledWith('space.permissionManager.lastOwnerRequired'));
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith(
+          failedChange('changeRoleFailed', 'Space creator', 'space.permissionManager.lastOwnerRequired')
+        )
+      );
     });
 
     it.each([
-      ['a lost right', deniedApiError, 'space.permissionManager.updateSpaceMemberFailed'],
+      ['a lost right', deniedApiError, 'changeFailure.noPermission'],
       [
         'the last owner rule',
         { code: 1008, httpStatus: 400, message: 'Invalid request:space must keep at least one explicit owner' },
@@ -3113,7 +3161,9 @@ describe('ManageSpace ACL management', () => {
         })
       );
 
-      await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expected));
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith(failedChange('changeRoleFailed', 'Space creator', expected))
+      );
       expectNoServerTextInToasts();
     });
 
@@ -3305,6 +3355,32 @@ describe('ManageSpace ACL management', () => {
           access_level: AccessLevel.ReadAndWrite,
         })
       );
+    });
+
+    it('names the group and says why when removing it is refused', async () => {
+      const memberGroup = group('group-1', 'R&D <EU>');
+
+      mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: customPermission }));
+      mockGetSpaceMembers.mockResolvedValue({ members: [], groups: [memberGroup] });
+      mockRemoveSpaceGroupPermission.mockRejectedValueOnce({
+        ...deniedApiError,
+        message: `user 42 cannot remove group ${SPACE_UUID}`,
+      });
+      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+      const row = await screen.findByTestId('space-group-row-group-1');
+      const removeButton = within(row).getByRole('button', { name: 'space.permissionManager.remove' });
+
+      await waitFor(() => expect(removeButton.hasAttribute('disabled')).toBe(false));
+      fireEvent.click(removeButton);
+
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith(failedChange('removeFailed', 'R&D <EU>', 'changeFailure.noPermission'))
+      );
+      expectNoServerTextInToasts();
+      // The group stays listed.
+      expect(screen.getByTestId('space-group-row-group-1')).toBeTruthy();
+      expect(toast.success).not.toHaveBeenCalled();
     });
 
     it('keeps the confirmed group update interactive when roster revalidation fails', async () => {

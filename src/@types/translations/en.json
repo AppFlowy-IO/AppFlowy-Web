@@ -3686,10 +3686,7 @@
       "loadSpaceMembersFailed": "Failed to load space members",
       "loadSpaceSettingsFailed": "Failed to load space settings",
       "addSpaceMemberSuccess": "Space member added",
-      "addSpaceMemberFailed": "Failed to add space member",
-      "updateSpaceMemberFailed": "Failed to update space member",
       "removeSpaceMemberSuccess": "Space member removed",
-      "removeSpaceMemberFailed": "Failed to remove space member",
       "lastOwnerRequired": "This space must have at least one owner. Make another member an owner before changing or removing this owner.",
       "customPermissionsTitle": "Custom permissions",
       "customPermissionsDescription": "Choose the default access for space members and everyone else in the workspace.",
@@ -3739,14 +3736,25 @@
       "searchPeopleOrGroups": "Search people or groups",
       "groupsNotInSpace": "Groups not in space",
       "addSpaceGroupSuccess": "Group added to space",
-      "addSpaceGroupFailed": "Failed to add group to space",
       "noAccessMembersHint": "Space members are listed but cannot access this space until their access is changed in General.",
       "everyoneElseFallback": "Everyone else in the workspace",
       "memberRoleWithAccessDescription": "Gets the space default access unless you choose a different level in Access.",
       "accessCheckFailed": "We couldn't check your access to this space. Changes are paused until we can.",
       "accessLost": "This space is no longer available to you.",
       "checkAgain": "Check again",
-      "nothingToAdd": "Everyone you can add is already in this space."
+      "nothingToAdd": "Everyone you can add is already in this space.",
+      "changeAccessFailed": "Couldn't change access for {{name}}. {{reason}}",
+      "changeRoleFailed": "Couldn't change the role for {{name}}. {{reason}}",
+      "addFailed": "Couldn't add {{name}}. {{reason}}",
+      "removeFailed": "Couldn't remove {{name}}. {{reason}}",
+      "changeSpaceTypeFailed": "Couldn't change the space type. {{reason}}",
+      "changeSidebarPolicyFailed": "Couldn't change who can add pages. {{reason}}",
+      "changeMembersAccessFailed": "Couldn't change the access for space members. {{reason}}",
+      "changeWorkspaceMembersAccessFailed": "Couldn't change the access for workspace members. {{reason}}",
+      "changeEveryoneElseAccessFailed": "Couldn't change the access for everyone else. {{reason}}",
+      "renameFailed": "Couldn't rename this space. {{reason}}",
+      "changeIconFailed": "Couldn't change the space icon. {{reason}}",
+      "saveSettingsFailed": "Couldn't save the space settings. {{reason}}"
     },
     "createSpace": "Create space",
     "manageSpace": "Manage space",
@@ -3761,7 +3769,6 @@
       "unavailable": "This access can't be changed anymore. Someone may have changed this space's settings.",
       "contextChanged": "Your account or workspace changed. Try again.",
       "identityUnavailable": "We couldn't load this person's account details. Reload the page and try again.",
-      "updateFailed": "Couldn't update access. Try again.",
       "inheritedNoAccess": "Space members get no access by default. Choose access for specific members or groups, or change the default in General.",
       "spaceDefault": "Space default ({{level}})",
       "defaultSuffix": "{{level}} · default",
@@ -4754,6 +4761,12 @@
     "giveAccess": "Give access",
     "updated": "Access updated",
     "canView": "Can view",
-    "canEdit": "Can edit"
+    "canEdit": "Can edit",
+    "updateFailed": "Couldn't change access to all spaces for {{group}}. {{reason}}"
+  },
+  "changeFailure": {
+    "noPermission": "You don't have permission to do this.",
+    "changedElsewhere": "Something changed in the meantime. Check the current settings and try again.",
+    "unknown": "Something went wrong. Try again."
   }
 }

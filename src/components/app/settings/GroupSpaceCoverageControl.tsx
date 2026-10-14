@@ -30,13 +30,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
+import { changeFailureReason, RAW } from '@/utils/change-failure';
 import { createCoalescedRefresh } from '@/utils/coalesced-refresh';
-import { getErrorMessage } from '@/utils/errors';
 
 import type { TFunction } from 'i18next';
 
-/** React already escapes text; i18next escaping would show `&amp;` in names such as "R&D". */
-const RAW = { interpolation: { escapeValue: false } };
 const COVERAGE_OPTIONS: readonly GroupSpaceCoverageLevel[] = [null, AccessLevel.ReadOnly, AccessLevel.ReadAndWrite];
 
 function coverageRank(level: GroupSpaceCoverageLevel): number {
@@ -128,7 +126,10 @@ export function GroupSpaceCoverageCard({ workspaceId, group, isCurrent, onChange
       void Promise.resolve(onChanged?.()).catch(() => undefined);
     } catch (error) {
       // A switched account/workspace already discarded this dialog; its error is not actionable.
-      if (stillCurrent()) toast.error(getErrorMessage(error, t('groupSpaceAccess.invalidResponse')));
+      // The toast names the change and keeps the confirmed level on screen.
+      if (stillCurrent()) {
+        toast.error(t('groupSpaceAccess.updateFailed', { group: group.name, reason: changeFailureReason(error, t), ...RAW }));
+      }
     } finally {
       if (alive.current) setPending(undefined);
     }

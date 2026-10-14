@@ -22,11 +22,16 @@ jest.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (
       key: string,
-      options?: { group?: string; count?: number; interpolation?: { escapeValue?: boolean } }
+      options?: { group?: string; reason?: string; count?: number; interpolation?: { escapeValue?: boolean } }
     ) => {
       const raw = options?.interpolation?.escapeValue === false;
 
-      if (options?.group !== undefined) return `${key}:${raw ? options.group : escapeLikeI18next(options.group)}`;
+      if (options?.group !== undefined) {
+        const group = raw ? options.group : escapeLikeI18next(options.group);
+
+        return options.reason !== undefined ? `${key}:${group}:${options.reason}` : `${key}:${group}`;
+      }
+
       if (options?.count !== undefined) return `${key}:${options.count}`;
       return key;
     },
@@ -172,13 +177,31 @@ describe('group access to all spaces (group dialog)', () => {
     expect(toastSuccess).toHaveBeenCalledWith('groupSpaceAccess.updated');
   });
 
-  it('a rejected save keeps the confirmed level', async () => {
-    mockSave.mockRejectedValueOnce({ code: 500, message: 'Server unavailable' });
+  it('a rejected save keeps the confirmed level and names the change, with a plain reason', async () => {
+    mockSave.mockRejectedValueOnce({ code: 500, message: 'Server unavailable: pool timed out' });
     render(<GroupSpaceCoverageCard workspaceId='workspace' group={group({ space_coverage_access_level: 30 })} />);
     fireEvent.click(option('off'));
-    await waitFor(() => expect(toastError).toHaveBeenCalledWith('Server unavailable'));
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith('groupSpaceAccess.updateFailed:Directory group:changeFailure.unknown')
+    );
     expect(trigger().textContent).toContain('groupSpaceAccess.canEdit');
     expect(toastSuccess).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a lost right', { code: 1012, httpStatus: 403, message: 'user 42 cannot manage group 7' }, 'changeFailure.noPermission'],
+    ['a deleted group', { code: -2, httpStatus: 404, message: 'Record not found: group 7' }, 'changeFailure.changedElsewhere'],
+    // The service's own checks already speak plainly.
+    ['a stale dialog', new Error('groupSpaceAccess.contextChanged'), 'groupSpaceAccess.contextChanged'],
+  ])('says why a save was refused after %s, with the group name as typed', async (_case, error, reason) => {
+    mockSave.mockRejectedValueOnce(error);
+    render(
+      <GroupSpaceCoverageCard workspaceId='workspace' group={group({ name: 'R&D <EU>', space_coverage_access_level: 10 })} />
+    );
+    fireEvent.click(option('off'));
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith(`groupSpaceAccess.updateFailed:R&D <EU>:${reason}`));
+    expect(String(toastError.mock.calls[0][0])).not.toMatch(/user 42|group 7|Record not found/);
+    expect(trigger().textContent).toContain('groupSpaceAccess.canView');
   });
 
   it.each([
