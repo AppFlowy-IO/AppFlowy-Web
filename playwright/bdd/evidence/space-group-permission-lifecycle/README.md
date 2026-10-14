@@ -1,232 +1,242 @@
 # Workspace permissions: Web review evidence
 
-Group permission changes must update open pages and navigation without a reload. The Web client
-rechecks canonical capabilities on real workspace revisions, removes denied content, disables editing
-for View access, and retains independent direct or second-group grants. The management controls keep
-explicit user/group levels distinct from inherited defaults; creation, sidebar and coverage settings
-have separate authority.
+Screenshots of the workspace permission UI in Web PR #621 after the UX redesign: the Permissions
+panel (who can create spaces, access to all spaces), the group dialog, Manage Space (per-person
+access and "Who can add pages to this space"), Create space, the account-only page, workspace
+creation limits, live loss and recovery of page access, and the sign-out question.
 
-**The connected document lifecycle passed: 44 checks, with restoration and preservation passing.**
-Run `cc3e83eb-a782-45bb-b834-3b6c1cf16f7f` completed in 1.1 minutes. Its eleven screenshots below are
-unaltered captures from that run. The expanded packet includes five fresh read-only captures and ten
-separately labelled historical captures: **26 captures total**. The packet
-does not claim every feature, persona or client has passed. Visible accounts and content are synthetic;
-no credentials, private configuration or live tokens are included. Capture and qualification hashes
-are recorded in [capture-manifest.json](capture-manifest.json).
+**16 current captures were made on 2026-10-14** from the real Web app against a real Cloud server on
+an isolated stack with synthetic data. 15 earlier captures that still match the current UI are kept
+and labelled historical; 11 captures of the old UI were removed. Hashes, viewers and the server
+state read back after the run are in [capture-manifest.json](capture-manifest.json).
 
-The live server used for the retained lifecycle and fresh settings captures predates the final four
-Rust review fixes. Those fixes have separate server component validation; this gallery does not claim
-a full connected run against the newest server source.
+## How the current captures were made
 
-## Fresh review captures
+| | |
+| --- | --- |
+| Date | 2026-10-14 (UTC) |
+| Web source | commit `d2c4d938` on `oodrive-fix/web-visual` (integration branch `codex/oodrive-permissions-fixes` at `b612fb90` plus the UI fixes below and the capture spec), served by the vite dev server |
+| Server source | AppFlowy Cloud Premium integration branch `codex/oodrive-permissions-fixes` at `bf8f37ef1`, built with `cargo build --locked --bin appflowy_cloud --features commercial-local-test` (self-hosted feature set: three member seats, guests separate) and run with `APPFLOWY_ACCESS_CONTROL=true` |
+| Stack | Isolated and synthetic: its own GoTrue (`appflowyinc/gotrue_premium:latest`), Redis, PostgreSQL database and MinIO bucket on loopback ports. No other environment, account or data was used. The Worker was not running (no imports or background jobs are shown). |
+| Browser | Chromium 145 (Playwright build 1208), 1440×900, device scale 1. Each person was signed in with a GoTrue password grant stored as the app's session (not through the login screen). Requests to anything but the three stack origins were blocked. |
+| Data | Created through the HTTP APIs only (GoTrue admin and Cloud REST) by [the seed](../../../support/permission-gallery-seed.ts). People use `@demo.test` addresses; nothing real is shown. |
+| Permission changes | Made by the owner or the operator through the API. Confirmations opened in the UI were cancelled, and no setting was saved from the UI. |
 
-These five screenshots were captured on 2026-10-12 from the real Web app and existing synthetic
-accounts. They use current Web source; all browser HTTP mutations were blocked, including profile,
-workspace-open and recent-page updates. Coverage GETs remained Off before, during and after both
-local drafts. No permission setting, membership or content was changed. API sign-in and unchanged
-WebSocket forwarding were used; this is not login-UI or policy-mutation acceptance.
+Reproduce on an isolated stack (the seed switches the installation's workspace creation policy, so
+it refuses the usual developer ports):
 
-**Creator policy and retained selections.** This fixture currently allows Members and Owners. The
-inactive Member selection remains visible for reuse when the selected-members mode is enabled.
+```
+APPFLOWY_PERMISSION_GALLERY=1 APPFLOWY_GALLERY_CLOUD=http://127.0.0.1:<cloud> \
+APPFLOWY_GALLERY_GOTRUE=http://127.0.0.1:<gotrue> BASE_URL=http://127.0.0.1:<web> \
+APPFLOWY_TEST_CHROMIUM_EXECUTABLE=<chromium> \
+./node_modules/.bin/playwright test -c playwright.permission-gallery.config.ts
+```
 
-![Current creator policy and retained inactive selection](review-current-creator-controls.png)
+[permission-gallery.capture.spec.ts](../../../e2e/app/permission-gallery.capture.spec.ts) is
+skipped without those variables. All 7 of its tests passed in the run that produced these images.
 
-**Optional coverage remains Off until saved.** The scope explanation distinguishes current/future
-Public and Custom spaces, excludes Private spaces, and preserves page restrictions.
+## The Demo workspace
 
-![Group coverage Off with Save disabled](review-coverage-off.png)
+| | |
+| --- | --- |
+| People | Olivia Martin (owner, the only person allowed to create workspaces), Alex Dupont and Sam Leroy (members). Jordan Petit has no workspace and one pending guest invitation to Demo: the three member seats of the self-hosted build are taken. |
+| Groups | Users (Olivia, Alex; access to all spaces: Can view), HR (Olivia, Sam), Product (Olivia, Alex, Sam), Super_Users (Alex) |
+| Who can create spaces | Owners and selected members: Alex and the Super_Users group |
+| Workspace creation (installation) | Selected users; only Olivia is selected |
+| General | Public, from the workspace template |
+| HR | Custom, owned by Olivia. Space members: Can edit by default; everyone else: No access; only space owners add pages. HR group: Can edit; Users group: Can view; Alex keeps the space default. Sam can reach HR only through the HR group. |
+| Product | Custom, created by Alex (a selected space creator). Product group: Can edit. Olivia's own row is an ordinary member with Can view. |
+| Leadership | Private, Olivia's |
 
-**View draft.** Selecting Can view enables Save; the server still reports Off.
+## Current captures (2026-10-14)
 
-![Unsaved View group coverage with Save enabled](review-coverage-view-draft.png)
+Each caption says what the image shows and what it does not prove. Where the spec asserted
+something, that is stated; otherwise the image is only a picture of the UI.
 
-**Edit draft.** Selecting Can edit also remains a local draft until Save. The test resets it to Off
-and verifies Save becomes disabled again. These images do not show a saved grant.
+**Permissions, as the owner.** "Who can create spaces" is set to "Owners and selected members";
+Alex and the Super_Users group are the selections; the Access to all spaces summary starts below.
+The spec checked that this card is the selected one and that both selections are listed.
+*Does not prove* that the selections let anyone create a space (the API read back
+`can_create_space: true` for Alex and `false` for Sam; see the manifest).
 
-![Unsaved Edit group coverage with Save enabled](review-coverage-edit-draft.png)
+![Permissions as the owner, with the selected members and groups](permissions-owner-selected-members.png)
 
-**Account-only state.** An existing signed-in account has no workspace and cannot create or import
-one. Invitation guidance remains visible. The API confirms an empty workspace list and null visiting
-workspace; this image alone does not establish automatic-home suppression.
+**Narrowing who can create spaces asks first.** Choosing "Owners only" opened this question; it was
+cancelled and the spec checked that the policy stayed "Owners and selected members". *Does not
+prove* what saving would do.
 
-![Signed-in account with creation and import unavailable](review-account-only.png)
+![Confirmation before narrowing who can create spaces](permissions-narrowing-confirmation.png)
+
+**Access to all spaces summary.** Groups with access to every current and future public and custom
+space (Users, Can view), and the Manage groups button that opens People > Groups. *Read-only*: it
+does not show that the coverage applies to a given space.
+
+![Access to all spaces summary in the Permissions panel](permissions-access-to-all-spaces-summary.png)
+
+**Permissions, as a member.** Sam sees "You can't create spaces in this workspace.", the current
+policy with every card unavailable, and "Only workspace owners can change this." The spec checked
+that the "Owners only" card is disabled. *Does not prove* that the server refuses Sam's request to
+create a space (that is covered by server tests, not this run).
+
+![Permissions as a member, read only](permissions-member-read-only.png)
+
+**People > Groups > HR > General, with the Access to all spaces menu open.** Off is ticked; Can view
+and Can edit are offered. The menu covers the end of the description while it is open. *Does not
+prove* a saved change.
+
+![Group dialog with the Access to all spaces menu open](group-dialog-access-to-all-spaces-menu.png)
+
+**Granting access to all spaces asks first.** Choosing Can edit for HR opened this question; it was
+cancelled and the spec checked that the group stayed Off.
+
+![Confirmation before giving HR access to all spaces](group-access-to-all-spaces-confirmation.png)
+
+**Manage Space > Members in a Custom space (HR), with one Access menu open.** Columns Name | Access |
+Role. Olivia (space owner) has "Full access" as text; Alex keeps the space default ("Can edit ·
+default", ticked in the open menu with Can view, Can comment and Can edit offered); the HR and Users
+groups have Can edit and Can view of their own. *Does not prove* that choosing a level saves.
+
+![Manage Space members with the Access menu of Alex open](manage-space-members-access-menu.png)
+
+**The one explanation of per-person access** is the Access column header's tooltip.
+
+![Access column explanation tooltip](manage-space-members-access-explanation.png)
+
+**Where your own extra access comes from.** In Product, Olivia manages the space as the workspace
+owner, but her own row is an ordinary member with Can view. Her menu ends with "You can also edit
+this space through the Product group." The spec checked that the note names the Product group; the
+server reported Olivia's access as Can edit from a group (`workspace_group`).
+
+![Own access menu explaining access through the Product group](manage-space-own-access-explanation.png)
+
+**Manage Space > General in a Custom space (HR), scrolled to the page setting.** Space members Can
+edit, everyone else in Demo No access, and "Who can add pages to this space: Only space owners" with
+its explanation. At 1440×900 the page setting is below the fold of this dialog, which scrolls.
+*Does not prove* that adding a page is refused for members (server and component tests cover that).
+
+![Manage Space General tab with who can add pages](manage-space-general-page-setting.png)
+
+**Create space**, opened by the owner from New page, with a name typed. Public is the default type.
+No space was created.
+
+![Create space dialog](create-space.png)
+
+**Workspace menu without permission to create workspaces.** Alex is not selected by the operator:
+Create workspace and Import workspace are unavailable, and the tooltip says "Your administrator
+hasn't allowed you to create workspaces." The spec checked that the item is marked unavailable and
+the tooltip is shown. *Does not prove* that the server refuses a creation request.
+
+![Workspace menu with Create workspace unavailable](workspace-menu-create-workspace-denied.png)
+
+**Signed in without a workspace.** Jordan sees "You're not in a workspace yet", the signed-in
+address, the pending invitation to Demo with Join, the reason creation is unavailable, Check again
+and Sign out. The API read back an empty workspace list and the pending invitation. *Not tested*:
+joining (the invitation was not accepted).
+
+![Account-only page with a pending invitation](account-only-pending-invitation.png)
+
+**An open page loses access when its group's access is removed.** Sam had "Onboarding checklist"
+(HR) open; the owner removed the HR group from the HR space through the API. The page shows "No
+access to this page" and HR left the sidebar. The spec checked the server answer for Sam
+(`can_read: false`), the message, and that the editor was gone.
+
+![Open page after its group access was removed](page-no-access-after-group-removed.png)
+
+**The same page recovers without a reload when access is given back.** The owner restored the HR
+group's Can edit through the API. The spec checked `can_write: true`, the page text, and that the
+tab was not reloaded (a marker set in the page survived). *Does not prove* that typing is saved (no
+edit was made).
+
+![The page after access was given back, without a reload](page-access-restored-after-regrant.png)
+
+**Sign-out question** (Settings > Account & App > Log out) with "Also remove my data from this
+browser" and its explanation. Nobody signed out; *does not prove* what is removed.
+
+![Sign-out question with the remove my data option](sign-out-remove-data.png)
+
+## UI fixes made while refreshing the gallery
+
+Found in these captures and fixed test-first before the final run (Web commits on
+`oodrive-fix/web-visual`):
+
+- `e7862526` Manage Space's member table: in a wide fallback font the Role menu read "Space mem…" and
+  emails were cut ("olivia@de…"). The dialog is now 760px wide and the Role column fits "Space
+  member". Groups use the group icon shown everywhere else instead of a letter avatar.
+- `005eff66` Sign-out question: the hidden dialog footer left an empty gap under the buttons, and the
+  question used "logout" as a verb ("Are you sure you want to log out?").
+- `564d200b` Public space card: "Everyone in the Workspace can access" is now in sentence case (the
+  French text no longer claims full access).
+
+## Historical captures (still match the current UI)
+
+These were captured on 2026-10-12, before the redesign, against an earlier server build. The page,
+"No access to this page" and search views they show were not changed by the redesign (compare
+the current captures above and a 2026-10-14 look at the search dialog), so they are kept. They were
+not re-run for this refresh.
+
+**Document lifecycle run `cc3e83eb-a782-45bb-b834-3b6c1cf16f7f` (passed, 44 checks).** Three
+documents of a separate fixture; owner API calls changed a group grant and a group membership; a
+second tab followed the same change; a delayed allowed answer for the revoked document was
+delivered and did not bring the content back. Its server build predates the final server review
+fixes. Titles are generated fixture names.
+
+| Image | What it showed |
+| --- | --- |
+| [initial-view-primary.png](initial-view-primary.png) | The primary document with View access (the DOM checks, not the image, established read-only). |
+| [explicit-edit-primary-title-focused.png](explicit-edit-primary-title-focused.png) | The same open page after Edit was granted, with its title focused and editable. |
+| [grant-removed-primary.png](grant-removed-primary.png) | The primary document denied after its group grant was removed; Shared with me keeps two independently granted documents. |
+| [grant-removed-direct.png](grant-removed-direct.png) | A document shared directly stays visible and editable after the same removal. |
+| [grant-removed-second.png](grant-removed-second.png) | A document granted through a second group stays editable. |
+| [grant-removed-follower.png](grant-removed-follower.png) | A second open tab of the primary document also shows the denial without reloading (same pixels as the primary tab). |
+| [final-recovered-view-primary.png](final-recovered-view-primary.png) | The primary document back to View on its original route after the regrant. |
+
+**Search reader runs `e589fbf2-943d-458c-aa13-377b2934b129` and
+`8b91758c-b947-4751-9a36-78419e967464` (passed).** Keyword search and recent pages before and after
+revocation and regrant, including a held allowed answer delivered after revocation. AI requests were
+blocked, so the visible Ask AI entry carries no AI claim. The gallery stack has no search service,
+so these were not repeated.
+
+| Image | What it showed |
+| --- | --- |
+| [historical-body-search-allowed.png](historical-body-search-allowed.png) | A protected body snippet found by keyword search before revocation. |
+| [historical-body-search-revoked.png](historical-body-search-revoked.png) | The snippet gone after revocation while a fresh search is pending. |
+| [historical-body-search-late-denied.png](historical-body-search-late-denied.png) | No results after an old allowed answer was delivered after revocation. |
+| [historical-body-search-regranted.png](historical-body-search-regranted.png) | The snippet back after regrant. |
+| [historical-recent-positive.png](historical-recent-positive.png) | The protected page in Recent pages before revocation. |
+| [historical-recent-revoked.png](historical-recent-revoked.png) | Recent pages without it after revocation. |
+| [historical-recent-late-response-hidden.png](historical-recent-late-response-hidden.png) | Still hidden after an old recent-pages answer was delivered (same pixels as the revoked state). |
+| [historical-recent-regranted.png](historical-recent-regranted.png) | Back after regrant. |
+
+## Removed captures of the old UI
+
+Native selects, radio buttons, Save buttons and internal wording that the redesign replaced:
+`review-current-creator-controls.png`, `owner-space-creator-settings.png` and
+`owner-space-creator-group-settings.png` (now *Permissions, as the owner*);
+`review-coverage-off.png`, `review-coverage-view-draft.png`, `review-coverage-edit-draft.png` and
+`owner-group-coverage-settings.png` (now the summary, the group dialog menu and its confirmation);
+`owner-group-view-assignment.png` (now *Manage Space > Members*); `historical-sidebar-policy.png`
+(now *Manage Space > General*); `review-account-only.png` and `historical-account-only.png` (now
+*Signed in without a workspace*). They remain in the Git history.
 
 ## Feature-to-evidence map
 
-| Feature | Behavior being reviewed | Evidence and scope |
+| Feature | Current captures | Automated coverage |
 | --- | --- | --- |
-| A — user and group levels | Member assignments distinguish inherited `null`, View and Edit; independent readable grants survive removal of another grant. | Passed document lifecycle and owner-assignment captures below; [Manage Space component cases](../../../../src/components/app/view-actions/__tests__/ManageSpace.test.tsx) and [tri-state BDD scenarios](../../features/workspace/space-group-permission-resolution.feature). BDD generation passed; the older BDD fixture was not executed by this run. |
-| B — selected space creators | Creation controls use the selected-user/group capability; creation permission does not grant document Write. | Read-only current policy and Member/Group controls below; [Workspace permission controls](../../../../src/components/app/settings/__tests__/WorkspacePermissionsPanel.test.tsx) and [creation capability cases](../../../../src/components/app/hooks/__tests__/useSpaceCreationCapability.test.tsx). This lifecycle did not mutate creator selections or create a space. |
-| P — sidebar rules | Direct space-child actions also require sidebar authority; nested pages retain their own Write check. | Historical [sidebar policy UI](historical-sidebar-policy.png) below; [action gate cases](../../../../src/components/app/view-actions/__tests__/actionPermissionGates.test.tsx). This screenshot shows configuration, not a fresh mutation run. |
-| C — optional group coverage | Coverage is inactive until configured; Public/Custom View/Edit coverage excludes Private spaces and preserves page restrictions. | Read-only scope and owned-group Off capture below; [Group coverage settings cases](../../../../src/components/app/settings/__tests__/GroupSpaceAccessSettings.test.tsx) and the separately retained server coverage matrix. No coverage mutation was performed by this lifecycle. |
-| D — workspace creation restrictions | A signed-in account with no workspace can see invitation guidance while creation/import are unavailable. | Historical [account-only state](historical-account-only.png) below and [NoWorkspace cases](../../../../src/components/app/workspaces/__tests__/NoWorkspace.test.tsx). The screenshot does not prove automatic-home suppression by itself. |
-| R — live permission refresh | Open editor state follows group grant and membership changes; delayed old responses must not restore revoked content. | Passed [connected document suite](../../../e2e/app/space-group-permission-lifecycle.spec.ts): real revisions, follower tab and a genuinely delivered stale allowance. Historical body-search captures have a separate passed real-response-delay result and make no AI/provider claim. |
+| A — per-person access in Custom spaces | Manage Space members, Access explanation, own access explanation | [Manage Space](../../../../src/components/app/view-actions/__tests__/ManageSpace.test.tsx), [copy](../../../../src/components/app/view-actions/__tests__/spaceAccessCopy.test.ts) |
+| B — who can create spaces | Permissions as owner and as member, narrowing confirmation, Create space | [Permissions panel](../../../../src/components/app/settings/__tests__/WorkspacePermissionsPanel.test.tsx), [creation capability](../../../../src/components/app/hooks/__tests__/useSpaceCreationCapability.test.tsx) |
+| C — access to all spaces | Summary, group dialog menu, grant confirmation | [Group coverage](../../../../src/components/app/settings/__tests__/GroupSpaceCoverageControl.test.tsx), [its menu](../../../../src/components/app/settings/__tests__/GroupSpaceCoverageCard.menu.test.tsx) |
+| P — who can add pages | Manage Space > General | [Action gates](../../../../src/components/app/view-actions/__tests__/actionPermissionGates.test.tsx) |
+| D — workspace creation limits | Workspace menu, account-only page | [NoWorkspace](../../../../src/components/app/workspaces/__tests__/NoWorkspace.test.tsx), [Workspaces menu](../../../../src/components/app/workspaces/__tests__/Workspaces.creation.test.tsx) |
+| R — live permission refresh | Open page loses and regains access | Historical 44-check lifecycle ([spec](../../../e2e/app/space-group-permission-lifecycle.spec.ts)) |
+| Sign out | Sign-out question | [LogoutConfirm](../../../../src/components/app/workspaces/__tests__/LogoutConfirm.test.tsx) |
 
-## Passed document lifecycle
+## Limits
 
-The suite reuses three documents from the passed server fixture. The primary document inherits the
-space group assignment. The controls have independent direct Edit and second-group Edit. A second
-primary tab observes the same real revision through the app's cross-tab flow. Owner API calls drove
-permission changes. The management screenshots were captured read-only after restoring View.
-
-**View:** the primary body remains visible. DOM assertions verify that Slate is read-only and the
-editable title control is absent; the screenshot alone cannot establish editability.
-
-![Primary document with View access](initial-view-primary.png)
-
-**Edit:** the same route and in-memory page remain open. The visible title caret accompanies assertions
-that the title is focused/editable and the body is editable. Focus did not type or change content.
-
-![Primary document with its editable title focused](explicit-edit-primary-title-focused.png)
-
-**Group grant removed:** primary content and edit controls disappear. Shared with me retains the two
-independently granted documents. The test checks exact canonical capabilities and both navigation trees.
-
-![Primary document denied after its space group grant is removed](grant-removed-primary.png)
-
-**Independent direct grant:** this document remains visible and editable after the same removal.
-The sidebar now exposes it through Shared with me; DOM assertions verify its body and title controls.
-
-![Directly granted document remains accessible through Shared with me](grant-removed-direct.png)
-
-**Independent second-group grant:** the other control document also retains Edit access.
-
-![Second-group document remains accessible through Shared with me](grant-removed-second.png)
-
-**Follower tab:** the second already-open primary tab receives the real revision and shows denial
-without reloading. Its route and in-memory marker are checked, not inferred from this image.
-
-![Follower primary tab also denies the revoked document](grant-removed-follower.png)
-
-**Regranted View:** the primary document recovers on its original route and in-memory page. The suite
-also checks Edit-to-View, group membership removal/re-addition, and the independently granted controls
-at each phase. The stale-response observer is disconnected before this intentional regrant.
-
-![Primary document recovers View access without a reload](final-recovered-view-primary.png)
-
-**Explicit group assignment:** the owner opens Manage Space without changing it. The group remains a
-Space member with explicit Can view, while the space default is No access. The synthetic account names
-do not determine their roles; the displayed Owner/Member roles are the canonical assignments.
-
-![Owner sees explicit group View while the space default grants no access](owner-group-view-assignment.png)
-
-**B, current creator policy:** the existing policy is Owners and selected Members. The existing Member
-entry is inactive and offers Select again; this read-only image does not claim that it grants creation.
-
-![Current selected-creator policy and inactive Member entry](owner-space-creator-settings.png)
-
-**B, group controls:** a separate capture after scrolling shows the complete Group selection controls
-and current No selections state. No selection was added or removed.
-
-![Complete Group creator selection controls with no current selections](owner-space-creator-group-settings.png)
-
-**C, existing coverage Off:** the owner filters to the synthetic primary group. Scope text includes
-current/future Public and Custom spaces, excludes Private spaces and preserves page restrictions.
-The selector remains Off and Save is disabled; no coverage change was made.
-
-![Group coverage scope and unchanged Off selection](owner-group-coverage-settings.png)
-
-The late-response case held a real canonical Edit response, revoked access with a newer server
-revision, and then fulfilled that exact response. The matching browser request finished successfully
-without cancellation. Content and controls stayed absent throughout the observed delivery interval.
-This establishes delivered-response rejection, rather than relying only on request cancellation.
-
-The sidebar oracle combines the fresh workspace tree and the separate Shared with me tree, matching
-the application's production composition. A workspace root response alone is not the whole sidebar.
-This fixture covers documents and UI controls; it does not establish database/grid/row behavior or
-CRDT edit acceptance. The server lifecycle separately exercised actual allowed/denied name writes.
-
-## Historical screenshots
-
-**P: direct-child sidebar policy.** Manage Space exposes “Space Owners only” independently of the
-Custom Member content default. This is the existing synthetic configuration capture, not the new
-space-group lifecycle fixture.
-
-![Historical Manage Space sidebar policy](historical-sidebar-policy.png)
-
-**D: signed in without a workspace.** The account remains signed in, receives invitation guidance,
-and sees disabled Create workspace and Import workspace actions.
-
-![Historical signed-in account-only state](historical-account-only.png)
-
-**R: body-search access before revocation.** A real editor-authored body snippet is visible in the
-open keyword search dialog. The AI action is present in the UI but its requests were blocked during
-this test, so this is a keyword-only claim.
-
-![Historical allowed body search result](historical-body-search-allowed.png)
-
-**R: old body-search response delivered after revocation.** The same query shows no results after the
-held real allowed response was fulfilled. This passed result is independent of the document
-capability response test.
-
-![Historical body search after delivery of a stale allowed response](historical-body-search-late-denied.png)
-
-## Additional historical reader states
-
-The following captures extend the original search examples with revocation and recovery. They remain
-separate from the 44-check document lifecycle. Their passed run IDs and original result hashes are in
-the capture manifest. AI routes were blocked, so the visible Ask AI action carries no AI acceptance claim.
-
-**Body snippet disappears after revocation**, including while fresh search is pending.
-
-![Historical protected body result removed after revocation](historical-body-search-revoked.png)
-
-**The same query recovers after regrant**, including its editor-authored protected body snippet.
-
-![Historical body snippet recovers after permission is restored](historical-body-search-regranted.png)
-
-**Recent metadata before revocation.** The protected document name appears in the open search dialog.
-
-![Historical recent document before revocation](historical-recent-positive.png)
-
-**Recent metadata after revocation.** The old document name disappears.
-
-![Historical recent metadata cleared after revocation](historical-recent-revoked.png)
-
-**Recent metadata after regrant.** The same document becomes available again.
-
-![Historical recent metadata recovers after regrant](historical-recent-regranted.png)
-
-**An old recent response delivered after revocation does not restore the name.** This uses a held
-real allowed response; it is distinct from simply cancelling an obsolete request.
-
-![Historical late recent response cannot restore denied metadata](historical-recent-late-response-hidden.png)
-
-## Reproduction and limits
-
-Use [the compatibility guide](../../../../doc/web-server-compatibility.md) for the opt-in command and
-private fixture inputs. The suite refuses unqualified processes, altered original server evidence,
-or a fixture whose grants/memberships/content differ from the owned baseline. It records the actual
-Web source manifest and verifies it remains unchanged through the run. A post-build
-requalification only verifies identity and preserved state; it does not rerun the original 65 server
-checks. Its reviewed SHA256 must be supplied explicitly. Failed attempts remain separate artifacts.
-
-Validation repeated while preparing the draft PR passed:
-
-- 1,021 Jest tests in all 70 modified/new suites.
-- Real Chromium/IndexedDB retention and isolation harness: denial, reload, explicit retry,
-  cross-tab denial, server/account/workspace changes, retained legacy bytes and sign-out.
-- `pnpm lint` (full application ESLint and production TypeScript); permission-harness TypeScript; ten Python guards; four offline
-  Playwright transport/identity cases; BDD generation and whitespace checks.
-- Five new read-only UI captures with coverage readback and account-only assertions.
-
-Earlier connected validation passed:
-
-- One connected Playwright case, 44 checks; exact starting grant/membership restored, owned document
-  bytes and all 392 original collab source records preserved, protected policy/member rows unchanged.
-- Production type-check, scoped test TypeScript and scoped ESLint.
-- Four offline Playwright identity/transport boundary cases and ten Python preservation/proof guards.
-- BDD generation and whitespace checks. BDD compilation is separate from executing that older fixture.
-
-Earlier failed attempts remain failed: one exposed a strict Search observation-timestamp comparison,
-and another exposed the harness's incomplete workspace-root-only navigation oracle. The intermediate
-43-check passing run remains passed, with its later legitimate regrant incorrectly setting a still-live
-observation flag; the final run scopes and disconnects that observer. None of those attempts supplies
-the eleven new captures above, and their checks are not added to the final count.
-
-Full persona coverage, external provider synchronization, database/row acceptance and Desktop
-rendered UI require their own qualified runs. Browser sessions used fresh existing-actor API sign-in,
-not the login UI. Read-only requalification bound the same fixture to reviewed current native builds;
-it did not rerun the original 65 server cases. The draft PR publishes this evidence; no release,
-deployment or merge is implied. Remote CI may skip draft PRs, and its results remain separate from
-these local checks.
+- One browser (Chromium), one viewport, English only. No Desktop client, no login screen, no mobile layout.
+- Synthetic data on a self-hosted build; the Worker, search and AI services were not running.
+- The gallery run changed permissions only through owner and operator API calls; it does not show
+  that saving from these controls works (component tests and server tests cover that separately).
+- [validation.json](validation.json) records the 2026-10-12 validation of the earlier draft. The
+  checks for this refresh are listed in the manifest's `current_capture` section.
+- Reproducing the historical lifecycle run needs its private fixture; see
+  [the compatibility guide](../../../../doc/web-server-compatibility.md).

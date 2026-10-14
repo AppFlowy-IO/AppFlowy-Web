@@ -1,111 +1,377 @@
 {
-  "captures": [
-    {
-      "file": "historical-sidebar-policy.png",
-      "original_capture": "web-owner.png",
-      "sha256": "814231444b08940fcaa05cd57b8a2bbb63cbb0f7aac1ec21a981e14744d14855",
-      "qualification": "historical UI capture; not the current document lifecycle run"
+  "gallery": "Web PR #621 workspace permission UI",
+  "updated": "2026-10-14",
+  "current_capture": {
+    "date": "2026-10-14",
+    "status": "passed; 7 of 7 capture tests",
+    "kind": "fresh connected UI captures on an isolated synthetic stack",
+    "web": {
+      "branch": "oodrive-fix/web-visual",
+      "commit": "d2c4d93835aab824d40f9bee2b95455dd2d5e6ef",
+      "base": "codex/oodrive-permissions-fixes at b612fb90",
+      "served_by": "vite dev server (loopback)",
+      "ui_fix_commits": [
+        "e7862526",
+        "005eff66",
+        "564d200b"
+      ]
     },
-    {
-      "file": "historical-account-only.png",
-      "original_capture": "web-empty.png",
-      "sha256": "6f76c9afa3b552ef4aea86f848f9637bb2c108e51de72e389f61af7ea7520e53",
-      "qualification": "historical UI capture; not the current document lifecycle run"
+    "server": {
+      "repository": "AppFlowy-Cloud-Premium",
+      "branch": "codex/oodrive-permissions-fixes",
+      "commit": "bf8f37ef1c5f46ebaeeab8a3cb5e4c27d13aba41",
+      "build": "cargo build --locked --bin appflowy_cloud --features commercial-local-test",
+      "binary_sha256": "46aa0501921f8fc1365398cb3aa98007f7ce84f10c6332b6b027d5dd32a4f9a1",
+      "settings": {
+        "APPFLOWY_ACCESS_CONTROL": "true",
+        "self_hosted": true,
+        "member_seats": 3
+      },
+      "worker": "not running",
+      "gotrue_image": "appflowyinc/gotrue_premium:latest (sha256:11f21d47ed443155c2...)"
     },
+    "stack": "isolated loopback stack with its own GoTrue, Redis, PostgreSQL database and MinIO bucket; synthetic @demo.test people; no other environment or data",
+    "browser": {
+      "engine": "Chromium 145.0.7632.0 (Playwright chromium-1208)",
+      "viewport": "1440x900",
+      "device_scale_factor": 1,
+      "session": "GoTrue password grant stored as the app token and runtime config injected (no login UI)",
+      "network": "requests outside the three stack origins aborted"
+    },
+    "permission_changes": "API only: the seed (GoTrue admin and Cloud REST, operator for the installation policy) and owner calls removing/restoring the HR group in the HR space; UI confirmations were opened and cancelled; nothing was saved from the UI",
+    "harness": {
+      "playwright/e2e/app/permission-gallery.capture.spec.ts": "330d6492d3d1e4b90bd2c0d500effba53bc99c317f06b8bd33b2874ad4d110ae",
+      "playwright/support/permission-gallery-seed.ts": "47dec9450541f24edeaa81363454d64aa86cf080525dc9109e4467421a7f1e46",
+      "playwright.permission-gallery.config.ts": "fe52e98904cb7820e3eaaf5ab8b35148bd98b4352cf61b9bbc673d696beec66a"
+    },
+    "server_readback_after_capture": {
+      "installation_policy": {
+        "supported": true,
+        "mode": "selected_users",
+        "revision": "2"
+      },
+      "olivia_workspace_creation": true,
+      "alex_workspace_creation": false,
+      "sam_workspace_creation": false,
+      "jordan_workspace_creation": false,
+      "olivia_space_creation": {
+        "policy": "owners_and_selected_members",
+        "can_create_space": true,
+        "can_manage_space_creators": true
+      },
+      "alex_space_creation": {
+        "policy": "owners_and_selected_members",
+        "can_create_space": true,
+        "can_manage_space_creators": false
+      },
+      "sam_space_creation": {
+        "policy": "owners_and_selected_members",
+        "can_create_space": false,
+        "can_manage_space_creators": false
+      },
+      "sam_onboarding": {
+        "access_level": 30,
+        "can_read": true,
+        "can_write": true
+      },
+      "olivia_product_access": {
+        "access_level": 30,
+        "source": "workspace_group",
+        "direct_member_access_level": 10,
+        "group_member_access_level": 30
+      },
+      "jordan_pending": [
+        [
+          "Demo",
+          "Pending"
+        ]
+      ],
+      "jordan_workspaces": [],
+      "coverage": {
+        "HR": null,
+        "Product": null,
+        "Super_Users": null,
+        "Users": 10
+      }
+    },
+    "captures": [
+      {
+        "file": "permissions-owner-selected-members.png",
+        "viewer": "olivia",
+        "crop": "viewport",
+        "shows": "Permissions panel as the owner: \"Owners and selected members\" with Alex and the Super_Users group selected; Access to all spaces summary below",
+        "asserted_by_spec": [
+          "policy card \"Owners and selected members\" is selected",
+          "Alex and Super_Users rows are listed"
+        ],
+        "does_not_prove": "Does not prove that the selections can create spaces (see server_readback).",
+        "sha256": "20beb4f80b80261f68b1eb9256f7f19b669f7c1150651a8f7d15f4b6b09c4409",
+        "captured_at": "2026-10-14T03:58:58.681Z"
+      },
+      {
+        "file": "permissions-narrowing-confirmation.png",
+        "viewer": "olivia",
+        "crop": "element",
+        "shows": "Confirmation shown when choosing \"Owners only\" (narrowing who can create spaces); cancelled",
+        "asserted_by_spec": [
+          "policy unchanged after Cancel"
+        ],
+        "does_not_prove": "Does not prove what saving would do.",
+        "sha256": "3123a7f18366f8fa800e1e04c274ec1174fde805bc843ba41608ef5ef1876794",
+        "captured_at": "2026-10-14T03:58:59.431Z"
+      },
+      {
+        "file": "permissions-access-to-all-spaces-summary.png",
+        "viewer": "olivia",
+        "crop": "element",
+        "shows": "Access to all spaces summary (Users, Can view) with the Manage groups button",
+        "asserted_by_spec": [
+          "Users row listed",
+          "Manage groups button visible"
+        ],
+        "does_not_prove": "Read-only summary; does not show coverage applied to a space.",
+        "sha256": "7e20492b34de0ffe6c8c11af53a1747963b4fe1981c55cb574d8915d6640f205",
+        "captured_at": "2026-10-14T03:59:00.132Z"
+      },
+      {
+        "file": "permissions-member-read-only.png",
+        "viewer": "sam",
+        "crop": "viewport",
+        "shows": "Permissions panel as a member (Sam): \"You can't create spaces in this workspace.\", policy cards unavailable, \"Only workspace owners can change this.\"",
+        "asserted_by_spec": [
+          "\"Owners only\" card disabled"
+        ],
+        "does_not_prove": "Does not prove the server refuses Sam's create request.",
+        "sha256": "d4bc8850275e0ddb081fb61bfcc3e6bf800df9570c25d3816f5231c59b73cdc9",
+        "captured_at": "2026-10-14T03:59:05.839Z"
+      },
+      {
+        "file": "group-dialog-access-to-all-spaces-menu.png",
+        "viewer": "olivia",
+        "crop": "viewport",
+        "shows": "People > Groups > HR > General with the Access to all spaces menu open (Off ticked, Can view, Can edit)",
+        "asserted_by_spec": [
+          "menu offers Can edit"
+        ],
+        "does_not_prove": "No change saved; the open menu covers part of the description.",
+        "sha256": "962021d4bf76d258043bdacbca7958f4979823bfac3b60b273998067a4fb2fc7",
+        "captured_at": "2026-10-14T03:59:01.261Z"
+      },
+      {
+        "file": "group-access-to-all-spaces-confirmation.png",
+        "viewer": "olivia",
+        "crop": "element",
+        "shows": "\"Give HR access to all spaces?\" confirmation for Can edit; cancelled",
+        "asserted_by_spec": [
+          "group stays Off after Cancel"
+        ],
+        "does_not_prove": "Does not prove what saving would do.",
+        "sha256": "d6d5beb22fe4225c0fb8230175c3c986d54931b73306e7800b0ff8ed65abd300",
+        "captured_at": "2026-10-14T03:59:01.964Z"
+      },
+      {
+        "file": "manage-space-members-access-menu.png",
+        "viewer": "olivia",
+        "crop": "viewport",
+        "shows": "Manage Space > Members (HR, Custom): Name | Access | Role, owner \"Full access\", Alex \"Can edit · default\" with the Access menu open, HR and Users groups with their own levels",
+        "asserted_by_spec": [
+          "Alex and HR access controls present",
+          "menu shows the space default option"
+        ],
+        "does_not_prove": "Does not prove that a chosen level saves.",
+        "sha256": "846a6db2d1272f150f85bdb16d34395c03dc8ca37b7da622f84250f6f949e30d",
+        "captured_at": "2026-10-14T03:59:10.272Z"
+      },
+      {
+        "file": "manage-space-members-access-explanation.png",
+        "viewer": "olivia",
+        "crop": "viewport",
+        "shows": "Access column header tooltip with the one explanation of per-person access",
+        "asserted_by_spec": [
+          "tooltip visible"
+        ],
+        "does_not_prove": "Picture only.",
+        "sha256": "062508c02c220322518f0406a403cccbd907d05b9a95ec17b8e61d85774936b3",
+        "captured_at": "2026-10-14T03:59:10.940Z"
+      },
+      {
+        "file": "manage-space-own-access-explanation.png",
+        "viewer": "olivia",
+        "crop": "viewport",
+        "shows": "Manage Space > Members (Product): Olivia's own row (Can view) menu ends with \"You can also edit this space through the Product group.\"",
+        "asserted_by_spec": [
+          "own access control enabled",
+          "note names the Product group"
+        ],
+        "does_not_prove": "Server reported Olivia's access as Can edit through a group; no change saved.",
+        "sha256": "d4d7e34493f36fe63c50d43b9cd1c2ec940df08838f2565647dc545fa713da3e",
+        "captured_at": "2026-10-14T03:59:12.306Z"
+      },
+      {
+        "file": "manage-space-general-page-setting.png",
+        "viewer": "olivia",
+        "crop": "viewport",
+        "shows": "Manage Space > General (HR, Custom), scrolled to \"Who can add pages to this space: Only space owners\"",
+        "asserted_by_spec": [
+          "page setting shows \"Only space owners\""
+        ],
+        "does_not_prove": "Below the fold at 1440x900 until scrolled; does not prove that members are refused.",
+        "sha256": "53c9a89735d8db50f3d38303330c673c0b15a57ebc7807c105b228b568044399",
+        "captured_at": "2026-10-14T03:59:09.509Z"
+      },
+      {
+        "file": "create-space.png",
+        "viewer": "olivia",
+        "crop": "viewport",
+        "shows": "Create space dialog opened by the owner from New page, name typed, Public selected",
+        "asserted_by_spec": [
+          "submit button visible"
+        ],
+        "does_not_prove": "No space was created.",
+        "sha256": "c688d4693dadfbd0258440b7a6dd69775802683b0fb4ed3ac7102fe80f1dd04a",
+        "captured_at": "2026-10-14T03:59:13.309Z"
+      },
+      {
+        "file": "workspace-menu-create-workspace-denied.png",
+        "viewer": "alex",
+        "crop": "viewport",
+        "shows": "Workspace menu for Alex: Create workspace and Import workspace unavailable, tooltip \"Your administrator hasn't allowed you to create workspaces.\"",
+        "asserted_by_spec": [
+          "Create workspace marked aria-disabled",
+          "tooltip shown"
+        ],
+        "does_not_prove": "Does not prove the server refuses a creation request.",
+        "sha256": "57a515b01484b51647cf90f9c1ee2cf9b2825ce8ade7ec6cad6206fd3267451a",
+        "captured_at": "2026-10-14T03:59:16.534Z"
+      },
+      {
+        "file": "account-only-pending-invitation.png",
+        "viewer": "jordan",
+        "crop": "viewport",
+        "shows": "\"You're not in a workspace yet\" for Jordan with the pending invitation to Demo, the denial reason, Check again and Sign out",
+        "asserted_by_spec": [
+          "heading visible",
+          "Demo invitation visible"
+        ],
+        "does_not_prove": "Joining was not tested.",
+        "sha256": "82266559f13cbc6e0cb08025c1d11a2ccfe7e4b18a6eaa263c14572530b1510d",
+        "captured_at": "2026-10-14T03:59:19.394Z"
+      },
+      {
+        "file": "page-no-access-after-group-removed.png",
+        "viewer": "sam",
+        "crop": "viewport",
+        "shows": "Sam's open \"Onboarding checklist\" (HR) after the owner removed the HR group from the HR space via the API: \"No access to this page\"",
+        "asserted_by_spec": [
+          "server answer for Sam can_read=false",
+          "no-access message shown",
+          "editor removed"
+        ],
+        "does_not_prove": "Server change made through the API, not the UI.",
+        "sha256": "539582912eb0913ee05b08d6ee3d078ccbadd8e924f9b2f1f77606df9cb8c816",
+        "captured_at": "2026-10-14T03:59:22.520Z"
+      },
+      {
+        "file": "page-access-restored-after-regrant.png",
+        "viewer": "sam",
+        "crop": "viewport",
+        "shows": "The same tab after the owner restored the HR group's Can edit via the API: page content back without a reload",
+        "asserted_by_spec": [
+          "server answer for Sam can_write=true",
+          "page text visible",
+          "in-page marker survived (no reload)"
+        ],
+        "does_not_prove": "No edit was typed or saved.",
+        "sha256": "29f521138c3f54387eadbded7c3ef6a51928ef2012acaf85eaca454efcd4613b",
+        "captured_at": "2026-10-14T03:59:23.519Z"
+      },
+      {
+        "file": "sign-out-remove-data.png",
+        "viewer": "alex",
+        "crop": "viewport",
+        "shows": "Sign-out question from Settings > Account & App with \"Also remove my data from this browser\"",
+        "asserted_by_spec": [
+          "switch visible"
+        ],
+        "does_not_prove": "Nobody signed out; does not prove what is removed.",
+        "sha256": "da3610a8443f0b8eee99b355777579e28c1a3e59ad663342abc4515e38b06868",
+        "captured_at": "2026-10-14T03:59:26.925Z"
+      }
+    ],
+    "limits": [
+      "Chromium only, 1440x900, English; no Desktop, login screen or mobile layout.",
+      "Synthetic data on a self-hosted build; Worker, search and AI services not running.",
+      "Permission changes through owner/operator API calls; saving from these controls is covered by component and server tests, not by this run.",
+      "Jordan's invitation is a guest invitation because the three member seats are taken."
+    ]
+  },
+  "historical_captures": [
     {
       "file": "historical-body-search-allowed.png",
       "original_capture": "web-search-body-keyword-positive.png",
       "sha256": "546de25480a04adb5e75197d4e119eabac30479e6b84416643998cbfc6070966",
-      "qualification": "historical UI capture; not the current document lifecycle run"
+      "qualification": "historical (2026-10-12, before the redesign): historical UI capture; not the current document lifecycle run; the view it shows is unchanged in the current UI; not re-run"
     },
     {
       "file": "historical-body-search-late-denied.png",
       "original_capture": "web-search-body-keyword-late-response-hidden.png",
       "sha256": "52e1c86c012f76babe69a8ba4761dd5ee044da5892eaffea6f97d9bfa0fe0a33",
-      "qualification": "historical UI capture; not the current document lifecycle run"
+      "qualification": "historical (2026-10-12, before the redesign): historical UI capture; not the current document lifecycle run; the view it shows is unchanged in the current UI; not re-run"
     },
     {
       "file": "initial-view-primary.png",
       "original_capture": "initial-view-primary.png",
       "sha256": "e4418b7288682e401096247dbbc679d7f8feb2070c26888424ec28b67543c44d",
-      "qualification": "passed connected document lifecycle",
+      "qualification": "historical (2026-10-12, before the redesign): passed connected document lifecycle; the view it shows is unchanged in the current UI; not re-run",
       "run_id": "cc3e83eb-a782-45bb-b834-3b6c1cf16f7f"
     },
     {
       "file": "explicit-edit-primary-title-focused.png",
       "original_capture": "explicit-edit-primary-title-focused.png",
       "sha256": "7e24928056064a2c601c886dc4353cf0d6bca3d17e9bce3a40582dbcf4b9f10d",
-      "qualification": "passed connected document lifecycle",
+      "qualification": "historical (2026-10-12, before the redesign): passed connected document lifecycle; the view it shows is unchanged in the current UI; not re-run",
       "run_id": "cc3e83eb-a782-45bb-b834-3b6c1cf16f7f"
     },
     {
       "file": "grant-removed-primary.png",
       "original_capture": "grant-removed-primary.png",
       "sha256": "45b076df0ac44922379e8ac352e180b5670c9d08339b321d354e178ea6ca3a12",
-      "qualification": "passed connected document lifecycle",
+      "qualification": "historical (2026-10-12, before the redesign): passed connected document lifecycle; the view it shows is unchanged in the current UI; not re-run",
       "run_id": "cc3e83eb-a782-45bb-b834-3b6c1cf16f7f"
     },
     {
       "file": "grant-removed-direct.png",
       "original_capture": "grant-removed-direct.png",
       "sha256": "96e2853b49f555ce77f19c813fd49342fb1aeffd53934a9250f69f7f67f3eed6",
-      "qualification": "passed connected document lifecycle",
+      "qualification": "historical (2026-10-12, before the redesign): passed connected document lifecycle; the view it shows is unchanged in the current UI; not re-run",
       "run_id": "cc3e83eb-a782-45bb-b834-3b6c1cf16f7f"
     },
     {
       "file": "grant-removed-second.png",
       "original_capture": "grant-removed-second.png",
       "sha256": "4884975dbdc4be37e96f5434c3485dd87e824d0747cf08fed5d4b10dfb1665c3",
-      "qualification": "passed connected document lifecycle",
+      "qualification": "historical (2026-10-12, before the redesign): passed connected document lifecycle; the view it shows is unchanged in the current UI; not re-run",
       "run_id": "cc3e83eb-a782-45bb-b834-3b6c1cf16f7f"
     },
     {
       "file": "grant-removed-follower.png",
       "original_capture": "grant-removed-follower.png",
       "sha256": "45b076df0ac44922379e8ac352e180b5670c9d08339b321d354e178ea6ca3a12",
-      "qualification": "passed connected document lifecycle",
+      "qualification": "historical (2026-10-12, before the redesign): passed connected document lifecycle; the view it shows is unchanged in the current UI; not re-run",
       "run_id": "cc3e83eb-a782-45bb-b834-3b6c1cf16f7f"
     },
     {
       "file": "final-recovered-view-primary.png",
       "original_capture": "final-recovered-view-primary.png",
       "sha256": "a18da05b6ec8fc0a8e3afdb350f94e9eefae473e0cb8afbe1d4964153e622ce1",
-      "qualification": "passed connected document lifecycle",
-      "run_id": "cc3e83eb-a782-45bb-b834-3b6c1cf16f7f"
-    },
-    {
-      "file": "owner-group-view-assignment.png",
-      "original_capture": "owner-group-view-assignment.png",
-      "sha256": "db135247df2a6dee342cfadbb588c2e62607b638db9ce1215e03c776d0dbe392",
-      "qualification": "passed connected document lifecycle",
-      "run_id": "cc3e83eb-a782-45bb-b834-3b6c1cf16f7f"
-    },
-    {
-      "file": "owner-space-creator-settings.png",
-      "original_capture": "owner-space-creator-settings.png",
-      "sha256": "0802d5ed6e1fec7ec82e04b676069f647cc076ce7effd8fe0a3ec475708cab73",
-      "qualification": "passed connected document lifecycle",
-      "run_id": "cc3e83eb-a782-45bb-b834-3b6c1cf16f7f"
-    },
-    {
-      "file": "owner-space-creator-group-settings.png",
-      "original_capture": "owner-space-creator-group-settings.png",
-      "sha256": "efa44e51ee961b371812429be5820533d57e89bf484bd47fc71e66f14a7a9d8c",
-      "qualification": "passed connected document lifecycle",
-      "run_id": "cc3e83eb-a782-45bb-b834-3b6c1cf16f7f"
-    },
-    {
-      "file": "owner-group-coverage-settings.png",
-      "original_capture": "owner-group-coverage-settings.png",
-      "sha256": "f62568d97274e6b979ec0edc400470432462bc1f440f468522f469eaa7a00c32",
-      "qualification": "passed connected document lifecycle",
+      "qualification": "historical (2026-10-12, before the redesign): passed connected document lifecycle; the view it shows is unchanged in the current UI; not re-run",
       "run_id": "cc3e83eb-a782-45bb-b834-3b6c1cf16f7f"
     },
     {
       "file": "historical-body-search-revoked.png",
       "original_capture": "web-search-body-keyword-revoked.png",
       "sha256": "63a398a7ded504f33a8e7c85c1c0d41f3ff09338fbefc63b2fe0a41d8a0a8831",
-      "qualification": "historical separate passed connected reader run; not rerun for draft PR",
+      "qualification": "historical (2026-10-12, before the redesign): historical separate passed connected reader run; not rerun for draft PR; the view it shows is unchanged in the current UI; not re-run",
       "run_id": "e589fbf2-943d-458c-aa13-377b2934b129",
       "result_sha256": "97415a594fe1f5c008adaf10079a77b7619c79634e2b1281f17d7f1fd3189daa"
     },
@@ -113,7 +379,7 @@
       "file": "historical-body-search-regranted.png",
       "original_capture": "web-search-body-keyword-regranted.png",
       "sha256": "0b3e38911732b5da5885e42688fd1a2c46f83bf636807c697f1393445c2c9d4c",
-      "qualification": "historical separate passed connected reader run; not rerun for draft PR",
+      "qualification": "historical (2026-10-12, before the redesign): historical separate passed connected reader run; not rerun for draft PR; the view it shows is unchanged in the current UI; not re-run",
       "run_id": "e589fbf2-943d-458c-aa13-377b2934b129",
       "result_sha256": "97415a594fe1f5c008adaf10079a77b7619c79634e2b1281f17d7f1fd3189daa"
     },
@@ -121,7 +387,7 @@
       "file": "historical-recent-positive.png",
       "original_capture": "web-search-recent-positive.png",
       "sha256": "c308b64c762b8f433b41ac142ddcecee22b7ec3cd0daf9f05b8c25404b208fbf",
-      "qualification": "historical separate passed connected reader run; not rerun for draft PR",
+      "qualification": "historical (2026-10-12, before the redesign): historical separate passed connected reader run; not rerun for draft PR; the view it shows is unchanged in the current UI; not re-run",
       "run_id": "8b91758c-b947-4751-9a36-78419e967464",
       "result_sha256": "5ab41f1c81d718e9e4862e49288f6978ed99dcb87a7ecd31b28db2cf0458a9f9"
     },
@@ -129,7 +395,7 @@
       "file": "historical-recent-revoked.png",
       "original_capture": "web-search-recent-revoked.png",
       "sha256": "e81c4bd0ef9dd7d8b22980a0905ae3de6c5639d0a59f5a008bd5610dbf90a8aa",
-      "qualification": "historical separate passed connected reader run; not rerun for draft PR",
+      "qualification": "historical (2026-10-12, before the redesign): historical separate passed connected reader run; not rerun for draft PR; the view it shows is unchanged in the current UI; not re-run",
       "run_id": "8b91758c-b947-4751-9a36-78419e967464",
       "result_sha256": "5ab41f1c81d718e9e4862e49288f6978ed99dcb87a7ecd31b28db2cf0458a9f9"
     },
@@ -137,7 +403,7 @@
       "file": "historical-recent-regranted.png",
       "original_capture": "web-search-recent-regranted.png",
       "sha256": "54acdd52d33ca7ad107bc22197253836f32b893ad6f2fa653104b57d6aa1884e",
-      "qualification": "historical separate passed connected reader run; not rerun for draft PR",
+      "qualification": "historical (2026-10-12, before the redesign): historical separate passed connected reader run; not rerun for draft PR; the view it shows is unchanged in the current UI; not re-run",
       "run_id": "8b91758c-b947-4751-9a36-78419e967464",
       "result_sha256": "5ab41f1c81d718e9e4862e49288f6978ed99dcb87a7ecd31b28db2cf0458a9f9"
     },
@@ -145,47 +411,12 @@
       "file": "historical-recent-late-response-hidden.png",
       "original_capture": "web-search-recent-late-response-hidden.png",
       "sha256": "e81c4bd0ef9dd7d8b22980a0905ae3de6c5639d0a59f5a008bd5610dbf90a8aa",
-      "qualification": "historical separate passed connected reader run; not rerun for draft PR",
+      "qualification": "historical (2026-10-12, before the redesign): historical separate passed connected reader run; not rerun for draft PR; the view it shows is unchanged in the current UI; not re-run",
       "run_id": "8b91758c-b947-4751-9a36-78419e967464",
       "result_sha256": "5ab41f1c81d718e9e4862e49288f6978ed99dcb87a7ecd31b28db2cf0458a9f9"
-    },
-    {
-      "file": "review-current-creator-controls.png",
-      "label": "Current space creator policy and retained inactive selection; no policy changes",
-      "sha256": "2764dc997f4db69138ed3265ee3803a1eb80ce967a5b303d7c8c14d45d675c50",
-      "qualification": "fresh connected read-only UI capture; coverage View/Edit are unsaved drafts",
-      "captured_at": "2026-10-12T07:41:45.478Z"
-    },
-    {
-      "file": "review-coverage-off.png",
-      "label": "Optional current/future Public and Custom coverage starts Off",
-      "sha256": "2f8722728a25ddc91b6f05397539de3c8e732362b22a11934df76a38c2d585da",
-      "qualification": "fresh connected read-only UI capture; coverage View/Edit are unsaved drafts",
-      "captured_at": "2026-10-12T07:41:45.478Z"
-    },
-    {
-      "file": "review-coverage-view-draft.png",
-      "label": "Unsaved view coverage draft; Save enabled while server remains Off",
-      "sha256": "b3bb6b60aebe84eb45bb9fe387400bac69a7efdbef84359432c68b9d6b85b760",
-      "qualification": "fresh connected read-only UI capture; coverage View/Edit are unsaved drafts",
-      "captured_at": "2026-10-12T07:41:45.478Z"
-    },
-    {
-      "file": "review-coverage-edit-draft.png",
-      "label": "Unsaved edit coverage draft; Save enabled while server remains Off",
-      "sha256": "7bbe9674c35c2d624aec69b24d45a15d2538f96e6618034a9015ce4bc04f559a",
-      "qualification": "fresh connected read-only UI capture; coverage View/Edit are unsaved drafts",
-      "captured_at": "2026-10-12T07:41:45.478Z"
-    },
-    {
-      "file": "review-account-only.png",
-      "label": "Existing signed-in account-only state; create/import disabled, invitation guidance available",
-      "sha256": "6f76c9afa3b552ef4aea86f848f9637bb2c108e51de72e389f61af7ea7520e53",
-      "qualification": "fresh connected read-only UI capture; coverage View/Edit are unsaved drafts",
-      "captured_at": "2026-10-12T07:41:45.478Z"
     }
   ],
-  "current_document_lifecycle": {
+  "historical_document_lifecycle": {
     "run_id": "cc3e83eb-a782-45bb-b834-3b6c1cf16f7f",
     "status": "passed",
     "fixture_run_id": "59dc5582-c54d-4f03-8203-e35d551b6eea",
@@ -216,71 +447,82 @@
       "playwright/e2e/app/space-group-permission-lifecycle.spec.ts": "e4933601d9cdb320787360bc9c59d71fd203fa20f0e6bab4efde66bb5cb41da7"
     }
   },
-  "draft_pr_read_only_capture": {
+  "historical_draft_pr_read_only_capture": {
     "captured_at": "2026-10-12T07:41:45.478Z",
-    "kind": "read-only connected UI and unsaved coverage drafts",
-    "checks": [
-      "Coverage remains Off before, during both unsaved drafts, and after reset; Save is disabled again.",
-      "Existing account-only fixture has no workspace and both creation actions disabled."
-    ],
-    "captures": [
-      {
-        "file": "review-current-creator-controls.png",
-        "label": "Current space creator policy and retained inactive selection; no policy changes",
-        "sha256": "2764dc997f4db69138ed3265ee3803a1eb80ce967a5b303d7c8c14d45d675c50"
-      },
-      {
-        "file": "review-coverage-off.png",
-        "label": "Optional current/future Public and Custom coverage starts Off",
-        "sha256": "2f8722728a25ddc91b6f05397539de3c8e732362b22a11934df76a38c2d585da"
-      },
-      {
-        "file": "review-coverage-view-draft.png",
-        "label": "Unsaved view coverage draft; Save enabled while server remains Off",
-        "sha256": "b3bb6b60aebe84eb45bb9fe387400bac69a7efdbef84359432c68b9d6b85b760"
-      },
-      {
-        "file": "review-coverage-edit-draft.png",
-        "label": "Unsaved edit coverage draft; Save enabled while server remains Off",
-        "sha256": "7bbe9674c35c2d624aec69b24d45a15d2538f96e6618034a9015ce4bc04f559a"
-      },
-      {
-        "file": "review-account-only.png",
-        "label": "Existing signed-in account-only state; create/import disabled, invitation guidance available",
-        "sha256": "6f76c9afa3b552ef4aea86f848f9637bb2c108e51de72e389f61af7ea7520e53"
-      }
-    ],
-    "blocked_writes": [
-      {
-        "method": "POST",
-        "path": "/api/user/update"
-      },
-      {
-        "method": "PUT",
-        "path": "/api/workspace/5cbcff36-8019-4c38-94f3-c4791361ed6b/open"
-      },
-      {
-        "method": "POST",
-        "path": "/api/workspace/5cbcff36-8019-4c38-94f3-c4791361ed6b/add-recent-pages"
-      },
-      {
-        "method": "POST",
-        "path": "/api/user/update"
-      }
-    ],
-    "page_errors": [],
-    "limitations": [
-      "Live server binaries predate the final four Rust review fixes; these images do not qualify those fixes.",
-      "API sign-in of existing synthetic accounts, not login UI qualification.",
-      "Coverage selections are local unsaved drafts; no policy, membership, document or coverage mutation is allowed."
-    ],
+    "note": "Its five images showed the old UI and were removed on 2026-10-14; see removed_captures.",
     "web_source_sha256": "76020995f9d686a130290b5b3d620d080f49a0c3d59785ef806b4c2447483a31",
-    "status": "passed",
-    "harness_sha256": "3ff6386c0ef430f25791ded2dca279cc9bf4b91e7fee4e3affe889b5bfaae114",
-    "earlier_attempts": "Two harness attempts did not complete: wrong search label, then initial settings-menu rerender. Their local logs remain separate; only the final passed attempt supplies these five captures."
+    "harness_sha256": "3ff6386c0ef430f25791ded2dca279cc9bf4b91e7fee4e3affe889b5bfaae114"
   },
+  "removed_captures": [
+    {
+      "file": "review-current-creator-controls.png",
+      "sha256": "2764dc997f4db69138ed3265ee3803a1eb80ce967a5b303d7c8c14d45d675c50",
+      "reason": "showed the UI replaced by the redesign",
+      "replaced_by": "permissions-owner-selected-members.png"
+    },
+    {
+      "file": "owner-space-creator-settings.png",
+      "sha256": "0802d5ed6e1fec7ec82e04b676069f647cc076ce7effd8fe0a3ec475708cab73",
+      "reason": "showed the UI replaced by the redesign",
+      "replaced_by": "permissions-owner-selected-members.png"
+    },
+    {
+      "file": "owner-space-creator-group-settings.png",
+      "sha256": "efa44e51ee961b371812429be5820533d57e89bf484bd47fc71e66f14a7a9d8c",
+      "reason": "showed the UI replaced by the redesign",
+      "replaced_by": "permissions-owner-selected-members.png"
+    },
+    {
+      "file": "review-coverage-off.png",
+      "sha256": "2f8722728a25ddc91b6f05397539de3c8e732362b22a11934df76a38c2d585da",
+      "reason": "showed the UI replaced by the redesign",
+      "replaced_by": "permissions-access-to-all-spaces-summary.png, group-dialog-access-to-all-spaces-menu.png"
+    },
+    {
+      "file": "review-coverage-view-draft.png",
+      "sha256": "b3bb6b60aebe84eb45bb9fe387400bac69a7efdbef84359432c68b9d6b85b760",
+      "reason": "showed the UI replaced by the redesign",
+      "replaced_by": "group-dialog-access-to-all-spaces-menu.png"
+    },
+    {
+      "file": "review-coverage-edit-draft.png",
+      "sha256": "7bbe9674c35c2d624aec69b24d45a15d2538f96e6618034a9015ce4bc04f559a",
+      "reason": "showed the UI replaced by the redesign",
+      "replaced_by": "group-access-to-all-spaces-confirmation.png"
+    },
+    {
+      "file": "owner-group-coverage-settings.png",
+      "sha256": "f62568d97274e6b979ec0edc400470432462bc1f440f468522f469eaa7a00c32",
+      "reason": "showed the UI replaced by the redesign",
+      "replaced_by": "permissions-access-to-all-spaces-summary.png, group-dialog-access-to-all-spaces-menu.png"
+    },
+    {
+      "file": "owner-group-view-assignment.png",
+      "sha256": "db135247df2a6dee342cfadbb588c2e62607b638db9ce1215e03c776d0dbe392",
+      "reason": "showed the UI replaced by the redesign",
+      "replaced_by": "manage-space-members-access-menu.png"
+    },
+    {
+      "file": "historical-sidebar-policy.png",
+      "sha256": "814231444b08940fcaa05cd57b8a2bbb63cbb0f7aac1ec21a981e14744d14855",
+      "reason": "showed the UI replaced by the redesign",
+      "replaced_by": "manage-space-general-page-setting.png"
+    },
+    {
+      "file": "review-account-only.png",
+      "sha256": "6f76c9afa3b552ef4aea86f848f9637bb2c108e51de72e389f61af7ea7520e53",
+      "reason": "showed the UI replaced by the redesign",
+      "replaced_by": "account-only-pending-invitation.png"
+    },
+    {
+      "file": "historical-account-only.png",
+      "sha256": "6f76c9afa3b552ef4aea86f848f9637bb2c108e51de72e389f61af7ea7520e53",
+      "reason": "showed the UI replaced by the redesign",
+      "replaced_by": "account-only-pending-invitation.png"
+    }
+  ],
   "packet_limits": [
-    "The 44-check lifecycle predates the final four server review fixes. No current-server-source end-to-end claim.",
-    "Historical keyword/recent reader and fresh settings captures are separate runs, not added to the 44-check count."
+    "Historical captures predate the redesign and the final server fixes; they are kept because the views they show did not change, not because they were re-run.",
+    "validation.json records the 2026-10-12 validation; this refresh is described in current_capture."
   ]
 }
