@@ -174,7 +174,8 @@
   }
 }
 
-.callout-block-menu {
+.callout-block-menu,
+.block-turn-into-menu {
   button {
     min-height: 32px;
     border-radius: 6px;
@@ -673,7 +674,8 @@ span[data-slate-placeholder="true"]:not(.inline-block-content) {
 
 }
 
-.callout-menu-paper.MuiPaper-root {
+.callout-menu-paper.MuiPaper-root,
+.block-turn-into-paper.MuiPaper-root {
   border: 1px solid var(--border-primary);
   border-radius: 12px;
   background: var(--surface-layer-04);

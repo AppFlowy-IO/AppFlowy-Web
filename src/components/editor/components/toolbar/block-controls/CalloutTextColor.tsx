@@ -40,7 +40,7 @@ function TextColorPreview({ color }: { color: string }) {
 }
 
 function CalloutTextColor({ node, onSelectColor }: { node: CalloutNode; onSelectColor: () => void }) {
-  const { getSubscriptions } = useEditorContext();
+  const { getSubscriptions, workspaceId } = useEditorContext();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
   const { t } = useTranslation();
@@ -48,7 +48,10 @@ function CalloutTextColor({ node, onSelectColor }: { node: CalloutNode; onSelect
   const blockId = node.blockId;
   const selectedColor = (node.data?.textColor || node.data?.bgColor || ColorEnum.Tint10) as ColorEnum;
 
-  const { isPro } = useSubscriptionPlan(getSubscriptions);
+  const { isPro } = useSubscriptionPlan(getSubscriptions, {
+    cacheKey: workspaceId ? `block-colors:${workspaceId}` : undefined,
+    enabled: open,
+  });
 
   const builtinColors = useMemo(() => {
     const proPalette = [
@@ -124,8 +127,8 @@ function CalloutTextColor({ node, onSelectColor }: { node: CalloutNode; onSelect
         <div className='flex w-[200px] flex-col py-1.5'>
           <div className={'px-3.5 pb-2 pt-1.5 text-xs font-medium text-text-tertiary'}>{t('editor.textColor')}</div>
           <div className={'flex flex-wrap gap-2 px-3.5 pb-1.5'}>
-            {builtinColors.map((color, index) => (
-              <Tooltip key={index}>
+            {builtinColors.map((color) => (
+              <Tooltip key={color.color}>
                 <TooltipContent>{color.label}</TooltipContent>
                 <TooltipTrigger asChild>
                   <ColorTile

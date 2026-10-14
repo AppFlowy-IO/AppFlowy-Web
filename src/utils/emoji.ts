@@ -13,9 +13,9 @@ async function httpGet (url: string) {
     return pendingRequests.get(url);
   }
 
-  const request = http.get(url).then((res) => {
+  const request = http.get(url).finally(() => {
+    // Share pending requests, but allow a later icon mount to retry a failed load.
     pendingRequests.delete(url);
-    return res;
   });
 
   pendingRequests.set(url, request);

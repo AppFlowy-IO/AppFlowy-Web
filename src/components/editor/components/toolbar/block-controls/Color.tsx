@@ -27,7 +27,7 @@ const origins: Origins = {
 };
 
 function Color({ node, onSelectColor }: { node: BlockNode; onSelectColor: () => void }) {
-  const { getSubscriptions } = useEditorContext();
+  const { getSubscriptions, workspaceId } = useEditorContext();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
   const { t } = useTranslation();
@@ -36,7 +36,10 @@ function Color({ node, onSelectColor }: { node: BlockNode; onSelectColor: () => 
   const hasNonTransparentBg = [BlockType.CalloutBlock, BlockType.OutlineBlock].includes(node.type);
   const selectedColor = node.data?.bgColor || (hasNonTransparentBg ? ColorEnum.Tint10 : '');
 
-  const { isPro } = useSubscriptionPlan(getSubscriptions);
+  const { isPro } = useSubscriptionPlan(getSubscriptions, {
+    cacheKey: workspaceId ? `block-colors:${workspaceId}` : undefined,
+    enabled: open,
+  });
 
   const builtinColors = useMemo(() => {
     const proPalette = [
@@ -105,14 +108,20 @@ function Color({ node, onSelectColor }: { node: BlockNode; onSelectColor: () => 
         {t(node.type === BlockType.CalloutBlock ? 'editor.backgroundColor' : 'document.plugins.optionAction.color')}
         <ChevronRightIcon className='ml-auto h-5 w-5 text-icon-tertiary' />
       </Button>
-      <Popover PaperProps={node.type === BlockType.CalloutBlock ? { className: 'callout-menu-paper' } : undefined} open={open} anchorEl={ref.current} onClose={() => setOpen(false)} {...origins}>
+      <Popover
+        PaperProps={node.type === BlockType.CalloutBlock ? { className: 'callout-menu-paper' } : undefined}
+        open={open}
+        anchorEl={ref.current}
+        onClose={() => setOpen(false)}
+        {...origins}
+      >
         <div className='flex w-[200px] flex-col py-1.5'>
           <div className={'px-3.5 pb-2 pt-1.5 text-xs font-medium text-text-tertiary'}>
             {t('editor.backgroundColor')}
           </div>
           <div className={'flex flex-wrap gap-2 px-3.5 pb-1.5'}>
-            {builtinColors.map((color, index) => (
-              <Tooltip key={index}>
+            {builtinColors.map((color) => (
+              <Tooltip key={color.color}>
                 <TooltipContent>{color.label}</TooltipContent>
                 <TooltipTrigger asChild>
                   <ColorTile

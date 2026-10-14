@@ -14,11 +14,11 @@ async function tokenColor(page: Page, token: string) {
 }
 
 const block = (page: Page) => page.getByTestId('callout').first();
-async function menu(page: Page) {
+async function menu(page: Page, text = 'Hello World') {
   // Initial editor layout can reset the hover controls; move again after that settles.
   await expect(async () => {
     await page.mouse.move(0, 0);
-    await block(page).getByText('Hello World', { exact: true }).hover();
+    await page.getByText(text, { exact: true }).hover();
     await expect(page.getByTestId('hover-controls')).toHaveCSS('opacity', '1', { timeout: 500 });
   }).toPass({ timeout: 5000 });
   await page.getByTestId('drag-block').click();
@@ -195,6 +195,33 @@ test('Flutter: the options menu converts a callout and keeps its text', async ({
   await page.getByRole('button', { name: 'Heading 1', exact: true }).click();
   await expect(page.locator('[data-block-type="heading"]').getByText('Hello World', { exact: true })).toBeVisible();
   await expect(page.getByTestId('callout')).toHaveCount(2);
+});
+
+test('Turn into is shared by paragraphs, headings, lists, quotes, code and callouts', async ({ page }, info) => {
+  const text = 'Following paragraph';
+  const conversions = [
+    ['Heading 2', 'heading'],
+    ['Bulleted', 'bulleted_list'],
+    ['Numbered', 'numbered_list'],
+    ['Checkbox', 'todo_list'],
+    ['Toggle list', 'toggle_list'],
+    ['Quote', 'quote'],
+    ['Code Block', 'code'],
+    ['Callout', 'callout'],
+    ['Text', 'paragraph'],
+  ];
+
+  for (const [label, type] of conversions) {
+    const actions = await menu(page, text);
+
+    await actions.getByRole('button', { name: 'Turn into', exact: true }).click();
+    if (label === 'Heading 2') {
+      await expect(page.getByTestId('turn-into-menu').locator('..')).toHaveCSS('opacity', '1');
+      await page.screenshot({ path: `test-results/shared-turn-into-${info.project.name}.png` });
+    }
+    await page.getByTestId('turn-into-menu').getByRole('button', { name: label, exact: true }).click();
+    await expect(page.locator(`[data-block-type="${type}"]`).getByText(text, { exact: true })).toBeVisible();
+  }
 });
 
 test('Flutter: insert a callout from the slash menu', async ({ page }) => {
