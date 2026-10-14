@@ -375,15 +375,28 @@ describe('DatabaseTemplateButton', () => {
     expect(store.read().templates[0].isDocumentEmpty).toBe(false);
   });
 
-  it.each([false, true])('saves real template content emptiness instead of the materialized Row flag (authored=%s)', async (authored) => {
+  it.each([
+    ['paragraph', '', true],
+    ['paragraph', 'authored content', false],
+    ['paragraph', ' ', false],
+    ['heading', '', false],
+    ['todo_list', '', false],
+    ['callout', '', false],
+  ] as const)('saves template content emptiness for %s with text %j', async (type, text, empty) => {
     const { Wrapper, database, rows } = setup();
     const store = new DatabaseRowTemplateStore(database);
     const templateId = '11111111-1111-4111-8111-111111111111';
     const docViewId = rowDocumentIdFromRowId(templateId);
     const body = createFirstBodyDraft(docViewId);
-    const texts = body.getMap(YjsEditorKey.data_section).get('document').get('meta').get('text_map') as Y.Map<Y.Text>;
+    const document = body.getMap(YjsEditorKey.data_section).get('document');
+    const texts = document.get('meta').get('text_map') as Y.Map<Y.Text>;
+    const blocks = document.get('blocks') as Y.Map<Y.Map<unknown>>;
 
-    if (authored) Array.from(texts.values())[0].insert(0, 'authored content');
+    Array.from(texts.values())[0].insert(0, text);
+    for (const [id, block] of blocks) {
+      if (id !== document.get('page_id')) block.set('ty', type);
+    }
+
     jest.mocked(getCachedProviderDoc).mockReturnValue(body);
     store.upsert({ templateId, name: 'Properties only', docViewId, isDocumentEmpty: true,
       embeddedDatabases: [], defaultCells: {}, createdAtMs: 1, updatedAtMs: 1 });
@@ -396,7 +409,7 @@ describe('DatabaseTemplateButton', () => {
 
     act(() => { meta.set(getMetaIdMap(templateId).get(RowMetaKey.IsDocumentEmpty)!, false); });
     fireEvent.keyDown(screen.getByRole('dialog', { name: 'Edit database template' }), { key: 'Escape' });
-    expect(store.read().templates[0].isDocumentEmpty).toBe(!authored);
+    expect(store.read().templates[0].isDocumentEmpty).toBe(empty);
     body.destroy();
   });
 

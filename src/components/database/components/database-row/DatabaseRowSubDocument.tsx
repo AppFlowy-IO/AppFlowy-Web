@@ -18,12 +18,11 @@ import { useUpdateRowMetaDispatch } from '@/application/database-yjs/dispatch';
 import { getMetaIdMap } from '@/application/database-yjs/row_meta';
 import { deleteCollabDB, openCollabDB } from '@/application/db';
 import { hasPendingAtomicRowFirstBody, prepareAtomicRowFirstBody } from '@/application/row-document/atomic-first-body';
+import { hasEditorNodeContent, hasYjsBlockContent } from '@/application/row-document/content';
 import { getCachedRowSubDoc } from '@/application/services/js-services/cache';
 import { YjsEditor } from '@/application/slate-yjs';
 import type { YHistoryEditor } from '@/application/slate-yjs/plugins/withHistory';
-import { dataStringTOJson } from '@/application/slate-yjs/utils/yjs';
 import {
-  BlockType,
   CollabOrigin,
   LoadRowDocumentOptions,
   YDatabaseCell,
@@ -43,68 +42,11 @@ import type { EditorContentPadding } from '@/components/editor/EditorContext';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Log } from '@/utils/log';
 
-type ContentNode = {
-  type?: BlockType | string;
-  text?: string;
-  children?: unknown[];
-  data?: Record<string, unknown>;
-};
-
 type IsCurrentRowDocumentRequest = () => boolean;
 type RowDocumentAttempt = 'ready' | 'retryable' | 'forbidden';
 
 const ALWAYS_CURRENT_ROW_DOCUMENT_REQUEST = () => true;
 const CONFIRMED_ROW_DOCUMENT_LOAD_OPTIONS: LoadRowDocumentOptions = { maxAttempts: 1 };
-
-function hasNonEmptyString(value: unknown) {
-  return typeof value === 'string' && value.length > 0;
-}
-
-function hasImageContent(data: Record<string, unknown> | undefined) {
-  if (!data) return false;
-
-  return (
-    hasNonEmptyString(data.url) || hasNonEmptyString(data.retry_local_url) || hasNonEmptyString(data.pending_upload_id)
-  );
-}
-
-function hasEditorNodeContent(node: unknown): boolean {
-  if (typeof node !== 'object' || node === null) return false;
-
-  const contentNode = node as ContentNode;
-
-  if ('text' in contentNode) {
-    return hasNonEmptyString(contentNode.text);
-  }
-
-  if (contentNode.type === BlockType.ImageBlock) {
-    return hasImageContent(contentNode.data);
-  }
-
-  if (contentNode.type === YjsEditorKey.text) {
-    return contentNode.children?.some(hasEditorNodeContent) ?? false;
-  }
-
-  if (contentNode.type && contentNode.type !== BlockType.Page && contentNode.type !== BlockType.Paragraph) {
-    return true;
-  }
-
-  return contentNode.children?.some(hasEditorNodeContent) ?? false;
-}
-
-function hasYjsBlockContent(block: Y.Map<unknown>) {
-  const type = block.get(YjsEditorKey.block_type);
-
-  if (!type || type === BlockType.Page || type === BlockType.Paragraph) {
-    return false;
-  }
-
-  if (type === BlockType.ImageBlock) {
-    return hasImageContent(dataStringTOJson(block.get(YjsEditorKey.block_data) as string) as Record<string, unknown>);
-  }
-
-  return true;
-}
 
 /**
  * DatabaseRowSubDocument - Full-featured component for row documents in app mode.

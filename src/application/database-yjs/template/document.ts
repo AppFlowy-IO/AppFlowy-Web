@@ -2,6 +2,7 @@ import { toBase64 } from 'lib0/buffer';
 import { Root } from 'protobufjs/light';
 import * as Y from 'yjs';
 
+import { hasYjsBlockContent } from '@/application/row-document/content';
 import { YjsEditorKey } from '@/application/types';
 
 // Wire fields from Desktop's flowy-document/src/entities.rs. Using a small
@@ -58,17 +59,6 @@ interface DocumentSnapshot {
   };
 }
 
-const TEXT_BLOCKS = new Set([
-  'paragraph',
-  'heading',
-  'numbered_list',
-  'bulleted_list',
-  'todo_list',
-  'toggle_list',
-  'quote',
-  'callout',
-]);
-
 export function encodeTemplateDocument(doc: Y.Doc): string {
   return toBase64(Y.encodeStateAsUpdate(doc));
 }
@@ -86,8 +76,7 @@ export function readTemplateDocumentEmptiness(doc: Y.Doc): boolean | undefined {
     if (id === body.get(YjsEditorKey.page_id)) continue;
     const text = texts.get(block.get(YjsEditorKey.block_external_id));
 
-    if (!TEXT_BLOCKS.has(block.get(YjsEditorKey.block_type)) ||
-      (text instanceof Y.Text && text.toString().trim().length > 0)) return false;
+    if (hasYjsBlockContent(block) || (text instanceof Y.Text && text.length > 0)) return false;
   }
 
   return true;
@@ -117,7 +106,6 @@ export function decodeTemplateDocumentSnapshot(bytes?: number[]):
     const meta = new Y.Map();
     const children = new Y.Map<Y.Array<string>>();
     const texts = new Y.Map<Y.Text>();
-    let isDocumentEmpty = true;
 
     doc.transact(() => {
       doc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.document, document);
@@ -152,14 +140,9 @@ export function decodeTemplateDocumentSnapshot(bytes?: number[]):
         value.set(YjsEditorKey.block_children, block.children_id);
         if (block.external_id) value.set(YjsEditorKey.block_external_id, block.external_id);
         if (block.external_type) value.set(YjsEditorKey.block_external_type, block.external_type);
-        if (
-          id !== snapshot.page_id &&
-          (!TEXT_BLOCKS.has(block.ty) || (block.external_id && texts.get(block.external_id)?.toString().trim()))
-        )
-          isDocumentEmpty = false;
       });
     });
-    return { encodedState: encodeTemplateDocument(doc), isDocumentEmpty };
+    return { encodedState: encodeTemplateDocument(doc), isDocumentEmpty: readTemplateDocumentEmptiness(doc)! };
   } catch {
     throw new Error('Invalid template document snapshot');
   } finally {
