@@ -142,9 +142,9 @@ export function usePageOperations({
         throw new Error('No workspace or service found');
       }
 
-      const shareWithMeView = findViewInShareWithMe(outlineRef.current || [], parentViewId);
-
-      if (role === Role.Guest || shareWithMeView) {
+      // Shared-with-me placement does not remove a member's write access to the
+      // parent page. The creation request enforces its current server permissions.
+      if (role === Role.Guest) {
         toast.error('No permission to create pages');
         throw new Error('No permission to create pages');
       }
@@ -168,7 +168,7 @@ export function usePageOperations({
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, outlineRef, role, loadOutline, capturePageActivation]
+    [currentWorkspaceId, role, loadOutline, capturePageActivation]
   );
 
   // Delete a page (move to trash)
@@ -178,9 +178,9 @@ export function usePageOperations({
         throw new Error('No workspace or service found');
       }
 
-      const shareWithMeView = findViewInShareWithMe(outlineRef.current || [], id);
-
-      if (role === Role.Guest || shareWithMeView) {
+      // Shared navigation does not remove Full Access to the target page.
+      // The trash endpoint checks its current permissions before deleting it.
+      if (role === Role.Guest) {
         throw new Error('Guest cannot delete pages');
       }
 
@@ -201,7 +201,9 @@ export function usePageOperations({
         void loadTrash?.(currentWorkspaceId, { ensureFreshAfterInFlight: true }).catch((error) => {
           Log.warn('[Trash] Failed to refresh after moving a page to trash', error);
         });
-        void loadOutline?.(currentWorkspaceId, false);
+        void loadOutline?.(currentWorkspaceId, false).catch((error) => {
+          Log.warn('[Outline] Failed to refresh after moving a page to trash', error);
+        });
         return;
       } catch (e) {
         return Promise.reject(e);
@@ -210,7 +212,20 @@ export function usePageOperations({
     [currentWorkspaceId, outlineRef, role, loadOutline, loadTrash]
   );
 
-  // Update page (rename) - uses WebSocket notification for sidebar refresh
+  // Normal folder notifications exclude another user's private subtree.
+  // Every successful shared-page metadata edit must refresh its projection.
+  const refreshSharedPageMetadata = useCallback(
+    (viewId: string) => {
+      if (!currentWorkspaceId || !findViewInShareWithMe(outlineRef.current || [], viewId)) return;
+
+      void loadOutline?.(currentWorkspaceId, false).catch((error) => {
+        Log.warn('[Outline] Failed to refresh Shared with me after updating a page', error);
+      });
+    },
+    [currentWorkspaceId, outlineRef, loadOutline]
+  );
+
+  // Update page metadata, including sidebar renames and icon changes.
   const updatePage = useCallback(
     async (viewId: string, payload: UpdatePagePayload) => {
       if (!currentWorkspaceId) {
@@ -222,13 +237,13 @@ export function usePageOperations({
         // Drop the cached view metadata (memory + disk) so a stale name/icon
         // can't be re-served if the WebSocket notification is dropped.
         ViewService.invalidateCache(currentWorkspaceId, viewId);
-        // Sidebar refresh is handled by WebSocket notification (FOLDER_OUTLINE_CHANGED)
+        refreshSharedPageMetadata(viewId);
         return;
       } catch (e) {
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId]
+    [currentWorkspaceId, refreshSharedPageMetadata]
   );
 
   // Update page icon
@@ -241,15 +256,16 @@ export function usePageOperations({
       try {
         await PageService.updateIcon(currentWorkspaceId, viewId, icon);
         ViewService.invalidateCache(currentWorkspaceId, viewId);
+        refreshSharedPageMetadata(viewId);
         return;
       } catch (e) {
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId]
+    [currentWorkspaceId, refreshSharedPageMetadata]
   );
 
-  // Update page name (rename) - uses WebSocket notification for sidebar refresh
+  // Update the page title through the dedicated name endpoint.
   const updatePageName = useCallback(
     async (viewId: string, name: string) => {
       if (!currentWorkspaceId) {
@@ -259,13 +275,14 @@ export function usePageOperations({
       try {
         await PageService.updateName(currentWorkspaceId, viewId, name);
         ViewService.invalidateCache(currentWorkspaceId, viewId);
-        // Sidebar refresh is handled by WebSocket notification (FOLDER_OUTLINE_CHANGED)
+        refreshSharedPageMetadata(viewId);
+
         return;
       } catch (e) {
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId]
+    [currentWorkspaceId, refreshSharedPageMetadata]
   );
 
   const duplicatePage = useCallback(
