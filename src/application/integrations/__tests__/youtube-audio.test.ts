@@ -6,7 +6,15 @@ import { getYoutubeAudioMetadata, getYoutubeCaptions } from '../youtube-audio';
 import { YoutubeAudioMetadata, YoutubeCaptionTranscript } from '../youtube-url';
 
 jest.mock('@/application/session/token', () => ({
-  getTokenParsed: () => ({ access_token: 'test-token', expires_at: Math.floor(Date.now() / 1000) + 3600 }), invalidToken: jest.fn(),
+  captureTokenSession: jest.fn(() => ({ generation: 1, userId: 'test-user' })),
+  getTokenParsed: () => ({
+    access_token: 'test-token',
+    expires_at: Math.floor(Date.now() / 1000) + 3600,
+    user: { id: 'test-user' },
+  }),
+  invalidToken: jest.fn(),
+  invalidTokenForSession: jest.fn(),
+  isTokenSessionCurrent: jest.fn(() => true),
 }));
 jest.mock('@/application/services/js-services/http/gotrue', () => ({ initGrantService: jest.fn(), refreshToken: jest.fn() }));
 jest.mock('@/utils/log', () => ({ Log: { debug: jest.fn(), warn: jest.fn(), error: jest.fn() } }));

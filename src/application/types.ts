@@ -1407,6 +1407,8 @@ export interface LoadViewOptions {
   databaseId?: string | null;
   /** Load only the canonical database collab, without page-view row_data. */
   databaseMetadataOnly?: boolean;
+  /** Embedded views share the database doc without taking over its page identity or sync binding. */
+  preserveViewMetadata?: boolean;
   forceFetch?: boolean;
 }
 
