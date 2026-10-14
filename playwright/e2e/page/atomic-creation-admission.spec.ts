@@ -12,16 +12,31 @@ for (const failure of ['offline', 'unsupported server'] as const) {
       request,
     }) => {
       await signInAndWaitForApp(page, request, generateRandomEmail(), 0);
-      const initialResponse = page.waitForResponse(
-        (response) => response.request().method() === 'POST' && response.url().endsWith('/v2/page-view/database/default')
+      // Admission can transiently refuse the initial database. Exercise the
+      // app's same-command retry before testing offline/capability rejection.
+      await page.route(
+        '**/v2/page-view/database/default',
+        (route) => route.fulfill({ status: 200, json: { code: -5, message: 'Temporary creation admission contention' } }),
+        { times: 1 }
       );
+      const creationAttempts: string[] = [];
+      const initialResponse = page.waitForResponse(async (response) => {
+        if (response.request().method() !== 'POST' || !response.url().endsWith('/v2/page-view/database/default')) {
+          return false;
+        }
+
+        creationAttempts.push(response.request().postData()!);
+        return (await response.json()).code !== -5;
+      });
 
       await createDatabaseView(page, 'Grid', 0);
       const initial = await initialResponse;
       const body = await initial.json();
       const command = initial.request().postDataJSON();
 
-      expect(body.code).toBe(0);
+      expect(body.code, JSON.stringify(body)).toBe(0);
+      expect(creationAttempts.length).toBeGreaterThanOrEqual(2);
+      expect(new Set(creationAttempts).size, 'RetryLater must preserve the database creation command').toBe(1);
       await expect(DatabaseGridSelectors.dataRows(page)).toHaveCount(3);
       if (failure === 'unsupported server') {
         await page.route('**/api/server-info**', async (route) => {
@@ -38,6 +53,7 @@ for (const failure of ['offline', 'unsupported server'] as const) {
         await capabilities;
         await expect(DatabaseGridSelectors.dataRows(page)).toHaveCount(3);
       }
+
       const beforeUrl = page.url();
       const mutations: string[] = [];
 
