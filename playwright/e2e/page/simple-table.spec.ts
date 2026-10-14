@@ -1376,10 +1376,11 @@ test.describe('SimpleTable', () => {
     await insertTableViaSlashCommand(page);
 
     await getCell(page, 0, 0).click();
-    await page.keyboard.type('Col0');
+    await page.keyboard.insertText('Col0');
+    await expect(getCell(page, 0, 0)).toHaveText('Col0');
     await getCell(page, 1, 0).click();
-    await page.keyboard.type('Col0R1');
-    await page.waitForTimeout(300);
+    await page.keyboard.insertText('Col0R1');
+    await expect(getCell(page, 1, 0)).toHaveText('Col0R1');
 
     const initialCols = await getColCount(page);
 

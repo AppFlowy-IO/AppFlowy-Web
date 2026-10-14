@@ -36,10 +36,13 @@ export function parseMarkdown(markdown: string, options: MarkdownParseOptions = 
     return [];
   }
 
-  // Pre-process: Replace • with - to support bullet character as list marker
-  // We consume following whitespace (including newlines) to ensure text is on the same line
-  // Support various bullet characters: • (Bullet), ◦ (White Bullet), ▪ (Black Small Square), ⁃ (Hyphen Bullet), – (En Dash), — (Em Dash)
-  const normalizedMarkdown = markdown.replace(/^([ \t]*)[•◦▪⁃–—]\s*/gm, '$1- ');
+  // Normalize pasted Unicode bullets while retaining their nesting. A tab is
+  // one list level (two spaces), so a leading tab does not turn the list into
+  // an indented code block. Keep newlines intact for empty list items.
+  const normalizedMarkdown = markdown.replace(
+    /^([ \t]*)[•◦▪⁃–—][ \t]*/gm,
+    (_, indentation: string) => `${indentation.replace(/\t/g, '  ')}- `
+  );
 
   const {
     gfm = true,

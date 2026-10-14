@@ -125,13 +125,15 @@ test.describe('AI Meeting Block - Copy Actions', () => {
     });
     await page.waitForTimeout(1500);
 
-    // Notes is the default tab when no summary exists
+    // Select the empty Notes tab explicitly; Summary is available for generation.
+    await AIMeetingSelectors.tab(page, 'notes').click();
     await AIMeetingSelectors.moreMenu(page).click();
     await page.waitForTimeout(500);
 
     // The copy button should be disabled (rendered with disabled attribute)
     const disabledCopy = page.locator('.MuiPopover-paper button:disabled').filter({ hasText: /Copy/ });
     await expect(disabledCopy).toBeVisible();
+    await expect(disabledCopy).toHaveText('Copy notes');
   });
 
   test('should copy summary and show success notification', async ({ page, request }) => {

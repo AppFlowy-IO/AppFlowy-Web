@@ -69,6 +69,30 @@ describe('markdown-parser', () => {
       expect(blocks[0].children[0]).toMatchObject({ type: BlockType.BulletedListBlock, text: 'Context: Child' });
     });
 
+    it('parses tab-separated Unicode bullets pasted after a paragraph as list items', () => {
+      const blocks = parseMarkdown('New features:\n\t•\tFast performance\n\t•\tSecure encryption\n\t•\tOffline mode');
+
+      expect(blocks.map(({ type, text }) => ({ type, text }))).toEqual([
+        { type: BlockType.Paragraph, text: 'New features:' },
+        { type: BlockType.BulletedListBlock, text: 'Fast performance' },
+        { type: BlockType.BulletedListBlock, text: 'Secure encryption' },
+        { type: BlockType.BulletedListBlock, text: 'Offline mode' },
+      ]);
+    });
+
+    it('preserves nested Unicode bullets indented with tabs', () => {
+      const blocks = parseMarkdown('\t•\tParent\n\t\t◦\tChild\n\t•\tSibling');
+
+      expect(blocks.map((block) => block.text)).toEqual(['Parent', 'Sibling']);
+      expect(blocks[0].children[0]).toMatchObject({ type: BlockType.BulletedListBlock, text: 'Child' });
+    });
+
+    it('preserves empty Unicode list items without consuming the next marker', () => {
+      const blocks = parseMarkdown('•\n• Second');
+
+      expect(blocks.map((block) => block.text)).toEqual(['', 'Second']);
+    });
+
     it('keeps empty list items without copying text from their siblings', () => {
       const blocks = parseMarkdown('-\n- Second');
 

@@ -165,7 +165,7 @@ test.describe('AI Meeting Block - Tab Switching', () => {
     await expect(AIMeetingSelectors.transcriptSection(page)).toBeVisible();
   });
 
-  test('should default to notes when only notes and transcript tabs exist', async ({ page, request }) => {
+  test('should default to Summary when notes and transcript are ready for the first summary', async ({ page, request }) => {
     await setupEditorWithCleanPage(page, request, testEmail);
 
     const available = await areTestUtilitiesAvailable(page);
@@ -174,7 +174,7 @@ test.describe('AI Meeting Block - Tab Switching', () => {
       return;
     }
 
-    // No summary content, so summary tab won't appear
+    // The Summary tab is available before generation when source content exists.
     await injectAIMeetingBlock(page, {
       title: 'No Summary',
       notes: 'Notes only.',
@@ -183,7 +183,8 @@ test.describe('AI Meeting Block - Tab Switching', () => {
     await page.waitForTimeout(1500);
 
     const block = AIMeetingSelectors.block(page);
-    await expect(block).toHaveAttribute('data-ai-meeting-active', 'notes');
-    await expect(AIMeetingSelectors.notesSection(page)).toBeVisible();
+    await expect(block).toHaveAttribute('data-ai-meeting-active', 'summary');
+    await expect(AIMeetingSelectors.summarySection(page)).toBeVisible();
+    await expect(block.getByRole('button', { name: 'Generate summary', exact: true })).toBeVisible();
   });
 });
