@@ -22,7 +22,7 @@ import { generateRandomEmail } from '../../support/test-config';
 import { grantTestProSubscription, mockProBillingResponses } from '../../support/subscription-test-helpers';
 import { expectViewCreationAvailable } from '../../support/view-creation-availability';
 
-const viewRoute = '**/v2/page-view/database-view/default';
+const viewRoute = '**/v2/page-view/database-view/default{,?**}';
 const viewPath = '/v2/page-view/database-view/default';
 
 function barrier() {
@@ -35,7 +35,7 @@ function barrier() {
 async function createSource(page: Page, request: APIRequestContext) {
   await signInAndWaitForApp(page, request, generateRandomEmail(), 0);
   const response = page.waitForResponse((item) => item.request().method() === 'POST' &&
-    item.url().endsWith('/v2/page-view/database/default'));
+    new URL(item.url()).pathname.endsWith('/v2/page-view/database/default'));
 
   await createDatabaseView(page, 'Grid', 0);
   const created = await response;
@@ -122,7 +122,7 @@ for (const layout of [
       } finally { doc.destroy(); }
       await route.fulfill({ response });
     }, { times: 1 });
-    const response = page.waitForResponse((item) => item.request().method() === 'POST' && item.url().endsWith(viewPath));
+    const response = page.waitForResponse((item) => item.request().method() === 'POST' && new URL(item.url()).pathname.endsWith(viewPath));
 
     await DatabaseViewSelectors.addViewButton(page).click();
     const option = page.getByRole('menuitem', { name: layout.name, exact: true });
@@ -196,7 +196,7 @@ test('a held source read and lost view ACK preserve selection until exact retry 
   let createdId = '';
 
   // Hold the real source generation check instead of waiting an arbitrary delay.
-  await page.route(`**/database/${source.databaseId}/restore-state`, async (route) => {
+  await page.route(`**/database/${source.databaseId}/restore-state{,?**}`, async (route) => {
     sourceEntered.release();
     await releaseSource.promise;
     await route.continue();
@@ -251,7 +251,7 @@ test('a held source read and lost view ACK preserve selection until exact retry 
 test('adding Feed to an existing Grid preserves the database and publishes matching cards, tab and sidebar across reload', async ({ page, request }, info) => {
   const source = await createSource(page, request);
   const requests = observeCreations(page);
-  const response = page.waitForResponse((item) => item.request().method() === 'POST' && item.url().endsWith(viewPath));
+  const response = page.waitForResponse((item) => item.request().method() === 'POST' && new URL(item.url()).pathname.endsWith(viewPath));
 
   await DatabaseViewSelectors.addViewButton(page).click();
   await page.getByTestId('add-feed-view-button').click();
@@ -341,7 +341,7 @@ test('linked Gallery publishes the source database view under the document with 
   const source = await createSource(page, request);
   const requests = observeCreations(page);
   const documentResponse = page.waitForResponse((response) => response.request().method() === 'POST' &&
-    response.url().endsWith('/v2/page-view/document/default'));
+    new URL(response.url()).pathname.endsWith('/v2/page-view/document/default'));
 
   await page.locator('[data-testid="inline-add-page"]:visible').first().click();
   await AddPageSelectors.addDocumentButton(page).click();
@@ -363,7 +363,7 @@ test('linked Gallery publishes the source database view under the document with 
 
   await expect(picker).toBeVisible();
   await picker.locator('input').fill(source.name);
-  const response = page.waitForResponse((item) => item.request().method() === 'POST' && item.url().endsWith(viewPath));
+  const response = page.waitForResponse((item) => item.request().method() === 'POST' && new URL(item.url()).pathname.endsWith(viewPath));
 
   await picker.getByText(source.name, { exact: true }).click();
   const created = await response;

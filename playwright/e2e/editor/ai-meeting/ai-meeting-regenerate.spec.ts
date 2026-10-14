@@ -190,14 +190,14 @@ test.describe('AI Meeting Block - Summary Regeneration', () => {
     }
 
     // Mock endpoints
-    await page.route('**/api/meeting/summary_templates', (route) => {
+    await page.route('**/api/meeting/summary_templates{,?**}', (route) => {
       route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ code: 0, data: null }),
       });
     });
-    await page.route('**/api/chat/*/v2', (route) => {
+    await page.route('**/api/chat/*/v2{,?**}', (route) => {
       route.fulfill({
         status: 200,
         contentType: 'text/event-stream',
@@ -236,14 +236,14 @@ test.describe('AI Meeting Block - Summary Regeneration', () => {
       return;
     }
 
-    await page.route('**/api/meeting/summary_templates', (route) => {
+    await page.route('**/api/meeting/summary_templates{,?**}', (route) => {
       route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ code: 0, data: null }),
       });
     });
-    await page.route('**/api/chat/*/v2', (route) => {
+    await page.route('**/api/chat/*/v2{,?**}', (route) => {
       route.fulfill({
         status: 200,
         contentType: 'text/event-stream',

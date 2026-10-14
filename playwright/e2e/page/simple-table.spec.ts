@@ -54,7 +54,7 @@ async function getColCount(page: Page, tableIndex = 0) {
 
 async function createNewPage(page: Page) {
   const creation = page.waitForResponse(
-    (response) => response.request().method() === 'POST' && response.url().endsWith('/v2/page-view/document/default')
+    (response) => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/v2/page-view/document/default')
   );
 
   await page.getByText('New page').click();

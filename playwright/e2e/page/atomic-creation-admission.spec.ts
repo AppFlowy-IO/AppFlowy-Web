@@ -15,13 +15,13 @@ for (const failure of ['offline', 'unsupported server'] as const) {
       // Admission can transiently refuse the initial database. Exercise the
       // app's same-command retry before testing offline/capability rejection.
       await page.route(
-        '**/v2/page-view/database/default',
+        '**/v2/page-view/database/default{,?**}',
         (route) => route.fulfill({ status: 200, json: { code: -5, message: 'Temporary creation admission contention' } }),
         { times: 1 }
       );
       const creationAttempts: string[] = [];
       const initialResponse = page.waitForResponse(async (response) => {
-        if (response.request().method() !== 'POST' || !response.url().endsWith('/v2/page-view/database/default')) {
+        if (response.request().method() !== 'POST' || !new URL(response.url()).pathname.endsWith('/v2/page-view/database/default')) {
           return false;
         }
 

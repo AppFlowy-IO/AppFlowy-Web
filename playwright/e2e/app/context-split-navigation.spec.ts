@@ -183,7 +183,7 @@ test.describe('Context Split Navigation Stability', () => {
     await page.waitForTimeout(500);
 
     const creationResponse = page.waitForResponse(
-      (response) => response.request().method() === 'POST' && response.url().endsWith('/v2/page-view/database/default')
+      (response) => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/v2/page-view/database/default')
     );
 
     await AddPageSelectors.inlineAddButton(page).first().click({ force: true });

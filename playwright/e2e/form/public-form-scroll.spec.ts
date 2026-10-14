@@ -14,7 +14,7 @@ test('respondents can reach the end of a long form', async ({ page }) => {
     input_style: 'auto',
   }));
 
-  await page.route(`**/api/workspace/public-form/${FORM_TOKEN}`, async (route) => {
+  await page.route(`**/api/workspace/public-form/${FORM_TOKEN}{,?**}`, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',

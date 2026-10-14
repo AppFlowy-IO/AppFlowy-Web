@@ -133,7 +133,7 @@ Given('a blank mention search document page is open', async ({ page }) => {
 });
 
 Given('database-row mention search retries later for {string}', async ({ page }, query: string) => {
-  await page.route('**/mentions/search', async (route) => {
+  await page.route('**/mentions/search{,?**}', async (route) => {
     const request = route.request();
     const body = request.postDataJSON() as {
       query?: string;
@@ -512,7 +512,7 @@ async function getCurrentDatabaseIdentity(page: Page): Promise<DatabaseIdentity>
 }
 
 async function mockDatabaseRowMentionSearch(page: Page, state: MentionFixtureState): Promise<void> {
-  await page.route('**/mentions/search', async (route) => {
+  await page.route('**/mentions/search{,?**}', async (route) => {
     const request = route.request();
     const body = request.postDataJSON() as {
       query?: string;

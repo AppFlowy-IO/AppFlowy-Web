@@ -110,12 +110,12 @@ for (const layout of layouts) {
     const conversions: string[] = [];
 
     page.on('request', (req) => {
-      if (req.method() === 'POST' && req.url().endsWith('/v2/page-view/database/default'))
+      if (req.method() === 'POST' && new URL(req.url()).pathname.endsWith('/v2/page-view/database/default'))
         creations.push(req.postData()!);
       if (req.method() !== 'GET' && /\/change-layout(?:\?|$)/.test(req.url())) conversions.push(req.url());
     });
     const response = page.waitForResponse(
-      (item) => item.request().method() === 'POST' && item.url().endsWith('/v2/page-view/database/default')
+      (item) => item.request().method() === 'POST' && new URL(item.url()).pathname.endsWith('/v2/page-view/database/default')
     );
 
     await createDatabaseView(page, layout.name, 0);
