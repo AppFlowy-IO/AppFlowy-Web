@@ -240,6 +240,7 @@ for (const scenario of [
       await writeFile(path, await page.screenshot({ animations: 'disabled' }));
       await testInfo.attach(name, { path, contentType: 'image/png' });
     };
+
     const openSharedMenu = async (viewId: string) => {
       // Navigation can replace a shared row after the pointer enters it. Retry
       // the non-mutating hover/menu action so a replaced row receives mouseenter.
@@ -251,6 +252,7 @@ for (const scenario of [
         await expect(page.getByRole('menu')).toBeVisible();
       }).toPass({ timeout: 15_000 });
     };
+
     const verifyTrashDenied = async () => {
       await openSharedMenu(child.view_id);
       await expect(page.getByTestId('shared-move-to-trash')).toHaveCount(0);
@@ -309,11 +311,18 @@ for (const scenario of [
     await saveScreenshot('full-access-shared-document-with-add-action');
     const createFromSidebar = async (parentId: string, title: string) => {
       const targetRow = page.getByTestId(`page-${parentId}`);
+      const addDocumentButton = page.getByTestId('add-document-button');
 
-      await targetRow.hover();
-      await expect(targetRow.getByTestId('inline-add-page')).toBeVisible();
-      await targetRow.getByTestId('inline-add-page').click();
-      await expect(page.getByTestId('add-document-button')).toBeVisible();
+      // Expanding the tree can move a descendant away from the pointer after
+      // hover, hiding its Add button. Re-hover while opening the menu settles;
+      // the page-creation click stays outside this retry so it runs only once.
+      await expect(async () => {
+        if (await addDocumentButton.isVisible()) return;
+
+        await targetRow.hover();
+        await targetRow.getByTestId('inline-add-page').click({ timeout: 2_000 });
+        await expect(addDocumentButton).toBeVisible({ timeout: 2_000 });
+      }).toPass({ timeout: 15_000 });
       const created = page.waitForResponse(async (response) => {
         if (
           response.request().method() !== 'POST' ||
@@ -325,7 +334,7 @@ for (const scenario of [
         return response.ok() && (await response.json()).code === 0;
       });
 
-      await page.getByTestId('add-document-button').click();
+      await addDocumentButton.click();
       const createResponse = await created;
       const createCommand = createResponse.request().postDataJSON();
       const receipt = await successful<{ request_id: string; result: { view_id: string } }>(
@@ -357,6 +366,7 @@ for (const scenario of [
       await expect(page.getByTestId(`page-${viewId}`).getByTestId('page-name')).toHaveText(title);
       return { viewId, createCommand, receipt };
     };
+
     const createdTitle = `C12 member subpage ${runId.slice(0, 8)}`;
     const created = await createFromSidebar(parent.view_id, createdTitle);
     const createdViewId = created.viewId;
@@ -418,6 +428,7 @@ for (const scenario of [
         name: grandchildTitle,
       });
     }
+
     expect(findView(persistedSharedTree, privateSpace.view_id)).toBeUndefined();
     expect(findView(persistedSharedTree, sibling.view_id)).toBeUndefined();
     for (const viewId of [privateSpace.view_id, sibling.view_id]) {
