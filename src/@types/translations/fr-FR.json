@@ -3232,7 +3232,7 @@
     "updated": "Accès mis à jour",
     "canView": "Lecture",
     "canEdit": "Modification",
-    "updateFailed": "Impossible de modifier l’accès à tous les espaces de {{group}}. {{reason}}"
+    "updateFailed": "Impossible de modifier l’accès de {{group}} à tous les espaces. {{reason}}"
   },
   "loading": "Chargement…",
   "recentPages": "Pages récentes",

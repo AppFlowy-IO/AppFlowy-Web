@@ -108,6 +108,15 @@ describe('permission settings translations', () => {
     expect(fr.groupSpaceAccess.summaryDescription).not.toContain('{{location}}');
   });
 
+  it('says whose access to all spaces could not be changed, in French as in English', () => {
+    expect(en.groupSpaceAccess.updateFailed).toBe("Couldn't change access to all spaces for {{group}}. {{reason}}");
+    // The group's access to every space, not access to the group's spaces ("l’accès à tous les
+    // espaces de {{group}}" reads as the latter).
+    expect(fr.groupSpaceAccess.updateFailed).toBe(
+      'Impossible de modifier l’accès de {{group}} à tous les espaces. {{reason}}'
+    );
+  });
+
   it.each(menuKeys)('%s exists in English and names the People menu as French users see it', (key) => {
     expect(resolves(en as Dictionary, key)).toBe(true);
     // Until the menu is translated, French falls back to the English name, and so does the summary.
