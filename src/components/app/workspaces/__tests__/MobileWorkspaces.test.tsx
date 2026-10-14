@@ -7,11 +7,18 @@ const mockChange = jest.fn();
 const mockNotifyError = jest.fn();
 
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-jest.mock('@/components/_shared/notify', () => ({ notify: { error: (...args: unknown[]) => mockNotifyError(...args) } }));
+jest.mock('@/components/_shared/notify', () => ({
+  notify: { error: (...args: unknown[]) => mockNotifyError(...args) },
+}));
 jest.mock('@/components/main/app.hooks', () => ({ useCurrentUser: () => ({ email: 'user@example.com' }) }));
 jest.mock('@/components/app/app.hooks', () => ({
   useCurrentWorkspaceId: () => 'current',
-  useUserWorkspaceInfo: () => ({ workspaces: [{ id: 'current', name: 'Current' }, { id: 'other', name: 'Other' }] }),
+  useUserWorkspaceInfo: () => ({
+    workspaces: [
+      { id: 'current', name: 'Current' },
+      { id: 'other', name: 'Other' },
+    ],
+  }),
   useAppOperations: () => ({ onChangeWorkspace: mockChange }),
 }));
 jest.mock('@/components/_shared/mobile-drawer', () => ({

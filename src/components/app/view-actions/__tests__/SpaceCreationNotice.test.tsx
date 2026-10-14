@@ -30,7 +30,8 @@ function permission(status: Status, canCreateSpace: boolean, retained?: boolean,
   return {
     status,
     canCreateSpace,
-    capability: retained === undefined ? undefined : ({ can_create_space: retained } as WorkspaceSpaceCreationCapabilities),
+    capability:
+      retained === undefined ? undefined : ({ can_create_space: retained } as WorkspaceSpaceCreationCapabilities),
     error,
   };
 }
