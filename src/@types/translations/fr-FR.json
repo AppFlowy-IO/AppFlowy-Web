@@ -22,12 +22,14 @@
       "addFailed": "Impossible d’ajouter la page. Réessayez."
     },
     "meetingNotesDenied": "Votre réunion s’est ouverte sans page de notes, car vous ne pouvez pas créer d’espaces dans cet espace de travail.",
-    "meetingNotesFailed": "Votre réunion s’est ouverte, mais sa page de notes n’a pas pu être créée."
+    "meetingNotesFailed": "Votre réunion s’est ouverte, mais sa page de notes n’a pas pu être créée.",
+    "firstPageElsewhere": "L’espace a été créé, mais sa première page se trouve ailleurs. Abandonnez cette demande pour continuer.",
+    "firstPageUnconfirmed": "L’espace a été créé, mais nous n’avons pas pu confirmer sa première page. Abandonnez cette demande pour continuer."
   },
   "workspacePermissions": {
     "sidebarPolicy": "Qui peut ajouter des pages à cet espace",
     "sidebarOwners": "Propriétaires de l’espace uniquement",
-    "sidebarMembers": "Toute personne pouvant modifier",
+    "sidebarMembers": "Membres de l’espace pouvant modifier",
     "sidebarExplanation": "S’applique aux pages ajoutées directement dans l’espace. Les pages placées dans d’autres pages suivent leurs propres autorisations.",
     "title": "Autorisations",
     "createSpaces": "Création d’espaces",
@@ -105,7 +107,13 @@
     "pendingEditsDiscardError": "Impossible de supprimer les modifications. Réessayez.",
     "invalidRequest": "Cette modification n’a pas pu être envoyée. Réessayez.",
     "invalidResponse": "Impossible de charger les paramètres de création d’espaces. Réessayez.",
-    "changeNotConfirmed": "Nous n’avons pas pu confirmer l’enregistrement de votre modification. Vérifiez les paramètres actuels et réessayez."
+    "changeNotConfirmed": "Nous n’avons pas pu confirmer l’enregistrement de votre modification. Vérifiez les paramètres actuels et réessayez.",
+    "sidebarWorkspaceMembers": "Membres de l’espace de travail pouvant modifier",
+    "restrictTitle": "Modifier qui peut créer des espaces ?",
+    "restrictMembersToOwners": "Les membres ne pourront plus créer de nouveaux espaces. Les espaces existants ne sont pas concernés.",
+    "restrictMembersToSelected": "Les membres non sélectionnés ne pourront plus créer de nouveaux espaces. Les espaces existants ne sont pas concernés.",
+    "restrictSelectedToOwners": "Les membres et groupes sélectionnés ne pourront plus créer de nouveaux espaces. Les espaces existants ne sont pas concernés.",
+    "restrictConfirm": "Modifier"
   },
   "appName": "AppFlowy",
   "defaultUsername": "Moi",
@@ -1457,7 +1465,8 @@
         "textAlignRight": "Aligner le texte à droite",
         "codeBlockDeleteTwoSpaces": "Supprimez deux espaces au début de la ligne dans le bloc de code"
       }
-    }
+    },
+    "sectionInfo": "À propos de « {{title}} »"
   },
   "grid": {
     "deleteView": "Voulez-vous vraiment supprimer cette vue ?",

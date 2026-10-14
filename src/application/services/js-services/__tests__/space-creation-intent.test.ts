@@ -104,3 +104,34 @@ test('discard is fenced to the scope that saved the request', () => {
   expect(() => store.discard()).toThrow('workspaceCreation.contextChanged');
   expect(new SpaceCreationIntentStore('workspace-a').snapshot()?.payload.view_id).toBe('space-a');
 });
+
+test('a first page that cannot be matched is remembered with the request across a reload', () => {
+  const store = new SpaceCreationIntentStore('workspace-a');
+
+  store.begin(draft());
+  store.recordFirstPageProblem('unconfirmed');
+  const reloaded = new SpaceCreationIntentStore('workspace-a');
+
+  expect(reloaded.snapshot()?.firstPageProblem).toBe('unconfirmed');
+  // The request itself is unchanged; only Discard ends it.
+  expect(reloaded.snapshot()?.payload.view_id).toBe('space-a');
+  reloaded.discard();
+  expect(reloaded.snapshot()).toBeUndefined();
+});
+
+test('recording a first page problem needs the saved request', () => {
+  const store = new SpaceCreationIntentStore('workspace-a');
+
+  expect(() => store.recordFirstPageProblem('elsewhere')).toThrow('spaceCreation.invalidRecovery');
+  expect(store.snapshot()).toBeUndefined();
+});
+
+test('an unknown first page problem is unreadable data, kept until it is discarded', () => {
+  const store = new SpaceCreationIntentStore('workspace-a');
+  const key = `space-creation:v1:${store.scopeKey}`;
+  const stored = JSON.stringify({ ...draft(), firstPageProblem: 'moved' });
+
+  sessionStorage.setItem(key, stored);
+  expect(() => store.snapshot()).toThrow('spaceCreation.invalidRecovery');
+  expect(sessionStorage.getItem(key)).toBe(stored);
+});

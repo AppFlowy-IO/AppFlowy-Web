@@ -8,11 +8,14 @@ import { WorkspaceService } from '@/application/services/domains';
 import { captureApiContext } from '@/application/services/js-services/http/request-context';
 import {
   InvalidSpaceCreationIntentError,
+  SpaceCreationFirstPageProblem,
   SpaceCreationIntentStore,
 } from '@/application/services/js-services/space-creation-intent';
 import {
+  firstPageAddedUnderOtherId,
   isDefinitiveCreationRejection,
   recoverSpaceCreation,
+  SpaceCreationFirstPageError,
 } from '@/application/services/js-services/space-creation-recovery';
 import { spaceMemberAddPayload } from '@/application/services/js-services/space-member-assignment';
 import {
@@ -52,6 +55,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { getErrorMessage } from '@/utils/errors';
+import { Log } from '@/utils/log';
 
 import type { KeyboardEvent } from 'react';
 
@@ -143,6 +147,10 @@ function CreateSpaceDraft({
     () => restored?.members.filter(({ uid }) => !restored.appliedMemberUids.includes(uid)).length ?? 0
   );
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
+  // The space was found but its first page can't be matched: only Discard is left.
+  const [firstPageProblem, setFirstPageProblem] = useState<SpaceCreationFirstPageProblem | undefined>(
+    () => restored?.firstPageProblem
+  );
   const creatingRef = useRef(false);
   const draftSpaceIdRef = useRef(restored?.payload.view_id ?? uuidv4());
   const draftInitialPageIdRef = useRef(restored?.initialPage?.view_id ?? uuidv4());
@@ -270,6 +278,7 @@ function CreateSpaceDraft({
     setMemberSearch('');
     setCommittedSpace(null);
     setHasAmbiguousCreation(false);
+    setFirstPageProblem(undefined);
     setPendingMemberCount(0);
     setDraftPage(null);
     committedSpaceRef.current = null;
@@ -461,7 +470,8 @@ function CreateSpaceDraft({
   }, []);
 
   const handleCreate = useCallback(async () => {
-    if (creatingRef.current || !workspaceId) return;
+    // Checking again can't match the first page of this space (Enter can still get here).
+    if (creatingRef.current || !workspaceId || firstPageProblem) return;
     const trimmedName = spaceName.trim();
 
     if (!trimmedName) {
@@ -556,6 +566,12 @@ function CreateSpaceDraft({
             return; // Unreachable: availability is checked before the request is saved.
           }
         } catch (error) {
+          // The space was created, but its first page under an ID the server chose: checking again
+          // would only add another page.
+          if (firstPageAddedUnderOtherId(error, savedInitialPage?.view_id)) {
+            throw new SpaceCreationFirstPageError('unconfirmed');
+          }
+
           // A definitive rejection proves only that this request created nothing. A resend of a
           // saved request says nothing about the earlier attempt with the same ID, which may
           // still commit, so that request stays saved until it is found or discarded.
@@ -581,7 +597,20 @@ function CreateSpaceDraft({
 
       // Once submitted, even a later denial cannot resolve an earlier write. A request that was
       // never saved, or whose first attempt was definitively refused, leaves an editable draft.
-      if (hasSavedRequest(intentStore)) setHasAmbiguousCreation(true);
+      const stillSaved = hasSavedRequest(intentStore);
+
+      if (stillSaved) setHasAmbiguousCreation(true);
+      if (stillSaved && error instanceof SpaceCreationFirstPageError) {
+        // The space exists and checking again can't change that. Saved with the request, so a
+        // resumed dialog says so too and recovery never adds the first page again.
+        setFirstPageProblem(error.problem);
+        try {
+          intentStore.recordFirstPageProblem(error.problem);
+        } catch (saveError) {
+          Log.warn('[CreateSpaceModal] could not save that the first page cannot be matched', saveError);
+        }
+      }
+
       notify.error(getErrorMessage(error));
     } finally {
       creatingRef.current = false;
@@ -595,6 +624,7 @@ function CreateSpaceDraft({
     createSpaceWithInitialPage,
     finishCreation,
     creationPermission,
+    firstPageProblem,
     initialPage,
     permissionSettings,
     releaseRejectedRequest,
@@ -619,7 +649,17 @@ function CreateSpaceDraft({
       />
     ) : null
   ) : phase === 'pending' ? (
-    <SpaceCreationRecoveryNotice kind='unconfirmed' disabled={loading} onDiscard={() => setDiscardConfirmOpen(true)} />
+    <SpaceCreationRecoveryNotice
+      kind={
+        firstPageProblem === 'elsewhere'
+          ? 'firstPageElsewhere'
+          : firstPageProblem === 'unconfirmed'
+          ? 'firstPageUnconfirmed'
+          : 'unconfirmed'
+      }
+      disabled={loading}
+      onDiscard={() => setDiscardConfirmOpen(true)}
+    />
   ) : (
     <SpaceCreationNotice permission={creationPermission} />
   );
@@ -731,6 +771,7 @@ function CreateSpaceDraft({
         primaryActionDisabled={
           loading ||
           recovery.invalid ||
+          Boolean(firstPageProblem) ||
           !spaceName.trim() ||
           (phase === 'fresh' && !canStartSpaceCreation(creationPermission))
         }

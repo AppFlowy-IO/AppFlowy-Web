@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 
 import {
+  isSpaceCreationDenial,
   readSpaceCreationAdmission,
   type SpaceCreationAdmission,
 } from '@/application/services/js-services/space-creation-recovery';
@@ -10,7 +11,7 @@ import { Button } from '@/components/ui/button';
 
 type SpaceCreationCapabilityState = ReturnType<typeof useSpaceCreationCapability>;
 export type SpaceCreationPermission = Pick<SpaceCreationCapabilityState, 'status' | 'canCreateSpace' | 'refresh'> &
-  Partial<Pick<SpaceCreationCapabilityState, 'capability'>>;
+  Partial<Pick<SpaceCreationCapabilityState, 'capability' | 'error'>>;
 export type SpaceCreationUnavailableReason = 'denied' | 'loadError' | 'loading';
 
 /**
@@ -26,11 +27,17 @@ export function canStartSpaceCreation(
   return permission.status === 'loading' && permission.capability?.can_create_space === true;
 }
 
-/** The visible reason creation cannot start, or undefined when it can. */
+/**
+ * The visible reason creation cannot start, or undefined when it can. The hook keeps a known
+ * answer (allowed, denied, an older server, a refusal) on screen while it is rechecked, so a
+ * background recheck never flashes "Checking permissions"; only a first check or a retry does.
+ */
 export function spaceCreationUnavailableReason(
-  permission: Pick<SpaceCreationPermission, 'status' | 'canCreateSpace' | 'capability'>
+  permission: Pick<SpaceCreationPermission, 'status' | 'canCreateSpace' | 'capability' | 'error'>
 ): SpaceCreationUnavailableReason | undefined {
   if (canStartSpaceCreation(permission)) return;
+  // A refused read is the server's answer, not a check that could not run.
+  if (permission.status === 'error' && isSpaceCreationDenial(permission.error)) return 'denied';
   // A confirmed denial stays visible while it is rechecked or the recheck fails.
   const denied = permission.capability
     ? permission.capability.can_create_space === false
@@ -87,8 +94,17 @@ export function SpaceCreationNotice({ permission }: { permission: SpaceCreationP
   );
 }
 
+/** Saved requests whose notice offers Discard. Only 'unconfirmed' can still be checked again. */
+const DISCARD_MESSAGES = {
+  unconfirmed: 'spaceCreation.unconfirmed',
+  invalid: 'spaceCreation.invalidRecovery',
+  // The space exists, but its saved first page can't be matched.
+  firstPageElsewhere: 'spaceCreation.firstPageElsewhere',
+  firstPageUnconfirmed: 'spaceCreation.firstPageUnconfirmed',
+} as const;
+
 type SpaceCreationRecoveryNoticeProps =
-  | { kind: 'unconfirmed' | 'invalid'; onDiscard: () => void; disabled?: boolean }
+  | { kind: keyof typeof DISCARD_MESSAGES; onDiscard: () => void; disabled?: boolean }
   | { kind: 'membersPending'; count: number; onAddLater: () => void; disabled?: boolean };
 
 /** A saved request that needs a decision: check again or discard it, or finish without the rest. */
@@ -97,7 +113,7 @@ export function SpaceCreationRecoveryNotice(props: SpaceCreationRecoveryNoticePr
   const message =
     props.kind === 'membersPending'
       ? t('spaceCreation.membersPending', { count: props.count })
-      : t(props.kind === 'unconfirmed' ? 'spaceCreation.unconfirmed' : 'spaceCreation.invalidRecovery');
+      : t(DISCARD_MESSAGES[props.kind]);
 
   return (
     <div

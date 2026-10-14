@@ -1,5 +1,5 @@
 import { Check, ChevronDown, FilePlus2, Globe2, LockKeyhole, Settings2, Shield, UserRound, Users } from 'lucide-react';
-import { memo, useId, useState } from 'react';
+import { memo, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { AccessLevel, Role, SpacePermissionSettings, SpaceSidebarEditPolicy, SpaceVisibility } from '@/application/types';
@@ -50,6 +50,9 @@ const SIDEBAR_EDIT_POLICY_OPTIONS: readonly SpaceSidebarEditPolicy[] = [
 
 const MODAL_WIDTH = 680;
 const CONTENT_WIDTH = 640;
+/** Every button in the panel shows where keyboard focus is (the shared Button has no focus style). */
+const BUTTON_FOCUS_RING =
+  '[&_button:focus-visible]:outline-none [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-border-theme-thick';
 
 export type SpaceSettingsTab = 'general' | 'members';
 
@@ -103,12 +106,21 @@ function accessLabel(accessLevel: AccessLevel | null | undefined, t: TFunction):
   return spaceMemberAccessLabel(accessLevel ?? null, t);
 }
 
-function sidebarEditPolicyLabel(policy: SpaceSidebarEditPolicy, t: TFunction): string {
+/**
+ * The server lets space owners add pages and, with "members and owners", space members who can
+ * edit. Space members are the people and groups added to a Custom space, and every workspace
+ * member (not guests) in a Public space. Private spaces have no setting: only the owner adds pages.
+ */
+function sidebarEditPolicyLabel(policy: SpaceSidebarEditPolicy, visibility: SpaceVisibility, t: TFunction): string {
   switch (policy) {
     case SpaceSidebarEditPolicy.OwnersOnly:
       return t('workspacePermissions.sidebarOwners');
     case SpaceSidebarEditPolicy.MembersAndOwners:
-      return t('workspacePermissions.sidebarMembers');
+      return t(
+        visibility === SpaceVisibility.Public
+          ? 'workspacePermissions.sidebarWorkspaceMembers'
+          : 'workspacePermissions.sidebarMembers'
+      );
     default:
       // A policy from a newer server is shown neutrally and kept as received.
       return t('workspacePermissions.sidebarUnknown');
@@ -134,15 +146,19 @@ function AccessDropdown({
   options,
   disabled,
   testId,
+  labelledBy,
   onChange,
 }: {
   value: AccessLevel | null | undefined;
   options: readonly (AccessLevel | null)[];
   disabled?: boolean;
   testId: string;
+  /** The row title, so the button says whose access it sets ("Space members, Can edit"). */
+  labelledBy: string;
   onChange: (value: AccessLevel | null) => void;
 }) {
   const { t } = useTranslation();
+  const valueId = useId();
 
   return (
     <DropdownMenu>
@@ -152,11 +168,12 @@ function AccessDropdown({
           variant='ghost'
           size='sm'
           disabled={disabled}
+          aria-labelledby={`${labelledBy} ${valueId}`}
           className='min-w-[120px] justify-end px-2 text-text-primary'
           data-testid={testId}
         >
-          {accessLabel(value, t)}
-          <ChevronDown className='h-4 w-4 text-icon-tertiary' />
+          <span id={valueId}>{accessLabel(value, t)}</span>
+          <ChevronDown aria-hidden className='h-4 w-4 text-icon-tertiary' />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align='end'>
@@ -292,10 +309,12 @@ function PermissionPrincipalRow({
  */
 const SidebarEditPolicyRow = memo(function SidebarEditPolicyRow({
   value,
+  visibility,
   disabled,
   onChange,
 }: {
   value: SpaceSidebarEditPolicy;
+  visibility: SpaceVisibility;
   disabled: boolean;
   onChange: (value: SpaceSidebarEditPolicy) => void;
 }) {
@@ -325,7 +344,7 @@ const SidebarEditPolicyRow = memo(function SidebarEditPolicyRow({
                 data-testid='space-sidebar-policy'
               >
                 <span id={valueId} className='truncate'>
-                  {sidebarEditPolicyLabel(value, t)}
+                  {sidebarEditPolicyLabel(value, visibility, t)}
                 </span>
                 <ChevronDown aria-hidden className='h-4 w-4 text-icon-tertiary' />
               </Button>
@@ -340,7 +359,7 @@ const SidebarEditPolicyRow = memo(function SidebarEditPolicyRow({
                   className='justify-between'
                   data-testid={`space-sidebar-policy-option-${option}`}
                 >
-                  {sidebarEditPolicyLabel(option, t)}
+                  {sidebarEditPolicyLabel(option, visibility, t)}
                   {option === value && <DropdownMenuItemTick />}
                 </DropdownMenuItem>
               ))}
@@ -364,6 +383,7 @@ const PublicAccessCard = memo(function PublicAccessCard({
   onSwitchToCustom: () => void;
 }) {
   const { t } = useTranslation();
+  const membersTitleId = useId();
 
   return (
     <section className='flex flex-col gap-3' data-testid='manage-space-public-access-card'>
@@ -382,6 +402,7 @@ const PublicAccessCard = memo(function PublicAccessCard({
         <PermissionPrincipalRow
           icon={<Users className='h-5 w-5 text-icon-primary' />}
           title={t('space.permissionManager.workspaceMembers')}
+          titleId={membersTitleId}
           description={t('space.permissionManager.workspaceMembersDescription')}
           testId='manage-space-workspace-members-row'
           trailing={
@@ -390,6 +411,7 @@ const PublicAccessCard = memo(function PublicAccessCard({
               options={PUBLIC_MEMBER_ACCESS_OPTIONS}
               disabled={disabled}
               testId='manage-space-workspace-members-access'
+              labelledBy={membersTitleId}
               onChange={onMembersAccessChange}
             />
           }
@@ -436,6 +458,8 @@ const CustomPermissionsCard = memo(function CustomPermissionsCard({
   onEveryoneElseAccessChange: (value: AccessLevel | null) => void;
 }) {
   const { t } = useTranslation();
+  const membersTitleId = useId();
+  const everyoneElseTitleId = useId();
 
   return (
     <section className='rounded-400 border border-border-primary' data-testid='manage-space-custom-permissions-card'>
@@ -453,6 +477,7 @@ const CustomPermissionsCard = memo(function CustomPermissionsCard({
       <PermissionPrincipalRow
         icon={<Users className='h-5 w-5 text-icon-primary' />}
         title={t('space.permissionManager.members')}
+        titleId={membersTitleId}
         description={t('space.permissionManager.customMembersDescription')}
         testId='manage-space-custom-members-row'
         trailing={
@@ -461,6 +486,7 @@ const CustomPermissionsCard = memo(function CustomPermissionsCard({
             options={CUSTOM_ACCESS_OPTIONS}
             disabled={disabled}
             testId='manage-space-custom-members-access'
+            labelledBy={membersTitleId}
             onChange={onMembersAccessChange}
           />
         }
@@ -472,6 +498,7 @@ const CustomPermissionsCard = memo(function CustomPermissionsCard({
             ? t('space.permissionManager.everyoneElse', { workspace: workspaceName })
             : t('space.permissionManager.everyoneElseFallback')
         }
+        titleId={everyoneElseTitleId}
         description={t('space.permissionManager.everyoneElseDescription')}
         testId='manage-space-everyone-else-row'
         trailing={
@@ -480,6 +507,7 @@ const CustomPermissionsCard = memo(function CustomPermissionsCard({
             options={CUSTOM_ACCESS_OPTIONS}
             disabled={disabled}
             testId='manage-space-everyone-else-access'
+            labelledBy={everyoneElseTitleId}
             onChange={onEveryoneElseAccessChange}
           />
         }
@@ -573,6 +601,105 @@ const PrivateMembersContent = memo(function PrivateMembersContent({
   );
 });
 
+/** A natively disabled control, which browsers take keyboard focus away from. */
+function isDisabledControl(element: Element): boolean {
+  return (element as HTMLButtonElement).disabled === true;
+}
+
+/**
+ * Saving or rechecking access briefly disables the General tab's controls, and a browser then
+ * moves keyboard focus from the disabled control to the page. Keep focus in the tab while the
+ * controls are paused, and return to the control the keyboard was on once it is available again,
+ * also when a menu or a confirmation (`overlay`) closed without giving focus back to it. Focus the
+ * user moved is left alone: to another control, to the tab itself (Tab, or a click on blank space
+ * in it), or out of the controls with a click elsewhere in the dialog. `stateKey` changes whenever
+ * any of that happens.
+ */
+function useKeyboardPlace(container: HTMLElement | null, stateKey: string) {
+  const lastControl = useRef<HTMLElement | null>(null);
+  // The user put focus where it is now (around the controls or nowhere), not a pause or a menu.
+  const placedByUser = useRef(false);
+  const parking = useRef(false);
+
+  useEffect(() => {
+    if (!container) return;
+    const doc = container.ownerDocument;
+    const panel = container.closest<HTMLElement>('[role="tabpanel"]');
+    let pointerDown = false;
+    const press = () => {
+      pointerDown = true;
+    };
+
+    const release = () => {
+      pointerDown = false;
+    };
+
+    const focusIn = (event: FocusEvent) => {
+      const target = event.target;
+
+      if (!(target instanceof HTMLElement)) return;
+      if (target !== container && container.contains(target)) {
+        lastControl.current = target;
+        placedByUser.current = false;
+      } else if (target.contains(container) && !parking.current) {
+        // Only the user focuses the tab itself; the dialog takes focus from a click or after a loss.
+        placedByUser.current = target === panel || pointerDown;
+      }
+    };
+
+    const focusOut = (event: FocusEvent) => {
+      // A click on something that takes no focus leaves focus on the page (no element gets it).
+      if (pointerDown && !(event.relatedTarget instanceof Element)) placedByUser.current = true;
+    };
+
+    const active = doc.activeElement;
+
+    // The field the dialog opened on was focused before this listener existed.
+    if (active instanceof HTMLElement && active !== container && container.contains(active)) {
+      lastControl.current = active;
+    }
+
+    doc.addEventListener('pointerdown', press, true);
+    doc.addEventListener('pointerup', release, true);
+    doc.addEventListener('pointercancel', release, true);
+    doc.addEventListener('focusin', focusIn, true);
+    doc.addEventListener('focusout', focusOut, true);
+    return () => {
+      doc.removeEventListener('pointerdown', press, true);
+      doc.removeEventListener('pointerup', release, true);
+      doc.removeEventListener('pointercancel', release, true);
+      doc.removeEventListener('focusin', focusIn, true);
+      doc.removeEventListener('focusout', focusOut, true);
+    };
+  }, [container]);
+
+  // Before paint, so the browser never gets to drop focus from the disabled control.
+  useLayoutEffect(() => {
+    if (!container) return;
+    const panel = container.closest<HTMLElement>('[role="tabpanel"]') ?? container;
+    const active = document.activeElement;
+
+    if (
+      active instanceof HTMLElement &&
+      active !== container &&
+      container.contains(active) &&
+      isDisabledControl(active)
+    ) {
+      parking.current = true;
+      panel.focus({ preventScroll: true });
+      parking.current = false;
+      placedByUser.current = false;
+      return;
+    }
+
+    const control = lastControl.current;
+
+    if (!control?.isConnected || !container.contains(control) || isDisabledControl(control)) return;
+    // Parked in the tab, or lost to the dialog or the page: an element around the tab has focus.
+    if ((!active || active.contains(container)) && !placedByUser.current) control.focus({ preventScroll: true });
+  }, [container, stateKey]);
+}
+
 /**
  * Shared Space settings presentation. Creation and management deliberately
  * keep their own controllers: this component owns layout only and never calls
@@ -622,6 +749,12 @@ function SpaceSettingsPanel({
   const draftIsPublic = draftVisibility === SpaceVisibility.Public;
   const draftIsCustom = draftVisibility === SpaceVisibility.Custom;
   const draftIsPrivate = draftVisibility === SpaceVisibility.Private;
+  const fallbackMembersTitleId = useId();
+
+  useKeyboardPlace(
+    container,
+    `${metadataDisabled}:${permissionSettingsDisabled}:${loadingSettings}:${primaryActionLoading}:${Boolean(overlay)}`
+  );
 
   return (
     <NormalModal
@@ -639,6 +772,8 @@ function SpaceSettingsPanel({
       showActions={showActions}
       overflowHidden
       PaperProps={{
+        // Covers the notice, both tabs and the footer buttons.
+        className: BUTTON_FOCUS_RING,
         style: {
           width: MODAL_WIDTH,
           maxWidth: '92vw',
@@ -666,8 +801,9 @@ function SpaceSettingsPanel({
           )}
         </TabsList>
 
-        <TabsContent value='general' className='min-h-0'>
-          <div ref={setContainer} className='appflowy-scroller max-h-[64vh] overflow-y-auto pr-1'>
+        <TabsContent value='general' className='min-h-0' data-testid='space-settings-general'>
+          {/* The scroll area clips what is drawn outside it: 2px on the left keeps focus rings whole. */}
+          <div ref={setContainer} className='appflowy-scroller max-h-[64vh] overflow-y-auto pl-0.5 pr-1'>
             <div className='flex flex-col gap-6 py-2'>
               <div className='flex flex-col gap-2'>
                 <div className='text-sm font-medium text-text-secondary'>{t('space.spaceName')}</div>
@@ -757,6 +893,7 @@ function SpaceSettingsPanel({
                   <PermissionPrincipalRow
                     icon={<Users className='h-5 w-5 text-icon-primary' />}
                     title={t('space.permissionManager.members')}
+                    titleId={fallbackMembersTitleId}
                     description={t('space.permissionManager.membersDescription')}
                     testId='manage-space-members-default-access-row'
                     trailing={
@@ -765,6 +902,7 @@ function SpaceSettingsPanel({
                         options={FALLBACK_MEMBER_ACCESS_OPTIONS}
                         disabled={permissionSettingsDisabled}
                         testId='manage-space-members-default-access'
+                        labelledBy={fallbackMembersTitleId}
                         onChange={(value) => {
                           if (value !== null) onMembersAccessChange(value);
                         }}
@@ -778,6 +916,7 @@ function SpaceSettingsPanel({
               {showAccessDetails && !draftIsPrivate && (
                 <SidebarEditPolicyRow
                   value={permissionSettings.sidebar_edit_policy}
+                  visibility={draftVisibility}
                   disabled={permissionSettingsDisabled || loadingSettings}
                   onChange={onSidebarEditPolicyChange}
                 />

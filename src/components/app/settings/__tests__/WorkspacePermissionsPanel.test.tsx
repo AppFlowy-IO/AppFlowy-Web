@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { ReactNode } from 'react';
 import { toast } from 'sonner';
 
+import { focusRingStandsApart, showsKeyboardFocus } from '@/__mocks__/keyboardFocus';
 import { APP_EVENTS } from '@/application/constants';
 import { Role, WorkspaceMember } from '@/application/types';
 import {
@@ -197,7 +198,9 @@ describe('workspace permission settings', () => {
     expect(mockPolicy).toHaveBeenCalledWith(workspaceId, 'owners_and_selected_members');
     // The chosen card is shown as pending right away, and the others are locked until it saves.
     expect(policyCard('owners_and_selected_members').getAttribute('aria-pressed')).toBe('true');
-    expect((policyCard('members_and_owners') as HTMLButtonElement).disabled).toBe(true);
+    expect(policyCard('members_and_owners').getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(policyCard('members_and_owners'));
+    expect(mockPolicy).toHaveBeenCalledTimes(1);
     await act(async () => save.resolve());
     await waitFor(() =>
       expect(toastSuccess).toHaveBeenCalledWith(
@@ -232,6 +235,74 @@ describe('workspace permission settings', () => {
     expect(toastSuccess).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['members_and_owners', 'owners_only', 'workspacePermissions.restrictMembersToOwners'],
+    ['members_and_owners', 'owners_and_selected_members', 'workspacePermissions.restrictMembersToSelected'],
+    ['owners_and_selected_members', 'owners_only', 'workspacePermissions.restrictSelectedToOwners'],
+  ] as const)('asks before going from %s to the narrower %s, and saves only after Change', async (from, to, body) => {
+    current.policy = from;
+    mount();
+    fireEvent.click(await screen.findByTestId(`space-creation-policy-${to}`));
+    const dialog = await screen.findByRole('alertdialog');
+
+    expect(within(dialog).getByText('workspacePermissions.restrictTitle')).toBeTruthy();
+    // The body names who loses the ability.
+    expect(within(dialog).getByText(body)).toBeTruthy();
+    expect(mockPolicy).not.toHaveBeenCalled();
+    expect(policyCard(from).getAttribute('aria-pressed')).toBe('true');
+    expect(policyCard(to).getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'workspacePermissions.restrictConfirm' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(mockPolicy).toHaveBeenCalledWith(workspaceId, to);
+    await waitFor(() =>
+      expect(toastSuccess).toHaveBeenCalledWith(
+        'workspacePermissions.policyUpdated',
+        expect.objectContaining({ action: expect.objectContaining({ label: 'workspacePermissions.undo' }) })
+      )
+    );
+    await waitFor(() => expect(policyCard(to).getAttribute('aria-pressed')).toBe('true'));
+  });
+
+  it.each(['cancel', 'escape'])('keeps the policy and sends nothing when the narrower choice is dismissed (%s)', async (how) => {
+    current.policy = 'members_and_owners';
+    mount();
+    const narrower = await screen.findByTestId('space-creation-policy-owners_only');
+
+    act(() => narrower.focus());
+    fireEvent.click(narrower);
+    const dialog = await screen.findByRole('alertdialog');
+
+    if (how === 'cancel') {
+      fireEvent.click(within(dialog).getByRole('button', { name: 'button.cancel' }));
+    } else {
+      fireEvent.keyDown(dialog, { key: 'Escape' });
+    }
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(mockPolicy).not.toHaveBeenCalled();
+    expect(policyCard('members_and_owners').getAttribute('aria-pressed')).toBe('true');
+    // Focus goes back to the card that opened the question.
+    await waitFor(() => expect(document.activeElement).toBe(policyCard('owners_only')));
+  });
+
+  it.each([
+    ['owners_only', 'members_and_owners'],
+    ['owners_only', 'owners_and_selected_members'],
+    ['owners_and_selected_members', 'members_and_owners'],
+  ] as const)('lets more people create spaces right away (%s to %s), with Undo', async (from, to) => {
+    current.policy = from;
+    mount();
+    fireEvent.click(await screen.findByTestId(`space-creation-policy-${to}`));
+    expect(mockPolicy).toHaveBeenCalledWith(workspaceId, to);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    await waitFor(() =>
+      expect(toastSuccess).toHaveBeenCalledWith(
+        'workspacePermissions.policyUpdated',
+        expect.objectContaining({ action: expect.objectContaining({ label: 'workspacePermissions.undo' }) })
+      )
+    );
+  });
+
   it('undo in the policy toast restores the previous policy', async () => {
     mount();
     fireEvent.click(await screen.findByTestId('space-creation-policy-members_and_owners'));
@@ -240,6 +311,8 @@ describe('workspace permission settings', () => {
 
     await waitFor(() => expect(policyCard('members_and_owners').getAttribute('aria-pressed')).toBe('true'));
     await act(async () => options.action.onClick());
+    // Undo puts back what was there a moment ago, so it does not ask again.
+    expect(screen.queryByRole('alertdialog')).toBeNull();
     await waitFor(() => expect(mockPolicy).toHaveBeenLastCalledWith(workspaceId, 'owners_only'));
     await waitFor(() => expect(toastSuccess).toHaveBeenCalledTimes(2));
     // Undoing an undo is not offered.
@@ -523,6 +596,67 @@ describe('workspace permission settings', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
+  it('says a refused settings read is a denial, not a connection problem', async () => {
+    mockRead.mockRejectedValue({ code: 1012, message: 'active workspace membership required' });
+    mount();
+    const status = await screen.findByText('workspacePermissions.denied');
+
+    expect(status.getAttribute('role')).toBe('status');
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'button.retry' })).toBeNull();
+    expect(screen.queryByTestId('space-creation-policy-options')).toBeNull();
+    expect(screen.queryByText('workspacePermissions.loading')).toBeNull();
+  });
+
+  it('removes settings, selections and group access when a recheck is refused', async () => {
+    current.policy = 'owners_and_selected_members';
+    rosterOf([row('user', aliceId, { name: 'Alice Martin' })]);
+    mockGroups.mockResolvedValue({
+      groups: [
+        {
+          group_id: groupId,
+          name: 'W_RH_edit',
+          member_count: 3,
+          space_coverage_supported: true,
+          can_manage_space_coverage: true,
+          space_coverage_access_level: 30,
+        },
+      ],
+    });
+    mount();
+    await screen.findByTestId(`space-creator-row-user-${aliceId}`);
+    await screen.findByTestId('group-space-coverage-summary');
+    mockRead.mockRejectedValue({ code: 1012, message: 'active workspace membership required' });
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await screen.findByText('workspacePermissions.denied');
+    // Someone who lost access no longer sees who else may create spaces.
+    expect(screen.queryByTestId(`space-creator-row-user-${aliceId}`)).toBeNull();
+    expect(screen.queryByTestId('space-creation-policy-options')).toBeNull();
+    expect(screen.queryByTestId('group-space-coverage-summary')).toBeNull();
+    expect(screen.queryByText('Alice Martin')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('keeps an older server\'s notice on screen while it is asked again', async () => {
+    mockRead.mockRejectedValueOnce({ httpStatus: 404 });
+    mount();
+    await screen.findByText('workspacePermissions.unsupported');
+    const next = deferred<WorkspaceSpaceCreationCapabilities>();
+
+    mockRead.mockReturnValueOnce(next.promise);
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await waitFor(() => expect(mockRead).toHaveBeenCalledTimes(2));
+    expect(screen.getByText('workspacePermissions.unsupported')).toBeTruthy();
+    expect(screen.queryByText('workspacePermissions.loading')).toBeNull();
+    await act(async () => next.reject({ httpStatus: 404 }));
+    expect(screen.getByText('workspacePermissions.unsupported')).toBeTruthy();
+  });
+
   it('tells an offline user to reconnect', async () => {
     Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
     mount();
@@ -609,5 +743,116 @@ describe('workspace permission settings', () => {
     expect(within(summary).getByText('groupSpaceAccess.canEdit')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'groupSpaceAccess.manageGroups' }));
     expect(onOpenGroups).toHaveBeenCalledTimes(1);
+  });
+
+  describe('with a keyboard', () => {
+    it('keeps focus on the chosen card while it saves', async () => {
+      const save = deferred<void>();
+
+      mockPolicy.mockImplementationOnce(async (_workspace, policy) => {
+        await save.promise;
+        current = { ...current, policy, revision: { epoch: '1', counter: '2' } };
+      });
+      mount();
+      const card = await screen.findByTestId('space-creation-policy-members_and_owners');
+
+      act(() => card.focus());
+      fireEvent.click(card);
+      // Browsers move focus off a disabled button, so a pending choice is marked unavailable instead.
+      expect((card as HTMLButtonElement).disabled).toBe(false);
+      expect(card.getAttribute('aria-disabled')).toBe('true');
+      expect(document.activeElement).toBe(card);
+      await act(async () => save.resolve());
+      await waitFor(() => expect(card.getAttribute('aria-disabled')).toBeNull());
+      expect(document.activeElement).toBe(card);
+    });
+
+    it('keeps focus inside the question about fewer people creating spaces', async () => {
+      current.policy = 'members_and_owners';
+      mount();
+      fireEvent.click(await screen.findByTestId('space-creation-policy-owners_only'));
+      const dialog = await screen.findByRole('alertdialog');
+
+      await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+      const cancel = within(dialog).getByRole('button', { name: 'button.cancel' });
+      const close = within(dialog).getByRole('button', { name: 'button.close' });
+
+      act(() => close.focus());
+      fireEvent.keyDown(close, { key: 'Tab' });
+      expect(document.activeElement).toBe(cancel);
+      fireEvent.keyDown(cancel, { key: 'Tab', shiftKey: true });
+      expect(document.activeElement).toBe(close);
+    });
+
+    it('shows keyboard focus on every button in the question about fewer people creating spaces', async () => {
+      current.policy = 'members_and_owners';
+      mount();
+      fireEvent.click(await screen.findByTestId('space-creation-policy-owners_only'));
+      const dialog = await screen.findByRole('alertdialog');
+      const buttons = within(dialog).getAllByRole('button');
+
+      // Close, Cancel and Change. The question opens over Settings, outside the panel's own rules.
+      expect(buttons).toHaveLength(3);
+      for (const button of buttons) {
+        expect(showsKeyboardFocus(button)).toBe(true);
+        expect(focusRingStandsApart(button)).toBe(true);
+      }
+    });
+
+    it('goes back to the search field after adding someone', async () => {
+      current.policy = 'owners_and_selected_members';
+      mount();
+      await selections();
+      await waitFor(() => expect(mockMembers).toHaveBeenCalledWith(workspaceId));
+      search('bo');
+      const add = await screen.findByRole('button', { name: 'workspacePermissions.addNamed:Bob Stone' });
+
+      act(() => add.focus());
+      fireEvent.click(add);
+      await screen.findByTestId(`space-creator-row-user-${bobId}`);
+      await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId('space-creator-search-input')));
+    });
+
+    it('keeps focus on Add while it saves and after it fails', async () => {
+      const grant = deferred<unknown>();
+
+      current.policy = 'owners_and_selected_members';
+      mockMutate.mockReturnValueOnce(grant.promise);
+      mount();
+      await selections();
+      await waitFor(() => expect(mockMembers).toHaveBeenCalledWith(workspaceId));
+      search('bo');
+      const add = await screen.findByRole('button', { name: 'workspacePermissions.addNamed:Bob Stone' });
+
+      act(() => add.focus());
+      fireEvent.click(add);
+      expect((add as HTMLButtonElement).disabled).toBe(false);
+      expect(add.getAttribute('aria-disabled')).toBe('true');
+      fireEvent.click(add);
+      expect(mockMutate).toHaveBeenCalledTimes(1);
+      await act(async () => grant.reject({ code: 500, message: 'Server error' }));
+      await waitFor(() => expect(toastError).toHaveBeenCalled());
+      expect(document.activeElement).toBe(add);
+      expect(add.getAttribute('aria-disabled')).toBeNull();
+    });
+
+    it('moves focus to the next person after a removal, then to the search field', async () => {
+      current.policy = 'owners_and_selected_members';
+      rosterOf([row('user', aliceId, { name: 'Alice Martin' }), row('user', bobId, { name: 'Bob Stone' })]);
+      mount();
+      const list = await selections();
+      const removeAlice = await within(list).findByRole('button', { name: 'workspacePermissions.removeNamed:Alice Martin' });
+
+      act(() => removeAlice.focus());
+      fireEvent.click(removeAlice);
+      expect((removeAlice as HTMLButtonElement).disabled).toBe(false);
+      await waitFor(() => expect(screen.queryByTestId(`space-creator-row-user-${aliceId}`)).toBeNull());
+      const removeBob = within(list).getByRole('button', { name: 'workspacePermissions.removeNamed:Bob Stone' });
+
+      await waitFor(() => expect(document.activeElement).toBe(removeBob));
+      fireEvent.click(removeBob);
+      await waitFor(() => expect(screen.queryByTestId(`space-creator-row-user-${bobId}`)).toBeNull());
+      await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId('space-creator-search-input')));
+    });
   });
 });

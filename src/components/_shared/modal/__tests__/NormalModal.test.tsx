@@ -1,7 +1,14 @@
 import { describe, expect, it, jest } from '@jest/globals';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+
+import { focusRingStandsApart, showsKeyboardFocus } from '@/__mocks__/keyboardFocus';
+import { mockResizeObserver } from '@/__mocks__/resizeObserver';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 import { NormalModal } from '../NormalModal';
+
+mockResizeObserver();
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -38,6 +45,23 @@ describe('NormalModal keyboard submission', () => {
     expect(onOk).not.toHaveBeenCalled();
   });
 
+  it('shows keyboard focus on its footer buttons, also when it opens over another dialog', () => {
+    render(
+      <NormalModal open title='Switch space type?' okText='Switch'>
+        <div>Members keep their access.</div>
+      </NormalModal>
+    );
+
+    for (const button of [
+      screen.getByRole('button', { name: 'button.cancel' }),
+      screen.getByRole('button', { name: 'Switch' }),
+    ]) {
+      expect(showsKeyboardFocus(button)).toBe(true);
+      // The OK button is a filled theme button; the ring needs a gap to stand out from it.
+      expect(focusRingStandsApart(button)).toBe(true);
+    }
+  });
+
   it('can hide its footer actions while keeping the close control', () => {
     render(
       <NormalModal open title='Manage Space' showActions={false}>
@@ -48,5 +72,78 @@ describe('NormalModal keyboard submission', () => {
     expect(screen.queryByRole('button', { name: 'button.cancel' })).toBeNull();
     expect(screen.queryByTestId('modal-ok-button')).toBeNull();
     expect(screen.getByRole('button', { name: 'button.close' })).toBeTruthy();
+  });
+});
+
+/**
+ * In a browser, React removes a menu that closes on Escape before the key press reaches the dialog;
+ * fireEvent runs inside act(), which keeps it mounted. A layer that handles Escape and stays open
+ * reaches the dialog in both. The dialog must ignore either.
+ */
+describe('NormalModal Escape', () => {
+  it('closes when Escape is pressed on one of its own controls', () => {
+    const onClose = jest.fn();
+
+    render(
+      <NormalModal open title='Manage space' onClose={onClose}>
+        <input aria-label='Space name' />
+      </NormalModal>
+    );
+
+    fireEvent.keyDown(screen.getByLabelText('Space name'), { key: 'Escape' });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays open when a menu inside it uses Escape to close itself', async () => {
+    const onClose = jest.fn();
+
+    render(
+      <NormalModal open title='Manage space' onClose={onClose}>
+        <DropdownMenu>
+          <DropdownMenuTrigger>Access</DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuItem>Can view</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </NormalModal>
+    );
+    const trigger = screen.getByRole('button', { name: 'Access' });
+
+    act(() => trigger.focus());
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+    await screen.findByRole('menu');
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+
+    // The menu used that key press; the dialog and the user's place in it stay.
+    expect(onClose).not.toHaveBeenCalled();
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+    // A second Escape, now on the dialog's own control, closes the dialog.
+    fireEvent.keyDown(trigger, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays open when a picker inside it keeps itself open on Escape', async () => {
+    const onClose = jest.fn();
+
+    render(
+      <NormalModal open title='Create space' onClose={onClose}>
+        <Popover open>
+          <PopoverTrigger>Change icon</PopoverTrigger>
+          {/* For example while it uploads an icon. */}
+          <PopoverContent onEscapeKeyDown={(event) => event.preventDefault()}>
+            <input aria-label='Search icons' />
+          </PopoverContent>
+        </Popover>
+      </NormalModal>
+    );
+    const search = await screen.findByRole('textbox', { name: 'Search icons' });
+
+    act(() => search.focus());
+    fireEvent.keyDown(search, { key: 'Escape' });
+
+    expect(screen.getByRole('textbox', { name: 'Search icons' })).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
   });
 });

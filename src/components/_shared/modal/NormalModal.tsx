@@ -10,8 +10,11 @@ type ModalButtonProps = React.ComponentProps<typeof Button>;
 
 // `AFButtonSize.m`, which every desktop dialog footer uses: spacing.xl of
 // horizontal padding and a `body.enhanced` (w500) label. The shared `Button`
-// defaults to the tighter px-3/w400 pairing.
-const FOOTER_BUTTON_CLASS = 'px-4 font-medium';
+// defaults to the tighter px-3/w400 pairing and has no keyboard focus style; a
+// confirmation opened over another dialog is outside that dialog's own rules.
+// The gap keeps the ring visible around the filled OK button, which has its color.
+const FOOTER_BUTTON_CLASS =
+  'px-4 font-medium focus-visible:ring-2 focus-visible:ring-border-theme-thick focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary';
 
 const ENTER_HANDLED_BY_CONTROL_SELECTOR = [
   'button',
@@ -71,7 +74,9 @@ export function NormalModal({
     <Dialog
       aria-labelledby={labelledBy}
       onKeyDown={(e) => {
-        if (e.key === 'Escape' && closable) {
+        // A menu, picker or confirmation inside the dialog that closes on Escape marks the key
+        // press as handled; only an unhandled Escape closes the dialog itself.
+        if (e.key === 'Escape' && closable && !e.defaultPrevented) {
           onClose?.();
         }
 

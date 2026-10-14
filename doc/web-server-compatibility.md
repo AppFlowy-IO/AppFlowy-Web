@@ -64,23 +64,62 @@ Space creation uses the authenticated
 `GET /api/workspace/{workspace_id}/space-creation-capabilities` response. Support, effective permission,
 configuration authority, and group entitlement are separate fields. A server without that route
 (HTTP 404/405) predates these controls: Create space, Duplicate Space and the calendar meeting space stay
-available and that server's own checks decide. An unknown policy, mismatched workspace, incomplete
-response or failed read leaves Create space and Duplicate Space unavailable with a visible reason. Create
-space offers "Try again"; Duplicate Space reads the answer again each time its menu opens and when the
-window regains focus or the connection returns. Calendar transcription then lets the server decide, and a
-denial still opens the meeting without a notes page. The current workspace role alone does not authorize
-creation. No release-version floor has been assigned to these new controls yet.
+available and that server's own checks decide. A refused read (HTTP 403 or code 1012, for example after
+leaving the workspace) is the server's answer: Create space, New Page and Duplicate Space say "You can't
+create spaces in this workspace." without a retry. An unknown policy, mismatched workspace, incomplete
+response or other failed read leaves Create space and Duplicate Space unavailable with "We couldn't check
+permissions. Try again."; Create space and New Page offer "Try again", and Duplicate Space reads the
+answer again each time its menu opens and when the window regains focus or the connection returns.
+Background rechecks keep a known answer on screen: a confirmed answer, an older server and a refusal stay
+as they are while they are asked again, so "Checking permissions…" appears only while there is no answer
+yet (a first check, or a recheck after a check that could not run). Entry points stay available on a
+confirmed yes while it is rechecked, and sending always reads the answer again first.
+Calendar transcription lets the server decide when the check could not run, and a denial or refusal still
+opens the meeting without a notes page. The current workspace role alone does not authorize creation. No
+release-version floor has been assigned to these new controls yet.
 
-Space creation settings save the policy through the existing workspace settings API. The request sets
-both `exact_space_creation_policy` and `space_creation_policy` to the chosen mode, and the change counts
-as saved only when the response's `exact_space_creation_policy` matches it. Current servers report
-"Owners and selected members" as `owners_only` in `space_creation_policy`, so clients that know only two
-modes can still read settings. The Web falls back to `space_creation_policy` only when a server predates
-`exact_space_creation_policy`; such servers report their exact policy there. Servers that know only two
-modes reject selected mode instead of ignoring it. User/group selections use focused UUID grant/revoke
-endpoints and separately paginated rosters; inactive selections remain visible. Member pickers require
-the optional `user_uuid` supplied by current servers. Numeric UIDs are not converted to grant identities.
-Guests, pending invitations and entries without a UUID cannot be selected.
+Space creation settings (Settings > Permissions) save the policy through the existing workspace settings
+API. The request sets both `exact_space_creation_policy` and `space_creation_policy` to the chosen mode,
+and the change counts as saved only when the response's `exact_space_creation_policy` matches it. Current
+servers report "Owners and selected members" as `owners_only` in `space_creation_policy`, so clients that
+know only two modes can still read settings. The Web falls back to `space_creation_policy` only when a
+server predates `exact_space_creation_policy`; such servers report their exact policy there. Servers that
+know only two modes reject selected mode instead of ignoring it. A choice that lets more people create
+spaces applies at once with "Space creation updated" and Undo. A choice that lets fewer people create
+spaces ("Owners and members" to "Owners only" or "Owners and selected members", or "Owners and selected
+members" to "Owners only") first asks "Change who can create spaces?" and names who loses the ability;
+Undo puts the previous policy back without asking again. User/group selections use focused UUID
+grant/revoke endpoints and separately paginated rosters (every page is read); removed selections are
+hidden, and selections that no longer count (guests, people who left the workspace, deleted groups) stay
+listed as "Not eligible". Member pickers require the optional `user_uuid` supplied by current servers.
+Numeric UIDs are not converted to grant identities. Owners (who can always create spaces), guests,
+pending invitations and entries without a UUID cannot be selected. A refused settings read shows "You
+can't create spaces in this workspace." and removes the last settings and selections from the panel;
+other failed reads offer Retry, or ask an offline browser to reconnect. A server without the capability
+route shows that it does not support these settings.
+
+Workspace creation uses the account's `GET /api/user/workspace-creation-capability`, which works before
+any workspace is selected. A server without that route (HTTP 404/405 without an application error code)
+predates workspace creation controls and is treated as a legacy server: Create workspace and Import
+workspace stay available in the workspace menu, Manage Data, the import page and the empty-account page,
+and creation uses the original `POST /api/workspace` without a `request_id`. Such a server has no
+receipt to replay, so nothing is saved for "Check again"; a lost response is reported as a failure and
+the server's own checks decide, with its own message when it refuses. On current servers a request ID
+is saved in tab storage after a fresh admission check, immediately before
+`POST /api/workspace/create-with-request-id`, and "Check again" replays the same ID without a new
+client check: the server returns the workspace that ID created, or checks the request itself. A
+definitive rejection of a first request (HTTP 400, 401, 403, 409 or 422, or a known server code such as
+a denial or a limit) releases it, and so does a first request that reaches a node without the keyed
+route; a replay is released only by codes the server sends after looking up the ID. A denial
+(`can_create_workspace = false`) disables Create workspace and new-workspace imports with "Your
+administrator hasn't allowed you to create workspaces.", and so does a first request refused with HTTP
+403 or code 1012, or a replay refused with code 1012. A replay refused with a bare HTTP 403 (no server
+code, for example from a proxy) stays saved as not confirmed, because the first request may have
+created the workspace. An answer that could not be read offers "Check again". The last confirmed answer
+stays visible while it is rechecked (after reconnecting, coming online or a permission change, and on
+focus or visibility once it is 30 seconds old; going offline makes it unavailable), and every new
+request is admitted again right before it is sent. Importing into an existing workspace does not need
+this permission.
 
 Workspace permission notification tag 14 carries an explicit workspace UUID and decimal-string epoch
 and counter. Generated protobuf bindings and HTTP validation preserve signed 64-bit values exactly.
@@ -88,12 +127,13 @@ The notification hook scopes its last revision by server, account and workspace,
 hints, and drops retained messages across a context switch. Hints re-probe current authority; they never
 grant access or delete pending edits. Capability reads also refresh on reconnect, online, focus and
 visibility changes, and discard responses that precede an observed revision.
-The space-creation capability and group-coverage directory each use `createCoalescedRefresh` to
-allow one active read and one replaceable pending refresh per mounted scope. Every hint invalidates
-the displayed authority immediately, before queueing. A superseded response cannot enable a control;
-unmounting also prevents a queued read from starting. Waiting for an active read bounds concurrency,
-not latency, and the group directory response itself is still unpaginated. Group drafts survive a
-same-scope refresh but do not confer permission to save.
+The space-creation capability, the access-to-all-spaces summary and the People > Groups list each use
+`createCoalescedRefresh` to allow one active read and one replaceable pending refresh per mounted scope.
+Every hint withdraws space creation admission immediately, before queueing, while the last confirmed
+answer stays on screen. A superseded response cannot enable a control; unmounting also prevents a queued
+read from starting. Waiting for an active read bounds concurrency, not latency, and the group directory
+response itself is still unpaginated. Access to all spaces is set per group in People > Groups > group >
+General and applies immediately: granting or raising it asks first, lowering or turning it off does not.
 
 Open search results, previews, AI summaries and recent-page names also have a server/account/workspace
 permission scope. A hard invalidation hides the old snapshot synchronously, before fresh requests
@@ -141,22 +181,31 @@ and the editor is editable, otherwise a toast offers to open it, and after a ses
 shown. A refused creation shows one plain message. Existing request debounce and cooldowns remain;
 these lifetime checks do not cancel the underlying mention HTTP requests or replace server authorization.
 
-Create/Manage Space expose the existing `sidebar_edit_policy`. Direct space-child actions require both
-canonical content Write and sidebar permission: the sidebar "+", New Page destinations (checked per space
-when the dialog opens, with the reason shown for unavailable spaces), Duplicate (the source's parent must
-accept a new page) and Move (the selected destination is checked before Move is enabled). For New Page,
-Duplicate and Move, a check that could not run (offline, server error) is not shown as a denial: that
-destination stays available and the server decides. A New Page choice whose space is no longer listed is
-dropped. Ordinary nested pages retain their own Write check. On a server without the structured space
-routes the sidebar policy does not exist and Write alone applies. Changing this setting does not grant B
-(space creation) or D (workspace creation). Create Space keeps useful draft fields after a denied
-pre-check. A definitive rejection of a first attempt (400/403/422, validation or denial) forgets the
-saved request and leaves the draft editable with fresh identities. An ambiguous outcome (lost response,
-timeout, 409, 5xx) keeps the original identity with "Check again" and "Discard", in the dialog and in the
-sidebar. A resend from "Check again" that is refused keeps that saved request as well, because the
-earlier attempt with the same identity may still commit; only finding the space or "Discard" ends it. The
-full background-writer, offline re-grant and native-client acceptance matrix remains in progress in the
-Server repository's Oodrive plan.
+Create/Manage Space expose the existing `sidebar_edit_policy` as "Who can add pages to this space": "Only
+space owners", or space members who can edit. Space members are the people and groups added to a Custom
+space ("Space members who can edit") and every workspace member except guests in a Public space
+("Workspace members who can edit"); someone with edit access only through "Everyone else" or a shared
+page cannot add pages directly. Private spaces have no setting, because only their owner adds pages. A
+policy value from a newer server is shown as "Other setting" and kept as received. Direct space-child
+actions require both canonical content Write and sidebar permission: the sidebar "+", New Page
+destinations (checked per space when the dialog opens, with the reason shown for unavailable spaces),
+Duplicate (the source's parent must accept a new page) and Move (the selected destination is checked
+before Move is enabled). For New Page, Duplicate and Move, a check that could not run (offline, server
+error) is not shown as a denial: that destination stays available and the server decides. A New Page
+choice whose space is no longer listed is dropped. Ordinary nested pages retain their own Write check. On
+a server without the structured space routes the sidebar policy does not exist and Write alone applies.
+Changing this setting does not grant B (space creation) or D (workspace creation). Create Space keeps
+useful draft fields after a denied pre-check. A definitive rejection of a first attempt (400/403/422,
+validation or denial) forgets the saved request and leaves the draft editable with fresh identities. An
+ambiguous outcome (lost response, timeout, 409, 5xx) keeps the original identity with "Check again" and
+"Discard", in the dialog and in the sidebar. A resend from "Check again" that is refused keeps that saved
+request as well, because the earlier attempt with the same identity may still commit; only finding the
+space or "Discard" ends it. When the space exists but its first page can't be matched ("Check again"
+finds the page under another parent, or a server that ignores the requested page ID added it under its
+own ID, on the first attempt or on a check), the dialog says the space was created and offers only
+"Discard": "Check again" is turned off, and the outcome is saved with the request, so a resumed dialog
+shows the same notice and recovery never adds the first page again. The full background-writer, offline
+re-grant and native-client acceptance matrix remains in progress in the Server repository's Oodrive plan.
 
 On servers with per-person access, Manage Space adds people and groups through the UUID routes. For
 Public, Private and unknown space types those routes store the level sent with the add and fall back to

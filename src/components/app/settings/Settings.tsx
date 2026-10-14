@@ -80,6 +80,16 @@ export function SettingsDialog({ open, onClose, onRequestOpen }: SettingsDialogP
     }
   }, [search, setSearch, onRequestOpen]);
 
+  // A menu, picker or question inside Settings that closes on Escape marks the key press as
+  // handled (MUI's dialog would close anyway); only an unhandled Escape closes Settings.
+  const handleDialogClose = useCallback(
+    (event: object, reason: 'backdropClick' | 'escapeKeyDown') => {
+      if (reason === 'escapeKeyDown' && (event as { defaultPrevented?: boolean }).defaultPrevented) return;
+      onClose();
+    },
+    [onClose]
+  );
+
   const handleImport = useCallback(() => {
     // Reuse the workspace importer after closing Settings so only one dialog owns focus.
     onClose();
@@ -98,7 +108,7 @@ export function SettingsDialog({ open, onClose, onRequestOpen }: SettingsDialogP
         paper: 'w-[1120px] h-[760px] max-w-[96vw] max-h-[92vh] flex flex-row overflow-hidden bg-surface-primary',
       }}
       open={open}
-      onClose={onClose}
+      onClose={handleDialogClose}
       PaperProps={{ 'data-testid': 'settings-dialog' }}
     >
       <SettingMenu onSelectItem={selectItem} selectedItem={selectedItem} showBilling={showBilling} />

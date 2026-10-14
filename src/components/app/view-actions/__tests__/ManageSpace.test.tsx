@@ -2285,6 +2285,42 @@ describe('ManageSpace ACL management', () => {
     expect(structuredUpdatePermission().sidebar_edit_policy).toBe('editors_and_owners');
   });
 
+  // The server lets space members with edit access add pages: people and groups added to a
+  // Custom space, every workspace member (not guests) in a Public space.
+  it.each([
+    ['Custom', SpaceVisibility.Custom, 'workspacePermissions.sidebarMembers'],
+    ['Public', SpaceVisibility.Public, 'workspacePermissions.sidebarWorkspaceMembers'],
+    ['newer-server', 'invite_only' as SpaceVisibility, 'workspacePermissions.sidebarMembers'],
+  ])('names the people who can add pages to a %s space by who its members are', async (_case, visibility, label) => {
+    const permission = {
+      ...customPermission,
+      visibility,
+      sidebar_edit_policy: SpaceSidebarEditPolicy.MembersAndOwners,
+    };
+
+    mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission }));
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+    await waitForSettingsLoaded();
+
+    expect(screen.getByTestId('space-sidebar-policy').textContent).toBe(label);
+    expect(screen.getAllByTestId(/^space-sidebar-policy-option-/).map((option) => option.textContent)).toEqual([
+      'workspacePermissions.sidebarOwners',
+      `${label}selected`,
+    ]);
+    expect(screen.getByTestId('space-sidebar-policy-row').textContent).toContain(
+      'workspacePermissions.sidebarExplanation'
+    );
+  });
+
+  it('has no page setting for a private space, where only its owner adds pages', async () => {
+    mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: privatePermission }));
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+    await waitForSettingsLoaded();
+
+    expect(screen.queryByTestId('space-sidebar-policy-row')).toBeNull();
+    expect(screen.queryByTestId('space-sidebar-policy')).toBeNull();
+  });
+
   it('serializes overlapping renames and rolls failed edits back to server-confirmed metadata', async () => {
     const firstRename = deferred<{ view_id: string }>();
     const secondRename = deferred<{ view_id: string }>();

@@ -22,12 +22,14 @@
       "addFailed": "Couldn't add the page. Try again."
     },
     "meetingNotesDenied": "Your meeting opened without a notes page, because you can't create spaces in this workspace.",
-    "meetingNotesFailed": "Your meeting opened, but its notes page couldn't be created."
+    "meetingNotesFailed": "Your meeting opened, but its notes page couldn't be created.",
+    "firstPageElsewhere": "The space was created, but its first page is somewhere else. Discard this request to continue.",
+    "firstPageUnconfirmed": "The space was created, but we couldn't confirm its first page. Discard this request to continue."
   },
   "workspacePermissions": {
     "sidebarPolicy": "Who can add pages to this space",
     "sidebarOwners": "Only space owners",
-    "sidebarMembers": "Anyone who can edit",
+    "sidebarMembers": "Space members who can edit",
     "sidebarExplanation": "Applies to pages added directly to the space. Pages inside other pages follow their own permissions.",
     "title": "Permissions",
     "createSpaces": "Space creation",
@@ -102,7 +104,13 @@
     "pendingEditsDiscardError": "We couldn't discard the changes. Try again.",
     "invalidRequest": "This change couldn't be sent. Try again.",
     "invalidResponse": "Couldn't load space creation settings. Try again.",
-    "changeNotConfirmed": "We couldn't confirm that your change was saved. Check the current settings and try again."
+    "changeNotConfirmed": "We couldn't confirm that your change was saved. Check the current settings and try again.",
+    "sidebarWorkspaceMembers": "Workspace members who can edit",
+    "restrictTitle": "Change who can create spaces?",
+    "restrictMembersToOwners": "Members won't be able to create new spaces. Existing spaces aren't affected.",
+    "restrictMembersToSelected": "Members who aren't selected won't be able to create new spaces. Existing spaces aren't affected.",
+    "restrictSelectedToOwners": "Selected members and groups won't be able to create new spaces. Existing spaces aren't affected.",
+    "restrictConfirm": "Change"
   },
   "databaseViewCreation": {
     "onlineRequired": "Connect to the internet to create Form or Chart views.",
@@ -1908,7 +1916,8 @@
       "selectLayout": "Select layout",
       "selectStartingDay": "Select starting day",
       "version": "Version"
-    }
+    },
+    "sectionInfo": "About {{title}}"
   },
   "grid": {
     "deleteView": "Are you sure you want to delete this view?",

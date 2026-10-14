@@ -1,11 +1,13 @@
 import { Check, Plus } from 'lucide-react';
 import { useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
+import type { MutableRefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { validate as isUuid } from 'uuid';
 
 import { APP_EVENTS } from '@/application/constants';
 import { WorkspaceService } from '@/application/services/domains';
+import { isSpaceCreationDenial } from '@/application/services/js-services/space-creation-recovery';
 import { Role, WorkspaceGroup, WorkspaceMember } from '@/application/types';
 import {
   SpaceCreatorKind,
@@ -26,8 +28,16 @@ import {
 import { GroupSpaceCoverageSummary } from '@/components/app/settings/GroupSpaceCoverageControl';
 import { WorkspaceGroupIcon } from '@/components/app/share/WorkspaceGroupIcon';
 import { WorkspaceMemberInlineSearchInput } from '@/components/app/share/WorkspaceMemberInlineSearch';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -47,6 +57,31 @@ const SELECTION_PAGE_LIMIT = 200;
 /** Rosters are bounded by workspace membership; the cap only stops a cursor that never ends. */
 const SELECTION_PAGE_CAP = 100;
 const MAX_CANDIDATES = 8;
+
+/** How many people a policy lets create spaces, from fewest to most. */
+const POLICY_REACH: Record<WorkspaceSpaceCreationPolicy, number> = {
+  owners_only: 0,
+  owners_and_selected_members: 1,
+  members_and_owners: 2,
+};
+
+type PolicyChange = { from: WorkspaceSpaceCreationPolicy; to: WorkspaceSpaceCreationPolicy };
+
+/** A change that takes the ability away from someone; it is confirmed before it is saved. */
+function restrictsCreation({ from, to }: PolicyChange): boolean {
+  return POLICY_REACH[to] < POLICY_REACH[from];
+}
+
+/** Who loses the ability with a narrowing change. */
+function restrictDescriptionKey({ from, to }: PolicyChange) {
+  if (from === 'members_and_owners') {
+    return to === SELECTED_MODE
+      ? 'workspacePermissions.restrictMembersToSelected'
+      : 'workspacePermissions.restrictMembersToOwners';
+  }
+
+  return 'workspacePermissions.restrictSelectedToOwners';
+}
 
 function revisionKey(revision: WorkspacePermissionRevision): string {
   return `${revision.epoch}:${revision.counter}`;
@@ -126,7 +161,11 @@ export function WorkspacePermissionsPanel({
 }) {
   const permission = useSpaceCreationCapability(workspaceId);
   const { t } = useTranslation();
-  const { capability, status } = permission;
+  const { status } = permission;
+  // A refused read (for example after leaving the workspace) is an answer, not a connection
+  // problem. It also hides the last settings, so names of selected people and groups go away.
+  const refused = status === 'error' && isSpaceCreationDenial(permission.error);
+  const capability = refused ? undefined : permission.capability;
 
   return (
     <SettingsPanelShell title={t('workspacePermissions.title')} testId='workspace-permissions-panel'>
@@ -141,7 +180,12 @@ export function WorkspacePermissionsPanel({
           {t('workspacePermissions.unsupported')}
         </p>
       )}
-      {!capability && status === 'error' && (
+      {refused && (
+        <p role='status' className='text-sm text-text-primary'>
+          {t('workspacePermissions.denied')}
+        </p>
+      )}
+      {!capability && status === 'error' && !refused && (
         <InlineAlert
           message={t(isOffline() ? 'workspacePermissions.offline' : 'workspacePermissions.loadFailed')}
           onRetry={() => void permission.refresh()}
@@ -183,6 +227,9 @@ function SpaceCreationSettings({
   const basis = revisionKey(capability.revision);
   const [saving, setSaving] = useState<WorkspaceSpaceCreationPolicy>();
   const [saved, setSaved] = useState<{ policy: WorkspaceSpaceCreationPolicy; basis: string }>();
+  const [confirming, setConfirming] = useState<PolicyChange>();
+  // The card that asked; focus goes back to it when the question closes.
+  const confirmOrigin = useRef<HTMLElement | null>(null);
   const savingRef = useRef(false);
   const undoPolicy = useRef<(previous: WorkspaceSpaceCreationPolicy) => Promise<void>>();
   // A confirmed save stays visible until the capability reports a newer revision.
@@ -224,7 +271,24 @@ function SpaceCreationSettings({
   };
 
   // Undo may run after newer renders (or after leaving the panel); it always uses the latest state.
+  // It puts back what was there a moment ago, so it is not confirmed again.
   undoPolicy.current = (previous: WorkspaceSpaceCreationPolicy) => choosePolicy(previous, false);
+
+  // Letting more people create spaces applies right away (with Undo); taking the ability away from
+  // someone asks first.
+  const requestPolicy = (next: WorkspaceSpaceCreationPolicy, origin: HTMLElement) => {
+    if (savingRef.current || !canManage || stale || next === policy) return;
+    if (next === SELECTED_MODE && !selectedSupported) return;
+    const change = { from: policy, to: next };
+
+    if (restrictsCreation(change)) {
+      confirmOrigin.current = origin;
+      setConfirming(change);
+      return;
+    }
+
+    void choosePolicy(next);
+  };
 
   return (
     <SettingsSection title={t('workspacePermissions.createSpaces')}>
@@ -247,12 +311,23 @@ function SpaceCreationSettings({
           labelledBy={questionId}
           value={policy}
           saving={saving}
-          disabled={!canManage || stale || saving !== undefined}
+          disabled={!canManage || stale}
           selectedSupported={selectedSupported}
-          onSelect={(next) => void choosePolicy(next)}
+          onSelect={requestPolicy}
         />
         {!canManage && <p className='text-sm text-text-secondary'>{t('workspacePermissions.ownerRequired')}</p>}
       </div>
+      {confirming && (
+        <RestrictPolicyConfirm
+          change={confirming}
+          returnFocusTo={confirmOrigin}
+          onCancel={() => setConfirming(undefined)}
+          onConfirm={() => {
+            setConfirming(undefined);
+            void choosePolicy(confirming.to);
+          }}
+        />
+      )}
       {rosterEnabled &&
         (policy === SELECTED_MODE ? (
           <SelectedCreators capability={capability} roster={roster} disabled={stale} />
@@ -268,6 +343,59 @@ function SpaceCreationSettings({
   );
 }
 
+/** Same confirmation pattern as giving a group access to all spaces (People > Groups). */
+function RestrictPolicyConfirm({
+  change,
+  returnFocusTo,
+  onCancel,
+  onConfirm,
+}: {
+  change: PolicyChange;
+  returnFocusTo: MutableRefObject<HTMLElement | null>;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <AlertDialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onCancel();
+      }}
+    >
+      <AlertDialogContent
+        className='w-[440px] max-w-[calc(100%-2rem)] gap-5 rounded-400 border-0 bg-surface-primary p-5'
+        data-testid='space-creation-restrict-confirmation'
+        showCloseButton
+        closeLabel={t('button.close')}
+        // Radix returns focus only to its own trigger; this dialog opens from a policy card.
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          if (returnFocusTo.current?.isConnected) returnFocusTo.current.focus();
+        }}
+      >
+        <AlertDialogHeader className='gap-3 pr-8 text-left'>
+          <AlertDialogTitle className='text-base font-bold leading-[22px] text-text-primary'>
+            {t('workspacePermissions.restrictTitle')}
+          </AlertDialogTitle>
+          <AlertDialogDescription className='text-sm leading-5 text-text-primary'>
+            {t(restrictDescriptionKey(change))}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter className='gap-3'>
+          <Button type='button' variant='outline' onClick={onCancel} data-testid='space-creation-restrict-cancel'>
+            {t('button.cancel')}
+          </Button>
+          <Button type='button' onClick={onConfirm} data-testid='space-creation-restrict-confirm'>
+            {t('workspacePermissions.restrictConfirm')}
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 function PolicyCards({
   labelledBy,
   value,
@@ -278,10 +406,11 @@ function PolicyCards({
 }: {
   labelledBy: string;
   value: WorkspaceSpaceCreationPolicy;
+  /** While a choice saves, every card is unavailable but keeps keyboard focus (not `disabled`). */
   saving?: WorkspaceSpaceCreationPolicy;
   disabled: boolean;
   selectedSupported: boolean;
-  onSelect: (policy: WorkspaceSpaceCreationPolicy) => void;
+  onSelect: (policy: WorkspaceSpaceCreationPolicy, card: HTMLElement) => void;
 }) {
   const { t } = useTranslation();
   const baseId = useId();
@@ -306,14 +435,17 @@ function PolicyCards({
             aria-pressed={selected}
             aria-labelledby={titleId}
             aria-describedby={descriptionId}
+            aria-disabled={saving !== undefined || undefined}
             disabled={disabled || unavailable}
-            onClick={() => onSelect(option)}
+            onClick={(event) => {
+              if (saving === undefined) onSelect(option, event.currentTarget);
+            }}
             data-testid={`space-creation-policy-${option}`}
             className={cn(
               'relative flex flex-col items-start gap-1.5 rounded-400 border px-3 py-3 pr-8 text-left transition-colors lg:min-h-[88px]',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-theme-thick',
-              'disabled:cursor-not-allowed',
-              !selected && 'disabled:opacity-60',
+              'disabled:cursor-not-allowed aria-disabled:cursor-not-allowed',
+              !selected && 'disabled:opacity-60 aria-disabled:opacity-60',
               selected
                 ? 'border-border-theme-thick bg-fill-theme-select ring-1 ring-border-theme-thick'
                 : 'border-border-primary hover:bg-fill-content-hover'
@@ -508,6 +640,8 @@ function SelectedCreators({
   const { t } = useTranslation();
   const headingId = useId();
   const alive = useAlive();
+  const sectionRef = useRef<HTMLElement>(null);
+  const removeButtons = useRef(new Map<string, HTMLButtonElement>());
   const workspaceId = capability.workspace_id;
   const groupsSupported = capability.group_selection_supported;
   const groupsAddable = groupsSupported && capability.can_grant_creator_groups;
@@ -568,6 +702,11 @@ function SelectedCreators({
         left.name.localeCompare(right.name)
     );
   }, [roster.groupsById, roster.membersByUuid, rows, t]);
+  const shownRows = useRef(sortedRows);
+
+  shownRows.current = sortedRows;
+
+  const focusSearch = () => sectionRef.current?.querySelector<HTMLInputElement>('input')?.focus();
 
   const begin = (key: string) => {
     if (pendingRef.current.has(key)) return false;
@@ -618,17 +757,34 @@ function SelectedCreators({
     }
   };
 
-  const add = async (candidate: Candidate) => {
+  /** `origin` is the Add button; a keyboard user on it goes back to the search field, as the list closes. */
+  const add = async (candidate: Candidate, origin?: HTMLElement) => {
     if (disabled) return;
-    if ((await grant(candidate.principal, candidate.name)) && alive.current) setSearch('');
+    if ((await grant(candidate.principal, candidate.name)) && alive.current) {
+      if (origin && document.activeElement === origin) focusSearch();
+      setSearch('');
+    }
   };
 
-  const remove = async (row: SpaceCreatorSelection, name: string) => {
+  /** A keyboard user on the removed row's button moves to the next person, or to the search field. */
+  const keepPlaceAfterRemoving = (key: string, origin?: HTMLElement) => {
+    if (!origin || document.activeElement !== origin) return;
+    const shown = shownRows.current;
+    const index = shown.findIndex((item) => principalKey(item.row.principal) === key);
+    const neighbour = shown[index + 1] ?? shown[index - 1];
+    const next = neighbour && removeButtons.current.get(principalKey(neighbour.row.principal));
+
+    if (next) next.focus();
+    else focusSearch();
+  };
+
+  const remove = async (row: SpaceCreatorSelection, name: string, origin?: HTMLElement) => {
     const key = principalKey(row.principal);
 
     if (disabled || !begin(key)) return;
     try {
       await WorkspaceService.setWorkspaceSpaceCreator(workspaceId, row.principal, false);
+      if (alive.current) keepPlaceAfterRemoving(key, origin);
       roster.applyLocal((current) => current.filter((item) => principalKey(item.principal) !== key));
       // Undo re-grants, so offer it only when a fresh grant would be accepted.
       const undoable = row.eligible && (row.principal.type === 'user' || capability.can_grant_creator_groups);
@@ -654,7 +810,12 @@ function SelectedCreators({
   };
 
   return (
-    <section aria-labelledby={headingId} className='flex flex-col gap-3' data-testid='space-creator-selections'>
+    <section
+      ref={sectionRef}
+      aria-labelledby={headingId}
+      className='flex flex-col gap-3'
+      data-testid='space-creator-selections'
+    >
       <div id={headingId} className='text-sm font-medium text-text-primary'>
         {t('workspacePermissions.selectionsTitle')}
       </div>
@@ -714,15 +875,18 @@ function SelectedCreators({
                       <div className='truncate text-xs text-text-secondary'>{candidate.subline}</div>
                     )}
                   </div>
-                  <Button
+                  {/* A native button: while it saves it stays focusable (aria-disabled), unlike `loading`. */}
+                  <button
                     type='button'
-                    size='sm'
-                    variant='ghost'
                     aria-label={t('workspacePermissions.addNamed', { name: candidate.name, ...RAW })}
-                    className='text-text-action hover:text-text-action-hover focus-visible:ring-1 focus-visible:ring-border-theme-thick'
+                    aria-disabled={pending[key] || undefined}
+                    aria-busy={pending[key] || undefined}
+                    className={cn(
+                      buttonVariants({ variant: 'ghost', size: 'sm' }),
+                      'text-text-action hover:text-text-action-hover aria-disabled:cursor-not-allowed aria-disabled:opacity-70'
+                    )}
                     disabled={disabled}
-                    loading={pending[key] === true}
-                    onClick={() => void add(candidate)}
+                    onClick={(event) => void add(candidate, event.currentTarget)}
                   >
                     {pending[key] ? (
                       <Progress variant='inherit' />
@@ -732,7 +896,7 @@ function SelectedCreators({
                         {t('workspacePermissions.add')}
                       </>
                     )}
-                  </Button>
+                  </button>
                 </div>
               );
             })
@@ -791,14 +955,21 @@ function SelectedCreators({
                 </div>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button
+                    <button
                       type='button'
-                      variant='ghost'
-                      size='icon'
+                      ref={(element) => {
+                        if (element) removeButtons.current.set(key, element);
+                        else removeButtons.current.delete(key);
+                      }}
                       aria-label={t('workspacePermissions.removeNamed', { name, ...RAW })}
+                      aria-disabled={pending[key] || undefined}
+                      aria-busy={pending[key] || undefined}
+                      className={cn(
+                        buttonVariants({ variant: 'ghost', size: 'icon' }),
+                        'aria-disabled:cursor-not-allowed aria-disabled:opacity-70'
+                      )}
                       disabled={disabled}
-                      loading={pending[key] === true}
-                      onClick={() => void remove(row, name)}
+                      onClick={(event) => void remove(row, name, event.currentTarget)}
                       data-testid='space-creator-remove'
                     >
                       {pending[key] ? (
@@ -806,7 +977,7 @@ function SelectedCreators({
                       ) : (
                         <CloseIcon aria-hidden='true' className='h-4 w-4' />
                       )}
-                    </Button>
+                    </button>
                   </TooltipTrigger>
                   <TooltipContent>{t('workspacePermissions.remove')}</TooltipContent>
                 </Tooltip>

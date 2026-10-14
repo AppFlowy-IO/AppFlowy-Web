@@ -28,6 +28,7 @@ const mockAddSpaceMember = jest.fn();
 const mockAddSpaceMemberByUuid = jest.fn();
 const mockMoveToTrash = jest.fn();
 const mockDeleteTrash = jest.fn();
+const mockAddPage = jest.fn();
 const mockRefreshCreationPermission = jest.fn();
 const mockGetSpaceCreationCapabilities = jest.fn();
 let mockCanCreateSpace = true;
@@ -90,9 +91,12 @@ jest.mock('react-i18next', () => ({
     t: (key: string) => (key === 'space.defaultSpaceName' ? 'General' : key),
   }),
 }));
+// Messages made outside components (saved-request and recovery errors) also show their key.
+jest.mock('i18next', () => ({ ...jest.requireActual('i18next'), t: (key: string) => key }));
 
 jest.mock('@/application/services/domains', () => ({
   PageService: {
+    add: (...args: unknown[]) => mockAddPage(...args),
     moveToTrash: (...args: unknown[]) => mockMoveToTrash(...args),
     deleteTrash: (...args: unknown[]) => mockDeleteTrash(...args),
   },
@@ -977,6 +981,107 @@ describe('CreateSpaceModal draft controller', () => {
     });
     expect(mockCreateSpace).toHaveBeenCalledTimes(2);
     expect(sessionStorage.length).toBe(0);
+  });
+
+  it('offers only Discard, also after reopening, when Check again finds the space but its first page elsewhere', async () => {
+    const onClose = jest.fn();
+
+    mockCreateSpaceWithInitialPage.mockRejectedValueOnce(new Error('response lost'));
+    const first = render(<CreateSpaceModal open onClose={onClose}
+      initialPage={{ layout: ViewLayout.Document, name: 'Meeting notes' }} />);
+
+    enterSpaceName('Research');
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('response lost'));
+    // The space exists, but the saved first page now sits under another space.
+    mockGetView.mockResolvedValue({ view_id: 'page-id', parent_view_id: 'another-space' });
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('spaceCreation.firstPageElsewhere'));
+
+    // The lasting notice agrees with the toast: the space was created, and only Discard is left.
+    expect(screen.queryByTestId('space-creation-recovery-unconfirmed')).toBeNull();
+    expect(screen.getByTestId('space-creation-recovery-firstPageElsewhere').textContent).toContain(
+      'spaceCreation.firstPageElsewhere'
+    );
+    expect(screen.getByTestId('create-space-submit').disabled).toBe(true);
+    expect(sessionStorage.length).toBe(1);
+
+    first.unmount();
+    render(<CreateSpaceModal open onClose={onClose}
+      initialPage={{ layout: ViewLayout.Document, name: 'Meeting notes' }} />);
+    expect(screen.getByTestId('space-creation-recovery-firstPageElsewhere')).toBeTruthy();
+    expect(screen.getByTestId('create-space-submit').disabled).toBe(true);
+
+    fireEvent.click(screen.getByTestId('space-creation-discard'));
+    fireEvent.click(screen.getByTestId('discard-space-request-confirm'));
+    expect(sessionStorage.length).toBe(0);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(mockCreateSpaceWithInitialPage).toHaveBeenCalledTimes(1);
+    expect(mockAddPage).not.toHaveBeenCalled();
+  });
+
+  it('never adds the first page twice when the server added it under its own ID', async () => {
+    mockCreateSpaceWithInitialPage.mockRejectedValueOnce(new Error('response lost'));
+    const first = render(<CreateSpaceModal open onClose={jest.fn()}
+      initialPage={{ layout: ViewLayout.Document, name: 'Meeting notes' }} />);
+
+    enterSpaceName('Research');
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('response lost'));
+    // The space exists without its first page; an older server adds the page under another ID,
+    // which the page request refuses.
+    mockGetView.mockRejectedValue({ code: -2, httpStatus: 404 });
+    mockAddPage.mockRejectedValue(
+      Object.assign(new Error('Create page returned an unexpected view ID'), {
+        code: -1,
+        clientGeneratedExpectedViewId: 'page-id',
+        clientGeneratedReturnedViewId: 'page-from-server',
+      })
+    );
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('spaceCreation.firstPageUnconfirmed'));
+
+    expect(mockAddPage).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('space-creation-recovery-firstPageUnconfirmed').textContent).toContain(
+      'spaceCreation.firstPageUnconfirmed'
+    );
+    expect(screen.getByTestId('create-space-submit').disabled).toBe(true);
+    // Enter outside a control runs the primary action even while its button is disabled.
+    fireEvent.keyDown(screen.getByTestId('create-space-modal'), { key: 'Enter' });
+    first.unmount();
+    render(<CreateSpaceModal open onClose={jest.fn()}
+      initialPage={{ layout: ViewLayout.Document, name: 'Meeting notes' }} />);
+    expect(screen.getByTestId('space-creation-recovery-firstPageUnconfirmed')).toBeTruthy();
+    expect(screen.getByTestId('create-space-submit').disabled).toBe(true);
+    fireEvent.keyDown(screen.getByTestId('create-space-modal'), { key: 'Enter' });
+    await Promise.resolve();
+
+    expect(mockAddPage).toHaveBeenCalledTimes(1);
+    expect(mockCreateSpaceWithInitialPage).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.length).toBe(1);
+  });
+
+  it('stops at once when the first attempt gets its first page back under the server\'s own ID', async () => {
+    // The space was created; an older server added the first page under an ID it chose.
+    mockCreateSpaceWithInitialPage.mockRejectedValueOnce(
+      Object.assign(new Error('Create page returned an unexpected view ID'), {
+        code: -1,
+        clientGeneratedExpectedViewId: 'page-id',
+        clientGeneratedReturnedViewId: 'page-from-server',
+        clientGeneratedCleanupSucceeded: false,
+      })
+    );
+    render(<CreateSpaceModal open onClose={jest.fn()}
+      initialPage={{ layout: ViewLayout.Document, name: 'Meeting notes' }} />);
+
+    enterSpaceName('Research');
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('spaceCreation.firstPageUnconfirmed'));
+
+    expect(screen.getByTestId('space-creation-recovery-firstPageUnconfirmed')).toBeTruthy();
+    expect(screen.getByTestId('create-space-submit').disabled).toBe(true);
+    expect(sessionStorage.length).toBe(1);
+    expect(mockAddPage).not.toHaveBeenCalled();
   });
 
   it('keeps a reloaded request when its resend is definitively rejected, so only Discard forgets it', async () => {
