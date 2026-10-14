@@ -523,6 +523,50 @@ describe('workspace permission settings', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
+  it('says a refused settings read is a denial, not a connection problem', async () => {
+    mockRead.mockRejectedValue({ code: 1012, message: 'active workspace membership required' });
+    mount();
+    const status = await screen.findByText('workspacePermissions.denied');
+
+    expect(status.getAttribute('role')).toBe('status');
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'button.retry' })).toBeNull();
+    expect(screen.queryByTestId('space-creation-policy-options')).toBeNull();
+    expect(screen.queryByText('workspacePermissions.loading')).toBeNull();
+  });
+
+  it('removes settings, selections and group access when a recheck is refused', async () => {
+    current.policy = 'owners_and_selected_members';
+    rosterOf([row('user', aliceId, { name: 'Alice Martin' })]);
+    mockGroups.mockResolvedValue({
+      groups: [
+        {
+          group_id: groupId,
+          name: 'W_RH_edit',
+          member_count: 3,
+          space_coverage_supported: true,
+          can_manage_space_coverage: true,
+          space_coverage_access_level: 30,
+        },
+      ],
+    });
+    mount();
+    await screen.findByTestId(`space-creator-row-user-${aliceId}`);
+    await screen.findByTestId('group-space-coverage-summary');
+    mockRead.mockRejectedValue({ code: 1012, message: 'active workspace membership required' });
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await screen.findByText('workspacePermissions.denied');
+    // Someone who lost access no longer sees who else may create spaces.
+    expect(screen.queryByTestId(`space-creator-row-user-${aliceId}`)).toBeNull();
+    expect(screen.queryByTestId('space-creation-policy-options')).toBeNull();
+    expect(screen.queryByTestId('group-space-coverage-summary')).toBeNull();
+    expect(screen.queryByText('Alice Martin')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   it('tells an offline user to reconnect', async () => {
     Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
     mount();

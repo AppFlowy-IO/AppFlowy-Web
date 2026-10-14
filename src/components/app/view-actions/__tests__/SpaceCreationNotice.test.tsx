@@ -8,11 +8,14 @@ jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) =>
 
 type Status = 'loading' | 'ready' | 'unsupported' | 'error';
 
-function permission(status: Status, canCreateSpace: boolean, retained?: boolean) {
+const refused = { code: 1012, message: 'active workspace membership required' };
+
+function permission(status: Status, canCreateSpace: boolean, retained?: boolean, error?: unknown) {
   return {
     status,
     canCreateSpace,
     capability: retained === undefined ? undefined : ({ can_create_space: retained } as WorkspaceSpaceCreationCapabilities),
+    error,
   };
 }
 
@@ -29,6 +32,10 @@ describe('space creation entry points', () => {
     ['a recheck of a denial', permission('loading', false, false), false, 'denied'],
     ['a failed recheck of an allowed answer', permission('error', false, true), false, 'loadError'],
     ['a failed recheck of a denial', permission('error', false, false), false, 'denied'],
+    // A refused read is the server's answer, not a check that could not run.
+    ['a refused first check', permission('error', false, undefined, refused), false, 'denied'],
+    ['a refused recheck of an allowed answer', permission('error', false, true, { httpStatus: 403 }), false, 'denied'],
+    ['an offline check', permission('error', false, undefined, new Error('Offline')), false, 'loadError'],
   ] as const)('handles %s', (_case, value, startable, reason) => {
     expect(canStartSpaceCreation(value)).toBe(startable);
     expect(spaceCreationUnavailableReason(value)).toBe(reason);

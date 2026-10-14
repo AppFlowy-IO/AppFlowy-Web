@@ -57,11 +57,24 @@ export function isDefinitiveCreationRejection(error: unknown): boolean {
 export type SpaceCreationAdmission = 'allowed' | 'denied' | 'unsupported' | 'unavailable';
 
 /**
+ * Whether a failed capability read is the server refusing this account (HTTP 403 or the
+ * not-enough-permissions code, e.g. after leaving the workspace) rather than a check that could
+ * not run. A refusal is an answer: creation stays unavailable and is explained as a denial.
+ */
+export function isSpaceCreationDenial(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const value = error as { code?: unknown; httpStatus?: unknown; response?: { status?: unknown } };
+
+  return value.httpStatus === 403 || value.response?.status === 403 || value.code === ERROR_CODE.NOT_HAS_PERMISSION;
+}
+
+/**
  * Read the current space-creation (B) decision before sending a new request.
  *
  * A server without the capability route predates B and decides by itself ('unsupported'), so
- * callers keep the legacy behaviour. Any other failure is 'unavailable'. The result is only an
- * admission hint; the server still checks authority when the space is created.
+ * callers keep the legacy behaviour. A refused read is 'denied'; any other failure is
+ * 'unavailable'. The result is only an admission hint; the server still checks authority when
+ * the space is created.
  */
 export async function readSpaceCreationAdmission(workspaceId: string): Promise<SpaceCreationAdmission> {
   try {
@@ -69,7 +82,8 @@ export async function readSpaceCreationAdmission(workspaceId: string): Promise<S
 
     return capability.can_create_space ? 'allowed' : 'denied';
   } catch (error) {
-    return isUnsupportedRouteError(error) ? 'unsupported' : 'unavailable';
+    if (isUnsupportedRouteError(error)) return 'unsupported';
+    return isSpaceCreationDenial(error) ? 'denied' : 'unavailable';
   }
 }
 

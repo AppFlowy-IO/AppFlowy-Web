@@ -4,6 +4,7 @@ import { ERROR_CODE } from '@/application/constants';
 
 import {
   isDefinitiveCreationRejection,
+  isSpaceCreationDenial,
   readSpaceCreationAdmission,
   recoverSpaceCreation,
 } from '../space-creation-recovery';
@@ -73,9 +74,21 @@ describe('readSpaceCreationAdmission', () => {
     ['a network failure', { code: -1, message: 'Network error' }],
     ['an application not-found', { code: ERROR_CODE.RECORD_NOT_FOUND, httpStatus: 404 }],
     ['an invalid response', new Error('Invalid space creation capabilities')],
+    ['a server error', { code: 500, httpStatus: 500, message: 'Internal error' }],
+    ['the offline marker', new Error('Offline')],
   ])('reports %s as unavailable', async (_case, error) => {
     mockGetCapabilities.mockRejectedValue(error);
     await expect(readSpaceCreationAdmission('workspace-1')).resolves.toBe('unavailable');
+  });
+
+  it.each([
+    ['the not-enough-permissions code inside HTTP 200', { code: ERROR_CODE.NOT_HAS_PERMISSION, message: 'denied' }],
+    ['an HTTP 403', { code: 403, httpStatus: 403, message: 'Forbidden' }],
+    ['an HTTP 403 with an application code', { code: ERROR_CODE.USER_UNAUTHORIZED, httpStatus: 403 }],
+  ])('reports a refused read (%s) as a denial, not as a check that could not run', async (_case, error) => {
+    mockGetCapabilities.mockRejectedValue(error);
+    await expect(readSpaceCreationAdmission('workspace-1')).resolves.toBe('denied');
+    expect(isSpaceCreationDenial(error)).toBe(true);
   });
 });
 

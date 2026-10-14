@@ -6,6 +6,7 @@ import { validate as isUuid } from 'uuid';
 
 import { APP_EVENTS } from '@/application/constants';
 import { WorkspaceService } from '@/application/services/domains';
+import { isSpaceCreationDenial } from '@/application/services/js-services/space-creation-recovery';
 import { Role, WorkspaceGroup, WorkspaceMember } from '@/application/types';
 import {
   SpaceCreatorKind,
@@ -126,7 +127,11 @@ export function WorkspacePermissionsPanel({
 }) {
   const permission = useSpaceCreationCapability(workspaceId);
   const { t } = useTranslation();
-  const { capability, status } = permission;
+  const { status } = permission;
+  // A refused read (for example after leaving the workspace) is an answer, not a connection
+  // problem. It also hides the last settings, so names of selected people and groups go away.
+  const refused = status === 'error' && isSpaceCreationDenial(permission.error);
+  const capability = refused ? undefined : permission.capability;
 
   return (
     <SettingsPanelShell title={t('workspacePermissions.title')} testId='workspace-permissions-panel'>
@@ -141,7 +146,12 @@ export function WorkspacePermissionsPanel({
           {t('workspacePermissions.unsupported')}
         </p>
       )}
-      {!capability && status === 'error' && (
+      {refused && (
+        <p role='status' className='text-sm text-text-primary'>
+          {t('workspacePermissions.denied')}
+        </p>
+      )}
+      {!capability && status === 'error' && !refused && (
         <InlineAlert
           message={t(isOffline() ? 'workspacePermissions.offline' : 'workspacePermissions.loadFailed')}
           onRetry={() => void permission.refresh()}

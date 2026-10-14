@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 
 import {
+  isSpaceCreationDenial,
   readSpaceCreationAdmission,
   type SpaceCreationAdmission,
 } from '@/application/services/js-services/space-creation-recovery';
@@ -10,7 +11,7 @@ import { Button } from '@/components/ui/button';
 
 type SpaceCreationCapabilityState = ReturnType<typeof useSpaceCreationCapability>;
 export type SpaceCreationPermission = Pick<SpaceCreationCapabilityState, 'status' | 'canCreateSpace' | 'refresh'> &
-  Partial<Pick<SpaceCreationCapabilityState, 'capability'>>;
+  Partial<Pick<SpaceCreationCapabilityState, 'capability' | 'error'>>;
 export type SpaceCreationUnavailableReason = 'denied' | 'loadError' | 'loading';
 
 /**
@@ -28,9 +29,11 @@ export function canStartSpaceCreation(
 
 /** The visible reason creation cannot start, or undefined when it can. */
 export function spaceCreationUnavailableReason(
-  permission: Pick<SpaceCreationPermission, 'status' | 'canCreateSpace' | 'capability'>
+  permission: Pick<SpaceCreationPermission, 'status' | 'canCreateSpace' | 'capability' | 'error'>
 ): SpaceCreationUnavailableReason | undefined {
   if (canStartSpaceCreation(permission)) return;
+  // A refused read is the server's answer, not a check that could not run.
+  if (permission.status === 'error' && isSpaceCreationDenial(permission.error)) return 'denied';
   // A confirmed denial stays visible while it is rechecked or the recheck fails.
   const denied = permission.capability
     ? permission.capability.can_create_space === false
