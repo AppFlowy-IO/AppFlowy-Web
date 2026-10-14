@@ -24,6 +24,9 @@ export interface ServerInfo {
   /** Web uses a separate release line from the native min_client_version field. */
   min_web_client_version?: string;
   enable_page_history: boolean;
+  /** Both flags must be literal true before a compact atomic command is submitted. */
+  enable_atomic_creation?: boolean;
+  enable_atomic_creation_defaults?: boolean;
   /** Database aggregate snapshots and the complete web history contract. Absent means disabled. */
   enable_database_history?: boolean;
   ai_enabled?: boolean;

@@ -1,5 +1,6 @@
 import { memo, useCallback, useState } from 'react';
 
+import type { FirstBodyOwner } from '@/application/row-document/first-body-owner';
 import { YjsEditor } from '@/application/slate-yjs';
 import { YDoc } from '@/application/types';
 import CollaborativeEditor from '@/components/editor/CollaborativeEditor';
@@ -9,6 +10,7 @@ import './editor.scss';
 
 export interface EditorProps extends EditorContextState {
   doc: YDoc;
+  firstBody?: FirstBodyOwner;
   /** Isolate preview DOM identities and prevent nested Feed document previews. */
   preview?: boolean;
   /** Enable floating navigation only for full document hosts. */
@@ -20,6 +22,7 @@ export interface EditorProps extends EditorContextState {
 export const Editor = memo(
   ({
     doc,
+    firstBody,
     preview = false,
     dockableOutline = false,
     onEditorConnected,
@@ -43,6 +46,7 @@ export const Editor = memo(
         >
           <CollaborativeEditor
             doc={doc}
+            firstBody={firstBody}
             dockableOutline={dockableOutline && !preview}
             onEditorConnected={onEditorConnected}
             onSelectionChange={onSelectionChange}

@@ -1,187 +1,254 @@
+import { act, renderHook } from '@testing-library/react';
+import { createElement, type ReactNode } from 'react';
 import * as Y from 'yjs';
 
-import { copyDatabaseViewConfiguration } from '@/application/database-yjs/dispatch';
+import { atomicRead } from '@/application/atomic-creation';
+import { DatabaseContext, type DatabaseContextState } from '@/application/database-yjs/context';
+import { createDefaultDatabaseView } from '@/application/database-yjs/creation/create-default-view';
+import { useDuplicateDatabaseView } from '@/application/database-yjs/dispatch';
 import {
   DatabaseViewLayout,
-  YDatabaseFilter,
-  YDatabaseFormFieldSettings,
-  YDatabaseRowOrders,
-  YDatabaseView,
+  type View,
+  ViewLayout,
+  type YDatabaseView,
+  type YDoc,
   YjsDatabaseKey,
+  YjsEditorKey,
 } from '@/application/types';
+import { AppOutlineContext } from '@/components/app/contexts/AppOutlineContext';
 
-function createView(id: string, name: string): YDatabaseView {
-  const view = new Y.Map() as YDatabaseView;
+jest.mock('@/application/atomic-creation', () => ({
+  atomicRead: jest.fn(),
+  captureAtomicCreationOwner: (_workspace: string, check: () => void) => ({ assertCurrent: check }),
+}));
+jest.mock('@/application/database-yjs/creation/create-default-view', () => ({ createDefaultDatabaseView: jest.fn() }));
 
-  view.set(YjsDatabaseKey.id, id);
-  view.set(YjsDatabaseKey.name, name);
-  view.set(YjsDatabaseKey.layout, DatabaseViewLayout.Gallery);
-  return view;
+const disposeFixtures: (() => void)[] = [];
+
+function fixture(layout = DatabaseViewLayout.Gallery, name = 'Gallery') {
+  const doc = new Y.Doc({ guid: 'database-id' }) as YDoc;
+  const database = new Y.Map();
+  const views = new Y.Map<YDatabaseView>();
+  const source = new Y.Map() as YDatabaseView;
+
+  source.set(YjsDatabaseKey.id, 'source-view-id');
+  source.set(YjsDatabaseKey.name, name);
+  source.set(YjsDatabaseKey.layout, layout);
+  views.set('source-view-id', source);
+  database.set(YjsDatabaseKey.id, 'database-id');
+  database.set(YjsDatabaseKey.views, views);
+  doc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.database, database);
+  const folderSource: View = {
+    view_id: 'source-view-id',
+    parent_view_id: 'container',
+    name,
+    layout: layout === DatabaseViewLayout.Form ? ViewLayout.Form : ViewLayout.Gallery,
+    icon: null,
+    extra: {},
+    children: [],
+    is_private: false,
+    is_published: false,
+  };
+  const container: View = {
+    ...folderSource,
+    view_id: 'container',
+    parent_view_id: 'space',
+    extra: { is_database_container: true },
+    children: [folderSource],
+  };
+
+  jest.mocked(atomicRead).mockImplementation(async (_owner, url) => {
+    if (url.endsWith('/source-view-id')) return folderSource as never;
+    if (url.endsWith('/container')) return container as never;
+    throw new Error('Unexpected metadata read');
+  });
+  const ensureVisible = jest.fn(async () => ['space', 'container']);
+  const context: DatabaseContextState = {
+    databaseDoc: doc,
+    databasePageId: 'container',
+    activeViewId: 'source-view-id',
+    workspaceId: 'workspace',
+    rowMap: {},
+    readOnly: false,
+    canWrite: true,
+  };
+  const hook = renderHook(() => useDuplicateDatabaseView(), {
+    wrapper: ({ children }: { children: ReactNode }) =>
+      createElement(
+        AppOutlineContext.Provider,
+        { value: { outline: [container], ensureViewVisibleInOutline: ensureVisible } },
+        createElement(DatabaseContext.Provider, { value: context }, children)
+      ),
+  });
+  const updates = jest.fn();
+
+  doc.on('update', updates);
+  disposeFixtures.push(() => {
+    hook.unmount();
+    doc.destroy();
+  });
+  return { ...hook, doc, database, views, source, updates, ensureVisible };
 }
 
-describe('copyDatabaseViewConfiguration', () => {
-  it('deep-copies nested Yjs configuration without replacing the target identity or name', () => {
-    const doc = new Y.Doc();
-    const views = doc.getMap<YDatabaseView>('views');
-    const source = createView('source-view-id', 'Gallery');
-    const target = createView('target-view-id', 'Gallery (Copy)');
-    const sourceFilter = new Y.Map() as YDatabaseFilter;
-    const sourceFilterChildren = new Y.Array<YDatabaseFilter>();
-    const sourceFilters = new Y.Array<YDatabaseFilter>();
-    const sourceGallerySettings = new Y.Map<unknown>();
-    const sourceLayoutSettings = new Y.Map<Y.Map<unknown>>();
-    const sourceGroupColumn = new Y.Map<unknown>();
-    const sourceGroupColumns = new Y.Array<Y.Map<unknown>>();
-    const sourceGroup = new Y.Map<unknown>();
-    const sourceGroups = new Y.Array<Y.Map<unknown>>();
-    const sourceFieldOrders = new Y.Array<{ id: string }>();
+afterEach(() => {
+  disposeFixtures.splice(0).forEach((dispose) => dispose());
+});
 
-    sourceFilter.set(YjsDatabaseKey.id, 'filter-id');
-    sourceFilter.set(YjsDatabaseKey.content, 'target');
-    sourceFilterChildren.push([sourceFilter]);
+beforeEach(() => {
+  jest.mocked(atomicRead).mockReset();
+  jest.mocked(createDefaultDatabaseView).mockReset().mockResolvedValue('server-created-view');
+});
 
-    const sourceAdvancedFilter = new Y.Map() as YDatabaseFilter;
+describe('server-owned database view duplication', () => {
+  it('keeps nested settings untouched while the atomic duplicate is pending', async () => {
+    const f = fixture();
+    const filters = new Y.Array();
+    const filter = new Y.Map();
+    const children = new Y.Array();
+    const childFilter = new Y.Map();
+    const layoutSettings = new Y.Map();
+    const gallerySettings = new Y.Map();
+    const groups = new Y.Array();
+    const group = new Y.Map();
+    const columns = new Y.Array();
+    const column = new Y.Map();
+    const fieldOrders = new Y.Array();
 
-    sourceAdvancedFilter.set(YjsDatabaseKey.id, 'advanced-filter-id');
-    sourceAdvancedFilter.set(YjsDatabaseKey.children, sourceFilterChildren);
-    sourceFilters.push([sourceAdvancedFilter]);
+    childFilter.set('content', 'source-filter');
+    children.push([childFilter]);
+    filter.set('children', children);
+    filters.push([filter]);
+    gallerySettings.set('card_width', 320);
+    layoutSettings.set(String(DatabaseViewLayout.Gallery), gallerySettings);
+    column.set('visible', true);
+    columns.push([column]);
+    group.set('groups', columns);
+    groups.push([group]);
+    fieldOrders.push([{ id: 'field-id' }]);
+    act(() => {
+      f.source.set(YjsDatabaseKey.filters, filters as never);
+      f.source.set(YjsDatabaseKey.layout_settings, layoutSettings as never);
+      f.source.set(YjsDatabaseKey.groups, groups as never);
+      f.source.set(YjsDatabaseKey.field_orders, fieldOrders as never);
+    });
+    const before = Y.encodeStateAsUpdate(f.doc);
 
-    sourceGallerySettings.set(YjsDatabaseKey.card_width, 320);
-    sourceLayoutSettings.set(String(DatabaseViewLayout.Gallery), sourceGallerySettings);
+    f.updates.mockClear();
+    let finish!: (viewId: string) => void;
+    let entered!: () => void;
+    const submitted = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
 
-    sourceGroupColumn.set(YjsDatabaseKey.id, 'column-id');
-    sourceGroupColumn.set(YjsDatabaseKey.visible, true);
-    sourceGroupColumns.push([sourceGroupColumn]);
-    sourceGroup.set(YjsDatabaseKey.id, 'group-id');
-    sourceGroup.set(YjsDatabaseKey.groups, sourceGroupColumns);
-    sourceGroups.push([sourceGroup]);
+    jest.mocked(createDefaultDatabaseView).mockImplementation(() => {
+      entered();
+      return new Promise<string>((resolve) => {
+        finish = resolve;
+      });
+    });
+    const pending = f.result.current('source-view-id', 'Gallery (Copy)');
 
-    sourceFieldOrders.push([{ id: 'field-id' }]);
-    source.set(YjsDatabaseKey.filters, sourceFilters);
-    source.set(YjsDatabaseKey.groups, sourceGroups);
-    source.set(YjsDatabaseKey.layout_settings, sourceLayoutSettings);
-    source.set(YjsDatabaseKey.field_orders, sourceFieldOrders);
-
-    views.set('source-view-id', source);
-    views.set('target-view-id', target);
-
-    copyDatabaseViewConfiguration(source, target);
-
-    expect(target.get(YjsDatabaseKey.id)).toBe('target-view-id');
-    expect(target.get(YjsDatabaseKey.name)).toBe('Gallery (Copy)');
-    expect(target.get(YjsDatabaseKey.filters).toJSON()).toEqual(sourceFilters.toJSON());
-    expect(target.get(YjsDatabaseKey.groups).toJSON()).toEqual(sourceGroups.toJSON());
-    expect(target.get(YjsDatabaseKey.layout_settings).toJSON()).toEqual(sourceLayoutSettings.toJSON());
-    expect(target.get(YjsDatabaseKey.field_orders).toJSON()).toEqual(sourceFieldOrders.toJSON());
-
-    const targetFilters = target.get(YjsDatabaseKey.filters);
-    const targetAdvancedFilter = targetFilters.get(0);
-    const targetFilterChildren = targetAdvancedFilter.get(YjsDatabaseKey.children) as Y.Array<YDatabaseFilter>;
-    const targetFilter = targetFilterChildren.get(0);
-    const targetGroups = target.get(YjsDatabaseKey.groups);
-    const targetGroupColumns = targetGroups.get(0).get(YjsDatabaseKey.groups) as Y.Array<Y.Map<unknown>>;
-    const targetGallerySettings = target
-      .get(YjsDatabaseKey.layout_settings)
-      .get(String(DatabaseViewLayout.Gallery)) as Y.Map<unknown>;
-
-    expect(targetFilters).not.toBe(sourceFilters);
-    expect(targetAdvancedFilter).not.toBe(sourceAdvancedFilter);
-    expect(targetFilterChildren).not.toBe(sourceFilterChildren);
-    expect(targetFilter).not.toBe(sourceFilter);
-    expect(targetGroups).not.toBe(sourceGroups);
-    expect(targetGroupColumns).not.toBe(sourceGroupColumns);
-    expect(targetGallerySettings).not.toBe(sourceGallerySettings);
-
-    targetFilter.set(YjsDatabaseKey.content, 'changed in duplicate');
-    targetGallerySettings.set(YjsDatabaseKey.card_width, 640);
-    sourceGroupColumn.set(YjsDatabaseKey.visible, false);
-    (target.get(YjsDatabaseKey.field_orders).get(0) as { id: string }).id = 'duplicate-field-id';
-
-    expect(sourceFilter.get(YjsDatabaseKey.content)).toBe('target');
-    expect(sourceGallerySettings.get(YjsDatabaseKey.card_width)).toBe(320);
-    expect(targetGroupColumns.get(0).get(YjsDatabaseKey.visible)).toBe(true);
-    expect(sourceFieldOrders.get(0).id).toBe('field-id');
+    await submitted;
+    expect(createDefaultDatabaseView).toHaveBeenCalledTimes(1);
+    expect(createDefaultDatabaseView).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceViewId: 'source-view-id',
+        databaseId: 'database-id',
+        parentViewId: 'container',
+        layout: DatabaseViewLayout.Gallery,
+        name: 'Gallery (Copy)',
+        position: { kind: 'index', index: 0 },
+      })
+    );
+    expect([...f.views.keys()]).toEqual(['source-view-id']);
+    expect(Y.encodeStateAsUpdate(f.doc)).toEqual(before);
+    expect(f.updates).not.toHaveBeenCalled();
+    expect(f.ensureVisible).not.toHaveBeenCalled();
+    finish('server-created-view');
+    await expect(pending).resolves.toBe('server-created-view');
+    expect(f.source.get(YjsDatabaseKey.filters)).toBe(filters);
+    expect(childFilter.get('content')).toBe('source-filter');
+    expect(gallerySettings.get('card_width')).toBe(320);
+    expect(column.get('visible')).toBe(true);
+    expect(fieldOrders.toJSON()).toEqual([{ id: 'field-id' }]);
+    expect(Y.encodeStateAsUpdate(f.doc)).toEqual(before);
   });
 
-  it('copies source row order while excluding rows deleted by Desktop canonical visibility', () => {
-    const doc = new Y.Doc();
-    const views = doc.getMap<YDatabaseView>('views');
-    const canonicalState = doc.getMap<YDatabaseRowOrders>('canonical-state');
-    const source = createView('source-view-id', 'Gallery');
-    const target = createView('target-view-id', 'Gallery (Copy)');
-    const sourceRowOrders = new Y.Array() as YDatabaseRowOrders;
-    const canonicalRowOrders = new Y.Array() as YDatabaseRowOrders;
+  it('leaves canonical deletion and restoration decisions to the server instead of rewriting source rows', async () => {
+    const f = fixture();
+    const rows = new Y.Array();
+    const canonicalRows = new Y.Array();
+    const internal = new Y.Map() as YDatabaseView;
+    const metas = new Y.Map();
 
-    sourceRowOrders.push([
+    rows.push([
       { id: 'visible-first', height: 10 },
       { id: 'canonical-deleted', height: 20 },
       { id: 'canonical-restored', height: 30, is_deleted: true },
       { id: 'raw-deleted', height: 40, is_deleted: true },
       { id: 'visible-last', height: 50 },
     ]);
-    canonicalRowOrders.push([
+    canonicalRows.push([
       { id: 'visible-first', height: 10, is_deleted: false },
       { id: 'canonical-deleted', height: 20, is_deleted: true },
       { id: 'canonical-restored', height: 30, is_deleted: false },
       { id: 'visible-last', height: 50, is_deleted: false },
     ]);
-    source.set(YjsDatabaseKey.row_orders, sourceRowOrders);
-    views.set('source-view-id', source);
-    views.set('target-view-id', target);
-    canonicalState.set('rows', canonicalRowOrders);
+    internal.set(YjsDatabaseKey.id, 'inline-view-id');
+    internal.set(YjsDatabaseKey.is_inline, true);
+    internal.set(YjsDatabaseKey.row_orders, canonicalRows as never);
+    metas.set(YjsDatabaseKey.iid, 'inline-view-id');
+    act(() => {
+      f.source.set(YjsDatabaseKey.row_orders, rows as never);
+      f.views.set('inline-view-id', internal);
+      f.database.set(YjsDatabaseKey.metas, metas);
+    });
+    const before = Y.encodeStateAsUpdate(f.doc);
 
-    copyDatabaseViewConfiguration(source, target, canonicalRowOrders);
-
-    expect(target.get(YjsDatabaseKey.row_orders).toJSON()).toEqual([
-      { id: 'visible-first', height: 10 },
-      { id: 'canonical-restored', height: 30, is_deleted: false },
-      { id: 'visible-last', height: 50 },
-    ]);
-    expect(sourceRowOrders.toJSON()).toEqual([
-      { id: 'visible-first', height: 10 },
-      { id: 'canonical-deleted', height: 20 },
-      { id: 'canonical-restored', height: 30, is_deleted: true },
-      { id: 'raw-deleted', height: 40, is_deleted: true },
-      { id: 'visible-last', height: 50 },
-    ]);
-    expect(target.get(YjsDatabaseKey.row_orders)).not.toBe(sourceRowOrders);
+    f.updates.mockClear();
+    await expect(f.result.current('source-view-id')).resolves.toBe('server-created-view');
+    expect(createDefaultDatabaseView).toHaveBeenCalledTimes(1);
+    expect(createDefaultDatabaseView).toHaveBeenCalledWith(expect.objectContaining({ sourceViewId: 'source-view-id' }));
+    expect(Y.encodeStateAsUpdate(f.doc)).toEqual(before);
+    expect(f.updates).not.toHaveBeenCalled();
+    expect([...f.views.keys()]).toEqual(['source-view-id', 'inline-view-id']);
   });
 
-  it('deep-copies Form field settings so the duplicated projection is independent', () => {
-    const doc = new Y.Doc();
-    const views = doc.getMap<YDatabaseView>('views');
-    const source = createView('source-form-id', 'Form');
-    const target = createView('target-form-id', 'Form (Copy)');
-    const sourceSettings = new Y.Map() as YDatabaseFormFieldSettings;
-    const sourceQuestion = new Y.Map<unknown>();
-    const sourceDecided = new Y.Map<unknown>();
+  it('keeps Form questions intact when atomic duplication fails without exposing a local copy', async () => {
+    const f = fixture(DatabaseViewLayout.Form, 'Form');
+    const settings = new Y.Map();
+    const question = new Y.Map();
+    const decided = new Y.Map();
 
-    source.set(YjsDatabaseKey.layout, DatabaseViewLayout.Form);
-    target.set(YjsDatabaseKey.layout, DatabaseViewLayout.Form);
-    sourceQuestion.set('included', true);
-    sourceQuestion.set('required', true);
-    sourceQuestion.set('description', 'Source description');
-    sourceDecided.set('included', false);
-    sourceSettings.set('field-id', sourceQuestion);
-    sourceSettings.set('__form_decided__', sourceDecided);
-    source.set(YjsDatabaseKey.form_field_settings, sourceSettings);
-    views.set('source-form-id', source);
-    views.set('target-form-id', target);
+    question.set('included', true);
+    question.set('required', true);
+    question.set('description', 'Source description');
+    decided.set('included', false);
+    settings.set('field-id', question);
+    settings.set('__form_decided__', decided);
+    act(() => {
+      f.source.set(YjsDatabaseKey.form_field_settings, settings as never);
+    });
+    const before = Y.encodeStateAsUpdate(f.doc);
+    const offline = new Error('Network unavailable');
 
-    copyDatabaseViewConfiguration(source, target);
-
-    const targetSettings = target.get(YjsDatabaseKey.form_field_settings);
-    const targetQuestion = targetSettings?.get('field-id');
-
-    expect(targetSettings?.toJSON()).toEqual(sourceSettings.toJSON());
-    expect(targetSettings).not.toBe(sourceSettings);
-    expect(targetQuestion).not.toBe(sourceQuestion);
-    expect(targetSettings?.get('__form_decided__')).not.toBe(sourceDecided);
-
-    targetQuestion?.set('required', false);
-    sourceQuestion.set('description', 'Updated only on source');
-
-    expect(sourceQuestion.get('required')).toBe(true);
-    expect(targetQuestion?.get('description')).toBe('Source description');
+    f.updates.mockClear();
+    jest.mocked(createDefaultDatabaseView).mockRejectedValue(offline);
+    await expect(f.result.current('source-view-id')).rejects.toBe(offline);
+    expect(createDefaultDatabaseView).toHaveBeenCalledTimes(1);
+    expect(createDefaultDatabaseView).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceViewId: 'source-view-id',
+        layout: DatabaseViewLayout.Form,
+        name: 'Form (Copy)',
+      })
+    );
+    expect(f.source.get(YjsDatabaseKey.form_field_settings)).toBe(settings);
+    expect(question.toJSON()).toEqual({ included: true, required: true, description: 'Source description' });
+    expect(decided.get('included')).toBe(false);
+    expect(Y.encodeStateAsUpdate(f.doc)).toEqual(before);
+    expect(f.updates).not.toHaveBeenCalled();
+    expect(f.ensureVisible).not.toHaveBeenCalled();
+    expect([...f.views.keys()]).toEqual(['source-view-id']);
   });
 });

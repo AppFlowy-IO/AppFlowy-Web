@@ -13,6 +13,7 @@ import { uploadImportFile } from '../import-api';
 import { publishCollabs } from '../publish-api';
 
 jest.mock('@/application/session/token', () => ({
+  captureTokenSession: jest.fn(() => ({ generation: 1, userId: null })),
   getTokenParsed: jest.fn(() => null),
   invalidToken: jest.fn(),
   saveGoTrueAuth: jest.fn(() => true),

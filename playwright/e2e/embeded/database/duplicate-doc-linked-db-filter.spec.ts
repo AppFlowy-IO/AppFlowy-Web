@@ -37,6 +37,14 @@ test.describe('Duplicate Document Linked Database Filter', () => {
 
     const docViewId = await createNamedDocumentPage(page, docName);
     const editor = editorForView(page, docViewId);
+    const linkedCommands: Array<{ request_id: string; view: { view_id: string; parent_view_id: string } }> = [];
+
+    page.on('request', (request) => {
+      if (request.method() !== 'POST' || !new URL(request.url()).pathname.endsWith('/v2/page-view/database-view/default')) return;
+      const command = request.postDataJSON();
+
+      if (command.view?.parent_view_id === docViewId) linkedCommands.push(command);
+    });
     // The linked database picker lists databases by the container name.
     // `createNamedGridPage` renames the container itself, so search by sourceDbName.
     await insertLinkedGridViaSlash(page, docViewId, sourceDbName, 0);
@@ -45,6 +53,10 @@ test.describe('Duplicate Document Linked Database Filter', () => {
     await page.waitForTimeout(3000);
     await insertLinkedGridViaSlash(page, docViewId, sourceDbName, 1);
 
+    // A completed insertion must retire its receipt; the next user action
+    // creates a distinct view instead of replaying the previous committed one.
+    expect(new Set(linkedCommands.map((command) => command.request_id)).size).toBe(2);
+    expect(new Set(linkedCommands.map((command) => command.view.view_id)).size).toBe(2);
     await expect(databaseBlocks(editor)).toHaveCount(2, { timeout: 30000 });
     await expectNoActiveFilters(databaseBlocks(editor).nth(0));
 

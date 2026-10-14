@@ -1,7 +1,8 @@
 import { BrowserContext, expect, Page } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
-import { ViewLayout } from '../../../src/application/types';
+import type { AtomicCreationReceipt } from '../../../src/application/atomic-creation/types';
+import { DatabaseViewLayout } from '../../../src/application/types';
 import { assertSuccessfulAppFlowyResponse } from '../../support/appflowy-response';
 import { signInWithPasswordViaUi } from '../../support/auth-flow-helpers';
 import { signInAndCreateDatabaseView } from '../../support/database-ui-helpers';
@@ -44,6 +45,7 @@ const EVA_PASSWORD = process.env.EVA_PASSWORD || process.env.SEEDED_USER_PASSWOR
 const MEMBER_FORM_DATABASE_PREFIX = 'Form member submission';
 
 type FormShareScenarioState = {
+  formTabOrder?: string[];
   capturedUrl?: string;
   evaUserId?: string;
   respondentContext?: BrowserContext;
@@ -124,20 +126,20 @@ Given('Nathan has a Grid with a Form tab open in his workspace', async ({ page }
   await Promise.all([
     // Record the server-created container, not a possibly stale selected page.
     page.waitForResponse((response) =>
-      new URL(response.url()).pathname === `/api/workspace/${workspaceId}/page-view` &&
+      new URL(response.url()).pathname === `/api/workspace/${workspaceId}/v2/page-view/database/default` &&
       response.request().method() === 'POST' &&
-      response.request().postDataJSON()?.layout === ViewLayout.Grid
+      response.request().postDataJSON()?.database?.layout === DatabaseViewLayout.Grid
     ).then(async (response) => {
       const bodyText = await response.text();
 
       assertSuccessfulAppFlowyResponse({
         bodyText, ok: response.ok(), status: response.status(), operation: 'Create form fixture',
       });
-      const { data } = JSON.parse(bodyText) as { data: { view_id: string } };
+      const { data } = JSON.parse(bodyText) as { data: AtomicCreationReceipt<'database'> };
 
       sharedState.set(page, {
         ...sharedState.get(page),
-        temporaryDatabase: { workspaceId, pageId: data.view_id },
+        temporaryDatabase: { workspaceId, pageId: data.result.view_id },
       });
     }),
     createNamedGridDatabase(page, databaseName, []),
@@ -281,7 +283,29 @@ Given('a Grid is open as a starter database', async ({ page, request }) => {
 });
 
 When('I add a Form view via the tab bar without dismissing modals', async ({ page }) => {
+  const originalTabs = await DatabaseViewSelectors.viewTab(page).evaluateAll((tabs) =>
+    tabs.map((tab) => tab.getAttribute('data-testid'))
+  );
+  const created = page.waitForResponse((response) =>
+    response.request().method() === 'POST' &&
+    response.url().endsWith('/v2/page-view/database-view/default') &&
+    response.request().postDataJSON()?.view.layout === DatabaseViewLayout.Form
+  );
+
   await addFormViewToTabBarRaw(page);
+  const response = await created;
+  const body = await response.json();
+  const { view } = response.request().postDataJSON();
+
+  expect(response.ok()).toBe(true);
+  expect(body.code).toBe(0);
+  expect(view.responses_view_id).toEqual(expect.any(String));
+  expect(body.data.result.view_ids).toEqual([view.view_id, view.responses_view_id]);
+  sharedState.get(page)!.formTabOrder = [
+    ...originalTabs as string[],
+    `view-tab-${view.view_id}`,
+    `view-tab-${view.responses_view_id}`,
+  ];
 });
 
 Then('the auto-create form questions dialog is visible', async ({ page }) => {
@@ -309,6 +333,22 @@ Then('the database view tab bar has {int} tabs', async ({ page }, expected: numb
   await expect(DatabaseViewSelectors.viewTab(page)).toHaveCount(expected, {
     timeout: 10000,
   });
+});
+
+Then('the Form and Responses tabs follow the original Grid after reload', async ({ page }) => {
+  const expectedOrder = sharedState.get(page)?.formTabOrder;
+
+  expect(expectedOrder).toHaveLength(3);
+  const assertOrder = async () => {
+    await expect.poll(() => DatabaseViewSelectors.viewTab(page).evaluateAll((tabs) =>
+      tabs.map((tab) => tab.getAttribute('data-testid'))
+    )).toEqual(expectedOrder);
+    await expect(DatabaseViewSelectors.viewTab(page).nth(2)).toContainText('Responses');
+  };
+
+  await assertOrder();
+  await page.reload();
+  await assertOrder();
 });
 
 Then('database view tab {int} is a {string} layout', async ({ page }, position: number, layout: string) => {

@@ -3,6 +3,7 @@ import { SidebarSelectors, WorkspaceSelectors } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
 import { mockServerInfo } from '../../support/server-info-helpers';
+import { mockBillingEndpoints } from '../../support/fixtures';
 
 /**
  * Workspace Upgrade Entry Tests
@@ -41,6 +42,8 @@ test.describe('Workspace Upgrade Entry', () => {
     } workspace owners`, async ({ page, request }) => {
       // Billing depends on the server's reported edition, including on localhost.
       await mockServerInfo(page, { self_hosted: selfHosted });
+      // The local Cloud stack has no billing service; model a confirmed free plan.
+      await mockBillingEndpoints(page);
       const serverInfoLoaded = page.waitForResponse(
         (response) => new URL(response.url()).pathname === '/api/server-info'
       );

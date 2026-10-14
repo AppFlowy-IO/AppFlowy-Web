@@ -117,6 +117,222 @@ describe('useShareAccessDetails', () => {
     expect(mockGetSharedGroups).toHaveBeenCalledWith('workspace-1', 'view-1');
   });
 
+  it('keeps a pending permission lookup across unrelated outline snapshot replacements', async () => {
+    let resolveDirectGroups!: (groups: WorkspaceGroupViewPermission[]) => void;
+
+    mockGetSharedGroups.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveDirectGroups = resolve;
+      })
+    );
+    mockGetShareDetail.mockResolvedValue({ shared_with: [removedPerson], groups: [sharedGroup] });
+    const { result, rerender } = renderHook(() => useShareAccessDetails('view-1', true));
+
+    await waitFor(() => expect(result.current.people).toEqual([removedPerson]));
+    mockOutline = [{ ...mockOutline[0], name: 'Renamed page', children: [] }];
+    rerender();
+    await act(async () => {
+      resolveDirectGroups([sharedGroup]);
+    });
+
+    expect(mockGetShareDetail).toHaveBeenCalledTimes(1);
+    expect(mockGetSharedGroups).toHaveBeenCalledTimes(1);
+    expect(result.current.editableGroupIds.has(sharedGroup.group_id)).toBe(true);
+  });
+
+  it('reloads permission details when the page moves to a different governing space', async () => {
+    mockGetShareDetail.mockResolvedValue({ shared_with: [], groups: [] });
+    const { result, rerender } = renderHook(() => useShareAccessDetails('view-1', true));
+
+    await waitFor(() => expect(mockGetShareDetail).toHaveBeenCalledTimes(1));
+    mockOutline = [
+      {
+        ...mockOutline[0],
+        view_id: 'new-space',
+        extra: { is_space: true },
+        children: [mockOutline[0]],
+      },
+    ];
+    rerender();
+
+    await waitFor(() => expect(mockGetSpacePermission).toHaveBeenCalledWith('workspace-1', 'new-space'));
+    await waitFor(() => expect(result.current.isLoadingPeople).toBe(false));
+    expect(mockGetShareDetail).toHaveBeenCalledTimes(2);
+    expect(mockGetSharedGroups).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows effective access while a slow direct-group lookup keeps group edits disabled', async () => {
+    let resolveDirectGroups!: (groups: WorkspaceGroupViewPermission[]) => void;
+
+    mockGetSharedGroups.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveDirectGroups = resolve;
+      })
+    );
+    mockGetShareDetail.mockResolvedValueOnce({
+      shared_with: [removedPerson],
+      groups: [sharedGroup],
+      current_user_permission: { access_level: AccessLevel.FullAccess },
+    });
+
+    const { result } = renderHook(() => useShareAccessDetails('view-1', true));
+
+    await waitFor(() => expect(result.current.people).toEqual([removedPerson]));
+    expect(result.current.groups).toEqual([sharedGroup]);
+    expect(result.current.currentUserAccessLevel).toBe(AccessLevel.FullAccess);
+    expect(result.current.isLoadingPeople).toBe(false);
+    expect(result.current.editableGroupIds.size).toBe(0);
+
+    await act(async () => {
+      resolveDirectGroups([sharedGroup]);
+    });
+    expect(result.current.editableGroupIds.has(sharedGroup.group_id)).toBe(true);
+  });
+
+  it('keeps the effective roster available when a delayed direct-group lookup fails', async () => {
+    let rejectDirectGroups!: (reason: Error) => void;
+
+    mockGetSharedGroups.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        rejectDirectGroups = reject;
+      })
+    );
+    mockGetShareDetail.mockResolvedValueOnce({ shared_with: [removedPerson], groups: [sharedGroup] });
+
+    const { result } = renderHook(() => useShareAccessDetails('view-1', true));
+
+    await waitFor(() => expect(result.current.people).toEqual([removedPerson]));
+    await act(async () => {
+      rejectDirectGroups(new Error('Direct grants unavailable'));
+    });
+    expect(result.current.groups).toEqual([sharedGroup]);
+    expect(result.current.isLoadingPeople).toBe(false);
+    expect(result.current.editableGroupIds.size).toBe(0);
+  });
+
+  it('pauses direct-grant editing during revalidation without hiding the confirmed roster', async () => {
+    let rejectDirectGroups!: (reason: Error) => void;
+
+    mockGetSharedGroups.mockResolvedValueOnce([sharedGroup]).mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        rejectDirectGroups = reject;
+      })
+    );
+    mockGetShareDetail.mockResolvedValue({ shared_with: [removedPerson], groups: [sharedGroup] });
+
+    const { result } = renderHook(() => useShareAccessDetails('view-1', true));
+
+    await waitFor(() => expect(result.current.editableGroupIds.has(sharedGroup.group_id)).toBe(true));
+    let refresh!: ReturnType<typeof result.current.loadPeople>;
+    let refreshSettled = false;
+
+    act(() => {
+      refresh = result.current.loadPeople();
+      void refresh.then(() => {
+        refreshSettled = true;
+      });
+    });
+    await waitFor(() => expect(result.current.isLoadingPeople).toBe(false));
+    expect(result.current.people).toEqual([removedPerson]);
+    expect(result.current.editableGroupIds.size).toBe(0);
+    // A mutation caller still needs the complete permission result, even
+    // though the effective roster is already usable by the UI.
+    expect(refreshSettled).toBe(false);
+
+    await act(async () => {
+      rejectDirectGroups(new Error('Direct grants unavailable'));
+      expect(await refresh).toMatchObject({
+        effectiveGroupsLoaded: true,
+        directGroupsLoaded: true,
+        directGroups: [sharedGroup],
+      });
+    });
+    expect(refreshSettled).toBe(true);
+    expect(result.current.editableGroupIds.has(sharedGroup.group_id)).toBe(true);
+  });
+
+  it('does not restore a revoked person or group when the slow direct lookup finishes', async () => {
+    let resolveDirectGroups!: (groups: WorkspaceGroupViewPermission[]) => void;
+
+    mockGetSharedGroups.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveDirectGroups = resolve;
+      })
+    );
+    mockGetShareDetail.mockResolvedValueOnce({ shared_with: [removedPerson], groups: [sharedGroup] });
+
+    const { result } = renderHook(() => useShareAccessDetails('view-1', true));
+
+    await waitFor(() => expect(result.current.people).toEqual([removedPerson]));
+    act(() => {
+      result.current.removePersonFromAccessList(removedPerson.email);
+      result.current.updateGroupInAccessList(sharedGroup.group_id, null);
+    });
+    await act(async () => {
+      resolveDirectGroups([sharedGroup]);
+    });
+    expect(result.current.people).toEqual([]);
+    expect(result.current.groups).toEqual([]);
+    expect(result.current.editableGroupIds.size).toBe(0);
+  });
+
+  it('ignores a slow direct lookup from a previously displayed page', async () => {
+    let resolveDirectGroups!: (groups: WorkspaceGroupViewPermission[]) => void;
+
+    mockGetSharedGroups.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveDirectGroups = resolve;
+      })
+    );
+    mockGetShareDetail
+      .mockResolvedValueOnce({ shared_with: [removedPerson], groups: [sharedGroup] })
+      .mockResolvedValueOnce({ shared_with: [], groups: [] });
+
+    const { result, rerender } = renderHook(({ viewId }) => useShareAccessDetails(viewId, true), {
+      initialProps: { viewId: 'view-1' },
+    });
+
+    await waitFor(() => expect(result.current.people).toEqual([removedPerson]));
+    rerender({ viewId: 'view-2' });
+    await waitFor(() => expect(result.current.isLoadingPeople).toBe(false));
+    await act(async () => {
+      resolveDirectGroups([sharedGroup]);
+    });
+    expect(result.current.people).toEqual([]);
+    expect(result.current.groups).toEqual([]);
+    expect(result.current.editableGroupIds.size).toBe(0);
+  });
+
+  it('does not restore the current user permission when direct grants settle after self-revocation', async () => {
+    let resolveDirectGroups!: (groups: WorkspaceGroupViewPermission[]) => void;
+    const currentPerson = { ...removedPerson, email: 'owner@appflowy.io', access_level: AccessLevel.FullAccess };
+
+    mockGetSharedGroups.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveDirectGroups = resolve;
+      })
+    );
+    mockGetShareDetail.mockResolvedValueOnce({
+      shared_with: [currentPerson],
+      groups: [sharedGroup],
+      current_user_permission: { access_level: AccessLevel.FullAccess },
+    });
+
+    const { result } = renderHook(() => useShareAccessDetails('view-1', true));
+
+    await waitFor(() => expect(result.current.hasFullAccess).toBe(true));
+    act(() => {
+      result.current.removePersonFromAccessList(currentPerson.email);
+    });
+    await act(async () => {
+      resolveDirectGroups([sharedGroup]);
+    });
+    expect(result.current.currentUserAccessLevel).toBeUndefined();
+    expect(result.current.hasFullAccess).toBe(false);
+    expect(result.current.canManageFullAccess).toBe(false);
+    expect(result.current.people).toEqual([]);
+  });
+
   it('allows workspace owners to manage Full Access grants on public pages', async () => {
     mockWorkspaceRole = Role.Owner;
     mockOutline[0].is_private = false;
