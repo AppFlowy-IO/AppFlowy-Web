@@ -3,7 +3,7 @@
   "updated": "2026-10-14",
   "current_capture": {
     "date": "2026-10-14",
-    "status": "passed; 7 of 7 capture tests in the first run (06:44 UTC); 3 of 3 in the rerun (10:55 UTC) of the tests whose screens changed, with the spec now at 8 tests",
+    "status": "passed; 7 of 7 capture tests in the first run (06:44 UTC); 3 of 3 in the rerun (10:55 UTC) of the tests whose screens changed, with the spec now at 8 tests; 2 of 2 in a second rerun (11:28 UTC) after the review of those fixes, both images byte-identical to the committed ones (nothing changed on screen)",
     "kind": "fresh connected UI captures on an isolated synthetic stack",
     "web": {
       "branch": "oodrive-fix/web-visual",
@@ -34,6 +34,11 @@
         "branch": "oodrive-fix/web-final",
         "source_commit": "fde232d77eb3439a2bcee831ed2b6eeb524892b4",
         "harness_commit": "3f0ef3537db9a3e4f9231b5875a756f3acc78454",
+        "harness_at_rerun": {
+          "playwright/e2e/app/permission-gallery.capture.spec.ts": "b205f770302b245d854d3450e7e574f68c3e68783e41c14eac21f29279acd938",
+          "playwright/support/permission-gallery-seed.ts": "f91c75eab139956f40c22446f80a1e88777144cbc979651613e566ec7a3562ec",
+          "playwright.permission-gallery.config.ts": "fe52e98904cb7820e3eaaf5ab8b35148bd98b4352cf61b9bbc673d696beec66a"
+        },
         "provenance": "App source (the UI captured) at source_commit; the capture spec and seed whose hashes are listed under `harness` were committed in harness_commit together with the retaken images and this record, so source_commit alone does not contain them.",
         "base": "codex/oodrive-permissions-fixes at 31cb5377",
         "served_by": "vite dev server (loopback)",
@@ -64,6 +69,43 @@
         ],
         "captures_kept_from_first_run": 14,
         "note": "permissions-narrowing-confirmation.png changed only in its rounded top-right corner, where the reordered cards show through behind the dialog; the dialog is the same. The refused Create space capture relays the live connection and holds back server pushes once the dialog is open, so the dialog learns of the narrowed rule only when Create rechecks with the server."
+      },
+      "second_rerun": {
+        "date": "2026-10-14",
+        "time_utc": "11:28-11:29",
+        "branch": "oodrive-fix/web-final",
+        "source_commit": "8d29f0e372d41331197a0bcfb56ee3a40b820bd1",
+        "harness_commit": "8d29f0e372d41331197a0bcfb56ee3a40b820bd1",
+        "provenance": "One commit holds both the app source and the harness (the spec changed in 3b516537 and 84b75699, the seed and config did not), so checking out source_commit reproduces this run; the `harness` hashes below are its hashes.",
+        "base": "codex/oodrive-permissions-fixes at 31cb5377",
+        "served_by": "vite dev server (loopback)",
+        "fix_commits": [
+          "514c4acc",
+          "3b516537",
+          "84b75699",
+          "967a6c36",
+          "8d29f0e3"
+        ],
+        "tests_run": [
+          "member: Create space refused after the owner narrows who can create spaces",
+          "account without a workspace sees its pending invitation"
+        ],
+        "captures_retaken_identical": [
+          "create-space-denied.png"
+        ],
+        "captures_verified_identical_in_scratch_folder": [
+          "account-only-pending-invitation.png"
+        ],
+        "captures_retaken_changed": [],
+        "captures_added": [],
+        "new_spec_checks": [
+          "Close has keyboard focus when the refused Create space dialog is captured (3b516537)",
+          "the account-only page shows \"Invited as a guest\" when the invitation read back carries role \"Guest\", and not otherwise; a run without the role is annotated \"waits for the server\" (84b75699)"
+        ],
+        "annotations": [
+          "account without a workspace sees its pending invitation: waits for the server: the invitation list sends role null; retake account-only-pending-invitation.png once it sends \"Guest\""
+        ],
+        "note": "Close takes keyboard focus as the refused card appears; Create was pressed with the mouse in this capture, so Chromium draws no focus ring and the image is unchanged (the spec asserts the focus). The account-only image was written to a scratch folder only to check the new assertion against this server; it came out byte for byte the same, so the committed file was left alone. The French toast fix (514c4acc) is not visible in this English gallery."
       }
     },
     "server": {
@@ -82,7 +124,8 @@
       "worker": "not running",
       "gotrue_image": "appflowyinc/gotrue_premium:latest (sha256:11f21d47ed443155c21ff3d47ab8dc9908e369151eeb3dc1869a853176b9bfd2)",
       "branch_head_at_rerun": "6dc8eec230b221387021ee65bac19ada3a574638",
-      "rerun_note": "Same binary (sha256 unchanged); the stack's build provenance records it as built at 540757ea9 with two uncommitted files. Since 59be2954e the branch has three more commits, one touching src (b11f93934, database duplicate authorization), none of them about the screens captured."
+      "rerun_note": "Same binary (sha256 unchanged); the stack's build provenance records it as built at 540757ea9 with two uncommitted files. Since 59be2954e the branch has three more commits, one touching src (b11f93934, database duplicate authorization), none of them about the screens captured.",
+      "second_rerun_note": "Same binary again (sha256 unchanged). Its invitation list has no role field (see server_readback_after_capture.second_rerun)."
     },
     "stack": "isolated loopback stack with its own GoTrue, Redis, PostgreSQL database and MinIO bucket; synthetic @demo.test people; no other environment or data",
     "browser": {
@@ -104,7 +147,7 @@
       }
     ],
     "harness": {
-      "playwright/e2e/app/permission-gallery.capture.spec.ts": "b205f770302b245d854d3450e7e574f68c3e68783e41c14eac21f29279acd938",
+      "playwright/e2e/app/permission-gallery.capture.spec.ts": "437fcf448474f896504be31b1fe562f9ae8375431b9e425c6305b5cd39bd61ae",
       "playwright/support/permission-gallery-seed.ts": "f91c75eab139956f40c22446f80a1e88777144cbc979651613e566ec7a3562ec",
       "playwright.permission-gallery.config.ts": "fe52e98904cb7820e3eaaf5ab8b35148bd98b4352cf61b9bbc673d696beec66a"
     },
@@ -201,6 +244,41 @@
           ]
         ],
         "note": "Read after the rerun: the rule the refused-creation capture narrowed is back to Owners and selected members, no Marketing space exists, and the invitation list still carries no invited role."
+      },
+      "second_rerun": {
+        "alex_space_creation": {
+          "policy": "owners_and_selected_members",
+          "can_create_space": true,
+          "can_manage_space_creators": false
+        },
+        "spaces_seen_by_alex": [
+          "General",
+          "HR",
+          "Product",
+          "Shared"
+        ],
+        "jordan_pending": [
+          [
+            "Demo",
+            "Pending",
+            null
+          ]
+        ],
+        "jordan_invitation_fields": [
+          "invite_id",
+          "invitee_email",
+          "inviter_email",
+          "inviter_icon",
+          "inviter_name",
+          "member_count",
+          "status",
+          "updated_at",
+          "workspace_icon",
+          "workspace_id",
+          "workspace_name"
+        ],
+        "jordan_workspaces": [],
+        "note": "Read after the second rerun through the stack APIs (password grants on its GoTrue): the rule the refused-creation capture narrowed is back to Owners and selected members, Alex sees no Marketing space (Leadership is private to Olivia; Shared is the shared pages entry), and each pending invitation still carries exactly the fields above, with no role."
       }
     },
     "captures": [
@@ -423,11 +501,13 @@
           "name field and Create button gone",
           "Close hides the dialog",
           "no Marketing space exists afterwards",
-          "rule put back and Alex can create again"
+          "rule put back and Alex can create again",
+          "Close has keyboard focus (added for the second rerun)"
         ],
         "does_not_prove": "The live hint was held back by the capture (relayed connection); when it arrives in time the dialog disables Create with the same message instead (component tests). Permission changes were made through the API.",
         "sha256": "f542929ae0e48d34dc5e4f55714af35d8cfa3b0e85382676521668b0e16c5f6c",
-        "captured_at": "2026-10-14T10:55:44.312Z"
+        "captured_at": "2026-10-14T10:55:44.312Z",
+        "reproduced": "second rerun 2026-10-14T11:28:50.561Z: byte-identical (same sha256)"
       },
       {
         "file": "workspace-menu-create-workspace-denied.png",
@@ -450,11 +530,13 @@
         "asserted_by_spec": [
           "heading visible",
           "Demo invitation visible",
-          "join line shown, invitation request line absent"
+          "join line shown, invitation request line absent",
+          "\"Invited as a guest\" absent while the invitation read back carries no role (added for the second rerun)"
         ],
-        "does_not_prove": "Joining was not tested; the invitation is a guest invitation, which the page can only say once the server sends the invited role (it does not yet), so this capture was not retaken.",
+        "does_not_prove": "Joining was not tested; the invitation is a guest invitation, which the page can only say once the server sends the invited role (it does not yet; see waiting_on_server), so this capture is kept until then.",
         "sha256": "9f86204efa35b3092609f524b4a45f904beacb1969516de65f3cb4bff8172b35",
-        "captured_at": "2026-10-14T06:44:38.959Z"
+        "captured_at": "2026-10-14T06:44:38.959Z",
+        "reproduced": "second rerun 2026-10-14T11:29:25.150Z, written to a scratch folder: byte-identical (same sha256); the run was annotated \"waits for the server\""
       },
       {
         "file": "page-no-access-after-group-removed.png",

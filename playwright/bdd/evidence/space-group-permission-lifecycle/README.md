@@ -8,8 +8,9 @@ creation limits, live loss and recovery of page access, and the sign-out questio
 **22 current captures were made on 2026-10-14** from the real Web app against a real Cloud server on
 an isolated stack with synthetic data: 21 after a design review of the first refresh (fixes listed
 below), of which 7 were taken again and 1 was added later the same day, after four follow-up fixes
-that align Web with Desktop (also listed below). 15 earlier captures that still match the current UI
-are kept and labelled historical; 11 captures of the old UI were removed. Hashes, viewers and the
+that align Web with Desktop (also listed below); a second rerun after the review of those fixes
+reproduced two of them byte for byte (also below). 15 earlier captures that still match the current
+UI are kept and labelled historical; 11 captures of the old UI were removed. Hashes, viewers and the
 server state read back after each run are in [capture-manifest.json](capture-manifest.json).
 
 ## How the current captures were made
@@ -17,7 +18,7 @@ server state read back after each run are in [capture-manifest.json](capture-man
 | | |
 | --- | --- |
 | Date | 2026-10-14 (UTC) |
-| Web source | commit `bcfa8067` on `oodrive-fix/web-visual` (integration branch `codex/oodrive-permissions-fixes` at `b612fb90` plus the UI fixes below and the capture spec), served by the vite dev server. The rerun (the Permissions panel as owner and as member, and the refused Create space) used app source at commit `fde232d7` on `oodrive-fix/web-final` (the integration branch at `31cb5377` plus the four follow-up fixes below) with the capture spec and seed as committed in `3f0ef353` (the commit that also added the retaken images and this record; their hashes are in the manifest, and `fde232d7` alone does not contain them), served the same way |
+| Web source | commit `bcfa8067` on `oodrive-fix/web-visual` (integration branch `codex/oodrive-permissions-fixes` at `b612fb90` plus the UI fixes below and the capture spec), served by the vite dev server. The rerun (the Permissions panel as owner and as member, and the refused Create space) used app source at commit `fde232d7` on `oodrive-fix/web-final` (the integration branch at `31cb5377` plus the four follow-up fixes below) with the capture spec and seed as committed in `3f0ef353` (the commit that also added the retaken images and this record; their hashes are in the manifest, and `fde232d7` alone does not contain them), served the same way. The second rerun (the refused Create space and the account-only page) used commit `8d29f0e3` on `oodrive-fix/web-final` (the above plus the review follow-ups below; app source and harness in that one commit), served the same way |
 | Server source | AppFlowy Cloud Premium integration branch `codex/oodrive-permissions-fixes` at `59be2954e`. The binary was built at `540757ea9` with `cargo build --locked --bin appflowy_cloud --features commercial-local-test` (self-hosted feature set: three member seats, guests separate); the three commits since then change only tests and docs. Run with `APPFLOWY_ACCESS_CONTROL=true`. The rerun used the same binary (same hash; the stack's build record notes two uncommitted files at build time) while the branch had moved to `6dc8eec23`, whose only source change since (`b11f93934`, database duplicate authorization) does not touch these screens |
 | Stack | Isolated and synthetic: its own GoTrue (`appflowyinc/gotrue_premium:latest`), Redis, PostgreSQL database and MinIO bucket on loopback ports. No other environment, account or data was used. The Worker was not running (no imports or background jobs are shown). |
 | Browser | Chromium 145 (Playwright build 1208, headless, so scrollbars are hidden), 1440×900, device scale 1. Each person was signed in with a GoTrue password grant stored as the app's session (not through the login screen). Requests to anything but the three stack origins were blocked. |
@@ -36,7 +37,10 @@ APPFLOWY_TEST_CHROMIUM_EXECUTABLE=<chromium> \
 
 [permission-gallery.capture.spec.ts](../../../e2e/app/permission-gallery.capture.spec.ts) is
 skipped without those variables. All 7 of its tests passed in the first run; the rerun ran 3 of its
-now 8 tests (with `--grep`), and all 3 passed.
+now 8 tests (with `--grep`), and all 3 passed. The second rerun ran 2 of the 8: the refused Create
+space into this folder, and the account-only page into a scratch folder to check its new assertion
+against this server; both passed, and both images came out byte for byte the same as the committed
+ones, so no image changed.
 
 ## The Demo workspace
 
@@ -177,7 +181,8 @@ request (icon, name, type) and the answer "You can't create spaces in this works
 workspace owner if you need a new space." and Close as the only action. Nothing is kept: closing
 releases the draft. The spec checked that Create was enabled before the change, that the server then
 said Alex could not create, the message, the summary, that the name field and Create button were
-gone, that Close hid the dialog and that no Marketing space existed afterwards; the rule was put back
+gone, that Close had keyboard focus (pressed with the mouse here, so no focus ring shows), that Close
+hid the dialog and that no Marketing space existed afterwards; the rule was put back
 and read back (Alex can create again). *Does not prove* what happens when the hint arrives in time:
 the dialog then disables Create with the same message instead (component tests cover both).
 
@@ -199,8 +204,8 @@ empty workspace list and the pending invitation. *Not shown*: that the invitatio
 invitation; the page says "Invited as a guest" once the server sends the invited role, which this
 server does not yet (the invitation read back after the rerun has no role), so this capture was not
 retaken. The spec checks that line: shown when the invitation it reads back carries the role
-`"Guest"`, absent otherwise (as here, with a note that the capture waits for the server). *Not
-tested*: joining.
+`"Guest"`, absent otherwise (as here, with a note that the capture waits for the server; the second
+rerun confirmed it: no role, no line, the same image). *Not tested*: joining.
 
 ![Account-only page with a pending invitation](account-only-pending-invitation.png)
 
@@ -243,6 +248,21 @@ Made test-first on `oodrive-fix/web-final` so Web says and does the same as Desk
   confirmed value kept on screen (not captured; component tests cover them).
 - `fde232d7` When the rule refuses a new space on Create, the form gives way to a summary of the
   request and the answer, with Close as the only action, and the draft is released (captured above).
+
+## Review follow-ups (second rerun)
+
+Made test-first on `oodrive-fix/web-final` after an independent review of the fixes above; the two
+captures they could touch were run again and came out byte for byte the same:
+
+- `514c4acc` The French toast for a failed change to a group's access to all spaces says whose access
+  could not be changed ("l’accès de {{group}} à tous les espaces"); not visible in this English gallery.
+- `3b516537` When the rule refuses a new space on Create, Close takes keyboard focus as the card
+  appears, so a keyboard or screen reader user does not lose their place; the spec now asserts it
+  (no focus ring in the capture, as Create was pressed with the mouse).
+- `84b75699` The "Invited as a guest" line is recorded as done on Web and waiting for the server, with
+  the exact field the page reads; the spec checks the line whenever the server sends the role.
+- `967a6c36`, `8d29f0e3` This README and the manifest name the commit that holds the first rerun's
+  harness and say that a rerun can differ by a few pixels.
 
 ## UI fixes made while refreshing the gallery
 
