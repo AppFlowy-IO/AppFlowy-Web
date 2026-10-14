@@ -157,7 +157,8 @@ export function RequestAccessContent({
           <div className='w-full whitespace-pre-wrap break-words text-center text-xl font-bold text-text-primary'>
             {t('landingPage.noAccess.title')}
           </div>
-          <div className='w-[320px] whitespace-pre-wrap break-words text-center text-sm text-text-primary'>
+          {/* Balanced lines, so a short last word ("page.") is not left on its own. */}
+          <div className='w-[320px] whitespace-pre-wrap text-balance break-words text-center text-sm text-text-primary'>
             {description}
           </div>
           <div className='flex w-[320px] flex-col gap-[10px]'>

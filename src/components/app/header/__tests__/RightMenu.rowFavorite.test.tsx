@@ -10,6 +10,7 @@ let mockActiveRowPage: ActiveRowPageInfo | null = null;
 let mockRouteViewId = 'database-container';
 let mockRouteView: Partial<View> = { view_id: mockRouteViewId };
 let mockOutline: Array<Record<string, unknown>> = [];
+let mockViewErrors = { notFound: false, deleted: false, noAccess: false };
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -29,6 +30,7 @@ jest.mock('@/components/app/app.hooks', () => ({
   useAppView: () => mockRouteView,
   useAppViewId: () => mockRouteViewId,
   useCurrentWorkspaceId: () => 'workspace-1',
+  useViewErrorStatus: () => mockViewErrors,
 }));
 
 jest.mock('src/components/app/share/ShareButton', () => ({
@@ -97,6 +99,24 @@ describe('RightMenu row-page actions', () => {
     mockRouteViewId = 'database-container';
     mockRouteView = { view_id: mockRouteViewId };
     mockOutline = [];
+    mockViewErrors = { notFound: false, deleted: false, noAccess: false };
+  });
+
+  it.each(['noAccess', 'notFound'] as const)('offers no page actions on a page that is not shown (%s)', (status) => {
+    mockViewErrors = { notFound: status === 'notFound', deleted: false, noAccess: status === 'noAccess' };
+    render(
+      <MemoryRouter
+        initialEntries={['/app/workspace-1/database-container']}
+        future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
+      >
+        <RightMenu />
+      </MemoryRouter>
+    );
+
+    // Someone who can't open the page can't share, favorite, comment on or act on it either.
+    for (const action of ['users', 'share-button', 'favorite-button', 'more-actions']) {
+      expect({ action, shown: screen.queryByTestId(action) !== null }).toEqual({ action, shown: false });
+    }
   });
 
   it('hides the favorite action while the requested row page state is not ready', () => {
