@@ -7,28 +7,44 @@
     "kind": "fresh connected UI captures on an isolated synthetic stack",
     "web": {
       "branch": "oodrive-fix/web-visual",
-      "commit": "d2c4d93835aab824d40f9bee2b95455dd2d5e6ef",
+      "commit": "bcfa806720a6174665c603e300b4086f30e094ab",
       "base": "codex/oodrive-permissions-fixes at b612fb90",
       "served_by": "vite dev server (loopback)",
       "ui_fix_commits": [
         "e7862526",
         "005eff66",
-        "564d200b"
+        "564d200b",
+        "f8c5d0a5",
+        "6927372b",
+        "ce0489b9",
+        "efc3a04c",
+        "93bbbf20",
+        "7b35e163",
+        "0ae79bbd",
+        "c9ec5e8b",
+        "e38a7759",
+        "50691060",
+        "3040909d",
+        "02c1976c",
+        "da77b101",
+        "7af339a6"
       ]
     },
     "server": {
       "repository": "AppFlowy-Cloud-Premium",
       "branch": "codex/oodrive-permissions-fixes",
-      "commit": "bf8f37ef1c5f46ebaeeab8a3cb5e4c27d13aba41",
+      "commit": "59be2954e4394daac51860efda6bb7674c5fbb07",
+      "binary_built_at_commit": "540757ea977e1b931b482305f42902a48a9f30d1",
+      "binary_note": "The three commits between 540757ea9 and 59be2954e change only tests and docs (no src/ or libs/ file), so the binary was not rebuilt.",
       "build": "cargo build --locked --bin appflowy_cloud --features commercial-local-test",
-      "binary_sha256": "46aa0501921f8fc1365398cb3aa98007f7ce84f10c6332b6b027d5dd32a4f9a1",
+      "binary_sha256": "12960c63ffcdfe1ae02a6cabbfa4f2ba417980c9b32a53e22107377262f07ebe",
       "settings": {
         "APPFLOWY_ACCESS_CONTROL": "true",
         "self_hosted": true,
         "member_seats": 3
       },
       "worker": "not running",
-      "gotrue_image": "appflowyinc/gotrue_premium:latest (sha256:11f21d47ed443155c2...)"
+      "gotrue_image": "appflowyinc/gotrue_premium:latest (sha256:11f21d47ed443155c21ff3d47ab8dc9908e369151eeb3dc1869a853176b9bfd2)"
     },
     "stack": "isolated loopback stack with its own GoTrue, Redis, PostgreSQL database and MinIO bucket; synthetic @demo.test people; no other environment or data",
     "browser": {
@@ -38,9 +54,9 @@
       "session": "GoTrue password grant stored as the app token and runtime config injected (no login UI)",
       "network": "requests outside the three stack origins aborted"
     },
-    "permission_changes": "API only: the seed (GoTrue admin and Cloud REST, operator for the installation policy) and owner calls removing/restoring the HR group in the HR space; UI confirmations were opened and cancelled; nothing was saved from the UI",
+    "permission_changes": "API only: the seed (GoTrue admin and Cloud REST, operator for the installation policy) and owner calls removing/restoring the HR group in the HR space; UI questions were opened and cancelled and the add lists were closed; nothing was saved from the UI (see server_readback_after_capture)",
     "harness": {
-      "playwright/e2e/app/permission-gallery.capture.spec.ts": "330d6492d3d1e4b90bd2c0d500effba53bc99c317f06b8bd33b2874ad4d110ae",
+      "playwright/e2e/app/permission-gallery.capture.spec.ts": "6da442280c27dcd257cf0be9212e463a45c5c2eab8028f51b95fb8037947b598",
       "playwright/support/permission-gallery-seed.ts": "47dec9450541f24edeaa81363454d64aa86cf080525dc9109e4467421a7f1e46",
       "playwright.permission-gallery.config.ts": "fe52e98904cb7820e3eaaf5ab8b35148bd98b4352cf61b9bbc673d696beec66a"
     },
@@ -87,6 +103,13 @@
         ]
       ],
       "jordan_workspaces": [],
+      "hr_space": {
+        "visibility": "custom",
+        "member_default_access_level": 30,
+        "everyone_else_access_level": null,
+        "sidebar_edit_policy": "owners_only"
+      },
+      "space_creator_selections": 2,
       "coverage": {
         "HR": null,
         "Product": null,
@@ -99,51 +122,66 @@
         "file": "permissions-owner-selected-members.png",
         "viewer": "olivia",
         "crop": "viewport",
-        "shows": "Permissions panel as the owner: \"Owners and selected members\" with Alex and the Super_Users group selected; Access to all spaces summary below",
+        "shows": "Permissions as the owner: \"Owners and selected members\" with Alex and the Super_Users group selected, the \"Find members or groups to add\" field, and the fade at the bottom of the panel over the Access to all spaces summary",
         "asserted_by_spec": [
           "policy card \"Owners and selected members\" is selected",
           "Alex and Super_Users rows are listed"
         ],
         "does_not_prove": "Does not prove that the selections can create spaces (see server_readback).",
-        "sha256": "20beb4f80b80261f68b1eb9256f7f19b669f7c1150651a8f7d15f4b6b09c4409",
-        "captured_at": "2026-10-14T03:58:58.681Z"
+        "sha256": "37f0580736810bc53651f9a8731abefb9985b95ef16a3230115d70fdc786848a",
+        "captured_at": "2026-10-14T06:44:15.616Z"
+      },
+      {
+        "file": "permissions-add-members-suggestions.png",
+        "viewer": "olivia",
+        "crop": "viewport",
+        "shows": "Add members or groups pressed, nothing typed: Sam, HR, Product and Users listed under \"Not selected\"; Alex and Super_Users are not offered",
+        "asserted_by_spec": [
+          "Sam and the HR group offered",
+          "Alex and Super_Users not offered",
+          "Escape closes the list"
+        ],
+        "does_not_prove": "Nothing was added.",
+        "sha256": "6b3caa3a04b977327f41aa119f5f15cda0ce88604a421224540597bae4b9e7ae",
+        "captured_at": "2026-10-14T06:44:16.226Z"
       },
       {
         "file": "permissions-narrowing-confirmation.png",
         "viewer": "olivia",
         "crop": "element",
-        "shows": "Confirmation shown when choosing \"Owners only\" (narrowing who can create spaces); cancelled",
+        "shows": "\"Change who can create spaces?\" for Owners only: the new rule, that selections are saved, and the \"Use Owners only\" button; cancelled",
         "asserted_by_spec": [
           "policy unchanged after Cancel"
         ],
         "does_not_prove": "Does not prove what saving would do.",
-        "sha256": "3123a7f18366f8fa800e1e04c274ec1174fde805bc843ba41608ef5ef1876794",
-        "captured_at": "2026-10-14T03:58:59.431Z"
+        "sha256": "c585374a3fc12538a94a3bfdab216317cae0a00217aa10e5472f7bcd34905a80",
+        "captured_at": "2026-10-14T06:44:16.917Z"
       },
       {
         "file": "permissions-access-to-all-spaces-summary.png",
         "viewer": "olivia",
         "crop": "element",
-        "shows": "Access to all spaces summary (Users, Can view) with the Manage groups button",
+        "shows": "Access to all spaces summary at the end of the panel: the new description, Users (Can view) and the Manage groups button",
         "asserted_by_spec": [
           "Users row listed",
-          "Manage groups button visible"
+          "Manage groups button visible",
+          "panel scrolled to its end (no fade)"
         ],
         "does_not_prove": "Read-only summary; does not show coverage applied to a space.",
-        "sha256": "7e20492b34de0ffe6c8c11af53a1747963b4fe1981c55cb574d8915d6640f205",
-        "captured_at": "2026-10-14T03:59:00.132Z"
+        "sha256": "a21e2a0144016173e4e27183cb7449cb6c228d3b24ea5ece6d59db29ca54e3d2",
+        "captured_at": "2026-10-14T06:44:17.650Z"
       },
       {
         "file": "permissions-member-read-only.png",
         "viewer": "sam",
         "crop": "viewport",
-        "shows": "Permissions panel as a member (Sam): \"You can't create spaces in this workspace.\", policy cards unavailable, \"Only workspace owners can change this.\"",
+        "shows": "Permissions as a member (Sam): \"You can't create spaces in this workspace.\" in a callout, policy cards unavailable, \"Only workspace owners can change this.\"",
         "asserted_by_spec": [
           "\"Owners only\" card disabled"
         ],
         "does_not_prove": "Does not prove the server refuses Sam's create request.",
-        "sha256": "d4bc8850275e0ddb081fb61bfcc3e6bf800df9570c25d3816f5231c59b73cdc9",
-        "captured_at": "2026-10-14T03:59:05.839Z"
+        "sha256": "cd7d7ed8aac79d64f94c53df5c62d70681d60c0426fbc449c5cb8196ec829df4",
+        "captured_at": "2026-10-14T06:44:23.034Z"
       },
       {
         "file": "group-dialog-access-to-all-spaces-menu.png",
@@ -154,8 +192,8 @@
           "menu offers Can edit"
         ],
         "does_not_prove": "No change saved; the open menu covers part of the description.",
-        "sha256": "962021d4bf76d258043bdacbca7958f4979823bfac3b60b273998067a4fb2fc7",
-        "captured_at": "2026-10-14T03:59:01.261Z"
+        "sha256": "0f8b82239c0783e9378cfde0ded4d2cf795b59bd7da47028c71996d7b42fe10c",
+        "captured_at": "2026-10-14T06:44:18.710Z"
       },
       {
         "file": "group-access-to-all-spaces-confirmation.png",
@@ -167,135 +205,194 @@
         ],
         "does_not_prove": "Does not prove what saving would do.",
         "sha256": "d6d5beb22fe4225c0fb8230175c3c986d54931b73306e7800b0ff8ed65abd300",
-        "captured_at": "2026-10-14T03:59:01.964Z"
-      },
-      {
-        "file": "manage-space-members-access-menu.png",
-        "viewer": "olivia",
-        "crop": "viewport",
-        "shows": "Manage Space > Members (HR, Custom): Name | Access | Role, owner \"Full access\", Alex \"Can edit · default\" with the Access menu open, HR and Users groups with their own levels",
-        "asserted_by_spec": [
-          "Alex and HR access controls present",
-          "menu shows the space default option"
-        ],
-        "does_not_prove": "Does not prove that a chosen level saves.",
-        "sha256": "846a6db2d1272f150f85bdb16d34395c03dc8ca37b7da622f84250f6f949e30d",
-        "captured_at": "2026-10-14T03:59:10.272Z"
-      },
-      {
-        "file": "manage-space-members-access-explanation.png",
-        "viewer": "olivia",
-        "crop": "viewport",
-        "shows": "Access column header tooltip with the one explanation of per-person access",
-        "asserted_by_spec": [
-          "tooltip visible"
-        ],
-        "does_not_prove": "Picture only.",
-        "sha256": "062508c02c220322518f0406a403cccbd907d05b9a95ec17b8e61d85774936b3",
-        "captured_at": "2026-10-14T03:59:10.940Z"
-      },
-      {
-        "file": "manage-space-own-access-explanation.png",
-        "viewer": "olivia",
-        "crop": "viewport",
-        "shows": "Manage Space > Members (Product): Olivia's own row (Can view) menu ends with \"You can also edit this space through the Product group.\"",
-        "asserted_by_spec": [
-          "own access control enabled",
-          "note names the Product group"
-        ],
-        "does_not_prove": "Server reported Olivia's access as Can edit through a group; no change saved.",
-        "sha256": "d4d7e34493f36fe63c50d43b9cd1c2ec940df08838f2565647dc545fa713da3e",
-        "captured_at": "2026-10-14T03:59:12.306Z"
+        "captured_at": "2026-10-14T06:44:19.382Z"
       },
       {
         "file": "manage-space-general-page-setting.png",
         "viewer": "olivia",
         "crop": "viewport",
-        "shows": "Manage Space > General (HR, Custom), scrolled to \"Who can add pages to this space: Only space owners\"",
+        "shows": "Manage space · HR > General (Custom) as it opens: the whole tab fits at 1440x900, including \"Who can add pages to this space: Only space owners\"",
         "asserted_by_spec": [
-          "page setting shows \"Only space owners\""
+          "page setting shows \"Only space owners\"",
+          "page setting fully in the viewport without scrolling",
+          "no \"more below\" fade"
         ],
-        "does_not_prove": "Below the fold at 1440x900 until scrolled; does not prove that members are refused.",
-        "sha256": "53c9a89735d8db50f3d38303330c673c0b15a57ebc7807c105b228b568044399",
-        "captured_at": "2026-10-14T03:59:09.509Z"
+        "does_not_prove": "Does not prove that members are refused when adding pages.",
+        "sha256": "8619dbf42dd1a2b426073d3ba791cff13290668f46a0fea5851c3124438582cc",
+        "captured_at": "2026-10-14T06:44:26.550Z"
+      },
+      {
+        "file": "manage-space-type-change-confirmation.png",
+        "viewer": "olivia",
+        "crop": "element",
+        "shows": "\"Make this space public?\" question from HR General, in sentence case; cancelled",
+        "asserted_by_spec": [
+          "question text",
+          "HR stays Custom after Cancel"
+        ],
+        "does_not_prove": "Does not prove what saving would do.",
+        "sha256": "93d4a67cea2184b9c18eca05a611dd3f2d95148f1178743d3e7efa8c092f8eef",
+        "captured_at": "2026-10-14T06:44:27.202Z"
+      },
+      {
+        "file": "manage-space-members-access-menu.png",
+        "viewer": "olivia",
+        "crop": "viewport",
+        "shows": "Manage space · HR > Members: Name | Access | Role, owner \"Full access\", Alex \"Can edit · default\" with the Access menu open (it covers the HR and Users levels; see the explanation capture)",
+        "asserted_by_spec": [
+          "Alex and HR access controls present",
+          "menu shows the space default option"
+        ],
+        "does_not_prove": "Does not prove that a chosen level saves.",
+        "sha256": "4b034f860bfabcd0af28729beff52ec1f9cdb8d44a5efd19ea77e5bffa74ade7",
+        "captured_at": "2026-10-14T06:44:27.979Z"
+      },
+      {
+        "file": "manage-space-members-access-explanation.png",
+        "viewer": "olivia",
+        "crop": "viewport",
+        "shows": "Access column header tooltip: \"Choose what each person or group can do in this space, ...\"; HR Can edit and Users Can view are visible",
+        "asserted_by_spec": [
+          "tooltip visible"
+        ],
+        "does_not_prove": "Picture only.",
+        "sha256": "723d42c6c520e103e28cfbc9313712169a7176f85cd1275f6caf4785ca1c9d47",
+        "captured_at": "2026-10-14T06:44:28.642Z"
+      },
+      {
+        "file": "manage-space-add-suggestions.png",
+        "viewer": "olivia",
+        "crop": "viewport",
+        "shows": "Add people or groups pressed in HR, nothing typed: Sam under \"Not in space\", Product and Super_Users under \"Groups not in space\"",
+        "asserted_by_spec": [
+          "Sam, Product and Super_Users listed",
+          "Escape closes the list"
+        ],
+        "does_not_prove": "Nothing was added.",
+        "sha256": "dd2a0eb41015d38838279d80c9185580dac51dfb70d14af29799752f5340654c",
+        "captured_at": "2026-10-14T06:44:29.451Z"
+      },
+      {
+        "file": "manage-space-own-access-hint.png",
+        "viewer": "olivia",
+        "crop": "viewport",
+        "shows": "Manage space · Product > Members: the info icon beside Olivia's closed \"Can view\" menu, with the tooltip \"You can also edit this space through the Product group.\"",
+        "asserted_by_spec": [
+          "icon labelled with the note",
+          "tooltip names the Product group"
+        ],
+        "does_not_prove": "Server reported Olivia's access as Can edit through a group; no change saved.",
+        "sha256": "0fd38917cac8b9342ea9c96f3976c3a1734e8232118f7a467a7518445612c26d",
+        "captured_at": "2026-10-14T06:44:30.785Z"
+      },
+      {
+        "file": "manage-space-own-access-explanation.png",
+        "viewer": "olivia",
+        "crop": "viewport",
+        "shows": "Olivia's own Access menu in Product open: Can view ticked, ending with \"You can also edit this space through the Product group.\"",
+        "asserted_by_spec": [
+          "own access control enabled",
+          "note names the Product group"
+        ],
+        "does_not_prove": "No change saved.",
+        "sha256": "f0f5585dcb0e248073a03f3f23183ac8ddd7e585c001b5792b355761aa80afe5",
+        "captured_at": "2026-10-14T06:44:31.471Z"
       },
       {
         "file": "create-space.png",
         "viewer": "olivia",
         "crop": "viewport",
-        "shows": "Create space dialog opened by the owner from New page, name typed, Public selected",
+        "shows": "Create space as it opens from New page, name typed, Public selected: the fade over \"Who can add pages to this space\" says more is below; Cancel and Create end where the cards end",
         "asserted_by_spec": [
-          "submit button visible"
+          "submit button visible",
+          "\"more below\" fade shown"
         ],
         "does_not_prove": "No space was created.",
-        "sha256": "c688d4693dadfbd0258440b7a6dd69775802683b0fb4ed3ac7102fe80f1dd04a",
-        "captured_at": "2026-10-14T03:59:13.309Z"
+        "sha256": "c09baabbc42774ce11ceeb3460f236069c3e673aee795a7204bdb002219904dc",
+        "captured_at": "2026-10-14T06:44:32.381Z"
+      },
+      {
+        "file": "create-space-page-setting.png",
+        "viewer": "olivia",
+        "crop": "viewport",
+        "shows": "The same Create space dialog scrolled to the end: \"Who can add pages to this space\" in full, no fade",
+        "asserted_by_spec": [
+          "page setting fully in the viewport",
+          "no \"more below\" fade"
+        ],
+        "does_not_prove": "No space was created.",
+        "sha256": "53975a683288c062f389d363bb5946ea724285beddd78a4a824f8ae55e70feac",
+        "captured_at": "2026-10-14T06:44:32.971Z"
       },
       {
         "file": "workspace-menu-create-workspace-denied.png",
         "viewer": "alex",
         "crop": "viewport",
-        "shows": "Workspace menu for Alex: Create workspace and Import workspace unavailable, tooltip \"Your administrator hasn't allowed you to create workspaces.\"",
+        "shows": "Workspace menu for Alex: Create workspace and Import workspace unavailable, no fill under the pointer, tooltip clear of the menu: \"Your administrator hasn't allowed you to create workspaces.\"",
         "asserted_by_spec": [
           "Create workspace marked aria-disabled",
           "tooltip shown"
         ],
         "does_not_prove": "Does not prove the server refuses a creation request.",
-        "sha256": "57a515b01484b51647cf90f9c1ee2cf9b2825ce8ade7ec6cad6206fd3267451a",
-        "captured_at": "2026-10-14T03:59:16.534Z"
+        "sha256": "4375f5925b031c32639cb17ccdbbc06e2bb056e3b7e53146ced001887df0a22f",
+        "captured_at": "2026-10-14T06:44:36.131Z"
       },
       {
         "file": "account-only-pending-invitation.png",
         "viewer": "jordan",
         "crop": "viewport",
-        "shows": "\"You're not in a workspace yet\" for Jordan with the pending invitation to Demo, the denial reason, Check again and Sign out",
+        "shows": "\"You're not in a workspace yet\" for Jordan: \"Join a workspace you've been invited to below.\", the Demo invitation with Join, the denial reason, Check again as a text button, Sign out",
         "asserted_by_spec": [
           "heading visible",
-          "Demo invitation visible"
+          "Demo invitation visible",
+          "join line shown, invitation request line absent"
         ],
-        "does_not_prove": "Joining was not tested.",
-        "sha256": "82266559f13cbc6e0cb08025c1d11a2ccfe7e4b18a6eaa263c14572530b1510d",
-        "captured_at": "2026-10-14T03:59:19.394Z"
+        "does_not_prove": "Joining was not tested; the invitation is a guest invitation, which the page cannot say yet.",
+        "sha256": "9f86204efa35b3092609f524b4a45f904beacb1969516de65f3cb4bff8172b35",
+        "captured_at": "2026-10-14T06:44:38.959Z"
       },
       {
         "file": "page-no-access-after-group-removed.png",
         "viewer": "sam",
         "crop": "viewport",
-        "shows": "Sam's open \"Onboarding checklist\" (HR) after the owner removed the HR group from the HR space via the API: \"No access to this page\"",
+        "shows": "Sam's open \"Onboarding checklist\" (HR) after the owner removed the HR group from the HR space via the API: \"No access to this page\" with balanced lines and no page actions in the top bar",
         "asserted_by_spec": [
           "server answer for Sam can_read=false",
           "no-access message shown",
-          "editor removed"
+          "editor removed",
+          "no Share button"
         ],
         "does_not_prove": "Server change made through the API, not the UI.",
-        "sha256": "539582912eb0913ee05b08d6ee3d078ccbadd8e924f9b2f1f77606df9cb8c816",
-        "captured_at": "2026-10-14T03:59:22.520Z"
+        "sha256": "54ede17c8d27e35d5ca0b84b091e3320659508628cf65d46c8a860aa2f45ec8f",
+        "captured_at": "2026-10-14T06:44:42.000Z"
       },
       {
         "file": "page-access-restored-after-regrant.png",
         "viewer": "sam",
         "crop": "viewport",
-        "shows": "The same tab after the owner restored the HR group's Can edit via the API: page content back without a reload",
+        "shows": "The same tab after the owner restored the HR group's Can edit via the API: page content and page actions back without a reload",
         "asserted_by_spec": [
           "server answer for Sam can_write=true",
           "page text visible",
+          "Share button back",
           "in-page marker survived (no reload)"
         ],
         "does_not_prove": "No edit was typed or saved.",
         "sha256": "29f521138c3f54387eadbded7c3ef6a51928ef2012acaf85eaca454efcd4613b",
-        "captured_at": "2026-10-14T03:59:23.519Z"
+        "captured_at": "2026-10-14T06:44:42.973Z"
       },
       {
         "file": "sign-out-remove-data.png",
         "viewer": "alex",
         "crop": "viewport",
-        "shows": "Sign-out question from Settings > Account & App with \"Also remove my data from this browser\"",
+        "shows": "Sign out question from Settings > Account & App: \"Also remove page copies from this browser\" and where unsent changes stay; behind it \"Set up password\" and the \"Sign out\" row",
         "asserted_by_spec": [
-          "switch visible"
+          "switch visible",
+          "\"Sign out\" button visible"
         ],
         "does_not_prove": "Nobody signed out; does not prove what is removed.",
-        "sha256": "da3610a8443f0b8eee99b355777579e28c1a3e59ad663342abc4515e38b06868",
-        "captured_at": "2026-10-14T03:59:26.925Z"
+        "sha256": "7f451a524dda3cc3c2546bfc85daf299d708a69ed3d369a1e22c11f792fac857",
+        "captured_at": "2026-10-14T06:44:46.326Z"
       }
     ],
     "limits": [
@@ -336,7 +433,7 @@
       "file": "grant-removed-primary.png",
       "original_capture": "grant-removed-primary.png",
       "sha256": "45b076df0ac44922379e8ac352e180b5670c9d08339b321d354e178ea6ca3a12",
-      "qualification": "historical (2026-10-12, before the redesign): passed connected document lifecycle; the view it shows is unchanged in the current UI; not re-run",
+      "qualification": "historical (2026-10-12, before the redesign): passed connected document lifecycle; its \"No access to this page\" view differs from the current UI in the top bar (page actions, removed by da77b101) and the message line breaks; see page-no-access-after-group-removed.png; not re-run",
       "run_id": "cc3e83eb-a782-45bb-b834-3b6c1cf16f7f"
     },
     {
@@ -357,7 +454,7 @@
       "file": "grant-removed-follower.png",
       "original_capture": "grant-removed-follower.png",
       "sha256": "45b076df0ac44922379e8ac352e180b5670c9d08339b321d354e178ea6ca3a12",
-      "qualification": "historical (2026-10-12, before the redesign): passed connected document lifecycle; the view it shows is unchanged in the current UI; not re-run",
+      "qualification": "historical (2026-10-12, before the redesign): passed connected document lifecycle; its \"No access to this page\" view differs from the current UI in the top bar (page actions, removed by da77b101) and the message line breaks; see page-no-access-after-group-removed.png; not re-run",
       "run_id": "cc3e83eb-a782-45bb-b834-3b6c1cf16f7f"
     },
     {

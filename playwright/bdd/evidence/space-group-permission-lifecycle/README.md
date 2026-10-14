@@ -1,26 +1,27 @@
 # Workspace permissions: Web review evidence
 
 Screenshots of the workspace permission UI in Web PR #621 after the UX redesign: the Permissions
-panel (who can create spaces, access to all spaces), the group dialog, Manage Space (per-person
+panel (who can create spaces, access to all spaces), the group dialog, Manage space (per-person
 access and "Who can add pages to this space"), Create space, the account-only page, workspace
 creation limits, live loss and recovery of page access, and the sign-out question.
 
-**16 current captures were made on 2026-10-14** from the real Web app against a real Cloud server on
-an isolated stack with synthetic data. 15 earlier captures that still match the current UI are kept
-and labelled historical; 11 captures of the old UI were removed. Hashes, viewers and the server
-state read back after the run are in [capture-manifest.json](capture-manifest.json).
+**21 current captures were made on 2026-10-14** from the real Web app against a real Cloud server on
+an isolated stack with synthetic data, after a design review of the first refresh (fixes listed
+below). 15 earlier captures that still match the current UI are kept and labelled historical; 11
+captures of the old UI were removed. Hashes, viewers and the server state read back after the run
+are in [capture-manifest.json](capture-manifest.json).
 
 ## How the current captures were made
 
 | | |
 | --- | --- |
 | Date | 2026-10-14 (UTC) |
-| Web source | commit `d2c4d938` on `oodrive-fix/web-visual` (integration branch `codex/oodrive-permissions-fixes` at `b612fb90` plus the UI fixes below and the capture spec), served by the vite dev server |
-| Server source | AppFlowy Cloud Premium integration branch `codex/oodrive-permissions-fixes` at `bf8f37ef1`, built with `cargo build --locked --bin appflowy_cloud --features commercial-local-test` (self-hosted feature set: three member seats, guests separate) and run with `APPFLOWY_ACCESS_CONTROL=true` |
+| Web source | commit `bcfa8067` on `oodrive-fix/web-visual` (integration branch `codex/oodrive-permissions-fixes` at `b612fb90` plus the UI fixes below and the capture spec), served by the vite dev server |
+| Server source | AppFlowy Cloud Premium integration branch `codex/oodrive-permissions-fixes` at `59be2954e`. The binary was built at `540757ea9` with `cargo build --locked --bin appflowy_cloud --features commercial-local-test` (self-hosted feature set: three member seats, guests separate); the three commits since then change only tests and docs. Run with `APPFLOWY_ACCESS_CONTROL=true` |
 | Stack | Isolated and synthetic: its own GoTrue (`appflowyinc/gotrue_premium:latest`), Redis, PostgreSQL database and MinIO bucket on loopback ports. No other environment, account or data was used. The Worker was not running (no imports or background jobs are shown). |
-| Browser | Chromium 145 (Playwright build 1208), 1440×900, device scale 1. Each person was signed in with a GoTrue password grant stored as the app's session (not through the login screen). Requests to anything but the three stack origins were blocked. |
+| Browser | Chromium 145 (Playwright build 1208, headless, so scrollbars are hidden), 1440×900, device scale 1. Each person was signed in with a GoTrue password grant stored as the app's session (not through the login screen). Requests to anything but the three stack origins were blocked. |
 | Data | Created through the HTTP APIs only (GoTrue admin and Cloud REST) by [the seed](../../../support/permission-gallery-seed.ts). People use `@demo.test` addresses; nothing real is shown. |
-| Permission changes | Made by the owner or the operator through the API. Confirmations opened in the UI were cancelled, and no setting was saved from the UI. |
+| Permission changes | Made by the owner or the operator through the API. Questions opened in the UI were cancelled, lists of people to add were closed, and no setting was saved from the UI (the manifest's read-back shows the policy, the selections, HR's settings and group access unchanged). |
 
 Reproduce on an isolated stack (the seed switches the installation's workspace creation policy, so
 it refuses the usual developer ports):
@@ -54,29 +55,39 @@ Each caption says what the image shows and what it does not prove. Where the spe
 something, that is stated; otherwise the image is only a picture of the UI.
 
 **Permissions, as the owner.** "Who can create spaces" is set to "Owners and selected members";
-Alex and the Super_Users group are the selections; the Access to all spaces summary starts below.
-The spec checked that this card is the selected one and that both selections are listed.
-*Does not prove* that the selections let anyone create a space (the API read back
-`can_create_space: true` for Alex and `false` for Sam; see the manifest).
+Alex and the Super_Users group are the selections, under "Find members or groups to add". The
+panel continues below: a fade over its bottom edge (the Access to all spaces summary) says so. The
+spec checked that this card is the selected one and that both selections are listed. *Does not
+prove* that the selections let anyone create a space (the API read back `can_create_space: true`
+for Alex and `false` for Sam; see the manifest).
 
 ![Permissions as the owner, with the selected members and groups](permissions-owner-selected-members.png)
 
-**Narrowing who can create spaces asks first.** Choosing "Owners only" opened this question; it was
-cancelled and the spec checked that the policy stayed "Owners and selected members". *Does not
-prove* what saving would do.
+**Add members or groups lists who can be chosen.** Pressed with nothing typed: Sam and the HR,
+Product and Users groups are listed under "Not selected"; Alex and Super_Users (already selected),
+guests, owners and pending invitations are not. The spec checked Sam and HR are offered, Alex and
+Super_Users are not, and that Escape closes the list. Nothing was added.
+
+![Add members or groups listing who can be chosen](permissions-add-members-suggestions.png)
+
+**Narrowing who can create spaces asks first.** Choosing "Owners only" opened this question. It
+states the new rule, that the selected members and groups are kept for a switch back, and the
+button names the rule ("Use Owners only"). It was cancelled and the spec checked that the policy
+stayed "Owners and selected members". *Does not prove* what saving would do.
 
 ![Confirmation before narrowing who can create spaces](permissions-narrowing-confirmation.png)
 
-**Access to all spaces summary.** Groups with access to every current and future public and custom
-space (Users, Can view), and the Manage groups button that opens People > Groups. *Read-only*: it
-does not show that the coverage applies to a given space.
+**Access to all spaces summary**, at the end of the panel (no fade). Groups with access to every
+current and future public and custom space, and that private spaces and restricted pages are not
+included; Users has Can view; the Manage groups button opens People > Groups. *Read-only*: it does
+not show that the coverage applies to a given space.
 
 ![Access to all spaces summary in the Permissions panel](permissions-access-to-all-spaces-summary.png)
 
-**Permissions, as a member.** Sam sees "You can't create spaces in this workspace.", the current
-policy with every card unavailable, and "Only workspace owners can change this." The spec checked
-that the "Owners only" card is disabled. *Does not prove* that the server refuses Sam's request to
-create a space (that is covered by server tests, not this run).
+**Permissions, as a member.** Sam sees "You can't create spaces in this workspace." in a callout,
+the current policy with every card unavailable, and "Only workspace owners can change this." The
+spec checked that the "Owners only" card is disabled. *Does not prove* that the server refuses
+Sam's request to create a space (that is covered by server tests, not this run).
 
 ![Permissions as a member, read only](permissions-member-read-only.png)
 
@@ -91,79 +102,138 @@ cancelled and the spec checked that the group stayed Off.
 
 ![Confirmation before giving HR access to all spaces](group-access-to-all-spaces-confirmation.png)
 
-**Manage Space > Members in a Custom space (HR), with one Access menu open.** Columns Name | Access |
-Role. Olivia (space owner) has "Full access" as text; Alex keeps the space default ("Can edit ·
-default", ticked in the open menu with Can view, Can comment and Can edit offered); the HR and Users
-groups have Can edit and Can view of their own. *Does not prove* that choosing a level saves.
+**Manage space · HR > General, as it opens.** The title names the space. The dialog takes the
+window's height, so the whole tab fits at 1440×900: space members Can edit, everyone else in Demo
+No access, and "Who can add pages to this space: Only space owners" with its explanation. The spec
+checked the page setting is fully in view without scrolling and that no "more below" fade shows.
+*Does not prove* that adding a page is refused for members (server and component tests cover
+that).
 
-![Manage Space members with the Access menu of Alex open](manage-space-members-access-menu.png)
+![Manage space General tab with who can add pages](manage-space-general-page-setting.png)
 
-**The one explanation of per-person access** is the Access column header's tooltip.
+**Changing the space type asks first, in sentence case.** Choosing Public in HR opened "Make this
+space public?"; it was cancelled and the spec checked that HR stayed Custom (also read back from
+the server).
+
+![Question before making HR public](manage-space-type-change-confirmation.png)
+
+**Manage space · HR > Members, with one Access menu open.** Columns Name | Access | Role; the
+headers end where the menus below them end. Olivia (space owner) has "Full access" as text; Alex
+keeps the space default ("Can edit · default", ticked in the open menu with Can view, Can comment
+and Can edit offered). The open menu covers the HR and Users levels; they show in the next image.
+*Does not prove* that choosing a level saves.
+
+![Manage space members with the Access menu of Alex open](manage-space-members-access-menu.png)
+
+**The one explanation of per-person access** is the Access column header's tooltip: "Choose what
+each person or group can do in this space, or keep the space default. ..." Here the HR group's Can
+edit and the Users group's Can view are visible.
 
 ![Access column explanation tooltip](manage-space-members-access-explanation.png)
 
-**Where your own extra access comes from.** In Product, Olivia manages the space as the workspace
-owner, but her own row is an ordinary member with Can view. Her menu ends with "You can also edit
-this space through the Product group." The spec checked that the note names the Product group; the
-server reported Olivia's access as Can edit from a group (`workspace_group`).
+**Add people or groups lists who can be added.** Pressed with nothing typed: Sam (who reaches HR
+only through the HR group) under "Not in space", and Product and Super_Users under "Groups not in
+space"; the members list stays below. The spec checked all three are listed and that Escape closes
+the list. Nothing was added.
+
+![Add people or groups listing who can be added](manage-space-add-suggestions.png)
+
+**Where your own extra access comes from, with the menu closed.** In Product, Olivia manages the
+space as the workspace owner, but her own row is an ordinary member with Can view. An info icon
+beside her closed menu says "You can also edit this space through the Product group." The spec
+checked the icon's label and the tooltip.
+
+![Info icon beside the closed own access menu](manage-space-own-access-hint.png)
+
+**The same note in the open menu.** Her menu ends with the same line. The spec checked that the
+note names the Product group; the server reported Olivia's access as Can edit from a group
+(`workspace_group`).
 
 ![Own access menu explaining access through the Product group](manage-space-own-access-explanation.png)
 
-**Manage Space > General in a Custom space (HR), scrolled to the page setting.** Space members Can
-edit, everyone else in Demo No access, and "Who can add pages to this space: Only space owners" with
-its explanation. At 1440×900 the page setting is below the fold of this dialog, which scrolls.
-*Does not prove* that adding a page is refused for members (server and component tests cover that).
+**Create space, as it opens** from New page, with a name typed; Public is the default type. A
+Public space's settings are taller than the dialog at 1440×900, so a fade over "Who can add pages
+to this space" says there is more below (the spec checked the fade is shown). Cancel and Create end
+where the cards end. No space was created.
 
-![Manage Space General tab with who can add pages](manage-space-general-page-setting.png)
+![Create space dialog as it opens](create-space.png)
 
-**Create space**, opened by the owner from New page, with a name typed. Public is the default type.
-No space was created.
+**Create space, scrolled to the end:** "Who can add pages to this space" in full and no fade (both
+checked by the spec).
 
-![Create space dialog](create-space.png)
+![Create space scrolled to who can add pages](create-space-page-setting.png)
 
 **Workspace menu without permission to create workspaces.** Alex is not selected by the operator:
-Create workspace and Import workspace are unavailable, and the tooltip says "Your administrator
-hasn't allowed you to create workspaces." The spec checked that the item is marked unavailable and
-the tooltip is shown. *Does not prove* that the server refuses a creation request.
+Create workspace and Import workspace are unavailable; under the pointer the entry has no fill and a
+not-allowed cursor, and the tooltip "Your administrator hasn't allowed you to create workspaces."
+opens clear of the menu. The spec checked that the item is marked unavailable and the tooltip is
+shown. *Does not prove* that the server refuses a creation request.
 
 ![Workspace menu with Create workspace unavailable](workspace-menu-create-workspace-denied.png)
 
 **Signed in without a workspace.** Jordan sees "You're not in a workspace yet", the signed-in
-address, the pending invitation to Demo with Join, the reason creation is unavailable, Check again
-and Sign out. The API read back an empty workspace list and the pending invitation. *Not tested*:
-joining (the invitation was not accepted).
+address, "Join a workspace you've been invited to below.", the pending invitation to Demo with
+Join, the reason creation is unavailable, Check again as a text button, and Sign out. The spec
+checked the join line is shown and the "ask a workspace owner" line is not; the API read back an
+empty workspace list and the pending invitation. *Not shown*: that the invitation is a guest
+invitation (the server does not return the invited role yet). *Not tested*: joining.
 
 ![Account-only page with a pending invitation](account-only-pending-invitation.png)
 
 **An open page loses access when its group's access is removed.** Sam had "Onboarding checklist"
 (HR) open; the owner removed the HR group from the HR space through the API. The page shows "No
-access to this page" and HR left the sidebar. The spec checked the server answer for Sam
-(`can_read: false`), the message, and that the editor was gone.
+access to this page" with balanced lines, HR left the sidebar, and the top bar offers no page
+actions. The spec checked the server answer for Sam (`can_read: false`), the message, that the
+editor was gone and that there is no Share button.
 
 ![Open page after its group access was removed](page-no-access-after-group-removed.png)
 
 **The same page recovers without a reload when access is given back.** The owner restored the HR
-group's Can edit through the API. The spec checked `can_write: true`, the page text, and that the
-tab was not reloaded (a marker set in the page survived). *Does not prove* that typing is saved (no
-edit was made).
+group's Can edit through the API. The spec checked `can_write: true`, the page text, that Share is
+back, and that the tab was not reloaded (a marker set in the page survived). *Does not prove* that
+typing is saved (no edit was made).
 
 ![The page after access was given back, without a reload](page-access-restored-after-regrant.png)
 
-**Sign-out question** (Settings > Account & App > Log out) with "Also remove my data from this
-browser" and its explanation. Nobody signed out; *does not prove* what is removed.
+**Sign out question** (Settings > Account & App > Sign out) with "Also remove page copies from this
+browser" and where unsent changes stay. Behind it, Account & App shows "Set up password" and the
+"Sign out" row. Nobody signed out; *does not prove* what is removed.
 
-![Sign-out question with the remove my data option](sign-out-remove-data.png)
+![Sign out question with the remove page copies option](sign-out-remove-data.png)
 
 ## UI fixes made while refreshing the gallery
 
-Found in these captures and fixed test-first before the final run (Web commits on
-`oodrive-fix/web-visual`):
+Found in these captures or in the design review of the first refresh, and fixed test-first before
+the final run (Web commits on `oodrive-fix/web-visual`):
 
-- `e7862526` Manage Space's member table: in a wide fallback font the Role menu read "Space mem…" and
+- `f8c5d0a5` Space settings dialogs take the window's height (the tabs were capped at 64% of it), a
+  fade shows while more settings are below (also in settings panels), and the footer buttons end
+  where the cards end.
+- `6927372b` General and Members tabs use the app's tab labels; section headings are larger than
+  card and row titles; the Access and Role headers end where their menus end.
+- `ce0489b9` "Manage space" in sentence case, with the space's icon and name in the title.
+- `efc3a04c` The space type and full access questions are in sentence case.
+- `93bbbf20` The Access header tooltip explains the column ("each person or group").
+- `7b35e163` An info icon beside your own closed Access menu says where more access comes from.
+- `0ae79bbd` The narrowing question states the new rule and that selections are kept ("Use Owners
+  only"); the Access to all spaces summary no longer says "open" or points at People > Groups.
+- `c9ec5e8b` A member who can't create spaces sees the answer in a callout.
+- `e38a7759` Add members or groups (Permissions), Add people or groups (Manage space) and Add members
+  (Create space) list who can be added before anything is typed.
+- `50691060` The account-only page asks to join a waiting invitation and makes Join the main action.
+- `3040909d` The sign-out option says it removes page copies and where unsent changes stay; "Sign
+  out" everywhere; "Set up password".
+- `02c1976c`, `7af339a6` The reason for an unavailable menu entry opens clear of the menu; the entry
+  has no fill under the pointer and keeps the fill for keyboard focus.
+- `da77b101` No page actions on a page you can't open; its message has balanced lines.
+
+From the first refresh:
+
+- `e7862526` Manage space's member table: in a wide fallback font the Role menu read "Space mem…" and
   emails were cut ("olivia@de…"). The dialog is now 760px wide and the Role column fits "Space
   member". Groups use the group icon shown everywhere else instead of a letter avatar.
 - `005eff66` Sign-out question: the hidden dialog footer left an empty gap under the buttons, and the
-  question used "logout" as a verb ("Are you sure you want to log out?").
+  question used "logout" as a verb.
 - `564d200b` Public space card: "Everyone in the Workspace can access" is now in sentence case (the
   French text no longer claims full access).
 
@@ -172,7 +242,11 @@ Found in these captures and fixed test-first before the final run (Web commits o
 These were captured on 2026-10-12, before the redesign, against an earlier server build. The page,
 "No access to this page" and search views they show were not changed by the redesign (compare
 the current captures above and a 2026-10-14 look at the search dialog), so they are kept. They were
-not re-run for this refresh.
+not re-run for this refresh. One exception in detail: since `da77b101` the "No access to this page"
+view has no page actions in its top bar and balances its message, so `grant-removed-primary.png`
+and `grant-removed-follower.png` still show the older top bar and line breaks (the current view is
+in *An open page loses access when its group's access is removed* above); they are kept for what
+the lifecycle run proved.
 
 **Document lifecycle run `cc3e83eb-a782-45bb-b834-3b6c1cf16f7f` (passed, 44 checks).** Three
 documents of a separate fixture; owner API calls changed a group grant and a group membership; a
@@ -214,28 +288,32 @@ Native selects, radio buttons, Save buttons and internal wording that the redesi
 `owner-space-creator-group-settings.png` (now *Permissions, as the owner*);
 `review-coverage-off.png`, `review-coverage-view-draft.png`, `review-coverage-edit-draft.png` and
 `owner-group-coverage-settings.png` (now the summary, the group dialog menu and its confirmation);
-`owner-group-view-assignment.png` (now *Manage Space > Members*); `historical-sidebar-policy.png`
-(now *Manage Space > General*); `review-account-only.png` and `historical-account-only.png` (now
+`owner-group-view-assignment.png` (now *Manage space > Members*); `historical-sidebar-policy.png`
+(now *Manage space > General*); `review-account-only.png` and `historical-account-only.png` (now
 *Signed in without a workspace*). They remain in the Git history.
 
 ## Feature-to-evidence map
 
 | Feature | Current captures | Automated coverage |
 | --- | --- | --- |
-| A — per-person access in Custom spaces | Manage Space members, Access explanation, own access explanation | [Manage Space](../../../../src/components/app/view-actions/__tests__/ManageSpace.test.tsx), [copy](../../../../src/components/app/view-actions/__tests__/spaceAccessCopy.test.ts) |
-| B — who can create spaces | Permissions as owner and as member, narrowing confirmation, Create space | [Permissions panel](../../../../src/components/app/settings/__tests__/WorkspacePermissionsPanel.test.tsx), [creation capability](../../../../src/components/app/hooks/__tests__/useSpaceCreationCapability.test.tsx) |
+| A — per-person access in Custom spaces | Manage space members, Access explanation, add list, own access icon and menu | [Manage Space](../../../../src/components/app/view-actions/__tests__/ManageSpace.test.tsx), [access menu](../../../../src/components/app/view-actions/__tests__/SpaceMemberAccessControl.menu.test.tsx), [copy](../../../../src/components/app/view-actions/__tests__/spaceAccessCopy.test.ts) |
+| B — who can create spaces | Permissions as owner and as member, add list, narrowing confirmation, Create space | [Permissions panel](../../../../src/components/app/settings/__tests__/WorkspacePermissionsPanel.test.tsx), [copy](../../../../src/components/app/settings/__tests__/WorkspacePermissions.i18n.test.ts), [creation capability](../../../../src/components/app/hooks/__tests__/useSpaceCreationCapability.test.tsx) |
 | C — access to all spaces | Summary, group dialog menu, grant confirmation | [Group coverage](../../../../src/components/app/settings/__tests__/GroupSpaceCoverageControl.test.tsx), [its menu](../../../../src/components/app/settings/__tests__/GroupSpaceCoverageCard.menu.test.tsx) |
-| P — who can add pages | Manage Space > General | [Action gates](../../../../src/components/app/view-actions/__tests__/actionPermissionGates.test.tsx) |
-| D — workspace creation limits | Workspace menu, account-only page | [NoWorkspace](../../../../src/components/app/workspaces/__tests__/NoWorkspace.test.tsx), [Workspaces menu](../../../../src/components/app/workspaces/__tests__/Workspaces.creation.test.tsx) |
-| R — live permission refresh | Open page loses and regains access | Historical 44-check lifecycle ([spec](../../../e2e/app/space-group-permission-lifecycle.spec.ts)) |
-| Sign out | Sign-out question | [LogoutConfirm](../../../../src/components/app/workspaces/__tests__/LogoutConfirm.test.tsx) |
+| P — who can add pages | Manage space > General, Create space scrolled | [Action gates](../../../../src/components/app/view-actions/__tests__/actionPermissionGates.test.tsx), [dialog layout](../../../../src/components/app/view-actions/__tests__/SpaceSettingsPanel.layout.test.tsx) |
+| Space type questions | Make this space public? | [copy](../../../../src/components/app/view-actions/__tests__/spaceAccessCopy.test.ts) |
+| D — workspace creation limits | Workspace menu, account-only page | [NoWorkspace](../../../../src/components/app/workspaces/__tests__/NoWorkspace.test.tsx), [unavailable entry](../../../../src/components/app/workspaces/__tests__/UnavailableMenuItem.test.tsx), [Workspaces menu](../../../../src/components/app/workspaces/__tests__/Workspaces.creation.test.tsx) |
+| R — live permission refresh | Open page loses and regains access | Historical 44-check lifecycle ([spec](../../../e2e/app/space-group-permission-lifecycle.spec.ts)), [page actions](../../../../src/components/app/header/__tests__/RightMenu.rowFavorite.test.tsx) |
+| Sign out | Sign out question | [LogoutConfirm](../../../../src/components/app/workspaces/__tests__/LogoutConfirm.test.tsx) |
 
 ## Limits
 
-- One browser (Chromium), one viewport, English only. No Desktop client, no login screen, no mobile layout.
+- One browser (Chromium, headless: scrollbars are hidden), one viewport, English only. No Desktop
+  client, no login screen, no mobile layout.
 - Synthetic data on a self-hosted build; the Worker, search and AI services were not running.
 - The gallery run changed permissions only through owner and operator API calls; it does not show
   that saving from these controls works (component tests and server tests cover that separately).
+- The account-only page cannot say that Jordan's invitation is a guest invitation: the server's
+  invitation list has no invited role.
 - [validation.json](validation.json) records the 2026-10-12 validation of the earlier draft. The
   checks for this refresh are listed in the manifest's `current_capture` section.
 - Reproducing the historical lifecycle run needs its private fixture; see
