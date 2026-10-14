@@ -122,10 +122,45 @@
   //@apply mx-1;
 }
 
-.block-element[data-block-type="callout"] {
-  //@apply mx-1;
-  > div > .block-element {
-    margin-left: 58px !important;
+// Align every direct child with the callout's first line, including iconless callouts.
+.block-element[data-block-type="callout"] > .callout-content {
+  > .text-element > .text-content,
+  > .block-element > div > .text-element > .text-content {
+    min-width: 0;
+    flex: 1;
+    padding: 2px 4px;
+  }
+
+  > .text-element {
+    padding-top: 2px;
+  }
+
+  &[data-callout-icon="removed"] > .text-element {
+    padding-left: 4px;
+  }
+
+  > .block-element {
+    margin-left: var(--callout-content-indent) !important;
+    width: calc(100% - var(--callout-content-indent));
+  }
+}
+
+.callout-block-menu {
+  button {
+    min-height: 32px;
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-weight: 400;
+    line-height: 20px;
+    text-transform: none;
+
+    &:hover, &:focus-visible {
+      background-color: var(--fill-content-hover);
+    }
+  }
+
+  button[data-testid="delete"]:hover, button[data-testid="delete"]:focus-visible {
+    color: var(--text-error);
   }
 }
 
@@ -607,4 +642,11 @@ span[data-slate-placeholder="true"]:not(.inline-block-content) {
 
   }
 
+}
+
+.callout-menu-paper.MuiPaper-root {
+  border: 1px solid var(--border-primary);
+  border-radius: 12px;
+  background: var(--surface-layer-04);
+  box-shadow: var(--custom-shadow-sm);
 }

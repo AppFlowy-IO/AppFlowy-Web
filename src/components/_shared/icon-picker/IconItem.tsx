@@ -22,24 +22,29 @@ function IconItem({
   container?: HTMLDivElement;
 }) {
   const trigger = useMemo(() => {
+    const button = (
+      <Button
+        variant={'ghost'}
+        aria-label={icon.name.replaceAll('-', ' ')}
+        className='h-8 w-8 min-w-[32px] items-center p-[7px]'
+        onClick={() => {
+          if (!enableColor) {
+            onSelect({
+              value: icon.id,
+              color: '',
+              content: icon.content,
+            });
+          }
+        }}
+      >
+        <div className={'h-5 w-5 text-text-primary'} dangerouslySetInnerHTML={{ __html: icon.cleanSvg }} />
+      </Button>
+    );
+
     return (
       <Tooltip disableHoverableContent>
         <TooltipTrigger asChild>
-          <Button
-            variant={'ghost'}
-            className='h-8 w-8 min-w-[32px] items-center p-[7px]'
-            onClick={() => {
-              if (!enableColor) {
-                onSelect({
-                  value: icon.id,
-                  color: '',
-                  content: icon.content,
-                });
-              }
-            }}
-          >
-            <div className={'h-5 w-5 text-text-primary'} dangerouslySetInnerHTML={{ __html: icon.cleanSvg }} />
-          </Button>
+          {enableColor ? <PopoverTrigger asChild>{button}</PopoverTrigger> : button}
         </TooltipTrigger>
         <TooltipContent container={container} side={'bottom'}>
           {icon.name.replaceAll('-', ' ')}
@@ -54,9 +59,7 @@ function IconItem({
 
   return (
     <Popover modal>
-      <PopoverTrigger>
-        <div>{trigger}</div>
-      </PopoverTrigger>
+      {trigger}
 
       <PopoverContent className={'p-2'} container={container}>
         <div className={'grid grid-cols-6 gap-1'}>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSlateStatic } from 'slate-react';
 
@@ -8,11 +8,12 @@ import { ReactComponent as ChevronRightIcon } from '@/assets/icons/alt_arrow_rig
 import { ColorTile } from '@/components/_shared/color-picker';
 import { Origins, Popover } from '@/components/_shared/popover';
 import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
+import { calloutPaletteTextColor, toCalloutColor } from '@/components/editor/components/blocks/callout/callout.utils';
 import { CalloutNode } from '@/components/editor/editor.type';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { ColorEnum, renderColor, toBlockColor, toTint } from '@/utils/color';
+import { ColorEnum, renderColor, toTint } from '@/utils/color';
 
 const origins: Origins = {
   anchorOrigin: {
@@ -27,7 +28,10 @@ const origins: Origins = {
 
 function TextColorPreview({ color }: { color: string }) {
   return (
-    <div className='m-0.5 flex h-4 w-4 items-center justify-center rounded-[4px] border border-border-primary'>
+    <div
+      aria-hidden='true'
+      className='m-0.5 flex h-4 w-4 items-center justify-center rounded-[4px] border border-border-primary'
+    >
       <span className='text-[11px] leading-none' style={{ color }}>
         A
       </span>
@@ -42,8 +46,7 @@ function CalloutTextColor({ node, onSelectColor }: { node: CalloutNode; onSelect
   const { t } = useTranslation();
   const editor = useSlateStatic() as YjsEditor;
   const blockId = node.blockId;
-  const [originalColor, setOriginalColor] = useState<string>(node.data?.textColor || '');
-  const selectedColor = originalColor || ColorEnum.BlockTextColor10;
+  const selectedColor = (node.data?.textColor || node.data?.bgColor || ColorEnum.Tint10) as ColorEnum;
 
   const { isPro } = useSubscriptionPlan(getSubscriptions);
 
@@ -85,28 +88,15 @@ function CalloutTextColor({ node, onSelectColor }: { node: CalloutNode; onSelect
     ];
   }, [isPro, t]);
 
-  useEffect(() => {
-    setOriginalColor(node.data?.textColor || '');
-  }, [node.data?.textColor]);
-
   const { text: previewColor } = useMemo(() => {
-    return toBlockColor(selectedColor as ColorEnum);
+    return toCalloutColor(selectedColor);
   }, [selectedColor]);
 
   const handlePickColor = useCallback(
     (color: string) => {
-      if (color === originalColor || color === ColorEnum.BlockTextColor10) {
-        CustomEditor.setBlockData(editor, blockId, { textColor: null });
-        setOriginalColor('');
-        return;
-      }
-
-      const tint = toTint(color as ColorEnum);
-
-      CustomEditor.setBlockData(editor, blockId, { textColor: tint || null });
-      setOriginalColor(tint);
+      CustomEditor.setBlockData(editor, blockId, { textColor: toTint(color as ColorEnum) });
     },
-    [blockId, editor, originalColor]
+    [blockId, editor]
   );
 
   return (
@@ -124,7 +114,13 @@ function CalloutTextColor({ node, onSelectColor }: { node: CalloutNode; onSelect
         {t('editor.textColor')}
         <ChevronRightIcon className='ml-auto h-5 w-5 text-icon-tertiary' />
       </Button>
-      <Popover open={open} anchorEl={ref.current} onClose={() => setOpen(false)} {...origins}>
+      <Popover
+        PaperProps={{ className: 'callout-menu-paper' }}
+        open={open}
+        anchorEl={ref.current}
+        onClose={() => setOpen(false)}
+        {...origins}
+      >
         <div className='flex w-[200px] flex-col py-1.5'>
           <div className={'px-3.5 pb-2 pt-1.5 text-xs font-medium text-text-tertiary'}>{t('editor.textColor')}</div>
           <div className={'flex flex-wrap gap-2 px-3.5 pb-1.5'}>
@@ -134,8 +130,9 @@ function CalloutTextColor({ node, onSelectColor }: { node: CalloutNode; onSelect
                 <TooltipTrigger asChild>
                   <ColorTile
                     isText
-                    value={renderColor(color.color)}
-                    active={previewColor === color.color}
+                    value={calloutPaletteTextColor(toTint(color.color))}
+                    aria-label={color.label}
+                    active={selectedColor === toTint(color.color)}
                     onClick={() => {
                       handlePickColor(color.color);
                       setOpen(false);

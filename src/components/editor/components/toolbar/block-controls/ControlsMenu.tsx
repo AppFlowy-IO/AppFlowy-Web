@@ -40,6 +40,7 @@ import { useEditorContext, useEditorLocalState } from '@/components/editor/Edito
 import { copyTextToClipboard } from '@/utils/copy';
 import { getErrorMessage } from '@/utils/errors';
 
+import { CalloutTurnInto, CalloutWritingActions } from './CalloutBlockActions';
 import CalloutIconControl from './CalloutIconControl';
 import CalloutQuickStyleControl from './CalloutQuickStyleControl';
 import Color from './Color';
@@ -645,8 +646,10 @@ function ControlsMenu({
         if (entry) scrollSimpleTableFromMenu(event, ReactEditor.toDOMNode(editor, entry[0]));
       } : undefined}
       {...popoverProps}
+      PaperProps={node?.[0]?.type === BlockType.CalloutBlock ? { ...popoverProps?.PaperProps, className: 'callout-menu-paper' } : popoverProps?.PaperProps}
     >
-      <div data-testid={'controls-menu'} className={`flex w-[240px] flex-col p-2 ${isSimpleTable ? 'simple-table-block-menu' : ''}`}>
+      <div data-testid={'controls-menu'} className={`flex w-[240px] flex-col p-2 ${isSimpleTable ? 'simple-table-block-menu' : ''} ${node?.[0]?.type === BlockType.CalloutBlock ? 'callout-block-menu' : ''}`}>
+        {node?.[0]?.type === BlockType.CalloutBlock && <div className='px-2 py-1.5 text-xs font-medium leading-[18px] text-text-tertiary'>{t('document.slashMenu.name.callout')}</div>}
         {options.map((option) => {
           return (
             <Button
@@ -697,13 +700,15 @@ function ControlsMenu({
           </>
         )}
 
-        {node?.[0]?.type === BlockType.CalloutBlock && (
+        {node?.[0]?.type === BlockType.CalloutBlock && onlySingleBlockSelected && (
           <>
+            <CalloutTurnInto node={node[0] as CalloutNode} onClose={onClose} />
             <Divider className='my-2' />
             <CalloutQuickStyleControl node={node[0] as CalloutNode} onSelectStyle={onClose} />
             <CalloutIconControl node={node[0] as CalloutNode} onSelectIcon={onClose} />
-            <Color node={node[0] as BlockNode} onSelectColor={onClose} />
             <CalloutTextColor node={node[0] as CalloutNode} onSelectColor={onClose} />
+            <Color node={node[0] as BlockNode} onSelectColor={onClose} />
+            <CalloutWritingActions node={node[0] as CalloutNode} onClose={onClose} />
           </>
         )}
       </div>

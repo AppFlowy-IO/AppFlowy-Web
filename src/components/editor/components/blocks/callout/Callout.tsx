@@ -1,46 +1,41 @@
-import { forwardRef, memo, useMemo } from 'react';
+import { CSSProperties, forwardRef, memo } from 'react';
 
 import { CalloutNode, EditorElementProps } from '@/components/editor/editor.type';
 import { cn } from '@/lib/utils';
-import { ColorEnum, renderColor, toBlockColor } from '@/utils/color';
+import { renderColor } from '@/utils/color';
+
+import { getCalloutColors, getCalloutIcon } from './callout.utils';
 
 export const Callout = memo(
   forwardRef<HTMLDivElement, EditorElementProps<CalloutNode>>(({ node, children, ...attributes }, ref) => {
-    const { className: attrClassName = '', style: attrStyle, ...restAttributes } = attributes;
-
-    const {
-      bg: blockBgColor,
-      border: blockBorderColor,
-      text: blockTextColor,
-    } = useMemo(() => {
-      return toBlockColor((node?.data?.bgColor || '') as ColorEnum);
-    }, [node?.data?.bgColor]);
-
-    const effectiveBlockTextColor = useMemo(() => {
-      const { text } = toBlockColor((node?.data?.textColor || '') as ColorEnum);
-
-      return text || blockTextColor;
-    }, [blockTextColor, node?.data?.textColor]);
+    const { className, style, ...restAttributes } = attributes;
+    const colors = getCalloutColors(node.data);
+    const hasIcon = !!getCalloutIcon(node.data);
 
     return (
       <div
-        ref={ref}
         {...restAttributes}
+        ref={ref}
+        data-testid='callout'
+        data-callout-icon={hasIcon ? 'visible' : 'removed'}
         className={cn(
-          attrClassName,
-          'relative my-1 flex w-full flex-col overflow-hidden rounded-300 bg-fill-list-active px-3 py-2'
+          className,
+          'callout-content relative my-1 flex w-full min-w-0 flex-col overflow-hidden rounded-[8px] py-2 pl-3 pr-2'
         )}
-        style={{
-          ...attrStyle,
-          backgroundColor: renderColor(blockBgColor),
-          color: renderColor(effectiveBlockTextColor),
-        }}
+        style={
+          {
+            ...style,
+            backgroundColor: renderColor(colors.bg),
+            color: renderColor(colors.text),
+            '--callout-content-indent': hasIcon ? '36px' : '4px',
+          } as CSSProperties
+        }
       >
         <div
-          className='absolute bottom-0 left-0 top-0 w-1 rounded-full'
-          style={{
-            backgroundColor: renderColor(blockBorderColor),
-          }}
+          aria-hidden='true'
+          contentEditable={false}
+          className='pointer-events-none absolute inset-y-0 left-0 w-1'
+          style={{ backgroundColor: renderColor(colors.border) }}
         />
         {children}
       </div>

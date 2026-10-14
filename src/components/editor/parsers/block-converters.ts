@@ -437,6 +437,7 @@ export function parseImage(node: HastElement): ParsedBlock {
 export function elementToBlock(node: HastElement): ParsedBlock | ParsedBlock[] | null {
   const tag = node.tagName;
 
+  if (tag === 'aside') return parseCallout(node);
   if (isHeading(tag)) return parseHeading(node);
   if (isBlockquote(tag)) return parseBlockquote(node);
   if (isCodeBlock(tag)) return parseCodeBlock(node);
@@ -461,4 +462,39 @@ export function elementToBlock(node: HastElement): ParsedBlock | ParsedBlock[] |
   }
 
   return null;
+}
+
+/** HTML callouts keep their first text line and nested blocks as separate nodes. */
+function parseCallout(node: HastElement): ParsedBlock {
+  const children: ParsedBlock[] = [];
+  let inline: HastElement['children'] = [];
+  const flushInline = () => {
+    if (!inline.length) return;
+    const paragraphs = parseParagraph({ type: 'element', tagName: 'p', properties: {}, children: inline });
+
+    children.push(...(Array.isArray(paragraphs) ? paragraphs : [paragraphs]));
+    inline = [];
+  };
+
+  for (const child of node.children) {
+    if (child.type === 'element' && (PARAGRAPH_BOUNDARY_TAGS.has(child.tagName) || child.tagName === 'img')) {
+      flushInline();
+      const converted = elementToBlock(child);
+
+      if (converted) children.push(...(Array.isArray(converted) ? converted : [converted]));
+    } else if (child.type === 'element' || (child.type === 'text' && (inline.length || child.value.trim()))) {
+      inline.push(child);
+    }
+  }
+
+  flushInline();
+  const first = children[0]?.type === BlockType.Paragraph ? children.shift() : undefined;
+
+  return {
+    type: BlockType.CalloutBlock,
+    data: {},
+    text: first?.text || '',
+    formats: first?.formats || [],
+    children: [...(first?.children || []), ...children],
+  };
 }

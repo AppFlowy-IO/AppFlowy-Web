@@ -34,8 +34,7 @@ function Color({ node, onSelectColor }: { node: BlockNode; onSelectColor: () => 
   const editor = useSlateStatic() as YjsEditor;
   const blockId = node.blockId;
   const hasNonTransparentBg = [BlockType.CalloutBlock, BlockType.OutlineBlock].includes(node.type);
-  const [originalColor, setOriginalColor] = useState<string>(node.data?.bgColor || '');
-  const selectedColor = originalColor || (hasNonTransparentBg ? ColorEnum.Tint10 : '');
+  const selectedColor = node.data?.bgColor || (hasNonTransparentBg ? ColorEnum.Tint10 : '');
 
   const { isPro } = useSubscriptionPlan(getSubscriptions);
 
@@ -81,14 +80,12 @@ function Color({ node, onSelectColor }: { node: BlockNode; onSelectColor: () => 
         CustomEditor.setBlockData(editor, blockId, {
           bgColor: null,
         });
-        setOriginalColor('');
         return;
       }
 
       CustomEditor.setBlockData(editor, blockId, {
         bgColor: bgColor || null,
       });
-      setOriginalColor(bgColor);
     },
     [blockId, editor, selectedColor]
   );
@@ -105,10 +102,10 @@ function Color({ node, onSelectColor }: { node: BlockNode; onSelectColor: () => 
         }}
       >
         <ColorTileIcon value={renderColor(selectedColor)} />
-        {t('document.plugins.optionAction.color')}
+        {t(node.type === BlockType.CalloutBlock ? 'editor.backgroundColor' : 'document.plugins.optionAction.color')}
         <ChevronRightIcon className='ml-auto h-5 w-5 text-icon-tertiary' />
       </Button>
-      <Popover open={open} anchorEl={ref.current} onClose={() => setOpen(false)} {...origins}>
+      <Popover PaperProps={node.type === BlockType.CalloutBlock ? { className: 'callout-menu-paper' } : undefined} open={open} anchorEl={ref.current} onClose={() => setOpen(false)} {...origins}>
         <div className='flex w-[200px] flex-col py-1.5'>
           <div className={'px-3.5 pb-2 pt-1.5 text-xs font-medium text-text-tertiary'}>
             {t('editor.backgroundColor')}
@@ -120,6 +117,7 @@ function Color({ node, onSelectColor }: { node: BlockNode; onSelectColor: () => 
                 <TooltipTrigger asChild>
                   <ColorTile
                     value={renderColor(color.color)}
+                    aria-label={color.label}
                     active={selectedColor === color.color}
                     onClick={() => {
                       handlePickColor(color.color);

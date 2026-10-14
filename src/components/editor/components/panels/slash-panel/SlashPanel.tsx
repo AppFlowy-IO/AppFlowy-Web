@@ -32,7 +32,6 @@ import {
   AudioUrlType,
   BlockData,
   BlockType,
-  CalloutBlockData,
   CodeBlockData,
   GalleryBlockData,
   GalleryLayout,
@@ -56,7 +55,6 @@ import { ReactComponent as AudioIcon } from '@/assets/icons/audio.svg';
 import { ReactComponent as BoardIcon } from '@/assets/icons/board.svg';
 import { ReactComponent as BulletedListIcon } from '@/assets/icons/bulleted_list.svg';
 import { ReactComponent as CalendarIcon } from '@/assets/icons/calendar.svg';
-import { ReactComponent as TimelineIcon } from '@/assets/icons/timeline.svg';
 import { ReactComponent as CalloutIcon } from '@/assets/icons/callout.svg';
 import { ReactComponent as ChartIcon } from '@/assets/icons/chart.svg';
 import { ReactComponent as ContinueWritingIcon } from '@/assets/icons/continue_writing.svg';
@@ -82,6 +80,7 @@ import { ReactComponent as QuoteIcon } from '@/assets/icons/quote.svg';
 import { ReactComponent as RefDocumentIcon } from '@/assets/icons/ref_page.svg';
 import { ReactComponent as SimpleTableIcon } from '@/assets/icons/table.svg';
 import { ReactComponent as TextIcon } from '@/assets/icons/text.svg';
+import { ReactComponent as TimelineIcon } from '@/assets/icons/timeline.svg';
 import { ReactComponent as TodoListIcon } from '@/assets/icons/todo.svg';
 import { ReactComponent as ToggleHeading1Icon } from '@/assets/icons/toggle_h1.svg';
 import { ReactComponent as ToggleHeading2Icon } from '@/assets/icons/toggle_h2.svg';
@@ -98,6 +97,7 @@ import { useDatabaseViewCreation } from '@/components/app/hooks/useDatabaseViewC
 import { useAIWriter } from '@/components/chat';
 import { SearchInput } from '@/components/chat/components/ui/search-input';
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
+import { DEFAULT_CALLOUT_DATA } from '@/components/editor/components/blocks/callout/callout.utils';
 import { createDatabaseNodeData } from '@/components/editor/components/blocks/database/utils/databaseBlockUtils';
 import { usePanelContext } from '@/components/editor/components/panels/Panels.hooks';
 import { PanelType } from '@/components/editor/components/panels/PanelsContext';
@@ -1660,9 +1660,7 @@ export function SlashPanel({
         group: SlashMenuGroupKey.AdvancedBlocks,
         keywords: ['callout', 'note', 'tip'],
         onClick: () => {
-          turnInto(BlockType.CalloutBlock, {
-            icon: '📌',
-          } as CalloutBlockData);
+          turnInto(BlockType.CalloutBlock, DEFAULT_CALLOUT_DATA);
         },
       },
       {
