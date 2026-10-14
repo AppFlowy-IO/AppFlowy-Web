@@ -1,14 +1,18 @@
+import { createRequire } from 'node:module';
+
 import { expect, test, type Page } from '@playwright/test';
 import { v5 as uuidv5 } from 'uuid';
 import * as Y from 'yjs';
 
-import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
 import { waitForRowBodyCompletion } from '../../support/atomic-creation-helpers';
+import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
 import { createDatabaseView } from '../../support/database-ui-helpers';
 import { waitForDocumentTextOnServer } from '../../support/duplicate-test-helpers';
 import { closeRowDetailWithEscape, openRowDetailByRowId } from '../../support/row-detail-helpers';
 import { DatabaseGridSelectors, RowDetailSelectors } from '../../support/selectors';
 import { generateRandomEmail, TestConfig } from '../../support/test-config';
+
+import type { collab } from '../../../src/proto/messages';
 
 const rowDocumentRoute = '**/v2/page-view/row-document';
 const editorForRow = (page: Page) => RowDetailSelectors.modal(page).getByTestId('editor-content').first();
@@ -174,6 +178,7 @@ test('opening an untouched row waits for the server document; body content alone
   } finally {
     release();
   }
+
   const editor = editorForRow(page);
 
   await expect(editor).toBeVisible();
@@ -247,6 +252,69 @@ test('opening an untouched row waits for the server document; body content alone
   expect(commands).toHaveLength(1);
 });
 
+test('a fresh row waits for its normal full-sync acknowledgment before creating its atomic page', async ({ page, request }) => {
+  await createGrid(page, request);
+  const before = new Set(await DatabaseGridSelectors.dataRows(page).evaluateAll((rows) =>
+    rows.map((row) => row.getAttribute('data-testid'))
+  ));
+
+  await DatabaseGridSelectors.newRowButton(page).click();
+  await expect(DatabaseGridSelectors.dataRows(page)).toHaveCount(before.size + 1);
+  const created = (await DatabaseGridSelectors.dataRows(page).evaluateAll((rows) =>
+    rows.map((row) => row.getAttribute('data-testid'))
+  )).find((id) => !before.has(id));
+  const rowId = created!.replace('grid-row-', '');
+  const commands = collectCreationCommands(page);
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const { loadSync } = createRequire(import.meta.url)('protobufjs') as typeof import('protobufjs');
+  const protocol = loadSync(new URL('../../../src/proto/collab.proto', import.meta.url).pathname);
+  const requestType = protocol.lookupType('collab.CollabBatchSyncRequest');
+  const responseType = protocol.lookupType('collab.CollabBatchSyncResponse');
+  let acknowledged = false;
+
+  await page.route('**/collab/full-sync/batch', async (route) => {
+    const body = route.request().postDataBuffer();
+    const batch = body ? requestType.decode(body) as unknown as collab.CollabBatchSyncRequest : undefined;
+
+    if (batch?.items.length !== 1 || batch.items[0].objectId !== rowId || !batch.items[0].docState?.length) {
+      await route.continue();
+      return;
+    }
+
+    const response = await route.fetch();
+    const result = responseType.decode(await response.body()) as unknown as collab.CollabBatchSyncResponse;
+
+    expect(response.ok()).toBe(true);
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0].objectId).toBe(rowId);
+    expect(result.results[0].error).toBeFalsy();
+    acknowledged = true;
+    await held;
+    await route.fulfill({ response });
+  });
+  try {
+    await openRowDetailByRowId(page, rowId);
+    await expect.poll(() => acknowledged).toBe(true);
+    expect(commands).toHaveLength(0);
+    await expect(editorForRow(page)).toHaveCount(0);
+    const completion = waitForRowBodyCompletion(page);
+
+    release();
+    await completion;
+    await expect(editorForRow(page)).toBeVisible();
+    await expect(rowIcon(page, rowId)).toHaveCount(0);
+    expect(commands).toHaveLength(1);
+    commands.forEach(expectDefaultSchema);
+    expect(await readRowEmptyFlag(page, rowId)).toBe(true);
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: 'wait' });
+  }
+});
+
 test('new ordinary rows can open an atomic empty page immediately after normal source synchronization', async ({
   page,
   request,
@@ -285,6 +353,7 @@ test('new ordinary rows can open an atomic empty page immediately after normal s
     await expect(editor).toContainText(text);
     await closeRowDetailWithEscape(page);
   }
+
   commands.forEach(expectDefaultSchema);
 });
 
@@ -315,6 +384,7 @@ test('a new row page opened offline shows an inline error without an editor and 
   } finally {
     await page.context().setOffline(false);
   }
+
   const completion = waitForRowBodyCompletion(page);
 
   await openRowDetailByRowId(page, rowId);

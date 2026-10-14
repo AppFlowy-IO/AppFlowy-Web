@@ -34,6 +34,7 @@ import { awaitAtomicRequest } from '@/application/services/js-services/http/atom
 import { CollabOrigin, RowDocumentSourcePayload, Types, YDoc, YDocWithMeta, YjsEditorKey } from '@/application/types';
 import { determineErrorType, ErrorType } from '@/application/utils/error-utils';
 
+import { ensureDurableRowSource } from './durable-row-source';
 import { FirstBodyContribution } from './first-body-actions';
 import { persistStagedBodyCheckpoint } from './first-body-checkpoint';
 import { applyFirstBodyStaging } from './first-body-staging';
@@ -408,14 +409,15 @@ export async function prepareAtomicRowFirstBody(input: {
       };
 
       const beforeSubmit = async () => {
-        await waitForRowDocumentSource(
-          {
-            databaseId: source.database_id,
-            sourceViewId: source.database_view_id,
-            rowId: source.row_id,
-            databaseVersion,
-            rowVersion,
-          },
+        const identity = {
+          databaseId: source.database_id,
+          sourceViewId: source.database_view_id,
+          rowId: source.row_id,
+          databaseVersion,
+          rowVersion,
+        };
+        const row = await waitForRowDocumentSource(
+          identity,
           {
             read: readSource,
             assertCurrent: currentOwner.assertCurrent,
@@ -423,6 +425,13 @@ export async function prepareAtomicRowFirstBody(input: {
             deadline,
           }
         );
+
+        await ensureDurableRowSource(identity, row, {
+          owner: currentOwner,
+          restoreId,
+          signal: controller.signal,
+          deadline,
+        });
       };
 
       try {

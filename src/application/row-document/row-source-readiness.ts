@@ -79,7 +79,7 @@ export async function waitForRowDocumentSource(
     signal: AbortSignal;
     deadline: number;
   }
-): Promise<void> {
+): Promise<CollabState> {
   while (!options.signal.aborted) {
     assertNotAborted(options.signal);
     options.assertCurrent();
@@ -117,7 +117,7 @@ export async function waitForRowDocumentSource(
         )
           throw new Error('The current source Row identity changed.');
         // Later local cell edits need not finish syncing to publish its body.
-        if (member) return;
+        if (member) return state.row;
       }
     } finally {
       database.destroy();
@@ -142,4 +142,5 @@ export async function waitForRowDocumentSource(
   }
 
   assertNotAborted(options.signal);
+  throw new Error('The row-page source check did not complete.');
 }

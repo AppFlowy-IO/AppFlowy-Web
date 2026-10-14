@@ -14,7 +14,8 @@ import {
 } from '@/application/db';
 import { isDatabaseStorageFenceCurrent } from '@/application/db/database-storage-fence';
 import { getOrCreateRowSubDoc } from '@/application/services/js-services/cache';
-import { YDoc, YjsEditorKey } from '@/application/types';
+import { collabFullSyncBatch } from '@/application/services/js-services/http/collab-api';
+import { Types, YDoc, YjsEditorKey } from '@/application/types';
 
 import { decodeCurrentRowPageCollab, prepareAtomicRowFirstBody } from '../atomic-first-body';
 import { compileFirstBodyActions, createFirstBodyDraft } from '../first-body-actions';
@@ -39,6 +40,7 @@ jest.mock('@/application/db/database-storage-fence', () => ({
   withDatabaseStorageFence: (_doc: unknown, _fence: unknown, apply: () => void) => apply(),
 }));
 jest.mock('@/application/services/js-services/cache', () => ({ getOrCreateRowSubDoc: jest.fn() }));
+jest.mock('@/application/services/js-services/http/collab-api', () => ({ collabFullSyncBatch: jest.fn() }));
 const NIL = '00000000-0000-0000-0000-000000000000';
 const ids = {
   workspace: 'workspace',
@@ -105,6 +107,14 @@ function setup() {
     assertCurrent: () => check?.(),
   }));
   (atomic.findPendingAtomicCreation as jest.Mock).mockResolvedValue(undefined);
+  jest.mocked(collabFullSyncBatch).mockResolvedValue([
+    {
+      objectId: ids.row,
+      collabType: Types.DatabaseRow,
+      missingUpdate: new Uint8Array([0, 0]),
+      serverStateVector: new Uint8Array([0]),
+    },
+  ]);
   (atomic.atomicRead as jest.Mock).mockImplementation((_owner, path: string) => {
     if (path.endsWith('restore-state')) return Promise.resolve({ database_restore_id: null, version: null });
     const target = path.split('/').pop();
@@ -347,6 +357,60 @@ describe('atomic row-page activation', () => {
       jest.useRealTimers();
     }
   });
+
+  it.each(['ready', 'item-error', 'retired-row', 'restore-changed'])(
+    'waits for the durable Row acknowledgment before atomic publication (%s)',
+    async (outcome) => {
+      jest.useFakeTimers();
+      const f = setup();
+      const submit = jest.fn();
+      let finish!: (results: Awaited<ReturnType<typeof collabFullSyncBatch>>) => void;
+
+      jest.mocked(collabFullSyncBatch).mockImplementation(
+        () => new Promise((resolve) => {
+          finish = resolve;
+        })
+      );
+      (atomic.runAtomicCreation as jest.Mock).mockImplementation(async ({ beforeSubmit, hydrate, owner }) => {
+        await beforeSubmit(owner);
+        submit();
+        return hydrate(f.receipt, owner);
+      });
+      const session = await prepareAtomicRowFirstBody(f.input);
+      const opening = session.createEmpty();
+
+      void opening.catch(() => undefined);
+      try {
+        await jest.advanceTimersByTimeAsync(0);
+        // Cache GETs already returned a complete Row, but no document may be published yet.
+        expect(collabFullSyncBatch).toHaveBeenCalledTimes(1);
+        expect(submit).not.toHaveBeenCalled();
+        expect(getOrCreateRowSubDoc).not.toHaveBeenCalled();
+        if (outcome === 'retired-row') f.input.rowDoc.destroy();
+        if (outcome === 'restore-changed') jest.mocked(isDatabaseStorageFenceCurrent).mockReturnValue(false);
+        finish([
+          {
+            objectId: ids.row,
+            collabType: Types.DatabaseRow,
+            missingUpdate: new Uint8Array([0, 0]),
+            serverStateVector: new Uint8Array([0]),
+            ...(outcome === 'item-error' ? { error: 'Not enough permissions' } : {}),
+          },
+        ]);
+        if (outcome === 'ready') {
+          await expect(opening).resolves.toBe(f.cached);
+          expect(submit).toHaveBeenCalledTimes(1);
+        } else {
+          await expect(opening).rejects.toThrow();
+          expect(submit).not.toHaveBeenCalled();
+          expect(getOrCreateRowSubDoc).not.toHaveBeenCalled();
+        }
+      } finally {
+        session.dispose();
+        jest.useRealTimers();
+      }
+    }
+  );
 
   it('hydrates independent current Database/Row/Document before canonical activation', async () => {
     const { input, cached, remoteDocument } = setup();
