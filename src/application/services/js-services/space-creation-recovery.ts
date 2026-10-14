@@ -1,3 +1,5 @@
+import { t } from 'i18next';
+
 import { ERROR_CODE } from '@/application/constants';
 import { PageService, WorkspaceService } from '@/application/services/domains';
 import { isUnsupportedRouteError } from '@/utils/errors';
@@ -95,8 +97,10 @@ export async function recoverSpaceCreation(
     const existing = await getView(workspaceId, initialPage.view_id, 0);
 
     assertCurrent();
+    // The space exists, but the page saved with this request is not its first page. Checking again
+    // cannot change that; the message says so in the reader's language (it reaches a toast).
     if (existing.view_id !== initialPage.view_id || existing.parent_view_id !== spaceId) {
-      throw new Error('Recovered page does not belong to the original space');
+      throw new Error(t('spaceCreation.firstPageElsewhere'));
     }
 
     return { spaceId, initialPageId: initialPage.view_id };
@@ -110,6 +114,6 @@ export async function recoverSpaceCreation(
   const page = await PageService.add(workspaceId, spaceId, initialPage);
 
   assertCurrent();
-  if (page.view_id !== initialPage.view_id) throw new Error('Create page returned an unexpected view ID');
+  if (page.view_id !== initialPage.view_id) throw new Error(t('spaceCreation.firstPageUnconfirmed'));
   return { spaceId, initialPageId: initialPage.view_id };
 }

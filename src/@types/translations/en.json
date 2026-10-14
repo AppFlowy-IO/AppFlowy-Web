@@ -20,7 +20,9 @@
       "noneAvailable": "You can't add pages to any space here. Ask a space owner for edit access."
     },
     "meetingNotesDenied": "Your meeting opened without a notes page, because you can't create spaces in this workspace.",
-    "meetingNotesFailed": "Your meeting opened, but its notes page couldn't be created."
+    "meetingNotesFailed": "Your meeting opened, but its notes page couldn't be created.",
+    "firstPageElsewhere": "The space was created, but its first page is somewhere else. Discard this request to continue.",
+    "firstPageUnconfirmed": "The space was created, but we couldn't confirm its first page. Discard this request to continue."
   },
   "workspacePermissions": {
     "sidebarPolicy": "Who can add pages to this space",

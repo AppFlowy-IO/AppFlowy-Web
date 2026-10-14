@@ -20,7 +20,9 @@
       "noneAvailable": "Vous ne pouvez ajouter de pages dans aucun espace. Demandez le droit de modification à un propriétaire d’espace."
     },
     "meetingNotesDenied": "Votre réunion s’est ouverte sans page de notes, car vous ne pouvez pas créer d’espaces dans cet espace de travail.",
-    "meetingNotesFailed": "Votre réunion s’est ouverte, mais sa page de notes n’a pas pu être créée."
+    "meetingNotesFailed": "Votre réunion s’est ouverte, mais sa page de notes n’a pas pu être créée.",
+    "firstPageElsewhere": "L’espace a été créé, mais sa première page se trouve ailleurs. Abandonnez cette demande pour continuer.",
+    "firstPageUnconfirmed": "L’espace a été créé, mais nous n’avons pas pu confirmer sa première page. Abandonnez cette demande pour continuer."
   },
   "workspacePermissions": {
     "sidebarPolicy": "Qui peut ajouter des pages à cet espace",

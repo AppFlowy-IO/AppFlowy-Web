@@ -1,14 +1,29 @@
+import en from '@/@types/translations/en.json';
+import fr from '@/@types/translations/fr-FR.json';
 import { ERROR_CODE } from '@/application/constants';
 
-import { isDefinitiveCreationRejection, readSpaceCreationAdmission } from '../space-creation-recovery';
+import {
+  isDefinitiveCreationRejection,
+  readSpaceCreationAdmission,
+  recoverSpaceCreation,
+} from '../space-creation-recovery';
+import { SpaceCreationIntent } from '../space-creation-intent';
 
 const mockGetCapabilities = jest.fn();
+const mockGetSpacePermission = jest.fn();
+const mockAddPage = jest.fn();
+const mockGetView = jest.fn();
 
+// Messages are looked up by key, so a test can tell a translated message from a hard-coded one.
+jest.mock('i18next', () => ({ t: (key: string) => `t:${key}` }));
 jest.mock('@/application/services/domains', () => ({
-  PageService: {},
-  WorkspaceService: { getWorkspaceSpaceCreationCapabilities: (...args: unknown[]) => mockGetCapabilities(...args) },
+  PageService: { add: (...args: unknown[]) => mockAddPage(...args) },
+  WorkspaceService: {
+    getWorkspaceSpaceCreationCapabilities: (...args: unknown[]) => mockGetCapabilities(...args),
+    getSpacePermission: (...args: unknown[]) => mockGetSpacePermission(...args),
+  },
 }));
-jest.mock('../http/view-api', () => ({ getView: jest.fn() }));
+jest.mock('../http/view-api', () => ({ getView: (...args: unknown[]) => mockGetView(...args) }));
 
 describe('isDefinitiveCreationRejection', () => {
   it.each([
@@ -61,5 +76,50 @@ describe('readSpaceCreationAdmission', () => {
   ])('reports %s as unavailable', async (_case, error) => {
     mockGetCapabilities.mockRejectedValue(error);
     await expect(readSpaceCreationAdmission('workspace-1')).resolves.toBe('unavailable');
+  });
+});
+
+describe('recoverSpaceCreation', () => {
+  const intent = {
+    payload: { view_id: 'space-1', name: 'Research' },
+    initialPage: { view_id: 'page-1', layout: 0, name: 'Notes' },
+    selectedMembers: [],
+    members: [],
+    appliedMemberUids: [],
+  } as unknown as SpaceCreationIntent;
+  const recover = () => recoverSpaceCreation('workspace-1', intent, () => undefined);
+
+  beforeEach(() => {
+    mockGetSpacePermission.mockReset().mockResolvedValue({ space_id: 'space-1' });
+    mockGetView.mockReset();
+    mockAddPage.mockReset();
+  });
+
+  it('finds the created space and its first page', async () => {
+    mockGetView.mockResolvedValue({ view_id: 'page-1', parent_view_id: 'space-1' });
+    await expect(recover()).resolves.toEqual({ spaceId: 'space-1', initialPageId: 'page-1' });
+    expect(mockAddPage).not.toHaveBeenCalled();
+  });
+
+  it('explains in the reader\'s language when the first page is found somewhere else', async () => {
+    mockGetView.mockResolvedValue({ view_id: 'page-1', parent_view_id: 'another-space' });
+    await expect(recover()).rejects.toThrow('t:spaceCreation.firstPageElsewhere');
+    expect(mockAddPage).not.toHaveBeenCalled();
+  });
+
+  it.each(['firstPageElsewhere', 'firstPageUnconfirmed'])('has English and French text for spaceCreation.%s', (key) => {
+    const english = (en.spaceCreation as Record<string, string>)[key];
+    const french = (fr.spaceCreation as Record<string, string>)[key];
+
+    expect(typeof english).toBe('string');
+    expect(typeof french).toBe('string');
+    expect(french).not.toBe(english);
+  });
+
+  it('explains in the reader\'s language when the first page cannot be confirmed', async () => {
+    mockGetView.mockRejectedValue({ code: ERROR_CODE.RECORD_NOT_FOUND, httpStatus: 404 });
+    mockAddPage.mockResolvedValue({ view_id: 'page-from-server' });
+    await expect(recover()).rejects.toThrow('t:spaceCreation.firstPageUnconfirmed');
+    expect(mockAddPage).toHaveBeenCalledWith('workspace-1', 'space-1', intent.initialPage);
   });
 });
