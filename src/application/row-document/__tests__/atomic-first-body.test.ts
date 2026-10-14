@@ -310,6 +310,39 @@ describe('atomic row-page activation', () => {
     }
   });
 
+  it('recovers a row restored in the inline view despite a stale linked-view tombstone', async () => {
+    const f = setup();
+    const root = f.remoteDatabase.getMap('data').get('database') as Y.Map<unknown>;
+    const views = root.get('views') as Y.Map<Y.Map<unknown>>;
+    const inlineOrders = new Y.Array();
+
+    f.rows.delete(0, f.rows.length);
+    f.rows.push([{ id: ids.row, is_deleted: true }]);
+    inlineOrders.push([{ id: ids.row }]);
+    views.set('inline', new Y.Map([['row_orders', inlineOrders]]));
+    root.set('metas', new Y.Map([['iid', 'inline']]));
+    const record = {
+      requestJson: JSON.stringify({ contribution: { kind: 'default_schema', schema_version: 'v1' } }),
+      state: 'committed',
+    };
+
+    (atomic.findPendingAtomicCreation as jest.Mock).mockResolvedValue(record);
+    (atomic.recoverAtomicCreation as jest.Mock).mockImplementation(async ({ onPrepared, hydrate, owner }) => {
+      await onPrepared(record);
+      return hydrate(f.receipt, owner);
+    });
+    const session = await prepareAtomicRowFirstBody(f.input);
+
+    try {
+      await expect(session.createEmpty()).resolves.toBe(f.cached);
+      expect(f.cached.getMap('data').toJSON()).toEqual(f.remoteDocument.getMap('data').toJSON());
+      expect(atomic.runAtomicCreation).not.toHaveBeenCalled();
+      expect(atomic.recoverAtomicCreation).toHaveBeenCalledWith(expect.objectContaining({ record }));
+    } finally {
+      session.dispose();
+    }
+  });
+
   it('waits for separately held normal Row and Database sync before publishing the first body', async () => {
     jest.useFakeTimers();
     const f = setup();

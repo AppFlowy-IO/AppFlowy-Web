@@ -2,10 +2,11 @@ import * as Y from 'yjs';
 
 import { assertNotAborted } from '@/application/database-yjs/creation/source-readiness';
 import { RowMetaKey } from '@/application/database-yjs/database.type';
+import { getInlineViewRowOrders, materializeVisibleRowOrders, RowOrderVisibilityEntry } from '@/application/database-yjs/row-order-visibility';
 import { getMetaIdMap } from '@/application/database-yjs/row_meta';
 import { parseDatabaseRowTemplate } from '@/application/database-yjs/template/codec';
 import { readTemplateRecords } from '@/application/database-yjs/template/storage';
-import { YDoc, YjsEditorKey } from '@/application/types';
+import { YDatabase, YDoc, YjsEditorKey } from '@/application/types';
 
 export interface CollabState {
   object_id: string;
@@ -53,12 +54,12 @@ export function hasCurrentRowDocumentSource(database: Y.Map<unknown>, viewId: st
   const orders = view instanceof Y.Map ? view.get('row_orders') : undefined;
 
   if (!(orders instanceof Y.Array)) return false;
-  if (orders.toArray().some((entry: unknown) => {
-    if (entry instanceof Y.Map) return entry.get('id') === rowId && entry.get('is_deleted') !== true;
-    const order = entry as { id?: string; is_deleted?: boolean } | null;
+  const visibleOrders = materializeVisibleRowOrders(
+    orders.toJSON() as RowOrderVisibilityEntry[],
+    getInlineViewRowOrders(database as YDatabase)?.toJSON() as RowOrderVisibilityEntry[] | undefined
+  );
 
-    return order?.id === rowId && order.is_deleted !== true;
-  })) return true;
+  if (visibleOrders?.some((order) => order.id === rowId)) return true;
 
   const metas = database.get('metas');
   const documentId = getMetaIdMap(rowId).get(RowMetaKey.DocumentId);
