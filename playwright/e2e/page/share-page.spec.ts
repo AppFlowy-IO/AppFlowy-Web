@@ -104,7 +104,7 @@ test.describe('Share Page Test', () => {
     const directGroupsGate = new Promise<void>((resolve) => {
       releaseDirectGroups = resolve;
     });
-    const directGroupsUrl = /\/api\/workspace\/[^/]+\/views\/[^/]+\/group$/;
+    const directGroupsUrl = /\/api\/workspace\/[^/]+\/views\/[^/]+\/group(?:\?|$)/;
 
     await page.route(directGroupsUrl, async (route) => {
       await directGroupsGate;

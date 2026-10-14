@@ -14,7 +14,7 @@ import { generateRandomEmail, TestConfig } from '../../support/test-config';
 
 import type { collab } from '../../../src/proto/messages';
 
-const rowDocumentRoute = '**/v2/page-view/row-document';
+const rowDocumentRoute = '**/v2/page-view/row-document{,?**}';
 const editorForRow = (page: Page) => RowDetailSelectors.modal(page).getByTestId('editor-content').first();
 const rowIcon = (page: Page, rowId: string) =>
   DatabaseGridSelectors.rowById(page, rowId).getByTestId(`row-document-icon-${rowId}`);
@@ -76,7 +76,7 @@ function collectCreationCommands(page: Page): string[] {
   const commands: string[] = [];
 
   page.on('request', (request) => {
-    if (request.method() === 'POST' && request.url().endsWith('/v2/page-view/row-document')) {
+    if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/v2/page-view/row-document')) {
       commands.push(request.postData()!);
     }
   });
@@ -94,7 +94,7 @@ test('side peek opens its row while the database bulk preload is still pending',
   });
   let bulkRequests = 0;
 
-  await page.route('**/database/*/blob/diff', async (route) => {
+  await page.route('**/database/*/blob/diff{,?**}', async (route) => {
     bulkRequests++;
     await held;
     await route.continue();
@@ -275,7 +275,7 @@ test('a fresh row waits for its normal full-sync acknowledgment before creating 
   const responseType = protocol.lookupType('collab.CollabBatchSyncResponse');
   let acknowledged = false;
 
-  await page.route('**/collab/full-sync/batch', async (route) => {
+  await page.route('**/collab/full-sync/batch{,?**}', async (route) => {
     const body = route.request().postDataBuffer();
     const batch = body ? requestType.decode(body) as unknown as collab.CollabBatchSyncRequest : undefined;
 
@@ -427,7 +427,7 @@ test('lost creation acknowledgement retries the identical command before enablin
   expect(commands).toHaveLength(1);
   expectDefaultSchema(commands[0]);
   const replay = page.waitForResponse(
-    (response) => response.request().method() === 'POST' && response.url().endsWith('/v2/page-view/row-document')
+    (response) => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/v2/page-view/row-document')
   );
 
   await error.getByRole('button', { name: /retry/i }).click();
@@ -472,7 +472,7 @@ test('reload after a lost creation acknowledgement recovers the saved command wi
   await expect(DatabaseGridSelectors.rowById(page, rowId)).toBeVisible();
   expect(commands).toHaveLength(1);
   const replay = page.waitForResponse(
-    (response) => response.request().method() === 'POST' && response.url().endsWith('/v2/page-view/row-document')
+    (response) => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/v2/page-view/row-document')
   );
 
   await openRowDetailByRowId(page, rowId);

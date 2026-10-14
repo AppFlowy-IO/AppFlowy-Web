@@ -15,13 +15,13 @@ for (const failure of ['offline', 'unsupported server'] as const) {
       // Admission can transiently refuse the initial database. Exercise the
       // app's same-command retry before testing offline/capability rejection.
       await page.route(
-        '**/v2/page-view/database/default',
+        '**/v2/page-view/database/default{,?**}',
         (route) => route.fulfill({ status: 200, json: { code: -5, message: 'Temporary creation admission contention' } }),
         { times: 1 }
       );
       const creationAttempts: string[] = [];
       const initialResponse = page.waitForResponse(async (response) => {
-        if (response.request().method() !== 'POST' || !response.url().endsWith('/v2/page-view/database/default')) {
+        if (response.request().method() !== 'POST' || !new URL(response.url()).pathname.endsWith('/v2/page-view/database/default')) {
           return false;
         }
 
@@ -40,7 +40,15 @@ for (const failure of ['offline', 'unsupported server'] as const) {
       await expect(DatabaseGridSelectors.dataRows(page)).toHaveCount(3);
       if (failure === 'unsupported server') {
         await page.route('**/api/server-info**', async (route) => {
-          const response = await route.fetch();
+          const headers = { ...route.request().headers() };
+
+          // Reconnect discovery can revalidate with an ETag. This fixture needs
+          // the full JSON body to override capabilities, including on refresh.
+          delete headers['if-none-match'];
+          delete headers['if-modified-since'];
+          const response = await route.fetch({ headers });
+
+          expect(response.status()).toBe(200);
           const info = await response.json();
 
           info.data.enable_atomic_creation = false;

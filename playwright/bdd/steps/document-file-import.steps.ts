@@ -120,10 +120,18 @@ When(
 
     expect(body.code, body.message).toBe(0);
     expect(body.data.task_id).toBeTruthy();
-    const taskUrl = `${created.url()}/${body.data.task_id}`;
+    const taskUrl = new URL(created.url());
+
+    taskUrl.pathname += `/${body.data.task_id}`;
     const terminalResponse = await page.waitForResponse(
       async (response) => {
-        if (response.url() !== taskUrl || response.request().method() !== 'GET') return false;
+        const url = new URL(response.url());
+
+        if (
+          url.origin !== taskUrl.origin || url.pathname !== taskUrl.pathname || response.request().method() !== 'GET'
+        ) {
+          return false;
+        }
         const result = await response.json();
 
         return result.code !== 0 || !['Pending', 'Processing'].includes(result.data?.status);

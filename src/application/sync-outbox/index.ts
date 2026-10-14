@@ -1,9 +1,11 @@
+
 import BaseDexie from 'dexie';
 import * as Y from 'yjs';
 
 import { db, matchesDatabaseStorageFence } from '@/application/db';
 import { type DatabaseStorageFence, isDatabaseStorageFenceCurrent } from '@/application/db/database-storage-fence';
 import { SyncOutboxRecord } from '@/application/db/tables/sync_outbox';
+import { serverRestore } from '@/application/server-restore';
 import { Types } from '@/application/types';
 import { collab, messages } from '@/proto/messages';
 import { Log } from '@/utils/log';
@@ -1177,7 +1179,7 @@ async function runSlowSyncCoordinated<T>(
     const lockManager = globalThis.navigator?.locks;
 
     if (lockManager) {
-      const lockName = `${SLOW_SYNC_LOCK_PREFIX}:${userId}:${workspaceId}`;
+      const lockName = serverRestore.cacheKey(`${SLOW_SYNC_LOCK_PREFIX}:${userId}:${workspaceId}`);
 
       return await lockManager.request(lockName, { mode: 'exclusive', signal: controller.signal }, () =>
         task(controller.signal)

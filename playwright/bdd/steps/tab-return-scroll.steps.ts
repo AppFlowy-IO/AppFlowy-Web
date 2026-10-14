@@ -45,7 +45,11 @@ When('I return to the document tab after scrolling down', async ({ page }) => {
     )
     .toBe(700);
 
-  const permissionRefresh = page.waitForResponse((response) => response.url().includes('/permission?collab_type='));
+  const permissionRefresh = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+
+    return url.pathname.endsWith('/permission') && url.searchParams.has('collab_type');
+  });
 
   // Headless browsers do not consistently hide background tabs. Deliver the
   // same lifecycle events explicitly so this also exercises revalidation in CI.
