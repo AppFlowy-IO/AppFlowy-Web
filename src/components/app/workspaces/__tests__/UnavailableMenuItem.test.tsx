@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { mockResizeObserver } from '@/__mocks__/resizeObserver';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -57,15 +57,26 @@ test('an unavailable entry is reached by arrow keys, explains why, and does noth
   expect(document.activeElement).toBe(entry);
 });
 
-test('an unavailable entry does not look clickable: no fill under the pointer, a not-allowed cursor', async () => {
+test('an unavailable entry does not look clickable under the pointer, but shows keyboard focus', async () => {
   render(<Menu unavailable='unavailable-item' />);
-  await focusFirstItem();
-  const classes = screen.getByRole('menuitem', { name: 'Create workspace' }).className.split(/\s+/);
+  fireEvent.keyDown(await focusFirstItem(), { key: 'ArrowDown' });
+  const entry = screen.getByRole('menuitem', { name: 'Create workspace' });
+  const classes = entry.className.split(/\s+/);
 
-  // Radix focuses the item under the pointer, so the focus fill is what a hover shows.
-  expect(classes).toEqual(expect.arrayContaining(['cursor-not-allowed', 'hover:bg-transparent', 'focus:bg-transparent']));
-  // Keyboard users still see where they are.
-  expect(classes).toContain('focus-visible:bg-fill-content-hover');
+  expect(classes).toEqual(
+    expect.arrayContaining(['cursor-not-allowed', 'hover:bg-transparent', 'data-[pointer-focus]:focus:bg-transparent'])
+  );
+  // Reached with the arrow keys: the usual focus fill shows where the keyboard is.
+  await waitFor(() => expect(document.activeElement).toBe(entry));
+  expect(entry.hasAttribute('data-pointer-focus')).toBe(false);
+  expect(classes).toContain('focus:bg-fill-content-hover');
+
+  // Radix focuses the entry under the pointer (and browsers count that as keyboard-style focus), so
+  // the entry notes that the pointer moved there first and drops the fill.
+  act(() => screen.getByRole('menuitem', { name: 'Existing workspace' }).focus());
+  fireEvent.pointerMove(entry);
+  act(() => entry.focus());
+  expect(entry.hasAttribute('data-pointer-focus')).toBe(true);
 });
 
 test('its reason opens beside the menu, clear of the menu border', async () => {
