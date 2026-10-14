@@ -1272,8 +1272,8 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   // Explicit members receive the collective member level; the per-member value
   // only matters on servers that still honour it.
   const explicitMemberAccessLevel = permissionSettings.member_default_access_level ?? AccessLevel.ReadOnly;
-  // Adds through the UUID routes follow the space as the server last confirmed it: only Custom
-  // members may leave the level out, every other type stores the level sent with the add.
+  // Adds through the UUID routes follow the space as the server last confirmed it. Ordinary
+  // members always carry a level (see spaceMemberAddPayload), even on Custom spaces, which ignore it.
   const memberAssignmentSettings = loadedPermissionSettings ?? permissionSettings;
 
   const handleAddMember = useCallback(

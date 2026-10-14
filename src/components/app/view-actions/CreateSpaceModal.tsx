@@ -14,6 +14,7 @@ import {
   isDefinitiveCreationRejection,
   recoverSpaceCreation,
 } from '@/application/services/js-services/space-creation-recovery';
+import { spaceMemberAddPayload } from '@/application/services/js-services/space-member-assignment';
 import {
   AccessLevel,
   CreatePagePayload,
@@ -236,7 +237,12 @@ function CreateSpaceDraft({
           requestContext.assertCurrent();
           if (supportsOverrides) {
             if (!userUuid) throw new Error(t('space.memberOverride.identityUnavailable'));
-            await WorkspaceService.addSpaceMemberByUuid(workspaceId, spaceId, userUuid, { role: SpaceMemberRole.Member });
+            await WorkspaceService.addSpaceMemberByUuid(
+              workspaceId,
+              spaceId,
+              userUuid,
+              spaceMemberAddPayload(SpaceMemberRole.Member, assignmentPermission.permission)
+            );
           } else {
             await WorkspaceService.addSpaceMember(workspaceId, spaceId, { uid, role: SpaceMemberRole.Member, access_level: accessLevel });
           }

@@ -1797,8 +1797,8 @@ export interface AddSpaceMemberByUuidPayload {
   role: SpaceMemberRole;
   /**
    * The level stored for an ordinary member of a Public or Private space. Omitted, the server
-   * stores its own default (Can edit), so callers send the space's member level; Custom spaces
-   * ignore it. Build the body with `spaceMemberAddPayload`.
+   * stores its own default (Can edit), so callers always send one for ordinary members; Custom
+   * spaces ignore it. Build the body with `spaceMemberAddPayload`.
    */
   access_level?: AccessLevel;
   access_level_override?: SpaceMemberAccessOverride;

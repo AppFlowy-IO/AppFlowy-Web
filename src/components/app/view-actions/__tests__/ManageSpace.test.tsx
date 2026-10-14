@@ -1217,13 +1217,16 @@ describe('ManageSpace ACL management', () => {
       await waitFor(() => expect(screen.getByTestId('inline-member-add').disabled).toBe(false));
       fireEvent.click(screen.getByTestId('inline-member-add'));
 
-      await waitFor(() =>
-        expect(mockAddSpaceMemberByUuid).toHaveBeenCalledWith('workspace-1', 'space-1', candidateUuid, {
-          role: SpaceMemberRole.Member,
-        })
-      );
-      // No frozen level: neither the legacy materialized level nor a chosen one is sent.
-      expect(mockAddSpaceMemberByUuid.mock.calls[0][3]).toEqual({ role: SpaceMemberRole.Member });
+      await waitFor(() => expect(mockAddSpaceMemberByUuid).toHaveBeenCalledTimes(1));
+      // No access is chosen for them, and the Custom space ignores the level. Can view, not the
+      // space's Can edit, is sent: if the space became Public without this dialog noticing, the
+      // server stores the level sent, and Public spaces already give every member their level.
+      expect(mockAddSpaceMemberByUuid.mock.calls[0]).toStrictEqual([
+        'workspace-1',
+        'space-1',
+        candidateUuid,
+        { role: SpaceMemberRole.Member, access_level: AccessLevel.ReadOnly },
+      ]);
       expect(mockAddSpaceMember).not.toHaveBeenCalled();
       await waitFor(() => expect(toast.success).toHaveBeenCalledWith('space.permissionManager.addSpaceMemberSuccess'));
     });
@@ -1368,7 +1371,7 @@ describe('ManageSpace ACL management', () => {
       expect(mockRemoveSpaceMember).not.toHaveBeenCalled();
     });
 
-    it('adds and promotes groups without sending an access level', async () => {
+    it('adds groups at Can view and promotes them without choosing an access level', async () => {
       const memberGroup = { ...group('group-1', 'Design'), access_level_override: null, effective_access_level: 30 };
       const grantedGroup = { ...group('group-engineering', 'Engineering'), access_level_override: null, effective_access_level: 30 };
 
@@ -1389,11 +1392,12 @@ describe('ManageSpace ACL management', () => {
       );
 
       await waitFor(() => expect(mockAddSpaceGroupPermission).toHaveBeenCalledTimes(1));
-      expect(mockAddSpaceGroupPermission.mock.calls[0]).toEqual([
+      // As for people: the Custom space ignores the level, which only guards a missed type switch.
+      expect(mockAddSpaceGroupPermission.mock.calls[0]).toStrictEqual([
         'workspace-1',
         'space-1',
         'group-engineering',
-        { role: SpaceMemberRole.Member },
+        { role: SpaceMemberRole.Member, access_level: AccessLevel.ReadOnly },
       ]);
 
       const row = await screen.findByTestId('space-group-row-group-1');

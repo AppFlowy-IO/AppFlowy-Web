@@ -202,7 +202,7 @@ test('never sends FullAccess through an ordinary-member override', async () => {
 
 describe('spaceMemberAddPayload', () => {
   // The server stores the level sent with an add for Public and Private members; a missing one
-  // becomes its own default (Can edit), so the space's member level must always be sent.
+  // becomes its own default (Can edit), so an ordinary member always gets a level.
   test.each([
     [SpaceVisibility.Public, AccessLevel.ReadOnly],
     [SpaceVisibility.Public, AccessLevel.ReadAndWrite],
@@ -223,16 +223,20 @@ describe('spaceMemberAddPayload', () => {
     ).toStrictEqual({ role: SpaceMemberRole.Member, access_level: AccessLevel.ReadOnly });
   });
 
-  test.each([AccessLevel.ReadAndWrite, null])(
-    'a Custom space member keeps the space default (%s): no level and no chosen access',
+  // A Custom space ignores the level, so the member keeps the space default and no access is
+  // chosen for them. The level still goes out: a dialog that missed a switch to Public would
+  // otherwise let the server store its own default, Can edit. Can view never gives more than a
+  // Public space already gives every member.
+  test.each([AccessLevel.ReadAndWrite, AccessLevel.ReadOnly, null])(
+    'a Custom space member (default %s) keeps the space default and is sent at Can view, never more',
     (level) => {
       const payload = spaceMemberAddPayload(SpaceMemberRole.Member, {
         visibility: SpaceVisibility.Custom,
         member_default_access_level: level,
       });
 
-      expect(payload).toStrictEqual({ role: SpaceMemberRole.Member });
-      expect(JSON.stringify(payload)).toBe('{"role":"member"}');
+      expect(payload).toStrictEqual({ role: SpaceMemberRole.Member, access_level: AccessLevel.ReadOnly });
+      expect(JSON.stringify(payload)).toBe('{"role":"member","access_level":10}');
     }
   );
 

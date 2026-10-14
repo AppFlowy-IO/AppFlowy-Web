@@ -30,17 +30,21 @@ const SYNTHETIC_MEMBER_SOURCES = new Set(['workspace_default', 'page_share', 'le
  * to a space on a server with per-person access.
  *
  * - Owners always get the space's owner access, so no level is sent.
- * - An ordinary member of a Custom space keeps the space default until a level is chosen for them
- *   in Manage Space: nothing is sent and the server ignores any level for Custom spaces.
- * - Public, Private and unknown space types store the level sent with the add. Leaving it out
- *   would store the server's own default (Can edit) instead of the space's member level, so the
- *   member level is always sent. A missing member level reads as Can view, like the server.
+ * - Every ordinary member gets a level: for a missing one the server stores its own default,
+ *   Can edit, on any space that is not Custom.
+ * - Public, Private and unknown space types store the level sent, so the space's member level is
+ *   sent. A missing member level reads as Can view, like the server.
+ * - A Custom space ignores the level: the member keeps the space default until a level is chosen
+ *   for them in Manage Space, and no access is chosen here. The level only counts if the space
+ *   stopped being Custom without the caller noticing, so the lowest one is sent: a Public space
+ *   already gives every member its member level, so Can view adds nothing there.
  */
 export function spaceMemberAddPayload(
   role: SpaceMemberRole,
   permission: Pick<SpacePermissionSettings, 'visibility' | 'member_default_access_level'>
 ): { role: SpaceMemberRole; access_level?: AccessLevel } {
-  if (role !== SpaceMemberRole.Member || permission.visibility === SpaceVisibility.Custom) return { role };
+  if (role !== SpaceMemberRole.Member) return { role };
+  if (permission.visibility === SpaceVisibility.Custom) return { role, access_level: AccessLevel.ReadOnly };
   return { role, access_level: permission.member_default_access_level ?? AccessLevel.ReadOnly };
 }
 

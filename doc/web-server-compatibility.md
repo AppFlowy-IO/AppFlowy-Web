@@ -158,12 +158,16 @@ earlier attempt with the same identity may still commit; only finding the space 
 full background-writer, offline re-grant and native-client acceptance matrix remains in progress in the
 Server repository's Oodrive plan.
 
-On servers with per-person access, Manage Space adds people and groups through the UUID routes. A
-Custom-space member is added with no level and keeps the space default until a level is chosen in the
-Access column. For Public, Private and unknown space types those routes store the level sent with the
-add and fall back to Can edit when it is missing, so Web always sends the space's member level. (Web
-keeps Public rosters read-only, and servers refuse member adds to Private spaces.) When signed-in users
-open the Access menu of their own row, Web reads
+On servers with per-person access, Manage Space adds people and groups through the UUID routes. For
+Public, Private and unknown space types those routes store the level sent with the add and fall back to
+Can edit when it is missing, so Web always sends the space's member level. (Web keeps Public rosters
+read-only, and servers refuse person adds to Private spaces.) A Custom-space member keeps the space
+default until a level is chosen in the Access column, because Custom spaces ignore the level sent. Web
+still sends Can view for them: if the space became Public without the open dialog noticing, the new
+member gets exactly the space's member level (Public spaces give it to every member) instead of the
+server's Can edit default.
+
+When signed-in users open the Access menu of their own row, Web reads
 `GET /api/workspace/{workspace_id}/spaces/{space_id}/access-details`. If a group of the space, Access to
 all spaces or a share of the space page gives them more than that row, the menu adds one line naming the
 source; a group is named only when exactly one group fits. The source follows the server's decision: for
