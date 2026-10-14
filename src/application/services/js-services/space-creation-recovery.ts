@@ -5,12 +5,34 @@ import { PageService, WorkspaceService } from '@/application/services/domains';
 import { isUnsupportedRouteError } from '@/utils/errors';
 
 import { getView } from './http/view-api';
-import { SpaceCreationIntent, SpaceCreationResult } from './space-creation-intent';
+import { SpaceCreationFirstPageProblem, SpaceCreationIntent, SpaceCreationResult } from './space-creation-intent';
 
 function isMissing(error: unknown): boolean {
   const value = error as { code?: number; httpStatus?: number; response?: { status?: number } } | null;
 
   return value?.code === ERROR_CODE.RECORD_NOT_FOUND || value?.httpStatus === 404 || value?.response?.status === 404;
+}
+
+/**
+ * The space exists, but the first page saved with the request is under another parent or was added
+ * under an ID the server chose. Checking again can't change that (and would add one more page on a
+ * server that ignores the requested ID), so the request can only be discarded.
+ */
+export class SpaceCreationFirstPageError extends Error {
+  constructor(readonly problem: SpaceCreationFirstPageProblem) {
+    super(t(problem === 'elsewhere' ? 'spaceCreation.firstPageElsewhere' : 'spaceCreation.firstPageUnconfirmed'));
+    this.name = 'SpaceCreationFirstPageError';
+  }
+}
+
+/**
+ * A create request whose first-page step was answered with another ID: the space exists, and the
+ * server added its first page under an ID it chose (it ignores the requested one). The request's
+ * own ID check reports that; a space created under another ID is not this case.
+ */
+export function firstPageAddedUnderOtherId(error: unknown, initialPageId: string | undefined): boolean {
+  if (!initialPageId || typeof error !== 'object' || error === null) return false;
+  return (error as { clientGeneratedExpectedViewId?: unknown }).clientGeneratedExpectedViewId === initialPageId;
 }
 
 const DEFINITIVE_APPLICATION_REJECTIONS: readonly number[] = [
@@ -94,6 +116,8 @@ export async function recoverSpaceCreation(
   assertCurrent: () => void
 ): Promise<SpaceCreationResult | undefined> {
   assertCurrent();
+  // Already found unresolvable: never read or add the first page again.
+  if (intent.firstPageProblem) throw new SpaceCreationFirstPageError(intent.firstPageProblem);
   try {
     await WorkspaceService.getSpacePermission(workspaceId, intent.payload.view_id);
     assertCurrent();
@@ -111,10 +135,9 @@ export async function recoverSpaceCreation(
     const existing = await getView(workspaceId, initialPage.view_id, 0);
 
     assertCurrent();
-    // The space exists, but the page saved with this request is not its first page. Checking again
-    // cannot change that; the message says so in the reader's language (it reaches a toast).
+    // The space exists, but the page saved with this request is not its first page.
     if (existing.view_id !== initialPage.view_id || existing.parent_view_id !== spaceId) {
-      throw new Error(t('spaceCreation.firstPageElsewhere'));
+      throw new SpaceCreationFirstPageError('elsewhere');
     }
 
     return { spaceId, initialPageId: initialPage.view_id };
@@ -125,9 +148,18 @@ export async function recoverSpaceCreation(
 
   // This is an existing-space page operation: the server checks current page
   // authority. B denial must not block recovery of an already created space.
-  const page = await PageService.add(workspaceId, spaceId, initialPage);
+  let page: { view_id: string };
+
+  try {
+    page = await PageService.add(workspaceId, spaceId, initialPage);
+  } catch (error) {
+    assertCurrent();
+    if (firstPageAddedUnderOtherId(error, initialPage.view_id)) throw new SpaceCreationFirstPageError('unconfirmed');
+    throw error;
+  }
 
   assertCurrent();
-  if (page.view_id !== initialPage.view_id) throw new Error(t('spaceCreation.firstPageUnconfirmed'));
+  // PageService.add already refuses another ID; this keeps the rule for any other answer.
+  if (page.view_id !== initialPage.view_id) throw new SpaceCreationFirstPageError('unconfirmed');
   return { spaceId, initialPageId: initialPage.view_id };
 }

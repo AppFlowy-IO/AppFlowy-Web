@@ -196,9 +196,11 @@ validation or denial) forgets the saved request and leaves the draft editable wi
 ambiguous outcome (lost response, timeout, 409, 5xx) keeps the original identity with "Check again" and
 "Discard", in the dialog and in the sidebar. A resend from "Check again" that is refused keeps that saved
 request as well, because the earlier attempt with the same identity may still commit; only finding the
-space or "Discard" ends it. When "Check again" finds the space but its first page somewhere else, or the
-server added the first page under another identity, the dialog says the space was created and asks to
-discard the request, since checking again cannot change that. The full background-writer, offline
+space or "Discard" ends it. When the space exists but its first page can't be matched ("Check again"
+finds the page under another parent, or a server that ignores the requested page ID added it under its
+own ID, on the first attempt or on a check), the dialog says the space was created and offers only
+"Discard": "Check again" is turned off, and the outcome is saved with the request, so a resumed dialog
+shows the same notice and recovery never adds the first page again. The full background-writer, offline
 re-grant and native-client acceptance matrix remains in progress in the Server repository's Oodrive plan.
 
 The opt-in `playwright.permissions.config.ts` suite uses the passed Server

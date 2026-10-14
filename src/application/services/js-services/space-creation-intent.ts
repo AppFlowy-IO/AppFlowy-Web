@@ -8,6 +8,11 @@ export const SPACE_CREATION_INTENT_CHANGED = 'appflowy:space-creation-intent';
 
 export type SpaceCreationMember = { uid: string; userUuid?: string; accessLevel: AccessLevel };
 export type SpaceCreationResult = { spaceId: string; initialPageId?: string };
+/**
+ * Why the first page saved with a created space can't be matched: it is under another parent, or
+ * the server added it under an ID it chose. Checking again can't change either.
+ */
+export type SpaceCreationFirstPageProblem = 'elsewhere' | 'unconfirmed';
 export type SpaceCreationIntent = {
   payload: CreateSpacePayload & { view_id: string };
   initialPage?: CreatePagePayload & { view_id: string };
@@ -15,7 +20,11 @@ export type SpaceCreationIntent = {
   members: SpaceCreationMember[];
   appliedMemberUids: string[];
   committed?: SpaceCreationResult;
+  /** The space was found but its first page can't be matched; only Discard is left. */
+  firstPageProblem?: SpaceCreationFirstPageProblem;
 };
+
+const FIRST_PAGE_PROBLEMS: readonly unknown[] = ['elsewhere', 'unconfirmed'];
 
 /** Saved data this build cannot read. It is kept until the user discards it, never replaced. */
 export class InvalidSpaceCreationIntentError extends Error {
@@ -40,7 +49,8 @@ function isSpaceCreationIntent(value: unknown): value is SpaceCreationIntent {
     Array.isArray(intent.selectedMembers) &&
     Array.isArray(intent.appliedMemberUids) &&
     (!intent.initialPage || typeof intent.initialPage.view_id === 'string') &&
-    (!intent.committed || intent.committed.spaceId === payload.view_id)
+    (!intent.committed || intent.committed.spaceId === payload.view_id) &&
+    (intent.firstPageProblem === undefined || FIRST_PAGE_PROBLEMS.includes(intent.firstPageProblem))
   );
 }
 
@@ -109,6 +119,17 @@ export class SpaceCreationIntentStore {
     }
 
     this.write({ ...intent, committed: result });
+  }
+
+  /**
+   * The space exists, but the first page saved with it can't be matched. Kept with the request, so
+   * a resumed dialog offers only Discard and recovery never adds the page again.
+   */
+  recordFirstPageProblem(problem: SpaceCreationFirstPageProblem): void {
+    const intent = this.snapshot();
+
+    if (!intent) throw new InvalidSpaceCreationIntentError();
+    if (intent.firstPageProblem !== problem) this.write({ ...intent, firstPageProblem: problem });
   }
 
   memberApplied(spaceId: string, uid: string): void {

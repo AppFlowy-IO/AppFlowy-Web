@@ -94,8 +94,17 @@ export function SpaceCreationNotice({ permission }: { permission: SpaceCreationP
   );
 }
 
+/** Saved requests whose notice offers Discard. Only 'unconfirmed' can still be checked again. */
+const DISCARD_MESSAGES = {
+  unconfirmed: 'spaceCreation.unconfirmed',
+  invalid: 'spaceCreation.invalidRecovery',
+  // The space exists, but its saved first page can't be matched.
+  firstPageElsewhere: 'spaceCreation.firstPageElsewhere',
+  firstPageUnconfirmed: 'spaceCreation.firstPageUnconfirmed',
+} as const;
+
 type SpaceCreationRecoveryNoticeProps =
-  | { kind: 'unconfirmed' | 'invalid'; onDiscard: () => void; disabled?: boolean }
+  | { kind: keyof typeof DISCARD_MESSAGES; onDiscard: () => void; disabled?: boolean }
   | { kind: 'membersPending'; count: number; onAddLater: () => void; disabled?: boolean };
 
 /** A saved request that needs a decision: check again or discard it, or finish without the rest. */
@@ -104,7 +113,7 @@ export function SpaceCreationRecoveryNotice(props: SpaceCreationRecoveryNoticePr
   const message =
     props.kind === 'membersPending'
       ? t('spaceCreation.membersPending', { count: props.count })
-      : t(props.kind === 'unconfirmed' ? 'spaceCreation.unconfirmed' : 'spaceCreation.invalidRecovery');
+      : t(DISCARD_MESSAGES[props.kind]);
 
   return (
     <div
