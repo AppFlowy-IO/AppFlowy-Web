@@ -12,7 +12,7 @@ import {
 } from '../../support/selectors';
 import { generateRandomEmail, TestConfig } from '../../support/test-config';
 
-const documentRoute = '**/v2/page-view/document/default';
+const documentRoute = '**/v2/page-view/document/default{,?**}';
 
 async function chooseDocument(page: Page) {
   await page.locator('[data-testid="inline-add-page"]:visible').first().click();
@@ -69,7 +69,7 @@ test('atomic creation keeps document/sidebar, database tabs and row-page content
   expect(page.url()).toBe(previousUrl);
   await page.reload();
   await expect(page.getByRole('button', { name: 'Finish creating your page' })).toBeVisible();
-  expect(atomicRequests.filter((entry) => entry.url.endsWith('/document/default'))).toHaveLength(1);
+  expect(atomicRequests.filter((entry) => new URL(entry.url).pathname.endsWith('/document/default'))).toHaveLength(1);
   const started = Date.now();
 
   await page.getByRole('button', { name: 'Finish creating your page' }).click();
@@ -77,7 +77,7 @@ test('atomic creation keeps document/sidebar, database tabs and row-page content
   await expect(page.getByTestId('editor-content').first()).toBeVisible();
   await expect(page.getByTestId(`page-${committedDocumentId}`)).toHaveAttribute('data-selected', 'true');
   timings.push({ operation: 'document explicit recovery to editor', elapsedMs: Date.now() - started });
-  const documentRequests = atomicRequests.filter((entry) => entry.url.endsWith('/document/default'));
+  const documentRequests = atomicRequests.filter((entry) => new URL(entry.url).pathname.endsWith('/document/default'));
 
   expect(documentRequests).toHaveLength(2);
   expect(documentRequests[1].body).toBe(documentRequests[0].body);
@@ -85,7 +85,7 @@ test('atomic creation keeps document/sidebar, database tabs and row-page content
 
   const databaseStarted = Date.now();
   const databaseResponse = page.waitForResponse(
-    (response) => response.request().method() === 'POST' && response.url().endsWith('/v2/page-view/database/default')
+    (response) => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/v2/page-view/database/default')
   );
 
   await createDatabaseView(page, 'Grid', 0);
@@ -102,7 +102,7 @@ test('atomic creation keeps document/sidebar, database tabs and row-page content
   const viewStarted = Date.now();
   const viewResponse = page.waitForResponse(
     (response) =>
-      response.request().method() === 'POST' && response.url().endsWith('/v2/page-view/database-view/default')
+      response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/v2/page-view/database-view/default')
   );
 
   await DatabaseViewSelectors.addViewButton(page).click();
@@ -123,7 +123,7 @@ test('atomic creation keeps document/sidebar, database tabs and row-page content
   const beforeBody = atomicRequests.length;
   const rowStarted = Date.now();
   const rowResponse = page.waitForResponse(
-    (response) => response.request().method() === 'POST' && response.url().endsWith('/v2/page-view/row-document')
+    (response) => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/v2/page-view/row-document')
   );
 
   await openRowDetail(page);

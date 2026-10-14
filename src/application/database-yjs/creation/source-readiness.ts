@@ -1,6 +1,8 @@
+
 import * as Y from 'yjs';
 
 import type { DatabaseStorageFence } from '@/application/db/database-storage-fence';
+import { serverRestore } from '@/application/server-restore';
 import type { CollabFullSyncBatchResult } from '@/application/services/js-services/http/collab-api';
 import { Types, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
@@ -173,7 +175,7 @@ export async function readPersistedDatabaseSource(
   const name = restoreId ? `${doc.guid}:database-restore:${restoreId}` : doc.guid;
   const connection = await new Promise<IDBDatabase>((resolve, reject) => {
     assertNotAborted(signal);
-    const request = indexedDB.open(name);
+    const request = indexedDB.open(serverRestore.cacheKey(name));
     let failed = false;
     const abort = () => { failed = true; request.transaction?.abort(); reject(signal.reason); };
 

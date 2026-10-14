@@ -195,7 +195,7 @@ test.describe('Feature: Import', () => {
 
     await test.step('Given the CSV import server endpoints are mocked end-to-end', async () => {
       // 1) createDatabaseCsvImportTask → returns a presigned URL we control
-      await page.route('**/api/workspace/**/database/import/csv', (route) => {
+      await page.route('**/api/workspace/**/database/import/csv{,?**}', (route) => {
         if (route.request().method() !== 'POST') return route.fallback();
         return route.fulfill({
           status: 200,
@@ -221,7 +221,7 @@ test.describe('Feature: Import', () => {
       // 3) Status poll → first response Pending, second Completed.
       // The client polls every 1.5s; with fake timers the second hit is enough.
       await page.route(
-        `**/api/workspace/**/database/import/csv/${taskId}`,
+        `**/api/workspace/**/database/import/csv/${taskId}{,?**}`,
         (route) => {
           pollCount += 1;
           const isDone = pollCount >= 2;
@@ -288,7 +288,7 @@ test.describe('Feature: Import', () => {
     const polls: Record<string, number> = {};
 
     await test.step('Given the document import server endpoints are mocked end-to-end', async () => {
-      await page.route('**/api/import/**/document', (route) => {
+      await page.route('**/api/import/**/document{,?**}', (route) => {
         if (route.request().method() !== 'POST') return route.fallback();
         const body = route.request().postDataJSON() as { file_name: string; format: string; parent_view_id: string };
         const index = createdTasks.push(body);
@@ -316,7 +316,7 @@ test.describe('Feature: Import', () => {
       });
 
       await page.route('**/api/import/**/document/docx-task-*', (route) => {
-        const taskId = route.request().url().split('/').pop() as string;
+        const taskId = new URL(route.request().url()).pathname.split('/').pop() as string;
         const index = Number(taskId.replace('docx-task-', '')) - 1;
 
         polls[taskId] = (polls[taskId] ?? 0) + 1;
@@ -395,7 +395,7 @@ test.describe('Feature: Import', () => {
     request,
   }) => {
     await test.step('Given the server rejects the scanned PDF after conversion', async () => {
-      await page.route('**/api/import/**/document', (route) => {
+      await page.route('**/api/import/**/document{,?**}', (route) => {
         if (route.request().method() !== 'POST') return route.fallback();
         return route.fulfill({
           status: 200,
@@ -408,7 +408,7 @@ test.describe('Feature: Import', () => {
         });
       });
       await page.route('https://example.test/pdf-upload', (route) => route.fulfill({ status: 200, body: '' }));
-      await page.route('**/api/import/**/document/pdf-task', (route) =>
+      await page.route('**/api/import/**/document/pdf-task{,?**}', (route) =>
         route.fulfill({
           status: 200,
           contentType: 'application/json',
@@ -423,7 +423,7 @@ test.describe('Feature: Import', () => {
           }),
         })
       );
-      await page.route('**/api/import/tasks/pdf-task/cancel', (route) =>
+      await page.route('**/api/import/tasks/pdf-task/cancel{,?**}', (route) =>
         route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 0, message: 'ok' }) })
       );
     });

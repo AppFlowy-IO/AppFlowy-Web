@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { serverRestore } from '@/application/server-restore';
 import { startDrainObject } from '@/application/sync-outbox';
 import type { messages } from '@/proto/messages';
 
@@ -40,7 +41,7 @@ export function useWorkspaceRealtimeTransport({
   deviceId,
 }: WorkspaceRealtimeTransportOptions): WorkspaceRealtimeTransport {
   const leadership = useWorkspaceWebSocketLeader(workspaceId);
-  const broadcastChannel = useBroadcastChannel(`workspace:${workspaceId}`);
+  const broadcastChannel = useBroadcastChannel(serverRestore.cacheKey(`workspace:${workspaceId}`));
   const localWebSocket = useAppflowyWebSocket({
     workspaceId,
     clientId,

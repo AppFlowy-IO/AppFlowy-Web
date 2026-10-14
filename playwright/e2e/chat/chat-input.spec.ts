@@ -126,7 +126,7 @@ test.describe('Chat Input Tests', () => {
     await expect(ChatSelectors.aiChatContainer(page)).toBeVisible({ timeout: 30000 });
 
     // Mock API endpoints
-    await page.route('**/api/chat/**/message/question', async (route) => {
+    await page.route('**/api/chat/**/message/question{,?**}', async (route) => {
       const postData = route.request().postDataJSON();
       await route.fulfill({
         status: 200,
@@ -143,7 +143,7 @@ test.describe('Chat Input Tests', () => {
       });
     });
 
-    await page.route('**/api/chat/**/answer/stream', async (route) => {
+    await page.route('**/api/chat/**/answer/stream{,?**}', async (route) => {
       await route.fulfill({
         status: 200,
         headers: { 'content-type': 'text/event-stream' },
@@ -205,7 +205,7 @@ test.describe('Chat Input Tests', () => {
     await textarea.fill('Hello world');
     await page.waitForTimeout(500);
 
-    const questionPromise = page.waitForRequest('**/api/chat/**/message/question');
+    const questionPromise = page.waitForRequest('**/api/chat/**/message/question{,?**}');
     await sendButton.click();
     await questionPromise;
 
@@ -225,7 +225,7 @@ test.describe('Chat Input Tests', () => {
     await textarea.fill('');
     await page.waitForTimeout(500);
 
-    const questionPromise2 = page.waitForRequest('**/api/chat/**/message/question');
+    const questionPromise2 = page.waitForRequest('**/api/chat/**/message/question{,?**}');
     await textarea.fill('Quick test');
     await textarea.press('Enter');
     await questionPromise2;
