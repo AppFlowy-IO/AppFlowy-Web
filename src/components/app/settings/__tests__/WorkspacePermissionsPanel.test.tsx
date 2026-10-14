@@ -567,6 +567,23 @@ describe('workspace permission settings', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
+  it('keeps an older server\'s notice on screen while it is asked again', async () => {
+    mockRead.mockRejectedValueOnce({ httpStatus: 404 });
+    mount();
+    await screen.findByText('workspacePermissions.unsupported');
+    const next = deferred<WorkspaceSpaceCreationCapabilities>();
+
+    mockRead.mockReturnValueOnce(next.promise);
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await waitFor(() => expect(mockRead).toHaveBeenCalledTimes(2));
+    expect(screen.getByText('workspacePermissions.unsupported')).toBeTruthy();
+    expect(screen.queryByText('workspacePermissions.loading')).toBeNull();
+    await act(async () => next.reject({ httpStatus: 404 }));
+    expect(screen.getByText('workspacePermissions.unsupported')).toBeTruthy();
+  });
+
   it('tells an offline user to reconnect', async () => {
     Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
     mount();

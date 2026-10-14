@@ -2,6 +2,7 @@ import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'r
 
 import { APP_EVENTS } from '@/application/constants';
 import { WorkspaceService } from '@/application/services/domains';
+import { isSpaceCreationDenial } from '@/application/services/js-services/space-creation-recovery';
 import {
   compareWorkspacePermissionRevisions,
   isWorkspacePermissionRevision,
@@ -27,6 +28,18 @@ type Snapshot = {
 /** Only the same account/server/workspace scope may keep showing an earlier answer. */
 function retained(previous: Snapshot | undefined, scope: object) {
   return previous?.scope === scope ? previous.capability : undefined;
+}
+
+/**
+ * Answers that never admit creation by themselves stay as they are while they are asked again: an
+ * older server without the route (it decides by itself) and a refused read. A capability goes back
+ * to loading instead, because admission must never use a stale yes.
+ */
+function keepsAnswerWhileRechecked(previous: Snapshot | undefined, scope: object) {
+  return (
+    previous?.scope === scope &&
+    (previous.status === 'unsupported' || (previous.status === 'error' && isSpaceCreationDenial(previous.error)))
+  );
 }
 
 /**
@@ -67,7 +80,11 @@ export function useSpaceCreationCapability(workspaceId?: string, enabled = true)
     const isCurrent = () => liveScope.current === scope && sequence.current === request;
 
     if (!scope.active || !scope.workspaceId) return Promise.resolve(undefined);
-    setSnapshot((previous) => ({ scope, status: 'loading', capability: retained(previous, scope) }));
+    setSnapshot((previous) =>
+      keepsAnswerWhileRechecked(previous, scope)
+        ? previous
+        : { scope, status: 'loading', capability: retained(previous, scope) }
+    );
     const id = scope.workspaceId;
 
     return scope.refresh(async () => {

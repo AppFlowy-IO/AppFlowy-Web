@@ -27,7 +27,11 @@ export function canStartSpaceCreation(
   return permission.status === 'loading' && permission.capability?.can_create_space === true;
 }
 
-/** The visible reason creation cannot start, or undefined when it can. */
+/**
+ * The visible reason creation cannot start, or undefined when it can. The hook keeps a known
+ * answer (allowed, denied, an older server, a refusal) on screen while it is rechecked, so a
+ * background recheck never flashes "Checking permissions"; only a first check or a retry does.
+ */
 export function spaceCreationUnavailableReason(
   permission: Pick<SpaceCreationPermission, 'status' | 'canCreateSpace' | 'capability' | 'error'>
 ): SpaceCreationUnavailableReason | undefined {
