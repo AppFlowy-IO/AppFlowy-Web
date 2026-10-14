@@ -2002,6 +2002,19 @@ describe('ManageSpace ACL management', () => {
     });
   });
 
+  it('says which space it manages, in a sentence-case title', async () => {
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+    await waitForSettingsLoaded();
+    const title = screen.getByTestId('manage-space-modal-title');
+
+    expect(within(title).getByText('space.manageSpace')).toBeTruthy();
+    expect(within(title).getByText('Space one')).toBeTruthy();
+    // A name being typed in General is not the space's name until it is saved.
+    fireEvent.change(screen.getByTestId('space-name-input'), { target: { value: 'Renamed' } });
+    expect(within(title).getByText('Space one')).toBeTruthy();
+    expect(within(title).queryByText('Renamed')).toBeNull();
+  });
+
   it('persists Custom permission selections immediately and the name when editing finishes', async () => {
     mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: customPermission }));
     render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);

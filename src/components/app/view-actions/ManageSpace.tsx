@@ -31,6 +31,7 @@ import {
 } from '@/application/types';
 import { isSameUserUid } from '@/application/user-uid';
 import { NormalModal } from '@/components/_shared/modal';
+import SpaceIcon from '@/components/_shared/view-icon/SpaceIcon';
 import {
   useAppOperations,
   useAppView,
@@ -2099,11 +2100,37 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     });
   };
 
+  // The saved name and icon, as in the sidebar: a name being typed in General is not the space's yet.
+  const titleName = view?.name || loadedSpaceMetadataRef.current.name;
+  const titleIcon = view?.extra?.space_icon || '';
+  const title = (
+    <span className='inline-flex max-w-full items-center justify-center gap-1.5 align-middle'>
+      <span className='shrink-0'>{t('space.manageSpace')}</span>
+      {titleName && (
+        <>
+          <span aria-hidden='true' className='shrink-0 text-text-tertiary'>
+            ·
+          </span>
+          <span className='sr-only'>:</span>
+          <span aria-hidden='true' className='flex shrink-0'>
+            <SpaceIcon
+              className='!h-5 !w-5 !min-w-5'
+              bgColor={view?.extra?.space_icon_color}
+              value={titleIcon}
+              char={titleIcon ? undefined : titleName.slice(0, 1)}
+            />
+          </span>
+          <span className='min-w-0 truncate'>{titleName}</span>
+        </>
+      )}
+    </span>
+  );
+
   return (
     <SpaceSettingsPanel
       open={open}
       onClose={onClose}
-      title={t('space.manage')}
+      title={title}
       modalTestId='manage-space-modal'
       activeTab={activeTab}
       onTabChange={handleTabChange}

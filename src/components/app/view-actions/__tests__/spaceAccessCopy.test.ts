@@ -1,3 +1,6 @@
+import fs from 'fs';
+import path from 'path';
+
 import i18next, { i18n } from 'i18next';
 
 import en from '@/@types/translations/en.json';
@@ -155,6 +158,23 @@ describe('space access copy', () => {
     expect(lookup(en, 'space.customPermissionDescription')).toBe('Choose who can access and what they can do');
     expect(lookup(en, 'space.privatePermissionDescription')).toBe('Only you can access');
     expect(lookup(fr, 'space.publicPermissionDescription')).toBe("Tout le monde dans l'espace de travail peut y accéder");
+  });
+
+  it('titles the space menu, its tooltip and its dialogs in sentence case, like Create space', () => {
+    for (const file of ['ManageSpace.tsx', 'MoreSpaceActions.tsx', 'SpaceSidebarActions.tsx']) {
+      const source = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+
+      expect({ file, titleCase: /'space\.manage'/.test(source) }).toEqual({ file, titleCase: false });
+      expect({ file, sentenceCase: /'space\.manageSpace'/.test(source) }).toEqual({ file, sentenceCase: true });
+    }
+
+    expect(lookup(en, 'space.manage')).toBeUndefined();
+    expect(lookup(en, 'space.manageSpace')).toBe('Manage space');
+    expect(lookup(en, 'space.createSpace')).toBe('Create space');
+    expect(lookup(en, 'space.duplicate')).toBe('Duplicate space');
+    expect(lookup(fr, 'space.manageSpace')).toBe("Gérer l'espace");
+    expect(lookup(fr, 'space.createSpace')).toBe('Créer un espace');
+    expect(lookup(fr, 'space.duplicate')).toBe("Dupliquer l'espace");
   });
 
   it('keeps internal permission terms out of the visible copy', () => {
