@@ -1,5 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 
+import { getServerInfo } from '@/application/services/js-services/http/auth-api';
 import { getTokenParsed } from '@/application/session/token';
 
 import { useAppflowyWebSocket, Options } from '../useAppflowyWebSocket';
@@ -19,6 +20,10 @@ const mockUseWebSocket = jest.fn(() => ({
 jest.mock('react-use-websocket', () => ({
   __esModule: true,
   default: (...args: unknown[]) => mockUseWebSocket(...(args as [])),
+}));
+
+jest.mock('@/application/services/js-services/http/auth-api', () => ({
+  getServerInfo: jest.fn().mockResolvedValue({}),
 }));
 
 jest.mock('@/application/session/token', () => ({
@@ -79,6 +84,16 @@ describe('useAppflowyWebSocket', () => {
     jest.clearAllMocks();
     mockReadyState = 1;
     setStoredToken('token-A');
+  });
+
+  it('does not open a socket when restore discovery fails; confirmed legacy 404 still connects', async () => {
+    renderHook(() => useAppflowyWebSocket(baseOptions));
+    (getServerInfo as jest.Mock).mockRejectedValueOnce(new Error('Server restore changed'));
+    await expect(resolveLastSocketUrl()).rejects.toThrow('Server restore changed');
+    (getServerInfo as jest.Mock).mockRejectedValueOnce({ code: 404 });
+    await expect(resolveLastSocketUrl()).resolves.toContain('server_restore_id=00000000-0000-0000-0000-000000000000');
+    (getServerInfo as jest.Mock).mockRejectedValueOnce(new Error('Server offline'));
+    await expect(resolveLastSocketUrl()).rejects.toThrow('Server offline');
   });
 
   it('connects with the session token in the socket URL', async () => {
