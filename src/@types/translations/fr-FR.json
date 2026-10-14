@@ -2763,7 +2763,7 @@
       "label": "Accès",
       "accessFor": "Accès de {{name}}",
       "unknown": "Indisponible",
-      "explanation": "Choisissez ce que cette personne ou ce groupe peut faire, ou conservez l’accès par défaut de l’espace. Le partage d’une page peut quand même donner accès, et les pages restreintes restent restreintes.",
+      "explanation": "Choisissez ce que chaque personne ou groupe peut faire dans cet espace, ou conservez l’accès par défaut de l’espace. Le partage d’une page peut quand même donner accès, et les pages restreintes restent restreintes.",
       "unavailable": "Cet accès ne peut plus être modifié. Quelqu’un a peut-être changé les paramètres de cet espace.",
       "contextChanged": "Votre compte ou votre espace de travail a changé. Réessayez.",
       "identityUnavailable": "Impossible de charger les informations du compte de cette personne. Rechargez la page et réessayez.",

@@ -13,8 +13,9 @@ import fr from '@/@types/translations/fr-FR.json';
  */
 const SHARED_VOCABULARY: Record<string, string> = {
   'space.memberOverride.label': 'Access',
+  // A column header has no "this" person: it explains the whole column.
   'space.memberOverride.explanation':
-    'Choose what this person or group can do, or keep the space default. Sharing a page can still give access, and restricted pages stay restricted.',
+    'Choose what each person or group can do in this space, or keep the space default. Sharing a page can still give access, and restricted pages stay restricted.',
   'space.memberOverride.levels.canView': 'Can view',
   'space.memberOverride.levels.canComment': 'Can comment',
   'space.memberOverride.levels.canEdit': 'Can edit',

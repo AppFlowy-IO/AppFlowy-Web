@@ -3754,7 +3754,7 @@
       "label": "Access",
       "accessFor": "Access for {{name}}",
       "unknown": "Unavailable",
-      "explanation": "Choose what this person or group can do, or keep the space default. Sharing a page can still give access, and restricted pages stay restricted.",
+      "explanation": "Choose what each person or group can do in this space, or keep the space default. Sharing a page can still give access, and restricted pages stay restricted.",
       "unavailable": "This access can't be changed anymore. Someone may have changed this space's settings.",
       "contextChanged": "Your account or workspace changed. Try again.",
       "identityUnavailable": "We couldn't load this person's account details. Reload the page and try again.",
