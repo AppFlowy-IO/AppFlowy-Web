@@ -352,6 +352,10 @@ Native selects, radio buttons, Save buttons and internal wording that the redesi
 
 - One browser (Chromium, headless: scrollbars are hidden), one viewport, English only. No Desktop
   client, no login screen, no mobile layout.
+- Running the capture spec again on the same source gives the same screens, but not always the same
+  bytes: a few pixels can differ where the pointer happens to rest or in the anti-aliasing of text
+  and icons. A hash that differs from the manifest therefore means a fresh capture, not a hand edit
+  (no image here was edited by hand); compare the images to judge a change.
 - Synthetic data on a self-hosted build; the Worker, search and AI services were not running.
 - The gallery run changed permissions only through owner and operator API calls; it does not show
   that saving from these controls works (component tests and server tests cover that separately).
