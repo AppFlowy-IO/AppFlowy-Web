@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 import { AccessLevel } from '@/application/types';
 
@@ -73,5 +73,24 @@ describe('the explanation in your own Access menu', () => {
 
     expect(within(menu).queryByTestId('own-access-note')).toBeNull();
     expect(within(menu).getAllByRole('separator')).toHaveLength(1);
+  });
+});
+
+describe('your extra access while the menu is closed', () => {
+  it('shows an info icon next to the closed menu that says where the extra access comes from', async () => {
+    render(control(NOTE));
+    const hint = screen.getByTestId('own-access-extra-access');
+
+    // Seen in the table without opening the menu, and named for screen readers.
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(hint.getAttribute('aria-label')).toBe(NOTE);
+    expect(hint.getAttribute('type')).toBe('button');
+    act(() => hint.focus());
+    expect((await screen.findByRole('tooltip')).textContent).toContain(NOTE);
+  });
+
+  it('adds nothing when there is no extra access', () => {
+    render(control(null));
+    expect(screen.queryByTestId('own-access-extra-access')).toBeNull();
   });
 });
