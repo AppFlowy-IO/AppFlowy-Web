@@ -4,7 +4,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { ReactNode } from 'react';
 import { toast } from 'sonner';
 
-import { showsKeyboardFocus } from '@/__mocks__/keyboardFocus';
+import { focusRingStandsApart, showsKeyboardFocus } from '@/__mocks__/keyboardFocus';
 import { APP_EVENTS } from '@/application/constants';
 import { Role, WorkspaceMember } from '@/application/types';
 import {
@@ -793,7 +793,10 @@ describe('workspace permission settings', () => {
 
       // Close, Cancel and Change. The question opens over Settings, outside the panel's own rules.
       expect(buttons).toHaveLength(3);
-      for (const button of buttons) expect(showsKeyboardFocus(button)).toBe(true);
+      for (const button of buttons) {
+        expect(showsKeyboardFocus(button)).toBe(true);
+        expect(focusRingStandsApart(button)).toBe(true);
+      }
     });
 
     it('goes back to the search field after adding someone', async () => {

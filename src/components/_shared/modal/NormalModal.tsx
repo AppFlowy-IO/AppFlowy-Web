@@ -12,7 +12,9 @@ type ModalButtonProps = React.ComponentProps<typeof Button>;
 // horizontal padding and a `body.enhanced` (w500) label. The shared `Button`
 // defaults to the tighter px-3/w400 pairing and has no keyboard focus style; a
 // confirmation opened over another dialog is outside that dialog's own rules.
-const FOOTER_BUTTON_CLASS = 'px-4 font-medium focus-visible:ring-2 focus-visible:ring-border-theme-thick';
+// The gap keeps the ring visible around the filled OK button, which has its color.
+const FOOTER_BUTTON_CLASS =
+  'px-4 font-medium focus-visible:ring-2 focus-visible:ring-border-theme-thick focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary';
 
 const ENTER_HANDLED_BY_CONTROL_SELECTOR = [
   'button',

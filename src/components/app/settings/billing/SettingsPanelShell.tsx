@@ -8,9 +8,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils';
 import { getErrorMessage } from '@/utils/errors';
 
-/** Every button in a settings panel shows where keyboard focus is (the shared Button has no focus style). */
+/**
+ * Every button in a settings panel shows where keyboard focus is (the shared Button has no focus
+ * style). The gap keeps the ring visible around a filled theme button, which has the ring's color.
+ */
 const BUTTON_FOCUS_RING =
-  '[&_button:focus-visible]:outline-none [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-border-theme-thick';
+  '[&_button:focus-visible]:outline-none [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-border-theme-thick [&_button:focus-visible]:ring-offset-2 [&_button:focus-visible]:ring-offset-surface-primary';
 
 /** Header and scrollable body shared by the settings panels (same markup as the account panel). */
 export function SettingsPanelShell({ title, testId, children }: { title: string; testId?: string; children: ReactNode }) {

@@ -1,7 +1,7 @@
 import { describe, expect, it, jest } from '@jest/globals';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-import { showsKeyboardFocus } from '@/__mocks__/keyboardFocus';
+import { focusRingStandsApart, showsKeyboardFocus } from '@/__mocks__/keyboardFocus';
 import { mockResizeObserver } from '@/__mocks__/resizeObserver';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -52,8 +52,14 @@ describe('NormalModal keyboard submission', () => {
       </NormalModal>
     );
 
-    expect(showsKeyboardFocus(screen.getByRole('button', { name: 'button.cancel' }))).toBe(true);
-    expect(showsKeyboardFocus(screen.getByRole('button', { name: 'Switch' }))).toBe(true);
+    for (const button of [
+      screen.getByRole('button', { name: 'button.cancel' }),
+      screen.getByRole('button', { name: 'Switch' }),
+    ]) {
+      expect(showsKeyboardFocus(button)).toBe(true);
+      // The OK button is a filled theme button; the ring needs a gap to stand out from it.
+      expect(focusRingStandsApart(button)).toBe(true);
+    }
   });
 
   it('can hide its footer actions while keeping the close control', () => {

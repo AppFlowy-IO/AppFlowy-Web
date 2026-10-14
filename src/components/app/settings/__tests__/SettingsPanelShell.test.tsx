@@ -3,6 +3,9 @@ import { act, render, screen } from '@testing-library/react';
 import en from '@/@types/translations/en.json';
 import fr from '@/@types/translations/fr-FR.json';
 
+import { focusRingStandsApart, showsKeyboardFocus } from '@/__mocks__/keyboardFocus';
+import { Button } from '@/components/ui/button';
+
 import { SettingsPanelShell, SettingsSection } from '../billing/SettingsPanelShell';
 
 jest.mock('react-i18next', () => ({
@@ -61,5 +64,17 @@ describe('SettingsPanelShell', () => {
     // The shared Button removes the browser outline, so the panel draws the focus ring for all of them.
     expect(screen.getByTestId('panel').className).toContain('[&_button:focus-visible]:ring-2');
     expect(screen.getByRole('heading', { name: 'Permissions' })).toBeTruthy();
+  });
+
+  it('sets the focus ring apart from filled buttons, which have the ring color', () => {
+    render(
+      <SettingsPanelShell title='Billing' testId='panel'>
+        <Button type='button'>Upgrade</Button>
+      </SettingsPanelShell>
+    );
+    const upgrade = screen.getByRole('button', { name: 'Upgrade' });
+
+    expect(showsKeyboardFocus(upgrade)).toBe(true);
+    expect(focusRingStandsApart(upgrade)).toBe(true);
   });
 });

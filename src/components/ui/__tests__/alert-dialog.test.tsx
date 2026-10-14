@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react';
 
-import { showsKeyboardFocus } from '@/__mocks__/keyboardFocus';
+import { focusRingStandsApart, showsKeyboardFocus } from '@/__mocks__/keyboardFocus';
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -28,6 +28,10 @@ describe('AlertDialog', () => {
     const buttons = within(screen.getByRole('alertdialog')).getAllByRole('button');
 
     expect(buttons).toHaveLength(3);
-    for (const button of buttons) expect(showsKeyboardFocus(button)).toBe(true);
+    for (const button of buttons) {
+      expect(showsKeyboardFocus(button)).toBe(true);
+      // "Give access" is a filled theme button: a ring right on it would only make it look bigger.
+      expect(focusRingStandsApart(button)).toBe(true);
+    }
   });
 });

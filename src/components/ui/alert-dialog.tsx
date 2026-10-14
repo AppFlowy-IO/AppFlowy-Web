@@ -34,9 +34,12 @@ const AlertDialogOverlay = React.forwardRef<
 
 AlertDialogOverlay.displayName = AlertDialogPrimitive.Overlay.displayName;
 
-/** The shared Button has no focus style; every button in a confirmation shows keyboard focus. */
+/**
+ * The shared Button has no focus style; every button in a confirmation shows keyboard focus. The gap
+ * keeps the ring visible around a filled theme button, which has the ring's color.
+ */
 const BUTTON_FOCUS_RING =
-  '[&_button:focus-visible]:outline-none [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-border-theme-thick';
+  '[&_button:focus-visible]:outline-none [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-border-theme-thick [&_button:focus-visible]:ring-offset-2 [&_button:focus-visible]:ring-offset-surface-primary';
 
 function AlertDialogContent({
   className,
