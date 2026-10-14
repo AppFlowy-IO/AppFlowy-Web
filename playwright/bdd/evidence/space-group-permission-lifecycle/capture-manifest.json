@@ -3,7 +3,7 @@
   "updated": "2026-10-14",
   "current_capture": {
     "date": "2026-10-14",
-    "status": "passed; 7 of 7 capture tests",
+    "status": "passed; 7 of 7 capture tests in the first run (06:44 UTC); 3 of 3 in the rerun (10:55 UTC) of the tests whose screens changed, with the spec now at 8 tests",
     "kind": "fresh connected UI captures on an isolated synthetic stack",
     "web": {
       "branch": "oodrive-fix/web-visual",
@@ -28,7 +28,41 @@
         "02c1976c",
         "da77b101",
         "7af339a6"
-      ]
+      ],
+      "rerun": {
+        "date": "2026-10-14",
+        "branch": "oodrive-fix/web-final",
+        "commit": "fde232d77eb3439a2bcee831ed2b6eeb524892b4",
+        "base": "codex/oodrive-permissions-fixes at 31cb5377",
+        "served_by": "vite dev server (loopback)",
+        "fix_commits": [
+          "d7327d21",
+          "a8a269d1",
+          "9aaec729",
+          "fde232d7"
+        ],
+        "tests_run": [
+          "owner: Permissions panel, narrowing question and Access to all spaces summary",
+          "member: Permissions panel is read-only",
+          "member: Create space refused after the owner narrows who can create spaces"
+        ],
+        "captures_retaken_changed": [
+          "permissions-owner-selected-members.png",
+          "permissions-add-members-suggestions.png",
+          "permissions-member-read-only.png",
+          "permissions-narrowing-confirmation.png"
+        ],
+        "captures_retaken_identical": [
+          "permissions-access-to-all-spaces-summary.png",
+          "group-dialog-access-to-all-spaces-menu.png",
+          "group-access-to-all-spaces-confirmation.png"
+        ],
+        "captures_added": [
+          "create-space-denied.png"
+        ],
+        "captures_kept_from_first_run": 14,
+        "note": "permissions-narrowing-confirmation.png changed only in its rounded top-right corner, where the reordered cards show through behind the dialog; the dialog is the same. The refused Create space capture relays the live connection and holds back server pushes once the dialog is open, so the dialog learns of the narrowed rule only when Create rechecks with the server."
+      }
     },
     "server": {
       "repository": "AppFlowy-Cloud-Premium",
@@ -44,7 +78,9 @@
         "member_seats": 3
       },
       "worker": "not running",
-      "gotrue_image": "appflowyinc/gotrue_premium:latest (sha256:11f21d47ed443155c21ff3d47ab8dc9908e369151eeb3dc1869a853176b9bfd2)"
+      "gotrue_image": "appflowyinc/gotrue_premium:latest (sha256:11f21d47ed443155c21ff3d47ab8dc9908e369151eeb3dc1869a853176b9bfd2)",
+      "branch_head_at_rerun": "6dc8eec230b221387021ee65bac19ada3a574638",
+      "rerun_note": "Same binary (sha256 unchanged); the stack's build provenance records it as built at 540757ea9 with two uncommitted files. Since 59be2954e the branch has three more commits, one touching src (b11f93934, database duplicate authorization), none of them about the screens captured."
     },
     "stack": "isolated loopback stack with its own GoTrue, Redis, PostgreSQL database and MinIO bucket; synthetic @demo.test people; no other environment or data",
     "browser": {
@@ -56,8 +92,8 @@
     },
     "permission_changes": "API only: the seed (GoTrue admin and Cloud REST, operator for the installation policy) and owner calls removing/restoring the HR group in the HR space; UI questions were opened and cancelled and the add lists were closed; nothing was saved from the UI (see server_readback_after_capture)",
     "harness": {
-      "playwright/e2e/app/permission-gallery.capture.spec.ts": "6da442280c27dcd257cf0be9212e463a45c5c2eab8028f51b95fb8037947b598",
-      "playwright/support/permission-gallery-seed.ts": "47dec9450541f24edeaa81363454d64aa86cf080525dc9109e4467421a7f1e46",
+      "playwright/e2e/app/permission-gallery.capture.spec.ts": "b205f770302b245d854d3450e7e574f68c3e68783e41c14eac21f29279acd938",
+      "playwright/support/permission-gallery-seed.ts": "f91c75eab139956f40c22446f80a1e88777144cbc979651613e566ec7a3562ec",
       "playwright.permission-gallery.config.ts": "fe52e98904cb7820e3eaaf5ab8b35148bd98b4352cf61b9bbc673d696beec66a"
     },
     "server_readback_after_capture": {
@@ -115,6 +151,44 @@
         "Product": null,
         "Super_Users": null,
         "Users": 10
+      },
+      "rerun": {
+        "olivia_space_creation": {
+          "policy": "owners_and_selected_members",
+          "can_create_space": true,
+          "can_manage_space_creators": true
+        },
+        "alex_space_creation": {
+          "policy": "owners_and_selected_members",
+          "can_create_space": true,
+          "can_manage_space_creators": false
+        },
+        "sam_space_creation": {
+          "policy": "owners_and_selected_members",
+          "can_create_space": false,
+          "can_manage_space_creators": false
+        },
+        "space_creator_selections": 2,
+        "coverage": {
+          "HR": null,
+          "Product": null,
+          "Super_Users": null,
+          "Users": 10
+        },
+        "spaces": [
+          "General",
+          "HR",
+          "Leadership",
+          "Product"
+        ],
+        "jordan_pending": [
+          [
+            "Demo",
+            "Pending",
+            null
+          ]
+        ],
+        "note": "Read after the rerun: the rule the refused-creation capture narrowed is back to Owners and selected members, no Marketing space exists, and the invitation list still carries no invited role."
       }
     },
     "captures": [
@@ -122,14 +196,14 @@
         "file": "permissions-owner-selected-members.png",
         "viewer": "olivia",
         "crop": "viewport",
-        "shows": "Permissions as the owner: \"Owners and selected members\" with Alex and the Super_Users group selected, the \"Find members or groups to add\" field, and the fade at the bottom of the panel over the Access to all spaces summary",
+        "shows": "Permissions as the owner: the choices from the most to the fewest people (Owners and members, Owners and selected members, Owners only), \"Owners and selected members\" selected with Alex and the Super_Users group, the \"Find members or groups to add\" field, and the fade at the bottom of the panel over the Access to all spaces summary",
         "asserted_by_spec": [
           "policy card \"Owners and selected members\" is selected",
           "Alex and Super_Users rows are listed"
         ],
         "does_not_prove": "Does not prove that the selections can create spaces (see server_readback).",
-        "sha256": "37f0580736810bc53651f9a8731abefb9985b95ef16a3230115d70fdc786848a",
-        "captured_at": "2026-10-14T06:44:15.616Z"
+        "sha256": "0ce2abbe5d6079308dc8b59bfef8551ef567719d6f7fa8494293d6048b70f2cb",
+        "captured_at": "2026-10-14T10:55:33.879Z"
       },
       {
         "file": "permissions-add-members-suggestions.png",
@@ -142,8 +216,8 @@
           "Escape closes the list"
         ],
         "does_not_prove": "Nothing was added.",
-        "sha256": "6b3caa3a04b977327f41aa119f5f15cda0ce88604a421224540597bae4b9e7ae",
-        "captured_at": "2026-10-14T06:44:16.226Z"
+        "sha256": "13318e33ad7cfecd84357b491ab0f146215eeb0fa030c01bcf6e78c06dabbedb",
+        "captured_at": "2026-10-14T10:55:34.508Z"
       },
       {
         "file": "permissions-narrowing-confirmation.png",
@@ -153,9 +227,9 @@
         "asserted_by_spec": [
           "policy unchanged after Cancel"
         ],
-        "does_not_prove": "Does not prove what saving would do.",
-        "sha256": "c585374a3fc12538a94a3bfdab216317cae0a00217aa10e5472f7bcd34905a80",
-        "captured_at": "2026-10-14T06:44:16.917Z"
+        "does_not_prove": "Does not prove what saving would do. Retaken in the rerun: only the rounded corner's background differs.",
+        "sha256": "c728954486547aca7a6800a6d5a00ea772b0080de067ed339772b3a17708f339",
+        "captured_at": "2026-10-14T10:55:35.196Z"
       },
       {
         "file": "permissions-access-to-all-spaces-summary.png",
@@ -169,19 +243,19 @@
         ],
         "does_not_prove": "Read-only summary; does not show coverage applied to a space.",
         "sha256": "a21e2a0144016173e4e27183cb7449cb6c228d3b24ea5ece6d59db29ca54e3d2",
-        "captured_at": "2026-10-14T06:44:17.650Z"
+        "captured_at": "2026-10-14T10:55:35.883Z"
       },
       {
         "file": "permissions-member-read-only.png",
         "viewer": "sam",
         "crop": "viewport",
-        "shows": "Permissions as a member (Sam): \"You can't create spaces in this workspace.\" in a callout, policy cards unavailable, \"Only workspace owners can change this.\"",
+        "shows": "Permissions as a member (Sam): \"You can't create spaces in this workspace.\" in a callout, the policy cards unavailable in the same order as for the owner, \"Only workspace owners can change this.\"",
         "asserted_by_spec": [
           "\"Owners only\" card disabled"
         ],
         "does_not_prove": "Does not prove the server refuses Sam's create request.",
-        "sha256": "cd7d7ed8aac79d64f94c53df5c62d70681d60c0426fbc449c5cb8196ec829df4",
-        "captured_at": "2026-10-14T06:44:23.034Z"
+        "sha256": "ab609220823ff32c4e764397faaa8bbee93dee53d1d47971322ad04725a48614",
+        "captured_at": "2026-10-14T10:55:41.041Z"
       },
       {
         "file": "group-dialog-access-to-all-spaces-menu.png",
@@ -193,7 +267,7 @@
         ],
         "does_not_prove": "No change saved; the open menu covers part of the description.",
         "sha256": "0f8b82239c0783e9378cfde0ded4d2cf795b59bd7da47028c71996d7b42fe10c",
-        "captured_at": "2026-10-14T06:44:18.710Z"
+        "captured_at": "2026-10-14T10:55:36.941Z"
       },
       {
         "file": "group-access-to-all-spaces-confirmation.png",
@@ -205,7 +279,7 @@
         ],
         "does_not_prove": "Does not prove what saving would do.",
         "sha256": "d6d5beb22fe4225c0fb8230175c3c986d54931b73306e7800b0ff8ed65abd300",
-        "captured_at": "2026-10-14T06:44:19.382Z"
+        "captured_at": "2026-10-14T10:55:37.628Z"
       },
       {
         "file": "manage-space-general-page-setting.png",
@@ -325,6 +399,25 @@
         "captured_at": "2026-10-14T06:44:32.971Z"
       },
       {
+        "file": "create-space-denied.png",
+        "viewer": "alex",
+        "crop": "viewport",
+        "shows": "Create space for Alex after the owner narrowed the rule to Owners only and Alex pressed Create: the form gave way to a summary of the request (icon, \"Marketing\", Public) and the callout \"You can't create spaces in this workspace.\" with \"Ask a workspace owner if you need a new space.\" and Close as the only action",
+        "asserted_by_spec": [
+          "Create enabled before the rule changed",
+          "server says Alex cannot create after the change",
+          "message and hint shown",
+          "summary names the space",
+          "name field and Create button gone",
+          "Close hides the dialog",
+          "no Marketing space exists afterwards",
+          "rule put back and Alex can create again"
+        ],
+        "does_not_prove": "The live hint was held back by the capture (relayed connection); when it arrives in time the dialog disables Create with the same message instead (component tests). Permission changes were made through the API.",
+        "sha256": "f542929ae0e48d34dc5e4f55714af35d8cfa3b0e85382676521668b0e16c5f6c",
+        "captured_at": "2026-10-14T10:55:44.312Z"
+      },
+      {
         "file": "workspace-menu-create-workspace-denied.png",
         "viewer": "alex",
         "crop": "viewport",
@@ -347,7 +440,7 @@
           "Demo invitation visible",
           "join line shown, invitation request line absent"
         ],
-        "does_not_prove": "Joining was not tested; the invitation is a guest invitation, which the page cannot say yet.",
+        "does_not_prove": "Joining was not tested; the invitation is a guest invitation, which the page can only say once the server sends the invited role (it does not yet), so this capture was not retaken.",
         "sha256": "9f86204efa35b3092609f524b4a45f904beacb1969516de65f3cb4bff8172b35",
         "captured_at": "2026-10-14T06:44:38.959Z"
       },
@@ -399,7 +492,8 @@
       "Chromium only, 1440x900, English; no Desktop, login screen or mobile layout.",
       "Synthetic data on a self-hosted build; Worker, search and AI services not running.",
       "Permission changes through owner/operator API calls; saving from these controls is covered by component and server tests, not by this run.",
-      "Jordan's invitation is a guest invitation because the three member seats are taken."
+      "Jordan's invitation is a guest invitation because the three member seats are taken; the page says \"Invited as a guest\" once the server sends the invited role, which this server does not yet.",
+      "Failure toasts, which now name the change that failed and give a plain reason, are not captured; component tests cover them."
     ]
   },
   "historical_captures": [

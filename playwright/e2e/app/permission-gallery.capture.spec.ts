@@ -14,6 +14,8 @@ import {
   refreshGallerySession,
   seedPermissionGallery,
   setGroupSpaceAccess,
+  setSpaceCreationPolicy,
+  spaceCreationCapability,
 } from '../../support/permission-gallery-seed';
 
 /**
@@ -51,12 +53,36 @@ async function guardNetwork(context: BrowserContext, cfg: GalleryConfig) {
   });
 }
 
-async function openAs(browser: Browser, fixture: GalleryFixture, person: GalleryPerson, path: string) {
+/**
+ * The live connection of a browser session. While `muted`, what the server pushes (including
+ * permission change hints) is held back, so the app only learns of a change when it asks itself.
+ */
+type Realtime = { muted: boolean };
+
+async function openAs(
+  browser: Browser,
+  fixture: GalleryFixture,
+  person: GalleryPerson,
+  path: string,
+  realtime?: Realtime
+) {
   const cfg = config as GalleryConfig;
   const session = await refreshGallerySession(cfg, fixture.people[person]);
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
 
   await guardNetwork(context, cfg);
+  if (realtime) {
+    // Relay the socket both ways, except that server pushes are dropped while muted.
+    await context.routeWebSocket(() => true, (socket) => {
+      const server = socket.connectToServer();
+
+      socket.onMessage((message) => server.send(message));
+      server.onMessage((message) => {
+        if (!realtime.muted) socket.send(message);
+      });
+    });
+  }
+
   // Same session setup as the permission lifecycle harness: runtime config plus a stored token.
   await context.addInitScript(
     ({ auth, cloud, gotrue }) => {
@@ -323,6 +349,57 @@ test.describe('Workspace permission screenshot gallery', () => {
     await expect(page.getByTestId('space-sidebar-policy-row')).toBeInViewport({ ratio: 1 });
     await expect(createGeneral.getByTestId('more-below-fade')).toHaveAttribute('data-visible', 'false');
     await shoot(page, 'create-space-page-setting.png', 'olivia');
+    await context.close();
+  });
+
+  test('member: Create space refused after the owner narrows who can create spaces', async ({ browser }) => {
+    const cfg = config as GalleryConfig;
+    // Alex is a selected space creator: Create space opens for him with the Create button enabled.
+    const realtime: Realtime = { muted: false };
+    const { context, page } = await openAs(browser, fixture, 'alex', `/app/${fixture.workspaceId}/${fixture.pages.roadmap}`, realtime);
+
+    try {
+      await waitForApp(page);
+      // The page syncs over the relayed connection, so the roadmap is on screen behind the dialog.
+      await expect(page.locator('[data-slate-editor="true"]')).toContainText('Three themes for next year');
+      await page.getByTestId('new-page-button').click();
+      await page.getByTestId('new-page-create-space-button').click();
+      await page.getByTestId('space-name-input').fill('Marketing');
+      await expect(page.getByTestId('create-space-submit')).toBeEnabled();
+
+      // The owner narrows the rule to Owners only while Alex's dialog is open. The live hint about
+      // it is held back, as when it arrives late, so the dialog still offers Create; pressing it
+      // rechecks with the server first, which now refuses.
+      realtime.muted = true;
+      await setSpaceCreationPolicy(cfg, fixture, 'owners_only');
+      await expect.poll(async () => (await spaceCreationCapability(cfg, fixture, 'alex'))?.can_create_space).toBe(false);
+      await expect(page.getByTestId('create-space-submit')).toBeEnabled();
+      await page.getByTestId('create-space-submit').click();
+
+      const denied = page.getByTestId('create-space-denied');
+
+      await expect(denied).toBeVisible();
+      await expect(denied).toContainText("You can't create spaces in this workspace.");
+      await expect(denied).toContainText('Ask a workspace owner if you need a new space.');
+      await expect(page.getByTestId('create-space-summary')).toContainText('Marketing');
+      // The form and its Create button are gone; Close is the only action.
+      await expect(page.getByTestId('space-name-input')).toHaveCount(0);
+      await expect(page.getByTestId('create-space-submit')).toHaveCount(0);
+      await shoot(page, 'create-space-denied.png', 'alex');
+      await page.getByTestId('create-space-denied-close').click();
+      await expect(page.getByTestId('create-space-modal')).toBeHidden();
+      // Nothing was created.
+      const spaces = await fetch(`${cfg.cloud}/api/workspace/${fixture.workspaceId}/spaces`, {
+        headers: { Authorization: `Bearer ${fixture.people.alex.auth.access_token}` },
+      }).then((response) => response.json() as Promise<{ data?: { spaces?: { name: string }[] } }>);
+
+      expect(spaces.data?.spaces?.some((space) => space.name === 'Marketing')).toBe(false);
+    } finally {
+      await setSpaceCreationPolicy(cfg, fixture, 'owners_and_selected_members');
+      realtime.muted = false;
+    }
+
+    await expect.poll(async () => (await spaceCreationCapability(cfg, fixture, 'alex'))?.can_create_space).toBe(true);
     await context.close();
   });
 

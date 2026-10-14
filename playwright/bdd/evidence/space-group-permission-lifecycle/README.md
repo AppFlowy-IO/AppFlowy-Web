@@ -5,19 +5,20 @@ panel (who can create spaces, access to all spaces), the group dialog, Manage sp
 access and "Who can add pages to this space"), Create space, the account-only page, workspace
 creation limits, live loss and recovery of page access, and the sign-out question.
 
-**21 current captures were made on 2026-10-14** from the real Web app against a real Cloud server on
-an isolated stack with synthetic data, after a design review of the first refresh (fixes listed
-below). 15 earlier captures that still match the current UI are kept and labelled historical; 11
-captures of the old UI were removed. Hashes, viewers and the server state read back after the run
-are in [capture-manifest.json](capture-manifest.json).
+**22 current captures were made on 2026-10-14** from the real Web app against a real Cloud server on
+an isolated stack with synthetic data: 21 after a design review of the first refresh (fixes listed
+below), of which 7 were taken again and 1 was added later the same day, after four follow-up fixes
+that align Web with Desktop (also listed below). 15 earlier captures that still match the current UI
+are kept and labelled historical; 11 captures of the old UI were removed. Hashes, viewers and the
+server state read back after each run are in [capture-manifest.json](capture-manifest.json).
 
 ## How the current captures were made
 
 | | |
 | --- | --- |
 | Date | 2026-10-14 (UTC) |
-| Web source | commit `bcfa8067` on `oodrive-fix/web-visual` (integration branch `codex/oodrive-permissions-fixes` at `b612fb90` plus the UI fixes below and the capture spec), served by the vite dev server |
-| Server source | AppFlowy Cloud Premium integration branch `codex/oodrive-permissions-fixes` at `59be2954e`. The binary was built at `540757ea9` with `cargo build --locked --bin appflowy_cloud --features commercial-local-test` (self-hosted feature set: three member seats, guests separate); the three commits since then change only tests and docs. Run with `APPFLOWY_ACCESS_CONTROL=true` |
+| Web source | commit `bcfa8067` on `oodrive-fix/web-visual` (integration branch `codex/oodrive-permissions-fixes` at `b612fb90` plus the UI fixes below and the capture spec), served by the vite dev server. The rerun (the Permissions panel as owner and as member, and the refused Create space) used commit `fde232d7` on `oodrive-fix/web-final` (the integration branch at `31cb5377` plus the four follow-up fixes below), served the same way |
+| Server source | AppFlowy Cloud Premium integration branch `codex/oodrive-permissions-fixes` at `59be2954e`. The binary was built at `540757ea9` with `cargo build --locked --bin appflowy_cloud --features commercial-local-test` (self-hosted feature set: three member seats, guests separate); the three commits since then change only tests and docs. Run with `APPFLOWY_ACCESS_CONTROL=true`. The rerun used the same binary (same hash; the stack's build record notes two uncommitted files at build time) while the branch had moved to `6dc8eec23`, whose only source change since (`b11f93934`, database duplicate authorization) does not touch these screens |
 | Stack | Isolated and synthetic: its own GoTrue (`appflowyinc/gotrue_premium:latest`), Redis, PostgreSQL database and MinIO bucket on loopback ports. No other environment, account or data was used. The Worker was not running (no imports or background jobs are shown). |
 | Browser | Chromium 145 (Playwright build 1208, headless, so scrollbars are hidden), 1440×900, device scale 1. Each person was signed in with a GoTrue password grant stored as the app's session (not through the login screen). Requests to anything but the three stack origins were blocked. |
 | Data | Created through the HTTP APIs only (GoTrue admin and Cloud REST) by [the seed](../../../support/permission-gallery-seed.ts). People use `@demo.test` addresses; nothing real is shown. |
@@ -34,7 +35,8 @@ APPFLOWY_TEST_CHROMIUM_EXECUTABLE=<chromium> \
 ```
 
 [permission-gallery.capture.spec.ts](../../../e2e/app/permission-gallery.capture.spec.ts) is
-skipped without those variables. All 7 of its tests passed in the run that produced these images.
+skipped without those variables. All 7 of its tests passed in the first run; the rerun ran 3 of its
+now 8 tests (with `--grep`), and all 3 passed.
 
 ## The Demo workspace
 
@@ -54,8 +56,10 @@ skipped without those variables. All 7 of its tests passed in the run that produ
 Each caption says what the image shows and what it does not prove. Where the spec asserted
 something, that is stated; otherwise the image is only a picture of the UI.
 
-**Permissions, as the owner.** "Who can create spaces" is set to "Owners and selected members";
-Alex and the Super_Users group are the selections, under "Find members or groups to add". The
+**Permissions, as the owner.** The choices read from the most to the fewest people who can create
+spaces, in the Desktop order: Owners and members, Owners and selected members, Owners only. "Who can
+create spaces" is set to "Owners and selected members"; Alex and the Super_Users group are the
+selections, under "Find members or groups to add". The
 panel continues below: a fade over its bottom edge (the Access to all spaces summary) says so. The
 spec checked that this card is the selected one and that both selections are listed. *Does not
 prove* that the selections let anyone create a space (the API read back `can_create_space: true`
@@ -85,7 +89,8 @@ not show that the coverage applies to a given space.
 ![Access to all spaces summary in the Permissions panel](permissions-access-to-all-spaces-summary.png)
 
 **Permissions, as a member.** Sam sees "You can't create spaces in this workspace." in a callout,
-the current policy with every card unavailable, and "Only workspace owners can change this." The
+the current policy with every card unavailable (in the same order as for the owner), and "Only
+workspace owners can change this." The
 spec checked that the "Owners only" card is disabled. *Does not prove* that the server refuses
 Sam's request to create a space (that is covered by server tests, not this run).
 
@@ -163,6 +168,21 @@ checked by the spec).
 
 ![Create space scrolled to who can add pages](create-space-page-setting.png)
 
+**Create space refused after the rule changed.** Alex, a selected space creator, opened Create space
+from New page and typed "Marketing"; meanwhile the owner narrowed "Who can create spaces" to Owners
+only through the API. The capture relays Alex's live connection and held back what the server pushed
+from then on, as when the hint about a change arrives late, so the dialog still offered Create.
+Pressing it rechecks with the server first, which refused: the form gave way to a summary of the
+request (icon, name, type) and the answer "You can't create spaces in this workspace." with "Ask a
+workspace owner if you need a new space." and Close as the only action. Nothing is kept: closing
+releases the draft. The spec checked that Create was enabled before the change, that the server then
+said Alex could not create, the message, the summary, that the name field and Create button were
+gone, that Close hid the dialog and that no Marketing space existed afterwards; the rule was put back
+and read back (Alex can create again). *Does not prove* what happens when the hint arrives in time:
+the dialog then disables Create with the same message instead (component tests cover both).
+
+![Create space refused: a summary of the request and the answer, with Close](create-space-denied.png)
+
 **Workspace menu without permission to create workspaces.** Alex is not selected by the operator:
 Create workspace and Import workspace are unavailable; under the pointer the entry has no fill and a
 not-allowed cursor, and the tooltip "Your administrator hasn't allowed you to create workspaces."
@@ -176,7 +196,9 @@ address, "Join a workspace you've been invited to below.", the pending invitatio
 Join, the reason creation is unavailable, Check again as a text button, and Sign out. The spec
 checked the join line is shown and the "ask a workspace owner" line is not; the API read back an
 empty workspace list and the pending invitation. *Not shown*: that the invitation is a guest
-invitation (the server does not return the invited role yet). *Not tested*: joining.
+invitation; the page says "Invited as a guest" once the server sends the invited role, which this
+server does not yet (the invitation read back after the rerun has no role), so this capture was not
+retaken. *Not tested*: joining.
 
 ![Account-only page with a pending invitation](account-only-pending-invitation.png)
 
@@ -200,6 +222,20 @@ browser" and where unsent changes stay. Behind it, Account & App shows "Set up p
 "Sign out" row. Nobody signed out; *does not prove* what is removed.
 
 ![Sign out question with the remove page copies option](sign-out-remove-data.png)
+
+## Follow-up fixes after the Desktop design review (captured in the rerun)
+
+Made test-first on `oodrive-fix/web-final` so Web says and does the same as Desktop:
+
+- `d7327d21` The space creation choices read from the most to the fewest people: Owners and members,
+  Owners and selected members, Owners only (narrowing still asks first).
+- `a8a269d1` The account-only page adds "Invited as a guest" under an invitation once the server
+  sends the invited role (not shown here: this server does not send it yet).
+- `9aaec729` Failure toasts in Manage space and People > Groups name the change that failed and give
+  a plain reason ("Couldn't change access for Alex. You don't have permission to do this."), with the
+  confirmed value kept on screen (not captured; component tests cover them).
+- `fde232d7` When the rule refuses a new space on Create, the form gives way to a summary of the
+  request and the answer, with Close as the only action, and the draft is released (captured above).
 
 ## UI fixes made while refreshing the gallery
 
@@ -297,11 +333,11 @@ Native selects, radio buttons, Save buttons and internal wording that the redesi
 | Feature | Current captures | Automated coverage |
 | --- | --- | --- |
 | A — per-person access in Custom spaces | Manage space members, Access explanation, add list, own access icon and menu | [Manage Space](../../../../src/components/app/view-actions/__tests__/ManageSpace.test.tsx), [access menu](../../../../src/components/app/view-actions/__tests__/SpaceMemberAccessControl.menu.test.tsx), [copy](../../../../src/components/app/view-actions/__tests__/spaceAccessCopy.test.ts) |
-| B — who can create spaces | Permissions as owner and as member, add list, narrowing confirmation, Create space | [Permissions panel](../../../../src/components/app/settings/__tests__/WorkspacePermissionsPanel.test.tsx), [copy](../../../../src/components/app/settings/__tests__/WorkspacePermissions.i18n.test.ts), [creation capability](../../../../src/components/app/hooks/__tests__/useSpaceCreationCapability.test.tsx) |
+| B — who can create spaces | Permissions as owner and as member, add list, narrowing confirmation, Create space, Create space refused | [Permissions panel](../../../../src/components/app/settings/__tests__/WorkspacePermissionsPanel.test.tsx), [copy](../../../../src/components/app/settings/__tests__/WorkspacePermissions.i18n.test.ts), [creation capability](../../../../src/components/app/hooks/__tests__/useSpaceCreationCapability.test.tsx), [Create space](../../../../src/components/app/view-actions/__tests__/CreateSpaceModal.test.tsx) |
 | C — access to all spaces | Summary, group dialog menu, grant confirmation | [Group coverage](../../../../src/components/app/settings/__tests__/GroupSpaceCoverageControl.test.tsx), [its menu](../../../../src/components/app/settings/__tests__/GroupSpaceCoverageCard.menu.test.tsx) |
 | P — who can add pages | Manage space > General, Create space scrolled | [Action gates](../../../../src/components/app/view-actions/__tests__/actionPermissionGates.test.tsx), [dialog layout](../../../../src/components/app/view-actions/__tests__/SpaceSettingsPanel.layout.test.tsx) |
 | Space type questions | Make this space public? | [copy](../../../../src/components/app/view-actions/__tests__/spaceAccessCopy.test.ts) |
-| D — workspace creation limits | Workspace menu, account-only page | [NoWorkspace](../../../../src/components/app/workspaces/__tests__/NoWorkspace.test.tsx), [unavailable entry](../../../../src/components/app/workspaces/__tests__/UnavailableMenuItem.test.tsx), [Workspaces menu](../../../../src/components/app/workspaces/__tests__/Workspaces.creation.test.tsx) |
+| D — workspace creation limits | Workspace menu, account-only page | [NoWorkspace](../../../../src/components/app/workspaces/__tests__/NoWorkspace.test.tsx) (also the guest invitation line), [invitation list](../../../../src/application/services/js-services/http/__tests__/workspace-invitations-api.test.ts), [unavailable entry](../../../../src/components/app/workspaces/__tests__/UnavailableMenuItem.test.tsx), [Workspaces menu](../../../../src/components/app/workspaces/__tests__/Workspaces.creation.test.tsx) |
 | R — live permission refresh | Open page loses and regains access | Historical 44-check lifecycle ([spec](../../../e2e/app/space-group-permission-lifecycle.spec.ts)), [page actions](../../../../src/components/app/header/__tests__/RightMenu.rowFavorite.test.tsx) |
 | Sign out | Sign out question | [LogoutConfirm](../../../../src/components/app/workspaces/__tests__/LogoutConfirm.test.tsx) |
 
@@ -312,8 +348,10 @@ Native selects, radio buttons, Save buttons and internal wording that the redesi
 - Synthetic data on a self-hosted build; the Worker, search and AI services were not running.
 - The gallery run changed permissions only through owner and operator API calls; it does not show
   that saving from these controls works (component tests and server tests cover that separately).
-- The account-only page cannot say that Jordan's invitation is a guest invitation: the server's
-  invitation list has no invited role.
+- The account-only page cannot yet say that Jordan's invitation is a guest invitation: this server's
+  invitation list has no invited role (the page shows "Invited as a guest" once it does).
+- Failure toasts, which now name the change that failed and give a plain reason, are not captured;
+  component tests cover them.
 - [validation.json](validation.json) records the 2026-10-12 validation of the earlier draft. The
   checks for this refresh are listed in the manifest's `current_capture` section.
 - Reproducing the historical lifecycle run needs its private fixture; see

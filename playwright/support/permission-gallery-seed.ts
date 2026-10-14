@@ -670,3 +670,27 @@ export async function pageCapability(config: GalleryConfig, fixture: GalleryFixt
 
   return status === 200 && value.code === 0 ? value.data : undefined;
 }
+
+export type GallerySpaceCreationPolicy = 'members_and_owners' | 'owners_and_selected_members' | 'owners_only';
+
+/** Owner API call the capture uses to change who can create spaces, and to put the rule back. */
+export async function setSpaceCreationPolicy(
+  config: GalleryConfig,
+  fixture: GalleryFixture,
+  policy: GallerySpaceCreationPolicy
+) {
+  await new GalleryApi(config).cloud(fixture.people.olivia, 'POST', `/api/workspace/${fixture.workspaceId}/settings`, {
+    space_creation_policy: policy,
+    exact_space_creation_policy: policy,
+  });
+}
+
+/** What the server says about a person creating spaces right now (undefined when it refuses to say). */
+export async function spaceCreationCapability(config: GalleryConfig, fixture: GalleryFixture, person: GalleryPerson) {
+  const { status, value } = await new GalleryApi(config).send<{
+    code: number;
+    data?: { policy: GallerySpaceCreationPolicy; can_create_space: boolean; can_manage_space_creators: boolean };
+  }>('cloud', 'GET', `/api/workspace/${fixture.workspaceId}/space-creation-capabilities`, fixture.people[person].auth.access_token);
+
+  return status === 200 && value.code === 0 ? value.data : undefined;
+}
