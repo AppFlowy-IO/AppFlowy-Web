@@ -19,6 +19,7 @@ jest.mock('axios', () => ({
 }));
 
 jest.mock('@/application/session/token', () => ({
+  captureTokenSession: jest.fn(() => ({ generation: 1, userId: null })),
   getTokenParsed: jest.fn(),
   saveGoTrueAuth: jest.fn(() => true),
 }));

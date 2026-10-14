@@ -108,6 +108,49 @@ function parseAuthToken(tokenData: unknown): GoTrueAuthToken | null {
 // builders, so the last successful parse is memoized on the raw stored string.
 // The string itself is the cache key: every save or removal changes it, and a
 // failed parse is never cached so a bad value is removed on each read.
+// Login lifetime is independent of access-token rotation. Unowned storage changes
+// invalidate captured work, including switching away and back to the same user.
+let sessionGeneration = 0;
+let observedRawToken: string | null | undefined;
+
+export interface TokenSessionWitness { readonly generation: number; readonly userId: string | null }
+
+function observeTokenStorage(): string | null {
+  const raw = getToken();
+
+  if (observedRawToken !== raw) {
+    sessionGeneration += 1;
+    observedRawToken = raw;
+  }
+
+  return raw;
+}
+
+export function captureTokenSession(): TokenSessionWitness {
+  const token = getTokenParsed();
+
+  return { generation: sessionGeneration, userId: token?.user.id ?? null };
+}
+
+export function isTokenSessionCurrent(witness: TokenSessionWitness): boolean {
+  const current = captureTokenSession();
+
+  return current.generation === witness.generation && current.userId === witness.userId;
+}
+
+export function invalidTokenForSession(witness: TokenSessionWitness): void {
+  if (isTokenSessionCurrent(witness)) invalidToken();
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    if (event.key === TOKEN_STORAGE_KEY || event.key === null) {
+      sessionGeneration += 1;
+      observedRawToken = getToken();
+    }
+  });
+}
+
 let memoizedRawToken: string | null = null;
 let memoizedParsedToken: GoTrueAuthToken | null = null;
 
@@ -117,6 +160,8 @@ function memoizeParsedToken(rawToken: string | null, parsed: GoTrueAuthToken | n
 }
 
 function removeStoredToken() {
+  sessionGeneration += 1;
+  observedRawToken = null;
   memoizeParsedToken(null, null);
 
   try {
@@ -127,10 +172,13 @@ function removeStoredToken() {
   }
 }
 
-export function saveGoTrueAuth(tokenData: string): boolean {
+export function saveGoTrueAuth(tokenData: string, refreshingSession?: TokenSessionWitness): boolean {
   const parsed = parseAuthToken(tokenData);
 
   if (!parsed) return false;
+
+  if (refreshingSession && (!isTokenSessionCurrent(refreshingSession) ||
+    (refreshingSession.userId !== null && refreshingSession.userId !== parsed.user.id))) return false;
 
   const serialized = JSON.stringify(parsed);
 
@@ -140,6 +188,8 @@ export function saveGoTrueAuth(tokenData: string): boolean {
     return false;
   }
 
+  if (!refreshingSession) sessionGeneration += 1;
+  observedRawToken = serialized;
   memoizeParsedToken(serialized, parsed);
   emit(EventType.SESSION_REFRESH, serialized);
   return true;
@@ -181,7 +231,7 @@ export function getToken(): string | null {
 }
 
 export function getTokenParsed(): GoTrueAuthToken | null {
-  const token = getToken();
+  const token = observeTokenStorage();
 
   if (!token) return null;
   if (token === memoizedRawToken && memoizedParsedToken) return memoizedParsedToken;

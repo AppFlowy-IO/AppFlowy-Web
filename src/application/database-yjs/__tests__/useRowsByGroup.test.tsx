@@ -1,9 +1,12 @@
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, render, renderHook, waitFor } from '@testing-library/react';
 import type React from 'react';
 import * as Y from 'yjs';
 
-import { DatabaseContext, DatabaseContextState, FieldType, useRowsByGroup } from '@/application/database-yjs';
+import { DatabaseContext, DatabaseContextState, FieldType, useGroupsSelector, useRowsByGroup } from '@/application/database-yjs';
+import { resolveDefaultBoardGroup } from '@/application/database-yjs/board-default-group';
+import { Board } from '@/components/database/board/Board';
 import {
+  DatabaseViewLayout,
   YDatabase,
   YDatabaseField,
   YDatabaseFields,
@@ -19,6 +22,13 @@ import { createCell, createRowDoc } from './test-helpers';
 
 jest.mock('@/utils/runtime-config', () => ({
   getConfigValue: (_key: string, fallback: string) => fallback,
+}));
+
+jest.mock('@/components/database/components/board', () => ({
+  Group: ({ groupId }: { groupId: string }) => <div data-testid='board-group'>{groupId}</div>,
+}));
+jest.mock('@/components/database/board/BoardProvider', () => ({
+  BoardProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
 const databaseId = 'database-id';
@@ -129,11 +139,85 @@ function createBoardFixture() {
     existingTodoRowDoc,
     remoteDoingRowDoc,
     rowOrders,
+    view,
+    fields,
+    groups,
     wrapper,
   };
 }
 
 describe('useRowsByGroup', () => {
+  it('renders a server-default read-only Board without writing grouping into its collab', async () => {
+    const fixture = createBoardFixture();
+
+    fixture.contextValue.readOnly = true;
+    fixture.view.set(YjsDatabaseKey.layout, DatabaseViewLayout.Board);
+    const remoteGroup = fixture.groups.get(0).clone();
+
+    fixture.groups.delete(0, fixture.groups.length);
+    const before = Y.encodeStateAsUpdate(fixture.databaseDoc);
+    const updates = jest.fn();
+
+    fixture.databaseDoc.on('update', updates);
+    const { result } = renderHook(() => {
+      const groups = useGroupsSelector();
+
+      return useRowsByGroup(groups[0]);
+    }, { wrapper: fixture.wrapper });
+    const board = render(<Board />, { wrapper: fixture.wrapper });
+
+    await waitFor(() => {
+      expect(result.current.groupRowsReady).toBe(true);
+      expect(result.current.fieldId).toBe(statusFieldId);
+      expect(result.current.columns.map(({ id }) => id)).toEqual([todoId, doingId]);
+      expect(board.getByTestId('board-group').textContent).toBe(`default-board:${statusFieldId}`);
+    });
+    expect(result.current.groupResult.get(todoId)?.map(({ id }) => id)).toEqual([existingTodoRowId]);
+    expect(updates).not.toHaveBeenCalled();
+    expect(Y.encodeStateAsUpdate(fixture.databaseDoc)).toEqual(before);
+
+    act(() => fixture.groups.push([remoteGroup]));
+    await waitFor(() => expect(board.getByTestId('board-group').textContent).toBe(groupId));
+    expect(updates).toHaveBeenCalledTimes(1);
+    expect(result.current.fieldId).toBe(statusFieldId);
+  });
+
+  it('initializes an editable lazy Board once, preserving an explicit group on remount', async () => {
+    const fixture = createBoardFixture();
+    const filters = new Y.Array<Y.Map<unknown>>();
+    const filter = new Y.Map<unknown>();
+
+    filter.set(YjsDatabaseKey.id, 'existing-status-filter');
+    filter.set(YjsDatabaseKey.field_id, statusFieldId);
+    filters.push([filter]);
+    fixture.view.set(YjsDatabaseKey.filters, filters);
+    fixture.view.set(YjsDatabaseKey.layout, DatabaseViewLayout.Board);
+    fixture.groups.delete(0, fixture.groups.length);
+    const mounted = render(<Board />, { wrapper: fixture.wrapper });
+
+    await waitFor(() => expect(fixture.groups.length).toBe(1));
+    const initializedId = fixture.groups.get(0).get(YjsDatabaseKey.id);
+
+    expect(fixture.groups.get(0).get(YjsDatabaseKey.field_id)).toBe(statusFieldId);
+    expect(filters.toJSON()).toEqual([{ id: 'existing-status-filter', field_id: statusFieldId }]);
+    expect(resolveDefaultBoardGroup(fixture.view, fixture.fields)).toBeUndefined();
+    mounted.unmount();
+    render(<Board />, { wrapper: fixture.wrapper });
+    expect(fixture.groups.length).toBe(1);
+    expect(fixture.groups.get(0).get(YjsDatabaseKey.id)).toBe(initializedId);
+  });
+
+  it('never invents optional Grid grouping or overrides a persisted group with a missing field', () => {
+    const fixture = createBoardFixture();
+
+    fixture.view.set(YjsDatabaseKey.layout, DatabaseViewLayout.Board);
+    fixture.groups.get(0).set(YjsDatabaseKey.field_id, 'deleted-field');
+    expect(resolveDefaultBoardGroup(fixture.view, fixture.fields)).toBeUndefined();
+    fixture.groups.delete(0, fixture.groups.length);
+    fixture.view.set(YjsDatabaseKey.layout, DatabaseViewLayout.Grid);
+    expect(resolveDefaultBoardGroup(fixture.view, fixture.fields)).toBeUndefined();
+  });
+
   it('never reveals empty columns while a remotely ordered row is still hydrating', async () => {
     const fixture = createBoardFixture();
     const visibleColumnHistory: string[][] = [];

@@ -21,7 +21,7 @@ test('cloud_linked_grid_picker.feature: container-less Feed, To-dos and Grid dat
   await renameCurrentDatabasePage(page, 'To-dos');
   const documentId = await createDocumentPageAndNavigate(page);
   const names = ['New Feed', 'To-dos', 'New Grid'];
-  let legacyNames: string[] = [];
+  const legacyNames: string[] = [];
   let catalogRevalidation: { url: string; headers: Record<string, string> } | undefined;
 
   // Desktop uses a pre-seeded cloud template account. Adapt its legacy catalog
@@ -100,15 +100,23 @@ test('cloud_linked_grid_picker.feature: container-less Feed, To-dos and Grid dat
   await picker.getByRole('textbox').fill('New Feed');
   await expect(picker.locator('span.flex-1.truncate')).toHaveCount(1);
   const [linkedView] = await Promise.all([
-    page.waitForResponse(
-      (response) =>
-        response.request().method() === 'POST' &&
-        new URL(response.url()).pathname.endsWith(`/page-view/${documentId}/database-view`)
-    ),
+    page.waitForResponse((response) => {
+      const request = response.request();
+
+      if (request.method() !== 'POST') return false;
+      const path = new URL(response.url()).pathname;
+
+      return (
+        path.endsWith(`/page-view/${documentId}/database-view`) ||
+        (path.endsWith('/v2/page-view/database-view/default') &&
+          request.postDataJSON().view?.parent_view_id === documentId)
+      );
+    }),
     picker.getByRole('button').click(),
   ]);
 
   expect(linkedView.ok()).toBe(true);
+  expect((await linkedView.json()).code).toBe(0);
   await expect(editor.getByTestId('database-grid')).toBeVisible({ timeout: 30_000 });
   await expect(editor.locator('[data-testid^="grid-row-"]:not([data-testid="grid-row-undefined"])')).toHaveCount(3);
 });

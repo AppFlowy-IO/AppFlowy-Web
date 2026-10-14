@@ -156,10 +156,7 @@ test.describe('Context Split Navigation Stability', () => {
     expect(contextErrors.length).toBe(0);
   });
 
-  test('should maintain sidebar outline state during view type switches', async ({
-    page,
-    request,
-  }) => {
+  test('should maintain sidebar outline state during view type switches', async ({ page, request }) => {
     await signInAndWaitForApp(page, request, testEmail);
     await expect(page).toHaveURL(/\/app/);
     await expect(SidebarSelectors.pageHeader(page)).toBeVisible({ timeout: 30000 });
@@ -169,8 +166,13 @@ test.describe('Context Split Navigation Stability', () => {
     await expandSpace(page);
     await page.waitForTimeout(1000);
 
-    // Count initial sidebar items
-    const initialItemCount = await PageSelectors.items(page).count();
+    // Collapsed descendants may be mounted initially and unloaded after refresh.
+    // Preserve the visible page identities, rather than counting hidden DOM rows.
+    const initialPageTestIds = await PageSelectors.items(page)
+      .filter({ visible: true })
+      .evaluateAll((items) =>
+        items.map((item) => item.querySelector(':scope > [data-testid^="page-"]')!.getAttribute('data-testid')!)
+      );
 
     // Navigate to default document page
     await PageSelectors.items(page).first().click({ force: true });
@@ -180,15 +182,23 @@ test.describe('Context Split Navigation Stability', () => {
     await PageSelectors.items(page).first().hover({ force: true });
     await page.waitForTimeout(500);
 
+    const creationResponse = page.waitForResponse(
+      (response) => response.request().method() === 'POST' && response.url().endsWith('/v2/page-view/database/default')
+    );
+
     await AddPageSelectors.inlineAddButton(page).first().click({ force: true });
     await clickAddPageMenuItem(page, 'Grid');
-    await page.waitForTimeout(5000);
+    const creation = await (await creationResponse).json();
 
-    // Verify sidebar still shows items (AppOutlineContext not re-rendered to empty)
-    await expect(PageSelectors.items(page).first()).toBeVisible();
-    const itemCountAfterSwitch = await PageSelectors.items(page).count();
-    // Should have at least the same number of items (may have more from Grid creation)
-    expect(itemCountAfterSwitch).toBeGreaterThanOrEqual(initialItemCount);
+    expect(creation.code).toBe(0);
+    const createdPage = page.getByTestId(`page-${creation.data.result.view_id}`);
+
+    await expect(createdPage).toBeVisible();
+    await expect(createdPage).toHaveAttribute('data-selected', 'true');
+    await expect(DatabaseGridSelectors.grid(page)).toBeVisible();
+    for (const testId of initialPageTestIds) {
+      await expect(page.getByTestId(testId)).toBeVisible();
+    }
 
     // Navigate back to document
     await PageSelectors.items(page).first().click({ force: true });

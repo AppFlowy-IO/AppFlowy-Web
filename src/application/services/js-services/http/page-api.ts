@@ -1,6 +1,7 @@
 import { omit } from 'lodash-es';
 import { v4 as uuidv4 } from 'uuid';
 
+import { AtomicCreationPendingError } from '@/application/atomic-creation';
 import { ERROR_CODE } from '@/application/constants';
 import {
   AccessLevel,
@@ -24,11 +25,12 @@ import {
   ViewIconType,
   View,
 } from '@/application/types';
+import { assertViewCreationOnline } from '@/application/view-online-policy';
 import { getErrorMessage, isUnsupportedRouteError } from '@/utils/errors';
 import { Log } from '@/utils/log';
-import { assertViewCreationOnline } from '@/application/view-online-policy';
 
 import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from './core';
+import { createDefaultPage, PageCreationActivation, usesDefaultPageCreation } from './page-default-creation';
 import { getView } from './view-api';
 
 function isLosslessLegacyPermission(permission: SpacePermissionSettings): boolean {
@@ -145,8 +147,12 @@ function assertClientGeneratedId(resource: 'space' | 'page', expected: string, a
 export async function addAppPage(
   workspaceId: string,
   parentViewId: string,
-  { layout, name, page_data, view_id, prev_view_id }: CreatePagePayload
+  payload: CreatePagePayload,
+  activation?: PageCreationActivation
 ) {
+  if (usesDefaultPageCreation(payload)) return createDefaultPage(workspaceId, parentViewId, payload, activation);
+  const { layout, name, page_data, view_id, prev_view_id } = payload;
+
   assertViewCreationOnline(layout);
   const url = `/api/workspace/${workspaceId}/page-view`;
 
@@ -379,7 +385,11 @@ export async function createSpace(workspaceId: string, payload: CreateSpacePaylo
   }
 }
 
-export async function createSpaceWithInitialPage(workspaceId: string, payload: CreateSpaceWithInitialPagePayload) {
+export async function createSpaceWithInitialPage(
+  workspaceId: string,
+  payload: CreateSpaceWithInitialPagePayload,
+  activation?: PageCreationActivation
+) {
   if (payload.permission) {
     // The atomic /v2/space endpoint accepts only the binary permission model;
     // it does not persist a structured ACL or a creator-owner row. Compose the
@@ -393,11 +403,13 @@ export async function createSpaceWithInitialPage(workspaceId: string, payload: C
     let spaceId: string;
 
     try {
+      activation?.assertCurrent?.();
       spaceId = await createSpace(workspaceId, {
         ...spacePayload,
         view_id: requestedSpaceId,
       });
     } catch (error) {
+      activation?.assertCurrent?.();
       // A transport failure can happen after the server commits. Because the
       // client generated a fresh ID, a best-effort trash operation also covers
       // that ambiguous outcome without risking a caller-owned existing space.
@@ -411,13 +423,21 @@ export async function createSpaceWithInitialPage(workspaceId: string, payload: C
     }
 
     try {
-      const page = await addAppPage(workspaceId, spaceId, initial_page);
+      activation?.assertCurrent?.();
+      const page = await addAppPage(workspaceId, spaceId, initial_page, activation);
+
+      activation?.assertCurrent?.();
 
       return {
         space: { view_id: spaceId },
         page,
       };
     } catch (error) {
+      // An atomic command may already be committed. Retain its parent and exact
+      // journaled request so current-state hydration can finish on explicit retry.
+      if (error instanceof AtomicCreationPendingError) throw error;
+      activation?.assertCurrent?.();
+
       // The Create Space draft supplies fresh stable IDs for both resources.
       // If the initial-page response was lost, an AlreadyExists retry confirms
       // that the exact requested page was committed.

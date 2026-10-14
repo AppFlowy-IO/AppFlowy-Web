@@ -1,4 +1,13 @@
 {
+  "atomicCreation": {
+    "offline": "Connect to the internet to create this item.",
+    "serverUpgrade": "Update the server to use this creation feature.",
+    "ownerChanged": "The account or workspace changed. Retry in the original workspace.",
+    "pending": "Creation is pending. Retry the original request to finish.",
+    "retry": "Retry creation",
+    "finishPage": "Finish creating your page",
+    "finishRowPageFirst": "Add content to this row page before inserting pages or databases."
+  },
   "databaseViewCreation": {
     "onlineRequired": "Connect to the internet to create Form or Chart views.",
     "connectionRequired": "Connect to the server to create this view.",
@@ -3434,6 +3443,8 @@
     "chooseImage": "Choose an image",
     "loading": "Loading",
     "imageLoadFailed": "Image load failed",
+    "imageLocalFileUnavailable": "This image is stored locally and isn't available on the web. Upload the original image to view it here.",
+    "replaceImage": "Replace image",
     "divider": "Divider",
     "table": "Table",
     "colAddBefore": "Add before",
