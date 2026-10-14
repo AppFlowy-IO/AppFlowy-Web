@@ -6,15 +6,15 @@ jest.mock('@/utils/runtime-config', () => ({
   getConfigValue: jest.fn(),
 }));
 
-// Import the module under test
+import { getConfigValue } from '@/utils/runtime-config';
+
 import {
   isAppFlowyAuthenticatedFileUrl,
   isAppFlowyFileStorageUrl,
   isAppFlowyPublicFormUploadUrl,
+  isLocalFilePath,
   resolveFileUrl,
 } from '../file-storage-url';
-// Import the mocked module to access the mock function
-import { getConfigValue } from '@/utils/runtime-config';
 
 describe('file-storage-url utils', () => {
   const mockBaseUrl = 'https://app.flowy.io';
@@ -37,6 +37,45 @@ describe('file-storage-url utils', () => {
     jest.clearAllMocks();
   });
 
+  describe('isLocalFilePath', () => {
+    it.each([
+      '/Users/example/Library/Application Support/com.appflowy.appflowy.flutter/data/images/photo.png',
+      '/home/example/.local/share/appflowy/images/photo.png',
+      'C:\\Users\\example\\AppFlowy\\images\\photo.png',
+      'D:/AppFlowy/images/photo.png',
+      '\\\\desktop\\shared\\images\\photo.png',
+      'file:///Users/example/AppFlowy/images/photo.png',
+      'file:///C:/Users/example/AppFlowy/images/photo.png',
+    ])('recognizes a path that requires the original device: %s', (path) => {
+      expect(isLocalFilePath(path)).toBe(true);
+    });
+
+    it.each([
+      undefined,
+      '',
+      mockFileId,
+      'https://example.com/Users/example/photo.png',
+      'http://localhost:8000/photo.png',
+      '/api/file_storage/workspace-123/v1/blob/view-456/image.png',
+      'blob:https://app.flowy.io/82fb925a-2e90-4f75-b58a-34c9b6b53c27',
+      'data:image/png;base64,iVBORw0KGgo=',
+    ])('does not misclassify a supported image source: %s', (source) => {
+      expect(isLocalFilePath(source)).toBe(false);
+    });
+
+    it('preserves first-party relative file routes under a configured API prefix', () => {
+      mockGetConfigValue.mockImplementation((key: string) => {
+        if (key === 'APPFLOWY_BASE_URL') return `${mockBaseUrl}/cloud`;
+        return '';
+      });
+
+      const source = '/cloud/api/file_storage/workspace-123/v1/blob/view-456/image.png';
+
+      expect(isLocalFilePath(source)).toBe(false);
+      expect(resolveFileUrl(source, mockWorkspaceId, mockViewId)).toBe(source);
+    });
+  });
+
   describe('resolveFileUrl', () => {
     it('should return empty string for undefined/null/empty input', () => {
       expect(resolveFileUrl(undefined, mockWorkspaceId, mockViewId)).toBe('');
@@ -45,11 +84,13 @@ describe('file-storage-url utils', () => {
 
     it('should return the URL as-is if it is already a full URL', () => {
       const fullUrl = 'https://example.com/image.png';
+
       expect(resolveFileUrl(fullUrl, mockWorkspaceId, mockViewId)).toBe(fullUrl);
     });
 
     it('should return the URL as-is if it is a local full URL', () => {
       const fullUrl = 'http://localhost:8000/api/file_storage/test.png';
+
       expect(resolveFileUrl(fullUrl, mockWorkspaceId, mockViewId)).toBe(fullUrl);
     });
 
@@ -57,7 +98,28 @@ describe('file-storage-url utils', () => {
       // When input is just an ID like "file-789"
       // It should construct: BASE_URL/api/file_storage/WORKSPACE_ID/v1/blob/VIEW_ID/FILE_ID
       const expectedUrl = `${mockBaseUrl}/api/file_storage/${mockWorkspaceId}/v1/blob/${mockViewId}/${mockFileId}`;
+
       expect(resolveFileUrl(mockFileId, mockWorkspaceId, mockViewId)).toBe(expectedUrl);
+    });
+
+    it.each([
+      '/Users/example/Library/Application Support/com.appflowy.appflowy.flutter/data/images/82fb925a-2e90-4f75-b58a-34c9b6b53c27.png',
+      '/home/example/.local/share/appflowy/images/photo.png',
+      'C:\\Users\\example\\AppData\\Roaming\\AppFlowy\\images\\photo.png',
+      'D:/AppFlowy/images/photo.png',
+      '\\\\desktop\\shared\\images\\photo.png',
+      'file:///Users/example/Library/Application%20Support/AppFlowy/images/photo.png',
+      'file:///C:/Users/example/AppFlowy/images/photo.png',
+    ])('does not turn a device-local path into a cloud file request: %s', (path) => {
+      expect(resolveFileUrl(path, mockWorkspaceId, mockViewId)).toBe('');
+    });
+
+    it.each([
+      '/api/file_storage/workspace-123/v1/blob/view-456/image.png',
+      'blob:https://app.flowy.io/82fb925a-2e90-4f75-b58a-34c9b6b53c27',
+      'data:image/png;base64,iVBORw0KGgo=',
+    ])('preserves an accessible API URL or browser preview: %s', (url) => {
+      expect(resolveFileUrl(url, mockWorkspaceId, mockViewId)).toBe(url);
     });
 
     it('should handle cases where isFileURL returns true but it is not a standard http URL', () => {
@@ -65,6 +127,7 @@ describe('file-storage-url utils', () => {
       // If isFileURL returns true, resolveFileUrl returns input as is.
       // Assuming "ftp://example.com/file" is considered a URL by the validator
       const ftpUrl = 'ftp://example.com/file';
+
       expect(resolveFileUrl(ftpUrl, mockWorkspaceId, mockViewId)).toBe(ftpUrl);
     });
   });
@@ -72,6 +135,7 @@ describe('file-storage-url utils', () => {
   describe('isAppFlowyFileStorageUrl', () => {
     it('should return true for URLs matching the configured AppFlowy base path', () => {
       const url = `${mockBaseUrl}/api/file_storage/some/path`;
+
       expect(isAppFlowyFileStorageUrl(url)).toBe(true);
     });
 
@@ -81,11 +145,13 @@ describe('file-storage-url utils', () => {
 
       // Test matching origin and path
       const url = `${mockBaseUrl}/api/file_storage/file-id`;
+
       expect(isAppFlowyFileStorageUrl(url)).toBe(true);
     });
 
     it('should return false for URLs not matching the file storage path', () => {
       const url = `${mockBaseUrl}/api/other_endpoint`;
+
       expect(isAppFlowyFileStorageUrl(url)).toBe(false);
     });
 
@@ -95,6 +161,7 @@ describe('file-storage-url utils', () => {
 
     it('should return false for external URLs that do not match the path', () => {
       const url = 'https://google.com/search';
+
       expect(isAppFlowyFileStorageUrl(url)).toBe(false);
     });
 
