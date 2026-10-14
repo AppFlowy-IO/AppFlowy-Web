@@ -58,8 +58,12 @@ export function prepareDefaultPage(
     : -1;
 
   if (payload.prev_view_id && previousIndex < 0) throw new Error('The insertion sibling is no longer in this parent');
+  // HTTP children exclude trashed and unreadable siblings; their indexes are not
+  // physical Folder positions. Resolve appends and sibling anchors on the server.
   const position: CreateDefaultDocumentPageRequest['position'] = payload.prev_view_id
-    ? { kind: 'index', index: previousIndex + 1 }
+    ? previousIndex === parent.children.length - 1
+      ? { kind: 'end' }
+      : { kind: 'after', view_id: payload.prev_view_id }
     : { kind: 'start' };
   const common = {
     schema_version: 'v1' as const,

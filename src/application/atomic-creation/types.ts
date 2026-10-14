@@ -1,7 +1,7 @@
 import type { DatabaseViewLayout, ViewIcon } from '@/application/types';
 
 /** These layouts are DatabaseLayout values, not the Folder ViewLayout values. */
-export type CreationViewPosition = { kind: 'start' | 'end' } | { kind: 'index'; index: number };
+export type CreationViewPosition = { kind: 'start' | 'end' } | { kind: 'index'; index: number } | { kind: 'after'; view_id: string };
 export interface DefaultDatabaseOptions {
   database_id: string;
   view_id: string;

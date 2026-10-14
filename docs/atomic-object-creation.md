@@ -68,6 +68,11 @@ deadline. Both must pass the final identity, ownership, restore and storage chec
 before the new view is selected. A barrier-based component test verifies the
 overlap without asserting machine-dependent latency.
 
+Page appends use the server's `end` position. Middle insertions retain the previous sibling as an
+`after` anchor, which requires server support for that position variant. Navigation children omit
+trashed or unreadable entries and must never be converted into raw Folder indexes. The server
+resolves anchors under its topology lock and rejects a sibling that has moved out of the parent.
+
 ## Row-page opening and content indicator
 
 An explicitly opened row (side/center peek or full page) loads through the existing

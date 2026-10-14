@@ -51,9 +51,26 @@ describe('server-owned page recipes', () => {
     }, ids());
 
     if (result.kind !== 'database') throw new Error('expected database');
-    expect(result.request.position).toEqual({ kind: 'index', index: 1 });
+    expect(result.request.position).toEqual({ kind: 'end' });
     expect(result.request.database.embedded).toBe(false);
     expect(() => prepareDefaultPage('workspace', parent(), { layout: ViewLayout.Document, prev_view_id: 'gone' })).toThrow();
+  });
+
+  it.each([ViewLayout.Document, ViewLayout.Grid])('appends layout %s after all raw siblings, including trashed children', (layout) => {
+    // The HTTP parent omits the trashed child retained in the Folder's raw order.
+    const visibleParent = parent({ children: [parent({ view_id: 'B' }), parent({ view_id: 'C' })] });
+    const result = prepareDefaultPage('workspace', visibleParent, { layout, prev_view_id: 'C' }, ids());
+
+    expect(result.request.position).toEqual({ kind: 'end' });
+  });
+
+  it('keeps a middle sibling as an anchor instead of a filtered numeric index', () => {
+    const visibleParent = parent({ children: [parent({ view_id: 'B' }), parent({ view_id: 'C' })] });
+    const result = prepareDefaultPage('workspace', visibleParent, {
+      layout: ViewLayout.Document, prev_view_id: 'B',
+    }, ids());
+
+    expect(result.request.position).toEqual({ kind: 'after', view_id: 'B' });
   });
 
   it('does not silently discard supplied authored data or route AI chats into default Documents', () => {
