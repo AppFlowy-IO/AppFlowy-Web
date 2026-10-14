@@ -224,10 +224,12 @@ export async function verifyCreatedPage(owner: AtomicCreationOwner, prepared: Pr
     const remoteRows = await read(activeRows, Types.DatabaseRow);
 
     remoteRows.forEach((row) => validateRow(row, row.guid, objectId));
-    const canonical = await openCollabDBWithProvider(objectId, { awaitSync: true,
-      ...(restore?.database_restore_id ? { databaseRestoreId: restore.database_restore_id } : {}),
-    });
-    const rows = await Promise.all(activeRows.map((id) => openRowCollabDBWithProvider(id, { awaitSync: true })));
+    const [canonical, rows] = await Promise.all([
+      openCollabDBWithProvider(objectId, { awaitSync: true,
+        ...(restore?.database_restore_id ? { databaseRestoreId: restore.database_restore_id } : {}),
+      }),
+      Promise.all(activeRows.map((id) => openRowCollabDBWithProvider(id, { awaitSync: true }))),
+    ]);
     const entries = [{ ...canonical, remote, id: objectId }, ...rows.map((entry, index) => ({ ...entry, remote: remoteRows[index], id: activeRows[index] }))];
     let retired = false;
     const onDestroy = () => { retired = true; };

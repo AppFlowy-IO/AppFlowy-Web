@@ -1,3 +1,4 @@
+import { waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
 import { atomicRead, AtomicCreationOwner } from '@/application/atomic-creation';
@@ -164,6 +165,32 @@ it('rejects a missing canonical active row even if the selected view happens to 
   serve(fixture);
   await expect(verifyCreatedPage(owner, fixture.prepared)).rejects.toThrow('row missing');
   expect(openCollabDBWithProvider).not.toHaveBeenCalled();
+});
+
+it('opens row caches while the database cache is still loading', async () => {
+  const fixture = databasePage();
+
+  fixture.addRow('row');
+  serve(fixture);
+  const open = jest.mocked(openCollabDBWithProvider).getMockImplementation()!;
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+
+  jest.mocked(openCollabDBWithProvider).mockImplementation(async (...args) => {
+    await held;
+    return open(...args);
+  });
+  const pending = verifyCreatedPage(owner, fixture.prepared);
+
+  try {
+    await waitFor(() => expect(openRowCollabDBWithProvider).toHaveBeenCalledWith('row', { awaitSync: true }));
+    expect(providers.get('row')!.doc.getMap(YjsEditorKey.data_section).size).toBe(0);
+  } finally {
+    release();
+    await pending;
+  }
+
+  expect(providers.get('row')!.doc.getMap(YjsEditorKey.data_section).toJSON()).toEqual(fixture.rows[0].getMap(YjsEditorKey.data_section).toJSON());
 });
 
 it('rejects a current row owned by a different database', async () => {
