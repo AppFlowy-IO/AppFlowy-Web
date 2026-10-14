@@ -1458,7 +1458,8 @@
         "textAlignRight": "Aligner le texte à droite",
         "codeBlockDeleteTwoSpaces": "Supprimez deux espaces au début de la ligne dans le bloc de code"
       }
-    }
+    },
+    "sectionInfo": "À propos de « {{title}} »"
   },
   "grid": {
     "deleteView": "Voulez-vous vraiment supprimer cette vue ?",

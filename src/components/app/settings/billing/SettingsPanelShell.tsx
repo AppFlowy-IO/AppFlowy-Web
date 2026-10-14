@@ -30,16 +30,25 @@ export function SettingsSection({
   tooltip?: string;
   children: ReactNode;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className='flex flex-col gap-4'>
       <div className='flex items-center gap-2'>
         <div className='text-base font-semibold text-text-primary'>{title}</div>
         {tooltip && (
           <Tooltip>
+            {/* A real button, so keyboard users can focus it: the explanation opens on focus too. */}
             <TooltipTrigger asChild>
-              <span className='cursor-default text-icon-secondary'>
-                <InfoIcon className='h-4 w-4' />
-              </span>
+              <Button
+                type='button'
+                variant='ghost'
+                size='icon-sm'
+                aria-label={t('settings.sectionInfo', { title, interpolation: { escapeValue: false } })}
+                className='text-icon-secondary focus-visible:ring-2 focus-visible:ring-border-theme-thick'
+              >
+                <InfoIcon aria-hidden='true' className='h-4 w-4' />
+              </Button>
             </TooltipTrigger>
             <TooltipContent className='max-w-[320px]'>{tooltip}</TooltipContent>
           </Tooltip>
