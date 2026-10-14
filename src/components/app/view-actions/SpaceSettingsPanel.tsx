@@ -1,9 +1,10 @@
 import { Check, ChevronDown, FilePlus2, Globe2, LockKeyhole, Settings2, Shield, UserRound, Users } from 'lucide-react';
-import { memo, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { AccessLevel, Role, SpacePermissionSettings, SpaceSidebarEditPolicy, SpaceVisibility } from '@/application/types';
 import { NormalModal } from '@/components/_shared/modal';
+import { MoreBelowFade, useMoreContentBelow } from '@/components/_shared/scroller/MoreBelowFade';
 import SpaceIconButton from '@/components/app/view-actions/SpaceIconButton';
 import { spaceMemberAccessLabel } from '@/components/app/view-actions/SpaceMemberAccessControl';
 import { spaceVisibilityDescription, spaceVisibilityLabel } from '@/components/app/view-actions/spaceVisibilityOptions';
@@ -54,6 +55,18 @@ const CONTENT_WIDTH = 720;
 /** Every button in the panel shows where keyboard focus is (the shared Button has no focus style). */
 const BUTTON_FOCUS_RING =
   '[&_button:focus-visible]:outline-none [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-border-theme-thick';
+/**
+ * The scroll areas and the footer reserve the same scrollbar gutter (none where scrollbars float
+ * over the content) and the same 4px, so the footer buttons end where the settings above them end.
+ */
+const SCROLLBAR_GUTTER = 'appflowy-scroller [scrollbar-gutter:stable] pr-1';
+/**
+ * The footer reserves the gutter like a scroll area that has nothing to scroll; 4px around its
+ * buttons keep their focus rings whole, and the negative margin keeps them where they were.
+ */
+const FOOTER_CLASS = `${SCROLLBAR_GUTTER} -my-1 overflow-y-auto py-1`;
+/** The open tab passes the dialog's remaining height on to its scroll area. */
+const TAB_PANEL_CLASS = 'min-h-0 data-[state=active]:flex data-[state=active]:flex-col';
 
 export type SpaceSettingsTab = 'general' | 'members';
 
@@ -126,6 +139,39 @@ function sidebarEditPolicyLabel(policy: SpaceSidebarEditPolicy, visibility: Spac
       // A policy from a newer server is shown neutrally and kept as received.
       return t('workspacePermissions.sidebarUnknown');
   }
+}
+
+/**
+ * A tab's scroll area. It takes the height the dialog has left (the dialog is limited by the window)
+ * and fades out at the bottom while more settings are below. It clips what is drawn outside it, so
+ * 2px on the left (and the gutter's 4px on the right) keep focus rings whole.
+ */
+function SettingsScrollArea({
+  children,
+  scrollRef,
+  testId,
+}: {
+  children: ReactNode;
+  scrollRef?: (element: HTMLDivElement | null) => void;
+  testId?: string;
+}) {
+  const [element, setElement] = useState<HTMLDivElement | null>(null);
+  const moreBelow = useMoreContentBelow(element);
+  const ref = useCallback(
+    (node: HTMLDivElement | null) => {
+      setElement(node);
+      scrollRef?.(node);
+    },
+    [scrollRef]
+  );
+
+  return (
+    <div ref={ref} className={cn('min-h-0 flex-1 overflow-y-auto pl-0.5', SCROLLBAR_GUTTER)} data-testid={testId}>
+      {/* One stable child, so a change in the size of the content is noticed. */}
+      <div>{children}</div>
+      <MoreBelowFade visible={moreBelow} />
+    </div>
+  );
 }
 
 function VisibilityIcon({ visibility, className }: { visibility: SpaceVisibility; className?: string }) {
@@ -563,10 +609,7 @@ const PrivateMembersContent = memo(function PrivateMembersContent({
     .join(' · ');
 
   return (
-    <div
-      className='appflowy-scroller flex max-h-[64vh] flex-col gap-4 overflow-y-auto py-2 pr-1'
-      data-testid='private-space-members-content'
-    >
+    <div className='flex flex-col gap-4 py-2' data-testid='private-space-members-content'>
       <div
         className='rounded-300 bg-fill-content-hover px-3 py-2 text-sm text-text-secondary'
         data-testid='private-space-members-info'
@@ -769,9 +812,13 @@ function SpaceSettingsPanel({
       okLoading={primaryActionLoading}
       okButtonProps={{ disabled: primaryActionDisabled, 'data-testid': 'create-space-submit' }}
       title={title}
-      classes={{ container: 'items-start max-md:mt-auto max-md:items-center mt-[6%]' }}
+      // Near the top, so the dialog does not jump when a tab or a space type changes its height; the
+      // offset is padding, so the dialog's height limit leaves room for it.
+      classes={{ container: 'items-start pt-[4vh] max-md:items-center max-md:pt-0' }}
       showActions={showActions}
+      footerClassName={FOOTER_CLASS}
       overflowHidden
+      fillAvailableHeight
       PaperProps={{
         // Covers the notice, both tabs and the footer buttons.
         className: BUTTON_FOCUS_RING,
@@ -787,7 +834,7 @@ function SpaceSettingsPanel({
         value={activeTab}
         onValueChange={(value) => onTabChange(value as SpaceSettingsTab)}
         aria-busy={primaryActionLoading || undefined}
-        className='min-h-0 max-w-full'
+        className='min-h-0 max-w-full flex-1'
         style={{ width: CONTENT_WIDTH }}
         data-testid='space-settings-panel'
       >
@@ -802,9 +849,8 @@ function SpaceSettingsPanel({
           )}
         </TabsList>
 
-        <TabsContent value='general' className='min-h-0' data-testid='space-settings-general'>
-          {/* The scroll area clips what is drawn outside it: 2px on the left keeps focus rings whole. */}
-          <div ref={setContainer} className='appflowy-scroller max-h-[64vh] overflow-y-auto pl-0.5 pr-1'>
+        <TabsContent value='general' className={TAB_PANEL_CLASS} data-testid='space-settings-general'>
+          <SettingsScrollArea scrollRef={setContainer}>
             <div className='flex flex-col gap-6 py-2'>
               <div className='flex flex-col gap-2'>
                 <div className='text-sm font-medium text-text-secondary'>{t('space.spaceName')}</div>
@@ -923,12 +969,14 @@ function SpaceSettingsPanel({
                 />
               )}
             </div>
-          </div>
+          </SettingsScrollArea>
         </TabsContent>
 
         {membersTabVisible && (
-          <TabsContent value='members' className='min-h-0'>
-            {draftIsPrivate ? <PrivateMembersContent owner={privateOwner} /> : membersContent}
+          <TabsContent value='members' className={TAB_PANEL_CLASS}>
+            <SettingsScrollArea>
+              {draftIsPrivate ? <PrivateMembersContent owner={privateOwner} /> : membersContent}
+            </SettingsScrollArea>
           </TabsContent>
         )}
       </Tabs>

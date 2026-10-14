@@ -2132,7 +2132,8 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       showActions={false}
       notice={permissionNotice}
       membersContent={
-        <div className='appflowy-scroller max-h-[64vh] overflow-y-auto py-2 pr-1'>
+        // The panel scrolls the tab and shows when more is below.
+        <div className='py-2'>
           <div className='flex flex-col gap-4'>
             {!membersReadOnly && (
               <>

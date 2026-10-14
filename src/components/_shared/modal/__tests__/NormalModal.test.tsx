@@ -75,6 +75,39 @@ describe('NormalModal keyboard submission', () => {
   });
 });
 
+describe('NormalModal height', () => {
+  function classes(element: Element | null | undefined) {
+    return (element?.className ?? '').split(/\s+/);
+  }
+
+  it('can let its body shrink to the dialog height, so a scroll area inside it uses the space that is left', () => {
+    render(
+      <NormalModal open title='Create space' fillAvailableHeight footerClassName='pr-1'>
+        <div data-testid='content'>Space settings</div>
+      </NormalModal>
+    );
+    const body = screen.getByTestId('content').parentElement;
+
+    // A flex item only shrinks below the height of its content with a zero minimum height.
+    expect(classes(body)).toEqual(expect.arrayContaining(['flex', 'flex-col', 'min-h-0']));
+    expect(classes(body?.parentElement)).toContain('min-h-0');
+    // The footer can line its buttons up with what is above them.
+    expect(classes(screen.getByRole('button', { name: 'button.cancel' }).parentElement)).toContain('pr-1');
+  });
+
+  it('keeps its usual layout unless asked', () => {
+    render(
+      <NormalModal open title='Rename'>
+        <div data-testid='content'>Name</div>
+      </NormalModal>
+    );
+    const body = screen.getByTestId('content').parentElement;
+
+    expect(classes(body)).not.toContain('min-h-0');
+    expect(classes(body?.parentElement)).not.toContain('min-h-0');
+  });
+});
+
 /**
  * In a browser, React removes a menu that closes on Escape before the key press reaches the dialog;
  * fireEvent runs inside act(), which keeps it mounted. A layer that handles Escape and stays open

@@ -44,6 +44,13 @@ export interface NormalModalProps extends DialogProps {
   closable?: boolean;
   overflowHidden?: boolean;
   showActions?: boolean;
+  /**
+   * Let the body shrink to the dialog's height limit instead of growing past it, so a scroll area
+   * inside it (`min-h-0` and `overflow-y-auto`) gets exactly the height that is left.
+   */
+  fillAvailableHeight?: boolean;
+  /** Extra classes for the footer row, e.g. to line its buttons up with a scroll area above it. */
+  footerClassName?: string;
 }
 
 export function NormalModal({
@@ -61,6 +68,8 @@ export function NormalModal({
   closable = true,
   overflowHidden = false,
   showActions = true,
+  fillAvailableHeight = false,
+  footerClassName,
   ...dialogProps
 }: NormalModalProps) {
   const { t } = useTranslation();
@@ -93,7 +102,7 @@ export function NormalModal({
         style={{
           overflow: overflowHidden ? 'hidden' : 'auto',
         }}
-        className={'relative flex flex-col gap-4 p-5'}
+        className={cn('relative flex flex-col gap-4 p-5', fillAvailableHeight && 'min-h-0')}
       >
         <div className={'flex w-full items-center justify-between text-base font-medium'}>
           <div id={internalTitleId} className={'flex-1 truncate text-center font-medium'}>
@@ -118,13 +127,13 @@ export function NormalModal({
           style={{
             overflow: overflowHidden ? 'hidden' : 'auto',
           }}
-          className={'w-full flex-1'}
+          className={cn('w-full flex-1', fillAvailableHeight && 'flex min-h-0 flex-col')}
         >
           {children}
         </div>
         {showActions && (
           // Desktop footers are right-aligned with a spacing.l gap, cancel first.
-          <div className={'flex w-full justify-end gap-3'}>
+          <div className={cn('flex w-full justify-end gap-3', footerClassName)}>
             <Button
               // MUI's Button defaulted to type="button"; the design-system one
               // does not, and a bare button inside a <form> would submit it.

@@ -676,7 +676,8 @@ function CreateSpaceDraft({
         membersTabVisible
         membersTabDisabled={false}
         membersContent={
-          <div className='appflowy-scroller max-h-[64vh] overflow-y-auto py-2 pr-1'>
+          // The panel scrolls the tab and shows when more is below.
+          <div className='py-2'>
             {permissionSettings.visibility !== SpaceVisibility.Custom ? (
               <div className='rounded-400 bg-fill-content-hover px-4 py-3 text-sm text-text-secondary'>
                 {t('space.customPermissionDescription')}

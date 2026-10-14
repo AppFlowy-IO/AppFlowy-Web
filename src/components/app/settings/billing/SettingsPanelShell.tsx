@@ -1,7 +1,8 @@
-import { ReactNode } from 'react';
+import { ReactNode, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as InfoIcon } from '@/assets/icons/info.svg';
+import { MoreBelowFade, useMoreContentBelow } from '@/components/_shared/scroller/MoreBelowFade';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -17,13 +18,18 @@ const BUTTON_FOCUS_RING =
 
 /** Header and scrollable body shared by the settings panels (same markup as the account panel). */
 export function SettingsPanelShell({ title, testId, children }: { title: string; testId?: string; children: ReactNode }) {
+  const [scrollArea, setScrollArea] = useState<HTMLDivElement | null>(null);
+  const moreBelow = useMoreContentBelow(scrollArea);
+
   return (
     <div className={cn('flex h-full min-h-0 flex-1 flex-col overflow-hidden', BUTTON_FOCUS_RING)} data-testid={testId}>
       <div className='border-b border-border-primary px-8 py-5'>
         <h2 className='text-xl font-semibold text-text-primary'>{title}</h2>
       </div>
-      <div className='appflowy-scroller flex-1 overflow-y-auto px-8 py-6'>
-        <div className='flex flex-col gap-6'>{children}</div>
+      {/* No vertical padding on the scroll area itself, so the fade sits right at its bottom edge. */}
+      <div ref={setScrollArea} className='appflowy-scroller flex-1 overflow-y-auto px-8'>
+        <div className='flex flex-col gap-6 py-6'>{children}</div>
+        <MoreBelowFade visible={moreBelow} />
       </div>
     </div>
   );
