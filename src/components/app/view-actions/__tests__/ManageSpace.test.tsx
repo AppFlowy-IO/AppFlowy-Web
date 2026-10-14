@@ -220,6 +220,13 @@ jest.mock('@/components/app/view-actions/SpaceIconButton', () => ({
   default: () => <div data-testid='space-icon-button' />,
 }));
 
+// The dialog title keeps the real SpaceIcon, which looks the space's icon up in the icon
+// catalogue; the real lookup fetches /af_icons/icons.json, a network request under jsdom.
+jest.mock('@/utils/emoji', () => ({
+  ...jest.requireActual('@/utils/emoji'),
+  getIcon: () => Promise.resolve(null),
+}));
+
 jest.mock('@/components/ui/dropdown-menu', () => {
   const React = jest.requireActual<typeof import('react')>('react');
   // Menus render open; clicking a trigger reports the menu as opened to menus that listen.
