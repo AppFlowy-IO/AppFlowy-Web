@@ -47,10 +47,11 @@ import { getErrorMessage } from '@/utils/errors';
 
 import type { TFunction } from 'i18next';
 
+/** Shown from the most to the fewest people who can create spaces, like Desktop. */
 const POLICIES: readonly WorkspaceSpaceCreationPolicy[] = [
   'members_and_owners',
-  'owners_only',
   'owners_and_selected_members',
+  'owners_only',
 ];
 const SELECTED_MODE: WorkspaceSpaceCreationPolicy = 'owners_and_selected_members';
 /** React already escapes text; i18next escaping would show `&amp;` in names such as "R&D". */

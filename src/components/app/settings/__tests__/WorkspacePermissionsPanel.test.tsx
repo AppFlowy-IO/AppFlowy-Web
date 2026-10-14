@@ -217,6 +217,22 @@ describe('workspace permission settings', () => {
     expect(mockMutate).not.toHaveBeenCalled();
   });
 
+  it('lists the choices from the most to the fewest people who can create spaces', async () => {
+    mount();
+    const options = await screen.findByTestId('space-creation-policy-options');
+
+    // The same order as Desktop: broadest first, so narrowing reads left to right.
+    expect(
+      Array.from(options.querySelectorAll('[data-testid^="space-creation-policy-"]'), (card) =>
+        card.getAttribute('data-testid')
+      )
+    ).toEqual([
+      'space-creation-policy-members_and_owners',
+      'space-creation-policy-owners_and_selected_members',
+      'space-creation-policy-owners_only',
+    ]);
+  });
+
   it.each([true, false])(
     'says that space creators keep their workspace role without needing a hover (owner=%s)',
     async (owner) => {
