@@ -37,12 +37,18 @@ let setBusy: (busy: boolean) => void = () => undefined;
 function Harness({
   visibility = SpaceVisibility.Public,
   disabled = false,
+  nameDisabled = false,
+  loading = false,
   initiallyOpen = true,
   busyOnChange = false,
   onMembersAccessChange = jest.fn(),
 }: {
   visibility?: SpaceVisibility;
   disabled?: boolean;
+  /** The name and icon, which only people who manage the space can change. */
+  nameDisabled?: boolean;
+  /** Like Manage Space while it rechecks access in the background. */
+  loading?: boolean;
   initiallyOpen?: boolean;
   /** Like Manage Space: choosing a value pauses the settings while it saves. */
   busyOnChange?: boolean;
@@ -73,6 +79,7 @@ function Harness({
         spaceIconColor=''
         onSpaceNameChange={jest.fn()}
         onSpaceIconChange={jest.fn()}
+        metadataDisabled={nameDisabled}
         permissionSettings={{
           ...basePermission,
           visibility,
@@ -80,6 +87,7 @@ function Harness({
         }}
         visibilityOptions={[SpaceVisibility.Public, SpaceVisibility.Custom, SpaceVisibility.Private]}
         permissionSettingsDisabled={disabled || busy}
+        loadingSettings={loading}
         workspaceName='Acme'
         onVisibilitySelect={() => setConfirming(true)}
         onMembersAccessChange={(value) => {
@@ -210,6 +218,94 @@ describe('Manage Space General tab with a keyboard', () => {
     expect(screen.getByTestId('space-settings-general').contains(document.activeElement)).toBe(true);
     rerender(<Harness />);
     expect(document.activeElement).toBe(trigger);
+  });
+
+  /** A background recheck: Manage Space passes `loadingSettings || revalidating`. */
+  function recheck(rerender: (ui: JSX.Element) => void) {
+    rerender(<Harness loading />);
+    rerender(<Harness />);
+  }
+
+  /** The user goes from the access menu button back to the space name. */
+  function focusNameAfterAnotherControl() {
+    const name = within(dialog()).getByPlaceholderText('space.spaceNamePlaceholder');
+
+    act(() => screen.getByTestId('manage-space-workspace-members-access').focus());
+    act(() => name.focus());
+    return name;
+  }
+
+  /** MUI makes this element focusable when nothing in the dialog had focus as it opened. */
+  function focusableDialogRoot() {
+    const root = dialog().parentElement as HTMLElement;
+
+    root.setAttribute('tabindex', '-1');
+    return root;
+  }
+
+  it('leaves focus on the tab the user moved to while the settings are rechecked', () => {
+    const { rerender } = render(<Harness />);
+    const name = focusNameAfterAnotherControl();
+    const panel = within(dialog()).getByRole('tabpanel');
+
+    // Shift+Tab from the first control, or a click on blank space in the tab, focuses the tab itself.
+    fireEvent.keyDown(name, { key: 'Tab', shiftKey: true });
+    act(() => panel.focus());
+    recheck(rerender);
+
+    // Typing must not go into the space name.
+    expect(document.activeElement).toBe(panel);
+  });
+
+  it('leaves focus off the controls after the user clicked blank space that takes no focus', () => {
+    const { rerender } = render(<Harness />);
+    const name = focusNameAfterAnotherControl();
+    const title = within(dialog()).getByText('Manage space');
+
+    fireEvent.pointerDown(title);
+    act(() => name.blur());
+    fireEvent.pointerUp(title);
+    recheck(rerender);
+
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it('leaves focus on the dialog after the user clicked blank space in it', () => {
+    const { rerender } = render(<Harness />);
+    const root = focusableDialogRoot();
+    const title = within(dialog()).getByText('Manage space');
+
+    focusNameAfterAnotherControl();
+    fireEvent.pointerDown(title);
+    act(() => root.focus());
+    fireEvent.pointerUp(title);
+    recheck(rerender);
+
+    expect(document.activeElement).toBe(root);
+  });
+
+  it('still returns to the control after its focus was lost to the dialog', () => {
+    const { rerender } = render(<Harness />);
+    const root = focusableDialogRoot();
+    const name = focusNameAfterAnotherControl();
+
+    // A closing menu dropped focus, and MUI put it on the dialog; no one clicked.
+    act(() => root.focus());
+    recheck(rerender);
+
+    expect(document.activeElement).toBe(name);
+  });
+
+  it('returns to the space name the dialog opened on after a pause', () => {
+    const { rerender } = render(<Harness />);
+    const name = within(dialog()).getByPlaceholderText('space.spaceNamePlaceholder');
+
+    expect(document.activeElement).toBe(name);
+    rerender(<Harness nameDisabled />);
+    expect(screen.getByTestId('space-settings-general').contains(document.activeElement)).toBe(true);
+    rerender(<Harness />);
+
+    expect(document.activeElement).toBe(name);
   });
 
   it('returns to the access menu button once a choice that paused the settings has saved', async () => {

@@ -610,20 +610,67 @@ function isDisabledControl(element: Element): boolean {
  * Saving or rechecking access briefly disables the General tab's controls, and a browser then
  * moves keyboard focus from the disabled control to the page. Keep focus in the tab while the
  * controls are paused, and return to the control the keyboard was on once it is available again,
- * also when a menu or a confirmation (`overlay`) closed without giving focus back to it. Focus that
- * moved to another control is left alone. `stateKey` changes whenever any of that happens.
+ * also when a menu or a confirmation (`overlay`) closed without giving focus back to it. Focus the
+ * user moved is left alone: to another control, to the tab itself (Tab, or a click on blank space
+ * in it), or out of the controls with a click elsewhere in the dialog. `stateKey` changes whenever
+ * any of that happens.
  */
 function useKeyboardPlace(container: HTMLElement | null, stateKey: string) {
   const lastControl = useRef<HTMLElement | null>(null);
+  // The user put focus where it is now (around the controls or nowhere), not a pause or a menu.
+  const placedByUser = useRef(false);
+  const parking = useRef(false);
 
   useEffect(() => {
     if (!container) return;
-    const remember = (event: FocusEvent) => {
-      if (event.target instanceof HTMLElement && event.target !== container) lastControl.current = event.target;
+    const doc = container.ownerDocument;
+    const panel = container.closest<HTMLElement>('[role="tabpanel"]');
+    let pointerDown = false;
+    const press = () => {
+      pointerDown = true;
     };
 
-    container.addEventListener('focusin', remember);
-    return () => container.removeEventListener('focusin', remember);
+    const release = () => {
+      pointerDown = false;
+    };
+
+    const focusIn = (event: FocusEvent) => {
+      const target = event.target;
+
+      if (!(target instanceof HTMLElement)) return;
+      if (target !== container && container.contains(target)) {
+        lastControl.current = target;
+        placedByUser.current = false;
+      } else if (target.contains(container) && !parking.current) {
+        // Only the user focuses the tab itself; the dialog takes focus from a click or after a loss.
+        placedByUser.current = target === panel || pointerDown;
+      }
+    };
+
+    const focusOut = (event: FocusEvent) => {
+      // A click on something that takes no focus leaves focus on the page (no element gets it).
+      if (pointerDown && !(event.relatedTarget instanceof Element)) placedByUser.current = true;
+    };
+
+    const active = doc.activeElement;
+
+    // The field the dialog opened on was focused before this listener existed.
+    if (active instanceof HTMLElement && active !== container && container.contains(active)) {
+      lastControl.current = active;
+    }
+
+    doc.addEventListener('pointerdown', press, true);
+    doc.addEventListener('pointerup', release, true);
+    doc.addEventListener('pointercancel', release, true);
+    doc.addEventListener('focusin', focusIn, true);
+    doc.addEventListener('focusout', focusOut, true);
+    return () => {
+      doc.removeEventListener('pointerdown', press, true);
+      doc.removeEventListener('pointerup', release, true);
+      doc.removeEventListener('pointercancel', release, true);
+      doc.removeEventListener('focusin', focusIn, true);
+      doc.removeEventListener('focusout', focusOut, true);
+    };
   }, [container]);
 
   // Before paint, so the browser never gets to drop focus from the disabled control.
@@ -638,7 +685,10 @@ function useKeyboardPlace(container: HTMLElement | null, stateKey: string) {
       container.contains(active) &&
       isDisabledControl(active)
     ) {
+      parking.current = true;
       panel.focus({ preventScroll: true });
+      parking.current = false;
+      placedByUser.current = false;
       return;
     }
 
@@ -646,7 +696,7 @@ function useKeyboardPlace(container: HTMLElement | null, stateKey: string) {
 
     if (!control?.isConnected || !container.contains(control) || isDisabledControl(control)) return;
     // Parked in the tab, or lost to the dialog or the page: an element around the tab has focus.
-    if (!active || active.contains(container)) control.focus({ preventScroll: true });
+    if ((!active || active.contains(container)) && !placedByUser.current) control.focus({ preventScroll: true });
   }, [container, stateKey]);
 }
 
