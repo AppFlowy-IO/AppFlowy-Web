@@ -2,7 +2,7 @@ import { useEffect, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { NormalModal } from '@/components/_shared/modal';
-import { HIDDEN_BUTTON_PROPS, MODAL_CLASSES, MODAL_PAPER_PROPS } from '@/components/app/workspaces/modal-props';
+import { MODAL_CLASSES, MODAL_PAPER_PROPS } from '@/components/app/workspaces/modal-props';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 
@@ -42,8 +42,8 @@ export function LogoutConfirm({
       title={<div style={{ textAlign: 'left' }}>{t('button.logout')}</div>}
       classes={MODAL_CLASSES}
       PaperProps={MODAL_PAPER_PROPS}
-      okButtonProps={HIDDEN_BUTTON_PROPS}
-      cancelButtonProps={HIDDEN_BUTTON_PROPS}
+      // The buttons below are the dialog's own; a hidden footer would still leave a gap under them.
+      showActions={false}
     >
       <div className='text-text-secondary'>
         {t('settings.menu.logoutPrompt')}

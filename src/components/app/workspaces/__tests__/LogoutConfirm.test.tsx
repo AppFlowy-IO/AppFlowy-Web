@@ -1,5 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 
+import en from '@/@types/translations/en.json';
+
 import { LogoutConfirm } from '../LogoutConfirm';
 
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
@@ -47,4 +49,17 @@ test('starts unchecked each time the dialog opens', () => {
   expect(screen.getByRole('switch', { name: 'settings.menu.logoutRemoveLocalData' }).getAttribute('aria-checked')).toBe(
     'false'
   );
+});
+
+test('shows only its own buttons, with no empty footer below them', () => {
+  renderConfirm();
+
+  // A hidden footer would still add its gap under the buttons.
+  expect(screen.getAllByRole('button', { name: 'button.cancel' })).toHaveLength(1);
+  expect(screen.getAllByRole('button', { name: 'button.logout' })).toHaveLength(1);
+  expect(screen.queryByTestId('modal-ok-button')).toBeNull();
+});
+
+test('asks in plain English', () => {
+  expect(en.settings.menu.logoutPrompt).toBe('Are you sure you want to log out?');
 });
