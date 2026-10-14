@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Node } from 'slate';
 import { useSlateStatic } from 'slate-react';
 
 import {
@@ -17,15 +18,19 @@ import {
   isTranscriptionLimitError,
   transcriptionUsage,
 } from '@/application/integrations/transcription-usage';
+import { YoutubeCaptionTranscript } from '@/application/integrations/youtube-url';
 import { getMeetingUsage } from '@/application/services/js-services/http/meeting-api';
 import { YjsEditor } from '@/application/slate-yjs';
-import { AIMeetingBlockData, SubscriptionPlan, WorkspaceUsageAndLimit } from '@/application/types';
+import { traverseBlock } from '@/application/slate-yjs/utils/convert';
+import { assertDocExists, dataStringTOJson, getBlock } from '@/application/slate-yjs/utils/yjs';
+import { AIMeetingBlockData, SubscriptionPlan, WorkspaceUsageAndLimit, YjsEditorKey } from '@/application/types';
 import { useIsOfficialHosted } from '@/components/app/hooks/useServerInfo';
 import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { getErrorMessage } from '@/utils/errors';
 
 import { applyAudioTranscript, updateMeetingData } from './ai-meeting.import';
+import { getSummaryLanguageCode } from './ai-meeting.summary-regenerate';
 
 export function useAIMeetingImport({
   blockId,
@@ -209,6 +214,7 @@ export function useAIMeetingImport({
           transcription_type: source instanceof File ? 'audioFile' : 'urlSource',
           transcript_language: language,
           audio_file_path: '',
+          youtube_caption_source: undefined,
           selected_tab_index: transcriptTabIndex,
           ...(source instanceof File && (!currentTitle || currentTitle === t('document.aiMeeting.titleDefault'))
             ? { title: titleFromAudioFile(source.name) }
@@ -225,8 +231,16 @@ export function useAIMeetingImport({
 
         if (!mounted.current || attempt.current !== id || latest.current.readOnly) return;
         const targetId = latest.current.transcriptBlockId;
+        const meeting = getBlock(blockId, editor.sharedRoot);
 
-        if (!targetId || !applyAudioTranscript(editor, blockId, targetId, result)) return;
+        if (!targetId || !meeting || !getBlock(targetId, editor.sharedRoot)) return;
+        // Yjs may already contain a collaborator's result or a replacement job
+        // before React renders it. Preserve their edits and citation source IDs.
+        const currentData = dataStringTOJson(meeting.get(YjsEditorKey.block_data)) as AIMeetingBlockData;
+        const transcript = traverseBlock(targetId, editor.sharedRoot);
+
+        if (currentData.transcript_id !== result.id || !transcript || Node.string(transcript).trim()) return;
+        if (!applyAudioTranscript(editor, blockId, targetId, result)) return;
         latest.current.onFinished();
         void reloadUsage();
       } catch (failure) {
@@ -257,6 +271,7 @@ export function useAIMeetingImport({
     if (available || !busy) return;
     attempt.current++;
     running.current = false;
+    resumedId.current = undefined;
     session.current?.suspend();
     setStage('idle');
   }, [available, busy]);
@@ -274,6 +289,54 @@ export function useAIMeetingImport({
       if (mounted.current && attempt.current === cancelledAttempt) setError(failure);
     }
   }, [blockId, editor]);
+
+  const importCaptions = useCallback((captions: YoutubeCaptionTranscript) => {
+    if (!available || !mounted.current || running.current || latest.current.readOnly) return;
+    const targetId = latest.current.transcriptBlockId;
+    const meeting = getBlock(blockId, editor.sharedRoot);
+
+    if (!targetId || !meeting) return;
+    const currentData = dataStringTOJson(meeting.get(YjsEditorKey.block_data)) as AIMeetingBlockData;
+    const transcript = traverseBlock(targetId, editor.sharedRoot);
+
+    // Another client can finish an import or start a job while the dialog is
+    // fetching captions. Never replace its content or take over its saved job.
+    if (!transcript || Node.string(transcript).trim() || currentData.transcript_id || currentData.recording_state === 'recording') return;
+    if (!captions.segments.length) return;
+    const title = currentData.title?.trim();
+    let applied = false;
+
+    assertDocExists(editor.sharedRoot).transact(() => {
+      applied = applyAudioTranscript(editor, blockId, targetId, {
+        // Captions have no transcription-provider job to resume or delete.
+        id: '',
+        text: captions.segments.map((segment) => segment.text).join('\n\n'),
+        language: captions.language,
+        segments: captions.segments.map((segment) => ({ ...segment, speaker: '' })),
+      });
+      if (!applied) return;
+      updateMeetingData(editor, blockId, {
+        transcription_type: 'urlSource',
+        transcript_language: captions.language,
+        ...(!currentData.summary_language ? { summary_language: getSummaryLanguageCode(captions.language) } : {}),
+        audio_file_path: '',
+        selected_tab_index: transcriptTabIndex,
+        youtube_caption_source: {
+          video_id: captions.videoId,
+          language: captions.language,
+          is_auto_generated: captions.isAutoGenerated,
+        },
+        ...(!title || title === t('document.aiMeeting.titleDefault') ? { title: captions.title } : {}),
+      });
+    });
+    if (!applied) return;
+    session.current?.suspend();
+    session.current = undefined;
+    resumedId.current = undefined;
+    setError(undefined);
+    setErrorDismissed(false);
+    latest.current.onFinished();
+  }, [available, blockId, editor, t, transcriptTabIndex]);
 
   const setLanguage = (next: string) => {
     if (!available || busy) return;
@@ -334,6 +397,7 @@ export function useAIMeetingImport({
     canRetry,
     retry: () => canRetry ? (session.current?.canRetry ? run() : reloadUsage()) : Promise.resolve(),
     importSource: run,
+    importCaptions,
     cancel,
     language,
     setLanguage,

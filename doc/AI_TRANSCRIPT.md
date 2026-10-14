@@ -14,8 +14,9 @@ The Paste YouTube URL action reads the clipboard on the button click. HTTP links
 prefill the input; denied clipboard permission or non-link text leaves it empty.
 Late clipboard reads do not overwrite user input.
 
-The six-language support banner appears on first insertion and in the Transcript
-tab, including during processing. Dismissal is saved per workspace in the browser,
+The six-language audio support banner appears on first insertion and in the Transcript
+tab, including during processing. Imported YouTube captions use their available
+languages and do not show this audio-provider banner. Dismissal is saved per workspace in the browser,
 using Flutter's `hasClickedAIMeetingBanner_<workspaceId>` preference. Dismissing
 one banner also hides it in other open blocks in that workspace.
 
@@ -24,52 +25,93 @@ the user can choose a shorter file or another URL. This does not mark all worksp
 minutes as consumed. Dismissing an exhausted-quota banner rechecks the current
 allowance; it does not reset usage or permit transcription without available time.
 
-YouTube previews and downloads follow Flutter's `YoutubeExplodeAudioRepository`:
-watch-page metadata, Android VR/Android player API clients, mp4 audio selection,
-1 MB byte ranges, and up to three stream URL refreshes after HTTP 403. Videos must
-have a known duration between one minute and four hours. Downloads have progress,
-Stop and retry controls. The completed audio then follows Flutter's release file
-import path: request `/api/file_storage/{workspace_id}/create_presigned_url` with
-the file size, MIME type, and `audio_file_transcription` prefix; PUT the raw bytes
-to the signed storage URL; then submit its download URL to
-`/api/meeting/{workspace_id}/v2/transcribe-audio` with the recording's duration.
-AppFlowy credentials are used only to request the signed URL. Sending the full
-audio through `/v2/upload-audio-file` can hit the Cloud proxy's body limit
-(HTTP 413), even when the file is within the workspace's upload allowance.
+## YouTube captions
 
-Audio selection prefers tracks labelled as original, then the default or an
-unlabelled stream. Auto-dubbed and non-default translated tracks are excluded,
-even if their bitrate is higher. Stream refreshes and client fallback preserve
-the selected track ID so an import cannot switch languages partway through.
+Pasting a YouTube URL loads its metadata and available caption languages. Choose
+**Import captions** to fetch existing captions and save their text and timestamps
+in the transcript section. Both creator-provided and automatically generated
+captions are supported. The default track follows the video's original/default
+language, with manual captions preferred within that language. Users can choose
+another available caption language; the bridge does not request translations.
 
-If the native clients are blocked, the bridge tries the same YouTube player API
-with the VisionOS client. Before responding with audio, it validates the first
-two ranges to detect YouTube's first-MB restriction. Switching clients restarts
-from byte zero and discards the earlier bytes; different clients may produce
-different encodings or file lengths. The upload limit is checked for each client.
-Native clients keep their Range header; the fallback uses the range query parameter.
+Caption import downloads no video or audio, creates no transcription-provider
+job, and consumes no transcription minutes. It stays available when transcription
+minutes are exhausted. Captions do not need the audio import's one-minute minimum
+or four-hour maximum duration. Imported cues have unknown speakers; no speaker
+identity is invented. The video ID, caption language and automatic-caption flag
+are saved as `youtube_caption_source` on the meeting block. The transcript is
+saved directly in Yjs, so reopening the page needs no provider polling. A late
+caption response cannot replace live transcript edits or another saved job.
+
+After import, the existing summary flow uses the saved transcript. Summary
+requests still use the normal AI-response allowance. Missing captions or a
+YouTube restriction keep the dialog open with an explanation. Users can explicitly
+choose **Download audio and transcribe** or **Upload audio/video**. Downloading
+does not start automatically when captions are missing.
+Stop, Retry, workspace changes and closing the dialog cancel pending requests.
+
+## Browser audio fallback
+
+### Why an extension is needed
+
+A normal React page cannot read arbitrary YouTube playback resources or change
+the browser's cross-origin response rules. React libraries still operate under
+the browser's [same-origin restrictions](https://developer.chrome.com/docs/extensions/develop/concepts/network-requests).
+The download also needs current playback metadata from YouTube's native player.
+The helper prepares that playback in a YouTube tab, then uses narrowly scoped
+[network-header rules](https://developer.chrome.com/docs/extensions/reference/api/declarativeNetRequest)
+to let AppFlowy fetch the audio directly on the user's device. This satisfies
+the requirement that AppFlowy servers do not download or proxy YouTube media.
+
+Only the audio track is needed for transcription. Existing captions already
+contain the words and timestamps, so importing them needs neither a media
+download nor the extension. Manual audio/video upload also needs no extension.
+
+### Installation and download flow
+
+The optional Chrome/Edge helper lives in `extensions/youtube-transcript`. Build
+its downloadable ZIP with `node extensions/youtube-transcript/package.mjs`.
+The URL dialog explains how to unzip it, enable Developer mode, choose **Load
+unpacked**, and reload AppFlowy. This is a development distribution, not a
+published extension-store listing. Self-hosted installations need a package
+configured for their exact origin; see the helper's README.
+
+After an explicit download click, the helper opens a temporary YouTube tab to
+prepare native playback for the requested video. It rejects advertisement
+sessions and returns bounded playback metadata to AppFlowy. YouTube's player and
+verification code execute on YouTube, outside the signed-in AppFlowy page.
+AppFlowy downloads the audio stream directly from Googlevideo using the helper's
+scoped network rules. It does not download the video track. Media never passes
+through an AppFlowy download server.
+
+The resulting playable file goes through the existing upload/transcription flow,
+including its duration and quota checks. Streaming enforces the workspace file
+limit and a 256 MiB browser download cap. Stop, navigation, workspace changes and
+loss of editing/transcription availability cancel preparation and download.
+Errors keep the file-upload alternative available. Captions remain usable without
+the extension and without transcription minutes.
 
 ## Server bridge
 
-Browsers cannot make Flutter's direct YouTube requests because of CORS. Vite serves
-`/api/youtube-audio` locally; the same handler is available to the Bun server and
-the Node API entry point in `api/youtube-audio.ts`. The SSR Docker image includes
-it. A static nginx deployment must route this endpoint to a Node/Bun instance;
-static HTML alone cannot provide YouTube import.
+The Web Node/Bun bridge fetches only YouTube metadata and timed caption text.
+Vite serves the existing `/api/youtube-audio` endpoint locally; its name is kept
+for deployment compatibility. It accepts GET `action=metadata` and
+`action=captions`, with `workspace_id`, `url`, and optional caption `language`.
+The old POST `action=audio` route is rejected. No AppFlowy Cloud changes,
+AssemblyAI key, yt-dlp executable or browser extension are needed for captions.
 
-The bridge uses `APPFLOWY_BASE_URL` to validate workspace access and usage before
-contacting YouTube. AppFlowy bearer tokens are sent only to that configured
-backend. Download targets are restricted to YouTube's audio CDN, with redirects
-disabled. Workspace quota and upload-size limits are checked before downloading,
-and checked again by the existing upload/transcription APIs. File transcription
-does not call the live-transcription duration reporting endpoint.
+The bridge uses `APPFLOWY_BASE_URL` and the existing workspace usage endpoint to
+verify access. It does not enforce audio duration, upload size or transcription
+minute quotas for caption text. AppFlowy bearer tokens go only to the configured
+AppFlowy backend. Caption targets are restricted to YouTube timed-text endpoints;
+redirects are disabled, responses are bounded, and signed caption URLs are never
+returned to the browser. YouTube may block caption requests or change its
+undocumented APIs, so unavailable and blocked captions have explicit errors.
 
-YouTube can reject its player requests or audio streams with bot checks or HTTP
-403, including for the Flutter client. These failures keep the dialog open and
-offer Retry; restrictions detected before streaming have a distinct error message.
-Partial downloads are never submitted for transcription. The fallback was verified
-with a complete download of video `FqiQfL9OBKY` (14:56); YouTube restrictions can
-still vary by network, session, and video.
+The Node API entry point is `api/youtube-audio.ts`; the SSR Docker image includes
+the shared handler. Static nginx deployments must route this endpoint to a
+Node/Bun instance. Existing file and direct-media URL transcription continue to
+use their current upload/provider flow and transcription allowances.
 
 ## Loading and summary sources
 
@@ -161,11 +203,41 @@ pnpm build
 pnpm build-storybook
 ```
 
-The YouTube dialog tests include the Flutter cases for progress, keeping the
-dialog open during download, out-of-range duration, and unavailable duration,
-plus clipboard, cancellation, stale responses, retry, and quota/size handling.
-Server tests cover authentication, token isolation, CDN targets, workspace limits,
-client fallback, complete byte ranges, stream refreshes, and corrupt downloads.
+The YouTube tests cover timed-caption parsing, language selection, unavailable
+and blocked captions, authentication, token isolation, allowed caption targets,
+response limits, cancellation, retry and stale responses. Editor tests cover
+caption persistence, timestamps, summary triggering, exhausted transcription
+minutes and preserving collaborator content without uploading audio or creating
+a provider job. An opt-in real YouTube regression can be run with:
+
+```sh
+RUN_YOUTUBE_CAPTION_LIVE_TEST=1 pnpm exec jest --runInBand --no-coverage --runTestsByPath api/_lib/__tests__/youtube-import.test.ts
+```
+
+This test retrieves caption text only. It does not download media, submit a
+transcription job or modify a document. Default tests use mocked HTTP responses.
+
+Browser-download unit tests cover extension detection, ad/session isolation,
+media host restrictions, cancellation, size limits, error redaction, playable
+file validation and the upload fallback. Run the opt-in real browser test with:
+
+```sh
+RUN_YOUTUBE_DOWNLOAD_LIVE_TEST=1 node scripts/test-youtube-browser-download.mjs
+```
+
+This opens a disposable Chromium profile, loads the local helper, downloads the
+test video's audio on the device, and verifies its complete byte count, playable
+duration, network destinations and helper-tab cleanup. It does not sign in,
+submit a paid transcription job or modify a document. It requires Playwright's
+Chromium (`pnpm exec playwright install chromium`). Set `VIDEO_ID` to
+test another video.
+
+A real download must be tested in a regular browser session: YouTube may reject playback in automated
+headless/`navigator.webdriver` sessions even when the same video plays normally.
+Verifying only metadata or an initial audio buffer is insufficient; check the
+complete file and its playable duration. The helper uses YouTube's changing
+playback protocol, so restricted videos can still require file upload.
+
 Summary tests cover Flutter's reference parsing and numbering cases, rich-text
 and Yjs persistence, loading through the completion stream, source edits/deletion,
 and source navigation on editable and read-only pages.

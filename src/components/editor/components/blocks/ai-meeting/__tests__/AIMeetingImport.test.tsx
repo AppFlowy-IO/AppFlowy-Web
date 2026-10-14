@@ -18,7 +18,7 @@ function state(overrides: Partial<AIMeetingImportState> = {}): AIMeetingImportSt
   return {
     workspaceId: 'workspace', reportError: jest.fn(), available: true, busy: false, stage: 'idle', progress: undefined, error: undefined, errorCode: undefined,
     message: '', usage: undefined, quotaExceeded: false, errorDismissed: false, showPromotion: false, dismissPromotion: jest.fn(),
-    dismissError: jest.fn(), canRetry: false, retry: jest.fn(async () => undefined), importSource: jest.fn(async () => undefined),
+    dismissError: jest.fn(), canRetry: false, retry: jest.fn(async () => undefined), importSource: jest.fn(async () => undefined), importCaptions: jest.fn(),
     cancel: jest.fn(async () => undefined), language: 'auto', setLanguage: jest.fn(), ...overrides,
   };
 }
@@ -130,13 +130,13 @@ describe('Flutter welcome actions and Figma banners', () => {
 
     expect(select.value).toBe('zh');
     expect(select.disabled).toBe(true);
-    expect(screen.getAllByText('AUTO')).toHaveLength(2);
+    expect(screen.getAllByText('ZH')).toHaveLength(2);
   });
 });
 
 describe('Paste YouTube URL dialog', () => {
   it('keeps Transcribe disabled for empty, invalid and unsupported URLs', () => {
-    render(<AIMeetingUrlDialog workspaceId="workspace" onClose={jest.fn()} onConfirm={jest.fn()} />);
+    render(<AIMeetingUrlDialog onConfirmCaptions={jest.fn()} workspaceId="workspace" onClose={jest.fn()} onConfirm={jest.fn()} />);
     const input = screen.getByRole('textbox');
     const confirm = screen.getByRole('button', { name: 'Transcribe' });
 
@@ -150,7 +150,7 @@ describe('Paste YouTube URL dialog', () => {
   it('accepts a signed direct URL and submits it with Enter', () => {
     const onConfirm = jest.fn();
 
-    render(<AIMeetingUrlDialog workspaceId="workspace" onClose={jest.fn()} onConfirm={onConfirm} />);
+    render(<AIMeetingUrlDialog onConfirmCaptions={jest.fn()} workspaceId="workspace" onClose={jest.fn()} onConfirm={onConfirm} />);
     const input = screen.getByRole('textbox');
 
     fireEvent.change(input, { target: { value: 'https://example.com/meeting.mp4?token=signed' } });
@@ -162,7 +162,7 @@ describe('Paste YouTube URL dialog', () => {
     const onClose = jest.fn();
     const onConfirm = jest.fn();
 
-    render(<AIMeetingUrlDialog workspaceId="workspace" onClose={onClose} onConfirm={onConfirm} />);
+    render(<AIMeetingUrlDialog onConfirmCaptions={jest.fn()} workspaceId="workspace" onClose={onClose} onConfirm={onConfirm} />);
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(onConfirm).not.toHaveBeenCalled();
@@ -170,7 +170,7 @@ describe('Paste YouTube URL dialog', () => {
 
   it('prefills a valid clipboard link', async () => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { readText: jest.fn().mockResolvedValue('https://example.com/meeting.wav') } });
-    render(<AIMeetingUrlDialog workspaceId="workspace" onClose={jest.fn()} onConfirm={jest.fn()} />);
+    render(<AIMeetingUrlDialog onConfirmCaptions={jest.fn()} workspaceId="workspace" onClose={jest.fn()} onConfirm={jest.fn()} />);
     await waitFor(() => expect((screen.getByRole('textbox')).value).toBe('https://example.com/meeting.wav'));
   });
 
@@ -178,7 +178,7 @@ describe('Paste YouTube URL dialog', () => {
     let complete!: (url: string) => void;
 
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { readText: jest.fn(() => new Promise<string>((resolve) => { complete = resolve; })) } });
-    render(<AIMeetingUrlDialog workspaceId="workspace" onClose={jest.fn()} onConfirm={jest.fn()} />);
+    render(<AIMeetingUrlDialog onConfirmCaptions={jest.fn()} workspaceId="workspace" onClose={jest.fn()} onConfirm={jest.fn()} />);
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'https://example.com/my-recording.mp3' } });
     complete('https://example.com/clipboard.mp3');
     await Promise.resolve();
@@ -187,13 +187,23 @@ describe('Paste YouTube URL dialog', () => {
 
   it('handles denied clipboard access without an error', async () => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { readText: jest.fn().mockRejectedValue(new Error('Denied')) } });
-    render(<AIMeetingUrlDialog workspaceId="workspace" onClose={jest.fn()} onConfirm={jest.fn()} />);
+    render(<AIMeetingUrlDialog onConfirmCaptions={jest.fn()} workspaceId="workspace" onClose={jest.fn()} onConfirm={jest.fn()} />);
     await Promise.resolve();
     expect(screen.queryByRole('alert')).toBeNull();
   });
 });
 
 describe('file import controls', () => {
+  it('allows opening YouTube caption import when transcription minutes are exhausted', async () => {
+    render(<AIMeetingImportActions state={state({ quotaExceeded: true })} showWelcome />);
+    expect(screen.getByRole('button', { name: 'Transcribe audio file' }).disabled).toBe(true);
+    const paste = screen.getByRole('button', { name: 'Paste YouTube URL' });
+
+    expect(paste.disabled).toBe(false);
+    fireEvent.click(paste);
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
+  });
+
   it('uses Flutter’s supported file types and allows selecting the same file again', () => {
     const importer = state();
     const { container } = render(<AIMeetingImportActions state={importer} showWelcome />);

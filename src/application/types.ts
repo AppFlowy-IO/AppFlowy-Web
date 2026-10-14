@@ -223,6 +223,7 @@ export interface AIMeetingBlockData extends BlockData {
   transcript_id?: string;
   transcript_language?: string;
   transcription_type?: string;
+  youtube_caption_source?: { video_id: string; language: string; is_auto_generated: boolean };
   created_at?: string | number;
   last_modified?: string | number;
   selected_tab_index?: number | string;

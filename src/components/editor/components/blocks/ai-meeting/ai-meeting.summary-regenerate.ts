@@ -397,7 +397,11 @@ export const getSummaryLanguageCode = (raw: unknown) => {
     (option) => option.code.toLowerCase() === normalized.toLowerCase()
   );
 
-  return matched?.code ?? DEFAULT_SUMMARY_LANGUAGE;
+  if (matched) return matched.code;
+  const base = normalized.toLowerCase().split('-')[0];
+
+  if (base === 'zh') return /^zh-(?:hant|tw|hk|mo)(?:-|$)/i.test(normalized) ? 'zh-TW' : 'zh-CN';
+  return SUMMARY_LANGUAGE_OPTIONS.find((option) => option.code === base)?.code ?? DEFAULT_SUMMARY_LANGUAGE;
 };
 
 export const buildSummaryRegeneratePrompt = ({

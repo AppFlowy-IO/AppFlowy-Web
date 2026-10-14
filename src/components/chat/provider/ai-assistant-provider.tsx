@@ -193,8 +193,11 @@ export const AIAssistantProvider = ({
         return cancel;
         // eslint-disable-next-line
       } catch (e: any) {
-        setError(e);
-        setApplyingState(ApplyingState.failed);
+        // Stop and exit already set the intended writer state.
+        if (e?.name !== 'AbortError') {
+          setError(e);
+          setApplyingState(ApplyingState.failed);
+        }
       } finally {
         setFetching(false);
         updateCurrentPromptId(null);

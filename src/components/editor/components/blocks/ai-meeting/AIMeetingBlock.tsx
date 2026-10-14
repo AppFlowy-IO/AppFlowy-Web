@@ -462,8 +462,11 @@ export const AIMeetingBlock = memo(
               </div>
             )}
 
-            {workspaceId && (showWelcome || activeTabKey === 'transcript') && (
+            {workspaceId && !data.youtube_caption_source && (showWelcome || activeTabKey === 'transcript') && (
               <AIMeetingLanguageBanner key={workspaceId} workspaceId={workspaceId} />
+            )}
+            {showWelcome && !readOnly && !regenerate.isAIEnabled && (
+              <AIMeetingErrorBanner message={t('document.aiMeeting.import.aiDisabled')} />
             )}
             {!importer.errorDismissed && (importer.error || importer.quotaExceeded) && importer.errorCode !== 'fileTooLarge' && (
               <AIMeetingErrorBanner

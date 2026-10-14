@@ -31,9 +31,11 @@ export function detectedTranscriptLanguage(value?: string | null) {
 }
 
 export function transcriptLanguageDisplayCode(value?: string) {
-  const code = detectedTranscriptLanguage(value);
+  const code = normalizeTranscriptLanguage(value);
 
-  return code?.slice(0, 2).toUpperCase() ?? 'AUTO';
+  // Caption tracks can use languages and regional codes outside the audio
+  // provider's language selector. Display their actual language when saved.
+  return code && /^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/.test(code) ? code.split('-')[0].toUpperCase() : 'AUTO';
 }
 
 export interface TranscriptSegment {

@@ -37,7 +37,7 @@ export default async function handler(
     if (!res.headersSent && !controller.signal.aborted) {
       res.statusCode = 502;
       res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ code: 502, message: 'youtubeDownloadFailed' }));
+      res.end(JSON.stringify({ code: 502, message: 'youtubeCaptionsFailed' }));
     } else res.destroy();
   } finally {
     req.off('aborted', abort);

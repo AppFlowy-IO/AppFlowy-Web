@@ -60,6 +60,9 @@ describe('Flutter transcript conversion and languages', () => {
     expect(transcriptLanguageDisplayCode('auto')).toBe('AUTO');
     expect(transcriptLanguageDisplayCode(undefined)).toBe('AUTO');
     expect(transcriptLanguageDisplayCode('fr')).toBe('FR');
+    expect(transcriptLanguageDisplayCode('zh-Hant')).toBe('ZH');
+    expect(transcriptLanguageDisplayCode('ja')).toBe('JA');
+    expect(transcriptLanguageDisplayCode('pt-BR')).toBe('PT');
     expect(transcriptLanguageDisplayCode('unknown')).toBe('AUTO');
   });
 });

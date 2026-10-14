@@ -58,10 +58,12 @@ export function AIMeetingTranscriptLanguage({
 
 export function AIMeetingWelcome({
   disabled,
+  uploadDisabled = false,
   onPasteUrl,
   onUpload,
 }: {
   disabled: boolean;
+  uploadDisabled?: boolean;
   onPasteUrl: () => void;
   onUpload: () => void;
 }) {
@@ -75,7 +77,7 @@ export function AIMeetingWelcome({
           type='button'
           variant='outline'
           className='h-8 w-[200px] max-w-full rounded-lg font-medium'
-          disabled={disabled}
+          disabled={disabled || uploadDisabled}
           onClick={onUpload}
         >
           {t('document.aiMeeting.import.upload')}
@@ -301,7 +303,8 @@ export function AIMeetingImportActions({ state, showWelcome }: { state: AIMeetin
       />
       {showWelcome && (
         <AIMeetingWelcome
-          disabled={!state.available || state.busy || state.quotaExceeded}
+          disabled={!state.available || state.busy}
+          uploadDisabled={state.quotaExceeded}
           onUpload={() => input.current?.click()}
           onPasteUrl={() => {
             setClipboardText(readTranscriptionClipboard());
@@ -312,9 +315,21 @@ export function AIMeetingImportActions({ state, showWelcome }: { state: AIMeetin
       {urlOpen && (
         <AIMeetingUrlDialog
           workspaceId={state.workspaceId}
+          language={state.language}
+          mediaDisabled={!state.available || state.busy || state.quotaExceeded}
+          maxBytes={state.usage?.single_upload_unlimited ? undefined : state.usage?.single_upload_limit}
           clipboardText={clipboardText}
           onFailure={state.reportError}
           onClose={() => setUrlOpen(false)}
+          onUpload={() => {
+            if (!state.available || state.busy || state.quotaExceeded) return;
+            setUrlOpen(false);
+            input.current?.click();
+          }}
+          onConfirmCaptions={(captions) => {
+            setUrlOpen(false);
+            state.importCaptions(captions);
+          }}
           onConfirm={(source) => {
             setUrlOpen(false);
             void state.importSource(source);

@@ -1,408 +1,303 @@
 /** @jest-environment node */
+import { YoutubeCaptionRepository } from '../youtube';
 import { handleYoutubeImport } from '../youtube-import';
 
 const videoId = 'lr3hNhA0IfQ';
 const cloud = 'https://cloud.example.com';
-const chunkSize = 1024 * 1024;
 
-interface AudioTrackFixture {
-  id: string;
-  displayName: string;
-  audioIsDefault: boolean;
-  isAutoDubbed?: boolean;
-  bitrate: number;
+function track(language = 'en', auto = false, url?: string) {
+  return {
+    languageCode: language,
+    baseUrl: url ?? `https://www.youtube.com/api/timedtext?v=${videoId}&lang=${language}&signature=private`,
+    name: { simpleText: `${language}${auto ? ' (auto-generated)' : ''}` },
+    ...(auto ? { kind: 'asr' } : {}),
+  };
 }
 
-function request(action = 'metadata', authenticated = true, extraHeaders?: Record<string, string>) {
+function request(action = 'metadata', options: { authenticated?: boolean; headers?: Record<string, string>; language?: string; url?: string; workspace?: string; signal?: AbortSignal; method?: string } = {}) {
   const url = new URL('http://localhost:3002/api/youtube-audio');
 
-  url.searchParams.set('url', `https://youtu.be/${videoId}?si=share`);
-  url.searchParams.set('workspace_id', 'workspace');
+  url.searchParams.set('url', options.url ?? `https://youtu.be/${videoId}?si=share`);
+  url.searchParams.set('workspace_id', options.workspace ?? 'workspace');
   url.searchParams.set('action', action);
-  return new Request(url, { method: action === 'audio' ? 'POST' : 'GET', headers: {
-    ...(authenticated ? { authorization: 'Bearer appflowy-session' } : {}), ...extraHeaders,
+  if (options.language) url.searchParams.set('language', options.language);
+  return new Request(url, { method: options.method ?? 'GET', signal: options.signal, headers: {
+    ...(options.authenticated === false ? {} : { authorization: 'Bearer appflowy-session' }), ...options.headers,
   } });
 }
 
 function fakeUpstreams(options: {
-  used?: number; limit?: number; duration?: string; size?: number; uploadLimit?: number;
-  vrUnavailable?: boolean; androidUnavailable?: boolean; fallbackUnavailable?: boolean; fallbackSize?: number;
-  forbidden?: number; forbiddenClients?: string[]; invalidStream?: boolean; missingBytes?: boolean; unavailable?: boolean;
-  tracks?: (client: string) => AudioTrackFixture[];
+  tracks?: ReturnType<typeof track>[]; defaultCaptionIndex?: number; captionBody?: string; captionStatus?: number;
+  watchStatus?: number; playability?: string; usageStatus?: number; usageCode?: number; duration?: string;
 } = {}) {
-  const size = options.size ?? chunkSize + 17;
-  let failures = options.forbidden ?? 0;
-
   return jest.fn(async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
     init?.signal?.throwIfAborted();
     const url = new URL(String(input));
 
-    if (url.origin === cloud) return Response.json({ code: 0, data: {
-      ai_transcription_seconds: options.used ?? 0, ai_transcription_seconds_limit: options.limit ?? 1800,
-      single_upload_limit: options.uploadLimit ?? 25 * 1024 * 1024,
-    } });
+    if (url.origin === cloud) return Response.json({ code: options.usageCode ?? 0, data: {
+      ai_transcription_seconds: 1800, ai_transcription_seconds_limit: 1800, single_upload_limit: 0,
+    } }, { status: options.usageStatus ?? 200 });
     if (url.pathname === '/watch') return new Response(`<script>var ytInitialPlayerResponse = ${JSON.stringify({
-      playabilityStatus: { status: options.unavailable ? 'ERROR' : 'OK' },
-      videoDetails: { videoId, title: 'Team {meeting} "recording"', author: 'AppFlowy', lengthSeconds: options.duration ?? '120', thumbnail: { thumbnails: [{ width: 640, url: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` }] } },
-    })};</script><script>ytcfg.set({"STS":20000,"VISITOR_DATA":"visitor"});</script>`, { headers: { 'Set-Cookie': 'YSC=youtube-session; Path=/; Secure' } });
-    if (url.pathname.includes('/player')) {
-      const { context } = JSON.parse(String(init?.body));
-      const client = context.client.clientName;
-
-      const unavailable = (options.vrUnavailable && client === 'ANDROID_VR') || (options.androidUnavailable && client === 'ANDROID') || (options.fallbackUnavailable && client === 'VISIONOS');
-
-      const format = {
-        itag: 140, mimeType: 'audio/mp4; codecs="mp4a.40.2"', bitrate: client === 'ANDROID_VR' ? 128000 : 256000,
-        contentLength: String(client === 'VISIONOS' ? options.fallbackSize ?? size : size),
-        url: options.invalidStream ? 'http://127.0.0.1/private' : `https://rr1.googlevideo.com/videoplayback?c=${client}`,
-      };
-      const formats = options.tracks?.(client).map(({ bitrate, ...audioTrack }) => ({
-        ...format, bitrate, audioTrack, url: `${format.url}&track=${encodeURIComponent(audioTrack.id)}`,
-      })) ?? [format];
-
-      return Response.json({ playabilityStatus: { status: unavailable ? 'LOGIN_REQUIRED' : 'OK' }, streamingData: { adaptiveFormats: formats } });
-    }
-
-    if (url.hostname.endsWith('.googlevideo.com')) {
-      if (init?.method === 'HEAD') return new Response(null);
-      const range = new Headers(init?.headers).get('range') ?? `bytes=${url.searchParams.get('range')}`;
-      const match = /^bytes=(\d+)-(\d+)$/.exec(range)!;
-
-      if ((Number(match[1]) > 0 || options.forbidden === Infinity) && (failures > 0 || options.forbiddenClients?.includes(url.searchParams.get('c')!))) {
-        failures--;
-        return new Response(null, { status: 403 });
-      }
-
-      return new Response(new Uint8Array(Number(match[2]) - Number(match[1]) + (options.missingBytes ? 0 : 1)).fill(url.searchParams.get('c') === 'VISIONOS' ? 9 : 7), { status: 206 });
-    }
-
+      playabilityStatus: { status: 'OK' },
+      videoDetails: { videoId, title: 'Team {meeting} "recording"', author: 'AppFlowy', lengthSeconds: options.duration ?? '120' },
+    })};</script>`, { status: options.watchStatus ?? 200 });
+    if (url.pathname === '/youtubei/v1/player') return Response.json({
+      playabilityStatus: { status: options.playability ?? 'OK' },
+      videoDetails: { videoId },
+      captions: { playerCaptionsTracklistRenderer: {
+        captionTracks: options.tracks ?? [track()], defaultAudioTrackIndex: 0,
+        audioTracks: [{ defaultCaptionTrackIndex: options.defaultCaptionIndex ?? 0 }],
+      } },
+    });
+    if (url.pathname === '/api/timedtext') return new Response(options.captionBody ?? JSON.stringify({ events: [
+      { tStartMs: 0, dDurationMs: 130000, id: 1 },
+      { tStartMs: 1200, dDurationMs: 2300, segs: [{ utf8: 'Welcome ' }, { utf8: 'to our meeting.' }] },
+      { tStartMs: 2000, dDurationMs: 1000, aAppend: 1, segs: [{ utf8: '\n' }] },
+      { tStartMs: 4000, dDurationMs: 1500, segs: [{ utf8: 'Review\nour progress & plans.' }] },
+    ] }), { status: options.captionStatus ?? 200 });
     throw new Error(`Unexpected upstream ${url.origin}${url.pathname}`);
   });
 }
 
-function bridge(fetcher: ReturnType<typeof fakeUpstreams>, action = 'metadata') {
-  return handleYoutubeImport(request(action), { baseURL: cloud, fetcher: fetcher as unknown as typeof fetch });
+function bridge(fetcher: ReturnType<typeof fakeUpstreams>, action = 'metadata', options: Parameters<typeof request>[1] = {}) {
+  return handleYoutubeImport(request(action, options), { baseURL: cloud, fetcher: fetcher as unknown as typeof fetch });
 }
 
-function downloadedAudioUrls(fetcher: ReturnType<typeof fakeUpstreams>) {
-  return fetcher.mock.calls
-    .filter(([input, init]) => String(input).includes('.googlevideo.com') && init?.method !== 'HEAD')
-    .map(([input]) => new URL(String(input)));
+function captionRequests(fetcher: ReturnType<typeof fakeUpstreams>) {
+  return fetcher.mock.calls.filter(([url]) => new URL(String(url)).pathname === '/api/timedtext');
 }
 
-describe('authenticated Flutter YouTube server bridge', () => {
-  it('rejects an unauthenticated or cross-site request before fetching any resource', async () => {
+describe('authenticated YouTube caption import', () => {
+  it('rejects unauthenticated, cross-site and obsolete audio requests without any upstream request', async () => {
     const fetcher = fakeUpstreams();
 
-    expect((await handleYoutubeImport(request('metadata', false), { baseURL: cloud, fetcher: fetcher as unknown as typeof fetch })).status).toBe(401);
-    expect((await handleYoutubeImport(request('metadata', true, { 'sec-fetch-site': 'cross-site' }), { baseURL: cloud, fetcher: fetcher as unknown as typeof fetch })).status).toBe(403);
+    expect((await bridge(fetcher, 'captions', { authenticated: false })).status).toBe(401);
+    expect((await bridge(fetcher, 'captions', { headers: { 'sec-fetch-site': 'cross-site' } })).status).toBe(403);
+    expect((await bridge(fetcher, 'audio', { method: 'POST' })).status).toBe(405);
+    expect((await bridge(fetcher, 'metadata', { method: 'POST' })).status).toBe(405);
     expect(fetcher).not.toHaveBeenCalled();
   });
 
-  it('uses watch-page metadata and keeps the AppFlowy token away from YouTube', async () => {
+  it.each([
+    { url: 'https://youtube.com.attacker.example/watch?v=lr3hNhA0IfQ' },
+    { url: 'http://localhost/private' },
+    { workspace: '../other-workspace' },
+    { language: '../private' },
+  ])('validates user-supplied URL, workspace and language before upstream requests: %p', async (options) => {
+    const fetcher = fakeUpstreams();
+
+    expect((await bridge(fetcher, 'captions', options)).status).toBe(400);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('returns metadata and available caption languages while keeping credentials away from YouTube', async () => {
     const fetcher = fakeUpstreams();
     const response = await bridge(fetcher);
 
-    expect(await response.json()).toMatchObject({ code: 0, data: { videoId, title: 'Team {meeting} "recording"', duration: 120, author: 'AppFlowy' } });
+    expect(await response.json()).toMatchObject({ code: 0, data: {
+      videoId, title: 'Team {meeting} "recording"', author: 'AppFlowy', duration: 120,
+      captionLanguages: [{ code: 'en', isAutoGenerated: false }],
+    } });
     expect(response.headers.get('cache-control')).toBe('private, no-store');
-    const [, cloudOptions] = fetcher.mock.calls[0];
-    const [, youtubeOptions] = fetcher.mock.calls[1];
-
-    expect(new Headers(cloudOptions?.headers).get('authorization')).toBe('Bearer appflowy-session');
-    expect(new Headers(youtubeOptions?.headers).has('authorization')).toBe(false);
-    expect(new Headers(youtubeOptions?.headers).get('cookie')).toContain('SOCS=CAI');
-    expect(youtubeOptions?.redirect).toBe('error');
+    expect(new Headers(fetcher.mock.calls[0][1]?.headers).get('authorization')).toBe('Bearer appflowy-session');
+    expect(fetcher.mock.calls.slice(1).every(([, init]) => !new Headers(init?.headers).has('authorization') && init?.redirect === 'error')).toBe(true);
+    expect(captionRequests(fetcher)).toHaveLength(0);
   });
 
-  it('blocks exhausted usage before making a YouTube request', async () => {
-    const fetcher = fakeUpstreams({ used: 1800 });
-    const response = await bridge(fetcher, 'audio');
-
-    expect(response.status).toBe(403);
-    expect(await response.json()).toMatchObject({ code: 1129, message: 'quotaExceeded' });
-    expect(fetcher).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not contact YouTube if workspace usage cannot be checked', async () => {
+  it('imports text and seconds without transcription allowance, file upload or media download', async () => {
     const fetcher = fakeUpstreams();
-
-    fetcher.mockResolvedValueOnce(Response.json({ code: 0, data: {} }));
-    expect(await (await bridge(fetcher)).json()).toMatchObject({ message: 'usageFailed' });
-    expect(fetcher).toHaveBeenCalledTimes(1);
-  });
-
-  it('retries a transient player failure, then downloads without changing clients', async () => {
-    const fetcher = fakeUpstreams();
-    const upstream = fetcher.getMockImplementation()!;
-    let failed = false;
-
-    fetcher.mockImplementation(async (input, init) => {
-      if (String(input).includes('/player') && !failed) {
-        failed = true;
-        return new Response(null, { status: 503 });
-      }
-
-      return upstream(input, init);
-    });
-    const response = await bridge(fetcher, 'audio');
-
-    expect((await response.arrayBuffer()).byteLength).toBe(chunkSize + 17);
-    expect(fetcher.mock.calls.filter(([input]) => String(input).includes('/player'))).toHaveLength(3);
-  });
-
-  it('checks the whole video against remaining seconds before downloading', async () => {
-    const fetcher = fakeUpstreams({ used: 1741 });
-    const response = await bridge(fetcher, 'audio');
-
-    expect(await response.json()).toMatchObject({ code: 400, message: 'recordingTooLong' });
-    expect(fetcher).toHaveBeenCalledTimes(2);
-  });
-
-  it.each(['45', '14401', '0'])('blocks invalid video duration %s', async (duration) => {
-    const fetcher = fakeUpstreams({ duration, limit: 20000 });
-    const response = await bridge(fetcher, 'audio');
-
-    expect(response.status).toBe(400);
-    expect((await response.json()).message).toBe(duration === '0' ? 'youtubeDurationUnavailable' : 'youtubeDurationOutOfRange');
-  });
-
-  it('streams complete 1 MB ranges and prefers native Android VR over a higher bitrate Android stream', async () => {
-    const fetcher = fakeUpstreams();
-    const response = await bridge(fetcher, 'audio');
-    const bytes = new Uint8Array(await response.arrayBuffer());
-
-    expect(response.headers.get('content-type')).toBe('audio/mp4');
-    expect(Number(response.headers.get('content-length'))).toBe(chunkSize + 17);
-    expect(bytes.length).toBe(chunkSize + 17);
-    expect(bytes.every((byte) => byte === 7)).toBe(true);
-    const chunks = fetcher.mock.calls.filter(([input, init]) => String(input).includes('.googlevideo.com') && init?.method !== 'HEAD');
-
-    expect(chunks).toHaveLength(2);
-    expect(new Headers(chunks[0][1]?.headers).get('range')).toBe(`bytes=0-${chunkSize - 1}`);
-    expect(new Headers(chunks[1][1]?.headers).get('range')).toBe(`bytes=${chunkSize}-${chunkSize + 16}`);
-    expect(chunks.every(([input]) => String(input).includes('c=ANDROID_VR'))).toBe(true);
-    expect(chunks.every(([, init]) => !new Headers(init?.headers).has('authorization'))).toBe(true);
-  });
-
-  it('falls back to the native Android client if Android VR is unavailable', async () => {
-    const fetcher = fakeUpstreams({ vrUnavailable: true, size: 17 });
-    const response = await bridge(fetcher, 'audio');
-
-    expect((await response.arrayBuffer()).byteLength).toBe(17);
-    const chunk = fetcher.mock.calls.find(([input, init]) => String(input).includes('.googlevideo.com') && init?.method !== 'HEAD')!;
-
-    expect(String(chunk[0])).toContain('c=ANDROID');
-  });
-
-  it.each(['en-US', 'es'])('imports the original %s audio instead of a higher-bitrate auto-dub', async (language) => {
-    const trackId = `${language}.4`;
-    const fetcher = fakeUpstreams({ size: 17, tracks: () => [
-      { id: 'pl.10', displayName: 'Polish', audioIsDefault: false, isAutoDubbed: true, bitrate: 131180 },
-      { id: trackId, displayName: `${language} original`, audioIsDefault: true, bitrate: 131176 },
-    ] });
-    const response = await bridge(fetcher, 'audio');
-
-    expect((await response.arrayBuffer()).byteLength).toBe(17);
-    expect(downloadedAudioUrls(fetcher).map((url) => url.searchParams.get('track'))).toEqual([trackId]);
-  });
-
-  it('keeps the original language when falling back to VisionOS', async () => {
-    const fetcher = fakeUpstreams({ size: 17, vrUnavailable: true, androidUnavailable: true, tracks: () => [
-      { id: 'pl.10', displayName: 'Polish', audioIsDefault: false, isAutoDubbed: true, bitrate: 131180 },
-      { id: 'en-US.4', displayName: 'English (US) original', audioIsDefault: true, bitrate: 131176 },
-    ] });
-    const response = await bridge(fetcher, 'audio');
-
-    expect((await response.arrayBuffer()).byteLength).toBe(17);
-    expect(downloadedAudioUrls(fetcher).map((url) => [url.searchParams.get('c'), url.searchParams.get('track')]))
-      .toEqual([['VISIONOS', 'en-US.4']]);
-  });
-
-  it('prefers the original track over another client\'s localized default', async () => {
-    const fetcher = fakeUpstreams({ size: 17, tracks: (client) => client === 'ANDROID_VR' ? [
-      { id: 'fr.1', displayName: 'French', audioIsDefault: true, bitrate: 256000 },
-    ] : [
-      { id: 'en-US.4', displayName: 'English (US) original', audioIsDefault: false, bitrate: 128000 },
-    ] });
-    const response = await bridge(fetcher, 'audio');
-
-    expect((await response.arrayBuffer()).byteLength).toBe(17);
-    expect(downloadedAudioUrls(fetcher).map((url) => url.searchParams.get('track'))).toEqual(['en-US.4']);
-  });
-
-  it('uses the default source track when the original label is absent', async () => {
-    const fetcher = fakeUpstreams({ size: 17, tracks: () => [
-      { id: 'fr.1', displayName: 'French', audioIsDefault: false, bitrate: 256000 },
-      { id: 'en-US.4', displayName: 'English (US)', audioIsDefault: true, bitrate: 128000 },
-    ] });
-    const response = await bridge(fetcher, 'audio');
-
-    expect((await response.arrayBuffer()).byteLength).toBe(17);
-    expect(downloadedAudioUrls(fetcher).map((url) => url.searchParams.get('track'))).toEqual(['en-US.4']);
-  });
-
-  it('tries the fallback client when native clients expose only a default auto-dub', async () => {
-    const fetcher = fakeUpstreams({ size: 17, tracks: (client) => client === 'VISIONOS' ? [
-      { id: 'en-US.4', displayName: 'English (US) original', audioIsDefault: true, bitrate: 128000 },
-    ] : [
-      { id: 'pl.10', displayName: 'Polish', audioIsDefault: true, isAutoDubbed: true, bitrate: 256000 },
-    ] });
-    const response = await bridge(fetcher, 'audio');
-
-    expect((await response.arrayBuffer()).byteLength).toBe(17);
-    expect(downloadedAudioUrls(fetcher).map((url) => [url.searchParams.get('c'), url.searchParams.get('track')]))
-      .toEqual([['VISIONOS', 'en-US.4']]);
-  });
-
-  it('reports a download error when only auto-dubbed tracks are available', async () => {
-    const fetcher = fakeUpstreams({ size: 17, tracks: () => [
-      { id: 'pl.10', displayName: 'Polish', audioIsDefault: true, isAutoDubbed: true, bitrate: 256000 },
-    ] });
-    const response = await bridge(fetcher, 'audio');
-
-    expect(response.status).toBe(400);
-    expect(await response.json()).toMatchObject({ message: 'youtubeDownloadFailed' });
-    expect(downloadedAudioUrls(fetcher)).toEqual([]);
-  });
-
-  it('fails before sending partial audio if refreshing loses the selected source track', async () => {
-    let refreshed = false;
-    const fetcher = fakeUpstreams({ forbidden: 1, tracks: () => [
-      { id: refreshed ? 'fr.4' : 'en-US.4', displayName: refreshed ? 'French original' : 'English original', audioIsDefault: true, bitrate: 128000 },
-    ] });
-    const upstream = fetcher.getMockImplementation()!;
-
-    fetcher.mockImplementation(async (input, init) => {
-      const response = await upstream(input, init);
-
-      if (response.status === 403 && String(input).includes('.googlevideo.com')) refreshed = true;
-      return response;
-    });
-    const response = await bridge(fetcher, 'audio');
-
-    expect(response.status).toBe(502);
-    expect(await response.json()).toMatchObject({ message: 'youtubeDownloadBlocked' });
-    expect(new Set(downloadedAudioUrls(fetcher).map((url) => url.searchParams.get('track')))).toEqual(new Set(['en-US.4']));
-  });
-
-  it('refreshes a forbidden stream URL without duplicating bytes', async () => {
-    const fetcher = fakeUpstreams({ forbidden: 1 });
-    const response = await bridge(fetcher, 'audio');
-
-    expect((await response.arrayBuffer()).byteLength).toBe(chunkSize + 17);
-    expect(fetcher.mock.calls.filter(([input]) => String(input).includes('/player'))).toHaveLength(4);
-  });
-
-  it('bounds stream refreshes and client fallback when all streams are forbidden', async () => {
-    const fetcher = fakeUpstreams({ forbidden: Infinity });
-    const response = await bridge(fetcher, 'audio');
-
-    expect(response.status).toBe(502);
-    expect(await response.json()).toMatchObject({ message: 'youtubeDownloadBlocked' });
-    expect(fetcher.mock.calls.filter(([input]) => String(input).includes('/player'))).toHaveLength(16);
-  });
-
-  it('restarts with the fallback client before sending any partial native audio to the browser', async () => {
-    const fallbackSize = chunkSize * 2 + 31;
-    const fetcher = fakeUpstreams({ vrUnavailable: true, forbiddenClients: ['ANDROID'], fallbackSize });
-    const response = await bridge(fetcher, 'audio');
-    const bytes = new Uint8Array(await response.arrayBuffer());
+    const response = await bridge(fetcher, 'captions');
 
     expect(response.status).toBe(200);
-    expect(Number(response.headers.get('content-length'))).toBe(fallbackSize);
-    expect(bytes.length).toBe(fallbackSize);
-    expect(bytes.every((byte) => byte === 9)).toBe(true);
-    const chunks = fetcher.mock.calls.filter(([input, init]) => String(input).includes('.googlevideo.com') && init?.method !== 'HEAD');
-    const fallback = chunks.filter(([input]) => new URL(String(input)).searchParams.get('c') === 'VISIONOS');
+    expect(await response.json()).toMatchObject({ code: 0, data: {
+      videoId, language: 'en', isAutoGenerated: false,
+      segments: [
+        { text: 'Welcome to our meeting.', start: 1.2, end: 3.5 },
+        { text: 'Review our progress & plans.', start: 4, end: 5.5 },
+      ],
+    } });
+    expect(fetcher.mock.calls.map(([input]) => new URL(String(input)).pathname)).toEqual([
+      '/api/workspace/workspace/usage-and-limit', '/watch', '/youtubei/v1/player', '/api/timedtext',
+    ]);
+    const [input, init] = captionRequests(fetcher)[0];
 
-    expect(chunks.some(([input]) => String(input).includes('c=ANDROID'))).toBe(true);
-    expect(fallback).toHaveLength(3);
-    expect(new URL(String(fallback[0][0])).searchParams.get('range')).toBe(`0-${chunkSize - 1}`);
-    expect(new URL(String(fallback[1][0])).searchParams.get('range')).toBe(`${chunkSize}-${chunkSize * 2 - 1}`);
-    expect(fallback.every(([, init]) => !new Headers(init?.headers).has('range') && !new Headers(init?.headers).has('authorization'))).toBe(true);
-    const fallbackPlayer = fetcher.mock.calls.find(([input, init]) => String(input).includes('/player') && JSON.parse(String(init?.body)).context.client.clientName === 'VISIONOS')!;
-
-    expect(new Headers(fallbackPlayer[1]?.headers).get('x-youtube-client-name')).toBe('101');
-    expect(JSON.parse(String(fallbackPlayer[1]?.body)).context.client.clientId).toBeUndefined();
+    expect(new URL(String(input)).searchParams.get('fmt')).toBe('json3');
+    expect(new Headers(init?.headers).has('authorization')).toBe(false);
   });
 
-  it('does not request the fallback while native audio works', async () => {
+  it('does not impose audio transcription duration limits on caption text', async () => {
+    const fetcher = fakeUpstreams({ duration: '12' });
+
+    expect((await bridge(fetcher, 'captions')).status).toBe(200);
+  });
+
+  it.each([{ usageStatus: 403 }, { usageCode: 1012 }])('verifies workspace access before contacting YouTube: %p', async (options) => {
+    const fetcher = fakeUpstreams(options);
+
+    expect((await (await bridge(fetcher, 'captions')).json()).message).toBe('usageFailed');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('prioritizes the default audio language and manual captions within that language, deduplicating metadata languages', async () => {
+    const fetcher = fakeUpstreams({ tracks: [track('fr'), track('en', true), track('en')], defaultCaptionIndex: 1 });
+    const metadata = await (await bridge(fetcher)).json();
+
+    expect(metadata.data.captionLanguages).toEqual([
+      { code: 'en', name: 'en', isAutoGenerated: false }, { code: 'fr', name: 'fr', isAutoGenerated: false },
+    ]);
+    const data = await (await bridge(fetcher, 'captions')).json();
+
+    expect(data.data).toMatchObject({ language: 'en', isAutoGenerated: false });
+  });
+
+  it.each(['fr', 'fr-CA'])('selects an explicitly requested available language %s without translation', async (language) => {
+    const fetcher = fakeUpstreams({ tracks: [track('en', true), track('fr')] });
+    const result = await (await bridge(fetcher, 'captions', { language })).json();
+
+    expect(result.data.language).toBe('fr');
+    const url = new URL(String(captionRequests(fetcher)[0][0]));
+
+    expect(url.searchParams.get('lang')).toBe('fr');
+    expect(url.searchParams.has('tlang')).toBe(false);
+  });
+
+  it('falls back to an existing default track when the requested language is unavailable', async () => {
     const fetcher = fakeUpstreams();
-    const response = await bridge(fetcher, 'audio');
 
-    await response.arrayBuffer();
-    const clients = fetcher.mock.calls.filter(([input]) => String(input).includes('/player')).map(([, init]) => JSON.parse(String(init?.body)).context.client.clientName);
-
-    expect(clients).toEqual(['ANDROID_VR', 'ANDROID']);
+    expect((await (await bridge(fetcher, 'captions', { language: 'de' })).json()).data.language).toBe('en');
   });
 
-  it('restarts from zero when a refresh changes clients even if the file lengths match', async () => {
-    const fetcher = fakeUpstreams({ forbiddenClients: ['ANDROID_VR'] });
+  it.each([
+    'http://www.youtube.com/api/timedtext',
+    'https://www.youtube.com:8443/api/timedtext',
+    'https://name:secret@www.youtube.com/api/timedtext',
+    'https://www.youtube.com.attacker.example/api/timedtext',
+    'https://www.youtube.com/redirect',
+    'https://rr1.googlevideo.com/videoplayback',
+    'https://127.0.0.1/api/timedtext',
+  ])('never follows a caption URL outside the precise text endpoint: %s', async (base) => {
+    const fetcher = fakeUpstreams({ tracks: [track('en', false, `${base}?v=${videoId}&lang=en`)] });
+
+    expect((await (await bridge(fetcher, 'captions')).json()).message).toBe('youtubeCaptionsUnavailable');
+    expect(captionRequests(fetcher)).toHaveLength(0);
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en&tlang=fr`,
+    'https://www.youtube.com/api/timedtext?v=otherVideo1&lang=en',
+    `https://www.youtube.com/api/timedtext?v=${videoId}&lang=fr`,
+  ])('rejects translated or mismatched track URLs: %s', async (url) => {
+    const fetcher = fakeUpstreams({ tracks: [track('en', false, url)] });
+
+    expect((await (await bridge(fetcher, 'captions')).json()).message).toBe('youtubeCaptionsUnavailable');
+    expect(captionRequests(fetcher)).toHaveLength(0);
+  });
+
+  it.each([403, 429])('reports upstream blocking (%s) distinctly', async (captionStatus) => {
+    const fetcher = fakeUpstreams({ captionStatus });
+
+    expect(await (await bridge(fetcher, 'captions')).json()).toMatchObject({ message: 'youtubeCaptionsBlocked' });
+  });
+
+  it('reports a bot-gated player as blocked without requesting caption URLs', async () => {
+    const fetcher = fakeUpstreams({ playability: 'LOGIN_REQUIRED' });
+
+    expect((await (await bridge(fetcher, 'captions')).json()).message).toBe('youtubeCaptionsBlocked');
+    expect(captionRequests(fetcher)).toHaveLength(0);
+  });
+
+  it.each([{ tracks: [] }, { captionBody: '' }, { captionBody: '{"events":[]}' }])('reports missing or empty captions instead of falling back to media: %p', async (options) => {
+    const fetcher = fakeUpstreams(options);
+
+    expect((await (await bridge(fetcher, 'captions')).json()).message).toBe('youtubeCaptionsUnavailable');
+  });
+
+  it.each([
+    '<html>upstream error</html>',
+    '{"events":[{"tStartMs":-1,"dDurationMs":100,"segs":[{"utf8":"text"}]}]}',
+    '{"events":[{"tStartMs":1e999,"dDurationMs":100,"segs":[{"utf8":"text"}]}]}',
+    '{"events":[{"tStartMs":1,"dDurationMs":-100,"segs":[{"utf8":"text"}]}]}',
+    '{"events":[{"tStartMs":1,"dDurationMs":100,"segs":[{"utf8":123}]}]}',
+    '{"events":[{"tStartMs":1,"segs":[{"utf8":"text"}]}]}',
+  ])('rejects malformed captions and invalid timestamps (%#)', async (captionBody) => {
+    const fetcher = fakeUpstreams({ captionBody });
+
+    expect((await (await bridge(fetcher, 'captions')).json()).message).toBe('youtubeCaptionsFailed');
+  });
+
+  it('rejects excessive text and cue counts', async () => {
+    for (const events of [
+      [{ tStartMs: 0, dDurationMs: 1, segs: [{ utf8: 'x'.repeat(1_000_001) }] }],
+      Array.from({ length: 25_001 }, (_, index) => ({ tStartMs: index, dDurationMs: 1, segs: [{ utf8: 'text' }] })),
+    ]) {
+      const fetcher = fakeUpstreams({ captionBody: JSON.stringify({ events }) });
+
+      expect((await (await bridge(fetcher, 'captions')).json()).message).toBe('youtubeCaptionsFailed');
+    }
+  });
+
+  it('cancels an oversized caption body while reading it', async () => {
+    const fetcher = fakeUpstreams();
     const upstream = fetcher.getMockImplementation()!;
-    let vrPlayers = 0;
+    const cancel = jest.fn();
+
+    fetcher.mockImplementation(async (input, init) => new URL(String(input)).pathname === '/api/timedtext' ?
+      new Response(new ReadableStream({ pull(controller) { controller.enqueue(new Uint8Array(1024 * 1024)); }, cancel })) :
+      upstream(input, init));
+    expect((await (await bridge(fetcher, 'captions')).json()).message).toBe('youtubeCaptionsFailed');
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('forbids redirects to arbitrary hosts', async () => {
+    const fetcher = fakeUpstreams({ captionStatus: 302 });
+
+    expect((await (await bridge(fetcher, 'captions')).json()).message).toBe('youtubeCaptionsFailed');
+    expect(captionRequests(fetcher)[0][1]?.redirect).toBe('error');
+  });
+
+  it('cancels caption body reading when the client disconnects', async () => {
+    const controller = new AbortController();
+    const fetcher = fakeUpstreams();
+    const upstream = fetcher.getMockImplementation()!;
+    const cancel = jest.fn();
 
     fetcher.mockImplementation(async (input, init) => {
-      const url = new URL(String(input));
-
-      if (url.pathname.includes('/player') && JSON.parse(String(init?.body)).context.client.clientName === 'ANDROID_VR' && ++vrPlayers > 1)
-        return Response.json({ playabilityStatus: { status: 'LOGIN_REQUIRED' } });
-      const response = await upstream(input, init);
-
-      if (url.hostname.endsWith('.googlevideo.com') && url.searchParams.get('c') === 'ANDROID' && init?.method !== 'HEAD' && response.ok)
-        return new Response(new Uint8Array(await response.arrayBuffer()).fill(8), { status: 206 });
-      return response;
+      if (new URL(String(input)).pathname !== '/api/timedtext') return upstream(input, init);
+      return new Response(new ReadableStream({ pull() { controller.abort(); }, cancel }));
     });
-    const response = await bridge(fetcher, 'audio');
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    const chunks = fetcher.mock.calls.filter(([input, init]) => new URL(String(input)).searchParams.get('c') === 'ANDROID' && init?.method !== 'HEAD');
-
-    expect(bytes.length).toBe(chunkSize + 17);
-    expect(bytes.every((byte) => byte === 8)).toBe(true);
-    expect(new Headers(chunks[0][1]?.headers).get('range')).toBe(`bytes=0-${chunkSize - 1}`);
-  });
-
-  it('reports YouTube access restrictions when all clients require sign-in', async () => {
-    const fetcher = fakeUpstreams({ vrUnavailable: true, androidUnavailable: true, fallbackUnavailable: true });
-    const response = await bridge(fetcher, 'audio');
+    const response = await bridge(fetcher, 'captions', { signal: controller.signal });
 
     expect(response.status).toBe(502);
-    expect(await response.json()).toMatchObject({ message: 'youtubeDownloadBlocked' });
-    expect(fetcher.mock.calls.some(([input]) => String(input).includes('.googlevideo.com'))).toBe(false);
-  });
-
-  it('checks the fallback stream against the upload limit before downloading it', async () => {
-    const fetcher = fakeUpstreams({ vrUnavailable: true, androidUnavailable: true, size: 17, fallbackSize: 100, uploadLimit: 99 });
-    const response = await bridge(fetcher, 'audio');
-
-    expect(await response.json()).toMatchObject({ message: 'fileTooLarge', data: { max_bytes: 99 } });
-    expect(fetcher.mock.calls.some(([input, init]) => String(input).includes('.googlevideo.com') && init?.method !== 'HEAD')).toBe(false);
-  });
-
-  it('enforces the workspace upload limit before requesting audio bytes', async () => {
-    const fetcher = fakeUpstreams({ size: 100, uploadLimit: 99 });
-    const response = await bridge(fetcher, 'audio');
-
-    expect(await response.json()).toMatchObject({ message: 'fileTooLarge', data: { max_bytes: 99 } });
-    expect(fetcher.mock.calls.some(([input, init]) => String(input).includes('.googlevideo.com') && init?.method !== 'HEAD')).toBe(false);
-  });
-
-  it('rejects stream URLs outside the YouTube CDN', async () => {
-    const fetcher = fakeUpstreams({ invalidStream: true });
-    const response = await bridge(fetcher, 'audio');
-
-    expect(await response.json()).toMatchObject({ message: 'youtubeDownloadFailed' });
-    expect(fetcher.mock.calls.some(([input]) => String(input).includes('127.0.0.1'))).toBe(false);
-  });
-
-  it('rejects incomplete range responses instead of uploading corrupted audio', async () => {
-    const response = await bridge(fakeUpstreams({ missingBytes: true }), 'audio');
-
-    expect(await response.json()).toMatchObject({ message: 'youtubeDownloadFailed' });
-  });
-
-  it('reports an unavailable/private video as a metadata error', async () => {
-    const response = await bridge(fakeUpstreams({ unavailable: true }));
-
-    expect(await response.json()).toMatchObject({ message: 'youtubeMetadataFailed' });
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(captionRequests(fetcher)).toHaveLength(1);
   });
 });
+
+const liveTest = process.env.RUN_YOUTUBE_CAPTION_LIVE_TEST === '1' ? it : it.skip;
+
+liveTest('retrieves real caption text for the reported YouTube video without requesting media', async () => {
+  const paths: string[] = [];
+  const textOnlyFetch: typeof fetch = async (input, init) => {
+    const url = new URL(String(input));
+
+    // Fail before fetching if a future implementation attempts a media download.
+    expect(url.origin).toBe('https://www.youtube.com');
+    expect(['/watch', '/youtubei/v1/player', '/api/timedtext']).toContain(url.pathname);
+    expect(new Headers(init?.headers).has('authorization')).toBe(false);
+    paths.push(url.pathname);
+    return fetch(input, init);
+  };
+
+  const repository = new YoutubeCaptionRepository('https://www.youtube.com/watch?v=W2zbKF5z1cs&list=RDW2zbKF5z1cs&start_radio=1', textOnlyFetch);
+  const signal = AbortSignal.timeout(60_000);
+  const metadata = await repository.metadata(signal);
+  const transcript = await repository.captions(signal);
+
+  expect(metadata.videoId).toBe('W2zbKF5z1cs');
+  expect(metadata.captionLanguages?.length).toBeGreaterThan(0);
+  expect(transcript.language).toBe('en');
+  expect(transcript.segments.length).toBeGreaterThan(0);
+  expect(transcript.segments.every((cue) => cue.text.trim() && Number.isFinite(cue.start) && Number.isFinite(cue.end) && cue.start >= 0 && cue.end >= cue.start)).toBe(true);
+  expect(paths).toEqual(['/watch', '/youtubei/v1/player', '/api/timedtext']);
+}, 65_000);

@@ -89,7 +89,7 @@ beforeEach(() => {
   mockImporter = {
     workspaceId: 'workspace', reportError: jest.fn(), available: true, busy: false, stage: 'idle', progress: undefined, error: undefined, errorCode: undefined,
     message: '', usage: undefined, quotaExceeded: false, errorDismissed: false, showPromotion: false, dismissPromotion: jest.fn(),
-    dismissError: jest.fn(), canRetry: false, retry: jest.fn(async () => undefined), importSource: jest.fn(async () => undefined),
+    dismissError: jest.fn(), canRetry: false, retry: jest.fn(async () => undefined), importSource: jest.fn(async () => undefined), importCaptions: jest.fn(),
     cancel: jest.fn(async () => undefined), language: 'en', setLanguage: jest.fn(),
   };
 });
