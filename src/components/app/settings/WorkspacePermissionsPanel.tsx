@@ -1,5 +1,6 @@
 import { Check, Plus } from 'lucide-react';
 import { useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
+import type { MutableRefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { validate as isUuid } from 'uuid';
@@ -27,6 +28,14 @@ import {
 import { GroupSpaceCoverageSummary } from '@/components/app/settings/GroupSpaceCoverageControl';
 import { WorkspaceGroupIcon } from '@/components/app/share/WorkspaceGroupIcon';
 import { WorkspaceMemberInlineSearchInput } from '@/components/app/share/WorkspaceMemberInlineSearch';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -48,6 +57,31 @@ const SELECTION_PAGE_LIMIT = 200;
 /** Rosters are bounded by workspace membership; the cap only stops a cursor that never ends. */
 const SELECTION_PAGE_CAP = 100;
 const MAX_CANDIDATES = 8;
+
+/** How many people a policy lets create spaces, from fewest to most. */
+const POLICY_REACH: Record<WorkspaceSpaceCreationPolicy, number> = {
+  owners_only: 0,
+  owners_and_selected_members: 1,
+  members_and_owners: 2,
+};
+
+type PolicyChange = { from: WorkspaceSpaceCreationPolicy; to: WorkspaceSpaceCreationPolicy };
+
+/** A change that takes the ability away from someone; it is confirmed before it is saved. */
+function restrictsCreation({ from, to }: PolicyChange): boolean {
+  return POLICY_REACH[to] < POLICY_REACH[from];
+}
+
+/** Who loses the ability with a narrowing change. */
+function restrictDescriptionKey({ from, to }: PolicyChange) {
+  if (from === 'members_and_owners') {
+    return to === SELECTED_MODE
+      ? 'workspacePermissions.restrictMembersToSelected'
+      : 'workspacePermissions.restrictMembersToOwners';
+  }
+
+  return 'workspacePermissions.restrictSelectedToOwners';
+}
 
 function revisionKey(revision: WorkspacePermissionRevision): string {
   return `${revision.epoch}:${revision.counter}`;
@@ -193,6 +227,9 @@ function SpaceCreationSettings({
   const basis = revisionKey(capability.revision);
   const [saving, setSaving] = useState<WorkspaceSpaceCreationPolicy>();
   const [saved, setSaved] = useState<{ policy: WorkspaceSpaceCreationPolicy; basis: string }>();
+  const [confirming, setConfirming] = useState<PolicyChange>();
+  // The card that asked; focus goes back to it when the question closes.
+  const confirmOrigin = useRef<HTMLElement | null>(null);
   const savingRef = useRef(false);
   const undoPolicy = useRef<(previous: WorkspaceSpaceCreationPolicy) => Promise<void>>();
   // A confirmed save stays visible until the capability reports a newer revision.
@@ -234,7 +271,24 @@ function SpaceCreationSettings({
   };
 
   // Undo may run after newer renders (or after leaving the panel); it always uses the latest state.
+  // It puts back what was there a moment ago, so it is not confirmed again.
   undoPolicy.current = (previous: WorkspaceSpaceCreationPolicy) => choosePolicy(previous, false);
+
+  // Letting more people create spaces applies right away (with Undo); taking the ability away from
+  // someone asks first.
+  const requestPolicy = (next: WorkspaceSpaceCreationPolicy, origin: HTMLElement) => {
+    if (savingRef.current || !canManage || stale || next === policy) return;
+    if (next === SELECTED_MODE && !selectedSupported) return;
+    const change = { from: policy, to: next };
+
+    if (restrictsCreation(change)) {
+      confirmOrigin.current = origin;
+      setConfirming(change);
+      return;
+    }
+
+    void choosePolicy(next);
+  };
 
   return (
     <SettingsSection title={t('workspacePermissions.createSpaces')}>
@@ -259,10 +313,21 @@ function SpaceCreationSettings({
           saving={saving}
           disabled={!canManage || stale || saving !== undefined}
           selectedSupported={selectedSupported}
-          onSelect={(next) => void choosePolicy(next)}
+          onSelect={requestPolicy}
         />
         {!canManage && <p className='text-sm text-text-secondary'>{t('workspacePermissions.ownerRequired')}</p>}
       </div>
+      {confirming && (
+        <RestrictPolicyConfirm
+          change={confirming}
+          returnFocusTo={confirmOrigin}
+          onCancel={() => setConfirming(undefined)}
+          onConfirm={() => {
+            setConfirming(undefined);
+            void choosePolicy(confirming.to);
+          }}
+        />
+      )}
       {rosterEnabled &&
         (policy === SELECTED_MODE ? (
           <SelectedCreators capability={capability} roster={roster} disabled={stale} />
@@ -275,6 +340,59 @@ function SpaceCreationSettings({
           )
         ))}
     </SettingsSection>
+  );
+}
+
+/** Same confirmation pattern as giving a group access to all spaces (People > Groups). */
+function RestrictPolicyConfirm({
+  change,
+  returnFocusTo,
+  onCancel,
+  onConfirm,
+}: {
+  change: PolicyChange;
+  returnFocusTo: MutableRefObject<HTMLElement | null>;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <AlertDialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onCancel();
+      }}
+    >
+      <AlertDialogContent
+        className='w-[440px] max-w-[calc(100%-2rem)] gap-5 rounded-400 border-0 bg-surface-primary p-5'
+        data-testid='space-creation-restrict-confirmation'
+        showCloseButton
+        closeLabel={t('button.close')}
+        // Radix returns focus only to its own trigger; this dialog opens from a policy card.
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          if (returnFocusTo.current?.isConnected) returnFocusTo.current.focus();
+        }}
+      >
+        <AlertDialogHeader className='gap-3 pr-8 text-left'>
+          <AlertDialogTitle className='text-base font-bold leading-[22px] text-text-primary'>
+            {t('workspacePermissions.restrictTitle')}
+          </AlertDialogTitle>
+          <AlertDialogDescription className='text-sm leading-5 text-text-primary'>
+            {t(restrictDescriptionKey(change))}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter className='gap-3'>
+          <Button type='button' variant='outline' onClick={onCancel} data-testid='space-creation-restrict-cancel'>
+            {t('button.cancel')}
+          </Button>
+          <Button type='button' onClick={onConfirm} data-testid='space-creation-restrict-confirm'>
+            {t('workspacePermissions.restrictConfirm')}
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
@@ -291,7 +409,7 @@ function PolicyCards({
   saving?: WorkspaceSpaceCreationPolicy;
   disabled: boolean;
   selectedSupported: boolean;
-  onSelect: (policy: WorkspaceSpaceCreationPolicy) => void;
+  onSelect: (policy: WorkspaceSpaceCreationPolicy, card: HTMLElement) => void;
 }) {
   const { t } = useTranslation();
   const baseId = useId();
@@ -317,7 +435,7 @@ function PolicyCards({
             aria-labelledby={titleId}
             aria-describedby={descriptionId}
             disabled={disabled || unavailable}
-            onClick={() => onSelect(option)}
+            onClick={(event) => onSelect(option, event.currentTarget)}
             data-testid={`space-creation-policy-${option}`}
             className={cn(
               'relative flex flex-col items-start gap-1.5 rounded-400 border px-3 py-3 pr-8 text-left transition-colors lg:min-h-[88px]',

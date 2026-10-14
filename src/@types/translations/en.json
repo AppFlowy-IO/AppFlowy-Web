@@ -103,7 +103,12 @@
     "invalidRequest": "This change couldn't be sent. Try again.",
     "invalidResponse": "Couldn't load space creation settings. Try again.",
     "changeNotConfirmed": "We couldn't confirm that your change was saved. Check the current settings and try again.",
-    "sidebarWorkspaceMembers": "Workspace members who can edit"
+    "sidebarWorkspaceMembers": "Workspace members who can edit",
+    "restrictTitle": "Change who can create spaces?",
+    "restrictMembersToOwners": "Members won't be able to create new spaces. Existing spaces aren't affected.",
+    "restrictMembersToSelected": "Members who aren't selected won't be able to create new spaces. Existing spaces aren't affected.",
+    "restrictSelectedToOwners": "Selected members and groups won't be able to create new spaces. Existing spaces aren't affected.",
+    "restrictConfirm": "Change"
   },
   "databaseViewCreation": {
     "onlineRequired": "Connect to the internet to create Form or Chart views.",

@@ -106,7 +106,12 @@
     "invalidRequest": "Cette modification n’a pas pu être envoyée. Réessayez.",
     "invalidResponse": "Impossible de charger les paramètres de création d’espaces. Réessayez.",
     "changeNotConfirmed": "Nous n’avons pas pu confirmer l’enregistrement de votre modification. Vérifiez les paramètres actuels et réessayez.",
-    "sidebarWorkspaceMembers": "Membres de l’espace de travail pouvant modifier"
+    "sidebarWorkspaceMembers": "Membres de l’espace de travail pouvant modifier",
+    "restrictTitle": "Modifier qui peut créer des espaces ?",
+    "restrictMembersToOwners": "Les membres ne pourront plus créer de nouveaux espaces. Les espaces existants ne sont pas concernés.",
+    "restrictMembersToSelected": "Les membres non sélectionnés ne pourront plus créer de nouveaux espaces. Les espaces existants ne sont pas concernés.",
+    "restrictSelectedToOwners": "Les membres et groupes sélectionnés ne pourront plus créer de nouveaux espaces. Les espaces existants ne sont pas concernés.",
+    "restrictConfirm": "Modifier"
   },
   "appName": "AppFlowy",
   "defaultUsername": "Moi",

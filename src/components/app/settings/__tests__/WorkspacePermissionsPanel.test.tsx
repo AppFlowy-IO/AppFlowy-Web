@@ -232,6 +232,74 @@ describe('workspace permission settings', () => {
     expect(toastSuccess).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['members_and_owners', 'owners_only', 'workspacePermissions.restrictMembersToOwners'],
+    ['members_and_owners', 'owners_and_selected_members', 'workspacePermissions.restrictMembersToSelected'],
+    ['owners_and_selected_members', 'owners_only', 'workspacePermissions.restrictSelectedToOwners'],
+  ] as const)('asks before going from %s to the narrower %s, and saves only after Change', async (from, to, body) => {
+    current.policy = from;
+    mount();
+    fireEvent.click(await screen.findByTestId(`space-creation-policy-${to}`));
+    const dialog = await screen.findByRole('alertdialog');
+
+    expect(within(dialog).getByText('workspacePermissions.restrictTitle')).toBeTruthy();
+    // The body names who loses the ability.
+    expect(within(dialog).getByText(body)).toBeTruthy();
+    expect(mockPolicy).not.toHaveBeenCalled();
+    expect(policyCard(from).getAttribute('aria-pressed')).toBe('true');
+    expect(policyCard(to).getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'workspacePermissions.restrictConfirm' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(mockPolicy).toHaveBeenCalledWith(workspaceId, to);
+    await waitFor(() =>
+      expect(toastSuccess).toHaveBeenCalledWith(
+        'workspacePermissions.policyUpdated',
+        expect.objectContaining({ action: expect.objectContaining({ label: 'workspacePermissions.undo' }) })
+      )
+    );
+    await waitFor(() => expect(policyCard(to).getAttribute('aria-pressed')).toBe('true'));
+  });
+
+  it.each(['cancel', 'escape'])('keeps the policy and sends nothing when the narrower choice is dismissed (%s)', async (how) => {
+    current.policy = 'members_and_owners';
+    mount();
+    const narrower = await screen.findByTestId('space-creation-policy-owners_only');
+
+    act(() => narrower.focus());
+    fireEvent.click(narrower);
+    const dialog = await screen.findByRole('alertdialog');
+
+    if (how === 'cancel') {
+      fireEvent.click(within(dialog).getByRole('button', { name: 'button.cancel' }));
+    } else {
+      fireEvent.keyDown(dialog, { key: 'Escape' });
+    }
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(mockPolicy).not.toHaveBeenCalled();
+    expect(policyCard('members_and_owners').getAttribute('aria-pressed')).toBe('true');
+    // Focus goes back to the card that opened the question.
+    await waitFor(() => expect(document.activeElement).toBe(policyCard('owners_only')));
+  });
+
+  it.each([
+    ['owners_only', 'members_and_owners'],
+    ['owners_only', 'owners_and_selected_members'],
+    ['owners_and_selected_members', 'members_and_owners'],
+  ] as const)('lets more people create spaces right away (%s to %s), with Undo', async (from, to) => {
+    current.policy = from;
+    mount();
+    fireEvent.click(await screen.findByTestId(`space-creation-policy-${to}`));
+    expect(mockPolicy).toHaveBeenCalledWith(workspaceId, to);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    await waitFor(() =>
+      expect(toastSuccess).toHaveBeenCalledWith(
+        'workspacePermissions.policyUpdated',
+        expect.objectContaining({ action: expect.objectContaining({ label: 'workspacePermissions.undo' }) })
+      )
+    );
+  });
+
   it('undo in the policy toast restores the previous policy', async () => {
     mount();
     fireEvent.click(await screen.findByTestId('space-creation-policy-members_and_owners'));
@@ -240,6 +308,8 @@ describe('workspace permission settings', () => {
 
     await waitFor(() => expect(policyCard('members_and_owners').getAttribute('aria-pressed')).toBe('true'));
     await act(async () => options.action.onClick());
+    // Undo puts back what was there a moment ago, so it does not ask again.
+    expect(screen.queryByRole('alertdialog')).toBeNull();
     await waitFor(() => expect(mockPolicy).toHaveBeenLastCalledWith(workspaceId, 'owners_only'));
     await waitFor(() => expect(toastSuccess).toHaveBeenCalledTimes(2));
     // Undoing an undo is not offered.
