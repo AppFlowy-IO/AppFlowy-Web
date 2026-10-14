@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { TabLabel, Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 
 import type { TFunction } from 'i18next';
@@ -301,7 +301,7 @@ function VisibilityCards({
             )}
             <div className='flex w-full items-center gap-2'>
               <VisibilityIcon visibility={option} className='h-4 w-4' />
-              <span className='font-medium text-text-primary'>{spaceVisibilityLabel(option, t)}</span>
+              <span className='text-sm font-medium text-text-primary'>{spaceVisibilityLabel(option, t)}</span>
             </div>
             <span className='text-xs leading-4 text-text-secondary'>{spaceVisibilityDescription(option, t)}</span>
           </button>
@@ -338,10 +338,10 @@ function PermissionPrincipalRow({
     >
       <div className='flex h-8 w-8 shrink-0 items-center justify-center rounded-300 bg-fill-content-hover'>{icon}</div>
       <div className='min-w-0 flex-1'>
-        <div id={titleId} className='font-medium text-text-primary'>
+        <div id={titleId} className='text-sm font-medium text-text-primary'>
           {title}
         </div>
-        <div className={cn('text-sm text-text-secondary', wrapDescription ? 'break-words' : 'truncate')}>
+        <div className={cn('text-xs text-text-secondary', wrapDescription ? 'break-words' : 'truncate')}>
           {description}
         </div>
       </div>
@@ -436,8 +436,8 @@ const PublicAccessCard = memo(function PublicAccessCard({
     <section className='flex flex-col gap-3' data-testid='manage-space-public-access-card'>
       <div className='rounded-400 border border-border-primary'>
         <div className='flex flex-col gap-1 border-b border-border-primary px-4 py-3'>
-          <div className='font-medium text-text-primary'>{t('space.permissionManager.publicAccessTitle')}</div>
-          <div className='text-sm text-text-secondary'>{t('space.permissionManager.publicAccessDescription')}</div>
+          <div className='text-sm font-medium text-text-primary'>{t('space.permissionManager.publicAccessTitle')}</div>
+          <div className='text-xs text-text-secondary'>{t('space.permissionManager.publicAccessDescription')}</div>
         </div>
         <PermissionPrincipalRow
           icon={<Shield className='h-5 w-5 text-icon-primary' />}
@@ -511,8 +511,8 @@ const CustomPermissionsCard = memo(function CustomPermissionsCard({
   return (
     <section className='rounded-400 border border-border-primary' data-testid='manage-space-custom-permissions-card'>
       <div className='flex flex-col gap-1 border-b border-border-primary px-4 py-3'>
-        <div className='font-medium text-text-primary'>{t('space.permissionManager.customPermissionsTitle')}</div>
-        <div className='text-sm text-text-secondary'>{t('space.permissionManager.customPermissionsDescription')}</div>
+        <div className='text-sm font-medium text-text-primary'>{t('space.permissionManager.customPermissionsTitle')}</div>
+        <div className='text-xs text-text-secondary'>{t('space.permissionManager.customPermissionsDescription')}</div>
       </div>
       <PermissionPrincipalRow
         icon={<Shield className='h-5 w-5 text-icon-primary' />}
@@ -570,8 +570,8 @@ const PrivateAccessCard = memo(function PrivateAccessCard() {
   return (
     <section className='rounded-400 border border-border-primary' data-testid='manage-space-private-access-card'>
       <div className='flex flex-col gap-1 border-b border-border-primary px-4 py-3'>
-        <div className='font-medium text-text-primary'>{t('space.permissionManager.privateAccessTitle')}</div>
-        <div className='text-sm text-text-secondary'>{t('space.permissionManager.privateAccessDescription')}</div>
+        <div className='text-sm font-medium text-text-primary'>{t('space.permissionManager.privateAccessTitle')}</div>
+        <div className='text-xs text-text-secondary'>{t('space.permissionManager.privateAccessDescription')}</div>
       </div>
       <PermissionPrincipalRow
         icon={<Shield className='h-5 w-5 text-icon-primary' />}
@@ -621,7 +621,8 @@ const PrivateMembersContent = memo(function PrivateMembersContent({
         style={{ gridTemplateColumns: 'minmax(0, 1fr) 220px' }}
       >
         <span>{t('space.permissionManager.name')}</span>
-        <span className='text-right'>{t('space.permissionManager.role')}</span>
+        {/* The value below has 8px of padding; the header ends where the value does. */}
+        <span className='pr-2 text-right'>{t('space.permissionManager.role')}</span>
       </div>
       <div className='flex items-center gap-3 border-b border-border-primary py-3' data-testid='private-space-owner-row'>
         <Avatar size='md'>
@@ -840,11 +841,11 @@ function SpaceSettingsPanel({
       >
         <TabsList>
           <TabsTrigger value='general' disabled={primaryActionLoading}>
-            {t('space.permissionManager.generalTab')}
+            <TabLabel>{t('space.permissionManager.generalTab')}</TabLabel>
           </TabsTrigger>
           {membersTabVisible && (
             <TabsTrigger value='members' disabled={membersTabDisabled || primaryActionLoading}>
-              {t('space.permissionManager.membersTab')}
+              <TabLabel>{t('space.permissionManager.membersTab')}</TabLabel>
             </TabsTrigger>
           )}
         </TabsList>
@@ -853,7 +854,8 @@ function SpaceSettingsPanel({
           <SettingsScrollArea scrollRef={setContainer}>
             <div className='flex flex-col gap-6 py-2'>
               <div className='flex flex-col gap-2'>
-                <div className='text-sm font-medium text-text-secondary'>{t('space.spaceName')}</div>
+                {/* Both parts of the form are headed alike: the name and the access. */}
+                <div className='text-base font-semibold text-text-primary'>{t('space.spaceName')}</div>
                 <div className='flex items-center gap-3'>
                   {container && (
                     <SpaceIconButton
@@ -885,10 +887,10 @@ function SpaceSettingsPanel({
               <section className='flex flex-col gap-3'>
                 <div className='flex items-center justify-between gap-3'>
                   <div className='flex min-w-0 flex-col gap-1'>
-                    <div className='text-sm font-semibold text-text-primary'>
+                    <div className='text-base font-semibold text-text-primary'>
                       {t('space.permissionManager.spaceAccess')}
                     </div>
-                    <div className='text-xs text-text-secondary'>
+                    <div className='text-sm text-text-secondary'>
                       {t('space.permissionManager.spaceAccessDescription')}
                     </div>
                   </div>

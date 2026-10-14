@@ -290,6 +290,7 @@ jest.mock('@/components/ui/tabs', () => {
     ),
     TabsContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
     TabsList: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    TabLabel: ({ children }: { children: ReactNode }) => <>{children}</>,
     TabsTrigger: ({ children, disabled, value }: { children: ReactNode; disabled?: boolean; value: string }) => {
       const tabs = React.useContext(TabsContext);
 
@@ -804,6 +805,20 @@ describe('ManageSpace ACL management', () => {
       expect(screen.queryByTestId('space-member-overrides-description')).toBeNull();
       expect(screen.queryByText(/space\.memberOverride\.(defaultAccess|assignmentAccess|inherit\b)/)).toBeNull();
       expect(screen.getAllByText('space.memberOverride.explanation')).toHaveLength(1);
+    });
+
+    it('lines the Access and Role headers up with the end of the menus below them', async () => {
+      const member = assignedMember();
+
+      mockGetSpacePermission.mockResolvedValue(supportedPermission());
+      mockGetSpaceMembers.mockResolvedValue({ members: [member], groups: [] });
+      await openMembersTab();
+      await screen.findByTestId(`space-member-access-${member.uid}`);
+      const header = screen.getByTestId('space-member-table-header');
+
+      // The menus are ghost buttons with 8px of padding after their chevron; the headers end there too.
+      expect((header.children[1] as HTMLElement).className.split(/\s+/)).toContain('pr-2');
+      expect((header.children[2] as HTMLElement).className.split(/\s+/)).toContain('pr-2');
     });
 
     // jsdom has no layout, so this pins the rule that keeps the columns apart:

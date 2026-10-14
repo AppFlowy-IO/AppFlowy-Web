@@ -303,6 +303,7 @@ jest.mock('@/components/ui/tabs', () => {
       return tabs.value === value ? <div>{children}</div> : null;
     },
     TabsList: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    TabLabel: ({ children }: { children: ReactNode }) => <>{children}</>,
     TabsTrigger: ({ children, disabled, value }: { children: ReactNode; disabled?: boolean; value: string }) => {
       const tabs = React.useContext(TabsContext);
 

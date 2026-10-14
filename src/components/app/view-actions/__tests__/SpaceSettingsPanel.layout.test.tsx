@@ -183,4 +183,43 @@ describe('space settings dialog layout', () => {
 
     expect(classes(footer)).toContain('overflow-y-auto');
   });
+
+  it('gives each tab a padded label with a hover fill, like the other tabs in the app', () => {
+    render(<Panel />);
+    for (const tab of screen.getAllByRole('tab')) {
+      expect(classes(tab.firstElementChild)).toEqual(
+        expect.arrayContaining(['px-1.5', 'py-1', 'hover:bg-fill-content-hover'])
+      );
+    }
+  });
+
+  it('keeps section headings above card and row titles in size', () => {
+    render(<Panel />);
+    const heading = ['text-base', 'font-semibold', 'text-text-primary'];
+
+    expect(classes(screen.getByText('space.spaceName'))).toEqual(expect.arrayContaining(heading));
+    expect(classes(screen.getByText('space.permissionManager.spaceAccess'))).toEqual(expect.arrayContaining(heading));
+    expect(classes(screen.getByText('space.permissionManager.spaceAccessDescription'))).toContain('text-sm');
+
+    const card = screen.getByTestId('manage-space-custom-permissions-card');
+
+    expect(classes(within(card).getByText('space.permissionManager.customPermissionsTitle'))).toEqual(
+      expect.arrayContaining(['text-sm', 'font-medium'])
+    );
+    expect(classes(within(card).getByText('space.permissionManager.customPermissionsDescription'))).toContain('text-xs');
+    expect(classes(within(card).getByText('space.permissionManager.owners'))).toEqual(
+      expect.arrayContaining(['text-sm', 'font-medium'])
+    );
+    expect(classes(within(card).getByText('space.permissionManager.ownersDescription'))).toContain('text-xs');
+    expect(classes(screen.getByText('workspacePermissions.sidebarPolicy'))).toEqual(
+      expect.arrayContaining(['text-sm', 'font-medium'])
+    );
+    expect(classes(screen.getByText('space.customPermission'))).toEqual(expect.arrayContaining(['text-sm', 'font-medium']));
+  });
+
+  it('lines the Role header of a private space up with the end of its value', () => {
+    render(<Panel tab='members' visibility={SpaceVisibility.Private} />);
+    // The value has 8px of padding, so the header gets the same.
+    expect(classes(screen.getByText('space.permissionManager.role'))).toContain('pr-2');
+  });
 });

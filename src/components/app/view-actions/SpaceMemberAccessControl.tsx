@@ -90,12 +90,15 @@ export function spaceMemberExtraAccessNote(extra: ExtraSpaceAccess, t: TFunction
   return t(EXTRA_ACCESS_KEYS[extra.level], { source: sourceText, ...noEscape });
 }
 
-/** Column header with the one explanation of how per-person access works. */
+/**
+ * Column header with the one explanation of how per-person access works. The menus below it are
+ * ghost buttons with 8px of padding after the chevron; the header ends where they do.
+ */
 export function SpaceMemberAccessHeader() {
   const { t } = useTranslation();
 
   return (
-    <div className='flex min-w-0 justify-end'>
+    <div className='flex min-w-0 justify-end pr-2'>
       <Tooltip>
         <TooltipTrigger asChild>
           <button

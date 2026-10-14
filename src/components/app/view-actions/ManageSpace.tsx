@@ -2218,7 +2218,8 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                 >
                   <span>{t('space.permissionManager.name')}</span>
                   {showAccessColumn && <SpaceMemberAccessHeader />}
-                  <span className='text-right'>{t('space.permissionManager.role')}</span>
+                  {/* Ends where the Role menus below end (their 8px of padding). */}
+                  <span className='pr-2 text-right'>{t('space.permissionManager.role')}</span>
                 </div>
 
                 {loadingMembers && spaceMembers.length === 0 && spaceGroups.length === 0 ? (
