@@ -28,12 +28,13 @@ const IMPORT_POLL_MAX_MS = 60_000;
 function WorkspaceRow({
   name,
   icon,
-  detail,
+  details = [],
   action,
 }: {
   name: string;
   icon?: string;
-  detail?: string;
+  /** Short lines under the name, e.g. who invited and as what. */
+  details?: string[];
   action: ReactNode;
 }) {
   return (
@@ -44,7 +45,11 @@ function WorkspaceRow({
       </Avatar>
       <div className='min-w-0 flex-1'>
         <div className='truncate text-sm font-medium text-text-primary'>{name}</div>
-        {detail && <div className='truncate text-xs text-text-secondary'>{detail}</div>}
+        {details.map((detail) => (
+          <div key={detail} className='truncate text-xs text-text-secondary'>
+            {detail}
+          </div>
+        ))}
       </div>
       {action}
     </li>
@@ -304,13 +309,19 @@ export function NoWorkspace() {
                   !invitation.workspace_name && inviter
                     ? t('workspaceCreation.joinInvitedBy', { name: inviter })
                     : t('workspaceCreation.joinNamed', { name });
+                // Guests get only the pages shared with them, so an invitation as a guest says so.
+                // Members and owners get the usual access, and older servers send no role.
+                const details = [
+                  inviter ? t('workspaceCreation.invitedBy', { name: inviter }) : undefined,
+                  invitation.role === 'Guest' ? t('workspaceCreation.invitedAsGuest') : undefined,
+                ].filter((detail): detail is string => Boolean(detail));
 
                 return (
                   <WorkspaceRow
                     key={invitation.invite_id}
                     name={name}
                     icon={invitation.workspace_icon}
-                    detail={inviter ? t('workspaceCreation.invitedBy', { name: inviter }) : undefined}
+                    details={details}
                     action={
                       <Button
                         size='sm'

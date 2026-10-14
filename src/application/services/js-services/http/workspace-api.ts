@@ -178,13 +178,23 @@ export async function createWorkspace(payload: CreateWorkspacePayload, options: 
   return data.workspace_id;
 }
 
+const INVITATION_ROLES = ['Owner', 'Member', 'Guest'] as const;
+
+function toInvitationRole(value: unknown): Invitation['role'] {
+  return (INVITATION_ROLES as readonly unknown[]).includes(value) ? (value as Invitation['role']) : undefined;
+}
+
 function toPendingInvitation(value: unknown): Invitation | undefined {
   if (!value || typeof value !== 'object') return;
   const raw = value as Record<string, unknown>;
   const text = (field: unknown) => (typeof field === 'string' ? field : '');
 
   if (typeof raw.invite_id !== 'string' || typeof raw.workspace_id !== 'string' || raw.status !== 'Pending') return;
+  // Older servers send no role, and a role this client does not know is not guessed at.
+  const role = toInvitationRole(raw.role);
+
   return {
+    ...(role ? { role } : {}),
     invite_id: raw.invite_id,
     workspace_id: raw.workspace_id,
     workspace_name: text(raw.workspace_name),

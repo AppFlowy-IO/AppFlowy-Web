@@ -56,6 +56,24 @@ test('lists only pending invitations for the signed-in account, with readable fa
   expect(mockClient.get).toHaveBeenCalledWith('/api/workspace/invite', { params: { status: 'Pending' } });
 });
 
+test.each([
+  ['a guest invitation', 'Guest', 'Guest'],
+  ['a member invitation', 'Member', 'Member'],
+  ['an owner invitation', 'Owner', 'Owner'],
+  // Older servers send no role; a role this client does not know is left out rather than guessed.
+  ['an older server without the role', undefined, undefined],
+  ['a role this client does not know', 'Admin', undefined],
+])('keeps the invited role of %s when the server sends one', async (_case, role, expected) => {
+  mockClient.get.mockResolvedValue({
+    data: [{ invite_id: 'invite-1', workspace_id: 'workspace-1', status: 'Pending', ...(role === undefined ? {} : { role }) }],
+  });
+
+  const [invitation] = await listPendingWorkspaceInvitations();
+
+  expect(invitation.role).toBe(expected);
+  expect('role' in invitation).toBe(expected !== undefined);
+});
+
 test('rejects a response that is not a list', async () => {
   mockClient.get.mockResolvedValue({ data: { invite_id: 'invite-1' } });
   await expect(listPendingWorkspaceInvitations()).rejects.toThrow('Invalid workspace invitation list');

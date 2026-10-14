@@ -2048,6 +2048,8 @@ export interface Invitation {
   workspace_icon: string;
   member_count: number;
   status: 'Accepted' | 'Pending';
+  /** The role the invitation gives (the server's AFRole by name). Older servers send none. */
+  role?: 'Owner' | 'Member' | 'Guest';
 }
 
 export interface GuestInvitation {

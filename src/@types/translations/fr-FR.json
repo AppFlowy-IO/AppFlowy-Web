@@ -3196,7 +3196,8 @@
     "importWorkspace": "Importer un espace de travail",
     "unnamedWorkspace": "Espace de travail sans nom",
     "joinInvitedBy": "Rejoindre l’espace de travail où {{name}} vous invite",
-    "invitationsWaiting": "Rejoignez ci-dessous un espace de travail auquel vous avez été invité."
+    "invitationsWaiting": "Rejoignez ci-dessous un espace de travail auquel vous avez été invité.",
+    "invitedAsGuest": "Accès en tant qu’invité"
   },
   "groupSpaceAccess": {
     "title": "Accès à tous les espaces",

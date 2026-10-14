@@ -183,6 +183,30 @@ test.each([
   await waitFor(() => expect(mockChange).toHaveBeenCalledWith('demo-workspace'));
 });
 
+test('an invitation to join as a guest says so under the workspace name', async () => {
+  mockListInvitations.mockResolvedValue([{ ...invitation, role: 'Guest' }]);
+  mount();
+  await screen.findByRole('button', { name: 'workspaceCreation.joinNamed Demo' });
+
+  const row = screen.getByText('Demo').closest('li') as HTMLElement;
+
+  expect(row.textContent).toContain('workspaceCreation.invitedBy Alice');
+  expect(row.textContent).toContain('workspaceCreation.invitedAsGuest');
+});
+
+test.each([
+  ['a member invitation', { role: 'Member' }],
+  ['an owner invitation', { role: 'Owner' }],
+  ['an older server that sends no role', {}],
+])('adds nothing about the role for %s', async (_case, role) => {
+  mockListInvitations.mockResolvedValue([{ ...invitation, ...role }]);
+  mount();
+  await screen.findByRole('button', { name: 'workspaceCreation.joinNamed Demo' });
+
+  expect(screen.queryByText('workspaceCreation.invitedAsGuest')).toBeNull();
+  expect(screen.getByText('workspaceCreation.invitedBy Alice')).toBeTruthy();
+});
+
 test('a failed join is reported and the lists are refreshed for another try', async () => {
   mockListInvitations.mockResolvedValue([invitation]);
   mockAccept.mockRejectedValueOnce({ code: 1068, message: 'This invitation is no longer valid' });
