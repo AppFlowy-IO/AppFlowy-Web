@@ -198,7 +198,9 @@ checked the join line is shown and the "ask a workspace owner" line is not; the 
 empty workspace list and the pending invitation. *Not shown*: that the invitation is a guest
 invitation; the page says "Invited as a guest" once the server sends the invited role, which this
 server does not yet (the invitation read back after the rerun has no role), so this capture was not
-retaken. *Not tested*: joining.
+retaken. The spec checks that line: shown when the invitation it reads back carries the role
+`"Guest"`, absent otherwise (as here, with a note that the capture waits for the server). *Not
+tested*: joining.
 
 ![Account-only page with a pending invitation](account-only-pending-invitation.png)
 
@@ -230,7 +232,12 @@ Made test-first on `oodrive-fix/web-final` so Web says and does the same as Desk
 - `d7327d21` The space creation choices read from the most to the fewest people: Owners and members,
   Owners and selected members, Owners only (narrowing still asks first).
 - `a8a269d1` The account-only page adds "Invited as a guest" under an invitation once the server
-  sends the invited role (not shown here: this server does not send it yet).
+  sends the invited role. Done on Web, waiting for the server: no server branch sends the role yet, so
+  it is not shown here. What the page reads is `role` on each item of
+  `GET /api/workspace/invite?status=Pending`, the invitation's role by name (`"Owner"`, `"Member"` or
+  `"Guest"`, spelt as a workspace member's `role` already is); no field, or any other value, adds
+  nothing. Once a server sends it, the account-only capture is retaken: its spec test checks the line
+  whenever the invitation it reads back carries `"Guest"`.
 - `9aaec729` Failure toasts in Manage space and People > Groups name the change that failed and give
   a plain reason ("Couldn't change access for Alex. You don't have permission to do this."), with the
   confirmed value kept on screen (not captured; component tests cover them).
@@ -349,7 +356,9 @@ Native selects, radio buttons, Save buttons and internal wording that the redesi
 - The gallery run changed permissions only through owner and operator API calls; it does not show
   that saving from these controls works (component tests and server tests cover that separately).
 - The account-only page cannot yet say that Jordan's invitation is a guest invitation: this server's
-  invitation list has no invited role (the page shows "Invited as a guest" once it does).
+  invitation list has no invited role. The page shows "Invited as a guest" once each pending
+  invitation carries `role` with the value `"Guest"` (see the `a8a269d1` note above); that capture is
+  then to be retaken, and the manifest's `waiting_on_server` entry says so.
 - Failure toasts, which now name the change that failed and give a plain reason, are not captured;
   component tests cover them.
 - [validation.json](validation.json) records the 2026-10-12 validation of the earlier draft. The

@@ -178,6 +178,13 @@ export async function createWorkspace(payload: CreateWorkspacePayload, options: 
   return data.workspace_id;
 }
 
+/**
+ * The role an invitation gives, as the server is to send it: `role` on each item of
+ * GET /api/workspace/invite (AFWorkspaceInvitation), the AFRole variant name "Owner" | "Member" |
+ * "Guest", spelt as a workspace member's `role` already is. Servers without the field send none, and
+ * a role this client does not know is left out rather than guessed; the account-only page says
+ * "Invited as a guest" only for "Guest". The spelling is pinned by workspace-invitations-api.test.ts.
+ */
 const INVITATION_ROLES = ['Owner', 'Member', 'Guest'] as const;
 
 function toInvitationRole(value: unknown): Invitation['role'] {

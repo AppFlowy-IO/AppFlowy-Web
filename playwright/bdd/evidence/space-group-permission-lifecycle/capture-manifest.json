@@ -91,6 +91,16 @@
       "network": "requests outside the three stack origins aborted"
     },
     "permission_changes": "API only: the seed (GoTrue admin and Cloud REST, operator for the installation policy) and owner calls removing/restoring the HR group in the HR space; UI questions were opened and cancelled and the add lists were closed; nothing was saved from the UI (see server_readback_after_capture)",
+    "waiting_on_server": [
+      {
+        "file": "account-only-pending-invitation.png",
+        "web_commit": "a8a269d1",
+        "shows_once_the_server_sends_it": "\"Invited as a guest\" under the Demo invitation",
+        "server_contract": "GET /api/workspace/invite?status=Pending: each AFWorkspaceInvitation carries `role`, the invitation's AFRole by variant name (\"Owner\" | \"Member\" | \"Guest\", as AFWorkspaceMember.role is already sent); Option<AFRole>, omitted or null when unknown. No field, null or any other value adds nothing on the page.",
+        "server_state": "not sent by the server binary used here (built at 540757ea9) nor by the integration branch head at the rerun (6dc8eec23), whose AFWorkspaceInvitation has no role field; the read-back jordan_pending shows role null",
+        "then": "retake with the capture spec: its account-only test asserts the line when the invitation it reads back carries role \"Guest\", and its absence otherwise (annotated \"waits for the server\")"
+      }
+    ],
     "harness": {
       "playwright/e2e/app/permission-gallery.capture.spec.ts": "b205f770302b245d854d3450e7e574f68c3e68783e41c14eac21f29279acd938",
       "playwright/support/permission-gallery-seed.ts": "f91c75eab139956f40c22446f80a1e88777144cbc979651613e566ec7a3562ec",
