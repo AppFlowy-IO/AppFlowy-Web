@@ -178,9 +178,9 @@ export function usePageOperations({
         throw new Error('No workspace or service found');
       }
 
-      const shareWithMeView = findViewInShareWithMe(outlineRef.current || [], id);
-
-      if (role === Role.Guest || shareWithMeView) {
+      // Shared navigation does not remove Full Access to the target page.
+      // The trash endpoint checks its current permissions before deleting it.
+      if (role === Role.Guest) {
         throw new Error('Guest cannot delete pages');
       }
 
@@ -201,7 +201,9 @@ export function usePageOperations({
         void loadTrash?.(currentWorkspaceId, { ensureFreshAfterInFlight: true }).catch((error) => {
           Log.warn('[Trash] Failed to refresh after moving a page to trash', error);
         });
-        void loadOutline?.(currentWorkspaceId, false);
+        void loadOutline?.(currentWorkspaceId, false).catch((error) => {
+          Log.warn('[Outline] Failed to refresh after moving a page to trash', error);
+        });
         return;
       } catch (e) {
         return Promise.reject(e);

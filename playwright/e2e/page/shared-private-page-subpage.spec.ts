@@ -57,12 +57,13 @@ function findView(root: ViewNode, id: string): ViewNode | undefined {
 }
 
 for (const scenario of [
-  { label: 'Full Access', accessLevel: 50, canWrite: true },
-  { label: 'Read Only', accessLevel: 10, canWrite: false },
+  { label: 'Full Access', accessLevel: 50, canWrite: true, canDelete: true },
+  { label: 'Can edit', accessLevel: 30, canWrite: true, canDelete: false },
+  { label: 'Read Only', accessLevel: 10, canWrite: false, canDelete: false },
 ]) {
-  test(`member with ${scenario.label} to a private-space document ${
-    scenario.canWrite ? 'can' : 'cannot'
-  } add a subpage from Shared with me`, async ({ page, request }, testInfo) => {
+  test(`member with ${scenario.label} to a private-space document ${scenario.canWrite ? 'can' : 'cannot'} add and ${
+    scenario.canDelete ? 'can' : 'cannot'
+  } trash a subpage from Shared with me`, async ({ page, request }, testInfo) => {
     test.setTimeout(180_000);
     const runId = randomUUID();
     const password = `C12-repro-${randomUUID()}!`;
@@ -236,8 +237,37 @@ for (const scenario of [
     const saveScreenshot = async (name: string) => {
       const path = testInfo.outputPath(`${name}.png`);
 
-      await writeFile(path, await page.screenshot());
+      await writeFile(path, await page.screenshot({ animations: 'disabled' }));
       await testInfo.attach(name, { path, contentType: 'image/png' });
+    };
+    const openSharedMenu = async (viewId: string) => {
+      // Navigation can replace a shared row after the pointer enters it. Retry
+      // the non-mutating hover/menu action so a replaced row receives mouseenter.
+      await expect(async () => {
+        const row = page.getByTestId(`page-${viewId}`);
+
+        await row.hover();
+        await row.getByTestId('shared-page-more-actions').click({ timeout: 2_000 });
+        await expect(page.getByRole('menu')).toBeVisible();
+      }).toPass({ timeout: 15_000 });
+    };
+    const verifyTrashDenied = async () => {
+      await openSharedMenu(child.view_id);
+      await expect(page.getByTestId('shared-move-to-trash')).toHaveCount(0);
+      await saveScreenshot(`${scenario.accessLevel}-shared-subpage-without-trash-action`);
+      await page.keyboard.press('Escape');
+      const denied = await request.post(`${workspaceUrl}/page-view/${child.view_id}/move-to-trash`, {
+        headers: memberHeaders,
+      });
+
+      expect((await denied.json()).code, `${scenario.label} sharing must not authorize trashing a subpage`).toBe(1012);
+      const unchanged = await successful<ViewNode>(
+        await request.get(`${workspaceUrl}/view/${parent.view_id}?depth=2`, { headers: ownerHeaders }),
+        'Verify rejected deletion preserves the canonical child'
+      );
+
+      expect(unchanged.parent_view_id).toBe(privateSpace.view_id);
+      expect(findView(unchanged, child.view_id)?.parent_view_id).toBe(parent.view_id);
     };
 
     if (!scenario.canWrite) {
@@ -264,12 +294,18 @@ for (const scenario of [
 
       expect(findView(unchangedParent, deniedViewId)).toBeUndefined();
       expect(unchangedParent.children.map((view) => view.view_id)).toEqual([child.view_id]);
+      await verifyTrashDenied();
       return;
     }
 
     const addButton = sharedRow.getByTestId('inline-add-page');
 
-    await expect(addButton, 'Full Access to the shared document should expose its add-subpage action').toBeVisible();
+    await expect(addButton, 'Write access to the shared document should expose its add-subpage action').toBeVisible();
+    if (!scenario.canDelete) {
+      await verifyTrashDenied();
+      return;
+    }
+
     await saveScreenshot('full-access-shared-document-with-add-action');
     const createFromSidebar = async (parentId: string, title: string) => {
       const targetRow = page.getByTestId(`page-${parentId}`);
@@ -393,6 +429,73 @@ for (const scenario of [
     await saveScreenshot('member-created-child-and-grandchild-after-reload');
     await testInfo.attach('browser-creation-and-canonical-parent', {
       body: JSON.stringify({ created, grandchild, persistedParent, persistedSharedTree }, null, 2),
+      contentType: 'application/json',
+    });
+
+    // Delete through the exact nested row's menu. The unrelated shared parent
+    // stays open while its child and grandchild move to Trash together.
+    await sharedRow.getByTestId('page-name').click();
+    await expect(page.locator(`[id="editor-${parent.view_id}"]`)).toBeVisible();
+    await openSharedMenu(createdViewId);
+    await expect(page.getByTestId('shared-move-to-trash')).toBeVisible();
+    await saveScreenshot('full-access-shared-subpage-with-trash-action');
+    const trashed = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' && response.url().endsWith(`/page-view/${createdViewId}/move-to-trash`)
+    );
+
+    // Unpublished documents use the existing confirmation flow's immediate path.
+    await page.getByTestId('shared-move-to-trash').click();
+    await successful(await trashed, 'Move the member-created subpage to Trash through its shared menu');
+    await expect(createdRow).toHaveCount(0);
+    await expect(grandchildRow).toHaveCount(0);
+    const parentAfterTrash = await successful<ViewNode>(
+      await request.get(`${workspaceUrl}/view/${parent.view_id}?depth=3`, { headers: ownerHeaders }),
+      'Verify canonical owner hierarchy after member deletion'
+    );
+    const sharedAfterTrash = await successful<ViewNode>(
+      await request.get(`${TestConfig.apiUrl}/api/sharing/workspace/${workspaceId}/view/${workspaceId}?depth=50`, {
+        headers: memberHeaders,
+      }),
+      'Verify member hierarchy after deletion'
+    );
+    const trash = await successful<{ views: ViewNode[] }>(
+      await request.get(`${workspaceUrl}/trash`, { headers: ownerHeaders }),
+      'Verify deleted subtree is present in server Trash'
+    );
+
+    expect(parentAfterTrash.parent_view_id).toBe(privateSpace.view_id);
+    for (const tree of [parentAfterTrash, sharedAfterTrash]) {
+      expect(findView(tree, createdViewId)).toBeUndefined();
+      expect(findView(tree, grandchild.viewId)).toBeUndefined();
+      expect(findView(tree, child.view_id)?.parent_view_id).toBe(parent.view_id);
+    }
+
+    expect(trash.views.some((view) => view.view_id === createdViewId)).toBe(true);
+    expect(trash.views.some((view) => view.view_id === parent.view_id || view.view_id === child.view_id)).toBe(false);
+    for (const viewId of [privateSpace.view_id, sibling.view_id]) {
+      const response = await request.get(`${workspaceUrl}/view/${viewId}`, { headers: memberHeaders });
+
+      expect((await response.json()).code, 'Trashing a shared child must preserve private-space isolation').toBe(1012);
+    }
+
+    await page.reload();
+    await expect(page.locator(`[id="editor-${parent.view_id}"]`)).toBeVisible({ timeout: 30_000 });
+    await expandSidebarRow(parent.view_id);
+    await expect(page.getByTestId(`page-${child.view_id}`)).toBeVisible();
+    await expect(createdRow).toHaveCount(0);
+    await expect(grandchildRow).toHaveCount(0);
+    await expect(page.getByTestId(`space-${privateSpace.view_id}`)).toHaveCount(0);
+    await expect(page.getByTestId(`page-${sibling.view_id}`)).toHaveCount(0);
+    await saveScreenshot('member-deleted-subpage-after-reload');
+    const trashEvidencePath = testInfo.outputPath('shared-subpage-trash-and-canonical-parent.json');
+
+    await writeFile(
+      trashEvidencePath,
+      JSON.stringify({ created, grandchild, parentAfterTrash, sharedAfterTrash, trash }, null, 2)
+    );
+    await testInfo.attach('shared-subpage-trash-and-canonical-parent', {
+      path: trashEvidencePath,
       contentType: 'application/json',
     });
   });

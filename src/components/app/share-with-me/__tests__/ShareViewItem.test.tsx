@@ -10,6 +10,7 @@ const mockUseViewActionPermissions = jest.fn();
 const mockAddPage = jest.fn();
 const mockOpenPageModal = jest.fn();
 const mockOpenRenameModal = jest.fn();
+const mockOpenDeleteModal = jest.fn();
 const mockNavigate = jest.fn();
 let mockRole = Role.Member;
 
@@ -27,7 +28,7 @@ jest.mock('@/application/services/domains', () => ({ AccessService: { revokeAcce
 jest.mock('@/components/_shared/notify', () => ({ notify: { error: jest.fn(), success: jest.fn() } }));
 jest.mock('@/components/main/app.hooks', () => ({ useCurrentUser: () => ({ email: 'member@example.com' }) }));
 jest.mock('@/components/app/app-overlay/AppOverlayContext', () => ({
-  useAppOverlayContext: () => ({ openRenameModal: mockOpenRenameModal }),
+  useAppOverlayContext: () => ({ openRenameModal: mockOpenRenameModal, openDeleteModal: mockOpenDeleteModal }),
 }));
 jest.mock('@/components/app/app.hooks', () => ({
   useAppOperations: () => ({ addPage: mockAddPage, updatePage: jest.fn(), uploadFile: jest.fn() }),
@@ -278,5 +279,58 @@ describe('shared page sidebar creation actions', () => {
     fireEvent.click(within(row).getByTestId('inline-add-page'));
     fireEvent.click(screen.getByTestId('add-import-button'));
     expect(onImportClick).toHaveBeenCalledWith(child);
+  });
+
+  it.each([
+    ['shared root', 'root-page', Role.Member],
+    ['shared descendant', 'nested-child', Role.Member],
+    ['shared descendant as workspace owner', 'nested-child', Role.Owner],
+  ])('opens the trash confirmation for the clicked %s', (_name, targetId, role) => {
+    mockRole = role as Role;
+    // A descendant's management permission must be checked independently of
+    // its shared root; stale sidebar access_level metadata is not authority.
+    mockUseViewActionPermissions.mockImplementation((target: View) => permissions({
+      canManageViewActions: target.view_id === targetId,
+    }));
+    const { navigateToView } = renderShared(view('root-page', { children: [view('nested-child')] }));
+    const row = screen.getByTestId(`row-${targetId}`);
+
+    fireEvent.mouseEnter(row);
+    fireEvent.click(within(row).getByTestId('shared-page-more-actions'));
+    fireEvent.mouseLeave(row);
+    fireEvent.click(screen.getByTestId('shared-move-to-trash'));
+
+    expect(mockOpenDeleteModal).toHaveBeenCalledTimes(1);
+    expect(mockOpenDeleteModal).toHaveBeenCalledWith(targetId);
+    expect(navigateToView).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['read-only', { canCreateViewActions: false, canManageViewActions: false }],
+    ['edit without FullAccess', { canCreateViewActions: true, canManageViewActions: false }],
+    ['unresolved', { hasLoadedViewActionPermissions: false }],
+    ['loading', { isLoadingViewActionPermissions: true }],
+  ])('hides trash while canonical permission is %s despite FullAccess sidebar metadata', (_name, result) => {
+    mockUseViewActionPermissions.mockReturnValue(permissions(result));
+    renderShared();
+    const row = screen.getByTestId('row-root-page');
+
+    fireEvent.mouseEnter(row);
+    fireEvent.click(within(row).getByTestId('shared-page-more-actions'));
+
+    expect(screen.queryByTestId('shared-move-to-trash')).toBeNull();
+    expect(mockOpenDeleteModal).not.toHaveBeenCalled();
+  });
+
+  it('keeps trash hidden for guests even with canonical FullAccess', () => {
+    mockRole = Role.Guest;
+    renderShared();
+    const row = screen.getByTestId('row-root-page');
+
+    fireEvent.mouseEnter(row);
+    fireEvent.click(within(row).getByTestId('shared-page-more-actions'));
+
+    expect(screen.queryByTestId('shared-move-to-trash')).toBeNull();
+    expect(mockOpenDeleteModal).not.toHaveBeenCalled();
   });
 });

@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { AccessService } from '@/application/services/domains';
 import { AccessLevel, Role, View, ViewIconType, ViewLayout } from '@/application/types';
 import { getViewUrl, isDatabaseContainer, isSpaceView } from '@/application/view-utils';
+import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { ReactComponent as EmojiIcon } from '@/assets/icons/emoji.svg';
 import { ReactComponent as LogoutIcon } from '@/assets/icons/logout.svg';
@@ -100,18 +101,22 @@ function SharedViewActions({
   const currentUser = useCurrentUser();
   const currentWorkspaceId = useCurrentWorkspaceId();
   const { updatePage, uploadFile } = useAppOperations();
-  const { openRenameModal } = useAppOverlayContext();
+  const { openRenameModal, openDeleteModal } = useAppOverlayContext();
   const role = useUserWorkspaceInfo()?.selectedWorkspace.role;
+  const isWorkspaceMember = role === Role.Member || role === Role.Owner;
   const canCreateChildren =
-    (role === Role.Member || role === Role.Owner) &&
+    isWorkspaceMember &&
     view.layout === ViewLayout.Document &&
     !isSpaceView(view) &&
     !isDatabaseContainer(view);
+  const canDeletePage = isWorkspaceMember && !isSpaceView(view);
   // Resolve only the hovered/open row, never every shared page on sidebar load.
-  const { canCreateViewActions, hasLoadedViewActionPermissions, isLoadingViewActionPermissions } =
-    useViewActionPermissions(view, canCreateChildren && (visible || addOpen));
+  const { canCreateViewActions, canManageViewActions, hasLoadedViewActionPermissions, isLoadingViewActionPermissions } =
+    useViewActionPermissions(view, (canCreateChildren || canDeletePage) && (visible || addOpen || popoverOpen));
   const showAdd =
     canCreateChildren && hasLoadedViewActionPermissions && !isLoadingViewActionPermissions && canCreateViewActions;
+  const showDelete =
+    canDeletePage && hasLoadedViewActionPermissions && !isLoadingViewActionPermissions && canManageViewActions;
 
   const canEdit = view.access_level && view.access_level > AccessLevel.ReadAndComment;
 
@@ -227,6 +232,23 @@ function SharedViewActions({
           </>
         )}
 
+        {showDelete && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              data-testid='shared-move-to-trash'
+              variant='destructive'
+              onSelect={() => {
+                setPopoverOpen(false);
+                openDeleteModal(view.view_id);
+              }}
+            >
+              <DeleteIcon />
+              {t('button.delete')}
+            </DropdownMenuItem>
+          </>
+        )}
+
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
           <DropdownMenuItem
@@ -243,7 +265,7 @@ function SharedViewActions({
         </DropdownMenuGroup>
       </DropdownMenuContent>
     );
-  }, [view, canEdit, handleChangeIcon, handleRemoveIcon, onUploadFile, handleRename, currentWorkspaceId, t]);
+  }, [view, canEdit, showDelete, openDeleteModal, handleChangeIcon, handleRemoveIcon, onUploadFile, handleRename, currentWorkspaceId, t]);
 
   return (
     <>

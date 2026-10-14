@@ -2,7 +2,7 @@ import { act, renderHook } from '@testing-library/react';
 import { type ReactNode } from 'react';
 
 import { PageService, ViewService } from '@/application/services/domains';
-import { Role, View, ViewLayout } from '@/application/types';
+import { AccessLevel, Role, View, ViewLayout } from '@/application/types';
 import { AuthInternalContext, AuthInternalContextType } from '@/components/app/contexts/AuthInternalContext';
 import { Log } from '@/utils/log';
 
@@ -37,6 +37,7 @@ jest.mock('@/application/services/js-services/publish-database-data', () => ({
 }));
 
 const workspaceId = 'workspace-id';
+let mockRole = Role.Owner;
 
 function createView(viewId: string, children: View[] = []): View {
   return {
@@ -61,7 +62,7 @@ function Wrapper({ children }: { children: ReactNode }) {
       selectedWorkspace: {
         id: workspaceId,
         databaseStorageId: 'database-storage-id',
-        role: Role.Owner,
+        role: mockRole,
       },
     } as AuthInternalContextType['userWorkspaceInfo'],
   };
@@ -69,9 +70,30 @@ function Wrapper({ children }: { children: ReactNode }) {
   return <AuthInternalContext.Provider value={authContext}>{children}</AuthInternalContext.Provider>;
 }
 
+function renderSharedDeletion(role = Role.Member) {
+  mockRole = role;
+  const child = { ...createView('shared-child'), parent_view_id: 'shared-page', access_level: AccessLevel.FullAccess };
+  const sharedPage = {
+    ...createView('shared-page', [child]),
+    parent_view_id: workspaceId,
+    access_level: AccessLevel.FullAccess,
+  };
+  // The inaccessible private space is absent; the page is projected beneath
+  // the synthetic Shared with me root without changing its actual identity.
+  const outlineRef = {
+    current: [{ ...createView(workspaceId, [sharedPage]), extra: { is_space: true, is_hidden_space: true } }],
+  };
+  const loadOutline = jest.fn().mockResolvedValue(undefined);
+  const loadTrash = jest.fn().mockResolvedValue(undefined);
+  const rendered = renderHook(() => usePageOperations({ outlineRef, loadOutline, loadTrash }), { wrapper: Wrapper });
+
+  return { ...rendered, loadOutline, loadTrash };
+}
+
 describe('usePageOperations trash refresh', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockRole = Role.Owner;
     (PageService.moveToTrash as jest.Mock).mockResolvedValue(undefined);
   });
 
@@ -103,9 +125,57 @@ describe('usePageOperations trash refresh', () => {
     expect(loadTrash).toHaveBeenCalledWith(workspaceId, { ensureFreshAfterInFlight: true });
   });
 
-  it('does not turn a background trash refresh failure into a delete failure', async () => {
+  it.each([
+    ['shared-page', workspaceId],
+    ['shared-child', 'shared-page'],
+  ])('allows a member to trash %s and refreshes the shared outline and trash', async (targetId, parentId) => {
+    const { result, loadOutline, loadTrash } = renderSharedDeletion();
+
+    await act(async () => {
+      await result.current.deletePage(targetId);
+    });
+
+    expect(PageService.moveToTrash).toHaveBeenCalledTimes(1);
+    expect(PageService.moveToTrash).toHaveBeenCalledWith(workspaceId, targetId);
+    expect(ViewService.invalidateCache).toHaveBeenCalledTimes(2);
+    expect(ViewService.invalidateCache).toHaveBeenCalledWith(workspaceId, targetId);
+    expect(ViewService.invalidateCache).toHaveBeenCalledWith(workspaceId, parentId);
+    expect(loadOutline).toHaveBeenCalledTimes(1);
+    expect(loadOutline).toHaveBeenCalledWith(workspaceId, false);
+    expect(loadTrash).toHaveBeenCalledTimes(1);
+    expect(loadTrash).toHaveBeenCalledWith(workspaceId, { ensureFreshAfterInFlight: true });
+  });
+
+  it('keeps guest deletion denied even for a FullAccess shared page', async () => {
+    const { result, loadOutline, loadTrash } = renderSharedDeletion(Role.Guest);
+
+    await expect(result.current.deletePage('shared-page')).rejects.toThrow('Guest cannot delete pages');
+
+    expect(PageService.moveToTrash).not.toHaveBeenCalled();
+    expect(ViewService.invalidateCache).not.toHaveBeenCalled();
+    expect(loadOutline).not.toHaveBeenCalled();
+    expect(loadTrash).not.toHaveBeenCalled();
+  });
+
+  it('preserves a server permission denial without invalidating or refreshing shared content', async () => {
+    const denial = Object.assign(new Error('Full access required to delete this page'), { code: 1012 });
+
+    jest.mocked(PageService.moveToTrash).mockRejectedValueOnce(denial);
+    const { result, loadOutline, loadTrash } = renderSharedDeletion();
+
+    await expect(result.current.deletePage('shared-child')).rejects.toBe(denial);
+
+    expect(PageService.moveToTrash).toHaveBeenCalledWith(workspaceId, 'shared-child');
+    expect(ViewService.invalidateCache).not.toHaveBeenCalled();
+    expect(loadOutline).not.toHaveBeenCalled();
+    expect(loadTrash).not.toHaveBeenCalled();
+  });
+
+  it('does not turn background trash or outline refresh failures into a delete failure', async () => {
     const refreshError = new Error('refresh unavailable');
+    const outlineError = new Error('outline unavailable');
     const loadTrash = jest.fn().mockRejectedValue(refreshError);
+    const loadOutline = jest.fn().mockRejectedValue(outlineError);
     const warn = jest.spyOn(Log, 'warn').mockImplementation(() => undefined);
     const outlineRef = {
       current: [createView('space-id', [createView('page-id')])],
@@ -115,20 +185,16 @@ describe('usePageOperations trash refresh', () => {
         usePageOperations({
           outlineRef,
           loadTrash,
+          loadOutline,
         }),
       { wrapper: Wrapper }
     );
 
-    await expect(
-      act(async () => {
-        await result.current.deletePage('page-id');
-      })
-    ).resolves.toBeUndefined();
-
     await act(async () => {
-      await Promise.resolve();
+      await expect(result.current.deletePage('page-id')).resolves.toBeUndefined();
     });
     expect(warn).toHaveBeenCalledWith('[Trash] Failed to refresh after moving a page to trash', refreshError);
+    expect(warn).toHaveBeenCalledWith(expect.any(String), outlineError);
     warn.mockRestore();
   });
 });
