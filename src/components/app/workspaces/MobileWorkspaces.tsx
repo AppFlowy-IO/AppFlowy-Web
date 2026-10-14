@@ -36,14 +36,14 @@ function MobileWorkspaces({ onClose }: { onClose: () => void }) {
       try {
         await handleSelectedWorkspace?.(selectedId);
       } catch (e) {
-        notify.error('Failed to change workspace');
+        notify.error(t('workspace.openFailed'));
       }
 
       onClose();
       handleClose();
       setChangeLoading(null);
     },
-    [handleClose, handleSelectedWorkspace, onClose]
+    [handleClose, handleSelectedWorkspace, onClose, t]
   );
 
   const triggerNode = useMemo(() => {
