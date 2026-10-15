@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import { serverRestore } from '@/application/server-restore';
 import { Log } from '@/utils/log';
 
 type LeadershipStatus = 'waiting' | 'leader' | 'fallback';
@@ -31,7 +32,7 @@ const lockManager = (): LockManager | null => {
  * realtime sync remains available instead of failing closed.
  */
 export function useWorkspaceWebSocketLeader(workspaceId: string): WorkspaceWebSocketLeadership {
-  const lockName = useMemo(() => `appflowy:websocket:${workspaceId}`, [workspaceId]);
+  const lockName = useMemo(() => serverRestore.cacheKey(`appflowy:websocket:${workspaceId}`), [workspaceId]);
   const [state, setState] = useState<LeadershipState>(() => ({
     lockName,
     status: lockManager() ? 'waiting' : 'fallback',

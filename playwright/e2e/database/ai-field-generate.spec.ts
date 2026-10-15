@@ -38,7 +38,7 @@ test.describe('AI Field - Generate Button', () => {
 
     // Mock the AI summary endpoint and capture the request body
     let capturedBody: any = null;
-    await page.route('**/api/ai/*/summarize_row', async (route) => {
+    await page.route('**/api/ai/*/summarize_row{,?**}', async (route) => {
       capturedBody = route.request().postDataJSON();
       await route.fulfill({
         status: 200,
@@ -97,7 +97,7 @@ test.describe('AI Field - Generate Button', () => {
 
     // Mock the AI translate endpoint and capture the request body
     let capturedBody: any = null;
-    await page.route('**/api/ai/*/translate_row', async (route) => {
+    await page.route('**/api/ai/*/translate_row{,?**}', async (route) => {
       capturedBody = route.request().postDataJSON();
       await route.fulfill({
         status: 200,
@@ -154,7 +154,7 @@ test.describe('AI Field - Generate Button', () => {
     await page.waitForTimeout(500);
 
     // Mock the AI summary endpoint to return an error
-    await page.route('**/api/ai/*/summarize_row', async (route) => {
+    await page.route('**/api/ai/*/summarize_row{,?**}', async (route) => {
       await route.fulfill({
         status: 500,
         contentType: 'application/json',
@@ -211,7 +211,7 @@ test.describe('AI Field - Generate Button', () => {
 
     // Track the API request to verify multi-field data
     let capturedBody: any = null;
-    await page.route('**/api/ai/*/summarize_row', async (route) => {
+    await page.route('**/api/ai/*/summarize_row{,?**}', async (route) => {
       capturedBody = route.request().postDataJSON();
       await route.fulfill({
         status: 200,

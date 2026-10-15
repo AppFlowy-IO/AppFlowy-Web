@@ -115,23 +115,32 @@ function linkPreviewApiPlugin() {
     apply: 'serve' as const,
     configureServer(server: ViteDevServer) {
       server.middlewares.use((req, res, next) => {
-        if (!req.url || !req.url.startsWith('/api/link-preview')) {
+        const pathname = req.url?.split('?')[0];
+        const youtube = pathname === '/api/youtube-audio';
+
+        if (!youtube && pathname !== '/api/link-preview') {
           return next();
         }
 
+        const configuredBaseURL = process.env.APPFLOWY_BASE_URL || server.config.env.APPFLOWY_BASE_URL || 'https://test.appflowy.cloud';
+        const backend = new URL(configuredBaseURL);
+        const localCloud = backend.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(backend.hostname) && ['8000', '8100'].includes(backend.port);
+        const baseURL = localCloud ? process.env.APPFLOWY_DEV_API_PROXY_TARGET || LOCAL_GATEWAY_TARGET : configuredBaseURL;
+
         server
-          .ssrLoadModule('/api/link-preview.ts')
+          .ssrLoadModule(youtube ? '/api/youtube-audio.ts' : '/api/link-preview.ts')
           .then((mod) =>
-            (mod.default as (req: IncomingMessage, res: ServerResponse) => Promise<void>)(
+            (mod.default as (req: IncomingMessage, res: ServerResponse, options?: { baseURL: string }) => Promise<void>)(
               req as IncomingMessage,
-              res as ServerResponse
+              res as ServerResponse,
+              youtube ? { baseURL } : undefined
             )
           )
           .catch((error: unknown) => {
-            server.config.logger.error(`[link-preview] ${error instanceof Error ? error.message : String(error)}`);
+            server.config.logger.error(`[local-api] ${error instanceof Error ? error.message : String(error)}`);
             res.statusCode = 502;
             res.setHeader('Content-Type', 'application/json; charset=utf-8');
-            res.end(JSON.stringify({ error: 'Failed to fetch link preview' }));
+            res.end(JSON.stringify(youtube ? { code: 502, message: 'youtubeDownloadFailed' } : { error: 'Failed to fetch link preview' }));
           });
       });
     },

@@ -23,7 +23,7 @@ test('creates, renames, reopens and deletes the exact atomic Document across rel
   await expect(newPageModal).toBeVisible();
   await newPageModal.getByTestId('space-item').first().click();
   const created = page.waitForResponse((response) =>
-    response.request().method() === 'POST' && response.url().endsWith('/v2/page-view/document/default'));
+    response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/v2/page-view/document/default'));
 
   await newPageModal.getByRole('button', { name: 'Add', exact: true }).click();
   const response = await created;
@@ -40,7 +40,7 @@ test('creates, renames, reopens and deletes the exact atomic Document across rel
   await expect(viewModal.locator(`[id="editor-${documentId}"]`)).toBeVisible();
   await expect(titleInput).toBeVisible();
   const renamed = page.waitForResponse((result) => result.request().method() === 'POST' &&
-    result.url().endsWith(`/page-view/${documentId}/update-name`) && result.request().postDataJSON().name === title);
+    new URL(result.url()).pathname.endsWith(`/page-view/${documentId}/update-name`) && result.request().postDataJSON().name === title);
 
   await titleInput.fill(title);
   await titleInput.press('Enter');
@@ -71,7 +71,7 @@ test('creates, renames, reopens and deletes the exact atomic Document across rel
   await exactItem.getByTestId('page-more-actions').click();
   await expect(ViewActionSelectors.popover(page)).toBeVisible();
   const deleted = page.waitForResponse((result) => result.request().method() === 'POST' &&
-    result.url().endsWith(`/page-view/${documentId}/move-to-trash`));
+    new URL(result.url()).pathname.endsWith(`/page-view/${documentId}/move-to-trash`));
 
   await ViewActionSelectors.deleteButton(page).click();
   expect((await (await deleted).json()).code).toBe(0);

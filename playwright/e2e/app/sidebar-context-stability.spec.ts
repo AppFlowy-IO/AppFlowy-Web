@@ -116,7 +116,7 @@ test.describe('Sidebar Context Stability', () => {
     await page.waitForTimeout(500);
 
     const creationResponse = page.waitForResponse(
-      (response) => response.request().method() === 'POST' && response.url().endsWith('/v2/page-view/document/default')
+      (response) => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/v2/page-view/document/default')
     );
 
     await AddPageSelectors.inlineAddButton(page).first().click({ force: true });

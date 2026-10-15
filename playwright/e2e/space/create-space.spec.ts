@@ -4,7 +4,7 @@ import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
 import { PageSelectors, SpaceSelectors, SidebarSelectors, ModalSelectors } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
 
-const documentRoute = '**/v2/page-view/document/default';
+const documentRoute = '**/v2/page-view/document/default{,?**}';
 
 async function openSpaceDraft(page: Page, spaceName: string) {
   await expect(SidebarSelectors.pageHeader(page)).toBeVisible();
@@ -53,7 +53,7 @@ test.describe('Space Creation Tests', () => {
     await signInAndWaitForApp(page, request, generateRandomEmail(), 0);
     const modal = await openSpaceDraft(page, spaceName);
     const created = page.waitForResponse((response) =>
-      response.request().method() === 'POST' && response.url().endsWith('/v2/page-view/document/default'));
+      response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/v2/page-view/document/default'));
 
     await modal.getByTestId('create-space-submit').click();
     const response = await created;
@@ -83,7 +83,7 @@ test.describe('Space Creation Tests', () => {
 
     await signInAndWaitForApp(page, request, generateRandomEmail(), 0);
     page.on('request', (sent) => {
-      if (sent.method() === 'POST' && sent.url().endsWith('/v2/page-view/document/default')) documentRequests.push(sent.postData() ?? '');
+      if (sent.method() === 'POST' && new URL(sent.url()).pathname.endsWith('/v2/page-view/document/default')) documentRequests.push(sent.postData() ?? '');
       if (sent.url().includes('/move-to-trash') || sent.method() === 'DELETE' && sent.url().includes('/trash/')) cleanupRequests.push(sent.url());
     });
     await page.route(documentRoute, async (route) => {
@@ -107,7 +107,7 @@ test.describe('Space Creation Tests', () => {
     expect(cleanupRequests.filter((url) => url.includes(parentId))).toEqual([]);
 
     const retried = page.waitForResponse((response) =>
-      response.request().method() === 'POST' && response.url().endsWith('/v2/page-view/document/default'));
+      response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/v2/page-view/document/default'));
 
     await modal.getByTestId('create-space-submit').click();
     const receipt = await (await retried).json();

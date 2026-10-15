@@ -80,7 +80,7 @@ test.describe('AI Meeting Block - Layout', () => {
     await expect(AIMeetingSelectors.notesSection(page)).toBeVisible();
   });
 
-  test('should hide Summary tab when summary section is empty', async ({ page, request }) => {
+  test('should offer Summary generation when source content exists without a summary', async ({ page, request }) => {
     await setupEditorWithCleanPage(page, request, testEmail);
 
     const available = await areTestUtilitiesAvailable(page);
@@ -98,8 +98,9 @@ test.describe('AI Meeting Block - Layout', () => {
     });
     await page.waitForTimeout(1500);
 
-    // Then the Summary tab should not be visible (no summary content)
-    await expect(AIMeetingSelectors.tab(page, 'summary')).not.toBeVisible();
+    // Source content makes the first summary available to generate.
+    await expect(AIMeetingSelectors.tab(page, 'summary')).toBeVisible();
+    await expect(AIMeetingSelectors.block(page).getByRole('button', { name: 'Generate summary', exact: true })).toBeVisible();
 
     // And Notes and Transcript tabs should be visible
     await expect(AIMeetingSelectors.tab(page, 'notes')).toBeVisible();
@@ -144,7 +145,7 @@ test.describe('AI Meeting Block - Layout', () => {
     await expect(secondSpeaker.locator('.ai-meeting-speaker__timestamp')).toContainText('02:10');
   });
 
-  test('should show default title when no stored title', async ({ page, request }) => {
+  test('should show the AI transcript placeholder when no title is stored', async ({ page, request }) => {
     await setupEditorWithCleanPage(page, request, testEmail);
 
     const available = await areTestUtilitiesAvailable(page);
@@ -158,7 +159,8 @@ test.describe('AI Meeting Block - Layout', () => {
     });
     await page.waitForTimeout(1500);
 
-    await expect(AIMeetingSelectors.title(page)).toHaveValue('Meeting');
+    await expect(AIMeetingSelectors.title(page)).toHaveValue('');
+    await expect(AIMeetingSelectors.title(page)).toHaveAttribute('placeholder', 'AI transcript');
   });
 
   test('should display only active tab section content via CSS visibility', async ({ page, request }) => {

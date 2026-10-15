@@ -5,7 +5,7 @@ export async function waitForRowBodyCompletion(page: Page): Promise<void> {
   const attempts: string[] = [];
   const response = await page.waitForResponse(
     async (result) => {
-      if (result.request().method() !== 'POST' || !result.url().endsWith('/v2/page-view/row-document')) return false;
+      if (result.request().method() !== 'POST' || !new URL(result.url()).pathname.endsWith('/v2/page-view/row-document')) return false;
       attempts.push(result.request().postData()!);
       const body = await result.json();
 

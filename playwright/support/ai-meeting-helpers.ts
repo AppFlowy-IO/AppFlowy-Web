@@ -262,20 +262,20 @@ export async function navigateAndClearEditor(page: Page) {
  *
  * The component renders:
  * - `.ai-meeting-block` with `data-ai-meeting-active` attribute on root
- * - `<input>` for title inside the block
+ * - Accessible textbox for the title inside the block
  * - Tab buttons as `<button>` with tab label text ("Summary", "Notes", "Transcript")
  * - `data-block-type="ai_meeting_summary|notes|transcription|speaker"` on sections
  * - `.ai-meeting-speaker__name`, `.ai-meeting-speaker__timestamp` classes
  * - "Regenerate" / "Generating" text on the regenerate button
- * - MUI `IconButton` for more menu (contains MoreIcon SVG)
+ * - Accessible button and menu names for summary options and more actions
  * - "Copy summary" / "Copy notes" / "Copy transcript" text in copy popover
  * - `.ai-meeting-reference` class on inline reference badges
  */
 export const AIMeetingSelectors = {
   /** The root .ai-meeting-block element */
   block: (page: Page) => page.locator('.ai-meeting-block'),
-  /** The title <input> inside the meeting block */
-  title: (page: Page) => page.locator('.ai-meeting-block input').first(),
+  /** The editable title, excluding the hidden audio upload input */
+  title: (page: Page) => page.locator('.ai-meeting-block').getByRole('textbox', { name: 'Meeting', exact: true }),
   /** A tab button by its label text */
   tab: (page: Page, key: 'summary' | 'notes' | 'transcript') => {
     const labels: Record<string, string> = {
@@ -289,25 +289,27 @@ export const AIMeetingSelectors = {
   regenerateButton: (page: Page) =>
     page.locator('.ai-meeting-block button').filter({ hasText: /^(Regenerate|Generating)$/ }),
   /** The dropdown arrow button next to Regenerate (right side of split button) */
-  regenerateOptionsButton: (page: Page) => {
-    // It's the sibling button right after the Regenerate button, within the same inline-flex div
-    return page.locator('.ai-meeting-block .inline-flex > button:last-child').first();
-  },
-  /** The regenerate options popover content (appears inside a MUI Popover) */
+  regenerateOptionsButton: (page: Page) =>
+    page.locator('.ai-meeting-block').getByRole('button', { name: 'Summary options', exact: true }),
+  /** The summary options menu */
   regeneratePopover: (page: Page) =>
-    page.locator('.MuiPopover-paper').filter({ hasText: 'Summary detail' }),
-  /** A template option button by its label text */
+    page.getByRole('menu', { name: 'Summary options', exact: true }),
+  /** Match the template label independently of optional emoji icons. */
   templateOption: (page: Page, label: string) =>
-    page.locator('.MuiPopover-paper button').filter({ hasText: label }),
-  /** A detail option button by its label text */
+    page.getByRole('menu', { name: 'Summary options', exact: true })
+      .getByRole('menuitemradio').filter({ has: page.getByText(label, { exact: true }) }),
+  /** A detail option by its accessible name */
   detailOption: (page: Page, label: string) =>
-    page.locator('.MuiPopover-paper button').filter({ hasText: label }),
-  /** A language option button by its label text */
+    page.getByRole('menu', { name: 'Summary options', exact: true }).getByRole('menuitemradio', { name: label, exact: true }),
+  /** The language submenu trigger */
+  languageMenu: (page: Page) =>
+    page.getByRole('menu', { name: 'Summary options', exact: true }).getByRole('menuitem', { name: /^Language/ }),
+  /** A language option inside the language submenu */
   languageOption: (page: Page, label: string) =>
-    page.locator('.MuiPopover-paper button').filter({ hasText: label }),
-  /** The more (...) menu IconButton */
+    page.getByRole('menu', { name: 'Summary language', exact: true }).getByRole('menuitemradio', { name: label, exact: true }),
+  /** The more (...) menu button */
   moreMenu: (page: Page) =>
-    page.locator('.ai-meeting-block .ai-meeting-tabs button[class*="MuiIconButton"]'),
+    page.locator('.ai-meeting-block').getByRole('button', { name: 'More actions', exact: true }),
   /** The copy button inside the more menu popover */
   copyButton: (page: Page) =>
     page.locator('.MuiPopover-paper button').filter({ hasText: /^Copy (summary|notes|transcript)$/ }),

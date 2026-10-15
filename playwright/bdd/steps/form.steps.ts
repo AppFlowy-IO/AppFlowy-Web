@@ -288,7 +288,7 @@ When('I add a Form view via the tab bar without dismissing modals', async ({ pag
   );
   const created = page.waitForResponse((response) =>
     response.request().method() === 'POST' &&
-    response.url().endsWith('/v2/page-view/database-view/default') &&
+    new URL(response.url()).pathname.endsWith('/v2/page-view/database-view/default') &&
     response.request().postDataJSON()?.view.layout === DatabaseViewLayout.Form
   );
 

@@ -111,6 +111,7 @@ test.describe('AI Meeting Block - Summary Regeneration', () => {
 
     // Language section should be visible with at least English
     await expect(popover.getByText('Summary language')).toBeVisible();
+    await AIMeetingSelectors.languageMenu(page).hover();
     await expect(AIMeetingSelectors.languageOption(page, 'English')).toBeVisible();
   });
 
@@ -137,17 +138,16 @@ test.describe('AI Meeting Block - Summary Regeneration', () => {
     await AIMeetingSelectors.regenerateOptionsButton(page).click();
     await page.waitForTimeout(500);
 
-    // "Auto" template button should contain an SVG check icon
+    // Selection is exposed by the radio menu item's accessible state.
     const autoButton = AIMeetingSelectors.templateOption(page, 'Auto');
-    await expect(autoButton.locator('svg')).toBeVisible();
+    await expect(autoButton).toHaveAttribute('aria-checked', 'true');
 
-    // "Balanced" detail button should contain an SVG check icon
     const balancedButton = AIMeetingSelectors.detailOption(page, 'Balanced');
-    await expect(balancedButton.locator('svg')).toBeVisible();
+    await expect(balancedButton).toHaveAttribute('aria-checked', 'true');
 
-    // "English" language button should contain an SVG check icon
+    await AIMeetingSelectors.languageMenu(page).hover();
     const englishButton = AIMeetingSelectors.languageOption(page, 'English');
-    await expect(englishButton.locator('svg')).toBeVisible();
+    await expect(englishButton).toHaveAttribute('aria-checked', 'true');
   });
 
   test('should show error notification when no source content for regeneration', async ({ page, request }) => {
@@ -190,14 +190,14 @@ test.describe('AI Meeting Block - Summary Regeneration', () => {
     }
 
     // Mock endpoints
-    await page.route('**/api/meeting/summary_templates', (route) => {
+    await page.route('**/api/meeting/summary_templates{,?**}', (route) => {
       route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ code: 0, data: null }),
       });
     });
-    await page.route('**/api/chat/*/v2', (route) => {
+    await page.route('**/api/chat/*/v2{,?**}', (route) => {
       route.fulfill({
         status: 200,
         contentType: 'text/event-stream',
@@ -236,14 +236,14 @@ test.describe('AI Meeting Block - Summary Regeneration', () => {
       return;
     }
 
-    await page.route('**/api/meeting/summary_templates', (route) => {
+    await page.route('**/api/meeting/summary_templates{,?**}', (route) => {
       route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ code: 0, data: null }),
       });
     });
-    await page.route('**/api/chat/*/v2', (route) => {
+    await page.route('**/api/chat/*/v2{,?**}', (route) => {
       route.fulfill({
         status: 200,
         contentType: 'text/event-stream',
@@ -291,6 +291,7 @@ test.describe('AI Meeting Block - Summary Regeneration', () => {
     await AIMeetingSelectors.regenerateOptionsButton(page).click();
     await page.waitForTimeout(500);
 
+    await AIMeetingSelectors.languageMenu(page).hover();
     await expect(AIMeetingSelectors.languageOption(page, 'English')).toBeVisible();
 
     // Scroll to Swedish (last in the list)

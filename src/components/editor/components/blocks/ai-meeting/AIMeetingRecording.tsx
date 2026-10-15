@@ -33,6 +33,7 @@ export function AIMeetingRecording({
   transcriptBlockId,
   pendingDuration = 0,
   onFinished,
+  hideStartButton = false,
 }: {
   workspaceId: string;
   viewId: string;
@@ -40,6 +41,7 @@ export function AIMeetingRecording({
   transcriptBlockId?: string;
   pendingDuration?: number;
   onFinished: () => void;
+  hideStartButton?: boolean;
 }) {
   const { t } = useTranslation();
   const { getSubscriptions } = useEditorContext();
@@ -209,9 +211,11 @@ export function AIMeetingRecording({
     }
   };
 
+  if (hideStartButton && state === 'idle' && !choosing && !error && !partial) return null;
+
   return (
     <div className='mt-3 flex flex-col gap-2 text-sm' contentEditable={false}>
-      {state === 'idle' ? (
+      {state === 'idle' ? (!hideStartButton && (
         <Button
           className='self-start'
           variant='outline'
@@ -220,7 +224,7 @@ export function AIMeetingRecording({
         >
           {t('document.aiMeeting.startTranscribing')}
         </Button>
-      ) : (
+      )) : (
         <div className='flex items-center gap-3'>
           <span role='status'>{t(`document.aiMeeting.recordingState.${state}`)}</span>
           <Button variant='outline' disabled={state === 'stopping'} onClick={() => void session.current?.stop()}>

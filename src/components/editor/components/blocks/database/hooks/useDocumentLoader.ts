@@ -56,7 +56,11 @@ export function useDocumentLoader({
       for (let attempt = 1; attempt <= retries; attempt++) {
         try {
           Log.debug('[useDocumentLoader] attempt', { viewIdToLoad, attempt, retries });
-          const result = await loadView(viewIdToLoad, false, false, { databaseId, databaseMetadataOnly: true });
+          const result = await loadView(viewIdToLoad, false, false, {
+            databaseId,
+            databaseMetadataOnly: true,
+            preserveViewMetadata: true,
+          });
 
           if (result) {
             Log.debug('[useDocumentLoader] loadView returned doc', { viewIdToLoad, attempt });
@@ -133,14 +137,22 @@ export function useDocumentLoader({
   useEffect(() => {
     if (!doc || !bindViewSync) return;
 
+    const docWithMeta = doc as YDocWithMeta;
+    const docViewId = docWithMeta.view_id ?? docWithMeta.object_id ?? doc.guid;
+    // A linked view can share a canonical doc whose metadata belongs to the
+    // full-page view. Sync is keyed by the database, not by its individual views.
+    const matchesDatabase = databaseId && (docWithMeta.object_id ?? doc.guid) === databaseId;
+
+    if (docViewId !== viewId && !matchesDatabase) return;
+
     // An embedded view may share the page's canonical database. Own a realtime
     // subscription without replacing the page's view identity or sync flag.
     if (scheduleDeferredCleanup) {
       return retainRollupSource({ bindViewSync, scheduleDeferredCleanup }, doc);
     }
 
-    if (!(doc as YDocWithMeta)._syncBound) bindViewSync(doc);
-  }, [doc, bindViewSync, scheduleDeferredCleanup]);
+    if (!docWithMeta._syncBound) bindViewSync(doc);
+  }, [doc, bindViewSync, scheduleDeferredCleanup, viewId, databaseId]);
 
   useEffect(() => {
     if (!eventEmitter) return;

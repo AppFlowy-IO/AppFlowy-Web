@@ -89,7 +89,7 @@ test.describe('Embedded database opened as a full page', () => {
     const createdGrid = page.waitForResponse(
       (response) =>
         response.request().method() === 'POST' &&
-        response.url().endsWith('/v2/page-view/database/default') &&
+        new URL(response.url()).pathname.endsWith('/v2/page-view/database/default') &&
         response.request().postDataJSON()?.parent_view_id === documentId
     );
 
@@ -113,7 +113,7 @@ test.describe('Embedded database opened as a full page', () => {
     const calendarRequest = page.waitForResponse(
       (response) =>
         response.request().method() === 'POST' &&
-        response.url().endsWith('/v2/page-view/database-view/default') &&
+        new URL(response.url()).pathname.endsWith('/v2/page-view/database-view/default') &&
         response.request().postDataJSON()?.view.parent_view_id === gridCommand.container_id
     );
 

@@ -4,6 +4,101 @@ import { parseMarkdown } from '../markdown-parser';
 
 describe('markdown-parser', () => {
   describe('parseMarkdown', () => {
+    it.each(['  \n', '\\\n'])('preserves a Markdown hard break %j and the bold/link offsets after it', (lineBreak) => {
+      const blocks = parseMarkdown(`Fiscal policy.${lineBreak}Attendees include **Jamie Dimon**. This is an [executive interview](https://example.com).`);
+      const text = 'Fiscal policy.\nAttendees include Jamie Dimon. This is an executive interview.';
+
+      expect(blocks).toHaveLength(1);
+      expect(blocks[0]).toMatchObject({ type: BlockType.Paragraph, text });
+      expect(blocks[0].formats).toContainEqual({ type: 'bold', start: text.indexOf('Jamie Dimon'), end: text.indexOf('Jamie Dimon') + 'Jamie Dimon'.length });
+      expect(blocks[0].formats).toContainEqual({ type: 'link', start: text.indexOf('executive interview'), end: text.indexOf('executive interview') + 'executive interview'.length, data: { href: 'https://example.com' } });
+    });
+
+    it('preserves a hard break inside emphasized text without shifting later formatting', () => {
+      const [block] = parseMarkdown('**Executive  \ninterview** with **Jamie Dimon**.');
+
+      expect(block.text).toBe('Executive\ninterview with Jamie Dimon.');
+      const nameStart = block.text.indexOf('Jamie Dimon');
+
+      expect(block.formats).toContainEqual({ type: 'bold', start: nameStart, end: nameStart + 'Jamie Dimon'.length });
+      expect(block.formats.filter((format) => format.type === 'bold').some((format) => format.start === 'Executive'.length && format.end === 'Executive\n'.length)).toBe(true);
+    });
+
+    it('preserves nested summary bullets and their own rich-text offsets', () => {
+      const blocks = parseMarkdown('- **Key point:** Some credit spreads rise. {ref:id1}\n  - **Context:** Conference growth. {ref:id2}\n- **Next:** Follow up.');
+
+      expect(blocks).toHaveLength(2);
+      expect(blocks[0]).toMatchObject({
+        type: BlockType.BulletedListBlock,
+        text: 'Key point: Some credit spreads rise. {ref:id1}',
+        formats: [{ type: 'bold', start: 0, end: 10 }],
+        children: [{
+          type: BlockType.BulletedListBlock,
+          text: 'Context: Conference growth. {ref:id2}',
+          formats: [{ type: 'bold', start: 0, end: 8 }],
+          children: [],
+        }],
+      });
+      expect(blocks[1].text).toBe('Next: Follow up.');
+    });
+
+    it('keeps paragraphs, ordered lists, tasks and code nested under their list item', () => {
+      const blocks = parseMarkdown([
+        '- Parent', '', '  Follow-up **paragraph**.', '',
+        '  3. Numbered child', '  4. Next child', '     - [x] Done', '     - [ ] Pending', '',
+        '  ```ts', '  const answer = 42;', '  ```',
+      ].join('\n'));
+
+      expect(blocks).toHaveLength(1);
+      expect(blocks[0].text).toBe('Parent');
+      expect(blocks[0].children).toMatchObject([
+        { type: BlockType.Paragraph, text: 'Follow-up paragraph.', formats: [{ type: 'bold', start: 10, end: 19 }] },
+        { type: BlockType.NumberedListBlock, text: 'Numbered child', data: { number: 3 } },
+        { type: BlockType.NumberedListBlock, text: 'Next child', data: { number: 4 }, children: [
+          { type: BlockType.TodoListBlock, text: 'Done', data: { checked: true } },
+          { type: BlockType.TodoListBlock, text: 'Pending', data: { checked: false } },
+        ] },
+        { type: BlockType.CodeBlock, text: 'const answer = 42;', data: { language: 'ts' } },
+      ]);
+    });
+
+    it('preserves nesting when normalizing Unicode bullet markers', () => {
+      const blocks = parseMarkdown('• Parent\n  ◦ **Context:** Child\n• Sibling');
+
+      expect(blocks.map((block) => block.text)).toEqual(['Parent', 'Sibling']);
+      expect(blocks[0].children[0]).toMatchObject({ type: BlockType.BulletedListBlock, text: 'Context: Child' });
+    });
+
+    it('parses tab-separated Unicode bullets pasted after a paragraph as list items', () => {
+      const blocks = parseMarkdown('New features:\n\t•\tFast performance\n\t•\tSecure encryption\n\t•\tOffline mode');
+
+      expect(blocks.map(({ type, text }) => ({ type, text }))).toEqual([
+        { type: BlockType.Paragraph, text: 'New features:' },
+        { type: BlockType.BulletedListBlock, text: 'Fast performance' },
+        { type: BlockType.BulletedListBlock, text: 'Secure encryption' },
+        { type: BlockType.BulletedListBlock, text: 'Offline mode' },
+      ]);
+    });
+
+    it('preserves nested Unicode bullets indented with tabs', () => {
+      const blocks = parseMarkdown('\t•\tParent\n\t\t◦\tChild\n\t•\tSibling');
+
+      expect(blocks.map((block) => block.text)).toEqual(['Parent', 'Sibling']);
+      expect(blocks[0].children[0]).toMatchObject({ type: BlockType.BulletedListBlock, text: 'Child' });
+    });
+
+    it('preserves empty Unicode list items without consuming the next marker', () => {
+      const blocks = parseMarkdown('•\n• Second');
+
+      expect(blocks.map((block) => block.text)).toEqual(['', 'Second']);
+    });
+
+    it('keeps empty list items without copying text from their siblings', () => {
+      const blocks = parseMarkdown('-\n- Second');
+
+      expect(blocks.map((block) => block.text)).toEqual(['', 'Second']);
+    });
+
     it('should return empty array for empty markdown', () => {
       const blocks = parseMarkdown('');
 
