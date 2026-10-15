@@ -428,25 +428,15 @@ test.describe('Workspace permission screenshot gallery', () => {
     await expect(page.getByText("Join a workspace you've been invited to below.")).toBeVisible();
     await expect(page.getByText('Ask a workspace owner to invite you')).toHaveCount(0);
 
-    // Jordan's invitation is for a guest. The page says so under the workspace name once the server
-    // sends the invited role (`role` on each pending invitation: "Owner", "Member" or "Guest"); a
-    // server that sends none gets no line, and this capture is to be retaken once one does.
+    // Jordan's invitation is for a guest: the server sends the invited role on each pending
+    // invitation (`role`: "Owner", "Member" or "Guest"), and the page says so under the workspace name.
     const invitations = await fetch(`${cfg.cloud}/api/workspace/invite?status=Pending`, {
       headers: { Authorization: `Bearer ${fixture.people.jordan.auth.access_token}` },
     }).then((response) => response.json() as Promise<{ data?: { workspace_id: string; role?: unknown }[] }>);
     const invitation = invitations.data?.find((item) => item.workspace_id === fixture.workspaceId);
-    const guestLine = page.getByText('Invited as a guest', { exact: true });
 
-    expect(invitation).toBeDefined();
-    if (invitation?.role === 'Guest') {
-      await expect(guestLine).toBeVisible();
-    } else {
-      await expect(guestLine).toHaveCount(0);
-      test.info().annotations.push({
-        type: 'waits for the server',
-        description: `the invitation list sends role ${JSON.stringify(invitation?.role ?? null)}; retake account-only-pending-invitation.png once it sends "Guest"`,
-      });
-    }
+    expect(invitation?.role).toBe('Guest');
+    await expect(page.getByText('Invited as a guest', { exact: true })).toBeVisible();
 
     await shoot(page, 'account-only-pending-invitation.png', 'jordan');
     await context.close();

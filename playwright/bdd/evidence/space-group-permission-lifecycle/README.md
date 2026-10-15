@@ -5,11 +5,13 @@ panel (who can create spaces, access to all spaces), the group dialog, Manage sp
 access and "Who can add pages to this space"), Create space, the account-only page, workspace
 creation limits, live loss and recovery of page access, and the sign-out question.
 
-**22 current captures were made on 2026-10-14** from the real Web app against a real Cloud server on
-an isolated stack with synthetic data: 21 after a design review of the first refresh (fixes listed
-below), of which 7 were taken again and 1 was added later the same day, after four follow-up fixes
-that align Web with Desktop (also listed below); a second rerun after the review of those fixes
-reproduced two of them byte for byte (also below). 15 earlier captures that still match the current
+**22 current captures were made on 2026-10-14** (one retaken on 2026-10-15) from the real Web app
+against a real Cloud server on an isolated stack with synthetic data: 21 after a design review of the
+first refresh (fixes listed below), of which 7 were taken again and 1 was added later the same day,
+after four follow-up fixes that align Web with Desktop (also listed below); a second rerun after the
+review of those fixes reproduced two of them byte for byte (also below); a third rerun on 2026-10-15
+retook the account-only page against a newer server that sends the invited role, so it now says
+"Invited as a guest" (also below). 15 earlier captures that still match the current
 UI are kept and labelled historical; 11 captures of the old UI were removed. Hashes, viewers and the
 server state read back after each run are in [capture-manifest.json](capture-manifest.json).
 
@@ -17,9 +19,9 @@ server state read back after each run are in [capture-manifest.json](capture-man
 
 | | |
 | --- | --- |
-| Date | 2026-10-14 (UTC) |
-| Web source | commit `bcfa8067` on `oodrive-fix/web-visual` (integration branch `codex/oodrive-permissions-fixes` at `b612fb90` plus the UI fixes below and the capture spec), served by the vite dev server. The rerun (the Permissions panel as owner and as member, and the refused Create space) used app source at commit `fde232d7` on `oodrive-fix/web-final` (the integration branch at `31cb5377` plus the four follow-up fixes below) with the capture spec and seed as committed in `3f0ef353` (the commit that also added the retaken images and this record; their hashes are in the manifest, and `fde232d7` alone does not contain them), served the same way. The second rerun (the refused Create space and the account-only page) used commit `8d29f0e3` on `oodrive-fix/web-final` (the above plus the review follow-ups below; app source and harness in that one commit), served the same way |
-| Server source | AppFlowy Cloud Premium integration branch `codex/oodrive-permissions-fixes` at `59be2954e`. The binary was built at `540757ea9` with `cargo build --locked --bin appflowy_cloud --features commercial-local-test` (self-hosted feature set: three member seats, guests separate); the three commits since then change only tests and docs. Run with `APPFLOWY_ACCESS_CONTROL=true`. The rerun used the same binary (same hash; the stack's build record notes two uncommitted files at build time) while the branch had moved to `6dc8eec23`, whose only source change since (`b11f93934`, database duplicate authorization) does not touch these screens |
+| Date | 2026-10-14 (UTC); the account-only page was retaken on 2026-10-15 (UTC) |
+| Web source | commit `bcfa8067` on `oodrive-fix/web-visual` (integration branch `codex/oodrive-permissions-fixes` at `b612fb90` plus the UI fixes below and the capture spec), served by the vite dev server. The rerun (the Permissions panel as owner and as member, and the refused Create space) used app source at commit `fde232d7` on `oodrive-fix/web-final` (the integration branch at `31cb5377` plus the four follow-up fixes below) with the capture spec and seed as committed in `3f0ef353` (the commit that also added the retaken images and this record; their hashes are in the manifest, and `fde232d7` alone does not contain them), served the same way. The second rerun (the refused Create space and the account-only page) used commit `8d29f0e3` on `oodrive-fix/web-final` (the above plus the review follow-ups below; app source and harness in that one commit), served the same way. The third rerun (the account-only page) used app source at the integration branch head `ef390b5b` on `oodrive-fix/web-guest-capture`, with the capture spec as committed together with the retaken image and this record, served the same way |
+| Server source | AppFlowy Cloud Premium integration branch `codex/oodrive-permissions-fixes` at `59be2954e`. The binary was built at `540757ea9` with `cargo build --locked --bin appflowy_cloud --features commercial-local-test` (self-hosted feature set: three member seats, guests separate); the three commits since then change only tests and docs. Run with `APPFLOWY_ACCESS_CONTROL=true`. The rerun used the same binary (same hash; the stack's build record notes two uncommitted files at build time) while the branch had moved to `6dc8eec23`, whose only source change since (`b11f93934`, database duplicate authorization) does not touch these screens. The third rerun used the integration branch at `e2a01e66c`, whose invitation list sends the invited role, with the same self-hosted feature set: the `appflowy_cloud` executable of `cargo test --no-run --locked --test main --features commercial-local-test` from the branch's validation run (so test fixtures enabled by its dev-dependencies are compiled in, unused by the server; hash in the manifest). The default-feature build of that commit was started first, but a hosted build refuses the seed's installation policy and cannot restrict workspace creation, so nothing was captured with it |
 | Stack | Isolated and synthetic: its own GoTrue (`appflowyinc/gotrue_premium:latest`), Redis, PostgreSQL database and MinIO bucket on loopback ports. No other environment, account or data was used. The Worker was not running (no imports or background jobs are shown). |
 | Browser | Chromium 145 (Playwright build 1208, headless, so scrollbars are hidden), 1440×900, device scale 1. Each person was signed in with a GoTrue password grant stored as the app's session (not through the login screen). Requests to anything but the three stack origins were blocked. |
 | Data | Created through the HTTP APIs only (GoTrue admin and Cloud REST) by [the seed](../../../support/permission-gallery-seed.ts). People use `@demo.test` addresses; nothing real is shown. |
@@ -40,7 +42,8 @@ skipped without those variables. All 7 of its tests passed in the first run; the
 now 8 tests (with `--grep`), and all 3 passed. The second rerun ran 2 of the 8: the refused Create
 space into this folder, and the account-only page into a scratch folder to check its new assertion
 against this server; both passed, and both images came out byte for byte the same as the committed
-ones, so no image changed.
+ones, so no image changed. The third rerun ran 1 of the 8, the account-only page, into this folder;
+it passed, and only that image changed.
 
 ## The Demo workspace
 
@@ -197,15 +200,13 @@ shown. *Does not prove* that the server refuses a creation request.
 ![Workspace menu with Create workspace unavailable](workspace-menu-create-workspace-denied.png)
 
 **Signed in without a workspace.** Jordan sees "You're not in a workspace yet", the signed-in
-address, "Join a workspace you've been invited to below.", the pending invitation to Demo with
-Join, the reason creation is unavailable, Check again as a text button, and Sign out. The spec
-checked the join line is shown and the "ask a workspace owner" line is not; the API read back an
-empty workspace list and the pending invitation. *Not shown*: that the invitation is a guest
-invitation; the page says "Invited as a guest" once the server sends the invited role, which this
-server does not yet (the invitation read back after the rerun has no role), so this capture was not
-retaken. The spec checks that line: shown when the invitation it reads back carries the role
-`"Guest"`, absent otherwise (as here, with a note that the capture waits for the server; the second
-rerun confirmed it: no role, no line, the same image). *Not tested*: joining.
+address, "Join a workspace you've been invited to below.", the pending invitation to Demo with Join
+and, under "Invited by Olivia Martin", "Invited as a guest", the reason creation is unavailable,
+Check again as a text button, and Sign out. Retaken in the third rerun, against a server that sends
+the invited role. The spec checked the join line is shown and the "ask a workspace owner" line is
+not, that the invitation it read back carries the role `"Guest"`, and that "Invited as a guest" is
+shown; the API read back an empty workspace list and the pending guest invitation. *Not tested*:
+joining, or what a guest can open after joining.
 
 ![Account-only page with a pending invitation](account-only-pending-invitation.png)
 
@@ -236,13 +237,11 @@ Made test-first on `oodrive-fix/web-final` so Web says and does the same as Desk
 
 - `d7327d21` The space creation choices read from the most to the fewest people: Owners and members,
   Owners and selected members, Owners only (narrowing still asks first).
-- `a8a269d1` The account-only page adds "Invited as a guest" under an invitation once the server
-  sends the invited role. Done on Web, waiting for the server: no server branch sends the role yet, so
-  it is not shown here. What the page reads is `role` on each item of
+- `a8a269d1` The account-only page adds "Invited as a guest" under an invitation the server marks
+  as a guest invitation (captured in the third rerun). What the page reads is `role` on each item of
   `GET /api/workspace/invite?status=Pending`, the invitation's role by name (`"Owner"`, `"Member"` or
   `"Guest"`, spelt as a workspace member's `role` already is); no field, or any other value, adds
-  nothing. Once a server sends it, the account-only capture is retaken: its spec test checks the line
-  whenever the invitation it reads back carries `"Guest"`.
+  nothing, so a server that sends no role shows no line.
 - `9aaec729` Failure toasts in Manage space and People > Groups name the change that failed and give
   a plain reason ("Couldn't change access for Alex. You don't have permission to do this."), with the
   confirmed value kept on screen (not captured; component tests cover them).
@@ -259,10 +258,25 @@ captures they could touch were run again and came out byte for byte the same:
 - `3b516537` When the rule refuses a new space on Create, Close takes keyboard focus as the card
   appears, so a keyboard or screen reader user does not lose their place; the spec now asserts it
   (no focus ring in the capture, as Create was pressed with the mouse).
-- `84b75699` The "Invited as a guest" line is recorded as done on Web and waiting for the server, with
-  the exact field the page reads; the spec checks the line whenever the server sends the role.
+- `84b75699` This record named the exact field the "Invited as a guest" line reads, and the spec
+  checked the line whenever the server sent the role (none did until the third rerun).
 - `967a6c36`, `8d29f0e3` This README and the manifest name the commit that holds the first rerun's
   harness and say that a rerun can differ by a few pixels.
+
+## Guest invitation line (third rerun, 2026-10-15)
+
+The integration branch's invitation list now sends the invited role (server `e2a01e66c`), so the
+account-only page was retaken; nothing else was run again.
+
+- The capture spec's account-only test now requires the role `"Guest"` on the invitation it reads
+  back and that "Invited as a guest" is shown; a run without the role is no longer noted as waiting
+  for the server. The seed already invited Jordan as a guest (and Alex and Sam as members), so it did
+  not change.
+- Only that image changed: the guest line under "Invited by Olivia Martin"; the taller row moves the
+  centred content up 8 px.
+- Read back after the run: Jordan's pending invitation to Demo has the role `"Guest"`, Jordan has no
+  workspace and may not create one, only selected users may create workspaces, and Demo's members
+  are Olivia (Owner), Alex and Sam (Members) and Jordan (pending Guest).
 
 ## UI fixes made while refreshing the gallery
 
@@ -379,10 +393,8 @@ Native selects, radio buttons, Save buttons and internal wording that the redesi
 - Synthetic data on a self-hosted build; the Worker, search and AI services were not running.
 - The gallery run changed permissions only through owner and operator API calls; it does not show
   that saving from these controls works (component tests and server tests cover that separately).
-- The account-only page cannot yet say that Jordan's invitation is a guest invitation: this server's
-  invitation list has no invited role. The page shows "Invited as a guest" once each pending
-  invitation carries `role` with the value `"Guest"` (see the `a8a269d1` note above); that capture is
-  then to be retaken, and the manifest's `waiting_on_server` entry says so.
+- The account-only page was retaken against a later server build (`e2a01e66c`) than the other
+  current captures, because only that build sends the invited role; no other screen here shows it.
 - Failure toasts, which now name the change that failed and give a plain reason, are not captured;
   component tests cover them.
 - [validation.json](validation.json) records the 2026-10-12 validation of the earlier draft. The

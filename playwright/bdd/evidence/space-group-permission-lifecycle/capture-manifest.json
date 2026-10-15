@@ -1,9 +1,9 @@
 {
   "gallery": "Web PR #621 workspace permission UI",
-  "updated": "2026-10-14",
+  "updated": "2026-10-15",
   "current_capture": {
     "date": "2026-10-14",
-    "status": "passed; 7 of 7 capture tests in the first run (06:44 UTC); 3 of 3 in the rerun (10:55 UTC) of the tests whose screens changed, with the spec now at 8 tests; 2 of 2 in a second rerun (11:28 UTC) after the review of those fixes, both images byte-identical to the committed ones (nothing changed on screen)",
+    "status": "passed; 7 of 7 capture tests in the first run (06:44 UTC); 3 of 3 in the rerun (10:55 UTC) of the tests whose screens changed, with the spec now at 8 tests; 2 of 2 in a second rerun (11:28 UTC) after the review of those fixes, both images byte-identical to the committed ones (nothing changed on screen); 1 of 1 in a third rerun (2026-10-15, 00:37 UTC) of the account-only page against a server that sends the invited role, whose image now shows \"Invited as a guest\"",
     "kind": "fresh connected UI captures on an isolated synthetic stack",
     "web": {
       "branch": "oodrive-fix/web-visual",
@@ -76,7 +76,12 @@
         "branch": "oodrive-fix/web-final",
         "source_commit": "8d29f0e372d41331197a0bcfb56ee3a40b820bd1",
         "harness_commit": "8d29f0e372d41331197a0bcfb56ee3a40b820bd1",
-        "provenance": "One commit holds both the app source and the harness (the spec changed in 3b516537 and 84b75699, the seed and config did not), so checking out source_commit reproduces this run; the `harness` hashes below are its hashes.",
+        "provenance": "One commit holds both the app source and the harness (the spec changed in 3b516537 and 84b75699, the seed and config did not), so checking out source_commit reproduces this run; its harness hashes are under harness_at_second_rerun (the spec changed again for the third rerun).",
+        "harness_at_second_rerun": {
+          "playwright/e2e/app/permission-gallery.capture.spec.ts": "437fcf448474f896504be31b1fe562f9ae8375431b9e425c6305b5cd39bd61ae",
+          "playwright/support/permission-gallery-seed.ts": "f91c75eab139956f40c22446f80a1e88777144cbc979651613e566ec7a3562ec",
+          "playwright.permission-gallery.config.ts": "fe52e98904cb7820e3eaaf5ab8b35148bd98b4352cf61b9bbc673d696beec66a"
+        },
         "base": "codex/oodrive-permissions-fixes at 31cb5377",
         "served_by": "vite dev server (loopback)",
         "fix_commits": [
@@ -106,6 +111,26 @@
           "account without a workspace sees its pending invitation: waits for the server: the invitation list sends role null; retake account-only-pending-invitation.png once it sends \"Guest\""
         ],
         "note": "Close takes keyboard focus as the refused card appears; Create was pressed with the mouse in this capture, so Chromium draws no focus ring and the image is unchanged (the spec asserts the focus). The account-only image was written to a scratch folder only to check the new assertion against this server; it came out byte for byte the same, so the committed file was left alone. The French toast fix (514c4acc) is not visible in this English gallery."
+      },
+      "third_rerun": {
+        "date": "2026-10-15",
+        "time_utc": "00:37",
+        "branch": "oodrive-fix/web-guest-capture",
+        "source_commit": "ef390b5b1a70454de6cb3e8b14bda1e47e63aa9d",
+        "provenance": "App source at source_commit, the integration branch head (the guest line is a8a269d1, merged there). The capture spec whose hash is listed under `harness` was committed together with the retaken image and this record, in the commit that follows source_commit on this branch; the seed and config did not change.",
+        "base": "codex/oodrive-permissions-fixes at ef390b5b",
+        "served_by": "vite dev server (loopback)",
+        "tests_run": [
+          "account without a workspace sees its pending invitation"
+        ],
+        "captures_retaken_changed": [
+          "account-only-pending-invitation.png"
+        ],
+        "captures_retaken_identical": [],
+        "captures_added": [],
+        "spec_change": "The account-only test requires role \"Guest\" on the invitation it reads back and a visible \"Invited as a guest\"; the branch that annotated a run without the role as \"waits for the server\" is removed. The seed already invited Jordan as a guest (and Alex and Sam as members), so it is unchanged.",
+        "server_contract": "GET /api/workspace/invite?status=Pending: each AFWorkspaceInvitation carries `role`, the invitation's AFRole by variant name (\"Owner\" | \"Member\" | \"Guest\", as AFWorkspaceMember.role is sent). The page adds \"Invited as a guest\" only for \"Guest\"; no field, or any other value, adds nothing.",
+        "note": "The only change on screen is the guest line under \"Invited by Olivia Martin\"; the taller row moves the centred content up 8 px. This resolves the former waiting_on_server entry (Web a8a269d1)."
       }
     },
     "server": {
@@ -125,7 +150,31 @@
       "gotrue_image": "appflowyinc/gotrue_premium:latest (sha256:11f21d47ed443155c21ff3d47ab8dc9908e369151eeb3dc1869a853176b9bfd2)",
       "branch_head_at_rerun": "6dc8eec230b221387021ee65bac19ada3a574638",
       "rerun_note": "Same binary (sha256 unchanged); the stack's build provenance records it as built at 540757ea9 with two uncommitted files. Since 59be2954e the branch has three more commits, one touching src (b11f93934, database duplicate authorization), none of them about the screens captured.",
-      "second_rerun_note": "Same binary again (sha256 unchanged). Its invitation list has no role field (see server_readback_after_capture.second_rerun)."
+      "second_rerun_note": "Same binary again (sha256 unchanged). Its invitation list has no role field (see server_readback_after_capture.second_rerun).",
+      "third_rerun": {
+        "date": "2026-10-15",
+        "branch": "codex/oodrive-permissions-fixes",
+        "commit": "e2a01e66c8b02c55ab9dd31139b8374063fee3e7",
+        "build": "cargo test --no-run --locked --test main --features commercial-local-test (its appflowy_cloud executable)",
+        "features": [
+          "actix-cors",
+          "commercial-local-test",
+          "default",
+          "self-host-af",
+          "sync-v2"
+        ],
+        "binary_sha256": "fc6f33c6fb6f6b9b5217cf39bbb0f02e93cc3ec976a1f29e4accc7ec5dc0f524",
+        "binary_note": "The self-hosted feature set, as for the first run. Taken from the integration branch's validation run, where it was built as the executable of the integration test suite, so features that the root package's dev-dependencies enable are compiled in (for example appflowy-cloud-core and collab-storage `test-support`, which add test fixtures that the server does not call).",
+        "default_feature_binary_sha256": "ac17c4386a0fd5a6173982507609ca94f430206c43b85af80a17f901d7faa050",
+        "default_feature_binary_note": "The default-feature build of the same commit (cargo build --locked --bin appflowy_cloud) was started first. Its invitation list also sent role \"Guest\", but as a hosted build it refused the seed's installation policy (code 1012, \"Restricted workspace creation is unavailable in this deployment\") and reports workspace creation as unrestricted, so it cannot show this gallery's state; it was stopped and nothing was captured with it.",
+        "settings": {
+          "APPFLOWY_ACCESS_CONTROL": "true",
+          "RUST_MIN_STACK": "16777216",
+          "self_hosted": true
+        },
+        "migration_ledger_max_version": 20261014060432,
+        "migration_note": "SELECT max(version) FROM _sqlx_migrations after start: 20261014060432 (permission_topology_trash_membership, applied when the default-feature build of the same commit started first)."
+      }
     },
     "stack": "isolated loopback stack with its own GoTrue, Redis, PostgreSQL database and MinIO bucket; synthetic @demo.test people; no other environment or data",
     "browser": {
@@ -136,18 +185,8 @@
       "network": "requests outside the three stack origins aborted"
     },
     "permission_changes": "API only: the seed (GoTrue admin and Cloud REST, operator for the installation policy) and owner calls removing/restoring the HR group in the HR space; UI questions were opened and cancelled and the add lists were closed; nothing was saved from the UI (see server_readback_after_capture)",
-    "waiting_on_server": [
-      {
-        "file": "account-only-pending-invitation.png",
-        "web_commit": "a8a269d1",
-        "shows_once_the_server_sends_it": "\"Invited as a guest\" under the Demo invitation",
-        "server_contract": "GET /api/workspace/invite?status=Pending: each AFWorkspaceInvitation carries `role`, the invitation's AFRole by variant name (\"Owner\" | \"Member\" | \"Guest\", as AFWorkspaceMember.role is already sent); Option<AFRole>, omitted or null when unknown. No field, null or any other value adds nothing on the page.",
-        "server_state": "not sent by the server binary used here (built at 540757ea9) nor by the integration branch head at the rerun (6dc8eec23), whose AFWorkspaceInvitation has no role field; the read-back jordan_pending shows role null",
-        "then": "retake with the capture spec: its account-only test asserts the line when the invitation it reads back carries role \"Guest\", and its absence otherwise (annotated \"waits for the server\")"
-      }
-    ],
     "harness": {
-      "playwright/e2e/app/permission-gallery.capture.spec.ts": "437fcf448474f896504be31b1fe562f9ae8375431b9e425c6305b5cd39bd61ae",
+      "playwright/e2e/app/permission-gallery.capture.spec.ts": "412288242bb06ef0a9cc7bd52c8a5c253beb9df63ea23112abd7c13b306f9500",
       "playwright/support/permission-gallery-seed.ts": "f91c75eab139956f40c22446f80a1e88777144cbc979651613e566ec7a3562ec",
       "playwright.permission-gallery.config.ts": "fe52e98904cb7820e3eaaf5ab8b35148bd98b4352cf61b9bbc673d696beec66a"
     },
@@ -279,6 +318,59 @@
         ],
         "jordan_workspaces": [],
         "note": "Read after the second rerun through the stack APIs (password grants on its GoTrue): the rule the refused-creation capture narrowed is back to Owners and selected members, Alex sees no Marketing space (Leadership is private to Olivia; Shared is the shared pages entry), and each pending invitation still carries exactly the fields above, with no role."
+      },
+      "third_rerun": {
+        "installation_policy": {
+          "supported": true,
+          "mode": "selected_users",
+          "revision": "2"
+        },
+        "jordan_workspace_creation": false,
+        "jordan_pending": [
+          [
+            "Demo",
+            "Pending",
+            "Guest"
+          ]
+        ],
+        "jordan_invitation_fields": [
+          "invite_id",
+          "invitee_email",
+          "inviter_email",
+          "inviter_icon",
+          "inviter_name",
+          "member_count",
+          "role",
+          "status",
+          "updated_at",
+          "workspace_icon",
+          "workspace_id",
+          "workspace_name"
+        ],
+        "jordan_workspaces": [],
+        "demo_roster": [
+          [
+            "alex@demo.test",
+            "Member",
+            false
+          ],
+          [
+            "jordan@demo.test",
+            "Guest",
+            true
+          ],
+          [
+            "olivia@demo.test",
+            "Owner",
+            false
+          ],
+          [
+            "sam@demo.test",
+            "Member",
+            false
+          ]
+        ],
+        "note": "Read after the third rerun through the stack APIs (password grants on its GoTrue): Jordan's pending invitation now carries role \"Guest\" among its fields, Jordan has no workspace and may not create one, and Demo's roster keeps Alex and Sam as Members (Jordan is listed as a pending Guest)."
       }
     },
     "captures": [
@@ -526,17 +618,18 @@
         "file": "account-only-pending-invitation.png",
         "viewer": "jordan",
         "crop": "viewport",
-        "shows": "\"You're not in a workspace yet\" for Jordan: \"Join a workspace you've been invited to below.\", the Demo invitation with Join, the denial reason, Check again as a text button, Sign out",
+        "shows": "\"You're not in a workspace yet\" for Jordan: \"Join a workspace you've been invited to below.\", the Demo invitation (\"Invited by Olivia Martin\", \"Invited as a guest\") with Join, the denial reason, Check again as a text button, Sign out",
         "asserted_by_spec": [
           "heading visible",
           "Demo invitation visible",
           "join line shown, invitation request line absent",
-          "\"Invited as a guest\" absent while the invitation read back carries no role (added for the second rerun)"
+          "the invitation read back carries role \"Guest\" and \"Invited as a guest\" is visible (third rerun)"
         ],
-        "does_not_prove": "Joining was not tested; the invitation is a guest invitation, which the page can only say once the server sends the invited role (it does not yet; see waiting_on_server), so this capture is kept until then.",
-        "sha256": "9f86204efa35b3092609f524b4a45f904beacb1969516de65f3cb4bff8172b35",
-        "captured_at": "2026-10-14T06:44:38.959Z",
-        "reproduced": "second rerun 2026-10-14T11:29:25.150Z, written to a scratch folder: byte-identical (same sha256); the run was annotated \"waits for the server\""
+        "does_not_prove": "Joining was not tested, nor what a guest can open after joining.",
+        "sha256": "21696b73c4c6b7321665f2fe646924e57614f1d9f2b764ae79ca0b140107be4e",
+        "captured_at": "2026-10-15T00:37:36.243Z",
+        "retaken": "third rerun 2026-10-15 against server e2a01e66c, which sends the invited role; the replaced image (replaced_sha256, captured 2026-10-14T06:44:38.959Z and reproduced byte for byte in the second rerun) had no guest line",
+        "replaced_sha256": "9f86204efa35b3092609f524b4a45f904beacb1969516de65f3cb4bff8172b35"
       },
       {
         "file": "page-no-access-after-group-removed.png",
@@ -586,7 +679,7 @@
       "Chromium only, 1440x900, English; no Desktop, login screen or mobile layout.",
       "Synthetic data on a self-hosted build; Worker, search and AI services not running.",
       "Permission changes through owner/operator API calls; saving from these controls is covered by component and server tests, not by this run.",
-      "Jordan's invitation is a guest invitation because the three member seats are taken; the page says \"Invited as a guest\" once the server sends the invited role, which this server does not yet.",
+      "The account-only page was retaken in the third rerun against a later server build (e2a01e66c) than the other current captures (540757ea9), because only the later one sends the invited role. Jordan's invitation is a guest invitation because the three member seats are taken.",
       "Failure toasts, which now name the change that failed and give a plain reason, are not captured; component tests cover them."
     ]
   },
