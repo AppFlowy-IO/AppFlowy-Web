@@ -497,8 +497,9 @@ export function initAPIService(config: AFCloudConfig) {
     async (config) => {
       applyServerRestoreFence(config, baseURL);
       config.atomicCreationOwner?.assertCurrent();
-      // Ordinary requests can join the same refresh as an atomic command. Every
-      // waiter must retain its original login lifetime before that shared await.
+      // Ordinary requests can join the same refresh as an atomic command, so the
+      // login is captured before that shared await: atomic commands keep exactly
+      // this login, ordinary requests keep its account.
       const session = captureTokenSession();
 
       config.authSessionWitness = session;
@@ -547,8 +548,11 @@ export function initAPIService(config: AFCloudConfig) {
         }
       }
 
+      // An atomic command keeps its exact login lifetime (its owner check is strict). An
+      // ordinary request may use a token another tab already rotated for the same account,
+      // but it is never sent with another account's credentials.
       config.atomicCreationOwner?.assertCurrent();
-      if (!isTokenSessionCurrent(session)) throw new Error('Request session changed');
+      if (getTokenParsed()?.user.id !== session.userId) throw new Error('Request session changed');
 
       if (access_token) {
         Object.assign(config.headers, {

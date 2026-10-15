@@ -68,8 +68,17 @@ jest.mock('axios', () => {
   };
 
   const isAxiosError = (error: unknown) => Boolean((error as { isAxiosError?: boolean })?.isAxiosError);
+  // Every API request is stamped with the tab's server restore generation, which needs its URL.
+  const getUri = ({ baseURL = '', url = '' }: { baseURL?: string; url?: string }) =>
+    /^https?:/.test(url) ? url : `${baseURL}${url}`;
 
-  return { __esModule: true, default: { create, isAxiosError, isCancel: () => false }, create, isAxiosError };
+  return {
+    __esModule: true,
+    default: { create, getUri, isAxiosError, isCancel: () => false },
+    create,
+    getUri,
+    isAxiosError,
+  };
 });
 
 jest.mock('@/application/sync-outbox', () => ({ clearDrainConfig: jest.fn(), setCurrentSession: jest.fn() }));
@@ -319,7 +328,8 @@ describe('token refresh across browser tabs', () => {
 
     await flush();
     await settlePost();
-    await request;
+    // The ended login's request is not sent at all (main's contract), and the session ends.
+    await expect(request).rejects.toThrow('Request failed with status code 400');
     expect(tab.signedOut).toHaveBeenCalledTimes(1);
     expect(storedToken()).toBeNull();
   });
