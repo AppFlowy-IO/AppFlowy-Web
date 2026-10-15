@@ -883,6 +883,7 @@ describe('DatabaseTemplateButton', () => {
     const createGate = new Promise<void>((resolve) => {
       resolveCreate = resolve;
     });
+
     jest.mocked(createCloudRow).mockImplementationOnce(async (intent) => {
       await createGate;
       return commitRow(intent);

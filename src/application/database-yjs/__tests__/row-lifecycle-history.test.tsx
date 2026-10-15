@@ -230,6 +230,7 @@ describe('row lifecycle production hooks use database history', () => {
       expect(getRowOrderIds(fixture)).toEqual([firstRowId, secondRowId, rowId]);
       act(() => result.current.history.redo());
     }
+
     expect(getRowOrderIds(fixture)).toEqual([firstRowId, rowId, secondRowId]);
   });
 

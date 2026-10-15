@@ -7,7 +7,7 @@ import { createDatabaseView, waitForGridReady } from '../../support/database-ui-
 import { DatabaseGridSelectors } from '../../support/selectors';
 import { generateRandomEmail, TestConfig } from '../../support/test-config';
 
-const rowRoute = '**/v2/database/*/row/default';
+const rowRoute = (url: URL) => /\/v2\/database\/[^/]+\/row\/default$/.test(url.pathname);
 
 test.beforeEach(async ({ page }) => {
   page.on('console', async (message) => {
@@ -48,7 +48,8 @@ function barrier() {
 async function createGrid(page: Page, request: APIRequestContext) {
   await signInAndWaitForApp(page, request, generateRandomEmail(), 0);
   const response = page.waitForResponse(
-    (item) => item.request().method() === 'POST' && item.url().endsWith('/v2/page-view/database/default')
+    (item) =>
+      item.request().method() === 'POST' && new URL(item.url()).pathname.endsWith('/v2/page-view/database/default')
   );
 
   await createDatabaseView(page, 'Grid', 0);
@@ -262,7 +263,7 @@ test('a template with an owned inline database commits its complete row graph be
   const finalized = page.waitForResponse(
     async (item) =>
       item.request().method() === 'POST' &&
-      item.url().endsWith('/v2/page-view/compound/finalize') &&
+      new URL(item.url()).pathname.endsWith('/v2/page-view/compound/finalize') &&
       (await item.json()).code === 0,
     { timeout: 30_000 }
   );
@@ -335,7 +336,7 @@ test('a self-linked template keeps one shared database and includes the committe
   const finalized = page.waitForResponse(
     async (item) =>
       item.request().method() === 'POST' &&
-      item.url().endsWith('/v2/page-view/compound/finalize') &&
+      new URL(item.url()).pathname.endsWith('/v2/page-view/compound/finalize') &&
       (await item.json()).code === 0,
     { timeout: 30_000 }
   );

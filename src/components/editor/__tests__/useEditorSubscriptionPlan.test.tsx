@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 
 import { Subscription, SubscriptionInterval, SubscriptionPlan } from '@/application/types';
+import { getConfigValue } from '@/utils/runtime-config';
 
 import { useEditorSubscriptionPlan } from '../useEditorSubscriptionPlan';
 
@@ -21,7 +22,9 @@ jest.mock('@/components/app/hooks/useServerInfo', () => ({
   useServerHostingMode: () => mockHostingMode,
   useServerInfoState: () => ({ status: 'available' }),
 }));
-jest.mock('@/utils/runtime-config', () => ({ getConfigValue: () => mockServerUrl }));
+jest.mock('@/utils/runtime-config', () => ({
+  getConfigValue: jest.fn((_key: string, fallback: string) => fallback),
+}));
 
 const proSubscription: Subscription = {
   currency: 'USD',
@@ -42,6 +45,7 @@ describe('editor color subscription reads', () => {
     mockUserId = 'user-a';
     mockWorkspaceId = `workspace-${++workspaceSequence}`;
     mockServerUrl = 'https://cloud.example.com';
+    jest.mocked(getConfigValue).mockImplementation(() => mockServerUrl);
     mockHostingMode = 'cloud';
     mockGetSubscriptions.mockReset().mockResolvedValue([proSubscription]);
   });
