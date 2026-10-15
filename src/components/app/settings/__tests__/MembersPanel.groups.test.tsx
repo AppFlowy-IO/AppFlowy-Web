@@ -925,6 +925,7 @@ describe('MembersPanel live group refresh', () => {
       </AppEventEmitterContext.Provider>
     );
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Network Error'));
+    // The panel's own words with the error code; the raw 'Network Error' text is never shown.
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Error -1: settings.appearance.people.loadGroupsFailed'));
   });
 });

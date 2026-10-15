@@ -212,7 +212,8 @@ test('a failed join is reported and the lists are refreshed for another try', as
   mockAccept.mockRejectedValueOnce({ code: 1068, message: 'This invitation is no longer valid' });
   mount();
   fireEvent.click(await screen.findByRole('button', { name: 'workspaceCreation.joinNamed Demo' }));
-  await waitFor(() => expect(mockToastError).toHaveBeenCalledWith('This invitation is no longer valid'));
+  // The shared catalog's words for code 1068, never the server's own text.
+  await waitFor(() => expect(mockToastError).toHaveBeenCalledWith("This invitation can't be used."));
   expect(mockChange).not.toHaveBeenCalled();
   expect(mockListInvitations).toHaveBeenCalledTimes(2);
   expect(mockRefresh).toHaveBeenCalledTimes(1);

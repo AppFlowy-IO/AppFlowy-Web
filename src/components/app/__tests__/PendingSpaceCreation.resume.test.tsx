@@ -173,7 +173,7 @@ test('a resumed request stays open and saved with its fields when Check again is
   expect(screen.getByTestId('space-name-input').value).toBe('Submitted');
   fireEvent.click(screen.getByTestId('create-space-submit'));
 
-  await waitFor(() => expect(notify.error).toHaveBeenCalledWith('invalid space name'));
+  await waitFor(() => expect(notify.error).toHaveBeenCalledWith("This request isn't valid."));
   expect(mockCreateSpace).toHaveBeenCalledWith(expect.objectContaining({ view_id: 'space-original' }));
   // The earlier attempt may still commit, so the dialog keeps the request instead of vanishing.
   expect(screen.getByTestId('create-space-modal')).toBeTruthy();

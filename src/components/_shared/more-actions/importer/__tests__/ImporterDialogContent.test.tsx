@@ -146,7 +146,8 @@ describe('ImporterDialogContent', () => {
     expect(onSuccess).not.toHaveBeenCalled();
 
     await act(async () => rejectImport?.(new Error('Finalization failed')));
-    expect(notify.error).toHaveBeenCalledWith('Finalization failed');
+    // Raw error text is never shown; the shared renderer gives generic guidance.
+    expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.');
     expectControlsDisabled(false);
 
     uploadVisibleFile(file);
@@ -198,7 +199,7 @@ describe('ImporterDialogContent', () => {
     const { rerender } = render(<ImporterDialogContent source='notion' onSuccess={jest.fn()} />);
 
     uploadVisibleFile(file);
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Network Error'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
     mockCreation.canCreate = false;
     mockCreation.status = 'error';
     rerender(<ImporterDialogContent source='notion' onSuccess={jest.fn()} />);

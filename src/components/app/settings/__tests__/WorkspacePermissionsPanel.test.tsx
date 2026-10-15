@@ -249,7 +249,8 @@ describe('workspace permission settings', () => {
     mockPolicy.mockRejectedValueOnce({ code: 1012, message: 'Only workspace owners can change this.' });
     mount();
     fireEvent.click(await screen.findByTestId('space-creation-policy-members_and_owners'));
-    await waitFor(() => expect(toastError).toHaveBeenCalledWith('Only workspace owners can change this.'));
+    // The shared catalog's words for code 1012, never the server's own text.
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith("You don't have permission to do this."));
     expect(policyCard('owners_only').getAttribute('aria-pressed')).toBe('true');
     expect(policyCard('members_and_owners').getAttribute('aria-pressed')).toBe('false');
     expect(toastSuccess).not.toHaveBeenCalled();
@@ -554,7 +555,7 @@ describe('workspace permission settings', () => {
     mockMutate.mockRejectedValueOnce({ code: 1008, message: 'Selection is no longer eligible' });
     mount();
     fireEvent.click(await screen.findByRole('button', { name: 'workspacePermissions.removeNamed:Alice Martin' }));
-    await waitFor(() => expect(toastError).toHaveBeenCalledWith('Selection is no longer eligible'));
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith("This request isn't valid."));
     expect(screen.getByTestId(`space-creator-row-user-${aliceId}`)).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
     expect(toastSuccess).not.toHaveBeenCalled();

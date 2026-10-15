@@ -789,7 +789,7 @@ describe('CreateSpaceModal draft controller', () => {
 
     enterSpaceName('With a page');
     fireEvent.click(screen.getByTestId('create-space-submit'));
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('invalid page'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith("This request isn't valid."));
     expect(sessionStorage.length).toBe(0);
     fireEvent.click(screen.getByTestId('create-space-submit'));
     await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
@@ -808,7 +808,7 @@ describe('CreateSpaceModal draft controller', () => {
 
     enterSpaceName('Maybe created');
     fireEvent.click(screen.getByTestId('create-space-submit'));
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('response lost'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
     fireEvent.click(screen.getByTestId('create-space-close'));
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(sessionStorage.length).toBe(1);
@@ -983,7 +983,7 @@ describe('CreateSpaceModal draft controller', () => {
 
     fireEvent.click(screen.getByTestId('create-space-submit'));
 
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith(message));
+    await waitFor(() => expect(notify.error).toHaveBeenNthCalledWith(2, message));
     expect(onClose).not.toHaveBeenCalled();
     expect(mockMoveToTrash).not.toHaveBeenCalled();
     expect(mockDeleteTrash).not.toHaveBeenCalled();
@@ -1005,7 +1005,7 @@ describe('CreateSpaceModal draft controller', () => {
 
     enterSpaceName('Original space');
     fireEvent.click(screen.getByTestId('create-space-submit'));
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('response lost'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
     first.unmount();
     const onCreated = jest.fn();
 
@@ -1022,9 +1022,9 @@ describe('CreateSpaceModal draft controller', () => {
   });
 
   it.each([
-    ['a validation rejection', { httpStatus: 422, message: 'validation rejected' }, 'validation rejected'],
-    ['a B revocation after the first attempt', { code: 1012, httpStatus: 403, message: 'forbidden' }, 'forbidden'],
-    ['a proxy rate limit', { httpStatus: 429, message: 'too many requests' }, 'too many requests'],
+    ['a validation rejection', { httpStatus: 422, message: 'validation rejected' }, 'Error 422: Something went wrong. Contact support if this keeps happening.'],
+    ['a B revocation after the first attempt', { code: 1012, httpStatus: 403, message: 'forbidden' }, "You don't have permission to do this."],
+    ['a proxy rate limit', { httpStatus: 429, message: 'too many requests' }, 'Too many requests were made. Please wait before trying again.'],
   ])('keeps the original ID and queued roster when a checked-again resend gets %s', async (_case, rejection, message) => {
     const onClose = jest.fn();
     const onCreated = jest.fn();
@@ -1040,7 +1040,7 @@ describe('CreateSpaceModal draft controller', () => {
     // The first request has not committed yet, so the identical request is sent again.
     mockGetSpacePermission.mockRejectedValueOnce({ httpStatus: 404 });
     fireEvent.click(screen.getByTestId('create-space-submit'));
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith(message));
+    await waitFor(() => expect(notify.error).toHaveBeenNthCalledWith(2, message));
     expect(mockCreateSpace.mock.calls[1][0].view_id).toBe(clientOwnedSpaceId);
     // A refused resend proves nothing about the first request, which may still commit.
     expect(sessionStorage.length).toBe(1);
@@ -1109,7 +1109,7 @@ describe('CreateSpaceModal draft controller', () => {
 
     enterSpaceName('Research');
     fireEvent.click(screen.getByTestId('create-space-submit'));
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('response lost'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
     // The space exists without its first page; an older server adds the page under another ID,
     // which the page request refuses.
     mockGetView.mockRejectedValue({ code: -2, httpStatus: 404 });
@@ -1224,7 +1224,7 @@ describe('CreateSpaceModal draft controller', () => {
 
     await selectCustomAndAdd(candidateOne);
     fireEvent.click(screen.getByTestId('create-space-submit'));
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('member add unavailable'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
     fireEvent.click(screen.getByTestId('space-creation-add-later'));
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith('space-id', undefined));
@@ -1241,7 +1241,7 @@ describe('CreateSpaceModal draft controller', () => {
 
     await selectCustomAndAdd(candidateOne);
     fireEvent.click(screen.getByTestId('create-space-submit'));
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('member add unavailable'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
     first.unmount();
 
     render(<CreateSpaceModal open onClose={jest.fn()} onCreated={onCreated} />);
