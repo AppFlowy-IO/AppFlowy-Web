@@ -40,7 +40,8 @@ import {
  * drawn by this harness, not by the app: hidden from assistive technology, ignoring the pointer,
  * and with the caption text in CSS generated content, so no locator can match it. Each test puts
  * back, in a `finally`, the settings it changes and the text of any page it edits; a page's edit
- * history stays (the evidence README explains what that changes for view-group-reads-only).
+ * history stays, so on a reused database view-group-reads-only opens a page with deletions in its
+ * history (and asserts that the reader is still never told about edits waiting for access).
  */
 const config = process.env.APPFLOWY_PERMISSION_VIDEOS === '1' ? galleryConfigFromEnv() : undefined;
 const SLOW_MO_MS = 200;
@@ -63,6 +64,8 @@ const SAM_SENTENCE = 'Sam added this line through the HR group';
 const ONBOARDING_TEXT = galleryPageText('onboarding');
 const NEW_WORKSPACE = 'Video demo workspace';
 const NEW_SPACE = 'Marketing';
+/** The notice about edits waiting for edit access (or being saved); in the DOM only while shown. */
+const PENDING_EDITS_NOTICE = '[data-testid="pending-permission-edits"]';
 
 /**
  * Caption banner and pointer dot, drawn by the recording harness (installed in every page). Browser
@@ -327,6 +330,44 @@ function toast(page: Page, text: string) {
   return page.locator('[data-sonner-toast]').filter({ hasText: text });
 }
 
+interface NoticeWatch {
+  watching: boolean;
+  seen: boolean;
+  text: string;
+}
+
+/**
+ * Watch a window for the pending-edits notice from now on: every DOM change is checked, so a notice
+ * that comes and goes between two assertions is caught too. Returns a reader of what was seen;
+ * `watching` is false if the page was reloaded since (the watch would have been lost).
+ */
+async function watchPendingEditsNotice(page: Page) {
+  await page.evaluate((selector) => {
+    const state: NoticeWatch = { watching: true, seen: false, text: '' };
+    const look = () => {
+      const notice = document.querySelector(selector);
+
+      if (notice && !state.seen) {
+        state.seen = true;
+        state.text = notice.textContent ?? '';
+      }
+    };
+
+    (window as Window & { __pendingEditsNotice?: NoticeWatch }).__pendingEditsNotice = state;
+    look();
+    new MutationObserver(look).observe(document, { childList: true, subtree: true });
+  }, PENDING_EDITS_NOTICE);
+  return () =>
+    page.evaluate(
+      (): NoticeWatch =>
+        (window as Window & { __pendingEditsNotice?: NoticeWatch }).__pendingEditsNotice ?? {
+          watching: false,
+          seen: false,
+          text: '',
+        }
+    );
+}
+
 /**
  * A test's clean-up, run from its `finally`. If it fails, the test fails, except that it never
  * replaces the error that ended the test early: that one is reported, this one is annotated.
@@ -466,6 +507,9 @@ test.describe('Workspace permission videos', () => {
           .toMatchObject({ can_read: true, can_write: false })
       );
       const page = await clip.open('alex', `/app/${fixture.workspaceId}/${fixture.pages.onboarding}`);
+      // A reader makes no edits, so the app must never tell him about edits waiting for access.
+      const noticeSeen = await watchPendingEditsNotice(page);
+      const noNotice: NoticeWatch = { watching: true, seen: false, text: '' };
       const editor = page.locator('[data-slate-editor="true"]');
 
       await waitForApp(page);
@@ -490,14 +534,10 @@ test.describe('Workspace permission videos', () => {
         await expect(page.getByTestId('drag-block')).toHaveCount(0);
       });
       await clip.caption(page, 'No title editing, no block handles: the page is read-only');
-      // On a page whose history has deletions, the app shows a reader this notice as the page opens,
-      // before any typing (see the evidence README). Said on screen whenever it is there.
-      const waitingNotice = page.getByText('Changes to 1 page are waiting for edit access.');
-
-      if (await waitingNotice.waitFor({ state: 'visible', timeout: 5000 }).then(() => true, () => false)) {
-        await clip.caption(page, 'The notice at the bottom right came up on opening, before any typing (see README)', 3400);
-      }
-
+      await clip.check(page, 'no notice about edits waiting for edit access since the page opened', async () => {
+        expect(await noticeSeen()).toEqual(noNotice);
+        await expect(page.locator(PENDING_EDITS_NOTICE)).toHaveCount(0);
+      });
       await clip.caption(page, 'Alex clicks into the text and types "Hello"');
       const before = await editor.innerText();
 
@@ -514,7 +554,13 @@ test.describe('Workspace permission videos', () => {
         expect(JSON.stringify(await readPageDocument(cfg, fixture, 'olivia', 'onboarding'))).not.toContain('Hello')
       );
       await clip.caption(page, 'Nothing changed: Alex can read this page but not edit it', 2600);
-      await clip.close(page);
+      // The last moments on screen are watched too: hold, check, then close without another hold.
+      await page.waitForTimeout(1800);
+      await clip.check(page, 'no notice about edits waiting for edit access at any moment, typing included', async () => {
+        expect(await noticeSeen()).toEqual(noNotice);
+        await expect(page.locator(PENDING_EDITS_NOTICE)).toHaveCount(0);
+      });
+      await clip.close(page, 0);
       failed = false;
     } finally {
       // Teardown (owner, API): Alex is a direct HR member at the space default again, as seeded.
@@ -808,14 +854,11 @@ test.describe('Workspace permission videos', () => {
       await clip.check(olivia, 'Owners and selected members is the current choice', () =>
         expect(olivia.getByTestId('space-creation-policy-owners_and_selected_members')).toHaveAttribute('aria-pressed', 'true')
       );
-      // With this server, the panel can fail to list the selected members and groups (see the
-      // evidence README). Said on screen whenever it happens.
-      const rosterError = olivia.getByText("We couldn't load the selected members and groups.");
-
-      if (await rosterError.waitFor({ state: 'visible', timeout: 5000 }).then(() => true, () => false)) {
-        await clip.caption(olivia, 'The selected members and groups fail to load here: a defect (see README)', 3200);
-      }
-
+      await clip.check(olivia, 'the selected members and groups are listed: Alex and Super_Users', async () => {
+        await expect(olivia.getByTestId(`space-creator-row-user-${fixture.people.alex.uuid}`)).toBeVisible();
+        await expect(olivia.getByTestId(`space-creator-row-group-${fixture.groups.Super_Users}`)).toBeVisible();
+        await expect(olivia.getByText("We couldn't load the selected members and groups.")).toHaveCount(0);
+      });
       await clip.caption(olivia, 'She sets Who can create spaces to Owners only');
       await press(olivia, 'space-creation-policy-owners_only');
       const confirmation = olivia.getByTestId('space-creation-restrict-confirmation');
