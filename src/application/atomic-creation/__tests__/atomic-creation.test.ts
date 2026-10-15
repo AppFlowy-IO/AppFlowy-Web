@@ -16,7 +16,9 @@ import {
   listPendingAtomicCreations,
   parseAtomicCreationRequest,
   recoverAtomicCreation,
+  releaseRefusedAtomicCreation,
   runAtomicCreation,
+  AtomicCreationPendingError,
   type AtomicCreationReceipt,
   type CreateDefaultDocumentPageRequest,
 } from '..';
@@ -194,6 +196,32 @@ it('reopens IndexedDB after lost ACK and resends identical bytes only on explici
   );
   await expect(recoverAtomicCreation({ owner, record, hydrate })).resolves.toBe('active');
   expect(send.mock.calls[0][0].data).toBe(send.mock.calls[1][0].data);
+});
+
+it('releases a command the server refused before committing, but never a committed receipt', async () => {
+  const owner = captureAtomicCreationOwner('workspace');
+
+  send.mockImplementation(async (config: InternalAxiosRequestConfig) => ({
+    ...reply(config, undefined),
+    data: { code: 1012, message: 'user cannot create pages here' },
+  }));
+  const refused = await runAtomicCreation({
+    owner, kind: 'document', request: command, logicalTarget: command.view_id, hydrate: jest.fn(),
+  }).catch((error: unknown) => error);
+
+  expect(refused).toBeInstanceOf(AtomicCreationPendingError);
+  expect((await findPendingAtomicCreation(owner, 'document', command.view_id))?.state).toBe('pending');
+  await expect(releaseRefusedAtomicCreation(owner, (refused as AtomicCreationPendingError).recordId)).resolves.toBe(true);
+  expect(await findPendingAtomicCreation(owner, 'document', command.view_id)).toBeUndefined();
+
+  send.mockImplementation(async (config: InternalAxiosRequestConfig) => reply(config, receipt));
+  const committed = await runAtomicCreation({
+    owner, kind: 'document', request: command, logicalTarget: command.view_id,
+    hydrate: async () => { throw new Error('current permission denied'); },
+  }).catch((error: unknown) => error);
+
+  await expect(releaseRefusedAtomicCreation(owner, (committed as AtomicCreationPendingError).recordId)).resolves.toBe(false);
+  expect((await findPendingAtomicCreation(owner, 'document', command.view_id))?.state).toBe('committed');
 });
 
 it('retains Committed after a failed current read, then hydrates without capability or another POST', async () => {
