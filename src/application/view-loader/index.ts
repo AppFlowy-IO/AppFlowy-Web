@@ -188,12 +188,14 @@ async function mergeLegacyDatabaseViewCache(viewId: string, databaseId: string, 
     // the canonical copy already has would show a reader "waiting for edit access" on every open
     // of this view and make an editor upload them again.
     const before = Y.snapshot(targetDoc);
-    const { pendingStructs, pendingDs } = targetDoc.store;
+    // Yjs keeps the pendingStructs object when more structs wait and replaces its update bytes.
+    const pendingStructs = targetDoc.store.pendingStructs?.update;
+    const { pendingDs } = targetDoc.store;
 
     withDatabaseStorageFence(targetDoc, storageFence, () => applyYDoc(targetDoc, missingUpdate));
     if (
       Y.equalSnapshots(before, Y.snapshot(targetDoc)) &&
-      targetDoc.store.pendingStructs === pendingStructs &&
+      targetDoc.store.pendingStructs?.update === pendingStructs &&
       targetDoc.store.pendingDs === pendingDs
     ) {
       return false;

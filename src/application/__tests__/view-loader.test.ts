@@ -217,6 +217,50 @@ describe('view-loader database cache identity', () => {
     legacyDoc.destroy();
   });
 
+  it('queues a legacy view cache that only adds to the structs the canonical cache holds pending', async () => {
+    const viewId = '00000000-0000-4000-8000-000000000013';
+    const databaseId = '00000000-0000-4000-8000-000000000014';
+    const canonicalDoc = createCompleteDatabaseDoc(databaseId, databaseId, viewId);
+    const author = createEmptyDoc('author');
+    const authorFields = () => author.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database)
+      .get(YjsDatabaseKey.fields) as Y.Map<unknown>;
+
+    Y.applyUpdate(author, Y.encodeStateAsUpdate(canonicalDoc));
+    authorFields().set('first', new Y.Map());
+    const afterFirst = Y.encodeStateVector(author);
+
+    authorFields().set('second', new Y.Map());
+    const second = Y.encodeStateAsUpdate(author, afterFirst);
+
+    authorFields().set('third', new Y.Map());
+    const legacyDoc = createEmptyDoc(viewId);
+
+    Y.applyUpdate(legacyDoc, Y.encodeStateAsUpdate(canonicalDoc));
+    // Both copies miss the first update. The canonical copy holds the second one pending, the legacy
+    // copy the second and the third.
+    Y.applyUpdate(canonicalDoc, second);
+    Y.applyUpdate(legacyDoc, Y.encodeStateAsUpdate(author, afterFirst));
+    const pending = canonicalDoc.store.pendingStructs;
+    const pendingEnd = () => Y.parseUpdateMetaV2(canonicalDoc.store.pendingStructs!.update).to.get(author.clientID)!;
+    const endBefore = pendingEnd();
+
+    mockOpenCollabDBWithProvider.mockImplementation(async (name: string) =>
+      createProvider(name === databaseId ? canonicalDoc : legacyDoc) as never);
+
+    await openView('workspace-id', viewId, ViewLayout.Grid, { databaseId });
+
+    // Yjs grows the pending update in place: the pending object stays, its bytes are replaced.
+    expect(canonicalDoc.store.pendingStructs).toBe(pending);
+    expect(pendingEnd()).toBeGreaterThan(endBefore);
+    expect(mockEnqueueOutboxUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ objectId: databaseId, collabType: Types.Database, payload: expect.any(Uint8Array) })
+    );
+
+    canonicalDoc.destroy();
+    legacyDoc.destroy();
+    author.destroy();
+  });
+
   it('opens Form views as canonical database collabs', async () => {
     const viewId = '00000000-0000-4000-8000-000000000021';
     const databaseId = '00000000-0000-4000-8000-000000000022';
