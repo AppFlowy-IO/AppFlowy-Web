@@ -19,6 +19,7 @@ import type { SearchOverviewSource } from '@/components/app/search/SearchAIOverv
 import SearchStatusNotice from '@/components/app/search/SearchStatusNotice';
 import { useSearchAccessScope } from '@/components/app/search/useSearchAccessScope';
 import ViewList, { SearchViewListItem } from '@/components/app/search/ViewList';
+import { isPermissionError } from '@/utils/change-failure';
 import { getAPIErrorCode } from '@/utils/errors';
 
 const SearchAIOverview = lazy(() =>
@@ -300,6 +301,7 @@ function BestMatch({
       const summaryRequest = aiEnabled
         ? SearchService.generateSearchSummary(currentWorkspaceId, searchTerm, controller.signal).catch(() => null)
         : null;
+      let res: SearchDocumentResponseItem[];
 
       try {
         let requestedOffset = 0;
@@ -312,7 +314,7 @@ function BestMatch({
         );
 
         if (!isLatest()) return;
-        let res = mergeSearchResults([], page.items || []);
+        res = mergeSearchResults([], page.items || []);
         let pages = 1;
 
         while (pages < pageCount && canLoadMoreSearchResults(page, requestedOffset)) {
@@ -334,55 +336,26 @@ function BestMatch({
         const views = await loadResultViews(res, controller.signal);
 
         if (!isLatest()) return;
-        const publishResults = () => {
-          setSearchResults(res);
-          setResultViews(views);
-          setHasMore(canLoadMoreSearchResults(lastPage, lastOffset));
-          setNextOffset(lastPage.next_offset ?? null);
-          shownRef.current = { scope, query: searchTerm, pages };
-        };
-
-        if (!background) {
-          publishResults();
-          setSummaryLoading(summaryRequest !== null);
-          setLoading(false);
-        }
-
-        let nextSummary: SearchSummary | null = null;
-        let sourceViews = new Map<string, View>();
-
-        if (summaryRequest) {
-          const summaryResult = await summaryRequest;
-
-          if (!isLatest()) return;
-          nextSummary = summaryResult?.summaries[0] || null;
-          sourceViews = nextSummary
-            ? await loadSummarySourceViews(
-                outlineRef.current || [],
-                currentWorkspaceId,
-                nextSummary.sources,
-                res,
-                controller.signal
-              )
-            : new Map<string, View>();
-          if (!isLatest()) return;
-        }
-
-        // A revalidation swaps results and summary together, so sources never mix responses.
-        if (background) publishResults();
-        setSummarySourceViews(sourceViews);
-        setSummary(nextSummary);
-        setSummaryLoading(false);
+        setSearchResults(res);
+        setResultViews(views);
+        setHasMore(canLoadMoreSearchResults(lastPage, lastOffset));
+        setNextOffset(lastPage.next_offset ?? null);
+        shownRef.current = { scope, query: searchTerm, pages };
+        // Publish keywords immediately. The previous summary belongs to the previous results.
+        setSummary(null);
+        setSummarySourceViews(new Map());
+        setSummaryLoading(summaryRequest !== null);
         // eslint-disable-next-line
       } catch (e: any) {
         if (!isLatest()) return;
-        if (background) {
-          // A failed revalidation keeps the response loaded under this same access scope. The
-          // summary that response was waiting for was cancelled for this run's, so stop waiting.
+        if (background && !isPermissionError(e)) {
+          // A failed revalidation can keep the previous response unless access was refused.
+          // Its pending summary was cancelled for this run's, so stop waiting.
           setSummaryLoading(false);
           return;
         }
 
+        controller.abort();
         const offline = !navigator.onLine;
 
         // A dropped connection is not "no results" either: run the query again once the browser is
@@ -390,11 +363,15 @@ function BestMatch({
         if (offline || getAPIErrorCode(e) === -1) setReconnectRetry({ query: searchTerm, epoch: startedEpoch });
         // The offline notice explains a failure while offline.
         if (!offline) notify.error(e.message);
+        shownRef.current = undefined;
         setSearchResults([]);
+        setResultViews(new Map());
         setSummary(null);
+        setSummarySourceViews(new Map());
         setSummaryLoading(false);
         setHasMore(false);
         setNextOffset(null);
+        return;
       } finally {
         if (isLatest()) {
           setLoading(false);
@@ -402,6 +379,28 @@ function BestMatch({
           setRevalidating(false);
         }
       }
+
+      // Summary work has its own loading state: it must not block keyword pagination or reset
+      // loadingMore when a page request starts while the summary is still being generated.
+      if (!summaryRequest) return;
+      const summaryResult = await summaryRequest;
+
+      if (!isLatest()) return;
+      const nextSummary = summaryResult?.summaries[0] || null;
+      const sourceViews = nextSummary
+        ? await loadSummarySourceViews(
+            outlineRef.current || [],
+            currentWorkspaceId,
+            nextSummary.sources,
+            res,
+            controller.signal
+          )
+        : new Map<string, View>();
+
+      if (!isLatest()) return;
+      setSummarySourceViews(sourceViews);
+      setSummary(nextSummary);
+      setSummaryLoading(false);
     },
     [aiEnabled, loadResultViews, currentWorkspaceId, keywordSearchStreamId, scope, isCurrent]
   );

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { View } from '@/application/types';
 import { isSpaceView } from '@/components/ai-chat/rag-scope';
+import { isPermissionError } from '@/utils/change-failure';
 
 export type SearchRecentViewsStatus = 'loading' | 'ready' | 'error' | 'offline';
 
@@ -106,6 +107,7 @@ export function useSearchRecentViews({
           if (next.key !== latestKey.current || !next.isCurrent()) continue;
           active.current = next;
           let result: Pick<RecentSnapshot, 'status' | 'views'>;
+          let denied = false;
 
           if (!next.online) {
             result = { status: 'offline', views: [] };
@@ -114,9 +116,10 @@ export function useSearchRecentViews({
               const views = next.load ? await next.load() : [];
 
               result = views ? { status: 'ready', views: recentPages(views) } : { status: 'error', views: [] };
-            } catch {
+            } catch (error) {
+              denied = isPermissionError(error);
               // A read lost because the browser went offline is not a server failure.
-              result = { status: navigator.onLine ? 'error' : 'offline', views: [] };
+              result = { status: denied || navigator.onLine ? 'error' : 'offline', views: [] };
             }
           }
 
@@ -126,9 +129,9 @@ export function useSearchRecentViews({
           const read = { key: next.key, refresh: next.refresh, retry: next.retry, epoch: next.epoch };
 
           setSnapshot((previous) =>
-            // A failed background revalidation keeps names loaded under this same access scope.
+            // Keep names through connection failures, but discard them when access is refused.
             // A new opening or scope never reuses them: its key differs.
-            previous?.key === next.key && previous.status === 'ready' && result.status !== 'ready'
+            previous?.key === next.key && previous.status === 'ready' && result.status !== 'ready' && !denied
               ? { ...previous, ...read }
               : { ...read, ...result }
           );

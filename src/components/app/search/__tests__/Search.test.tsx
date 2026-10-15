@@ -2,7 +2,7 @@ import EventEmitter from 'events';
 
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-import { APP_EVENTS } from '@/application/constants';
+import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import { emit, EventType } from '@/application/session/event';
 import { RAG_SOURCE_OWNERS_METADATA_KEY } from '@/components/ai-chat/rag-scope';
 import { AppEventEmitterContext } from '@/components/app/contexts/AppEventEmitterContext';
@@ -712,6 +712,55 @@ describe('Search recent pages', () => {
       await Promise.resolve();
     });
     expect(mockLoadRecentViews).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['HTTP 403', { httpStatus: 403 }],
+    ['permission error code', { code: ERROR_CODE.NOT_HAS_PERMISSION }],
+    ['expired session', { httpStatus: 401 }],
+  ])('clears protected recent pages when a reconnect refresh returns %s', async (_reason, error) => {
+    const emitter = Object.assign(new EventEmitter(), { webSocketReadyState: WebSocket.OPEN });
+
+    mockLoadRecentViews
+      .mockResolvedValueOnce([{ view_id: 'secret', name: 'Protected recent' }])
+      .mockRejectedValueOnce(error)
+      .mockResolvedValueOnce([{ view_id: 'allowed', name: 'Allowed recent' }]);
+    render(<AppEventEmitterContext.Provider value={emitter}><Search /></AppEventEmitterContext.Provider>);
+    fireEvent.click(screen.getByText('button.search'));
+    await screen.findByText('Protected recent');
+    act(() => {
+      emitter.emit(APP_EVENTS.WEBSOCKET_STATUS, WebSocket.CLOSED);
+      emitter.emit(APP_EVENTS.WEBSOCKET_STATUS, WebSocket.OPEN);
+    });
+    await screen.findByText('search.recentPagesFailed');
+    expect(screen.queryByText('Protected recent')).toBeNull();
+    fireEvent.change(screen.getByLabelText('search-input'), { target: { value: 'query' } });
+    fireEvent.change(screen.getByLabelText('search-input'), { target: { value: '' } });
+    expect(screen.queryByText('Protected recent')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'button.tryAgain' }));
+    expect(await screen.findByText('Allowed recent')).toBeTruthy();
+    expect(mockLoadRecentViews).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    ['network failure', { code: -1 }],
+    ['server failure', { httpStatus: 502 }],
+  ])('keeps recent pages when a reconnect refresh has a transient %s', async (_reason, error) => {
+    const emitter = Object.assign(new EventEmitter(), { webSocketReadyState: WebSocket.OPEN });
+
+    mockLoadRecentViews
+      .mockResolvedValueOnce([{ view_id: 'recent', name: 'Kept recent' }])
+      .mockRejectedValueOnce(error);
+    render(<AppEventEmitterContext.Provider value={emitter}><Search /></AppEventEmitterContext.Provider>);
+    fireEvent.click(screen.getByText('button.search'));
+    await screen.findByText('Kept recent');
+    await act(async () => {
+      emitter.emit(APP_EVENTS.WEBSOCKET_STATUS, WebSocket.CLOSED);
+      emitter.emit(APP_EVENTS.WEBSOCKET_STATUS, WebSocket.OPEN);
+    });
+    expect(mockLoadRecentViews).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('Kept recent')).toBeTruthy();
+    expect(screen.queryByText('search.recentPagesFailed')).toBeNull();
   });
 
   it('revalidates recent pages in the background after the socket reconnects', async () => {

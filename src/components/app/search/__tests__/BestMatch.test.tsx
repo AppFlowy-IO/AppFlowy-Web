@@ -3,7 +3,7 @@ import EventEmitter from 'events';
 import { describe, expect, it, beforeEach, jest } from '@jest/globals';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-import { APP_EVENTS } from '@/application/constants';
+import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import { ViewLayout } from '@/application/types';
 import type { View } from '@/application/types';
 import { AppEventEmitterContext } from '@/components/app/contexts/AppEventEmitterContext';
@@ -266,6 +266,86 @@ describe('BestMatch', () => {
     expect(screen.queryByText('Revoked second page')).toBeNull();
     expect(screen.getByText('First page')).toBeTruthy();
     expect(mockSearchWorkspaceDocumentPage.mock.calls.slice(2).map((call) => call[2])).toEqual([0, 10]);
+  });
+
+  it.each([
+    ['HTTP 403', { httpStatus: 403 }],
+    ['permission error code', { code: ERROR_CODE.NOT_HAS_PERMISSION }],
+    ['expired session', { httpStatus: 401 }],
+  ])('clears protected results and summaries when a reconnect refresh returns %s', async (_reason, error) => {
+    let resolveSummary!: (value: unknown) => void;
+
+    mockAppOutline = [createView({ view_id: 'secret', name: 'Protected page' })];
+    mockSearchWorkspaceDocumentPage
+      .mockResolvedValueOnce({ items: [{ object_id: 'secret' }], has_more: true, next_offset: 10 })
+      .mockRejectedValueOnce({ ...error, message: 'Access denied' });
+    mockGenerateSearchSummary
+      .mockResolvedValueOnce({ summaries: [{ content: 'Protected summary', sources: ['secret'] }] })
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveSummary = resolve; }));
+    renderBestMatch('secret');
+    await screen.findByText('Protected summary');
+    act(() => {
+      mockEmitter.emit(APP_EVENTS.WEBSOCKET_STATUS, WebSocket.CLOSED);
+      mockEmitter.emit(APP_EVENTS.WEBSOCKET_STATUS, WebSocket.OPEN);
+    });
+    await waitFor(() => expect(screen.queryByText('Protected page')).toBeNull());
+    expect(screen.queryByText('Protected summary')).toBeNull();
+    expect(screen.queryByText('Load more')).toBeNull();
+    expect(mockOverviewSources).toEqual([]);
+    expect(screen.getByTestId('ai-overview').getAttribute('data-loading')).toBe('false');
+    await act(async () => {
+      resolveSummary({ summaries: [{ content: 'Late protected summary', sources: ['secret'] }] });
+    });
+    expect(screen.queryByText('Late protected summary')).toBeNull();
+  });
+
+  it('publishes refreshed keywords and permits pagination while the AI summary is pending', async () => {
+    let resolveSummary!: (value: unknown) => void;
+    let resolveNextPage!: (value: unknown) => void;
+
+    mockAppOutline = [
+      createView({ view_id: 'old', name: 'Old page' }),
+      createView({ view_id: 'fresh', name: 'Fresh page' }),
+      createView({ view_id: 'next', name: 'Next page' }),
+    ];
+    mockSearchWorkspaceDocumentPage
+      .mockResolvedValueOnce({ items: [{ object_id: 'old' }], has_more: false })
+      .mockResolvedValueOnce({ items: [{ object_id: 'fresh' }], has_more: true, next_offset: 10 })
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveNextPage = resolve; }));
+    mockGenerateSearchSummary
+      .mockResolvedValueOnce({ summaries: [{ content: 'Old summary', sources: ['old'] }] })
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveSummary = resolve; }));
+    renderBestMatch('page');
+    await screen.findByText('Old summary');
+    act(() => {
+      mockEmitter.emit(APP_EVENTS.WEBSOCKET_STATUS, WebSocket.CLOSED);
+      mockEmitter.emit(APP_EVENTS.WEBSOCKET_STATUS, WebSocket.OPEN);
+    });
+    await screen.findByText('Fresh page');
+    expect(screen.queryByText('Old page')).toBeNull();
+    expect(screen.queryByText('Old summary')).toBeNull();
+    expect(mockOverviewSources).toEqual([]);
+    expect(screen.getByTestId('ai-overview').getAttribute('data-loading')).toBe('true');
+    const loadMore = screen.getByRole('button', { name: 'Load more' });
+
+    expect(loadMore.disabled).toBe(false);
+    fireEvent.click(loadMore);
+    expect(loadMore.disabled).toBe(true);
+    expect(mockSearchWorkspaceDocumentPage).toHaveBeenCalledTimes(3);
+    await act(async () => {
+      resolveSummary({ summaries: [{ content: 'Fresh summary', sources: ['fresh'] }] });
+    });
+    expect(screen.getByText('Fresh summary')).toBeTruthy();
+    // Finishing the summary must not unlock pagination while its request is still pending.
+    expect(loadMore.disabled).toBe(true);
+    fireEvent.click(loadMore);
+    expect(mockSearchWorkspaceDocumentPage).toHaveBeenCalledTimes(3);
+    await act(async () => {
+      resolveNextPage({ items: [{ object_id: 'next' }], has_more: false, next_offset: null });
+    });
+    expect(screen.getByText('Fresh page')).toBeTruthy();
+    expect(screen.getByText('Next page')).toBeTruthy();
+    expect(screen.queryByText('Load more')).toBeNull();
   });
 
   it('stops waiting for the AI summary when a reconnect revalidation fails', async () => {

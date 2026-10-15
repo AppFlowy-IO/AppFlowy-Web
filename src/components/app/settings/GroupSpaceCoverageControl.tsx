@@ -305,7 +305,12 @@ export function GroupSpaceCoverageSummary({
       if (document.visibilityState === 'visible') revalidate();
     };
 
+    const socket = (readyState: unknown) => {
+      if (readyState === WebSocket.OPEN) revalidate();
+    };
+
     emitter?.on(APP_EVENTS.PERMISSION_CHANGED, revalidate);
+    emitter?.on(APP_EVENTS.WEBSOCKET_STATUS, socket);
     window.addEventListener('focus', revalidate);
     window.addEventListener('online', revalidate);
     document.addEventListener('visibilitychange', visible);
@@ -313,6 +318,7 @@ export function GroupSpaceCoverageSummary({
       alive.current = false;
       sequence.current += 1;
       emitter?.off(APP_EVENTS.PERMISSION_CHANGED, revalidate);
+      emitter?.off(APP_EVENTS.WEBSOCKET_STATUS, socket);
       window.removeEventListener('focus', revalidate);
       window.removeEventListener('online', revalidate);
       document.removeEventListener('visibilitychange', visible);

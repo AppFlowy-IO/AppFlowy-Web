@@ -371,6 +371,35 @@ describe('access to all spaces summary (Permissions panel)', () => {
     expect(await screen.findByText('groupSpaceAccess.canEdit')).toBeTruthy();
   });
 
+  it('refreshes group access after the socket reconnects and removes its listener on unmount', async () => {
+    mockRead.mockResolvedValueOnce({ groups: [group({ space_coverage_access_level: 10 })] });
+    const { unmount } = mountSummary();
+
+    await screen.findByText('groupSpaceAccess.canView');
+    const next = deferred<unknown>();
+
+    mockRead.mockReturnValueOnce(next.promise);
+    act(() => {
+      emitter.emit(APP_EVENTS.WEBSOCKET_STATUS, WebSocket.CLOSED);
+      emitter.emit(APP_EVENTS.WEBSOCKET_STATUS, WebSocket.CONNECTING);
+    });
+    expect(mockRead).toHaveBeenCalledTimes(1);
+    act(() => {
+      emitter.emit(APP_EVENTS.WEBSOCKET_STATUS, WebSocket.OPEN);
+    });
+    await waitFor(() => expect(mockRead).toHaveBeenCalledTimes(2));
+    expect(screen.getByText('groupSpaceAccess.canView')).toBeTruthy();
+    await act(async () => next.resolve({ groups: [group({ space_coverage_access_level: 30 })] }));
+    expect(screen.getByText('groupSpaceAccess.canEdit')).toBeTruthy();
+    expect(screen.queryByText('groupSpaceAccess.canView')).toBeNull();
+    unmount();
+    expect(emitter.listenerCount(APP_EVENTS.WEBSOCKET_STATUS)).toBe(0);
+    act(() => {
+      emitter.emit(APP_EVENTS.WEBSOCKET_STATUS, WebSocket.OPEN);
+    });
+    expect(mockRead).toHaveBeenCalledTimes(2);
+  });
+
   it('a permission burst keeps one read active and one fresh follow-up', async () => {
     const first = deferred<unknown>();
 
