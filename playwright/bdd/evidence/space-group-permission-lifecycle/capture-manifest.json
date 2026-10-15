@@ -1,9 +1,55 @@
 {
   "gallery": "Web PR #621 workspace permission UI",
   "updated": "2026-10-15",
+  "found_while_recording_fixed": {
+    "date": "2026-10-15",
+    "note": "Two defects of the merged code showed up while recording; both are fixed, and the current videos (runs H and I) and the screenshot check after the fixes (gallery run G3) ran on the fixed code. The video spec asserts both instead of captioning them.",
+    "defects": [
+      {
+        "id": 1,
+        "symptom": "The owner's Permissions panel showed \"We couldn't load the selected members and groups.\" instead of the selected members and groups.",
+        "cause": "Web adds server_restore_id to every Cloud API request; server 805c9bab0 refused unknown query fields on GET /api/workspace/{id}/space-creators (400).",
+        "fixed_in": {
+          "server_commit": "65bc423601c67be90d7fea7b5435b14a55f94abb",
+          "branch": "oodrive-fix/server-restore-query",
+          "subject": "Accept the server restore stamp in creator list queries"
+        },
+        "now_asserted_by": [
+          "space-creation-control: the selected members and groups are listed: Alex and Super_Users",
+          "permission-gallery owner test: Alex and Super_Users rows are listed (failed before the fix)"
+        ]
+      },
+      {
+        "id": 2,
+        "symptom": "A reader of a page whose edit history has deletions saw \"Changes to 1 page are waiting for edit access.\" without having changed anything.",
+        "cause": "The client queued its sync verification reply, which always carries the page's complete delete set, and the server refused it because the reader cannot edit.",
+        "fixed_in": {
+          "web_branch": "oodrive-fix/web-reader-notice",
+          "web_commits": {
+            "541acb82d7d39091ff4c88e1b7ab9984d63234f1": {
+              "cherry_picked_as": "8468aff5998226c85cddd0cd7f1317e79b46e1c5",
+              "subject": "Skip manifest replies that only repeat the server's deletions"
+            },
+            "dbd74da98ad08ec01a6e8185d98f773d4a2da484": {
+              "cherry_picked_as": "0c8da2e48dc18fefa18899a0b8bd9dfe57d6c6af",
+              "subject": "Prove server-held structs and drop stale manifest replies"
+            },
+            "d13d06e0515f861d7142279dd42bd1223ab2fe78": {
+              "cherry_picked_as": "2ae2faca0cff6ddb4f5164618ba2432fc7895afa",
+              "subject": "Queue a legacy view-cache merge only when it changes the database"
+            }
+          }
+        },
+        "now_asserted_by": [
+          "view-group-reads-only: no notice about edits waiting for edit access since the page opened",
+          "view-group-reads-only: no notice about edits waiting for edit access at any moment, typing included (a MutationObserver watches the window from the moment the page opens)"
+        ]
+      }
+    ]
+  },
   "current_capture": {
     "date": "2026-10-14",
-    "status": "passed; 7 of 7 capture tests in the first run (06:44 UTC); 3 of 3 in the rerun (10:55 UTC) of the tests whose screens changed, with the spec now at 8 tests; 2 of 2 in a second rerun (11:28 UTC) after the review of those fixes, both images byte-identical to the committed ones (nothing changed on screen); 1 of 1 in a third rerun (2026-10-15, 00:37 UTC) of the account-only page against a server that sends the invited role, whose image now shows \"Invited as a guest\"; merged-code refresh (2026-10-15, Web b59969d6, server 805c9bab0): 7 of 8 in each of two runs (04:49 and 05:02 UTC) on a freshly seeded stack. The owner's Permissions test failed both times at its first check because the selected members and groups cannot load (the merged client adds server_restore_id to every request and the server's space creators list refuses unknown query fields), so its 6 images were not retaken; of the 16 earlier images of the other 7 tests, 14 came out byte for byte the same, 1 was retaken (only the date it shows changed) and 1 kept (2 pixels differing by 1 of 255); 1 capture was added. Five videos were recorded (see videos). Review fixes (2026-10-15, harness 00b73225): the network guard was tightened and the screenshot spec ran once more as validation (current_capture.web.review_validation; images not committed); the reader and editor videos were recorded again (see videos.review_fixes).",
+    "status": "passed; 7 of 7 capture tests in the first run (06:44 UTC); 3 of 3 in the rerun (10:55 UTC) of the tests whose screens changed, with the spec now at 8 tests; 2 of 2 in a second rerun (11:28 UTC) after the review of those fixes, both images byte-identical to the committed ones (nothing changed on screen); 1 of 1 in a third rerun (2026-10-15, 00:37 UTC) of the account-only page against a server that sends the invited role, whose image now shows \"Invited as a guest\"; merged-code refresh (2026-10-15, Web b59969d6, server 805c9bab0): 7 of 8 in each of two runs (04:49 and 05:02 UTC) on a freshly seeded stack. The owner's Permissions test failed both times at its first check because the selected members and groups could not load (the merged client adds server_restore_id to every request and that server's space creators list refused unknown query fields; fixed since, see found_while_recording_fixed), so its 6 images were checked only after the fix; of the 16 earlier images of the other 7 tests, 14 came out byte for byte the same, 1 was retaken (only the date it shows changed) and 1 kept (2 pixels differing by 1 of 255); 1 capture was added. Five videos were recorded (see videos). Review fixes (2026-10-15, harness 00b73225): the network guard was tightened and the screenshot spec ran once more as validation (current_capture.web.review_validation; images not committed); the reader and editor videos were recorded again (see videos.review_fixes). After the fixes (2026-10-15, Web 2ae2faca and server 65bc42360): gallery run G3 passed 8 of 8 on a freshly seeded stack; of the 23 images, 19 came out byte for byte the same and 4 differ only by anti-aliasing noise, so none was replaced (current_capture.web.after_fixes); all five videos were recorded again (see videos.after_fixes).",
     "kind": "fresh connected UI captures on an isolated synthetic stack",
     "web": {
       "branch": "oodrive-fix/web-visual",
@@ -182,7 +228,7 @@
             "group-dialog-access-to-all-spaces-menu.png",
             "group-access-to-all-spaces-confirmation.png"
           ],
-          "status": "not fixed here (reported)"
+          "status": "fixed after the refresh in server 65bc42360 (found_while_recording_fixed); the test passed in gallery run G3 (current_capture.web.after_fixes), where these six images were taken again and verified"
         },
         "tests_run": [
           "owner: Permissions panel, narrowing question and Access to all spaces summary (failed)",
@@ -356,6 +402,163 @@
           }
         },
         "note": "7 of 8 passed, as in the merged-code refresh; the owner's Permissions test failed at the same check (space-creator-row-user, defect 1). The images went to a scratch folder and were compared with the committed ones; none was replaced. Two earlier validation runs with earlier forms of these fixes, while a CI virtual machine was using most of the host's 20 cores (load average about 18 when measured), failed 4 of 8 at the first click in the workspace menu (in the failure snapshots the page title, which focuses itself when it mounts, had taken focus and the menu was gone); the harness from before the fixes (959cde7e) failed 2 of 8 the same way under the same load. G2 ran at normal load."
+      },
+      "after_fixes": {
+        "label": "gallery run G3 after the defect fixes",
+        "date": "2026-10-15",
+        "time_utc": "09:25-09:26",
+        "branch": "oodrive-fix/web-media",
+        "source_commit": "2ae2faca0cff6ddb4f5164618ba2432fc7895afa",
+        "app_source": "b59969d6 plus the three Web fix commits (found_while_recording_fixed); the same app source as videos.web.source_commit (5dbfedfd, which adds only the video spec assertions)",
+        "harness_at_after_fixes": {
+          "playwright/e2e/app/permission-gallery.capture.spec.ts": "84708e9376e445471f325ffa3eaab787fc63874d30510f504fa9a70883d6723c",
+          "playwright/support/permission-gallery-seed.ts": "52d3587c299ea45792f1d3c69ede17ad45b01fb4ae825b15e1fcd442f85e8136",
+          "playwright/support/permission-gallery-browser.ts": "7c1363c8c0d298d92fd184318e7e0affe167666a0e53930b7a51c5abc9aefa86",
+          "playwright.permission-gallery.config.ts": "78e2a699b706a254df150e64646dbdf28502f827cf2f8c93e0c5c6b2c0c41894"
+        },
+        "server": "current_capture.server.after_fixes",
+        "stack": "reset just before (stop.sh --purge; start.sh), so the seed built Demo afresh",
+        "result": "8 passed (46.0s)",
+        "tests": [
+          "owner: Permissions panel, narrowing question and Access to all spaces summary: passed",
+          "member: Permissions panel is read-only: passed",
+          "owner: Manage Space members and page setting in a Custom space, then Create Space: passed",
+          "member: Create space refused after the owner narrows who can create spaces: passed",
+          "member: workspace menu with Create workspace unavailable: passed",
+          "account without a workspace sees its pending invitation: passed",
+          "open page loses and regains access when its group grant changes: passed",
+          "sign-out question offers to remove this account’s data: passed"
+        ],
+        "images_dir": "scratch only; every image was compared with the committed one and none was replaced",
+        "comparison": {
+          "account-only-pending-invitation.png": {
+            "status": "identical-bytes"
+          },
+          "create-space-denied.png": {
+            "status": "identical-bytes"
+          },
+          "create-space-page-setting.png": {
+            "status": "identical-bytes"
+          },
+          "create-space.png": {
+            "status": "identical-bytes"
+          },
+          "group-access-to-all-spaces-confirmation.png": {
+            "status": "identical-bytes"
+          },
+          "group-dialog-access-to-all-spaces-menu.png": {
+            "status": "changed",
+            "changed_pixels": 2,
+            "strong_pixels": 0,
+            "max_channel_diff": 1,
+            "bbox": [
+              14,
+              164,
+              15,
+              194
+            ]
+          },
+          "manage-space-add-suggestions.png": {
+            "status": "identical-bytes"
+          },
+          "manage-space-general-page-setting.png": {
+            "status": "identical-bytes"
+          },
+          "manage-space-groups-view-and-edit.png": {
+            "status": "identical-bytes"
+          },
+          "manage-space-members-access-explanation.png": {
+            "status": "identical-bytes"
+          },
+          "manage-space-members-access-menu.png": {
+            "status": "identical-bytes"
+          },
+          "manage-space-own-access-explanation.png": {
+            "status": "identical-bytes"
+          },
+          "manage-space-own-access-hint.png": {
+            "status": "identical-bytes"
+          },
+          "manage-space-type-change-confirmation.png": {
+            "status": "identical-bytes"
+          },
+          "page-access-restored-after-regrant.png": {
+            "status": "identical-bytes"
+          },
+          "page-no-access-after-group-removed.png": {
+            "status": "identical-bytes"
+          },
+          "permissions-access-to-all-spaces-summary.png": {
+            "status": "identical-bytes"
+          },
+          "permissions-add-members-suggestions.png": {
+            "status": "changed",
+            "changed_pixels": 2,
+            "strong_pixels": 0,
+            "max_channel_diff": 1,
+            "bbox": [
+              14,
+              164,
+              15,
+              194
+            ]
+          },
+          "permissions-member-read-only.png": {
+            "status": "changed",
+            "changed_pixels": 2,
+            "strong_pixels": 0,
+            "max_channel_diff": 1,
+            "bbox": [
+              14,
+              164,
+              15,
+              194
+            ]
+          },
+          "permissions-narrowing-confirmation.png": {
+            "status": "identical-bytes"
+          },
+          "permissions-owner-selected-members.png": {
+            "status": "changed",
+            "changed_pixels": 90,
+            "strong_pixels": 0,
+            "max_channel_diff": 8,
+            "bbox": [
+              14,
+              164,
+              1247,
+              479
+            ]
+          },
+          "sign-out-remove-data.png": {
+            "status": "identical-bytes"
+          },
+          "workspace-menu-create-workspace-denied.png": {
+            "status": "identical-bytes"
+          }
+        },
+        "sockets": {
+          "samples": 174,
+          "interval_s": 0.2,
+          "seconds": 46.7,
+          "remote_endpoints": [
+            "127.0.0.1:34210",
+            "127.0.0.1:34211",
+            "127.0.0.1:34230"
+          ],
+          "non_loopback_endpoints": [],
+          "by_process": {
+            "chrome": [
+              "127.0.0.1:34211",
+              "127.0.0.1:34230"
+            ],
+            "node": [
+              "127.0.0.1:34210",
+              "127.0.0.1:34211"
+            ]
+          }
+        },
+        "note": "8 of 8 passed, including the owner's Permissions test that failed before the fix. Of the 23 images, 19 are byte for byte the committed ones and 4 differ only by anti-aliasing noise (no pixel by more than 48; at most 90 pixels, by at most 8 of 255), so the committed bytes were kept; the six images of the owner's Permissions test are verified on this code."
       }
     },
     "server": {
@@ -422,6 +625,33 @@
         },
         "migration_ledger_max_version": 20261014060432,
         "migration_rows": 293
+      },
+      "after_fixes": {
+        "date": "2026-10-15",
+        "branch": "oodrive-fix/server-restore-query",
+        "commit": "65bc423601c67be90d7fea7b5435b14a55f94abb",
+        "subject": "Accept the server restore stamp in creator list queries",
+        "parent": "82b36b43c111c879865c503335172ec0eb189b68 (the server PR head, which includes server main)",
+        "fix": "SpaceCreatorPageQuery and WorkspaceCreatorQuery no longer deny unknown fields, so the server_restore_id that Web adds to every request is ignored instead of answered with 400",
+        "build": "cargo build --locked -p appflowy-cloud --bin appflowy_cloud --features commercial-local-test",
+        "features": [
+          "commercial-local-test",
+          "self-host-af"
+        ],
+        "profile": "dev (line-tables debug info)",
+        "toolchain": "rustc 1.98.0 (88d9e12ae 2026-08-18), rust-toolchain.toml pin",
+        "binary_sha256": "a491ff45ecb42bd53d886d4c8fe7dac9122dff60eb0f76958b25ad6e5983cac7",
+        "binary_bytes": 984074008,
+        "binary_note": "Built from a clean worktree of 65bc42360 (git status empty before and after) with SQLX_OFFLINE=true and without sccache, in a target directory warm from earlier builds; the build record is kept with the binary.",
+        "settings": {
+          "APPFLOWY_ACCESS_CONTROL": "true",
+          "RUST_MIN_STACK": "16777216",
+          "self_hosted": true,
+          "member_seats": 3
+        },
+        "migration_ledger_max_version": 20261014060432,
+        "migration_rows": 293,
+        "migrations_note": "no new migrations since 805c9bab0 (the migrations trees are identical)"
       }
     },
     "stack": "isolated loopback stack with its own GoTrue, Redis, PostgreSQL database and MinIO bucket; synthetic @demo.test people; no other environment or data",
@@ -439,7 +669,7 @@
       "playwright/support/permission-gallery-browser.ts": "7c1363c8c0d298d92fd184318e7e0affe167666a0e53930b7a51c5abc9aefa86",
       "playwright.permission-gallery.config.ts": "78e2a699b706a254df150e64646dbdf28502f827cf2f8c93e0c5c6b2c0c41894"
     },
-    "harness_note": "The files as committed in 00b73225 (review fixes), which the validation run review_validation used. The current images were captured with the maps under web.rerun, web.second_rerun, web.third_rerun and web.fourth_rerun; since the fourth, only the seed, the browser helper and the config changed (the capture spec did not).",
+    "harness_note": "The files as committed in 00b73225 (review fixes), which the validation run review_validation used. The current images were captured with the maps under web.rerun, web.second_rerun, web.third_rerun and web.fourth_rerun; since the fourth, only the seed, the browser helper and the config changed (the capture spec did not). Gallery run G3 after the fixes (current_capture.web.after_fixes) used the same files.",
     "server_readback_after_capture": {
       "installation_policy": {
         "supported": true,
@@ -740,6 +970,182 @@
           }
         ],
         "note": "Read through the stack APIs (password grants on its GoTrue; the selections with kind=user and kind=group and no server_restore_id). The seeded state: only selected users may create workspaces (Olivia); owners and selected members (Alex, Super_Users) may create spaces; Users covers all spaces with Can view; HR is Custom with the HR group at Can edit and Users at Can view; Jordan has no workspace and one pending Guest invitation."
+      },
+      "after_fixes": {
+        "run": "G3",
+        "note": "Read through the stack APIs after gallery run G3: the seeded state, unchanged by the run (the questions were cancelled and nothing was saved from the UI).",
+        "coverage": {
+          "HR": null,
+          "Product": null,
+          "Super_Users": null,
+          "Users": 10
+        },
+        "hr_groups": [
+          {
+            "access_level_override": 30,
+            "effective_access_level": 30,
+            "name": "HR"
+          },
+          {
+            "access_level_override": 10,
+            "effective_access_level": 10,
+            "name": "Users"
+          }
+        ],
+        "hr_members": [
+          {
+            "access_level_override": null,
+            "effective_access_level": 50,
+            "name": "Olivia Martin",
+            "role": "owner",
+            "source": "creator"
+          },
+          {
+            "access_level_override": null,
+            "effective_access_level": 30,
+            "name": "Alex Dupont",
+            "role": "member",
+            "source": "manual"
+          }
+        ],
+        "hr_space": {
+          "everyone_else_access_level": null,
+          "member_default_access_level": 30,
+          "sidebar_edit_policy": "owners_only",
+          "visibility": "custom"
+        },
+        "installation_policy": {
+          "mode": "selected_users",
+          "revision": "2",
+          "supported": true
+        },
+        "jordan_pending": [
+          {
+            "role": "Guest",
+            "status": "Pending",
+            "workspace_name": "Demo"
+          }
+        ],
+        "jordan_workspaces": [],
+        "olivia_workspaces": [
+          "Demo"
+        ],
+        "onboarding_capability": {
+          "alex": {
+            "access_level": 30,
+            "can_comment": true,
+            "can_read": true,
+            "can_share": false,
+            "can_write": true,
+            "collab_type": 0,
+            "governing_view_id": "40b444e3-0311-4db5-8107-23bc524c3580",
+            "object_id": "40b444e3-0311-4db5-8107-23bc524c3580"
+          },
+          "sam": {
+            "access_level": 30,
+            "can_comment": true,
+            "can_read": true,
+            "can_share": false,
+            "can_write": true,
+            "collab_type": 0,
+            "governing_view_id": "40b444e3-0311-4db5-8107-23bc524c3580",
+            "object_id": "40b444e3-0311-4db5-8107-23bc524c3580"
+          }
+        },
+        "onboarding_lines": [
+          "Welcome aboard! Laptop, accounts and a first coffee with your buddy."
+        ],
+        "space_creation": {
+          "alex": {
+            "can_create_space": true,
+            "can_grant_creator_groups": false,
+            "can_manage_space_creators": false,
+            "group_selection_supported": true,
+            "policy": "owners_and_selected_members",
+            "revision": {
+              "counter": "31",
+              "epoch": "1"
+            },
+            "selected_creators_supported": true,
+            "workspace_id": "5536e2ae-fac5-419e-b9e0-d7b91094e1ef"
+          },
+          "olivia": {
+            "can_create_space": true,
+            "can_grant_creator_groups": true,
+            "can_manage_space_creators": true,
+            "group_selection_supported": true,
+            "policy": "owners_and_selected_members",
+            "revision": {
+              "counter": "31",
+              "epoch": "1"
+            },
+            "selected_creators_supported": true,
+            "workspace_id": "5536e2ae-fac5-419e-b9e0-d7b91094e1ef"
+          },
+          "sam": {
+            "can_create_space": false,
+            "can_grant_creator_groups": false,
+            "can_manage_space_creators": false,
+            "group_selection_supported": true,
+            "policy": "owners_and_selected_members",
+            "revision": {
+              "counter": "31",
+              "epoch": "1"
+            },
+            "selected_creators_supported": true,
+            "workspace_id": "5536e2ae-fac5-419e-b9e0-d7b91094e1ef"
+          }
+        },
+        "space_creator_selections": {
+          "group": [
+            [
+              "Super_Users",
+              "group",
+              null,
+              true
+            ]
+          ],
+          "user": [
+            [
+              "Alex Dupont",
+              "user",
+              null,
+              true
+            ]
+          ]
+        },
+        "spaces": [
+          "General",
+          "HR",
+          "Leadership",
+          "Product"
+        ],
+        "workspace_creation": {
+          "alex": {
+            "can_create_workspace": false,
+            "mode": "selected_users",
+            "revision": "2",
+            "supported": true
+          },
+          "jordan": {
+            "can_create_workspace": false,
+            "mode": "selected_users",
+            "revision": "2",
+            "supported": true
+          },
+          "olivia": {
+            "can_create_workspace": true,
+            "mode": "selected_users",
+            "revision": "2",
+            "supported": true
+          },
+          "sam": {
+            "can_create_workspace": false,
+            "mode": "selected_users",
+            "revision": "2",
+            "supported": true
+          }
+        }
       }
     },
     "captures": [
@@ -755,7 +1161,7 @@
         "does_not_prove": "Does not prove that the selections can create spaces (see server_readback).",
         "sha256": "0ce2abbe5d6079308dc8b59bfef8551ef567719d6f7fa8494293d6048b70f2cb",
         "captured_at": "2026-10-14T10:55:33.879Z",
-        "merged_code_rerun": "not retaken: on 2026-10-15 this test failed at its first check (the selected members and groups do not load on the merged code); the image shows the panel before the merge"
+        "after_fixes": "taken again on 2026-10-15 in gallery run G3 (Web 2ae2faca, server 65bc42360): 90 pixels differ by at most 8 of 255 (anti-aliasing at the corners of the Owners only card and the edges and icon of the Add members or groups button, and 2 pixels at the sidebar edge), which cannot be seen: noise, so the committed image was kept"
       },
       {
         "file": "permissions-add-members-suggestions.png",
@@ -770,7 +1176,7 @@
         "does_not_prove": "Nothing was added.",
         "sha256": "13318e33ad7cfecd84357b491ab0f146215eeb0fa030c01bcf6e78c06dabbedb",
         "captured_at": "2026-10-14T10:55:34.508Z",
-        "merged_code_rerun": "not retaken: on 2026-10-15 this test failed at its first check (the selected members and groups do not load on the merged code); the image shows the panel before the merge"
+        "after_fixes": "taken again on 2026-10-15 in gallery run G3 (Web 2ae2faca, server 65bc42360): 2 pixels differ by at most 1 of 255 (at the sidebar edge), which cannot be seen: noise, so the committed image was kept"
       },
       {
         "file": "permissions-narrowing-confirmation.png",
@@ -783,7 +1189,7 @@
         "does_not_prove": "Does not prove what saving would do. Retaken in the rerun: only the rounded corner's background differs.",
         "sha256": "c728954486547aca7a6800a6d5a00ea772b0080de067ed339772b3a17708f339",
         "captured_at": "2026-10-14T10:55:35.196Z",
-        "merged_code_rerun": "not retaken: on 2026-10-15 this test failed at its first check (the selected members and groups do not load on the merged code); the image shows the panel before the merge"
+        "after_fixes": "taken again on 2026-10-15 in gallery run G3 (Web 2ae2faca, server 65bc42360): byte for byte the same; kept"
       },
       {
         "file": "permissions-access-to-all-spaces-summary.png",
@@ -798,7 +1204,7 @@
         "does_not_prove": "Read-only summary; does not show coverage applied to a space.",
         "sha256": "a21e2a0144016173e4e27183cb7449cb6c228d3b24ea5ece6d59db29ca54e3d2",
         "captured_at": "2026-10-14T10:55:35.883Z",
-        "merged_code_rerun": "not retaken: on 2026-10-15 this test failed at its first check (the selected members and groups do not load on the merged code); the image shows the panel before the merge"
+        "after_fixes": "taken again on 2026-10-15 in gallery run G3 (Web 2ae2faca, server 65bc42360): byte for byte the same; kept"
       },
       {
         "file": "permissions-member-read-only.png",
@@ -811,7 +1217,8 @@
         "does_not_prove": "Does not prove the server refuses Sam's create request.",
         "sha256": "ab609220823ff32c4e764397faaa8bbee93dee53d1d47971322ad04725a48614",
         "captured_at": "2026-10-14T10:55:41.041Z",
-        "merged_code_rerun": "kept: on 2026-10-15 the merged code gave the same screen with 2 pixels at the sidebar edge 1 of 255 off"
+        "merged_code_rerun": "kept: on 2026-10-15 the merged code gave the same screen with 2 pixels at the sidebar edge 1 of 255 off",
+        "after_fixes": "taken again on 2026-10-15 in gallery run G3 (Web 2ae2faca, server 65bc42360): 2 pixels differ by at most 1 of 255 (at the sidebar edge), which cannot be seen: noise, so the committed image was kept"
       },
       {
         "file": "group-dialog-access-to-all-spaces-menu.png",
@@ -824,7 +1231,7 @@
         "does_not_prove": "No change saved; the open menu covers part of the description.",
         "sha256": "0f8b82239c0783e9378cfde0ded4d2cf795b59bd7da47028c71996d7b42fe10c",
         "captured_at": "2026-10-14T10:55:36.941Z",
-        "merged_code_rerun": "not retaken: on 2026-10-15 this test failed at its first check (the selected members and groups do not load on the merged code); the image shows the panel before the merge"
+        "after_fixes": "taken again on 2026-10-15 in gallery run G3 (Web 2ae2faca, server 65bc42360): 2 pixels differ by at most 1 of 255 (at the sidebar edge), which cannot be seen: noise, so the committed image was kept"
       },
       {
         "file": "group-access-to-all-spaces-confirmation.png",
@@ -837,7 +1244,7 @@
         "does_not_prove": "Does not prove what saving would do.",
         "sha256": "d6d5beb22fe4225c0fb8230175c3c986d54931b73306e7800b0ff8ed65abd300",
         "captured_at": "2026-10-14T10:55:37.628Z",
-        "merged_code_rerun": "not retaken: on 2026-10-15 this test failed at its first check (the selected members and groups do not load on the merged code); the image shows the panel before the merge"
+        "after_fixes": "taken again on 2026-10-15 in gallery run G3 (Web 2ae2faca, server 65bc42360): byte for byte the same; kept"
       },
       {
         "file": "manage-space-general-page-setting.png",
@@ -852,7 +1259,8 @@
         "does_not_prove": "Does not prove that members are refused when adding pages.",
         "sha256": "8619dbf42dd1a2b426073d3ba791cff13290668f46a0fea5851c3124438582cc",
         "captured_at": "2026-10-14T06:44:26.550Z",
-        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)"
+        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)",
+        "after_fixes": "taken again on 2026-10-15 in gallery run G3 (Web 2ae2faca, server 65bc42360): byte for byte the same; kept"
       },
       {
         "file": "manage-space-type-change-confirmation.png",
@@ -866,7 +1274,8 @@
         "does_not_prove": "Does not prove what saving would do.",
         "sha256": "93d4a67cea2184b9c18eca05a611dd3f2d95148f1178743d3e7efa8c092f8eef",
         "captured_at": "2026-10-14T06:44:27.202Z",
-        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)"
+        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)",
+        "after_fixes": "taken again on 2026-10-15 in gallery run G3 (Web 2ae2faca, server 65bc42360): byte for byte the same; kept"
       },
       {
         "file": "manage-space-groups-view-and-edit.png",
@@ -881,7 +1290,8 @@
         "does_not_prove": "What members of the two groups can do in HR's pages; the videos view-group-reads-only and edit-group-edits show one reader and one editor.",
         "sha256": "f33577b2e52bcab5db0f531a6e715a74ef852a17edba63c3228e5db7342376b6",
         "captured_at": "2026-10-15T05:03:37.908Z",
-        "added": "merged-code refresh 2026-10-15 (Web b59969d6, server 805c9bab0)"
+        "added": "merged-code refresh 2026-10-15 (Web b59969d6, server 805c9bab0)",
+        "after_fixes": "taken again on 2026-10-15 in gallery run G3 (Web 2ae2faca, server 65bc42360): byte for byte the same; kept"
       },
       {
         "file": "manage-space-members-access-menu.png",
@@ -895,7 +1305,8 @@
         "does_not_prove": "Does not prove that a chosen level saves.",
         "sha256": "4b034f860bfabcd0af28729beff52ec1f9cdb8d44a5efd19ea77e5bffa74ade7",
         "captured_at": "2026-10-14T06:44:27.979Z",
-        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)"
+        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)",
+        "after_fixes": "taken again on 2026-10-15 in gallery run G3 (Web 2ae2faca, server 65bc42360): byte for byte the same; kept"
       },
       {
         "file": "manage-space-members-access-explanation.png",
@@ -908,7 +1319,8 @@
         "does_not_prove": "Picture only.",
         "sha256": "723d42c6c520e103e28cfbc9313712169a7176f85cd1275f6caf4785ca1c9d47",
         "captured_at": "2026-10-14T06:44:28.642Z",
-        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)"
+        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)",
+        "after_fixes": "taken again on 2026-10-15 in gallery run G3 (Web 2ae2faca, server 65bc42360): byte for byte the same; kept"
       },
       {
         "file": "manage-space-add-suggestions.png",
@@ -922,7 +1334,8 @@
         "does_not_prove": "Nothing was added.",
         "sha256": "dd2a0eb41015d38838279d80c9185580dac51dfb70d14af29799752f5340654c",
         "captured_at": "2026-10-14T06:44:29.451Z",
-        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)"
+        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)",
+        "after_fixes": "taken again on 2026-10-15 in gallery run G3 (Web 2ae2faca, server 65bc42360): byte for byte the same; kept"
       },
       {
         "file": "manage-space-own-access-hint.png",
@@ -936,7 +1349,8 @@
         "does_not_prove": "Server reported Olivia's access as Can edit through a group; no change saved.",
         "sha256": "0fd38917cac8b9342ea9c96f3976c3a1734e8232118f7a467a7518445612c26d",
         "captured_at": "2026-10-14T06:44:30.785Z",
-        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)"
+        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)",
+        "after_fixes": "taken again on 2026-10-15 in gallery run G3 (Web 2ae2faca, server 65bc42360): byte for byte the same; kept"
       },
       {
         "file": "manage-space-own-access-explanation.png",
@@ -950,7 +1364,8 @@
         "does_not_prove": "No change saved.",
         "sha256": "f0f5585dcb0e248073a03f3f23183ac8ddd7e585c001b5792b355761aa80afe5",
         "captured_at": "2026-10-14T06:44:31.471Z",
-        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)"
+        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)",
+        "after_fixes": "taken again on 2026-10-15 in gallery run G3 (Web 2ae2faca, server 65bc42360): byte for byte the same; kept"
       },
       {
         "file": "create-space.png",
@@ -964,7 +1379,8 @@
         "does_not_prove": "No space was created.",
         "sha256": "c09baabbc42774ce11ceeb3460f236069c3e673aee795a7204bdb002219904dc",
         "captured_at": "2026-10-14T06:44:32.381Z",
-        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)"
+        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)",
+        "after_fixes": "taken again on 2026-10-15 in gallery run G3 (Web 2ae2faca, server 65bc42360): byte for byte the same; kept"
       },
       {
         "file": "create-space-page-setting.png",
@@ -978,7 +1394,8 @@
         "does_not_prove": "No space was created.",
         "sha256": "53975a683288c062f389d363bb5946ea724285beddd78a4a824f8ae55e70feac",
         "captured_at": "2026-10-14T06:44:32.971Z",
-        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)"
+        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)",
+        "after_fixes": "taken again on 2026-10-15 in gallery run G3 (Web 2ae2faca, server 65bc42360): byte for byte the same; kept"
       },
       {
         "file": "create-space-denied.png",
@@ -1000,7 +1417,8 @@
         "sha256": "f542929ae0e48d34dc5e4f55714af35d8cfa3b0e85382676521668b0e16c5f6c",
         "captured_at": "2026-10-14T10:55:44.312Z",
         "reproduced": "second rerun 2026-10-14T11:28:50.561Z: byte-identical (same sha256)",
-        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)"
+        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)",
+        "after_fixes": "taken again on 2026-10-15 in gallery run G3 (Web 2ae2faca, server 65bc42360): byte for byte the same; kept"
       },
       {
         "file": "workspace-menu-create-workspace-denied.png",
@@ -1014,7 +1432,8 @@
         "does_not_prove": "Does not prove the server refuses a creation request.",
         "sha256": "4375f5925b031c32639cb17ccdbbc06e2bb056e3b7e53146ced001887df0a22f",
         "captured_at": "2026-10-14T06:44:36.131Z",
-        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)"
+        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)",
+        "after_fixes": "taken again on 2026-10-15 in gallery run G3 (Web 2ae2faca, server 65bc42360): byte for byte the same; kept"
       },
       {
         "file": "account-only-pending-invitation.png",
@@ -1032,7 +1451,8 @@
         "captured_at": "2026-10-15T00:37:36.243Z",
         "retaken": "third rerun 2026-10-15 against server e2a01e66c, which sends the invited role; the replaced image (replaced_sha256, captured 2026-10-14T06:44:38.959Z and reproduced byte for byte in the second rerun) had no guest line",
         "replaced_sha256": "9f86204efa35b3092609f524b4a45f904beacb1969516de65f3cb4bff8172b35",
-        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)"
+        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)",
+        "after_fixes": "taken again on 2026-10-15 in gallery run G3 (Web 2ae2faca, server 65bc42360): byte for byte the same; kept"
       },
       {
         "file": "page-no-access-after-group-removed.png",
@@ -1048,7 +1468,8 @@
         "does_not_prove": "Server change made through the API, not the UI.",
         "sha256": "54ede17c8d27e35d5ca0b84b091e3320659508628cf65d46c8a860aa2f45ec8f",
         "captured_at": "2026-10-14T06:44:42.000Z",
-        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)"
+        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)",
+        "after_fixes": "taken again on 2026-10-15 in gallery run G3 (Web 2ae2faca, server 65bc42360): byte for byte the same; kept"
       },
       {
         "file": "page-access-restored-after-regrant.png",
@@ -1064,7 +1485,8 @@
         "does_not_prove": "No edit was typed or saved.",
         "sha256": "29f521138c3f54387eadbded7c3ef6a51928ef2012acaf85eaca454efcd4613b",
         "captured_at": "2026-10-14T06:44:42.973Z",
-        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)"
+        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)",
+        "after_fixes": "taken again on 2026-10-15 in gallery run G3 (Web 2ae2faca, server 65bc42360): byte for byte the same; kept"
       },
       {
         "file": "sign-out-remove-data.png",
@@ -1079,7 +1501,8 @@
         "sha256": "182decfb43be8a746be835566dc6aedbdb23b4828d1c8f9738b21da1bea1892f",
         "captured_at": "2026-10-15T05:04:01.214Z",
         "retaken": "merged-code refresh 2026-10-15 (Web b59969d6, server 805c9bab0): the same screen; only the date in the Date & Time preview changed (10/15/2026). The replaced image (replaced_sha256) was captured 2026-10-14T06:44:46.326Z.",
-        "replaced_sha256": "7f451a524dda3cc3c2546bfc85daf299d708a69ed3d369a1e22c11f792fac857"
+        "replaced_sha256": "7f451a524dda3cc3c2546bfc85daf299d708a69ed3d369a1e22c11f792fac857",
+        "after_fixes": "taken again on 2026-10-15 in gallery run G3 (Web 2ae2faca, server 65bc42360): byte for byte the same; kept"
       }
     ],
     "limits": [
@@ -1088,7 +1511,6 @@
       "Permission changes through owner/operator API calls; saving from these controls is covered by component and server tests, not by this run.",
       "The account-only page was retaken in the third rerun against a later server build (e2a01e66c) than the other current captures (540757ea9), because only the later one sends the invited role. Jordan's invitation is a guest invitation because the three member seats are taken.",
       "Failure toasts, which now name the change that failed and give a plain reason, are not captured; component tests cover them.",
-      "The six images of the owner's Permissions test (permissions-owner-selected-members.png to group-access-to-all-spaces-confirmation.png) were not retaken on the merged code: that test fails there because the selected members and groups do not load against server 805c9bab0.",
       "The guard of these runs aborted the app's HTTP requests outside the stack only: its WebSockets and Chromium's own background traffic were not filtered (Chromium was later seen connecting to Google with that guard; no other service was contacted)."
     ]
   },
@@ -1319,16 +1741,19 @@
     "encoder": "playwright/support/permission-videos-encode.py",
     "web": {
       "branch": "oodrive-fix/web-media",
-      "source_commit": "b59969d69737f8e71bbb6c76aab89264a2d73a24",
-      "harness_commit": "c95f5471bee0c1a8f578216e661cd04e0cffd43d (runs C and D: groups-two-levels, workspace-creation-control, space-creation-control) and 00b732252545293083bf49713d5e822815ab4e43 (runs E and F: view-group-reads-only, edit-group-edits)",
-      "base": "codex/oodrive-permissions-fixes at b59969d6 (after the merge of main, d8cd5643)",
-      "served_by": "vite dev server (loopback)"
+      "source_commit": "5dbfedfd4c194b32a72d3235b46dc117231f9ce2",
+      "harness_commit": "5dbfedfd4c194b32a72d3235b46dc117231f9ce2",
+      "base": "codex/oodrive-permissions-fixes at b59969d6 (after the merge of main, d8cd5643), plus the fix commits",
+      "served_by": "vite dev server (loopback)",
+      "app_source": "b59969d6 plus the three Web fix commits (found_while_recording_fixed)",
+      "earlier_harness_commits": "c95f5471bee0c1a8f578216e661cd04e0cffd43d (runs C and D) and 00b732252545293083bf49713d5e822815ab4e43 (runs E and F); no file here comes from those runs any more"
     },
     "server": {
-      "commit": "805c9bab058231dbdf59c5dc2124e59d0aa35ddd",
-      "binary_sha256": "1e7b8c4c498cf1dcbd1e6418fe535fcd5e14b892747c5b7e31bb1d4f1177c3ff",
+      "commit": "65bc423601c67be90d7fea7b5435b14a55f94abb",
+      "binary_sha256": "a491ff45ecb42bd53d886d4c8fe7dac9122dff60eb0f76958b25ad6e5983cac7",
       "features": "commercial-local-test (self-host-af)",
-      "details": "current_capture.server.fourth_rerun"
+      "details": "current_capture.server.after_fixes",
+      "earlier_runs": "runs C to F used server 805c9bab058231dbdf59c5dc2124e59d0aa35ddd, binary sha256 1e7b8c4c498cf1dcbd1e6418fe535fcd5e14b892747c5b7e31bb1d4f1177c3ff (current_capture.server.fourth_rerun)"
     },
     "browser": {
       "engine": "Chromium 145.0.7632.0 (Playwright chromium-1208), headless",
@@ -1337,7 +1762,7 @@
       "slow_mo_ms": 200,
       "recorder": "Playwright recordVideo, one VP8 webm per window at 25 fps (Playwright ffmpeg-1011); no audio",
       "session": "GoTrue password grant stored as the app session, except Jordan, who signs in on the login screen",
-      "network": "Runs C and D: the app's HTTP requests outside the three stack origins aborted; WebSockets and Chromium's own background traffic not filtered (the realtime relay connected any URL). Runs E and F: also Chromium started with --proxy-server=http://127.0.0.1:9 (closed; Chromium never proxies loopback), the app's WebSockets outside the stack closed before they connect, and the relay limited to the Cloud socket; sampling the sockets of the Playwright process tree every 0.2 s found only loopback peers (see runs)."
+      "network": "Runs H and I (the current files), as in E and F: the app's HTTP requests outside the three stack origins aborted, Chromium started with --proxy-server=http://127.0.0.1:9 (closed; Chromium never proxies loopback), the app's WebSockets outside the stack closed before they connect, and the relay limited to the Cloud socket; sampling the sockets of the Playwright process tree every 0.2 s found only loopback peers (see runs). Earlier runs C and D: the app's HTTP requests outside the three stack origins aborted; WebSockets and Chromium's own background traffic not filtered (the realtime relay connected any URL)."
     },
     "overlays": "Drawn by the recording harness, not the app: a caption banner at the top (the step in plain words, text in CSS generated content) and a dot marking the pointer, both aria-hidden with pointer-events none. Browser spell-check underlines turned off, as for the screenshots.",
     "composition": "At each moment the most recently opened window that is still open is shown; each part starts at the next caption in its window and the clip ends when the last window closed. Cut points come from timeline.json, aligned to each recording by the frame where its first caption appears. Nothing else is cut, sped up, reordered or retouched.",
@@ -1347,6 +1772,13 @@
       "gif": "fps 8, width 960, palettegen stats_mode=diff, paletteuse dither=bayer:bayer_scale=5; no GIF needed 6 fps or a speed-up"
     },
     "harness": {
+      "playwright/e2e/app/permission-videos.capture.spec.ts": "b08c23eea7ac5e99987bcbeb6cb26d4771b64f84a7ffff5eb7054701db395bb4",
+      "playwright/support/permission-gallery-browser.ts": "7c1363c8c0d298d92fd184318e7e0affe167666a0e53930b7a51c5abc9aefa86",
+      "playwright/support/permission-gallery-seed.ts": "52d3587c299ea45792f1d3c69ede17ad45b01fb4ae825b15e1fcd442f85e8136",
+      "playwright.permission-gallery.config.ts": "78e2a699b706a254df150e64646dbdf28502f827cf2f8c93e0c5c6b2c0c41894",
+      "playwright/support/permission-videos-encode.py": "6c0fbda7ad9f1e3168c3b7071fc0e5444601140badd3bc150c6abc6656f916a7"
+    },
+    "harness_runs_e_f": {
       "playwright/e2e/app/permission-videos.capture.spec.ts": "025ba9445738250a6dc16faf8249bec108e1d0c2a40337c97c1b735cfc453f8b",
       "playwright/support/permission-gallery-browser.ts": "7c1363c8c0d298d92fd184318e7e0affe167666a0e53930b7a51c5abc9aefa86",
       "playwright/support/permission-gallery-seed.ts": "52d3587c299ea45792f1d3c69ede17ad45b01fb4ae825b15e1fcd442f85e8136",
@@ -1360,7 +1792,7 @@
       "playwright.permission-gallery.config.ts": "3afb9535c4567379daf6ad786af8ab2f23243a357c4d2441c24182f27b886294",
       "playwright/support/permission-videos-encode.py": "6c0fbda7ad9f1e3168c3b7071fc0e5444601140badd3bc150c6abc6656f916a7"
     },
-    "harness_note": "harness: the files as committed in 00b73225, as run in E and F (view-group-reads-only and edit-group-edits). harness_runs_c_d: as run in C and D (the other three videos).",
+    "harness_note": "harness: the files as committed in 5dbfedfd, as run in H and I (all five current videos). harness_runs_e_f: as run in E and F; harness_runs_c_d: as run in C and D (their files were replaced).",
     "runs": [
       {
         "run": "C",
@@ -1383,7 +1815,7 @@
           "view-group-reads-only": "shown",
           "space-creation-control": "shown"
         },
-        "encoded": "groups-two-levels, workspace-creation-control and space-creation-control (still the files here); its view-group-reads-only and edit-group-edits files were replaced by run F's"
+        "encoded": "groups-two-levels, workspace-creation-control and space-creation-control, replaced by run I's files after the fixes"
       },
       {
         "run": "E",
@@ -1452,21 +1884,84 @@
             ]
           }
         },
-        "encoded": "view-group-reads-only and edit-group-edits only"
+        "encoded": "view-group-reads-only and edit-group-edits, replaced by run I's files after the fixes"
+      },
+      {
+        "run": "H",
+        "started_utc": "2026-10-15T09:28:34Z",
+        "ended_utc": "2026-10-15T09:31:33Z",
+        "result": "5 passed (3.0m)",
+        "harness_commit": "5dbfedfd4c194b32a72d3235b46dc117231f9ce2",
+        "server_commit": "65bc423601c67be90d7fea7b5435b14a55f94abb",
+        "database": "as left by gallery run G3, which ran first on a stack reset just before; no editing test had run",
+        "sockets": {
+          "samples": 676,
+          "interval_s": 0.2,
+          "seconds": 179.3,
+          "remote_endpoints": [
+            "127.0.0.1:34210",
+            "127.0.0.1:34211",
+            "127.0.0.1:34230"
+          ],
+          "non_loopback_endpoints": [],
+          "by_process": {
+            "chrome": [
+              "127.0.0.1:34210",
+              "127.0.0.1:34211",
+              "127.0.0.1:34230"
+            ],
+            "node": [
+              "127.0.0.1:34210",
+              "127.0.0.1:34211"
+            ]
+          }
+        }
+      },
+      {
+        "run": "I",
+        "started_utc": "2026-10-15T09:31:34Z",
+        "ended_utc": "2026-10-15T09:34:33Z",
+        "result": "5 passed (3.0m)",
+        "harness_commit": "5dbfedfd4c194b32a72d3235b46dc117231f9ce2",
+        "server_commit": "65bc423601c67be90d7fea7b5435b14a55f94abb",
+        "database": "as left by run H (no reset), so Onboarding checklist's history has the deletions of run H's editing test",
+        "sockets": {
+          "samples": 671,
+          "interval_s": 0.2,
+          "seconds": 179.2,
+          "remote_endpoints": [
+            "127.0.0.1:34210",
+            "127.0.0.1:34211",
+            "127.0.0.1:34230"
+          ],
+          "non_loopback_endpoints": [],
+          "by_process": {
+            "chrome": [
+              "127.0.0.1:34210",
+              "127.0.0.1:34211",
+              "127.0.0.1:34230"
+            ],
+            "node": [
+              "127.0.0.1:34210",
+              "127.0.0.1:34211"
+            ]
+          }
+        },
+        "encoded": "all five (the files here)"
       }
     ],
     "earlier_runs": "Earlier versions of the spec ran four times the same morning (04:22, 4 of 5: the member removal never matched, fixed in the seed; 04:33, 04:41 and 04:44, 5 of 5 each); the spec then gained the two conditional captions. No file here comes from those runs. During the review fixes, one exploratory run of all five (06:04, an earlier form of the WebSocket guard) and scratch checks outside the spec (the page restore, the guard, a failure injected into edit-group-edits) ran before runs E and F; no file here comes from them.",
     "files": {
-      "playwright/bdd/evidence/space-group-permission-lifecycle/videos/groups-two-levels.mp4": "b210c6014fdb2cff449cec7f0e784316c57eb4fa609cab8d8abacca4d7dddf2f",
-      "playwright/bdd/evidence/space-group-permission-lifecycle/videos/groups-two-levels.gif": "7aad0321ebe9af73b7f4277cd11e388019ab246edcaa13b7b6dc805470f48531",
-      "playwright/bdd/evidence/space-group-permission-lifecycle/videos/view-group-reads-only.mp4": "8799fa5d25ec07b9724e874bf8abc9a7f07c273d66c1a071de9649a4a6219cbb",
-      "playwright/bdd/evidence/space-group-permission-lifecycle/videos/view-group-reads-only.gif": "efc7e4f812dbdabeb6f4198d5c57a7dc6555b473e19d705cd39ac29d419d40d0",
-      "playwright/bdd/evidence/space-group-permission-lifecycle/videos/edit-group-edits.mp4": "778d64552889631c83b26fd5db35ca34d102804f39879880b19d4487ff862406",
-      "playwright/bdd/evidence/space-group-permission-lifecycle/videos/edit-group-edits.gif": "7d16df2e8c7d0f7c78e910d5c02435103fd3de113d2fb47f4a7abec54103a88b",
-      "playwright/bdd/evidence/space-group-permission-lifecycle/videos/workspace-creation-control.mp4": "9c324f828ee7d0583faada7ec0ddb6793ed03dbe75283c091d1abef7062e0cf2",
-      "playwright/bdd/evidence/space-group-permission-lifecycle/videos/workspace-creation-control.gif": "44a828a5520faeb6a2e1ea34cf752f6c4a7123a990b88340c847514edb390ffc",
-      "playwright/bdd/evidence/space-group-permission-lifecycle/videos/space-creation-control.mp4": "5f6ba266dce0a1f40c3ad28ff6dee220cb4ac53f9afc21a2d4aae1cda92e3749",
-      "playwright/bdd/evidence/space-group-permission-lifecycle/videos/space-creation-control.gif": "7a4650ee4b01cedddf6da13c7e3918783f3686d0d3dcb41c987e9b5b6de8e031"
+      "playwright/bdd/evidence/space-group-permission-lifecycle/videos/groups-two-levels.mp4": "62e0c41c4ce37e3793fcdb0a1f354d1970da9ae3c4ab673d52fac8249a33e7b9",
+      "playwright/bdd/evidence/space-group-permission-lifecycle/videos/groups-two-levels.gif": "d7bd61c45d73e67517f92a9b07a348db261f67239d84d8bd1543400bfeae494c",
+      "playwright/bdd/evidence/space-group-permission-lifecycle/videos/view-group-reads-only.mp4": "fecf7a508737c7dfc32814bdf10375f63eb842d15a4914e53cbc6a10bd8cb3ec",
+      "playwright/bdd/evidence/space-group-permission-lifecycle/videos/view-group-reads-only.gif": "098c7bdb78439623fdafa1de170ade382d428a8c09b2ad3d09ab5c576f232f99",
+      "playwright/bdd/evidence/space-group-permission-lifecycle/videos/edit-group-edits.mp4": "5d9df6f9319080b5d577b81687aef69124ef932733de9ce6b5d6c9ec771969a0",
+      "playwright/bdd/evidence/space-group-permission-lifecycle/videos/edit-group-edits.gif": "76d64de2311d79d16229605d2a208c65e9b8c709a6ca338137b79173fa3b4fed",
+      "playwright/bdd/evidence/space-group-permission-lifecycle/videos/workspace-creation-control.mp4": "cdb3f9311662bb61e84f2ec4ea06cbd4c9a69765b9d3b663eb73f6c558bc6b78",
+      "playwright/bdd/evidence/space-group-permission-lifecycle/videos/workspace-creation-control.gif": "038f3ee01da31471ad6331bc03fe4a64486f281678e09f1426156cdea0936ab6",
+      "playwright/bdd/evidence/space-group-permission-lifecycle/videos/space-creation-control.mp4": "72e8b04fcbfaf0b0cf6961128964f858520aa35afddcb409b30aabfb8420f0a3",
+      "playwright/bdd/evidence/space-group-permission-lifecycle/videos/space-creation-control.gif": "e6492a0fe1de66ca588509d7ad0384c750fdfae725332d6d5c52fddc9eabb61c"
     },
     "clips": [
       {
@@ -1475,15 +1970,15 @@
         "test": "groups-two-levels: the HR group can edit HR, the Users group can view it",
         "mp4": {
           "path": "videos/groups-two-levels.mp4",
-          "sha256": "b210c6014fdb2cff449cec7f0e784316c57eb4fa609cab8d8abacca4d7dddf2f",
-          "bytes": 348201,
-          "duration_s": 29.52
+          "sha256": "62e0c41c4ce37e3793fcdb0a1f354d1970da9ae3c4ab673d52fac8249a33e7b9",
+          "bytes": 351720,
+          "duration_s": 29.16
         },
         "gif": {
           "path": "videos/groups-two-levels.gif",
-          "sha256": "7aad0321ebe9af73b7f4277cd11e388019ab246edcaa13b7b6dc805470f48531",
-          "bytes": 2290214,
-          "duration_s": 29.51,
+          "sha256": "d7bd61c45d73e67517f92a9b07a348db261f67239d84d8bd1543400bfeae494c",
+          "bytes": 2090204,
+          "duration_s": 29.13,
           "fps": 8,
           "speedup": 1.0
         },
@@ -1491,27 +1986,27 @@
           {
             "index": 1,
             "person": "olivia",
-            "opened_ms": 174,
-            "closed_ms": 34920
+            "opened_ms": 132,
+            "closed_ms": 33182
           }
         ],
         "parts": [
           {
             "window": 1,
             "person": "olivia",
-            "from_s": 4.13,
-            "to_s": 33.662,
-            "timeline_from_ms": 5388,
-            "timeline_to_ms": 34920
+            "from_s": 3.61,
+            "to_s": 32.763,
+            "timeline_from_ms": 4029,
+            "timeline_to_ms": 33182
           }
         ],
         "recording_offsets_s": {
-          "1": -1.084
+          "1": -0.287
         },
         "recordings": [
           {
             "name": "window-1-olivia.webm",
-            "sha256": "91994c49ba1382e96d830cf4c11adf428ebb2187ffbead716e11d6bdeeb5409d"
+            "sha256": "d2a902d2331d4768e65b90f7841819be12d5136e1cd960d82818eaace6a37bd7"
           }
         ],
         "checks_passed": [
@@ -1537,8 +2032,8 @@
         ],
         "setup_and_cleanup": "None through the API: Olivia saves both changes from the UI and the last one restores the seeded level.",
         "does_not_prove": "What members of the groups can then do in HR's pages (the next two videos), or how a failed save looks (component tests cover failure toasts).",
-        "recorded_in_run": "D",
-        "harness_commit": "c95f5471bee0c1a8f578216e661cd04e0cffd43d"
+        "recorded_in_run": "I",
+        "harness_commit": "5dbfedfd4c194b32a72d3235b46dc117231f9ce2"
       },
       {
         "slug": "view-group-reads-only",
@@ -1546,15 +2041,15 @@
         "test": "view-group-reads-only: through the Users group, Alex can read an HR page but not edit it",
         "mp4": {
           "path": "videos/view-group-reads-only.mp4",
-          "sha256": "8799fa5d25ec07b9724e874bf8abc9a7f07c273d66c1a071de9649a4a6219cbb",
-          "bytes": 113677,
-          "duration_s": 19.12
+          "sha256": "fecf7a508737c7dfc32814bdf10375f63eb842d15a4914e53cbc6a10bd8cb3ec",
+          "bytes": 80492,
+          "duration_s": 15.68
         },
         "gif": {
           "path": "videos/view-group-reads-only.gif",
-          "sha256": "efc7e4f812dbdabeb6f4198d5c57a7dc6555b473e19d705cd39ac29d419d40d0",
-          "bytes": 939288,
-          "duration_s": 19.13,
+          "sha256": "098c7bdb78439623fdafa1de170ade382d428a8c09b2ad3d09ab5c576f232f99",
+          "bytes": 588383,
+          "duration_s": 15.63,
           "fps": 8,
           "speedup": 1.0
         },
@@ -1562,27 +2057,27 @@
           {
             "index": 1,
             "person": "alex",
-            "opened_ms": 189,
-            "closed_ms": 23047
+            "opened_ms": 192,
+            "closed_ms": 18714
           }
         ],
         "parts": [
           {
             "window": 1,
             "person": "alex",
-            "from_s": 3.61,
-            "to_s": 22.729,
-            "timeline_from_ms": 3928,
-            "timeline_to_ms": 23047
+            "from_s": 2.73,
+            "to_s": 18.422,
+            "timeline_from_ms": 3022,
+            "timeline_to_ms": 18714
           }
         ],
         "recording_offsets_s": {
-          "1": -0.129
+          "1": -0.1
         },
         "recordings": [
           {
             "name": "window-1-alex.webm",
-            "sha256": "ce08d31ef9f78a8e8bea95ecd6cc4e4f0d4fdf3615836725af0743fd8ae59ab0"
+            "sha256": "23a6458cf274a755595cef3df210adb7300a9ec727c1e3d54152d4ee32f7db55"
           }
         ],
         "checks_passed": [
@@ -1594,8 +2089,10 @@
           "the title is not editable (no title input)",
           "no Add icon or cover buttons over the title",
           "no block handles (add or drag) beside the text",
+          "no notice about edits waiting for edit access since the page opened",
           "typing changed nothing on screen",
           "server: the document has no \"Hello\"",
+          "no notice about edits waiting for edit access at any moment, typing included",
           "teardown: Alex is a direct HR member at the space default again",
           "teardown: Alex can write Onboarding checklist again"
         ],
@@ -1603,17 +2100,16 @@
           "Alex (member) reaches HR only through the Users group, which can view",
           "He has opened Onboarding checklist in HR",
           "No title editing, no block handles: the page is read-only",
-          "The notice at the bottom right came up on opening, before any typing (see README)",
           "Alex clicks into the text and types \"Hello\"",
           "Nothing changed: Alex can read this page but not edit it"
         ],
         "setup_and_cleanup": "Owner, API: Alex's own HR membership is removed first (he keeps HR through the Users group, Can view); afterwards it is given back at the space default and read back.",
-        "defect_on_screen": "\"Changes to 1 page are waiting for edit access.\" appears as the page opens, before any typing (a caption says so). A view-only session opened without typing on the stack's previous database, after earlier runs of the editing test, held one outbox item for the page: a sync verification snapshot (source \"manifest\", 22 bytes) that the server had refused because Alex cannot edit; its bytes are a Yjs update with no new content, only the page's delete set (the text the editing test adds and removes). Holiday policy, whose history has no deletions, gave no item and no notice. In runs C and E (the page freshly seeded, before the editing test) the notice did not appear; in runs D and F it did (this file is from run F). Not fixed here.",
         "does_not_prove": "Comment access (Users has Can view here), or what Alex sees in other spaces.",
-        "recorded_in_run": "F",
-        "harness_commit": "00b732252545293083bf49713d5e822815ab4e43",
+        "recorded_in_run": "I",
+        "harness_commit": "5dbfedfd4c194b32a72d3235b46dc117231f9ce2",
         "pointer": "Right after the click into the text, the harness moves the pointer (and its dot) to the right margin, so the line stays readable while Alex types.",
-        "positive_control": "edit-group-edits finds the title input, the Add icon and Add cover buttons and the block handles for Sam with the same locators, hovers and 700 ms pauses; each of those checks passed at its first attempt, 0.94 to 0.97 s after its hover began in run F, as soon as Alex's absence checks ran."
+        "positive_control": "edit-group-edits finds the title input, the Add icon and Add cover buttons and the block handles for Sam with the same locators, hovers and 700 ms pauses; each of those checks passed at its first attempt, 0.94 to 0.96 s after its hover began in run I, as soon as Alex's absence checks ran.",
+        "no_pending_edits_notice": "Asserted, not captioned: a MutationObserver installed right after the page is opened records any appearance of the pending-edits notice ([data-testid=\"pending-permission-edits\"], in the DOM only while shown); the record is checked after the read-only checks and again at the end, after the last hold, and must show none. In run I the page's history has the deletions of run H's editing test."
       },
       {
         "slug": "edit-group-edits",
@@ -1621,15 +2117,15 @@
         "test": "edit-group-edits: through the HR group, Sam edits an HR page and the edit is saved",
         "mp4": {
           "path": "videos/edit-group-edits.mp4",
-          "sha256": "778d64552889631c83b26fd5db35ca34d102804f39879880b19d4487ff862406",
-          "bytes": 208017,
-          "duration_s": 30.68
+          "sha256": "5d9df6f9319080b5d577b81687aef69124ef932733de9ce6b5d6c9ec771969a0",
+          "bytes": 231970,
+          "duration_s": 30.8
         },
         "gif": {
           "path": "videos/edit-group-edits.gif",
-          "sha256": "7d16df2e8c7d0f7c78e910d5c02435103fd3de113d2fb47f4a7abec54103a88b",
-          "bytes": 1410631,
-          "duration_s": 30.63,
+          "sha256": "76d64de2311d79d16229605d2a208c65e9b8c709a6ca338137b79173fa3b4fed",
+          "bytes": 1392070,
+          "duration_s": 30.76,
           "fps": 8,
           "speedup": 1.0
         },
@@ -1637,27 +2133,27 @@
           {
             "index": 1,
             "person": "sam",
-            "opened_ms": 150,
-            "closed_ms": 34646
+            "opened_ms": 132,
+            "closed_ms": 33715
           }
         ],
         "parts": [
           {
             "window": 1,
             "person": "sam",
-            "from_s": 3.69,
-            "to_s": 34.37,
-            "timeline_from_ms": 3966,
-            "timeline_to_ms": 34646
+            "from_s": 2.69,
+            "to_s": 33.496,
+            "timeline_from_ms": 2909,
+            "timeline_to_ms": 33715
           }
         ],
         "recording_offsets_s": {
-          "1": -0.126
+          "1": -0.087
         },
         "recordings": [
           {
             "name": "window-1-sam.webm",
-            "sha256": "82abccad1c6321b051d390314eff98a11b5e87ca0c730a0d7530c51eaa747598"
+            "sha256": "c4799fc5b0388684d20c99c0fd96a2c626c1a0cee24d49909a41d551aafa7ddf"
           }
         ],
         "checks_passed": [
@@ -1689,8 +2185,8 @@
         ],
         "setup_and_cleanup": "In the video, Sam deletes his sentence in the UI and the page is read back with only its seeded line. After a failure (not in the video), the finally closes the windows and the owner puts the seeded line back through Cloud's web-update API (restorePageText: the extra blocks are deleted the way the app deletes a block), then reads the page back; tried once with an injected failure outside the recorded runs.",
         "does_not_prove": "Editing by two people at once, offline editing, or that the reload read the server rather than the browser's copy (the API read shows the server has the sentence).",
-        "recorded_in_run": "F",
-        "harness_commit": "00b732252545293083bf49713d5e822815ab4e43",
+        "recorded_in_run": "I",
+        "harness_commit": "5dbfedfd4c194b32a72d3235b46dc117231f9ce2",
         "positive_controls": "The title input, the Add icon and Add cover buttons (on pointing at the title) and the block handles (on pointing at the text): what view-group-reads-only checks is missing."
       },
       {
@@ -1699,15 +2195,15 @@
         "test": "workspace-creation-control: who may create workspaces",
         "mp4": {
           "path": "videos/workspace-creation-control.mp4",
-          "sha256": "9c324f828ee7d0583faada7ec0ddb6793ed03dbe75283c091d1abef7062e0cf2",
-          "bytes": 342061,
-          "duration_s": 37.8
+          "sha256": "cdb3f9311662bb61e84f2ec4ea06cbd4c9a69765b9d3b663eb73f6c558bc6b78",
+          "bytes": 333563,
+          "duration_s": 37.88
         },
         "gif": {
           "path": "videos/workspace-creation-control.gif",
-          "sha256": "44a828a5520faeb6a2e1ea34cf752f6c4a7123a990b88340c847514edb390ffc",
-          "bytes": 2352294,
-          "duration_s": 37.76,
+          "sha256": "038f3ee01da31471ad6331bc03fe4a64486f281678e09f1426156cdea0936ab6",
+          "bytes": 2183542,
+          "duration_s": 37.88,
           "fps": 8,
           "speedup": 1.0
         },
@@ -1715,20 +2211,20 @@
           {
             "index": 1,
             "person": "sam",
-            "opened_ms": 93,
-            "closed_ms": 13138
+            "opened_ms": 110,
+            "closed_ms": 13149
           },
           {
             "index": 2,
             "person": "jordan",
-            "opened_ms": 13386,
-            "closed_ms": 27228
+            "opened_ms": 13389,
+            "closed_ms": 27239
           },
           {
             "index": 3,
             "person": "olivia",
-            "opened_ms": 27672,
-            "closed_ms": 47216
+            "opened_ms": 27635,
+            "closed_ms": 47221
           }
         ],
         "parts": [
@@ -1737,43 +2233,43 @@
             "person": "sam",
             "from_s": 2.69,
             "to_s": 12.924,
-            "timeline_from_ms": 2904,
-            "timeline_to_ms": 13138
+            "timeline_from_ms": 2915,
+            "timeline_to_ms": 13149
           },
           {
             "window": 2,
             "person": "jordan",
-            "from_s": 1.89,
-            "to_s": 13.729,
-            "timeline_from_ms": 15389,
-            "timeline_to_ms": 27228
+            "from_s": 1.85,
+            "to_s": 13.734,
+            "timeline_from_ms": 15355,
+            "timeline_to_ms": 27239
           },
           {
             "window": 3,
             "person": "olivia",
             "from_s": 3.69,
-            "to_s": 19.434,
-            "timeline_from_ms": 31472,
-            "timeline_to_ms": 47216
+            "to_s": 19.469,
+            "timeline_from_ms": 31442,
+            "timeline_to_ms": 47221
           }
         ],
         "recording_offsets_s": {
-          "1": -0.121,
-          "2": -0.113,
-          "3": -0.11
+          "1": -0.115,
+          "2": -0.116,
+          "3": -0.117
         },
         "recordings": [
           {
             "name": "window-1-sam.webm",
-            "sha256": "1fbbf610215c0f9f572bd7e46da31c8ee0796bc851dfc5643aa93d428331f0fb"
+            "sha256": "745dd27c93489345ef8fd7618d2767649a7515e584ac423c02f3957487afc031"
           },
           {
             "name": "window-2-jordan.webm",
-            "sha256": "a9340896a589cf4525710749fb429b135ebee52bea7940c79e02832b0806b2dc"
+            "sha256": "33c2c9365c6638bcbfc1bdf0578b3060ec3a5d7903325f476d2e5cef49ee3ffd"
           },
           {
             "name": "window-3-olivia.webm",
-            "sha256": "48c874b99618e6444ac1048242e804e265068887b6d8978e2194b8469f002ab7"
+            "sha256": "07c2ff27113a0b6f263f06f3fce818644599a6af180a3041f22f1205a7333fdb"
           }
         ],
         "checks_passed": [
@@ -1806,8 +2302,8 @@
         "setup_and_cleanup": "Owner, API: the new workspace is deleted afterwards (and any left by an interrupted run first) and read back.",
         "does_not_prove": "That the server refuses a creation request from Sam or Jordan (only the UI is shown; server tests cover the API), joining the invitation, or importing.",
         "sign_in": "Jordan signs in on the login screen (email, Continue with password, password); the other people use stored sessions.",
-        "recorded_in_run": "D",
-        "harness_commit": "c95f5471bee0c1a8f578216e661cd04e0cffd43d"
+        "recorded_in_run": "I",
+        "harness_commit": "5dbfedfd4c194b32a72d3235b46dc117231f9ce2"
       },
       {
         "slug": "space-creation-control",
@@ -1815,15 +2311,15 @@
         "test": "space-creation-control: the owner narrows who can create spaces",
         "mp4": {
           "path": "videos/space-creation-control.mp4",
-          "sha256": "5f6ba266dce0a1f40c3ad28ff6dee220cb4ac53f9afc21a2d4aae1cda92e3749",
-          "bytes": 698673,
-          "duration_s": 39.52
+          "sha256": "72e8b04fcbfaf0b0cf6961128964f858520aa35afddcb409b30aabfb8420f0a3",
+          "bytes": 655668,
+          "duration_s": 36.24
         },
         "gif": {
           "path": "videos/space-creation-control.gif",
-          "sha256": "7a4650ee4b01cedddf6da13c7e3918783f3686d0d3dcb41c987e9b5b6de8e031",
-          "bytes": 4206051,
-          "duration_s": 39.51,
+          "sha256": "e6492a0fe1de66ca588509d7ad0384c750fdfae725332d6d5c52fddc9eabb61c",
+          "bytes": 4477323,
+          "duration_s": 36.26,
           "fps": 8,
           "speedup": 1.0
         },
@@ -1832,53 +2328,53 @@
             "index": 1,
             "person": "alex",
             "opened_ms": 112,
-            "closed_ms": 46882
+            "closed_ms": 42532
           },
           {
             "index": 2,
             "person": "olivia",
-            "opened_ms": 10530,
-            "closed_ms": 31779
+            "opened_ms": 10497,
+            "closed_ms": 27585
           }
         ],
         "parts": [
           {
             "window": 1,
             "person": "alex",
-            "from_s": 2.69,
-            "to_s": 10.304,
-            "timeline_from_ms": 2916,
-            "timeline_to_ms": 10530
+            "from_s": 2.73,
+            "to_s": 10.29,
+            "timeline_from_ms": 2937,
+            "timeline_to_ms": 10497
           },
           {
             "window": 2,
             "person": "olivia",
-            "from_s": 3.73,
-            "to_s": 21.118,
-            "timeline_from_ms": 14391,
-            "timeline_to_ms": 31779
+            "from_s": 2.73,
+            "to_s": 16.966,
+            "timeline_from_ms": 13349,
+            "timeline_to_ms": 27585
           },
           {
             "window": 1,
             "person": "alex",
-            "from_s": 32.101,
-            "to_s": 46.656,
-            "timeline_from_ms": 32327,
-            "timeline_to_ms": 46882
+            "from_s": 27.889,
+            "to_s": 42.325,
+            "timeline_from_ms": 28096,
+            "timeline_to_ms": 42532
           }
         ],
         "recording_offsets_s": {
-          "1": -0.114,
-          "2": -0.131
+          "1": -0.095,
+          "2": -0.122
         },
         "recordings": [
           {
             "name": "window-1-alex.webm",
-            "sha256": "c250011e93939b4d3bb12cec041cf03fbed5262be8986227873979f42f7a3f97"
+            "sha256": "0f7c77967b6368d2ebc948e1d3aea830f08c712c5e0cbb8dcdf94048e1ef866d"
           },
           {
             "name": "window-2-olivia.webm",
-            "sha256": "08afcb09ff3ffbbcc6b7390be6be643e2eac9dbe8955a8b6c311ede898d6fc9e"
+            "sha256": "cdf32ffd891f3e8378fb5c88b014f4b500085ba9db040a7f8d3089420e1b6ba1"
           }
         ],
         "checks_passed": [
@@ -1886,6 +2382,7 @@
           "server: no space is called Marketing",
           "Create is enabled for Alex",
           "Owners and selected members is the current choice",
+          "the selected members and groups are listed: Alex and Super_Users",
           "the question before narrowing is shown",
           "toast \"Space creation updated\"",
           "Owners only is now the selected choice",
@@ -1903,7 +2400,6 @@
           "Alex (member) may create spaces. He opens New page > Create space",
           "He names the space \"Marketing\" and leaves the dialog open",
           "Meanwhile Olivia (owner) opens Settings > Permissions",
-          "The selected members and groups fail to load here: a defect (see README)",
           "She sets Who can create spaces to Owners only",
           "The app asks first; she confirms",
           "Saved: only owners can create spaces now",
@@ -1914,11 +2410,10 @@
         ],
         "setup_and_cleanup": "Owner, API: the rule is put back to Owners and selected members and read back (Alex may create spaces again).",
         "harness_intervention": "From the moment Olivia's window opened, the harness dropped what the server pushed to Alex's window (his live connection is relayed), as when the live update arrives late; otherwise the dialog disables Create on its own. A caption says so.",
-        "defect_on_screen": "Olivia's Permissions panel shows \"We couldn't load the selected members and groups.\" with Retry (a caption says so): the same server_restore_id rejection that fails the owner's screenshot test.",
-        "omitted": "Olivia's page loading before her first caption (3.9 s) and 21.8 s of Alex's window while hers was open and until his next caption, in which his dialog was left alone (the spec then checked that Create was still enabled).",
+        "omitted": "Olivia's page loading before her first caption (2.9 s) and 17.6 s of Alex's window while hers was open and until his next caption, in which his dialog was left alone (the spec then checked that Create was still enabled).",
         "does_not_prove": "What happens when the live update arrives in time (the dialog disables Create with the same message; component tests cover it, and the last step shows New page after a fresh check), or that the selected members and groups survive a switch back.",
-        "recorded_in_run": "D",
-        "harness_commit": "c95f5471bee0c1a8f578216e661cd04e0cffd43d"
+        "recorded_in_run": "I",
+        "harness_commit": "5dbfedfd4c194b32a72d3235b46dc117231f9ce2"
       }
     ],
     "side_by_side": "Not made: at the MP4 width of 1280 the reader and editor windows would each be shown at half size (the app's text about 7 pixels high), and the two tests have different lengths.",
@@ -1989,6 +2484,127 @@
             "policy": "owners_and_selected_members",
             "can_create_space": false,
             "can_manage_space_creators": false
+          }
+        },
+        "coverage": {
+          "HR": null,
+          "Product": null,
+          "Super_Users": null,
+          "Users": 10
+        },
+        "hr_space": {
+          "everyone_else_access_level": null,
+          "member_default_access_level": 30,
+          "sidebar_edit_policy": "owners_only",
+          "visibility": "custom"
+        },
+        "hr_members": [
+          {
+            "access_level_override": null,
+            "effective_access_level": 50,
+            "name": "Olivia Martin",
+            "role": "owner",
+            "source": "creator"
+          },
+          {
+            "access_level_override": null,
+            "effective_access_level": 30,
+            "name": "Alex Dupont",
+            "role": "member",
+            "source": "manual"
+          }
+        ],
+        "hr_groups": [
+          {
+            "access_level_override": 30,
+            "effective_access_level": 30,
+            "name": "HR"
+          },
+          {
+            "access_level_override": 10,
+            "effective_access_level": 10,
+            "name": "Users"
+          }
+        ],
+        "olivia_workspaces": [
+          "Demo"
+        ],
+        "jordan_workspaces": [],
+        "jordan_pending": [
+          {
+            "role": "Guest",
+            "status": "Pending",
+            "workspace_name": "Demo"
+          }
+        ],
+        "onboarding_lines": [
+          "Welcome aboard! Laptop, accounts and a first coffee with your buddy."
+        ]
+      }
+    },
+    "after_fixes": {
+      "date": "2026-10-15",
+      "harness_commit": "5dbfedfd4c194b32a72d3235b46dc117231f9ce2",
+      "server_commit": "65bc423601c67be90d7fea7b5435b14a55f94abb",
+      "harness_change": "permission-videos.capture.spec.ts: the two conditional defect captions became assertions (space-creation-control: the selections are listed; view-group-reads-only: the notice never appears); nothing else in the harness changed",
+      "runs": [
+        "G3 (screenshots, scratch only)",
+        "H",
+        "I"
+      ],
+      "videos_recorded_again": [
+        "groups-two-levels",
+        "view-group-reads-only",
+        "edit-group-edits",
+        "workspace-creation-control",
+        "space-creation-control"
+      ],
+      "encoded_from": "I",
+      "readback_after_I": {
+        "installation_policy": {
+          "mode": "selected_users",
+          "revision": "2",
+          "supported": true
+        },
+        "space_creation": {
+          "alex": {
+            "can_create_space": true,
+            "can_grant_creator_groups": false,
+            "can_manage_space_creators": false,
+            "group_selection_supported": true,
+            "policy": "owners_and_selected_members",
+            "revision": {
+              "counter": "49",
+              "epoch": "1"
+            },
+            "selected_creators_supported": true,
+            "workspace_id": "5536e2ae-fac5-419e-b9e0-d7b91094e1ef"
+          },
+          "olivia": {
+            "can_create_space": true,
+            "can_grant_creator_groups": true,
+            "can_manage_space_creators": true,
+            "group_selection_supported": true,
+            "policy": "owners_and_selected_members",
+            "revision": {
+              "counter": "49",
+              "epoch": "1"
+            },
+            "selected_creators_supported": true,
+            "workspace_id": "5536e2ae-fac5-419e-b9e0-d7b91094e1ef"
+          },
+          "sam": {
+            "can_create_space": false,
+            "can_grant_creator_groups": false,
+            "can_manage_space_creators": false,
+            "group_selection_supported": true,
+            "policy": "owners_and_selected_members",
+            "revision": {
+              "counter": "49",
+              "epoch": "1"
+            },
+            "selected_creators_supported": true,
+            "workspace_id": "5536e2ae-fac5-419e-b9e0-d7b91094e1ef"
           }
         },
         "coverage": {

@@ -7,17 +7,16 @@ account-only page, workspace creation limits, live loss and recovery of page acc
 sign-out question.
 
 **Refreshed on 2026-10-15 on the merged code**: Web `b59969d6` (the integration branch after the
-merge of main) against server `805c9bab0`. Five [videos](#videos) of the permission flows were
-recorded, each a Playwright test whose assertions passed in two consecutive runs; after a review,
-the reader and editor videos were recorded again with a stricter harness (see
-[Review fixes](#review-fixes-2026-10-15)). The screenshot
-spec ran twice on a freshly seeded stack and 7 of its 8 tests passed: of the 16 earlier images they
-took, 14 came out byte for byte the same, one differs only in the date it shows (replaced) and one
-in 2 pixels by 1 of 255 (kept), and one capture is new (HR's two groups with their levels). The
-first test failed both times: on the merged code the owner's Permissions panel cannot list the
-selected members and groups from this server, so its six images were not retaken and still show
-the panel before the merge. Two defects of the merged code showed up and are described in
-[Merged-code refresh](#merged-code-refresh-2026-10-15); neither is fixed here.
+merge of main) against server `805c9bab0`. The screenshot spec ran twice on a freshly seeded stack
+and 7 of its 8 tests passed: of the 16 earlier images they took, 14 came out byte for byte the same,
+one differs only in the date it shows (replaced) and one in 2 pixels by 1 of 255 (kept), and one
+capture is new (HR's two groups with their levels). Two defects showed up while recording; both are
+fixed (see [Found while recording, fixed](#found-while-recording-fixed)). **On the fixed code** (Web
+`5dbfedfd`, server `65bc42360`) all five [videos](#videos) of the permission flows were recorded
+again, each a Playwright test whose assertions passed in two consecutive runs, and the screenshot
+spec passed all 8 of its tests on a freshly seeded stack: of the 23 current images, 19 came out byte
+for byte the same and 4 differ only by anti-aliasing noise, so none was replaced. This includes the
+six images of the owner's Permissions test, now verified on this code.
 
 History before the refresh: **22 current captures were made on 2026-10-14** (one retaken on
 2026-10-15) from the real Web app against a real Cloud server on an isolated stack with synthetic
@@ -35,12 +34,12 @@ were removed. Hashes, viewers, video files and the server state read back after 
 
 | | |
 | --- | --- |
-| Date | Merged-code refresh, videos and review fixes: 2026-10-15 (UTC). Before: 2026-10-14 (UTC), and the account-only page retaken on 2026-10-15 (UTC) before the merge; each image's date is in the manifest |
-| Web source | Merged-code refresh and videos: app source at `b59969d6` on `oodrive-fix/web-media` (the integration branch `codex/oodrive-permissions-fixes` after the merge of main in `d8cd5643`), with the capture spec, the video spec, the seed and the encoder as committed in `c95f5471` (hashes below), served by the vite dev server; the two videos recorded again after the review used the same app source with the harness as committed in `00b73225`. Before the refresh: commit `bcfa8067` on `oodrive-fix/web-visual` (integration branch `codex/oodrive-permissions-fixes` at `b612fb90` plus the UI fixes below and the capture spec), served by the vite dev server. The rerun (the Permissions panel as owner and as member, and the refused Create space) used app source at commit `fde232d7` on `oodrive-fix/web-final` (the integration branch at `31cb5377` plus the four follow-up fixes below) with the capture spec and seed as committed in `3f0ef353` (the commit that also added the retaken images and this record; their hashes are in the manifest, and `fde232d7` alone does not contain them), served the same way. The second rerun (the refused Create space and the account-only page) used commit `8d29f0e3` on `oodrive-fix/web-final` (the above plus the review follow-ups below; app source and harness in that one commit), served the same way. The third rerun (the account-only page) used app source at the integration branch head `ef390b5b` on `oodrive-fix/web-guest-capture`, with the capture spec as committed together with the retaken image and this record, served the same way |
-| Server source | Merged-code refresh and videos: AppFlowy Cloud Premium `codex/oodrive-permissions-fixes` at `805c9bab0` (the server PR head), built from a clean checkout with `cargo build --locked -p appflowy-cloud --bin appflowy_cloud --features commercial-local-test` (self-hosted feature set: three member seats, guests separate, restricted workspace creation; dev profile, rustc 1.98.0), binary sha256 `1e7b8c4c498cf1dcbd1e6418fe535fcd5e14b892747c5b7e31bb1d4f1177c3ff`, run with `APPFLOWY_ACCESS_CONTROL=true`; migration ledger at `20261014060432` (293 rows). Before the refresh: AppFlowy Cloud Premium integration branch `codex/oodrive-permissions-fixes` at `59be2954e`. The binary was built at `540757ea9` with `cargo build --locked --bin appflowy_cloud --features commercial-local-test` (self-hosted feature set: three member seats, guests separate); the three commits since then change only tests and docs. Run with `APPFLOWY_ACCESS_CONTROL=true`. The rerun used the same binary (same hash; the stack's build record notes two uncommitted files at build time) while the branch had moved to `6dc8eec23`, whose only source change since (`b11f93934`, database duplicate authorization) does not touch these screens. The third rerun used the integration branch at `e2a01e66c`, whose invitation list sends the invited role, with the same self-hosted feature set: the `appflowy_cloud` executable of `cargo test --no-run --locked --test main --features commercial-local-test` from the branch's validation run (so test fixtures enabled by its dev-dependencies are compiled in, unused by the server; hash in the manifest). The default-feature build of that commit was started first, but a hosted build refuses the seed's installation policy and cannot restrict workspace creation, so nothing was captured with it |
-| Harness | sha256 of the files as run. Refresh and video runs C and D: capture spec `84708e9376e4…`, video spec `3a28950efa2b…`, seed `a5af8041f82f…`, browser helper `2370e34e2888…`, config `3afb9535c456…`, encoder `6c0fbda7ad9f…`. Review fixes (`00b73225`; gallery run G2, video runs E and F): video spec `025ba9445738…`, seed `52d3587c299e…`, browser helper `7c1363c8c0d2…`, config `78e2a699b706…`; capture spec and encoder unchanged. Full values in the manifest (`current_capture.web.fourth_rerun`, `current_capture.harness`, `videos.harness_runs_c_d`, `videos.harness`) |
+| Date | Merged-code refresh, review fixes, and the videos and screenshot check after the fixes: 2026-10-15 (UTC). Before: 2026-10-14 (UTC), and the account-only page retaken on 2026-10-15 (UTC) before the merge; each image's date is in the manifest |
+| Web source | Videos and screenshot check after the fixes: commit `5dbfedfd` on `oodrive-fix/web-media`, that is app source `b59969d6` plus the three Web fix commits `541acb82`, `dbd74da9` and `d13d06e0` (branch `oodrive-fix/web-reader-notice`, cherry-picked here as `8468aff5`, `0c8da2e4` and `2ae2faca`), with the harness as committed in `5dbfedfd`, served by the vite dev server; gallery run G3 ran at `2ae2faca`, the same app source and screenshot harness before the video spec's new assertions were committed. Merged-code refresh: app source at `b59969d6` on `oodrive-fix/web-media` (the integration branch `codex/oodrive-permissions-fixes` after the merge of main in `d8cd5643`), with the capture spec, the video spec, the seed and the encoder as committed in `c95f5471` (hashes below), served by the vite dev server; the earlier videos (runs C to F, since replaced) used the same app source with the harness as committed in `c95f5471` and `00b73225`. Before the refresh: commit `bcfa8067` on `oodrive-fix/web-visual` (integration branch `codex/oodrive-permissions-fixes` at `b612fb90` plus the UI fixes below and the capture spec), served by the vite dev server. The rerun (the Permissions panel as owner and as member, and the refused Create space) used app source at commit `fde232d7` on `oodrive-fix/web-final` (the integration branch at `31cb5377` plus the four follow-up fixes below) with the capture spec and seed as committed in `3f0ef353` (the commit that also added the retaken images and this record; their hashes are in the manifest, and `fde232d7` alone does not contain them), served the same way. The second rerun (the refused Create space and the account-only page) used commit `8d29f0e3` on `oodrive-fix/web-final` (the above plus the review follow-ups below; app source and harness in that one commit), served the same way. The third rerun (the account-only page) used app source at the integration branch head `ef390b5b` on `oodrive-fix/web-guest-capture`, with the capture spec as committed together with the retaken image and this record, served the same way |
+| Server source | Videos and screenshot check after the fixes: AppFlowy Cloud Premium fix commit `65bc42360` ("Accept the server restore stamp in creator list queries", branch `oodrive-fix/server-restore-query`), whose parent `82b36b43c` is the server PR head and includes server main, built from a clean worktree with the same command and feature set (dev profile, rustc 1.98.0), binary sha256 `a491ff45ecb42bd53d886d4c8fe7dac9122dff60eb0f76958b25ad6e5983cac7`, run with `APPFLOWY_ACCESS_CONTROL=true`; no new migrations (ledger at `20261014060432`, 293 rows). Merged-code refresh and the earlier videos: AppFlowy Cloud Premium `codex/oodrive-permissions-fixes` at `805c9bab0` (the server PR head), built from a clean checkout with `cargo build --locked -p appflowy-cloud --bin appflowy_cloud --features commercial-local-test` (self-hosted feature set: three member seats, guests separate, restricted workspace creation; dev profile, rustc 1.98.0), binary sha256 `1e7b8c4c498cf1dcbd1e6418fe535fcd5e14b892747c5b7e31bb1d4f1177c3ff`, run with `APPFLOWY_ACCESS_CONTROL=true`; migration ledger at `20261014060432` (293 rows). Before the refresh: AppFlowy Cloud Premium integration branch `codex/oodrive-permissions-fixes` at `59be2954e`. The binary was built at `540757ea9` with `cargo build --locked --bin appflowy_cloud --features commercial-local-test` (self-hosted feature set: three member seats, guests separate); the three commits since then change only tests and docs. Run with `APPFLOWY_ACCESS_CONTROL=true`. The rerun used the same binary (same hash; the stack's build record notes two uncommitted files at build time) while the branch had moved to `6dc8eec23`, whose only source change since (`b11f93934`, database duplicate authorization) does not touch these screens. The third rerun used the integration branch at `e2a01e66c`, whose invitation list sends the invited role, with the same self-hosted feature set: the `appflowy_cloud` executable of `cargo test --no-run --locked --test main --features commercial-local-test` from the branch's validation run (so test fixtures enabled by its dev-dependencies are compiled in, unused by the server; hash in the manifest). The default-feature build of that commit was started first, but a hosted build refuses the seed's installation policy and cannot restrict workspace creation, so nothing was captured with it |
+| Harness | sha256 of the files as run. Refresh and video runs C and D: capture spec `84708e9376e4…`, video spec `3a28950efa2b…`, seed `a5af8041f82f…`, browser helper `2370e34e2888…`, config `3afb9535c456…`, encoder `6c0fbda7ad9f…`. Review fixes (`00b73225`; gallery run G2, video runs E and F): video spec `025ba9445738…`, seed `52d3587c299e…`, browser helper `7c1363c8c0d2…`, config `78e2a699b706…`; capture spec and encoder unchanged. After the fixes (`5dbfedfd`; gallery run G3, video runs H and I): video spec `b08c23eea7ac…`; the other files as in `00b73225`. Full values in the manifest (`current_capture.web.fourth_rerun`, `current_capture.web.after_fixes`, `current_capture.harness`, `videos.harness_runs_c_d`, `videos.harness_runs_e_f`, `videos.harness`) |
 | Stack | Isolated and synthetic: its own GoTrue (`appflowyinc/gotrue_premium:latest`), Redis, PostgreSQL database and MinIO bucket on loopback ports. No other environment, account or data was used. The Worker was not running (no imports or background jobs are shown). |
-| Browser | Chromium 145 (Playwright build 1208, headless, so scrollbars are hidden), device scale 1: screenshots at 1440×900, videos at 1280×800 with Playwright's slowMo of 200 ms. Each person was signed in with a GoTrue password grant stored as the app's session (not through the login screen), except Jordan in the workspace creation video, who signs in on the login screen. Network: for the screenshots and video runs C and D, the app's HTTP requests outside the three stack origins were aborted; its WebSockets and Chromium's own background traffic were not filtered. For the review runs, Chromium could also reach nothing but loopback, and the app's WebSockets outside the stack were closed (see [Review fixes](#review-fixes-2026-10-15)). |
+| Browser | Chromium 145 (Playwright build 1208, headless, so scrollbars are hidden), device scale 1: screenshots at 1440×900, videos at 1280×800 with Playwright's slowMo of 200 ms. Each person was signed in with a GoTrue password grant stored as the app's session (not through the login screen), except Jordan in the workspace creation video, who signs in on the login screen. Network: for the screenshots and video runs C and D, the app's HTTP requests outside the three stack origins were aborted; its WebSockets and Chromium's own background traffic were not filtered. For the review runs and the runs after the fixes (gallery run G3 and video runs H and I, which made the current videos), Chromium could also reach nothing but loopback, and the app's WebSockets outside the stack were closed (see [Review fixes](#review-fixes-2026-10-15)). |
 | Data | Created through the HTTP APIs only (GoTrue admin and Cloud REST) by [the seed](../../../support/permission-gallery-seed.ts). People use `@demo.test` addresses; nothing real is shown. |
 | Permission changes | Screenshots: made by the owner or the operator through the API. Questions opened in the UI were cancelled, lists of people to add were closed, and no setting was saved from the UI (the manifest's read-back shows the policy, the selections, HR's settings and group access unchanged). Videos: Olivia saves two changes from the UI (the Users group's access in HR, who can create spaces) and creates a workspace from the UI; each video's API setup and clean-up are listed with it, and every setting a test changes and every page text it edits is put back and read back in the same test (a page's edit history is not; see [A view group reads but cannot edit](#a-view-group-reads-but-cannot-edit)). |
 
@@ -66,7 +65,8 @@ space into this folder, and the account-only page into a scratch folder to check
 against this server; both passed, and both images came out byte for byte the same as the committed
 ones, so no image changed. The third rerun ran 1 of the 8, the account-only page, into this folder;
 it passed, and only that image changed. The merged-code refresh ran all 8 twice, each time on a
-stack reset just before: 7 passed both times and the first failed both times (see below).
+stack reset just before: 7 passed both times and the first failed both times (see below). After
+the fixes, run G3 ran all 8 on a stack reset just before, and all 8 passed.
 [permission-videos.capture.spec.ts](../../../e2e/app/permission-videos.capture.spec.ts) is skipped
 unless `APPFLOWY_PERMISSION_VIDEOS=1` is set as well.
 
@@ -85,18 +85,16 @@ unless `APPFLOWY_PERMISSION_VIDEOS=1` is set as well.
 
 ## Videos
 
-Recorded on 2026-10-15 on the merged code (Web `b59969d6`, server `805c9bab0`) by
+Recorded again on 2026-10-15 on the fixed code (Web `5dbfedfd`, server `65bc42360`; see [Found while
+recording, fixed](#found-while-recording-fixed)) by
 [permission-videos.capture.spec.ts](../../../e2e/app/permission-videos.capture.spec.ts). Each video
 is one Playwright test on the Demo workspace above, with the same seed and stack as the screenshots.
-Each test's assertions passed in two consecutive runs on the same database:
-
-- **Two groups, two levels**, **Who may create workspaces** and **The owner narrows who can create
-  spaces**: files from run D, with the harness of `c95f5471` (runs C and D, 5 of 5 each,
-  04:55–05:01 UTC). They were not recorded again: what they show did not change, only the network
-  guard did (their tests passed again in runs E and F).
-- **A view group reads but cannot edit** and **An edit group edits**: recorded again after the
-  [review](#review-fixes-2026-10-15), with the harness of `00b73225`: runs E and F, 5 of 5 each,
-  06:58–07:05 UTC, on a stack reset just before gallery run G2; these two files are from run F.
+Each test's assertions passed in two consecutive runs on the same database: runs H and I, 5 of 5
+each, 09:28–09:34 UTC, after gallery run G3 on a stack reset just before. All five files are from
+run I, encoded with the committed encoder; they replace the files of runs D and F. Sampling the
+sockets of the whole Playwright process tree every 0.2 s during runs G3, H and I found only loopback
+peers: in run I, Chromium reached only ports 34210, 34211 and 34230 (GoTrue, Cloud and Vite) and the
+test process only 34210 and 34211, all on 127.0.0.1.
 
 How they were made:
 
@@ -119,16 +117,17 @@ How they were made:
   rate or a speed-up. The MP4 has every frame; the GIF can skip a brief state.
 - Each test puts back, in a `finally` (so also after a failure), every setting it changed and the
   text of any page it edited, and reads them back through the API. A page's edit history is not put
-  back: the editing video's insert and delete stay in Onboarding checklist's history, and that is
-  what makes the next run's reader video show the defect described there. The manifest's `videos`
-  section lists each video's checks, captions, windows, cut points and hashes.
+  back: the editing video's insert and delete stay in Onboarding checklist's history, so in run I
+  the reader video opened a page with deletions in its history, the case that showed the notice
+  about waiting changes before the fix. The manifest's `videos` section lists each video's checks,
+  captions, windows, cut points and hashes.
 - A side-by-side of the reader and editor videos was not made: at 1280 pixels wide each window would
   be shown at half size (the app's text about 7 pixels high), and the two tests differ in length.
 
 ### Two groups, two levels in HR
 
 [MP4](videos/groups-two-levels.mp4) · [GIF](videos/groups-two-levels.gif) ·
-29.5 s · MP4 348,201 bytes (0.35 MB) · GIF 2,290,214 bytes (2.29 MB, 8 fps) · no speed-up · one window (Olivia)
+29.2 s · MP4 351,720 bytes (0.35 MB) · GIF 2,090,204 bytes (2.09 MB, 8 fps) · no speed-up · one window (Olivia)
 
 **Shows:** Olivia (owner) opens Manage space for HR from the sidebar and goes to Members: the HR
 group has Can edit and the Users group has Can view. From the Users group's Access menu she chooses
@@ -154,8 +153,7 @@ one reader and one editor), or how a failed save looks (component tests cover fa
 ### A view group reads but cannot edit
 
 [MP4](videos/view-group-reads-only.mp4) · [GIF](videos/view-group-reads-only.gif) ·
-19.1 s · MP4 113,677 bytes (0.11 MB) · GIF 939,288 bytes (0.94 MB, 8 fps) · no speed-up · one window (Alex) ·
-recorded again after the review (run F)
+15.7 s · MP4 80,492 bytes (0.08 MB) · GIF 588,383 bytes (0.59 MB, 8 fps) · no speed-up · one window (Alex)
 
 **Setup and clean-up (owner, API):** Alex's own HR membership is removed first, so he reaches HR only
 through the Users group (Can view). Afterwards it is given back at the space default, as seeded, and
@@ -164,20 +162,9 @@ read back.
 **Shows:** Alex opens Onboarding checklist in HR. The page reads, but there is no title input, no Add
 icon or cover buttons over the title and no block handles beside the text. He clicks into the text
 and types "Hello", and nothing changes. Right after the click, the pointer dot (drawn by the harness)
-moves to the right margin, so the line stays readable while he types.
-
-**Also on screen, a defect:** at the bottom right, "Changes to 1 page are waiting for edit access.
-They're saved on this device. Try again once you can edit, or discard them." appears as the page
-opens, before Alex types anything (a caption says so). He made no change. To find out why, the same
-view-only session was opened without typing on the stack's previous database, after earlier runs of
-the editing test, and the app's sync outbox was read: it held one item for this page, a sync
-verification snapshot (`source: manifest`, 22 bytes) that the server had refused because Alex cannot
-edit. Its bytes are a Yjs update with no new content, only the page's record of deleted text (the
-sentence the editing test adds and removes). Holiday policy, whose history has no deletions, gave no
-item and no notice. In runs C and E, where this test ran on a freshly seeded page before the
-editing test, the notice did not appear; in runs D and F, after it, it did (this file is from run
-F). So a reader of any page whose history contains deletions is told he has waiting changes when he
-has none.
+moves to the right margin, so the line stays readable while he types. No notice about changes
+waiting for edit access comes up at any moment: the spec watches his window for it from the moment
+the page opens, and in run I the page's history has the deletions of run H's editing test.
 
 **Checked** (in this order, each passed):
 
@@ -189,15 +176,17 @@ has none.
 - the title is not editable (no title input)
 - no Add icon or cover buttons over the title
 - no block handles (add or drag) beside the text
+- no notice about edits waiting for edit access since the page opened
 - typing changed nothing on screen
 - server: the document has no "Hello"
+- no notice about edits waiting for edit access at any moment, typing included
 - teardown: Alex is a direct HR member at the space default again
 - teardown: Alex can write Onboarding checklist again
 
 **Positive control:** the checks that something is missing (title input, Add icon and cover buttons,
 block handles) use the same locators, hovers and 700 ms pauses that find all three for Sam in the
 next video. Each of Sam's checks passed at its first attempt, as soon after its hover as Alex's
-checks ran (0.94 to 0.97 s in run F), so a renamed test id or a hover that reveals nothing would fail
+checks ran (0.94 to 0.96 s in run I), so a renamed test id or a hover that reveals nothing would fail
 there.
 
 **Does not prove:** comment access (Users has Can view here), or what Alex sees in other spaces.
@@ -205,8 +194,7 @@ there.
 ### An edit group edits, and the edit is kept
 
 [MP4](videos/edit-group-edits.mp4) · [GIF](videos/edit-group-edits.gif) ·
-30.7 s · MP4 208,017 bytes (0.21 MB) · GIF 1,410,631 bytes (1.41 MB, 8 fps) · no speed-up · one window (Sam) ·
-recorded again after the review (run F)
+30.8 s · MP4 231,970 bytes (0.23 MB) · GIF 1,392,070 bytes (1.39 MB, 8 fps) · no speed-up · one window (Sam)
 
 **Shows:** Sam, who reaches HR only through the HR group (Can edit), opens Onboarding checklist.
 Pointing at the title brings up Add icon and Add cover, and pointing at the text brings up the block
@@ -245,7 +233,7 @@ server rather than the browser's copy (the API read is what shows that the serve
 ### Who may create workspaces
 
 [MP4](videos/workspace-creation-control.mp4) · [GIF](videos/workspace-creation-control.gif) ·
-37.8 s · MP4 342,061 bytes (0.34 MB) · GIF 2,352,294 bytes (2.35 MB, 8 fps) · no speed-up · three windows, one after another: Sam, Jordan, Olivia
+37.9 s · MP4 333,563 bytes (0.33 MB) · GIF 2,183,542 bytes (2.18 MB, 8 fps) · no speed-up · three windows, one after another: Sam, Jordan, Olivia
 
 **Shows:** (1) Sam (member) opens the workspace menu: Create workspace and Import workspace are
 unavailable, and pointing at each shows "Your administrator hasn't allowed you to create
@@ -280,11 +268,12 @@ shown; server tests cover the API), joining the invitation, or importing.
 ### The owner narrows who can create spaces
 
 [MP4](videos/space-creation-control.mp4) · [GIF](videos/space-creation-control.gif) ·
-39.5 s · MP4 698,673 bytes (0.70 MB) · GIF 4,206,051 bytes (4.21 MB, 8 fps) · no speed-up · two windows: Alex, then Olivia, then Alex again
+36.2 s · MP4 655,668 bytes (0.66 MB) · GIF 4,477,323 bytes (4.48 MB, 8 fps) · no speed-up · two windows: Alex, then Olivia, then Alex again
 
 **Shows:** Alex, a selected space creator, opens New page > Create space and names the space
-"Marketing". Meanwhile, in her own window, Olivia (owner) opens Settings > Permissions, chooses
-Owners only and confirms the question ("Space creation updated"). Back in Alex's window, Create is
+"Marketing". Meanwhile, in her own window, Olivia (owner) opens Settings > Permissions, where Alex
+and the Super_Users group are listed under "Selected members and groups", chooses Owners only and
+confirms the question ("Space creation updated"). Back in Alex's window, Create is
 still offered; pressing it rechecks with the server, which refuses: the form gives way to "You can't
 create spaces in this workspace." with Close. New page then shows "Create a new space" as
 unavailable, with the same reason.
@@ -294,16 +283,12 @@ server pushed to Alex's window (his live connection is relayed), as when the liv
 late. Otherwise his dialog would have disabled Create by itself, with the same message. A caption
 says so.
 
-**Also on screen, a defect:** in Olivia's panel, "Selected members and groups" shows "We couldn't
-load the selected members and groups." with Retry (a caption says so); see
-[Merged-code refresh](#merged-code-refresh-2026-10-15).
-
 **Clean-up (owner, API):** the rule is put back to Owners and selected members and read back (Alex
 may create spaces again).
 
 **How it was joined:** Alex's window until Olivia's opened, Olivia's window from her first caption
 until it closed, then Alex's window again from his next caption. Not shown: Olivia's page loading
-(3.9 s), and 21.8 s of Alex's window while hers was open, in which his dialog was left alone (the
+(2.9 s), and 17.6 s of Alex's window while hers was open, in which his dialog was left alone (the
 spec then checked that Create was still enabled).
 
 **Checked** (in this order, each passed):
@@ -312,6 +297,7 @@ spec then checked that Create was still enabled).
 - server: no space is called Marketing
 - Create is enabled for Alex
 - Owners and selected members is the current choice
+- the selected members and groups are listed: Alex and Super_Users
 - the question before narrowing is shown
 - toast "Space creation updated"
 - Owners only is now the selected choice
@@ -333,8 +319,11 @@ once the rule is restored).
 ## Current captures
 
 Captured on 2026-10-14 unless a caption says otherwise. On 2026-10-15 the merged code reproduced 14
-of them byte for byte; one was retaken, one is new, and the six of the owner's Permissions test
-could not be retaken (see [Merged-code refresh](#merged-code-refresh-2026-10-15)).
+of them byte for byte; one was retaken and one is new. After the fixes, gallery run G3 took all
+23 again on the fixed code (09:25–09:26 UTC; all 8 tests passed): 19 came out byte for byte the
+same and 4 differ only by anti-aliasing noise (at most 90 pixels, by at most 8 of 255), so none
+was replaced. That includes the six images of the owner's Permissions test. Per-image results are in
+the manifest (`current_capture.web.after_fixes.comparison`).
 
 Each caption says what the image shows and what it does not prove. Where the spec asserted
 something, that is stated; otherwise the image is only a picture of the UI.
@@ -347,7 +336,6 @@ panel continues below: a fade over its bottom edge (the Access to all spaces sum
 spec checked that this card is the selected one and that both selections are listed. *Does not
 prove* that the selections let anyone create a space (the API read back `can_create_space: true`
 for Alex and `false` for Sam; see the manifest).
-*Not retaken on the merged code (the owner's Permissions test fails there).*
 
 ![Permissions as the owner, with the selected members and groups](permissions-owner-selected-members.png)
 
@@ -355,7 +343,6 @@ for Alex and `false` for Sam; see the manifest).
 Product and Users groups are listed under "Not selected"; Alex and Super_Users (already selected),
 guests, owners and pending invitations are not. The spec checked Sam and HR are offered, Alex and
 Super_Users are not, and that Escape closes the list. Nothing was added.
-*Not retaken on the merged code (the owner's Permissions test fails there).*
 
 ![Add members or groups listing who can be chosen](permissions-add-members-suggestions.png)
 
@@ -363,7 +350,6 @@ Super_Users are not, and that Escape closes the list. Nothing was added.
 states the new rule, that the selected members and groups are kept for a switch back, and the
 button names the rule ("Use Owners only"). It was cancelled and the spec checked that the policy
 stayed "Owners and selected members". *Does not prove* what saving would do.
-*Not retaken on the merged code (the owner's Permissions test fails there).*
 
 ![Confirmation before narrowing who can create spaces](permissions-narrowing-confirmation.png)
 
@@ -371,7 +357,6 @@ stayed "Owners and selected members". *Does not prove* what saving would do.
 current and future public and custom space, and that private spaces and restricted pages are not
 included; Users has Can view; the Manage groups button opens People > Groups. *Read-only*: it does
 not show that the coverage applies to a given space.
-*Not retaken on the merged code (the owner's Permissions test fails there).*
 
 ![Access to all spaces summary in the Permissions panel](permissions-access-to-all-spaces-summary.png)
 
@@ -386,13 +371,11 @@ Sam's request to create a space (that is covered by server tests, not this run).
 **People > Groups > HR > General, with the Access to all spaces menu open.** Off is ticked; Can view
 and Can edit are offered. The menu covers the end of the description while it is open. *Does not
 prove* a saved change.
-*Not retaken on the merged code (the owner's Permissions test fails there).*
 
 ![Group dialog with the Access to all spaces menu open](group-dialog-access-to-all-spaces-menu.png)
 
 **Granting access to all spaces asks first.** Choosing Can edit for HR opened this question; it was
 cancelled and the spec checked that the group stayed Off.
-*Not retaken on the merged code (the owner's Permissions test fails there).*
 
 ![Confirmation before giving HR access to all spaces](group-access-to-all-spaces-confirmation.png)
 
@@ -524,11 +507,28 @@ browser" and where unsent changes stay. Behind it, Account & App shows "Set up p
 
 ![Sign out question with the remove page copies option](sign-out-remove-data.png)
 
+## Found while recording, fixed
+
+Two defects of the merged code showed up while recording on 2026-10-15. Both are fixed, and the
+current videos and the screenshot check after the fixes ran on the fixed code:
+
+- The owner's Permissions panel could not list the selected members and groups: Web adds
+  `server_restore_id` to every Cloud API request, and the server's list of selected space creators
+  refused unknown query fields (400). Fixed in server `65bc42360`.
+- A reader of a page whose edit history has deletions was told "Changes to 1 page are waiting for
+  edit access." although he had changed nothing. Fixed in Web `541acb82`, `dbd74da9` and `d13d06e0`
+  (branch `oodrive-fix/web-reader-notice`, cherry-picked here as `8468aff5`, `0c8da2e4` and
+  `2ae2faca`).
+
+The video spec now asserts both, so a regression fails the test instead of being captioned: Olivia's
+panel lists Alex and Super_Users, and the reader's window never shows the notice.
+
 ## Merged-code refresh (2026-10-15)
 
 The integration branch merged main (`d8cd5643`) and moved on to `b59969d6`. The screenshot spec ran
 twice on that code against server `805c9bab0` (04:49 and 05:02 UTC), each time on a stack reset just
-before, and 7 of its 8 tests passed both times.
+before, and 7 of its 8 tests passed both times; the owner's Permissions test failed on the first
+defect under [Found while recording, fixed](#found-while-recording-fixed).
 
 - **The screens of the seven passing tests did not change with the merge.** Every image was compared
   pixel by pixel with the committed one, with the same result in both runs: 14 came out byte for
@@ -537,26 +537,6 @@ before, and 7 of its 8 tests passed both times.
   data difference, so it was retaken. In `permissions-member-read-only.png`, 2 pixels at the
   sidebar edge differ by 1 of 255, which cannot be seen: noise, so it was kept.
   `manage-space-groups-view-and-edit.png` is new.
-- **Defect 1: the owner's Permissions panel cannot list the selected members and groups.** The first
-  test failed both times at its first check (Alex's row under "Selected members and groups" never
-  appeared). Web `20331871` ("fix: reload web caches after a full server restore (#630)", from main)
-  adds `server_restore_id` to every request to the Cloud API. Server `805c9bab0` has no such
-  parameter, and its list of selected space creators refuses unknown query fields
-  (`SpaceCreatorPageQuery` has `#[serde(deny_unknown_fields)]`), so
-  `GET /api/workspace/{id}/space-creators?server_restore_id=…&kind=user&limit=200` answers 400
-  ("unknown field `server_restore_id`, expected one of `kind`, `after`, `limit`"). The panel then
-  shows "We couldn't load the selected members and groups." with Retry (also visible in the video
-  [The owner narrows who can create spaces](#the-owner-narrows-who-can-create-spaces)). The six
-  images of that test were not retaken and show the panel before the merge:
-  `permissions-owner-selected-members.png`,
-  `permissions-add-members-suggestions.png`, `permissions-narrowing-confirmation.png`,
-  `permissions-access-to-all-spaces-summary.png`, `group-dialog-access-to-all-spaces-menu.png` and
-  `group-access-to-all-spaces-confirmation.png`.
-- **Defect 2: a reader is told about waiting changes he never made.** A member who can only view a
-  page whose history contains deletions sees "Changes to 1 page are waiting for edit access." as the
-  page opens: the client queues its sync verification snapshot, the server refuses it because the
-  reader cannot edit, and the notice counts it as the reader's changes. Details under
-  [A view group reads but cannot edit](#a-view-group-reads-but-cannot-edit).
 - **Harness changes** (`c95f5471`): the screenshot and video specs share one browser-session helper
   ([permission-gallery-browser.ts](../../../support/permission-gallery-browser.ts)) with the same
   viewport, network guard, runtime config and stored session as before; the capture spec adds the
@@ -581,8 +561,8 @@ An independent review of the videos and screenshots found six points. All were f
   `try`/`finally` like the other four; see its clean-up above. Its server checks compare the page's
   lines instead of searching for the sentence.
 - **"Every change a test makes is undone" was not true of the edit history.** Settings and page
-  text are put back; a page's edit history is not, and Sam's insert and delete are what make a later
-  reader run show the waiting-changes notice. This record, the spec and the manifest now say so.
+  text are put back; a page's edit history is not (Sam's insert and delete stay in it). This record,
+  the spec and the manifest now say so.
 - **The network guard covered only the app's HTTP requests.** During a re-run the reviewer saw the
   test browser connect to Google (ports 443 and 5228), and the same Chromium on a blank page did the
   same: Chromium's own background traffic. WebSockets were not filtered either (the live-connection
@@ -618,11 +598,10 @@ just before the first (one Playwright run at a time):
   failure snapshots the page title had taken focus (it focuses itself when it mounts) and the menu
   was gone. The harness from before these fixes failed two of them the same way under that load, so
   this is a timing weakness of the screenshot spec, not of the fixes; G2 ran at normal load.
-- **E**, the five videos (06:58–07:01 UTC): 5 of 5 passed. The reader saw no notice (no editing
-  test had run on the fresh seed).
-- **F**, the five videos again on the same database (07:02–07:05 UTC): 5 of 5 passed, and the reader
-  saw the notice after run E's editing test. The reader and editor videos here are encoded from this
-  run with the committed encoder; the other three are still the files of run D.
+- **E**, the five videos (06:58–07:01 UTC): 5 of 5 passed.
+- **F**, the five videos again on the same database (07:02–07:05 UTC): 5 of 5 passed. Its reader and
+  editor videos were the files here until all five were recorded again after the fixes (runs H and
+  I).
 
 The screenshots were not retaken: the guard decides what may be loaded, not what is drawn, and the
 validation run's images are compared in the manifest (`current_capture.web.review_validation`).
@@ -786,13 +765,11 @@ Native selects, radio buttons, Save buttons and internal wording that the redesi
 - The videos are real-time recordings slowed by Playwright's slowMo of 200 ms, with a caption banner
   and a pointer dot drawn by the harness and no sound. Each joins one test's windows as described
   under [Videos](#videos), with no other cut. The GIFs are 8 fps previews; the MP4s have every frame.
-- The six images of the owner's Permissions test show the panel before the merge of main: that test
-  fails on the merged code against server `805c9bab0` (defect 1 above).
-- The screenshots and the three videos from run D were made with the earlier network guard: the
-  app's HTTP requests outside the stack were aborted, but its WebSockets and Chromium's own
-  background traffic were not filtered (in a later re-run with that guard, Chromium was seen
-  connecting to Google; no other service was contacted). Only the two videos recorded again after
-  the review, and gallery run G2, ran with the stricter guard.
+- The committed screenshots were made with the earlier network guard: the app's HTTP requests
+  outside the stack were aborted, but its WebSockets and Chromium's own background traffic were not
+  filtered (in a later re-run with that guard, Chromium was seen connecting to Google; no other
+  service was contacted). Gallery runs G2 and G3, which reproduced them (byte for byte or up to
+  noise), and the runs of all five current videos (H and I) used the stricter guard.
 - Running the capture spec again on the same source gives the same screens, but not always the same
   bytes: a few pixels can differ where the pointer happens to rest or in the anti-aliasing of text
   and icons. A hash that differs from the manifest therefore means a fresh capture, not a hand edit
