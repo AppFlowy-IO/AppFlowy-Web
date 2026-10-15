@@ -9,6 +9,23 @@ function isRestoreId(value: unknown): value is string {
 }
 
 /**
+ * The restore generation that wrote a stored name (database, lock, channel or storage key), and
+ * the name inside it. Unprefixed names belong to the initial generation.
+ */
+export function splitRestoreCacheKey(name: string): { restoreId: string; logicalName: string } {
+  const restoreId = name.slice(CACHE_PREFIX.length, CACHE_PREFIX.length + 36);
+
+  return name.startsWith(CACHE_PREFIX) && isRestoreId(restoreId) && name.charAt(CACHE_PREFIX.length + 36) === ':'
+    ? { restoreId, logicalName: name.slice(CACHE_PREFIX.length + 37) }
+    : { restoreId: INITIAL_SERVER_RESTORE_ID, logicalName: name };
+}
+
+/** The stored name of a logical name in a given restore generation. */
+export function restoreCacheKey(restoreId: string, name: string): string {
+  return restoreId === INITIAL_SERVER_RESTORE_ID ? name : `${CACHE_PREFIX}${restoreId}:${name}`;
+}
+
+/**
  * A tab's storage and network generation never change in place. Reloading is
  * essential: merging an older Yjs snapshot cannot undo newer local operations.
  * Old tabs may finish persistence work, but can only write their old namespace.
@@ -41,7 +58,7 @@ export class ServerRestoreBoundary {
 
   /** Keep legacy caches on normal restarts; a committed restore gets fresh storage. */
   cacheKey(name: string): string {
-    return this.restoreId === INITIAL_SERVER_RESTORE_ID ? name : `${CACHE_PREFIX}${this.restoreId}:${name}`;
+    return restoreCacheKey(this.restoreId, name);
   }
 
   /** Database enumeration must not discover caches left by a different generation. */

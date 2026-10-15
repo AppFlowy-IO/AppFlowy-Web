@@ -2,6 +2,17 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 
 import { useWorkspaceWebSocketLeader } from '../useWorkspaceWebSocketLeader';
 
+// The tab's server restore generation (null: the initial one).
+let mockRestoreId: string | null = null;
+
+jest.mock('@/application/server-restore', () => ({
+  get serverRestore() {
+    const { ServerRestoreBoundary } = jest.requireActual('@/application/server-restore');
+
+    return new ServerRestoreBoundary('https://server-A', { getItem: () => mockRestoreId, setItem: jest.fn() }, jest.fn());
+  },
+}));
+
 interface PendingLockRequest {
   name: string;
   callback: LockGrantedCallback;
@@ -69,6 +80,7 @@ describe('useWorkspaceWebSocketLeader', () => {
   const originalLocksDescriptor = Object.getOwnPropertyDescriptor(navigator, 'locks');
 
   afterEach(() => {
+    mockRestoreId = null;
     jest.restoreAllMocks();
     if (originalLocksDescriptor) {
       Object.defineProperty(navigator, 'locks', originalLocksDescriptor);
@@ -102,6 +114,27 @@ describe('useWorkspaceWebSocketLeader', () => {
     });
 
     second.unmount();
+  });
+
+  it('elects the socket owner among tabs of the same server restore generation only', async () => {
+    const request = jest.fn((_name: string, _options: LockOptions, _callback: LockGrantedCallback) =>
+      new Promise<unknown>(() => undefined));
+
+    Object.defineProperty(navigator, 'locks', { configurable: true, value: { request } });
+    const initial = renderHook(() => useWorkspaceWebSocketLeader('workspace-1'));
+
+    await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+    // After a restore, tabs on the old generation must not hold the restored tab's lock.
+    mockRestoreId = '11111111-1111-4111-8111-111111111111';
+    const restored = renderHook(() => useWorkspaceWebSocketLeader('workspace-1'));
+
+    await waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+    expect(request.mock.calls.map(([name]) => name)).toEqual([
+      'appflowy:websocket:workspace-1',
+      `server-restore:${mockRestoreId}:appflowy:websocket:workspace-1`,
+    ]);
+    initial.unmount();
+    restored.unmount();
   });
 
   it('keeps realtime available when Web Locks are unavailable', () => {

@@ -23,8 +23,11 @@ export type DatabaseStorageFence = {
   nonDurable?: boolean;
 };
 
-export const DATABASE_CACHE_EPOCH_PREFIX = serverRestore.cacheKey('af_database_blob_epoch:');
-export const DATABASE_RESTORE_MARKER_PREFIX = serverRestore.cacheKey('af_database_restore:');
+/** Storage key names inside a restore generation; the prefixes below add this tab's generation. */
+export const DATABASE_CACHE_EPOCH_KEY = 'af_database_blob_epoch:';
+export const DATABASE_RESTORE_MARKER_KEY = 'af_database_restore:';
+export const DATABASE_CACHE_EPOCH_PREFIX = serverRestore.cacheKey(DATABASE_CACHE_EPOCH_KEY);
+export const DATABASE_RESTORE_MARKER_PREFIX = serverRestore.cacheKey(DATABASE_RESTORE_MARKER_KEY);
 const applyingFences = new WeakMap<YDoc, DatabaseStorageFence>();
 
 export function databaseStorageFenceObjectId(databaseId: string): string {
