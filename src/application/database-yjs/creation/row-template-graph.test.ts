@@ -583,6 +583,50 @@ test('template child pages receive new owned documents instead of retaining sour
   expect(JSON.parse(String(documentBlocks(copied).get('child')!.get('data'))).viewId).toBe(childView.view_id);
 });
 
+test('child metadata loads concurrently with bounded fan-out and batched document reads', async () => {
+  const root = document();
+  const child = document();
+  const childIds = Array.from({ length: 10 }, (_, index) => id(`sibling-${index}`));
+
+  childIds.forEach((childId, index) => {
+    documentBlocks(root).set(
+      `child-${index}`,
+      new Y.Map(Object.entries({
+        id: `child-${index}`, ty: 'sub_page', parent: 'root', children: '',
+        data: JSON.stringify({ viewId: childId }),
+      }))
+    );
+  });
+  const params = input(root);
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+
+  read.mockImplementation(async (_owner, path: string) => {
+    await held;
+    const childId = childIds.find((candidate) => path.includes(candidate))!;
+
+    return { view_id: childId, name: childId, layout: 0, parent_view_id: params.template.docViewId };
+  });
+  sync.mockImplementation(async (_workspace, items) => items.map((item: { objectId: string }) => ({
+    objectId: item.objectId,
+    collabType: Types.Document,
+    missingUpdate: Y.encodeStateAsUpdate(child),
+    serverStateVector: Y.encodeStateVector(child),
+  })));
+
+  const pending = prepareTemplateRowGraph(params);
+
+  expect(read).toHaveBeenCalledTimes(8);
+  expect(sync).not.toHaveBeenCalled();
+  release();
+  const result = compound(await pending);
+
+  expect(read).toHaveBeenCalledTimes(10);
+  expect(sync.mock.calls.map((call) => call[1].map((item: { objectId: string }) => item.objectId)))
+    .toEqual([childIds.slice(0, 8), childIds.slice(8)]);
+  expect(result.manifest.views.filter((view) => view.content.kind === 'document')).toHaveLength(10);
+});
+
 test('incomplete source history and owner replacement are rejected before a manifest is returned', async () => {
   const source = archive();
   const params = input(document([{ viewIds: [source.views[0].id], databaseId: source.database_id }]));

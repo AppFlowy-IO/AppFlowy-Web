@@ -129,27 +129,46 @@ export async function prepareTemplateRowGraph(input: TemplateRowGraphInput): Pro
 
     for (let cursor = 0; cursor < documents.length; cursor++) {
       const current = documents[cursor];
+      const blocks = [...documentBlocks(current.doc).values()];
+      const childIds: string[] = [];
+      const discoveredDocuments = new Set(documents.map((item) => item.sourceId));
 
-      for (const block of documentBlocks(current.doc).values()) {
+      for (const block of blocks) {
         if (!(block instanceof Y.Map)) throw new Error('Invalid template document block');
         if (block.get('ty') === 'sub_page') {
           const sourceId = uuid(blockData(block).viewId, 'child document');
 
-          if (documents.some((item) => item.sourceId === sourceId))
+          if (discoveredDocuments.has(sourceId))
             throw new Error('Template child document has duplicate ownership');
-          const source = await sources.view(sourceId);
+          discoveredDocuments.add(sourceId);
+          childIds.push(sourceId);
+        }
+      }
 
+      // Siblings are independent. Bound metadata fan-out and batch their bodies
+      // after ownership validation, instead of paying two round trips per child.
+      for (let start = 0; start < childIds.length; start += 8) {
+        const chunk = childIds.slice(start, start + 8);
+        const views = await Promise.all(chunk.map((sourceId) => sources.view(sourceId)));
+
+        for (const source of views) {
           if (source.parent_view_id !== current.sourceId || source.layout !== 0)
             throw new Error('Template child document ownership changed');
-          const [doc] = await sources.documents([sourceId], Types.Document);
-          const targetId = identity('document', sourceId);
-
-          owned.push(doc);
-          ids.set(sourceId, targetId);
-          documents.push({ sourceId, targetId, doc, name: source.name, parentDocument: current.targetId });
-          continue;
         }
 
+        const childDocs = await sources.documents(chunk, Types.Document);
+
+        owned.push(...childDocs);
+        childDocs.forEach((doc, index) => {
+          const sourceId = chunk[index];
+          const targetId = identity('document', sourceId);
+
+          ids.set(sourceId, targetId);
+          documents.push({ sourceId, targetId, doc, name: views[index].name, parentDocument: current.targetId });
+        });
+      }
+
+      for (const block of blocks) {
         if (!DATABASE_BLOCKS.has(String(block.get('ty')))) continue;
         const data = blockData(block);
         const originalViews = blockViews(data);

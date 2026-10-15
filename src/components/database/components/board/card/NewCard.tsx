@@ -133,7 +133,7 @@ function NewCard({
               inputRef.current = input;
             }
           }}
-          disabled={pending}
+          readOnly={pending}
           aria-busy={pending}
           value={value}
           onChange={(e) => {
