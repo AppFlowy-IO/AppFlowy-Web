@@ -318,7 +318,10 @@ const handleUpdate = (ctx: SyncContext, message: collab.IUpdate): void => {
 
   // Only the server assigns a message id: to its Updates, also when another tab
   // relays them or when one is built from an HTTP sync result. The fan-out of
-  // local edits between tabs has none.
+  // local edits between tabs has none. buildUpdateMessage (sync-outbox) and
+  // applyHttpFullSyncResult (useSync) keep it that way: a message id on bytes
+  // the server does not hold would make this tab skip, or the cleanup delete,
+  // a manifest reply that carries them.
   if (message.messageId) {
     const proven = recordServerUpdate(doc, message.flags === UpdateFlags.Lib0v1 ? message.payload ?? null : null);
 

@@ -1944,6 +1944,38 @@ describe('sync outbox live send', () => {
     expect(mockRecords).toHaveLength(0);
   });
 
+  it('never puts a server message id on sibling fan-out, sends or manifest replies', async () => {
+    // sync-protocol takes an Update with a message id as the server's own: it records what the
+    // bytes prove the server holds and deletes queued manifest replies they show to be redundant.
+    const send = jest.fn();
+    const broadcast = jest.fn();
+    let cached: 'allowed' | undefined;
+    const checkPermission = jest.fn(async () => {
+      cached = 'allowed';
+      return 'allowed' as const;
+    });
+
+    configureDrain({ userId, workspaceId, send, broadcast, isReady: () => true, checkPermission,
+      peekPermission: () => cached });
+    // Checked first, then fanned out and drained; then admitted and sent at once; then a manifest reply.
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('H') });
+    await flushPromises();
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('He') });
+    await flushPromises();
+    await enqueueOutboxUpdate(
+      { objectId, collabType: Types.Document, payload: makeUpdate('Hel') },
+      { broadcast: false, source: 'manifest' }
+    );
+    await flushPromises();
+
+    expect(broadcast).toHaveBeenCalledTimes(2);
+    expect(send).toHaveBeenCalledTimes(3);
+    for (const [message] of [...broadcast.mock.calls, ...send.mock.calls]) {
+      expect(message.collabMessage.update.payload).toBeInstanceOf(Uint8Array);
+      expect(message.collabMessage.update.messageId).toBeUndefined();
+    }
+  });
+
   it('checks access again before sending after a permission change or a re-check', async () => {
     const send = jest.fn();
     let cached: 'allowed' | undefined;

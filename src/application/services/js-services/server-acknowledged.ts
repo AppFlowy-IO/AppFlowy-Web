@@ -29,6 +29,12 @@ import { YDoc } from '@/application/types';
  * again in the next reply. Within one exchange it relies on the server keeping what it sent. It
  * is also ignored once the collab version or the database restore generation changes.
  *
+ * Accepted risk: an Update the server sent before this context's latest request can still be
+ * applied after it (a Database message waiting in the per-object queue, a message replayed after
+ * a reset, a late HTTP sync result, a late relay by the previous socket owner) and is recorded
+ * like any other. If the server lost that data in between, the replies of this exchange leave it
+ * out and the next exchange sends it again. The local document keeps it throughout.
+ *
  * The server's opt-in delete-set digest (`SyncRequest.delete_set`, used by the desktop client) is
  * not used: the Web protocol does not carry that field, and a digest covers deletions only.
  */

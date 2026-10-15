@@ -1340,6 +1340,11 @@ async function distinctObjectIdsForSession(userId: string, workspaceId: string, 
   return Array.from(ids);
 }
 
+/**
+ * The Update that carries a local edit or manifest reply to the server and to sibling tabs. It
+ * never has a message id: sync-protocol takes an Update with one as the server's own, records
+ * what it proves the server holds, and deletes queued manifest replies it shows to be redundant.
+ */
 function buildUpdateMessage(
   record: Pick<
     SyncOutboxRecord,

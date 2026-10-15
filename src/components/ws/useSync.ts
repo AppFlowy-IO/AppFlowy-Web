@@ -356,6 +356,8 @@ export const useSync = (
                 payload: hasMissingUpdate ? result.missingUpdate : new Uint8Array([0, 0]),
                 version,
                 databaseRestoreId: result.databaseRestoreId,
+                // The server's message id on the server's own diff: sync-protocol records what
+                // it proves the server holds. Never attach one to bytes the server did not send.
                 messageId: result.messageId,
               },
             };
