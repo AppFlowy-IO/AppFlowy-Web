@@ -1,5 +1,6 @@
 import { t } from 'i18next';
 
+import { PlainError } from '@/application/errors/plain-error';
 import { isUnsupportedRouteError } from '@/utils/errors';
 
 import { APIResponse, executeAPIRequest } from './core';
@@ -47,7 +48,7 @@ export async function getWorkspaceCreationCapability(): Promise<WorkspaceCreatio
     );
 
     assertCurrent();
-    if (!isCapability(capability)) throw new Error(t('workspaceCreation.invalidResponse'));
+    if (!isCapability(capability)) throw new PlainError(t('workspaceCreation.invalidResponse'));
     // Copy the known fields so a response can never claim the client-only legacy marker.
     return {
       supported: capability.supported,
@@ -71,10 +72,10 @@ export async function getWorkspaceCreationCapability(): Promise<WorkspaceCreatio
 export async function admitWorkspaceCreation(): Promise<{ assertCurrent: () => void; legacy: boolean }> {
   const assertCurrent = captureWorkspaceCreationContext();
 
-  if (!navigator.onLine) throw new Error(t('workspaceCreation.unavailable'));
+  if (!navigator.onLine) throw new PlainError(t('workspaceCreation.unavailable'));
   const capability = await getWorkspaceCreationCapability();
 
-  if (!capability.can_create_workspace) throw new Error(t('workspaceCreation.denied'));
+  if (!capability.can_create_workspace) throw new PlainError(t('workspaceCreation.denied'));
   assertCurrent();
   return { assertCurrent, legacy: capability.legacy === true };
 }

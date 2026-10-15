@@ -2,6 +2,7 @@ import { t } from 'i18next';
 import { v4 as uuid } from 'uuid';
 
 import { ERROR_CODE } from '@/application/constants';
+import { PlainError } from '@/application/errors/plain-error';
 import { CreateWorkspacePayload } from '@/application/types';
 import { getAPIErrorCode, isUnsupportedRouteError } from '@/utils/errors';
 
@@ -69,13 +70,13 @@ function settleFailure(error: unknown, firstSend: boolean): { release: boolean; 
   const status = httpStatusOf(error);
   // A bare HTTP status is copied into `code`; only a different value is a code the server sent.
   const serverCode = code !== undefined && code !== status ? code : undefined;
-  const keep = { release: false, error: new Error(t('workspaceCreation.notConfirmed'), { cause: error }) };
+  const keep = { release: false, error: new PlainError(t('workspaceCreation.notConfirmed'), { cause: error }) };
 
   if (isUnsupportedRouteError(error)) {
     // A first request that reaches a node without the keyed route created nothing. A later 404 may
     // come from an old node after an earlier attempt committed on a current one.
     return firstSend
-      ? { release: true, error: new Error(t('workspaceCreation.tryAgainLater'), { cause: error }) }
+      ? { release: true, error: new PlainError(t('workspaceCreation.tryAgainLater'), { cause: error }) }
       : keep;
   }
 
@@ -86,7 +87,7 @@ function settleFailure(error: unknown, firstSend: boolean): { release: boolean; 
 
   if (!definitive) return keep;
   if (serverCode === ERROR_CODE.NOT_HAS_PERMISSION || status === 403) {
-    return { release: true, error: new Error(t('workspaceCreation.denied'), { cause: error }) };
+    return { release: true, error: new PlainError(t('workspaceCreation.denied'), { cause: error }) };
   }
 
   return { release: true, error };
@@ -120,7 +121,7 @@ export class WorkspaceCreationAttempt {
 
     if (!isDraft(draft)) {
       // Keep the unreadable value: it may name a request that committed. Only Discard removes it.
-      const error = new Error(t('workspaceCreation.invalidDraft'));
+      const error = new PlainError(t('workspaceCreation.invalidDraft'));
 
       error.name = UNREADABLE_DRAFT;
       throw error;
@@ -151,7 +152,7 @@ export class WorkspaceCreationAttempt {
   private async submit(name: string): Promise<string> {
     const previous = this.snapshot();
 
-    if (previous && name !== previous.name) throw new Error(t('workspaceCreation.immutableDraft'));
+    if (previous && name !== previous.name) throw new PlainError(t('workspaceCreation.immutableDraft'));
     if (previous?.workspaceId) return previous.workspaceId;
     let draft = previous;
 

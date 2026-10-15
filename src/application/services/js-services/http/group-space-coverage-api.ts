@@ -1,6 +1,7 @@
 import { t } from 'i18next';
 import { validate as isUuid } from 'uuid';
 
+import { PlainError } from '@/application/errors/plain-error';
 import { GroupSpaceCoverageLevel } from '@/application/types';
 
 import { APIResponse, executeAPIRequest } from './core';
@@ -21,14 +22,14 @@ function parseCoverage(value: unknown): GroupSpaceCoverage {
     !('access_level' in value) ||
     !isGroupSpaceCoverageLevel(value.access_level)
   ) {
-    throw new Error(t('groupSpaceAccess.invalidResponse'));
+    throw new PlainError(t('groupSpaceAccess.invalidResponse'));
   }
 
   return { access_level: value.access_level };
 }
 
 function coverageUrl(workspaceId: string, groupId: string) {
-  if (!isUuid(groupId)) throw new Error(t('groupSpaceAccess.invalidResponse'));
+  if (!isUuid(groupId)) throw new PlainError(t('groupSpaceAccess.invalidResponse'));
   return `/api/workspace/${encodeURIComponent(workspaceId)}/groups/${groupId}/space-coverage`;
 }
 
@@ -52,10 +53,10 @@ export async function setGroupSpaceCoverage(
   const context = captureApiContext();
   const assertCurrent = () => {
     context.assertCurrent();
-    if (!isCurrent()) throw new Error(t('groupSpaceAccess.contextChanged'));
+    if (!isCurrent()) throw new PlainError(t('groupSpaceAccess.contextChanged'));
   };
 
-  if (!isGroupSpaceCoverageLevel(level)) throw new Error(t('groupSpaceAccess.invalidResponse'));
+  if (!isGroupSpaceCoverageLevel(level)) throw new PlainError(t('groupSpaceAccess.invalidResponse'));
   const url = coverageUrl(workspaceId, groupId);
 
   assertCurrent();
@@ -69,6 +70,6 @@ export async function setGroupSpaceCoverage(
   assertCurrent();
   const coverage = parseCoverage(result);
 
-  if (coverage.access_level !== level) throw new Error(t('groupSpaceAccess.invalidResponse'));
+  if (coverage.access_level !== level) throw new PlainError(t('groupSpaceAccess.invalidResponse'));
   return coverage;
 }

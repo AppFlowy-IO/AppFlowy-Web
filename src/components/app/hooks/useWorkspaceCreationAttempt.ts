@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { PlainError } from '@/application/errors/plain-error';
 import { WorkspaceService } from '@/application/services/domains';
 import {
   isUnreadableDraftError,
@@ -74,14 +75,14 @@ export function useWorkspaceCreationFlow(
   const [submitting, setSubmitting] = useState(false);
 
   const submit = async (name: string) => {
-    if (!creation.isCurrent()) throw new Error(t('workspaceCreation.contextChanged'));
+    if (!creation.isCurrent()) throw new PlainError(t('workspaceCreation.contextChanged'));
     setSubmitting(true);
     try {
       // A saved request may finish after a denial: the server resolves it before admission.
-      if (!attempt.draft && !creation.canCreate) throw new Error(t('workspaceCreation.denied'));
+      if (!attempt.draft && !creation.canCreate) throw new PlainError(t('workspaceCreation.denied'));
       const workspaceId = await attempt.create(name);
 
-      if (!creation.isCurrent()) throw new Error(t('workspaceCreation.contextChanged'));
+      if (!creation.isCurrent()) throw new PlainError(t('workspaceCreation.contextChanged'));
       await openWorkspace(workspaceId);
       if (creation.isCurrent()) attempt.complete(workspaceId);
     } catch (error) {

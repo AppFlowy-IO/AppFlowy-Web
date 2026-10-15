@@ -1,6 +1,7 @@
 import { t } from 'i18next';
 
 import { ERROR_CODE } from '@/application/constants';
+import { PlainError } from '@/application/errors/plain-error';
 import { PageService, WorkspaceService } from '@/application/services/domains';
 import { isUnsupportedRouteError } from '@/utils/errors';
 
@@ -18,7 +19,7 @@ function isMissing(error: unknown): boolean {
  * under an ID the server chose. Checking again can't change that (and would add one more page on a
  * server that ignores the requested ID), so the request can only be discarded.
  */
-export class SpaceCreationFirstPageError extends Error {
+export class SpaceCreationFirstPageError extends PlainError {
   constructor(readonly problem: SpaceCreationFirstPageProblem) {
     super(t(problem === 'elsewhere' ? 'spaceCreation.firstPageElsewhere' : 'spaceCreation.firstPageUnconfirmed'));
     this.name = 'SpaceCreationFirstPageError';

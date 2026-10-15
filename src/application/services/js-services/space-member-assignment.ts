@@ -1,5 +1,6 @@
 import { t } from 'i18next';
 
+import { PlainError } from '@/application/errors/plain-error';
 import {
   AccessLevel,
   SpaceAccessDetails,
@@ -59,11 +60,11 @@ export async function setSpaceMemberAccessOverride(
   const context = captureApiContext();
   const assertCurrent = () => {
     context.assertCurrent();
-    if (!isCurrent()) throw new Error(t('space.memberOverride.contextChanged'));
+    if (!isCurrent()) throw new PlainError(t('space.memberOverride.contextChanged'));
   };
 
   if (override !== null && override !== 10 && override !== 20 && override !== 30) {
-    throw new Error(t('space.memberOverride.unavailable'));
+    throw new PlainError(t('space.memberOverride.unavailable'));
   }
 
   assertCurrent();
@@ -84,7 +85,7 @@ export async function setSpaceMemberAccessOverride(
     !permission.can_manage_members ||
     permission.permission.visibility !== SpaceVisibility.Custom
   ) {
-    throw new Error(t('space.memberOverride.unavailable'));
+    throw new PlainError(t('space.memberOverride.unavailable'));
   }
 
   if (rosterResult.status === 'rejected') throw rosterResult.reason;
@@ -97,7 +98,7 @@ export async function setSpaceMemberAccessOverride(
       : roster.groups.find((group) => group.group_id === principal.uuid);
 
   if (!assignment || assignment.role !== SpaceMemberRole.Member || assignment.access_level_override === undefined) {
-    throw new Error(t('space.memberOverride.unavailable'));
+    throw new PlainError(t('space.memberOverride.unavailable'));
   }
 
   // A focused PATCH never carries role or the legacy materialized access_level.

@@ -1,5 +1,6 @@
 import { t } from 'i18next';
 
+import { PlainError } from '@/application/errors/plain-error';
 import { getTokenParsed } from '@/application/session/token';
 import { getConfigValue } from '@/utils/runtime-config';
 
@@ -21,7 +22,7 @@ export function captureApiContext() {
         getTokenParsed()?.user?.id !== userId ||
         getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud') !== serverUrl
       ) {
-        throw new Error(t('workspaceCreation.contextChanged'));
+        throw new PlainError(t('workspaceCreation.contextChanged'));
       }
     },
   };

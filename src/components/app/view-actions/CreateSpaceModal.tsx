@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { v4 as uuidv4 } from 'uuid';
 
 
+import { PlainError } from '@/application/errors/plain-error';
 import { WorkspaceService } from '@/application/services/domains';
 import { captureApiContext } from '@/application/services/js-services/http/request-context';
 import {
@@ -255,7 +256,7 @@ function CreateSpaceDraft({
           intentStore.assertCurrent();
           requestContext.assertCurrent();
           if (supportsOverrides) {
-            if (!userUuid) throw new Error(t('space.memberOverride.identityUnavailable'));
+            if (!userUuid) throw new PlainError(t('space.memberOverride.identityUnavailable'));
             await WorkspaceService.addSpaceMemberByUuid(
               workspaceId,
               spaceId,
@@ -545,8 +546,8 @@ function CreateSpaceDraft({
           const admission = await refreshSpaceCreationAdmission(creationPermission, workspaceId);
 
           intentStore.assertCurrent();
-          if (admission === 'denied') throw new Error(t('workspacePermissions.denied'));
-          if (admission === 'unavailable') throw new Error(t('workspacePermissions.loadError'));
+          if (admission === 'denied') throw new PlainError(t('workspacePermissions.denied'));
+          if (admission === 'unavailable') throw new PlainError(t('workspacePermissions.loadError'));
         }
 
         const visibility = permissionSettings.visibility;

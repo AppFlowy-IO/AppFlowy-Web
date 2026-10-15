@@ -1,6 +1,7 @@
 import { t } from 'i18next';
 import { validate as isUuid } from 'uuid';
 
+import { PlainError } from '@/application/errors/plain-error';
 import {
   isWorkspacePermissionRevision,
   isWorkspaceSpaceCreationCapabilities,
@@ -25,7 +26,7 @@ export async function getWorkspaceSpaceCreationCapabilities(
 
   // Missing/older endpoints and unknown modes stay unavailable. Never infer a grant from role alone.
   if (!isWorkspaceSpaceCreationCapabilities(capability, workspaceId)) {
-    throw new Error(t('workspacePermissions.invalidResponse'));
+    throw new PlainError(t('workspacePermissions.invalidResponse'));
   }
 
   return capability;
@@ -42,7 +43,7 @@ interface SpaceCreationPolicySettings {
 }
 
 export async function setWorkspaceSpaceCreationPolicy(workspaceId: string, policy: WorkspaceSpaceCreationPolicy) {
-  if (!isWorkspaceSpaceCreationPolicy(policy)) throw new Error(t('workspacePermissions.invalidRequest'));
+  if (!isWorkspaceSpaceCreationPolicy(policy)) throw new PlainError(t('workspacePermissions.invalidRequest'));
 
   const settings = await executeAPIRequest<SpaceCreationPolicySettings | undefined>(() =>
     getAxios()?.post<APIResponse<SpaceCreationPolicySettings>>(`/api/workspace/${workspaceId}/settings`, {
@@ -55,7 +56,7 @@ export async function setWorkspaceSpaceCreationPolicy(workspaceId: string, polic
   const confirmed = settings?.exact_space_creation_policy ?? settings?.space_creation_policy;
 
   // A mixed-version server may ignore an unknown field. Success must confirm the requested policy.
-  if (confirmed !== policy) throw new Error(t('workspacePermissions.changeNotConfirmed'));
+  if (confirmed !== policy) throw new PlainError(t('workspacePermissions.changeNotConfirmed'));
 }
 
 function isPrincipal(value: unknown): value is SpaceCreatorPrincipal {
@@ -94,7 +95,7 @@ export async function listWorkspaceSpaceCreators(
   const limit = query.limit ?? 50;
 
   if ((query.kind !== 'user' && query.kind !== 'group') || !Number.isInteger(limit) || limit < 1 || limit > 200) {
-    throw new Error(t('workspacePermissions.invalidRequest'));
+    throw new PlainError(t('workspacePermissions.invalidRequest'));
   }
 
   const result = await executeAPIRequest<Partial<SpaceCreatorSelections>>(() =>
@@ -110,7 +111,7 @@ export async function listWorkspaceSpaceCreators(
     !result.selections.every((selection) => isSelection(selection, query.kind)) ||
     !(result.next_cursor === null || (typeof result.next_cursor === 'string' && result.next_cursor.length > 0))
   ) {
-    throw new Error(t('workspacePermissions.invalidResponse'));
+    throw new PlainError(t('workspacePermissions.invalidResponse'));
   }
 
   return result as SpaceCreatorSelections;
@@ -122,7 +123,7 @@ export async function setWorkspaceSpaceCreator(
   principal: SpaceCreatorPrincipal,
   granted: boolean
 ): Promise<SpaceCreatorMutationResult> {
-  if (!isPrincipal(principal)) throw new Error(t('workspacePermissions.invalidRequest'));
+  if (!isPrincipal(principal)) throw new PlainError(t('workspacePermissions.invalidRequest'));
   const kind = principal.type === 'user' ? 'users' : 'groups';
   const url = `/api/workspace/${workspaceId}/space-creators/${kind}/${principal.id}`;
   const result = await executeAPIRequest<SpaceCreatorMutationResult>(() =>
@@ -132,7 +133,7 @@ export async function setWorkspaceSpaceCreator(
   );
 
   if (!result || typeof result.changed !== 'boolean' || !isWorkspacePermissionRevision(result.revision)) {
-    throw new Error(t('workspacePermissions.changeNotConfirmed'));
+    throw new PlainError(t('workspacePermissions.changeNotConfirmed'));
   }
 
   return result;

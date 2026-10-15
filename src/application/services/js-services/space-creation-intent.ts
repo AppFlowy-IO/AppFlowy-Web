@@ -1,5 +1,6 @@
 import { t } from 'i18next';
 
+import { PlainError } from '@/application/errors/plain-error';
 import { AccessLevel, CreatePagePayload, CreateSpacePayload, WorkspaceMember } from '@/application/types';
 
 import { captureApiContext } from './http/request-context';
@@ -27,7 +28,7 @@ export type SpaceCreationIntent = {
 const FIRST_PAGE_PROBLEMS: readonly unknown[] = ['elsewhere', 'unconfirmed'];
 
 /** Saved data this build cannot read. It is kept until the user discards it, never replaced. */
-export class InvalidSpaceCreationIntentError extends Error {
+export class InvalidSpaceCreationIntentError extends PlainError {
   constructor() {
     super(t('spaceCreation.invalidRecovery'));
     this.name = 'InvalidSpaceCreationIntentError';
@@ -72,7 +73,7 @@ export class SpaceCreationIntentStore {
   assertCurrent(): void {
     this.context.assertCurrent();
     if (!this.context.userId || !this.isMountedScopeCurrent()) {
-      throw new Error(t('workspaceCreation.contextChanged'));
+      throw new PlainError(t('workspaceCreation.contextChanged'));
     }
   }
 
@@ -101,7 +102,7 @@ export class SpaceCreationIntentStore {
       if (JSON.stringify(previous.payload) !== JSON.stringify(intent.payload) ||
         JSON.stringify(previous.initialPage) !== JSON.stringify(intent.initialPage) ||
         JSON.stringify(previous.members) !== JSON.stringify(intent.members)) {
-        throw new Error(t('spaceCreation.pendingRecovery'));
+        throw new PlainError(t('spaceCreation.pendingRecovery'));
       }
 
       return;
@@ -147,7 +148,7 @@ export class SpaceCreationIntentStore {
     if (!intent?.committed || intent.committed.spaceId !== result.spaceId ||
       intent.committed.initialPageId !== result.initialPageId ||
       intent.members.some((member) => !intent.appliedMemberUids.includes(member.uid))) {
-      throw new Error(t('spaceCreation.pendingRecovery'));
+      throw new PlainError(t('spaceCreation.pendingRecovery'));
     }
 
     this.remove();

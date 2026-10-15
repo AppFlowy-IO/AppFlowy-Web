@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
+import { PlainError } from '@/application/errors/plain-error';
 import { WorkspaceService } from '@/application/services/domains';
 import { captureApiContext } from '@/application/services/js-services/http/request-context';
 import {
@@ -1356,7 +1357,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       setAddingUid(uid);
       try {
         if (memberOverridesSupported) {
-          if (!workspaceMember.user_uuid) throw new Error(t('space.memberOverride.identityUnavailable'));
+          if (!workspaceMember.user_uuid) throw new PlainError(t('space.memberOverride.identityUnavailable'));
           await WorkspaceService.addSpaceMemberByUuid(
             workspaceId,
             viewId,
@@ -1471,7 +1472,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       if (!setMemberMutationPending(member.uid, true)) return;
       try {
         if (memberOverridesSupported) {
-          if (!member.user_uuid) throw new Error(t('space.memberOverride.identityUnavailable'));
+          if (!member.user_uuid) throw new PlainError(t('space.memberOverride.identityUnavailable'));
           if (isMutableSpaceMember(member)) await WorkspaceService.updateSpaceMemberByUuid(workspaceId, viewId, member.user_uuid, { role });
           else {
             await WorkspaceService.addSpaceMemberByUuid(
@@ -1540,7 +1541,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       if (!setMemberMutationPending(member.uid, true)) return;
       try {
         if (memberOverridesSupported) {
-          if (!member.user_uuid) throw new Error(t('space.memberOverride.identityUnavailable'));
+          if (!member.user_uuid) throw new PlainError(t('space.memberOverride.identityUnavailable'));
           await WorkspaceService.removeSpaceMemberByUuid(workspaceId, viewId, member.user_uuid);
         } else await WorkspaceService.removeSpaceMember(workspaceId, viewId, member.uid);
         if (spaceRequestRef.current.generation !== requestGeneration) return;
