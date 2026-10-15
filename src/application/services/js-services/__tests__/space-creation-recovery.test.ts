@@ -16,6 +16,7 @@ const mockGetCapabilities = jest.fn();
 const mockGetSpacePermission = jest.fn();
 const mockPost = jest.fn();
 const mockGetView = jest.fn();
+const mockCreateDefaultPage = jest.fn();
 
 // Messages are looked up by key, so a test can tell a translated message from a hard-coded one.
 jest.mock('i18next', () => ({ t: (key: string) => `t:${key}` }));
@@ -33,6 +34,11 @@ jest.mock('@/application/services/domains', () => ({
   },
 }));
 jest.mock('../http/view-api', () => ({ getView: (...args: unknown[]) => mockGetView(...args) }));
+// A default first page goes through main's atomic creation; authored pages keep the page-view request.
+jest.mock('../http/page-default-creation', () => ({
+  ...jest.requireActual('../http/page-default-creation'),
+  createDefaultPage: (...args: unknown[]) => mockCreateDefaultPage(...args),
+}));
 
 describe('isDefinitiveCreationRejection', () => {
   it.each([
@@ -126,7 +132,8 @@ describe('firstPageAddedUnderOtherId', () => {
 describe('recoverSpaceCreation', () => {
   const intent = {
     payload: { view_id: 'space-1', name: 'Research' },
-    initialPage: { view_id: 'page-1', layout: 0, name: 'Notes' },
+    // Authored content keeps these cases on the page-view request and its own ID check.
+    initialPage: { view_id: 'page-1', layout: 0, name: 'Notes', page_data: { blocks: [] } },
     selectedMembers: [],
     members: [],
     appliedMemberUids: [],
@@ -158,6 +165,19 @@ describe('recoverSpaceCreation', () => {
       '/api/workspace/workspace-1/page-view',
       expect.objectContaining({ parent_view_id: 'space-1', view_id: 'page-1', collab_id: 'page-1' })
     );
+  });
+
+  it('adds a missing default first page through atomic creation under the requested ID', async () => {
+    const defaultPage = { view_id: 'page-1', layout: 0, name: 'Notes' };
+
+    mockGetView.mockRejectedValue({ code: ERROR_CODE.RECORD_NOT_FOUND, httpStatus: 404 });
+    mockCreateDefaultPage.mockReset().mockResolvedValue({ view_id: 'page-1' });
+    await expect(recover({ ...intent, initialPage: defaultPage } as unknown as SpaceCreationIntent)).resolves.toEqual({
+      spaceId: 'space-1',
+      initialPageId: 'page-1',
+    });
+    expect(mockCreateDefaultPage).toHaveBeenCalledWith('workspace-1', 'space-1', defaultPage, undefined);
+    expect(mockPost).not.toHaveBeenCalled();
   });
 
   it('explains in the reader\'s language when the first page is found somewhere else', async () => {
