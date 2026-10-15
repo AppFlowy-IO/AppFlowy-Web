@@ -16,6 +16,9 @@ import {
   blockPermissionSync,
   clearDrainConfig,
   configureDrain,
+  discardPermissionBlockedEdits,
+  enqueueOutboxUpdate,
+  retryPermissionBlockedSync,
   setCurrentSession,
   startDrainAll,
   waitForDrain,
@@ -96,22 +99,52 @@ function pageWithDeletionHistory(): Y.Doc {
   return server;
 }
 
-function startSession(role: Role) {
-  const sent: messages.IMessage[] = [];
+/**
+ * A page whose earlier authors keep editing: each `edit` is accepted by the server and returned
+ * as the bytes the server relays. The author already has history in the page, so its new
+ * structs start well after clock 0.
+ */
+function pageWithActiveAuthor() {
+  const server = pageWithDeletionHistory();
+  const author = new Y.Doc();
 
-  setCurrentSession({ userId: USER_ID, workspaceId: WORKSPACE_ID, serverUrl: SERVER_URL });
+  Y.applyUpdate(author, Y.encodeStateAsUpdate(server));
+  author.getText('body').insert(0, 'Draft: ');
+  Y.applyUpdate(server, Y.encodeStateAsUpdate(author));
+  const edit = (change: (text: Y.Text) => void) => {
+    Y.applyUpdate(author, Y.encodeStateAsUpdate(server));
+    const before = Y.encodeStateVector(author);
+
+    change(author.getText('body'));
+    const update = Y.encodeStateAsUpdate(author, before);
+    const firstClock = Y.parseUpdateMeta(update).from.get(author.clientID);
+
+    // A pure deletion holds no struct.
+    if (firstClock !== undefined) expect(firstClock).toBeGreaterThan(0);
+    Y.applyUpdate(server, update);
+    return update;
+  };
+
+  return { server, edit };
+}
+
+const session = { userId: USER_ID, workspaceId: WORKSPACE_ID, serverUrl: SERVER_URL };
+
+function startSession(initialRole: Role) {
+  const sent: messages.IMessage[] = [];
+  const access = { role: initialRole };
+
+  setCurrentSession(session);
   configureDrain({
-    userId: USER_ID,
-    workspaceId: WORKSPACE_ID,
-    serverUrl: SERVER_URL,
+    ...session,
     send: (message) => {
       sent.push(message);
     },
     isReady: () => true,
-    checkPermission: async () => (role === 'editor' ? 'allowed' : 'denied'),
+    checkPermission: async () => (access.role === 'editor' ? 'allowed' : 'denied'),
   });
   startDrainAll();
-  return sent;
+  return Object.assign(sent, { access });
 }
 
 interface OpenPage {
@@ -160,29 +193,33 @@ function lastAnnouncedStateVector(ctx: SyncContext): Uint8Array {
  * server's own state vector.
  */
 async function serverManifestExchange(page: OpenPage, server: Y.Doc) {
-  const { ctx, objectId } = page;
-
-  handleMessage(
-    ctx,
-    fromWire({
-      objectId,
-      collabType: Types.Document,
-      update: {
-        flags: 0,
-        payload: Y.encodeStateAsUpdate(server, lastAnnouncedStateVector(ctx)),
-        messageId: { timestamp: nextRid++, counter: 0 },
-      },
-    })
-  );
-  handleMessage(
-    ctx,
-    fromWire({
-      objectId,
-      collabType: Types.Document,
-      syncRequest: { stateVector: Y.encodeStateVector(server), lastMessageId: { timestamp: 0, counter: 0 } },
-    })
-  );
+  serverUpdate(page, Y.encodeStateAsUpdate(server, lastAnnouncedStateVector(page.ctx)));
+  stateVectorRequest(page, Y.encodeStateVector(server));
   await settle(page);
+}
+
+/** An Update from the server: it carries a stream message id, also when another tab relays it. */
+function serverUpdate(page: OpenPage, payload: Uint8Array) {
+  handleMessage(
+    page.ctx,
+    fromWire({
+      objectId: page.objectId,
+      collabType: Types.Document,
+      update: { flags: 0, payload, messageId: { timestamp: nextRid++, counter: 0 } },
+    })
+  );
+}
+
+/** A state-vector request: the server's Manifest, or a sibling tab's request over BroadcastChannel. */
+function stateVectorRequest(page: OpenPage, stateVector: Uint8Array) {
+  handleMessage(
+    page.ctx,
+    fromWire({
+      objectId: page.objectId,
+      collabType: Types.Document,
+      syncRequest: { stateVector, lastMessageId: { timestamp: 0, counter: 0 } },
+    })
+  );
 }
 
 async function settle(page: OpenPage) {
@@ -228,6 +265,17 @@ function changesServer(server: Y.Doc, updates: Uint8Array[]): boolean {
 
   updates.forEach((update) => Y.applyUpdate(server, update));
   return !Y.equalSnapshots(before, Y.snapshot(server));
+}
+
+/** Like `changesServer`, on a copy, so the server itself stays as it is. */
+function wouldChangeServer(server: Y.Doc, updates: Uint8Array[]): boolean {
+  const probe = new Y.Doc();
+
+  Y.applyUpdate(probe, Y.encodeStateAsUpdate(server));
+  const changed = changesServer(probe, updates);
+
+  probe.destroy();
+  return changed;
 }
 
 describe('manifest reply for a page whose history contains deletions', () => {
@@ -407,5 +455,322 @@ describe.each([
     expect(changesServer(server, sentUpdates(sent, page.objectId))).toBe(true);
     expect(server.getText('body').toString()).toBe(page.ctx.doc.getText('body').toString());
     expect(await outboxRows(page.objectId)).toEqual([]);
+  });
+});
+
+describe('replies that only repeat what the server holds, across tabs and re-syncs', () => {
+  test('a reader answering a sibling tab that missed a relayed update gets no row and no notice', async () => {
+    startSession('reader');
+    const { server, edit } = pageWithActiveAuthor();
+    const page = openCachedPage(server);
+
+    renderNotice();
+    await serverManifestExchange(page, server);
+    const siblingVector = Y.encodeStateVector(server);
+
+    // The server relays another author's edit to this tab; the sibling tab has not seen it yet.
+    serverUpdate(page, edit((text) => text.insert(0, 'New: ')));
+    stateVectorRequest(page, siblingVector);
+    await settle(page);
+    await letNoticeRead();
+
+    expect(await outboxRows(page.objectId)).toEqual([]);
+    expect(screen.queryByTestId('pending-permission-edits')).toBeNull();
+  });
+
+  test('an editor answering that sibling tab uploads nothing', async () => {
+    const sent = startSession('editor');
+    const { server, edit } = pageWithActiveAuthor();
+    const page = openCachedPage(server);
+
+    await serverManifestExchange(page, server);
+    const siblingVector = Y.encodeStateVector(server);
+
+    serverUpdate(
+      page,
+      edit((text) => {
+        text.insert(0, 'New: ');
+        text.delete(12, 3);
+      })
+    );
+    stateVectorRequest(page, siblingVector);
+    await settle(page);
+    await expect(waitForDrain([page.objectId], { timeoutMs: WAIT.timeout })).resolves.toBe(true);
+
+    expect(sentUpdates(sent, page.objectId)).toEqual([]);
+  });
+
+  test("a re-sync whose Manifest is older than a live update that overtook it gets no row", async () => {
+    startSession('reader');
+    const { server, edit } = pageWithActiveAuthor();
+    const page = openCachedPage(server);
+
+    renderNotice();
+    await serverManifestExchange(page, server);
+    // The tab re-syncs; the server builds its answer, then accepts and broadcasts a live edit,
+    // which reaches this tab before the answer.
+    bindSyncContext(page.ctx);
+    const staleDiff = Y.encodeStateAsUpdate(server, lastAnnouncedStateVector(page.ctx));
+    const staleVector = Y.encodeStateVector(server);
+
+    serverUpdate(page, edit((text) => text.insert(0, 'Live: ')));
+    serverUpdate(page, staleDiff);
+    stateVectorRequest(page, staleVector);
+    await settle(page);
+    await letNoticeRead();
+
+    expect(await outboxRows(page.objectId)).toEqual([]);
+    expect(screen.queryByTestId('pending-permission-edits')).toBeNull();
+  });
+
+  test.each([
+    ['holds the same copy', (page: OpenPage) => Y.encodeStateVector(page.ctx.doc)],
+    ['opened an older copy', (_page: OpenPage, olderVector: Uint8Array) => olderVector],
+  ])(
+    "a sibling tab's request that arrives before the server answers this tab queues nothing (sibling %s)",
+    async (_name, siblingVectorOf) => {
+      startSession('reader');
+      const { server, edit } = pageWithActiveAuthor();
+      const olderVector = Y.encodeStateVector(server);
+
+      edit((text) => text.insert(0, 'Newer: '));
+      const page = openCachedPage(server);
+
+      await blockPermissionSync(page.objectId, WORKSPACE_ID);
+      renderNotice();
+      // Both tabs bind at once; the sibling's request reaches this tab over BroadcastChannel first.
+      stateVectorRequest(page, siblingVectorOf(page, olderVector));
+      await settle(page);
+      expect(await outboxRows(page.objectId)).toEqual([]);
+      await serverManifestExchange(page, server);
+      await letNoticeRead();
+
+      expect(await outboxRows(page.objectId)).toEqual([]);
+      expect(screen.queryByTestId('pending-permission-edits')).toBeNull();
+    }
+  );
+
+  test("a reply queued for a lagging sibling tab is removed once the server's answer to that tab arrives", async () => {
+    startSession('reader');
+    const { server, edit } = pageWithActiveAuthor();
+    const olderVector = Y.encodeStateVector(server);
+
+    edit((text) => text.insert(0, 'Newer: '));
+    // This tab opens a copy that already holds the newer edit, so the server never sends it here.
+    const page = openCachedPage(server);
+
+    renderNotice();
+    await serverManifestExchange(page, server);
+    stateVectorRequest(page, olderVector);
+    await settle(page);
+    // Nothing yet proves the server holds what the sibling lacks: the reply waits, briefly.
+    expect(await outboxRows(page.objectId)).toHaveLength(1);
+    expect(await screen.findByText(NOTICE, undefined, WAIT)).toBeTruthy();
+
+    // The socket owner relays the server's answer to the sibling's request to every tab.
+    serverUpdate(page, Y.encodeStateAsUpdate(server, olderVector));
+    stateVectorRequest(page, Y.encodeStateVector(server));
+
+    await waitFor(async () => expect(await outboxRows(page.objectId)).toEqual([]), WAIT);
+    await waitFor(() => expect(screen.queryByTestId('pending-permission-edits')).toBeNull(), WAIT);
+  });
+
+  test('a waiting reply left by an earlier build that only repeats server deletions is removed', async () => {
+    startSession('reader');
+    const server = pageWithDeletionHistory();
+    const objectId = uuidv4();
+    const cached = new Y.Doc();
+
+    Y.applyUpdate(cached, Y.encodeStateAsUpdate(server));
+    await blockPermissionSync(objectId, WORKSPACE_ID);
+    // What the unfixed build queued: the server's deletions and nothing else.
+    await enqueueOutboxUpdate(
+      {
+        objectId,
+        collabType: Types.Document,
+        version: null,
+        payload: Y.encodeStateAsUpdate(cached, Y.encodeStateVector(server)),
+        beforeStateVector: Y.encodeStateVector(server),
+      },
+      { broadcast: false, source: 'manifest' }
+    );
+    renderNotice();
+    expect(await screen.findByText(NOTICE, undefined, WAIT)).toBeTruthy();
+
+    const page = openCachedPage(server, undefined, objectId);
+
+    await serverManifestExchange(page, server);
+    await waitFor(async () => expect(await outboxRows(objectId)).toEqual([]), WAIT);
+    await waitFor(() => expect(screen.queryByTestId('pending-permission-edits')).toBeNull(), WAIT);
+  });
+
+  test('a waiting reply with a change the server lacks is kept', async () => {
+    startSession('reader');
+    const server = pageWithDeletionHistory();
+    const objectId = uuidv4();
+    const cached = new Y.Doc();
+
+    Y.applyUpdate(cached, Y.encodeStateAsUpdate(server));
+    cached.getText('body').delete(0, 2);
+    await blockPermissionSync(objectId, WORKSPACE_ID);
+    await enqueueOutboxUpdate(
+      {
+        objectId,
+        collabType: Types.Document,
+        version: null,
+        payload: Y.encodeStateAsUpdate(cached, Y.encodeStateVector(server)),
+        beforeStateVector: Y.encodeStateVector(server),
+      },
+      { broadcast: false, source: 'manifest' }
+    );
+    renderNotice();
+
+    const page = openCachedPage(server, undefined, objectId);
+
+    await serverManifestExchange(page, server);
+    // Past the cleanup delay: the row stays, and so does the notice.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
+    const rows = await outboxRows(objectId);
+
+    expect(rows).toHaveLength(1);
+    expect(wouldChangeServer(server, [rows[0].payload])).toBe(true);
+    expect(await screen.findByText(NOTICE, undefined, WAIT)).toBeTruthy();
+  });
+
+  test('after a reconnect, an editor sends again a deletion the server lost', async () => {
+    const sent = startSession('editor');
+    const base = new Y.Doc();
+
+    base.getText('body').insert(0, 'Onboarding checklist: laptop, badge');
+    // The server came back without one deletion it had sent before (same collab version).
+    const lost = new Y.Doc();
+    const server = new Y.Doc();
+
+    Y.applyUpdate(lost, Y.encodeStateAsUpdate(base));
+    Y.applyUpdate(server, Y.encodeStateAsUpdate(base));
+    server.getText('body').delete(0, 11);
+    const page = openCachedPage(server);
+
+    await serverManifestExchange(page, server);
+    await expect(waitForDrain([page.objectId], { timeoutMs: WAIT.timeout })).resolves.toBe(true);
+    expect(sentUpdates(sent, page.objectId)).toEqual([]);
+
+    bindSyncContext(page.ctx);
+    await serverManifestExchange(page, lost);
+    await expect(waitForDrain([page.objectId], { timeoutMs: WAIT.timeout })).resolves.toBe(true);
+
+    expect(changesServer(lost, sentUpdates(sent, page.objectId))).toBe(true);
+    expect(lost.getText('body').toString()).toBe(page.ctx.doc.getText('body').toString());
+  });
+
+  test("a bare request for an empty server state is answered while this tab awaits the server's answer", async () => {
+    const sent = startSession('editor');
+    const local = new Y.Doc();
+
+    local.getText('body').insert(0, 'Written before the server had this page');
+    const page = openCachedPage(local);
+
+    // The server has no state for the page: its answer is a request with an empty state vector, no Update.
+    stateVectorRequest(page, Y.encodeStateVector(new Y.Doc()));
+    await settle(page);
+    await expect(waitForDrain([page.objectId], { timeoutMs: WAIT.timeout })).resolves.toBe(true);
+    const server = new Y.Doc();
+
+    expect(changesServer(server, sentUpdates(sent, page.objectId))).toBe(true);
+    expect(server.getText('body').toString()).toBe('Written before the server had this page');
+  });
+
+  test('replies queued for another collab version are left alone', async () => {
+    startSession('reader');
+    const server = pageWithDeletionHistory();
+    const page = openCachedPage(server);
+    const cached = new Y.Doc();
+
+    Y.applyUpdate(cached, Y.encodeStateAsUpdate(server));
+    await blockPermissionSync(page.objectId, WORKSPACE_ID);
+    await enqueueOutboxUpdate(
+      {
+        objectId: page.objectId,
+        collabType: Types.Document,
+        version: 'older-version',
+        payload: Y.encodeStateAsUpdate(cached, Y.encodeStateVector(server)),
+        beforeStateVector: Y.encodeStateVector(server),
+      },
+      { broadcast: false, source: 'manifest' }
+    );
+    await serverManifestExchange(page, server);
+    await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
+
+    expect(await outboxRows(page.objectId)).toMatchObject([{ version: 'older-version', source: 'manifest' }]);
+  });
+
+  test('proof from one collab version does not cover replies once the doc moves to another', async () => {
+    startSession('reader');
+    const server = pageWithDeletionHistory();
+    const page = openCachedPage(server);
+
+    await serverManifestExchange(page, server);
+    page.ctx.doc.version = 'version-2';
+    stateVectorRequest(page, Y.encodeStateVector(server));
+    await settle(page);
+    // The earlier proof belongs to the old version, so the reply is kept for now...
+    expect(await outboxRows(page.objectId)).toHaveLength(1);
+
+    // ...until the server proves its state for the new version.
+    bindSyncContext(page.ctx);
+    await serverManifestExchange(page, server);
+    await waitFor(async () => expect(await outboxRows(page.objectId)).toEqual([]), WAIT);
+  });
+});
+
+describe('a pure deletion refused before the user became a reader', () => {
+  /** An editor's deletion is sent, the server refuses it, and the editor is demoted. */
+  async function refusedDeletion() {
+    const sent = startSession('editor');
+    const server = pageWithDeletionHistory();
+    const page = openCachedPage(server);
+
+    await serverManifestExchange(page, server);
+    page.ctx.doc.getText('body').delete(0, 3);
+    await expect(waitForDrain([page.objectId], { timeoutMs: WAIT.timeout })).resolves.toBe(true);
+    expect(sentUpdates(sent, page.objectId)).toHaveLength(1);
+    sent.access.role = 'reader';
+    await blockPermissionSync(page.objectId, WORKSPACE_ID);
+    renderNotice();
+    // On reconnect the server, which never applied the deletion, asks again.
+    bindSyncContext(page.ctx);
+    await serverManifestExchange(page, server);
+
+    const rows = await outboxRows(page.objectId);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ source: 'manifest', permissionBlocked: true });
+    expect(wouldChangeServer(server, [rows[0].payload])).toBe(true);
+    expect(await screen.findByText(NOTICE, undefined, WAIT)).toBeTruthy();
+    return { sent, server, page };
+  }
+
+  test('Try again keeps it while access is missing and sends it once access is back', async () => {
+    const { sent, server, page } = await refusedDeletion();
+    const before = sentUpdates(sent, page.objectId).length;
+
+    await expect(retryPermissionBlockedSync(session)).resolves.toMatchObject({ denied: [page.objectId] });
+    expect(await outboxRows(page.objectId)).toHaveLength(1);
+
+    sent.access.role = 'editor';
+    await expect(retryPermissionBlockedSync(session)).resolves.toMatchObject({ released: [page.objectId] });
+    await expect(waitForDrain([page.objectId], { timeoutMs: WAIT.timeout })).resolves.toBe(true);
+
+    expect(changesServer(server, sentUpdates(sent, page.objectId).slice(before))).toBe(true);
+    expect(server.getText('body').toString()).toBe(page.ctx.doc.getText('body').toString());
+    await waitFor(() => expect(screen.queryByTestId('pending-permission-edits')).toBeNull(), WAIT);
+  });
+
+  test('Discard changes removes it and the notice', async () => {
+    const { page } = await refusedDeletion();
+
+    await expect(discardPermissionBlockedEdits(session)).resolves.toEqual([page.objectId]);
+    expect(await outboxRows(page.objectId)).toEqual([]);
+    await waitFor(() => expect(screen.queryByTestId('pending-permission-edits')).toBeNull(), WAIT);
   });
 });

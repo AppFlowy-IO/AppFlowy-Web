@@ -650,6 +650,46 @@ async function persistOutboxRow(row: SyncOutboxRecord): Promise<number | null> {
 }
 
 /**
+ * Delete this session's manifest replies for one object and collab generation that `isRedundant`
+ * shows hold nothing the server lacks, so no edit is dropped. This clears replies queued before
+ * the server had proven its state, waiting ones included, which would otherwise keep "waiting
+ * for edit access" on screen. Local edits and replies of other generations are left alone.
+ *
+ * Resolves to the number of manifest replies of the object still queued in this session, or null
+ * when there is no session.
+ */
+export async function deleteRedundantManifestRows(
+  objectId: string,
+  generation: { version: string | null; databaseRestoreId?: string },
+  isRedundant: (payload: Uint8Array) => boolean
+): Promise<number | null> {
+  const userId = currentUserId;
+  const workspaceId = currentWorkspaceId;
+  const serverUrl = currentServerUrl;
+
+  if (!userId || !workspaceId || isPurging) return null;
+  return db.transaction('rw', db.sync_outbox, async () => {
+    const redundant: number[] = [];
+    let remaining = 0;
+
+    await db.sync_outbox
+      .where('[userId+workspaceId+objectId]')
+      .equals([userId, workspaceId, objectId])
+      .each((row) => {
+        if (row.source !== 'manifest' || row.serverUrl !== serverUrl) return;
+        const sameGeneration =
+          (row.version ?? null) === generation.version && row.databaseRestoreId === generation.databaseRestoreId;
+
+        if (sameGeneration && row.id !== undefined && isRedundant(row.payload)) redundant.push(row.id);
+        else remaining += 1;
+      });
+
+    if (redundant.length > 0) await db.sync_outbox.bulkDelete(redundant);
+    return remaining;
+  });
+}
+
+/**
  * Gate non-outbox full-sync paths with the same durable quarantine. The server
  * still authorizes every item and reports `permission_denied` per item, so no
  * permission request is made here (a large batch must not drop items because

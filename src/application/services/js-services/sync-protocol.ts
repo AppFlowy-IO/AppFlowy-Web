@@ -7,6 +7,7 @@ import {
   blockPermissionSync,
   getCurrentOutboxSession,
   deleteOutboxByObjectId,
+  deleteRedundantManifestRows,
   enqueueOutboxUpdate,
   shouldRouteUpdateThroughOutbox,
   waitForDrain,
@@ -15,7 +16,7 @@ import { CollabOrigin, Types, YDoc } from '@/application/types';
 import { collab, messages } from '@/proto/messages';
 import { Log } from '@/utils/log';
 
-import { isNoopForServer, recordServerDeletions } from './server-deletions';
+import { awaitsServerAnswer, beginServerExchange, isNoopForServer, recordServerUpdate } from './server-acknowledged';
 
 /**
  * SyncContext is the context object passed to the sync protocol handlers.
@@ -87,6 +88,68 @@ export enum UpdateFlags {
 const isEmptyUpdateV1 = (update: Uint8Array): boolean =>
   update.byteLength === 2 && update[0] === 0 && update[1] === 0;
 
+/** True for a state vector that lists a client. The server describes an empty state with one that lists none. */
+const listsAnyClient = (stateVector: Uint8Array | undefined): boolean =>
+  stateVector !== undefined && Y.decodeStateVector(stateVector).size > 0;
+
+interface ManifestCleanup {
+  timer?: ReturnType<typeof setTimeout>;
+  /** A manifest reply of this doc may be queued, by this context, another tab or an earlier visit. */
+  pending: boolean;
+  marks: number;
+}
+
+const manifestCleanups = new WeakMap<YDoc, ManifestCleanup>();
+// Lets the Updates of one server answer (and its relayed copies) land before the outbox is read.
+const MANIFEST_CLEANUP_DELAY_MS = 50;
+
+function manifestCleanupOf(doc: YDoc): ManifestCleanup {
+  let cleanup = manifestCleanups.get(doc);
+
+  if (!cleanup) {
+    cleanup = { pending: true, marks: 0 };
+    manifestCleanups.set(doc, cleanup);
+  }
+
+  return cleanup;
+}
+
+/** A manifest reply of this doc may now be queued; the server's next proof checks the queue. */
+function expectManifestReplies(doc: YDoc): void {
+  const cleanup = manifestCleanupOf(doc);
+
+  cleanup.pending = true;
+  cleanup.marks += 1;
+}
+
+/**
+ * The server proved more of its state. Delete this doc's queued manifest replies that are now
+ * redundant: one queued for a sibling tab's request before the server's answer arrived, or one
+ * left by an earlier build. Waiting replies among them would keep the notice on screen.
+ */
+function scheduleManifestCleanup(doc: YDoc): void {
+  const cleanup = manifestCleanupOf(doc);
+
+  if (!cleanup.pending || cleanup.timer !== undefined) return;
+  cleanup.timer = setTimeout(() => {
+    cleanup.timer = undefined;
+    if (!isCollabStorageCurrent(doc)) return;
+    const marks = cleanup.marks;
+    const { version, databaseRestoreId } = doc;
+    const sameGeneration = () => doc.version === version && doc.databaseRestoreId === databaseRestoreId;
+
+    void (async () => {
+      const remaining = await deleteRedundantManifestRows(
+        doc.guid,
+        { version: version ?? null, databaseRestoreId },
+        (payload) => sameGeneration() && isNoopForServer(doc, payload)
+      );
+
+      if (remaining === 0 && cleanup.marks === marks) cleanup.pending = false;
+    })().catch((error) => Log.warn('[sync] Could not remove manifest replies the server already holds', error));
+  }, MANIFEST_CLEANUP_DELAY_MS);
+}
+
 /**
  * Bind an existing sync context to the current realtime connection.
  *
@@ -102,6 +165,10 @@ export const bindSyncContext = (ctx: SyncContext): void => {
   }
 
   if (!isCollabStorageCurrent(doc)) return;
+  // Whatever the server proved before this request may since have been lost on its side; its
+  // answer proves its state afresh. A reply queued meanwhile by another tab is checked again then.
+  beginServerExchange(doc);
+  expectManifestReplies(doc);
   Log.debug('[sync] binding context with manifest exchange', {
     objectId: doc.guid,
     collabType,
@@ -155,10 +222,12 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
   // though it carries no row metadata or parent database id.
   //
   // A diff always carries the complete delete set, so a page with any deletion
-  // in its history never produces the empty update. Bytes without structs
-  // whose deletions all came from the server are the same no-op; queueing them
-  // would show a reader "waiting for edit access" and make an editor re-send
-  // the delete set on every open. A local deletion is never among them.
+  // in its history never produces the empty update, and a request that is
+  // behind the server makes the reply repeat structs the server holds. Bytes
+  // made only of structs and deletions the server has proven it holds since
+  // this context's last request are the same no-op; queueing them would show
+  // a reader "waiting for edit access" and make an editor upload them again.
+  // An unsent local change is never among them.
   if (isEmptyUpdateV1(update) || isNoopForServer(doc, update)) {
     ctx.onManifestSync?.(doc.guid);
     return;
@@ -169,6 +238,15 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
   // let the serialized outbox use the bounded HTTP slow lane. Emitting here
   // would close the WebSocket before any fallback could run.
   if (shouldRouteUpdateThroughOutbox(update.byteLength)) {
+    // While this context's own request is unanswered, a request that lists
+    // clients is not the answer: the server answers with an Update first, and
+    // describes an empty state with a request that lists none. It comes from a
+    // sibling tab (or is a repair request the server sent first). On this path
+    // its reply would reach only the server, and the reply to the Manifest
+    // after the server's Update will carry everything this one holds. Tabs
+    // that bind at the same time therefore queue nothing for each other.
+    if (awaitsServerAnswer(doc) && listsAnyClient(stateVector)) return;
+    expectManifestReplies(doc);
     const persisted = enqueueOutboxUpdate(
       {
         objectId: doc.guid,
@@ -244,11 +322,18 @@ const handleUpdate = (ctx: SyncContext, message: collab.IUpdate): void => {
 
   Log.debug('[Version] handleUpdate: localDocVersion=%s, incomingMsgVersion=%s, docId=%s', doc.version, message.version, doc.guid);
 
+  // Only the server assigns a message id: to its Updates, also when another tab
+  // relays them or when one is built from an HTTP sync result. The fan-out of
+  // local edits between tabs has none.
+  if (message.messageId) {
+    const proven = recordServerUpdate(doc, message.flags === UpdateFlags.Lib0v1 ? message.payload ?? null : null);
+
+    if (proven) scheduleManifestCleanup(doc);
+  }
+
   switch (message.flags) {
     case UpdateFlags.Lib0v1:
       Y.applyUpdate(doc, message.payload!, 'remote');
-      // Only the server assigns a message id; sibling-tab fan-out has none.
-      if (message.messageId) recordServerDeletions(doc, message.payload!);
       break;
     case UpdateFlags.Lib0v2:
       Y.applyUpdateV2(doc, message.payload!, 'remote');
