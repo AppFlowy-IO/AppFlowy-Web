@@ -1,29 +1,63 @@
-import { Browser, BrowserContext } from '@playwright/test';
+import { Browser, BrowserContext, LaunchOptions } from '@playwright/test';
 
 import { GalleryConfig, GalleryFixture, GalleryPerson, refreshGallerySession } from './permission-gallery-seed';
 
 /**
- * Browser sessions of the permission gallery: the network guard and session setup that the
- * screenshot spec (permission-gallery.capture.spec.ts) and the video spec
+ * Browser sessions of the permission gallery: the browser flags, network guard and session setup
+ * that the screenshot spec (permission-gallery.capture.spec.ts) and the video spec
  * (permission-videos.capture.spec.ts) share, so both run with the same isolation.
  */
 
-/** Abort every request outside the gallery stack's three origins. */
+/**
+ * Chromium for both specs. Besides the app's own requests (see `guardGalleryNetwork`), Chromium
+ * opens connections by itself (update checks, Google services). Its proxy is therefore a closed
+ * loopback port: 9, which only root could listen on. Chromium never proxies loopback addresses, so
+ * the stack is reached directly, while anything else fails to connect. This is a flag rather than
+ * Playwright's `proxy` option, which would send loopback through the proxy as well.
+ */
+export function galleryLaunchOptions(extra: Pick<LaunchOptions, 'slowMo'> = {}): LaunchOptions {
+  return {
+    executablePath: process.env.APPFLOWY_TEST_CHROMIUM_EXECUTABLE,
+    args: ['--no-sandbox', '--disable-dev-shm-usage', '--force-device-scale-factor=1', '--proxy-server=http://127.0.0.1:9'],
+    ...extra,
+  };
+}
+
+/** `origin` (an http origin of the stack) in `scheme`, as a regular expression source. */
+function originSource(origin: string, scheme: 'http' | 'ws') {
+  return origin.replace(/^http/, scheme).replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+}
+
+/**
+ * The URLs the app may not use: anything outside the stack's three origins, and the paths the dev
+ * server proxies to developer ports. `scheme` is http for requests and ws for WebSockets.
+ */
+function outsideStack(cfg: GalleryConfig, scheme: 'http' | 'ws') {
+  const [web, cloud, gotrue] = [cfg.web, cfg.cloud, cfg.gotrue].map((origin) => originSource(origin, scheme));
+  const devProxy = '(?:api|ws|gotrue|s3|billing)(?:[/?#]|$)';
+
+  return new RegExp(`^(?!${cloud}/|${gotrue}/|${web}/(?!${devProxy}))`);
+}
+
+/**
+ * Abort the app's requests outside the gallery stack's three origins. `route` does not see
+ * WebSockets, so a WebSocket outside the stack is closed before it connects. The WebSocket rule
+ * is a pattern, not a function: with a function, Playwright hands every WebSocket to the test
+ * process and relays those no handler takes through it, message by message; with a pattern, the
+ * sockets it does not match connect directly.
+ */
 export async function guardGalleryNetwork(context: BrowserContext, cfg: GalleryConfig) {
-  const allowed = new Set([cfg.web, cfg.cloud, cfg.gotrue]);
+  const requests = outsideStack(cfg, 'http');
 
   await context.route('**/*', async (route) => {
-    const url = new URL(route.request().url());
-    // The dev server proxies these paths to developer ports; the app must only use the gallery stack.
-    const devProxy = url.origin === cfg.web && /^\/(api|ws|gotrue|s3|billing)(\/|$)/.test(url.pathname);
-
-    if (!allowed.has(url.origin) || devProxy) {
+    if (requests.test(route.request().url())) {
       await route.abort();
       return;
     }
 
     await route.continue();
   });
+  await context.routeWebSocket(outsideStack(cfg, 'ws'), (socket) => socket.close());
 }
 
 /**
@@ -64,15 +98,18 @@ export async function newGalleryContext(
   const realtime = options.realtime;
 
   if (realtime) {
-    // Relay the socket both ways, except that server pushes are dropped while muted.
-    await context.routeWebSocket(() => true, (socket) => {
-      const server = socket.connectToServer();
+    // Relay the app's Cloud socket both ways, except that server pushes are dropped while muted.
+    await context.routeWebSocket(
+      new RegExp(`^${originSource(cfg.cloud, 'ws')}/`),
+      (socket) => {
+        const server = socket.connectToServer();
 
-      socket.onMessage((message) => server.send(message));
-      server.onMessage((message) => {
-        if (!realtime.muted) socket.send(message);
-      });
-    });
+        socket.onMessage((message) => server.send(message));
+        server.onMessage((message) => {
+          if (!realtime.muted) socket.send(message);
+        });
+      }
+    );
   }
 
   await context.addInitScript(

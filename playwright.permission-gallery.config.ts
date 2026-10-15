@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
+import { galleryLaunchOptions } from './playwright/support/permission-gallery-browser';
+
 /**
  * Opt-in screenshot gallery and videos of the workspace permission UI (Web PR #621). Both seed a
  * synthetic "Demo" workspace through the APIs of an isolated loopback stack; see
@@ -32,10 +34,8 @@ export default defineConfig({
       ...devices['Desktop Chrome'],
       viewport: { width: 1440, height: 900 },
       deviceScaleFactor: 1,
-      launchOptions: {
-        executablePath: process.env.APPFLOWY_TEST_CHROMIUM_EXECUTABLE,
-        args: ['--no-sandbox', '--disable-dev-shm-usage', '--force-device-scale-factor=1'],
-      },
+      // The gallery's Chromium and flags, shared with the video spec (see the helper).
+      launchOptions: galleryLaunchOptions(),
     },
   }],
   expect: { timeout: 30000 },

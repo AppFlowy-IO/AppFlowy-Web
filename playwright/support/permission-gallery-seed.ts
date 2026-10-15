@@ -7,6 +7,8 @@
  * again restores the same state, so captures can be repeated on the same database.
  */
 
+import * as Y from 'yjs';
+
 export type GalleryPerson = 'olivia' | 'alex' | 'sam' | 'jordan';
 export type GalleryGroup = 'Users' | 'HR' | 'Product' | 'Super_Users';
 export type GallerySpace = 'General' | 'HR' | 'Product' | 'Leadership';
@@ -143,7 +145,7 @@ export interface GalleryConfig {
 }
 
 /** Ports of the usual local developer stack: the gallery must never run there. */
-const DEVELOPER_PORTS = new Set(['8000', '8001', '8002', '8100', '9999', '3000', '5432', '6379', '9000']);
+const DEVELOPER_PORTS = new Set(['8000', '8001', '8002', '8100', '9999', '3000', '4001', '4002', '5432', '6379', '9000']);
 
 function loopbackOrigin(name: string, value: string | undefined): string {
   if (!value) throw new Error(`${name} is required for the permission gallery`);
@@ -716,6 +718,95 @@ export async function readPageDocument(
   );
 
   return data.collab;
+}
+
+/** The text a page was seeded with (its one line). */
+export function galleryPageText(page: GalleryPage) {
+  return PAGES[page].text;
+}
+
+/** A text of the server's document JSON as plain text: a string, or delta operations. */
+function plainText(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (!Array.isArray(value)) return '';
+  return value.map((op: { insert?: unknown }) => (typeof op?.insert === 'string' ? op.insert : '')).join('');
+}
+
+/** The lines of a page (the texts of its top-level blocks, in order) as the server holds them. */
+export async function readPageLines(config: GalleryConfig, fixture: GalleryFixture, page: GalleryPage) {
+  const collab = (await readPageDocument(config, fixture, PAGES[page].author, page)) as {
+    document?: {
+      page_id: string;
+      blocks: Record<string, { children: string; external_id?: string | null }>;
+      meta: { children_map: Record<string, string[]>; text_map: Record<string, unknown> };
+    };
+  };
+  const document = collab.document;
+
+  if (!document) throw new Error(`${PAGES[page].name}: the server's JSON has no document`);
+  const top = document.meta.children_map[document.blocks[document.page_id]?.children] ?? [];
+
+  return top.map((id) => plainText(document.meta.text_map[document.blocks[id]?.external_id ?? '']));
+}
+
+/**
+ * Put a page back to its seeded text, as its author, through Cloud's web-update API (the update
+ * the Web client sends): every top-level block after the first is deleted with its children and
+ * text, as the app deletes a block, and the first block keeps no children and the seeded text.
+ * The edit history stays. Returns whether anything had to change.
+ */
+export async function restorePageText(config: GalleryConfig, fixture: GalleryFixture, page: GalleryPage) {
+  const api = new GalleryApi(config);
+  const author = fixture.people[PAGES[page].author];
+  const path = `/api/workspace/v1/${fixture.workspaceId}/collab/${fixture.pages[page]}`;
+  const { doc_state: state } = await api.cloud<{ doc_state: number[] }>(author, 'GET', `${path}?collab_type=0`);
+  const doc = new Y.Doc();
+
+  Y.applyUpdate(doc, Uint8Array.from(state));
+  const known = Y.encodeStateVector(doc);
+  const document = doc.getMap('data').get('document') as Y.Map<unknown> | undefined;
+  const blocks = document?.get('blocks') as Y.Map<Y.Map<unknown>> | undefined;
+  const meta = document?.get('meta') as Y.Map<unknown> | undefined;
+  const childrenMap = meta?.get('children_map') as Y.Map<Y.Array<string>> | undefined;
+  const textMap = meta?.get('text_map') as Y.Map<Y.Text> | undefined;
+
+  if (!document || !blocks || !childrenMap || !textMap) throw new Error(`${PAGES[page].name} is not a document`);
+  const childrenOf = (id: string) => childrenMap.get(blocks.get(id)?.get('children') as string);
+  const remove = (id: string) => {
+    childrenOf(id)?.toArray().forEach(remove);
+    const children = blocks.get(id)?.get('children');
+    const textId = blocks.get(id)?.get('external_id');
+
+    if (typeof children === 'string') childrenMap.delete(children);
+    if (typeof textId === 'string') textMap.delete(textId);
+    blocks.delete(id);
+  };
+
+  const top = childrenOf(document.get('page_id') as string);
+  const first = top?.get(0);
+
+  if (!top || !first) throw new Error(`${PAGES[page].name} has no line to keep`);
+  const later = top.toArray().slice(1);
+  const nested = childrenOf(first)?.toArray() ?? [];
+  const text = textMap.get(blocks.get(first)?.get('external_id') as string);
+  const retext = text !== undefined && text.toString() !== PAGES[page].text;
+
+  if (!later.length && !nested.length && !retext) return false;
+  doc.transact(() => {
+    later.forEach(remove);
+    if (later.length) top.delete(1, later.length);
+    nested.forEach(remove);
+    if (nested.length) childrenOf(first)?.delete(0, nested.length);
+    if (text && retext) {
+      text.delete(0, text.length);
+      text.insert(0, PAGES[page].text);
+    }
+  });
+  await api.cloud(author, 'POST', `${path}/web-update`, {
+    doc_state: Array.from(Y.encodeStateAsUpdate(doc, known)),
+    collab_type: 0,
+  });
+  return true;
 }
 
 /** The workspaces `person` belongs to. */

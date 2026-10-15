@@ -2,7 +2,7 @@ import { writeFile } from 'node:fs/promises';
 
 import { Browser, BrowserContext, expect, Page, test, TestInfo } from '@playwright/test';
 
-import { GalleryRealtime, newGalleryContext } from '../../support/permission-gallery-browser';
+import { galleryLaunchOptions, GalleryRealtime, newGalleryContext } from '../../support/permission-gallery-browser';
 import {
   deleteGalleryWorkspace,
   GALLERY_PEOPLE,
@@ -10,12 +10,15 @@ import {
   galleryConfigFromEnv,
   GalleryConfig,
   GalleryFixture,
+  galleryPageText,
   GalleryPerson,
   isOwnSpaceMemberRow,
   listGalleryWorkspaces,
   pageCapability,
   readPageDocument,
+  readPageLines,
   readSpaceAssignments,
+  restorePageText,
   seedPermissionGallery,
   setDirectSpaceMember,
   setSpaceCreationPolicy,
@@ -35,22 +38,19 @@ import {
  *
  * The caption banner and the dot that marks the pointer (headless recordings show no cursor) are
  * drawn by this harness, not by the app: hidden from assistive technology, ignoring the pointer,
- * and with the caption text in CSS generated content, so no locator can match it. Every change a
- * test makes is undone in the same test.
+ * and with the caption text in CSS generated content, so no locator can match it. Each test puts
+ * back, in a `finally`, the settings it changes and the text of any page it edits; a page's edit
+ * history stays (the evidence README explains what that changes for view-group-reads-only).
  */
 const config = process.env.APPFLOWY_PERMISSION_VIDEOS === '1' ? galleryConfigFromEnv() : undefined;
 const SLOW_MO_MS = 200;
 
 // Recording is on in this spec only (the gallery spec and the config keep it off). launchOptions
-// replaces the project's, so the gallery's Chromium and flags are repeated beside slowMo.
+// replaces the project's, so the gallery's Chromium and flags are given again, with slowMo.
 test.use({
   video: { mode: 'on', size: { width: 1280, height: 800 } },
   viewport: { width: 1280, height: 800 },
-  launchOptions: {
-    executablePath: process.env.APPFLOWY_TEST_CHROMIUM_EXECUTABLE,
-    args: ['--no-sandbox', '--disable-dev-shm-usage', '--force-device-scale-factor=1'],
-    slowMo: SLOW_MO_MS,
-  },
+  launchOptions: galleryLaunchOptions({ slowMo: SLOW_MO_MS }),
 });
 
 const CAN_VIEW = 10;
@@ -59,6 +59,8 @@ const WORKSPACE_DENIED = "Your administrator hasn't allowed you to create worksp
 const SPACE_DENIED = "You can't create spaces in this workspace.";
 /** Typed by Sam in V3 and removed again; plain ASCII so it reads the same in the server's JSON. */
 const SAM_SENTENCE = 'Sam added this line through the HR group';
+/** Onboarding checklist's one line, as seeded. */
+const ONBOARDING_TEXT = galleryPageText('onboarding');
 const NEW_WORKSPACE = 'Video demo workspace';
 const NEW_SPACE = 'Marketing';
 
@@ -500,6 +502,8 @@ test.describe('Workspace permission videos', () => {
       const before = await editor.innerText();
 
       await editor.getByText('Welcome aboard!').click();
+      // The pointer dot moves to the margin, so the line stays readable while he types.
+      await page.mouse.move(1110, 360, { steps: 6 });
       await page.keyboard.type('Hello', { delay: 160 });
       await page.waitForTimeout(900);
       await clip.check(page, 'typing changed nothing on screen', async () => {
@@ -532,63 +536,101 @@ test.describe('Workspace permission videos', () => {
   test('edit-group-edits: through the HR group, Sam edits an HR page and the edit is saved', async ({ browser, viewport }, testInfo) => {
     const cfg = config as GalleryConfig;
     const clip = startClip(browser, testInfo, fixture, viewport);
-    const serverText = async () => JSON.stringify(await readPageDocument(cfg, fixture, 'olivia', 'onboarding'));
+    const lines = () => readPageLines(cfg, fixture, 'onboarding');
+    let failed = true;
 
-    await clip.check(null, 'server: Sam can write Onboarding checklist (HR group: Can edit)', () =>
-      expect.poll(async () => (await pageCapability(cfg, fixture, 'sam', 'onboarding'))?.can_write).toBe(true)
-    );
-    await clip.check(null, 'server: Sam is not a direct member of HR', async () =>
-      expect(
-        (await readSpaceAssignments(cfg, fixture, 'HR')).members.some(
-          (member) => member.user_uuid === fixture.people.sam.uuid && isOwnSpaceMemberRow(member)
-        )
-      ).toBe(false)
-    );
-    await clip.check(null, 'server: the document does not contain the sentence yet', async () =>
-      expect(await serverText()).not.toContain(SAM_SENTENCE)
-    );
-    const page = await clip.open('sam', `/app/${fixture.workspaceId}/${fixture.pages.onboarding}`);
-    const editor = page.locator('[data-slate-editor="true"]');
+    try {
+      await clip.check(null, 'server: Sam can write Onboarding checklist (HR group: Can edit)', () =>
+        expect.poll(async () => (await pageCapability(cfg, fixture, 'sam', 'onboarding'))?.can_write).toBe(true)
+      );
+      await clip.check(null, 'server: Sam is not a direct member of HR', async () =>
+        expect(
+          (await readSpaceAssignments(cfg, fixture, 'HR')).members.some(
+            (member) => member.user_uuid === fixture.people.sam.uuid && isOwnSpaceMemberRow(member)
+          )
+        ).toBe(false)
+      );
+      await clip.check(null, 'server: the page holds only its seeded line', async () =>
+        expect(await lines()).toEqual([ONBOARDING_TEXT])
+      );
+      const page = await clip.open('sam', `/app/${fixture.workspaceId}/${fixture.pages.onboarding}`);
+      const editor = page.locator('[data-slate-editor="true"]');
 
-    await waitForApp(page);
-    await clip.check(page, 'the page text is shown', () => expect(editor).toContainText('Welcome aboard'));
-    await clip.check(page, 'the editor is editable (contenteditable is true)', () =>
-      expect(editor).toHaveAttribute('contenteditable', 'true')
-    );
-    await clip.caption(page, 'Sam (member) reaches HR only through the HR group, which can edit');
-    await clip.caption(page, 'He opens Onboarding checklist and adds a sentence');
-    await editor.getByText('Welcome aboard!').click();
-    await page.keyboard.press('End');
-    await page.keyboard.press('Enter');
-    await page.keyboard.type(SAM_SENTENCE, { delay: 70 });
-    await clip.check(page, 'the sentence appears in the page', () => expect(editor).toContainText(SAM_SENTENCE));
-    await clip.check(null, 'server: the document now contains the sentence', () =>
-      expect.poll(serverText, { timeout: 30000 }).toContain(SAM_SENTENCE)
-    );
-    await clip.caption(page, 'The server has it. Sam reloads the page');
-    await page.reload({ waitUntil: 'domcontentloaded' });
-    await waitForApp(page);
-    await clip.check(page, 'after the reload the sentence is still there', () => expect(editor).toContainText(SAM_SENTENCE));
-    await clip.caption(page, 'After the reload the sentence is still there', 2400);
+      await waitForApp(page);
+      await clip.check(page, 'the page text is shown', () => expect(editor).toContainText('Welcome aboard'));
+      await clip.caption(page, 'Sam (member) reaches HR only through the HR group, which can edit');
+      await clip.caption(page, 'He has opened Onboarding checklist in HR');
+      await clip.check(page, 'the editor is editable (contenteditable is true)', () =>
+        expect(editor).toHaveAttribute('contenteditable', 'true')
+      );
+      // What view-group-reads-only finds missing, looked for in the same way (same locators, hovers
+      // and 700 ms pauses): its positive control. Each caption is up before the pointer moves.
+      await clip.check(page, 'the title is editable (title input present)', () =>
+        expect(page.getByTestId('page-title-input')).toBeVisible()
+      );
+      await clip.caption(page, 'Pointing at the title shows Add icon and Add cover', 0);
+      await page.getByTestId('view-meta-hover-area').hover();
+      await page.waitForTimeout(700);
+      await clip.check(page, 'Add icon and Add cover buttons appear over the title', async () => {
+        await expect(page.getByTestId('add-icon-button')).toBeVisible();
+        await expect(page.getByTestId('view-meta-hover-area').getByRole('button', { name: 'Add cover' })).toBeVisible();
+      });
+      await page.waitForTimeout(1800);
+      await clip.caption(page, 'Pointing at the text shows the block handles: the page is editable', 0);
+      await editor.getByText('Welcome aboard!').hover();
+      await page.waitForTimeout(700);
+      await clip.check(page, 'block handles (add and drag) appear beside the text', async () => {
+        await expect(page.getByTestId('hover-controls')).toHaveCSS('opacity', '1');
+        await expect(page.getByTestId('add-block')).toBeVisible();
+        await expect(page.getByTestId('drag-block')).toBeVisible();
+      });
+      await page.waitForTimeout(1800);
+      await clip.caption(page, 'He adds a sentence under the first line');
+      await editor.getByText('Welcome aboard!').click();
+      await page.keyboard.press('End');
+      await page.keyboard.press('Enter');
+      await page.keyboard.type(SAM_SENTENCE, { delay: 70 });
+      await clip.check(page, 'the sentence appears in the page', () => expect(editor).toContainText(SAM_SENTENCE));
+      await clip.check(null, 'server: the sentence is saved as the second line', () =>
+        expect.poll(lines, { timeout: 30000 }).toEqual([ONBOARDING_TEXT, SAM_SENTENCE])
+      );
+      await clip.caption(page, 'The server has it. Sam reloads the page');
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await waitForApp(page);
+      await clip.check(page, 'after the reload the sentence is still there', () => expect(editor).toContainText(SAM_SENTENCE));
+      await clip.caption(page, 'After the reload the sentence is still there', 2400);
 
-    await clip.caption(page, 'Cleanup: Sam deletes the sentence again');
-    await editor.getByText(SAM_SENTENCE).click();
-    await page.keyboard.press('End');
-    await page.waitForTimeout(400);
-    await page.keyboard.press('Shift+Home');
-    await page.waitForTimeout(700);
-    await page.keyboard.press('Backspace');
-    await page.waitForTimeout(500);
-    await page.keyboard.press('Backspace');
-    await clip.check(page, 'the sentence is gone from the page', () => expect(editor).not.toContainText(SAM_SENTENCE));
-    await clip.check(page, 'the original paragraph is unchanged', () =>
-      expect(editor).toContainText('Welcome aboard! Laptop, accounts and a first coffee with your buddy.')
-    );
-    await clip.check(null, 'server: the document no longer contains the sentence', () =>
-      expect.poll(serverText, { timeout: 30000 }).not.toContain(SAM_SENTENCE)
-    );
-    await clip.caption(page, 'The page is back as it was', 2400);
-    await clip.close(page);
+      await clip.caption(page, 'Cleanup: Sam deletes the sentence again');
+      await editor.getByText(SAM_SENTENCE).click();
+      await page.keyboard.press('End');
+      await page.waitForTimeout(400);
+      await page.keyboard.press('Shift+Home');
+      await page.waitForTimeout(700);
+      await page.keyboard.press('Backspace');
+      await page.waitForTimeout(500);
+      await page.keyboard.press('Backspace');
+      await clip.check(page, 'the sentence is gone from the page', () => expect(editor).not.toContainText(SAM_SENTENCE));
+      await clip.check(page, 'the original paragraph is unchanged', () => expect(editor).toContainText(ONBOARDING_TEXT));
+      await clip.check(null, 'server: the page holds only its seeded line again', () =>
+        expect.poll(lines, { timeout: 30000 }).toEqual([ONBOARDING_TEXT])
+      );
+      await clip.caption(page, 'The page is back as it was', 2400);
+      await clip.close(page);
+      failed = false;
+    } finally {
+      // After a failure the page can keep Sam's line, whole or half typed: the windows are closed,
+      // and the owner puts the seeded text back through the API (see restorePageText).
+      await cleanUp(failed, async () => {
+        if (!failed) return;
+        await clip.closeAll();
+        // Leave time for an update sent just before a window closed to reach the server.
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        await restorePageText(cfg, fixture, 'onboarding');
+        await clip.check(null, 'cleanup: the page holds only its seeded line', async () =>
+          expect(await lines()).toEqual([ONBOARDING_TEXT])
+        );
+      });
+    }
   });
 
   test('workspace-creation-control: who may create workspaces', async ({ browser, viewport }, testInfo) => {
