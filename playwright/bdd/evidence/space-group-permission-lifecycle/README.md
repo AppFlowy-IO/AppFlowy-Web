@@ -8,7 +8,9 @@ sign-out question.
 
 **Refreshed on 2026-10-15 on the merged code**: Web `b59969d6` (the integration branch after the
 merge of main) against server `805c9bab0`. Five [videos](#videos) of the permission flows were
-recorded, each a Playwright test whose assertions passed in two consecutive runs. The screenshot
+recorded, each a Playwright test whose assertions passed in two consecutive runs; after a review,
+the reader and editor videos were recorded again with a stricter harness (see
+[Review fixes](#review-fixes-2026-10-15)). The screenshot
 spec ran twice on a freshly seeded stack and 7 of its 8 tests passed: of the 16 earlier images they
 took, 14 came out byte for byte the same, one differs only in the date it shows (replaced) and one
 in 2 pixels by 1 of 255 (kept), and one capture is new (HR's two groups with their levels). The
@@ -33,14 +35,14 @@ were removed. Hashes, viewers, video files and the server state read back after 
 
 | | |
 | --- | --- |
-| Date | Merged-code refresh and videos: 2026-10-15 (UTC). Before: 2026-10-14 (UTC), and the account-only page retaken on 2026-10-15 (UTC) before the merge; each image's date is in the manifest |
-| Web source | Merged-code refresh and videos: app source at `b59969d6` on `oodrive-fix/web-media` (the integration branch `codex/oodrive-permissions-fixes` after the merge of main in `d8cd5643`), with the capture spec, the video spec, the seed and the encoder as committed in `c95f5471` (hashes below), served by the vite dev server. Before the refresh: commit `bcfa8067` on `oodrive-fix/web-visual` (integration branch `codex/oodrive-permissions-fixes` at `b612fb90` plus the UI fixes below and the capture spec), served by the vite dev server. The rerun (the Permissions panel as owner and as member, and the refused Create space) used app source at commit `fde232d7` on `oodrive-fix/web-final` (the integration branch at `31cb5377` plus the four follow-up fixes below) with the capture spec and seed as committed in `3f0ef353` (the commit that also added the retaken images and this record; their hashes are in the manifest, and `fde232d7` alone does not contain them), served the same way. The second rerun (the refused Create space and the account-only page) used commit `8d29f0e3` on `oodrive-fix/web-final` (the above plus the review follow-ups below; app source and harness in that one commit), served the same way. The third rerun (the account-only page) used app source at the integration branch head `ef390b5b` on `oodrive-fix/web-guest-capture`, with the capture spec as committed together with the retaken image and this record, served the same way |
+| Date | Merged-code refresh, videos and review fixes: 2026-10-15 (UTC). Before: 2026-10-14 (UTC), and the account-only page retaken on 2026-10-15 (UTC) before the merge; each image's date is in the manifest |
+| Web source | Merged-code refresh and videos: app source at `b59969d6` on `oodrive-fix/web-media` (the integration branch `codex/oodrive-permissions-fixes` after the merge of main in `d8cd5643`), with the capture spec, the video spec, the seed and the encoder as committed in `c95f5471` (hashes below), served by the vite dev server; the two videos recorded again after the review used the same app source with the harness as committed in `00b73225`. Before the refresh: commit `bcfa8067` on `oodrive-fix/web-visual` (integration branch `codex/oodrive-permissions-fixes` at `b612fb90` plus the UI fixes below and the capture spec), served by the vite dev server. The rerun (the Permissions panel as owner and as member, and the refused Create space) used app source at commit `fde232d7` on `oodrive-fix/web-final` (the integration branch at `31cb5377` plus the four follow-up fixes below) with the capture spec and seed as committed in `3f0ef353` (the commit that also added the retaken images and this record; their hashes are in the manifest, and `fde232d7` alone does not contain them), served the same way. The second rerun (the refused Create space and the account-only page) used commit `8d29f0e3` on `oodrive-fix/web-final` (the above plus the review follow-ups below; app source and harness in that one commit), served the same way. The third rerun (the account-only page) used app source at the integration branch head `ef390b5b` on `oodrive-fix/web-guest-capture`, with the capture spec as committed together with the retaken image and this record, served the same way |
 | Server source | Merged-code refresh and videos: AppFlowy Cloud Premium `codex/oodrive-permissions-fixes` at `805c9bab0` (the server PR head), built from a clean checkout with `cargo build --locked -p appflowy-cloud --bin appflowy_cloud --features commercial-local-test` (self-hosted feature set: three member seats, guests separate, restricted workspace creation; dev profile, rustc 1.98.0), binary sha256 `1e7b8c4c498cf1dcbd1e6418fe535fcd5e14b892747c5b7e31bb1d4f1177c3ff`, run with `APPFLOWY_ACCESS_CONTROL=true`; migration ledger at `20261014060432` (293 rows). Before the refresh: AppFlowy Cloud Premium integration branch `codex/oodrive-permissions-fixes` at `59be2954e`. The binary was built at `540757ea9` with `cargo build --locked --bin appflowy_cloud --features commercial-local-test` (self-hosted feature set: three member seats, guests separate); the three commits since then change only tests and docs. Run with `APPFLOWY_ACCESS_CONTROL=true`. The rerun used the same binary (same hash; the stack's build record notes two uncommitted files at build time) while the branch had moved to `6dc8eec23`, whose only source change since (`b11f93934`, database duplicate authorization) does not touch these screens. The third rerun used the integration branch at `e2a01e66c`, whose invitation list sends the invited role, with the same self-hosted feature set: the `appflowy_cloud` executable of `cargo test --no-run --locked --test main --features commercial-local-test` from the branch's validation run (so test fixtures enabled by its dev-dependencies are compiled in, unused by the server; hash in the manifest). The default-feature build of that commit was started first, but a hosted build refuses the seed's installation policy and cannot restrict workspace creation, so nothing was captured with it |
-| Harness (refresh and videos) | sha256 of the files as run: capture spec `84708e9376e4…`, video spec `3a28950efa2b…`, seed `a5af8041f82f…`, browser helper `2370e34e2888…`, config `3afb9535c456…`, encoder `6c0fbda7ad9f…` (full values in the manifest's `current_capture.harness` and `videos.harness`) |
+| Harness | sha256 of the files as run. Refresh and video runs C and D: capture spec `84708e9376e4…`, video spec `3a28950efa2b…`, seed `a5af8041f82f…`, browser helper `2370e34e2888…`, config `3afb9535c456…`, encoder `6c0fbda7ad9f…`. Review fixes (`00b73225`; gallery run G2, video runs E and F): video spec `025ba9445738…`, seed `52d3587c299e…`, browser helper `7c1363c8c0d2…`, config `78e2a699b706…`; capture spec and encoder unchanged. Full values in the manifest (`current_capture.web.fourth_rerun`, `current_capture.harness`, `videos.harness_runs_c_d`, `videos.harness`) |
 | Stack | Isolated and synthetic: its own GoTrue (`appflowyinc/gotrue_premium:latest`), Redis, PostgreSQL database and MinIO bucket on loopback ports. No other environment, account or data was used. The Worker was not running (no imports or background jobs are shown). |
-| Browser | Chromium 145 (Playwright build 1208, headless, so scrollbars are hidden), device scale 1: screenshots at 1440×900, videos at 1280×800 with Playwright's slowMo of 200 ms. Each person was signed in with a GoTrue password grant stored as the app's session (not through the login screen), except Jordan in the workspace creation video, who signs in on the login screen. Requests to anything but the three stack origins were blocked. |
+| Browser | Chromium 145 (Playwright build 1208, headless, so scrollbars are hidden), device scale 1: screenshots at 1440×900, videos at 1280×800 with Playwright's slowMo of 200 ms. Each person was signed in with a GoTrue password grant stored as the app's session (not through the login screen), except Jordan in the workspace creation video, who signs in on the login screen. Network: for the screenshots and video runs C and D, the app's HTTP requests outside the three stack origins were aborted; its WebSockets and Chromium's own background traffic were not filtered. For the review runs, Chromium could also reach nothing but loopback, and the app's WebSockets outside the stack were closed (see [Review fixes](#review-fixes-2026-10-15)). |
 | Data | Created through the HTTP APIs only (GoTrue admin and Cloud REST) by [the seed](../../../support/permission-gallery-seed.ts). People use `@demo.test` addresses; nothing real is shown. |
-| Permission changes | Screenshots: made by the owner or the operator through the API. Questions opened in the UI were cancelled, lists of people to add were closed, and no setting was saved from the UI (the manifest's read-back shows the policy, the selections, HR's settings and group access unchanged). Videos: Olivia saves two changes from the UI (the Users group's access in HR, who can create spaces) and creates a workspace from the UI; each video's API setup and clean-up are listed with it, and every change is undone and read back in the same test. |
+| Permission changes | Screenshots: made by the owner or the operator through the API. Questions opened in the UI were cancelled, lists of people to add were closed, and no setting was saved from the UI (the manifest's read-back shows the policy, the selections, HR's settings and group access unchanged). Videos: Olivia saves two changes from the UI (the Users group's access in HR, who can create spaces) and creates a workspace from the UI; each video's API setup and clean-up are listed with it, and every setting a test changes and every page text it edits is put back and read back in the same test (a page's edit history is not; see [A view group reads but cannot edit](#a-view-group-reads-but-cannot-edit)). |
 
 Reproduce on an isolated stack (the seed switches the installation's workspace creation policy, so
 it refuses the usual developer ports):
@@ -83,11 +85,18 @@ unless `APPFLOWY_PERMISSION_VIDEOS=1` is set as well.
 
 ## Videos
 
-Recorded on 2026-10-15 on the merged code (Web `b59969d6` with the harness of `c95f5471`, server
-`805c9bab0`) by [permission-videos.capture.spec.ts](../../../e2e/app/permission-videos.capture.spec.ts).
-Each video is one Playwright test on the Demo workspace above, with the same seed, stack and network
-guard as the screenshots. Its assertions passed in two consecutive runs on the same database (runs C
-and D, 5 of 5 each, 04:55–05:01 UTC); the files here are from the second run.
+Recorded on 2026-10-15 on the merged code (Web `b59969d6`, server `805c9bab0`) by
+[permission-videos.capture.spec.ts](../../../e2e/app/permission-videos.capture.spec.ts). Each video
+is one Playwright test on the Demo workspace above, with the same seed and stack as the screenshots.
+Each test's assertions passed in two consecutive runs on the same database:
+
+- **Two groups, two levels**, **Who may create workspaces** and **The owner narrows who can create
+  spaces**: files from run D, with the harness of `c95f5471` (runs C and D, 5 of 5 each,
+  04:55–05:01 UTC). They were not recorded again: what they show did not change, only the network
+  guard did (their tests passed again in runs E and F).
+- **A view group reads but cannot edit** and **An edit group edits**: recorded again after the
+  [review](#review-fixes-2026-10-15), with the harness of `00b73225`: runs E and F, 5 of 5 each,
+  06:58–07:05 UTC, on a stack reset just before gallery run G2; these two files are from run F.
 
 How they were made:
 
@@ -108,8 +117,11 @@ How they were made:
 - MP4: libx264, CRF 28, preset slow, yuv420p, faststart, 1280 wide. GIF preview: 8 fps, 960 wide,
   palettegen `stats_mode=diff`, paletteuse `dither=bayer:bayer_scale=5`. No GIF needed a lower frame
   rate or a speed-up. The MP4 has every frame; the GIF can skip a brief state.
-- Every change a test makes is undone in the same test and read back through the API. The manifest's
-  `videos` section lists each video's checks, captions, windows, cut points and hashes.
+- Each test puts back, in a `finally` (so also after a failure), every setting it changed and the
+  text of any page it edited, and reads them back through the API. A page's edit history is not put
+  back: the editing video's insert and delete stay in Onboarding checklist's history, and that is
+  what makes the next run's reader video show the defect described there. The manifest's `videos`
+  section lists each video's checks, captions, windows, cut points and hashes.
 - A side-by-side of the reader and editor videos was not made: at 1280 pixels wide each window would
   be shown at half size (the app's text about 7 pixels high), and the two tests differ in length.
 
@@ -142,7 +154,8 @@ one reader and one editor), or how a failed save looks (component tests cover fa
 ### A view group reads but cannot edit
 
 [MP4](videos/view-group-reads-only.mp4) · [GIF](videos/view-group-reads-only.gif) ·
-18.8 s · MP4 109,772 bytes (0.11 MB) · GIF 1,253,710 bytes (1.25 MB, 8 fps) · no speed-up · one window (Alex)
+19.1 s · MP4 113,677 bytes (0.11 MB) · GIF 939,288 bytes (0.94 MB, 8 fps) · no speed-up · one window (Alex) ·
+recorded again after the review (run F)
 
 **Setup and clean-up (owner, API):** Alex's own HR membership is removed first, so he reaches HR only
 through the Users group (Can view). Afterwards it is given back at the space default, as seeded, and
@@ -150,7 +163,8 @@ read back.
 
 **Shows:** Alex opens Onboarding checklist in HR. The page reads, but there is no title input, no Add
 icon or cover buttons over the title and no block handles beside the text. He clicks into the text
-and types "Hello", and nothing changes.
+and types "Hello", and nothing changes. Right after the click, the pointer dot (drawn by the harness)
+moves to the right margin, so the line stays readable while he types.
 
 **Also on screen, a defect:** at the bottom right, "Changes to 1 page are waiting for edit access.
 They're saved on this device. Try again once you can edit, or discard them." appears as the page
@@ -160,9 +174,10 @@ the editing test, and the app's sync outbox was read: it held one item for this 
 verification snapshot (`source: manifest`, 22 bytes) that the server had refused because Alex cannot
 edit. Its bytes are a Yjs update with no new content, only the page's record of deleted text (the
 sentence the editing test adds and removes). Holiday policy, whose history has no deletions, gave no
-item and no notice. In run C, where this test ran on a freshly seeded page before the editing test,
-the notice did not appear; in run D, after it, it did. So a reader of any page whose history
-contains deletions is told he has waiting changes when he has none.
+item and no notice. In runs C and E, where this test ran on a freshly seeded page before the
+editing test, the notice did not appear; in runs D and F, after it, it did (this file is from run
+F). So a reader of any page whose history contains deletions is told he has waiting changes when he
+has none.
 
 **Checked** (in this order, each passed):
 
@@ -179,30 +194,50 @@ contains deletions is told he has waiting changes when he has none.
 - teardown: Alex is a direct HR member at the space default again
 - teardown: Alex can write Onboarding checklist again
 
+**Positive control:** the checks that something is missing (title input, Add icon and cover buttons,
+block handles) use the same locators, hovers and 700 ms pauses that find all three for Sam in the
+next video. Each of Sam's checks passed at its first attempt, as soon after its hover as Alex's
+checks ran (0.94 to 0.97 s in run F), so a renamed test id or a hover that reveals nothing would fail
+there.
+
 **Does not prove:** comment access (Users has Can view here), or what Alex sees in other spaces.
 
 ### An edit group edits, and the edit is kept
 
 [MP4](videos/edit-group-edits.mp4) · [GIF](videos/edit-group-edits.gif) ·
-23.5 s · MP4 176,802 bytes (0.18 MB) · GIF 1,445,550 bytes (1.45 MB, 8 fps) · no speed-up · one window (Sam)
+30.7 s · MP4 208,017 bytes (0.21 MB) · GIF 1,410,631 bytes (1.41 MB, 8 fps) · no speed-up · one window (Sam) ·
+recorded again after the review (run F)
 
-**Shows:** Sam, who reaches HR only through the HR group (Can edit), opens Onboarding checklist and
-types a sentence under the first line; after a reload the sentence is still there; he then deletes
-it and the page is as it was.
+**Shows:** Sam, who reaches HR only through the HR group (Can edit), opens Onboarding checklist.
+Pointing at the title brings up Add icon and Add cover, and pointing at the text brings up the block
+handles (add and drag): the controls the reader in the previous video does not get. He types a
+sentence under the first line; after a reload the sentence is still there; he then deletes it and
+the page is as it was.
 
-**Checked** (in this order, each passed):
+**Clean-up:** in the video, Sam deletes his sentence in the UI and the server's copy is read back
+with only the seeded line. After a failure (not in the video), the test's `finally` closes its
+windows and the owner puts the seeded line back through Cloud's web-update API (`restorePageText` in
+the seed deletes the extra blocks the way the app does), then reads the page back. That path was
+tried once outside the recorded runs, with a failure injected after the server had the sentence: the
+original error was reported and the page was back to its seeded line.
+
+**Checked** (in this order, each passed; the server checks compare the page's lines, so a leftover
+empty or half-typed line would fail them too):
 
 - server: Sam can write Onboarding checklist (HR group: Can edit)
 - server: Sam is not a direct member of HR
-- server: the document does not contain the sentence yet
+- server: the page holds only its seeded line
 - the page text is shown
 - the editor is editable (contenteditable is true)
+- the title is editable (title input present)
+- Add icon and Add cover buttons appear over the title
+- block handles (add and drag) appear beside the text
 - the sentence appears in the page
-- server: the document now contains the sentence
+- server: the sentence is saved as the second line
 - after the reload the sentence is still there
 - the sentence is gone from the page
 - the original paragraph is unchanged
-- server: the document no longer contains the sentence
+- server: the page holds only its seeded line again
 
 **Does not prove:** editing by two people at once, offline editing, or that the reload read the
 server rather than the browser's copy (the API read is what shows that the server has the sentence).
@@ -535,6 +570,63 @@ before, and 7 of its 8 tests passed both times.
   spaces with Can view; HR is Custom with members at Can edit by default, the HR group at Can edit and
   Users at Can view; Jordan has no workspace and one pending Guest invitation to Demo.
 
+## Review fixes (2026-10-15)
+
+An independent review of the videos and screenshots found six points. All were fixed in `00b73225`
+(harness) and this record; the two videos they affect were recorded again.
+
+- **The editing video did not clean up after a failure.** `edit-group-edits` had no `finally`: if it
+  failed after Sam typed, his sentence stayed in Onboarding checklist, the next run failed its first
+  check and gallery captures of that page would show it until the stack was reset. It now runs in
+  `try`/`finally` like the other four; see its clean-up above. Its server checks compare the page's
+  lines instead of searching for the sentence.
+- **"Every change a test makes is undone" was not true of the edit history.** Settings and page
+  text are put back; a page's edit history is not, and Sam's insert and delete are what make a later
+  reader run show the waiting-changes notice. This record, the spec and the manifest now say so.
+- **The network guard covered only the app's HTTP requests.** During a re-run the reviewer saw the
+  test browser connect to Google (ports 443 and 5228), and the same Chromium on a blank page did the
+  same: Chromium's own background traffic. WebSockets were not filtered either (the live-connection
+  relay connected any URL). Now Chromium starts with `--proxy-server=http://127.0.0.1:9`, a closed
+  port that only root could open (Chromium never proxies loopback, so the stack is reached directly);
+  the app's WebSockets outside the three stack origins are closed before they connect; and the relay
+  only takes the Cloud socket. Both WebSocket rules are URL patterns, so other sockets connect
+  directly instead of being relayed through the test process. Checked: the same Chromium on a blank
+  page for 30 s connected to five Google addresses without the flag and to nothing with it (a fetch of
+  example.com failed, one of the stack's Cloud succeeded); a scratch test's loopback server on a
+  port outside the stack received a request and a WebSocket upgrade from a plain browser context and
+  nothing from guarded or relayed ones; and sampling the sockets of the whole Playwright process tree
+  every 0.2 s during runs G2, E and F found only loopback peers (in run F, Chromium reached ports
+  34210, 34211 and 34230, GoTrue, Cloud and Vite, and the test process 34210 and 34211, all on
+  127.0.0.1).
+- **The seed's list of developer ports lacked 4001 and 4002.** They are refused now.
+- **The read-only checks had no positive control.** The reader video proves read-only access partly
+  by absence (no title input, no Add icon or cover buttons, no block handles). The editing video now
+  finds all three for Sam with the same locators, hovers and pauses.
+- **The pointer dot covered the line in the reader video** while Alex typed and while "Nothing
+  changed" was shown. It now moves to the right margin right after the click.
+
+Runs, all with Web `b59969d6`, the harness of `00b73225` and server `805c9bab0`, on a stack reset
+just before the first (one Playwright run at a time):
+
+- **G2**, the screenshot spec, with its images written to a scratch folder only (06:54–06:55 UTC):
+  7 of 8 passed. As in the refresh, only the owner's Permissions test failed, at the same check (the
+  selected members and groups never load). Of the 17 images the other seven took, 16 came out byte
+  for byte the same as the committed ones, and `sign-out-remove-data.png` differs in 2 pixels at the
+  sidebar edge by 1 of 255 (the noise seen before), so no image was replaced. Two earlier
+  validation runs, made while a CI virtual machine was using most of the host's 20 cores (load
+  average about 18 when measured), failed four tests at their first workspace-menu click: in the
+  failure snapshots the page title had taken focus (it focuses itself when it mounts) and the menu
+  was gone. The harness from before these fixes failed two of them the same way under that load, so
+  this is a timing weakness of the screenshot spec, not of the fixes; G2 ran at normal load.
+- **E**, the five videos (06:58–07:01 UTC): 5 of 5 passed. The reader saw no notice (no editing
+  test had run on the fresh seed).
+- **F**, the five videos again on the same database (07:02–07:05 UTC): 5 of 5 passed, and the reader
+  saw the notice after run E's editing test. The reader and editor videos here are encoded from this
+  run with the committed encoder; the other three are still the files of run D.
+
+The screenshots were not retaken: the guard decides what may be loaded, not what is drawn, and the
+validation run's images are compared in the manifest (`current_capture.web.review_validation`).
+
 ## Follow-up fixes after the Desktop design review (captured in the rerun)
 
 Made test-first on `oodrive-fix/web-final` so Web says and does the same as Desktop:
@@ -696,6 +788,11 @@ Native selects, radio buttons, Save buttons and internal wording that the redesi
   under [Videos](#videos), with no other cut. The GIFs are 8 fps previews; the MP4s have every frame.
 - The six images of the owner's Permissions test show the panel before the merge of main: that test
   fails on the merged code against server `805c9bab0` (defect 1 above).
+- The screenshots and the three videos from run D were made with the earlier network guard: the
+  app's HTTP requests outside the stack were aborted, but its WebSockets and Chromium's own
+  background traffic were not filtered (in a later re-run with that guard, Chromium was seen
+  connecting to Google; no other service was contacted). Only the two videos recorded again after
+  the review, and gallery run G2, ran with the stricter guard.
 - Running the capture spec again on the same source gives the same screens, but not always the same
   bytes: a few pixels can differ where the pointer happens to rest or in the anti-aliasing of text
   and icons. A hash that differs from the manifest therefore means a fresh capture, not a hand edit
