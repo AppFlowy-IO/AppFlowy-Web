@@ -3,7 +3,7 @@
   "updated": "2026-10-15",
   "current_capture": {
     "date": "2026-10-14",
-    "status": "passed; 7 of 7 capture tests in the first run (06:44 UTC); 3 of 3 in the rerun (10:55 UTC) of the tests whose screens changed, with the spec now at 8 tests; 2 of 2 in a second rerun (11:28 UTC) after the review of those fixes, both images byte-identical to the committed ones (nothing changed on screen); 1 of 1 in a third rerun (2026-10-15, 00:37 UTC) of the account-only page against a server that sends the invited role, whose image now shows \"Invited as a guest\"",
+    "status": "passed; 7 of 7 capture tests in the first run (06:44 UTC); 3 of 3 in the rerun (10:55 UTC) of the tests whose screens changed, with the spec now at 8 tests; 2 of 2 in a second rerun (11:28 UTC) after the review of those fixes, both images byte-identical to the committed ones (nothing changed on screen); 1 of 1 in a third rerun (2026-10-15, 00:37 UTC) of the account-only page against a server that sends the invited role, whose image now shows \"Invited as a guest\"; merged-code refresh (2026-10-15, Web b59969d6, server 805c9bab0): 7 of 8 in each of two runs (04:49 and 05:02 UTC) on a freshly seeded stack. The owner's Permissions test failed both times at its first check because the selected members and groups cannot load (the merged client adds server_restore_id to every request and the server's space creators list refuses unknown query fields), so its 6 images were not retaken; of the 16 earlier images of the other 7 tests, 14 came out byte for byte the same, 1 was retaken (only the date it shows changed) and 1 kept (2 pixels differing by 1 of 255); 1 capture was added. Five videos were recorded (see videos).",
     "kind": "fresh connected UI captures on an isolated synthetic stack",
     "web": {
       "branch": "oodrive-fix/web-visual",
@@ -130,7 +130,122 @@
         "captures_added": [],
         "spec_change": "The account-only test requires role \"Guest\" on the invitation it reads back and a visible \"Invited as a guest\"; the branch that annotated a run without the role as \"waits for the server\" is removed. The seed already invited Jordan as a guest (and Alex and Sam as members), so it is unchanged.",
         "server_contract": "GET /api/workspace/invite?status=Pending: each AFWorkspaceInvitation carries `role`, the invitation's AFRole by variant name (\"Owner\" | \"Member\" | \"Guest\", as AFWorkspaceMember.role is sent). The page adds \"Invited as a guest\" only for \"Guest\"; no field, or any other value, adds nothing.",
-        "note": "The only change on screen is the guest line under \"Invited by Olivia Martin\"; the taller row moves the centred content up 8 px. This resolves the former waiting_on_server entry (Web a8a269d1)."
+        "note": "The only change on screen is the guest line under \"Invited by Olivia Martin\"; the taller row moves the centred content up 8 px. This resolves the former waiting_on_server entry (Web a8a269d1).",
+        "harness_at_third_rerun": {
+          "playwright/e2e/app/permission-gallery.capture.spec.ts": "412288242bb06ef0a9cc7bd52c8a5c253beb9df63ea23112abd7c13b306f9500",
+          "playwright/support/permission-gallery-seed.ts": "f91c75eab139956f40c22446f80a1e88777144cbc979651613e566ec7a3562ec",
+          "playwright.permission-gallery.config.ts": "fe52e98904cb7820e3eaaf5ab8b35148bd98b4352cf61b9bbc673d696beec66a"
+        },
+        "harness_note": "The capture spec, seed and config as they were for the third rerun (they were the top-level harness until the merged-code refresh)."
+      },
+      "fourth_rerun": {
+        "label": "merged-code refresh",
+        "date": "2026-10-15",
+        "time_utc": "04:49-04:50 (run 1) and 05:02-05:04 (run 2)",
+        "branch": "oodrive-fix/web-media",
+        "source_commit": "b59969d69737f8e71bbb6c76aab89264a2d73a24",
+        "harness_commit": "c95f5471bee0c1a8f578216e661cd04e0cffd43d",
+        "provenance": "App source at source_commit, the integration branch head after the merge of main (d8cd5643); capture spec, seed, browser helper and config as committed in harness_commit (hashes under harness_at_fourth_rerun, the same files as harness). The stack was reset (stop.sh --purge; start.sh) before each run, so the seed built Demo afresh.",
+        "harness_at_fourth_rerun": {
+          "playwright/e2e/app/permission-gallery.capture.spec.ts": "84708e9376e445471f325ffa3eaab787fc63874d30510f504fa9a70883d6723c",
+          "playwright/support/permission-gallery-seed.ts": "a5af8041f82fde462aed1f218d2abcd3d87127b471585a615508895ffebc21be",
+          "playwright/support/permission-gallery-browser.ts": "2370e34e28889f8e8120a8eeab8395bfc042e86a96a8efbddf0cff4a352fd600",
+          "playwright.permission-gallery.config.ts": "3afb9535c4567379daf6ad786af8ab2f23243a357c4d2441c24182f27b886294"
+        },
+        "base": "codex/oodrive-permissions-fixes at b59969d6",
+        "served_by": "vite dev server (loopback)",
+        "runs": [
+          {
+            "run": 1,
+            "started_utc": "2026-10-15T04:49:10Z",
+            "ended_utc": "2026-10-15T04:50:21Z",
+            "result": "7 passed, 1 failed (1.2m)",
+            "images_dir": "scratch only"
+          },
+          {
+            "run": 2,
+            "started_utc": "2026-10-15T05:02:48Z",
+            "ended_utc": "2026-10-15T05:04:01Z",
+            "result": "7 passed, 1 failed (1.2m)",
+            "images_taken_from_this_run": true
+          }
+        ],
+        "failed_test": {
+          "name": "owner: Permissions panel, narrowing question and Access to all spaces summary",
+          "check": "getByTestId('space-creator-row-user-<alex uuid>') to be visible (30 s)",
+          "cause": "Web 20331871 (\"fix: reload web caches after a full server restore (#630)\", from main) adds server_restore_id to every Cloud API request. Server 805c9bab0 has no such parameter and SpaceCreatorPageQuery (libs/appflowy-entity/src/database/dto.rs) has #[serde(deny_unknown_fields)], so GET /api/workspace/{id}/space-creators?server_restore_id=...&kind=user&limit=200 answers 400 \"Query deserialize error: unknown field `server_restore_id`, expected one of `kind`, `after`, `limit`\". The panel shows \"We couldn't load the selected members and groups.\" with Retry.",
+          "images_not_retaken": [
+            "permissions-owner-selected-members.png",
+            "permissions-add-members-suggestions.png",
+            "permissions-narrowing-confirmation.png",
+            "permissions-access-to-all-spaces-summary.png",
+            "group-dialog-access-to-all-spaces-menu.png",
+            "group-access-to-all-spaces-confirmation.png"
+          ],
+          "status": "not fixed here (reported)"
+        },
+        "tests_run": [
+          "owner: Permissions panel, narrowing question and Access to all spaces summary (failed)",
+          "member: Permissions panel is read-only",
+          "owner: Manage Space members and page setting in a Custom space, then Create Space",
+          "member: Create space refused after the owner narrows who can create spaces",
+          "member: workspace menu with Create workspace unavailable",
+          "account without a workspace sees its pending invitation",
+          "open page loses and regains access when its group grant changes",
+          "sign-out question offers to remove this account’s data"
+        ],
+        "comparison": "Every new PNG against the committed one: byte identity, then a pixel difference (PIL ImageChops) with the count of differing pixels, the largest channel difference and the bounding box; both runs gave the same result.",
+        "captures_retaken_identical": [
+          "account-only-pending-invitation.png",
+          "create-space-denied.png",
+          "create-space-page-setting.png",
+          "create-space.png",
+          "manage-space-add-suggestions.png",
+          "manage-space-general-page-setting.png",
+          "manage-space-members-access-explanation.png",
+          "manage-space-members-access-menu.png",
+          "manage-space-own-access-explanation.png",
+          "manage-space-own-access-hint.png",
+          "manage-space-type-change-confirmation.png",
+          "page-access-restored-after-regrant.png",
+          "page-no-access-after-group-removed.png",
+          "workspace-menu-create-workspace-denied.png"
+        ],
+        "captures_retaken_changed": [
+          "sign-out-remove-data.png"
+        ],
+        "captures_kept_noise": [
+          "permissions-member-read-only.png"
+        ],
+        "captures_added": [
+          "manage-space-groups-view-and-edit.png"
+        ],
+        "differences": {
+          "sign-out-remove-data.png": {
+            "kind": "data difference",
+            "pixels_changed": 64,
+            "bbox": [
+              453,
+              294,
+              461,
+              304
+            ],
+            "note": "Only the date in the Date & Time preview behind the question: 10/14/2026 in the committed image, 10/15/2026 (the day of the run). In run 1 two more pixels at the sidebar edge differed too (noise); the image is from run 2."
+          },
+          "permissions-member-read-only.png": {
+            "kind": "noise",
+            "pixels_changed": 2,
+            "max_channel_diff": 1,
+            "bbox": [
+              14,
+              164,
+              15,
+              194
+            ],
+            "note": "Two pixels at the sidebar edge differ by 1 of 255 in both runs; not visible, kept."
+          }
+        },
+        "note": "None of the screens of the seven passing tests changed with the merge of main. The seed fix in harness_commit (removing a person's own space membership now matches the sources this server sends) changes nothing on a fresh seed: Sam has no such row to remove."
       }
     },
     "server": {
@@ -174,6 +289,29 @@
         },
         "migration_ledger_max_version": 20261014060432,
         "migration_note": "SELECT max(version) FROM _sqlx_migrations after start: 20261014060432 (permission_topology_trash_membership, applied when the default-feature build of the same commit started first)."
+      },
+      "fourth_rerun": {
+        "date": "2026-10-15",
+        "branch": "codex/oodrive-permissions-fixes",
+        "commit": "805c9bab058231dbdf59c5dc2124e59d0aa35ddd",
+        "build": "cargo build --locked -p appflowy-cloud --bin appflowy_cloud --features commercial-local-test",
+        "features": [
+          "commercial-local-test",
+          "self-host-af"
+        ],
+        "profile": "dev (line-tables debug info)",
+        "toolchain": "rustc 1.98.0 (88d9e12ae 2026-08-18), rust-toolchain.toml pin",
+        "binary_sha256": "1e7b8c4c498cf1dcbd1e6418fe535fcd5e14b892747c5b7e31bb1d4f1177c3ff",
+        "binary_bytes": 981896496,
+        "binary_note": "Built from a clean checkout of 805c9bab0 (git status empty before and after) in a fresh target directory without sccache; the build record is kept with the binary.",
+        "settings": {
+          "APPFLOWY_ACCESS_CONTROL": "true",
+          "RUST_MIN_STACK": "16777216",
+          "self_hosted": true,
+          "member_seats": 3
+        },
+        "migration_ledger_max_version": 20261014060432,
+        "migration_rows": 293
       }
     },
     "stack": "isolated loopback stack with its own GoTrue, Redis, PostgreSQL database and MinIO bucket; synthetic @demo.test people; no other environment or data",
@@ -186,9 +324,10 @@
     },
     "permission_changes": "API only: the seed (GoTrue admin and Cloud REST, operator for the installation policy) and owner calls removing/restoring the HR group in the HR space; UI questions were opened and cancelled and the add lists were closed; nothing was saved from the UI (see server_readback_after_capture)",
     "harness": {
-      "playwright/e2e/app/permission-gallery.capture.spec.ts": "412288242bb06ef0a9cc7bd52c8a5c253beb9df63ea23112abd7c13b306f9500",
-      "playwright/support/permission-gallery-seed.ts": "f91c75eab139956f40c22446f80a1e88777144cbc979651613e566ec7a3562ec",
-      "playwright.permission-gallery.config.ts": "fe52e98904cb7820e3eaaf5ab8b35148bd98b4352cf61b9bbc673d696beec66a"
+      "playwright/e2e/app/permission-gallery.capture.spec.ts": "84708e9376e445471f325ffa3eaab787fc63874d30510f504fa9a70883d6723c",
+      "playwright/support/permission-gallery-seed.ts": "a5af8041f82fde462aed1f218d2abcd3d87127b471585a615508895ffebc21be",
+      "playwright/support/permission-gallery-browser.ts": "2370e34e28889f8e8120a8eeab8395bfc042e86a96a8efbddf0cff4a352fd600",
+      "playwright.permission-gallery.config.ts": "3afb9535c4567379daf6ad786af8ab2f23243a357c4d2441c24182f27b886294"
     },
     "server_readback_after_capture": {
       "installation_policy": {
@@ -371,6 +510,125 @@
           ]
         ],
         "note": "Read after the third rerun through the stack APIs (password grants on its GoTrue): Jordan's pending invitation now carries role \"Guest\" among its fields, Jordan has no workspace and may not create one, and Demo's roster keeps Alex and Sam as Members (Jordan is listed as a pending Guest)."
+      },
+      "fourth_rerun": {
+        "read_at": "after the second gallery run of the merged-code refresh (05:04 UTC)",
+        "installation_policy": {
+          "mode": "selected_users",
+          "revision": "2",
+          "supported": true
+        },
+        "workspace_creation": {
+          "alex": false,
+          "jordan": false,
+          "olivia": true,
+          "sam": false
+        },
+        "space_creation": {
+          "alex": {
+            "policy": "owners_and_selected_members",
+            "can_create_space": true,
+            "can_manage_space_creators": false
+          },
+          "olivia": {
+            "policy": "owners_and_selected_members",
+            "can_create_space": true,
+            "can_manage_space_creators": true
+          },
+          "sam": {
+            "policy": "owners_and_selected_members",
+            "can_create_space": false,
+            "can_manage_space_creators": false
+          }
+        },
+        "space_creator_selections": {
+          "group": [
+            [
+              "Super_Users",
+              "group",
+              null,
+              true
+            ]
+          ],
+          "user": [
+            [
+              "Alex Dupont",
+              "user",
+              null,
+              true
+            ]
+          ]
+        },
+        "coverage": {
+          "HR": null,
+          "Product": null,
+          "Super_Users": null,
+          "Users": 10
+        },
+        "hr_space": {
+          "everyone_else_access_level": null,
+          "member_default_access_level": 30,
+          "sidebar_edit_policy": "owners_only",
+          "visibility": "custom"
+        },
+        "hr_members": [
+          {
+            "access_level_override": null,
+            "effective_access_level": 50,
+            "name": "Olivia Martin",
+            "role": "owner",
+            "source": "creator"
+          },
+          {
+            "access_level_override": null,
+            "effective_access_level": 30,
+            "name": "Alex Dupont",
+            "role": "member",
+            "source": "manual"
+          }
+        ],
+        "hr_groups": [
+          {
+            "access_level_override": 30,
+            "effective_access_level": 30,
+            "name": "HR"
+          },
+          {
+            "access_level_override": 10,
+            "effective_access_level": 10,
+            "name": "Users"
+          }
+        ],
+        "onboarding": {
+          "alex": {
+            "access_level": 30,
+            "can_read": true,
+            "can_write": true
+          },
+          "sam": {
+            "access_level": 30,
+            "can_read": true,
+            "can_write": true
+          }
+        },
+        "spaces": [
+          "General",
+          "HR",
+          "Leadership",
+          "Product"
+        ],
+        "olivia_workspaces": [
+          "Demo"
+        ],
+        "jordan_workspaces": [],
+        "jordan_pending": [
+          {
+            "role": "Guest",
+            "status": "Pending",
+            "workspace_name": "Demo"
+          }
+        ],
+        "note": "Read through the stack APIs (password grants on its GoTrue; the selections with kind=user and kind=group and no server_restore_id). The seeded state: only selected users may create workspaces (Olivia); owners and selected members (Alex, Super_Users) may create spaces; Users covers all spaces with Can view; HR is Custom with the HR group at Can edit and Users at Can view; Jordan has no workspace and one pending Guest invitation."
       }
     },
     "captures": [
@@ -385,7 +643,8 @@
         ],
         "does_not_prove": "Does not prove that the selections can create spaces (see server_readback).",
         "sha256": "0ce2abbe5d6079308dc8b59bfef8551ef567719d6f7fa8494293d6048b70f2cb",
-        "captured_at": "2026-10-14T10:55:33.879Z"
+        "captured_at": "2026-10-14T10:55:33.879Z",
+        "merged_code_rerun": "not retaken: on 2026-10-15 this test failed at its first check (the selected members and groups do not load on the merged code); the image shows the panel before the merge"
       },
       {
         "file": "permissions-add-members-suggestions.png",
@@ -399,7 +658,8 @@
         ],
         "does_not_prove": "Nothing was added.",
         "sha256": "13318e33ad7cfecd84357b491ab0f146215eeb0fa030c01bcf6e78c06dabbedb",
-        "captured_at": "2026-10-14T10:55:34.508Z"
+        "captured_at": "2026-10-14T10:55:34.508Z",
+        "merged_code_rerun": "not retaken: on 2026-10-15 this test failed at its first check (the selected members and groups do not load on the merged code); the image shows the panel before the merge"
       },
       {
         "file": "permissions-narrowing-confirmation.png",
@@ -411,7 +671,8 @@
         ],
         "does_not_prove": "Does not prove what saving would do. Retaken in the rerun: only the rounded corner's background differs.",
         "sha256": "c728954486547aca7a6800a6d5a00ea772b0080de067ed339772b3a17708f339",
-        "captured_at": "2026-10-14T10:55:35.196Z"
+        "captured_at": "2026-10-14T10:55:35.196Z",
+        "merged_code_rerun": "not retaken: on 2026-10-15 this test failed at its first check (the selected members and groups do not load on the merged code); the image shows the panel before the merge"
       },
       {
         "file": "permissions-access-to-all-spaces-summary.png",
@@ -425,7 +686,8 @@
         ],
         "does_not_prove": "Read-only summary; does not show coverage applied to a space.",
         "sha256": "a21e2a0144016173e4e27183cb7449cb6c228d3b24ea5ece6d59db29ca54e3d2",
-        "captured_at": "2026-10-14T10:55:35.883Z"
+        "captured_at": "2026-10-14T10:55:35.883Z",
+        "merged_code_rerun": "not retaken: on 2026-10-15 this test failed at its first check (the selected members and groups do not load on the merged code); the image shows the panel before the merge"
       },
       {
         "file": "permissions-member-read-only.png",
@@ -437,7 +699,8 @@
         ],
         "does_not_prove": "Does not prove the server refuses Sam's create request.",
         "sha256": "ab609220823ff32c4e764397faaa8bbee93dee53d1d47971322ad04725a48614",
-        "captured_at": "2026-10-14T10:55:41.041Z"
+        "captured_at": "2026-10-14T10:55:41.041Z",
+        "merged_code_rerun": "kept: on 2026-10-15 the merged code gave the same screen with 2 pixels at the sidebar edge 1 of 255 off"
       },
       {
         "file": "group-dialog-access-to-all-spaces-menu.png",
@@ -449,7 +712,8 @@
         ],
         "does_not_prove": "No change saved; the open menu covers part of the description.",
         "sha256": "0f8b82239c0783e9378cfde0ded4d2cf795b59bd7da47028c71996d7b42fe10c",
-        "captured_at": "2026-10-14T10:55:36.941Z"
+        "captured_at": "2026-10-14T10:55:36.941Z",
+        "merged_code_rerun": "not retaken: on 2026-10-15 this test failed at its first check (the selected members and groups do not load on the merged code); the image shows the panel before the merge"
       },
       {
         "file": "group-access-to-all-spaces-confirmation.png",
@@ -461,7 +725,8 @@
         ],
         "does_not_prove": "Does not prove what saving would do.",
         "sha256": "d6d5beb22fe4225c0fb8230175c3c986d54931b73306e7800b0ff8ed65abd300",
-        "captured_at": "2026-10-14T10:55:37.628Z"
+        "captured_at": "2026-10-14T10:55:37.628Z",
+        "merged_code_rerun": "not retaken: on 2026-10-15 this test failed at its first check (the selected members and groups do not load on the merged code); the image shows the panel before the merge"
       },
       {
         "file": "manage-space-general-page-setting.png",
@@ -475,7 +740,8 @@
         ],
         "does_not_prove": "Does not prove that members are refused when adding pages.",
         "sha256": "8619dbf42dd1a2b426073d3ba791cff13290668f46a0fea5851c3124438582cc",
-        "captured_at": "2026-10-14T06:44:26.550Z"
+        "captured_at": "2026-10-14T06:44:26.550Z",
+        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)"
       },
       {
         "file": "manage-space-type-change-confirmation.png",
@@ -488,7 +754,23 @@
         ],
         "does_not_prove": "Does not prove what saving would do.",
         "sha256": "93d4a67cea2184b9c18eca05a611dd3f2d95148f1178743d3e7efa8c092f8eef",
-        "captured_at": "2026-10-14T06:44:27.202Z"
+        "captured_at": "2026-10-14T06:44:27.202Z",
+        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)"
+      },
+      {
+        "file": "manage-space-groups-view-and-edit.png",
+        "viewer": "olivia",
+        "crop": "viewport",
+        "shows": "Manage space · HR > Members with no menu or tooltip open: Olivia (space owner, Full access), Alex (Can edit · default), the HR group with Can edit and the Users group with Can view",
+        "asserted_by_spec": [
+          "HR group row reads \"Can edit\"",
+          "Users group row reads \"Can view\"",
+          "no menu and no tooltip open"
+        ],
+        "does_not_prove": "What members of the two groups can do in HR's pages; the videos view-group-reads-only and edit-group-edits show one reader and one editor.",
+        "sha256": "f33577b2e52bcab5db0f531a6e715a74ef852a17edba63c3228e5db7342376b6",
+        "captured_at": "2026-10-15T05:03:37.908Z",
+        "added": "merged-code refresh 2026-10-15 (Web b59969d6, server 805c9bab0)"
       },
       {
         "file": "manage-space-members-access-menu.png",
@@ -501,7 +783,8 @@
         ],
         "does_not_prove": "Does not prove that a chosen level saves.",
         "sha256": "4b034f860bfabcd0af28729beff52ec1f9cdb8d44a5efd19ea77e5bffa74ade7",
-        "captured_at": "2026-10-14T06:44:27.979Z"
+        "captured_at": "2026-10-14T06:44:27.979Z",
+        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)"
       },
       {
         "file": "manage-space-members-access-explanation.png",
@@ -513,7 +796,8 @@
         ],
         "does_not_prove": "Picture only.",
         "sha256": "723d42c6c520e103e28cfbc9313712169a7176f85cd1275f6caf4785ca1c9d47",
-        "captured_at": "2026-10-14T06:44:28.642Z"
+        "captured_at": "2026-10-14T06:44:28.642Z",
+        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)"
       },
       {
         "file": "manage-space-add-suggestions.png",
@@ -526,7 +810,8 @@
         ],
         "does_not_prove": "Nothing was added.",
         "sha256": "dd2a0eb41015d38838279d80c9185580dac51dfb70d14af29799752f5340654c",
-        "captured_at": "2026-10-14T06:44:29.451Z"
+        "captured_at": "2026-10-14T06:44:29.451Z",
+        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)"
       },
       {
         "file": "manage-space-own-access-hint.png",
@@ -539,7 +824,8 @@
         ],
         "does_not_prove": "Server reported Olivia's access as Can edit through a group; no change saved.",
         "sha256": "0fd38917cac8b9342ea9c96f3976c3a1734e8232118f7a467a7518445612c26d",
-        "captured_at": "2026-10-14T06:44:30.785Z"
+        "captured_at": "2026-10-14T06:44:30.785Z",
+        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)"
       },
       {
         "file": "manage-space-own-access-explanation.png",
@@ -552,7 +838,8 @@
         ],
         "does_not_prove": "No change saved.",
         "sha256": "f0f5585dcb0e248073a03f3f23183ac8ddd7e585c001b5792b355761aa80afe5",
-        "captured_at": "2026-10-14T06:44:31.471Z"
+        "captured_at": "2026-10-14T06:44:31.471Z",
+        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)"
       },
       {
         "file": "create-space.png",
@@ -565,7 +852,8 @@
         ],
         "does_not_prove": "No space was created.",
         "sha256": "c09baabbc42774ce11ceeb3460f236069c3e673aee795a7204bdb002219904dc",
-        "captured_at": "2026-10-14T06:44:32.381Z"
+        "captured_at": "2026-10-14T06:44:32.381Z",
+        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)"
       },
       {
         "file": "create-space-page-setting.png",
@@ -578,7 +866,8 @@
         ],
         "does_not_prove": "No space was created.",
         "sha256": "53975a683288c062f389d363bb5946ea724285beddd78a4a824f8ae55e70feac",
-        "captured_at": "2026-10-14T06:44:32.971Z"
+        "captured_at": "2026-10-14T06:44:32.971Z",
+        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)"
       },
       {
         "file": "create-space-denied.png",
@@ -599,7 +888,8 @@
         "does_not_prove": "The live hint was held back by the capture (relayed connection); when it arrives in time the dialog disables Create with the same message instead (component tests). Permission changes were made through the API.",
         "sha256": "f542929ae0e48d34dc5e4f55714af35d8cfa3b0e85382676521668b0e16c5f6c",
         "captured_at": "2026-10-14T10:55:44.312Z",
-        "reproduced": "second rerun 2026-10-14T11:28:50.561Z: byte-identical (same sha256)"
+        "reproduced": "second rerun 2026-10-14T11:28:50.561Z: byte-identical (same sha256)",
+        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)"
       },
       {
         "file": "workspace-menu-create-workspace-denied.png",
@@ -612,7 +902,8 @@
         ],
         "does_not_prove": "Does not prove the server refuses a creation request.",
         "sha256": "4375f5925b031c32639cb17ccdbbc06e2bb056e3b7e53146ced001887df0a22f",
-        "captured_at": "2026-10-14T06:44:36.131Z"
+        "captured_at": "2026-10-14T06:44:36.131Z",
+        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)"
       },
       {
         "file": "account-only-pending-invitation.png",
@@ -629,7 +920,8 @@
         "sha256": "21696b73c4c6b7321665f2fe646924e57614f1d9f2b764ae79ca0b140107be4e",
         "captured_at": "2026-10-15T00:37:36.243Z",
         "retaken": "third rerun 2026-10-15 against server e2a01e66c, which sends the invited role; the replaced image (replaced_sha256, captured 2026-10-14T06:44:38.959Z and reproduced byte for byte in the second rerun) had no guest line",
-        "replaced_sha256": "9f86204efa35b3092609f524b4a45f904beacb1969516de65f3cb4bff8172b35"
+        "replaced_sha256": "9f86204efa35b3092609f524b4a45f904beacb1969516de65f3cb4bff8172b35",
+        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)"
       },
       {
         "file": "page-no-access-after-group-removed.png",
@@ -644,7 +936,8 @@
         ],
         "does_not_prove": "Server change made through the API, not the UI.",
         "sha256": "54ede17c8d27e35d5ca0b84b091e3320659508628cf65d46c8a860aa2f45ec8f",
-        "captured_at": "2026-10-14T06:44:42.000Z"
+        "captured_at": "2026-10-14T06:44:42.000Z",
+        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)"
       },
       {
         "file": "page-access-restored-after-regrant.png",
@@ -659,7 +952,8 @@
         ],
         "does_not_prove": "No edit was typed or saved.",
         "sha256": "29f521138c3f54387eadbded7c3ef6a51928ef2012acaf85eaca454efcd4613b",
-        "captured_at": "2026-10-14T06:44:42.973Z"
+        "captured_at": "2026-10-14T06:44:42.973Z",
+        "merged_code_rerun": "reproduced byte for byte on 2026-10-15 (Web b59969d6, server 805c9bab0)"
       },
       {
         "file": "sign-out-remove-data.png",
@@ -671,8 +965,10 @@
           "\"Sign out\" button visible"
         ],
         "does_not_prove": "Nobody signed out; does not prove what is removed.",
-        "sha256": "7f451a524dda3cc3c2546bfc85daf299d708a69ed3d369a1e22c11f792fac857",
-        "captured_at": "2026-10-14T06:44:46.326Z"
+        "sha256": "182decfb43be8a746be835566dc6aedbdb23b4828d1c8f9738b21da1bea1892f",
+        "captured_at": "2026-10-15T05:04:01.214Z",
+        "retaken": "merged-code refresh 2026-10-15 (Web b59969d6, server 805c9bab0): the same screen; only the date in the Date & Time preview changed (10/15/2026). The replaced image (replaced_sha256) was captured 2026-10-14T06:44:46.326Z.",
+        "replaced_sha256": "7f451a524dda3cc3c2546bfc85daf299d708a69ed3d369a1e22c11f792fac857"
       }
     ],
     "limits": [
@@ -680,7 +976,8 @@
       "Synthetic data on a self-hosted build; Worker, search and AI services not running.",
       "Permission changes through owner/operator API calls; saving from these controls is covered by component and server tests, not by this run.",
       "The account-only page was retaken in the third rerun against a later server build (e2a01e66c) than the other current captures (540757ea9), because only the later one sends the invited role. Jordan's invitation is a guest invitation because the three member seats are taken.",
-      "Failure toasts, which now name the change that failed and give a plain reason, are not captured; component tests cover them."
+      "Failure toasts, which now name the change that failed and give a plain reason, are not captured; component tests cover them.",
+      "The six images of the owner's Permissions test (permissions-owner-selected-members.png to group-access-to-all-spaces-confirmation.png) were not retaken on the merged code: that test fails there because the selected members and groups do not load against server 805c9bab0."
     ]
   },
   "historical_captures": [
@@ -902,5 +1199,520 @@
   "packet_limits": [
     "Historical captures predate the redesign and the final server fixes; they are kept because the views they show did not change, not because they were re-run.",
     "validation.json records the 2026-10-12 validation; this refresh is described in current_capture."
-  ]
+  ],
+  "videos": {
+    "date": "2026-10-15",
+    "kind": "screen recordings of passing Playwright tests on an isolated synthetic stack",
+    "spec": "playwright/e2e/app/permission-videos.capture.spec.ts (opt-in: APPFLOWY_PERMISSION_VIDEOS=1)",
+    "encoder": "playwright/support/permission-videos-encode.py",
+    "web": {
+      "branch": "oodrive-fix/web-media",
+      "source_commit": "b59969d69737f8e71bbb6c76aab89264a2d73a24",
+      "harness_commit": "c95f5471bee0c1a8f578216e661cd04e0cffd43d",
+      "base": "codex/oodrive-permissions-fixes at b59969d6 (after the merge of main, d8cd5643)",
+      "served_by": "vite dev server (loopback)"
+    },
+    "server": {
+      "commit": "805c9bab058231dbdf59c5dc2124e59d0aa35ddd",
+      "binary_sha256": "1e7b8c4c498cf1dcbd1e6418fe535fcd5e14b892747c5b7e31bb1d4f1177c3ff",
+      "features": "commercial-local-test (self-host-af)",
+      "details": "current_capture.server.fourth_rerun"
+    },
+    "browser": {
+      "engine": "Chromium 145.0.7632.0 (Playwright chromium-1208), headless",
+      "viewport": "1280x800",
+      "device_scale_factor": 1,
+      "slow_mo_ms": 200,
+      "recorder": "Playwright recordVideo, one VP8 webm per window at 25 fps (Playwright ffmpeg-1011); no audio",
+      "session": "GoTrue password grant stored as the app session, except Jordan, who signs in on the login screen",
+      "network": "requests outside the three stack origins aborted (the gallery's guard)"
+    },
+    "overlays": "Drawn by the recording harness, not the app: a caption banner at the top (the step in plain words, text in CSS generated content) and a dot marking the pointer, both aria-hidden with pointer-events none. Browser spell-check underlines turned off, as for the screenshots.",
+    "composition": "At each moment the most recently opened window that is still open is shown; each part starts at the next caption in its window and the clip ends when the last window closed. Cut points come from timeline.json, aligned to each recording by the frame where its first caption appears. Nothing else is cut, sped up, reordered or retouched.",
+    "encoding": {
+      "ffmpeg": "ffmpeg version 6.1.1-3ubuntu5+esm8 Copyright (c) 2000-2023 the FFmpeg developers",
+      "mp4": "libx264 -crf 28 -preset slow -pix_fmt yuv420p -movflags +faststart, width 1280",
+      "gif": "fps 8, width 960, palettegen stats_mode=diff, paletteuse dither=bayer:bayer_scale=5; no GIF needed 6 fps or a speed-up"
+    },
+    "harness": {
+      "playwright/e2e/app/permission-videos.capture.spec.ts": "3a28950efa2bb7fdca28a71e44e0f57aa5f305347bf7f9ad307e81d7782d3b10",
+      "playwright/support/permission-gallery-browser.ts": "2370e34e28889f8e8120a8eeab8395bfc042e86a96a8efbddf0cff4a352fd600",
+      "playwright/support/permission-gallery-seed.ts": "a5af8041f82fde462aed1f218d2abcd3d87127b471585a615508895ffebc21be",
+      "playwright.permission-gallery.config.ts": "3afb9535c4567379daf6ad786af8ab2f23243a357c4d2441c24182f27b886294",
+      "playwright/support/permission-videos-encode.py": "6c0fbda7ad9f1e3168c3b7071fc0e5444601140badd3bc150c6abc6656f916a7"
+    },
+    "runs": [
+      {
+        "run": "C",
+        "started_utc": "2026-10-15T04:55:03Z",
+        "ended_utc": "2026-10-15T04:58:17Z",
+        "result": "5 passed (3.2m)",
+        "database": "seeded afresh for the first refresh gallery run, unchanged since",
+        "conditional_captions": {
+          "view-group-reads-only": "not shown (no notice: Onboarding checklist had no deletions yet)",
+          "space-creation-control": "shown"
+        }
+      },
+      {
+        "run": "D",
+        "started_utc": "2026-10-15T04:58:17Z",
+        "ended_utc": "2026-10-15T05:01:21Z",
+        "result": "5 passed (3.0m)",
+        "database": "as left by run C (no reset)",
+        "conditional_captions": {
+          "view-group-reads-only": "shown",
+          "space-creation-control": "shown"
+        },
+        "encoded": true
+      }
+    ],
+    "earlier_runs": "Earlier versions of the spec ran four times the same morning (04:22, 4 of 5: the member removal never matched, fixed in the seed; 04:33, 04:41 and 04:44, 5 of 5 each); the spec then gained the two conditional captions. No file here comes from those runs.",
+    "files": {
+      "playwright/bdd/evidence/space-group-permission-lifecycle/videos/groups-two-levels.mp4": "b210c6014fdb2cff449cec7f0e784316c57eb4fa609cab8d8abacca4d7dddf2f",
+      "playwright/bdd/evidence/space-group-permission-lifecycle/videos/groups-two-levels.gif": "7aad0321ebe9af73b7f4277cd11e388019ab246edcaa13b7b6dc805470f48531",
+      "playwright/bdd/evidence/space-group-permission-lifecycle/videos/view-group-reads-only.mp4": "2fe5d171ef95674ec2f08a472d0b97d9ca7d9ab06e5267b02ee24a05b7d71303",
+      "playwright/bdd/evidence/space-group-permission-lifecycle/videos/view-group-reads-only.gif": "c1c712814b8f40698955163c5074b2b97ee7e467aa96a3eccae100e455665b8a",
+      "playwright/bdd/evidence/space-group-permission-lifecycle/videos/edit-group-edits.mp4": "dbb4b9df2f28b404b0704683074194ea0a1a6e317e48da6a248201e66f47041b",
+      "playwright/bdd/evidence/space-group-permission-lifecycle/videos/edit-group-edits.gif": "5dcd6e87f08c2750bb7ec2466ac05afe0255c7269a433b92d04a2bef30ccf580",
+      "playwright/bdd/evidence/space-group-permission-lifecycle/videos/workspace-creation-control.mp4": "9c324f828ee7d0583faada7ec0ddb6793ed03dbe75283c091d1abef7062e0cf2",
+      "playwright/bdd/evidence/space-group-permission-lifecycle/videos/workspace-creation-control.gif": "44a828a5520faeb6a2e1ea34cf752f6c4a7123a990b88340c847514edb390ffc",
+      "playwright/bdd/evidence/space-group-permission-lifecycle/videos/space-creation-control.mp4": "5f6ba266dce0a1f40c3ad28ff6dee220cb4ac53f9afc21a2d4aae1cda92e3749",
+      "playwright/bdd/evidence/space-group-permission-lifecycle/videos/space-creation-control.gif": "7a4650ee4b01cedddf6da13c7e3918783f3686d0d3dcb41c987e9b5b6de8e031"
+    },
+    "clips": [
+      {
+        "slug": "groups-two-levels",
+        "title": "Two groups, two levels in HR",
+        "test": "groups-two-levels: the HR group can edit HR, the Users group can view it",
+        "mp4": {
+          "path": "videos/groups-two-levels.mp4",
+          "sha256": "b210c6014fdb2cff449cec7f0e784316c57eb4fa609cab8d8abacca4d7dddf2f",
+          "bytes": 348201,
+          "duration_s": 29.52
+        },
+        "gif": {
+          "path": "videos/groups-two-levels.gif",
+          "sha256": "7aad0321ebe9af73b7f4277cd11e388019ab246edcaa13b7b6dc805470f48531",
+          "bytes": 2290214,
+          "duration_s": 29.51,
+          "fps": 8,
+          "speedup": 1.0
+        },
+        "windows": [
+          {
+            "index": 1,
+            "person": "olivia",
+            "opened_ms": 174,
+            "closed_ms": 34920
+          }
+        ],
+        "parts": [
+          {
+            "window": 1,
+            "person": "olivia",
+            "from_s": 4.13,
+            "to_s": 33.662,
+            "timeline_from_ms": 5388,
+            "timeline_to_ms": 34920
+          }
+        ],
+        "recording_offsets_s": {
+          "1": -1.084
+        },
+        "recordings": [
+          {
+            "name": "window-1-olivia.webm",
+            "sha256": "91994c49ba1382e96d830cf4c11adf428ebb2187ffbead716e11d6bdeeb5409d"
+          }
+        ],
+        "checks_passed": [
+          "server: the Users group has Can view in HR before the clip",
+          "HR group row shows Can edit",
+          "Users group row shows Can view",
+          "toast \"Access updated\" after choosing Can comment",
+          "Users group row shows Can comment",
+          "server: the Users group has Can comment (20) in HR",
+          "toast \"Access updated\" after choosing Can view",
+          "Users group row shows Can view again",
+          "server: the Users group has Can view (10) in HR again",
+          "HR group row still shows Can edit"
+        ],
+        "captions": [
+          "Olivia (owner) opens the HR space settings: Manage space",
+          "The Members tab lists people and groups with their access",
+          "Two groups, two levels: the HR group can edit, the Users group can view",
+          "Olivia opens the Users group's Access menu and picks Can comment",
+          "Saved: the Users group can now comment in HR",
+          "Olivia sets the Users group back to Can view",
+          "Saved: back to the HR group editing and the Users group viewing"
+        ],
+        "setup_and_cleanup": "None through the API: Olivia saves both changes from the UI and the last one restores the seeded level.",
+        "does_not_prove": "What members of the groups can then do in HR's pages (the next two videos), or how a failed save looks (component tests cover failure toasts)."
+      },
+      {
+        "slug": "view-group-reads-only",
+        "title": "A view group reads but cannot edit",
+        "test": "view-group-reads-only: through the Users group, Alex can read an HR page but not edit it",
+        "mp4": {
+          "path": "videos/view-group-reads-only.mp4",
+          "sha256": "2fe5d171ef95674ec2f08a472d0b97d9ca7d9ab06e5267b02ee24a05b7d71303",
+          "bytes": 109772,
+          "duration_s": 18.8
+        },
+        "gif": {
+          "path": "videos/view-group-reads-only.gif",
+          "sha256": "c1c712814b8f40698955163c5074b2b97ee7e467aa96a3eccae100e455665b8a",
+          "bytes": 1253710,
+          "duration_s": 18.76,
+          "fps": 8,
+          "speedup": 1.0
+        },
+        "windows": [
+          {
+            "index": 1,
+            "person": "alex",
+            "opened_ms": 159,
+            "closed_ms": 21737
+          }
+        ],
+        "parts": [
+          {
+            "window": 1,
+            "person": "alex",
+            "from_s": 2.65,
+            "to_s": 21.477,
+            "timeline_from_ms": 2910,
+            "timeline_to_ms": 21737
+          }
+        ],
+        "recording_offsets_s": {
+          "1": -0.101
+        },
+        "recordings": [
+          {
+            "name": "window-1-alex.webm",
+            "sha256": "f3f5e4aa0e0587b1bcc99990cf6b710f7f84d036ea30132d90ce77ac51d9cff0"
+          }
+        ],
+        "checks_passed": [
+          "setup: Alex is no longer a direct member of HR",
+          "setup: the Users group (with Alex in it) has Can view in HR",
+          "server: Alex can read Onboarding checklist but not write it",
+          "the page text is shown",
+          "the editor is read-only (contenteditable is false)",
+          "the title is not editable (no title input)",
+          "no Add icon or cover buttons over the title",
+          "no block handles (add or drag) beside the text",
+          "typing changed nothing on screen",
+          "server: the document has no \"Hello\"",
+          "teardown: Alex is a direct HR member at the space default again",
+          "teardown: Alex can write Onboarding checklist again"
+        ],
+        "captions": [
+          "Alex (member) reaches HR only through the Users group, which can view",
+          "He has opened Onboarding checklist in HR",
+          "No title editing, no block handles: the page is read-only",
+          "The notice at the bottom right came up on opening, before any typing (see README)",
+          "Alex clicks into the text and types \"Hello\"",
+          "Nothing changed: Alex can read this page but not edit it"
+        ],
+        "setup_and_cleanup": "Owner, API: Alex's own HR membership is removed first (he keeps HR through the Users group, Can view); afterwards it is given back at the space default and read back.",
+        "defect_on_screen": "\"Changes to 1 page are waiting for edit access.\" appears as the page opens, before any typing (a caption says so). A view-only session opened without typing on the stack's previous database, after earlier runs of the editing test, held one outbox item for the page: a sync verification snapshot (source \"manifest\", 22 bytes) that the server had refused because Alex cannot edit; its bytes are a Yjs update with no new content, only the page's delete set (the text the editing test adds and removes). Holiday policy, whose history has no deletions, gave no item and no notice. In run C (the page freshly seeded, before the editing test) the notice did not appear; in run D it did. Not fixed here.",
+        "does_not_prove": "Comment access (Users has Can view here), or what Alex sees in other spaces."
+      },
+      {
+        "slug": "edit-group-edits",
+        "title": "An edit group edits, and the edit is kept",
+        "test": "edit-group-edits: through the HR group, Sam edits an HR page and the edit is saved",
+        "mp4": {
+          "path": "videos/edit-group-edits.mp4",
+          "sha256": "dbb4b9df2f28b404b0704683074194ea0a1a6e317e48da6a248201e66f47041b",
+          "bytes": 176802,
+          "duration_s": 23.48
+        },
+        "gif": {
+          "path": "videos/edit-group-edits.gif",
+          "sha256": "5dcd6e87f08c2750bb7ec2466ac05afe0255c7269a433b92d04a2bef30ccf580",
+          "bytes": 1445550,
+          "duration_s": 23.51,
+          "fps": 8,
+          "speedup": 1.0
+        },
+        "windows": [
+          {
+            "index": 1,
+            "person": "sam",
+            "opened_ms": 117,
+            "closed_ms": 27364
+          }
+        ],
+        "parts": [
+          {
+            "window": 1,
+            "person": "sam",
+            "from_s": 3.65,
+            "to_s": 27.134,
+            "timeline_from_ms": 3880,
+            "timeline_to_ms": 27364
+          }
+        ],
+        "recording_offsets_s": {
+          "1": -0.113
+        },
+        "recordings": [
+          {
+            "name": "window-1-sam.webm",
+            "sha256": "333e8e7a3f5a9337b01536f2fa4c7ae2d20be17c7af7f387bc14d9b16f50f43f"
+          }
+        ],
+        "checks_passed": [
+          "server: Sam can write Onboarding checklist (HR group: Can edit)",
+          "server: Sam is not a direct member of HR",
+          "server: the document does not contain the sentence yet",
+          "the page text is shown",
+          "the editor is editable (contenteditable is true)",
+          "the sentence appears in the page",
+          "server: the document now contains the sentence",
+          "after the reload the sentence is still there",
+          "the sentence is gone from the page",
+          "the original paragraph is unchanged",
+          "server: the document no longer contains the sentence"
+        ],
+        "captions": [
+          "Sam (member) reaches HR only through the HR group, which can edit",
+          "He opens Onboarding checklist and adds a sentence",
+          "The server has it. Sam reloads the page",
+          "After the reload the sentence is still there",
+          "Cleanup: Sam deletes the sentence again",
+          "The page is back as it was"
+        ],
+        "setup_and_cleanup": "Sam deletes his sentence again in the UI; the server's copy is read back without it.",
+        "does_not_prove": "Editing by two people at once, offline editing, or that the reload read the server rather than the browser's copy (the API read shows the server has the sentence)."
+      },
+      {
+        "slug": "workspace-creation-control",
+        "title": "Who may create workspaces",
+        "test": "workspace-creation-control: who may create workspaces",
+        "mp4": {
+          "path": "videos/workspace-creation-control.mp4",
+          "sha256": "9c324f828ee7d0583faada7ec0ddb6793ed03dbe75283c091d1abef7062e0cf2",
+          "bytes": 342061,
+          "duration_s": 37.8
+        },
+        "gif": {
+          "path": "videos/workspace-creation-control.gif",
+          "sha256": "44a828a5520faeb6a2e1ea34cf752f6c4a7123a990b88340c847514edb390ffc",
+          "bytes": 2352294,
+          "duration_s": 37.76,
+          "fps": 8,
+          "speedup": 1.0
+        },
+        "windows": [
+          {
+            "index": 1,
+            "person": "sam",
+            "opened_ms": 93,
+            "closed_ms": 13138
+          },
+          {
+            "index": 2,
+            "person": "jordan",
+            "opened_ms": 13386,
+            "closed_ms": 27228
+          },
+          {
+            "index": 3,
+            "person": "olivia",
+            "opened_ms": 27672,
+            "closed_ms": 47216
+          }
+        ],
+        "parts": [
+          {
+            "window": 1,
+            "person": "sam",
+            "from_s": 2.69,
+            "to_s": 12.924,
+            "timeline_from_ms": 2904,
+            "timeline_to_ms": 13138
+          },
+          {
+            "window": 2,
+            "person": "jordan",
+            "from_s": 1.89,
+            "to_s": 13.729,
+            "timeline_from_ms": 15389,
+            "timeline_to_ms": 27228
+          },
+          {
+            "window": 3,
+            "person": "olivia",
+            "from_s": 3.69,
+            "to_s": 19.434,
+            "timeline_from_ms": 31472,
+            "timeline_to_ms": 47216
+          }
+        ],
+        "recording_offsets_s": {
+          "1": -0.121,
+          "2": -0.113,
+          "3": -0.11
+        },
+        "recordings": [
+          {
+            "name": "window-1-sam.webm",
+            "sha256": "1fbbf610215c0f9f572bd7e46da31c8ee0796bc851dfc5643aa93d428331f0fb"
+          },
+          {
+            "name": "window-2-jordan.webm",
+            "sha256": "a9340896a589cf4525710749fb429b135ebee52bea7940c79e02832b0806b2dc"
+          },
+          {
+            "name": "window-3-olivia.webm",
+            "sha256": "48c874b99618e6444ac1048242e804e265068887b6d8978e2194b8469f002ab7"
+          }
+        ],
+        "checks_passed": [
+          "Create workspace is marked unavailable (aria-disabled)",
+          "Import workspace is marked unavailable (aria-disabled)",
+          "Create workspace explains: \"Your administrator hasn't allowed you to create workspaces.\"",
+          "Import workspace explains: \"Your administrator hasn't allowed you to create workspaces.\"",
+          "\"You're not in a workspace yet\" is shown",
+          "the reason is shown: \"Your administrator hasn't allowed you to create workspaces.\"",
+          "the pending invitation to Demo is shown with \"Invited as a guest\"",
+          "server: Jordan has no workspace and one pending Guest invitation to Demo",
+          "Create workspace is available to Olivia",
+          "\"You'll be the owner of the new workspace.\" is shown",
+          "the workspace menu now shows the new workspace",
+          "server: Olivia has exactly one new workspace with that name",
+          "the address is in the new workspace",
+          "cleanup: the new workspace is deleted"
+        ],
+        "captions": [
+          "Sam (member) opens the workspace menu",
+          "Create workspace and Import workspace are unavailable to him",
+          "Pointing at Create workspace shows why",
+          "Import workspace gives the same reason",
+          "Jordan has an account but no workspace. He signs in",
+          "No workspace yet: why he can't create one, and his guest invitation to Demo",
+          "Olivia is the one person the administrator allows to create workspaces",
+          "She names it \"Video demo workspace\" and presses Create",
+          "Created: Olivia is now in her new workspace"
+        ],
+        "setup_and_cleanup": "Owner, API: the new workspace is deleted afterwards (and any left by an interrupted run first) and read back.",
+        "does_not_prove": "That the server refuses a creation request from Sam or Jordan (only the UI is shown; server tests cover the API), joining the invitation, or importing.",
+        "sign_in": "Jordan signs in on the login screen (email, Continue with password, password); the other people use stored sessions."
+      },
+      {
+        "slug": "space-creation-control",
+        "title": "The owner narrows who can create spaces",
+        "test": "space-creation-control: the owner narrows who can create spaces",
+        "mp4": {
+          "path": "videos/space-creation-control.mp4",
+          "sha256": "5f6ba266dce0a1f40c3ad28ff6dee220cb4ac53f9afc21a2d4aae1cda92e3749",
+          "bytes": 698673,
+          "duration_s": 39.52
+        },
+        "gif": {
+          "path": "videos/space-creation-control.gif",
+          "sha256": "7a4650ee4b01cedddf6da13c7e3918783f3686d0d3dcb41c987e9b5b6de8e031",
+          "bytes": 4206051,
+          "duration_s": 39.51,
+          "fps": 8,
+          "speedup": 1.0
+        },
+        "windows": [
+          {
+            "index": 1,
+            "person": "alex",
+            "opened_ms": 112,
+            "closed_ms": 46882
+          },
+          {
+            "index": 2,
+            "person": "olivia",
+            "opened_ms": 10530,
+            "closed_ms": 31779
+          }
+        ],
+        "parts": [
+          {
+            "window": 1,
+            "person": "alex",
+            "from_s": 2.69,
+            "to_s": 10.304,
+            "timeline_from_ms": 2916,
+            "timeline_to_ms": 10530
+          },
+          {
+            "window": 2,
+            "person": "olivia",
+            "from_s": 3.73,
+            "to_s": 21.118,
+            "timeline_from_ms": 14391,
+            "timeline_to_ms": 31779
+          },
+          {
+            "window": 1,
+            "person": "alex",
+            "from_s": 32.101,
+            "to_s": 46.656,
+            "timeline_from_ms": 32327,
+            "timeline_to_ms": 46882
+          }
+        ],
+        "recording_offsets_s": {
+          "1": -0.114,
+          "2": -0.131
+        },
+        "recordings": [
+          {
+            "name": "window-1-alex.webm",
+            "sha256": "c250011e93939b4d3bb12cec041cf03fbed5262be8986227873979f42f7a3f97"
+          },
+          {
+            "name": "window-2-olivia.webm",
+            "sha256": "08afcb09ff3ffbbcc6b7390be6be643e2eac9dbe8955a8b6c311ede898d6fc9e"
+          }
+        ],
+        "checks_passed": [
+          "server: owners and selected members may create spaces; Alex may",
+          "server: no space is called Marketing",
+          "Create is enabled for Alex",
+          "Owners and selected members is the current choice",
+          "the question before narrowing is shown",
+          "toast \"Space creation updated\"",
+          "Owners only is now the selected choice",
+          "server: the policy is Owners only and Alex may not create spaces",
+          "Alex's dialog still offers Create (the live update was held back)",
+          "the answer is shown: \"You can't create spaces in this workspace.\"",
+          "the form and Create are gone; Close is the only action",
+          "Close hides the dialog",
+          "server: no space called Marketing was created",
+          "Create space is disabled in New page",
+          "New page shows the reason: \"You can't create spaces in this workspace.\"",
+          "cleanup: the policy is Owners and selected members again and Alex may create spaces"
+        ],
+        "captions": [
+          "Alex (member) may create spaces. He opens New page > Create space",
+          "He names the space \"Marketing\" and leaves the dialog open",
+          "Meanwhile Olivia (owner) opens Settings > Permissions",
+          "The selected members and groups fail to load here: a defect (see README)",
+          "She sets Who can create spaces to Owners only",
+          "The app asks first; she confirms",
+          "Saved: only owners can create spaces now",
+          "Back to Alex: the harness held back the live update, so Create is still offered",
+          "He presses Create; the app checks with the server first",
+          "Refused: he can't create spaces in this workspace any more",
+          "New page now offers Create space as unavailable, with the reason"
+        ],
+        "setup_and_cleanup": "Owner, API: the rule is put back to Owners and selected members and read back (Alex may create spaces again).",
+        "harness_intervention": "From the moment Olivia's window opened, the harness dropped what the server pushed to Alex's window (his live connection is relayed), as when the live update arrives late; otherwise the dialog disables Create on its own. A caption says so.",
+        "defect_on_screen": "Olivia's Permissions panel shows \"We couldn't load the selected members and groups.\" with Retry (a caption says so): the same server_restore_id rejection that fails the owner's screenshot test.",
+        "omitted": "Olivia's page loading before her first caption (3.9 s) and 21.8 s of Alex's window while hers was open and until his next caption, in which his dialog was left alone (the spec then checked that Create was still enabled).",
+        "does_not_prove": "What happens when the live update arrives in time (the dialog disables Create with the same message; component tests cover it, and the last step shows New page after a fresh check), or that the selected members and groups survive a switch back."
+      }
+    ],
+    "side_by_side": "Not made: at the MP4 width of 1280 the reader and editor windows would each be shown at half size (the app's text about 7 pixels high), and the two tests have different lengths."
+  }
 }
