@@ -1,4 +1,3 @@
-import { getErrorMessage } from '@/utils/errors';
 import { Dialog, InputBase } from '@mui/material';
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -35,7 +34,7 @@ import { findAncestors } from '@/components/chat/lib/views';
 import type { View as ChatView } from '@/components/chat/types';
 import { dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { getAPIErrorCode } from '@/utils/errors';
+import { getAPIErrorCode, getErrorMessage } from '@/utils/errors';
 import { createHotkey, createHotKeyLabel, HOT_KEY_NAME } from '@/utils/hotkeys';
 
 const BestMatch = lazy(() => import('@/components/app/search/BestMatch'));
@@ -45,7 +44,6 @@ function getFallbackAIChatParent(outline: View[] | undefined) {
 
   return outline.find(isSpaceView) || outline[0];
 }
-
 
 function isPermissionDenied(error: unknown) {
   const status = (error as { httpStatus?: unknown; response?: { status?: unknown } } | null) ?? undefined;
