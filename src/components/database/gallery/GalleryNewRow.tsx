@@ -1,32 +1,18 @@
-import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { toast } from 'sonner';
 
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch';
 import { GalleryCardSize } from '@/application/types';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
+import { RowCreationSpinner, useRowCreationAction } from '@/components/database/hooks/useRowCreationAction';
 import { cn } from '@/lib/utils';
-import { Log } from '@/utils/log';
 
 import { GALLERY_TILE_PADDING, getGalleryMinimumCardHeight } from './gallery.constants';
 
 export function GalleryNewRow({ cardSize }: { cardSize: GalleryCardSize }) {
   const { t } = useTranslation();
   const createRow = useNewRowDispatch();
-  const [creating, setCreating] = useState(false);
+  const { pending: creating, run } = useRowCreationAction();
   const minimumHeight = getGalleryMinimumCardHeight(cardSize);
-
-  const handleCreateRow = async () => {
-    setCreating(true);
-    try {
-      await createRow({ openAfterCreate: true, tailing: true });
-    } catch (error) {
-      Log.error('[GalleryNewRow] failed to create row', error);
-      toast.error(error instanceof Error ? error.message : t('error.generalError'));
-    } finally {
-      setCreating(false);
-    }
-  };
 
   return (
     <div
@@ -54,11 +40,11 @@ export function GalleryNewRow({ cardSize }: { cardSize: GalleryCardSize }) {
         )}
         data-testid='gallery-new-row'
         disabled={creating}
-        onClick={() => void handleCreateRow()}
+        onClick={() => void run(() => createRow({ openAfterCreate: true, tailing: true }))}
         style={{ minHeight: minimumHeight }}
         type='button'
       >
-        <PlusIcon aria-hidden='true' className={cn('h-4 w-4', creating && 'animate-spin motion-reduce:animate-none')} />
+        {creating ? <RowCreationSpinner /> : <PlusIcon aria-hidden='true' className={'h-4 w-4'} />}
       </button>
     </div>
   );

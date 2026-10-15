@@ -10,7 +10,6 @@ import {
   useReadOnly,
   useRowsByGroup,
 } from '@/application/database-yjs';
-import { useNewRowDispatch } from '@/application/database-yjs/dispatch';
 import KanbanSkeleton from '@/components/_shared/skeleton/KanbanSkeleton';
 import { useBoardActions } from '@/components/database/board/BoardProvider';
 import { BoardDragContext } from '@/components/database/components/board/drag-and-drop/board-context';
@@ -77,8 +76,7 @@ const HydratedGroup = ({ groupId, columns, groupResult, fieldId, groupRowsReady 
     },
     [groupResult]
   );
-  const onNewCard = useNewRowDispatch();
-  const { setEditingCardId, setSelectedCardIds } = useBoardActions();
+  const { createCard, setSelectedCardIds } = useBoardActions();
   const [element, setElement] = useState<HTMLElement | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const deleteRowIdsRef = useRef<string[]>([]);
@@ -105,19 +103,10 @@ const HydratedGroup = ({ groupId, columns, groupResult, fieldId, groupRowsReady 
   });
 
   const addCardBefore = useCallback(
-    async (columnId: string) => {
-      if (!fieldId) return;
-      const cellsData = {
-        [fieldId]: columnId,
-      };
-
-      const rowId = await onNewCard({ cellsData });
-
-      if (!rowId) return;
-
-      setEditingCardId(`${columnId}/${rowId}`);
+    (columnId: string) => {
+      void createCard(columnId);
     },
-    [fieldId, onNewCard, setEditingCardId]
+    [createCard]
   );
 
   const { contextValue, scrollableRef: ref } = useColumnsDrag(groupId, columns, getCards, fieldId);

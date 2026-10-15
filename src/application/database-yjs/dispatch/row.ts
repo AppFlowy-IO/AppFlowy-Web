@@ -12,6 +12,7 @@
  */
 
 import dayjs from 'dayjs';
+import { fromBase64 } from 'lib0/buffer';
 import { useCallback, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import * as Y from 'yjs';
@@ -30,6 +31,7 @@ import {
   useRowMap,
   useSharedRoot,
 } from '@/application/database-yjs/context';
+import { CommittedRowActivationError, createCloudRow } from '@/application/database-yjs/creation/create-row';
 import { FieldType, isAttributionFieldType, RowMetaKey } from '@/application/database-yjs/database.type';
 import { createCheckboxCell } from '@/application/database-yjs/fields/checkbox/utils';
 import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
@@ -50,14 +52,16 @@ import { generateRowMeta, getMetaIdMap, getMetaJSON, getRowKey } from '@/applica
 import { getPrimaryFieldId, useCalendarLayoutSetting, useDatabaseViewLayout } from '@/application/database-yjs/selector';
 import {
   DatabaseRowTemplateStore,
-  initializeTemplateSourceRow,
   mergeTemplateViewDecorations,
   readDatabaseRowTemplateState,
   templateDecorationsNeedResolution,
 } from '@/application/database-yjs/template';
-import { decodeTemplateDocumentSnapshot, encodeTemplateDocument } from '@/application/database-yjs/template/document';
+import {
+  decodeTemplateDocumentSnapshot,
+  readTemplateDocumentEmptiness,
+} from '@/application/database-yjs/template/document';
 import { duplicateTimelineRowDependencyLinks } from '@/application/database-yjs/timeline-layout';
-import { deleteCollabDB, getCachedProviderDoc, openCollabDB } from '@/application/db';
+import { deleteCollabDB, getCachedProviderDoc } from '@/application/db';
 import {
   ensureRowDocumentView,
   rowDocumentExists,
@@ -68,7 +72,6 @@ import { PageService } from '@/application/services/domains';
 import { getCachedRowSubDoc } from '@/application/services/js-services/cache';
 import { deleteOutboxByObjectId } from '@/application/sync-outbox';
 import {
-  BlockType,
   DatabaseViewLayout,
   FieldId,
   YDatabaseCell,
@@ -550,20 +553,8 @@ export function useTrashAwareDeleteRowsDispatch() {
   );
 }
 
-function markRowDocumentNonEmpty(rowDoc: YDoc, rowId: string) {
-  rowDoc.transact(() => {
-    const materializedMeta = generateRowMeta(rowId, {
-      [RowMetaKey.IsDocumentEmpty]: false,
-    });
-    const meta = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.meta) as Y.Map<unknown>;
-
-    Object.entries(materializedMeta).forEach(([key, value]) => meta.set(key, value));
-  }, 'database-row-template-materialized');
-}
-
 export function useNewRowDispatch() {
   const database = useDatabase();
-  const sharedRoot = useSharedRoot();
   const createRow = useCreateRow();
   const guid = useDocGuid();
   const viewId = useDatabaseViewId();
@@ -580,12 +571,23 @@ export function useNewRowDispatch() {
     getViewIdFromDatabaseId,
     bindViewSync,
     loadRowDocument,
-    createRowDocument,
-    duplicateRowDocument,
+    workspaceId,
+    readOnly,
+    canWrite,
   } = useDatabaseContext();
   const rowMap = useRowMap();
   const currentUser = useCurrentUserOptional();
   const actorUid = resolveUserAttributionUid(currentUser);
+  const ownerRef = useRef({ databaseDoc, viewId, workspaceId, readOnly, canWrite });
+  const mountedRef = useRef(true);
+
+  ownerRef.current = { databaseDoc, viewId, workspaceId, readOnly, canWrite };
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   return useCallback(
     async ({
@@ -615,6 +617,27 @@ export function useNewRowDispatch() {
       openAfterCreate?: boolean;
     }) => {
       if (isDatabaseHistoryDocumentImmutable(databaseDoc)) return null;
+      const version = databaseDoc.version;
+      const restoreId = databaseDoc.databaseRestoreId;
+      const assertCurrent = () => {
+        const current = ownerRef.current;
+
+        if (
+          !mountedRef.current ||
+          current.databaseDoc !== databaseDoc ||
+          current.viewId !== viewId ||
+          current.workspaceId !== workspaceId ||
+          current.readOnly ||
+          current.canWrite === false ||
+          databaseDoc.version !== version ||
+          databaseDoc.databaseRestoreId !== restoreId ||
+          isDatabaseHistoryDocumentImmutable(databaseDoc)
+        ) {
+          throw new Error('This database is no longer writable.');
+        }
+      };
+
+      assertCurrent();
 
       if (!currentView) {
         throw new Error('Current view not found');
@@ -651,9 +674,7 @@ export function useNewRowDispatch() {
             const templateView = await loadViewMeta(effectiveTemplate.docViewId);
             const resolvedTemplate = mergeTemplateViewDecorations(effectiveTemplate, templateView);
 
-            return resolvedTemplate === effectiveTemplate
-              ? effectiveTemplate
-              : new DatabaseRowTemplateStore(database).upsert(resolvedTemplate);
+            return resolvedTemplate;
           } catch (error) {
             Log.warn('[useNewRowDispatch] failed to resolve template view decorations', {
               templateId: effectiveTemplate.templateId,
@@ -676,172 +697,155 @@ export function useNewRowDispatch() {
           .toArray()
           .some((row) => row.id === rowId);
       const rowKey = getRowKey(guid, rowId);
-      const [selectedTemplate, rowDoc] = await Promise.all([templatePromise, createRow(rowKey)]);
-      // Snapshot the filter array once: Y.Array.toArray() allocates a fresh
-      // JS array on each call, and we read it twice (length check + forEach).
-      const hasActiveFilters = (filters?.length ?? 0) > 0;
-      // Open the row detail page whenever filters are active so the user can
-      // see and complete the new row (its primary "Name" cell is always empty,
-      // and other cells get pre-filled from filters but still need user input).
-      let shouldOpenRowModal = hasActiveFilters;
-      // Relation prefills are written synchronously in the transact below, but
-      // their reciprocal/back-link updates must run async after the row exists.
-      // Keyed by fieldId so multiple filters on the same relation field don't
-      // queue conflicting backfills — only the LAST filter's IDs survive in
-      // the cell (cells.set overwrites), and the reciprocal updates must
-      // mirror that final state, not every intermediate write.
-      const relationPrefills = new Map<FieldId, string[]>();
+      const selectedTemplate = await templatePromise;
 
-      rowDoc.transact(() => {
-        initialDatabaseRow(rowId, database.get(YjsDatabaseKey.id), rowDoc, actorUid);
-        const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
-        const row = rowSharedRoot.get(YjsEditorKey.database_row);
-        const meta = rowSharedRoot.get(YjsEditorKey.meta);
+      assertCurrent();
+      // A new row has no provider, IndexedDB record, or membership until the server commits.
+      // An already published calendar draft is an ordinary edit on retry, not a second create.
+      const rowDoc = alreadyPublished ? await createRow(rowKey) : (new Y.Doc({ guid: rowId }) as YDoc);
+      let committed = alreadyPublished;
 
-        const prefill = populateNewRowCells({
-          row,
-          database,
-          filters,
-          template: selectedTemplate,
-          cellsData,
-          initialCells: draft?.cells,
-          calendarFieldId: isCalendar ? calendarSetting?.fieldId : undefined,
-        });
+      try {
+        assertCurrent();
+        // Snapshot the filter array once: Y.Array.toArray() allocates a fresh
+        // JS array on each call, and we read it twice (length check + forEach).
+        const hasActiveFilters = (filters?.length ?? 0) > 0;
+        // Open the row detail page whenever filters are active so the user can
+        // see and complete the new row (its primary "Name" cell is always empty,
+        // and other cells get pre-filled from filters but still need user input).
+        let shouldOpenRowModal = hasActiveFilters;
+        // Relation prefills are written synchronously in the transact below, but
+        // their reciprocal/back-link updates must run async after the row exists.
+        // Keyed by fieldId so multiple filters on the same relation field don't
+        // queue conflicting backfills — only the LAST filter's IDs survive in
+        // the cell (cells.set overwrites), and the reciprocal updates must
+        // mirror that final state, not every intermediate write.
+        const relationPrefills = new Map<FieldId, string[]>();
 
-        shouldOpenRowModal = prefill.shouldOpenRowModal;
-        prefill.relationPrefills.forEach((ids, fieldId) => relationPrefills.set(fieldId, ids));
+        rowDoc.transact(() => {
+          initialDatabaseRow(rowId, database.get(YjsDatabaseKey.id), rowDoc, actorUid);
+          const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
+          const row = rowSharedRoot.get(YjsEditorKey.database_row);
+          const meta = rowSharedRoot.get(YjsEditorKey.meta);
 
-        const newMeta = generateRowMeta(rowId, {
-          [RowMetaKey.IsDocumentEmpty]: selectedTemplate?.isDocumentEmpty ?? true,
-          [RowMetaKey.IconId]: selectedTemplate?.icon ?? null,
-          [RowMetaKey.CoverId]: selectedTemplate?.cover ?? null,
-        });
-
-        Object.keys(newMeta).forEach((key) => {
-          const value = newMeta[key];
-
-          if (value !== undefined && value !== null) {
-            meta.set(key, value);
-          }
-        });
-        draft?.meta.forEach((value, key) => meta.set(key, value));
-      });
-
-      if (!alreadyPublished && selectedTemplate && !selectedTemplate.isDocumentEmpty) {
-        if (!duplicateRowDocument) {
-          throw new Error('Template document duplication is unavailable');
-        } else {
-          try {
-            // A template is represented as a hidden row collab. It deliberately
-            // never enters row_orders, but gives the existing cloud duplication
-            // pipeline a stable source identity and preserves inline-vs-linked
-            // database semantics.
-            const cachedSourceDocument =
-              getCachedRowSubDoc(selectedTemplate.docViewId) ?? getCachedProviderDoc(selectedTemplate.docViewId);
-            const sourceDocumentPromise = documentSnapshot
-              ? Promise.resolve(null)
-              : cachedSourceDocument
-              ? Promise.resolve(cachedSourceDocument)
-              : loadRowDocument
-              ? loadRowDocument(selectedTemplate.docViewId)
-              : Promise.resolve(null);
-            const [sourceRowDoc, sourceDocument] = await Promise.all([
-              createRow(getRowKey(guid, selectedTemplate.templateId)),
-              sourceDocumentPromise,
-            ]);
-
-            initializeTemplateSourceRow(sourceRowDoc, database, selectedTemplate);
-
-            const clientDocStateB64 =
-              documentSnapshot?.encodedState ?? (sourceDocument ? encodeTemplateDocument(sourceDocument) : undefined);
-
-            const databaseId = database.get(YjsDatabaseKey.id);
-            const sourceDocumentId = rowDocumentIdFromRowId(selectedTemplate.templateId);
-
-            await duplicateRowDocument(databaseId, selectedTemplate.templateId, rowId, clientDocStateB64, async () => {
-              await createRowDocument?.(sourceDocumentId, {
-                database_id: databaseId,
-                database_view_id: viewId,
-                row_id: selectedTemplate.templateId,
-              });
-            });
-            // Cloud returns after queueing duplication, not after writing the
-            // target. Reassert this after the request so row hydration received
-            // while awaiting it cannot make the target open as an empty document.
-            markRowDocumentNonEmpty(rowDoc, rowId);
-          } catch (error) {
-            Log.error('[useNewRowDispatch] template document duplication failed', error);
-            throw error;
-          }
-        }
-      }
-
-      // Publish only after template setup succeeds. A failed copy must leave
-      // neither a visible partial row nor navigation/reciprocal-link side effects.
-      executeOperationWithAllViews(
-        sharedRoot,
-        database,
-        (view, id) => {
-          const rowOrders = view.get(YjsDatabaseKey.row_orders);
-
-          if (!rowOrders) {
-            throw new Error(`Row orders not found`);
-          }
-
-          if (draft && rowOrders.toArray().some((row) => row.id === rowId)) return;
-          const row = {
-            id: rowId,
-            height: 36,
-          };
-
-          const index = beforeRowId ? rowOrders.toArray().findIndex((row) => row.id === beforeRowId) + 1 : 0;
-
-          if ((viewId !== id && index === -1) || tailing) {
-            rowOrders.push([row]);
-          } else {
-            rowOrders.insert(index, [row]);
-          }
-        },
-        'newRowDispatch',
-        historyGroup
-      );
-
-      if ((!suppressAutoOpen && shouldOpenRowModal) || openAfterCreate) {
-        navigateToRow?.(rowId);
-      }
-
-      // Backfill reciprocal links for two-way relations seeded from filter prefills.
-      // Done after row creation so related row docs can be loaded asynchronously.
-      // Independent prefills on different fields are processed in parallel.
-      await Promise.all(
-        Array.from(relationPrefills, ([fieldId, rowIds]) =>
-          applyRelationReciprocalInserts({
-            sourceRowId: rowId,
-            sourceFieldId: fieldId,
-            insertedRowIds: rowIds,
+          const prefill = populateNewRowCells({
+            row,
             database,
+            filters,
+            template: selectedTemplate,
+            cellsData,
+            initialCells: draft?.cells,
+            calendarFieldId: isCalendar ? calendarSetting?.fieldId : undefined,
+          });
+
+          shouldOpenRowModal = prefill.shouldOpenRowModal;
+          prefill.relationPrefills.forEach((ids, fieldId) => relationPrefills.set(fieldId, ids));
+
+          const newMeta = generateRowMeta(rowId, {
+            [RowMetaKey.IsDocumentEmpty]: selectedTemplate?.isDocumentEmpty ?? true,
+            [RowMetaKey.IconId]: selectedTemplate?.icon ?? null,
+            [RowMetaKey.CoverId]: selectedTemplate?.cover ?? null,
+          });
+
+          Object.keys(newMeta).forEach((key) => {
+            const value = newMeta[key];
+
+            if (value !== undefined && value !== null) {
+              meta.set(key, value);
+            }
+          });
+          draft?.meta.forEach((value, key) => meta.set(key, value));
+        });
+
+        if (!alreadyPublished) {
+          let documentState: Uint8Array | undefined;
+
+          if (selectedTemplate && !selectedTemplate.isDocumentEmpty) {
+            const sourceDocument = documentSnapshot
+              ? undefined
+              : getCachedRowSubDoc(selectedTemplate.docViewId) ??
+                getCachedProviderDoc(selectedTemplate.docViewId) ??
+                (await loadRowDocument?.(selectedTemplate.docViewId));
+
+            assertCurrent();
+            documentState = documentSnapshot
+              ? fromBase64(documentSnapshot.encodedState)
+              : sourceDocument
+              ? Y.encodeStateAsUpdate(sourceDocument)
+              : undefined;
+            if (!documentState) throw new Error('Template document is unavailable');
+          }
+
+          if (!workspaceId) throw new Error('A workspace is required to create a row');
+          await createCloudRow({
+            workspaceId,
+            databaseId: database.get(YjsDatabaseKey.id),
             databaseDoc,
-            rowMap,
-            createRow,
-            loadView,
-            getViewIdFromDatabaseId,
-            bindViewSync,
-            actorUid,
-          })
-        )
-      );
+            sourceViewId: viewId,
+            rowId,
+            rowDoc,
+            rowKey,
+            position: tailing
+              ? { kind: 'end' }
+              : beforeRowId
+              ? { kind: 'after', row_id: beforeRowId }
+              : { kind: 'start' },
+            assertCurrent,
+            registerRow: () => createRow(rowKey),
+            template: selectedTemplate,
+            documentState,
+            historyGroup,
+          });
+          committed = true;
+        }
 
-      if (isCalendar && shouldOpenRowModal && !suppressAutoOpen) {
-        return null;
+        assertCurrent();
+
+        if ((!suppressAutoOpen && shouldOpenRowModal) || openAfterCreate) {
+          navigateToRow?.(rowId);
+        }
+
+        // Backfill reciprocal links for two-way relations seeded from filter prefills.
+        // Done after row creation so related row docs can be loaded asynchronously.
+        // Independent prefills on different fields are processed in parallel.
+        await Promise.all(
+          Array.from(relationPrefills, ([fieldId, rowIds]) =>
+            applyRelationReciprocalInserts({
+              sourceRowId: rowId,
+              sourceFieldId: fieldId,
+              insertedRowIds: rowIds,
+              database,
+              databaseDoc,
+              rowMap,
+              createRow,
+              loadView,
+              getViewIdFromDatabaseId,
+              bindViewSync,
+              actorUid,
+              assertCurrent,
+            })
+          )
+        );
+        assertCurrent();
+
+        if (isCalendar && shouldOpenRowModal && !suppressAutoOpen) {
+          return null;
+        }
+
+        return rowId;
+      } catch (error) {
+        // Relation follow-up is an ordinary edit after creation committed. A
+        // failure must not invite a second create with a different row identity.
+        if (committed) throw new CommittedRowActivationError(rowId, error);
+        throw error;
+      } finally {
+        if (!alreadyPublished) rowDoc.destroy();
       }
-
-      return rowId;
     },
     [
       bindViewSync,
       calendarSetting,
       actorUid,
-      createRowDocument,
       createRow,
       currentView,
       database,
@@ -855,8 +859,7 @@ export function useNewRowDispatch() {
       loadRowDocument,
       navigateToRow,
       rowMap,
-      sharedRoot,
-      duplicateRowDocument,
+      workspaceId,
       viewId,
     ]
   );
@@ -868,225 +871,138 @@ export function useDuplicateRowDispatch() {
   const createRow = useCreateRow();
   const guid = useDocGuid();
   const rowMap = useRowMap();
-  const { duplicateRowDocument } = useDatabaseContext();
+  const { databaseDoc, workspaceId, activeViewId, readOnly, canWrite, loadRowDocument } = useDatabaseContext();
   const currentUser = useCurrentUserOptional();
   const actorUid = resolveUserAttributionUid(currentUser);
+  const ownerRef = useRef({ databaseDoc, workspaceId, activeViewId, readOnly, canWrite });
+  const mounted = useRef(true);
+
+  ownerRef.current = { databaseDoc, workspaceId, activeViewId, readOnly, canWrite };
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   return useCallback(
     async (referenceRowId: string) => {
-      const referenceRowDoc = rowMap?.[referenceRowId];
+      const assertCurrent = () => {
+        const owner = ownerRef.current;
 
-      if (!referenceRowDoc) {
-        throw new Error(`Row not found`);
-      }
+        if (
+          !mounted.current ||
+          owner.databaseDoc !== databaseDoc ||
+          owner.workspaceId !== workspaceId ||
+          owner.activeViewId !== activeViewId ||
+          owner.readOnly ||
+          owner.canWrite === false ||
+          isDatabaseHistoryDocumentImmutable(databaseDoc)
+        )
+          throw new Error('This database is no longer writable.');
+      };
 
-      if (!createRow) {
-        throw new Error('No createRow function');
-      }
+      assertCurrent();
+      const reference = rowMap?.[referenceRowId];
 
-      const referenceRowSharedRoot = referenceRowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
-      const referenceRow = referenceRowSharedRoot.get(YjsEditorKey.database_row);
-      const referenceCells = referenceRow.get(YjsDatabaseKey.cells);
-      const referenceMeta = getMetaJSON(referenceRowId, referenceRowSharedRoot.get(YjsEditorKey.meta));
-
+      if (!reference || !createRow || !workspaceId) throw new Error('Source Row is unavailable');
+      const sourceRoot = reference.getMap(YjsEditorKey.data_section) as YSharedRoot;
+      const referenceCells = sourceRoot.get(YjsEditorKey.database_row).get(YjsDatabaseKey.cells);
+      const sourceMeta = getMetaJSON(referenceRowId, sourceRoot.get(YjsEditorKey.meta));
       const rowId = uuidv4();
-
-      const icon = referenceMeta.icon;
-      const cover = referenceMeta.cover;
-      const sourceDocId = referenceMeta.documentId;
-      const isSourceDocEmpty = referenceMeta.isEmptyDocument === true;
-      const isSourceDocNonEmpty = referenceMeta.isEmptyDocument === false;
-      const shouldDuplicateSourceDoc = Boolean(sourceDocId) && !isSourceDocEmpty;
-      const newMeta = generateRowMeta(rowId, {
-        [RowMetaKey.IsDocumentEmpty]: !isSourceDocNonEmpty,
-        [RowMetaKey.IconId]: icon,
-        [RowMetaKey.CoverId]: cover ? JSON.stringify(cover) : null,
-      });
-
+      const historyGroup = createDatabaseHistoryGroup();
       const rowKey = getRowKey(guid, rowId);
-      const rowDoc = await createRow(rowKey);
+      const rowDoc = new Y.Doc({ guid: rowId }) as YDoc;
+      const databaseId = database.get(YjsDatabaseKey.id);
+      let committed = false;
 
-      rowDoc.transact(() => {
-        initialDatabaseRow(rowId, database.get(YjsDatabaseKey.id), rowDoc, actorUid);
-
-        const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
-
-        const row = rowSharedRoot.get(YjsEditorKey.database_row);
-
-        const meta = rowSharedRoot.get(YjsEditorKey.meta);
-
-        Object.keys(newMeta).forEach((key) => {
-          const value = newMeta[key];
-
-          if (value !== undefined && value !== null) {
-            meta.set(key, value);
-          }
-        });
-
-        const cells = row.get(YjsDatabaseKey.cells);
+      try {
+        initialDatabaseRow(rowId, databaseId, rowDoc, actorUid);
+        const root = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
+        const cells = root.get(YjsEditorKey.database_row).get(YjsDatabaseKey.cells);
         const fields = database.get(YjsDatabaseKey.fields);
 
-        Object.keys(referenceCells.toJSON()).forEach((fieldId) => {
-          try {
-            const referenceCell = referenceCells.get(fieldId);
+        referenceCells.forEach((cell, fieldId) => {
+          const field = fields.get(fieldId);
 
-            if (!referenceCell) {
-              throw new Error(`Cell not found`);
-            }
+          if (!field) return;
+          const type = Number(field.get(YjsDatabaseKey.type));
 
-            const fieldType = Number(fields.get(fieldId)?.get(YjsDatabaseKey.type));
-
-            if (isAttributionFieldType(fieldType)) return;
-
-            const cell = cloneDatabaseCell(fieldType, referenceCell);
-
-            cells.set(fieldId, cell);
-          } catch (e) {
-            console.error(e);
-          }
+          if (!isAttributionFieldType(type)) cells.set(fieldId, cloneDatabaseCell(type, cell as YDatabaseCell));
         });
-      });
+        let documentState: Uint8Array | undefined;
 
-      executeOperationWithAllViews(
-        sharedRoot,
-        database,
-        (view) => {
-          const rowOrders = view.get(YjsDatabaseKey.row_orders);
+        const cachedDocument = getCachedRowSubDoc(sourceMeta.documentId) ?? getCachedProviderDoc(sourceMeta.documentId);
 
-          if (!rowOrders) {
-            throw new Error(`Row orders not found`);
-          }
+        if (
+          sourceMeta.isEmptyDocument === false ||
+          (cachedDocument && readTemplateDocumentEmptiness(cachedDocument) === false)
+        ) {
+          const sourceDoc = cachedDocument ?? (await loadRowDocument?.(sourceMeta.documentId));
 
-          duplicateTimelineRowDependencyLinks(view, referenceCells, referenceRowId, rowId);
-          const row = {
-            id: rowId,
-            height: 36,
-          };
+          assertCurrent();
+          if (!sourceDoc) throw new Error('Source Row document is unavailable');
+          const empty = readTemplateDocumentEmptiness(sourceDoc);
 
-          const referenceIndex = rowOrders.toArray().findIndex((row) => row.id === referenceRowId);
-          const targetIndex = referenceIndex + 1;
-
-          if (targetIndex >= rowOrders.length) {
-            rowOrders.push([row]);
-            return;
-          }
-
-          rowOrders.insert(targetIndex, [row]);
-        },
-        'duplicateRowDispatch'
-      );
-
-      // Ask the server to duplicate the row document with inline database
-      // deep copy. Send the client's current doc state so the worker has
-      // the latest content even if WebSocket sync hasn't persisted yet.
-      if (duplicateRowDocument) {
-        const databaseId = database.get(YjsDatabaseKey.id);
-
-        try {
-          let clientDocStateB64: string | undefined;
-          let hasClientDocumentContent = false;
-
-          if (shouldDuplicateSourceDoc) {
-            // Find a Y.Doc with actual content. Check in priority order:
-            //   1. Dialog sub-doc cache (rowSubDocs) — populated when user
-            //      opens the row in dialog mode.
-            //   2. Provider cache (providerCache) — populated when user opens
-            //      the row in full-page mode.
-            //   3. IndexedDB — durable y-indexeddb store. Survives cache
-            //      eviction and deferred cleanup.
-            // Any of these may be an empty shell (doc structure but no
-            // content) if the user typed in a different mode, so we validate
-            // content at each step and fall through if empty.
-            const hasMeaningfulContent = (doc: YDoc | undefined): boolean => {
-              if (!doc) return false;
-              const root = doc.getMap(YjsEditorKey.data_section);
-              const document = root?.get(YjsEditorKey.document) as Y.Map<unknown> | undefined;
-              const meta = document?.get(YjsEditorKey.meta) as Y.Map<unknown> | undefined;
-              const textMap = meta?.get(YjsEditorKey.text_map) as Y.Map<Y.Text> | undefined;
-
-              if (textMap) {
-                for (const text of textMap.values()) {
-                  if (text?.toString().length) {
-                    return true;
-                  }
-                }
-              }
-
-              const blocks = document?.get(YjsEditorKey.blocks) as Y.Map<unknown> | undefined;
-
-              if (!blocks) return false;
-
-              for (const block of blocks.values()) {
-                if (!(block instanceof Y.Map)) {
-                  return true;
-                }
-
-                const blockType = block.get(YjsEditorKey.block_type);
-
-                if (blockType && blockType !== BlockType.Page && blockType !== BlockType.Paragraph) {
-                  return true;
-                }
-              }
-
-              return false;
-            };
-
-            let cachedDoc: YDoc | undefined = getCachedRowSubDoc(sourceDocId);
-
-            if (!hasMeaningfulContent(cachedDoc)) {
-              cachedDoc = getCachedProviderDoc(sourceDocId);
-            }
-
-            if (!hasMeaningfulContent(cachedDoc)) {
-              try {
-                cachedDoc = await openCollabDB(sourceDocId);
-              } catch (e) {
-                Log.warn('[duplicateRowDocument] openCollabDB fallback failed', { sourceDocId, error: e });
-              }
-            }
-
-            hasClientDocumentContent = hasMeaningfulContent(cachedDoc);
-
-            if (cachedDoc && hasClientDocumentContent) {
-              const docState = Y.encodeStateAsUpdate(cachedDoc);
-              // Convert to base64 for the server (chunked to avoid stack overflow on large docs)
-              const CHUNK = 8192;
-              const chunks: string[] = [];
-
-              for (let i = 0; i < docState.length; i += CHUNK) {
-                chunks.push(String.fromCharCode(...docState.subarray(i, i + CHUNK)));
-              }
-
-              clientDocStateB64 = btoa(chunks.join(''));
-
-              // If we found a cached doc with content, ensure the duplicated
-              // row's meta marks the document as non-empty so the client
-              // fetches from the server when the row is opened.
-              if (!isSourceDocNonEmpty) {
-                rowDoc.transact(() => {
-                  const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
-                  const meta = rowSharedRoot.get(YjsEditorKey.meta);
-                  const isEmptyKey = getMetaIdMap(rowId).get(RowMetaKey.IsDocumentEmpty) ?? '';
-
-                  if (isEmptyKey) {
-                    meta.set(isEmptyKey, false);
-                  }
-                });
-              }
-            }
-          }
-
-          if (shouldDuplicateSourceDoc || hasClientDocumentContent) {
-            await duplicateRowDocument(databaseId, referenceRowId, rowId, clientDocStateB64);
-          }
-        } catch (err) {
-          Log.error('[duplicateRowDocument] failed:', err);
+          if (empty === undefined) throw new Error('Source Row document is incomplete');
+          if (!empty) documentState = Y.encodeStateAsUpdate(sourceDoc);
         }
-      }
 
-      return rowId;
+        const metadata = generateRowMeta(rowId, {
+          [RowMetaKey.IsDocumentEmpty]: !documentState,
+          [RowMetaKey.IconId]: sourceMeta.icon,
+          [RowMetaKey.CoverId]: sourceMeta.cover ? JSON.stringify(sourceMeta.cover) : null,
+        });
+
+        Object.entries(metadata).forEach(([key, value]) => {
+          if (value !== undefined && value !== null) root.get(YjsEditorKey.meta).set(key, value);
+        });
+        // The same complete graph builder handles a live source document and its
+        // embedded databases. No local membership or legacy copy is published first.
+        await createCloudRow({
+          workspaceId,
+          databaseId,
+          databaseDoc,
+          sourceViewId: activeViewId,
+          rowId,
+          rowKey,
+          rowDoc,
+          position: { kind: 'after', row_id: referenceRowId },
+          assertCurrent,
+          registerRow: () => createRow(rowKey),
+          documentState,
+          historyGroup,
+          template: documentState
+            ? {
+                templateId: referenceRowId,
+                name: '',
+                docViewId: sourceMeta.documentId,
+                isDocumentEmpty: false,
+                embeddedDatabases: [],
+                defaultCells: {},
+                createdAtMs: 0,
+                updatedAtMs: 0,
+              }
+            : undefined,
+        });
+        committed = true;
+        assertCurrent();
+        executeOperationWithAllViews(
+          sharedRoot,
+          database,
+          (view) => duplicateTimelineRowDependencyLinks(view, referenceCells, referenceRowId, rowId),
+          'duplicateRowDispatch',
+          historyGroup
+        );
+        return rowId;
+      } catch (error) {
+        if (committed) throw new CommittedRowActivationError(rowId, error);
+        throw error;
+      } finally {
+        rowDoc.destroy();
+      }
     },
-    [actorUid, createRow, database, guid, rowMap, sharedRoot, duplicateRowDocument]
+    [activeViewId, actorUid, createRow, database, databaseDoc, guid, loadRowDocument, rowMap, sharedRoot, workspaceId]
   );
 }
 

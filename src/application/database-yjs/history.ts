@@ -245,7 +245,13 @@ type DatabaseHistoryStackEntry = {
   stackItem: StackItem;
 };
 
+export interface DatabaseSemanticHistoryAction {
+  isCurrent(): boolean;
+  replay(type: 'undo' | 'redo'): boolean;
+}
+
 type DatabaseHistoryStackGroup = {
+  semantic?: DatabaseSemanticHistoryAction;
   group: DatabaseHistoryGroup;
   entries: DatabaseHistoryStackEntry[];
 };
@@ -299,6 +305,23 @@ export class DatabaseHistoryManager {
   redo() {
     this.cancelPendingActions();
     return this.replay('redo');
+  }
+
+  /** Register an already committed action without capturing unrelated server Yjs structs. */
+  recordCommittedAction(semantic: DatabaseSemanticHistoryAction, group: object = Object.freeze({})) {
+    const latest = this.undoStack[this.undoStack.length - 1];
+
+    // Calendar setup may have created its date field before the row committed.
+    // Keep that setup and the new membership in the same user-visible undo step.
+    if (latest?.group === group && !latest.semantic) {
+      latest.semantic = semantic;
+    } else {
+      this.undoStack.push({ group, entries: [], semantic });
+      this.trimUndoHistory();
+    }
+
+    this.clearRedoHistory();
+    this.notify();
   }
 
   registerPendingAction(cancel: () => void) {
@@ -431,7 +454,10 @@ export class DatabaseHistoryManager {
   private hasAvailableEntry(group: DatabaseHistoryStackGroup, type: 'undo' | 'redo') {
     const stackKey = type === 'undo' ? 'undoStack' : 'redoStack';
 
-    return group.entries.some((entry) => entry.source.undoManager[stackKey].includes(entry.stackItem));
+    return (
+      !!group.semantic?.isCurrent() ||
+      group.entries.some((entry) => entry.source.undoManager[stackKey].includes(entry.stackItem))
+    );
   }
 
   private replay(type: 'undo' | 'redo') {
@@ -457,6 +483,7 @@ export class DatabaseHistoryManager {
       this.replaying = type;
       this.replayedEntries = [];
       let result: StackItem | null = null;
+      let semanticReplayed = false;
 
       try {
         // Entries are recorded in mutation order. Replaying in reverse makes a
@@ -467,11 +494,17 @@ export class DatabaseHistoryManager {
 
           result = result ?? replayed;
         }
+
+        if (group.semantic?.isCurrent()) semanticReplayed = group.semantic.replay(type);
       } finally {
         this.replaying = null;
 
-        if (this.replayedEntries.length > 0) {
-          targetStack.push({ group: group.group, entries: this.replayedEntries });
+        if (this.replayedEntries.length > 0 || semanticReplayed) {
+          targetStack.push({
+            group: group.group,
+            entries: this.replayedEntries,
+            semantic: semanticReplayed ? group.semantic : undefined,
+          });
         }
 
         this.replayedEntries = [];
@@ -481,7 +514,7 @@ export class DatabaseHistoryManager {
       // A remote edit can make a selected item ineffective. Only that exact
       // item was consumed, so continue at the next global action instead of
       // allowing the source UndoManager to scan into older local history.
-      if (result) return result;
+      if (result || semanticReplayed) return result;
     }
 
     this.notify();

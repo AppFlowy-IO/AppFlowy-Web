@@ -28,6 +28,9 @@ import {
 } from '@/application/types';
 import { AFConfigContext } from '@/components/main/app.hooks';
 
+import { createCloudRow, type CloudRowCreationIntent } from '../creation/create-row';
+import { recordCommittedRowCreation } from '../creation/row-creation-history';
+
 import { createCell, createRowDoc } from './test-helpers';
 
 import type { ReactNode } from 'react';
@@ -41,6 +44,35 @@ jest.mock('@/application/db', () => ({
 jest.mock('@/application/sync-outbox', () => ({
   deleteOutboxByObjectId: jest.fn(),
 }));
+
+jest.mock('../creation/create-row', () => ({ createCloudRow: jest.fn() }));
+beforeEach(() => {
+  jest.mocked(createCloudRow).mockImplementation(async (intent: CloudRowCreationIntent) => {
+    intent.assertCurrent();
+    const row = await intent.registerRow();
+
+    Y.applyUpdate(row, Y.encodeStateAsUpdate(intent.rowDoc));
+    const database = intent.databaseDoc.getMap('data').get('database') as YDatabase;
+
+    // Model the committed remote activation, using the real semantic history component.
+    intent.databaseDoc.transact(() => {
+      database.get(YjsDatabaseKey.views).forEach((view) => {
+        const orders = view.get(YjsDatabaseKey.row_orders);
+        const position = intent.position;
+        const index =
+          position.kind === 'after'
+            ? orders.toArray().findIndex((order) => order.id === position.row_id) + 1
+            : position.kind === 'end'
+            ? orders.length
+            : 0;
+
+        orders.insert(index, [{ id: intent.rowId, height: 36 }]);
+      });
+    }, 'remote');
+    recordCommittedRowCreation(intent.databaseDoc, intent.rowId, intent.historyGroup);
+    return intent.rowId;
+  });
+});
 
 const databaseId = 'database-id';
 const databaseDocId = '00000000-0000-4000-8000-000000000001';
@@ -183,6 +215,11 @@ describe('row lifecycle production hooks use database history', () => {
     relation.set(YjsDatabaseKey.data, [secondRowId]);
     relation.set(YjsDatabaseKey.field_type, FieldType.Relation);
     source.get(YjsDatabaseKey.cells).set('relation', relation);
+    const relationField = new Y.Map() as YDatabaseField;
+
+    relationField.set(YjsDatabaseKey.id, 'relation');
+    relationField.set(YjsDatabaseKey.type, FieldType.Relation);
+    database.get(YjsDatabaseKey.fields).set('relation', relationField);
     const metadata = { type: TimelineDependencyType.StartToStart, lag: 3 };
     const originalLinks = { [`${secondRowId}:${firstRowId}`]: metadata };
 

@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
+import { RowCreationSpinner, useRowCreationAction } from '@/components/database/hooks/useRowCreationAction';
 import { cn } from '@/lib/utils';
 
 export function ListLoadingIndicator({ fillAvailable = false }: { fillAvailable?: boolean }) {
@@ -52,15 +53,18 @@ export function ListLoadMoreIndicator() {
 export function ListNewRow() {
   const { t } = useTranslation();
   const createRow = useNewRowDispatch();
+  const { pending, run } = useRowCreationAction();
 
   return (
     <button
       className='ml-10 flex h-10 w-[calc(100%_-_2.5rem)] items-center gap-1.5 rounded-[4px] px-2 text-left text-sm text-text-tertiary hover:bg-fill-content-hover'
       data-testid='list-new-row'
-      onClick={() => void createRow({ openAfterCreate: true, tailing: true })}
+      disabled={pending}
+      aria-busy={pending}
+      onClick={() => void run(() => createRow({ openAfterCreate: true, tailing: true }))}
       type='button'
     >
-      <PlusIcon aria-hidden='true' className='h-4 w-4' />
+      {pending ? <RowCreationSpinner /> : <PlusIcon aria-hidden='true' className='h-4 w-4' />}
       {t('grid.row.newRow')}
     </button>
   );

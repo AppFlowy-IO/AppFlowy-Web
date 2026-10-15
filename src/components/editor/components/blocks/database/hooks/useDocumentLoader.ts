@@ -1,9 +1,10 @@
 import EventEmitter from 'events';
+
 import { useCallback, useEffect, useState } from 'react';
 
+import { retainRollupSource } from '@/application/database-yjs/rollup/source-sync';
 import { deleteCollabDB } from '@/application/db';
-import { LoadView, YDoc, YDocWithMeta } from '@/application/types';
-import { SyncContext } from '@/application/services/js-services/sync-protocol';
+import { BindViewSync, LoadView, YDoc, YDocWithMeta } from '@/application/types';
 import { determineErrorType, ErrorType } from '@/application/utils/error-utils';
 import { subscribeCollabDocReset } from '@/components/ws/sync/subscribeCollabDocReset';
 import { CollabDocResetPayload } from '@/components/ws/sync/types';
@@ -13,7 +14,8 @@ interface UseDocumentLoaderProps {
   viewId: string;
   databaseId?: string | null;
   loadView?: LoadView;
-  bindViewSync?: (doc: YDoc) => SyncContext | null;
+  bindViewSync?: BindViewSync;
+  scheduleDeferredCleanup?: (objectId: string, delayMs?: number) => void;
   eventEmitter?: EventEmitter;
 }
 
@@ -37,12 +39,12 @@ export function useDocumentLoader({
   databaseId,
   loadView,
   bindViewSync,
+  scheduleDeferredCleanup,
   eventEmitter,
 }: UseDocumentLoaderProps): UseDocumentLoaderResult {
   const [doc, setDoc] = useState<YDoc | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [noAccess, setNoAccess] = useState(false);
-  const [syncBound, setSyncBound] = useState(false);
 
   const loadWithRetry = useCallback(
     async (viewIdToLoad: string, retries = 3): Promise<YDoc | null> => {
@@ -54,7 +56,7 @@ export function useDocumentLoader({
       for (let attempt = 1; attempt <= retries; attempt++) {
         try {
           Log.debug('[useDocumentLoader] attempt', { viewIdToLoad, attempt, retries });
-          const result = await loadView(viewIdToLoad, false, false, { databaseId });
+          const result = await loadView(viewIdToLoad, false, false, { databaseId, databaseMetadataOnly: true });
 
           if (result) {
             Log.debug('[useDocumentLoader] loadView returned doc', { viewIdToLoad, attempt });
@@ -100,7 +102,6 @@ export function useDocumentLoader({
         setDoc(loadedDoc);
         setNotFound(false);
         setNoAccess(false);
-        setSyncBound(false);
       } catch (error) {
         if (cancelled) return;
 
@@ -130,24 +131,16 @@ export function useDocumentLoader({
   }, [viewId, databaseId, loadWithRetry]);
 
   useEffect(() => {
-    if (!doc || !bindViewSync || syncBound) return;
+    if (!doc || !bindViewSync) return;
 
-    const docWithMeta = doc as YDocWithMeta;
-    const docViewId = docWithMeta.view_id ?? docWithMeta.object_id;
-
-    if (docViewId !== viewId) return;
-
-    if (docWithMeta._syncBound) {
-      setSyncBound(true);
-      return;
+    // An embedded view may share the page's canonical database. Own a realtime
+    // subscription without replacing the page's view identity or sync flag.
+    if (scheduleDeferredCleanup) {
+      return retainRollupSource({ bindViewSync, scheduleDeferredCleanup }, doc);
     }
 
-    const syncContext = bindViewSync(doc);
-
-    if (syncContext) {
-      setSyncBound(true);
-    }
-  }, [doc, bindViewSync, syncBound, viewId]);
+    if (!(doc as YDocWithMeta)._syncBound) bindViewSync(doc);
+  }, [doc, bindViewSync, scheduleDeferredCleanup]);
 
   useEffect(() => {
     if (!eventEmitter) return;

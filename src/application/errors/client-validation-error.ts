@@ -10,6 +10,7 @@ export const clientValidationMessages = {
   ATOMIC_CREATION_SERVER_UPGRADE: 'Update the server to use this creation feature.',
   ATOMIC_CREATION_OWNER_CHANGED: 'The account or workspace changed. Retry in the original workspace.',
   ATOMIC_CREATION_PENDING: 'Creation is pending. Retry the original request to finish.',
+  ATOMIC_ROW_CREATED_RELOAD: 'The row was created. Reload this database to open it.',
 } as const;
 
 const translationKeys: Partial<Record<keyof typeof clientValidationMessages, string>> = {
@@ -17,6 +18,7 @@ const translationKeys: Partial<Record<keyof typeof clientValidationMessages, str
   ATOMIC_CREATION_SERVER_UPGRADE: 'atomicCreation.serverUpgrade',
   ATOMIC_CREATION_OWNER_CHANGED: 'atomicCreation.ownerChanged',
   ATOMIC_CREATION_PENDING: 'atomicCreation.pending',
+  ATOMIC_ROW_CREATED_RELOAD: 'atomicCreation.rowCreatedReload',
 };
 
 /**

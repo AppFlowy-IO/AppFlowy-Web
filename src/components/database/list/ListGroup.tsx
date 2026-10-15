@@ -15,6 +15,7 @@ import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { ReactComponent as TickIcon } from '@/assets/icons/tick.svg';
 import { Tag } from '@/components/_shared/tag';
 import { SelectOptionColorMap, SelectOptionFgColorMap } from '@/components/database/components/cell/cell.const';
+import { RowCreationSpinner, useRowCreationAction } from '@/components/database/hooks/useRowCreationAction';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
@@ -57,6 +58,7 @@ export function ListGroupHeader({
   const setVisibility = useSetListGroupVisibilityDispatch(groupConfigId, fieldId);
   const clearGrouping = useClearGroupByFieldDispatch();
   const createRow = useCreateListGroupRow(fieldId, group.id);
+  const { pending, run } = useRowCreationAction();
   const isCheckbox = fieldType === FieldType.Checkbox;
   const isChecked = group.id === 'Yes';
   const optionBackgroundToken = group.option ? SelectOptionColorMap[group.option.color] : undefined;
@@ -145,12 +147,14 @@ export function ListGroupHeader({
             aria-label={t('grid.row.newRow', 'New row in group')}
             className='h-7 w-7 rounded-[4px] p-1 opacity-0 focus-visible:opacity-100 group-focus-within/list-group-header:opacity-100 group-hover/list-group-header:opacity-100'
             data-testid='list-group-new-row'
-            onClick={() => void createRow()}
+            disabled={pending}
+            loading={pending}
+            onClick={() => void run(createRow)}
             size='icon'
             type='button'
             variant='ghost'
           >
-            <PlusIcon aria-hidden='true' className='h-4 w-4' />
+            {pending ? <RowCreationSpinner /> : <PlusIcon aria-hidden='true' className='h-4 w-4' />}
           </Button>
         </>
       ) : null}
@@ -161,15 +165,18 @@ export function ListGroupHeader({
 export function ListGroupFooter({ fieldId, groupId }: { fieldId?: string; groupId: string }) {
   const { t } = useTranslation();
   const createRow = useCreateListGroupRow(fieldId, groupId);
+  const { pending, run } = useRowCreationAction();
 
   return (
     <div className='ml-10 h-9 border-b border-border-primary px-1' data-testid={`list-group-footer-${groupId}`}>
       <button
         className='flex h-9 w-full items-center gap-1.5 rounded-[6px] px-2 text-left text-sm text-text-tertiary hover:bg-fill-content-hover'
-        onClick={() => void createRow()}
+        disabled={pending}
+        aria-busy={pending}
+        onClick={() => void run(createRow)}
         type='button'
       >
-        <PlusIcon aria-hidden='true' className='h-4 w-4' />
+        {pending ? <RowCreationSpinner /> : <PlusIcon aria-hidden='true' className='h-4 w-4' />}
         {t('grid.row.newRow')}
       </button>
     </div>
