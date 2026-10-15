@@ -70,6 +70,30 @@ it('keeps released atomic commands when a main version 13 database gains the per
   }
 });
 
+it('keeps durable denials when a database created by the permissions PR build (version 13) is upgraded', async () => {
+  // PR #621 builds declared sync_permission_blocks at version 13, the number main's
+  // atomic_creation release also used. Dexie diffs every version from the stored one up, so
+  // the merged version 13 must declare the table too or its step would drop the denials.
+  const branch = new Dexie(NAME);
+
+  branch.version(13).stores({ ...STORES_V12, ...syncPermissionBlockSchema });
+  await branch.table('sync_permission_blocks').add(block);
+  await branch.table('app_view_cache').add(bareCacheRow);
+  branch.close();
+
+  const db = await openMergedDatabase();
+
+  try {
+    expect(db.verno).toBe(15);
+    expect(await db.table('sync_permission_blocks').toArray()).toEqual([expect.objectContaining(block)]);
+    expect(await db.table('atomic_creation').count()).toBe(0);
+    // Version 15's cleanup still runs for this path.
+    expect(await db.table('app_view_cache').count()).toBe(0);
+  } finally {
+    db.close();
+  }
+});
+
 it('keeps durable denials when a permissions-branch version 14 database gains atomic commands', async () => {
   const branch = new Dexie(NAME);
 

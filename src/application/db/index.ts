@@ -281,7 +281,11 @@ db.version(12).stores({
 
 // Version 13: immutable atomic commands are scoped to their original account,
 // server and workspace. They are never drained automatically after reconnect.
-// Released builds already created this version: it must stay exactly as it is.
+// Two released lines created a version 13: main's with atomic_creation and the
+// permissions PR build's with sync_permission_blocks (see version 14). Dexie
+// diffs every version from the stored one up and drops tables a step doesn't
+// declare, so this step declares both: either database keeps its table and
+// gains the other one.
 db.version(13).stores({
   ...viewMetasSchema,
   ...userSchema,
@@ -289,14 +293,18 @@ db.version(13).stores({
   ...workspaceMemberProfileSchema,
   ...versionSchema,
   ...syncOutboxSchema,
+  ...syncPermissionBlockSchema,
   ...collabStorageSchema,
   ...appViewCacheSchema,
   ...workspaceDatabaseCatalogSchema,
   ...atomicCreationSchema,
 });
 
-// Version 14: a durable denial survives even when a prior socket submission
-// already retired its outbox row. Never infer a new grant from a restart.
+// Version 14: sync_permission_blocks keeps a durable denial even when a prior
+// socket submission already retired its outbox row. Never infer a new grant
+// from a restart. Version 13 declares the table too; integration builds created
+// this version without atomic_creation. Stores are cumulative, so restating
+// every table here and in version 15 only documents the full schema.
 db.version(14).stores({
   ...viewMetasSchema, ...userSchema, ...rowSchema, ...workspaceMemberProfileSchema,
   ...versionSchema, ...syncOutboxSchema, ...syncPermissionBlockSchema,
