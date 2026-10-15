@@ -2,6 +2,7 @@ import EventEmitter from 'events';
 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
+import { AtomicCreationPendingError } from '@/application/atomic-creation';
 import { AccessLevel, ViewLayout } from '@/application/types';
 import type { CreatePagePayload } from '@/application/types';
 import NewPage from '@/components/app/view-actions/NewPage';
@@ -457,6 +458,25 @@ describe('NewPage create-space flow', () => {
     expect(mockOpenPageModal).not.toHaveBeenCalled();
     // The dialog stays open so another space can be chosen.
     expect(screen.getByTestId('new-page-modal')).toBeTruthy();
+  });
+
+  it('says the same when an atomic page creation is refused', async () => {
+    // Atomic creation keeps the server's answer as the cause of its pending command.
+    const denial = { code: 1012, message: 'user is not allowed to access this view', httpStatus: 403 };
+
+    mockAddPage.mockRejectedValue(new AtomicCreationPendingError({ id: 'journal', requestId: 'request' } as never, denial));
+    await addToExisting();
+
+    expect(mockNotifyError).toHaveBeenCalledWith('spaceCreation.pageDestination.addDenied');
+  });
+
+  it('shows the reviewed pending guidance when an atomic page creation could not be confirmed', async () => {
+    const pending = new AtomicCreationPendingError({ id: 'journal', requestId: 'request' } as never, new Error('lost'));
+
+    mockAddPage.mockRejectedValue(pending);
+    await addToExisting();
+
+    expect(mockNotifyError).toHaveBeenCalledWith(pending.message);
   });
 
   it('reports any other failure in plain words instead of the raw error', async () => {

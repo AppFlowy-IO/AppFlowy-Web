@@ -1,4 +1,6 @@
 import { ERROR_CODE } from '@/application/constants';
+import { userFriendlyErrorMessage } from '@/application/errors/error-message';
+import { getWorkspacePlanPolicy } from '@/application/workspace-plan-policy';
 import { getBillingErrorMessage } from '@/utils/billing-error';
 import { getAPIErrorCode, isUnsupportedRouteError } from '@/utils/errors';
 
@@ -50,21 +52,38 @@ export function isTooLargeError(error: unknown): boolean {
   return code === ERROR_CODE.PAYLOAD_TOO_LARGE || code === 413 || httpStatus(error) === 413;
 }
 
+const NO_PUBLIC_MESSAGE = '\u0000';
+
+/**
+ * The reviewed words the server or the shared error catalog gives for this error, in the
+ * reader's language, or undefined when only generic guidance would apply. Never raw server text.
+ */
+export function publicErrorMessage(error: unknown): string | undefined {
+  const message = userFriendlyErrorMessage(error, {
+    fallback: NO_PUBLIC_MESSAGE,
+    hostedBilling: getWorkspacePlanPolicy().usesHostedBilling,
+  });
+
+  return message.includes(NO_PUBLIC_MESSAGE) ? undefined : message;
+}
+
 /**
  * Why a change didn't go through, in plain words, to follow the name of the change in a toast
- * ("Couldn't change access for Alex. You don't have permission to do this."). Server text can name
- * internal IDs, so an answer from the server gets reviewed copy; errors raised by this client
- * already carry plain copy.
+ * ("Couldn't change access for Alex. You don't have permission to do this."). One precedence for
+ * every permission screen: billing remedies; then this client's words for lost rights and things
+ * that changed elsewhere; then a public message from the server or the shared catalog; then the
+ * copy an error raised by this client carries; then a generic reason. Server text, which can name
+ * internal IDs, is never shown.
  */
 export function changeFailureReason(error: unknown, t: TFunction): string {
   const billingMessage = getBillingErrorMessage(error);
 
   if (billingMessage) return billingMessage;
-  if (getAPIErrorCode(error) === undefined) {
-    return error instanceof Error && error.message ? error.message : t('changeFailure.unknown');
-  }
-
   if (isPermissionError(error)) return t('changeFailure.noPermission');
   if (isGoneError(error)) return t('changeFailure.changedElsewhere');
+  const publicMessage = publicErrorMessage(error);
+
+  if (publicMessage) return publicMessage;
+  if (getAPIErrorCode(error) === undefined && error instanceof Error && error.message) return error.message;
   return t('changeFailure.unknown');
 }

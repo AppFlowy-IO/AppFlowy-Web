@@ -1057,7 +1057,8 @@ describe('ManageSpace ACL management', () => {
       ['a lost right', deniedApiError, 'changeFailure.noPermission'],
       ['a removed member', notFoundApiError, 'changeFailure.changedElsewhere'],
       ['a network failure', networkApiError, 'changeFailure.unknown'],
-      ['a server failure', { code: 500, httpStatus: 500, message: 'Internal error: pool timed out' }, 'changeFailure.unknown'],
+      // The shared catalog's words for a server failure (main's public messages).
+      ['a server failure', { code: 500, httpStatus: 500, message: 'Internal error: pool timed out' }, "AppFlowy isn't available right now. Try again later."],
       // The service's own checks already speak plainly.
       ['a stale capability', new Error('space.memberOverride.contextChanged'), 'space.memberOverride.contextChanged'],
     ])('names the change and gives a plain reason instead of server text after %s', async (_case, error, expected) => {

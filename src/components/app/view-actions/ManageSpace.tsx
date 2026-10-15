@@ -76,7 +76,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 import { getBillingErrorMessage } from '@/utils/billing-error';
-import { changeFailureReason, isGoneError, isPermissionError, RAW } from '@/utils/change-failure';
+import { changeFailureReason, isGoneError, isPermissionError, publicErrorMessage, RAW } from '@/utils/change-failure';
 import { getAPIErrorCode, getErrorDiagnostic, isUnsupportedRouteError } from '@/utils/errors';
 import { getConfigValue } from '@/utils/runtime-config';
 
@@ -256,15 +256,20 @@ function isAccessDeniedError(error: unknown): boolean {
 }
 
 /**
- * Toast copy for a failed read. Server text can name internal IDs ("user 42
- * cannot manage members for space …"), so a server answer gets the caller's
- * plain copy. Errors raised by this client already carry plain copy.
+ * Toast copy for a failed read, with the same precedence as changeFailureReason. Server text can
+ * name internal IDs ("user 42 cannot manage members for space …"), so it is never shown: lost
+ * access keeps the caller's plain copy (the dialog explains it), a public server or catalog
+ * message is shown when there is one, and errors raised by this client carry their own copy.
  */
 function plainErrorMessage(error: unknown, fallback: string): string {
   const billingMessage = getBillingErrorMessage(error);
 
   if (billingMessage) return billingMessage;
-  if (getAPIErrorCode(error) === undefined) return error instanceof Error && error.message ? error.message : fallback;
+  if (isAccessDeniedError(error)) return fallback;
+  const publicMessage = publicErrorMessage(error);
+
+  if (publicMessage) return publicMessage;
+  if (getAPIErrorCode(error) === undefined && error instanceof Error && error.message) return error.message;
   return fallback;
 }
 

@@ -182,7 +182,8 @@ describe('group access to all spaces (group dialog)', () => {
     render(<GroupSpaceCoverageCard workspaceId='workspace' group={group({ space_coverage_access_level: 30 })} />);
     fireEvent.click(option('off'));
     await waitFor(() =>
-      expect(toastError).toHaveBeenCalledWith('groupSpaceAccess.updateFailed:Directory group:changeFailure.unknown')
+      // A server failure gets the shared catalog's words; its own text is never shown.
+      expect(toastError).toHaveBeenCalledWith("groupSpaceAccess.updateFailed:Directory group:AppFlowy isn't available right now. Try again later.")
     );
     expect(trigger().textContent).toContain('groupSpaceAccess.canEdit');
     expect(toastSuccess).not.toHaveBeenCalled();

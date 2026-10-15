@@ -2,6 +2,7 @@ import { Button as MuiButton } from '@mui/material';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { AtomicCreationPendingError } from '@/application/atomic-creation';
 import { View, ViewLayout } from '@/application/types';
 import { ReactComponent as Add } from '@/assets/icons/add_new_page.svg';
 import { ReactComponent as LockSvg } from '@/assets/icons/lock.svg';
@@ -34,6 +35,7 @@ import { dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { getBillingErrorMessage } from '@/utils/billing-error';
+import { publicErrorMessage } from '@/utils/change-failure';
 import { Log } from '@/utils/log';
 
 const CREATE_SPACE_INITIAL_PAGE = { layout: ViewLayout.Document };
@@ -208,11 +210,15 @@ function NewPage() {
       } catch (error) {
         if (pageOpenSequence !== pageOpenSequenceRef.current) return;
         // Server errors are plain objects whose text is not written for people. A denial usually
-        // means access changed after the destination was checked.
+        // means access changed after the destination was checked; an atomic creation keeps the
+        // server's answer as the cause of its pending command. Precedence: our words for a denial,
+        // billing, then a public message (such as "creation is pending"), then our own fallback.
+        const cause = error instanceof AtomicCreationPendingError ? error.cause : error;
+
         notify.error(
-          isPermissionDeniedError(error)
+          isPermissionDeniedError(cause)
             ? t('spaceCreation.pageDestination.addDenied')
-            : getBillingErrorMessage(error) || t('spaceCreation.pageDestination.addFailed')
+            : getBillingErrorMessage(cause) || publicErrorMessage(error) || t('spaceCreation.pageDestination.addFailed')
         );
       } finally {
         if (pageOpenSequence === pageOpenSequenceRef.current) {
