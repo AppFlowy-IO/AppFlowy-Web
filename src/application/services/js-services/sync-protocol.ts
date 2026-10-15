@@ -15,6 +15,8 @@ import { CollabOrigin, Types, YDoc } from '@/application/types';
 import { collab, messages } from '@/proto/messages';
 import { Log } from '@/utils/log';
 
+import { isNoopForServer, recordServerDeletions } from './server-deletions';
+
 /**
  * SyncContext is the context object passed to the sync protocol handlers.
  * It contains the Y.Doc instance, optional awareness instance, collab type
@@ -151,7 +153,13 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
   // durable outbox or on the wire. An empty DatabaseRow update with an empty
   // causal vector otherwise looks like a self-contained replacement even
   // though it carries no row metadata or parent database id.
-  if (isEmptyUpdateV1(update)) {
+  //
+  // A diff always carries the complete delete set, so a page with any deletion
+  // in its history never produces the empty update. Bytes without structs
+  // whose deletions all came from the server are the same no-op; queueing them
+  // would show a reader "waiting for edit access" and make an editor re-send
+  // the delete set on every open. A local deletion is never among them.
+  if (isEmptyUpdateV1(update) || isNoopForServer(doc, update)) {
     ctx.onManifestSync?.(doc.guid);
     return;
   }
@@ -239,6 +247,8 @@ const handleUpdate = (ctx: SyncContext, message: collab.IUpdate): void => {
   switch (message.flags) {
     case UpdateFlags.Lib0v1:
       Y.applyUpdate(doc, message.payload!, 'remote');
+      // Only the server assigns a message id; sibling-tab fan-out has none.
+      if (message.messageId) recordServerDeletions(doc, message.payload!);
       break;
     case UpdateFlags.Lib0v2:
       Y.applyUpdateV2(doc, message.payload!, 'remote');
