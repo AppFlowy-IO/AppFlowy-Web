@@ -1,3 +1,4 @@
+import { serverRestore } from '@/application/server-restore';
 import type { YDoc } from '@/application/types';
 
 import { captureCollabStorageScope, collabStorageKey } from './collab-storage-scope';
@@ -22,8 +23,8 @@ export type DatabaseStorageFence = {
   nonDurable?: boolean;
 };
 
-export const DATABASE_CACHE_EPOCH_PREFIX = 'af_database_blob_epoch:';
-export const DATABASE_RESTORE_MARKER_PREFIX = 'af_database_restore:';
+export const DATABASE_CACHE_EPOCH_PREFIX = serverRestore.cacheKey('af_database_blob_epoch:');
+export const DATABASE_RESTORE_MARKER_PREFIX = serverRestore.cacheKey('af_database_restore:');
 const applyingFences = new WeakMap<YDoc, DatabaseStorageFence>();
 
 export function databaseStorageFenceObjectId(databaseId: string): string {

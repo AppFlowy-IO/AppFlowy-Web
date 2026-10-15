@@ -76,7 +76,7 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { getBillingErrorMessage } from '@/utils/billing-error';
 import { changeFailureReason, isGoneError, isPermissionError, RAW } from '@/utils/change-failure';
-import { getAPIErrorCode, getErrorMessage, isUnsupportedRouteError } from '@/utils/errors';
+import { getAPIErrorCode, getErrorDiagnostic, isUnsupportedRouteError } from '@/utils/errors';
 import { getConfigValue } from '@/utils/runtime-config';
 
 import type { TFunction } from 'i18next';
@@ -269,7 +269,8 @@ function plainErrorMessage(error: unknown, fallback: string): string {
 
 /** Why a change in this dialog didn't go through; the last-owner rule has its own explanation. */
 function changeReason(error: unknown, t: TFunction): string {
-  return getErrorMessage(error, '').toLowerCase().includes(LAST_EXPLICIT_OWNER_ERROR)
+  // The server's diagnostic is read only to recognize the rule; it is never shown.
+  return getErrorDiagnostic(error).toLowerCase().includes(LAST_EXPLICIT_OWNER_ERROR)
     ? t('space.permissionManager.lastOwnerRequired')
     : changeFailureReason(error, t);
 }

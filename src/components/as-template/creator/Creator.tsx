@@ -21,7 +21,11 @@ const MenuProps = {
   },
 };
 
-function Creator({ value, onChange }: { value?: string; onChange: (value: string) => void }) {
+function Creator({ value, onChange, disabled = false }: {
+  value?: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+}) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
@@ -58,6 +62,7 @@ function Creator({ value, onChange }: { value?: string; onChange: (value: string
       </Typography>
       <div className={'flex flex-col gap-4'}>
         <Button
+          disabled={disabled}
           variant={'outlined'}
           color={'inherit'}
           ref={ref}
@@ -90,7 +95,7 @@ function Creator({ value, onChange }: { value?: string; onChange: (value: string
             );
           })}
         </div>
-        <Popover {...MenuProps} open={open} anchorEl={ref.current} onClose={() => setOpen(false)}>
+        <Popover {...MenuProps} open={open && !disabled} anchorEl={ref.current} onClose={() => setOpen(false)}>
           <div
             className={'flex flex-col gap-2'}
             style={{

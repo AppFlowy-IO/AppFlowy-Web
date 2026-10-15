@@ -1,3 +1,5 @@
+import { AtomicCreationPendingError } from '@/application/atomic-creation';
+import { createDefaultPage } from '../page-default-creation';
 import { ERROR_CODE } from '@/application/constants';
 import {
   AccessLevel,
@@ -36,6 +38,11 @@ jest.mock('@/application/services/js-services/http/core', () => ({
   getAxios: jest.fn(),
 }));
 
+jest.mock('../page-default-creation', () => ({
+  ...jest.requireActual('../page-default-creation'),
+  createDefaultPage: jest.fn(),
+}));
+
 const privatePermission: SpacePermissionSettings = {
   visibility: SpaceVisibility.Private,
   owner_access_level: AccessLevel.FullAccess,
@@ -65,7 +72,7 @@ function apiResponse<T>(data: T) {
   };
 }
 
-describe('online Form and Chart creation', () => {
+describe('legacy authored Form and Chart creation', () => {
   beforeEach(() => {
     updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), {
       status: 'available', info: { enable_page_history: true, self_hosted: false },
@@ -78,7 +85,7 @@ describe('online Form and Chart creation', () => {
     jest.clearAllMocks();
     jest.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
 
-    await expect(addAppPage('workspace-id', 'parent-id', { layout })).rejects.toThrow(
+    await expect(addAppPage('workspace-id', 'parent-id', { layout, page_data: { authored: true } })).rejects.toThrow(
       'Connect to the internet to create Form or Chart views.'
     );
     await expect(createDatabaseView('workspace-id', 'source-id', {
@@ -98,7 +105,7 @@ describe('online Form and Chart creation', () => {
     // reachable. Self-hosted operations must be allowed to reach that server.
     jest.mocked(executeAPIRequest).mockResolvedValue({ view_id: 'accepted-view-id' });
 
-    await expect(addAppPage('workspace-id', 'parent-id', { layout })).resolves.toEqual({ view_id: 'accepted-view-id' });
+    await expect(addAppPage('workspace-id', 'parent-id', { layout, page_data: { authored: true } })).resolves.toEqual({ view_id: 'accepted-view-id' });
     await expect(createDatabaseView('workspace-id', 'source-id', {
       database_id: 'database-id', parent_view_id: 'parent-id', layout, name: 'View',
     })).resolves.toEqual({ view_id: 'accepted-view-id' });
@@ -107,7 +114,7 @@ describe('online Form and Chart creation', () => {
 
 });
 
-describe('createSpaceWithInitialPage', () => {
+describe('createSpaceWithInitialPage with authored content', () => {
   const post = jest.fn();
   const deleteRequest = jest.fn();
 
@@ -147,7 +154,7 @@ describe('createSpaceWithInitialPage', () => {
       name: 'Original', view_id: 'draft-space-id', client_generated_view_id: true,
       permission: structuredPrivatePermission,
       initial_page: { layout: ViewLayout.Document, view_id: 'draft-page-id' },
-    }, () => { if (!current) throw new Error('Workspace changed'); });
+    }, { assertCurrent: () => { if (!current) throw new Error('Workspace changed'); } });
 
     current = false;
     resolve(apiResponse({ view_id: 'draft-space-id' }));
@@ -247,7 +254,7 @@ describe('createSpaceWithInitialPage', () => {
         space_icon: '',
         space_icon_color: '',
         permission: structuredPrivatePermission,
-        initial_page: { layout: ViewLayout.Document },
+        initial_page: { page_data: { blocks: [] }, layout: ViewLayout.Document },
       })
     ).rejects.toBe(pageError);
 
@@ -279,7 +286,7 @@ describe('createSpaceWithInitialPage', () => {
         space_icon_color: '',
         view_id: 'explicit-space-id',
         permission: structuredPrivatePermission,
-        initial_page: { layout: ViewLayout.Document },
+        initial_page: { page_data: { blocks: [] }, layout: ViewLayout.Document },
       })
     ).rejects.toBe(pageError);
 
@@ -302,7 +309,7 @@ describe('createSpaceWithInitialPage', () => {
         space_icon_color: '',
         view_id: 'requested-space-id',
         permission: structuredPrivatePermission,
-        initial_page: { layout: ViewLayout.Document },
+        initial_page: { page_data: { blocks: [] }, layout: ViewLayout.Document },
       })
     ).rejects.toBe(createError);
 
@@ -319,7 +326,8 @@ describe('createSpaceWithInitialPage', () => {
     const payload = {
       name: 'Draft space', view_id: 'draft-space-id', client_generated_view_id: true,
       permission: structuredPrivatePermission,
-      initial_page: { layout: ViewLayout.Document, view_id: 'draft-page-id' },
+      // Authored content keeps the composed page-view path instead of atomic default creation.
+      initial_page: { page_data: { blocks: [] }, layout: ViewLayout.Document, view_id: 'draft-page-id' },
     };
 
     post.mockImplementation(async (url: string, body?: { view_id?: string }) => {
@@ -363,7 +371,7 @@ describe('createSpaceWithInitialPage', () => {
     await expect(createSpaceWithInitialPage('workspace-id', {
       name: 'Draft space', view_id: 'draft-space-id', client_generated_view_id: true,
       permission: structuredPrivatePermission,
-      initial_page: { layout: ViewLayout.Document, view_id: 'draft-page-id' },
+      initial_page: { page_data: { blocks: [] }, layout: ViewLayout.Document, view_id: 'draft-page-id' },
     })).rejects.toMatchObject({ clientGeneratedCleanupSucceeded: false });
     expect(post).toHaveBeenCalledTimes(2);
     expect(deleteRequest).not.toHaveBeenCalled();
@@ -379,7 +387,7 @@ describe('createSpaceWithInitialPage', () => {
     await expect(createSpaceWithInitialPage('workspace-id', {
       name: 'Draft space', view_id: 'draft-space-id', client_generated_view_id: true,
       permission: structuredPrivatePermission,
-      initial_page: { layout: ViewLayout.Document, view_id: 'draft-page-id' },
+      initial_page: { page_data: { blocks: [] }, layout: ViewLayout.Document, view_id: 'draft-page-id' },
     })).rejects.toMatchObject({ clientGeneratedCleanupSucceeded: false });
   });
 
@@ -395,7 +403,7 @@ describe('createSpaceWithInitialPage', () => {
         view_id: 'draft-space-id',
         client_generated_view_id: true,
         permission: structuredPrivatePermission,
-        initial_page: { layout: ViewLayout.Document, view_id: 'draft-page-id' },
+        initial_page: { page_data: { blocks: [] }, layout: ViewLayout.Document, view_id: 'draft-page-id' },
       })
     ).rejects.toBe(createError);
 
@@ -423,7 +431,7 @@ describe('createSpaceWithInitialPage', () => {
         view_id: 'draft-space-id',
         client_generated_view_id: true,
         permission: structuredPrivatePermission,
-        initial_page: { layout: ViewLayout.Document, view_id: 'draft-page-id' },
+        initial_page: { page_data: { blocks: [] }, layout: ViewLayout.Document, view_id: 'draft-page-id' },
       })
     ).rejects.toBe(pageError);
 
@@ -453,7 +461,7 @@ describe('createSpaceWithInitialPage', () => {
         view_id: 'draft-space-id',
         client_generated_view_id: true,
         permission: structuredPrivatePermission,
-        initial_page: { layout: ViewLayout.Document, view_id: 'draft-page-id' },
+        initial_page: { page_data: { blocks: [] }, layout: ViewLayout.Document, view_id: 'draft-page-id' },
       })
     ).rejects.toMatchObject({
       code: -1,
@@ -483,7 +491,7 @@ describe('createSpaceWithInitialPage', () => {
         view_id: 'draft-space-id',
         client_generated_view_id: true,
         permission: structuredPrivatePermission,
-        initial_page: { layout: ViewLayout.Document, view_id: 'draft-page-id' },
+        initial_page: { page_data: { blocks: [] }, layout: ViewLayout.Document, view_id: 'draft-page-id' },
       })
     ).rejects.toMatchObject({
       code: -1,
@@ -510,7 +518,7 @@ describe('createSpaceWithInitialPage', () => {
         view_id: 'draft-space-id',
         client_generated_view_id: true,
         permission: structuredPrivatePermission,
-        initial_page: { layout: ViewLayout.Document, view_id: 'draft-page-id' },
+        initial_page: { page_data: { blocks: [] }, layout: ViewLayout.Document, view_id: 'draft-page-id' },
       })
     ).resolves.toEqual({
       space: { view_id: 'draft-space-id' },
@@ -526,7 +534,7 @@ describe('createSpaceWithInitialPage', () => {
       parent_view_id: 'draft-space-id',
       layout: ViewLayout.Document,
       name: undefined,
-      page_data: undefined,
+      page_data: { blocks: [] },
       view_id: 'draft-page-id',
       collab_id: 'draft-page-id',
       prev_view_id: undefined,
@@ -547,7 +555,7 @@ describe('createSpaceWithInitialPage', () => {
       space_icon: '',
       space_icon_color: '',
       space_permission: SpacePermission.Private,
-      initial_page: { layout: ViewLayout.Document },
+      initial_page: { page_data: { blocks: [] }, layout: ViewLayout.Document },
     };
 
     await expect(createSpaceWithInitialPage('workspace-id', payload)).resolves.toEqual(response);
@@ -573,7 +581,7 @@ describe('createSpaceWithInitialPage', () => {
         view_id: 'legacy-space-id',
         client_generated_view_id: true,
         space_permission: SpacePermission.Private,
-        initial_page: { layout: ViewLayout.Document, view_id: 'legacy-page-id' },
+        initial_page: { page_data: { blocks: [] }, layout: ViewLayout.Document, view_id: 'legacy-page-id' },
       })
     ).rejects.toMatchObject({ code: -1 });
   });
@@ -601,7 +609,7 @@ describe('createSpaceWithInitialPage', () => {
         // The structured visibility is authoritative when both forms are
         // present, so a stale compatibility field cannot select a legacy path.
         space_permission: staleLegacyPermission,
-        initial_page: { layout: ViewLayout.Document, view_id: 'page-id' },
+        initial_page: { page_data: { blocks: [] }, layout: ViewLayout.Document, view_id: 'page-id' },
       })
     ).resolves.toEqual({
       space: { view_id: 'space-id' },
@@ -619,7 +627,7 @@ describe('createSpaceWithInitialPage', () => {
       parent_view_id: 'space-id',
       layout: ViewLayout.Document,
       name: undefined,
-      page_data: undefined,
+      page_data: { blocks: [] },
       view_id: 'page-id',
       collab_id: 'page-id',
       prev_view_id: undefined,
@@ -847,4 +855,67 @@ describe('legacy space permission mapping', () => {
   ])('treats %s visibility as legacy-compatible: %s', (visibility, expected) => {
     expect(isLegacyCompatibleSpaceVisibility(visibility)).toBe(expected);
   });
+});
+
+
+describe('default atomic page composition', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it.each([ViewLayout.Document, ViewLayout.Grid, ViewLayout.Form])('delegates default layout %s without the legacy body endpoint', async (layout) => {
+    jest.mocked(createDefaultPage).mockResolvedValueOnce({ view_id: 'created-page' });
+    const activation = { assertCurrent: jest.fn(), activate: jest.fn() };
+
+    await expect(addAppPage('workspace-id', 'parent-id', { layout }, activation)).resolves.toEqual({ view_id: 'created-page' });
+    expect(createDefaultPage).toHaveBeenCalledWith('workspace-id', 'parent-id', { layout }, activation);
+    expect(executeAPIRequest).not.toHaveBeenCalled();
+  });
+
+  it('retains a newly created space when its atomic initial page has a pending outcome', async () => {
+    const post = jest.fn().mockResolvedValue(apiResponse({ view_id: 'space-id' }));
+    const deleteRequest = jest.fn();
+
+    jest.mocked(getAxios).mockReturnValue({ post, delete: deleteRequest } as never);
+    jest.mocked(executeAPIRequest).mockImplementation(async (request) => (await request()!).data.data);
+    const pending = new AtomicCreationPendingError({ id: 'journal-id', requestId: 'request-id' } as never, new Error('response lost'));
+
+    jest.mocked(createDefaultPage).mockRejectedValueOnce(pending);
+    await expect(createSpaceWithInitialPage('workspace-id', {
+      name: 'New space',
+      permission: structuredPrivatePermission,
+      initial_page: { layout: ViewLayout.Document },
+    })).rejects.toBe(pending);
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post.mock.calls[0][0]).toBe('/api/workspace/workspace-id/spaces');
+    expect(deleteRequest).not.toHaveBeenCalled();
+  });
+});
+
+it('passes the initial-page activation owner through structured space composition', async () => {
+  jest.clearAllMocks();
+  const post = jest.fn().mockResolvedValue(apiResponse({ view_id: 'space-id' }));
+  const activation = { assertCurrent: jest.fn(), activate: jest.fn(async () => {}) };
+
+  jest.mocked(getAxios).mockReturnValue({ post } as never);
+  jest.mocked(executeAPIRequest).mockImplementation(async (request) => (await request()!).data.data);
+  jest.mocked(createDefaultPage).mockResolvedValueOnce({ view_id: 'page-id' });
+  const initial_page = { layout: ViewLayout.Document, view_id: 'page-id' };
+
+  await createSpaceWithInitialPage('workspace-id', { name: 'Space', permission: structuredPrivatePermission, initial_page }, activation);
+  expect(createDefaultPage).toHaveBeenCalledWith('workspace-id', 'space-id', initial_page, activation);
+  expect(activation.assertCurrent).toHaveBeenCalled();
+});
+
+it('does not issue compensation under a replaced owner after the space response', async () => {
+  jest.clearAllMocks();
+  let replaced = false;
+  const post = jest.fn(async () => { replaced = true; return apiResponse({ view_id: 'space-id' }); });
+  const activation = { assertCurrent: () => { if (replaced) throw new Error('owner replaced'); } };
+
+  jest.mocked(getAxios).mockReturnValue({ post } as never);
+  jest.mocked(executeAPIRequest).mockImplementation(async (request) => (await request()!).data.data);
+  await expect(createSpaceWithInitialPage('workspace-id', {
+    name: 'Space', permission: structuredPrivatePermission, initial_page: { layout: ViewLayout.Document },
+  }, activation)).rejects.toThrow('owner replaced');
+  expect(createDefaultPage).not.toHaveBeenCalled();
+  expect(executeAPIVoidRequest).not.toHaveBeenCalled();
 });

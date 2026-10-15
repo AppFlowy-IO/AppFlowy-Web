@@ -8,6 +8,7 @@ import { Invitation } from '@/application/types';
 import { ReactComponent as SuccessLogo } from '@/assets/icons/success_logo.svg';
 import { AccessService } from '@/application/services/domains';
 import { ErrorPage } from '@/components/_shared/landing-page/ErrorPage';
+import { LandingPageError } from '@/components/_shared/landing-page/errorContent';
 import { InvalidLink } from '@/components/_shared/landing-page/InvalidLink';
 import LandingPage from '@/components/_shared/landing-page/LandingPage';
 import { NotInvitationAccount } from '@/components/_shared/landing-page/NotInvitationAccount';
@@ -27,7 +28,7 @@ function AcceptInvitationPage() {
   const [loading, setLoading] = useState(false);
   const [notInvitee, setNotInvitee] = useState(false);
   const [isError, setIsError] = useState(false);
-  const [errorInfo, setErrorInfo] = useState<{ code?: number; message?: string }>();
+  const [errorInfo, setErrorInfo] = useState<LandingPageError>();
   const [invalidMessage, setInvalidMessage] = useState<string>();
 
   const loadInvitation = useCallback(async () => {
@@ -57,7 +58,7 @@ function AcceptInvitationPage() {
         return;
       }
 
-      setErrorInfo({ code: e.code, message: e.message });
+      setErrorInfo(e);
       setIsError(true);
     }
   }, [invitationId]);
@@ -111,7 +112,7 @@ function AcceptInvitationPage() {
         return;
       }
 
-      setErrorInfo({ code: e.code, message: e.message });
+      setErrorInfo(e);
       setIsError(true);
     } finally {
       setLoading(false);

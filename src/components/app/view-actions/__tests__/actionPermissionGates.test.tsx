@@ -441,4 +441,43 @@ describe('view action permission gates', () => {
 
     expect(screen.getByTestId('add-page-actions')).toBeTruthy();
   });
+
+  it.each([
+    ['denied', false, true, false],
+    ['unresolved', true, false, false],
+    ['loading', true, true, true],
+  ] as const)(
+    'honors %s permissions supplied by the row instead of independently granting Add',
+    (_name, canCreateViewActions, hasLoadedViewActionPermissions, isLoadingViewActionPermissions) => {
+      mockUseViewActionPermissions.mockReturnValue({
+        canCreateViewActions: true,
+        canManageViewActions: true,
+        hasLoadedViewActionPermissions: true,
+        isLoadingViewActionPermissions: false,
+      });
+
+      render(
+        <ViewActionsPopover
+          view={mockDocumentView}
+          popoverType={{ category: 'page', type: 'add' }}
+          viewActionPermissions={{
+            canCreateViewActions,
+            canManageViewActions: false,
+            hasLoadedViewActionPermissions,
+            isLoadingViewActionPermissions,
+          }}
+          open
+          onOpenChange={jest.fn()}
+        >
+          <button type='button'>trigger</button>
+        </ViewActionsPopover>
+      );
+
+      expect(mockUseViewActionPermissions).toHaveBeenCalledWith(mockDocumentView, false);
+      expect(screen.queryByTestId('add-page-actions')).toBeNull();
+      expect(Boolean(screen.queryByTestId('add-page-permission-loading'))).toBe(
+        !hasLoadedViewActionPermissions || isLoadingViewActionPermissions
+      );
+    }
+  );
 });

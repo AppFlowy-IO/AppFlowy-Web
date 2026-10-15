@@ -101,7 +101,9 @@ export class DatabaseViewCreationFixture {
     this.page.on('request', (request) => {
       if (
         request.method() === 'POST' &&
-        /\/api\/workspace\/.*\/(page-view|database-view)$/.test(new URL(request.url()).pathname)
+        /\/api\/workspace\/[^/]+\/(?:page-view|database-view|v2\/page-view\/(?:document|database|database-view)\/default)$/.test(
+          new URL(request.url()).pathname
+        )
       ) {
         this.creationRequests += 1;
       }
@@ -153,13 +155,22 @@ export class DatabaseViewCreationFixture {
       await expect(ChartSelectors.chart(this.page)).toBeVisible();
     }
 
-    await expect.poll(async () => (await this.databaseSnapshot()).views.length).toBe(before.views.length + 1);
+    // A Form and its Responses grid are published together by the atomic API.
+    await expect.poll(async () => (await this.databaseSnapshot()).views.length).toBe(before.views.length + (layout === 'Form' ? 2 : 1));
     const after = await this.databaseSnapshot();
     const created = after.views.filter((view) => !before.views.some((previous) => previous.id === view.id));
 
-    expect(created).toEqual([
-      { id: after.activeId, layout: layout === 'Form' ? DatabaseViewLayout.Form : DatabaseViewLayout.Chart },
-    ]);
+    expect(created).toContainEqual({
+      id: after.activeId,
+      layout: layout === 'Form' ? DatabaseViewLayout.Form : DatabaseViewLayout.Chart,
+    });
+    if (layout === 'Form') {
+      const responses = created.filter((view) => view.layout === DatabaseViewLayout.Grid);
+
+      expect(responses).toHaveLength(1);
+      await expect(DatabaseViewSelectors.viewTab(this.page).filter({ hasText: /^Responses$/ })).toBeVisible();
+      this.createdIds.set('Responses', responses[0].id);
+    }
     this.createdIds.set(layout, after.activeId);
 
     expect(this.checkouts).toHaveLength(0);
@@ -268,7 +279,7 @@ export class DatabaseViewCreationFixture {
     await this.page.goto(this.databaseUrl);
     await waitForGridReady(this.page);
 
-    await expect(DatabaseViewSelectors.viewTab(this.page)).toHaveCount(3);
+    await expect(DatabaseViewSelectors.viewTab(this.page)).toHaveCount(4);
   }
 
   async openDocument(): Promise<void> {

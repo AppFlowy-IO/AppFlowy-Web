@@ -6,7 +6,7 @@
 import { v4 as uuidv4 } from 'uuid';
 
 import { isWorkspaceLimitError } from '@/utils/billing-error';
-import { getErrorMessage } from '@/utils/errors';
+import { getErrorDiagnostic, getErrorMessage } from '@/utils/errors';
 import {
   getAppFlowyFileUrl,
   getMultipartAbortUrl,
@@ -57,7 +57,7 @@ function isStaleSessionError(error: unknown): boolean {
   };
 
   if (e.response?.status === 404) return true;
-  const msg = [e.response?.data?.code, e.response?.data?.message, e.message].filter(Boolean).join(' ');
+  const msg = [e.response?.data?.code, e.response?.data?.message, getErrorDiagnostic(error)].filter(Boolean).join(' ');
 
   return /no\s*such\s*upload|nosuchupload|upload.{0,32}(not\s*found|does\s+not\s+exist|doesn't\s+exist|expired|invalid|missing|gone)/i.test(
     msg

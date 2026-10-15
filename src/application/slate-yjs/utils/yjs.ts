@@ -13,6 +13,7 @@ import { INLINE_COMMENT_IDS_KEY } from '@/application/slate-yjs/types';
 import {
   BlockData,
   BlockType,
+  CollabOrigin,
   ToggleListBlockData,
   YBlock,
   YBlocks,
@@ -255,11 +256,14 @@ export function executeOperations(
   sharedRoot: YSharedRoot,
   operations: (() => void)[],
   operationName: string,
-  origin?: unknown
+  origin: unknown = CollabOrigin.LocalManual
 ) {
   console.time(operationName);
   const doc = assertDocExists(sharedRoot);
 
+  // These imperative editor commands mutate Yjs directly rather than Slate.
+  // Keep them identifiable as local edits without conflating remote hydration
+  // (which can use a null origin) with authored content-state changes.
   doc.transact(() => {
     operations.forEach((op) => op());
   }, origin);

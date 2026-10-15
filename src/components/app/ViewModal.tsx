@@ -526,7 +526,6 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         eventEmitter={eventEmitter}
         getViewIdFromDatabaseId={operations.getViewIdFromDatabaseId}
         loadDatabaseRelations={loadDatabaseRelations}
-        createDatabaseView={operations.createDatabaseView}
         loadDatabasePrompts={operations.loadDatabasePrompts}
         testDatabasePromptConfig={operations.testDatabasePromptConfig}
         checkIfRowDocumentExists={operations.checkIfRowDocumentExists}

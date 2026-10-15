@@ -3,15 +3,32 @@ import { emit, EventType } from '@/application/session/event';
 import { clearDrainConfig, setCurrentSession } from '@/application/sync-outbox';
 import { getConfigValue } from '@/utils/runtime-config';
 
-import { getTokenParsed, memoizeParsedToken, parseAuthToken, removeStoredToken, TOKEN_STORAGE_KEY } from './token-storage';
+import {
+  getTokenParsed,
+  isTokenSessionCurrent,
+  memoizeParsedToken,
+  parseAuthToken,
+  recordStoredToken,
+  removeStoredToken,
+  TOKEN_STORAGE_KEY,
+  type TokenSessionWitness,
+} from './token-storage';
 
-export { getToken, getTokenParsed } from './token-storage';
-export type { GoTrueAuthToken, GoTrueAuthUser } from './token-storage';
+export { captureTokenSession, getToken, getTokenParsed, isTokenSessionCurrent } from './token-storage';
+export type { GoTrueAuthToken, GoTrueAuthUser, TokenSessionWitness } from './token-storage';
 
-export function saveGoTrueAuth(tokenData: string): boolean {
+/** Ends only the login that captured the witness; a newer login is never signed out. */
+export function invalidTokenForSession(witness: TokenSessionWitness): void {
+  if (isTokenSessionCurrent(witness)) invalidToken();
+}
+
+export function saveGoTrueAuth(tokenData: string, refreshingSession?: TokenSessionWitness): boolean {
   const parsed = parseAuthToken(tokenData);
 
   if (!parsed) return false;
+
+  if (refreshingSession && (!isTokenSessionCurrent(refreshingSession) ||
+    (refreshingSession.userId !== null && refreshingSession.userId !== parsed.user.id))) return false;
 
   const serialized = JSON.stringify(parsed);
 
@@ -21,6 +38,7 @@ export function saveGoTrueAuth(tokenData: string): boolean {
     return false;
   }
 
+  recordStoredToken(serialized, refreshingSession !== undefined);
   memoizeParsedToken(serialized, parsed);
   emit(EventType.SESSION_REFRESH, serialized);
   return true;

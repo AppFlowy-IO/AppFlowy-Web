@@ -71,6 +71,19 @@ errors propagate before navigation and reciprocal relation updates. Cloud docume
 duplication still completes asynchronously through the existing worker pipeline.
 Property-only legacy templates remain usable without document duplication.
 
+Web's explicit New Template action initializes a server-owned blank document with
+the atomic Row Document API before opening the template editor. Editing an older
+template with no live document does the same, after recovering any saved creation
+command. This allows an embedded database as the first template block. Ordinary
+empty row pages still create their document only after an accepted editor command.
+Template source rows remain outside normal row ordering; atomic readiness validates
+their canonical template registry record and document identity instead.
+
+Web template duplication assigns the copied name to both the registry record and
+the primary default cell before initializing its editable source row. The editor
+saves that cell as the template name, so leaving the original title there would
+rename the copy on an unrelated property edit. Other default cells remain unchanged.
+
 ## Cross-client fixtures
 
 `flowy-database2/tests/fixtures/row_template_interop.json` is mirrored in Web's

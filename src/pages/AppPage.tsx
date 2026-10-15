@@ -575,7 +575,6 @@ function AppPage() {
           eventEmitter={eventEmitter}
           getViewIdFromDatabaseId={operations.getViewIdFromDatabaseId}
           loadDatabaseRelations={loadDatabaseRelations}
-          createDatabaseView={operations.createDatabaseView}
           loadDatabasePrompts={aiEnabled ? operations.loadDatabasePrompts : undefined}
           testDatabasePromptConfig={aiEnabled ? operations.testDatabasePromptConfig : undefined}
           checkIfRowDocumentExists={operations.checkIfRowDocumentExists}
@@ -628,7 +627,6 @@ function AppPage() {
         eventEmitter={eventEmitter}
         getViewIdFromDatabaseId={operations.getViewIdFromDatabaseId}
         loadDatabaseRelations={loadDatabaseRelations}
-        createDatabaseView={operations.createDatabaseView}
         loadDatabasePrompts={aiEnabled ? operations.loadDatabasePrompts : undefined}
         testDatabasePromptConfig={aiEnabled ? operations.testDatabasePromptConfig : undefined}
         checkIfRowDocumentExists={operations.checkIfRowDocumentExists}

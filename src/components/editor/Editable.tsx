@@ -130,7 +130,15 @@ const EditorEditable = () => {
     if (YHistoryEditor.isYHistoryEditor(editor)) editor.undoManager.stopCapturing();
   }, [editor, readOnly]);
 
-  const onCompositionStart = useCallback(() => {
+  const onCompositionStart = useCallback((event: React.CompositionEvent<HTMLDivElement>) => {
+    const firstBody = (editor as YjsEditor).firstBody;
+
+    if (firstBody && !firstBody.allowSlateMutation()) {
+      event.preventDefault();
+      return;
+    }
+
+    firstBody?.beginComposition();
     const { selection } = editor;
 
     if (!selection) return;
@@ -236,6 +244,7 @@ const EditorEditable = () => {
               autoComplete={'off'}
               scrollSelectionIntoView={scrollSelectionIntoView}
               onCompositionStart={readOnly ? undefined : onCompositionStart}
+              onCompositionEnd={() => (editor as YjsEditor).firstBody?.endComposition()}
               onCut={onCut}
               onKeyDown={readOnly ? undefined : onKeyDown}
               onMouseDown={handleMouseDown}

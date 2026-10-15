@@ -42,9 +42,18 @@ jest.mock('@/application/services/js-services/cache', () => ({
   openRowDoc: jest.fn(),
 }));
 
-jest.mock('@/components/database/DatabaseRow', () => ({
-  DatabaseRow: () => null,
-}));
+jest.mock('@/components/database/DatabaseRow', () => {
+  const { useDatabaseContext } = jest.requireActual<typeof import('@/application/database-yjs/context')>(
+    '@/application/database-yjs/context'
+  );
+
+  return {
+    DatabaseRow: () => {
+      mockDatabaseContext = useDatabaseContext();
+      return null;
+    },
+  };
+});
 
 jest.mock('@/components/database/DatabaseRowModal', () => {
   const React = jest.requireActual<typeof import('react')>('react');
@@ -240,7 +249,7 @@ function createDatabaseDoc(guid: string, databaseId = 'database-id') {
 }
 
 function insertRemoteRowOrder(doc: YDoc, rowId: string) {
-  const remoteDoc = new Y.Doc();
+  const remoteDoc = new Y.Doc() as YDoc;
 
   Y.applyUpdate(remoteDoc, Y.encodeStateAsUpdate(doc));
   const beforeInsert = Y.encodeStateVector(remoteDoc);
@@ -254,7 +263,7 @@ function insertRemoteRowOrder(doc: YDoc, rowId: string) {
 }
 
 function hydrateDatabaseIdWithRemoteRowOrders(doc: YDoc, databaseId: string, rowIds: string[]) {
-  const remoteDoc = new Y.Doc();
+  const remoteDoc = new Y.Doc() as YDoc;
 
   Y.applyUpdate(remoteDoc, Y.encodeStateAsUpdate(doc));
   const beforeHydration = Y.encodeStateVector(remoteDoc);
@@ -368,6 +377,154 @@ describe('Database blob prefetch lifecycle', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  it.each(['peek', 'page'] as const)(
+    'keeps the opened %s canonical row when bulk seeds finish in the same React batch',
+    async (surface) => {
+      const doc = createDatabaseDoc('database-id');
+
+      insertRemoteRowOrder(doc, 'remote-row-id');
+      const seed = createHydratedRowDoc('seed-row');
+      const canonical = createHydratedRowDoc('canonical-row');
+      const backgroundDoc = createHydratedRowDoc('background-row');
+      const pendingBackground = createDeferred<YDoc>();
+      const createRow = jest.fn(async () => canonical);
+
+      mockedPeekSeed.mockReturnValue({ bytes: new Uint8Array([1]), encoderVersion: 1 });
+      mockedOpenRowDoc.mockImplementation((key) =>
+        key.endsWith('_rows_row-id') ? Promise.resolve(seed) : pendingBackground.promise
+      );
+      const { unmount } = render(
+        <Database
+          {...databaseProps(doc)}
+          {...(surface === 'peek' ? { modalRowId: 'row-id' } : { rowId: 'row-id' })}
+          createRow={createRow}
+        />
+      );
+
+      try {
+        await act(async () => {
+          mockedPrefetch.mock.calls[0][2]?.onSeedsReady?.();
+          await Promise.resolve();
+        });
+        expect(mockedOpenRowDoc).toHaveBeenCalledWith('database-id_rows_remote-row-id', expect.anything());
+        const context = surface === 'peek' ? mockPeekContext : mockDatabaseContext;
+
+        await act(async () => {
+          expect(await context?.ensureRow?.('row-id')).toBe(canonical);
+          // The canonical state update is queued while another row keeps the bulk
+          // load pending. Finish both before React commits and updates rowMapRef.
+          pendingBackground.resolve(backgroundDoc);
+          for (let turn = 0; turn < 8; turn++) await Promise.resolve();
+        });
+        expect(mockDatabaseContext?.rowMap?.['row-id']).toBe(canonical);
+        expect(mockDatabaseContext?.rowMap?.['remote-row-id']).toBe(backgroundDoc);
+        expect(createRow).toHaveBeenCalledTimes(1);
+        expect(mockDatabaseContext?.hasCellLocalMutation?.('row-id', 'field-id')).toBe(false);
+      } finally {
+        unmount();
+        [doc, seed, canonical, backgroundDoc].forEach((document) => document.destroy());
+      }
+    }
+  );
+
+  it.each(['peek', 'page'] as const)(
+    'loads only the opened %s row before pending bulk seeds and shares its canonical sync owner',
+    async (surface) => {
+      const doc = createDatabaseDoc('database-id');
+      const rowDoc = createHydratedRowDoc('row-id');
+      const backgroundDoc = createHydratedRowDoc('remote-row-id');
+      const open = createDeferred<YDoc>();
+      const createRow = jest.fn(async (key: string) => key.endsWith('_rows_row-id') ? rowDoc : backgroundDoc);
+      const scheduleDeferredCleanup = jest.fn();
+
+      mockedOpenRowDoc.mockImplementation((key) =>
+        key.endsWith('_rows_row-id') ? open.promise : Promise.resolve(backgroundDoc)
+      );
+      const { unmount } = render(
+        <Database
+          {...databaseProps(doc)}
+          {...(surface === 'peek' ? { modalRowId: 'row-id' } : { rowId: 'row-id' })}
+          createRow={createRow}
+          scheduleDeferredCleanup={scheduleDeferredCleanup}
+        />
+      );
+
+      try {
+        const context = surface === 'peek' ? mockPeekContext : mockDatabaseContext;
+
+        if (!context?.ensureRow) throw new Error('Row detail did not expose its loader');
+        let backgroundSettled = false;
+        const background = context.ensureRow('remote-row-id')?.then(() => { backgroundSettled = true; });
+        const first = context.ensureRow('row-id');
+        const second = context.ensureRow('row-id');
+
+        // No timer advancement or blob response: direct user intent starts
+        // only this row's canonical load, while the bulk path stays batched.
+        expect(mockedOpenRowDoc).toHaveBeenCalledTimes(1);
+        expect(mockedOpenRowDoc).toHaveBeenCalledWith('database-id_rows_row-id', undefined);
+        await act(async () => {
+          open.resolve(rowDoc);
+          expect(await Promise.all([first, second])).toEqual([rowDoc, rowDoc]);
+        });
+        expect(createRow).toHaveBeenCalledTimes(1);
+        expect(createRow).toHaveBeenCalledWith('database-id_rows_row-id');
+        expect(backgroundSettled).toBe(false);
+        expect(mockDatabaseContext?.rowMap?.['row-id']).toBe(rowDoc);
+        expect(mockDatabaseContext?.hasCellLocalMutation?.('row-id', 'field-id')).toBe(false);
+
+        // A later bulk response must keep the interactive canonical document,
+        // not replace it with a seed shell or acquire a second owner.
+        mockedPeekSeed.mockReturnValue({ bytes: new Uint8Array([1]), encoderVersion: 1 });
+        await act(async () => {
+          mockedPrefetch.mock.calls[0][2]?.onSeedsReady?.();
+          await background;
+        });
+        expect(backgroundSettled).toBe(true);
+        expect(mockDatabaseContext?.rowMap?.['row-id']).toBe(rowDoc);
+        expect(mockedOpenRowDoc.mock.calls.filter(([key]) => key === 'database-id_rows_row-id')).toHaveLength(1);
+        expect(createRow.mock.calls.filter(([key]) => key === 'database-id_rows_row-id')).toHaveLength(1);
+      } finally {
+        unmount();
+        expect(scheduleDeferredCleanup.mock.calls.filter(([id]) => id === 'row-id')).toHaveLength(1);
+        doc.destroy();
+        rowDoc.destroy();
+        backgroundDoc.destroy();
+      }
+    }
+  );
+
+  it('drops an interactive row that finishes after the workspace lifecycle changes', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const rowDoc = createHydratedRowDoc('row-id');
+    const open = createDeferred<YDoc>();
+    const createRow = jest.fn(async () => rowDoc);
+
+    mockedOpenRowDoc.mockReturnValue(open.promise);
+    const { rerender, unmount } = render(
+      <Database {...databaseProps(doc)} modalRowId='row-id' createRow={createRow} />
+    );
+
+    try {
+      if (!mockPeekContext?.ensureRow) throw new Error('Peek did not expose its loader');
+      const pending = mockPeekContext.ensureRow('row-id');
+
+      expect(mockedOpenRowDoc).toHaveBeenCalledTimes(1);
+      rerender(
+        <Database {...databaseProps(doc)} workspaceId='replacement-workspace' modalRowId='row-id' createRow={createRow} />
+      );
+      await act(async () => {
+        open.resolve(rowDoc);
+        expect(await pending).toBeUndefined();
+      });
+      expect(createRow).not.toHaveBeenCalled();
+      expect(mockDatabaseContext?.rowMap?.['row-id']).toBeUndefined();
+    } finally {
+      unmount();
+      doc.destroy();
+      rowDoc.destroy();
+    }
   });
 
   it.each([
@@ -505,7 +662,7 @@ describe('Database blob prefetch lifecycle', () => {
     const seed = { bytes: new Uint8Array([1, 2, 3]), encoderVersion: 1 };
     const createRow = jest.fn(async () => canonicalRowDoc);
 
-    mockedPeekSeed.mockImplementation((rowKey) => (rowKey === 'database-id_rows_remote-row-id' ? seed : undefined));
+    mockedPeekSeed.mockImplementation((rowKey) => (rowKey === 'database-id_rows_remote-row-id' ? seed : null));
     mockedOpenRowDoc.mockImplementation((rowKey) => {
       if (rowKey === 'database-id_rows_remote-row-id') return seedLoad.promise;
       throw new Error(`unexpected row key: ${rowKey}`);
@@ -574,7 +731,7 @@ describe('Database blob prefetch lifecycle', () => {
       expect(createRow).toHaveBeenCalledTimes(1);
 
       act(() => {
-        const index = rowOrders?.toArray().findIndex((row) => row.id === 'remote-row-id') ?? -1;
+        const index = rowOrders?.toArray().findIndex((row: { id: string }) => row.id === 'remote-row-id') ?? -1;
 
         if (index >= 0) rowOrders?.delete(index, 1);
       });

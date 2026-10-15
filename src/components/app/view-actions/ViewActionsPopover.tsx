@@ -37,6 +37,7 @@ function ViewActionsPopover({
   open,
   onOpenChange,
   onImportClick,
+  viewActionPermissions,
 }: {
   view?: View;
   popoverType?: {
@@ -48,15 +49,22 @@ function ViewActionsPopover({
   // ancestor (e.g. Outline) since this popover is unmounted as soon as the
   // dropdown closes.
   onImportClick?: (view: View) => void;
+  // A row that already resolves canonical permissions can share that result.
+  viewActionPermissions?: Pick<
+    ReturnType<typeof useViewActionPermissions>,
+    'canCreateViewActions' | 'canManageViewActions' | 'hasLoadedViewActionPermissions' | 'isLoadingViewActionPermissions'
+  >;
 } & ComponentProps<typeof DropdownMenu>) {
-  // For a space this single hook also reads the space permission (management + sidebar).
-  const {
-    canCreateViewActions,
-    canManageViewActions,
-    canOpenManageSpace,
-    hasLoadedViewActionPermissions,
-    isLoadingViewActionPermissions,
-  } = useViewActionPermissions(view, Boolean(open && popoverType));
+  // A row that already resolves canonical permissions can share that result. For a space the
+  // hook also reads the space permission (management + sidebar) in the same request.
+  const ownViewActionPermissions = useViewActionPermissions(
+    view,
+    Boolean(open && popoverType && !viewActionPermissions)
+  );
+  const { canCreateViewActions, canManageViewActions, hasLoadedViewActionPermissions, isLoadingViewActionPermissions } =
+    viewActionPermissions ?? ownViewActionPermissions;
+  // Shared rows pass their page permissions; Manage space needs the space's own permission read.
+  const canOpenManageSpace = !viewActionPermissions && ownViewActionPermissions.canOpenManageSpace;
   const isResolvingViewActionPermissions = isLoadingViewActionPermissions || !hasLoadedViewActionPermissions;
   // Duplicate places the copy beside the page, so the parent must accept a new child (P).
   const duplicateDestination = useDuplicateDestinationAccess(

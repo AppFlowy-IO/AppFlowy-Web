@@ -1,5 +1,6 @@
 const mockGrantClient = {
   interceptors: {
+    response: { use: jest.fn() },
     request: {
       use: jest.fn(),
     },
@@ -18,6 +19,7 @@ jest.mock('axios', () => ({
 }));
 
 jest.mock('@/application/session/token', () => ({
+  captureTokenSession: jest.fn(() => ({ generation: 1, userId: null })),
   getTokenParsed: jest.fn(),
   saveGoTrueAuth: jest.fn(() => true),
 }));

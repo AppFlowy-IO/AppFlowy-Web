@@ -6,6 +6,7 @@ import { databasePrefix } from '@/application/constants';
 import { metaIdFromRowId } from '@/application/database-yjs/const';
 import { RowMetaKey } from '@/application/database-yjs/database.type';
 import { appViewCacheSchema, type AppViewCacheTable } from '@/application/db/tables/app_view_cache';
+import { atomicCreationSchema, type AtomicCreationTable } from '@/application/db/tables/atomic_creation';
 import {
   collabStorageSchema,
   type CollabSnapshotRecord,
@@ -25,6 +26,7 @@ import {
   workspaceMemberProfileSchema,
   WorkspaceMemberProfileTable,
 } from '@/application/db/tables/workspace_member_profiles';
+import { serverRestore } from '@/application/server-restore';
 import { YDatabase, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { Log } from '@/utils/log';
 
@@ -50,7 +52,8 @@ import {
   readDatabaseCacheEpoch,
 } from './database-storage-fence';
 
-type DexieTables = ViewMetasTable &
+type DexieTables = AtomicCreationTable &
+  ViewMetasTable &
   UserTable &
   rowTable &
   WorkspaceMemberProfileTable &
@@ -62,10 +65,11 @@ type DexieTables = ViewMetasTable &
 
 export type Dexie<T = DexieTables> = BaseDexie & T;
 
-export const db = new BaseDexie(`${databasePrefix}_cache`) as Dexie;
+export const db = new BaseDexie(serverRestore.cacheKey(`${databasePrefix}_cache`)) as Dexie;
 const _schema = Object.assign(
   {},
   {
+    ...atomicCreationSchema,
     ...viewMetasSchema,
     ...userSchema,
     ...rowSchema,
@@ -275,12 +279,29 @@ db.version(12).stores({
   ...workspaceDatabaseCatalogSchema,
 });
 
-// Version 13: a durable denial survives even when a prior socket submission
-// already retired its outbox row. Never infer a new grant from a restart.
+// Version 13: immutable atomic commands are scoped to their original account,
+// server and workspace. They are never drained automatically after reconnect.
+// Released builds already created this version: it must stay exactly as it is.
 db.version(13).stores({
+  ...viewMetasSchema,
+  ...userSchema,
+  ...rowSchema,
+  ...workspaceMemberProfileSchema,
+  ...versionSchema,
+  ...syncOutboxSchema,
+  ...collabStorageSchema,
+  ...appViewCacheSchema,
+  ...workspaceDatabaseCatalogSchema,
+  ...atomicCreationSchema,
+});
+
+// Version 14: a durable denial survives even when a prior socket submission
+// already retired its outbox row. Never infer a new grant from a restart.
+db.version(14).stores({
   ...viewMetasSchema, ...userSchema, ...rowSchema, ...workspaceMemberProfileSchema,
   ...versionSchema, ...syncOutboxSchema, ...syncPermissionBlockSchema,
   ...collabStorageSchema, ...appViewCacheSchema, ...workspaceDatabaseCatalogSchema,
+  ...atomicCreationSchema,
 });
 
 /** Server-scoped account keys are JSON arrays; earlier builds stored the bare account id. */
@@ -288,14 +309,15 @@ function isPreScopeAccountCacheRow(record: { user_id?: unknown }): boolean {
   return typeof record.user_id !== 'string' || !record.user_id.startsWith('[');
 }
 
-// Version 14: the app view and workspace database catalog caches are keyed by
+// Version 15: the app view and workspace database catalog caches are keyed by
 // a server-scoped account. Rows written under the bare account id can never be
 // read, refreshed or evicted again, so drop them (as version 9 did for its key change).
-db.version(14)
+db.version(15)
   .stores({
     ...viewMetasSchema, ...userSchema, ...rowSchema, ...workspaceMemberProfileSchema,
     ...versionSchema, ...syncOutboxSchema, ...syncPermissionBlockSchema,
     ...collabStorageSchema, ...appViewCacheSchema, ...workspaceDatabaseCatalogSchema,
+    ...atomicCreationSchema,
   })
   .upgrade(async (transaction) => {
     await Promise.all(
@@ -324,7 +346,8 @@ function createYjsStores(db: IDBDatabase) {
 
 function openIdbDatabase(name: string, version?: number) {
   return new Promise<IDBDatabase | null>((resolve) => {
-    const request = typeof version === 'number' ? indexedDB.open(name, version) : indexedDB.open(name);
+    const storageName = serverRestore.cacheKey(name);
+    const request = typeof version === 'number' ? indexedDB.open(storageName, version) : indexedDB.open(storageName);
 
     request.onupgradeneeded = () => {
       createYjsStores(request.result);
@@ -387,7 +410,14 @@ export async function listCollabIndexedDBNames() {
 
     const prefix = captureCollabStorageScope().storageKey('');
 
-    return new Set(databases.flatMap(({ name }) => name?.startsWith(prefix) ? [name.slice(prefix.length)] : []));
+    // Only this restore generation, then only this account and workspace.
+    return new Set(
+      databases.flatMap(({ name }) => {
+        const logicalName = name ? serverRestore.logicalCacheKey(name) : undefined;
+
+        return logicalName?.startsWith(prefix) ? [logicalName.slice(prefix.length)] : [];
+      })
+    );
   } catch (error) {
     Log.warn('[DB] failed to list IndexedDB databases', { error });
     return new Set<string>();
@@ -454,7 +484,8 @@ function storesObjectWithUnsentEdits(name: string, accountPrefix: string, pendin
  * fresh permission check allows it. Edits that were already sent over the
  * realtime connection but never applied cannot be told apart and are lost with
  * their copy. Removes nothing if the outbox cannot be read, and stops as soon as
- * `isSignedOut` reports the same account signed in again.
+ * `isSignedOut` reports the same account signed in again. Only the current
+ * server restore generation is touched.
  */
 export async function removeSignedOutLocalData(account: SignedOutAccount, isSignedOut: () => boolean = () => true) {
   const prefix = accountCollabStoragePrefix(account.serverUrl, account.userId);
@@ -466,7 +497,13 @@ export async function removeSignedOutLocalData(account: SignedOutAccount, isSign
     const factory = typeof indexedDB === 'undefined' ? undefined : (indexedDB as IndexedDBFactoryWithDatabases);
 
     if (factory?.databases && isSignedOut()) {
-      const names = (await factory.databases()).flatMap(({ name }) => (name && removable(name) ? [name] : []));
+      // Only this restore generation: copies an earlier generation left behind, with any
+      // edits queued there, are never read, uploaded or removed from here.
+      const names = (await factory.databases()).flatMap(({ name }) => {
+        const logicalName = name ? serverRestore.logicalCacheKey(name) : undefined;
+
+        return logicalName && removable(logicalName) ? [logicalName] : [];
+      });
 
       // A blocked delete completes once the closing tab releases its connection.
       for (let index = 0; index < names.length; index += SIGN_OUT_DELETE_BATCH) {
@@ -521,7 +558,7 @@ async function probeCollabIndexedDBExists(name: string) {
     };
 
     try {
-      const request = indexedDB.open(name);
+      const request = indexedDB.open(serverRestore.cacheKey(name));
 
       request.onupgradeneeded = () => {
         createdDuringProbe = true;
@@ -574,7 +611,7 @@ export async function collabIndexedDBExists(name: string) {
     try {
       const databases = await indexedDBWithDatabases.databases();
 
-      return databases.some((database) => database.name === storageName);
+      return databases.some((database) => database.name === serverRestore.cacheKey(storageName));
     } catch (error) {
       Log.warn('[DB] failed to list IndexedDB databases while checking collab existence', { name, error });
     }
@@ -634,7 +671,7 @@ const providerCache = new ScopedCollabMap<CachedProviderEntry>(retireProviders);
 const pendingOpens = new ScopedCollabMap<Promise<CachedProviderEntry>>();
 const rowProviderCache = new ScopedCollabMap<CachedProviderEntry>(retireProviders);
 const pendingRowOpens = new ScopedCollabMap<Promise<CachedProviderEntry>>();
-const DATABASE_BLOB_RID_PREFIX = 'af_database_blob_rid:';
+const DATABASE_BLOB_RID_PREFIX = serverRestore.cacheKey('af_database_blob_rid:');
 const SHARED_COLLAB_COMPACT_UPDATE_THRESHOLD = 200;
 const SHARED_STORAGE_EPOCH_KEY = '__storage_epoch';
 const SHARED_COLLAB_COMPACT_MAX_RETRIES = 3;
@@ -975,7 +1012,10 @@ class SharedIndexeddbPersistence {
       else this._databaseStorageFence = databaseStorageFence;
     }
 
-    this._pendingWrite = this._pendingWrite
+    // Synchronous fenced publication can run inside a collab_custom-only
+    // transaction. Observer work outlives that transaction and must own its
+    // storage scope; its own transaction below still rechecks both epochs.
+    this._pendingWrite = BaseDexie.ignoreTransaction(() => this._pendingWrite
       .then(async () => {
         await this.whenSynced;
         const persisted = await db.transaction('rw', db.collab_updates, db.collab_custom, async () => {
@@ -1000,7 +1040,7 @@ class SharedIndexeddbPersistence {
       .catch((error) => {
         this._persistenceError ??= { error };
         Log.warn('[DB] failed to persist shared collab update', { name: this.name, error });
-      });
+      }));
   };
 
   /** The epoch check and write share a transaction with authoritative cache deletion. */
@@ -1016,12 +1056,12 @@ class SharedIndexeddbPersistence {
   }
 
   private queueCompact() {
-    this._pendingWrite = this._pendingWrite
+    this._pendingWrite = BaseDexie.ignoreTransaction(() => this._pendingWrite
       .then(() => this.compact())
       .catch((error) => {
         this._persistenceError ??= { error };
         Log.warn('[DB] failed to compact shared collab updates', { name: this.name, error });
-      });
+      }));
   }
 
   private async compact() {
@@ -1193,7 +1233,7 @@ async function deleteIndexedDBDatabase(name: string, options: { blockedTimeoutMs
   if (typeof indexedDB === 'undefined') return true;
 
   return new Promise<boolean>((resolve) => {
-    const request = indexedDB.deleteDatabase(name);
+    const request = indexedDB.deleteDatabase(serverRestore.cacheKey(name));
     let settled = false;
     let blockedTimeout: ReturnType<typeof setTimeout> | undefined;
 
@@ -1604,7 +1644,7 @@ async function _openCollabDBWithProviderInternal(
 
   await ensureYjsStores(storageName);
 
-  let provider = new IndexeddbPersistence(storageName, doc);
+  let provider = new IndexeddbPersistence(serverRestore.cacheKey(storageName), doc);
   let version = await provider.get(name + '/version');
 
   if (!scope.isCurrent()) {
@@ -1643,7 +1683,7 @@ async function _openCollabDBWithProviderInternal(
     doc = new Y.Doc({
       guid: name,
     }) as YDoc;
-    provider = new IndexeddbPersistence(storageName, doc);
+    provider = new IndexeddbPersistence(serverRestore.cacheKey(storageName), doc);
 
     if (options?.expectedVersion) {
       await provider.set(name + '/version', options.expectedVersion);
@@ -1923,11 +1963,13 @@ function clearDatabaseCheckpointsForDeletedDatabases(results: Array<{ name: stri
   const blockedDatabaseIds = new Set<string>();
 
   results.forEach(({ name, deleted }) => {
-    if (!name) return;
-    const markerIndex = name.indexOf('_rows_');
+    const logicalName = serverRestore.logicalCacheKey(name);
+
+    if (!logicalName) return;
+    const markerIndex = logicalName.indexOf('_rows_');
 
     if (markerIndex <= 0) return;
-    const databaseId = name.slice(0, markerIndex);
+    const databaseId = logicalName.slice(0, markerIndex);
 
     if (!databaseId) return;
     if (deleted) {

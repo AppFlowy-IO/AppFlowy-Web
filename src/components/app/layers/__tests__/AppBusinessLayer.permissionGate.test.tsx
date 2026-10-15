@@ -7,6 +7,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import { deleteCollabDB, deleteDatabaseLocalCopies } from '@/application/db';
 import { AccessService, ViewService } from '@/application/services/domains';
+import { handleAPIError } from '@/application/services/js-services/http/core';
 import {
   getCachedWorkspaceViewMetadata,
   invalidateWorkspaceViewMetadata,
@@ -63,6 +64,7 @@ jest.mock('@/components/app/components/AppContextConsumer', () => ({
 }));
 
 jest.mock('@/components/app/contexts/AuthInternalContext', () => ({
+  ...jest.requireActual('@/components/app/contexts/AuthInternalContext'),
   useAuthInternal: jest.fn(),
 }));
 
@@ -153,6 +155,7 @@ function NavigationProbe({ modalTargetId, effectiveTargetId }: { modalTargetId: 
       )}
       <span data-testid={'modal-view-id'}>{navigation.openPageModalViewId ?? ''}</span>
       <span data-testid={'no-access'}>{String(navigation.viewNoAccess)}</span>
+      <span data-testid={'view-not-found'}>{String(navigation.notFound)}</span>
       <span data-testid={'object-permission'}>
         {JSON.stringify(navigation.objectPermissions?.[routeViewId] ?? null)}
       </span>
@@ -272,6 +275,28 @@ describe('AppBusinessLayer permission gates', () => {
     (deleteCollabDB as jest.Mock).mockResolvedValue(true);
     (deleteDatabaseLocalCopies as jest.Mock).mockResolvedValue(true);
     (AccessService.getObjectPermission as jest.Mock).mockImplementation(resolveObjectPermission());
+  });
+
+  it('recognizes old-server missing routes after HTTP error presentation', async () => {
+    (ViewService.get as jest.Mock).mockRejectedValue(handleAPIError({
+      code: -2, message: 'Record not found: view no longer exists',
+    }));
+    renderBusinessLayer(new EventEmitter(), []);
+
+    await waitFor(() => expect(screen.getByTestId('view-not-found').textContent).toBe('true'));
+  });
+
+  it('does not let public wording mark an existing route as missing', async () => {
+    (ViewService.get as jest.Mock).mockRejectedValue(handleAPIError({
+      code: 1017,
+      message: 'Worker unavailable',
+      user_error: { schema_version: 1, reason: 'ACTION_PROBLEM', message: 'A worker was not found. Try again later.', locale: 'en' },
+    }));
+    renderBusinessLayer(new EventEmitter(), []);
+
+    await act(async () => { await Promise.resolve(); });
+    expect(ViewService.get).toHaveBeenCalled();
+    expect(screen.getByTestId('view-not-found').textContent).toBe('false');
   });
 
   it('exposes all canonical object capabilities to active page consumers', async () => {

@@ -1,4 +1,5 @@
 import { WEB_CLIENT_VERSION } from '@/application/compatibility/client-version';
+import { serverRestore } from '@/application/server-restore';
 import {
   AuthProvider,
   CUSTOM_PROVIDER_PREFIX,
@@ -7,20 +8,28 @@ import {
   LoginProviderId,
   LoginProviders,
 } from '@/application/types';
+import { getErrorDiagnostic } from '@/utils/errors';
 import { Log } from '@/utils/log';
 
-import { APIError, APIResponse, executeAPIRequest, getAxios } from './core';
+import { APIResponse, executeAPIRequest, getAxios } from './core';
 import { verifyAndRefreshGoTrueToken } from './gotrue';
 import { parseGoTrueErrorFromUrl } from './gotrue-error';
 
 export { verifyToken } from './cloud-auth';
 
 export interface ServerInfo {
+  /** Stable across ordinary restarts; changes after a full Admin backup restore. */
+  server_restore_id?: string;
+  /** Absent on older servers that do not implement error schema negotiation. */
+  supported_error_schema_version?: number;
   /** Missing on older web server-info responses; never interpret absence as an old version. */
   version?: string;
   /** Web uses a separate release line from the native min_client_version field. */
   min_web_client_version?: string;
   enable_page_history: boolean;
+  /** Both flags must be literal true before a compact atomic command is submitted. */
+  enable_atomic_creation?: boolean;
+  enable_atomic_creation_defaults?: boolean;
   /** Database aggregate snapshots and the complete web history contract. Absent means disabled. */
   enable_database_history?: boolean;
   ai_enabled?: boolean;
@@ -51,10 +60,7 @@ export async function signInWithUrl(url: string) {
       code: gotrueError.code,
       message: gotrueError.message,
     });
-    return Promise.reject({
-      code: gotrueError.code,
-      message: gotrueError.message,
-    });
+    return Promise.reject(gotrueError);
   }
 
   // No errors found, proceed with normal token extraction
@@ -153,6 +159,7 @@ export async function getServerInfo(signal?: AbortSignal): Promise<ServerInfo> {
     })
   );
 
+  serverRestore.accept(info.server_restore_id);
   if (info.version !== undefined) return info;
 
   // Already-deployed servers may strip version from the web projection. Their
@@ -269,7 +276,7 @@ export async function getAuthProviders(): Promise<LoginProviders> {
     // sharing a key.
     return { providers: [...new Set(providers)], customProviders, ldapProviders };
   } catch (error) {
-    const message = (error as APIError)?.message;
+    const message = getErrorDiagnostic(error);
 
     console.warn('Auth providers API returned error:', message);
     console.error('Failed to fetch auth providers:', error);

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { serverRestore } from '@/application/server-restore';
 import { startDrainObject } from '@/application/sync-outbox';
 import type { messages } from '@/proto/messages';
 
@@ -41,8 +42,10 @@ export function useWorkspaceRealtimeTransport({
   deviceId,
 }: WorkspaceRealtimeTransportOptions): WorkspaceRealtimeTransport {
   const scopeKey = realtimeSessionKey(workspaceId);
+  // Both fences: the server/account/workspace scope, and the restore generation
+  // (which the leader lock applies itself).
   const leadership = useWorkspaceWebSocketLeader(scopeKey);
-  const broadcastChannel = useBroadcastChannel(`workspace:${scopeKey}`);
+  const broadcastChannel = useBroadcastChannel(serverRestore.cacheKey(`workspace:${scopeKey}`));
   const localWebSocket = useAppflowyWebSocket({
     workspaceId,
     clientId,

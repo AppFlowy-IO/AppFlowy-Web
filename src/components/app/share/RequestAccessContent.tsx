@@ -10,6 +10,7 @@ import { RequestAccessError } from '@/components/app/hooks/useWorkspaceData';
 import { AccessService } from '@/application/services/domains';
 import { getLandingPageErrorContent, LandingPageError } from '@/components/_shared/landing-page/errorContent';
 import { useCurrentUser } from '@/components/main/app.hooks';
+import { useErrorCatalogRevision } from '@/components/main/hooks/useServerErrorCatalog';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 
@@ -27,6 +28,9 @@ export function RequestAccessContent({
   error: _error,
 }: RequestAccessContentProps) {
   const { t } = useTranslation();
+
+  useErrorCatalogRevision();
+
   const currentWorkspaceId = useCurrentWorkspaceId();
   const appViewId = useAppViewId();
   const [searchParams] = useSearchParams();
@@ -44,12 +48,7 @@ export function RequestAccessContent({
   const handleSendRequest = async () => {
     try {
       if (!workspaceId || !viewId) {
-        setError({
-          message: t(
-            'landingPage.error.missingAccessRequestContext',
-            'This access request is missing required page information. Please reopen the shared page and try again.'
-          ),
-        });
+        setError(undefined);
         setIsError(true);
         return;
       }
@@ -124,6 +123,12 @@ export function RequestAccessContent({
 
   if (isError) {
     const errorContent = getLandingPageErrorContent(error, t);
+    const errorDescription = !workspaceId || !viewId
+      ? t(
+          'landingPage.error.missingAccessRequestContext',
+          'This access request is missing required page information. Please reopen the shared page and try again.'
+        )
+      : errorContent.description;
 
     return (
       <div className='flex h-full w-full flex-col items-center justify-center px-4'>
@@ -133,7 +138,7 @@ export function RequestAccessContent({
               {errorContent.title}
             </div>
             <div className='w-[320px] whitespace-pre-wrap break-words text-center text-sm text-text-primary'>
-              {errorContent.description}
+              {errorDescription}
             </div>
             <div className='flex w-[320px] flex-col gap-[10px]'>
               <Button onClick={handleRetry} size='lg' className='w-full min-w-full' variant='default'>

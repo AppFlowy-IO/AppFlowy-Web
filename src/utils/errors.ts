@@ -1,18 +1,15 @@
 import { ERROR_CODE } from '@/application/constants';
+import { getWorkspacePlanPolicy } from '@/application/workspace-plan-policy';
+import { userFriendlyErrorMessage } from '@/application/errors/error-message';
 import { getBillingErrorMessage } from '@/utils/billing-error';
 
-export function getErrorMessage(error: unknown, fallback = 'Request failed'): string {
+export { getErrorDiagnostic } from '@/application/errors/error-message';
+
+export function getErrorMessage(error: unknown, fallback?: string): string {
+  const message = userFriendlyErrorMessage(error, { fallback, hostedBilling: getWorkspacePlanPolicy().usesHostedBilling });
   const billingMessage = getBillingErrorMessage(error);
 
-  if (billingMessage) return billingMessage;
-  if (error instanceof Error) return error.message;
-  if (typeof error === 'object' && error !== null && 'message' in error) {
-    const message = (error as { message?: unknown }).message;
-
-    if (typeof message === 'string') return message;
-  }
-
-  return fallback;
+  return billingMessage ? `${message} ${billingMessage}` : message;
 }
 
 export function isAPIErrorCode(error: unknown, code: number): boolean {

@@ -1,12 +1,15 @@
 import { toBase64 } from 'lib0/buffer';
 
+import type { AtomicCreationOwner } from '@/application/atomic-creation/owner';
 import { ERROR_CODE } from '@/application/constants';
 import { getOrCreateDeviceId } from '@/application/services/js-services/device-id';
 import { RowDocumentSourcePayload, RowId, Types, User, View } from '@/application/types';
 import { database_blob } from '@/proto/database_blob';
 import { collab } from '@/proto/messages';
+import { getErrorDiagnostic } from '@/utils/errors';
 import { Log } from '@/utils/log';
 
+import { awaitAtomicRequest, ownedRequestConfig } from './atomic-creation-api';
 import { APIResponse, APIError, executeAPIRequest, executeAPIVoidRequest, getAxios, parseRetryAfterSecs } from './core';
 
 export interface CollabFullSyncBatchResult {
@@ -20,6 +23,8 @@ export interface CollabFullSyncBatchResult {
 }
 
 export interface CollabFullSyncBatchOptions {
+  /** Opt-in command owner for an authoritative creation source read. */
+  atomicCreationOwner?: AtomicCreationOwner;
   /**
    * Marks a single oversized item for the server's bounded slow-sync lane.
    * Ordinary batch requests intentionally omit this header.
@@ -194,6 +199,10 @@ export async function collabFullSyncBatch(
   }>,
   options?: CollabFullSyncBatchOptions
 ): Promise<CollabFullSyncBatchResult[]> {
+  const owner = options?.atomicCreationOwner;
+
+  owner?.assertCurrent();
+  if (owner && owner.workspaceId !== workspaceId) throw new Error('Atomic source read workspace changed');
   const url = `/api/workspace/v1/${workspaceId}/collab/full-sync/batch`;
   const streamingGzipAvailable = canUseStreamingGzip();
   const slowSyncPayloadBytes = items.reduce(
@@ -248,12 +257,13 @@ export async function collabFullSyncBatch(
   const deviceId = getOrCreateDeviceId();
   const axiosInstance = getAxios();
   const timeoutMs =
-    options?.timeoutMs ?? (options?.syncLane === 'slow' ? getSlowSyncUploadTimeoutMs(slowSyncPayloadBytes) : undefined);
+    options?.timeoutMs ?? (options?.syncLane === 'slow' ? getSlowSyncUploadTimeoutMs(slowSyncPayloadBytes) : owner ? 30_000 : undefined);
 
   // Send the request with protobuf content type.
   // Use validateStatus to prevent axios from throwing on 429/503 so we can
   // extract the Retry-After header and surface it to callers.
-  const response = await axiosInstance?.post(url, encoded, {
+  const response = await awaitAtomicRequest(Promise.resolve(axiosInstance?.post(url, encoded, {
+    ...(owner ? ownedRequestConfig(owner, options?.signal) : {}),
     headers: {
       'Content-Type': 'application/octet-stream',
       'client-version': 'web',
@@ -269,8 +279,9 @@ export async function collabFullSyncBatch(
     // protobufjs' pooled zero padding beyond this Uint8Array view.
     transformRequest: [(data: Uint8Array) => data],
     validateStatus: (status) => status === 200 || status === 429 || status === 503,
-  });
+  })), owner ? options?.signal : undefined);
 
+  owner?.assertCurrent();
   if (!response) {
     const err = new Error('No response received from server');
 
@@ -323,6 +334,7 @@ export async function collabFullSyncBatch(
     });
   }
 
+  owner?.assertCurrent();
   return results;
 }
 
@@ -428,7 +440,7 @@ export async function duplicateRowDocument(
       if (
         delay === undefined ||
         apiError?.code !== ERROR_CODE.INVALID_REQUEST ||
-        !apiError.message?.includes(`new_row_id ${newRowId} does not belong to database ${databaseId}`)
+        !getErrorDiagnostic(apiError).includes(`new_row_id ${newRowId} does not belong to database ${databaseId}`)
       ) {
         throw error;
       }

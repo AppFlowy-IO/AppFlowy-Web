@@ -725,7 +725,7 @@ describe('CreateSpaceModal draft controller', () => {
     fireEvent.change(screen.getByTestId('space-name-input'), { target: { value: 'Keep this draft' } });
     fireEvent.click(screen.getByTestId('create-space-submit'));
 
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('could not create space'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
     expect(screen.getByTestId('create-space-modal')).toBeTruthy();
     expect(screen.getByTestId('space-name-input').value).toBe('Keep this draft');
     expect(screen.getByTestId('space-name-input').getAttribute('disabled')).not.toBeNull();
@@ -753,7 +753,7 @@ describe('CreateSpaceModal draft controller', () => {
     fireEvent.change(screen.getByTestId('space-name-input'), { target: { value: 'Rejected draft' } });
     fireEvent.click(screen.getByTestId('create-space-submit'));
 
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('invalid space name'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Error 422: Something went wrong. Contact support if this keeps happening.'));
     // The name can be fixed here: only a refusal by the space creation rule replaces the form.
     expect(screen.queryByTestId('create-space-denied')).toBeNull();
     expect(screen.getByTestId('space-name-input').getAttribute('disabled')).toBeNull();
@@ -898,7 +898,7 @@ describe('CreateSpaceModal draft controller', () => {
 
     await selectCustomAndAdd(candidateOne);
     fireEvent.click(screen.getByTestId('create-space-submit'));
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('response lost'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
     const clientOwnedSpaceId = mockCreateSpace.mock.calls[0][0].view_id;
 
     fireEvent.click(screen.getByTestId('create-space-submit'));
@@ -937,7 +937,7 @@ describe('CreateSpaceModal draft controller', () => {
 
     enterSpaceName('Original submitted name');
     fireEvent.click(screen.getByTestId('create-space-submit'));
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('client timed out before commit'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
     const originalId = mockCreateSpace.mock.calls[0][0].view_id;
 
     fireEvent.click(screen.getByTestId('create-space-close'));
@@ -965,9 +965,9 @@ describe('CreateSpaceModal draft controller', () => {
   });
 
   it.each([
-    ['a network failure', new Error('reconcile unavailable'), 'reconcile unavailable'],
-    ['a 403', { httpStatus: 403, message: 'forbidden' }, 'forbidden'],
-    ['a transient 503', { httpStatus: 503, message: 'service unavailable' }, 'service unavailable'],
+    ['a network failure', new Error('reconcile unavailable'), 'Something went wrong. Contact support if this keeps happening.'],
+    ['a 403', { httpStatus: 403, message: 'forbidden' }, "You don't have permission to do this."],
+    ['a transient 503', { httpStatus: 503, message: 'service unavailable' }, "AppFlowy isn't available right now. Try again later."],
   ])('preserves the frozen standalone draft when reconciliation returns %s', async (_case, error, message) => {
     const onClose = jest.fn();
     const onCreated = jest.fn();
@@ -978,7 +978,7 @@ describe('CreateSpaceModal draft controller', () => {
 
     enterSpaceName();
     fireEvent.click(screen.getByTestId('create-space-submit'));
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('response lost'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
     const clientOwnedSpaceId = mockCreateSpace.mock.calls[0][0].view_id;
 
     fireEvent.click(screen.getByTestId('create-space-submit'));
@@ -1034,7 +1034,7 @@ describe('CreateSpaceModal draft controller', () => {
 
     await selectCustomAndAdd(candidateOne);
     fireEvent.click(screen.getByTestId('create-space-submit'));
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('response lost'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
     const clientOwnedSpaceId = mockCreateSpace.mock.calls[0][0].view_id;
 
     // The first request has not committed yet, so the identical request is sent again.
@@ -1074,7 +1074,7 @@ describe('CreateSpaceModal draft controller', () => {
 
     enterSpaceName('Research');
     fireEvent.click(screen.getByTestId('create-space-submit'));
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('response lost'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
     // The space exists, but the saved first page now sits under another space.
     mockGetView.mockResolvedValue({ view_id: 'page-id', parent_view_id: 'another-space' });
     fireEvent.click(screen.getByTestId('create-space-submit'));
@@ -1174,7 +1174,7 @@ describe('CreateSpaceModal draft controller', () => {
 
     enterSpaceName('Submitted before reload');
     fireEvent.click(screen.getByTestId('create-space-submit'));
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('response lost'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
     const originalId = mockCreateSpace.mock.calls[0][0].view_id;
 
     first.unmount();
@@ -1182,7 +1182,7 @@ describe('CreateSpaceModal draft controller', () => {
     mockGetSpacePermission.mockRejectedValueOnce({ httpStatus: 404 });
     mockCreateSpace.mockRejectedValueOnce({ code: 1008, httpStatus: 400, message: 'invalid space name' });
     fireEvent.click(screen.getByTestId('create-space-submit'));
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('invalid space name'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith("This request isn't valid."));
     expect(mockCreateSpace.mock.calls[1][0].view_id).toBe(originalId);
     expect(sessionStorage.length).toBe(1);
     expect(screen.getByTestId('space-name-input').value).toBe('Submitted before reload');
@@ -1203,7 +1203,7 @@ describe('CreateSpaceModal draft controller', () => {
 
     await selectCustomAndAdd(candidateOne);
     fireEvent.click(screen.getByTestId('create-space-submit'));
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('member add unavailable'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
     expect(screen.getByTestId('space-creation-recovery-membersPending').textContent).toContain('spaceCreation.membersPending');
     expect(screen.getByTestId('create-space-submit').textContent).toBe('spaceCreation.tryAgain');
 
@@ -1264,11 +1264,12 @@ describe('CreateSpaceModal draft controller', () => {
 
     await selectCustomAndAdd(candidateOne);
     fireEvent.click(screen.getByTestId('create-space-submit'));
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('response lost'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
     const clientOwnedSpaceId = mockCreateSpace.mock.calls[0][0].view_id;
 
     fireEvent.click(screen.getByTestId('create-space-submit'));
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('member add unavailable'));
+    // The roster failure is the second message; the first came from the lost creation response.
+    await waitFor(() => expect(notify.error).toHaveBeenNthCalledWith(2, 'Something went wrong. Contact support if this keeps happening.'));
     expect(onCreated).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
     expect(mockMoveToTrash).not.toHaveBeenCalled();
@@ -1290,7 +1291,7 @@ describe('CreateSpaceModal draft controller', () => {
 
     await selectCustomAndAdd(candidateOne);
     fireEvent.click(screen.getByTestId('create-space-submit'));
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('member add unavailable'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
     expect(onCreated).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByTestId('create-space-close'));
@@ -1318,7 +1319,7 @@ describe('CreateSpaceModal draft controller', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'space.permissionManager.generalTab' }));
     fireEvent.click(screen.getByTestId('create-space-submit'));
 
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('member add failed'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
     expect(mockCreateSpace).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('create-space-submit').textContent).toBe('spaceCreation.tryAgain');
     expect(screen.getByTestId('space-name-input').getAttribute('disabled')).not.toBeNull();

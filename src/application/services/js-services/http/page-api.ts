@@ -1,6 +1,7 @@
 import { omit } from 'lodash-es';
 import { v4 as uuidv4 } from 'uuid';
 
+import { AtomicCreationPendingError } from '@/application/atomic-creation';
 import { ERROR_CODE } from '@/application/constants';
 import {
   AccessLevel,
@@ -29,6 +30,7 @@ import { getErrorMessage, isUnsupportedRouteError } from '@/utils/errors';
 import { Log } from '@/utils/log';
 
 import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from './core';
+import { createDefaultPage, PageCreationActivation, usesDefaultPageCreation } from './page-default-creation';
 import { captureApiContext } from './request-context';
 import { getView } from './view-api';
 
@@ -148,8 +150,12 @@ function assertClientGeneratedId(resource: 'space' | 'page', expected: string, a
 export async function addAppPage(
   workspaceId: string,
   parentViewId: string,
-  { layout, name, page_data, view_id, prev_view_id }: CreatePagePayload
+  payload: CreatePagePayload,
+  activation?: PageCreationActivation
 ) {
+  if (usesDefaultPageCreation(payload)) return createDefaultPage(workspaceId, parentViewId, payload, activation);
+  const { layout, name, page_data, view_id, prev_view_id } = payload;
+
   assertViewCreationOnline(layout);
   const url = `/api/workspace/${workspaceId}/page-view`;
 
@@ -391,10 +397,15 @@ export async function createSpace(workspaceId: string, payload: CreateSpacePaylo
 export async function createSpaceWithInitialPage(
   workspaceId: string,
   payload: CreateSpaceWithInitialPagePayload,
-  assertWorkspaceCurrent: () => void = () => undefined
+  activation?: PageCreationActivation
 ) {
   const context = captureApiContext();
-  const assertCurrent = () => { context.assertCurrent(); assertWorkspaceCurrent(); };
+  // The request's server and account, and the caller's owner (workspace, remount),
+  // must both still be current before every step and after every reply.
+  const assertCurrent = () => {
+    context.assertCurrent();
+    activation?.assertCurrent?.();
+  };
 
   assertCurrent();
   if (payload.permission) {
@@ -428,7 +439,7 @@ export async function createSpaceWithInitialPage(
     }
 
     try {
-      const page = await addAppPage(workspaceId, spaceId, initial_page);
+      const page = await addAppPage(workspaceId, spaceId, initial_page, activation);
 
       assertCurrent();
       return {
@@ -436,7 +447,11 @@ export async function createSpaceWithInitialPage(
         page,
       };
     } catch (error) {
+      // An atomic command may already be committed. Retain its parent and exact
+      // journaled request so current-state hydration can finish on explicit retry.
+      if (error instanceof AtomicCreationPendingError) throw error;
       assertCurrent();
+
       // The Create Space draft supplies fresh stable IDs for both resources.
       // If the initial-page response was lost, an AlreadyExists retry confirms
       // that the exact requested page was committed.

@@ -132,7 +132,7 @@ export function withYHistory<T extends YjsEditor>(editor: T): T & YHistoryEditor
   const { connect } = e;
   // The pinned Yjs typings predate `stack-item-updated`, although newer
   // runtimes support it. Keep the compatibility cast local to this event.
-  const updatedEventApi = e.undoManager as unknown as UndoManagerUpdatedEventApi;
+  let updatedEventApi = e.undoManager as unknown as UndoManagerUpdatedEventApi;
 
   e.connect = () => {
     connect();
@@ -150,8 +150,28 @@ export function withYHistory<T extends YjsEditor>(editor: T): T & YHistoryEditor
     disconnect();
   };
 
+  const activateFirstBody = e.activateFirstBody;
+
+  e.activateFirstBody = (doc) => {
+    e.undoManager.destroy();
+    activateFirstBody(doc);
+    e.undoManager = new Y.UndoManager(getDocument(e.sharedRoot), {
+      trackedOrigins: new Set([CollabOrigin.Local, CollabOrigin.LocalManual, null]),
+      captureTimeout: 200,
+    });
+    updatedEventApi = e.undoManager as unknown as UndoManagerUpdatedEventApi;
+    if (YjsEditor.connected(e)) {
+      e.undoManager.on('stack-item-added', handleStackItemChanged);
+      updatedEventApi.on('stack-item-updated', handleStackItemChanged);
+      e.undoManager.on('stack-item-popped', handleStackItemPopped);
+    }
+
+    LAST_SELECTION.delete(e);
+  };
+
   e.undo = () => {
     if (!e.readOnly && YjsEditor.connected(e)) {
+      if (e.firstBody && !e.firstBody.allowSlateMutation()) return;
       YjsEditor.flushLocalChanges(e);
       e.undoManager.undo();
     }
@@ -159,6 +179,7 @@ export function withYHistory<T extends YjsEditor>(editor: T): T & YHistoryEditor
 
   e.redo = () => {
     if (!e.readOnly && YjsEditor.connected(e)) {
+      if (e.firstBody && !e.firstBody.allowSlateMutation()) return;
       YjsEditor.flushLocalChanges(e);
       e.undoManager.redo();
     }

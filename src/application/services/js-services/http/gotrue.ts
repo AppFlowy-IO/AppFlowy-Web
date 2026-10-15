@@ -1,6 +1,8 @@
 import axios, { AxiosInstance } from 'axios';
 
+import { readErrorIdentity, userFriendlyErrorMessage } from '@/application/errors/error-message';
 import {
+  captureTokenSession,
   getTokenParsed,
   invalidToken,
   saveGoTrueAuth,
@@ -12,7 +14,7 @@ import { CUSTOM_PROVIDER_PREFIX } from '@/application/types';
 import { Log } from '@/utils/log';
 
 import { verifyToken } from './cloud-auth';
-import { GoTrueErrorCode, parseGoTrueError } from './gotrue-error';
+import { GoTrueErrorCode, parseGoTrueError, parseGoTrueFailure } from './gotrue-error';
 
 export * from './gotrue-error';
 
@@ -49,6 +51,15 @@ export function initGrantService(baseURL: string) {
     Object.assign(config.headers, headers);
 
     return config;
+  });
+  axiosInstance.interceptors.response.use(undefined, (error: unknown) => {
+    // Keep Axios status/response fields intact for refresh and session handling.
+    // Direct callers still need to know that numeric GoTrue codes are HTTP.
+    if (axios.isAxiosError(error)) {
+      Object.assign(error, { sourceDomain: error.response ? 'gotrue' : 'transport' });
+    }
+
+    return Promise.reject(error);
   });
 }
 
@@ -144,9 +155,16 @@ export async function refreshToken(refresh_token: string) {
     return inFlight;
   }
 
+  // The login this refresh belongs to: a refreshed token is stored only while it is current.
+  const refreshingSession = captureTokenSession();
+  const originalSession = getTokenParsed();
+
+  // A newer token was already stored for this tab's session, so this one belongs to
+  // a replaced session: never refresh it, and never sign the current session out for it.
+  if (originalSession && originalSession.refresh_token !== refresh_token) throw new AuthSessionChangedError();
+
   Log.info('[Auth] refreshToken: requesting new token');
   const client = axiosInstance;
-  const originalSession = getTokenParsed();
   // The account owning this refresh token is known only when it is the stored one.
   const ownerUserId = originalSession?.refresh_token === refresh_token ? originalSession.user.id : undefined;
 
@@ -206,7 +224,7 @@ export async function refreshToken(refresh_token: string) {
     }
 
     Log.info('[Auth] refreshToken: success, saving token');
-    if (!saveGoTrueAuth(JSON.stringify(newToken))) {
+    if (!saveGoTrueAuth(JSON.stringify(newToken), refreshingSession)) {
       throw new Error('Failed to persist refreshed token');
     }
 
@@ -225,13 +243,12 @@ export async function refreshToken(refresh_token: string) {
 }
 
 function normalizeAuthFlowError(error: unknown, fallbackMessage: string, useErrorMessage: boolean) {
-  const err = error as { message?: string; code?: number };
-  const message =
-    useErrorMessage && typeof err?.message === 'string' ? err.message.replace(/\s*\[.*\]$/, '') : fallbackMessage;
+  const identity = readErrorIdentity(error);
 
   return {
-    code: err?.code ?? -1,
-    message,
+    ...identity,
+    code: identity.code ?? -1,
+    message: userFriendlyErrorMessage(error, { fallback: useErrorMessage ? undefined : fallbackMessage }),
   };
 }
 
@@ -304,12 +321,7 @@ export async function signInWithPassword(params: { email: string; password: stri
     // eslint-disable-next-line
   } catch (e: any) {
     // Parse error from response
-    const error = parseGoTrueError({
-      error: e.response?.data?.error,
-      errorDescription: e.response?.data?.error_description || e.response?.data?.msg,
-      errorCode: e.response?.status,
-      message: e.response?.data?.message || 'Incorrect password. Please try again.',
-    });
+    const error = parseGoTrueFailure(e);
 
     Log.error('[Auth] signInWithPassword: failed', {
       status: e.response?.status,
@@ -317,10 +329,7 @@ export async function signInWithPassword(params: { email: string; password: stri
       message: error.message,
     });
 
-    return Promise.reject({
-      code: error.code,
-      message: error.message,
-    });
+    return Promise.reject(error);
   }
 }
 
@@ -352,10 +361,9 @@ export async function signUpWithPassword(params: { email: string; password: stri
       // Treat this as "already registered".
       if (!data.access_token && Array.isArray(data.identities) && data.identities.length === 0) {
         Log.warn('[Auth] signUpWithPassword: email already registered', { email: params.email });
-        return Promise.reject({
-          code: 422,
-          message: 'Email already registered',
-        });
+        return Promise.reject(parseGoTrueError({
+          status: 422, error_code: 'email_exists', message: 'Email already registered',
+        }));
       }
 
       // If email confirmation is required, the response won't contain an access_token.
@@ -397,12 +405,7 @@ export async function signUpWithPassword(params: { email: string; password: stri
     }
     // eslint-disable-next-line
   } catch (e: any) {
-    const error = parseGoTrueError({
-      error: e.response?.data?.error,
-      errorDescription: e.response?.data?.error_description || e.response?.data?.msg,
-      errorCode: e.response?.status,
-      message: e.response?.data?.message || 'Failed to sign up with password.',
-    });
+    const error = parseGoTrueFailure(e);
 
     Log.error('[Auth] signUpWithPassword: failed', {
       status: e.response?.status,
@@ -410,10 +413,7 @@ export async function signUpWithPassword(params: { email: string; password: stri
       message: error.message,
     });
 
-    return Promise.reject({
-      code: error.code,
-      message: error.message,
-    });
+    return Promise.reject(error);
   }
 }
 
@@ -441,10 +441,7 @@ export async function forgotPassword(params: { email: string }) {
     // eslint-disable-next-line
   } catch (e: any) {
     Log.error('[Auth] forgotPassword: failed', { status: e.response?.status, message: e.message });
-    return Promise.reject({
-      code: -1,
-      message: e.message,
-    });
+    return Promise.reject(parseGoTrueFailure(e));
   }
 }
 
@@ -493,10 +490,7 @@ export async function changePassword(params: { password: string }) {
       invalidToken();
     }
 
-    return Promise.reject({
-      code: -1,
-      message: e.response?.data?.msg || e.message,
-    });
+    return Promise.reject(parseGoTrueFailure(e));
   }
 }
 
@@ -556,10 +550,7 @@ export async function signInOTP({
       code: e.response?.data?.code,
       message: e.response?.data?.msg || e.message,
     });
-    return Promise.reject({
-      code: e.response?.data?.code || e.response?.status,
-      message: e.response?.data?.msg || e.message,
-    });
+    return Promise.reject(parseGoTrueFailure(e));
   }
 
   return;
@@ -660,14 +651,6 @@ export function signInDiscord(authUrl: string) {
   redirectToAuthProvider(url);
 }
 
-interface AxiosErrorLike {
-  response?: {
-    data?: { message?: string; msg?: string };
-    status?: number;
-  };
-  message?: string;
-}
-
 /**
  * Initiates SAML SSO login flow
  * @param authUrl - The callback URL after SSO completes
@@ -696,12 +679,6 @@ export async function signInSaml(authUrl: string, domain: string): Promise<void>
       message: 'No SSO redirect URL returned',
     });
   } catch (e: unknown) {
-    const err = e as AxiosErrorLike;
-    const errorMessage = err.response?.data?.message || err.response?.data?.msg || err.message || 'SSO login failed';
-
-    return Promise.reject({
-      code: err.response?.status || GoTrueErrorCode.UNKNOWN,
-      message: errorMessage,
-    });
+    return Promise.reject(parseGoTrueFailure(e));
   }
 }

@@ -1,4 +1,5 @@
 import { DatabaseNodeData } from '@/application/types';
+import { getErrorDiagnostic } from '@/utils/errors';
 
 /**
  * Utility functions for database block view_ids operations
@@ -153,14 +154,13 @@ const VIEW_GONE_MESSAGE_PATTERN = /\b(not\s*found|not\s*exist)\b/i;
 export function isViewGoneError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
 
-  const { code, httpStatus, message } = error as {
+  const { code, httpStatus } = error as {
     code?: number;
     httpStatus?: number;
-    message?: string;
   };
 
   if (httpStatus === 404 || httpStatus === 410) return true;
   if (code === 404 || code === -2 || code === -4) return true;
 
-  return typeof message === 'string' && VIEW_GONE_MESSAGE_PATTERN.test(message);
+  return VIEW_GONE_MESSAGE_PATTERN.test(getErrorDiagnostic(error));
 }

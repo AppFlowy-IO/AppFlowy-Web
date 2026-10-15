@@ -108,12 +108,59 @@ export function parseAuthToken(tokenData: unknown): GoTrueAuthToken | null {
 let memoizedRawToken: string | null = null;
 let memoizedParsedToken: GoTrueAuthToken | null = null;
 
+// Login lifetime is independent of access-token rotation. Unowned storage changes
+// invalidate captured work, including switching away and back to the same user.
+let sessionGeneration = 0;
+let observedRawToken: string | null | undefined;
+
+export interface TokenSessionWitness { readonly generation: number; readonly userId: string | null }
+
+function observeTokenStorage(): string | null {
+  const raw = getToken();
+
+  if (observedRawToken !== raw) {
+    sessionGeneration += 1;
+    observedRawToken = raw;
+  }
+
+  return raw;
+}
+
+/** A token this tab stored: only a refresh of the captured login keeps that login's lifetime. */
+export function recordStoredToken(serialized: string, refreshedCapturedLogin: boolean) {
+  if (!refreshedCapturedLogin) sessionGeneration += 1;
+  observedRawToken = serialized;
+}
+
+export function captureTokenSession(): TokenSessionWitness {
+  const token = getTokenParsed();
+
+  return { generation: sessionGeneration, userId: token?.user.id ?? null };
+}
+
+export function isTokenSessionCurrent(witness: TokenSessionWitness): boolean {
+  const current = captureTokenSession();
+
+  return current.generation === witness.generation && current.userId === witness.userId;
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    if (event.key === TOKEN_STORAGE_KEY || event.key === null) {
+      sessionGeneration += 1;
+      observedRawToken = getToken();
+    }
+  });
+}
+
 export function memoizeParsedToken(rawToken: string | null, parsed: GoTrueAuthToken | null) {
   memoizedRawToken = rawToken;
   memoizedParsedToken = parsed;
 }
 
 export function removeStoredToken() {
+  sessionGeneration += 1;
+  observedRawToken = null;
   memoizeParsedToken(null, null);
 
   try {
@@ -133,7 +180,7 @@ export function getToken(): string | null {
 }
 
 export function getTokenParsed(): GoTrueAuthToken | null {
-  const token = getToken();
+  const token = observeTokenStorage();
 
   if (!token) return null;
   if (token === memoizedRawToken && memoizedParsedToken) return memoizedParsedToken;

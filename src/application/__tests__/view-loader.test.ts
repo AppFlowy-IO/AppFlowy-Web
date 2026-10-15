@@ -463,3 +463,37 @@ describe('view-loader row document retry policy', () => {
     expect(jest.getTimerCount()).toBe(0);
   });
 });
+
+describe('just-created empty Document data handoff', () => {
+  beforeEach(() => jest.clearAllMocks());
+  it('uses the independently hydrated provider once, then restores ordinary shell refetch', async () => {
+    const { rememberCreatedDocument } = await import('@/application/view-loader/created-document');
+    const document = createDocumentDoc('created-page');
+    const owner = { workspaceId: 'workspace', userId: 'user', serverUrl: 'https://test', assertCurrent: jest.fn() };
+
+    mockOpenCollabDB.mockResolvedValue(document);
+    mockFetchPageCollab.mockResolvedValue({ data: new Uint8Array([0, 0]) } as never);
+    rememberCreatedDocument(document, owner, 'created-page');
+    const first = await openView('workspace', 'created-page', ViewLayout.Document);
+
+    expect(first.fromCache).toBe(true);
+    expect(first.doc).toBe(document);
+    expect(mockFetchPageCollab).not.toHaveBeenCalled();
+    expect(owner.assertCurrent).toHaveBeenCalledTimes(1);
+    await openView('workspace', 'created-page', ViewLayout.Document);
+    expect(mockFetchPageCollab).toHaveBeenCalledTimes(1);
+    document.destroy();
+  });
+
+  it('does not let a replaced owner reuse the hydration hint', async () => {
+    const { rememberCreatedDocument } = await import('@/application/view-loader/created-document');
+    const document = createDocumentDoc('created-page');
+
+    mockOpenCollabDB.mockResolvedValue(document);
+    rememberCreatedDocument(document, { workspaceId: 'workspace', userId: 'user', serverUrl: 'https://test',
+      assertCurrent: () => { throw new Error('owner changed'); } }, 'created-page');
+    await expect(openView('workspace', 'created-page', ViewLayout.Document)).rejects.toThrow('owner changed');
+    expect(mockFetchPageCollab).not.toHaveBeenCalled();
+    document.destroy();
+  });
+});

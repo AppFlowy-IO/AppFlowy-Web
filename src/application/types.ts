@@ -2412,7 +2412,6 @@ export interface ViewComponentProps {
   getMentionUser?: (uuid: string) => Promise<MentionablePerson | undefined>;
   searchMentions?: SearchMentions;
   mentionContext?: MentionSearchContext;
-  createDatabaseView?: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
 }
 
 export interface CreatePagePayload {
@@ -2574,6 +2573,8 @@ export interface DocumentFileImportStatusResponse {
   error?: string;
   /** Stable application error code; older workers report only the message. */
   error_code?: number;
+  /** Optional public error metadata from newer workers. */
+  user_error?: unknown;
   diagnostics?: ImportDiagnostics;
 }
 

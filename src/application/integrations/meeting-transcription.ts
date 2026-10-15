@@ -78,7 +78,11 @@ export class MeetingTranscription {
 
       this.assertOpen();
       if (!token) throw new MeetingRecordingError('connectionFailed');
-      this.context = new AudioContext({ sampleRate: 24_000 });
+      // Some browsers cannot connect captured audio to a context at a different
+      // sample rate. Keep the device rate and advertise it to the transcriber.
+      this.context = new AudioContext();
+      const sampleRate = this.context.sampleRate;
+
       await this.context.audioWorklet.addModule(audioWorkletUrl);
       this.assertOpen();
       this.processor = new AudioWorkletNode(this.context, 'meeting-audio', {
@@ -89,7 +93,7 @@ export class MeetingTranscription {
 
       url.search = new URLSearchParams({
         token,
-        sample_rate: '24000',
+        sample_rate: String(sampleRate),
         speech_model: 'u3-rt-pro',
         encoding: 'pcm_s16le',
         language_detection: 'true',
@@ -98,7 +102,8 @@ export class MeetingTranscription {
       this.assertOpen();
       this.processor.port.onmessage = ({ data }: MessageEvent<ArrayBuffer>) => {
         if (this.socket?.readyState === WebSocket.OPEN && !this.stopping) {
-          if (this.socket.bufferedAmount > 240_000) {
+          // Bound queued mono PCM16 audio to five seconds at the capture rate.
+          if (this.socket.bufferedAmount > sampleRate * 2 * 5) {
             this.fail(new MeetingRecordingError('connectionFailed'));
             return;
           }
