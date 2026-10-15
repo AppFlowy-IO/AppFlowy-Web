@@ -628,6 +628,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     const invalidatePermissionProbe = (changedViewId: string) => {
       if (!currentWorkspaceId || !requesterId) return;
 
+      AccessService.invalidateObjectPermissionRequests(currentWorkspaceId);
       const cacheKey = createPermissionProbeCacheKey(requesterId, currentWorkspaceId, changedViewId);
 
       permissionProbeCache.delete(cacheKey);

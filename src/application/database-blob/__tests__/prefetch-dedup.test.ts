@@ -5,6 +5,8 @@ import {
   invalidateDatabaseBlobAfterRestore,
   peekDatabaseRowDocSeed,
   takeDatabaseRowDocSeed,
+  retainDatabaseRowDocSeedCache,
+  releaseDatabaseRowDocSeedCache,
 } from '@/application/database-blob';
 import * as pageStageModule from '@/application/database-blob/page-stage';
 import type { DatabaseBlobDiffPageStage } from '@/application/database-blob/page-stage';
@@ -88,6 +90,18 @@ function createDeferred<T>() {
   });
 
   return { promise, resolve };
+}
+
+function setLoginSession(userId: string, lifetime = 1) {
+  localStorage.setItem(
+    'token',
+    JSON.stringify({
+      user: { id: userId },
+      access_token: `test-access-${lifetime}`,
+      refresh_token: `test-refresh-${lifetime}`,
+      expires_at: 2_000_000_000,
+    })
+  );
 }
 
 function createMockPageStage(options?: { failAppend?: boolean }) {
@@ -252,6 +266,382 @@ describe('database blob prefetch deduplication', () => {
     jest.restoreAllMocks();
     databaseIds.forEach(clearDatabaseRowDocSeedCache);
     databaseIds.clear();
+  });
+
+  it('revalidates a retained complete snapshot with one shared delta after navigation', async () => {
+    const databaseId = 'navigation-delta';
+    const workspaceId = 'workspace';
+    databaseIds.add(databaseId);
+    retainDatabaseRowDocSeedCache(databaseId);
+    mockedDatabaseBlobDiff.mockResolvedValueOnce(persistablePage({ timestamp: 100, seqNo: 1 }));
+    await prefetchDatabaseBlobDiff(workspaceId, databaseId, { forceFullSync: true });
+    releaseDatabaseRowDocSeedCache(databaseId);
+    retainDatabaseRowDocSeedCache(databaseId);
+    const deferred = createDeferred<database_blob.DatabaseBlobDiffResponse>();
+    mockedDatabaseBlobDiff.mockReturnValueOnce(deferred.promise);
+    const ready = jest.fn();
+    const first = prefetchDatabaseBlobDiff(workspaceId, databaseId, { forceFullSync: true, onSeedsReady: ready });
+    const second = prefetchDatabaseBlobDiff(workspaceId, databaseId, { forceFullSync: true });
+    await flushPendingWork();
+    expect(ready).not.toHaveBeenCalled();
+    expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(2);
+    expect(mockedDatabaseBlobDiff.mock.calls[1][2].maxKnownRid).toMatchObject({ timestamp: 100, seqNo: 1 });
+    deferred.resolve(deletePage({ timestamp: 101, seqNo: 1 }));
+    await Promise.all([first, second]);
+    expect(ready).toHaveBeenCalledTimes(1);
+    expect(peekDatabaseRowDocSeed(`${databaseId}_rows_${VALID_ROW_ID}`)).toBeNull();
+    releaseDatabaseRowDocSeedCache(databaseId);
+  });
+
+  it('reuses one snapshot across full, plain, and full views with a shared delta on each return', async () => {
+    const databaseId = 'navigation-full-plain-full';
+
+    databaseIds.add(databaseId);
+    retainDatabaseRowDocSeedCache(databaseId);
+    mockedDatabaseBlobDiff.mockResolvedValueOnce(persistablePage({ timestamp: 100, seqNo: 1 }));
+    await prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true });
+    expect(localStorage.getItem(`af_database_blob_rid:${databaseId}`)).toBeNull();
+    releaseDatabaseRowDocSeedCache(databaseId);
+    retainDatabaseRowDocSeedCache(databaseId);
+    const delta = createDeferred<database_blob.DatabaseBlobDiffResponse>();
+
+    mockedDatabaseBlobDiff.mockReturnValueOnce(delta.promise);
+    const firstPlain = prefetchDatabaseBlobDiff('workspace', databaseId);
+    const secondPlain = prefetchDatabaseBlobDiff('workspace', databaseId);
+
+    await flushPendingWork();
+    expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(2);
+    expect(mockedDatabaseBlobDiff.mock.calls[1][2].maxKnownRid).toMatchObject({ timestamp: 100, seqNo: 1 });
+    delta.resolve(readyDiff());
+    await Promise.all([firstPlain, secondPlain]);
+    releaseDatabaseRowDocSeedCache(databaseId);
+    retainDatabaseRowDocSeedCache(databaseId);
+    mockedDatabaseBlobDiff.mockResolvedValueOnce(readyDiff());
+    await prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true });
+    expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(3);
+    expect(mockedDatabaseBlobDiff.mock.calls[2][2].maxKnownRid).toMatchObject({ timestamp: 100, seqNo: 1 });
+    expect(peekDatabaseRowDocSeed(`${databaseId}_rows_${VALID_ROW_ID}`)).not.toBeNull();
+    releaseDatabaseRowDocSeedCache(databaseId);
+  });
+
+  it.each(['network failure', 'non-ready walk'])(
+    'discards retained seeds before row-sync fallback when revalidation has a %s',
+    async (failure) => {
+      const databaseId = `navigation-revalidation-${failure}`;
+      const rowKey = `${databaseId}_rows_${VALID_ROW_ID}`;
+
+      databaseIds.add(databaseId);
+      retainDatabaseRowDocSeedCache(databaseId);
+      mockedDatabaseBlobDiff.mockResolvedValueOnce(persistablePage({ timestamp: 100, seqNo: 1 }));
+      await prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true });
+      const capturedSeed = peekDatabaseRowDocSeed(rowKey)!;
+
+      releaseDatabaseRowDocSeedCache(databaseId);
+      retainDatabaseRowDocSeedCache(databaseId);
+      const ready = jest.fn(() => expect(peekDatabaseRowDocSeed(rowKey)).toBeNull());
+
+      if (failure === 'network failure') {
+        mockedDatabaseBlobDiff.mockRejectedValueOnce(new Error('Network unavailable'));
+      } else {
+        const failedStage = createMockPageStage({ failAppend: true });
+
+        jest.spyOn(pageStageModule, 'createDatabaseBlobDiffPageStage').mockReturnValueOnce(failedStage.stage);
+        mockedDatabaseBlobDiff.mockResolvedValueOnce(readyDiff());
+      }
+
+      const revalidation = prefetchDatabaseBlobDiff('workspace', databaseId, {
+        forceFullSync: true,
+        onSeedsReady: ready,
+      });
+
+      if (failure === 'network failure') {
+        await expect(revalidation).rejects.toThrow('Network unavailable');
+        expect(ready).not.toHaveBeenCalled();
+      } else {
+        await revalidation;
+        expect(ready).toHaveBeenCalledTimes(1);
+      }
+
+      expect(peekDatabaseRowDocSeed(rowKey)).toBeNull();
+      expect(isDatabaseRowDocSeedCurrent(capturedSeed)).toBe(false);
+      mockedDatabaseBlobDiff.mockResolvedValueOnce(persistablePage({ timestamp: 101, seqNo: 1 }));
+      await prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true });
+      expect(mockedDatabaseBlobDiff.mock.calls[2][2].maxKnownRid).toBeNull();
+      releaseDatabaseRowDocSeedCache(databaseId);
+    }
+  );
+
+  it.each(['missing seed', 'row reset', 'restore'])(
+    'downloads a full snapshot when the retained cache is unsafe: %s', async (reason) => {
+      const databaseId = `navigation-${reason}`;
+      databaseIds.add(databaseId);
+      retainDatabaseRowDocSeedCache(databaseId);
+      mockedDatabaseBlobDiff.mockResolvedValue(persistablePage({ timestamp: 100, seqNo: 1 }));
+      await prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true });
+      releaseDatabaseRowDocSeedCache(databaseId);
+      if (reason === 'missing seed') takeDatabaseRowDocSeed(`${databaseId}_rows_${VALID_ROW_ID}`);
+      if (reason === 'row reset') invalidateDatabaseRowDocSeed(VALID_ROW_ID);
+      if (reason === 'restore') publishDatabaseCacheEpoch(databaseId, 'restored');
+      retainDatabaseRowDocSeedCache(databaseId);
+      await prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true });
+      expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(2);
+      expect(mockedDatabaseBlobDiff.mock.calls[1][2].maxKnownRid).toBeNull();
+      releaseDatabaseRowDocSeedCache(databaseId);
+    }
+  );
+
+  it('expires the inactive snapshot after 30 seconds while preserving actively retained views', async () => {
+    const databaseId = 'navigation-expiry';
+    const rowKey = `${databaseId}_rows_${VALID_ROW_ID}`;
+
+    databaseIds.add(databaseId);
+    retainDatabaseRowDocSeedCache(databaseId);
+    retainDatabaseRowDocSeedCache(databaseId);
+    mockedDatabaseBlobDiff.mockResolvedValue(persistablePage({ timestamp: 100, seqNo: 1 }));
+    await prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true });
+    jest.useFakeTimers();
+    releaseDatabaseRowDocSeedCache(databaseId);
+    jest.advanceTimersByTime(30_001);
+    expect(peekDatabaseRowDocSeed(rowKey)).not.toBeNull();
+
+    releaseDatabaseRowDocSeedCache(databaseId);
+    jest.advanceTimersByTime(29_999);
+    expect(peekDatabaseRowDocSeed(rowKey)).not.toBeNull();
+    jest.advanceTimersByTime(1);
+    expect(peekDatabaseRowDocSeed(rowKey)).toBeNull();
+    retainDatabaseRowDocSeedCache(databaseId);
+    await prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true });
+    expect(mockedDatabaseBlobDiff.mock.calls[1][2].maxKnownRid).toBeNull();
+    releaseDatabaseRowDocSeedCache(databaseId);
+  });
+
+  it('joins a pending delta when navigation releases a separate completed full snapshot', async () => {
+    const databaseId = 'navigation-pending-delta';
+
+    databaseIds.add(databaseId);
+    retainDatabaseRowDocSeedCache(databaseId);
+    mockedDatabaseBlobDiff.mockResolvedValueOnce(persistablePage({ timestamp: 100, seqNo: 1 }));
+    await prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true });
+    localStorage.setItem(`af_database_blob_rid:${databaseId}`, JSON.stringify({ timestamp: 100, seqNo: 1 }));
+    const deferred = createDeferred<database_blob.DatabaseBlobDiffResponse>();
+
+    mockedDatabaseBlobDiff.mockReturnValue(deferred.promise);
+    const first = prefetchDatabaseBlobDiff('workspace', databaseId);
+
+    await flushPendingWork();
+    releaseDatabaseRowDocSeedCache(databaseId);
+    retainDatabaseRowDocSeedCache(databaseId);
+    const second = prefetchDatabaseBlobDiff('workspace', databaseId);
+
+    await flushPendingWork();
+    expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(2);
+    deferred.resolve(readyDiff());
+    await Promise.all([first, second]);
+    releaseDatabaseRowDocSeedCache(databaseId);
+  });
+
+  it.each([true, false])(
+    'retains a revalidation finishing between views only when persistence succeeds: %s',
+    async (persisted) => {
+      const databaseId = `navigation-pending-persistence-${persisted}`;
+      const rowKey = `${databaseId}_rows_${VALID_ROW_ID}`;
+
+      databaseIds.add(databaseId);
+      retainDatabaseRowDocSeedCache(databaseId);
+      mockedDatabaseBlobDiff.mockResolvedValueOnce(persistablePage({ timestamp: 100, seqNo: 1 }));
+      await prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true });
+      releaseDatabaseRowDocSeedCache(databaseId);
+      retainDatabaseRowDocSeedCache(databaseId);
+      const persistence = createDeferred<void>();
+
+      mockedOpenRowCollabDB.mockImplementationOnce(async () => {
+        await persistence.promise;
+        if (!persisted) throw new Error('IndexedDB unavailable');
+        return {
+          doc: { destroy: jest.fn() },
+          provider: { destroy: jest.fn(), whenPersisted: jest.fn() },
+        } as unknown as Awaited<ReturnType<typeof openRowCollabDBWithProvider>>;
+      });
+      mockedDatabaseBlobDiff.mockResolvedValueOnce(persistablePage({ timestamp: 101, seqNo: 1 }));
+      const revalidation = prefetchDatabaseBlobDiff('workspace', databaseId);
+
+      await flushPendingWork();
+      releaseDatabaseRowDocSeedCache(databaseId);
+      persistence.resolve();
+      await revalidation;
+      await flushPendingWork();
+      expect(Boolean(peekDatabaseRowDocSeed(rowKey))).toBe(persisted);
+
+      retainDatabaseRowDocSeedCache(databaseId);
+      mockedDatabaseBlobDiff.mockResolvedValueOnce(readyDiff());
+      await prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true });
+      expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(3);
+      expect(mockedDatabaseBlobDiff.mock.calls[2][2].maxKnownRid).toEqual(
+        persisted ? { timestamp: 101, seqNo: 1 } : null
+      );
+      releaseDatabaseRowDocSeedCache(databaseId);
+    }
+  );
+
+  it('does not restart the inactive deadline when a pending snapshot finishes', async () => {
+    const databaseId = 'navigation-pending-expiry';
+    const rowKey = `${databaseId}_rows_${VALID_ROW_ID}`;
+    const response = createDeferred<database_blob.DatabaseBlobDiffResponse>();
+
+    databaseIds.add(databaseId);
+    retainDatabaseRowDocSeedCache(databaseId);
+    mockedDatabaseBlobDiff.mockReturnValueOnce(response.promise);
+    const prefetch = prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true });
+
+    await flushPendingWork();
+    jest.useFakeTimers();
+    releaseDatabaseRowDocSeedCache(databaseId);
+    jest.advanceTimersByTime(29_999);
+    response.resolve(persistablePage({ timestamp: 100, seqNo: 1 }));
+    await prefetch;
+    expect(peekDatabaseRowDocSeed(rowKey)).not.toBeNull();
+    jest.advanceTimersByTime(1);
+    expect(peekDatabaseRowDocSeed(rowKey)).toBeNull();
+  });
+
+  it('does not resurrect a snapshot whose pending request finishes after idle expiry', async () => {
+    const databaseId = 'navigation-pending-expired';
+    const rowKey = `${databaseId}_rows_${VALID_ROW_ID}`;
+    const response = createDeferred<database_blob.DatabaseBlobDiffResponse>();
+
+    databaseIds.add(databaseId);
+    retainDatabaseRowDocSeedCache(databaseId);
+    mockedDatabaseBlobDiff.mockReturnValueOnce(response.promise);
+    const prefetch = prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true });
+
+    await flushPendingWork();
+    jest.useFakeTimers();
+    releaseDatabaseRowDocSeedCache(databaseId);
+    jest.advanceTimersByTime(30_000);
+    response.resolve(persistablePage({ timestamp: 100, seqNo: 1 }));
+    await prefetch;
+    expect(peekDatabaseRowDocSeed(rowKey)).toBeNull();
+  });
+
+  it('does not retain an incomplete server snapshot that reports missing rows', async () => {
+    const databaseId = 'navigation-missing-rows';
+    const partial = persistablePage({ timestamp: 100, seqNo: 1 });
+
+    partial.missingRowIds = [SECOND_VALID_ROW_ID_BYTES];
+    databaseIds.add(databaseId);
+    retainDatabaseRowDocSeedCache(databaseId);
+    mockedDatabaseBlobDiff.mockResolvedValueOnce(partial).mockResolvedValueOnce(readyDiff());
+    await prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true });
+    releaseDatabaseRowDocSeedCache(databaseId);
+    retainDatabaseRowDocSeedCache(databaseId);
+    await prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true });
+    expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(2);
+    expect(mockedDatabaseBlobDiff.mock.calls[1][2].maxKnownRid).toBeNull();
+    releaseDatabaseRowDocSeedCache(databaseId);
+  });
+
+  it.each(['user-1', 'user-2'])('retires retained and captured seeds after logging in as %s', async (nextUserId) => {
+    const databaseId = `navigation-session-${nextUserId}`;
+    const rowKey = `${databaseId}_rows_${VALID_ROW_ID}`;
+
+    databaseIds.add(databaseId);
+    setLoginSession('user-1');
+    retainDatabaseRowDocSeedCache(databaseId);
+    mockedDatabaseBlobDiff.mockResolvedValueOnce(persistablePage({ timestamp: 100, seqNo: 1 }));
+    await prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true });
+    const capturedSeed = peekDatabaseRowDocSeed(rowKey)!;
+
+    expect(capturedSeed).not.toBeNull();
+    releaseDatabaseRowDocSeedCache(databaseId);
+    setLoginSession(nextUserId, 2);
+    expect(isDatabaseRowDocSeedCurrent(capturedSeed)).toBe(false);
+    expect(peekDatabaseRowDocSeed(rowKey)).toBeNull();
+    retainDatabaseRowDocSeedCache(databaseId);
+    mockedDatabaseBlobDiff.mockResolvedValueOnce(readyDiff());
+    await prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true });
+    expect(mockedDatabaseBlobDiff.mock.calls[1][2].maxKnownRid).toBeNull();
+    releaseDatabaseRowDocSeedCache(databaseId);
+  });
+
+  it('preserves the new view retain when an old session view releases after it mounts', async () => {
+    const databaseId = 'navigation-session-retain-order';
+    const rowKey = `${databaseId}_rows_${VALID_ROW_ID}`;
+
+    databaseIds.add(databaseId);
+    setLoginSession('user-1');
+    retainDatabaseRowDocSeedCache(databaseId);
+    mockedDatabaseBlobDiff.mockResolvedValue(persistablePage({ timestamp: 100, seqNo: 1 }));
+    await prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true });
+    setLoginSession('user-2');
+    retainDatabaseRowDocSeedCache(databaseId);
+    await prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true });
+    jest.useFakeTimers();
+    // Old view cleanup must not decrement a reset counter owned by the new view.
+    releaseDatabaseRowDocSeedCache(databaseId);
+    jest.advanceTimersByTime(30_001);
+    expect(peekDatabaseRowDocSeed(rowKey)).not.toBeNull();
+    releaseDatabaseRowDocSeedCache(databaseId);
+    jest.advanceTimersByTime(30_000);
+    expect(peekDatabaseRowDocSeed(rowKey)).toBeNull();
+  });
+
+  it('rejects a delayed response from a previous login before seeding or persisting rows', async () => {
+    const databaseId = 'navigation-delayed-session';
+    const deferred = createDeferred<database_blob.DatabaseBlobDiffResponse>();
+    const ready = jest.fn();
+
+    databaseIds.add(databaseId);
+    setLoginSession('user-1');
+    mockedDatabaseBlobDiff.mockReturnValueOnce(deferred.promise);
+    const prefetch = prefetchDatabaseBlobDiff('workspace', databaseId, { onSeedsReady: ready });
+
+    await flushPendingWork();
+    setLoginSession('user-2');
+    deferred.resolve(persistablePage({ timestamp: 100, seqNo: 1 }));
+    await expect(prefetch).rejects.toThrow('session change');
+    expect(ready).not.toHaveBeenCalled();
+    expect(mockedOpenRowCollabDB).not.toHaveBeenCalled();
+    expect(peekDatabaseRowDocSeed(`${databaseId}_rows_${VALID_ROW_ID}`)).toBeNull();
+    expect(localStorage.getItem(`af_database_blob_rid:${databaseId}`)).toBeNull();
+  });
+
+  it('fences a pending storage open and previously captured seed after a login change', async () => {
+    const databaseId = 'navigation-delayed-session-storage';
+    const deferredOpen = createDeferred<Awaited<ReturnType<typeof openRowCollabDBWithProvider>>>();
+    const doc = { destroy: jest.fn() };
+    const provider = {
+      destroy: jest.fn().mockResolvedValue(undefined),
+      whenPersisted: jest.fn().mockResolvedValue(undefined),
+    };
+
+    databaseIds.add(databaseId);
+    setLoginSession('user-1');
+    mockedDatabaseBlobDiff.mockResolvedValueOnce(persistablePage({ timestamp: 100, seqNo: 1 }));
+    mockedOpenRowCollabDB.mockReturnValueOnce(deferredOpen.promise);
+    const prefetch = prefetchDatabaseBlobDiff('workspace', databaseId);
+
+    await flushPendingWork();
+    const capturedSeed = peekDatabaseRowDocSeed(`${databaseId}_rows_${VALID_ROW_ID}`)!;
+
+    expect(capturedSeed).not.toBeNull();
+    setLoginSession('user-2');
+    deferredOpen.resolve({ doc, provider } as unknown as Awaited<ReturnType<typeof openRowCollabDBWithProvider>>);
+    await expect(prefetch).rejects.toThrow('session change');
+    expect(isDatabaseRowDocSeedCurrent(capturedSeed)).toBe(false);
+    expect(mockedApplyYDoc).not.toHaveBeenCalled();
+    expect(localStorage.getItem(`af_database_blob_rid:${databaseId}`)).toBeNull();
+  });
+
+  it('evicts the previous inactive database so navigation cannot retain many snapshots', async () => {
+    for (const databaseId of ['navigation-first', 'navigation-second']) {
+      databaseIds.add(databaseId);
+      retainDatabaseRowDocSeedCache(databaseId);
+      mockedDatabaseBlobDiff.mockResolvedValueOnce(persistablePage({ timestamp: 100, seqNo: 1 }));
+      await prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true });
+      releaseDatabaseRowDocSeedCache(databaseId);
+    }
+    expect(peekDatabaseRowDocSeed(`navigation-first_rows_${VALID_ROW_ID}`)).toBeNull();
+    expect(peekDatabaseRowDocSeed(`navigation-second_rows_${VALID_ROW_ID}`)).not.toBeNull();
   });
 
   it('rejects a delayed response after another tab restores, including a row unknown to that tab', async () => {

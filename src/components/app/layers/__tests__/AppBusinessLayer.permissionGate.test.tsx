@@ -35,6 +35,7 @@ jest.mock('@/application/db', () => ({
 jest.mock('@/application/services/domains', () => ({
   AccessService: {
     getObjectPermission: jest.fn(),
+    invalidateObjectPermissionRequests: jest.fn(),
   },
   ViewService: {
     get: jest.fn(),
@@ -797,6 +798,7 @@ describe('AppBusinessLayer permission gates', () => {
       document.dispatchEvent(new Event('visibilitychange'));
     });
     await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(2));
+    expect(AccessService.invalidateObjectPermissionRequests).toHaveBeenCalledWith(workspaceId);
 
     act(() => {
       window.dispatchEvent(new Event('online'));
@@ -815,6 +817,7 @@ describe('AppBusinessLayer permission gates', () => {
         createObjectPermission(routeViewId, Types.Document, { can_share: false })
       );
     });
+    expect(AccessService.invalidateObjectPermissionRequests).toHaveBeenCalledTimes(3);
     visibilityState.mockRestore();
   });
 
@@ -862,6 +865,7 @@ describe('AppBusinessLayer permission gates', () => {
       expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(2);
       expect(screen.getByTestId('no-access').textContent).toBe('true');
     });
+    expect(AccessService.invalidateObjectPermissionRequests).toHaveBeenCalledWith(workspaceId);
 
     await act(async () => {
       resolveInitialProbe(createObjectPermission(routeViewId));

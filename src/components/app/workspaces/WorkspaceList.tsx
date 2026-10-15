@@ -1,7 +1,6 @@
 import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
 import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
 import { reorder } from '@atlaskit/pragmatic-drag-and-drop/reorder';
-import { autoScrollForElements } from '@atlaskit/pragmatic-drag-and-drop-auto-scroll/element';
 import { extractClosestEdge, type Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { getReorderDestinationIndex } from '@atlaskit/pragmatic-drag-and-drop-hitbox/util/get-reorder-destination-index';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -9,6 +8,7 @@ import { toast } from 'sonner';
 
 import { WorkspaceService } from '@/application/services/domains';
 import { Workspace } from '@/application/types';
+import { registerSharedAutoScroll } from '@/components/_shared/reorder/sharedAutoScroll';
 import { WorkspaceItem } from '@/components/app/workspaces/WorkspaceItem';
 import { Log } from '@/utils/log';
 
@@ -185,7 +185,7 @@ function WorkspaceList({
           void reorderWorkspaces(sourceId, targetId, closestEdgeOfTarget);
         },
       }),
-      autoScrollForElements({
+      registerSharedAutoScroll({
         canScroll: canRespond,
         element,
       })

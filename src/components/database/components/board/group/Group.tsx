@@ -1,4 +1,3 @@
-import { autoScrollForElements } from '@atlaskit/pragmatic-drag-and-drop-auto-scroll/element';
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -10,6 +9,7 @@ import {
   useReadOnly,
   useRowsByGroup,
 } from '@/application/database-yjs';
+import { registerSharedAutoScroll } from '@/components/_shared/reorder/sharedAutoScroll';
 import KanbanSkeleton from '@/components/_shared/skeleton/KanbanSkeleton';
 import { useBoardActions } from '@/components/database/board/BoardProvider';
 import { BoardDragContext } from '@/components/database/components/board/drag-and-drop/board-context';
@@ -177,7 +177,7 @@ const HydratedGroup = ({ groupId, columns, groupResult, fieldId, groupRowsReady 
   useEffect(() => {
     if (!verticalScrollContainer || readOnly) return;
 
-    const cleanup = autoScrollForElements({
+    const cleanup = registerSharedAutoScroll({
       element: verticalScrollContainer,
       canScroll: ({ source }) => source.data.instanceId === contextValue.instanceId && source.data.type === 'card',
     });
