@@ -37,6 +37,8 @@ jest.mock('@/application/services/domains', () => ({
 
 // AppProvider composes the workspace layers under AppAuthLayer; they are
 // irrelevant to these tests, so render their children directly.
+jest.mock('@/components/app/workspaces/NoWorkspace', () => ({ NoWorkspace: () => <div>Signed in without a workspace</div> }));
+
 jest.mock('@/components/app/layers/AppSyncLayer', () => ({
   AppSyncLayer: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
@@ -79,6 +81,16 @@ describe('AppAuthLayer workspace info loading', () => {
       ai_enabled: true,
     } as never);
     mockOpenWorkspace.mockResolvedValue(undefined as never);
+  });
+
+  it('keeps an authenticated empty account on the no-workspace landing', async () => {
+    mockGetWorkspaceInfo.mockResolvedValue({ userId: 'empty', selectedWorkspace: null, workspaces: [] });
+    render(<AFConfigContext.Provider value={{ isAuthenticated: true, authenticatedUserId: 'empty', updateCurrentUser: jest.fn(), openLoginModal: jest.fn() }}>
+      <AppProvider><div>Workspace content</div></AppProvider>
+    </AFConfigContext.Provider>);
+    await screen.findByText('Signed in without a workspace');
+    expect(screen.queryByText('Workspace content')).toBeNull();
+    expect(mockInvalidToken).not.toHaveBeenCalled();
   });
 
   it.each([

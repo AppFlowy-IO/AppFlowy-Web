@@ -31,6 +31,7 @@ import { Log } from '@/utils/log';
 
 import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from './core';
 import { createDefaultPage, PageCreationActivation, usesDefaultPageCreation } from './page-default-creation';
+import { captureApiContext } from './request-context';
 import { getView } from './view-api';
 
 function isLosslessLegacyPermission(permission: SpacePermissionSettings): boolean {
@@ -81,13 +82,15 @@ function mayHaveCommittedMutation(error: unknown): boolean {
       ? code
       : undefined;
 
-  return (
-    (code === undefined && httpStatus === undefined) ||
-    code === -1 ||
-    httpStatus === 408 ||
-    httpStatus === 409 ||
-    (httpStatus !== undefined && httpStatus >= 500 && httpStatus <= 599)
-  );
+  // HTTP 200 can carry an internal/timeout/conflict application envelope.
+  // Unknown outcomes remain ambiguous; only known rejection classes permit
+  // compensation of an acknowledged parent after an initial-page failure.
+  const rejectedHttp = typeof httpStatus === 'number' && httpStatus >= 400 && httpStatus < 500 &&
+    httpStatus !== 408 && httpStatus !== 409;
+  const rejectedApplication = [ERROR_CODE.INVALID_REQUEST, ERROR_CODE.NOT_LOGGED_IN,
+    ERROR_CODE.NOT_HAS_PERMISSION, ERROR_CODE.USER_UNAUTHORIZED].some((value) => value === code);
+
+  return !rejectedHttp && !rejectedApplication;
 }
 
 function isMissingOrDeletedResource(error: unknown): boolean {
@@ -135,8 +138,8 @@ function assertClientGeneratedId(resource: 'space' | 'page', expected: string, a
   // The caller supplied this identity as the idempotency boundary. Handing a
   // different (or missing) ID to the editor can open a folder view whose
   // document collab lives under the requested ID, and makes retries target the
-  // wrong resource. Treat a broken echo as an ambiguous response so the
-  // composed flow compensates the caller-owned space instead.
+  // wrong resource. Treat a broken echo as ambiguous so the composed flow
+  // retains the caller-owned identities for reconciliation.
   throw Object.assign(new Error(`Create ${resource} returned an unexpected view ID`), {
     code: -1,
     clientGeneratedExpectedViewId: expected,
@@ -320,6 +323,8 @@ export async function movePageTo(workspaceId: string, viewId: string, parentView
 }
 
 export async function createSpace(workspaceId: string, payload: CreateSpacePayload): Promise<string> {
+  const context = captureApiContext();
+
   if (payload.permission) {
     const url = `/api/workspace/${workspaceId}/spaces`;
     const {
@@ -330,15 +335,17 @@ export async function createSpace(workspaceId: string, payload: CreateSpacePaylo
 
     try {
       const data = await executeAPIRequest<{ view_id: string }>(() =>
-        getAxios()?.post<APIResponse<{ view_id: string }>>(url, structuredPayload)
+        context.client?.post<APIResponse<{ view_id: string }>>(url, structuredPayload)
       );
 
+      context.assertCurrent();
       if (clientGeneratedViewId && payload.view_id) {
         assertClientGeneratedId('space', payload.view_id, data.view_id);
       }
 
       return data.view_id;
     } catch (error) {
+      context.assertCurrent();
       if (clientGeneratedViewId && payload.view_id && isAlreadyExistsError(error)) return payload.view_id;
       if (!isUnsupportedRouteError(error)) throw error;
 
@@ -371,15 +378,17 @@ export async function createSpace(workspaceId: string, payload: CreateSpacePaylo
 
   try {
     const data = await executeAPIRequest<{ view_id: string }>(() =>
-      getAxios()?.post<APIResponse<{ view_id: string }>>(url, requestPayload)
+      context.client?.post<APIResponse<{ view_id: string }>>(url, requestPayload)
     );
 
+    context.assertCurrent();
     if (clientGeneratedViewId && payload.view_id) {
       assertClientGeneratedId('space', payload.view_id, data.view_id);
     }
 
     return data.view_id;
   } catch (error) {
+    context.assertCurrent();
     if (clientGeneratedViewId && payload.view_id && isAlreadyExistsError(error)) return payload.view_id;
     throw error;
   }
@@ -390,6 +399,15 @@ export async function createSpaceWithInitialPage(
   payload: CreateSpaceWithInitialPagePayload,
   activation?: PageCreationActivation
 ) {
+  const context = captureApiContext();
+  // The request's server and account, and the caller's owner (workspace, remount),
+  // must both still be current before every step and after every reply.
+  const assertCurrent = () => {
+    context.assertCurrent();
+    activation?.assertCurrent?.();
+  };
+
+  assertCurrent();
   if (payload.permission) {
     // The atomic /v2/space endpoint accepts only the binary permission model;
     // it does not persist a structured ACL or a creator-owner row. Compose the
@@ -403,31 +421,27 @@ export async function createSpaceWithInitialPage(
     let spaceId: string;
 
     try {
-      activation?.assertCurrent?.();
       spaceId = await createSpace(workspaceId, {
         ...spacePayload,
         view_id: requestedSpaceId,
       });
+      assertCurrent();
     } catch (error) {
-      activation?.assertCurrent?.();
-      // A transport failure can happen after the server commits. Because the
-      // client generated a fresh ID, a best-effort trash operation also covers
-      // that ambiguous outcome without risking a caller-owned existing space.
+      assertCurrent();
+      // A timeout can precede the commit. A cleanup read/delete returning 404
+      // cannot cancel the still-running POST. Preserve the original identity
+      // for reconciliation instead of reporting a successful compensation.
       if (ownsSpaceId && mayHaveCommittedMutation(error)) {
-        const cleanupSucceeded = await removePartiallyCreatedSpace(workspaceId, requestedSpaceId, true);
-
-        throw withClientGeneratedCleanupOutcome(error, cleanupSucceeded);
+        throw withClientGeneratedCleanupOutcome(error, false);
       }
 
       throw error;
     }
 
     try {
-      activation?.assertCurrent?.();
       const page = await addAppPage(workspaceId, spaceId, initial_page, activation);
 
-      activation?.assertCurrent?.();
-
+      assertCurrent();
       return {
         space: { view_id: spaceId },
         page,
@@ -436,7 +450,7 @@ export async function createSpaceWithInitialPage(
       // An atomic command may already be committed. Retain its parent and exact
       // journaled request so current-state hydration can finish on explicit retry.
       if (error instanceof AtomicCreationPendingError) throw error;
-      activation?.assertCurrent?.();
+      assertCurrent();
 
       // The Create Space draft supplies fresh stable IDs for both resources.
       // If the initial-page response was lost, an AlreadyExists retry confirms
@@ -449,6 +463,12 @@ export async function createSpaceWithInitialPage(
       }
 
       if (ownsSpaceId) {
+        // The page request may likewise still be running. Retrying its stable
+        // ID can recover a committed result without deleting its parent first.
+        if (clientGeneratedViewId || mayHaveCommittedMutation(error)) {
+          throw withClientGeneratedCleanupOutcome(error, false);
+        }
+
         const cleanupSucceeded = await removePartiallyCreatedSpace(workspaceId, spaceId, true);
 
         throw withClientGeneratedCleanupOutcome(error, cleanupSucceeded);
@@ -472,9 +492,10 @@ export async function createSpaceWithInitialPage(
 
   try {
     const result = await executeAPIRequest<CreateSpaceWithInitialPageResponse>(() =>
-      getAxios()?.post<APIResponse<CreateSpaceWithInitialPageResponse>>(url, requestPayload)
+      context.client?.post<APIResponse<CreateSpaceWithInitialPageResponse>>(url, requestPayload)
     );
 
+    assertCurrent();
     if (clientGeneratedViewId && payload.view_id && payload.initial_page.view_id) {
       assertClientGeneratedId('space', payload.view_id, result.space.view_id);
       assertClientGeneratedId('page', payload.initial_page.view_id, result.page.view_id);
@@ -482,6 +503,7 @@ export async function createSpaceWithInitialPage(
 
     return result;
   } catch (error) {
+    assertCurrent();
     if (clientGeneratedViewId && payload.view_id && payload.initial_page.view_id && isAlreadyExistsError(error)) {
       return {
         space: { view_id: payload.view_id },
@@ -500,9 +522,7 @@ async function removePartiallyCreatedSpace(workspaceId: string, spaceId: string,
     await moveToTrash(workspaceId, spaceId);
     absenceConfirmed = true;
   } catch (cleanupError) {
-    if (isMissingOrDeletedResource(cleanupError)) {
-      absenceConfirmed = true;
-    } else {
+    if (!isMissingOrDeletedResource(cleanupError)) {
       Log.error('[createSpaceWithInitialPage] Failed to clean up partially created structured space', {
         workspaceId,
         spaceId,
@@ -525,9 +545,8 @@ async function removePartiallyCreatedSpace(workspaceId: string, spaceId: string,
       });
     }
 
-    // Once move-to-trash (or an already missing/deleted response) is
-    // confirmed, the ID cannot remain as an active space. Permanent purge is
-    // best-effort and must not make a later retry reuse a trashed tombstone.
+    // Only an acknowledged mutation confirms compensation. A missing read
+    // does not prove a previous request can no longer commit.
     return absenceConfirmed;
   }
 }

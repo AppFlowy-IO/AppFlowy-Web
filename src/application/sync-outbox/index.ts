@@ -10,6 +10,11 @@ import { Types } from '@/application/types';
 import { collab, messages } from '@/proto/messages';
 import { Log } from '@/utils/log';
 
+import { isFencedByDiscard, recordDiscardedEdits, requestDiscardSettlement } from './discard-fence';
+import { permissionBlockKey, persistPermissionBlock, readPermissionBlock, releasePermissionBlock } from './permission-quarantine';
+
+export { settleDiscardedEdits, subscribeDiscardedEdits } from './discard-fence';
+
 // Inlined to avoid a circular import with sync-protocol. Value must match
 // UpdateFlags.Lib0v1 in sync-protocol.ts.
 const FLAGS_LIB0V1 = 0;
@@ -21,6 +26,7 @@ export type OutboxReady = () => boolean;
 export interface SyncOutboxSession {
   userId: string;
   workspaceId: string;
+  serverUrl?: string;
 }
 
 export interface SlowSyncOutboxItem {
@@ -34,7 +40,31 @@ export interface SlowSyncOutboxItem {
 
 export type SlowSyncBlockedReason = 'permission_denied' | 'update_too_large';
 
-type SlowSyncBlock = { reason: 'permission_denied' } | { reason: 'update_too_large'; recordIds: number[] };
+type SlowSyncBlock =
+  /** Resolves false when the durable quarantine could not be written; this tab then keeps it in memory. */
+  | { reason: 'permission_denied'; persisted: Promise<boolean> }
+  | { reason: 'update_too_large'; recordIds: number[] };
+
+export type UploadPermissionVerdict = 'allowed' | 'denied' | 'unknown';
+
+/** Outcome of an explicit retry, per object that had quarantined edits. */
+export interface PermissionRetryResult {
+  /** Edit access is current; the edits are queued for upload again. */
+  released: string[];
+  /** Edit access is still missing, or a newer denial replaced the reviewed one. */
+  denied: string[];
+  /** Access could not be checked (offline, server error, superseded check). */
+  unknown: string[];
+}
+
+/**
+ * - allowed: send now.
+ * - denied: quarantined until an explicit retry.
+ * - unknown: the check failed; retried with backoff.
+ * - held: the database restore barrier keeps the bytes queued.
+ * - stale: a permission change happened during the check; check again.
+ */
+type AdmissionVerdict = UploadPermissionVerdict | 'held' | 'stale';
 
 export type SlowSyncOutboxResult =
   | {
@@ -50,6 +80,7 @@ export type SlowSyncOutboxResult =
 interface DrainConfig {
   userId: string;
   workspaceId: string;
+  serverUrl?: string;
   /** Sends to the authoritative server (WebSocket). Only invoked when isReady(). */
   send: OutboxSender;
   /**
@@ -74,6 +105,14 @@ interface DrainConfig {
    * waiting for the drain that is awaiting this callback.
    */
   beforeSend?: (objectId: string, collabType: Types, databaseRestoreId?: string) => Promise<boolean>;
+  /** Current canonical authority, fenced by the owning session and permission revision. */
+  checkPermission?: (objectId: string, collabType: Types) => Promise<UploadPermissionVerdict>;
+  /**
+   * Synchronous view of a still-fresh `checkPermission` verdict. An object whose
+   * last full admission still holds sends edits immediately (sibling tabs and
+   * the server) instead of waiting for IndexedDB and a permission round trip.
+   */
+  peekPermission?: (objectId: string, collabType: Types) => UploadPermissionVerdict | undefined;
   /** Fence legacy database bytes as the unmarked generation on capable servers. */
   databaseHistoryEnabled?: boolean;
   /** Notifies the elected socket owner after the IndexedDB row is durable. */
@@ -100,6 +139,7 @@ let drainConfig: DrainConfig | null = null;
 // before any local edits can happen; kept in sync with the active sync layer.
 let currentUserId: string | null = null;
 let currentWorkspaceId: string | null = null;
+let currentServerUrl: string | undefined;
 const draining = new Map<string, Promise<void>>();
 const slowSyncRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const slowSyncRetryAttempts = new Map<string, number>();
@@ -124,6 +164,7 @@ const suppressedObjects = new Set<string>();
 // suppression set alone cannot detect that case once cleanup releases it.
 const objectGenerations = new Map<string, number>();
 let lifecycleGeneration = 0;
+let permissionGeneration = 0;
 // When `purgeAllOutbox` is running, both new enqueues and new drain iterations
 // are blocked so we can quiesce the outbox across a logout boundary without
 // racing concurrent writes or sends.
@@ -139,7 +180,18 @@ let startDrainAllQueued = false;
 // can leapfrog an oversized record left in IndexedDB by a prior page load.
 let discoveredOutboxSessionKey: string | null = null;
 
+// Objects whose last full admission (current edit access, no quarantine, restore
+// barrier passed) still holds in the captured generations. Only these may take
+// the immediate realtime path while permission checks are configured.
+const admittedObjects = new Map<string, { lifecycle: number; permission: number; object: number }>();
+// Checked enqueues still waiting for admission. A later immediate send for the
+// same object must not overtake them.
+const pendingAdmissions = new Map<string, number>();
+const admissionRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const admissionRetryAttempts = new Map<string, number>();
+
 const SLOW_SYNC_RETRY_DELAYS_MS = [5_000, 30_000, 2 * 60_000, 5 * 60_000];
+const ADMISSION_RETRY_DELAYS_MS = [5_000, 30_000, 2 * 60_000, 5 * 60_000];
 const DEFAULT_REALTIME_UPDATE_BYTES = 4 * 1024 * 1024;
 const OUTBOX_READ_BATCH_SIZE = 64;
 const SLOW_SYNC_LOCK_PREFIX = 'appflowy:sync-outbox:slow';
@@ -151,12 +203,12 @@ interface EnqueueOutboxOptions {
   source?: 'manifest';
 }
 
-function sessionObjectKey(userId: string, workspaceId: string, objectId: string): string {
-  return `${userId}\u0000${workspaceId}\u0000${objectId}`;
+function sessionObjectKey(userId: string, workspaceId: string, objectId: string, serverUrl?: string): string {
+  return `${userId}\u0000${workspaceId}\u0000${serverUrl ?? ''}\u0000${objectId}`;
 }
 
-function sessionKey(userId: string, workspaceId: string): string {
-  return `${userId}\u0000${workspaceId}`;
+function sessionKey(userId: string, workspaceId: string, serverUrl?: string): string {
+  return `${userId}\u0000${workspaceId}\u0000${serverUrl ?? ''}`;
 }
 
 /**
@@ -166,11 +218,11 @@ function sessionKey(userId: string, workspaceId: string): string {
  * only drain when that session's sync layer is re-mounted with the matching
  * `(userId, workspaceId)`.
  */
-export function setCurrentSession(session: { userId: string; workspaceId: string } | null) {
+export function setCurrentSession(session: SyncOutboxSession | null) {
   const nextUserId = session?.userId ?? null;
   const nextWorkspaceId = session?.workspaceId ?? null;
-  const nextSessionKey = nextUserId && nextWorkspaceId ? sessionKey(nextUserId, nextWorkspaceId) : null;
-  const currentSessionKey = currentUserId && currentWorkspaceId ? sessionKey(currentUserId, currentWorkspaceId) : null;
+  const nextSessionKey = nextUserId && nextWorkspaceId ? sessionKey(nextUserId, nextWorkspaceId, session?.serverUrl) : null;
+  const currentSessionKey = currentUserId && currentWorkspaceId ? sessionKey(currentUserId, currentWorkspaceId, currentServerUrl) : null;
 
   if (nextSessionKey !== currentSessionKey) {
     lifecycleGeneration += 1;
@@ -179,6 +231,7 @@ export function setCurrentSession(session: { userId: string; workspaceId: string
 
   currentUserId = nextUserId;
   currentWorkspaceId = nextWorkspaceId;
+  currentServerUrl = session?.serverUrl;
 }
 
 /**
@@ -190,7 +243,7 @@ export function getCurrentOutboxSession(expectedWorkspaceId?: string): SyncOutbo
   if (!currentUserId || !currentWorkspaceId) return null;
   if (expectedWorkspaceId && currentWorkspaceId !== expectedWorkspaceId) return null;
 
-  return { userId: currentUserId, workspaceId: currentWorkspaceId };
+  return { userId: currentUserId, workspaceId: currentWorkspaceId, ...(currentServerUrl ? { serverUrl: currentServerUrl } : {}) };
 }
 
 /** Read-only lifetime witness for commands prepared by the currently mounted workspace. */
@@ -218,12 +271,31 @@ export function enqueueOutboxUpdate(
     return Promise.resolve(false);
   }
 
-  const objectSessionKey = sessionObjectKey(userId, workspaceId, record.objectId);
+  // These edits were discarded in another tab (or in this one, which is about
+  // to reload) while this tab still held the object in memory. Refuse anything
+  // rebuilt from that copy and have the page reloaded from the server.
+  const discardScope = { serverUrl: currentServerUrl, userId, workspaceId };
+
+  if (isFencedByDiscard(discardScope, record.objectId)) {
+    Log.warn('[outbox] enqueue dropped: the edits were discarded; reloading the page', { objectId: record.objectId });
+    requestDiscardSettlement(discardScope);
+    return Promise.resolve(false);
+  }
+
+  const objectSessionKey = sessionObjectKey(userId, workspaceId, record.objectId, currentServerUrl);
   const capturedLifecycleGeneration = lifecycleGeneration;
+  const capturedPermissionGeneration = permissionGeneration;
   const capturedObjectGeneration = objectGenerations.get(objectSessionKey) ?? 0;
   const isCurrentGeneration = () =>
     lifecycleGeneration === capturedLifecycleGeneration &&
+    permissionGeneration === capturedPermissionGeneration &&
     (objectGenerations.get(objectSessionKey) ?? 0) === capturedObjectGeneration;
+  // Only a permission change invalidated this enqueue's check: the row is still
+  // owned by this session and object, so it is checked again.
+  const onlyPermissionChanged = () =>
+    lifecycleGeneration === capturedLifecycleGeneration &&
+    (objectGenerations.get(objectSessionKey) ?? 0) === capturedObjectGeneration &&
+    permissionGeneration !== capturedPermissionGeneration;
 
   // A discard is in progress for this objectId (version reset / revert).
   // Refuse to add new rows so a local edit landing mid-discard cannot slip
@@ -239,18 +311,30 @@ export function enqueueOutboxUpdate(
     ...record,
     userId,
     workspaceId,
+    serverUrl: currentServerUrl,
     createdAt: Date.now(),
     source: options?.source,
   };
 
+  const activeConfig = drainConfig;
+  const sameActiveSession = Boolean(
+    activeConfig &&
+      activeConfig.userId === userId &&
+      activeConfig.workspaceId === workspaceId &&
+      activeConfig.serverUrl === row.serverUrl
+  );
+  // Ordinary edits keep the low-latency realtime path. With permission checks,
+  // that path is open only while this object's last full admission still holds;
+  // otherwise the edit is persisted and checked first (database objects always
+  // wait for their restore check).
+  const immediate = Boolean(activeConfig && sameActiveSession && canSendImmediately(activeConfig, record));
+
   // Fan out to sibling tabs immediately, regardless of WebSocket state. The
   // server send uses the same update shape below when the WebSocket is open;
   // the durable outbox row remains the fallback when it is not.
-  const broadcast = drainConfig?.broadcast;
-
-  if (options?.broadcast !== false && broadcast && drainConfig?.workspaceId === workspaceId && !isRestoreGated(drainConfig, record.collabType)) {
+  if (options?.broadcast !== false && activeConfig?.broadcast && immediate) {
     try {
-      broadcast(buildUpdateMessage(record, drainConfig));
+      activeConfig.broadcast(buildUpdateMessage(record, activeConfig));
     } catch (error) {
       Log.warn('[outbox] broadcast failed', { objectId: record.objectId, error });
     }
@@ -268,26 +352,36 @@ export function enqueueOutboxUpdate(
     serializedSlowSyncObjects.add(objectSessionKey);
   }
 
+  const checked = Boolean(activeConfig && requiresUploadAdmission(activeConfig, record.collabType) && !immediate);
+
+  if (checked) pendingAdmissions.set(objectSessionKey, (pendingAdmissions.get(objectSessionKey) ?? 0) + 1);
   const addPromise: Promise<unknown> = persistOutboxRow(row as SyncOutboxRecord);
   const set = inflightAdds.get(record.objectId) ?? new Set<Promise<unknown>>();
   let sentImmediately = false;
-  const activeConfig = drainConfig;
   const notifyPersisted =
     activeConfig?.userId === enqueueUserId && activeConfig.workspaceId === enqueueWorkspaceId
       ? activeConfig.onPersisted
       : undefined;
+  const notifyOwner = () => {
+    try {
+      notifyPersisted?.(enqueueWorkspaceId, record.objectId);
+    } catch (error) {
+      Log.warn('[outbox] durable-update notification failed', {
+        workspaceId: enqueueWorkspaceId,
+        objectId: record.objectId,
+        error,
+      });
+    }
+  };
 
-  // Preserve the low-latency realtime path for ordinary edits. Oversized
-  // updates are different: they must first become durable, then the serialized
-  // drain routes them through HTTP. Sending one here would exceed the server
-  // frame limit before the slow lane gets a chance to run.
+  // Oversized updates are different: they must first become durable, then the
+  // serialized drain routes them through HTTP. Sending one here would exceed
+  // the server frame limit before the slow lane gets a chance to run.
   if (
     activeConfig &&
-    !isRestoreGated(activeConfig, record.collabType) &&
-    activeConfig.userId === enqueueUserId &&
-    activeConfig.workspaceId === enqueueWorkspaceId &&
+    immediate &&
     !isPurging &&
-    discoveredOutboxSessionKey === sessionKey(enqueueUserId, enqueueWorkspaceId) &&
+    discoveredOutboxSessionKey === sessionKey(enqueueUserId, enqueueWorkspaceId, row.serverUrl) &&
     !suppressedObjects.has(objectSessionKey) &&
     !draining.has(record.objectId) &&
     activeConfig.isReady() &&
@@ -305,24 +399,50 @@ export function enqueueOutboxUpdate(
   set.add(addPromise);
   inflightAdds.set(record.objectId, set);
 
+  const releaseAdmission = () => {
+    if (!checked) return;
+    const remaining = (pendingAdmissions.get(objectSessionKey) ?? 1) - 1;
+
+    if (remaining > 0) pendingAdmissions.set(objectSessionKey, remaining);
+    else pendingAdmissions.delete(objectSessionKey);
+  };
+
   return addPromise
     .then(async (id) => {
-      if (activeConfig && isRestoreGated(activeConfig, record.collabType)) {
-        const allowed = await maySendOutboxUpdate(
+      // Discarded in another tab after the synchronous check above.
+      if (id === null) {
+        requestDiscardSettlement(discardScope);
+        return false;
+      }
+
+      if (activeConfig && checked) {
+        const verdict = await admitOutboxUpdate(
           activeConfig,
           record.objectId,
           record.collabType as Types,
           record.databaseRestoreId
         );
 
+        if (verdict === 'unknown' && isCurrentGeneration() && sameDrainSession(drainConfig, activeConfig)) {
+          // A transient failure keeps the row durable. Retry with backoff and let
+          // the socket owner (possibly another tab) try as well.
+          scheduleAdmissionRetry(activeConfig, record.objectId);
+          notifyOwner();
+        }
+
         if (
-          !allowed ||
+          verdict !== 'allowed' ||
           !isCurrentGeneration() ||
           !sameDrainSession(drainConfig, activeConfig) ||
           isPurging ||
           suppressedObjects.has(objectSessionKey)
-        )
+        ) {
+          if ((verdict === 'stale' || onlyPermissionChanged()) && sameDrainSession(drainConfig, activeConfig)) {
+            scheduleDrain(record.objectId);
+          }
+
           return true;
+        }
 
         // Keep the enqueue durable while the check is pending, including
         // offline operation. Fan-out is subject to the same restore barrier
@@ -336,18 +456,12 @@ export function enqueueOutboxUpdate(
         }
       }
 
-      try {
-        notifyPersisted?.(enqueueWorkspaceId, record.objectId);
-      } catch (error) {
-        Log.warn('[outbox] durable-update notification failed', {
-          workspaceId: enqueueWorkspaceId,
-          objectId: record.objectId,
-          error,
-        });
-      }
+      notifyOwner();
 
       if (sentImmediately) {
-        if (typeof id === 'number') {
+        // A sibling tab may have quarantined this object after this tab's
+        // admission. Keep a row that persisted as quarantined for explicit retry.
+        if (typeof id === 'number' && !row.permissionBlocked) {
           try {
             await db.sync_outbox.bulkDelete([id]);
           } catch (error) {
@@ -383,23 +497,24 @@ export function enqueueOutboxUpdate(
       // by string (not by config object identity) is important: AppSyncLayer
       // rebuilds drainConfig on same-session readyState changes — identity
       // comparison would spuriously treat those rebuilds as session switches.
-      const activeConfig = drainConfig;
+      const fallbackConfig = drainConfig;
 
-      if (!activeConfig || activeConfig.userId !== enqueueUserId || activeConfig.workspaceId !== enqueueWorkspaceId) {
+      if (!fallbackConfig || fallbackConfig.userId !== enqueueUserId || fallbackConfig.workspaceId !== enqueueWorkspaceId || fallbackConfig.serverUrl !== row.serverUrl) {
         Log.warn('[outbox] fallback skipped: session changed since enqueue', {
           objectId: record.objectId,
           enqueueUserId,
           enqueueWorkspaceId,
-          currentUserId: activeConfig?.userId,
-          currentWorkspaceId: activeConfig?.workspaceId,
+          currentUserId: fallbackConfig?.userId,
+          currentWorkspaceId: fallbackConfig?.workspaceId,
         });
         return false;
       }
 
-      // A purge (logout) or version-reset discard started while the IDB write
-      // was in flight. The synchronous guard at enqueue time passed, but the
-      // state has since changed — drop the fallback to honour the boundary.
-      if (isPurging || suppressedObjects.has(objectSessionKey)) {
+      // A purge (logout), a version-reset discard or a discard of these paused
+      // edits started while the IDB write was in flight. The synchronous guard
+      // at enqueue time passed, but the state has since changed — drop the
+      // fallback to honour the boundary.
+      if (isPurging || suppressedObjects.has(objectSessionKey) || isFencedByDiscard(discardScope, record.objectId)) {
         Log.debug('[outbox] fallback skipped: purge/discard in progress', { objectId: record.objectId });
         return false;
       }
@@ -409,11 +524,11 @@ export function enqueueOutboxUpdate(
       // after a refresh, so fail visibly and let the next manifest exchange
       // reconstruct the diff instead of closing the socket with an oversize
       // frame.
-      if (exceedsRealtimeLimit(record.payload.byteLength, activeConfig.maxUpdateBytes)) {
+      if (exceedsRealtimeLimit(record.payload.byteLength, fallbackConfig.maxUpdateBytes)) {
         Log.error('[outbox] oversized update could not be persisted; WebSocket fallback suppressed', {
           objectId: record.objectId,
           payloadBytes: record.payload.byteLength,
-          maxUpdateBytes: activeConfig.maxUpdateBytes,
+          maxUpdateBytes: fallbackConfig.maxUpdateBytes,
         });
 
         try {
@@ -441,13 +556,13 @@ export function enqueueOutboxUpdate(
             flags: FLAGS_LIB0V1,
             payload: record.payload,
             version: record.version ?? undefined,
-            databaseRestoreId: wireDatabaseRestoreId(activeConfig, record.collabType, record.databaseRestoreId),
+            databaseRestoreId: wireDatabaseRestoreId(fallbackConfig, record.collabType, record.databaseRestoreId),
             beforeStateVector: record.beforeStateVector,
           } as collab.IUpdate,
         },
       };
 
-      const fallback = activeConfig.sendBestEffort ?? (activeConfig.isReady() ? activeConfig.send : undefined);
+      const fallback = fallbackConfig.sendBestEffort ?? (fallbackConfig.isReady() ? fallbackConfig.send : undefined);
 
       if (!fallback) {
         Log.warn('[outbox] cannot fall back: no sendBestEffort and WS not OPEN', {
@@ -457,15 +572,16 @@ export function enqueueOutboxUpdate(
       }
 
       if (
-        isRestoreGated(activeConfig, record.collabType) &&
-        !(await maySendOutboxUpdate(activeConfig, record.objectId, record.collabType as Types, record.databaseRestoreId))
+        requiresUploadAdmission(fallbackConfig, record.collabType) &&
+        (await admitOutboxUpdate(fallbackConfig, record.objectId, record.collabType as Types, record.databaseRestoreId)) !==
+          'allowed'
       ) {
         return false;
       }
 
       if (
         !isCurrentGeneration() ||
-        !sameDrainSession(drainConfig, activeConfig) ||
+        !sameDrainSession(drainConfig, fallbackConfig) ||
         isPurging ||
         suppressedObjects.has(objectSessionKey)
       ) {
@@ -484,6 +600,7 @@ export function enqueueOutboxUpdate(
       return false;
     })
     .finally(() => {
+      releaseAdmission();
       const current = inflightAdds.get(record.objectId);
 
       if (!current) return;
@@ -499,12 +616,13 @@ export function enqueueOutboxUpdate(
  * IndexedDB serializes read-write transactions across tabs, so concurrent
  * manifest replies cannot both observe an empty prefix and commit duplicates.
  */
-async function persistOutboxRow(row: SyncOutboxRecord): Promise<number> {
-  if (row.source !== 'manifest') {
-    return db.sync_outbox.add(row);
-  }
-
-  return db.transaction('rw', db.sync_outbox, async () => {
+async function persistOutboxRow(row: SyncOutboxRecord): Promise<number | null> {
+  return db.transaction('rw', db.sync_outbox, db.sync_permission_blocks, async () => {
+    // A discard commits its record before deleting rows, so a row written after
+    // that deletion sees it here and is refused (null).
+    if (isFencedByDiscard(row, row.objectId)) return null;
+    if (await readPermissionBlock(row, row.objectId)) row.permissionBlocked = true;
+    if (row.source !== 'manifest') return db.sync_outbox.add(row);
     const supersededIds: number[] = [];
 
     await db.sync_outbox
@@ -513,6 +631,8 @@ async function persistOutboxRow(row: SyncOutboxRecord): Promise<number> {
       .each((pending) => {
         if (
           pending.source === 'manifest' &&
+          pending.serverUrl === row.serverUrl &&
+          !pending.permissionBlocked &&
           pending.id !== undefined &&
           pending.databaseRestoreId === row.databaseRestoreId &&
           (pending.version ?? undefined) === (row.version ?? undefined)
@@ -529,6 +649,81 @@ async function persistOutboxRow(row: SyncOutboxRecord): Promise<number> {
   });
 }
 
+/**
+ * Delete this session's manifest replies for one object and collab generation that `isRedundant`
+ * shows hold nothing the server lacks, so no edit is dropped. This clears replies queued before
+ * the server had proven its state, waiting ones included, which would otherwise keep "waiting
+ * for edit access" on screen. Local edits and replies of other generations are left alone.
+ *
+ * Resolves to the number of manifest replies of the object still queued in this session, or null
+ * when there is no session.
+ */
+export async function deleteRedundantManifestRows(
+  objectId: string,
+  generation: { version: string | null; databaseRestoreId?: string },
+  isRedundant: (payload: Uint8Array) => boolean
+): Promise<number | null> {
+  const userId = currentUserId;
+  const workspaceId = currentWorkspaceId;
+  const serverUrl = currentServerUrl;
+
+  if (!userId || !workspaceId || isPurging) return null;
+  return db.transaction('rw', db.sync_outbox, async () => {
+    const redundant: number[] = [];
+    let remaining = 0;
+
+    await db.sync_outbox
+      .where('[userId+workspaceId+objectId]')
+      .equals([userId, workspaceId, objectId])
+      .each((row) => {
+        if (row.source !== 'manifest' || row.serverUrl !== serverUrl) return;
+        const sameGeneration =
+          (row.version ?? null) === generation.version && row.databaseRestoreId === generation.databaseRestoreId;
+
+        if (sameGeneration && row.id !== undefined && isRedundant(row.payload)) redundant.push(row.id);
+        else remaining += 1;
+      });
+
+    if (redundant.length > 0) await db.sync_outbox.bulkDelete(redundant);
+    return remaining;
+  });
+}
+
+/**
+ * Gate non-outbox full-sync paths with the same durable quarantine. The server
+ * still authorizes every item and reports `permission_denied` per item, so no
+ * permission request is made here (a large batch must not drop items because
+ * a probe queue overflowed).
+ */
+export async function mayUploadCollab(objectId: string, collabType: Types, workspaceId: string): Promise<boolean> {
+  const config = drainConfig;
+  const generation = lifecycleGeneration;
+
+  if (!config || config.workspaceId !== workspaceId) return false;
+  if (isFencedByDiscard(config, objectId)) {
+    requestDiscardSettlement(config);
+    return false;
+  }
+
+  if (!config.checkPermission) return true;
+  const records = await readOutboxPrefix(config.userId, workspaceId, objectId, config.serverUrl);
+
+  if (isSlowSyncBlockedForRecords(sessionObjectKey(config.userId, workspaceId, objectId, config.serverUrl), records)) return false;
+  if (await countPermissionBlockedRows(config, objectId) > 0 || await hasActivePermissionBlock(config, objectId)) return false;
+
+  return drainConfig === config && generation === lifecycleGeneration;
+}
+
+/** Capture freshness once for a composed batch, before checking its first item. */
+export function captureSyncAuthorization(workspaceId: string): () => boolean {
+  const config = drainConfig;
+  const lifecycle = lifecycleGeneration;
+  const permission = permissionGeneration;
+
+  return () => Boolean(config && config === drainConfig && config.workspaceId === workspaceId &&
+    lifecycle === lifecycleGeneration && permission === permissionGeneration);
+}
+
 async function awaitInflightAdds(objectId: string): Promise<void> {
   const pending = inflightAdds.get(objectId);
 
@@ -540,19 +735,20 @@ async function awaitInflightAdds(objectId: string): Promise<void> {
 export function configureDrain(config: DrainConfig) {
   const previousConfig = drainConfig;
 
-  if (previousConfig && (previousConfig.userId !== config.userId || previousConfig.workspaceId !== config.workspaceId)) {
+  if (previousConfig && (previousConfig.userId !== config.userId || previousConfig.workspaceId !== config.workspaceId || previousConfig.serverUrl !== config.serverUrl)) {
     abortSlowSyncCoordinations(previousConfig.userId, previousConfig.workspaceId);
   }
 
   // A meaningful owner/capability rebuild is the point at which a previously
   // terminal server decision may have changed (permission grant or larger
   // advertised limit). Ordinary readyState transitions no longer rebuild.
-  for (const key of blockedSlowSyncObjects.keys()) {
-    if (key.startsWith(`${config.userId}\u0000${config.workspaceId}\u0000`)) {
+  for (const [key, block] of blockedSlowSyncObjects) {
+    if (block.reason !== 'permission_denied' && key.startsWith(`${config.userId}\u0000${config.workspaceId}\u0000`)) {
       blockedSlowSyncObjects.delete(key);
     }
   }
 
+  admittedObjects.clear();
   drainConfig = config;
 }
 
@@ -564,25 +760,263 @@ export function clearDrainConfig() {
     abortSlowSyncCoordinations(previousConfig.userId, previousConfig.workspaceId);
   }
 
+  admittedObjects.clear();
   pendingRerun.clear();
   oversizedDiagnostics.clear();
   // Retry state is session-object keyed and intentionally survives a
   // same-session transport/config rebuild. Purge owns the hard reset.
 }
 
-/** Retry only objects whose slow upload was terminally blocked by access. */
-export function resumePermissionBlockedSync(objectId: string): void {
+/**
+ * Re-check every queued object (or one) without consuming a quarantine: a hint
+ * only schedules fresh checks, and restoring a grant still requires the user's
+ * explicit retry. `abortDenied` (real permission changes only) also cancels an
+ * in-flight upload whose fresh check is denied; uploads that are still allowed
+ * keep running.
+ */
+export async function resumePermissionBlockedSync(objectId?: string, options: { abortDenied?: boolean } = {}): Promise<void> {
   const config = drainConfig;
 
-  if (!config) return;
+  if (!config?.checkPermission) return;
+  const generation = lifecycleGeneration;
+  const objectIds = objectId ? [objectId] : await distinctObjectIdsForSession(config.userId, config.workspaceId, config.serverUrl);
 
-  const objectSessionKey = sessionObjectKey(config.userId, config.workspaceId, objectId);
+  for (const id of objectIds) {
+    if (drainConfig !== config || generation !== lifecycleGeneration) return;
+    const records = await readOutboxPrefix(config.userId, config.workspaceId, id, config.serverUrl);
+    const first = records[0];
 
-  if (blockedSlowSyncObjects.get(objectSessionKey)?.reason !== 'permission_denied') return;
+    // Quarantined edits are released only by an explicit retry, so a re-check
+    // could not change anything for them.
+    if (!first || records.some((record) => record.permissionBlocked)) continue;
+    const permission = await config.checkPermission(id, first.collabType as Types);
 
-  blockedSlowSyncObjects.delete(objectSessionKey);
-  oversizedDiagnostics.delete(objectSessionKey);
-  scheduleDrain(objectId);
+    if (drainConfig !== config || generation !== lifecycleGeneration) return;
+    const key = sessionObjectKey(config.userId, config.workspaceId, id, config.serverUrl);
+
+    if (permission === 'denied') {
+      if (options.abortDenied) abortSlowSyncCoordination(key);
+      // Confirming an existing quarantine is not a new denial: keep the
+      // revision a concurrent explicit retry may have reviewed.
+      await quarantinePermissionUpdates(id, config);
+    } else if (permission === 'allowed') {
+      clearAdmissionRetry(key);
+      scheduleDrain(id);
+    } else {
+      scheduleAdmissionRetry(config, id);
+    }
+  }
+}
+
+/**
+ * A permission change fences admission decisions made before it and closes the
+ * immediate path until each object is checked again. In-flight uploads keep
+ * running: the server stays the authority, and `resumePermissionBlockedSync`
+ * cancels only uploads whose fresh check is denied.
+ */
+export function invalidateOutboxPermissions(): void {
+  permissionGeneration += 1;
+  admittedObjects.clear();
+}
+
+/**
+ * Focus, visibility, connectivity and socket-open events may follow a missed
+ * permission notification. Re-check before the next immediate send without
+ * fencing checks or uploads already in progress.
+ */
+export function expireOutboxAdmissions(): void {
+  admittedObjects.clear();
+}
+
+/** Record a canonical denial even before a rejected socket edit is reconstructed. */
+export async function blockPermissionSync(objectId: string, expectedWorkspaceId: string): Promise<void> {
+  const config = drainConfig;
+
+  if (!config || config.workspaceId !== expectedWorkspaceId) return;
+  const key = sessionObjectKey(config.userId, config.workspaceId, objectId, config.serverUrl);
+
+  // A denial for one object fences only that object's checks and upload.
+  objectGenerations.set(key, (objectGenerations.get(key) ?? 0) + 1);
+  abortSlowSyncCoordination(key);
+  await quarantinePermissionUpdates(objectId, config, { renew: true });
+}
+
+/**
+ * Retain pending bytes across access loss, including small WebSocket updates.
+ * `renew` records a new denial revision; otherwise an existing quarantine keeps
+ * its revision.
+ */
+async function quarantinePermissionUpdates(
+  objectId: string,
+  config: DrainConfig,
+  options: { renew?: boolean } = {}
+): Promise<void> {
+  const key = sessionObjectKey(config.userId, config.workspaceId, objectId, config.serverUrl);
+  const persisted = persistPermissionBlock(config, objectId, { keepExistingRevision: !options.renew }).then(
+    () => true,
+    (error) => {
+      Log.error('[outbox] could not persist the permission quarantine; keeping it in this tab', { objectId, error });
+      return false;
+    }
+  );
+
+  admittedObjects.delete(key);
+  clearAdmissionRetry(key);
+  blockedSlowSyncObjects.set(key, { reason: 'permission_denied', persisted });
+  await persisted;
+}
+
+/**
+ * True while the object is quarantined. A durable block that disappeared was
+ * released by an explicit retry, possibly in another tab; this tab's in-memory
+ * copy then follows it. The in-memory block alone is authoritative only when
+ * the durable write failed.
+ */
+async function hasActivePermissionBlock(config: DrainConfig, objectId: string): Promise<boolean> {
+  const key = sessionObjectKey(config.userId, config.workspaceId, objectId, config.serverUrl);
+  const memory = blockedSlowSyncObjects.get(key);
+
+  if (memory?.reason === 'permission_denied' && !(await memory.persisted)) return true;
+  if (await readPermissionBlock(config, objectId)) return true;
+  if (memory?.reason === 'permission_denied' && blockedSlowSyncObjects.get(key) === memory) {
+    blockedSlowSyncObjects.delete(key);
+  }
+
+  return false;
+}
+
+async function countPermissionBlockedRows(scope: SyncOutboxSession, objectId: string): Promise<number> {
+  return db.sync_outbox
+    .where('[userId+workspaceId+objectId]')
+    .equals([scope.userId, scope.workspaceId, objectId])
+    .filter((record) => record.serverUrl === scope.serverUrl && Boolean(record.permissionBlocked))
+    .count();
+}
+
+async function permissionBlockedObjectIds(scope: SyncOutboxSession): Promise<string[]> {
+  const ids = new Set<string>();
+
+  await db.sync_outbox
+    .where('[userId+workspaceId]')
+    .equals([scope.userId, scope.workspaceId])
+    .each((record) => {
+      if (record.serverUrl === scope.serverUrl && record.permissionBlocked) ids.add(record.objectId);
+    });
+  return Array.from(ids);
+}
+
+function emptyRetryResult(): PermissionRetryResult {
+  return { released: [], denied: [], unknown: [] };
+}
+
+/**
+ * Explicitly retry retained edits after checking their current write authority.
+ * Released objects wake the socket owner, which may be another tab.
+ */
+export async function retryPermissionBlockedSync(expectedSession?: SyncOutboxSession): Promise<PermissionRetryResult> {
+  const result = emptyRetryResult();
+  const config = drainConfig;
+  const generation = lifecycleGeneration;
+  const accessGeneration = permissionGeneration;
+
+  if (!config?.checkPermission) return result;
+  if (expectedSession && (config.userId !== expectedSession.userId || config.workspaceId !== expectedSession.workspaceId ||
+    config.serverUrl !== expectedSession.serverUrl)) return result;
+  const isCurrent = () => drainConfig === config && generation === lifecycleGeneration && accessGeneration === permissionGeneration;
+  const ids = await permissionBlockedObjectIds(config);
+
+  for (let index = 0; index < ids.length; index += 1) {
+    const id = ids[index];
+
+    if (!isCurrent()) {
+      result.unknown.push(...ids.slice(index));
+      break;
+    }
+
+    const records = await readOutboxPrefix(config.userId, config.workspaceId, id, config.serverUrl);
+    const block = await readPermissionBlock(config, id);
+    let throughId = 0;
+
+    await db.sync_outbox.where('[userId+workspaceId+objectId]').equals([config.userId, config.workspaceId, id])
+      .each((record) => {
+        if (record.serverUrl === config.serverUrl && record.permissionBlocked) throughId = Math.max(throughId, record.id ?? 0);
+      });
+
+    // Released or discarded elsewhere meanwhile.
+    if (!records.length || !throughId) continue;
+    const permission = await config.checkPermission(id, records[0].collabType as Types);
+
+    if (permission === 'denied') {
+      result.denied.push(id);
+      continue;
+    }
+
+    if (permission !== 'allowed' || !isCurrent()) {
+      result.unknown.push(id);
+      continue;
+    }
+
+    // Clear only the exact records the user chose to retry. A concurrent denial
+    // is rechecked by the drain and a later edit cannot inherit this choice.
+    if (!await releasePermissionBlock(config, id, block, throughId, isCurrent)) {
+      // A newer denial replaced the reviewed quarantine, or the session moved on.
+      (isCurrent() ? result.denied : result.unknown).push(id);
+      continue;
+    }
+
+    const key = sessionObjectKey(config.userId, config.workspaceId, id, config.serverUrl);
+
+    if (blockedSlowSyncObjects.get(key)?.reason === 'permission_denied') blockedSlowSyncObjects.delete(key);
+    result.released.push(id);
+
+    try {
+      config.onPersisted?.(config.workspaceId, id);
+    } catch (error) {
+      Log.warn('[outbox] retry wake-up notification failed', { objectId: id, error });
+    }
+
+    scheduleDrain(id);
+  }
+
+  return result;
+}
+
+/**
+ * Permanently delete the quarantined edits shown to the user for one session,
+ * with their durable denial. Edits that are not quarantined are kept.
+ * Returns the objects whose edits were discarded. Every tab that holds one of
+ * them in memory must reload it before it may upload it again (discard-fence).
+ */
+export async function discardPermissionBlockedEdits(session: SyncOutboxSession): Promise<string[]> {
+  const discarded: string[] = [];
+  const objectIds = await permissionBlockedObjectIds(session);
+
+  // Recorded first: from now on no tab that still holds one of these objects
+  // in memory can persist or upload a copy rebuilt from it, and every other tab
+  // is told to reload or settle them.
+  recordDiscardedEdits(session, objectIds);
+
+  for (const objectId of objectIds) {
+    const key = sessionObjectKey(session.userId, session.workspaceId, objectId, session.serverUrl);
+
+    // One transaction with the durable block: a row persisted concurrently is
+    // either quarantined and discarded here, or created after the block is gone.
+    await db.transaction('rw', db.sync_outbox, db.sync_permission_blocks, async () => {
+      await db.sync_outbox
+        .where('[userId+workspaceId+objectId]')
+        .equals([session.userId, session.workspaceId, objectId])
+        .filter((record) => record.serverUrl === session.serverUrl && Boolean(record.permissionBlocked))
+        .delete();
+      await db.sync_permission_blocks.delete(permissionBlockKey(session, objectId));
+    });
+
+    if (blockedSlowSyncObjects.get(key)?.reason === 'permission_denied') blockedSlowSyncObjects.delete(key);
+    admittedObjects.delete(key);
+    clearAdmissionRetry(key);
+    discarded.push(objectId);
+  }
+
+  return discarded;
 }
 
 /**
@@ -593,7 +1027,8 @@ export function resumePermissionBlockedSync(objectId: string): void {
  * unlimited.
  */
 export function shouldRouteUpdateThroughOutbox(updateBytes: number): boolean {
-  if (drainConfig && discoveredOutboxSessionKey !== sessionKey(drainConfig.userId, drainConfig.workspaceId)) {
+  if (drainConfig?.checkPermission) return true;
+  if (drainConfig && discoveredOutboxSessionKey !== sessionKey(drainConfig.userId, drainConfig.workspaceId, drainConfig.serverUrl)) {
     return true;
   }
 
@@ -626,7 +1061,9 @@ export function startDrainAll() {
     if (!config) return;
 
     try {
-      const objectIds = await distinctObjectIdsForSession(config.userId, config.workspaceId);
+      await adoptLegacyOutboxRows(config);
+      if (!sameDrainSession(drainConfig, config)) return;
+      const objectIds = await distinctObjectIdsForSession(config.userId, config.workspaceId, config.serverUrl);
 
       if (!sameDrainSession(drainConfig, config)) return;
       for (const objectId of objectIds) {
@@ -636,10 +1073,30 @@ export function startDrainAll() {
       // scheduleDrain synchronously installs the per-object drain promise, so
       // an edit arriving after this assignment is still held behind any
       // discovered predecessor for that object.
-      discoveredOutboxSessionKey = sessionKey(config.userId, config.workspaceId);
+      discoveredOutboxSessionKey = sessionKey(config.userId, config.workspaceId, config.serverUrl);
     } catch (error) {
       Log.warn('[outbox] startDrainAll failed', error);
     }
+  });
+}
+
+/**
+ * Rows written before outbox entries recorded their API origin belong to the
+ * account and workspace they name, and the previous release talked only to the
+ * configured server. They join that session's queue; like every row they are
+ * sent only after a fresh permission check, and a denial quarantines them for
+ * the user's explicit Try again or Discard.
+ */
+async function adoptLegacyOutboxRows(config: DrainConfig): Promise<void> {
+  if (!config.serverUrl) return;
+  const serverUrl = config.serverUrl;
+
+  await db.transaction('rw', db.sync_outbox, async () => {
+    await db.sync_outbox
+      .where('[userId+workspaceId]')
+      .equals([config.userId, config.workspaceId])
+      .filter((record) => record.serverUrl === undefined)
+      .modify({ serverUrl });
   });
 }
 
@@ -669,7 +1126,7 @@ export async function waitForDrain(objectIds?: string[], opts?: WaitForDrainOpti
   const pollIntervalMs = opts?.pollIntervalMs ?? 150;
   const start = Date.now();
   const ids =
-    objectIds ?? (drainConfig ? await distinctObjectIdsForSession(drainConfig.userId, drainConfig.workspaceId) : []);
+    objectIds ?? (drainConfig ? await distinctObjectIdsForSession(drainConfig.userId, drainConfig.workspaceId, drainConfig.serverUrl) : []);
 
   if (ids.length === 0) return true;
 
@@ -689,7 +1146,7 @@ export async function waitForDrain(objectIds?: string[], opts?: WaitForDrainOpti
     if (!userId || !workspaceId) return false;
 
     const remaining = await Promise.all(
-      ids.map((id) => db.sync_outbox.where('[userId+workspaceId+objectId]').equals([userId, workspaceId, id]).count())
+      ids.map((id) => db.sync_outbox.where('[userId+workspaceId+objectId]').equals([userId, workspaceId, id]).filter((record) => record.serverUrl === drainConfig?.serverUrl).count())
     );
 
     if (remaining.every((count) => count === 0)) return true;
@@ -758,8 +1215,10 @@ async function runPurge(): Promise<void> {
     oversizedDiagnostics.clear();
     blockedSlowSyncObjects.clear();
     slowSyncAbortControllers.clear();
+    admittedObjects.clear();
     discoveredOutboxSessionKey = null;
     clearAllSlowSyncRetries();
+    clearAllAdmissionRetries();
 
     try {
       await db.sync_outbox.clear();
@@ -802,7 +1261,7 @@ export async function deleteOutboxByObjectId(
     return;
   }
 
-  const objectSessionKey = sessionObjectKey(userId, workspaceId, objectId);
+  const objectSessionKey = sessionObjectKey(userId, workspaceId, objectId, targetSession?.serverUrl);
 
   // Synchronously suppress in-flight work for this exact session/object BEFORE
   // yielding. A stale cleanup from another workspace must not drop current
@@ -833,7 +1292,7 @@ export async function deleteOutboxByObjectId(
     // resolving here would let a blocked/closing IDB leave stale records that
     // then drain onto the newly rebuilt document.
     const discard = async () => {
-      const records = db.sync_outbox.where('[userId+workspaceId+objectId]').equals([userId, workspaceId, objectId]);
+      const records = db.sync_outbox.where('[userId+workspaceId+objectId]').equals([userId, workspaceId, objectId]).filter((record) => record.serverUrl === targetSession?.serverUrl);
 
       if (options?.preserveDatabaseRestoreId !== undefined) {
         await records
@@ -869,18 +1328,23 @@ export async function deleteOutboxByObjectId(
   }
 }
 
-async function distinctObjectIdsForSession(userId: string, workspaceId: string): Promise<string[]> {
+async function distinctObjectIdsForSession(userId: string, workspaceId: string, serverUrl?: string): Promise<string[]> {
   const ids = new Set<string>();
 
   await db.sync_outbox
     .where('[userId+workspaceId]')
     .equals([userId, workspaceId])
     .each((record) => {
-      ids.add(record.objectId);
+      if (record.serverUrl === serverUrl) ids.add(record.objectId);
     });
   return Array.from(ids);
 }
 
+/**
+ * The Update that carries a local edit or manifest reply to the server and to sibling tabs. It
+ * never has a message id: sync-protocol takes an Update with one as the server's own, records
+ * what it proves the server holds, and deletes queued manifest replies it shows to be redundant.
+ */
 function buildUpdateMessage(
   record: Pick<
     SyncOutboxRecord,
@@ -921,13 +1385,14 @@ function exceedsRealtimeLimit(payloadBytes: number, maxUpdateBytes: number | und
   return limit !== undefined && payloadBytes > limit;
 }
 
-async function readOutboxPrefix(userId: string, workspaceId: string, objectId: string): Promise<SyncOutboxRecord[]> {
+async function readOutboxPrefix(userId: string, workspaceId: string, objectId: string, serverUrl?: string): Promise<SyncOutboxRecord[]> {
   // The four-part index is naturally ordered by the auto-incremented id. A
   // fixed prefix bound prevents one long-offline object from being read into
   // memory in a single drain iteration.
   const records = await db.sync_outbox
     .where('[userId+workspaceId+objectId+id]')
     .between([userId, workspaceId, objectId, BaseDexie.minKey], [userId, workspaceId, objectId, BaseDexie.maxKey])
+    .filter((record) => record.serverUrl === serverUrl)
     .limit(OUTBOX_READ_BATCH_SIZE)
     .toArray();
 
@@ -1066,8 +1531,8 @@ function clearAllSlowSyncRetries() {
   slowSyncRetryAttempts.clear();
 }
 
-function scheduleSlowSyncRetry(userId: string, workspaceId: string, objectId: string, retryAfterSecs?: number) {
-  const objectSessionKey = sessionObjectKey(userId, workspaceId, objectId);
+function scheduleSlowSyncRetry(userId: string, workspaceId: string, objectId: string, retryAfterSecs?: number, serverUrl?: string) {
+  const objectSessionKey = sessionObjectKey(userId, workspaceId, objectId, serverUrl);
 
   if (slowSyncRetryTimers.has(objectSessionKey)) return;
 
@@ -1085,9 +1550,50 @@ function scheduleSlowSyncRetry(userId: string, workspaceId: string, objectId: st
       slowSyncRetryTimers.delete(objectSessionKey);
       const config = drainConfig;
 
-      if (!config || config.userId !== userId || config.workspaceId !== workspaceId) return;
+      if (!config || config.userId !== userId || config.workspaceId !== workspaceId || config.serverUrl !== serverUrl) return;
       scheduleDrain(objectId);
     }, delay)
+  );
+}
+
+function clearAdmissionRetry(objectSessionKey: string) {
+  const timer = admissionRetryTimers.get(objectSessionKey);
+
+  if (timer) clearTimeout(timer);
+  admissionRetryTimers.delete(objectSessionKey);
+  admissionRetryAttempts.delete(objectSessionKey);
+}
+
+function clearAllAdmissionRetries() {
+  for (const timer of admissionRetryTimers.values()) {
+    clearTimeout(timer);
+  }
+
+  admissionRetryTimers.clear();
+  admissionRetryAttempts.clear();
+}
+
+/**
+ * Bounded backoff for an access check that could not complete (offline, a
+ * server error, a saturated check queue). The row stays durable meanwhile.
+ */
+function scheduleAdmissionRetry(config: DrainConfig, objectId: string) {
+  const { userId, workspaceId, serverUrl } = config;
+  const objectSessionKey = sessionObjectKey(userId, workspaceId, objectId, serverUrl);
+
+  if (admissionRetryTimers.has(objectSessionKey)) return;
+  const attempt = admissionRetryAttempts.get(objectSessionKey) ?? 0;
+
+  admissionRetryAttempts.set(objectSessionKey, attempt + 1);
+  admissionRetryTimers.set(
+    objectSessionKey,
+    setTimeout(() => {
+      admissionRetryTimers.delete(objectSessionKey);
+      const current = drainConfig;
+
+      if (!current || current.userId !== userId || current.workspaceId !== workspaceId || current.serverUrl !== serverUrl) return;
+      scheduleDrain(objectId);
+    }, ADMISSION_RETRY_DELAYS_MS[Math.min(attempt, ADMISSION_RETRY_DELAYS_MS.length - 1)])
   );
 }
 
@@ -1209,16 +1715,52 @@ function retryAfterSecsFromError(error: unknown): number | undefined {
 }
 
 function sameDrainSession(left: DrainConfig | null, right: DrainConfig | null): boolean {
-  return Boolean(left && right && left.userId === right.userId && left.workspaceId === right.workspaceId);
+  return Boolean(left && right && left.userId === right.userId && left.workspaceId === right.workspaceId && left.serverUrl === right.serverUrl);
+}
+
+/** Database bytes are sent only after their restore generation is checked. */
+function isRestoreGated(config: DrainConfig | null | undefined, collabType: number): boolean {
+  return Boolean(config?.beforeSend) && (collabType === Types.Database || collabType === Types.DatabaseRow);
 }
 
 /**
- * Only Database collabs wait for restore authority. Every other collab keeps the
- * immediate per-update sibling fan-out and realtime send: delaying them until
- * IndexedDB commits delivers keystrokes to sibling tabs in bursts.
+ * Permission-aware sessions check access before transmitting any collab.
+ * Legacy sessions retain immediate fan-out except for database restore checks.
  */
-function isRestoreGated(config: DrainConfig | null | undefined, collabType: number): boolean {
-  return Boolean(config?.beforeSend) && (collabType === Types.Database || collabType === Types.DatabaseRow);
+function requiresUploadAdmission(config: DrainConfig | null | undefined, collabType: number): boolean {
+  return Boolean(config?.checkPermission) || isRestoreGated(config, collabType);
+}
+
+function recordAdmission(config: DrainConfig, objectId: string, generations: { lifecycle: number; object: number }) {
+  const key = sessionObjectKey(config.userId, config.workspaceId, objectId, config.serverUrl);
+
+  admittedObjects.set(key, { lifecycle: generations.lifecycle, permission: permissionGeneration, object: generations.object });
+}
+
+/**
+ * Without permission checks every non-database edit is sent immediately, as
+ * before. With them, an edit is sent immediately only while the object's last
+ * full admission still holds in the current generations, the permission cache
+ * still says allowed, nothing is quarantined, and no earlier checked edit for
+ * the object is still waiting. Anything else persists first and is checked.
+ */
+function canSendImmediately(config: DrainConfig, record: Pick<SyncOutboxRecord, 'objectId' | 'collabType'>): boolean {
+  if (!requiresUploadAdmission(config, record.collabType)) return true;
+  if (!config.checkPermission || !config.peekPermission || isRestoreGated(config, record.collabType)) return false;
+  const key = sessionObjectKey(config.userId, config.workspaceId, record.objectId, config.serverUrl);
+  const admission = admittedObjects.get(key);
+
+  if (
+    !admission ||
+    admission.lifecycle !== lifecycleGeneration ||
+    admission.permission !== permissionGeneration ||
+    admission.object !== (objectGenerations.get(key) ?? 0)
+  ) {
+    return false;
+  }
+
+  if (blockedSlowSyncObjects.get(key)?.reason === 'permission_denied' || pendingAdmissions.has(key)) return false;
+  return config.peekPermission(record.objectId, record.collabType as Types) === 'allowed';
 }
 
 function wireDatabaseRestoreId(
@@ -1232,13 +1774,29 @@ function wireDatabaseRestoreId(
     : undefined;
 }
 
-async function maySendOutboxUpdate(
+async function admitOutboxUpdate(
   config: DrainConfig,
   objectId: string,
   collabType: Types,
   databaseRestoreId?: string
-): Promise<boolean> {
+): Promise<AdmissionVerdict> {
+  const key = sessionObjectKey(config.userId, config.workspaceId, objectId, config.serverUrl);
+  const accessGeneration = permissionGeneration;
+  const generations = { lifecycle: lifecycleGeneration, object: objectGenerations.get(key) ?? 0 };
+
   try {
+    if (config.checkPermission) {
+      const permission = await config.checkPermission(objectId, collabType);
+
+      if (permission === 'denied') {
+        await quarantinePermissionUpdates(objectId, config);
+        return 'denied';
+      }
+
+      if (permission !== 'allowed') return 'unknown';
+      if (await hasActivePermissionBlock(config, objectId)) return 'denied';
+    }
+
     // Legacy queued database bytes predate any committed restore. Explicitly
     // check that generation; undefined is reserved by the coordinator for
     // discovery calls that do not carry a captured update.
@@ -1248,11 +1806,27 @@ async function maySendOutboxUpdate(
         ? '00000000-0000-0000-0000-000000000000'
         : undefined);
 
-    return (await config.beforeSend?.(objectId, collabType, expectedRestoreId)) ?? true;
+    const allowed = (await config.beforeSend?.(objectId, collabType, expectedRestoreId)) ?? true;
+
+    if (!allowed) return 'held';
+    if (accessGeneration !== permissionGeneration) return 'stale';
+    if (config.checkPermission) {
+      clearAdmissionRetry(key);
+      recordAdmission(config, objectId, generations);
+    }
+
+    return 'allowed';
   } catch (error) {
     Log.warn('[outbox] pre-send check failed; leaving updates queued', { objectId, error });
-    return false;
+    return 'unknown';
   }
+}
+
+/** Follow-up for a drain whose check did not allow sending. */
+function handleRejectedAdmission(config: DrainConfig, objectId: string, verdict: AdmissionVerdict) {
+  if (verdict === 'unknown') scheduleAdmissionRetry(config, objectId);
+  // The check was superseded by a permission change: check again under it.
+  if (verdict === 'stale') pendingRerun.add(objectId);
 }
 
 function logOversizedOnce(objectSessionKey: string, reason: string, details: Record<string, unknown>) {
@@ -1262,11 +1836,17 @@ function logOversizedOnce(objectSessionKey: string, reason: string, details: Rec
   Log.warn('[outbox] oversized update remains durable', { reason, ...details });
 }
 
+/**
+ * Synchronous blocks only: quarantined rows and a rejected oversized prefix. An
+ * in-memory permission block is validated against the durable quarantine by
+ * `hasActivePermissionBlock`, because an explicit retry in another tab can
+ * release it.
+ */
 function isSlowSyncBlockedForRecords(objectSessionKey: string, records: SyncOutboxRecord[]): boolean {
+  if (records.some((record) => record.permissionBlocked)) return true;
   const block = blockedSlowSyncObjects.get(objectSessionKey);
 
-  if (!block) return false;
-  if (block.reason === 'permission_denied') return true;
+  if (!block || block.reason === 'permission_denied') return false;
 
   const sameRejectedPrefix =
     block.recordIds.length > 0 && block.recordIds.every((id, index) => records[index]?.id === id);
@@ -1286,7 +1866,7 @@ function scheduleDrain(objectId: string) {
 
   if (!config) return;
 
-  const objectSessionKey = sessionObjectKey(config.userId, config.workspaceId, objectId);
+  const objectSessionKey = sessionObjectKey(config.userId, config.workspaceId, objectId, config.serverUrl);
 
   // Refuse to spawn a drain while a discard or purge is in progress. Without
   // this gate, an in-flight `db.sync_outbox.add()` can resolve mid-discard
@@ -1350,24 +1930,38 @@ async function drainObjectWhileReady(objectId: string): Promise<void> {
 
     const userId = config.userId;
     const workspaceId = config.workspaceId;
-    const objectSessionKey = sessionObjectKey(userId, workspaceId, objectId);
+    const objectSessionKey = sessionObjectKey(userId, workspaceId, objectId, config.serverUrl);
     const capturedLifecycleGeneration = lifecycleGeneration;
+    const capturedPermissionGeneration = permissionGeneration;
     const capturedObjectGeneration = objectGenerations.get(objectSessionKey) ?? 0;
     const isCurrentGeneration = () =>
       lifecycleGeneration === capturedLifecycleGeneration &&
+      permissionGeneration === capturedPermissionGeneration &&
       (objectGenerations.get(objectSessionKey) ?? 0) === capturedObjectGeneration;
+    // Only a permission change superseded this iteration: check again under it.
+    const onlyPermissionChanged = () =>
+      lifecycleGeneration === capturedLifecycleGeneration &&
+      (objectGenerations.get(objectSessionKey) ?? 0) === capturedObjectGeneration &&
+      permissionGeneration !== capturedPermissionGeneration;
 
     if (slowSyncRetryTimers.has(objectSessionKey)) return;
 
-    const records = await readOutboxPrefix(userId, workspaceId, objectId);
+    const records = await readOutboxPrefix(userId, workspaceId, objectId, config.serverUrl);
 
     if (records.length === 0) {
       serializedSlowSyncObjects.delete(objectSessionKey);
       clearSlowSyncRetry(objectSessionKey);
+      clearAdmissionRetry(objectSessionKey);
       return;
     }
 
     if (isSlowSyncBlockedForRecords(objectSessionKey, records)) return;
+    if (
+      blockedSlowSyncObjects.get(objectSessionKey)?.reason === 'permission_denied' &&
+      (await hasActivePermissionBlock(config, objectId))
+    ) {
+      return;
+    }
 
     const realtimeLimit = realtimeByteLimit(config.maxUpdateBytes);
     const firstRecord = records[0];
@@ -1399,7 +1993,7 @@ async function drainObjectWhileReady(objectId: string): Promise<void> {
           // Another tab may have completed the prefix while this tab waited
           // for the lock. Re-read and select under the lock so the upload and
           // its exact-ID retirement operate on one authoritative snapshot.
-          const lockedRecords = await readOutboxPrefix(userId, workspaceId, objectId);
+          const lockedRecords = await readOutboxPrefix(userId, workspaceId, objectId, config.serverUrl);
 
           if (suppressedObjects.has(objectSessionKey) || !sameDrainSession(drainConfig, initialConfig) || isPurging) {
             return { status: 'aborted' as const };
@@ -1433,16 +2027,15 @@ async function drainObjectWhileReady(objectId: string): Promise<void> {
           const lockedLastRecord = lockedBatch.records[lockedBatch.records.length - 1];
           const lockedIds = recordIds(lockedBatch.records);
 
-          if (
-            isRestoreGated(config, lockedLastRecord.collabType) &&
-            !(await maySendOutboxUpdate(
+          if (requiresUploadAdmission(config, lockedLastRecord.collabType)) {
+            const verdict = await admitOutboxUpdate(
               config,
               objectId,
               lockedLastRecord.collabType as Types,
               lockedLastRecord.databaseRestoreId
-            ))
-          ) {
-            return { status: 'aborted' as const };
+            );
+
+            if (verdict !== 'allowed') return { status: 'rejected' as const, verdict };
           }
 
           if (
@@ -1452,7 +2045,7 @@ async function drainObjectWhileReady(objectId: string): Promise<void> {
             isPurging ||
             signal.aborted
           ) {
-            return { status: 'aborted' as const };
+            return { status: onlyPermissionChanged() && !signal.aborted ? ('stale' as const) : ('aborted' as const) };
           }
 
           const result = await config.slowSync!(
@@ -1494,13 +2087,24 @@ async function drainObjectWhileReady(objectId: string): Promise<void> {
 
         if (coordinated.status === 'aborted' || coordinated.status === 'stalled') return;
         if (coordinated.status === 'rescan') continue;
+        if (coordinated.status === 'rejected') {
+          handleRejectedAdmission(config, objectId, coordinated.verdict);
+          return;
+        }
+
+        if (coordinated.status === 'stale') {
+          pendingRerun.add(objectId);
+          return;
+        }
+
         if (coordinated.status === 'blocked') {
-          blockedSlowSyncObjects.set(
-            objectSessionKey,
-            coordinated.reason === 'update_too_large'
-              ? { reason: coordinated.reason, recordIds: coordinated.recordIds }
-              : { reason: coordinated.reason }
-          );
+          // The server rejected this upload: a new denial for the object.
+          if (coordinated.reason === 'permission_denied') {
+            await quarantinePermissionUpdates(objectId, config, { renew: true });
+          } else {
+            blockedSlowSyncObjects.set(objectSessionKey, { reason: coordinated.reason, recordIds: coordinated.recordIds });
+          }
+
           logOversizedOnce(objectSessionKey, coordinated.reason, {
             objectId,
             recordCount: coordinated.recordCount,
@@ -1516,7 +2120,7 @@ async function drainObjectWhileReady(objectId: string): Promise<void> {
           headPayloadBytes: firstRecord.payload.byteLength,
           error,
         });
-        scheduleSlowSyncRetry(userId, workspaceId, objectId, retryAfterSecsFromError(error));
+        scheduleSlowSyncRetry(userId, workspaceId, objectId, retryAfterSecsFromError(error), config.serverUrl);
         return;
       }
 
@@ -1531,12 +2135,19 @@ async function drainObjectWhileReady(objectId: string): Promise<void> {
     const realtimeBatch = selectRecordsForRealtime(records, realtimeLimit);
     const lastRecord = realtimeBatch.records[realtimeBatch.records.length - 1];
 
-    if (
-      isRestoreGated(config, lastRecord.collabType) &&
-      !(await maySendOutboxUpdate(config, objectId, lastRecord.collabType as Types, lastRecord.databaseRestoreId))
-    )
+    if (requiresUploadAdmission(config, lastRecord.collabType)) {
+      const verdict = await admitOutboxUpdate(config, objectId, lastRecord.collabType as Types, lastRecord.databaseRestoreId);
+
+      if (verdict !== 'allowed') {
+        handleRejectedAdmission(config, objectId, verdict);
+        return;
+      }
+    }
+
+    if (!isCurrentGeneration()) {
+      if (onlyPermissionChanged()) pendingRerun.add(objectId);
       return;
-    if (!isCurrentGeneration()) return;
+    }
 
     const message = buildUpdateMessage(
       {

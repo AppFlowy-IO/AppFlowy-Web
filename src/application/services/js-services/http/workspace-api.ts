@@ -2,16 +2,19 @@ import {
   AccessLevel,
   AddSpaceGroupPermissionPayload,
   AddSpaceMemberPayload,
+  AddSpaceMemberByUuidPayload,
   AddWorkspaceGroupMemberPayload,
   CreateWorkspaceGroupPayload,
   CreateWorkspacePayload,
   FolderView,
   GuestConversionCodeInfo,
   GuestInvitation,
+  Invitation,
   MentionablePerson,
   MentionSearchRequest,
   MentionSearchResponse,
   Role,
+  SpaceAccessDetails,
   SpaceMember,
   SpaceMembers,
   Spaces,
@@ -34,6 +37,8 @@ import {
 import { canonicalizeUserUid } from '@/application/user-uid';
 
 import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from './core';
+import { captureApiContext } from './request-context';
+import { admitWorkspaceCreation } from './workspace-creation-api';
 
 const UID_FIELD_REGEX = /"uid"\s*:\s*(\d{16,})/g;
 
@@ -52,7 +57,9 @@ function stringifyAddSpaceMemberPayload(payload: AddSpaceMemberPayload) {
     throw new Error('Space member uid must be a numeric string');
   }
 
-  return `{"uid":${payload.uid},"role":${JSON.stringify(payload.role)},"access_level":${payload.access_level}}`;
+  const { uid, ...fields } = payload;
+
+  return `{"uid":${uid},${JSON.stringify(fields).slice(1)}`;
 }
 
 function stringifyAddWorkspaceGroupMemberPayload(payload: AddWorkspaceGroupMemberPayload) {
@@ -129,12 +136,98 @@ export async function updateWorkspace(workspaceId: string, payload: UpdateWorksp
   );
 }
 
-export async function createWorkspace(payload: CreateWorkspacePayload) {
-  const url = '/api/workspace';
+export interface CreateWorkspaceOptions {
+  /**
+   * Recover an earlier keyed request whose outcome is unknown. The server resolves a completed
+   * receipt before new-work admission, so this skips the client admission check and never uses the
+   * unkeyed route: a later 404 may come from an old node after the original request committed.
+   */
+  replay?: string;
+  /**
+   * Start a keyed request. Called only after fresh admission passes on a server with keyed creation,
+   * immediately before the POST; it must durably record and return a new request ID. A throw stops
+   * before sending. Without it, or on a legacy server, creation uses the original unkeyed route.
+   */
+  reserve?: () => string;
+}
 
-  return executeAPIRequest<{ workspace_id: string }>(() =>
-    getAxios()?.post<APIResponse<{ workspace_id: string }>>(url, payload)
-  ).then((data) => data.workspace_id);
+export async function createWorkspace(payload: CreateWorkspacePayload, options: CreateWorkspaceOptions = {}) {
+  const scope = captureApiContext();
+  let url = '/api/workspace';
+  let body: CreateWorkspacePayload & { request_id?: string } = payload;
+
+  if (options.replay) {
+    url = '/api/workspace/create-with-request-id';
+    body = { ...payload, request_id: options.replay };
+  } else {
+    const { legacy } = await admitWorkspaceCreation();
+
+    scope.assertCurrent();
+    if (!legacy && options.reserve) {
+      url = '/api/workspace/create-with-request-id';
+      body = { ...payload, request_id: options.reserve() };
+    }
+  }
+
+  const data = await executeAPIRequest<{ workspace_id: string }>(() => {
+    scope.assertCurrent();
+    return scope.client?.post<APIResponse<{ workspace_id: string }>>(url, body);
+  });
+
+  scope.assertCurrent();
+  return data.workspace_id;
+}
+
+/**
+ * The role an invitation gives, as the server is to send it: `role` on each item of
+ * GET /api/workspace/invite (AFWorkspaceInvitation), the AFRole variant name "Owner" | "Member" |
+ * "Guest", spelt as a workspace member's `role` already is. Servers without the field send none, and
+ * a role this client does not know is left out rather than guessed; the account-only page says
+ * "Invited as a guest" only for "Guest". The spelling is pinned by workspace-invitations-api.test.ts.
+ */
+const INVITATION_ROLES = ['Owner', 'Member', 'Guest'] as const;
+
+function toInvitationRole(value: unknown): Invitation['role'] {
+  return (INVITATION_ROLES as readonly unknown[]).includes(value) ? (value as Invitation['role']) : undefined;
+}
+
+function toPendingInvitation(value: unknown): Invitation | undefined {
+  if (!value || typeof value !== 'object') return;
+  const raw = value as Record<string, unknown>;
+  const text = (field: unknown) => (typeof field === 'string' ? field : '');
+
+  if (typeof raw.invite_id !== 'string' || typeof raw.workspace_id !== 'string' || raw.status !== 'Pending') return;
+  // Older servers send no role, and a role this client does not know is not guessed at.
+  const role = toInvitationRole(raw.role);
+
+  return {
+    ...(role ? { role } : {}),
+    invite_id: raw.invite_id,
+    workspace_id: raw.workspace_id,
+    workspace_name: text(raw.workspace_name),
+    inviter_name: text(raw.inviter_name),
+    inviter_email: text(raw.inviter_email),
+    inviter_icon: text(raw.inviter_icon),
+    workspace_icon: text(raw.workspace_icon),
+    member_count: typeof raw.member_count === 'number' ? raw.member_count : 0,
+    status: 'Pending',
+  };
+}
+
+/** Pending invitations addressed to the signed-in account, so it can join without the link. */
+export async function listPendingWorkspaceInvitations(): Promise<Invitation[]> {
+  const scope = captureApiContext();
+  const data = await executeAPIRequest<unknown>(() =>
+    scope.client?.get<APIResponse<unknown>>('/api/workspace/invite', { params: { status: 'Pending' } })
+  );
+
+  scope.assertCurrent();
+  if (!Array.isArray(data)) throw new Error('Invalid workspace invitation list');
+  return data.flatMap((value) => {
+    const invitation = toPendingInvitation(value);
+
+    return invitation ? [invitation] : [];
+  });
 }
 
 export async function getWorkspaces(): Promise<Workspace[]> {
@@ -241,6 +334,17 @@ export async function getSpacePermission(workspaceId: string, spaceId: string) {
   );
 }
 
+/** Why the signed-in user has their access to a space. Servers without the route answer 404. */
+export async function getSpaceAccessDetails(workspaceId: string, spaceId: string) {
+  const url = `/api/workspace/${workspaceId}/spaces/${spaceId}/access-details`;
+
+  return executeAPIRequest<SpaceAccessDetails>(() =>
+    getAxios()?.get<APIResponse<SpaceAccessDetails>>(url, {
+      transformResponse: [parseResponseWithExactUid],
+    })
+  );
+}
+
 export async function getSpaces(workspaceId: string) {
   const url = `/api/workspace/${workspaceId}/spaces`;
 
@@ -310,6 +414,36 @@ export async function updateSpaceMember(
 
 export async function removeSpaceMember(workspaceId: string, spaceId: string, uid: string) {
   const url = `/api/workspace/${workspaceId}/spaces/${spaceId}/members/${uid}`;
+
+  return executeAPIVoidRequest(() => getAxios()?.delete<APIResponse>(url));
+}
+
+function spaceMemberUuidUrl(workspaceId: string, spaceId: string, memberUuid: string) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(memberUuid)) {
+    throw new Error('A valid member UUID is required');
+  }
+
+  return `/api/workspace/${encodeURIComponent(workspaceId)}/spaces/${encodeURIComponent(spaceId)}/members/users/${memberUuid}`;
+}
+
+export async function addSpaceMemberByUuid(workspaceId: string, spaceId: string, memberUuid: string, payload: AddSpaceMemberByUuidPayload) {
+  const url = spaceMemberUuidUrl(workspaceId, spaceId, memberUuid);
+
+  return executeAPIRequest<SpaceMember>(() => getAxios()?.post<APIResponse<SpaceMember>>(url, payload, {
+    transformResponse: [parseResponseWithExactUid],
+  }));
+}
+
+export async function updateSpaceMemberByUuid(workspaceId: string, spaceId: string, memberUuid: string, payload: UpdateSpaceMemberPayload) {
+  const url = spaceMemberUuidUrl(workspaceId, spaceId, memberUuid);
+
+  return executeAPIRequest<SpaceMember>(() => getAxios()?.patch<APIResponse<SpaceMember>>(url, payload, {
+    transformResponse: [parseResponseWithExactUid],
+  }));
+}
+
+export async function removeSpaceMemberByUuid(workspaceId: string, spaceId: string, memberUuid: string) {
+  const url = spaceMemberUuidUrl(workspaceId, spaceId, memberUuid);
 
   return executeAPIVoidRequest(() => getAxios()?.delete<APIResponse>(url));
 }

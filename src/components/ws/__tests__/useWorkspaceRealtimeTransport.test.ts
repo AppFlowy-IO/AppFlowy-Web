@@ -12,6 +12,20 @@ import {
 import { useWorkspaceRealtimeTransport } from '../useWorkspaceRealtimeTransport';
 import { useWorkspaceWebSocketLeader } from '../useWorkspaceWebSocketLeader';
 
+let mockScope = 'server-A:actor-A:workspace-1';
+// The tab's server restore generation (null: the initial one).
+let mockRestoreId: string | null = null;
+
+jest.mock('../realtime-session', () => ({ realtimeSessionKey: () => mockScope }));
+
+jest.mock('@/application/server-restore', () => ({
+  get serverRestore() {
+    const { ServerRestoreBoundary } = jest.requireActual('@/application/server-restore');
+
+    return new ServerRestoreBoundary('https://server-A', { getItem: () => mockRestoreId, setItem: jest.fn() }, jest.fn());
+  },
+}));
+
 jest.mock('@/application/sync-outbox', () => ({
   startDrainObject: jest.fn(),
 }));
@@ -75,6 +89,8 @@ const renderTransport = () =>
 describe('useWorkspaceRealtimeTransport', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockScope = 'server-A:actor-A:workspace-1';
+    mockRestoreId = null;
     subscribeProtocolMessages.mockReturnValue(jest.fn());
     subscribeOutboxReady.mockReturnValue(jest.fn());
     subscribeTransportSignals.mockReturnValue(jest.fn());
@@ -202,6 +218,36 @@ describe('useWorkspaceRealtimeTransport', () => {
     });
     expect(sendWebSocketMessage).not.toHaveBeenCalled();
     expect(reconnect).not.toHaveBeenCalled();
+  });
+
+  it('isolates coordination and follower readiness across server/account switches', () => {
+    let signal: ((value: WorkspaceTransportSignal) => void) | undefined;
+
+    mockUseWorkspaceWebSocketLeader.mockReturnValue({ isLeader: false, isCoordinated: true });
+    subscribeTransportSignals.mockImplementation((listener) => { signal = listener; return jest.fn(); });
+    const { result, rerender } = renderTransport();
+
+    act(() => signal?.({ type: 'transport-status', workspaceId: 'workspace-1', readyState: WebSocket.OPEN }));
+    expect(result.current.webSocket.readyState).toBe(WebSocket.OPEN);
+    expect(mockUseWorkspaceWebSocketLeader).toHaveBeenLastCalledWith(mockScope);
+    expect(mockUseBroadcastChannel).toHaveBeenLastCalledWith(`workspace:${mockScope}`);
+
+    mockScope = 'server-B:actor-B:workspace-1';
+    rerender();
+    expect(result.current.webSocket.readyState).toBe(WebSocket.CONNECTING);
+    expect(mockUseWorkspaceWebSocketLeader).toHaveBeenLastCalledWith(mockScope);
+    expect(mockUseBroadcastChannel).toHaveBeenLastCalledWith(`workspace:${mockScope}`);
+  });
+
+  it('relays only between tabs of the same server restore generation', () => {
+    mockUseWorkspaceWebSocketLeader.mockReturnValue({ isLeader: false, isCoordinated: true });
+    // A tab still on the old generation must never relay into a restored tab, or back.
+    mockRestoreId = '11111111-1111-4111-8111-111111111111';
+    renderTransport();
+
+    expect(mockUseBroadcastChannel).toHaveBeenLastCalledWith(`server-restore:${mockRestoreId}:workspace:${mockScope}`);
+    // The leader lock applies the generation itself.
+    expect(mockUseWorkspaceWebSocketLeader).toHaveBeenLastCalledWith(mockScope);
   });
 
   it('uses an independent socket when browser lock coordination is unavailable', () => {

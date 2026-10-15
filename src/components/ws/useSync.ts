@@ -210,7 +210,11 @@ export const useSync = (
   // Dispatches server-pushed workspace events (permission changes, section updates,
   // profile changes, etc.) to the app-wide EventEmitter.  Handles both direct
   // WebSocket notifications and cross-tab BroadcastChannel relays.
-  useWorkspaceNotifications(wsNotification, bcNotification, eventEmitter);
+  useWorkspaceNotifications(wsNotification, bcNotification, eventEmitter, {
+    workspaceId,
+    userId: currentUser?.uuid,
+    serverUrl: ws.options?.url ?? '',
+  });
 
   // ── Batch sync utilities ─────────────────────────────────────────────
   // flushAllSync: drain buffered local updates to WebSocket for every registered doc.
@@ -352,6 +356,8 @@ export const useSync = (
                 payload: hasMissingUpdate ? result.missingUpdate : new Uint8Array([0, 0]),
                 version,
                 databaseRestoreId: result.databaseRestoreId,
+                // The server's message id on the server's own diff: sync-protocol records what
+                // it proves the server holds. Never attach one to bytes the server did not send.
                 messageId: result.messageId,
               },
             };

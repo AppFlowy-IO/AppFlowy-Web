@@ -1,14 +1,22 @@
-import { renderHook, waitFor } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import EventEmitter from 'events';
 
+import { act, renderHook, waitFor } from '@testing-library/react';
+
+
+import { APP_EVENTS } from '@/application/constants';
 import { AccessLevel, type CollabObjectPermission, Types, type View, ViewLayout } from '@/application/types';
 import { AppNavigationContext } from '@/components/app/contexts/AppNavigationContext';
 import { useViewActionPermissions } from '@/components/app/view-actions/useViewActionPermissions';
 
+import type { ReactNode } from 'react';
+
 const mockGetObjectPermission = jest.fn();
 const mockGetView = jest.fn();
+const mockGetSpacePermission = jest.fn();
+const mockEventEmitter = new EventEmitter();
 
 jest.mock('@/application/services/domains', () => ({
+  WorkspaceService: { getSpacePermission: (...args: unknown[]) => mockGetSpacePermission(...args) },
   AccessService: {
     getObjectPermission: (...args: unknown[]) => mockGetObjectPermission(...args),
   },
@@ -19,6 +27,7 @@ jest.mock('@/application/services/domains', () => ({
 
 jest.mock('@/components/app/app.hooks', () => ({
   useCurrentWorkspaceId: () => 'workspace-id',
+  useEventEmitter: () => mockEventEmitter,
 }));
 
 function createView(overrides: Partial<View> = {}): View {
@@ -53,6 +62,8 @@ describe('useViewActionPermissions', () => {
   beforeEach(() => {
     mockGetObjectPermission.mockReset();
     mockGetView.mockReset();
+    mockGetSpacePermission.mockReset();
+    mockEventEmitter.removeAllListeners();
   });
 
   it('resolves action gates from the object-permission endpoint', async () => {
@@ -68,6 +79,76 @@ describe('useViewActionPermissions', () => {
     expect(result.current.canCreateViewActions).toBe(true);
     expect(result.current.canUsePageHistory).toBe(true);
     expect(result.current.canManageViewActions).toBe(false);
+  });
+
+  it.each([
+    ['offline', { code: -1, message: 'Network Error' }, true],
+    ['a server error', { code: 1017, message: 'Internal error' }, true],
+    ['a denial', { code: 1012, httpStatus: 403, message: 'Forbidden' }, false],
+  ] as const)('reports an object read that failed because of %s as unavailable only when nothing was decided', async (_case, error, unavailable) => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    mockGetObjectPermission.mockRejectedValue(error);
+    const { result } = renderHook(() => useViewActionPermissions(createView(), true));
+
+    await waitFor(() => expect(result.current.hasLoadedViewActionPermissions).toBe(true));
+    expect(result.current.canWrite).toBe(false);
+    expect(result.current.objectPermissionUnavailable).toBe(unavailable);
+    consoleError.mockRestore();
+  });
+
+  it('clears the unavailable state once the object permission is read', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    mockGetObjectPermission.mockRejectedValueOnce({ code: -1, message: 'Network Error' }).mockResolvedValue(createPermission());
+    const { result } = renderHook(() => useViewActionPermissions(createView(), true));
+
+    await waitFor(() => expect(result.current.objectPermissionUnavailable).toBe(true));
+    act(() => {
+      mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'view-id' });
+    });
+    expect(result.current.objectPermissionUnavailable).toBe(false);
+    await waitFor(() => expect(result.current.canWrite).toBe(true));
+    expect(result.current.objectPermissionUnavailable).toBe(false);
+    consoleError.mockRestore();
+  });
+
+  it('re-probes an open action menu after a broad change and discards an older positive result', async () => {
+    let resolveOld!: (permission: CollabObjectPermission) => void;
+
+    mockGetObjectPermission.mockReturnValueOnce(new Promise<CollabObjectPermission>((resolve) => { resolveOld = resolve; }))
+      .mockResolvedValue(createPermission({ can_write: false }));
+    const { result } = renderHook(() => useViewActionPermissions(createView(), true));
+
+    act(() => { mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {}); });
+    await waitFor(() => expect(result.current.hasLoadedViewActionPermissions).toBe(true));
+    await act(async () => { resolveOld(createPermission()); });
+    expect(result.current.canCreateViewActions).toBe(false);
+    expect(result.current.canWrite).toBe(false);
+  });
+
+  it.each([[true, false, false], [false, true, false], [true, true, true]])(
+    'requires both direct-child Write (%s) and sidebar authority (%s)', async (canWrite, canEditSidebar, allowed) => {
+      mockGetObjectPermission.mockResolvedValue(createPermission({ can_write: canWrite }));
+      mockGetSpacePermission.mockResolvedValue({ can_manage_space: false, can_edit_sidebar: canEditSidebar });
+      const { result } = renderHook(() => useViewActionPermissions(createView({ is_space: true }), true));
+
+      await waitFor(() => expect(result.current.hasLoadedViewActionPermissions).toBe(true));
+      expect(result.current.canCreateViewActions).toBe(allowed);
+      expect(result.current.canWrite).toBe(canWrite);
+    }
+  );
+
+  it('exposes space management and sidebar authority from its single space-permission read', async () => {
+    mockGetObjectPermission.mockResolvedValue(createPermission());
+    mockGetSpacePermission.mockResolvedValue({ can_manage_space: true, can_edit_sidebar: false });
+    const { result } = renderHook(() => useViewActionPermissions(createView({ is_space: true }), true));
+
+    await waitFor(() => expect(result.current.hasLoadedViewActionPermissions).toBe(true));
+    expect(result.current.canOpenManageSpace).toBe(true);
+    expect(result.current.canEditSidebar).toBe(false);
+    expect(result.current.canCreateViewActions).toBe(false);
+    expect(mockGetSpacePermission).toHaveBeenCalledTimes(1);
   });
 
   it('uses the canonical database collab identity', async () => {

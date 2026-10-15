@@ -1,7 +1,10 @@
+import EventEmitter from 'events';
+
 import { act, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import * as Y from 'yjs';
 
+import { APP_EVENTS } from '@/application/constants';
 import { ViewService } from '@/application/services/domains';
 import { AccessLevel, Types, ViewLayout, type View } from '@/application/types';
 
@@ -24,6 +27,7 @@ const mockSetOpenPageModalEffectiveViewId = jest.fn();
 const mockRenderedViewProps = jest.fn();
 const mockMoreActionsProps = jest.fn();
 let mockObjectPermissions: Record<string, ReturnType<typeof createMockPermission>> = {};
+const mockEventEmitter = new EventEmitter();
 
 function createMockPermission(viewId: string, overrides: Record<string, unknown> = {}) {
   return {
@@ -73,7 +77,7 @@ jest.mock('@/components/app/app.hooks', () => ({
   }),
   useAppOutline: () => mockOutlineViews,
   useCurrentWorkspaceId: () => 'workspace-id',
-  useEventEmitter: () => undefined,
+  useEventEmitter: () => mockEventEmitter,
   useGetMentionUser: () => mockNoop,
   useLoadDatabaseRelations: () => mockNoop,
   useLoadViews: () => mockNoop,
@@ -94,9 +98,9 @@ jest.mock('@/components/app/hooks/useViewObjectPermission', () => ({
 
 jest.mock('@/components/app/hooks/useViewOperations', () => ({
   getViewCanCommentStatus: () => true,
-  getViewCanWriteStatus: () => true,
+  getViewCanWriteStatus: (_id: string, _outline: unknown, _view: unknown, permission: { can_write?: boolean }) => permission.can_write === true,
   useViewOperations: () => ({
-    getViewReadOnlyStatus: () => false,
+    getViewReadOnlyStatus: (_id: string, _outline: unknown, _view: unknown, permission: { can_write?: boolean }) => permission.can_write !== true,
   }),
 }));
 
@@ -153,8 +157,70 @@ import ViewModal from '@/components/app/ViewModal';
 describe('ViewModal permission cleanup', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // clearAllMocks keeps queued once-values, so a failed test could feed the next one.
+    mockLoadView.mockReset();
+    mockEventEmitter.removeAllListeners();
     mockOutlineViews = [mockView];
     mockObjectPermissions = { [modalViewId]: createMockPermission(modalViewId) };
+  });
+
+  // AppBusinessLayer drops the open page's permission while it re-checks it after any permission
+  // notification, workspace revision, focus, reconnect or return online.
+  it('keeps the open page on screen, read-only, while its access is re-checked', async () => {
+    mockLoadView.mockResolvedValue(new Y.Doc({ guid: 'open-page' }));
+    const { rerender } = render(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+
+    await screen.findByText('open-page');
+    expect(mockRenderedViewProps).toHaveBeenLastCalledWith(expect.objectContaining({ canWrite: true, readOnly: false }));
+
+    delete mockObjectPermissions[modalViewId];
+    rerender(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+    expect(screen.getByText('open-page')).toBeTruthy();
+    // The header with its page actions stays too.
+    expect(screen.getByTestId('view-modal-close')).toBeTruthy();
+    expect(mockRenderedViewProps).toHaveBeenLastCalledWith(expect.objectContaining({ canWrite: false, readOnly: true }));
+
+    mockObjectPermissions[modalViewId] = createMockPermission(modalViewId);
+    rerender(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+    expect(screen.getByText('open-page')).toBeTruthy();
+    expect(mockRenderedViewProps).toHaveBeenLastCalledWith(expect.objectContaining({ canWrite: true, readOnly: false }));
+    // Never unloaded and loaded again.
+    expect(mockLoadView).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the page at once when its own access is revoked during a re-check, and recovers after a grant', async () => {
+    mockLoadView.mockResolvedValueOnce(new Y.Doc({ guid: 'revoked-page' }))
+      .mockResolvedValueOnce(new Y.Doc({ guid: 'granted-again' }));
+    const { rerender } = render(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+
+    await screen.findByText('revoked-page');
+    delete mockObjectPermissions[modalViewId];
+    act(() => {
+      mockEventEmitter.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: modalViewId });
+    });
+    rerender(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+    expect(screen.queryByText('revoked-page')).toBeNull();
+    expect(screen.queryByTestId('view-modal-close')).toBeNull();
+    expect(screen.getByRole('status').textContent).toBe('publish.noAccessToVisit');
+
+    mockObjectPermissions[modalViewId] = createMockPermission(modalViewId);
+    rerender(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+    await screen.findByText('granted-again');
+    expect(mockLoadView).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the page when another page loses access', async () => {
+    mockLoadView.mockResolvedValue(new Y.Doc({ guid: 'still-readable' }));
+    const { rerender } = render(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+
+    await screen.findByText('still-readable');
+    delete mockObjectPermissions[modalViewId];
+    act(() => {
+      mockEventEmitter.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: '00000000-0000-4000-8000-000000000099' });
+    });
+    rerender(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+    expect(screen.getByText('still-readable')).toBeTruthy();
+    expect(mockLoadView).toHaveBeenCalledTimes(1);
   });
 
   it('passes fetched off-outline database metadata to its own history menu', async () => {
@@ -223,6 +289,27 @@ describe('ViewModal permission cleanup', () => {
 
     await waitFor(() => expect(mockLoadView).toHaveBeenCalledWith(childViewId, false, true));
     await screen.findByText('database-child-doc');
+  });
+
+  it('downgrades, hides protected content, and reloads after regrant without closing the modal', async () => {
+    mockLoadView.mockResolvedValueOnce(new Y.Doc({ guid: 'before-revoke' }))
+      .mockResolvedValueOnce(new Y.Doc({ guid: 'after-regrant' }));
+    const { rerender } = render(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+
+    await screen.findByText('before-revoke');
+    mockObjectPermissions[modalViewId] = createMockPermission(modalViewId, { can_write: false });
+    rerender(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+    expect(mockRenderedViewProps).toHaveBeenLastCalledWith(expect.objectContaining({ canWrite: false, readOnly: true }));
+    mockObjectPermissions[modalViewId] = createMockPermission(modalViewId, { can_read: false, can_write: false });
+    rerender(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+    expect(screen.queryByText('before-revoke')).toBeNull();
+    expect(screen.queryByText('Modal page')).toBeNull();
+    expect(screen.getByRole('status').textContent).toBe('publish.noAccessToVisit');
+    expect(mockNoop).not.toHaveBeenCalled();
+    mockObjectPermissions[modalViewId] = createMockPermission(modalViewId);
+    rerender(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+    await screen.findByText('after-regrant');
+    expect(mockLoadView).toHaveBeenCalledTimes(2);
   });
 
   it('drops a loaded Y.Doc when a security close bypasses handleClose', async () => {

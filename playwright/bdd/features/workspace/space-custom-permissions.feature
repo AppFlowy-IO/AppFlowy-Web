@@ -227,16 +227,16 @@ Feature: Seeded Public, Private and Custom space permissions
     And the Manage Space members list shows seeded scp0822 "outsider" as "Space member" with the subtitle "Workspace member"
 
   # (j) PRD §17/§39 Custom General: both collective dropdowns offer all five access levels and
-  # Can view and comment applies like any other level.
+  # Can comment applies like any other level.
   Scenario: The collective dropdowns offer every access level including comment-only
     Given I sign in as seeded scp0822 "owner"
     When I open the seeded scp0822 "custom space" manage space panel
     Then the Custom permissions "space members" dropdown offers every access level
     And the Custom permissions "everyone else" dropdown offers every access level
-    When I set the Custom permissions space members level to "Can view and comment"
-    Then the seeded scp0822 "custom space" members level is "Can view and comment" via the API
+    When I set the Custom permissions space members level to "Can comment"
+    Then the seeded scp0822 "custom space" members level is "Can comment" via the API
     When I open the seeded scp0822 "custom space" manage space panel
-    Then the Custom permissions card shows Space members "Can view and comment" and everyone else "Can view"
+    Then the Custom permissions card shows Space members "Can comment" and everyone else "Can view"
     When I sign in as seeded scp0822 "member"
     And I directly open the seeded scp0822 "custom page"
     Then the directly opened seeded scp0822 page is "read-only"

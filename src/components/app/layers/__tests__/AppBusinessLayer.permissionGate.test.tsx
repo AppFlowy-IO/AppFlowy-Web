@@ -5,7 +5,7 @@ import { useContext, useState, type MutableRefObject, type ReactNode } from 'rea
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
-import { deleteCollabDB } from '@/application/db';
+import { deleteCollabDB, deleteDatabaseLocalCopies } from '@/application/db';
 import { AccessService, ViewService } from '@/application/services/domains';
 import { handleAPIError } from '@/application/services/js-services/http/core';
 import {
@@ -28,8 +28,11 @@ import { useWorkspaceData } from '@/components/app/hooks/useWorkspaceData';
 
 import { AppBusinessLayer } from '../AppBusinessLayer';
 
+jest.mock('@/application/sync-outbox', () => ({ blockPermissionSync: jest.fn() }));
+
 jest.mock('@/application/db', () => ({
   deleteCollabDB: jest.fn(),
+  deleteDatabaseLocalCopies: jest.fn(),
 }));
 
 jest.mock('@/application/services/domains', () => ({
@@ -269,7 +272,8 @@ describe('AppBusinessLayer permission gates', () => {
     (resolveWorkspaceViewMetadata as jest.Mock).mockImplementation(
       (_workspaceId: string, _viewId: string, loader: () => Promise<View | null | undefined>) => loader()
     );
-    (deleteCollabDB as jest.Mock).mockResolvedValue(undefined);
+    (deleteCollabDB as jest.Mock).mockResolvedValue(true);
+    (deleteDatabaseLocalCopies as jest.Mock).mockResolvedValue(true);
     (AccessService.getObjectPermission as jest.Mock).mockImplementation(resolveObjectPermission());
   });
 
@@ -587,7 +591,7 @@ describe('AppBusinessLayer permission gates', () => {
     expect(ViewService.refresh).toHaveBeenCalledWith(workspaceId, modalViewId);
   });
 
-  it('probes and closes a denied modal whose view differs from the route', async () => {
+  it('probes and retains the target of a denied modal whose view differs from the route', async () => {
     const eventEmitter = new EventEmitter();
     const routeView = createView(routeViewId);
     const modalView = createView(modalViewId);
@@ -606,7 +610,7 @@ describe('AppBusinessLayer permission gates', () => {
 
     await waitFor(() => {
       expect(AccessService.getObjectPermission).toHaveBeenCalledWith(workspaceId, modalViewId, Types.Document);
-      expect(screen.getByTestId('modal-view-id').textContent).toBe('');
+      expect(screen.getByTestId('modal-view-id').textContent).toBe(modalViewId);
     });
     expect(ViewService.invalidateCache).toHaveBeenCalledWith(workspaceId, modalViewId);
     expect(invalidateWorkspaceViewMetadata).toHaveBeenCalledWith(workspaceId, modalViewId);
@@ -661,13 +665,16 @@ describe('AppBusinessLayer permission gates', () => {
       eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: modalDatabaseId });
     });
 
-    await waitFor(() => expect(screen.getByTestId('modal-view-id').textContent).toBe(''));
+    await waitFor(() => expect(JSON.parse(screen.getByTestId('effective-modal-permission').textContent || 'null')?.can_read).toBe(false));
+    expect(screen.getByTestId('modal-view-id').textContent).toBe(modalViewId);
     expect(ViewService.invalidateCache).toHaveBeenCalledWith(workspaceId, effectiveModalViewId);
     expect(deleteCollabDB).toHaveBeenCalledWith(effectiveModalViewId, { destroyDoc: true });
-    expect(deleteCollabDB).toHaveBeenCalledWith(modalDatabaseId, { destroyDoc: true });
+    // The database goes with its rows and row pages.
+    expect(deleteDatabaseLocalCopies).toHaveBeenCalledWith(modalDatabaseId, { destroyDoc: true });
+    expect(deleteCollabDB).not.toHaveBeenCalledWith(modalDatabaseId, expect.anything());
   });
 
-  it('closes an exactly revoked modal even when it has the route view id', async () => {
+  it('retains an exactly revoked modal target even when it has the route view id', async () => {
     const eventEmitter = new EventEmitter();
 
     renderBusinessLayer(eventEmitter, [createView(routeViewId)], routeViewId);
@@ -684,7 +691,7 @@ describe('AppBusinessLayer permission gates', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByTestId('modal-view-id').textContent).toBe('');
+      expect(screen.getByTestId('modal-view-id').textContent).toBe(routeViewId);
       expect(screen.getByTestId('no-access').textContent).toBe('true');
     });
   });
@@ -872,7 +879,7 @@ describe('AppBusinessLayer permission gates', () => {
     expect(deleteCollabDB).toHaveBeenCalledWith(routeViewId, { destroyDoc: true });
   });
 
-  it('re-probes and closes an active modal after a broad permission change', async () => {
+  it('re-probes and retains an active modal target after a broad permission change', async () => {
     const eventEmitter = new EventEmitter();
     let modalCanRead = true;
 
@@ -905,7 +912,7 @@ describe('AppBusinessLayer permission gates', () => {
       expect(
         (AccessService.getObjectPermission as jest.Mock).mock.calls.filter(([, objectId]) => objectId === modalViewId)
       ).toHaveLength(2);
-      expect(screen.getByTestId('modal-view-id').textContent).toBe('');
+      expect(screen.getByTestId('modal-view-id').textContent).toBe(modalViewId);
     });
     expect(ViewService.invalidateCache).toHaveBeenCalledWith(workspaceId, modalViewId);
     expect(deleteCollabDB).toHaveBeenCalledWith(modalViewId, { destroyDoc: true });

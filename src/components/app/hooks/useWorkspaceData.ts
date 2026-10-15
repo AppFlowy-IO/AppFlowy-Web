@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { validate as uuidValidate } from 'uuid';
 
 import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
-import { deleteCollabDB } from '@/application/db';
+import { deleteCollabDB, deleteDatabaseLocalCopies } from '@/application/db';
 import { AccessService, ViewService, WorkspaceService } from '@/application/services/domains';
 import {
   captureWorkspaceViewMetadataAccessToken,
@@ -17,6 +17,7 @@ import {
   primeWorkspaceViewMetadataFromServer,
 } from '@/application/services/js-services/workspace-view-metadata';
 import { invalidToken } from '@/application/session/token';
+import { blockPermissionSync } from '@/application/sync-outbox';
 import { DatabaseRelations, MentionablePerson, UIVariant, View, ViewLayout } from '@/application/types';
 import { isDatabaseLayout, isSpaceView } from '@/application/view-utils';
 import {
@@ -2134,7 +2135,17 @@ export function useWorkspaceData() {
           const collabIds = new Set([changedViewId, databaseId].filter((id): id is string => Boolean(id)));
 
           collabIds.forEach((collabId) => {
-            void deleteCollabDB(collabId, { destroyDoc: true });
+            // No read access: unsent edits stay quarantined for Try again or
+            // Discard, while the synced copy (a database with its rows and row
+            // pages) is removed so the revoked content is no longer readable on
+            // this device.
+            void blockPermissionSync(collabId, workspaceId).catch((error) =>
+              Log.warn('[Outline] could not quarantine edits after access loss', { collabId, error }));
+            if (collabId === databaseId) {
+              void deleteDatabaseLocalCopies(collabId, { destroyDoc: true });
+            } else {
+              void deleteCollabDB(collabId, { destroyDoc: true });
+            }
           });
           eventEmitter?.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: changedViewId });
         });
@@ -2971,8 +2982,8 @@ export function useWorkspaceData() {
     return cached && !isStaleWorkspaceRequest(cached.workspaceId, cached.revision) ? cached.value : undefined;
   }, [isStaleWorkspaceRequest]);
 
-  const selectedWorkspaceId = userWorkspaceInfo?.selectedWorkspace.id;
-  const databaseStorageId = userWorkspaceInfo?.selectedWorkspace.databaseStorageId;
+  const selectedWorkspaceId = userWorkspaceInfo?.selectedWorkspace?.id;
+  const databaseStorageId = userWorkspaceInfo?.selectedWorkspace?.databaseStorageId;
 
   // Internal helper to fetch and update database relations
   const fetchAndUpdateDatabaseRelations = useCallback(

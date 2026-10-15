@@ -16,7 +16,11 @@ import { isSpaceView } from '@/components/ai-chat/rag-scope';
 import type { AIChatRagSource } from '@/components/ai-chat/rag-scope';
 import { useAIEnabled, useAppOutline, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import type { SearchOverviewSource } from '@/components/app/search/SearchAIOverview';
+import SearchStatusNotice from '@/components/app/search/SearchStatusNotice';
+import { useSearchAccessScope } from '@/components/app/search/useSearchAccessScope';
 import ViewList, { SearchViewListItem } from '@/components/app/search/ViewList';
+import { isPermissionError } from '@/utils/change-failure';
+import { getAPIErrorCode } from '@/utils/errors';
 
 const SearchAIOverview = lazy(() =>
   import('@/components/app/search/SearchAIOverview').then(({ SearchAIOverview }) => ({ default: SearchAIOverview }))
@@ -50,13 +54,17 @@ function getSearchResultViewIdCandidates(item: SearchDocumentResponseItem): stri
 
 async function loadSearchResultView(
   item: SearchDocumentResponseItem,
-  currentWorkspaceId: string
+  currentWorkspaceId: string,
+  isCurrent: () => boolean,
+  signal: AbortSignal
 ): Promise<View | undefined> {
   const workspaceId = item.workspace_id || currentWorkspaceId;
 
+  if (workspaceId !== currentWorkspaceId) return;
   for (const viewId of getSearchResultViewIdCandidates(item)) {
+    if (!isCurrent()) return;
     try {
-      return await ViewService.get(workspaceId, viewId);
+      return await ViewService.get(workspaceId, viewId, signal);
     } catch {
       // Search can return database/object ids that are not view ids. Try the next candidate.
     }
@@ -67,7 +75,8 @@ async function loadSummarySourceViews(
   outline: View[],
   currentWorkspaceId: string,
   sourceIds: string[],
-  searchResults: SearchDocumentResponseItem[]
+  searchResults: SearchDocumentResponseItem[],
+  signal: AbortSignal
 ): Promise<Map<string, View>> {
   const resultSourceIds = new Set(
     searchResults.flatMap((item) => [item.object_id, item.database_row_id].filter(Boolean) as string[])
@@ -79,7 +88,7 @@ async function loadSummarySourceViews(
   if (unresolvedSourceIds.length === 0) return new Map();
 
   try {
-    const views = await ViewService.getMultiple(currentWorkspaceId, unresolvedSourceIds, 0);
+    const views = await ViewService.getMultiple(currentWorkspaceId, unresolvedSourceIds, 0, signal);
 
     return new Map(views.filter((view) => !isSpaceView(view)).map((view) => [view.view_id, view]));
   } catch {
@@ -160,22 +169,42 @@ function BestMatch({
   const [loading, setLoading] = useState<boolean>(false);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [revalidating, setRevalidating] = useState(false);
+  // A query whose results are missing because the connection was lost (skipped offline, or failed
+  // when it dropped). It runs again once the browser is back online after `epoch`.
+  const [reconnectRetry, setReconnectRetry] = useState<{ query: string; epoch: number }>();
   const aiEnabled = useAIEnabled();
   const currentWorkspaceId = useCurrentWorkspaceId();
+  const { scope, isCurrent, refreshKey, online, onlineEpoch } = useSearchAccessScope(currentWorkspaceId);
+  const onlineEpochRef = useRef(onlineEpoch);
+
+  useLayoutEffect(() => {
+    onlineEpochRef.current = onlineEpoch;
+  }, [onlineEpoch]);
+  const [responseScope, setResponseScope] = useState(scope);
+  const responseIsCurrent = responseScope === scope;
   const searchSeqRef = useRef(0);
+  const requestController = useRef<AbortController>();
+  // The response on screen: a background revalidation reloads exactly this query and page count.
+  const shownRef = useRef<{ scope: object; query: string; pages: number }>();
+  const searchValueRef = useRef(searchValue);
   const [keywordSearchStreamId] = useState(() => createSearchStreamId('best-match-keyword'));
+
+  useLayoutEffect(() => {
+    searchValueRef.current = searchValue;
+  }, [searchValue]);
 
   // Metadata helps route results but is not a search input. Read the latest
   // outline when resolving a response without restarting requests on renames.
   const loadResultViews = useCallback(
-    async (results: SearchDocumentResponseItem[]) => {
+    async (results: SearchDocumentResponseItem[], signal: AbortSignal) => {
       const views = new Map<string, View>();
 
       if (!currentWorkspaceId) return views;
       const resolvedViews = await Promise.all(
         results.map(
           async (item) =>
-            resolveSearchResultView(outlineRef.current || [], item) || loadSearchResultView(item, currentWorkspaceId)
+            resolveSearchResultView(outlineRef.current || [], item) || loadSearchResultView(item, currentWorkspaceId, isCurrent, signal)
         )
       );
 
@@ -187,7 +216,7 @@ function BestMatch({
 
       return views;
     },
-    [currentWorkspaceId]
+    [currentWorkspaceId, isCurrent]
   );
 
   const items = useMemo<SearchViewListItem[]>(() => {
@@ -217,97 +246,175 @@ function BestMatch({
     return items;
   }, [outline, resultViews, searchResults, t]);
 
-  const handleSearch = useCallback(
-    async (searchTerm: string) => {
-      if (!currentWorkspaceId) return;
+  /** Replaces the response, or with `revalidate` reloads the shown query and pages in the background
+   * (missed permission hints after a reconnect) and keeps the current response until it completes. */
+  const runSearch = useCallback(
+    async (searchTerm: string, revalidate = false) => {
+      if (!currentWorkspaceId || !isCurrent()) return;
+      const shown = shownRef.current;
+      const background = revalidate && Boolean(searchTerm) && shown?.scope === scope && shown.query === searchTerm;
+
+      // A revalidation that cannot run leaves the shown response alone, including its pending summary.
+      if (background && !navigator.onLine) return;
       const searchSeq = searchSeqRef.current + 1;
 
       searchSeqRef.current = searchSeq;
-      setSummary(null);
-      setSummarySourceViews(new Map());
-      setResultViews(new Map());
-      setSummaryLoading(false);
-      if (!searchTerm) {
+      requestController.current?.abort();
+      const controller = new AbortController();
+
+      requestController.current = controller;
+      const isLatest = () => isCurrent() && searchSeqRef.current === searchSeq;
+      const pageCount = background && shown ? shown.pages : 1;
+      const startedEpoch = onlineEpochRef.current;
+
+      setLoadingMore(false);
+      if (!background) {
+        shownRef.current = undefined;
+        setResponseScope(scope);
+        setSummary(null);
+        setSummarySourceViews(new Map());
+        setResultViews(new Map());
+        setSummaryLoading(false);
         setSearchResults([]);
         setHasMore(false);
         setNextOffset(null);
+        setRevalidating(false);
+      }
+
+      if (!searchTerm) {
+        setReconnectRetry(undefined);
         setLoading(false);
-        setLoadingMore(false);
         return;
       }
 
-      setLoading(true);
-      setLoadingMore(false);
-      setSearchResults([]);
-      setHasMore(false);
-      setNextOffset(null);
+      if (!navigator.onLine) {
+        // Offline is not "no results": retry after reconnecting.
+        setReconnectRetry({ query: searchTerm, epoch: startedEpoch });
+        setLoading(false);
+        return;
+      }
+
+      setReconnectRetry(undefined);
+      if (background) setRevalidating(true);
+      else setLoading(true);
 
       const summaryRequest = aiEnabled
-        ? SearchService.generateSearchSummary(currentWorkspaceId, searchTerm).catch(() => null)
+        ? SearchService.generateSearchSummary(currentWorkspaceId, searchTerm, controller.signal).catch(() => null)
         : null;
+      let res: SearchDocumentResponseItem[];
 
       try {
-        const page = await SearchService.searchWorkspaceDocumentPage(
+        let requestedOffset = 0;
+        let page = await SearchService.searchWorkspaceDocumentPage(
           currentWorkspaceId,
           searchTerm,
-          0,
-          keywordSearchStreamId
+          requestedOffset,
+          keywordSearchStreamId,
+          controller.signal
         );
 
-        if (searchSeqRef.current !== searchSeq) return;
+        if (!isLatest()) return;
+        res = mergeSearchResults([], page.items || []);
+        let pages = 1;
 
-        const res = mergeSearchResults([], page.items || []);
-        const shouldGenerateSummary = summaryRequest !== null;
-        const views = await loadResultViews(res);
+        while (pages < pageCount && canLoadMoreSearchResults(page, requestedOffset)) {
+          requestedOffset = page.next_offset as number;
+          page = await SearchService.searchWorkspaceDocumentPage(
+            currentWorkspaceId,
+            searchTerm,
+            requestedOffset,
+            keywordSearchStreamId,
+            controller.signal
+          );
+          if (!isLatest()) return;
+          res = mergeSearchResults(res, page.items || []);
+          pages += 1;
+        }
 
-        if (searchSeqRef.current !== searchSeq) return;
+        const lastPage = page;
+        const lastOffset = requestedOffset;
+        const views = await loadResultViews(res, controller.signal);
 
+        if (!isLatest()) return;
         setSearchResults(res);
         setResultViews(views);
-        setHasMore(canLoadMoreSearchResults(page, 0));
-        setNextOffset(page.next_offset ?? null);
-        setSummaryLoading(shouldGenerateSummary);
-        setLoading(false);
-
-        if (shouldGenerateSummary) {
-          const summaryResult = await summaryRequest;
-
-          if (searchSeqRef.current !== searchSeq) return;
-
-          const nextSummary = summaryResult?.summaries[0] || null;
-          const sourceViews = nextSummary
-            ? await loadSummarySourceViews(outlineRef.current || [], currentWorkspaceId, nextSummary.sources, res)
-            : new Map<string, View>();
-
-          if (searchSeqRef.current !== searchSeq) return;
-
-          setSummarySourceViews(sourceViews);
-          setSummary(nextSummary);
-          setSummaryLoading(false);
-        }
+        setHasMore(canLoadMoreSearchResults(lastPage, lastOffset));
+        setNextOffset(lastPage.next_offset ?? null);
+        shownRef.current = { scope, query: searchTerm, pages };
+        // Publish keywords immediately. The previous summary belongs to the previous results.
+        setSummary(null);
+        setSummarySourceViews(new Map());
+        setSummaryLoading(summaryRequest !== null);
         // eslint-disable-next-line
       } catch (e: any) {
-        if (searchSeqRef.current !== searchSeq) return;
-        notify.error(e.message);
+        if (!isLatest()) return;
+        if (background && !isPermissionError(e)) {
+          // A failed revalidation can keep the previous response unless access was refused.
+          // Its pending summary was cancelled for this run's, so stop waiting.
+          setSummaryLoading(false);
+          return;
+        }
+
+        controller.abort();
+        const offline = !navigator.onLine;
+
+        // A dropped connection is not "no results" either: run the query again once the browser is
+        // back online. While it stays online (an unreachable server) nothing retries on its own.
+        if (offline || getAPIErrorCode(e) === -1) setReconnectRetry({ query: searchTerm, epoch: startedEpoch });
+        // The offline notice explains a failure while offline.
+        if (!offline) notify.error(e.message);
+        shownRef.current = undefined;
         setSearchResults([]);
+        setResultViews(new Map());
         setSummary(null);
+        setSummarySourceViews(new Map());
         setSummaryLoading(false);
         setHasMore(false);
         setNextOffset(null);
+        return;
       } finally {
-        if (searchSeqRef.current === searchSeq) {
+        if (isLatest()) {
           setLoading(false);
           setLoadingMore(false);
+          setRevalidating(false);
         }
       }
+
+      // Summary work has its own loading state: it must not block keyword pagination or reset
+      // loadingMore when a page request starts while the summary is still being generated.
+      if (!summaryRequest) return;
+      const summaryResult = await summaryRequest;
+
+      if (!isLatest()) return;
+      const nextSummary = summaryResult?.summaries[0] || null;
+      const sourceViews = nextSummary
+        ? await loadSummarySourceViews(
+            outlineRef.current || [],
+            currentWorkspaceId,
+            nextSummary.sources,
+            res,
+            controller.signal
+          )
+        : new Map<string, View>();
+
+      if (!isLatest()) return;
+      setSummarySourceViews(sourceViews);
+      setSummary(nextSummary);
+      setSummaryLoading(false);
     },
-    [aiEnabled, loadResultViews, currentWorkspaceId, keywordSearchStreamId]
+    [aiEnabled, loadResultViews, currentWorkspaceId, keywordSearchStreamId, scope, isCurrent]
   );
 
   const handleLoadMore = useCallback(async () => {
-    if (!currentWorkspaceId || !searchValue || loading || loadingMore || !hasMore || nextOffset === null) return;
+    if (
+      !isCurrent() || !responseIsCurrent || !currentWorkspaceId || !searchValue ||
+      loading || loadingMore || revalidating || !hasMore || nextOffset === null
+    ) return;
 
     const searchSeq = searchSeqRef.current;
+    const signal = requestController.current?.signal;
+
+    if (!signal || signal.aborted) return;
 
     setLoadingMore(true);
 
@@ -316,26 +423,28 @@ function BestMatch({
         currentWorkspaceId,
         searchValue,
         nextOffset,
-        keywordSearchStreamId
+        keywordSearchStreamId,
+        signal
       );
 
-      if (searchSeqRef.current !== searchSeq) return;
+      if (!isCurrent() || searchSeqRef.current !== searchSeq) return;
 
       const mergedResults = mergeSearchResults(searchResults, page.items || []);
-      const views = await loadResultViews(page.items || []);
+      const views = await loadResultViews(page.items || [], signal);
 
-      if (searchSeqRef.current !== searchSeq) return;
+      if (!isCurrent() || searchSeqRef.current !== searchSeq) return;
 
       setSearchResults(mergedResults);
       setResultViews((previous) => new Map([...previous, ...views]));
       setHasMore(canLoadMoreSearchResults(page, nextOffset));
       setNextOffset(page.next_offset ?? null);
+      if (shownRef.current) shownRef.current = { ...shownRef.current, pages: shownRef.current.pages + 1 };
       // eslint-disable-next-line
     } catch (e: any) {
-      if (searchSeqRef.current !== searchSeq) return;
+      if (!isCurrent() || searchSeqRef.current !== searchSeq) return;
       notify.error(e.message);
     } finally {
-      if (searchSeqRef.current === searchSeq) {
+      if (isCurrent() && searchSeqRef.current === searchSeq) {
         setLoadingMore(false);
       }
     }
@@ -347,24 +456,46 @@ function BestMatch({
     loading,
     loadingMore,
     nextOffset,
+    revalidating,
     searchResults,
     searchValue,
+    isCurrent,
+    responseIsCurrent,
   ]);
 
   const debounceSearch = useMemo(() => {
-    return debounce(handleSearch, 300);
-  }, [handleSearch]);
+    return debounce(runSearch, 300);
+  }, [runSearch]);
 
   useEffect(() => {
     void debounceSearch(searchValue);
 
     return () => {
       debounceSearch.cancel();
+      requestController.current?.abort();
       // Ignore old responses immediately, including during the next debounce
       // interval and after the search dialog has unmounted.
       searchSeqRef.current += 1;
     };
   }, [searchValue, debounceSearch]);
+
+  // Permission hints sent while the socket was down are not replayed: revalidate after reconnecting.
+  const handledRefreshKey = useRef(refreshKey);
+
+  useEffect(() => {
+    if (handledRefreshKey.current === refreshKey) return;
+    handledRefreshKey.current = refreshKey;
+    debounceSearch.cancel();
+    void runSearch(searchValueRef.current, true);
+  }, [debounceSearch, refreshKey, runSearch]);
+
+  const retryAfterReconnect = online && reconnectRetry !== undefined && reconnectRetry.epoch !== onlineEpoch;
+
+  useEffect(() => {
+    if (!retryAfterReconnect) return;
+    debounceSearch.cancel();
+    void runSearch(searchValueRef.current, true);
+  }, [debounceSearch, retryAfterReconnect, runSearch]);
 
   const overviewSources = useMemo<SearchOverviewSource[]>(() => {
     if (!summary) return [];
@@ -413,31 +544,45 @@ function BestMatch({
 
   const summarySourceCount = new Set(summary?.sources || []).size;
   const canAskFollowUp = summarySourceCount > 0 && overviewSources.length === summarySourceCount;
+  const showLoading = loading || retryAfterReconnect || !responseIsCurrent;
+
+  if (!online && (!responseIsCurrent || searchResults.length === 0)) {
+    return <SearchStatusNotice title={t('commandPalette.bestMatches')} message={t('search.offlineResults')} />;
+  }
 
   return (
     <ViewList
-      items={loading ? undefined : items}
-      loading={loading}
+      items={showLoading ? undefined : items}
+      loading={showLoading}
       query={searchValue}
       title={t('commandPalette.bestMatches')}
-      hasMore={hasMore}
-      loadingMore={loadingMore}
+      hasMore={responseIsCurrent && hasMore}
+      loadingMore={loadingMore || revalidating}
       onClose={onClose}
       onLoadMore={handleLoadMore}
       header={
         aiEnabled ? (
-          <Suspense fallback={null}>
-            <SearchAIOverview
-              askingAI={askingAI}
-              loading={loading || summaryLoading}
-              query={searchValue}
-              sources={overviewSources}
-              summary={summary}
-              canAskFollowUp={canAskFollowUp}
-              onClose={onClose}
-              onAskAI={(sources) => onAskAI(searchValue, sources)}
-            />
-          </Suspense>
+          <>
+            {!online && (
+              <div role={'status'} className={'px-4 pt-3 text-xs text-text-secondary'}>
+                {t('search.offlineAskAI')}
+              </div>
+            )}
+            <Suspense fallback={null}>
+              <SearchAIOverview
+                askingAI={askingAI || !online}
+                loading={showLoading || summaryLoading}
+                query={searchValue}
+                sources={responseIsCurrent ? overviewSources : []}
+                summary={responseIsCurrent ? summary : null}
+                canAskFollowUp={responseIsCurrent && canAskFollowUp}
+                onClose={onClose}
+                onAskAI={(sources) => {
+                  if (isCurrent() && responseIsCurrent && online) onAskAI(searchValue, sources);
+                }}
+              />
+            </Suspense>
+          </>
         ) : undefined
       }
     />

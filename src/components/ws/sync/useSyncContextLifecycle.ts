@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { validate as uuidValidate } from 'uuid';
 import * as Y from 'yjs';
 
+import { assertCollabStorageCurrent, isCollabStorageCurrent } from '@/application/db/collab-storage-scope';
 import { initSync, SyncContext } from '@/application/services/js-services/sync-protocol';
 import { Types } from '@/application/types';
 import { messages } from '@/proto/messages';
@@ -148,6 +149,7 @@ export function useSyncContextLifecycle(
 
   const registerSyncContext = useCallback(
     (context: RegisterSyncContext): SyncContext => {
+      assertCollabStorageCurrent(context.doc);
       if (!uuidValidate(context.doc.guid)) {
         throw new Error(`Invalid Y.Doc guid: ${context.doc.guid}. It must be a valid UUID v4.`);
       }
@@ -178,6 +180,7 @@ export function useSyncContextLifecycle(
       Log.debug(`Registering sync context for objectId ${context.doc.guid} with collabType ${context.collabType}`);
       prepareContext?.(context);
       context.emit = (message) => {
+        if (!isCollabStorageCurrent(context.doc)) return;
         if (!beforeSend || (context.collabType !== Types.Database && context.collabType !== Types.DatabaseRow)) {
           sendMessage(message);
           postMessage(message);
@@ -189,7 +192,7 @@ export function useSyncContextLifecycle(
           '00000000-0000-0000-0000-000000000000';
 
         void beforeSend(doc.guid, context.collabType, marker).then((allowed) => {
-          if (!allowed || refs.registeredContexts.current.get(doc.guid)?.doc !== doc) return;
+          if (!allowed || !isCollabStorageCurrent(doc) || refs.registeredContexts.current.get(doc.guid)?.doc !== doc) return;
           sendMessage(message);
           postMessage(message);
         }).catch((error) => Log.warn('[DatabaseHistory] Sync deferred until restore state is available', error));
@@ -203,6 +206,8 @@ export function useSyncContextLifecycle(
       refs.registeredContexts.current.set(syncContext.doc.guid, syncContext);
       const handleDocDestroy = () => {
         const objectId = syncContext.doc.guid;
+
+        if (refs.registeredContexts.current.get(objectId) !== syncContext) return;
         const flushPending = !refs.skipFlushOnDestroy.current.has(objectId);
 
         cancelDeferredCleanup(objectId);

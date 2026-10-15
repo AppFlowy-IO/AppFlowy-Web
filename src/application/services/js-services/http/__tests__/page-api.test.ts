@@ -25,6 +25,9 @@ import {
   upgradeDatabaseContainer,
 } from '../page-api';
 
+let mockCreateActor = 'actor-a';
+jest.mock('@/application/session/token', () => ({ getTokenParsed: () => ({ user: { id: mockCreateActor } }) }));
+
 jest.mock('uuid', () => ({
   v4: jest.fn(() => 'generated-space-id'),
 }));
@@ -117,6 +120,7 @@ describe('createSpaceWithInitialPage with authored content', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockCreateActor = 'actor-a';
     jest.mocked(getAxios).mockReturnValue({ post, delete: deleteRequest } as never);
     (executeAPIRequest as jest.Mock).mockImplementation(
       async (request: () => Promise<ReturnType<typeof apiResponse>>) => {
@@ -128,6 +132,52 @@ describe('createSpaceWithInitialPage with authored content', () => {
     (executeAPIVoidRequest as jest.Mock).mockImplementation(async (request: () => Promise<unknown>) => {
       await request();
     });
+  });
+
+  it.each([1017, 1065, 55555])('retains an HTTP-200 application error %s as ambiguous', async (code) => {
+    post.mockRejectedValue({ code, httpStatus: 200 });
+    await expect(createSpaceWithInitialPage('workspace-id', {
+      name: 'Retain me', view_id: 'draft-space-id', client_generated_view_id: true,
+      permission: structuredPrivatePermission,
+      initial_page: { layout: ViewLayout.Document, view_id: 'draft-page-id' },
+    })).rejects.toMatchObject({ code, clientGeneratedCleanupSucceeded: false });
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(deleteRequest).not.toHaveBeenCalled();
+  });
+
+  it('never creates an initial page after the workspace changes during the space POST', async () => {
+    let resolve!: (value: ReturnType<typeof apiResponse>) => void;
+    let current = true;
+
+    post.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    const creating = createSpaceWithInitialPage('workspace-id', {
+      name: 'Original', view_id: 'draft-space-id', client_generated_view_id: true,
+      permission: structuredPrivatePermission,
+      initial_page: { layout: ViewLayout.Document, view_id: 'draft-page-id' },
+    }, { assertCurrent: () => { if (!current) throw new Error('Workspace changed'); } });
+
+    current = false;
+    resolve(apiResponse({ view_id: 'draft-space-id' }));
+    await expect(creating).rejects.toThrow('Workspace changed');
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(deleteRequest).not.toHaveBeenCalled();
+  });
+
+  it('never creates an initial page under a different account after the space reply arrives', async () => {
+    let resolve!: (value: ReturnType<typeof apiResponse>) => void;
+
+    post.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    const creating = createSpaceWithInitialPage('workspace-id', {
+      name: 'Original', view_id: 'draft-space-id', client_generated_view_id: true,
+      permission: structuredPrivatePermission,
+      initial_page: { layout: ViewLayout.Document, view_id: 'draft-page-id' },
+    });
+
+    mockCreateActor = 'actor-b';
+    resolve(apiResponse({ view_id: 'draft-space-id' }));
+    await expect(creating).rejects.toThrow();
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(deleteRequest).not.toHaveBeenCalled();
   });
 
   it('preserves a structured Private ACL while composing space and initial-page creation', async () => {
@@ -181,7 +231,7 @@ describe('createSpaceWithInitialPage with authored content', () => {
   });
 
   it('removes an internally identified structured space when creating its initial page fails', async () => {
-    const pageError = new Error('initial page failed');
+    const pageError = Object.assign(new Error('initial page failed'), { httpStatus: 422 });
     const requestOrder: string[] = [];
 
     post.mockImplementation(async (url: string) => {
@@ -221,7 +271,7 @@ describe('createSpaceWithInitialPage with authored content', () => {
   });
 
   it('does not remove a caller-owned space ID when initial-page creation fails', async () => {
-    const pageError = new Error('initial page failed');
+    const pageError = Object.assign(new Error('initial page failed'), { httpStatus: 422 });
 
     post.mockImplementation(async (url: string) => {
       if (url === '/api/workspace/workspace-id/spaces') return apiResponse({ view_id: 'explicit-space-id' });
@@ -267,88 +317,78 @@ describe('createSpaceWithInitialPage with authored content', () => {
     expect(deleteRequest).not.toHaveBeenCalled();
   });
 
-  it('uses a fresh internal ID to clean up an ambiguous structured-create failure', async () => {
-    const createError = new Error('response lost');
+  it('retains a timed-out create while its server commit is held, then recovers the same space and page', async () => {
+    let release!: () => void;
+    const commitBarrier = new Promise<void>((resolve) => { release = resolve; });
+    let committedSpace: string | undefined;
+    let serverWrite!: Promise<void>;
+    let attempts = 0;
+    const payload = {
+      name: 'Draft space', view_id: 'draft-space-id', client_generated_view_id: true,
+      permission: structuredPrivatePermission,
+      // Authored content keeps the composed page-view path instead of atomic default creation.
+      initial_page: { page_data: { blocks: [] }, layout: ViewLayout.Document, view_id: 'draft-page-id' },
+    };
 
-    post.mockImplementation(async (url: string) => {
-      if (url === '/api/workspace/workspace-id/spaces') throw createError;
-      if (url === '/api/workspace/workspace-id/page-view/generated-space-id/move-to-trash') {
-        return apiResponse(undefined);
+    post.mockImplementation(async (url: string, body?: { view_id?: string }) => {
+      if (url === '/api/workspace/workspace-id/spaces') {
+        attempts++;
+        if (attempts === 1) {
+          serverWrite = commitBarrier.then(() => { committedSpace = body?.view_id; });
+          throw new Error('timeout before commit');
+        }
+        if (committedSpace === body?.view_id) throw { code: ERROR_CODE.RECORD_ALREADY_EXISTS };
+        throw new Error('retry changed the stable ID');
       }
+      if (url.endsWith('/move-to-trash')) throw { httpStatus: 404 };
+      if (url.endsWith('/page-view')) return apiResponse({ view_id: 'draft-page-id' });
       throw new Error(`Unexpected URL: ${url}`);
     });
+    deleteRequest.mockRejectedValue({ httpStatus: 404 });
 
-    await expect(
-      createSpaceWithInitialPage('workspace-id', {
-        name: 'Private space',
-        space_icon: '',
-        space_icon_color: '',
-        permission: structuredPrivatePermission,
-        initial_page: { page_data: { blocks: [] }, layout: ViewLayout.Document },
-      })
-    ).rejects.toBe(createError);
-
-    expect(createError).toMatchObject({ clientGeneratedCleanupSucceeded: true });
-
-    expect(post).toHaveBeenNthCalledWith(
-      1,
-      '/api/workspace/workspace-id/spaces',
-      expect.objectContaining({ view_id: 'generated-space-id' })
-    );
-    expect(post).toHaveBeenNthCalledWith(2, '/api/workspace/workspace-id/page-view/generated-space-id/move-to-trash');
-    expect(deleteRequest).toHaveBeenCalledWith('/api/workspace/workspace-id/trash/generated-space-id');
+    await expect(createSpaceWithInitialPage('workspace-id', payload)).rejects.toMatchObject({
+      clientGeneratedCleanupSucceeded: false,
+    });
+    expect(committedSpace).toBeUndefined();
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(deleteRequest).not.toHaveBeenCalled();
+    release();
+    await serverWrite;
+    await expect(createSpaceWithInitialPage('workspace-id', payload)).resolves.toEqual({
+      space: { view_id: 'draft-space-id' }, page: { view_id: 'draft-page-id' },
+    });
+    expect(committedSpace).toBe('draft-space-id');
+    expect(post.mock.calls.filter(([url]) => url.endsWith('/spaces')).map(([, body]) => body.view_id))
+      .toEqual(['draft-space-id', 'draft-space-id']);
+    expect(deleteRequest).not.toHaveBeenCalled();
   });
 
-  it('marks an ambiguous client-generated create when permanent cleanup cannot be confirmed', async () => {
-    const createError = new Error('response lost');
-
+  it('preserves both IDs after an ambiguous initial-page response without removing its parent', async () => {
     post.mockImplementation(async (url: string) => {
-      if (url === '/api/workspace/workspace-id/spaces') throw createError;
-      if (url === '/api/workspace/workspace-id/page-view/draft-space-id/move-to-trash') {
-        throw new Error('trash unavailable');
-      }
-      throw new Error(`Unexpected URL: ${url}`);
+      if (url.endsWith('/spaces')) return apiResponse({ view_id: 'draft-space-id' });
+      throw new Error('page response lost');
     });
-    deleteRequest.mockRejectedValue(new Error('delete unavailable'));
-
-    await expect(
-      createSpaceWithInitialPage('workspace-id', {
-        name: 'Draft space',
-        view_id: 'draft-space-id',
-        client_generated_view_id: true,
-        permission: structuredPrivatePermission,
-        initial_page: { page_data: { blocks: [] }, layout: ViewLayout.Document, view_id: 'draft-page-id' },
-      })
-    ).rejects.toBe(createError);
-
-    expect(createError).toMatchObject({ clientGeneratedCleanupSucceeded: false });
-    expect(post).toHaveBeenNthCalledWith(2, '/api/workspace/workspace-id/page-view/draft-space-id/move-to-trash');
-    expect(deleteRequest).toHaveBeenCalledWith('/api/workspace/workspace-id/trash/draft-space-id');
+    await expect(createSpaceWithInitialPage('workspace-id', {
+      name: 'Draft space', view_id: 'draft-space-id', client_generated_view_id: true,
+      permission: structuredPrivatePermission,
+      initial_page: { page_data: { blocks: [] }, layout: ViewLayout.Document, view_id: 'draft-page-id' },
+    })).rejects.toMatchObject({ clientGeneratedCleanupSucceeded: false });
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(deleteRequest).not.toHaveBeenCalled();
   });
 
-  it('treats a confirmed move to trash as compensation even when permanent purge fails', async () => {
-    const createError = new Error('response lost');
-
+  it('does not report a missing cleanup response as confirmed compensation', async () => {
     post.mockImplementation(async (url: string) => {
-      if (url === '/api/workspace/workspace-id/spaces') throw createError;
-      if (url === '/api/workspace/workspace-id/page-view/draft-space-id/move-to-trash') {
-        return apiResponse(undefined);
-      }
-      throw new Error(`Unexpected URL: ${url}`);
+      if (url.endsWith('/spaces')) return apiResponse({ view_id: 'draft-space-id' });
+      if (url.endsWith('/page-view')) throw { httpStatus: 422, message: 'rejected page' };
+      throw { httpStatus: 404 };
     });
-    deleteRequest.mockRejectedValue(new Error('delete unavailable'));
-
-    await expect(
-      createSpaceWithInitialPage('workspace-id', {
-        name: 'Draft space',
-        view_id: 'draft-space-id',
-        client_generated_view_id: true,
-        permission: structuredPrivatePermission,
-        initial_page: { page_data: { blocks: [] }, layout: ViewLayout.Document, view_id: 'draft-page-id' },
-      })
-    ).rejects.toBe(createError);
-
-    expect(createError).toMatchObject({ clientGeneratedCleanupSucceeded: true });
+    deleteRequest.mockRejectedValue({ httpStatus: 404 });
+    await expect(createSpaceWithInitialPage('workspace-id', {
+      name: 'Draft space', view_id: 'draft-space-id', client_generated_view_id: true,
+      permission: structuredPrivatePermission,
+      initial_page: { page_data: { blocks: [] }, layout: ViewLayout.Document, view_id: 'draft-page-id' },
+    })).rejects.toMatchObject({ clientGeneratedCleanupSucceeded: false });
   });
 
   it('does not compensate or mark a definitive structured space-create rejection as ambiguous', async () => {
@@ -372,8 +412,8 @@ describe('createSpaceWithInitialPage with authored content', () => {
     expect(deleteRequest).not.toHaveBeenCalled();
   });
 
-  it('owns an explicitly client-generated ID and cleans it up when page creation fails', async () => {
-    const pageError = new Error('initial page failed');
+  it('retains a durable client-owned parent when its initial page is rejected', async () => {
+    const pageError = Object.assign(new Error('initial page failed'), { httpStatus: 422 });
 
     post.mockImplementation(async (url: string) => {
       if (url === '/api/workspace/workspace-id/spaces') return apiResponse({ view_id: 'draft-space-id' });
@@ -400,11 +440,12 @@ describe('createSpaceWithInitialPage with authored content', () => {
       view_id: 'draft-space-id',
       permission: structuredPrivatePermission,
     });
-    expect(post).toHaveBeenNthCalledWith(3, '/api/workspace/workspace-id/page-view/draft-space-id/move-to-trash');
-    expect(deleteRequest).toHaveBeenCalledWith('/api/workspace/workspace-id/trash/draft-space-id');
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(deleteRequest).not.toHaveBeenCalled();
+    expect(pageError).toMatchObject({ clientGeneratedCleanupSucceeded: false });
   });
 
-  it('rejects a mismatched client-generated space response and compensates only the requested space', async () => {
+  it('retains a mismatched space response as ambiguous without compensating an in-flight request', async () => {
     post.mockImplementation(async (url: string) => {
       if (url === '/api/workspace/workspace-id/spaces') return apiResponse({ view_id: 'unexpected-space-id' });
       if (url === '/api/workspace/workspace-id/page-view/draft-space-id/move-to-trash') {
@@ -426,15 +467,14 @@ describe('createSpaceWithInitialPage with authored content', () => {
       code: -1,
       clientGeneratedExpectedViewId: 'draft-space-id',
       clientGeneratedReturnedViewId: 'unexpected-space-id',
-      clientGeneratedCleanupSucceeded: true,
+      clientGeneratedCleanupSucceeded: false,
     });
 
-    expect(post).toHaveBeenCalledTimes(2);
-    expect(post).toHaveBeenLastCalledWith('/api/workspace/workspace-id/page-view/draft-space-id/move-to-trash');
-    expect(deleteRequest).toHaveBeenCalledWith('/api/workspace/workspace-id/trash/draft-space-id');
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(deleteRequest).not.toHaveBeenCalled();
   });
 
-  it('rejects a mismatched initial-page response before handoff and removes its client-owned parent', async () => {
+  it('retains a mismatched initial-page response before handoff without removing its parent', async () => {
     post.mockImplementation(async (url: string) => {
       if (url === '/api/workspace/workspace-id/spaces') return apiResponse({ view_id: 'draft-space-id' });
       if (url === '/api/workspace/workspace-id/page-view') return apiResponse({ view_id: 'unexpected-page-id' });
@@ -457,10 +497,10 @@ describe('createSpaceWithInitialPage with authored content', () => {
       code: -1,
       clientGeneratedExpectedViewId: 'draft-page-id',
       clientGeneratedReturnedViewId: 'unexpected-page-id',
-      clientGeneratedCleanupSucceeded: true,
+      clientGeneratedCleanupSucceeded: false,
     });
 
-    expect(deleteRequest).toHaveBeenCalledWith('/api/workspace/workspace-id/trash/draft-space-id');
+    expect(deleteRequest).not.toHaveBeenCalled();
   });
 
   it('reconciles AlreadyExists for exact client-generated space and page IDs on retry', async () => {

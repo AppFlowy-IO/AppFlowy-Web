@@ -11,6 +11,7 @@ import {
   ViewLayout,
   WorkspaceMember,
 } from '@/application/types';
+import { SpaceCreationIntentStore } from '@/application/services/js-services/space-creation-intent';
 import { notify } from '@/components/_shared/notify';
 import CreateSpaceModal from '@/components/app/view-actions/CreateSpaceModal';
 
@@ -19,10 +20,32 @@ import type { KeyboardEventHandler, ReactNode } from 'react';
 const mockCreateSpace = jest.fn();
 const mockCreateSpaceWithInitialPage = jest.fn();
 const mockGetMembers = jest.fn();
+const mockGetView = jest.fn();
+
+jest.mock('@/application/services/js-services/http/view-api', () => ({ getView: (...args: unknown[]) => mockGetView(...args) }));
 const mockGetSpacePermission = jest.fn();
 const mockAddSpaceMember = jest.fn();
+const mockAddSpaceMemberByUuid = jest.fn();
 const mockMoveToTrash = jest.fn();
 const mockDeleteTrash = jest.fn();
+const mockAddPage = jest.fn();
+const mockRefreshCreationPermission = jest.fn();
+const mockGetSpaceCreationCapabilities = jest.fn();
+let mockCanCreateSpace = true;
+let mockCapabilityStatus: 'loading' | 'ready' | 'unsupported' | 'error' = 'ready';
+let mockUuidIndex = 0;
+
+jest.mock('uuid', () => ({ v4: () => ['space-id', 'page-id'][mockUuidIndex++] ?? `generated-${mockUuidIndex}` }));
+jest.mock('@/application/session/token', () => ({ getTokenParsed: () => ({ user: { id: 'test-user' } }) }));
+
+jest.mock('@/components/app/hooks/useSpaceCreationCapability', () => ({
+  useSpaceCreationCapability: () => ({
+    status: mockCapabilityStatus,
+    canCreateSpace: mockCanCreateSpace,
+    capability: mockCapabilityStatus === 'ready' ? { can_create_space: mockCanCreateSpace } : undefined,
+    refresh: mockRefreshCreationPermission,
+  }),
+}));
 
 const candidateOne: WorkspaceMember = {
   uid: 'member-1',
@@ -68,16 +91,21 @@ jest.mock('react-i18next', () => ({
     t: (key: string) => (key === 'space.defaultSpaceName' ? 'General' : key),
   }),
 }));
+// Messages made outside components (saved-request and recovery errors) also show their key.
+jest.mock('i18next', () => ({ ...jest.requireActual('i18next'), t: (key: string) => key }));
 
 jest.mock('@/application/services/domains', () => ({
   PageService: {
+    add: (...args: unknown[]) => mockAddPage(...args),
     moveToTrash: (...args: unknown[]) => mockMoveToTrash(...args),
     deleteTrash: (...args: unknown[]) => mockDeleteTrash(...args),
   },
   WorkspaceService: {
     getMembers: (...args: unknown[]) => mockGetMembers(...args),
     getSpacePermission: (...args: unknown[]) => mockGetSpacePermission(...args),
+    getWorkspaceSpaceCreationCapabilities: (...args: unknown[]) => mockGetSpaceCreationCapabilities(...args),
     addSpaceMember: (...args: unknown[]) => mockAddSpaceMember(...args),
+    addSpaceMemberByUuid: (...args: unknown[]) => mockAddSpaceMemberByUuid(...args),
   },
 }));
 
@@ -112,7 +140,7 @@ jest.mock('@/components/_shared/modal', () => ({
     okText,
     okButtonProps,
     PaperProps,
-    showActions,
+    showActions = true,
   }: {
     children: ReactNode;
     open: boolean;
@@ -131,8 +159,13 @@ jest.mock('@/components/_shared/modal', () => ({
           if (event.key === 'Enter') onOk?.();
         }}
       >
-        <div data-testid='create-space-title'>{title}</div>
-        <button data-testid='create-space-close' onClick={onClose}>
+        <div data-testid={PaperProps?.['data-testid'] === 'create-space-modal' ? 'create-space-title' : 'modal-title'}>
+          {title}
+        </div>
+        <button
+          data-testid={PaperProps?.['data-testid'] === 'create-space-modal' ? 'create-space-close' : 'modal-close'}
+          onClick={onClose}
+        >
           close
         </button>
         {showActions && (
@@ -160,14 +193,16 @@ jest.mock('@/components/app/share/WorkspaceMemberInlineSearch', () => ({
     workspaceMembers,
     search,
     excludedUids,
+    listAllWhenEmpty,
   }: {
     workspaceMembers: WorkspaceMember[];
     search: string;
     excludedUids: Set<string>;
+    listAllWhenEmpty?: boolean;
   }) => {
     const normalized = search.trim().toLowerCase();
 
-    if (!normalized) return [];
+    if (!normalized && !listAllWhenEmpty) return [];
     return workspaceMembers.filter(
       (member) =>
         !excludedUids.has(String(member.uid)) && `${member.name} ${member.email}`.toLowerCase().includes(normalized)
@@ -180,6 +215,7 @@ jest.mock('@/components/app/share/WorkspaceMemberInlineSearch', () => ({
     onAddMember,
     inputDisabled,
     onInputKeyDown,
+    onAddButtonClick,
   }: {
     search: string;
     onSearchChange: (value: string) => void;
@@ -187,6 +223,7 @@ jest.mock('@/components/app/share/WorkspaceMemberInlineSearch', () => ({
     onAddMember: (member: WorkspaceMember) => void;
     inputDisabled?: boolean;
     onInputKeyDown?: KeyboardEventHandler<HTMLInputElement>;
+    onAddButtonClick?: () => void;
   }) => (
     <div>
       <input
@@ -196,6 +233,12 @@ jest.mock('@/components/app/share/WorkspaceMemberInlineSearch', () => ({
         onChange={(event) => onSearchChange(event.target.value)}
         onKeyDown={onInputKeyDown}
       />
+      {/* The real component's Add members button. */}
+      {onAddButtonClick && (
+        <button data-testid='draft-member-browse' onClick={onAddButtonClick}>
+          browse
+        </button>
+      )}
       {addableMembers.map((member) => (
         <button
           key={String(member.uid)}
@@ -270,6 +313,7 @@ jest.mock('@/components/ui/tabs', () => {
       return tabs.value === value ? <div>{children}</div> : null;
     },
     TabsList: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    TabLabel: ({ children }: { children: ReactNode }) => <>{children}</>,
     TabsTrigger: ({ children, disabled, value }: { children: ReactNode; disabled?: boolean; value: string }) => {
       const tabs = React.useContext(TabsContext);
 
@@ -289,15 +333,26 @@ jest.mock('@/components/ui/tabs', () => {
 
 describe('CreateSpaceModal draft controller', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
+    sessionStorage.clear();
+    mockUuidIndex = 0;
+    mockCanCreateSpace = true;
+    mockCapabilityStatus = 'ready';
+    mockGetView.mockResolvedValue({ view_id: 'page-id', parent_view_id: 'space-id' });
+    mockRefreshCreationPermission.mockResolvedValue({ can_create_space: true });
     mockGetMembers.mockResolvedValue([candidateOne, candidateTwo]);
-    mockGetSpacePermission.mockRejectedValue({ code: -2, httpStatus: 404, message: 'Space not found' });
-    mockCreateSpace.mockResolvedValue('space-id');
+    mockGetSpacePermission.mockImplementation(async (_workspaceId: string, spaceId: string) => {
+      if (spaceId === 'space-id') return { space_id: spaceId, permission: customPermission };
+      throw Object.assign(new Error('Space not found'), { code: -2, httpStatus: 404 });
+    });
+    // Servers echo the client-owned identity of a created space.
+    mockCreateSpace.mockImplementation(async (payload: { view_id: string }) => payload.view_id);
     mockCreateSpaceWithInitialPage.mockResolvedValue({
       space: { view_id: 'space-id' },
       page: { view_id: 'page-id' },
     });
     mockAddSpaceMember.mockResolvedValue(undefined);
+    mockAddSpaceMemberByUuid.mockResolvedValue(undefined);
     mockMoveToTrash.mockResolvedValue(undefined);
     mockDeleteTrash.mockResolvedValue(undefined);
   });
@@ -305,6 +360,92 @@ describe('CreateSpaceModal draft controller', () => {
   function visibilityOption(visibility: SpaceVisibility) {
     return screen.getByTestId(`manage-space-visibility-option-${visibility}`);
   }
+
+  it('replaces the form with the answer when a fresh permission read refuses creation on Create', async () => {
+    const onClose = jest.fn();
+
+    mockRefreshCreationPermission.mockResolvedValue({ can_create_space: false });
+    const view = render(<CreateSpaceModal open onClose={onClose} />);
+
+    enterSpaceName('Marketing');
+    // Pressed from the keyboard: Create has focus when it disappears.
+    screen.getByTestId('create-space-submit').focus();
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+
+    const denied = await screen.findByTestId('create-space-denied');
+
+    expect(denied.textContent).toContain('workspacePermissions.denied');
+    expect(denied.textContent).toContain('spaceCreation.deniedHint');
+    // Keyboard focus moves to Close, the only action left, instead of being lost with the button.
+    expect(document.activeElement).toBe(screen.getByTestId('create-space-denied-close'));
+    // The request is summed up; the form, its Create button and the notice are gone.
+    expect(screen.getByTestId('create-space-summary').textContent).toContain('Marketing');
+    expect(screen.queryByTestId('space-name-input')).toBeNull();
+    expect(screen.queryByTestId('create-space-submit')).toBeNull();
+    expect(screen.queryByTestId('space-creation-notice')).toBeNull();
+    // Nothing was created and nothing is kept, and no toast repeats the card.
+    expect(notify.error).not.toHaveBeenCalled();
+    expect(mockCreateSpace).not.toHaveBeenCalled();
+    expect(mockCreateSpaceWithInitialPage).not.toHaveBeenCalled();
+    expect(sessionStorage.length).toBe(0);
+
+    // Close is the only action; the draft is released, so the dialog reopens empty.
+    fireEvent.click(screen.getByTestId('create-space-denied-close'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    view.rerender(<CreateSpaceModal open={false} onClose={onClose} />);
+    view.rerender(<CreateSpaceModal open onClose={onClose} />);
+    expect(screen.queryByTestId('create-space-denied')).toBeNull();
+    expect(screen.getByTestId('space-name-input').value).toBe('');
+    expect(screen.getByTestId('create-space-submit').textContent).toBe('button.create');
+  });
+
+  it('replaces the form with the answer when the server itself refuses the request', async () => {
+    const onClose = jest.fn();
+
+    mockCreateSpace.mockRejectedValueOnce({ code: 1012, httpStatus: 403, message: 'forbidden' });
+    render(<CreateSpaceModal open onClose={onClose} />);
+
+    enterSpaceName('Refused draft');
+    screen.getByTestId('create-space-submit').focus();
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+
+    const denied = await screen.findByTestId('create-space-denied');
+
+    expect(denied.textContent).toContain('workspacePermissions.denied');
+    expect(denied.textContent).toContain('spaceCreation.deniedHint');
+    expect(document.activeElement).toBe(screen.getByTestId('create-space-denied-close'));
+    expect(screen.queryByTestId('space-name-input')).toBeNull();
+    expect(screen.queryByTestId('create-space-submit')).toBeNull();
+    expect(screen.queryByTestId('space-creation-recovery-unconfirmed')).toBeNull();
+    // A refusal proves that this request created nothing: no saved request, no toast repeating the card.
+    expect(sessionStorage.length).toBe(0);
+    expect(notify.error).not.toHaveBeenCalled();
+    expect(mockCreateSpace).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByTestId('create-space-denied-close'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('includes the explicitly chosen sidebar policy in the create payload', async () => {
+    render(<CreateSpaceModal open onClose={jest.fn()} />);
+    enterSpaceName('Editors can add pages');
+    fireEvent.click(screen.getByTestId(`space-sidebar-policy-option-${SpaceSidebarEditPolicy.MembersAndOwners}`));
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    await waitFor(() => expect(mockCreateSpace).toHaveBeenCalledWith(expect.objectContaining({
+      permission: expect.objectContaining({ sidebar_edit_policy: SpaceSidebarEditPolicy.MembersAndOwners }),
+    })));
+  });
+
+  it('disables new creation but leaves draft fields editable after a live revocation', () => {
+    const { rerender } = render(<CreateSpaceModal open onClose={jest.fn()} />);
+
+    enterSpaceName('Keep this draft');
+    mockCanCreateSpace = false;
+    rerender(<CreateSpaceModal open onClose={jest.fn()} />);
+    expect((screen.getByTestId('create-space-submit')).disabled).toBe(true);
+    expect((screen.getByTestId('space-name-input')).value).toBe('Keep this draft');
+    expect(screen.getByText('workspacePermissions.denied')).toBeTruthy();
+  });
 
   function enterSpaceName(name = 'General') {
     fireEvent.change(screen.getByTestId('space-name-input'), { target: { value: name } });
@@ -318,6 +459,22 @@ describe('CreateSpaceModal draft controller', () => {
     fireEvent.change(screen.getByTestId('draft-member-search'), { target: { value: member.email } });
     fireEvent.click(await screen.findByTestId(`draft-member-add-${member.uid}`));
   }
+
+  it('lists the members who can be added as soon as Add members is pressed', async () => {
+    render(<CreateSpaceModal open onClose={jest.fn()} />);
+    enterSpaceName();
+    fireEvent.click(visibilityOption(SpaceVisibility.Custom));
+    await waitFor(() => expect(mockGetMembers).toHaveBeenCalledWith('workspace-1'));
+    fireEvent.click(screen.getByRole('tab', { name: 'space.permissionManager.membersTab' }));
+    expect(screen.queryByTestId('draft-member-add-member-1')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('draft-member-browse'));
+    expect(await screen.findByTestId('draft-member-add-member-1')).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByTestId('draft-member-search'));
+    // Escape closes the list and is used up, so the dialog stays open.
+    expect(fireEvent.keyDown(screen.getByTestId('draft-member-search'), { key: 'Escape' })).toBe(false);
+    expect(screen.queryByTestId('draft-member-add-member-1')).toBeNull();
+  });
 
   it('renders the shared Create Space panel and a deferred Create action', () => {
     render(<CreateSpaceModal open onClose={jest.fn()} />);
@@ -533,7 +690,7 @@ describe('CreateSpaceModal draft controller', () => {
 
     fireEvent.click(submit);
     fireEvent.click(submit);
-    expect(mockCreateSpace).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mockCreateSpace).toHaveBeenCalledTimes(1));
 
     creation.resolve('space-id');
     await waitFor(() => expect(submit.getAttribute('disabled')).not.toBeNull());
@@ -561,7 +718,7 @@ describe('CreateSpaceModal draft controller', () => {
     await waitFor(() => expect(screen.queryByTestId('create-space-loading-indicator')).toBeNull());
   });
 
-  it('keeps an ambiguous create draft open, frozen, and retries with the same client-owned ID', async () => {
+  it('keeps an ambiguous create draft open, frozen, and checks again with the same client-owned ID', async () => {
     mockCreateSpace.mockRejectedValueOnce(new Error('could not create space'));
     render(<CreateSpaceModal open onClose={jest.fn()} />);
 
@@ -572,42 +729,171 @@ describe('CreateSpaceModal draft controller', () => {
     expect(screen.getByTestId('create-space-modal')).toBeTruthy();
     expect(screen.getByTestId('space-name-input').value).toBe('Keep this draft');
     expect(screen.getByTestId('space-name-input').getAttribute('disabled')).not.toBeNull();
-    expect(screen.getByTestId('create-space-submit').textContent).toBe('button.retry');
+    expect(screen.getByTestId('create-space-submit').textContent).toBe('spaceCreation.checkAgain');
+    expect(screen.getByTestId('space-creation-recovery-unconfirmed').textContent).toContain('spaceCreation.unconfirmed');
+    expect(screen.getByTestId('space-creation-discard')).toBeTruthy();
     expect(mockCreateSpace).toHaveBeenCalledTimes(1);
 
     const firstAttemptId = mockCreateSpace.mock.calls[0][0].view_id;
 
+    mockGetSpacePermission.mockRejectedValueOnce({ httpStatus: 404 });
     mockCreateSpace.mockResolvedValueOnce(firstAttemptId);
     fireEvent.click(screen.getByTestId('create-space-submit'));
     await waitFor(() => expect(mockCreateSpace).toHaveBeenCalledTimes(2));
     expect(mockCreateSpace.mock.calls[1][0].view_id).toBe(firstAttemptId);
   });
 
-  it('keeps a definitively rejected standalone draft editable and cancellable without recovery requests', async () => {
+  it('releases the draft for editing after a validation rejection and forgets the saved request', async () => {
     const onClose = jest.fn();
+    const onCreated = jest.fn();
 
     mockCreateSpace.mockRejectedValueOnce({ code: 422, httpStatus: 422, message: 'invalid space name' });
-    render(<CreateSpaceModal open onClose={onClose} />);
+    render(<CreateSpaceModal open onClose={onClose} onCreated={onCreated} />);
 
     fireEvent.change(screen.getByTestId('space-name-input'), { target: { value: 'Rejected draft' } });
     fireEvent.click(screen.getByTestId('create-space-submit'));
 
     await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Error 422: Something went wrong. Contact support if this keeps happening.'));
+    // The name can be fixed here: only a refusal by the space creation rule replaces the form.
+    expect(screen.queryByTestId('create-space-denied')).toBeNull();
     expect(screen.getByTestId('space-name-input').getAttribute('disabled')).toBeNull();
+    expect(screen.getByTestId('space-name-input').value).toBe('Rejected draft');
     expect(screen.getByTestId('create-space-submit').textContent).toBe('button.create');
-    fireEvent.click(screen.getByTestId('create-space-close'));
-    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('space-creation-recovery-unconfirmed')).toBeNull();
+    expect(sessionStorage.length).toBe(0);
+
+    fireEvent.change(screen.getByTestId('space-name-input'), { target: { value: 'Fixed name' } });
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
+    expect(mockCreateSpace).toHaveBeenCalledTimes(2);
+    expect(mockCreateSpace.mock.calls[1][0].name).toBe('Fixed name');
+    // The rejected identity is never reused for an edited request.
+    expect(mockCreateSpace.mock.calls[1][0].view_id).not.toBe(mockCreateSpace.mock.calls[0][0].view_id);
+    expect(onCreated).toHaveBeenCalledWith(mockCreateSpace.mock.calls[1][0].view_id, undefined);
     expect(mockGetSpacePermission).not.toHaveBeenCalled();
     expect(mockMoveToTrash).not.toHaveBeenCalled();
-    expect(mockDeleteTrash).not.toHaveBeenCalled();
+    expect(sessionStorage.length).toBe(0);
   });
 
-  it('hands off a committed standalone space and its queued roster when Close reconciles a lost response', async () => {
+  it('releases a definitively rejected first-page request and keeps its page payload with a fresh identity', async () => {
+    const onCreated = jest.fn();
+
+    mockCreateSpaceWithInitialPage
+      .mockRejectedValueOnce({ code: 1008, httpStatus: 400, message: 'invalid page' })
+      .mockImplementationOnce(async (payload: { view_id: string; initial_page: { view_id: string } }) => ({
+        space: { view_id: payload.view_id },
+        page: { view_id: payload.initial_page.view_id },
+      }));
+    render(<CreateSpaceModal open onClose={jest.fn()} onCreated={onCreated}
+      initialPage={{ layout: ViewLayout.Document, name: 'First page' }} />);
+
+    enterSpaceName('With a page');
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith("This request isn't valid."));
+    expect(sessionStorage.length).toBe(0);
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
+    const [first, second] = mockCreateSpaceWithInitialPage.mock.calls.map(([payload]) => payload);
+
+    expect(second.initial_page).toEqual({ layout: ViewLayout.Document, name: 'First page', view_id: expect.any(String) });
+    expect(second.view_id).not.toBe(first.view_id);
+    expect(second.initial_page.view_id).not.toBe(first.initial_page.view_id);
+  });
+
+  it('keeps an unconfirmed request after closing and forgets it only after Discard is confirmed', async () => {
+    const onClose = jest.fn();
+
+    mockCreateSpace.mockRejectedValueOnce(new Error('response lost'));
+    const first = render(<CreateSpaceModal open onClose={onClose} />);
+
+    enterSpaceName('Maybe created');
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
+    fireEvent.click(screen.getByTestId('create-space-close'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.length).toBe(1);
+    first.unmount();
+
+    render(<CreateSpaceModal open onClose={onClose} />);
+    expect(screen.getByTestId('space-name-input').value).toBe('Maybe created');
+    fireEvent.click(screen.getByTestId('space-creation-discard'));
+    expect(screen.getByTestId('modal-title').textContent).toBe('spaceCreation.discardTitle');
+    fireEvent.click(screen.getByTestId('modal-close'));
+    expect(sessionStorage.length).toBe(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByTestId('space-creation-discard'));
+    fireEvent.click(screen.getByTestId('discard-space-request-confirm'));
+    expect(sessionStorage.length).toBe(0);
+    expect(onClose).toHaveBeenCalledTimes(2);
+    expect(mockCreateSpace).toHaveBeenCalledTimes(1);
+    expect(mockGetSpacePermission).not.toHaveBeenCalled();
+  });
+
+  it('shows unreadable saved data with Discard and continues with a fresh draft once it is discarded', () => {
+    const key = `space-creation:v1:${new SpaceCreationIntentStore('workspace-1').scopeKey}`;
+
+    sessionStorage.setItem(key, '{invalid');
+    render(<CreateSpaceModal open onClose={jest.fn()} />);
+
+    expect(screen.getByTestId('space-creation-recovery-invalid').textContent).toContain('spaceCreation.invalidRecovery');
+    enterSpaceName('New space');
+    expect(screen.getByTestId('create-space-submit').getAttribute('disabled')).not.toBeNull();
+    fireEvent.click(screen.getByTestId('space-creation-discard'));
+    expect(sessionStorage.getItem(key)).toBeNull();
+    expect(screen.queryByTestId('space-creation-recovery-invalid')).toBeNull();
+    expect(screen.getByTestId('create-space-submit').getAttribute('disabled')).toBeNull();
+    expect(screen.getByTestId('create-space-submit').textContent).toBe('button.create');
+  });
+
+  it('lets a server without the capability route decide instead of disabling creation', async () => {
+    const onCreated = jest.fn();
+
+    mockCapabilityStatus = 'unsupported';
+    mockCanCreateSpace = false;
+    mockRefreshCreationPermission.mockResolvedValue(undefined);
+    mockGetSpaceCreationCapabilities.mockRejectedValue({ code: 404, httpStatus: 404, message: 'Not Found' });
+    render(<CreateSpaceModal open onClose={jest.fn()} onCreated={onCreated} />);
+
+    expect(screen.queryByTestId('space-creation-notice')).toBeNull();
+    enterSpaceName('Legacy server space');
+    expect(screen.getByTestId('create-space-submit').getAttribute('disabled')).toBeNull();
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith('space-id', undefined));
+    expect(mockCreateSpace).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not send when the permission check fails for another reason', async () => {
+    mockRefreshCreationPermission.mockResolvedValue(undefined);
+    mockGetSpaceCreationCapabilities.mockRejectedValue({ code: -1, message: 'Network error' });
+    render(<CreateSpaceModal open onClose={jest.fn()} />);
+
+    enterSpaceName('Offline draft');
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('workspacePermissions.loadError'));
+    expect(mockCreateSpace).not.toHaveBeenCalled();
+    expect(sessionStorage.length).toBe(0);
+    // Could not check, so the draft stays editable for another try; it is not an answer.
+    expect(screen.queryByTestId('create-space-denied')).toBeNull();
+    expect(screen.getByTestId('space-name-input').getAttribute('disabled')).toBeNull();
+  });
+
+  it('shows why creation is unavailable with a retry when permissions cannot be loaded', () => {
+    mockCapabilityStatus = 'error';
+    mockCanCreateSpace = false;
+    render(<CreateSpaceModal open onClose={jest.fn()} />);
+
+    expect(screen.getByTestId('space-creation-notice').textContent).toContain('workspacePermissions.loadError');
+    fireEvent.click(within(screen.getByTestId('space-creation-notice')).getByRole('button'));
+    expect(mockRefreshCreationPermission).toHaveBeenCalledTimes(1);
+  });
+
+  it('hands off a committed standalone space and its queued roster when Retry reconciles a lost response', async () => {
     const onClose = jest.fn();
     const onCreated = jest.fn();
 
     mockCreateSpace.mockRejectedValueOnce(new Error('response lost'));
-    mockGetSpacePermission.mockResolvedValueOnce({ permission: customPermission });
+    mockGetSpacePermission.mockResolvedValue({ permission: customPermission });
     render(<CreateSpaceModal open onClose={onClose} onCreated={onCreated} />);
 
     await selectCustomAndAdd(candidateOne);
@@ -615,7 +901,7 @@ describe('CreateSpaceModal draft controller', () => {
     await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
     const clientOwnedSpaceId = mockCreateSpace.mock.calls[0][0].view_id;
 
-    fireEvent.click(screen.getByTestId('create-space-close'));
+    fireEvent.click(screen.getByTestId('create-space-submit'));
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith(clientOwnedSpaceId, undefined));
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -631,30 +917,51 @@ describe('CreateSpaceModal draft controller', () => {
     expect(mockCreateSpace).toHaveBeenCalledTimes(1);
   });
 
-  it('cleans the exact client-owned ID after reconciliation confirms a standalone 404', async () => {
+  it('reloads a submitted identity while B denies, then recovers the original held commit without another POST', async () => {
     const onClose = jest.fn();
     const onCreated = jest.fn();
+    const commit = deferred<void>();
+    let persistedSpaceId: string | undefined;
+    let serverWrite!: Promise<void>;
 
-    mockCreateSpace.mockRejectedValueOnce(new Error('response lost'));
-    mockGetSpacePermission.mockRejectedValueOnce({
-      code: -2,
-      httpStatus: 404,
-      message: 'Space not found',
+    mockCreateSpace.mockImplementationOnce(async (payload) => {
+      expect(sessionStorage.length).toBe(1);
+      serverWrite = commit.promise.then(() => { persistedSpaceId = payload.view_id; });
+      throw new Error('client timed out before commit');
     });
-    render(<CreateSpaceModal open onClose={onClose} onCreated={onCreated} />);
+    mockGetSpacePermission.mockImplementation(async () => {
+      if (!persistedSpaceId) throw Object.assign(new Error('not committed yet'), { httpStatus: 404 });
+      return { space_id: persistedSpaceId, permission: customPermission };
+    });
+    const first = render(<CreateSpaceModal open onClose={onClose} onCreated={onCreated} />);
 
-    enterSpaceName();
+    enterSpaceName('Original submitted name');
     fireEvent.click(screen.getByTestId('create-space-submit'));
     await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
-    const clientOwnedSpaceId = mockCreateSpace.mock.calls[0][0].view_id;
+    const originalId = mockCreateSpace.mock.calls[0][0].view_id;
 
     fireEvent.click(screen.getByTestId('create-space-close'));
-
-    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
-    expect(mockGetSpacePermission).toHaveBeenCalledWith('workspace-1', clientOwnedSpaceId);
-    expect(mockMoveToTrash).toHaveBeenCalledWith('workspace-1', clientOwnedSpaceId);
-    expect(mockDeleteTrash).toHaveBeenCalledWith('workspace-1', clientOwnedSpaceId);
-    expect(onCreated).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
+    first.unmount();
+    mockCanCreateSpace = false;
+    mockRefreshCreationPermission.mockResolvedValue({ can_create_space: false });
+    render(<CreateSpaceModal open onClose={onClose} onCreated={onCreated} />);
+    expect(screen.getByTestId('space-name-input').value).toBe('Original submitted name');
+    expect(screen.getByTestId('space-name-input').disabled).toBe(true);
+    expect(screen.getByTestId('create-space-submit').disabled).toBe(false);
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('workspacePermissions.denied'));
+    expect(mockGetSpacePermission).toHaveBeenCalledWith('workspace-1', originalId);
+    expect(mockCreateSpace).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.length).toBe(1);
+    commit.resolve();
+    await serverWrite;
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith(originalId, undefined));
+    expect(mockCreateSpace).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.length).toBe(0);
+    expect(mockMoveToTrash).not.toHaveBeenCalled();
+    expect(mockDeleteTrash).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -674,14 +981,15 @@ describe('CreateSpaceModal draft controller', () => {
     await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
     const clientOwnedSpaceId = mockCreateSpace.mock.calls[0][0].view_id;
 
-    fireEvent.click(screen.getByTestId('create-space-close'));
+    fireEvent.click(screen.getByTestId('create-space-submit'));
 
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith(message));
+    await waitFor(() => expect(notify.error).toHaveBeenNthCalledWith(2, message));
     expect(onClose).not.toHaveBeenCalled();
     expect(mockMoveToTrash).not.toHaveBeenCalled();
     expect(mockDeleteTrash).not.toHaveBeenCalled();
     expect(screen.getByTestId('space-name-input').getAttribute('disabled')).not.toBeNull();
 
+    mockGetSpacePermission.mockRejectedValueOnce({ httpStatus: 404 });
     mockCreateSpace.mockResolvedValueOnce(clientOwnedSpaceId);
     fireEvent.click(screen.getByTestId('create-space-submit'));
 
@@ -690,120 +998,38 @@ describe('CreateSpaceModal draft controller', () => {
     expect(mockCreateSpace.mock.calls[1][0].view_id).toBe(clientOwnedSpaceId);
   });
 
-  it('retries the authoritative initial page on Close after composed cleanup could not be confirmed', async () => {
-    const onClose = jest.fn();
-    const onCreated = jest.fn();
-    const cleanupFailed = Object.assign(new Error('response lost and cleanup unavailable'), {
-      clientGeneratedCleanupSucceeded: false,
-    });
+  it('restores the original initial page and frozen roster after reload despite a different host draft', async () => {
+    mockCreateSpaceWithInitialPage.mockRejectedValueOnce(new Error('response lost'));
+    const first = render(<CreateSpaceModal open onClose={jest.fn()}
+      initialPage={{ layout: ViewLayout.Document, name: 'Original page' }} />);
 
-    mockCreateSpaceWithInitialPage.mockRejectedValueOnce(cleanupFailed);
-    render(
-      <CreateSpaceModal
-        open
-        onClose={onClose}
-        onCreated={onCreated}
-        initialPage={{ layout: ViewLayout.Document, name: 'First page' }}
-      />
-    );
-
-    enterSpaceName();
+    enterSpaceName('Original space');
     fireEvent.click(screen.getByTestId('create-space-submit'));
     await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
-    expect(screen.getByTestId('space-name-input').getAttribute('disabled')).not.toBeNull();
-    const firstPayload = mockCreateSpaceWithInitialPage.mock.calls[0][0];
+    first.unmount();
+    const onCreated = jest.fn();
 
-    mockCreateSpaceWithInitialPage.mockResolvedValueOnce({
-      space: { view_id: firstPayload.view_id },
-      page: { view_id: firstPayload.initial_page.view_id },
-    });
-    fireEvent.click(screen.getByTestId('create-space-close'));
-
-    await waitFor(() => expect(onCreated).toHaveBeenCalledWith(firstPayload.view_id, firstPayload.initial_page.view_id));
-    expect(onClose).toHaveBeenCalledTimes(1);
-    expect(mockCreateSpaceWithInitialPage).toHaveBeenCalledTimes(2);
-    expect(mockCreateSpaceWithInitialPage.mock.calls[1][0].view_id).toBe(firstPayload.view_id);
-    expect(mockCreateSpaceWithInitialPage.mock.calls[1][0].initial_page.view_id).toBe(firstPayload.initial_page.view_id);
-    expect(mockCreateSpace).not.toHaveBeenCalled();
+    mockCanCreateSpace = false;
+    mockRefreshCreationPermission.mockResolvedValue({ can_create_space: false });
+    render(<CreateSpaceModal open onClose={jest.fn()} onCreated={onCreated}
+      initialPage={{ layout: ViewLayout.Grid, name: 'Different host page' }} />);
+    expect(screen.getByTestId('space-name-input').value).toBe('Original space');
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith('space-id', 'page-id'));
+    expect(mockGetView).toHaveBeenCalledWith('workspace-1', 'page-id', 0);
+    expect(mockCreateSpaceWithInitialPage).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.length).toBe(0);
   });
 
-  it('keeps the initial-page draft editable and rotates both IDs when composed cleanup was confirmed', async () => {
-    const onClose = jest.fn();
-    const cleanupSucceeded = Object.assign(new Error('initial page failed'), {
-      clientGeneratedCleanupSucceeded: true,
-    });
-
-    mockCreateSpaceWithInitialPage.mockRejectedValueOnce(cleanupSucceeded);
-    render(
-      <CreateSpaceModal open onClose={onClose} initialPage={{ layout: ViewLayout.Document, name: 'First page' }} />
-    );
-
-    enterSpaceName();
-    fireEvent.click(screen.getByTestId('create-space-submit'));
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
-    expect(screen.getByTestId('space-name-input').getAttribute('disabled')).toBeNull();
-    expect(screen.getByTestId('create-space-submit').textContent).toBe('button.create');
-    const firstPayload = mockCreateSpaceWithInitialPage.mock.calls[0][0];
-
-    fireEvent.click(screen.getByTestId('create-space-submit'));
-    await waitFor(() => expect(mockCreateSpaceWithInitialPage).toHaveBeenCalledTimes(2));
-    const secondPayload = mockCreateSpaceWithInitialPage.mock.calls[1][0];
-
-    expect(secondPayload.view_id).not.toBe(firstPayload.view_id);
-    expect(secondPayload.initial_page.view_id).not.toBe(firstPayload.initial_page.view_id);
-    expect(onClose).toHaveBeenCalledTimes(1);
-  });
-
-  it('unfreezes an ambiguous initial-page draft only after a retry confirms cleanup', async () => {
+  it.each([
+    ['a validation rejection', { httpStatus: 422, message: 'validation rejected' }, 'Error 422: Something went wrong. Contact support if this keeps happening.'],
+    ['a B revocation after the first attempt', { code: 1012, httpStatus: 403, message: 'forbidden' }, "You don't have permission to do this."],
+    ['a proxy rate limit', { httpStatus: 429, message: 'too many requests' }, 'Too many requests were made. Please wait before trying again.'],
+  ])('keeps the original ID and queued roster when a checked-again resend gets %s', async (_case, rejection, message) => {
     const onClose = jest.fn();
     const onCreated = jest.fn();
-    const cleanupUnconfirmed = Object.assign(new Error('response lost and cleanup unavailable'), {
-      clientGeneratedCleanupSucceeded: false,
-    });
-    const cleanupConfirmed = Object.assign(new Error('initial page rejected and cleanup confirmed'), {
-      clientGeneratedCleanupSucceeded: true,
-    });
 
-    mockCreateSpaceWithInitialPage.mockRejectedValueOnce(cleanupUnconfirmed).mockRejectedValueOnce(cleanupConfirmed);
-    render(
-      <CreateSpaceModal
-        open
-        onClose={onClose}
-        onCreated={onCreated}
-        initialPage={{ layout: ViewLayout.Document, name: 'First page' }}
-      />
-    );
-
-    enterSpaceName();
-    fireEvent.click(screen.getByTestId('create-space-submit'));
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
-    const firstPayload = mockCreateSpaceWithInitialPage.mock.calls[0][0];
-
-    expect(screen.getByTestId('space-name-input').getAttribute('disabled')).not.toBeNull();
-    expect(screen.getByTestId('create-space-submit').textContent).toBe('button.retry');
-
-    fireEvent.click(screen.getByTestId('create-space-submit'));
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
-    expect(mockCreateSpaceWithInitialPage.mock.calls[1][0].view_id).toBe(firstPayload.view_id);
-    expect(mockCreateSpaceWithInitialPage.mock.calls[1][0].initial_page.view_id).toBe(
-      firstPayload.initial_page.view_id
-    );
-    expect(screen.getByTestId('space-name-input').getAttribute('disabled')).toBeNull();
-    expect(screen.getByTestId('create-space-submit').textContent).toBe('button.create');
-
-    fireEvent.click(screen.getByTestId('create-space-close'));
-
-    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
-    expect(mockCreateSpaceWithInitialPage).toHaveBeenCalledTimes(2);
-    expect(onCreated).not.toHaveBeenCalled();
-  });
-
-  it('keeps an earlier ambiguous ID and queued roster when a retry is definitively rejected without cleanup', async () => {
-    const onClose = jest.fn();
-    const onCreated = jest.fn();
-    const definitiveRetryRejection = { httpStatus: 422, message: 'validation rejected' };
-
-    mockCreateSpace.mockRejectedValueOnce(new Error('response lost')).mockRejectedValueOnce(definitiveRetryRejection);
+    mockCreateSpace.mockRejectedValueOnce(new Error('response lost')).mockRejectedValueOnce(rejection);
     render(<CreateSpaceModal open onClose={onClose} onCreated={onCreated} />);
 
     await selectCustomAndAdd(candidateOne);
@@ -811,14 +1037,22 @@ describe('CreateSpaceModal draft controller', () => {
     await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
     const clientOwnedSpaceId = mockCreateSpace.mock.calls[0][0].view_id;
 
+    // The first request has not committed yet, so the identical request is sent again.
+    mockGetSpacePermission.mockRejectedValueOnce({ httpStatus: 404 });
     fireEvent.click(screen.getByTestId('create-space-submit'));
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Error 422: Something went wrong. Contact support if this keeps happening.'));
+    await waitFor(() => expect(notify.error).toHaveBeenNthCalledWith(2, message));
     expect(mockCreateSpace.mock.calls[1][0].view_id).toBe(clientOwnedSpaceId);
+    // A refused resend proves nothing about the first request, which may still commit.
+    expect(sessionStorage.length).toBe(1);
     expect(screen.getByTestId('draft-member-search').getAttribute('disabled')).not.toBeNull();
-    expect(screen.getByTestId('create-space-submit').textContent).toBe('button.retry');
+    expect(screen.getByTestId('create-space-draft-member-member-1')).toBeTruthy();
+    expect(screen.getByTestId('create-space-submit').textContent).toBe('spaceCreation.checkAgain');
+    expect(screen.getByTestId('space-creation-recovery-unconfirmed')).toBeTruthy();
+    expect(screen.getByTestId('space-creation-discard')).toBeTruthy();
 
-    mockGetSpacePermission.mockResolvedValueOnce({ permission: customPermission });
-    fireEvent.click(screen.getByTestId('create-space-close'));
+    // The first request commits later: Check again finds it and adds the queued people.
+    mockGetSpacePermission.mockResolvedValue({ permission: customPermission });
+    fireEvent.click(screen.getByTestId('create-space-submit'));
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith(clientOwnedSpaceId, undefined));
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -828,28 +1062,195 @@ describe('CreateSpaceModal draft controller', () => {
       access_level: AccessLevel.ReadAndWrite,
     });
     expect(mockCreateSpace).toHaveBeenCalledTimes(2);
+    expect(sessionStorage.length).toBe(0);
   });
 
-  it('closes after a confirmed standalone move even when permanent purge fails', async () => {
+  it('offers only Discard, also after reopening, when Check again finds the space but its first page elsewhere', async () => {
+    const onClose = jest.fn();
+
+    mockCreateSpaceWithInitialPage.mockRejectedValueOnce(new Error('response lost'));
+    const first = render(<CreateSpaceModal open onClose={onClose}
+      initialPage={{ layout: ViewLayout.Document, name: 'Meeting notes' }} />);
+
+    enterSpaceName('Research');
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
+    // The space exists, but the saved first page now sits under another space.
+    mockGetView.mockResolvedValue({ view_id: 'page-id', parent_view_id: 'another-space' });
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('spaceCreation.firstPageElsewhere'));
+
+    // The lasting notice agrees with the toast: the space was created, and only Discard is left.
+    expect(screen.queryByTestId('space-creation-recovery-unconfirmed')).toBeNull();
+    expect(screen.getByTestId('space-creation-recovery-firstPageElsewhere').textContent).toContain(
+      'spaceCreation.firstPageElsewhere'
+    );
+    expect(screen.getByTestId('create-space-submit').disabled).toBe(true);
+    expect(sessionStorage.length).toBe(1);
+
+    first.unmount();
+    render(<CreateSpaceModal open onClose={onClose}
+      initialPage={{ layout: ViewLayout.Document, name: 'Meeting notes' }} />);
+    expect(screen.getByTestId('space-creation-recovery-firstPageElsewhere')).toBeTruthy();
+    expect(screen.getByTestId('create-space-submit').disabled).toBe(true);
+
+    fireEvent.click(screen.getByTestId('space-creation-discard'));
+    fireEvent.click(screen.getByTestId('discard-space-request-confirm'));
+    expect(sessionStorage.length).toBe(0);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(mockCreateSpaceWithInitialPage).toHaveBeenCalledTimes(1);
+    expect(mockAddPage).not.toHaveBeenCalled();
+  });
+
+  it('never adds the first page twice when the server added it under its own ID', async () => {
+    mockCreateSpaceWithInitialPage.mockRejectedValueOnce(new Error('response lost'));
+    const first = render(<CreateSpaceModal open onClose={jest.fn()}
+      initialPage={{ layout: ViewLayout.Document, name: 'Meeting notes' }} />);
+
+    enterSpaceName('Research');
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
+    // The space exists without its first page; an older server adds the page under another ID,
+    // which the page request refuses.
+    mockGetView.mockRejectedValue({ code: -2, httpStatus: 404 });
+    mockAddPage.mockRejectedValue(
+      Object.assign(new Error('Create page returned an unexpected view ID'), {
+        code: -1,
+        clientGeneratedExpectedViewId: 'page-id',
+        clientGeneratedReturnedViewId: 'page-from-server',
+      })
+    );
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('spaceCreation.firstPageUnconfirmed'));
+
+    expect(mockAddPage).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('space-creation-recovery-firstPageUnconfirmed').textContent).toContain(
+      'spaceCreation.firstPageUnconfirmed'
+    );
+    expect(screen.getByTestId('create-space-submit').disabled).toBe(true);
+    // Enter outside a control runs the primary action even while its button is disabled.
+    fireEvent.keyDown(screen.getByTestId('create-space-modal'), { key: 'Enter' });
+    first.unmount();
+    render(<CreateSpaceModal open onClose={jest.fn()}
+      initialPage={{ layout: ViewLayout.Document, name: 'Meeting notes' }} />);
+    expect(screen.getByTestId('space-creation-recovery-firstPageUnconfirmed')).toBeTruthy();
+    expect(screen.getByTestId('create-space-submit').disabled).toBe(true);
+    fireEvent.keyDown(screen.getByTestId('create-space-modal'), { key: 'Enter' });
+    await Promise.resolve();
+
+    expect(mockAddPage).toHaveBeenCalledTimes(1);
+    expect(mockCreateSpaceWithInitialPage).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.length).toBe(1);
+  });
+
+  it('stops at once when the first attempt gets its first page back under the server\'s own ID', async () => {
+    // The space was created; an older server added the first page under an ID it chose.
+    mockCreateSpaceWithInitialPage.mockRejectedValueOnce(
+      Object.assign(new Error('Create page returned an unexpected view ID'), {
+        code: -1,
+        clientGeneratedExpectedViewId: 'page-id',
+        clientGeneratedReturnedViewId: 'page-from-server',
+        clientGeneratedCleanupSucceeded: false,
+      })
+    );
+    render(<CreateSpaceModal open onClose={jest.fn()}
+      initialPage={{ layout: ViewLayout.Document, name: 'Meeting notes' }} />);
+
+    enterSpaceName('Research');
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('spaceCreation.firstPageUnconfirmed'));
+
+    expect(screen.getByTestId('space-creation-recovery-firstPageUnconfirmed')).toBeTruthy();
+    expect(screen.getByTestId('create-space-submit').disabled).toBe(true);
+    expect(sessionStorage.length).toBe(1);
+    expect(mockAddPage).not.toHaveBeenCalled();
+  });
+
+  it('keeps a reloaded request when its resend is definitively rejected, so only Discard forgets it', async () => {
+    const onClose = jest.fn();
+
+    mockCreateSpace.mockRejectedValueOnce(new Error('response lost'));
+    const first = render(<CreateSpaceModal open onClose={onClose} />);
+
+    enterSpaceName('Submitted before reload');
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
+    const originalId = mockCreateSpace.mock.calls[0][0].view_id;
+
+    first.unmount();
+    render(<CreateSpaceModal open onClose={onClose} />);
+    mockGetSpacePermission.mockRejectedValueOnce({ httpStatus: 404 });
+    mockCreateSpace.mockRejectedValueOnce({ code: 1008, httpStatus: 400, message: 'invalid space name' });
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith("This request isn't valid."));
+    expect(mockCreateSpace.mock.calls[1][0].view_id).toBe(originalId);
+    expect(sessionStorage.length).toBe(1);
+    expect(screen.getByTestId('space-name-input').value).toBe('Submitted before reload');
+    expect(screen.getByTestId('create-space-submit').textContent).toBe('spaceCreation.checkAgain');
+
+    fireEvent.click(screen.getByTestId('space-creation-discard'));
+    fireEvent.click(screen.getByTestId('discard-space-request-confirm'));
+    expect(sessionStorage.length).toBe(0);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps Close usable when the remaining people still cannot be added, leaving the request resumable', async () => {
     const onClose = jest.fn();
     const onCreated = jest.fn();
 
-    mockCreateSpace.mockRejectedValueOnce(new Error('response lost'));
-    mockDeleteTrash.mockRejectedValueOnce(new Error('delete unavailable'));
+    mockAddSpaceMember.mockRejectedValue(new Error('member add unavailable'));
     render(<CreateSpaceModal open onClose={onClose} onCreated={onCreated} />);
 
-    enterSpaceName();
+    await selectCustomAndAdd(candidateOne);
     fireEvent.click(screen.getByTestId('create-space-submit'));
     await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
-    const clientOwnedSpaceId = mockCreateSpace.mock.calls[0][0].view_id;
+    expect(screen.getByTestId('space-creation-recovery-membersPending').textContent).toContain('spaceCreation.membersPending');
+    expect(screen.getByTestId('create-space-submit').textContent).toBe('spaceCreation.tryAgain');
 
     fireEvent.click(screen.getByTestId('create-space-close'));
-
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
-    expect(mockMoveToTrash).toHaveBeenCalledWith('workspace-1', clientOwnedSpaceId);
-    expect(mockDeleteTrash).toHaveBeenCalledWith('workspace-1', clientOwnedSpaceId);
+    expect(mockAddSpaceMember).toHaveBeenCalledTimes(2);
     expect(onCreated).not.toHaveBeenCalled();
+    expect(sessionStorage.length).toBe(1);
     expect(mockCreateSpace).toHaveBeenCalledTimes(1);
+  });
+
+  it('finishes without the remaining people when Add later is chosen', async () => {
+    const onClose = jest.fn();
+    const onCreated = jest.fn();
+
+    mockAddSpaceMember.mockRejectedValue(new Error('member add unavailable'));
+    render(<CreateSpaceModal open onClose={onClose} onCreated={onCreated} />);
+
+    await selectCustomAndAdd(candidateOne);
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
+    fireEvent.click(screen.getByTestId('space-creation-add-later'));
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith('space-id', undefined));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.length).toBe(0);
+    expect(mockAddSpaceMember).toHaveBeenCalledTimes(1);
+  });
+
+  it('restores a committed request with its remaining people instead of creating it again', async () => {
+    const onCreated = jest.fn();
+
+    mockAddSpaceMember.mockRejectedValueOnce(new Error('member add unavailable'));
+    const first = render(<CreateSpaceModal open onClose={jest.fn()} />);
+
+    await selectCustomAndAdd(candidateOne);
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
+    first.unmount();
+
+    render(<CreateSpaceModal open onClose={jest.fn()} onCreated={onCreated} />);
+    expect(screen.getByTestId('space-creation-recovery-membersPending')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith('space-id', undefined));
+    expect(mockCreateSpace).toHaveBeenCalledTimes(1);
+    expect(mockAddSpaceMember).toHaveBeenCalledTimes(2);
+    expect(sessionStorage.length).toBe(0);
   });
 
   it('does not let repeated Close bypass a pending roster after standalone reconciliation', async () => {
@@ -857,7 +1258,7 @@ describe('CreateSpaceModal draft controller', () => {
     const onCreated = jest.fn();
 
     mockCreateSpace.mockRejectedValueOnce(new Error('response lost'));
-    mockGetSpacePermission.mockResolvedValueOnce({ permission: customPermission });
+    mockGetSpacePermission.mockResolvedValue({ permission: customPermission });
     mockAddSpaceMember.mockRejectedValueOnce(new Error('member add unavailable')).mockResolvedValueOnce(undefined);
     render(<CreateSpaceModal open onClose={onClose} onCreated={onCreated} />);
 
@@ -866,8 +1267,9 @@ describe('CreateSpaceModal draft controller', () => {
     await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
     const clientOwnedSpaceId = mockCreateSpace.mock.calls[0][0].view_id;
 
-    fireEvent.click(screen.getByTestId('create-space-close'));
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    // The roster failure is the second message; the first came from the lost creation response.
+    await waitFor(() => expect(notify.error).toHaveBeenNthCalledWith(2, 'Something went wrong. Contact support if this keeps happening.'));
     expect(onCreated).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
     expect(mockMoveToTrash).not.toHaveBeenCalled();
@@ -919,7 +1321,7 @@ describe('CreateSpaceModal draft controller', () => {
 
     await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.'));
     expect(mockCreateSpace).toHaveBeenCalledTimes(1);
-    expect(screen.getByTestId('create-space-submit').textContent).toBe('button.retry');
+    expect(screen.getByTestId('create-space-submit').textContent).toBe('spaceCreation.tryAgain');
     expect(screen.getByTestId('space-name-input').getAttribute('disabled')).not.toBeNull();
 
     fireEvent.click(screen.getByTestId('create-space-submit'));
@@ -928,6 +1330,65 @@ describe('CreateSpaceModal draft controller', () => {
     expect(mockCreateSpace).toHaveBeenCalledTimes(1);
     expect(mockAddSpaceMember.mock.calls.filter((call) => call[2].uid === 'member-1')).toHaveLength(1);
     expect(mockAddSpaceMember.mock.calls.filter((call) => call[2].uid === 'member-2')).toHaveLength(2);
+  });
+
+  it('new Custom assignments use exact UUIDs and inherit instead of freezing the collective default', async () => {
+    const userUuid = '12345678-1234-4123-8123-123456789abc';
+    const candidate = { ...candidateOne, user_uuid: userUuid };
+    const onCreated = jest.fn();
+
+    mockGetMembers.mockResolvedValue([candidate]);
+    mockGetSpacePermission.mockResolvedValue({ permission: customPermission, member_access_overrides_supported: true });
+    render(<CreateSpaceModal open onClose={jest.fn()} onCreated={onCreated} />);
+    await selectCustomAndAdd(candidate);
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    await waitFor(() => expect(onCreated).toHaveBeenCalled());
+    // No access is chosen; the Custom space ignores the level, which never exceeds Can view.
+    expect(mockAddSpaceMemberByUuid.mock.calls).toStrictEqual([
+      ['workspace-1', 'space-id', userUuid, { role: SpaceMemberRole.Member, access_level: AccessLevel.ReadOnly }],
+    ]);
+    expect(mockAddSpaceMember).not.toHaveBeenCalled();
+  });
+
+  it('adds queued members at the member level the server reports when the space is no longer Custom', async () => {
+    // For example a saved request resumed after another owner made the space Public: a missing
+    // level would store the server's own default, Can edit, although the space's members comment.
+    const userUuid = '12345678-1234-4123-8123-123456789abc';
+    const candidate = { ...candidateOne, user_uuid: userUuid };
+    const onCreated = jest.fn();
+
+    mockGetMembers.mockResolvedValue([candidate]);
+    mockGetSpacePermission.mockResolvedValue({
+      permission: {
+        ...customPermission,
+        visibility: SpaceVisibility.Public,
+        member_default_access_level: AccessLevel.ReadAndComment,
+        everyone_else_access_level: null,
+      },
+      member_access_overrides_supported: true,
+    });
+    render(<CreateSpaceModal open onClose={jest.fn()} onCreated={onCreated} />);
+    await selectCustomAndAdd(candidate);
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    await waitFor(() => expect(onCreated).toHaveBeenCalled());
+    expect(mockAddSpaceMemberByUuid.mock.calls).toStrictEqual([
+      ['workspace-1', 'space-id', userUuid, { role: SpaceMemberRole.Member, access_level: AccessLevel.ReadAndComment }],
+    ]);
+  });
+
+  it('keeps a committed roster draft when a supported server omits the exact member identity', async () => {
+    const onCreated = jest.fn();
+
+    mockGetSpacePermission.mockResolvedValue({ permission: customPermission, member_access_overrides_supported: true });
+    render(<CreateSpaceModal open onClose={jest.fn()} onCreated={onCreated} />);
+    await selectCustomAndAdd(candidateOne);
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('space.memberOverride.identityUnavailable'));
+    expect(onCreated).not.toHaveBeenCalled();
+    expect(mockCreateSpace).toHaveBeenCalledTimes(1);
+    expect(mockAddSpaceMember).not.toHaveBeenCalled();
+    expect(mockAddSpaceMemberByUuid).not.toHaveBeenCalled();
+    expect(screen.getByTestId('create-space-submit').textContent).toBe('spaceCreation.tryAgain');
   });
 
   it('cancels a draft without any mutation request', () => {

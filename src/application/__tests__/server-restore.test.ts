@@ -1,4 +1,4 @@
-import { INITIAL_SERVER_RESTORE_ID, ServerRestoreBoundary } from '../server-restore';
+import { INITIAL_SERVER_RESTORE_ID, restoreCacheKey, ServerRestoreBoundary, splitRestoreCacheKey } from '../server-restore';
 
 const restoredId = '11111111-1111-4111-8111-111111111111';
 const nextRestoreId = '22222222-2222-4222-8222-222222222222';
@@ -69,4 +69,20 @@ test('denied persistence or malformed discovery never allows a restored connecti
   expect(() => denied.accept(restoredId)).toThrow('Storage denied');
   for (const invalid of [null, '', 'unknown', 42]) expect(() => denied.accept(invalid)).toThrow('Invalid');
   expect(reload).not.toHaveBeenCalled();
+});
+
+test('a stored name splits into the restore generation that wrote it and its logical name', () => {
+  expect(splitRestoreCacheKey('document')).toEqual({ restoreId: INITIAL_SERVER_RESTORE_ID, logicalName: 'document' });
+  expect(splitRestoreCacheKey(`server-restore:${restoredId}:workspace:ws`)).toEqual({
+    restoreId: restoredId,
+    logicalName: 'workspace:ws',
+  });
+  // Only a well-formed generation prefix names a generation.
+  expect(splitRestoreCacheKey('server-restore:not-a-restore:document').restoreId).toBe(INITIAL_SERVER_RESTORE_ID);
+  for (const restoreId of [INITIAL_SERVER_RESTORE_ID, restoredId, nextRestoreId]) {
+    const tab = new ServerRestoreBoundary('https://cloud', { getItem: () => restoreId, setItem: jest.fn() }, jest.fn());
+
+    expect(restoreCacheKey(restoreId, 'af_database_cache')).toBe(tab.cacheKey('af_database_cache'));
+    expect(splitRestoreCacheKey(tab.cacheKey('af_database_cache'))).toEqual({ restoreId, logicalName: 'af_database_cache' });
+  }
 });

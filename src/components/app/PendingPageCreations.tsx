@@ -80,7 +80,10 @@ export function PendingPageCreations() {
         requestId: record.requestId,
         message: getErrorMessage(error instanceof AtomicCreationPendingError ? error.cause : error),
       });
-      if (lifetime.current === epoch) toast.error(t('atomicCreation.pending'));
+      // A page the server refused is released (it leaves this list), so say why instead.
+      if (lifetime.current === epoch) {
+        toast.error(error instanceof AtomicCreationPendingError ? t('atomicCreation.pending') : getErrorMessage(error));
+      }
     } finally {
       if (lifetime.current === epoch) setRecovering(undefined);
     }

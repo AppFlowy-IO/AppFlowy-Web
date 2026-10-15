@@ -38,7 +38,7 @@ jest.mock('@/utils/log', () => ({
 }));
 
 const { initGrantService, refreshToken } = require('../gotrue') as typeof import('../gotrue');
-const { saveGoTrueAuth } = require('@/application/session/token') as { saveGoTrueAuth: jest.Mock };
+const { saveGoTrueAuth, getTokenParsed } = require('@/application/session/token') as { saveGoTrueAuth: jest.Mock; getTokenParsed: jest.Mock };
 
 function createDeferred<T>() {
   let resolve!: (value: T) => void;
@@ -60,6 +60,7 @@ const refreshedToken = {
 describe('refreshToken concurrent deduplication', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    getTokenParsed.mockReturnValue(undefined);
     mockGrantClient.post.mockReset();
     initGrantService('http://localhost/gotrue');
   });
@@ -85,6 +86,26 @@ describe('refreshToken concurrent deduplication', () => {
     expect(firstToken).toEqual(refreshedToken);
     expect(secondToken).toEqual(refreshedToken);
     expect(saveGoTrueAuth).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['account', 'logout', 'server'])('rejects a refresh completed after %s changes', async (change) => {
+    const original = { access_token: 'old', refresh_token: 'refresh', user: { id: 'actor-a' } };
+    const deferred = createDeferred<{ data: typeof refreshedToken }>();
+
+    getTokenParsed.mockReturnValue(original);
+    mockGrantClient.post.mockReturnValue(deferred.promise);
+    const request = refreshToken('refresh');
+
+    if (change === 'account') getTokenParsed.mockReturnValue({ ...original, user: { id: 'actor-b' } });
+    if (change === 'logout') getTokenParsed.mockReturnValue(undefined);
+    if (change === 'server') {
+      mockAxiosCreate.mockReturnValueOnce({ ...mockGrantClient });
+      initGrantService('http://other-server/gotrue');
+    }
+
+    deferred.resolve({ data: refreshedToken });
+    await expect(request).rejects.toThrow('authentication context changed');
+    expect(saveGoTrueAuth).not.toHaveBeenCalled();
   });
 
   it('issues a new request once the previous refresh has settled', async () => {

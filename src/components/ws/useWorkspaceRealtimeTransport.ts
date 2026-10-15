@@ -4,6 +4,7 @@ import { serverRestore } from '@/application/server-restore';
 import { startDrainObject } from '@/application/sync-outbox';
 import type { messages } from '@/proto/messages';
 
+import { realtimeSessionKey } from './realtime-session';
 import { useAppflowyWebSocket, type AppflowyWebSocketType } from './useAppflowyWebSocket';
 import { useBroadcastChannel, type BroadcastChannelType } from './useBroadcastChannel';
 import { useWorkspaceWebSocketLeader } from './useWorkspaceWebSocketLeader';
@@ -24,7 +25,7 @@ export interface WorkspaceRealtimeTransport {
 }
 
 interface RemoteTransportState {
-  workspaceId: string;
+  scopeKey: string;
   readyState: number;
 }
 
@@ -40,8 +41,11 @@ export function useWorkspaceRealtimeTransport({
   clientId,
   deviceId,
 }: WorkspaceRealtimeTransportOptions): WorkspaceRealtimeTransport {
-  const leadership = useWorkspaceWebSocketLeader(workspaceId);
-  const broadcastChannel = useBroadcastChannel(serverRestore.cacheKey(`workspace:${workspaceId}`));
+  const scopeKey = realtimeSessionKey(workspaceId);
+  // Both fences: the server/account/workspace scope, and the restore generation
+  // (which the leader lock applies itself).
+  const leadership = useWorkspaceWebSocketLeader(scopeKey);
+  const broadcastChannel = useBroadcastChannel(serverRestore.cacheKey(`workspace:${scopeKey}`));
   const localWebSocket = useAppflowyWebSocket({
     workspaceId,
     clientId,
@@ -73,11 +77,11 @@ export function useWorkspaceRealtimeTransport({
       if (signal.type === 'transport-status') {
         if (!isCoordinatedLeader) {
           setRemoteTransportState((current) => {
-            if (current?.workspaceId === workspaceId && current.readyState === signal.readyState) {
+            if (current?.scopeKey === scopeKey && current.readyState === signal.readyState) {
               return current;
             }
 
-            return { workspaceId, readyState: signal.readyState };
+            return { scopeKey, readyState: signal.readyState };
           });
         }
 
@@ -105,6 +109,7 @@ export function useWorkspaceRealtimeTransport({
     postTransportSignal,
     subscribeTransportSignals,
     workspaceId,
+    scopeKey,
   ]);
 
   // Publish every leader state transition and answer late-joining followers'
@@ -138,7 +143,7 @@ export function useWorkspaceRealtimeTransport({
 
   const transportReadyState = canSendToServer
     ? localReadyState
-    : remoteTransportState?.workspaceId === workspaceId
+    : remoteTransportState?.scopeKey === scopeKey
       ? remoteTransportState.readyState
       : WS_READY_STATE_CONNECTING;
 

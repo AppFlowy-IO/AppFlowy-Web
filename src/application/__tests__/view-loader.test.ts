@@ -1,7 +1,8 @@
 import { expect } from '@jest/globals';
 import * as Y from 'yjs';
 
-import { captureDatabaseStorageFence, deleteCollabDB, openCollabDB, openCollabDBWithProvider } from '@/application/db';
+import { captureDatabaseStorageFence, closeCollabDB, deleteCollabDB, openCollabDB, openCollabDBWithProvider } from '@/application/db';
+import { collabStorageKey } from '@/application/db/collab-storage-scope';
 import { getOrCreateRowSubDoc } from '@/application/services/js-services/cache';
 import { invalidateViewCache } from '@/application/services/js-services/cached-api';
 import { fetchDatabaseCollab, fetchPageCollab, fetchRowDocumentCollab } from '@/application/services/js-services/fetch';
@@ -13,6 +14,7 @@ jest.mock('@/application/db', () => ({
   openCollabDB: jest.fn(),
   openCollabDBWithProvider: jest.fn(),
   deleteCollabDB: jest.fn(),
+  closeCollabDB: jest.fn().mockResolvedValue(undefined),
   captureDatabaseStorageFence: jest.fn(),
 }));
 
@@ -124,7 +126,7 @@ describe('view-loader database cache identity', () => {
 
     mockOpenCollabDBWithProvider.mockImplementation(async (name) => {
       if (name === databaseId) return createProvider(canonicalDoc) as never;
-      if (scenario === 'restore during open') localStorage.setItem(`af_database_blob_epoch:${databaseId}`, 'restore-new');
+      if (scenario === 'restore during open') localStorage.setItem(`af_database_blob_epoch:${collabStorageKey(databaseId)}`, 'restore-new');
       return createProvider(legacyDoc) as never;
     });
 
@@ -171,6 +173,92 @@ describe('view-loader database cache identity', () => {
       })
     );
     expect(mockFetchPageCollab).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['only repeats deletions the canonical cache already has', false],
+    ['holds a deletion the canonical cache lacks', true],
+  ])('merges a legacy view cache that %s, queueing it only on a change', async (_name, legacyDeletes) => {
+    const viewId = '00000000-0000-4000-8000-000000000011';
+    const databaseId = '00000000-0000-4000-8000-000000000012';
+    const canonicalDoc = createCompleteDatabaseDoc(databaseId, databaseId, viewId);
+    const fields = canonicalDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database)
+      .get(YjsDatabaseKey.fields) as Y.Map<unknown>;
+
+    fields.set('removed-field', new Y.Map());
+    fields.set('kept-field', new Y.Map());
+    fields.delete('removed-field');
+    const legacyDoc = createEmptyDoc(viewId);
+
+    Y.applyUpdate(legacyDoc, Y.encodeStateAsUpdate(canonicalDoc));
+    if (legacyDeletes) {
+      (legacyDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database)
+        .get(YjsDatabaseKey.fields) as Y.Map<unknown>).delete('kept-field');
+    }
+
+    // Either way the diff is more than the empty update: it carries the legacy delete set.
+    expect(Y.encodeStateAsUpdate(legacyDoc, Y.encodeStateVector(canonicalDoc)).byteLength).toBeGreaterThan(2);
+    mockOpenCollabDBWithProvider.mockImplementation(async (name: string) =>
+      createProvider(name === databaseId ? canonicalDoc : legacyDoc) as never);
+
+    const result = await openView('workspace-id', viewId, ViewLayout.Grid, { databaseId });
+
+    expect(result.doc).toBe(canonicalDoc);
+    expect(fields.has('kept-field')).toBe(!legacyDeletes);
+    if (legacyDeletes) {
+      expect(mockEnqueueOutboxUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ objectId: databaseId, collabType: Types.Database, payload: expect.any(Uint8Array) })
+      );
+    } else {
+      expect(mockEnqueueOutboxUpdate).not.toHaveBeenCalled();
+    }
+
+    canonicalDoc.destroy();
+    legacyDoc.destroy();
+  });
+
+  it('queues a legacy view cache that only adds to the structs the canonical cache holds pending', async () => {
+    const viewId = '00000000-0000-4000-8000-000000000013';
+    const databaseId = '00000000-0000-4000-8000-000000000014';
+    const canonicalDoc = createCompleteDatabaseDoc(databaseId, databaseId, viewId);
+    const author = createEmptyDoc('author');
+    const authorFields = () => author.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database)
+      .get(YjsDatabaseKey.fields) as Y.Map<unknown>;
+
+    Y.applyUpdate(author, Y.encodeStateAsUpdate(canonicalDoc));
+    authorFields().set('first', new Y.Map());
+    const afterFirst = Y.encodeStateVector(author);
+
+    authorFields().set('second', new Y.Map());
+    const second = Y.encodeStateAsUpdate(author, afterFirst);
+
+    authorFields().set('third', new Y.Map());
+    const legacyDoc = createEmptyDoc(viewId);
+
+    Y.applyUpdate(legacyDoc, Y.encodeStateAsUpdate(canonicalDoc));
+    // Both copies miss the first update. The canonical copy holds the second one pending, the legacy
+    // copy the second and the third.
+    Y.applyUpdate(canonicalDoc, second);
+    Y.applyUpdate(legacyDoc, Y.encodeStateAsUpdate(author, afterFirst));
+    const pending = canonicalDoc.store.pendingStructs;
+    const pendingEnd = () => Y.parseUpdateMetaV2(canonicalDoc.store.pendingStructs!.update).to.get(author.clientID)!;
+    const endBefore = pendingEnd();
+
+    mockOpenCollabDBWithProvider.mockImplementation(async (name: string) =>
+      createProvider(name === databaseId ? canonicalDoc : legacyDoc) as never);
+
+    await openView('workspace-id', viewId, ViewLayout.Grid, { databaseId });
+
+    // Yjs grows the pending update in place: the pending object stays, its bytes are replaced.
+    expect(canonicalDoc.store.pendingStructs).toBe(pending);
+    expect(pendingEnd()).toBeGreaterThan(endBefore);
+    expect(mockEnqueueOutboxUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ objectId: databaseId, collabType: Types.Database, payload: expect.any(Uint8Array) })
+    );
+
+    canonicalDoc.destroy();
+    legacyDoc.destroy();
+    author.destroy();
   });
 
   it('opens Form views as canonical database collabs', async () => {
@@ -359,7 +447,8 @@ describe('view-loader permission error cache eviction', () => {
     });
 
     expect(mockFetchPageCollab).toHaveBeenCalledTimes(1);
-    expect(mockDeleteCollabDB).toHaveBeenCalledWith(databaseId, { destroyDoc: true });
+    expect(closeCollabDB).toHaveBeenCalledWith(databaseId);
+    expect(mockDeleteCollabDB).not.toHaveBeenCalled();
     expect(mockInvalidateViewCache).toHaveBeenCalledWith('workspace-id', viewId);
   });
 
@@ -455,7 +544,8 @@ describe('view-loader row document retry policy', () => {
     await rejection;
 
     expect(mockFetchRowDocumentCollab).toHaveBeenCalledTimes(1);
-    expect(mockDeleteCollabDB).toHaveBeenCalledWith(documentId, { destroyDoc: true });
+    expect(closeCollabDB).toHaveBeenCalledWith(documentId);
+    expect(mockDeleteCollabDB).not.toHaveBeenCalled();
     expect(jest.getTimerCount()).toBe(0);
   });
 });

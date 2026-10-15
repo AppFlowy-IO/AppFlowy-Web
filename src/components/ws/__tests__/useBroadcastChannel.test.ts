@@ -313,7 +313,7 @@ describe('useBroadcastChannel', () => {
     expect(delayedWorkspaceA.closed).toBe(true);
   });
 
-  it('keeps postMessage referentially stable across channel switches and sends', () => {
+  it('rebinds sends on scope changes while retaining subscriptions', () => {
     const { result, rerender } = renderHook(({ name }) => useBroadcastChannel(name), {
       initialProps: { name: 'workspace:A' },
     });
@@ -327,8 +327,33 @@ describe('useBroadcastChannel', () => {
 
     rerender({ name: 'workspace:B' });
 
-    expect(result.current.postMessage).toBe(initialPostMessage);
+    expect(result.current.postMessage).not.toBe(initialPostMessage);
+    initialPostMessage(message);
+    expect(MockBroadcastChannel.instances[1].postMessage).not.toHaveBeenCalled();
     expect(result.current.subscribeProtocolMessages).toBe(initialSubscribe);
+  });
+
+  it('ignores a previous channel event queued until the next render', () => {
+    let oldChannel: MockBroadcastChannel;
+    const listener = jest.fn();
+    const { result, rerender } = renderHook(({ name }) => {
+      const channel = useBroadcastChannel(name);
+
+      useLayoutEffect(() => {
+        if (name === 'workspace:B') {
+          oldChannel.emitMessage(messages.Message.encode({ collabMessage: { objectId: 'old' } }).finish());
+          oldChannel.emitMessage({ type: 'outbox-ready', workspaceId: 'A', objectId: 'old' });
+        }
+      }, [name]);
+      return channel;
+    }, { initialProps: { name: 'workspace:A' } });
+
+    oldChannel = MockBroadcastChannel.instances[0];
+    result.current.subscribeCollabMessages!(listener);
+    result.current.subscribeOutboxReady(listener);
+    rerender({ name: 'workspace:B' });
+    expect(listener).not.toHaveBeenCalled();
+    expect(result.current.lastBroadcastMessage).toBeNull();
   });
 
   it('drops sends without throwing after the channel is closed underneath', () => {

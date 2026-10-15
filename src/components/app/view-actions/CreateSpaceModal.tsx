@@ -3,10 +3,23 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { v4 as uuidv4 } from 'uuid';
 
-import type { KeyboardEvent } from 'react';
 
-import { ERROR_CODE } from '@/application/constants';
-import { PageService, WorkspaceService } from '@/application/services/domains';
+import { PlainError } from '@/application/errors/plain-error';
+import { WorkspaceService } from '@/application/services/domains';
+import { captureApiContext } from '@/application/services/js-services/http/request-context';
+import {
+  InvalidSpaceCreationIntentError,
+  SpaceCreationFirstPageProblem,
+  SpaceCreationIntentStore,
+} from '@/application/services/js-services/space-creation-intent';
+import {
+  firstPageAddedUnderOtherId,
+  isDefinitiveCreationRejection,
+  isSpaceCreationDenial,
+  recoverSpaceCreation,
+  SpaceCreationFirstPageError,
+} from '@/application/services/js-services/space-creation-recovery';
+import { spaceMemberAddPayload } from '@/application/services/js-services/space-member-assignment';
 import {
   AccessLevel,
   CreatePagePayload,
@@ -17,24 +30,40 @@ import {
   WorkspaceMember,
 } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
+import SpaceIcon from '@/components/_shared/view-icon/SpaceIcon';
 import { useAppOperations, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { useSpaceCreationCapability } from '@/components/app/hooks/useSpaceCreationCapability';
+import { SpaceCreationIntentState, useSpaceCreationIntent } from '@/components/app/hooks/useSpaceCreationIntent';
+import { useSuggestionsOpen } from '@/components/app/share/useSuggestionsOpen';
 import {
   getWorkspaceMemberUid,
   useAddableWorkspaceMembers,
   WorkspaceMemberInlineSearch,
   workspaceMemberDisplayName,
 } from '@/components/app/share/WorkspaceMemberInlineSearch';
+import {
+  canStartSpaceCreation,
+  DiscardSpaceRequestConfirm,
+  refreshSpaceCreationAdmission,
+  SpaceCreationDeniedCard,
+  SpaceCreationNotice,
+  SpaceCreationRecoveryNotice,
+} from '@/components/app/view-actions/SpaceCreationNotice';
 import SpaceSettingsPanel, { SpaceSettingsTab } from '@/components/app/view-actions/SpaceSettingsPanel';
 import {
   defaultEveryoneElseAccessLevel,
   defaultSpacePermissionSettings,
   SELECTABLE_SPACE_VISIBILITIES,
+  spaceVisibilityLabel,
 } from '@/components/app/view-actions/spaceVisibilityOptions';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { getErrorMessage } from '@/utils/errors';
+import { Log } from '@/utils/log';
+
+import type { KeyboardEvent } from 'react';
 
 const DEFAULT_SPACE_VISIBILITY = SpaceVisibility.Public;
 const DRAFT_EXCLUDED_ROLES = [Role.Owner];
@@ -46,96 +75,22 @@ type CommittedSpace = {
 
 type QueuedMember = {
   uid: string;
+  userUuid?: string;
   accessLevel: AccessLevel;
 };
 
-function isMissingOrDeletedResource(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null) return false;
-  const candidate = error as {
-    code?: unknown;
-    httpStatus?: unknown;
-    response?: { status?: unknown; data?: { code?: unknown } };
-  };
-  const code = candidate.code ?? candidate.response?.data?.code;
-  const httpStatus = candidate.httpStatus ?? candidate.response?.status;
+function withoutSpentIdentity(page: CreatePagePayload): CreatePagePayload {
+  const { view_id: _spent, ...payload } = page;
 
-  return (
-    code === ERROR_CODE.RECORD_NOT_FOUND ||
-    code === ERROR_CODE.RECORD_DELETED ||
-    httpStatus === 404 ||
-    httpStatus === 410
-  );
+  return payload;
 }
 
-function mayHaveCommittedCreate(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null) return true;
-  const candidate = error as {
-    code?: unknown;
-    clientGeneratedCleanupSucceeded?: unknown;
-    httpStatus?: unknown;
-    response?: { status?: unknown; data?: { code?: unknown } };
-  };
-
-  if (candidate.clientGeneratedCleanupSucceeded === true) return false;
-  if (candidate.clientGeneratedCleanupSucceeded === false) return true;
-  const code = candidate.code ?? candidate.response?.data?.code;
-  const explicitHttpStatus = candidate.httpStatus ?? candidate.response?.status;
-  const httpStatus =
-    typeof explicitHttpStatus === 'number'
-      ? explicitHttpStatus
-      : typeof code === 'number' && code >= 100 && code <= 599
-      ? code
-      : undefined;
-
-  // `-1` is the HTTP layer's network/malformed-response sentinel. Timeouts,
-  // conflicts for a client-owned ID, and server failures can likewise arrive
-  // after the server committed the mutation. Ordinary 4xx/application errors
-  // are authoritative rejections and must leave the draft editable.
-  return (
-    (code === undefined && httpStatus === undefined) ||
-    code === -1 ||
-    httpStatus === 408 ||
-    httpStatus === 409 ||
-    (httpStatus !== undefined && httpStatus >= 500 && httpStatus <= 599)
-  );
-}
-
-function clientGeneratedCleanupWasConfirmed(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    (error as { clientGeneratedCleanupSucceeded?: unknown }).clientGeneratedCleanupSucceeded === true
-  );
-}
-
-async function discardClientOwnedDraftSpace(workspaceId: string, spaceId: string): Promise<void> {
-  let inactiveConfirmed = false;
-
+function hasSavedRequest(store: SpaceCreationIntentStore): boolean {
   try {
-    await PageService.moveToTrash(workspaceId, spaceId);
-    inactiveConfirmed = true;
+    return Boolean(store.snapshot());
   } catch (error) {
-    if (isMissingOrDeletedResource(error)) {
-      inactiveConfirmed = true;
-    } else {
-      // A lost move response may still have committed. A successful permanent
-      // delete can reconcile that outcome; otherwise preserve the stable ID.
-      try {
-        await PageService.deleteTrash(workspaceId, spaceId);
-        return;
-      } catch {
-        throw error;
-      }
-    }
-  }
-
-  try {
-    await PageService.deleteTrash(workspaceId, spaceId);
-  } catch (error) {
-    // A confirmed move already removed the space from the active outline.
-    // Permanent deletion is best-effort and must not reopen or hand off the
-    // trashed ID.
-    if (!inactiveConfirmed && !isMissingOrDeletedResource(error)) throw error;
+    // Unreadable data is still retained (and offered for Discard), never treated as absent.
+    return error instanceof InvalidSpaceCreationIntentError;
   }
 }
 
@@ -147,43 +102,72 @@ function permissionSettingsForCreation(settings: SpacePermissionSettings): Space
   };
 }
 
-function CreateSpaceModal({
-  open,
-  onClose,
-  onCreated,
-  initialPage,
-}: {
+type CreateSpaceModalProps = {
   open: boolean;
   onClose: () => void;
-  onCreated?: (spaceId: string, initialPageId?: string) => void;
+  onCreated?: (spaceId: string, initialPageId?: string) => void | Promise<void>;
   initialPage?: CreatePagePayload;
-}) {
+};
+
+function CreateSpaceModal(props: CreateSpaceModalProps) {
+  const workspaceId = useCurrentWorkspaceId();
+  const recovery = useSpaceCreationIntent(workspaceId);
+
+  return <CreateSpaceDraft key={recovery.store.scopeKey} {...props} recovery={recovery} />;
+}
+
+function CreateSpaceDraft({
+  open, onClose, onCreated, initialPage: requestedInitialPage, recovery,
+}: CreateSpaceModalProps & { recovery: SpaceCreationIntentState }) {
+  const [restored] = useState(() => recovery.intent);
+  // A restored request keeps its own first page. After a definitive rejection the page payload
+  // stays but loses its spent identity; a reset returns to the host's requested page.
+  const [draftPage, setDraftPage] = useState<{ page?: CreatePagePayload } | null>(() =>
+    restored ? { page: restored.initialPage } : null
+  );
+  const initialPage = draftPage ? draftPage.page : requestedInitialPage;
+  const intentStore = recovery.store;
   const { t } = useTranslation();
   const { createSpace, createSpaceWithInitialPage } = useAppOperations();
   const workspaceId = useCurrentWorkspaceId();
+  const creationPermission = useSpaceCreationCapability(workspaceId, open);
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const currentUser = useCurrentUserOptional();
   const [tab, setTab] = useState<SpaceSettingsTab>('general');
-  const [spaceName, setSpaceName] = useState('');
-  const [spaceIcon, setSpaceIcon] = useState('');
-  const [spaceIconColor, setSpaceIconColor] = useState('');
+  const [spaceName, setSpaceName] = useState(restored?.payload.name ?? '');
+  const [spaceIcon, setSpaceIcon] = useState(restored?.payload.space_icon ?? '');
+  const [spaceIconColor, setSpaceIconColor] = useState(restored?.payload.space_icon_color ?? '');
   const [permissionSettings, setPermissionSettings] = useState<SpacePermissionSettings>(() =>
-    defaultSpacePermissionSettings(DEFAULT_SPACE_VISIBILITY)
+    restored?.payload.permission ?? defaultSpacePermissionSettings(DEFAULT_SPACE_VISIBILITY)
   );
   const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>([]);
   const [loadedWorkspaceMemberDirectoryId, setLoadedWorkspaceMemberDirectoryId] = useState<string | null>(null);
   const [loadingWorkspaceMembers, setLoadingWorkspaceMembers] = useState(false);
-  const [selectedMembers, setSelectedMembers] = useState<WorkspaceMember[]>([]);
+  const [selectedMembers, setSelectedMembers] = useState<WorkspaceMember[]>(restored?.selectedMembers ?? []);
   const [memberSearch, setMemberSearch] = useState('');
+  // Add members lists everyone who can be added, so the creator need not know names.
+  const memberAddAreaRef = useRef<HTMLDivElement>(null);
+  const [suggestingMembers, setSuggestingMembers] = useSuggestionsOpen(memberAddAreaRef);
   const [loading, setLoading] = useState(false);
-  const [committedSpace, setCommittedSpace] = useState<CommittedSpace | null>(null);
-  const [hasAmbiguousCreation, setHasAmbiguousCreation] = useState(false);
+  // A request recorded as committed was confirmed by the server; only its roster/handoff remain.
+  const [committedSpace, setCommittedSpace] = useState<CommittedSpace | null>(() => restored?.committed ?? null);
+  const [hasAmbiguousCreation, setHasAmbiguousCreation] = useState(Boolean(restored));
+  // The space creation rule refused a new request: the form gives way to the answer (Close only).
+  const [denied, setDenied] = useState(false);
+  const [pendingMemberCount, setPendingMemberCount] = useState(
+    () => restored?.members.filter(({ uid }) => !restored.appliedMemberUids.includes(uid)).length ?? 0
+  );
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
+  // The space was found but its first page can't be matched: only Discard is left.
+  const [firstPageProblem, setFirstPageProblem] = useState<SpaceCreationFirstPageProblem | undefined>(
+    () => restored?.firstPageProblem
+  );
   const creatingRef = useRef(false);
-  const draftSpaceIdRef = useRef(uuidv4());
-  const draftInitialPageIdRef = useRef(uuidv4());
-  const committedSpaceRef = useRef<CommittedSpace | null>(null);
-  const queuedMembersRef = useRef<QueuedMember[]>([]);
-  const appliedMemberUidsRef = useRef(new Set<string>());
+  const draftSpaceIdRef = useRef(restored?.payload.view_id ?? uuidv4());
+  const draftInitialPageIdRef = useRef(restored?.initialPage?.view_id ?? uuidv4());
+  const committedSpaceRef = useRef<CommittedSpace | null>(restored?.committed ?? null);
+  const queuedMembersRef = useRef<QueuedMember[]>(restored?.members ?? []);
+  const appliedMemberUidsRef = useRef(new Set<string>(restored?.appliedMemberUids ?? []));
 
   const currentWorkspace = useMemo(() => {
     const workspaces = userWorkspaceInfo?.workspaces ?? [];
@@ -253,27 +237,47 @@ function CreateSpaceModal({
     excludedEmails: selectedMemberEmails,
     excludedRoles: DRAFT_EXCLUDED_ROLES,
     excludePending: true,
+    listAllWhenEmpty: suggestingMembers,
   });
 
   const applyQueuedMembers = useCallback(
     async (spaceId: string) => {
       if (!workspaceId || queuedMembersRef.current.length === 0) return;
+      intentStore.assertCurrent();
+      const requestContext = captureApiContext();
+      const assignmentPermission = await WorkspaceService.getSpacePermission(workspaceId, spaceId);
+
+      intentStore.assertCurrent();
+      requestContext.assertCurrent();
+      const supportsOverrides = assignmentPermission.member_access_overrides_supported === true;
       const pending = queuedMembersRef.current.filter(({ uid }) => !appliedMemberUidsRef.current.has(uid));
       const results = await Promise.allSettled(
-        pending.map(async ({ uid, accessLevel }) => {
-          await WorkspaceService.addSpaceMember(workspaceId, spaceId, {
-            uid,
-            role: SpaceMemberRole.Member,
-            access_level: accessLevel,
-          });
+        pending.map(async ({ uid, userUuid, accessLevel }) => {
+          intentStore.assertCurrent();
+          requestContext.assertCurrent();
+          if (supportsOverrides) {
+            if (!userUuid) throw new PlainError(t('space.memberOverride.identityUnavailable'));
+            await WorkspaceService.addSpaceMemberByUuid(
+              workspaceId,
+              spaceId,
+              userUuid,
+              spaceMemberAddPayload(SpaceMemberRole.Member, assignmentPermission.permission)
+            );
+          } else {
+            await WorkspaceService.addSpaceMember(workspaceId, spaceId, { uid, role: SpaceMemberRole.Member, access_level: accessLevel });
+          }
+
+          requestContext.assertCurrent();
+          intentStore.memberApplied(spaceId, uid);
           appliedMemberUidsRef.current.add(uid);
         })
       );
       const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
 
+      setPendingMemberCount(queuedMembersRef.current.filter(({ uid }) => !appliedMemberUidsRef.current.has(uid)).length);
       if (failure) throw failure.reason;
     },
-    [workspaceId]
+    [workspaceId, t, intentStore]
   );
 
   const resetDraft = useCallback(() => {
@@ -284,159 +288,137 @@ function CreateSpaceModal({
     setPermissionSettings(defaultSpacePermissionSettings(DEFAULT_SPACE_VISIBILITY));
     setSelectedMembers([]);
     setMemberSearch('');
+    setSuggestingMembers(false);
     setCommittedSpace(null);
     setHasAmbiguousCreation(false);
+    setDenied(false);
+    setFirstPageProblem(undefined);
+    setPendingMemberCount(0);
+    setDraftPage(null);
     committedSpaceRef.current = null;
     queuedMembersRef.current = [];
     appliedMemberUidsRef.current.clear();
     draftSpaceIdRef.current = uuidv4();
     draftInitialPageIdRef.current = uuidv4();
-  }, []);
+  }, [setSuggestingMembers]);
 
-  const finishCreation = useCallback(() => {
+  const releaseRejectedRequest = useCallback(() => {
+    // A first attempt was definitively refused, so nothing was created. Forget it, keep the
+    // fields editable, and give the next attempt fresh identities so an edited request can never
+    // be matched to the refused one.
+    intentStore.discard();
+    setDraftPage((current) => (current?.page ? { page: withoutSpentIdentity(current.page) } : current));
+    setHasAmbiguousCreation(false);
+    setPendingMemberCount(0);
+    queuedMembersRef.current = [];
+    appliedMemberUidsRef.current.clear();
+    draftSpaceIdRef.current = uuidv4();
+    draftInitialPageIdRef.current = uuidv4();
+  }, [intentStore]);
+
+  const finishCreation = useCallback(async () => {
     const committed = committedSpaceRef.current;
 
     if (!committed) return;
-    const { spaceId, initialPageId } = committed;
-
+    intentStore.assertCurrent();
+    // The full roster is committed before handoff. Keep recovery available if
+    // navigation/hydration rejects, and never clear another account's intent.
+    await onCreated?.(committed.spaceId, committed.initialPageId);
+    intentStore.complete(committed);
     resetDraft();
     onClose();
-    onCreated?.(spaceId, initialPageId);
-  }, [onClose, onCreated, resetDraft]);
+  }, [onClose, onCreated, resetDraft, intentStore]);
 
   const finishCommittedClose = useCallback(async () => {
     const committed = committedSpaceRef.current;
 
     if (!committed || creatingRef.current) return;
     const hasPendingRoster = queuedMembersRef.current.some(({ uid }) => !appliedMemberUidsRef.current.has(uid));
+    let completed = !hasPendingRoster;
 
-    if (!hasPendingRoster) {
-      finishCreation();
-      return;
-    }
-
-    let completed = false;
-
-    creatingRef.current = true;
-    setLoading(true);
-    try {
-      await applyQueuedMembers(committed.spaceId);
-      completed = true;
-    } catch (error) {
-      notify.error(getErrorMessage(error));
-    } finally {
-      creatingRef.current = false;
-      setLoading(false);
-    }
-
-    if (completed) finishCreation();
-  }, [applyQueuedMembers, finishCreation]);
-
-  const resolveAmbiguousClose = useCallback(async () => {
-    if (!workspaceId || creatingRef.current) return;
-    const clientOwnedSpaceId = draftSpaceIdRef.current;
-    let resolution: 'committed' | 'discarded' | null = null;
-
-    creatingRef.current = true;
-    setLoading(true);
-    try {
-      if (initialPage) {
-        if (!createSpaceWithInitialPage) throw new Error('Create space service is unavailable');
-        const result = await createSpaceWithInitialPage({
-          name: spaceName.trim(),
-          space_icon: spaceIcon,
-          space_icon_color: spaceIconColor,
-          view_id: clientOwnedSpaceId,
-          client_generated_view_id: true,
-          permission: permissionSettingsForCreation(permissionSettings),
-          initial_page: {
-            ...initialPage,
-            view_id: initialPage.view_id ?? draftInitialPageIdRef.current,
-          },
-        });
-        const committed = { spaceId: result.space.view_id, initialPageId: result.page.view_id };
-
-        committedSpaceRef.current = committed;
-        setCommittedSpace(committed);
+    if (hasPendingRoster) {
+      creatingRef.current = true;
+      setLoading(true);
+      try {
         await applyQueuedMembers(committed.spaceId);
-        resolution = 'committed';
-      } else {
-        let spaceExists = false;
-
-        try {
-          await WorkspaceService.getSpacePermission(workspaceId, clientOwnedSpaceId);
-          spaceExists = true;
-        } catch (error) {
-          if (!isMissingOrDeletedResource(error)) throw error;
-          await discardClientOwnedDraftSpace(workspaceId, clientOwnedSpaceId);
-          resolution = 'discarded';
-        }
-
-        if (spaceExists) {
-          const committed = { spaceId: clientOwnedSpaceId };
-
-          committedSpaceRef.current = committed;
-          setCommittedSpace(committed);
-          await applyQueuedMembers(clientOwnedSpaceId);
-          resolution = 'committed';
-        }
+        completed = true;
+      } catch (error) {
+        notify.error(getErrorMessage(error));
+      } finally {
+        creatingRef.current = false;
+        setLoading(false);
       }
-    } catch (error) {
-      if (
-        initialPage &&
-        typeof error === 'object' &&
-        error !== null &&
-        (error as { clientGeneratedCleanupSucceeded?: unknown }).clientGeneratedCleanupSucceeded === true
-      ) {
-        resolution = 'discarded';
-      } else {
-        // Keep the exact client-owned ID and frozen payload in this mounted
-        // draft. A later Retry or Close can safely reconcile the same request;
-        // silently resetting here could orphan a committed space.
+    }
+
+    if (completed) {
+      try {
+        await finishCreation();
+        return;
+      } catch (error) {
         notify.error(getErrorMessage(error));
       }
-    } finally {
-      creatingRef.current = false;
-      setLoading(false);
     }
 
-    if (resolution === 'committed') {
-      finishCreation();
-    } else if (resolution === 'discarded') {
-      resetDraft();
-      onClose();
-    }
-  }, [
-    applyQueuedMembers,
-    createSpaceWithInitialPage,
-    finishCreation,
-    initialPage,
-    onClose,
-    permissionSettings,
-    resetDraft,
-    spaceIcon,
-    spaceIconColor,
-    spaceName,
-    workspaceId,
-  ]);
+    // Close never traps the user. A partial roster is not handed off; the saved request stays
+    // resumable from the sidebar, where it can be finished or discarded.
+    onClose();
+  }, [applyQueuedMembers, finishCreation, onClose]);
 
   const handleClose = useCallback(() => {
     if (creatingRef.current) return;
     if (committedSpaceRef.current) {
-      // Do not hand off a partially applied roster. Close retries only the
-      // pending member requests against the already committed stable ID.
+      // Close retries only the pending member requests against the already committed stable ID.
       void finishCommittedClose();
       return;
     }
 
     if (hasAmbiguousCreation) {
-      void resolveAmbiguousClose();
+      // Leave the request saved; Check again or Discard (here or in the sidebar) resolves it.
+      onClose();
       return;
     }
 
     resetDraft();
     onClose();
-  }, [finishCommittedClose, hasAmbiguousCreation, onClose, resetDraft, resolveAmbiguousClose]);
+  }, [finishCommittedClose, hasAmbiguousCreation, onClose, resetDraft]);
+
+  const discardSavedRequest = useCallback(() => {
+    if (creatingRef.current) return;
+    const unreadable = recovery.invalid;
+
+    setDiscardConfirmOpen(false);
+    try {
+      intentStore.discard();
+    } catch (error) {
+      notify.error(getErrorMessage(error));
+      return;
+    }
+
+    // Unreadable data was never restored into this draft; it only blocked sending, so the
+    // dialog stays open with whatever the user has typed.
+    if (unreadable) return;
+    resetDraft();
+    onClose();
+  }, [intentStore, onClose, recovery.invalid, resetDraft]);
+
+  const finishWithoutPendingMembers = useCallback(async () => {
+    const committed = committedSpaceRef.current;
+
+    if (!committed || creatingRef.current) return;
+    creatingRef.current = true;
+    try {
+      intentStore.assertCurrent();
+      // The space exists; the remaining people can be added later from Manage Space.
+      await onCreated?.(committed.spaceId, committed.initialPageId);
+      intentStore.discard();
+      resetDraft();
+      onClose();
+    } catch (error) {
+      notify.error(getErrorMessage(error));
+    } finally {
+      creatingRef.current = false;
+    }
+  }, [intentStore, onClose, onCreated, resetDraft]);
 
   const handleSpaceIconChange = useCallback((icon: string, color: string) => {
     setSpaceIcon(icon);
@@ -494,15 +476,24 @@ function CreateSpaceModal({
     setSelectedMembers((current) => current.filter((member) => getWorkspaceMemberUid(member) !== uid));
   }, []);
 
-  const handleMemberSearchKeyDown = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
-    // NormalModal treats Enter from a plain input as its primary action. A
-    // member query must never create the space before the highlighted person
-    // is explicitly added to the local draft.
-    if (event.key === 'Enter') event.stopPropagation();
-  }, []);
+  const handleMemberSearchKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLInputElement>) => {
+      // NormalModal treats Enter from a plain input as its primary action. A
+      // member query must never create the space before the highlighted person
+      // is explicitly added to the local draft.
+      if (event.key === 'Enter') event.stopPropagation();
+      // Escape first closes the list of members to add; with the list closed it closes the dialog.
+      if (event.key === 'Escape' && suggestingMembers) {
+        event.preventDefault();
+        setSuggestingMembers(false);
+      }
+    },
+    [setSuggestingMembers, suggestingMembers]
+  );
 
   const handleCreate = useCallback(async () => {
-    if (creatingRef.current) return;
+    // Checking again can't match the first page of this space (Enter can still get here).
+    if (creatingRef.current || !workspaceId || firstPageProblem) return;
     const trimmedName = spaceName.trim();
 
     if (!trimmedName) {
@@ -510,7 +501,8 @@ function CreateSpaceModal({
       return;
     }
 
-    if (!committedSpaceRef.current && !createSpace && !(initialPage && createSpaceWithInitialPage)) return;
+    // Never save a request this host cannot send.
+    if (!committedSpaceRef.current && (initialPage ? !createSpaceWithInitialPage : !createSpace)) return;
 
     creatingRef.current = true;
     setLoading(true);
@@ -518,6 +510,46 @@ function CreateSpaceModal({
       let committed = committedSpaceRef.current;
 
       if (!committed) {
+        // A possibly committed stable ID must still be reconciled. A new request rechecks before
+        // any writes; denial leaves its name, icon, permission choices and queued people intact.
+        // A server without the capability route predates B and decides by itself.
+        const saved = intentStore.snapshot();
+
+        if (!saved) {
+          const admission = await refreshSpaceCreationAdmission(creationPermission, workspaceId);
+
+          // A refusal is the answer: nothing was sent, nothing is kept, and the form gives way to it.
+          // A check that could not run is not an answer: the draft stays editable for another try.
+          if (admission === 'denied') {
+            setDenied(true);
+            return;
+          }
+
+          if (admission === 'unavailable') {
+            notify.error(t('workspacePermissions.loadError'));
+            return;
+          }
+        } else {
+          const recovered = await recoverSpaceCreation(workspaceId, saved, () => intentStore.assertCurrent());
+
+          if (recovered) {
+            committedSpaceRef.current = recovered;
+            setCommittedSpace(recovered);
+            intentStore.committed(recovered);
+            await applyQueuedMembers(recovered.spaceId);
+            await finishCreation();
+            return;
+          }
+
+          // Not created yet. A check that sends nothing cannot resolve the earlier request, so
+          // a denial keeps it saved (Check again or Discard).
+          const admission = await refreshSpaceCreationAdmission(creationPermission, workspaceId);
+
+          intentStore.assertCurrent();
+          if (admission === 'denied') throw new PlainError(t('workspacePermissions.denied'));
+          if (admission === 'unavailable') throw new PlainError(t('workspacePermissions.loadError'));
+        }
+
         const visibility = permissionSettings.visibility;
         const spacePayload = {
           name: trimmedName,
@@ -534,62 +566,86 @@ function CreateSpaceModal({
             ? selectedMembers.flatMap((member) => {
                 const uid = getWorkspaceMemberUid(member);
 
-                return uid ? [{ uid, accessLevel: memberAccessLevel }] : [];
+                return uid ? [{ uid, userUuid: member.user_uuid, accessLevel: memberAccessLevel }] : [];
               })
             : [];
         appliedMemberUidsRef.current.clear();
 
-        if (initialPage) {
-          if (!createSpaceWithInitialPage) return;
-          const result = await createSpaceWithInitialPage({
-            ...spacePayload,
-            initial_page: {
-              ...initialPage,
-              view_id: initialPage.view_id ?? draftInitialPageIdRef.current,
-            },
-          });
+        const savedInitialPage = initialPage ? {
+          ...initialPage, view_id: initialPage.view_id ?? draftInitialPageIdRef.current,
+        } : undefined;
 
-          committed = { spaceId: result.space.view_id, initialPageId: result.page.view_id };
-        } else {
-          if (!createSpace) return;
-          committed = { spaceId: await createSpace(spacePayload) };
+        intentStore.begin({
+          payload: spacePayload, initialPage: savedInitialPage,
+          selectedMembers, members: queuedMembersRef.current,
+          appliedMemberUids: [...appliedMemberUidsRef.current],
+        });
+        // Persisted intent is uncertain until the complete authoritative result
+        // and queued roster have been handed off, including on browser reload.
+        setHasAmbiguousCreation(true);
+        setPendingMemberCount(queuedMembersRef.current.length);
+        try {
+          if (savedInitialPage && createSpaceWithInitialPage) {
+            const result = await createSpaceWithInitialPage({ ...spacePayload, initial_page: savedInitialPage });
+
+            committed = { spaceId: result.space.view_id, initialPageId: result.page.view_id };
+          } else if (createSpace) {
+            committed = { spaceId: await createSpace(spacePayload) };
+          } else {
+            return; // Unreachable: availability is checked before the request is saved.
+          }
+        } catch (error) {
+          // The space was created, but its first page under an ID the server chose: checking again
+          // would only add another page.
+          if (firstPageAddedUnderOtherId(error, savedInitialPage?.view_id)) {
+            throw new SpaceCreationFirstPageError('unconfirmed');
+          }
+
+          // A definitive rejection proves only that this request created nothing. A resend of a
+          // saved request says nothing about the earlier attempt with the same ID, which may
+          // still commit, so that request stays saved until it is found or discarded.
+          if (!saved && isDefinitiveCreationRejection(error)) {
+            releaseRejectedRequest();
+            // The space creation rule refused this account after the pre-check: the answer
+            // replaces the form, with nothing to retry here.
+            if (isSpaceCreationDenial(error)) {
+              setDenied(true);
+              return;
+            }
+          }
+
+          throw error;
         }
 
         // Record the committed identity before any queued member POST. A retry
         // after a partial failure can only target this space and cannot create
         // a duplicate.
+        intentStore.assertCurrent();
+        intentStore.committed(committed);
         committedSpaceRef.current = committed;
         setCommittedSpace(committed);
         setHasAmbiguousCreation(false);
       }
 
       await applyQueuedMembers(committed.spaceId);
-      finishCreation();
+      await finishCreation();
     } catch (error) {
-      if (!committedSpaceRef.current) {
-        if (!mayHaveCommittedCreate(error)) {
-          const cleanupConfirmed = clientGeneratedCleanupWasConfirmed(error);
+      // A context switch remounts this draft for the new scope; never report into it.
+      try { intentStore.assertCurrent(); } catch { return; }
 
-          // A definitive rejection only proves that this attempt did not
-          // commit. If an earlier attempt is still ambiguous, keep the frozen
-          // ID and roster until that earlier request is reconciled. Confirmed
-          // cleanup is the stronger signal that makes the whole sequence safe
-          // to reset and edit again.
-          if (!hasAmbiguousCreation || cleanupConfirmed) {
-            setHasAmbiguousCreation(false);
-            queuedMembersRef.current = [];
-            appliedMemberUidsRef.current.clear();
-          }
+      // Once submitted, even a later denial cannot resolve an earlier write. A request that was
+      // never saved, or whose first attempt was definitively refused, leaves an editable draft.
+      const stillSaved = hasSavedRequest(intentStore);
 
-          if (cleanupConfirmed) {
-            // The previous IDs now refer to trash/tombstones. Preserve the
-            // user's draft fields but rotate both resource identities before
-            // the next editable Create attempt.
-            draftSpaceIdRef.current = uuidv4();
-            draftInitialPageIdRef.current = uuidv4();
-          }
-        } else {
-          setHasAmbiguousCreation(true);
+      if (stillSaved) setHasAmbiguousCreation(true);
+      if (stillSaved && error instanceof SpaceCreationFirstPageError) {
+        // The space exists and checking again can't change that. Saved with the request, so a
+        // resumed dialog says so too and recovery never adds the first page again.
+        setFirstPageProblem(error.problem);
+        try {
+          intentStore.recordFirstPageProblem(error.problem);
+        } catch (saveError) {
+          Log.warn('[CreateSpaceModal] could not save that the first page cannot be matched', saveError);
         }
       }
 
@@ -599,13 +655,17 @@ function CreateSpaceModal({
       setLoading(false);
     }
   }, [
+    intentStore,
+    workspaceId,
     applyQueuedMembers,
     createSpace,
     createSpaceWithInitialPage,
     finishCreation,
-    hasAmbiguousCreation,
+    creationPermission,
+    firstPageProblem,
     initialPage,
     permissionSettings,
+    releaseRejectedRequest,
     selectedMembers,
     spaceIcon,
     spaceIconColor,
@@ -614,114 +674,193 @@ function CreateSpaceModal({
   ]);
 
   const memberControlsDisabled = loading || Boolean(committedSpace) || hasAmbiguousCreation;
+  const phase = committedSpace ? 'committed' : hasAmbiguousCreation ? 'pending' : 'fresh';
+  const trimmedName = spaceName.trim();
+  // What was asked, kept in view with the answer once the form is gone.
+  const deniedSummary = denied ? (
+    <div
+      className='flex items-center gap-3 rounded-400 border border-border-primary px-3 py-2'
+      data-testid='create-space-summary'
+    >
+      <span aria-hidden='true' className='flex shrink-0'>
+        <SpaceIcon
+          className='!h-8 !w-8 !min-w-8'
+          bgColor={spaceIconColor}
+          value={spaceIcon}
+          char={spaceIcon ? undefined : trimmedName.slice(0, 1)}
+        />
+      </span>
+      <div className='min-w-0 flex-1'>
+        <div className='truncate text-sm font-medium text-text-primary'>{trimmedName}</div>
+        <div className='truncate text-xs text-text-secondary'>
+          {spaceVisibilityLabel(permissionSettings.visibility, t)}
+        </div>
+      </div>
+    </div>
+  ) : null;
+  const notice = denied ? null : recovery.invalid ? (
+    <SpaceCreationRecoveryNotice kind='invalid' disabled={loading} onDiscard={discardSavedRequest} />
+  ) : phase === 'committed' ? (
+    pendingMemberCount > 0 ? (
+      <SpaceCreationRecoveryNotice
+        kind='membersPending'
+        count={pendingMemberCount}
+        disabled={loading}
+        onAddLater={() => void finishWithoutPendingMembers()}
+      />
+    ) : null
+  ) : phase === 'pending' ? (
+    <SpaceCreationRecoveryNotice
+      kind={
+        firstPageProblem === 'elsewhere'
+          ? 'firstPageElsewhere'
+          : firstPageProblem === 'unconfirmed'
+          ? 'firstPageUnconfirmed'
+          : 'unconfirmed'
+      }
+      disabled={loading}
+      onDiscard={() => setDiscardConfirmOpen(true)}
+    />
+  ) : (
+    <SpaceCreationNotice permission={creationPermission} />
+  );
 
   return (
-    <SpaceSettingsPanel
-      open={open}
-      onClose={handleClose}
-      title={t('space.createSpace')}
-      modalTestId='create-space-modal'
-      activeTab={tab}
-      onTabChange={setTab}
-      membersTabVisible
-      membersTabDisabled={false}
-      membersContent={
-        <div className='appflowy-scroller max-h-[64vh] overflow-y-auto py-2 pr-1'>
-          {permissionSettings.visibility !== SpaceVisibility.Custom ? (
-            <div className='rounded-400 bg-fill-content-hover px-4 py-3 text-sm text-text-secondary'>
-              {t('space.customPermissionDescription')}
-            </div>
-          ) : (
-            <div className='flex flex-col gap-4'>
-              <WorkspaceMemberInlineSearch
-                search={memberSearch}
-                onSearchChange={setMemberSearch}
-                addableMembers={addableWorkspaceMembers}
-                searchPlaceholder={t('space.permissionManager.searchWorkspaceMembers')}
-                addButtonLabel={t('space.permissionManager.addMembers')}
-                addResultLabel={t('space.permissionManager.notInSpace')}
-                addActionLabel={t('space.permissionManager.add')}
-                ownerBadgeLabel={t('space.permissionManager.workspaceOwner')}
-                unavailableTitle={t('space.permissionManager.workspaceMemberUidUnavailable')}
-                unavailableHint={t('space.permissionManager.workspaceMemberUidUnavailableHint')}
-                inputDisabled={memberControlsDisabled || loadingWorkspaceMembers}
-                addButtonDisabled={memberControlsDisabled || loadingWorkspaceMembers}
-                onInputKeyDown={handleMemberSearchKeyDown}
-                onAddMember={handleAddDraftMember}
-              />
-              {loadingWorkspaceMembers && <Progress />}
-              {selectedMembers.length > 0 && (
-                <div className='flex flex-col' data-testid='create-space-draft-members'>
-                  {selectedMembers.map((member) => {
-                    const uid = getWorkspaceMemberUid(member);
+    <>
+      <SpaceSettingsPanel
+        open={open}
+        onClose={handleClose}
+        title={t('space.createSpace')}
+        modalTestId='create-space-modal'
+        activeTab={tab}
+        onTabChange={setTab}
+        membersTabVisible
+        membersTabDisabled={false}
+        membersContent={
+          // The panel scrolls the tab and shows when more is below.
+          <div className='py-2'>
+            {permissionSettings.visibility !== SpaceVisibility.Custom ? (
+              <div className='rounded-400 bg-fill-content-hover px-4 py-3 text-sm text-text-secondary'>
+                {t('space.customPermissionDescription')}
+              </div>
+            ) : (
+              <div ref={memberAddAreaRef} className='flex flex-col gap-4'>
+                <WorkspaceMemberInlineSearch
+                  search={memberSearch}
+                  onSearchChange={setMemberSearch}
+                  addableMembers={addableWorkspaceMembers}
+                  searchPlaceholder={t('space.permissionManager.searchWorkspaceMembers')}
+                  addButtonLabel={t('space.permissionManager.addMembers')}
+                  addResultLabel={t('space.permissionManager.notInSpace')}
+                  addActionLabel={t('space.permissionManager.add')}
+                  ownerBadgeLabel={t('space.permissionManager.workspaceOwner')}
+                  unavailableTitle={t('space.permissionManager.workspaceMemberUidUnavailable')}
+                  unavailableHint={t('space.permissionManager.workspaceMemberUidUnavailableHint')}
+                  inputDisabled={memberControlsDisabled || loadingWorkspaceMembers}
+                  addButtonDisabled={memberControlsDisabled || loadingWorkspaceMembers}
+                  onInputKeyDown={handleMemberSearchKeyDown}
+                  onAddButtonClick={() => {
+                    setSuggestingMembers(true);
+                    memberAddAreaRef.current?.querySelector('input')?.focus();
+                  }}
+                  onAddMember={handleAddDraftMember}
+                />
+                {loadingWorkspaceMembers && <Progress />}
+                {selectedMembers.length > 0 && (
+                  <div className='flex flex-col' data-testid='create-space-draft-members'>
+                    {selectedMembers.map((member) => {
+                      const uid = getWorkspaceMemberUid(member);
 
-                    if (!uid) return null;
-                    const displayName = workspaceMemberDisplayName(member);
+                      if (!uid) return null;
+                      const displayName = workspaceMemberDisplayName(member);
 
-                    return (
-                      <div
-                        key={uid}
-                        className='flex items-center gap-3 border-b border-border-primary py-3'
-                        data-testid={`create-space-draft-member-${uid}`}
-                      >
-                        <Avatar size='md'>
-                          <AvatarImage src={member.avatar_url} alt={member.name} />
-                          <AvatarFallback name={displayName}>{displayName.slice(0, 1).toUpperCase()}</AvatarFallback>
-                        </Avatar>
-                        <div className='min-w-0 flex-1'>
-                          <div className='truncate font-medium text-text-primary'>{displayName}</div>
-                          <div className='truncate text-sm text-text-secondary'>{member.email}</div>
-                        </div>
-                        <Button
-                          type='button'
-                          variant='ghost'
-                          size='sm'
-                          disabled={memberControlsDisabled}
-                          aria-label={`${t('space.permissionManager.remove')} ${displayName}`}
-                          onClick={() => handleRemoveDraftMember(uid)}
+                      return (
+                        <div
+                          key={uid}
+                          className='flex items-center gap-3 border-b border-border-primary py-3'
+                          data-testid={`create-space-draft-member-${uid}`}
                         >
-                          <X aria-hidden='true' className='h-4 w-4' />
-                          {t('space.permissionManager.remove')}
-                        </Button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      }
-      spaceName={spaceName}
-      spaceIcon={spaceIcon}
-      spaceIconColor={spaceIconColor}
-      metadataDisabled={memberControlsDisabled}
-      onSpaceNameChange={setSpaceName}
-      onSpaceIconChange={handleSpaceIconChange}
-      permissionSettings={permissionSettings}
-      visibilityOptions={SELECTABLE_SPACE_VISIBILITIES}
-      permissionSettingsDisabled={memberControlsDisabled}
-      workspaceName={workspaceName}
-      privateOwner={privateOwner}
-      onVisibilitySelect={handleVisibilitySelect}
-      onMembersAccessChange={handleMembersAccessChange}
-      onEveryoneElseAccessChange={handleEveryoneElseAccessChange}
-      showActions
-      primaryActionText={committedSpace || hasAmbiguousCreation ? t('button.retry') : t('button.create')}
-      primaryActionLoading={loading}
-      primaryActionDisabled={loading || !spaceName.trim()}
-      onPrimaryAction={() => void handleCreate()}
-      overlay={
-        loading ? (
-          <div
-            className='bg-surface-primary/80 absolute inset-0 z-10 flex items-center justify-center rounded-400 backdrop-blur-sm'
-            data-testid='create-space-loading-indicator'
-          >
-            <Progress aria-label={t('loading')} role='status' variant='primary' />
+                          <Avatar size='md'>
+                            <AvatarImage src={member.avatar_url} alt={member.name} />
+                            <AvatarFallback name={displayName}>{displayName.slice(0, 1).toUpperCase()}</AvatarFallback>
+                          </Avatar>
+                          <div className='min-w-0 flex-1'>
+                            <div className='truncate font-medium text-text-primary'>{displayName}</div>
+                            <div className='truncate text-sm text-text-secondary'>{member.email}</div>
+                          </div>
+                          <Button
+                            type='button'
+                            variant='ghost'
+                            size='sm'
+                            disabled={memberControlsDisabled}
+                            aria-label={`${t('space.permissionManager.remove')} ${displayName}`}
+                            onClick={() => handleRemoveDraftMember(uid)}
+                          >
+                            <X aria-hidden='true' className='h-4 w-4' />
+                            {t('space.permissionManager.remove')}
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-        ) : null
-      }
-    />
+        }
+        spaceName={spaceName}
+        spaceIcon={spaceIcon}
+        spaceIconColor={spaceIconColor}
+        metadataDisabled={memberControlsDisabled}
+        onSpaceNameChange={setSpaceName}
+        onSpaceIconChange={handleSpaceIconChange}
+        permissionSettings={permissionSettings}
+        visibilityOptions={SELECTABLE_SPACE_VISIBILITIES}
+        permissionSettingsDisabled={memberControlsDisabled}
+        workspaceName={workspaceName}
+        privateOwner={privateOwner}
+        onVisibilitySelect={handleVisibilitySelect}
+        onMembersAccessChange={handleMembersAccessChange}
+        onEveryoneElseAccessChange={handleEveryoneElseAccessChange}
+        onSidebarEditPolicyChange={(sidebar_edit_policy) => {
+          if (!committedSpaceRef.current) setPermissionSettings((current) => ({ ...current, sidebar_edit_policy }));
+        }}
+        showActions={!denied}
+        summary={denied ? <SpaceCreationDeniedCard summary={deniedSummary} onClose={handleClose} /> : undefined}
+        primaryActionText={
+          phase === 'committed'
+            ? t('spaceCreation.tryAgain')
+            : phase === 'pending'
+            ? t('spaceCreation.checkAgain')
+            : t('button.create')
+        }
+        primaryActionLoading={loading}
+        primaryActionDisabled={
+          loading ||
+          recovery.invalid ||
+          Boolean(firstPageProblem) ||
+          !spaceName.trim() ||
+          (phase === 'fresh' && !canStartSpaceCreation(creationPermission))
+        }
+        notice={notice}
+        onPrimaryAction={() => void handleCreate()}
+        overlay={
+          loading ? (
+            <div
+              className='bg-surface-primary/80 absolute inset-0 z-10 flex items-center justify-center rounded-400 backdrop-blur-sm'
+              data-testid='create-space-loading-indicator'
+            >
+              <Progress aria-label={t('loading')} role='status' variant='primary' />
+            </div>
+          ) : null
+        }
+      />
+      <DiscardSpaceRequestConfirm
+        open={discardConfirmOpen}
+        onCancel={() => setDiscardConfirmOpen(false)}
+        onConfirm={discardSavedRequest}
+      />
+    </>
   );
 }
 

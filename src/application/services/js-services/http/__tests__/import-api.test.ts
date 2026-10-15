@@ -1,3 +1,4 @@
+jest.mock('../workspace-creation-api', () => ({ ensureCanCreateWorkspace: async () => () => undefined }));
 import { executeAPIRequest, getAxios } from '@/application/services/js-services/http/core';
 
 import {

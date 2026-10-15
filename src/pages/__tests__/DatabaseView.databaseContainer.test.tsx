@@ -210,6 +210,40 @@ describe('DatabaseView database container', () => {
     }
   );
 
+  it('retains an open row route across denial unmount and regrant, but clears explicit close', () => {
+    const doc = createDatabaseDoc('database', ['view']);
+    const Location = () => <output data-testid='location'>{useLocation().search}</output>;
+    const page = (allowed: boolean) => (
+      <MemoryRouter initialEntries={['/app/workspace/view?keep=1']}>
+        <Location />
+        {allowed && <DatabaseView isRouteView doc={doc} workspaceId='workspace' readOnly
+          viewMeta={{ viewId: 'view', name: 'Grid', layout: ViewLayout.Grid,
+            workspaceId: 'workspace', visibleViewIds: [] }}
+          updatePage={jest.fn()} updatePageIcon={jest.fn()} updatePageName={jest.fn()} />}
+      </MemoryRouter>
+    );
+    const { rerender, unmount } = render(page(true));
+    const props = () => global.__databaseViewTestState?.capturedDatabaseProps as {
+      modalRowId?: string; onRowPeekChange: (rowId: string | null, viewId?: string) => void;
+    };
+
+    act(() => props().onRowPeekChange('row', 'view'));
+    expect(screen.getByTestId('location').textContent).toBe('?keep=1&r-modal=row');
+    rerender(page(false));
+    rerender(page(true));
+    expect(props().modalRowId).toBe('row');
+    act(() => props().onRowPeekChange(null));
+    rerender(page(false));
+    rerender(page(true));
+    expect(props().modalRowId).toBeUndefined();
+    expect(screen.getByTestId('location').textContent).toBe('?keep=1');
+
+    act(() => props().onRowPeekChange('related-row', 'other-database-view'));
+    expect(props().modalRowId).toBeUndefined();
+    unmount();
+    doc.destroy();
+  });
+
   it('does not let a modal database replace the routed header selection and clears it on departure', () => {
     const routeDoc = createDatabaseDoc('route-db', ['route-tab']);
     const modalDoc = createDatabaseDoc('modal-db', ['modal-tab']);

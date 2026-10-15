@@ -3709,6 +3709,7 @@ export const notification = $root.notification = (() => {
          * @property {notification.ICommentChanged|null} [commentChanged] WorkspaceNotification commentChanged
          * @property {notification.IDatabaseRestored|null} [databaseRestored] WorkspaceNotification databaseRestored
          * @property {notification.IStorageLimitExceeded|null} [storageLimitExceeded] WorkspaceNotification storageLimitExceeded
+         * @property {notification.IWorkspacePermissionsChanged|null} [workspacePermissionsChanged] WorkspaceNotification workspacePermissionsChanged
          */
 
         /**
@@ -3830,17 +3831,25 @@ export const notification = $root.notification = (() => {
          */
         WorkspaceNotification.prototype.storageLimitExceeded = null;
 
+        /**
+         * WorkspaceNotification workspacePermissionsChanged.
+         * @member {notification.IWorkspacePermissionsChanged|null|undefined} workspacePermissionsChanged
+         * @memberof notification.WorkspaceNotification
+         * @instance
+         */
+        WorkspaceNotification.prototype.workspacePermissionsChanged = null;
+
         // OneOf field names bound to virtual getters and setters
         let $oneOfFields;
 
         /**
          * WorkspaceNotification payload.
-         * @member {"profileChange"|"permissionChanged"|"sectionChanged"|"shareViewsChanged"|"mentionablePersonListChanged"|"serverLimit"|"workspaceMemberProfileChanged"|"folderChanged"|"folderViewChanged"|"inboxNotification"|"commentChanged"|"databaseRestored"|"storageLimitExceeded"|undefined} payload
+         * @member {"profileChange"|"permissionChanged"|"sectionChanged"|"shareViewsChanged"|"mentionablePersonListChanged"|"serverLimit"|"workspaceMemberProfileChanged"|"folderChanged"|"folderViewChanged"|"inboxNotification"|"commentChanged"|"databaseRestored"|"storageLimitExceeded"|"workspacePermissionsChanged"|undefined} payload
          * @memberof notification.WorkspaceNotification
          * @instance
          */
         Object.defineProperty(WorkspaceNotification.prototype, "payload", {
-            get: $util.oneOfGetter($oneOfFields = ["profileChange", "permissionChanged", "sectionChanged", "shareViewsChanged", "mentionablePersonListChanged", "serverLimit", "workspaceMemberProfileChanged", "folderChanged", "folderViewChanged", "inboxNotification", "commentChanged", "databaseRestored", "storageLimitExceeded"]),
+            get: $util.oneOfGetter($oneOfFields = ["profileChange", "permissionChanged", "sectionChanged", "shareViewsChanged", "mentionablePersonListChanged", "serverLimit", "workspaceMemberProfileChanged", "folderChanged", "folderViewChanged", "inboxNotification", "commentChanged", "databaseRestored", "storageLimitExceeded", "workspacePermissionsChanged"]),
             set: $util.oneOfSetter($oneOfFields)
         });
 
@@ -3894,6 +3903,8 @@ export const notification = $root.notification = (() => {
                 $root.notification.DatabaseRestored.encode(message.databaseRestored, writer.uint32(/* id 12, wireType 2 =*/98).fork()).ldelim();
             if (message.storageLimitExceeded != null && Object.hasOwnProperty.call(message, "storageLimitExceeded"))
                 $root.notification.StorageLimitExceeded.encode(message.storageLimitExceeded, writer.uint32(/* id 13, wireType 2 =*/106).fork()).ldelim();
+            if (message.workspacePermissionsChanged != null && Object.hasOwnProperty.call(message, "workspacePermissionsChanged"))
+                $root.notification.WorkspacePermissionsChanged.encode(message.workspacePermissionsChanged, writer.uint32(/* id 14, wireType 2 =*/114).fork()).ldelim();
             return writer;
         };
 
@@ -3980,6 +3991,10 @@ export const notification = $root.notification = (() => {
                     }
                 case 13: {
                         message.storageLimitExceeded = $root.notification.StorageLimitExceeded.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 14: {
+                        message.workspacePermissionsChanged = $root.notification.WorkspacePermissionsChanged.decode(reader, reader.uint32());
                         break;
                     }
                 default:
@@ -4146,6 +4161,16 @@ export const notification = $root.notification = (() => {
                         return "storageLimitExceeded." + error;
                 }
             }
+            if (message.workspacePermissionsChanged != null && message.hasOwnProperty("workspacePermissionsChanged")) {
+                if (properties.payload === 1)
+                    return "payload: multiple values";
+                properties.payload = 1;
+                {
+                    let error = $root.notification.WorkspacePermissionsChanged.verify(message.workspacePermissionsChanged);
+                    if (error)
+                        return "workspacePermissionsChanged." + error;
+                }
+            }
             return null;
         };
 
@@ -4225,6 +4250,11 @@ export const notification = $root.notification = (() => {
                 if (typeof object.storageLimitExceeded !== "object")
                     throw TypeError(".notification.WorkspaceNotification.storageLimitExceeded: object expected");
                 message.storageLimitExceeded = $root.notification.StorageLimitExceeded.fromObject(object.storageLimitExceeded);
+            }
+            if (object.workspacePermissionsChanged != null) {
+                if (typeof object.workspacePermissionsChanged !== "object")
+                    throw TypeError(".notification.WorkspaceNotification.workspacePermissionsChanged: object expected");
+                message.workspacePermissionsChanged = $root.notification.WorkspacePermissionsChanged.fromObject(object.workspacePermissionsChanged);
             }
             return message;
         };
@@ -4307,6 +4337,11 @@ export const notification = $root.notification = (() => {
                 if (options.oneofs)
                     object.payload = "storageLimitExceeded";
             }
+            if (message.workspacePermissionsChanged != null && message.hasOwnProperty("workspacePermissionsChanged")) {
+                object.workspacePermissionsChanged = $root.notification.WorkspacePermissionsChanged.toObject(message.workspacePermissionsChanged, options);
+                if (options.oneofs)
+                    object.payload = "workspacePermissionsChanged";
+            }
             return object;
         };
 
@@ -4337,6 +4372,258 @@ export const notification = $root.notification = (() => {
         };
 
         return WorkspaceNotification;
+    })();
+
+    notification.WorkspacePermissionsChanged = (function() {
+
+        /**
+         * Properties of a WorkspacePermissionsChanged.
+         * @memberof notification
+         * @interface IWorkspacePermissionsChanged
+         * @property {string|null} [workspaceId] WorkspacePermissionsChanged workspaceId
+         * @property {string|null} [epoch] WorkspacePermissionsChanged epoch
+         * @property {string|null} [counter] WorkspacePermissionsChanged counter
+         */
+
+        /**
+         * Constructs a new WorkspacePermissionsChanged.
+         * @memberof notification
+         * @classdesc Represents a WorkspacePermissionsChanged.
+         * @implements IWorkspacePermissionsChanged
+         * @constructor
+         * @param {notification.IWorkspacePermissionsChanged=} [properties] Properties to set
+         */
+        function WorkspacePermissionsChanged(properties) {
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * WorkspacePermissionsChanged workspaceId.
+         * @member {string} workspaceId
+         * @memberof notification.WorkspacePermissionsChanged
+         * @instance
+         */
+        WorkspacePermissionsChanged.prototype.workspaceId = "";
+
+        /**
+         * WorkspacePermissionsChanged epoch.
+         * @member {string} epoch
+         * @memberof notification.WorkspacePermissionsChanged
+         * @instance
+         */
+        WorkspacePermissionsChanged.prototype.epoch = "";
+
+        /**
+         * WorkspacePermissionsChanged counter.
+         * @member {string} counter
+         * @memberof notification.WorkspacePermissionsChanged
+         * @instance
+         */
+        WorkspacePermissionsChanged.prototype.counter = "";
+
+        /**
+         * Creates a new WorkspacePermissionsChanged instance using the specified properties.
+         * @function create
+         * @memberof notification.WorkspacePermissionsChanged
+         * @static
+         * @param {notification.IWorkspacePermissionsChanged=} [properties] Properties to set
+         * @returns {notification.WorkspacePermissionsChanged} WorkspacePermissionsChanged instance
+         */
+        WorkspacePermissionsChanged.create = function create(properties) {
+            return new WorkspacePermissionsChanged(properties);
+        };
+
+        /**
+         * Encodes the specified WorkspacePermissionsChanged message. Does not implicitly {@link notification.WorkspacePermissionsChanged.verify|verify} messages.
+         * @function encode
+         * @memberof notification.WorkspacePermissionsChanged
+         * @static
+         * @param {notification.IWorkspacePermissionsChanged} message WorkspacePermissionsChanged message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        WorkspacePermissionsChanged.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.workspaceId != null && Object.hasOwnProperty.call(message, "workspaceId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.workspaceId);
+            if (message.epoch != null && Object.hasOwnProperty.call(message, "epoch"))
+                writer.uint32(/* id 2, wireType 2 =*/18).string(message.epoch);
+            if (message.counter != null && Object.hasOwnProperty.call(message, "counter"))
+                writer.uint32(/* id 3, wireType 2 =*/26).string(message.counter);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified WorkspacePermissionsChanged message, length delimited. Does not implicitly {@link notification.WorkspacePermissionsChanged.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof notification.WorkspacePermissionsChanged
+         * @static
+         * @param {notification.IWorkspacePermissionsChanged} message WorkspacePermissionsChanged message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        WorkspacePermissionsChanged.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a WorkspacePermissionsChanged message from the specified reader or buffer.
+         * @function decode
+         * @memberof notification.WorkspacePermissionsChanged
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {notification.WorkspacePermissionsChanged} WorkspacePermissionsChanged
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        WorkspacePermissionsChanged.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.WorkspacePermissionsChanged();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.workspaceId = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.epoch = reader.string();
+                        break;
+                    }
+                case 3: {
+                        message.counter = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a WorkspacePermissionsChanged message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof notification.WorkspacePermissionsChanged
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {notification.WorkspacePermissionsChanged} WorkspacePermissionsChanged
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        WorkspacePermissionsChanged.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a WorkspacePermissionsChanged message.
+         * @function verify
+         * @memberof notification.WorkspacePermissionsChanged
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        WorkspacePermissionsChanged.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.workspaceId != null && message.hasOwnProperty("workspaceId"))
+                if (!$util.isString(message.workspaceId))
+                    return "workspaceId: string expected";
+            if (message.epoch != null && message.hasOwnProperty("epoch"))
+                if (!$util.isString(message.epoch))
+                    return "epoch: string expected";
+            if (message.counter != null && message.hasOwnProperty("counter"))
+                if (!$util.isString(message.counter))
+                    return "counter: string expected";
+            return null;
+        };
+
+        /**
+         * Creates a WorkspacePermissionsChanged message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof notification.WorkspacePermissionsChanged
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {notification.WorkspacePermissionsChanged} WorkspacePermissionsChanged
+         */
+        WorkspacePermissionsChanged.fromObject = function fromObject(object) {
+            if (object instanceof $root.notification.WorkspacePermissionsChanged)
+                return object;
+            let message = new $root.notification.WorkspacePermissionsChanged();
+            if (object.workspaceId != null)
+                message.workspaceId = String(object.workspaceId);
+            if (object.epoch != null)
+                message.epoch = String(object.epoch);
+            if (object.counter != null)
+                message.counter = String(object.counter);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a WorkspacePermissionsChanged message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof notification.WorkspacePermissionsChanged
+         * @static
+         * @param {notification.WorkspacePermissionsChanged} message WorkspacePermissionsChanged
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        WorkspacePermissionsChanged.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            let object = {};
+            if (options.defaults) {
+                object.workspaceId = "";
+                object.epoch = "";
+                object.counter = "";
+            }
+            if (message.workspaceId != null && message.hasOwnProperty("workspaceId"))
+                object.workspaceId = message.workspaceId;
+            if (message.epoch != null && message.hasOwnProperty("epoch"))
+                object.epoch = message.epoch;
+            if (message.counter != null && message.hasOwnProperty("counter"))
+                object.counter = message.counter;
+            return object;
+        };
+
+        /**
+         * Converts this WorkspacePermissionsChanged to JSON.
+         * @function toJSON
+         * @memberof notification.WorkspacePermissionsChanged
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        WorkspacePermissionsChanged.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for WorkspacePermissionsChanged
+         * @function getTypeUrl
+         * @memberof notification.WorkspacePermissionsChanged
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        WorkspacePermissionsChanged.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/notification.WorkspacePermissionsChanged";
+        };
+
+        return WorkspacePermissionsChanged;
     })();
 
     notification.DatabaseRestored = (function() {

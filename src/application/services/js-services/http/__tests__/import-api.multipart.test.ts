@@ -37,6 +37,16 @@ describe('multipart import request lifecycle', () => {
 
   afterEach(() => jest.restoreAllMocks());
 
+  it('checks the caller context immediately before multipart completion POST', async () => {
+    put.mockResolvedValue({ status: 200, headers: { etag: 'etag' } });
+    const beforeComplete = jest.fn(() => { throw new Error('Context changed'); });
+
+    await expect(uploadImportFileMultipart(file, multipart(1), jest.fn(), undefined, beforeComplete))
+      .rejects.toThrow('Context changed');
+    expect(beforeComplete).toHaveBeenCalledTimes(1);
+    expect(post).not.toHaveBeenCalled();
+  });
+
   it.each(['network', 'http'] as const)(
     'cancels sibling requests after a %s failure and never starts queued parts',
     async (failure) => {

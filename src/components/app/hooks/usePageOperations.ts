@@ -1,6 +1,6 @@
-import { MutableRefObject, useCallback, useEffect, useRef } from 'react';
-import { toast } from 'sonner';
+import { MutableRefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 
+import { ERROR_CODE } from '@/application/constants';
 import { BillingService, FileService, PageService, PublishService, ViewService } from '@/application/services/domains';
 import { deleteView as clearViewCache } from '@/application/services/js-services/cache';
 import { clearPublishViewInfoCache } from '@/application/services/js-services/cached-api';
@@ -102,8 +102,17 @@ export function usePageOperations({
   ensureViewVisibleInOutline?: (viewId: string) => Promise<string[]>;
 }) {
   const { currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
-  const role = userWorkspaceInfo?.selectedWorkspace.role;
+  const role = userWorkspaceInfo?.selectedWorkspace?.role;
   const pendingPublishesRef = useRef(new Map<string, Promise<void>>());
+  const workspaceScope = useMemo(() => ({ currentWorkspaceId }), [currentWorkspaceId]);
+  const currentWorkspaceScope = useRef<typeof workspaceScope | null>(workspaceScope);
+
+  currentWorkspaceScope.current = workspaceScope;
+  useLayoutEffect(() => {
+    currentWorkspaceScope.current = workspaceScope;
+    return () => { if (currentWorkspaceScope.current === workspaceScope) currentWorkspaceScope.current = null; };
+  }, [workspaceScope]);
+
   const creationOwnerRef = useRef({ workspaceId: currentWorkspaceId, userId: userWorkspaceInfo?.userId, epoch: 0 });
 
   if (creationOwnerRef.current.workspaceId !== currentWorkspaceId || creationOwnerRef.current.userId !== userWorkspaceInfo?.userId) {
@@ -145,8 +154,8 @@ export function usePageOperations({
       // Shared-with-me placement does not remove a member's write access to the
       // parent page. The creation request enforces its current server permissions.
       if (role === Role.Guest) {
-        toast.error('No permission to create pages');
-        throw new Error('No permission to create pages');
+        // Callers report a failed creation in their own words; the code marks this one as a denial.
+        throw Object.assign(new Error('No permission to create pages'), { code: ERROR_CODE.NOT_HAS_PERMISSION });
       }
 
       try {
@@ -458,15 +467,24 @@ export function usePageOperations({
 
       // Structured spaces compose their initial default page through the same
       // creation boundary as Add Page, including current sidebar publication.
-      const activation = payload.permission && usesDefaultPageCreation(payload.initial_page)
+      const pageActivation = payload.permission && usesDefaultPageCreation(payload.initial_page)
         ? capturePageActivation(payload.initial_page) : undefined;
+      // Every step also stops once this workspace is left while the request is pending.
+      const activation: PageCreationActivation = {
+        ...pageActivation,
+        assertCurrent: () => {
+          if (currentWorkspaceScope.current !== workspaceScope) throw new Error('Space creation context changed');
+          pageActivation?.assertCurrent?.();
+        },
+      };
       const res = await PageService.createSpaceWithInitialPage(currentWorkspaceId, payload, activation);
 
-      activation?.assertCurrent?.();
-      if (!activation) void loadOutline?.(currentWorkspaceId, false);
+      activation.assertCurrent?.();
+      // An atomic initial page installs its own navigation; other spaces refresh the sidebar.
+      if (!pageActivation) void loadOutline?.(currentWorkspaceId, false);
       return res;
     },
-    [currentWorkspaceId, loadOutline, capturePageActivation]
+    [currentWorkspaceId, loadOutline, workspaceScope, capturePageActivation]
   );
 
   // Update space

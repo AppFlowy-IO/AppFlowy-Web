@@ -1,17 +1,36 @@
 import EventEmitter from 'events';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 
 import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import { deleteCollabDB } from '@/application/db';
 import { deleteOutboxByObjectId } from '@/application/sync-outbox';
+import {
+  compareWorkspacePermissionRevisions,
+  isWorkspacePermissionRevision,
+  WorkspacePermissionRevision,
+  WorkspacePermissionsChanged,
+} from '@/application/workspace-permissions';
 import { notification } from '@/proto/messages';
 import { getErrorMessage } from '@/utils/errors';
 import { Log } from '@/utils/log';
 
 type WorkspaceNotification = notification.IWorkspaceNotification;
 const PERMISSION_CHANGED_REASON_OBJECT_DELETED = 1;
+
+interface NotificationScope {
+  workspaceId: string;
+  userId: string | undefined;
+  serverUrl: string;
+}
+
+interface ProcessedPermissionHints {
+  scope: string | undefined;
+  revision?: WorkspacePermissionRevision;
+  ws: WorkspaceNotification | undefined | null;
+  bc: WorkspaceNotification | undefined | null;
+}
 
 function dispatchNotifications(
   eventEmitter: EventEmitter,
@@ -83,8 +102,50 @@ function dispatchNotifications(
 export function useWorkspaceNotifications(
   wsNotification: WorkspaceNotification | undefined | null,
   bcNotification: WorkspaceNotification | undefined | null,
-  eventEmitter: EventEmitter
+  eventEmitter: EventEmitter,
+  scope?: NotificationScope
 ) {
+  const processedHints = useRef<ProcessedPermissionHints>();
+  const workspaceId = scope?.workspaceId;
+  const scopeKey = scope?.serverUrl && scope.userId && workspaceId
+    ? JSON.stringify([scope.serverUrl, scope.userId, workspaceId])
+    : undefined;
+
+  useEffect(() => {
+    // Nothing is recorded until the session is identified: a hint that arrives
+    // while the current user is still loading belongs to the session that is
+    // about to resolve and must be dispatched then, not marked as processed.
+    if (!scopeKey || !workspaceId) return;
+    const previous = processedHints.current;
+    const sameScope = previous?.scope === scopeKey;
+    const next: ProcessedPermissionHints = {
+      scope: scopeKey,
+      revision: sameScope ? previous?.revision : undefined,
+      ws: wsNotification,
+      bc: bcNotification,
+    };
+
+    processedHints.current = next;
+
+    for (const [message, previousMessage] of [[wsNotification, previous?.ws], [bcNotification, previous?.bc]]) {
+      // React can retain the old transport's last message during a session/workspace switch.
+      if (!sameScope && previous && message === previousMessage) continue;
+      const hint = message?.workspacePermissionsChanged;
+
+      if (!hint || hint.workspaceId !== workspaceId || !isWorkspacePermissionRevision(hint)) continue;
+      const revision = { epoch: hint.epoch, counter: hint.counter };
+
+      if (next.revision && compareWorkspacePermissionRevisions(revision, next.revision) <= 0) continue;
+      next.revision = revision;
+      const changed: WorkspacePermissionsChanged = { workspaceId, revision };
+
+      eventEmitter.emit(APP_EVENTS.WORKSPACE_PERMISSIONS_CHANGED, changed);
+      // Existing active-view and sidebar handlers already support an object-less refresh.
+      // Keep it a hint: a re-probe decides access, and pending local edits remain recoverable.
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+    }
+  }, [wsNotification, bcNotification, eventEmitter, workspaceId, scopeKey]);
+
   // Handle workspace notifications from WebSocket
   // This handles notifications received directly from the server via WebSocket connection.
   // Only the "active" tab per workspace maintains a WebSocket connection to prevent

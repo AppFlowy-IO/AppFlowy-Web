@@ -5,12 +5,13 @@ import { type ReactNode } from 'react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 
 import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
-import { deleteCollabDB } from '@/application/db';
+import { deleteCollabDB, deleteDatabaseLocalCopies } from '@/application/db';
 import { AccessService, ViewService } from '@/application/services/domains';
 import {
   invalidateWorkspaceViewMetadata,
   markWorkspaceViewMetadataOutlineUntrusted,
 } from '@/application/services/js-services/workspace-view-metadata';
+import { blockPermissionSync } from '@/application/sync-outbox';
 import { Role, User, View, ViewLayout } from '@/application/types';
 import { findView } from '@/components/_shared/outline/utils';
 import { AuthInternalContext, AuthInternalContextType } from '@/components/app/contexts/AuthInternalContext';
@@ -64,6 +65,11 @@ jest.mock('@/application/services/domains', () => ({
 
 jest.mock('@/application/db', () => ({
   deleteCollabDB: jest.fn(),
+  deleteDatabaseLocalCopies: jest.fn(),
+}));
+
+jest.mock('@/application/sync-outbox', () => ({
+  blockPermissionSync: jest.fn(async () => undefined),
 }));
 
 jest.mock('@/application/services/js-services/workspace-view-metadata', () => ({
@@ -202,7 +208,8 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     );
     (ViewService.getTrashCached as jest.Mock).mockResolvedValue([]);
     (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
-    (deleteCollabDB as jest.Mock).mockResolvedValue(undefined);
+    (deleteCollabDB as jest.Mock).mockResolvedValue(true);
+    (deleteDatabaseLocalCopies as jest.Mock).mockResolvedValue(true);
   });
 
   it('invalidates cached access details for every remote share change', async () => {
@@ -1496,7 +1503,7 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     expect(findView(result.current.outline ?? [], freshChild.view_id)).not.toBeNull();
   });
 
-  it('evicts a disk-only canonical database collab when the current user loses access', async () => {
+  it('removes the synced copy of a disk-only database collab and quarantines its unsent edits on access loss', async () => {
     const eventEmitter = new EventEmitter();
     const databaseView = createView('database-view-id', {
       layout: ViewLayout.Grid,
@@ -1532,8 +1539,12 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
 
     await waitFor(() => {
       expect(deleteCollabDB).toHaveBeenCalledWith(databaseView.view_id, { destroyDoc: true });
-      expect(deleteCollabDB).toHaveBeenCalledWith('database-collab-id', { destroyDoc: true });
+      // The database goes with its rows and row pages.
+      expect(deleteDatabaseLocalCopies).toHaveBeenCalledWith('database-collab-id', { destroyDoc: true });
+      expect(deleteCollabDB).not.toHaveBeenCalledWith('database-collab-id', expect.anything());
     });
+    expect(blockPermissionSync).toHaveBeenCalledWith(databaseView.view_id, workspaceId);
+    expect(blockPermissionSync).toHaveBeenCalledWith('database-collab-id', workspaceId);
     expect(ViewService.getCachedFromDisk).toHaveBeenCalledWith(workspaceId, databaseView.view_id);
     expect(ViewService.invalidateCache).toHaveBeenCalledWith(workspaceId, databaseView.view_id);
     expect(revokedListener).toHaveBeenCalledWith({ viewId: databaseView.view_id });
@@ -1580,7 +1591,9 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
 
     await waitFor(() => {
       expect(deleteCollabDB).toHaveBeenCalledWith(databaseView.view_id, { destroyDoc: true });
-      expect(deleteCollabDB).toHaveBeenCalledWith('memory-only-database-collab-id', { destroyDoc: true });
+      // The database goes with its rows and row pages.
+      expect(deleteDatabaseLocalCopies).toHaveBeenCalledWith('memory-only-database-collab-id', { destroyDoc: true });
+      expect(deleteCollabDB).not.toHaveBeenCalledWith('memory-only-database-collab-id', expect.anything());
     });
     expect(ViewService.invalidateWorkspaceMemoryCache).toHaveBeenCalledWith(workspaceId);
     expect(ViewService.getCachedFromDisk).not.toHaveBeenCalled();

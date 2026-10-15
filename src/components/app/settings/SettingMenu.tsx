@@ -4,9 +4,10 @@ import { useTranslation } from 'react-i18next';
 import { SettingMenuItem } from '@/application/types';
 import { ReactComponent as ManageDataIcon } from '@/assets/icons/database.svg';
 import { ReactComponent as ConnectionsIcon } from '@/assets/icons/link.svg';
+import { ReactComponent as PermissionsIcon } from '@/assets/icons/lock.svg';
+import { ReactComponent as ProfileIcon } from '@/assets/icons/person.svg';
 import { ReactComponent as BillingIcon } from '@/assets/icons/settings_credit_card.svg';
 import { ReactComponent as PlanIcon } from '@/assets/icons/settings_plan.svg';
-import { ReactComponent as ProfileIcon } from '@/assets/icons/person.svg';
 import { ReactComponent as PersonIcon } from '@/assets/icons/user.svg';
 import { ReactComponent as MembersIcon } from '@/assets/icons/users.svg';
 
@@ -43,6 +44,11 @@ function SettingMenu({ selectedItem, onSelectItem, showBilling = false }: Settin
         IconComponent: ManageDataIcon,
       },
       {
+        value: SettingMenuItem.PERMISSIONS,
+        label: t('workspacePermissions.title'),
+        IconComponent: PermissionsIcon,
+      },
+      {
         value: SettingMenuItem.CONNECTIONS,
         label: t('settings.connections.menuLabel'),
         IconComponent: ConnectionsIcon,
@@ -67,8 +73,10 @@ function SettingMenu({ selectedItem, onSelectItem, showBilling = false }: Settin
   return (
     <div className={'flex h-full w-[228px] flex-col gap-1 overflow-y-auto overflow-x-hidden bg-surface-container-layer-01 px-2 py-4'}>
       {options.map((option) => (
-        <div
+        <button
           key={option.value}
+          type='button'
+          aria-current={option.value === selectedItem ? 'page' : undefined}
           data-testid={`settings-menu-${option.value.toLowerCase()}`}
           onClick={() => onSelectItem(option.value)}
           className={`flex cursor-pointer items-center gap-3 rounded-[8px] px-3 py-2 hover:bg-fill-content-hover ${
@@ -77,7 +85,7 @@ function SettingMenu({ selectedItem, onSelectItem, showBilling = false }: Settin
         >
           <option.IconComponent className={'h-5 w-5'} />
           <span className={'text-sm font-medium'}>{option.label}</span>
-        </div>
+        </button>
       ))}
     </div>
   );

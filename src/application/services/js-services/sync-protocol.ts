@@ -1,9 +1,13 @@
 import * as awarenessProtocol from 'y-protocols/awareness';
 import * as Y from 'yjs';
 
-import { deleteCollabDB } from '@/application/db';
+import { collectDatabaseRowIds, deleteCollabDB, deleteDatabaseLocalCopies } from '@/application/db';
+import { isCollabStorageCurrent } from '@/application/db/collab-storage-scope';
 import {
+  blockPermissionSync,
+  getCurrentOutboxSession,
   deleteOutboxByObjectId,
+  deleteRedundantManifestRows,
   enqueueOutboxUpdate,
   shouldRouteUpdateThroughOutbox,
   waitForDrain,
@@ -11,6 +15,8 @@ import {
 import { CollabOrigin, Types, YDoc } from '@/application/types';
 import { collab, messages } from '@/proto/messages';
 import { Log } from '@/utils/log';
+
+import { beginServerExchange, isNoopForServer, recordServerUpdate } from './server-acknowledged';
 
 /**
  * SyncContext is the context object passed to the sync protocol handlers.
@@ -82,6 +88,64 @@ export enum UpdateFlags {
 const isEmptyUpdateV1 = (update: Uint8Array): boolean =>
   update.byteLength === 2 && update[0] === 0 && update[1] === 0;
 
+interface ManifestCleanup {
+  timer?: ReturnType<typeof setTimeout>;
+  /** A manifest reply of this doc may be queued, by this context, another tab or an earlier visit. */
+  pending: boolean;
+  marks: number;
+}
+
+const manifestCleanups = new WeakMap<YDoc, ManifestCleanup>();
+// Lets the Updates of one server answer (and its relayed copies) land before the outbox is read.
+const MANIFEST_CLEANUP_DELAY_MS = 50;
+
+function manifestCleanupOf(doc: YDoc): ManifestCleanup {
+  let cleanup = manifestCleanups.get(doc);
+
+  if (!cleanup) {
+    cleanup = { pending: true, marks: 0 };
+    manifestCleanups.set(doc, cleanup);
+  }
+
+  return cleanup;
+}
+
+/** A manifest reply of this doc may now be queued; the server's next proof checks the queue. */
+function expectManifestReplies(doc: YDoc): void {
+  const cleanup = manifestCleanupOf(doc);
+
+  cleanup.pending = true;
+  cleanup.marks += 1;
+}
+
+/**
+ * The server proved more of its state. Delete this doc's queued manifest replies that are now
+ * redundant: one queued for a sibling tab's request before the server's answer arrived, or one
+ * left by an earlier build. Waiting replies among them would keep the notice on screen.
+ */
+function scheduleManifestCleanup(doc: YDoc): void {
+  const cleanup = manifestCleanupOf(doc);
+
+  if (!cleanup.pending || cleanup.timer !== undefined) return;
+  cleanup.timer = setTimeout(() => {
+    cleanup.timer = undefined;
+    if (!isCollabStorageCurrent(doc)) return;
+    const marks = cleanup.marks;
+    const { version, databaseRestoreId } = doc;
+    const sameGeneration = () => doc.version === version && doc.databaseRestoreId === databaseRestoreId;
+
+    void (async () => {
+      const remaining = await deleteRedundantManifestRows(
+        doc.guid,
+        { version: version ?? null, databaseRestoreId },
+        (payload) => sameGeneration() && isNoopForServer(doc, payload)
+      );
+
+      if (remaining === 0 && cleanup.marks === marks) cleanup.pending = false;
+    })().catch((error) => Log.warn('[sync] Could not remove manifest replies the server already holds', error));
+  }, MANIFEST_CLEANUP_DELAY_MS);
+}
+
 /**
  * Bind an existing sync context to the current realtime connection.
  *
@@ -96,6 +160,12 @@ export const bindSyncContext = (ctx: SyncContext): void => {
     throw new Error('SyncContext must have a Y.Doc instance.');
   }
 
+  if (!isCollabStorageCurrent(doc)) return;
+  // Whatever the server proved before this request may since have been lost on its side; its
+  // answer proves its state afresh. Replies queued meanwhile, by this tab or another, are checked
+  // again then.
+  beginServerExchange(doc);
+  expectManifestReplies(doc);
   Log.debug('[sync] binding context with manifest exchange', {
     objectId: doc.guid,
     collabType,
@@ -130,6 +200,8 @@ export const bindSyncContext = (ctx: SyncContext): void => {
 
 const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void => {
   const { doc, emit } = ctx;
+
+  if (!isCollabStorageCurrent(doc)) return;
   const stateVector = message.stateVector && message.stateVector.length > 0 ? message.stateVector : undefined;
   const update = Y.encodeStateAsUpdate(doc, stateVector);
 
@@ -145,7 +217,15 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
   // durable outbox or on the wire. An empty DatabaseRow update with an empty
   // causal vector otherwise looks like a self-contained replacement even
   // though it carries no row metadata or parent database id.
-  if (isEmptyUpdateV1(update)) {
+  //
+  // A diff always carries the complete delete set, so a page with any deletion
+  // in its history never produces the empty update, and a request that is
+  // behind the server makes the reply repeat structs the server holds. Bytes
+  // made only of structs and deletions the server has proven it holds since
+  // this context's last request are the same no-op; queueing them would show
+  // a reader "waiting for edit access" and make an editor upload them again.
+  // An unsent local change is never among them.
+  if (isEmptyUpdateV1(update) || isNoopForServer(doc, update)) {
     ctx.onManifestSync?.(doc.guid);
     return;
   }
@@ -155,6 +235,12 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
   // let the serialized outbox use the bounded HTTP slow lane. Emitting here
   // would close the WebSocket before any fallback could run.
   if (shouldRouteUpdateThroughOutbox(update.byteLength)) {
+    // A request that arrives before the server has answered this context may
+    // be a sibling tab's, or the server's repair request for an edit it
+    // refused after the drain had deleted the edit's row. The two cannot be
+    // told apart and the answer may never come, so the reply is queued like
+    // any other; once server Updates prove its content, the cleanup deletes it.
+    expectManifestReplies(doc);
     const persisted = enqueueOutboxUpdate(
       {
         objectId: doc.guid,
@@ -192,19 +278,27 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
 };
 
 const handleAccessChanged = (ctx: SyncContext, message: collab.IAccessChanged): void => {
+  if (!isCollabStorageCurrent(ctx.doc)) return;
+  if (message.canRead === false || message.canWrite === false) {
+    const session = getCurrentOutboxSession();
+
+    // Revocation pauses both incremental edits and reconstructed manifests.
+    // A later grant must not imply consent to upload retained offline work.
+    if (session) void blockPermissionSync(ctx.doc.guid, session.workspaceId)
+      .catch((error) => Log.error('[sync] Could not persist permission quarantine', error));
+  }
+
   if (message.canRead === false) {
-    //FIXME: we should not only destroy the doc, but also remove it from the persistent storage.
-    // Access revoked: drop any queued outbox rows so we do not replay local
-    // edits against a doc the user no longer has permission on. The discard
-    // runs async — to prevent the destroy handler's subsequent unregister
-    // from firing a flush that races with the delete, synchronously null
-    // out ctx.flush first. The drain also gates on `suppressedObjects`
-    // (set synchronously by discardPendingUpdates), so any new drain
-    // iteration aborts before sending.
-    void ctx.discardPendingUpdates?.();
+    // No read access: hide the content and remove the synced copy so it is no
+    // longer readable on this device (for a database, with its rows, read from
+    // the open document before it is destroyed). Unsent edits stay quarantined
+    // in the outbox (above) for the user's Try again or Discard.
     ctx.flush = undefined;
-    ctx.discardPendingUpdates = undefined;
-    void deleteCollabDB(ctx.doc.guid, { destroyDoc: false });
+    const removed = ctx.collabType === Types.Database
+      ? deleteDatabaseLocalCopies(ctx.doc.guid, { destroyDoc: false, knownRowIds: collectDatabaseRowIds(ctx.doc) })
+      : deleteCollabDB(ctx.doc.guid, { destroyDoc: false });
+
+    void removed.catch((error) => Log.warn('[sync] Could not remove the revoked local copy', error));
     ctx.doc.destroy();
   }
 };
@@ -221,6 +315,18 @@ const handleUpdate = (ctx: SyncContext, message: collab.IUpdate): void => {
   const { doc, emit } = ctx;
 
   Log.debug('[Version] handleUpdate: localDocVersion=%s, incomingMsgVersion=%s, docId=%s', doc.version, message.version, doc.guid);
+
+  // Only the server assigns a message id: to its Updates, also when another tab
+  // relays them or when one is built from an HTTP sync result. The fan-out of
+  // local edits between tabs has none. buildUpdateMessage (sync-outbox) and
+  // applyHttpFullSyncResult (useSync) keep it that way: a message id on bytes
+  // the server does not hold would make this tab skip, or the cleanup delete,
+  // a manifest reply that carries them.
+  if (message.messageId) {
+    const proven = recordServerUpdate(doc, message.flags === UpdateFlags.Lib0v1 ? message.payload ?? null : null);
+
+    if (proven) scheduleManifestCleanup(doc);
+  }
 
   switch (message.flags) {
     case UpdateFlags.Lib0v1:
@@ -286,7 +392,7 @@ export const initSync = (ctx: SyncContext) => {
   ctx.discardPendingUpdates = (options) => deleteOutboxByObjectId(doc.guid, options);
 
   const onUpdate = (update: Uint8Array, origin: string, _doc: Y.Doc, transaction: Y.Transaction) => {
-    if (origin === CollabOrigin.Remote) return;
+    if (origin === CollabOrigin.Remote || !isCollabStorageCurrent(doc)) return;
 
     if (origin === CollabOrigin.InlineCommentAuthorized) {
       // Read-and-comment anchors use their narrowly authorized HTTP endpoint,
@@ -312,17 +418,7 @@ export const initSync = (ctx: SyncContext) => {
     ctx.onLocalUpdate?.(doc.guid);
   };
 
-  const onDestroy = () => {
-    // when switching versions, we destroy previous instance of the document
-    // at this point all stashed updates are no longer valid. Fire-and-forget
-    // is acceptable here: the unregister path that sets `skipFlushOnDestroy`
-    // will also trigger its own discard, and callers that need to observe
-    // completion go through the await path in useCollab{Message,Version}Revert.
-    void ctx.discardPendingUpdates?.();
-  };
-
   doc.on('update', onUpdate);
-  doc.on('destroy', onDestroy);
 
   if (awareness) {
     onAwarenessChange = ({ added, updated, removed }: AwarenessEvent, _: string) => {
@@ -353,7 +449,6 @@ export const initSync = (ctx: SyncContext) => {
   // discardPendingUpdates() (version reset/revert paths only).
   const cleanup = () => {
     doc.off('update', onUpdate);
-    doc.off('destroy', onDestroy);
     if (awareness && onAwarenessChange) {
       awareness.off('change', onAwarenessChange);
     }
@@ -384,6 +479,7 @@ export const getCollabMessageVersion = (message: collab.ICollabMessage): string 
 export const handleMessage = (ctx: SyncContext, message: collab.ICollabMessage): void => {
   const doc = ctx.doc || ctx.awareness?.doc;
 
+  if (!isCollabStorageCurrent(doc)) return;
   if (message.objectId !== doc.guid) {
     throw new Error(`collab message mismatch - expected objectId ${message.objectId}, got ${doc.guid}`);
   }

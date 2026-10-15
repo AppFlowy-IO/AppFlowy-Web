@@ -57,3 +57,236 @@ server, or whether a client upgrade can help resets dismissal; a confirmed
 compatible response clears it. Reloading the tab starts a new session. An old
 web client offers a reload action; contradictory requirements ask the
 administrator to update both components.
+
+## Workspace permission controls
+
+Space creation uses the authenticated
+`GET /api/workspace/{workspace_id}/space-creation-capabilities` response. Support, effective permission,
+configuration authority, and group entitlement are separate fields. A server without that route
+(HTTP 404/405) predates these controls: Create space, Duplicate Space and the calendar meeting space stay
+available and that server's own checks decide. A refused read (HTTP 403 or code 1012, for example after
+leaving the workspace) is the server's answer: Create space, New Page and Duplicate Space say "You can't
+create spaces in this workspace." without a retry. An unknown policy, mismatched workspace, incomplete
+response or other failed read leaves Create space and Duplicate Space unavailable with "We couldn't check
+permissions. Try again."; Create space and New Page offer "Try again", and Duplicate Space reads the
+answer again each time its menu opens and when the window regains focus or the connection returns.
+Background rechecks keep a known answer on screen: a confirmed answer, an older server and a refusal stay
+as they are while they are asked again, so "Checking permissions…" appears only while there is no answer
+yet (a first check, or a recheck after a check that could not run). Entry points stay available on a
+confirmed yes while it is rechecked, and sending always reads the answer again first.
+Calendar transcription lets the server decide when the check could not run, and a denial or refusal still
+opens the meeting without a notes page. The current workspace role alone does not authorize creation. No
+release-version floor has been assigned to these new controls yet.
+
+Space creation settings (Settings > Permissions) save the policy through the existing workspace settings
+API. The request sets both `exact_space_creation_policy` and `space_creation_policy` to the chosen mode,
+and the change counts as saved only when the response's `exact_space_creation_policy` matches it. Current
+servers report "Owners and selected members" as `owners_only` in `space_creation_policy`, so clients that
+know only two modes can still read settings. The Web falls back to `space_creation_policy` only when a
+server predates `exact_space_creation_policy`; such servers report their exact policy there. Servers that
+know only two modes reject selected mode instead of ignoring it. A choice that lets more people create
+spaces applies at once with "Space creation updated" and Undo. A choice that lets fewer people create
+spaces ("Owners and members" to "Owners only" or "Owners and selected members", or "Owners and selected
+members" to "Owners only") first asks "Change who can create spaces?" and names who loses the ability;
+Undo puts the previous policy back without asking again. User/group selections use focused UUID
+grant/revoke endpoints and separately paginated rosters (every page is read); removed selections are
+hidden, and selections that no longer count (guests, people who left the workspace, deleted groups) stay
+listed as "Not eligible". Member pickers require the optional `user_uuid` supplied by current servers.
+Numeric UIDs are not converted to grant identities. Owners (who can always create spaces), guests,
+pending invitations and entries without a UUID cannot be selected. A refused settings read shows "You
+can't create spaces in this workspace." and removes the last settings and selections from the panel;
+other failed reads offer Retry, or ask an offline browser to reconnect. A server without the capability
+route shows that it does not support these settings.
+
+Workspace creation uses the account's `GET /api/user/workspace-creation-capability`, which works before
+any workspace is selected. A server without that route (HTTP 404/405 without an application error code)
+predates workspace creation controls and is treated as a legacy server: Create workspace and Import
+workspace stay available in the workspace menu, Manage Data, the import page and the empty-account page,
+and creation uses the original `POST /api/workspace` without a `request_id`. Such a server has no
+receipt to replay, so nothing is saved for "Check again"; a lost response is reported as a failure and
+the server's own checks decide, with its own message when it refuses. On current servers a request ID
+is saved in tab storage after a fresh admission check, immediately before
+`POST /api/workspace/create-with-request-id`, and "Check again" replays the same ID without a new
+client check: the server returns the workspace that ID created, or checks the request itself. A
+definitive rejection of a first request (HTTP 400, 401, 403, 409 or 422, or a known server code such as
+a denial or a limit) releases it, and so does a first request that reaches a node without the keyed
+route; a replay is released only by codes the server sends after looking up the ID. A denial
+(`can_create_workspace = false`) disables Create workspace and new-workspace imports with "Your
+administrator hasn't allowed you to create workspaces.", and so does a first request refused with HTTP
+403 or code 1012, or a replay refused with code 1012. A replay refused with a bare HTTP 403 (no server
+code, for example from a proxy) stays saved as not confirmed, because the first request may have
+created the workspace. An answer that could not be read offers "Check again". The last confirmed answer
+stays visible while it is rechecked (after reconnecting, coming online or a permission change, and on
+focus or visibility once it is 30 seconds old; going offline makes it unavailable), and every new
+request is admitted again right before it is sent. Importing into an existing workspace does not need
+this permission.
+
+Workspace permission notification tag 14 carries an explicit workspace UUID and decimal-string epoch
+and counter. Generated protobuf bindings and HTTP validation preserve signed 64-bit values exactly.
+The notification hook scopes its last revision by server, account and workspace, ignores duplicate/older
+hints, and drops retained messages across a context switch. Hints re-probe current authority; they never
+grant access or delete pending edits. Capability reads also refresh on reconnect, online, focus and
+visibility changes, and discard responses that precede an observed revision.
+The space-creation capability, the access-to-all-spaces summary and the People > Groups list each use
+`createCoalescedRefresh` to allow one active read and one replaceable pending refresh per mounted scope.
+Every hint withdraws space creation admission immediately, before queueing, while the last confirmed
+answer stays on screen. A superseded response cannot enable a control; unmounting also prevents a queued
+read from starting. Waiting for an active read bounds concurrency, not latency, and the group directory
+response itself is still unpaginated. Access to all spaces is set per group in People > Groups > group >
+General and applies immediately: granting or raising it asks first, lowering or turning it off does not.
+
+Open search results, previews, AI summaries and recent-page names also have a server/account/workspace
+permission scope. A hard invalidation hides the old snapshot synchronously, before fresh requests
+finish: an object or broad permission hint, a share hint, sign-in or sign-out, or a different account
+or GoTrue session, also from another tab. A routine token refresh keeps the same `session_id` and so
+keeps the scope; tokens without that claim count as a new session. Late keyword, pagination, metadata
+and summary responses cannot restore an invalidated snapshot, and the unchanged query runs again after
+the normal debounce. Window focus, tab visibility and connectivity changes invalidate nothing. When the
+realtime socket reopens after a disconnect (hints may have been missed), Best matches reloads the shown
+query with every loaded page and the AI summary in the background and swaps them together, and recent
+pages revalidate the same way; a failed revalidation keeps the current results. Offline, Best matches
+and recent pages say so instead of showing empty results and Ask AI is disabled with that reason. A
+read skipped offline or lost to the dropped connection runs again once the browser is back online;
+while the browser stays online, a failed read is not retried on its own. These are UI lifetime checks;
+Search and page APIs still enforce current server authorization.
+Keyword, summary and metadata requests receive a caller-owned cancellation signal; these metadata
+reads do not join or populate shared view-cache requests. Recent pages are read directly from
+`GET /api/workspace/{workspace_id}/recent`, because the app-wide loader cannot tell a failure from a
+request that another reader replaced. Loading, offline, failed (with "Try again") and empty ("No
+recent pages yet.") are distinct. A loaded list belongs to one dialog opening within one scope, so
+clearing the query shows it again without a request; after a hard invalidation a failed refresh keeps
+the old names hidden. Recent-page refresh keeps one active read and one replaceable follow-up, and
+only starts while recent pages are displayed. Until Ask AI sends its create request, closing the dialog
+or a permission or session change cancels the attempt (a permission change asks the user to try
+again). Once the chat page exists the attempt finishes: after a permission hint the parent is read
+again and only sources inside the fresh, permission-filtered tree are attached; if the dialog was
+closed meanwhile, a toast offers to open the chat; only a session, account, workspace or server change
+stops it silently. Ask AI stays busy for the whole attempt, so one request cannot create two chats.
+
+Mention suggestions reuse that permission/session scope. The cache lifetime follows the scope: within
+one scope a reopened picker shows its cached suggestions at once and revalidates them, while a
+permission or session change (also while the picker is closed) or a remount starts empty, so an
+earlier account/workspace/server snapshot is never reused. The shared cache retains at most 50
+entries, and a retired scope frees its entries. Scope changes hide results and prevent selection
+immediately; a late request cannot fill the replacement scope. Authenticated `loadViews` fallback
+suggestions also reload under that scope, while anonymous published-page fallback remains available.
+`RetryLater` discards cached and displayed suggestions even before a permission hint arrives,
+including when only the parallel row request fails: for a typed query the server returns it only when
+permissions changed or are being updated, and a parallel response may predate that change. The picker
+says "Refreshing suggestions…" and searches again after the server's cooldown. A per-key read token
+prevents an older success from undoing that invalidation. A socket reconnect refreshes suggestions in
+the background, and a dropped connection or server error during a refresh keeps them on screen. A page
+created from the picker is the user's own: it is linked when the same picker opening is still active
+and the editor is editable, otherwise a toast offers to open it, and after a session change nothing is
+shown. A refused creation shows one plain message. Existing request debounce and cooldowns remain;
+these lifetime checks do not cancel the underlying mention HTTP requests or replace server authorization.
+
+Create/Manage Space expose the existing `sidebar_edit_policy` as "Who can add pages to this space": "Only
+space owners", or space members who can edit. Space members are the people and groups added to a Custom
+space ("Space members who can edit") and every workspace member except guests in a Public space
+("Workspace members who can edit"); someone with edit access only through "Everyone else" or a shared
+page cannot add pages directly. Private spaces have no setting, because only their owner adds pages. A
+policy value from a newer server is shown as "Other setting" and kept as received. Direct space-child
+actions require both canonical content Write and sidebar permission: the sidebar "+", New Page
+destinations (checked per space when the dialog opens, with the reason shown for unavailable spaces),
+Duplicate (the source's parent must accept a new page) and Move (the selected destination is checked
+before Move is enabled). For New Page, Duplicate and Move, a check that could not run (offline, server
+error) is not shown as a denial: that destination stays available and the server decides. A New Page
+choice whose space is no longer listed is dropped. Ordinary nested pages retain their own Write check. On
+a server without the structured space routes the sidebar policy does not exist and Write alone applies.
+Changing this setting does not grant B (space creation) or D (workspace creation). Create Space keeps
+useful draft fields after a denied pre-check. A definitive rejection of a first attempt (400/403/422,
+validation or denial) forgets the saved request and leaves the draft editable with fresh identities. An
+ambiguous outcome (lost response, timeout, 409, 5xx) keeps the original identity with "Check again" and
+"Discard", in the dialog and in the sidebar. A resend from "Check again" that is refused keeps that saved
+request as well, because the earlier attempt with the same identity may still commit; only finding the
+space or "Discard" ends it. When the space exists but its first page can't be matched ("Check again"
+finds the page under another parent, or a server that ignores the requested page ID added it under its
+own ID, on the first attempt or on a check), the dialog says the space was created and offers only
+"Discard": "Check again" is turned off, and the outcome is saved with the request, so a resumed dialog
+shows the same notice and recovery never adds the first page again. The full background-writer, offline
+re-grant and native-client acceptance matrix remains in progress in the Server repository's Oodrive plan.
+
+On servers with per-person access, Manage Space adds people and groups through the UUID routes. For
+Public, Private and unknown space types those routes store the level sent with the add and fall back to
+Can edit when it is missing, so Web always sends the space's member level. (Web keeps Public rosters
+read-only, and servers refuse person adds to Private spaces.) A Custom-space member keeps the space
+default until a level is chosen in the Access column, because Custom spaces ignore the level sent. Web
+still sends Can view for them: if the space became Public without the open dialog noticing, the new
+member gets exactly the space's member level (Public spaces give it to every member) instead of the
+server's Can edit default.
+
+When the Members tab shows signed-in users their own row with an Access menu, Web reads
+`GET /api/workspace/{workspace_id}/spaces/{space_id}/access-details` once, and again after each permission
+notification (keeping the last answer meanwhile). If a group of the space, Access to all spaces or a
+share of the space page gives them more than that row, the menu adds one line naming the source; a group
+is named only when exactly one group fits. Because the line is read ahead, it is in the menu, and
+describes it, as soon as the menu opens; a line that arrives or changes while the menu is open is read
+out through a polite live region. The source follows the server's decision: for anyone but a space
+owner, a share of the space page replaces what the space, its groups and Access to all spaces give, even
+when it is lower. So when the share is the final level, the line names the share, and a group or Access
+to all spaces above the final level is never named. The route explains only the caller's own access, so
+other people's rows carry no such line. A server without the route, or any failed read, shows no line
+and no error.
+
+`GET /api/user/workspace` sends `allow_empty=true`. Current servers return `visiting_workspace: null`
+for an account without a workspace only to callers that opt in (others get an error), and older servers
+ignore the parameter. An open page keeps its content while its access is re-checked: after a permission
+hint, focus, reconnect or return online the app drops the page's capability until a new probe answers.
+Both the main page and the page modal stay visible, read-only, meanwhile. Only a confirmed denial, or a
+revocation of that page, hides them.
+
+The opt-in `playwright.permissions.config.ts` suite uses the passed Server
+`group_permission_lifecycle.py` document fixture. It checks real open editor bodies, title controls,
+Slate editability, canonical Folder plus Shared with me navigation and a second tab across group View/Edit/revoke and
+membership removal/re-addition. Independent direct and second-group grants are controls; a readable
+child can retain its containing space as an ancestor. The stale-response case holds an actual fresh
+allowed capability response across a newer server revocation and requires completed browser delivery;
+a cancelled response does not establish that an old response was consumed safely. Notifications are
+observed passively and never synthesized. This fixture has no database/grid/row coverage.
+After restoring View, the owner captures the actual group override and reads workspace creation and
+group coverage settings without changing them. These settings screenshots show the canonical current
+configuration; they do not establish a creation or coverage mutation. The journal records the Web
+source manifest and requires it to remain unchanged through preservation checks.
+
+Run its offline transport/identity guards with
+`pnpm exec playwright test -c playwright.permissions.config.ts --grep @offline`.
+The connected case skips unless `APPFLOWY_GROUP_PERMISSION_RUNTIME_DIR` is supplied. It also requires
+`APPFLOWY_GROUP_PERMISSION_CLOUD_PROOF`, `APPFLOWY_GROUP_PERMISSION_WORKER_PROOF`, and `BASE_URL` matching
+the private runtime. Optional `APPFLOWY_TEST_PYTHON` selects the Python environment with psycopg;
+`APPFLOWY_TEST_CHROMIUM_EXECUTABLE` selects an installed browser. The read-only preflight binds current
+processes/source to the passed Server run and verifies restored owned state before authenticating the
+two existing actors. Each attempt journals mutations before sending, restores the exact starting grant
+and membership, and checks original content/config/roster rows and owned document bytes afterward.
+Original Server evidence is immutable. No user, workspace or document is created by this Web suite;
+AI traffic and unrelated browser writes are excluded, traces/video are disabled, and evidence consists
+of screenshots plus a separate private journal and sanitized result. The preservation comparison
+retains raw protected rows and permits only three observed timestamps inside the server-managed
+`search_admission_health` value (`last_checked_at`, `last_healthy_at`, `next_check_at`) plus that
+row's `updated_at`; every policy value, admission state, lease, other configuration field and membership
+timestamp remains strict. The owning Cloud monitor in `libs/database/src/search_health.rs` updates
+those observations every ten seconds; its row hashes are recorded separately. These tests require an exclusive
+released fixture; compiling or listing them is not connected UI verification.
+
+The older stg0822 BDD fixture now represents inheritance explicitly with
+`access_level_override: null`; explicit View/Edit overrides remain independent of the collective
+Custom Member default. Its teardown restores each scenario's exact prior role, override, default and
+seeded memberships instead of imposing a hardcoded baseline. It requires a server returning the
+tri-state assignment DTO and refuses a lossy restore when that field is absent.
+
+After a reviewed server rebuild, the original fixture result and journal remain unchanged. The
+read-only guard accepts a separate `identity_state_requalification` record only with matching
+`APPFLOWY_GROUP_PERMISSION_REQUALIFICATION` and
+`APPFLOWY_GROUP_PERMISSION_REQUALIFICATION_SHA256` inputs. Its generator uses JSON stdin with
+`action: "requalify"`, current and original Cloud/Worker proof paths, a preserved raw baseline
+snapshot, an exact reviewed list of changed native-source paths, and a new private output path.
+It validates current process/binary/environment/source proofs before reading actor credentials,
+then performs only PostgreSQL SELECTs. It rechecks fixture identities, the restored View grant,
+Member roles/memberships, None defaults, independent Edit grants, document bytes and protected rows.
+The record binds original evidence hashes and the exact source delta; it explicitly does not claim
+that the original server lifecycle cases ran again. Unknown source changes, modified proof bytes,
+missing checks, or an altered fixture fail closed. The generator never overwrites an output file.
+Each completed SELECT snapshot is also retained as a separate private, explicitly unqualified
+observation before preservation checks, so a rejected lease or policy change retains its raw evidence.
+Run its offline regressions with
+`PYTHONDONTWRITEBYTECODE=1 python3 playwright/support/test_space_group_permission_guard.py`.

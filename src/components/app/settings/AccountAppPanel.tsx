@@ -13,7 +13,7 @@ import { MetadataKey } from '@/application/user-metadata';
 import { ReactComponent as ChevronDownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { NormalModal } from '@/components/_shared/modal';
 import { HIDDEN_BUTTON_PROPS, MODAL_CLASSES } from '@/components/app/workspaces/modal-props';
-import LogoutConfirm from '@/components/app/workspaces/LogoutConfirm';
+import LogoutConfirm, { type LogoutOptions } from '@/components/app/workspaces/LogoutConfirm';
 import { useAppConfig } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import {
@@ -222,9 +222,9 @@ export function AccountAppPanel() {
     [persist]
   );
 
-  const handleSignOut = useCallback(() => {
+  const handleSignOut = useCallback((options?: LogoutOptions) => {
     clearRedirectTo();
-    invalidToken();
+    invalidToken({ removeLocalData: options?.removeLocalData });
     navigate('/login?force=true');
   }, [navigate]);
 

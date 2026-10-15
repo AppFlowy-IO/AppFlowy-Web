@@ -1,6 +1,7 @@
 
 import * as Y from 'yjs';
 
+import { assertCollabStorageCurrent, collabStorageKey } from '@/application/db/collab-storage-scope';
 import type { DatabaseStorageFence } from '@/application/db/database-storage-fence';
 import { serverRestore } from '@/application/server-restore';
 import type { CollabFullSyncBatchResult } from '@/application/services/js-services/http/collab-api';
@@ -172,7 +173,11 @@ export async function readPersistedDatabaseSource(
     throw new Error('Database source storage generation changed');
   }
 
-  const name = restoreId ? `${doc.guid}:database-restore:${restoreId}` : doc.guid;
+  // The root lives in this account and workspace's namespace of the current restore
+  // generation. A document opened under another account or workspace is never read here.
+  assertCollabStorageCurrent(doc);
+  const storageName = collabStorageKey(doc.guid);
+  const name = restoreId ? `${storageName}:database-restore:${restoreId}` : storageName;
   const connection = await new Promise<IDBDatabase>((resolve, reject) => {
     assertNotAborted(signal);
     const request = indexedDB.open(serverRestore.cacheKey(name));

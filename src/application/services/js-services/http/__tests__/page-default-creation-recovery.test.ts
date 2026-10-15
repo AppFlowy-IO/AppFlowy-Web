@@ -1,18 +1,27 @@
 import {
   assertAtomicCreationAvailable, atomicRead, AtomicCreationOwner, AtomicCreationPendingError,
   AtomicCreationRecord, captureAtomicCreationOwner, findPendingAtomicCreation, recoverAtomicCreation,
-  runAtomicCreation,
+  releaseRefusedAtomicCreation, runAtomicCreation,
 } from '@/application/atomic-creation';
 import { ViewLayout } from '@/application/types';
 
 import { verifyCreatedPage } from '../created-page-hydration';
-import { createDefaultPage } from '../page-default-creation';
+import { createDefaultPage, recoverDefaultPage } from '../page-default-creation';
 
 jest.mock('@/application/atomic-creation', () => ({
   assertAtomicCreationAvailable: jest.fn(), atomicRead: jest.fn(), captureAtomicCreationOwner: jest.fn(),
   findPendingAtomicCreation: jest.fn(), recoverAtomicCreation: jest.fn(), runAtomicCreation: jest.fn(),
+  releaseRefusedAtomicCreation: jest.fn(),
   parseAtomicCreationRequest: (record: { requestJson: string }) => JSON.parse(record.requestJson),
-  AtomicCreationPendingError: class extends Error {},
+  AtomicCreationPendingError: class extends Error {
+    constructor(readonly record: { id: string }, readonly cause: unknown) {
+      super('pending');
+    }
+
+    get recordId() {
+      return this.record.id;
+    }
+  },
 }));
 jest.mock('../created-page-hydration', () => ({ verifyCreatedPage: jest.fn() }));
 
@@ -57,4 +66,44 @@ it('keeps the command pending when a supplied initial Document ID belongs to ano
   expect(recoverAtomicCreation).not.toHaveBeenCalled();
   expect(runAtomicCreation).not.toHaveBeenCalled();
   expect(atomicRead).not.toHaveBeenCalled();
+});
+
+describe('a page the server refuses', () => {
+  const denial = { code: 1012, httpStatus: 403, sourceDomain: 'appflowy.server', message: 'not allowed' };
+
+  beforeEach(() => {
+    jest.mocked(findPendingAtomicCreation).mockResolvedValue(undefined);
+    jest.mocked(atomicRead).mockResolvedValue({ view_id: 'stable-space', children: [] } as never);
+  });
+
+  it('releases the never-committed command and answers with the refusal itself', async () => {
+    jest.mocked(runAtomicCreation).mockRejectedValue(new AtomicCreationPendingError(record, denial));
+    jest.mocked(releaseRefusedAtomicCreation).mockResolvedValue(true);
+
+    await expect(createDefaultPage('workspace', 'stable-space', { layout: ViewLayout.Document })).rejects.toBe(denial);
+    expect(releaseRefusedAtomicCreation).toHaveBeenCalledWith(owner, 'journal');
+  });
+
+  it('keeps a committed command pending for an explicit retry', async () => {
+    const pending = new AtomicCreationPendingError(record, denial);
+
+    jest.mocked(runAtomicCreation).mockRejectedValue(pending);
+    jest.mocked(releaseRefusedAtomicCreation).mockResolvedValue(false);
+    await expect(createDefaultPage('workspace', 'stable-space', { layout: ViewLayout.Document })).rejects.toBe(pending);
+  });
+
+  it('keeps an ambiguous outcome pending without releasing anything', async () => {
+    const pending = new AtomicCreationPendingError(record, new Error('response lost'));
+
+    jest.mocked(runAtomicCreation).mockRejectedValue(pending);
+    await expect(createDefaultPage('workspace', 'stable-space', { layout: ViewLayout.Document })).rejects.toBe(pending);
+    expect(releaseRefusedAtomicCreation).not.toHaveBeenCalled();
+  });
+
+  it('releases a refused retry of a saved page too', async () => {
+    jest.mocked(recoverAtomicCreation).mockRejectedValue(new AtomicCreationPendingError(record, denial));
+    jest.mocked(releaseRefusedAtomicCreation).mockResolvedValue(true);
+
+    await expect(recoverDefaultPage(owner, record)).rejects.toBe(denial);
+  });
 });

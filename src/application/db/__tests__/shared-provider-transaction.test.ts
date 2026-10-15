@@ -14,7 +14,12 @@ import {
   publishWithDatabaseStorageFence,
   rotateDatabaseStorageFence,
 } from '@/application/db';
-import { withDatabaseStorageFence } from '@/application/db/database-storage-fence';
+import { collabStorageKey } from '@/application/db/collab-storage-scope';
+import {
+  DATABASE_CACHE_EPOCH_PREFIX,
+  databaseStorageFenceObjectId,
+  withDatabaseStorageFence,
+} from '@/application/db/database-storage-fence';
 
 jest.mock('@/utils/log', () => ({ Log: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
 
@@ -28,6 +33,8 @@ afterAll(() => db.close());
 
 it.each([1, 201])('persists %i fenced row updates without inheriting the publisher transaction', async (updates) => {
   const rowId = uuidv4();
+  // Shared rows are stored under the account and workspace scope.
+  const rowKey = collabStorageKey(rowId);
   const databaseId = uuidv4();
   const entry = await openRowCollabDBWithProvider(rowId, { awaitSync: true });
   const fence = await captureDatabaseStorageFence(databaseId, { required: true });
@@ -45,7 +52,7 @@ it.each([1, 201])('persists %i fenced row updates without inheriting the publish
     const reopened = await openRowCollabDBWithProvider(rowId, { awaitSync: true });
 
     expect(reopened.doc.getMap('row').get('body')).toBe(`durable-${updates - 1}`);
-    if (updates > 200) expect(await db.collab_snapshots.get(rowId)).toBeDefined();
+    if (updates > 200) expect(await db.collab_snapshots.get(rowKey)).toBeDefined();
 
     // A detached persistence queue still has to reject bytes captured before
     // an authoritative restore replaces the aggregate generation.
@@ -53,11 +60,11 @@ it.each([1, 201])('persists %i fenced row updates without inheriting the publish
     withDatabaseStorageFence(reopened.doc, fence, () => reopened.doc.getMap('row').set('body', 'stale'));
     await expect(reopened.provider.whenPersisted()).rejects.toThrow('generation changed');
     const persisted = new Y.Doc();
-    const snapshot = await db.collab_snapshots.get(rowId);
+    const snapshot = await db.collab_snapshots.get(rowKey);
 
     if (snapshot) Y.applyUpdate(persisted, snapshot.update);
 
-    for (const update of await db.collab_updates.where('objectId').equals(rowId).toArray()) {
+    for (const update of await db.collab_updates.where('objectId').equals(rowKey).toArray()) {
       Y.applyUpdate(persisted, update.update);
     }
 
@@ -65,7 +72,7 @@ it.each([1, 201])('persists %i fenced row updates without inheriting the publish
     persisted.destroy();
   } finally {
     await deleteCollabDB(rowId);
-    localStorage.removeItem(`af_database_blob_epoch:${databaseId}`);
-    await db.collab_custom.where('objectId').equals(`database-blob-epoch:${databaseId}`).delete();
+    localStorage.removeItem(`${DATABASE_CACHE_EPOCH_PREFIX}${collabStorageKey(databaseId)}`);
+    await db.collab_custom.where('objectId').equals(databaseStorageFenceObjectId(databaseId)).delete();
   }
 });

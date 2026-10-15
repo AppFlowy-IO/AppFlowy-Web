@@ -6,6 +6,8 @@ import { ExportService } from '@/application/services/domains';
 import { isSameUserUid } from '@/application/user-uid';
 import { ReactComponent as HelpIcon } from '@/assets/icons/help.svg';
 import { useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { useWorkspaceCreationCapability } from '@/components/app/hooks/useWorkspaceCreationCapability';
+import { WorkspaceCreationNotice } from '@/components/app/workspaces/WorkspaceCreationNotice';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -20,6 +22,7 @@ export function ManageDataPanel({ onImport }: { onImport: () => void }) {
   const currentWorkspaceId = useCurrentWorkspaceId();
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const currentUser = useCurrentUser();
+  const creation = useWorkspaceCreationCapability();
 
   const [backingUp, setBackingUp] = useState(false);
 
@@ -65,8 +68,11 @@ export function ManageDataPanel({ onImport }: { onImport: () => void }) {
               <HelpTip url={IMPORT_GUIDE_URL} />
             </div>
             <p className='mt-1 text-sm text-text-secondary'>{t('settings.manageData.importWorkspace.tooltip')}</p>
+            <WorkspaceCreationNotice capability={creation} showOwnership />
           </div>
-          <Button variant='default' size='lg' data-testid='manage-data-import' onClick={onImport}>
+          <Button variant='default' size='lg' data-testid='manage-data-import' disabled={!creation.canCreate} onClick={() => {
+            if (creation.canCreate) onImport();
+          }}>
             {t('settings.manageData.importWorkspace.button')}
           </Button>
         </section>

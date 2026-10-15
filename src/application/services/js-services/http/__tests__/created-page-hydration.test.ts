@@ -3,6 +3,8 @@ import * as Y from 'yjs';
 
 import { atomicRead, AtomicCreationOwner } from '@/application/atomic-creation';
 import { captureDatabaseStorageFence, getCachedProviderDoc, openCollabDBWithProvider, openRowCollabDBWithProvider, publishWithDatabaseStorageFence } from '@/application/db';
+// The epoch key carries the account and workspace scope; publish it the way storage does.
+import { publishDatabaseCacheEpoch } from '@/application/db/database-storage-fence';
 import { Types, View, ViewLayout, YDoc, YjsEditorKey } from '@/application/types';
 
 import { collabFullSyncBatch, CollabFullSyncBatchResult } from '../collab-api';
@@ -265,7 +267,7 @@ it('opens a recovered Database in its current restore namespace without resettin
 
   fixture.remote.version = 'current-version';
   serve(fixture);
-  localStorage.setItem(`af_database_blob_epoch:${fixture.remote.guid}`, 'current-restore');
+  publishDatabaseCacheEpoch(fixture.remote.guid, 'current-restore');
   jest.mocked(captureDatabaseStorageFence).mockResolvedValue({ databaseId: fixture.remote.guid, epoch: 'current-restore', cacheEpoch: 'current-restore' });
   jest.mocked(atomicRead).mockImplementation(async (_owner, url) => url.endsWith('restore-state')
     ? { database_restore_id: 'current-restore', version: 'current-version' } as never : fixture.folder as never);
@@ -301,7 +303,7 @@ it('does not publish if storage rotates while version persistence is pending', a
     ? { database_restore_id: null, version: 'version' } as never : fixture.folder as never);
   jest.mocked(openCollabDBWithProvider).mockImplementation(async (id) => {
     const entry = { doc: doc(id), provider: { set: jest.fn(async () => {
-      localStorage.setItem(`af_database_blob_epoch:${id}`, 'new-restore');
+      publishDatabaseCacheEpoch(id, 'new-restore');
     }) } };
 
     providers.set(id, entry);

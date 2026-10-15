@@ -4,21 +4,35 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
+import { PlainError } from '@/application/errors/plain-error';
 import { WorkspaceService } from '@/application/services/domains';
+import { captureApiContext } from '@/application/services/js-services/http/request-context';
+import {
+  extraSpaceAccess,
+  fetchOwnSpaceAccessDetails,
+  setSpaceMemberAccessOverride,
+  SpaceAssignmentPrincipal,
+  spaceMemberAddPayload,
+} from '@/application/services/js-services/space-member-assignment';
 import {
   AccessLevel,
   legacySpacePermission,
   normalizeKnownLegacySpaceVisibility,
   Role,
+  SpaceAccessDetails,
   SpaceMember,
   SpaceMemberRole,
+  SpaceMemberAccessOverride,
   SpacePermissionSettings,
+  SpaceSidebarEditPolicy,
   SpaceVisibility,
   WorkspaceGroup,
   WorkspaceGroupSpacePermission,
   WorkspaceMember,
 } from '@/application/types';
+import { isSameUserUid } from '@/application/user-uid';
 import { NormalModal } from '@/components/_shared/modal';
+import SpaceIcon from '@/components/_shared/view-icon/SpaceIcon';
 import {
   useAppOperations,
   useAppView,
@@ -26,11 +40,21 @@ import {
   useEventEmitter,
   useUserWorkspaceInfo,
 } from '@/components/app/app.hooks';
+import { useSuggestionsOpen } from '@/components/app/share/useSuggestionsOpen';
+import { WorkspaceGroupIcon } from '@/components/app/share/WorkspaceGroupIcon';
 import {
   getWorkspaceMemberUid,
   useAddableWorkspaceMembers,
   WorkspaceMemberInlineSearch,
 } from '@/components/app/share/WorkspaceMemberInlineSearch';
+import {
+  SpaceMemberAccessControl,
+  spaceMemberAccessLabel,
+  SpaceMemberAccessHeader,
+  SpaceMemberAccessStatic,
+  spaceMemberAssignmentLabel,
+  spaceMemberExtraAccessNote,
+} from '@/components/app/view-actions/SpaceMemberAccessControl';
 import SpaceSettingsPanel, { SpaceSettingsTab } from '@/components/app/view-actions/SpaceSettingsPanel';
 import {
   defaultEveryoneElseAccessLevel,
@@ -39,7 +63,7 @@ import {
   LEGACY_SPACE_VISIBILITIES,
   SELECTABLE_SPACE_VISIBILITIES,
 } from '@/components/app/view-actions/spaceVisibilityOptions';
-import { useCurrentUserOptional } from '@/components/main/app.hooks';
+import { useAuthenticatedUserIdOptional, useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -51,10 +75,13 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
-import { getErrorDiagnostic, getErrorMessage, isUnsupportedRouteError } from '@/utils/errors';
+import { getBillingErrorMessage } from '@/utils/billing-error';
+import { changeFailureReason, isGoneError, isPermissionError, publicErrorMessage, RAW } from '@/utils/change-failure';
+import { getErrorDiagnostic, isUnsupportedRouteError } from '@/utils/errors';
+import { getConfigValue } from '@/utils/runtime-config';
 
 import type { TFunction } from 'i18next';
-import type { KeyboardEvent } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 
 type ManageSpaceTab = SpaceSettingsTab;
 
@@ -76,8 +103,8 @@ type SpaceMetadataMutationCoordinator = {
 // that is still in flight.
 const spaceMetadataMutationCoordinators = new Map<string, SpaceMetadataMutationCoordinator>();
 
-function metadataMutationKey(workspaceId: string, viewId: string): string {
-  return JSON.stringify([workspaceId, viewId]);
+function metadataMutationKey(serverUrl: string, accountId: string | undefined, workspaceId: string, viewId: string): string {
+  return JSON.stringify([serverUrl, accountId, workspaceId, viewId]);
 }
 
 function getMetadataMutationCoordinator(
@@ -94,12 +121,23 @@ function getMetadataMutationCoordinator(
 }
 
 // Compatibility controls for a visibility value this client does not yet understand.
-const INHERITED_MEMBER_SOURCES = new Set(['workspace_default', 'page_share']);
+const INHERITED_MEMBER_SOURCES = new Set(['workspace_default', 'page_share', 'legacy_private_owner']);
+const PAGE_SHARE_MEMBER_SOURCE = 'page_share';
 const LAST_EXPLICIT_OWNER_ERROR = 'space must keep at least one explicit owner';
 const MEMBER_GRID_COLUMNS = 'minmax(0, 1fr) 220px';
+// Name | Access | Role. Every row is its own grid, so no track may depend on
+// its content or the columns would not line up. The Role track fits its label
+// ("Space member" plus the chevron, 146px in a wide fallback font such as
+// DejaVu Sans), the Access menu truncates, and the Name column absorbs a narrow
+// dialog.
+const MEMBER_ACCESS_GRID_COLUMNS = 'minmax(0, 1fr) min(196px, 32%) 152px';
 const MAX_ADDABLE_GROUP_RESULTS = 8;
 
 type FullAccessAudience = 'space-members' | 'everyone-else' | 'workspace-members';
+
+// Why this dialog's access could not be confirmed: a failure worth checking
+// again, or an answer that the user can no longer see this space.
+type PermissionLoadFailure = 'unavailable' | 'denied';
 
 type PendingConfirmation =
   | { kind: 'visibility'; target: SpaceVisibility }
@@ -211,12 +249,88 @@ function workspaceRoleLabel(role: Role | undefined, t: TFunction): string | null
   }
 }
 
-function manageSpaceErrorMessage(error: unknown, fallback: string, t: TFunction): string {
-  const message = getErrorMessage(error, fallback);
+// Answers meaning the user can no longer see or change what they acted on:
+// lost rights, a removed member or group, or a deleted space.
+function isAccessDeniedError(error: unknown): boolean {
+  return isPermissionError(error) || isGoneError(error);
+}
 
+/**
+ * Toast copy for a failed read, with the same precedence as changeFailureReason. Server text can
+ * name internal IDs ("user 42 cannot manage members for space …"), so it is never shown: lost
+ * access keeps the caller's plain copy (the dialog explains it), a public server or catalog
+ * message (including the copy this client's PlainError carries) is shown when there is one, and
+ * anything else gets the caller's copy.
+ */
+function plainErrorMessage(error: unknown, fallback: string): string {
+  const billingMessage = getBillingErrorMessage(error);
+
+  if (billingMessage) return billingMessage;
+  if (isAccessDeniedError(error)) return fallback;
+  return publicErrorMessage(error) ?? fallback;
+}
+
+/** Why a change in this dialog didn't go through; the last-owner rule has its own explanation. */
+function changeReason(error: unknown, t: TFunction): string {
+  // The server's diagnostic is read only to recognize the rule; it is never shown.
   return getErrorDiagnostic(error).toLowerCase().includes(LAST_EXPLICIT_OWNER_ERROR)
     ? t('space.permissionManager.lastOwnerRequired')
-    : message;
+    : changeFailureReason(error, t);
+}
+
+type FailedChangeKey = 'changeAccessFailed' | 'changeRoleFailed' | 'addFailed' | 'removeFailed';
+type FailedSettingKey =
+  | 'changeSpaceTypeFailed'
+  | 'changeSidebarPolicyFailed'
+  | 'changeMembersAccessFailed'
+  | 'changeWorkspaceMembersAccessFailed'
+  | 'changeEveryoneElseAccessFailed'
+  | 'renameFailed'
+  | 'changeIconFailed'
+  | 'saveSettingsFailed';
+
+/** A failed change for someone: "Couldn't change access for Alex. You don't have permission to do this." */
+function failedChange(key: FailedChangeKey, name: string, error: unknown, t: TFunction): string {
+  return t(`space.permissionManager.${key}`, { name, reason: changeReason(error, t), ...RAW });
+}
+
+/** A failed space setting: "Couldn't change who can add pages. …" */
+function failedSetting(key: FailedSettingKey, error: unknown, t: TFunction): string {
+  return t(`space.permissionManager.${key}`, { reason: changeReason(error, t), ...RAW });
+}
+
+const SETTING_FIELDS = [
+  'visibility',
+  'sidebar_edit_policy',
+  'member_default_access_level',
+  'everyone_else_access_level',
+] as const;
+
+/** Which setting a rejected save was about, so the toast can name it. */
+function settingsFailureKey(previous: SpacePermissionSettings, next: SpacePermissionSettings): FailedSettingKey {
+  const changed = SETTING_FIELDS.filter((field) => previous[field] !== next[field]);
+
+  // A type change also seeds the levels the new type needs.
+  if (changed.includes('visibility')) return 'changeSpaceTypeFailed';
+  if (changed.length !== 1) return 'saveSettingsFailed';
+  switch (changed[0]) {
+    case 'sidebar_edit_policy':
+      return 'changeSidebarPolicyFailed';
+    case 'member_default_access_level':
+      return next.visibility === SpaceVisibility.Public
+        ? 'changeWorkspaceMembersAccessFailed'
+        : 'changeMembersAccessFailed';
+    default:
+      return 'changeEveryoneElseAccessFailed';
+  }
+}
+
+/** The name, the icon (chosen with its colour), or both. */
+function metadataFailureKey(patch: Partial<SpaceMetadata>): FailedSettingKey {
+  const icon = patch.space_icon !== undefined || patch.space_icon_color !== undefined;
+
+  if (patch.name === undefined) return 'changeIconFailed';
+  return icon ? 'saveSettingsFailed' : 'renameFailed';
 }
 
 function displayNameForMember(member: SpaceMember, t: TFunction): string {
@@ -255,6 +369,26 @@ function isMutableSpaceMember(member: SpaceMember): boolean {
   return !INHERITED_MEMBER_SOURCES.has(member.source);
 }
 
+// Whether a person's Access cell is a menu rather than static text (see memberAccessCell):
+// an ordinary row that can be changed, with a known identity and chosen access.
+function hasSpaceMemberAccessMenu(member: SpaceMember): boolean {
+  return (
+    member.role !== SpaceMemberRole.Owner &&
+    isMutableSpaceMember(member) &&
+    Boolean(member.user_uuid) &&
+    member.access_level_override !== undefined
+  );
+}
+
+function accessOverrideKey(principal: SpaceAssignmentPrincipal): string {
+  return `${principal.type}:${principal.uuid}`;
+}
+
+// Servers that predate per-person access only report the materialized level.
+function confirmedEffectiveAccess(row: SpaceMember | WorkspaceGroupSpacePermission): AccessLevel | null {
+  return row.effective_access_level !== undefined ? row.effective_access_level : row.access_level;
+}
+
 function RoleDropdown({
   value,
   disabled,
@@ -262,6 +396,8 @@ function RoleDropdown({
   onChange,
   onRemove,
   canRemove,
+  memberDescription,
+  removeHint,
 }: {
   value: SpaceMemberRole;
   disabled?: boolean;
@@ -269,6 +405,10 @@ function RoleDropdown({
   onChange: (value: SpaceMemberRole) => void;
   onRemove: () => void;
   canRemove: boolean;
+  /** How a Space member's access is decided, shown under the Space member option. */
+  memberDescription: string;
+  /** Why Remove is unavailable for this row. */
+  removeHint?: string;
 }) {
   const { t } = useTranslation();
 
@@ -284,9 +424,10 @@ function RoleDropdown({
           variant='ghost'
           size='sm'
           disabled={disabled}
-          className='w-fit justify-end px-2 text-text-primary'
+          className='min-w-0 max-w-full justify-end px-2 text-text-primary'
         >
-          {roleLabel(value, t)}
+          {/* A label wider than its column is cut short instead of covering the Access menu. */}
+          <span className='truncate'>{roleLabel(value, t)}</span>
           <ChevronDown className='h-4 w-4 text-icon-tertiary' />
         </Button>
       </DropdownMenuTrigger>
@@ -306,9 +447,7 @@ function RoleDropdown({
         >
           <div className='flex flex-col gap-1'>
             <span>{t('space.permissionManager.member')}</span>
-            <span className='text-xs leading-5 text-text-secondary'>
-              {t('space.permissionManager.memberRoleDescription')}
-            </span>
+            <span className='text-xs leading-5 text-text-secondary'>{memberDescription}</span>
           </div>
           {value === SpaceMemberRole.Member && <DropdownMenuItemTick />}
         </DropdownMenuItem>
@@ -318,7 +457,7 @@ function RoleDropdown({
         </DropdownMenuItem>
         {!canRemove && (
           <div className='px-2 pb-1 text-xs text-text-tertiary'>
-            {t('space.permissionManager.inheritedAccessManagedFromGeneral')}
+            {removeHint ?? t('space.permissionManager.inheritedAccessManagedFromGeneral')}
           </div>
         )}
       </DropdownMenuContent>
@@ -376,6 +515,8 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   const workspaceId = useCurrentWorkspaceId();
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const currentUser = useCurrentUserOptional();
+  const accountId = useAuthenticatedUserIdOptional();
+  const serverUrl = getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud');
   const eventEmitter = useEventEmitter();
   const { t } = useTranslation();
   const [tab, setTab] = useState<ManageSpaceTab>('general');
@@ -390,6 +531,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   const [canEditSidebar, setCanEditSidebar] = useState(false);
   const [canManageMembers, setCanManageMembers] = useState(false);
   const [canInviteMembers, setCanInviteMembers] = useState(false);
+  const [memberOverridesSupported, setMemberOverridesSupported] = useState(false);
   const [spaceMembers, setSpaceMembers] = useState<SpaceMember[]>([]);
   const [spaceGroups, setSpaceGroups] = useState<WorkspaceGroupSpacePermission[]>([]);
   const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>([]);
@@ -398,7 +540,8 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   const [loadingMembers, setLoadingMembers] = useState(false);
   const [spaceMembersLoaded, setSpaceMembersLoaded] = useState(false);
   const [permissionLoaded, setPermissionLoaded] = useState(false);
-  const [permissionLoadFailed, setPermissionLoadFailed] = useState(false);
+  const [permissionLoadFailure, setPermissionLoadFailure] = useState<PermissionLoadFailure | null>(null);
+  const permissionLoadFailed = permissionLoadFailure !== null;
   const [legacyPermissionMode, setLegacyPermissionMode] = useState(false);
   const [permissionRefreshRevision, setPermissionRefreshRevision] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -407,10 +550,34 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   const [addingUid, setAddingUid] = useState<string | null>(null);
   const [addingGroupId, setAddingGroupId] = useState<string | null>(null);
   const [memberSearch, setMemberSearch] = useState('');
+  // Add people or groups lists everyone who can be added, so owners need not know names.
+  const addAreaRef = useRef<HTMLDivElement>(null);
+  const [suggestingAdditions, setSuggestingAdditions] = useSuggestionsOpen(addAreaRef);
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
+  // A notification-driven recheck of settings already on screen. Controls whose
+  // authority is being rechecked are disabled; the confirmed data stays visible.
+  const [revalidating, setRevalidating] = useState(false);
+  // Access choices shown optimistically until the server confirms or rejects them.
+  const [pendingAccessOverrides, setPendingAccessOverrides] = useState<ReadonlyMap<string, SpaceMemberAccessOverride>>(
+    () => new Map()
+  );
+  const pendingAccessOverridesRef = useRef<Map<string, SpaceMemberAccessOverride>>(new Map());
+  // Why the signed-in user can do more than their own row gives them. The server only explains
+  // the caller's own access, so this is read for that row alone: once when its Access menu is on
+  // screen and again after each permission change, so the line is ready before the menu opens.
+  const [ownAccessDetails, setOwnAccessDetails] = useState<SpaceAccessDetails | null>(null);
+  const [ownAccessDetailsRevision, setOwnAccessDetailsRevision] = useState(0);
+  const ownAccessRequestRef = useRef(0);
+  const backgroundRefreshRequestedRef = useRef(false);
+  const permissionConfirmedRef = useRef(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const settingsRequestSequenceRef = useRef(0);
   const permissionMutationSequenceRef = useRef(0);
+  // Counts server-confirmed settings replacing what the dialog shows. A failed
+  // save restores its baseline only when nothing newer was confirmed since it
+  // started; unlike permissionMutationSequenceRef, a notification alone does
+  // not change it.
+  const confirmedSettingsVersionRef = useRef(0);
   const metadataMutationGenerationRef = useRef(0);
   const metadataFieldVersionsRef = useRef<SpaceMetadataFieldVersions>({
     name: 0,
@@ -452,19 +619,22 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         open: false,
       };
     };
-  }, [open, viewId, workspaceId]);
+  }, [accountId, serverUrl, open, viewId, workspaceId]);
 
   const beginPermissionRefresh = useCallback(() => {
+    permissionConfirmedRef.current = false;
+    setRevalidating(false);
     setLoadingSettings(true);
     setLoadingMembers(false);
     setPermissionLoaded(false);
-    setPermissionLoadFailed(false);
+    setPermissionLoadFailure(null);
     setLegacyPermissionMode(false);
     setLoadedPermissionSettings(null);
     setCanManageSpace(false);
     setCanEditSidebar(false);
     setCanManageMembers(false);
     setCanInviteMembers(false);
+    setMemberOverridesSupported(false);
     setSpaceMembersLoaded(false);
     setSpaceMembers([]);
     setSpaceGroups([]);
@@ -514,6 +684,9 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     permissionMutationSequenceRef.current += 1;
     savingRef.current = false;
     mutatingMemberUidsRef.current = new Set();
+    pendingAccessOverridesRef.current = new Map();
+    backgroundRefreshRequestedRef.current = false;
+    permissionConfirmedRef.current = false;
     setTab('general');
     setSpaceName(loadedMetadata.name);
     setSpaceIcon(loadedMetadata.space_icon);
@@ -524,8 +697,9 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     setCanEditSidebar(false);
     setCanManageMembers(false);
     setCanInviteMembers(false);
+    setMemberOverridesSupported(false);
     setPermissionLoaded(false);
-    setPermissionLoadFailed(false);
+    setPermissionLoadFailure(null);
     setLegacyPermissionMode(false);
     setSpaceMembersLoaded(false);
     setLoadingMembers(false);
@@ -538,8 +712,13 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     setAddingUid(null);
     setAddingGroupId(null);
     setMemberSearch('');
+    setSuggestingAdditions(false);
     setPendingConfirmation(null);
     setSaving(false);
+    setRevalidating(false);
+    setPendingAccessOverrides(new Map());
+    ownAccessRequestRef.current += 1;
+    setOwnAccessDetails(null);
     inputRef.current = null;
 
     return () => {
@@ -547,9 +726,9 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       // the per-space coordinator still preserves server request ordering.
       metadataMutationGenerationRef.current += 1;
     };
-  }, [open, viewId, workspaceId]);
+  }, [accountId, serverUrl, open, setSuggestingAdditions, viewId, workspaceId]);
 
-  const refreshSpaceMembers = useCallback(async (): Promise<boolean> => {
+  const refreshSpaceMembers = useCallback(async ({ silent = false }: { silent?: boolean } = {}): Promise<boolean> => {
     if (!workspaceId || !viewId) return false;
     const requestScope = spaceRequestRef.current;
 
@@ -587,8 +766,9 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     } catch (error) {
       if (!isCurrentRequest()) return false;
       // Keep an already-loaded roster interactive when only a post-mutation
-      // revalidation fails. Initial loads start with this flag cleared.
-      toast.error(getErrorMessage(error, t('space.permissionManager.loadSpaceMembersFailed')));
+      // revalidation fails. Initial loads start with this flag cleared. A
+      // silent reconciliation follows an error the user was already told about.
+      if (!silent) toast.error(plainErrorMessage(error, t('space.permissionManager.loadSpaceMembersFailed')));
       return false;
     } finally {
       if (isCurrentRequest()) setLoadingMembers(false);
@@ -612,15 +792,20 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         ...requestScope,
         memberRequestSequence: requestScope.memberRequestSequence + 1,
       };
-      beginPermissionRefresh();
+      // The server also sends this after the user's own changes in this
+      // dialog. Recheck in the background instead of blanking the dialog.
+      backgroundRefreshRequestedRef.current = true;
       setPermissionRefreshRevision((revision) => revision + 1);
+      // Groups, shares and access to all spaces may have changed: read them again, keeping the
+      // last answer until the new one arrives.
+      setOwnAccessDetailsRevision((revision) => revision + 1);
     };
 
     eventEmitter.on(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChanged);
     return () => {
       eventEmitter.off(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChanged);
     };
-  }, [beginPermissionRefresh, eventEmitter, open]);
+  }, [eventEmitter, open]);
 
   useEffect(() => {
     if (!open || !workspaceId || !viewRef.current) return;
@@ -646,10 +831,21 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       );
     };
 
-    beginPermissionRefresh();
+    // Only a notification recheck of settings already confirmed on screen runs
+    // in the background; opening the dialog and type changes reload from blank.
+    const background = backgroundRefreshRequestedRef.current && permissionConfirmedRef.current;
+
+    backgroundRefreshRequestedRef.current = false;
+    if (background) {
+      setRevalidating(true);
+    } else {
+      beginPermissionRefresh();
+    }
+
     void (async () => {
       let shouldLoadWorkspacePrincipals = false;
       let shouldLoadSpaceMembers = false;
+      let backgroundRecheckFailed = false;
 
       try {
         const permission = await WorkspaceService.getSpacePermission(workspaceId, viewId);
@@ -660,14 +856,18 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
           Boolean(viewRef.current?.is_private)
         );
 
+        confirmedSettingsVersionRef.current += 1;
         setPermissionSettings(normalizedPermission);
         setLoadedPermissionSettings(normalizedPermission);
         setCanManageSpace(permission.can_manage_space);
         setCanEditSidebar(permission.can_edit_sidebar || permission.can_manage_space);
         setCanManageMembers(permission.can_manage_members);
         setCanInviteMembers(permission.can_invite_members);
+        setMemberOverridesSupported(permission.member_access_overrides_supported === true);
         setLegacyPermissionMode(false);
+        setPermissionLoadFailure(null);
         setPermissionLoaded(true);
+        permissionConfirmedRef.current = true;
         // Public rosters follow the workspace and are read-only, so there is
         // nothing to add there.
         const hasEditableRoster = !isPrivateSpaceVisibility(normalizedPermission.visibility);
@@ -679,43 +879,71 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         shouldLoadSpaceMembers = hasEditableRoster && permission.can_manage_members;
       } catch (error) {
         if (isCurrentSettingsRequest()) {
-          // The structured capability response is the authority for this
-          // dialog. An unavailable/unsupported route must never manufacture
-          // management rights from the legacy binary space model.
-          setCanManageSpace(false);
-          setCanEditSidebar(false);
-          setCanManageMembers(false);
-          setCanInviteMembers(false);
-          setLoadedPermissionSettings(null);
-          setPermissionLoaded(false);
-          setPermissionLoadFailed(true);
-          setLegacyPermissionMode(false);
-          setSpaceMembersLoaded(false);
-          setSpaceMembers([]);
-          setSpaceGroups([]);
-          setWorkspaceMembers([]);
-          setWorkspaceGroups([]);
-          toast.error(getErrorMessage(error, t('space.permissionManager.loadSpaceSettingsFailed')));
+          const denied = isAccessDeniedError(error);
+
+          if (background && !denied) {
+            // Keep the last confirmed data on screen, but fail closed: every
+            // control and mutation is blocked until a later check succeeds.
+            backgroundRecheckFailed = true;
+            setPermissionLoadFailure('unavailable');
+          } else {
+            // The structured capability response is the authority for this
+            // dialog. An unavailable/unsupported route must never manufacture
+            // management rights from the legacy binary space model, and someone
+            // who may no longer see the space must not keep seeing other
+            // people's names and emails.
+            permissionConfirmedRef.current = false;
+            setCanManageSpace(false);
+            setCanEditSidebar(false);
+            setCanManageMembers(false);
+            setCanInviteMembers(false);
+            setMemberOverridesSupported(false);
+            setLoadedPermissionSettings(null);
+            setPermissionLoaded(false);
+            setPermissionLoadFailure(denied ? 'denied' : 'unavailable');
+            setLegacyPermissionMode(false);
+            setSpaceMembersLoaded(false);
+            setSpaceMembers([]);
+            setSpaceGroups([]);
+            setWorkspaceMembers([]);
+            setWorkspaceGroups([]);
+          }
+
+          toast.error(plainErrorMessage(error, t('space.permissionManager.loadSpaceSettingsFailed')));
         }
       } finally {
-        if (isCurrentSettingsRequest()) setLoadingSettings(false);
+        if (isCurrentSettingsRequest()) {
+          setLoadingSettings(false);
+          setRevalidating(false);
+        }
       }
 
+      if (backgroundRecheckFailed) return;
+
       const loadWorkspaceMembers = async () => {
-        if (!shouldLoadWorkspacePrincipals) return;
+        if (!shouldLoadWorkspacePrincipals) {
+          // A background recheck can withdraw the right to add people.
+          if (background && isCurrentSettingsRequest()) setWorkspaceMembers([]);
+          return;
+        }
+
         try {
           const workspaceMemberList = await WorkspaceService.getMembers(workspaceId);
 
           if (isCurrentSettingsRequest()) setWorkspaceMembers(workspaceMemberList);
         } catch (error) {
           if (isCurrentSettingsRequest()) {
-            toast.error(getErrorMessage(error, t('space.permissionManager.loadSpaceMembersFailed')));
+            toast.error(plainErrorMessage(error, t('space.permissionManager.loadSpaceMembersFailed')));
           }
         }
       };
 
       const loadWorkspaceGroups = async () => {
-        if (!shouldLoadWorkspacePrincipals) return;
+        if (!shouldLoadWorkspacePrincipals) {
+          if (background && isCurrentSettingsRequest()) setWorkspaceGroups([]);
+          return;
+        }
+
         try {
           const groups = await WorkspaceService.getWorkspaceGroups(workspaceId);
 
@@ -724,7 +952,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
           // Groups are an optional add target; people can still be added when
           // the group listing is unavailable (e.g. an older server).
           if (isCurrentSettingsRequest() && !isUnsupportedRouteError(error)) {
-            toast.error(getErrorMessage(error, t('space.permissionManager.loadSpaceMembersFailed')));
+            toast.error(plainErrorMessage(error, t('space.permissionManager.loadSpaceMembersFailed')));
           }
         }
       };
@@ -745,7 +973,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     return () => {
       cancelled = true;
     };
-  }, [beginPermissionRefresh, open, permissionRefreshRevision, refreshSpaceMembers, t, viewId, workspaceId]);
+  }, [accountId, serverUrl, beginPermissionRefresh, open, permissionRefreshRevision, refreshSpaceMembers, t, viewId, workspaceId]);
 
   const normalizedMemberSearch = memberSearch.trim().toLowerCase();
 
@@ -776,16 +1004,17 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     excludedUids: explicitMemberUids,
     excludedEmails: explicitMemberEmails,
     excludePending: true,
+    listAllWhenEmpty: suggestingAdditions,
   });
-  // Like people, groups only surface once the user types: the roster below
-  // stays the primary content of the tab.
+  // Like people, groups surface once the user types or presses Add people or groups: the roster
+  // below stays the primary content of the tab.
   const addableWorkspaceGroups = useMemo(() => {
-    if (!normalizedMemberSearch) return [];
+    if (!normalizedMemberSearch && !suggestingAdditions) return [];
 
     return workspaceGroups
       .filter((group) => !spaceGroupIds.has(group.group_id) && matchesGroupSearch(group, normalizedMemberSearch))
       .slice(0, MAX_ADDABLE_GROUP_RESULTS);
-  }, [normalizedMemberSearch, spaceGroupIds, workspaceGroups]);
+  }, [normalizedMemberSearch, spaceGroupIds, suggestingAdditions, workspaceGroups]);
   const showCurrentSpaceMemberList =
     !normalizedMemberSearch ||
     visibleSpaceMembers.length > 0 ||
@@ -824,7 +1053,8 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         ownedFieldVersions[field] = version;
       }
 
-      const coordinatorKey = metadataMutationKey(workspaceId, viewId);
+      const requestContext = captureApiContext();
+      const coordinatorKey = metadataMutationKey(serverUrl, accountId, workspaceId, viewId);
       const coordinator = getMetadataMutationCoordinator(coordinatorKey, confirmedSpaceMetadataRef.current);
       const mutation = coordinator.tail
         .catch(() => undefined)
@@ -832,6 +1062,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
           const requestMetadata = { ...coordinator.confirmed, ...patch };
 
           try {
+            requestContext.assertCurrent();
             if (legacyPermissionMode) {
               await updateLegacySpace?.({
                 view_id: viewId,
@@ -881,7 +1112,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
             }
 
             loadedSpaceMetadataRef.current = rolledBack;
-            toast.error(getErrorMessage(error, t('space.error.updateSpace')));
+            toast.error(failedSetting(metadataFailureKey(patch), error, t));
           }
         });
 
@@ -896,6 +1127,8 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       await mutation;
     },
     [
+      accountId,
+      serverUrl,
       canEditSidebar,
       legacyPermissionMode,
       permissionLoaded,
@@ -944,6 +1177,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       const visibilityChanged = previousPermission.visibility !== nextPermission.visibility;
       const mutationSequence = permissionMutationSequenceRef.current + 1;
       const requestGeneration = spaceRequestRef.current.generation;
+      const confirmedVersion = confirmedSettingsVersionRef.current;
       const isCurrentMutation = () =>
         permissionMutationSequenceRef.current === mutationSequence &&
         spaceRequestRef.current.generation === requestGeneration;
@@ -970,7 +1204,15 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
           });
         }
 
-        if (!isCurrentMutation()) return false;
+        if (!isCurrentMutation()) {
+          // The server sends its permission notification before this response,
+          // so a newer recheck usually owns the settings on screen by now. Leave
+          // them to it, but still confirm the change the server accepted.
+          if (spaceRequestRef.current.generation === requestGeneration) toast.success(t('space.success.updateSpace'));
+          return false;
+        }
+
+        confirmedSettingsVersionRef.current += 1;
         setLoadedPermissionSettings(nextPermission);
         toast.success(t('space.success.updateSpace'));
 
@@ -980,13 +1222,21 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
           // sidebar permission notifications are handled independently.
           beginPermissionRefresh();
           setPermissionRefreshRevision((revision) => revision + 1);
+        } else if (memberOverridesSupported && canManageMembers) {
+          await refreshSpaceMembers();
         }
 
         return true;
       } catch (error) {
-        if (isCurrentMutation()) {
-          setPermissionSettings(previousPermission);
-          toast.error(getErrorMessage(error, t('space.error.updateSpace')));
+        // A permission notification may have superseded this request (a
+        // concurrent demotion sends one and is also why the save fails), so
+        // report every rejection while the dialog still shows this space.
+        if (spaceRequestRef.current.generation === requestGeneration) {
+          // Settings confirmed after this save started are newer than its
+          // baseline and never included the rejected change; keep them.
+          if (confirmedSettingsVersionRef.current === confirmedVersion) setPermissionSettings(previousPermission);
+
+          toast.error(failedSetting(settingsFailureKey(previousPermission, nextPermission), error, t));
         }
 
         return false;
@@ -999,6 +1249,9 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     },
     [
       beginPermissionRefresh,
+      canManageMembers,
+      memberOverridesSupported,
+      refreshSpaceMembers,
       canManageSpace,
       legacyPermissionMode,
       loadedPermissionSettings,
@@ -1071,6 +1324,14 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     (value: AccessLevel | null) => requestCollectiveAccessChange('everyone_else_access_level', value),
     [requestCollectiveAccessChange]
   );
+  // Re-selecting the current policy (or closing the menu) never sends a request.
+  const handleSidebarEditPolicyChange = useCallback(
+    (sidebar_edit_policy: SpaceSidebarEditPolicy) => {
+      if (sidebar_edit_policy === permissionSettings.sidebar_edit_policy) return;
+      persistPermissionPatch({ sidebar_edit_policy });
+    },
+    [permissionSettings.sidebar_edit_policy, persistPermissionPatch]
+  );
 
   // A public space makes every workspace member an implicit space member, so
   // its roster is informational only. Gate on the loaded (server) visibility,
@@ -1080,6 +1341,9 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   // Explicit members receive the collective member level; the per-member value
   // only matters on servers that still honour it.
   const explicitMemberAccessLevel = permissionSettings.member_default_access_level ?? AccessLevel.ReadOnly;
+  // Adds through the UUID routes follow the space as the server last confirmed it. Ordinary
+  // members always carry a level (see spaceMemberAddPayload), even on Custom spaces, which ignore it.
+  const memberAssignmentSettings = loadedPermissionSettings ?? permissionSettings;
 
   const handleAddMember = useCallback(
     async (workspaceMember: WorkspaceMember) => {
@@ -1094,18 +1358,25 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       setMemberSearch('');
       setAddingUid(uid);
       try {
-        await WorkspaceService.addSpaceMember(workspaceId, viewId, {
-          uid,
-          role: SpaceMemberRole.Member,
-          access_level: explicitMemberAccessLevel,
-        });
+        if (memberOverridesSupported) {
+          if (!workspaceMember.user_uuid) throw new PlainError(t('space.memberOverride.identityUnavailable'));
+          await WorkspaceService.addSpaceMemberByUuid(
+            workspaceId,
+            viewId,
+            workspaceMember.user_uuid,
+            spaceMemberAddPayload(SpaceMemberRole.Member, memberAssignmentSettings)
+          );
+        } else {
+          await WorkspaceService.addSpaceMember(workspaceId, viewId, { uid, role: SpaceMemberRole.Member, access_level: explicitMemberAccessLevel });
+        }
+
         if (spaceRequestRef.current.generation !== requestGeneration) return;
         if (canManageMembers) await refreshSpaceMembers();
         if (spaceRequestRef.current.generation !== requestGeneration) return;
         toast.success(t('space.permissionManager.addSpaceMemberSuccess'));
       } catch (error) {
         if (spaceRequestRef.current.generation === requestGeneration) {
-          toast.error(getErrorMessage(error, t('space.permissionManager.addSpaceMemberFailed')));
+          toast.error(failedChange('addFailed', workspaceMember.name?.trim() || workspaceMember.email, error, t));
         }
       } finally {
         if (spaceRequestRef.current.generation === requestGeneration) setAddingUid(null);
@@ -1114,7 +1385,9 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     [
       canInviteMembers,
       canManageMembers,
+      memberOverridesSupported,
       explicitMemberAccessLevel,
+      memberAssignmentSettings,
       membersReadOnly,
       permissionLoadFailed,
       permissionLoaded,
@@ -1133,10 +1406,14 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       setMemberSearch('');
       setAddingGroupId(group.group_id);
       try {
-        const granted = await WorkspaceService.addSpaceGroupPermission(workspaceId, viewId, group.group_id, {
-          role: SpaceMemberRole.Member,
-          access_level: explicitMemberAccessLevel,
-        });
+        const granted = await WorkspaceService.addSpaceGroupPermission(
+          workspaceId,
+          viewId,
+          group.group_id,
+          memberOverridesSupported
+            ? spaceMemberAddPayload(SpaceMemberRole.Member, memberAssignmentSettings)
+            : { role: SpaceMemberRole.Member, access_level: explicitMemberAccessLevel }
+        );
         const currentScope = spaceRequestRef.current;
 
         if (
@@ -1157,7 +1434,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         toast.success(t('space.permissionManager.addSpaceGroupSuccess'));
       } catch (error) {
         if (spaceRequestRef.current.generation === requestGeneration) {
-          toast.error(getErrorMessage(error, t('space.permissionManager.addSpaceGroupFailed')));
+          toast.error(failedChange('addFailed', group.name, error, t));
         }
       } finally {
         if (spaceRequestRef.current.generation === requestGeneration) setAddingGroupId(null);
@@ -1165,7 +1442,9 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     },
     [
       canManageMembers,
+      memberOverridesSupported,
       explicitMemberAccessLevel,
+      memberAssignmentSettings,
       membersReadOnly,
       permissionLoadFailed,
       permissionLoaded,
@@ -1194,7 +1473,18 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
 
       if (!setMemberMutationPending(member.uid, true)) return;
       try {
-        if (isMutableSpaceMember(member)) {
+        if (memberOverridesSupported) {
+          if (!member.user_uuid) throw new PlainError(t('space.memberOverride.identityUnavailable'));
+          if (isMutableSpaceMember(member)) await WorkspaceService.updateSpaceMemberByUuid(workspaceId, viewId, member.user_uuid, { role });
+          else {
+            await WorkspaceService.addSpaceMemberByUuid(
+              workspaceId,
+              viewId,
+              member.user_uuid,
+              spaceMemberAddPayload(role, memberAssignmentSettings)
+            );
+          }
+        } else if (isMutableSpaceMember(member)) {
           await WorkspaceService.updateSpaceMember(workspaceId, viewId, member.uid, {
             role,
             access_level: accessLevel,
@@ -1211,7 +1501,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         await refreshSpaceMembers();
       } catch (error) {
         if (spaceRequestRef.current.generation === requestGeneration) {
-          toast.error(manageSpaceErrorMessage(error, t('space.permissionManager.updateSpaceMemberFailed'), t));
+          toast.error(failedChange('changeRoleFailed', displayNameForMember(member, t), error, t));
         }
       } finally {
         if (spaceRequestRef.current.generation === requestGeneration) {
@@ -1221,7 +1511,9 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     },
     [
       canManageMembers,
+      memberOverridesSupported,
       explicitMemberAccessLevel,
+      memberAssignmentSettings,
       membersReadOnly,
       permissionLoadFailed,
       permissionLoaded,
@@ -1250,14 +1542,17 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
 
       if (!setMemberMutationPending(member.uid, true)) return;
       try {
-        await WorkspaceService.removeSpaceMember(workspaceId, viewId, member.uid);
+        if (memberOverridesSupported) {
+          if (!member.user_uuid) throw new PlainError(t('space.memberOverride.identityUnavailable'));
+          await WorkspaceService.removeSpaceMemberByUuid(workspaceId, viewId, member.user_uuid);
+        } else await WorkspaceService.removeSpaceMember(workspaceId, viewId, member.uid);
         if (spaceRequestRef.current.generation !== requestGeneration) return;
         await refreshSpaceMembers();
         if (spaceRequestRef.current.generation !== requestGeneration) return;
         toast.success(t('space.permissionManager.removeSpaceMemberSuccess'));
       } catch (error) {
         if (spaceRequestRef.current.generation === requestGeneration) {
-          toast.error(manageSpaceErrorMessage(error, t('space.permissionManager.removeSpaceMemberFailed'), t));
+          toast.error(failedChange('removeFailed', displayNameForMember(member, t), error, t));
         }
       } finally {
         if (spaceRequestRef.current.generation === requestGeneration) {
@@ -1267,6 +1562,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     },
     [
       canManageMembers,
+      memberOverridesSupported,
       membersReadOnly,
       permissionLoadFailed,
       permissionLoaded,
@@ -1312,7 +1608,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       try {
         const updatedGroup = await WorkspaceService.updateSpaceGroupPermission(workspaceId, viewId, group.group_id, {
           role,
-          access_level: accessLevel,
+          ...(memberOverridesSupported ? {} : { access_level: accessLevel }),
         });
         const currentScope = spaceRequestRef.current;
 
@@ -1331,7 +1627,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         await refreshSpaceMembers();
       } catch (error) {
         if (spaceRequestRef.current.generation === requestGeneration) {
-          toast.error(manageSpaceErrorMessage(error, t('space.permissionManager.updateSpaceMemberFailed'), t));
+          toast.error(failedChange('changeRoleFailed', group.name, error, t));
         }
       } finally {
         if (spaceRequestRef.current.generation === requestGeneration) {
@@ -1341,6 +1637,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     },
     [
       canManageMembers,
+      memberOverridesSupported,
       explicitMemberAccessLevel,
       membersReadOnly,
       permissionLoadFailed,
@@ -1389,10 +1686,10 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
 
         setSpaceGroups((current) => current.filter((currentGroup) => currentGroup.group_id !== group.group_id));
         await refreshSpaceMembers();
-        toast.success(t('shareAction.removeGroupAccessSuccess', { group: group.name }));
+        toast.success(t('shareAction.removeGroupAccessSuccess', { group: group.name, ...RAW }));
       } catch (error) {
         if (spaceRequestRef.current.generation === requestGeneration) {
-          toast.error(manageSpaceErrorMessage(error, t('shareAction.removeAccessError'), t));
+          toast.error(failedChange('removeFailed', group.name, error, t));
         }
       } finally {
         if (spaceRequestRef.current.generation === requestGeneration) {
@@ -1413,9 +1710,193 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     ]
   );
 
-  const handleMemberSearchKeyDown = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Enter') event.stopPropagation();
+  const setAccessOverridePending = useCallback((key: string, override: SpaceMemberAccessOverride | undefined) => {
+    const next = new Map(pendingAccessOverridesRef.current);
+
+    if (override === undefined) {
+      if (!next.has(key)) return;
+      next.delete(key);
+    } else {
+      next.set(key, override);
+    }
+
+    pendingAccessOverridesRef.current = next;
+    setPendingAccessOverrides(next);
   }, []);
+
+  // Apply the server-confirmed result of an access change to its row. A later
+  // roster read replaces it; this only avoids showing the old value meanwhile.
+  const applyConfirmedAccessOverride = useCallback(
+    (
+      principal: SpaceAssignmentPrincipal,
+      requested: SpaceMemberAccessOverride,
+      confirmed: SpaceMember | WorkspaceGroupSpacePermission | undefined
+    ) => {
+      const override = confirmed?.access_level_override !== undefined ? confirmed.access_level_override : requested;
+      const effectiveAccess =
+        confirmed?.effective_access_level !== undefined
+          ? confirmed.effective_access_level
+          : override ?? loadedPermissionSettings?.member_default_access_level ?? null;
+      const apply = <T extends SpaceMember | WorkspaceGroupSpacePermission>(row: T): T => ({
+        ...row,
+        access_level_override: override,
+        effective_access_level: effectiveAccess,
+      });
+
+      if (principal.type === 'user') {
+        setSpaceMembers((current) =>
+          current.map((member) =>
+            member.user_uuid === principal.uuid && isMutableSpaceMember(member) ? apply(member) : member
+          )
+        );
+      } else {
+        setSpaceGroups((current) =>
+          current.map((group) => (group.group_id === principal.uuid ? apply(group) : group))
+        );
+      }
+    },
+    [loadedPermissionSettings]
+  );
+
+  const ownUid = currentUser?.uid;
+  const ownUuid = currentUser?.uuid;
+  const isOwnMember = (member: SpaceMember) =>
+    Boolean((ownUuid && member.user_uuid === ownUuid) || isSameUserUid(member.uid, ownUid));
+
+  // The Members tab shows the signed-in user's own row with an Access menu (Access is a column
+  // only on Custom spaces of servers with per-person access).
+  const ownAccessMenuShown =
+    open &&
+    tab === 'members' &&
+    memberOverridesSupported &&
+    loadedPermissionSettings?.visibility === SpaceVisibility.Custom &&
+    spaceMembers.some((member) => isOwnMember(member) && hasSpaceMemberAccessMenu(member));
+
+  // Read ahead rather than when the menu opens, so the line is in the menu, and describes it, as
+  // soon as it opens. Any failure (an older server without the route included) leaves the row with
+  // its own level and no explanation.
+  useEffect(() => {
+    if (!ownAccessMenuShown || !workspaceId) return;
+    const generation = spaceRequestRef.current.generation;
+    const request = ++ownAccessRequestRef.current;
+
+    void fetchOwnSpaceAccessDetails(workspaceId, viewId, ownUid).then((details) => {
+      if (spaceRequestRef.current.generation !== generation || ownAccessRequestRef.current !== request) return;
+      setOwnAccessDetails(details);
+    });
+  }, [ownAccessMenuShown, ownAccessDetailsRevision, ownUid, viewId, workspaceId]);
+
+  const handleAccessOverrideChange = useCallback(
+    async (principal: SpaceAssignmentPrincipal, override: SpaceMemberAccessOverride) => {
+      if (
+        !workspaceId ||
+        !memberOverridesSupported ||
+        !canManageMembers ||
+        !permissionLoaded ||
+        permissionLoadFailed ||
+        loadedPermissionSettings?.visibility !== SpaceVisibility.Custom
+      ) {
+        return;
+      }
+
+      const assignment =
+        principal.type === 'user'
+          ? spaceMembers.find((member) => member.user_uuid === principal.uuid && isMutableSpaceMember(member))
+          : spaceGroups.find((group) => group.group_id === principal.uuid);
+      const key = accessOverrideKey(principal);
+
+      if (
+        !assignment ||
+        assignment.role !== SpaceMemberRole.Member ||
+        assignment.access_level_override === undefined ||
+        assignment.access_level_override === override ||
+        pendingAccessOverridesRef.current.has(key)
+      ) {
+        return;
+      }
+
+      const uid = principal.type === 'user' ? (assignment as SpaceMember).uid : undefined;
+      const name = 'group_id' in assignment ? assignment.name : displayNameForMember(assignment, t);
+
+      if (uid !== undefined && !setMemberMutationPending(uid, true)) return;
+      if (principal.type === 'group') setGroupMutationPending(principal.uuid, true);
+
+      const generation = spaceRequestRef.current.generation;
+      // A background permission recheck (including the server's echo of this
+      // very change) must not discard the result of the user's own action; the
+      // service rechecks authority right before writing and the server again.
+      const isCurrent = () => {
+        const current = spaceRequestRef.current;
+
+        return (
+          current.open &&
+          current.generation === generation &&
+          current.workspaceId === workspaceId &&
+          current.viewId === viewId
+        );
+      };
+
+      // Show the choice right away; the row keeps it until the server answers.
+      setAccessOverridePending(key, override);
+      try {
+        const confirmed = await setSpaceMemberAccessOverride(workspaceId, viewId, principal, override, isCurrent);
+
+        if (!isCurrent()) return;
+        applyConfirmedAccessOverride(principal, override, confirmed);
+        setAccessOverridePending(key, undefined);
+        toast.success(t('space.memberOverride.updated'));
+        await refreshSpaceMembers();
+      } catch (error) {
+        if (!isCurrent()) return;
+        // Roll back to the last confirmed value, then reconcile this list with
+        // the server without reloading the dialog (the outcome may be unknown).
+        setAccessOverridePending(key, undefined);
+        toast.error(failedChange('changeAccessFailed', name, error, t));
+        void refreshSpaceMembers({ silent: true });
+      } finally {
+        if (spaceRequestRef.current.generation === generation) {
+          setAccessOverridePending(key, undefined);
+          if (uid !== undefined) setMemberMutationPending(uid, false);
+          else setGroupMutationPending(principal.uuid, false);
+        }
+      }
+    },
+    [
+      applyConfirmedAccessOverride,
+      canManageMembers,
+      loadedPermissionSettings,
+      memberOverridesSupported,
+      permissionLoadFailed,
+      permissionLoaded,
+      refreshSpaceMembers,
+      setAccessOverridePending,
+      setGroupMutationPending,
+      setMemberMutationPending,
+      spaceGroups,
+      spaceMembers,
+      t,
+      viewId,
+      workspaceId,
+    ]
+  );
+
+  // Settings already confirmed stay on screen while they are checked again.
+  const handleCheckPermissionAgain = useCallback(() => {
+    backgroundRefreshRequestedRef.current = true;
+    setPermissionRefreshRevision((revision) => revision + 1);
+  }, []);
+
+  const handleMemberSearchKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLInputElement>) => {
+      if (event.key === 'Enter') event.stopPropagation();
+      // Escape first closes the list of people to add; with the list closed it closes the dialog.
+      if (event.key === 'Escape' && suggestingAdditions) {
+        event.preventDefault();
+        setSuggestingAdditions(false);
+      }
+    },
+    [setSuggestingAdditions, suggestingAdditions]
+  );
 
   const closeConfirmation = useCallback(() => setPendingConfirmation(null), []);
 
@@ -1502,12 +1983,15 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
 
   if (!view) return null;
 
+  // The name and icon stay editable during a background recheck: disabling a
+  // focused input would interrupt typing, and the server still enforces access.
   const metadataDisabled = loadingSettings || !permissionLoaded || permissionLoadFailed || !canEditSidebar;
   const permissionSettingsDisabled =
-    saving || loadingSettings || !permissionLoaded || permissionLoadFailed || !canManageSpace;
+    saving || loadingSettings || revalidating || !permissionLoaded || permissionLoadFailed || !canManageSpace;
   const membersDisabled =
     membersReadOnly ||
     loadingMembers ||
+    revalidating ||
     !permissionLoaded ||
     permissionLoadFailed ||
     !spaceMembersLoaded ||
@@ -1521,12 +2005,192 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   const membersHaveNoAccess =
     loadedPermissionSettings?.visibility === SpaceVisibility.Custom &&
     loadedPermissionSettings.member_default_access_level === null;
+  // Per-person access exists only on Custom spaces of servers that support it.
+  const showAccessColumn = memberOverridesSupported && loadedPermissionSettings?.visibility === SpaceVisibility.Custom;
+  const memberGridColumns = showAccessColumn ? MEMBER_ACCESS_GRID_COLUMNS : MEMBER_GRID_COLUMNS;
+  const memberDefaultAccess = loadedPermissionSettings?.member_default_access_level ?? null;
+  const memberRoleDescription = t(
+    showAccessColumn
+      ? 'space.permissionManager.memberRoleWithAccessDescription'
+      : 'space.permissionManager.memberRoleDescription'
+  );
+  // The one visible reason every control is disabled after a failed check.
+  const permissionNotice = permissionLoadFailure ? (
+    <div
+      role='status'
+      className='mb-3 flex items-center justify-between gap-3 rounded-300 border border-border-primary px-3 py-2 text-sm text-text-secondary'
+      data-testid='manage-space-permission-notice'
+    >
+      <span className='min-w-0'>
+        {t(
+          permissionLoadFailure === 'denied'
+            ? 'space.permissionManager.accessLost'
+            : 'space.permissionManager.accessCheckFailed'
+        )}
+      </span>
+      <Button
+        type='button'
+        variant='outline'
+        size='sm'
+        loading={loadingSettings || revalidating}
+        onClick={handleCheckPermissionAgain}
+        data-testid='manage-space-permission-check-again'
+      >
+        {t('space.permissionManager.checkAgain')}
+      </Button>
+    </div>
+  ) : null;
+
+  const assignmentAccessCell = ({
+    principal,
+    triggerTestId,
+    principalName,
+    override,
+    effectiveAccess,
+    disabled,
+    own = false,
+  }: {
+    principal: SpaceAssignmentPrincipal | null;
+    triggerTestId: string;
+    principalName: string;
+    override: SpaceMemberAccessOverride | undefined;
+    effectiveAccess: AccessLevel | null | undefined;
+    disabled: boolean;
+    /** The signed-in user's own row, whose menu can say where more access comes from. */
+    own?: boolean;
+  }): ReactNode => {
+    if (!principal || override === undefined) {
+      return (
+        <SpaceMemberAccessStatic
+          testId='space-member-access-control'
+          value={override === undefined ? 'unknown' : override === null ? 'inherit' : String(override)}
+          label={spaceMemberAssignmentLabel(override, effectiveAccess, memberDefaultAccess, t)}
+          reason={t(principal ? 'space.memberOverride.reloadToChange' : 'space.memberOverride.identityUnavailable')}
+        />
+      );
+    }
+
+    const key = accessOverrideKey(principal);
+    const pending = pendingAccessOverrides.has(key);
+    const value = pending ? (pendingAccessOverrides.get(key) as SpaceMemberAccessOverride) : override;
+    const shownAccess = pending ? value ?? memberDefaultAccess : effectiveAccess;
+    const extraAccess =
+      own && ownAccessDetails
+        ? extraSpaceAccess(ownAccessDetails, shownAccess === undefined ? memberDefaultAccess : shownAccess, {
+            spaceGroups,
+            workspaceGroups,
+          })
+        : null;
+
+    return (
+      <SpaceMemberAccessControl
+        value={value}
+        effectiveAccess={shownAccess}
+        defaultAccess={memberDefaultAccess}
+        disabled={disabled}
+        pending={pending}
+        principalName={principalName}
+        testId={triggerTestId}
+        onChange={(next) => void handleAccessOverrideChange(principal, next)}
+        note={extraAccess ? spaceMemberExtraAccessNote(extraAccess, t) : null}
+      />
+    );
+  };
+
+  const memberAccessCell = (member: SpaceMember): ReactNode => {
+    if (!showAccessColumn) return undefined;
+    if (member.role === SpaceMemberRole.Owner) {
+      return (
+        <SpaceMemberAccessStatic
+          testId='space-member-access-fixed'
+          label={spaceMemberAccessLabel(confirmedEffectiveAccess(member), t)}
+        />
+      );
+    }
+
+    if (member.source === PAGE_SHARE_MEMBER_SOURCE) {
+      return (
+        <SpaceMemberAccessStatic
+          testId='space-member-access-fixed'
+          label={t('space.memberOverride.sharedPagesOnly')}
+          reason={t('space.memberOverride.sharedPagesReason')}
+        />
+      );
+    }
+
+    if (!isMutableSpaceMember(member)) {
+      return (
+        <SpaceMemberAccessStatic
+          testId='space-member-access-fixed'
+          label={spaceMemberAccessLabel(confirmedEffectiveAccess(member), t)}
+          reason={t('space.memberOverride.managedElsewhere')}
+        />
+      );
+    }
+
+    return assignmentAccessCell({
+      principal: member.user_uuid ? { type: 'user', uuid: member.user_uuid } : null,
+      triggerTestId: `space-member-access-${member.uid}`,
+      principalName: displayNameForMember(member, t),
+      override: member.access_level_override,
+      effectiveAccess: member.effective_access_level,
+      disabled: membersDisabled || mutatingMemberUids.has(member.uid),
+      own: isOwnMember(member),
+    });
+  };
+
+  const groupAccessCell = (group: WorkspaceGroupSpacePermission): ReactNode => {
+    if (!showAccessColumn) return undefined;
+    if (group.role === SpaceMemberRole.Owner) {
+      return (
+        <SpaceMemberAccessStatic
+          testId='space-member-access-fixed'
+          label={spaceMemberAccessLabel(confirmedEffectiveAccess(group), t)}
+        />
+      );
+    }
+
+    return assignmentAccessCell({
+      principal: { type: 'group', uuid: group.group_id },
+      triggerTestId: `space-group-access-${group.group_id}`,
+      principalName: group.name,
+      override: group.access_level_override,
+      effectiveAccess: group.effective_access_level,
+      disabled: membersDisabled || mutatingGroupIds.has(group.group_id),
+    });
+  };
+
+  // The saved name and icon, as in the sidebar: a name being typed in General is not the space's yet.
+  const titleName = view?.name || loadedSpaceMetadataRef.current.name;
+  const titleIcon = view?.extra?.space_icon || '';
+  const title = (
+    <span className='inline-flex max-w-full items-center justify-center gap-1.5 align-middle'>
+      <span className='shrink-0'>{t('space.manageSpace')}</span>
+      {titleName && (
+        <>
+          <span aria-hidden='true' className='shrink-0 text-text-tertiary'>
+            ·
+          </span>
+          <span className='sr-only'>:</span>
+          <span aria-hidden='true' className='flex shrink-0'>
+            <SpaceIcon
+              className='!h-5 !w-5 !min-w-5'
+              bgColor={view?.extra?.space_icon_color}
+              value={titleIcon}
+              char={titleIcon ? undefined : titleName.slice(0, 1)}
+            />
+          </span>
+          <span className='min-w-0 truncate'>{titleName}</span>
+        </>
+      )}
+    </span>
+  );
 
   return (
     <SpaceSettingsPanel
       open={open}
       onClose={onClose}
-      title={t('space.manage')}
+      title={title}
       modalTestId='manage-space-modal'
       activeTab={activeTab}
       onTabChange={handleTabChange}
@@ -1544,19 +2208,22 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       permissionSettings={permissionSettings}
       visibilityOptions={legacyPermissionMode ? LEGACY_SPACE_VISIBILITIES : SELECTABLE_SPACE_VISIBILITIES}
       permissionSettingsDisabled={permissionSettingsDisabled}
-      loadingSettings={loadingSettings}
+      loadingSettings={loadingSettings || revalidating}
       showAccessDetails={draftIsPrivate || !legacyPermissionMode}
       workspaceName={workspaceName}
       privateOwner={privateOwner}
       onVisibilitySelect={requestVisibilityChange}
       onMembersAccessChange={handleMembersAccessChange}
       onEveryoneElseAccessChange={handleEveryoneElseAccessChange}
+      onSidebarEditPolicyChange={handleSidebarEditPolicyChange}
       showActions={false}
+      notice={permissionNotice}
       membersContent={
-        <div className='appflowy-scroller max-h-[64vh] overflow-y-auto py-2 pr-1'>
+        // The panel scrolls the tab and shows when more is below.
+        <div className='py-2'>
           <div className='flex flex-col gap-4'>
             {!membersReadOnly && (
-              <>
+              <div ref={addAreaRef} className='flex flex-col gap-4'>
                 <WorkspaceMemberInlineSearch
                   search={memberSearch}
                   onSearchChange={setMemberSearch}
@@ -1569,9 +2236,13 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                   unavailableTitle={t('space.permissionManager.workspaceMemberUidUnavailable')}
                   unavailableHint={t('space.permissionManager.workspaceMemberUidUnavailableHint')}
                   inputDisabled={addMembersDisabled}
-                  addButtonDisabled={addMembersDisabled || Boolean(addingUid)}
+                  addButtonDisabled={addMembersDisabled || revalidating || Boolean(addingUid)}
                   addingUid={addingUid}
                   onInputKeyDown={handleMemberSearchKeyDown}
+                  onAddButtonClick={() => {
+                    setSuggestingAdditions(true);
+                    addAreaRef.current?.querySelector('input')?.focus();
+                  }}
                   onAddMember={(member) => void handleAddMember(member)}
                 />
 
@@ -1587,9 +2258,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                           className='flex items-center gap-3 rounded-300 px-2 py-2 hover:bg-fill-content-hover'
                           data-testid={`space-group-inline-search-result-${group.group_id}`}
                         >
-                          <Avatar size='md'>
-                            <AvatarFallback name={group.name}>{group.name.slice(0, 1).toUpperCase()}</AvatarFallback>
-                          </Avatar>
+                          <WorkspaceGroupIcon variant='settings-row' />
                           <div className='min-w-0 flex-1'>
                             <div className='truncate text-sm font-medium text-text-primary'>{group.name}</div>
                             <div className='truncate text-xs text-text-secondary'>
@@ -1602,7 +2271,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                             variant='ghost'
                             aria-label={`${t('space.permissionManager.add')} ${group.name}`}
                             className='text-text-action hover:text-text-action-hover'
-                            disabled={addGroupsDisabled || Boolean(addingGroupId)}
+                            disabled={addGroupsDisabled || revalidating || Boolean(addingGroupId)}
                             loading={addingGroupId === group.group_id}
                             onClick={() => void handleAddGroup(group)}
                             data-testid='space-group-inline-search-result-add'
@@ -1615,27 +2284,48 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                     </div>
                   </div>
                 )}
-              </>
+
+                {/* The directory always lists you, so an empty one has not loaded yet. */}
+                {suggestingAdditions &&
+                  !normalizedMemberSearch &&
+                  workspaceMembers.length > 0 &&
+                  addableWorkspaceMembers.length === 0 &&
+                  addableWorkspaceGroups.length === 0 && (
+                    <div
+                      className='border-t border-border-primary pt-4 text-center text-sm text-text-secondary'
+                      data-testid='manage-space-nothing-to-add'
+                    >
+                      {t('space.permissionManager.nothingToAdd')}
+                    </div>
+                  )}
+              </div>
             )}
 
             {canManageMembers && showCurrentSpaceMemberList && (
               <>
-                <div
-                  className='grid items-center gap-3 border-b border-border-primary pb-2 text-sm font-medium text-text-secondary'
-                  style={{ gridTemplateColumns: MEMBER_GRID_COLUMNS }}
-                >
-                  <span>{t('space.permissionManager.name')}</span>
-                  <span className='text-right'>{t('space.permissionManager.role')}</span>
-                </div>
-
                 {membersHaveNoAccess && (
                   <div
                     className='rounded-300 bg-fill-content-hover px-3 py-2 text-xs text-text-secondary'
                     data-testid='manage-space-members-no-access-hint'
                   >
-                    {t('space.permissionManager.noAccessMembersHint')}
+                    {t(
+                      memberOverridesSupported
+                        ? 'space.memberOverride.inheritedNoAccess'
+                        : 'space.permissionManager.noAccessMembersHint'
+                    )}
                   </div>
                 )}
+
+                <div
+                  className='grid items-center gap-3 border-b border-border-primary pb-2 text-sm font-medium text-text-secondary'
+                  style={{ gridTemplateColumns: memberGridColumns }}
+                  data-testid='space-member-table-header'
+                >
+                  <span>{t('space.permissionManager.name')}</span>
+                  {showAccessColumn && <SpaceMemberAccessHeader />}
+                  {/* Ends where the Role menus below end (their 8px of padding). */}
+                  <span className='pr-2 text-right'>{t('space.permissionManager.role')}</span>
+                </div>
 
                 {loadingMembers && spaceMembers.length === 0 && spaceGroups.length === 0 ? (
                   <div className='flex justify-center py-8'>
@@ -1651,6 +2341,14 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                       <SpaceMemberRowItem
                         key={`${member.uid}-${member.source}`}
                         member={member}
+                        gridColumns={memberGridColumns}
+                        accessCell={memberAccessCell(member)}
+                        memberDescription={memberRoleDescription}
+                        removeHint={
+                          member.source === PAGE_SHARE_MEMBER_SOURCE
+                            ? t('space.memberOverride.sharedPagesReason')
+                            : undefined
+                        }
                         readOnly={membersReadOnly}
                         disabled={membersDisabled || mutatingMemberUids.has(member.uid)}
                         canRemove={!membersReadOnly && canManageMembers && isMutableSpaceMember(member)}
@@ -1662,6 +2360,9 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                       <SpaceGroupRowItem
                         key={`group:${group.group_id}`}
                         group={group}
+                        gridColumns={memberGridColumns}
+                        accessCell={groupAccessCell(group)}
+                        memberDescription={memberRoleDescription}
                         readOnly={membersReadOnly}
                         disabled={membersDisabled || mutatingGroupIds.has(group.group_id)}
                         canRemove={!membersReadOnly && canManageMembers}
@@ -1771,18 +2472,27 @@ function confirmationTexts(
 
 const SpaceMemberRowItem = memo(function SpaceMemberRowItem({
   member,
+  gridColumns,
   readOnly,
   disabled,
   canRemove,
   onChangeRole,
   onRemove,
+  accessCell,
+  memberDescription,
+  removeHint,
 }: {
   member: SpaceMember;
+  gridColumns: string;
   readOnly: boolean;
   disabled: boolean;
   canRemove: boolean;
   onChangeRole: (member: SpaceMember, role: SpaceMemberRole) => Promise<void>;
   onRemove: (member: SpaceMember) => Promise<void>;
+  /** The Access column, present only when per-person access applies. */
+  accessCell?: ReactNode;
+  memberDescription: string;
+  removeHint?: string;
 }) {
   const { t } = useTranslation();
 
@@ -1790,7 +2500,7 @@ const SpaceMemberRowItem = memo(function SpaceMemberRowItem({
     <div
       data-testid={`space-member-row-${member.uid}`}
       className='grid items-center gap-3 border-b border-border-primary py-3'
-      style={{ gridTemplateColumns: MEMBER_GRID_COLUMNS }}
+      style={{ gridTemplateColumns: gridColumns }}
     >
       <div className='flex min-w-0 items-center gap-3'>
         <Avatar size='md'>
@@ -1804,12 +2514,16 @@ const SpaceMemberRowItem = memo(function SpaceMemberRowItem({
         </div>
       </div>
 
-      <div className='flex justify-end'>
+      {accessCell}
+
+      <div className='flex min-w-0 justify-end'>
         <RoleDropdown
           value={member.role}
           readOnly={readOnly}
           disabled={disabled}
           canRemove={canRemove}
+          memberDescription={memberDescription}
+          removeHint={removeHint}
           onChange={(role) => void onChangeRole(member, role)}
           onRemove={() => void onRemove(member)}
         />
@@ -1820,18 +2534,25 @@ const SpaceMemberRowItem = memo(function SpaceMemberRowItem({
 
 const SpaceGroupRowItem = memo(function SpaceGroupRowItem({
   group,
+  gridColumns,
   readOnly,
   disabled,
   canRemove,
   onChangeRole,
   onRemove,
+  accessCell,
+  memberDescription,
 }: {
   group: WorkspaceGroupSpacePermission;
+  gridColumns: string;
   readOnly: boolean;
   disabled: boolean;
   canRemove: boolean;
   onChangeRole: (group: WorkspaceGroupSpacePermission, role: SpaceMemberRole) => void;
   onRemove: (group: WorkspaceGroupSpacePermission) => Promise<void>;
+  /** The Access column, present only when per-group access applies. */
+  accessCell?: ReactNode;
+  memberDescription: string;
 }) {
   const { t } = useTranslation();
 
@@ -1839,12 +2560,10 @@ const SpaceGroupRowItem = memo(function SpaceGroupRowItem({
     <div
       data-testid={`space-group-row-${group.group_id}`}
       className='grid items-center gap-3 border-b border-border-primary py-3'
-      style={{ gridTemplateColumns: MEMBER_GRID_COLUMNS }}
+      style={{ gridTemplateColumns: gridColumns }}
     >
       <div className='flex min-w-0 items-center gap-3'>
-        <Avatar size='md'>
-          <AvatarFallback name={group.name}>{group.name.slice(0, 1).toUpperCase()}</AvatarFallback>
-        </Avatar>
+        <WorkspaceGroupIcon variant='settings-row' />
         <div className='min-w-0'>
           <div className='truncate font-medium text-text-primary'>{group.name}</div>
           <div className='truncate text-sm text-text-secondary' data-testid='space-group-subtitle'>
@@ -1853,12 +2572,15 @@ const SpaceGroupRowItem = memo(function SpaceGroupRowItem({
         </div>
       </div>
 
-      <div className='flex justify-end'>
+      {accessCell}
+
+      <div className='flex min-w-0 justify-end'>
         <RoleDropdown
           value={group.role}
           readOnly={readOnly}
           disabled={disabled}
           canRemove={canRemove}
+          memberDescription={memberDescription}
           onChange={(role) => onChangeRole(group, role)}
           onRemove={() => void onRemove(group)}
         />

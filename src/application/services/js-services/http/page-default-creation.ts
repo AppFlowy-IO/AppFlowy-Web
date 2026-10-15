@@ -12,9 +12,11 @@ import {
   CreateDefaultDocumentPageRequest,
   parseAtomicCreationRequest,
   recoverAtomicCreation,
+  releaseRefusedAtomicCreation,
   runAtomicCreation,
 } from '@/application/atomic-creation';
 import { CreatePagePayload, CreatePageResponse, DatabaseViewLayout, View, ViewLayout } from '@/application/types';
+import { isPermissionDeniedError } from '@/application/utils/error-utils';
 import { isDatabaseLayout, isSpaceView } from '@/application/view-utils';
 
 import { verifyCreatedPage } from './created-page-hydration';
@@ -107,6 +109,25 @@ export function prepareDefaultPage(
 
 export { verifyCreatedPage } from './created-page-hydration';
 
+/**
+ * A page the server refused to create (no permission) leaves nothing to retry: release its saved
+ * command and answer with the refusal itself, so the caller can say so in plain words. Every other
+ * failure keeps the pending command for an explicit retry.
+ */
+async function releaseRefusedPage(
+  owner: AtomicCreationOwner,
+  create: () => Promise<CreatePageResponse>
+): Promise<CreatePageResponse> {
+  try {
+    return await create();
+  } catch (error) {
+    if (!(error instanceof AtomicCreationPendingError) || !isPermissionDeniedError(error.cause)) throw error;
+    const released = await releaseRefusedAtomicCreation(owner, error.recordId).catch(() => false);
+
+    throw released ? error.cause : error;
+  }
+}
+
 export async function createDefaultPage(
   workspaceId: string,
   parentViewId: string,
@@ -146,9 +167,9 @@ export async function createDefaultPage(
     return result;
   };
 
-  return prepared.kind === 'document'
+  return releaseRefusedPage(owner, () => prepared.kind === 'document'
     ? runAtomicCreation({ owner, kind: 'document', request: prepared.request, logicalTarget: prepared.selectedViewId, hydrate })
-    : runAtomicCreation({ owner, kind: 'database', request: prepared.request, logicalTarget: prepared.selectedViewId, hydrate });
+    : runAtomicCreation({ owner, kind: 'database', request: prepared.request, logicalTarget: prepared.selectedViewId, hydrate }));
 }
 
 /** Explicit recovery uses the saved command, including its chosen IDs, placement and timezone. */
@@ -156,6 +177,14 @@ export async function recoverDefaultPage(
   owner: AtomicCreationOwner,
   record: AtomicCreationRecord,
   activation: PageCreationActivation = {}
+): Promise<CreatePageResponse> {
+  return releaseRefusedPage(owner, () => recoverSavedDefaultPage(owner, record, activation));
+}
+
+async function recoverSavedDefaultPage(
+  owner: AtomicCreationOwner,
+  record: AtomicCreationRecord,
+  activation: PageCreationActivation
 ): Promise<CreatePageResponse> {
   const hydrate = async (prepared: ReturnType<typeof prepareDefaultPage>) => {
     const result = await verifyCreatedPage(owner, prepared);

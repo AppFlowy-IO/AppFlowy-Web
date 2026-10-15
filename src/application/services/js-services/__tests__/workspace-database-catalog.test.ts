@@ -1,3 +1,4 @@
+import { serverScopedAccountKey } from '@/application/db/collab-storage-scope';
 import { db } from '@/application/db';
 import { emit, EventType } from '@/application/session/event';
 import { getTokenParsed } from '@/application/session/token';
@@ -128,7 +129,7 @@ describe('workspace database catalog', () => {
 
     await expect(getDatabaseIdFromWorkspaceCatalog('workspace-1', 'grid-1')).resolves.toBe('database-1');
 
-    expect(catalogTable.get).toHaveBeenCalledWith([currentTestUserId, 'workspace-1', 'grid-1']);
+    expect(catalogTable.get).toHaveBeenCalledWith([serverScopedAccountKey(currentTestUserId), 'workspace-1', 'grid-1']);
     expect(listWorkspaceDatabases).not.toHaveBeenCalled();
   });
 
@@ -172,13 +173,13 @@ describe('workspace database catalog', () => {
     expect(deleteWorkspaceRecords).toHaveBeenCalledTimes(1);
     expect(catalogTable.bulkPut).toHaveBeenCalledWith([
       expect.objectContaining({
-        user_id: currentTestUserId,
+        user_id: serverScopedAccountKey(currentTestUserId),
         workspace_id: 'workspace-1',
         database_id: 'database-1',
         view_id: 'container-1',
       }),
       expect.objectContaining({
-        user_id: currentTestUserId,
+        user_id: serverScopedAccountKey(currentTestUserId),
         workspace_id: 'workspace-1',
         database_id: 'database-1',
         view_id: 'grid-1',

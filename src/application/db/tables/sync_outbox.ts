@@ -4,6 +4,8 @@ export interface SyncOutboxRecord {
   id?: number;
   userId: string;
   workspaceId: string;
+  /** API origin that owns these bytes; absent only on legacy records. */
+  serverUrl?: string;
   objectId: string;
   collabType: number;
   version?: string | null;
@@ -23,16 +25,31 @@ export interface SyncOutboxRecord {
    * unset so they are never removed by manifest coalescing.
    */
   source?: 'manifest';
+  /** Retained after a permission denial; a transport restart is not a new grant. */
+  permissionBlocked?: boolean;
 }
 
 export type SyncOutboxTable = {
   sync_outbox: Table<SyncOutboxRecord, number>;
+  sync_permission_blocks: Table<SyncPermissionBlock, [string, string, string, string]>;
+};
+
+export interface SyncPermissionBlock {
+  serverUrl: string;
+  userId: string;
+  workspaceId: string;
+  objectId: string;
+  revision: string;
+}
+
+export const syncPermissionBlockSchema = {
+  sync_permission_blocks: '[serverUrl+userId+workspaceId+objectId], [serverUrl+userId+workspaceId]',
 };
 
 // Records are scoped by [userId + workspaceId] so a tab crash cannot leave
 // rows from user A that later drain over user B's WebSocket in the same
-// workspace. Purge-on-logout covers the graceful case; userId scoping is the
-// backstop for tab crashes / orphaned rows.
+// workspace. Sign-out preserves recoverable edits; drain authorization also
+// checks the owning API origin before transmitting any retained row.
 export const syncOutboxSchema = {
   sync_outbox: '++id, [userId+workspaceId], [userId+workspaceId+objectId], [userId+workspaceId+objectId+id]',
 };

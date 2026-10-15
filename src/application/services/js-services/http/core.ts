@@ -9,7 +9,7 @@ import { getErrorMessage } from '@/utils/errors';
 import { Log } from '@/utils/log';
 
 import { applyErrorCapability } from './error-capability';
-import { initGrantService, refreshToken } from './gotrue';
+import { initGrantService, isAuthSessionChangedError, isDefinitiveRefreshFailure, refreshToken } from './gotrue';
 import { resolveLocalApiBaseURL } from './local-dev-origins';
 import { applyServerRestoreFence, handleServerRestoreRejection } from './server-restore';
 
@@ -497,8 +497,9 @@ export function initAPIService(config: AFCloudConfig) {
     async (config) => {
       applyServerRestoreFence(config, baseURL);
       config.atomicCreationOwner?.assertCurrent();
-      // Ordinary requests can join the same refresh as an atomic command. Every
-      // waiter must retain its original login lifetime before that shared await.
+      // Ordinary requests can join the same refresh as an atomic command, so the
+      // login is captured before that shared await: atomic commands keep exactly
+      // this login, ordinary requests keep its account.
       const session = captureTokenSession();
 
       config.authSessionWitness = session;
@@ -523,6 +524,21 @@ export function initAPIService(config: AFCloudConfig) {
 
           access_token = newToken?.access_token || '';
         } catch (e) {
+          // A sign-out, another account or another server replaced this session
+          // while it refreshed. Never send the request with the replacement's
+          // credentials, and never sign the replacement out.
+          if (isAuthSessionChangedError(e)) throw e;
+
+          // Offline, timeouts and 5xx keep the session so a later request can
+          // refresh it. Only GoTrue rejecting the refresh token ends it.
+          if (!isDefinitiveRefreshFailure(e)) {
+            console.warn('[initAPIService][request] token refresh failed temporarily; keeping the session', {
+              url: requestUrlForLog(config.url),
+              message: (e as Error)?.message,
+            });
+            throw e;
+          }
+
           console.warn('[initAPIService][request] refresh token failed, marking token invalid', {
             url: requestUrlForLog(config.url),
             message: (e as Error)?.message,
@@ -532,8 +548,11 @@ export function initAPIService(config: AFCloudConfig) {
         }
       }
 
+      // An atomic command keeps its exact login lifetime (its owner check is strict). An
+      // ordinary request may use a token another tab already rotated for the same account,
+      // but it is never sent with another account's credentials.
       config.atomicCreationOwner?.assertCurrent();
-      if (!isTokenSessionCurrent(session)) throw new Error('Request session changed');
+      if (getTokenParsed()?.user.id !== session.userId) throw new Error('Request session changed');
 
       if (access_token) {
         Object.assign(config.headers, {
@@ -571,12 +590,20 @@ export function initAPIService(config: AFCloudConfig) {
       try {
         await refreshToken(refresh_token);
       } catch (e) {
-        console.warn('[initAPIService][response] refresh on 401 failed, emitting invalid token', {
-          message: (e as Error)?.message,
-          url: requestUrlForLog(axiosError.config?.url),
-        });
-        if (session) invalidTokenForSession(session);
-        else invalidToken();
+        if (isAuthSessionChangedError(e) || !isDefinitiveRefreshFailure(e)) {
+          console.warn('[initAPIService][response] refresh on 401 did not complete; keeping the current session', {
+            message: (e as Error)?.message,
+            url: requestUrlForLog(axiosError.config?.url),
+          });
+        } else {
+          console.warn('[initAPIService][response] refresh on 401 failed, emitting invalid token', {
+            message: (e as Error)?.message,
+            url: requestUrlForLog(axiosError.config?.url),
+          });
+          // Only the login that sent the request may end; a newer login stays signed in.
+          if (session) invalidTokenForSession(session);
+          else invalidToken();
+        }
       }
     }
 

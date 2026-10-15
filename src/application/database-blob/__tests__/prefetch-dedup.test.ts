@@ -9,8 +9,9 @@ import {
 import * as pageStageModule from '@/application/database-blob/page-stage';
 import type { DatabaseBlobDiffPageStage } from '@/application/database-blob/page-stage';
 import { isDatabaseRowDocSeedCurrent } from '@/application/database-blob/row-seed-fence';
-import { publishDatabaseCacheEpoch } from '@/application/db/database-storage-fence';
 import { deleteCollabDB, openRowCollabDBWithProvider } from '@/application/db';
+import { collabStorageKey } from '@/application/db/collab-storage-scope';
+import { publishDatabaseCacheEpoch } from '@/application/db/database-storage-fence';
 import { deleteRow } from '@/application/services/js-services/cache';
 import { databaseBlobDiff } from '@/application/services/js-services/http/http_api';
 import { deleteOutboxByObjectId, getCurrentOutboxSession } from '@/application/sync-outbox';
@@ -20,15 +21,15 @@ import { database_blob } from '@/proto/database_blob';
 jest.mock('@/application/db', () => ({
   captureDatabaseStorageFence: jest.fn(async (databaseId: string) => ({
     databaseId,
-    epoch: localStorage.getItem(`af_database_blob_epoch:${databaseId}`),
-    cacheEpoch: localStorage.getItem(`af_database_blob_epoch:${databaseId}`),
+    epoch: localStorage.getItem(`af_database_blob_epoch:${collabStorageKey(databaseId)}`),
+    cacheEpoch: localStorage.getItem(`af_database_blob_epoch:${collabStorageKey(databaseId)}`),
   })),
   rotateDatabaseStorageFence: jest.fn(async (databaseId: string, restoreId: string) =>
-    localStorage.setItem(`af_database_blob_epoch:${databaseId}`, restoreId)
+    localStorage.setItem(`af_database_blob_epoch:${collabStorageKey(databaseId)}`, restoreId)
   ),
   publishWithDatabaseStorageFence: jest.fn(
     async (fence: { databaseId: string; epoch: string | null }, publish: () => void) => {
-      if (localStorage.getItem(`af_database_blob_epoch:${fence.databaseId}`) !== fence.epoch) return false;
+      if (localStorage.getItem(`af_database_blob_epoch:${collabStorageKey(fence.databaseId)}`) !== fence.epoch) return false;
       publish();
       return true;
     }
@@ -272,23 +273,24 @@ describe('database blob prefetch deduplication', () => {
     expect(mockedOpenRowCollabDB).not.toHaveBeenCalled();
     expect(onSeedsReady).not.toHaveBeenCalled();
     expect(peekDatabaseRowDocSeed(`${databaseId}_rows_${VALID_ROW_ID}`)).toBeNull();
-    expect(localStorage.getItem(`af_database_blob_rid:${databaseId}`)).toBeNull();
+    expect(localStorage.getItem(`af_database_blob_rid:${collabStorageKey(databaseId)}`)).toBeNull();
   });
 
   it('keeps current seeds and RID when another tab reconciles the same committed restore', async () => {
     const databaseId = 'database-same-restore';
+
     databaseIds.add(databaseId);
     publishDatabaseCacheEpoch(databaseId, 'R');
     mockedDatabaseBlobDiff.mockResolvedValueOnce(persistablePage({ timestamp: 100, seqNo: 1 }));
     await prefetchDatabaseBlobDiff('workspace', databaseId);
     const seed = peekDatabaseRowDocSeed(`${databaseId}_rows_${VALID_ROW_ID}`);
-    const rid = localStorage.getItem(`af_database_blob_rid:${databaseId}`);
+    const rid = localStorage.getItem(`af_database_blob_rid:${collabStorageKey(databaseId)}`);
 
     expect(seed).not.toBeNull();
     await invalidateDatabaseBlobAfterRestore(databaseId, 'R', null);
     expect(peekDatabaseRowDocSeed(`${databaseId}_rows_${VALID_ROW_ID}`)).toBe(seed);
     expect(isDatabaseRowDocSeedCurrent(seed!)).toBe(true);
-    expect(localStorage.getItem(`af_database_blob_rid:${databaseId}`)).toBe(rid);
+    expect(localStorage.getItem(`af_database_blob_rid:${collabStorageKey(databaseId)}`)).toBe(rid);
   });
 
   it('invalidates captured seed references and blocks RID publication while a newly opened provider is pending', async () => {
@@ -312,7 +314,7 @@ describe('database blob prefetch deduplication', () => {
     expect(isDatabaseRowDocSeedCurrent(capturedSeed!)).toBe(false);
     expect(takeDatabaseRowDocSeed(`${databaseId}_rows_${VALID_ROW_ID}`)).toBeNull();
     expect(mockedApplyYDoc).not.toHaveBeenCalled();
-    expect(localStorage.getItem(`af_database_blob_rid:${databaseId}`)).toBeNull();
+    expect(localStorage.getItem(`af_database_blob_rid:${collabStorageKey(databaseId)}`)).toBeNull();
   });
 
   it('reuses an in-flight cold delta request for a concurrent full prefetch', async () => {
@@ -349,7 +351,7 @@ describe('database blob prefetch deduplication', () => {
     const fullDeferred = createDeferred<database_blob.DatabaseBlobDiffResponse>();
 
     databaseIds.add(databaseId);
-    localStorage.setItem(`af_database_blob_rid:${databaseId}`, JSON.stringify({ timestamp: 1_721_800_000, seqNo: 7 }));
+    localStorage.setItem(`af_database_blob_rid:${collabStorageKey(databaseId)}`, JSON.stringify({ timestamp: 1_721_800_000, seqNo: 7 }));
     mockedDatabaseBlobDiff.mockReturnValueOnce(deltaDeferred.promise).mockReturnValueOnce(fullDeferred.promise);
 
     const deltaPrefetch = prefetchDatabaseBlobDiff(workspaceId, databaseId);
@@ -411,7 +413,7 @@ describe('database blob prefetch deduplication', () => {
     });
 
     databaseIds.add(databaseId);
-    localStorage.setItem(`af_database_blob_rid:${databaseId}`, JSON.stringify(originalRid));
+    localStorage.setItem(`af_database_blob_rid:${collabStorageKey(databaseId)}`, JSON.stringify(originalRid));
     mockedDatabaseBlobDiff.mockResolvedValueOnce(firstPage).mockResolvedValueOnce(finalPage);
 
     const result = await prefetchDatabaseBlobDiff(workspaceId, databaseId);
@@ -433,7 +435,7 @@ describe('database blob prefetch deduplication', () => {
     expect(Array.from(firstRequest.page?.cursor ?? [])).toEqual([]);
     expect(finalRequest.maxKnownRid).toMatchObject(originalRid);
     expect(Array.from(finalRequest.page?.cursor ?? [])).toEqual(Array.from(nextCursor));
-    expect(JSON.parse(localStorage.getItem(`af_database_blob_rid:${databaseId}`) ?? 'null')).toEqual({
+    expect(JSON.parse(localStorage.getItem(`af_database_blob_rid:${collabStorageKey(databaseId)}`) ?? 'null')).toEqual({
       timestamp: 1_721_800_002,
       seqNo: 2,
     });
@@ -505,7 +507,7 @@ describe('database blob prefetch deduplication', () => {
     const result = await prefetch;
 
     expect(result).toBe(pendingPage);
-    expect(localStorage.getItem(`af_database_blob_rid:${databaseId}`)).toBeNull();
+    expect(localStorage.getItem(`af_database_blob_rid:${collabStorageKey(databaseId)}`)).toBeNull();
     expect(onSeedsReady).toHaveBeenCalledTimes(1);
     expect(mockedOpenRowCollabDB).not.toHaveBeenCalled();
 
@@ -548,7 +550,7 @@ describe('database blob prefetch deduplication', () => {
     expect(Array.from(mockedDatabaseBlobDiff.mock.calls[1][2].page?.cursor ?? [])).toEqual(Array.from(nextCursor));
     expect(Array.from(mockedDatabaseBlobDiff.mock.calls[2][2].page?.cursor ?? [])).toEqual([]);
     expect(mockedDatabaseBlobDiff.mock.calls.map(([, , request]) => request.maxKnownRid)).toEqual([null, null, null]);
-    expect(JSON.parse(localStorage.getItem(`af_database_blob_rid:${databaseId}`) ?? 'null')).toEqual({
+    expect(JSON.parse(localStorage.getItem(`af_database_blob_rid:${collabStorageKey(databaseId)}`) ?? 'null')).toEqual({
       timestamp: 7,
       seqNo: 3,
     });
@@ -635,7 +637,7 @@ describe('database blob prefetch deduplication', () => {
     expect(append).toHaveBeenCalledTimes(2);
     expect(read.mock.calls.map(([pageIndex]) => pageIndex)).toEqual([0, 1, 0, 1]);
     expect(clear).toHaveBeenCalledTimes(1);
-    expect(localStorage.getItem(`af_database_blob_rid:${databaseId}`)).toBe(JSON.stringify({ timestamp: 10, seqNo: 2 }));
+    expect(localStorage.getItem(`af_database_blob_rid:${collabStorageKey(databaseId)}`)).toBe(JSON.stringify({ timestamp: 10, seqNo: 2 }));
 
     stageSpy.mockRestore();
   });
@@ -737,7 +739,7 @@ describe('database blob prefetch deduplication', () => {
     expect(read).not.toHaveBeenCalled();
     expect(clear).toHaveBeenCalledTimes(1);
     expect(onSeedsReady).toHaveBeenCalledTimes(1);
-    expect(localStorage.getItem(`af_database_blob_rid:${databaseId}`)).toBeNull();
+    expect(localStorage.getItem(`af_database_blob_rid:${collabStorageKey(databaseId)}`)).toBeNull();
 
     stageSpy.mockRestore();
   });
@@ -754,7 +756,7 @@ describe('database blob prefetch deduplication', () => {
       'final page contained a continuation cursor'
     );
     expect(clear).toHaveBeenCalledTimes(1);
-    expect(localStorage.getItem(`af_database_blob_rid:${databaseId}`)).toBeNull();
+    expect(localStorage.getItem(`af_database_blob_rid:${collabStorageKey(databaseId)}`)).toBeNull();
 
     stageSpy.mockRestore();
   });
@@ -801,7 +803,7 @@ describe('database blob prefetch deduplication', () => {
 
     expect(result).toBe(restartResponse);
     expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(3);
-    expect(localStorage.getItem(`af_database_blob_rid:${databaseId}`)).toBeNull();
+    expect(localStorage.getItem(`af_database_blob_rid:${collabStorageKey(databaseId)}`)).toBeNull();
     expect(onSeedsReady).toHaveBeenCalledTimes(1);
 
     // An exhausted walk holds no complete seed set, so it must not be reused.
@@ -822,7 +824,7 @@ describe('database blob prefetch deduplication', () => {
     await prefetchDatabaseBlobDiff(workspaceId, databaseId);
 
     expect(mockedOpenRowCollabDB).toHaveBeenCalledTimes(1);
-    expect(localStorage.getItem(`af_database_blob_rid:${databaseId}`)).toBeNull();
+    expect(localStorage.getItem(`af_database_blob_rid:${collabStorageKey(databaseId)}`)).toBeNull();
   });
 
   it.each([false, true])('rejects strict restore reuse after ordinary persistence fails (settled: %s)', async (settled) => {
@@ -878,7 +880,7 @@ describe('database blob prefetch deduplication', () => {
 
     await prefetchDatabaseBlobDiff(workspaceId, databaseId);
 
-    expect(JSON.parse(localStorage.getItem(`af_database_blob_rid:${databaseId}`) ?? 'null')).toEqual({
+    expect(JSON.parse(localStorage.getItem(`af_database_blob_rid:${collabStorageKey(databaseId)}`) ?? 'null')).toEqual({
       timestamp: 500,
       seqNo: 4,
     });
@@ -905,7 +907,7 @@ describe('database blob prefetch deduplication', () => {
       storageFence: { databaseId, epoch: null, cacheEpoch: null },
     });
     expect(mockedDeleteRow).toHaveBeenCalledWith(`${databaseId}_rows_${VALID_ROW_ID}`);
-    expect(JSON.parse(localStorage.getItem(`af_database_blob_rid:${databaseId}`) ?? 'null')).toEqual({
+    expect(JSON.parse(localStorage.getItem(`af_database_blob_rid:${collabStorageKey(databaseId)}`) ?? 'null')).toEqual({
       timestamp: 600,
       seqNo: 2,
     });
@@ -983,14 +985,14 @@ describe('database blob prefetch deduplication', () => {
     const cachedRid = { timestamp: 10, seqNo: 3 };
 
     databaseIds.add(databaseId);
-    localStorage.setItem(`af_database_blob_rid:${databaseId}`, JSON.stringify(cachedRid));
+    localStorage.setItem(`af_database_blob_rid:${collabStorageKey(databaseId)}`, JSON.stringify(cachedRid));
     mockedDatabaseBlobDiff.mockResolvedValueOnce(deletePage({ timestamp: 800, seqNo: 5 }));
     mockedDeleteCollabDB.mockResolvedValueOnce(false);
 
     await prefetchDatabaseBlobDiff('workspace-delete-failure', databaseId);
 
     expect(mockedDeleteRow).toHaveBeenCalledWith(`${databaseId}_rows_${VALID_ROW_ID}`);
-    expect(JSON.parse(localStorage.getItem(`af_database_blob_rid:${databaseId}`) ?? 'null')).toEqual(cachedRid);
+    expect(JSON.parse(localStorage.getItem(`af_database_blob_rid:${collabStorageKey(databaseId)}`) ?? 'null')).toEqual(cachedRid);
   });
 
   it('leaves the RID unchanged when legacy row storage cannot be deleted', async () => {
@@ -1009,7 +1011,7 @@ describe('database blob prefetch deduplication', () => {
     expect(mockedDeleteCollabDB).toHaveBeenNthCalledWith(2, `${databaseId}_rows_${VALID_ROW_ID}`, {
       storageFence: { databaseId, epoch: null, cacheEpoch: null },
     });
-    expect(localStorage.getItem(`af_database_blob_rid:${databaseId}`)).toBeNull();
+    expect(localStorage.getItem(`af_database_blob_rid:${collabStorageKey(databaseId)}`)).toBeNull();
   });
 
   it('waits for every tombstone in a failed delete batch to settle', async () => {
@@ -1064,7 +1066,7 @@ describe('database blob prefetch deduplication', () => {
     expect(settled).toBe(true);
     expect(mockedDeleteRow).toHaveBeenCalledWith(`${databaseId}_rows_${VALID_ROW_ID}`);
     expect(mockedDeleteRow).toHaveBeenCalledWith(`${databaseId}_rows_${SECOND_VALID_ROW_ID}`);
-    expect(localStorage.getItem(`af_database_blob_rid:${databaseId}`)).toBeNull();
+    expect(localStorage.getItem(`af_database_blob_rid:${collabStorageKey(databaseId)}`)).toBeNull();
   });
 
   it('does not advance the RID for a malformed row tombstone', async () => {
@@ -1083,6 +1085,6 @@ describe('database blob prefetch deduplication', () => {
     await prefetchDatabaseBlobDiff('workspace-delete-invalid', databaseId);
 
     expect(mockedDeleteCollabDB).not.toHaveBeenCalled();
-    expect(localStorage.getItem(`af_database_blob_rid:${databaseId}`)).toBeNull();
+    expect(localStorage.getItem(`af_database_blob_rid:${collabStorageKey(databaseId)}`)).toBeNull();
   });
 });

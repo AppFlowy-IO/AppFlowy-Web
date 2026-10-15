@@ -20,10 +20,12 @@ export async function getAppOutline(workspaceId: string): Promise<AppOutlineResp
   }));
 }
 
-export async function getView(workspaceId: string, viewId: string, depth: number = 1) {
+export async function getView(workspaceId: string, viewId: string, depth: number = 1, signal?: AbortSignal) {
   const url = `/api/workspace/${workspaceId}/view/${viewId}?depth=${depth}`;
 
-  return executeAPIRequest<View>(() => getAxios()?.get<APIResponse<View>>(url));
+  return executeAPIRequest<View>(() => signal
+    ? getAxios()?.get<APIResponse<View>>(url, { signal })
+    : getAxios()?.get<APIResponse<View>>(url));
 }
 
 export async function getViewNavigation(workspaceId: string, viewId: string, depth: number = 0) {
@@ -71,51 +73,53 @@ export async function listWorkspaceDatabases(workspaceId: string): Promise<Works
   return databases;
 }
 
-export async function getViews(workspaceId: string, viewIds: string[], depth: number = 2) {
+export async function getViews(workspaceId: string, viewIds: string[], depth: number = 2, signal?: AbortSignal) {
   if (viewIds.length === 0) return [];
 
   const url = `/api/workspace/${workspaceId}/views`;
   const viewChunks = await Promise.all(
-    chunkViewIds(viewIds, WORKSPACE_VIEW_SUBTREES_BATCH_CHUNK_SIZE).map((chunk) => getViewsChunk(url, chunk, depth))
+    chunkViewIds(viewIds, WORKSPACE_VIEW_SUBTREES_BATCH_CHUNK_SIZE).map((chunk) => getViewsChunk(url, chunk, depth, signal))
   );
 
   return viewChunks.flat();
 }
 
-async function getViewsChunk(url: string, viewIds: string[], depth: number): Promise<View[]> {
+async function getViewsChunk(url: string, viewIds: string[], depth: number, signal?: AbortSignal): Promise<View[]> {
   if (workspaceViewSubtreesQueryFitsGet(url, viewIds, depth)) {
-    return getViewsByGet(url, viewIds, depth);
+    return getViewsByGet(url, viewIds, depth, signal);
   }
 
   try {
-    return await getViewsByPost(url, viewIds, depth);
+    return await getViewsByPost(url, viewIds, depth, signal);
   } catch (error) {
     if (!isUnsupportedPostRouteError(error)) {
       throw error;
     }
 
     const viewChunks = await Promise.all(
-      workspaceViewSubtreesGetChunks(url, viewIds, depth).map((chunk) => getViewsByGet(url, chunk, depth))
+      workspaceViewSubtreesGetChunks(url, viewIds, depth).map((chunk) => getViewsByGet(url, chunk, depth, signal))
     );
 
     return viewChunks.flat();
   }
 }
 
-async function getViewsByGet(url: string, viewIds: string[], depth: number): Promise<View[]> {
+async function getViewsByGet(url: string, viewIds: string[], depth: number, signal?: AbortSignal): Promise<View[]> {
   const query = workspaceViewSubtreesQuery(viewIds, depth);
 
   return executeAPIRequest<{ views: View[] }>(() =>
-    getAxios()?.get<APIResponse<{ views: View[] }>>(`${url}?${query}`)
+    signal
+      ? getAxios()?.get<APIResponse<{ views: View[] }>>(`${url}?${query}`, { signal })
+      : getAxios()?.get<APIResponse<{ views: View[] }>>(`${url}?${query}`)
   ).then((data) => data.views ?? []);
 }
 
-async function getViewsByPost(url: string, viewIds: string[], depth: number): Promise<View[]> {
+async function getViewsByPost(url: string, viewIds: string[], depth: number, signal?: AbortSignal): Promise<View[]> {
   return executeAPIRequest<{ views: View[] }>(() =>
     getAxios()?.post<APIResponse<{ views: View[] }>>(url, {
       depth,
       view_ids: viewIds,
-    })
+    }, ...(signal ? [{ signal }] : []))
   ).then((data) => data.views ?? []);
 }
 

@@ -1,6 +1,9 @@
 import { serverRestore } from '@/application/server-restore';
 import type { YDoc } from '@/application/types';
 
+import { captureCollabStorageScope, collabStorageKey } from './collab-storage-scope';
+
+
 /** A newer tab changed storage while this tab was checking the server's restore head. */
 export class DatabaseStorageGenerationChangedError extends Error {
   constructor() {
@@ -12,23 +15,28 @@ export class DatabaseStorageGenerationChangedError extends Error {
 /** Captured before a database blob request, never refreshed for its response. */
 export type DatabaseStorageFence = {
   databaseId: string;
+  scopeKey?: string;
+  scopeGeneration?: number;
   epoch: string | null;
   cacheEpoch: string | null | undefined;
   /** Ordinary reads retain their legacy fallback until a restore epoch exists. */
   nonDurable?: boolean;
 };
 
-export const DATABASE_CACHE_EPOCH_PREFIX = serverRestore.cacheKey('af_database_blob_epoch:');
-export const DATABASE_RESTORE_MARKER_PREFIX = serverRestore.cacheKey('af_database_restore:');
+/** Storage key names inside a restore generation; the prefixes below add this tab's generation. */
+export const DATABASE_CACHE_EPOCH_KEY = 'af_database_blob_epoch:';
+export const DATABASE_RESTORE_MARKER_KEY = 'af_database_restore:';
+export const DATABASE_CACHE_EPOCH_PREFIX = serverRestore.cacheKey(DATABASE_CACHE_EPOCH_KEY);
+export const DATABASE_RESTORE_MARKER_PREFIX = serverRestore.cacheKey(DATABASE_RESTORE_MARKER_KEY);
 const applyingFences = new WeakMap<YDoc, DatabaseStorageFence>();
 
 export function databaseStorageFenceObjectId(databaseId: string): string {
-  return `database-blob-epoch:${databaseId}`;
+  return collabStorageKey(`database-blob-epoch:${databaseId}`);
 }
 
 export function readDatabaseCacheEpoch(databaseId: string): string | null | undefined {
   try {
-    return localStorage.getItem(`${DATABASE_CACHE_EPOCH_PREFIX}${databaseId}`);
+    return localStorage.getItem(`${DATABASE_CACHE_EPOCH_PREFIX}${collabStorageKey(databaseId)}`);
   } catch {
     // Synchronous seed readers must fail closed when cross-tab fencing is unavailable.
     return undefined;
@@ -36,11 +44,15 @@ export function readDatabaseCacheEpoch(databaseId: string): string | null | unde
 }
 
 export function publishDatabaseCacheEpoch(databaseId: string, epoch: string): void {
-  localStorage.setItem(`${DATABASE_CACHE_EPOCH_PREFIX}${databaseId}`, epoch);
+  localStorage.setItem(`${DATABASE_CACHE_EPOCH_PREFIX}${collabStorageKey(databaseId)}`, epoch);
 }
 
 export function isDatabaseStorageFenceCurrent(fence: DatabaseStorageFence): boolean {
+  const scope = captureCollabStorageScope();
+
   return (
+    (fence.scopeGeneration === undefined || fence.scopeGeneration === scope.generation) &&
+    (fence.scopeKey === undefined || fence.scopeKey === scope.key) &&
     (fence.cacheEpoch !== undefined || fence.nonDurable === true) &&
     readDatabaseCacheEpoch(fence.databaseId) === fence.cacheEpoch
   );

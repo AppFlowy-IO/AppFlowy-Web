@@ -21,11 +21,16 @@ import {
   useUserWorkspaceInfo,
 } from '@/components/app/app.hooks';
 import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
+import { useWorkspaceCreationFlow } from '@/components/app/hooks/useWorkspaceCreationAttempt';
+import { useWorkspaceCreationCapability } from '@/components/app/hooks/useWorkspaceCreationCapability';
 import { SettingsDialog } from '@/components/app/settings';
+import { CreateWorkspaceDialog } from '@/components/app/workspaces/CreateWorkspaceDialog';
 import CurrentWorkspace from '@/components/app/workspaces/CurrentWorkspace';
 import DeleteWorkspace from '@/components/app/workspaces/DeleteWorkspace';
 import EditWorkspace from '@/components/app/workspaces/EditWorkspace';
 import LeaveWorkspace from '@/components/app/workspaces/LeaveWorkspace';
+import { UnavailableMenuItem } from '@/components/app/workspaces/UnavailableMenuItem';
+import { workspaceCreationBlockedReason } from '@/components/app/workspaces/WorkspaceCreationNotice';
 import WorkspaceList from '@/components/app/workspaces/WorkspaceList';
 import UpgradePlan from '@/components/billing/UpgradePlan';
 import { useCurrentUser } from '@/components/main/app.hooks';
@@ -66,6 +71,18 @@ export function Workspaces() {
   const [openDeleteWorkspace, setOpenDeleteWorkspace] = useState<Workspace | null>(null);
   const [openLeaveWorkspace, setOpenLeaveWorkspace] = useState<Workspace | null>(null);
   const [openSettings, setOpenSettings] = useState(false);
+  const creation = useWorkspaceCreationCapability();
+  const openCreatedWorkspace = useCallback(
+    async (workspaceId: string) => {
+      await handleSelectedWorkspace?.(workspaceId);
+    },
+    [handleSelectedWorkspace]
+  );
+  const creationFlow = useWorkspaceCreationFlow(creation, openCreatedWorkspace);
+  // A saved request can always be finished or discarded, even after access changes.
+  const canOpenCreate = creation.canCreate || Boolean(creationFlow.draft) || creationFlow.unreadable;
+  const creationBlockedKey = workspaceCreationBlockedReason(creation);
+  const creationBlockedReason = creationBlockedKey && t(creationBlockedKey);
 
   const canManageBilling =
     currentWorkspace?.id === currentWorkspaceId &&
@@ -82,35 +99,25 @@ export function Workspaces() {
         await handleSelectedWorkspace?.(selectedId);
         setOpen(false);
       } catch (e) {
-        notify.error('Failed to change workspace');
+        notify.error(t('workspace.openFailed'));
       }
 
       setChangeLoading(null);
     },
-    [handleSelectedWorkspace]
+    [handleSelectedWorkspace, t]
   );
   const [, setSearchParams] = useSearchParams();
 
   const handleOpenImport = useCallback(
     (source: 'notion' | 'appflowy' | 'confluence') => {
+      if (!creation.canCreate) return;
       setSearchParams((prev) => {
         prev.set('action', 'import');
         prev.set('source', source);
         return prev;
       });
     },
-    [setSearchParams]
-  );
-
-  const handleCreateWorkspace = useCallback(
-    async (name: string) => {
-      const workspaceId = await WorkspaceService.create({
-        workspace_name: name,
-      });
-
-      await handleSelectedWorkspace?.(workspaceId);
-    },
-    [handleSelectedWorkspace]
+    [setSearchParams, creation.canCreate]
   );
 
   const handleUpdateWorkspace = useCallback(
@@ -192,49 +199,84 @@ export function Workspaces() {
                 />
               </div>
             </DropdownMenuGroup>
-            <DropdownMenuItem
-              onSelect={() => {
-                setOpenCreateWorkspace(true);
-              }}
-            >
-              <div className={'flex h-5 w-5 items-center justify-center rounded-100 border border-border-primary'}>
-                <AddIcon className={'!h-4 !w-4'} />
-              </div>
-              {t('workspace.create')}
-            </DropdownMenuItem>
+            {creationBlockedReason && !canOpenCreate ? (
+              <UnavailableMenuItem
+                testId='create-workspace'
+                label={t('workspace.create')}
+                reason={creationBlockedReason}
+                icon={
+                  <div className={'flex h-5 w-5 items-center justify-center rounded-100 border border-border-primary'}>
+                    <AddIcon className={'!h-4 !w-4'} />
+                  </div>
+                }
+              />
+            ) : (
+              <DropdownMenuItem data-testid='create-workspace' onSelect={() => setOpenCreateWorkspace(true)}>
+                <div className={'flex h-5 w-5 items-center justify-center rounded-100 border border-border-primary'}>
+                  <AddIcon className={'!h-4 !w-4'} />
+                </div>
+                {t('workspace.create')}
+              </DropdownMenuItem>
+            )}
+            {creation.status === 'error' && !canOpenCreate && (
+              <DropdownMenuItem
+                data-testid='workspace-creation-check-again'
+                disabled={creation.checking}
+                onSelect={(event) => {
+                  // Keep the menu open so the result replaces the reason in place.
+                  event.preventDefault();
+                  void creation.refresh();
+                }}
+              >
+                <div className={'h-5 w-5'} />
+                {t('workspaceCreation.checkAgain')}
+              </DropdownMenuItem>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger data-testid='import-workspace-trigger'>
-                  <ImportIcon />
-                  <div className={'flex-1 text-left'}>{t('web.importWorkspace')}</div>
-                </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent>
-                  <DropdownMenuItem data-testid='import-from-appflowy' onSelect={() => handleOpenImport('appflowy')}>
-                    <div className={'flex-1 text-left'}>{t('web.importFromAppFlowy')}</div>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem data-testid='import-from-notion' onSelect={() => handleOpenImport('notion')}>
-                    <div className={'flex-1 text-left'}>{t('web.importFromNotion')}</div>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void openUrl('https://docs.appflowy.io/docs/guides/import-from-notion', '_blank');
-                          }}
-                          className={'ml-auto cursor-pointer text-icon-secondary'}
-                        >
-                          <TipIcon />
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent>{t('workspace.learnMore')}</TooltipContent>
-                    </Tooltip>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem data-testid='import-from-confluence' onSelect={() => handleOpenImport('confluence')}>
-                    <div className={'flex-1 text-left'}>{t('web.importFromConfluence')}</div>
-                  </DropdownMenuItem>
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
+              {creationBlockedReason ? (
+                <UnavailableMenuItem
+                  testId='import-workspace-trigger'
+                  label={t('workspaceCreation.importWorkspace')}
+                  reason={creationBlockedReason}
+                  icon={<ImportIcon />}
+                />
+              ) : (
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger data-testid='import-workspace-trigger'>
+                    <ImportIcon />
+                    <div className={'flex-1 text-left'}>{t('workspaceCreation.importWorkspace')}</div>
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    <DropdownMenuItem data-testid='import-from-appflowy' onSelect={() => handleOpenImport('appflowy')}>
+                      <div className={'flex-1 text-left'}>{t('web.importFromAppFlowy')}</div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem data-testid='import-from-notion' onSelect={() => handleOpenImport('notion')}>
+                      <div className={'flex-1 text-left'}>{t('web.importFromNotion')}</div>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void openUrl('https://docs.appflowy.io/docs/guides/import-from-notion', '_blank');
+                            }}
+                            className={'ml-auto cursor-pointer text-icon-secondary'}
+                          >
+                            <TipIcon />
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent>{t('workspace.learnMore')}</TooltipContent>
+                      </Tooltip>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      data-testid='import-from-confluence'
+                      onSelect={() => handleOpenImport('confluence')}
+                    >
+                      <div className={'flex-1 text-left'}>{t('web.importFromConfluence')}</div>
+                    </DropdownMenuItem>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              )}
             </DropdownMenuGroup>
 
             <DropdownMenuSeparator />
@@ -268,12 +310,13 @@ export function Workspaces() {
 
       <Import />
       {openCreateWorkspace && (
-        <EditWorkspace
-          onOk={handleCreateWorkspace}
-          okText={t('button.create')}
-          defaultName={`${currentUser?.name}'s Workspace`}
+        <CreateWorkspaceDialog
           open={openCreateWorkspace}
-          openOnChange={setOpenCreateWorkspace}
+          onOpenChange={setOpenCreateWorkspace}
+          creation={creation}
+          flow={creationFlow}
+          defaultName={currentUser?.name ? `${currentUser.name}'s Workspace` : undefined}
+          onDiscarded={() => void refreshUserWorkspaceInfo?.()}
         />
       )}
 
