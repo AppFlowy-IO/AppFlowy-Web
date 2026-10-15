@@ -17,6 +17,8 @@ const mockOpenPageModal = jest.fn();
 const mockOpenRenameModal = jest.fn();
 const mockOpenDeleteModal = jest.fn();
 const mockNavigate = jest.fn();
+// The permissions hook refreshes on permission notifications from the app event emitter.
+const mockEventEmitter = { on: jest.fn(), off: jest.fn(), emit: jest.fn() };
 let mockRole = Role.Member;
 let mockViewId = 'root-page';
 
@@ -42,6 +44,7 @@ jest.mock('@/components/app/app.hooks', () => ({
   useAppOperations: () => ({ addPage: mockAddPage, updatePage: mockUpdatePage, uploadFile: mockUploadFile }),
   useAppViewId: () => mockViewId,
   useCurrentWorkspaceId: () => 'workspace',
+  useEventEmitter: () => mockEventEmitter,
   useUserWorkspaceInfo: () => ({ selectedWorkspace: { role: mockRole } }),
   useAIEnabled: () => false,
   useOpenPageModal: () => mockOpenPageModal,
@@ -59,6 +62,12 @@ jest.mock('@/components/app/view-actions/useSpaceActionPermissions', () => ({
     hasLoadedSpaceActionPermissions: true,
     isLoadingSpaceActionPermissions: false,
   }),
+}));
+// Duplicate is a More menu action (mocked out below); shared rows only exercise Add here, so the
+// destination check for a duplicate stays out of the permission calls this suite inspects.
+jest.mock('@/components/app/view-actions/usePageDestinationAccess', () => ({
+  ...jest.requireActual('@/components/app/view-actions/usePageDestinationAccess'),
+  useDuplicateDestinationAccess: () => ({ state: 'none' }),
 }));
 jest.mock('@/components/app/view-actions/MorePageActions', () => ({ __esModule: true, default: () => null }));
 jest.mock('@/components/app/view-actions/MoreSpaceActions', () => ({ __esModule: true, default: () => null }));

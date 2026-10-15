@@ -73,9 +73,11 @@ describe('usePageOperations addPage refusals', () => {
   });
 
   // Every caller reports a failed creation itself; a second toast from here doubled the message.
+  // A member's page under Shared with me is no longer refused here: the server decides from the
+  // page's own permissions (main #629, see usePageOperations.sharedSubpageCreation.test.tsx).
   it.each([
     ['for a guest', Role.Guest, 'space-id'],
-    ['under a page shared with the user', Role.Member, 'shared-page'],
+    ['for a guest under a page shared with the user', Role.Guest, 'shared-page'],
   ])('refuses %s with a permission error and leaves the message to the caller', async (_case, role, parentId) => {
     const { result } = renderPageOperations(role);
     const error = await result.current
