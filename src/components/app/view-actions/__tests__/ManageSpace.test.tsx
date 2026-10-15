@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
+import { PlainError } from '@/application/errors/plain-error';
 import {
   AccessLevel,
   Role,
@@ -1060,7 +1061,9 @@ describe('ManageSpace ACL management', () => {
       // The shared catalog's words for a server failure (main's public messages).
       ['a server failure', { code: 500, httpStatus: 500, message: 'Internal error: pool timed out' }, "AppFlowy isn't available right now. Try again later."],
       // The service's own checks already speak plainly.
-      ['a stale capability', new Error('space.memberOverride.contextChanged'), 'space.memberOverride.contextChanged'],
+      ['a stale capability', new PlainError('space.memberOverride.contextChanged'), 'space.memberOverride.contextChanged'],
+      // A guard or library failure carries no reviewed copy, so its text is never shown.
+      ['an unexpected client error', new Error('A valid member UUID is required'), 'changeFailure.unknown'],
     ])('names the change and gives a plain reason instead of server text after %s', async (_case, error, expected) => {
       const member = assignedMember();
 
@@ -1792,7 +1795,9 @@ describe('ManageSpace ACL management', () => {
       fireEvent.click(visibilityOption(SpaceVisibility.Custom));
       confirmPending();
 
-      await waitFor(() => expect(toast.error).toHaveBeenCalledWith(failedSetting('changeSpaceTypeFailed', 'save failed')));
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith(failedSetting('changeSpaceTypeFailed', 'changeFailure.unknown'))
+      );
       expect(screen.getByRole('tab', { name: 'space.permissionManager.generalTab' }).getAttribute('aria-selected')).toBe(
         'true'
       );
@@ -2212,7 +2217,9 @@ describe('ManageSpace ACL management', () => {
 
     fireEvent.click(screen.getByTestId(`space-sidebar-policy-option-${SpaceSidebarEditPolicy.MembersAndOwners}`));
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(failedSetting('changeSidebarPolicyFailed', 'policy save failed')));
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(failedSetting('changeSidebarPolicyFailed', 'changeFailure.unknown'))
+    );
     expect(screen.getByTestId('space-sidebar-policy').textContent).toBe('workspacePermissions.sidebarOwners');
     await waitFor(() => expect((screen.getByTestId('space-sidebar-policy')).disabled).toBe(false));
   });
@@ -2252,6 +2259,23 @@ describe('ManageSpace ACL management', () => {
     expectNoServerTextInToasts();
   });
 
+  it.each([
+    // A failure inside this client carries no reviewed copy: the screen's own words are shown.
+    ['an unexpected client error', new TypeError("Cannot read properties of undefined (reading 'members')"),
+      'space.permissionManager.loadSpaceMembersFailed'],
+    // Copy this client wrote for people is shown as it is.
+    ['a plain client explanation', new PlainError('space.memberOverride.unavailable'), 'space.memberOverride.unavailable'],
+  ])('shows plain copy when the member list cannot be loaded because of %s', async (_case, error, expected) => {
+    mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: customPermission }));
+    mockGetSpaceMembers.mockRejectedValueOnce(error);
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expected));
+    for (const [message] of (toast.error as jest.Mock).mock.calls) {
+      expect(String(message)).not.toContain('Cannot read properties');
+    }
+  });
+
   // A permission notification can arrive while a save is in flight, e.g. the
   // concurrent demotion that also makes the save fail. The rejection must
   // still be reported, and the rejected value must never stay on screen.
@@ -2287,7 +2311,7 @@ describe('ManageSpace ACL management', () => {
         save.reject(new Error('policy save failed'));
       });
 
-      expect(toast.error).toHaveBeenCalledWith(failedSetting('changeSidebarPolicyFailed', 'policy save failed'));
+      expect(toast.error).toHaveBeenCalledWith(failedSetting('changeSidebarPolicyFailed', 'changeFailure.unknown'));
       expect(toast.success).not.toHaveBeenCalled();
       expect(policyTrigger().textContent).toBe('workspacePermissions.sidebarOwners');
       await waitFor(() => expect(policyTrigger().disabled).toBe(false));
@@ -2307,7 +2331,7 @@ describe('ManageSpace ACL management', () => {
         save.reject(new Error('policy save failed'));
       });
 
-      expect(toast.error).toHaveBeenCalledWith(failedSetting('changeSidebarPolicyFailed', 'policy save failed'));
+      expect(toast.error).toHaveBeenCalledWith(failedSetting('changeSidebarPolicyFailed', 'changeFailure.unknown'));
       expect(policyTrigger().textContent).toBe('workspacePermissions.sidebarOwners');
 
       await act(async () => {
@@ -2333,7 +2357,7 @@ describe('ManageSpace ACL management', () => {
         save.reject(new Error('policy save failed'));
       });
 
-      expect(toast.error).toHaveBeenCalledWith(failedSetting('changeSidebarPolicyFailed', 'policy save failed'));
+      expect(toast.error).toHaveBeenCalledWith(failedSetting('changeSidebarPolicyFailed', 'changeFailure.unknown'));
       expect(policyTrigger().textContent).toBe('workspacePermissions.sidebarOwners');
       expect(policyTrigger().disabled).toBe(true);
     });
@@ -2917,7 +2941,7 @@ describe('ManageSpace ACL management', () => {
     // The refreshed settings are newer than the failed request's baseline, so
     // they stay; the owner is still told their change did not go through.
     expectSelectedVisibility(SpaceVisibility.Public);
-    expect(toast.error).toHaveBeenCalledWith(failedSetting('changeSpaceTypeFailed', 'older mutation failed'));
+    expect(toast.error).toHaveBeenCalledWith(failedSetting('changeSpaceTypeFailed', 'changeFailure.unknown'));
   });
 
   it('changes the member default without overwriting a manual member grant', async () => {

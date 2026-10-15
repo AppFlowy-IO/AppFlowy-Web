@@ -5,6 +5,7 @@ import { ReactNode } from 'react';
 import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
+import { PlainError } from '@/application/errors/plain-error';
 import { WorkspaceGroup } from '@/application/types';
 import { AppEventEmitterContext } from '@/components/app/contexts/AppEventEmitterContext';
 
@@ -193,7 +194,10 @@ describe('group access to all spaces (group dialog)', () => {
     ['a lost right', { code: 1012, httpStatus: 403, message: 'user 42 cannot manage group 7' }, 'changeFailure.noPermission'],
     ['a deleted group', { code: -2, httpStatus: 404, message: 'Record not found: group 7' }, 'changeFailure.changedElsewhere'],
     // The service's own checks already speak plainly.
-    ['a stale dialog', new Error('groupSpaceAccess.contextChanged'), 'groupSpaceAccess.contextChanged'],
+    ['a stale dialog', new PlainError('groupSpaceAccess.contextChanged'), 'groupSpaceAccess.contextChanged'],
+    // A guard or library failure carries no reviewed copy, so its text is never shown.
+    ['an unexpected client error', new TypeError("Cannot read properties of undefined (reading 'access_level')"),
+      'changeFailure.unknown'],
   ])('says why a save was refused after %s, with the group name as typed', async (_case, error, reason) => {
     mockSave.mockRejectedValueOnce(error);
     render(

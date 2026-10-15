@@ -46,6 +46,15 @@ describe('changeFailureReason precedence', () => {
     );
   });
 
+  it('never shows the text of an unexpected client error', () => {
+    // Guards and library failures carry no reviewed copy; only PlainError and
+    // ClientValidationError opt into the interface.
+    expect(changeFailureReason(new Error('A valid member UUID is required'), t)).toBe('changeFailure.unknown');
+    expect(changeFailureReason(new TypeError("Cannot read properties of undefined (reading 'uid')"), t)).toBe(
+      'changeFailure.unknown'
+    );
+  });
+
   it('falls back to a generic reason, never to server text', () => {
     expect(changeFailureReason({ code: 55555, message: 'internal detail 3fa85f64' }, t)).toBe('changeFailure.unknown');
     expect(changeFailureReason({}, t)).toBe('changeFailure.unknown');

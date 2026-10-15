@@ -71,9 +71,10 @@ export function publicErrorMessage(error: unknown): string | undefined {
  * Why a change didn't go through, in plain words, to follow the name of the change in a toast
  * ("Couldn't change access for Alex. You don't have permission to do this."). One precedence for
  * every permission screen: billing remedies; then this client's words for lost rights and things
- * that changed elsewhere; then a public message from the server or the shared catalog; then the
- * copy an error raised by this client carries; then a generic reason. Server text, which can name
- * internal IDs, is never shown.
+ * that changed elsewhere; then a public message from the server or the shared catalog, which
+ * includes the copy this client's PlainError and ClientValidationError carry; then a generic
+ * reason. Server text, which can name internal IDs, and the text of any other error (guards,
+ * library failures) are never shown.
  */
 export function changeFailureReason(error: unknown, t: TFunction): string {
   const billingMessage = getBillingErrorMessage(error);
@@ -81,9 +82,5 @@ export function changeFailureReason(error: unknown, t: TFunction): string {
   if (billingMessage) return billingMessage;
   if (isPermissionError(error)) return t('changeFailure.noPermission');
   if (isGoneError(error)) return t('changeFailure.changedElsewhere');
-  const publicMessage = publicErrorMessage(error);
-
-  if (publicMessage) return publicMessage;
-  if (getAPIErrorCode(error) === undefined && error instanceof Error && error.message) return error.message;
-  return t('changeFailure.unknown');
+  return publicErrorMessage(error) ?? t('changeFailure.unknown');
 }

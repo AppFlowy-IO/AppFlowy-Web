@@ -77,7 +77,7 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { getBillingErrorMessage } from '@/utils/billing-error';
 import { changeFailureReason, isGoneError, isPermissionError, publicErrorMessage, RAW } from '@/utils/change-failure';
-import { getAPIErrorCode, getErrorDiagnostic, isUnsupportedRouteError } from '@/utils/errors';
+import { getErrorDiagnostic, isUnsupportedRouteError } from '@/utils/errors';
 import { getConfigValue } from '@/utils/runtime-config';
 
 import type { TFunction } from 'i18next';
@@ -259,18 +259,15 @@ function isAccessDeniedError(error: unknown): boolean {
  * Toast copy for a failed read, with the same precedence as changeFailureReason. Server text can
  * name internal IDs ("user 42 cannot manage members for space …"), so it is never shown: lost
  * access keeps the caller's plain copy (the dialog explains it), a public server or catalog
- * message is shown when there is one, and errors raised by this client carry their own copy.
+ * message (including the copy this client's PlainError carries) is shown when there is one, and
+ * anything else gets the caller's copy.
  */
 function plainErrorMessage(error: unknown, fallback: string): string {
   const billingMessage = getBillingErrorMessage(error);
 
   if (billingMessage) return billingMessage;
   if (isAccessDeniedError(error)) return fallback;
-  const publicMessage = publicErrorMessage(error);
-
-  if (publicMessage) return publicMessage;
-  if (getAPIErrorCode(error) === undefined && error instanceof Error && error.message) return error.message;
-  return fallback;
+  return publicErrorMessage(error) ?? fallback;
 }
 
 /** Why a change in this dialog didn't go through; the last-owner rule has its own explanation. */
