@@ -9,7 +9,7 @@ import { ReactComponent as PDFIcon } from '@/assets/icons/pdf.svg';
 import { useAppOverlayContext } from '@/components/app/app-overlay/AppOverlayContext';
 import { useAppView, useCurrentWorkspaceId, useGetSubscriptions } from '@/components/app/app.hooks';
 import { useIsOfficialHosted } from '@/components/app/hooks/useServerInfo';
-import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
+import { useWorkspaceSubscriptionPlan } from '@/components/app/hooks/useWorkspaceSubscriptionPlan';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { downloadBlob } from '@/utils/download';
@@ -20,7 +20,7 @@ function ExportPanel({ viewId }: { viewId: string }) {
   const viewIdResolved = view?.view_id;
   const workspaceId = useCurrentWorkspaceId();
   const getSubscriptions = useGetSubscriptions();
-  const { isPro, isLoading, hasError } = useSubscriptionPlan(getSubscriptions);
+  const { isPro, isLoading, hasError } = useWorkspaceSubscriptionPlan({ getSubscriptions, workspaceId });
   const isHosted = useIsOfficialHosted();
   const { showBlockingLoader, hideBlockingLoader } = useAppOverlayContext();
   const [linkedPagesOverride, setLinkedPagesOverride] = useState<boolean | null>(null);

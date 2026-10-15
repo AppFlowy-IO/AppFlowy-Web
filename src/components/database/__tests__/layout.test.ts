@@ -101,6 +101,26 @@ describe('shouldUseFixedDatabaseViewport', () => {
     });
   });
 
+  it('reserves the embedded viewport while rows load and shrinks empty or small settled grids', () => {
+    const input = { embeddedHeight: 600, isDocumentBlock: true };
+
+    expect(getEmbeddedGridViewportStyle({ ...input, contentHeight: 108, isLoading: true })).toEqual({
+      height: 600,
+      maxHeight: '600px',
+    });
+    expect(getEmbeddedGridViewportStyle({ ...input, contentHeight: 72, isLoading: false })).toEqual({
+      height: 72,
+      maxHeight: '600px',
+    });
+    expect(getEmbeddedGridViewportStyle({ ...input, contentHeight: 288, isLoading: false })).toEqual({
+      height: 288,
+      maxHeight: '600px',
+    });
+    expect(
+      getEmbeddedGridViewportStyle({ ...input, contentHeight: 108, isLoading: true, isDocumentBlock: false })
+    ).toBeUndefined();
+  });
+
   it('keeps non-grid embedded viewports fixed when an embedded height is provided', () => {
     const input = {
       embeddedHeight: 600,
