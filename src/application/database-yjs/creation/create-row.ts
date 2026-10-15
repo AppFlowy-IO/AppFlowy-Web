@@ -16,13 +16,14 @@ import { createRow as openCachedRow } from '@/application/services/js-services/c
 import { atomicRead } from '@/application/services/js-services/http/atomic-creation-api';
 import { postDefaultRowCreation } from '@/application/services/js-services/http/atomic-row-creation-api';
 import { collabFullSyncBatch } from '@/application/services/js-services/http/collab-api';
-import { Types, YDoc, YjsEditorKey } from '@/application/types';
+import { Types, YDatabase, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
 
-import { decodeBase64Bytes, decodeCreatedRowCollab } from './encoded-collab';
+import { decodeBase64Bytes, decodeCreatedRowCollab, encodeCreationCollab } from './encoded-collab';
 import { recordCommittedRowCreation } from './row-creation-history';
 import { CreatedRowReceipt, DefaultRowRequest, PreparedRowIntent } from './row-creation-types';
 import { prepareTemplateRowGraph } from './row-template-graph';
+import type { PreparedTemplateRowGraph } from './row-template-graph-types';
 import {
   assertNotAborted,
   ORIGINAL_DATABASE_RESTORE_ID,
@@ -41,6 +42,8 @@ export interface CloudRowCreationIntent extends PreparedRowIntent {
   registerRow(): Promise<YDoc>;
   template?: DatabaseRowTemplate;
   documentState?: Uint8Array;
+  /** Copies retain raw storage types, including cells awaiting a field conversion. */
+  preserveCellStorage?: boolean;
   historyGroup?: object;
 }
 
@@ -206,7 +209,21 @@ export async function createCloudRow(intent: CloudRowCreationIntent): Promise<st
   try {
     assertAtomicCreationAvailable(owner);
     const request = prepareDefaultRowRequest(intent, uuidv4());
-    const graph =
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+    const anchor = 'row_id' in intent.position ? intent.position.row_id : undefined;
+    // The seeded contract appends in unselected views. Preserve placement wherever
+    // the anchor is active, and let views without it receive the normal append.
+    const positionViewIds: string[] = [];
+
+    database.get(YjsDatabaseKey.views).forEach((view, id) => {
+      if (
+        id === sourceViewId ||
+        !anchor ||
+        view.get(YjsDatabaseKey.row_orders).toArray().some((row) => row.id === anchor && !row.is_deleted)
+      )
+        positionViewIds.push(id);
+    });
+    const graph: PreparedTemplateRowGraph | undefined =
       intent.documentState && intent.template
         ? await prepareTemplateRowGraph({
             owner,
@@ -216,6 +233,7 @@ export async function createCloudRow(intent: CloudRowCreationIntent): Promise<st
             requestId: request.request_id,
             rowId,
             position: intent.position,
+            positionViewIds,
             rowDoc: intent.rowDoc,
             template: intent.template,
             documentState: intent.documentState,
@@ -223,6 +241,18 @@ export async function createCloudRow(intent: CloudRowCreationIntent): Promise<st
             deadline,
             assertCurrent: () => owner.assertCurrent(),
           })
+        : intent.preserveCellStorage
+        ? {
+            kind: 'seeded',
+            request: {
+              request_id: request.request_id,
+              database_restore_id: restoreId,
+              source_view_id: sourceViewId,
+              row: { row_id: rowId, collab: encodeCreationCollab(intent.rowDoc) },
+              position: intent.position,
+              position_view_ids: positionViewIds,
+            },
+          }
         : undefined;
 
     fence = await captureDatabaseStorageFence(databaseId, { required: true });

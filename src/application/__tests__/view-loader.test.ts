@@ -442,6 +442,49 @@ describe('view-loader row document retry policy', () => {
     expect(jest.getTimerCount()).toBe(0);
   });
 
+  it('requires server confirmation even when a local document passes the cache check', async () => {
+    const documentId = '00000000-0000-4000-8000-000000000008';
+    const doc = createDocumentDoc(documentId);
+    const body = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.document) as Y.Map<unknown>;
+    const blocks = new Y.Map();
+
+    body.set(YjsEditorKey.blocks, blocks);
+    for (const id of ['page', 'paragraph-1', 'paragraph-2']) blocks.set(id, new Y.Map());
+    const serverDoc = createEmptyDoc(documentId);
+
+    Y.applyUpdate(serverDoc, Y.encodeStateAsUpdate(doc));
+    serverDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.document).set('server-version', 'fresh');
+    mockGetOrCreateRowSubDoc.mockResolvedValue(doc);
+    mockFetchRowDocumentCollab.mockResolvedValue({ data: Y.encodeStateAsUpdate(serverDoc) });
+
+    const result = await openRowSubDocument('workspace-id', documentId, { requireServerFetch: true });
+
+    expect(result.fromCache).toBe(false);
+    expect(body.get('server-version')).toBe('fresh');
+    expect(mockFetchRowDocumentCollab).toHaveBeenCalledTimes(1);
+    doc.destroy();
+    serverDoc.destroy();
+  });
+
+  it('rejects an unconfirmed local shell when a required fetch exhausts its retries', async () => {
+    const documentId = '00000000-0000-4000-8000-000000000008';
+    const doc = createDocumentDoc(documentId);
+    const error = new Error('network unavailable');
+
+    mockGetOrCreateRowSubDoc.mockResolvedValue(doc);
+    mockFetchRowDocumentCollab.mockRejectedValue(error);
+    const rejection = expect(
+      openRowSubDocument('workspace-id', documentId, { maxAttempts: 2, requireServerFetch: true })
+    ).rejects.toBe(error);
+
+    await jest.runAllTimersAsync();
+    await rejection;
+    expect(mockFetchRowDocumentCollab).toHaveBeenCalledTimes(2);
+    expect(mockDeleteCollabDB).not.toHaveBeenCalled();
+    expect(jest.getTimerCount()).toBe(0);
+    doc.destroy();
+  });
+
   it('rejects immediately and evicts the cache when a row document fetch is forbidden', async () => {
     const documentId = '00000000-0000-4000-8000-000000000009';
     const doc = createEmptyDoc(documentId);

@@ -12,7 +12,7 @@ export interface TemplateDatabaseView extends TemplateRecord {
   database_id: string;
   name: string;
   layout: number;
-  row_orders: Array<{ id: string; height: number }>;
+  row_orders: Array<{ id: string; height: number; is_deleted?: boolean }>;
   field_orders: Array<{ id: string }>;
 }
 export interface TemplateDatabaseArchive {
@@ -79,10 +79,10 @@ export interface CreateDatabaseRowRequest {
   request_id: string;
   database_restore_id: string;
   source_view_id: string;
-  row: { row_id: string; collab: string; document: string };
+  row: { row_id: string; collab: string; document?: string };
   position: CreationRowPosition;
   position_view_ids: string[];
-  document_name: string;
+  document_name?: string;
 }
 export interface TemplateRowGraphInput {
   owner: AtomicCreationOwner;
@@ -92,6 +92,7 @@ export interface TemplateRowGraphInput {
   requestId: string;
   rowId: string;
   position: CreationRowPosition;
+  positionViewIds: string[];
   rowDoc: Y.Doc;
   template: DatabaseRowTemplate;
   documentState: Uint8Array;

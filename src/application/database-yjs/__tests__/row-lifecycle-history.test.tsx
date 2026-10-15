@@ -2,7 +2,7 @@ import { act, renderHook } from '@testing-library/react';
 import * as Y from 'yjs';
 
 import { DatabaseContext, type DatabaseContextState } from '@/application/database-yjs/context';
-import { FieldType, TimelineDependencyType } from '@/application/database-yjs/database.type';
+import { FieldType, RowMetaKey, TimelineDependencyType } from '@/application/database-yjs/database.type';
 import {
   useDeleteRowDispatch,
   useDuplicateRowDispatch,
@@ -10,7 +10,7 @@ import {
   useReorderRowDispatch,
 } from '@/application/database-yjs/dispatch';
 import { useDatabaseHistory } from '@/application/database-yjs/history';
-import { getRowKey } from '@/application/database-yjs/row_meta';
+import { generateRowMeta, getRowKey } from '@/application/database-yjs/row_meta';
 import { readTimelineLayoutSetting, updateTimelineLayoutSetting } from '@/application/database-yjs/timeline-layout';
 import {
   DatabaseViewLayout,
@@ -54,7 +54,7 @@ beforeEach(() => {
     Y.applyUpdate(row, Y.encodeStateAsUpdate(intent.rowDoc));
     const database = intent.databaseDoc.getMap('data').get('database') as YDatabase;
 
-    // Model the committed remote activation, using the real semantic history component.
+    // Model the committed remote activation, using the real creation history component.
     intent.databaseDoc.transact(() => {
       database.get(YjsDatabaseKey.views).forEach((view) => {
         const orders = view.get(YjsDatabaseKey.row_orders);
@@ -126,7 +126,9 @@ function createFixture(rowIds: string[] = [firstRowId, secondRowId, thirdRowId])
       [fieldId]: createCell(FieldType.RichText, `Name for ${rowId}`),
     });
 
-    rowDoc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.meta, new Y.Map());
+    rowDoc
+      .getMap(YjsEditorKey.data_section)
+      .set(YjsEditorKey.meta, new Y.Map(Object.entries(generateRowMeta(rowId, { [RowMetaKey.IsDocumentEmpty]: true }))));
     rowMap[rowId] = rowDoc;
   });
 
@@ -201,6 +203,34 @@ describe('row lifecycle production hooks use database history', () => {
 
     act(() => result.current.history.redo());
     expect(getRowOrderIds(fixture)).toEqual([createdRowId, firstRowId, secondRowId]);
+  });
+
+  it('replays creation and later reorders without duplicating membership', async () => {
+    const fixture = createFixture([firstRowId, secondRowId]);
+    const { result } = renderHook(useRowLifecycleHistory, { wrapper: createWrapper(fixture) });
+    let rowId = '';
+
+    await act(async () => {
+      rowId = (await result.current.createRow({}))!;
+    });
+    act(() => result.current.reorderRow(rowId, secondRowId));
+    act(() => result.current.reorderRow(rowId, firstRowId));
+
+    for (let cycle = 0; cycle < 3; cycle++) {
+      expect(getRowOrderIds(fixture)).toEqual([firstRowId, rowId, secondRowId]);
+      act(() => result.current.history.undo());
+      expect(getRowOrderIds(fixture)).toEqual([firstRowId, secondRowId, rowId]);
+      act(() => result.current.history.undo());
+      expect(getRowOrderIds(fixture)).toEqual([rowId, firstRowId, secondRowId]);
+      act(() => result.current.history.undo());
+      expect(getRowOrderIds(fixture)).toEqual([firstRowId, secondRowId]);
+      act(() => result.current.history.redo());
+      expect(getRowOrderIds(fixture)).toEqual([rowId, firstRowId, secondRowId]);
+      act(() => result.current.history.redo());
+      expect(getRowOrderIds(fixture)).toEqual([firstRowId, secondRowId, rowId]);
+      act(() => result.current.history.redo());
+    }
+    expect(getRowOrderIds(fixture)).toEqual([firstRowId, rowId, secondRowId]);
   });
 
   it('duplicates a row and undoes and redoes its insertion', async () => {

@@ -1,6 +1,6 @@
 import * as Y from 'yjs';
 
-import { DatabaseNoHistoryOrigin, getOrCreateDatabaseHistoryManager } from '@/application/database-yjs/history';
+import { getOrCreateDatabaseHistoryManager } from '@/application/database-yjs/history';
 import { isDatabaseHistoryDocumentImmutable } from '@/application/database-yjs/immutable';
 import { YDatabase, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
@@ -25,53 +25,34 @@ export function recordCommittedRowCreation(databaseDoc: YDoc, rowId: string, gro
   const capturedLifetime = lifetime;
   const version = databaseDoc.version;
   const restoreId = databaseDoc.databaseRestoreId;
-  const placements = new Map<string, { previous?: string; next?: string; height: number }>();
+  const insertions = Y.createDeleteSet();
 
-  views.forEach((view, id) => {
-    const rows = view.get(YjsDatabaseKey.row_orders).toArray();
+  views.forEach((view) => {
+    const orders = view.get(YjsDatabaseKey.row_orders);
+    const rows = orders.toArray();
     const index = rows.findIndex((row) => row.id === rowId);
 
-    if (index >= 0)
-      placements.set(id, { previous: rows[index - 1]?.id, next: rows[index + 1]?.id, height: rows[index].height });
+    if (index < 0 || rows[index].is_deleted) return;
+    // Relative positions expose the exact clock even when several orders share
+    // one Yjs Item. Capture only this slot, never the rest of the server update.
+    const item = Y.createRelativePositionFromTypeIndex(orders, index).item;
+
+    if (!item) return;
+    const ranges = insertions.clients.get(item.client) ?? [];
+
+    ranges.push({ clock: item.clock, len: 1 });
+    insertions.clients.set(item.client, ranges);
   });
-  if (!placements.size) return;
-  const origin = new DatabaseNoHistoryOrigin({ type: 'row.creation.history', rowId, policy: 'skip' });
+  if (!insertions.clients.size) return;
+  insertions.clients.forEach((ranges) => ranges.sort((a, b) => a.clock - b.clock));
 
-  getOrCreateDatabaseHistoryManager(databaseDoc).recordCommittedAction(
-    {
-      isCurrent: () =>
-        !capturedLifetime.destroyed &&
-        !isDatabaseHistoryDocumentImmutable(databaseDoc) &&
-        databaseDoc.version === version &&
-        databaseDoc.databaseRestoreId === restoreId,
-      replay: (type) => {
-        let changed = false;
-
-        databaseDoc.transact(() => {
-          placements.forEach((placement, id) => {
-            const orders = views.get(id)?.get(YjsDatabaseKey.row_orders);
-
-            if (!(orders instanceof Y.Array)) return;
-            const rows = orders.toArray();
-            const index = rows.findIndex((row) => row.id === rowId);
-
-            if (type === 'undo' && index >= 0) {
-              orders.delete(index, 1);
-              changed = true;
-            } else if (type === 'redo' && index < 0) {
-              const next = rows.findIndex((row) => row.id === placement.next);
-              const previous = rows.findIndex((row) => row.id === placement.previous);
-
-              orders.insert(next >= 0 ? next : previous >= 0 ? previous + 1 : rows.length, [
-                { id: rowId, height: placement.height },
-              ]);
-              changed = true;
-            }
-          });
-        }, origin);
-        return changed;
-      },
-    },
+  getOrCreateDatabaseHistoryManager(databaseDoc).recordCommittedInsertions(
+    insertions,
+    () =>
+      !capturedLifetime.destroyed &&
+      !isDatabaseHistoryDocumentImmutable(databaseDoc) &&
+      databaseDoc.version === version &&
+      databaseDoc.databaseRestoreId === restoreId,
     group
   );
 }

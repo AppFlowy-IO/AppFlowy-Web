@@ -9,7 +9,7 @@ function fixture() {
   const database = new Y.Map();
   const views = new Y.Map<Y.Map<unknown>>();
   const view = new Y.Map();
-  const orders = new Y.Array<{ id: string; height: number }>();
+  const orders = new Y.Array<{ id: string; height: number; is_deleted?: boolean }>();
 
   doc.getMap('data').set('database', database);
   database.set('views', views);
@@ -49,6 +49,49 @@ it('remote removal prevents a stale creation undo from manufacturing a redo resu
     f.history.undo();
     expect(f.history.canRedo()).toBe(false);
     expect(f.ids()).toEqual(['before', 'after']);
+  } finally {
+    f.doc.destroy();
+  }
+});
+
+it('preserves a collaborator trash tombstone through creation undo and redo', () => {
+  const f = fixture();
+
+  try {
+    f.doc.transact(() => {
+      f.orders.delete(1, 1);
+      f.orders.insert(1, [{ id: 'created', height: 36, is_deleted: true }]);
+    }, 'remote');
+    f.history.undo();
+    expect(f.history.canRedo()).toBe(false);
+    f.history.redo();
+    expect(f.orders.get(1)).toEqual({ id: 'created', height: 36, is_deleted: true });
+  } finally {
+    f.doc.destroy();
+  }
+});
+
+it.each(['removed', 'trashed'])('redo restores only views actually undone when a peer has %s membership', (state) => {
+  const f = fixture();
+
+  try {
+    const views = (f.doc.getMap('data').get('database') as Y.Map<Y.Map<Y.Map<unknown>>>).get('views')!;
+    const view = new Y.Map<unknown>();
+    const orders = new Y.Array<{ id: string; height: number; is_deleted?: boolean }>();
+
+    views.set('second', view);
+    view.set('row_orders', orders);
+    orders.push([{ id: 'created', height: 36 }]);
+    f.history.clear();
+    recordCommittedRowCreation(f.doc, 'created');
+    f.doc.transact(() => {
+      orders.delete(0, 1);
+      if (state === 'trashed') orders.push([{ id: 'created', height: 36, is_deleted: true }]);
+    }, 'remote');
+    f.history.undo();
+    f.history.redo();
+    expect(f.ids()).toEqual(['before', 'created', 'after']);
+    expect(orders.toArray()).toEqual(state === 'removed' ? [] : [{ id: 'created', height: 36, is_deleted: true }]);
   } finally {
     f.doc.destroy();
   }

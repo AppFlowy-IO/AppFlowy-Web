@@ -14,6 +14,7 @@ import {
   DATABASE_BLOCKS,
   detachedDocument,
   documentBlocks,
+  excludeInactiveRows,
   FOLDER_LAYOUTS,
   GRAPH_LIMIT,
   INLINE_LIMIT,
@@ -21,6 +22,7 @@ import {
   parseArchive,
   record,
   remapReferences,
+  remapRelationFilters,
   uuid,
 } from './row-template-graph-data';
 import { TemplateSources } from './row-template-graph-sources';
@@ -123,7 +125,7 @@ export async function prepareTemplateRowGraph(input: TemplateRowGraphInput): Pro
     const copiedDatabases = new Set<string>();
     const copiedRows = new Set<string>();
     const discoveredArchives = new Set<string>();
-    const frozenArchives = new Set<string>();
+    const frozenArchives = new Map<string, TemplateDatabaseArchive>();
     const resolvedBlocks = new Map<Y.Map<unknown>, string[]>();
     const containerAliases = new Map<string, string>();
 
@@ -210,8 +212,13 @@ export async function prepareTemplateRowGraph(input: TemplateRowGraphInput): Pro
             archive = cached ?? parseArchive(snapshot.rawData, snapshot.sourceDatabaseId || undefined);
             if (snapshot.sourceDatabaseId && snapshot.sourceDatabaseId !== archive.database_id)
               throw new Error('Template archive database identity changed');
+            // Compare original snapshots, not the active-only archive prepared for copying.
+            const previous = frozenArchives.get(archive.database_id) ?? archives.get(archive.database_id);
+
+            if (previous && previous !== archive && JSON.stringify(previous) !== JSON.stringify(archive))
+              throw new Error('Template database has conflicting archived snapshots');
             parsedArchives.set(snapshot.rawData, archive);
-            frozenArchives.add(archive.database_id);
+            frozenArchives.set(archive.database_id, archive);
           } else {
             // A Desktop frozen snapshot must be complete. Only legacy live templates may discover
             // dependencies through their authoritative Folder mounts.
@@ -252,11 +259,8 @@ export async function prepareTemplateRowGraph(input: TemplateRowGraphInput): Pro
           if (!linked) copiedDatabases.add(archive.database_id);
           const prior = archives.get(archive.database_id);
 
-          if (prior && snapshot && prior !== archive && JSON.stringify(prior) !== JSON.stringify(archive)) {
-            throw new Error('Template database has conflicting archived snapshots');
-          }
-
-          if (!prior || snapshot) archives.set(archive.database_id, archive);
+          if (!prior || (snapshot && !discoveredArchives.has(archive.database_id)))
+            archives.set(archive.database_id, archive);
         }
       }
 
@@ -270,9 +274,10 @@ export async function prepareTemplateRowGraph(input: TemplateRowGraphInput): Pro
 
         if (!frozenArchives.has(databaseId)) {
           archive = await sources.completeDatabase(databaseId);
-          archives.set(databaseId, archive);
         }
 
+        archive = excludeInactiveRows(archive);
+        archives.set(databaseId, archive);
         for (const sourceRow of archive.rows) {
           const rowId = uuid(sourceRow.id, 'row');
 
@@ -323,7 +328,7 @@ export async function prepareTemplateRowGraph(input: TemplateRowGraphInput): Pro
           source_view_id: input.sourceViewId,
           row: { row_id: input.rowId, collab: seeds.get(input.rowId)!, document: seeds.get(documentId)! },
           position: input.position,
-          position_view_ids: [],
+          position_view_ids: input.positionViewIds,
           document_name: input.template.name,
         },
       };
@@ -399,8 +404,10 @@ export async function prepareTemplateRowGraph(input: TemplateRowGraphInput): Pro
         const target = ids.get(mount.sourceId)!;
         const view = normalizeView(remapReferences(source, ids) as TemplateDatabaseView, target, targetDatabase);
 
-        if (copied) view.row_orders = source.row_orders.map((order) => ({ ...order, id: ids.get(order.id)! }));
-        else {
+        if (copied) {
+          view.row_orders = source.row_orders.map((order) => ({ ...order, id: ids.get(order.id)! }));
+          view.filters = remapRelationFilters(view.filters, archive.fields, ids);
+        } else {
           const internal = currentSource!.views.find((candidate) => candidate.is_inline);
 
           if (!internal) throw new Error('Template source database has no canonical membership');
@@ -587,7 +594,7 @@ export async function prepareTemplateRowGraph(input: TemplateRowGraphInput): Pro
           database_restore_id: input.restoreId,
           source_view_id: input.sourceViewId,
           position: input.position,
-          position_view_ids: [],
+          position_view_ids: input.positionViewIds,
         },
         objects,
         views: sorted,

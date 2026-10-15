@@ -6,7 +6,7 @@ import { collabFullSyncBatch } from '@/application/services/js-services/http/col
 import { Types, View } from '@/application/types';
 import { isEmbeddedDatabaseViewWithoutChildren } from '@/application/view-utils';
 
-import { detachedDocument, GRAPH_LIMIT, record, templateJson, uuid } from './row-template-graph-data';
+import { detachedDocument, excludeInactiveRows, GRAPH_LIMIT, record, templateJson, uuid } from './row-template-graph-data';
 import { ORIGINAL_DATABASE_RESTORE_ID } from './source-readiness';
 
 import type {
@@ -113,12 +113,13 @@ export class TemplateSources {
   }
 
   private async readCompleteDatabase(id: string): Promise<TemplateDatabaseArchive> {
-    const { archive, restoreId } = await this.database(id);
+    const source = await this.database(id);
+    const archive = excludeInactiveRows(source.archive);
     const canonical = archive.views.find((view) => view.is_inline) ?? archive.views[0];
     const rowIds = [...new Set(canonical.row_orders.map((order) => uuid(order.id, 'row')))];
 
     if (rowIds.length > 4096) throw new Error('Template graph exceeds its object limit');
-    const rows = await this.documents(rowIds, Types.DatabaseRow, restoreId);
+    const rows = await this.documents(rowIds, Types.DatabaseRow, source.restoreId);
 
     try {
       const rowMetas: Record<string, TemplateRecord> = {};

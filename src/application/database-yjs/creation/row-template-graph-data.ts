@@ -1,6 +1,8 @@
 import { v5 as uuidv5, validate as validateUuid } from 'uuid';
 import * as Y from 'yjs';
 
+import { FieldType, FilterType } from '../database.type';
+import { RelationFilterCondition } from '../fields/relation/relation.type';
 import { readTemplateRecords, writeTemplateRecords } from '../template/storage';
 
 import type {
@@ -137,6 +139,24 @@ export function parseArchive(raw: string, expectedDatabase?: string): TemplateDa
   return archive;
 }
 
+/** Canonical active membership owns the copied bodies; trash is never a creation seed. */
+export function excludeInactiveRows(archive: TemplateDatabaseArchive): TemplateDatabaseArchive {
+  const canonical = archive.views.find((view) => view.is_inline) ?? archive.views[0];
+  const active = new Set(canonical.row_orders.filter((order) => !order.is_deleted).map((order) => order.id));
+
+  return {
+    ...archive,
+    rows: archive.rows.filter((row) => active.has(String(row.id))),
+    row_metas: archive.row_metas
+      ? Object.fromEntries(Object.entries(archive.row_metas).filter(([id]) => active.has(id)))
+      : undefined,
+    views: archive.views.map((view) => ({
+      ...view,
+      row_orders: view.row_orders.filter((order) => !order.is_deleted && active.has(order.id)),
+    })),
+  };
+}
+
 /** Structural JSON values are copied; user-authored strings are never global search/replaced. */
 export function remapReferences(value: TemplateJson, ids: ReadonlyMap<string, string>, key?: string): TemplateJson {
   if (typeof value === 'string') {
@@ -147,14 +167,61 @@ export function remapReferences(value: TemplateJson, ids: ReadonlyMap<string, st
   if (Array.isArray(value)) return value.map((child) => remapReferences(child, ids, key));
   if (value && typeof value === 'object') {
     return Object.fromEntries(
-      Object.entries(value).map(([childKey, child]) => [
-        ids.get(childKey) ?? childKey,
-        remapReferences(child, ids, childKey),
-      ])
+      Object.entries(value).map(([childKey, child]) => {
+        const endpoints = key === 'dependency_links' ? childKey.split(':') : [];
+        const mappedKey =
+          endpoints.length === 2
+            ? endpoints.map((id) => ids.get(id) ?? id).join(':')
+            : ids.get(childKey) ?? childKey;
+
+        return [mappedKey, remapReferences(child, ids, childKey)];
+      })
     );
   }
 
   return value;
+}
+
+/** Relation filter content encodes row identities; other filter text remains user-authored. */
+export function remapRelationFilters(
+  filters: TemplateJson,
+  fields: TemplateRecord[],
+  ids: ReadonlyMap<string, string>
+): TemplateJson {
+  const relationFields = new Set(
+    fields.filter((field) => Number(field.field_type) === FieldType.Relation).map((field) => String(field.id))
+  );
+  const remap = (value: TemplateJson): TemplateJson => {
+    if (Array.isArray(value)) return value.map(remap);
+    if (!value || typeof value !== 'object') return value;
+    const type = Number(value.filter_type);
+
+    if (type === FilterType.And || type === FilterType.Or) {
+      return Array.isArray(value.children) ? { ...value, children: value.children.map(remap) } : value;
+    }
+
+    if (
+      !relationFields.has(String(value.field_id)) ||
+      ![RelationFilterCondition.RelationContains, RelationFilterCondition.RelationDoesNotContain].includes(
+        Number(value.condition)
+      ) ||
+      typeof value.content !== 'string'
+    ) return value;
+    try {
+      const targets: unknown = JSON.parse(value.content);
+
+      if (!Array.isArray(targets) || !targets.every((target) => typeof target === 'string')) return value;
+      const mapped = targets.map((target: string) => ids.get(target) ?? target);
+
+      return mapped.some((target, index) => target !== targets[index])
+        ? { ...value, content: JSON.stringify(mapped) }
+        : value;
+    } catch {
+      return value;
+    }
+  };
+
+  return remap(filters);
 }
 
 function map(value: TemplateRecord): Y.Map<unknown> {
@@ -171,6 +238,22 @@ function array(value: TemplateJson[]): Y.Array<TemplateJson> {
 
   result.push(value);
   return result;
+}
+
+/** Editable setting records (including group columns and filter children) are shared types. */
+function sharedSettings(value: TemplateJson): unknown {
+  if (Array.isArray(value)) {
+    const result = new Y.Array<unknown>();
+
+    result.push(value.map(sharedSettings));
+    return result;
+  }
+
+  if (value && typeof value === 'object') {
+    return new Y.Map(Object.entries(value).map(([key, child]) => [key, sharedSettings(child)]));
+  }
+
+  return value;
 }
 
 export function normalizeView(source: TemplateDatabaseView, id: string, databaseId: string): TemplateDatabaseView {
@@ -219,7 +302,7 @@ export function databaseDocument(
   root.set('views', viewMap);
   root.set('metas', metas);
 
-  // Dormant templates retain their complete frozen snapshots; only their future row identities change.
+  // Frozen snapshots retain their source document ownership, including child-page parents.
   const oldMetas = archive.row_templates_meta;
 
   if (oldMetas) {
@@ -242,7 +325,6 @@ export function databaseDocument(
       return {
         ...template,
         template_id: uuidv5(`template:${id}`, databaseId),
-        doc_view_id: uuidv5(`template-document:${id}`, databaseId),
       };
     });
 
@@ -277,13 +359,22 @@ export function databaseDocument(
     for (const [key, item] of Object.entries(view)) {
       const storedKey = key === 'group_settings' ? 'groups' : key;
 
-      value.set(storedKey, Array.isArray(item) ? array(item) : item && typeof item === 'object' ? map(item) : item);
+      value.set(
+        storedKey,
+        ['group_settings', 'sorts', 'filters'].includes(key)
+          ? sharedSettings(item)
+          : Array.isArray(item)
+          ? array(item)
+          : item && typeof item === 'object'
+          ? map(item)
+          : item
+      );
     }
 
     const sourceId = sourcesByTarget.get(view.id);
 
     value.set('form_field_settings', map(sourceId ? archive.form_field_settings?.[sourceId] ?? {} : {}));
-    value.set('calculations', array(sourceId ? archive.calculations?.[sourceId] ?? [] : []));
+    value.set('calculations', sharedSettings(sourceId ? archive.calculations?.[sourceId] ?? [] : []));
   }
 
   return doc;
@@ -324,7 +415,7 @@ export function archivedRowDocument(
 
     const storedType = Number(cell.source_field_type ?? cell.field_type ?? fieldById.get(id)?.field_type);
 
-    if (storedType === 10) {
+    if (storedType === FieldType.Relation) {
       if (Array.isArray(cell.data)) {
         cell.data = cell.data.map((related) => (typeof related === 'string' ? ids.get(related) ?? related : related));
       } else if (typeof cell.data === 'string') {
@@ -335,7 +426,15 @@ export function archivedRowDocument(
       }
     }
 
-    cells.set(id, map(cell));
+    const stored = map(cell);
+
+    // Media entries and relation targets are shared arrays in the cell schema.
+    // Use the storage type so a lazily converted cell retains its original encoding.
+    if ((storedType === FieldType.Media || storedType === FieldType.Relation) && Array.isArray(cell.data)) {
+      stored.set('data', array(cell.data));
+    }
+
+    cells.set(id, stored);
   }
 
   metas.set(uuidv5('is_document_empty', rowId), meta?.is_document_empty !== false);

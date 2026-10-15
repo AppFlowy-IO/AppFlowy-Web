@@ -1,12 +1,24 @@
 import { webcrypto } from 'crypto';
+import { act, renderHook } from '@testing-library/react';
 import { fromBase64 } from 'lib0/buffer';
+import { createElement, type ReactNode } from 'react';
 import { v5 as uuidv5 } from 'uuid';
 import * as Y from 'yjs';
 
 import { atomicRead } from '@/application/atomic-creation';
 import { collabFullSyncBatch } from '@/application/services/js-services/http/collab-api';
-import { Types } from '@/application/types';
+import { Types, YDatabase, YDatabaseCell, YDoc, YjsDatabaseKey } from '@/application/types';
+import { parseYDatabaseFileMediaCellToCell, parseYDatabaseRelationCellToCell } from '../cell.parse';
+import { DatabaseContext, type DatabaseContextState } from '../context';
+import { CalculationType, FieldType, FilterType } from '../database.type';
+import { useCalculateFieldDispatch } from '../dispatch/calculation';
+import { useRemoveSort } from '../dispatch/sort-filter';
+import { RelationFilterCondition } from '../fields/relation/relation.type';
+import { TextFilterCondition } from '../fields/text/text.type';
+import { filterBy } from '../filter';
+import { useGroupsSelector } from '../selector';
 import { decodeTemplateDocumentSnapshot, encodeTemplateDocumentSnapshot } from '../template/document';
+import { readTimelineLayoutSetting } from '../timeline-layout';
 
 import { decodeCreatedRowCollab } from './encoded-collab';
 import { prepareTemplateRowGraph } from './row-template-graph';
@@ -106,6 +118,7 @@ function input(doc = document()): TemplateRowGraphInput {
     requestId: id('request'),
     rowId: id('new-row'),
     position: { kind: 'end' },
+    positionViewIds: [id('parent-view'), id('other-parent-view')],
     rowDoc: keep(
       archivedRowDocument(
         { id: id('new-row'), cells: {} },
@@ -224,6 +237,7 @@ afterEach(() => {
 
 test('plain first body uses seeded Row API and never changes prepared source state', async () => {
   const params = input();
+  params.position = { kind: 'after', row_id: id('anchor') };
   const before = Y.encodeStateAsUpdate(params.rowDoc);
   const result = await prepareTemplateRowGraph(params);
 
@@ -234,6 +248,8 @@ test('plain first body uses seeded Row API and never changes prepared source sta
   expect((row.getMap('data').get('meta') as Y.Map<unknown>).get(uuidv5('is_document_empty', params.rowId))).toBe(false);
   expect(Y.encodeStateAsUpdate(params.rowDoc)).toEqual(before);
   expect(result.request.row.document).toBeTruthy();
+  expect(result.request.position).toEqual(params.position);
+  expect(result.request.position_view_ids).toEqual(params.positionViewIds);
   expect(read).not.toHaveBeenCalled();
   expect(sync).not.toHaveBeenCalled();
 });
@@ -242,6 +258,7 @@ test('owned two-tab archive creates one complete detached backing and unique row
   const source = archive();
   const doc = document([{ viewIds: source.views.map((view) => view.id), databaseId: source.database_id }]);
   const params = input(doc);
+  params.position = { kind: 'after', row_id: id('anchor') };
 
   snapshots(params, source);
   const before = Y.encodeStateAsUpdate(doc);
@@ -264,6 +281,8 @@ test('owned two-tab archive creates one complete detached backing and unique row
     expect((view.get('row_orders') as Y.Array<{ id: string }>).toArray().map((order) => order.id)).toEqual(rowIds)
   );
   expect(result.manifest.database_extensions).toEqual([]);
+  expect(result.manifest.target.position).toEqual(params.position);
+  expect(result.manifest.target.position_view_ids).toEqual(params.positionViewIds);
   expect(new Set([...result.seeds.keys()]).size).toBe(5);
   expect(result.manifest.views[0].content).toMatchObject({
     kind: 'row_document',
@@ -279,6 +298,217 @@ test('owned two-tab archive creates one complete detached backing and unique row
     expect(descriptor.byte_length).toBe(bytes.length);
     expect(descriptor.sha256).toEqual(Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))));
   }
+});
+
+test('copied settings support group selection, sort removal, calculations and nested shared edits', async () => {
+  const source = archive();
+  const view = source.views[0];
+  view.group_settings = [{ id: 'group', field_id: 'name', ty: 0, groups: [{ id: 'column', visible: true }] }];
+  view.sorts = [{ id: 'sort', field_id: 'name', condition: 0 }];
+  view.filters = [
+    { id: 'filter', filter_type: 0, children: [{ id: 'child-filter', field_id: 'name', filter_type: 2 }] },
+  ];
+  source.calculations = { [view.id]: [{ id: 'count', field_id: 'name', ty: CalculationType.Count }] };
+  const before = JSON.stringify(source);
+  const params = input(document([{ viewIds: [view.id], databaseId: source.database_id }]));
+  snapshots(params, source);
+  const result = compound(await prepareTemplateRowGraph(params));
+  const descriptor = result.manifest.objects.find((object) => object.kind === 'database')!;
+  const doc = decode(result.seeds.get(descriptor.object_id)!) as YDoc;
+  const database = doc.getMap('data').get('database') as YDatabase;
+  const [viewId, copied] = [...database.get(YjsDatabaseKey.views)].find(
+    ([, value]) => !value.get(YjsDatabaseKey.is_inline)
+  )!;
+  const context: DatabaseContextState = {
+    databaseDoc: doc,
+    databasePageId: viewId,
+    activeViewId: viewId,
+    readOnly: false,
+    rowMap: {},
+  };
+  const hooks = renderHook(
+    () => ({
+      groups: useGroupsSelector(),
+      removeSort: useRemoveSort(),
+      calculate: useCalculateFieldDispatch('name'),
+    }),
+    {
+      wrapper: ({ children }: { children: ReactNode }) =>
+        createElement(DatabaseContext.Provider, { value: context }, children),
+    }
+  );
+  try {
+    expect(hooks.result.current.groups).toEqual(['group']);
+    const columns = copied.get(YjsDatabaseKey.groups).get(0).get(YjsDatabaseKey.groups);
+    const filterChildren = copied.get(YjsDatabaseKey.filters).get(0).get(YjsDatabaseKey.children) as Y.Array<
+      Y.Map<unknown>
+    >;
+    expect(columns).toBeInstanceOf(Y.Array);
+    expect(columns.get(0).get(YjsDatabaseKey.id)).toBe('column');
+    expect(filterChildren).toBeInstanceOf(Y.Array);
+    expect(filterChildren.get(0).get('id')).toBe('child-filter');
+    act(() => {
+      hooks.result.current.removeSort('sort');
+      hooks.result.current.calculate(
+        new Map([
+          ['first', 'one'],
+          ['second', 'two'],
+        ])
+      );
+      columns.get(0).set(YjsDatabaseKey.visible, false);
+    });
+    expect(copied.get(YjsDatabaseKey.sorts).length).toBe(0);
+    expect(copied.get(YjsDatabaseKey.calculations).get(0).get(YjsDatabaseKey.calculation_value)).toBe(2);
+    expect(columns.get(0).get(YjsDatabaseKey.visible)).toBe(false);
+    expect(copied.get(YjsDatabaseKey.row_orders).get(0)).not.toBeInstanceOf(Y.Map);
+    expect(copied.get(YjsDatabaseKey.field_orders).get(0)).toEqual({ id: 'name' });
+    expect(JSON.stringify(source)).toBe(before);
+  } finally {
+    hooks.unmount();
+  }
+});
+
+test.each([true, false])('owned database copies exclude inactive rows and view orders (frozen=%s)', async (frozen) => {
+  const source = archive();
+  const [active, trashed] = source.rows;
+  source.views[0].row_orders[1].is_deleted = true;
+  source.row_metas![String(trashed.id)].is_document_empty = false;
+  const params = input(document([{ viewIds: source.views.map((view) => view.id), databaseId: source.database_id }]));
+  if (frozen) {
+    snapshots(params, source);
+  } else {
+    params.template.documentData = undefined;
+    const live = provideSource(source);
+    const db = live.getMap('data').get('database') as YDatabase;
+    const canonical = [...db.get(YjsDatabaseKey.views).values()].find((view) => view.get(YjsDatabaseKey.is_inline))!;
+    const orders = canonical.get(YjsDatabaseKey.row_orders);
+    orders.delete(1, 1);
+    orders.insert(1, [{ id: String(trashed.id), height: 60, is_deleted: true }]);
+    const row = keep(
+      archivedRowDocument(active, undefined, String(active.id), source.database_id, new Map(), source.fields)
+    );
+    read.mockImplementation(async (_owner, path: string) => {
+      if (path.endsWith('/restore-state')) return { database_restore_id: null, version: null };
+      const container = path.includes(`/view/${id('owned-container')}`);
+      return {
+        view_id: container ? id('owned-container') : source.views.find((view) => path.includes(view.id))!.id,
+        parent_view_id: container ? params.template.docViewId : id('owned-container'),
+        layout: 1,
+        children: [],
+        has_children: container,
+        extra: { database_id: source.database_id, is_database_container: container },
+      };
+    });
+    sync.mockImplementation(async (_workspace, items) =>
+      items.map((item: { objectId: string; collabType: Types }) => {
+        if (item.collabType === Types.Database) return sourceResponse(live, item.objectId, item.collabType);
+        expect(item.objectId).toBe(active.id);
+        expect(item.collabType).toBe(Types.DatabaseRow);
+        return sourceResponse(row, item.objectId, item.collabType);
+      })
+    );
+  }
+  const result = compound(await prepareTemplateRowGraph(params));
+  const rows = result.manifest.objects.filter(
+    (object) => object.kind === 'database_row' && object.object_id !== params.rowId
+  );
+  expect(rows).toHaveLength(1);
+  const descriptor = result.manifest.objects.find((object) => object.kind === 'database')!;
+  const copied = decode(result.seeds.get(descriptor.object_id)!).getMap('data').get('database') as YDatabase;
+  copied.get(YjsDatabaseKey.views).forEach((view) => {
+    expect(view.get(YjsDatabaseKey.row_orders).toArray()).toEqual([{ id: rows[0].object_id, height: 60 }]);
+  });
+  expect(result.manifest.objects.filter((object) => object.kind === 'document')).toHaveLength(1);
+  expect(source.rows).toHaveLength(2);
+  expect(source.views[0].row_orders[1].is_deleted).toBe(true);
+  if (frozen) expect(sync).not.toHaveBeenCalled();
+});
+
+test('copied timeline dependencies remap both endpoints and retain custom types and lag', async () => {
+  const source = archive();
+  const [first, second] = source.rows.map((row) => String(row.id));
+  const external = id('external-row');
+  const view = source.views[0];
+  view.layout = 8;
+  view.layout_settings = {
+    '8': {
+      dependency_field_id: 'relation',
+      dependency_direction: 1,
+      dependency_links: {
+        [`${first}:${second}`]: { ty: 3, lag: -4 },
+        [`${second}:${first}`]: { ty: 2, lag: 7 },
+        [`${first}:${external}`]: { ty: 1, lag: 2 },
+      },
+    },
+  };
+  source.fields.push({ id: 'relation', field_type: 10, type_options: {} });
+  source.rows[0].cells = { relation: { field_type: 10, data: [second, external] } };
+  const params = input(document([{ viewIds: [view.id], databaseId: source.database_id, ty: 'timeline' }]));
+  snapshots(params, source);
+  const result = compound(await prepareTemplateRowGraph(params));
+  const descriptor = result.manifest.objects.find((object) => object.kind === 'database')!;
+  const copied = decode(result.seeds.get(descriptor.object_id)!).getMap('data').get('database') as YDatabase;
+  const copiedView = [...copied.get(YjsDatabaseKey.views)].find(([, view]) => !view.get(YjsDatabaseKey.is_inline))![0];
+  const a = uuidv5(`row:${first}`, params.requestId);
+  const b = uuidv5(`row:${second}`, params.requestId);
+  expect(readTimelineLayoutSetting(copied, copiedView, 0, false).dependencyLinks).toEqual({
+    [`${a}:${b}`]: { type: 3, lag: -4 },
+    [`${b}:${a}`]: { type: 2, lag: 7 },
+    [`${a}:${external}`]: { type: 1, lag: 2 },
+  });
+  const row = decode(result.seeds.get(a)!).getMap('data').get('data') as Y.Map<Y.Map<Y.Map<unknown>>>;
+  expect((row.get('cells')!.get('relation')!.get('data') as Y.Array<string>).toArray()).toEqual([b, external]);
+});
+
+test('a frozen template in a copied database can still copy its owned child page', async () => {
+  const source = archive();
+  const templateBody = document();
+  const childId = id('frozen-template-child');
+  const sourceDocId = id('frozen-template-owner');
+  documentBlocks(templateBody).set(
+    'child',
+    new Y.Map(
+      Object.entries({
+        id: 'child',
+        ty: 'sub_page',
+        parent: 'root',
+        children: '',
+        data: JSON.stringify({ viewId: childId }),
+      })
+    )
+  );
+  source.row_templates_meta = {
+    row_templates: JSON.stringify([
+      {
+        ...legacyTemplateMetadata(sourceDocId),
+        doc_data: encodeTemplateDocumentSnapshot(templateBody),
+      },
+    ]),
+  };
+  const params = input(document([{ viewIds: [source.views[0].id], databaseId: source.database_id }]));
+  snapshots(params, source);
+  const [template] = createdTemplates(compound(await prepareTemplateRowGraph(params)));
+  const snapshot = decodeTemplateDocumentSnapshot(template.doc_data)!;
+  const useTemplate = input();
+  useTemplate.template = {
+    ...useTemplate.template,
+    templateId: template.template_id,
+    docViewId: template.doc_view_id,
+    documentData: template.doc_data,
+  };
+  useTemplate.documentState = fromBase64(snapshot.encodedState);
+  const child = document();
+  read.mockResolvedValue({ view_id: childId, name: 'Owned child', parent_view_id: sourceDocId, layout: 0 });
+  sync.mockImplementation(async (_workspace, items) =>
+    items.map((item: { objectId: string; collabType: Types }) => sourceResponse(child, item.objectId, item.collabType))
+  );
+  const result = compound(await prepareTemplateRowGraph(useTemplate));
+  const copiedChild = result.manifest.views.find((view) => view.content.kind === 'document')!;
+  expect(copiedChild.name).toBe('Owned child');
+  expect(copiedChild.view_id).not.toBe(childId);
+  expect(copiedChild.parent_view_id).toBe(uuidv5('document_id', useTemplate.rowId));
+  const copiedBody = decode(result.seeds.get(copiedChild.parent_view_id)!);
+  expect(JSON.parse(String(documentBlocks(copiedBody).get('child')!.get('data'))).viewId).toBe(copiedChild.view_id);
 });
 
 test('an empty frozen backing requires no live source lookup', async () => {
@@ -415,7 +645,7 @@ test('nested template v2 edits and tombstones survive a copied backing without s
 
   expect(template.name).toBe('Current');
   expect(template.template_id).not.toBe('legacy-id');
-  expect(template.doc_view_id).not.toBe(old.doc_view_id);
+  expect(template.doc_view_id).toBe(old.doc_view_id);
   expect(metas.get('default_row_template')).toBe(template.template_id);
 });
 
@@ -492,12 +722,16 @@ test('legacy Folder wrapper expands its actual tabs and reads rows in one bounde
   expect(sync.mock.calls[1][1]).toHaveLength(2);
 });
 
-test('copied row document backlink mounts under its new row document and shares the copied backing', async () => {
+test.each([false, true])('copied row backlinks share the copied backing (has trash=%s)', async (hasTrash) => {
   const source = archive();
   const sourceRowId = String(source.rows[0].id);
   const sourceDocument = document([{ viewIds: [source.views[1].id], databaseId: source.database_id }]);
 
   source.row_metas![sourceRowId].is_document_empty = false;
+  if (hasTrash)
+    source.views.forEach((view) => {
+      view.row_orders[1].is_deleted = true;
+    });
   const params = input(document([{ viewIds: [source.views[0].id], databaseId: source.database_id }]));
 
   snapshots(params, source);
@@ -520,6 +754,7 @@ test('copied row document backlink mounts under its new row document and shares 
 
   expect(backlink).toBeDefined();
   expect(result.manifest.objects.filter((object) => object.kind === 'database')).toHaveLength(1);
+  expect(result.manifest.objects.filter((object) => object.kind === 'database_row')).toHaveLength(hasTrash ? 2 : 3);
   expect(result.manifest.database_extensions).toEqual([]);
   expect(sync).toHaveBeenCalledTimes(1);
 });
@@ -709,19 +944,35 @@ test('Yrs bigint timestamp wire values become JSON numbers before constructing c
   expect(mounted.get('created_at')).toBe(1792000000);
 });
 
-test('copied relation cells remap owned row arrays while preserving external and text references', async () => {
+test('copied media and relation cells retain readable shared arrays, external targets and lazy storage', async () => {
   const source = archive();
   const relatedRow = String(source.rows[1].id);
   const externalRow = id('external-related-row');
+  const attachment = {
+    id: id('attachment'),
+    name: 'Image',
+    file_type: 1,
+    upload_type: 1,
+    url: 'https://example.com/image.png',
+  };
 
   source.fields.push(
     { id: 'relation', name: 'Related', field_type: 10, type_options: {} },
-    { id: 'converted', name: 'Converted', field_type: 10, type_options: {} }
+    { id: 'converted', name: 'Converted', field_type: 10, type_options: {} },
+    { id: 'media', name: 'Media', field_type: FieldType.Media, type_options: {} },
+    { id: 'converted-media', name: 'Converted media', field_type: FieldType.RichText, type_options: {} }
   );
   source.rows[0].cells = {
     relation: { field_type: 10, data: [relatedRow, externalRow] },
     converted: { field_type: 10, source_field_type: 0, data: relatedRow },
+    media: { field_type: FieldType.Media, data: [JSON.stringify(attachment)] },
+    'converted-media': {
+      field_type: FieldType.RichText,
+      source_field_type: FieldType.Media,
+      data: [JSON.stringify(attachment)],
+    },
   };
+  const originalCells = JSON.parse(JSON.stringify(source.rows[0].cells));
   const params = input(document([{ viewIds: [source.views[0].id], databaseId: source.database_id }]));
 
   snapshots(params, source);
@@ -731,15 +982,99 @@ test('copied relation cells remap owned row arrays while preserving external and
     .map((object) => decode(result.seeds.get(object.object_id)!).getMap('data').get('data') as Y.Map<unknown>);
   const first = copiedRows.find((row) => (row.get('cells') as Y.Map<unknown>).has('relation'))!;
   const second = copiedRows.find((row) => row !== first)!;
-  const cells = first.get('cells') as Y.Map<Y.Map<unknown>>;
+  const cells = first.get('cells') as Y.Map<YDatabaseCell>;
 
-  expect(cells.get('relation')!.get('data')).toEqual([second.get('id'), externalRow]);
+  const relation = parseYDatabaseRelationCellToCell(cells.get('relation')!);
+
+  expect(relation.data).toBeInstanceOf(Y.Array);
+  expect((relation.data as Y.Array<string>).toArray()).toEqual([second.get('id'), externalRow]);
+  expect(parseYDatabaseFileMediaCellToCell(cells.get('media')!).data).toEqual([attachment]);
+  expect(parseYDatabaseFileMediaCellToCell(cells.get('converted-media')!).data).toEqual([attachment]);
+  expect(cells.get('converted-media')!.get('source_field_type')).toBe(FieldType.Media);
   expect(cells.get('converted')!.get('data')).toBe(relatedRow);
-  expect(source.rows[0].cells).toEqual({
-    relation: { field_type: 10, data: [relatedRow, externalRow] },
-    converted: { field_type: 10, source_field_type: 0, data: relatedRow },
-  });
+  expect(source.rows[0].cells).toEqual(originalCells);
 });
+
+test.each([RelationFilterCondition.RelationContains, RelationFilterCondition.RelationDoesNotContain])(
+  'copied nested relation filters preserve matching rows for condition %s',
+  async (condition) => {
+    const source = archive();
+    const relatedRow = String(source.rows[1].id);
+    const externalRow = id('external-related-row');
+    const content = JSON.stringify([relatedRow, externalRow]);
+
+    source.fields.push({
+      id: 'relation',
+      field_type: FieldType.Relation,
+      type_options: { '10': { database_id: source.database_id } },
+    });
+    source.rows[0].cells = {
+      name: { field_type: FieldType.RichText, data: content },
+      relation: { field_type: FieldType.Relation, data: [relatedRow] },
+    };
+    source.rows[1].cells = { name: { field_type: FieldType.RichText, data: content } };
+    source.views[0].filters = [
+      {
+        id: 'root',
+        filter_type: FilterType.And,
+        children: [
+          {
+            id: 'nested',
+            filter_type: FilterType.Or,
+            children: [
+              {
+                id: 'related',
+                filter_type: FilterType.Data,
+                field_id: 'relation',
+                ty: FieldType.Relation,
+                condition,
+                content,
+              },
+            ],
+          },
+          {
+            id: 'text',
+            filter_type: FilterType.Data,
+            field_id: 'name',
+            ty: FieldType.RichText,
+            condition: TextFilterCondition.TextIs,
+            content,
+          },
+        ],
+      },
+    ];
+    const originalFilters = JSON.parse(JSON.stringify(source.views[0].filters));
+    const params = input(document([{ viewIds: [source.views[0].id], databaseId: source.database_id }]));
+
+    snapshots(params, source);
+    const result = compound(await prepareTemplateRowGraph(params));
+    const descriptor = result.manifest.objects.find((object) => object.kind === 'database')!;
+    const copied = decode(result.seeds.get(descriptor.object_id)!).getMap('data').get('database') as YDatabase;
+    const mounted = [...copied.get('views').values()].find((view) => !view.get('is_inline'))!;
+    const orders = mounted.get('row_orders').toArray();
+    const filters = mounted.get('filters');
+    const rowDocs = Object.fromEntries(orders.map((row) => [row.id, decode(result.seeds.get(row.id)!) as YDoc]));
+
+    expect(filters.toJSON()).toEqual([
+      {
+        ...originalFilters[0],
+        children: [
+          {
+            ...originalFilters[0].children[0],
+            children: [
+              { ...originalFilters[0].children[0].children[0], content: JSON.stringify([orders[1].id, externalRow]) },
+            ],
+          },
+          originalFilters[0].children[1],
+        ],
+      },
+    ]);
+    expect(filterBy(orders, filters, copied.get('fields'), rowDocs)).toEqual([
+      orders[condition === RelationFilterCondition.RelationContains ? 0 : 1],
+    ]);
+    expect(source.views[0].filters).toEqual(originalFilters);
+  }
+);
 
 test.each(['viewId', 'database_view_id'])(
   'legacy database block %s references participate in the complete graph',

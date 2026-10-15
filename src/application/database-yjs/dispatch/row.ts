@@ -935,16 +935,27 @@ export function useDuplicateRowDispatch() {
         const cachedDocument = getCachedRowSubDoc(sourceMeta.documentId) ?? getCachedProviderDoc(sourceMeta.documentId);
 
         if (
-          sourceMeta.isEmptyDocument === false ||
+          sourceMeta.isEmptyDocument !== true ||
           (cachedDocument && readTemplateDocumentEmptiness(cachedDocument) === false)
         ) {
-          const sourceDoc = cachedDocument ?? (await loadRowDocument?.(sourceMeta.documentId));
+          const sourceDoc =
+            cachedDocument && readTemplateDocumentEmptiness(cachedDocument) === false
+              ? cachedDocument
+              : await loadRowDocument?.(sourceMeta.documentId, {
+                  requireServerFetch: true,
+                  rowDocumentSource: {
+                    database_id: databaseId,
+                    database_view_id: activeViewId,
+                    row_id: referenceRowId,
+                  },
+                });
 
           assertCurrent();
           if (!sourceDoc) throw new Error('Source Row document is unavailable');
           const empty = readTemplateDocumentEmptiness(sourceDoc);
 
           if (empty === undefined) throw new Error('Source Row document is incomplete');
+          if (empty && sourceMeta.isEmptyDocument === false) throw new Error('Source Row document is still empty');
           if (!empty) documentState = Y.encodeStateAsUpdate(sourceDoc);
         }
 
@@ -972,6 +983,7 @@ export function useDuplicateRowDispatch() {
           registerRow: () => createRow(rowKey),
           documentState,
           historyGroup,
+          preserveCellStorage: true,
           template: documentState
             ? {
                 templateId: referenceRowId,

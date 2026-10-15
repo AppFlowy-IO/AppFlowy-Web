@@ -3,13 +3,19 @@ import { v4 as uuidv4 } from 'uuid';
 import * as Y from 'yjs';
 
 import { atomicRead } from '@/application/services/js-services/http/atomic-creation-api';
-import { postDefaultRowCreation } from '@/application/services/js-services/http/atomic-row-creation-api';
+import {
+  postDefaultRowCreation,
+  postRowCreation,
+} from '@/application/services/js-services/http/atomic-row-creation-api';
 import { collabFullSyncBatch } from '@/application/services/js-services/http/collab-api';
 import { createRow as openCachedRow } from '@/application/services/js-services/cache';
-import { Types, YDoc } from '@/application/types';
+import { Types, YDatabaseCell, YDoc } from '@/application/types';
 
+import { cloneDatabaseCell } from '../cell.clone';
+import { FieldType } from '../database.type';
 import { CloudRowCreationIntent, createCloudRow, prepareDefaultRowRequest } from '../creation/create-row';
-import { encodeCreationCollab } from '../creation/encoded-collab';
+import { decodeCreatedRowCollab, encodeCreationCollab } from '../creation/encoded-collab';
+import type { CreateDatabaseRowRequest } from '../creation/row-template-graph-types';
 import { CreatedRowReceipt, DefaultRowRequest } from '../creation/row-creation-types';
 import { readPersistedDatabaseSource } from '../creation/source-readiness';
 import { initialDatabaseRow } from '../row';
@@ -44,6 +50,7 @@ jest.mock('@/application/db/database-storage-fence', () => ({
 jest.mock('@/application/services/js-services/http/atomic-creation-api', () => ({ atomicRead: jest.fn() }));
 jest.mock('@/application/services/js-services/http/atomic-row-creation-api', () => ({
   postDefaultRowCreation: jest.fn(),
+  postRowCreation: jest.fn(),
 }));
 jest.mock('@/application/services/js-services/http/collab-api', () => ({ collabFullSyncBatch: jest.fn() }));
 jest.mock('@/application/services/js-services/cache', () => ({ createRow: jest.fn() }));
@@ -108,7 +115,7 @@ function fixture() {
           : snapshot(canonical, rowId, Types.DatabaseRow)
       )
     );
-  const commit = (request: DefaultRowRequest): CreatedRowReceipt => {
+  const commit = (request: Pick<DefaultRowRequest, 'request_id' | 'database_restore_id'>): CreatedRowReceipt => {
     const vector = Y.encodeStateVector(remote);
     const target = (remote.getMap('data').get('database') as Y.Map<Y.Map<Y.Map<Y.Array<{ id: string }>>>>)
       .get('views')!
@@ -153,6 +160,82 @@ beforeEach(() => {
   mockAvailable.mockReset();
   mockOwner.mockReset();
 });
+
+it.each([
+  ['Desktop Text', BigInt(0), undefined],
+  ['legacy string Text', '0', undefined],
+  ['lazy select', FieldType.MultiSelect, undefined],
+  ['legacy lazy Text', FieldType.Number, '0'],
+])(
+  'duplicates %s cells through the raw seeded contract and positions every eligible view',
+  async (_label, type, sourceType) => {
+    const f = fixture();
+    const source = new Y.Doc();
+    const sourceCell = source.getMap('cell') as YDatabaseCell;
+    const seeded = new Y.Doc();
+
+    try {
+      sourceCell.set('field_type', typeof type === 'bigint' ? Number(type) : type);
+      if (typeof type === 'bigint') {
+        // A Desktop i64 is decoded by Yjs, but cannot be inserted with Map.set.
+        (sourceCell._map.get('field_type')!.content as unknown as { arr: unknown[] }).arr[0] = type;
+      }
+      if (sourceType !== undefined) sourceCell.set('source_field_type', sourceType);
+      sourceCell.set('data', 'Raw source value');
+      sourceCell.set('rich_text', '{"v":2,"future":"preserved"}');
+      const row = f.rowDoc.getMap('data').get('data') as Y.Map<Y.Map<unknown>>;
+
+      row.get('cells')!.set('name', cloneDatabaseCell(FieldType.RichText, sourceCell));
+      f.intent.preserveCellStorage = true;
+      const anchor = uuidv4();
+
+      f.intent.position = { kind: 'after', row_id: anchor };
+      const database = f.databaseDoc.getMap('data').get('database') as Y.Map<Y.Map<Y.Map<unknown>>>;
+      const views = database.get('views')!;
+      const otherViewId = uuidv4();
+      const missingAnchorId = uuidv4();
+
+      [otherViewId, missingAnchorId].forEach((id) => {
+        const view = new Y.Map<unknown>();
+
+        view.set('row_orders', new Y.Array());
+        views.set(id, view);
+      });
+      [f.intent.sourceViewId, otherViewId].forEach((id) => {
+        (views.get(id)!.get('row_orders') as Y.Array<unknown>).push([{ id: anchor, height: 36 }]);
+      });
+      Y.applyUpdate(f.remote, Y.encodeStateAsUpdate(f.databaseDoc));
+      jest.mocked(postRowCreation).mockImplementation(async (_owner, path, payload) => {
+        expect(path).toBe(`database/${f.intent.databaseId}/row`);
+        const request = payload as CreateDatabaseRowRequest;
+
+        expect(request.row.document).toBeUndefined();
+        expect(request.document_name).toBeUndefined();
+        expect(request.position).toEqual(f.intent.position);
+        expect(request.position_view_ids).toEqual([f.intent.sourceViewId, otherViewId]);
+        Y.applyUpdate(seeded, decodeCreatedRowCollab(request.row.collab).state);
+        const cells = (seeded.getMap('data').get('data') as Y.Map<Y.Map<Y.Map<unknown>>>).get('cells')!;
+
+        expect(cells.get('name')!.toJSON()).toMatchObject({
+          field_type: Number(type),
+          ...(sourceType === undefined ? {} : { source_field_type: Number(sourceType) }),
+          data: 'Raw source value',
+          rich_text: '{"v":2,"future":"preserved"}',
+        });
+        return f.commit(request);
+      });
+
+      await expect(createCloudRow(f.intent)).resolves.toBe(f.intent.rowId);
+      expect(postRowCreation).toHaveBeenCalledTimes(1);
+      expect(postDefaultRowCreation).not.toHaveBeenCalled();
+      expect(sourceCell.get('field_type')).toBe(type);
+    } finally {
+      source.destroy();
+      seeded.destroy();
+      f.cleanup();
+    }
+  }
+);
 
 it('keeps row storage, membership, and binding untouched until the server commits', async () => {
   const f = fixture();
