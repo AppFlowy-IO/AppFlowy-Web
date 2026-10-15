@@ -4,12 +4,21 @@ import { SpaceCreationIntent, SpaceCreationIntentStore } from '../space-creation
 
 let mockUser = 'actor-a';
 let mockServer = 'https://server-a';
+// The tab's server restore generation (null: the initial one). A restore reloads every tab.
+let mockRestoreId: string | null = null;
 const mockClient = {};
 
 jest.mock('@/application/session/token', () => ({ getTokenParsed: () => ({ user: { id: mockUser } }) }));
 jest.mock('@/utils/runtime-config', () => ({ getConfigValue: () => mockServer }));
 jest.mock('../http/core', () => ({ getAxios: () => mockClient }));
 jest.mock('i18next', () => ({ t: (key: string) => key }));
+jest.mock('@/application/server-restore', () => ({
+  get serverRestore() {
+    const { ServerRestoreBoundary } = jest.requireActual('@/application/server-restore');
+
+    return new ServerRestoreBoundary(mockServer, { getItem: () => mockRestoreId, setItem: jest.fn() }, jest.fn());
+  },
+}));
 
 const draft = (): SpaceCreationIntent => ({
   payload: { name: 'Original', view_id: 'space-a', client_generated_view_id: true,
@@ -19,7 +28,7 @@ const draft = (): SpaceCreationIntent => ({
   appliedMemberUids: [],
 });
 
-beforeEach(() => { sessionStorage.clear(); mockUser = 'actor-a'; mockServer = 'https://server-a'; });
+beforeEach(() => { sessionStorage.clear(); mockUser = 'actor-a'; mockServer = 'https://server-a'; mockRestoreId = null; });
 
 test('submitted immutable payload and partial roster survive reload and only complete after full handoff', () => {
   const original = draft();
@@ -134,4 +143,24 @@ test('an unknown first page problem is unreadable data, kept until it is discard
   sessionStorage.setItem(key, stored);
   expect(() => store.snapshot()).toThrow('spaceCreation.invalidRecovery');
   expect(sessionStorage.getItem(key)).toBe(stored);
+});
+
+test('a request saved before a server restore is never offered against the restored server', () => {
+  new SpaceCreationIntentStore('workspace-a').begin(draft());
+  // A committed restore reloads the tab onto fresh storage; session storage survives the reload,
+  // and the atomic page commands the old request relied on stay in the old generation.
+  mockRestoreId = '11111111-1111-4111-8111-111111111111';
+  const restored = new SpaceCreationIntentStore('workspace-a');
+
+  expect(restored.snapshot()).toBeUndefined();
+  const next = draft();
+
+  next.payload.view_id = 'space-b';
+  next.initialPage!.view_id = 'page-b';
+  restored.begin(next);
+  expect(new SpaceCreationIntentStore('workspace-a').snapshot()?.payload.view_id).toBe('space-b');
+
+  // The earlier generation's request is neither replaced nor removed by the restored one.
+  mockRestoreId = null;
+  expect(new SpaceCreationIntentStore('workspace-a').snapshot()?.payload.view_id).toBe('space-a');
 });
