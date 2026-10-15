@@ -518,7 +518,7 @@ function currentGenerationCache(): GenerationCache {
   };
 }
 
-/** Another generation's shared cache, opened as stored: never upgraded, created or read for content. */
+/** Another generation's shared cache, opened as stored (never upgraded); only outbox keys are read. */
 async function storedGenerationCache(storedName: string): Promise<GenerationCache> {
   const shared = new BaseDexie(storedName);
 
@@ -639,8 +639,10 @@ export async function removeSignedOutLocalData(account: SignedOutAccount, isSign
       for (const { name } of await factory.databases()) {
         if (!name) continue;
         const { restoreId, logicalName } = splitRestoreCacheKey(name);
+        const names = generations.get(restoreId);
 
-        generations.set(restoreId, [...(generations.get(restoreId) ?? []), logicalName]);
+        if (names) names.push(logicalName);
+        else generations.set(restoreId, [logicalName]);
       }
 
       // Checkpoint keys can outlive every database of their generation.
