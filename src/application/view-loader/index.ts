@@ -183,7 +183,22 @@ async function mergeLegacyDatabaseViewCache(viewId: string, databaseId: string, 
       return false;
     }
 
+    // The diff also carries the legacy copy's complete delete set, so it is never empty once that
+    // copy has a deletion. Queue it only when it changed the canonical copy: repeating deletions
+    // the canonical copy already has would show a reader "waiting for edit access" on every open
+    // of this view and make an editor upload them again.
+    const before = Y.snapshot(targetDoc);
+    const { pendingStructs, pendingDs } = targetDoc.store;
+
     withDatabaseStorageFence(targetDoc, storageFence, () => applyYDoc(targetDoc, missingUpdate));
+    if (
+      Y.equalSnapshots(before, Y.snapshot(targetDoc)) &&
+      targetDoc.store.pendingStructs === pendingStructs &&
+      targetDoc.store.pendingDs === pendingDs
+    ) {
+      return false;
+    }
+
     void enqueueOutboxUpdate({
       objectId: databaseId,
       collabType: Types.Database,

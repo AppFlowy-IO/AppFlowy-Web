@@ -175,6 +175,48 @@ describe('view-loader database cache identity', () => {
     expect(mockFetchPageCollab).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['only repeats deletions the canonical cache already has', false],
+    ['holds a deletion the canonical cache lacks', true],
+  ])('merges a legacy view cache that %s, queueing it only on a change', async (_name, legacyDeletes) => {
+    const viewId = '00000000-0000-4000-8000-000000000011';
+    const databaseId = '00000000-0000-4000-8000-000000000012';
+    const canonicalDoc = createCompleteDatabaseDoc(databaseId, databaseId, viewId);
+    const fields = canonicalDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database)
+      .get(YjsDatabaseKey.fields) as Y.Map<unknown>;
+
+    fields.set('removed-field', new Y.Map());
+    fields.set('kept-field', new Y.Map());
+    fields.delete('removed-field');
+    const legacyDoc = createEmptyDoc(viewId);
+
+    Y.applyUpdate(legacyDoc, Y.encodeStateAsUpdate(canonicalDoc));
+    if (legacyDeletes) {
+      (legacyDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database)
+        .get(YjsDatabaseKey.fields) as Y.Map<unknown>).delete('kept-field');
+    }
+
+    // Either way the diff is more than the empty update: it carries the legacy delete set.
+    expect(Y.encodeStateAsUpdate(legacyDoc, Y.encodeStateVector(canonicalDoc)).byteLength).toBeGreaterThan(2);
+    mockOpenCollabDBWithProvider.mockImplementation(async (name: string) =>
+      createProvider(name === databaseId ? canonicalDoc : legacyDoc) as never);
+
+    const result = await openView('workspace-id', viewId, ViewLayout.Grid, { databaseId });
+
+    expect(result.doc).toBe(canonicalDoc);
+    expect(fields.has('kept-field')).toBe(!legacyDeletes);
+    if (legacyDeletes) {
+      expect(mockEnqueueOutboxUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ objectId: databaseId, collabType: Types.Database, payload: expect.any(Uint8Array) })
+      );
+    } else {
+      expect(mockEnqueueOutboxUpdate).not.toHaveBeenCalled();
+    }
+
+    canonicalDoc.destroy();
+    legacyDoc.destroy();
+  });
+
   it('opens Form views as canonical database collabs', async () => {
     const viewId = '00000000-0000-4000-8000-000000000021';
     const databaseId = '00000000-0000-4000-8000-000000000022';
