@@ -21,7 +21,17 @@ jest.mock('@/application/services/domains', () => ({
   WorkspaceService: { getWorkspaceSpaceCreationCapabilities: (...args: unknown[]) => mockRead(...args) },
 }));
 jest.mock('@/components/main/app.hooks', () => ({ useAuthenticatedUserIdOptional: () => mockUserId }));
-jest.mock('@/utils/runtime-config', () => ({ getConfigValue: () => mockServerUrl }));
+// Main's server restore boundary reads the base URL while modules load, before this file's
+// variables are initialized: fall back to the caller's default until then.
+jest.mock('@/utils/runtime-config', () => ({
+  getConfigValue: (_key: string, fallback?: string) => {
+    try {
+      return mockServerUrl;
+    } catch {
+      return fallback;
+    }
+  },
+}));
 
 function Wrapper({ children }: { children: ReactNode }) {
   return (

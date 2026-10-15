@@ -16,7 +16,17 @@ import {
 
 let mockServer = 'https://server-a';
 
-jest.mock('@/utils/runtime-config', () => ({ getConfigValue: () => mockServer }));
+// Main's server restore boundary reads the base URL while modules load, before this file's
+// variables are initialized: fall back to the caller's default until then.
+jest.mock('@/utils/runtime-config', () => ({
+  getConfigValue: (_key: string, fallback?: string) => {
+    try {
+      return mockServer;
+    } catch {
+      return fallback;
+    }
+  },
+}));
 
 jest.mock('@/application/db', () => ({
   db: {

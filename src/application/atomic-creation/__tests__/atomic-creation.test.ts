@@ -25,6 +25,9 @@ let mockWorkspace = 'workspace';
 let mockSessionGeneration = 0;
 jest.mock('@/application/sync-outbox', () => ({
   purgeAllOutbox: jest.fn(() => Promise.resolve()),
+  // Signing out stops uploads and keeps unsent edits (permissions branch) instead of purging them.
+  clearDrainConfig: jest.fn(),
+  setCurrentSession: jest.fn(),
   getCurrentOutboxSession: (workspace: string) =>
     workspace === mockWorkspace ? { userId: 'user', workspaceId: workspace } : null,
   getCurrentOutboxSessionGeneration: () => mockSessionGeneration,
