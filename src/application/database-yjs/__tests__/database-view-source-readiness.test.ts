@@ -13,6 +13,7 @@ import {
   remoteDatabaseCoversSource,
   waitForDatabaseViewSource,
 } from '@/application/database-yjs/creation/source-readiness';
+import { collabStorageKey } from '@/application/db/collab-storage-scope';
 import { Types, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
 function database() {
@@ -153,7 +154,9 @@ describe('Database view source readiness', () => {
 
       live.databaseRestoreId = restoreId ?? undefined;
       live.version = 'version';
-      const name = storageEpoch ? `${live.guid}:database-restore:${storageEpoch}` : live.guid;
+      // Database roots live in the account and workspace's scoped namespace.
+      const root = collabStorageKey(live.guid);
+      const name = storageEpoch ? `${root}:database-restore:${storageEpoch}` : root;
       const connection = await new Promise<IDBDatabase>((resolve) => {
         const request = indexedDB.open(name);
 
@@ -193,7 +196,7 @@ describe('Database view source readiness', () => {
       expect(
         (await indexedDB.databases())
           .map(({ name: databaseName }) => databaseName)
-          .filter((databaseName) => databaseName?.startsWith(live.guid))
+          .filter((databaseName) => databaseName?.startsWith(root))
       ).toEqual([name]);
       connection.close();
       await new Promise<void>((resolve, reject) => {
@@ -207,8 +210,9 @@ describe('Database view source readiness', () => {
 
   it('does not fall back to the original namespace when restored storage is missing', async () => {
     const live = database() as YDoc;
+    const root = collabStorageKey(live.guid);
     const connection = await new Promise<IDBDatabase>((resolve) => {
-      const request = indexedDB.open(live.guid);
+      const request = indexedDB.open(root);
 
       request.onupgradeneeded = () => {
         request.result.createObjectStore('updates', { autoIncrement: true });
@@ -234,12 +238,12 @@ describe('Database view source readiness', () => {
       ).rejects.toMatchObject({ name: 'AbortError' });
       const names = (await indexedDB.databases()).map(({ name }) => name);
 
-      expect(names).toContain(live.guid);
-      expect(names).not.toContain(`${live.guid}:database-restore:missing-restore`);
+      expect(names).toContain(root);
+      expect(names).not.toContain(`${root}:database-restore:missing-restore`);
     } finally {
       connection.close();
       live.destroy();
-      indexedDB.deleteDatabase(live.guid);
+      indexedDB.deleteDatabase(root);
     }
   });
 
