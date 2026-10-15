@@ -316,7 +316,7 @@ interface FolderView {
   extra?: { is_space?: boolean } | null;
 }
 
-interface SpaceMemberRow {
+export interface SpaceMemberRow {
   uid: string;
   user_uuid?: string;
   role: string;
@@ -324,10 +324,58 @@ interface SpaceMemberRow {
   source: string;
 }
 
-interface SpaceGroupRow {
+export interface SpaceGroupRow {
   group_id: string;
   role: string;
   access_level_override?: number | null;
+}
+
+/** Rows the server lists for people who are not members themselves (as the Web client reads them). */
+const SYNTHETIC_MEMBER_SOURCES = new Set(['workspace_default', 'page_share', 'legacy_private_owner']);
+
+/** A person's own membership row (`manual`, `joined`, `creator`), not one derived from elsewhere. */
+export function isOwnSpaceMemberRow(member: SpaceMemberRow) {
+  return !SYNTHETIC_MEMBER_SOURCES.has(member.source);
+}
+
+/**
+ * Make `person` a direct member of a space at `override` (null: the space default), as the owner.
+ * A person who is already a member keeps the row; only the level is set.
+ */
+async function ensureDirectMember(
+  api: GalleryApi,
+  owner: GallerySession,
+  ws: string,
+  space: string,
+  person: GallerySession,
+  override: number | null
+) {
+  const data = await api.cloud<{ members: SpaceMemberRow[] }>(owner, 'GET', `${ws}/spaces/${space}/members`);
+  const row = data.members.find((member) => member.user_uuid === person.uuid && isOwnSpaceMemberRow(member));
+  const path = `${ws}/spaces/${space}/members/users/${person.uuid}`;
+
+  if (!row) {
+    await api.cloud(owner, 'POST', path, { role: 'member', access_level: override ?? VIEW });
+  }
+
+  const after = await api.cloud<{ members: SpaceMemberRow[] }>(owner, 'GET', `${ws}/spaces/${space}/members`);
+  const current = after.members.find((member) => member.user_uuid === person.uuid && isOwnSpaceMemberRow(member));
+
+  if (current && current.role === 'member' && current.access_level_override !== override) {
+    await api.cloud(owner, 'PATCH', path, { access_level_override: override });
+  }
+}
+
+/**
+ * Remove `person`'s own membership of a space, as the owner (other paths to it, such as a group,
+ * stay). Space owners are kept. The server stores such rows as `manual` or `joined`.
+ */
+async function removeDirectMember(api: GalleryApi, owner: GallerySession, ws: string, space: string, person: GallerySession) {
+  const data = await api.cloud<{ members: SpaceMemberRow[] }>(owner, 'GET', `${ws}/spaces/${space}/members`);
+
+  if (data.members.some((member) => member.user_uuid === person.uuid && member.role === 'member' && isOwnSpaceMemberRow(member))) {
+    await api.cloud(owner, 'DELETE', `${ws}/spaces/${space}/members/users/${person.uuid}`);
+  }
 }
 
 /**
@@ -547,24 +595,6 @@ export async function seedPermissionGallery(config: GalleryConfig): Promise<Gall
     }
   };
 
-  const ensureDirectMember = async (space: string, person: GallerySession, override: number | null) => {
-    const actor = olivia;
-    const data = await api.cloud<{ members: SpaceMemberRow[] }>(actor, 'GET', `${ws}/spaces/${space}/members`);
-    const row = data.members.find((member) => member.user_uuid === person.uuid && member.source !== 'workspace_default');
-    const path = `${ws}/spaces/${space}/members/users/${person.uuid}`;
-
-    if (!row) {
-      await api.cloud(actor, 'POST', path, { role: 'member', access_level: override ?? VIEW });
-    }
-
-    const after = await api.cloud<{ members: SpaceMemberRow[] }>(actor, 'GET', `${ws}/spaces/${space}/members`);
-    const current = after.members.find((member) => member.user_uuid === person.uuid && member.source !== 'workspace_default');
-
-    if (current && current.role === 'member' && current.access_level_override !== override) {
-      await api.cloud(actor, 'PATCH', path, { access_level_override: override });
-    }
-  };
-
   const ensureOrdinaryMember = async (space: string, person: GallerySession, override: number) => {
     const data = await api.cloud<{ members: SpaceMemberRow[] }>(olivia, 'GET', `${ws}/spaces/${space}/members`);
     const row = data.members.find((member) => member.user_uuid === person.uuid && member.source !== 'workspace_default');
@@ -581,20 +611,12 @@ export async function seedPermissionGallery(config: GalleryConfig): Promise<Gall
     }
   };
 
-  const removeDirectMember = async (space: string, person: GallerySession) => {
-    const data = await api.cloud<{ members: SpaceMemberRow[] }>(olivia, 'GET', `${ws}/spaces/${space}/members`);
-
-    if (data.members.some((member) => member.user_uuid === person.uuid && member.role === 'member' && member.source === 'direct')) {
-      await api.cloud(olivia, 'DELETE', `${ws}/spaces/${space}/members/users/${person.uuid}`);
-    }
-  };
-
   // HR: the HR group can edit, Users can view, Alex keeps the space default. Sam gets HR access only
   // through the HR group, so removing that group's access leaves Sam without access.
   await ensureGroupAssignment(spaces.HR, groups.HR, EDIT);
   await ensureGroupAssignment(spaces.HR, groups.Users, VIEW);
-  await ensureDirectMember(spaces.HR, alex, null);
-  await removeDirectMember(spaces.HR, sam);
+  await ensureDirectMember(api, olivia, ws, spaces.HR, alex, null);
+  await removeDirectMember(api, olivia, ws, spaces.HR, sam);
   // Product (owned by Alex): the Product group can edit. Olivia keeps managing it as the workspace
   // owner, but her own row is an ordinary member with Can view, so Manage Space can explain that
   // she can also edit through the Product group.
@@ -648,6 +670,67 @@ export async function setGroupSpaceAccess(
   } else {
     await api.cloud(fixture.people.olivia, 'POST', path, { role: 'member', access_level: level, access_level_override: level });
   }
+}
+
+/**
+ * Owner API calls the videos use to take a person's own membership of a space away (other paths to
+ * the space, such as a group, stay) and to give it back as the seed has it (the space default).
+ */
+export async function setDirectSpaceMember(
+  config: GalleryConfig,
+  fixture: GalleryFixture,
+  space: GallerySpace,
+  person: GalleryPerson,
+  member: boolean
+) {
+  const api = new GalleryApi(config);
+  const ws = `/api/workspace/${fixture.workspaceId}`;
+
+  if (member) {
+    await ensureDirectMember(api, fixture.people.olivia, ws, fixture.spaces[space], fixture.people[person], null);
+  } else {
+    await removeDirectMember(api, fixture.people.olivia, ws, fixture.spaces[space], fixture.people[person]);
+  }
+}
+
+/** A space's people and groups with their levels, as the owner reads them. */
+export async function readSpaceAssignments(config: GalleryConfig, fixture: GalleryFixture, space: GallerySpace) {
+  return new GalleryApi(config).cloud<{ members: SpaceMemberRow[]; groups: SpaceGroupRow[] }>(
+    fixture.people.olivia,
+    'GET',
+    `/api/workspace/${fixture.workspaceId}/spaces/${fixture.spaces[space]}/members`
+  );
+}
+
+/** A page's document as the server holds it now (the collab as JSON), read by `person`. */
+export async function readPageDocument(
+  config: GalleryConfig,
+  fixture: GalleryFixture,
+  person: GalleryPerson,
+  page: GalleryPage
+): Promise<unknown> {
+  const data = await new GalleryApi(config).cloud<{ collab: unknown }>(
+    fixture.people[person],
+    'GET',
+    `/api/workspace/v1/${fixture.workspaceId}/collab/${fixture.pages[page]}/json?collab_type=0`
+  );
+
+  return data.collab;
+}
+
+/** The workspaces `person` belongs to. */
+export async function listGalleryWorkspaces(config: GalleryConfig, fixture: GalleryFixture, person: GalleryPerson) {
+  return new GalleryApi(config).cloud<{ workspace_id: string; workspace_name: string; owner_uid: string }[]>(
+    fixture.people[person],
+    'GET',
+    '/api/workspace'
+  );
+}
+
+/** Delete a workspace Olivia created during a capture; Demo itself is never deleted. */
+export async function deleteGalleryWorkspace(config: GalleryConfig, fixture: GalleryFixture, workspaceId: string) {
+  if (workspaceId === fixture.workspaceId) throw new Error('The Demo workspace is not deleted');
+  await new GalleryApi(config).cloud(fixture.people.olivia, 'DELETE', `/api/workspace/${workspaceId}`);
 }
 
 /** Fresh sign-in for a browser session (tokens expire after two hours). */

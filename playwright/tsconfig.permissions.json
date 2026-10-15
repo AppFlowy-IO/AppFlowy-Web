@@ -9,7 +9,9 @@
     "bdd/steps/space-group-permission-resolution.steps.ts",
     "../playwright.permission-gallery.config.ts",
     "support/permission-gallery-seed.ts",
-    "e2e/app/permission-gallery.capture.spec.ts"
+    "support/permission-gallery-browser.ts",
+    "e2e/app/permission-gallery.capture.spec.ts",
+    "e2e/app/permission-videos.capture.spec.ts"
   ],
   "references": []
 }

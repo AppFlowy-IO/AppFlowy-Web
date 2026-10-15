@@ -2,8 +2,9 @@ import { createHash } from 'node:crypto';
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-import { Browser, BrowserContext, expect, Locator, Page, test } from '@playwright/test';
+import { Browser, expect, Locator, Page, test } from '@playwright/test';
 
+import { GalleryRealtime, newGalleryContext } from '../../support/permission-gallery-browser';
 import {
   GALLERY_WORKSPACE_NAME,
   galleryConfigFromEnv,
@@ -11,7 +12,6 @@ import {
   GalleryFixture,
   GalleryPerson,
   pageCapability,
-  refreshGallerySession,
   seedPermissionGallery,
   setGroupSpaceAccess,
   setSpaceCreationPolicy,
@@ -36,65 +36,19 @@ const outputDir = resolve(
 
 test.use({ trace: 'off', video: 'off' });
 
-async function guardNetwork(context: BrowserContext, cfg: GalleryConfig) {
-  const allowed = new Set([cfg.web, cfg.cloud, cfg.gotrue]);
-
-  await context.route('**/*', async (route) => {
-    const url = new URL(route.request().url());
-    // The dev server proxies these paths to developer ports; the app must only use the gallery stack.
-    const devProxy = url.origin === cfg.web && /^\/(api|ws|gotrue|s3|billing)(\/|$)/.test(url.pathname);
-
-    if (!allowed.has(url.origin) || devProxy) {
-      await route.abort();
-      return;
-    }
-
-    await route.continue();
-  });
-}
-
-/**
- * The live connection of a browser session. While `muted`, what the server pushes (including
- * permission change hints) is held back, so the app only learns of a change when it asks itself.
- */
-type Realtime = { muted: boolean };
-
 async function openAs(
   browser: Browser,
   fixture: GalleryFixture,
   person: GalleryPerson,
   path: string,
-  realtime?: Realtime
+  realtime?: GalleryRealtime
 ) {
   const cfg = config as GalleryConfig;
-  const session = await refreshGallerySession(cfg, fixture.people[person]);
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
-
-  await guardNetwork(context, cfg);
-  if (realtime) {
-    // Relay the socket both ways, except that server pushes are dropped while muted.
-    await context.routeWebSocket(() => true, (socket) => {
-      const server = socket.connectToServer();
-
-      socket.onMessage((message) => server.send(message));
-      server.onMessage((message) => {
-        if (!realtime.muted) socket.send(message);
-      });
-    });
-  }
-
-  // Same session setup as the permission lifecycle harness: runtime config plus a stored token.
-  await context.addInitScript(
-    ({ auth, cloud, gotrue }) => {
-      (window as Window & { __APP_CONFIG__?: Record<string, string> }).__APP_CONFIG__ = {
-        APPFLOWY_BASE_URL: cloud,
-        APPFLOWY_GOTRUE_BASE_URL: gotrue,
-        APPFLOWY_WS_BASE_URL: `${cloud.replace(/^http/, 'ws')}/ws/v2`,
-      };
-      localStorage.setItem('token', JSON.stringify(auth));
-    },
-    { auth: session.auth, cloud: cfg.cloud, gotrue: cfg.gotrue }
-  );
+  // Requests outside the stack aborted, runtime config plus a stored session (see the helper).
+  const context = await newGalleryContext(browser, cfg, fixture, person, {
+    viewport: { width: 1440, height: 900 },
+    realtime,
+  });
   const page = await context.newPage();
 
   await page.goto(`${cfg.web}${path}`, { waitUntil: 'domcontentloaded' });
@@ -287,6 +241,12 @@ test.describe('Workspace permission screenshot gallery', () => {
     await expect(page.getByTestId('manage-space-visibility-option-custom')).toHaveAttribute('aria-pressed', 'true');
 
     await page.getByRole('tab', { name: 'Members' }).click();
+    // Both group rows with their levels, nothing open: the HR group can edit, Users can view.
+    await expect(page.getByTestId(`space-group-access-${fixture.groups.HR}`)).toHaveText('Can edit');
+    await expect(page.getByTestId(`space-group-access-${fixture.groups.Users}`)).toHaveText('Can view');
+    await expect(page.getByRole('menu')).toHaveCount(0);
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
+    await shoot(page, 'manage-space-groups-view-and-edit.png', 'olivia');
     const alexAccess = page.getByTestId(`space-member-access-${fixture.people.alex.uid}`);
 
     await expect(alexAccess).toBeVisible();
@@ -355,7 +315,7 @@ test.describe('Workspace permission screenshot gallery', () => {
   test('member: Create space refused after the owner narrows who can create spaces', async ({ browser }) => {
     const cfg = config as GalleryConfig;
     // Alex is a selected space creator: Create space opens for him with the Create button enabled.
-    const realtime: Realtime = { muted: false };
+    const realtime: GalleryRealtime = { muted: false };
     const { context, page } = await openAs(browser, fixture, 'alex', `/app/${fixture.workspaceId}/${fixture.pages.roadmap}`, realtime);
 
     try {
