@@ -20,6 +20,8 @@ const mockNavigate = jest.fn();
 // The permissions hook refreshes on permission notifications from the app event emitter.
 const mockEventEmitter = { on: jest.fn(), off: jest.fn(), emit: jest.fn() };
 let mockRole = Role.Member;
+// An account without a workspace has no selected workspace (and no role) yet.
+let mockHasSelectedWorkspace = true;
 let mockViewId = 'root-page';
 
 jest.mock('react-i18next', () => ({
@@ -45,7 +47,7 @@ jest.mock('@/components/app/app.hooks', () => ({
   useAppViewId: () => mockViewId,
   useCurrentWorkspaceId: () => 'workspace',
   useEventEmitter: () => mockEventEmitter,
-  useUserWorkspaceInfo: () => ({ selectedWorkspace: { role: mockRole } }),
+  useUserWorkspaceInfo: () => ({ selectedWorkspace: mockHasSelectedWorkspace ? { role: mockRole } : undefined }),
   useAIEnabled: () => false,
   useOpenPageModal: () => mockOpenPageModal,
   useToView: () => mockNavigate,
@@ -335,6 +337,7 @@ describe('shared page sidebar actions', () => {
   beforeEach(() => {
     jest.resetAllMocks();
     mockRole = Role.Member;
+    mockHasSelectedWorkspace = true;
     mockViewId = 'root-page';
     mockAddPage.mockResolvedValue({ view_id: 'created-child' });
     mockUpdatePage.mockResolvedValue(undefined);
@@ -538,6 +541,20 @@ describe('shared page sidebar actions', () => {
     fireEvent.click(within(row).getByTestId('shared-page-more-actions'));
 
     expect(screen.queryByTestId('shared-move-to-trash')).toBeNull();
+    expect(mockOpenDeleteModal).not.toHaveBeenCalled();
+  });
+
+  it('offers neither Add nor Move to trash to an account without a selected workspace', () => {
+    mockHasSelectedWorkspace = false;
+    renderShared();
+    const row = screen.getByTestId('row-root-page');
+
+    fireEvent.mouseEnter(row);
+    expect(within(row).queryByTestId('inline-add-page')).toBeNull();
+    fireEvent.click(within(row).getByTestId('shared-page-more-actions'));
+
+    expect(screen.queryByTestId('shared-move-to-trash')).toBeNull();
+    expect(mockAddPage).not.toHaveBeenCalled();
     expect(mockOpenDeleteModal).not.toHaveBeenCalled();
   });
 
