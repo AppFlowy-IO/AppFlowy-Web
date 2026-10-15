@@ -387,9 +387,10 @@ describe('collab IndexedDB persistence internals', () => {
     );
   });
 
-  it('drops account caches written under a bare account id when upgrading to version 14', async () => {
+  // Main's released version 13 adds atomic_creation, so this cleanup runs as version 15.
+  it('drops account caches written under a bare account id when upgrading to version 15', async () => {
     type UpgradeVersion = { _cfg: { version: number; contentUpgrade?: (transaction: unknown) => Promise<void> } };
-    const version = (db as unknown as { _versions: UpgradeVersion[] })._versions.find(({ _cfg }) => _cfg.version === 14);
+    const version = (db as unknown as { _versions: UpgradeVersion[] })._versions.find(({ _cfg }) => _cfg.version === 15);
     const rows: Record<string, Array<{ user_id: string }>> = {
       app_view_cache: [{ user_id: 'legacy-user' }, { user_id: '["https://server","user"]' }],
       workspace_database_catalog: [{ user_id: '["https://server","user"]' }, { user_id: 'legacy-user' }],
