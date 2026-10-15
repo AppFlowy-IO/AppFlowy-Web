@@ -5,7 +5,7 @@ import * as Y from 'yjs';
 
 import { APP_EVENTS } from '@/application/constants';
 import { deleteCollabDB } from '@/application/db';
-import { YDoc } from '@/application/types';
+import { YDoc, YDocWithMeta } from '@/application/types';
 
 import { useDocumentLoader } from '../useDocumentLoader';
 
@@ -40,8 +40,32 @@ describe('useDocumentLoader', () => {
     }));
 
     await waitFor(() => {
-      expect(loadView).toHaveBeenCalledWith('view-id', false, false, { databaseId: 'database-id' });
+      expect(loadView).toHaveBeenCalledWith('view-id', false, false, {
+        databaseId: 'database-id',
+        preserveViewMetadata: true,
+      });
     });
+  });
+
+  it.each([true, false])('shares a canonical database owned by another view (already bound: %s)', async (alreadyBound) => {
+    const doc = createDoc('database-id') as YDocWithMeta;
+
+    doc.object_id = 'database-id';
+    doc.view_id = 'page-view-id';
+    doc._syncBound = alreadyBound;
+    const loadView = jest.fn(async () => doc);
+    const bindViewSync = jest.fn().mockReturnValue({});
+    const { result } = renderHook(() => useDocumentLoader({
+      viewId: 'embedded-view-id',
+      databaseId: 'database-id',
+      loadView,
+      bindViewSync,
+    }));
+
+    await waitFor(() => expect(result.current.doc).toBe(doc));
+    expect(bindViewSync).toHaveBeenCalledTimes(alreadyBound ? 0 : 1);
+    if (!alreadyBound) expect(bindViewSync).toHaveBeenCalledWith(doc);
+    expect(doc.view_id).toBe('page-view-id');
   });
 
   it('reports noAccess without retrying when loadView fails with a permission error', async () => {
@@ -147,7 +171,10 @@ describe('useDocumentLoader', () => {
     );
 
     await waitFor(() => {
-      expect(loadView).toHaveBeenCalledWith('old-view-id', false, false, { databaseId: 'old-database-id' });
+      expect(loadView).toHaveBeenCalledWith('old-view-id', false, false, {
+        databaseId: 'old-database-id',
+        preserveViewMetadata: true,
+      });
     });
 
     rerender({
@@ -156,7 +183,10 @@ describe('useDocumentLoader', () => {
     });
 
     await waitFor(() => {
-      expect(loadView).toHaveBeenCalledWith('new-view-id', false, false, { databaseId: 'new-database-id' });
+      expect(loadView).toHaveBeenCalledWith('new-view-id', false, false, {
+        databaseId: 'new-database-id',
+        preserveViewMetadata: true,
+      });
     });
 
     await act(async () => {

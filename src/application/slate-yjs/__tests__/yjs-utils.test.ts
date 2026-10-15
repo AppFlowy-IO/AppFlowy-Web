@@ -390,6 +390,34 @@ describe('deepCopyBlock', () => {
       { insert: 'commented', attributes: { 'comment-ids': ['comment-1'] } },
     ]);
   });
+
+  it.each([false, true])('remaps internal citation IDs and preserves unrelated IDs and marks (JSON: %s)', (asJson) => {
+    const doc = new Y.Doc();
+
+    initializeDocumentStructure(doc, false);
+    const { sharedRoot, pageId } = getDocumentData(doc);
+    const source = createTextBlock({ sharedRoot, parent: getBlock(pageId, sharedRoot), type: BlockType.Paragraph, data: {}, text: '' });
+    const child = createTextBlock({ sharedRoot, parent: source, type: BlockType.Paragraph, data: {}, text: 'Source text' });
+    const sourceId = child.get(YjsEditorKey.block_id);
+    const reference = { blockIds: [sourceId, 'external-source', 'actually-deleted-source'], number: 2 };
+
+    getRequiredText(source, sharedRoot).applyDelta([
+      { insert: 'Bold citation ', attributes: { bold: true } },
+      { insert: '^', attributes: { italic: true, reference: asJson ? JSON.stringify(reference) : reference } },
+      { insert: ' malformed', attributes: { reference: '{invalid' } },
+    ]);
+    const copied = getBlock(deepCopyBlock(sharedRoot, source)!, sharedRoot);
+    const copiedChildId = getChildrenArray(copied.get(YjsEditorKey.block_children), sharedRoot).get(0);
+    const remapped = { ...reference, blockIds: [copiedChildId, 'external-source', 'actually-deleted-source'] };
+
+    expect(getRequiredText(copied, sharedRoot).toDelta()).toEqual([
+      { insert: 'Bold citation ', attributes: { bold: true } },
+      { insert: '^', attributes: { italic: true, reference: asJson ? JSON.stringify(remapped) : remapped } },
+      { insert: ' malformed', attributes: { reference: '{invalid' } },
+    ]);
+    expect(getRequiredText(source, sharedRoot).toDelta()[1].attributes?.reference).toEqual(asJson ? JSON.stringify(reference) : reference);
+    doc.destroy();
+  });
 });
 
 describe('turnToBlock', () => {

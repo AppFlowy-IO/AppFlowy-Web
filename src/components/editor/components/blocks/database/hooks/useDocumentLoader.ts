@@ -54,7 +54,7 @@ export function useDocumentLoader({
       for (let attempt = 1; attempt <= retries; attempt++) {
         try {
           Log.debug('[useDocumentLoader] attempt', { viewIdToLoad, attempt, retries });
-          const result = await loadView(viewIdToLoad, false, false, { databaseId });
+          const result = await loadView(viewIdToLoad, false, false, { databaseId, preserveViewMetadata: true });
 
           if (result) {
             Log.debug('[useDocumentLoader] loadView returned doc', { viewIdToLoad, attempt });
@@ -134,8 +134,11 @@ export function useDocumentLoader({
 
     const docWithMeta = doc as YDocWithMeta;
     const docViewId = docWithMeta.view_id ?? docWithMeta.object_id;
+    // A linked view can share a canonical doc whose metadata belongs to the
+    // full-page view. Sync is keyed by the database, not by its individual views.
+    const matchesDatabase = databaseId && (docWithMeta.object_id ?? doc.guid) === databaseId;
 
-    if (docViewId !== viewId) return;
+    if (docViewId !== viewId && !matchesDatabase) return;
 
     if (docWithMeta._syncBound) {
       setSyncBound(true);
@@ -147,7 +150,7 @@ export function useDocumentLoader({
     if (syncContext) {
       setSyncBound(true);
     }
-  }, [doc, bindViewSync, syncBound, viewId]);
+  }, [doc, bindViewSync, syncBound, viewId, databaseId]);
 
   useEffect(() => {
     if (!eventEmitter) return;

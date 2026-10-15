@@ -326,7 +326,7 @@ for (const scenario of [
       const created = page.waitForResponse(async (response) => {
         if (
           response.request().method() !== 'POST' ||
-          !response.url().endsWith('/v2/page-view/document/default') ||
+          !new URL(response.url()).pathname.endsWith('/v2/page-view/document/default') ||
           response.request().postDataJSON().parent_view_id !== parentId
         )
           return false;
@@ -354,7 +354,7 @@ for (const scenario of [
       const renamed = page.waitForResponse(
         (response) =>
           response.request().method() === 'POST' &&
-          response.url().endsWith(`/page-view/${viewId}/update-name`) &&
+          new URL(response.url()).pathname.endsWith(`/page-view/${viewId}/update-name`) &&
           response.request().postDataJSON().name === title
       );
 
@@ -452,7 +452,8 @@ for (const scenario of [
     await saveScreenshot('full-access-shared-subpage-with-trash-action');
     const trashed = page.waitForResponse(
       (response) =>
-        response.request().method() === 'POST' && response.url().endsWith(`/page-view/${createdViewId}/move-to-trash`)
+        response.request().method() === 'POST' &&
+        new URL(response.url()).pathname.endsWith(`/page-view/${createdViewId}/move-to-trash`)
     );
 
     // Unpublished documents use the existing confirmation flow's immediate path.

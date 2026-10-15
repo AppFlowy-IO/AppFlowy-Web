@@ -23,6 +23,7 @@ import {
 import { getBlockIndex, getParent } from '@/application/slate-yjs/utils/yjs';
 import {
   AlignType,
+  AIMeetingBlockData,
   AudioBlockData,
   AudioUrlType,
   BlockData,
@@ -47,6 +48,7 @@ import {
 import { ReactComponent as EmojiIcon } from '@/assets/icons/add_emoji.svg';
 import { ReactComponent as AddPageIcon } from '@/assets/icons/add_to_page.svg';
 import { ReactComponent as AskAIIcon } from '@/assets/icons/ai.svg';
+import { ReactComponent as TranscriptIcon } from '@/assets/icons/ai_meeting_transcript_tab.svg';
 import { ReactComponent as AudioIcon } from '@/assets/icons/audio.svg';
 import { ReactComponent as BoardIcon } from '@/assets/icons/board.svg';
 import { ReactComponent as BulletedListIcon } from '@/assets/icons/bulleted_list.svg';
@@ -95,6 +97,7 @@ import { useAIWriter } from '@/components/chat';
 import { SearchInput } from '@/components/chat/components/ui/search-input';
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
 import { createDatabaseNodeData } from '@/components/editor/components/blocks/database/utils/databaseBlockUtils';
+import { initializeMeetingSections } from '@/components/editor/components/blocks/ai-meeting/ai-meeting.import';
 import { usePanelContext } from '@/components/editor/components/panels/Panels.hooks';
 import { PanelType } from '@/components/editor/components/panels/PanelsContext';
 import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
@@ -410,6 +413,12 @@ export function SlashPanel({
         newBlockId = CustomEditor.turnToBlock(editor, blockId, type, data);
       } else {
         newBlockId = CustomEditor.addBelowBlock(editor, blockId, type, data);
+      }
+
+      if (newBlockId && type === BlockType.AIMeetingBlock) {
+        initializeMeetingSections(editor, newBlockId);
+        Transforms.deselect(editor);
+        return;
       }
 
       if (newBlockId && isEmbedBlockTypes(type)) {
@@ -777,6 +786,19 @@ export function SlashPanel({
     const allOptions: SlashMenuOption[] = [
       ...(aiEnabled
         ? [
+            {
+              label: t('document.aiMeeting.import.title'),
+              key: 'aiTranscript',
+              icon: <TranscriptIcon />,
+              group: SlashMenuGroupKey.AppFlowyAI,
+              keywords: ['ai', 'transcript', 'transcription', 'meeting', 'audio', 'video'],
+              onClick: () => turnInto(BlockType.AIMeetingBlock, {
+                title: '',
+                recording_state: 'idle',
+                transcription_type: 'none',
+                created_at: new Date().toISOString(),
+              } as AIMeetingBlockData),
+            },
             {
               label: t('document.slashMenu.name.askAIAnything'),
               key: 'askAIAnything',
