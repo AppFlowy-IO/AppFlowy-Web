@@ -5,7 +5,6 @@ import * as Y from 'yjs';
 import { YDoc } from '@/application/types';
 
 import {
-  awaitsServerAnswer,
   beginServerExchange,
   isNoopForServer,
   readUpdateRanges,
@@ -624,30 +623,26 @@ describe('isNoopForServer', () => {
 });
 
 describe('server exchanges', () => {
-  test('a state-vector request forgets earlier proof and waits for the answer', () => {
+  test('a state-vector request forgets earlier proof until the server proves its state again', () => {
     const server = pageWithDeletionHistory();
     const client = copyOf(server);
 
-    expect(awaitsServerAnswer(client)).toBe(false);
     receiveServerDiff(client, server);
     expect(isNoopForServer(client, manifestReply(client, server))).toBe(true);
 
     beginServerExchange(client);
-    expect(awaitsServerAnswer(client)).toBe(true);
     expect(isNoopForServer(client, manifestReply(client, server))).toBe(false);
 
     receiveServerDiff(client, server);
-    expect(awaitsServerAnswer(client)).toBe(false);
     expect(isNoopForServer(client, manifestReply(client, server))).toBe(true);
   });
 
-  test('an Update that cannot be read as v1 answers the request but proves nothing', () => {
+  test('an Update that cannot be read as v1 proves nothing', () => {
     const server = pageWithDeletionHistory();
     const client = copyOf(server);
 
     beginServerExchange(client);
     expect(recordServerUpdate(client, null)).toBe(false);
-    expect(awaitsServerAnswer(client)).toBe(false);
     expect(isNoopForServer(client, manifestReply(client, server))).toBe(false);
   });
 

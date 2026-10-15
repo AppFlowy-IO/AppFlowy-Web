@@ -527,7 +527,7 @@ describe('replies that only repeat what the server holds, across tabs and re-syn
     ['holds the same copy', (page: OpenPage) => Y.encodeStateVector(page.ctx.doc)],
     ['opened an older copy', (_page: OpenPage, olderVector: Uint8Array) => olderVector],
   ])(
-    "a sibling tab's request that arrives before the server answers this tab queues nothing (sibling %s)",
+    "a reply to a sibling tab's request that comes before this tab's answer is removed once proven (sibling %s)",
     async (_name, siblingVectorOf) => {
       startSession('reader');
       const { server, edit } = pageWithActiveAuthor();
@@ -535,18 +535,22 @@ describe('replies that only repeat what the server holds, across tabs and re-syn
 
       edit((text) => text.insert(0, 'Newer: '));
       const page = openCachedPage(server);
+      const siblingVector = siblingVectorOf(page, olderVector);
 
       await blockPermissionSync(page.objectId, WORKSPACE_ID);
       renderNotice();
       // Both tabs bind at once; the sibling's request reaches this tab over BroadcastChannel first.
-      stateVectorRequest(page, siblingVectorOf(page, olderVector));
+      // It cannot be told apart from a repair request of the server, so its reply is kept.
+      stateVectorRequest(page, siblingVector);
       await settle(page);
-      expect(await outboxRows(page.objectId)).toEqual([]);
+      expect(await outboxRows(page.objectId)).toHaveLength(1);
       await serverManifestExchange(page, server);
-      await letNoticeRead();
+      // The socket owner relays the server's answer to the sibling's request to every tab.
+      serverUpdate(page, Y.encodeStateAsUpdate(server, siblingVector));
+      stateVectorRequest(page, Y.encodeStateVector(server));
 
-      expect(await outboxRows(page.objectId)).toEqual([]);
-      expect(screen.queryByTestId('pending-permission-edits')).toBeNull();
+      await waitFor(async () => expect(await outboxRows(page.objectId)).toEqual([]), WAIT);
+      await waitFor(() => expect(screen.queryByTestId('pending-permission-edits')).toBeNull(), WAIT);
     }
   );
 
@@ -720,6 +724,65 @@ describe('replies that only repeat what the server holds, across tabs and re-syn
     bindSyncContext(page.ctx);
     await serverManifestExchange(page, server);
     await waitFor(async () => expect(await outboxRows(page.objectId)).toEqual([]), WAIT);
+  });
+});
+
+describe("the server's repair request is answered in every exchange", () => {
+  /**
+   * An editor's edit is sent and its row deleted, but the server refuses it (it arrived ahead of
+   * an update it depends on). Only the open document still holds it, so the reply to the
+   * server's repair request, a state vector with no Update before it, is the only way it reaches
+   * the server before the next re-sync.
+   */
+  async function sendRefusedEdit(sent: messages.IMessage[], page: OpenPage) {
+    page.ctx.doc.getText('body').insert(0, 'Refused. ');
+    await expect(waitForDrain([page.objectId], { timeoutMs: WAIT.timeout })).resolves.toBe(true);
+    expect(await outboxRows(page.objectId)).toEqual([]);
+    return sentUpdates(sent, page.objectId).length;
+  }
+
+  async function answerRepairRequest(sent: messages.IMessage[], page: OpenPage, server: Y.Doc, refusedSends: number) {
+    stateVectorRequest(page, Y.encodeStateVector(server));
+    await settle(page);
+    await expect(waitForDrain([page.objectId], { timeoutMs: WAIT.timeout })).resolves.toBe(true);
+    sentUpdates(sent, page.objectId).slice(refusedSends).forEach((update) => Y.applyUpdate(server, update));
+  }
+
+  test('after the empty-state answer that creates the page on the server', async () => {
+    const sent = startSession('editor');
+    const local = new Y.Doc();
+
+    local.getText('body').insert(0, 'Written before the server had this page');
+    const page = openCachedPage(local);
+
+    // The server had no state for the page. Its whole answer is a request with an empty state
+    // vector, and no server Update reaches this tab afterwards while it is the only editor.
+    stateVectorRequest(page, Y.encodeStateVector(new Y.Doc()));
+    await settle(page);
+    await expect(waitForDrain([page.objectId], { timeoutMs: WAIT.timeout })).resolves.toBe(true);
+    const server = new Y.Doc();
+
+    sentUpdates(sent, page.objectId).forEach((update) => Y.applyUpdate(server, update));
+    expect(server.getText('body').toString()).toBe('Written before the server had this page');
+    await answerRepairRequest(sent, page, server, await sendRefusedEdit(sent, page));
+
+    expect(server.getText('body').toString()).toBe(page.ctx.doc.getText('body').toString());
+  });
+
+  test("when the answer to this tab's re-sync never arrives", async () => {
+    const sent = startSession('editor');
+    const server = pageWithDeletionHistory();
+    const page = openCachedPage(server);
+
+    await serverManifestExchange(page, server);
+    const refusedSends = await sendRefusedEdit(sent, page);
+
+    // The tab re-syncs, but the answer is lost: the tab that owned the socket closed before
+    // relaying it, or the server's read failed. The repair request for the refused edit arrives.
+    bindSyncContext(page.ctx);
+    await answerRepairRequest(sent, page, server, refusedSends);
+
+    expect(server.getText('body').toString()).toBe(page.ctx.doc.getText('body').toString());
   });
 });
 

@@ -16,7 +16,7 @@ import { CollabOrigin, Types, YDoc } from '@/application/types';
 import { collab, messages } from '@/proto/messages';
 import { Log } from '@/utils/log';
 
-import { awaitsServerAnswer, beginServerExchange, isNoopForServer, recordServerUpdate } from './server-acknowledged';
+import { beginServerExchange, isNoopForServer, recordServerUpdate } from './server-acknowledged';
 
 /**
  * SyncContext is the context object passed to the sync protocol handlers.
@@ -87,10 +87,6 @@ export enum UpdateFlags {
 // not publish this no-op as an explicit full-state replacement.
 const isEmptyUpdateV1 = (update: Uint8Array): boolean =>
   update.byteLength === 2 && update[0] === 0 && update[1] === 0;
-
-/** True for a state vector that lists a client. The server describes an empty state with one that lists none. */
-const listsAnyClient = (stateVector: Uint8Array | undefined): boolean =>
-  stateVector !== undefined && Y.decodeStateVector(stateVector).size > 0;
 
 interface ManifestCleanup {
   timer?: ReturnType<typeof setTimeout>;
@@ -166,7 +162,8 @@ export const bindSyncContext = (ctx: SyncContext): void => {
 
   if (!isCollabStorageCurrent(doc)) return;
   // Whatever the server proved before this request may since have been lost on its side; its
-  // answer proves its state afresh. A reply queued meanwhile by another tab is checked again then.
+  // answer proves its state afresh. Replies queued meanwhile, by this tab or another, are checked
+  // again then.
   beginServerExchange(doc);
   expectManifestReplies(doc);
   Log.debug('[sync] binding context with manifest exchange', {
@@ -238,14 +235,11 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
   // let the serialized outbox use the bounded HTTP slow lane. Emitting here
   // would close the WebSocket before any fallback could run.
   if (shouldRouteUpdateThroughOutbox(update.byteLength)) {
-    // While this context's own request is unanswered, a request that lists
-    // clients is not the answer: the server answers with an Update first, and
-    // describes an empty state with a request that lists none. It comes from a
-    // sibling tab (or is a repair request the server sent first). On this path
-    // its reply would reach only the server, and the reply to the Manifest
-    // after the server's Update will carry everything this one holds. Tabs
-    // that bind at the same time therefore queue nothing for each other.
-    if (awaitsServerAnswer(doc) && listsAnyClient(stateVector)) return;
+    // A request that arrives before the server has answered this context may
+    // be a sibling tab's, or the server's repair request for an edit it
+    // refused after the drain had deleted the edit's row. The two cannot be
+    // told apart and the answer may never come, so the reply is queued like
+    // any other; once server Updates prove its content, the cleanup deletes it.
     expectManifestReplies(doc);
     const persisted = enqueueOutboxUpdate(
       {

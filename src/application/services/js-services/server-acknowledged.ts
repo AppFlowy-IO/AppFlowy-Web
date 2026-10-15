@@ -40,8 +40,6 @@ type ClientRanges = Map<number, Ranges>;
 interface ServerRecord {
   version: string | undefined;
   databaseRestoreId: string | undefined;
-  /** False from this context's state-vector request until the server's first Update after it. */
-  answered: boolean;
   structs: ClientRanges;
   deletes: ClientRanges;
 }
@@ -369,11 +367,10 @@ function currentRecord(doc: YDoc): ServerRecord | undefined {
   return record;
 }
 
-function newRecord(doc: YDoc, answered: boolean): ServerRecord {
+function newRecord(doc: YDoc): ServerRecord {
   const record: ServerRecord = {
     version: doc.version,
     databaseRestoreId: doc.databaseRestoreId,
-    answered,
     structs: new Map(),
     deletes: new Map(),
   };
@@ -382,41 +379,26 @@ function newRecord(doc: YDoc, answered: boolean): ServerRecord {
   return record;
 }
 
-/**
- * This context is sending its state-vector request: forget what the server proved before and
- * wait for its answer, which starts with an Update.
- */
+/** This context is sending its state-vector request: forget what the server proved before. */
 export function beginServerExchange(doc: YDoc): void {
-  newRecord(doc, false);
+  newRecord(doc);
 }
 
 /**
  * Records what a server Update (one that carries a stream message id) proves the server holds.
- * `update` is its lib0 v1 payload, or null when it is not v1 (lib0 v2): such an Update still
- * answers the pending request but proves nothing. Unreadable bytes prove nothing either.
- * Returns true when the record grew.
+ * `update` is its lib0 v1 payload, or null when it is not v1 (lib0 v2): such an Update proves
+ * nothing, and neither do unreadable bytes. Returns true when the record grew.
  */
 export function recordServerUpdate(doc: YDoc, update: Uint8Array | null): boolean {
-  const record = currentRecord(doc) ?? newRecord(doc, true);
-
-  record.answered = true;
   const ranges = update ? readUpdateRanges(update) : null;
 
   if (!ranges) return false;
+  const record = currentRecord(doc) ?? newRecord(doc);
   let grew = false;
 
   for (const [client, incoming] of ranges.structs) grew = addClientRanges(record.structs, client, incoming) || grew;
   for (const [client, incoming] of ranges.deletes) grew = addClientRanges(record.deletes, client, incoming) || grew;
   return grew;
-}
-
-/**
- * True while this context's state-vector request is unanswered: the server has sent no Update
- * since. The answer always starts with an Update; only an empty server state comes as a bare
- * request with an empty state vector.
- */
-export function awaitsServerAnswer(doc: YDoc): boolean {
-  return currentRecord(doc)?.answered === false;
 }
 
 /**
