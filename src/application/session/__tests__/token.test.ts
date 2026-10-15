@@ -211,6 +211,27 @@ describe('captured token session lifetime', () => {
     expect(isTokenSessionCurrent(session)).toBe(false);
   });
 
+  it.each(['token', null])(
+    'ends captured work when another tab changes the login, even back to the same token (storage key %p)',
+    async (key) => {
+      const { captureTokenSession, isTokenSessionCurrent } = await import('../token');
+      const original = JSON.stringify(createToken());
+
+      saveGoTrueAuth(original);
+      const session = captureTokenSession();
+
+      // Another tab switches to another account and back (or clears storage and signs in with the
+      // same saved token) before this tab reads the token again.
+      localStorage.setItem('token', JSON.stringify(createToken({ user: { id: 'other-user' } })));
+      window.dispatchEvent(new StorageEvent('storage', { key }));
+      localStorage.setItem('token', original);
+      window.dispatchEvent(new StorageEvent('storage', { key }));
+
+      expect(getTokenParsed()?.user.id).toBe('user-1');
+      expect(isTokenSessionCurrent(session)).toBe(false);
+    }
+  );
+
   it('cannot publish an old refresh into a different account or invalidate that account', async () => {
     const { captureTokenSession, invalidTokenForSession } = await import('../token');
 

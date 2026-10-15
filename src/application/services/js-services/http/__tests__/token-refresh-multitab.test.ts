@@ -90,6 +90,8 @@ type Tab = {
   unauthorized: (error: unknown) => Promise<unknown>;
   signedOut: jest.Mock;
   token: typeof import('@/application/session/token');
+  gotrue: typeof import('../gotrue');
+  events: typeof import('@/application/session/event');
 };
 
 function openTab(): Tab {
@@ -103,6 +105,8 @@ function openTab(): Tab {
     const token = require('@/application/session/token') as typeof import('@/application/session/token');
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const events = require('@/application/session/event') as typeof import('@/application/session/event');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const gotrue = require('../gotrue') as typeof import('../gotrue');
     const signedOut = jest.fn();
 
     events.on(events.EventType.SESSION_INVALID, signedOut);
@@ -115,6 +119,8 @@ function openTab(): Tab {
       unauthorized: (error) => handleUnauthorized!(error),
       signedOut,
       token,
+      gotrue,
+      events,
     };
   });
 
@@ -258,6 +264,51 @@ describe('token refresh across browser tabs', () => {
     await expect(requestA).rejects.toThrow('authentication context changed');
     expect(storedToken()).toEqual(otherAccount);
     expect(tabA.signedOut).not.toHaveBeenCalled();
+  });
+
+  it('refuses a request when another account signs in right after its refresh, signing nobody out', async () => {
+    const server = createGoTrue();
+    const original = server.issue('user-1');
+    const otherAccount = server.issue('user-2');
+    const tabA = openTab();
+    const tabB = openTab();
+
+    storeExpired(original);
+    // Tab B's sign-in lands just after tab A stored its refreshed token, before tab A's request
+    // continues: only the request's own account check can still stop it.
+    tabA.events.on(tabA.events.EventType.SESSION_REFRESH, () => {
+      expect(tabB.token.saveGoTrueAuth(JSON.stringify(otherAccount))).toBe(true);
+    });
+    const requestA = tabA.request();
+
+    await flush();
+    await settlePost();
+
+    await expect(requestA).rejects.toThrow('Request session changed');
+    expect(storedToken()).toEqual(otherAccount);
+    expect(tabA.signedOut).not.toHaveBeenCalled();
+    expect(tabB.signedOut).not.toHaveBeenCalled();
+  });
+
+  it('refuses to refresh a token that was already replaced, without asking GoTrue or signing out', async () => {
+    const server = createGoTrue();
+    const original = server.issue('user-1');
+    const rotated = server.issue('user-1');
+    const tab = openTab();
+
+    localStorage.setItem('token', JSON.stringify(rotated));
+    // A caller that read the token before it rotated (such as the realtime socket) refreshes it late.
+    const outcome = tab.gotrue.refreshToken(original.refresh_token).then(() => 'refreshed', (error: unknown) => error);
+
+    await flush();
+    expect(mockPendingPosts).toHaveLength(0);
+    const error = await outcome;
+
+    // A changed session, not a rejected refresh: no caller may end the current login for it.
+    expect(tab.gotrue.isAuthSessionChangedError(error)).toBe(true);
+    expect(tab.gotrue.isDefinitiveRefreshFailure(error)).toBe(false);
+    expect(storedToken()).toEqual(rotated);
+    expect(tab.signedOut).not.toHaveBeenCalled();
   });
 
   it('does not restore a session that was signed out while its refresh was in flight', async () => {
