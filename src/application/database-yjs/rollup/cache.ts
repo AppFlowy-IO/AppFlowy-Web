@@ -64,6 +64,7 @@ type RelatedViewLoader = (
 type RollupCacheEntry = RollupCellValue & {
   generation: number;
   updatedAt: number;
+  lastAccessedAt: number;
 };
 
 export type RollupComputeContext = RollupSourceSync & {
@@ -84,6 +85,7 @@ export type RollupComputeContext = RollupSourceSync & {
 
 const ROLLUP_CACHE_TTL_MS = 5_000;
 const ROLLUP_CACHE_PRUNE_INTERVAL_MS = 2_000;
+const ROLLUP_CACHE_MAX = 5_000;
 const ROLLUP_MAX_CONCURRENCY = 4;
 const ROLLUP_RELATED_DOC_CACHE_MAX = 50;
 
@@ -133,7 +135,8 @@ function bumpGeneration(cellId: string) {
   const next = getGeneration(cellId) + 1;
 
   generations.set(cellId, next);
-  cache.delete(cellId);
+  // Retain the last result for synchronous filters while a new generation loads.
+  // Async reads still require the current generation before returning a value.
   inflight.delete(cellId);
   return next;
 }
@@ -176,6 +179,7 @@ export function invalidateRollupCacheAfterRestore() {
   const cells = new Set([...cache.keys(), ...inflight.keys(), ...listeners.keys()]);
 
   cells.forEach(bumpGeneration);
+  cache.clear();
   cells.forEach((cellId) => listeners.get(cellId)?.forEach((notify) => notify({ value: '' })));
   globalListeners.forEach((notify) => notify());
 }
@@ -195,17 +199,30 @@ function emit(cellId: string, value: RollupCellValue) {
 }
 
 function getCachedValue(cellId: string): RollupCacheEntry | undefined {
-  return cache.get(cellId);
+  const entry = cache.get(cellId);
+
+  if (entry) {
+    entry.lastAccessedAt = Date.now();
+    cache.delete(cellId);
+    cache.set(cellId, entry);
+  }
+
+  return entry;
 }
 
 function pruneCache(now = Date.now()) {
-  if (now - lastPruneAt < ROLLUP_CACHE_PRUNE_INTERVAL_MS) return;
+  if (cache.size <= ROLLUP_CACHE_MAX || now - lastPruneAt < ROLLUP_CACHE_PRUNE_INTERVAL_MS) return;
   lastPruneAt = now;
 
+  // Expiry triggers revalidation, not an empty cell. Keep the last resolved
+  // value so filters/sorts stay stable while the replacement is computed.
+  // Evict the least recently used inactive entries; active views may exceed
+  // the soft limit without losing values on every condition pass.
   for (const [cellId, entry] of cache) {
-    if (now - entry.updatedAt > ROLLUP_CACHE_TTL_MS) {
-      cache.delete(cellId);
-    }
+    if (listeners.has(cellId) || inflight.has(cellId) || now - entry.lastAccessedAt <= ROLLUP_CACHE_TTL_MS) continue;
+
+    cache.delete(cellId);
+    if (cache.size <= ROLLUP_CACHE_MAX) return;
   }
 }
 
@@ -1044,10 +1061,11 @@ export async function resolveRollupCell(context: RollupComputeContext): Promise<
 export async function readRollupCell(context: RollupComputeContext): Promise<RollupCellValue> {
   if (isDatabaseHistoryDocumentImmutable(context.baseDoc)) return readStoredRollupValue(context);
 
-  pruneCache();
   const cellId = `${context.rowId}:${context.fieldId}`;
   const generation = getGeneration(cellId);
   const cached = getCachedValue(cellId);
+
+  pruneCache();
 
   if (cached && isEntryFresh(cached, generation)) {
     return {
@@ -1086,6 +1104,7 @@ export async function readRollupCell(context: RollupComputeContext): Promise<Rol
             rawDate: value.rawDate,
             generation: currentGen,
             updatedAt: Date.now(),
+            lastAccessedAt: Date.now(),
           });
           emit(cellId, value);
         }
@@ -1132,10 +1151,11 @@ export async function readRollupCell(context: RollupComputeContext): Promise<Rol
 export function readRollupCellSync(context: RollupComputeContext): RollupCellValue {
   if (isDatabaseHistoryDocumentImmutable(context.baseDoc)) return readStoredRollupValue(context);
 
-  pruneCache();
   const cellId = `${context.rowId}:${context.fieldId}`;
   const generation = getGeneration(cellId);
   const cached = getCachedValue(cellId);
+
+  pruneCache();
 
   if (cached && isEntryFresh(cached, generation)) {
     return {
@@ -1172,6 +1192,7 @@ export function readRollupCellSync(context: RollupComputeContext): RollupCellVal
             rawDate: value.rawDate,
             generation: currentGen,
             updatedAt: Date.now(),
+            lastAccessedAt: Date.now(),
           });
           emit(cellId, value);
         }

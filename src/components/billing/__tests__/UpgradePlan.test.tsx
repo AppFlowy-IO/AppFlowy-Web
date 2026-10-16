@@ -214,10 +214,19 @@ describe('UpgradePlan', () => {
   });
 
   it('renders the comparison table with Pro highlighted as the upgrade target', async () => {
-    renderModal(async () => catalog);
+    let resolveSubscriptions!: (subscriptions: Subscription[]) => void;
+    const subscriptions = new Promise<Subscription[]>((resolve) => {
+      resolveSubscriptions = resolve;
+    });
+
+    renderModal(async () => catalog, { getSubscriptions: () => subscriptions });
 
     const proColumn = await screen.findByTestId('pricing-plan-pro');
     const freeColumn = screen.getByTestId('pricing-plan-free');
+
+    // Catalog columns can render before the independent subscription request finishes.
+    expect(screen.getByTestId('subscription-loading')).toBeTruthy();
+    expect(within(freeColumn).queryByTestId('current-plan-badge')).toBeNull();
 
     // Server copy wins even when this client has translations for known plan IDs.
     expect(within(freeColumn).getByText('Personal')).toBeTruthy();
@@ -226,7 +235,8 @@ describe('UpgradePlan', () => {
     expect(within(proColumn).getByText('Server pro description')).toBeTruthy();
 
     // Free is the current plan; Pro is the upgrade target and therefore highlighted, like the desktop dialog.
-    expect(within(freeColumn).getByTestId('current-plan-badge')).toBeTruthy();
+    resolveSubscriptions([]);
+    expect(await within(freeColumn).findByTestId('current-plan-badge')).toBeTruthy();
     expect(within(proColumn).queryByTestId('current-plan-badge')).toBeNull();
     expect(proColumn.getAttribute('data-highlighted')).toBe('true');
     expect(freeColumn.getAttribute('data-highlighted')).toBe('false');
