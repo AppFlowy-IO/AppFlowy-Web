@@ -428,7 +428,7 @@ describe('view-loader row document retry policy', () => {
     expect(mockFetchRowDocumentCollab).toHaveBeenCalledTimes(6);
   });
 
-  it('honors a one-attempt limit when existence was already confirmed', async () => {
+  it('honors a one-attempt limit when the row opener owns retries', async () => {
     const documentId = '00000000-0000-4000-8000-000000000008';
     const doc = createEmptyDoc(documentId);
 
@@ -439,6 +439,20 @@ describe('view-loader row document retry policy', () => {
 
     expect(result.doc).toBe(doc);
     expect(mockFetchRowDocumentCollab).toHaveBeenCalledTimes(1);
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('propagates a missing document so the opener can initialize it without an existence probe', async () => {
+    const documentId = '00000000-0000-4000-8000-000000000008';
+    const doc = createEmptyDoc(documentId);
+    const missing = { code: -2, message: 'Collab not found' };
+
+    mockGetOrCreateRowSubDoc.mockResolvedValue(doc);
+    mockFetchRowDocumentCollab.mockRejectedValue(missing);
+
+    await expect(openRowSubDocument('workspace-id', documentId, { maxAttempts: 1 })).rejects.toBe(missing);
+    expect(mockFetchRowDocumentCollab).toHaveBeenCalledTimes(1);
+    expect(mockDeleteCollabDB).not.toHaveBeenCalled();
     expect(jest.getTimerCount()).toBe(0);
   });
 

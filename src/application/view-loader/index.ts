@@ -27,7 +27,7 @@ import {
   YjsEditorKey,
   YSharedRoot,
 } from '@/application/types';
-import { determineErrorType, ErrorType, isPermissionDeniedError } from '@/application/utils/error-utils';
+import { determineErrorType, ErrorType, isPermissionDeniedError, isRecordNotFoundError } from '@/application/utils/error-utils';
 import { isDatabaseLayout } from '@/application/view-utils';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { Log } from '@/utils/log';
@@ -569,7 +569,9 @@ export async function openRowSubDocument(
           error: e instanceof Error ? e.message : String(e),
         });
 
-        if (options.requireServerFetch && attempt === maxAttempts) throw e;
+        // Preserve an authoritative missing-body result for the row opener's
+        // create-on-open decision instead of returning an empty local shell.
+        if (attempt === maxAttempts && (options.requireServerFetch || isRecordNotFoundError(e))) throw e;
         if (attempt < maxAttempts) {
           await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
         }

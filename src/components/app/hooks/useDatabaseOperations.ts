@@ -20,7 +20,7 @@ import {
   YjsEditorKey,
 } from '@/application/types';
 import { openRowSubDocument } from '@/application/view-loader';
-import { isPermissionDeniedError } from '@/application/utils/error-utils';
+import { isPermissionDeniedError, isRecordNotFoundError } from '@/application/utils/error-utils';
 import { PromptDatabaseConfiguration } from '@/components/chat';
 import { Log } from '@/utils/log';
 
@@ -344,7 +344,7 @@ export function useDatabaseOperations(
         return doc;
       } catch (e) {
         Log.error('[loadRowDocument] failed to load', e);
-        if (isPermissionDeniedError(e)) throw e;
+        if (isPermissionDeniedError(e) || isRecordNotFoundError(e)) throw e;
         return null;
       }
     },
