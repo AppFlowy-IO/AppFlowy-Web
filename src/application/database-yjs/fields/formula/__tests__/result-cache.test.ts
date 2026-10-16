@@ -147,6 +147,44 @@ describe('saved formula result cache', () => {
     expect(evaluateAst).toHaveBeenCalledTimes(4);
   });
 
+  it('recomputes desktop styled list results after a persisted Yjs round trip', () => {
+    const f = fixture('[style("91", "red"), "90"]');
+    const result = f.evaluate();
+    const database = new Y.Doc();
+    const row = new Y.Doc();
+
+    Y.applyUpdate(database, Y.encodeStateAsUpdate(f.databaseDoc));
+    Y.applyUpdate(row, Y.encodeStateAsUpdate(f.doc));
+    const fields = database.getMap('fields') as YDatabaseFields;
+    const restored = evaluateFormulaCell({
+      schema: readFormulaSchema(fields),
+      field: fields.get('result')!,
+      fieldId: 'result',
+      row: row.getMap('row') as YDatabaseRow,
+      rowId: 'row-1',
+    });
+
+    expect(restored).toEqual(result);
+    expect(restored).toMatchObject({
+      text: '91, 90',
+      runs: [
+        { text: '91', styles: ['red'] },
+        { text: ', 90', styles: [] },
+      ],
+      value: {
+        type: 'list',
+        items: [
+          { type: 'text', value: '91', runs: [{ text: '91', styles: ['red'] }] },
+          { type: 'text', value: '90' },
+        ],
+      },
+    });
+    database.destroy();
+    row.destroy();
+    f.databaseDoc.destroy();
+    f.doc.destroy();
+  });
+
   it('accounts for styled-run storage before caching a compact text result', () => {
     const f = fixture('("A".style("red") + "B".style("blue")).repeat(1000)');
 
