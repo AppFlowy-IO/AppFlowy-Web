@@ -147,9 +147,11 @@ function createWrapper({
   duplicateRowDocument,
   sourceDocument,
   loadRowDocument,
+  checkIfRowDocumentExists,
 }: {
   sourceDocument?: YDoc;
   loadRowDocument?: DatabaseContextState['loadRowDocument'];
+  checkIfRowDocumentExists?: DatabaseContextState['checkIfRowDocumentExists'];
   databaseDoc: YDoc;
   referenceRowDoc: YDoc;
   createdRows: Map<string, YDoc>;
@@ -171,6 +173,7 @@ function createWrapper({
       return rowDoc;
     },
     duplicateRowDocument,
+    checkIfRowDocumentExists,
     loadRowDocument:
       loadRowDocument ??
       (async () => {
@@ -341,6 +344,56 @@ describe('useDuplicateRowDispatch', () => {
     expect(duplicateRowDocument).not.toHaveBeenCalled();
   });
 
+  it('duplicates a legacy bodyless row after the server confirms its document does not exist', async () => {
+    const databaseDoc = createDatabaseDoc();
+    const referenceRowDoc = createReferenceRowDoc();
+    const createdRows = new Map<string, YDoc>();
+    const loadRowDocument = jest.fn();
+    const checkIfRowDocumentExists = jest.fn(async () => false);
+    const { result } = renderHook(() => useDuplicateRowDispatch(), {
+      wrapper: createWrapper({
+        databaseDoc,
+        referenceRowDoc,
+        createdRows,
+        loadRowDocument,
+        checkIfRowDocumentExists,
+        duplicateRowDocument: jest.fn(),
+      }),
+    });
+    let rowId = '';
+
+    await act(async () => {
+      rowId = await result.current(sourceRowId);
+    });
+    expect(checkIfRowDocumentExists).toHaveBeenCalledWith(getMetaIdMap(sourceRowId).get(RowMetaKey.DocumentId));
+    expect(loadRowDocument).not.toHaveBeenCalled();
+    expect(jest.mocked(createCloudRow).mock.calls[0][0].documentState).toBeUndefined();
+    expect(getRowMetaValue(createdRows.get(getRowKey(databaseDocId, rowId))!, rowId, RowMetaKey.IsDocumentEmpty)).toBe(true);
+  });
+
+  it('does not treat a failed document existence check as an absent legacy body', async () => {
+    const databaseDoc = createDatabaseDoc();
+    const referenceRowDoc = createReferenceRowDoc();
+    const createdRows = new Map<string, YDoc>();
+    const error = new Error('Network unavailable');
+    const checkIfRowDocumentExists = jest.fn().mockRejectedValue(error);
+    const { result } = renderHook(() => useDuplicateRowDispatch(), {
+      wrapper: createWrapper({
+        databaseDoc,
+        referenceRowDoc,
+        createdRows,
+        checkIfRowDocumentExists,
+        duplicateRowDocument: jest.fn(),
+      }),
+    });
+
+    await act(async () => {
+      await expect(result.current(sourceRowId)).rejects.toBe(error);
+    });
+    expect(createdRows.size).toBe(0);
+    expect(createCloudRow).not.toHaveBeenCalled();
+  });
+
   it.each(
     [false, undefined].flatMap((isEmptyDocument) =>
       ['absent', 'empty', 'incomplete', 'nonempty'].map((cache) => ({ isEmptyDocument, cache }))
@@ -377,6 +430,7 @@ describe('useDuplicateRowDispatch', () => {
       if (cache !== 'absent')
         jest.mocked(getCachedProviderDoc).mockReturnValue(cache === 'nonempty' ? sourceDocument : cached);
       const loadRowDocument = jest.fn(async () => sourceDocument);
+      const checkIfRowDocumentExists = jest.fn(async () => true);
       const databaseDoc = createDatabaseDoc();
       const referenceRowDoc = createReferenceRowDoc({
         documentId: sourceDocumentId,
@@ -385,7 +439,14 @@ describe('useDuplicateRowDispatch', () => {
       const createdRows = new Map<string, YDoc>();
       const duplicateRowDocument = jest.fn().mockResolvedValue(undefined);
       const { result } = renderHook(() => useDuplicateRowDispatch(), {
-        wrapper: createWrapper({ databaseDoc, referenceRowDoc, createdRows, duplicateRowDocument, loadRowDocument }),
+        wrapper: createWrapper({
+          databaseDoc,
+          referenceRowDoc,
+          createdRows,
+          duplicateRowDocument,
+          loadRowDocument,
+          checkIfRowDocumentExists,
+        }),
       });
       let duplicatedRowId = '';
 
@@ -406,6 +467,7 @@ describe('useDuplicateRowDispatch', () => {
         isDocumentEmpty: false,
       });
       expect(loadRowDocument).toHaveBeenCalledTimes(cache === 'nonempty' ? 0 : 1);
+      expect(checkIfRowDocumentExists).toHaveBeenCalledTimes(isEmptyDocument === undefined && cache !== 'nonempty' ? 1 : 0);
       if (cache !== 'nonempty') {
         expect(loadRowDocument).toHaveBeenCalledWith(getMetaIdMap(sourceRowId).get(RowMetaKey.DocumentId), {
           requireServerFetch: true,

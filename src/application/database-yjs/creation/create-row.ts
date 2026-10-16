@@ -105,7 +105,7 @@ export function prepareDefaultRowRequest(intent: CloudRowCreationIntent, request
       icon_url: presentation.icon || null,
       cover: presentation.cover
         ? {
-            data: presentation.cover.data,
+            data: String(presentation.cover.data),
             cover_type: presentation.cover.cover_type,
             upload_type: Number((presentation.cover as { upload_type?: number }).upload_type ?? 0),
             offset: presentation.cover.offset ?? 0,

@@ -9,16 +9,17 @@ import {
 } from '@/application/services/js-services/http/atomic-row-creation-api';
 import { collabFullSyncBatch } from '@/application/services/js-services/http/collab-api';
 import { createRow as openCachedRow } from '@/application/services/js-services/cache';
-import { Types, YDatabaseCell, YDoc } from '@/application/types';
+import { RowCoverType, Types, YDatabaseCell, YDoc } from '@/application/types';
 
 import { cloneDatabaseCell } from '../cell.clone';
-import { FieldType } from '../database.type';
+import { FieldType, RowMetaKey } from '../database.type';
 import { CloudRowCreationIntent, createCloudRow, prepareDefaultRowRequest } from '../creation/create-row';
 import { decodeCreatedRowCollab, encodeCreationCollab } from '../creation/encoded-collab';
 import type { CreateDatabaseRowRequest } from '../creation/row-template-graph-types';
 import { CreatedRowReceipt, DefaultRowRequest } from '../creation/row-creation-types';
 import { readPersistedDatabaseSource } from '../creation/source-readiness';
 import { initialDatabaseRow } from '../row';
+import { getMetaIdMap } from '../row_meta';
 
 const mockAvailable = jest.fn();
 const mockOwner = jest.fn();
@@ -350,6 +351,27 @@ it('freezes only resolved cells and presentation, leaving schema and actor metad
       position: { kind: 'end' },
     });
     expect(JSON.stringify(request)).not.toMatch(/doc_state|created_at|created_by|row_orders/);
+  } finally {
+    f.cleanup();
+  }
+});
+
+it.each([
+  { data: 1, expectedData: '1', coverType: RowCoverType.AssetCover },
+  { data: 'https://example.com/cover.png', expectedData: 'https://example.com/cover.png', coverType: RowCoverType.FileCover },
+])('serializes cover data as a string for the default row API: $data', ({ data, expectedData, coverType }) => {
+  const f = fixture();
+
+  try {
+    const meta = f.rowDoc.getMap('data').get('meta') as Y.Map<unknown>;
+
+    meta.set(getMetaIdMap(f.intent.rowId).get(RowMetaKey.CoverId)!, JSON.stringify({ data, cover_type: coverType, offset: 0.25 }));
+    expect(prepareDefaultRowRequest(f.intent, uuidv4()).presentation.cover).toEqual({
+      cover_type: coverType,
+      data: expectedData,
+      upload_type: 0,
+      offset: 0.25,
+    });
   } finally {
     f.cleanup();
   }

@@ -871,7 +871,8 @@ export function useDuplicateRowDispatch() {
   const createRow = useCreateRow();
   const guid = useDocGuid();
   const rowMap = useRowMap();
-  const { databaseDoc, workspaceId, activeViewId, readOnly, canWrite, loadRowDocument } = useDatabaseContext();
+  const { databaseDoc, workspaceId, activeViewId, readOnly, canWrite, loadRowDocument, checkIfRowDocumentExists } =
+    useDatabaseContext();
   const currentUser = useCurrentUserOptional();
   const actorUid = resolveUserAttributionUid(currentUser);
   const ownerRef = useRef({ databaseDoc, workspaceId, activeViewId, readOnly, canWrite });
@@ -933,22 +934,27 @@ export function useDuplicateRowDispatch() {
         let documentState: Uint8Array | undefined;
 
         const cachedDocument = getCachedRowSubDoc(sourceMeta.documentId) ?? getCachedProviderDoc(sourceMeta.documentId);
+        const hasCachedContent = cachedDocument && readTemplateDocumentEmptiness(cachedDocument) === false;
+        // Legacy rows may have neither emptiness metadata nor a materialized body.
+        // Only an explicit absence result can skip loading an unknown document.
+        const needsDocument =
+          hasCachedContent ||
+          sourceMeta.isEmptyDocument === false ||
+          (sourceMeta.isEmptyDocument !== true &&
+            (await checkIfRowDocumentExists?.(sourceMeta.documentId)) !== false);
 
-        if (
-          sourceMeta.isEmptyDocument !== true ||
-          (cachedDocument && readTemplateDocumentEmptiness(cachedDocument) === false)
-        ) {
-          const sourceDoc =
-            cachedDocument && readTemplateDocumentEmptiness(cachedDocument) === false
-              ? cachedDocument
-              : await loadRowDocument?.(sourceMeta.documentId, {
-                  requireServerFetch: true,
-                  rowDocumentSource: {
-                    database_id: databaseId,
-                    database_view_id: activeViewId,
-                    row_id: referenceRowId,
-                  },
-                });
+        assertCurrent();
+        if (needsDocument) {
+          const sourceDoc = hasCachedContent
+            ? cachedDocument
+            : await loadRowDocument?.(sourceMeta.documentId, {
+                requireServerFetch: true,
+                rowDocumentSource: {
+                  database_id: databaseId,
+                  database_view_id: activeViewId,
+                  row_id: referenceRowId,
+                },
+              });
 
           assertCurrent();
           if (!sourceDoc) throw new Error('Source Row document is unavailable');
@@ -1014,7 +1020,19 @@ export function useDuplicateRowDispatch() {
         rowDoc.destroy();
       }
     },
-    [activeViewId, actorUid, createRow, database, databaseDoc, guid, loadRowDocument, rowMap, sharedRoot, workspaceId]
+    [
+      activeViewId,
+      actorUid,
+      checkIfRowDocumentExists,
+      createRow,
+      database,
+      databaseDoc,
+      guid,
+      loadRowDocument,
+      rowMap,
+      sharedRoot,
+      workspaceId,
+    ]
   );
 }
 
