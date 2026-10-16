@@ -118,9 +118,9 @@ export function RowPeekLayout({
           data-testid='database-side-peek'
           aria-label={t('grid.rowPage.sidePeek')}
           hidden={!visible}
-          // Above the page, below every body-level overlay (MUI modals and Radix
+          // Covers the page and its header, below body-level overlays (MUI modals and Radix
           // menus are z-50), so editor panels and the peek's own menus stay on top.
-          className='database-side-peek fixed bottom-0 top-12 z-40 bg-surface-primary'
+          className='database-side-peek fixed inset-y-0 z-40 bg-surface-primary'
           style={{ right: rightOffset, width }}
         >
           <div
