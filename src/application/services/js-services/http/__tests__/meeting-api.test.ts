@@ -18,7 +18,7 @@ jest.mock('@/application/session/token', () => ({
 jest.mock('../gotrue', () => ({ initGrantService: jest.fn(), refreshToken: jest.fn() }));
 jest.mock('@/utils/log', () => ({ Log: { debug: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
 
-// Cloud requests include protocol query parameters such as server_restore_id.
+// Match the endpoint independently of optional query parameters.
 function matchCloudPath(path: string): RegExp {
   const url = new URL(path, 'https://api.example.test').href;
 
@@ -70,7 +70,10 @@ describe('Flutter meeting HTTP contract', () => {
     await expect(uploadMeetingAudio('workspace', file, controller.signal, onProgress)).resolves.toBe(downloadUrl);
     expect(onProgress.mock.calls).toEqual([[0.5], [1]]);
     expect(http.history.post).toHaveLength(1);
-    expect(new URL(http.history.post[0].url!).pathname).toBe(signingPath);
+    const requestUrl = new URL(http.history.post[0].url!, http.history.post[0].baseURL);
+
+    expect(requestUrl.pathname).toBe(signingPath);
+    expect(requestUrl.searchParams.has('server_restore_id')).toBe(false);
     expect(storage.history.put).toHaveLength(1);
   });
 

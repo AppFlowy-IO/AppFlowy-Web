@@ -11,7 +11,6 @@ import { Log } from '@/utils/log';
 import { applyErrorCapability } from './error-capability';
 import { initGrantService, refreshToken } from './gotrue';
 import { resolveLocalApiBaseURL } from './local-dev-origins';
-import { applyServerRestoreFence, handleServerRestoreRejection } from './server-restore';
 
 declare module 'axios' {
   interface AxiosRequestConfig {
@@ -495,7 +494,6 @@ export function initAPIService(config: AFCloudConfig) {
 
   axiosInstance.interceptors.request.use(
     async (config) => {
-      applyServerRestoreFence(config, baseURL);
       config.atomicCreationOwner?.assertCurrent();
       // Ordinary requests can join the same refresh as an atomic command. Every
       // waiter must retain its original login lifetime before that shared await.
@@ -549,7 +547,6 @@ export function initAPIService(config: AFCloudConfig) {
   );
 
   const handleUnauthorized = async (error: unknown) => {
-    handleServerRestoreRejection(error, baseURL);
     const axiosError = error as AxiosError;
     const status = axiosError.response?.status;
 
@@ -610,7 +607,6 @@ export function initAPIService(config: AFCloudConfig) {
 
   // Request: attach stored ETag as If-None-Match
   axiosInstance.interceptors.request.use((config) => {
-    applyServerRestoreFence(config, baseURL);
     applyErrorCapability(config, configuredBaseURL, baseURL);
     const locale = i18next.language || i18next.resolvedLanguage;
 

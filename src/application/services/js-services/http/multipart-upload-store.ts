@@ -1,8 +1,6 @@
-import { serverRestore } from '@/application/server-restore';
-
 import { UploadPartInfo } from './multipart-upload.types';
 
-const DB_NAME = serverRestore.cacheKey('AppFlowyMultipartUploads');
+const DB_NAME = 'AppFlowyMultipartUploads';
 const DB_VERSION = 1;
 const STORE_NAME = 'uploads';
 

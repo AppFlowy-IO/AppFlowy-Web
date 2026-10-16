@@ -1,5 +1,4 @@
 import { WEB_CLIENT_VERSION } from '@/application/compatibility/client-version';
-import { serverRestore } from '@/application/server-restore';
 import {
   AuthProvider,
   CUSTOM_PROVIDER_PREFIX,
@@ -18,8 +17,6 @@ import { parseGoTrueErrorFromUrl } from './gotrue-error';
 export { verifyToken } from './cloud-auth';
 
 export interface ServerInfo {
-  /** Stable across ordinary restarts; changes after a full Admin backup restore. */
-  server_restore_id?: string;
   /** Absent on older servers that do not implement error schema negotiation. */
   supported_error_schema_version?: number;
   /** Missing on older web server-info responses; never interpret absence as an old version. */
@@ -159,7 +156,6 @@ export async function getServerInfo(signal?: AbortSignal): Promise<ServerInfo> {
     })
   );
 
-  serverRestore.accept(info.server_restore_id);
   if (info.version !== undefined) return info;
 
   // Already-deployed servers may strip version from the web projection. Their

@@ -19,9 +19,7 @@ for (const provider of ['google-drive', 'google-calendar'] as const) {
 
     expect(confirmations).toHaveLength(1);
     expect(confirmations[0].postDataJSON().connection_id).toBe(authorization.id);
-    expect(new URL(confirmations[0].url()).searchParams.get('server_restore_id')).toBe(
-      '00000000-0000-0000-0000-000000000000'
-    );
+    expect(new URL(confirmations[0].url()).searchParams.has('server_restore_id')).toBe(false);
     await expect
       .poll(() => connectionApp.requests.filter((request) => new URL(request.url()).pathname.endsWith('/api/integrations/proxy')).length)
       .toBe(1);
