@@ -2,8 +2,6 @@ import * as random from 'lib0/random';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import useWebSocket from 'react-use-websocket';
 
-import { serverRestore } from '@/application/server-restore';
-import { getServerInfo } from '@/application/services/js-services/http/auth-api';
 import { refreshToken } from '@/application/services/js-services/http/gotrue';
 import { getTokenParsed, invalidToken } from '@/application/session/token';
 import { messages } from '@/proto/messages';
@@ -218,18 +216,9 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
   // every automatic retry. Reading the token here keeps the hook input stable
   // during normal renders while ensuring each actual connection uses the
   // freshest session token.
-  const socketUrl = useCallback(async () => {
-    // Resolve on every connection attempt, before the library can flush queued sync.
-    try {
-      await getServerInfo();
-    } catch (error) {
-      // A confirmed missing discovery endpoint retains legacy-server support.
-      if ((error as { code?: number } | null)?.code !== 404) throw error;
-    }
-
-    serverRestore.assertCurrent();
+  const socketUrl = useCallback(() => {
     const token = options.token || getTokenParsed()?.access_token;
-    const baseUrl = `${wsUrl}/${options.workspaceId}/?clientId=${clientId}&deviceId=${deviceId}&token=${token}&cv=0.10.0&cp=web&server_restore_id=${serverRestore.restoreId}`;
+    const baseUrl = `${wsUrl}/${options.workspaceId}/?clientId=${clientId}&deviceId=${deviceId}&token=${token}&cv=0.10.0&cp=web`;
 
     return reconnectNonce > 0 ? `${baseUrl}&_rc=${reconnectNonce}` : baseUrl;
   }, [wsUrl, options.workspaceId, options.token, clientId, deviceId, reconnectNonce]);
@@ -362,8 +351,6 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
         timeout: 90000, // 90s: more tolerant of slow/congested networks (was 45s)
         interval: 30000, // Match desktop: 30s ping interval (balances NAT keep-alive with power efficiency)
       },
-      // Retry failed async discovery as well as failed socket connections.
-      retryOnError: true,
       // Reconnect configuration
       shouldReconnect: (closeEvent) => {
         Log.info('Connection closed, code:', closeEvent.code, 'reason:', closeEvent.reason);

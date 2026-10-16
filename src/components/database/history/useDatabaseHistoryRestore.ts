@@ -1,10 +1,8 @@
-
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { v4 as uuid } from 'uuid';
 
 import { ERROR_CODE } from '@/application/constants';
 import type { DatabaseRestoreJob } from '@/application/database-history.type';
-import { serverRestore } from '@/application/server-restore';
 import { getDatabaseRestoreJob, startDatabaseRestore } from '@/application/services/domains/database-history';
 import { defaultConfig } from '@/application/services/js-services/http/cloud-config';
 
@@ -65,7 +63,7 @@ export function useDatabaseHistoryRestore({
   databaseId: string;
   onRestored: (databaseId: string, restoreId: string) => Promise<void>;
 }) {
-  const storageKey = serverRestore.cacheKey(`af_database_history_restore:v1:${defaultConfig.baseURL}:${userId}:${workspaceId}:${databaseId}`);
+  const storageKey = `af_database_history_restore:v1:${defaultConfig.baseURL}:${userId}:${workspaceId}:${databaseId}`;
   const [pending, setPending] = useState<PendingRestore | null>(() => readPending(storageKey));
   const [loadedStorageKey, setLoadedStorageKey] = useState(storageKey);
   const [job, setJob] = useState<DatabaseRestoreJob | null>(null);

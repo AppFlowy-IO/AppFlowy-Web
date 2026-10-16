@@ -794,23 +794,22 @@ describe('http_api client (unit)', () => {
     warnSpy.mockRestore();
   });
 
-  it('checks restore discovery before returning bootstrap data to reconnecting clients', async () => {
+  it('returns bootstrap data without acting on a server restore identifier', async () => {
     const module = await import('../http_api');
-    const { serverRestore } = await import('@/application/server-restore');
+
     module.initAPIService(baseConfig);
     const id = '11111111-1111-4111-8111-111111111111';
-    const accept = jest.spyOn(serverRestore, 'accept').mockImplementation(() => {
-      throw new Error('Server restore changed; reloading');
-    });
+    const storageKey = 'af_server_restore:v1:https://test.appflowy.cloud';
+    const previousId = '00000000-0000-0000-0000-000000000000';
+
+    localStorage.setItem(storageKey, previousId);
     mockAxiosInstance.get.mockResolvedValue({ data: {
       code: 0, data: { version: '0.19.0', server_restore_id: id, enable_page_history: true },
     } });
 
-    await expect(module.getServerInfo()).rejects.toThrow('Server restore changed');
-    expect(accept).toHaveBeenCalledWith(id);
-    // A restore rejection cannot fall through to the native legacy-version probe.
+    await expect(module.getServerInfo()).resolves.toMatchObject({ version: '0.19.0', enable_page_history: true });
+    expect(localStorage.getItem(storageKey)).toBe(previousId);
     expect(mockAxiosInstance.get).toHaveBeenCalledTimes(1);
-    accept.mockRestore();
   });
 
   it('bounds and cancels server-info requests while identifying the web platform and bundle version', async () => {

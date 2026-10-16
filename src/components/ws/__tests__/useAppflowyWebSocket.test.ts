@@ -86,21 +86,13 @@ describe('useAppflowyWebSocket', () => {
     setStoredToken('token-A');
   });
 
-  it('does not open a socket when restore discovery fails; confirmed legacy 404 still connects', async () => {
-    renderHook(() => useAppflowyWebSocket(baseOptions));
-    (getServerInfo as jest.Mock).mockRejectedValueOnce(new Error('Server restore changed'));
-    await expect(resolveLastSocketUrl()).rejects.toThrow('Server restore changed');
-    (getServerInfo as jest.Mock).mockRejectedValueOnce({ code: 404 });
-    await expect(resolveLastSocketUrl()).resolves.toContain('server_restore_id=00000000-0000-0000-0000-000000000000');
-    (getServerInfo as jest.Mock).mockRejectedValueOnce(new Error('Server offline'));
-    await expect(resolveLastSocketUrl()).rejects.toThrow('Server offline');
-  });
-
   it('connects with the session token in the socket URL', async () => {
     renderHook(() => useAppflowyWebSocket(baseOptions));
 
     expect(await resolveLastSocketUrl()).toContain('token=token-A');
     expect(await resolveLastSocketUrl()).toContain('/workspace-1/');
+    expect(new URL(await resolveLastSocketUrl()).searchParams.has('server_restore_id')).toBe(false);
+    expect(getServerInfo).not.toHaveBeenCalled();
   });
 
   // A token rotation must not replace the URL callback during a live session,

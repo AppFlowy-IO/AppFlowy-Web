@@ -1,4 +1,3 @@
-
 import {
   startTransition,
   useCallback,
@@ -15,7 +14,6 @@ import { useDatabaseContext, useDatabaseView, useDatabaseViewId, useRowMap } fro
 import { ROW_SYNC_RETRY_DELAYS_MS } from '@/application/database-yjs/row-sync';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { openRowCollabDBWithProvider } from '@/application/db';
-import { serverRestore } from '@/application/server-restore';
 import { YDatabaseRowOrders, YDoc, YjsDatabaseKey } from '@/application/types';
 
 const BACKGROUND_BATCH_SIZE = 24;
@@ -37,7 +35,7 @@ const retainedEphemeralRowDocs = new WeakMap<YDoc, number>();
 
 function openIndexedDB(name: string) {
   return new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open(serverRestore.cacheKey(name));
+    const request = indexedDB.open(name);
 
     request.onupgradeneeded = () => {
       const db = request.result;

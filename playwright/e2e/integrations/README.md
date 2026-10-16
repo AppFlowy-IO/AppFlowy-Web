@@ -31,11 +31,11 @@ The popup-blocked case overrides `window.open` to return `null`; it checks the U
 
 GitHub Actions runs this suite in the standalone **Connections (Chromium, Firefox, WebKit)** job, with no Cloud container dependency. It typechecks the tests and retains failure screenshots and retry traces.
 
-Cloud requests include protocol query parameters such as `server_restore_id`. Match endpoint paths
+Cloud requests may include query parameters. Match endpoint paths
 with `new URL(request.url()).pathname`, and inspect meaningful query values through `searchParams`
 instead of depending on parameter order. Route globs ending at an endpoint need an optional query
 suffix, for example `**/api/integrations/connect/google-drive{,?**}`. Keep method, body, request-count,
-and origin assertions intact. The consent tests also assert that the restore ID reaches Cloud.
+and origin assertions intact.
 
 ## Callback fixture provenance
 

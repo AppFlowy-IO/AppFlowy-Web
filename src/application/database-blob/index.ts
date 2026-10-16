@@ -20,7 +20,6 @@ import {
   isDatabaseStorageFenceCurrent,
   withDatabaseStorageFence,
 } from '@/application/db/database-storage-fence';
-import { serverRestore } from '@/application/server-restore';
 import { deleteRow as deleteCachedRow, getCachedRowDoc } from '@/application/services/js-services/cache';
 import { captureTokenSession, isTokenSessionCurrent, type TokenSessionWitness } from '@/application/session/token';
 import { databaseBlobDiff } from '@/application/services/js-services/http/http_api';
@@ -107,7 +106,7 @@ type FetchDiffResult = {
   stagedPages: DatabaseBlobDiffPageStage | null;
 };
 
-const RID_CACHE_PREFIX = serverRestore.cacheKey('af_database_blob_rid:');
+const RID_CACHE_PREFIX = 'af_database_blob_rid:';
 const APPLY_CONCURRENCY = 6;
 const MAX_ROW_DOC_SEEDS = 2000;
 const MAX_ROW_DOC_SEEDS_LOOKUP = 10000;
