@@ -17,9 +17,11 @@ import {
   LoadViewOptions,
   TextCount,
   Types,
+  UIVariant,
   View,
 } from '@/application/types';
 import { isPermissionDeniedError } from '@/application/utils/error-utils';
+import { BreadcrumbSource } from '@/components/_shared/breadcrumb/BreadcrumbSource';
 import { findAncestors, findView } from '@/components/_shared/outline/utils';
 import { AppEventEmitterContext } from '@/components/app/contexts/AppEventEmitterContext';
 import { AppNavigationContext, AppNavigationContextType } from '@/components/app/contexts/AppNavigationContext';
@@ -759,6 +761,15 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     if (!outline || !breadcrumbViewId) return NO_BREADCRUMB_ANCESTORS;
     return findAncestors(outline, breadcrumbViewId) || NO_BREADCRUMB_ANCESTORS;
   }, [outline, breadcrumbViewId]);
+  const outlineRoot = originalCrumbs[0];
+  const outlineRootParentId = outlineRoot && BreadcrumbSource.fromView(outlineRoot, UIVariant.App).parentViewId;
+  // Navigation responses can start at a detached view. A nonempty outline
+  // path is complete only when its logical parent is already accounted for.
+  const hasCompleteOutlinePath = originalCrumbs.length > 0 && (
+    !outlineRootParentId ||
+    outlineRootParentId === currentWorkspaceId ||
+    originalCrumbs.some((view) => view.view_id === outlineRootParentId)
+  );
   const [fallbackCrumbs, setFallbackCrumbs] = useState<View[]>([]);
 
   useEffect(() => {
@@ -767,7 +778,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       return;
     }
 
-    if (originalCrumbs.length > 0) {
+    if (hasCompleteOutlinePath) {
       setFallbackCrumbs([]);
       return;
     }
@@ -799,7 +810,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
 
         if (!currentView) break;
         chain.unshift(currentView);
-        cursorId = currentView.parent_view_id;
+        cursorId = BreadcrumbSource.fromView(currentView, UIVariant.App).parentViewId;
       }
 
       if (!cancelled) {
@@ -810,9 +821,11 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     return () => {
       cancelled = true;
     };
-  }, [breadcrumbViewId, originalCrumbs, currentWorkspaceId, stableOutlineRef]);
+  }, [breadcrumbViewId, originalCrumbs, hasCompleteOutlinePath, currentWorkspaceId, stableOutlineRef]);
 
-  const sourceCrumbs = originalCrumbs.length > 0 ? originalCrumbs : fallbackCrumbs;
+  const sourceCrumbs = !hasCompleteOutlinePath && fallbackCrumbs[fallbackCrumbs.length - 1]?.view_id === breadcrumbViewId
+    ? fallbackCrumbs
+    : originalCrumbs;
 
   // Trailing crumb appended by pages without their own route ancestry (e.g. a
   // database row opened as a full page). Held separately from the ancestor

@@ -9,6 +9,8 @@ import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import PublishIcon from '@/components/_shared/view-icon/PublishIcon';
 import SpaceIcon from '@/components/_shared/view-icon/SpaceIcon';
 
+import { useBreadcrumbTitle } from './useBreadcrumbTitle';
+
 function BreadcrumbItem({
   crumb,
   disableClick = false,
@@ -20,7 +22,8 @@ function BreadcrumbItem({
   toView?: (viewId: string) => Promise<void>;
   variant?: UIVariant;
 }) {
-  const { view_id, name, extra, is_published } = crumb;
+  const { view_id, extra, is_published } = crumb;
+  const name = useBreadcrumbTitle(crumb, variant);
 
   const { t } = useTranslation();
 
