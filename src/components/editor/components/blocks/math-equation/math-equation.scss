@@ -1,0 +1,38 @@
+.math-equation-surface {
+  &.is-empty {
+    background: var(--block-bg-color-20);
+  }
+  &:hover,
+  &:focus-within,
+  &.is-active {
+    background: var(--block-bg-color-20);
+  }
+  &.is-empty:hover,
+  &.is-empty:focus-within,
+  &.is-empty.is-active {
+    background: var(--block-bg-hover-color-20);
+  }
+  .math-equation-toolbar {
+    opacity: 0;
+  }
+  &:hover .math-equation-toolbar,
+  &:focus-within .math-equation-toolbar,
+  &.is-active .math-equation-toolbar {
+    opacity: 1;
+  }
+  .katex-display {
+    margin: 0;
+  }
+  .math-equation-render > div {
+    max-width: 100%;
+  }
+}
+@media (hover: none) {
+  .math-equation-surface .math-equation-toolbar {
+    opacity: 1;
+  }
+}
+
+.math-equation-popover:has([data-expanded='true']) {
+  visibility: hidden;
+}

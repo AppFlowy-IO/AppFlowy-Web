@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Transforms, Text, Editor } from 'slate';
 import { useSlate } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
@@ -9,6 +8,7 @@ import { EditorMarkFormat } from '@/application/slate-yjs/types';
 import { ReactComponent as MathSvg } from '@/assets/icons/formula.svg';
 import ActionButton from '@/components/editor/components/toolbar/selection-toolbar/actions/ActionButton';
 import { useSelectionToolbarContext } from '@/components/editor/components/toolbar/selection-toolbar/SelectionToolbar.hooks';
+import { toggleInlineEquation } from '@/components/editor/utils/math-equation';
 
 
 function Formula() {
@@ -41,55 +41,7 @@ function Formula() {
   }, [visible, getState, editor.selection]);
 
   const onClick = useCallback(() => {
-    const { selection } = editor;
-
-    if (!selection) return;
-
-    const isActivated = CustomEditor.isMarkActive(editor, EditorMarkFormat.Formula);
-
-    if (!isActivated) {
-      const text = editor.string(selection);
-
-      editor.delete();
-
-      editor.insertText('$');
-
-      const newSelection = editor.selection;
-
-      if (!newSelection) {
-        console.error('newSelection is undefined');
-        return;
-      }
-
-      Transforms.select(editor, {
-        anchor: {
-          path: newSelection.anchor.path,
-          offset: newSelection.anchor.offset - 1,
-        },
-        focus: newSelection.focus,
-      });
-
-      CustomEditor.addMark(editor, {
-        key: EditorMarkFormat.Formula,
-        value: text,
-      });
-    } else {
-      const [entry] = editor.nodes({
-        at: selection,
-        match: (n) => !Editor.isEditor(n) && Text.isText(n) && n.formula !== undefined,
-      });
-
-      if (!entry) return;
-
-      const [node, path] = entry;
-      const formula = (node as Text).formula;
-
-      if (!formula) return;
-      editor.select(path);
-      CustomEditor.removeMark(editor, EditorMarkFormat.Formula);
-      editor.delete();
-      editor.insertText(formula);
-    }
+    toggleInlineEquation(editor);
 
     setState(getState());
   }, [editor, getState]);

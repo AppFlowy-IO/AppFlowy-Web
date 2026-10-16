@@ -9,6 +9,8 @@ export function detectMarkdown(text: string): boolean {
 
   // Patterns that indicate Markdown formatting
   const patterns = [
+    /(^|[^\\$])\${1,2}[^$\n]+\${1,2}/m, // Math equations
+
     /^#{1,6}\s+/m, // Headings: # Heading
     /\*\*[^*]+\*\*/, // Bold: **text**
     /__[^_]+__/, // Bold alternative: __text__

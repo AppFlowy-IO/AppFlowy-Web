@@ -3,8 +3,16 @@ import { ReactEditor } from 'slate-react';
 
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
 import { BlockType } from '@/application/types';
+import { OPEN_MATH_EQUATION_EVENT } from '@/components/editor/utils/math-equation';
+
+
+export type MathEquationAIAction = 'generate' | 'explain' | 'check';
+export interface MathEquationAISession { blockId: string; action: MathEquationAIAction; draft?: string; id?: number }
 
 export interface BlockPopoverContextType {
+  mathEquationAI?: MathEquationAISession;
+  openMathEquationAI?: (session: MathEquationAISession) => void;
+  closeMathEquationAI?: () => void;
   type?: BlockType;
   blockId?: string;
   anchorEl?: HTMLElement | null;
@@ -37,6 +45,10 @@ export function usePopoverMountSignal(blockId: string | undefined) {
 }
 
 export const BlockPopoverProvider = ({ children, editor }: { children: React.ReactNode; editor: ReactEditor }) => {
+  const [mathEquationAI, setMathEquationAI] = useState<MathEquationAISession>();
+  const sessionId = useRef(0);
+  const openMathEquationAI = useCallback((session: MathEquationAISession) => setMathEquationAI({ ...session, id: ++sessionId.current }), []);
+  const closeMathEquationAI = useCallback(() => setMathEquationAI(undefined), []);
   const [type, setType] = useState<BlockType | undefined>();
   const [blockId, setBlockId] = useState<string | undefined>();
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
@@ -82,6 +94,17 @@ export const BlockPopoverProvider = ({ children, editor }: { children: React.Rea
     [resolveAnchor]
   );
 
+  useEffect(() => {
+    const handleOpen = (event: Event) => {
+      const detail = (event as CustomEvent<{ editor: ReactEditor; blockId: string }>).detail;
+
+      if (detail.editor === editor) openPopover(detail.blockId, BlockType.EquationBlock);
+    };
+
+    window.addEventListener(OPEN_MATH_EQUATION_EVENT, handleOpen);
+    return () => window.removeEventListener(OPEN_MATH_EQUATION_EVENT, handleOpen);
+  }, [editor, openPopover]);
+
   const notifyMount = useCallback(
     (mountedBlockId: string) => {
       const pending = pendingRef.current;
@@ -108,8 +131,8 @@ export const BlockPopoverProvider = ({ children, editor }: { children: React.Rea
   );
 
   const contextValue = useMemo(
-    () => ({ blockId, type, anchorEl, open, close, openPopover, notifyMount, isOpen }),
-    [blockId, type, anchorEl, open, close, openPopover, notifyMount, isOpen]
+    () => ({ blockId, type, anchorEl, open, close, openPopover, notifyMount, isOpen, mathEquationAI, openMathEquationAI, closeMathEquationAI }),
+    [blockId, type, anchorEl, open, close, openPopover, notifyMount, isOpen, mathEquationAI, openMathEquationAI, closeMathEquationAI]
   );
 
   return <BlockPopoverContext.Provider value={contextValue}>{children}</BlockPopoverContext.Provider>;

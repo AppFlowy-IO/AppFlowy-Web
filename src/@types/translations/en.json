@@ -2696,7 +2696,21 @@
       "mathEquation": {
         "name": "Math Equation",
         "addMathEquation": "Add a TeX equation",
-        "editMathEquation": "Edit Math Equation"
+        "editMathEquation": "Edit Math Equation",
+        "inline": "Inline equation",
+        "options": "Math equation options",
+        "insert": "Insert",
+        "comment": "Comment",
+        "generating": "Generating…",
+        "send": "Send",
+        "stop": "Stop",
+        "askAI": "Ask AI",
+        "explain": "Explain equation",
+        "check": "Check equation",
+        "theEquationIsEmpty": "The equation is empty",
+        "changedDuringAI": "This equation changed while AI was working. Review it and try again.",
+        "noEquation": "The response does not contain an equation. Try again with a more specific request.",
+        "aiUnavailable": "AI is unavailable in this document"
       },
       "optionAction": {
         "askAI": "Ask AI",

@@ -2,7 +2,7 @@ import { Button } from '@mui/material';
 import { PopoverOrigin } from '@mui/material/Popover/Popover';
 import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Editor, Element, Transforms } from 'slate';
+import { Editor, Element, RangeRef, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
 import { isDatabaseBlockType } from '@/application/database-block';
@@ -98,12 +98,14 @@ import { usePopoverContext } from '@/components/editor/components/block-popover/
 import { DEFAULT_CALLOUT_DATA } from '@/components/editor/components/blocks/callout/callout.utils';
 import { createDatabaseNodeData } from '@/components/editor/components/blocks/database/utils/databaseBlockUtils';
 import { initializeMeetingSections } from '@/components/editor/components/blocks/ai-meeting/ai-meeting.import';
+import FormulaPopover from '@/components/editor/components/leaf/formula/FormulaPopover';
 import { usePanelContext } from '@/components/editor/components/panels/Panels.hooks';
 import { PanelType } from '@/components/editor/components/panels/PanelsContext';
 import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { createSubpage } from '@/components/editor/subpage/create-subpage';
 import { captureBlockCreationTarget, captureExistingDatabaseBlock } from '@/components/editor/utils/block-creation-target';
+import { insertInlineEquation } from '@/components/editor/utils/math-equation';
 import { Button as OutlineButton } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
@@ -293,6 +295,19 @@ export function SlashPanel({
   const [transformOrigin, setTransformOrigin] = React.useState<PopoverOrigin | undefined>(undefined);
   const selectedOptionRef = React.useRef<string | null>(null);
   const { openPopover } = usePopoverContext();
+  const [inlineEquation, setInlineEquation] = useState<{ range: RangeRef; position: { top: number; left: number } }>();
+  const closeInlineEquation = useCallback(() => {
+    setInlineEquation((current) => {
+      const range = current?.range.unref();
+
+      if (range) { editor.select(range); ReactEditor.focus(editor); }
+
+      return undefined;
+    });
+  }, [editor]);
+
+  useEffect(() => () => { inlineEquation?.range.unref(); }, [inlineEquation]);
+
 
   const open = useMemo(() => {
     return isPanelOpen(PanelType.Slash);
@@ -1590,6 +1605,17 @@ export function SlashPanel({
         },
       },
       {
+        label: t('document.plugins.mathEquation.inline'),
+        key: 'inlineMath', icon: <FormulaIcon />, group: SlashMenuGroupKey.Inline,
+        keywords: ['inline', 'math', 'equation', 'formula', 'tex', 'latex'], shortcut: '$...$',
+        onClick: () => {
+          if (!editor.selection) return;
+          const rect = ReactEditor.toDOMRange(editor, editor.selection).getBoundingClientRect();
+
+          setInlineEquation({ range: Editor.rangeRef(editor, editor.selection), position: { top: rect.bottom, left: rect.left } });
+        },
+      },
+      {
         label: t('document.slashMenu.name.mathEquation'),
         key: 'math',
         icon: <FormulaIcon />,
@@ -1883,6 +1909,14 @@ export function SlashPanel({
 
   return (
     <>
+      {inlineEquation && <FormulaPopover open defaultValue='' anchorPosition={inlineEquation.position} onClose={closeInlineEquation}
+        onDone={(formula) => {
+          const range = inlineEquation.range.unref();
+
+          setInlineEquation(undefined);
+          if (range) insertInlineEquation(editor, formula, range);
+          ReactEditor.focus(editor);
+        }} />}
       <Popover
         adjustOrigins={false}
         data-testid={'slash-panel'}

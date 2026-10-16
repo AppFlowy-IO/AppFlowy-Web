@@ -10,6 +10,8 @@ export function extractTextFromMDAST(node: unknown): string {
 
   const n = node as { type: string; value?: string; children?: unknown[] };
 
+  if (n.type === 'inlineMath') return '$';
+
   if (n.type === 'text') {
     return (n as MdastText).value;
   }
@@ -44,6 +46,12 @@ export function extractInlineFormatsFromMDAST(node: unknown, baseOffset = 0): In
       children?: unknown[];
       url?: string;
     };
+
+    if (obj.type === 'inlineMath') {
+      formats.push({ start: currentOffset, end: currentOffset + 1, type: 'formula', data: { formula: obj.value ?? '' } });
+      currentOffset++;
+      return '$';
+    }
 
     // Hard breaks take one character, just like the extracted paragraph text.
     // Counting them here keeps later bold/link/reference offsets aligned.

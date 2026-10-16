@@ -41,7 +41,7 @@ function BlockPopover() {
 
     const entry = findSlateEntryByBlockId(editor, blockId);
 
-    if (!entry) return;
+    if (!entry) { close(); return; }
 
     const [, path] = entry;
 
@@ -136,7 +136,7 @@ function BlockPopover() {
       slotProps={{
         paper: {
           ref: paperRef,
-          className: 'w-[400px] max-h-[366px]',
+          className: `w-[400px] max-h-[366px] ${type === BlockType.EquationBlock ? 'math-equation-popover !rounded-xl !bg-surface-primary !shadow-menu' : ''}`,
         },
       }}
       {...origins}
