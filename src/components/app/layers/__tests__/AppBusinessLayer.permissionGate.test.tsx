@@ -154,6 +154,7 @@ function NavigationProbe({ modalTargetId, effectiveTargetId }: { modalTargetId: 
       <span data-testid={'modal-view-id'}>{navigation.openPageModalViewId ?? ''}</span>
       <span data-testid={'no-access'}>{String(navigation.viewNoAccess)}</span>
       <span data-testid={'view-not-found'}>{String(navigation.notFound)}</span>
+      <span data-testid={'breadcrumbs'}>{JSON.stringify(navigation.breadcrumbs?.map((view) => view.view_id))}</span>
       <span data-testid={'object-permission'}>
         {JSON.stringify(navigation.objectPermissions?.[routeViewId] ?? null)}
       </span>
@@ -1032,4 +1033,40 @@ describe('AppBusinessLayer permission gates', () => {
     });
     expect(parentFetchCount()).toBe(1);
   });
+
+  it.each(['missing', 'partial'])(
+    'connects a row subpage breadcrumb to its source database with a %s outline path',
+    async (outlinePath) => {
+      const rowView = {
+        ...createView(parentViewId),
+        parent_view_id: parentViewId,
+        extra: {
+          row_document: {
+            source: { database_id: modalDatabaseId, database_view_id: modalViewId, row_id: 'row' },
+          },
+        },
+      };
+      const subpage = { ...createView(routeViewId), parent_view_id: parentViewId };
+      const database = { ...createView(modalViewId), parent_view_id: effectiveModalViewId };
+      const space = { ...createView(effectiveModalViewId, [database]), parent_view_id: workspaceId };
+
+      (ViewService.get as jest.Mock).mockImplementation(async (_workspaceId: string, id: string) => {
+        if (id === routeViewId) return subpage;
+        if (id === parentViewId) return rowView;
+        throw new Error(`Unexpected view lookup: ${id}`);
+      });
+
+      const outline = outlinePath === 'partial'
+        ? [space, { ...rowView, parent_view_id: undefined, children: [subpage] }]
+        : [space];
+
+      renderBusinessLayer(new EventEmitter(), outline);
+
+      await waitFor(() => {
+        expect(JSON.parse(screen.getByTestId('breadcrumbs').textContent || '[]')).toEqual([
+          effectiveModalViewId, modalViewId, parentViewId, routeViewId,
+        ]);
+      });
+    }
+  );
 });
