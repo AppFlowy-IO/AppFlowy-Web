@@ -10,17 +10,17 @@ const STYLES: FormulaTextStyle[] = [
   ...COLORS,
   ...COLORS.map((color): FormulaTextStyle => `${color}_background`),
 ];
-const styleOrder = new Map<string, number>(STYLES.map((style, index) => [style, index]));
+const supportedStyles = new Set<string>(STYLES);
 const foreground = new Set<string>(COLORS);
 
-/** Canonical order makes equivalent adjacent spans cheap to merge. */
+/** Desktop sorts tokens lexically; equivalent adjacent spans can then merge. */
 function normalizeStyles(names: readonly string[]): FormulaTextStyle[] {
   const styles = new Set<FormulaTextStyle>();
   let color: FormulaTextStyle | undefined;
   let background: FormulaTextStyle | undefined;
 
   for (const name of names) {
-    if (!styleOrder.has(name)) continue;
+    if (!supportedStyles.has(name)) continue;
     const style = name as FormulaTextStyle;
 
     if (foreground.has(style)) color = style;
@@ -30,7 +30,12 @@ function normalizeStyles(names: readonly string[]): FormulaTextStyle[] {
 
   if (color) styles.add(color);
   if (background) styles.add(background);
-  return [...styles].sort((a, b) => styleOrder.get(a)! - styleOrder.get(b)!);
+  return [...styles].sort();
+}
+
+/** Include copied attributes as well as text and run slots in the work budget. */
+export function textWork(value: FormulaTextValue): number {
+  return value.value.length + (value.runs?.reduce((total, run) => total + 1 + run.styles.length, 0) ?? 0);
 }
 
 function runsOf(value: FormulaTextValue): FormulaTextRun[] {
@@ -63,10 +68,17 @@ function fromRuns(runs: Iterable<FormulaTextRun>): FormulaTextValue {
 }
 
 /** Apply only recognized tokens; arbitrary formula text never becomes CSS. */
-export function styleText(value: FormulaTextValue, names: readonly string[]): FormulaTextValue {
+export function styleText(
+  value: FormulaTextValue,
+  names: readonly string[],
+  consumeWork?: (amount: number) => void
+): FormulaTextValue {
   const additions = normalizeStyles(names);
 
   if (!additions.length) return value;
+  // Recoloring can coalesce thousands of runs. Reserve the temporary attribute
+  // expansion before mapping them; charging only the final value misses it.
+  consumeWork?.(additions.length * (value.runs?.length ?? (value.value ? 1 : 0)));
   return fromRuns(
     runsOf(value).map((run) => ({ text: run.text, styles: normalizeStyles([...run.styles, ...additions]) }))
   );
@@ -88,9 +100,8 @@ export function joinText(
   consumeWork?: (amount: number) => void
 ): FormulaTextValue {
   const separatorCount = Math.max(0, values.length - 1);
-  const work = (value: FormulaTextValue) => value.value.length + (value.runs?.length ?? 0);
 
-  consumeWork?.(values.reduce((total, value) => total + work(value), separatorCount * work(separator)));
+  consumeWork?.(values.reduce((total, value) => total + textWork(value), separatorCount * textWork(separator)));
   if (!separator.runs && values.every((value) => !value.runs)) {
     return text(values.map((value) => value.value).join(separator.value));
   }
@@ -110,7 +121,7 @@ export function repeatText(
   count: number,
   consumeWork: (amount: number) => void
 ): FormulaTextValue {
-  consumeWork((value.value.length + (value.runs?.length ?? 0)) * count);
+  consumeWork(textWork(value) * count);
   if (!value.runs) return text(value.value.repeat(count));
 
   function* runs(): Iterable<FormulaTextRun> {

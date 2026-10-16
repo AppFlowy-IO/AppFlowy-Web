@@ -3,7 +3,7 @@ import { RE2JS } from 're2js';
 import { asList, asNumber, asText, asTextValueWithBudget } from '../coerce';
 import { FormulaError, SourcePosition } from '../errors';
 import { EvalContext, FormulaFunctionSpec, FormulaParam } from '../registry';
-import { joinText, repeatText, styleText, unstyleText } from '../styled-text';
+import { joinText, repeatText, styleText, textWork, unstyleText } from '../styled-text';
 import { bool, EMPTY, FormulaValue, list, listOf, num, text } from '../values';
 
 // style() and unstyle(): the text, then any number of Notion style names.
@@ -269,7 +269,10 @@ export const textFunctions: FormulaFunctionSpec[] = [
     examples: [{ expression: 'style("Done", "b", "green")', result: '"Done"' }],
     params: STYLE_PARAMS,
     returnType: 'text',
-    impl: ([value, ...styles]) => styleText(value.type === 'text' ? value : text(asText(value)), styles.map(asText)),
+    impl: ([value, ...styles], ctx, _nodes, position) =>
+      styleText(value.type === 'text' ? value : text(asText(value)), styles.map(asText), (amount) =>
+        ctx.consumeWork(amount, position)
+      ),
   },
   {
     name: 'unstyle',
@@ -337,7 +340,7 @@ export const textFunctions: FormulaFunctionSpec[] = [
       const delimiter = separator.type === 'text' ? separator : text(asText(separator));
 
       // Parts are already charged; only repeated separators add new copies.
-      consumeWork(Math.max(0, parts.length - 1) * (delimiter.value.length + (delimiter.runs?.length ?? 0)));
+      consumeWork(Math.max(0, parts.length - 1) * textWork(delimiter));
       return joinText(parts, delimiter);
     },
   },
