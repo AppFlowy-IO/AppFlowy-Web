@@ -6,13 +6,15 @@ export type DatabaseRowDocSeed = {
   rowId?: string;
   generation?: number;
   storageFence?: DatabaseStorageFence;
+  /** A captured seed must not outlive the login session that downloaded it. */
+  isOwnerCurrent?: () => boolean;
 };
 
 const rowSeedGenerations = new Map<string, number>();
 
 export function createDatabaseRowDocSeed(
   rowId: string,
-  state: Pick<DatabaseRowDocSeed, 'bytes' | 'encoderVersion' | 'storageFence'>
+  state: Pick<DatabaseRowDocSeed, 'bytes' | 'encoderVersion' | 'storageFence' | 'isOwnerCurrent'>
 ): DatabaseRowDocSeed {
   return {
     ...state,
@@ -27,6 +29,7 @@ export function invalidateDatabaseRowDocSeedGeneration(rowId: string) {
 
 /** Unfenced seeds remain valid for callers outside the blob prefetch path. */
 export function isDatabaseRowDocSeedCurrent(seed: DatabaseRowDocSeed) {
+  if (seed.isOwnerCurrent && !seed.isOwnerCurrent()) return false;
   if (seed.storageFence && !isDatabaseStorageFenceCurrent(seed.storageFence)) return false;
   if (!seed.rowId || seed.generation === undefined) return true;
   return seed.generation === (rowSeedGenerations.get(seed.rowId) ?? 0);

@@ -3,10 +3,9 @@ import { dropTargetForElements } from '@atlaskit/pragmatic-drag-and-drop/element
 import { attachClosestEdge, extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { VirtualItem } from '@tanstack/react-virtual';
 import { uniqBy } from 'lodash-es';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 
-import { useReadOnly, useRowData, useSortsSelector } from '@/application/database-yjs';
-import { YjsDatabaseKey } from '@/application/types';
+import { useReadOnly, useSortsSelector } from '@/application/database-yjs';
 import { DropRowIndicator } from '@/components/database/components/drag-and-drop/DropRowIndicator';
 import { HoverControls } from '@/components/database/components/grid/controls/HoverControls';
 import {
@@ -52,14 +51,9 @@ function GridVirtualRow({
   const rowId = rowData.rowId as string;
   const rowKey = getRenderRowKey(rowData);
   const rowType = rowData.type;
-  const { isGrouped, rowResizeStore } = useGridContext();
+  const { isGrouped } = useGridContext();
   const { setHoverRowKey } = useGridInteractionActions();
   const hasActiveCell = useIsGridRowActive(rowKey);
-  const databaseRow = useRowData(rowId);
-  const cells = databaseRow?.get(YjsDatabaseKey.cells);
-  const cellsCount = cells?.size;
-
-  const rowRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   const dragHandleRef = useRef<HTMLDivElement | null>(null);
   const [state, setState] = useState<ItemState>(idleState);
@@ -156,53 +150,10 @@ function GridVirtualRow({
     });
   }, [columnItems, columns, data, row, onResizeColumnStart]);
 
-  const onResize = useCallback(() => {
-    const row = rowRef.current;
-    const cells = row?.querySelectorAll('.grid-cell');
-
-    if (!cells || !rowId) return;
-    const maxCellHeight = Array.from(cells).reduce((acc, cell) => {
-      const cellHeight = cell.getBoundingClientRect().height;
-
-      return Math.max(acc, cellHeight, 35); // Ensure minimum height
-    }, 0);
-
-    rowResizeStore.report(rowKey, maxCellHeight);
-  }, [rowId, rowKey, rowResizeStore]);
-
-  useEffect(() => {
-    const el = innerRef.current;
-
-    if (!el) return;
-
-    const observer = new ResizeObserver(onResize);
-
-    observer.observe(el);
-
-    return () => {
-      observer.disconnect();
-    };
-  }, [onResize]);
-
-  useEffect(() => {
-    if (!cells || !cellsCount) return;
-
-    if (isRegularRow && cells) {
-      onResize();
-    }
-
-    cells.observeDeep(onResize);
-
-    return () => {
-      cells.unobserveDeep(onResize);
-    };
-  }, [isRegularRow, onResize, cells, cellsCount]);
-
   return (
     <GridRowProvider
       value={{
         isSticky,
-        resizeRow: onResize,
       }}
     >
       <div
@@ -227,7 +178,6 @@ function GridVirtualRow({
           )}
         </div>
         <div
-          ref={rowRef}
           data-testid={`grid-row-${rowId}`}
           data-row-key={rowKey}
           className={cn(

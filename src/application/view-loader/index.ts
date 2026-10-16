@@ -499,7 +499,7 @@ export async function openRowSubDocument(
   // During row duplication the local doc may be created as an empty shell
   // (by openLocalDocument → initializeDocumentStructure). In that case
   // we must fetch from the server to get the worker-created content.
-  let fromCache = hasCollabCache(doc);
+  let fromCache = !options.requireServerFetch && hasCollabCache(doc);
 
   if (fromCache) {
     const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot | undefined;
@@ -569,6 +569,7 @@ export async function openRowSubDocument(
           error: e instanceof Error ? e.message : String(e),
         });
 
+        if (options.requireServerFetch && attempt === maxAttempts) throw e;
         if (attempt < maxAttempts) {
           await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
         }

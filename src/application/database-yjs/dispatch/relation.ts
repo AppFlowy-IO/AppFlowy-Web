@@ -7,6 +7,7 @@ import * as Y from 'yjs';
 import { AttributionUid, resolveUserAttributionUid, touchRowAttribution } from '@/application/database-yjs/attribution';
 import { getStoredCellFieldType, setCellStoredType } from '@/application/database-yjs/cell.field-type';
 import { useDatabase, useDatabaseContext, useRowMap, useSharedRoot } from '@/application/database-yjs/context';
+import { CommittedRowActivationError, createCloudRow } from '@/application/database-yjs/creation/create-row';
 import { waitForDatabaseHydration } from '@/application/database-yjs/database.hydration';
 import { FieldType, FieldVisibility } from '@/application/database-yjs/database.type';
 import { normalizeRelationTypeOption, parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
@@ -30,6 +31,7 @@ import { waitForDatabaseRowHydration } from '@/application/database-yjs/row.hydr
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import {
   FieldId,
+  LoadViewMeta,
   RowId,
   YDatabase,
   YDatabaseCell,
@@ -43,6 +45,7 @@ import {
   YjsEditorKey,
   YMapFieldTypeOption,
 } from '@/application/types';
+import { isDatabaseContainer } from '@/application/view-utils';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Log } from '@/utils/log';
 
@@ -370,7 +373,9 @@ async function loadRowDoc(args: {
   rowId: RowId;
   rowMap?: Record<RowId, YDoc> | null;
   createRow?: (rowKey: string) => Promise<YDoc>;
+  assertCurrent?: () => void;
 }) {
+  args.assertCurrent?.();
   const cached = args.rowMap?.[args.rowId];
 
   if (cached) return cached;
@@ -378,7 +383,11 @@ async function loadRowDoc(args: {
 
   const rowDoc = await args.createRow(getRowKey(args.databaseDoc.guid, args.rowId));
 
-  return waitForDatabaseRowHydration(rowDoc);
+  args.assertCurrent?.();
+  const hydrated = await waitForDatabaseRowHydration(rowDoc);
+
+  args.assertCurrent?.();
+  return hydrated;
 }
 
 async function loadRelatedDatabaseDoc(args: {
@@ -388,7 +397,9 @@ async function loadRelatedDatabaseDoc(args: {
   loadView?: (viewId: string) => Promise<YDoc | null>;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
   bindViewSync?: (doc: YDoc) => unknown;
+  assertCurrent?: () => void;
 }) {
+  args.assertCurrent?.();
   const sourceDatabaseId = args.sourceDatabase.get(YjsDatabaseKey.id);
 
   if (sourceDatabaseId === args.relatedDatabaseId) {
@@ -397,9 +408,13 @@ async function loadRelatedDatabaseDoc(args: {
 
   const relatedViewId = await args.getViewIdFromDatabaseId?.(args.relatedDatabaseId);
 
+  args.assertCurrent?.();
+
   if (!relatedViewId || !args.loadView) return null;
 
   const doc = await args.loadView(relatedViewId);
+
+  args.assertCurrent?.();
 
   // loadView may return a cache-only doc that is not bound to server sync.
   // Bind it so reciprocal field/cell mutations propagate to other clients;
@@ -421,6 +436,7 @@ async function loadRelatedDatabaseDoc(args: {
   // is the only channel that can deliver the missing `database` map, and waiting first would let
   // the timeout expire before that channel even opens.
   if (doc) await waitForDatabaseHydration(doc);
+  args.assertCurrent?.();
 
   return doc;
 }
@@ -556,6 +572,8 @@ export async function applyRelationReciprocalInserts(args: {
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
   bindViewSync?: (doc: YDoc) => unknown;
   actorUid?: AttributionUid;
+  /** Retire asynchronous follow-up when the creation's caller or restore branch changes. */
+  assertCurrent?: () => void;
   /**
    * The related database doc, when the caller already resolved it. Resolving it again means a
    * second `loadView` round-trip — and a second wait on {@link waitForDatabaseHydration} for a
@@ -563,6 +581,7 @@ export async function applyRelationReciprocalInserts(args: {
    */
   relatedDoc?: YDoc | null;
 }) {
+  args.assertCurrent?.();
   if (args.insertedRowIds.length === 0) return;
 
   const field = args.database.get(YjsDatabaseKey.fields)?.get(args.sourceFieldId);
@@ -584,8 +603,10 @@ export async function applyRelationReciprocalInserts(args: {
       loadView: args.loadView,
       getViewIdFromDatabaseId: args.getViewIdFromDatabaseId,
       bindViewSync: args.bindViewSync,
+      assertCurrent: args.assertCurrent,
     }));
 
+  args.assertCurrent?.();
   if (!relatedDoc) return;
 
   const relatedDatabase = getDatabaseFromDoc(relatedDoc);
@@ -602,8 +623,10 @@ export async function applyRelationReciprocalInserts(args: {
         rowId: targetRowId,
         createRow: args.createRow,
         rowMap: relatedDoc === args.databaseDoc ? args.rowMap : undefined,
+        assertCurrent: args.assertCurrent,
       });
 
+      args.assertCurrent?.();
       if (!targetRowDoc) return;
 
       const reciprocalChanges = applyRelationCellChanges(
@@ -625,8 +648,10 @@ export async function applyRelationReciprocalInserts(args: {
             rowId: removedSourceRowId,
             rowMap: args.rowMap,
             createRow: args.createRow,
+            assertCurrent: args.assertCurrent,
           });
 
+          args.assertCurrent?.();
           if (!removedSourceRowDoc) return;
 
           applyRelationCellChanges(
@@ -1032,42 +1057,77 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
 
 /**
  * Create a new row in a (possibly different) related database with the
- * primary cell pre-filled, then return its row id. Mirrors the desktop
- * `_handleCreateAndLinkRow` flow (see commit c811059939, AppFlowy#8644):
- *   1. Resolve the target's primary field from its loaded view doc.
- *   2. Create a fresh row doc and seed the primary cell with `primaryText`.
- *   3. Append the row id to every view's `row_orders` in the target db.
+ * primary cell pre-filled, then return its committed row id. Preparation is private:
+ * the server atomically publishes the row and membership, and the shared creation
+ * component activates the returned database before the caller can link it.
  * The caller is expected to pipe the returned row id through the existing
  * relation-update path (`useUpdateRelationCell` / `onAddRelationRowId`)
  * so the source cell, OneOnly limits, and reciprocal back-links all get
  * the same handling as a normal "select existing row" action.
  */
 export async function createRowInRelatedDatabase(args: {
+  workspaceId: string;
+  sourceViewId: string;
+  loadViewMeta?: LoadViewMeta;
   relatedDatabaseDoc: YDoc;
   primaryFieldId: FieldId;
   primaryText: string;
   createRow?: (rowKey: string) => Promise<YDoc>;
   bindViewSync?: (doc: YDoc) => unknown;
   actorUid?: AttributionUid;
+  assertCurrent: () => void;
 }): Promise<RowId | null> {
   const trimmed = args.primaryText.trim();
 
   if (!trimmed) return null;
   if (!args.createRow) return null;
+  args.assertCurrent();
 
   const relatedDatabase = getDatabaseFromDoc(args.relatedDatabaseDoc);
 
   if (!relatedDatabase) return null;
 
   const databaseId = relatedDatabase.get(YjsDatabaseKey.id) || args.relatedDatabaseDoc.guid;
+  const views = relatedDatabase.get(YjsDatabaseKey.views);
+  let sourceViewId = args.sourceViewId;
+  let sourceView = views?.get(sourceViewId);
+
+  // Relation targets name the Folder container, which has no row_orders of its
+  // own. Resolve only that container's current children, never an arbitrary
+  // linked view in the same collab (which may have different permissions).
+  if (!sourceView && args.loadViewMeta) {
+    const container = await args.loadViewMeta(sourceViewId, undefined, { authoritative: true });
+
+    args.assertCurrent();
+    if (
+      container?.view_id === sourceViewId &&
+      isDatabaseContainer(container) &&
+      container.extra.database_id === databaseId
+    ) {
+      const child = container.children?.find((item) => {
+        const view = views?.get(item.view_id);
+
+        return view && !view.get(YjsDatabaseKey.is_inline);
+      });
+
+      if (child) {
+        sourceViewId = child.view_id;
+        sourceView = views?.get(sourceViewId);
+      }
+    }
+  }
+
+  if (!args.workspaceId || !sourceView || sourceView.get(YjsDatabaseKey.is_inline)) {
+    throw new Error('A readable related database view is required to create a row');
+  }
+
   const rowId = uuidv4();
   const rowKey = getRowKey(args.relatedDatabaseDoc.guid, rowId);
-  const rowDoc = await args.createRow(rowKey);
+  const rowDoc = new Y.Doc({ guid: rowId }) as YDoc;
+  let committed = false;
 
-  runDatabaseRowAction(
-    rowDoc,
-    { type: 'relation.create-related-row-primary-cell', fieldId: args.primaryFieldId },
-    () => {
+  try {
+    rowDoc.transact(() => {
       initialDatabaseRow(rowId, databaseId, rowDoc, args.actorUid);
       const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as Y.Map<unknown>;
       const row = rowSharedRoot.get(YjsEditorKey.database_row) as YDatabaseRow | undefined;
@@ -1086,33 +1146,35 @@ export async function createRowInRelatedDatabase(args: {
       primaryCell.set(YjsDatabaseKey.field_type, FieldType.RichText);
       primaryCell.set(YjsDatabaseKey.data, trimmed);
       cells.set(args.primaryFieldId, primaryCell);
-    }
-  );
-
-  // Add the new row to every view's row_orders so it shows up in any open
-  // grid/board/calendar of the target database.
-  runDatabaseAction(args.relatedDatabaseDoc, { type: 'relation.create-related-row-order', policy: 'skip' }, () => {
-    const views = relatedDatabase.get(YjsDatabaseKey.views);
-
-    if (!views) return;
-
-    Object.keys(views.toJSON()).forEach((viewId) => {
-      const view = views.get(viewId) as YDatabaseView | undefined;
-      const rowOrders = view?.get(YjsDatabaseKey.row_orders);
-
-      if (rowOrders) {
-        rowOrders.push([{ id: rowId, height: 36 }]);
-      }
     });
-  });
+    await createCloudRow({
+      workspaceId: args.workspaceId,
+      databaseId,
+      databaseDoc: args.relatedDatabaseDoc,
+      sourceViewId,
+      rowId,
+      rowKey,
+      rowDoc,
+      position: { kind: 'end' },
+      assertCurrent: args.assertCurrent,
+      registerRow: () => args.createRow!(rowKey),
+    });
+    committed = true;
+    args.assertCurrent();
 
-  // Bind sync if the target db hasn't been opened yet so the new row
-  // propagates. The shared `boundRelatedDocs` WeakSet keeps this idempotent
-  // across multiple create-and-link calls in one session.
-  if (args.bindViewSync && !boundRelatedDocs.has(args.relatedDatabaseDoc)) {
-    boundRelatedDocs.add(args.relatedDatabaseDoc);
-    args.bindViewSync(args.relatedDatabaseDoc);
+    // Bind sync if the target db hasn't been opened yet so the new row
+    // propagates. The shared `boundRelatedDocs` WeakSet keeps this idempotent
+    // across multiple create-and-link calls in one session.
+    if (args.bindViewSync && !boundRelatedDocs.has(args.relatedDatabaseDoc)) {
+      args.bindViewSync(args.relatedDatabaseDoc);
+      boundRelatedDocs.add(args.relatedDatabaseDoc);
+    }
+
+    return rowId;
+  } catch (error) {
+    if (committed) throw new CommittedRowActivationError(rowId, error);
+    throw error;
+  } finally {
+    rowDoc.destroy();
   }
-
-  return rowId;
 }

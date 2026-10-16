@@ -1,13 +1,19 @@
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 
 import { PublishConfig, PublishConfigPatch, View, ViewLayout } from '@/application/types';
 import { useLoadPublishInfo } from '@/components/app/share/publish.hooks';
+import PublishPanel from '@/components/app/share/PublishPanel';
 
 const mockGetViewInfo = jest.fn();
 const mockGetView = jest.fn();
 const mockUpdateConfig = jest.fn();
 const mockGetConfig = jest.fn();
 const mockUpdateSettings = jest.fn();
+const mockPublish = jest.fn();
+const mockUnpublish = jest.fn();
+
+jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+jest.mock('@/components/app/share/PublishLinkPreview', () => ({ __esModule: true, default: () => null }));
 
 const childView: View = {
   view_id: 'board-view',
@@ -62,6 +68,7 @@ jest.mock('@/application/services/domains', () => ({
 }));
 
 jest.mock('@/components/app/app.hooks', () => ({
+  usePublishing: () => ({ publish: mockPublish, unpublish: mockUnpublish }),
   useAppView: (viewId?: string) => (viewId ? views.get(viewId) : undefined),
   useUserWorkspaceInfo: () => ({
     selectedWorkspace: {
@@ -78,12 +85,15 @@ jest.mock('@/components/main/app.hooks', () => ({
 jest.mock('@/components/_shared/notify', () => ({
   notify: {
     error: jest.fn(),
+    success: jest.fn(),
   },
 }));
 
 beforeEach(() => {
   jest.resetAllMocks();
   mockGetView.mockResolvedValue(undefined);
+  mockPublish.mockResolvedValue(undefined);
+  mockUnpublish.mockResolvedValue(undefined);
   mockUpdateConfig.mockResolvedValue(undefined);
   mockGetConfig.mockRejectedValue(new Error('Record not found'));
   mockUpdateSettings.mockImplementation(async (_workspace: string, _view: string, patch: PublishConfigPatch) => ({
@@ -259,6 +269,42 @@ function publishInfo(commentEnabled: boolean) {
 }
 
 describe('useLoadPublishInfo config updates', () => {
+  it('shares the panel mount and lifecycle refresh while retaining a fresh read after publication changes', async () => {
+    const initialConfig = deferred<PublishConfig>();
+
+    mockGetViewInfo.mockRejectedValue(new Error('Record not found'));
+    mockGetConfig.mockReturnValueOnce(initialConfig.promise).mockResolvedValue({
+      comments_enabled: false,
+      duplicate_enabled: true,
+    });
+    render(<PublishPanel viewId='view-id' opened onClose={jest.fn()} canShare />);
+    expect(mockGetConfig).toHaveBeenCalledTimes(1);
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    expect(mockGetConfig).toHaveBeenCalledTimes(1);
+    await act(async () => initialConfig.resolve({ comments_enabled: false, duplicate_enabled: true }));
+
+    // A focus refresh can still be pending when a publish operation completes.
+    const beforePublish = deferred<PublishConfig>();
+
+    mockGetConfig.mockReturnValueOnce(beforePublish.promise);
+    act(() => { window.dispatchEvent(new Event('focus')); });
+    expect(mockGetConfig).toHaveBeenCalledTimes(2);
+    mockGetViewInfo.mockResolvedValue(publishInfo(true));
+    mockGetConfig.mockResolvedValue({ comments_enabled: true, duplicate_enabled: true });
+    fireEvent.click(screen.getByTestId('publish-confirm-button'));
+    await waitFor(() => expect(mockPublish).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mockGetConfig).toHaveBeenCalledTimes(3));
+    await act(async () => beforePublish.resolve({ comments_enabled: false, duplicate_enabled: true }));
+    expect(screen.getByTestId<HTMLInputElement>('publish-comments-switch').checked).toBe(true);
+
+    fireEvent.click(screen.getByTestId('unpublish-button'));
+    await waitFor(() => expect(mockUnpublish).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mockGetConfig).toHaveBeenCalledTimes(4));
+  });
+
   it('loads and saves settings only on the server, ignoring legacy browser storage', async () => {
     window.localStorage.setItem('appflowy:publish-comments:v2:view-id', '1');
     window.sessionStorage.setItem('appflowy:publish-comments:v1:view-id', '1');

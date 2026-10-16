@@ -4,6 +4,7 @@
     "serverUpgrade": "Update the server to use this creation feature.",
     "ownerChanged": "The account or workspace changed. Retry in the original workspace.",
     "pending": "Creation is pending. Retry the original request to finish.",
+    "rowCreatedReload": "The row was created. Reload this database to open it.",
     "retry": "Retry creation",
     "finishPage": "Finish creating your page",
     "finishRowPageFirst": "Add content to this row page before inserting pages or databases."

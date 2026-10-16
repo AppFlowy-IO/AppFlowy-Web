@@ -236,9 +236,24 @@ export async function toggleCheckbox(page: Page, fieldId: string, rowIndex: numb
  * events directly to the element like Cypress does.
  */
 export async function addRows(page: Page, count: number): Promise<void> {
+  const button = DatabaseGridSelectors.newRowButton(page);
+
   for (let i = 0; i < count; i++) {
-    await DatabaseGridSelectors.newRowButton(page).click();
-    await page.waitForTimeout(500);
+    // A pending source can require retries; wait for the committed row before the next click.
+    const created = page.waitForResponse(async (response) => {
+      if (
+        response.request().method() !== 'POST' ||
+        !/\/v2\/database\/[^/]+\/row\/(default|seeded)$/.test(new URL(response.url()).pathname)
+      ) {
+        return false;
+      }
+
+      return (await response.json()).code === 0;
+    });
+
+    await button.click();
+    await created;
+    await expect(button).toBeEnabled();
   }
 }
 

@@ -265,6 +265,17 @@ test('a fresh row waits for its normal full-sync acknowledgment before creating 
   )).find((id) => !before.has(id));
   const rowId = created!.replace('grid-row-', '');
   const commands = collectCreationCommands(page);
+  const replyCodes: Promise<number>[] = [];
+
+  page.on('response', (response) => {
+    if (
+      response.request().method() === 'POST' &&
+      new URL(response.url()).pathname.endsWith('/v2/page-view/row-document')
+    ) {
+      replyCodes.push(response.json().then((body) => body.code));
+    }
+  });
+
   let release!: () => void;
   const held = new Promise<void>((resolve) => {
     release = resolve;
@@ -306,7 +317,10 @@ test('a fresh row waits for its normal full-sync acknowledgment before creating 
     await completion;
     await expect(editorForRow(page)).toBeVisible();
     await expect(rowIcon(page, rowId)).toHaveCount(0);
-    expect(commands).toHaveLength(1);
+    // Durable source settlement can request a retry after full-sync acknowledges.
+    // Require one journaled command and only explicit retry-later replies before success.
+    expect(new Set(commands).size).toBe(1);
+    expect(await Promise.all(replyCodes)).toEqual([...Array(commands.length - 1).fill(-5), 0]);
     commands.forEach(expectDefaultSchema);
     expect(await readRowEmptyFlag(page, rowId)).toBe(true);
   } finally {

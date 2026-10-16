@@ -8,16 +8,13 @@ on:
   workflow_dispatch:
 
 env:
-  # Keep the migration owner (Cloud) and its workers on one completed release.
-  # The partial 0.18.61 publish left latest-amd64 images on incompatible schemas:
-  # https://github.com/AppFlowy-IO/AppFlowy-Cloud-Premium/actions/runs/36148705160
+  # Keep the migration owner (Cloud) and its workers on one source revision.
   # Update version and revision together after all three Rust images publish.
-  # Atomic creation and row-page opening require the APIs in release 0.19.29.
-  # https://github.com/AppFlowy-IO/AppFlowy-Cloud-Premium/actions/runs/38420911278
-  # Include the List field-order repair from PR1372; all three CI images published.
-  # https://github.com/AppFlowy-IO/AppFlowy-Cloud-Premium/actions/runs/38490394412
-  CLOUD_VERSION: ci-list-b64c81e4b20f-amd64
-  CLOUD_REVISION: b64c81e4b20f85f69c99054be0d7564f6b5b139b
+  # 0.19.31 supplies atomic row creation (PR1375); retain the List field-order
+  # repair (PR1372) already required by the browser suite.
+  # https://github.com/AppFlowy-IO/AppFlowy-Cloud-Premium/actions/runs/38755659237
+  CLOUD_VERSION: ci-web-row-list-9563cf767ef1-amd64
+  CLOUD_REVISION: 9563cf767ef1ae97995a9e51e6ac0898faf54774
   # AI is published independently from the Rust services.
   AI_VERSION: latest-amd64
   # Public Form APIs and uploads reject plaintext requests at the backend proxy.
