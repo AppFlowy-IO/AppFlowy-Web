@@ -13,6 +13,7 @@ import {
 } from 'react';
 import { AbstractType, type Transaction, type YEvent } from 'yjs';
 
+import { resolveDefaultBoardGroup } from '@/application/database-yjs/board-default-group';
 import { isUngroupedColumnHidden, resolveBoardColumnVisibility } from '@/application/database-yjs/board-visibility';
 import { createCalendarLayoutStore } from '@/application/database-yjs/calendar-layout';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
@@ -1078,77 +1079,20 @@ export function useGroupsSelector() {
   const [groups, setGroups] = useState<string[]>([]);
 
   useEffect(() => {
-    if (!viewId || !database) {
-      return;
-    }
-
-    let retryIntervalId: ReturnType<typeof setInterval> | null = null;
-
     const updateGroups = () => {
-      const view = database.get(YjsDatabaseKey.views)?.get(viewId);
+      const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+      const persisted = view?.get(YjsDatabaseKey.groups)?.toArray().map((item) => item.get(YjsDatabaseKey.id)) ?? [];
+      const fallback = resolveDefaultBoardGroup(view, database?.get(YjsDatabaseKey.fields));
+      const next = fallback ? [fallback.id] : persisted;
 
-      if (!view) {
-        setGroups([]);
-        return false;
-      }
-
-      const groupOrders = view.get(YjsDatabaseKey.groups);
-
-      if (!groupOrders) {
-        setGroups([]);
-        return false;
-      }
-
-      const newGroups = groupOrders.toArray().map((item) => item.get(YjsDatabaseKey.id));
-
-      setGroups(newGroups);
-
-      // Clear retry interval once we have groups
-      if (retryIntervalId && newGroups.length > 0) {
-        clearInterval(retryIntervalId);
-        retryIntervalId = null;
-      }
-
-      return newGroups.length > 0;
+      setGroups((current) =>
+        current.length === next.length && current.every((id, index) => id === next[index]) ? current : next
+      );
     };
 
-    // Attach observer FIRST to avoid missing updates that arrive during setup
-    database.observeDeep(updateGroups);
-
-    // Then check current state
-    const hasGroups = updateGroups();
-
-    // If groups not found initially, poll briefly to catch race conditions
-    if (!hasGroups) {
-      retryIntervalId = setInterval(() => {
-        const found = updateGroups();
-
-        if (found && retryIntervalId) {
-          clearInterval(retryIntervalId);
-          retryIntervalId = null;
-        }
-      }, 100);
-
-      // Stop polling after 3 seconds max
-      setTimeout(() => {
-        if (retryIntervalId) {
-          clearInterval(retryIntervalId);
-          retryIntervalId = null;
-        }
-      }, 3000);
-    }
-
-    return () => {
-      if (retryIntervalId) {
-        clearInterval(retryIntervalId);
-      }
-
-      try {
-        database.unobserveDeep(updateGroups);
-      } catch {
-        // Ignore errors from unobserving destroyed Yjs objects
-      }
-    };
+    database?.observeDeep(updateGroups);
+    updateGroups();
+    return () => database?.unobserveDeep(updateGroups);
   }, [database, viewId]);
 
   return groups;
@@ -1171,39 +1115,42 @@ export function useGroup(groupId: string) {
   const viewId = useDatabaseViewId();
   const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
   const fields = database?.get(YjsDatabaseKey.fields);
-  const group = view
-    ?.get(YjsDatabaseKey.groups)
-    ?.toArray()
-    .find((group) => group.get(YjsDatabaseKey.id) === groupId);
   const [fieldId, setFieldId] = useState<string | null>(null);
   const [columns, setColumns] = useState<GroupColumn[]>([]);
 
   useEffect(() => {
-    if (!viewId || !group) {
-      setFieldId(null);
-      setColumns([]);
-      return;
-    }
-
     const observerEvent = () => {
-      const groupFieldId = group.get(YjsDatabaseKey.field_id);
+      const group = view?.get(YjsDatabaseKey.groups)?.toArray().find((item) => item.get(YjsDatabaseKey.id) === groupId);
+      const fallback = resolveDefaultBoardGroup(view, fields);
+      const groupFieldId = group?.get(YjsDatabaseKey.field_id) ?? (fallback?.id === groupId ? fallback.fieldId : null);
 
       setFieldId(groupFieldId);
-      const groupColumnsVisible = group.get(YjsDatabaseKey.groups);
-      const persistedColumns = normalizeUniqueDatabaseGroupColumns(groupColumnsVisible?.toArray() ?? []);
+      const persistedColumns = normalizeUniqueDatabaseGroupColumns(group?.get(YjsDatabaseKey.groups)?.toArray() ?? []);
+      const nextColumns = !groupFieldId
+        ? []
+        : persistedColumns.length > 0 ? persistedColumns : getFallbackGroupColumns(fields?.get(groupFieldId));
 
-      setColumns(persistedColumns.length > 0 ? persistedColumns : getFallbackGroupColumns(fields?.get(groupFieldId)));
+      // The view observer also receives names, row orders and layout changes.
+      // Preserve the snapshot when those updates do not change its columns.
+      setColumns((current) =>
+        current.length === nextColumns.length && current.every((column, index) => {
+          const next = nextColumns[index];
+
+          return column.id === next.id && column.visible === next.visible &&
+            column.visibleExplicit === next.visibleExplicit && column.groupColor === next.groupColor;
+        }) ? current : nextColumns
+      );
     };
 
-    observerEvent();
-    group?.observeDeep(observerEvent);
+    view?.observeDeep(observerEvent);
     fields?.observeDeep(observerEvent);
+    observerEvent();
 
     return () => {
-      group?.unobserveDeep(observerEvent);
+      view?.unobserveDeep(observerEvent);
       fields?.unobserveDeep(observerEvent);
     };
-  }, [viewId, groupId, group, fields]);
+  }, [view, groupId, fields]);
 
   return {
     columns,
@@ -1213,11 +1160,11 @@ export function useGroup(groupId: string) {
 
 export function useBoardLayoutSettings() {
   const view = useDatabaseView();
+  const fields = useDatabaseFields();
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [hideUnGroup, setHideUnGroup] = useState(false);
   const [hideEmptyGroups, setHideEmptyGroups] = useState(false);
   const [shownEmptyGroupIds, setShownEmptyGroupIds] = useState<ReadonlySet<string>>(() => new Set());
-  const groups = view?.get(YjsDatabaseKey.groups);
   const [fieldId, setFieldId] = useState<string | null>(null);
   const [ungroupedColumn, setUngroupedColumn] = useState<GroupColumn | null>(null);
 
@@ -1259,10 +1206,10 @@ export function useBoardLayoutSettings() {
 
   useEffect(() => {
     const observerEvent = () => {
-      const group = groups?.toArray()?.[0];
+      const group = view?.get(YjsDatabaseKey.groups)?.toArray()?.[0];
 
       if (!group) {
-        setFieldId(null);
+        setFieldId(resolveDefaultBoardGroup(view, fields)?.fieldId ?? null);
         setUngroupedColumn(null);
         return;
       }
@@ -1293,12 +1240,14 @@ export function useBoardLayoutSettings() {
     };
 
     observerEvent();
-    groups?.observeDeep(observerEvent);
+    view?.observeDeep(observerEvent);
+    fields?.observeDeep(observerEvent);
 
     return () => {
-      groups?.unobserveDeep(observerEvent);
+      view?.unobserveDeep(observerEvent);
+      fields?.unobserveDeep(observerEvent);
     };
-  }, [groups]);
+  }, [view, fields]);
 
   const ungroupedColumnHidden = isUngroupedColumnHidden({
     column: ungroupedColumn,

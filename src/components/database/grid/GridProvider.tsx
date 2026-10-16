@@ -8,11 +8,10 @@ import {
   useRenderRows,
 } from '@/components/database/components/grid/grid-row';
 import type { RenderRow } from '@/components/database/components/grid/grid-row';
-import { useDatabaseHistoryScope } from '@/components/database/databaseHistoryScopeCoordinator';
 import { useDatabaseHistoryScopeContext } from '@/components/database/DatabaseHistoryScope';
+import { useDatabaseHistoryScope } from '@/components/database/databaseHistoryScopeCoordinator';
 import {
   createGridInteractionStore,
-  createGridRowResizeStore,
   GridContext,
   GridInteractionContext,
 } from '@/components/database/grid/useGridContext';
@@ -75,9 +74,6 @@ function GridProviderContent({
   // Each database view owns independent transient interaction state.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const interactionStore = useMemo(() => createGridInteractionStore(), [activeViewId]);
-  // Discard buffered measurements when switching views.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const rowResizeStore = useMemo(() => createGridRowResizeStore(), [activeViewId]);
   const [visibleRowLimit, setVisibleRowLimit] = useState(EMBEDDED_GRID_INITIAL_ROW_LIMIT);
   const embeddedVisibleRowLimit = isDocumentBlock ? visibleRowLimit : undefined;
   const {
@@ -175,7 +171,6 @@ function GridProviderContent({
       setRows,
       activePropertyId,
       setActivePropertyId,
-      rowResizeStore,
       remainingRowCount,
       lastVisibleRowId,
       loadMoreRows,
@@ -189,7 +184,6 @@ function GridProviderContent({
       rows,
       setRows,
       activePropertyId,
-      rowResizeStore,
       remainingRowCount,
       lastVisibleRowId,
       loadMoreRows,

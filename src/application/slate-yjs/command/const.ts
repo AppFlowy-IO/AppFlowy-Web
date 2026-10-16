@@ -38,6 +38,20 @@ export const TEXT_BLOCK_TYPES = [
   BlockType.SimpleTableCellBlock,
 ];
 
+// These blocks contain child blocks rather than an editable text row of their own.
+const BLOCK_TYPES_WITHOUT_DIRECT_TEXT = new Set<BlockType>([
+  BlockType.SimpleTableBlock,
+  BlockType.SimpleTableRowBlock,
+  BlockType.SimpleTableCellBlock,
+  BlockType.AIMeetingBlock,
+  BlockType.AIMeetingSummaryBlock,
+  BlockType.AIMeetingNotesBlock,
+  BlockType.AIMeetingTranscriptionBlock,
+  BlockType.AIMeetingSpeakerBlock,
+]);
+
+export const hasDirectBlockText = (type: BlockType) => !BLOCK_TYPES_WITHOUT_DIRECT_TEXT.has(type);
+
 export const isEmbedBlockTypes = (type: BlockType) => {
   return ![...LIST_BLOCK_TYPES, ...CONTAINER_BLOCK_TYPES, ...SOFT_BREAK_TYPES, BlockType.HeadingBlock].includes(type);
 };

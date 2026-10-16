@@ -1,6 +1,7 @@
 import { getMeetingStreamingToken, reportMeetingDuration } from '@/application/services/js-services/http/meeting-api';
 
 import audioWorkletUrl from './meeting-audio-worklet?worker&url';
+import { acquireTranscription, hasActiveTranscription, releaseTranscription } from './transcription-session';
 
 export type MeetingAudioSource = 'microphone' | 'meeting';
 export type TranscriptionState = 'starting' | 'recording' | 'stopping' | 'idle';
@@ -45,7 +46,7 @@ export class MeetingTranscription {
   ) {}
 
   async start(source: MeetingAudioSource, pendingDuration = 0) {
-    if (MeetingTranscription.activeSession) throw new MeetingRecordingError('alreadyRecording');
+    if (MeetingTranscription.activeSession || hasActiveTranscription()) throw new MeetingRecordingError('alreadyRecording');
     if (
       !navigator.mediaDevices?.getUserMedia ||
       typeof AudioContext === 'undefined' ||
@@ -53,6 +54,7 @@ export class MeetingTranscription {
     )
       throw new MeetingRecordingError('unsupported');
     MeetingTranscription.activeSession = this;
+    acquireTranscription(this);
     this.callbacks.onState('starting');
     try {
       // Screen capture must be requested directly from the source-selection click.
@@ -287,6 +289,7 @@ export class MeetingTranscription {
       }
 
       if (MeetingTranscription.activeSession === this) MeetingTranscription.activeSession = undefined;
+      releaseTranscription(this);
       this.callbacks.onState('idle');
     })();
     return this.stopping;

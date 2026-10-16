@@ -1,19 +1,21 @@
 import { memo, useCallback, useMemo, useState } from 'react';
-import { Editor, Element, Node, Text } from 'slate';
-import { ReactEditor, useReadOnly, useSlateStatic } from 'slate-react';
+import { useTranslation } from 'react-i18next';
+import { Editor, Element, Node, Text, Transforms } from 'slate';
+import { ReactEditor, useReadOnly, useSlateSelector, useSlateStatic } from 'slate-react';
 import smoothScrollIntoViewIfNeeded from 'smooth-scroll-into-view-if-needed';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
 import { BlockType } from '@/application/types';
+import { ReactComponent as WarningIcon } from '@/assets/icons/ai_reference_warning.svg';
 import { ReactComponent as NotesIcon } from '@/assets/icons/ai_summary_ref_notes.svg';
 import { ReactComponent as TranscriptIcon } from '@/assets/icons/ai_summary_ref_transcript.svg';
-import { ReactComponent as WarningIcon } from '@/assets/icons/ai_reference_warning.svg';
-import { formatTimestamp } from '@/components/editor/components/blocks/ai-meeting/ai-meeting.utils';
 import { RichTooltip } from '@/components/_shared/popover';
+import { formatTimestamp } from '@/components/editor/components/blocks/ai-meeting/ai-meeting.utils';
 import { useLeafSelected } from '@/components/editor/components/leaf/leaf.hooks';
-import { useTranslation } from 'react-i18next';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 import { InlineReferenceData } from './utils';
 
@@ -127,10 +129,13 @@ const getAvailableTabs = (meetingNode: Element) => {
   const transcriptNode = children.find(
     (child) => Element.isElement(child) && child.type === BlockType.AIMeetingTranscriptionBlock
   ) as Element | undefined;
+  const notesNode = children.find(
+    (child) => Element.isElement(child) && child.type === BlockType.AIMeetingNotesBlock
+  ) as Element | undefined;
 
   const tabs: Array<'summary' | 'notes' | 'transcript'> = [];
 
-  if (summaryNode && buildContent(summaryNode).length > 0) {
+  if (summaryNode && [summaryNode, transcriptNode, notesNode].some((section) => section && buildContent(section).length > 0)) {
     tabs.push('summary');
   }
 
@@ -201,7 +206,7 @@ const ReferenceBadge = memo(({ number, hasError }: { number: number; hasError?: 
     <span
       className={[
         'ai-meeting-reference',
-        'inline-flex h-5 w-5 items-center justify-center rounded-full border text-[11px] font-medium',
+        'inline-flex h-5 w-5 items-center justify-center rounded-full border text-xs font-medium leading-[18px] tracking-[0.1px]',
         hasError ? 'border-border-error-thick text-text-error' : 'border-border-primary text-text-secondary',
       ].join(' ')}
     >
@@ -293,7 +298,7 @@ const ReferencePopoverContent = memo(({
 
   return (
     <div
-      className="ai-meeting-reference-popover w-[360px] max-w-[360px] max-h-[300px] overflow-y-auto"
+      className="ai-meeting-reference-popover max-h-[360px] w-[360px] max-w-[calc(100vw-32px)] overflow-y-auto overscroll-contain"
       onMouseDown={(event) => event.stopPropagation()}
       onClick={(event) => event.stopPropagation()}
     >
@@ -318,18 +323,18 @@ const ReferencePopoverContent = memo(({
           <button
             key={status.blockId}
             type="button"
-            className="flex w-full flex-col items-start gap-2 rounded-xl px-4 py-3 text-left hover:bg-fill-list-hover"
+            className="flex w-full flex-col items-start gap-1 rounded-xl p-2 text-left hover:bg-fill-list-hover"
             onClick={() => handleReferenceClick(status)}
           >
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               <ReferenceBadge number={referenceNumber} />
               {isTranscript ? (
-                <TranscriptIcon className="h-4 w-4 text-icon-secondary" />
+                <TranscriptIcon className="h-5 w-5 text-icon-secondary" />
               ) : (
-                <NotesIcon className="h-4 w-4 text-icon-secondary" />
+                <NotesIcon className="h-5 w-5 text-icon-secondary" />
               )}
               {timestampLabel && (
-                <span className="inline-flex items-center rounded-md bg-fill-list-active px-2 py-[1px] text-[11px] text-text-secondary">
+                <span className="inline-flex items-center rounded bg-fill-content-visible px-2 py-[1px] text-xs leading-[18px] text-text-secondary">
                   {timestampLabel}
                 </span>
               )}
@@ -353,29 +358,13 @@ export const InlineReference = memo(
     const editor = useSlateStatic();
     const { t } = useTranslation();
     const editorReadOnly = useReadOnly();
-    const elementReadOnly = useMemo(() => {
-      try {
-        const path = ReactEditor.findPath(editor, text);
-        const match = Editor.above(editor, {
-          at: path,
-          match: (n) => !Editor.isEditor(n) && Element.isElement(n),
-        });
-
-        if (!match) return false;
-
-        return editor.isElementReadOnly(match[0] as Element);
-      } catch {
-        return false;
-      }
-    }, [editor, text]);
-    const readOnly = editorReadOnly || elementReadOnly;
-    const { isSelected, isCursorBefore, select } = useLeafSelected(text);
+    const { isCursorBefore } = useLeafSelected(text);
     const [open, setOpen] = useState(false);
 
-    const meetingNode = useMemo(() => {
+    const meetingNode = useSlateSelector(useCallback((currentEditor) => {
       try {
-        const path = ReactEditor.findPath(editor, text);
-        const match = Editor.above(editor, {
+        const path = ReactEditor.findPath(currentEditor, text);
+        const match = Editor.above(currentEditor, {
           at: path,
           match: (n) =>
             !Editor.isEditor(n) && Element.isElement(n) && n.type === BlockType.AIMeetingBlock,
@@ -387,7 +376,7 @@ export const InlineReference = memo(
       } catch {
         return null;
       }
-    }, [editor, text]);
+    }, [text]));
 
     const normalizedBlockIds = useMemo(() => {
       const unique = Array.from(new Set(reference.blockIds));
@@ -431,7 +420,7 @@ export const InlineReference = memo(
           onClose={handleClose}
           placement="bottom-start"
           PaperProps={{
-            className: 'bg-background-primary shadow-md',
+            className: 'm-2 overflow-hidden rounded-xl bg-background-primary shadow-md',
           }}
           content={
             hasStatuses ? (
@@ -447,29 +436,35 @@ export const InlineReference = memo(
             )
           }
         >
-          <span
+          <Button
+            type='button'
+            variant='ghost'
             contentEditable={false}
-            className={[
-              'ai-meeting-reference inline-flex items-center ml-1 cursor-pointer',
-              (isSelected || open) && 'rounded-full bg-fill-list-active',
-            ].join(' ')}
-            onMouseDown={(event) => event.preventDefault()}
+            className={cn(
+              'ai-meeting-reference ml-1 h-5 w-5 cursor-pointer select-none rounded-full p-0 align-text-bottom focus-visible:ring-2 focus-visible:ring-border-theme-thick/50',
+              open && 'bg-fill-content-hover'
+            )}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
             onClick={(event) => {
               event.stopPropagation();
 
-              if (!readOnly) {
-                select();
-              }
-
               if (hasStatuses) {
+                // Flutter clears the editor selection before opening a source.
+                // Selecting the hidden citation text opens the formatting toolbar.
+                window.getSelection()?.removeAllRanges();
+                Transforms.deselect(editor);
                 setOpen((prev) => !prev);
               }
             }}
             title={tooltipLabel}
             aria-label={tooltipLabel}
+            aria-expanded={open}
           >
             <ReferenceBadge number={reference.number} hasError={hasDeleted} />
-          </span>
+          </Button>
         </RichTooltip>
       </>
     );

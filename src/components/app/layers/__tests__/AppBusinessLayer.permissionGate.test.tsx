@@ -7,6 +7,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import { deleteCollabDB } from '@/application/db';
 import { AccessService, ViewService } from '@/application/services/domains';
+import { handleAPIError } from '@/application/services/js-services/http/core';
 import {
   getCachedWorkspaceViewMetadata,
   invalidateWorkspaceViewMetadata,
@@ -34,6 +35,7 @@ jest.mock('@/application/db', () => ({
 jest.mock('@/application/services/domains', () => ({
   AccessService: {
     getObjectPermission: jest.fn(),
+    invalidateObjectPermissionRequests: jest.fn(),
   },
   ViewService: {
     get: jest.fn(),
@@ -60,6 +62,7 @@ jest.mock('@/components/app/components/AppContextConsumer', () => ({
 }));
 
 jest.mock('@/components/app/contexts/AuthInternalContext', () => ({
+  ...jest.requireActual('@/components/app/contexts/AuthInternalContext'),
   useAuthInternal: jest.fn(),
 }));
 
@@ -150,6 +153,7 @@ function NavigationProbe({ modalTargetId, effectiveTargetId }: { modalTargetId: 
       )}
       <span data-testid={'modal-view-id'}>{navigation.openPageModalViewId ?? ''}</span>
       <span data-testid={'no-access'}>{String(navigation.viewNoAccess)}</span>
+      <span data-testid={'view-not-found'}>{String(navigation.notFound)}</span>
       <span data-testid={'object-permission'}>
         {JSON.stringify(navigation.objectPermissions?.[routeViewId] ?? null)}
       </span>
@@ -268,6 +272,28 @@ describe('AppBusinessLayer permission gates', () => {
     );
     (deleteCollabDB as jest.Mock).mockResolvedValue(undefined);
     (AccessService.getObjectPermission as jest.Mock).mockImplementation(resolveObjectPermission());
+  });
+
+  it('recognizes old-server missing routes after HTTP error presentation', async () => {
+    (ViewService.get as jest.Mock).mockRejectedValue(handleAPIError({
+      code: -2, message: 'Record not found: view no longer exists',
+    }));
+    renderBusinessLayer(new EventEmitter(), []);
+
+    await waitFor(() => expect(screen.getByTestId('view-not-found').textContent).toBe('true'));
+  });
+
+  it('does not let public wording mark an existing route as missing', async () => {
+    (ViewService.get as jest.Mock).mockRejectedValue(handleAPIError({
+      code: 1017,
+      message: 'Worker unavailable',
+      user_error: { schema_version: 1, reason: 'ACTION_PROBLEM', message: 'A worker was not found. Try again later.', locale: 'en' },
+    }));
+    renderBusinessLayer(new EventEmitter(), []);
+
+    await act(async () => { await Promise.resolve(); });
+    expect(ViewService.get).toHaveBeenCalled();
+    expect(screen.getByTestId('view-not-found').textContent).toBe('false');
   });
 
   it('exposes all canonical object capabilities to active page consumers', async () => {
@@ -772,6 +798,7 @@ describe('AppBusinessLayer permission gates', () => {
       document.dispatchEvent(new Event('visibilitychange'));
     });
     await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(2));
+    expect(AccessService.invalidateObjectPermissionRequests).toHaveBeenCalledWith(workspaceId);
 
     act(() => {
       window.dispatchEvent(new Event('online'));
@@ -790,6 +817,7 @@ describe('AppBusinessLayer permission gates', () => {
         createObjectPermission(routeViewId, Types.Document, { can_share: false })
       );
     });
+    expect(AccessService.invalidateObjectPermissionRequests).toHaveBeenCalledTimes(3);
     visibilityState.mockRestore();
   });
 
@@ -837,6 +865,7 @@ describe('AppBusinessLayer permission gates', () => {
       expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(2);
       expect(screen.getByTestId('no-access').textContent).toBe('true');
     });
+    expect(AccessService.invalidateObjectPermissionRequests).toHaveBeenCalledWith(workspaceId);
 
     await act(async () => {
       resolveInitialProbe(createObjectPermission(routeViewId));

@@ -3,6 +3,7 @@ const mockGrantClient = {
     baseURL: '',
   },
   interceptors: {
+    response: { use: jest.fn() },
     request: {
       use: jest.fn(),
     },
@@ -19,11 +20,13 @@ jest.mock('axios', () => ({
   __esModule: true,
   default: {
     create: mockAxiosCreate,
+    isAxiosError: (error: unknown) => Boolean((error as { isAxiosError?: boolean })?.isAxiosError),
   },
   create: mockAxiosCreate,
 }));
 
 jest.mock('@/application/session/token', () => ({
+  captureTokenSession: jest.fn(() => ({ generation: 1, userId: null })),
   getTokenParsed: jest.fn(),
   invalidToken: jest.fn(),
   saveGoTrueAuth: jest.fn(() => true),
@@ -71,6 +74,19 @@ describe('GoTrue login token completion', () => {
     initGrantService('http://localhost/gotrue');
   });
 
+  it('tags the endpoint without losing the Axios response used for session recovery', async () => {
+    const reject = mockGrantClient.interceptors.response.use.mock.calls.at(-1)?.[1];
+    const response = { status: 401, data: { code: 401, msg: 'private authentication diagnostic' } };
+    const authError = { isAxiosError: true, response, message: 'Request failed' };
+    const networkError = { isAxiosError: true, code: 'ERR_NETWORK', message: 'offline' };
+
+    await expect(reject(authError)).rejects.toBe(authError);
+    expect(authError).toMatchObject({ sourceDomain: 'gotrue', response });
+    await expect(reject(networkError)).rejects.toBe(networkError);
+    expect(networkError).toMatchObject({ sourceDomain: 'transport' });
+    expect(invalidToken).not.toHaveBeenCalled();
+  });
+
   it('refreshes and saves the token after AppFlowy Cloud verifies the password login token', async () => {
     const loginToken = {
       access_token: 'login-access-token',
@@ -101,7 +117,7 @@ describe('GoTrue login token completion', () => {
       refresh_token: loginToken.refresh_token,
     });
     expect(saveGoTrueAuth).toHaveBeenCalledTimes(1);
-    expect(saveGoTrueAuth).toHaveBeenCalledWith(JSON.stringify(refreshedToken));
+    expect(saveGoTrueAuth).toHaveBeenCalledWith(JSON.stringify(refreshedToken), { generation: 1, userId: null });
   });
 
   it('rejects the refresh when the new token cannot be persisted', async () => {
@@ -115,7 +131,7 @@ describe('GoTrue login token completion', () => {
     saveGoTrueAuth.mockReturnValueOnce(false);
 
     await expect(refreshToken('stored-refresh-token')).rejects.toThrow('Failed to persist refreshed token');
-    expect(saveGoTrueAuth).toHaveBeenCalledWith(JSON.stringify(refreshedToken));
+    expect(saveGoTrueAuth).toHaveBeenCalledWith(JSON.stringify(refreshedToken), { generation: 1, userId: null });
   });
 
   it('uses the same verify-refresh-save flow for OAuth callback tokens', async () => {
@@ -137,7 +153,7 @@ describe('GoTrue login token completion', () => {
       refresh_token: 'oauth-refresh-token',
     });
     expect(saveGoTrueAuth).toHaveBeenCalledTimes(1);
-    expect(saveGoTrueAuth).toHaveBeenCalledWith(JSON.stringify(refreshedToken));
+    expect(saveGoTrueAuth).toHaveBeenCalledWith(JSON.stringify(refreshedToken), { generation: 1, userId: null });
   });
 
   it('uses the same verify-refresh-save flow for email OTP tokens', async () => {
@@ -170,7 +186,7 @@ describe('GoTrue login token completion', () => {
       refresh_token: otpToken.refresh_token,
     });
     expect(saveGoTrueAuth).toHaveBeenCalledTimes(1);
-    expect(saveGoTrueAuth).toHaveBeenCalledWith(JSON.stringify(refreshedToken));
+    expect(saveGoTrueAuth).toHaveBeenCalledWith(JSON.stringify(refreshedToken), { generation: 1, userId: null });
   });
 
   it.each<AuthVariant>(['password', 'oauth', 'otp'])(
@@ -184,7 +200,7 @@ describe('GoTrue login token completion', () => {
         message: 'Backend says no [request-id]',
       });
 
-      await expect(runAuthVariant(variant, initialToken)).rejects.toEqual(expectedVerifyError(variant));
+      await expect(runAuthVariant(variant, initialToken)).rejects.toMatchObject({ code: 401, sourceDomain: 'http', diagnosticMessage: 'Backend says no [request-id]', message: 'Sign in to continue.' });
       expect(refreshTokenCalls()).toHaveLength(0);
       expect(saveGoTrueAuth).not.toHaveBeenCalled();
     }
@@ -228,9 +244,9 @@ describe('GoTrue recovery session consistency', () => {
   it('does not invalidate an existing session when password recovery fails', async () => {
     mockGrantClient.post.mockRejectedValueOnce(new Error('Recovery service unavailable'));
 
-    await expect(forgotPassword({ email: 'admin@example.com' })).rejects.toEqual({
-      code: -1,
-      message: 'Recovery service unavailable',
+    await expect(forgotPassword({ email: 'admin@example.com' })).rejects.toMatchObject({
+      code: -1, sourceDomain: 'client', diagnosticMessage: 'Recovery service unavailable',
+      message: 'Error -1: Something went wrong. Contact support if this keeps happening.',
     });
     expect(invalidToken).not.toHaveBeenCalled();
   });
@@ -242,9 +258,9 @@ describe('GoTrue recovery session consistency', () => {
       response: { status: 503, data: { msg: 'Server unavailable' } },
     });
 
-    await expect(changePassword({ password: 'new-password' })).rejects.toEqual({
-      code: -1,
-      message: 'Server unavailable',
+    await expect(changePassword({ password: 'new-password' })).rejects.toMatchObject({
+      code: 503, httpStatus: 503, sourceDomain: 'gotrue', diagnosticMessage: 'Server unavailable',
+      message: "AppFlowy isn't available right now. Try again later.",
     });
     expect(invalidToken).not.toHaveBeenCalled();
   });
@@ -256,9 +272,9 @@ describe('GoTrue recovery session consistency', () => {
       response: { status: 401, data: { msg: 'Unauthorized' } },
     });
 
-    await expect(changePassword({ password: 'new-password' })).rejects.toEqual({
-      code: -1,
-      message: 'Unauthorized',
+    await expect(changePassword({ password: 'new-password' })).rejects.toMatchObject({
+      code: 401, httpStatus: 401, sourceDomain: 'gotrue', diagnosticMessage: 'Unauthorized',
+      message: 'Sign in to continue.',
     });
     expect(invalidToken).toHaveBeenCalledTimes(1);
   });
@@ -333,17 +349,6 @@ function queueRefreshResponse(token: ReturnType<typeof createToken>) {
 
 function refreshTokenCalls() {
   return mockGrantClient.post.mock.calls.filter(([url]) => url === '/token?grant_type=refresh_token');
-}
-
-function expectedVerifyError(variant: AuthVariant) {
-  switch (variant) {
-    case 'password':
-      return { code: 401, message: 'Backend says no' };
-    case 'oauth':
-      return { code: 401, message: 'Verify token failed' };
-    case 'otp':
-      return { code: 401, message: 'Failed to create user account' };
-  }
 }
 
 function runAuthVariant(variant: AuthVariant, token: ReturnType<typeof createToken>) {

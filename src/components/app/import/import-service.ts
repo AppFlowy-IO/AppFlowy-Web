@@ -1,5 +1,8 @@
 import * as Y from 'yjs';
 
+import { supportedPublicError } from '@/application/errors/error-message';
+import errorCatalog from '@/application/errors/shared-error-catalog.json';
+import { serverErrorCodes } from '@/application/errors/shared-error-codes';
 import { getCollab, updateCollab } from '@/application/services/js-services/http/collab-api';
 import {
   cancelDatabaseCsvImportTask,
@@ -131,7 +134,7 @@ export class ImportAbortError extends Error {
 
 /** Preserve the worker's error code just like a rejected HTTP request. */
 class ImportTaskError extends Error {
-  constructor(message: string, public readonly code?: number) {
+  constructor(message: string, public readonly code?: number, public user_error?: unknown) {
     super(message);
     this.name = 'ImportTaskError';
   }
@@ -359,7 +362,23 @@ export async function importDocumentFile(input: ImportDocumentFileInput): Promis
       }
 
       if (status.status === 'Failed' || status.status === 'Expire' || status.status === 'Cancel') {
-        throw new ImportTaskError(status.error || `${format} import ${status.status.toLowerCase()}`, status.error_code);
+        const error = new ImportTaskError(
+          status.error || `${format} import ${status.status.toLowerCase()}`, status.error_code, status.user_error
+        );
+
+        // Older workers only identify scanned PDFs through this reviewed diagnostic.
+        // Promote its remedy to a localized reason without exposing arbitrary task text.
+        if (format === 'pdf' && status.status === 'Failed' && !supportedPublicError(error.user_error) &&
+          (error.code === undefined || error.code === serverErrorCodes.ImportError) &&
+          /^(?:Import failed: )?this PDF has no selectable text on its \d{1,10} page\(s\); run OCR on it before importing$/.test(error.message)) {
+          error.user_error = {
+            schema_version: 1,
+            reason: 'IMPORT_PDF_NEEDS_OCR',
+            message: errorCatalog.reasons.IMPORT_PDF_NEEDS_OCR,
+          };
+        }
+
+        throw error;
       }
 
       await sleep(DOCUMENT_POLL_INTERVAL_MS, signal);

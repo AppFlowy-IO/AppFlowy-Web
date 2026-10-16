@@ -127,44 +127,12 @@ export function useIsGridCellActive(rowKey: string, fieldId: string) {
   return useSyncExternalStore(store.subscribeActiveCell, getSnapshot, getSnapshot);
 }
 
-type GridRowResizeListener = (rowKey: string, maxCellHeight: number) => void;
-
-export type GridRowResizeStore = {
-  report: (rowKey: string, maxCellHeight: number) => void;
-  subscribe: (listener: GridRowResizeListener) => () => void;
-};
-
-export function createGridRowResizeStore(): GridRowResizeStore {
-  const listeners = new Set<GridRowResizeListener>();
-  const pending = new Map<string, number>();
-
-  return {
-    report: (rowKey, maxCellHeight) => {
-      if (listeners.size === 0) {
-        pending.set(rowKey, maxCellHeight);
-        return;
-      }
-
-      listeners.forEach((listener) => listener(rowKey, maxCellHeight));
-    },
-    subscribe: (listener) => {
-      listeners.add(listener);
-      pending.forEach((maxCellHeight, rowKey) => listener(rowKey, maxCellHeight));
-      pending.clear();
-      return () => {
-        listeners.delete(listener);
-      };
-    },
-  };
-}
-
 export type GridContextType = {
   rowOrders?: Row[];
   rows: RenderRow[];
   setRows: (rows: RenderRow[]) => void;
   activePropertyId?: string;
   setActivePropertyId: (activePropertyId?: string) => void;
-  rowResizeStore: GridRowResizeStore;
   remainingRowCount: number;
   lastVisibleRowId?: string;
   loadMoreRows: () => void;

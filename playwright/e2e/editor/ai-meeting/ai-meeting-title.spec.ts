@@ -127,7 +127,7 @@ test.describe('AI Meeting Block - Title Editing', () => {
     await expect(titleInput).toHaveValue('Some Title');
   });
 
-  test('should show default "Meeting" title for new block without title', async ({ page, request }) => {
+  test('should show the AI transcript placeholder for a new block without a title', async ({ page, request }) => {
     await setupEditorWithCleanPage(page, request, testEmail);
 
     const available = await areTestUtilitiesAvailable(page);
@@ -141,6 +141,7 @@ test.describe('AI Meeting Block - Title Editing', () => {
     });
     await page.waitForTimeout(1500);
 
-    await expect(AIMeetingSelectors.title(page)).toHaveValue('Meeting');
+    await expect(AIMeetingSelectors.title(page)).toHaveValue('');
+    await expect(AIMeetingSelectors.title(page)).toHaveAttribute('placeholder', 'AI transcript');
   });
 });

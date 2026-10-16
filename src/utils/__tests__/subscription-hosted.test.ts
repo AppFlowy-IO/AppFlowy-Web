@@ -12,6 +12,24 @@ describe('isOfficialHostedServer', () => {
     mockGetConfigValue.mockReturnValue('https://beta.appflowy.cloud');
   });
 
+  afterEach(() => jest.restoreAllMocks());
+
+  it.each(['getter', 'getItem'] as const)('preserves hosting policy when the storage %s is denied', (access) => {
+    const denyStorage = () => {
+      throw new DOMException('Storage access denied', 'SecurityError');
+    };
+
+    if (access === 'getter') jest.spyOn(window, 'localStorage', 'get').mockImplementation(denyStorage);
+    else jest.spyOn(Storage.prototype, 'getItem').mockImplementation(denyStorage);
+
+    expect(getServerHostingMode({ status: 'loading' })).toBe('unknown');
+    expect(getServerHostingMode({ status: 'unavailable' })).toBe('unknown');
+    expect(getServerHostingMode({ status: 'available', info: { self_hosted: true } })).toBe('self-hosted');
+    expect(getServerHostingMode({ status: 'available', info: { self_hosted: false } })).toBe('cloud');
+    expect(getServerHostingMode({ status: 'available', info: {} })).toBe('cloud');
+    expect(getServerHostingMode({ status: 'available', info: {} }, 'https://selfhost.example.com')).toBe('self-hosted');
+  });
+
   it('never grants billing while server info is loading or unavailable', () => {
     expect(isOfficialHostedServer({ status: 'loading' })).toBe(false);
     expect(isOfficialHostedServer({ status: 'unavailable' })).toBe(false);

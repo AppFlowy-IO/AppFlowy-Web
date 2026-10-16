@@ -2,16 +2,19 @@ import { ReactNode, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
+import { userErrorSupportDetails } from '@/application/errors/error-message';
 import { ReactComponent as ErrorLogo } from '@/assets/icons/warning_logo.svg';
 import { getLandingPageErrorContent, LandingPageError } from '@/components/_shared/landing-page/errorContent';
 import LandingPage from '@/components/_shared/landing-page/LandingPage';
 import { useServerHostingMode } from '@/components/app/hooks/useServerInfo';
+import { useErrorCatalogRevision } from '@/components/main/hooks/useServerErrorCatalog';
 import { Progress } from '@/components/ui/progress';
 
 interface ErrorPageProps {
   onRetry?: () => Promise<void>;
   error?: LandingPageError;
   title?: ReactNode;
+  /** Reviewed local guidance; server error messages must go through `error`. */
   description?: ReactNode;
 }
 
@@ -20,6 +23,7 @@ export function ErrorPage({ onRetry, error, title, description }: ErrorPageProps
 
   // Re-evaluate quota guidance when deployment capabilities resolve or change.
   useServerHostingMode();
+  useErrorCatalogRevision();
 
   const [loading, setLoading] = useState(false);
   const errorContent = getLandingPageErrorContent(error, t);
@@ -27,7 +31,7 @@ export function ErrorPage({ onRetry, error, title, description }: ErrorPageProps
   const handleCopyError = useCallback(async () => {
     if (!error) return;
 
-    const errorText = error.code ? `Error: ${error.message}\nCode: ${error.code}` : `Error: ${error.message}`;
+    const errorText = userErrorSupportDetails(error);
 
     try {
       await navigator.clipboard.writeText(errorText);

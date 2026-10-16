@@ -1,4 +1,6 @@
-const DB_NAME = 'AppFlowyDatabaseBlobDiffPageStage';
+import { serverRestore } from '@/application/server-restore';
+
+const DB_NAME = serverRestore.cacheKey('AppFlowyDatabaseBlobDiffPageStage');
 const DB_VERSION = 1;
 const STORE_NAME = 'pages';
 const WALK_ID_INDEX = 'walkId';

@@ -248,7 +248,7 @@ function methodTokenPrefix(method: SignInMethod) {
 }
 
 async function mockAuthProviders(page: Page) {
-  await page.route('**/api/server-info/auth-providers', (route) =>
+  await page.route('**/api/server-info/auth-providers{,?**}', (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -268,7 +268,7 @@ async function mockAuthProviders(page: Page) {
 
 async function mockCompletedSessionApis(page: Page, state: MockLoginState) {
   await page.route('**/api/user/verify/**', (route) => {
-    state.verifiedAccessTokens.push(decodeURIComponent(route.request().url().split('/api/user/verify/')[1] || ''));
+    state.verifiedAccessTokens.push(decodeURIComponent(new URL(route.request().url()).pathname.split('/api/user/verify/')[1] || ''));
 
     return route.fulfill({
       status: 200,

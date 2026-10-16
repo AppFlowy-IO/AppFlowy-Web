@@ -2,6 +2,7 @@ import { toBase64 } from 'lib0/buffer';
 import { Root } from 'protobufjs/light';
 import * as Y from 'yjs';
 
+import { hasYjsBlockContent } from '@/application/row-document/content';
 import { YjsEditorKey } from '@/application/types';
 
 // Wire fields from Desktop's flowy-document/src/entities.rs. Using a small
@@ -58,19 +59,75 @@ interface DocumentSnapshot {
   };
 }
 
-const TEXT_BLOCKS = new Set([
-  'paragraph',
-  'heading',
-  'numbered_list',
-  'bulleted_list',
-  'todo_list',
-  'toggle_list',
-  'quote',
-  'callout',
-]);
-
 export function encodeTemplateDocument(doc: Y.Doc): string {
   return toBase64(Y.encodeStateAsUpdate(doc));
+}
+
+/** A materialized empty template has a server body but no authored content. */
+export function readTemplateDocumentEmptiness(doc: Y.Doc): boolean | undefined {
+  const body = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.document);
+  const blocks = body instanceof Y.Map ? body.get(YjsEditorKey.blocks) : undefined;
+  const meta = body instanceof Y.Map ? body.get(YjsEditorKey.meta) : undefined;
+  const texts = meta instanceof Y.Map ? meta.get(YjsEditorKey.text_map) : undefined;
+
+  if (!(body instanceof Y.Map) || !(blocks instanceof Y.Map) || !(texts instanceof Y.Map)) return undefined;
+  for (const [id, block] of blocks.entries()) {
+    if (!(block instanceof Y.Map)) return undefined;
+    if (id === body.get(YjsEditorKey.page_id)) continue;
+    const text = texts.get(block.get(YjsEditorKey.block_external_id));
+
+    if (hasYjsBlockContent(block) || (text instanceof Y.Text && text.length > 0)) return false;
+  }
+
+  return true;
+}
+
+/** Freeze a canonical document in the same protobuf format consumed by Desktop templates. */
+export function encodeTemplateDocumentSnapshot(doc: Y.Doc): number[] {
+  if (doc.store.pendingDs || doc.store.pendingStructs || readTemplateDocumentEmptiness(doc) === undefined) {
+    throw new Error('Invalid template document snapshot');
+  }
+
+  const body = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.document) as Y.Map<unknown>;
+  const blocks = body.get(YjsEditorKey.blocks) as Y.Map<Y.Map<unknown>>;
+  const meta = body.get(YjsEditorKey.meta) as Y.Map<unknown>;
+  const children = meta.get(YjsEditorKey.children_map) as Y.Map<Y.Array<string>>;
+  const texts = meta.get(YjsEditorKey.text_map) as Y.Map<Y.Text>;
+  const pageId = String(body.get(YjsEditorKey.page_id));
+
+  if (
+    !blocks.has(pageId) ||
+    [...blocks.values()].some((block) => !(block instanceof Y.Map)) ||
+    !(children instanceof Y.Map) ||
+    [...children.values()].some((order) => !(order instanceof Y.Array)) ||
+    [...texts.values()].some((text) => !(text instanceof Y.Text))
+  )
+    throw new Error('Invalid template document snapshot');
+  const snapshot: DocumentSnapshot = {
+    page_id: pageId,
+    blocks: Object.fromEntries(
+      [...blocks.entries()].map(([id, block]) => [
+        id,
+        {
+          id,
+          ty: String(block.get(YjsEditorKey.block_type) ?? ''),
+          data: String(block.get(YjsEditorKey.block_data) ?? '{}'),
+          parent_id: String(block.get(YjsEditorKey.block_parent) ?? ''),
+          children_id: String(block.get(YjsEditorKey.block_children) ?? ''),
+          external_id: String(block.get(YjsEditorKey.block_external_id) ?? ''),
+          external_type: String(block.get(YjsEditorKey.block_external_type) ?? ''),
+        },
+      ])
+    ),
+    meta: {
+      children_map: Object.fromEntries(
+        [...children.entries()].map(([id, order]) => [id, { children: order.toArray() }])
+      ),
+      text_map: Object.fromEntries([...texts.entries()].map(([id, text]) => [id, JSON.stringify(text.toDelta())])),
+    },
+  };
+
+  return Array.from(documentType.encode(snapshot).finish());
 }
 
 /** Stored Desktop snapshots take precedence over a stale/missing orphan view. */
@@ -97,7 +154,6 @@ export function decodeTemplateDocumentSnapshot(bytes?: number[]):
     const meta = new Y.Map();
     const children = new Y.Map<Y.Array<string>>();
     const texts = new Y.Map<Y.Text>();
-    let isDocumentEmpty = true;
 
     doc.transact(() => {
       doc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.document, document);
@@ -132,14 +188,9 @@ export function decodeTemplateDocumentSnapshot(bytes?: number[]):
         value.set(YjsEditorKey.block_children, block.children_id);
         if (block.external_id) value.set(YjsEditorKey.block_external_id, block.external_id);
         if (block.external_type) value.set(YjsEditorKey.block_external_type, block.external_type);
-        if (
-          id !== snapshot.page_id &&
-          (!TEXT_BLOCKS.has(block.ty) || (block.external_id && texts.get(block.external_id)?.toString().trim()))
-        )
-          isDocumentEmpty = false;
       });
     });
-    return { encodedState: encodeTemplateDocument(doc), isDocumentEmpty };
+    return { encodedState: encodeTemplateDocument(doc), isDocumentEmpty: readTemplateDocumentEmptiness(doc)! };
   } catch {
     throw new Error('Invalid template document snapshot');
   } finally {

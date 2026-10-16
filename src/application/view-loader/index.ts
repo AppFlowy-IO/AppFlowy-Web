@@ -32,6 +32,8 @@ import { isDatabaseLayout } from '@/application/view-utils';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { Log } from '@/utils/log';
 
+import { consumeCreatedDocument } from './created-document';
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -336,7 +338,7 @@ export async function openView(
   // during a previous load when the server hadn't finished duplication yet.
   let fromCache = options.forceFetch ? false : hasCollabCache(doc);
 
-  if (fromCache) {
+  if (fromCache && !consumeCreatedDocument(doc, workspaceId, viewId)) {
     const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot | undefined;
     const document = sharedRoot?.get(YjsEditorKey.document) as Y.Map<unknown> | undefined;
     const blocks = document?.get(YjsEditorKey.blocks) as Y.Map<unknown> | undefined;
@@ -497,7 +499,7 @@ export async function openRowSubDocument(
   // During row duplication the local doc may be created as an empty shell
   // (by openLocalDocument → initializeDocumentStructure). In that case
   // we must fetch from the server to get the worker-created content.
-  let fromCache = hasCollabCache(doc);
+  let fromCache = !options.requireServerFetch && hasCollabCache(doc);
 
   if (fromCache) {
     const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot | undefined;
@@ -567,6 +569,7 @@ export async function openRowSubDocument(
           error: e instanceof Error ? e.message : String(e),
         });
 
+        if (options.requireServerFetch && attempt === maxAttempts) throw e;
         if (attempt < maxAttempts) {
           await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
         }

@@ -11,7 +11,7 @@
     "clean": "rm -rf dist storybook-static coverage .nyc_output node_modules/.vite node_modules/.cache",
     "type-check": "tsc --noEmit --project tsconfig.web.json",
     "type-check:watch": "tsc --build --watch",
-    "lint": "pnpm type-check && eslint --quiet --ext .js,.ts,.tsx . --ignore-path .eslintignore.web",
+    "lint": "pnpm error-catalog:check && pnpm type-check && eslint --quiet --ext .js,.ts,.tsx . --ignore-path .eslintignore.web",
     "start": "vite preview --port 3000",
     "css:variables": "node scripts/generateTailwindColors.cjs",
     "analyze": "cross-env ANALYZE_MODE=true vite build",
@@ -52,7 +52,9 @@
     "generate-tokens": "node scripts/system-token/convert-tokens.cjs",
     "generate-protobuf": "pbjs -t static-module -w es6 -o ./src/proto/messages.js ./src/proto/messages.proto && pbts -o ./src/proto/messages.d.ts ./src/proto/messages.js",
     "storybook": "storybook dev -p 6006",
-    "build-storybook": "storybook build"
+    "build-storybook": "storybook build",
+    "error-catalog:sync": "node scripts/sync-error-catalog.mjs",
+    "error-catalog:check": "node scripts/sync-error-catalog.mjs --check"
   },
   "dependencies": {
     "@appflowyinc/editor": "^0.1.13",
@@ -114,6 +116,7 @@
     "fast-json-patch": "^3.1.1",
     "framer-motion": "^12.6.3",
     "google-protobuf": "^3.15.12",
+    "googlevideo": "4.1.1",
     "hast-util-to-mdast": "^10.1.0",
     "heic2any": "^0.0.4",
     "highlight.js": "^11.10.0",
@@ -253,6 +256,7 @@
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.6",
     "eslint-plugin-unused-imports": "^4.1.4",
+    "fake-indexeddb": "^6.2.5",
     "jest": "^29.5.0",
     "jest-environment-jsdom": "^29.6.2",
     "jest-node-exports-resolver": "^1.1.6",

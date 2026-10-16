@@ -4,8 +4,10 @@ import { useTranslation } from 'react-i18next';
 import { Row, useReadOnly } from '@/application/database-yjs';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
+import { useBoardSelection } from '@/components/database/board/BoardProvider';
 import { ColumnMenu } from '@/components/database/components/board/column/ColumnMenu';
 import { useRenderColumn } from '@/components/database/components/board/column/useRenderColumn';
+import { RowCreationSpinner } from '@/components/database/hooks/useRowCreationAction';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -33,6 +35,8 @@ function ColumnHeaderPrimitive(
   const { header, renameEnabled, deleteEnabled, hideEnabled } = useRenderColumn(id, fieldId);
   const { t } = useTranslation();
   const readOnly = useReadOnly();
+  const { pendingColumnId } = useBoardSelection();
+  const pending = pendingColumnId === id;
 
   return (
     <div
@@ -44,7 +48,9 @@ function ColumnHeaderPrimitive(
       {...props}
     >
       <div className={'flex flex-1 items-center gap-2'}>
-        <div data-testid={'board-column-name'} className={'w-auto max-w-[170px] overflow-hidden'}>{header}</div>
+        <div data-testid={'board-column-name'} className={'w-auto max-w-[170px] overflow-hidden'}>
+          {header}
+        </div>
         <span className={'text-xs text-text-secondary'}>{rowCount}</span>
       </div>
       {!readOnly && (
@@ -65,6 +71,10 @@ function ColumnHeaderPrimitive(
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
+                aria-label={t('board.column.addToColumnTopTooltip')}
+                loading={pending}
+                disabled={pendingColumnId !== null}
+                data-testid='board-add-card'
                 variant={'ghost'}
                 size={'icon-sm'}
                 onClick={(e) => {
@@ -73,7 +83,7 @@ function ColumnHeaderPrimitive(
                 }}
                 className={'text-icon-secondary'}
               >
-                <AddIcon className={'h-5 w-5'} />
+                {pending ? <RowCreationSpinner className='h-5 w-5' /> : <AddIcon className={'h-5 w-5'} />}
               </Button>
             </TooltipTrigger>
             <TooltipContent>{t('board.column.addToColumnTopTooltip')}</TooltipContent>

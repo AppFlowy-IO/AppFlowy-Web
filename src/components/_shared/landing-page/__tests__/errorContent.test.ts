@@ -19,14 +19,18 @@ it.each([
   const serverUrl = getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud');
 
   updateServerInfo(serverUrl, { status: 'available', info: { enable_page_history: true, self_hosted: false } });
-  expect(getLandingPageErrorContent({ code }, translate).description).toMatch(/upgrade/i);
+  const cloudMessage = getLandingPageErrorContent({ code }, translate).description;
+
+  expect(cloudMessage).toMatch(/limit|storage/);
+  if (code === ERROR_CODE.PAID_PLAN_GUEST_LIMIT_EXCEEDED) expect(cloudMessage).not.toMatch(/upgrade/i);
 
   updateServerInfo(serverUrl, { status: 'available', info: { enable_page_history: true, self_hosted: true } });
   expect(getLandingPageErrorContent({ code }, translate).description).toContain('workspace administrator');
-  expect(getLandingPageErrorContent({ code }, translate).description).not.toMatch(/Free|Pro|upgrade/);
-  expect(getLandingPageErrorContent({ code, message: 'Configured by the server administrator' }, translate).description)
-    .toBe('Configured by the server administrator');
+  expect(getLandingPageErrorContent({ code }, translate).description).not.toMatch(/free plan|paid plan|\bPro\b|upgrade/i);
+  expect(getLandingPageErrorContent({ code, message: 'private quota diagnostic',
+    user_error: { schema_version: 1, reason: 'ADMIN_LIMIT', message: 'Configured by the server administrator' },
+  }, translate).description).toBe(`Error ${code}: Configured by the server administrator`);
 
   updateServerInfo(serverUrl, { status: 'unavailable' });
-  expect(getLandingPageErrorContent({ code }, translate).description).not.toMatch(/Free|Pro|upgrade/);
+  expect(getLandingPageErrorContent({ code }, translate).description).not.toMatch(/free plan|paid plan|\bPro\b|upgrade/i);
 });

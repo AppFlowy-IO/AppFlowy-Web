@@ -13,6 +13,7 @@ import { INLINE_COMMENT_IDS_KEY } from '@/application/slate-yjs/types';
 import {
   BlockData,
   BlockType,
+  CollabOrigin,
   ToggleListBlockData,
   YBlock,
   YBlocks,
@@ -255,11 +256,14 @@ export function executeOperations(
   sharedRoot: YSharedRoot,
   operations: (() => void)[],
   operationName: string,
-  origin?: unknown
+  origin: unknown = CollabOrigin.LocalManual
 ) {
   console.time(operationName);
   const doc = assertDocExists(sharedRoot);
 
+  // These imperative editor commands mutate Yjs directly rather than Slate.
+  // Keep them identifiable as local edits without conflating remote hydration
+  // (which can use a null origin) with authored content-state changes.
   doc.transact(() => {
     operations.forEach((op) => op());
   }, origin);
@@ -830,6 +834,7 @@ export function deepCopyBlock(
       ty: sourceBlock.get(YjsEditorKey.block_type),
       data: dataOverride ?? dataStringTOJson(sourceBlock.get(YjsEditorKey.block_data)),
     });
+    const copiedIds = new Map([[sourceBlock.get(YjsEditorKey.block_id), newBlock.get(YjsEditorKey.block_id)]]);
 
     copyBlockText(sharedRoot, sourceBlock, newBlock, stripInlineCommentIds);
 
@@ -843,9 +848,12 @@ export function deepCopyBlock(
         targetChildrenArray,
         newBlock.get(YjsEditorKey.block_id),
         undefined,
-        stripInlineCommentIds
+        stripInlineCommentIds,
+        copiedIds
       );
     }
+
+    remapCopiedBlockReferences(sharedRoot, copiedIds);
 
     return newBlock.get(YjsEditorKey.block_id);
   } catch (error) {
@@ -1004,8 +1012,10 @@ export function deepCopyChildren(
   targetArray: Y.Array<string>,
   targetBlockId: string,
   index?: number,
-  stripInlineCommentIds = false
+  stripInlineCommentIds = false,
+  copiedIds = new Map<string, string>()
 ) {
+  const isRootCopy = copiedIds.size === 0;
   const sourceArraySorted = index === undefined ? sourceArray.toArray() : sourceArray.toArray().reverse();
 
   sourceArraySorted.forEach((childId) => {
@@ -1018,6 +1028,8 @@ export function deepCopyChildren(
         data: oldData,
       });
 
+      copiedIds.set(childId, newChild.get(YjsEditorKey.block_id));
+
       const sourceText = getText(sourceChild.get(YjsEditorKey.block_external_id), sharedRoot);
       const targetText = getText(newChild.get(YjsEditorKey.block_external_id), sharedRoot);
 
@@ -1027,7 +1039,7 @@ export function deepCopyChildren(
         targetText.applyDelta(stripInlineCommentIds ? stripInlineCommentIdsFromDelta(delta) : delta);
       }
 
-      const sourceChildrenArray = getChildrenArray(childId, sharedRoot);
+      const sourceChildrenArray = getChildrenArray(sourceChild.get(YjsEditorKey.block_children), sharedRoot);
 
       if (sourceChildrenArray && sourceChildrenArray.length > 0) {
         const newChildrenArray = getChildrenArray(newChild.get(YjsEditorKey.block_children), sharedRoot);
@@ -1039,7 +1051,8 @@ export function deepCopyChildren(
             newChildrenArray,
             newChild.get(YjsEditorKey.block_id),
             undefined,
-            stripInlineCommentIds
+            stripInlineCommentIds,
+            copiedIds
           );
         }
       }
@@ -1049,6 +1062,44 @@ export function deepCopyChildren(
       updateBlockParent(sharedRoot, newChild, getBlock(targetBlockId, sharedRoot), targetIndex);
     }
   });
+
+  if (isRootCopy) remapCopiedBlockReferences(sharedRoot, copiedIds);
+}
+
+/** A move copies the subtree. References inside that copy must follow its new source IDs. */
+function remapCopiedBlockReferences(sharedRoot: YSharedRoot, copiedIds: ReadonlyMap<string, string>) {
+  for (const id of copiedIds.values()) {
+    const block = getBlock(id, sharedRoot);
+    const text = block && getText(block.get(YjsEditorKey.block_external_id), sharedRoot);
+
+    if (!text) continue;
+    let offset = 0;
+
+    for (const op of text.toDelta() as Op[]) {
+      const length = typeof op.insert === 'string' ? op.insert.length : 1;
+      const raw: unknown = op.attributes?.reference;
+
+      if (raw) {
+        try {
+          const reference = typeof raw === 'string' ? JSON.parse(raw) : raw;
+
+          if (reference && Array.isArray(reference.blockIds)) {
+            const blockIds = reference.blockIds.map((sourceId: string) => copiedIds.get(sourceId) ?? sourceId);
+
+            if (blockIds.some((sourceId: string, index: number) => sourceId !== reference.blockIds[index])) {
+              const remapped = { ...reference, blockIds };
+
+              text.format(offset, length, { reference: typeof raw === 'string' ? JSON.stringify(remapped) : remapped });
+            }
+          }
+        } catch {
+          // Keep malformed legacy references untouched; the renderer handles them.
+        }
+      }
+
+      offset += length;
+    }
+  }
 }
 
 export function mergeBlockChildren(sharedRoot: YSharedRoot, sourceBlock: YBlock, targetBlock: YBlock) {

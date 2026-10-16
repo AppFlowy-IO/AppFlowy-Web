@@ -13,6 +13,7 @@ import { createInitialTimezone, UserTimezone } from '@/application/user-timezone
 import { InfoSnackbarProps } from '@/components/_shared/notify';
 import { AFConfigContext, defaultConfig } from '@/components/main/app.hooks';
 import { useUserTimezone } from '@/components/main/hooks/useUserTimezone';
+import { useServerErrorCatalog } from '@/components/main/hooks/useServerErrorCatalog';
 import { useAppLanguage } from '@/components/main/useAppLanguage';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 import { Log } from '@/utils/log';
@@ -103,6 +104,7 @@ function AppConfig({ children }: { children: React.ReactNode }) {
   const savedLanguage = currentUser?.uuid === userId ? currentUser?.metadata?.[MetadataKey.Language] : undefined;
 
   useAppLanguage(typeof savedLanguage === 'string' ? savedLanguage : undefined);
+  useServerErrorCatalog(defaultConfig.baseURL);
 
   const timezoneInfo = useUserTimezone({ updateInterval: 0 });
 

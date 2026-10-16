@@ -7,6 +7,7 @@ import { clearHttpResponseCaches } from '@/application/services/js-services/http
 import { emit, EventType } from '@/application/session';
 import { AFConfigContext } from '@/components/main/app.hooks';
 import { useUserTimezone } from '@/components/main/hooks/useUserTimezone';
+import { useServerErrorCatalog } from '@/components/main/hooks/useServerErrorCatalog';
 import { useAppLanguage } from '@/components/main/useAppLanguage';
 
 import AppConfig from '../AppConfig';
@@ -66,6 +67,10 @@ jest.mock('@/components/main/hooks/useUserTimezone', () => ({
   useUserTimezone: jest.fn(),
 }));
 
+jest.mock('@/components/main/hooks/useServerErrorCatalog', () => ({
+  useServerErrorCatalog: jest.fn(),
+}));
+
 jest.mock('@/components/main/useAppLanguage', () => ({
   useAppLanguage: jest.fn(),
 }));
@@ -89,6 +94,13 @@ function AuthenticationState() {
 }
 
 describe('AppConfig authentication startup', () => {
+  it('mounts public error catalog loading before authentication', () => {
+    mockTokenValid = false;
+    render(<AppConfig><AuthenticationState /></AppConfig>);
+    expect(screen.getByTestId('authentication-state').textContent).toBe('false');
+    expect(useServerErrorCatalog).toHaveBeenCalledWith('https://test.appflowy.cloud');
+  });
+
   const mockGetCurrent = UserService.getCurrent as jest.MockedFunction<typeof UserService.getCurrent>;
   const mockUpdateProfile = UserService.updateProfile as jest.MockedFunction<typeof UserService.updateProfile>;
   const mockUseUserTimezone = useUserTimezone as jest.MockedFunction<typeof useUserTimezone>;

@@ -267,7 +267,8 @@ test.describe('Password Login Flow', () => {
       await failedLoginResponse;
 
       // Verify error message
-      await expect(page.getByText('Invalid login credentials')).toBeVisible();
+      await expect(page.getByText("These sign-in details don't match. Check your email or username and password.")).toBeVisible();
+      await expect(page.getByText('Invalid login credentials', { exact: true })).toBeHidden();
 
       // Verify still on password page
       await expect(page).toHaveURL(/action=enterPassword/);

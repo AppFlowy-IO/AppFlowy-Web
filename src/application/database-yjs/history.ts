@@ -246,6 +246,7 @@ type DatabaseHistoryStackEntry = {
 };
 
 type DatabaseHistoryStackGroup = {
+  isCurrent?: () => boolean;
   group: DatabaseHistoryGroup;
   entries: DatabaseHistoryStackEntry[];
 };
@@ -299,6 +300,34 @@ export class DatabaseHistoryManager {
   redo() {
     this.cancelPendingActions();
     return this.replay('redo');
+  }
+
+  /** Track only selected server-created items in the same Yjs history as subsequent local edits. */
+  recordCommittedInsertions(
+    insertions: StackItem['insertions'],
+    isCurrent: () => boolean,
+    group: object = Object.freeze({})
+  ) {
+    if (!this.databaseSource || !insertions.clients.size) return;
+    const stackItem: StackItem = { insertions, deletions: Y.createDeleteSet(), meta: new Map() };
+    const entry = { source: this.databaseSource, stackItem };
+    const latest = this.undoStack[this.undoStack.length - 1];
+
+    this.databaseSource.undoManager.undoStack.push(stackItem);
+    // Calendar setup may have created its date field before the row committed.
+    // Keep that setup and the new membership in the same user-visible undo step.
+    if (latest?.group === group) {
+      latest.entries.push(entry);
+      const previousGuard = latest.isCurrent;
+
+      latest.isCurrent = () => isCurrent() && (!previousGuard || previousGuard());
+    } else {
+      this.undoStack.push({ group, entries: [entry], isCurrent });
+      this.trimUndoHistory();
+    }
+
+    this.clearRedoHistory();
+    this.notify();
   }
 
   registerPendingAction(cancel: () => void) {
@@ -410,12 +439,17 @@ export class DatabaseHistoryManager {
   }
 
   private pruneStacks() {
-    while (this.undoStack.length > 0 && !this.hasAvailableEntry(this.undoStack[this.undoStack.length - 1], 'undo')) {
-      this.undoStack.pop();
-    }
+    // Source replay temporarily isolates one native stack item. Subscribers may
+    // read history during that transaction; the hidden entries are still valid.
+    if (this.replaying) return;
+    for (const type of ['undo', 'redo'] as const) {
+      const stack = type === 'undo' ? this.undoStack : this.redoStack;
 
-    while (this.redoStack.length > 0 && !this.hasAvailableEntry(this.redoStack[this.redoStack.length - 1], 'redo')) {
-      this.redoStack.pop();
+      while (stack.length > 0 && !this.hasAvailableEntry(stack[stack.length - 1], type)) {
+        const discarded = stack.pop()!;
+
+        discarded.entries.forEach((entry) => entry.source.discardStackItem(type, entry.stackItem));
+      }
     }
   }
 
@@ -431,7 +465,10 @@ export class DatabaseHistoryManager {
   private hasAvailableEntry(group: DatabaseHistoryStackGroup, type: 'undo' | 'redo') {
     const stackKey = type === 'undo' ? 'undoStack' : 'redoStack';
 
-    return group.entries.some((entry) => entry.source.undoManager[stackKey].includes(entry.stackItem));
+    return (
+      (!group.isCurrent || group.isCurrent()) &&
+      group.entries.some((entry) => entry.source.undoManager[stackKey].includes(entry.stackItem))
+    );
   }
 
   private replay(type: 'undo' | 'redo') {
@@ -471,7 +508,11 @@ export class DatabaseHistoryManager {
         this.replaying = null;
 
         if (this.replayedEntries.length > 0) {
-          targetStack.push({ group: group.group, entries: this.replayedEntries });
+          targetStack.push({
+            group: group.group,
+            entries: this.replayedEntries,
+            isCurrent: group.isCurrent,
+          });
         }
 
         this.replayedEntries = [];

@@ -165,7 +165,7 @@ describe('BillingPanel', () => {
     api.getWorkspaceSubscriptionStatus.mockRejectedValueOnce(new Error('billing down')).mockResolvedValue([]);
     renderPanel();
 
-    expect((await screen.findByTestId('billing-error')).textContent).toContain('billing down');
+    expect((await screen.findByTestId('billing-error')).textContent).toContain('Something went wrong. Contact support if this keeps happening.');
     fireEvent.click(screen.getByText('Retry'));
     expect(await screen.findByText('Personal')).toBeTruthy();
   });

@@ -31,10 +31,12 @@ import {
   DATABASE_TAB_VIEW_ID_QUERY_PARAM,
   resolveSidebarSelectedViewId,
 } from '@/components/app/hooks/resolveSidebarSelectedViewId';
+import { getErrorDiagnostic } from '@/utils/errors';
 
 import { AppContextConsumer } from '../components/AppContextConsumer';
 import { useAuthInternal } from '../contexts/AuthInternalContext';
 import { DatabaseRestoreNoticeProvider } from '../DatabaseRestoreNotice';
+import { PendingPageCreations } from '../PendingPageCreations';
 import { useDatabaseOperations } from '../hooks/useDatabaseOperations';
 import { usePageOperations } from '../hooks/usePageOperations';
 import { useRowOperations } from '../hooks/useRowOperations';
@@ -91,22 +93,19 @@ function isRouteNotFoundError(error: unknown): boolean {
   const normalizedError = error as {
     code?: number;
     status?: number;
-    message?: string;
     response?: {
       status?: number;
       data?: {
         code?: number;
-        message?: string;
       };
     };
   };
 
   const statusCode = normalizedError.status ?? normalizedError.response?.status;
   const appCode = normalizedError.code ?? normalizedError.response?.data?.code;
-  const message = normalizedError.message || normalizedError.response?.data?.message || '';
 
   if (statusCode === 404 || appCode === 404) return true;
-  return ROUTE_NOT_FOUND_MESSAGE_PATTERN.test(message);
+  return ROUTE_NOT_FOUND_MESSAGE_PATTERN.test(getErrorDiagnostic(error));
 }
 
 async function resolvePermissionProbeTargetFromMetadata(
@@ -271,7 +270,6 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     createSpace,
     createSpaceWithInitialPage,
     updateSpace,
-    createDatabaseView,
     uploadFile,
     getSubscriptions,
     getPricingCatalog,
@@ -281,6 +279,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
   } = usePageOperations({
     outlineRef: stableOutlineRef,
     loadOutline,
+    ensureViewVisibleInOutline,
     flushAllSync: syncContext.flushAllSync,
     syncAllToServer: syncContext.syncAllToServer,
     loadViewChildren,
@@ -629,6 +628,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     const invalidatePermissionProbe = (changedViewId: string) => {
       if (!currentWorkspaceId || !requesterId) return;
 
+      AccessService.invalidateObjectPermissionRequests(currentWorkspaceId);
       const cacheKey = createPermissionProbeCacheKey(requesterId, currentWorkspaceId, changedViewId);
 
       permissionProbeCache.delete(cacheKey);
@@ -1061,7 +1061,6 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       createSpace,
       createSpaceWithInitialPage,
       updateSpace,
-      createDatabaseView,
       uploadFile,
       getSubscriptions,
       getPricingCatalog,
@@ -1104,7 +1103,6 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       createSpace,
       createSpaceWithInitialPage,
       updateSpace,
-      createDatabaseView,
       uploadFile,
       getSubscriptions,
       getPricingCatalog,
@@ -1156,6 +1154,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
                   setOpenModalViewId={setOpenModalViewId}
                 >
                   {children}
+                  <PendingPageCreations key={`${requesterId}:${currentWorkspaceId}`} />
                 </AppContextConsumer>
               </DatabaseRestoreNoticeProvider>
             </AppSyncContext.Provider>

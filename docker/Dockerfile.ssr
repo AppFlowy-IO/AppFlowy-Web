@@ -39,7 +39,9 @@ COPY --from=builder /app/dist /usr/share/nginx/html/
 COPY --from=builder /app/dist /app/dist
 
 # Copy all SSR server files (server.ts imports config.ts, logger.ts, routes.ts, etc.)
-COPY deploy/ /app/
+COPY deploy/ /app/deploy/
+COPY api/_lib/youtube.ts api/_lib/youtube-import.ts /app/api/_lib/
+COPY src/application/integrations/youtube-url.ts /app/src/application/integrations/youtube-url.ts
 COPY docker/nginx-ssr.conf /etc/nginx/nginx.conf 
 COPY docker/supervisord-ssr.conf /etc/supervisor/conf.d/supervisord.conf
 COPY docker/entrypoint-ssr.sh /docker-entrypoint.sh
