@@ -27,7 +27,7 @@ import {
   YjsEditorKey,
   YSharedRoot,
 } from '@/application/types';
-import { determineErrorType, ErrorType, isPermissionDeniedError, isRecordNotFoundError } from '@/application/utils/error-utils';
+import { determineErrorType, ErrorType, isPermissionDeniedError } from '@/application/utils/error-utils';
 import { isDatabaseLayout } from '@/application/view-utils';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { Log } from '@/utils/log';
@@ -543,12 +543,10 @@ export async function openRowSubDocument(
   // the document after a row duplication.
   if (!fromCache) {
     const maxAttempts = Math.max(1, Math.floor(options.maxAttempts ?? DEFAULT_ROW_DOCUMENT_MAX_ATTEMPTS));
-    let fetched = false;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         await fetchRowDocumentAndApply(workspaceId, documentId, doc, options);
-        fetched = true;
         break;
       } catch (e) {
         // A permission denial cannot be repaired by retrying or by creating the
@@ -569,17 +567,11 @@ export async function openRowSubDocument(
           error: e instanceof Error ? e.message : String(e),
         });
 
-        // Preserve an authoritative missing-body result for the row opener's
-        // create-on-open decision instead of returning an empty local shell.
-        if (attempt === maxAttempts && (options.requireServerFetch || isRecordNotFoundError(e))) throw e;
-        if (attempt < maxAttempts) {
-          await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
-        }
+        // Without an accepted cache, only a successful fetch can make this
+        // document editable. Preserve the failure for the opener's retry/create decision.
+        if (attempt === maxAttempts) throw e;
+        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
       }
-    }
-
-    if (!fetched) {
-      Log.warn('[ViewLoader] rowSubDoc fetch exhausted retries, using local doc', { documentId });
     }
   }
 

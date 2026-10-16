@@ -12,7 +12,10 @@ import { useUpdateRowMetaDispatch } from '@/application/database-yjs/dispatch';
 import { openCollabDB } from '@/application/db';
 import { hasPendingAtomicRowFirstBody, prepareAtomicRowFirstBody } from '@/application/row-document/atomic-first-body';
 import { getCachedRowSubDoc, getOrCreateRowSubDoc } from '@/application/services/js-services/cache';
+import { fetchRowDocumentCollab } from '@/application/services/js-services/fetch';
+import { initializeDocumentStructure } from '@/application/slate-yjs/utils/yjs';
 import { CollabOrigin, YDatabase, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { openRowSubDocument } from '@/application/view-loader';
 import { useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 
@@ -54,6 +57,13 @@ jest.mock('@/application/services/js-services/cache', () => ({
   getCachedRowSubDoc: jest.fn(),
   getOrCreateRowSubDoc: jest.fn(),
   trackRowDocEnsure: jest.fn(),
+  hasCollabCache: (doc: YDoc) => doc.getMap(YjsEditorKey.data_section).has(YjsEditorKey.document),
+}));
+
+jest.mock('@/application/services/js-services/fetch', () => ({
+  fetchDatabaseCollab: jest.fn(),
+  fetchPageCollab: jest.fn(),
+  fetchRowDocumentCollab: jest.fn(),
 }));
 
 jest.mock('@/components/app/app.hooks', () => ({
@@ -267,6 +277,55 @@ describe('DatabaseRowSubDocument', () => {
       expect(createRowDocument).not.toHaveBeenCalled();
       view.unmount();
     }
+  });
+
+  it('keeps a cached placeholder uneditable until a failed read is retried successfully', async () => {
+    jest.useFakeTimers();
+
+    const documentId = '00000000-0000-4000-8000-000000000099';
+    const cachedDoc = new Y.Doc({ guid: documentId }) as YDoc;
+
+    initializeDocumentStructure(cachedDoc, true, documentId);
+    jest.mocked(fetchRowDocumentCollab).mockRejectedValue({ sourceDomain: 'http', httpStatus: 503 });
+    configureRowDocumentTest({
+      documentIds: { row: documentId },
+      cachedDocs: new Map([[documentId, cachedDoc]]),
+      loadRowDocument: jest.fn(async (id, options) => (await openRowSubDocument('workspace-id', id, options)).doc),
+      createRowDocument: jest.fn(),
+      isEmptyDocument: true,
+    });
+    const bindViewSync = jest.fn();
+
+    mockUseDatabaseContextOptional.mockReturnValue({ ...mockUseDatabaseContextOptional(), bindViewSync });
+    const view = render(<DatabaseRowSubDocument rowId='row' />);
+
+    await act(flushAsyncWork);
+    expect(screen.queryByTestId('row-document-editor')).toBeNull();
+    expect(bindViewSync).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(10000);
+      await flushAsyncWork();
+    });
+
+    expect(fetchRowDocumentCollab).toHaveBeenCalledTimes(4);
+    expect(screen.getByRole('alert').textContent).toContain('chat.openPagePreviewFailedToast');
+    expect(screen.queryByTestId('row-document-editor')).toBeNull();
+    expect(bindViewSync).not.toHaveBeenCalled();
+    expect(prepareAtomicRowFirstBody).not.toHaveBeenCalled();
+    expect(jest.getTimerCount()).toBe(0);
+
+    jest.mocked(fetchRowDocumentCollab).mockResolvedValue({ data: Y.encodeStateAsUpdate(cachedDoc) });
+    fireEvent.click(screen.getByRole('button', { name: 'atomicCreation.retry' }));
+    await act(flushAsyncWork);
+
+    expect(fetchRowDocumentCollab).toHaveBeenCalledTimes(5);
+    expect(screen.getByTestId('row-document-editor').getAttribute('data-read-only')).toBe('false');
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(bindViewSync).toHaveBeenCalledWith(cachedDoc);
+    expect(prepareAtomicRowFirstBody).not.toHaveBeenCalled();
+    view.unmount();
+    cachedDoc.destroy();
   });
 
   it.each([
