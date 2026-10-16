@@ -6,7 +6,7 @@ import {
   parseGoTrueErrorFromUrl,
   parseGoTrueFailure,
 } from '@/application/services/js-services/http/gotrue-error';
-import { determineErrorType, ErrorType, isPermissionDeniedError } from '@/application/utils/error-utils';
+import { determineErrorType, ErrorType, isPermissionDeniedError, isRecordNotFoundError } from '@/application/utils/error-utils';
 
 import { getErrorDiagnostic, readErrorIdentity, userErrorSupportDetails, userFriendlyErrorMessage } from '../error-message';
 
@@ -89,6 +89,16 @@ describe('shared error presentation', () => {
     expect(determineErrorType({ code: -3 }).type).toBe(ErrorType.AlreadyExists);
     expect(determineErrorType({ code: ERROR_CODE.ACCESS_REQUEST_ALREADY_DENIED }).type).not.toBe(ErrorType.AlreadyJoined);
     expect(determineErrorType({ code: ERROR_CODE.ACCESS_REQUEST_ALREADY_APPROVED }).type).not.toBe(ErrorType.AlreadyJoined);
+  });
+
+  it('distinguishes a missing object from other errors before allowing initialization', () => {
+    expect(isRecordNotFoundError({ code: ERROR_CODE.RECORD_NOT_FOUND })).toBe(true);
+    expect(isRecordNotFoundError({ sourceDomain: 'http', httpStatus: 404 })).toBe(true);
+    for (const code of [ERROR_CODE.WORKSPACE_NOT_FOUND, ERROR_CODE.INVALID_FOLDER_VIEW,
+      ERROR_CODE.NOT_HAS_PERMISSION, ERROR_CODE.RECORD_DELETED]) {
+      expect(isRecordNotFoundError({ sourceDomain: 'appflowy.server', code, httpStatus: 404 })).toBe(false);
+    }
+    expect(isRecordNotFoundError({ sourceDomain: 'transport', code: -2 })).toBe(false);
   });
 
   it('keeps timeout and cancellation distinct from network errors', () => {
