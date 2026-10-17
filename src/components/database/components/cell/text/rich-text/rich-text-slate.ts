@@ -592,6 +592,18 @@ export function withRichTextCell<T extends ReactEditor>(
   };
 
   editor.insertData = (data) => {
+    const plain = data.getData('text/plain');
+
+    if (plain && isSingleURLText(plain)) {
+      insertLink(editor, plain.trim());
+      return;
+    }
+
+    // A paste over an expanded selection replaces the selected text
+    if (editor.selection && Range.isExpanded(editor.selection)) {
+      Transforms.delete(editor);
+    }
+
     const fragment = readClipboardFragment(data);
 
     if (fragment) {
@@ -599,14 +611,7 @@ export function withRichTextCell<T extends ReactEditor>(
       return;
     }
 
-    const plain = data.getData('text/plain');
-
     if (!plain) return;
-
-    if (isSingleURLText(plain)) {
-      insertLink(editor, plain.trim());
-      return;
-    }
 
     editor.insertText(plain.replace(/\r\n?|\n/g, lineBreak));
   };

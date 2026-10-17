@@ -749,4 +749,18 @@ describe('rich text cell slate model', () => {
       { insert: '@', attributes: { mention: { type: 'task', label: 'T\ufffd' } } },
     ]);
   });
+  it('replaces selected text when pasting into a database text cell or peek modal field', () => {
+    const initialText = 'Initial text in peek modal text field';
+    const editor = makeEditor(initialText);
+    Transforms.select(editor, {
+      anchor: { path: [0, 0], offset: 0 },
+      focus: { path: [0, 0], offset: initialText.length },
+    });
+
+    const dt = new DataTransfer();
+    dt.setData('text/plain', 'Pasted replacement text');
+    editor.insertData(dt);
+
+    expect(Editor.string(editor, [])).toBe('Pasted replacement text');
+  });
 });
