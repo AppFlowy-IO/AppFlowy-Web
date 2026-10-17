@@ -13,7 +13,10 @@ import { PendingPermissionEdits } from '../PendingPermissionEdits';
 
 let mockPending: { blocked: string[]; queued: string[] } = { blocked: [], queued: [] };
 
-jest.mock('dexie-react-hooks', () => ({ useLiveQuery: () => mockPending }));
+// Like the real query, a result is read for the released pages it is given (its last dependency).
+jest.mock('dexie-react-hooks', () => ({
+  useLiveQuery: (_querier: unknown, deps: unknown[]) => ({ ...mockPending, released: deps.at(-1) }),
+}));
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, options?: { count?: number }) => (options?.count === undefined ? key : `${key}:${options.count}`),
