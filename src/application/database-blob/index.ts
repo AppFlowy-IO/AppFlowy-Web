@@ -390,16 +390,29 @@ function hasCurrentSeedDocument(doc: YDoc | null | undefined): boolean {
   return (!owner || owner()) && (!fence || isDatabaseStorageFenceCurrent(fence));
 }
 
-function clearRowDocSeeds(databaseId: string, rowId: string) {
-  const rowKey = getRowKey(databaseId, rowId);
-  const seedDoc = rowDocSeedDocCache.get(rowKey);
+/** The seed maps of the current storage scope, for one synchronous pass over many rows. */
+type RowSeedMaps = {
+  seeds: Map<string, DatabaseRowDocSeed>;
+  lookup: Map<string, DatabaseRowDocSeed>;
+  docs: Map<string, YDoc>;
+};
 
-  rowDocSeedCache.delete(rowKey);
-  rowDocSeedLookup.delete(rowKey);
+// A synchronous pass can't see the storage scope change, so it captures the maps once instead of
+// reading the scope again for every row.
+function captureRowSeedMaps(): RowSeedMaps {
+  return { seeds: rowDocSeedCache.capture(), lookup: rowDocSeedLookup.capture(), docs: rowDocSeedDocCache.capture() };
+}
+
+function clearRowDocSeeds(databaseId: string, rowId: string, maps = captureRowSeedMaps()) {
+  const rowKey = getRowKey(databaseId, rowId);
+  const seedDoc = maps.docs.get(rowKey);
+
+  maps.seeds.delete(rowKey);
+  maps.lookup.delete(rowKey);
 
   if (seedDoc) {
     seedDoc.destroy();
-    rowDocSeedDocCache.delete(rowKey);
+    maps.docs.delete(rowKey);
   }
 }
 
@@ -438,8 +451,8 @@ export function invalidateDatabaseRowDocSeed(rowId: string) {
   });
 }
 
-function applySeedToSharedRowDoc(rowKey: string, seed: DatabaseRowDocSeed) {
-  const doc = rowDocSeedDocCache.get(rowKey);
+function applySeedToSharedRowDoc(rowKey: string, seed: DatabaseRowDocSeed, docs = rowDocSeedDocCache.capture()) {
+  const doc = docs.get(rowKey);
 
   if (!doc) return;
 
@@ -451,16 +464,16 @@ function applySeedToSharedRowDoc(rowKey: string, seed: DatabaseRowDocSeed) {
     invalidateRowConditionCache(doc);
   } catch {
     doc.destroy();
-    rowDocSeedDocCache.delete(rowKey);
+    docs.delete(rowKey);
   }
 }
 
-function trimRowDocSeedLookup() {
-  while (rowDocSeedLookup.size > MAX_ROW_DOC_SEEDS_LOOKUP) {
-    const oldestKey = rowDocSeedLookup.keys().next().value;
+function trimRowDocSeedLookup(lookup: Map<string, DatabaseRowDocSeed>) {
+  while (lookup.size > MAX_ROW_DOC_SEEDS_LOOKUP) {
+    const oldestKey = lookup.keys().next().value;
 
     if (!oldestKey) break;
-    rowDocSeedLookup.delete(oldestKey);
+    lookup.delete(oldestKey);
   }
 }
 
@@ -841,6 +854,7 @@ function seedRowDocCacheFromDiff(
   }
 ) {
   const updates = [...diff.creates, ...diff.updates];
+  const maps = captureRowSeedMaps();
 
   const priorityRowIds = options?.priorityRowIds ?? [];
   const prioritySet = new Set(priorityRowIds);
@@ -872,10 +886,10 @@ function seedRowDocCacheFromDiff(
       isOwnerCurrent: options?.isOwnerCurrent,
     });
 
-    applySeedToSharedRowDoc(rowKey, seed);
-    rowDocSeedLookup.set(rowKey, seed);
-    if (rowDocSeedLookup.size > MAX_ROW_DOC_SEEDS_LOOKUP) {
-      trimRowDocSeedLookup();
+    applySeedToSharedRowDoc(rowKey, seed, maps.docs);
+    maps.lookup.set(rowKey, seed);
+    if (maps.lookup.size > MAX_ROW_DOC_SEEDS_LOOKUP) {
+      trimRowDocSeedLookup(maps.lookup);
     }
 
     if (applySeedToCachedDoc(rowKey, seed)) {
@@ -891,14 +905,14 @@ function seedRowDocCacheFromDiff(
       return;
     }
 
-    rowDocSeedCache.set(rowKey, seed);
+    maps.seeds.set(rowKey, seed);
     seeded += 1;
 
-    while (rowDocSeedCache.size > MAX_ROW_DOC_SEEDS) {
-      const oldestKey = rowDocSeedCache.keys().next().value;
+    while (maps.seeds.size > MAX_ROW_DOC_SEEDS) {
+      const oldestKey = maps.seeds.keys().next().value;
 
       if (!oldestKey) break;
-      rowDocSeedCache.delete(oldestKey);
+      maps.seeds.delete(oldestKey);
     }
   });
 
@@ -919,10 +933,10 @@ function seedRowDocCacheFromDiff(
       isOwnerCurrent: options?.isOwnerCurrent,
     });
 
-    applySeedToSharedRowDoc(rowKey, seed);
-    rowDocSeedLookup.set(rowKey, seed);
-    if (rowDocSeedLookup.size > MAX_ROW_DOC_SEEDS_LOOKUP) {
-      trimRowDocSeedLookup();
+    applySeedToSharedRowDoc(rowKey, seed, maps.docs);
+    maps.lookup.set(rowKey, seed);
+    if (maps.lookup.size > MAX_ROW_DOC_SEEDS_LOOKUP) {
+      trimRowDocSeedLookup(maps.lookup);
     }
 
     if (applySeedToCachedDoc(rowKey, seed)) {
@@ -930,15 +944,15 @@ function seedRowDocCacheFromDiff(
       return;
     }
 
-    rowDocSeedCache.set(rowKey, seed);
+    maps.seeds.set(rowKey, seed);
     seeded += 1;
     prioritized += 1;
 
-    while (rowDocSeedCache.size > MAX_ROW_DOC_SEEDS) {
-      const oldestKey = rowDocSeedCache.keys().next().value;
+    while (maps.seeds.size > MAX_ROW_DOC_SEEDS) {
+      const oldestKey = maps.seeds.keys().next().value;
 
       if (!oldestKey) break;
-      rowDocSeedCache.delete(oldestKey);
+      maps.seeds.delete(oldestKey);
     }
   });
 
@@ -951,7 +965,7 @@ function seedRowDocCacheFromDiff(
       return;
     }
 
-    clearRowDocSeeds(databaseId, rowId);
+    clearRowDocSeeds(databaseId, rowId, maps);
     deleted += 1;
   });
 

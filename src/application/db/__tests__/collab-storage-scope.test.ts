@@ -63,6 +63,26 @@ it('retains stable durable identity but fences old work after leaving and return
   doc.destroy();
 });
 
+it('checks a storage fence against one read of the scope, or against a scope the caller captured', () => {
+  publishDatabaseCacheEpoch('same-id', 'restore-a');
+  const scope = captureCollabStorageScope();
+  const fence = { databaseId: 'same-id', epoch: 'restore-a', cacheEpoch: readDatabaseCacheEpoch('same-id'),
+    scopeKey: scope.key, scopeGeneration: scope.generation };
+  const getItem = jest.spyOn(Storage.prototype, 'getItem');
+  const tokenReads = () => getItem.mock.calls.filter(([key]) => key === 'token').length;
+
+  expect(isDatabaseStorageFenceCurrent(fence)).toBe(true);
+  expect(tokenReads()).toBe(1);
+  expect(isDatabaseStorageFenceCurrent(fence, scope)).toBe(true);
+  expect(readDatabaseCacheEpoch('same-id', scope)).toBe('restore-a');
+  expect(tokenReads()).toBe(1);
+  // Another tab restores the database: both forms see it.
+  publishDatabaseCacheEpoch('same-id', 'restore-b');
+  expect(isDatabaseStorageFenceCurrent(fence)).toBe(false);
+  expect(isDatabaseStorageFenceCurrent(fence, captureCollabStorageScope())).toBe(false);
+  getItem.mockRestore();
+});
+
 it('keeps same-actor token refresh valid and rejects token replacement before React remounts', () => {
   const scope = captureCollabStorageScope();
 

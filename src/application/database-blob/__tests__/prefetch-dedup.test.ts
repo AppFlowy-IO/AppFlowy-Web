@@ -19,6 +19,7 @@ import { databaseBlobDiff } from '@/application/services/js-services/http/http_a
 import { deleteOutboxByObjectId, getCurrentOutboxSession } from '@/application/sync-outbox';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { database_blob } from '@/proto/database_blob';
+import { Log } from '@/utils/log';
 
 jest.mock('@/application/db', () => ({
   captureDatabaseStorageFence: jest.fn(async (databaseId: string) => ({
@@ -1045,6 +1046,57 @@ describe('database blob prefetch deduplication', () => {
     expect(Array.from(seed?.bytes ?? [])).toEqual([1, 2, 3]);
     expect(seed?.bytes.byteLength).toBe(3);
     expect(seed?.bytes.buffer.byteLength).toBe(3);
+  });
+
+  it('reads the stored login per seeded row only to fence and stamp it, not for every cache operation', async () => {
+    setLoginSession('user-1');
+    const debug = jest.mocked(Log.debug);
+    // Login reads made until the page's seeds are cached, which happens in one synchronous pass.
+    const tokenReadsUntilSeeded = async (rows: number) => {
+      const databaseId = `database-seed-reads-${rows}`;
+      const rowIds = Array.from({ length: rows }, (_, index) => {
+        const bytes = Uint8Array.from(VALID_ROW_ID_BYTES);
+
+        bytes[14] = index >> 8;
+        bytes[15] = index & 0xff;
+        return bytes;
+      });
+
+      databaseIds.add(databaseId);
+      mockedDatabaseBlobDiff.mockResolvedValueOnce(
+        database_blob.DatabaseBlobDiffResponse.create({
+          status: database_blob.DiffStatus.READY,
+          creates: rowIds.map((rowId, index) => ({
+            rowId,
+            rid: { timestamp: 20, seqNo: index },
+            docState: { docState: new Uint8Array([1, 2, 3]), encoderVersion: 1 },
+          })),
+          updates: [],
+          deletes: [],
+          page: { hasMore: false, nextCursor: new Uint8Array(), restartRequired: false },
+        })
+      );
+      debug.mockClear();
+      const getItem = jest.spyOn(Storage.prototype, 'getItem');
+
+      await prefetchDatabaseBlobDiff('workspace-seed-reads', databaseId);
+      const seeded = debug.mock.calls.findIndex(([message]) => message === '[Database] blob seed cache prepared');
+      const seededAt = debug.mock.invocationCallOrder[seeded];
+      const reads = getItem.mock.calls.filter(
+        ([key], call) => key === 'token' && getItem.mock.invocationCallOrder[call] < seededAt
+      ).length;
+
+      getItem.mockRestore();
+      expect(seeded).toBeGreaterThanOrEqual(0);
+      return reads;
+    };
+
+    const one = await tokenReadsUntilSeeded(1);
+    const many = await tokenReadsUntilSeeded(101);
+
+    // Per row: the reset check (session and storage fence) and the seed's own scope and row
+    // generation. The seed caches are captured once for the page instead of on every row.
+    expect((many - one) / 100).toBeLessThanOrEqual(4);
   });
 
   it('fences a reset row out of a blob request that is still in flight', async () => {

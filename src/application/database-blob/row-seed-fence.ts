@@ -19,11 +19,13 @@ export function createDatabaseRowDocSeed(
   rowId: string,
   state: Pick<DatabaseRowDocSeed, 'bytes' | 'encoderVersion' | 'storageFence' | 'isOwnerCurrent'>
 ): DatabaseRowDocSeed {
+  const scope = captureCollabStorageScope();
+
   return {
     ...state,
     rowId,
-    scopeKey: captureCollabStorageScope().key,
-    scopeGeneration: captureCollabStorageScope().generation,
+    scopeKey: scope.key,
+    scopeGeneration: scope.generation,
     generation: rowSeedGenerations.get(rowId) ?? 0,
   };
 }
@@ -34,10 +36,13 @@ export function invalidateDatabaseRowDocSeedGeneration(rowId: string) {
 
 /** Unfenced seeds remain valid for callers outside the blob prefetch path. */
 export function isDatabaseRowDocSeedCurrent(seed: DatabaseRowDocSeed) {
-  if (seed.scopeGeneration !== undefined && seed.scopeGeneration !== captureCollabStorageScope().generation) return false;
-  if (seed.scopeKey !== undefined && seed.scopeKey !== captureCollabStorageScope().key) return false;
+  // One capture serves every check below: the scope cannot change within this synchronous call.
+  const scope = captureCollabStorageScope();
+
+  if (seed.scopeGeneration !== undefined && seed.scopeGeneration !== scope.generation) return false;
+  if (seed.scopeKey !== undefined && seed.scopeKey !== scope.key) return false;
   if (seed.isOwnerCurrent && !seed.isOwnerCurrent()) return false;
-  if (seed.storageFence && !isDatabaseStorageFenceCurrent(seed.storageFence)) return false;
+  if (seed.storageFence && !isDatabaseStorageFenceCurrent(seed.storageFence, scope)) return false;
   if (!seed.rowId || seed.generation === undefined) return true;
   return seed.generation === (rowSeedGenerations.get(seed.rowId) ?? 0);
 }
