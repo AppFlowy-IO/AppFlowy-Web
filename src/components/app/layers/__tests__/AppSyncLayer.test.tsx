@@ -319,6 +319,48 @@ describe('AppSyncLayer per-message churn', () => {
     expect(outboxMock.invalidateOutboxPermissions).not.toHaveBeenCalled();
   });
 
+  it('runs one access re-check for lifecycle events that arrive together', () => {
+    const outboxMock = jest.requireMock('@/application/sync-outbox');
+    let now = 1_000_000;
+
+    renderLayer();
+    jest.clearAllMocks();
+    const clock = jest.spyOn(Date, 'now').mockImplementation(() => now);
+
+    // A tab switch fires focus and visibilitychange back to back, here next to a socket reopen.
+    window.dispatchEvent(new Event('focus'));
+    document.dispatchEvent(new Event('visibilitychange'));
+    latestEventEmitter?.emit(APP_EVENTS.WEBSOCKET_STATUS, 1);
+    expect(outboxMock.expireOutboxAdmissions).toHaveBeenCalledTimes(1);
+    expect(outboxMock.resumePermissionBlockedSync).toHaveBeenCalledTimes(1);
+
+    now += 1_000;
+    window.dispatchEvent(new Event('online'));
+    expect(outboxMock.expireOutboxAdmissions).toHaveBeenCalledTimes(2);
+    expect(outboxMock.resumePermissionBlockedSync).toHaveBeenCalledTimes(2);
+    clock.mockRestore();
+  });
+
+  it('never folds a permission change into a recent lifecycle re-check', () => {
+    const outboxMock = jest.requireMock('@/application/sync-outbox');
+
+    renderLayer();
+    jest.clearAllMocks();
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(1_000_000);
+
+    window.dispatchEvent(new Event('focus'));
+    latestEventEmitter?.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'object-1' });
+    latestEventEmitter?.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'object-2' });
+
+    expect(outboxMock.invalidateOutboxPermissions).toHaveBeenCalledTimes(2);
+    expect(outboxMock.resumePermissionBlockedSync.mock.calls).toEqual([
+      [],
+      [undefined, { abortDenied: true }],
+      [undefined, { abortDenied: true }],
+    ]);
+    clock.mockRestore();
+  });
+
   it('ignores offline and closed-socket transitions for permission checks', () => {
     const outboxMock = jest.requireMock('@/application/sync-outbox');
 

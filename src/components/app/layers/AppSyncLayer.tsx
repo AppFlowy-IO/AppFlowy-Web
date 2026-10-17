@@ -41,6 +41,9 @@ interface AppSyncLayerProps {
 }
 
 const WS_READY_STATE_OPEN = 1;
+// A tab switch fires focus and visibilitychange back to back, often next to an
+// online event or a socket reopen; one access re-check covers them all.
+const LIFECYCLE_PERMISSION_RECHECK_COALESCE_MS = 1_000;
 
 function exactSlowSyncResult(item: SlowSyncOutboxItem, results: CollabFullSyncBatchResult[]): CollabFullSyncBatchResult {
   if (results.length !== 1 || results[0].objectId !== item.objectId || results[0].collabType !== item.collabType) {
@@ -464,6 +467,8 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
   // uploads whose fresh check is denied are cancelled; quarantined edits still
   // wait for the user's explicit retry.
   useEffect(() => {
+    let lastRecheckAt = Number.NEGATIVE_INFINITY;
+
     const handlePermissionChange = () => {
       uploadPermission.invalidate();
       invalidateOutboxPermissions();
@@ -473,8 +478,13 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
     // Focus, visibility, connectivity and socket-open events can follow a missed
     // notification. Re-check before the next immediate send and re-probe queued
     // objects without cancelling checks or uploads in progress, so a large
-    // upload survives alt-tabbing and socket reconnects.
+    // upload survives alt-tabbing and socket reconnects. Only these hints are
+    // coalesced; a permission change above always runs at once.
     const recheckPermissions = () => {
+      const now = Date.now();
+
+      if (now - lastRecheckAt < LIFECYCLE_PERMISSION_RECHECK_COALESCE_MS) return;
+      lastRecheckAt = now;
       uploadPermission.expire();
       expireOutboxAdmissions();
       void resumePermissionBlockedSync();
