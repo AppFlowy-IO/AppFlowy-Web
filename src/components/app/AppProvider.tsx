@@ -65,7 +65,8 @@ function WorkspaceBootstrapError({ error, onRetry }: { error: Error; onRetry?: (
 // Internal component to conditionally render sync and business layers only when workspace ID exists
 const ConditionalWorkspaceLayers = ({ children }: { children: ReactNode }) => {
   const authContext = useContext(AuthInternalContext);
-  const { isAuthenticated, userWorkspaceInfo, workspaceInfoError, retryLoadWorkspaceInfo } = authContext || {};
+  const { isAuthenticated, userWorkspaceInfo, currentWorkspaceId, workspaceInfoError, retryLoadWorkspaceInfo } =
+    authContext || {};
 
   // Unmount user/workspace-scoped providers in the same render that auth is
   // invalidated. AppAuthLayer will redirect to login after this commit.
@@ -84,8 +85,11 @@ const ConditionalWorkspaceLayers = ({ children }: { children: ReactNode }) => {
 
   if (!userWorkspaceInfo.selectedWorkspace) return <NoWorkspace />;
 
+  // Key on the routed workspace the layer runs on, not the server's account-wide
+  // visiting workspace. A deep link, or another tab opening a workspace, moves
+  // that without changing this tab's route, and must not remount the whole tree.
   return (
-    <AppSyncLayer key={realtimeSessionKey(userWorkspaceInfo.selectedWorkspace.id)}>
+    <AppSyncLayer key={realtimeSessionKey(currentWorkspaceId ?? userWorkspaceInfo.selectedWorkspace.id)}>
       <AppBusinessLayer>{children}</AppBusinessLayer>
     </AppSyncLayer>
   );
