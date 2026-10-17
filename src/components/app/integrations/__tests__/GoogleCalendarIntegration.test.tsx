@@ -140,3 +140,68 @@ test('a server without the capability route still creates the private meeting sp
   expect(mockCreateSpaceWithInitialPage).toHaveBeenCalledTimes(1);
   expect(mockToastError).not.toHaveBeenCalled();
 });
+
+test('checks space creation while the event is still being read', async () => {
+  let resolveEvent!: (event: typeof mockEvent) => void;
+
+  mockFetchCalendarEvent.mockReturnValue(
+    new Promise((resolve) => {
+      resolveEvent = resolve;
+    })
+  );
+  mockGetCapabilities.mockResolvedValue({ can_create_space: false });
+  await startTranscribing();
+
+  // The check does not wait for the calendar while the reserved window stays blank.
+  expect(mockGetCapabilities).toHaveBeenCalledWith('workspace-1');
+  expect(meetWindow.location.replace).not.toHaveBeenCalled();
+  await act(async () => {
+    resolveEvent(mockEvent);
+  });
+
+  await waitFor(() => expect(meetWindow.location.replace).toHaveBeenCalledWith(mockEvent.meetUrl));
+  expect(mockToastError).toHaveBeenCalledWith('spaceCreation.meetingNotesDenied');
+  expect(mockCreateSpaceWithInitialPage).not.toHaveBeenCalled();
+  expect(mockGetCapabilities).toHaveBeenCalledTimes(1);
+});
+
+test('ignores the space-creation answer when the event is gone', async () => {
+  mockFetchCalendarEvent.mockResolvedValue(null);
+  mockGetCapabilities.mockResolvedValue({ can_create_space: false });
+  render(<GoogleCalendarIntegration />);
+  await act(async () => undefined);
+  await act(async () => {
+    fireEvent.click(screen.getByText('document.aiMeeting.startTranscribing'));
+  });
+
+  expect(mockGetCapabilities).toHaveBeenCalledTimes(1);
+  expect(meetWindow.close).toHaveBeenCalled();
+  expect(mockToastError).not.toHaveBeenCalled();
+  expect(meetWindow.location.replace).not.toHaveBeenCalled();
+  expect(mockCreateSpaceWithInitialPage).not.toHaveBeenCalled();
+  expect(screen.queryByText('document.aiMeeting.startTranscribing')).toBeNull();
+});
+
+test('closes the reserved window when the calendar goes away while space creation is checked', async () => {
+  let answer!: (capability: { can_create_space: boolean }) => void;
+
+  mockGetCapabilities.mockReturnValue(
+    new Promise((resolve) => {
+      answer = resolve;
+    })
+  );
+  const { unmount } = render(<GoogleCalendarIntegration />);
+
+  await act(async () => undefined);
+  fireEvent.click(screen.getByText('document.aiMeeting.startTranscribing'));
+  await act(async () => undefined);
+  expect(mockFetchCalendarEvent).toHaveBeenCalledTimes(1);
+  unmount();
+  await act(async () => {
+    answer({ can_create_space: true });
+  });
+
+  expect(meetWindow.close).toHaveBeenCalled();
+  expect(meetWindow.location.replace).not.toHaveBeenCalled();
+  expect(mockCreateSpaceWithInitialPage).not.toHaveBeenCalled();
+});

@@ -125,6 +125,11 @@ function WorkspaceCalendar({ workspaceId }: { workspaceId: string }) {
 
     if (meetWindow) meetWindow.opener = null;
     try {
+      const privateSpace = outline?.find((view) => view.is_private && (view.is_space || view.extra?.is_space));
+      // Without a private space the notes page needs a new one, which is space creation (B). The
+      // check needs only the workspace, so it runs while the event is read. It never rejects, and
+      // its answer is ignored when the launch stops first.
+      const admissionCheck = privateSpace ? undefined : readSpaceCreationAdmission(workspaceId);
       const latest = await fetchCalendarEvent(event, lifetime.current?.signal);
 
       if (lifetime.current?.signal.aborted) {
@@ -142,13 +147,11 @@ function WorkspaceCalendar({ workspaceId }: { workspaceId: string }) {
       const title = `${latest.summary || t('document.aiMeeting.titleDefault')} - ${new Date(
         latest.start
       ).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-      const privateSpace = outline?.find((view) => view.is_private && (view.is_space || view.extra?.is_space));
 
-      if (!privateSpace) {
-        // Without a private space the notes page needs a new one, which is space creation (B).
+      if (admissionCheck) {
         // A denied member still joins the meeting, just without a notes page. A server without
         // the capability route, or a failed check, lets the server decide.
-        const admission = await readSpaceCreationAdmission(workspaceId);
+        const admission = await admissionCheck;
 
         if (lifetime.current?.signal.aborted) {
           meetWindow?.close();
