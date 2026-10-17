@@ -8,6 +8,7 @@ const mockDuplicate = jest.fn();
 const mockGetView = jest.fn();
 const mockGetCapabilities = jest.fn();
 const mockRefresh = jest.fn();
+const mockRefreshAnswer = jest.fn();
 const mockToastError = jest.fn();
 let mockCanCreateSpace = true;
 let mockStatus: 'loading' | 'ready' | 'unsupported' | 'error' = 'ready';
@@ -18,6 +19,7 @@ jest.mock('@/components/app/hooks/useSpaceCreationCapability', () => ({
     canCreateSpace: mockCanCreateSpace,
     capability: mockStatus === 'ready' ? { can_create_space: mockCanCreateSpace } : undefined,
     refresh: mockRefresh,
+    refreshAnswer: mockRefreshAnswer,
   }),
 }));
 jest.mock('@/application/services/domains', () => ({
@@ -86,8 +88,7 @@ test.each([
 test('keeps Duplicate available on a server without the capability route and lets the server decide', async () => {
   mockCanCreateSpace = false;
   mockStatus = 'unsupported';
-  mockRefresh.mockResolvedValue(undefined);
-  mockGetCapabilities.mockRejectedValue({ code: 404, httpStatus: 404, message: 'Not Found' });
+  mockRefreshAnswer.mockResolvedValue({ status: 'unsupported', error: { code: 404, httpStatus: 404 } });
   renderActions();
 
   const duplicate = screen.getByTestId('space-action-duplicate');
@@ -97,10 +98,12 @@ test('keeps Duplicate available on a server without the capability route and let
   fireEvent.click(duplicate);
   await waitFor(() => expect(mockDuplicate).toHaveBeenCalledWith('workspace-id', 'space-id'));
   expect(mockToastError).not.toHaveBeenCalled();
+  // The live read already found no route; the same request is not sent again.
+  expect(mockGetCapabilities).not.toHaveBeenCalled();
 });
 
 test('a fresh denial stops duplication with a clear reason', async () => {
-  mockRefresh.mockResolvedValue({ can_create_space: false });
+  mockRefreshAnswer.mockResolvedValue({ status: 'ready', capability: { can_create_space: false } });
   renderActions();
 
   fireEvent.click(screen.getByTestId('space-action-duplicate'));

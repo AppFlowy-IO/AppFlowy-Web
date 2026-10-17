@@ -14,6 +14,7 @@ import {
 } from '@/application/workspace-permissions';
 import { AppEventEmitterContext } from '@/components/app/contexts/AppEventEmitterContext';
 import { AuthInternalContext } from '@/components/app/contexts/AuthInternalContext';
+import { clearSpaceCreationCapabilityCache } from '@/components/app/hooks/useSpaceCreationCapability';
 
 import { WorkspacePermissionsPanel } from '../WorkspacePermissionsPanel';
 
@@ -148,6 +149,9 @@ async function selections() {
 function search(value: string) {
   fireEvent.change(screen.getByTestId('space-creator-search-input'), { target: { value } });
 }
+
+// The capability answer outlives a mount; every test starts without one.
+beforeEach(clearSpaceCreationCapabilityCache);
 
 describe('workspace permission settings', () => {
   beforeEach(() => {

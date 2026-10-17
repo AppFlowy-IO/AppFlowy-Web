@@ -5,11 +5,12 @@ import { ReactNode } from 'react';
 
 import { APP_EVENTS } from '@/application/constants';
 import { WorkspaceService } from '@/application/services/domains';
+import { emit, EventType } from '@/application/session/event';
 import { WorkspaceSpaceCreationCapabilities } from '@/application/workspace-permissions';
 import { AppEventEmitterContext } from '@/components/app/contexts/AppEventEmitterContext';
 import { AuthInternalContext } from '@/components/app/contexts/AuthInternalContext';
 
-import { useSpaceCreationCapability } from '../useSpaceCreationCapability';
+import { clearSpaceCreationCapabilityCache, useSpaceCreationCapability } from '../useSpaceCreationCapability';
 
 const mockRead = jest.fn();
 let mockUserId = 'user-a';
@@ -78,6 +79,7 @@ function mount() {
 
 describe('space creation capability lifecycle', () => {
   beforeEach(() => {
+    clearSpaceCreationCapabilityCache();
     mockUserId = 'user-a';
     mockWorkspaceId = 'workspace-a';
     mockServerUrl = 'https://one.test';
@@ -333,5 +335,174 @@ describe('space creation capability lifecycle', () => {
     });
     await expect(requests[0]).resolves.toEqual(capability('2', false));
     expect(mockRead).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('one answer shared by every consumer of the workspace', () => {
+  let now = 1_000_000;
+  let clock: jest.SpyInstance<number, []>;
+
+  beforeEach(() => {
+    clearSpaceCreationCapabilityCache();
+    mockUserId = 'user-a';
+    mockWorkspaceId = 'workspace-a';
+    mockServerUrl = 'https://one.test';
+    mockRead.mockReset();
+    emitter.removeAllListeners();
+    Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
+    now = 1_000_000;
+    clock = jest.spyOn(Date, 'now').mockImplementation(() => now);
+  });
+  afterEach(() => clock.mockRestore());
+
+  it('reads once for consumers mounted together, such as New Page and its Create Space dialog', async () => {
+    mockRead.mockResolvedValue(capability('1'));
+    const page = mount();
+    const dialog = mount();
+
+    await waitFor(() => expect(dialog.result.current.status).toBe('ready'));
+    expect(page.result.current.canCreateSpace).toBe(true);
+    expect(mockRead).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the answer at once to a consumer opened later, but admits only after a read since it opened', async () => {
+    mockRead.mockResolvedValue(capability('1'));
+    const page = mount();
+
+    await waitFor(() => expect(page.result.current.canCreateSpace).toBe(true));
+    // A space menu opens: the answer is shown at once and not asked again while it is recent.
+    const menu = mount();
+
+    expect(menu.result.current.status).toBe('loading');
+    expect(menu.result.current.capability?.can_create_space).toBe(true);
+    expect(menu.result.current.revalidating).toBe(true);
+    expect(menu.result.current.canCreateSpace).toBe(false);
+    expect(mockRead).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await menu.result.current.refresh();
+    });
+    expect(menu.result.current.canCreateSpace).toBe(true);
+    expect(mockRead).toHaveBeenCalledTimes(2);
+  });
+
+  it('asks again for a consumer opened once the answer is old', async () => {
+    mockRead.mockResolvedValue(capability('1'));
+    const page = mount();
+
+    await waitFor(() => expect(page.result.current.status).toBe('ready'));
+    page.unmount();
+    now += 31_000;
+    const menu = mount();
+
+    expect(menu.result.current.capability?.can_create_space).toBe(true);
+    await waitFor(() => expect(menu.result.current.status).toBe('ready'));
+    expect(mockRead).toHaveBeenCalledTimes(2);
+  });
+
+  it('reads once when returning to the tab, even while that read is still running', async () => {
+    mockRead.mockResolvedValueOnce(capability('1'));
+    const { result } = mount();
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    const next = deferred();
+
+    mockRead.mockReturnValueOnce(next.promise);
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await act(async () => next.resolve(capability('2')));
+    expect(mockRead).toHaveBeenCalledTimes(2);
+    expect(result.current.capability?.revision.counter).toBe('2');
+  });
+
+  it('asks again when the live connection opens, not when it closes', async () => {
+    mockRead.mockResolvedValue(capability('1'));
+    const { result } = mount();
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    await act(async () => {
+      emitter.emit(APP_EVENTS.WEBSOCKET_STATUS, 3);
+      emitter.emit(APP_EVENTS.WEBSOCKET_STATUS, 0);
+    });
+    expect(mockRead).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      emitter.emit(APP_EVENTS.WEBSOCKET_STATUS, 1);
+    });
+    expect(mockRead).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not send a read queued for a hint once every consumer has closed', async () => {
+    const old = deferred();
+
+    mockRead.mockReturnValueOnce(old.promise);
+    const { unmount } = mount();
+
+    await waitFor(() => expect(mockRead).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      emitter.emit(APP_EVENTS.WORKSPACE_PERMISSIONS_CHANGED, {
+        workspaceId: mockWorkspaceId,
+        revision: capability('2').revision,
+      });
+    });
+    unmount();
+    await act(async () => old.resolve(capability('1')));
+    expect(mockRead).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['user', 'workspace'])('never starts another %s from this answer', async (changed) => {
+    mockRead.mockResolvedValueOnce(capability('1'));
+    const first = mount();
+
+    await waitFor(() => expect(first.result.current.status).toBe('ready'));
+    const next = deferred();
+
+    mockRead.mockReturnValueOnce(next.promise);
+    if (changed === 'user') mockUserId = 'user-b';
+    if (changed === 'workspace') mockWorkspaceId = 'workspace-b';
+    const second = mount();
+
+    expect(second.result.current.status).toBe('loading');
+    expect(second.result.current.capability).toBeUndefined();
+    await waitFor(() => expect(mockRead).toHaveBeenCalledTimes(2));
+    await act(async () => next.resolve(capability('7', false)));
+    expect(second.result.current.canCreateSpace).toBe(false);
+    expect(first.result.current.capability?.revision.counter).toBe('1');
+  });
+
+  it('forgets the answer when the session ends', async () => {
+    mockRead.mockResolvedValueOnce(capability('1'));
+    const { result } = mount();
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    const next = deferred();
+
+    mockRead.mockReturnValueOnce(next.promise);
+    act(() => emit(EventType.SESSION_INVALID));
+    expect(result.current.status).toBe('loading');
+    expect(result.current.capability).toBeUndefined();
+    await waitFor(() => expect(mockRead).toHaveBeenCalledTimes(2));
+  });
+
+  it('says why a read has no capability', async () => {
+    mockRead.mockResolvedValueOnce(capability('1'));
+    const { result } = mount();
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    const missing = { httpStatus: 404 };
+    const refused = { httpStatus: 403 };
+
+    mockRead.mockRejectedValueOnce(missing).mockRejectedValueOnce(refused).mockResolvedValueOnce(capability('2', false));
+    await act(async () => {
+      await expect(result.current.refreshAnswer()).resolves.toEqual({ status: 'unsupported', error: missing });
+      await expect(result.current.refreshAnswer()).resolves.toEqual({ status: 'error', error: refused });
+      await expect(result.current.refreshAnswer()).resolves.toEqual({
+        status: 'ready',
+        capability: capability('2', false),
+      });
+    });
+    expect(mockRead).toHaveBeenCalledTimes(4);
   });
 });

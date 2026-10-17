@@ -15,19 +15,23 @@ const mockOpenPageModal = jest.fn();
 const mockEnsureViewVisibleInOutline = jest.fn();
 const mockNotifyError = jest.fn();
 const mockRefreshCapability = jest.fn();
+const mockCapabilityEnabled = jest.fn();
 const mockGetSpacePermission = jest.fn();
 const mockEventEmitter = new EventEmitter();
 let mockCanCreateSpace = true;
 let mockCapabilityStatus: 'loading' | 'ready' | 'unsupported' | 'error' = 'ready';
 
 jest.mock('@/components/app/hooks/useSpaceCreationCapability', () => ({
-  useSpaceCreationCapability: () => ({
-    status: mockCapabilityStatus,
-    canCreateSpace: mockCanCreateSpace,
-    capability: mockCapabilityStatus === 'ready' ? { can_create_space: mockCanCreateSpace } : undefined,
-    refresh: mockRefreshCapability,
-    scopeKey: 'workspace-1',
-  }),
+  useSpaceCreationCapability: (_workspaceId?: string, enabled?: boolean) => {
+    mockCapabilityEnabled(enabled);
+    return {
+      status: mockCapabilityStatus,
+      canCreateSpace: mockCanCreateSpace,
+      capability: mockCapabilityStatus === 'ready' ? { can_create_space: mockCanCreateSpace } : undefined,
+      refresh: mockRefreshCapability,
+      scopeKey: 'workspace-1',
+    };
+  },
 }));
 jest.mock('@/application/services/domains', () => ({
   WorkspaceService: { getSpacePermission: (...args: unknown[]) => mockGetSpacePermission(...args) },
@@ -328,6 +332,18 @@ describe('NewPage create-space flow', () => {
     await openCreateSpaceFlow();
     expect(mockCreateSpaceModuleLoads).toBe(3);
     expect(screen.getByTestId('create-space-draft-panel')).toBeTruthy();
+  });
+
+  it('reads the space creation answer only while New Page itself is shown', async () => {
+    render(<NewPage />);
+
+    expect(mockCapabilityEnabled).toHaveBeenLastCalledWith(false);
+    fireEvent.click(screen.getByTestId('new-page-button'));
+    expect(mockCapabilityEnabled).toHaveBeenLastCalledWith(true);
+    // Create Space reads for itself, starting from the shared answer.
+    fireEvent.click(screen.getByTestId('new-page-create-space-button'));
+    await screen.findByTestId('create-space-draft-panel');
+    expect(mockCapabilityEnabled).toHaveBeenLastCalledWith(false);
   });
 
   it('loads and mounts the Create Space draft only while that flow is open', async () => {

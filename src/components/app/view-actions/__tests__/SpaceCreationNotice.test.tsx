@@ -6,9 +6,13 @@ import { ReactNode } from 'react';
 import type { WorkspaceSpaceCreationCapabilities } from '@/application/workspace-permissions';
 import { AppEventEmitterContext } from '@/components/app/contexts/AppEventEmitterContext';
 import { AuthInternalContext } from '@/components/app/contexts/AuthInternalContext';
-import { useSpaceCreationCapability } from '@/components/app/hooks/useSpaceCreationCapability';
+import {
+  clearSpaceCreationCapabilityCache,
+  useSpaceCreationCapability,
+} from '@/components/app/hooks/useSpaceCreationCapability';
 import {
   canStartSpaceCreation,
+  refreshSpaceCreationAdmission,
   SpaceCreationNotice,
   spaceCreationUnavailableReason,
 } from '@/components/app/view-actions/SpaceCreationNotice';
@@ -94,16 +98,19 @@ function Wrapper({ children }: { children: ReactNode }) {
 }
 
 // What Create Space shows: the notice plus whether Create may start.
-function CreateSpaceEntry() {
+function CreateSpaceEntry({ testId = 'startable', onState }: { testId?: string; onState?: (state: State) => void }) {
   const state = useSpaceCreationCapability('workspace-a');
 
+  onState?.(state);
   return (
     <>
       <SpaceCreationNotice permission={state} />
-      <span data-testid='startable'>{String(canStartSpaceCreation(state))}</span>
+      <span data-testid={testId}>{String(canStartSpaceCreation(state))}</span>
     </>
   );
 }
+
+type State = ReturnType<typeof useSpaceCreationCapability>;
 
 function notice() {
   return screen.queryByTestId('space-creation-notice')?.textContent ?? null;
@@ -126,6 +133,7 @@ async function recheckInBackground<T>() {
 
 describe('the space creation notice during background rechecks', () => {
   beforeEach(() => {
+    clearSpaceCreationCapabilityCache();
     mockRead.mockReset();
     emitter.removeAllListeners();
     Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
@@ -194,5 +202,62 @@ describe('the space creation notice during background rechecks', () => {
     await act(async () => next.resolve(capability(true)));
     expect(notice()).toBeNull();
     expect(startable()).toBe('true');
+  });
+});
+
+describe('the answer shared by the entry points', () => {
+  beforeEach(() => {
+    clearSpaceCreationCapabilityCache();
+    mockRead.mockReset();
+    emitter.removeAllListeners();
+    Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
+  });
+
+  it('opens Create Space from New Page with the answer New Page already has', async () => {
+    mockRead.mockResolvedValue(capability(true));
+    render(<CreateSpaceEntry />, { wrapper: Wrapper });
+    await waitFor(() => expect(startable()).toBe('true'));
+    render(<CreateSpaceEntry testId='dialog-startable' />, { wrapper: Wrapper });
+
+    // No "Checking permissions…" and Create is usable at once; sending re-reads admission anyway.
+    expect(screen.queryAllByTestId('space-creation-notice')).toHaveLength(0);
+    expect(screen.getByTestId('dialog-startable').textContent).toBe('true');
+    expect(mockRead).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['a server without the capability route', { httpStatus: 404, code: 404 }, 'unsupported'],
+    ['a refused read', { httpStatus: 403 }, 'denied'],
+  ])('settles admission on %s with the read it already made', async (_case, failure, admission) => {
+    let state!: State;
+
+    mockRead.mockResolvedValueOnce(capability(true)).mockRejectedValueOnce(failure);
+    render(<CreateSpaceEntry onState={(next) => (state = next)} />, { wrapper: Wrapper });
+    await waitFor(() => expect(startable()).toBe('true'));
+    let result: unknown;
+
+    await act(async () => {
+      result = await refreshSpaceCreationAdmission(state, 'workspace-a');
+    });
+    expect(result).toBe(admission);
+    expect(mockRead).toHaveBeenCalledTimes(2);
+  });
+
+  it('asks once more directly when the live read could not run', async () => {
+    let state!: State;
+
+    mockRead
+      .mockResolvedValueOnce(capability(true))
+      .mockRejectedValueOnce({ code: 500, httpStatus: 500, message: 'Server error' })
+      .mockResolvedValueOnce(capability(true));
+    render(<CreateSpaceEntry onState={(next) => (state = next)} />, { wrapper: Wrapper });
+    await waitFor(() => expect(startable()).toBe('true'));
+    let result: unknown;
+
+    await act(async () => {
+      result = await refreshSpaceCreationAdmission(state, 'workspace-a');
+    });
+    expect(result).toBe('allowed');
+    expect(mockRead).toHaveBeenCalledTimes(3);
   });
 });

@@ -137,9 +137,10 @@ function NewPage() {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const workspaceId = useCurrentWorkspaceId();
-  const creationPermission = useSpaceCreationCapability(workspaceId, open);
   const [loading, setLoading] = useState(false);
   const [createSpaceOpen, setCreateSpaceOpen] = useState(false);
+  // Create Space asks for itself while it is open, starting from the answer read here.
+  const creationPermission = useSpaceCreationCapability(workspaceId, open && !createSpaceOpen);
   const [CreateSpaceModal, setCreateSpaceModal] = useState<CreateSpaceModalType | null>(null);
   const [chosenSpaceId, setChosenSpaceId] = useState('');
   const addingPageRef = useRef(false);

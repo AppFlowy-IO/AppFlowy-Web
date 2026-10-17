@@ -14,7 +14,7 @@ import type { ReactNode } from 'react';
 
 type SpaceCreationCapabilityState = ReturnType<typeof useSpaceCreationCapability>;
 export type SpaceCreationPermission = Pick<SpaceCreationCapabilityState, 'status' | 'canCreateSpace' | 'refresh'> &
-  Partial<Pick<SpaceCreationCapabilityState, 'capability' | 'error'>>;
+  Partial<Pick<SpaceCreationCapabilityState, 'capability' | 'error' | 'refreshAnswer'>>;
 export type SpaceCreationUnavailableReason = 'denied' | 'loadError' | 'loading';
 
 /**
@@ -55,16 +55,22 @@ export function spaceCreationUnavailableKey(reason: SpaceCreationUnavailableReas
 }
 
 /**
- * Fresh admission before a new request. Uses the live capability read, then one direct read
- * when that read has no answer, so a server without the capability route can still decide.
+ * Fresh admission before a new request. Uses the live capability read, which already tells a server
+ * without the capability route and a refusal apart. Only when that read has no answer (it was
+ * superseded, or it could not run) does one direct read decide, so the same request is not repeated.
  */
 export async function refreshSpaceCreationAdmission(
-  permission: Pick<SpaceCreationPermission, 'refresh'>,
+  permission: Pick<SpaceCreationPermission, 'refresh' | 'refreshAnswer'>,
   workspaceId: string
 ): Promise<SpaceCreationAdmission> {
-  const capability = await permission.refresh();
+  // A permission that only offers refresh() reports a capability or nothing.
+  const answer = permission.refreshAnswer
+    ? await permission.refreshAnswer()
+    : await permission.refresh().then((capability) => capability && { status: 'ready' as const, capability });
 
-  if (capability) return capability.can_create_space ? 'allowed' : 'denied';
+  if (answer?.status === 'ready') return answer.capability.can_create_space ? 'allowed' : 'denied';
+  if (answer?.status === 'unsupported') return 'unsupported';
+  if (answer?.status === 'error' && isSpaceCreationDenial(answer.error)) return 'denied';
   return readSpaceCreationAdmission(workspaceId);
 }
 
