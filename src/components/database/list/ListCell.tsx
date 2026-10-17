@@ -112,6 +112,7 @@ function ListMediaCell({ cell, fieldId, rowId }: ListSpecialCellProps) {
 
   const attachmentLabel = t('grid.media.attachmentsHint').replace('{}', String(files.length));
 
+  // Flutter MediaCardCell ignores the style map's textStyle and keeps secondaryTextColor.
   return (
     <span
       className='flex h-5 min-w-0 items-center gap-1.5 overflow-hidden px-1 text-xs text-text-secondary'
@@ -143,7 +144,7 @@ function ListTimeCell({ cell, fieldId, rowId }: ListSpecialCellProps) {
   if (!content) return null;
 
   return (
-    <span className='truncate text-xs text-text-secondary' data-testid={`list-time-cell-${rowId}-${fieldId}`}>
+    <span className='truncate text-xs text-text-primary' data-testid={`list-time-cell-${rowId}-${fieldId}`}>
       {content}
     </span>
   );
@@ -198,7 +199,7 @@ function ListChecklistCell({ cell, fieldId, rowId }: ListSpecialCellProps) {
           </span>
         )}
       </span>
-      <span className='w-[45px] shrink-0 text-right text-xs text-text-secondary'>
+      <span className='w-[45px] shrink-0 text-right text-xs text-text-primary'>
         {Math.round(data.percentage * 100)}%
       </span>
     </span>
@@ -245,11 +246,13 @@ export function ListCell({
         <div
           className={cn(
             'min-w-0 max-w-full',
-            field.fieldType === FieldType.Person &&
-              '[&_.select-option-cell>div>div>span]:!text-xs [&_.select-option-cell>div>div]:!gap-1.5 [&_.select-option-cell]:!gap-0',
+            // Flutter desktopListCardCellStyleMap: Person is `hideName: true, spacing: 4.0`.
+            // Names stay in the DOM for screen readers; PersonCell's own `gap-1` is the 4px.
+            field.fieldType === FieldType.Person && '[&_.person-cell-name]:sr-only',
             field.fieldType === FieldType.Relation &&
-              '[&_.relation-cell>div]:!text-text-secondary [&_.relation-cell]:!gap-0',
-            field.fieldType === FieldType.Rollup && '[&_.rollup-cell>div>div]:!bg-fill-secondary'
+              '[&_.relation-cell>div]:!text-text-primary [&_.relation-cell]:!gap-0',
+            field.fieldType === FieldType.Rollup &&
+              '[&_.rollup-cell>div>div]:!bg-fill-secondary [&_.rollup-person-name]:text-xs [&_.rollup-person-name]:leading-[18px]'
           )}
           data-field-type={field.fieldType}
           data-testid={`list-shared-cell-${rowId}-${field.fieldId}`}
@@ -263,6 +266,18 @@ export function ListCell({
             style={style}
             wrap={false}
           />
+        </div>
+      );
+    case FieldType.CreatedBy:
+    case FieldType.LastEditedBy:
+      // Desktop keeps the names here (no `hideName`), set in the map's 12px `textStyle`.
+      return (
+        <div
+          className='min-w-0 max-w-full [&_.attribution-name]:text-xs [&_.attribution-name]:leading-[18px]'
+          data-field-type={field.fieldType}
+          data-testid={`list-shared-cell-${rowId}-${field.fieldId}`}
+        >
+          <Cell cell={cell} fieldId={field.fieldId} readOnly rowId={rowId} style={style} wrap={false} />
         </div>
       );
     default:

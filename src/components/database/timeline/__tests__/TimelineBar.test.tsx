@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { ComponentProps, ReactNode } from 'react';
 
-import { FieldVisibility } from '@/application/database-yjs';
+import { FieldType, FieldVisibility } from '@/application/database-yjs';
 
 import { TimelineBar } from '../TimelineBar';
 import { TimelineTableProvider } from '../TimelineTable';
@@ -140,4 +140,51 @@ test('a hover card reads the resized table boundary only when opened', () => {
   rerender(bar);
   expect(screen.getByTestId('tooltip-left-padding').textContent).toBe('676');
   bounds.mockRestore();
+});
+
+test('property chips use the desktop list card cell style map', () => {
+  const chip = (fieldId: string, fieldType: FieldType) => ({
+    fieldId,
+    fieldType,
+    width: 100,
+    visibility: FieldVisibility.AlwaysShown,
+    isPrimary: false,
+  });
+
+  setup({
+    propertyFields: [
+      chip('assignee', FieldType.Person),
+      chip('files', FieldType.Media),
+      chip('count', FieldType.Number),
+      chip('author', FieldType.CreatedBy),
+    ],
+  });
+
+  const chips = ['assignee', 'files', 'count', 'author'].map((fieldId) =>
+    screen.getByTestId(`timeline-bar-chip-row-${fieldId}`)
+  );
+  const [person, media, number, author] = chips;
+
+  for (const element of chips) {
+    // Caption 12/18 regular overrides the bar's `font-medium`; the chip stays a nested control.
+    expect(element.className).toContain('text-xs');
+    expect(element.className).toContain('leading-[18px]');
+    expect(element.className).toContain('font-normal');
+    expect(element.className).toContain('shrink-0');
+    expect(element.className).toContain('whitespace-nowrap');
+    expect(element.hasAttribute('data-timeline-control')).toBe(true);
+    expect(element.querySelector('[data-testid="checkbox-chip"]')).not.toBeNull();
+  }
+
+  // Desktop paints the all-day title in textEvent but the chips in the map's primary color.
+  expect(screen.getByText('Task').closest('[role="button"]')?.className).toContain('text-other-colors-text-event');
+  expect(person.className).toContain('text-text-primary');
+  expect(person.className).toContain('[&_.person-cell-name]:sr-only');
+  expect(person.getAttribute('data-field-type')).toBe(String(FieldType.Person));
+  expect(media.className).toContain('text-text-secondary');
+  expect(media.className).not.toContain('text-text-primary');
+  expect(number.className).toContain('text-text-primary');
+  expect(number.className).not.toContain('sr-only');
+  expect(author.className).toContain('text-text-primary');
+  expect(author.className).not.toContain('sr-only');
 });

@@ -42,7 +42,7 @@ export function RollupPersonList({ value, type }: { value: string; type: FieldTy
                 </AvatarFallback>
               </Avatar>
             ) : null}
-            <span className='truncate text-sm'>{label}</span>
+            <span className='rollup-person-name truncate text-sm'>{label}</span>
           </span>
         );
       })}

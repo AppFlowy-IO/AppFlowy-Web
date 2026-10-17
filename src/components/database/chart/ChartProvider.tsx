@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
 
 import { useChartLayoutSetting } from '@/application/database-yjs';
-import { ChartAggregationType, ChartDataItem, ChartType } from '@/application/database-yjs/chart.type';
+import { ChartAggregationType, ChartClickItem, ChartType } from '@/application/database-yjs/chart.type';
 import { useChartData } from '@/components/database/chart/hooks';
 import { ChartContext, ChartContextValue } from '@/components/database/chart/useChartContext';
 
@@ -20,9 +20,12 @@ export function ChartProvider({ children }: ChartProviderProps) {
   const { chartData, isLoading, xAxisField, selectOptions, fieldType, hasGroupableFields } = useChartData({ settings });
 
   // Drill-down state
-  const [drillDownItem, setDrillDownItem] = useState<ChartDataItem | null>(null);
+  const [drillDownItem, setDrillDownItem] = useState<ChartClickItem | null>(null);
 
-  const handleElementClick = useCallback((item: ChartDataItem) => {
+  const handleElementClick = useCallback((item: ChartClickItem) => {
+    // Desktop's `_showRowListPopup`: a category without rows (e.g. the
+    // always-present "No {field}" bucket of a select field) opens nothing.
+    if (item.rowIds.length === 0) return;
     setDrillDownItem(item);
   }, []);
 

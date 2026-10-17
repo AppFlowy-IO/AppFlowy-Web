@@ -12,6 +12,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
+import { timelineCardCellClassName } from './card-cell-style';
 import { TIMELINE_BAR_INSET, TIMELINE_ROW_HEIGHT } from './constants';
 import { TimelineDragMode } from './hooks/useTimelineDrag';
 import { TimelineRowModel } from './hooks/useTimelineRows';
@@ -252,7 +253,12 @@ export const TimelineBar = memo(
                       <span
                         key={field.fieldId}
                         data-timeline-control
-                        className='flex shrink-0 items-center whitespace-nowrap'
+                        data-field-type={field.fieldType}
+                        data-testid={`timeline-bar-chip-${rowId}-${field.fieldId}`}
+                        className={cn(
+                          'flex shrink-0 items-center whitespace-nowrap',
+                          timelineCardCellClassName(field.fieldType)
+                        )}
                       >
                         <CardField rowId={rowId} fieldId={field.fieldId} />
                       </span>

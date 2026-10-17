@@ -38,7 +38,7 @@ export function AttributionCell({ fieldId, onTextChange, rowId, style, wrap }: C
         <AvatarImage src={user?.avatar_url || undefined} alt={displayName} />
         <AvatarFallback className='text-xs'>{displayName}</AvatarFallback>
       </Avatar>
-      <span className='truncate text-sm'>{displayName}</span>
+      <span className='attribution-name truncate text-sm'>{displayName}</span>
     </div>
   );
 }

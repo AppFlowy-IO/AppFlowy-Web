@@ -2,6 +2,7 @@ import { createContext, useContext } from 'react';
 
 import {
   ChartAggregationType,
+  ChartClickItem,
   ChartDataItem,
   ChartLayoutSettings,
   ChartType,
@@ -29,8 +30,8 @@ export interface ChartContextValue {
   selectOptions: SelectOption[];
   /** Whether there are any groupable fields in the database */
   hasGroupableFields: boolean;
-  /** Callback when a chart element is clicked (for drill-down) */
-  onElementClick?: (item: ChartDataItem) => void;
+  /** Drill-down click; the widget passes the fill color it drew for the item. */
+  onElementClick?: (item: ChartClickItem) => void;
 }
 
 const defaultContext: ChartContextValue = {

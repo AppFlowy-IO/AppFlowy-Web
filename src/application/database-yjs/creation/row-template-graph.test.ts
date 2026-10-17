@@ -9,8 +9,10 @@ import { atomicRead } from '@/application/atomic-creation';
 import { collabFullSyncBatch } from '@/application/services/js-services/http/collab-api';
 import { Types, YDatabase, YDatabaseCell, YDoc, YjsDatabaseKey } from '@/application/types';
 import { parseYDatabaseFileMediaCellToCell, parseYDatabaseRelationCellToCell } from '../cell.parse';
+import { readChartLayoutSetting, writeChartLayoutSetting } from '../chart-layout-setting';
+import { CHART_LAYOUT_SETTINGS_KEY, ChartAggregationType, ChartType } from '../chart.type';
 import { DatabaseContext, type DatabaseContextState } from '../context';
-import { CalculationType, FieldType, FilterType } from '../database.type';
+import { CalculationType, DateGroupCondition, FieldType, FilterType } from '../database.type';
 import { useCalculateFieldDispatch } from '../dispatch/calculation';
 import { useRemoveSort } from '../dispatch/sort-filter';
 import { RelationFilterCondition } from '../fields/relation/relation.type';
@@ -1357,4 +1359,84 @@ test('legacy linked blocks retain the explicit database identity when Folder met
   const result = compound(await prepareTemplateRowGraph(params));
   expect(result.manifest.database_extensions[0].database_id).toBe(source.database_id);
   expect(result.manifest.objects.map((object) => object.kind).sort()).toEqual(['database_row', 'document']);
+});
+
+test('copied chart settings keep desktop BigInt integers, so Median and Week survive on both clients', async () => {
+  const source = archive();
+
+  source.views[0].layout = 3; // DatabaseViewLayout.Chart
+  const live = provideSource(source);
+  const db = live.getMap('data').get('database') as Y.Map<unknown>;
+  const view = (db.get('views') as Y.Map<Y.Map<unknown>>).get(source.views[0].id)!;
+  const chart = new Y.Map<unknown>();
+
+  // The source chart stores its integers as Any::BigInt, the way both clients write them.
+  (view.get('layout_settings') as Y.Map<unknown>).set(CHART_LAYOUT_SETTINGS_KEY, chart);
+  writeChartLayoutSetting(chart, {
+    chartType: ChartType.Line,
+    xFieldId: 'name',
+    aggregationType: ChartAggregationType.Median,
+    yFieldId: 'name',
+    dateCondition: DateGroupCondition.Week,
+  });
+  const params = input(document([{ viewIds: [source.views[0].id], databaseId: source.database_id }]));
+
+  params.template.documentData = undefined;
+  read.mockImplementation(async (_owner, path: string) =>
+    path.endsWith('/restore-state')
+      ? { database_restore_id: null, version: null }
+      : {
+          view_id: path.includes(`/view/${id('owned-container')}`) ? id('owned-container') : source.views[0].id,
+          parent_view_id: path.includes(`/view/${id('owned-container')}`)
+            ? params.template.docViewId
+            : id('owned-container'),
+          layout: 1,
+          children: [],
+          has_children: path.includes(`/view/${id('owned-container')}`),
+          extra: {
+            database_id: source.database_id,
+            is_database_container: path.includes(`/view/${id('owned-container')}`),
+          },
+        }
+  );
+  const rows = new Map(
+    source.rows.map((row) => [
+      String(row.id),
+      keep(archivedRowDocument(row, undefined, String(row.id), source.database_id, new Map(), source.fields)),
+    ])
+  );
+
+  sync.mockImplementation(async (_workspace, items) =>
+    items.map((request: { objectId: string; collabType: Types }) => {
+      const doc = request.collabType === Types.Database ? live : rows.get(request.objectId)!;
+
+      return {
+        objectId: request.objectId,
+        collabType: request.collabType,
+        missingUpdate: Y.encodeStateAsUpdate(doc),
+        serverStateVector: Y.encodeStateVector(doc),
+      };
+    })
+  );
+  const result = compound(await prepareTemplateRowGraph(params));
+  const descriptor = result.manifest.objects.find((object) => object.kind === 'database')!;
+  const copied = decode(result.seeds.get(descriptor.object_id)!).getMap('data').get('database') as Y.Map<unknown>;
+  const mounted = [...(copied.get('views') as Y.Map<Y.Map<unknown>>).values()].find(
+    (candidate) => !candidate.get('is_inline')
+  )!;
+  const copiedChart = (mounted.get('layout_settings') as Y.Map<unknown>).get(CHART_LAYOUT_SETTINGS_KEY) as Y.Map<unknown>;
+
+  // The live source read flattens bigint to JSON numbers; the copy re-tags them, or neither client honors the sidecars.
+  for (const key of ['chart_type', 'aggregation_type', 'date_condition', 'aggregation_type_pb']) {
+    expect(typeof copiedChart.get(key)).toBe('bigint');
+  }
+
+  expect(readChartLayoutSetting(copiedChart)).toEqual({
+    chartType: ChartType.Line,
+    xFieldId: 'name',
+    omitEmptyValues: false,
+    aggregationType: ChartAggregationType.Median,
+    yFieldId: 'name',
+    dateCondition: DateGroupCondition.Week,
+  });
 });

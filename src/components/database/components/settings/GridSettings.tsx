@@ -24,9 +24,10 @@ function GridSettings({ children }: { children: ReactNode }) {
         className={'!min-w-[120px]'}
       >
         <DropdownMenuGroup>
+          {/* Desktop database_settings_list.dart order: Properties, Layout, Group. */}
           <Properties />
-          <GridSettingGroup />
           <Layout currentLayout={DatabaseViewLayout.Grid} />
+          <GridSettingGroup />
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>

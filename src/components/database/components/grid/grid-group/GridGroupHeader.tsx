@@ -7,7 +7,8 @@ import {
   useSetGridGroupVisibilityDispatch,
   useToggleGridGroupCollapsedDispatch,
 } from '@/application/database-yjs/dispatch';
-import { ReactComponent as ArrowIcon } from '@/assets/icons/alt_arrow_right_small.svg';
+import { ReactComponent as ArrowDownFilledIcon } from '@/assets/icons/arrow_down_filled.svg';
+import { ReactComponent as ArrowRightFilledIcon } from '@/assets/icons/arrow_right_filled.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { ReactComponent as TickIcon } from '@/assets/icons/tick.svg';
@@ -17,7 +18,26 @@ import type { RenderRow } from '@/components/database/components/grid/grid-row';
 import { useCreateGridGroupRow } from '@/components/database/components/grid/grid-row/GridNewRow';
 import { RowCreationSpinner, useRowCreationAction } from '@/components/database/hooks/useRowCreationAction';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+
+// Desktop GroupHeader: a 24px ghost button (2px padding) around a 20px filled arrow.
+const collapsedIcon = (
+  <ArrowRightFilledIcon
+    aria-hidden='true'
+    className='h-5 w-5 text-icon-primary'
+    data-collapsed='true'
+    data-testid='grid-group-collapse-icon'
+  />
+);
+const expandedIcon = (
+  <ArrowDownFilledIcon
+    aria-hidden='true'
+    className='h-5 w-5 text-icon-primary'
+    data-collapsed='false'
+    data-testid='grid-group-collapse-icon'
+  />
+);
 
 function GridGroupHeader({ data }: { data: RenderRow }) {
   const { t } = useTranslation();
@@ -45,14 +65,12 @@ function GridGroupHeader({ data }: { data: RenderRow }) {
       <button
         aria-expanded={!data.groupCollapsed}
         aria-label={data.groupCollapsed ? t('button.expand', 'Expand group') : t('button.collapse', 'Collapse group')}
-        className='flex h-7 w-7 shrink-0 items-center justify-center rounded-300 hover:bg-fill-content-hover'
+        className='flex h-6 w-6 shrink-0 items-center justify-center rounded-300 p-0.5 hover:bg-fill-content-hover'
         data-testid='grid-group-collapse-toggle'
         onClick={onToggle}
         type='button'
       >
-        <ArrowIcon
-          className={cn('h-4 w-4 text-icon-primary transition-transform', !data.groupCollapsed && 'rotate-90')}
-        />
+        {data.groupCollapsed ? collapsedIcon : expandedIcon}
       </button>
 
       {data.groupOption ? (
@@ -65,7 +83,8 @@ function GridGroupHeader({ data }: { data: RenderRow }) {
           <Tag bgColor={optionBackgroundToken} label={data.groupOption.name} textColor={optionTextToken} />
         </div>
       ) : isCheckbox ? (
-        <div className='flex min-w-0 items-center gap-1.5'>
+        /* Desktop GroupHeader: an 18px RowSelectionCheckbox, HSpace(spacing.xs), then the field name. */
+        <div className='flex min-w-0 items-center gap-1'>
           <span
             aria-label={`${data.groupFieldName}: ${isChecked ? t('button.yes', 'Yes') : t('button.no', 'No')}`}
             aria-checked={isChecked}
@@ -107,24 +126,30 @@ function GridGroupHeader({ data }: { data: RenderRow }) {
                 data-testid='grid-hide-group'
                 onSelect={() => data.groupId && setVisibility(data.groupId, false)}
               >
-                {t('board.hideGroup', 'Hide group')}
+                {t('grid.settings.hideGroup', 'Hide group')}
               </DropdownMenuItem>
               <DropdownMenuItem data-testid='grid-remove-grouping' onSelect={clearGrouping} variant='destructive'>
                 {t('board.removeGrouping', 'Remove grouping')}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <button
-            aria-label={t('grid.row.newRow', 'New row in group')}
-            className='flex h-7 w-7 items-center justify-center rounded-300 opacity-0 hover:bg-fill-content-hover focus-visible:opacity-100 group-focus-within/grid-group-header:opacity-100 group-hover/grid-group-header:opacity-100'
-            data-testid='grid-group-new-row'
-            disabled={pending}
-            aria-busy={pending}
-            onClick={() => void run(createRow)}
-            type='button'
-          >
-            {pending ? <RowCreationSpinner /> : <PlusIcon className='h-4 w-4' />}
-          </button>
+          {/* Desktop GroupAddButton: AFTooltip("Create a new") around the ghost plus button. */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                aria-label={t('grid.row.newRow', 'New row in group')}
+                className='flex h-7 w-7 items-center justify-center rounded-300 opacity-0 hover:bg-fill-content-hover focus-visible:opacity-100 group-focus-within/grid-group-header:opacity-100 group-hover/grid-group-header:opacity-100'
+                data-testid='grid-group-new-row'
+                disabled={pending}
+                aria-busy={pending}
+                onClick={() => void run(createRow)}
+                type='button'
+              >
+                {pending ? <RowCreationSpinner /> : <PlusIcon className='h-4 w-4' />}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>{t('grid.selectOption.createNew', 'Create a new')}</TooltipContent>
+          </Tooltip>
         </>
       )}
     </div>

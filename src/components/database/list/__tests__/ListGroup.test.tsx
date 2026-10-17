@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { useDatabaseFields, useReadOnly } from '@/application/database-yjs';
 import {
@@ -25,8 +25,10 @@ jest.mock('@/application/database-yjs/dispatch', () => ({
   useToggleListGroupCollapsedDispatch: jest.fn(),
 }));
 
+const mockT = jest.fn((key: string, fallback?: string) => fallback ?? key);
+
 jest.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string, fallback?: string) => fallback ?? key }),
+  useTranslation: () => ({ t: mockT }),
 }));
 
 jest.mock('@/components/_shared/tag', () => ({
@@ -102,7 +104,13 @@ describe('ListGroupHeader', () => {
 
     actionsTrigger.focus();
     fireEvent.keyDown(actionsTrigger, { code: 'Enter', key: 'Enter' });
-    fireEvent.click(await screen.findByTestId('list-hide-group'));
+    const hideGroup = await screen.findByTestId('list-hide-group');
+
+    // Desktop _GroupMoreMenu reads grid.settings.hideGroup, not a board key.
+    expect(hideGroup.textContent).toBe('Hide group');
+    expect(mockT).toHaveBeenCalledWith('grid.settings.hideGroup', 'Hide group');
+    expect(mockT).not.toHaveBeenCalledWith('board.hideGroup', expect.anything());
+    fireEvent.click(hideGroup);
     expect(setVisibility).toHaveBeenCalledWith('todo', false);
 
     actionsTrigger.focus();
@@ -134,19 +142,64 @@ describe('ListGroupHeader', () => {
     );
   });
 
+  it('labels the add button with the desktop "Create a new" tooltip', async () => {
+    renderHeader();
+    const newRowButton = screen.getByTestId('list-group-new-row');
+
+    expect(screen.queryByRole('tooltip')).toBeNull();
+
+    act(() => newRowButton.focus());
+
+    expect(document.activeElement).toBe(newRowButton);
+    expect((await screen.findByRole('tooltip')).textContent).toBe('Create a new');
+    expect(mockT).toHaveBeenCalledWith('grid.selectOption.createNew', 'Create a new');
+  });
+
   it('matches Desktop GroupHeader spacing and control geometry', () => {
     renderHeader();
 
     const header = screen.getByTestId('list-group-header-todo');
     const collapse = screen.getByTestId('list-group-collapse-toggle');
+    const collapseTokens = collapse.className.split(/\s+/);
     const count = screen.getByTestId('list-group-row-count');
     const actions = screen.getByTestId('list-group-actions');
 
     expect(header.className).toContain('h-11');
-    expect(collapse.className).toContain('mr-1');
+    // Desktop AFGhostButton m with 2px padding: 24x24, radius 8, then an 8px gap before the name.
+    expect(collapseTokens).toEqual(
+      expect.arrayContaining(['h-6', 'w-6', 'p-0.5', 'rounded-300', 'mr-2', 'hover:bg-fill-content-hover'])
+    );
+    expect(collapseTokens).not.toContain('h-7');
     expect(count.className).toContain('ml-2');
     expect(count.className).toContain('py-px');
     expect(actions.className).toContain('ml-2');
+  });
+
+  it('swaps the filled arrow with the collapsed state instead of rotating it', () => {
+    const { rerender } = renderHeader();
+
+    const openIcon = screen.getByTestId('list-group-collapse-icon');
+
+    expect(openIcon.getAttribute('data-collapsed')).toBe('false');
+    expect(openIcon.getAttribute('class')).toContain('h-5');
+    expect(openIcon.getAttribute('class')).not.toContain('rotate-90');
+    expect(screen.getByTestId('list-group-collapse-toggle').getAttribute('aria-expanded')).toBe('true');
+
+    rerender(
+      <ListGroupHeader
+        fieldId='status'
+        fieldName='Status'
+        fieldType={0}
+        group={{ ...group, collapsed: true }}
+        groupConfigId='group-config'
+      />
+    );
+
+    const collapsedIcon = screen.getByTestId('list-group-collapse-icon');
+
+    expect(collapsedIcon.getAttribute('data-collapsed')).toBe('true');
+    expect(collapsedIcon.getAttribute('class')).not.toContain('rotate-90');
+    expect(screen.getByTestId('list-group-collapse-toggle').getAttribute('aria-expanded')).toBe('false');
   });
 });
 
@@ -187,9 +240,12 @@ describe('ListGroupFooter', () => {
     );
   });
 
-  it('matches Desktop 36px grouped footer geometry', () => {
+  it('matches Desktop 36px grouped footer geometry without a bottom border', () => {
     render(<ListGroupFooter fieldId='status' groupId='todo' />);
 
-    expect(screen.getByTestId('list-group-footer-todo').className).toContain('h-9');
+    const footer = screen.getByTestId('list-group-footer-todo');
+
+    expect(footer.className).toContain('h-9');
+    expect(footer.className).not.toContain('border-b');
   });
 });

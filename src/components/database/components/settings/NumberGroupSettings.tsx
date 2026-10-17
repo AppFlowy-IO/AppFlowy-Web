@@ -19,13 +19,19 @@ const RANGE_FIELDS = [
   { key: 'range_interval', name: 'interval', label: 'Interval' },
 ] as const;
 
+// Desktop `board.numberGrouping.*` strings; `t(key, fallback)` keeps them in
+// step with en.json once the keys are translated.
 const ERROR_MESSAGES: Record<NumberGroupValidationError, string> = {
-  invalidNumber: 'Enter valid decimal numbers.',
-  invalidBounds: 'End must be greater than Start.',
-  invalidInterval: 'Interval must be greater than zero.',
+  invalidNumber: 'Enter a number. Decimals are allowed.',
+  invalidBounds: 'The end value must be greater than the start value.',
+  invalidInterval: 'Use an interval greater than zero.',
   tooManyRanges: 'Use a larger interval to create at most 1,000 ranges.',
-  precisionExceeded: 'These values exceed the supported decimal precision.',
+  precisionExceeded: 'These numbers have too many decimal places. Use fewer.',
 };
+
+// Desktop NumberGroupSettings pads its section titles and choice rows 12x4
+// (spacing.l / spacing.xs) instead of the menu's default 8x6.
+const PANEL_ROW_CLASS = 'px-3 py-1';
 
 function rangeDraft(configuration: NumberGroupConfiguration): RangeDraft {
   return {
@@ -115,7 +121,9 @@ export function NumberGroupSettings({
 
   return (
     <>
-      <DropdownMenuLabel>{t('board.numberGrouping.title', 'Group numbers by')}</DropdownMenuLabel>
+      <DropdownMenuLabel className={PANEL_ROW_CLASS}>
+        {t('board.numberGrouping.title', 'Group numbers by')}
+      </DropdownMenuLabel>
       {configuration.mode === NumberGroupMode.Legacy ? (
         <p className='px-3 py-1 text-xs text-text-secondary' data-testid={`${testIdPrefix}-number-group-legacy`}>
           {t('board.numberGrouping.legacy', 'Automatic ranges of 100')}
@@ -127,6 +135,7 @@ export function NumberGroupSettings({
       ].map(({ mode, name, label }) => (
         <DropdownMenuItem
           aria-checked={configuration.mode === mode}
+          className={PANEL_ROW_CLASS}
           data-testid={`${testIdPrefix}-number-group-mode-${name}`}
           key={name}
           onSelect={(event) => {
@@ -155,6 +164,7 @@ export function NumberGroupSettings({
                   onChange={(event) => updateDraft(key, event.target.value)}
                   onKeyDown={(event) => handleInputKeyDown(event, key)}
                   role='textbox'
+                  size='sm'
                   type='text'
                   value={draft[key]}
                 />
@@ -192,10 +202,11 @@ export function NumberGroupSettings({
           </DropdownMenuItem>
         </div>
       ) : null}
-      <DropdownMenuLabel>{t('board.numberGrouping.sort', 'Sort groups')}</DropdownMenuLabel>
+      <DropdownMenuLabel className={PANEL_ROW_CLASS}>{t('board.numberGrouping.sort', 'Sort groups')}</DropdownMenuLabel>
       {[false, true].map((descending) => (
         <DropdownMenuItem
           aria-checked={configuration.sort_descending === descending}
+          className={PANEL_ROW_CLASS}
           data-testid={`${testIdPrefix}-number-group-sort-${descending ? 'descending' : 'ascending'}`}
           key={String(descending)}
           onSelect={(event) => {

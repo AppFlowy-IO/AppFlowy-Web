@@ -1,6 +1,7 @@
 import { forwardRef, useCallback, useMemo } from 'react';
 
 import { FieldType, GroupColumn, Row, useFieldType, useReadOnly } from '@/application/database-yjs';
+import { getRenderedBoardColumns } from '@/application/database-yjs/board-grouping';
 import { Column } from '@/components/database/components/board/column';
 import HiddenGroupColumn from '@/components/database/components/board/column/HiddenGroupColumn';
 import AddGroupColumn from '@/components/database/components/board/group/AddGroupColumn';
@@ -31,18 +32,10 @@ const Columns = forwardRef<
   const columnsWithRows = useMemo(() => {
     if (!groupResult) return [];
 
-    return columns
-      .map((data) => {
-        if (!groupResult.has(data.id)) {
-          return null;
-        }
-
-        return {
-          ...data,
-          rows: groupResult.get(data.id) || [],
-        };
-      })
-      .filter(Boolean) as (GroupColumn & { rows: Row[] })[];
+    return getRenderedBoardColumns(columns, groupResult).map((data) => ({
+      ...data,
+      rows: groupResult.get(data.id) || [],
+    }));
   }, [columns, groupResult]);
   const shownColumnIds = useMemo(() => new Set(columnsWithRows.map((column) => column.id)), [columnsWithRows]);
 

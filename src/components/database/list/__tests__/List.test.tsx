@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import { useDatabaseContext, useFieldsSelector, useReadOnly, useSortsSelector } from '@/application/database-yjs';
 
@@ -42,23 +42,28 @@ jest.mock('../ListGroupingContext', () => ({
   useListGrouping: () => grouping,
 }));
 
-jest.mock('../ListRow', () => ({
-  ListRow: ({
-    fields,
-    reorderable,
-    rowId,
-  }: {
-    fields: Array<{ fieldId: string }>;
-    reorderable: boolean;
-    rowId: string;
-  }) => (
-    <div
-      data-field-ids={fields.map((field) => field.fieldId).join(',')}
-      data-reorderable={String(reorderable)}
-      data-testid={`list-row-${rowId}`}
-    />
-  ),
-}));
+jest.mock('../ListRow', () => {
+  const { useListRowLayout } = jest.requireActual<typeof import('../ListRowLayout')>('../ListRowLayout');
+
+  return {
+    ListRow: ({
+      fields,
+      reorderable,
+      rowId,
+    }: {
+      fields: Array<{ fieldId: string }>;
+      reorderable: boolean;
+      rowId: string;
+    }) => (
+      <div
+        data-field-ids={fields.map((field) => field.fieldId).join(',')}
+        data-layout={useListRowLayout()}
+        data-reorderable={String(reorderable)}
+        data-testid={`list-row-${rowId}`}
+      />
+    ),
+  };
+});
 
 jest.mock('../ListGroup', () => ({
   ListGroupFooter: ({ groupId }: { groupId: string }) => <div data-testid={`list-group-footer-${groupId}`} />,
@@ -282,7 +287,68 @@ describe('List incremental rendering', () => {
     expect(screen.getByTestId('list-group-footer-todo')).toBeTruthy();
     expect(screen.getAllByTestId(/^list-row-row-/)).toHaveLength(2);
     expect(screen.getByTestId('list-row-row-1').getAttribute('data-reorderable')).toBe('false');
+    expect(screen.getByTestId('list-row-row-1').getAttribute('data-layout')).toBe('wide');
     expect(screen.queryByTestId('list-new-row')).toBeNull();
+  });
+
+  it('list_row.dart LayoutBuilder: measures the row layout once per List and hands it to every row', () => {
+    const originalResizeObserver = global.ResizeObserver;
+    const observers: Array<{ callback: ResizeObserverCallback; targets: Element[] }> = [];
+
+    global.ResizeObserver = class {
+      private readonly entry: { callback: ResizeObserverCallback; targets: Element[] };
+
+      constructor(callback: ResizeObserverCallback) {
+        this.entry = { callback, targets: [] };
+        observers.push(this.entry);
+      }
+
+      observe(target: Element) {
+        this.entry.targets.push(target);
+      }
+
+      unobserve() {
+        /* noop */
+      }
+
+      disconnect() {
+        /* noop */
+      }
+    } as unknown as typeof ResizeObserver;
+
+    try {
+      render(<List />);
+
+      const content = screen.getByTestId('database-list').firstElementChild as HTMLElement;
+      const layoutObservers = observers.filter((entry) => entry.targets.includes(content));
+      const resize = (width: number) =>
+        act(() => {
+          layoutObservers[0].callback(
+            [{ contentRect: { width } } as ResizeObserverEntry],
+            layoutObservers[0] as unknown as ResizeObserver
+          );
+        });
+
+      // One observer for the List, not one per mounted row.
+      expect(layoutObservers).toHaveLength(1);
+      expect(screen.getAllByTestId(/^list-row-row-/)).toHaveLength(50);
+      expect(screen.getAllByTestId(/^list-row-row-/).every((row) => row.getAttribute('data-layout') === 'wide')).toBe(
+        true
+      );
+
+      resize(400);
+      expect(
+        screen.getAllByTestId(/^list-row-row-/).every((row) => row.getAttribute('data-layout') === 'narrow')
+      ).toBe(true);
+
+      resize(1200);
+      expect(screen.getAllByTestId(/^list-row-row-/).every((row) => row.getAttribute('data-layout') === 'wide')).toBe(
+        true
+      );
+      expect(observers.filter((entry) => entry.targets.includes(content))).toHaveLength(1);
+    } finally {
+      global.ResizeObserver = originalResizeObserver;
+    }
   });
 
   it('keeps the initial grouped row subscription budget global across many groups', () => {

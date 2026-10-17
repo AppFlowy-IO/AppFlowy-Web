@@ -2,13 +2,14 @@ Feature: Database side peek entry points
 
   Rows open in a nonmodal side peek, except calendar and timeline rows which
   start centered. Each shows the row that was picked. Mirrors desktop
-  SP6 (list, gallery and feed rows) and covers the entry points desktop has
-  no hover control for: board cards and keyboard selection, the calendar
-  event popover and No Date list, the chart drill-down, timeline bars and
-  relation links.
+  SP6 (list, gallery and feed rows) and the list row's hover peek button
+  (desktop PR #1475), and covers the entry points desktop has no hover
+  control for: board cards and keyboard selection, the calendar event popover
+  and No Date list, the chart drill-down, timeline bars and relation links.
 
   # Mirror of desktop SP6. A web card click opens the peek directly; the list
-  # row additionally exposes a keyboard-only "Open row" control.
+  # row additionally exposes a keyboard-only "Open row" control and, since
+  # desktop PR #1475, the hover peek button covered by the next scenario.
   Scenario: List, gallery and feed rows open in the side peek from their cards
     Given I am signed in for side peek testing
     And I have created a grid named "Peek Layouts" with rows "Amber, Birch, Cedar"
@@ -27,6 +28,22 @@ Feature: Database side peek entry points
     And I open a new Feed view of the database
     And I open the row "Amber" in the peek from the feed view
     Then the peek is open in side mode showing "Amber"
+    And the peek has no backdrop
+
+  # Desktop list_row.dart _PeekButton (PR #1475): a 20px ghost button after the
+  # title that exists only while the row is hovered and opens the side peek.
+  # On the web it sits next to the row click, which keeps opening the peek.
+  Scenario: The list row's hover peek button opens the side peek
+    Given I am signed in for side peek testing
+    And I have created a grid named "Peek Hover" with rows "Amber, Birch, Cedar"
+    When I open a new List view of the database
+    Then the list row "Birch" does not show its peek button
+    When I hover the list row "Birch"
+    Then the list row "Birch" shows its peek button
+    When I move the pointer off the list rows
+    Then the list row "Birch" does not show its peek button
+    When I click the peek button of the list row "Birch"
+    Then the peek is open in side mode showing "Birch"
     And the peek has no backdrop
 
   Scenario: Board cards open the side peek from a click and from Enter on the selected card
@@ -60,8 +77,9 @@ Feature: Database side peek entry points
     When I open the undated row "Backlog" from the No Date list
     Then the peek is open in center mode showing "Backlog"
 
-  # One category keeps bar 1 unambiguous; the empty category is only drawn
-  # for rows without an option.
+  # One category keeps bar 1 unambiguous: a select field always draws its
+  # 0-row "No Type" bar (desktop parity), but it sorts last, so bar 1 stays
+  # "Design".
   Scenario: A chart drill-down row opens the side peek and closes the popup
     Given I am signed in for side peek testing
     And I have created a grid named "Peek Chart" with rows "Amber, Birch, Cedar"
