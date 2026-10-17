@@ -9,6 +9,7 @@ import type {
   SearchSummary,
 } from '@/application/services/domains/search';
 import { View } from '@/application/types';
+import { isRecordNotFoundError } from '@/application/utils/error-utils';
 import { getDatabaseIdFromExtra } from '@/application/view-utils';
 import { notify } from '@/components/_shared/notify';
 import { findView } from '@/components/_shared/outline/utils';
@@ -52,22 +53,48 @@ function getSearchResultViewIdCandidates(item: SearchDocumentResponseItem): stri
   return Array.from(new Set([item.object_id, item.database_view_id, item.database_id].filter(Boolean) as string[]));
 }
 
+/**
+ * Reads one view a result may open. `known` holds this access scope's answers: a loaded view, or
+ * `null` for an id the server says is no view. A cancelled, offline or failed read is not kept,
+ * so the next search asks again.
+ */
+async function lookUpResultView(
+  workspaceId: string,
+  viewId: string,
+  known: Map<string, View | null>,
+  signal: AbortSignal
+): Promise<View | undefined> {
+  try {
+    // A cancellable read skips the shared cache, so use a fresh entry the app already has.
+    const cached = ViewService.getCached(workspaceId, viewId);
+
+    if (cached) return cached;
+    if (known.has(viewId)) return known.get(viewId) ?? undefined;
+    const view = await ViewService.get(workspaceId, viewId, signal);
+
+    known.set(viewId, view);
+    return view;
+  } catch (error) {
+    if (isRecordNotFoundError(error)) known.set(viewId, null);
+    return undefined;
+  }
+}
+
 async function loadSearchResultView(
   item: SearchDocumentResponseItem,
   currentWorkspaceId: string,
   isCurrent: () => boolean,
-  signal: AbortSignal
+  lookUpView: (viewId: string) => Promise<View | undefined>
 ): Promise<View | undefined> {
   const workspaceId = item.workspace_id || currentWorkspaceId;
 
   if (workspaceId !== currentWorkspaceId) return;
   for (const viewId of getSearchResultViewIdCandidates(item)) {
     if (!isCurrent()) return;
-    try {
-      return await ViewService.get(workspaceId, viewId, signal);
-    } catch {
-      // Search can return database/object ids that are not view ids. Try the next candidate.
-    }
+    const view = await lookUpView(viewId);
+
+    // Search can return database/object ids that are not view ids. Try the next candidate.
+    if (view) return view;
   }
 }
 
@@ -187,6 +214,9 @@ function BestMatch({
   const requestController = useRef<AbortController>();
   // The response on screen: a background revalidation reloads exactly this query and page count.
   const shownRef = useRef<{ scope: object; query: string; pages: number }>();
+  // Views read for results missing from the outline, kept while the access scope lasts so a refined
+  // query or the next page does not read them again.
+  const knownResultViewsRef = useRef<{ scope: object; views: Map<string, View | null> }>();
   const searchValueRef = useRef(searchValue);
   const [keywordSearchStreamId] = useState(() => createSearchStreamId('best-match-keyword'));
 
@@ -201,10 +231,26 @@ function BestMatch({
       const views = new Map<string, View>();
 
       if (!currentWorkspaceId) return views;
+      if (knownResultViewsRef.current?.scope !== scope) knownResultViewsRef.current = { scope, views: new Map() };
+      const known = knownResultViewsRef.current.views;
+      // Results share reads: every row of one database falls back to the same database view.
+      const lookups = new Map<string, Promise<View | undefined>>();
+      const lookUpView = (viewId: string) => {
+        let lookup = lookups.get(viewId);
+
+        if (!lookup) {
+          lookup = lookUpResultView(currentWorkspaceId, viewId, known, signal);
+          lookups.set(viewId, lookup);
+        }
+
+        return lookup;
+      };
+
       const resolvedViews = await Promise.all(
         results.map(
           async (item) =>
-            resolveSearchResultView(outlineRef.current || [], item) || loadSearchResultView(item, currentWorkspaceId, isCurrent, signal)
+            resolveSearchResultView(outlineRef.current || [], item) ||
+            loadSearchResultView(item, currentWorkspaceId, isCurrent, lookUpView)
         )
       );
 
@@ -216,7 +262,7 @@ function BestMatch({
 
       return views;
     },
-    [currentWorkspaceId, isCurrent]
+    [currentWorkspaceId, isCurrent, scope]
   );
 
   const items = useMemo<SearchViewListItem[]>(() => {
@@ -485,6 +531,8 @@ function BestMatch({
   useEffect(() => {
     if (handledRefreshKey.current === refreshKey) return;
     handledRefreshKey.current = refreshKey;
+    // A missed hint may also have changed what a result opens.
+    knownResultViewsRef.current = undefined;
     debounceSearch.cancel();
     void runSearch(searchValueRef.current, true);
   }, [debounceSearch, refreshKey, runSearch]);

@@ -16,6 +16,7 @@ const mockUseAIEnabled = jest.fn();
 const mockSearchWorkspaceDocumentPage = jest.fn();
 const mockGenerateSearchSummary = jest.fn();
 const mockGetView = jest.fn();
+const mockGetCachedView = jest.fn();
 const mockGetMultipleViews = jest.fn();
 const mockNotifyError = jest.fn();
 let mockAppOutline: View[] | undefined = [];
@@ -62,6 +63,7 @@ jest.mock('@/application/services/domains', () => ({
   },
   ViewService: {
     get: (...args: unknown[]) => mockGetView(...args),
+    getCached: (...args: unknown[]) => mockGetCachedView(...args),
     getMultiple: (...args: unknown[]) => mockGetMultipleViews(...args),
   },
 }));
@@ -170,9 +172,13 @@ describe('BestMatch', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     // Unconsumed one-off responses must not leak into the next case.
-    [mockSearchWorkspaceDocumentPage, mockGenerateSearchSummary, mockGetView, mockGetMultipleViews].forEach((mock) =>
-      mock.mockReset()
-    );
+    [
+      mockSearchWorkspaceDocumentPage,
+      mockGenerateSearchSummary,
+      mockGetView,
+      mockGetCachedView,
+      mockGetMultipleViews,
+    ].forEach((mock) => mock.mockReset());
     mockAppOutline = [];
     mockWorkspaceId = 'workspace-id';
     mockUserId = 'user-id';
@@ -774,5 +780,132 @@ describe('BestMatch', () => {
       ])
     );
     expect(mockCanAskFollowUp).toBe(true);
+  });
+
+  describe('views of results missing from the outline', () => {
+    // What the server answers for a row or database id: it is not a folder view.
+    const notAView = {
+      code: ERROR_CODE.RECORD_NOT_FOUND,
+      httpStatus: 404,
+      sourceDomain: 'appflowy.server',
+      message: 'There is no accessible folder view',
+    };
+    const projects = createView({ view_id: 'database-view-id', name: 'Projects', layout: ViewLayout.Grid });
+    const deepResult = { object_id: 'deep-view-id', workspace_id: 'workspace-id' };
+
+    function rowResult(rowId: string) {
+      return {
+        object_id: rowId,
+        workspace_id: 'workspace-id',
+        database_row_id: rowId,
+        database_view_id: 'database-view-id',
+        database_id: 'database-id',
+      };
+    }
+
+    function rerenderWith(rerender: ReturnType<typeof renderBestMatch>['rerender'], searchValue: string) {
+      rerender(<BestMatch askingAI={false} searchValue={searchValue} onAskAI={jest.fn()} onClose={jest.fn()} />);
+    }
+
+    beforeEach(() => {
+      mockUseAIEnabled.mockReturnValue(false);
+      mockGetView.mockImplementation((_workspaceId, viewId) =>
+        viewId === 'database-view-id' ? Promise.resolve(projects) : Promise.reject(notAView)
+      );
+    });
+
+    it('reads the database view of several row results once', async () => {
+      mockSearchWorkspaceDocumentPage.mockResolvedValue({
+        has_more: false,
+        items: [rowResult('row-1'), rowResult('row-2'), rowResult('row-3')],
+        next_offset: null,
+      });
+      renderBestMatch('launch');
+
+      expect(await screen.findAllByText('Projects')).toHaveLength(3);
+      expect(mockGetView.mock.calls.filter((call) => call[1] === 'database-view-id')).toHaveLength(1);
+    });
+
+    it('does not read views or row ids again for a refined query', async () => {
+      mockSearchWorkspaceDocumentPage
+        .mockResolvedValueOnce({ has_more: false, items: [rowResult('row-1'), rowResult('row-2')], next_offset: null })
+        .mockResolvedValueOnce({
+          has_more: false,
+          items: [rowResult('row-1'), rowResult('row-2'), rowResult('row-3')],
+          next_offset: null,
+        });
+      const { rerender } = renderBestMatch('lau');
+
+      expect(await screen.findAllByText('Projects')).toHaveLength(2);
+      expect(mockGetView).toHaveBeenCalledTimes(3);
+      rerenderWith(rerender, 'launch');
+
+      await waitFor(() => expect(screen.getAllByText('Projects')).toHaveLength(3));
+      // Only the new row id is asked about.
+      expect(mockGetView).toHaveBeenCalledTimes(4);
+      expect(mockGetView).toHaveBeenLastCalledWith('workspace-id', 'row-3', expect.any(AbortSignal));
+    });
+
+    it('asks again for a view whose read was cancelled or failed', async () => {
+      mockSearchWorkspaceDocumentPage.mockResolvedValue({ has_more: false, items: [deepResult], next_offset: null });
+      mockGetView
+        // The next keystroke cancels this read, which then rejects like a real request.
+        .mockImplementationOnce(
+          (_workspaceId, _viewId, signal) =>
+            new Promise((_resolve, reject) => {
+              (signal as AbortSignal).addEventListener('abort', () =>
+                reject({ code: -1, sourceDomain: 'transport', transportFailure: 'cancelled', message: 'canceled' })
+              );
+            })
+        )
+        .mockRejectedValueOnce({ code: 500, httpStatus: 500, sourceDomain: 'http', message: 'Internal Server Error' })
+        .mockResolvedValueOnce(createView({ view_id: 'deep-view-id', name: 'Deep page' }));
+      const { rerender } = renderBestMatch('dee');
+
+      await waitFor(() => expect(mockGetView).toHaveBeenCalledTimes(1));
+      rerenderWith(rerender, 'deep');
+      expect(await screen.findByText('noSearchResults')).toBeTruthy();
+      expect(mockGetView).toHaveBeenCalledTimes(2);
+      rerenderWith(rerender, 'deep page');
+
+      expect(await screen.findByText('Deep page')).toBeTruthy();
+      expect(mockGetView).toHaveBeenCalledTimes(3);
+    });
+
+    it.each([
+      [
+        'the socket reconnects',
+        () => {
+          mockEmitter.emit(APP_EVENTS.WEBSOCKET_STATUS, WebSocket.CLOSED);
+          mockEmitter.emit(APP_EVENTS.WEBSOCKET_STATUS, WebSocket.OPEN);
+        },
+      ],
+      ['a permission changes', () => mockEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {})],
+    ])('reads them again after %s', async (_event, emit) => {
+      mockSearchWorkspaceDocumentPage.mockResolvedValue({ has_more: false, items: [deepResult], next_offset: null });
+      mockGetView.mockResolvedValueOnce(createView({ view_id: 'deep-view-id', name: 'Deep page' }));
+      renderBestMatch('deep');
+      await screen.findByText('Deep page');
+      mockGetView.mockResolvedValueOnce(createView({ view_id: 'deep-view-id', name: 'Renamed deep page' }));
+
+      act(() => {
+        emit();
+      });
+
+      expect(await screen.findByText('Renamed deep page')).toBeTruthy();
+      expect(mockGetView).toHaveBeenCalledTimes(2);
+    });
+
+    it('uses a view the app read moments ago instead of reading it again', async () => {
+      mockSearchWorkspaceDocumentPage.mockResolvedValue({ has_more: false, items: [deepResult], next_offset: null });
+      mockGetCachedView.mockImplementation((_workspaceId, viewId) =>
+        viewId === 'deep-view-id' ? createView({ view_id: 'deep-view-id', name: 'Deep page' }) : undefined
+      );
+      renderBestMatch('deep');
+
+      expect(await screen.findByText('Deep page')).toBeTruthy();
+      expect(mockGetCachedView).toHaveBeenCalledWith('workspace-id', 'deep-view-id');
+      expect(mockGetView).not.toHaveBeenCalled();
+    });
   });
 });
