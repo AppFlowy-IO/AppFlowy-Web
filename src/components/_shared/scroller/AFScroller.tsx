@@ -77,19 +77,32 @@ export const AFScroller = React.forwardRef(
           ),
         })}
         style={style}
-        renderView={(props) => (
-          <div
-            {...props}
-            style={{
-              ...props.style,
-              overflowX: overflowXHidden ? 'hidden' : 'auto',
-              overflowY: overflowYHidden ? 'hidden' : 'auto',
-              marginRight: 0,
-              marginBottom: 0,
-            }}
-            className={cn(hideScrollbars ? 'appflowy-hidden-scroller' : 'appflowy-custom-scroller', className)}
-          />
-        )}
+        renderView={(props) => {
+          // Scrollbars pushes a space-taking native scrollbar out of view with a negative
+          // margin. That margin is reset to 0 below so the content keeps its exact width, so
+          // hide the native bar with CSS instead whenever it would take space (classic
+          // "always show" scrollbars on macOS/Linux, every Windows browser). Overlay
+          // scrollbars measure 0 and stay native, as Scrollbars hides its own tracks for them.
+          const nativeScrollbarTakesSpace = Number(props.style?.marginRight) < 0;
+
+          return (
+            <div
+              {...props}
+              style={{
+                ...props.style,
+                overflowX: overflowXHidden ? 'hidden' : 'auto',
+                overflowY: overflowYHidden ? 'hidden' : 'auto',
+                marginRight: 0,
+                marginBottom: 0,
+              }}
+              className={cn(
+                hideScrollbars ? 'appflowy-hidden-scroller' : 'appflowy-custom-scroller',
+                nativeScrollbarTakesSpace && 'appflowy-hidden-scrollbar',
+                className
+              )}
+            />
+          );
+        }}
       >
         {children}
       </Scrollbars>

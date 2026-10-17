@@ -46,7 +46,8 @@ function BoardSettingGroup() {
     },
     [getRows, groupRowsReady, hideEmptyGroups, setColumnRendered]
   );
-  const { properties: allProperties } = usePropertiesSelector(true);
+  // Desktop offers every groupable field, hidden ones included.
+  const { properties: allProperties } = usePropertiesSelector(false);
   const properties = useMemo(
     () => allProperties.filter((property) => BOARD_GROUPABLE_FIELD_TYPES.includes(property.type)),
     [allProperties]

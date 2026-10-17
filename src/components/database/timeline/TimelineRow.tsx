@@ -1,7 +1,7 @@
 import { memo, MouseEvent, PointerEvent as ReactPointerEvent, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Column } from '@/application/database-yjs';
+import { Column, type FieldType } from '@/application/database-yjs';
 import { ReactComponent as ArrowLeft } from '@/assets/icons/arrow_left.svg';
 import { ReactComponent as ArrowRight } from '@/assets/icons/arrow_right.svg';
 import { type Edge } from '@/components/database/components/drag-and-drop/useRowDnd';
@@ -49,6 +49,8 @@ interface TimelineRowProps {
   rowActions: TimelineRowActions;
   /** Properties shown as table columns after the title. */
   tableFieldIds: string[];
+  /** Their field types, resolved once by the view. */
+  tableFieldTypes: ReadonlyMap<string, FieldType>;
   /** When grouped: the group field and this row's group, so inserts land in the same group. */
   groupFieldId?: string;
   groupId?: string;
@@ -75,13 +77,7 @@ interface TimelineRowProps {
   ) => void;
 }
 
-function OffscreenPill({
-  direction,
-  onClick,
-}: {
-  direction: 'left' | 'right';
-  onClick: () => void;
-}) {
+function OffscreenPill({ direction, onClick }: { direction: 'left' | 'right'; onClick: () => void }) {
   const { t } = useTranslation();
   const Icon = direction === 'left' ? ArrowLeft : ArrowRight;
 
@@ -128,6 +124,7 @@ export const TimelineRow = memo(
     formatTime,
     rowActions,
     tableFieldIds,
+    tableFieldTypes,
     groupFieldId,
     groupId,
     onOpen,
@@ -189,6 +186,7 @@ export const TimelineRow = memo(
             selected={selected}
             rowActions={rowActions}
             tableFieldIds={tableFieldIds}
+            tableFieldTypes={tableFieldTypes}
             groupFieldId={groupFieldId}
             groupId={groupId}
             dropTargetRef={rowRef}

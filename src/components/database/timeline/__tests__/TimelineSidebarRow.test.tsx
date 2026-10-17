@@ -1,7 +1,6 @@
 import { render, screen } from '@testing-library/react';
 
 import { FieldType } from '@/application/database-yjs/database.type';
-import { YjsDatabaseKey } from '@/application/types';
 
 import { TimelineSidebarRow } from '../TimelineSidebarRow';
 import { TimelineTableProvider } from '../TimelineTable';
@@ -12,13 +11,7 @@ const mockFieldTypes: Record<string, FieldType> = {
   count: FieldType.Number,
   author: FieldType.CreatedBy,
 };
-// Just enough of a Y.Map field for the type lookup.
-const mockFields = new Map(
-  Object.entries(mockFieldTypes).map(([fieldId, fieldType]) => [
-    fieldId,
-    { get: (key: string) => (key === YjsDatabaseKey.type ? String(fieldType) : undefined) },
-  ])
-);
+const mockTableFieldTypes: ReadonlyMap<string, FieldType> = new Map(Object.entries(mockFieldTypes));
 
 // jsdom drops a `var()` width, so the column widths are plain pixels here.
 const mockColumnWidth = (fieldId: string) => `${100 + fieldId.length}px`;
@@ -31,7 +24,6 @@ jest.mock('../table-layout', () => ({
 jest.mock('@/application/database-yjs', () => ({
   ...jest.requireActual('@/application/database-yjs/database.type'),
   useRowMetaSelector: () => undefined,
-  useFieldSelector: (fieldId: string) => ({ clock: 0, field: mockFields.get(fieldId) }),
 }));
 jest.mock('@/components/database/components/drag-and-drop/useRowDnd', () => ({
   useRowDnd: () => ({ dragging: false, ignoreClickRef: { current: false } }),
@@ -56,6 +48,7 @@ function renderRow(tableFieldIds = Object.keys(mockFieldTypes)) {
         editable={false}
         rowActions={{ addAbove: jest.fn(), addBelow: jest.fn(), duplicate: jest.fn() }}
         tableFieldIds={tableFieldIds}
+        tableFieldTypes={mockTableFieldTypes}
         dropTargetRef={{ current: null }}
       />
     </TimelineTableProvider>

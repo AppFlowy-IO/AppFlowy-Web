@@ -58,6 +58,7 @@ const rows = Array.from({ length: 10 }, (_, index) => ({
 const rect = { left: 20, width: 300 };
 const properties = [{ fieldId: 'done', width: 100, visibility: FieldVisibility.AlwaysShown, isPrimary: false }];
 const tableFieldIds = ['owner'];
+const tableFieldTypes = new Map<string, never>();
 const rowActions = { addAbove: jest.fn(), addBelow: jest.fn(), duplicate: jest.fn() };
 const formatTime = () => '';
 
@@ -100,6 +101,7 @@ function ResizeHarness({ onCommit }: { onCommit: (fieldId: string, width: number
             showSidebar
             propertyFields={properties}
             tableFieldIds={tableFieldIds}
+            tableFieldTypes={tableFieldTypes}
             editable
             dateEditable
             offscreenLeft

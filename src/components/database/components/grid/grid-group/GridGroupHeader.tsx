@@ -21,6 +21,24 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
+// Desktop GroupHeader: a 24px ghost button (2px padding) around a 20px filled arrow.
+const collapsedIcon = (
+  <ArrowRightFilledIcon
+    aria-hidden='true'
+    className='h-5 w-5 text-icon-primary'
+    data-collapsed='true'
+    data-testid='grid-group-collapse-icon'
+  />
+);
+const expandedIcon = (
+  <ArrowDownFilledIcon
+    aria-hidden='true'
+    className='h-5 w-5 text-icon-primary'
+    data-collapsed='false'
+    data-testid='grid-group-collapse-icon'
+  />
+);
+
 function GridGroupHeader({ data }: { data: RenderRow }) {
   const { t } = useTranslation();
   const readOnly = useReadOnly();
@@ -52,22 +70,7 @@ function GridGroupHeader({ data }: { data: RenderRow }) {
         onClick={onToggle}
         type='button'
       >
-        {/* Desktop GroupHeader: a 24px ghost button (2px padding) around a 20px filled arrow. */}
-        {data.groupCollapsed ? (
-          <ArrowRightFilledIcon
-            aria-hidden='true'
-            className='h-5 w-5 text-icon-primary'
-            data-collapsed='true'
-            data-testid='grid-group-collapse-icon'
-          />
-        ) : (
-          <ArrowDownFilledIcon
-            aria-hidden='true'
-            className='h-5 w-5 text-icon-primary'
-            data-collapsed='false'
-            data-testid='grid-group-collapse-icon'
-          />
-        )}
+        {data.groupCollapsed ? collapsedIcon : expandedIcon}
       </button>
 
       {data.groupOption ? (

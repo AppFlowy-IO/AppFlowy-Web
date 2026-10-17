@@ -22,10 +22,10 @@
  * - grouped_search_test.dart
  *
  * The Flutter controller-sync cases map to the colocated Yjs selector/hook
- * suites. Runnable Web exclusions are grouped search (Web has no database
- * search control) and list_group_visibility.feature (Web currently renders
- * List as unsupported). Board-only and native-mobile interaction suites are
- * outside this Grid migration.
+ * suites. The only runnable Web exclusion is grouped search (Web has no
+ * database search control); list_group_visibility.feature is migrated as
+ * playwright/bdd/features/database/list-group-visibility.feature. Board-only
+ * and native-mobile interaction suites are outside this Grid migration.
  */
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';

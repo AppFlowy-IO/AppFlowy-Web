@@ -24,6 +24,24 @@ import { cn } from '@/lib/utils';
 
 import { getListGroupCellsData } from './ListRowActions';
 
+// Desktop GroupHeader: a 24px ghost button (2px padding) around a 20px filled arrow.
+const collapsedIcon = (
+  <ArrowRightFilledIcon
+    aria-hidden='true'
+    className='h-5 w-5 text-icon-primary'
+    data-collapsed='true'
+    data-testid='list-group-collapse-icon'
+  />
+);
+const expandedIcon = (
+  <ArrowDownFilledIcon
+    aria-hidden='true'
+    className='h-5 w-5 text-icon-primary'
+    data-collapsed='false'
+    data-testid='list-group-collapse-icon'
+  />
+);
+
 export function useCreateListGroupRow(groupFieldId?: string, groupId?: string, openAfterCreate = false) {
   const fields = useDatabaseFields();
   const view = useDatabaseView();
@@ -85,22 +103,7 @@ export function ListGroupHeader({
         type='button'
         variant='ghost'
       >
-        {/* Desktop GroupHeader: a 24px ghost button (2px padding) around a 20px filled arrow. */}
-        {group.collapsed ? (
-          <ArrowRightFilledIcon
-            aria-hidden='true'
-            className='h-5 w-5 text-icon-primary'
-            data-collapsed='true'
-            data-testid='list-group-collapse-icon'
-          />
-        ) : (
-          <ArrowDownFilledIcon
-            aria-hidden='true'
-            className='h-5 w-5 text-icon-primary'
-            data-collapsed='false'
-            data-testid='list-group-collapse-icon'
-          />
-        )}
+        {group.collapsed ? collapsedIcon : expandedIcon}
       </Button>
 
       {group.option ? (

@@ -76,7 +76,7 @@ import { useTimelineRange } from './hooks/useTimelineRange';
 import { useTimelineRects } from './hooks/useTimelineRects';
 import { TimelineRowModel, useTimelineRows } from './hooks/useTimelineRows';
 import { useTimelineSavedColumnWidths } from './hooks/useTimelineSavedColumnWidths';
-import { useTimelineTableFieldIds } from './hooks/useTimelineTableFieldIds';
+import { useTimelineTableFieldIds, useTimelineTableFieldTypes } from './hooks/useTimelineTableFieldIds';
 import { useTimelineVirtualizer } from './hooks/useTimelineVirtualizer';
 import { buildDependencyGraph, collectDependents, linkOf } from './scale/dependencies';
 import {
@@ -173,6 +173,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
   const databaseFields = useDatabaseFields();
   const savedColumnWidths = useTimelineSavedColumnWidths();
   const tableFieldIds = useTimelineTableFieldIds(setting.tableFieldIds, primaryFieldId);
+  const tableFieldTypes = useTimelineTableFieldTypes(tableFieldIds);
   const [columnResize, setColumnResize] = useState<(TimelineColumnResize & { viewId: string }) | null>(null);
   const activeColumnResize =
     showSidebar &&
@@ -875,6 +876,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                       formatTime={formatTimeDisplay}
                       rowActions={rowActions}
                       tableFieldIds={tableFieldIds}
+                      tableFieldTypes={tableFieldTypes}
                       onOpen={handleOpen}
                       onSelect={setSelectedRowId}
                       onScrollTo={handleScrollToX}

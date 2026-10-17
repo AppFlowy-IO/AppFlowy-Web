@@ -143,9 +143,13 @@ export function createChartRowsStore(initialWatch: ChartRowsWatch = EMPTY_CHART_
         detach(current);
         observers.delete(rowId);
       });
-      Object.entries(rows).forEach(([rowId, doc]) => {
+      // `rowMap` is replaced per ensured row, so this runs hundreds of times
+      // while a large database loads; iterate without building a pairs array.
+      for (const rowId in rows) {
+        const doc = rows[rowId];
+
         if (doc && !observers.has(rowId)) attach(rowId, doc);
-      });
+      }
     },
     setWatch: (next) => {
       watch = next;

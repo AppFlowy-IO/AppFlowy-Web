@@ -63,7 +63,7 @@ jest.mock('@/components/database/components/sorts/ClearSortingConfirm', () => ({
 
 // RowPeekLayout reaches Dexie through side-peek-width.ts.
 jest.mock('@/components/database/row-peek/RowPeekLayout', () => ({
-  useRowPeekLayout: () => ({ canShow: true }),
+  useRowPeekCanShow: () => true,
 }));
 
 jest.mock('../ListRowActions', () => ({

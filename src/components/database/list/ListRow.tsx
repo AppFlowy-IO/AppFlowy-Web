@@ -1,11 +1,4 @@
-import {
-  type CSSProperties,
-  memo,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-} from 'react';
+import { type CSSProperties, memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -38,6 +31,9 @@ import { ListRowActions } from './ListRowActions';
 import { useListRowLayout } from './ListRowLayout';
 import { ListRowPeekButton } from './ListRowPeekButton';
 import { useListHasSorts } from './ListSortState';
+
+// Static, so the per-row re-renders skip it.
+const documentIndicatorIcon = <DocumentIcon aria-hidden='true' className='mr-1 h-5 w-5 shrink-0 text-icon-secondary' />;
 
 // Desktop desktopListCardCellStyleMap: caption.standard (12/18) in text-primary.
 const listCellStyle: CSSProperties = {
@@ -109,7 +105,7 @@ function ListPrimaryField({ field, rowId }: { field: Column; rowId: string }) {
           {meta?.icon}
         </span>
       ) : indicator === 'document' ? (
-        <DocumentIcon aria-hidden='true' className='mr-1 h-5 w-5 shrink-0 text-icon-secondary' />
+        documentIndicatorIcon
       ) : null}
       <div className='flex min-w-0 max-w-full shrink items-center overflow-hidden'>
         {isRowLoaded ? (
@@ -242,7 +238,7 @@ export const ListRow = memo(function ListRow({
         <div
           className={cn(
             'flex min-w-0 flex-1 cursor-pointer overflow-hidden rounded-300 p-2',
-            'group-hover/list-row:bg-fill-content-hover group-focus-within/list-row:bg-fill-content-hover',
+            'group-focus-within/list-row:bg-fill-content-hover group-hover/list-row:bg-fill-content-hover',
             narrow ? 'flex-col items-start' : 'items-center'
           )}
           data-testid={`list-row-content-${rowId}`}

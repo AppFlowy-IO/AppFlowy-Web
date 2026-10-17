@@ -9,10 +9,18 @@ import { cn } from '@/lib/utils';
  * names stay in the DOM for screen readers), CreatedBy/LastEditedBy with their
  * names, and Media in the secondary color (`MediaCardCell` ignores the map's
  * text style). Applied to the wrapper around `CardField`, which keeps the
- * Board's cell layout.
+ * Board's cell layout. Every table cell and bar chip asks for it on each
+ * render and the result only depends on the field type, so it is built once
+ * per type.
  */
+const classNameByFieldType = new Map<FieldType | undefined, string>();
+
 export function timelineCardCellClassName(fieldType?: FieldType) {
-  return cn(
+  const cached = classNameByFieldType.get(fieldType);
+
+  if (cached !== undefined) return cached;
+
+  const className = cn(
     'text-xs font-normal leading-[18px]',
     fieldType === FieldType.Media ? 'text-text-secondary' : 'text-text-primary',
     // PersonCell's own `gap-1` is the 4px avatar spacing.
@@ -24,4 +32,8 @@ export function timelineCardCellClassName(fieldType?: FieldType) {
     // `ChecklistProgressBar` renders its percentage in `textStyle` too.
     fieldType === FieldType.Checklist && '[&_.checklist-progress-label]:text-text-primary'
   );
+
+  classNameByFieldType.set(fieldType, className);
+
+  return className;
 }

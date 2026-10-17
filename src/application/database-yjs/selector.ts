@@ -1422,6 +1422,8 @@ export function useRowsByGroup(groupId: string) {
     fieldId,
     groupResult,
     columns: visibleColumns,
+    /** Every persisted column, hidden ones included (the Board group menu lists them all). */
+    allColumns: columns,
     groupRowsReady: groupVisibilityReady,
     hideEmptyGroups,
     notFound,

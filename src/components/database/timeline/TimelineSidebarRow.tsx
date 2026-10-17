@@ -1,8 +1,7 @@
 import { memo, MutableRefObject, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { type FieldType, useFieldSelector, useRowMetaSelector } from '@/application/database-yjs';
-import { YjsDatabaseKey } from '@/application/types';
+import { type FieldType, useRowMetaSelector } from '@/application/database-yjs';
 import { ReactComponent as ExpandIcon } from '@/assets/icons/expand.svg';
 import { DropRowIndicator } from '@/components/database/components/drag-and-drop/DropRowIndicator';
 import { type Edge, useRowDnd } from '@/components/database/components/drag-and-drop/useRowDnd';
@@ -31,6 +30,8 @@ interface TimelineSidebarRowProps {
   rowActions: TimelineRowActions;
   /** Properties shown as columns after the title. */
   tableFieldIds: string[];
+  /** Their field types, resolved once by the view. */
+  tableFieldTypes: ReadonlyMap<string, FieldType>;
   /** When grouped: inserted rows inherit this group's value. */
   groupFieldId?: string;
   groupId?: string;
@@ -45,10 +46,7 @@ interface TimelineSidebarRowProps {
  * One property column. The field type picks the desktop list style map entry
  * (`_tableCell` in database_timeline.dart): Person avatars only, Media secondary.
  */
-function TimelineTableCell({ fieldId, rowId }: { fieldId: string; rowId: string }) {
-  const { field } = useFieldSelector(fieldId);
-  const fieldType = field ? (Number(field.get(YjsDatabaseKey.type)) as FieldType) : undefined;
-
+function TimelineTableCell({ fieldId, fieldType, rowId }: { fieldId: string; fieldType?: FieldType; rowId: string }) {
   return (
     <div
       className={cn(
@@ -76,6 +74,7 @@ export const TimelineSidebarRow = memo(
     selected,
     rowActions,
     tableFieldIds,
+    tableFieldTypes,
     groupFieldId,
     groupId,
     dropTargetRef,
@@ -153,7 +152,12 @@ export const TimelineSidebarRow = memo(
             <span className='truncate'>{row.title || t('grid.row.titlePlaceholder', { defaultValue: 'Untitled' })}</span>
           </button>
           {tableFieldIds.map((fieldId) => (
-            <TimelineTableCell key={fieldId} fieldId={fieldId} rowId={row.rowId} />
+            <TimelineTableCell
+              key={fieldId}
+              fieldId={fieldId}
+              fieldType={tableFieldTypes.get(fieldId)}
+              rowId={row.rowId}
+            />
           ))}
           {/* Trailing control slot, the same width as the header's table toggle, so
             the property columns line up with their headers. */}

@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import { useDatabaseContextOptional } from '@/application/database-yjs';
-import { useRowPeekLayout } from '@/components/database/row-peek/RowPeekLayout';
+import { useRowPeekCanShow } from '@/components/database/row-peek/RowPeekLayout';
 
 import { ListRowPeekButton } from '../ListRowPeekButton';
 
@@ -11,7 +11,7 @@ jest.mock('@/application/database-yjs', () => ({
 
 // RowPeekLayout reaches Dexie through side-peek-width.ts.
 jest.mock('@/components/database/row-peek/RowPeekLayout', () => ({
-  useRowPeekLayout: jest.fn(),
+  useRowPeekCanShow: jest.fn(),
 }));
 
 jest.mock('react-i18next', () => ({
@@ -21,9 +21,8 @@ jest.mock('react-i18next', () => ({
 const mockUseDatabaseContextOptional = useDatabaseContextOptional as jest.MockedFunction<
   typeof useDatabaseContextOptional
 >;
-const mockUseRowPeekLayout = useRowPeekLayout as jest.MockedFunction<typeof useRowPeekLayout>;
+const mockUseRowPeekCanShow = useRowPeekCanShow as jest.MockedFunction<typeof useRowPeekCanShow>;
 
-type PeekLayout = ReturnType<typeof useRowPeekLayout>;
 type DatabaseContext = ReturnType<typeof useDatabaseContextOptional>;
 
 describe('ListRowPeekButton', () => {
@@ -32,7 +31,7 @@ describe('ListRowPeekButton', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockUseDatabaseContextOptional.mockReturnValue({ navigateToRow } as DatabaseContext);
-    mockUseRowPeekLayout.mockReturnValue({ canShow: true } as PeekLayout);
+    mockUseRowPeekCanShow.mockReturnValue(true);
   });
 
   it('list_row.dart _PeekButton: a 20x20 ghost button shown only while the row is hovered or focused', () => {
@@ -72,17 +71,17 @@ describe('ListRowPeekButton', () => {
   });
 
   it('labels the center peek when the side peek cannot show or a page modal is open', () => {
-    mockUseRowPeekLayout.mockReturnValue({ canShow: false } as PeekLayout);
+    mockUseRowPeekCanShow.mockReturnValue(false);
     const { rerender } = render(<ListRowPeekButton rowId='row-1' />);
 
     expect(screen.getByRole('button').getAttribute('aria-label')).toBe('grid.rowPage.openAsCenterPeekPanel');
 
-    mockUseRowPeekLayout.mockReturnValue({ canShow: true } as PeekLayout);
+    mockUseRowPeekCanShow.mockReturnValue(true);
     mockUseDatabaseContextOptional.mockReturnValue({ navigateToRow, openPageModalViewId: 'modal' } as DatabaseContext);
     rerender(<ListRowPeekButton rowId='row-1' />);
     expect(screen.getByRole('button').getAttribute('aria-label')).toBe('grid.rowPage.openAsCenterPeekPanel');
 
-    mockUseRowPeekLayout.mockReturnValue(null);
+    mockUseRowPeekCanShow.mockReturnValue(false);
     mockUseDatabaseContextOptional.mockReturnValue({ navigateToRow } as DatabaseContext);
     rerender(<ListRowPeekButton rowId='row-1' />);
     expect(screen.getByRole('button').getAttribute('aria-label')).toBe('grid.rowPage.openAsCenterPeekPanel');

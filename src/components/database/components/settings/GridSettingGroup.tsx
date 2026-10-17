@@ -1,4 +1,4 @@
-import { type KeyboardEvent, type PointerEvent, type RefObject, useMemo, useRef, useState } from 'react';
+import { type KeyboardEvent, type PointerEvent, type RefObject, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { DateGroupCondition, FieldType, usePropertiesSelector } from '@/application/database-yjs';
@@ -12,7 +12,10 @@ import {
   useUpdateNumberGroupConfigurationDispatch,
 } from '@/application/database-yjs/dispatch';
 import { DATABASE_GROUPABLE_FIELD_TYPES, parseDateGroupConfiguration } from '@/application/database-yjs/group';
-import { type NumberGroupConfiguration, parseNumberGroupConfiguration } from '@/application/database-yjs/number-grouping';
+import {
+  type NumberGroupConfiguration,
+  parseNumberGroupConfiguration,
+} from '@/application/database-yjs/number-grouping';
 import { DatabaseViewLayout } from '@/application/types';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as GroupIcon } from '@/assets/icons/group.svg';
@@ -21,6 +24,7 @@ import { ReactComponent as ShowIcon } from '@/assets/icons/show.svg';
 import { Tag } from '@/components/_shared/tag';
 import { SelectOptionColorMap, SelectOptionFgColorMap } from '@/components/database/components/cell/cell.const';
 import { FieldDisplay } from '@/components/database/components/field';
+import FieldCustomIcon from '@/components/database/components/field/FieldCustomIcon';
 import { NumberGroupSettings } from '@/components/database/components/settings/NumberGroupSettings';
 import { useGridGrouping } from '@/components/database/grid/GridGroupingContext';
 import {
@@ -45,6 +49,12 @@ const DATE_CONDITIONS = [
 ] as const;
 
 export const GRID_GROUP_VISIBILITY_LIMIT = 40;
+
+// Static icons, hoisted so the menu's frequent re-renders while open skip them.
+const groupIcon = <GroupIcon />;
+const deleteIcon = (
+  <DeleteIcon className='text-icon-primary group-hover/delete-grouping:text-text-error group-focus/delete-grouping:text-text-error' />
+);
 
 /**
  * One row of the "Groups" section. Grid/List/Timeline pass their `GridGroup`s
@@ -89,7 +99,9 @@ export interface DatabaseSettingGroupProps {
  * empty ones included, while it is off. Stale row-derived IDs that web only
  * retains as metadata never render, so they are not offered either.
  */
-export function getDatabaseGroupVisibilityGroups(grouping: Pick<GridGrouping, 'groups' | 'hideEmptyGroups'>): GridGroup[] {
+export function getDatabaseGroupVisibilityGroups(
+  grouping: Pick<GridGrouping, 'groups' | 'hideEmptyGroups'>
+): GridGroup[] {
   return grouping.groups.filter((group) =>
     grouping.hideEmptyGroups ? group.rows.length > 0 : !group.automaticallyHidden
   );
@@ -97,7 +109,7 @@ export function getDatabaseGroupVisibilityGroups(grouping: Pick<GridGrouping, 'g
 
 /** Desktop lists every `canBeGroup` field of the view, hidden fields included. */
 export function useGroupableProperties() {
-  const { properties } = usePropertiesSelector(true);
+  const { properties } = usePropertiesSelector(false);
 
   return useMemo(
     () => properties.filter((property) => DATABASE_GROUPABLE_FIELD_TYPES.includes(property.type)),
@@ -184,6 +196,13 @@ export function GridGroupVisibilityList({
   const renderedGroups = filteredGroups.slice(0, GRID_GROUP_VISIBILITY_LIMIT);
   const isLimited = renderedGroups.length < filteredGroups.length;
   const handleSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    // Inside the box the horizontal arrows move the caret; Radix would close
+    // the submenu on ArrowLeft.
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      event.stopPropagation();
+      return;
+    }
+
     if (event.ctrlKey || event.altKey || event.metaKey || event.key.length !== 1) return;
 
     // Radix uses printable keys for menu typeahead. Keep them in the search
@@ -252,7 +271,8 @@ export function GridGroupVisibilityList({
         </DropdownMenuItem>
       ))}
 
-      {filteredGroups.length === 0 && (
+      {/* Only a search can leave no match; an empty "Groups" list itself stays silent, as on desktop. */}
+      {normalizedSearch && filteredGroups.length === 0 ? (
         <div
           className='px-3 py-2 text-sm text-text-secondary'
           data-testid={`${testIdPrefix}-group-visibility-empty`}
@@ -260,7 +280,7 @@ export function GridGroupVisibilityList({
         >
           {t('grid.settings.noMatchingGroups', { defaultValue: 'No matching groups' })}
         </div>
-      )}
+      ) : null}
 
       {isLimited && (
         <div
@@ -360,6 +380,23 @@ export function DatabaseSettingGroup({
   const isNumber = grouping.fieldType === FieldType.Number;
   const dateFieldId = grouping.fieldType === FieldType.DateTime ? grouping.fieldId : undefined;
   const currentDateCondition = parseDateGroupConfiguration(grouping.content).condition;
+  const isGrouped = grouping.isGrouped;
+  const wasGrouped = useRef(isGrouped);
+
+  // Choosing a field or None keeps the menu open (desktop dismisses it) and
+  // swaps the inline field list for the grouped sections, which unmounts the
+  // focused item and drops keyboard focus to <body>. Radix only restores
+  // focus for its trapped root content, not for a portaled sub content, so
+  // bring it back into this submenu; its roving focus group then lands on the
+  // first item.
+  useEffect(() => {
+    if (wasGrouped.current === isGrouped) return;
+
+    wasGrouped.current = isGrouped;
+    const content = contentRef.current;
+
+    if (content && !content.contains(document.activeElement)) content.focus();
+  }, [isGrouped]);
   const fieldList = (
     <GroupByFieldList
       clearGrouping={clearGrouping}
@@ -378,7 +415,7 @@ export function DatabaseSettingGroup({
         data-testid={`${testIdPrefix}-group-settings-trigger`}
         onPointerLeave={keepSubmenuOpenOnPointerLeave(contentRef)}
       >
-        <GroupIcon />
+        {groupIcon}
         <span className='min-w-0 flex-1 truncate'>{t('grid.settings.group', 'Group')}</span>
         {grouping.isGrouped && grouping.fieldName ? (
           <span
@@ -481,11 +518,13 @@ export function DatabaseSettingGroup({
                       key={condition.value}
                       onSelect={() => updateDateCondition(condition.value)}
                     >
-                      <FieldDisplay
+                      {/* The icon alone; FieldDisplay would add a second field subscription per row. */}
+                      <span
+                        className='flex items-center'
                         data-testid={`${testIdPrefix}-date-group-condition-field-icon`}
-                        fieldId={dateFieldId}
-                        showPropertyName={false}
-                      />
+                      >
+                        <FieldCustomIcon fieldId={dateFieldId} />
+                      </span>
                       <span className='truncate'>
                         {t(`chart.dateGrouping.${condition.label.toLowerCase()}`, condition.label)}
                       </span>
@@ -504,7 +543,7 @@ export function DatabaseSettingGroup({
                     data-testid={`${testIdPrefix}-remove-grouping`}
                     onSelect={clearGrouping}
                   >
-                    <DeleteIcon className='text-icon-primary group-hover/delete-grouping:text-text-error group-focus/delete-grouping:text-text-error' />
+                    {deleteIcon}
                     {t('board.deleteGroup', 'Delete grouping')}
                   </DropdownMenuItem>
                 </>

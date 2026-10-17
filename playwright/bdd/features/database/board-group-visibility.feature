@@ -32,7 +32,8 @@ Feature: Board group visibility
     When I toggle the Board Groups row "No Status"
     Then the Board has no visible column named "No Status"
     And the Board Groups list shows "No Status" as hidden
-    When I expand the Board Hidden Groups section
+    When I close Board Group settings
+    And I expand the Board Hidden Groups section
     Then Hidden Groups has exactly one "No Status" row with only a show action
     When I toggle the Board Groups row "No Status"
     Then the Board shows the column named "No Status"

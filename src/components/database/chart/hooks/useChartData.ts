@@ -51,9 +51,12 @@ function formatPositional(template: string, values: string[]): string {
   return values.reduce((text, value) => text.replace('{}', () => value), template);
 }
 
+const BUCKET_DATE_PATTERN = /^(\d{4,})-(\d{2})-(\d{2})$/;
+const INTEGER_TEXT_PATTERN = /^[+-]?\d+$/;
+
 /** Local midnight of a `yyyy-MM-dd` bucket key (Dart `DateTime.tryParse`). */
 function parseBucketDate(key: string): Dayjs | null {
-  const match = /^(\d{4,})-(\d{2})-(\d{2})$/.exec(key);
+  const match = BUCKET_DATE_PATTERN.exec(key);
 
   if (!match) return null;
   const date = new Date(0);
@@ -282,7 +285,7 @@ function parseTimestampSeconds(value: unknown): number | null {
   if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'bigint') return null;
   const text = String(value);
 
-  if (!/^[+-]?\d+$/.test(text)) return null;
+  if (!INTEGER_TEXT_PATTERN.test(text)) return null;
   const seconds = Number(text);
 
   return Math.abs(seconds) >= 1e12 ? Math.trunc(seconds / 1000) : seconds;
@@ -679,9 +682,7 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     // Ensured ids only accumulate, so a size check tells whether the
     // published set is behind (a cancelled batch may have ensured some rows).
     const publishLoadedRows = () => {
-      setLoadedRowIds((prev) =>
-        prev.size === loadedRowIdsRef.current.size ? prev : new Set(loadedRowIdsRef.current)
-      );
+      setLoadedRowIds((prev) => (prev.size === loadedRowIdsRef.current.size ? prev : new Set(loadedRowIdsRef.current)));
       setHasLoadedOnce(true);
     };
 
@@ -792,7 +793,14 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
   // loaded row docs for the data the axes read and bump a clock, coalesced
   // per frame, like desktop reloading the chart on `rowsUpdated`.
   const chartRowsStore = useMemo(() => createChartRowsStore(), []);
-  const { aggregationType, yFieldId } = settings ?? DEFAULT_CHART_LAYOUT_SETTINGS;
+  const { aggregationType, yFieldId, omitEmptyValues, dateCondition } = settings ?? DEFAULT_CHART_LAYOUT_SETTINGS;
+  // Only the fields the bucketing reads: a chart-type switch (or the first
+  // persisted x field write) must not redo the O(rows) compute. `xFieldId`
+  // already reaches it through `xAxisField` / `fieldType` / `selectOptions`.
+  const computeSettings = useMemo<ChartLayoutSettings>(
+    () => ({ ...DEFAULT_CHART_LAYOUT_SETTINGS, aggregationType, yFieldId, omitEmptyValues, dateCondition }),
+    [aggregationType, yFieldId, omitEmptyValues, dateCondition]
+  );
   const yField = aggregationType !== ChartAggregationType.Count && yFieldId ? fields?.get(yFieldId) : undefined;
   const yFieldType = yField ? (Number(yField.get(YjsDatabaseKey.type)) as FieldType) : null;
   const rowsWatch = useMemo<ChartRowsWatch>(() => {
@@ -849,7 +857,7 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     if (!hasLoadedOnce) return EMPTY_CHART_DATA;
 
     return computeChartData({
-      settings,
+      settings: computeSettings,
       rowOrders: loadedRowOrders,
       rowMetas,
       xAxisField,
@@ -860,7 +868,7 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     });
   }, [
     hasLoadedOnce,
-    settings,
+    computeSettings,
     loadedRowOrders,
     rowMetas,
     xAxisField,

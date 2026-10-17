@@ -56,3 +56,28 @@ describe('AttributionCell avatar', () => {
     expect(screen.getByTestId('attribution-avatar-color-key').textContent).toBe(expectedColorKey);
   });
 });
+
+describe('AttributionCell name hook', () => {
+  it('marks the name with attribution-name for the list, gallery, feed and timeline card styles', () => {
+    const row = { get: jest.fn(() => '42') };
+    const user = {
+      avatar_url: '',
+      email: 'nathan@appflowy.io',
+      name: 'Nathan Foo',
+      person_id: 'person-42',
+      uid: '42',
+    };
+
+    mockUseFieldType.mockReturnValue(FieldType.CreatedBy);
+    mockUseRowDataSelector.mockReturnValue({ row } as unknown as ReturnType<typeof useRowDataSelector>);
+    mockUseMentionableUsersWithAutoFetch.mockReturnValue({
+      loading: false,
+      users: [user],
+      usersByUid: new Map([['42', user]]),
+    });
+
+    const { container } = render(<AttributionCell fieldId='created-by' readOnly rowId='row-1' wrap={false} />);
+
+    expect(container.querySelector('.attribution-name')?.textContent).toBe('Nathan Foo');
+  });
+});

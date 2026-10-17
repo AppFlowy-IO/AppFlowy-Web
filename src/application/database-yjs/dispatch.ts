@@ -358,7 +358,10 @@ export function useGroupByFieldDispatch({ preserveFilters = false }: { preserveF
         [
           () => {
             const layout = Number(view.get(YjsDatabaseKey.layout)) as DatabaseViewLayout;
-            const supportsOptionalGrouping = layout === DatabaseViewLayout.Grid || layout === DatabaseViewLayout.List;
+            const supportsOptionalGrouping =
+              layout === DatabaseViewLayout.Grid ||
+              layout === DatabaseViewLayout.List ||
+              layout === DatabaseViewLayout.Timeline;
 
             if (!supportsOptionalGrouping && !preserveFilters) {
               // Board keeps its existing behavior: a field cannot simultaneously

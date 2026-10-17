@@ -1,7 +1,14 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react';
+import { useState } from 'react';
 import * as Y from 'yjs';
 
-import { DatabaseContext, DateGroupCondition, FieldType, SelectOptionColor } from '@/application/database-yjs';
+import {
+  DatabaseContext,
+  DateGroupCondition,
+  FieldType,
+  FieldVisibility,
+  SelectOptionColor,
+} from '@/application/database-yjs';
 import type { DatabaseContextState, GridGroup } from '@/application/database-yjs';
 import { createCell, createRowDoc } from '@/application/database-yjs/__tests__/test-helpers';
 import { createYDatabaseGroupColumn } from '@/application/database-yjs/group-column';
@@ -10,7 +17,9 @@ import { DatabaseViewLayout, YjsDatabaseKey, YjsEditorKey } from '@/application/
 import type {
   YDatabase,
   YDatabaseField,
+  YDatabaseFieldOrders,
   YDatabaseFields,
+  YDatabaseFieldSettings,
   YDatabaseFieldTypeOption,
   YDatabaseFilters,
   YDatabaseGroup,
@@ -32,6 +41,7 @@ import {
   GRID_GROUP_VISIBILITY_LIMIT,
   GridGroupVisibilityList,
   getDatabaseGroupVisibilityGroups,
+  useGroupableProperties,
 } from '@/components/database/components/settings/GridSettingGroup';
 import { GridGroupingProvider, useGridGrouping } from '@/components/database/grid/GridGroupingContext';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -783,5 +793,95 @@ describe('GridGroupVisibilityList', () => {
     fireEvent.click(visibleGroup);
     expect(setVisibility).toHaveBeenCalledWith('group-1', false);
     expect(screen.getByRole('menu')).toBeTruthy();
+  });
+});
+
+describe('DatabaseSettingGroup keyboard focus across the grouped swap', () => {
+  const GROUPED: DatabaseSettingGroupProps['grouping'] = {
+    fieldId: FIELD_ID,
+    fieldName: 'Status',
+    fieldType: FieldType.SingleSelect,
+    groups: [],
+    hideEmptyGroups: true,
+    isGrouped: true,
+  };
+
+  function TransitionMenu({ groupBy }: { groupBy: jest.Mock }) {
+    const [grouping, setGrouping] = useState<DatabaseSettingGroupProps['grouping']>(UNGROUPED);
+
+    return (
+      <SettingGroupMenu
+        clearGrouping={() => setGrouping(UNGROUPED)}
+        groupBy={(fieldId) => {
+          groupBy(fieldId);
+          setGrouping(GROUPED);
+        }}
+        grouping={grouping}
+        properties={[{ id: FIELD_ID, type: FieldType.SingleSelect }]}
+      />
+    );
+  }
+
+  it('keeps focus inside the submenu after Enter on a field row and on None (the menu stays open, unlike desktop)', async () => {
+    const fixture = createFixture();
+    const groupBy = jest.fn();
+    const { unmount } = render(
+      <DatabaseContext.Provider value={fixture.contextValue}>
+        <TransitionMenu groupBy={groupBy} />
+      </DatabaseContext.Provider>
+    );
+    const { menu } = await openSettingGroup();
+    const fieldRow = await screen.findByTestId(`grid-group-by-field-${FIELD_ID}`);
+
+    fieldRow.focus();
+    fireEvent.keyDown(fieldRow, { key: 'Enter' });
+    expect(groupBy).toHaveBeenCalledWith(FIELD_ID);
+    // The inline field list is replaced by the grouped sections...
+    await screen.findByTestId('grid-group-by-trigger');
+    // ...and keyboard focus stays in the submenu instead of falling back to <body>.
+    await waitFor(() => expect(menu.contains(document.activeElement)).toBe(true));
+
+    const groupByMenu = await openGroupBySubmenu();
+    const none = within(groupByMenu).getByTestId('grid-group-by-none');
+
+    none.focus();
+    fireEvent.keyDown(none, { key: 'Enter' });
+    await waitFor(() => expect(within(menu).getByTestId('grid-group-by-none')).toBeTruthy());
+    await waitFor(() => expect(menu.contains(document.activeElement)).toBe(true));
+
+    unmount();
+    fixture.destroy();
+  });
+});
+
+describe('useGroupableProperties', () => {
+  it('database_group.dart: offers every groupable field, hidden ones included', async () => {
+    const fixture = createFixture();
+    const database = fixture.contextValue.databaseDoc
+      .getMap(YjsEditorKey.data_section)
+      .get(YjsEditorKey.database) as YDatabase;
+    const view = database.get(YjsDatabaseKey.views).get('grid-view');
+    const fieldOrders = new Y.Array<{ id: string }>() as YDatabaseFieldOrders;
+    const fieldSettings = new Y.Map() as YDatabaseFieldSettings;
+    const statusSetting = new Y.Map();
+
+    fieldOrders.push([{ id: FIELD_ID }]);
+    statusSetting.set(YjsDatabaseKey.visibility, FieldVisibility.AlwaysHidden);
+    fieldSettings.set(FIELD_ID, statusSetting);
+    view.set(YjsDatabaseKey.field_orders, fieldOrders);
+    view.set(YjsDatabaseKey.field_settings, fieldSettings);
+
+    const { result, unmount } = renderHook(useGroupableProperties, {
+      wrapper: ({ children }) => (
+        <DatabaseContext.Provider value={fixture.contextValue}>{children}</DatabaseContext.Provider>
+      ),
+    });
+
+    await waitFor(() => {
+      expect(result.current.map(({ id, visible }) => [id, visible])).toEqual([[FIELD_ID, false]]);
+    });
+
+    unmount();
+    fixture.destroy();
   });
 });

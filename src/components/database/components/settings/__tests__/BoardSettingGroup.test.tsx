@@ -1,7 +1,13 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import * as Y from 'yjs';
 
-import { DatabaseContext, FieldType, SelectOptionColor } from '@/application/database-yjs';
+import {
+  DatabaseContext,
+  FieldType,
+  FilterType,
+  SelectOptionColor,
+  SelectOptionFilterCondition,
+} from '@/application/database-yjs';
 import type { DatabaseContextState } from '@/application/database-yjs';
 import { createCell, createField, createRowDoc } from '@/application/database-yjs/__tests__/test-helpers';
 import { resolveBoardGroupVisibilityRows } from '@/application/database-yjs/board-grouping';
@@ -21,6 +27,7 @@ import type {
   YDatabaseFieldOrders,
   YDatabaseFields,
   YDatabaseFieldTypeOption,
+  YDatabaseFilter,
   YDatabaseFilters,
   YDatabaseGroup,
   YDatabaseGroupColumns,
@@ -350,6 +357,31 @@ describe('BoardSettingGroup', () => {
 
     act(() => lastMenuProps().setVisibility('done', true));
     expect(setColumnRendered).toHaveBeenLastCalledWith('done', true, false);
+
+    unmount();
+    fixture.destroy();
+  });
+
+  it('closes the eye of a column the canvas skips because a filter excludes its option', async () => {
+    const fixture = createBoardFixture({ hideEmptyGroups: false });
+    const database = fixture.contextValue.databaseDoc
+      .getMap(YjsEditorKey.data_section)
+      .get(YjsEditorKey.database) as YDatabase;
+    const view = database.get(YjsDatabaseKey.views).get(VIEW_ID);
+    const filter = new Y.Map() as YDatabaseFilter;
+
+    filter.set(YjsDatabaseKey.id, 'status-filter');
+    filter.set(YjsDatabaseKey.field_id, STATUS_FIELD_ID);
+    filter.set(YjsDatabaseKey.filter_type, FilterType.Data);
+    filter.set(YjsDatabaseKey.condition, SelectOptionFilterCondition.OptionIs);
+    filter.set(YjsDatabaseKey.content, 'todo');
+    view.get(YjsDatabaseKey.filters).push([filter]);
+    const { unmount } = renderBoardSettingGroup(fixture.contextValue);
+
+    // Columns.tsx only draws columns with a grouping bucket: "Status is To do"
+    // leaves To do alone, so No Status, Done and Empty read as hidden although
+    // nothing hides them explicitly and Hide empty groups is off.
+    await waitForGroups([false, true, false, false]);
 
     unmount();
     fixture.destroy();
