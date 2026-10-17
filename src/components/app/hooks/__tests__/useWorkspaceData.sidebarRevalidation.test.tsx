@@ -1574,6 +1574,137 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     consoleErrorSpy.mockRestore();
   });
 
+  it.each([
+    ['a concurrent subtree load', false],
+    ['a sidebar revalidation', true],
+  ])('keeps a pending branch visible while %s is already fetching it', async (_label, revalidate) => {
+    const eventEmitter = new EventEmitter();
+    const withoutChildren = (view: View): View => ({ ...view, children: [] });
+    const leaf = createView('leaf');
+    const sub = createView('sub', { children: [leaf], has_children: true });
+    const page = createView('page', { children: [sub, createView('revoked-page')], has_children: true });
+    const space = createView('space', { children: [page], extra: { is_space: true }, has_children: true });
+    const loadedTree = [space];
+    // The root lists only the space, so page and sub are settled by refetches alone.
+    const shallowRoot = loadedTree.map(withoutChildren);
+    const serverPage = { ...page, children: [withoutChildren(sub)] };
+    const rootRefresh = createDeferred<{ outline: View[]; folderRid: string }>();
+    const revalidationRoot = createDeferred<{ outline: View[]; folderRid: string }>();
+    const subtreeRequests: { viewIds: string[]; resolve: (views: View[]) => void }[] = [];
+    const published: View[][] = [];
+    const rendered: View[][] = [];
+    let recording = false;
+
+    (ViewService.getOutline as jest.Mock)
+      .mockResolvedValueOnce({ outline: shallowRoot, folderRid: '1-1' })
+      .mockReturnValueOnce(rootRefresh.promise);
+    (ViewService.getMultiple as jest.Mock).mockImplementation(async (_workspaceId: string, viewIds: string[]) =>
+      viewIds.map((viewId) => {
+        const view = findView(loadedTree, viewId);
+
+        return view ? { ...view, children: view.children.map(withoutChildren) } : undefined;
+      })
+    );
+    eventEmitter.on(APP_EVENTS.OUTLINE_LOADED, (outline: View[]) => {
+      if (recording) published.push(outline);
+    });
+
+    const { result } = renderHook(
+      () => {
+        const workspaceData = useWorkspaceData();
+
+        if (recording && workspaceData.outline) rendered.push(workspaceData.outline);
+        return workspaceData;
+      },
+      { wrapper: createWrapper(eventEmitter) }
+    );
+
+    await waitFor(() => expect(result.current.outline).toEqual(shallowRoot));
+    for (const viewIds of [['space'], ['page'], ['sub']]) {
+      await act(async () => {
+        await result.current.loadViewChildrenBatch?.(viewIds);
+      });
+    }
+
+    expect(result.current.outline).toEqual(loadedTree);
+    (ViewService.getMultiple as jest.Mock).mockClear().mockImplementation((_workspaceId: string, viewIds: string[]) => {
+      const response = createDeferred<View[]>();
+
+      subtreeRequests.push({ viewIds, resolve: response.resolve });
+      return response.promise;
+    });
+    recording = true;
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+    });
+
+    // Another load claims the pending page before its permission wave runs.
+    let concurrentLoad: Promise<unknown> | undefined;
+
+    act(() => {
+      if (revalidate) {
+        (ViewService.getOutline as jest.Mock).mockReturnValueOnce(revalidationRoot.promise);
+        concurrentLoad = result.current.revalidateSidebarOutline?.(['space', 'page', 'sub']);
+      } else {
+        concurrentLoad = result.current.loadViewChildrenBatch?.(['page']);
+      }
+    });
+    if (revalidate) {
+      await act(async () => {
+        revalidationRoot.resolve({ outline: shallowRoot, folderRid: '1-3' });
+        await revalidationRoot.promise;
+      });
+    }
+
+    await waitFor(() => expect(subtreeRequests).toHaveLength(2));
+    await act(async () => {
+      subtreeRequests[0].resolve([{ ...space, children: [withoutChildren(page)] }]);
+      // Let the page wave run to completion against the still-pending load.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    const childIds = (outline: View[], viewId: string) =>
+      findView(outline, viewId)?.children.map((child) => child.view_id);
+
+    // The wave asks for the page itself instead of taking the other load's
+    // pending request as its answer, so nothing is dropped meanwhile.
+    for (const outline of [...published, ...rendered]) {
+      expect(childIds(outline, 'page')).toEqual(['sub', 'revoked-page']);
+    }
+
+    expect(subtreeRequests.map(({ viewIds }) => viewIds)).toEqual([
+      ['space'],
+      revalidate ? ['page', 'sub'] : ['page'],
+      ['page'],
+    ]);
+
+    await act(async () => {
+      subtreeRequests[1].resolve(revalidate ? [serverPage, sub] : [serverPage]);
+      await concurrentLoad;
+    });
+    // The first authoritative child list removes the revoked page.
+    expect(findView(result.current.outline ?? [], 'revoked-page')).toBeNull();
+
+    await act(async () => {
+      subtreeRequests[2].resolve([serverPage]);
+    });
+    await waitFor(() => expect(subtreeRequests).toHaveLength(4));
+    expect(subtreeRequests[3].viewIds).toEqual(['sub']);
+    await act(async () => {
+      subtreeRequests[3].resolve([sub]);
+      rootRefresh.resolve({ outline: shallowRoot, folderRid: '1-2' });
+      await rootRefresh.promise;
+    });
+    await waitFor(() => expect(result.current.loadedViewIds?.has('sub')).toBe(true));
+
+    expect(result.current.outline).toEqual([{ ...space, children: [{ ...page, children: [sub] }] }]);
+    expect(result.current.loadedViewIds?.has('page')).toBe(true);
+    // No published or rendered outline ever emptied the page or its loaded child.
+    for (const outline of [...published, ...rendered]) {
+      expect(childIds(outline, 'sub')).toEqual(['leaf']);
+    }
+  });
+
   it('refreshes an already-loaded favorites list after a permission change', async () => {
     const eventEmitter = new EventEmitter();
     const revokedFavorite = createView('revoked-favorite-id', { is_favorite: true });

@@ -1390,7 +1390,12 @@ export function useWorkspaceData() {
   );
 
   const loadViewChildrenBatch = useCallback(
-    async (viewIds: string[], rootRequestSeq?: number, restoreRead?: RestoreNavigationRead): Promise<View[]> => {
+    async (
+      viewIds: string[],
+      rootRequestSeq?: number,
+      restoreRead?: RestoreNavigationRead,
+      { includeInFlight = false }: { includeInFlight?: boolean } = {}
+    ): Promise<View[]> => {
       if (!currentWorkspaceId || viewIds.length === 0) return [];
 
       const workspaceId = currentWorkspaceId;
@@ -1403,7 +1408,11 @@ export function useWorkspaceData() {
         (rootRequestSeq === undefined
           ? isStaleWorkspaceRequest(workspaceId, workspaceRevision)
           : isStaleRootOutlineRequest(workspaceId, workspaceRevision, rootRequestSeq));
-      const uniqueIds = Array.from(new Set(viewIds)).filter((viewId) => !loadingViewIdsRef.current.has(viewId));
+      // Skip views another load is already fetching, unless the caller needs
+      // this request's own answer for them.
+      const uniqueIds = Array.from(new Set(viewIds)).filter(
+        (viewId) => includeInFlight || !loadingViewIdsRef.current.has(viewId)
+      );
 
       if (uniqueIds.length === 0) return [];
 
@@ -2364,7 +2373,9 @@ export function useWorkspaceData() {
             if (!isCurrentPermissionRefresh()) return;
 
             try {
-              await loadViewChildrenBatch([viewId]);
+              // Request the view even if another load is already fetching it:
+              // the drop below must follow this refresh's own answer.
+              await loadViewChildrenBatch([viewId], undefined, undefined, { includeInFlight: true });
               break;
             } catch (error) {
               // A definitive denial is the expected revoke path. Retry only
