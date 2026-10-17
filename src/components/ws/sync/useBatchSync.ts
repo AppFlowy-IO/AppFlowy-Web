@@ -17,7 +17,7 @@ import {
 } from '@/application/services/js-services/cache';
 import { handleAPIError, withRetry } from '@/application/services/js-services/http/core';
 import { collabFullSyncBatch, createOrphanedView, checkIfCollabExists } from '@/application/services/js-services/http/http_api';
-import { blockPermissionSync, captureSyncAuthorization, mayUploadCollab, waitForDrain } from '@/application/sync-outbox';
+import { blockPermissionSync, captureSyncAuthorization, captureUploadGate, waitForDrain } from '@/application/sync-outbox';
 import { Types, YDatabase, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { Log } from '@/utils/log';
@@ -109,11 +109,13 @@ export function useBatchSync(
     const historyEnabled = databaseHistoryEnabledRef.current;
 
     // Edits waiting for edit access are never uploaded by a full sync. That
-    // check is local; the server still authorizes every other item.
+    // check is local and read once for the batch; the server still authorizes
+    // every other item.
+    const mayUpload = await captureUploadGate(workspaceId, items.map((item) => item.objectId));
     // Concurrent guards share the tracker's in-flight check for each database,
     // while every row still verifies the generation captured with its bytes.
     const checkedItems = await Promise.all(items.map(async (item) => {
-      if (!await mayUploadCollab(item.objectId, item.collabType, workspaceId)) {
+      if (!mayUpload(item.objectId)) {
         quarantined?.add(item.objectId);
         return null;
       }

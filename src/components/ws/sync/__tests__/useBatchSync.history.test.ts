@@ -4,7 +4,7 @@ import * as Y from 'yjs';
 import { openRowCollabDBWithProvider } from '@/application/db';
 import { withRetry } from '@/application/services/js-services/http/core';
 import { collabFullSyncBatch } from '@/application/services/js-services/http/http_api';
-import { mayUploadCollab } from '@/application/sync-outbox';
+import { captureUploadGate } from '@/application/sync-outbox';
 import { Types, YDoc, YjsEditorKey } from '@/application/types';
 import { Log } from '@/utils/log';
 
@@ -24,7 +24,7 @@ jest.mock('@/application/services/js-services/http/http_api', () => ({ collabFul
 jest.mock('@/application/services/js-services/http/core', () => ({
   withRetry: jest.fn((fn: () => Promise<unknown>) => fn()), handleAPIError: jest.fn(),
 }));
-jest.mock('@/application/sync-outbox', () => ({ waitForDrain: async () => true, mayUploadCollab: jest.fn(async () => true), blockPermissionSync: jest.fn(async () => undefined), captureSyncAuthorization: () => () => true }));
+jest.mock('@/application/sync-outbox', () => ({ waitForDrain: async () => true, captureUploadGate: jest.fn(async () => () => true), blockPermissionSync: jest.fn(async () => undefined), captureSyncAuthorization: () => () => true }));
 
 jest.mock('@/utils/log', () => ({ Log: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
 
@@ -32,13 +32,13 @@ beforeEach(() => {
   jest.clearAllMocks();
   jest.mocked(collabFullSyncBatch).mockResolvedValue([]);
   jest.mocked(withRetry).mockImplementation((fn) => fn());
-  jest.mocked(mayUploadCollab).mockResolvedValue(true);
+  jest.mocked(captureUploadGate).mockResolvedValue(() => true);
 });
 
 test('reports collabs left out of a full sync because their edits wait for edit access', async () => {
   const docs = ['allowed-page', 'quarantined-page'].map((guid) => new Y.Doc({ guid }) as YDoc);
 
-  jest.mocked(mayUploadCollab).mockImplementation(async (objectId) => objectId !== 'quarantined-page');
+  jest.mocked(captureUploadGate).mockResolvedValue((objectId) => objectId !== 'quarantined-page');
   const { result } = renderHook(() => {
     const refs = useSyncRefs();
 
@@ -48,10 +48,13 @@ test('reports collabs left out of a full sync because their edits wait for edit 
   const leftOut = () => jest.mocked(Log.warn).mock.calls.filter(([message]) => String(message).includes('waiting for edit access'));
 
   await act(async () => { await result.current.syncAllToServer('workspace'); });
+  // One local check for the whole batch.
+  expect(captureUploadGate).toHaveBeenCalledTimes(1);
+  expect(captureUploadGate).toHaveBeenCalledWith('workspace', ['allowed-page', 'quarantined-page']);
   expect(jest.mocked(collabFullSyncBatch).mock.calls[0][1].map((item) => item.objectId)).toEqual(['allowed-page']);
   expect(leftOut()).toEqual([[expect.any(String), { workspaceId: 'workspace', objectIds: ['quarantined-page'] }]]);
 
-  jest.mocked(mayUploadCollab).mockResolvedValue(false);
+  jest.mocked(captureUploadGate).mockResolvedValue(() => false);
   jest.mocked(collabFullSyncBatch).mockClear();
   jest.mocked(Log.warn).mockClear();
   await act(async () => { await result.current.syncAllToServer('workspace'); });

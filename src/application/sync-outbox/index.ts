@@ -8,7 +8,7 @@ import { Types } from '@/application/types';
 import { collab, messages } from '@/proto/messages';
 import { Log } from '@/utils/log';
 
-import { isFencedByDiscard, recordDiscardedEdits, requestDiscardSettlement } from './discard-fence';
+import { isFencedByDiscard, recordDiscardedEdits, requestDiscardSettlement, unsettledDiscards } from './discard-fence';
 import { permissionBlockKey, persistPermissionBlock, readPermissionBlock, releasePermissionBlock } from './permission-quarantine';
 
 export { settleDiscardedEdits, subscribeDiscardedEdits } from './discard-fence';
@@ -193,6 +193,10 @@ const ADMISSION_RETRY_DELAYS_MS = [5_000, 30_000, 2 * 60_000, 5 * 60_000];
 const DEFAULT_REALTIME_UPDATE_BYTES = 4 * 1024 * 1024;
 const OUTBOX_READ_BATCH_SIZE = 64;
 const SLOW_SYNC_LOCK_PREFIX = 'appflowy:sync-outbox:slow';
+// As many access checks at once as the permission gate runs (MAX_ACTIVE_PROBES
+// in permission-gate.ts). More would only queue there, and the gate answers
+// unknown once its queue is full.
+const PERMISSION_RETRY_CONCURRENCY = 8;
 
 interface EnqueueOutboxOptions {
   /** Manifest replies are server-directed and do not need sibling-tab fan-out. */
@@ -712,6 +716,62 @@ export async function mayUploadCollab(objectId: string, collabType: Types, works
   return drainConfig === config && generation === lifecycleGeneration;
 }
 
+/**
+ * `mayUploadCollab` for a whole batch, with the same verdicts: the discard
+ * record, the quarantined rows and the durable denials are read once for the
+ * batch instead of once per item. Only an object whose oversized prefix the
+ * server rejected still reads its own rows. Ids outside `objectIds` are refused.
+ */
+export async function captureUploadGate(
+  workspaceId: string,
+  objectIds: readonly string[]
+): Promise<(objectId: string) => boolean> {
+  const config = drainConfig;
+  const generation = lifecycleGeneration;
+  const allowed = new Set<string>();
+  const mayUpload = (objectId: string) => allowed.has(objectId);
+
+  if (!config || config.workspaceId !== workspaceId) return mayUpload;
+  const discarded = new Set(unsettledDiscards(config));
+
+  objectIds.forEach((objectId) => {
+    if (!discarded.has(objectId)) allowed.add(objectId);
+  });
+  if (objectIds.some((objectId) => discarded.has(objectId))) requestDiscardSettlement(config);
+  if (!config.checkPermission || allowed.size === 0) return mayUpload;
+  const keyOf = (objectId: string) => sessionObjectKey(config.userId, workspaceId, objectId, config.serverUrl);
+  const quarantined = await permissionBlockedObjectIds(config);
+
+  await Promise.all(Array.from(allowed, async (objectId) => {
+    if (blockedSlowSyncObjects.get(keyOf(objectId))?.reason !== 'update_too_large') return;
+    const records = await readOutboxPrefix(config.userId, workspaceId, objectId, config.serverUrl);
+
+    if (isSlowSyncBlockedForRecords(keyOf(objectId), records)) allowed.delete(objectId);
+  }));
+  quarantined.forEach((objectId) => allowed.delete(objectId));
+
+  // As in hasActivePermissionBlock: a denial kept only in memory decides while
+  // its durable write has failed; otherwise the durable row decides, and a
+  // memory copy whose row is gone (released, possibly in another tab) is dropped.
+  const denials = Array.from(allowed).flatMap((objectId) => {
+    const block = blockedSlowSyncObjects.get(keyOf(objectId));
+
+    return block?.reason === 'permission_denied' ? [{ objectId, block }] : [];
+  });
+  const persisted = await Promise.all(denials.map(({ block }) => block.persisted));
+  const durable = await durablyBlockedObjectIds(config);
+
+  denials.forEach(({ objectId, block }, index) => {
+    if (!persisted[index]) allowed.delete(objectId);
+    else if (!durable.has(objectId) && blockedSlowSyncObjects.get(keyOf(objectId)) === block) {
+      blockedSlowSyncObjects.delete(keyOf(objectId));
+    }
+  });
+  durable.forEach((objectId) => allowed.delete(objectId));
+  if (drainConfig !== config || generation !== lifecycleGeneration) allowed.clear();
+  return mayUpload;
+}
+
 /** Capture freshness once for a composed batch, before checking its first item. */
 export function captureSyncAuthorization(workspaceId: string): () => boolean {
   const config = drainConfig;
@@ -903,6 +963,16 @@ async function permissionBlockedObjectIds(scope: SyncOutboxSession): Promise<str
   return Array.from(ids);
 }
 
+/** Objects of the session with a durable permission denial, in one read. */
+async function durablyBlockedObjectIds(scope: SyncOutboxSession): Promise<Set<string>> {
+  const blocks = await db.sync_permission_blocks
+    .where('[serverUrl+userId+workspaceId]')
+    .equals([scope.serverUrl ?? '', scope.userId, scope.workspaceId])
+    .toArray();
+
+  return new Set(blocks.map((block) => block.objectId));
+}
+
 function emptyRetryResult(): PermissionRetryResult {
   return { released: [], denied: [], unknown: [] };
 }
@@ -921,14 +991,15 @@ export async function retryPermissionBlockedSync(expectedSession?: SyncOutboxSes
   if (expectedSession && (config.userId !== expectedSession.userId || config.workspaceId !== expectedSession.workspaceId ||
     config.serverUrl !== expectedSession.serverUrl)) return result;
   const isCurrent = () => drainConfig === config && generation === lifecycleGeneration && accessGeneration === permissionGeneration;
+  const checkPermission = config.checkPermission;
   const ids = await permissionBlockedObjectIds(config);
 
-  for (let index = 0; index < ids.length; index += 1) {
-    const id = ids[index];
-
+  // Objects are independent, so their fresh access checks overlap (each one is
+  // a request), as many at once as the permission gate runs.
+  await forEachConcurrently(ids, PERMISSION_RETRY_CONCURRENCY, async (id) => {
     if (!isCurrent()) {
-      result.unknown.push(...ids.slice(index));
-      break;
+      result.unknown.push(id);
+      return;
     }
 
     const records = await readOutboxPrefix(config.userId, config.workspaceId, id, config.serverUrl);
@@ -941,17 +1012,17 @@ export async function retryPermissionBlockedSync(expectedSession?: SyncOutboxSes
       });
 
     // Released or discarded elsewhere meanwhile.
-    if (!records.length || !throughId) continue;
-    const permission = await config.checkPermission(id, records[0].collabType as Types);
+    if (!records.length || !throughId) return;
+    const permission = await checkPermission(id, records[0].collabType as Types);
 
     if (permission === 'denied') {
       result.denied.push(id);
-      continue;
+      return;
     }
 
     if (permission !== 'allowed' || !isCurrent()) {
       result.unknown.push(id);
-      continue;
+      return;
     }
 
     // Clear only the exact records the user chose to retry. A concurrent denial
@@ -959,7 +1030,7 @@ export async function retryPermissionBlockedSync(expectedSession?: SyncOutboxSes
     if (!await releasePermissionBlock(config, id, block, throughId, isCurrent)) {
       // A newer denial replaced the reviewed quarantine, or the session moved on.
       (isCurrent() ? result.denied : result.unknown).push(id);
-      continue;
+      return;
     }
 
     const key = sessionObjectKey(config.userId, config.workspaceId, id, config.serverUrl);
@@ -974,9 +1045,32 @@ export async function retryPermissionBlockedSync(expectedSession?: SyncOutboxSes
     }
 
     scheduleDrain(id);
-  }
+  });
 
   return result;
+}
+
+/**
+ * Runs `task` for every item, at most `limit` at once. As in a sequential
+ * loop, no item starts after a failure; the first error is thrown once the
+ * running tasks have ended.
+ */
+async function forEachConcurrently<T>(items: readonly T[], limit: number, task: (item: T) => Promise<void>): Promise<void> {
+  const errors: unknown[] = [];
+  let next = 0;
+  const work = async () => {
+    while (errors.length === 0 && next < items.length) {
+      const item = items[next];
+
+      next += 1;
+      await task(item).catch((error: unknown) => {
+        errors.push(error);
+      });
+    }
+  };
+
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, work));
+  if (errors.length > 0) throw errors[0];
 }
 
 /**
@@ -1143,15 +1237,21 @@ export async function waitForDrain(objectIds?: string[], opts?: WaitForDrainOpti
 
     if (!userId || !workspaceId) return false;
 
-    const remaining = await Promise.all(
-      ids.map((id) => db.sync_outbox.where('[userId+workspaceId+objectId]').equals([userId, workspaceId, id]).filter((record) => record.serverUrl === drainConfig?.serverUrl).count())
-    );
+    const pendingRows = (id: string) =>
+      db.sync_outbox
+        .where('[userId+workspaceId+objectId]')
+        .equals([userId, workspaceId, id])
+        .filter((record) => record.serverUrl === drainConfig?.serverUrl);
+    // A filtered count reads every queued row; whether one remains is enough.
+    const remaining = await Promise.all(ids.map((id) => pendingRows(id).first()));
 
-    if (remaining.every((count) => count === 0)) return true;
+    if (remaining.every((row) => row === undefined)) return true;
 
     if (Date.now() - start >= timeoutMs) {
+      const counts = await Promise.all(ids.map((id) => pendingRows(id).count()));
+
       Log.warn('[outbox] waitForDrain timed out with pending records', {
-        totalPending: remaining.reduce((a, b) => a + b, 0),
+        totalPending: counts.reduce((a, b) => a + b, 0),
         timeoutMs,
       });
       return false;
