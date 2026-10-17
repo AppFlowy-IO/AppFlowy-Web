@@ -321,6 +321,43 @@ export function preserveLoadedChildren(
   return { outline: finalOutline, loadedIds: nextLoadedIds };
 }
 
+/**
+ * Re-attach the children a permission refresh keeps on screen while it
+ * refetches access-derived subtrees. A depth-limited outline returns those
+ * views with empty children, which says nothing about their child lists; only
+ * each view's own refetch settles them, so grafted views stay unloaded.
+ */
+function preservePermissionFallbackChildren(
+  newOutline: View[],
+  oldOutline: View[],
+  fallbackViewIds: Set<string>
+): View[] {
+  if (fallbackViewIds.size === 0) return newOutline;
+
+  const oldIndex = buildViewIndex(oldOutline);
+  const oldDepths = buildViewDepthIndex(oldOutline);
+  // Ancestors first: a grafted subtree already carries its pending descendants.
+  const pendingViewIds = Array.from(fallbackViewIds).sort(
+    (left, right) => (oldDepths.get(left) ?? Number.MAX_SAFE_INTEGER) - (oldDepths.get(right) ?? Number.MAX_SAFE_INTEGER)
+  );
+  let finalOutline = newOutline;
+
+  for (const viewId of pendingViewIds) {
+    const oldView = oldIndex.get(viewId);
+
+    if (!oldView?.children?.length) continue;
+
+    const newView = findView(finalOutline, viewId);
+
+    // Nothing to graft into, or the new outline is explicit about this view.
+    if (!newView || newView.has_children === false || newView.children?.length) continue;
+
+    finalOutline = mergeChildrenIntoOutline(finalOutline, viewId, oldView.children, oldView.has_children);
+  }
+
+  return finalOutline;
+}
+
 const FOLDER_VIEW_CHANGE_TYPE = {
   VIEW_FIELDS_CHANGED: 0,
   VIEW_ADDED: 1,
@@ -665,20 +702,40 @@ export function useWorkspaceData() {
   const [loadedViewIdsRevision, setLoadedViewIdsRevision] = useState(0);
   const loadedViewIds = useMemo(() => loadedViewIdsRef.current, [loadedViewIdsRevision]); // eslint-disable-line react-hooks/exhaustive-deps
   const loadingViewIdsRef = useRef<Set<string>>(new Set());
+  // Views whose rendered children predate a permission/share change and are
+  // waiting for their own authoritative child list (see refreshPermissionSubtrees).
+  const permissionFallbackViewIdsRef = useRef<Set<string>>(new Set());
 
   // Helper: replace the outline tree while preserving previously lazy-loaded
   // children so expanded sidebar nodes don't collapse.  Used by both
-  // `loadOutline` and `handleFolderOutlineChanged`.
+  // `loadOutline` and `handleFolderOutlineChanged`. `serverOutline` is the raw
+  // server snapshot, when there is one; a diff applied to local state is not.
   // deps: [] is correct — all reads go through stable refs; state setters are
   // stable by React guarantee.
-  const replaceOutlinePreservingChildren = useCallback((newOutline: View[]) => {
+  const replaceOutlinePreservingChildren = useCallback((newOutline: View[], serverOutline?: View[]) => {
     const prevOutline = stableOutlineRef.current;
     const prevLoadedIds = new Set(loadedViewIdsRef.current);
+    const fallbackViewIds = permissionFallbackViewIdsRef.current;
     // Harden against duplicate sibling references in the server outline (see
     // deduplicateOutlineChildren) so they never render as two identical rows.
     const dedupedOutline = deduplicateOutlineChildren(newOutline);
+
+    if (serverOutline && fallbackViewIds.size > 0) {
+      const serverIndex = buildViewIndex(serverOutline);
+
+      // A snapshot that materializes a pending child list settles it, just as
+      // the view's own refetch would.
+      fallbackViewIds.forEach((viewId) => {
+        const serverView = serverIndex.get(viewId);
+
+        if (serverView && (serverView.has_children === false || serverView.children?.length)) {
+          fallbackViewIds.delete(viewId);
+        }
+      });
+    }
+
     const { outline: mergedOutline, loadedIds: nextLoadedIds } = preserveLoadedChildren(
-      dedupedOutline,
+      preservePermissionFallbackChildren(dedupedOutline, prevOutline, fallbackViewIds),
       prevOutline,
       prevLoadedIds
     );
@@ -699,6 +756,30 @@ export function useWorkspaceData() {
 
     return mergedOutline;
   }, []);
+
+  // Merge a view's authoritative child list. If a permission refresh kept the
+  // view's previous children on screen, merge as if they had been evicted:
+  // only children still pending or already re-verified keep their descendants.
+  const mergeAuthoritativeViewChildren = useCallback(
+    (outline: View[], viewId: string, children: View[], hasChildren?: boolean) => {
+      if (!permissionFallbackViewIdsRef.current.delete(viewId)) {
+        return mergeShallowChildrenIntoOutline(outline, viewId, children, hasChildren);
+      }
+
+      const fallbackView = findView(outline, viewId);
+      const verifiedChildren = (fallbackView?.children ?? []).filter(
+        (child) => permissionFallbackViewIdsRef.current.has(child.view_id) || loadedViewIdsRef.current.has(child.view_id)
+      );
+
+      return mergeShallowChildrenIntoOutline(
+        mergeChildrenIntoOutline(outline, viewId, verifiedChildren, fallbackView?.has_children),
+        viewId,
+        children,
+        hasChildren
+      );
+    },
+    []
+  );
 
   const reconcilePendingFolderViewUpdates = useCallback((nextOutline: View[], nextFolderRid: FolderRid | null) => {
     let reconciledOutline = nextOutline;
@@ -905,7 +986,7 @@ export function useWorkspaceData() {
           const reconciledOutline = reconcilePendingFolderViewUpdates(outlineWithShareWithMe, nextFolderRid);
 
           primeWorkspaceViewMetadataFromServer(workspaceId, reconciledOutline, metadataAccessToken);
-          const mergedOutline = replaceOutlinePreservingChildren(reconciledOutline);
+          const mergedOutline = replaceOutlinePreservingChildren(reconciledOutline, outlineWithShareWithMe);
 
           updateAppliedRootOutlineSnapshot(nextFolderRid, outlineWithShareWithMe);
 
@@ -1109,12 +1190,9 @@ export function useWorkspaceData() {
       }
 
       const parentExists = Boolean(findView(stableOutlineRef.current, viewId));
-      const nextOutline = mergeShallowChildrenIntoOutline(
-        stableOutlineRef.current,
-        viewId,
-        children,
-        viewData.has_children
-      );
+      const nextOutline = options.markLoaded
+        ? mergeAuthoritativeViewChildren(stableOutlineRef.current, viewId, children, viewData.has_children)
+        : mergeShallowChildrenIntoOutline(stableOutlineRef.current, viewId, children, viewData.has_children);
 
       if (nextOutline !== stableOutlineRef.current) {
         stableOutlineRef.current = nextOutline;
@@ -1133,7 +1211,7 @@ export function useWorkspaceData() {
 
       return children;
     },
-    [eventEmitter, isStaleWorkspaceRequest, stableOutlineRef, updateLastFolderRid]
+    [eventEmitter, isStaleWorkspaceRequest, mergeAuthoritativeViewChildren, stableOutlineRef, updateLastFolderRid]
   );
 
   const mergeLoadedViewChildren = useCallback(
@@ -1187,6 +1265,7 @@ export function useWorkspaceData() {
         ViewService.invalidateCache(workspaceId, staleViewId);
         invalidateWorkspaceViewMetadata(workspaceId, staleViewId);
         loadingViewIdsRef.current.delete(staleViewId);
+        permissionFallbackViewIdsRef.current.delete(staleViewId);
 
         if (loadedViewIdsRef.current.delete(staleViewId)) {
           removedLoaded = true;
@@ -1395,7 +1474,7 @@ export function useWorkspaceData() {
           if (!viewId) continue;
 
           const children = viewData.children ?? [];
-          const mergedOutline = mergeShallowChildrenIntoOutline(nextOutline, viewId, children, viewData?.has_children);
+          const mergedOutline = mergeAuthoritativeViewChildren(nextOutline, viewId, children, viewData?.has_children);
 
           if (mergedOutline !== nextOutline) {
             nextOutline = mergedOutline;
@@ -1440,6 +1519,7 @@ export function useWorkspaceData() {
       eventEmitter,
       isStaleWorkspaceRequest,
       isStaleRootOutlineRequest,
+      mergeAuthoritativeViewChildren,
       updateLastFolderRid,
     ]
   );
@@ -1504,11 +1584,13 @@ export function useWorkspaceData() {
 
       updateLastFolderRid(parseFolderRid(navigationRoot.folder_rid));
 
+      const fallbackViewIds = permissionFallbackViewIdsRef.current;
       const nextOutline = mergeNavigationTreeIntoOutline(
         stableOutlineRef.current,
         navigationRoot,
         viewId,
-        loadedViewIdsRef.current
+        // Branches pending a permission refresh keep their children like loaded ones.
+        fallbackViewIds.size > 0 ? new Set([...loadedViewIdsRef.current, ...fallbackViewIds]) : loadedViewIdsRef.current
       );
 
       if (nextOutline !== stableOutlineRef.current) {
@@ -1523,6 +1605,9 @@ export function useWorkspaceData() {
       let loadedChanged = false;
 
       for (const ancestorId of ancestorIds) {
+        // The navigation tree lists each ancestor's children authoritatively.
+        fallbackViewIds.delete(ancestorId);
+
         if (!loadedViewIdsRef.current.has(ancestorId)) {
           loadedViewIdsRef.current.add(ancestorId);
           loadedChanged = true;
@@ -1890,7 +1975,7 @@ export function useWorkspaceData() {
 
       markCachedFolderSubtreesStale(workspaceId, staleLoadedViewIds, false);
 
-      const mergedOutline = replaceOutlinePreservingChildren(nextOutline);
+      const mergedOutline = replaceOutlinePreservingChildren(nextOutline, res.outline);
 
       if (staleLoadedViewIds.length > 0) {
         loadedViewIdsRef.current = new Set();
@@ -1985,10 +2070,11 @@ export function useWorkspaceData() {
       void loadOutlineRef.current(currentWorkspaceId, false);
     };
 
-    const evictAccessDerivedSubtrees = (targetViewId?: string) => {
+    const invalidateAccessDerivedSubtrees = (targetViewId?: string, evictChildren = false) => {
       if (!currentWorkspaceId) return { staleSubtreeIds: [], viewDepths: new Map<string, number>() };
 
       const viewDepths = buildViewDepthIndex(stableOutlineRef.current);
+      const fallbackViewIds = permissionFallbackViewIdsRef.current;
       const staleSubtreeIdSet = new Set([...loadedViewIdsRef.current, ...loadingViewIdsRef.current]);
       const targetView = targetViewId ? findView(stableOutlineRef.current, targetViewId) : null;
       const targetSubtreeIds = targetView ? collectOutlineViewIds([targetView]) : null;
@@ -1999,30 +2085,54 @@ export function useWorkspaceData() {
         }
 
         // Root responses are shallow. If this view currently has materialized
-        // children without a lazy-load marker, clear and refresh it as well so
-        // a revoke cannot leave those children visible until the root request
-        // finishes.
+        // children without a lazy-load marker, refresh it as well so its own
+        // child list settles them.
         if (targetView?.children?.length) staleSubtreeIdSet.add(targetView.view_id);
       }
 
-      const staleSubtreeIds = Array.from(staleSubtreeIdSet);
-      let evictedOutline = stableOutlineRef.current;
-
-      for (const viewId of staleSubtreeIds) {
-        const subtreeRoot = findView(evictedOutline, viewId);
-
-        evictedOutline = mergeChildrenIntoOutline(
-          evictedOutline,
-          viewId,
-          [],
-          subtreeRoot?.has_children ?? Boolean(subtreeRoot?.children?.length)
-        );
+      // Branches kept by a superseded refresh never received their own child
+      // list. Refresh them again, wherever they are.
+      for (const viewId of fallbackViewIds) {
+        if (findView(stableOutlineRef.current, viewId)?.children?.length) {
+          staleSubtreeIdSet.add(viewId);
+        } else {
+          fallbackViewIds.delete(viewId);
+        }
       }
 
-      if (evictedOutline !== stableOutlineRef.current) {
-        stableOutlineRef.current = evictedOutline;
-        setOutline(evictedOutline);
-        eventEmitter?.emit(APP_EVENTS.OUTLINE_LOADED, evictedOutline);
+      const staleSubtreeIds = Array.from(staleSubtreeIdSet);
+
+      if (evictChildren) {
+        let evictedOutline = stableOutlineRef.current;
+
+        for (const viewId of staleSubtreeIds) {
+          const subtreeRoot = findView(evictedOutline, viewId);
+
+          evictedOutline = mergeChildrenIntoOutline(
+            evictedOutline,
+            viewId,
+            [],
+            subtreeRoot?.has_children ?? Boolean(subtreeRoot?.children?.length)
+          );
+        }
+
+        if (evictedOutline !== stableOutlineRef.current) {
+          stableOutlineRef.current = evictedOutline;
+          setOutline(evictedOutline);
+          eventEmitter?.emit(APP_EVENTS.OUTLINE_LOADED, evictedOutline);
+        }
+
+        fallbackViewIds.clear();
+      } else {
+        // Keep these branches on screen while they are refetched instead of
+        // emptying them first: each child list is replaced by its own
+        // authoritative response, or dropped if that refetch is denied or
+        // keeps failing. Trade-off: a page whose access was revoked can stay
+        // listed for about one round trip; its content stays protected by
+        // AppBusinessLayer's permission probe and by the server.
+        for (const viewId of staleSubtreeIds) {
+          if (findView(stableOutlineRef.current, viewId)?.children?.length) fallbackViewIds.add(viewId);
+        }
       }
 
       // Clear both loaded and in-flight markers before any replacement root or
@@ -2043,6 +2153,22 @@ export function useWorkspaceData() {
       }
 
       return { staleSubtreeIds, viewDepths };
+    };
+
+    // A refetch that ends without replacing the kept children (omitted,
+    // denied or still failing) settles them the way eviction did.
+    const dropPermissionFallbackChildren = (viewId: string) => {
+      if (!permissionFallbackViewIdsRef.current.delete(viewId) || loadedViewIdsRef.current.has(viewId)) return;
+
+      const view = findView(stableOutlineRef.current, viewId);
+
+      if (!view?.children?.length) return;
+
+      const nextOutline = mergeChildrenIntoOutline(stableOutlineRef.current, viewId, [], view.has_children ?? true);
+
+      stableOutlineRef.current = nextOutline;
+      setOutline(nextOutline);
+      eventEmitter?.emit(APP_EVENTS.OUTLINE_LOADED, nextOutline);
     };
 
     const handleShareViewsChanged = (payload?: { emails?: string[] | null; viewId?: string | null }) => {
@@ -2151,7 +2277,10 @@ export function useWorkspaceData() {
         });
     };
 
-    const preparePermissionSubtreeRefresh = (changedViewId?: string) => {
+    const preparePermissionSubtreeRefresh = (
+      changedViewId?: string,
+      { evictChildren = false }: { evictChildren?: boolean } = {}
+    ) => {
       if (!currentWorkspaceId) return;
 
       ViewService.invalidateDatabaseCatalog?.(currentWorkspaceId);
@@ -2160,8 +2289,8 @@ export function useWorkspaceData() {
 
       // AppBusinessLayer handles the same event separately because it owns the
       // active route/modal IDs and can re-probe and purge either rendered view.
-      // A permission object can also be a workspace group. Scope eviction to a
-      // known view, retaining the broad fallback for unknown or missing IDs.
+      // A permission object can also be a workspace group. Scope the refresh to
+      // a known view, retaining the broad fallback for unknown or missing IDs.
       const changedView = changedViewId ? findView(stableOutlineRef.current, changedViewId) : null;
       const targetViewId = changedView?.view_id;
       // A shallow root refresh cannot remove a revoked page below its depth
@@ -2173,19 +2302,19 @@ export function useWorkspaceData() {
           ? findParentView(stableOutlineRef.current, changedView.view_id)
           : null;
 
-      // Invalidate every affected subtree that could otherwise be grafted onto
-      // the depth-limited root response, and supersede lazy-load responses that
+      // Invalidate every affected subtree so the depth-limited root response
+      // cannot graft it back as loaded, and supersede lazy-load responses that
       // started before this event.
       const supersededLoadingViewIds = Array.from(loadingViewIdsRef.current);
 
       permissionRefreshRevisionRef.current += 1;
       const permissionRevision = permissionRefreshRevisionRef.current;
       const workspaceId = currentWorkspaceId;
-      const { staleSubtreeIds, viewDepths } = evictAccessDerivedSubtrees(targetViewId);
+      const { staleSubtreeIds, viewDepths } = invalidateAccessDerivedSubtrees(targetViewId, evictChildren);
       const staleSubtreeWaves = new Map<number, string[]>();
 
       // The permission revision above makes every captured request stale. A
-      // targeted eviction clears markers inside the changed view, but must not
+      // targeted refresh clears markers inside the changed view, but must not
       // leave an in-flight sibling permanently marked as loading. Release all
       // superseded markers before replacement requests claim them. Stale
       // request finally handlers are revision-gated, so they cannot clear a
@@ -2194,9 +2323,9 @@ export function useWorkspaceData() {
         loadingViewIdsRef.current.delete(viewId);
       }
 
-      // Resume both evicted expanded branches and sibling loads that the global
-      // permission revision superseded. Parent depths run first so a nested
-      // request always has an outline node to merge into.
+      // Resume both invalidated expanded branches and sibling loads that the
+      // global permission revision superseded. Parent depths run first so a
+      // nested request always has an outline node to merge into.
       const rehydrateViewIds = new Set([...staleSubtreeIds, ...supersededLoadingViewIds]);
 
       if (parentView && !parentView.extra?.is_hidden_space) {
@@ -2236,14 +2365,16 @@ export function useWorkspaceData() {
 
             try {
               await loadViewChildrenBatch([viewId]);
-              return;
+              break;
             } catch (error) {
               // A definitive denial is the expected revoke path. Retry only
-              // transient/unknown failures so expanded authorized roots do not
-              // remain blank after a temporary transport error.
-              if (isAuthoritativeViewRefreshError(error)) return;
+              // transient/unknown failures so a temporary transport error does
+              // not drop an authorized branch.
+              if (isAuthoritativeViewRefreshError(error)) break;
             }
           }
+
+          if (isCurrentPermissionRefresh()) dropPermissionFallbackChildren(viewId);
         };
 
         const waves = Array.from(staleSubtreeWaves.entries()).sort(
@@ -2377,7 +2508,9 @@ export function useWorkspaceData() {
         pendingRestoreNotifications.get(payload.databaseId) === payload.restoreId
       ) return;
       const alreadyPending = restoreRefreshInFlight || restoreRetryTimer !== undefined;
-      const refresh = preparePermissionSubtreeRefresh();
+      // Restores still evict: their retries can span an outage, and pre-restore
+      // database tabs must not stay listed meanwhile.
+      const refresh = preparePermissionSubtreeRefresh(undefined, { evictChildren: true });
 
       if (!refresh) return;
       pendingRestoreNotifications.set(payload.databaseId, payload.restoreId);
@@ -2552,7 +2685,11 @@ export function useWorkspaceData() {
       const nextOutline = existingShareWithMe ? [...patchedOutline, existingShareWithMe] : patchedOutline;
       const previousOutline = stableOutlineRef.current;
 
-      const mergedOutline = replaceOutlinePreservingChildren(reconcilePendingFolderViewUpdates(nextOutline, patchRid));
+      const mergedOutline = replaceOutlinePreservingChildren(
+        reconcilePendingFolderViewUpdates(nextOutline, patchRid),
+        // Only a full replacement is a server snapshot; a diff carries local children forward.
+        fastReplace ? patchedOutline : undefined
+      );
       const { addedIds, removedIds } = getOutlineMembershipChange(previousOutline, mergedOutline);
 
       // This is an accepted folder mutation diff, not an ordinary shallow root
@@ -3168,6 +3305,7 @@ export function useWorkspaceData() {
     loadedViewIdsRef.current = new Set();
     setLoadedViewIdsRevision((r) => r + 1);
     loadingViewIdsRef.current = new Set();
+    permissionFallbackViewIdsRef.current = new Set();
     // Clear workspace-scoped lists when switching workspaces to prevent
     // cross-workspace data contamination. Resetting favorites/recents back to
     // `undefined` (the unloaded state) also lets lazy consumers — e.g. the
