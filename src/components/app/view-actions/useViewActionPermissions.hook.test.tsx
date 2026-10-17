@@ -127,6 +127,121 @@ describe('useViewActionPermissions', () => {
     expect(result.current.canWrite).toBe(false);
   });
 
+  it.each([
+    ['a permission change', () => mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {})],
+    ['coming back online', () => window.dispatchEvent(new Event('online'))],
+  ])('drops the answer and re-reads it at once after %s', async (_case, trigger) => {
+    mockGetObjectPermission.mockResolvedValueOnce(createPermission()).mockReturnValueOnce(new Promise(() => undefined));
+    const { result } = renderHook(() => useViewActionPermissions(createView(), true));
+
+    await waitFor(() => expect(result.current.canWrite).toBe(true));
+    act(() => { trigger(); });
+    expect(mockGetObjectPermission).toHaveBeenCalledTimes(2);
+    expect(result.current.hasLoadedViewActionPermissions).toBe(false);
+    expect(result.current.isLoadingViewActionPermissions).toBe(true);
+    expect(result.current.canWrite).toBe(false);
+  });
+
+  it('keeps the confirmed answer through a window focus and re-reads it in the background once stale', async () => {
+    let now = 1_000_000;
+    const clock = jest.spyOn(Date, 'now').mockImplementation(() => now);
+    let resolveFresh!: (permission: CollabObjectPermission) => void;
+
+    mockGetObjectPermission.mockResolvedValueOnce(createPermission())
+      .mockReturnValueOnce(new Promise<CollabObjectPermission>((resolve) => { resolveFresh = resolve; }));
+    const { result } = renderHook(() => useViewActionPermissions(createView(), true));
+
+    await waitFor(() => expect(result.current.canWrite).toBe(true));
+    act(() => { window.dispatchEvent(new Event('focus')); });
+    // A fresh answer is not re-read on every alt-tab.
+    expect(mockGetObjectPermission).toHaveBeenCalledTimes(1);
+    expect(result.current.hasLoadedViewActionPermissions).toBe(true);
+
+    now += 30_000;
+    act(() => { window.dispatchEvent(new Event('focus')); });
+    expect(mockGetObjectPermission).toHaveBeenCalledTimes(2);
+    // Embeds and sidebar rows keep the confirmed answer while it is re-read.
+    expect(result.current.hasLoadedViewActionPermissions).toBe(true);
+    expect(result.current.isLoadingViewActionPermissions).toBe(false);
+    expect(result.current.canWrite).toBe(true);
+
+    await act(async () => { resolveFresh(createPermission({ can_write: false })); });
+    await waitFor(() => expect(result.current.canWrite).toBe(false));
+    expect(result.current.hasLoadedViewActionPermissions).toBe(true);
+    clock.mockRestore();
+  });
+
+  it.each([
+    ['cannot run', { code: -1, message: 'Network Error' }, true],
+    ['is refused', { code: 1012, httpStatus: 403, message: 'Forbidden' }, false],
+  ] as const)('keeps the confirmed answer only while a background focus read %s', async (_case, error, keeps) => {
+    let now = 1_000_000;
+    const clock = jest.spyOn(Date, 'now').mockImplementation(() => now);
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    mockGetObjectPermission.mockResolvedValueOnce(createPermission()).mockRejectedValueOnce(error);
+    const { result } = renderHook(() => useViewActionPermissions(createView(), true));
+
+    await waitFor(() => expect(result.current.canWrite).toBe(true));
+    now += 30_000;
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(mockGetObjectPermission).toHaveBeenCalledTimes(2);
+    expect(result.current.canWrite).toBe(keeps);
+    expect(result.current.hasLoadedViewActionPermissions).toBe(true);
+    expect(result.current.objectPermissionUnavailable).toBe(false);
+    consoleError.mockRestore();
+    clock.mockRestore();
+  });
+
+  it('discards a background focus read that a permission change superseded', async () => {
+    let now = 1_000_000;
+    const clock = jest.spyOn(Date, 'now').mockImplementation(() => now);
+    let resolveFocusRead!: (permission: CollabObjectPermission) => void;
+
+    mockGetObjectPermission.mockResolvedValueOnce(createPermission({ can_write: false }))
+      .mockReturnValueOnce(new Promise<CollabObjectPermission>((resolve) => { resolveFocusRead = resolve; }))
+      .mockResolvedValueOnce(createPermission({ can_write: false }));
+    const { result } = renderHook(() => useViewActionPermissions(createView(), true));
+
+    await waitFor(() => expect(result.current.hasLoadedViewActionPermissions).toBe(true));
+    now += 30_000;
+    act(() => { window.dispatchEvent(new Event('focus')); });
+    act(() => { mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {}); });
+    await waitFor(() => expect(result.current.hasLoadedViewActionPermissions).toBe(true));
+    await act(async () => {
+      resolveFocusRead(createPermission());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(mockGetObjectPermission).toHaveBeenCalledTimes(3);
+    expect(result.current.canWrite).toBe(false);
+    clock.mockRestore();
+  });
+
+  it('leaves an answer taken from the active page to AppBusinessLayer on window focus', () => {
+    let now = 1_000_000;
+    const clock = jest.spyOn(Date, 'now').mockImplementation(() => now);
+    const permission = createPermission({ can_share: true });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AppNavigationContext.Provider value={{ objectPermissions: { 'view-id': permission } }}>
+        {children}
+      </AppNavigationContext.Provider>
+    );
+    const { result } = renderHook(() => useViewActionPermissions(createView(), true), { wrapper });
+
+    expect(result.current.canShare).toBe(true);
+    now += 30_000;
+    act(() => { window.dispatchEvent(new Event('focus')); });
+
+    expect(mockGetObjectPermission).not.toHaveBeenCalled();
+    expect(result.current.canShare).toBe(true);
+    clock.mockRestore();
+  });
+
   it.each([[true, false, false], [false, true, false], [true, true, true]])(
     'requires both direct-child Write (%s) and sidebar authority (%s)', async (canWrite, canEditSidebar, allowed) => {
       mockGetObjectPermission.mockResolvedValue(createPermission({ can_write: canWrite }));

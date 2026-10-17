@@ -20,6 +20,29 @@ import {
   isPermissionDeniedError,
 } from '@/components/app/view-actions/viewActionPermission';
 
+/** A window focus re-reads an answer only once it was last read this long ago. */
+const FOCUS_REVALIDATE_MIN_AGE_MS = 30_000;
+
+async function readObjectPermission(workspaceId: string, viewId: string, knownTarget?: PermissionProbeTarget) {
+  let target = knownTarget;
+
+  if (!target) {
+    // A modal or fallback route can be valid without being materialized in
+    // the outline. Resolve its database identity from direct metadata; if
+    // that workspace-scoped read is unavailable to a guest, fall back to
+    // the document identity and let the permission endpoint decide.
+    const responseRoot = await ViewService.get(workspaceId, viewId).catch(() => undefined);
+    const fallbackView = findPermissionProbeView(viewId, responseRoot);
+
+    target = resolvePermissionProbeTarget(viewId, fallbackView);
+  }
+
+  return {
+    permission: await AccessService.getObjectPermission(workspaceId, target.collabObjectId, target.collabType),
+    target,
+  };
+}
+
 export function useViewActionPermissions(
   view: View | null | undefined,
   opened: boolean,
@@ -36,6 +59,8 @@ export function useViewActionPermissions(
   const collabObjectId = resolvedTarget?.collabObjectId;
   const collabType = resolvedTarget?.collabType;
   const requestSeq = useRef(0);
+  // The view whose shown answer this hook read from the server itself, and when it last asked.
+  const lastReadRef = useRef<{ viewId: string; at: number } | null>(null);
   const [loadedViewId, setLoadedViewId] = useState<string | null>(null);
   const [objectPermission, setObjectPermission] = useState<CollabObjectPermission | null>(null);
   // The view whose object permission read failed without a decision (offline, server error).
@@ -49,6 +74,7 @@ export function useViewActionPermissions(
       // Menus may target an off-outline view that AppBusinessLayer does not currently render.
       // Fence its in-flight response and bypass any earlier positive context snapshot as well.
       requestSeq.current += 1;
+      lastReadRef.current = null;
       setLoadedViewId(null);
       setObjectPermission(null);
       setIsLoadingViewActionPermissions(true);
@@ -56,14 +82,52 @@ export function useViewActionPermissions(
     };
 
     eventEmitter.on(APP_EVENTS.PERMISSION_CHANGED, invalidate);
-    window.addEventListener('focus', invalidate);
     window.addEventListener('online', invalidate);
     return () => {
       eventEmitter.off(APP_EVENTS.PERMISSION_CHANGED, invalidate);
-      window.removeEventListener('focus', invalidate);
       window.removeEventListener('online', invalidate);
     };
   }, [eventEmitter, opened]);
+
+  // Focus fires on every alt-tab and closed file picker, and long-lived callers (embedded
+  // databases, sidebar rows) would flip read-only if it cleared the answer. Re-read this hook's
+  // own answer in the background once it is stale and replace it when the read lands. An answer
+  // taken from the active page is re-probed by AppBusinessLayer instead.
+  useEffect(() => {
+    if (!opened || !workspaceId || !viewId) return;
+    let cancelled = false;
+    const knownTarget =
+      collabObjectId !== undefined && collabType !== undefined ? { collabObjectId, collabType } : undefined;
+
+    const revalidate = () => {
+      const lastRead = lastReadRef.current;
+
+      if (!lastRead || lastRead.viewId !== viewId || Date.now() - lastRead.at < FOCUS_REVALIDATE_MIN_AGE_MS) return;
+      const seq = ++requestSeq.current;
+
+      lastReadRef.current = { viewId, at: Date.now() };
+      void readObjectPermission(workspaceId, viewId, knownTarget)
+        .then(({ permission, target }) => {
+          if (cancelled || seq !== requestSeq.current) return;
+          setObjectPermission(isCollabObjectPermissionForTarget(permission, target) ? permission : null);
+          setUnavailableViewId(null);
+        })
+        .catch((error) => {
+          if (cancelled || seq !== requestSeq.current) return;
+          console.error(error);
+          // A read that could not run keeps the last answer; the server checks every action anyway.
+          if (!isPermissionDeniedError(error)) return;
+          setObjectPermission(null);
+          setUnavailableViewId(null);
+        });
+    };
+
+    window.addEventListener('focus', revalidate);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', revalidate);
+    };
+  }, [collabObjectId, collabType, opened, viewId, workspaceId]);
 
   useEffect(() => {
     setLoadedViewId(null);
@@ -89,6 +153,7 @@ export function useViewActionPermissions(
       permissionRefreshRevision === 0 &&
       (!knownTarget || isCollabObjectPermissionForTarget(activeObjectPermission, knownTarget))
     ) {
+      lastReadRef.current = null;
       setObjectPermission(activeObjectPermission);
       setUnavailableViewId(null);
       setLoadedViewId(viewId);
@@ -99,32 +164,16 @@ export function useViewActionPermissions(
 
     let cancelled = false;
 
+    lastReadRef.current = null;
     setLoadedViewId(null);
     setObjectPermission(null);
     setIsLoadingViewActionPermissions(true);
 
-    void (async () => {
-      let target = knownTarget;
-
-      if (!target) {
-        // A modal or fallback route can be valid without being materialized in
-        // the outline. Resolve its database identity from direct metadata; if
-        // that workspace-scoped read is unavailable to a guest, fall back to
-        // the document identity and let the permission endpoint decide.
-        const responseRoot = await ViewService.get(workspaceId, viewId).catch(() => undefined);
-        const fallbackView = findPermissionProbeView(viewId, responseRoot);
-
-        target = resolvePermissionProbeTarget(viewId, fallbackView);
-      }
-
-      return {
-        permission: await AccessService.getObjectPermission(workspaceId, target.collabObjectId, target.collabType),
-        target,
-      };
-    })()
+    void readObjectPermission(workspaceId, viewId, knownTarget)
       .then(({ permission, target }) => {
         if (cancelled || seq !== requestSeq.current) return;
 
+        lastReadRef.current = { viewId, at: Date.now() };
         setObjectPermission(isCollabObjectPermissionForTarget(permission, target) ? permission : null);
         setUnavailableViewId(null);
         setLoadedViewId(viewId);
@@ -133,6 +182,7 @@ export function useViewActionPermissions(
       .catch((error) => {
         if (cancelled || seq !== requestSeq.current) return;
         console.error(error);
+        lastReadRef.current = { viewId, at: Date.now() };
         setObjectPermission(null);
         setUnavailableViewId(isPermissionDeniedError(error) ? null : viewId);
         setLoadedViewId(viewId);
