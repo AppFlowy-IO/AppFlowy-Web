@@ -389,6 +389,16 @@ function confirmedEffectiveAccess(row: SpaceMember | WorkspaceGroupSpacePermissi
   return row.effective_access_level !== undefined ? row.effective_access_level : row.access_level;
 }
 
+// The access an Access menu shows: a choice still being saved (the space default for `null`), or
+// what the server confirmed.
+function shownAssignmentAccess(
+  effectiveAccess: AccessLevel | null | undefined,
+  pendingAccess: SpaceMemberAccessOverride | undefined,
+  defaultAccess: AccessLevel | null
+): AccessLevel | null | undefined {
+  return pendingAccess === undefined ? effectiveAccess : pendingAccess ?? defaultAccess;
+}
+
 function RoleDropdown({
   value,
   disabled,
@@ -2041,123 +2051,25 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     </div>
   ) : null;
 
-  const assignmentAccessCell = ({
-    principal,
-    triggerTestId,
-    principalName,
-    override,
-    effectiveAccess,
-    disabled,
-    own = false,
-  }: {
-    principal: SpaceAssignmentPrincipal | null;
-    triggerTestId: string;
-    principalName: string;
-    override: SpaceMemberAccessOverride | undefined;
-    effectiveAccess: AccessLevel | null | undefined;
-    disabled: boolean;
-    /** The signed-in user's own row, whose menu can say where more access comes from. */
-    own?: boolean;
-  }): ReactNode => {
-    if (!principal || override === undefined) {
-      return (
-        <SpaceMemberAccessStatic
-          testId='space-member-access-control'
-          value={override === undefined ? 'unknown' : override === null ? 'inherit' : String(override)}
-          label={spaceMemberAssignmentLabel(override, effectiveAccess, memberDefaultAccess, t)}
-          reason={t(principal ? 'space.memberOverride.reloadToChange' : 'space.memberOverride.identityUnavailable')}
-        />
-      );
-    }
+  // The rows are memoized and draw their own Access cells, so they get plain values here: a cell
+  // built for them would be new on every render (each keystroke in the search) and redraw them all.
+  const pendingAccessFor = (principal: SpaceAssignmentPrincipal) =>
+    pendingAccessOverrides.get(accessOverrideKey(principal));
 
-    const key = accessOverrideKey(principal);
-    const pending = pendingAccessOverrides.has(key);
-    const value = pending ? (pendingAccessOverrides.get(key) as SpaceMemberAccessOverride) : override;
-    const shownAccess = pending ? value ?? memberDefaultAccess : effectiveAccess;
-    const extraAccess =
-      own && ownAccessDetails
-        ? extraSpaceAccess(ownAccessDetails, shownAccess === undefined ? memberDefaultAccess : shownAccess, {
-            spaceGroups,
-            workspaceGroups,
-          })
-        : null;
-
-    return (
-      <SpaceMemberAccessControl
-        value={value}
-        effectiveAccess={shownAccess}
-        defaultAccess={memberDefaultAccess}
-        disabled={disabled}
-        pending={pending}
-        principalName={principalName}
-        testId={triggerTestId}
-        onChange={(next) => void handleAccessOverrideChange(principal, next)}
-        note={extraAccess ? spaceMemberExtraAccessNote(extraAccess, t) : null}
-      />
+  // Where more access comes from. The server explains only the signed-in user's own access, so
+  // every other row has no line.
+  const ownAccessNote = (member: SpaceMember): string | null => {
+    if (!showAccessColumn || !ownAccessDetails || !member.user_uuid) return null;
+    if (!isOwnMember(member) || !hasSpaceMemberAccessMenu(member)) return null;
+    const shownAccess = shownAssignmentAccess(
+      member.effective_access_level,
+      pendingAccessFor({ type: 'user', uuid: member.user_uuid }),
+      memberDefaultAccess
     );
-  };
+    const configuredLevel = shownAccess === undefined ? memberDefaultAccess : shownAccess;
+    const extraAccess = extraSpaceAccess(ownAccessDetails, configuredLevel, { spaceGroups, workspaceGroups });
 
-  const memberAccessCell = (member: SpaceMember): ReactNode => {
-    if (!showAccessColumn) return undefined;
-    if (member.role === SpaceMemberRole.Owner) {
-      return (
-        <SpaceMemberAccessStatic
-          testId='space-member-access-fixed'
-          label={spaceMemberAccessLabel(confirmedEffectiveAccess(member), t)}
-        />
-      );
-    }
-
-    if (member.source === PAGE_SHARE_MEMBER_SOURCE) {
-      return (
-        <SpaceMemberAccessStatic
-          testId='space-member-access-fixed'
-          label={t('space.memberOverride.sharedPagesOnly')}
-          reason={t('space.memberOverride.sharedPagesReason')}
-        />
-      );
-    }
-
-    if (!isMutableSpaceMember(member)) {
-      return (
-        <SpaceMemberAccessStatic
-          testId='space-member-access-fixed'
-          label={spaceMemberAccessLabel(confirmedEffectiveAccess(member), t)}
-          reason={t('space.memberOverride.managedElsewhere')}
-        />
-      );
-    }
-
-    return assignmentAccessCell({
-      principal: member.user_uuid ? { type: 'user', uuid: member.user_uuid } : null,
-      triggerTestId: `space-member-access-${member.uid}`,
-      principalName: displayNameForMember(member, t),
-      override: member.access_level_override,
-      effectiveAccess: member.effective_access_level,
-      disabled: membersDisabled || mutatingMemberUids.has(member.uid),
-      own: isOwnMember(member),
-    });
-  };
-
-  const groupAccessCell = (group: WorkspaceGroupSpacePermission): ReactNode => {
-    if (!showAccessColumn) return undefined;
-    if (group.role === SpaceMemberRole.Owner) {
-      return (
-        <SpaceMemberAccessStatic
-          testId='space-member-access-fixed'
-          label={spaceMemberAccessLabel(confirmedEffectiveAccess(group), t)}
-        />
-      );
-    }
-
-    return assignmentAccessCell({
-      principal: { type: 'group', uuid: group.group_id },
-      triggerTestId: `space-group-access-${group.group_id}`,
-      principalName: group.name,
-      override: group.access_level_override,
-      effectiveAccess: group.effective_access_level,
-      disabled: membersDisabled || mutatingGroupIds.has(group.group_id),
-    });
+    return extraAccess ? spaceMemberExtraAccessNote(extraAccess, t) : null;
   };
 
   // The saved name and icon, as in the sidebar: a name being typed in General is not the space's yet.
@@ -2342,7 +2254,13 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                         key={`${member.uid}-${member.source}`}
                         member={member}
                         gridColumns={memberGridColumns}
-                        accessCell={memberAccessCell(member)}
+                        showAccessColumn={showAccessColumn}
+                        defaultAccess={memberDefaultAccess}
+                        pendingAccess={
+                          member.user_uuid ? pendingAccessFor({ type: 'user', uuid: member.user_uuid }) : undefined
+                        }
+                        accessNote={ownAccessNote(member)}
+                        onAccessChange={handleAccessOverrideChange}
                         memberDescription={memberRoleDescription}
                         removeHint={
                           member.source === PAGE_SHARE_MEMBER_SOURCE
@@ -2361,7 +2279,10 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                         key={`group:${group.group_id}`}
                         group={group}
                         gridColumns={memberGridColumns}
-                        accessCell={groupAccessCell(group)}
+                        showAccessColumn={showAccessColumn}
+                        defaultAccess={memberDefaultAccess}
+                        pendingAccess={pendingAccessFor({ type: 'group', uuid: group.group_id })}
+                        onAccessChange={handleAccessOverrideChange}
                         memberDescription={memberRoleDescription}
                         readOnly={membersReadOnly}
                         disabled={membersDisabled || mutatingGroupIds.has(group.group_id)}
@@ -2470,6 +2391,126 @@ function confirmationTexts(
   }
 }
 
+/** What a row's Access cell needs besides the person or group itself. */
+type AccessCellOptions = {
+  defaultAccess: AccessLevel | null;
+  /** The choice being saved for this row (`null` is the space default); `undefined` while none is. */
+  pendingAccess: SpaceMemberAccessOverride | undefined;
+  disabled: boolean;
+  /** Where more access comes from; only the signed-in user's own row has one. */
+  note: string | null;
+  onChange: (principal: SpaceAssignmentPrincipal, override: SpaceMemberAccessOverride) => Promise<void>;
+  t: TFunction;
+};
+
+function assignmentAccessCell(
+  {
+    principal,
+    triggerTestId,
+    principalName,
+    override,
+    effectiveAccess,
+  }: {
+    principal: SpaceAssignmentPrincipal | null;
+    triggerTestId: string;
+    principalName: string;
+    override: SpaceMemberAccessOverride | undefined;
+    effectiveAccess: AccessLevel | null | undefined;
+  },
+  { defaultAccess, pendingAccess, disabled, note, onChange, t }: AccessCellOptions
+): ReactNode {
+  if (!principal || override === undefined) {
+    return (
+      <SpaceMemberAccessStatic
+        testId='space-member-access-control'
+        value={override === undefined ? 'unknown' : override === null ? 'inherit' : String(override)}
+        label={spaceMemberAssignmentLabel(override, effectiveAccess, defaultAccess, t)}
+        reason={t(principal ? 'space.memberOverride.reloadToChange' : 'space.memberOverride.identityUnavailable')}
+      />
+    );
+  }
+
+  return (
+    <SpaceMemberAccessControl
+      value={pendingAccess === undefined ? override : pendingAccess}
+      effectiveAccess={shownAssignmentAccess(effectiveAccess, pendingAccess, defaultAccess)}
+      defaultAccess={defaultAccess}
+      disabled={disabled}
+      pending={pendingAccess !== undefined}
+      principalName={principalName}
+      testId={triggerTestId}
+      onChange={(next) => void onChange(principal, next)}
+      note={note}
+    />
+  );
+}
+
+function memberAccessCell(member: SpaceMember, options: AccessCellOptions): ReactNode {
+  const { t } = options;
+
+  if (member.role === SpaceMemberRole.Owner) {
+    return (
+      <SpaceMemberAccessStatic
+        testId='space-member-access-fixed'
+        label={spaceMemberAccessLabel(confirmedEffectiveAccess(member), t)}
+      />
+    );
+  }
+
+  if (member.source === PAGE_SHARE_MEMBER_SOURCE) {
+    return (
+      <SpaceMemberAccessStatic
+        testId='space-member-access-fixed'
+        label={t('space.memberOverride.sharedPagesOnly')}
+        reason={t('space.memberOverride.sharedPagesReason')}
+      />
+    );
+  }
+
+  if (!isMutableSpaceMember(member)) {
+    return (
+      <SpaceMemberAccessStatic
+        testId='space-member-access-fixed'
+        label={spaceMemberAccessLabel(confirmedEffectiveAccess(member), t)}
+        reason={t('space.memberOverride.managedElsewhere')}
+      />
+    );
+  }
+
+  return assignmentAccessCell(
+    {
+      principal: member.user_uuid ? { type: 'user', uuid: member.user_uuid } : null,
+      triggerTestId: `space-member-access-${member.uid}`,
+      principalName: displayNameForMember(member, t),
+      override: member.access_level_override,
+      effectiveAccess: member.effective_access_level,
+    },
+    options
+  );
+}
+
+function groupAccessCell(group: WorkspaceGroupSpacePermission, options: AccessCellOptions): ReactNode {
+  if (group.role === SpaceMemberRole.Owner) {
+    return (
+      <SpaceMemberAccessStatic
+        testId='space-member-access-fixed'
+        label={spaceMemberAccessLabel(confirmedEffectiveAccess(group), options.t)}
+      />
+    );
+  }
+
+  return assignmentAccessCell(
+    {
+      principal: { type: 'group', uuid: group.group_id },
+      triggerTestId: `space-group-access-${group.group_id}`,
+      principalName: group.name,
+      override: group.access_level_override,
+      effectiveAccess: group.effective_access_level,
+    },
+    options
+  );
+}
+
 const SpaceMemberRowItem = memo(function SpaceMemberRowItem({
   member,
   gridColumns,
@@ -2478,7 +2519,11 @@ const SpaceMemberRowItem = memo(function SpaceMemberRowItem({
   canRemove,
   onChangeRole,
   onRemove,
-  accessCell,
+  showAccessColumn,
+  defaultAccess,
+  pendingAccess,
+  accessNote,
+  onAccessChange,
   memberDescription,
   removeHint,
 }: {
@@ -2489,8 +2534,12 @@ const SpaceMemberRowItem = memo(function SpaceMemberRowItem({
   canRemove: boolean;
   onChangeRole: (member: SpaceMember, role: SpaceMemberRole) => Promise<void>;
   onRemove: (member: SpaceMember) => Promise<void>;
-  /** The Access column, present only when per-person access applies. */
-  accessCell?: ReactNode;
+  /** Whether per-person access applies, which adds the Access column. */
+  showAccessColumn: boolean;
+  defaultAccess: AccessLevel | null;
+  pendingAccess?: SpaceMemberAccessOverride;
+  accessNote: string | null;
+  onAccessChange: (principal: SpaceAssignmentPrincipal, override: SpaceMemberAccessOverride) => Promise<void>;
   memberDescription: string;
   removeHint?: string;
 }) {
@@ -2514,7 +2563,15 @@ const SpaceMemberRowItem = memo(function SpaceMemberRowItem({
         </div>
       </div>
 
-      {accessCell}
+      {showAccessColumn &&
+        memberAccessCell(member, {
+          defaultAccess,
+          pendingAccess,
+          disabled,
+          note: accessNote,
+          onChange: onAccessChange,
+          t,
+        })}
 
       <div className='flex min-w-0 justify-end'>
         <RoleDropdown
@@ -2540,7 +2597,10 @@ const SpaceGroupRowItem = memo(function SpaceGroupRowItem({
   canRemove,
   onChangeRole,
   onRemove,
-  accessCell,
+  showAccessColumn,
+  defaultAccess,
+  pendingAccess,
+  onAccessChange,
   memberDescription,
 }: {
   group: WorkspaceGroupSpacePermission;
@@ -2550,8 +2610,11 @@ const SpaceGroupRowItem = memo(function SpaceGroupRowItem({
   canRemove: boolean;
   onChangeRole: (group: WorkspaceGroupSpacePermission, role: SpaceMemberRole) => void;
   onRemove: (group: WorkspaceGroupSpacePermission) => Promise<void>;
-  /** The Access column, present only when per-group access applies. */
-  accessCell?: ReactNode;
+  /** Whether per-group access applies, which adds the Access column. */
+  showAccessColumn: boolean;
+  defaultAccess: AccessLevel | null;
+  pendingAccess?: SpaceMemberAccessOverride;
+  onAccessChange: (principal: SpaceAssignmentPrincipal, override: SpaceMemberAccessOverride) => Promise<void>;
   memberDescription: string;
 }) {
   const { t } = useTranslation();
@@ -2572,7 +2635,15 @@ const SpaceGroupRowItem = memo(function SpaceGroupRowItem({
         </div>
       </div>
 
-      {accessCell}
+      {showAccessColumn &&
+        groupAccessCell(group, {
+          defaultAccess,
+          pendingAccess,
+          disabled,
+          note: null,
+          onChange: onAccessChange,
+          t,
+        })}
 
       <div className='flex min-w-0 justify-end'>
         <RoleDropdown

@@ -287,6 +287,27 @@ jest.mock('@/components/ui/tooltip', () => ({
   ),
 }));
 
+// The real Access cells, counted as they render so a test can tell which rows were drawn again.
+const mockAccessCellRender = jest.fn();
+
+jest.mock('@/components/app/view-actions/SpaceMemberAccessControl', () => {
+  const actual = jest.requireActual<typeof import('@/components/app/view-actions/SpaceMemberAccessControl')>(
+    '@/components/app/view-actions/SpaceMemberAccessControl'
+  );
+
+  return {
+    ...actual,
+    SpaceMemberAccessControl: (props: Parameters<typeof actual.SpaceMemberAccessControl>[0]) => {
+      mockAccessCellRender(props.testId);
+      return <actual.SpaceMemberAccessControl {...props} />;
+    },
+    SpaceMemberAccessStatic: (props: Parameters<typeof actual.SpaceMemberAccessStatic>[0]) => {
+      mockAccessCellRender(props.testId);
+      return <actual.SpaceMemberAccessStatic {...props} />;
+    },
+  };
+});
+
 jest.mock('@/components/ui/tabs', () => {
   const React = jest.requireActual<typeof import('react')>('react');
   const TabsContext = React.createContext({ value: '', onValueChange: (_value: string) => undefined });
@@ -1287,6 +1308,92 @@ describe('ManageSpace ACL management', () => {
       await waitFor(() => expect(trigger.disabled).toBe(false));
       expect(trigger.textContent).toBe('space.memberOverride.levels.canView');
       expect(toast.error).not.toHaveBeenCalled();
+    });
+
+    // Rosters are neither paged nor virtualized, so a keystroke must not redraw every row.
+    it('does not redraw unchanged rows while people search, browse or save another row', async () => {
+      const first = assignedMember();
+      const second: SpaceMember = {
+        ...assignedMember(),
+        uid: '6789012345678901',
+        user_uuid: '22345678-1234-4123-8123-123456789abc',
+        name: 'Second member',
+        email: 'second-member@appflowy.io',
+      };
+      const owner: SpaceMember = {
+        ...creatorMember(),
+        user_uuid: '32345678-1234-4123-8123-123456789abc',
+        access_level_override: null,
+        effective_access_level: AccessLevel.FullAccess,
+      };
+      const team = {
+        ...group('group-1', 'AppFlowy team'),
+        access_level_override: null,
+        effective_access_level: AccessLevel.ReadAndWrite,
+      };
+      const save = deferred<SpaceMember>();
+      const rendersOf = (testId: string) => mockAccessCellRender.mock.calls.filter(([id]) => id === testId).length;
+      const space = mockViews['space-1'];
+
+      mockGetSpacePermission.mockResolvedValue(supportedPermission());
+      mockGetSpaceMembers.mockResolvedValue({ members: [owner, first, second], groups: [team] });
+      mockSetOverride.mockReturnValue(save.promise);
+      const { rerender } = render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+      await waitForSettingsLoaded();
+      await act(async () => {
+        fireEvent.click(screen.getByRole('tab', { name: 'space.permissionManager.membersTab' }));
+      });
+      await waitFor(() => expect(accessTrigger(first.uid).disabled).toBe(false));
+      expect(rendersOf('space-member-access-fixed')).toBeGreaterThan(0);
+      mockAccessCellRender.mockClear();
+
+      // Every row still matches the search.
+      fireEvent.change(screen.getByTestId('inline-member-search'), { target: { value: 'app' } });
+      fireEvent.change(screen.getByTestId('inline-member-search'), { target: { value: 'appflowy' } });
+      fireEvent.click(screen.getByTestId('inline-member-browse'));
+      // A sidebar change hands the dialog a new view object.
+      mockViews['space-1'] = { ...space };
+      rerender(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+      mockViews['space-1'] = space;
+      expect(screen.getByTestId(`space-member-row-${owner.uid}`)).toBeTruthy();
+      expect(screen.getByTestId(`space-member-row-${second.uid}`)).toBeTruthy();
+      expect(screen.getByTestId('space-group-row-group-1')).toBeTruthy();
+      expect(mockAccessCellRender).not.toHaveBeenCalled();
+
+      // Saving one person's access draws that row alone again.
+      fireEvent.click(screen.getByTestId(`space-member-access-${first.uid}-option-${AccessLevel.ReadOnly}`));
+      expect(mockSetOverride).toHaveBeenCalledWith(
+        'workspace-1',
+        'space-1',
+        { type: 'user', uuid: memberUuid },
+        AccessLevel.ReadOnly,
+        expect.any(Function)
+      );
+      expect(accessTrigger(first.uid).textContent).toBe('space.memberOverride.levels.canView');
+      expect(accessTrigger(first.uid).disabled).toBe(true);
+      expect(rendersOf(`space-member-access-${first.uid}`)).toBeGreaterThan(0);
+      expect(rendersOf(`space-member-access-${second.uid}`)).toBe(0);
+      expect(rendersOf('space-group-access-group-1')).toBe(0);
+      expect(rendersOf('space-member-access-fixed')).toBe(0);
+
+      const saved = {
+        ...first,
+        access_level_override: AccessLevel.ReadOnly,
+        effective_access_level: AccessLevel.ReadOnly,
+      };
+      const ownerRow = screen.getByTestId(`space-member-row-${owner.uid}`);
+
+      mockGetSpaceMembers.mockResolvedValue({ members: [owner, saved, second], groups: [team] });
+      await act(async () => {
+        save.resolve(saved);
+      });
+      await waitFor(() => expect(accessTrigger(first.uid).disabled).toBe(false));
+      expect(accessTrigger(first.uid).textContent).toBe('space.memberOverride.levels.canView');
+      expect(accessTrigger(second.uid).textContent).toBe(inheritEditLabel);
+      expect(within(ownerRow).getByTestId('space-member-access-fixed').textContent).toBe(
+        'space.memberOverride.levels.fullAccess'
+      );
     });
   });
 
