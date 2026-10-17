@@ -832,10 +832,30 @@ async function shrinkViewportUntilNarrow(page: Page, row: Locator): Promise<numb
   for (const width of [900, 760, 640, 560, 480]) {
     await page.setViewportSize({ height: 800, width });
 
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-      if ((await row.getAttribute('data-layout')) === 'narrow') return width;
-      await page.waitForTimeout(100);
-    }
+    // Closing the responsive sidebar animates the content width. A row can
+    // briefly become narrow and then wide again, so wait for stable geometry
+    // before deciding whether this viewport is narrow enough.
+    let previous = '';
+    let stableSamples = 0;
+
+    await expect
+      .poll(
+        async () => {
+          const current = await row.evaluate((element) => {
+            const { x, y, width, height } = element.getBoundingClientRect();
+
+            return JSON.stringify([element.getAttribute('data-layout'), x, y, width, height]);
+          });
+
+          stableSamples = current === previous ? stableSamples + 1 : 0;
+          previous = current;
+          return stableSamples;
+        },
+        { intervals: [100], message: 'List row geometry settles after resizing the viewport' }
+      )
+      .toBeGreaterThanOrEqual(5);
+
+    if ((await row.getAttribute('data-layout')) === 'narrow') return width;
   }
 
   throw new Error('No viewport width switched the List rows to the narrow layout');
