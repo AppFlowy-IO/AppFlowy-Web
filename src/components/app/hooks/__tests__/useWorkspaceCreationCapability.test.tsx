@@ -4,9 +4,13 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { ReactNode } from 'react';
 
 import { APP_EVENTS } from '@/application/constants';
+import { emit, EventType } from '@/application/session/event';
 import { AppEventEmitterContext } from '@/components/app/contexts/AppEventEmitterContext';
 
-import { useWorkspaceCreationCapability } from '../useWorkspaceCreationCapability';
+import {
+  clearWorkspaceCreationCapabilityCache,
+  useWorkspaceCreationCapability,
+} from '../useWorkspaceCreationCapability';
 
 const mockRead = jest.fn();
 let mockUserId = 'user';
@@ -36,15 +40,16 @@ function deferred() {
   return { promise, resolve };
 }
 
+function Wrapper({ children }: { children: ReactNode }) {
+  return <AppEventEmitterContext.Provider value={emitter}>{children}</AppEventEmitterContext.Provider>;
+}
+
 function mount() {
-  return renderHook(() => useWorkspaceCreationCapability(), {
-    wrapper: ({ children }: { children: ReactNode }) => (
-      <AppEventEmitterContext.Provider value={emitter}>{children}</AppEventEmitterContext.Provider>
-    ),
-  });
+  return renderHook(() => useWorkspaceCreationCapability(), { wrapper: Wrapper });
 }
 
 beforeEach(() => {
+  clearWorkspaceCreationCapabilityCache();
   mockRead.mockReset();
   mockUserId = 'user';
   mockServerUrl = 'https://one.test';
@@ -240,4 +245,187 @@ test('offline suspends a prior grant; reconnect revalidates without changing sig
   });
   expect(result.current.canCreate).toBe(true);
   expect(mockAuthenticated).toBe(true);
+});
+
+describe('one answer shared by every consumer of the account', () => {
+  let now = 1_000_000;
+  let clock: jest.SpyInstance<number, []>;
+
+  beforeEach(() => {
+    now = 1_000_000;
+    clock = jest.spyOn(Date, 'now').mockImplementation(() => now);
+  });
+  afterEach(() => clock.mockRestore());
+
+  test('consumers mounted together read once', async () => {
+    mockRead.mockResolvedValue(capability('1'));
+    const sidebar = mount();
+    const settings = mount();
+
+    await waitFor(() => expect(settings.result.current.canCreate).toBe(true));
+    expect(sidebar.result.current.canCreate).toBe(true);
+    expect(mockRead).toHaveBeenCalledTimes(1);
+  });
+
+  test('a consumer opened later starts from the confirmed answer and does not ask while it is recent', async () => {
+    mockRead.mockResolvedValue(capability('1'));
+    const sidebar = mount();
+
+    await waitFor(() => expect(sidebar.result.current.canCreate).toBe(true));
+    // Manage data or the importer opens: no "Checking…" and Import is usable at once.
+    const settings = mount();
+
+    expect(settings.result.current.status).toBe('ready');
+    expect(settings.result.current.canCreate).toBe(true);
+    expect(mockRead).toHaveBeenCalledTimes(1);
+  });
+
+  test('a consumer opened once the answer is old shows it and rechecks it in the background', async () => {
+    mockRead.mockResolvedValueOnce(capability('1'));
+    const sidebar = mount();
+
+    await waitFor(() => expect(sidebar.result.current.canCreate).toBe(true));
+    const pending = deferred();
+
+    mockRead.mockReturnValueOnce(pending.promise);
+    now += 31_000;
+    const settings = mount();
+
+    expect(settings.result.current.canCreate).toBe(true);
+    expect(mockRead).toHaveBeenCalledTimes(2);
+    await act(async () => pending.resolve(capability('2', false)));
+    expect(settings.result.current.canCreate).toBe(false);
+    expect(sidebar.result.current.canCreate).toBe(false);
+  });
+
+  test('returning to the tab reads once even while that read is still running', async () => {
+    mockRead.mockResolvedValueOnce(capability('1'));
+    const { result } = mount();
+
+    await waitFor(() => expect(result.current.canCreate).toBe(true));
+    const pending = deferred();
+
+    mockRead.mockReturnValueOnce(pending.promise);
+    now += 31_000;
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await act(async () => pending.resolve(capability('1')));
+    expect(mockRead).toHaveBeenCalledTimes(2);
+  });
+
+  test('a socket that opens while the first read runs joins it', async () => {
+    const pending = deferred();
+
+    mockRead.mockReturnValueOnce(pending.promise);
+    const { result } = mount();
+
+    await act(async () => {
+      emitter.emit(APP_EVENTS.WEBSOCKET_STATUS, 1);
+    });
+    await act(async () => pending.resolve(capability('1')));
+    expect(result.current.canCreate).toBe(true);
+    expect(mockRead).toHaveBeenCalledTimes(1);
+  });
+
+  test('a burst of permission hints heard by every consumer sends one read after the one in flight', async () => {
+    mockRead.mockResolvedValueOnce(capability('1'));
+    const sidebar = mount();
+    const settings = mount();
+
+    await waitFor(() => expect(settings.result.current.canCreate).toBe(true));
+    const pending = deferred();
+
+    mockRead.mockReturnValueOnce(pending.promise).mockResolvedValue(capability('3', false));
+    await act(async () => {
+      emitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+    });
+    expect(mockRead).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      emitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+      emitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+    });
+    expect(mockRead).toHaveBeenCalledTimes(2);
+    expect(sidebar.result.current.canCreate).toBe(true);
+    // The read in flight started before the later hints, so its answer is dropped for a new one.
+    await act(async () => pending.resolve(capability('2')));
+    expect(mockRead).toHaveBeenCalledTimes(3);
+    expect(sidebar.result.current.capability?.revision).toBe('3');
+    expect(settings.result.current.canCreate).toBe(false);
+  });
+
+  test('an unchanged answer does not re-render its consumers', async () => {
+    let renders = 0;
+
+    mockRead.mockResolvedValue(capability('1'));
+    const { result } = renderHook(
+      () => {
+        renders += 1;
+        return useWorkspaceCreationCapability();
+      },
+      { wrapper: Wrapper }
+    );
+
+    await waitFor(() => expect(result.current.canCreate).toBe(true));
+    const settledRenders = renders;
+
+    await act(async () => {
+      emitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+    });
+    expect(mockRead).toHaveBeenCalledTimes(2);
+    expect(renders).toBe(settledRenders);
+  });
+
+  test('Check again does not join a background read: it asks again and drops the older answer', async () => {
+    const background = deferred();
+
+    mockRead.mockReturnValueOnce(background.promise).mockResolvedValueOnce(capability('1', false));
+    const { result } = mount();
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+    expect(mockRead).toHaveBeenCalledTimes(2);
+    expect(result.current.canCreate).toBe(false);
+    await act(async () => background.resolve(capability('1', true)));
+    expect(result.current.canCreate).toBe(false);
+  });
+
+  test.each(['user', 'server'])('another %s never starts from this answer', async (change) => {
+    mockRead.mockResolvedValueOnce(capability('1'));
+    const first = mount();
+
+    await waitFor(() => expect(first.result.current.canCreate).toBe(true));
+    const pending = deferred();
+
+    mockRead.mockReturnValueOnce(pending.promise);
+    if (change === 'user') mockUserId = 'other';
+    if (change === 'server') mockServerUrl = 'https://two.test';
+    const second = mount();
+
+    expect(second.result.current.status).toBe('loading');
+    expect(second.result.current.capability).toBeUndefined();
+    expect(mockRead).toHaveBeenCalledTimes(2);
+    await act(async () => pending.resolve(capability('1', false)));
+    expect(second.result.current.canCreate).toBe(false);
+  });
+
+  test('signing out forgets the answer', async () => {
+    mockRead.mockResolvedValueOnce(capability('1'));
+    const { result } = mount();
+
+    await waitFor(() => expect(result.current.canCreate).toBe(true));
+    const pending = deferred();
+
+    mockRead.mockReturnValueOnce(pending.promise);
+    act(() => emit(EventType.SESSION_INVALID));
+    expect(result.current.status).toBe('loading');
+    expect(result.current.canCreate).toBe(false);
+    expect(mockRead).toHaveBeenCalledTimes(2);
+    await act(async () => pending.resolve(capability('2', false)));
+    expect(result.current.status).toBe('ready');
+  });
 });

@@ -1,5 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
+import { clearWorkspaceCreationCapabilityCache } from '@/components/app/hooks/useWorkspaceCreationCapability';
+
 import { ManageDataPanel } from '../ManageDataPanel';
 
 // Only the transport is replaced: the real capability hook and client decide what the panel shows.
@@ -25,6 +27,7 @@ jest.mock('@/components/main/app.hooks', () => ({
 }));
 
 beforeEach(() => {
+  clearWorkspaceCreationCapabilityCache();
   mockClient.get.mockReset();
 });
 
