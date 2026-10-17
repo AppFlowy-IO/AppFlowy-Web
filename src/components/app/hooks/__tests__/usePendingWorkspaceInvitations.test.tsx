@@ -58,3 +58,32 @@ test('a response after unmount is ignored', async () => {
   await act(async () => resolve([invitation]));
   expect(result.current.items).toEqual([]);
 });
+
+test('returning to the tab sends one request, while Check again still asks', async () => {
+  let now = 1_000_000;
+  const clock = jest.spyOn(Date, 'now').mockImplementation(() => now);
+  let resolve!: (value: unknown[]) => void;
+
+  mockList.mockResolvedValueOnce([]);
+  const { result } = renderHook(() => usePendingWorkspaceInvitations());
+
+  await waitFor(() => expect(result.current.status).toBe('ready'));
+  mockList.mockReturnValueOnce(new Promise((done) => (resolve = done))).mockResolvedValue([invitation]);
+  now += 31_000;
+  // Both events fire on a tab return; the second arrives while the first one's request runs.
+  await act(async () => {
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await act(async () => {
+    window.dispatchEvent(new Event('focus'));
+  });
+  expect(mockList).toHaveBeenCalledTimes(2);
+  await act(async () => {
+    await result.current.refresh();
+  });
+  expect(mockList).toHaveBeenCalledTimes(3);
+  expect(result.current.items).toEqual([invitation]);
+  await act(async () => resolve([]));
+  expect(result.current.items).toEqual([invitation]);
+  clock.mockRestore();
+});

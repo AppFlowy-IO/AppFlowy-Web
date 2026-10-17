@@ -19,8 +19,9 @@ export function usePendingWorkspaceInvitations() {
   const sequence = useRef(0);
   const mounted = useRef(true);
   const loadedAt = useRef(0);
+  const inFlight = useRef<Promise<boolean>>();
 
-  const refresh = useCallback(async () => {
+  const load = useCallback(async () => {
     const request = ++sequence.current;
 
     try {
@@ -46,12 +47,25 @@ export function usePendingWorkspaceInvitations() {
     }
   }, []);
 
+  const refresh = useCallback(() => {
+    const pending = load();
+    const settle = () => {
+      // Only this load clears its marker; a newer one (Check again) may have replaced it.
+      if (inFlight.current === pending) inFlight.current = undefined;
+    };
+
+    inFlight.current = pending;
+    void pending.then(settle, settle);
+    return pending;
+  }, [load]);
+
   useEffect(() => {
     mounted.current = true;
     void refresh();
     const revalidate = () => {
       if (document.visibilityState === 'hidden') return;
-      if (Date.now() - loadedAt.current < REVALIDATE_MIN_AGE_MS) return;
+      // Returning to the tab fires both focus and visibilitychange; the first one's load covers both.
+      if (inFlight.current || Date.now() - loadedAt.current < REVALIDATE_MIN_AGE_MS) return;
       void refresh();
     };
 
