@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useDatabaseContext, useDatabaseFields, useDatabaseView } from '@/application/database-yjs';
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch';
 import { getGroupRowCellsData } from '@/application/database-yjs/group-row';
+import { isVerificationField } from '@/application/page-verification/native';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { useGridContext } from '@/components/database/grid/useGridContext';
 
@@ -17,6 +18,7 @@ export function useCreateGridGroupRow(groupFieldId?: string, groupId?: string) {
   const view = useDatabaseView();
 
   return useCallback(async () => {
+    if (isVerificationField(groupFieldId ? fields.get(groupFieldId) : undefined) && groupId !== 'unverified') return;
     const cellsData = getGridGroupCellsData(fields, groupFieldId, groupId, view);
 
     await onNewRow(

@@ -623,6 +623,7 @@
     "link": "Link"
   },
   "tooltip": {
+    "verificationField": "Show the Cloud verification status and expiration date",
     "lightMode": "Switch to Light mode",
     "darkMode": "Switch to Dark mode",
     "openAsPage": "Open as a Page",
@@ -1804,6 +1805,33 @@
     }
   },
   "grid": {
+    "verification": {
+      "unsupportedDate": "Unsupported date",
+      "clickToVerify": "Click to verify",
+      "conversionTitle": "Change Verification property?",
+      "conversionDescription": "Changing this property type removes the database’s verification records. The original field values are preserved.",
+      "conversionConfirm": "Change property",
+      "conversionErrorTitle": "Could not change property",
+      "conversionError": "Could not change Verification. Please try again.",
+      "statusUnverified": "Unverified",
+      "statusVerified": "Verified",
+      "statusExpired": "Expired",
+      "expirationDate": "Expiration date",
+      "expiresOnOrBefore": "Expires on or before",
+      "expiresOnOrAfter": "Expires on or after",
+      "anyDate": "Any date",
+      "deletePropertyDescription": "Deleting this property removes verification, verifier details, and expiration dates from every row in this database. Your rows and other properties remain.",
+      "clearPropertyDescription": "Remove verification from all pages in this database? The property and its settings will remain.",
+      "updateFailed": "Could not update Verification.",
+      "editPermissionRequired": "You need permission to edit this database’s properties.",
+      "upgradeDescription": "Upgrade to Pro to verify pages and help your team identify up-to-date information.",
+      "upgrade": "Upgrade to Pro",
+      "addPropertyDescription": "Add one Verification property across this database’s views. Rows start Unverified.",
+      "addProperty": "Add Verification",
+      "setupDescription": "Add the Verification property before verifying a row page. Its cell and page will share the same verification.",
+      "openDatabaseToSetup": "Open the database and add the Verification property before verifying this row.",
+      "changed": "Verification changed. Reopen this control and try again."
+    },
     "deleteView": "Are you sure you want to delete this view?",
     "createView": "New",
     "title": {
@@ -1949,6 +1977,11 @@
       "delete": "Delete",
       "wrapCellContent": "Wrap text",
       "clear": "Clear cells",
+      "typeCannotBeChanged": "This property type cannot be changed.",
+      "verificationFieldName": "Verification",
+      "verificationUntil": "Until {{date}}",
+      "verificationExpired": "Expired {{date}}",
+      "verificationIndefinitely": "Indefinitely",
       "switchPrimaryFieldTooltip": "Cannot change field type of primary field",
       "textFieldName": "Text",
       "checkboxFieldName": "Checkbox",

@@ -1,7 +1,7 @@
 import { renderHook } from '@testing-library/react';
 import * as Y from 'yjs';
 
-import { DatabaseContext, DatabaseContextState, GridGrouping } from '@/application/database-yjs';
+import { DatabaseContext, DatabaseContextState, FieldType, GridGrouping } from '@/application/database-yjs';
 import { YDoc } from '@/application/types';
 
 import { RenderRowType, useRenderRows } from '../useRenderRows';
@@ -24,6 +24,32 @@ function createWrapper() {
 }
 
 describe('useRenderRows', () => {
+  it('allows row creation only in the unverified group using native type identity', () => {
+    const grouping: GridGrouping = {
+      isGrouped: true,
+      fieldId: 'ordinary-native-id',
+      fieldType: FieldType.Verification,
+      hideEmptyGroups: false,
+      ready: true,
+      groups: [],
+      visibleGroups: ['unverified', 'verified', 'expired'].map((id) => ({
+        id,
+        label: id,
+        rows: [],
+        isDefault: false,
+        visible: true,
+        hidden: false,
+        automaticallyHidden: false,
+        collapsed: false,
+      })),
+    };
+    const { result } = renderHook(() => useRenderRows([], { grouping }), { wrapper: createWrapper() });
+
+    expect(result.current.rows.filter((row) => row.type === RenderRowType.NewRow).map((row) => row.groupId)).toEqual([
+      'unverified',
+    ]);
+  });
+
   it('renders the loading placeholder above the new-row control while rows are loading', () => {
     const { result } = renderHook(() => useRenderRows(undefined), {
       wrapper: createWrapper(),

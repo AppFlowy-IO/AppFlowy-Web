@@ -81,6 +81,7 @@ export function isTextWrittenCell(cell: Pick<YDatabaseCell, 'get'>): boolean {
 
 /** Mark newly written data as native to the current field type. */
 export function setCellStoredType(cell: YDatabaseCell, fieldType: FieldType): void {
+  if (fieldType === FieldType.Verification) throw new Error('Verification cells are Cloud owned');
   cell.set(YjsDatabaseKey.field_type, fieldType);
   cell.delete(YjsDatabaseKey.source_field_type);
 }

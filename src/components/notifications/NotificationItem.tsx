@@ -1,17 +1,19 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 
+import { getVerificationReminder, VerificationReminder } from '@/application/services/js-services/http/page-verification-api';
 import { DateFormat } from '@/application/types';
 import { MetadataKey } from '@/application/user-metadata';
 import { ReactComponent as ArchiveIcon } from '@/assets/icons/archive.svg';
 import { ReactComponent as CheckCircleIcon } from '@/assets/icons/check_circle.svg';
 import { ReactComponent as MainReminderIcon } from '@/assets/icons/m_notification_reminder.svg';
-import { ReactComponent as BadgeAtIcon } from '@/assets/icons/notification_icon_at.svg';
 import { ReactComponent as BadgeBellIcon } from '@/assets/icons/notification_bell.svg';
+import { ReactComponent as BadgeAtIcon } from '@/assets/icons/notification_icon_at.svg';
 import { ReactComponent as BadgeReminderIcon } from '@/assets/icons/notification_reminder_badge.svg';
 import { ReactComponent as ReminderClockIcon } from '@/assets/icons/reminder_clock.svg';
-import { useToView } from '@/components/app/app.hooks';
-import { useCurrentUser } from '@/components/main/app.hooks';
+import { useCurrentWorkspaceIdOptional, useToView } from '@/components/app/app.hooks';
+import { useAuthenticatedUserIdOptional, useCurrentUser } from '@/components/main/app.hooks';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { getDateFormat, getTimeFormat, renderDate } from '@/utils/time';
 
@@ -195,38 +197,82 @@ function GenericContent({ notification }: { notification: Notification }) {
 function NotificationItem({ notification, tab, onMarkRead, onArchive, onClose }: NotificationItemProps) {
   const { t } = useTranslation();
   const toView = useToView();
-  const actionInFlightRef = useRef(false);
+  const navigate = useNavigate();
+  const workspaceId = useCurrentWorkspaceIdOptional();
+  const userId = useAuthenticatedUserIdOptional();
+  const actionScopeRef = useRef({ active: false, inFlight: false });
+  const verification = typeof notification.metadata.verification_kind === 'string';
+  const [reminder, setReminder] = useState<VerificationReminder | null>();
+
+  useLayoutEffect(() => {
+    const scope = { active: true, inFlight: false };
+
+    actionScopeRef.current = scope;
+    // Invalidate before a late response can navigate or act in another session.
+    return () => { scope.active = false; };
+  }, [userId, workspaceId, notification.workspaceId, notification.id, verification]);
+
+  useEffect(() => {
+    setReminder(undefined);
+    if (!verification) return;
+    const scope = actionScopeRef.current;
+    let active = true;
+
+    void getVerificationReminder(notification.workspaceId, notification.id).then((value) => { if (active && scope.active) setReminder(value); }).catch(() => { if (active && scope.active) setReminder(undefined); });
+    return () => { active = false; };
+  }, [userId, workspaceId, verification, notification.workspaceId, notification.id]);
 
   const anchorId = pickText(notification.metadata, ['row_id', 'block_id']) || undefined;
 
   const handleClick = useCallback(async () => {
-    if (actionInFlightRef.current) return;
-    actionInFlightRef.current = true;
+    const scope = actionScopeRef.current;
+
+    if (!scope.active || scope.inFlight) return;
+    scope.inFlight = true;
 
     try {
-      if (notification.viewId) {
+      if (verification) {
+        const current = await getVerificationReminder(notification.workspaceId, notification.id);
+
+        if (!scope.active) return;
+        setReminder(current);
+        if (current?.view_id) {
+          if (current.row_id) {
+            // The authorized reminder already identifies a database row. Preserve
+            // that identity without inferring a block link from cached view metadata.
+            const search = new URLSearchParams({ r: current.row_id });
+
+            navigate(`/app/${notification.workspaceId}/${current.view_id}?${search}`);
+          } else {
+            await toView(current.view_id);
+          }
+        }
+      } else if (notification.viewId) {
         await toView(notification.viewId, anchorId);
       }
 
+      if (!scope.active) return;
       if (!notification.isRead) {
         await onMarkRead([notification.id]);
       }
 
-      onClose();
+      if (scope.active) onClose();
     } finally {
-      actionInFlightRef.current = false;
+      scope.inFlight = false;
     }
-  }, [notification.viewId, notification.isRead, notification.id, toView, anchorId, onMarkRead, onClose]);
+  }, [notification.viewId, notification.isRead, notification.id, notification.workspaceId, verification, navigate, toView, anchorId, onMarkRead, onClose]);
 
   const handleMarkRead = useCallback(
     async (e: React.MouseEvent) => {
       e.stopPropagation();
-      if (actionInFlightRef.current) return;
-      actionInFlightRef.current = true;
+      const scope = actionScopeRef.current;
+
+      if (!scope.active || scope.inFlight) return;
+      scope.inFlight = true;
       try {
         await onMarkRead([notification.id]);
       } finally {
-        actionInFlightRef.current = false;
+        scope.inFlight = false;
       }
     },
     [notification.id, onMarkRead]
@@ -235,12 +281,14 @@ function NotificationItem({ notification, tab, onMarkRead, onArchive, onClose }:
   const handleArchive = useCallback(
     async (e: React.MouseEvent) => {
       e.stopPropagation();
-      if (actionInFlightRef.current) return;
-      actionInFlightRef.current = true;
+      const scope = actionScopeRef.current;
+
+      if (!scope.active || scope.inFlight) return;
+      scope.inFlight = true;
       try {
         await onArchive([notification.id]);
       } finally {
-        actionInFlightRef.current = false;
+        scope.inFlight = false;
       }
     },
     [notification.id, onArchive]
@@ -249,8 +297,12 @@ function NotificationItem({ notification, tab, onMarkRead, onArchive, onClose }:
   const isArchiveTab = tab === NotificationTabType.Archived;
 
   // Type-specific content
-  const content =
-    notification.type === 'mention' ||
+  const content = verification ? (
+    <div className='flex min-w-0 flex-1 flex-col'>
+      <NotificationHeader title={reminder?.title ?? pickText(notification.metadata, ['title'])} createdAt={notification.createdAt} isRead={notification.isRead} />
+      <p className='mt-1 text-sm text-text-secondary'>{reminder === null ? 'This verification has since changed or been removed.' : reminder?.body ?? pickText(notification.metadata, ['body'])}</p>
+    </div>
+  ) : notification.type === 'mention' ||
     notification.type === 'comment_reply' ||
     notification.type === 'comment_on_page' ? (
       <MentionContent notification={notification} />

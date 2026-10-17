@@ -10,6 +10,7 @@ import {
   getRowConditionSnapshot,
 } from '@/application/database-yjs/condition-value-cache';
 import { CalculationType, FieldType, FilterType, RollupDisplayMode } from '@/application/database-yjs/database.type';
+import { readVerificationFieldSnapshot } from '@/application/database-yjs/external-fields';
 import {
   CheckboxFilter,
   CheckboxFilterCondition,
@@ -29,6 +30,12 @@ import {
   SelectOptionFilterCondition,
   TextFilter,
   TextFilterCondition,
+  VerificationFilter,
+  VerificationFilterCondition,
+  VerificationFilterStatus,
+  matchesVerificationFilter,
+  parseVerificationFilter,
+  serializeVerificationFilter,
 } from '@/application/database-yjs/fields';
 import { FormulaFieldSchema, ReadFieldValueContext, readFormulaSchema } from '@/application/database-yjs/fields/formula';
 import { EnhancedBigStats } from '@/application/database-yjs/fields/number/EnhancedBigStats';
@@ -89,6 +96,8 @@ export function parseFilter(storedFieldType: FieldType, filter: YDatabaseFilter,
   const predicateType = fieldType === FieldType.Rollup ? rollupPredicateType(value) : fieldType;
 
   switch (predicateType) {
+    case FieldType.Verification:
+      return { ...value, ...parseVerificationFilter(condition, content) } as VerificationFilter;
     case FieldType.URL:
     case FieldType.RichText:
     case FieldType.Relation:
@@ -239,7 +248,17 @@ function hasListFilterContent(content: unknown) {
     .some(Boolean);
 }
 
+function verificationFilterTypeMismatch(filter: YDatabaseFilter, field: YDatabaseField): boolean {
+  const storedType = filter.get(YjsDatabaseKey.type);
+  const actualType = Number(field.get(YjsDatabaseKey.type));
+
+  return storedType !== undefined &&
+    (Number(storedType) === FieldType.Verification || actualType === FieldType.Verification) &&
+    Number(storedType) !== actualType;
+}
+
 function isDataFilterEffective(filter: YDatabaseFilter, field: YDatabaseField, fields?: YDatabaseFields) {
+  if (verificationFilterTypeMismatch(filter, field)) return false;
   const actualType = Number(field.get(YjsDatabaseKey.type));
   const fieldType =
     actualType === FieldType.Rollup
@@ -251,6 +270,8 @@ function isDataFilterEffective(filter: YDatabaseFilter, field: YDatabaseField, f
   const content = filter.get(YjsDatabaseKey.content);
 
   switch (fieldType) {
+    case FieldType.Verification:
+      return true;
     case FieldType.RichText:
     case FieldType.URL:
       return (
@@ -827,12 +848,13 @@ export function filterBy(
 ) {
   const filterArray = filters.toArray();
 
-  if (filterArray.length === 0 || Object.keys(rowMetas).length === 0 || fields.size === 0) return rows;
+  if (filterArray.length === 0 || fields.size === 0) return rows;
 
   // Formula filters evaluate every row; read the schema once for the pass.
   let formulaSchema: FormulaFieldSchema[] | undefined;
   const getFormulaSchema = () => (formulaSchema ??= readFormulaSchema(fields));
 
+  let hasVerificationPredicate = false;
   const compileFilterPredicate = (filterNode: YDatabaseFilter): ((row: Row) => boolean) | null => {
     if (!filterNode || typeof filterNode !== 'object') {
       return null;
@@ -866,6 +888,8 @@ export function filterBy(
     if (!field || !isDataFilterEffective(node, field, fields)) return null;
 
     const fieldType = Number(field.get(YjsDatabaseKey.type));
+
+    if (fieldType === FieldType.Verification) hasVerificationPredicate = true;
     // A formula filters with the vocabulary of its result type.
     const formulaPredicateType = fieldType === FieldType.Formula ? formulaPredicateFieldType(field, fields) : undefined;
     const filterValue = parseFilter(formulaPredicateType ?? fieldType, node);
@@ -883,6 +907,11 @@ export function filterBy(
 
     return (row: Row): boolean => {
       const rowId = row.id;
+
+      if (fieldType === FieldType.Verification) {
+        return matchesVerificationFilter(readVerificationFieldSnapshot(field, rowId), filterValue as VerificationFilter);
+      }
+
       const rowMeta = rowMetas[rowId];
 
       if (!rowMeta) return false;
@@ -1008,7 +1037,7 @@ export function filterBy(
     .map(compileFilterPredicate)
     .filter((predicate): predicate is (row: Row) => boolean => predicate !== null);
 
-  if (conditions.length === 0) return rows;
+  if (conditions.length === 0 || (!hasVerificationPredicate && Object.keys(rowMetas).length === 0)) return rows;
 
   const predicate = createPredicate(conditions);
 
@@ -1466,6 +1495,7 @@ export function personFilterFillData(content: string, condition: number) {
 }
 
 export function filterFillData(filter: YDatabaseFilter, field: YDatabaseField) {
+  if (verificationFilterTypeMismatch(filter, field)) return null;
   const content = filter.get(YjsDatabaseKey.content);
   const condition = Number(filter.get(YjsDatabaseKey.condition));
 
@@ -1498,6 +1528,16 @@ export function getDefaultFilterCondition(
   field?: YDatabaseField
 ): { condition: number; content?: string } | undefined {
   switch (fieldType) {
+    case FieldType.Verification:
+      return {
+        condition: VerificationFilterCondition.Is,
+        content: serializeVerificationFilter({
+          condition: VerificationFilterCondition.Is,
+          status: VerificationFilterStatus.Verified,
+          expiresAfterMicros: null,
+          expiresBeforeMicros: null,
+        }),
+      };
     case FieldType.RichText:
     case FieldType.URL:
       return {

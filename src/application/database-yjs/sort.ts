@@ -1,18 +1,20 @@
-import { FieldType, RollupDisplayMode, SortCondition } from '@/application/database-yjs/database.type';
 import {
   ConditionSortValue,
   getConditionSortValue,
   getRowConditionSnapshot,
 } from '@/application/database-yjs/condition-value-cache';
+import { FieldType, RollupDisplayMode, SortCondition } from '@/application/database-yjs/database.type';
+import { readVerificationFieldSnapshot } from '@/application/database-yjs/external-fields';
 import { parseRollupTypeOption } from '@/application/database-yjs/fields';
 import { FormulaFieldSchema, ReadFieldValueContext, readFormulaSchema } from '@/application/database-yjs/fields/formula';
+import { compareVerificationSnapshots, VerificationSnapshot } from '@/application/database-yjs/fields/verification';
 import { evaluateFormulaForRow, formulaPredicateFieldType } from '@/application/database-yjs/formula/filter';
 import { isNumericRollupField } from '@/application/database-yjs/rollup/utils';
 import { Row } from '@/application/database-yjs/selector';
 import { RowId, YDatabaseFields, YDatabaseSorts, YDoc, YjsDatabaseKey } from '@/application/types';
 import { canonicalizeUserUid } from '@/application/user-uid';
 
-type SortableValue = ConditionSortValue;
+type SortableValue = ConditionSortValue | VerificationSnapshot;
 
 type SortOptions = {
   getRelationCellText?: (rowId: string, fieldId: string) => string;
@@ -31,7 +33,12 @@ export function sortBy(
 ) {
   const sortArray = sorts.toArray();
 
-  if (sortArray.length === 0 || Object.keys(rowMetas).length === 0 || fields.size === 0) return rows;
+  if (sortArray.length === 0 || fields.size === 0) return rows;
+  const hasVerificationSort = sortArray.some(
+    (sort) => Number(fields.get(sort.get(YjsDatabaseKey.field_id))?.get(YjsDatabaseKey.type)) === FieldType.Verification
+  );
+
+  if (!hasVerificationSort && Object.keys(rowMetas).length === 0) return rows;
 
   // Define collator for Unicode string comparison
   // Can adjust parameters based on application needs, such as locale, sensitivity, etc.
@@ -42,7 +49,7 @@ export function sortBy(
   });
 
   // Create a function for comparison
-  const compare = (a: SortableValue, b: SortableValue, order: string): number => {
+  const compare = (a: ConditionSortValue, b: ConditionSortValue, order: string): number => {
     if (a === undefined && b === undefined) return 0;
     // undefined value is placed at the end
     if (a === undefined) return order === 'asc' ? 1 : -1;
@@ -68,13 +75,17 @@ export function sortBy(
   let formulaSchema: FormulaFieldSchema[] | undefined;
   const getFormulaSchema = () => (formulaSchema ??= readFormulaSchema(fields));
   const sortData = rows.map((row) => {
-    const values = sortArray.map((sort) => {
+    const values: SortableValue[] = sortArray.map((sort) => {
       const fieldId = sort.get(YjsDatabaseKey.field_id);
 
       if (!fieldId) return '';
 
       const field = fields.get(fieldId);
+
+      if (!field) return undefined;
       const fieldType = Number(field.get(YjsDatabaseKey.type));
+
+      if (fieldType === FieldType.Verification) return readVerificationFieldSnapshot(field, row.id);
 
       // Formulas sort by their evaluated result, ordered like the native type
       // of that result (numbers numerically, dates chronologically, ...).
@@ -104,7 +115,9 @@ export function sortBy(
 
         switch (predicateType) {
           case FieldType.Number:
-            return result.rawNumeric !== undefined && Number.isFinite(result.rawNumeric) ? result.rawNumeric : defaultData;
+            return result.rawNumeric !== undefined && Number.isFinite(result.rawNumeric)
+              ? result.rawNumeric
+              : defaultData;
           case FieldType.DateTime:
             return result.rawDate ? result.rawDate.start : defaultData;
           case FieldType.Checkbox:
@@ -193,16 +206,30 @@ export function sortBy(
     return { row, values };
   });
 
-  sortData.sort((a, b) => {
+  const compareValues = (a: (typeof sortData)[number], b: (typeof sortData)[number]) => {
     for (let i = 0; i < sortArray.length; i++) {
-      const order = Number(sortArray[i].get(YjsDatabaseKey.condition)) === SortCondition.Descending ? 'desc' : 'asc';
-      const result = compare(a.values[i], b.values[i], order);
+      const direction = Number(sortArray[i].get(YjsDatabaseKey.condition));
+      const field = fields.get(sortArray[i].get(YjsDatabaseKey.field_id));
+      const result =
+        Number(field?.get(YjsDatabaseKey.type)) === FieldType.Verification
+          ? compareVerificationSnapshots(
+              a.values[i] as VerificationSnapshot | undefined,
+              b.values[i] as VerificationSnapshot | undefined,
+              direction
+            )
+          : compare(
+              a.values[i] as ConditionSortValue,
+              b.values[i] as ConditionSortValue,
+              direction === SortCondition.Descending ? 'desc' : 'asc'
+            );
 
       if (result !== 0) return result;
     }
 
     return 0;
-  });
+  };
+
+  sortData.sort(compareValues);
 
   return sortData.map((item) => item.row);
 }

@@ -100,7 +100,7 @@ export function useRenderRows(rows?: Row[], options?: { visibleRowLimit?: number
               }))
             : []),
           !group.collapsed &&
-            !readOnly && {
+            !readOnly && (grouping.fieldType !== FieldType.Verification || group.id === 'unverified') && {
               key: `group:${group.id}:new`,
               type: RenderRowType.NewRow,
               groupId: group.id,

@@ -8,8 +8,9 @@ import PropertiesMenu from '@/components/database/components/conditions/Properti
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-import { useConditionsContext } from './context';
 import { useRollupSortableIds } from '../sorts/utils';
+
+import { useConditionsContext } from './context';
 
 function SortsButton({
   compact = false,
@@ -21,25 +22,26 @@ function SortsButton({
   expanded?: boolean;
 }) {
   const sorts = useSortsSelector();
+  const sortCount = sorts.length;
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const readOnly = useReadOnly();
   const addSort = useAddSort();
   const conditionsContext = useConditionsContext();
   const setExpanded = conditionsContext?.setExpanded;
-  const prevSortsLengthRef = useRef(sorts.length);
+  const prevSortsLengthRef = useRef(sortCount);
 
   // Auto-expand conditions panel when first sort is added (e.g. synced from desktop)
   useEffect(() => {
     const prevLength = prevSortsLengthRef.current;
-    const currentLength = sorts.length;
+    const currentLength = sortCount;
 
     if (prevLength === 0 && currentLength > 0) {
       setExpanded?.(true);
     }
 
     prevSortsLengthRef.current = currentLength;
-  }, [sorts.length, setExpanded]);
+  }, [sortCount, setExpanded]);
 
   const rollupSortableIds = useRollupSortableIds();
   const propertyFilter = useCallback(
@@ -80,14 +82,14 @@ function SortsButton({
               className={'relative'}
               onClick={(e) => {
                 e.stopPropagation();
-                if (readOnly || sorts.length > 0) {
+                if (readOnly || sortCount > 0) {
                   toggleExpanded?.();
                 } else {
                   setOpen(true);
                 }
               }}
               style={{
-                color: sorts.length > 0 ? 'var(--icon-info-thick)' : undefined,
+                color: sortCount > 0 ? 'var(--icon-info-thick)' : undefined,
               }}
               type='button'
             >

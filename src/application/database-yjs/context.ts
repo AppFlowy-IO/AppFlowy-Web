@@ -284,6 +284,21 @@ function getDatabaseExternalStore(databaseDoc: YDoc) {
   return store;
 }
 
+const emptyOptionalDatabaseStore = {
+  subscribe: () => () => undefined,
+  getSnapshot: () => 0,
+  getDatabase: (): YDatabase | undefined => undefined,
+};
+
+/** Optional readers share the normal hydration observer without requiring a database provider. */
+export const useDatabaseOptional = () => {
+  const context = useDatabaseContextOptional();
+  const store = context?.databaseDoc ? getDatabaseExternalStore(context.databaseDoc) : emptyOptionalDatabaseStore;
+
+  useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+  return store.getDatabase();
+};
+
 export const useDatabase = () => {
   const context = useDatabaseContext();
   const databaseDoc = context.databaseDoc;

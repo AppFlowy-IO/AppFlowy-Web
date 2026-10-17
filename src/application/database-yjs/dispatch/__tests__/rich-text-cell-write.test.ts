@@ -476,3 +476,58 @@ describe('saving a cell that needs a newer client', () => {
     expect(cell(fixture).toJSON()).toEqual(newer);
   });
 });
+
+
+describe('native Verification write boundaries', () => {
+  it.each([undefined, 'Original source'])('refuses direct or pasted data without mutating the source cell (%s)', (data) => {
+    const target = setup(data);
+    const before = target.row.toJSON();
+
+    expect(write(target, 'Verified', undefined, FieldType.Verification)).toBe('cancelled');
+    expect(target.row.toJSON()).toEqual(before);
+  });
+
+  it('refuses bulk clear, card drag and stale date editor writes after conversion', async () => {
+    const f = databaseFixture(FieldType.Verification, { field_type: FieldType.RichText, data: 'Original source' });
+    const before = f.row.toJSON();
+    const { result } = renderHook(() => ({
+      clear: useClearCellsWithFieldDispatch(),
+      date: useUpdateStartEndTimeCells(),
+      move: useMoveCardDispatch(),
+      update: useUpdateCellDispatch(ROW, FIELD),
+    }), { wrapper: f.wrapper });
+
+    await act(async () => {
+      result.current.clear(FIELD);
+      result.current.move({ rowId: ROW, fieldId: FIELD, startColumnId: FIELD, finishColumnId: 'verified' });
+      await result.current.date([{ rowId: ROW, fieldId: FIELD, startTimestamp: '1700000000' }]);
+      expect(await result.current.update('Forged')).toBe('cancelled');
+    });
+    expect(f.row.toJSON()).toEqual(before);
+  });
+});
+
+
+it('refuses a delayed text save when the native field map was replaced by Verification during hydration', async () => {
+  const f = databaseFixture(FieldType.RichText, { field_type: FieldType.RichText, data: 'Original source' });
+  const database = f.databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+  let completeRow!: (doc: YDoc) => void;
+  const ensureRow = jest.fn(() => new Promise<YDoc>((resolve) => { completeRow = resolve; }));
+  const context = { databaseDoc: f.databaseDoc, databasePageId: VIEW, activeViewId: VIEW, workspaceId: 'workspace', readOnly: false, rowMap: {}, ensureRow } as DatabaseContextState;
+  const wrapper = ({ children }: { children: ReactNode }) => createElement(DatabaseContext.Provider, { value: context }, children);
+  const { result } = renderHook(() => useUpdateCellDispatch(ROW, FIELD), { wrapper });
+  const before = f.row.toJSON();
+  let saving!: Promise<CellWriteStatus | undefined>;
+
+  act(() => { saving = result.current('Stale edit'); });
+  const replacement = new Y.Map() as YDatabaseField;
+
+  replacement.set(YjsDatabaseKey.id, FIELD);
+  replacement.set(YjsDatabaseKey.type, FieldType.Verification);
+  await act(async () => {
+    database.get(YjsDatabaseKey.fields).set(FIELD, replacement);
+    completeRow(f.rowDoc);
+    expect(await saving).toBe('cancelled');
+  });
+  expect(f.row.toJSON()).toEqual(before);
+});

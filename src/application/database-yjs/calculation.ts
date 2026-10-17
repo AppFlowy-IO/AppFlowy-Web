@@ -27,9 +27,7 @@ export function calculateFieldValue({
 
   const countEmptyResult = countBy(values, (data) => {
     if (fieldType === FieldType.Checkbox) {
-      return getChecked(data as string | number | boolean)
-        ? CalculationType.CountNonEmpty
-        : CalculationType.CountEmpty;
+      return getChecked(data as string | number | boolean) ? CalculationType.CountNonEmpty : CalculationType.CountEmpty;
     }
 
     if (fieldType === FieldType.Checklist && typeof data === 'string') {
@@ -74,6 +72,12 @@ export function calculateFieldValue({
       return countEmptyResult[CalculationType.CountEmpty] ?? 0;
     case CalculationType.CountNonEmpty:
       return countEmptyResult[CalculationType.CountNonEmpty] ?? 0;
+    case CalculationType.CountUnique:
+      return new Set(values.filter((value) => value !== '' && value !== undefined && value !== null)).size;
+    case CalculationType.PercentEmpty:
+      return values.length ? (100 * (countEmptyResult[CalculationType.CountEmpty] ?? 0)) / values.length : 0;
+    case CalculationType.PercentNotEmpty:
+      return values.length ? (100 * (countEmptyResult[CalculationType.CountNonEmpty] ?? 0)) / values.length : 0;
     case CalculationType.Count:
       return values.length;
     case CalculationType.Sum:

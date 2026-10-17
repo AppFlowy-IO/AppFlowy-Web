@@ -1,5 +1,6 @@
 import { getStoredCellFieldType } from '@/application/database-yjs/cell.field-type';
 import { FieldType } from '@/application/database-yjs/database.type';
+import { isExternalDatabaseField } from '@/application/database-yjs/external-fields';
 import { YjsDatabaseKey } from '@/application/types';
 
 import { FormulaNode } from './ast';
@@ -125,7 +126,7 @@ function localDependencies(options: EvaluateFormulaCellOptions): FormulaFieldSch
         case 'prop': {
           const dependency = resolveFormulaField(schema, node.ref);
 
-          if (!dependency) safe = false;
+          if (!dependency || isExternalDatabaseField(dependency.field)) safe = false;
           else if (dependency.type === FieldType.Formula) pendingFields.push(dependency);
           else if (localFieldTypes.has(dependency.type)) leaves.set(dependency.id, dependency);
           else safe = false;

@@ -1,7 +1,7 @@
 import { forwardRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Row, useReadOnly } from '@/application/database-yjs';
+import { FieldType, Row, useFieldType, useReadOnly } from '@/application/database-yjs';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 import { ColumnMenu } from '@/components/database/components/board/column/ColumnMenu';
@@ -33,6 +33,7 @@ function ColumnHeaderPrimitive(
   const { header, renameEnabled, deleteEnabled, hideEnabled } = useRenderColumn(id, fieldId);
   const { t } = useTranslation();
   const readOnly = useReadOnly();
+  const fieldType = useFieldType(fieldId);
 
   return (
     <div
@@ -71,7 +72,7 @@ function ColumnHeaderPrimitive(
                   e.preventDefault();
                   addCardBefore(id);
                 }}
-                className={'text-icon-secondary'}
+                className={cn('text-icon-secondary', fieldType === FieldType.Verification && id !== 'unverified' && 'hidden')}
               >
                 <AddIcon className={'h-5 w-5'} />
               </Button>

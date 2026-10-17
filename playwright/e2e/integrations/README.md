@@ -54,3 +54,15 @@ Cloud API responses and persistence are simulated here. These tests do not valid
 During development, adding `COOP: same-origin-allow-popups` to the fixture severed `window.opener` in Firefox when the initial `about:blank` popup finished loading before navigation to the provider. The same flow worked without that extra header. Do not assume a COOP configuration is compatible with this asynchronous popup flow without testing the deployed headers.
 
 This is the browser regression layer of the [Playwright API-mocking approach](https://playwright.dev/docs/mock), not a claim of live Google end-to-end coverage.
+
+## Native Verification query parity
+
+Run the isolated Verification browser scenarios with:
+
+```sh
+pnpm exec playwright test -c playwright.integrations.config.ts --project=chromium playwright/e2e/integrations/verification.spec.ts
+```
+
+These scenarios mount the production database condition menus, native Yjs fields/filter trees/sort lists, row selector, Verification store, and HTTP client. Only Cloud responses and the surrounding app/auth context are fixtures. Every test owns a fresh browser context and a localhost Vite origin; native document state is retained in that context's session storage for reload checks. No installed app settings, real Cloud account, or shared test storage is used. The fixture blocks external network requests and reports unexpected API requests. HMR is disabled for the isolated test server so concurrent source edits cannot reload an active scenario.
+
+Coverage includes known versus unknown status, negative/empty predicates, Number AND/OR with repeated Verification leaves, reload persistence, ordinary/Verification sort priority and keyboard reorder, and expiration-driven membership changes. Verification values are read from the Cloud snapshot bridge; no raw cell text or second filtering/sorting pass supplies them. Backend authorization and Cloud persistence remain covered by service tests rather than this controlled browser fixture.

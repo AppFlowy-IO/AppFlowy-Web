@@ -17,6 +17,7 @@ message WorkspaceNotification {
         CommentChanged comment_changed = 11;
         DatabaseRestored database_restored = 12;
         StorageLimitExceeded storage_limit_exceeded = 13;
+        PageVerificationChanged page_verification_changed = 14;
     }
 }
 
@@ -136,3 +137,5 @@ message StorageLimitExceeded {
     int32 code = 2;
     string message = 3;
 }
+
+message PageVerificationChanged {}

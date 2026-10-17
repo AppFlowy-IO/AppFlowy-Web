@@ -1,9 +1,10 @@
-import { cleanup, render, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
 import { createRowDoc } from '@/application/database-yjs/__tests__/test-helpers';
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs/context';
 import { CalculationType, FieldType } from '@/application/database-yjs/database.type';
+import { VerificationViewSettings } from '@/application/page-verification/types';
 import {
   YDatabase,
   YDatabaseCalculation,
@@ -21,12 +22,40 @@ import { GridCalculateRowCell, GridCalculateRowCellWithValues } from '../GridCal
 
 import type { ReactNode } from 'react';
 
+const mockUpdateSettings = jest.fn();
+let mockSettings: VerificationViewSettings;
+
+jest.mock('@/application/page-verification/database', () => ({
+  useDatabaseVerification: () => ({ settings: mockSettings, updateSettings: mockUpdateSettings }),
+}));
+
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 jest.mock('@/components/database/components/grid/grid-calculation-cell/CalcationMenu', () => ({
   __esModule: true,
-  default: () => null,
+  default: ({
+    open,
+    onChangeType,
+    onClear,
+  }: {
+    open?: boolean;
+    onChangeType: (type: CalculationType) => void;
+    onClear: () => void;
+  }) =>
+    open ? (
+      <>
+        <button onClick={() => onChangeType(CalculationType.Count)}>Count</button>
+        <button onClick={onClear}>Clear</button>
+      </>
+    ) : null,
 }));
-jest.mock('@/components/database/components/grid/grid-calculation-cell', () => ({ CalculationCell: () => null }));
+jest.mock('@/components/database/components/grid/grid-calculation-cell', () => ({
+  CalculationCell: ({ cell }: { cell?: { type: CalculationType; value: string } }) =>
+    cell ? (
+      <span data-testid='calculation-value'>
+        {cell.type}:{cell.value}
+      </span>
+    ) : null,
+}));
 
 const fieldId = 'amount';
 const rowOrders = ['a', 'b', 'c'].map((id) => ({ id, height: 36 }));
@@ -83,10 +112,14 @@ function fixture(readOnly = false) {
     <DatabaseContext.Provider value={context}>{children}</DatabaseContext.Provider>
   );
 
-  return { context, Wrapper, calculation, liveRows, databaseDoc };
+  return { context, Wrapper, calculation, liveRows, databaseDoc, field, calculations };
 }
 
 describe('GridCalculateRowCellWithValues', () => {
+  beforeEach(() => {
+    mockSettings = {};
+    mockUpdateSettings.mockReset().mockResolvedValue(undefined);
+  });
   afterEach(() => {
     cleanup();
     documents.splice(0).forEach((doc) => doc.destroy());
@@ -140,5 +173,86 @@ describe('GridCalculateRowCellWithValues', () => {
     context.rowMap = liveRows;
     rerender(<GridCalculateRowCell fieldId={fieldId} rowOrders={rowOrders} />);
     await waitFor(() => expect(calculation.get(YjsDatabaseKey.calculation_value)).toBe('60'));
+  });
+
+  it.each([undefined, null])('does not use dormant Number Sum when the Verification selection is %s', (selection) => {
+    const f = fixture();
+
+    f.field.set(YjsDatabaseKey.type, FieldType.Verification);
+    mockSettings = { calculation: selection };
+    render(<GridCalculateRowCellWithValues fieldId={fieldId} cells={completeCells} ready />, { wrapper: f.Wrapper });
+    expect(screen.queryByTestId('calculation-value')).toBeNull();
+    expect(f.calculation.get(YjsDatabaseKey.type)).toBe(CalculationType.Sum);
+    expect(f.calculation.get(YjsDatabaseKey.calculation_value)).toBe('60');
+  });
+
+  it('clears only the Cloud selection and retains the dormant native calculation', async () => {
+    const f = fixture();
+
+    f.field.set(YjsDatabaseKey.type, FieldType.Verification);
+    mockSettings = { calculation: 'count' };
+    mockUpdateSettings.mockImplementation(async (patch: VerificationViewSettings) => {
+      mockSettings = { ...mockSettings, ...patch };
+    });
+    const { rerender } = render(<GridCalculateRowCellWithValues fieldId={fieldId} cells={completeCells} ready />, {
+      wrapper: f.Wrapper,
+    });
+
+    expect(screen.getByTestId('calculation-value').textContent).toBe(`${CalculationType.Count}:3`);
+    fireEvent.click(screen.getByTestId(`grid-calculate-cell-${fieldId}`));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    await waitFor(() => expect(mockUpdateSettings).toHaveBeenCalledWith({ calculation: null }));
+    rerender(<GridCalculateRowCellWithValues fieldId={fieldId} cells={completeCells} ready />);
+    expect(screen.queryByTestId('calculation-value')).toBeNull();
+    expect(f.calculations.length).toBe(1);
+    expect(f.calculation.get(YjsDatabaseKey.type)).toBe(CalculationType.Sum);
+  });
+
+  it('restores the original Number calculation after a Verification roundtrip', () => {
+    const f = fixture();
+
+    f.field.set(YjsDatabaseKey.type, FieldType.Verification);
+    mockSettings = { calculation: 'count' };
+    const { rerender } = render(<GridCalculateRowCellWithValues fieldId={fieldId} cells={completeCells} ready />, {
+      wrapper: f.Wrapper,
+    });
+
+    expect(screen.getByTestId('calculation-value').textContent).toBe(`${CalculationType.Count}:3`);
+    act(() => {
+      f.field.set(YjsDatabaseKey.type, FieldType.Number);
+    });
+    rerender(<GridCalculateRowCellWithValues fieldId={fieldId} cells={completeCells} ready />);
+    expect(screen.getByTestId('calculation-value').textContent).toBe(`${CalculationType.Sum}:60`);
+    expect(f.calculations.length).toBe(1);
+  });
+
+  it('does not delete Number Sum when an older Verification settings write finishes after conversion', async () => {
+    const f = fixture();
+    let finish!: () => void;
+    const saved = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+
+    f.field.set(YjsDatabaseKey.type, FieldType.Verification);
+    mockUpdateSettings.mockReturnValueOnce(saved);
+    const { rerender } = render(
+      <GridCalculateRowCellWithValues fieldId={fieldId} cells={completeCells} ready={false} />,
+      { wrapper: f.Wrapper }
+    );
+
+    fireEvent.click(screen.getByTestId(`grid-calculate-cell-${fieldId}`));
+    fireEvent.click(screen.getByRole('button', { name: 'Count' }));
+    expect(mockUpdateSettings).toHaveBeenCalledWith({ calculation: 'count' });
+    act(() => {
+      f.field.set(YjsDatabaseKey.type, FieldType.Number);
+    });
+    rerender(<GridCalculateRowCellWithValues fieldId={fieldId} cells={completeCells} ready={false} />);
+    await act(async () => {
+      finish();
+      await saved;
+    });
+    expect(f.calculations.length).toBe(1);
+    expect(f.calculation.get(YjsDatabaseKey.type)).toBe(CalculationType.Sum);
+    expect(f.calculation.get(YjsDatabaseKey.calculation_value)).toBe('60');
   });
 });

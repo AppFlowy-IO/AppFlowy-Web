@@ -1,4 +1,4 @@
-import { Button } from '@mui/material';
+import { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ViewIconType } from '@/application/types';
@@ -6,6 +6,8 @@ import { ReactComponent as AddIcon } from '@/assets/icons/emoji.svg';
 import { ReactComponent as AddCover } from '@/assets/icons/image.svg';
 import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
 import { cn } from '@/lib/utils';
+
+import HeaderToolbarButton from './HeaderToolbarButton';
 
 function AddIconCover({
   hasIcon,
@@ -18,6 +20,8 @@ function AddIconCover({
   iconTabs,
   defaultIconTab,
   contentClassName,
+  readOnly = false,
+  children,
 }: {
   visible: boolean;
   hasIcon: boolean;
@@ -29,6 +33,8 @@ function AddIconCover({
   iconTabs?: ['emoji' | 'icon' | 'upload'];
   defaultIconTab?: 'emoji' | 'icon' | 'upload';
   contentClassName?: string;
+  readOnly?: boolean;
+  children?: ReactNode;
 }) {
   const { t } = useTranslation();
 
@@ -36,14 +42,14 @@ function AddIconCover({
     <div
       style={{
         width: maxWidth ? `${maxWidth}px` : '100%',
-        visibility: visible ? 'visible' : 'hidden',
       }}
       className={cn(
-        'flex h-full min-w-0 max-w-full items-end justify-start gap-2 px-24 max-sm:hidden max-sm:px-6',
+        'flex h-full min-w-0 max-w-full items-end justify-start gap-2 px-24 max-sm:px-6',
+        !children && 'max-sm:hidden',
         contentClassName
       )}
     >
-      {!hasIcon && (
+      {!readOnly && !hasIcon && (
         <CustomIconPopover
           tabs={iconTabs}
           defaultActiveTab={defaultIconTab}
@@ -67,16 +73,19 @@ function AddIconCover({
           }}
           onUploadFile={onUploadFile}
         >
-          <Button data-testid='add-icon-button' color='inherit' size='small' startIcon={<AddIcon />}>
+          <HeaderToolbarButton className={cn('max-sm:!hidden', !visible && 'invisible')} data-testid='add-icon-button'>
+            <AddIcon className='h-5 w-5 text-icon-primary' />
             {t('document.plugins.cover.addIcon')}
-          </Button>
+          </HeaderToolbarButton>
         </CustomIconPopover>
       )}
-      {!hasCover && (
-        <Button size='small' color='inherit' onClick={onAddCover} startIcon={<AddCover />}>
+      {!readOnly && !hasCover && (
+        <HeaderToolbarButton className={cn('max-sm:!hidden', !visible && 'invisible')} onClick={onAddCover}>
+          <AddCover className='h-5 w-5 text-icon-primary' />
           {t('document.plugins.cover.addCover')}
-        </Button>
+        </HeaderToolbarButton>
       )}
+      {children && <div className='flex items-center'>{children}</div>}
     </div>
   );
 }

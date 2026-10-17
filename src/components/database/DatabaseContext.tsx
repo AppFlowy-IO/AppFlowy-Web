@@ -8,6 +8,7 @@ import {
   runDatabaseRowAction,
 } from '@/application/database-yjs/history';
 import { useEditorPreviewId } from '@/components/editor/EditorPreviewContext';
+import { VerificationDatabaseValues } from '@/components/page-verification/VerificationDatabaseValues';
 import { isDevelopmentOrTestEnvironment } from '@/utils/runtime-config';
 
 import { exposeDatabaseTestContext, type DatabaseTestWindow } from './database-test-context';
@@ -46,5 +47,10 @@ export const DatabaseContextProvider = ({ children, value }: DatabaseContextProv
     });
   }, [value, previewId]);
 
-  return <DatabaseContext.Provider value={value}>{children}</DatabaseContext.Provider>;
+  return (
+    <DatabaseContext.Provider value={value}>
+      <VerificationDatabaseValues />
+      {children}
+    </DatabaseContext.Provider>
+  );
 };

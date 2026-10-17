@@ -3,10 +3,12 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { useTranslation } from 'react-i18next';
 
 import {
+  FieldType,
   GroupColumn,
   PADDING_END,
   Row,
   useDatabaseContext,
+  useFieldType,
   useReadOnly,
   useRowsByGroup,
 } from '@/application/database-yjs';
@@ -68,6 +70,7 @@ interface HydratedGroupProps extends GroupProps {
 
 const HydratedGroup = ({ groupId, columns, groupResult, fieldId, groupRowsReady }: HydratedGroupProps) => {
   const context = useDatabaseContext();
+  const fieldType = useFieldType(fieldId);
   const { paddingStart, paddingEnd, navigateToRow } = context;
 
   const readOnly = useReadOnly();
@@ -107,9 +110,8 @@ const HydratedGroup = ({ groupId, columns, groupResult, fieldId, groupRowsReady 
   const addCardBefore = useCallback(
     async (columnId: string) => {
       if (!fieldId) return;
-      const cellsData = {
-        [fieldId]: columnId,
-      };
+      if (fieldType === FieldType.Verification && columnId !== 'unverified') return;
+      const cellsData = fieldType === FieldType.Verification ? {} : { [fieldId]: columnId };
 
       const rowId = await onNewCard({ cellsData });
 
@@ -117,7 +119,7 @@ const HydratedGroup = ({ groupId, columns, groupResult, fieldId, groupRowsReady 
 
       setEditingCardId(`${columnId}/${rowId}`);
     },
-    [fieldId, onNewCard, setEditingCardId]
+    [fieldId, fieldType, onNewCard, setEditingCardId]
   );
 
   const { contextValue, scrollableRef: ref } = useColumnsDrag(groupId, columns, getCards, fieldId);

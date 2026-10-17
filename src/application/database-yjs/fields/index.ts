@@ -11,6 +11,7 @@ export * from './relation';
 export * from './rollup';
 export * from './person';
 export * from './formula';
+export * from './verification';
 
 export function getFieldName (fieldType: FieldType) {
   switch (fieldType) {
@@ -54,6 +55,8 @@ export function getFieldName (fieldType: FieldType) {
       return 'Rollup';
     case FieldType.Formula:
       return 'Formula';
+    case FieldType.Verification:
+      return 'Verification';
     default:
       return 'Text';
   }

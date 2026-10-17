@@ -1458,6 +1458,9 @@ export namespace notification {
 
         /** WorkspaceNotification storageLimitExceeded */
         storageLimitExceeded?: (notification.IStorageLimitExceeded|null);
+
+        /** WorkspaceNotification pageVerificationChanged */
+        pageVerificationChanged?: (notification.IPageVerificationChanged|null);
     }
 
     /** Represents a WorkspaceNotification. */
@@ -1508,8 +1511,11 @@ export namespace notification {
         /** WorkspaceNotification storageLimitExceeded. */
         public storageLimitExceeded?: (notification.IStorageLimitExceeded|null);
 
+        /** WorkspaceNotification pageVerificationChanged. */
+        public pageVerificationChanged?: (notification.IPageVerificationChanged|null);
+
         /** WorkspaceNotification payload. */
-        public payload?: ("profileChange"|"permissionChanged"|"sectionChanged"|"shareViewsChanged"|"mentionablePersonListChanged"|"serverLimit"|"workspaceMemberProfileChanged"|"folderChanged"|"folderViewChanged"|"inboxNotification"|"commentChanged"|"databaseRestored"|"storageLimitExceeded");
+        public payload?: ("profileChange"|"permissionChanged"|"sectionChanged"|"shareViewsChanged"|"mentionablePersonListChanged"|"serverLimit"|"workspaceMemberProfileChanged"|"folderChanged"|"folderViewChanged"|"inboxNotification"|"commentChanged"|"databaseRestored"|"storageLimitExceeded"|"pageVerificationChanged");
 
         /**
          * Creates a new WorkspaceNotification instance using the specified properties.
@@ -3481,6 +3487,97 @@ export namespace notification {
 
         /**
          * Gets the default type url for StorageLimitExceeded
+         * @param [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns The default type url
+         */
+        public static getTypeUrl(typeUrlPrefix?: string): string;
+    }
+
+    /** Properties of a PageVerificationChanged. */
+    interface IPageVerificationChanged {
+    }
+
+    /** Represents a PageVerificationChanged. */
+    class PageVerificationChanged implements IPageVerificationChanged {
+
+        /**
+         * Constructs a new PageVerificationChanged.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: notification.IPageVerificationChanged);
+
+        /**
+         * Creates a new PageVerificationChanged instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns PageVerificationChanged instance
+         */
+        public static create(properties?: notification.IPageVerificationChanged): notification.PageVerificationChanged;
+
+        /**
+         * Encodes the specified PageVerificationChanged message. Does not implicitly {@link notification.PageVerificationChanged.verify|verify} messages.
+         * @param message PageVerificationChanged message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: notification.IPageVerificationChanged, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified PageVerificationChanged message, length delimited. Does not implicitly {@link notification.PageVerificationChanged.verify|verify} messages.
+         * @param message PageVerificationChanged message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: notification.IPageVerificationChanged, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a PageVerificationChanged message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns PageVerificationChanged
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): notification.PageVerificationChanged;
+
+        /**
+         * Decodes a PageVerificationChanged message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns PageVerificationChanged
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): notification.PageVerificationChanged;
+
+        /**
+         * Verifies a PageVerificationChanged message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a PageVerificationChanged message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns PageVerificationChanged
+         */
+        public static fromObject(object: { [k: string]: any }): notification.PageVerificationChanged;
+
+        /**
+         * Creates a plain object from a PageVerificationChanged message. Also converts values to other types if specified.
+         * @param message PageVerificationChanged
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: notification.PageVerificationChanged, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this PageVerificationChanged to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+
+        /**
+         * Gets the default type url for PageVerificationChanged
          * @param [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
          * @returns The default type url
          */

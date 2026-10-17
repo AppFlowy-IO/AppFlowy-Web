@@ -1,10 +1,19 @@
 import { useMemo } from 'react';
 
-import { DateFilter, FieldType, Filter, NumberFilter, PersonFilter, SelectOptionFilter, useFieldSelector } from '@/application/database-yjs';
+import {
+  DateFilter,
+  FieldType,
+  Filter,
+  NumberFilter,
+  PersonFilter,
+  SelectOptionFilter,
+  useFieldSelector,
+} from '@/application/database-yjs';
 import { predicateFieldTypeForResult } from '@/application/database-yjs/formula/filter';
 import { useFormulaResultType } from '@/application/database-yjs/selector';
 import { YjsDatabaseKey } from '@/application/types';
 import DateTimeFilterMenu from '@/components/database/components/filters/filter-menu/DateTimeFilterMenu';
+import { VerificationFilterMenu } from '@/components/page-verification/VerificationConditions';
 
 import CheckboxFilterMenu from './CheckboxFilterMenu';
 import ChecklistFilterMenu from './ChecklistFilterMenu';
@@ -26,6 +35,8 @@ export function FilterMenu({ filter }: { filter: Filter }) {
   const menu = useMemo(() => {
     if (!field) return null;
     switch (fieldType) {
+      case FieldType.Verification:
+        return <VerificationFilterMenu filter={filter} />;
       case FieldType.RichText:
       case FieldType.URL:
         return <TextFilterMenu filter={filter} />;

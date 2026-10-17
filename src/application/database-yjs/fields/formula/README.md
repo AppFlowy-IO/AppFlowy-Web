@@ -23,3 +23,11 @@ IndexedDB is intentionally not part of this implementation. Its [asynchronous AP
 Read-time validation also avoids relying on [Yjs observer delivery order](https://docs.yjs.dev/api/y.doc): observers run after a transaction's edits, whereas formula reads can occur during the transaction itself. The cache adds one destroy listener per database and no row listeners, preserving the existing [React subscription cleanup](https://react.dev/reference/react/useSyncExternalStore) ownership.
 
 Regression tests cover cache hits, local and remote edits, transitive/schema changes, conversion and formatting, transaction-time reads, copied schemas, result mutation, eviction, excluded dependencies, first-render freshness after reopen, filtered/sorted footer recovery, and rapid database switching without computation for closed consumers.
+
+Server-owned properties use the document-scoped external-field registry. Verification is exposed
+as text (`Verified`, `Expired`, or an empty string for an unverified row), with the property
+generation ID retained in stored formula references. Metadata updates and expiration invalidate
+formula readers without changing CRDT fields or cells. External inputs bypass the result cache;
+unavailable/unauthorized values produce a formula error rather than an unverified result. The
+provider is mounted only for authenticated live databases, including when the property is hidden.
+Footer calculations read the same projection and wait for complete authorized metadata.

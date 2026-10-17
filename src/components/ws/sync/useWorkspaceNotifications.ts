@@ -1,3 +1,5 @@
+import { invalidateActiveVerifications } from '@/application/page-verification/store';
+import { invalidateActiveVerificationProperties } from '@/application/page-verification/database';
 import EventEmitter from 'events';
 
 import { useEffect } from 'react';
@@ -25,6 +27,11 @@ function dispatchNotifications(
       // access stays intact so sync can resume after an upgrade or storage cleanup.
       toast.error(message, { id: 'workspace-storage-limit-exceeded' });
     }
+  }
+
+  if (n.pageVerificationChanged || n.permissionChanged) {
+    invalidateActiveVerifications();
+    invalidateActiveVerificationProperties();
   }
 
   if (n.profileChange) {

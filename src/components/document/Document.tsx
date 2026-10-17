@@ -161,6 +161,7 @@ export const Document = (props: DocumentProps) => {
     <div ref={ref} className={'flex h-full w-full flex-col items-center'}>
       <ViewMetaPreview
         {...viewMeta}
+        showVerification={!isTemplateThumb && !!viewMeta.workspaceId}
         readOnly={readOnly}
         updatePage={updatePage}
         updatePageIcon={updatePageIcon}

@@ -53,7 +53,10 @@ function FieldCustomIcon({
     );
   }, [iconContent, className, props]);
 
-  return icon || <FieldTypeIcon type={type} className={cn('icon h-5 w-5', className)} />;
+  if (icon) return icon;
+  const iconClassName = cn('icon h-5 w-5', className);
+
+  return <FieldTypeIcon type={type} className={iconClassName} />;
 }
 
 export default FieldCustomIcon;

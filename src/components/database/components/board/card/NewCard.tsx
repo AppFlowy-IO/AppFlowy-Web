@@ -1,7 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { usePrimaryFieldId } from '@/application/database-yjs';
+import { FieldType, useFieldType, usePrimaryFieldId } from '@/application/database-yjs';
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { Button } from '@/components/ui/button';
@@ -26,6 +26,7 @@ function NewCard({
   setIsCreating: (isCreating: boolean) => void;
 }) {
   const primaryFieldId = usePrimaryFieldId();
+  const fieldType = useFieldType(fieldId);
   const { t } = useTranslation();
   const [value, setValue] = useState('');
   const onNewCard = useNewRowDispatch();
@@ -57,7 +58,7 @@ function NewCard({
 
       const cellsData = {
         [primaryFieldId]: inputValue,
-        [fieldId]: columnId,
+        ...(fieldType !== FieldType.Verification ? { [fieldId]: columnId } : {}),
       };
 
       setValue('');
@@ -67,7 +68,7 @@ function NewCard({
       });
       scrollToBottom();
     },
-    [beforeId, columnId, fieldId, onNewCard, primaryFieldId, scrollToBottom]
+    [beforeId, columnId, fieldId, fieldType, onNewCard, primaryFieldId, scrollToBottom]
   );
 
   useLayoutEffect(() => {

@@ -41,6 +41,7 @@ jest.mock('@/utils/runtime-config', () => ({
 
 jest.mock('@/components/main/app.hooks', () => ({
   useCurrentUser: () => undefined,
+  useAuthenticatedUserIdOptional: () => undefined,
 }));
 
 function createDatabaseDoc({

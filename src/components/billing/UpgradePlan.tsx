@@ -343,7 +343,13 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
   }, [catalog, currentPlan, isHosted, t]);
 
   // Billing owns the feature order; keep labels and plan values in its array order.
-  const rows: PricingComparisonRow[] = catalog?.comparison ?? [];
+  const rows: PricingComparisonRow[] = [...(catalog?.comparison ?? [])];
+
+  if (isHosted && !rows.some((row) => row.label === 'Verify any page')) {
+    rows.push({ key: 'page_verification', label: 'Verify any page', tooltip: null,
+      values: Object.fromEntries((catalog ? workspacePlans(catalog) : []).map((plan) => [plan.id,
+        isFreePlan(plan) ? { kind: 'excluded', display: '✕' } : { kind: 'included', display: '✓' }])) });
+  }
 
   return (
     <NormalModal

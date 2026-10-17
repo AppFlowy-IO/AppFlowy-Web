@@ -5,6 +5,7 @@ import * as Y from 'yjs';
 import { FormulaCell } from '@/application/database-yjs/cell.type';
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs/context';
 import { FieldType } from '@/application/database-yjs/database.type';
+import { registerExternalDatabaseFields, publishExternalDatabaseFields } from '@/application/database-yjs/external-fields';
 import { createFields, createRow } from '@/application/database-yjs/fields/formula/__tests__/fixture';
 import * as formulaEvaluator from '@/application/database-yjs/fields/formula/evaluator';
 import * as formulaSchema from '@/application/database-yjs/fields/formula/schema';
@@ -58,6 +59,45 @@ describe('formula row subscriptions', () => {
     });
     rerender();
     expect(readSchema).not.toHaveBeenCalled();
+  });
+
+  it('refreshes verification formulas when metadata changes without a row or schema mutation', async () => {
+    const f = fixture('if(prop("Verification") == "Verified", 1, 0)');
+    const field = createFields([
+      { id: 'verification', name: 'Verification', type: FieldType.Verification },
+    ]).get('verification').clone();
+
+    f.fields.set('verification', field);
+    let value: string | undefined = '';
+    const unregister = registerExternalDatabaseFields(f.fields, [{ field, readValue: () => value }]);
+    const { result, unmount } = renderHook(
+      () => useCellSelector({ rowId: f.rowId, fieldId: 'formula' }) as FormulaCell | undefined,
+      { wrapper: f.wrapper }
+    );
+    const rowBefore = f.row.toJSON();
+    const fieldsBefore = f.fields.toJSON();
+
+    expect(result.current?.rawNumeric).toBe(0);
+    for (const [next, expected] of [['Verified', 1], ['Expired', 0], ['', 0], [undefined, undefined]] as const) {
+      await act(async () => {
+        value = next;
+        publishExternalDatabaseFields(f.fields);
+        await Promise.resolve();
+      });
+      expect(result.current?.rawNumeric).toBe(expected);
+    }
+
+    expect(result.current?.error).toContain('unavailable');
+    await act(async () => {
+      value = 'Verified';
+      publishExternalDatabaseFields(f.fields);
+      await Promise.resolve();
+    });
+    expect(result.current?.rawNumeric).toBe(1);
+    expect(f.row.toJSON()).toEqual(rowBefore);
+    expect(f.fields.toJSON()).toEqual(fieldsBefore);
+    unmount();
+    unregister();
   });
 
   it('starts and stops formula schema reads when a field changes type', () => {

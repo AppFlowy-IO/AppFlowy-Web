@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 
-import { isAIFieldType, usePrimaryFieldId, usePropertiesSelector, useReadOnly } from '@/application/database-yjs';
-import { useReorderColumnDispatch } from '@/application/database-yjs/dispatch';
+import { FieldVisibility, isAIFieldType, useFieldsSelector, usePrimaryFieldId, useReadOnly } from '@/application/database-yjs';
+import { useReorderPropertiesDispatch } from '@/application/database-yjs/dispatch/property-order';
 import { useAIEnabled } from '@/components/app/app.hooks';
 import RowNewProperty from '@/components/database/components/database-row/RowNewProperty';
 import RowProperty from '@/components/database/components/database-row/RowProperty';
@@ -10,33 +10,37 @@ import { DragContext, useDragContextValue } from '@/components/database/componen
 import { getScrollParent } from '@/components/global-comment/utils';
 import { cn } from '@/lib/utils';
 
+const allVisibilities = [FieldVisibility.AlwaysShown, FieldVisibility.HideWhenEmpty, FieldVisibility.AlwaysHidden];
+
 export function DatabaseRowProperties({ rowId, templateStyle = false }: { rowId: string; templateStyle?: boolean }) {
   const primaryFieldId = usePrimaryFieldId();
   const [isFilterHidden, setIsFilterHidden] = useState(true);
   const [activePropertyId, setActivePropertyId] = useState<string | null>(null);
   const aiEnabled = useAIEnabled();
 
-  const { properties, hiddenProperties } = usePropertiesSelector(isFilterHidden);
-  const fields = useMemo(() => {
-    return properties.filter((column) => column.id !== primaryFieldId && (aiEnabled || !isAIFieldType(column.type)));
-  }, [aiEnabled, properties, primaryFieldId]);
-  const visibleHiddenProperties = useMemo(() => {
-    return hiddenProperties.filter((column) => aiEnabled || !isAIFieldType(column.type));
-  }, [aiEnabled, hiddenProperties]);
+  const columns = useFieldsSelector(allVisibilities);
+  const rowProperties = useMemo(
+    () => columns.filter((column) => column.fieldId !== primaryFieldId && (aiEnabled || !isAIFieldType(column.fieldType))),
+    [aiEnabled, columns, primaryFieldId]
+  );
+  const fields = useMemo(
+    () => rowProperties.filter((column) => !isFilterHidden || column.visibility !== FieldVisibility.AlwaysHidden),
+    [isFilterHidden, rowProperties]
+  );
+  const hiddenCount = rowProperties.filter((column) => column.visibility === FieldVisibility.AlwaysHidden).length;
   const readOnly = useReadOnly();
 
   const dragData = useMemo(() => {
-    return fields.map((field) => ({ id: field.id }));
+    return fields.map((field) => ({ id: field.fieldId }));
   }, [fields]);
 
   const [dom, setDom] = useState<HTMLElement | null>(null);
-  const recorderColumn = useReorderColumnDispatch();
+  const reorderProperties = useReorderPropertiesDispatch();
   const onReorder = useCallback(
     ({
       oldData,
       newData,
       startIndex,
-      finishIndex,
     }: {
       oldData: {
         id: string;
@@ -53,11 +57,9 @@ export function DatabaseRowProperties({ rowId, templateStyle = false }: { rowId:
         throw new Error('No optionId provided');
       }
 
-      const beforeId = newData[finishIndex - 1]?.id;
-
-      recorderColumn(optionId, beforeId);
+      reorderProperties(optionId, newData.map((property) => property.id));
     },
-    [recorderColumn]
+    [reorderProperties]
   );
 
   const container = useMemo(() => {
@@ -84,10 +86,10 @@ export function DatabaseRowProperties({ rowId, templateStyle = false }: { rowId:
         {fields.map((field) => {
           return (
             <RowProperty
-              key={field.id}
+              key={field.fieldId}
               rowId={rowId}
-              fieldId={field.id}
-              isActive={activePropertyId === field.id}
+              fieldId={field.fieldId}
+              isActive={activePropertyId === field.fieldId}
               setActivePropertyId={setActivePropertyId}
               templateStyle={templateStyle}
             />
@@ -96,7 +98,7 @@ export function DatabaseRowProperties({ rowId, templateStyle = false }: { rowId:
         {!readOnly && (
           <>
             <RowSwitchFieldsHidden
-              hideCount={visibleHiddenProperties.length}
+              hideCount={hiddenCount}
               isFilterHidden={isFilterHidden}
               templateStyle={templateStyle}
               onToggleSwitchFieldsHidden={() => {

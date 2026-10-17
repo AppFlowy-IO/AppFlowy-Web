@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { FieldType, useCellSelector, useFieldSelector, useReadOnly } from '@/application/database-yjs';
 import { Cell as CellType, CellProps } from '@/application/database-yjs/cell.type';
 import { YjsDatabaseKey } from '@/application/types';
+import { Cell } from '@/components/database/components/cell/Cell';
 import { CheckboxCell } from '@/components/database/components/cell/checkbox';
 import { AttributionCell } from '@/components/database/components/cell/attribution';
 import { RowCreateModifiedTime } from '@/components/database/components/cell/created-modified';
@@ -17,12 +18,11 @@ import { TextCell } from '@/components/database/components/cell/text';
 import PropertyWrapper from '@/components/database/components/property/PropertyWrapper';
 import { TextProperty } from '@/components/database/components/property/text';
 
-
 import { ChecklistProperty } from 'src/components/database/components/property/cheklist';
 
 import { PersonCell } from '../cell/person';
 
-export function Property ({ fieldId, rowId }: { fieldId: string; rowId: string }) {
+export function Property({ fieldId, rowId }: { fieldId: string; rowId: string }) {
   const cell = useCellSelector({
     fieldId,
     rowId,
@@ -66,17 +66,27 @@ export function Property ({ fieldId, rowId }: { fieldId: string; rowId: string }
     }
   }, [fieldType]) as FC<CellProps<CellType>>;
 
+  if (fieldType === FieldType.Verification) {
+    return (
+      <PropertyWrapper fieldId={fieldId}>
+        <Cell
+          cell={cell}
+          rowId={rowId}
+          fieldId={fieldId}
+          wrap
+          readOnly={readOnly}
+          placeholder={t('grid.verification.clickToVerify', { defaultValue: 'Click to verify' })}
+        />
+      </PropertyWrapper>
+    );
+  }
+
   if (fieldType === FieldType.CreatedTime || fieldType === FieldType.LastEditedTime) {
     const attrName = fieldType === FieldType.CreatedTime ? YjsDatabaseKey.created_at : YjsDatabaseKey.last_modified;
 
     return (
       <PropertyWrapper fieldId={fieldId}>
-        <RowCreateModifiedTime
-          wrap
-          rowId={rowId}
-          fieldId={fieldId}
-          attrName={attrName}
-        />
+        <RowCreateModifiedTime wrap rowId={rowId} fieldId={fieldId} attrName={attrName} />
       </PropertyWrapper>
     );
   }

@@ -41,7 +41,7 @@ export function PublishedPageMeta({
   const cover = useMemo(() => getPublishedViewCover(extra), [extra]);
 
   return (
-    <ViewMetaPreview
+    <ViewMetaPreview showVerification={false}
       readOnly
       icon={view.icon || undefined}
       cover={cover}

@@ -21,6 +21,10 @@ import DeletePropertyConfirm from '@/components/database/components/property/Del
 import FormulaPropertyMenuContent from '@/components/database/components/property/formula/FormulaPropertyMenuContent';
 import FileMediaPropertyMenuContent from '@/components/database/components/property/media/FileMediaPropertyMenuContent';
 import NumberPropertyMenuContent from '@/components/database/components/property/number/NumberPropertyMenuContent';
+import {
+  PropertyMenuContent,
+  PropertyMenuOperation,
+} from '@/components/database/components/property/PropertyMenuContent';
 import PropertyProfile from '@/components/database/components/property/PropertyProfile';
 import PropertySelectTrigger from '@/components/database/components/property/PropertySelectTrigger';
 import RelationCreationDialog, {
@@ -31,15 +35,8 @@ import RollupPropertyMenuContent from '@/components/database/components/property
 import SelectPropertyMenuContent from '@/components/database/components/property/select/SelectPropertyMenuContent';
 import TranslatePropertyMenuContext from '@/components/database/components/property/translate/TranslatePropertyMenuContext';
 import { isFieldEditingDisabled } from '@/components/database/utils/field-editing';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useVerificationPropertyConversion } from '@/components/page-verification/useVerificationPropertyConversion';
+import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Log } from '@/utils/log';
 
 const FormulaEditorDialog = lazy(() =>
@@ -71,11 +68,11 @@ function PropertyMenu({
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [relationDialogOpen, setRelationDialogOpen] = useState(false);
   const [formulaDialogOpen, setFormulaDialogOpen] = useState(false);
+  const verificationConversion = useVerificationPropertyConversion(fieldId, () => onOpenChange?.(false));
   const switchType = useSwitchPropertyType();
   const updatePropertyName = useUpdatePropertyNameDispatch(fieldId);
   const updateRelationTypeOption = useUpdateRelationTypeOption(fieldId);
-  const initialRelationFieldName =
-    field?.get(YjsDatabaseKey.name) || t('grid.field.relationFieldName');
+  const initialRelationFieldName = field?.get(YjsDatabaseKey.name) || t('grid.field.relationFieldName');
 
   const handleRequestRelation = useCallback(() => {
     onOpenChange?.(false);
@@ -102,7 +99,9 @@ function PropertyMenu({
       setRelationDialogOpen(false);
 
       try {
-        await switchType(fieldId, FieldType.Relation);
+        if (type === FieldType.Verification) {
+          if (!(await verificationConversion.convert(FieldType.Relation))) return;
+        } else await switchType(fieldId, FieldType.Relation);
         updatePropertyName(result.fieldName);
         await updateRelationTypeOption({
           database_id: result.relatedDatabaseId,
@@ -115,9 +114,9 @@ function PropertyMenu({
         Log.warn('[PropertyMenu] Failed to create relation field', { fieldId, error });
       }
     },
-    [fieldId, switchType, updatePropertyName, updateRelationTypeOption]
+    [fieldId, switchType, updatePropertyName, updateRelationTypeOption, type, verificationConversion]
   );
-  const operations = useMemo(
+  const operations = useMemo<PropertyMenuOperation[]>(
     () => [
       {
         testId: visibility === FieldVisibility.AlwaysHidden ? 'show' : 'hide',
@@ -136,7 +135,7 @@ function PropertyMenu({
         testId: 'duplicate',
         label: t('grid.field.duplicate'),
         icon: <DuplicateIcon />,
-        disabled: isPrimary,
+        disabled: isPrimary || type === FieldType.Verification,
         onSelect: () => {
           onDuplicateProperty(fieldId);
         },
@@ -152,7 +151,7 @@ function PropertyMenu({
         },
       },
     ],
-    [visibility, t, isPrimary, onHideProperty, fieldId, onShowProperty, onDuplicateProperty]
+    [visibility, t, isPrimary, type, onHideProperty, fieldId, onShowProperty, onDuplicateProperty]
   );
 
   const propertyContent = useMemo(() => {
@@ -196,50 +195,27 @@ function PropertyMenu({
         <DropdownMenuTrigger asChild>
           {children ? children : <div className={'absolute bottom-0 left-0 w-full'} />}
         </DropdownMenuTrigger>
-        <DropdownMenuContent side={'bottom'} align={'start'} onCloseAutoFocus={(e) => e.preventDefault()}>
-          <PropertyProfile onEnter={() => onOpenChange?.(false)} className={'mb-2'} fieldId={fieldId} />
-          {isPrimary ? (
-            <Tooltip disableHoverableContent>
-              <TooltipTrigger asChild>
-                <div>
-                  <PropertySelectTrigger fieldId={fieldId} disabled />
-                </div>
-              </TooltipTrigger>
-              <TooltipContent side={'bottom'}>{t('grid.field.switchPrimaryFieldTooltip')}</TooltipContent>
-            </Tooltip>
-          ) : (
-            <PropertySelectTrigger
-              fieldId={fieldId}
-              onRequestRelation={handleRequestRelation}
-              onRequestFormula={handleRequestFormula}
-            />
-          )}
-
+        <PropertyMenuContent
+          profile={<PropertyProfile onEnter={() => onOpenChange?.(false)} className='mb-2' fieldId={fieldId} />}
+          operations={operations}
+          preservePointerFocus={[FieldType.MultiSelect, FieldType.SingleSelect].includes(type)}
+          typeSelector={
+            isPrimary ? (
+              <PropertySelectTrigger fieldId={fieldId} disabled />
+            ) : (
+              <PropertySelectTrigger
+                fieldId={fieldId}
+                onRequestRelation={handleRequestRelation}
+                onRequestFormula={handleRequestFormula}
+                onRequestVerification={verificationConversion.convert}
+              />
+            )
+          }
+        >
           {propertyContent}
-          <DropdownMenuSeparator />
-          <DropdownMenuGroup>
-            {operations.map((operation) => (
-              <DropdownMenuItem
-                data-testid={`property-menu-${operation.testId}`}
-                disabled={operation.disabled}
-                onSelect={operation.onSelect}
-                key={operation.label}
-                variant={operation.variant as 'destructive' | undefined}
-                {...([FieldType.MultiSelect, FieldType.SingleSelect].includes(type)
-                  ? {
-                      onPointerMove: (e) => e.preventDefault(),
-                      onPointerEnter: (e) => e.preventDefault(),
-                      onPointerLeave: (e) => e.preventDefault(),
-                    }
-                  : undefined)}
-              >
-                {operation.icon}
-                {operation.label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuGroup>
-        </DropdownMenuContent>
+        </PropertyMenuContent>
       </DropdownMenu>
+      {verificationConversion.feedback}
       <DeletePropertyConfirm
         fieldId={fieldId}
         onClose={() => {

@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 
 import { useDatabaseFields } from '@/application/database-yjs/context';
+import { subscribeExternalDatabaseFields } from '@/application/database-yjs/external-fields';
 import type { YDatabaseFields } from '@/application/types';
 
 type FieldsVersionStore = {
@@ -19,6 +20,7 @@ function createFieldsVersionStore(fields: YDatabaseFields): FieldsVersionStore {
   const subscribers = new Set<() => void>();
   let version = 0;
   let observing = false;
+  let stopExternal: (() => void) | undefined;
 
   const publish = () => {
     version += 1;
@@ -32,6 +34,7 @@ function createFieldsVersionStore(fields: YDatabaseFields): FieldsVersionStore {
       if (!observing) {
         observing = true;
         fields.observeDeep(publish);
+        stopExternal = subscribeExternalDatabaseFields(fields, publish);
         // Close the render-to-subscribe gap and force the first subscriber to
         // reread the identity-stable Y.Map after the observer is attached.
         version += 1;
@@ -42,6 +45,7 @@ function createFieldsVersionStore(fields: YDatabaseFields): FieldsVersionStore {
         if (subscribers.size === 0 && observing) {
           observing = false;
           fields.unobserveDeep(publish);
+          stopExternal?.();
         }
       };
     },

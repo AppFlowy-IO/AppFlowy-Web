@@ -7,6 +7,7 @@ import {
   useToggleHideEmptyGroups,
   useToggleHideUnGrouped,
 } from '@/application/database-yjs/dispatch';
+import { useDatabaseVerification } from '@/application/page-verification/database';
 import { ReactComponent as GroupIcon } from '@/assets/icons/group.svg';
 import { FieldDisplay } from '@/components/database/components/field';
 import {
@@ -31,11 +32,14 @@ function BoardSettingGroup () {
   const groupBy = useGroupByFieldDispatch();
 
   const { properties: allProperties } = usePropertiesSelector(true);
+  const verification = useDatabaseVerification();
+
   const properties = useMemo(() => {
     return allProperties.filter(property => {
       const type = property.type;
 
       return [
+        FieldType.Verification,
         FieldType.SingleSelect,
         FieldType.MultiSelect,
         FieldType.Checkbox,
@@ -75,7 +79,7 @@ function BoardSettingGroup () {
                   checked={hideEmptyGroups}
                 />
               </DropdownMenuItem>
-              <DropdownMenuItem
+              {!verification.settings.grouping && <DropdownMenuItem
                 className={'w-full'}
                 onSelect={(e) => {
                   e.preventDefault();
@@ -88,7 +92,7 @@ function BoardSettingGroup () {
                   checked={!ungroupedColumnHidden}
                 />
 
-              </DropdownMenuItem>
+              </DropdownMenuItem>}
               <DropdownMenuSeparator />
             </>
           )}

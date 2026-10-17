@@ -1,11 +1,13 @@
-import { IconButton } from '@mui/material';
 import { memo, useMemo, useState } from 'react';
 
+import { getBreadcrumbVerificationTarget } from '@/application/page-verification/breadcrumb';
 import { UIVariant, View } from '@/application/types';
 import { ReactComponent as RightIcon } from '@/assets/icons/alt_arrow_right.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import BreadcrumbItem from '@/components/_shared/breadcrumb/BreadcrumbItem';
 import BreadcrumbMoreModal from '@/components/_shared/breadcrumb/BreadcrumbMoreModal';
+import { BreadcrumbVerification } from '@/components/_shared/breadcrumb/BreadcrumbVerification';
+import { Button } from '@/components/ui/button';
 import { getPlatform } from '@/utils/platform';
 
 export interface BreadcrumbProps {
@@ -17,7 +19,9 @@ export interface BreadcrumbProps {
 export function Breadcrumb({ crumbs, toView, variant }: BreadcrumbProps) {
   const [openMore, setOpenMore] = useState(false);
   const renderCrumb = useMemo(() => {
-    const tailCount = getPlatform().isMobile ? 1 : 2;
+    const verificationTarget = getBreadcrumbVerificationTarget(crumbs);
+    const tailCount = getPlatform().isMobile && verificationTarget === crumbs[crumbs.length - 1] ? 1 : 2;
+    const status = (crumb: View) => <BreadcrumbVerification crumbs={crumbs} crumb={crumb} variant={variant} />;
 
     if (crumbs.length > tailCount + 1) {
       const firstCrumb = crumbs[0];
@@ -28,17 +32,24 @@ export function Breadcrumb({ crumbs, toView, variant }: BreadcrumbProps) {
           {firstCrumb.extra?.is_hidden_space ? null : (
             <div className={'flex min-w-0 items-center gap-2 truncate text-text-primary'}>
               <BreadcrumbItem variant={variant} toView={toView} crumb={firstCrumb} disableClick={true} />
+              {status(firstCrumb)}
               <RightIcon className={'h-5 w-5 shrink-0'} />
             </div>
           )}
           <div className={'flex min-w-0 shrink-0 items-center gap-2 truncate text-text-primary'}>
-            <IconButton
+            <Button
+              variant='ghost'
+              size='icon-sm'
+              className='focus-visible:ring-2 focus-visible:ring-border-theme-thick'
+              aria-label='Show all breadcrumbs'
+              aria-haspopup='dialog'
+              aria-expanded={openMore}
               onClick={() => {
                 setOpenMore(true);
               }}
             >
               <MoreIcon className={'h-5 w-5 shrink-0'} />
-            </IconButton>
+            </Button>
 
             <RightIcon className={'h-5 w-5 shrink-0'} />
           </div>
@@ -53,6 +64,7 @@ export function Breadcrumb({ crumbs, toView, variant }: BreadcrumbProps) {
                   crumb={crumb}
                   disableClick={index === lastCrumbs.length - 1}
                 />
+                {status(crumb)}
                 {index === lastCrumbs.length - 1 ? null : <RightIcon className={'h-5 w-5 shrink-0'} />}
               </div>
             );
@@ -75,11 +87,12 @@ export function Breadcrumb({ crumbs, toView, variant }: BreadcrumbProps) {
           key={key}
         >
           <BreadcrumbItem toView={toView} crumb={crumb} disableClick={isLast} variant={variant} />
+          {status(crumb)}
           {!isLast && <RightIcon className={'h-5 w-5 shrink-0'} />}
         </div>
       );
     });
-  }, [crumbs, toView, variant]);
+  }, [crumbs, toView, variant, openMore]);
 
   return (
     <div

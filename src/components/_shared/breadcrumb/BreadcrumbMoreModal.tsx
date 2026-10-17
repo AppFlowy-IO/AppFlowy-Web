@@ -1,8 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { UIVariant, View } from '@/application/types';
 import BreadcrumbItem from '@/components/_shared/breadcrumb/BreadcrumbItem';
+import { BreadcrumbVerification } from '@/components/_shared/breadcrumb/BreadcrumbVerification';
 import { NormalModal } from '@/components/_shared/modal';
 
 function BreadcrumbMoreModal({
@@ -19,6 +20,7 @@ function BreadcrumbMoreModal({
   variant?: UIVariant;
 }) {
   const { t } = useTranslation();
+  const [container, setContainer] = useState<HTMLDivElement | null>(null);
   const title = useMemo(() => {
     return (
       <div className={'flex items-center gap-2'}>
@@ -39,7 +41,7 @@ function BreadcrumbMoreModal({
       open={open}
       onClose={onClose}
     >
-      <div className={'flex min-w-[350px] flex-col justify-start gap-2 max-sm:min-w-full'}>
+      <div ref={setContainer} className={'flex min-w-[350px] flex-col justify-start gap-2 max-sm:min-w-full'}>
         {crumbs.map((crumb, index) => (
           <div
             key={crumb.view_id}
@@ -56,6 +58,7 @@ function BreadcrumbMoreModal({
           >
             {index !== 0 && <div className={'text-text-secondary'}> {'-'} </div>}
             <BreadcrumbItem crumb={crumb} toView={toView} variant={variant} />
+            <BreadcrumbVerification crumbs={crumbs} crumb={crumb} variant={variant} container={container} />
           </div>
         ))}
       </div>

@@ -9,6 +9,7 @@ import { findAncestors } from '@/components/_shared/outline/utils';
 import { RichTooltip } from '@/components/_shared/popover';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { useAppOutline, useToView } from '@/components/app/app.hooks';
+import { PageVerificationControl } from '@/components/page-verification/PageVerificationControl';
 
 function ListItem({
   itemId,
@@ -148,6 +149,7 @@ function ListItem({
           <div className={'min-w-0 truncate text-base font-medium leading-[22px] text-text-primary'}>
             <HighlightedText text={displayTitle} query={query} />
           </div>
+          <PageVerificationControl targetId={view.view_id} badgeOnly />
           {!preview && !displaySubtitle && (
             <div className={'flex min-w-0 items-center gap-2 overflow-hidden text-sm text-text-secondary'}>
               {breadcrumbs}

@@ -6,44 +6,50 @@ import DragItem from '@/components/database/components/drag-and-drop/DragItem';
 import { useDragContextValue, DragContext } from '@/components/database/components/drag-and-drop/useDragContext';
 import Sort from '@/components/database/components/sorts/Sort';
 
-function SortList () {
+function SortList() {
   const sorts = useSortsSelector();
   const readOnly = useReadOnly();
 
   const reorderSorts = useReorderSorts();
-  const data = useMemo(() => {
-    return sorts.map((sort) => ({
-      id: sort.id,
-    }));
-  }, [sorts]);
+  const data = useMemo(() => sorts.map((sort) => ({ id: sort.id })), [sorts]);
 
-  const onReorder = useCallback(({
-    oldData,
-    newData,
-    startIndex,
-    finishIndex,
-  }: {
-    oldData: {
-      id: string
-    }[]
-    newData: {
-      id: string
-    }[]
-    startIndex: number
-    finishIndex: number
-  }) => {
-    const optionId = oldData[startIndex].id;
+  const onReorder = useCallback(
+    ({
+      oldData,
+      newData,
+      startIndex,
+    }: {
+      oldData: {
+        id: string;
+      }[];
+      newData: {
+        id: string;
+      }[];
+      startIndex: number;
+      finishIndex: number;
+    }) => {
+      const optionId = oldData[startIndex].id;
 
-    if (!optionId) {
-      throw new Error('No optionId provided');
-    }
+      if (!optionId) {
+        throw new Error('No optionId provided');
+      }
 
-    const beforeId = newData[finishIndex - 1]?.id;
+      const index = newData.findIndex(({ id }) => id === optionId);
 
-    reorderSorts(optionId, beforeId);
-  }, [reorderSorts]);
+      if (index !== startIndex) reorderSorts(optionId, newData[index - 1]?.id);
+    },
+    [reorderSorts]
+  );
 
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
+  const move = (startIndex: number, finishIndex: number) => {
+    if (finishIndex < 0 || finishIndex >= data.length) return;
+    const newData = [...data];
+
+    newData.splice(finishIndex, 0, newData.splice(startIndex, 1)[0]);
+    void onReorder({ oldData: data, newData, startIndex, finishIndex });
+  };
+
   const dragContentValue = useDragContextValue({
     enabled: !readOnly,
     data,
@@ -52,24 +58,25 @@ function SortList () {
   });
 
   return (
-    <div
-      ref={setContainer}
-      className={'flex w-fit flex-col gap-2'}
-    >
+    <div ref={setContainer} className={'flex w-fit flex-col gap-2'}>
       <DragContext.Provider value={dragContentValue}>
-        {sorts.map((sort) => readOnly ? (
-          <Sort
-            sortId={sort.id}
-            key={sort.id}
-          />
-        ) : (
-          <DragItem
-            id={sort.id}
-            key={sort.id}
-          >
-            <Sort sortId={sort.id} />
-          </DragItem>
-        ))}
+        {data.map((sort, index) =>
+          readOnly ? (
+            <div key={sort.id}>
+              <Sort sortId={sort.id} />
+            </div>
+          ) : (
+            <DragItem
+              id={sort.id}
+              key={sort.id}
+              dragHandleLabel='Reorder sort'
+              onMoveUp={() => move(index, index - 1)}
+              onMoveDown={() => move(index, index + 1)}
+            >
+              <Sort sortId={sort.id} />
+            </DragItem>
+          )
+        )}
       </DragContext.Provider>
     </div>
   );

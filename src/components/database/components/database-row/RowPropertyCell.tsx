@@ -31,7 +31,8 @@ function RowPropertyCell({
   const readOnly = useReadOnly();
   const { field, clock } = useFieldSelector(fieldId);
   const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
-  const isReadOnlyCell = readOnly || isFieldEditingDisabled(fieldType);
+  const isVerification = fieldType === FieldType.Verification;
+  const isReadOnlyCell = readOnly || isFieldEditingDisabled(fieldType) || (templateStyle && isVerification);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const fieldName = useMemo(() => field?.get(YjsDatabaseKey.name) || '', [field, clock]);
@@ -53,10 +54,11 @@ function RowPropertyCell({
   }, [isChecklist, isFileMedia]) as React.FC<CellProps<CellType>>;
 
   const placeholder = useMemo(() => {
+    if (isVerification) return 'Click to verify';
     if (fieldType === FieldType.Rollup) return '';
     if (fieldType === FieldType.Formula) return t('grid.formula.editFormula', { defaultValue: 'Edit formula' });
     return `${t('button.add')} ${fieldName}`;
-  }, [fieldName, t, fieldType]);
+  }, [fieldName, t, fieldType, isVerification]);
 
   return (
     <div
@@ -74,7 +76,8 @@ function RowPropertyCell({
       }}
       className={cn(
         'relative flex h-fit min-h-[36px] flex-1 flex-wrap items-center overflow-x-hidden rounded-300 px-2 py-2 pr-1 text-sm',
-        !isReadOnlyCell && !isChecklist && 'cursor-pointer hover:bg-fill-content-hover',
+        !isReadOnlyCell && !isChecklist && 'cursor-pointer',
+        !isReadOnlyCell && !isChecklist && !isVerification && 'hover:bg-fill-content-hover',
         templateStyle && 'min-h-[30px] py-1.5'
       )}
     >

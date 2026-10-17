@@ -26,7 +26,7 @@ export interface CalculationCellProps {
   cell?: ICalculationCell;
 }
 
-export function CalculationCell ({ cell }: CalculationCellProps) {
+export function CalculationCell({ cell }: CalculationCellProps) {
   const { t } = useTranslation();
 
   const fieldId = cell?.fieldId || '';
@@ -46,7 +46,7 @@ export function CalculationCell ({ cell }: CalculationCellProps) {
       return undefined;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [field, fieldType, clock],
+    [field, fieldType, clock]
   );
   const [num, setNum] = useState<string>();
 
@@ -88,6 +88,12 @@ export function CalculationCell ({ cell }: CalculationCellProps) {
         return t('grid.calculationTypeLabel.countNonEmptyShort');
       }
 
+      case CalculationType.CountUnique:
+        return t('grid.calculationTypeLabel.countUnique');
+      case CalculationType.PercentEmpty:
+        return t('grid.calculationTypeLabel.percentEmpty');
+      case CalculationType.PercentNotEmpty:
+        return t('grid.calculationTypeLabel.percentNotEmpty');
       case CalculationType.Median:
         return t('grid.calculationTypeLabel.median');
       default:
@@ -101,6 +107,9 @@ export function CalculationCell ({ cell }: CalculationCellProps) {
     return (
       cell.type === CalculationType.Count ||
       cell.type === CalculationType.CountEmpty ||
+      cell.type === CalculationType.CountUnique ||
+      cell.type === CalculationType.PercentEmpty ||
+      cell.type === CalculationType.PercentNotEmpty ||
       cell.type === CalculationType.CountNonEmpty
     );
   }, [cell]);
@@ -124,7 +133,10 @@ export function CalculationCell ({ cell }: CalculationCellProps) {
         return data.toString();
       }
 
-      const res = parseFloat(data).toFixed(2).replace(/(\.[0-9]*[1-9])0+$/, '$1').replace(/\.0+$/, '');
+      const res = parseFloat(data)
+        .toFixed(2)
+        .replace(/(\.[0-9]*[1-9])0+$/, '$1')
+        .replace(/\.0+$/, '');
 
       if (format && currencyFormaterMap[format] && !isCount) {
         return currencyFormaterMap[format](parseFloat(res));
@@ -133,15 +145,23 @@ export function CalculationCell ({ cell }: CalculationCellProps) {
       return res;
     };
 
-    setNum(readValue());
-  }, [cell?.value, format, prefix, isCount]);
+    const value = readValue();
+
+    setNum(
+      cell?.type === CalculationType.PercentEmpty || cell?.type === CalculationType.PercentNotEmpty ? `${value}%` : value
+    );
+  }, [cell?.value, cell?.type, format, prefix, isCount]);
 
   return (
     <Tooltip delayDuration={1500}>
       <TooltipTrigger asChild>
-        <div className={'h-full text-sm w-full overflow-hidden items-center px-2 text-right flex gap-[10px] uppercase leading-[36px] text-text-secondary'}>
+        <div
+          className={
+            'flex h-full w-full items-center gap-[10px] overflow-hidden px-2 text-right text-sm uppercase leading-[36px] text-text-secondary'
+          }
+        >
           <span className={'flex-1 text-xs'}>{prefix}</span>
-          <span className={'font-medium text-text-primary truncate'}>{num}</span>
+          <span className={'truncate font-medium text-text-primary'}>{num}</span>
         </div>
       </TooltipTrigger>
       <TooltipContent>

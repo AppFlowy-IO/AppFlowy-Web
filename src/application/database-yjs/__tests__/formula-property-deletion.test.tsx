@@ -1,4 +1,4 @@
-import { act, fireEvent, render, renderHook, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react';
 import * as Y from 'yjs';
 
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs/context';
@@ -26,7 +26,6 @@ import { FormulaEditorDialog } from '@/components/database/components/property/f
 import { flushFormulaEditor, formulaSource, setFormulaSource } from './formula-editor-input';
 
 import type { ReactNode } from 'react';
-
 
 function fixture() {
   const fields = createFields([
@@ -147,7 +146,7 @@ describe('deleting formula dependencies', () => {
     ).toMatchObject({ text: '', missingPropertyRef: 'price' });
   });
 
-  it('warns about direct and indirect formulas, allows cancel, and deletes only after confirmation', () => {
+  it('warns about direct and indirect formulas, allows cancel, and deletes only after confirmation', async () => {
     const f = fixture();
     const onClose = jest.fn();
 
@@ -169,7 +168,7 @@ describe('deleting formula dependencies', () => {
     expect(screen.queryByTestId('formula-deletion-warning')).toBeNull();
     rerender(<DeletePropertyConfirm fieldId={'price'} open onClose={onClose} />);
     fireEvent.click(screen.getByRole('button', { name: 'button.delete', exact: true }));
-    expect(onClose).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(2));
     expect(f.fields.has('price')).toBe(false);
     expect(parseFormulaTypeOption(f.fields.get('total')).formula).toBe('prop("price") * prop("quantity")');
   });

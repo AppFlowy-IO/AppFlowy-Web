@@ -1,11 +1,15 @@
 import React, { lazy, Suspense, useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { getBreadcrumbVerificationTarget } from '@/application/page-verification/breadcrumb';
 import { CoverType, ViewIconType, ViewLayout, ViewMetaCover, ViewMetaIcon, ViewMetaProps } from '@/application/types';
 import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
 import { notify } from '@/components/_shared/notify';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
+import { useBreadcrumb } from '@/components/app/app.hooks';
+import { PageVerificationControl } from '@/components/page-verification/PageVerificationControl';
 import TitleEditable from '@/components/view-meta/TitleEditable';
+import { useHeaderHover } from '@/components/view-meta/useHeaderHover';
 import ViewCover from '@/components/view-meta/ViewCover';
 import { ColorEnum } from '@/utils/color';
 import { clampCoverOffset } from '@/utils/cover';
@@ -22,12 +26,14 @@ const normalizeCover = (cover?: ViewMetaCover | null): ViewMetaCover | null => {
 };
 
 export function ViewMetaPreview({
+  showVerification = true,
   icon: iconProp,
   cover: coverProp,
   name,
   extra,
   readOnly = true,
   viewId,
+  workspaceId,
   updatePage,
   onEnter,
   maxWidth,
@@ -37,6 +43,8 @@ export function ViewMetaPreview({
   updatePageIcon,
   updatePageName,
 }: ViewMetaProps) {
+  const crumbs = useBreadcrumb();
+  const hasBreadcrumbStatus = !!viewId && getBreadcrumbVerificationTarget(crumbs)?.view_id === viewId;
   const [cover, setCover] = React.useState<ViewMetaCover | null>(normalizeCover(coverProp));
   const [icon, setIcon] = React.useState<ViewMetaIcon | null>(iconProp || null);
   const [focusedTitleViewId, setFocusedTitleViewId] = React.useState<string>();
@@ -84,7 +92,7 @@ export function ViewMetaPreview({
   }, [coverType, cover?.value]);
   const { t } = useTranslation();
 
-  const [isHover, setIsHover] = React.useState(false);
+  const { ref, isHover } = useHeaderHover();
 
   const handleUpdateIcon = React.useCallback(
     async (icon: { ty: ViewIconType; value: string }) => {
@@ -149,31 +157,6 @@ export function ViewMetaPreview({
     [uploadFile]
   );
 
-  const ref = React.useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const el = ref.current;
-    const handleMouseEnter = () => {
-      setIsHover(true);
-    };
-
-    const handleMouseLeave = () => {
-      setIsHover(false);
-    };
-
-    if (el) {
-      el.addEventListener('mouseenter', handleMouseEnter);
-      el.addEventListener('mouseleave', handleMouseLeave);
-    }
-
-    return () => {
-      if (el) {
-        el.removeEventListener('mouseenter', handleMouseEnter);
-        el.removeEventListener('mouseleave', handleMouseLeave);
-      }
-    };
-  }, []);
-
   return (
     <div data-view-meta-preview className={'flex w-full flex-col items-center'}>
       {cover && (
@@ -194,7 +177,7 @@ export function ViewMetaPreview({
           }}
           className={'relative flex w-full justify-center max-sm:h-[32px]'}
         >
-          {!readOnly && (
+          {(!readOnly || showVerification) && (
             <Suspense>
               <AddIconCover
                 visible={isHover}
@@ -210,7 +193,18 @@ export function ViewMetaPreview({
                 }}
                 maxWidth={maxWidth}
                 onUploadFile={onUploadFile}
-              />
+                readOnly={readOnly}
+              >
+                {showVerification && (
+                  <PageVerificationControl
+                    targetId={viewId}
+                    workspaceId={workspaceId}
+                    showAction={isHover}
+                    readOnly={readOnly}
+                    displayMode={hasBreadcrumbStatus ? 'action' : 'all'}
+                  />
+                )}
+              </AddIconCover>
             </Suspense>
           )}
         </div>
@@ -256,8 +250,9 @@ export function ViewMetaPreview({
                 onUploadFile={onUploadFile}
               >
                 <div
-                  className={`view-icon flex h-[1.25em] w-[1.25em] items-center justify-center px-1.5 ${readOnly ? 'cursor-default' : 'cursor-pointer hover:bg-fill-content-hover '
-                    }`}
+                  className={`view-icon flex h-[1.25em] w-[1.25em] items-center justify-center px-1.5 ${
+                    readOnly ? 'cursor-default' : 'cursor-pointer hover:bg-fill-content-hover '
+                  }`}
                 >
                   <PageIcon
                     view={{

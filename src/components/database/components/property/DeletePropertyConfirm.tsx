@@ -2,19 +2,10 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useDatabaseFields } from '@/application/database-yjs/context';
-import { useDeletePropertyDispatch } from '@/application/database-yjs/dispatch';
 import { collectDependentFormulaFields } from '@/application/database-yjs/fields/formula/dependencies';
 import { readFormulaSchemaForVersion } from '@/application/database-yjs/fields/formula/schema';
 import { useDatabaseFieldsVersion } from '@/application/database-yjs/hooks/useDatabaseFieldsVersion';
-import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { PropertyMutationConfirm } from '@/components/database/components/property/PropertyMutationConfirm';
 
 export function DeletePropertyConfirm({
   open,
@@ -25,48 +16,11 @@ export function DeletePropertyConfirm({
   onClose: () => void;
   fieldId: string;
 }) {
-  const { t } = useTranslation();
-  const deleteDispatch = useDeletePropertyDispatch();
-
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(status) => {
-        if (!status) {
-          onClose();
-        }
-      }}
-    >
-      <DialogContent
-        onCloseAutoFocus={(e) => {
-          e.preventDefault();
-        }}
-        onOpenAutoFocus={(e) => {
-          e.preventDefault();
-        }}
-      >
-        <DialogHeader>
-          <DialogTitle>{t('grid.field.delete')}</DialogTitle>
-        </DialogHeader>
-        <DialogDescription>{t('grid.field.deleteFieldPromptMessage')}</DialogDescription>
-        {open ? <FormulaDeletionWarning fieldId={fieldId} /> : null}
-        <DialogFooter>
-          <Button variant={'outline'} onClick={onClose}>
-            {t('button.cancel')}
-          </Button>
-          <Button
-            variant={'destructive'}
-            onClick={() => {
-              deleteDispatch(fieldId);
-              onClose();
-            }}
-          >
-            {t('button.delete')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
+  return open ? (
+    <PropertyMutationConfirm fieldId={fieldId} kind='delete' onClose={onClose}>
+      <FormulaDeletionWarning fieldId={fieldId} />
+    </PropertyMutationConfirm>
+  ) : null;
 }
 
 /** Only mounted while confirming deletion, so closed property menus don't watch the schema. */

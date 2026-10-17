@@ -1,8 +1,12 @@
+import { assertFieldMutation, bindVerificationField, getVerificationSourceType, VerificationFieldGuard } from '@/application/page-verification/native';
+import { useVerificationGroupActions, verificationGroupOrder } from '@/application/page-verification/grouping';
+import { VerificationStatus } from '@/application/page-verification/types';
 import dayjs from 'dayjs';
 import { t } from 'i18next';
 import { nanoid } from 'nanoid';
 import { useCallback, useMemo } from 'react';
 import * as Y from 'yjs';
+import { isVerificationField, useDatabaseVerification } from '@/application/page-verification/database';
 
 import { resolveUserAttributionUid, touchRowAttribution } from '@/application/database-yjs/attribution';
 import { calculateFieldValue } from '@/application/database-yjs/calculation';
@@ -327,6 +331,7 @@ function generateGroupByField(field: YDatabaseField) {
 }
 
 export function useGroupByFieldDispatch() {
+  const verification = useDatabaseVerification();
   const view = useDatabaseView();
   const database = useDatabase();
   const sharedRoot = useSharedRoot();
@@ -335,6 +340,15 @@ export function useGroupByFieldDispatch() {
     (fieldId: string) => {
       if (!view) {
         throw new Error('View not found');
+      }
+
+      if (isVerificationField(database.get(YjsDatabaseKey.fields)?.get(fieldId))) {
+        void verification.updateSettings({ grouping: verification.settings.grouping ?? {} }).catch(Log.error);
+        return;
+      }
+
+      if (verification.settings.grouping) {
+        void verification.updateSettings({ grouping: null }).catch(Log.error);
       }
 
       const currentFieldId = view.get(YjsDatabaseKey.groups)?.toArray()[0]?.get(YjsDatabaseKey.field_id);
@@ -403,15 +417,17 @@ export function useGroupByFieldDispatch() {
         'groupByField'
       );
     },
-    [database, sharedRoot, view]
+    [database, sharedRoot, view, verification]
   );
 }
 
 export function useClearGroupByFieldDispatch() {
+  const verification = useDatabaseVerification();
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
 
   return useCallback(() => {
+    if (verification.settings.grouping) void verification.updateSettings({ grouping: null }).catch(Log.error);
     executeOperations(
       sharedRoot,
       [
@@ -423,7 +439,7 @@ export function useClearGroupByFieldDispatch() {
       ],
       'clearGroupByField'
     );
-  }, [sharedRoot, view]);
+  }, [sharedRoot, view, verification]);
 }
 
 export function useUpdateGroupContentDispatch() {
@@ -575,11 +591,22 @@ export function useUpdateDateGroupConditionDispatch() {
 }
 
 export function useReorderGroupColumnDispatch(groupId: string) {
+  const verification = useVerificationGroupActions();
   const view = useDatabaseView();
+  const fields = useDatabaseFields();
   const sharedRoot = useSharedRoot();
 
   return useCallback(
     (columnId: string, beforeColumnId?: string) => {
+      if (isVerificationField(groupId ? fields?.get(groupId) : undefined) && verification.active) {
+        const order = verificationGroupOrder(verification.settings ?? {}).filter((id) => id !== columnId);
+        const index = beforeColumnId ? order.indexOf(beforeColumnId as VerificationStatus) + 1 : 0;
+
+        order.splice(index, 0, columnId as VerificationStatus);
+        verification.update({ order });
+        return;
+      }
+
       executeOperations(
         sharedRoot,
         [
@@ -630,7 +657,7 @@ export function useReorderGroupColumnDispatch(groupId: string) {
         'reorderGroupColumn'
       );
     },
-    [groupId, sharedRoot, view]
+    [fields, groupId, sharedRoot, view, verification]
   );
 }
 
@@ -983,12 +1010,14 @@ function setEmptyGroupOverride(layoutSetting: YDatabaseBoardLayoutSetting, colum
 }
 
 export function useToggleHiddenGroupColumnDispatch(groupId: string, fieldId: string) {
+  const verification = useVerificationGroupActions();
   const view = useDatabaseView();
   const fields = useDatabaseFields();
   const sharedRoot = useSharedRoot();
 
   return useCallback(
     (columnId: string, hidden: boolean) => {
+      if (isVerificationField(fieldId ? fields?.get(fieldId) : undefined)) return verification.setVisible([columnId], !hidden);
       executeOperations(
         sharedRoot,
         [
@@ -1006,17 +1035,27 @@ export function useToggleHiddenGroupColumnDispatch(groupId: string, fieldId: str
         'hideGroupColumn'
       );
     },
-    [fieldId, fields, groupId, sharedRoot, view]
+    [fieldId, fields, groupId, sharedRoot, view, verification]
   );
 }
 
 export function useSetBoardColumnRenderedDispatch(groupId: string, fieldId: string) {
+  const verification = useVerificationGroupActions();
   const view = useDatabaseView();
   const fields = useDatabaseFields();
   const sharedRoot = useSharedRoot();
 
   return useCallback(
     (columnId: string, shown: boolean, automaticallyHidden: boolean) => {
+      if (isVerificationField(fieldId ? fields?.get(fieldId) : undefined)) {
+        const hidden = new Set(verification.settings?.hidden ?? []);
+
+        if (shown) hidden.delete(columnId as VerificationStatus);
+        else hidden.add(columnId as VerificationStatus);
+        verification.update({ hidden: [...hidden], ...(shown && automaticallyHidden ? { hide_empty: false } : {}) });
+        return;
+      }
+
       executeOperations(
         sharedRoot,
         [
@@ -1032,7 +1071,7 @@ export function useSetBoardColumnRenderedDispatch(groupId: string, fieldId: stri
         'setBoardColumnRendered'
       );
     },
-    [fieldId, fields, groupId, sharedRoot, view]
+    [fieldId, fields, groupId, sharedRoot, view, verification]
   );
 }
 
@@ -1084,11 +1123,13 @@ function getOrCreateDatabaseGroupingLayoutSetting(
 }
 
 export function useToggleDatabaseHideEmptyGroups(layout: GroupableDatabaseLayout) {
+  const verification = useVerificationGroupActions();
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
 
   return useCallback(
     (hide: boolean) => {
+      if (verification.active) return verification.update({ hide_empty: hide });
       executeOperations(
         sharedRoot,
         [
@@ -1100,7 +1141,7 @@ export function useToggleDatabaseHideEmptyGroups(layout: GroupableDatabaseLayout
         'toggleDatabaseHideEmptyGroups'
       );
     },
-    [layout, sharedRoot, view]
+    [layout, sharedRoot, view, verification]
   );
 }
 
@@ -1117,12 +1158,14 @@ export function useToggleTimelineHideEmptyGroups() {
 }
 
 export function useSetDatabaseGroupVisibilityDispatch(groupId?: string, fieldId?: string) {
+  const verification = useVerificationGroupActions();
   const view = useDatabaseView();
   const fields = useDatabaseFields();
   const sharedRoot = useSharedRoot();
 
   return useCallback(
     (columnId: string, visible: boolean) => {
+      if (isVerificationField(fieldId ? fields?.get(fieldId) : undefined)) return verification.setVisible([columnId], visible);
       executeOperations(
         sharedRoot,
         [
@@ -1143,7 +1186,7 @@ export function useSetDatabaseGroupVisibilityDispatch(groupId?: string, fieldId?
         'setDatabaseGroupVisibility'
       );
     },
-    [fieldId, fields, groupId, sharedRoot, view]
+    [fieldId, fields, groupId, sharedRoot, view, verification]
   );
 }
 
@@ -1156,12 +1199,14 @@ export function useSetListGroupVisibilityDispatch(groupId?: string, fieldId?: st
 }
 
 export function useSetAllDatabaseGroupsVisibilityDispatch(groupId?: string, fieldId?: string) {
+  const verification = useVerificationGroupActions();
   const view = useDatabaseView();
   const fields = useDatabaseFields();
   const sharedRoot = useSharedRoot();
 
   return useCallback(
     (columnIds: string[], visible: boolean) => {
+      if (isVerificationField(fieldId ? fields?.get(fieldId) : undefined)) return verification.setVisible(columnIds, visible);
       executeOperations(
         sharedRoot,
         [
@@ -1182,7 +1227,7 @@ export function useSetAllDatabaseGroupsVisibilityDispatch(groupId?: string, fiel
         'setAllDatabaseGroupsVisibility'
       );
     },
-    [fieldId, fields, groupId, sharedRoot, view]
+    [fieldId, fields, groupId, sharedRoot, view, verification]
   );
 }
 
@@ -1195,11 +1240,22 @@ export function useSetAllListGroupsVisibilityDispatch(groupId?: string, fieldId?
 }
 
 export function useToggleDatabaseGroupCollapsedDispatch(groupId?: string) {
+  const verification = useVerificationGroupActions();
   const view = useDatabaseView();
+  const fields = useDatabaseFields();
   const sharedRoot = useSharedRoot();
 
   return useCallback(
     (columnId: string, collapsed: boolean) => {
+      if (isVerificationField(groupId ? fields?.get(groupId) : undefined)) {
+        const ids = new Set(verification.settings?.collapsed ?? []);
+
+        if (collapsed) ids.add(columnId as VerificationStatus);
+        else ids.delete(columnId as VerificationStatus);
+        verification.update({ collapsed: [...ids] });
+        return;
+      }
+
       executeOperations(
         sharedRoot,
         [
@@ -1230,7 +1286,7 @@ export function useToggleDatabaseGroupCollapsedDispatch(groupId?: string) {
         'toggleDatabaseGroupCollapsed'
       );
     },
-    [groupId, sharedRoot, view]
+    [fields, groupId, sharedRoot, view, verification]
   );
 }
 
@@ -1310,11 +1366,13 @@ export function useToggleHideUnGrouped() {
 }
 
 export function useToggleHideEmptyGroups() {
+  const verification = useVerificationGroupActions();
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
 
   return useCallback(
     (hide: boolean) => {
+      if (verification.active) return verification.update({ hide_empty: hide });
       executeOperations(
         sharedRoot,
         [
@@ -1334,7 +1392,7 @@ export function useToggleHideEmptyGroups() {
         'toggleHideEmptyGroups'
       );
     },
-    [sharedRoot, view]
+    [sharedRoot, view, verification]
   );
 }
 
@@ -1988,6 +2046,8 @@ export function useDeletePropertyDispatch() {
   return useCallback(
     (fieldId: string) => {
       const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+
+      assertFieldMutation(field);
       const fieldType = Number(field?.get(YjsDatabaseKey.type));
       const relationOption = field && fieldType === FieldType.Relation ? parseRelationTypeOption(field) : null;
 
@@ -2311,6 +2371,8 @@ export function useClearCellsWithFieldDispatch() {
             const rows = Object.keys(rowMap);
             const fieldType = Number(database.get(YjsDatabaseKey.fields)?.get(fieldId)?.get(YjsDatabaseKey.type));
 
+            if (fieldType === FieldType.Verification) return;
+
             if (!rows) {
               throw new Error(`Row orders not found`);
             }
@@ -2391,6 +2453,8 @@ export function useDuplicatePropertyDispatch() {
             if (!field) {
               throw new Error(`Field not found`);
             }
+
+            if (isVerificationField(field)) throw new Error('Verification properties cannot be duplicated');
 
             // Clone Field
             const newField = new Y.Map() as YDatabaseField;
@@ -3651,7 +3715,7 @@ export function useSwitchPropertyType() {
     useDatabaseContext();
 
   return useCallback(
-    (fieldId: string, fieldType: FieldType) => {
+    (fieldId: string, fieldType: FieldType, guard: VerificationFieldGuard = {}) => {
       if (!rowMap) {
         throw new Error(`Row docs not found`);
       }
@@ -3662,11 +3726,28 @@ export function useSwitchPropertyType() {
         throw new Error(`Field not found`);
       }
 
-      const sourceType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
+      assertFieldMutation(field, guard);
+      const actualSourceType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
+      const sourceType = actualSourceType === FieldType.Verification ? getVerificationSourceType(field) : actualSourceType;
+      const verificationSwitch = actualSourceType === FieldType.Verification || fieldType === FieldType.Verification;
       const skipsRelationHistory = sourceType === FieldType.Relation || fieldType === FieldType.Relation;
       const requestVersion = beginFieldSwitchRequest(database, fieldId);
 
-      if (sourceType === fieldType) return Promise.resolve();
+      if (verificationSwitch && (fieldType === FieldType.Verification || sourceType === fieldType)) {
+        executeOperations(sharedRoot, [() => {
+          const current = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+
+          assertFieldMutation(current, guard);
+          if (fieldType === FieldType.Verification) {
+            bindVerificationField(database, current, guard.verificationPropertyId ?? '');
+          } else {
+            current.set(YjsDatabaseKey.type, fieldType);
+          }
+        }], 'switchVerificationPropertyType', { type: 'field.switch-verification', policy: 'skip' });
+        return Promise.resolve();
+      }
+
+      if (actualSourceType === fieldType) return Promise.resolve();
 
       const rowIds = collectDatabaseRowIds(database, rowMap);
 
@@ -3678,10 +3759,20 @@ export function useSwitchPropertyType() {
         // the switch, the type_option for Relation may be cleared/replaced and
         // the reciprocal pointer is no longer reachable from this field.
         const fieldBefore = database.get(YjsDatabaseKey.fields)?.get(fieldId);
-        const oldFieldTypeBefore = fieldBefore ? Number(fieldBefore.get(YjsDatabaseKey.type)) : null;
+        const oldFieldTypeBefore = sourceType;
+        let conversionField = fieldBefore;
+
+        if (fieldBefore && actualSourceType === FieldType.Verification) {
+          const sourceDoc = new Y.Doc();
+
+          conversionField = fieldBefore.clone() as YDatabaseField;
+          sourceDoc.getMap('source').set('field', conversionField);
+          conversionField.set(YjsDatabaseKey.type, sourceType);
+        }
+
         const relationOptionToCleanUp =
-          fieldBefore && oldFieldTypeBefore === FieldType.Relation && fieldType !== FieldType.Relation
-            ? parseRelationTypeOption(fieldBefore)
+          conversionField && oldFieldTypeBefore === FieldType.Relation && fieldType !== FieldType.Relation
+            ? parseRelationTypeOption(conversionField)
             : null;
         // Like Notion, converting a formula keeps what it displayed. Evaluate
         // every row while the field is still a formula.
@@ -3699,7 +3790,7 @@ export function useSwitchPropertyType() {
               evaluateFormulaCell({
                 ...formulaContexts?.get(rowId),
                 schema,
-                field: fieldBefore,
+                field: conversionField,
                 fieldId,
                 row,
                 rowId,
@@ -3719,7 +3810,8 @@ export function useSwitchPropertyType() {
                 throw new Error(`Field not found`);
               }
 
-              const oldFieldType = Number(field.get(YjsDatabaseKey.type));
+              assertFieldMutation(field, guard);
+              const oldFieldType = sourceType;
 
               let typeOptionMap = field?.get(YjsDatabaseKey.type_option);
 
@@ -3836,7 +3928,7 @@ export function useSwitchPropertyType() {
                           const data =
                             oldFieldType === FieldType.Formula
                               ? formulaResults.get(rowId)?.text
-                              : getFieldSwitchCellData(rowDoc, fieldId, field);
+                              : getFieldSwitchCellData(rowDoc, fieldId, conversionField ?? field);
 
                           if (typeof data !== 'string') return;
                           data.split(',').forEach((item) => {
@@ -3862,7 +3954,7 @@ export function useSwitchPropertyType() {
                         const rowDoc = resolvedRowMap[rowId];
 
                         if (!rowDoc) return;
-                        const data = getFieldSwitchCellData(rowDoc, fieldId, field);
+                        const data = getFieldSwitchCellData(rowDoc, fieldId, conversionField ?? field);
                         const checklist = typeof data === 'string' ? parseChecklistData(data) : null;
 
                         checklist?.options?.forEach((option) => {
@@ -3943,7 +4035,7 @@ export function useSwitchPropertyType() {
                     rowId: row,
                     fieldId,
                     fieldType: skipsRelationHistory ? FieldType.Relation : undefined,
-                    policy: skipsRelationHistory ? 'skip' : 'capture',
+                    policy: skipsRelationHistory || verificationSwitch ? 'skip' : 'capture',
                   },
                   () => {
                     const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
@@ -4026,7 +4118,7 @@ export function useSwitchPropertyType() {
           'switchPropertyType',
           skipsRelationHistory
             ? { type: 'relation.switch-field-type', fieldId, fieldType: FieldType.Relation, policy: 'skip' }
-            : { type: 'database.switch-field-type', fieldId }
+            : { type: 'database.switch-field-type', fieldId, policy: verificationSwitch ? 'skip' : 'capture' }
         );
 
         if (relationOptionToCleanUp) {
@@ -4127,7 +4219,7 @@ export function useSwitchPropertyType() {
             throw new Error('Field-type switch was superseded by a newer request');
           }
 
-          if (Number(fields?.get(fieldId)?.get(YjsDatabaseKey.type)) !== sourceType) {
+          if (Number(fields?.get(fieldId)?.get(YjsDatabaseKey.type)) !== actualSourceType) {
             throw new Error('Field type changed while preparing the conversion');
           }
 

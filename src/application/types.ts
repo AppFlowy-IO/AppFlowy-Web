@@ -591,6 +591,8 @@ export enum YjsDatabaseKey {
   name = 'name',
   type = 'ty',
   type_option = 'type_option',
+  property_id = 'property_id',
+  previous_field_type = 'previous_field_type',
   content = 'content',
   data = 'data',
   iid = 'iid',
@@ -1259,6 +1261,7 @@ export interface YMapFieldTypeOption extends Y.Map<unknown> {
       | YjsDatabaseKey.time_format
       | YjsDatabaseKey.date_format
       | YjsDatabaseKey.rollup_show_as_color
+      | YjsDatabaseKey.property_id
   ): string | undefined;
 
   // Relation
@@ -1272,6 +1275,7 @@ export interface YMapFieldTypeOption extends Y.Map<unknown> {
       | YjsDatabaseKey.target_limit
       | YjsDatabaseKey.rollup_show_as_type
       | YjsDatabaseKey.rollup_show_as_divisor
+      | YjsDatabaseKey.previous_field_type
   ): number | undefined;
 
   get(key: YjsDatabaseKey.calculation_type | YjsDatabaseKey.show_as): number;
@@ -2259,6 +2263,8 @@ export interface CreateOrphanedViewPayload {
 export type ViewMetaCover = ViewCover;
 
 export interface ViewMetaProps {
+  /** Disable live verification on snapshots, templates, and public pages. */
+  showVerification?: boolean;
   icon?: ViewMetaIcon;
   cover?: ViewMetaCover;
   name?: string;

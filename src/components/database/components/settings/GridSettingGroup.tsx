@@ -256,12 +256,13 @@ export function DatabaseSettingGroup({
   const { t } = useTranslation();
   const contentRef = useRef<HTMLDivElement>(null);
   const { properties: allProperties } = usePropertiesSelector(true);
+
   const properties = useMemo(
-    () => allProperties.filter((property) => DATABASE_GROUPABLE_FIELD_TYPES.includes(property.type)),
+    () => allProperties.filter((property) => (property.type === FieldType.Verification || DATABASE_GROUPABLE_FIELD_TYPES.includes(property.type))),
     [allProperties]
   );
   const visibilityGroups = useMemo(
-    () => getGridGroupVisibilityGroups(grouping.groups, grouping.fieldType, grouping.content),
+    () => grouping.fieldType === FieldType.Verification ? grouping.groups : getGridGroupVisibilityGroups(grouping.groups, grouping.fieldType, grouping.content),
     [grouping.fieldType, grouping.groups, grouping.content]
   );
   const currentDateCondition = parseDateGroupConfiguration(grouping.content).condition;

@@ -7,7 +7,7 @@ import { getReorderDestinationIndex } from '@atlaskit/pragmatic-drag-and-drop-hi
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useDatabaseViewId, useReadOnly } from '@/application/database-yjs';
-import { useReorderColumnDispatch } from '@/application/database-yjs/dispatch';
+import { useReorderPropertiesDispatch } from '@/application/database-yjs/dispatch/property-order';
 import { Log } from '@/utils/log';
 
 import type { CleanupFn } from '@atlaskit/pragmatic-drag-and-drop/types';
@@ -73,7 +73,7 @@ export function usePropertyDragContextValue(
   const viewId = useDatabaseViewId();
   const [instanceId] = useState(() => Symbol(`property-drag-context-${viewId}`));
   const stableData = useRef<Property[]>(data);
-  const onReorderProperty = useReorderColumnDispatch();
+  const onReorderProperty = useReorderPropertiesDispatch();
 
   useEffect(() => {
     stableData.current = data;
@@ -112,9 +112,7 @@ export function usePropertyDragContextValue(
         throw new Error('No property id provided');
       }
 
-      const beforeId = newProperties[finishIndex - 1]?.id;
-
-      onReorderProperty(id, beforeId);
+      onReorderProperty(id, newProperties.map((property) => property.id));
     },
     [onReorderProperty]
   );

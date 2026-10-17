@@ -9,12 +9,7 @@ import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as FilterIcon } from '@/assets/icons/filter.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 
 import { useConditionsContext } from '../../conditions/context';
@@ -29,12 +24,16 @@ function FieldMenuTitle({
   fieldId,
   renderConditionSelect,
   nameMaxWidthClassName,
+  onDelete,
+  allowAdvanced = true,
 }: {
   filterId: string;
   fieldId: string;
   renderConditionSelect: React.ReactNode;
   /** Desktop caps the field name at 150px, except the date editor which uses 120px. */
   nameMaxWidthClassName?: string;
+  onDelete?: () => void;
+  allowAdvanced?: boolean;
 }) {
   const deleteFilter = useRemoveFilter();
   const enterAdvancedMode = useEnterAdvancedMode();
@@ -49,9 +48,10 @@ function FieldMenuTitle({
   const setOpenFilterId = context?.setOpenFilterId;
 
   const handleDeleteFilter = useCallback(() => {
-    deleteFilter(filterId);
+    if (onDelete) onDelete();
+    else deleteFilter(filterId);
     setMenuOpen(false);
-  }, [deleteFilter, filterId]);
+  }, [deleteFilter, filterId, onDelete]);
 
   const handleSwitchToAdvancedFilter = useCallback(() => {
     // Enter advanced mode - this will wrap existing filters in a hierarchical structure
@@ -90,10 +90,12 @@ function FieldMenuTitle({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align='end' className='min-w-[200px]'>
-            <DropdownMenuItem onSelect={handleSwitchToAdvancedFilter}>
-              <FilterIcon className={'h-5 w-5'} />
-              {t('grid.filter.switchToAdvancedFilter')}
-            </DropdownMenuItem>
+            {allowAdvanced && (
+              <DropdownMenuItem onSelect={handleSwitchToAdvancedFilter}>
+                <FilterIcon className={'h-5 w-5'} />
+                {t('grid.filter.switchToAdvancedFilter')}
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onSelect={handleDeleteFilter} data-testid='delete-filter-button'>
               <DeleteIcon className={'h-5 w-5'} />
               {t('grid.settings.deleteFilter')}

@@ -1,13 +1,15 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { usePropertiesSelector } from '@/application/database-yjs';
+import { FieldVisibility, useFieldsSelector } from '@/application/database-yjs';
+import { useDatabaseVerification } from '@/application/page-verification/database';
 import { ReactComponent as Checklist } from '@/assets/icons/database/checklist.svg';
 import Property from '@/components/database/components/settings/Property';
 import {
   PropertyDragContext,
   usePropertyDragContextValue,
 } from '@/components/database/components/settings/usePropertyDragContext';
+import { VerificationPropertyControl } from '@/components/page-verification/VerificationPropertyControl';
 import {
   DropdownMenuPortal,
   DropdownMenuSub,
@@ -15,12 +17,18 @@ import {
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
 
+const allVisibilities = [FieldVisibility.AlwaysShown, FieldVisibility.HideWhenEmpty, FieldVisibility.AlwaysHidden];
+
 function Properties({ excludeFieldId }: { excludeFieldId?: string }) {
   const { t } = useTranslation();
-  const { properties: allProperties } = usePropertiesSelector();
+  const fields = useFieldsSelector(allVisibilities);
+  const { fieldId: verificationFieldId } = useDatabaseVerification();
   const properties = React.useMemo(
-    () => allProperties.filter((property) => property.id !== excludeFieldId),
-    [allProperties, excludeFieldId]
+    () => fields.filter((field) => field.fieldId !== excludeFieldId).map((field) => ({
+      id: field.fieldId,
+      visible: field.visibility !== FieldVisibility.AlwaysHidden,
+    })),
+    [fields, excludeFieldId]
   );
 
   const [container, setContainer] = React.useState<HTMLDivElement | null>(null);
@@ -42,6 +50,7 @@ function Properties({ excludeFieldId }: { excludeFieldId?: string }) {
             {properties.map((property) => (
               <Property key={property.id} property={property} />
             ))}
+            {!verificationFieldId && <VerificationPropertyControl />}
           </PropertyDragContext.Provider>
         </DropdownMenuSubContent>
       </DropdownMenuPortal>

@@ -52,6 +52,11 @@ function Property({
   const innerRef = useRef<HTMLDivElement>(null);
   const dragHandleRef = useRef<HTMLDivElement | null>(null);
   const readOnly = useReadOnly();
+  const toggleVisibility = () => {
+    if (readOnly) return;
+    (visible ? onHideProperty : onShowProperty)(id);
+  };
+
   const [state, setState] = useState<ItemState>(idleState);
 
   useEffect(() => {
@@ -117,13 +122,10 @@ function Property({
     <DropdownMenuItem
       data-testid={`database-property-${id}`}
       ref={innerRef}
+      disabled={readOnly}
       onSelect={(e) => {
         e.preventDefault();
-        if (visible) {
-          onHideProperty(id);
-        } else {
-          onShowProperty(id);
-        }
+        void toggleVisibility();
       }}
       className={cn('relative', state.type === DragState.DRAGGING && 'opacity-40')}
     >
@@ -139,15 +141,13 @@ function Property({
         <Button
           aria-label={`${visible ? 'Hide' : 'Show'} ${name || 'property'}`}
           data-testid={`database-property-visibility-${id}`}
+          disabled={readOnly}
           variant={'ghost'}
           size={'icon-sm'}
           onClick={(e) => {
+            e.preventDefault();
             e.stopPropagation();
-            if (visible) {
-              onHideProperty(id);
-            } else {
-              onShowProperty(id);
-            }
+            void toggleVisibility();
           }}
         >
           {visible ? <ShowIcon /> : <HideIcon />}

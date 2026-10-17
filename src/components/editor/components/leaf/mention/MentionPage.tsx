@@ -15,6 +15,7 @@ import { ReactComponent as ParagraphIcon } from '@/assets/icons/paragraph.svg';
 import { findView } from '@/components/_shared/outline/utils';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { useEditorContext } from '@/components/editor/EditorContext';
+import { PageVerificationControl } from '@/components/page-verification/PageVerificationControl';
 
 import './style.css';
 
@@ -217,6 +218,7 @@ function MentionPage({
           <span className={`mention-icon`}>{mentionIcon}</span>
 
           <span className={'mention-content max-w-[330px] truncate opacity-80'}>{content}</span>
+          <PageVerificationControl targetId={pageId} workspaceId={context.workspaceId} badgeOnly />
         </>
       )}
     </span>

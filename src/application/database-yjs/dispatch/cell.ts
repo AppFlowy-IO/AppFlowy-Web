@@ -233,6 +233,8 @@ export function writeCellToRow({
   historyOptions?: CellHistoryOptions;
   actorUid?: AttributionUid;
 }): CellWriteStatus {
+  if (fieldType === FieldType.Verification) return 'cancelled';
+
   const { richText: requestedRichText, shouldWrite, ...historyDescriptor } = historyOptions ?? {};
   // Formatting belongs to Text cells only (URL cells share the text editor).
   const richText = fieldType === FieldType.RichText ? requestedRichText : undefined;
@@ -312,6 +314,7 @@ function reportCellWrite(status: CellWriteStatus, onWritten: () => void) {
 }
 
 export function useUpdateCellDispatch(rowId: string, fieldId: string) {
+  const database = useDatabase();
   const { databaseDoc, rowMap, ensureRow, markCellLocalMutation } = useDatabaseContext();
   const { field } = useFieldSelector(fieldId);
   const currentUser = useCurrentUserOptional();
@@ -345,12 +348,15 @@ export function useUpdateCellDispatch(rowId: string, fieldId: string) {
         // database-wide history stack.
         getOrCreateDatabaseHistoryManager(databaseDoc).registerRowDoc(rowId, rowDoc);
 
+        const currentField = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+
+        if (!currentField || Number(currentField.get(YjsDatabaseKey.type)) === FieldType.Verification) return 'cancelled';
         const status = writeCellToRow({
           rowDoc,
           row: target.row,
           cells: target.cells,
           fieldId,
-          fieldType: Number(field.get(YjsDatabaseKey.type)) as FieldType,
+          fieldType: Number(currentField.get(YjsDatabaseKey.type)) as FieldType,
           rowId,
           data,
           dateOpts,
@@ -365,7 +371,7 @@ export function useUpdateCellDispatch(rowId: string, fieldId: string) {
         return undefined;
       });
     },
-    [actorUid, databaseDoc, ensureRow, field, fieldId, markCellLocalMutation, rowMap, rowId]
+    [actorUid, database, databaseDoc, ensureRow, field, fieldId, markCellLocalMutation, rowMap, rowId]
   );
 }
 
@@ -404,12 +410,15 @@ export function useUpdateAnyCellDispatch() {
 
         getOrCreateDatabaseHistoryManager(databaseDoc).registerRowDoc(rowId, rowDoc);
 
+        const currentField = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+
+        if (!currentField || Number(currentField.get(YjsDatabaseKey.type)) === FieldType.Verification) return 'cancelled';
         const status = writeCellToRow({
           rowDoc,
           row: target.row,
           cells: target.cells,
           fieldId,
-          fieldType: Number(field.get(YjsDatabaseKey.type)) as FieldType,
+          fieldType: Number(currentField.get(YjsDatabaseKey.type)) as FieldType,
           rowId,
           data,
           historyOptions,
@@ -466,6 +475,7 @@ function dateRangeWriteIntent({ startTimestamp, endTimestamp, isAllDay }: DateCe
 
 /** Resolve every writable row before committing a date edit as one undo group. */
 export function useUpdateStartEndTimeCells() {
+  const database = useDatabase();
   const { databaseDoc, activeViewId, rowMap, ensureRow, markCellLocalMutation } = useDatabaseContext();
   const currentUser = useCurrentUserOptional();
   const actorUid = resolveUserAttributionUid(currentUser);
@@ -523,6 +533,8 @@ export function useUpdateStartEndTimeCells() {
             finish();
           }
         }
+
+        if (updates.some(({ fieldId }) => Number(database.get(YjsDatabaseKey.fields)?.get(fieldId)?.get(YjsDatabaseKey.type)) === FieldType.Verification)) return;
 
         const targets = new Map<string, WritableRowTarget>();
 
@@ -596,6 +608,6 @@ export function useUpdateStartEndTimeCells() {
         Log.error('[useUpdateStartEndTimeCells] failed to update date cells', { error });
       }
     },
-    [actorUid, databaseDoc, ensureRow, markCellLocalMutation, pendingActions, rowMap]
+    [actorUid, database, databaseDoc, ensureRow, markCellLocalMutation, pendingActions, rowMap]
   );
 }

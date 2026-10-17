@@ -3,11 +3,12 @@ import { useTranslation } from 'react-i18next';
 
 import { FieldType } from '@/application/database-yjs';
 
-function FieldLabel ({ type, ...props }: { type: FieldType } & React.HTMLAttributes<HTMLDivElement>) {
+function FieldLabel({ type, ...props }: { type: FieldType } & React.HTMLAttributes<HTMLDivElement>) {
   const { t } = useTranslation();
 
   const text = useMemo(() => {
     return {
+      [FieldType.Verification]: t('grid.field.verificationFieldName', { defaultValue: 'Verification' }),
       [FieldType.RichText]: t('grid.field.textFieldName'),
       [FieldType.Number]: t('grid.field.numberFieldName'),
       [FieldType.DateTime]: t('grid.field.dateFieldName'),
@@ -31,9 +32,7 @@ function FieldLabel ({ type, ...props }: { type: FieldType } & React.HTMLAttribu
     }[type];
   }, [t, type]);
 
-  return (
-    <div {...props}>{text}</div>
-  );
+  return <div {...props}>{text}</div>;
 }
 
 export default FieldLabel;

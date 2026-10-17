@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import { FieldType, isAIFieldType, useFieldSelector } from '@/application/database-yjs';
 import { useSwitchPropertyType } from '@/application/database-yjs/dispatch';
+import { useDatabaseVerification } from '@/application/page-verification/database';
 import { YjsDatabaseKey } from '@/application/types';
 import { useAIEnabled } from '@/components/app/app.hooks';
 import { FieldTypeIcon } from '@/components/database/components/field';
@@ -32,6 +33,7 @@ const properties = [
   FieldType.CreatedTime,
   FieldType.CreatedBy,
   FieldType.LastEditedBy,
+  FieldType.Verification,
   FieldType.Relation,
   FieldType.Rollup,
   FieldType.Formula,
@@ -49,18 +51,21 @@ export function PropertySelectTrigger({
   disabled,
   onRequestRelation,
   onRequestFormula,
+  onRequestVerification,
 }: {
   fieldId: string;
   disabled?: boolean;
   onRequestRelation?: () => void;
   /** Called after a switch to Formula so the host can open the editor right away. */
   onRequestFormula?: () => void;
+  onRequestVerification?: (targetType?: FieldType) => Promise<boolean> | void;
 }) {
   const { field } = useFieldSelector(fieldId);
   const type = Number(field?.get(YjsDatabaseKey.type)) as unknown as FieldType;
   const { t } = useTranslation();
   const switchType = useSwitchPropertyType();
   const aiEnabled = useAIEnabled();
+  const { state: verification, nativeField: verificationField, readOnly } = useDatabaseVerification();
   const selectableProperties = useMemo(
     () => (aiEnabled ? properties : properties.filter((property) => !isAIFieldType(property))),
     [aiEnabled]
@@ -72,6 +77,10 @@ export function PropertySelectTrigger({
     if (!aiEnabled && isAIFieldType(property)) return false;
 
     try {
+      if (type === FieldType.Verification || property === FieldType.Verification) {
+        return (await onRequestVerification?.(property)) === true;
+      }
+
       await switchType(fieldId, property);
       return true;
     } catch (error) {
@@ -84,6 +93,9 @@ export function PropertySelectTrigger({
     [key in FieldType]: string;
   } = useMemo(() => {
     return {
+      [FieldType.Verification]: t('tooltip.verificationField', {
+        defaultValue: 'Show the Cloud verification status and expiration date',
+      }),
       [FieldType.RichText]: t('tooltip.textField'),
       [FieldType.Number]: t('tooltip.numberField'),
       [FieldType.DateTime]: t('tooltip.dateField'),
@@ -110,18 +122,37 @@ export function PropertySelectTrigger({
   }, [t]);
 
   const [open, setOpen] = useState(false);
+  const typeDisabled = disabled;
+  const trigger = (
+    <DropdownMenuSubTrigger data-testid='property-type-trigger' disabled={typeDisabled}>
+      <FieldTypeIcon type={type} />
+      <FieldLabel type={type} />
+    </DropdownMenuSubTrigger>
+  );
 
   return (
     <DropdownMenuGroup>
       <DropdownMenuSub open={open} onOpenChange={setOpen}>
-        <DropdownMenuSubTrigger data-testid="property-type-trigger" disabled={disabled}>
-          <FieldTypeIcon type={type} />
-          <FieldLabel type={type} />
-        </DropdownMenuSubTrigger>
+        {typeDisabled ? (
+          <Tooltip disableHoverableContent>
+            <TooltipTrigger asChild>
+              <div tabIndex={0}>{trigger}</div>
+            </TooltipTrigger>
+            <TooltipContent side='bottom'>{t('grid.field.typeCannotBeChanged')}</TooltipContent>
+          </Tooltip>
+        ) : (
+          trigger
+        )}
         <DropdownMenuPortal>
-          <DropdownMenuSubContent className="appflowy-scroller max-h-[450px] overflow-y-auto">
+          <DropdownMenuSubContent className='appflowy-scroller max-h-[450px] overflow-y-auto'>
             {selectableProperties.map((property) => {
+              if (property === FieldType.Verification && (!verification || readOnly || !verification.can_edit))
+                return null;
               const isUnsupported = unsupportedFieldTypes.includes(property);
+              const alreadyAdded =
+                property === FieldType.Verification &&
+                !!verificationField &&
+                verificationField.get(YjsDatabaseKey.id) !== fieldId;
 
               return (
                 <Tooltip key={property}>
@@ -136,6 +167,7 @@ export function PropertySelectTrigger({
                     ) : (
                       <DropdownMenuItem
                         data-testid={`property-type-option-${property}`}
+                        disabled={alreadyAdded}
                         onSelect={(e) => {
                           if (property === FieldType.Relation) {
                             e.preventDefault();

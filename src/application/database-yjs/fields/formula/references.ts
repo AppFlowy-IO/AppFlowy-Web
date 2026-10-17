@@ -1,4 +1,5 @@
 import { FieldType, RollupDisplayMode } from '@/application/database-yjs/database.type';
+import { isExternalDatabaseField } from '@/application/database-yjs/external-fields';
 import { parseRollupTypeOption } from '@/application/database-yjs/fields/rollup/parse';
 import { YDatabaseField, YDatabaseFields, YjsDatabaseKey } from '@/application/types';
 
@@ -11,6 +12,7 @@ import { FormulaFieldSchema, resolveFormulaField, stringifyFormulaConfig } from 
 export interface FormulaExternalReferences {
   /** now()/today(), including calls in referenced formulas. */
   clock?: boolean;
+  external?: boolean;
   /** Person, Created by or Last edited by: names come from the workspace members. */
   people: boolean;
   /** Relation fields: titles come from the related database. */
@@ -35,10 +37,13 @@ export function collectExpressionExternalReferences(
 ): FormulaExternalReferences {
   let people = false;
   let clock = false;
+  let external = false;
   const relations = new Map<string, FormulaFieldSchema>();
   const rollups = new Map<string, FormulaFieldSchema>();
   const visited = new Set<string>(ownerId ? [ownerId] : []);
-  const pending: Array<{ source: string; fieldId?: string } | { ref: string }> = [{ source: expression, fieldId: ownerId }];
+  const pending: Array<{ source: string; fieldId?: string } | { ref: string }> = [
+    { source: expression, fieldId: ownerId },
+  ];
 
   while (pending.length > 0) {
     const next = pending.pop()!;
@@ -60,6 +65,7 @@ export function collectExpressionExternalReferences(
     const entry = resolveFormulaField(schema, next.ref);
 
     if (!entry) continue;
+    external ||= isExternalDatabaseField(entry.field);
     if (PEOPLE_TYPES.has(entry.type)) people = true;
     if (entry.type === FieldType.Relation) relations.set(entry.id, entry);
     if (entry.type === FieldType.Rollup) {
@@ -77,8 +83,8 @@ export function collectExpressionExternalReferences(
     }
   }
 
-  if (!clock && !people && relations.size === 0 && rollups.size === 0) return NO_EXTERNAL_REFERENCES;
-  return { clock, people, relations: Array.from(relations.values()), rollups: Array.from(rollups.values()) };
+  if (!external && !clock && !people && relations.size === 0 && rollups.size === 0) return NO_EXTERNAL_REFERENCES;
+  return { external, clock, people, relations: Array.from(relations.values()), rollups: Array.from(rollups.values()) };
 }
 
 /** `collectExpressionExternalReferences` for a formula field's saved expression. */
@@ -107,6 +113,7 @@ export function formulaExternalReferencesKey(references: FormulaExternalReferenc
   };
 
   return stringifyFormulaConfig([
+    references.external,
     references.clock,
     references.people,
     references.relations.map(fieldKey),

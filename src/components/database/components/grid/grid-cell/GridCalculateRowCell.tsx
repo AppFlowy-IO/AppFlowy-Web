@@ -1,15 +1,33 @@
 import { useCallback, useContext, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Row, useDatabaseView, useFieldCellsByRowsSelector, useReadOnly } from '@/application/database-yjs';
-import { CalculationType } from '@/application/database-yjs/database.type';
+import {
+  Row,
+  useDatabaseView,
+  useFieldCellsByRowsSelector,
+  useReadOnly,
+  useFieldType,
+} from '@/application/database-yjs';
+import { calculateFieldValue } from '@/application/database-yjs/calculation';
+import { FieldType, CalculationType } from '@/application/database-yjs/database.type';
 import { useCalculateFieldDispatch, useClearCalculate, useUpdateCalculate } from '@/application/database-yjs/dispatch';
+import { useDatabaseVerification } from '@/application/page-verification/database';
+import { VerificationViewSettings } from '@/application/page-verification/types';
 import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as DropdownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { CalculationCell, ICalculationCell } from '@/components/database/components/grid/grid-calculation-cell';
 import CalcationMenu from '@/components/database/components/grid/grid-calculation-cell/CalcationMenu';
 import { GridContext } from '@/components/database/grid/useGridContext';
 import { cn } from '@/lib/utils';
+
+const verificationCalculations: Partial<Record<CalculationType, VerificationViewSettings['calculation']>> = {
+  [CalculationType.Count]: 'count',
+  [CalculationType.CountEmpty]: 'count_empty',
+  [CalculationType.CountNonEmpty]: 'count_non_empty',
+  [CalculationType.CountUnique]: 'count_unique',
+  [CalculationType.PercentEmpty]: 'percent_empty',
+  [CalculationType.PercentNotEmpty]: 'percent_not_empty',
+};
 
 export interface GridCalculateRowCellProps {
   fieldId: string;
@@ -35,6 +53,9 @@ export interface GridCalculateRowCellWithValuesProps {
 /** Shared calculation controls for callers that load complete row snapshots. */
 export function GridCalculateRowCellWithValues({ fieldId, cells, ready }: GridCalculateRowCellWithValuesProps) {
   const databaseView = useDatabaseView();
+  const verification = useDatabaseVerification();
+  const external = useFieldType(fieldId) === FieldType.Verification;
+  const [error, setError] = useState<string>();
   const [calculation, setCalculation] = useState<ICalculationCell>();
   const readOnly = useReadOnly();
   const calculate = useCalculateFieldDispatch(fieldId);
@@ -77,10 +98,10 @@ export function GridCalculateRowCellWithValues({ fieldId, cells, ready }: GridCa
   }, [calculations, fieldId, handleObserver]);
 
   useEffect(() => {
-    if (readOnly || !ready || !cells) return;
+    if (external || readOnly || !ready || !cells) return;
 
     calculate(cells);
-  }, [cells, readOnly, ready, calculate, calculation?.type]);
+  }, [cells, readOnly, ready, calculate, calculation?.type, external]);
 
   const [isHovered, setHovered] = useState(false);
 
@@ -88,6 +109,36 @@ export function GridCalculateRowCellWithValues({ fieldId, cells, ready }: GridCa
 
   const updateCalculation = useUpdateCalculate(fieldId);
   const clearCalculation = useClearCalculate(fieldId);
+
+  // Verification uses only its Cloud selection. Keep native calculations dormant
+  // so converting back restores the original field's calculation.
+  const selected = verification.settings.calculation;
+  const externalType =
+    selected === null || selected === undefined
+      ? undefined
+      : Number(Object.entries(verificationCalculations).find(([, value]) => value === selected)?.[0]);
+  const displayedCalculation = external
+    ? externalType !== undefined && Number.isFinite(externalType) && cells && ready
+      ? {
+          id: fieldId,
+          fieldId,
+          type: externalType,
+          value: String(
+            calculateFieldValue({
+              fieldType: FieldType.Verification,
+              calculationType: externalType,
+              cellValues: cells.values(),
+            }) ?? ''
+          ),
+        }
+      : undefined
+    : calculation;
+  const saveCalculation = (calculation: VerificationViewSettings['calculation']) => {
+    setError(undefined);
+    void verification
+      .updateSettings({ calculation })
+      .catch((error: unknown) => setError(error instanceof Error ? error.message : 'Could not update calculation.'));
+  };
 
   return (
     <>
@@ -109,25 +160,30 @@ export function GridCalculateRowCellWithValues({ fieldId, cells, ready }: GridCa
           'relative flex h-full w-full items-center justify-end'
         )}
       >
-        {!calculation && isHovered ? (
+        {!displayedCalculation && isHovered ? (
           <div className={'flex items-center gap-1.5 px-2 text-sm text-text-secondary'}>
             {t('grid.calculate')}
             <DropdownIcon className={'h-5 w-5'} />
           </div>
         ) : (
-          <CalculationCell cell={calculation} />
+          <CalculationCell cell={displayedCalculation} />
         )}
         {!readOnly && (
           <CalcationMenu
             fieldId={fieldId}
             open={open}
             onOpenChange={setOpen}
-            calculation={calculation}
-            onClear={clearCalculation}
-            onChangeType={updateCalculation}
+            calculation={displayedCalculation}
+            onClear={external ? () => saveCalculation(null) : clearCalculation}
+            onChangeType={external ? (type) => saveCalculation(verificationCalculations[type]) : updateCalculation}
           />
         )}
       </div>
+      {error && (
+        <span role='alert' className='text-xs text-text-error'>
+          {error}
+        </span>
+      )}
     </>
   );
 }

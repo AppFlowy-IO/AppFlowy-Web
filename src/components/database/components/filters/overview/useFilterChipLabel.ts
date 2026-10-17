@@ -17,6 +17,11 @@ import {
   SelectOptionFilterCondition,
 } from '@/application/database-yjs/fields/select-option/select_option.type';
 import { TextFilterCondition } from '@/application/database-yjs/fields/text/text.type';
+import {
+  parseVerificationFilter,
+  VerificationFilterCondition,
+  VerificationFilterStatus,
+} from '@/application/database-yjs/fields/verification';
 import { predicateFieldTypeForResult } from '@/application/database-yjs/formula/filter';
 import {
   resolvedRollupTarget,
@@ -347,6 +352,18 @@ function buildChipLabel(
   const fieldType = typeOverride ?? (Number(field.get(YjsDatabaseKey.type)) as FieldType);
 
   switch (fieldType) {
+    case FieldType.Verification: {
+      const value = parseVerificationFilter(filter.condition, filter.content ?? '');
+      const prefix = t(`grid.textFilter.${['is', 'isNot', 'isEmpty', 'isNotEmpty'][value.condition]}`);
+      const status = VerificationFilterStatus[value.status];
+      const description =
+        value.condition === VerificationFilterCondition.Is || value.condition === VerificationFilterCondition.IsNot
+          ? `${prefix} ${t(`grid.verification.status${status}`, { defaultValue: status })}`
+          : prefix;
+
+      return { description, hasContent: true };
+    }
+
     case FieldType.RichText:
     case FieldType.URL:
       return textChipLabel(filter.condition as TextFilterCondition, filter.content ?? '', t);

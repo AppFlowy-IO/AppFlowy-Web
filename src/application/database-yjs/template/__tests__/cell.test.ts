@@ -97,6 +97,28 @@ function template(defaultCells: Record<string, TemplateCellValue>): DatabaseRowT
 }
 
 describe('database row template cells', () => {
+  it('discards Verification defaults when saving templates and creating rows', () => {
+    const db = database();
+    const defaults: Record<string, TemplateCellValue> = {
+      name: { type: 'text', value: 'New task' },
+      'verification:property': { type: 'text', value: 'Verified' },
+    };
+    const rowDoc = new Y.Doc() as YDoc;
+
+    initializeTemplateSourceRow(rowDoc, db, template(defaults));
+    const saved = updateTemplateFromSourceRow(template(defaults), rowDoc, db);
+
+    expect(saved.defaultCells).toEqual({ name: defaults.name });
+    const newRowDoc = new Y.Doc() as YDoc;
+
+    initialDatabaseRow('new-row', databaseId, newRowDoc);
+    const row = newRowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+
+    applyTemplateCellsToRow(row, db, defaults);
+    expect(row.get(YjsDatabaseKey.cells).has('verification:property')).toBe(false);
+    expect(extractTemplateCellsFromRow(row, db)).toEqual({ name: defaults.name });
+  });
+
   it('sanitizes typed and legacy values using Desktop-compatible rules', () => {
     const result = sanitizeTemplateCells(database(), {
       name: { type: 'legacy', value: '  Issue  ' },

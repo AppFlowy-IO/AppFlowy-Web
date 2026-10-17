@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { FieldType, parseSelectOptionTypeOptions, useFieldSelector } from '@/application/database-yjs';
 import { getChecked } from '@/application/database-yjs/fields/checkbox/utils';
+import { verificationGroupLabels } from '@/application/page-verification/grouping';
 import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as CheckboxCheckSvg } from '@/assets/icons/check_filled.svg';
 import { ReactComponent as CheckboxUncheckSvg } from '@/assets/icons/uncheck.svg';
@@ -17,6 +18,7 @@ export function useRenderColumn(id: string, fieldId: string) {
   const { t } = useTranslation();
   const header = useMemo(() => {
     if (!field) return null;
+    if ((fieldType === FieldType.Verification)) return <span>{verificationGroupLabels[id]}</span>;
     if (fieldType === FieldType.Checkbox)
       return (
         <div className={'flex items-center gap-2'}>
@@ -60,9 +62,7 @@ export function useRenderColumn(id: string, fieldId: string) {
     return [FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType);
   }, [fieldType]);
 
-  const deleteEnabled = useMemo(() => {
-    return true;
-  }, []);
+  const deleteEnabled = !(fieldType === FieldType.Verification);
 
   const hideEnabled = useMemo(() => {
     return true;

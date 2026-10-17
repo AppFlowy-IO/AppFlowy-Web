@@ -3709,6 +3709,7 @@ export const notification = $root.notification = (() => {
          * @property {notification.ICommentChanged|null} [commentChanged] WorkspaceNotification commentChanged
          * @property {notification.IDatabaseRestored|null} [databaseRestored] WorkspaceNotification databaseRestored
          * @property {notification.IStorageLimitExceeded|null} [storageLimitExceeded] WorkspaceNotification storageLimitExceeded
+         * @property {notification.IPageVerificationChanged|null} [pageVerificationChanged] WorkspaceNotification pageVerificationChanged
          */
 
         /**
@@ -3830,17 +3831,25 @@ export const notification = $root.notification = (() => {
          */
         WorkspaceNotification.prototype.storageLimitExceeded = null;
 
+        /**
+         * WorkspaceNotification pageVerificationChanged.
+         * @member {notification.IPageVerificationChanged|null|undefined} pageVerificationChanged
+         * @memberof notification.WorkspaceNotification
+         * @instance
+         */
+        WorkspaceNotification.prototype.pageVerificationChanged = null;
+
         // OneOf field names bound to virtual getters and setters
         let $oneOfFields;
 
         /**
          * WorkspaceNotification payload.
-         * @member {"profileChange"|"permissionChanged"|"sectionChanged"|"shareViewsChanged"|"mentionablePersonListChanged"|"serverLimit"|"workspaceMemberProfileChanged"|"folderChanged"|"folderViewChanged"|"inboxNotification"|"commentChanged"|"databaseRestored"|"storageLimitExceeded"|undefined} payload
+         * @member {"profileChange"|"permissionChanged"|"sectionChanged"|"shareViewsChanged"|"mentionablePersonListChanged"|"serverLimit"|"workspaceMemberProfileChanged"|"folderChanged"|"folderViewChanged"|"inboxNotification"|"commentChanged"|"databaseRestored"|"storageLimitExceeded"|"pageVerificationChanged"|undefined} payload
          * @memberof notification.WorkspaceNotification
          * @instance
          */
         Object.defineProperty(WorkspaceNotification.prototype, "payload", {
-            get: $util.oneOfGetter($oneOfFields = ["profileChange", "permissionChanged", "sectionChanged", "shareViewsChanged", "mentionablePersonListChanged", "serverLimit", "workspaceMemberProfileChanged", "folderChanged", "folderViewChanged", "inboxNotification", "commentChanged", "databaseRestored", "storageLimitExceeded"]),
+            get: $util.oneOfGetter($oneOfFields = ["profileChange", "permissionChanged", "sectionChanged", "shareViewsChanged", "mentionablePersonListChanged", "serverLimit", "workspaceMemberProfileChanged", "folderChanged", "folderViewChanged", "inboxNotification", "commentChanged", "databaseRestored", "storageLimitExceeded", "pageVerificationChanged"]),
             set: $util.oneOfSetter($oneOfFields)
         });
 
@@ -3894,6 +3903,8 @@ export const notification = $root.notification = (() => {
                 $root.notification.DatabaseRestored.encode(message.databaseRestored, writer.uint32(/* id 12, wireType 2 =*/98).fork()).ldelim();
             if (message.storageLimitExceeded != null && Object.hasOwnProperty.call(message, "storageLimitExceeded"))
                 $root.notification.StorageLimitExceeded.encode(message.storageLimitExceeded, writer.uint32(/* id 13, wireType 2 =*/106).fork()).ldelim();
+            if (message.pageVerificationChanged != null && Object.hasOwnProperty.call(message, "pageVerificationChanged"))
+                $root.notification.PageVerificationChanged.encode(message.pageVerificationChanged, writer.uint32(/* id 14, wireType 2 =*/114).fork()).ldelim();
             return writer;
         };
 
@@ -3980,6 +3991,10 @@ export const notification = $root.notification = (() => {
                     }
                 case 13: {
                         message.storageLimitExceeded = $root.notification.StorageLimitExceeded.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 14: {
+                        message.pageVerificationChanged = $root.notification.PageVerificationChanged.decode(reader, reader.uint32());
                         break;
                     }
                 default:
@@ -4146,6 +4161,16 @@ export const notification = $root.notification = (() => {
                         return "storageLimitExceeded." + error;
                 }
             }
+            if (message.pageVerificationChanged != null && message.hasOwnProperty("pageVerificationChanged")) {
+                if (properties.payload === 1)
+                    return "payload: multiple values";
+                properties.payload = 1;
+                {
+                    let error = $root.notification.PageVerificationChanged.verify(message.pageVerificationChanged);
+                    if (error)
+                        return "pageVerificationChanged." + error;
+                }
+            }
             return null;
         };
 
@@ -4225,6 +4250,11 @@ export const notification = $root.notification = (() => {
                 if (typeof object.storageLimitExceeded !== "object")
                     throw TypeError(".notification.WorkspaceNotification.storageLimitExceeded: object expected");
                 message.storageLimitExceeded = $root.notification.StorageLimitExceeded.fromObject(object.storageLimitExceeded);
+            }
+            if (object.pageVerificationChanged != null) {
+                if (typeof object.pageVerificationChanged !== "object")
+                    throw TypeError(".notification.WorkspaceNotification.pageVerificationChanged: object expected");
+                message.pageVerificationChanged = $root.notification.PageVerificationChanged.fromObject(object.pageVerificationChanged);
             }
             return message;
         };
@@ -4306,6 +4336,11 @@ export const notification = $root.notification = (() => {
                 object.storageLimitExceeded = $root.notification.StorageLimitExceeded.toObject(message.storageLimitExceeded, options);
                 if (options.oneofs)
                     object.payload = "storageLimitExceeded";
+            }
+            if (message.pageVerificationChanged != null && message.hasOwnProperty("pageVerificationChanged")) {
+                object.pageVerificationChanged = $root.notification.PageVerificationChanged.toObject(message.pageVerificationChanged, options);
+                if (options.oneofs)
+                    object.payload = "pageVerificationChanged";
             }
             return object;
         };
@@ -9050,6 +9085,183 @@ export const notification = $root.notification = (() => {
         };
 
         return StorageLimitExceeded;
+    })();
+
+    notification.PageVerificationChanged = (function() {
+
+        /**
+         * Properties of a PageVerificationChanged.
+         * @memberof notification
+         * @interface IPageVerificationChanged
+         */
+
+        /**
+         * Constructs a new PageVerificationChanged.
+         * @memberof notification
+         * @classdesc Represents a PageVerificationChanged.
+         * @implements IPageVerificationChanged
+         * @constructor
+         * @param {notification.IPageVerificationChanged=} [properties] Properties to set
+         */
+        function PageVerificationChanged(properties) {
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * Creates a new PageVerificationChanged instance using the specified properties.
+         * @function create
+         * @memberof notification.PageVerificationChanged
+         * @static
+         * @param {notification.IPageVerificationChanged=} [properties] Properties to set
+         * @returns {notification.PageVerificationChanged} PageVerificationChanged instance
+         */
+        PageVerificationChanged.create = function create(properties) {
+            return new PageVerificationChanged(properties);
+        };
+
+        /**
+         * Encodes the specified PageVerificationChanged message. Does not implicitly {@link notification.PageVerificationChanged.verify|verify} messages.
+         * @function encode
+         * @memberof notification.PageVerificationChanged
+         * @static
+         * @param {notification.IPageVerificationChanged} message PageVerificationChanged message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        PageVerificationChanged.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            return writer;
+        };
+
+        /**
+         * Encodes the specified PageVerificationChanged message, length delimited. Does not implicitly {@link notification.PageVerificationChanged.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof notification.PageVerificationChanged
+         * @static
+         * @param {notification.IPageVerificationChanged} message PageVerificationChanged message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        PageVerificationChanged.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a PageVerificationChanged message from the specified reader or buffer.
+         * @function decode
+         * @memberof notification.PageVerificationChanged
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {notification.PageVerificationChanged} PageVerificationChanged
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        PageVerificationChanged.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.PageVerificationChanged();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a PageVerificationChanged message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof notification.PageVerificationChanged
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {notification.PageVerificationChanged} PageVerificationChanged
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        PageVerificationChanged.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a PageVerificationChanged message.
+         * @function verify
+         * @memberof notification.PageVerificationChanged
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        PageVerificationChanged.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            return null;
+        };
+
+        /**
+         * Creates a PageVerificationChanged message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof notification.PageVerificationChanged
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {notification.PageVerificationChanged} PageVerificationChanged
+         */
+        PageVerificationChanged.fromObject = function fromObject(object) {
+            if (object instanceof $root.notification.PageVerificationChanged)
+                return object;
+            return new $root.notification.PageVerificationChanged();
+        };
+
+        /**
+         * Creates a plain object from a PageVerificationChanged message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof notification.PageVerificationChanged
+         * @static
+         * @param {notification.PageVerificationChanged} message PageVerificationChanged
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        PageVerificationChanged.toObject = function toObject() {
+            return {};
+        };
+
+        /**
+         * Converts this PageVerificationChanged to JSON.
+         * @function toJSON
+         * @memberof notification.PageVerificationChanged
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        PageVerificationChanged.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for PageVerificationChanged
+         * @function getTypeUrl
+         * @memberof notification.PageVerificationChanged
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        PageVerificationChanged.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/notification.PageVerificationChanged";
+        };
+
+        return PageVerificationChanged;
     })();
 
     return notification;

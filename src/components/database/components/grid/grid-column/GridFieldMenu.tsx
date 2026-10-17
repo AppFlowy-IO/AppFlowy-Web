@@ -26,9 +26,10 @@ import { FILTER_EXCLUDED_FIELD_TYPES } from '@/components/database/components/fi
 import ClearCellsConfirm from '@/components/database/components/property/ClearCellsConfirm';
 import DeletePropertyConfirm from '@/components/database/components/property/DeletePropertyConfirm';
 import PropertyMenu from '@/components/database/components/property/PropertyMenu';
+import { PropertyMenuActions } from '@/components/database/components/property/PropertyMenuContent';
 import PropertyProfile from '@/components/database/components/property/PropertyProfile';
-import { isFieldEditingDisabled } from '@/components/database/utils/field-editing';
 import { useGridContext } from '@/components/database/grid/useGridContext';
+import { isFieldEditingDisabled } from '@/components/database/utils/field-editing';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -165,7 +166,7 @@ function GridFieldMenu({
         testId: 'duplicate',
         label: t('grid.field.duplicate'),
         icon: <DuplicateIcon />,
-        disabled: isPrimary,
+        disabled: isPrimary || type === FieldType.Verification,
         onSelect: () => {
           onDuplicateProperty(fieldId);
         },
@@ -223,9 +224,7 @@ function GridFieldMenu({
         </DropdownMenuTrigger>
         <DropdownMenuContent onCloseAutoFocus={(e) => e.preventDefault()}>
           {isEditingDisabled && (
-            <div className="mb-2 px-2 py-1.5 text-sm text-text-secondary">
-              {t('common.editNotSupported')}
-            </div>
+            <div className='mb-2 px-2 py-1.5 text-sm text-text-secondary'>{t('common.editNotSupported')}</div>
           )}
           {!isEditingDisabled && (
             <PropertyProfile
@@ -239,24 +238,12 @@ function GridFieldMenu({
               }}
             />
           )}
-          <DropdownMenuGroup>
-            {operations.map((operation, index) => (
-              <DropdownMenuItem
-                data-testid={`grid-field-${operation.testId}`}
-                onPointerMove={(e) => e.preventDefault()}
-                onPointerEnter={(e) => e.preventDefault()}
-                onPointerLeave={(e) => e.preventDefault()}
-                ref={index === 0 ? secondItemRef : undefined}
-                disabled={operation.disabled}
-                onSelect={operation.onSelect}
-                key={operation.label}
-                variant={operation.variant}
-              >
-                {operation.icon}
-                {operation.label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuGroup>
+          <PropertyMenuActions
+            operations={operations}
+            testIdPrefix='grid-field'
+            preservePointerFocus
+            firstItemRef={secondItemRef}
+          />
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
             <DropdownMenuItem

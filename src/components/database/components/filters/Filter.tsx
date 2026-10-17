@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { ReactNode, useCallback } from 'react';
 
 import { FieldType, useFilterSelector, useReadOnly } from '@/application/database-yjs';
 import { YjsDatabaseKey } from '@/application/types';
@@ -42,33 +42,67 @@ function Filter({ filterId }: { filterId: string }) {
   const buttonText = hasContent ? `${fieldName}: ${description}` : fieldName;
 
   return (
+    <FilterPopover
+      fieldId={filter.fieldId}
+      label={buttonText}
+      active={hasContent}
+      open={open}
+      onOpenChange={setOpen}
+      readOnly={readOnly}
+      wideMenu={wideMenu}
+    >
+      <FilterMenu filter={filter} />
+    </FilterPopover>
+  );
+}
+
+export function FilterPopover({
+  fieldId,
+  label,
+  active,
+  open,
+  onOpenChange,
+  readOnly,
+  wideMenu,
+  children,
+}: {
+  fieldId: string;
+  label: string;
+  active: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  readOnly: boolean;
+  wideMenu?: boolean;
+  children: ReactNode;
+}) {
+  return (
     <div className={'relative h-7'}>
-      <Popover modal open={open} onOpenChange={setOpen}>
+      <Popover modal open={open} onOpenChange={onOpenChange}>
         <PopoverTrigger asChild>
           <button
             aria-readonly={readOnly ? 'true' : 'false'}
             data-testid={'database-filter-condition'}
             className={cn(
               'flex h-7 max-w-[300px] items-center rounded-full border px-2 py-1 outline-none',
-              hasContent
+              active
                 ? 'border-border-theme-thick bg-fill-theme-select'
                 : 'border-border-primary bg-transparent hover:bg-fill-content-hover'
             )}
           >
             <FieldCustomIcon
-              fieldId={filter.fieldId}
-              className={cn('h-4 w-4 shrink-0', hasContent ? 'text-other-colors-text-event' : 'text-icon-primary')}
+              fieldId={fieldId}
+              className={cn('h-4 w-4 shrink-0', active ? 'text-other-colors-text-event' : 'text-icon-primary')}
             />
             <span
               className={cn(
                 'ml-1 max-w-[200px] truncate whitespace-nowrap text-sm font-medium',
-                hasContent ? 'text-other-colors-text-event' : 'text-text-primary'
+                active ? 'text-other-colors-text-event' : 'text-text-primary'
               )}
             >
-              {buttonText}
+              {label}
             </span>
             <ArrowDown
-              className={cn('ml-1 h-5 w-5 shrink-0', hasContent ? 'text-icon-info-thick' : 'text-icon-secondary')}
+              className={cn('ml-1 h-5 w-5 shrink-0', active ? 'text-icon-info-thick' : 'text-icon-secondary')}
             />
           </button>
         </PopoverTrigger>
@@ -80,7 +114,7 @@ function Filter({ filterId }: { filterId: string }) {
             e.stopPropagation();
           }}
         >
-          <FilterMenu filter={filter} />
+          {children}
         </PopoverContent>
       </Popover>
     </div>

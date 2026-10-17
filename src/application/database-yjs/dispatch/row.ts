@@ -1,3 +1,4 @@
+import { isVerificationField } from '@/application/page-verification/database';
 /**
  * Row dispatch hooks
  *
@@ -172,6 +173,7 @@ export function useMoveCardDispatch() {
       startColumnId: string;
       finishColumnId: string;
     }) => {
+      if (isVerificationField(database.get(YjsDatabaseKey.fields)?.get(fieldId))) return;
       if (!view) {
         throw new Error(`Unable to reorder card`);
       }
@@ -936,7 +938,7 @@ export function useDuplicateRowDispatch() {
 
             const fieldType = Number(fields.get(fieldId)?.get(YjsDatabaseKey.type));
 
-            if (isAttributionFieldType(fieldType)) return;
+            if (isAttributionFieldType(fieldType) || fieldType === FieldType.Verification) return;
 
             const cell = cloneDatabaseCell(fieldType, referenceCell);
 

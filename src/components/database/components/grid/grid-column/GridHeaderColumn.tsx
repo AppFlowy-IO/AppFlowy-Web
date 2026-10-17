@@ -80,13 +80,7 @@ export function GridHeaderColumn({
         )}
       </div>
     );
-  }, [
-    fieldId,
-    isAIField,
-    onResizeColumnStart,
-    readOnly,
-    tooltipContent,
-  ]);
+  }, [fieldId, isAIField, onResizeColumnStart, readOnly, tooltipContent]);
 
   const displayMenu = useMemo(() => {
     if (!showStickyHeader && isSticky) return false;

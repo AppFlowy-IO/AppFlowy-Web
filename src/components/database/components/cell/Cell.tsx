@@ -5,6 +5,7 @@ import { CellProps, Cell as CellType } from '@/application/database-yjs/cell.typ
 import { useDatabaseContextOptional } from '@/application/database-yjs/context';
 import { FieldType } from '@/application/database-yjs/database.type';
 import { useFieldSelector } from '@/application/database-yjs/selector';
+import { getVerificationPropertyId } from '@/application/page-verification/native';
 import { YjsDatabaseKey } from '@/application/types';
 import { AITextCell } from '@/components/database/components/cell/ai-text/AITextCell';
 import { AttributionCell } from '@/components/database/components/cell/attribution';
@@ -19,6 +20,7 @@ import { RollupCell } from '@/components/database/components/cell/rollup';
 import { SelectOptionCell } from '@/components/database/components/cell/select-option';
 import { TextCell } from '@/components/database/components/cell/text';
 import { isFieldEditingDisabled } from '@/components/database/utils/field-editing';
+import { PageVerificationControl } from '@/components/page-verification/PageVerificationControl';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 import { FileMediaCell } from 'src/components/database/components/cell/file-media';
@@ -66,6 +68,26 @@ export function Cell(props: CellProps<CellType>) {
         return TextCell;
     }
   }, [fieldType]) as FC<CellProps<CellType>>;
+
+  if (fieldType === FieldType.Verification) {
+    // Templates expose the property schema, but never load or edit verification values.
+    const propertyId = field && getVerificationPropertyId(field);
+
+    if (!propertyId || context?.templateEditingRowId === rowId || context?.dataSource?.type === 'history') {
+      return <span className='text-text-tertiary'>—</span>;
+    }
+
+    return (
+      <PageVerificationControl
+        targetId={rowId}
+        expectedPropertyId={propertyId}
+        displayMode='cell'
+        placeholder={props.placeholder}
+        wrap={wrap}
+        readOnly={props.readOnly || context?.readOnly}
+      />
+    );
+  }
 
   if (fieldType === FieldType.CreatedTime || fieldType === FieldType.LastEditedTime) {
     const attrName = fieldType === FieldType.CreatedTime ? YjsDatabaseKey.created_at : YjsDatabaseKey.last_modified;

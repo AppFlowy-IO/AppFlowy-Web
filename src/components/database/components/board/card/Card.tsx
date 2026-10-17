@@ -4,7 +4,7 @@ import { dropTargetForExternal } from '@atlaskit/pragmatic-drag-and-drop/externa
 import { attachClosestEdge, extractClosestEdge, type Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 
-import { useReadOnly } from '@/application/database-yjs';
+import { FieldType, useFieldType, useReadOnly } from '@/application/database-yjs';
 import { useBoardSelection } from '@/components/database/board/BoardProvider';
 import { CardPrimitive } from '@/components/database/components/board/card/CardPrimitive';
 import NewCard from '@/components/database/components/board/card/NewCard';
@@ -33,7 +33,8 @@ export const Card = memo(
     const { instanceId, registerCard } = useBoardDragContext();
     const [closestEdge, setClosestEdge] = useState<Edge | null>(null);
     const [state, setState] = useState<State>(idleState);
-    const readOnly = useReadOnly();
+    const groupFieldType = useFieldType(groupFieldId);
+    const readOnly = useReadOnly() || groupFieldType === FieldType.Verification;
     const { editingCardId } = useBoardSelection();
 
     const editing = useMemo(() => {

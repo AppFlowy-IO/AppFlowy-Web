@@ -29,6 +29,7 @@ export enum FieldType {
   CreatedBy = 17,
   LastEditedBy = 18,
   Formula = 19,
+  Verification = 20,
 }
 
 export const ATTRIBUTION_FIELD_TYPES = [FieldType.CreatedBy, FieldType.LastEditedBy] as const;

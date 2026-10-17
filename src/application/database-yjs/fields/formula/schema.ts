@@ -1,4 +1,5 @@
 import { FieldType } from '@/application/database-yjs/database.type';
+import { getExternalDatabaseFields } from '@/application/database-yjs/external-fields';
 import { YDatabaseField, YDatabaseFields, YjsDatabaseKey } from '@/application/types';
 
 import { findFormulaPropCalls } from './prop-calls';
@@ -34,7 +35,11 @@ function readCurrentFormulaSchema(fields: YDatabaseFields, version?: number): Fo
   const schema: FormulaFieldSchema[] = [];
   const signatureEntries: unknown[] = [];
 
-  fields.forEach((field, id) => {
+  const allFields = new Map<string, YDatabaseField>();
+
+  fields.forEach((field, id) => allFields.set(id, field));
+  getExternalDatabaseFields(fields).forEach(({ field }) => allFields.set(field.get(YjsDatabaseKey.id), field));
+  allFields.forEach((field, id) => {
     const name = String(field.get(YjsDatabaseKey.name) ?? '');
     const type = Number(field.get(YjsDatabaseKey.type)) as FieldType;
 

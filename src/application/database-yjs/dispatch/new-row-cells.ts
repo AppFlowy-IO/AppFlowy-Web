@@ -132,7 +132,7 @@ export function populateNewRowCells({
 
     const type = Number(field.get(YjsDatabaseKey.type));
 
-    if (isAttributionFieldType(type)) {
+    if (isAttributionFieldType(type) || type === FieldType.Verification) {
       shouldOpenRowModal = true;
       return;
     }
@@ -214,7 +214,7 @@ export function populateNewRowCells({
 
       const type = Number(field.get(YjsDatabaseKey.type));
 
-      if (isAttributionFieldType(type)) return;
+      if (isAttributionFieldType(type) || type === FieldType.Verification) return;
 
       const rawData = typeof data === 'object' ? data.data : data;
 
@@ -262,7 +262,7 @@ export function populateNewRowCells({
       if (!field) return;
       const type = Number(field.get(YjsDatabaseKey.type));
 
-      if (isAttributionFieldType(type) || type === FieldType.CreatedTime || type === FieldType.LastEditedTime) return;
+      if (isAttributionFieldType(type) || type === FieldType.Verification || type === FieldType.CreatedTime || type === FieldType.LastEditedTime) return;
       cells.set(fieldId, cloneDatabaseCell(type, cell));
       if (type === FieldType.Relation) {
         const data = cell.get(YjsDatabaseKey.data);

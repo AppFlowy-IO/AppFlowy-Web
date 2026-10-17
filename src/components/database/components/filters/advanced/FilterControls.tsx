@@ -31,6 +31,7 @@ import { FilterSearchInput } from '@/components/database/components/filters/filt
 import { SelectOptionList } from '@/components/database/components/filters/filter-menu/SelectOptionList';
 import { useDebouncedFilterInput } from '@/components/database/components/filters/hooks/useDebouncedFilterInput';
 import { useRelationData } from '@/components/database/components/property/relation/useRelationData';
+import { VerificationFilterValue } from '@/components/page-verification/VerificationConditions';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
@@ -166,6 +167,13 @@ function useConditionsForFieldType(
       ];
     }
 
+    if (fieldType === FieldType.Verification) {
+      return ['is', 'isNot', 'isEmpty', 'isNotEmpty'].map((key, value) => ({
+        value,
+        text: t(`grid.textFilter.${key}`),
+      }));
+    }
+
     if (textTypes.includes(fieldType)) {
       return [
         { value: TextFilterCondition.TextContains, text: t('grid.textFilter.contains') },
@@ -297,6 +305,8 @@ export function ValueInput({ filter, fieldType, field, disabled }: ValueInputPro
   }
 
   // Number / Time field - editable number input
+  if (fieldType === FieldType.Verification) return <VerificationFilterValue filter={filter} disabled={disabled} />;
+
   if (fieldType === FieldType.Number || fieldType === FieldType.Time) {
     return <NumberValueInput filter={filter as NumberFilter} disabled={disabled} />;
   }

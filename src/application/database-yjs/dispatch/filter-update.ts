@@ -2,6 +2,11 @@ import { YDatabaseFields, YDatabaseFilter, YDatabaseFilters, YjsDatabaseKey as K
 
 import { FieldType } from '../database.type';
 import { RollupFilterMetadata } from '../fields/rollup/rollup.type';
+import {
+  parseVerificationFilter,
+  serializeVerificationFilter,
+  VerificationFilterCondition,
+} from '../fields/verification';
 import { newRollupFilterMetadata, parseRollupFilterMetadata, rollupConfigurationMatches } from '../rollup/filter';
 
 export interface UpdateFilterParams {
@@ -42,6 +47,21 @@ export function applyFilterUpdate(filters: YDatabaseFilters, fields: YDatabaseFi
       if (params.condition !== undefined) updates[K.condition] = params.condition;
       if (params.content !== undefined) updates[K.content] = params.content;
       if (params.transformContent) updates[K.content] = params.transformContent(String(get(K.content) ?? ''));
+      if (Number(field?.get(K.type)) === FieldType.Verification && (K.condition in updates || K.content in updates)) {
+        const predicate = parseVerificationFilter(
+          Number(updates[K.condition] ?? get(K.condition)),
+          String(updates[K.content] ?? get(K.content) ?? '')
+        );
+
+        // Empty status has no expiration; selecting it clears the editor's date bounds.
+        if (params.condition === VerificationFilterCondition.IsEmpty) {
+          predicate.expiresAfterMicros = null;
+          predicate.expiresBeforeMicros = null;
+        }
+
+        updates[K.content] = serializeVerificationFilter(predicate);
+      }
+
       if (params.rollupMetadata !== undefined) updates[K.rollup_meta] = { ...metadata, ...params.rollupMetadata };
       if (params.rollupTargetFieldType !== undefined) updates[K.rollup_target_type] = params.rollupTargetFieldType;
       if (!map) return { ...obj, ...updates };

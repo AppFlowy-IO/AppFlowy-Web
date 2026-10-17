@@ -18,6 +18,7 @@ import { ReactComponent as LastEditedTimeSvg } from '@/assets/icons/last_modifie
 import { ReactComponent as RelationSvg } from '@/assets/icons/relation.svg';
 import { ReactComponent as TimeSvg } from '@/assets/icons/time.svg'; // Import TimeSvg
 import { ReactComponent as PersonSvg } from '@/assets/icons/user.svg';
+import { ReactComponent as VerificationSvg } from '@/assets/icons/verify.svg';
 
 export const FieldTypeSvgMap: Record<FieldType, FC<React.SVGProps<SVGSVGElement>>> = {
   [FieldType.RichText]: TextSvg,
@@ -40,6 +41,7 @@ export const FieldTypeSvgMap: Record<FieldType, FC<React.SVGProps<SVGSVGElement>
   [FieldType.CreatedBy]: PersonSvg,
   [FieldType.LastEditedBy]: PersonSvg,
   [FieldType.Formula]: FormulaSvg,
+  [FieldType.Verification]: VerificationSvg,
 };
 
 export const FieldTypeIcon: FC<{ type: FieldType; className?: string }> = memo(({ type, ...props }) => {

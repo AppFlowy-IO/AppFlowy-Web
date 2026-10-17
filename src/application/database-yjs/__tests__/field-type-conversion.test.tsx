@@ -3,7 +3,8 @@ import * as Y from 'yjs';
 
 import { DatabaseContext, DatabaseContextState, FieldType } from '@/application/database-yjs';
 import { getCellDataText, parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
-import { useSwitchPropertyType } from '@/application/database-yjs/dispatch';
+import { useDeletePropertyDispatch, useDuplicatePropertyDispatch, useSwitchPropertyType } from '@/application/database-yjs/dispatch';
+import * as relationDispatch from '@/application/database-yjs/dispatch/relation';
 import { parseSelectOptionTypeOptions, SelectOptionColor } from '@/application/database-yjs/fields';
 import { getOrCreateDatabaseHistoryManager } from '@/application/database-yjs/history';
 import { useCellSelector } from '@/application/database-yjs/selector';
@@ -714,4 +715,181 @@ describe('round-trip A -> B -> A preserves cell data (desktop parity)', () => {
     expect(cellOf().get(YjsDatabaseKey.field_type)).toBe(typeA);
     expect(cellOf().get(YjsDatabaseKey.source_field_type)).toBeUndefined();
   });
+});
+
+
+describe('native Verification conversion', () => {
+  it('preserves field ID, cells and existing options through a same-source round trip', async () => {
+    const { databaseDoc, rowDoc, switchType } = setup();
+    const field = getField(databaseDoc);
+    const cell = getCell(rowDoc);
+    const cellBefore = cell.toJSON();
+    const originalOptions = field.get(YjsDatabaseKey.type_option).get(String(FieldType.MultiSelect));
+
+    await act(async () => {
+      await switchType(fieldId, FieldType.Verification, {
+        expectedFieldType: FieldType.MultiSelect,
+        verificationPropertyId: 'generation-a',
+      });
+    });
+    expect(getField(databaseDoc)).toBe(field);
+    expect(cell.toJSON()).toEqual(cellBefore);
+    await act(async () => {
+      await switchType(fieldId, FieldType.MultiSelect, {
+        expectedFieldType: FieldType.Verification,
+        expectedVerificationPropertyId: 'generation-a',
+      });
+    });
+    expect(getField(databaseDoc)).toBe(field);
+    expect(cell.toJSON()).toEqual(cellBefore);
+    expect(field.get(YjsDatabaseKey.type_option).get(String(FieldType.MultiSelect))).toBe(originalOptions);
+    expect(getCellDataText(cell, field)).toBe('0,60,82');
+  });
+
+  it.each([FieldType.SingleSelect, FieldType.MultiSelect])('converts original text through Verification to %s using ordinary select transformation', async (target) => {
+    const { databaseDoc, rowDoc, switchType } = setup();
+    const field = getField(databaseDoc);
+    const cell = getCell(rowDoc);
+
+    act(() => {
+      field.set(YjsDatabaseKey.type, FieldType.RichText);
+      cell.set(YjsDatabaseKey.field_type, FieldType.RichText);
+      cell.set(YjsDatabaseKey.data, 'Red,Blue');
+    });
+    const before = cell.toJSON();
+
+    await act(async () => {
+      await switchType(fieldId, FieldType.Verification, { expectedFieldType: FieldType.RichText, verificationPropertyId: 'a' });
+      await switchType(fieldId, FieldType.Verification, {
+        expectedFieldType: FieldType.Verification,
+        expectedVerificationPropertyId: 'a',
+        verificationPropertyId: 'b',
+      });
+      await switchType(fieldId, target, {
+        expectedFieldType: FieldType.Verification,
+        expectedVerificationPropertyId: 'b',
+      });
+    });
+    const names = parseSelectOptionTypeOptions(field)?.options?.map((option) => option.name);
+
+    expect(names).toEqual(expect.arrayContaining(['Red', 'Blue']));
+    expect(cell.toJSON()).toEqual(before);
+    // The existing text-to-select decoder retains the original comma-separated text.
+    expect(getCellDataText(cell, field)).toBe('Red,Blue');
+  });
+
+  it('rejects unguarded and stale-generation switches, including a stale ordinary editor', async () => {
+    const { databaseDoc, switchType } = setup();
+
+    await act(async () => {
+      await switchType(fieldId, FieldType.Verification, { verificationPropertyId: 'new', expectedFieldType: FieldType.MultiSelect });
+    });
+    expect(() => switchType(fieldId, FieldType.RichText)).toThrow('changed');
+    expect(() => switchType(fieldId, FieldType.RichText, { expectedFieldType: FieldType.MultiSelect })).toThrow('changed');
+    expect(() => switchType(fieldId, FieldType.RichText, {
+      expectedFieldType: FieldType.Verification,
+      expectedVerificationPropertyId: 'old',
+    })).toThrow('changed');
+    expect(Number(getField(databaseDoc).get(YjsDatabaseKey.type))).toBe(FieldType.Verification);
+  });
+});
+
+
+describe('Verification conversion asynchronous safety', () => {
+  it('rejects a rebind while loading original source rows for a select conversion', async () => {
+    const databaseDoc = createDatabaseDoc();
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+    const field = getField(databaseDoc);
+    const rowDoc = createRowDoc(rowId, databaseId, { [fieldId]: { fieldType: FieldType.RichText, data: 'Saved' } });
+    let resolveRow!: (doc: YDoc) => void;
+    const ensureRow = jest.fn(() => new Promise<YDoc>((resolve) => { resolveRow = resolve; }));
+
+    field.set(YjsDatabaseKey.type, FieldType.RichText);
+    database.get(YjsDatabaseKey.views).get(viewId).set(YjsDatabaseKey.row_orders, Y.Array.from([{ id: rowId, height: 36 }]));
+    const context = { databaseDoc, databasePageId: viewId, activeViewId: viewId, readOnly: false, workspaceId: 'workspace', rowMap: {}, ensureRow } as DatabaseContextState;
+    const wrapper = ({ children }: { children: React.ReactNode }) => <DatabaseContext.Provider value={context}>{children}</DatabaseContext.Provider>;
+    const { result } = renderHook(useSwitchPropertyType, { wrapper });
+
+    await act(async () => {
+      await result.current(fieldId, FieldType.Verification, { expectedFieldType: FieldType.RichText, verificationPropertyId: 'a' });
+    });
+    let converting!: Promise<void>;
+
+    act(() => {
+      converting = result.current(fieldId, FieldType.SingleSelect, { expectedFieldType: FieldType.Verification, expectedVerificationPropertyId: 'a' });
+    });
+    expect(ensureRow).toHaveBeenCalled();
+    // The field stays Verification while lazy rows load; a remote client rebinds it.
+    field.get(YjsDatabaseKey.type_option).get(String(FieldType.Verification)).set(YjsDatabaseKey.property_id, 'b');
+    await act(async () => {
+      resolveRow(rowDoc);
+      await expect(converting).rejects.toThrow('changed');
+    });
+    expect(Number(field.get(YjsDatabaseKey.type))).toBe(FieldType.Verification);
+    expect(getCell(rowDoc).get(YjsDatabaseKey.data)).toBe('Saved');
+  });
+
+  it('does not materialize Formula output on entry, and uses its original source on exit', async () => {
+    const { databaseDoc, rowDoc, switchType } = setup();
+    const field = getField(databaseDoc);
+    const option = new Y.Map();
+
+    option.set(YjsDatabaseKey.expression, '42');
+    act(() => {
+      field.get(YjsDatabaseKey.type_option).set(String(FieldType.Formula), option);
+      field.set(YjsDatabaseKey.type, FieldType.Formula);
+    });
+    const before = getCell(rowDoc).toJSON();
+
+    await act(async () => {
+      await switchType(fieldId, FieldType.Verification, { expectedFieldType: FieldType.Formula, verificationPropertyId: 'a' });
+    });
+    expect(getCell(rowDoc).toJSON()).toEqual(before);
+    await act(async () => {
+      await switchType(fieldId, FieldType.Number, { expectedFieldType: FieldType.Verification, expectedVerificationPropertyId: 'a' });
+    });
+    expect(getCell(rowDoc).get(YjsDatabaseKey.data)).toBe('42');
+  });
+
+  it('blocks ordinary deletion and duplication of a native Verification field', async () => {
+    const { databaseDoc, switchType } = setup();
+    const context = { databaseDoc, databasePageId: viewId, activeViewId: viewId, readOnly: false, workspaceId: 'workspace', rowMap: {} } as DatabaseContextState;
+    const wrapper = ({ children }: { children: React.ReactNode }) => <DatabaseContext.Provider value={context}>{children}</DatabaseContext.Provider>;
+    const { result } = renderHook(() => ({ remove: useDeletePropertyDispatch(), duplicate: useDuplicatePropertyDispatch() }), { wrapper });
+
+    await act(async () => { await switchType(fieldId, FieldType.Verification, { expectedFieldType: FieldType.MultiSelect, verificationPropertyId: 'a' }); });
+    expect(() => result.current.remove(fieldId)).toThrow('changed');
+    expect(() => result.current.duplicate(fieldId)).toThrow('cannot be duplicated');
+    expect(getField(databaseDoc).get(YjsDatabaseKey.id)).toBe(fieldId);
+  });
+});
+
+
+it('cleans up the original reciprocal when switching Relation through Verification to Text', async () => {
+  const { databaseDoc, switchType } = setup();
+  const field = getField(databaseDoc);
+  const relation = new Y.Map();
+  const cleanup = jest.spyOn(relationDispatch, 'deleteReciprocalRelationField').mockResolvedValue(undefined);
+
+  relation.set(YjsDatabaseKey.database_id, 'related-database');
+  relation.set(YjsDatabaseKey.is_two_way, true);
+  relation.set(YjsDatabaseKey.reciprocal_field_id, 'reciprocal-field');
+  act(() => {
+    field.get(YjsDatabaseKey.type_option).set(String(FieldType.Relation), relation);
+    field.set(YjsDatabaseKey.type, FieldType.Relation);
+  });
+  try {
+    await act(async () => {
+      await switchType(fieldId, FieldType.Verification, { expectedFieldType: FieldType.Relation, verificationPropertyId: 'a' });
+    });
+    expect(cleanup).not.toHaveBeenCalled();
+    await act(async () => {
+      await switchType(fieldId, FieldType.RichText, { expectedFieldType: FieldType.Verification, expectedVerificationPropertyId: 'a' });
+    });
+    expect(cleanup).toHaveBeenCalledWith(expect.objectContaining({
+      relationOption: expect.objectContaining({ database_id: 'related-database', reciprocal_field_id: 'reciprocal-field', is_two_way: true }),
+    }));
+  } finally {
+    cleanup.mockRestore();
+  }
 });

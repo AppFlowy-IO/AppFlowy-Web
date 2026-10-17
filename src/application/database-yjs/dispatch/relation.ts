@@ -1,3 +1,4 @@
+import { isVerificationField } from '@/application/page-verification/native';
 import dayjs from 'dayjs';
 import { nanoid } from 'nanoid';
 import { useCallback } from 'react';
@@ -313,6 +314,7 @@ export function addFieldToAllViews(database: YDatabase, fieldId: FieldId) {
 }
 
 function deleteFieldFromDatabase(database: YDatabase, fieldId: FieldId) {
+  if (isVerificationField(database.get(YjsDatabaseKey.fields)?.get(fieldId))) return;
   database.get(YjsDatabaseKey.fields)?.delete(fieldId);
 
   const views = database.get(YjsDatabaseKey.views);
@@ -475,7 +477,7 @@ async function clearRelationCells(args: {
         createRow: args.createRow,
       });
 
-      if (!rowDoc) return;
+      if (!rowDoc || isVerificationField(args.database.get(YjsDatabaseKey.fields)?.get(args.fieldId))) return;
 
       runDatabaseRowAction(
         rowDoc,
@@ -529,7 +531,9 @@ async function backfillReciprocalLinks(args: {
             rowMap: args.reciprocalDatabaseDoc === args.sourceDatabaseDoc ? args.rowMap : undefined,
           });
 
-          if (!relatedRowDoc) return;
+          if (!relatedRowDoc ||
+            isVerificationField(args.sourceDatabase.get(YjsDatabaseKey.fields)?.get(args.sourceFieldId)) ||
+            isVerificationField(getDatabaseFromDoc(args.reciprocalDatabaseDoc)?.get(YjsDatabaseKey.fields)?.get(args.reciprocalFieldId))) return;
 
           applyRelationCellChanges(
             relatedRowDoc,
@@ -567,7 +571,7 @@ export async function applyRelationReciprocalInserts(args: {
 
   const field = args.database.get(YjsDatabaseKey.fields)?.get(args.sourceFieldId);
 
-  if (!field) return;
+  if (!field || isVerificationField(args.database.get(YjsDatabaseKey.fields)?.get(args.sourceFieldId))) return;
 
   const typeOption = parseRelationTypeOption(field);
 
@@ -604,7 +608,7 @@ export async function applyRelationReciprocalInserts(args: {
         rowMap: relatedDoc === args.databaseDoc ? args.rowMap : undefined,
       });
 
-      if (!targetRowDoc) return;
+      if (!targetRowDoc || isVerificationField(args.database.get(YjsDatabaseKey.fields)?.get(args.sourceFieldId)) || isVerificationField(relatedDatabase?.get(YjsDatabaseKey.fields)?.get(reciprocalFieldId))) return;
 
       const reciprocalChanges = applyRelationCellChanges(
         targetRowDoc,
@@ -627,7 +631,7 @@ export async function applyRelationReciprocalInserts(args: {
             createRow: args.createRow,
           });
 
-          if (!removedSourceRowDoc) return;
+          if (!removedSourceRowDoc || isVerificationField(args.database.get(YjsDatabaseKey.fields)?.get(args.sourceFieldId))) return;
 
           applyRelationCellChanges(
             removedSourceRowDoc,
@@ -658,7 +662,7 @@ export function useUpdateRelationCellDispatch() {
     async (rowId: RowId, fieldId: FieldId, changes: RelationCellChanges) => {
       const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
 
-      if (!field) return;
+      if (!field || isVerificationField(database.get(YjsDatabaseKey.fields)?.get(fieldId))) return;
 
       const typeOption = parseRelationTypeOption(field);
       const sourceRowDoc = await loadRowDoc({
@@ -668,7 +672,7 @@ export function useUpdateRelationCellDispatch() {
         createRow,
       });
 
-      if (!sourceRowDoc) return;
+      if (!sourceRowDoc || isVerificationField(database.get(YjsDatabaseKey.fields)?.get(fieldId))) return;
 
       // The template editor edits a hidden source row that never joins
       // row_orders; reciprocal links would point real rows at that phantom
@@ -784,7 +788,8 @@ export function useUpdateRelationCellDispatch() {
           continue;
         }
 
-        if (unavailable) return;
+        if (unavailable || isVerificationField(database.get(YjsDatabaseKey.fields)?.get(fieldId)) ||
+          isVerificationField(relatedDatabase?.get(YjsDatabaseKey.fields)?.get(typeOption.reciprocal_field_id))) return;
 
         for (const [doc, fields] of plan) {
           for (const [id, ids] of fields) {
@@ -837,7 +842,7 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
     async (updates: RelationTypeOptionUpdates) => {
       const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
 
-      if (!field) return;
+      if (!field || isVerificationField(database.get(YjsDatabaseKey.fields)?.get(fieldId))) return;
 
       const oldOption = parseRelationTypeOption(field);
       let nextOption = normalizeRelationTypeOption({
@@ -860,6 +865,8 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
           getViewIdFromDatabaseId,
           bindViewSync,
         });
+
+        if (isVerificationField(database.get(YjsDatabaseKey.fields)?.get(fieldId))) return;
         const oldRelatedDatabase = oldRelatedDoc ? getDatabaseFromDoc(oldRelatedDoc) : null;
 
         if (oldRelatedDatabase) {
@@ -886,6 +893,7 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
         };
       }
 
+      if (isVerificationField(database.get(YjsDatabaseKey.fields)?.get(fieldId))) return;
       const shouldCreateReciprocal = nextOption.is_two_way && nextOption.database_id && !nextOption.reciprocal_field_id;
 
       // The back-pointer sync after `executeOperations` needs the same related doc the create
@@ -903,6 +911,7 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
           bindViewSync,
         });
 
+        if (isVerificationField(database.get(YjsDatabaseKey.fields)?.get(fieldId))) return;
         createdRelatedDoc = relatedDoc;
         const relatedDatabase = relatedDoc ? getDatabaseFromDoc(relatedDoc) : null;
 
@@ -970,7 +979,7 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
           () => {
             const currentField = database.get(YjsDatabaseKey.fields)?.get(fieldId);
 
-            if (!currentField) return;
+            if (!currentField || isVerificationField(currentField)) return;
             setRelationTypeOption(currentField, nextOption);
             if (databaseIdChanged) migrateRollupsForRelation(database, fieldId);
           },

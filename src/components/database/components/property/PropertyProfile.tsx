@@ -24,8 +24,6 @@ function PropertyProfile({
 } & React.HTMLAttributes<HTMLDivElement>) {
   const { field } = useFieldSelector(fieldId);
   const name = field?.get(YjsDatabaseKey.name);
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const ref = useRef<HTMLDivElement>(null);
   const updateDispatch = useUpdatePropertyNameDispatch(fieldId);
   const updateIcon = useUpdatePropertyIconDispatch(fieldId);
 
@@ -34,32 +32,64 @@ function PropertyProfile({
   }
 
   return (
+    <PropertyProfileContent
+      {...props}
+      name={name ?? ''}
+      onNameChange={updateDispatch}
+      onNext={onNext}
+      onEnter={onEnter}
+      icon={
+        <CustomIconPopover
+          tabs={['icon']}
+          defaultActiveTab={'icon'}
+          enableColor={false}
+          removeIcon={() => {
+            updateIcon('');
+          }}
+          onSelectIcon={(icon) => {
+            Log.debug(icon);
+            updateIcon(icon.value);
+          }}
+        >
+          <Button variant={'outline'} className={'h-8 w-8 p-0'}>
+            <FieldCustomIcon fieldId={fieldId} className={'h-5 w-5 text-text-secondary'} />
+          </Button>
+        </CustomIconPopover>
+      }
+    />
+  );
+}
+
+/** Shared name/icon header; immutable system properties omit the mutation callbacks. */
+export function PropertyProfileContent({
+  name,
+  icon,
+  onNameChange,
+  onNext,
+  onEnter,
+  ...props
+}: {
+  name: string;
+  icon: React.ReactNode;
+  onNameChange?: (name: string) => void;
+  onNext?: () => void;
+  onEnter?: () => void;
+} & React.HTMLAttributes<HTMLDivElement>) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  return (
     <div
-      ref={ref}
       {...props}
       className={cn(
         'flex w-full items-center justify-center gap-[10px] !p-0 hover:!bg-transparent focus:!bg-transparent',
         props.className
       )}
     >
-      <CustomIconPopover
-        tabs={['icon']}
-        defaultActiveTab={'icon'}
-        enableColor={false}
-        removeIcon={() => {
-          updateIcon('');
-        }}
-        onSelectIcon={(icon) => {
-          Log.debug(icon);
-          updateIcon(icon.value);
-        }}
-      >
-        <Button variant={'outline'} className={'h-8 w-8 p-0'}>
-          <FieldCustomIcon fieldId={fieldId} className={'h-5 w-5 text-text-secondary'} />
-        </Button>
-      </CustomIconPopover>
+      {icon}
       <Input
         data-testid={'property-name-input'}
+        aria-label='Property name'
+        readOnly={!onNameChange}
         ref={(input: HTMLInputElement) => {
           if (!input) return;
           if (!inputRef.current) {
@@ -75,7 +105,7 @@ function PropertyProfile({
         onInput={(e) => {
           const target = e.target as HTMLInputElement;
 
-          updateDispatch(target.value);
+          onNameChange?.(target.value);
         }}
         onKeyDown={(e) => {
           e.stopPropagation();
@@ -91,7 +121,7 @@ function PropertyProfile({
             e.stopPropagation();
             const target = e.target as HTMLInputElement;
 
-            updateDispatch(target.value);
+            onNameChange?.(target.value);
             onEnter?.();
             return;
           }

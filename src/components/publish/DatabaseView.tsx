@@ -222,7 +222,7 @@ function DatabaseView({ viewMeta, navigateToView, ...props }: DatabaseProps) {
       }}
       className={cn('relative flex w-full flex-col', !isPublishVariant && 'h-full')}
     >
-      {rowId ? null : <ViewMetaPreview {...pageMeta} readOnly={true} />}
+      {rowId ? null : <ViewMetaPreview showVerification={false} {...pageMeta} readOnly={true} />}
 
       <Suspense fallback={skeleton}>
         <Database

@@ -114,7 +114,7 @@ function GridGroupHeader({ data }: { data: RenderRow }) {
           </DropdownMenu>
           <button
             aria-label={t('grid.row.newRow', 'New row in group')}
-            className='flex h-7 w-7 items-center justify-center rounded-300 opacity-0 hover:bg-fill-content-hover focus-visible:opacity-100 group-focus-within/grid-group-header:opacity-100 group-hover/grid-group-header:opacity-100'
+            className={cn('flex h-7 w-7 items-center justify-center rounded-300 opacity-0 hover:bg-fill-content-hover focus-visible:opacity-100 group-focus-within/grid-group-header:opacity-100 group-hover/grid-group-header:opacity-100', data.groupFieldType === FieldType.Verification && data.groupId !== 'unverified' && 'hidden')}
             data-testid='grid-group-new-row'
             onClick={() => void createRow()}
             type='button'

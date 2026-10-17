@@ -1,6 +1,6 @@
 import { memo, useCallback, useMemo } from 'react';
 
-import { Row, useReadOnly } from '@/application/database-yjs';
+import { FieldType, Row, useFieldType, useReadOnly } from '@/application/database-yjs';
 import CardList, { CardType, RenderCard } from '@/components/database/components/board/column/CardList';
 import ColumnHeaderPrimitive from '@/components/database/components/board/column/ColumnHeaderPrimitive';
 import { useCardsDrag } from '@/components/database/components/board/column/useCardsDrag';
@@ -46,6 +46,7 @@ function areColumnPropsEqual(prev: ColumnProps, next: ColumnProps) {
 export const Column = memo(
   ({ id, rows, fieldId, addCardBefore, groupId }: ColumnProps) => {
     const readOnly = useReadOnly();
+    const fieldType = useFieldType(fieldId);
 
     const data: RenderCard[] = useMemo(() => {
       const cards = rows.map((row) => ({
@@ -53,7 +54,7 @@ export const Column = memo(
         id: row.id,
       }));
 
-      if (!readOnly) {
+      if (!readOnly && (fieldType !== FieldType.Verification || id === 'unverified')) {
         cards.push({
           type: CardType.NEW_CARD,
           id: 'new_card',
@@ -61,7 +62,7 @@ export const Column = memo(
       }
 
       return cards;
-    }, [rows, readOnly]);
+    }, [rows, readOnly, fieldType, id]);
 
     const { columnRef, headerRef, state, isDragging } = useColumnHeaderDrag(id);
     const { contextValue, columnInnerRef } = useCardsDrag(id, rows);

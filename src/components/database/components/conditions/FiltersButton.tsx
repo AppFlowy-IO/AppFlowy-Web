@@ -21,6 +21,7 @@ function FiltersButton({
   expanded?: boolean;
 }) {
   const filters = useFiltersSelector();
+  const filterCount = filters.length;
   const readOnly = useReadOnly();
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -28,12 +29,12 @@ function FiltersButton({
   const conditionsContext = useConditionsContext();
   const setOpenFilterId = conditionsContext?.setOpenFilterId;
   const setExpanded = conditionsContext?.setExpanded;
-  const prevFiltersLengthRef = useRef(filters.length);
+  const prevFiltersLengthRef = useRef(filterCount);
 
   // Auto-expand conditions panel when first filter is added
   useEffect(() => {
     const prevLength = prevFiltersLengthRef.current;
-    const currentLength = filters.length;
+    const currentLength = filterCount;
 
     // If filters went from 0 to 1+, expand the panel
     if (prevLength === 0 && currentLength > 0) {
@@ -41,7 +42,7 @@ function FiltersButton({
     }
 
     prevFiltersLengthRef.current = currentLength;
-  }, [filters.length, setExpanded]);
+  }, [filterCount, setExpanded]);
 
   return (
     <PropertiesMenu
@@ -74,14 +75,14 @@ function FiltersButton({
                   return;
                 }
 
-                if (readOnly || filters.length > 0) {
+                if (readOnly || filterCount > 0) {
                   toggleExpanded?.();
                 } else {
                   setOpen(true);
                 }
               }}
               style={{
-                color: filters.length > 0 ? 'var(--icon-info-thick)' : undefined,
+                color: filterCount > 0 ? 'var(--icon-info-thick)' : undefined,
               }}
               type='button'
             >

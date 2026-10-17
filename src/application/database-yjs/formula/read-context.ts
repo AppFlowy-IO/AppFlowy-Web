@@ -14,6 +14,7 @@ import {
 } from '@/application/database-yjs/fields/formula';
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
 import { useFormulaClock } from '@/application/database-yjs/formula/clock';
+import { useDatabaseFieldsVersion } from '@/application/database-yjs/hooks/useDatabaseFieldsVersion';
 import { useRollupFieldObservers } from '@/application/database-yjs/hooks/useRollupFieldObservers';
 import { isDatabaseHistoryDocumentImmutable } from '@/application/database-yjs/immutable';
 import {
@@ -206,6 +207,7 @@ export function useFormulaReadContext({
   const referencesKey = formulaExternalReferencesKey(nextReferences);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const references = useMemo(() => nextReferences, [referencesKey]);
+  const externalRevision = useDatabaseFieldsVersion(!history && !!references.external);
   const clock = useFormulaClock(!history && references.clock);
   const loadersRef = useRef<RelatedRowLoaders>({ loadView, createRow, getViewIdFromDatabaseId, workspaceId });
 
@@ -339,5 +341,5 @@ export function useFormulaReadContext({
     [history, rowId, row, database, databaseDoc, rowMap, members, hasRelations, hasRollups, rollupValues]
   );
 
-  return { context, revision: `${clock}:${titles}` };
+  return { context, revision: `${clock}:${titles}:${externalRevision}` };
 }

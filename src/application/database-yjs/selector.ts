@@ -1,4 +1,3 @@
-import { useDatabaseDependencyRestoreRevision } from '@/application/database-yjs/restore-dependencies';
 import dayjs from 'dayjs';
 import { debounce } from 'lodash-es';
 import {
@@ -29,6 +28,7 @@ import {
   useRowMap,
 } from '@/application/database-yjs/context';
 import { decodeCellToText } from '@/application/database-yjs/decode';
+import { readExternalFieldValue } from '@/application/database-yjs/external-fields';
 import {
   collectFormulaExternalReferences,
   compileFormula,
@@ -58,6 +58,7 @@ import {
   hasEffectiveFilters,
   parseFilter,
 } from '@/application/database-yjs/filter';
+import { useFormulaClock } from '@/application/database-yjs/formula/clock';
 import {
   formulaConditionContext,
   formulaRowContext,
@@ -65,7 +66,6 @@ import {
   memberNames,
   useFormulaReadContext,
 } from '@/application/database-yjs/formula/read-context';
-import { useFormulaClock } from '@/application/database-yjs/formula/clock';
 import { FormulaRowSources, useFormulaRelationTitles } from '@/application/database-yjs/formula/useFormulaRelationTitles';
 import { DEFAULT_GALLERY_LAYOUT_SETTINGS } from '@/application/database-yjs/gallery-layout';
 import {
@@ -102,10 +102,9 @@ import {
   subscribeRelationCache,
   subscribeRelationGroupLabels,
 } from '@/application/database-yjs/relation/cache';
-import { observeRollupCell } from '@/application/database-yjs/rollup/observe';
-import { retainRollupSource } from '@/application/database-yjs/rollup/source-sync';
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import { readHistoricalRelationText } from '@/application/database-yjs/relation/history';
+import { useDatabaseDependencyRestoreRevision } from '@/application/database-yjs/restore-dependencies';
 import {
   invalidateRollupCell,
   readRollupCell,
@@ -114,11 +113,15 @@ import {
   subscribeRollupCell,
   subscribeRollupCache,
 } from '@/application/database-yjs/rollup/cache';
+import { observeRollupCell } from '@/application/database-yjs/rollup/observe';
+import { retainRollupSource } from '@/application/database-yjs/rollup/source-sync';
 import { getInlineViewRowOrders, materializeVisibleRowOrders } from '@/application/database-yjs/row-order-visibility';
 import { getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
 import { subscribeSharedYjsDeep } from '@/application/database-yjs/shared-yjs-observer';
 import { sortBy } from '@/application/database-yjs/sort';
 import { createTimelineLayoutStore } from '@/application/database-yjs/timeline-layout';
+import { useDatabaseVerification } from '@/application/page-verification/database';
+import { useVerificationGrouping, verificationGroupOrder } from '@/application/page-verification/grouping';
 import {
   DatabaseViewLayout,
   FieldId,
@@ -437,9 +440,6 @@ export function useFieldsSelector(visibilitys: FieldVisibility[] = defaultVisibl
             wrap: setting?.get(YjsDatabaseKey.wrap) ?? DEFAULT_FIELD_WRAP,
             fieldType: Number(field?.get(YjsDatabaseKey.type)) as FieldType,
           };
-        })
-        .filter((column) => {
-          return visibilitys.includes(column.visibility);
         });
     };
 
@@ -477,7 +477,7 @@ export function useFieldsSelector(visibilitys: FieldVisibility[] = defaultVisibl
     };
   }, [database, view, visibilitys]);
 
-  return columns;
+  return useMemo(() => columns.filter((column) => visibilitys.includes(column.visibility)), [columns, visibilitys]);
 }
 
 /**
@@ -1072,6 +1072,7 @@ export function useSortSelector(sortId: SortId) {
 }
 
 export function useGroupsSelector() {
+  const verification = useDatabaseVerification();
   const database = useDatabase();
   const viewId = useDatabaseViewId();
   const [groups, setGroups] = useState<string[]>([]);
@@ -1150,7 +1151,8 @@ export function useGroupsSelector() {
     };
   }, [database, viewId]);
 
-  return groups;
+  return verification.fieldId && verification.settings.grouping
+    ? [verification.fieldId] : groups;
 }
 
 export type GroupColumn = DatabaseGroupColumn;
@@ -1166,6 +1168,7 @@ function getFallbackGroupColumns(field?: YDatabaseField, content?: string): Grou
 }
 
 export function useGroup(groupId: string) {
+  const verification = useDatabaseVerification();
   const database = useDatabase();
   const viewId = useDatabaseViewId();
   const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
@@ -1204,6 +1207,13 @@ export function useGroup(groupId: string) {
     };
   }, [viewId, groupId, group, fields]);
 
+  if (verification.fieldId && verification.settings.grouping && groupId === verification.fieldId) {
+    return { fieldId: verification.fieldId,
+      columns: verificationGroupOrder(verification.settings.grouping).map((id) => ({
+        id, visible: !verification.settings.grouping?.hidden?.includes(id), visibleExplicit: true,
+      })) };
+  }
+
   return {
     columns,
     fieldId,
@@ -1211,6 +1221,7 @@ export function useGroup(groupId: string) {
 }
 
 export function useBoardLayoutSettings() {
+  const verification = useDatabaseVerification();
   const view = useDatabaseView();
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [hideUnGroup, setHideUnGroup] = useState(false);
@@ -1304,6 +1315,11 @@ export function useBoardLayoutSettings() {
     hideUngroupedColumn: hideUnGroup,
   });
 
+  if (verification.fieldId && verification.settings.grouping) {
+    return { isCollapsed, hideUnGroup: false, hideEmptyGroups: Boolean(verification.settings.grouping.hide_empty),
+      shownEmptyGroupIds, fieldId: verification.fieldId, ungroupedColumnHidden: false };
+  }
+
   return {
     isCollapsed,
     hideUnGroup,
@@ -1343,6 +1359,7 @@ export function useRowsByGroup(groupId: string) {
   const { columns, fieldId } = useGroup(groupId);
   const rows = useRowMap();
   const rowOrders = useRowOrdersSelector();
+  const verificationGrouping = useVerificationGrouping(rowOrders);
   const viewId = useDatabaseViewId();
   const { databaseDoc, dataSource } = useDatabaseContext();
   const isHistory = dataSource?.type === 'history';
@@ -1468,6 +1485,13 @@ export function useRowsByGroup(groupId: string) {
       }).visibleColumns,
     [columns, fieldId, groupResult, groupVisibilityReady, hideEmptyGroups, hideUnGroup, shownEmptyGroupIds]
   );
+
+  if (verificationGrouping) {
+    return { fieldId: verificationGrouping.fieldId!,
+      groupResult: new Map(verificationGrouping.groups.map((group) => [group.id, group.rows])),
+      columns: verificationGrouping.visibleGroups.map((group) => ({id: group.id, visible: true, visibleExplicit: true})),
+      groupRowsReady: verificationGrouping.ready, hideEmptyGroups: verificationGrouping.hideEmptyGroups, notFound: false };
+  }
 
   return {
     fieldId,
@@ -1814,6 +1838,7 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
   const database = useDatabase();
   const fields = useDatabaseFields();
   const rowOrders = useRowOrdersSelector();
+  const verificationGrouping = useVerificationGrouping(rowOrders);
   const rows = useRowMap();
   const persistedGroups = view?.get(YjsDatabaseKey.groups);
   const persistedGroup = persistedGroups?.toArray()?.[0];
@@ -2245,7 +2270,7 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
     isHistory,
   ]);
 
-  return grouping;
+  return verificationGrouping ?? grouping;
 }
 
 export function useGridGroupingSelector(): GridGrouping {
@@ -2333,7 +2358,10 @@ export function useRowOrdersSelector() {
   const conditionFormulas = conditionFormulaFields(fields, sorts, filters);
   const conditionFormulaKey = conditionFormulas.map((field) => String(field.get(YjsDatabaseKey.id))).join(',');
   // Their references change with the formulas' expressions (and the fields they reach).
-  const conditionFieldsVersion = useDatabaseFieldsVersion(conditionFormulaKey !== '');
+  const hasVerificationCondition = [...getConditionFieldIds(sorts, filters, fields)].some(
+    (fieldId) => Number(fields?.get(fieldId)?.get(YjsDatabaseKey.type)) === FieldType.Verification
+  );
+  const conditionFieldsVersion = useDatabaseFieldsVersion(conditionFormulaKey !== '' || hasVerificationCondition);
   const formulaConditionReferences = useMemo(
     () => {
       void conditionFieldsVersion;
@@ -2502,7 +2530,7 @@ export function useRowOrdersSelector() {
     if (!originalRowOrders) return false;
 
     const conditionSignature = getConditionSignature(sorts, filters, fields);
-    const conditionStateKey = `${viewId ?? ''}:${conditionSignature}`;
+    const conditionStateKey = `${viewId ?? ''}:${conditionSignature}:${conditionFieldsVersion}`;
     const currentHasConditions = conditionSignature !== '';
 
     if (conditionSignatureRef.current !== conditionStateKey) {
@@ -2515,9 +2543,15 @@ export function useRowOrdersSelector() {
     if (currentHasConditions) return false;
 
     filtersAppliedRef.current = false;
-    setRowOrdersState({ rows: originalRowOrders, conditionSignature: conditionStateKey });
+    setRowOrdersState((previous) => {
+        const unchanged = previous.conditionSignature === conditionStateKey &&
+          previous.rows?.length === originalRowOrders.length &&
+          previous.rows.every((row, index) => row.id === originalRowOrders[index].id && row.height === originalRowOrders[index].height);
+
+        return unchanged ? previous : { rows: originalRowOrders, conditionSignature: conditionStateKey };
+      });
     return true;
-  }, [fields, filters, readVisibleRowOrders, sorts, viewId]);
+  }, [fields, filters, readVisibleRowOrders, sorts, viewId, conditionFieldsVersion]);
 
   // Getter for relation cell text (used in sorting/filtering)
   const relationTextGetter = useCallback(
@@ -2640,7 +2674,7 @@ export function useRowOrdersSelector() {
     // a stale-closure problem when the callback is invoked by a Yjs observer
     // before React has re-rendered (e.g. remote filter/sort sync from desktop).
     const conditionSignature = getConditionSignature(sorts, filters, fields);
-    const conditionStateKey = `${viewId ?? ''}:${conditionSignature}`;
+    const conditionStateKey = `${viewId ?? ''}:${conditionSignature}:${conditionFieldsVersion}`;
     const currentHasConditions = conditionSignature !== '';
 
     if (conditionSignatureRef.current !== conditionStateKey) {
@@ -2652,13 +2686,23 @@ export function useRowOrdersSelector() {
 
     if (!currentHasConditions) {
       filtersAppliedRef.current = false;
-      setRowOrdersState({ rows: originalRowOrders, conditionSignature: conditionStateKey });
+      setRowOrdersState((previous) => {
+        const unchanged = previous.conditionSignature === conditionStateKey &&
+          previous.rows?.length === originalRowOrders.length &&
+          previous.rows.every((row, index) => row.id === originalRowOrders[index].id && row.height === originalRowOrders[index].height);
+
+        return unchanged ? previous : { rows: originalRowOrders, conditionSignature: conditionStateKey };
+      });
       logConditionCompute(originalRowOrders.length, originalRowOrders.length);
 
       return;
     }
 
-    const rowsWithDocs = originalRowOrders.filter((row) => hasRowConditionData(rowDocsForConditions[row.id]));
+    // Cloud predicates can decide membership before row CRDTs load, including
+    // the Verification branch of an OR. Unknown ordinary leaves remain false.
+    const rowsWithDocs = hasVerificationCondition
+      ? originalRowOrders
+      : originalRowOrders.filter((row) => hasRowConditionData(rowDocsForConditions[row.id]));
     const unresolvedRows = originalRowOrders.filter(
       (row) => !hasRowConditionData(rowDocsForConditions[row.id]) && !unavailableConditionRowsRef.current.has(row.id)
     );
@@ -2668,7 +2712,9 @@ export function useRowOrdersSelector() {
     // blank grid, which looks like the database finished with no rows.
     if (unresolvedRows.length > 0) {
       requestMissingConditionRows(unresolvedRows);
+    }
 
+    if (unresolvedRows.length > 0 && !hasVerificationCondition) {
       if (!filtersAppliedRef.current) {
         setRowOrdersState({ rows: undefined, conditionSignature: conditionStateKey });
       } else {
@@ -2723,6 +2769,8 @@ export function useRowOrdersSelector() {
     logConditionCompute(rowsWithDocs.length, nextRowOrders.length);
   }, [
     fields,
+    conditionFieldsVersion,
+    hasVerificationCondition,
     attributionNameGetter,
     formulaContextGetter,
     filters,
@@ -2739,7 +2787,7 @@ export function useRowOrdersSelector() {
   // Trigger computation when dependencies change
   useEffect(() => {
     onConditionsChange();
-  }, [conditionLoadRevision, onConditionsChange, formulaClock]);
+  }, [conditionLoadRevision, onConditionsChange, formulaClock, conditionFieldsVersion]);
 
   // Subscribe to relation/rollup cache changes
   useEffect(() => {
@@ -2899,7 +2947,7 @@ export function useRowOrdersSelector() {
   useRollupFieldObservers(onConditionsChange, rollupWatchVersion, { rows: rowDocsForConditions });
   useRelativeDateFilterRefresh(filters, fields, onConditionsChange);
 
-  const liveConditionSignature = `${viewId ?? ''}:${getConditionSignature(sorts, filters, fields)}`;
+  const liveConditionSignature = `${viewId ?? ''}:${getConditionSignature(sorts, filters, fields)}:${conditionFieldsVersion}`;
 
   return rowOrdersState.conditionSignature === liveConditionSignature ? rowOrdersState.rows : undefined;
 }
@@ -3993,11 +4041,20 @@ export const useFieldCellsByRowsSelector = (fieldId: string, rows?: Row[]) => {
   const { dataSource } = useDatabaseContext();
   const isHistory = dataSource?.type === 'history';
   const { field, clock: fieldClock } = useFieldSelector(fieldId);
+  const external = Number(field?.get(YjsDatabaseKey.type)) === FieldType.Verification;
+  const externalVersion = useDatabaseFieldsVersion(external);
   // A formula column has no stored cell; the footer calculates over its results.
   const rowIds = useMemo(() => rows?.map(({ id }) => id) ?? [], [rows]);
   const evaluateFormula = useFormulaColumnEvaluator(fieldId, { rows: rowMap, rowIds });
 
   useEffect(() => {
+    if (external) {
+      const values = rows?.map((row) => [row.id, readExternalFieldValue(field, row.id)] as const);
+
+      setCells(values?.every(([, value]) => value !== undefined) ? new Map(values) : null);
+      return;
+    }
+
     if (!rows || !rowMap) {
       setCells(null);
       return;
@@ -4054,7 +4111,7 @@ export const useFieldCellsByRowsSelector = (fieldId: string, rows?: Row[]) => {
         unobserverEvent();
       });
     };
-  }, [rows, rowMap, fieldId, field, fieldClock, evaluateFormula, isHistory]);
+  }, [rows, rowMap, fieldId, field, fieldClock, evaluateFormula, isHistory, external, externalVersion]);
 
   return {
     cells,

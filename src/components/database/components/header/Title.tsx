@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 import { useTranslation } from 'react-i18next';
 
@@ -6,12 +6,15 @@ import { RowMetaKey, useDatabaseContext, useReadOnly } from '@/application/datab
 import { useUpdateCellDispatch, useUpdateRowMetaDispatch } from '@/application/database-yjs/dispatch';
 import type { RichTextDelta } from '@/application/database-yjs/fields/text/rich-text';
 import { notifyRichTextNewer } from '@/application/database-yjs/fields/text/rich-text-notice';
+import { usePublishContext } from '@/application/publish';
 import { RowCoverType, ViewIconType } from '@/application/types';
 import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
 import { RichTextCellEditor } from '@/components/database/components/cell/text/rich-text/load';
 import RichTextCellContent from '@/components/database/components/cell/text/rich-text/RichTextCellContent';
+import { PageVerificationControl } from '@/components/page-verification/PageVerificationControl';
 import { TextareaAutosize } from '@/components/ui/textarea-autosize';
 import AddIconCover from '@/components/view-meta/AddIconCover';
+import { useHeaderHover } from '@/components/view-meta/useHeaderHover';
 import { cn } from '@/lib/utils';
 import { isFlagEmoji } from '@/utils/emoji';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
@@ -45,9 +48,11 @@ export function Title({
   const updateCell = useUpdateCellDispatch(rowId, fieldId);
 
   const { uploadFile, workspaceId } = useDatabaseContext();
+  const published = usePublishContext();
+  const showVerification = !templateStyle && !published && !!workspaceId;
 
   const updateRowMeta = useUpdateRowMetaDispatch(rowId);
-  const [isHover, setIsHover] = useState(false);
+  const { ref: headerRef, isHover } = useHeaderHover();
 
   const handleUpdateIcon = useCallback(
     ({ value }: { value: string; ty: ViewIconType }) => {
@@ -129,24 +134,17 @@ export function Title({
         ? 'h-11'
         : 'h-[200px]'
       : 'h-10'
-    : hasCover && icon
+    : hasCover && icon && !showVerification
     ? 'h-4'
     : 'h-[36px]';
 
   return (
     <div
-      onMouseEnter={() => {
-        if (readOnly) return;
-        setIsHover(true);
-      }}
-      onMouseLeave={() => {
-        if (readOnly) return;
-        setIsHover(false);
-      }}
+      ref={headerRef}
       className={'flex w-full flex-col'}
     >
       <div className={cn('relative flex w-full justify-center', toolbarHeight)}>
-        {!readOnly ? (
+        {!readOnly || showVerification ? (
           <AddIconCover
             iconTabs={['emoji']}
             defaultIconTab={'emoji'}
@@ -165,7 +163,18 @@ export function Title({
             }}
             onUploadFile={onUploadFile}
             contentClassName={templateStyle ? 'px-[60px] max-sm:px-6' : undefined}
-          />
+            readOnly={readOnly}
+          >
+            {showVerification && (
+              <PageVerificationControl
+                targetId={rowId}
+                workspaceId={workspaceId}
+                showAction={isHover}
+                readOnly={readOnly}
+                displayMode='action'
+              />
+            )}
+          </AddIconCover>
         ) : null}
         {templateStyle && icon ? (
           <div className={cn('absolute left-[60px] z-10 max-sm:left-6', hasCover ? 'bottom-0' : 'bottom-10')}>

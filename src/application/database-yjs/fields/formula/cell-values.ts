@@ -1,6 +1,7 @@
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { DateTimeCell, FileMediaCellData } from '@/application/database-yjs/cell.type';
 import { FieldType, RollupDisplayMode } from '@/application/database-yjs/database.type';
+import { isExternalDatabaseField, readExternalFieldValue } from '@/application/database-yjs/external-fields';
 import { getChecked } from '@/application/database-yjs/fields/checkbox/utils';
 import { parseChecklistFlexible } from '@/application/database-yjs/fields/checklist/parse';
 import { parsePersonTypeOptions } from '@/application/database-yjs/fields/person/parse';
@@ -13,6 +14,7 @@ import type { RollupCellValue } from '@/application/database-yjs/rollup/cache';
 import { isNumericRollupField } from '@/application/database-yjs/rollup/utils';
 import { YDatabaseCell, YDatabaseField, YDatabaseRow, YjsDatabaseKey } from '@/application/types';
 
+import { FormulaError } from './errors';
 import { FormulaFieldSchema } from './schema';
 import { bool, date, EMPTY, FormulaType, FormulaValue, list, listOf, num, text } from './values';
 
@@ -171,6 +173,13 @@ export function readFieldFormulaValue(
   row: YDatabaseRow,
   context: ReadFieldValueContext = {}
 ): FormulaValue {
+  if (isExternalDatabaseField(entry.field)) {
+    const value = readExternalFieldValue(entry.field, String(row.get(YjsDatabaseKey.id)));
+
+    if (value === undefined) throw new FormulaError(`${entry.name} is unavailable or still loading.`);
+    return text(value);
+  }
+
   const cell: YDatabaseCell | undefined = row.get(YjsDatabaseKey.cells)?.get(entry.id);
 
   switch (entry.type) {

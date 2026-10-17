@@ -618,7 +618,7 @@ export function DatabaseTemplateButton({ compact = false }: { compact?: boolean 
                     <DragItem
                       key={template.templateId}
                       id={template.templateId}
-                      className='group min-h-7 items-stretch rounded-[6px] px-[6px] focus-within:bg-fill-content-hover hover:bg-fill-content-hover'
+                      className='group min-h-7 items-stretch rounded-[6px] px-[6px]'
                       dragHandleLabel={`Reorder ${template.name}`}
                       onMoveUp={
                         index > 0 ? () => store.move(template.templateId, templates[index - 1].templateId) : undefined
@@ -637,7 +637,7 @@ export function DatabaseTemplateButton({ compact = false }: { compact?: boolean 
                         data-testid={`database-template-row-${template.templateId}`}
                       >
                         <DropdownMenuItem
-                          className='min-h-7 min-w-0 flex-1 gap-2 rounded-r-none bg-transparent px-0 py-[2px] text-sm hover:bg-transparent focus:bg-transparent [&_svg]:h-4 [&_svg]:w-4'
+                          className='min-h-7 min-w-0 flex-1 gap-2 px-0 py-[2px] text-sm [&_svg]:h-4 [&_svg]:w-4'
                           onSelect={() =>
                             void runBusyAction('Failed to create row from template', () =>
                               createNewRow({ templateId: template.templateId, tailing: true, openAfterCreate: true })
@@ -656,7 +656,7 @@ export function DatabaseTemplateButton({ compact = false }: { compact?: boolean 
                         <DropdownMenuSub>
                           <DropdownMenuSubTrigger
                             aria-label={`Actions for ${template.name}`}
-                            className='ml-1.5 min-h-7 w-6 flex-none gap-0 rounded-l-none bg-transparent p-0 hover:bg-transparent focus:bg-transparent [&>svg]:hidden [&_svg]:h-4 [&_svg]:w-4'
+                            className='ml-1.5 min-h-7 w-6 flex-none gap-0 p-0 hover:bg-fill-content-hover [&>svg]:hidden [&_svg]:h-4 [&_svg]:w-4'
                             data-testid={`database-template-actions-${template.templateId}`}
                           >
                             <span className='flex h-4 w-4 items-center justify-center text-icon-secondary'>
