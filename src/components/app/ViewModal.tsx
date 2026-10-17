@@ -163,7 +163,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     !(canReadEffectiveView && probedObjectPermission !== revokedAccess.permission);
   const accessDenied = probedObjectPermission?.can_read === false || accessRevoked;
   // AppBusinessLayer drops the permission while it re-checks it after every permission
-  // notification, focus or reconnect. A page already loaded under a confirmed read stays on screen,
+  // notification, tab return or reconnect. A page already loaded under a confirmed read stays on screen,
   // read-only, until the answer arrives; only a confirmed denial hides it.
   const canShowEffectiveView = !accessDenied && (canReadEffectiveView || (!!doc && doc.id === effectiveViewId));
 
