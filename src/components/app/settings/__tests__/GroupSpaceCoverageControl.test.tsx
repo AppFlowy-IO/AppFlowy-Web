@@ -292,6 +292,19 @@ function mountSummary(onOpenGroups = jest.fn()) {
 }
 
 describe('access to all spaces summary (Permissions panel)', () => {
+  // Background checks join a read made moments ago, so tests move the clock past that window.
+  let now = 1_000;
+  let clock: jest.SpyInstance<number, []>;
+
+  beforeEach(() => {
+    now = 1_000;
+    clock = jest.spyOn(Date, 'now').mockImplementation(() => now);
+  });
+
+  afterEach(() => {
+    clock.mockRestore();
+  });
+
   it('lists only groups with access and links to People > Groups', async () => {
     const onOpenGroups = jest.fn();
 
@@ -384,6 +397,7 @@ describe('access to all spaces summary (Permissions panel)', () => {
       emitter.emit(APP_EVENTS.WEBSOCKET_STATUS, WebSocket.CONNECTING);
     });
     expect(mockRead).toHaveBeenCalledTimes(1);
+    now += 60_000;
     act(() => {
       emitter.emit(APP_EVENTS.WEBSOCKET_STATUS, WebSocket.OPEN);
     });
@@ -433,5 +447,118 @@ describe('access to all spaces summary (Permissions panel)', () => {
     unmount();
     await act(async () => first.resolve({ groups: [group()] }));
     expect(mockRead).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads once when the tab comes back, though visibility and focus both fire', async () => {
+    mockRead.mockResolvedValueOnce({ groups: [group({ space_coverage_access_level: 10 })] });
+    mountSummary();
+    await screen.findByText('groupSpaceAccess.canView');
+    const read = deferred<unknown>();
+
+    mockRead.mockReturnValueOnce(read.promise).mockResolvedValue({ groups: [group()] });
+    now += 60_000;
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    expect(mockRead).toHaveBeenCalledTimes(2);
+    // Focus arrives while that read is in flight.
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await act(async () => read.resolve({ groups: [group({ space_coverage_access_level: 30 })] }));
+    // Its answer is shown instead of being dropped for a second read.
+    expect(screen.getByText('groupSpaceAccess.canEdit')).toBeTruthy();
+    expect(mockRead).toHaveBeenCalledTimes(2);
+  });
+
+  it('a permission change still replaces a read that focus started', async () => {
+    mockRead.mockResolvedValueOnce({ groups: [group({ space_coverage_access_level: 10 })] });
+    mountSummary();
+    await screen.findByText('groupSpaceAccess.canView');
+    const older = deferred<unknown>();
+
+    mockRead
+      .mockReturnValueOnce(older.promise)
+      .mockResolvedValue({ groups: [group({ space_coverage_access_level: 30 })] });
+    now += 60_000;
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await act(async () => {
+      emitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+    });
+    await act(async () => older.resolve({ groups: [group()] }));
+    await waitFor(() => expect(mockRead).toHaveBeenCalledTimes(3));
+    expect(await screen.findByText('groupSpaceAccess.canEdit')).toBeTruthy();
+    expect(screen.queryByText('groupSpaceAccess.summaryEmpty')).toBeNull();
+  });
+
+  it('a background check right after a read joins it, and a later one reads again', async () => {
+    mockRead.mockResolvedValue({ groups: [group({ space_coverage_access_level: 10 })] });
+    mountSummary();
+    await screen.findByText('groupSpaceAccess.canView');
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(mockRead).toHaveBeenCalledTimes(1);
+    now += 5_000;
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    expect(mockRead).toHaveBeenCalledTimes(2);
+  });
+
+  it('a clock set back does not make the last read look fresh', async () => {
+    mockRead.mockResolvedValue({ groups: [group({ space_coverage_access_level: 10 })] });
+    mountSummary();
+    await screen.findByText('groupSpaceAccess.canView');
+    now -= 60_000;
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    expect(mockRead).toHaveBeenCalledTimes(2);
+  });
+
+  it('a failed read does not hold off the next background check', async () => {
+    mockRead.mockRejectedValueOnce({ code: -1, message: 'Network Error' });
+    mockRead.mockResolvedValue({ groups: [group({ space_coverage_access_level: 10 })] });
+    mountSummary();
+    await screen.findByRole('alert');
+    await act(async () => {
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(await screen.findByText('groupSpaceAccess.canView')).toBeTruthy();
+    expect(mockRead).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows the list its panel passes in, without reading or following one itself', async () => {
+    const refresh = jest.fn(async () => undefined);
+    const { rerender } = render(
+      <GroupSpaceCoverageSummary
+        workspaceId='workspace'
+        groupList={{ groups: [group({ space_coverage_access_level: 30 })], loading: false, denied: false, refresh }}
+      />,
+      { wrapper: Wrapper }
+    );
+
+    expect(screen.getByText('groupSpaceAccess.canEdit')).toBeTruthy();
+    now += 60_000;
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+      emitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+    });
+    expect(mockRead).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+    // Retry asks the panel's list to read again.
+    rerender(
+      <GroupSpaceCoverageSummary
+        workspaceId='workspace'
+        groupList={{ loading: false, denied: false, error: new Error('Network Error'), refresh }}
+      />
+    );
+    fireEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: 'button.retry' }));
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(mockRead).not.toHaveBeenCalled();
   });
 });

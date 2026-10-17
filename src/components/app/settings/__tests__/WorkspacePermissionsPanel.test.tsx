@@ -854,6 +854,76 @@ describe('workspace permission settings', () => {
     expect(onOpenGroups).toHaveBeenCalledTimes(1);
   });
 
+  describe('one group list for the panel', () => {
+    function coveredGroup(memberCount: number) {
+      return {
+        group_id: groupId,
+        name: 'W_RH_edit',
+        member_count: memberCount,
+        space_coverage_supported: true,
+        can_manage_space_coverage: true,
+        space_coverage_access_level: 30,
+      };
+    }
+
+    async function mountWithSelectedGroup() {
+      current.policy = 'owners_and_selected_members';
+      rosterOf([row('group', groupId)]);
+      mockGroups.mockResolvedValue({ groups: [coveredGroup(3)] });
+      mount();
+      const summary = await screen.findByTestId('group-space-coverage-summary');
+      const selected = await screen.findByTestId(`space-creator-row-group-${groupId}`);
+
+      await waitFor(() => expect(within(selected).getByText('workspacePermissions.groupMembers:3')).toBeTruthy());
+      expect(within(summary).getByText('workspacePermissions.groupMembers:3')).toBeTruthy();
+      return { summary, selected };
+    }
+
+    it('reads the group list once for the access summary and the selections', async () => {
+      await mountWithSelectedGroup();
+      expect(mockGroups).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ['a permission change', APP_EVENTS.PERMISSION_CHANGED],
+      ['a workspace membership change', APP_EVENTS.MENTIONABLE_PERSON_LIST_CHANGED],
+    ])('shows the same refreshed group in the summary and the selections after %s', async (_change, event) => {
+      const { summary, selected } = await mountWithSelectedGroup();
+
+      mockGroups.mockResolvedValue({ groups: [coveredGroup(5)] });
+      await act(async () => {
+        emitter.emit(event, {});
+      });
+      await waitFor(() => expect(within(summary).getByText('workspacePermissions.groupMembers:5')).toBeTruthy());
+      expect(within(selected).getByText('workspacePermissions.groupMembers:5')).toBeTruthy();
+      expect(mockGroups).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps members on offer when the group list fails, and its retry reads only the groups again', async () => {
+      current.policy = 'owners_and_selected_members';
+      mockGroups.mockRejectedValueOnce({ code: -1, message: 'Network Error' });
+      mount();
+      const list = await selections();
+      const alert = (await within(list).findByText('workspacePermissions.directoryError')).closest(
+        '[role="alert"]'
+      ) as HTMLElement;
+
+      fireEvent.click(screen.getByRole('button', { name: 'workspacePermissions.addMembersOrGroups' }));
+      const results = await screen.findByTestId('space-creator-candidates');
+
+      expect(await within(results).findByText('Alice Martin')).toBeTruthy();
+      expect(within(results).queryByText('W_RH_edit')).toBeNull();
+      // The access summary reports the same failed read.
+      expect(screen.getByText('groupSpaceAccess.loadFailed')).toBeTruthy();
+      fireEvent.click(within(alert).getByRole('button', { name: 'button.retry' }));
+      expect(await within(results).findByText('W_RH_edit')).toBeTruthy();
+      expect(within(list).queryByText('workspacePermissions.directoryError')).toBeNull();
+      expect(screen.queryByText('groupSpaceAccess.loadFailed')).toBeNull();
+      expect(mockGroups).toHaveBeenCalledTimes(2);
+      expect(mockMembers).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('with a keyboard', () => {
     it('keeps focus on the chosen card while it saves', async () => {
       const save = deferred<void>();

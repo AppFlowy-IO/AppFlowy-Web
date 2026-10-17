@@ -786,6 +786,10 @@ describe('MembersPanel live group refresh', () => {
     });
   }
 
+  // Background checks join a read made moments ago, so tests move the clock past that window.
+  let now = 1_000;
+  let clock: jest.SpyInstance<number, []>;
+
   beforeEach(() => {
     jest.clearAllMocks();
     // Drop queued one-off answers so a failing test can't feed the next one.
@@ -796,6 +800,12 @@ describe('MembersPanel live group refresh', () => {
     mockGetMembers.mockResolvedValue([workspaceMember]);
     mockGetWorkspaceGroupMembers.mockResolvedValue({ members: [] });
     mockSetGroupSpaceCoverage.mockImplementation(async (_workspace, _group, level) => ({ access_level: level }));
+    now = 1_000;
+    clock = jest.spyOn(Date, 'now').mockImplementation(() => now);
+  });
+
+  afterEach(() => {
+    clock.mockRestore();
   });
 
   it('shows a change made by another owner in the open group dialog', async () => {
@@ -841,12 +851,72 @@ describe('MembersPanel live group refresh', () => {
     await renderPanel();
     fireEvent.click(screen.getByRole('tab', { name: /settings\.appearance\.people\.groupsTab/ }));
     mockGetWorkspaceGroups.mockResolvedValue({ groups: [{ ...hr(null), name: 'Human Resources' }] });
+    now += 60_000;
 
     await act(async () => {
       fire();
     });
     expect(await screen.findByText('Human Resources')).toBeTruthy();
     expect(mockGetWorkspaceGroups).toHaveBeenCalledTimes(2);
+  });
+
+  it('reads groups once when the tab comes back, though visibility and focus both fire', async () => {
+    mockGetWorkspaceGroups.mockResolvedValue({ groups: [hr(null)] });
+    await renderPanel();
+    fireEvent.click(screen.getByRole('tab', { name: /settings\.appearance\.people\.groupsTab/ }));
+    const read = deferred<{ groups: WorkspaceGroup[] }>();
+
+    mockGetWorkspaceGroups.mockReturnValueOnce(read.promise);
+    now += 60_000;
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    expect(mockGetWorkspaceGroups).toHaveBeenCalledTimes(2);
+    // Focus arrives while that read is in flight.
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await act(async () => read.resolve({ groups: [{ ...hr(null), name: 'Human Resources' }] }));
+    // Its answer is shown instead of being dropped for a second read.
+    expect(screen.getByText('Human Resources')).toBeTruthy();
+    expect(mockGetWorkspaceGroups).toHaveBeenCalledTimes(2);
+  });
+
+  it('a background check during the first load joins it, and its failure is still reported', async () => {
+    const first = deferred<{ groups: WorkspaceGroup[] }>();
+
+    mockGetWorkspaceGroups.mockReturnValueOnce(first.promise).mockResolvedValue({ groups: [hr(null)] });
+    render(
+      <AppEventEmitterContext.Provider value={emitter}>
+        <MembersPanel initialTab='groups' />
+      </AppEventEmitterContext.Provider>
+    );
+    await waitFor(() => expect(mockGetWorkspaceGroups).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await act(async () => first.reject({ code: -1, message: 'Network Error' }));
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith('Error -1: settings.appearance.people.loadGroupsFailed')
+    );
+    expect(mockGetWorkspaceGroups).toHaveBeenCalledTimes(1);
+  });
+
+  it('a permission hint still replaces a read that focus started', async () => {
+    mockGetWorkspaceGroups.mockResolvedValue({ groups: [hr(null)] });
+    await openGroupDialog();
+    const older = deferred<{ groups: WorkspaceGroup[] }>();
+
+    mockGetWorkspaceGroups.mockReturnValueOnce(older.promise).mockResolvedValue({ groups: [hr(30)] });
+    now += 60_000;
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await hint();
+    // The read focus started may predate the change, so its answer is dropped.
+    await act(async () => older.resolve({ groups: [hr(10)] }));
+    await waitFor(() => expect(mockGetWorkspaceGroups).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(coverageTrigger().textContent).toContain('groupSpaceAccess.canEdit'));
   });
 
   it('does not re-read groups for permission changes while the Members tab is shown', async () => {

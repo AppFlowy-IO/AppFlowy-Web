@@ -1,5 +1,5 @@
 import { ChevronDown } from 'lucide-react';
-import { useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
@@ -250,7 +250,130 @@ export function GroupSpaceCoverageCard({ workspaceId, group, isCurrent, onChange
   );
 }
 
-type SummaryState = { groups?: WorkspaceGroup[]; error?: unknown; loading: boolean; denied: boolean };
+/** A background check this soon after a read that succeeded joins it instead of reading again. */
+const BACKGROUND_READ_JOIN_MS = 2_000;
+
+/** One read of the workspace group list, as a background check sees it. */
+export type GroupListRead = {
+  request: number;
+  settled: boolean;
+  /** When a read that succeeded was sent. */
+  freshAsOf?: number;
+};
+
+/**
+ * Returning to the tab fires visibilitychange and focus back to back, and reconnecting fires online
+ * and then socket open. Such a background check joins the latest read while it is queued or in
+ * flight, or moments after it succeeded, instead of dropping it for a second one. A change (a
+ * permission hint, a save) must still replace that read: it may have been sent before the change.
+ */
+export function joinsGroupListRead(read: GroupListRead | undefined, latestRequest: number): boolean {
+  // A read that was replaced, or dropped when its reader went away, can't be joined.
+  if (read?.request !== latestRequest) return false;
+  if (!read.settled) return true;
+  // Only a read that succeeded counts, and a clock set back never makes it look fresher.
+  const age = Date.now() - (read.freshAsOf ?? -Infinity);
+
+  return age >= 0 && age < BACKGROUND_READ_JOIN_MS;
+}
+
+type GroupListState = { groups?: WorkspaceGroup[]; error?: unknown; loading: boolean; denied: boolean };
+
+const INITIAL_GROUP_LIST: GroupListState = { loading: true, denied: false };
+
+export type WorkspaceGroupList = GroupListState & {
+  /** Reads again and drops any read already in flight, which may predate a change. */
+  refresh: () => Promise<void>;
+};
+
+/**
+ * The workspace group list, revalidated in the background with the last list kept on screen. A
+ * panel reads it once and passes it down, so all of its sections show the same copy.
+ */
+export function useWorkspaceGroupList(workspaceId: string, enabled = true): WorkspaceGroupList {
+  const emitter = useContext(AppEventEmitterContext);
+  const [state, setState] = useState<GroupListState>(INITIAL_GROUP_LIST);
+  const active = useRef(false);
+  const sequence = useRef(0);
+  const latestRead = useRef<GroupListRead>();
+  const [queueRefresh] = useState(() => createCoalescedRefresh<void>());
+
+  const refresh = useCallback(() => {
+    const request = ++sequence.current;
+    const isCurrent = () => active.current && request === sequence.current;
+    const read: GroupListRead = { request, settled: false };
+
+    latestRead.current = read;
+    // Keep the last list on screen while it revalidates.
+    setState((previous) => ({ ...previous, loading: true }));
+    return queueRefresh(async () => {
+      try {
+        if (!isCurrent()) return;
+        const sentAt = Date.now();
+        const result = await WorkspaceService.getWorkspaceGroups(workspaceId);
+
+        if (!isCurrent()) return;
+        if (!Array.isArray(result?.groups)) throw new Error('Invalid group directory');
+        read.freshAsOf = sentAt;
+        setState({ groups: result.groups, loading: false, denied: false });
+      } catch (error) {
+        if (!isCurrent()) return;
+        // Losing access is not a connectivity problem: the section simply disappears.
+        const denied = isPermissionDenied(error);
+
+        setState((previous) => ({ groups: denied ? undefined : previous.groups, error, loading: false, denied }));
+      } finally {
+        read.settled = true;
+      }
+    });
+  }, [queueRefresh, workspaceId]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    active.current = true;
+    void refresh();
+    return () => {
+      active.current = false;
+      sequence.current += 1;
+      // Another workspace's list, or one this viewer may no longer read, is never shown again.
+      setState(INITIAL_GROUP_LIST);
+    };
+  }, [enabled, refresh]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    const revalidate = () => {
+      void refresh();
+    };
+
+    const revalidateInBackground = () => {
+      if (!joinsGroupListRead(latestRead.current, sequence.current)) revalidate();
+    };
+
+    const visible = () => {
+      if (document.visibilityState === 'visible') revalidateInBackground();
+    };
+
+    const socket = (readyState: unknown) => {
+      if (readyState === WebSocket.OPEN) revalidateInBackground();
+    };
+
+    emitter?.on(APP_EVENTS.PERMISSION_CHANGED, revalidate);
+    emitter?.on(APP_EVENTS.WEBSOCKET_STATUS, socket);
+    window.addEventListener('focus', revalidateInBackground);
+    window.addEventListener('online', revalidateInBackground);
+    document.addEventListener('visibilitychange', visible);
+    return () => {
+      emitter?.off(APP_EVENTS.PERMISSION_CHANGED, revalidate);
+      emitter?.off(APP_EVENTS.WEBSOCKET_STATUS, socket);
+      window.removeEventListener('focus', revalidateInBackground);
+      window.removeEventListener('online', revalidateInBackground);
+      document.removeEventListener('visibilitychange', visible);
+    };
+  }, [emitter, enabled, refresh]);
+
+  return useMemo(() => ({ ...state, refresh }), [refresh, state]);
+}
 
 /**
  * Read-only "Access to all spaces" summary for the Permissions panel. Coverage is configured per
@@ -259,74 +382,18 @@ type SummaryState = { groups?: WorkspaceGroup[]; error?: unknown; loading: boole
 export function GroupSpaceCoverageSummary({
   workspaceId,
   onOpenGroups,
+  groupList,
 }: {
   workspaceId: string;
   onOpenGroups?: () => void;
+  /** The panel's own group list, shared with its other sections; without it the summary reads one. */
+  groupList?: WorkspaceGroupList;
 }) {
   const { t } = useTranslation();
-  const emitter = useContext(AppEventEmitterContext);
-  const [state, setState] = useState<SummaryState>({ loading: true, denied: false });
-  const alive = useRef(true);
-  const sequence = useRef(0);
-  const [queueRefresh] = useState(() => createCoalescedRefresh<void>());
+  const ownList = useWorkspaceGroupList(workspaceId, !groupList);
+  const { groups, error, loading, denied, refresh } = groupList ?? ownList;
 
-  const refresh = useCallback(() => {
-    const request = ++sequence.current;
-    const isCurrent = () => alive.current && request === sequence.current;
-
-    // Keep the last list on screen while it revalidates.
-    setState((previous) => ({ ...previous, loading: true }));
-    return queueRefresh(async () => {
-      if (!isCurrent()) return;
-      try {
-        const result = await WorkspaceService.getWorkspaceGroups(workspaceId);
-
-        if (!isCurrent()) return;
-        if (!Array.isArray(result?.groups)) throw new Error('Invalid group directory');
-        setState({ groups: result.groups, loading: false, denied: false });
-      } catch (error) {
-        if (!isCurrent()) return;
-        // Losing access is not a connectivity problem: the section simply disappears.
-        const denied = isPermissionDenied(error);
-
-        setState((previous) => ({ groups: denied ? undefined : previous.groups, error, loading: false, denied }));
-      }
-    });
-  }, [queueRefresh, workspaceId]);
-
-  useEffect(() => {
-    alive.current = true;
-    void refresh();
-    const revalidate = () => {
-      void refresh();
-    };
-
-    const visible = () => {
-      if (document.visibilityState === 'visible') revalidate();
-    };
-
-    const socket = (readyState: unknown) => {
-      if (readyState === WebSocket.OPEN) revalidate();
-    };
-
-    emitter?.on(APP_EVENTS.PERMISSION_CHANGED, revalidate);
-    emitter?.on(APP_EVENTS.WEBSOCKET_STATUS, socket);
-    window.addEventListener('focus', revalidate);
-    window.addEventListener('online', revalidate);
-    document.addEventListener('visibilitychange', visible);
-    return () => {
-      alive.current = false;
-      sequence.current += 1;
-      emitter?.off(APP_EVENTS.PERMISSION_CHANGED, revalidate);
-      emitter?.off(APP_EVENTS.WEBSOCKET_STATUS, socket);
-      window.removeEventListener('focus', revalidate);
-      window.removeEventListener('online', revalidate);
-      document.removeEventListener('visibilitychange', visible);
-    };
-  }, [emitter, refresh]);
-
-  if (state.denied) return null;
-  const groups = state.groups;
+  if (denied) return null;
   // Coverage support is server-wide; an empty directory cannot tell either way.
   const supported = !groups || groups.length === 0 || groups.some((group) => group.space_coverage_supported === true);
   const covered = (groups ?? [])
@@ -342,12 +409,12 @@ export function GroupSpaceCoverageSummary({
       {supported && (
         <p className='text-sm text-text-secondary'>{t('groupSpaceAccess.summaryDescription')}</p>
       )}
-      {!groups && state.loading && (
+      {!groups && loading && (
         <div role='status' aria-label={t('loading')} className='flex'>
           <Progress />
         </div>
       )}
-      {!groups && !state.loading && state.error !== undefined && (
+      {!groups && !loading && error !== undefined && (
         <div role='alert' className='flex flex-wrap items-center gap-3 text-sm text-text-secondary'>
           {t('groupSpaceAccess.loadFailed')}
           <Button variant='outline' size='sm' onClick={() => void refresh()}>

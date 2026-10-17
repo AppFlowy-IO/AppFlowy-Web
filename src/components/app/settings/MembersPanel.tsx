@@ -14,7 +14,11 @@ import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
 import { useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { AppEventEmitterContext } from '@/components/app/contexts/AppEventEmitterContext';
-import { GroupSpaceCoverageCard } from '@/components/app/settings/GroupSpaceCoverageControl';
+import {
+  GroupListRead,
+  GroupSpaceCoverageCard,
+  joinsGroupListRead,
+} from '@/components/app/settings/GroupSpaceCoverageControl';
 import { PersonAvatar } from '@/components/app/share/PersonAvatar';
 import { WorkspaceGroupIcon } from '@/components/app/share/WorkspaceGroupIcon';
 import {
@@ -200,7 +204,10 @@ function MembersPanelForWorkspace({
   // All group reads share one queue (one read at a time plus the latest follow-up), and only the
   // latest request may publish, so a slow older read can't bring back a value that has changed.
   const [queueGroupsRead] = useState(() => createCoalescedRefresh<void>());
-  const groupsRead = useRef({ request: 0, reportFailure: false });
+  const groupsRead = useRef<{ request: number; reportFailure: boolean; latest?: GroupListRead }>({
+    request: 0,
+    reportFailure: false,
+  });
 
   const currentWorkspace = useMemo(
     () => userWorkspaceInfo?.workspaces.find((workspace) => workspace.id === currentWorkspaceId),
@@ -259,17 +266,21 @@ function MembersPanelForWorkspace({
       const requestGeneration = workspaceGeneration;
       const reads = groupsRead.current;
       const request = ++reads.request;
+      const read: GroupListRead = { request, settled: false };
       const isCurrent = () =>
         reads.request === request && isCurrentWorkspaceRequest(requestedWorkspaceId, requestGeneration);
 
+      reads.latest = read;
       if (reportFailure) reads.reportFailure = true;
       return queueGroupsRead(async () => {
-        if (!isCurrent()) return;
         try {
+          if (!isCurrent()) return;
+          const sentAt = Date.now();
           const result = await WorkspaceService.getWorkspaceGroups(requestedWorkspaceId);
 
           if (!isCurrent()) return;
           reads.reportFailure = false;
+          read.freshAsOf = sentAt;
           applyGroups(result.groups || []);
         } catch (e) {
           if (!isCurrent()) return;
@@ -277,6 +288,8 @@ function MembersPanelForWorkspace({
 
           reads.reportFailure = false;
           if (report) toast.error(getErrorMessage(e, t('settings.appearance.people.loadGroupsFailed')));
+        } finally {
+          read.settled = true;
         }
       });
     },
@@ -318,26 +331,33 @@ function MembersPanelForWorkspace({
       void readGroups(false);
     };
 
+    // Joining leaves the read as it is, including a failure report it carries for the first load.
+    const revalidateInBackground = () => {
+      const reads = groupsRead.current;
+
+      if (!joinsGroupListRead(reads.latest, reads.request)) revalidate();
+    };
+
     const visible = () => {
-      if (document.visibilityState === 'visible') revalidate();
+      if (document.visibilityState === 'visible') revalidateInBackground();
     };
 
     const socket = (readyState: unknown) => {
-      if (readyState === WebSocket.OPEN) revalidate();
+      if (readyState === WebSocket.OPEN) revalidateInBackground();
     };
 
     // The notification adapter follows every workspace permission hint with PERMISSION_CHANGED,
     // so this one event covers both.
     emitter?.on(APP_EVENTS.PERMISSION_CHANGED, revalidate);
     emitter?.on(APP_EVENTS.WEBSOCKET_STATUS, socket);
-    window.addEventListener('focus', revalidate);
-    window.addEventListener('online', revalidate);
+    window.addEventListener('focus', revalidateInBackground);
+    window.addEventListener('online', revalidateInBackground);
     document.addEventListener('visibilitychange', visible);
     return () => {
       emitter?.off(APP_EVENTS.PERMISSION_CHANGED, revalidate);
       emitter?.off(APP_EVENTS.WEBSOCKET_STATUS, socket);
-      window.removeEventListener('focus', revalidate);
-      window.removeEventListener('online', revalidate);
+      window.removeEventListener('focus', revalidateInBackground);
+      window.removeEventListener('online', revalidateInBackground);
       document.removeEventListener('visibilitychange', visible);
     };
   }, [emitter, followGroupChanges, readGroups]);

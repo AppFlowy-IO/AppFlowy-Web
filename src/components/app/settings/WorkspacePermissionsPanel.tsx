@@ -25,7 +25,11 @@ import {
   SettingsPanelShell,
   SettingsSection,
 } from '@/components/app/settings/billing/SettingsPanelShell';
-import { GroupSpaceCoverageSummary } from '@/components/app/settings/GroupSpaceCoverageControl';
+import {
+  GroupSpaceCoverageSummary,
+  useWorkspaceGroupList,
+  WorkspaceGroupList,
+} from '@/components/app/settings/GroupSpaceCoverageControl';
 import { useSuggestionsOpen } from '@/components/app/share/useSuggestionsOpen';
 import { WorkspaceGroupIcon } from '@/components/app/share/WorkspaceGroupIcon';
 import { WorkspaceMemberInlineSearchInput } from '@/components/app/share/WorkspaceMemberInlineSearch';
@@ -169,6 +173,8 @@ export function WorkspacePermissionsPanel({
   // problem. It also hides the last settings, so names of selected people and groups go away.
   const refused = status === 'error' && isSpaceCreationDenial(permission.error);
   const capability = refused ? undefined : permission.capability;
+  // One group list for the panel, so the access summary and the creator roster show the same copy.
+  const groupList = useWorkspaceGroupList(workspaceId, capability?.can_manage_space_creators === true);
 
   return (
     <SettingsPanelShell title={t('workspacePermissions.title')} testId='workspace-permissions-panel'>
@@ -200,12 +206,18 @@ export function WorkspacePermissionsPanel({
           capability={capability}
           stale={status === 'error'}
           onRefresh={permission.refresh}
+          groupList={groupList}
         />
       )}
       {capability?.can_manage_space_creators && (
         <>
           <SettingsDivider />
-          <GroupSpaceCoverageSummary key={permission.scopeKey} workspaceId={workspaceId} onOpenGroups={onOpenGroups} />
+          <GroupSpaceCoverageSummary
+            key={permission.scopeKey}
+            workspaceId={workspaceId}
+            onOpenGroups={onOpenGroups}
+            groupList={groupList}
+          />
         </>
       )}
     </SettingsPanelShell>
@@ -216,11 +228,13 @@ function SpaceCreationSettings({
   capability,
   stale,
   onRefresh,
+  groupList,
 }: {
   capability: WorkspaceSpaceCreationCapabilities;
   /** The last refresh failed, so the shown authority may be out of date. */
   stale: boolean;
   onRefresh: () => Promise<WorkspaceSpaceCreationCapabilities | undefined>;
+  groupList: WorkspaceGroupList;
 }) {
   const { t } = useTranslation();
   const questionId = useId();
@@ -238,7 +252,7 @@ function SpaceCreationSettings({
   // A confirmed save stays visible until the capability reports a newer revision.
   const policy = saving ?? (saved?.basis === basis ? saved.policy : capability.policy);
   const rosterEnabled = canManage && selectedSupported;
-  const roster = useSpaceCreatorRoster(capability, rosterEnabled, rosterEnabled && policy === SELECTED_MODE);
+  const roster = useSpaceCreatorRoster(capability, rosterEnabled, rosterEnabled && policy === SELECTED_MODE, groupList);
 
   const choosePolicy = async (next: WorkspaceSpaceCreationPolicy, offerUndo = true) => {
     if (savingRef.current || !canManage || stale || next === policy) return;
@@ -494,6 +508,8 @@ function PolicyCards({
 
 type DirectoryStatus = 'idle' | 'loading' | 'ready' | 'error';
 
+const NO_GROUPS: WorkspaceGroup[] = [];
+
 interface SpaceCreatorRoster {
   /** Current (not removed) selections; undefined until the first read finishes. */
   rows?: SpaceCreatorSelection[];
@@ -512,11 +528,13 @@ interface SpaceCreatorRoster {
 /**
  * Selections and the people/group directory, revalidated in the background: rows stay on screen
  * while a permission change re-reads them, and nothing here is reset by a capability refresh.
+ * Groups come from the panel's list, which the access summary shows too; only members are read here.
  */
 function useSpaceCreatorRoster(
   capability: WorkspaceSpaceCreationCapabilities,
   enabled: boolean,
-  directoryEnabled: boolean
+  directoryEnabled: boolean,
+  groupList: WorkspaceGroupList
 ): SpaceCreatorRoster {
   const emitter = useContext(AppEventEmitterContext);
   const alive = useAlive();
@@ -527,12 +545,12 @@ function useSpaceCreatorRoster(
   const [loadError, setLoadError] = useState<unknown>();
   const [reloadToken, setReloadToken] = useState(0);
   const localVersion = useRef(0);
-  const [directory, setDirectory] = useState<{
-    members: WorkspaceMember[];
-    groups: WorkspaceGroup[];
-    status: DirectoryStatus;
-  }>({ members: [], groups: [], status: 'idle' });
+  const [directory, setDirectory] = useState<{ members: WorkspaceMember[]; status: DirectoryStatus }>({
+    members: [],
+    status: 'idle',
+  });
   const [directoryToken, setDirectoryToken] = useState(0);
+  const refreshGroups = groupList.refresh;
 
   useEffect(() => {
     if (!enabled) return;
@@ -566,14 +584,9 @@ function useSpaceCreatorRoster(
     let cancelled = false;
 
     setDirectory((previous) => (previous.status === 'ready' ? previous : { ...previous, status: 'loading' }));
-    void Promise.all([
-      WorkspaceService.getMembers(workspaceId),
-      includeGroups
-        ? WorkspaceService.getWorkspaceGroups(workspaceId).then((result) => result.groups ?? [])
-        : Promise.resolve<WorkspaceGroup[]>([]),
-    ]).then(
-      ([members, groups]) => {
-        if (!cancelled) setDirectory({ members, groups, status: 'ready' });
+    void WorkspaceService.getMembers(workspaceId).then(
+      (members) => {
+        if (!cancelled) setDirectory({ members, status: 'ready' });
       },
       () => {
         if (!cancelled) setDirectory((previous) => ({ ...previous, status: 'error' }));
@@ -582,20 +595,40 @@ function useSpaceCreatorRoster(
     return () => {
       cancelled = true;
     };
-  }, [directoryEnabled, directoryToken, includeGroups, workspaceId]);
+  }, [directoryEnabled, directoryToken, workspaceId]);
 
   useEffect(() => {
     if (!directoryEnabled) return;
-    const refresh = () => setDirectoryToken((value) => value + 1);
+    const refresh = () => {
+      setDirectoryToken((value) => value + 1);
+      // Group member counts follow workspace membership.
+      if (includeGroups) void refreshGroups();
+    };
 
     emitter?.on(APP_EVENTS.MENTIONABLE_PERSON_LIST_CHANGED, refresh);
     return () => {
       emitter?.off(APP_EVENTS.MENTIONABLE_PERSON_LIST_CHANGED, refresh);
     };
-  }, [directoryEnabled, emitter]);
+  }, [directoryEnabled, emitter, includeGroups, refreshGroups]);
 
+  const groups = includeGroups ? groupList.groups ?? NO_GROUPS : NO_GROUPS;
+  // A failed or refused group read leaves the members on offer; the alert offers to read it again.
+  const groupsStatus: DirectoryStatus =
+    !includeGroups || groupList.groups ? 'ready' : groupList.loading ? 'loading' : 'error';
+  const membersFailed = directory.status === 'error';
+  const groupsFailed = groupsStatus === 'error';
+  const directoryStatus: DirectoryStatus =
+    membersFailed || groupsFailed
+      ? 'error'
+      : directory.status === 'loading' || groupsStatus === 'loading'
+      ? 'loading'
+      : directory.status;
   const reload = useCallback(() => setReloadToken((value) => value + 1), []);
-  const reloadDirectory = useCallback(() => setDirectoryToken((value) => value + 1), []);
+  // Retry reads again only what failed; the group list is the summary's too.
+  const reloadDirectory = useCallback(() => {
+    if (membersFailed) setDirectoryToken((value) => value + 1);
+    if (groupsFailed) void refreshGroups();
+  }, [groupsFailed, membersFailed, refreshGroups]);
   const applyLocal = useCallback(
     (update: (current: SpaceCreatorSelection[]) => SpaceCreatorSelection[]) => {
       localVersion.current += 1;
@@ -612,10 +645,7 @@ function useSpaceCreatorRoster(
 
     return result;
   }, [directory.members]);
-  const groupsById = useMemo(
-    () => new Map(directory.groups.map((group) => [group.group_id.toLowerCase(), group])),
-    [directory.groups]
-  );
+  const groupsById = useMemo(() => new Map(groups.map((group) => [group.group_id.toLowerCase(), group])), [groups]);
 
   return {
     rows,
@@ -624,9 +654,9 @@ function useSpaceCreatorRoster(
     applyLocal,
     members: directory.members,
     membersByUuid,
-    groups: directory.groups,
+    groups,
     groupsById,
-    directoryStatus: directory.status,
+    directoryStatus,
     reloadDirectory,
   };
 }
