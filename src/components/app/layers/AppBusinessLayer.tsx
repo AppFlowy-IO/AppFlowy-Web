@@ -69,6 +69,9 @@ const ROUTE_VIEW_EXISTS_REVALIDATE_MS = 10000;
 const PERMISSION_PROBE_TTL_MS = 10000;
 const PERMISSION_PROBE_CACHE_MAX = 200;
 const PERMISSION_PROBE_RETRY_DELAYS_MS = [250, 1000, 3000] as const;
+// A window focus re-probes the active views at most this often, counted from
+// their last revalidation, whichever event caused it.
+const PERMISSION_FOCUS_RECHECK_MIN_INTERVAL_MS = 30000;
 const WS_READY_STATE_OPEN = 1;
 
 // Stable "not resolvable" result for breadcrumb ancestors. Identity matters:
@@ -109,6 +112,20 @@ function isRouteNotFoundError(error: unknown): boolean {
 
   if (statusCode === 404 || appCode === 404) return true;
   return ROUTE_NOT_FOUND_MESSAGE_PATTERN.test(getErrorDiagnostic(error));
+}
+
+function isSameObjectPermission(previous: CollabObjectPermission | undefined, next: CollabObjectPermission) {
+  return (
+    previous !== undefined &&
+    previous.object_id === next.object_id &&
+    previous.collab_type === next.collab_type &&
+    previous.governing_view_id === next.governing_view_id &&
+    previous.access_level === next.access_level &&
+    previous.can_read === next.can_read &&
+    previous.can_write === next.can_write &&
+    previous.can_comment === next.can_comment &&
+    previous.can_share === next.can_share
+  );
 }
 
 async function resolvePermissionProbeTargetFromMetadata(
@@ -175,6 +192,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
   const currentRequesterIdRef = useRef(requesterId);
   const permissionProbeSessionRevisionRef = useRef(0);
   const permissionProbeRevisionRef = useRef<Map<string, number>>(new Map());
+  const activeViewsRevalidatedAtRef = useRef(Number.NEGATIVE_INFINITY);
   const [permissionProbeRefreshRevision, setPermissionProbeRefreshRevision] = useState(0);
 
   currentRequesterIdRef.current = requesterId;
@@ -585,8 +603,12 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
         }
 
         if (permission && !cancelled) {
+          // A re-probe that confirms the stored capabilities keeps that object,
+          // so a background focus check re-renders no navigation consumer.
           setObjectPermissions((current) =>
-            current[activeViewId] === permission ? current : { ...current, [activeViewId]: permission }
+            isSameObjectPermission(current[activeViewId], permission)
+              ? current
+              : { ...current, [activeViewId]: permission }
           );
         }
 
@@ -657,6 +679,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       const activeViewIds = activePermissionViewIds.filter((activeViewId) => activeViewId !== excludedViewId);
 
       if (activeViewIds.length === 0) return;
+      activeViewsRevalidatedAtRef.current = Date.now();
       // Existing capabilities may have been downgraded. Remove them before the
       // asynchronous re-probe so editors, comments, and share controls fall back
       // to the safe read-only state instead of retaining stale authority.
@@ -741,13 +764,32 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       revalidateActiveViews();
     };
 
+    // Focus also fires on every alt-tab back and closed file picker, so it is
+    // only a hint: dropping the capabilities would make the open page read-only
+    // for a round trip and lose what the user types. Re-probe the active views
+    // while keeping them, without superseding reads in flight (the upload gate
+    // shares them); each result replaces its entry and a denial still closes
+    // the view. The interval also absorbs the visibilitychange of a tab switch.
+    const handleFocus = () => {
+      if (!currentWorkspaceId || !requesterId || activePermissionViewIds.length === 0) return;
+      if (Date.now() - activeViewsRevalidatedAtRef.current < PERMISSION_FOCUS_RECHECK_MIN_INTERVAL_MS) return;
+
+      activeViewsRevalidatedAtRef.current = Date.now();
+      // Dropping only the cached probe makes the probe effect ask the server
+      // again; the unchanged per-key revision lets that newer probe apply.
+      activePermissionViewIds.forEach((activeViewId) => {
+        permissionProbeCache.delete(createPermissionProbeCacheKey(requesterId, currentWorkspaceId, activeViewId));
+      });
+      setPermissionProbeRefreshRevision((revision) => revision + 1);
+    };
+
     syncContext.eventEmitter?.on(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChanged);
     syncContext.eventEmitter?.on(APP_EVENTS.VIEW_ACCESS_REVOKED, handleViewAccessRevoked);
     syncContext.eventEmitter?.on(APP_EVENTS.VIEW_ACCESS_RESTORED, handleViewAccessRestored);
     syncContext.eventEmitter?.on(APP_EVENTS.WEBSOCKET_STATUS, handleWebSocketStatus);
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('online', handleOnline);
-    window.addEventListener('focus', handleOnline);
+    window.addEventListener('focus', handleFocus);
 
     return () => {
       syncContext.eventEmitter?.off(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChanged);
@@ -756,7 +798,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       syncContext.eventEmitter?.off(APP_EVENTS.WEBSOCKET_STATUS, handleWebSocketStatus);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('online', handleOnline);
-      window.removeEventListener('focus', handleOnline);
+      window.removeEventListener('focus', handleFocus);
     };
   }, [
     activePermissionViewIds,

@@ -829,6 +829,156 @@ describe('AppBusinessLayer permission gates', () => {
     visibilityState.mockRestore();
   });
 
+  it('keeps the confirmed capabilities while a window focus re-probes the route in the background', async () => {
+    const eventEmitter = new EventEmitter();
+    let resolveRecheck!: (permission: CollabObjectPermission) => void;
+    const pendingRecheck = new Promise<CollabObjectPermission>((resolve) => {
+      resolveRecheck = resolve;
+    });
+
+    (AccessService.getObjectPermission as jest.Mock)
+      .mockResolvedValueOnce(createObjectPermission(routeViewId))
+      .mockReturnValueOnce(pendingRecheck);
+    renderBusinessLayer(eventEmitter, [createView(routeViewId)]);
+
+    await waitFor(() => expect(screen.getByTestId('object-permission').textContent).not.toBe('null'));
+
+    // The first verdict is still inside the probe cache TTL; focus asks the server anyway.
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(2));
+    // The page stays editable, and reads in flight elsewhere (the upload gate) are not superseded.
+    expect(JSON.parse(screen.getByTestId('object-permission').textContent || 'null')).toEqual(
+      createObjectPermission(routeViewId)
+    );
+    expect(AccessService.invalidateObjectPermissionRequests).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveRecheck(createObjectPermission(routeViewId, Types.Document, { can_write: false }));
+      await pendingRecheck;
+    });
+
+    await waitFor(() => {
+      expect(JSON.parse(screen.getByTestId('object-permission').textContent || 'null')).toEqual(
+        createObjectPermission(routeViewId, Types.Document, { can_write: false })
+      );
+    });
+  });
+
+  it('closes the route at once when a window focus re-probe is denied', async () => {
+    const eventEmitter = new EventEmitter();
+
+    (AccessService.getObjectPermission as jest.Mock)
+      .mockResolvedValueOnce(createObjectPermission(routeViewId))
+      .mockResolvedValueOnce(createObjectPermission(routeViewId, Types.Document, { can_read: false }));
+    renderBusinessLayer(eventEmitter, [createView(routeViewId)]);
+
+    await waitFor(() => expect(screen.getByTestId('object-permission').textContent).not.toBe('null'));
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await waitFor(() => expect(screen.getByTestId('no-access').textContent).toBe('true'));
+    expect(deleteCollabDB).toHaveBeenCalledWith(routeViewId, { destroyDoc: true });
+  });
+
+  it('folds focus into a recent revalidation and re-probes again only once that is stale', async () => {
+    let now = 1_000_000;
+    const clock = jest.spyOn(Date, 'now').mockImplementation(() => now);
+    const eventEmitter = new EventEmitter();
+
+    renderBusinessLayer(eventEmitter, [createView(routeViewId)]);
+    await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(1));
+
+    // A tab switch fires visibilitychange and focus together.
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new Event('focus'));
+    });
+    await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(2));
+    expect(AccessService.invalidateObjectPermissionRequests).toHaveBeenCalledTimes(1);
+
+    now += 29_000;
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(2);
+
+    now += 1_000;
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(3));
+    expect(AccessService.invalidateObjectPermissionRequests).toHaveBeenCalledTimes(1);
+    clock.mockRestore();
+  });
+
+  it('lets a permission change supersede a pending focus re-probe', async () => {
+    const eventEmitter = new EventEmitter();
+    let resolveFocusProbe!: (permission: CollabObjectPermission) => void;
+    const focusProbe = new Promise<CollabObjectPermission>((resolve) => {
+      resolveFocusProbe = resolve;
+    });
+
+    (AccessService.getObjectPermission as jest.Mock)
+      .mockResolvedValueOnce(createObjectPermission(routeViewId))
+      .mockReturnValueOnce(focusProbe)
+      .mockResolvedValueOnce(createObjectPermission(routeViewId, Types.Document, { can_read: false }));
+    renderBusinessLayer(eventEmitter, [createView(routeViewId)]);
+
+    await waitFor(() => expect(screen.getByTestId('object-permission').textContent).not.toBe('null'));
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(2));
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'workspace-group-id' });
+    });
+    await waitFor(() => expect(screen.getByTestId('no-access').textContent).toBe('true'));
+
+    await act(async () => {
+      resolveFocusProbe(createObjectPermission(routeViewId));
+      await focusProbe;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(screen.getByTestId('no-access').textContent).toBe('true');
+    expect(JSON.parse(screen.getByTestId('object-permission').textContent || 'null')?.can_read).toBe(false);
+  });
+
+  it('keeps the stored capability object when a focus re-probe confirms it', async () => {
+    const eventEmitter = new EventEmitter();
+    const seen: Array<CollabObjectPermission | undefined> = [];
+
+    function PermissionIdentityProbe() {
+      const navigation = useContext(AppNavigationContext);
+
+      seen.push(navigation?.objectPermissions?.[routeViewId]);
+      return null;
+    }
+
+    renderBusinessLayer(eventEmitter, [createView(routeViewId)], modalViewId, <PermissionIdentityProbe />);
+    await waitFor(() => expect(seen.at(-1)).toEqual(createObjectPermission(routeViewId)));
+    const confirmed = seen.at(-1);
+    const rendersBeforeFocus = seen.length;
+
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    // An unchanged answer re-renders no navigation consumer.
+    expect(seen.at(-1)).toBe(confirmed);
+    expect(seen).toHaveLength(rendersBeforeFocus);
+  });
+
   it('re-probes the active route when access is restored', async () => {
     const eventEmitter = new EventEmitter();
 
