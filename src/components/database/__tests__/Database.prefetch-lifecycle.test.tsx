@@ -15,11 +15,15 @@ const mockSeedLoadPromises: Array<Promise<YDoc | undefined>> = [];
 const mockEnsureRowPromises: Array<Promise<YDoc | undefined> | void> = [];
 let mockDatabaseContext: DatabaseContextState | undefined;
 let mockPeekContext: DatabaseContextState | undefined;
+let mockPeekOpenPage: ((rowId: string) => void | Promise<void>) | undefined;
 let mockLoadSeedOnLifecycleChange = false;
 
-jest.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
-}));
+jest.mock('react-i18next', () => {
+  // Stable like the real hook's `t`, so callbacks that list it keep their identity.
+  const t = (key: string) => key;
+
+  return { useTranslation: () => ({ t }) };
+});
 
 let mockSourceCanWrite = false;
 
@@ -64,15 +68,18 @@ jest.mock('@/components/database/DatabaseRowModal', () => {
   return function MockRowModal({
     open,
     rowId,
+    openPage,
     onOpenChange,
   }: {
     open: boolean;
     rowId: string;
+    openPage?: (rowId: string) => void | Promise<void>;
     onOpenChange: (open: boolean) => void;
   }) {
     const [mode, setMode] = React.useState('side');
 
     mockPeekContext = useDatabaseContext();
+    mockPeekOpenPage = openPage;
     return open ? (
       <div data-testid='database-row-modal' data-peek-mode={mode} data-row-id={rowId}>
         <button onClick={() => setMode('center')}>Center peek</button>
@@ -366,6 +373,7 @@ describe('Database blob prefetch lifecycle', () => {
     mockEnsureRowPromises.length = 0;
     mockDatabaseContext = undefined;
     mockPeekContext = undefined;
+    mockPeekOpenPage = undefined;
     mockLoadSeedOnLifecycleChange = false;
     mockedPeekSeed.mockReset();
     mockedGetCachedRowDoc.mockReset();
@@ -1332,6 +1340,50 @@ describe('Database blob prefetch lifecycle', () => {
 
     unmount();
     expect(onRowPeekChange).toHaveBeenLastCalledWith('next-row', 'view-id');
+    doc.destroy();
+  });
+
+  it('keeps both database contexts when the host passes new row route callbacks', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const props = databaseProps(doc);
+    const initialRowPeekChange = jest.fn();
+    const initialOpenRowPage = jest.fn();
+    const { rerender, unmount } = render(
+      <Database {...props} onRowPeekChange={initialRowPeekChange} onOpenRowPage={initialOpenRowPage} />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open row' }));
+    expect(initialRowPeekChange).toHaveBeenLastCalledWith('row-id', 'view-id');
+    const mainContext = mockDatabaseContext;
+    const peekContext = mockPeekContext;
+    const openPage = mockPeekOpenPage;
+
+    // The routed host re-renders after the `r-modal` URL write above, and its
+    // search-param callbacks change identity.
+    const onRowPeekChange = jest.fn();
+    const onOpenRowPage = jest.fn();
+
+    rerender(<Database {...props} onRowPeekChange={onRowPeekChange} onOpenRowPage={onOpenRowPage} />);
+
+    expect(mockDatabaseContext).toBe(mainContext);
+    expect(mockPeekContext).toBe(peekContext);
+    expect(mockPeekOpenPage).toBe(openPage);
+
+    // Handlers captured before the change still reach the host's latest callbacks.
+    await act(async () => {
+      await openPage?.('row-id');
+    });
+    expect(onOpenRowPage).toHaveBeenCalledWith('row-id');
+    act(() => peekContext?.closeRowDetailModal?.());
+    expect(onRowPeekChange).toHaveBeenLastCalledWith(null);
+    await act(async () => {
+      await Promise.resolve(mainContext?.navigateToRow?.('next-row'));
+    });
+    expect(onRowPeekChange).toHaveBeenLastCalledWith('next-row', 'view-id');
+    expect(initialRowPeekChange).toHaveBeenCalledTimes(1);
+    expect(initialOpenRowPage).not.toHaveBeenCalled();
+
+    unmount();
     doc.destroy();
   });
 

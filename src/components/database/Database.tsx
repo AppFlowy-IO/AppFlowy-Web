@@ -1424,6 +1424,18 @@ function Database(props: Database2Props) {
     [doc, workspaceId]
   );
 
+  // DatabaseView builds these from `useSearchParams`, so they change identity on
+  // every URL search change, including the `r-modal` write a peek makes. Calling
+  // them through refs keeps that write from rebuilding both database contexts
+  // and re-rendering every consumer.
+  const onRowPeekChangeRef = useRef(onRowPeekChange);
+  const onOpenRowPageRef = useRef(onOpenRowPage);
+
+  useLayoutEffect(() => {
+    onRowPeekChangeRef.current = onRowPeekChange;
+    onOpenRowPageRef.current = onOpenRowPage;
+  }, [onOpenRowPage, onRowPeekChange]);
+
   const handleOpenRow = useCallback(
     async (rowId: string, viewId?: string, permissions?: DatabaseRowPermissions, source?: DatabaseRowPeekSource) => {
       const peekSource = source ?? {
@@ -1471,8 +1483,10 @@ function Database(props: Database2Props) {
             return;
           }
 
-          if (!onOpenRowPage) throw new Error('Row navigation is not available');
-          await onOpenRowPage(rowId);
+          const openRowPage = onOpenRowPageRef.current;
+
+          if (!openRowPage) throw new Error('Row navigation is not available');
+          await openRowPage(rowId);
           return;
         }
 
@@ -1507,7 +1521,7 @@ function Database(props: Database2Props) {
             permissions,
             source: peekSource,
           }));
-          onRowPeekChange?.(rowId, viewId);
+          onRowPeekChangeRef.current?.(rowId, viewId);
           return;
         }
 
@@ -1520,7 +1534,7 @@ function Database(props: Database2Props) {
           permissions,
           source: peekSource,
         });
-        onRowPeekChange?.(rowId, viewId || activeViewId);
+        onRowPeekChangeRef.current?.(rowId, viewId || activeViewId);
       } catch (error) {
         Log.error('[Database] Failed to open row', { rowId, viewId: viewId ?? activeViewId, error });
         toast.error(t('chat.openPagePreviewFailedToast'));
@@ -1537,8 +1551,6 @@ function Database(props: Database2Props) {
       doc,
       loadView,
       navigateToView,
-      onOpenRowPage,
-      onRowPeekChange,
       openRowInHostPeek,
       props.variant,
       props.embeddedPermissionSource,
@@ -1597,18 +1609,18 @@ function Database(props: Database2Props) {
       databaseDoc: null,
       rowMap: null,
     });
-    onRowPeekChange?.(null);
-  }, [onRowPeekChange]);
+    onRowPeekChangeRef.current?.(null);
+  }, []);
 
   const handleOpenPeekAsPage = useCallback(
     async (rowId: string) => {
       if (modalState.viewId && navigateToView && (modalState.databaseDoc || modalState.viewId !== activeViewId)) {
         await navigateToView(modalState.viewId, rowId);
       } else {
-        await onOpenRowPage?.(rowId);
+        await onOpenRowPageRef.current?.(rowId);
       }
     },
-    [activeViewId, modalState.databaseDoc, modalState.viewId, navigateToView, onOpenRowPage]
+    [activeViewId, modalState.databaseDoc, modalState.viewId, navigateToView]
   );
 
   // Memoized callback for modal open change to avoid inline function in JSX
