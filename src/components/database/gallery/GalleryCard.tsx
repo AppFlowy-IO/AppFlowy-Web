@@ -51,7 +51,9 @@ const primaryCellStyle: CSSProperties = {
 
 const propertyCellStyle: CSSProperties = {
   alignItems: 'center',
-  color: 'var(--gallery-card-hint)',
+  // Flutter desktopListCardCellStyleMap renders property text in textColorScheme.primary;
+  // GalleryProperty remaps --text-primary to --gallery-card-title.
+  color: 'var(--text-primary)',
   display: 'flex',
   fontSize: 12,
   lineHeight: '20px',

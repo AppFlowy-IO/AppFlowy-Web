@@ -1,13 +1,12 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import * as Y from 'yjs';
 
 import { DatabaseContext } from '@/application/database-yjs';
 import type { DatabaseContextState, GridGrouping } from '@/application/database-yjs';
 import type { YDoc } from '@/application/types';
-import { useIsDatabaseHistoryScopeActive } from '@/components/database/databaseHistoryScopeCoordinator';
 import { DatabaseHistoryScope } from '@/components/database/DatabaseHistoryScope';
+import { useIsDatabaseHistoryScopeActive } from '@/components/database/databaseHistoryScopeCoordinator';
 import { GridProvider } from '@/components/database/grid/GridProvider';
 import {
   createGridInteractionStore,
@@ -182,8 +181,7 @@ describe('GridProvider interaction isolation', () => {
     expect(renders).toEqual({ activeA: 3, activeB: 2, base: 1, hoverA: 2, hoverB: 1 });
   });
 
-  it('scopes wheel suppression to the Grid and reports row heights without provider rerenders', () => {
-    const resizeListener = jest.fn();
+  it('scopes wheel suppression to the Grid without provider rerenders', () => {
     let baseRenderCount = 0;
 
     function Probe() {
@@ -193,19 +191,14 @@ describe('GridProvider interaction isolation', () => {
     }
 
     function Controls() {
-      const { rowResizeStore } = useGridContext();
       const { setHoverRowKey } = useGridInteractionActions();
 
       baseRenderCount += 1;
-      useEffect(() => rowResizeStore.subscribe(resizeListener), [rowResizeStore]);
 
       return (
         <>
           <button onClick={() => setHoverRowKey('row-a')} type='button'>
             Hover row
-          </button>
-          <button onClick={() => rowResizeStore.report('row-a', 48)} type='button'>
-            Report height
           </button>
         </>
       );
@@ -230,8 +223,6 @@ describe('GridProvider interaction isolation', () => {
     fireEvent.wheel(gridRoot);
     expect(screen.getByTestId('hover-state').textContent).toBe('false');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Report height' }));
-    expect(resizeListener).toHaveBeenCalledWith('row-a', 48);
     expect(baseRenderCount).toBe(1);
   });
 

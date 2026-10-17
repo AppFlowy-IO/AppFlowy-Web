@@ -3,33 +3,36 @@ import { readFileSync } from 'fs';
 import { expect, type Locator, type Page, test } from '@playwright/test';
 import { createBdd, DataTable } from 'playwright-bdd';
 
-import { loginAndCreateGrid } from '../../support/field-type-helpers';
+import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
+import { waitForGridReady } from '../../support/database-ui-helpers';
 import {
-  addInputField,
-  ensureRowCount,
   fieldIdByName,
   formulaInput,
   openFormulaEditorFromCell,
   readGridFieldsDirect,
-  renameFieldDirect,
   revealColumn,
   saveFormula,
-  seedColumn,
-  trimRowsDirect,
   typeFormula,
 } from '../../support/formula-test-helpers';
-import { DatabaseGridSelectors } from '../../support/selectors';
+import {
+  AddPageSelectors,
+  DatabaseGridSelectors,
+  FieldType,
+  ImportSelectors,
+  PageSelectors,
+} from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
 
 const { Given, When, Then } = createBdd();
 const conversionCsv = readFileSync(
-  new URL('../../fixtures/database/csv/notion_formula_conversion_test_data.csv', import.meta.url),
-  'utf8'
-)
+  new URL('../../fixtures/database/csv/notion_formula_conversion_test_data.csv', import.meta.url)
+);
+const conversionRows = conversionCsv
+  .toString('utf8')
   .trim()
   .split(/\r?\n/)
+  .slice(1)
   .map((line) => line.split(','));
-const [headers, ...conversionRows] = conversionCsv;
 
 // Notion copies property tokens as their names. prop() makes those same tokens
 // explicit when pasting plain text into AppFlowy's formula editor.
@@ -41,33 +44,35 @@ const conversionFormula = `let(
 Given("a Grid with the reporter's conversion CSV", async ({ page, request }) => {
   test.setTimeout(180_000);
   await page.setViewportSize({ width: 1600, height: 1000 });
-  expect(headers).toEqual(['Name', 'Done', 'In progress']);
-  await loginAndCreateGrid(page, request, generateRandomEmail());
-  await ensureRowCount(page, conversionRows.length);
-  await trimRowsDirect(page, conversionRows.length);
+  await signInAndWaitForApp(page, request, generateRandomEmail());
+  await PageSelectors.items(page).first().hover();
+  await AddPageSelectors.inlineAddButton(page).first().click();
+  await AddPageSelectors.addImportButton(page).click();
+  await expect(ImportSelectors.dialog(page)).toBeVisible();
+  // Use the real CSV importer, as desktop does; no seeded replacement database.
+  await ImportSelectors.csvInput(page).setInputFiles({
+    name: 'notion_formula_conversion_test_data.csv',
+    mimeType: 'text/csv',
+    buffer: conversionCsv,
+  });
+  await expect(ImportSelectors.dialog(page)).not.toBeVisible({ timeout: 120_000 });
+  await waitForGridReady(page);
+  const fields = await readGridFieldsDirect(page);
 
-  const defaults = await readGridFieldsDirect(page);
-  const nameField = defaults.find((field) => field.name === 'Name')!;
-  const doneCheckbox = defaults.find((field) => field.name === 'Done');
-
-  if (doneCheckbox) await renameFieldDirect(page, doneCheckbox.id, 'Original checkbox');
-  await seedColumn(
-    page,
-    nameField.id,
-    'Text',
-    conversionRows.map((row) => row[0])
-  );
-  for (const [index, name] of headers.entries()) {
-    if (index === 0) continue;
-    const fieldId = await addInputField(page, name, 'Number');
-
-    await seedColumn(
-      page,
-      fieldId,
-      'Number',
-      conversionRows.map((row) => row[index])
-    );
+  for (const name of ['Done', 'In progress']) {
+    expect(fields.find((field) => field.name === name)?.type).toBe(FieldType.Number);
   }
+  const nameId = fields.find((field) => field.name === 'Name')!.id;
+
+  await expect(DatabaseGridSelectors.dataRowCellsForField(page, nameId)).toHaveText(
+    conversionRows.map(([name]) => name)
+  );
+});
+
+Given('the formula grid uses the {string} theme', async ({ page }, theme: string) => {
+  if (theme !== 'light' && theme !== 'dark') throw new Error(`Unknown theme: ${theme}`);
+  await page.emulateMedia({ colorScheme: theme });
+  await expect(page.locator('html')).toHaveAttribute('data-dark-mode', String(theme === 'dark'));
 });
 
 When("I paste the reporter's conditional conversion formula", async ({ page }) => {
@@ -80,40 +85,32 @@ When("I paste the reporter's conditional conversion formula", async ({ page }) =
   await expect(formulaInput(page)).toHaveAttribute('data-value', conversionFormula);
 });
 
-/** Inspect the element that paints each text node, including nested rich spans. */
-async function expectTextColor(locator: Locator, color: string, text: string): Promise<void> {
+/** Red-only/plain results must also clear typography left by a previous result. */
+async function expectConversionStyle(locator: Locator, color: string, text: string, formats = 'none'): Promise<void> {
   expect(['red', 'default']).toContain(color);
-  const expected = await locator.evaluate(
-    (element, expectedColor) => {
-      const probe = document.createElement('span');
+  const baseline = await locator.evaluate((element) => {
+    const css = getComputedStyle(element);
 
-      probe.style.color = expectedColor;
-      element.append(probe);
-      const expected = getComputedStyle(probe).color;
-
-      probe.remove();
-      return expected;
-    },
-    color === 'red' ? 'var(--palette-text-color-1)' : 'var(--text-primary)'
+    return {
+      color: css.color,
+      backgroundColor: css.backgroundColor,
+      fontWeight: '400',
+      fontStyle: 'normal',
+      textDecorationLine: 'none',
+      fontFamily: css.fontFamily,
+      borderRadius: '0px',
+    };
+  });
+  const expected = await expectedStyle(
+    locator,
+    baseline,
+    { formats, foreground: color === 'red' ? '--palette-text-color-1' : '--text-primary', background: 'default' },
+    baseline.fontFamily
   );
 
   await expect
-    .poll(
-      () =>
-        locator.evaluate((element) => {
-          const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-          const actual: string[] = [];
-
-          while (walker.nextNode()) {
-            if (walker.currentNode.textContent?.trim())
-              actual.push(getComputedStyle(walker.currentNode.parentElement!).color);
-          }
-
-          return { text: element.textContent?.trim(), colors: [...new Set(actual)] };
-        }),
-      { message: `Formula text uses ${color} foreground` }
-    )
-    .toEqual({ text, colors: [expected] });
+    .poll(() => renderedStyles(locator, 0, text.length), { message: `Formula ${text} uses exactly ${color}/${formats}` })
+    .toEqual({ text, styles: [expected] });
 }
 
 Then("the conversion formula matches the reporter's expected text and colors", async ({ page }, table: DataTable) => {
@@ -125,11 +122,11 @@ Then("the conversion formula matches the reporter's expected text and colors", a
     const index = conversionRows.findIndex(([name]) => name === row);
 
     expect(index, `CSV row ${row}`).toBeGreaterThanOrEqual(0);
-    const cell = DatabaseGridSelectors.dataRowCellsForField(page, formulaId).nth(index);
+    const cell = DatabaseGridSelectors.dataRowCellsForField(page, formulaId).nth(index).locator('.formula-cell');
 
     await cell.scrollIntoViewIfNeeded();
     await expect(cell, row).toHaveText(value);
-    await expectTextColor(cell, color, value);
+    await expectConversionStyle(cell, color, value);
   }
 
   if (table.hashes().length === conversionRows.length) {
@@ -144,8 +141,32 @@ Then("the conversion formula matches the reporter's expected text and colors", a
 });
 
 Then('the conversion formula preview text is {string}', async ({ page }, color: string) => {
-  await expectTextColor(page.getByTestId('formula-preview-value'), color, '91');
+  await expectConversionStyle(page.getByTestId('formula-preview-value'), color, '91');
 });
+
+When('I add bold italic and underline to the conversion formula', async ({ page }) => {
+  await typeFormula(page, conversionFormula.replace('"red"', '"red", "b", "i", "u"'));
+});
+
+Then(
+  'the conversion formula preview renders {string} in {string} with formats {string}',
+  async ({ page }, text: string, color: string, formats: string) => {
+    await expectConversionStyle(page.getByTestId('formula-preview-value'), color, text, formats);
+  }
+);
+
+Then(
+  'conversion row {int} renders {string} in {string} with formats {string}',
+  async ({ page }, row: number, text: string, color: string, formats: string) => {
+    const id = await fieldIdByName(page, 'Formula');
+    const cell = DatabaseGridSelectors.dataRowCellsForField(page, id)
+      .nth(row - 1)
+      .locator('.formula-cell');
+
+    await cell.scrollIntoViewIfNeeded();
+    await expectConversionStyle(cell, color, text, formats);
+  }
+);
 
 interface RenderedStyle {
   color: string;

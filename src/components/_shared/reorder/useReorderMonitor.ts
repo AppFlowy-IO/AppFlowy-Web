@@ -1,12 +1,12 @@
 import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
 import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
 import { reorder } from '@atlaskit/pragmatic-drag-and-drop/reorder';
-import { autoScrollForElements } from '@atlaskit/pragmatic-drag-and-drop-auto-scroll/element';
 import { extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
-import { getReorderDestinationIndex } from '@atlaskit/pragmatic-drag-and-drop-hitbox/util/get-reorder-destination-index';
 import { extractInstruction } from '@atlaskit/pragmatic-drag-and-drop-hitbox/tree-item';
+import { getReorderDestinationIndex } from '@atlaskit/pragmatic-drag-and-drop-hitbox/util/get-reorder-destination-index';
 import React, { useEffect, useRef } from 'react';
 
+import { registerSharedAutoScroll } from '@/components/_shared/reorder/sharedAutoScroll';
 import {
   extractReorderableTreeItemData,
   moveIdAfterPrevious,
@@ -177,7 +177,7 @@ export function useReorderMonitor({
 
     if (autoScrollElement) {
       cleanups.push(
-        autoScrollForElements({
+        registerSharedAutoScroll({
           canScroll: canRespond,
           element: autoScrollElement,
         })

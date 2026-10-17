@@ -781,6 +781,66 @@ describe('relation and rollup basics', () => {
     await expect(joinedRead).resolves.toMatchObject({ value: '1' });
   });
 
+  it.each(['expired', 'invalidated'])('keeps a resolved rollup available while an %s value is revalidated', async (reason) => {
+    const suffix = `rollup-revalidation-${reason}`;
+    const fieldId = `rollup-${suffix}`;
+    const fixture = createFixture({
+      suffix,
+      rollups: [{
+        fieldId,
+        targetFieldId: `score-${suffix}`,
+        calculationType: CalculationType.Sum,
+        showAs: RollupDisplayMode.Calculated,
+      }],
+    });
+    const gate = createDeferred<void>();
+    let refreshing = false;
+    const createRow = jest.fn(async (rowKey: string) => {
+      if (refreshing) await gate.promise;
+      return fixture.createRow(rowKey);
+    });
+    const context = {
+      baseDoc: fixture.baseDoc,
+      database: fixture.baseDatabase,
+      rollupField: fixture.baseDatabase.get(YjsDatabaseKey.fields).get(fieldId)!,
+      row: fixture.baseRow,
+      rowId: fixture.baseRowId,
+      fieldId,
+      loadView: fixture.loadView,
+      createRow,
+      getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
+    };
+
+    await expect(readRollupCell(context)).resolves.toMatchObject({ value: '30', rawNumeric: 30 });
+    const source = await fixture.createRow(fixture.relatedRowIds[0]);
+
+    source!.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row)
+      .get(YjsDatabaseKey.cells).get(fixture.scoreFieldId).set(YjsDatabaseKey.data, '15');
+    refreshing = true;
+    const now = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + (reason === 'expired' ? 60_000 : 0));
+    const cellId = `${fixture.baseRowId}:${fieldId}`;
+    const notify = jest.fn();
+    const unsubscribe = subscribeRollupCell(cellId, notify);
+
+    try {
+      if (reason === 'invalidated') invalidateRollupCell(cellId);
+      // Revalidation must not make a numeric filter see an empty cell.
+      expect(readRollupCellSync(context)).toMatchObject({ value: '30', rawNumeric: 30 });
+      expect(readRollupCellSync(context)).toMatchObject({ value: '30', rawNumeric: 30 });
+      const refreshed = readRollupCell(context);
+
+      gate.resolve();
+      await expect(refreshed).resolves.toMatchObject({ value: '35', rawNumeric: 35 });
+      expect(notify).toHaveBeenCalledTimes(1);
+      expect(createRow).toHaveBeenCalledTimes(4);
+      expect(readRollupCellSync(context)).toMatchObject({ value: '35', rawNumeric: 35 });
+    } finally {
+      gate.resolve();
+      unsubscribe();
+      now.mockRestore();
+    }
+  });
+
   it('returns rollup original list values when configured', async () => {
     const rollupFieldId = 'rollup-list';
     const suffix = 'rollup-list';
@@ -865,6 +925,7 @@ describe('cross-database restore caches', () => {
           [fixture.scoreFieldId]: createCell(String(amount), FieldType.Number),
         })]));
       invalidateDatabaseDependenciesAfterRestore();
+      expect(readRollupCellSync(rollup)).toEqual({ value: '' });
       await read(`Restored ${generation}-0, Restored ${generation}-1`, amount * 2);
     }
     expect(loadView.mock.calls.length).toBeGreaterThan(initialLoads);

@@ -1,7 +1,6 @@
 import { t } from 'i18next';
 
 import { PlainError } from '@/application/errors/plain-error';
-import { serverRestore } from '@/application/server-restore';
 import { AccessLevel, CreatePagePayload, CreateSpacePayload, WorkspaceMember } from '@/application/types';
 
 import { captureApiContext } from './http/request-context';
@@ -60,9 +59,6 @@ function isSpaceCreationIntent(value: unknown): value is SpaceCreationIntent {
  * Persist submitted work before sending it. A missing server read cannot prove
  * a timed-out write will not commit, so recovery always keeps the original IDs.
  * Session storage isolates independent tabs while surviving reload and logout.
- * Like every other local store, a request belongs to the server restore
- * generation that saved it: after a restore it is never resumed against the
- * restored server (its atomic page commands stay in the old generation too).
  */
 export class SpaceCreationIntentStore {
   private readonly context = captureApiContext();
@@ -71,7 +67,7 @@ export class SpaceCreationIntentStore {
 
   constructor(workspaceId: string, private readonly isMountedScopeCurrent: () => boolean = () => true) {
     this.scopeKey = JSON.stringify([this.context.serverUrl, this.context.userId, workspaceId]);
-    this.key = serverRestore.cacheKey(`space-creation:v1:${this.scopeKey}`);
+    this.key = `space-creation:v1:${this.scopeKey}`;
   }
 
   assertCurrent(): void {

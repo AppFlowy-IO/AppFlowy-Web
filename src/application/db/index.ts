@@ -26,12 +26,6 @@ import {
   workspaceMemberProfileSchema,
   WorkspaceMemberProfileTable,
 } from '@/application/db/tables/workspace_member_profiles';
-import {
-  INITIAL_SERVER_RESTORE_ID,
-  restoreCacheKey,
-  serverRestore,
-  splitRestoreCacheKey,
-} from '@/application/server-restore';
 import { YDatabase, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { Log } from '@/utils/log';
 
@@ -46,9 +40,7 @@ import {
   type CollabStorageScope,
 } from './collab-storage-scope';
 import {
-  DATABASE_CACHE_EPOCH_KEY,
   DATABASE_CACHE_EPOCH_PREFIX,
-  DATABASE_RESTORE_MARKER_KEY,
   DATABASE_RESTORE_MARKER_PREFIX,
   DatabaseStorageGenerationChangedError,
   type DatabaseStorageFence,
@@ -72,7 +64,7 @@ type DexieTables = AtomicCreationTable &
 
 export type Dexie<T = DexieTables> = BaseDexie & T;
 
-export const db = new BaseDexie(serverRestore.cacheKey(`${databasePrefix}_cache`)) as Dexie;
+export const db = new BaseDexie(`${databasePrefix}_cache`) as Dexie;
 const _schema = Object.assign(
   {},
   {
@@ -361,8 +353,7 @@ function createYjsStores(db: IDBDatabase) {
 
 function openIdbDatabase(name: string, version?: number) {
   return new Promise<IDBDatabase | null>((resolve) => {
-    const storageName = serverRestore.cacheKey(name);
-    const request = typeof version === 'number' ? indexedDB.open(storageName, version) : indexedDB.open(storageName);
+    const request = typeof version === 'number' ? indexedDB.open(name, version) : indexedDB.open(name);
 
     request.onupgradeneeded = () => {
       createYjsStores(request.result);
@@ -425,14 +416,8 @@ export async function listCollabIndexedDBNames() {
 
     const prefix = captureCollabStorageScope().storageKey('');
 
-    // Only this restore generation, then only this account and workspace.
-    return new Set(
-      databases.flatMap(({ name }) => {
-        const logicalName = name ? serverRestore.logicalCacheKey(name) : undefined;
-
-        return logicalName?.startsWith(prefix) ? [logicalName.slice(prefix.length)] : [];
-      })
-    );
+    // Only this account and workspace.
+    return new Set(databases.flatMap(({ name }) => (name?.startsWith(prefix) ? [name.slice(prefix.length)] : [])));
   } catch (error) {
     Log.warn('[DB] failed to list IndexedDB databases', { error });
     return new Set<string>();
@@ -442,7 +427,6 @@ export async function listCollabIndexedDBNames() {
 type SignedOutAccount = { serverUrl: string; userId: string };
 
 const SIGN_OUT_DELETE_BATCH = 16;
-const SHARED_CACHE_NAME = `${databasePrefix}_cache`;
 
 /** Pre-scope shared rows are the keys outside the scoped namespace, on either side of it. */
 async function deleteSharedRowsOutsideScopedNamespace(
@@ -458,10 +442,10 @@ const ACCOUNT_STORAGE_NAME_REST = /^(null|"(?:[^"\\]|\\.)*")\]:(.*)$/s;
 const LEGACY_ROW_MARKER = '_rows_';
 
 /** `<workspace JSON>\0<objectId>` for every object of the account that still has outbox rows. */
-async function objectsWithUnsentEdits(outbox: Table, userId: string): Promise<Set<string>> {
+async function objectsWithUnsentEdits(userId: string): Promise<Set<string>> {
   // Every [userId, workspaceId, objectId] key of the account. Each bound names maxKey once:
   // a key that repeats one array instance is invalid in spec-conforming IndexedDB.
-  const keys = await outbox
+  const keys = await db.sync_outbox
     .where('[userId+workspaceId+objectId]')
     .between([userId], [userId, BaseDexie.maxKey])
     .uniqueKeys();
@@ -491,123 +475,6 @@ function storesObjectWithUnsentEdits(name: string, accountPrefix: string, pendin
   return pending.has(`${workspace}\u0000${objectId}`);
 }
 
-/** One restore generation's shared cache, as sign-out cleanup reads and trims it. */
-interface GenerationCache {
-  outbox: Table;
-  /** Shared collab tables and the row index, with the index naming each record's storage name. */
-  copies: Array<{ table: Table; index: 'objectId' | 'row_key' }>;
-  viewCache?: Table;
-  catalog?: Table;
-  transaction: (tables: Table[], scope: () => Promise<void>) => Promise<void>;
-  close: () => void;
-}
-
-function currentGenerationCache(): GenerationCache {
-  return {
-    outbox: db.sync_outbox,
-    copies: [
-      { table: db.collab_snapshots, index: 'objectId' },
-      { table: db.collab_updates, index: 'objectId' },
-      { table: db.collab_custom, index: 'objectId' },
-      { table: db.rows, index: 'row_key' },
-    ],
-    viewCache: db.app_view_cache,
-    catalog: db.workspace_database_catalog,
-    transaction: (tables, scope) => db.transaction('rw', tables, scope),
-    close: () => undefined,
-  };
-}
-
-/** Another generation's shared cache, opened as stored (never upgraded); only outbox keys are read. */
-async function storedGenerationCache(storedName: string): Promise<GenerationCache> {
-  const shared = new BaseDexie(storedName);
-
-  try {
-    await shared.open();
-    const table = (name: string) => (shared.tables.some((stored) => stored.name === name) ? shared.table(name) : undefined);
-    const copies = (
-      [['collab_snapshots', 'objectId'], ['collab_updates', 'objectId'], ['collab_custom', 'objectId'], ['rows', 'row_key']] as const
-    ).flatMap(([name, index]) => {
-      const stored = table(name);
-
-      return stored ? [{ table: stored, index }] : [];
-    });
-
-    return {
-      // A cache without an outbox cannot say which copies unsent edits need: it throws here.
-      outbox: shared.table('sync_outbox'),
-      copies,
-      viewCache: table('app_view_cache'),
-      catalog: table('workspace_database_catalog'),
-      transaction: (tables, scope) => shared.transaction('rw', tables, scope),
-      close: () => shared.close(),
-    };
-  } catch (error) {
-    shared.close();
-    throw error;
-  }
-}
-
-/**
- * Removes the account's copies from one restore generation and returns which storage names were
- * removable there, or undefined when nothing could be removed (its outbox could not be read, or
- * the account signed in again).
- */
-async function removeGenerationCopies(
-  account: SignedOutAccount,
-  restoreId: string,
-  names: string[],
-  isSignedOut: () => boolean
-): Promise<((name: string) => boolean) | undefined> {
-  const prefix = accountCollabStoragePrefix(account.serverUrl, account.userId);
-  const accountKey = JSON.stringify([account.serverUrl, account.userId]);
-  let cache: GenerationCache | undefined;
-
-  try {
-    if (restoreId === serverRestore.restoreId) cache = currentGenerationCache();
-    else if (names.includes(SHARED_CACHE_NAME)) cache = await storedGenerationCache(restoreCacheKey(restoreId, SHARED_CACHE_NAME));
-    // Without a shared cache there is no outbox, so nothing there is waiting to be sent.
-    const pending = cache ? await objectsWithUnsentEdits(cache.outbox, account.userId) : new Set<string>();
-    const kept = (name: string) => storesObjectWithUnsentEdits(name, prefix, pending);
-    const removable = (name: string) => (name.startsWith(prefix) && !kept(name)) || isPreScopeCollabStorageName(name);
-    const removed = names.filter(removable);
-
-    // A blocked delete completes once the closing tab releases its connection.
-    for (let index = 0; index < removed.length; index += SIGN_OUT_DELETE_BATCH) {
-      if (!isSignedOut()) return undefined;
-      await Promise.all(removed.slice(index, index + SIGN_OUT_DELETE_BATCH)
-        .map((name) => deleteStoredIndexedDBDatabase(restoreCacheKey(restoreId, name))));
-    }
-
-    if (!isSignedOut()) return undefined;
-    if (!cache) return removable;
-    const { copies } = cache;
-
-    if (copies.length > 0) {
-      await cache.transaction(copies.map(({ table }) => table), async () => {
-        if (!isSignedOut()) return;
-        for (const { table, index } of copies) {
-          await table.where(index).startsWith(prefix).filter((record) => !kept(record[index])).delete();
-          await deleteSharedRowsOutsideScopedNamespace(table, index);
-        }
-      });
-    }
-
-    if (!isSignedOut()) return undefined;
-    await cache.viewCache?.where('user_id').equals(accountKey).delete();
-    await cache.catalog
-      ?.where('[user_id+workspace_id]')
-      .between([accountKey, BaseDexie.minKey], [accountKey, BaseDexie.maxKey])
-      .delete();
-    return removable;
-  } catch (error) {
-    Log.warn('[DB] could not remove local data after sign-out', { restoreId, error });
-    return undefined;
-  } finally {
-    cache?.close();
-  }
-}
-
 /**
  * Removes, at the user's request when signing out, the copies of server
  * content that belong to that account (documents, database rows and their sync
@@ -618,66 +485,58 @@ async function removeGenerationCopies(
  * their quarantine are uploaded only after that account signs in again and a
  * fresh permission check allows it. Edits that were already sent over the
  * realtime connection but never applied cannot be told apart and are lost with
- * their copy. Stops as soon as `isSignedOut` reports the same account signed in
- * again.
- *
- * Every server restore generation on this device is cleaned the same way: the
- * current one, and the copies an earlier generation left behind before a server
- * restore (never read or uploaded again, but still this account's content).
- * Each generation keeps the copies its own outbox still needs, and nothing is
- * removed from a generation whose outbox cannot be read. Other generations are
- * found by listing IndexedDB, so without that API only the current one is cleaned.
+ * their copy. Removes nothing if the outbox cannot be read, and stops as soon as
+ * `isSignedOut` reports the same account signed in again.
  */
 export async function removeSignedOutLocalData(account: SignedOutAccount, isSignedOut: () => boolean = () => true) {
-  // Restore generation -> logical names of its IndexedDB databases, the current generation first.
-  const generations = new Map<string, string[]>([[serverRestore.restoreId, []]]);
+  const prefix = accountCollabStoragePrefix(account.serverUrl, account.userId);
 
   try {
+    const pending = await objectsWithUnsentEdits(account.userId);
+    const kept = (name: string) => storesObjectWithUnsentEdits(name, prefix, pending);
+    const removable = (name: string) => (name.startsWith(prefix) && !kept(name)) || isPreScopeCollabStorageName(name);
     const factory = typeof indexedDB === 'undefined' ? undefined : (indexedDB as IndexedDBFactoryWithDatabases);
 
-    if (factory?.databases) {
-      for (const { name } of await factory.databases()) {
-        if (!name) continue;
-        const { restoreId, logicalName } = splitRestoreCacheKey(name);
-        const names = generations.get(restoreId);
+    if (factory?.databases && isSignedOut()) {
+      const names = (await factory.databases()).flatMap(({ name }) => (name && removable(name) ? [name] : []));
 
-        if (names) names.push(logicalName);
-        else generations.set(restoreId, [logicalName]);
+      // A blocked delete completes once the closing tab releases its connection.
+      for (let index = 0; index < names.length; index += SIGN_OUT_DELETE_BATCH) {
+        if (!isSignedOut()) return;
+        await Promise.all(names.slice(index, index + SIGN_OUT_DELETE_BATCH).map((name) => deleteIndexedDBDatabase(name)));
+      }
+    }
+
+    if (!isSignedOut()) return;
+    await db.transaction('rw', [db.collab_snapshots, db.collab_updates, db.collab_custom, db.rows], async () => {
+      if (!isSignedOut()) return;
+      const sharedTables: Array<Table<{ objectId: string }>> = [db.collab_snapshots, db.collab_updates, db.collab_custom];
+
+      for (const table of sharedTables) {
+        await table.where('objectId').startsWith(prefix).filter((record) => !kept(record.objectId)).delete();
+        await deleteSharedRowsOutsideScopedNamespace(table, 'objectId');
       }
 
-      // Checkpoint keys can outlive every database of their generation.
-      generations.set(INITIAL_SERVER_RESTORE_ID, generations.get(INITIAL_SERVER_RESTORE_ID) ?? []);
-      forEachLocalStorageKey((key) => {
-        const { restoreId } = splitRestoreCacheKey(key);
+      await db.rows.where('row_key').startsWith(prefix).filter((record) => !kept(record.row_key)).delete();
+      await deleteSharedRowsOutsideScopedNamespace(db.rows, 'row_key');
+    });
 
-        if (!generations.has(restoreId)) generations.set(restoreId, []);
-      });
-    }
-  } catch (error) {
-    Log.warn('[DB] could not list local data after sign-out', { error });
-    return;
-  }
-
-  const removableIn = new Map<string, (name: string) => boolean>();
-
-  for (const [restoreId, names] of generations) {
     if (!isSignedOut()) return;
-    const removable = await removeGenerationCopies(account, restoreId, names, isSignedOut);
+    removeLocalStorageKeys((key) =>
+      [DATABASE_BLOB_RID_PREFIX, DATABASE_CACHE_EPOCH_PREFIX].some((keyPrefix) =>
+        key.startsWith(keyPrefix) && removable(key.slice(keyPrefix.length))) ||
+      key.startsWith(`${DATABASE_RESTORE_MARKER_PREFIX}v1:${account.serverUrl}:${account.userId}:`));
 
-    if (removable) removableIn.set(restoreId, removable);
+    const accountKey = JSON.stringify([account.serverUrl, account.userId]);
+
+    await db.app_view_cache.where('user_id').equals(accountKey).delete();
+    await db.workspace_database_catalog
+      .where('[user_id+workspace_id]')
+      .between([accountKey, BaseDexie.minKey], [accountKey, BaseDexie.maxKey])
+      .delete();
+  } catch (error) {
+    Log.warn('[DB] could not remove local data after sign-out', { error });
   }
-
-  if (!isSignedOut()) return;
-  const restoreMarkers = `${DATABASE_RESTORE_MARKER_KEY}v1:${account.serverUrl}:${account.userId}:`;
-
-  removeLocalStorageKeys((key) => {
-    const { restoreId, logicalName } = splitRestoreCacheKey(key);
-    const removable = removableIn.get(restoreId);
-
-    return removable !== undefined && (logicalName.startsWith(restoreMarkers) ||
-      [DATABASE_BLOB_RID_KEY, DATABASE_CACHE_EPOCH_KEY].some((keyPrefix) =>
-        logicalName.startsWith(keyPrefix) && removable(logicalName.slice(keyPrefix.length))));
-  });
 }
 
 async function probeCollabIndexedDBExists(name: string) {
@@ -694,7 +553,7 @@ async function probeCollabIndexedDBExists(name: string) {
     };
 
     try {
-      const request = indexedDB.open(serverRestore.cacheKey(name));
+      const request = indexedDB.open(name);
 
       request.onupgradeneeded = () => {
         createdDuringProbe = true;
@@ -747,7 +606,7 @@ export async function collabIndexedDBExists(name: string) {
     try {
       const databases = await indexedDBWithDatabases.databases();
 
-      return databases.some((database) => database.name === serverRestore.cacheKey(storageName));
+      return databases.some((database) => database.name === storageName);
     } catch (error) {
       Log.warn('[DB] failed to list IndexedDB databases while checking collab existence', { name, error });
     }
@@ -807,8 +666,7 @@ const providerCache = new ScopedCollabMap<CachedProviderEntry>(retireProviders);
 const pendingOpens = new ScopedCollabMap<Promise<CachedProviderEntry>>();
 const rowProviderCache = new ScopedCollabMap<CachedProviderEntry>(retireProviders);
 const pendingRowOpens = new ScopedCollabMap<Promise<CachedProviderEntry>>();
-const DATABASE_BLOB_RID_KEY = 'af_database_blob_rid:';
-const DATABASE_BLOB_RID_PREFIX = serverRestore.cacheKey(DATABASE_BLOB_RID_KEY);
+const DATABASE_BLOB_RID_PREFIX = 'af_database_blob_rid:';
 const SHARED_COLLAB_COMPACT_UPDATE_THRESHOLD = 200;
 const SHARED_STORAGE_EPOCH_KEY = '__storage_epoch';
 const SHARED_COLLAB_COMPACT_MAX_RETRIES = 3;
@@ -1367,11 +1225,6 @@ function disposeRowProvider(name: string, options: { destroyDoc?: boolean } = {}
 }
 
 async function deleteIndexedDBDatabase(name: string, options: { blockedTimeoutMs?: number } = {}) {
-  return deleteStoredIndexedDBDatabase(serverRestore.cacheKey(name), options);
-}
-
-/** Deletes a database by its stored name, which already carries its restore generation. */
-async function deleteStoredIndexedDBDatabase(name: string, options: { blockedTimeoutMs?: number } = {}) {
   if (typeof indexedDB === 'undefined') return true;
 
   return new Promise<boolean>((resolve) => {
@@ -1786,7 +1639,7 @@ async function _openCollabDBWithProviderInternal(
 
   await ensureYjsStores(storageName);
 
-  let provider = new IndexeddbPersistence(serverRestore.cacheKey(storageName), doc);
+  let provider = new IndexeddbPersistence(storageName, doc);
   let version = await provider.get(name + '/version');
 
   if (!scope.isCurrent()) {
@@ -1825,7 +1678,7 @@ async function _openCollabDBWithProviderInternal(
     doc = new Y.Doc({
       guid: name,
     }) as YDoc;
-    provider = new IndexeddbPersistence(serverRestore.cacheKey(storageName), doc);
+    provider = new IndexeddbPersistence(storageName, doc);
 
     if (options?.expectedVersion) {
       await provider.set(name + '/version', options.expectedVersion);
@@ -2065,22 +1918,19 @@ export function getCachedRowProvider(name: string): SharedIndexeddbPersistence |
   return entry && !entry.disposed ? entry.provider as SharedIndexeddbPersistence : undefined;
 }
 
-function forEachLocalStorageKey(visit: (key: string) => void) {
+function removeLocalStorageKeys(matches: (key: string) => boolean) {
   if (typeof localStorage === 'undefined') return;
+
+  const keysToRemove: string[] = [];
 
   for (let i = 0; i < localStorage.length; i += 1) {
     const key = localStorage.key(i);
 
-    if (key) visit(key);
+    if (key && matches(key)) {
+      keysToRemove.push(key);
+    }
   }
-}
 
-function removeLocalStorageKeys(matches: (key: string) => boolean) {
-  const keysToRemove: string[] = [];
-
-  forEachLocalStorageKey((key) => {
-    if (matches(key)) keysToRemove.push(key);
-  });
   keysToRemove.forEach((key) => localStorage.removeItem(key));
 }
 
@@ -2108,13 +1958,11 @@ function clearDatabaseCheckpointsForDeletedDatabases(results: Array<{ name: stri
   const blockedDatabaseIds = new Set<string>();
 
   results.forEach(({ name, deleted }) => {
-    const logicalName = serverRestore.logicalCacheKey(name);
-
-    if (!logicalName) return;
-    const markerIndex = logicalName.indexOf('_rows_');
+    if (!name) return;
+    const markerIndex = name.indexOf('_rows_');
 
     if (markerIndex <= 0) return;
-    const databaseId = logicalName.slice(0, markerIndex);
+    const databaseId = name.slice(0, markerIndex);
 
     if (!databaseId) return;
     if (deleted) {

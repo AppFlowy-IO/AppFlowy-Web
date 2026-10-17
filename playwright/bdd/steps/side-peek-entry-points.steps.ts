@@ -12,6 +12,8 @@ import { getVisibleDataRowIds } from '../../support/row-detail-helpers';
 import {
   BoardSelectors,
   DatabaseGridSelectors,
+  DatabaseListSelectors,
+  DatabaseViewSelectors,
   FieldType,
   GridFieldSelectors,
   PropertyMenuSelectors,
@@ -74,6 +76,49 @@ When('I activate the Open row button of the list row {string}', async ({ page },
   await expect(opener).toBeAttached({ timeout: 15_000 });
   await opener.focus();
   await active.keyboard.press('Enter');
+  await expectPeekOpen(active, undefined, title);
+});
+
+// Desktop list_row.dart `_PeekButton` (PR #1475): `list-row-peek-<rowId>` is
+// hidden until the row is hovered or holds focus, then a 20px ghost button.
+
+When('I hover the list row {string}', async ({ page }, title: string) => {
+  const active = activeSidePeekPage(page);
+
+  await DatabaseListSelectors.rowById(active, await rowIdByTitle(active, title)).hover();
+});
+
+/** The active view tab lies outside every row, its gutter and the peek button. */
+When('I move the pointer off the list rows', async ({ page }) => {
+  await DatabaseViewSelectors.activeViewTab(activeSidePeekPage(page)).hover();
+});
+
+Then('the list row {string} shows its peek button', async ({ page }, title: string) => {
+  const active = activeSidePeekPage(page);
+  const peekButton = active.getByTestId(`list-row-peek-${await rowIdByTitle(active, title)}`);
+
+  await expect(peekButton).toBeVisible();
+  const box = await peekButton.boundingBox();
+
+  if (!box) throw new Error(`The peek button of the list row "${title}" has no layout box`);
+  expect(Math.abs(box.width - 20)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(box.height - 20)).toBeLessThanOrEqual(0.5);
+});
+
+Then('the list row {string} does not show its peek button', async ({ page }, title: string) => {
+  const active = activeSidePeekPage(page);
+  const peekButton = active.getByTestId(`list-row-peek-${await rowIdByTitle(active, title)}`);
+
+  await expect(peekButton).toBeAttached({ timeout: 15_000 });
+  await expect(peekButton).toBeHidden();
+});
+
+When('I click the peek button of the list row {string}', async ({ page }, title: string) => {
+  const active = activeSidePeekPage(page);
+  const rowId = await rowIdByTitle(active, title);
+
+  await DatabaseListSelectors.rowById(active, rowId).hover();
+  await active.getByTestId(`list-row-peek-${rowId}`).click();
   await expectPeekOpen(active, undefined, title);
 });
 

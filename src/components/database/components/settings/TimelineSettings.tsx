@@ -25,10 +25,11 @@ function TimelineSettings({ children }: { children: React.ReactNode }) {
         className={'!min-w-[120px]'}
       >
         <DropdownMenuGroup>
+          {/* Desktop database_settings_list.dart order: Properties, Layout, Group, Timeline settings. */}
           <Properties />
           <Layout currentLayout={DatabaseViewLayout.Timeline} />
-          <TimelineLayoutSettings />
           <TimelineSettingGroup />
+          <TimelineLayoutSettings />
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>

@@ -63,6 +63,10 @@ test.describe('Database side peek', () => {
 
     await typeTextIntoCell(page, fieldId, 0, 'First task');
     await typeTextIntoCell(page, fieldId, 1, 'Second task');
+    const pageLayout = page.locator('.appflowy-layout');
+    const originalPageBounds = await pageLayout.boundingBox();
+    const pageShare = page.locator('.appflowy-top-bar').getByTestId('share-button');
+
     await openRowDetail(page);
 
     const detail = RowDetailSelectors.modal(page);
@@ -71,6 +75,22 @@ test.describe('Database side peek', () => {
     await expect(detail).toHaveAttribute('data-peek-mode', 'side');
     await expect(page.locator('.MuiBackdrop-root:visible')).toHaveCount(0);
     await expect(page.getByTestId('row-peek-previous')).toBeDisabled();
+    await expect.poll(() => pageLayout.boundingBox()).toEqual(originalPageBounds);
+    await expect
+      .poll(() => page.getByTestId('database-side-peek').boundingBox())
+      .toEqual(expect.objectContaining({ y: 0, height: page.viewportSize()!.height }));
+    // The peek covers the original toolbar, including its Share button.
+    await expect
+      .poll(() =>
+        pageShare.evaluate((button) => {
+          const bounds = button.getBoundingClientRect();
+
+          return !!document
+            .elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2)
+            ?.closest('[data-testid="database-side-peek"]');
+        })
+      )
+      .toBe(true);
 
     // A real grid edit must work without dismissing the nonmodal panel.
     await typeTextIntoCell(page, fieldId, 1, 'Updated second task');
@@ -102,11 +122,12 @@ test.describe('Database side peek', () => {
     await chooseMode(page, 'side');
     await expect(title).toHaveAttribute('data-editor-instance', 'original');
     await expect(title).toHaveText('Draft retained across modes');
-    await page.screenshot({ path: testInfo.outputPath('side-peek.png') });
+    await page.screenshot({ path: testInfo.outputPath('side-peek.png'), animations: 'disabled' });
 
     await RowDetailSelectors.modalTitle(page).click({ position: { x: 5, y: 5 } });
     await page.keyboard.press('Escape');
     await expect(detail).toHaveCount(0);
+    await pageShare.click({ trial: true });
     await expect(DatabaseGridSelectors.dataRowCellsForField(page, fieldId).first()).toContainText(
       'Draft retained across modes'
     );

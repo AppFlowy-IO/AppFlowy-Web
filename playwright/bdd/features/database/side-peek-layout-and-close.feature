@@ -125,7 +125,7 @@ Feature: Database side peek layout and close
     Then the side peek width is at its minimum
     And the side peek width is within its bounds
 
-  Scenario: The comments panel reclaims width from the side peek
+  Scenario: The side peek respects the comments panel width
     Given I am signed in for side peek testing
     And I have created a grid named "Peek Comments" with rows "Amber, Birch, Cedar"
     And I have created a document named "Peek Comments Host" with a linked grid "Peek Comments"
@@ -135,8 +135,13 @@ Feature: Database side peek layout and close
     When I press End on the side peek resizer
     Then the side peek width is at its maximum
     When I remember the side peek width
-    And I open the comments panel from the page header
-    Then the side peek is narrower than before
+    # Side peek covers the page header, so close it before using the page's comments button.
+    And I close the peek with the close button
+    Then no peek is open
+    When I open the comments panel from the page header
+    And I open the row "Amber" in the peek from the grid
+    Then the peek is open in side mode showing "Amber"
+    And the side peek is narrower than before
     And the side peek width is at its maximum
     And the side peek maximum width is two thirds of the available width
     And the side peek width is within its bounds
@@ -146,7 +151,10 @@ Feature: Database side peek layout and close
     And the side peek is wider than before
     And the side peek width is at its maximum
     # At 1200 px the 352 px comments panel leaves less than the 880 px a side peek needs, so it falls back to center.
+    When I close the peek with the close button
+    Then no peek is open
     When I open the comments panel from the page header
+    And I open the row "Amber" in the peek from the grid
     And I set the viewport to 1200x900
     Then the peek is open in center mode showing "Amber"
     When I close the comments panel

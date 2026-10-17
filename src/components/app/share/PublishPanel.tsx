@@ -81,7 +81,8 @@ function PublishPanel({
       });
     };
 
-    refresh();
+    // useLoadPublishInfo owns the initial load. Lifecycle events join that
+    // pending request instead of starting another pair of publication reads.
     window.addEventListener('focus', refresh);
     document.addEventListener('visibilitychange', refresh);
     return () => {
@@ -100,7 +101,7 @@ function PublishPanel({
       try {
         await publish(view, newPublishName);
         setPublishedOverride(true);
-        await loadPublishInfo();
+        await loadPublishInfo({ force: true });
         notify.success(t('publish.publishSuccessfully'));
         // eslint-disable-next-line
       } catch (e: any) {
@@ -124,7 +125,7 @@ function PublishPanel({
     try {
       await unpublish(publishInfoViewId);
       setPublishedOverride(false);
-      await loadPublishInfo();
+      await loadPublishInfo({ force: true });
       notify.success(t('publish.unpublishSuccessfully'));
       // eslint-disable-next-line
     } catch (e: any) {

@@ -12,6 +12,7 @@ import {
 } from '@/application/database-yjs/database.type';
 import { useDuplicateRowDispatch } from '@/application/database-yjs/dispatch/row';
 import { getMetaIdMap, getRowKey } from '@/application/database-yjs/row_meta';
+import { getCachedProviderDoc } from '@/application/db';
 import {
   RowId,
   YDatabase,
@@ -24,6 +25,7 @@ import {
   YjsEditorKey,
 } from '@/application/types';
 
+import { CommittedRowActivationError, createCloudRow, type CloudRowCreationIntent } from '../creation/create-row';
 import { readTimelineLayoutSetting, updateTimelineLayoutSetting } from '../timeline-layout';
 
 import { createCell, createRowDoc } from './test-helpers';
@@ -41,6 +43,31 @@ jest.mock('@/application/db', () => {
     getCachedProviderDoc: jest.fn(),
     openCollabDB: jest.fn(async () => new Yjs.Doc()),
   };
+});
+
+jest.mock('../creation/create-row', () => ({
+  ...jest.requireActual('../creation/create-row'),
+  createCloudRow: jest.fn(),
+}));
+beforeEach(() => {
+  jest.mocked(getCachedProviderDoc).mockReset();
+  jest.mocked(createCloudRow).mockReset();
+  jest.mocked(createCloudRow).mockImplementation(async (intent: CloudRowCreationIntent) => {
+    intent.assertCurrent();
+    const row = await intent.registerRow();
+
+    Y.applyUpdate(row, Y.encodeStateAsUpdate(intent.rowDoc));
+    const database = intent.databaseDoc.getMap('data').get('database') as YDatabase;
+
+    database.get(YjsDatabaseKey.views).forEach((view) => {
+      const orders = view.get(YjsDatabaseKey.row_orders);
+      const anchor = intent.position.kind === 'after' ? intent.position.row_id : '';
+      const index = orders.toArray().findIndex((order) => order.id === anchor);
+
+      orders.insert(index + 1, [{ id: intent.rowId, height: 36 }]);
+    });
+    return intent.rowId;
+  });
 });
 
 const databaseId = 'database-id';
@@ -118,7 +145,13 @@ function createWrapper({
   referenceRowDoc,
   createdRows,
   duplicateRowDocument,
+  sourceDocument,
+  loadRowDocument,
+  checkIfRowDocumentExists,
 }: {
+  sourceDocument?: YDoc;
+  loadRowDocument?: DatabaseContextState['loadRowDocument'];
+  checkIfRowDocumentExists?: DatabaseContextState['checkIfRowDocumentExists'];
   databaseDoc: YDoc;
   referenceRowDoc: YDoc;
   createdRows: Map<string, YDoc>;
@@ -140,6 +173,13 @@ function createWrapper({
       return rowDoc;
     },
     duplicateRowDocument,
+    checkIfRowDocumentExists,
+    loadRowDocument:
+      loadRowDocument ??
+      (async () => {
+        if (!sourceDocument) throw new Error('missing source document');
+        return sourceDocument;
+      }),
   };
 
   return ({ children }: { children: ReactNode }) => (
@@ -208,7 +248,7 @@ describe('useDuplicateRowDispatch', () => {
 
   it('preserves a lazy cell raw value and stored type', async () => {
     const databaseDoc = createDatabaseDoc();
-    const referenceRowDoc = createReferenceRowDoc({ storedFieldType: FieldType.MultiSelect });
+    const referenceRowDoc = createReferenceRowDoc({ storedFieldType: FieldType.MultiSelect, isEmptyDocument: true });
     const createdRows = new Map<string, YDoc>();
     const duplicateRowDocument = jest.fn().mockResolvedValue(undefined);
     const { result } = renderHook(() => useDuplicateRowDispatch(), {
@@ -227,11 +267,12 @@ describe('useDuplicateRowDispatch', () => {
     expect(cell.get(YjsDatabaseKey.data)).toBe('Source row');
     expect(cell.get(YjsDatabaseKey.field_type)).toBe(FieldType.MultiSelect);
     expect(cell.get(YjsDatabaseKey.source_field_type)).toBeUndefined();
+    expect(jest.mocked(createCloudRow).mock.calls[0][0].preserveCellStorage).toBe(true);
   });
 
   it('deep-clones Y.Array cell data so duplicate edits do not mutate the source', async () => {
     const databaseDoc = createDatabaseDoc();
-    const referenceRowDoc = createReferenceRowDoc({ storedFieldType: FieldType.Relation });
+    const referenceRowDoc = createReferenceRowDoc({ storedFieldType: FieldType.Relation, isEmptyDocument: true });
     const referenceRow = referenceRowDoc
       .getMap(YjsEditorKey.data_section)
       .get(YjsEditorKey.database_row) as YDatabaseRow;
@@ -284,49 +325,253 @@ describe('useDuplicateRowDispatch', () => {
     expect(duplicateRowDocument).not.toHaveBeenCalled();
   });
 
-  it('keeps duplicated rows with unknown document state marked empty until content is confirmed', async () => {
+  it('rejects duplication when unknown document state cannot be resolved', async () => {
     const databaseDoc = createDatabaseDoc();
     const referenceRowDoc = createReferenceRowDoc();
     const createdRows = new Map<string, YDoc>();
     const duplicateRowDocument = jest.fn().mockResolvedValue(undefined);
+    const loadRowDocument = jest.fn(async () => null);
     const { result } = renderHook(() => useDuplicateRowDispatch(), {
-      wrapper: createWrapper({ databaseDoc, referenceRowDoc, createdRows, duplicateRowDocument }),
+      wrapper: createWrapper({ databaseDoc, referenceRowDoc, createdRows, duplicateRowDocument, loadRowDocument }),
     });
-    let duplicatedRowId = '';
 
     await act(async () => {
-      duplicatedRowId = await result.current(sourceRowId);
+      await expect(result.current(sourceRowId)).rejects.toThrow('Source Row document is unavailable');
     });
-
-    const createdRowDoc = createdRows.get(getRowKey(databaseDocId, duplicatedRowId));
-
-    expect(createdRowDoc).toBeDefined();
-    expect(getRowMetaValue(createdRowDoc as YDoc, duplicatedRowId, RowMetaKey.IsDocumentEmpty)).toBe(true);
-    expect(duplicateRowDocument).toHaveBeenCalledWith(databaseId, sourceRowId, duplicatedRowId, undefined);
+    expect(loadRowDocument).toHaveBeenCalledTimes(1);
+    expect(createdRows.size).toBe(0);
+    expect(createCloudRow).not.toHaveBeenCalled();
+    expect(duplicateRowDocument).not.toHaveBeenCalled();
   });
 
-  it('still requests row page duplication for a known non-empty source document', async () => {
-    const sourceDocumentId = 'source-document-id';
+  it('duplicates a legacy bodyless row after the server confirms its document does not exist', async () => {
     const databaseDoc = createDatabaseDoc();
-    const referenceRowDoc = createReferenceRowDoc({
-      documentId: sourceDocumentId,
-      isEmptyDocument: false,
-    });
+    const referenceRowDoc = createReferenceRowDoc();
     const createdRows = new Map<string, YDoc>();
-    const duplicateRowDocument = jest.fn().mockResolvedValue(undefined);
+    const loadRowDocument = jest.fn();
+    const checkIfRowDocumentExists = jest.fn(async () => false);
     const { result } = renderHook(() => useDuplicateRowDispatch(), {
-      wrapper: createWrapper({ databaseDoc, referenceRowDoc, createdRows, duplicateRowDocument }),
+      wrapper: createWrapper({
+        databaseDoc,
+        referenceRowDoc,
+        createdRows,
+        loadRowDocument,
+        checkIfRowDocumentExists,
+        duplicateRowDocument: jest.fn(),
+      }),
     });
-    let duplicatedRowId = '';
+    let rowId = '';
 
     await act(async () => {
-      duplicatedRowId = await result.current(sourceRowId);
+      rowId = await result.current(sourceRowId);
+    });
+    expect(checkIfRowDocumentExists).toHaveBeenCalledWith(getMetaIdMap(sourceRowId).get(RowMetaKey.DocumentId));
+    expect(loadRowDocument).not.toHaveBeenCalled();
+    expect(jest.mocked(createCloudRow).mock.calls[0][0].documentState).toBeUndefined();
+    expect(getRowMetaValue(createdRows.get(getRowKey(databaseDocId, rowId))!, rowId, RowMetaKey.IsDocumentEmpty)).toBe(true);
+  });
+
+  it('does not treat a failed document existence check as an absent legacy body', async () => {
+    const databaseDoc = createDatabaseDoc();
+    const referenceRowDoc = createReferenceRowDoc();
+    const createdRows = new Map<string, YDoc>();
+    const error = new Error('Network unavailable');
+    const checkIfRowDocumentExists = jest.fn().mockRejectedValue(error);
+    const { result } = renderHook(() => useDuplicateRowDispatch(), {
+      wrapper: createWrapper({
+        databaseDoc,
+        referenceRowDoc,
+        createdRows,
+        checkIfRowDocumentExists,
+        duplicateRowDocument: jest.fn(),
+      }),
     });
 
-    const createdRowDoc = createdRows.get(getRowKey(databaseDocId, duplicatedRowId));
-
-    expect(createdRowDoc).toBeDefined();
-    expect(getRowMetaValue(createdRowDoc as YDoc, duplicatedRowId, RowMetaKey.IsDocumentEmpty)).toBe(false);
-    expect(duplicateRowDocument).toHaveBeenCalledWith(databaseId, sourceRowId, duplicatedRowId, undefined);
+    await act(async () => {
+      await expect(result.current(sourceRowId)).rejects.toBe(error);
+    });
+    expect(createdRows.size).toBe(0);
+    expect(createCloudRow).not.toHaveBeenCalled();
   });
+
+  it.each(
+    [false, undefined].flatMap((isEmptyDocument) =>
+      ['absent', 'empty', 'incomplete', 'nonempty'].map((cache) => ({ isEmptyDocument, cache }))
+    )
+  )(
+    'copies a complete document with metadata $isEmptyDocument and a $cache cache',
+    async ({ isEmptyDocument, cache }) => {
+      const sourceDocumentId = 'source-document-id';
+      const sourceDocument = new Y.Doc() as YDoc;
+      const body = new Y.Map();
+      const blocks = new Y.Map();
+      const paragraph = new Y.Map();
+      const meta = new Y.Map();
+      const text = new Y.Text('Source content');
+      const texts = new Y.Map();
+
+      sourceDocument.getMap('data').set('document', body);
+      body.set('blocks', blocks);
+      body.set('meta', meta);
+      meta.set('text_map', texts);
+      texts.set('text', text);
+      blocks.set('paragraph', paragraph);
+      paragraph.set('external_id', 'text');
+      const cached = new Y.Doc() as YDoc;
+
+      if (cache === 'empty') {
+        Y.applyUpdate(cached, Y.encodeStateAsUpdate(sourceDocument));
+        const cachedBody = cached.getMap('data').get('document') as Y.Map<Y.Map<Y.Map<Y.Text>>>;
+        const cachedText = cachedBody.get('meta')!.get('text_map')!.get('text')!;
+
+        cachedText.delete(0, cachedText.length);
+      }
+
+      if (cache !== 'absent')
+        jest.mocked(getCachedProviderDoc).mockReturnValue(cache === 'nonempty' ? sourceDocument : cached);
+      const loadRowDocument = jest.fn(async () => sourceDocument);
+      const checkIfRowDocumentExists = jest.fn(async () => true);
+      const databaseDoc = createDatabaseDoc();
+      const referenceRowDoc = createReferenceRowDoc({
+        documentId: sourceDocumentId,
+        isEmptyDocument,
+      });
+      const createdRows = new Map<string, YDoc>();
+      const duplicateRowDocument = jest.fn().mockResolvedValue(undefined);
+      const { result } = renderHook(() => useDuplicateRowDispatch(), {
+        wrapper: createWrapper({
+          databaseDoc,
+          referenceRowDoc,
+          createdRows,
+          duplicateRowDocument,
+          loadRowDocument,
+          checkIfRowDocumentExists,
+        }),
+      });
+      let duplicatedRowId = '';
+
+      await act(async () => {
+        duplicatedRowId = await result.current(sourceRowId);
+      });
+
+      const createdRowDoc = createdRows.get(getRowKey(databaseDocId, duplicatedRowId));
+
+      expect(createdRowDoc).toBeDefined();
+      expect(getRowMetaValue(createdRowDoc as YDoc, duplicatedRowId, RowMetaKey.IsDocumentEmpty)).toBe(false);
+      expect(duplicateRowDocument).not.toHaveBeenCalled();
+      const intent = jest.mocked(createCloudRow).mock.calls.at(-1)![0];
+
+      expect(intent.documentState).toEqual(Y.encodeStateAsUpdate(sourceDocument));
+      expect(intent.template).toMatchObject({
+        docViewId: getMetaIdMap(sourceRowId).get(RowMetaKey.DocumentId),
+        isDocumentEmpty: false,
+      });
+      expect(loadRowDocument).toHaveBeenCalledTimes(cache === 'nonempty' ? 0 : 1);
+      expect(checkIfRowDocumentExists).toHaveBeenCalledTimes(isEmptyDocument === undefined && cache !== 'nonempty' ? 1 : 0);
+      if (cache !== 'nonempty') {
+        expect(loadRowDocument).toHaveBeenCalledWith(getMetaIdMap(sourceRowId).get(RowMetaKey.DocumentId), {
+          requireServerFetch: true,
+          rowDocumentSource: { database_id: databaseId, database_view_id: viewId, row_id: sourceRowId },
+        });
+      }
+
+      cached.destroy();
+      sourceDocument.destroy();
+    }
+  );
+
+  it('omits the body only after loading and confirming an unknown document is empty', async () => {
+    const databaseDoc = createDatabaseDoc();
+    const referenceRowDoc = createReferenceRowDoc();
+    const shell = new Y.Doc() as YDoc;
+    const body = new Y.Map();
+    const meta = new Y.Map();
+
+    shell.getMap('data').set('document', body);
+    body.set('blocks', new Y.Map());
+    body.set('meta', meta);
+    meta.set('text_map', new Y.Map());
+    const loadRowDocument = jest.fn(async () => shell);
+    const createdRows = new Map<string, YDoc>();
+    const { result } = renderHook(() => useDuplicateRowDispatch(), {
+      wrapper: createWrapper({
+        databaseDoc,
+        referenceRowDoc,
+        createdRows,
+        duplicateRowDocument: jest.fn(),
+        loadRowDocument,
+      }),
+    });
+    let rowId = '';
+
+    await act(async () => {
+      rowId = await result.current(sourceRowId);
+    });
+    expect(loadRowDocument).toHaveBeenCalledTimes(1);
+    expect(jest.mocked(createCloudRow).mock.calls[0][0].documentState).toBeUndefined();
+    expect(getRowMetaValue(createdRows.get(getRowKey(databaseDocId, rowId))!, rowId, RowMetaKey.IsDocumentEmpty)).toBe(
+      true
+    );
+    shell.destroy();
+  });
+
+  it('rejects a nonempty row whose cached body remains empty after hydration', async () => {
+    const databaseDoc = createDatabaseDoc();
+    const referenceRowDoc = createReferenceRowDoc({ isEmptyDocument: false });
+    const shell = new Y.Doc() as YDoc;
+    const body = new Y.Map();
+    const meta = new Y.Map();
+
+    shell.getMap('data').set('document', body);
+    body.set('blocks', new Y.Map());
+    body.set('meta', meta);
+    meta.set('text_map', new Y.Map());
+    jest.mocked(getCachedProviderDoc).mockReturnValue(shell);
+    const createdRows = new Map<string, YDoc>();
+    const loadRowDocument = jest.fn(async () => shell);
+    const { result } = renderHook(() => useDuplicateRowDispatch(), {
+      wrapper: createWrapper({
+        databaseDoc,
+        referenceRowDoc,
+        createdRows,
+        duplicateRowDocument: jest.fn(),
+        loadRowDocument,
+      }),
+    });
+
+    await act(async () => {
+      await expect(result.current(sourceRowId)).rejects.toThrow('Source Row document is still empty');
+    });
+    expect(loadRowDocument).toHaveBeenCalledTimes(1);
+    expect(createCloudRow).not.toHaveBeenCalled();
+    expect(createdRows.size).toBe(0);
+    shell.destroy();
+  });
+});
+
+test('duplicate completion after owner retirement reports the committed copy instead of a failed create', async () => {
+  const databaseDoc = createDatabaseDoc();
+  const referenceRowDoc = createReferenceRowDoc({ isEmptyDocument: true });
+  const createdRows = new Map<string, YDoc>();
+  const { result, unmount } = renderHook(() => useDuplicateRowDispatch(), {
+    wrapper: createWrapper({ databaseDoc, referenceRowDoc, createdRows, duplicateRowDocument: jest.fn() }),
+  });
+  const publish = jest.mocked(createCloudRow).getMockImplementation()!;
+
+  jest.mocked(createCloudRow).mockImplementationOnce(async (intent) => {
+    const rowId = await publish(intent);
+
+    unmount();
+    return rowId;
+  });
+  let error: unknown;
+
+  await act(async () => {
+    error = await result.current(sourceRowId).catch((error: unknown) => error);
+  });
+  expect(error).toBeInstanceOf(CommittedRowActivationError);
+  const rowId = (error as CommittedRowActivationError).rowId;
+
+  expect(createdRows.has(getRowKey(databaseDocId, rowId))).toBe(true);
+  expect(jest.mocked(createCloudRow)).toHaveBeenCalledTimes(1);
 });

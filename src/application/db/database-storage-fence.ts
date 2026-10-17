@@ -1,8 +1,6 @@
-import { serverRestore } from '@/application/server-restore';
 import type { YDoc } from '@/application/types';
 
 import { captureCollabStorageScope, collabStorageKey } from './collab-storage-scope';
-
 
 /** A newer tab changed storage while this tab was checking the server's restore head. */
 export class DatabaseStorageGenerationChangedError extends Error {
@@ -23,11 +21,8 @@ export type DatabaseStorageFence = {
   nonDurable?: boolean;
 };
 
-/** Storage key names inside a restore generation; the prefixes below add this tab's generation. */
-export const DATABASE_CACHE_EPOCH_KEY = 'af_database_blob_epoch:';
-export const DATABASE_RESTORE_MARKER_KEY = 'af_database_restore:';
-export const DATABASE_CACHE_EPOCH_PREFIX = serverRestore.cacheKey(DATABASE_CACHE_EPOCH_KEY);
-export const DATABASE_RESTORE_MARKER_PREFIX = serverRestore.cacheKey(DATABASE_RESTORE_MARKER_KEY);
+export const DATABASE_CACHE_EPOCH_PREFIX = 'af_database_blob_epoch:';
+export const DATABASE_RESTORE_MARKER_PREFIX = 'af_database_restore:';
 const applyingFences = new WeakMap<YDoc, DatabaseStorageFence>();
 
 export function databaseStorageFenceObjectId(databaseId: string): string {

@@ -1,25 +1,37 @@
-import { expect, Page } from '@playwright/test';
+import { expect, Locator, Page } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
-import { getFieldIdByName, loginAndCreateGrid } from '../../support/field-type-helpers';
+import { addFieldWithType, getFieldIdByName, loginAndCreateGrid, toggleCheckbox } from '../../support/field-type-helpers';
 import { clickSelectCell, createSelectOption, selectExistingOption } from '../../support/filter-test-helpers';
 import {
   BoardSelectors,
   DatabaseGridSelectors,
   DatabaseListSelectors,
   DatabaseViewSelectors,
+  FieldType,
 } from '../../support/selectors';
 import { generateRandomEmail, setupPageErrorHandling } from '../../support/test-config';
 
 const { Given, When, Then } = createBdd();
 
 const typeFieldIds = new WeakMap<Page, string>();
+const checkboxFieldIds = new WeakMap<Page, string>();
 const gridViewIds = new WeakMap<Page, string>();
 const listViewIds = new WeakMap<Page, string>();
 const listGroupRowCounts = new WeakMap<Page, number>();
 
 const listGroupHeaders = (page: Page) => page.locator('[data-testid^="list-group-header-"]');
 const listGroupHeaderByName = (page: Page, name: string) => listGroupHeaders(page).filter({ hasText: name });
+const listGroupSettingsMenu = (page: Page) => page.getByTestId('list-group-settings-menu');
+const listGroupByMenu = (page: Page) => page.getByTestId('list-group-by-menu');
+// Field rows only: the FieldDisplay name and the tick reuse the same test-id prefix.
+const listGroupByFieldRows = (scope: Locator) =>
+  scope.locator('[role="menuitem"][data-testid^="list-group-by-field-"]');
+// The eye icons and option tags reuse the row prefix; only rows carry the checkbox role.
+const listGroupVisibilityRows = (page: Page) =>
+  listGroupSettingsMenu(page).locator('[data-testid^="list-group-visibility-"][role="menuitemcheckbox"]');
+const listGroupVisibilityRowByName = (page: Page, name: string) =>
+  listGroupVisibilityRows(page).filter({ has: page.getByText(name, { exact: true }) });
 
 async function databaseViewIds(page: Page): Promise<string[]> {
   return DatabaseViewSelectors.viewTab(page).evaluateAll((tabs) =>
@@ -30,8 +42,7 @@ async function databaseViewIds(page: Page): Promise<string[]> {
 }
 
 async function openListGroupSettings(page: Page) {
-  const alreadyOpen = await page
-    .getByTestId('list-group-settings-menu')
+  const alreadyOpen = await listGroupSettingsMenu(page)
     .isVisible()
     .catch(() => false);
 
@@ -44,17 +55,39 @@ async function openListGroupSettings(page: Page) {
     await page.getByTestId('database-actions-settings').click();
     await expect(groupTrigger).toBeVisible();
   }
+
   await groupTrigger.click();
-  await expect(page.getByTestId('list-group-settings-menu')).toBeVisible();
+  await expect(listGroupSettingsMenu(page)).toBeVisible();
+}
+
+/** Desktop's grouped menu keeps the field list in a nested "Group by ▸ <field>" submenu. */
+async function openListGroupByMenu(page: Page) {
+  await openListGroupSettings(page);
+  if (!(await listGroupByMenu(page).isVisible())) {
+    await page.getByTestId('list-group-by-trigger').click();
+  }
+
+  await expect(listGroupByMenu(page)).toBeVisible();
+
+  return listGroupByMenu(page);
 }
 
 async function closeListGroupSettings(page: Page) {
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
-  await expect(page.getByTestId('list-group-settings-menu')).toBeHidden();
+  await expect(listGroupSettingsMenu(page)).toBeHidden();
   await expect(
     page.locator('[data-slot="dropdown-menu-content"]:visible, [data-slot="dropdown-menu-sub-content"]:visible')
   ).toHaveCount(0);
+}
+
+/** Desktop _GroupVisibilityRow: one eye icon per row mirrored by aria-checked, no switch. */
+async function expectListGroupEye(row: Locator, shown: boolean) {
+  await expect(row).toHaveCount(1);
+  await expect(row).toHaveAttribute('aria-checked', String(shown));
+  await expect(row.locator('[data-testid^="list-group-visibility-shown-"]')).toHaveCount(shown ? 1 : 0);
+  await expect(row.locator('[data-testid^="list-group-visibility-hidden-"]')).toHaveCount(shown ? 0 : 1);
+  await expect(row.locator('[role="switch"]')).toHaveCount(0);
 }
 
 async function changeActiveDatabaseLayout(page: Page, layout: 'Board' | 'List') {
@@ -133,6 +166,18 @@ Given('the grid has an empty List group option {string}', async ({ page }, optio
   );
 });
 
+Given('the grid has a Checkbox field checked on the first row', async ({ page }) => {
+  // The property keeps its default name, "Checkbox", which the group headers repeat.
+  const checkboxFieldId = await addFieldWithType(page, FieldType.Checkbox);
+
+  expect(checkboxFieldId).not.toBe('');
+  checkboxFieldIds.set(page, checkboxFieldId);
+  await toggleCheckbox(page, checkboxFieldId, 0);
+  await expect(
+    DatabaseGridSelectors.dataRowCellsForField(page, checkboxFieldId).nth(0).getByTestId('checkbox-checked-icon')
+  ).toBeVisible();
+});
+
 When('I add a List view for group visibility testing', async ({ page }) => {
   const previousViewIds = new Set(await databaseViewIds(page));
 
@@ -167,7 +212,24 @@ Then('the List database is visible', async ({ page }) => {
 
 When('I group the List by the Type field', async ({ page }) => {
   await openListGroupSettings(page);
-  await page.locator('[data-testid^="list-group-by-field-"]').filter({ hasText: 'Type' }).click();
+  // An ungrouped List lists its fields inline (desktop _EmptyGroupByList).
+  await expect(page.getByTestId('list-group-by-trigger')).toHaveCount(0);
+  const typeRow = listGroupByFieldRows(listGroupSettingsMenu(page)).filter({ hasText: 'Type' });
+
+  await expect(typeRow).toHaveCount(1);
+  await typeRow.click();
+  await closeListGroupSettings(page);
+  await expect(listGroupHeaders(page).first()).toBeVisible({ timeout: 15_000 });
+});
+
+When('I group the List by the Checkbox field through the Group by submenu', async ({ page }) => {
+  const checkboxFieldId = checkboxFieldIds.get(page);
+
+  if (!checkboxFieldId) throw new Error('The Checkbox field was not created');
+
+  const groupByMenu = await openListGroupByMenu(page);
+
+  await groupByMenu.getByTestId(`list-group-by-field-${checkboxFieldId}`).click();
   await closeListGroupSettings(page);
   await expect(listGroupHeaders(page).first()).toBeVisible({ timeout: 15_000 });
 });
@@ -181,10 +243,59 @@ Then('List group {string} is not visible', async ({ page }, groupName: string) =
   await expect(listGroupHeaderByName(page, groupName)).toHaveCount(0);
 });
 
-Then('the List Remove grouping action is available', async ({ page }) => {
+Then(
+  'the List shows Checkbox group headers for {string} reading {string}',
+  async ({ page }, fieldName: string, valueList: string) => {
+    const values = valueList.split(',').map((value) => value.trim());
+
+    await expect(listGroupHeaders(page)).toHaveCount(values.length);
+    for (const value of values) {
+      await expect(
+        listGroupHeaders(page).getByRole('checkbox', { name: `${fieldName}: ${value}`, exact: true })
+      ).toHaveCount(1);
+    }
+  }
+);
+
+Then('the List Group entry shows {string} as the current field', async ({ page }, fieldName: string) => {
+  const groupTrigger = page.getByTestId('list-group-settings-trigger');
+
+  if (!(await groupTrigger.isVisible())) {
+    await page.getByTestId('database-actions-settings').click();
+  }
+
+  await expect(groupTrigger).toBeVisible();
+  await expect(groupTrigger.getByTestId('list-group-settings-field')).toHaveText(fieldName);
+});
+
+Then('the List Group by submenu ticks {string}', async ({ page }, fieldName: string) => {
   await openListGroupSettings(page);
-  await expect(page.getByTestId('list-remove-grouping')).toHaveCount(1);
-  await expect(page.getByTestId('list-remove-grouping')).toBeVisible();
+  await expect(page.getByTestId('list-group-by-current-field')).toHaveText(fieldName);
+  // Grouped menus no longer list fields inline.
+  await expect(listGroupByFieldRows(listGroupSettingsMenu(page))).toHaveCount(0);
+
+  const groupByMenu = await openListGroupByMenu(page);
+  const selectedRow = listGroupByFieldRows(groupByMenu).filter({
+    has: page.getByTestId('list-group-by-field-selected'),
+  });
+
+  await expect(selectedRow).toHaveCount(1);
+  await expect(selectedRow).toContainText(fieldName);
+  await expect(groupByMenu.getByTestId('list-group-by-none')).toHaveCount(1);
+  await expect(groupByMenu.getByTestId('list-group-by-none').locator('[data-slot="dropdown-menu-tick"]')).toHaveCount(
+    0
+  );
+  await closeListGroupSettings(page);
+});
+
+Then('the List Delete grouping action is available', async ({ page }) => {
+  await openListGroupSettings(page);
+  const action = page.getByTestId('list-remove-grouping');
+
+  await expect(action).toHaveCount(1);
+  await expect(action).toBeVisible();
+  await expect(action).toHaveText('Delete grouping');
+  await expect(action.locator('svg')).toHaveCount(1);
 });
 
 When('I add a row from List group {string} footer', async ({ page }, groupName: string) => {
@@ -198,6 +309,7 @@ When('I add a row from List group {string} footer', async ({ page }, groupName: 
   if (!groupId || !Number.isFinite(previousCount)) {
     throw new Error(`Could not resolve List group ${groupName} before adding its row`);
   }
+
   listGroupRowCounts.set(page, previousCount);
   await DatabaseListSelectors.groupFooterById(page, groupId).getByRole('button').click();
 });
@@ -212,18 +324,22 @@ Then('List group {string} has one more row', async ({ page }, groupName: string)
   );
 });
 
-When('I remove List grouping', async ({ page }) => {
+When('I delete List grouping', async ({ page }) => {
   await openListGroupSettings(page);
   await page.getByTestId('list-remove-grouping').click();
+  // Desktop dismisses the menu once the grouping is deleted.
+  await expect(listGroupSettingsMenu(page)).toBeHidden();
 });
 
 Then('the List has no group headers', async ({ page }) => {
   await expect(listGroupHeaders(page)).toHaveCount(0, { timeout: 15_000 });
 });
 
-Then('the List Remove grouping action is not available', async ({ page }) => {
+Then('the List Delete grouping action is not available', async ({ page }) => {
   await openListGroupSettings(page);
   await expect(page.getByTestId('list-remove-grouping')).toHaveCount(0);
+  // Ungrouped menus offer a ticked None instead.
+  await expect(page.getByTestId('list-group-by-none').locator('[data-slot="dropdown-menu-tick"]')).toHaveCount(1);
 });
 
 When('I change the active database layout to Board', async ({ page }) => {
@@ -233,7 +349,14 @@ When('I change the active database layout to Board', async ({ page }) => {
 When('I group the Board by the Type field', async ({ page }) => {
   await page.getByTestId('database-actions-settings').click();
   await page.getByTestId('board-group-settings-trigger').click();
-  const typeField = page.getByTestId('board-group-by-field').filter({
+  await expect(page.getByTestId('board-group-settings-menu')).toBeVisible();
+  // Board views always stay grouped, so the field list lives in the nested
+  // "Group by ▸" submenu like desktop's _GroupByList.
+  await page.getByTestId('board-group-by-trigger').click();
+  const groupByMenu = page.getByTestId('board-group-by-menu');
+
+  await expect(groupByMenu).toBeVisible();
+  const typeField = groupByMenu.getByTestId('board-group-by-field').filter({
     has: page.getByTestId('board-group-by-field-name').filter({ hasText: 'Type' }),
   });
 
@@ -255,6 +378,15 @@ Then('Board grouping cannot be removed', async ({ page }) => {
   await expect(menu).toBeVisible();
   await expect(menu.getByRole('menuitem', { name: 'None', exact: true })).toHaveCount(0);
   await expect(menu.getByTestId('board-remove-grouping')).toHaveCount(0);
+  await expect(menu.getByText('Delete grouping')).toHaveCount(0);
+
+  // None is not offered in the nested field picker either (#970).
+  await page.getByTestId('board-group-by-trigger').click();
+  const groupByMenu = page.getByTestId('board-group-by-menu');
+
+  await expect(groupByMenu).toBeVisible();
+  await expect(groupByMenu.getByTestId('board-group-by-none')).toHaveCount(0);
+  await expect(groupByMenu.getByRole('menuitem', { name: 'None', exact: true })).toHaveCount(0);
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
 });
@@ -265,24 +397,56 @@ When('I change the active database layout to List', async ({ page }) => {
 
 When('I hide List group {string} from group settings', async ({ page }, groupName: string) => {
   await openListGroupSettings(page);
-  const groupRow = page
-    .locator('[data-testid^="list-group-visibility-"][role="menuitemcheckbox"]')
-    .filter({ hasText: groupName });
+  const groupRow = listGroupVisibilityRowByName(page, groupName);
 
-  await expect(groupRow).toHaveCount(1);
+  await expectListGroupEye(groupRow, true);
   await groupRow.click();
+  await expectListGroupEye(groupRow, false);
   await closeListGroupSettings(page);
 });
 
 When('I show List group {string} from group settings', async ({ page }, groupName: string) => {
   await openListGroupSettings(page);
-  const groupRow = page
-    .locator('[data-testid^="list-group-visibility-"][role="menuitemcheckbox"]')
-    .filter({ hasText: groupName });
+  const groupRow = listGroupVisibilityRowByName(page, groupName);
 
-  await expect(groupRow).toHaveCount(1);
+  await expectListGroupEye(groupRow, false);
   await groupRow.click();
+  await expectListGroupEye(groupRow, true);
   await closeListGroupSettings(page);
+});
+
+Then('the List Groups list shows {string} as {word}', async ({ page }, groupName: string, state: string) => {
+  expect(['shown', 'hidden']).toContain(state);
+  await openListGroupSettings(page);
+  await expectListGroupEye(listGroupVisibilityRowByName(page, groupName), state === 'shown');
+});
+
+Then('the List Groups list offers the groups {string} as shown', async ({ page }, groupIdList: string) => {
+  await openListGroupSettings(page);
+  for (const groupId of groupIdList.split(',').map((id) => id.trim())) {
+    await expectListGroupEye(page.getByTestId(`list-group-visibility-${groupId}`), true);
+  }
+});
+
+Then('the List Groups list does not offer {string}', async ({ page }, groupName: string) => {
+  await openListGroupSettings(page);
+  await expect(listGroupSettingsMenu(page).getByText('Groups', { exact: true })).toBeVisible();
+  await expect(listGroupVisibilityRowByName(page, groupName)).toHaveCount(0);
+});
+
+Then('the List Groups list has no bulk visibility actions', async ({ page }) => {
+  await openListGroupSettings(page);
+  await expect(listGroupVisibilityRows(page).first()).toBeVisible();
+  await expect(page.getByTestId('list-show-all-groups')).toHaveCount(0);
+  await expect(page.getByTestId('list-hide-all-groups')).toHaveCount(0);
+  await expect(page.locator('[data-testid^="list-group-visibility-switch-"]')).toHaveCount(0);
+  await expect(listGroupVisibilityRows(page).locator('[role="switch"]')).toHaveCount(0);
+});
+
+Then('the List has no Hide empty groups toggle', async ({ page }) => {
+  await openListGroupSettings(page);
+  await expect(page.getByTestId('list-hide-empty-groups-toggle')).toHaveCount(0);
+  await expect(page.getByTestId('list-hide-empty-groups-switch')).toHaveCount(0);
 });
 
 Then('List Hide empty groups is on', async ({ page }) => {

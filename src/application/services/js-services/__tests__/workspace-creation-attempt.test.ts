@@ -5,21 +5,12 @@ import { WorkspaceCreationAttempt } from '../workspace-creation-attempt';
 
 let mockUser = 'actor-a';
 let mockServer = 'https://server-a';
-// The tab's server restore generation (null: the initial one). A restore reloads every tab.
-let mockRestoreId: string | null = null;
 const mockClient = {};
 
 jest.mock('@/application/session/token', () => ({ getTokenParsed: () => ({ user: { id: mockUser } }) }));
 jest.mock('@/utils/runtime-config', () => ({ getConfigValue: () => mockServer }));
 jest.mock('../http/core', () => ({ getAxios: () => mockClient }));
 jest.mock('i18next', () => ({ t: (key: string) => key }));
-jest.mock('@/application/server-restore', () => ({
-  get serverRestore() {
-    const { ServerRestoreBoundary } = jest.requireActual('@/application/server-restore');
-
-    return new ServerRestoreBoundary(mockServer, { getItem: () => mockRestoreId, setItem: jest.fn() }, jest.fn());
-  },
-}));
 
 type Create = (payload: CreateWorkspacePayload, options: CreateWorkspaceOptions) => Promise<string>;
 
@@ -40,7 +31,6 @@ beforeEach(() => {
   sessionStorage.clear();
   mockUser = 'actor-a';
   mockServer = 'https://server-a';
-  mockRestoreId = null;
 });
 
 test('a lost reply survives remount with the same immutable request and original payload', async () => {
@@ -335,24 +325,4 @@ test('Discard forgets an unconfirmed request so a new name can be used', async (
   expect(await attempt.run('Second')).toBe('second');
   expect(create.mock.calls[1][0]).toEqual({ workspace_name: 'Second' });
   expect(create.mock.calls[1][1].replay).toBeUndefined();
-});
-
-test('a request saved before a server restore is never resumed against the restored server', async () => {
-  const create = server({ code: -1, message: 'Network Error' }, 'restored-workspace');
-
-  await expect(new WorkspaceCreationAttempt(create).run('Original name')).rejects.toThrow('workspaceCreation.notConfirmed');
-  const original = new WorkspaceCreationAttempt(create).snapshot();
-
-  // A committed restore reloads the tab onto fresh storage; session storage survives the reload.
-  mockRestoreId = '11111111-1111-4111-8111-111111111111';
-  const restored = new WorkspaceCreationAttempt(create);
-
-  expect(restored.snapshot()).toBeUndefined();
-  // A new name is a new request with its own ID, not a replay of the old one.
-  expect(await restored.run('Another name')).toBe('restored-workspace');
-  expect(create).toHaveBeenLastCalledWith({ workspace_name: 'Another name' }, expect.not.objectContaining({ replay: expect.anything() }));
-
-  // The earlier generation's request is neither replaced nor removed by the restored one.
-  mockRestoreId = null;
-  expect(new WorkspaceCreationAttempt(create).snapshot()).toEqual(original);
 });

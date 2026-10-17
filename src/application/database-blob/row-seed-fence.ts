@@ -9,13 +9,15 @@ export type DatabaseRowDocSeed = {
   scopeGeneration?: number;
   generation?: number;
   storageFence?: DatabaseStorageFence;
+  /** A captured seed must not outlive the login session that downloaded it. */
+  isOwnerCurrent?: () => boolean;
 };
 
 const rowSeedGenerations = new ScopedCollabMap<number>();
 
 export function createDatabaseRowDocSeed(
   rowId: string,
-  state: Pick<DatabaseRowDocSeed, 'bytes' | 'encoderVersion' | 'storageFence'>
+  state: Pick<DatabaseRowDocSeed, 'bytes' | 'encoderVersion' | 'storageFence' | 'isOwnerCurrent'>
 ): DatabaseRowDocSeed {
   return {
     ...state,
@@ -34,6 +36,7 @@ export function invalidateDatabaseRowDocSeedGeneration(rowId: string) {
 export function isDatabaseRowDocSeedCurrent(seed: DatabaseRowDocSeed) {
   if (seed.scopeGeneration !== undefined && seed.scopeGeneration !== captureCollabStorageScope().generation) return false;
   if (seed.scopeKey !== undefined && seed.scopeKey !== captureCollabStorageScope().key) return false;
+  if (seed.isOwnerCurrent && !seed.isOwnerCurrent()) return false;
   if (seed.storageFence && !isDatabaseStorageFenceCurrent(seed.storageFence)) return false;
   if (!seed.rowId || seed.generation === undefined) return true;
   return seed.generation === (rowSeedGenerations.get(seed.rowId) ?? 0);

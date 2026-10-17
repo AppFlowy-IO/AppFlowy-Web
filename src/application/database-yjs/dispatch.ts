@@ -11,6 +11,8 @@ import { CalendarLayoutUpdate, updateCalendarLayoutSetting } from '@/application
 import { cloneDatabaseCell } from '@/application/database-yjs/cell.clone';
 import { normalizeLegacyCellFieldType } from '@/application/database-yjs/cell.field-type';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
+import { writeChartLayoutSetting } from '@/application/database-yjs/chart-layout-setting';
+import { CHART_LAYOUT_SETTINGS_KEY, ChartLayoutSettings } from '@/application/database-yjs/chart.type';
 import { DEFAULT_FIELD_WRAP } from '@/application/database-yjs/const';
 import {
   useDatabase,
@@ -67,6 +69,8 @@ import {
   initializeGalleryLayoutSetting,
 } from '@/application/database-yjs/gallery-layout';
 import {
+  getDateGroupId,
+  getGroupCellData,
   getGroupColumns,
   isDatabaseGroupableFieldType,
   parseDateGroupConfiguration,
@@ -128,7 +132,6 @@ import {
   YDatabaseCalendarLayoutSetting,
   YDatabaseCell,
   YDatabaseCells,
-  YDatabaseChartLayoutSetting,
   YDatabaseField,
   YDatabaseFieldOrders,
   YDatabaseFields,
@@ -355,7 +358,10 @@ export function useGroupByFieldDispatch({ preserveFilters = false }: { preserveF
         [
           () => {
             const layout = Number(view.get(YjsDatabaseKey.layout)) as DatabaseViewLayout;
-            const supportsOptionalGrouping = layout === DatabaseViewLayout.Grid || layout === DatabaseViewLayout.List;
+            const supportsOptionalGrouping =
+              layout === DatabaseViewLayout.Grid ||
+              layout === DatabaseViewLayout.List ||
+              layout === DatabaseViewLayout.Timeline;
 
             if (!supportsOptionalGrouping && !preserveFilters) {
               // Board keeps its existing behavior: a field cannot simultaneously
@@ -530,35 +536,59 @@ export function useUpdateDateGroupConditionDispatch() {
         sharedRoot,
         [
           () => {
-            const groups = view?.get(YjsDatabaseKey.groups);
-            const currentGroup = groups?.get(0);
-            const fieldId = currentGroup?.get(YjsDatabaseKey.field_id);
+            const group = view?.get(YjsDatabaseKey.groups)?.toArray()[0];
+            const fieldId = group?.get(YjsDatabaseKey.field_id);
             const field = fieldId ? database.get(YjsDatabaseKey.fields)?.get(fieldId) : undefined;
 
-            if (!groups || !currentGroup || !field) throw new Error('Date group not found');
+            if (!group || !field) throw new Error('Date group not found');
             if (Number(field.get(YjsDatabaseKey.type)) !== FieldType.DateTime) {
               throw new Error('Grouping field is not a date field');
             }
 
-            const configuration = parseDateGroupConfiguration(currentGroup.get(YjsDatabaseKey.content));
+            const configuration = parseDateGroupConfiguration(group.get(YjsDatabaseKey.content));
 
             if (configuration.condition === condition) return;
 
-            // Desktop rebuilds the group setting when its date condition
-            // changes. Old day/week/month/year IDs are categorically invalid
-            // under the new condition, so replacing this map is safe even when
-            // some offscreen row documents are only seed snapshots.
-            const replacement = generateGroupByField(field);
+            // Desktop (database_editor_group.rs set_group_by_field) keeps the
+            // setting for the same field and only rewrites its content, so the
+            // setting id, per-group visibility/colour and collapsed ids survive
+            // a condition change. Old day/week/month/year IDs are categorically
+            // invalid under the new condition, so prune them the way the Number
+            // path does: an ID is still valid only when the date it encodes maps
+            // back onto itself under the new condition.
+            group.set(YjsDatabaseKey.content, JSON.stringify({ ...configuration, condition }));
 
-            replacement.set(YjsDatabaseKey.content, JSON.stringify({ ...configuration, condition }));
+            const isValid = (id: string) => {
+              if (id === fieldId) return true;
+
+              const value = getGroupCellData(id, field);
+
+              return value !== undefined && getDateGroupId(value, condition) === id;
+            };
+
+            const columns = group.get(YjsDatabaseKey.groups);
+
+            if (columns) {
+              for (let index = columns.length - 1; index >= 0; index--) {
+                if (!isValid(getDatabaseGroupColumnId(columns.get(index)) ?? '')) columns.delete(index);
+              }
+            }
+
+            const collapsed = group.get(YjsDatabaseKey.collapsed_group_ids);
+
+            if (collapsed instanceof Y.Array) {
+              for (let index = collapsed.length - 1; index >= 0; index--) {
+                if (!isValid(collapsed.get(index))) collapsed.delete(index);
+              }
+            } else if (Array.isArray(collapsed)) {
+              group.set(YjsDatabaseKey.collapsed_group_ids, Y.Array.from(collapsed.filter(isValid)));
+            }
+
             const layout = Number(view?.get(YjsDatabaseKey.layout)) as DatabaseViewLayout;
 
             if (layout === DatabaseViewLayout.Grid || layout === DatabaseViewLayout.List) {
-              markLocalDatabaseGroupInitialization(replacement);
+              markLocalDatabaseGroupInitialization(group);
             }
-
-            groups.delete(0, groups.length);
-            groups.insert(0, [replacement]);
           },
         ],
         'updateDateGroupCondition'
@@ -3324,6 +3354,7 @@ export function useSwitchPropertyType() {
               // Check if the field type is supported for type options
               if (
                 [
+                  FieldType.RichText,
                   FieldType.Number,
                   FieldType.SingleSelect,
                   FieldType.MultiSelect,
@@ -4959,22 +4990,17 @@ export {
   useUpdateAdvancedFilterAndRebuild,
 } from './dispatch/sort-filter';
 
-export interface ChartLayoutSetting {
-  chartType?: number;
-  xFieldId?: string;
-  showEmptyValues?: boolean;
-  aggregationType?: number;
-  yFieldId?: string;
-  cumulative?: boolean;
-  dateCondition?: number;
-}
-
+/**
+ * Merge a partial chart setting into `view.layout_settings['3']`, written in
+ * desktop's format (see `writeChartLayoutSetting`). Pass `yFieldId: undefined`
+ * to clear the Y axis; other `undefined` fields keep their stored value.
+ */
 export function useUpdateChartSetting() {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
 
   return useCallback(
-    (settings: Partial<ChartLayoutSetting>) => {
+    (settings: Partial<ChartLayoutSettings>) => {
       executeOperations(
         sharedRoot,
         [
@@ -4990,40 +5016,15 @@ export function useUpdateChartSetting() {
               view.set(YjsDatabaseKey.layout_settings, layoutSettings);
             }
 
-            let layoutSetting = layoutSettings.get('3') as Y.Map<unknown> | undefined;
+            const storedSetting: unknown = layoutSettings.get(CHART_LAYOUT_SETTINGS_KEY);
+            // Like desktop's `get_or_init`, an entry that is not a map is replaced.
+            const layoutSetting = storedSetting instanceof Y.Map ? storedSetting : new Y.Map<unknown>();
 
-            if (!layoutSetting) {
-              layoutSetting = new Y.Map();
-              layoutSettings.set('3', layoutSetting as unknown as YDatabaseChartLayoutSetting);
+            if (layoutSetting !== storedSetting) {
+              layoutSettings.set(CHART_LAYOUT_SETTINGS_KEY, layoutSetting);
             }
 
-            if (settings.chartType !== undefined) {
-              layoutSetting.set('chartType', settings.chartType);
-            }
-
-            if (settings.xFieldId !== undefined) {
-              layoutSetting.set('xFieldId', settings.xFieldId);
-            }
-
-            if (settings.showEmptyValues !== undefined) {
-              layoutSetting.set('showEmptyValues', settings.showEmptyValues);
-            }
-
-            if (settings.aggregationType !== undefined) {
-              layoutSetting.set('aggregationType', settings.aggregationType);
-            }
-
-            if (settings.yFieldId !== undefined) {
-              layoutSetting.set('yFieldId', settings.yFieldId);
-            }
-
-            if (settings.cumulative !== undefined) {
-              layoutSetting.set('cumulative', settings.cumulative);
-            }
-
-            if (settings.dateCondition !== undefined) {
-              layoutSetting.set('dateCondition', settings.dateCondition);
-            }
+            writeChartLayoutSetting(layoutSetting, settings);
           },
         ],
         'updateChartSetting'

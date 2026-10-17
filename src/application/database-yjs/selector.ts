@@ -1,4 +1,3 @@
-import { useDatabaseDependencyRestoreRevision } from '@/application/database-yjs/restore-dependencies';
 import dayjs from 'dayjs';
 import { debounce } from 'lodash-es';
 import {
@@ -59,6 +58,7 @@ import {
   hasEffectiveFilters,
   parseFilter,
 } from '@/application/database-yjs/filter';
+import { useFormulaClock } from '@/application/database-yjs/formula/clock';
 import {
   formulaConditionContext,
   formulaRowContext,
@@ -66,7 +66,6 @@ import {
   memberNames,
   useFormulaReadContext,
 } from '@/application/database-yjs/formula/read-context';
-import { useFormulaClock } from '@/application/database-yjs/formula/clock';
 import { FormulaRowSources, useFormulaRelationTitles } from '@/application/database-yjs/formula/useFormulaRelationTitles';
 import { DEFAULT_GALLERY_LAYOUT_SETTINGS } from '@/application/database-yjs/gallery-layout';
 import {
@@ -103,10 +102,9 @@ import {
   subscribeRelationCache,
   subscribeRelationGroupLabels,
 } from '@/application/database-yjs/relation/cache';
-import { observeRollupCell } from '@/application/database-yjs/rollup/observe';
-import { retainRollupSource } from '@/application/database-yjs/rollup/source-sync';
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import { readHistoricalRelationText } from '@/application/database-yjs/relation/history';
+import { useDatabaseDependencyRestoreRevision } from '@/application/database-yjs/restore-dependencies';
 import {
   invalidateRollupCell,
   readRollupCell,
@@ -115,6 +113,8 @@ import {
   subscribeRollupCell,
   subscribeRollupCache,
 } from '@/application/database-yjs/rollup/cache';
+import { observeRollupCell } from '@/application/database-yjs/rollup/observe';
+import { retainRollupSource } from '@/application/database-yjs/rollup/source-sync';
 import { getInlineViewRowOrders, materializeVisibleRowOrders } from '@/application/database-yjs/row-order-visibility';
 import { usePublishRowOrders } from '@/application/database-yjs/row-orders-store';
 import { getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
@@ -131,7 +131,6 @@ import {
   SortId,
   TimeFormat,
   YDatabase,
-  YDatabaseChartLayoutSetting,
   YDatabaseField,
   YDatabaseFields,
   YDatabaseFilters,
@@ -151,10 +150,10 @@ import { useMentionableUsersWithAutoFetch } from '@/components/database/componen
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { getDateFormat, getTimeFormat, renderDate } from '@/utils/time';
 
-import { ChartLayoutSettings } from './chart.type';
+import { chartLayoutSettingsEqual, readChartLayoutSetting } from './chart-layout-setting';
+import { CHART_LAYOUT_SETTINGS_KEY, ChartLayoutSettings } from './chart.type';
 import {
   CalculationType,
-  DateGroupCondition,
   FieldType,
   FieldVisibility,
   Filter,
@@ -1423,6 +1422,8 @@ export function useRowsByGroup(groupId: string) {
     fieldId,
     groupResult,
     columns: visibleColumns,
+    /** Every persisted column, hidden ones included (the Board group menu lists them all). */
+    allColumns: columns,
     groupRowsReady: groupVisibilityReady,
     hideEmptyGroups,
     notFound,
@@ -4233,80 +4234,42 @@ export function useRowPrimaryContentSelector(rowDoc: YDoc | null, primaryFieldId
   return primaryContent;
 }
 
-function chartSettingsEqual(a: ChartLayoutSettings | null, b: ChartLayoutSettings | null): boolean {
-  if (a === b) return true;
-  if (!a || !b) return false;
-  return (
-    a.chartType === b.chartType &&
-    a.xFieldId === b.xFieldId &&
-    a.showEmptyValues === b.showEmptyValues &&
-    a.aggregationType === b.aggregationType &&
-    a.yFieldId === b.yFieldId &&
-    a.cumulative === b.cumulative &&
-    a.dateCondition === b.dateCondition
-  );
+function readViewChartLayoutSetting(view: YDatabaseView | undefined): ChartLayoutSettings | null {
+  return readChartLayoutSetting(view?.get(YjsDatabaseKey.layout_settings)?.get(CHART_LAYOUT_SETTINGS_KEY));
 }
 
 /**
  * Subscribe to the chart layout setting persisted at
- * `view.layout_settings['3']`.
+ * `view.layout_settings['3']`, or null when the view has none.
  *
  * Uses `observeDeep` on the view to robustly catch initial Yjs sync (which
  * may deliver layout_settings + its '3' key via nested deltas that wouldn't
  * fire a direct `observe` on the view). The expensive part — re-rendering
- * downstream consumers — is gated by `chartSettingsEqual`, so the wider
- * observer only costs a handful of equality checks per Yjs event.
+ * downstream consumers — is gated by `chartLayoutSettingsEqual`, so the wider
+ * observer only costs a handful of equality checks per Yjs event. The first
+ * render already reads the stored setting, so charts never flash defaults.
  *
- * Returns the strongly-typed `ChartLayoutSettings`. Persisted Yjs values are
- * stored as numbers/strings/booleans and cast to enum types here so consumers
- * don't have to project again.
+ * Decoding (desktop keys, BigInt sidecars, legacy web keys) lives in
+ * `readChartLayoutSetting` so both clients resolve the same setting.
  */
 export function useChartLayoutSetting(): ChartLayoutSettings | null {
   const database = useDatabase();
   const viewId = useDatabaseViewId();
-  const [setting, setSetting] = useState<ChartLayoutSettings | null>(null);
+  const [setting, setSetting] = useState<ChartLayoutSettings | null>(() =>
+    readViewChartLayoutSetting(database.get(YjsDatabaseKey.views)?.get(viewId))
+  );
 
   useEffect(() => {
     const view = database.get(YjsDatabaseKey.views)?.get(viewId);
-
-    if (!view) return;
-
     const observerHandler = () => {
-      const chartSettingMap = view.get(YjsDatabaseKey.layout_settings)?.get('3') as
-        | YDatabaseChartLayoutSetting
-        | undefined;
+      const next = readViewChartLayoutSetting(view);
 
-      if (!chartSettingMap) {
-        setSetting((prev) => (prev === null ? prev : null));
-        return;
-      }
-
-      // Persisted Yjs cells may be missing for fields that haven't been
-      // explicitly written yet (e.g. only `aggregationType` was changed).
-      // Apply desktop-parity defaults for those — most importantly
-      // `showEmptyValues = true`, otherwise an empty grid renders "No data"
-      // instead of a single "No <field>" bar after a partial write.
-      const showEmptyRaw = chartSettingMap.get('showEmptyValues');
-      // `DateGroupCondition.Relative` persists as `0`, so we must use an
-      // undefined-only fallback — `|| 3` would silently coerce Relative back
-      // to Month every time the chart loads.
-      const dateConditionRaw = chartSettingMap.get('dateCondition');
-      const next: ChartLayoutSettings = {
-        chartType: Number(chartSettingMap.get('chartType') || 0) as ChartLayoutSettings['chartType'],
-        xFieldId: String(chartSettingMap.get('xFieldId') || ''),
-        showEmptyValues: showEmptyRaw === undefined ? true : Boolean(showEmptyRaw),
-        aggregationType: Number(chartSettingMap.get('aggregationType') || 0) as ChartLayoutSettings['aggregationType'],
-        yFieldId: chartSettingMap.get('yFieldId') ? String(chartSettingMap.get('yFieldId')) : undefined,
-        cumulative: Boolean(chartSettingMap.get('cumulative')),
-        dateCondition: (dateConditionRaw === undefined || dateConditionRaw === null
-          ? DateGroupCondition.Month
-          : Number(dateConditionRaw)) as ChartLayoutSettings['dateCondition'],
-      };
-
-      setSetting((prev) => (chartSettingsEqual(prev, next) ? prev : next));
+      setSetting((prev) => (chartLayoutSettingsEqual(prev, next) ? prev : next));
     };
 
     observerHandler();
+    if (!view) return;
+
     view.observeDeep(observerHandler);
 
     return () => {

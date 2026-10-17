@@ -3,7 +3,6 @@ import { v4 as uuid } from 'uuid';
 
 import { ERROR_CODE } from '@/application/constants';
 import { PlainError } from '@/application/errors/plain-error';
-import { serverRestore } from '@/application/server-restore';
 import { CreateWorkspacePayload } from '@/application/types';
 import { getAPIErrorCode, isUnsupportedRouteError } from '@/utils/errors';
 
@@ -98,14 +97,11 @@ function settleFailure(error: unknown, firstSend: boolean): { release: boolean; 
  * One recoverable creation per tab/account/server. A request ID is saved only after admission
  * passes, immediately before the keyed request is sent, and an unconfirmed outcome must never cause
  * a fresh request ID. Definitive rejections release it; Discard forgets it on request. Tab storage
- * keeps unrelated tabs from overwriting each other's pending requests. A request belongs to the
- * server restore generation that saved it and is never resumed against a restored server.
+ * keeps unrelated tabs from overwriting each other's pending requests.
  */
 export class WorkspaceCreationAttempt {
   private readonly scope = captureApiContext();
-  private readonly key = serverRestore.cacheKey(
-    `workspace-creation:v1:${JSON.stringify([this.scope.serverUrl, this.scope.userId])}`
-  );
+  private readonly key = `workspace-creation:v1:${JSON.stringify([this.scope.serverUrl, this.scope.userId])}`;
   private pending?: Promise<string>;
 
   constructor(private readonly create: Create) {}

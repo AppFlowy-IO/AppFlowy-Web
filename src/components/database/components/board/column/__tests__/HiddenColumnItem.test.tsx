@@ -56,4 +56,28 @@ describe('HiddenColumnItem', () => {
 
     expect(setColumnRendered).toHaveBeenLastCalledWith('empty-group', false, true);
   });
+
+  it('renders the desktop 16px eye icon for both states', () => {
+    mockUseSetBoardColumnRenderedDispatch.mockReturnValue(jest.fn());
+    const baseProps = {
+      fieldId: 'status-field',
+      getRows: () => [],
+      groupId: 'board-group',
+      id: 'empty-group',
+      automaticallyHidden: false,
+    };
+
+    const { rerender } = render(<HiddenColumnItem {...baseProps} isShownOnBoard={false} />);
+    const iconTokens = (name: string) =>
+      screen.getByRole('button', { name }).querySelector('svg')?.getAttribute('class')?.split(/\s+/) ?? [];
+
+    // Desktop HiddenGroupCard: FlowyIconButton(width 20) around a 16px show/hide icon.
+    expect(iconTokens('board.mobile.showGroup')).toEqual(expect.arrayContaining(['h-4', 'w-4']));
+    expect(iconTokens('board.mobile.showGroup')).not.toContain('h-5');
+
+    rerender(<HiddenColumnItem {...baseProps} isShownOnBoard />);
+
+    expect(iconTokens('board.column.hideColumn')).toEqual(expect.arrayContaining(['h-4', 'w-4']));
+    expect(iconTokens('board.column.hideColumn')).not.toContain('h-5');
+  });
 });

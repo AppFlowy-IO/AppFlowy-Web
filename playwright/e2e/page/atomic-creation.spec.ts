@@ -31,7 +31,7 @@ test('atomic creation keeps document/sidebar, database tabs and row-page content
   const atomicRequests: { url: string; body: string }[] = [];
 
   page.on('request', (req) => {
-    if (req.method() === 'POST' && req.url().includes('/v2/page-view/')) {
+    if (req.method() === 'POST' && /\/v2\/(?:page-view\/|database\/[^/]+\/row\/)/.test(new URL(req.url()).pathname)) {
       atomicRequests.push({ url: req.url(), body: req.postData() ?? '' });
     }
   });
@@ -140,8 +140,7 @@ test('atomic creation keeps document/sidebar, database tabs and row-page content
   timings.push({ operation: 'row page open through body edit and reopen', elapsedMs: Date.now() - rowStarted });
   await closeRowDetailWithEscape(page);
 
-  // A newly added client Row becomes durable through normal sync. Creating its
-  // first body must wait for that source, without publishing the Row atomically.
+  // The new Row is committed atomically before its first body is created.
   const previousRows = new Set(
     await DatabaseGridSelectors.dataRows(page).evaluateAll((rows) => rows.map((row) => row.getAttribute('data-testid')))
   );
@@ -177,9 +176,16 @@ test('atomic creation keeps document/sidebar, database tabs and row-page content
   expect(atomicRequests).toHaveLength(beforeOffline);
   await page.keyboard.press('Escape');
   await DatabaseGridSelectors.newRowButton(page).click();
-  await expect(DatabaseGridSelectors.dataRows(page)).toHaveCount(5);
+  await expect(DatabaseGridSelectors.newRowButton(page)).toBeEnabled();
+  await expect(DatabaseGridSelectors.dataRows(page)).toHaveCount(4);
   expect(atomicRequests).toHaveLength(beforeOffline);
   await page.context().setOffline(false);
+  await DatabaseGridSelectors.newRowButton(page).click();
+  await expect(DatabaseGridSelectors.dataRows(page)).toHaveCount(5);
+  const reconnectedRequests = atomicRequests.slice(beforeOffline);
+
+  expect(new Set(reconnectedRequests.map((entry) => entry.body)).size).toBe(1);
+  expect(reconnectedRequests.every((entry) => new URL(entry.url).pathname.endsWith('/row/default'))).toBe(true);
   await info.attach('creation-phase-timings', {
     body: JSON.stringify(timings, null, 2),
     contentType: 'application/json',

@@ -82,6 +82,54 @@ export function readTemplateDocumentEmptiness(doc: Y.Doc): boolean | undefined {
   return true;
 }
 
+/** Freeze a canonical document in the same protobuf format consumed by Desktop templates. */
+export function encodeTemplateDocumentSnapshot(doc: Y.Doc): number[] {
+  if (doc.store.pendingDs || doc.store.pendingStructs || readTemplateDocumentEmptiness(doc) === undefined) {
+    throw new Error('Invalid template document snapshot');
+  }
+
+  const body = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.document) as Y.Map<unknown>;
+  const blocks = body.get(YjsEditorKey.blocks) as Y.Map<Y.Map<unknown>>;
+  const meta = body.get(YjsEditorKey.meta) as Y.Map<unknown>;
+  const children = meta.get(YjsEditorKey.children_map) as Y.Map<Y.Array<string>>;
+  const texts = meta.get(YjsEditorKey.text_map) as Y.Map<Y.Text>;
+  const pageId = String(body.get(YjsEditorKey.page_id));
+
+  if (
+    !blocks.has(pageId) ||
+    [...blocks.values()].some((block) => !(block instanceof Y.Map)) ||
+    !(children instanceof Y.Map) ||
+    [...children.values()].some((order) => !(order instanceof Y.Array)) ||
+    [...texts.values()].some((text) => !(text instanceof Y.Text))
+  )
+    throw new Error('Invalid template document snapshot');
+  const snapshot: DocumentSnapshot = {
+    page_id: pageId,
+    blocks: Object.fromEntries(
+      [...blocks.entries()].map(([id, block]) => [
+        id,
+        {
+          id,
+          ty: String(block.get(YjsEditorKey.block_type) ?? ''),
+          data: String(block.get(YjsEditorKey.block_data) ?? '{}'),
+          parent_id: String(block.get(YjsEditorKey.block_parent) ?? ''),
+          children_id: String(block.get(YjsEditorKey.block_children) ?? ''),
+          external_id: String(block.get(YjsEditorKey.block_external_id) ?? ''),
+          external_type: String(block.get(YjsEditorKey.block_external_type) ?? ''),
+        },
+      ])
+    ),
+    meta: {
+      children_map: Object.fromEntries(
+        [...children.entries()].map(([id, order]) => [id, { children: order.toArray() }])
+      ),
+      text_map: Object.fromEntries([...texts.entries()].map(([id, text]) => [id, JSON.stringify(text.toDelta())])),
+    },
+  };
+
+  return Array.from(documentType.encode(snapshot).finish());
+}
+
 /** Stored Desktop snapshots take precedence over a stale/missing orphan view. */
 export function decodeTemplateDocumentSnapshot(bytes?: number[]):
   | {

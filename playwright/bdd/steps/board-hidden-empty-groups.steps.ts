@@ -27,6 +27,7 @@ After(async ({ page }) => {
       delete watchedWindow.__boardVisibilityWatches;
     });
   }
+
   await state?.secondContext?.close();
   stateByPage.delete(page);
 });
@@ -74,6 +75,7 @@ Given('another web client opens the same Board database', async ({ page, browser
   if ((await toggle.getAttribute('aria-expanded')) === 'false') {
     await toggle.click();
   }
+
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
 });
 
@@ -143,6 +145,7 @@ When('I expand the Board Hidden Groups section', async ({ page }) => {
   if ((await toggle.getAttribute('aria-expanded')) === 'false') {
     await toggle.click();
   }
+
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
 });
 
@@ -206,21 +209,40 @@ Then('Board Group settings expose no ungrouping action', async ({ page }) => {
   await expect(menu).toBeVisible();
   await expect(menu.getByRole('menuitem', { name: 'None', exact: true })).toHaveCount(0);
   await expect(menu.getByRole('menuitem', { name: 'Delete grouping', exact: true })).toHaveCount(0);
+  await expect(menu.getByTestId('board-remove-grouping')).toHaveCount(0);
+  // Desktop has no "Show ungrouped items" switch: the "No <field>" column is a
+  // Groups row like any other, so the only switch left is Hide empty groups.
+  await expect(menu.getByText('Show ungrouped items')).toHaveCount(0);
+  await expect(menu.locator('[role="switch"]:not([data-testid="board-hide-empty-groups-switch"])')).toHaveCount(0);
+
+  // The nested "Group by" field picker hides None on Board as well (#970).
+  const groupByMenu = await openBoardGroupByMenu(page);
+
+  await expect(groupByMenu.getByTestId('board-group-by-none')).toHaveCount(0);
+  await expect(groupByMenu.getByRole('menuitem', { name: 'None', exact: true })).toHaveCount(0);
 });
 
 Then('Board Group settings show exactly one selected field named {string}', async ({ page }, fieldName: string) => {
   const menu = boardGroupSettingsMenu(page);
-  const fieldRows = menu.getByTestId('board-group-by-field');
+
+  await expect(menu).toHaveCount(1);
+  await expect(menu).toBeVisible();
+  // Desktop names the grouping field on the settings entry and on the
+  // "Group by ▸" row; the field rows themselves live in the nested submenu.
+  await expect(page.getByTestId('board-group-settings-field')).toHaveText(fieldName);
+  await expect(page.getByTestId('board-group-by-current-field')).toHaveText(fieldName);
+  await expect(menu.getByTestId('board-group-by-field')).toHaveCount(0);
+
+  const groupByMenu = await openBoardGroupByMenu(page);
+  const fieldRows = groupByMenu.getByTestId('board-group-by-field');
   const selectedField = fieldRows.filter({
     has: page.getByTestId('board-group-by-field-name').getByText(fieldName, { exact: true }),
   });
 
-  await expect(menu).toHaveCount(1);
-  await expect(menu).toBeVisible();
   await expect(selectedField).toHaveCount(1);
   await expect(selectedField).toBeVisible();
   await expect(selectedField.getByTestId('board-group-by-field-selected')).toHaveCount(1);
-  await expect(menu.getByTestId('board-group-by-field-selected')).toHaveCount(1);
+  await expect(groupByMenu.getByTestId('board-group-by-field-selected')).toHaveCount(1);
 });
 
 When('I close Board Group settings', async ({ page }) => {
@@ -310,6 +332,7 @@ When(
             watchedGroupName
         );
       };
+
       const watch = {
         everVisible: false,
         observer: new MutationObserver((records) => {
@@ -412,10 +435,27 @@ async function openBoardGroupSettings(page: Page) {
   };
 }
 
+/** Opens desktop's nested "Group by ▸" field picker inside the open Group settings menu. */
+async function openBoardGroupByMenu(page: Page) {
+  const groupByMenu = page.getByTestId('board-group-by-menu');
+
+  if (await groupByMenu.isVisible()) return groupByMenu;
+
+  const trigger = page.getByTestId('board-group-by-trigger');
+
+  await expect(trigger).toHaveCount(1);
+  await expect(trigger).toBeVisible();
+  await trigger.click();
+  await expect(groupByMenu).toBeVisible();
+
+  return groupByMenu;
+}
+
 async function closeBoardGroupSettings(page: Page) {
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
   await expect(boardGroupSettingsMenu(page)).toHaveCount(0);
+  await expect(page.getByTestId('board-group-by-menu')).toHaveCount(0);
 }
 
 function boardGroupSettingsMenu(page: Page) {

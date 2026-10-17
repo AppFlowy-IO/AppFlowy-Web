@@ -50,7 +50,11 @@ jest.mock('@/components/database/components/cell/Cell', () => ({
 }));
 
 jest.mock('@/components/database/list/ListCell', () => ({
-  ListCell: () => <button type='button'>Property action</button>,
+  ListCell: ({ style }: { style?: { color?: string } }) => (
+    <button data-property-color={style?.color} type='button'>
+      Property action
+    </button>
+  ),
 }));
 jest.mock('@/components/database/components/sorts/ClearSortingConfirm', () => ({
   ClearSortingConfirm: () => null,
@@ -123,6 +127,14 @@ describe('GalleryCard rendering lifecycle', () => {
       />
     );
   }
+
+  it('desktop_list_card_cell_style.dart: properties take the primary text color', () => {
+    renderCard();
+
+    // GalleryProperty remaps --text-primary to the card title color, so this
+    // is the web equivalent of desktop's textColorScheme.primary on cards.
+    expect(screen.getByText('Property action').getAttribute('data-property-color')).toBe('var(--text-primary)');
+  });
 
   it('provides a separate keyboard-focusable opener without swallowing nested controls', () => {
     renderCard();

@@ -1,13 +1,15 @@
 import { render } from '@testing-library/react';
 
 import { DatabaseContextState } from '@/application/database-yjs';
+import { publishedDatabasePayload } from '@/application/publish-snapshot/__fixtures__/published-page-snapshots';
 import { createDatabaseYjsRenderDocsFromSnapshot } from '@/application/publish-snapshot/database-yjs-render-bridge';
 import { normalizePublishedPageSnapshot } from '@/application/publish-snapshot/normalize';
-import { publishedDatabasePayload } from '@/application/publish-snapshot/__fixtures__/published-page-snapshots';
 import { UIVariant } from '@/application/types';
 import { Database } from '@/components/database';
 
 import { DatabaseContent } from '../DatabaseContent';
+
+import type { ComponentProps } from 'react';
 
 jest.mock('@/components/database', () => ({
   Database: jest.fn(() => <div data-testid='database' />),
@@ -22,6 +24,36 @@ jest.mock('react-i18next', () => ({
 describe('DatabaseContent', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('reserves the configured height only while database metadata loads', () => {
+    const props: ComponentProps<typeof DatabaseContent> = {
+      baseViewId: 'view-id',
+      selectedViewId: null,
+      hasDatabase: false,
+      notFound: false,
+      deletionStatus: null,
+      paddingStart: 0,
+      paddingEnd: 0,
+      width: 800,
+      doc: null,
+      workspaceId: 'workspace-id',
+      onOpenRowPage: jest.fn(),
+      loadViewMeta: jest.fn(),
+      databaseName: '',
+      visibleViewIds: [],
+      onChangeView: jest.fn(),
+      context: { variant: UIVariant.App } as DatabaseContextState,
+      databaseReadOnly: true,
+      databaseCanWrite: false,
+      databaseCanShare: false,
+      fixedHeight: 420,
+    };
+    const { container, rerender } = render(<DatabaseContent {...props} />);
+
+    expect((container.firstElementChild as HTMLElement).style.height).toBe('420px');
+    rerender(<DatabaseContent {...props} notFound />);
+    expect((container.firstElementChild as HTMLElement).style.height).toBe('');
   });
 
   it('passes published database row docs into embedded publish databases', () => {

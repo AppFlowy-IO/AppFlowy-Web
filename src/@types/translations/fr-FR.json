@@ -3402,6 +3402,7 @@
     "serverUpgrade": "Mettez à jour le serveur pour utiliser cette fonctionnalité de création.",
     "ownerChanged": "Le compte ou l’espace de travail a changé. Réessayez dans l’espace de travail d’origine.",
     "pending": "La création est en attente. Relancez la demande d’origine pour la terminer.",
+    "rowCreatedReload": "La ligne a été créée. Rechargez cette base de données pour l’ouvrir.",
     "retry": "Relancer la création",
     "finishPage": "Terminer la création de votre page",
     "finishRowPageFirst": "Ajoutez du contenu à la page de cette ligne avant d’y insérer des pages ou des bases de données."

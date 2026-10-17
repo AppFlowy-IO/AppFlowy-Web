@@ -145,7 +145,10 @@ export const DatabaseContent = ({
   const showError = notFound || noAccess || deletionStatus === 'inTrash' || deletionStatus === 'deleted';
 
   return (
-    <div className='flex h-full w-full flex-col items-center justify-center gap-2 rounded bg-background-primary px-16 py-10 text-text-secondary max-md:px-4'>
+    <div
+      className='flex h-full w-full flex-col items-center justify-center gap-2 rounded bg-background-primary px-16 py-10 text-text-secondary max-md:px-4'
+      style={showError ? undefined : { height: fixedHeight }}
+    >
       {showError ? <div className='text-base font-medium'>{getNotFoundMessage()}</div> : <CircularProgress size={20} />}
     </div>
   );

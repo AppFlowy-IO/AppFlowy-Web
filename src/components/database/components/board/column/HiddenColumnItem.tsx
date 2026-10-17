@@ -73,7 +73,8 @@ function HiddenColumnItem({
                 setColumnRendered(id, shouldShow, automaticallyHidden);
               }}
             >
-              {isShownOnBoard ? <HideIcon className={'h-5 w-5'} /> : <ShowIcon className={'h-5 w-5'} />}
+              {/* Desktop HiddenGroupCard: a 16px hide/show eye inside the 20px icon button. */}
+              {isShownOnBoard ? <HideIcon className={'h-4 w-4'} /> : <ShowIcon className={'h-4 w-4'} />}
             </Button>
           </div>
         </HiddenItemMenu>
