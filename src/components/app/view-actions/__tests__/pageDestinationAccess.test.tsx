@@ -1,7 +1,8 @@
 import EventEmitter from 'events';
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
+import { APP_EVENTS } from '@/application/constants';
 import { AccessLevel, Types, type View, ViewLayout } from '@/application/types';
 import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
 import ViewActionsPopover from '@/components/app/view-actions/ViewActionsPopover';
@@ -66,7 +67,12 @@ jest.mock('@/components/ui/dropdown-menu', () => ({
 }));
 jest.mock('@/components/ui/progress', () => ({ Progress: () => <span /> }));
 jest.mock('@/components/ui/popover', () => ({
-  Popover: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Popover: ({ children, onOpenChange }: { children: ReactNode; onOpenChange?: (open: boolean) => void }) => (
+    <div>
+      {children}
+      <button type='button' data-testid='dismiss-popover' onClick={() => onOpenChange?.(false)} />
+    </div>
+  ),
   PopoverTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
   PopoverContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
@@ -172,6 +178,31 @@ test('Move explains and blocks a space root that only its owners can add pages t
   await waitFor(() => expect(move.hasAttribute('disabled')).toBe(false));
   fireEvent.click(move);
   await waitFor(() => expect(mockMovePage).toHaveBeenCalledWith('nested', 'general'));
+});
+
+test('Move stops checking its destination once the picker is dismissed', async () => {
+  const onOpenChange = jest.fn();
+
+  writable.handbook = false;
+  render(
+    <MovePagePopover viewId='onboarding' onOpenChange={onOpenChange}>
+      <button type='button'>move</button>
+    </MovePagePopover>
+  );
+
+  fireEvent.click(screen.getByTestId('destination-handbook'));
+  await waitFor(() =>
+    expect(screen.getByTestId('move-page-destination-status').textContent).toBe('spaceCreation.pageDestination.noEdit'));
+  fireEvent.click(screen.getByTestId('dismiss-popover'));
+
+  expect(onOpenChange).toHaveBeenCalledWith(false);
+  expect(screen.queryByTestId('move-page-destination-status')).toBeNull();
+  // A popover that stays mounted after dismissal no longer re-checks the old selection.
+  mockGetObjectPermission.mockClear();
+  act(() => {
+    mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+  });
+  expect(mockGetObjectPermission).not.toHaveBeenCalled();
 });
 
 test('Move blocks a page destination without Write', async () => {

@@ -23,6 +23,7 @@ function MovePagePopover({
   onMoved,
   children,
   popoverContentProps,
+  onOpenChange,
   ...props
 }: React.ComponentProps<typeof Popover> & {
   viewId: string;
@@ -78,6 +79,16 @@ function MovePagePopover({
     }
   }, [canMoveToDestination, movePage, onMoved, selectedViewId, viewId]);
 
+  const handleOpenChange = React.useCallback(
+    (open: boolean) => {
+      // ViewModal keeps this popover mounted after it is dismissed, and a kept selection would keep
+      // checking (and re-checking) a destination nobody is looking at.
+      if (!open) setSelectedViewId(null);
+      onOpenChange?.(open);
+    },
+    [onOpenChange]
+  );
+
   const renderExtra = React.useCallback(
     ({ view }: { view: View }) => {
       if (view.view_id !== selectedViewId) return null;
@@ -87,7 +98,7 @@ function MovePagePopover({
   );
 
   return (
-    <Popover modal {...props}>
+    <Popover modal {...props} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>{children}</PopoverTrigger>
       <PopoverContent
         onCloseAutoFocus={(e) => {
