@@ -7,56 +7,62 @@
  *  - Count is the default aggregation; the Y-Axis section is hidden.
  *  - Aggregation labels appear in the desktop order
  *    (Count → Count values → Sum → Average → Min → Max → Median).
- *  - Selecting any non-Count aggregation reveals the Y-Axis section.
- *  - Switching back to Count hides the Y-Axis section again.
+ *  - Selecting any non-Count aggregation keeps the popover open, reveals the
+ *    Y-Axis section and auto-picks the first Y-Axis field (desktop's
+ *    `_onAggregationTypeSelected`); the chart is retitled "<aggregation>(Type)".
  *  - Count values requires a Y-Axis field too (matches desktop's
  *    `_needsYAxisField`, which excludes only Count).
+ *  - Switching back to Count hides the Y-Axis section again.
+ *
+ * The default grid's only Y-Axis candidate is the Done checkbox, unchecked on
+ * every row, so the chart shows a single "No Type" bucket of three rows.
  */
 import { expect, test } from '@playwright/test';
 
 import {
   addChartViewTab,
+  closeChartSettings,
+  collectUnexpectedPageErrors,
+  expectNoUnexpectedPageErrors,
+  expectOptionNotSelected,
+  expectOptionSelected,
   openChartSettings,
   selectAggregation,
+  waitForChartReady,
 } from '../../support/chart-test-helpers';
 import { signInAndCreateDatabaseView } from '../../support/database-ui-helpers';
-import { ChartSettingsSelectors } from '../../support/selectors';
+import { ChartSelectors, ChartSettingsSelectors } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
 
 test.describe('Chart settings — Aggregation', () => {
-  test.beforeEach(async ({ page }) => {
-    page.on('pageerror', (err) => {
-      if (
-        err.message.includes('Minified React error') ||
-        err.message.includes('View not found') ||
-        err.message.includes('No workspace or service found') ||
-        err.message.includes('ResizeObserver loop')
-      ) {
-        return;
-      }
-    });
+  let pageErrors: Error[] = [];
 
+  test.beforeEach(async ({ page }) => {
+    pageErrors = collectUnexpectedPageErrors(page);
     await page.setViewportSize({ width: 1440, height: 900 });
   });
 
-  test('shows Count selected and hides the Y-Axis section by default', async ({
-    page,
-    request,
-  }) => {
+  test.afterEach(() => {
+    expectNoUnexpectedPageErrors(pageErrors);
+  });
+
+  test('shows Count selected and hides the Y-Axis section by default', async ({ page, request }) => {
     // Given: a fresh chart view sitting on top of a grid
     const testEmail = generateRandomEmail();
 
     await signInAndCreateDatabaseView(page, request, testEmail, 'Grid');
     await addChartViewTab(page);
+    await waitForChartReady(page);
+    await expect(ChartSelectors.title(page)).toHaveText('Count(Type)');
+
+    // When: opening the chart settings
     await openChartSettings(page);
 
-    // Then: Count is selected (its row carries the right-aligned tick) and the
-    // Y-Axis section is not rendered yet.
-    const countItem = ChartSettingsSelectors.aggregationItem(page, 'Count');
-
-    await expect(countItem).toBeVisible();
-    await expect(countItem.locator('svg')).toBeVisible();
+    // Then: Count is selected (its row carries the tick) and the Y-Axis
+    // section is not rendered.
+    await expectOptionSelected(ChartSettingsSelectors.aggregationItem(page, 'Count'));
     await expect(ChartSettingsSelectors.yAxisLabel(page)).toHaveCount(0);
+    await expect(ChartSettingsSelectors.yAxisFields(page)).toHaveCount(0);
   });
 
   test('lists the seven aggregations in desktop order', async ({ page, request }) => {
@@ -64,59 +70,50 @@ test.describe('Chart settings — Aggregation', () => {
 
     await signInAndCreateDatabaseView(page, request, testEmail, 'Grid');
     await addChartViewTab(page);
+    await waitForChartReady(page);
     await openChartSettings(page);
 
-    // Each label should be present in the menu.
-    for (const label of ['Count', 'Count values', 'Sum', 'Average', 'Min', 'Max', 'Median']) {
-      await expect(ChartSettingsSelectors.aggregationItem(page, label)).toBeVisible();
-    }
-
-    // Order: scoped to the Aggregation list region (skip the X-Axis fields).
-    // We check the *relative* positions of the seven aggregation items rather
-    // than the entire menuitem index, since the menu also includes X-Axis
-    // field rows above the Aggregation section.
-    const positions = await Promise.all(
-      ['Count', 'Count values', 'Sum', 'Average', 'Min', 'Max', 'Median'].map(async (label) => {
-        const box = await ChartSettingsSelectors.aggregationItem(page, label).boundingBox();
-
-        return { label, top: box?.y ?? -1 };
-      })
+    // Then: the Aggregation section lists the seven rows in desktop order,
+    // with exactly one of them selected.
+    await expect(ChartSettingsSelectors.aggregationItems(page)).toHaveText([
+      'Count',
+      'Count values',
+      'Sum',
+      'Average',
+      'Min',
+      'Max',
+      'Median',
+    ]);
+    await expect(ChartSettingsSelectors.aggregationItems(page).and(page.locator('[data-selected="true"]'))).toHaveCount(
+      1
     );
-    const tops = positions.map((p) => p.top);
-
-    expect(tops.every((t) => t > 0)).toBe(true);
-    for (let i = 1; i < tops.length; i++) {
-      expect(tops[i]).toBeGreaterThan(tops[i - 1]);
-    }
   });
 
-  test('selecting Sum reveals the Y-Axis section and moves the tick', async ({
-    page,
-    request,
-  }) => {
+  test('selecting Sum reveals the Y-Axis section and retitles the chart', async ({ page, request }) => {
     const testEmail = generateRandomEmail();
 
     await signInAndCreateDatabaseView(page, request, testEmail, 'Grid');
     await addChartViewTab(page);
+    await waitForChartReady(page);
     await openChartSettings(page);
 
-    // When: switching aggregation to Sum. selectAggregation closes the menu
-    // afterwards so the Yjs write can settle.
+    // When: switching aggregation to Sum
     await selectAggregation(page, 'Sum');
 
-    // Reopen and assert state
-    await openChartSettings(page);
+    // Then: the popover stays open with the tick moved to Sum
+    await expect(ChartSettingsSelectors.panel(page)).toBeVisible();
+    await expectOptionSelected(ChartSettingsSelectors.aggregationItem(page, 'Sum'));
+    await expectOptionNotSelected(ChartSettingsSelectors.aggregationItem(page, 'Count'));
 
-    // Then: the Y-Axis section is now visible
-    await expect(ChartSettingsSelectors.yAxisLabel(page)).toBeVisible({ timeout: 5000 });
+    // And: the Y-Axis section lists the Done checkbox and auto-picks it
+    await expect(ChartSettingsSelectors.yAxisLabel(page)).toBeVisible();
+    await expect(ChartSettingsSelectors.yAxisFields(page)).toHaveText(['Done']);
+    await expectOptionSelected(ChartSettingsSelectors.yAxisField(page, 'Done'));
 
-    // And: the tick is on Sum (not Count)
-    await expect(
-      ChartSettingsSelectors.aggregationItem(page, 'Sum').locator('svg')
-    ).toBeVisible();
-    await expect(
-      ChartSettingsSelectors.aggregationItem(page, 'Count').locator('svg')
-    ).toHaveCount(0);
+    // And: the chart sums Done (unchecked everywhere) under the new title
+    await closeChartSettings(page);
+    await expect(ChartSelectors.title(page)).toHaveText('Sum(Type)');
+    await expect(ChartSelectors.valueLabels(page)).toHaveText(['0']);
   });
 
   test('Count values also reveals the Y-Axis section', async ({ page, request }) => {
@@ -126,15 +123,19 @@ test.describe('Chart settings — Aggregation', () => {
 
     await signInAndCreateDatabaseView(page, request, testEmail, 'Grid');
     await addChartViewTab(page);
+    await waitForChartReady(page);
     await openChartSettings(page);
 
     await selectAggregation(page, 'Count values');
-    await openChartSettings(page);
 
-    await expect(ChartSettingsSelectors.yAxisLabel(page)).toBeVisible({ timeout: 5000 });
-    await expect(
-      ChartSettingsSelectors.aggregationItem(page, 'Count values').locator('svg')
-    ).toBeVisible();
+    await expect(ChartSettingsSelectors.yAxisLabel(page)).toBeVisible();
+    await expectOptionSelected(ChartSettingsSelectors.aggregationItem(page, 'Count values'));
+    await expectOptionSelected(ChartSettingsSelectors.yAxisField(page, 'Done'));
+
+    // Then: three unchecked rows hold one distinct Done value
+    await closeChartSettings(page);
+    await expect(ChartSelectors.title(page)).toHaveText('Count values(Type)');
+    await expect(ChartSelectors.valueLabels(page)).toHaveText(['1']);
   });
 
   test('switching back to Count hides the Y-Axis section', async ({ page, request }) => {
@@ -142,20 +143,23 @@ test.describe('Chart settings — Aggregation', () => {
 
     await signInAndCreateDatabaseView(page, request, testEmail, 'Grid');
     await addChartViewTab(page);
+    await waitForChartReady(page);
     await openChartSettings(page);
 
     // Move to Sum first, confirm Y-Axis is visible
     await selectAggregation(page, 'Sum');
-    await openChartSettings(page);
-    await expect(ChartSettingsSelectors.yAxisLabel(page)).toBeVisible({ timeout: 5000 });
+    await expect(ChartSettingsSelectors.yAxisLabel(page)).toBeVisible();
 
     // Then switch back to Count
     await selectAggregation(page, 'Count');
-    await openChartSettings(page);
 
     await expect(ChartSettingsSelectors.yAxisLabel(page)).toHaveCount(0);
-    await expect(
-      ChartSettingsSelectors.aggregationItem(page, 'Count').locator('svg')
-    ).toBeVisible();
+    await expectOptionSelected(ChartSettingsSelectors.aggregationItem(page, 'Count'));
+    await expectOptionNotSelected(ChartSettingsSelectors.aggregationItem(page, 'Sum'));
+
+    // And: the chart counts rows again
+    await closeChartSettings(page);
+    await expect(ChartSelectors.title(page)).toHaveText('Count(Type)');
+    await expect(ChartSelectors.valueLabels(page)).toHaveText(['3']);
   });
 });

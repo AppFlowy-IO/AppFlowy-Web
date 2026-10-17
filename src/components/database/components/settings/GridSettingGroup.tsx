@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useMemo, useRef, useState } from 'react';
+import { type KeyboardEvent, type PointerEvent, type RefObject, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { DateGroupCondition, FieldType, usePropertiesSelector } from '@/application/database-yjs';
@@ -6,23 +6,18 @@ import type { GridGroup, GridGrouping } from '@/application/database-yjs';
 import {
   useClearGroupByFieldDispatch,
   useGroupByFieldDispatch,
-  useSetAllGridGroupsVisibilityDispatch,
   useSetGridGroupVisibilityDispatch,
   useToggleGridHideEmptyGroups,
   useUpdateDateGroupConditionDispatch,
   useUpdateNumberGroupConfigurationDispatch,
 } from '@/application/database-yjs/dispatch';
-import {
-  DATABASE_GROUPABLE_FIELD_TYPES,
-  isDynamicDatabaseGroupFieldType,
-  parseDateGroupConfiguration,
-} from '@/application/database-yjs/group';
-import {
-  NumberGroupMode,
-  type NumberGroupConfiguration,
-  parseNumberGroupConfiguration,
-} from '@/application/database-yjs/number-grouping';
+import { DATABASE_GROUPABLE_FIELD_TYPES, parseDateGroupConfiguration } from '@/application/database-yjs/group';
+import { type NumberGroupConfiguration, parseNumberGroupConfiguration } from '@/application/database-yjs/number-grouping';
+import { DatabaseViewLayout } from '@/application/types';
+import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as GroupIcon } from '@/assets/icons/group.svg';
+import { ReactComponent as HideIcon } from '@/assets/icons/hide.svg';
+import { ReactComponent as ShowIcon } from '@/assets/icons/show.svg';
 import { Tag } from '@/components/_shared/tag';
 import { SelectOptionColorMap, SelectOptionFgColorMap } from '@/components/database/components/cell/cell.const';
 import { FieldDisplay } from '@/components/database/components/field';
@@ -39,6 +34,7 @@ import {
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Switch } from '@/components/ui/switch';
+import { cn } from '@/lib/utils';
 
 const DATE_CONDITIONS = [
   { label: 'Relative', value: DateGroupCondition.Relative },
@@ -50,15 +46,99 @@ const DATE_CONDITIONS = [
 
 export const GRID_GROUP_VISIBILITY_LIMIT = 40;
 
-export function getGridGroupVisibilityGroups(groups: GridGroup[], fieldType?: FieldType, content?: string): GridGroup[] {
-  if (fieldType === undefined || !isDynamicDatabaseGroupFieldType(fieldType)) return groups;
-  if (fieldType === FieldType.Number && parseNumberGroupConfiguration(content).mode === NumberGroupMode.Range)
-    return groups;
+/**
+ * One row of the "Groups" section. Grid/List/Timeline pass their `GridGroup`s
+ * straight through; Board derives rows from its columns.
+ */
+export type DatabaseSettingGroupVisibilityGroup = Pick<GridGroup, 'id' | 'label' | 'option' | 'isDefault'> & {
+  /** Grid/List/Timeline: the persisted flag. Board: whether the column is currently rendered. */
+  visible: boolean;
+  rows?: unknown[];
+};
 
-  return groups.filter((group) => group.isDefault || group.rows.length > 0);
+export type DatabaseSettingGrouping = Pick<
+  GridGrouping,
+  'isGrouped' | 'fieldId' | 'fieldType' | 'fieldName' | 'content' | 'hideEmptyGroups'
+> & {
+  /** Rows for the "Groups" section, already filtered per layout rule. */
+  groups: DatabaseSettingGroupVisibilityGroup[];
+};
+
+export interface DatabaseSettingGroupProps {
+  grouping: DatabaseSettingGrouping;
+  /** Board hides "None" and "Delete grouping" because it must always stay grouped. */
+  layout: DatabaseViewLayout;
+  /** Groupable fields, already filtered per layout. */
+  properties: Array<{ id: string; type: FieldType }>;
+  groupBy: (fieldId: string) => void;
+  clearGrouping: () => void;
+  toggleHideEmpty: (hide: boolean) => void;
+  setVisibility: (groupId: string, visible: boolean) => void;
+  /** Grid/List/Timeline only: enables the "Group condition" section for Date groupings. */
+  updateDateCondition?: (condition: DateGroupCondition) => void;
+  /** Grid/List/Timeline only: enables the Number panel. */
+  updateNumberConfiguration?: (configuration: NumberGroupConfiguration) => void;
+  testIdPrefix: 'grid' | 'list' | 'timeline' | 'board';
+  /** Board BDD steps rely on the constant id 'board-group-by-field'; default `${prefix}-group-by-field-${fieldId}`. */
+  groupByFieldTestId?: (fieldId: string) => string;
 }
 
-function GridGroupVisibilityLabel({ group, testIdPrefix }: { group: GridGroup; testIdPrefix: string }) {
+/**
+ * Desktop's backend (view_editor.rs `v_load_groups`) drops empty groups from
+ * the "Groups" list while "Hide empty groups" is on and lists every group,
+ * empty ones included, while it is off. Stale row-derived IDs that web only
+ * retains as metadata never render, so they are not offered either.
+ */
+export function getDatabaseGroupVisibilityGroups(grouping: Pick<GridGrouping, 'groups' | 'hideEmptyGroups'>): GridGroup[] {
+  return grouping.groups.filter((group) =>
+    grouping.hideEmptyGroups ? group.rows.length > 0 : !group.automaticallyHidden
+  );
+}
+
+/** Desktop lists every `canBeGroup` field of the view, hidden fields included. */
+export function useGroupableProperties() {
+  const { properties } = usePropertiesSelector(true);
+
+  return useMemo(
+    () => properties.filter((property) => DATABASE_GROUPABLE_FIELD_TYPES.includes(property.type)),
+    [properties]
+  );
+}
+
+/** Grid/List/Timeline grouping state reduced to the menu's props contract. */
+export function useDatabaseSettingGrouping(grouping: GridGrouping): DatabaseSettingGrouping {
+  return useMemo(() => {
+    const { isGrouped, fieldId, fieldType, fieldName, content, hideEmptyGroups } = grouping;
+
+    return {
+      isGrouped,
+      fieldId,
+      fieldType,
+      fieldName,
+      content,
+      hideEmptyGroups,
+      groups: getDatabaseGroupVisibilityGroups(grouping),
+    };
+  }, [grouping]);
+}
+
+function keepSubmenuOpenOnPointerLeave(contentRef: RefObject<HTMLDivElement | null>) {
+  return (event: PointerEvent<HTMLDivElement>) => {
+    // Entering the portaled submenu must not focus the parent menu and
+    // dismiss the draft when Radix's geometric hover grace area is missed.
+    if (event.relatedTarget instanceof Node && contentRef.current?.contains(event.relatedTarget)) {
+      event.preventDefault();
+    }
+  };
+}
+
+function GridGroupVisibilityLabel({
+  group,
+  testIdPrefix,
+}: {
+  group: DatabaseSettingGroupVisibilityGroup;
+  testIdPrefix: string;
+}) {
   if (!group.option) return <span className='truncate'>{group.label}</span>;
 
   const backgroundToken = SelectOptionColorMap[group.option.color];
@@ -81,7 +161,7 @@ export function GridGroupVisibilityList({
   setVisibility,
   testIdPrefix = 'grid',
 }: {
-  groups: GridGroup[];
+  groups: DatabaseSettingGroupVisibilityGroup[];
   setVisibility: (groupId: string, visible: boolean) => void;
   testIdPrefix?: string;
 }) {
@@ -89,7 +169,7 @@ export function GridGroupVisibilityList({
   const [searchValue, setSearchValue] = useState('');
   const searchEnabled = groups.length > GRID_GROUP_VISIBILITY_LIMIT;
   // Ignore stale text as soon as a newly selected field no longer needs the
-  // search control. GridSettingGroup also keys this list by field id so a
+  // search control. DatabaseSettingGroup also keys this list by field id so a
   // different grouping field starts with a clean query.
   const normalizedSearch = searchEnabled ? searchValue.trim().toLocaleLowerCase() : '';
   const filteredGroups = useMemo(() => {
@@ -145,23 +225,30 @@ export function GridGroupVisibilityList({
 
       {renderedGroups.map((group) => (
         <DropdownMenuItem
-          aria-checked={!group.hidden}
+          aria-checked={group.visible}
           data-testid={`${testIdPrefix}-group-visibility-${group.id}`}
           key={group.id}
           onSelect={(event) => {
             event.preventDefault();
-            setVisibility(group.id, group.hidden);
+            setVisibility(group.id, !group.visible);
           }}
           role='menuitemcheckbox'
         >
           <GridGroupVisibilityLabel group={group} testIdPrefix={testIdPrefix} />
-          <Switch
-            aria-hidden='true'
-            checked={!group.hidden}
-            className='pointer-events-none ml-auto'
-            data-testid={`${testIdPrefix}-group-visibility-switch-${group.id}`}
-            tabIndex={-1}
-          />
+          {/* Desktop _GroupVisibilityRow: show_s in icon-secondary while visible, hide_m in icon-tertiary while hidden. */}
+          {group.visible ? (
+            <ShowIcon
+              aria-hidden='true'
+              className='ml-auto text-icon-secondary'
+              data-testid={`${testIdPrefix}-group-visibility-shown-${group.id}`}
+            />
+          ) : (
+            <HideIcon
+              aria-hidden='true'
+              className='ml-auto text-icon-tertiary'
+              data-testid={`${testIdPrefix}-group-visibility-hidden-${group.id}`}
+            />
+          )}
         </DropdownMenuItem>
       ))}
 
@@ -192,205 +279,238 @@ export function GridGroupVisibilityList({
   );
 }
 
-export function GridGroupVisibilityActions({
-  groups,
-  setAllVisibility,
-  testIdPrefix = 'grid',
-}: {
-  groups: GridGroup[];
-  setAllVisibility: (groupIds: string[], visible: boolean) => void;
-  testIdPrefix?: string;
+/** Desktop _EmptyGroupByList: "Group by" label, optional None, then every groupable field. */
+function GroupByFieldList({
+  clearGrouping,
+  groupBy,
+  groupByFieldTestId,
+  grouping,
+  properties,
+  showNone,
+  testIdPrefix,
+}: Pick<
+  DatabaseSettingGroupProps,
+  'clearGrouping' | 'groupBy' | 'groupByFieldTestId' | 'grouping' | 'properties' | 'testIdPrefix'
+> & {
+  showNone: boolean;
 }) {
   const { t } = useTranslation();
-  const groupIds = useMemo(() => groups.filter((group) => !group.isDefault).map((group) => group.id), [groups]);
-
-  if (groupIds.length === 0) return null;
 
   return (
     <>
-      <DropdownMenuItem
-        data-testid={`${testIdPrefix}-show-all-groups`}
-        onSelect={(event) => {
-          event.preventDefault();
-          setAllVisibility(groupIds, true);
-        }}
-      >
-        {t('board.showAllGroups', 'Show all')}
-      </DropdownMenuItem>
-      <DropdownMenuItem
-        data-testid={`${testIdPrefix}-hide-all-groups`}
-        onSelect={(event) => {
-          event.preventDefault();
-          setAllVisibility(groupIds, false);
-        }}
-      >
-        {t('board.hideAllGroups', 'Hide all')}
-      </DropdownMenuItem>
+      <DropdownMenuLabel>{t('board.groupBy', 'Group by')}</DropdownMenuLabel>
+      {showNone && (
+        <DropdownMenuItem
+          data-testid={`${testIdPrefix}-group-by-none`}
+          onSelect={(event) => {
+            event.preventDefault();
+            clearGrouping();
+          }}
+        >
+          {t('grid.calculationTypeLabel.none', 'None')}
+          {!grouping.isGrouped && <DropdownMenuItemTick />}
+        </DropdownMenuItem>
+      )}
+      {properties.map((property) => (
+        <DropdownMenuItem
+          data-testid={groupByFieldTestId?.(property.id) ?? `${testIdPrefix}-group-by-field-${property.id}`}
+          key={property.id}
+          onSelect={(event) => {
+            event.preventDefault();
+            groupBy(property.id);
+          }}
+        >
+          <FieldDisplay
+            className='min-w-0 flex-1'
+            data-testid={`${testIdPrefix}-group-by-field-name`}
+            fieldId={property.id}
+          />
+          {grouping.fieldId === property.id && (
+            <DropdownMenuItemTick data-testid={`${testIdPrefix}-group-by-field-selected`} />
+          )}
+        </DropdownMenuItem>
+      ))}
     </>
   );
 }
 
-interface DatabaseSettingGroupProps {
-  grouping: GridGrouping;
-  groupBy: (fieldId: string) => void;
-  clearGrouping: () => void;
-  toggleHideEmpty: (hide: boolean) => void;
-  setVisibility: (groupId: string, visible: boolean) => void;
-  setAllVisibility: (groupIds: string[], visible: boolean) => void;
-  updateDateCondition: (condition: DateGroupCondition) => void;
-  updateNumberConfiguration: (configuration: NumberGroupConfiguration) => void;
-  testIdPrefix: 'grid' | 'list' | 'timeline';
-}
-
+/**
+ * The "Group" settings submenu, structured like desktop's DatabaseGroupList:
+ * ungrouped = Group by / None / fields; grouped = Group by ▸ field → [Number
+ * panel] → Hide empty groups → Groups rows → [Group condition] → [Delete
+ * grouping].
+ */
 export function DatabaseSettingGroup({
-  grouping,
-  groupBy,
   clearGrouping,
-  toggleHideEmpty,
+  groupBy,
+  groupByFieldTestId,
+  grouping,
+  layout,
+  properties,
   setVisibility,
-  setAllVisibility,
+  testIdPrefix,
+  toggleHideEmpty,
   updateDateCondition,
   updateNumberConfiguration,
-  testIdPrefix,
 }: DatabaseSettingGroupProps) {
   const { t } = useTranslation();
   const contentRef = useRef<HTMLDivElement>(null);
-  const { properties: allProperties } = usePropertiesSelector(true);
-  const properties = useMemo(
-    () => allProperties.filter((property) => DATABASE_GROUPABLE_FIELD_TYPES.includes(property.type)),
-    [allProperties]
-  );
-  const visibilityGroups = useMemo(
-    () => getGridGroupVisibilityGroups(grouping.groups, grouping.fieldType, grouping.content),
-    [grouping.fieldType, grouping.groups, grouping.content]
-  );
+  const groupByContentRef = useRef<HTMLDivElement>(null);
+  const isBoard = layout === DatabaseViewLayout.Board;
+  const isNumber = grouping.fieldType === FieldType.Number;
+  const dateFieldId = grouping.fieldType === FieldType.DateTime ? grouping.fieldId : undefined;
   const currentDateCondition = parseDateGroupConfiguration(grouping.content).condition;
+  const fieldList = (
+    <GroupByFieldList
+      clearGrouping={clearGrouping}
+      groupBy={groupBy}
+      groupByFieldTestId={groupByFieldTestId}
+      grouping={grouping}
+      properties={properties}
+      showNone={!isBoard}
+      testIdPrefix={testIdPrefix}
+    />
+  );
 
   return (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger
         data-testid={`${testIdPrefix}-group-settings-trigger`}
-        onPointerLeave={(event) => {
-          // Entering the portaled editor must not focus the parent menu and
-          // dismiss the draft when Radix's geometric hover grace area is missed.
-          if (event.relatedTarget instanceof Node && contentRef.current?.contains(event.relatedTarget)) {
-            event.preventDefault();
-          }
-        }}
+        onPointerLeave={keepSubmenuOpenOnPointerLeave(contentRef)}
       >
         <GroupIcon />
-        {t('grid.settings.group', 'Group')}
+        <span className='min-w-0 flex-1 truncate'>{t('grid.settings.group', 'Group')}</span>
+        {grouping.isGrouped && grouping.fieldName ? (
+          <span
+            className='max-w-[80px] truncate text-xs text-text-secondary'
+            data-testid={`${testIdPrefix}-group-settings-field`}
+          >
+            {grouping.fieldName}
+          </span>
+        ) : null}
       </DropdownMenuSubTrigger>
       <DropdownMenuPortal>
         <DropdownMenuSubContent
           ref={contentRef}
-          className='appflowy-scroller max-h-[520px] max-w-[280px] overflow-y-auto'
+          className={cn('appflowy-scroller w-[240px] overflow-y-auto', isNumber ? 'max-h-[560px]' : 'max-h-[280px]')}
           data-testid={`${testIdPrefix}-group-settings-menu`}
         >
-          {grouping.isGrouped && (
+          {!grouping.isGrouped ? (
+            fieldList
+          ) : (
             <>
-              <DropdownMenuItem
-                aria-checked={grouping.hideEmptyGroups}
-                className='w-full'
-                data-testid={`${testIdPrefix}-hide-empty-groups-toggle`}
-                onSelect={(event) => {
-                  event.preventDefault();
-                  toggleHideEmpty(!grouping.hideEmptyGroups);
-                }}
-                role='menuitemcheckbox'
-              >
-                {t('board.hideEmptyGroups', 'Hide empty groups')}
-                <Switch
-                  aria-hidden='true'
-                  checked={grouping.hideEmptyGroups}
-                  className='pointer-events-none ml-auto'
-                  data-testid={`${testIdPrefix}-hide-empty-groups-switch`}
-                  tabIndex={-1}
-                />
-              </DropdownMenuItem>
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger
+                  data-testid={`${testIdPrefix}-group-by-trigger`}
+                  onPointerLeave={keepSubmenuOpenOnPointerLeave(groupByContentRef)}
+                >
+                  <span className='min-w-0 flex-1 truncate'>{t('board.groupBy', 'Group by')}</span>
+                  {grouping.fieldName ? (
+                    <span
+                      className='max-w-[80px] truncate text-text-secondary'
+                      data-testid={`${testIdPrefix}-group-by-current-field`}
+                    >
+                      {grouping.fieldName}
+                    </span>
+                  ) : null}
+                </DropdownMenuSubTrigger>
+                <DropdownMenuPortal>
+                  <DropdownMenuSubContent
+                    ref={groupByContentRef}
+                    className='appflowy-scroller max-h-[280px] w-[240px] overflow-y-auto'
+                    data-testid={`${testIdPrefix}-group-by-menu`}
+                  >
+                    {fieldList}
+                  </DropdownMenuSubContent>
+                </DropdownMenuPortal>
+              </DropdownMenuSub>
 
-              {grouping.fieldType === FieldType.DateTime && (
+              {isNumber && updateNumberConfiguration && (
                 <>
-                  <DropdownMenuLabel>{t('grid.settings.groupDateBy', 'Group dates by')}</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <NumberGroupSettings
+                    configuration={parseNumberGroupConfiguration(grouping.content)}
+                    key={grouping.fieldId}
+                    onChange={updateNumberConfiguration}
+                    testIdPrefix={testIdPrefix}
+                  />
+                  <DropdownMenuSeparator />
+                </>
+              )}
+
+              {/* Desktop hides the toggle for Checkbox groupings: "Yes"/"No" never go empty. */}
+              {grouping.fieldType !== FieldType.Checkbox && (
+                <DropdownMenuItem
+                  aria-checked={grouping.hideEmptyGroups}
+                  className='w-full'
+                  data-testid={`${testIdPrefix}-hide-empty-groups-toggle`}
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    toggleHideEmpty(!grouping.hideEmptyGroups);
+                  }}
+                  role='menuitemcheckbox'
+                >
+                  {t('board.hideEmptyGroups', 'Hide empty groups')}
+                  <Switch
+                    aria-hidden='true'
+                    checked={grouping.hideEmptyGroups}
+                    className='pointer-events-none ml-auto'
+                    data-testid={`${testIdPrefix}-hide-empty-groups-switch`}
+                    tabIndex={-1}
+                  />
+                </DropdownMenuItem>
+              )}
+
+              <DropdownMenuLabel>{t('board.groups', 'Groups')}</DropdownMenuLabel>
+              <GridGroupVisibilityList
+                groups={grouping.groups}
+                key={grouping.fieldId}
+                setVisibility={setVisibility}
+                testIdPrefix={testIdPrefix}
+              />
+
+              {dateFieldId && updateDateCondition && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel>{t('board.groupCondition', 'Group condition')}</DropdownMenuLabel>
                   {DATE_CONDITIONS.map((condition) => (
+                    // Desktop reuses its field row here, so each condition carries
+                    // the date field's icon, and selecting one dismisses the menu.
                     <DropdownMenuItem
                       data-testid={`${testIdPrefix}-date-group-condition-${condition.value}`}
                       key={condition.value}
-                      onSelect={(event) => {
-                        event.preventDefault();
-                        updateDateCondition(condition.value);
-                      }}
+                      onSelect={() => updateDateCondition(condition.value)}
                     >
-                      {t(`chart.dateGrouping.${condition.label.toLowerCase()}`, condition.label)}
+                      <FieldDisplay
+                        data-testid={`${testIdPrefix}-date-group-condition-field-icon`}
+                        fieldId={dateFieldId}
+                        showPropertyName={false}
+                      />
+                      <span className='truncate'>
+                        {t(`chart.dateGrouping.${condition.label.toLowerCase()}`, condition.label)}
+                      </span>
                       {currentDateCondition === condition.value && <DropdownMenuItemTick />}
                     </DropdownMenuItem>
                   ))}
                 </>
               )}
 
-              {grouping.fieldType === FieldType.Number ? (
-                <NumberGroupSettings
-                  configuration={parseNumberGroupConfiguration(grouping.content)}
-                  key={grouping.fieldId}
-                  onChange={updateNumberConfiguration}
-                  testIdPrefix={testIdPrefix}
-                />
-              ) : null}
-
-              {visibilityGroups.length > 0 && (
+              {!isBoard && (
                 <>
                   <DropdownMenuSeparator />
-                  <DropdownMenuLabel>{t('grid.settings.groupVisibility', 'Group visibility')}</DropdownMenuLabel>
-                  <GridGroupVisibilityActions
-                    groups={visibilityGroups}
-                    setAllVisibility={setAllVisibility}
-                    testIdPrefix={testIdPrefix}
-                  />
-                  <GridGroupVisibilityList
-                    groups={visibilityGroups}
-                    key={grouping.fieldId}
-                    setVisibility={setVisibility}
-                    testIdPrefix={testIdPrefix}
-                  />
+                  {/* Desktop buildDeleteGroupItem: primary at rest, error colored only while hovered or focused. */}
+                  <DropdownMenuItem
+                    className='group/delete-grouping hover:text-text-error focus:text-text-error'
+                    data-testid={`${testIdPrefix}-remove-grouping`}
+                    onSelect={clearGrouping}
+                  >
+                    <DeleteIcon className='text-icon-primary group-hover/delete-grouping:text-text-error group-focus/delete-grouping:text-text-error' />
+                    {t('board.deleteGroup', 'Delete grouping')}
+                  </DropdownMenuItem>
                 </>
               )}
-
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                data-testid={`${testIdPrefix}-remove-grouping`}
-                onSelect={clearGrouping}
-                variant='destructive'
-              >
-                {t('board.removeGrouping', 'Remove grouping')}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
             </>
           )}
-
-          <DropdownMenuLabel>{t('board.groupBy', 'Group by')}</DropdownMenuLabel>
-          <DropdownMenuItem
-            data-testid={`${testIdPrefix}-group-by-none`}
-            onSelect={(event) => {
-              event.preventDefault();
-              clearGrouping();
-            }}
-          >
-            {t('button.none', 'None')}
-            {!grouping.isGrouped && <DropdownMenuItemTick />}
-          </DropdownMenuItem>
-          {properties.map((property) => (
-            <DropdownMenuItem
-              data-testid={`${testIdPrefix}-group-by-field-${property.id}`}
-              key={property.id}
-              onSelect={(event) => {
-                event.preventDefault();
-                groupBy(property.id);
-              }}
-            >
-              <FieldDisplay fieldId={property.id} />
-              {grouping.fieldId === property.id && <DropdownMenuItemTick />}
-            </DropdownMenuItem>
-          ))}
         </DropdownMenuSubContent>
       </DropdownMenuPortal>
     </DropdownMenuSub>
@@ -403,16 +523,18 @@ function GridSettingGroup() {
   const clearGrouping = useClearGroupByFieldDispatch();
   const toggleHideEmpty = useToggleGridHideEmptyGroups();
   const setVisibility = useSetGridGroupVisibilityDispatch(grouping.groupId, grouping.fieldId);
-  const setAllVisibility = useSetAllGridGroupsVisibilityDispatch(grouping.groupId, grouping.fieldId);
   const updateDateCondition = useUpdateDateGroupConditionDispatch();
   const updateNumberConfiguration = useUpdateNumberGroupConfigurationDispatch();
+  const properties = useGroupableProperties();
+  const settingGrouping = useDatabaseSettingGrouping(grouping);
 
   return (
     <DatabaseSettingGroup
       clearGrouping={clearGrouping}
       groupBy={groupBy}
-      grouping={grouping}
-      setAllVisibility={setAllVisibility}
+      grouping={settingGrouping}
+      layout={DatabaseViewLayout.Grid}
+      properties={properties}
       setVisibility={setVisibility}
       testIdPrefix='grid'
       toggleHideEmpty={toggleHideEmpty}

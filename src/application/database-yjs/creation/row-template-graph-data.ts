@@ -1,6 +1,7 @@
 import { v5 as uuidv5, validate as validateUuid } from 'uuid';
 import * as Y from 'yjs';
 
+import { restoreChartLayoutSettingIntegers } from '../chart-layout-setting';
 import { FieldType, FilterType } from '../database.type';
 import { RelationFilterCondition } from '../fields/relation/relation.type';
 import { readTemplateRecords, writeTemplateRecords } from '../template/storage';
@@ -370,6 +371,10 @@ export function databaseDocument(
           : item
       );
     }
+
+    // `templateJson` flattened the source's BigInt chart integers to numbers,
+    // which neither client honors for the chart sidecars.
+    restoreChartLayoutSettingIntegers(value.get('layout_settings'));
 
     const sourceId = sourcesByTarget.get(view.id);
 

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { renderToStaticMarkup } from 'react-dom/server.node';
 import * as Y from 'yjs';
 
@@ -36,6 +36,7 @@ import GridGroupHeader from '../GridGroupHeader';
 
 const toggleCollapsed = jest.fn();
 const syncGroupColumns = jest.fn();
+const mockT = jest.fn((_key: string, fallback?: string) => fallback ?? _key);
 
 jest.mock('@/application/database-yjs/dispatch', () => ({
   useClearGroupByFieldDispatch: () => jest.fn(),
@@ -45,7 +46,7 @@ jest.mock('@/application/database-yjs/dispatch', () => ({
 }));
 
 jest.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (_key: string, fallback?: string) => fallback ?? _key }),
+  useTranslation: () => ({ t: mockT }),
 }));
 
 jest.mock('@/components/database/components/grid/grid-row/GridNewRow', () => ({
@@ -285,6 +286,35 @@ describe('GridGroupHeader desktop color parity', () => {
     fixture.databaseDoc.destroy();
   });
 
+  it('matches the desktop 24px collapse toggle and swaps the filled arrow with the collapsed state', () => {
+    const { rerender } = renderHeader(baseData);
+    const toggle = screen.getByTestId('grid-group-collapse-toggle');
+    const toggleTokens = toggle.className.split(/\s+/);
+    const openIcon = screen.getByTestId('grid-group-collapse-icon');
+
+    // Desktop AFGhostButton m with 2px padding around a 20px filled arrow.
+    expect(toggleTokens).toEqual(
+      expect.arrayContaining(['h-6', 'w-6', 'p-0.5', 'rounded-300', 'hover:bg-fill-content-hover'])
+    );
+    expect(toggleTokens).not.toContain('h-7');
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(openIcon.getAttribute('data-collapsed')).toBe('false');
+    expect(openIcon.getAttribute('class')).toContain('h-5');
+    expect(openIcon.getAttribute('class')).not.toContain('rotate-90');
+
+    rerender(
+      <DatabaseContext.Provider value={createContextValue()}>
+        <GridGroupHeader data={{ ...baseData, groupCollapsed: true }} />
+      </DatabaseContext.Provider>
+    );
+
+    const collapsedIcon = screen.getByTestId('grid-group-collapse-icon');
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(collapsedIcon.getAttribute('data-collapsed')).toBe('true');
+    expect(collapsedIcon.getAttribute('class')).not.toContain('rotate-90');
+  });
+
   it('keeps hover-only header actions visible when they receive keyboard focus', () => {
     renderHeader(baseData, false);
     const actionsButton = screen.getByTestId('grid-group-actions');
@@ -299,6 +329,32 @@ describe('GridGroupHeader desktop color parity', () => {
     });
   });
 
+  it('labels the add button with the desktop "Create a new" tooltip', async () => {
+    renderHeader(baseData, false);
+    const newRowButton = screen.getByTestId('grid-group-new-row');
+
+    expect(screen.queryByRole('tooltip')).toBeNull();
+
+    act(() => newRowButton.focus());
+
+    expect(document.activeElement).toBe(newRowButton);
+    expect((await screen.findByRole('tooltip')).textContent).toBe('Create a new');
+    expect(mockT).toHaveBeenCalledWith('grid.selectOption.createNew', 'Create a new');
+  });
+
+  it('reads the more-menu "Hide group" label from the desktop locale key', async () => {
+    renderHeader(baseData, false);
+    const actionsButton = screen.getByTestId('grid-group-actions');
+
+    actionsButton.focus();
+    fireEvent.keyDown(actionsButton, { code: 'Enter', key: 'Enter' });
+
+    expect((await screen.findByTestId('grid-hide-group')).textContent).toBe('Hide group');
+    expect(mockT).toHaveBeenCalledWith('grid.settings.hideGroup', 'Hide group');
+    expect(mockT).not.toHaveBeenCalledWith('board.hideGroup', expect.anything());
+    expect(screen.getByTestId('grid-remove-grouping').textContent).toBe('Remove grouping');
+  });
+
   it('announces Checkbox group status as named, read-only semantics used by desktop', () => {
     const { rerender } = renderHeader({
       ...baseData,
@@ -309,6 +365,11 @@ describe('GridGroupHeader desktop color parity', () => {
     });
 
     expect(screen.getByText('Registration Complete')).toBeTruthy();
+    // Desktop GroupHeader: 18px RowSelectionCheckbox + HSpace(spacing.xs) = 4px before the name.
+    const checkboxRow = screen.getByText('Registration Complete').parentElement?.className.split(/\s+/) ?? [];
+
+    expect(checkboxRow).toContain('gap-1');
+    expect(checkboxRow).not.toContain('gap-1.5');
     const checked = screen.getByRole('checkbox', { name: 'Registration Complete: Yes' });
 
     expect(checked.getAttribute('aria-checked')).toBe('true');

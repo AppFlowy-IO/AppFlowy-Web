@@ -43,7 +43,7 @@ export function LinearProgressWithLabel({
           <span className={'h-[4px] w-full rounded-full bg-fill-theme-select'} />
         )}
       </div>
-      <div className={'min-w-[30px] text-center text-text-secondary'}>{result}</div>
+      <div className={'checklist-progress-label min-w-[30px] text-center text-text-secondary'}>{result}</div>
     </div>
   );
 }

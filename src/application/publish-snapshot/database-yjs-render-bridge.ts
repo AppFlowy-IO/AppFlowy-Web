@@ -1,5 +1,6 @@
 import * as Y from 'yjs';
 
+import { restoreChartLayoutSettingIntegers } from '@/application/database-yjs/chart-layout-setting';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import {
   RowId,
@@ -214,6 +215,20 @@ function populateSharedRoot(root: YSharedRoot, value: PublishedJsonObject) {
   });
 }
 
+/**
+ * The server builds the snapshot with `collab.to_json_value()`, which writes
+ * yrs `Any::BigInt` as a plain JSON integer. Both clients honor the chart
+ * `date_condition` / `aggregation_type_pb` sidecars only as BigInt, so put the
+ * tag back now that the maps live in this local-only document.
+ */
+function restoreChartLayoutIntegers(doc: YDoc, database: YDatabase) {
+  doc.transact(() => {
+    (database.get(YjsDatabaseKey.views) as Y.Map<unknown> | undefined)?.forEach((view) => {
+      if (view instanceof Y.Map) restoreChartLayoutSettingIntegers(view.get(YjsDatabaseKey.layout_settings));
+    });
+  });
+}
+
 function createDatabaseDoc(snapshot: PublishedDatabaseSnapshot): YDoc {
   const doc = new Y.Doc({
     guid: snapshot.database.databaseId,
@@ -224,6 +239,7 @@ function createDatabaseDoc(snapshot: PublishedDatabaseSnapshot): YDoc {
   doc.object_id = snapshot.database.databaseId;
   doc.view_id = snapshot.view.viewId;
   root.set(YjsEditorKey.database, database);
+  restoreChartLayoutIntegers(doc, database);
   return doc;
 }
 

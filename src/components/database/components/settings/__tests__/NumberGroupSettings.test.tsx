@@ -86,7 +86,7 @@ describe('NumberGroupSettings', () => {
     changeRange('-0.50', '0.50', '0');
     expect(onChange).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
-    expect(screen.getByRole('alert').textContent).toBe('Interval must be greater than zero.');
+    expect(screen.getByRole('alert').textContent).toBe('Use an interval greater than zero.');
     expect(onChange).not.toHaveBeenCalled();
 
     fireEvent.change(input('Interval'), { target: { value: '0.25' } });
@@ -139,6 +139,59 @@ describe('NumberGroupSettings', () => {
     expect(input('Start').value).toBe('-0.');
     expect(input('Start').selectionStart).toBe(2);
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('reports every validation failure with the desktop wording', () => {
+    const onChange = jest.fn();
+
+    render(<LiveSettingsMenu onChange={onChange} />);
+
+    const cases: Array<[string, string, string, string]> = [
+      ['abc', '1', '1', 'Enter a number. Decimals are allowed.'],
+      ['5', '5', '1', 'The end value must be greater than the start value.'],
+      ['0', '1', '0', 'Use an interval greater than zero.'],
+      ['0', '100000', '1', 'Use a larger interval to create at most 1,000 ranges.'],
+      [
+        '79228162514264337593543950334',
+        '79228162514264337593543950335',
+        '1',
+        'These numbers have too many decimal places. Use fewer.',
+      ],
+    ];
+
+    cases.forEach(([start, end, interval, message]) => {
+      changeRange(start, end, interval);
+      fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+      expect(screen.getByRole('alert').textContent).toBe(message);
+    });
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('matches the desktop panel paddings and field size', () => {
+    render(<LiveSettingsMenu onChange={jest.fn()} />);
+
+    const tokens = (element: HTMLElement) => element.className.split(/\s+/);
+
+    // Desktop _sectionTitle / _choiceItem: AFMenuItem padded spacing.l x spacing.xs (12x4).
+    [screen.getByText('Group numbers by'), screen.getByText('Sort groups')].forEach((label) => {
+      expect(tokens(label)).toEqual(expect.arrayContaining(['px-3', 'py-1']));
+      expect(tokens(label)).not.toContain('px-2');
+    });
+    ['Exact value', 'Range', 'Ascending', 'Descending'].forEach((name) => {
+      const row = tokens(screen.getByRole('menuitemradio', { name }));
+
+      expect(row).toEqual(expect.arrayContaining(['px-3', 'py-1']));
+      expect(row).not.toContain('px-2');
+      expect(row).not.toContain('py-1.5');
+    });
+    // Desktop _rangeForm: padded 12x8, AFTextField size m (32px tall), full-width Apply.
+    const form = input('Start').closest('.px-3.py-2');
+
+    expect(form).not.toBeNull();
+    ['Start', 'End', 'Interval'].forEach((name) => {
+      expect(tokens(input(name as 'Start' | 'End' | 'Interval'))).toContain('h-8');
+    });
+    expect(tokens(screen.getByRole('button', { name: 'Apply' }))).toContain('w-full');
   });
 
   it('handles Enter inside a range field without Radix selecting a different option', () => {

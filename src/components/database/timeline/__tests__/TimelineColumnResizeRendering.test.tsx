@@ -17,6 +17,7 @@ jest.mock('@/application/database-yjs', () => ({
   ...jest.requireActual('@/application/database-yjs/database.type'),
   DEFAULT_ROW_HEIGHT: jest.requireActual('@/application/database-yjs/const').DEFAULT_ROW_HEIGHT,
   useRowMetaSelector: () => undefined,
+  useFieldSelector: () => ({ clock: 0, field: undefined }),
 }));
 jest.mock('@/components/database/components/drag-and-drop/useRowDnd', () => ({
   useRowDnd: () => ({ dragging: false, ignoreClickRef: { current: false } }),

@@ -1,118 +1,80 @@
-import { useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useCallback, useMemo } from 'react';
 
-import { FieldType, useBoardLayoutSettings, useFieldType, usePropertiesSelector } from '@/application/database-yjs';
+import { FieldType, usePropertiesSelector } from '@/application/database-yjs';
+import { useBoardGroupingSummary } from '@/application/database-yjs/board-grouping';
 import {
+  useClearGroupByFieldDispatch,
   useGroupByFieldDispatch,
+  useSetBoardColumnRenderedDispatch,
   useToggleHideEmptyGroups,
-  useToggleHideUnGrouped,
 } from '@/application/database-yjs/dispatch';
-import { ReactComponent as GroupIcon } from '@/assets/icons/group.svg';
-import { FieldDisplay } from '@/components/database/components/field';
-import {
-  DropdownMenuPortal,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuItem, DropdownMenuLabel, DropdownMenuItemTick, DropdownMenuSeparator,
-} from '@/components/ui/dropdown-menu';
-import { Switch } from '@/components/ui/switch';
+import { DatabaseViewLayout } from '@/application/types';
+import { DatabaseSettingGroup } from '@/components/database/components/settings/GridSettingGroup';
 
-function BoardSettingGroup () {
-  const { t } = useTranslation();
-  const {
-    hideEmptyGroups,
-    ungroupedColumnHidden,
-    fieldId,
-  } = useBoardLayoutSettings();
-  const fieldType = useFieldType(fieldId || '');
-  const toggle = useToggleHideUnGrouped();
-  const toggleHideEmptyGroups = useToggleHideEmptyGroups();
+// Desktop lets a Board group by every groupable type, but the web Board only
+// renders select and checkbox columns, so the picker stays limited to them.
+const BOARD_GROUPABLE_FIELD_TYPES: readonly FieldType[] = [
+  FieldType.SingleSelect,
+  FieldType.MultiSelect,
+  FieldType.Checkbox,
+];
+
+// Board BDD steps locate every field row through this one constant id.
+const BOARD_GROUP_BY_FIELD_TEST_ID = 'board-group-by-field';
+
+function getBoardGroupByFieldTestId() {
+  return BOARD_GROUP_BY_FIELD_TEST_ID;
+}
+
+function BoardSettingGroup() {
+  const { fieldId, fieldName, fieldType, getRows, groupId, groupRowsReady, groups, hideEmptyGroups } =
+    useBoardGroupingSummary();
   const groupBy = useGroupByFieldDispatch();
+  // Board views always stay grouped: the shared menu hides None and Delete
+  // grouping for this layout, but its contract still takes the dispatch.
+  const clearGrouping = useClearGroupByFieldDispatch();
+  const toggleHideEmptyGroups = useToggleHideEmptyGroups();
+  const setColumnRendered = useSetBoardColumnRenderedDispatch(groupId ?? '', fieldId ?? '');
+  const setVisibility = useCallback(
+    (columnId: string, visible: boolean) => {
+      // Desktop pairs updateBoardGroupRenderOverride(rendered, isEmpty) with
+      // updateGroup(visible); the render dispatch writes both in one operation
+      // and mirrors hide_ungrouped_column when the default column is hidden.
+      const automaticallyHidden = groupRowsReady && hideEmptyGroups && getRows(columnId).length === 0;
 
+      setColumnRendered(columnId, visible, automaticallyHidden);
+    },
+    [getRows, groupRowsReady, hideEmptyGroups, setColumnRendered]
+  );
   const { properties: allProperties } = usePropertiesSelector(true);
-  const properties = useMemo(() => {
-    return allProperties.filter(property => {
-      const type = property.type;
-
-      return [
-        FieldType.SingleSelect,
-        FieldType.MultiSelect,
-        FieldType.Checkbox,
-        // FieldType.DateTime,
-        // FieldType.LastEditedTime,
-        // FieldType.CreatedTime,
-      ].includes(type);
-    });
-  }, [allProperties]);
+  const properties = useMemo(
+    () => allProperties.filter((property) => BOARD_GROUPABLE_FIELD_TYPES.includes(property.type)),
+    [allProperties]
+  );
+  const grouping = useMemo(
+    () => ({
+      fieldId: fieldId ?? undefined,
+      fieldName,
+      fieldType,
+      groups,
+      hideEmptyGroups,
+      isGrouped: Boolean(fieldId),
+    }),
+    [fieldId, fieldName, fieldType, groups, hideEmptyGroups]
+  );
 
   return (
-    <DropdownMenuSub>
-      <DropdownMenuSubTrigger data-testid={'board-group-settings-trigger'}>
-        <GroupIcon />
-        {t('grid.settings.group')}
-      </DropdownMenuSubTrigger>
-      <DropdownMenuPortal>
-        <DropdownMenuSubContent
-          data-testid={'board-group-settings-menu'}
-          className={'max-w-[240px] appflowy-scroller overflow-y-auto'}
-        >
-          {fieldType !== FieldType.Checkbox && (
-            <>
-              <DropdownMenuItem
-                data-testid={'board-hide-empty-groups-toggle'}
-                className={'w-full'}
-                onSelect={(e) => {
-                  e.preventDefault();
-                  toggleHideEmptyGroups(!hideEmptyGroups);
-                }}
-              >
-                {t('board.hideEmptyGroups')}
-                <Switch
-                  data-testid={'board-hide-empty-groups-switch'}
-                  aria-label={t('board.hideEmptyGroups')}
-                  className={'ml-auto'}
-                  checked={hideEmptyGroups}
-                />
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className={'w-full'}
-                onSelect={(e) => {
-                  e.preventDefault();
-                  toggle(!ungroupedColumnHidden);
-                }}
-              >
-                {t('board.showUngrouped')}
-                <Switch
-                  className={'ml-auto'}
-                  checked={!ungroupedColumnHidden}
-                />
-
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-            </>
-          )}
-
-          <DropdownMenuLabel>{t('board.groupBy')}</DropdownMenuLabel>
-          {properties.map(property => (
-            <DropdownMenuItem
-              data-testid={'board-group-by-field'}
-              key={property.id}
-              className={'w-full'}
-              onSelect={(e) => {
-                e.preventDefault();
-                groupBy(property.id);
-              }}
-            >
-              <FieldDisplay data-testid={'board-group-by-field-name'} fieldId={property.id} />
-              {fieldId === property.id && <DropdownMenuItemTick data-testid={'board-group-by-field-selected'} />}
-
-            </DropdownMenuItem>
-          ))}
-
-        </DropdownMenuSubContent>
-      </DropdownMenuPortal>
-    </DropdownMenuSub>
+    <DatabaseSettingGroup
+      clearGrouping={clearGrouping}
+      groupBy={groupBy}
+      groupByFieldTestId={getBoardGroupByFieldTestId}
+      grouping={grouping}
+      layout={DatabaseViewLayout.Board}
+      properties={properties}
+      setVisibility={setVisibility}
+      testIdPrefix='board'
+      toggleHideEmpty={toggleHideEmptyGroups}
+    />
   );
 }
 

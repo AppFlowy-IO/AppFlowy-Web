@@ -1,146 +1,266 @@
-import { memo, useMemo, useState } from 'react';
+import { memo, MouseEvent, useCallback, useMemo, useState } from 'react';
 import {
-  BarChart as RechartsBarChart,
   Bar,
-  XAxis,
-  YAxis,
+  BarChart as RechartsBarChart,
   CartesianGrid,
-  ResponsiveContainer,
   Cell,
   LabelList,
+  LabelProps,
+  ResponsiveContainer,
+  XAxis,
+  YAxis,
 } from 'recharts';
 
-import { ChartDataItem } from '@/application/database-yjs/chart.type';
+import { ChartAggregationType, ChartClickItem, ChartDataItem } from '@/application/database-yjs/chart.type';
+import { cn } from '@/lib/utils';
 
-import { ChartTooltip } from './ChartTooltip';
 import {
-  TooltipState,
-  INITIAL_TOOLTIP_STATE,
+  AXIS_LINE_PROPS,
+  AxisTickProps,
+  CATEGORY_AXIS_HEIGHT,
+  GRID_LINE_PROPS,
+  NO_MARGIN,
+  PLOT_SURFACE_OVERFLOW_CLASS,
+  renderCategoryAxisTick,
+  VALUE_AXIS_WIDTH,
+} from './chartAxis';
+import { ChartNoValidData } from './ChartNoValidData';
+import { CHART_TITLE_VERTICAL_WIDTH, ChartTitle, useChartAggregationLabel } from './ChartTitle';
+import { PositionedChartTooltip } from './ChartTooltip';
+import {
+  axisTicks,
+  calculateAxisInterval,
   calculateBarWidth,
   chartDataEqual,
-  computeValueAxis,
+  computeBarAxisMax,
   formatValue,
+  isPlottableValue,
+  resolveChartItemColor,
 } from './chartUtils';
 
 interface BarChartWidgetProps {
   data: ChartDataItem[];
-  onBarClick?: (item: ChartDataItem) => void;
+  onBarClick?: (item: ChartClickItem) => void;
+  aggregationType?: ChartAggregationType;
+}
+
+/** Gap between a bar's top and its value label (fl_chart `tooltipMargin`). */
+const BAR_VALUE_LABEL_GAP = 4;
+const BAR_RADIUS: [number, number, number, number] = [4, 4, 0, 0];
+
+/**
+ * Bar chart value-axis label (desktop's `_buildLeftTitle`): 12px regular in
+ * the body text color at 70%, right-aligned against the plot (`space: 0`).
+ */
+function ValueAxisTick({ x = 0, y = 0, payload }: AxisTickProps) {
+  return (
+    <text
+      x={x}
+      y={y}
+      textAnchor='end'
+      dominantBaseline='central'
+      fillOpacity={0.7}
+      className='fill-text-primary text-xs'
+    >
+      {payload?.value}
+    </text>
+  );
+}
+
+interface BarChartBodyProps extends BarChartWidgetProps {
+  /** Set by `ResponsiveContainer`: the box desktop's `LayoutBuilder` measures. */
+  width?: number;
+  height?: number;
 }
 
 /**
- * Vertical bar chart widget using Recharts
+ * Desktop's `_BarChartContent`: the vertical aggregation title, then the
+ * chart. Hovering anywhere in a bar's equal-width column (axis band included)
+ * shades that column behind the bar, hides the bar's value label and shows the
+ * tooltip above the bar; clicking the column opens the bar's rows.
  */
-function BarChartWidgetImpl({ data, onBarClick }: BarChartWidgetProps) {
-  const [tooltip, setTooltip] = useState<TooltipState>(INITIAL_TOOLTIP_STATE);
+function BarChartBody({ data, onBarClick, aggregationType, width = 0, height = 0 }: BarChartBodyProps) {
+  const aggregationLabel = useChartAggregationLabel(aggregationType);
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
-  // Y-axis: zero-anchored [min, max] domain + nice ticks. Shared across
-  // BarChart / LineChart / HorizontalBarChart via `computeValueAxis`.
-  const { domain: yAxisDomain, ticks: yAxisTicks } = useMemo(() => computeValueAxis(data), [data]);
+  const bars = useMemo(() => data.map((item, index) => ({ item, color: resolveChartItemColor(item, index) })), [data]);
+  const rows = useMemo(() => data.map((item, index) => ({ index, value: item.value })), [data]);
+  const categoryTick = useMemo(() => renderCategoryAxisTick(data.map((item) => item.label)), [data]);
+  const axis = useMemo(() => {
+    const maxValue = data.reduce((max, item) => Math.max(max, item.value), 0);
+    const axisMax = computeBarAxisMax(maxValue);
+    // Desktop steps the labels and grid lines by the interval of the tallest
+    // bar, not of the padded axis maximum.
+    const ticks = axisTicks(axisMax, calculateAxisInterval(maxValue));
 
-  // Calculate bar width based on data count
-  const barWidth = useMemo(() => calculateBarWidth(data.length), [data.length]);
+    return {
+      axisMax,
+      // Whole numbers only, never the axis minimum or maximum.
+      labelValues: ticks.filter((value) => value > 0 && value < axisMax && Number.isInteger(value)),
+      // fl_chart draws no grid line on the axis minimum or maximum.
+      gridValues: ticks.filter((value) => value > 0 && value < axisMax),
+    };
+  }, [data]);
 
-  const handleClick = (item: ChartDataItem) => {
-    if (onBarClick) {
-      onBarClick(item);
-    }
+  const titleWidth = aggregationLabel ? CHART_TITLE_VERTICAL_WIDTH : 0;
+  const chartWidth = Math.max(0, width - titleWidth);
+  const plotWidth = Math.max(0, chartWidth - VALUE_AXIS_WIDTH);
+  const plotHeight = Math.max(0, height - CATEGORY_AXIS_HEIGHT);
+  // `BarChartAlignment.spaceAround` centers every bar in an equal segment.
+  const segmentWidth = bars.length > 0 ? plotWidth / bars.length : 0;
+  const activeIndex = hoveredIndex !== null && hoveredIndex < bars.length ? hoveredIndex : null;
+  const hovered = activeIndex === null ? null : bars[activeIndex];
+
+  const gridLines = useCallback(
+    () => axis.gridValues.map((value) => plotHeight * (1 - value / axis.axisMax)),
+    [axis, plotHeight]
+  );
+
+  // Desktop draws each value label (fl_chart's bar tooltip) above its bar in
+  // the bar's color, except for the hovered bar, which shows the tooltip.
+  // The label's box ends 4px above the bar; its baseline sits one descent up.
+  const renderValueLabel = useCallback(
+    ({ index, value, viewBox }: LabelProps) => {
+      if (index === undefined || index === activeIndex || !bars[index]) return null;
+      const { x = 0, y = 0, width: barWidth = 0 } = (viewBox ?? {}) as { x?: number; y?: number; width?: number };
+
+      return (
+        <text
+          x={x + barWidth / 2}
+          y={y - BAR_VALUE_LABEL_GAP}
+          dy='-0.24em'
+          textAnchor='middle'
+          fill={bars[index].color}
+          className='text-xs font-semibold'
+        >
+          {formatValue(Number(value))}
+        </text>
+      );
+    },
+    [activeIndex, bars]
+  );
+
+  // `_ChartHitDetector`: only the pointer's x matters, so the whole column of
+  // a segment, from the top of the plot through the label band, is its bar.
+  const segmentIndexAt = (event: MouseEvent<HTMLDivElement>) => {
+    if (segmentWidth <= 0) return null;
+    const plotX = event.clientX - event.currentTarget.getBoundingClientRect().left - VALUE_AXIS_WIDTH;
+
+    if (plotX < 0) return null;
+    const index = Math.floor(plotX / segmentWidth);
+
+    return index < bars.length ? index : null;
   };
 
-  const handleMouseEnter = (data: ChartDataItem, index: number, e: React.MouseEvent) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const containerRect = e.currentTarget.closest('.recharts-wrapper')?.getBoundingClientRect();
+  const handleClick = (event: MouseEvent<HTMLDivElement>) => {
+    const index = segmentIndexAt(event);
 
-    if (containerRect) {
-      setTooltip({
-        active: true,
-        item: data,
-        // Center horizontally on the bar
-        x: rect.left + rect.width / 2 - containerRect.left,
-        // Position above the bar top (with offset for value label)
-        y: rect.top - containerRect.top - 20,
-      });
-    }
-  };
+    if (index === null) return;
+    const { item, color } = bars[index];
 
-  const handleMouseLeave = () => {
-    setTooltip(INITIAL_TOOLTIP_STATE);
+    onBarClick?.({ ...item, color });
   };
 
   return (
-    <div data-testid='bar-chart-widget' className='relative w-full' style={{ height: '400px' }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <RechartsBarChart
-          data={data}
-          margin={{ top: 24, right: 0, left: 0, bottom: 40 }}
-        >
-          <CartesianGrid
-            vertical={false}
-            stroke="var(--border-primary)"
-            strokeOpacity={0.5}
+    <div className='relative flex h-full w-full'>
+      {aggregationLabel && <ChartTitle label={aggregationLabel} />}
+      <div
+        data-testid='bar-chart-plot'
+        className={cn(
+          'relative h-full min-w-0 flex-1',
+          PLOT_SURFACE_OVERFLOW_CLASS,
+          activeIndex !== null && 'cursor-pointer'
+        )}
+        onMouseMove={(event) => setHoveredIndex(segmentIndexAt(event))}
+        onMouseLeave={() => setHoveredIndex(null)}
+        onClick={handleClick}
+      >
+        {activeIndex !== null && (
+          <div
+            data-testid='bar-chart-hover-background'
+            className='pointer-events-none absolute top-0 bg-fill-content-hover'
+            style={{ left: VALUE_AXIS_WIDTH + segmentWidth * activeIndex, width: segmentWidth, height: plotHeight }}
           />
+        )}
+        <RechartsBarChart
+          width={chartWidth}
+          height={height}
+          data={rows}
+          margin={NO_MARGIN}
+          // Recharts pins `cursor: default` on its wrapper; follow the hover state instead.
+          style={{ cursor: 'inherit' }}
+        >
+          <CartesianGrid vertical={false} horizontalCoordinatesGenerator={gridLines} {...GRID_LINE_PROPS} />
           <XAxis
-            dataKey="label"
-            tick={{ fontSize: 12, fill: 'var(--text-secondary)' }}
-            tickLine={false}
-            axisLine={{ stroke: 'var(--border-primary)' }}
+            dataKey='index'
+            type='category'
+            height={CATEGORY_AXIS_HEIGHT}
             interval={0}
-            tickFormatter={(label) => label.length > 15 ? `${label.substring(0, 15)}...` : label}
+            tickLine={false}
+            tickSize={0}
+            tickMargin={0}
+            axisLine={AXIS_LINE_PROPS}
+            tick={categoryTick}
           />
           <YAxis
-            domain={yAxisDomain}
-            ticks={yAxisTicks}
-            tick={{ fontSize: 12, fill: 'var(--text-secondary)' }}
+            type='number'
+            domain={[0, axis.axisMax]}
+            ticks={axis.labelValues}
+            interval={0}
+            width={VALUE_AXIS_WIDTH}
+            axisLine={false}
             tickLine={false}
-            axisLine={{ stroke: 'var(--border-primary)' }}
-            width={40}
+            tickSize={0}
+            tickMargin={0}
+            // An all-zero chart has no whole-number label between 0 and the
+            // axis maximum, so desktop draws none; Recharts would otherwise
+            // fall back to its own fractional ticks for an empty list.
+            tick={axis.labelValues.length > 0 ? ValueAxisTick : false}
           />
-          <Bar
-            dataKey="value"
-            radius={[4, 4, 0, 0]}
-            cursor="pointer"
-            onClick={(data) => handleClick(data as ChartDataItem)}
-            maxBarSize={barWidth}
-            activeBar={false}
-            onMouseLeave={handleMouseLeave}
-          >
-            {data.map((entry, index) => (
-              <Cell
-                key={`cell-${index}`}
-                fill={entry.color}
-                onMouseEnter={(e) => handleMouseEnter(entry, index, e as unknown as React.MouseEvent)}
-              />
+          <Bar dataKey='value' barSize={calculateBarWidth(bars.length)} radius={BAR_RADIUS} isAnimationActive={false}>
+            {bars.map(({ color }, index) => (
+              <Cell key={index} fill={color} />
             ))}
-            <LabelList
-              dataKey="value"
-              position="top"
-              formatter={formatValue}
-              style={{
-                fontSize: 12,
-                fontWeight: 600,
-                fill: 'var(--text-primary)',
-              }}
-            />
+            <LabelList dataKey='value' content={renderValueLabel} />
           </Bar>
         </RechartsBarChart>
-      </ResponsiveContainer>
-
-      {/* Fixed position tooltip above the bar */}
-      {tooltip.active && tooltip.item && (
-        <div
-          className="absolute pointer-events-none z-10"
-          style={{
-            left: tooltip.x,
-            top: tooltip.y,
-            transform: 'translate(-50%, -100%)',
+      </div>
+      {hovered && activeIndex !== null && (
+        <PositionedChartTooltip
+          label={hovered.item.label}
+          value={hovered.item.value}
+          color={hovered.color}
+          anchor={{
+            x: titleWidth + VALUE_AXIS_WIDTH + segmentWidth * (activeIndex + 0.5),
+            y: plotHeight * (1 - hovered.item.value / axis.axisMax),
           }}
-        >
-          <ChartTooltip
-            label={tooltip.item.label}
-            value={tooltip.item.value}
-            color={tooltip.item.color}
-          />
-        </div>
+          chartSize={{ width, height }}
+        />
       )}
+    </div>
+  );
+}
+
+/**
+ * Vertical bar chart (desktop's `DatabaseBarChart`): a 400px chart padded
+ * 24px on the left, or a "no valid data" note when no value can be plotted.
+ */
+function BarChartWidgetImpl({ data, onBarClick, aggregationType }: BarChartWidgetProps) {
+  const validData = useMemo(() => data.filter(isPlottableValue), [data]);
+
+  if (validData.length === 0) {
+    return (
+      <div data-testid='bar-chart-widget' className='h-[400px] w-full'>
+        <ChartNoValidData />
+      </div>
+    );
+  }
+
+  return (
+    <div data-testid='bar-chart-widget' className='h-[400px] w-full pl-6'>
+      <ResponsiveContainer width='100%' height='100%'>
+        <BarChartBody data={validData} onBarClick={onBarClick} aggregationType={aggregationType} />
+      </ResponsiveContainer>
     </div>
   );
 }
@@ -150,7 +270,11 @@ function BarChartWidgetImpl({ data, onBarClick }: BarChartWidgetProps) {
 // `onBarClick` is `useCallback`-stable in `ChartProvider`, so reference
 // equality is sufficient there.
 export const BarChartWidget = memo(BarChartWidgetImpl, (prev, next) => {
-  return prev.onBarClick === next.onBarClick && chartDataEqual(prev.data, next.data);
+  return (
+    prev.onBarClick === next.onBarClick &&
+    prev.aggregationType === next.aggregationType &&
+    chartDataEqual(prev.data, next.data)
+  );
 });
 
 export default BarChartWidget;

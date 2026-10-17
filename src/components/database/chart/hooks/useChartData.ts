@@ -1,8 +1,17 @@
 import dayjs, { Dayjs } from 'dayjs';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { TFunction } from 'i18next';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useTranslation } from 'react-i18next';
 
-import { useDatabaseContext, useDatabaseFields, useRowMap, useRowOrdersSelector } from '@/application/database-yjs';
+import {
+  useDatabaseContext,
+  useDatabaseFields,
+  useDatabaseView,
+  useRowMap,
+  useRowOrdersSelector,
+} from '@/application/database-yjs';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
+import { DEFAULT_CHART_LAYOUT_SETTINGS } from '@/application/database-yjs/chart-layout-setting';
 import {
   ChartAggregationType,
   ChartDataItem,
@@ -10,414 +19,535 @@ import {
   isDateGroupableFieldType,
   isGroupableFieldType,
 } from '@/application/database-yjs/chart.type';
-import { getCell } from '@/application/database-yjs/const';
 import { DateGroupCondition, FieldType } from '@/application/database-yjs/database.type';
 import { parseSelectOptionTypeOptions, SelectOption } from '@/application/database-yjs/fields';
-import { safeParseTimestamp } from '@/application/database-yjs/fields/date/utils';
+import { parseDesktopCheckboxValue } from '@/application/database-yjs/fields/text/utils';
 import {
-  YjsDatabaseKey,
-  YjsEditorKey,
+  RowId,
+  YDatabaseCells,
   YDatabaseField,
   YDatabaseFields,
   YDatabaseRow,
-  RowId,
   YDoc,
+  YjsDatabaseKey,
+  YjsEditorKey,
 } from '@/application/types';
 
-import { useChartColors, UseChartColorsReturn } from './useChartColors';
+import { getCheckboxChartColor, getSelectOptionChartColor, getSelectOptionChartTextColor } from './chartColors';
+import { ChartRowsWatch, createChartRowsStore } from './chartRowsStore';
 
-interface GroupedData {
-  label: string;
-  optionId?: string;
-  rowIds: RowId[];
-  isEmptyCategory: boolean;
-  /** Lexicographically sortable key for chronological ordering of date buckets */
-  sortKey?: string;
+const SECONDS_PER_DAY = 24 * 60 * 60;
+const RELATIVE_MONTH_PREFIX = 'month_';
+
+/** Dart `String.compareTo`: UTF-16 code unit order, not `localeCompare`. */
+function compareCodeUnits(a: string, b: string): number {
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
 }
 
-interface GroupValue {
-  label: string;
-  /** Used to merge buckets across rows (e.g., date bucket key like "2026-03"). */
-  groupKey: string;
-  /** Chronological sort hint for date buckets. */
-  sortKey?: string;
+/** Fill `{}` placeholders in order (desktop's positional `tr(args: [...])`). */
+function formatPositional(template: string, values: string[]): string {
+  return values.reduce((text, value) => text.replace('{}', () => value), template);
 }
 
-function bucketDate(date: Dayjs, condition: DateGroupCondition): GroupValue {
+/** Local midnight of a `yyyy-MM-dd` bucket key (Dart `DateTime.tryParse`). */
+function parseBucketDate(key: string): Dayjs | null {
+  const match = /^(\d{4,})-(\d{2})-(\d{2})$/.exec(key);
+
+  if (!match) return null;
+  const date = new Date(0);
+
+  date.setFullYear(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  date.setHours(0, 0, 0, 0);
+  const parsed = dayjs(date);
+
+  return parsed.isValid() ? parsed : null;
+}
+
+function relativeBucketKey(date: Dayjs, now: Dayjs): string {
+  // Calendar-day difference. Desktop takes `Duration.inDays` between two local
+  // midnights, which is off by one across a DST change; dayjs is not.
+  const diff = date.startOf('day').diff(now.startOf('day'), 'day');
+
+  if (diff === 0) return 'today';
+  if (diff === -1) return 'yesterday';
+  if (diff === 1) return 'tomorrow';
+  if (diff >= -7 && diff < -1) return 'last_7_days';
+  if (diff > 1 && diff <= 7) return 'next_7_days';
+  if (diff >= -30 && diff < -7) return 'last_30_days';
+  if (diff > 7 && diff <= 30) return 'next_30_days';
+  // Further away: bucket by month.
+  return `${RELATIVE_MONTH_PREFIX}${date.format('YYYY-MM')}`;
+}
+
+/**
+ * Desktop's `ChartUtils.dateToBucketKey`: a key that sorts chronologically —
+ * Day `2026-03-15`, Week `2026-03-09` (its Monday), Month `2026-03`, Year
+ * `2026`, Relative `today` / `last_7_days` / … / `month_2026-03`.
+ */
+export function dateToBucketKey(date: Dayjs, condition: DateGroupCondition, now: Dayjs = dayjs()): string {
+  switch (condition) {
+    case DateGroupCondition.Day:
+      return date.format('YYYY-MM-DD');
+    case DateGroupCondition.Week:
+      // Monday of the week (dayjs: Sunday = 0).
+      return date.subtract((date.day() + 6) % 7, 'day').format('YYYY-MM-DD');
+    case DateGroupCondition.Month:
+      return date.format('YYYY-MM');
+    case DateGroupCondition.Year:
+      return date.format('YYYY');
+    case DateGroupCondition.Relative:
+      return relativeBucketKey(date, now);
+    default:
+      return date.format('YYYY-MM');
+  }
+}
+
+function relativeKeyToLabel(key: string, t: TFunction): string {
+  switch (key) {
+    case 'today':
+      return t('board.dateCondition.today');
+    case 'yesterday':
+      return t('board.dateCondition.yesterday');
+    case 'tomorrow':
+      return t('board.dateCondition.tomorrow');
+    case 'last_7_days':
+      return t('board.dateCondition.lastSevenDays');
+    case 'next_7_days':
+      return t('board.dateCondition.nextSevenDays');
+    case 'last_30_days':
+      return t('board.dateCondition.lastThirtyDays');
+    case 'next_30_days':
+      return t('board.dateCondition.nextThirtyDays');
+    default: {
+      if (key.startsWith(RELATIVE_MONTH_PREFIX)) {
+        const date = parseBucketDate(`${key.substring(RELATIVE_MONTH_PREFIX.length)}-01`);
+
+        if (date) return date.format('MMM YYYY');
+      }
+
+      return key;
+    }
+  }
+}
+
+/**
+ * Desktop's `ChartUtils.bucketKeyToLabel`: Day `March 15, 2026`, Week
+ * `Week of Mar 09 - 15 2026`, Month `Mar 2026`, Year `2026`, Relative the
+ * board's relative names (months as `Mar 2026`).
+ */
+export function bucketKeyToLabel(key: string, condition: DateGroupCondition, t: TFunction): string {
   switch (condition) {
     case DateGroupCondition.Day: {
-      const key = date.format('YYYY-MM-DD');
+      const date = parseBucketDate(key);
 
-      return { label: key, groupKey: key, sortKey: key };
+      return date ? date.format('MMMM D, YYYY') : key;
     }
 
     case DateGroupCondition.Week: {
-      // Week of year (ISO-style): start on Monday
-      const monday = date.day() === 0 ? date.subtract(6, 'day') : date.subtract(date.day() - 1, 'day');
-      const key = monday.format('YYYY-MM-DD');
+      const monday = parseBucketDate(key);
 
-      return { label: `Week of ${key}`, groupKey: key, sortKey: key };
+      if (!monday) return key;
+      const sunday = monday.add(6, 'day');
+      const beginFormat = monday.year() !== sunday.year() ? 'MMM DD YYYY' : 'MMM DD';
+      const endFormat = monday.month() !== sunday.month() ? 'MMM DD YYYY' : 'DD YYYY';
+
+      return formatPositional(t('board.dateCondition.weekOf'), [monday.format(beginFormat), sunday.format(endFormat)]);
     }
 
     case DateGroupCondition.Month: {
-      const key = date.format('YYYY-MM');
+      const date = parseBucketDate(`${key}-01`);
 
-      return { label: date.format('MMM YYYY'), groupKey: key, sortKey: key };
+      return date ? date.format('MMM YYYY') : key;
     }
 
-    case DateGroupCondition.Year: {
-      const key = date.format('YYYY');
-
-      return { label: key, groupKey: key, sortKey: key };
-    }
-
+    case DateGroupCondition.Year:
+      return key;
     case DateGroupCondition.Relative:
-    default: {
-      const now = dayjs();
-      const startOfDay = date.startOf('day');
-      const today = now.startOf('day');
-      const diffDays = startOfDay.diff(today, 'day');
-
-      if (diffDays === 0) return { label: 'Today', groupKey: 'rel-0', sortKey: '01' };
-      if (diffDays === -1) return { label: 'Yesterday', groupKey: 'rel--1', sortKey: '00' };
-      if (diffDays === 1) return { label: 'Tomorrow', groupKey: 'rel-1', sortKey: '02' };
-      if (diffDays >= -7 && diffDays < -1) return { label: 'Last 7 days', groupKey: 'rel-last7', sortKey: '00a' };
-      if (diffDays > 1 && diffDays <= 7) return { label: 'Next 7 days', groupKey: 'rel-next7', sortKey: '03' };
-      // Fallback: month bucket
-      const key = date.format('YYYY-MM');
-
-      return { label: date.format('MMM YYYY'), groupKey: key, sortKey: key };
-    }
-  }
-}
-
-/**
- * Get cell value for grouping (x-axis field)
- */
-function getCellGroupValue(
-  rowId: string,
-  field: YDatabaseField,
-  rowMetas: Record<RowId, YDoc>,
-  dateCondition: DateGroupCondition
-): GroupValue[] {
-  const fieldId = field.get(YjsDatabaseKey.id);
-  const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
-  const rowDoc = rowMetas[rowId];
-  const dataSection = rowDoc?.getMap(YjsEditorKey.data_section);
-  const databaseRow = dataSection?.get(YjsEditorKey.database_row) as YDatabaseRow | undefined;
-  const cells = databaseRow?.get(YjsDatabaseKey.cells);
-  const cell = cells?.get(fieldId);
-  const data = cell ? parseYDatabaseCellToCell(cell, field).data : undefined;
-
-  switch (fieldType) {
-    case FieldType.SingleSelect: {
-      if (typeof data === 'string' && data.length > 0) {
-        return [{ label: data, groupKey: data }];
-      }
-
-      return [];
-    }
-
-    case FieldType.MultiSelect: {
-      if (typeof data === 'string' && data.length > 0) {
-        return data
-          .split(',')
-          .filter(Boolean)
-          .map((id) => ({ label: id, groupKey: id }));
-      }
-
-      return [];
-    }
-
-    case FieldType.Checkbox: {
-      if (data === 'Yes' || data === true) {
-        return [{ label: 'Checked', groupKey: 'Checked' }];
-      }
-
-      return [{ label: 'Unchecked', groupKey: 'Unchecked' }];
-    }
-
-    case FieldType.DateTime:
-    case FieldType.LastEditedTime:
-    case FieldType.CreatedTime: {
-      // For DateTime, the timestamp lives in the cell's `data`. For
-      // CreatedTime / LastEditedTime there's no per-field cell — newly
-      // created rows have no entry in `cells` at all. The timestamp is
-      // stored on the row itself, the same way `useRowTimeString` reads it.
-      let raw: string | undefined;
-
-      if (fieldType === FieldType.DateTime) {
-        if (typeof data === 'string' && data.length > 0) raw = data;
-      } else {
-        // YDatabaseRow has overloaded `.get` per key, so the lookup must use
-        // a literal `YjsDatabaseKey` member rather than a computed variable.
-        const v =
-          fieldType === FieldType.CreatedTime
-            ? databaseRow?.get(YjsDatabaseKey.created_at)
-            : databaseRow?.get(YjsDatabaseKey.last_modified);
-
-        raw = v !== undefined && v !== null ? String(v) : undefined;
-      }
-
-      if (!raw) return [];
-
-      const date = safeParseTimestamp(raw);
-
-      if (!date.isValid()) return [];
-
-      return [bucketDate(date, dateCondition)];
-    }
-
+      return relativeKeyToLabel(key, t);
     default:
-      return [];
+      return key;
   }
 }
 
-/**
- * Get numeric value for aggregation (y-axis field). Mirrors desktop's
- * `_yValueFromCell` in chart_bloc.dart: Number is parsed directly, Checkbox
- * yields 0/1, and date-typed fields yield "days since epoch" so Min/Max/Avg
- * make sense on a human scale.
- */
-function getCellNumericValue(rowId: string, field: YDatabaseField, rowMetas: Record<RowId, YDoc>): number | null {
-  const fieldId = field.get(YjsDatabaseKey.id);
-  const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
-  const cell = getCell(rowId, fieldId, rowMetas);
-  const data = cell ? parseYDatabaseCellToCell(cell, field).data : undefined;
-
-  switch (fieldType) {
-    case FieldType.Checkbox: {
-      if (data === null || data === undefined || data === '') return 0;
-      return data === 'Yes' || data === true ? 1 : 0;
-    }
-
-    case FieldType.DateTime:
-    case FieldType.LastEditedTime:
-    case FieldType.CreatedTime: {
-      if (data === null || data === undefined || data === '') return null;
-      const parsed = safeParseTimestamp(String(data));
-
-      if (!parsed.isValid()) return null;
-
-      // Seconds → days since epoch (matches desktop's `timestamp / 86400`).
-      return parsed.unix() / (24 * 60 * 60);
-    }
-
-    case FieldType.Number:
-    default: {
-      if (data === null || data === undefined || data === '') return null;
-      const num = typeof data === 'number' ? data : parseFloat(String(data));
-
-      return isNaN(num) || !isFinite(num) ? null : num;
-    }
+/** Desktop's `ChartUtils.relativeBucketSortOrder`: past ranges first, months after every range. */
+export function relativeBucketSortOrder(key: string): number {
+  switch (key) {
+    case 'last_30_days':
+      return 0;
+    case 'last_7_days':
+      return 1;
+    case 'yesterday':
+      return 2;
+    case 'today':
+      return 3;
+    case 'tomorrow':
+      return 4;
+    case 'next_7_days':
+      return 5;
+    case 'next_30_days':
+      return 6;
+    default:
+      return key.startsWith(RELATIVE_MONTH_PREFIX) ? 7 : 8;
   }
 }
 
-/**
- * Compute aggregation on an array of values
- */
-function computeAggregation(values: number[], aggregationType: ChartAggregationType): number {
-  if (values.length === 0) {
-    return 0;
+/** Desktop's date bucket comparator: chronological keys, Relative by range then month. */
+export function compareDateBucketKeys(a: string, b: string, condition: DateGroupCondition): number {
+  if (condition === DateGroupCondition.Relative) {
+    const order = relativeBucketSortOrder(a) - relativeBucketSortOrder(b);
+
+    if (order !== 0) return order;
+    const stripMonth = (key: string) =>
+      key.startsWith(RELATIVE_MONTH_PREFIX) ? key.substring(RELATIVE_MONTH_PREFIX.length) : key;
+
+    return compareCodeUnits(stripMonth(a), stripMonth(b));
   }
+
+  return compareCodeUnits(a, b);
+}
+
+/**
+ * Desktop's `aggregateValuesForTest`: Count is the bucket's row count; the
+ * others fold the Y values collected for the bucket, and 0 when it has none.
+ */
+export function aggregateChartValues(
+  aggregationType: ChartAggregationType,
+  rowCount: number,
+  values: readonly number[]
+): number {
+  const sum = () => values.reduce((acc, value) => acc + value, 0);
 
   switch (aggregationType) {
     case ChartAggregationType.Count:
-      return values.length;
+      return rowCount;
+    case ChartAggregationType.CountValues:
+      return new Set(values).size;
     case ChartAggregationType.Sum:
-      return values.reduce((acc, val) => acc + val, 0);
+      return sum();
     case ChartAggregationType.Average:
-      return values.reduce((acc, val) => acc + val, 0) / values.length;
-    case ChartAggregationType.Min: {
-      // Single-pass loop avoids `Math.min(...values)` spread-arg overflow on
-      // large arrays (RangeError around ~100k elements on V8).
-      let min = values[0];
-
-      for (let i = 1; i < values.length; i++) if (values[i] < min) min = values[i];
-      return min;
-    }
-
-    case ChartAggregationType.Max: {
-      let max = values[0];
-
-      for (let i = 1; i < values.length; i++) if (values[i] > max) max = values[i];
-      return max;
-    }
-
+      return values.length === 0 ? 0 : sum() / values.length;
+    // `reduce` instead of `Math.min(...values)`: spreading ~100k arguments
+    // throws a RangeError on V8.
+    case ChartAggregationType.Min:
+      return values.length === 0 ? 0 : values.reduce((min, value) => (value < min ? value : min));
+    case ChartAggregationType.Max:
+      return values.length === 0 ? 0 : values.reduce((max, value) => (value > max ? value : max));
     case ChartAggregationType.Median: {
+      if (values.length === 0) return 0;
       const sorted = [...values].sort((a, b) => a - b);
       const mid = Math.floor(sorted.length / 2);
 
-      return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+      return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
     }
 
-    case ChartAggregationType.CountValues:
-      return new Set(values).size;
     default:
-      return values.length;
+      return rowCount;
   }
 }
 
-interface ComputeChartDataInput {
+/** A hydrated row's data map and cells, read once per row per compute. */
+interface RowData {
+  row: YDatabaseRow;
+  cells: YDatabaseCells | undefined;
+}
+
+function readRowData(rowDoc: YDoc | undefined): RowData | null {
+  const row = rowDoc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database_row) as YDatabaseRow | undefined;
+
+  return row ? { row, cells: row.get(YjsDatabaseKey.cells) } : null;
+}
+
+/** A cell's data in its field's current type (lazy desktop conversion included). */
+function readCellData(rowData: RowData | null, field: YDatabaseField): unknown {
+  const cell = rowData?.cells?.get(field.get(YjsDatabaseKey.id));
+
+  return cell ? parseYDatabaseCellToCell(cell, field).data : undefined;
+}
+
+/** Collab's checkbox parse: `1` / `true` / `yes` in any case is checked. */
+function isCheckedCellData(data: unknown): boolean {
+  return (
+    (typeof data === 'string' || typeof data === 'number' || typeof data === 'boolean') &&
+    parseDesktopCheckboxValue(data)
+  );
+}
+
+/**
+ * Whole seconds, the way collab reads date cells (`data.parse::<i64>()`).
+ * 13-digit values are millisecond timestamps from older web builds.
+ */
+function parseTimestampSeconds(value: unknown): number | null {
+  if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'bigint') return null;
+  const text = String(value);
+
+  if (!/^[+-]?\d+$/.test(text)) return null;
+  const seconds = Number(text);
+
+  return Math.abs(seconds) >= 1e12 ? Math.trunc(seconds / 1000) : seconds;
+}
+
+/**
+ * Timestamp of a date-typed field in seconds. Created / last-edited time live
+ * on the row itself (newly created rows have no cell for them), the way
+ * desktop synthesizes their cells from `row.created_at` / `row.modified_at`.
+ */
+function readTimestamp(rowData: RowData | null, field: YDatabaseField, fieldType: FieldType): number | null {
+  // YDatabaseRow overloads `.get` per key, so each lookup names its key.
+  if (fieldType === FieldType.CreatedTime) return parseTimestampSeconds(rowData?.row.get(YjsDatabaseKey.created_at));
+  if (fieldType === FieldType.LastEditedTime) {
+    return parseTimestampSeconds(rowData?.row.get(YjsDatabaseKey.last_modified));
+  }
+
+  return parseTimestampSeconds(readCellData(rowData, field));
+}
+
+/**
+ * Desktop's `yValueFromCellForTest`: Number → its value, Checkbox → 1 / 0
+ * (empty counts as 0), date types → seconds / 86400; anything else has no
+ * value.
+ */
+function readYValue(rowData: RowData | null, field: YDatabaseField, fieldType: FieldType): number | null {
+  switch (fieldType) {
+    case FieldType.Number: {
+      const data = readCellData(rowData, field);
+
+      if (data === null || data === undefined || data === '') return null;
+      const value = typeof data === 'number' ? data : parseFloat(String(data));
+
+      return Number.isFinite(value) ? value : null;
+    }
+
+    case FieldType.Checkbox:
+      return isCheckedCellData(readCellData(rowData, field)) ? 1 : 0;
+    case FieldType.DateTime:
+    case FieldType.LastEditedTime:
+    case FieldType.CreatedTime: {
+      const seconds = readTimestamp(rowData, field, fieldType);
+
+      return seconds === null ? null : seconds / SECONDS_PER_DAY;
+    }
+
+    default:
+      return null;
+  }
+}
+
+/**
+ * Options a select cell resolves to, like desktop's `make_selected_options`:
+ * known ids in cell order (unknown ids dropped), a SingleSelect keeps one.
+ */
+function readSelectedOptions(
+  data: unknown,
+  optionsById: ReadonlyMap<string, SelectOption>,
+  single: boolean
+): SelectOption[] {
+  if (typeof data !== 'string' || data === '') return [];
+  const selected: SelectOption[] = [];
+
+  for (const id of data.split(',')) {
+    const option = optionsById.get(id);
+
+    if (!option) continue;
+    selected.push(option);
+    if (single) break;
+  }
+
+  return selected;
+}
+
+interface Bucket {
+  label: string;
+  rowIds: RowId[];
+  yValues: number[];
+  isEmptyCategory: boolean;
+  /** Option tag / checkbox color; palette buckets leave it to the widget. */
+  color?: string;
+  textColor?: string;
+  /** Date bucket key, the chronological sort key. */
+  sortKey?: string;
+}
+
+export interface ComputeChartDataInput {
   settings: ChartLayoutSettings | null;
-  resolvedXFieldId: string | null;
   rowOrders: ReadonlyArray<{ id: string }> | null | undefined;
   rowMetas: Record<RowId, YDoc> | null | undefined;
   xAxisField: YDatabaseField | null;
   fieldType: FieldType | null;
   fields: YDatabaseFields | undefined;
-  optionIdToName: Map<string, string>;
-  colors: UseChartColorsReturn;
+  selectOptions: readonly SelectOption[];
+  t: TFunction;
+  /** Reference time for Relative date buckets. */
+  now?: Dayjs;
 }
 
 /**
- * Pure transform: rowOrders + rowMetas + chart settings → ChartDataItem[].
- * Side-effect free so the consumer can keep it inside a `useMemo` without
- * fighting React's data flow.
+ * Pure transform: rows + chart settings → ChartDataItem[], ported from
+ * desktop's `ChartBloc._computeChartData`. Side-effect free so the consumer
+ * can keep it inside a `useMemo`.
+ *
+ * - Select / checkbox buckets are keyed by their label, like desktop: options
+ *   sharing a name share a bucket (first option color wins).
+ * - Select fields always carry a "No {field}" bucket, even with no rows;
+ *   checkbox rows are always Checked / Unchecked; date fields get the bucket
+ *   only when some rows have no date. `omitEmptyValues` drops it.
+ * - Labels sort by UTF-16 code units, date buckets chronologically, and the
+ *   empty bucket goes last.
  */
-function computeChartData({
+export function computeChartData({
   settings,
-  resolvedXFieldId,
   rowOrders,
   rowMetas,
   xAxisField,
   fieldType,
   fields,
-  optionIdToName,
-  colors,
+  selectOptions,
+  t,
+  now = dayjs(),
 }: ComputeChartDataInput): ChartDataItem[] {
-  if (!rowOrders || !rowMetas || !xAxisField || !resolvedXFieldId || !fieldType) {
+  if (!rowOrders || !rowMetas || !xAxisField || fieldType === null || !isGroupableFieldType(fieldType)) {
     return [];
   }
 
-  const {
-    yFieldId,
-    aggregationType,
-    showEmptyValues = true,
-    cumulative = false,
-    dateCondition = DateGroupCondition.Month,
-  } = settings ?? {
-    aggregationType: ChartAggregationType.Count,
-  };
-
-  const isDateBucketed = isDateGroupableFieldType(fieldType);
-  const groups = new Map<string, GroupedData>();
-  const emptyGroup: GroupedData = {
-    label: `No ${xAxisField.get(YjsDatabaseKey.name) || 'Value'}`,
+  const { aggregationType, yFieldId, omitEmptyValues, dateCondition } = settings ?? DEFAULT_CHART_LAYOUT_SETTINGS;
+  const isSelectField = fieldType === FieldType.SingleSelect || fieldType === FieldType.MultiSelect;
+  const isDateField = isDateGroupableFieldType(fieldType);
+  const emptyBucket: Bucket = {
+    label: t('chart.noFieldValue', {
+      name: String(xAxisField.get(YjsDatabaseKey.name) ?? ''),
+      // Plain text label; i18next would otherwise HTML-escape the field name.
+      interpolation: { escapeValue: false },
+    }),
     rowIds: [],
+    yValues: [],
     isEmptyCategory: true,
   };
+  const checkedLabel = t('chart.checked');
+  const uncheckedLabel = t('chart.unchecked');
 
-  rowOrders.forEach((row) => {
-    const rowId = row.id;
-    const groupValues = getCellGroupValue(rowId, xAxisField, rowMetas, dateCondition);
+  // Count ignores the Y axis; a missing Y field leaves every other aggregation at 0.
+  const yField = aggregationType !== ChartAggregationType.Count && yFieldId ? fields?.get(yFieldId) : undefined;
+  const yFieldType = yField ? (Number(yField.get(YjsDatabaseKey.type)) as FieldType) : null;
 
-    if (groupValues.length === 0) {
-      emptyGroup.rowIds.push(rowId);
-    } else {
-      groupValues.forEach((gv) => {
-        let label = gv.label;
-        let optionId: string | undefined;
+  const optionsById = new Map<string, SelectOption>();
 
-        if (fieldType === FieldType.SingleSelect || fieldType === FieldType.MultiSelect) {
-          optionId = gv.groupKey;
-          label = optionIdToName.get(gv.groupKey) || gv.label;
-        }
+  selectOptions.forEach((option) => {
+    if (option.id && !optionsById.has(option.id)) optionsById.set(option.id, option);
+  });
 
-        const key = gv.groupKey;
+  const buckets = new Map<string, Bucket>();
+  const bucketFor = (key: string, create: () => Bucket) => {
+    let bucket = buckets.get(key);
 
-        if (!groups.has(key)) {
-          groups.set(key, {
+    if (!bucket) {
+      bucket = create();
+      buckets.set(key, bucket);
+    }
+
+    return bucket;
+  };
+
+  for (const { id: rowId } of rowOrders) {
+    const rowData = readRowData(rowMetas[rowId]);
+    const yValue = yField && yFieldType !== null ? readYValue(rowData, yField, yFieldType) : null;
+    const add = (bucket: Bucket, collectY = true) => {
+      bucket.rowIds.push(rowId);
+      if (collectY && yValue !== null) bucket.yValues.push(yValue);
+    };
+
+    if (isSelectField) {
+      const options = readSelectedOptions(
+        readCellData(rowData, xAxisField),
+        optionsById,
+        fieldType === FieldType.SingleSelect
+      );
+
+      if (options.length === 0) {
+        // Desktop quirk: a MultiSelect row without options is counted in the
+        // empty bucket but its Y value is not aggregated there.
+        add(emptyBucket, fieldType === FieldType.SingleSelect);
+        continue;
+      }
+
+      options.forEach((option) => {
+        const label = option.name || option.id;
+
+        add(
+          bucketFor(label, () => ({
             label,
-            optionId,
             rowIds: [],
+            yValues: [],
             isEmptyCategory: false,
-            sortKey: gv.sortKey,
-          });
-        }
-
-        groups.get(key)!.rowIds.push(rowId);
+            color: getSelectOptionChartColor(option.color),
+            textColor: getSelectOptionChartTextColor(option.color),
+          }))
+        );
       });
+      continue;
     }
-  });
 
-  if (showEmptyValues && emptyGroup.rowIds.length > 0) {
-    groups.set(`__empty__${emptyGroup.label}`, emptyGroup);
+    if (fieldType === FieldType.Checkbox) {
+      // A missing or unparsable checkbox cell is Unchecked: no empty bucket.
+      const checked = isCheckedCellData(readCellData(rowData, xAxisField));
+      const label = checked ? checkedLabel : uncheckedLabel;
+
+      add(
+        bucketFor(label, () => ({
+          label,
+          rowIds: [],
+          yValues: [],
+          isEmptyCategory: false,
+          color: getCheckboxChartColor(checked),
+        }))
+      );
+      continue;
+    }
+
+    const seconds = readTimestamp(rowData, xAxisField, fieldType);
+    const date = seconds === null ? null : dayjs(seconds * 1000);
+
+    if (!date || !date.isValid()) {
+      add(emptyBucket);
+      continue;
+    }
+
+    const key = dateToBucketKey(date, dateCondition, now);
+
+    add(
+      bucketFor(key, () => ({
+        label: bucketKeyToLabel(key, dateCondition, t),
+        rowIds: [],
+        yValues: [],
+        isEmptyCategory: false,
+        sortKey: key,
+      }))
+    );
   }
 
-  const yField = yFieldId && fields ? fields.get(yFieldId) : undefined;
+  const sorted = [...buckets.values()].sort((a, b) =>
+    isDateField
+      ? compareDateBucketKeys(a.sortKey ?? '', b.sortKey ?? '', dateCondition)
+      : compareCodeUnits(a.label, b.label)
+  );
 
-  const data: ChartDataItem[] = [];
-  let colorIndex = 0;
-
-  groups.forEach((group) => {
-    let value: number;
-
-    if (aggregationType === ChartAggregationType.Count) {
-      value = group.rowIds.length;
-    } else if (yFieldId) {
-      const numericValues = yField
-        ? group.rowIds
-            .map((rowId) => getCellNumericValue(rowId, yField, rowMetas))
-            .filter((v): v is number => v !== null)
-        : [];
-
-      value = computeAggregation(numericValues, aggregationType);
-    } else {
-      value = group.rowIds.length;
-    }
-
-    const color = group.isEmptyCategory
-      ? colors.emptyColor
-      : colors.getColorForCategory(group.label, group.optionId, colorIndex);
-
-    data.push({
-      label: group.label,
-      value,
-      rowIds: group.rowIds,
-      color,
-      isEmptyCategory: group.isEmptyCategory,
-    });
-
-    if (!group.isEmptyCategory) {
-      colorIndex++;
-    }
-  });
-
-  // Pre-build a label → sortKey map so the comparator below is O(1) per
-  // call instead of scanning `groups.values()` every comparison.
-  const sortKeyByLabel = isDateBucketed ? new Map<string, string>() : null;
-
-  if (sortKeyByLabel) {
-    groups.forEach((g) => {
-      if (!sortKeyByLabel.has(g.label)) sortKeyByLabel.set(g.label, g.sortKey ?? g.label);
-    });
+  // The empty bucket always sorts last on desktop.
+  if (!omitEmptyValues && (isSelectField || emptyBucket.rowIds.length > 0)) {
+    sorted.push(emptyBucket);
   }
 
-  data.sort((a, b) => {
-    if (a.isEmptyCategory) return 1;
-    if (b.isEmptyCategory) return -1;
-    if (sortKeyByLabel) {
-      const ak = sortKeyByLabel.get(a.label) ?? a.label;
-      const bk = sortKeyByLabel.get(b.label) ?? b.label;
+  return sorted.map((bucket) => {
+    const item: ChartDataItem = {
+      label: bucket.label,
+      value: aggregateChartValues(aggregationType, bucket.rowIds.length, bucket.yValues),
+      rowIds: bucket.rowIds,
+      isEmptyCategory: bucket.isEmptyCategory,
+    };
 
-      return ak.localeCompare(bk);
-    }
-
-    return a.label.localeCompare(b.label);
+    if (bucket.color !== undefined) item.color = bucket.color;
+    if (bucket.textColor !== undefined) item.textColor = bucket.textColor;
+    return item;
   });
-
-  if (cumulative) {
-    let runningTotal = 0;
-
-    for (const item of data) {
-      if (item.isEmptyCategory) continue;
-      runningTotal += item.value;
-      item.value = runningTotal;
-    }
-  }
-
-  return data;
 }
 
 export interface UseChartDataOptions {
@@ -436,7 +566,7 @@ export interface UseChartDataReturn {
   xAxisField: YDatabaseField | null;
   selectOptions: SelectOption[];
   fieldType: FieldType | null;
-  /** All fields that can be used for grouping (SingleSelect, MultiSelect, Checkbox) */
+  /** Fields that can be used for grouping, in the view's field order. */
   groupableFields: GroupableField[];
   /** Whether there are any groupable fields in the database */
   hasGroupableFields: boolean;
@@ -467,7 +597,9 @@ const ROW_LOAD_CONCURRENCY = 16;
  * change — no `useState` / `useEffect` / `setTimeout` round-trip.
  */
 export function useChartData({ settings }: UseChartDataOptions): UseChartDataReturn {
+  const { t } = useTranslation();
   const fields = useDatabaseFields();
+  const fieldOrders = useDatabaseView()?.get(YjsDatabaseKey.field_orders);
   const rowOrders = useRowOrdersSelector();
   const rowMetas = useRowMap();
   const { ensureRow, dataSource } = useDatabaseContext();
@@ -487,18 +619,35 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     return () => fields.unobserveDeep(onChange);
   }, [fields]);
 
+  // Same for the view's field order, which decides the default X-axis field.
+  const [fieldOrdersClock, setFieldOrdersClock] = useState(0);
+
+  useEffect(() => {
+    if (!fieldOrders) return;
+    const onChange = () => setFieldOrdersClock((c) => c + 1);
+
+    fieldOrders.observe(onChange);
+    return () => fieldOrders.unobserve(onChange);
+  }, [fieldOrders]);
+
   // Stable string representation of the row order. Yjs often returns a fresh
   // array reference even when the contents are unchanged, so we depend on the
   // joined ids in effects instead of the array identity.
   const rowIdsKey = useMemo(() => rowOrders?.map((r) => r.id).join(',') ?? '', [rowOrders]);
 
   const loadedRowIdsRef = useRef<Set<string>>(new Set());
-  // Always start in the loading state. The effect below decides when to
-  // transition to `true` — either after rows are ensured (populated grid)
-  // or after a short grace period in which no rows arrived (empty grid).
-  // Without the grace period an empty `rowOrders` at mount would flash
-  // "No data" before Yjs syncs the actual rows.
-  const [rowsLoaded, setRowsLoaded] = useState<boolean>(false);
+  // Rows whose doc has been ensured, published once per load batch. The chart
+  // is computed over these only, so rows that arrive later (a collaborator's
+  // new row, a filter revealing one) join it once their doc is in, instead of
+  // being bucketed as empty in the meantime.
+  const [loadedRowIds, setLoadedRowIds] = useState<ReadonlySet<string>>(() => new Set());
+  // Always start in the loading state. The effect below flips this once:
+  // after the first rows are ensured (populated grid) or after a short grace
+  // period in which no rows arrived (empty grid; without it an empty
+  // `rowOrders` at mount would flash "No data" before Yjs syncs the rows).
+  // It never flips back: later batches load behind the chart on screen, the
+  // way desktop keeps its chart until a reload emits, instead of a spinner.
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
 
   // Boolean view of whether `rowOrders` has been observed at all. Needed
   // because `rowIdsKey` is `''` for both `undefined` and `[]`, so the
@@ -508,7 +657,7 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
   // Lazily request row docs that haven't been loaded yet.
   useEffect(() => {
     if (isHistory) {
-      setRowsLoaded(Boolean(rowOrders));
+      if (rowOrders) setHasLoadedOnce(true);
       return;
     }
 
@@ -522,19 +671,26 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
       // `rowOrders` first and then populates it from the server; if rows
       // arrive within the grace window this effect re-runs (rowIdsKey
       // changes) and the timer is cancelled.
-      const timer = setTimeout(() => setRowsLoaded(true), EMPTY_ROW_ORDERS_GRACE_MS);
+      const timer = setTimeout(() => setHasLoadedOnce(true), EMPTY_ROW_ORDERS_GRACE_MS);
 
       return () => clearTimeout(timer);
     }
 
+    // Ensured ids only accumulate, so a size check tells whether the
+    // published set is behind (a cancelled batch may have ensured some rows).
+    const publishLoadedRows = () => {
+      setLoadedRowIds((prev) =>
+        prev.size === loadedRowIdsRef.current.size ? prev : new Set(loadedRowIdsRef.current)
+      );
+      setHasLoadedOnce(true);
+    };
+
     const rowsToLoad = rowOrders.filter((row) => !loadedRowIdsRef.current.has(row.id));
 
     if (rowsToLoad.length === 0) {
-      setRowsLoaded(true);
+      publishLoadedRows();
       return;
     }
-
-    setRowsLoaded(false);
 
     let cancelled = false;
     const loadAll = async () => {
@@ -561,7 +717,7 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
 
       await Promise.all(Array.from({ length: workerCount }, worker));
 
-      if (!cancelled) setRowsLoaded(true);
+      if (!cancelled) publishLoadedRows();
     };
 
     void loadAll();
@@ -572,15 +728,24 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rowOrdersReady, rowIdsKey, ensureRow, isHistory]);
 
-  // Find all groupable fields
+  // Groupable fields in the view's field order, like desktop's
+  // `fieldController.fieldInfos`; fields missing from the order go last.
   const groupableFields = useMemo<GroupableField[]>(() => {
     if (!fields) return [];
+    const orderedIds = new Set<string>();
+
+    fieldOrders?.toArray().forEach(({ id }) => {
+      if (fields.has(id)) orderedIds.add(id);
+    });
+    fields.forEach((_field, fieldId) => orderedIds.add(fieldId));
+
     const result: GroupableField[] = [];
 
-    fields.forEach((field, fieldId) => {
-      const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
+    orderedIds.forEach((fieldId) => {
+      const field = fields.get(fieldId);
+      const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
 
-      if (isGroupableFieldType(fieldType)) {
+      if (field && isGroupableFieldType(fieldType)) {
         result.push({
           id: fieldId,
           name: String(field.get(YjsDatabaseKey.name) || ''),
@@ -590,11 +755,12 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     });
     return result;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fields, fieldsClock]);
+  }, [fields, fieldsClock, fieldOrders, fieldOrdersClock]);
 
   const hasGroupableFields = groupableFields.length > 0;
 
-  // Resolve x-axis field: settings.xFieldId if valid, otherwise first groupable.
+  // Resolve x-axis field: settings.xFieldId if valid, otherwise first groupable
+  // (desktop's `_resolveXAxisField`).
   const resolvedXFieldId = useMemo<string | null>(() => {
     if (!hasGroupableFields) return null;
 
@@ -620,54 +786,90 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [xAxisField, fieldType, fieldsClock]);
 
-  const colors = useChartColors({ fieldType, selectOptions });
+  // Row documents are separate Yjs documents, so none of the inputs above
+  // changes when a cell is edited in place (from the drill-down's row peek, by
+  // a collaborator, or by a sync filling a doc that opened empty). Observe the
+  // loaded row docs for the data the axes read and bump a clock, coalesced
+  // per frame, like desktop reloading the chart on `rowsUpdated`.
+  const chartRowsStore = useMemo(() => createChartRowsStore(), []);
+  const { aggregationType, yFieldId } = settings ?? DEFAULT_CHART_LAYOUT_SETTINGS;
+  const yField = aggregationType !== ChartAggregationType.Count && yFieldId ? fields?.get(yFieldId) : undefined;
+  const yFieldType = yField ? (Number(yField.get(YjsDatabaseKey.type)) as FieldType) : null;
+  const rowsWatch = useMemo<ChartRowsWatch>(() => {
+    const fieldIds = new Set<string>();
+    const rowKeys = new Set<string>();
 
-  const optionIdToName = useMemo(() => {
-    const map = new Map<string, string>();
+    if (resolvedXFieldId) fieldIds.add(resolvedXFieldId);
+    if (yField && yFieldId) fieldIds.add(yFieldId);
+    // Created / last-edited time live on the row, not in a cell.
+    for (const type of [fieldType, yFieldType]) {
+      if (type === FieldType.CreatedTime) rowKeys.add(YjsDatabaseKey.created_at);
+      if (type === FieldType.LastEditedTime) rowKeys.add(YjsDatabaseKey.last_modified);
+    }
 
-    selectOptions.forEach((opt) => {
-      map.set(opt.id, opt.name);
-    });
-    return map;
-  }, [selectOptions]);
+    return { fieldIds, rowKeys };
+  }, [resolvedXFieldId, fieldType, yField, yFieldId, yFieldType]);
+
+  useEffect(() => {
+    chartRowsStore.setWatch(rowsWatch);
+  }, [chartRowsStore, rowsWatch]);
+
+  useEffect(() => {
+    // A historical snapshot cannot change, and registering its rows would
+    // retain them outside the bounded history store.
+    if (!isHistory) chartRowsStore.replaceRows(rowMetas ?? {});
+  }, [chartRowsStore, rowMetas, isHistory]);
+
+  useEffect(() => () => chartRowsStore.detachRows(), [chartRowsStore]);
+
+  const rowsClock = useSyncExternalStore(
+    chartRowsStore.subscribe,
+    chartRowsStore.getSnapshot,
+    chartRowsStore.getSnapshot
+  );
 
   // === Render-time derivation ===
-  const isLoading = !rowsLoaded;
+  const isLoading = !hasLoadedOnce;
 
-  // Pure derivation. Yjs hydrates row docs in micro-batches, so this can
-  // recompute many times during a single page load — but downstream chart
-  // widgets are wrapped in `React.memo(..., chartDataEqual)`, so re-renders
-  // are skipped when the resulting bars are unchanged.
+  // The rows the chart draws: those with an ensured doc. A historical
+  // snapshot holds every row already.
+  const loadedRowOrders = useMemo(
+    () => (isHistory ? rowOrders : rowOrders?.filter(({ id }) => loadedRowIds.has(id))),
+    [rowOrders, loadedRowIds, isHistory]
+  );
+
+  // Pure derivation. The clocks stand in for the Yjs maps and row docs the
+  // compute reads in place, whose identities never change on an edit.
+  // Downstream chart widgets are wrapped in `React.memo(..., chartDataEqual)`,
+  // so a recompute that leaves the bars unchanged does not re-render them.
   const chartData = useMemo<ChartDataItem[]>(() => {
-    // Yjs mutates field maps in place, so their identity cannot invalidate this
-    // memo after a schema-only field-type switch.
     void fieldsClock;
+    void rowsClock;
 
-    if (!rowsLoaded) return EMPTY_CHART_DATA;
+    if (!hasLoadedOnce) return EMPTY_CHART_DATA;
 
     return computeChartData({
       settings,
-      resolvedXFieldId,
-      rowOrders,
+      rowOrders: loadedRowOrders,
       rowMetas,
       xAxisField,
       fieldType,
       fields,
-      optionIdToName,
-      colors,
+      selectOptions,
+      t,
     });
   }, [
-    rowsLoaded,
+    hasLoadedOnce,
     settings,
-    resolvedXFieldId,
-    rowOrders,
+    loadedRowOrders,
     rowMetas,
     xAxisField,
     fieldType,
     fields,
     fieldsClock,
-    optionIdToName,
-    colors,
+    rowsClock,
+    selectOptions,
+    t,
   ]);
 
   return {

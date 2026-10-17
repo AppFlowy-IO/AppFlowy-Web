@@ -9,7 +9,8 @@ import {
   useSetListGroupVisibilityDispatch,
   useToggleListGroupCollapsedDispatch,
 } from '@/application/database-yjs/dispatch';
-import { ReactComponent as ArrowIcon } from '@/assets/icons/alt_arrow_right_small.svg';
+import { ReactComponent as ArrowDownFilledIcon } from '@/assets/icons/arrow_down_filled.svg';
+import { ReactComponent as ArrowRightFilledIcon } from '@/assets/icons/arrow_right_filled.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { ReactComponent as TickIcon } from '@/assets/icons/tick.svg';
@@ -18,6 +19,7 @@ import { SelectOptionColorMap, SelectOptionFgColorMap } from '@/components/datab
 import { RowCreationSpinner, useRowCreationAction } from '@/components/database/hooks/useRowCreationAction';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 import { getListGroupCellsData } from './ListRowActions';
@@ -76,14 +78,29 @@ export function ListGroupHeader({
       <Button
         aria-expanded={!group.collapsed}
         aria-label={group.collapsed ? t('button.expand', 'Expand group') : t('button.collapse', 'Collapse group')}
-        className='mr-1 h-7 w-7 rounded-[4px] p-0.5'
+        className='mr-2'
         data-testid='list-group-collapse-toggle'
         onClick={() => toggleCollapsed(group.id, !group.collapsed)}
-        size='icon'
+        size='icon-sm'
         type='button'
         variant='ghost'
       >
-        <ArrowIcon aria-hidden='true' className={cn('h-5 w-5 text-icon-primary', !group.collapsed && 'rotate-90')} />
+        {/* Desktop GroupHeader: a 24px ghost button (2px padding) around a 20px filled arrow. */}
+        {group.collapsed ? (
+          <ArrowRightFilledIcon
+            aria-hidden='true'
+            className='h-5 w-5 text-icon-primary'
+            data-collapsed='true'
+            data-testid='list-group-collapse-icon'
+          />
+        ) : (
+          <ArrowDownFilledIcon
+            aria-hidden='true'
+            className='h-5 w-5 text-icon-primary'
+            data-collapsed='false'
+            data-testid='list-group-collapse-icon'
+          />
+        )}
       </Button>
 
       {group.option ? (
@@ -136,26 +153,32 @@ export function ListGroupHeader({
             </DropdownMenuTrigger>
             <DropdownMenuContent align='start' className='min-w-[180px]'>
               <DropdownMenuItem data-testid='list-hide-group' onSelect={() => setVisibility(group.id, false)}>
-                {t('board.hideGroup', 'Hide group')}
+                {t('grid.settings.hideGroup', 'Hide group')}
               </DropdownMenuItem>
               <DropdownMenuItem data-testid='list-remove-grouping' onSelect={clearGrouping} variant='destructive'>
                 {t('board.removeGrouping', 'Remove grouping')}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button
-            aria-label={t('grid.row.newRow', 'New row in group')}
-            className='h-7 w-7 rounded-[4px] p-1 opacity-0 focus-visible:opacity-100 group-focus-within/list-group-header:opacity-100 group-hover/list-group-header:opacity-100'
-            data-testid='list-group-new-row'
-            disabled={pending}
-            loading={pending}
-            onClick={() => void run(createRow)}
-            size='icon'
-            type='button'
-            variant='ghost'
-          >
-            {pending ? <RowCreationSpinner /> : <PlusIcon aria-hidden='true' className='h-4 w-4' />}
-          </Button>
+          {/* Desktop GroupAddButton: AFTooltip("Create a new") around the ghost plus button. */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                aria-label={t('grid.row.newRow', 'New row in group')}
+                className='h-7 w-7 rounded-[4px] p-1 opacity-0 focus-visible:opacity-100 group-focus-within/list-group-header:opacity-100 group-hover/list-group-header:opacity-100'
+                data-testid='list-group-new-row'
+                disabled={pending}
+                loading={pending}
+                onClick={() => void run(createRow)}
+                size='icon'
+                type='button'
+                variant='ghost'
+              >
+                {pending ? <RowCreationSpinner /> : <PlusIcon aria-hidden='true' className='h-4 w-4' />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t('grid.selectOption.createNew', 'Create a new')}</TooltipContent>
+          </Tooltip>
         </>
       ) : null}
     </div>
@@ -168,7 +191,7 @@ export function ListGroupFooter({ fieldId, groupId }: { fieldId?: string; groupI
   const { pending, run } = useRowCreationAction();
 
   return (
-    <div className='ml-10 h-9 border-b border-border-primary px-1' data-testid={`list-group-footer-${groupId}`}>
+    <div className='ml-10 h-9 px-1' data-testid={`list-group-footer-${groupId}`}>
       <button
         className='flex h-9 w-full items-center gap-1.5 rounded-[6px] px-2 text-left text-sm text-text-tertiary hover:bg-fill-content-hover'
         disabled={pending}

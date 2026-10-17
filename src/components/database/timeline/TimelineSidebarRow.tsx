@@ -1,7 +1,8 @@
 import { memo, MutableRefObject, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useRowMetaSelector } from '@/application/database-yjs';
+import { type FieldType, useFieldSelector, useRowMetaSelector } from '@/application/database-yjs';
+import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as ExpandIcon } from '@/assets/icons/expand.svg';
 import { DropRowIndicator } from '@/components/database/components/drag-and-drop/DropRowIndicator';
 import { type Edge, useRowDnd } from '@/components/database/components/drag-and-drop/useRowDnd';
@@ -13,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
+import { timelineCardCellClassName } from './card-cell-style';
 import { TimelineRowModel } from './hooks/useTimelineRows';
 import { timelineColumnWidthStyle } from './table-layout';
 import { TimelineTableViewport } from './TimelineTable';
@@ -37,6 +39,29 @@ interface TimelineSidebarRowProps {
   onOpen?: (rowId: string) => void;
   onSelect?: (rowId: string | null) => void;
   onDropRow?: (sourceRowId: string, targetRowId: string, edge: Edge) => void;
+}
+
+/**
+ * One property column. The field type picks the desktop list style map entry
+ * (`_tableCell` in database_timeline.dart): Person avatars only, Media secondary.
+ */
+function TimelineTableCell({ fieldId, rowId }: { fieldId: string; rowId: string }) {
+  const { field } = useFieldSelector(fieldId);
+  const fieldType = field ? (Number(field.get(YjsDatabaseKey.type)) as FieldType) : undefined;
+
+  return (
+    <div
+      className={cn(
+        'flex h-full shrink-0 items-center overflow-hidden border-l border-border-primary px-2',
+        timelineCardCellClassName(fieldType)
+      )}
+      style={timelineColumnWidthStyle(fieldId)}
+      data-field-type={fieldType}
+      data-testid={`timeline-table-cell-${rowId}-${fieldId}`}
+    >
+      <CardField rowId={rowId} fieldId={fieldId} />
+    </div>
+  );
 }
 
 /**
@@ -128,14 +153,7 @@ export const TimelineSidebarRow = memo(
             <span className='truncate'>{row.title || t('grid.row.titlePlaceholder', { defaultValue: 'Untitled' })}</span>
           </button>
           {tableFieldIds.map((fieldId) => (
-            <div
-              key={fieldId}
-              className='flex h-full shrink-0 items-center overflow-hidden border-l border-border-primary px-2'
-              style={timelineColumnWidthStyle(fieldId)}
-              data-testid={`timeline-table-cell-${row.rowId}-${fieldId}`}
-            >
-              <CardField rowId={row.rowId} fieldId={fieldId} />
-            </div>
+            <TimelineTableCell key={fieldId} fieldId={fieldId} rowId={row.rowId} />
           ))}
           {/* Trailing control slot, the same width as the header's table toggle, so
             the property columns line up with their headers. */}

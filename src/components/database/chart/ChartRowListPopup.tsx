@@ -3,7 +3,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useFieldSelector, useNavigateToRow, usePrimaryFieldId, useRowMap } from '@/application/database-yjs';
-import { ChartDataItem } from '@/application/database-yjs/chart.type';
+import { ChartClickItem } from '@/application/database-yjs/chart.type';
 import { getCell } from '@/application/database-yjs/const';
 import { decodeCellToText } from '@/application/database-yjs/decode';
 import { YjsDatabaseKey } from '@/application/types';
@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 interface ChartRowListPopupProps {
   open: boolean;
   onClose: () => void;
-  item: ChartDataItem;
+  item: ChartClickItem;
 }
 
 interface RowItem {
@@ -38,6 +38,9 @@ export function ChartRowListPopup({ open, onClose, item }: ChartRowListPopupProp
   const { xAxisField } = useChartContext();
 
   const xAxisName = xAxisField ? String(xAxisField.get(YjsDatabaseKey.name) || '') : '';
+  // The widget passes the fill it drew for the clicked element, so the swatch
+  // matches the bar / slice (desktop resolves it by render index as well).
+  const { color } = item;
 
   const navigateToRow = useNavigateToRow();
 
@@ -85,7 +88,7 @@ export function ChartRowListPopup({ open, onClose, item }: ChartRowListPopupProp
       >
         <DialogTitle className='flex items-center justify-between border-b border-border-primary px-4 py-3'>
           <div className='flex items-center gap-3'>
-            <div className='h-4 w-4 rounded-sm' style={{ backgroundColor: item.color }} />
+            <div className='h-4 w-4 rounded-sm' style={{ backgroundColor: color }} />
             <span className='text-base font-medium text-text-primary'>{item.label}</span>
             <span className='text-sm text-text-secondary'>
               ({t('chart.drilldown.rowCount', { count: item.rowIds.length })})
@@ -101,7 +104,7 @@ export function ChartRowListPopup({ open, onClose, item }: ChartRowListPopupProp
           <div className='flex items-center gap-2 border-b border-border-primary px-4 py-2 text-xs text-text-secondary'>
             <span className='rounded bg-fill-list-hover px-2 py-1 text-text-primary'>{xAxisName}</span>
             <span>:</span>
-            <span className='rounded px-2 py-1 text-text-primary' style={{ backgroundColor: item.color }}>
+            <span className='rounded px-2 py-1 text-text-primary' style={{ backgroundColor: color }}>
               {item.label}
             </span>
           </div>

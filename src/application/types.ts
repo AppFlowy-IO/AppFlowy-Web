@@ -1075,11 +1075,12 @@ export interface YDatabaseTimelineLayoutSetting extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.table_field_ids | YjsDatabaseKey.dependency_links): unknown;
 }
 
-export interface YDatabaseChartLayoutSetting extends Y.Map<unknown> {
-  get(key: 'chartType' | 'aggregationType' | 'dateCondition'): string;
-  get(key: 'xFieldId' | 'yFieldId'): string | undefined;
-  get(key: 'showEmptyValues' | 'cumulative'): boolean;
-}
+/**
+ * Chart settings at `layout_settings['3']`. Desktop writes snake_case keys
+ * (integers as BigInt); older web builds wrote camelCase keys. Values are
+ * decoded by `readChartLayoutSetting`.
+ */
+export type YDatabaseChartLayoutSetting = Y.Map<unknown>;
 
 export interface YDatabaseListLayoutSetting extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.display_mode | YjsDatabaseKey.card_width): number;

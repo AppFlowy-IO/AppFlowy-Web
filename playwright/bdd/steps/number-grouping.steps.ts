@@ -17,6 +17,10 @@ const { Given, When, Then } = createBdd();
 const numberFieldIds = new WeakMap<Page, string>();
 const groupHeaders = (page: Page) => page.locator('[data-testid^="grid-group-header-"]');
 const numberControl = (page: Page, name: string) => page.getByTestId(`grid-number-group-${name}`);
+const GROUP_ROW_PREFIX = 'grid-group-visibility-';
+// The eye icons reuse the row prefix; only the rows carry the checkbox role.
+const groupVisibilityRows = (page: Page) =>
+  page.getByTestId('grid-group-settings-menu').locator(`[data-testid^="${GROUP_ROW_PREFIX}"][role="menuitemcheckbox"]`);
 
 function numberFieldId(page: Page): string {
   const fieldId = numberFieldIds.get(page);
@@ -77,6 +81,24 @@ async function expectSavedRange(page: Page, start: string, end: string, interval
   await expect(numberControl(page, 'end')).toHaveValue(end);
   await expect(numberControl(page, 'interval')).toHaveValue(interval);
   await closeNumberGroupSettings(page);
+}
+
+/** Asserts the elements appear in document order, which is their visual order inside one menu. */
+async function expectDomOrder(page: Page, testIds: string[]) {
+  const order = await page.evaluate((ids) => {
+    const nodes = ids.map((id) => document.querySelector(`[data-testid="${id}"]`));
+
+    if (nodes.some((node) => node === null)) {
+      return ids.map((id, index) => (nodes[index] ? id : `missing:${id}`));
+    }
+
+    return (nodes as Element[])
+      .slice()
+      .sort((left, right) => (left.compareDocumentPosition(right) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1))
+      .map((node) => node.getAttribute('data-testid'));
+  }, testIds);
+
+  expect(order).toEqual(testIds);
 }
 
 async function setHideEmpty(page: Page, hide: boolean) {
@@ -254,6 +276,46 @@ Then('these invalid range drafts cannot be applied or saved', async ({ page }, t
       .poll(() => groupHeaders(page).evaluateAll((headers) => headers.map((header) => header.dataset.groupId)))
       .toEqual(savedGroupIds);
   }
+});
+
+Then(
+  'the number Group menu lists Group by, the number panel, Hide empty groups, then the Groups rows',
+  async ({ page }) => {
+    await openNumberGroupSettings(page);
+    // Desktop _GroupByList for Number: Group by ▸ → number panel between
+    // dividers → Hide empty groups → "Groups" rows → Delete grouping.
+    await expect(page.getByTestId('grid-group-by-trigger')).toBeVisible();
+    await expectDomOrder(page, [
+      'grid-group-by-trigger',
+      'grid-number-group-mode-exact',
+      'grid-number-group-apply',
+      'grid-number-group-sort-descending',
+      'grid-hide-empty-groups-toggle',
+      `${GROUP_ROW_PREFIX}${numberFieldId(page)}`,
+      'grid-remove-grouping',
+    ]);
+    await closeNumberGroupSettings(page);
+  }
+);
+
+Then('the Group menu offers exactly these number buckets', async ({ page }, table: DataTable) => {
+  const expected = table.hashes().map(({ bucket }) => bucketId(page, bucket));
+
+  await openNumberGroupSettings(page);
+  await expect
+    .poll(() =>
+      groupVisibilityRows(page).evaluateAll((rows) =>
+        rows.map((row) => row.getAttribute('data-testid')?.replace('grid-group-visibility-', ''))
+      )
+    )
+    .toEqual(expected);
+  await closeNumberGroupSettings(page);
+});
+
+Then('the Group menu offers the number bucket {string}', async ({ page }, bucket: string) => {
+  await openNumberGroupSettings(page);
+  await expect(page.getByTestId(`${GROUP_ROW_PREFIX}${bucketId(page, bucket)}`)).toHaveCount(1);
+  await closeNumberGroupSettings(page);
 });
 
 When('I add a row to number group {string}', async ({ page }, bucket: string) => {

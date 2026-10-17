@@ -26,7 +26,7 @@ import { type Edge, useRowDnd as useListRowDnd } from '@/components/database/com
 import { cn } from '@/lib/utils';
 import { isFlagEmoji } from '@/utils/emoji';
 
-import { LIST_ROW_ACTIONS_WIDTH, LIST_ROW_HEIGHT } from './list.constants';
+import { LIST_ROW_ACTIONS_WIDTH, LIST_ROW_HEIGHT, LIST_ROW_NARROW_HEIGHT } from './list.constants';
 import {
   getListLeadingFieldMinWidth,
   isListRowInteractiveTarget,
@@ -35,14 +35,17 @@ import {
 } from './list.utils';
 import { ListCell } from './ListCell';
 import { ListRowActions } from './ListRowActions';
+import { useListRowLayout } from './ListRowLayout';
+import { ListRowPeekButton } from './ListRowPeekButton';
 import { useListHasSorts } from './ListSortState';
 
+// Desktop desktopListCardCellStyleMap: caption.standard (12/18) in text-primary.
 const listCellStyle: CSSProperties = {
   alignItems: 'center',
-  color: 'var(--text-secondary)',
+  color: 'var(--text-primary)',
   display: 'flex',
   fontSize: 12,
-  lineHeight: '20px',
+  lineHeight: '18px',
   maxWidth: '100%',
   minHeight: 20,
   overflow: 'hidden',
@@ -56,6 +59,7 @@ const listPrimaryCellStyle: CSSProperties = {
   color: 'var(--text-primary)',
   fontSize: 14,
   fontWeight: 500,
+  lineHeight: '20px',
 };
 
 function ListPropertyCell({ field, leading, rowId }: { field: Column; leading?: boolean; rowId: string }) {
@@ -66,9 +70,10 @@ function ListPropertyCell({ field, leading, rowId }: { field: Column; leading?: 
   return (
     <div
       className={cn(
-        'list-property-cell flex h-6 min-w-0 items-center overflow-hidden text-xs text-text-secondary',
+        'list-property-cell flex h-5 min-w-0 items-center overflow-hidden text-xs leading-[18px] text-text-primary',
         interactive ? 'pointer-events-auto' : 'pointer-events-none',
-        !leading && 'shrink-0 px-0.5'
+        // Desktop pads every trailing cell 12px on the left, the first one included.
+        !leading && 'shrink-0 pl-3'
       )}
       data-field-id={field.fieldId}
       data-testid={`list-field-${field.fieldId}-${rowId}`}
@@ -89,7 +94,7 @@ function ListPrimaryField({ field, rowId }: { field: Column; rowId: string }) {
 
   return (
     <div
-      className='list-primary-field flex h-6 min-w-0 max-w-full shrink items-center overflow-hidden'
+      className='list-primary-field flex h-5 min-w-0 max-w-full shrink items-center overflow-hidden'
       data-primary-indicator={indicator}
       data-testid={`list-primary-cell-${rowId}`}
     >
@@ -104,7 +109,7 @@ function ListPrimaryField({ field, rowId }: { field: Column; rowId: string }) {
           {meta?.icon}
         </span>
       ) : indicator === 'document' ? (
-        <DocumentIcon aria-hidden='true' className='mr-1.5 h-4 w-4 shrink-0 p-px text-icon-tertiary' />
+        <DocumentIcon aria-hidden='true' className='mr-1 h-5 w-5 shrink-0 text-icon-secondary' />
       ) : null}
       <div className='flex min-w-0 max-w-full shrink items-center overflow-hidden'>
         {isRowLoaded ? (
@@ -164,7 +169,10 @@ export const ListRow = memo(function ListRow({
   const readOnly = useReadOnly();
   const hasSorts = useListHasSorts();
   const { bindRowSync, navigateToRow } = useDatabaseContext();
+  const layout = useListRowLayout();
+  const narrow = layout === 'narrow';
   const fieldGroups = useMemo(() => splitListFields(fields, groupFieldId), [fields, groupFieldId]);
+  const hasTrailing = fieldGroups.trailing.length > 0;
   const dnd = useListRowDnd({
     dragHandleRef,
     enabled: reorderable && !readOnly,
@@ -190,19 +198,20 @@ export const ListRow = memo(function ListRow({
     <>
       <div
         className={cn('group/list-row relative flex w-full min-w-0 items-center', dnd.dragging && 'opacity-40')}
+        data-layout={layout}
         data-row-id={rowId}
         data-testid={`list-row-${rowId}`}
         onClick={handleOpenRow}
         ref={rowRef}
         style={{
           contentVisibility: 'auto',
-          containIntrinsicSize: `auto ${LIST_ROW_HEIGHT}px`,
+          containIntrinsicSize: `auto ${narrow && hasTrailing ? LIST_ROW_NARROW_HEIGHT : LIST_ROW_HEIGHT}px`,
           minHeight: LIST_ROW_HEIGHT,
         }}
       >
         <button
           aria-label={t('grid.row.open', { defaultValue: 'Open row' })}
-          className='pointer-events-none absolute inset-y-0 left-10 right-0 z-10 rounded-[4px] bg-transparent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-fill-theme-thick'
+          className='pointer-events-none absolute inset-y-0 left-10 right-0 z-10 rounded-300 bg-transparent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-fill-theme-thick'
           data-testid={`list-row-open-${rowId}`}
           onClick={(event) => {
             event.stopPropagation();
@@ -225,10 +234,26 @@ export const ListRow = memo(function ListRow({
           />
         )}
 
-        <div className='flex h-9 min-w-0 flex-1 cursor-pointer items-center overflow-hidden rounded-[4px] px-1.5 py-1.5 hover:bg-fill-content-hover group-focus-within/list-row:bg-fill-content-hover'>
-          <div className='flex h-6 min-w-0 flex-1 items-center overflow-hidden pl-0.5'>
+        {/*
+          Desktop content box: 8px padding, 8px radius, height from the 20px
+          title row (36px wide, 62px narrow with properties). The hover fill
+          follows the whole row, gutter included, like desktop's MouseRegion.
+        */}
+        <div
+          className={cn(
+            'flex min-w-0 flex-1 cursor-pointer overflow-hidden rounded-300 p-2',
+            'group-hover/list-row:bg-fill-content-hover group-focus-within/list-row:bg-fill-content-hover',
+            narrow ? 'flex-col items-start' : 'items-center'
+          )}
+          data-testid={`list-row-content-${rowId}`}
+        >
+          {/* Wide: intrinsic width (desktop's non-flex title row); narrow: a full line. */}
+          <div
+            className={cn('flex h-5 min-w-0 items-center', narrow ? 'w-full' : 'flex-initial')}
+            data-testid={`list-row-title-${rowId}`}
+          >
             {fieldGroups.leading.length > 0 ? (
-              <div className='mr-3 flex h-6 shrink-0 items-center gap-1.5 overflow-hidden'>
+              <div className='mr-3 flex h-5 shrink-0 items-center gap-1.5 overflow-hidden'>
                 {fieldGroups.leading.map((field) => (
                   <ListPropertyCell field={field} key={field.fieldId} leading rowId={rowId} />
                 ))}
@@ -237,16 +262,32 @@ export const ListRow = memo(function ListRow({
 
             {fieldGroups.primary ? <ListPrimaryField field={fieldGroups.primary} rowId={rowId} /> : null}
 
-            <div aria-hidden='true' className='min-w-0 flex-1' data-testid={`list-row-spacer-${rowId}`} />
+            <ListRowPeekButton rowId={rowId} />
+          </div>
 
-            {fieldGroups.trailing.length > 0 ? (
-              <div className='ml-1.5 flex h-6 shrink-0 items-center justify-end overflow-hidden'>
+          {hasTrailing ? (
+            /*
+              Desktop's horizontal SingleChildScrollView. `flex-row-reverse`
+              with a single child is `reverse: true`: flush right when the
+              cells fit, and the initial scroll position shows the right end
+              when they overflow. The scrollbar stays hidden on every engine,
+              while the container keeps its pointer events for wheel scrolling;
+              clicks on it bubble to the row and still open it.
+            */
+            <div
+              className={cn(
+                'appflowy-hidden-scroller flex min-w-0 overflow-x-auto overflow-y-hidden [scrollbar-width:none]',
+                narrow ? 'mt-1.5 max-w-full' : 'ml-3 flex-1 flex-row-reverse'
+              )}
+              data-testid={`list-row-trailing-${rowId}`}
+            >
+              <div className='flex h-5 shrink-0 items-center'>
                 {fieldGroups.trailing.map((field) => (
                   <ListPropertyCell field={field} key={field.fieldId} rowId={rowId} />
                 ))}
               </div>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
         </div>
 
         {dnd.closestEdge ? <DropRowIndicator edge={dnd.closestEdge} /> : null}

@@ -534,7 +534,7 @@ describe('useGridGroupingSelector refresh behavior', () => {
     fixture.databaseDoc.destroy();
   });
 
-  it('rebuilds Date metadata when the grouping condition changes', async () => {
+  it('rewrites Date metadata in place when the grouping condition changes', async () => {
     const localTimestamp = (year: number, month: number, day: number) =>
       String(Math.floor(new Date(year, month - 1, day, 12).getTime() / 1000));
     const fixture = createGridGroupingFixture({
@@ -552,35 +552,50 @@ describe('useGridGroupingSelector refresh behavior', () => {
       { wrapper: fixture.wrapper }
     );
 
-    act(() => result.current.updateDateCondition(DateGroupCondition.Day));
-
-    await waitFor(() => {
-      expect(result.current.grouping.activeGroupIds).toEqual(['name', '2024/01/15', '2024/01/20']);
-      expect(
-        fixture.groups
-          .get(0)
-          ?.get(YjsDatabaseKey.groups)
-          .toJSON()
-          .map(({ id }: { id: string }) => id)
-      ).toEqual(['name', '2024/01/15', '2024/01/20']);
-    });
-
-    const dayGroupId = fixture.groups.get(0)?.get(YjsDatabaseKey.id);
-
-    act(() => result.current.updateDateCondition(DateGroupCondition.Month));
-
-    await waitFor(() => {
-      const monthGroup = fixture.groups.get(0);
-      const monthColumnIds = monthGroup
+    const columnIds = () =>
+      fixture.groups
+        .get(0)
         ?.get(YjsDatabaseKey.groups)
         .toJSON()
         .map(({ id }: { id: string }) => id);
 
-      expect(monthGroup?.get(YjsDatabaseKey.id)).not.toBe(dayGroupId);
+    await waitFor(() => expect(columnIds()).toEqual(['name', '2024/01/01']));
+
+    act(() => result.current.updateDateCondition(DateGroupCondition.Day));
+
+    await waitFor(() => {
+      // The Relative month bucket persisted before the switch is still a valid
+      // Day id, so it survives (desktop keeps every persisted id); it stays
+      // automatically hidden because no row maps onto it.
+      expect(result.current.grouping.activeGroupIds).toEqual(['name', '2024/01/01', '2024/01/15', '2024/01/20']);
+      expect(columnIds()).toEqual(['name', '2024/01/01', '2024/01/15', '2024/01/20']);
+      expect(result.current.grouping.visibleGroups.map(({ id }) => id)).toEqual(['2024/01/15', '2024/01/20']);
+    });
+
+    const dayGroup = fixture.groups.get(0);
+    const dayGroupId = dayGroup?.get(YjsDatabaseKey.id);
+
+    // Desktop keeps the same group setting and only rewrites its content, so
+    // the setting id, per-group visibility and still-valid collapsed ids all
+    // survive while IDs invalid under the new condition are pruned.
+    act(() => {
+      dayGroup?.get(YjsDatabaseKey.groups).get(0).set(YjsDatabaseKey.visible, false);
+      dayGroup?.set(YjsDatabaseKey.collapsed_group_ids, Y.Array.from(['name', '2024/01/15']));
+    });
+    act(() => result.current.updateDateCondition(DateGroupCondition.Month));
+
+    await waitFor(() => {
+      const monthGroup = fixture.groups.get(0);
+      const monthColumns = monthGroup?.get(YjsDatabaseKey.groups).toJSON() as Array<{ id: string; visible: boolean }>;
+      const monthColumnIds = monthColumns.map(({ id }) => id);
+      const collapsed = monthGroup?.get(YjsDatabaseKey.collapsed_group_ids);
+
+      expect(monthGroup).toBe(dayGroup);
+      expect(monthGroup?.get(YjsDatabaseKey.id)).toBe(dayGroupId);
       expect(result.current.grouping.activeGroupIds).toEqual(['name', '2024/01/01']);
       expect(monthColumnIds).toEqual(['name', '2024/01/01']);
-      expect(monthColumnIds).not.toContain('2024/01/15');
-      expect(monthColumnIds).not.toContain('2024/01/20');
+      expect(monthColumns[0].visible).toBe(false);
+      expect(collapsed instanceof Y.Array ? collapsed.toArray() : collapsed).toEqual(['name']);
     });
 
     unmount();

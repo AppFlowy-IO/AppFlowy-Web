@@ -113,7 +113,8 @@ export function PersonCell({
               <AvatarImage src={user.avatar_url || undefined} alt={displayName} />
               <AvatarFallback className='text-xs'>{displayName}</AvatarFallback>
             </Avatar>
-            <span className='truncate text-sm'>{displayName}</span>
+            {/* `person-cell-name` is a hook for avatar-only renderers (List/Gallery/Feed/Timeline). */}
+            <span className='person-cell-name truncate text-sm'>{displayName}</span>
           </div>
         </div>
       );
@@ -159,7 +160,7 @@ function AnonymousPersonChip() {
         <Avatar className='h-5 w-5 bg-fill-content'>
           <AvatarFallback className='text-xs text-text-tertiary'>·</AvatarFallback>
         </Avatar>
-        <span className='truncate text-sm text-text-tertiary'>Anonymous</span>
+        <span className='person-cell-name truncate text-sm text-text-tertiary'>Anonymous</span>
       </div>
     </div>
   );
