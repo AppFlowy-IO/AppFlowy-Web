@@ -7,6 +7,7 @@ import { APP_EVENTS } from '@/application/constants';
 import { AccessLevel, type CollabObjectPermission, Types, type View, ViewLayout } from '@/application/types';
 import { AppNavigationContext } from '@/components/app/contexts/AppNavigationContext';
 import { useViewActionPermissions } from '@/components/app/view-actions/useViewActionPermissions';
+import { useAppEmbeddedDatabasePermissions } from '@/components/editor/components/blocks/database/hooks/useEmbeddedDatabasePermissions';
 
 import type { ReactNode } from 'react';
 
@@ -107,7 +108,8 @@ describe('useViewActionPermissions', () => {
     act(() => {
       mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'view-id' });
     });
-    expect(result.current.objectPermissionUnavailable).toBe(false);
+    // The re-read runs in the background, so the last answer stays until it lands.
+    expect(result.current.objectPermissionUnavailable).toBe(true);
     await waitFor(() => expect(result.current.canWrite).toBe(true));
     expect(result.current.objectPermissionUnavailable).toBe(false);
     consoleError.mockRestore();
@@ -130,16 +132,145 @@ describe('useViewActionPermissions', () => {
   it.each([
     ['a permission change', () => mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {})],
     ['coming back online', () => window.dispatchEvent(new Event('online'))],
-  ])('drops the answer and re-reads it at once after %s', async (_case, trigger) => {
-    mockGetObjectPermission.mockResolvedValueOnce(createPermission()).mockReturnValueOnce(new Promise(() => undefined));
+  ])('keeps the answer while re-reading it at once in the background after %s', async (_case, trigger) => {
+    let resolveFresh!: (permission: CollabObjectPermission) => void;
+
+    mockGetObjectPermission.mockResolvedValueOnce(createPermission())
+      .mockReturnValueOnce(new Promise<CollabObjectPermission>((resolve) => { resolveFresh = resolve; }));
     const { result } = renderHook(() => useViewActionPermissions(createView(), true));
 
     await waitFor(() => expect(result.current.canWrite).toBe(true));
     act(() => { trigger(); });
+    // Unlike focus, even a recent answer is re-read, and it stays on screen meanwhile.
     expect(mockGetObjectPermission).toHaveBeenCalledTimes(2);
-    expect(result.current.hasLoadedViewActionPermissions).toBe(false);
-    expect(result.current.isLoadingViewActionPermissions).toBe(true);
+    expect(result.current.hasLoadedViewActionPermissions).toBe(true);
+    expect(result.current.isLoadingViewActionPermissions).toBe(false);
+    expect(result.current.canWrite).toBe(true);
+
+    await act(async () => { resolveFresh(createPermission({ can_write: false })); });
     expect(result.current.canWrite).toBe(false);
+    expect(result.current.hasLoadedViewActionPermissions).toBe(true);
+  });
+
+  it.each([
+    ['cannot run', () => Promise.reject({ code: -1, message: 'Network Error' }), true],
+    ['is refused', () => Promise.reject({ code: 1012, httpStatus: 403, message: 'Forbidden' }), false],
+    ['denies reading', () => Promise.resolve(createPermission({ can_read: false, can_write: false })), false],
+  ] as const)('keeps the confirmed answer only while a permission change re-read %s', async (_case, reread, keeps) => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    mockGetObjectPermission.mockResolvedValueOnce(createPermission()).mockImplementationOnce(reread);
+    const { result } = renderHook(() => useViewActionPermissions(createView(), true));
+
+    await waitFor(() => expect(result.current.canWrite).toBe(true));
+    await act(async () => {
+      mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(mockGetObjectPermission).toHaveBeenCalledTimes(2);
+    expect(result.current.canRead).toBe(keeps);
+    expect(result.current.canWrite).toBe(keeps);
+    expect(result.current.hasLoadedViewActionPermissions).toBe(true);
+    expect(result.current.objectPermissionUnavailable).toBe(false);
+    consoleError.mockRestore();
+  });
+
+  it('applies only the newest re-read when permission changes overlap', async () => {
+    let resolveOlder!: (permission: CollabObjectPermission) => void;
+    let resolveNewer!: (permission: CollabObjectPermission) => void;
+
+    mockGetObjectPermission.mockResolvedValueOnce(createPermission())
+      .mockReturnValueOnce(new Promise<CollabObjectPermission>((resolve) => { resolveOlder = resolve; }))
+      .mockReturnValueOnce(new Promise<CollabObjectPermission>((resolve) => { resolveNewer = resolve; }));
+    const { result } = renderHook(() => useViewActionPermissions(createView(), true));
+
+    await waitFor(() => expect(result.current.canWrite).toBe(true));
+    act(() => { mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {}); });
+    act(() => { mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {}); });
+    expect(mockGetObjectPermission).toHaveBeenCalledTimes(3);
+
+    await act(async () => { resolveNewer(createPermission({ can_write: false })); });
+    expect(result.current.canWrite).toBe(false);
+    // A read that started before the newer change is never applied.
+    await act(async () => { resolveOlder(createPermission()); });
+    expect(result.current.canWrite).toBe(false);
+  });
+
+  it('follows the active page answer through a permission change without reading it again', async () => {
+    let activePermission = createPermission({ can_share: true });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AppNavigationContext.Provider value={{ objectPermissions: { 'view-id': activePermission } }}>
+        {children}
+      </AppNavigationContext.Provider>
+    );
+    const { result, rerender } = renderHook(() => useViewActionPermissions(createView(), true), { wrapper });
+
+    await waitFor(() => expect(result.current.canShare).toBe(true));
+    act(() => { mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {}); });
+    // AppBusinessLayer re-probes the page in the background and keeps its answer meanwhile.
+    expect(mockGetObjectPermission).not.toHaveBeenCalled();
+    expect(result.current.hasLoadedViewActionPermissions).toBe(true);
+    expect(result.current.isLoadingViewActionPermissions).toBe(false);
+    expect(result.current.canShare).toBe(true);
+
+    activePermission = createPermission({ can_share: false });
+    rerender();
+    expect(result.current.canShare).toBe(false);
+    expect(mockGetObjectPermission).not.toHaveBeenCalled();
+  });
+
+  it('still re-reads a view the active page does not cover after a permission change', async () => {
+    const routePermission = createPermission({ object_id: 'route-view-id', governing_view_id: 'route-view-id' });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AppNavigationContext.Provider value={{ objectPermissions: { 'route-view-id': routePermission } }}>
+        {children}
+      </AppNavigationContext.Provider>
+    );
+    const target = { collabObjectId: 'view-id', collabType: Types.Document };
+    let resolveFresh!: (permission: CollabObjectPermission) => void;
+
+    mockGetObjectPermission.mockResolvedValueOnce(createPermission())
+      .mockReturnValueOnce(new Promise<CollabObjectPermission>((resolve) => { resolveFresh = resolve; }));
+    const { result } = renderHook(() => useViewActionPermissions(undefined, true, 'view-id', target), { wrapper });
+
+    await waitFor(() => expect(result.current.canWrite).toBe(true));
+    act(() => { mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {}); });
+    expect(mockGetObjectPermission).toHaveBeenCalledTimes(2);
+    expect(result.current.canWrite).toBe(true);
+
+    await act(async () => { resolveFresh(createPermission({ can_write: false })); });
+    expect(result.current.canWrite).toBe(false);
+  });
+
+  it('keeps an embedded database editable through a permission change that leaves its access unchanged', async () => {
+    const databasePermission = () => createPermission({ object_id: 'database-id', collab_type: Types.Database });
+    const readOnlyStates: boolean[] = [];
+    let resolveFresh!: (permission: CollabObjectPermission) => void;
+
+    mockGetObjectPermission.mockResolvedValueOnce(databasePermission())
+      .mockReturnValueOnce(new Promise<CollabObjectPermission>((resolve) => { resolveFresh = resolve; }));
+    const { result } = renderHook(() => {
+      const permissions = useAppEmbeddedDatabasePermissions({
+        sourceViewId: 'view-id',
+        sourceDatabaseId: 'database-id',
+        inheritedReadOnly: false,
+      });
+
+      readOnlyStates.push(permissions.readOnly);
+      return permissions;
+    });
+
+    await waitFor(() => expect(result.current.readOnly).toBe(false));
+    const rendersBeforeChange = readOnlyStates.length;
+
+    act(() => { mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {}); });
+    expect(mockGetObjectPermission).toHaveBeenLastCalledWith('workspace-id', 'database-id', Types.Database);
+    await act(async () => { resolveFresh(databasePermission()); });
+
+    expect(mockGetObjectPermission).toHaveBeenCalledTimes(2);
+    expect(readOnlyStates.slice(rendersBeforeChange)).not.toContain(true);
+    expect(result.current).toEqual({ readOnly: false, canWrite: true, canShare: false });
   });
 
   it('keeps the confirmed answer through a window focus and re-reads it in the background once stale', async () => {

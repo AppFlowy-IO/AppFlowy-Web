@@ -68,41 +68,24 @@ export function useViewActionPermissions(
   const [isLoadingViewActionPermissions, setIsLoadingViewActionPermissions] = useState(false);
   const [permissionRefreshRevision, setPermissionRefreshRevision] = useState(0);
 
-  useEffect(() => {
-    if (!opened) return;
-    const invalidate = () => {
-      // Menus may target an off-outline view that AppBusinessLayer does not currently render.
-      // Fence its in-flight response and bypass any earlier positive context snapshot as well.
-      requestSeq.current += 1;
-      lastReadRef.current = null;
-      setLoadedViewId(null);
-      setObjectPermission(null);
-      setIsLoadingViewActionPermissions(true);
-      setPermissionRefreshRevision((revision) => revision + 1);
-    };
-
-    eventEmitter.on(APP_EVENTS.PERMISSION_CHANGED, invalidate);
-    window.addEventListener('online', invalidate);
-    return () => {
-      eventEmitter.off(APP_EVENTS.PERMISSION_CHANGED, invalidate);
-      window.removeEventListener('online', invalidate);
-    };
-  }, [eventEmitter, opened]);
-
-  // Focus fires on every alt-tab and closed file picker, and long-lived callers (embedded
-  // databases, sidebar rows) would flip read-only if it cleared the answer. Re-read this hook's
-  // own answer in the background once it is stale and replace it when the read lands. An answer
-  // taken from the active page is re-probed by AppBusinessLayer instead.
+  // Permission notifications, a return online and focus re-read this hook's own answer in the
+  // background: long-lived callers (embedded databases, sidebar rows, open menus) would flip
+  // read-only or hide their actions if the answer were cleared, so it stays until the read lands
+  // and replaces it. Focus fires on every alt-tab and closed file picker, so it re-reads only a
+  // stale answer. An answer taken from the active page follows AppBusinessLayer, which re-probes
+  // it on the same events.
   useEffect(() => {
     if (!opened || !workspaceId || !viewId) return;
     let cancelled = false;
     const knownTarget =
       collabObjectId !== undefined && collabType !== undefined ? { collabObjectId, collabType } : undefined;
 
-    const revalidate = () => {
+    // Re-reads the answer this hook read itself while keeping it; returns whether there is one.
+    const revalidate = (onlyIfStale: boolean) => {
       const lastRead = lastReadRef.current;
 
-      if (!lastRead || lastRead.viewId !== viewId || Date.now() - lastRead.at < FOCUS_REVALIDATE_MIN_AGE_MS) return;
+      if (!lastRead || lastRead.viewId !== viewId) return false;
+      if (onlyIfStale && Date.now() - lastRead.at < FOCUS_REVALIDATE_MIN_AGE_MS) return true;
       const seq = ++requestSeq.current;
 
       lastReadRef.current = { viewId, at: Date.now() };
@@ -120,14 +103,31 @@ export function useViewActionPermissions(
           setObjectPermission(null);
           setUnavailableViewId(null);
         });
+      return true;
     };
 
-    window.addEventListener('focus', revalidate);
+    const revalidateOnFocus = () => {
+      revalidate(true);
+    };
+
+    const revalidateNow = () => {
+      if (revalidate(false)) return;
+      // A first read still in flight started before the change: fence it and read again. An
+      // answer taken from the active page is kept and follows AppBusinessLayer's re-probe.
+      requestSeq.current += 1;
+      setPermissionRefreshRevision((revision) => revision + 1);
+    };
+
+    eventEmitter.on(APP_EVENTS.PERMISSION_CHANGED, revalidateNow);
+    window.addEventListener('online', revalidateNow);
+    window.addEventListener('focus', revalidateOnFocus);
     return () => {
       cancelled = true;
-      window.removeEventListener('focus', revalidate);
+      eventEmitter.off(APP_EVENTS.PERMISSION_CHANGED, revalidateNow);
+      window.removeEventListener('online', revalidateNow);
+      window.removeEventListener('focus', revalidateOnFocus);
     };
-  }, [collabObjectId, collabType, opened, viewId, workspaceId]);
+  }, [collabObjectId, collabType, eventEmitter, opened, viewId, workspaceId]);
 
   useEffect(() => {
     setLoadedViewId(null);
@@ -146,11 +146,12 @@ export function useViewActionPermissions(
       collabObjectId !== undefined && collabType !== undefined ? { collabObjectId, collabType } : undefined;
 
     // AppBusinessLayer indexes canonical permissions by folder view id after
-    // validating their collab identity. This is also the best source when an
-    // off-outline database view has no local metadata yet.
+    // validating their collab identity, and re-probes them in the background
+    // after every permission change, so its answer is followed rather than read
+    // again. This is also the best source when an off-outline database view has
+    // no local metadata yet.
     if (
       activeObjectPermission &&
-      permissionRefreshRevision === 0 &&
       (!knownTarget || isCollabObjectPermissionForTarget(activeObjectPermission, knownTarget))
     ) {
       lastReadRef.current = null;
@@ -164,6 +165,7 @@ export function useViewActionPermissions(
 
     let cancelled = false;
 
+    // A permission change that fenced this first read bumps permissionRefreshRevision to restart it.
     lastReadRef.current = null;
     setLoadedViewId(null);
     setObjectPermission(null);
