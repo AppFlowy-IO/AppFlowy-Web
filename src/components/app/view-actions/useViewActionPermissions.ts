@@ -146,10 +146,10 @@ export function useViewActionPermissions(
       collabObjectId !== undefined && collabType !== undefined ? { collabObjectId, collabType } : undefined;
 
     // AppBusinessLayer indexes canonical permissions by folder view id after
-    // validating their collab identity, and re-probes them in the background
-    // after every permission change, so its answer is followed rather than read
-    // again. This is also the best source when an off-outline database view has
-    // no local metadata yet.
+    // validating their collab identity, keeps them only for the views it
+    // renders and re-probes those in the background after every permission
+    // change, so its answer is followed rather than read again. This is also
+    // the best source when an off-outline database view has no local metadata yet.
     if (
       activeObjectPermission &&
       (!knownTarget || isCollabObjectPermissionForTarget(activeObjectPermission, knownTarget))

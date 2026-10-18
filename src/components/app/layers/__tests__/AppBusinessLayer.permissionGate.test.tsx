@@ -2,7 +2,7 @@ import EventEmitter from 'events';
 
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useContext, useState, type MutableRefObject, type ReactNode } from 'react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 
 import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import { deleteCollabDB, deleteDatabaseLocalCopies } from '@/application/db';
@@ -19,13 +19,14 @@ import { AccessLevel, type CollabObjectPermission, Types, type View, ViewLayout 
 import type { AppEventEmitter } from '@/components/app/contexts/AppEventEmitterContext';
 import { AppNavigationContext } from '@/components/app/contexts/AppNavigationContext';
 import { AppOperationsContext } from '@/components/app/contexts/AppOperationsContext';
-import { useAuthInternal } from '@/components/app/contexts/AuthInternalContext';
+import { AuthInternalContext, useAuthInternal } from '@/components/app/contexts/AuthInternalContext';
 import { useSyncInternal } from '@/components/app/contexts/SyncInternalContext';
 import { useDatabaseOperations } from '@/components/app/hooks/useDatabaseOperations';
 import { usePageOperations } from '@/components/app/hooks/usePageOperations';
 import { useRowOperations } from '@/components/app/hooks/useRowOperations';
 import { useViewOperations } from '@/components/app/hooks/useViewOperations';
 import { useWorkspaceData } from '@/components/app/hooks/useWorkspaceData';
+import { useViewActionPermissions } from '@/components/app/view-actions/useViewActionPermissions';
 
 import { AppBusinessLayer } from '../AppBusinessLayer';
 
@@ -1296,6 +1297,54 @@ describe('AppBusinessLayer permission gates', () => {
     expect(seen).toHaveLength(rendersBeforeFocus);
   });
 
+  it('drops the page it leaves for a route with no view, so an open menu reads that page itself', async () => {
+    const eventEmitter = new EventEmitter();
+
+    function RouteMenu() {
+      const navigation = useContext(AppNavigationContext);
+      const navigate = useNavigate();
+      const { canWrite } = useViewActionPermissions(createView(routeViewId), true);
+
+      return (
+        <>
+          <button type={'button'} onClick={() => navigate('/trash')}>
+            open trash
+          </button>
+          <span data-testid={'object-permission'}>
+            {JSON.stringify(navigation?.objectPermissions?.[routeViewId] ?? null)}
+          </span>
+          <span data-testid={'menu-can-write'}>{String(canWrite)}</span>
+        </>
+      );
+    }
+
+    renderBusinessLayer(
+      eventEmitter,
+      [createView(routeViewId)],
+      modalViewId,
+      <AuthInternalContext.Provider value={{ currentWorkspaceId: workspaceId } as never}>
+        <RouteMenu />
+      </AuthInternalContext.Provider>
+    );
+    await waitFor(() => expect(screen.getByTestId('object-permission').textContent).not.toBe('null'));
+    await waitFor(() => expect(screen.getByTestId('menu-can-write').textContent).toBe('true'));
+
+    // No view is active on the trash route, so nothing would re-check an entry left behind.
+    fireEvent.click(screen.getByRole('button', { name: 'open trash' }));
+    await waitFor(() => expect(screen.getByTestId('object-permission').textContent).toBe('null'));
+    await waitFor(() => expect(screen.getByTestId('menu-can-write').textContent).toBe('true'));
+    const readsBeforeChange = (AccessService.getObjectPermission as jest.Mock).mock.calls.length;
+
+    // The server downgrades the page; the menu re-reads it on the notification.
+    (AccessService.getObjectPermission as jest.Mock).mockImplementation(resolveObjectPermission({ can_write: false }));
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'workspace-group-id' });
+    });
+
+    await waitFor(() => expect(screen.getByTestId('menu-can-write').textContent).toBe('false'));
+    expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(readsBeforeChange + 1);
+  });
+
   it('re-probes the active route when access is restored', async () => {
     const eventEmitter = new EventEmitter();
 
@@ -1316,6 +1365,39 @@ describe('AppBusinessLayer permission gates', () => {
       expect(JSON.parse(screen.getByTestId('object-permission').textContent || 'null')).toEqual(
         createObjectPermission(routeViewId)
       );
+    });
+  });
+
+  it('still drops every active view at once when access is restored, until their fresh answers arrive', async () => {
+    const eventEmitter = new EventEmitter();
+    const renders: PermissionRenders = [];
+    const probes = controlObjectPermissionProbes();
+
+    renderBusinessLayer(
+      eventEmitter,
+      [createView(routeViewId), createView(modalViewId)],
+      modalViewId,
+      <PermissionRecorder renders={renders} viewIds={[routeViewId, modalViewId]} />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'open modal' }));
+    await waitFor(() => expect(renders.at(-1)?.[modalViewId]).toEqual(createObjectPermission(modalViewId)));
+    await waitFor(() => expect(renders.at(-1)?.[routeViewId]).toEqual(createObjectPermission(routeViewId)));
+
+    probes.hold();
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.VIEW_ACCESS_RESTORED, { viewId: modalViewId });
+    });
+
+    expect(renders.at(-1)).toEqual({ [routeViewId]: undefined, [modalViewId]: undefined });
+    await waitFor(() => expect(probes.pending).toHaveLength(2));
+    await act(async () => {
+      probes.pending.forEach(({ resolve }) => resolve());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(renders.at(-1)).toEqual({
+      [routeViewId]: createObjectPermission(routeViewId),
+      [modalViewId]: createObjectPermission(modalViewId),
     });
   });
 

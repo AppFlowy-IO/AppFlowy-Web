@@ -492,15 +492,11 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
   useEffect(() => {
     if (!currentWorkspaceId || !requesterId) return;
 
-    // A page modal owns a separate collab from the route underneath it. A
-    // database-container modal also mounts its first child, so probe both the
-    // requested container and the effective child before cached content is
-    // allowed to render.
-    if (activePermissionViewIds.length === 0) return;
-
     // Only active routes need to participate in render permissions. Pruning
     // old entries bounds the context and prevents a prior navigation from
-    // accidentally becoming a fallback permission source.
+    // accidentally becoming a fallback permission source. Prune even when no
+    // view is active (trash, a trashed route): nothing re-checks an entry left
+    // behind, and action menus would follow it instead of reading the view.
     setObjectPermissions((current) => {
       const activeViewIdSet = new Set(activePermissionViewIds);
       const retained = Object.fromEntries(
@@ -509,6 +505,12 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
 
       return Object.keys(retained).length === Object.keys(current).length ? current : retained;
     });
+
+    // A page modal owns a separate collab from the route underneath it. A
+    // database-container modal also mounts its first child, so probe both the
+    // requested container and the effective child before cached content is
+    // allowed to render.
+    if (activePermissionViewIds.length === 0) return;
 
     let cancelled = false;
     const workspaceId = currentWorkspaceId;
