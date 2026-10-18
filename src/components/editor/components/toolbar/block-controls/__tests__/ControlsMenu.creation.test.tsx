@@ -18,7 +18,11 @@ let mockSelectedBlockIds: string[];
 const mockTranslate = (key: string) => key;
 
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: mockTranslate }) }));
-jest.mock('slate-react', () => ({ ...jest.requireActual('slate-react'), useSlateStatic: () => mockEditor }));
+jest.mock('slate-react', () => ({
+  ...jest.requireActual('slate-react'),
+  useSlateStatic: () => mockEditor,
+  useSlateSelector: (selector: (editor: YjsEditor) => unknown) => selector(mockEditor),
+}));
 jest.mock('@/components/editor/EditorContext', () => ({
   useEditorContext: () => mockContext,
   useEditorLocalState: () => ({ selectedBlockIds: mockSelectedBlockIds }),
