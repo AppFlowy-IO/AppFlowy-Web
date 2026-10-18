@@ -18,11 +18,31 @@ function textBlock(type: BlockType, text: string, data = {}, children: Element[]
   return { type, data, children: [{ type: YjsEditorKey.text, children: [{ text }] }, ...children] } as Element;
 }
 
-function CalloutPlayground({ readOnly = false, presets = false }: { readOnly?: boolean; presets?: boolean }) {
+function CalloutPlayground({
+  readOnly = false,
+  presets = false,
+  bodyBlocks = false,
+}: {
+  readOnly?: boolean;
+  presets?: boolean;
+  bodyBlocks?: boolean;
+}) {
   const [doc] = useState(() => {
     const document = createEmptyDocument();
     const pageId = getPageId(document.getMap(YjsEditorKey.data_section) as YSharedRoot);
-    const blocks = presets
+    const blocks = bodyBlocks
+      ? [0, 1, 2, 3].map((level) =>
+          textBlock(BlockType.CalloutBlock, `Normal text title ${level}`, DEFAULT_CALLOUT_DATA, [
+            textBlock(BlockType.ToggleListBlock, level ? `Toggle heading ${level}` : 'Toggle List', {
+              level,
+              collapsed: false,
+            }),
+            textBlock(BlockType.BulletedListBlock, 'Sibling bullet'),
+            textBlock(BlockType.NumberedListBlock, 'Sibling numbered item', { number: 1 }),
+            textBlock(BlockType.HeadingBlock, 'Body heading', { level: 2 }),
+          ])
+        )
+      : presets
       ? [...QUICK_STYLE_OPTIONS, ...MORE_STYLE_OPTIONS].map((preset) =>
           textBlock(
             BlockType.CalloutBlock,
@@ -60,7 +80,7 @@ function CalloutPlayground({ readOnly = false, presets = false }: { readOnly?: b
   return (
     <AppTheme>
       <TooltipProvider>
-        <div className='h-screen overflow-auto bg-surface-layer-01 py-10 text-text-primary'>
+        <div className='relative h-screen overflow-auto bg-surface-layer-01 py-10 text-text-primary'>
           <Editor
             doc={doc}
             viewId='callout-playground'
@@ -95,3 +115,4 @@ type Story = StoryObj<typeof meta>;
 export const Editing: Story = { args: {} };
 export const Presets: Story = { args: { presets: true } };
 export const ReadOnly: Story = { args: { readOnly: true, presets: true } };
+export const BodyBlocks: Story = { args: { bodyBlocks: true } };

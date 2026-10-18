@@ -6,6 +6,7 @@ import { withTestingYDoc } from '@/application/slate-yjs/__tests__/withTestingYj
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { withYHistory, YHistoryEditor } from '@/application/slate-yjs/plugins/withHistory';
 import { slateContentInsertToYData, yDocToSlateContent } from '@/application/slate-yjs/utils/convert';
+import { getBlock, getText } from '@/application/slate-yjs/utils/yjs';
 import { BlockType, CollabOrigin, YjsEditorKey } from '@/application/types';
 import { withInsertBreak } from '@/components/editor/plugins/withInsertBreak';
 
@@ -79,6 +80,32 @@ describe('Flutter callout editing parity', () => {
     editor.insertBreak();
     expect(editor.children[0]).toMatchObject({ type: BlockType.CalloutBlock });
     expect((editor.children[0] as Element).children.map(Node.string)).toEqual(['', '']);
+  });
+
+  it.each(['', 'Normal title'])('stores a native text title %j independently of structured body blocks', (title) => {
+    const editor = create([
+      block(BlockType.CalloutBlock, title, [
+        block(BlockType.ToggleListBlock, 'Toggle body', [block(BlockType.Paragraph, 'Nested content')], {
+          collapsed: false,
+        }),
+        block(BlockType.HeadingBlock, 'Heading body', [], { level: 2 }),
+        block(BlockType.BulletedListBlock, 'List body'),
+      ], DEFAULT_CALLOUT_DATA),
+    ]);
+    const callout = editor.children[0] as Element;
+    const stored = getBlock(callout.blockId!, editor.sharedRoot);
+    const textId = stored.get(YjsEditorKey.block_external_id);
+
+    expect(callout.children[0]).toMatchObject({ type: YjsEditorKey.text });
+    expect(textId).toBeTruthy();
+    expect(getText(textId, editor.sharedRoot).toString()).toBe(title);
+    expect(JSON.parse(stored.get(YjsEditorKey.block_data))).not.toHaveProperty('title_mode');
+    expect(callout.children.slice(1).map((child) => (child as Element).type)).toEqual([
+      BlockType.ToggleListBlock,
+      BlockType.HeadingBlock,
+      BlockType.BulletedListBlock,
+    ]);
+    expect(yDocToSlateContent(editor.sharedRoot.doc!)?.children).toEqual(editor.children);
   });
 
   it('replaces a selected range before inserting the child paragraph', () => {

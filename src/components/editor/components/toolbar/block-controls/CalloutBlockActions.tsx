@@ -5,7 +5,7 @@ import { ReactEditor, useSlateStatic } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
-import { ReactComponent as AIIcon } from '@/assets/icons/ai.svg';
+import { ReactComponent as AIIcon } from '@/assets/icons/block-menu-ai.svg';
 import { ReactComponent as CommentIcon } from '@/assets/icons/toolbar_add_comment.svg';
 import { useAIEnabled } from '@/components/app/app.hooks';
 import { AIAssistantType, AIWriterMenu } from '@/components/chat';
@@ -82,14 +82,14 @@ export function CalloutWritingActions({ node, onClose }: { node: CalloutNode; on
         >
           <Button
             variant='ghost'
-            className='justify-start text-ai-primary'
+            className='justify-start'
             disabled={!input.trim()}
             onClick={() => {
               if (selectContent(true)) setOpen(true);
             }}
           >
-            <AIIcon className='h-5 w-5' />
-            {t('editor.askAI')}
+            <AIIcon className='h-5 w-5 [&_path[fill]]:fill-current [&_path[stroke]]:stroke-current' />
+            {t('document.plugins.optionAction.askAI', { defaultValue: 'Ask AI' })}
           </Button>
         </AIWriterMenu>
       )}

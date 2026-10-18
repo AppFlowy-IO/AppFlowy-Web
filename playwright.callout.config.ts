@@ -1,14 +1,16 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const port = process.env.CALLOUT_STORYBOOK_PORT || '6007';
+
 export default defineConfig({
   testDir: './playwright/storybook/callout',
   workers: 1,
   timeout: 45000,
   expect: { timeout: 10000 },
-  use: { baseURL: 'http://localhost:6007', trace: 'retain-on-failure', screenshot: 'only-on-failure' },
+  use: { baseURL: `http://localhost:${port}`, trace: 'retain-on-failure', screenshot: 'only-on-failure' },
   webServer: {
-    command: 'pnpm exec storybook dev -p 6007 --ci --no-open',
-    url: 'http://localhost:6007',
+    command: `pnpm exec storybook dev -p ${port} --ci --no-open`,
+    url: `http://localhost:${port}`,
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
   },

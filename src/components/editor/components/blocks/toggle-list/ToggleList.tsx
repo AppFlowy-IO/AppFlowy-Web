@@ -1,7 +1,7 @@
 import { forwardRef, memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Element } from 'slate';
-import { useReadOnly, useSlateStatic } from 'slate-react';
+import { Editor, Element } from 'slate';
+import { ReactEditor, useReadOnly, useSlateStatic } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
@@ -12,12 +12,16 @@ export const ToggleList = memo(
   forwardRef<HTMLDivElement, EditorElementProps<ToggleListNode>>(({ node, children, ...attributes }, ref) => {
     const blockId = node.blockId;
     const editor = useSlateStatic() as YjsEditor;
+    const inCallout = !!Editor.above(editor, {
+      at: ReactEditor.findPath(editor, node),
+      match: (ancestor) => Element.isElement(ancestor) && ancestor.type === BlockType.CalloutBlock,
+    });
     const { collapsed, level = 0 } = useMemo(() => node.data || {}, [node.data]);
     const { t } = useTranslation();
     const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
 
     const className = useMemo(() => {
-      const classList = ['flex w-full flex-col'];
+      const classList = ['toggle-list flex w-full flex-col'];
 
       if (attributes.className) {
         classList.push(attributes.className);
@@ -50,7 +54,9 @@ export const ToggleList = memo(
                 'ml-[1.45em] flex h-[36px] cursor-pointer select-none items-center rounded-[6px] px-[0.5em] text-sm text-text-secondary hover:bg-fill-content-hover'
               }
             >
-              {level === 0
+              {inCallout
+                ? t('document.plugins.emptyToggle')
+                : level === 0
                 ? t('document.plugins.emptyToggleList')
                 : t('document.plugins.emptyToggleHeadingWeb', { level })}
             </div>

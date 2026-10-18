@@ -6,7 +6,7 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { ViewIconType } from '@/application/types';
 import { ReactComponent as AddEmojiIcon } from '@/assets/icons/add_emoji.svg';
-import { ReactComponent as ChevronRightIcon } from '@/assets/icons/alt_arrow_right.svg';
+import { ReactComponent as ChevronRightIcon } from '@/assets/icons/block-menu-chevron-right.svg';
 import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
 import {
   CALLOUT_ICON_VERSION,
@@ -63,7 +63,7 @@ function CalloutIconControl({ node, onSelectIcon }: { node: CalloutNode; onSelec
       >
         <AddEmojiIcon className='h-5 w-5' />
         {t('document.callout.changeIcon')}
-        <ChevronRightIcon className='ml-auto h-5 w-5 text-icon-tertiary' />
+        <ChevronRightIcon className='ml-auto h-5 w-5 shrink-0 text-icon-tertiary [&_path]:stroke-current' />
       </Button>
     </CustomIconPopover>
   );

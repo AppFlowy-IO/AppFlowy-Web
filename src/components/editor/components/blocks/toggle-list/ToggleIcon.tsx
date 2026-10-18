@@ -1,5 +1,10 @@
 import React, { useCallback } from 'react';
-import { useSlateStatic } from 'slate-react';
+import { Editor, Element } from 'slate';
+import { ReactEditor, useSlateStatic } from 'slate-react';
+
+import { BlockType } from '@/application/types';
+import { ReactComponent as CalloutToggleRight } from '@/assets/icons/callout_toggle_right.svg';
+import { ReactComponent as CalloutToggleDown } from '@/assets/icons/callout_toggle_down.svg';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
@@ -10,6 +15,10 @@ function ToggleIcon({ block, className }: { block: ToggleListNode; className: st
   const { collapsed } = block.data;
   const editor = useSlateStatic();
 
+  const inCallout = !!Editor.above(editor, {
+    at: ReactEditor.findPath(editor, block),
+    match: (ancestor) => Element.isElement(ancestor) && ancestor.type === BlockType.CalloutBlock,
+  });
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
@@ -31,7 +40,17 @@ function ToggleIcon({ block, className }: { block: ToggleListNode; className: st
       }}
       className={`${className} toggle-icon cursor-pointer pr-1 hover:text-text-action`}
     >
-      {collapsed ? <ToggleListIcon className='h-5 w-5' /> : <ToggleListIcon className={'h-5 w-5 rotate-90 transform'} />}
+      {inCallout ? (
+        collapsed ? (
+          <CalloutToggleRight />
+        ) : (
+          <CalloutToggleDown />
+        )
+      ) : collapsed ? (
+        <ToggleListIcon className='h-5 w-5' />
+      ) : (
+        <ToggleListIcon className={'h-5 w-5 rotate-90 transform'} />
+      )}
     </span>
   );
 }

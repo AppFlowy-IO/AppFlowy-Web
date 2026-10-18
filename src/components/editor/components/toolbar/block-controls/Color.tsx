@@ -106,7 +106,7 @@ function Color({ node, onSelectColor }: { node: BlockNode; onSelectColor: () => 
       >
         <ColorTileIcon value={renderColor(selectedColor)} />
         {t(node.type === BlockType.CalloutBlock ? 'editor.backgroundColor' : 'document.plugins.table.bgColor')}
-        <ChevronRightIcon className='ml-auto h-5 w-5 text-icon-tertiary [--stroke-0:currentColor]' />
+        <ChevronRightIcon className='ml-auto h-5 w-5 shrink-0 text-icon-tertiary [&_path]:stroke-current' />
       </Button>
       <Popover
         PaperProps={node.type === BlockType.CalloutBlock ? { className: 'callout-menu-paper' } : undefined}

@@ -1657,7 +1657,7 @@ export function SlashPanel({
         label: t('document.slashMenu.name.callout'),
         key: 'callout',
         icon: <CalloutIcon />,
-        group: SlashMenuGroupKey.AdvancedBlocks,
+        group: SlashMenuGroupKey.BasicBlocks,
         keywords: ['callout', 'note', 'tip'],
         onClick: () => {
           turnInto(BlockType.CalloutBlock, DEFAULT_CALLOUT_DATA);

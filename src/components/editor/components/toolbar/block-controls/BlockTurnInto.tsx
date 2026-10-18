@@ -61,7 +61,7 @@ export function BlockTurnInto({ node, onClose }: { node: BlockNode; onClose: () 
       <Button ref={ref} variant='ghost' className='justify-start' onClick={() => setOpen(true)}>
         <TurnIntoIcon className='h-5 w-5' />
         {t('document.plugins.optionAction.turnInto')}
-        <ChevronRightIcon className='ml-auto h-5 w-5 text-icon-tertiary [--stroke-0:currentColor]' />
+        <ChevronRightIcon className='ml-auto h-5 w-5 shrink-0 text-icon-tertiary [&_path]:stroke-current' />
       </Button>
       <Popover
         PaperProps={{ className: 'block-turn-into-paper' }}

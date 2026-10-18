@@ -4,7 +4,7 @@ import { useSlateStatic } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
-import { ReactComponent as ChevronRightIcon } from '@/assets/icons/alt_arrow_right.svg';
+import { ReactComponent as ChevronRightIcon } from '@/assets/icons/block-menu-chevron-right.svg';
 import { ColorTile } from '@/components/_shared/color-picker';
 import { Origins, Popover } from '@/components/_shared/popover';
 import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
@@ -115,7 +115,7 @@ function CalloutTextColor({ node, onSelectColor }: { node: CalloutNode; onSelect
       >
         <TextColorPreview color={renderColor(previewColor)} />
         {t('editor.textColor')}
-        <ChevronRightIcon className='ml-auto h-5 w-5 text-icon-tertiary' />
+        <ChevronRightIcon className='ml-auto h-5 w-5 shrink-0 text-icon-tertiary [&_path]:stroke-current' />
       </Button>
       <Popover
         PaperProps={{ className: 'callout-menu-paper' }}

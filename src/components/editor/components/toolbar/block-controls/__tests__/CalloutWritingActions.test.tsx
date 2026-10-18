@@ -57,7 +57,7 @@ it('enables AI for body-only callouts and selects the whole block', async () => 
 
   expect(screen.getByRole('button', { name: 'document.plugins.optionAction.comment' }).disabled).toBe(true);
   await act(async () => {
-    fireEvent.click(screen.getByRole('button', { name: 'editor.askAI' }));
+    fireEvent.click(screen.getByRole('button', { name: 'document.plugins.optionAction.askAI' }));
   });
   expect(screen.getByTestId('writer').getAttribute('data-open')).toBe('true');
   expect(editor.selection?.focus).toEqual({ path: [0, 1, 0, 0], offset: 9 });
@@ -70,7 +70,7 @@ it('preserves a line break between title and body in AI input', () => {
 
 it('does not enable AI for an entirely empty callout', () => {
   setup('', '');
-  expect(screen.getByRole('button', { name: 'editor.askAI' }).disabled).toBe(true);
+  expect(screen.getByRole('button', { name: 'document.plugins.optionAction.askAI' }).disabled).toBe(true);
 });
 
 it('does not select an old node after it was deleted', async () => {
@@ -80,7 +80,7 @@ it('does not select an old node after it was deleted', async () => {
     Transforms.removeNodes(editor, { at: [0] });
   });
   await act(async () => {
-    fireEvent.click(screen.getByRole('button', { name: 'editor.askAI' }));
+    fireEvent.click(screen.getByRole('button', { name: 'document.plugins.optionAction.askAI' }));
   });
   expect(screen.getByTestId('writer').getAttribute('data-open')).toBe('false');
 });
