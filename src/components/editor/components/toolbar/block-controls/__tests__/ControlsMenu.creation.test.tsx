@@ -18,7 +18,11 @@ let mockSelectedBlockIds: string[];
 const mockTranslate = (key: string) => key;
 
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: mockTranslate }) }));
-jest.mock('slate-react', () => ({ ...jest.requireActual('slate-react'), useSlateStatic: () => mockEditor }));
+jest.mock('slate-react', () => ({
+  ...jest.requireActual('slate-react'),
+  useSlateStatic: () => mockEditor,
+  useSlateSelector: (selector: (editor: YjsEditor) => unknown) => selector(mockEditor),
+}));
 jest.mock('@/components/editor/EditorContext', () => ({
   useEditorContext: () => mockContext,
   useEditorLocalState: () => ({ selectedBlockIds: mockSelectedBlockIds }),
@@ -30,6 +34,8 @@ jest.mock('@/components/_shared/notify', () => ({ notify: { error: jest.fn(), su
 jest.mock('@/application/database-yjs/creation/create-linked-default-view', () => ({
   createLinkedDefaultDatabaseView: jest.fn(),
 }));
+// This suite exercises database duplication; callout writing actions have their own coverage.
+jest.mock('../CalloutBlockActions', () => ({ CalloutWritingActions: () => null }));
 
 it.each([false, true])(
   'closing the menu preserves only the still-connected editor owner (disconnect: %s)',

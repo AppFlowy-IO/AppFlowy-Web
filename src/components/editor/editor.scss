@@ -122,10 +122,112 @@
   //@apply mx-1;
 }
 
-.block-element[data-block-type="callout"] {
-  //@apply mx-1;
-  > div > .block-element {
-    margin-left: 58px !important;
+// Figma's callout rows have their own spacing, without the editor's paragraph margins.
+.block-element[data-block-type="callout"] > .callout-content {
+  > .text-element > .text-content,
+  > .block-element > div > .text-element > .text-content {
+    --callout-text-top: 2px;
+    min-width: 0;
+    flex: 1;
+    padding: var(--callout-text-top) 4px 2px;
+
+    > .text-placeholder {
+      top: var(--callout-text-top);
+      left: 4px;
+      width: calc(100% - 8px);
+      transform: none;
+    }
+  }
+
+  > .text-element {
+    align-items: flex-start;
+    margin-top: 0;
+    margin-bottom: 0;
+
+    > .text-content {
+      // Center the first text line on the 28px icon button, including custom font sizes.
+      --callout-text-top: max(0px, calc((28px - 1.5em) / 2));
+    }
+
+    > [data-testid="callout-icon-button"] {
+      margin-top: max(0px, calc((1.5em - 28px) / 2));
+      font-size: inherit;
+    }
+  }
+
+  &[data-callout-icon="removed"] > .text-element {
+    padding-left: 4px;
+
+    > .text-content {
+      --callout-text-top: 4px;
+    }
+  }
+
+  > .block-element {
+    margin-left: var(--callout-content-indent) !important;
+    width: calc(100% - var(--callout-content-indent));
+  }
+
+  > .block-element[data-block-type="paragraph"] > div > .text-element {
+    margin-top: 0;
+    margin-bottom: 0;
+  }
+}
+
+#body .hover-controls.callout-controls,
+#body .hover-controls.callout-body-controls {
+  height: 28px;
+
+  > .hover-controls-placeholder {
+    display: none;
+  }
+}
+
+#body .hover-controls.callout-controls {
+  padding: 0 8px 0 0;
+
+  > div {
+    gap: 0;
+  }
+
+  button {
+    width: 28px;
+    height: 28px;
+    padding: 4px;
+    border-radius: 6px;
+  }
+}
+
+// Both MUI and UI buttons are used here; keep their icon slots and row spacing identical.
+#body .text-block-menu,
+#body .block-turn-into-menu {
+  > button {
+    min-height: 32px;
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 20px;
+    text-transform: none;
+
+    &:hover, &:focus-visible {
+      background-color: var(--fill-content-hover);
+    }
+  }
+
+  > button > .MuiButton-startIcon {
+    margin-left: 0;
+    margin-right: 8px;
+  }
+
+  > .MuiDivider-root {
+    margin-left: -8px;
+    margin-right: -8px;
+    border-color: var(--border-primary);
+  }
+
+  > button[data-testid="delete"]:hover, > button[data-testid="delete"]:focus-visible {
+    color: var(--text-error);
   }
 }
 
@@ -607,4 +709,98 @@ span[data-slate-placeholder="true"]:not(.inline-block-content) {
 
   }
 
+}
+
+.text-block-menu-paper.MuiPaper-root,
+.callout-menu-paper.MuiPaper-root,
+.block-turn-into-paper.MuiPaper-root {
+  border: 1px solid var(--border-primary);
+  border-radius: 12px;
+  background: var(--surface-layer-04);
+  box-shadow: var(--custom-shadow-sm);
+}
+
+// Callout toggles share the list marker gutter with bullets, including headings,
+// with the body and empty hint aligned to the title.
+#body .callout-content .toggle-list {
+  --callout-toggle-line-height: 1.5em;
+  border-radius: 4px;
+  padding: 2px 0;
+  margin-block: 2px;
+  gap: 6px;
+
+  &.level-1 {
+    --callout-toggle-line-height: 1.375em;
+  }
+
+  > .text-element {
+    margin: 0;
+    align-items: flex-start;
+    gap: 4px;
+
+    > .text-content {
+      min-width: 0;
+      flex: 1;
+      padding: 0;
+      line-height: var(--callout-toggle-line-height);
+
+      > .text-placeholder {
+        top: 0;
+        left: 0;
+      }
+    }
+
+    > .toggle-icon {
+      --fill-0: var(--icon-secondary);
+      flex: 0 0 24px;
+      width: 24px;
+      height: 24px;
+      padding: 2px 4px 2px 0;
+      top: 0;
+      margin-top: max(0px, calc((var(--callout-toggle-line-height) - 24px) / 2));
+      border-radius: 6px;
+      color: var(--icon-secondary);
+
+      > svg {
+        width: 20px;
+        height: 20px;
+        flex: none;
+      }
+
+      &:hover {
+        background-color: var(--fill-content-hover);
+      }
+    }
+  }
+
+  > .block-element,
+  > [data-testid="toggle-list-empty"] {
+    margin-left: 24px !important;
+    width: calc(100% - 24px);
+  }
+
+  > .block-element[data-block-type="paragraph"] > div > .text-element {
+    margin: 0;
+
+    > .text-content {
+      padding: 0 4px;
+
+      > .text-placeholder {
+        top: 0;
+        left: 4px;
+        width: calc(100% - 8px);
+        transform: none;
+      }
+    }
+  }
+
+  > [data-testid="toggle-list-empty"] {
+    height: auto;
+    min-height: 24px;
+    padding: 0 4px;
+    border-radius: 4px;
+    font-size: 1em;
+    line-height: 1.5;
+    color: var(--text-tertiary);
+  }
 }

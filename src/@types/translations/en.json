@@ -2313,7 +2313,7 @@
       "tip": "Tip",
       "warning": "Warning",
       "alert": "Alert",
-      "moreStyles": "More Styles",
+      "moreStyles": "Special styles",
       "insight": "Insight",
       "idea": "Idea",
       "spark": "Spark",
@@ -2630,6 +2630,7 @@
       "emoji": "Emoji",
       "toggleList": "Toggle list",
       "emptyToggleHeading": "Empty toggle h{}. Click to add content.",
+      "emptyToggle": "Empty toggle. Click to add content",
       "emptyToggleList": "Empty toggle list. Click to add content.",
       "emptyToggleHeadingWeb": "Empty toggle h{{level}}. Click to add content",
       "quoteList": "Quote list",
@@ -2698,6 +2699,7 @@
         "editMathEquation": "Edit Math Equation"
       },
       "optionAction": {
+        "askAI": "Ask AI",
         "click": "Click",
         "toOpenMenu": " to open menu",
         "drag": "Drag",

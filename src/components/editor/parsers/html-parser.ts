@@ -1,5 +1,8 @@
+import emojiRegex from 'emoji-regex';
 import rehypeParse from 'rehype-parse';
 import { unified } from 'unified';
+
+import { BlockType, CalloutBlockData } from '@/application/types';
 
 import { elementToBlock } from './block-converters';
 import { sanitizeHTML } from './sanitize';
@@ -43,7 +46,7 @@ export function parseHTML(html: string, options: HTMLParseOptions = {}): ParsedB
     // Step 3: Convert HAST to ParsedBlocks
     const blocks = convertASTToAppFlowyBlocks(tree.children as HastElement[], options);
 
-    return blocks;
+    return restoreNotionCallouts(blocks);
   } catch (error) {
     console.error('Error parsing HTML:', error);
     return [];
@@ -165,4 +168,56 @@ export function extractImageURLs(html: string): string[] {
   walk(tree.children as HastElement[]);
 
   return urls;
+}
+
+const EMOJI_REGEX = emojiRegex();
+const NOTION_IMAGE_MARKER = /^<img\s[^>]*\/?>(?:\s*)$/;
+
+/** Notion's clipboard encodes aside tags as text, even across list boundaries. */
+function restoreNotionCallouts(blocks: ParsedBlock[]): ParsedBlock[] {
+  const result: ParsedBlock[] = [];
+
+  for (let index = 0; index < blocks.length; index++) {
+    const opening = blocks[index];
+    const header = opening.text.trim();
+    const iconText = header.startsWith('<aside>') ? header.slice('<aside>'.length).trim() : undefined;
+    const emoji = iconText?.match(EMOJI_REGEX)?.[0];
+    // Only consume a standalone marker plus an optional icon, never ordinary prose.
+    const isMarker = opening.type === BlockType.Paragraph && iconText !== undefined &&
+      (!iconText || emoji === iconText || NOTION_IMAGE_MARKER.test(iconText));
+    const closingOffset = isMarker ? blocks.slice(index + 1).findIndex(block => block.text.trimEnd().endsWith('</aside>')) : -1;
+
+    if (!isMarker || closingOffset < 0) {
+      result.push(opening);
+      continue;
+    }
+
+    const closingIndex = index + 1 + closingOffset;
+    const contents = blocks.slice(index + 1, closingIndex + 1).map((block, offset) => {
+      if (offset !== closingOffset) return block;
+      const text = block.text.slice(0, block.text.lastIndexOf('</aside>')).trimEnd();
+
+      return {
+        ...block,
+        text,
+        formats: block.formats.filter(format => format.start < text.length)
+          .map(format => ({ ...format, end: Math.min(format.end, text.length) })),
+      };
+    });
+    const closing = contents[contents.length - 1];
+
+    if (closing.type === BlockType.Paragraph && !closing.text && !closing.children.length) contents.pop();
+    const first = contents[0]?.type === BlockType.Paragraph ? contents.shift() : undefined;
+
+    result.push({
+      type: BlockType.CalloutBlock,
+      data: emoji ? { icon: emoji, icon_type: 'emoji' } as CalloutBlockData : {},
+      text: first?.text || '',
+      formats: first?.formats || [],
+      children: [...(first?.children || []), ...contents],
+    });
+    index = closingIndex;
+  }
+
+  return result;
 }

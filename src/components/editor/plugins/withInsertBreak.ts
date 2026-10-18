@@ -23,6 +23,12 @@ export function withInsertBreak(editor: ReactEditor) {
 
     if (!node) return;
 
+    // Flutter falls through its character shortcuts and inserts a literal newline.
+    if (node.type === BlockType.CalloutBlock) {
+      editor.insertText('\n');
+      return;
+    }
+
     if (Range.isCollapsed(selection) && isEmbedBlockTypes(node.type as BlockType)) {
       CustomEditor.addBelowBlock(editor as YjsEditor, node.blockId as string, BlockType.Paragraph, {});
       return;

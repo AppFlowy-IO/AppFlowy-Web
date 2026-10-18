@@ -90,6 +90,8 @@ function Placeholder({ node, ...attributes }: { node: Element; className?: strin
         }
       }
 
+      case BlockType.CalloutBlock:
+        return t('editor.calloutPlaceholder', { defaultValue: 'Write anything' });
       case BlockType.QuoteBlock:
         return t('blockPlaceholders.quote');
       case BlockType.TodoListBlock:
@@ -149,6 +151,7 @@ function Placeholder({ node, ...attributes }: { node: Element; className?: strin
 
     switch(block?.type) {
       case BlockType.HeadingBlock:
+      case BlockType.CalloutBlock:
         return unSelectedPlaceholder;
       case  BlockType.ToggleListBlock:
       case  BlockType.TodoListBlock:

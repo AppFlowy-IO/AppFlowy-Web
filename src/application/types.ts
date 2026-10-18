@@ -109,8 +109,9 @@ export interface CodeBlockData extends BlockData {
 }
 
 export interface CalloutBlockData extends BlockData {
-  icon: string;
-  icon_type?: 'emoji' | 'icon';
+  icon?: string | null;
+  icon_type?: 'emoji' | 'icon' | 'custom';
+  version?: number;
   textColor?: string;
 }
 

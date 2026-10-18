@@ -13,9 +13,9 @@ async function httpGet (url: string) {
     return pendingRequests.get(url);
   }
 
-  const request = http.get(url).then((res) => {
+  const request = http.get(url).finally(() => {
+    // Share pending requests, but allow a later icon mount to retry a failed load.
     pendingRequests.delete(url);
-    return res;
   });
 
   pendingRequests.set(url, request);
@@ -59,33 +59,33 @@ export enum ICON_CATEGORY {
   work_education = 'work_education',
 }
 
-let icons: Record<ICON_CATEGORY,
-  {
-    id: string;
-    name: string;
-    content: string;
-    keywords: string[];
-  }[]> | undefined;
+export type CatalogIcon = {
+  id: string;
+  name: string;
+  content: string;
+  keywords: string[];
+};
 
-export async function loadIcons (): Promise<
-  Record<
-    ICON_CATEGORY,
-    {
-      id: string;
-      name: string;
-      content: string;
-      keywords: string[];
-    }[]
-  >
-> {
+let icons: Record<ICON_CATEGORY, CatalogIcon[]> | undefined;
+let iconIndex: Map<string, CatalogIcon> | undefined;
+
+export async function loadIcons (): Promise<Record<ICON_CATEGORY, CatalogIcon[]>> {
   if (icons) {
     return icons;
   }
 
   return httpGet('/af_icons/icons.json').then((res) => {
-    icons = res.data;
-    return res.data;
+    const catalog = res.data as Record<ICON_CATEGORY, CatalogIcon[]>;
+
+    iconIndex = new Map(Object.values(catalog).flat().map((icon) => [icon.id, icon]));
+    icons = catalog;
+    return catalog;
   });
+}
+
+/** Synchronous catalog lookup: null until the catalog has loaded, or for an unknown id. */
+export function getCachedIcon (id: string): CatalogIcon | null {
+  return iconIndex?.get(id) ?? null;
 }
 
 export async function getIconBase64 (id: string, color: string) {
@@ -116,15 +116,7 @@ export async function randomIcon () {
 }
 
 export async function getIcon (id: string) {
-  const icons = await loadIcons();
+  await loadIcons();
 
-  for (const category of Object.keys(icons)) {
-    for (const icon of icons[category as ICON_CATEGORY]) {
-      if (icon.id === id) {
-        return icon;
-      }
-    }
-  }
-
-  return null;
+  return getCachedIcon(id);
 }

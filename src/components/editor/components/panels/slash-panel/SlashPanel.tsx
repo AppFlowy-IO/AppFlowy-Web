@@ -28,7 +28,6 @@ import {
   AudioUrlType,
   BlockData,
   BlockType,
-  CalloutBlockData,
   CodeBlockData,
   GalleryBlockData,
   GalleryLayout,
@@ -96,6 +95,7 @@ import { useDatabaseViewCreation } from '@/components/app/hooks/useDatabaseViewC
 import { useAIWriter } from '@/components/chat';
 import { SearchInput } from '@/components/chat/components/ui/search-input';
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
+import { DEFAULT_CALLOUT_DATA } from '@/components/editor/components/blocks/callout/callout.utils';
 import { createDatabaseNodeData } from '@/components/editor/components/blocks/database/utils/databaseBlockUtils';
 import { initializeMeetingSections } from '@/components/editor/components/blocks/ai-meeting/ai-meeting.import';
 import { usePanelContext } from '@/components/editor/components/panels/Panels.hooks';
@@ -1573,12 +1573,10 @@ export function SlashPanel({
         label: t('document.slashMenu.name.callout'),
         key: 'callout',
         icon: <CalloutIcon />,
-        group: SlashMenuGroupKey.AdvancedBlocks,
+        group: SlashMenuGroupKey.BasicBlocks,
         keywords: ['callout', 'note', 'tip'],
         onClick: () => {
-          turnInto(BlockType.CalloutBlock, {
-            icon: '📌',
-          } as CalloutBlockData);
+          turnInto(BlockType.CalloutBlock, DEFAULT_CALLOUT_DATA);
         },
       },
       {

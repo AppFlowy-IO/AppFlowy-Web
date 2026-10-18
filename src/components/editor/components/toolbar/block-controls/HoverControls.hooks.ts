@@ -196,7 +196,7 @@ export function useHoverControls({ disabled }: { disabled: boolean }) {
       el.style.opacity = '1';
       el.style.pointerEvents = 'auto';
 
-      setCssProperty(getBlockCssProperty(node));
+      setCssProperty(getBlockCssProperty(node, blockElement));
       setHoveredBlockId(node.blockId as string);
       updateParentId(node.blockId as string);
     };
