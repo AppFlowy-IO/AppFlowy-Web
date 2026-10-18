@@ -671,7 +671,7 @@ export function Outline({ width }: { width: number }) {
     <>
       <div ref={spaceListRef} className={'folder-views flex w-full flex-1 flex-col px-[8px] pb-[10px] pt-1'}>
         <Favorite />
-        <ShareWithMe width={width - 20} />
+        <ShareWithMe width={width - 20} onImportClick={handleImportClick} />
         {!outline || outline.length === 0 ? (
           <div
             style={{

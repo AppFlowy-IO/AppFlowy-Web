@@ -1,7 +1,7 @@
 import dayjs from 'dayjs';
 
 import { FormulaError, SourcePosition } from './errors';
-import { joinText } from './styled-text';
+import { joinText, textWork } from './styled-text';
 import { FormulaDate, FormulaTextValue, FormulaValue, text } from './values';
 
 /**
@@ -62,7 +62,7 @@ export function asTextValueWithBudget(value: FormulaValue, consumeWork: (amount:
 
   const result = value.type === 'text' ? value : text(asText(value));
 
-  consumeWork(result.value.length + (result.runs?.length ?? 0));
+  consumeWork(textWork(result));
   return result;
 }
 

@@ -1,13 +1,13 @@
-import { MutableRefObject, useCallback, useRef } from 'react';
+import { MutableRefObject, useCallback, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 
 import { BillingService, FileService, PageService, PublishService, ViewService } from '@/application/services/domains';
 import { deleteView as clearViewCache } from '@/application/services/js-services/cache';
 import { clearPublishViewInfoCache } from '@/application/services/js-services/cached-api';
+import { PageCreationActivation, usesDefaultPageCreation } from '@/application/services/js-services/http/page-default-creation';
 import { publishCollabs, PublishCollabMetadata } from '@/application/services/js-services/http/publish-api';
 import { gatherDatabasePublishData } from '@/application/services/js-services/publish-database-data';
 import {
-  CreateDatabaseViewPayload,
   CreateOrphanedViewPayload,
   DuplicatePageOperationOptions,
   CreatePagePayload,
@@ -90,6 +90,7 @@ export function usePageOperations({
   loadViewChildren,
   getDatabaseIdForViewId,
   loadTrash,
+  ensureViewVisibleInOutline,
 }: {
   outlineRef: MutableRefObject<View[] | undefined>;
   loadOutline?: (workspaceId: string, force?: boolean) => Promise<void>;
@@ -98,10 +99,41 @@ export function usePageOperations({
   loadViewChildren?: (viewId: string) => Promise<View[]>;
   getDatabaseIdForViewId?: (viewId: string) => Promise<string | null | undefined>;
   loadTrash?: (workspaceId: string, options?: { ensureFreshAfterInFlight?: boolean }) => Promise<void>;
+  ensureViewVisibleInOutline?: (viewId: string) => Promise<string[]>;
 }) {
   const { currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
   const role = userWorkspaceInfo?.selectedWorkspace.role;
   const pendingPublishesRef = useRef(new Map<string, Promise<void>>());
+  const creationOwnerRef = useRef({ workspaceId: currentWorkspaceId, userId: userWorkspaceInfo?.userId, epoch: 0 });
+
+  if (creationOwnerRef.current.workspaceId !== currentWorkspaceId || creationOwnerRef.current.userId !== userWorkspaceInfo?.userId) {
+    creationOwnerRef.current = { workspaceId: currentWorkspaceId, userId: userWorkspaceInfo?.userId, epoch: creationOwnerRef.current.epoch + 1 };
+  }
+
+  useEffect(() => () => { creationOwnerRef.current.epoch += 1; }, []);
+
+  const capturePageActivation = useCallback((payload: CreatePagePayload): PageCreationActivation => {
+    if (usesDefaultPageCreation(payload) && !ensureViewVisibleInOutline) {
+      throw new Error('Page creation navigation is not available');
+    }
+
+    const capturedEpoch = creationOwnerRef.current.epoch;
+    const assertCurrent = () => {
+      if (creationOwnerRef.current.epoch !== capturedEpoch || creationOwnerRef.current.workspaceId !== currentWorkspaceId) {
+        throw new Error('The page creation workspace changed');
+      }
+    };
+
+    return {
+      assertCurrent,
+      activate: ensureViewVisibleInOutline ? async (page) => {
+        assertCurrent();
+        await ensureViewVisibleInOutline(page.view_id);
+        assertCurrent();
+        if (!findView(outlineRef.current ?? [], page.view_id)) throw new Error('Created page navigation is not ready');
+      } : undefined,
+    };
+  }, [currentWorkspaceId, ensureViewVisibleInOutline, outlineRef]);
 
   // Add a new page
   const addPage = useCallback(
@@ -110,15 +142,18 @@ export function usePageOperations({
         throw new Error('No workspace or service found');
       }
 
-      const shareWithMeView = findViewInShareWithMe(outlineRef.current || [], parentViewId);
-
-      if (role === Role.Guest || shareWithMeView) {
+      // Shared-with-me placement does not remove a member's write access to the
+      // parent page. The creation request enforces its current server permissions.
+      if (role === Role.Guest) {
         toast.error('No permission to create pages');
         throw new Error('No permission to create pages');
       }
 
       try {
-        const response = await PageService.add(currentWorkspaceId, parentViewId, payload);
+        const activation = capturePageActivation(payload);
+        const response = await PageService.add(currentWorkspaceId, parentViewId, payload, activation);
+
+        activation.assertCurrent?.();
 
         ViewService.invalidateCache(currentWorkspaceId, parentViewId);
         if (isDatabaseLayout(payload.layout)) {
@@ -127,13 +162,13 @@ export function usePageOperations({
 
         // Keep a resilient fallback when realtime delivery is unavailable.
         // This guarantees sidebar eventual consistency after creation.
-        void loadOutline?.(currentWorkspaceId, false);
+        if (!usesDefaultPageCreation(payload)) void loadOutline?.(currentWorkspaceId, false);
         return response;
       } catch (e) {
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, outlineRef, role, loadOutline]
+    [currentWorkspaceId, role, loadOutline, capturePageActivation]
   );
 
   // Delete a page (move to trash)
@@ -143,9 +178,9 @@ export function usePageOperations({
         throw new Error('No workspace or service found');
       }
 
-      const shareWithMeView = findViewInShareWithMe(outlineRef.current || [], id);
-
-      if (role === Role.Guest || shareWithMeView) {
+      // Shared navigation does not remove Full Access to the target page.
+      // The trash endpoint checks its current permissions before deleting it.
+      if (role === Role.Guest) {
         throw new Error('Guest cannot delete pages');
       }
 
@@ -166,7 +201,9 @@ export function usePageOperations({
         void loadTrash?.(currentWorkspaceId, { ensureFreshAfterInFlight: true }).catch((error) => {
           Log.warn('[Trash] Failed to refresh after moving a page to trash', error);
         });
-        void loadOutline?.(currentWorkspaceId, false);
+        void loadOutline?.(currentWorkspaceId, false).catch((error) => {
+          Log.warn('[Outline] Failed to refresh after moving a page to trash', error);
+        });
         return;
       } catch (e) {
         return Promise.reject(e);
@@ -175,7 +212,20 @@ export function usePageOperations({
     [currentWorkspaceId, outlineRef, role, loadOutline, loadTrash]
   );
 
-  // Update page (rename) - uses WebSocket notification for sidebar refresh
+  // Normal folder notifications exclude another user's private subtree.
+  // Every successful shared-page metadata edit must refresh its projection.
+  const refreshSharedPageMetadata = useCallback(
+    (viewId: string) => {
+      if (!currentWorkspaceId || !findViewInShareWithMe(outlineRef.current || [], viewId)) return;
+
+      void loadOutline?.(currentWorkspaceId, false).catch((error) => {
+        Log.warn('[Outline] Failed to refresh Shared with me after updating a page', error);
+      });
+    },
+    [currentWorkspaceId, outlineRef, loadOutline]
+  );
+
+  // Update page metadata, including sidebar renames and icon changes.
   const updatePage = useCallback(
     async (viewId: string, payload: UpdatePagePayload) => {
       if (!currentWorkspaceId) {
@@ -187,13 +237,13 @@ export function usePageOperations({
         // Drop the cached view metadata (memory + disk) so a stale name/icon
         // can't be re-served if the WebSocket notification is dropped.
         ViewService.invalidateCache(currentWorkspaceId, viewId);
-        // Sidebar refresh is handled by WebSocket notification (FOLDER_OUTLINE_CHANGED)
+        refreshSharedPageMetadata(viewId);
         return;
       } catch (e) {
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId]
+    [currentWorkspaceId, refreshSharedPageMetadata]
   );
 
   // Update page icon
@@ -206,15 +256,16 @@ export function usePageOperations({
       try {
         await PageService.updateIcon(currentWorkspaceId, viewId, icon);
         ViewService.invalidateCache(currentWorkspaceId, viewId);
+        refreshSharedPageMetadata(viewId);
         return;
       } catch (e) {
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId]
+    [currentWorkspaceId, refreshSharedPageMetadata]
   );
 
-  // Update page name (rename) - uses WebSocket notification for sidebar refresh
+  // Update the page title through the dedicated name endpoint.
   const updatePageName = useCallback(
     async (viewId: string, name: string) => {
       if (!currentWorkspaceId) {
@@ -224,13 +275,14 @@ export function usePageOperations({
       try {
         await PageService.updateName(currentWorkspaceId, viewId, name);
         ViewService.invalidateCache(currentWorkspaceId, viewId);
-        // Sidebar refresh is handled by WebSocket notification (FOLDER_OUTLINE_CHANGED)
+        refreshSharedPageMetadata(viewId);
+
         return;
       } catch (e) {
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId]
+    [currentWorkspaceId, refreshSharedPageMetadata]
   );
 
   const duplicatePage = useCallback(
@@ -404,16 +456,17 @@ export function usePageOperations({
         throw new Error('No workspace or service found');
       }
 
-      try {
-        const res = await PageService.createSpaceWithInitialPage(currentWorkspaceId, payload);
+      // Structured spaces compose their initial default page through the same
+      // creation boundary as Add Page, including current sidebar publication.
+      const activation = payload.permission && usesDefaultPageCreation(payload.initial_page)
+        ? capturePageActivation(payload.initial_page) : undefined;
+      const res = await PageService.createSpaceWithInitialPage(currentWorkspaceId, payload, activation);
 
-        void loadOutline?.(currentWorkspaceId, false);
-        return res;
-      } catch (e) {
-        return Promise.reject(e);
-      }
+      activation?.assertCurrent?.();
+      if (!activation) void loadOutline?.(currentWorkspaceId, false);
+      return res;
     },
-    [currentWorkspaceId, loadOutline]
+    [currentWorkspaceId, loadOutline, capturePageActivation]
   );
 
   // Update space
@@ -427,32 +480,6 @@ export function usePageOperations({
         const res = await PageService.updateSpace(currentWorkspaceId, payload);
 
         void loadOutline?.(currentWorkspaceId, false);
-        return res;
-      } catch (e) {
-        return Promise.reject(e);
-      }
-    },
-    [currentWorkspaceId, loadOutline]
-  );
-
-  // Create database view (linked view using new endpoint)
-  const createDatabaseView = useCallback(
-    async (viewId: string, payload: CreateDatabaseViewPayload) => {
-      if (!currentWorkspaceId) {
-        throw new Error('No workspace or service found');
-      }
-
-      try {
-        const res = await PageService.createDatabaseView(currentWorkspaceId, viewId, payload);
-
-        refreshDatabaseCatalogAfterMutation(currentWorkspaceId);
-        // The database response already contains the new view and its Yjs
-        // update. Do not hold tab creation and navigation behind a separate
-        // workspace-wide outline refresh: either outline request can remain
-        // pending while the linked view itself was created successfully.
-        void loadOutline?.(currentWorkspaceId, false).catch((error) => {
-          Log.warn('[createDatabaseView] failed to refresh outline after creating a linked view', error);
-        });
         return res;
       } catch (e) {
         return Promise.reject(e);
@@ -677,7 +704,6 @@ export function usePageOperations({
     createSpace,
     createSpaceWithInitialPage,
     updateSpace,
-    createDatabaseView,
     uploadFile,
     getSubscriptions,
     getPricingCatalog,

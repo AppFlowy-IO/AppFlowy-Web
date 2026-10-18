@@ -1,3 +1,4 @@
+
 import { stringify as uuidStringify } from 'uuid';
 import * as Y from 'yjs';
 
@@ -20,6 +21,7 @@ import {
   withDatabaseStorageFence,
 } from '@/application/db/database-storage-fence';
 import { deleteRow as deleteCachedRow, getCachedRowDoc } from '@/application/services/js-services/cache';
+import { captureTokenSession, isTokenSessionCurrent, type TokenSessionWitness } from '@/application/session/token';
 import { databaseBlobDiff } from '@/application/services/js-services/http/http_api';
 import { deleteOutboxByObjectId, getCurrentOutboxSession, type SyncOutboxSession } from '@/application/sync-outbox';
 import { YDoc, YjsEditorKey } from '@/application/types';
@@ -59,16 +61,25 @@ type PrefetchOptions = {
 class InvalidatedRows extends Set<string> {
   all = false;
   storageFence?: DatabaseStorageFence;
+  session?: TokenSessionWitness;
 
   has(rowId: string): boolean {
     return (
-      this.all || Boolean(this.storageFence && !isDatabaseStorageFenceCurrent(this.storageFence)) || super.has(rowId)
+      this.all ||
+      Boolean(this.session && !isTokenSessionCurrent(this.session)) ||
+      Boolean(this.storageFence && !isDatabaseStorageFenceCurrent(this.storageFence)) ||
+      super.has(rowId)
     );
   }
 }
 
 type SharedPrefetchEntry = {
   invalidated?: boolean;
+  session: TokenSessionWitness;
+  /** A released snapshot must catch up before another view consumes it. */
+  needsRevalidation?: boolean;
+  snapshotRid?: DatabaseBlobRowRid | null;
+  seedRowIds: Set<string>;
   storageFence?: DatabaseStorageFence;
   priorityRowIds: Set<string>;
   /** Rows reset after this prefetch started must not consume its stale snapshot. */
@@ -109,6 +120,41 @@ const BLOB_DIFF_MAX_RESTARTS = 2;
 const readyStatus = database_blob.DiffStatus.READY;
 const pendingStatus = database_blob.DiffStatus.PENDING;
 const sharedPrefetchEntries = new Map<string, SharedPrefetchEntry>();
+// Keep at most one inactive database briefly during navigation. Active views
+// retain their own cache; row seed limits still bound the shared working set.
+const NAVIGATION_CACHE_TTL_MS = 30_000;
+let inactiveDatabaseCache: { databaseId: string; timer: ReturnType<typeof setTimeout> } | undefined;
+
+function cancelInactiveDatabaseCache(databaseId: string) {
+  if (inactiveDatabaseCache?.databaseId !== databaseId) return;
+  clearTimeout(inactiveDatabaseCache.timer);
+  inactiveDatabaseCache = undefined;
+}
+
+function hasReusableSnapshot(entry: SharedPrefetchEntry, databaseId: string) {
+  return Boolean(
+    entry.settled &&
+    entry.persisted &&
+    entry.coversFullSnapshot &&
+    entry.hasCompleteSeedSet &&
+    entry.snapshotRid &&
+    !entry.invalidated &&
+    entry.invalidatedRowIds.size === 0 &&
+    !entry.invalidatedRowIds.all &&
+    isTokenSessionCurrent(entry.session) &&
+    (!entry.storageFence || isDatabaseStorageFenceCurrent(entry.storageFence)) &&
+    entry.seedRowIds.size <= MAX_ROW_DOC_SEEDS_LOOKUP &&
+    Array.from(entry.seedRowIds).every((rowId) => {
+      const key = getRowKey(databaseId, rowId);
+
+      return (
+        peekDatabaseRowDocSeed(key) ||
+        hasCurrentSeedDocument(rowDocSeedDocCache.get(key)) ||
+        hasCurrentSeedDocument(getCachedRowDoc(key))
+      );
+    })
+  );
+}
 
 function ridCacheKey(databaseId: string) {
   return `${RID_CACHE_PREFIX}${databaseId}`;
@@ -136,7 +182,26 @@ function findSharedPrefetchEntry(
   const requestedKey = sharedPrefetchKeyForOptions(workspaceId, databaseId, options);
   const requestedEntry = sharedPrefetchEntries.get(requestedKey);
 
-  if (requestedEntry || !options?.forceFullSync) {
+  if (!options?.forceFullSync) {
+    if (requestedEntry && !requestedEntry.settled) return { sharedKey: requestedKey, entry: requestedEntry };
+    const fullKey = fullSharedPrefetchKey(workspaceId, databaseId);
+    const fullEntry = sharedPrefetchEntries.get(fullKey);
+
+    // A plain grid can catch up the same completed snapshot as a filtered
+    // view, including when no persisted delta checkpoint has been published.
+    if (
+      fullEntry &&
+      !fullEntry.invalidated &&
+      ((!fullEntry.settled && fullEntry.coversFullSnapshot) ||
+        (fullEntry.needsRevalidation && hasReusableSnapshot(fullEntry, databaseId)))
+    ) {
+      return { sharedKey: fullKey, entry: fullEntry };
+    }
+
+    return { sharedKey: requestedKey, entry: requestedEntry };
+  }
+
+  if (requestedEntry) {
     return { sharedKey: requestedKey, entry: requestedEntry };
   }
 
@@ -176,7 +241,13 @@ function applyPrefetchOptions(entry: SharedPrefetchEntry, options?: PrefetchOpti
 
   if (entry.seedsReady) {
     void Promise.resolve().then(() => {
-      if (!entry.storageFence || isDatabaseStorageFenceCurrent(entry.storageFence)) options.onSeedsReady?.();
+      if (
+        !entry.invalidated &&
+        isTokenSessionCurrent(entry.session) &&
+        (!entry.storageFence || isDatabaseStorageFenceCurrent(entry.storageFence))
+      ) {
+        options.onSeedsReady?.();
+      }
     });
     return;
   }
@@ -185,13 +256,18 @@ function applyPrefetchOptions(entry: SharedPrefetchEntry, options?: PrefetchOpti
 }
 
 function notifySeedsReady(entry: SharedPrefetchEntry) {
-  if (entry.invalidated || (entry.storageFence && !isDatabaseStorageFenceCurrent(entry.storageFence)))
-    throw new Error('Database prefetch superseded by restore');
+  assertPrefetchCurrent(entry);
   entry.seedsReady = true;
   const callbacks = Array.from(entry.onSeedsReadyCallbacks);
 
   entry.onSeedsReadyCallbacks.clear();
   callbacks.forEach((callback) => callback());
+}
+
+function assertPrefetchCurrent(entry: SharedPrefetchEntry) {
+  if (!isTokenSessionCurrent(entry.session)) throw new Error('Database prefetch superseded by session change');
+  if (entry.invalidated || (entry.storageFence && !isDatabaseStorageFenceCurrent(entry.storageFence)))
+    throw new Error('Database prefetch superseded by restore');
 }
 
 function clearSharedPrefetchEntryAfterSettle(databaseId: string, sharedKey: string, entry: SharedPrefetchEntry) {
@@ -202,7 +278,11 @@ function clearSharedPrefetchEntryAfterSettle(databaseId: string, sharedKey: stri
     ?.finally(() => {
       entry.clearWhenSettled = false;
 
-      if ((rowDocSeedCacheRetainCounts.get(databaseId) ?? 0) === 0 && sharedPrefetchEntries.get(sharedKey) === entry) {
+      if (
+        (rowDocSeedCacheRetainCounts.get(databaseId) ?? 0) === 0 &&
+        inactiveDatabaseCache?.databaseId !== databaseId &&
+        sharedPrefetchEntries.get(sharedKey) === entry
+      ) {
         clearDatabaseRowDocSeedCache(databaseId);
       }
     })
@@ -269,8 +349,43 @@ const rowDocSeedCache = new Map<string, DatabaseRowDocSeed>();
 const rowDocSeedLookup = new Map<string, DatabaseRowDocSeed>();
 const rowDocSeedDocCache = new Map<string, YDoc>();
 const seedDocumentFences = new WeakMap<YDoc, DatabaseStorageFence>();
+const seedDocumentOwners = new WeakMap<YDoc, () => boolean>();
 const rowDocSeedCacheRetainCounts = new Map<string, number>();
 const ROW_KEY_SEPARATOR = '_rows_';
+let rowSeedCacheSession: TokenSessionWitness | undefined;
+
+// The seed working set is session-owned. Retiring its requests synchronously
+// also prevents their delayed responses from repopulating it after logout.
+function synchronizeRowSeedCacheSession() {
+  const session = captureTokenSession();
+
+  if (
+    rowSeedCacheSession &&
+    (rowSeedCacheSession.generation !== session.generation || rowSeedCacheSession.userId !== session.userId)
+  ) {
+    if (inactiveDatabaseCache) cancelInactiveDatabaseCache(inactiveDatabaseCache.databaseId);
+    sharedPrefetchEntries.forEach((entry) => {
+      entry.invalidated = true;
+      entry.invalidatedRowIds.all = true;
+      entry.onSeedsReadyCallbacks.clear();
+    });
+    sharedPrefetchEntries.clear();
+    rowDocSeedCache.clear();
+    rowDocSeedLookup.clear();
+    rowDocSeedDocCache.forEach((doc) => doc.destroy());
+    rowDocSeedDocCache.clear();
+  }
+
+  rowSeedCacheSession = session;
+}
+
+function hasCurrentSeedDocument(doc: YDoc | null | undefined): boolean {
+  if (!hasRowConditionData(doc)) return false;
+  const owner = seedDocumentOwners.get(doc);
+  const fence = seedDocumentFences.get(doc);
+
+  return (!owner || owner()) && (!fence || isDatabaseStorageFenceCurrent(fence));
+}
 
 function clearRowDocSeeds(databaseId: string, rowId: string) {
   const rowKey = getRowKey(databaseId, rowId);
@@ -329,6 +444,7 @@ function applySeedToSharedRowDoc(rowKey: string, seed: DatabaseRowDocSeed) {
     if (!isDatabaseRowDocSeedCurrent(seed)) return;
     withDatabaseStorageFence(doc, seed.storageFence, () => applyYDoc(doc, seed.bytes, seed.encoderVersion));
     if (seed.storageFence) seedDocumentFences.set(doc, seed.storageFence);
+    if (seed.isOwnerCurrent) seedDocumentOwners.set(doc, seed.isOwnerCurrent);
     invalidateRowConditionCache(doc);
   } catch {
     doc.destroy();
@@ -402,6 +518,7 @@ export function takeDatabaseRowDocSeed(rowKey: string): DatabaseRowDocSeed | nul
  * filter/sort, another to open the IndexedDB-backed row doc for rendering.
  */
 export function peekDatabaseRowDocSeed(rowKey: string): DatabaseRowDocSeed | null {
+  synchronizeRowSeedCacheSession();
   const seed = rowDocSeedCache.get(rowKey) ?? rowDocSeedLookup.get(rowKey) ?? null;
 
   if (seed && !isDatabaseRowDocSeedCurrent(seed)) {
@@ -420,9 +537,12 @@ export function peekDatabaseRowDocSeed(rowKey: string): DatabaseRowDocSeed | nul
  * seed bytes so multiple views of the same database can reuse cell values.
  */
 export function getDatabaseRowDocFromSeed(rowKey: string): YDoc | null {
+  synchronizeRowSeedCacheSession();
   const liveDoc = getCachedRowDoc(rowKey);
   const liveFence = liveDoc && seedDocumentFences.get(liveDoc);
+  const liveOwner = liveDoc && seedDocumentOwners.get(liveDoc);
 
+  if (liveOwner && !liveOwner()) return null;
   if (liveFence && !isDatabaseStorageFenceCurrent(liveFence)) return null;
   if (hasRowConditionData(liveDoc)) return liveDoc;
 
@@ -430,8 +550,9 @@ export function getDatabaseRowDocFromSeed(rowKey: string): YDoc | null {
 
   if (cachedDoc) {
     const fence = seedDocumentFences.get(cachedDoc);
+    const owner = seedDocumentOwners.get(cachedDoc);
 
-    if (fence && !isDatabaseStorageFenceCurrent(fence)) {
+    if ((owner && !owner()) || (fence && !isDatabaseStorageFenceCurrent(fence))) {
       rowDocSeedDocCache.delete(rowKey);
       return null;
     }
@@ -463,11 +584,12 @@ export function getDatabaseRowDocFromSeed(rowKey: string): YDoc | null {
 
   rowDocSeedDocCache.set(rowKey, doc);
   if (seed.storageFence) seedDocumentFences.set(doc, seed.storageFence);
+  if (seed.isOwnerCurrent) seedDocumentOwners.set(doc, seed.isOwnerCurrent);
   return doc;
 }
 
 export function clearDatabaseRowDocSeedCache(databaseId: string) {
-  const prefix = `${databaseId}_rows_`;
+  cancelInactiveDatabaseCache(databaseId);
   let hasUnsettledPrefetch = false;
 
   for (const [key, entry] of sharedPrefetchEntries.entries()) {
@@ -482,6 +604,18 @@ export function clearDatabaseRowDocSeedCache(databaseId: string) {
   }
 
   if (hasUnsettledPrefetch) return;
+  clearDatabaseRowSeeds(databaseId);
+
+  for (const [key, entry] of sharedPrefetchEntries.entries()) {
+    if (sharedPrefetchEntryMatchesDatabase(key, databaseId)) {
+      entry.onSeedsReadyCallbacks.clear();
+      sharedPrefetchEntries.delete(key);
+    }
+  }
+}
+
+function clearDatabaseRowSeeds(databaseId: string) {
+  const prefix = `${databaseId}_rows_`;
 
   for (const key of rowDocSeedCache.keys()) {
     if (key.startsWith(prefix)) {
@@ -499,13 +633,6 @@ export function clearDatabaseRowDocSeedCache(databaseId: string) {
     if (key.startsWith(prefix)) {
       doc.destroy();
       rowDocSeedDocCache.delete(key);
-    }
-  }
-
-  for (const [key, entry] of sharedPrefetchEntries.entries()) {
-    if (sharedPrefetchEntryMatchesDatabase(key, databaseId)) {
-      entry.onSeedsReadyCallbacks.clear();
-      sharedPrefetchEntries.delete(key);
     }
   }
 }
@@ -561,10 +688,13 @@ export async function invalidateDatabaseBlobAfterRestore(
 }
 
 export function retainDatabaseRowDocSeedCache(databaseId: string) {
+  synchronizeRowSeedCacheSession();
+  cancelInactiveDatabaseCache(databaseId);
   rowDocSeedCacheRetainCounts.set(databaseId, (rowDocSeedCacheRetainCounts.get(databaseId) ?? 0) + 1);
 }
 
 export function releaseDatabaseRowDocSeedCache(databaseId: string) {
+  synchronizeRowSeedCacheSession();
   const count = rowDocSeedCacheRetainCounts.get(databaseId) ?? 0;
 
   if (count > 1) {
@@ -573,7 +703,47 @@ export function releaseDatabaseRowDocSeedCache(databaseId: string) {
   }
 
   rowDocSeedCacheRetainCounts.delete(databaseId);
-  clearDatabaseRowDocSeedCache(databaseId);
+  const entries = Array.from(sharedPrefetchEntries).filter(([key]) => sharedPrefetchEntryMatchesDatabase(key, databaseId));
+
+  if (!entries.some(([, entry]) => !entry.settled || hasReusableSnapshot(entry, databaseId))) {
+    clearDatabaseRowDocSeedCache(databaseId);
+    return;
+  }
+
+  if (inactiveDatabaseCache) clearDatabaseRowDocSeedCache(inactiveDatabaseCache.databaseId);
+  const inactiveCache = {
+    databaseId,
+    timer: setTimeout(() => clearDatabaseRowDocSeedCache(databaseId), NAVIGATION_CACHE_TTL_MS),
+  };
+
+  inactiveDatabaseCache = inactiveCache;
+  const finishRelease = () => {
+    if (inactiveDatabaseCache !== inactiveCache || (rowDocSeedCacheRetainCounts.get(databaseId) ?? 0) > 0) return;
+    const currentEntries = Array.from(sharedPrefetchEntries).filter(([key]) =>
+      sharedPrefetchEntryMatchesDatabase(key, databaseId)
+    );
+
+    currentEntries.forEach(([, entry]) => entry.onSeedsReadyCallbacks.clear());
+    const pending = currentEntries.filter(([, entry]) => !entry.settled);
+
+    if (pending.length > 0) {
+      // Navigation may leave while a validated page is still being persisted.
+      // Reassess on completion without extending this release's idle deadline.
+      void Promise.allSettled(pending.map(([, entry]) => entry.promise)).then(finishRelease);
+      return;
+    }
+
+    if (!currentEntries.some(([, entry]) => hasReusableSnapshot(entry, databaseId))) {
+      clearDatabaseRowDocSeedCache(databaseId);
+      return;
+    }
+
+    currentEntries.forEach(([, entry]) => {
+      entry.needsRevalidation = true;
+    });
+  };
+
+  finishRelease();
 }
 
 function maxRidFromDiff(diff: database_blob.DatabaseBlobDiffResponse): DatabaseBlobRowRid | null {
@@ -653,6 +823,7 @@ function applySeedToCachedDoc(rowKey: string, seed: DatabaseRowDocSeed) {
   if (!isDatabaseRowDocSeedCurrent(seed)) return false;
   withDatabaseStorageFence(cachedDoc, seed.storageFence, () => applyYDoc(cachedDoc, seed.bytes, seed.encoderVersion));
   if (seed.storageFence) seedDocumentFences.set(cachedDoc, seed.storageFence);
+  if (seed.isOwnerCurrent) seedDocumentOwners.set(cachedDoc, seed.isOwnerCurrent);
   invalidateRowConditionCache(cachedDoc);
   return true;
 }
@@ -663,6 +834,7 @@ function seedRowDocCacheFromDiff(
   options?: Pick<PrefetchOptions, 'priorityRowIds'> & {
     invalidatedRowIds?: ReadonlySet<string>;
     storageFence?: DatabaseStorageFence;
+    isOwnerCurrent?: () => boolean;
   }
 ) {
   const updates = [...diff.creates, ...diff.updates];
@@ -691,7 +863,11 @@ function seedRowDocCacheFromDiff(
 
     if (!state) return;
 
-    const seed = createDatabaseRowDocSeed(rowId, { ...state, storageFence: options?.storageFence });
+    const seed = createDatabaseRowDocSeed(rowId, {
+      ...state,
+      storageFence: options?.storageFence,
+      isOwnerCurrent: options?.isOwnerCurrent,
+    });
 
     applySeedToSharedRowDoc(rowKey, seed);
     rowDocSeedLookup.set(rowKey, seed);
@@ -734,7 +910,11 @@ function seedRowDocCacheFromDiff(
 
     if (!state) return;
 
-    const seed = createDatabaseRowDocSeed(rowId, { ...state, storageFence: options?.storageFence });
+    const seed = createDatabaseRowDocSeed(rowId, {
+      ...state,
+      storageFence: options?.storageFence,
+      isOwnerCurrent: options?.isOwnerCurrent,
+    });
 
     applySeedToSharedRowDoc(rowKey, seed);
     rowDocSeedLookup.set(rowKey, seed);
@@ -1002,7 +1182,7 @@ async function applyRowUpdate(
     docBytes: doc.docState.docState?.length ?? 0,
   });
 
-  await applyCollabUpdate(docId, doc.docState);
+  await applyCollabUpdate(docId, doc.docState, { shouldApply: () => !isInvalidated() });
 
   Log.debug('[Database] applyRowUpdate completed', {
     databaseId,
@@ -1192,6 +1372,7 @@ async function fetchReadyDiff(
   options: {
     cachedRid: DatabaseBlobRowRid | null;
     forceFullSync?: boolean;
+    assertCurrent?: () => void;
   }
 ): Promise<FetchDiffResult> {
   const cachedRid = options.cachedRid;
@@ -1229,8 +1410,11 @@ async function fetchReadyDiff(
       });
 
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        options.assertCurrent?.();
         const attemptStartedAt = Date.now();
         const diff = await databaseBlobDiff(workspaceId, databaseId, request);
+
+        options.assertCurrent?.();
 
         Log.debug('[Database] blob diff page response', {
           databaseId,
@@ -1367,12 +1551,21 @@ async function fetchReadyDiff(
 }
 
 export async function prefetchDatabaseBlobDiff(workspaceId: string, databaseId: string, options?: PrefetchOptions) {
+  synchronizeRowSeedCacheSession();
   const { sharedKey, entry: existingEntry } = findSharedPrefetchEntry(workspaceId, databaseId, options);
 
-  if (existingEntry?.storageFence && !isDatabaseStorageFenceCurrent(existingEntry.storageFence))
+  if (
+    existingEntry &&
+    (!isTokenSessionCurrent(existingEntry.session) ||
+      (existingEntry.storageFence && !isDatabaseStorageFenceCurrent(existingEntry.storageFence)))
+  ) {
     existingEntry.invalidated = true;
+  }
 
-  if (existingEntry?.promise && !existingEntry.invalidated) {
+  const retainedSnapshot =
+    existingEntry?.needsRevalidation && hasReusableSnapshot(existingEntry, databaseId) ? existingEntry : undefined;
+
+  if (existingEntry?.promise && !existingEntry.invalidated && !existingEntry.needsRevalidation) {
     const canReuseSettledFullSeed = Boolean(
       options?.forceFullSync && existingEntry.settled && existingEntry.hasCompleteSeedSet
     );
@@ -1410,24 +1603,66 @@ export async function prefetchDatabaseBlobDiff(workspaceId: string, databaseId: 
   // sync-outbox module's replacement session at completion time.
   const outboxSession = getCurrentOutboxSession(workspaceId);
   const cachedRid = options?.forceFullSync ? null : readCachedRid(databaseId);
+  const session = captureTokenSession();
+  const isOwnerCurrent = () => isTokenSessionCurrent(session);
   const entry: SharedPrefetchEntry = {
+    session,
+    seedRowIds: new Set(retainedSnapshot?.seedRowIds),
     priorityRowIds: new Set(),
     invalidatedRowIds: new InvalidatedRows(),
     onSeedsReadyCallbacks: new Set(),
     seedsReady: false,
     hasCompleteSeedSet: false,
-    coversFullSnapshot: cachedRid === null,
+    coversFullSnapshot: Boolean(retainedSnapshot) || cachedRid === null,
   };
+
+  entry.invalidatedRowIds.session = session;
 
   applyPrefetchOptions(entry, options);
 
+  const discardUnvalidatedSnapshot = () => {
+    if (
+      !retainedSnapshot ||
+      entry.seedsReady ||
+      entry.invalidated ||
+      !isOwnerCurrent() ||
+      (entry.storageFence && !isDatabaseStorageFenceCurrent(entry.storageFence)) ||
+      sharedPrefetchEntries.get(sharedKey) !== entry
+    ) {
+      return;
+    }
+
+    // A failed catch-up must fall back to canonical row loading, not present
+    // the retained baseline as a freshly validated complete seed set.
+    for (const rowId of new Set([...retainedSnapshot.seedRowIds, ...entry.seedRowIds])) {
+      invalidateDatabaseRowDocSeedGeneration(rowId);
+    }
+
+    clearDatabaseRowSeeds(databaseId);
+    entry.seedRowIds.clear();
+    entry.hasCompleteSeedSet = false;
+    entry.coversFullSnapshot = false;
+  };
+
   const seedDiff = (diff: database_blob.DatabaseBlobDiffResponse, source: string) => {
-    if (entry.invalidated || (entry.storageFence && !isDatabaseStorageFenceCurrent(entry.storageFence)))
-      throw new Error('Database prefetch superseded by restore');
+    assertPrefetchCurrent(entry);
+    for (const update of [...diff.creates, ...diff.updates]) {
+      const rowId = decodeRowId(update.rowId);
+
+      if (rowId) entry.seedRowIds.add(rowId);
+    }
+
+    for (const deleted of diff.deletes) {
+      const rowId = decodeRowId(deleted.rowId);
+
+      if (rowId) entry.seedRowIds.delete(rowId);
+    }
+
     const seedSummary = seedRowDocCacheFromDiff(databaseId, diff, {
       priorityRowIds: Array.from(entry.priorityRowIds),
       invalidatedRowIds: entry.invalidatedRowIds,
       storageFence: entry.storageFence,
+      isOwnerCurrent,
     });
 
     Log.debug('[Database] blob seed cache prepared', {
@@ -1447,22 +1682,33 @@ export async function prefetchDatabaseBlobDiff(workspaceId: string, databaseId: 
 
     entry.storageFence = storageFence;
     entry.invalidatedRowIds.storageFence = storageFence;
-    const capturedRid = options?.forceFullSync ? null : readCachedRid(databaseId, storageFence);
+    assertPrefetchCurrent(entry);
+    const resumeSnapshot = retainedSnapshot && hasReusableSnapshot(retainedSnapshot, databaseId);
 
-    entry.coversFullSnapshot = capturedRid === null;
+    if (!resumeSnapshot) entry.seedRowIds.clear();
+    const capturedRid = resumeSnapshot
+      ? retainedSnapshot.snapshotRid!
+      : retainedSnapshot || options?.forceFullSync
+      ? null
+      : readCachedRid(databaseId, storageFence);
+
+    entry.coversFullSnapshot = capturedRid === null || Boolean(resumeSnapshot);
     const sourceLabel = options?.forceFullSync ? 'ready full' : 'ready delta';
     const { diff, ready, stagedPages } = await fetchReadyDiff(workspaceId, databaseId, {
       cachedRid: capturedRid,
-      forceFullSync: options?.forceFullSync,
+      forceFullSync: options?.forceFullSync && !resumeSnapshot,
+      assertCurrent: () => assertPrefetchCurrent(entry),
     });
 
     if (!ready) {
+      discardUnvalidatedSnapshot();
       if (options?.requirePersistence) throw new Error('The restored database is still finalizing. Retry shortly.');
       notifySeedsReady(entry);
       return diff;
     }
 
     let allPagesPersisted = true;
+    let hasMissingRows = false;
     let maxRid: DatabaseBlobRowRid | null = null;
     const pageCount = stagedPages?.pageCount ?? 0;
 
@@ -1471,8 +1717,7 @@ export async function prefetchDatabaseBlobDiff(workspaceId: string, databaseId: 
     }
 
     try {
-      if (entry.invalidated || (entry.storageFence && !isDatabaseStorageFenceCurrent(entry.storageFence)))
-        throw new Error('Database prefetch superseded by restore');
+      assertPrefetchCurrent(entry);
       if (pageCount === 0) {
         throw new Error('database blob diff paging protocol error: Ready walk did not stage any pages');
       }
@@ -1484,14 +1729,17 @@ export async function prefetchDatabaseBlobDiff(workspaceId: string, databaseId: 
         const page = database_blob.DatabaseBlobDiffResponse.decode(await stagedPages.read(index));
 
         seedDiff(page, `ready page ${index + 1}/${pageCount}`);
+        hasMissingRows = hasMissingRows || page.missingRowIds.length > 0;
         maxRid = latestRid(maxRid, maxRidFromDiff(page));
       }
 
-      entry.hasCompleteSeedSet = true;
+      entry.hasCompleteSeedSet = !hasMissingRows;
       notifySeedsReady(entry);
 
       for (let index = 0; index < pageCount; index += 1) {
         const page = database_blob.DatabaseBlobDiffResponse.decode(await stagedPages.read(index));
+
+        assertPrefetchCurrent(entry);
         const persisted = await persistDiffToIndexedDB(
           databaseId,
           page,
@@ -1509,13 +1757,16 @@ export async function prefetchDatabaseBlobDiff(workspaceId: string, databaseId: 
       }
 
       const checkpointPublished = await publishWithDatabaseStorageFence(storageFence, () => {
+        assertPrefetchCurrent(entry);
         if (!entry.invalidated && !options?.forceFullSync && allPagesPersisted && maxRid) {
           writeCachedRid(databaseId, maxRid, storageFence);
         }
       });
 
       if (!checkpointPublished || entry.invalidated) throw new Error('Database prefetch superseded by restore');
+      assertPrefetchCurrent(entry);
       entry.persisted = allPagesPersisted && !storageFence.nonDurable;
+      entry.snapshotRid = latestRid(resumeSnapshot ? retainedSnapshot.snapshotRid ?? null : null, maxRid);
       if (!options?.forceFullSync && allPagesPersisted && maxRid) {
         Log.debug('[Database] blob updated rid cache after terminal page', { databaseId, maxRid, pageCount });
       } else if (!allPagesPersisted) {
@@ -1539,6 +1790,7 @@ export async function prefetchDatabaseBlobDiff(workspaceId: string, databaseId: 
   try {
     return await promise;
   } catch (error) {
+    discardUnvalidatedSnapshot();
     const currentEntry = sharedPrefetchEntries.get(sharedKey);
 
     if (currentEntry === entry) {

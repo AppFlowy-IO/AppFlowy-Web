@@ -247,6 +247,7 @@ export function constructFileStorageUrl(workspaceId: string, viewId?: string, fi
  * Resolves a file URL or ID into a complete accessible URL.
  * If the input is already a URL (http/https), it returns it as is.
  * If it's a file ID, it constructs the AppFlowy file storage URL.
+ * Device-local paths return an empty string because Web cannot read them.
  *
  * @param urlOrId - The file URL or ID
  * @param workspaceId - The workspace ID
@@ -254,11 +255,20 @@ export function constructFileStorageUrl(workspaceId: string, viewId?: string, fi
  * @returns The resolved complete URL
  */
 export function resolveFileUrl(urlOrId: string | undefined, workspaceId: string, viewId: string): string {
-  if (!urlOrId) return '';
+  if (!urlOrId || isLocalFilePath(urlOrId)) return '';
 
-  if (isFileURL(urlOrId)) {
+  if (isFileURL(urlOrId) || /^(?:blob:|data:)/i.test(urlOrId)) {
     return urlOrId;
   }
 
   return getAppFlowyFileUrl(workspaceId, viewId, urlOrId);
+}
+
+/** Desktop paths identify files on that device, not objects in cloud storage. */
+export function isLocalFilePath(value: string | undefined): boolean {
+  if (!value || isFileURL(value)) return false;
+
+  // Keep relative AppFlowy API URLs above, and recognize macOS/Linux paths,
+  // Windows drive/UNC paths, and file URIs even on old blocks without a type.
+  return /^(?:file:|[a-z]:[\\/]|[\\/]|\.{1,2}[\\/])/i.test(value.trim());
 }

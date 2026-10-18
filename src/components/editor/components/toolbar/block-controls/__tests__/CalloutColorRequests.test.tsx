@@ -12,6 +12,7 @@ import type { ReactNode } from 'react';
 const mockGetSubscriptions = jest.fn(async () => [{ plan: SubscriptionPlan.Pro }]);
 
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+jest.mock('@/components/main/app.hooks', () => ({ useAuthenticatedUserIdOptional: () => 'callout-color-user' }));
 jest.mock('slate-react', () => ({ useSlateStatic: () => ({}) }));
 jest.mock('@/components/editor/EditorContext', () => ({
   useEditorContext: () => ({ workspaceId: 'color-request-test', getSubscriptions: mockGetSubscriptions }),

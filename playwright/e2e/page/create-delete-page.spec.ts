@@ -1,119 +1,84 @@
-import { test, expect } from '@playwright/test';
-import { PageSelectors, ModalSelectors, SidebarSelectors } from '../../support/selectors';
-import { generateRandomEmail } from '../../support/test-config';
+import { test, expect, type Page } from '@playwright/test';
+
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
-import { expandSpace } from '../../support/page/flows';
-import { deletePageByName } from '../../support/page/page-actions';
-import { closeModalsIfOpen } from '../../support/test-helpers';
+import { PageSelectors, ModalSelectors, SidebarSelectors, ViewActionSelectors } from '../../support/selectors';
+import { generateRandomEmail } from '../../support/test-config';
 
-/**
- * Page Create and Delete Tests
- * Migrated from: cypress/e2e/page/create-delete-page.cy.ts
- */
-const isMac = process.platform === 'darwin';
+async function expandCreatedParent(page: Page, parentId: string) {
+  const space = page.getByTestId(`space-${parentId}`);
 
-test.describe('Page Create and Delete Tests', () => {
-  let testEmail: string;
-  let testPageName: string;
+  await expect(space).toBeVisible();
+  if (await space.getAttribute('data-expanded') !== 'true') await space.getByTestId('space-name').click();
+  await expect(space).toHaveAttribute('data-expanded', 'true');
+}
 
-  test.beforeEach(async () => {
-    testEmail = generateRandomEmail();
-    testPageName = 'e2e test-create page';
-  });
+test('creates, renames, reopens and deletes the exact atomic Document across reloads', async ({ page, request }) => {
+  const title = `Atomic Document ${Date.now()}`;
 
-  test.describe('Page Management Tests', () => {
-    test('should login, create a page, reload and verify page exists, delete page, reload and verify page is gone', async ({
-      page,
-      request,
-    }) => {
-      page.on('pageerror', (err) => {
-        if (err.message.includes('No workspace or service found')) {
-          return;
-        }
-      });
+  await signInAndWaitForApp(page, request, generateRandomEmail(), 0);
+  await expect(SidebarSelectors.pageHeader(page)).toBeVisible();
+  await PageSelectors.newPageButton(page).click();
+  const newPageModal = ModalSelectors.newPageModal(page);
 
-      // Step 1: Login
-      await signInAndWaitForApp(page, request, testEmail);
+  await expect(newPageModal).toBeVisible();
+  await newPageModal.getByTestId('space-item').first().click();
+  const created = page.waitForResponse((response) =>
+    response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/v2/page-view/document/default'));
 
-      // Wait for the app to fully load
-      await expect(SidebarSelectors.pageHeader(page)).toBeVisible({ timeout: 30000 });
-      await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 30000 });
-      await page.waitForTimeout(2000);
+  await newPageModal.getByRole('button', { name: 'Add', exact: true }).click();
+  const response = await created;
+  const receipt = await response.json();
+  const command = response.request().postDataJSON();
+  const documentId = command.view_id as string;
+  const parentId = command.parent_view_id as string;
 
-      // Wait for the new page button
-      await expect(PageSelectors.newPageButton(page)).toBeVisible({ timeout: 20000 });
+  expect(receipt.code).toBe(0);
+  expect(receipt.data.result.view_id).toBe(documentId);
+  const viewModal = page.getByRole('dialog').filter({ has: page.getByTestId('view-modal-close') });
+  const titleInput = viewModal.locator(`[id="editor-title-${documentId}"]`);
 
-      // Step 2: Create a new page
-      await PageSelectors.newPageButton(page).click();
-      await page.waitForTimeout(1000);
+  await expect(viewModal.locator(`[id="editor-${documentId}"]`)).toBeVisible();
+  await expect(titleInput).toBeVisible();
+  const renamed = page.waitForResponse((result) => result.request().method() === 'POST' &&
+    new URL(result.url()).pathname.endsWith(`/page-view/${documentId}/update-name`) && result.request().postDataJSON().name === title);
 
-      // Handle the new page modal
-      const modal = ModalSelectors.newPageModal(page);
-      await expect(modal).toBeVisible();
-      await modal.getByTestId('space-item').first().click();
-      await page.waitForTimeout(500);
-      await modal.getByRole('button', { name: 'Add' }).click();
-      await page.waitForTimeout(3000);
+  await titleInput.fill(title);
+  await titleInput.press('Enter');
+  expect((await (await renamed).json()).code).toBe(0);
+  await expect(titleInput).toHaveText(title);
+  await viewModal.getByTestId('view-modal-close').click();
+  await expandCreatedParent(page, parentId);
+  const sidebarPage = PageSelectors.pageByViewId(page, documentId);
 
-      // Close any remaining modal dialogs
-      await closeModalsIfOpen(page);
+  await expect(sidebarPage.getByTestId('page-name')).toHaveText(title);
+  await sidebarPage.getByTestId('page-name').click();
+  await expect(page).toHaveURL(new RegExp(documentId));
+  await expect(sidebarPage).toHaveAttribute('data-selected', 'true');
+  await expect(page.locator(`[id="editor-title-${documentId}"]`)).toHaveText(title);
+  await expect(page.locator(`[id="editor-${documentId}"]`)).toBeVisible();
 
-      // Set the page title
-      const titleInput = PageSelectors.titleInput(page).first();
-      await expect(titleInput).toBeVisible();
-      await page.waitForTimeout(1000);
+  await page.reload();
+  await expect(SidebarSelectors.pageHeader(page)).toBeVisible();
+  await expandCreatedParent(page, parentId);
+  await expect(sidebarPage.getByTestId('page-name')).toHaveText(title);
+  await expect(sidebarPage).toHaveAttribute('data-selected', 'true');
+  await expect(page.locator(`[id="editor-title-${documentId}"]`)).toHaveText(title);
+  await expect(page.locator(`[id="editor-${documentId}"]`)).toBeVisible();
 
-      await titleInput.click({ force: true });
-      await page.keyboard.press(isMac ? 'Meta+A' : 'Control+A');
-      await titleInput.pressSequentially(testPageName, { delay: 50 });
-      await page.keyboard.press('Enter');
-      await page.waitForTimeout(2000);
+  const exactItem = PageSelectors.itemByViewId(page, documentId);
 
-      // Step 3: Reload and verify the page exists
-      await page.reload();
-      await page.waitForTimeout(3000);
+  await exactItem.hover();
+  await exactItem.getByTestId('page-more-actions').click();
+  await expect(ViewActionSelectors.popover(page)).toBeVisible();
+  const deleted = page.waitForResponse((result) => result.request().method() === 'POST' &&
+    new URL(result.url()).pathname.endsWith(`/page-view/${documentId}/move-to-trash`));
 
-      // Expand the first space to see its pages
-      await expandSpace(page);
-      await page.waitForTimeout(1000);
-
-      // Verify the page exists
-      const pageNames = PageSelectors.names(page);
-      const pageTexts = await pageNames.allTextContents();
-      const trimmedNames = pageTexts.map((t) => t.trim());
-
-      let createdPageName = '';
-      if (trimmedNames.includes(testPageName)) {
-        createdPageName = testPageName;
-      } else {
-        // If title didn't save properly, find "Untitled" page
-        const hasUntitled = trimmedNames.some((name) => name === 'Untitled');
-        if (hasUntitled) {
-          createdPageName = 'Untitled';
-        } else {
-          throw new Error(
-            `Could not find created page. Expected "${testPageName}", found: ${trimmedNames.join(', ')}`
-          );
-        }
-      }
-
-      // Step 4: Delete the page we just created
-      await deletePageByName(page, createdPageName);
-
-      // Step 5: Reload and verify the page is gone
-      await page.reload();
-      await page.waitForTimeout(3000);
-
-      // Expand the space again
-      await expandSpace(page);
-      await page.waitForTimeout(1000);
-
-      // Verify the page no longer exists
-      const pageNamesAfterDelete = await PageSelectors.names(page).allTextContents();
-      const trimmedAfterDelete = pageNamesAfterDelete.map((t) => t.trim());
-      const pageStillExists = trimmedAfterDelete.includes(createdPageName);
-
-      expect(pageStillExists).toBe(false);
-    });
-  });
+  await ViewActionSelectors.deleteButton(page).click();
+  expect((await (await deleted).json()).code).toBe(0);
+  await expect(sidebarPage).toHaveCount(0);
+  await page.reload();
+  await expect(SidebarSelectors.pageHeader(page)).toBeVisible();
+  await expandCreatedParent(page, parentId);
+  await expect(sidebarPage).toHaveCount(0);
+  await expect(PageSelectors.names(page).filter({ hasText: title })).toHaveCount(0);
 });

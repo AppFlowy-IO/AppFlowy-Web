@@ -18,8 +18,6 @@ import {
   View,
   CreatePagePayload,
   CreatePageResponse,
-  CreateDatabaseViewPayload,
-  CreateDatabaseViewResponse,
   DuplicatePageOperationOptions,
   TextCount,
   LoadDatabasePrompts,
@@ -113,7 +111,6 @@ export interface EditorContextState {
   duplicatePage?: (viewId: string, options?: DuplicatePageOperationOptions) => Promise<void>;
   openPageModal?: (viewId: string) => void;
   loadViews?: (variant?: UIVariant) => Promise<View[] | undefined>;
-  createDatabaseView?: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
   onWordCountChange?: (viewId: string, props: TextCount) => void;
   uploadFile?: (file: File, onProgress?: (progress: number) => void) => Promise<string>;
   requestInstance?: AxiosInstance | null;
@@ -175,7 +172,6 @@ export const EditorContextProvider = ({
   duplicatePage,
   openPageModal,
   loadViews,
-  createDatabaseView,
   onWordCountChange,
   uploadFile,
   requestInstance,
@@ -274,7 +270,6 @@ export const EditorContextProvider = ({
       duplicatePage,
       openPageModal,
       loadViews,
-      createDatabaseView,
       onWordCountChange,
       uploadFile,
       requestInstance,
@@ -330,7 +325,6 @@ export const EditorContextProvider = ({
       duplicatePage,
       openPageModal,
       loadViews,
-      createDatabaseView,
       onWordCountChange,
       uploadFile,
       requestInstance,

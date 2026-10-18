@@ -192,7 +192,7 @@ test.describe('Password Sign Up Flow', () => {
         })
       );
 
-      await page.route('**/api/user/update', (route: any) =>
+      await page.route('**/api/user/update{,?**}', (route: any) =>
         route.fulfill({
           status: 200,
           contentType: 'application/json',

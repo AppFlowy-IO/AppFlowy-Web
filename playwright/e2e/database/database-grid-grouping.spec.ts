@@ -22,10 +22,10 @@
  * - grouped_search_test.dart
  *
  * The Flutter controller-sync cases map to the colocated Yjs selector/hook
- * suites. Runnable Web exclusions are grouped search (Web has no database
- * search control) and list_group_visibility.feature (Web currently renders
- * List as unsupported). Board-only and native-mobile interaction suites are
- * outside this Grid migration.
+ * suites. The only runnable Web exclusion is grouped search (Web has no
+ * database search control); list_group_visibility.feature is migrated as
+ * playwright/bdd/features/database/list-group-visibility.feature. Board-only
+ * and native-mobile interaction suites are outside this Grid migration.
  */
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
@@ -81,10 +81,13 @@ async function loginAndCreateGroupingGrid(page: Page, request: Parameters<typeof
   await loginAndCreateGrid(page, request, generateRandomEmail());
 }
 
+const gridGroupSettingsMenu = (page: Page) => page.getByTestId('grid-group-settings-menu');
+const gridGroupByMenu = (page: Page) => page.getByTestId('grid-group-by-menu');
+
 async function openGridGroupSettings(page: Page) {
   await page.getByTestId('database-actions-settings').click();
   await page.getByTestId('grid-group-settings-trigger').click();
-  await expect(page.getByTestId('grid-group-settings-menu')).toBeVisible();
+  await expect(gridGroupSettingsMenu(page)).toBeVisible();
 }
 
 async function closeGridGroupSettings(page: Page) {
@@ -92,11 +95,65 @@ async function closeGridGroupSettings(page: Page) {
   await page.keyboard.press('Escape');
 }
 
-async function groupGridByField(page: Page, fieldId: string) {
+/** Asserts the elements appear in document order, which is their visual order inside one menu. */
+async function expectDomOrder(page: Page, testIds: string[]) {
+  const order = await page.evaluate((ids) => {
+    const nodes = ids.map((id) => document.querySelector(`[data-testid="${id}"]`));
+
+    if (nodes.some((node) => node === null)) {
+      return ids.map((id, index) => (nodes[index] ? id : `missing:${id}`));
+    }
+
+    return (nodes as Element[])
+      .slice()
+      .sort((left, right) => (left.compareDocumentPosition(right) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1))
+      .map((node) => node.getAttribute('data-testid'));
+  }, testIds);
+
+  expect(order).toEqual(testIds);
+}
+
+/**
+ * Desktop's grouped menu (_GroupByList) moves the field list into a nested
+ * "Group by ▸ <field>" submenu; only the ungrouped menu lists fields inline.
+ */
+async function openGridGroupByMenu(page: Page) {
+  await page.getByTestId('grid-group-by-trigger').click();
+  await expect(gridGroupByMenu(page)).toBeVisible();
+
+  return gridGroupByMenu(page);
+}
+
+async function chooseGridGroupingField(page: Page, fieldId: string) {
   await openGridGroupSettings(page);
-  await page.getByTestId(`grid-group-by-field-${fieldId}`).click();
+  const isGrouped = await page.getByTestId('grid-group-by-trigger').isVisible();
+  const fieldList = isGrouped ? await openGridGroupByMenu(page) : gridGroupSettingsMenu(page);
+
+  await fieldList.getByTestId(`grid-group-by-field-${fieldId}`).click();
   await closeGridGroupSettings(page);
+}
+
+async function groupGridByField(page: Page, fieldId: string) {
+  await chooseGridGroupingField(page, fieldId);
   await expect(gridGroupHeaders(page).first()).toBeVisible({ timeout: 15000 });
+}
+
+/** Desktop _GroupVisibilityRow: the eye icon mirrors the row's checked state; there is no switch. */
+async function expectGridGroupEye(page: Page, groupId: string, shown: boolean) {
+  const row = page.getByTestId(`grid-group-visibility-${groupId}`);
+
+  await expect(row).toHaveAttribute('role', 'menuitemcheckbox');
+  await expect(row).toHaveAttribute('aria-checked', String(shown));
+  await expect(row.getByTestId(`grid-group-visibility-${shown ? 'shown' : 'hidden'}-${groupId}`)).toHaveCount(1);
+  await expect(row.getByTestId(`grid-group-visibility-${shown ? 'hidden' : 'shown'}-${groupId}`)).toHaveCount(0);
+  await expect(row.locator('[role="switch"]')).toHaveCount(0);
+}
+
+/** Desktop dismisses the whole settings menu once a date condition is picked. */
+async function selectGridDateGroupCondition(page: Page, condition: number) {
+  await page.getByTestId(`grid-date-group-condition-${condition}`).click();
+  await expect(gridGroupSettingsMenu(page)).toBeHidden();
+  await expect(page.locator('[data-slot="dropdown-menu-content"]:visible')).toHaveCount(0);
 }
 
 async function assignNewSelectOption(page: Page, fieldId: string, rowIndex: number, optionName: string) {
@@ -110,6 +167,7 @@ async function assignExistingSelectOptions(page: Page, fieldId: string, rowIndex
   for (const optionName of optionNames) {
     await selectExistingOption(page, optionName);
   }
+
   await page.keyboard.press('Escape');
 }
 
@@ -182,8 +240,15 @@ async function changeDatabaseLayout(page: Page, layout: 'Grid' | 'Board') {
 async function groupBoardByFieldName(page: Page, fieldName: string) {
   await page.getByTestId('database-actions-settings').click();
   await page.getByTestId('board-group-settings-trigger').click();
+  await expect(page.getByTestId('board-group-settings-menu')).toBeVisible();
 
-  const field = page.getByTestId('board-group-by-field').filter({
+  // Board views always stay grouped, so the field list lives in the nested
+  // "Group by ▸" submenu like desktop's _GroupByList.
+  await page.getByTestId('board-group-by-trigger').click();
+  const groupByMenu = page.getByTestId('board-group-by-menu');
+
+  await expect(groupByMenu).toBeVisible();
+  const field = groupByMenu.getByTestId('board-group-by-field').filter({
     has: page.getByTestId('board-group-by-field-name').filter({ hasText: fieldName }),
   });
 
@@ -236,9 +301,24 @@ test.describe('Database Grid grouping', () => {
     await typeTextIntoCell(page, primaryFieldId, 2, 'C');
     await typeTextIntoCell(page, notesFieldId, 0, 'before grouping');
 
-    await openGridGroupSettings(page);
-    await expect(page.getByTestId('grid-hide-all-groups')).toHaveCount(0);
+    await page.getByTestId('database-actions-settings').click();
+    // Desktop database_settings_list.dart lists Properties, Layout, Group.
+    await expectDomOrder(page, [
+      'database-properties-settings-trigger',
+      'database-layout-settings-trigger',
+      'grid-group-settings-trigger',
+    ]);
+    await page.getByTestId('grid-group-settings-trigger').click();
+    await expect(gridGroupSettingsMenu(page)).toBeVisible();
+
+    // Ungrouped (desktop _EmptyGroupByList): the trigger carries no field
+    // name and the menu is only "Group by", a ticked None and the fields.
+    await expect(page.getByTestId('grid-group-settings-field')).toHaveCount(0);
+    await expect(page.getByTestId('grid-group-by-trigger')).toHaveCount(0);
+    await expect(page.getByTestId('grid-group-by-none').locator('[data-slot="dropdown-menu-tick"]')).toHaveCount(1);
+    await expect(page.getByTestId('grid-hide-empty-groups-toggle')).toHaveCount(0);
     await expect(page.locator('[data-testid^="grid-group-visibility-"]')).toHaveCount(0);
+    await expect(page.getByTestId('grid-remove-grouping')).toHaveCount(0);
     await page.getByTestId(`grid-group-by-field-${primaryFieldId}`).click();
     await closeGridGroupSettings(page);
 
@@ -281,6 +361,27 @@ test.describe('Database Grid grouping', () => {
     await page.getByTestId('grid-group-header-B').getByTestId('grid-group-collapse-toggle').click();
     await expect(DatabaseGridSelectors.dataRows(page)).toHaveCount(4);
 
+    // Grouped (desktop _GroupByList): the trigger names the field, the field
+    // list moves into the nested "Group by ▸" submenu with the tick on the
+    // current field, and None is only offered there.
+    await openGridGroupSettings(page);
+    await expect(page.getByTestId('grid-group-settings-field')).toHaveText('Name');
+    await expect(page.getByTestId('grid-group-by-current-field')).toHaveText('Name');
+    await expect(gridGroupSettingsMenu(page).getByTestId('grid-group-by-none')).toHaveCount(0);
+    await expect(gridGroupSettingsMenu(page).getByTestId(`grid-group-by-field-${primaryFieldId}`)).toHaveCount(0);
+    await expectDomOrder(page, ['grid-group-by-trigger', 'grid-hide-empty-groups-toggle', 'grid-group-visibility-B']);
+    await expectDomOrder(page, ['grid-group-visibility-C', 'grid-remove-grouping']);
+
+    const groupByMenu = await openGridGroupByMenu(page);
+
+    await expect(groupByMenu.getByTestId('grid-group-by-none')).toHaveCount(1);
+    await expect(groupByMenu.getByTestId('grid-group-by-none').locator('[data-slot="dropdown-menu-tick"]')).toHaveCount(0);
+    await expect(
+      groupByMenu.getByTestId(`grid-group-by-field-${primaryFieldId}`).getByTestId('grid-group-by-field-selected')
+    ).toHaveCount(1);
+    await expect(groupByMenu.getByTestId('grid-group-by-field-selected')).toHaveCount(1);
+    await closeGridGroupSettings(page);
+
     // Header actions and settings share the same persisted visibility state.
     await page.getByTestId('grid-group-header-C').hover();
     await page.getByTestId('grid-group-header-C').getByTestId('grid-group-actions').click();
@@ -288,7 +389,9 @@ test.describe('Database Grid grouping', () => {
     await expect(page.getByTestId('grid-group-header-C')).toHaveCount(0);
 
     await openGridGroupSettings(page);
+    await expectGridGroupEye(page, 'C', false);
     await page.getByTestId('grid-group-visibility-C').click();
+    await expectGridGroupEye(page, 'C', true);
     await closeGridGroupSettings(page);
     await expect(page.getByTestId('grid-group-header-C')).toBeVisible();
 
@@ -328,27 +431,42 @@ test.describe('Database Grid grouping', () => {
     await expect(page.getByTestId('grid-group-header-C')).toHaveCount(0);
 
     await openGridGroupSettings(page);
+    await expectGridGroupEye(page, 'C', false);
     await page.getByTestId('grid-group-visibility-C').click();
     await closeGridGroupSettings(page);
     await expect(page.getByTestId('grid-group-header-C')).toBeVisible();
 
-    // Desktop exposes bulk visibility actions in the same settings section.
+    // Desktop has no Show all / Hide all: every Groups row toggles its own eye,
+    // and with hide-empty off the empty default group is listed as well.
     await openGridGroupSettings(page);
-    await page.getByTestId('grid-hide-all-groups').click();
+    await expect(page.getByTestId('grid-hide-all-groups')).toHaveCount(0);
+    await expect(page.getByTestId('grid-show-all-groups')).toHaveCount(0);
+    await expectGridGroupEye(page, 'B', true);
+    await expectGridGroupEye(page, 'C', true);
+    await expectGridGroupEye(page, primaryFieldId, true);
+    await page.getByTestId('grid-group-visibility-B').click();
+    await expectGridGroupEye(page, 'B', false);
+    await page.getByTestId('grid-group-visibility-C').click();
+    await expectGridGroupEye(page, 'C', false);
     await closeGridGroupSettings(page);
     await expect(page.getByTestId('grid-group-header-B')).toHaveCount(0);
     await expect(page.getByTestId('grid-group-header-C')).toHaveCount(0);
     await expect(page.getByTestId(`grid-group-header-${primaryFieldId}`)).toBeVisible();
 
     await openGridGroupSettings(page);
-    await page.getByTestId('grid-show-all-groups').click();
+    await page.getByTestId('grid-group-visibility-B').click();
+    await expectGridGroupEye(page, 'B', true);
+    await page.getByTestId('grid-group-visibility-C').click();
+    await expectGridGroupEye(page, 'C', true);
     await closeGridGroupSettings(page);
     await expect(page.getByTestId('grid-group-header-B')).toBeVisible();
     await expect(page.getByTestId('grid-group-header-C')).toBeVisible();
 
+    // Desktop buildDeleteGroupItem: "Delete grouping" closes the menu and clears the setting.
     await openGridGroupSettings(page);
+    await expect(page.getByTestId('grid-remove-grouping')).toHaveText('Delete grouping');
     await page.getByTestId('grid-remove-grouping').click();
-    await closeGridGroupSettings(page);
+    await expect(gridGroupSettingsMenu(page)).toBeHidden();
     await expect(page.locator('[data-testid^="grid-group-header-"]')).toHaveCount(0);
     await expect(DatabaseGridSelectors.dataRows(page)).toHaveCount(4);
 
@@ -468,9 +586,7 @@ test.describe('Database Grid grouping', () => {
       .poll(() => gridGroupHeaders(page).evaluateAll((headers) => headers.map((header) => header.dataset.groupId)))
       .toEqual(['number_interval_70_80', 'number_above_100']);
 
-    await openGridGroupSettings(page);
-    await page.getByTestId(`grid-group-by-field-${urlFieldId}`).click();
-    await closeGridGroupSettings(page);
+    await chooseGridGroupingField(page, urlFieldId);
     await expect(
       page.getByTestId('grid-group-header-https://appflowy.io').getByTestId('grid-group-row-count')
     ).toHaveText('2');
@@ -582,14 +698,24 @@ test.describe('Database Grid grouping', () => {
     await groupGridByField(page, primaryFieldId);
     await expect(gridGroupHeaders(page)).toHaveCount(3);
 
-    await openGridGroupSettings(page);
-    await page.getByTestId(`grid-group-by-field-${checkboxFieldId}`).click();
-    await closeGridGroupSettings(page);
+    await chooseGridGroupingField(page, checkboxFieldId);
 
     await expect(gridGroupHeaders(page)).toHaveCount(2);
     await expect(gridGroupHeaders(page).getByRole('checkbox')).toHaveCount(2);
     await expect(gridGroupHeaders(page).getByText('Checkbox', { exact: true })).toHaveCount(2);
     await expect(DatabaseGridSelectors.dataRows(page)).toHaveCount(3);
+
+    // Desktop hides "Hide empty groups" for Checkbox groupings; Yes and No
+    // stay ordinary Groups rows under the renamed trigger.
+    await openGridGroupSettings(page);
+    await expect(page.getByTestId('grid-group-settings-field')).toHaveText('Checkbox');
+    await expect(page.getByTestId('grid-group-by-current-field')).toHaveText('Checkbox');
+    await expect(page.getByTestId('grid-hide-empty-groups-toggle')).toHaveCount(0);
+    await expect(page.getByTestId('grid-hide-empty-groups-switch')).toHaveCount(0);
+    await expectGridGroupEye(page, 'Yes', true);
+    await expectGridGroupEye(page, 'No', true);
+    await expect(page.getByTestId('grid-remove-grouping')).toHaveText('Delete grouping');
+    await closeGridGroupSettings(page);
   });
 
   test('isolates grouping per Grid view and restores it after switching tabs', async ({ page, request }) => {
@@ -654,6 +780,8 @@ test.describe('Database Grid grouping', () => {
     await expect(DatabaseGridSelectors.dataRows(page)).toHaveCount(3);
     await openGridGroupSettings(page);
     await expect(page.getByTestId('grid-group-by-none')).toContainText('None');
+    await expect(page.getByTestId('grid-group-by-trigger')).toHaveCount(0);
+    await expect(page.getByTestId('grid-group-settings-field')).toHaveCount(0);
     await expect(page.getByTestId('grid-remove-grouping')).toHaveCount(0);
     await closeGridGroupSettings(page);
   });
@@ -709,10 +837,25 @@ test.describe('Database Grid grouping', () => {
     await selectDateByDay(page, 21);
     await groupGridByField(page, dateFieldId);
 
-    // Day grouping yields two dated groups plus the non-empty default group.
+    // Desktop's "Group condition" rows reuse its field row: they sit after the
+    // Groups rows, carry the date field's icon, and tick the current condition.
     await openGridGroupSettings(page);
-    await page.getByTestId('grid-date-group-condition-1').click();
-    await closeGridGroupSettings(page);
+    await expectDomOrder(page, [
+      'grid-hide-empty-groups-toggle',
+      `grid-group-visibility-${dateFieldId}`,
+      'grid-date-group-condition-0',
+      'grid-date-group-condition-4',
+      'grid-remove-grouping',
+    ]);
+    await expect(
+      page.getByTestId('grid-date-group-condition-1').getByTestId('grid-date-group-condition-field-icon')
+    ).toHaveCount(1);
+    await expect(page.getByTestId('grid-date-group-condition-0').locator('[data-slot="dropdown-menu-tick"]')).toHaveCount(
+      1
+    );
+
+    // Day grouping yields two dated groups plus the non-empty default group.
+    await selectGridDateGroupCondition(page, 1);
     await expect(gridGroupHeaders(page)).toHaveCount(3);
     await expect(DatabaseGridSelectors.dataRows(page)).toHaveCount(3);
 
@@ -720,14 +863,15 @@ test.describe('Database Grid grouping', () => {
     // Keep empty groups visible to prove the obsolete Day IDs were rebuilt,
     // rather than merely masked by the layout's hide-empty setting.
     await openGridGroupSettings(page);
+    await expect(page.getByTestId('grid-date-group-condition-1').locator('[data-slot="dropdown-menu-tick"]')).toHaveCount(
+      1
+    );
     if ((await page.getByTestId('grid-hide-empty-groups-switch').getAttribute('data-state')) === 'checked') {
       await page.getByTestId('grid-hide-empty-groups-toggle').click();
     }
-    await closeGridGroupSettings(page);
-    await openGridGroupSettings(page);
+
     await expect(page.getByTestId('grid-hide-empty-groups-switch')).toHaveAttribute('data-state', 'unchecked');
-    await page.getByTestId('grid-date-group-condition-3').click();
-    await closeGridGroupSettings(page);
+    await selectGridDateGroupCondition(page, 3);
     await expect(gridGroupHeaders(page)).toHaveCount(2);
     await expect(DatabaseGridSelectors.dataRows(page)).toHaveCount(3);
   });

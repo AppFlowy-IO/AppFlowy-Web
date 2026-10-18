@@ -130,3 +130,10 @@ test.each([
   expect(screen.getAllByText(label)).toHaveLength(occurrences);
   expect(screen.queryByText('Unknown user')).toBeNull();
 });
+
+test('names carry the rollup-person-name hook the list and timeline card styles resize', () => {
+  mockUsers = [{ person_id: 'alice', uid: '1', name: 'Alice', avatar_url: '' }] as MentionablePerson[];
+  const { container } = render(<RollupPersonList value='["alice"]' type={FieldType.Person} />);
+
+  expect(container.querySelector('.rollup-person-name')?.textContent).toBe('Alice');
+});

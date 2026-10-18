@@ -22,7 +22,7 @@ const styleCases: Array<{ token: FormulaTextStyle; inlineStyle: string | null; c
   { token: 'i', inlineStyle: 'font-style:italic' },
   { token: 'u', inlineStyle: 'text-decoration-line:underline' },
   { token: 's', inlineStyle: 'text-decoration-line:line-through' },
-  { token: 'c', inlineStyle: null, className: 'rounded-100 bg-fill-secondary font-mono' },
+  { token: 'c', inlineStyle: null, className: 'rounded-100 bg-fill-content-visible font-mono' },
   ...colors.map(([token, palette]) => ({ token, inlineStyle: `color:var(--palette-text-color-${palette})` })),
   ...colors.map(([color, palette]) => ({
     token: `${color}_background` as FormulaTextStyle,
@@ -73,7 +73,7 @@ describe('FormulaTextContent', () => {
     expect(span?.getAttribute('style')).toBe(
       'font-weight:bold;font-style:italic;color:var(--palette-text-color-1);background-color:var(--palette-bg-color-12);text-decoration-line:underline line-through'
     );
-    expect(span?.getAttribute('class')).toBe('rounded-100 bg-fill-secondary font-mono');
+    expect(span?.getAttribute('class')).toBe('rounded-100 bg-fill-content-visible font-mono');
   });
 
   it('clears every format on an existing run and when switching to a plain result', () => {
@@ -91,7 +91,7 @@ describe('FormulaTextContent', () => {
     expect(styled.style.fontWeight).toBe('bold');
     expect(styled.style.fontStyle).toBe('italic');
     expect(styled.style.textDecorationLine).toBe('underline line-through');
-    expect(styled.className).toBe('rounded-100 bg-fill-secondary font-mono');
+    expect(styled.className).toBe('rounded-100 bg-fill-content-visible font-mono');
 
     rerender(
       <FormulaTextContent

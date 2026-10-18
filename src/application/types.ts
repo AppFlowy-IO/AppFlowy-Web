@@ -222,7 +222,9 @@ export interface AIMeetingBlockData extends BlockData {
   summary_detail?: string;
   summary_language?: string;
   transcript_id?: string;
+  transcript_language?: string;
   transcription_type?: string;
+  youtube_caption_source?: { video_id: string; language: string; is_auto_generated: boolean };
   created_at?: string | number;
   last_modified?: string | number;
   selected_tab_index?: number | string;
@@ -1074,11 +1076,12 @@ export interface YDatabaseTimelineLayoutSetting extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.table_field_ids | YjsDatabaseKey.dependency_links): unknown;
 }
 
-export interface YDatabaseChartLayoutSetting extends Y.Map<unknown> {
-  get(key: 'chartType' | 'aggregationType' | 'dateCondition'): string;
-  get(key: 'xFieldId' | 'yFieldId'): string | undefined;
-  get(key: 'showEmptyValues' | 'cumulative'): boolean;
-}
+/**
+ * Chart settings at `layout_settings['3']`. Desktop writes snake_case keys
+ * (integers as BigInt); older web builds wrote camelCase keys. Values are
+ * decoded by `readChartLayoutSetting`.
+ */
+export type YDatabaseChartLayoutSetting = Y.Map<unknown>;
 
 export interface YDatabaseListLayoutSetting extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.display_mode | YjsDatabaseKey.card_width): number;
@@ -1406,6 +1409,8 @@ export interface LoadViewOptions {
   databaseId?: string | null;
   /** Load only the canonical database collab, without page-view row_data. */
   databaseMetadataOnly?: boolean;
+  /** Embedded views share the database doc without taking over its page identity or sync binding. */
+  preserveViewMetadata?: boolean;
   forceFetch?: boolean;
 }
 
@@ -1418,6 +1423,8 @@ export type LoadView = (
 
 export interface LoadRowDocumentOptions {
   maxAttempts?: number;
+  /** Require a successful server fetch instead of falling back to local cached content. */
+  requireServerFetch?: boolean;
   rowDocumentSource?: RowDocumentSourcePayload;
 }
 
@@ -2350,7 +2357,6 @@ export interface ViewComponentProps {
   getMentionUser?: (uuid: string) => Promise<MentionablePerson | undefined>;
   searchMentions?: SearchMentions;
   mentionContext?: MentionSearchContext;
-  createDatabaseView?: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
 }
 
 export interface CreatePagePayload {

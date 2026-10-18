@@ -15,6 +15,8 @@ jest.mock('../TimelineBar', () => ({
   ),
 }));
 
+const tableFieldTypes = new Map<string, never>();
+
 test('a connector identifies the pressed occurrence of a row shared by groups', () => {
   const row = { rowId: 'shared', title: 'Shared', allDay: true, isRange: false };
   const rect = { left: 40, width: 80 };
@@ -33,6 +35,7 @@ test('a connector identifies the pressed occurrence of a row shared by groups', 
           dateEditable
           propertyFields={[]}
           tableFieldIds={[]}
+          tableFieldTypes={tableFieldTypes}
           offscreenLeft={false}
           offscreenRight={false}
           rowActions={{ addAbove: jest.fn(), addBelow: jest.fn(), duplicate: jest.fn() }}

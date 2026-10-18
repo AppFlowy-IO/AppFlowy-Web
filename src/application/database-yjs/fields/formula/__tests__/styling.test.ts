@@ -1,3 +1,6 @@
+import { readFileSync } from 'fs';
+import path from 'path';
+
 import { inferFormulaType } from '../checker';
 import { asText } from '../coerce';
 import { evaluateFormula } from '../evaluator';
@@ -5,6 +8,9 @@ import { formatFormulaValue } from '../format';
 import { parseFormula } from '../parser';
 import { FormulaValue, num, text, typeOfValue } from '../values';
 
+// Desktop parity: AppFlowy-Premium#1451, af506271c021f0241e29f128025e800296e82586,
+// frontend/rust-lib/flowy-formula/tests/styling_test.rs. Keep token expectations
+// independent of the implementation, including desktop's lexical token order.
 function run(source: string, properties: Record<string, FormulaValue> = {}): FormulaValue {
   const ast = parseFormula(source);
 
@@ -45,35 +51,52 @@ describe('formula text styling', () => {
       value: '91',
       runs: [{ text: '91', styles: [style] }],
     });
+    expect(run(`${styled} + " / 90"`)).toEqual({
+      type: 'text',
+      value: '91 / 90',
+      runs: [
+        { text: '91', styles: [style] },
+        { text: ' / 90', styles: [] },
+      ],
+    });
     expect(run(`${styled}.unstyle("${style}")`)).toEqual(text('91'));
     expect(run(`${styled}.unstyle()`)).toEqual(text('91'));
   });
 
-  // Values and names from the reporter's notion_formula_conversion_test_data.csv.
-  it.each([
-    ['No completed work', 0, 10, '0', false],
-    ['Low conversion', 2, 8, '20', false],
-    ['Half completed', 5, 5, '50', false],
-    ['High conversion', 9, 1, '90', false],
-    ['Just above threshold', 91, 9, '91', true],
-    ['Very high conversion', 19, 1, '95', true],
-    ['Fully completed', 10, 0, '100', true],
-    ['Rounding below threshold', 904, 96, '90', false],
-    ['Rounding above threshold', 905, 95, '91', true],
-    ['Small numbers', 1, 2, '33', false],
-    ['Uneven ratio', 7, 3, '70', false],
-    ['Zero denominator', 0, 0, '0', false],
-  ])('preserves conditional styling for %s', (_name, done, inProgress, expected, red) => {
+  // Read the original fixture, just like desktop's include_str! regression.
+  const [header, ...csvRows] = readFileSync(
+    path.resolve(
+      __dirname,
+      '../../../../../../playwright/fixtures/database/csv/notion_formula_conversion_test_data.csv'
+    ),
+    'utf8'
+  )
+    .trim()
+    .split(/\r?\n/);
+  const expectedConversions = ['0', '20', '50', '90', '91', '95', '100', '90', '91', '33', '70', '0'];
+
+  it('retains all twelve rows of the desktop CSV fixture', () => {
+    expect(header).toBe('Name,Done,In progress');
+    expect(csvRows).toHaveLength(expectedConversions.length);
+  });
+
+  it.each(
+    csvRows.map((row, index) => {
+      const [name, done, inProgress] = row.split(',');
+
+      return { name, done: Number(done), inProgress: Number(inProgress), expected: expectedConversions[index] };
+    })
+  )('preserves conditional styling for $name', ({ done, inProgress, expected }) => {
     const value = run(
       'let(Conversion, round((prop("Done") / (prop("In progress") + prop("Done"))) * 100), ' +
         'if(Conversion > 90, style(format(Conversion), "red"), format(Conversion)))',
-      { Done: num(Number(done)), 'In progress': num(Number(inProgress)) }
+      { Done: num(done), 'In progress': num(inProgress) }
     );
 
     expect(value).toEqual({
       type: 'text',
       value: expected,
-      ...(red ? { runs: [{ text: expected, styles: ['red'] }] } : {}),
+      ...(Number(expected) > 90 ? { runs: [{ text: expected, styles: ['red'] }] } : {}),
     });
   });
 
@@ -81,7 +104,65 @@ describe('formula text styling', () => {
     expect(run('style(style("Done", "red", "b", "yellow_background"), "i", "blue", "green_background", "b")')).toEqual({
       type: 'text',
       value: 'Done',
-      runs: [{ text: 'Done', styles: ['b', 'i', 'blue', 'green_background'] }],
+      runs: [{ text: 'Done', styles: ['b', 'blue', 'green_background', 'i'] }],
+    });
+  });
+
+  it('combines all formats with the last colors in desktop token order', () => {
+    expect(
+      run(
+        'style(style("95", "b", "i", "u", "s", "c", "red", "yellow_background"), "blue", "green_background") + " / 90"'
+      )
+    ).toEqual({
+      type: 'text',
+      value: '95 / 90',
+      runs: [
+        { text: '95', styles: ['b', 'blue', 'c', 'green_background', 'i', 's', 'u'] },
+        { text: ' / 90', styles: [] },
+      ],
+    });
+  });
+
+  it.each(['style("😀", "red") + " / " + style("完成", "b")', '[style("😀", "red"), style("完成", "b")].join(" / ")'])(
+    'retains Unicode and run boundaries in %s',
+    (expression) => {
+      expect(run(expression)).toEqual({
+        type: 'text',
+        value: '😀 / 完成',
+        runs: [
+          { text: '😀', styles: ['red'] },
+          { text: ' / ', styles: [] },
+          { text: '完成', styles: ['b'] },
+        ],
+      });
+    }
+  );
+
+  it('preserves Unicode styles through format and merges repeated runs', () => {
+    expect(run('format(style("😀", "red"))')).toEqual({
+      type: 'text',
+      value: '😀',
+      runs: [{ text: '😀', styles: ['red'] }],
+    });
+    expect(run('style("😀", "red").repeat(3)')).toEqual({
+      type: 'text',
+      value: '😀😀😀',
+      runs: [{ text: '😀😀😀', styles: ['red'] }],
+    });
+  });
+
+  it('preserves styled items when concatenating nested lists with text', () => {
+    // Like the native test, exercise raw evaluation here: both clients reject
+    // heterogeneous list literals in the checker, but stored values can mix them.
+    const value = evaluateFormula(parseFormula('[[style("A", "red")], "B"] + "!"'), { getProp: () => text('') });
+
+    expect(value).toEqual({
+      type: 'text',
+      value: 'A, B!',
+      runs: [
+        { text: 'A', styles: ['red'] },
+        { text: ', B!', styles: [] },
+      ],
     });
   });
 
@@ -131,6 +212,8 @@ describe('formula text styling', () => {
 
   it('ignores unknown style names without interpreting HTML or CSS', () => {
     expect(run('"<b>A</b>".style("color: red", "<script>")')).toEqual(text('<b>A</b>'));
+    expect(run('style("hello", "unknown", "default")')).toEqual(text('hello'));
+    expect(run('style("", "red")')).toEqual(text(''));
   });
 
   it.each(['gray', 'brown', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'red'])(
@@ -148,7 +231,7 @@ describe('formula text styling', () => {
     expect(run('"A".style("c", "s", "u", "i", "b")')).toEqual({
       type: 'text',
       value: 'A',
-      runs: [{ text: 'A', styles: ['b', 'i', 'u', 's', 'c'] }],
+      runs: [{ text: 'A', styles: ['b', 'c', 'i', 's', 'u'] }],
     });
   });
 
@@ -158,7 +241,7 @@ describe('formula text styling', () => {
     ).toEqual({
       type: 'text',
       value: '91',
-      runs: [{ text: '91', styles: ['b', 's', 'c', 'red'] }],
+      runs: [{ text: '91', styles: ['b', 'c', 'red', 's'] }],
     });
   });
 
@@ -184,10 +267,27 @@ describe('formula text styling', () => {
     expect(run(`["${listItem}"].join("")`)).toEqual(text(listItem));
   });
 
+  it('budgets style attributes before recolored runs merge into a small result', () => {
+    // Scaled to the browser's smaller work budget. Without the growth guard,
+    // seven attributes expand across 9,000 runs before merging into one run.
+    const source = '(style("a", "red") + "b").repeat(4500)';
+
+    expect(asText(run(source))).toHaveLength(9000);
+    expect(() => run(`${source}.style("b", "i", "u", "s", "c", "blue", "green_background")`)).toThrow(/work limit/);
+  });
+
+  it('rejects an oversized join with a styled separator before allocating it', () => {
+    expect(() =>
+      run('let(separator, style(repeat("x", 10000), "red"), repeat(",", 1000).split(",").join(separator))')
+    ).toThrow(/work limit/);
+  });
+
   it('keeps comparisons, conversion, searches and exports based on plain text', () => {
     expect(run('"42".style("red") == "42"')).toEqual({ type: 'boolean', value: true });
     expect(run('toNumber("42".style("red"))')).toEqual(num(42));
     expect(run('contains("Done".style("b"), "one")')).toEqual({ type: 'boolean', value: true });
+    expect(run('[style("91", "red"), "91"].unique().length()')).toEqual(num(1));
+    expect(run('style("a", "red") < "b"')).toEqual({ type: 'boolean', value: true });
     expect(run('["B".style("red"), "A".style("blue")].sort().first()')).toEqual(run('"A".style("blue")'));
     const value = run('"42".style("red")');
 

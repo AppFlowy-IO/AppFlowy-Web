@@ -46,7 +46,7 @@ export const createServer = async (req: Request) => {
 };
 
 declare const Bun: {
-  serve: (options: { port: number; fetch: typeof createServer; error: (err: Error) => Response }) => void;
+  serve: (options: { port: number; idleTimeout: number; fetch: typeof createServer; error: (err: Error) => Response }) => void;
 };
 
 export const start = () => {
@@ -54,6 +54,9 @@ export const start = () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     Bun.serve({
       port: 3000,
+      // YouTube metadata and the first audio chunk can take longer than Bun's
+      // default 10 seconds; the import handler has its own bounded timeouts.
+      idleTimeout: 210,
       fetch: createServer,
       error: (err) => {
         logger.error(`Internal Server Error: ${err}`);

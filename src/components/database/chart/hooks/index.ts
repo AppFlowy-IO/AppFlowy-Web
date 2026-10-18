@@ -1,2 +1,2 @@
-export { useChartColors, getSelectOptionColor, getCSSVariableColor } from './useChartColors';
+export { getCheckboxChartColor, getSelectOptionChartColor, getSelectOptionChartTextColor } from './chartColors';
 export { useChartData } from './useChartData';

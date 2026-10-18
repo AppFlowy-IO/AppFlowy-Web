@@ -1,17 +1,12 @@
 import { Button } from '@mui/material';
 import { PopoverOrigin } from '@mui/material/Popover/Popover';
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Editor, Element, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
 import { isDatabaseBlockType } from '@/application/database-block';
-import { createDatabaseFeedPageViaGrid, createLinkedDatabaseFeedView } from '@/application/database-yjs/feed-layout';
-import {
-  createDatabaseGalleryPageViaGrid,
-  createLinkedDatabaseGalleryView,
-} from '@/application/database-yjs/gallery-layout';
-import { createDatabaseListPageViaGrid, createLinkedDatabaseListView } from '@/application/database-yjs/list-layout';
+import { createLinkedDefaultDatabaseView } from '@/application/database-yjs/creation/create-linked-default-view';
 import {
   databaseCatalogViewToView,
   getDatabaseContainerEntries,
@@ -28,6 +23,7 @@ import {
 import { getBlockIndex, getParent } from '@/application/slate-yjs/utils/yjs';
 import {
   AlignType,
+  AIMeetingBlockData,
   AudioBlockData,
   AudioUrlType,
   BlockData,
@@ -44,13 +40,14 @@ import {
   VideoBlockData,
   View,
   ViewLayout,
+  DatabaseViewLayout,
   YjsEditorKey,
 } from '@/application/types';
-import { applyYDoc } from '@/application/ydoc/apply';
 // import { ReactComponent as AIWriterIcon } from '@/assets/slash_menu_icon_ai_writer.svg';
 import { ReactComponent as EmojiIcon } from '@/assets/icons/add_emoji.svg';
 import { ReactComponent as AddPageIcon } from '@/assets/icons/add_to_page.svg';
 import { ReactComponent as AskAIIcon } from '@/assets/icons/ai.svg';
+import { ReactComponent as TranscriptIcon } from '@/assets/icons/ai_meeting_transcript_tab.svg';
 import { ReactComponent as AudioIcon } from '@/assets/icons/audio.svg';
 import { ReactComponent as BoardIcon } from '@/assets/icons/board.svg';
 import { ReactComponent as BulletedListIcon } from '@/assets/icons/bulleted_list.svg';
@@ -93,17 +90,20 @@ import { notify } from '@/components/_shared/notify';
 import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { useAIEnabled } from '@/components/app/app.hooks';
+import { AppOutlineContext } from '@/components/app/contexts/AppOutlineContext';
 import { useDatabaseViewCreation } from '@/components/app/hooks/useDatabaseViewCreation';
 import { useAIWriter } from '@/components/chat';
 import { SearchInput } from '@/components/chat/components/ui/search-input';
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
 import { DEFAULT_CALLOUT_DATA } from '@/components/editor/components/blocks/callout/callout.utils';
 import { createDatabaseNodeData } from '@/components/editor/components/blocks/database/utils/databaseBlockUtils';
+import { initializeMeetingSections } from '@/components/editor/components/blocks/ai-meeting/ai-meeting.import';
 import { usePanelContext } from '@/components/editor/components/panels/Panels.hooks';
 import { PanelType } from '@/components/editor/components/panels/PanelsContext';
 import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { createSubpage } from '@/components/editor/subpage/create-subpage';
+import { captureBlockCreationTarget, captureExistingDatabaseBlock } from '@/components/editor/utils/block-creation-target';
 import { Button as OutlineButton } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
@@ -266,12 +266,13 @@ export function SlashPanel({
     loadView,
     bindViewSync,
     scheduleDeferredCleanup,
-    deletePage,
-    updatePage,
     getMoreAIContext,
-    createDatabaseView,
   } = useEditorContext();
   const editorContext = useEditorContext();
+  const outline = useContext(AppOutlineContext);
+  const creationOwnerRef = useRef({ documentId, workspaceId, outline });
+
+  creationOwnerRef.current = { documentId, workspaceId, outline };
   const [viewName, setViewName] = useState('');
   const [linkedPicker, setLinkedPicker] = useState<{
     position: { top: number; left: number };
@@ -399,8 +400,8 @@ export function SlashPanel({
   );
 
   const turnInto = useCallback(
-    (type: BlockType, data: BlockData) => {
-      const block = getBlockEntry(editor);
+    (type: BlockType, data: BlockData, targetBlockId?: string) => {
+      const block = targetBlockId ? findSlateEntryByBlockId(editor, targetBlockId) : getBlockEntry(editor);
 
       if (!block) return;
 
@@ -412,6 +413,12 @@ export function SlashPanel({
         newBlockId = CustomEditor.turnToBlock(editor, blockId, type, data);
       } else {
         newBlockId = CustomEditor.addBelowBlock(editor, blockId, type, data);
+      }
+
+      if (newBlockId && type === BlockType.AIMeetingBlock) {
+        initializeMeetingSections(editor, newBlockId);
+        Transforms.deselect(editor);
+        return;
       }
 
       if (newBlockId && isEmbedBlockTypes(type)) {
@@ -446,6 +453,8 @@ export function SlashPanel({
       ) {
         openPopover(newBlockId, type);
       }
+
+      return newBlockId;
     },
     [editor, openPopover]
   );
@@ -476,62 +485,7 @@ export function SlashPanel({
 
       try {
         const name = t('document.plugins.database.newDatabase');
-        const response =
-          layout === ViewLayout.List
-            ? await (() => {
-                if (!loadView || !bindViewSync || !deletePage || !scheduleDeferredCleanup) {
-                  throw new Error('List creation is not available right now');
-                }
-
-                return createDatabaseListPageViaGrid({
-                  parentViewId: documentId,
-                  name,
-                  addPage,
-                  loadViewMeta,
-                  loadView,
-                  bindViewSync,
-                  scheduleDeferredCleanup,
-                  deletePage,
-                  updatePage,
-                });
-              })()
-            : layout === ViewLayout.Gallery
-            ? await (() => {
-                if (!loadView || !bindViewSync || !deletePage || !scheduleDeferredCleanup) {
-                  throw new Error('Gallery creation is not available right now');
-                }
-
-                return createDatabaseGalleryPageViaGrid({
-                  parentViewId: documentId,
-                  name,
-                  addPage,
-                  loadViewMeta,
-                  loadView,
-                  bindViewSync,
-                  deletePage,
-                  scheduleDeferredCleanup,
-                  updatePage,
-                });
-              })()
-            : layout === ViewLayout.Feed
-            ? await (() => {
-                if (!loadView || !bindViewSync || !deletePage || !scheduleDeferredCleanup) {
-                  throw new Error('Feed creation is not available right now');
-                }
-
-                return createDatabaseFeedPageViaGrid({
-                  parentViewId: documentId,
-                  name,
-                  addPage,
-                  loadViewMeta,
-                  loadView,
-                  bindViewSync,
-                  deletePage,
-                  scheduleDeferredCleanup,
-                  updatePage,
-                });
-              })()
-            : await addPage(documentId, { layout, name });
+        const response = await addPage(documentId, { layout, name });
 
         Log.debug('[SlashPanel] {} created inline database', {
           documentId,
@@ -585,17 +539,11 @@ export function SlashPanel({
     },
     [
       addPage,
-      bindViewSync,
-      deletePage,
       documentId,
       editor,
-      loadView,
-      loadViewMeta,
       openPageModal,
-      scheduleDeferredCleanup,
       t,
       turnInto,
-      updatePage,
     ]
   );
 
@@ -647,7 +595,7 @@ export function SlashPanel({
 
   const handleOpenLinkedDatabasePicker = useCallback(
     async (layout: ViewLayout) => {
-      if (!documentId || !createDatabaseView) return;
+      if (!documentId || !workspaceId || editor.firstBody || editorContext.readOnly || editorContext.canWrite === false) return;
       const rect = getRangeRect();
 
       if (!rect) return;
@@ -665,14 +613,14 @@ export function SlashPanel({
         setLinkedPicker(null);
       }
     },
-    [createDatabaseView, loadDatabasesForPicker, t, documentId]
+    [loadDatabasesForPicker, t, documentId, workspaceId, editor.firstBody, editorContext.readOnly, editorContext.canWrite]
   );
 
   const handleSelectDatabase = useCallback(
     async (targetViewId: string) => {
       if (!linkedPicker || !checkCreationRef.current(linkedPicker.layout, () => setLinkedPicker(null))) return;
 
-      if (!createDatabaseView || !documentId) {
+      if (!documentId || !loadView || !bindViewSync || !scheduleDeferredCleanup || editorContext.readOnly || editorContext.canWrite === false) {
         notify.error(
           t('document.slashMenu.linkedDatabase.actionUnavailable', {
             defaultValue: 'Linking databases is not available right now',
@@ -746,100 +694,53 @@ export function SlashPanel({
         const referencedName = prefix ? `${prefix} ${baseName}` : baseName;
         const sourceViewId = option.sourceViewId;
 
-        const response =
-          linkedPicker.layout === ViewLayout.List
-            ? await createLinkedDatabaseListView({
-                requestViewId: documentId,
-                sourceViewId,
-                payload: {
-                  parent_view_id: documentId,
-                  database_id: databaseId,
-                  name: referencedName,
-                  embedded: true,
-                },
-                createDatabaseView,
-                loadView,
-                bindViewSync,
-                deletePage,
-                scheduleDeferredCleanup,
-              })
-            : linkedPicker.layout === ViewLayout.Gallery
-            ? await createLinkedDatabaseGalleryView({
-                requestViewId: documentId,
-                sourceViewId,
-                payload: {
-                  parent_view_id: documentId,
-                  database_id: databaseId,
-                  name: referencedName,
-                  embedded: true,
-                },
-                createDatabaseView,
-                loadView,
-                bindViewSync,
-                deletePage,
-                scheduleDeferredCleanup,
-              })
-            : linkedPicker.layout === ViewLayout.Feed
-            ? await createLinkedDatabaseFeedView({
-                requestViewId: documentId,
-                sourceViewId,
-                payload: {
-                  parent_view_id: documentId,
-                  database_id: databaseId,
-                  name: referencedName,
-                  embedded: true,
-                },
-                createDatabaseView,
-                loadView,
-                bindViewSync,
-                deletePage,
-                scheduleDeferredCleanup,
-              })
-            : await createDatabaseView(documentId, {
-                parent_view_id: documentId,
-                database_id: databaseId,
-                layout: linkedPicker.layout,
-                name: referencedName,
-                embedded: true,
-              });
+        if (!workspaceId || editor.firstBody) throw new Error('Linked Database creation is unavailable');
+        const targetBlockId = getBlockEntry(editor)?.[0].blockId;
 
-        Log.debug('[SlashPanel] {} created linked database', {
-          documentId,
-          databaseViewId,
-          newViewId: response.view_id,
-          referencedName,
+        if (!targetBlockId) throw new Error('The linked Database insertion block is unavailable');
+        const target = captureBlockCreationTarget(editor, targetBlockId);
+        const layouts: Partial<Record<ViewLayout, DatabaseViewLayout>> = {
+          [ViewLayout.Grid]: DatabaseViewLayout.Grid, [ViewLayout.Board]: DatabaseViewLayout.Board,
+          [ViewLayout.Calendar]: DatabaseViewLayout.Calendar, [ViewLayout.Chart]: DatabaseViewLayout.Chart,
+          [ViewLayout.List]: DatabaseViewLayout.List, [ViewLayout.Gallery]: DatabaseViewLayout.Gallery,
+          [ViewLayout.Feed]: DatabaseViewLayout.Feed, [ViewLayout.Form]: DatabaseViewLayout.Form,
+          [ViewLayout.Timeline]: DatabaseViewLayout.Timeline,
+        };
+        const layout = layouts[linkedPicker.layout];
+
+        if (layout === undefined) throw new Error('Unsupported linked Database layout');
+        const assertCurrent = () => {
+          const current = creationOwnerRef.current;
+
+          target.assertCurrent();
+          if (current.documentId !== documentId || current.workspaceId !== workspaceId) {
+            throw new Error('Linked Database creation owner changed');
+          }
+        };
+
+        await createLinkedDefaultDatabaseView({
+          workspaceId, requestViewId: documentId, sourceViewId, layout,
+          payload: { parent_view_id: documentId, database_id: databaseId, name: referencedName, embedded: true },
+          loadView, bindViewSync, scheduleDeferredCleanup, assertCurrent,
+          findExistingActivation: (id) => captureExistingDatabaseBlock(editor, documentId, databaseId, id),
+          activate: async (id) => {
+            const ensure = creationOwnerRef.current.outline?.ensureViewVisibleInOutline;
+
+            if (!ensure) throw new Error('The sidebar creation owner is unavailable');
+            assertCurrent();
+            const ancestors = await ensure(id);
+
+            assertCurrent();
+            if (ancestors.length === 0) {
+              throw new Error('Created linked Database view is missing from the sidebar');
+            }
+
+            target.replace((blockId) => turnInto(blockType, createDatabaseNodeData({
+              parentId: documentId, viewIds: [id], databaseId,
+            }), blockId));
+          },
         });
 
-        if (
-          linkedPicker.layout !== ViewLayout.List &&
-          linkedPicker.layout !== ViewLayout.Gallery &&
-          linkedPicker.layout !== ViewLayout.Feed &&
-          response.database_update?.length &&
-          loadView
-        ) {
-          try {
-            const databaseDoc = await loadView(response.view_id, false, false, {
-              databaseId: response.database_id || databaseId,
-            });
-
-            applyYDoc(databaseDoc, new Uint8Array(response.database_update));
-          } catch (error) {
-            Log.warn('[SlashPanel] failed to apply linked database update', {
-              viewId: response.view_id,
-              databaseId: response.database_id || databaseId,
-              error,
-            });
-          }
-        }
-
-        turnInto(
-          blockType,
-          createDatabaseNodeData({
-            parentId: documentId,
-            viewIds: [response.view_id],
-            databaseId: response.database_id,
-          })
-        );
       } catch (e) {
         const error = e as Error;
 
@@ -850,13 +751,15 @@ export function SlashPanel({
     },
     [
       linkedPicker,
-      createDatabaseView,
+      editorContext.readOnly,
+      editorContext.canWrite,
+      editor,
+      workspaceId,
       documentId,
       databaseOptions,
       turnInto,
       t,
       bindViewSync,
-      deletePage,
       loadView,
       scheduleDeferredCleanup,
     ]
@@ -883,6 +786,19 @@ export function SlashPanel({
     const allOptions: SlashMenuOption[] = [
       ...(aiEnabled
         ? [
+            {
+              label: t('document.aiMeeting.import.title'),
+              key: 'aiTranscript',
+              icon: <TranscriptIcon />,
+              group: SlashMenuGroupKey.AppFlowyAI,
+              keywords: ['ai', 'transcript', 'transcription', 'meeting', 'audio', 'video'],
+              onClick: () => turnInto(BlockType.AIMeetingBlock, {
+                title: '',
+                recording_state: 'idle',
+                transcription_type: 'none',
+                created_at: new Date().toISOString(),
+              } as AIMeetingBlockData),
+            },
             {
               label: t('document.slashMenu.name.askAIAnything'),
               key: 'askAIAnything',

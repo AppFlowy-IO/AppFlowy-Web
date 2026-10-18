@@ -5,6 +5,7 @@ import { calendarDraftTitle, switchPlaceholderCalendarView } from '../../support
 import { loginAndCreateCalendar, switchCalendarView } from '../../support/calendar-test-helpers';
 import { getSlashMenuItemName } from '../../support/i18n-constants';
 import { createDocumentPageAndNavigate } from '../../support/page-utils';
+import { mockServerInfo } from '../../support/server-info-helpers';
 import {
   BlockSelectors,
   CalendarSelectors,
@@ -304,6 +305,7 @@ test('calendar tabs retain their own range and wheel navigation preserves the fo
   request,
 }) => {
   setupPageErrorHandling(page);
+  await mockServerInfo(page, { enable_database_history: true });
   await loginAndCreateCalendar(page, request, generateRandomEmail());
   const currentDate = await today(page);
 

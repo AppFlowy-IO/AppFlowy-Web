@@ -46,6 +46,29 @@ Feature: Number grouping matches Desktop
       | empty   | 1    |
       | [0, 10) | 1    |
 
+  Scenario: The Group menu follows Desktop's order and lists only populated buckets while empty groups are hidden
+    Given a Grid contains the following numbers for number grouping
+      | value   |
+      | 5       |
+      | 15      |
+      | <empty> |
+    When I group the Grid by its number field
+    Then the number Group menu lists Group by, the number panel, Hide empty groups, then the Groups rows
+    And the Group menu offers exactly these number buckets
+      | bucket   |
+      | empty    |
+      | [0, 10)  |
+      | [10, 20) |
+    When I show empty number groups
+    Then the Group menu offers the number bucket "[20, 30)"
+    And the Group menu offers the number bucket "> 100"
+    When I hide empty number groups
+    Then the Group menu offers exactly these number buckets
+      | bucket   |
+      | empty    |
+      | [0, 10)  |
+      | [10, 20) |
+
   Scenario: Exact values merge decimal spellings and sort numerically after reopening
     Given a Grid contains the following numbers for number grouping
       | value   |

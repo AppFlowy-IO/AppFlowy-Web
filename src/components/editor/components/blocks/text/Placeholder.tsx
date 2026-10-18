@@ -1,6 +1,6 @@
 import { CSSProperties, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Editor, Element, Range } from 'slate';
+import { Editor, Element, Node, Range } from 'slate';
 import { ReactEditor, useFocused, useSelected, useSlate } from 'slate-react';
 
 import { BlockType, ToggleListBlockData } from '@/application/types';
@@ -33,6 +33,17 @@ function Placeholder({ node, ...attributes }: { node: Element; className?: strin
 
   const block = getBlock();
   const blockCount = editor.children.length;
+  // Read the current ancestor even when this empty paragraph hasn't changed.
+  // Edits to another note replace the section, so its placeholder must update too.
+  const notesSection = block?.type === BlockType.Paragraph
+    ? Editor.above(editor, {
+      at: ReactEditor.findPath(editor, node),
+      match: (n) =>
+        !Editor.isEditor(n) &&
+        Element.isElement(n) &&
+        n.type === BlockType.AIMeetingNotesBlock,
+    })?.[0]
+    : undefined;
 
   const className = useMemo(() => {
     const classList = attributes.className?.split(' ') ?? [];
@@ -45,19 +56,8 @@ function Placeholder({ node, ...attributes }: { node: Element; className?: strin
   const unSelectedPlaceholder = useMemo(() => {
     switch(block?.type) {
       case BlockType.Paragraph: {
-        try {
-          const path = ReactEditor.findPath(editor, node);
-          const inNotes = Editor.above(editor, {
-            at: path,
-            match: (n) =>
-              !Editor.isEditor(n) &&
-              Element.isElement(n) &&
-              n.type === BlockType.AIMeetingNotesBlock,
-          });
-
-          if (inNotes) return t('document.aiMeeting.notesPlaceholder');
-        } catch {
-          // ignore
+        if (notesSection) {
+          return Node.string(notesSection).trim() ? '' : t('document.aiMeeting.notesPlaceholder');
         }
 
         // Show placeholder when the document is empty (single empty paragraph)
@@ -126,7 +126,7 @@ function Placeholder({ node, ...attributes }: { node: Element; className?: strin
       default:
         return '';
     }
-  }, [block, blockCount, editor, node, t]);
+  }, [block, blockCount, notesSection, t]);
 
   const isInsideTableCell = useMemo(() => {
     try {

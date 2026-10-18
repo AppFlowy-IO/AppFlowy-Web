@@ -271,7 +271,7 @@ test('shares and favorites the row from side peek without navigating the underly
   const detail = RowDetailSelectors.modal(page);
 
   await detail.getByTestId('row-title-input').fill('Favorite from peek');
-  const favoriteRequest = page.waitForRequest((req) => req.method() === 'POST' && req.url().endsWith('/favorite'));
+  const favoriteRequest = page.waitForRequest((req) => req.method() === 'POST' && new URL(req.url()).pathname.endsWith('/favorite'));
 
   await detail.getByTestId('favorite-button').click();
   const req = await favoriteRequest;

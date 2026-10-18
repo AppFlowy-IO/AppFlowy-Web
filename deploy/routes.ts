@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 
+import { handleYoutubeImport } from '../api/_lib/youtube-import';
+
 import { fetchPublishedViewRoute, fetchPublishMetadata, fetchPublishSnapshot, type SnapshotFetchResult } from './api';
 import { APP_PATHS, matchesAppPath } from './app-paths';
 import { defaultSite, distDir } from './config';
@@ -389,4 +391,8 @@ const methodNotAllowed = async ({ req }: RequestContext) => {
 
 const notFound = async () => new Response('Not Found', { status: 404 });
 
-export const routes: RouteHandler[] = [staticRoute, appRoute, publishRoute, methodNotAllowed, notFound];
+const youtubeImportRoute: RouteHandler = async ({ req, url }) => url.pathname === '/api/youtube-audio'
+  ? handleYoutubeImport(req, { baseURL: process.env.APPFLOWY_BASE_URL || 'https://test.appflowy.cloud' })
+  : undefined;
+
+export const routes: RouteHandler[] = [staticRoute, youtubeImportRoute, appRoute, publishRoute, methodNotAllowed, notFound];

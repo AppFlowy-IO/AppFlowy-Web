@@ -1,9 +1,10 @@
-import { IconButton, Tooltip } from '@mui/material';
+import Tooltip from '@mui/material/Tooltip';
 import { memo, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
+import { ReactComponent as MoreIcon } from '@/assets/ai-transcript/summary-more.svg';
 import { Popover } from '@/components/_shared/popover';
+import { Button } from '@/components/ui/button';
 
 import type { CopyMeta } from './ai-meeting.utils';
 
@@ -25,13 +26,16 @@ export const AIMeetingMoreMenu = memo(({ activeCopyItem, onCopy }: AIMeetingMore
 
   return (
     <>
-      <IconButton
-        size="small"
+      <Button
+        type='button'
+        variant='ghost'
+        size='icon-lg'
+        aria-label={t('document.aiMeeting.regenerate.moreActions')}
         onClick={(event) => setMenuAnchor(event.currentTarget)}
-        className="rounded-md text-text-secondary hover:bg-fill-list-hover"
+        className='rounded-lg p-1.5 text-icon-secondary'
       >
-        <MoreIcon className="h-5 w-5 text-current" />
-      </IconButton>
+        <MoreIcon aria-hidden className="h-5 w-5 [&_[fill='#6F748C']]:fill-current [&_[stroke]]:stroke-current" />
+      </Button>
       <Popover
         open={menuOpen}
         anchorEl={menuAnchor}

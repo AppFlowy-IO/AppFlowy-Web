@@ -1,13 +1,17 @@
 import {
   useClearGroupByFieldDispatch,
   useGroupByFieldDispatch,
-  useSetAllListGroupsVisibilityDispatch,
   useSetListGroupVisibilityDispatch,
   useToggleListHideEmptyGroups,
   useUpdateDateGroupConditionDispatch,
 } from '@/application/database-yjs';
 import { useUpdateNumberGroupConfigurationDispatch } from '@/application/database-yjs/dispatch';
-import { DatabaseSettingGroup } from '@/components/database/components/settings/GridSettingGroup';
+import { DatabaseViewLayout } from '@/application/types';
+import {
+  DatabaseSettingGroup,
+  useDatabaseSettingGrouping,
+  useGroupableProperties,
+} from '@/components/database/components/settings/GridSettingGroup';
 import { useListGrouping } from '@/components/database/list/ListGroupingContext';
 
 function ListSettingGroup() {
@@ -16,16 +20,18 @@ function ListSettingGroup() {
   const clearGrouping = useClearGroupByFieldDispatch();
   const toggleHideEmpty = useToggleListHideEmptyGroups();
   const setVisibility = useSetListGroupVisibilityDispatch(grouping.groupId, grouping.fieldId);
-  const setAllVisibility = useSetAllListGroupsVisibilityDispatch(grouping.groupId, grouping.fieldId);
   const updateDateCondition = useUpdateDateGroupConditionDispatch();
   const updateNumberConfiguration = useUpdateNumberGroupConfigurationDispatch();
+  const properties = useGroupableProperties();
+  const settingGrouping = useDatabaseSettingGrouping(grouping);
 
   return (
     <DatabaseSettingGroup
       clearGrouping={clearGrouping}
       groupBy={groupBy}
-      grouping={grouping}
-      setAllVisibility={setAllVisibility}
+      grouping={settingGrouping}
+      layout={DatabaseViewLayout.List}
+      properties={properties}
       setVisibility={setVisibility}
       testIdPrefix='list'
       toggleHideEmpty={toggleHideEmpty}

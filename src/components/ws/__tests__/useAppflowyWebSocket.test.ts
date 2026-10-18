@@ -1,5 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 
+import { getServerInfo } from '@/application/services/js-services/http/auth-api';
 import { getTokenParsed } from '@/application/session/token';
 
 import { useAppflowyWebSocket, Options } from '../useAppflowyWebSocket';
@@ -19,6 +20,10 @@ const mockUseWebSocket = jest.fn(() => ({
 jest.mock('react-use-websocket', () => ({
   __esModule: true,
   default: (...args: unknown[]) => mockUseWebSocket(...(args as [])),
+}));
+
+jest.mock('@/application/services/js-services/http/auth-api', () => ({
+  getServerInfo: jest.fn().mockResolvedValue({}),
 }));
 
 jest.mock('@/application/session/token', () => ({
@@ -86,6 +91,8 @@ describe('useAppflowyWebSocket', () => {
 
     expect(await resolveLastSocketUrl()).toContain('token=token-A');
     expect(await resolveLastSocketUrl()).toContain('/workspace-1/');
+    expect(new URL(await resolveLastSocketUrl()).searchParams.has('server_restore_id')).toBe(false);
+    expect(getServerInfo).not.toHaveBeenCalled();
   });
 
   // A token rotation must not replace the URL callback during a live session,

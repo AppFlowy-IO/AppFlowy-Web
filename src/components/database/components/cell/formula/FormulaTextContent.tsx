@@ -60,7 +60,7 @@ export function FormulaTextContent({ text, runs }: { text: string; runs?: Formul
         <span
           key={index}
           style={runStyle(run)}
-          className={run.styles.includes('c') ? 'rounded-100 bg-fill-secondary font-mono' : undefined}
+          className={run.styles.includes('c') ? 'rounded-100 bg-fill-content-visible font-mono' : undefined}
         >
           {run.text}
         </span>

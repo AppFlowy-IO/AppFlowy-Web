@@ -1,0 +1,10 @@
+{
+  "issue": "https://github.com/AppFlowy-IO/AppFlowy/issues/9052",
+  "capture": "Flutter test render layer; no computer-use automation",
+  "fixture": "Synthetic raw database matching the Web Number-to-Text schema without type_option[0]; not a reporter export",
+  "native_base": "36c17990c6fb804fb129ae57134c2e4987e7f505",
+  "native_test": "frontend/appflowy_flutter/integration_test/desktop/bdd/database/grid/web_text_compatibility_test.dart",
+  "before": "Baseline native reader leaves City blank while the valid City copy displays identical stored values",
+  "after": "Paired native fix reads the same legacy schema; separately verified native edits, fresh cell writes and reopening",
+  "web_behavior": "Web displays text in both versions. This Web fix supplies Text metadata to retain compatibility with older native readers."
+}

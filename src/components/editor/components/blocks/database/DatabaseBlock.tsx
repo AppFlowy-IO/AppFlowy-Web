@@ -83,6 +83,7 @@ function DatabaseBlockBody({ node, children, editor, forwardedRef, readOnly, ...
     loadView,
     bindViewSync,
     eventEmitter: context.eventEmitter,
+    scheduleDeferredCleanup: context.scheduleDeferredCleanup,
   });
 
   // 2. Visible view IDs from block data

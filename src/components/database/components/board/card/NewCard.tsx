@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { usePrimaryFieldId } from '@/application/database-yjs';
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
+import { RowCreationSpinner, useRowCreationAction } from '@/components/database/hooks/useRowCreationAction';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -29,6 +30,7 @@ function NewCard({
   const { t } = useTranslation();
   const [value, setValue] = useState('');
   const onNewCard = useNewRowDispatch();
+  const { pending, run } = useRowCreationAction();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const ref = useRef<HTMLButtonElement | null>(null);
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
@@ -50,7 +52,7 @@ function NewCard({
   }, [container]);
 
   const handleSubmit = useCallback(
-    (inputValue: string) => {
+    async (inputValue: string) => {
       if (!primaryFieldId) {
         throw new Error('Primary field not found');
       }
@@ -60,14 +62,14 @@ function NewCard({
         [fieldId]: columnId,
       };
 
-      setValue('');
-      void onNewCard({
-        cellsData,
-        beforeRowId: beforeId,
-      });
-      scrollToBottom();
+      const result = await run(() => onNewCard({ cellsData, beforeRowId: beforeId }));
+
+      if (result.ok) {
+        setValue('');
+        scrollToBottom();
+      }
     },
-    [beforeId, columnId, fieldId, onNewCard, primaryFieldId, scrollToBottom]
+    [beforeId, columnId, fieldId, onNewCard, primaryFieldId, run, scrollToBottom]
   );
 
   useLayoutEffect(() => {
@@ -81,7 +83,12 @@ function NewCard({
   }, []);
 
   return (
-    <Popover open={isCreating} onOpenChange={setIsCreating}>
+    <Popover
+      open={isCreating}
+      onOpenChange={(open) => {
+        if (!pending) setIsCreating(open);
+      }}
+    >
       <PopoverTrigger asChild>
         <Button ref={ref} size={'sm'} className={'w-full justify-start p-1 text-text-secondary'} variant={'ghost'}>
           {isCreating ? (
@@ -110,7 +117,8 @@ function NewCard({
         onCloseAutoFocus={(e) => e.preventDefault()}
         onKeyDown={(e) => {
           if (createHotkey(HOT_KEY_NAME.ENTER)(e.nativeEvent)) {
-            handleSubmit(value);
+            e.preventDefault();
+            void handleSubmit(value);
           }
         }}
       >
@@ -125,12 +133,15 @@ function NewCard({
               inputRef.current = input;
             }
           }}
+          readOnly={pending}
+          aria-busy={pending}
           value={value}
           onChange={(e) => {
             setValue(e.target.value);
           }}
           className={'!h-9 w-full !rounded-300 text-text-primary'}
         />
+        {pending && <RowCreationSpinner />}
       </PopoverContent>
     </Popover>
   );

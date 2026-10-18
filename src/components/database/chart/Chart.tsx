@@ -12,7 +12,7 @@ import LineChartWidget from '@/components/database/chart/widgets/LineChart';
 import { Progress } from '@/components/ui/progress';
 
 function ChartContent() {
-  const { chartType, chartData, isLoading, hasGroupableFields, onElementClick } = useChartContext();
+  const { chartType, chartData, isLoading, hasGroupableFields, aggregationType, onElementClick } = useChartContext();
 
   // Loading state
   if (isLoading) {
@@ -35,16 +35,17 @@ function ChartContent() {
 
   // Render appropriate chart type
   switch (chartType) {
-    case ChartType.Bar:
-      return <BarChartWidget data={chartData} onBarClick={onElementClick} />;
     case ChartType.HorizontalBar:
-      return <HorizontalBarChartWidget data={chartData} onBarClick={onElementClick} />;
+      return (
+        <HorizontalBarChartWidget data={chartData} aggregationType={aggregationType} onBarClick={onElementClick} />
+      );
     case ChartType.Line:
-      return <LineChartWidget data={chartData} onPointClick={onElementClick} />;
+      return <LineChartWidget data={chartData} aggregationType={aggregationType} onPointClick={onElementClick} />;
     case ChartType.Donut:
-      return <DonutChartWidget data={chartData} onSliceClick={onElementClick} />;
+      return <DonutChartWidget data={chartData} aggregationType={aggregationType} onSliceClick={onElementClick} />;
+    case ChartType.Bar:
     default:
-      return <BarChartWidget data={chartData} onBarClick={onElementClick} />;
+      return <BarChartWidget data={chartData} aggregationType={aggregationType} onBarClick={onElementClick} />;
   }
 }
 
@@ -56,14 +57,17 @@ export function Chart() {
     onRendered?.();
   }, [onRendered]);
 
-  // Use same padding as DatabaseTabs for alignment
+  // Use same padding as DatabaseTabs for alignment. The 20px bottom padding
+  // keeps tilted category labels, which hang below the chart's SVG, from
+  // being clipped when this scroll container is only as tall as the widget
+  // (embedded blocks, published pages).
   const horizontalPadding = paddingStart === undefined ? 96 : paddingStart;
 
   return (
     <ChartProvider>
       <div
         data-testid="database-chart"
-        className={`database-chart relative chart-${viewId} flex w-full flex-1 flex-col items-start justify-start overflow-y-auto overflow-x-hidden`}
+        className={`database-chart relative chart-${viewId} flex w-full flex-1 flex-col items-start justify-start overflow-y-auto overflow-x-hidden pb-5`}
         style={{
           paddingLeft: horizontalPadding,
           paddingRight: horizontalPadding,

@@ -394,55 +394,168 @@ export const DatabaseViewSelectors = {
   viewTypeOption: (page: Page, label: string) => page.getByRole('menuitem', { name: label }),
 };
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+const chartContainer = (page: Page) => page.getByTestId('database-chart');
+
 /**
- * Chart view selectors
+ * Chart view selectors. The bar and line charts are Recharts charts, the donut
+ * draws its own sections, leader labels and legend around a Recharts
+ * `PieChart`, and the horizontal bar chart is plain elements (no Recharts).
  */
 export const ChartSelectors = {
-  chart: (page: Page) => page.getByTestId('database-chart'),
-  anyChart: (page: Page) => page.locator('.recharts-wrapper'),
+  chart: chartContainer,
+  /**
+   * The rendered chart surface, one element per chart: the Recharts wrapper of
+   * a bar, line or donut chart, or the horizontal bar chart once it has rows.
+   */
+  anyChart: (page: Page) =>
+    page.locator(
+      '.recharts-wrapper, [data-testid="horizontal-bar-chart-widget"]:has([data-testid="horizontal-bar-chart-row"])'
+    ),
+  barWidget: (page: Page) => page.getByTestId('bar-chart-widget'),
+  horizontalBarWidget: (page: Page) => page.getByTestId('horizontal-bar-chart-widget'),
+  lineWidget: (page: Page) => page.getByTestId('line-chart-widget'),
+  donutWidget: (page: Page) => page.getByTestId('donut-chart-widget'),
   barChart: (page: Page) => page.locator('.recharts-bar-rectangles'),
   lineChart: (page: Page) => page.locator('.recharts-line'),
   pieChart: (page: Page) => page.locator('.recharts-pie'),
   bars: (page: Page) => page.locator('.recharts-bar-rectangle'),
   dots: (page: Page) => page.locator('.recharts-dot'),
   slices: (page: Page) => page.locator('.recharts-pie-sector'),
-  emptyStateNoField: (page: Page) => page.getByTestId('database-chart').getByText('No fields available for grouping'),
-  emptyStateNoData: (page: Page) => page.getByTestId('database-chart').getByText('No data'),
-  tooltip: (page: Page) => page.locator('.recharts-tooltip-wrapper'),
-  legend: (page: Page) => page.locator('.recharts-legend-wrapper'),
+  /** Category labels under a bar or line chart, in chart order ("No {field}" last). */
+  categoryLabels: (page: Page) => chartContainer(page).locator('.recharts-xAxis .recharts-cartesian-axis-tick'),
+  categoryLabel: (page: Page, label: string) =>
+    chartContainer(page)
+      .locator('.recharts-xAxis .recharts-cartesian-axis-tick')
+      .filter({ hasText: new RegExp(`^${escapeRegExp(label)}$`) }),
+  /** Value labels over the bars or line points, in chart order. A hovered bar hides its own. */
+  valueLabels: (page: Page) => chartContainer(page).locator('.recharts-label-list text'),
+  horizontalBarRows: (page: Page) => page.getByTestId('horizontal-bar-chart-row'),
+  horizontalBarLabels: (page: Page) => page.locator('[data-testid="horizontal-bar-chart-row"] > div:first-child'),
+  horizontalBarValues: (page: Page) => page.getByTestId('horizontal-bar-chart-value'),
+  donutSections: (page: Page) => page.getByTestId('donut-chart-section'),
+  /** "<value> (<percent>%)" under each donut leader label. */
+  donutLeaderValues: (page: Page) => page.getByTestId('donut-chart-leader-value'),
+  /** The donut hole: the total, "Total" and the aggregation title. */
+  donutCenter: (page: Page) => page.getByTestId('donut-chart-center'),
+  donutLegendItems: (page: Page) => page.getByTestId('donut-chart-legend-item'),
+  /** Aggregation title copied from desktop, e.g. "Count(Type)" whatever the X-Axis field. */
+  title: (page: Page) => chartContainer(page).getByTestId('chart-title'),
+  /** Hover tooltip: category, value and "Click to view data". */
+  tooltip: (page: Page) => page.getByTestId('chart-tooltip'),
+  emptyStateNoField: (page: Page) => chartContainer(page).getByText('No fields available for grouping'),
+  emptyStateNoData: (page: Page) => chartContainer(page).getByText('No data'),
 };
 
+/** Chart types in the order of desktop's chart type grid, mapped to their test id slugs. */
+export const CHART_TYPE_SLUGS = {
+  Bar: 'bar',
+  'Horizontal Bar': 'horizontal-bar',
+  Line: 'line',
+  Donut: 'donut',
+} as const;
+export type ChartTypeName = keyof typeof CHART_TYPE_SLUGS;
+
+export const CHART_AGGREGATION_SLUGS = {
+  Count: 'count',
+  'Count values': 'count-values',
+  Sum: 'sum',
+  Average: 'average',
+  Min: 'min',
+  Max: 'max',
+  Median: 'median',
+} as const;
+export type ChartAggregationName = keyof typeof CHART_AGGREGATION_SLUGS;
+
+export const CHART_DATE_GROUPING_SLUGS = {
+  Relative: 'relative',
+  Day: 'day',
+  Week: 'week',
+  Month: 'month',
+  Year: 'year',
+} as const;
+export type ChartDateGroupingName = keyof typeof CHART_DATE_GROUPING_SLUGS;
+
+const chartSettingsPanel = (page: Page) => page.getByTestId('chart-settings-panel');
+const chartTypeButton = (page: Page, type: ChartTypeName) =>
+  page.getByTestId(`chart-type-button-${CHART_TYPE_SLUGS[type]}`);
+/** X-Axis / Y-Axis field rows only differ by test id prefix; match one by its field name. */
+const chartSettingsFieldRow = (page: Page, testIdPrefix: string, name: string) =>
+  chartSettingsPanel(page)
+    .locator(byTestIdPrefix(testIdPrefix))
+    .filter({ has: page.getByText(name, { exact: true }) });
+
 /**
- * Chart settings dropdown selectors. The dropdown opens off the
- * `database-actions-settings` (gear) button and contains nested submenus.
- * Items are matched by visible label since the dropdown items have no
- * dedicated test ids.
+ * Chart settings popover, opened from the `database-actions-settings` (gear)
+ * button. Like desktop's revamped panel it lists Properties and Layout, then
+ * the chart sections inline: the chart type grid, the X-Axis fields with the
+ * "Omit zero values" toggle, Aggregation and, for any aggregation but Count,
+ * the Y-Axis fields. A date X-Axis row opens its grouping in a submenu that is
+ * portaled outside the panel. Selected rows carry `data-selected="true"` and a
+ * tick (date X-Axis rows have no tick, like desktop); chart type buttons carry
+ * `aria-pressed`.
  */
 export const ChartSettingsSelectors = {
   settingsButton: (page: Page) => page.getByTestId('database-actions-settings'),
-  // Submenu triggers in the top-level Properties / Layout / Chart settings menu
-  chartSettingsSubTrigger: (page: Page) => page.getByRole('menuitem', { name: /chart settings/i }),
-  // Sub-submenu trigger inside Chart settings for the four chart types
-  chartTypeSubTrigger: (page: Page) => page.getByRole('menuitem', { name: /^chart type$/i }),
-  // Section labels inside the Chart settings submenu
-  xAxisLabel: (page: Page) => page.getByText('X-Axis', { exact: true }),
-  aggregationLabel: (page: Page) => page.getByText('Aggregation', { exact: true }),
-  yAxisLabel: (page: Page) => page.getByText('Y-Axis', { exact: true }),
-  // A specific aggregation row by label (e.g. "Count", "Sum", "Average").
-  aggregationItem: (page: Page, label: string) => page.getByRole('menuitem', { name: new RegExp(`^${label}$`, 'i') }),
-  // A chart type row by label (Bar / Horizontal Bar / Line / Donut)
-  chartTypeItem: (page: Page, label: string) => page.getByRole('menuitem', { name: new RegExp(`^${label}$`, 'i') }),
-  // Toggle rows
-  showEmptyValuesItem: (page: Page) => page.getByRole('menuitem', { name: /show empty values/i }),
-  cumulativeItem: (page: Page) => page.getByRole('menuitem', { name: /cumulative/i }),
+  panel: chartSettingsPanel,
+  /** Wrapper of the inline chart sections; absent in read-only views. */
+  chartSections: (page: Page) => page.getByTestId('chart-layout-settings'),
+  sectionHeaders: (page: Page) => chartSettingsPanel(page).locator('[data-chart-settings-section-header]'),
+  chartTypeLabel: (page: Page) => chartSettingsPanel(page).getByText('Chart type', { exact: true }),
+  xAxisLabel: (page: Page) => chartSettingsPanel(page).getByText('X-Axis', { exact: true }),
+  aggregationLabel: (page: Page) => chartSettingsPanel(page).getByText('Aggregation', { exact: true }),
+  yAxisLabel: (page: Page) => chartSettingsPanel(page).getByText('Y-Axis', { exact: true }),
+  chartTypeButtons: (page: Page) => page.getByTestId('chart-type-grid').locator(byTestIdPrefix('chart-type-button-')),
+  /** An icon-only button of the chart type grid; its accessible name is the type name. */
+  chartTypeButton,
+  /**
+   * The button once it can switch the chart: neither crowned (a confirmed
+   * Free plan on official hosting) nor inert (`aria-disabled` while the plan
+   * or the hosting mode is still unknown; never crowned meanwhile).
+   */
+  unlockedChartTypeButton: (page: Page, type: ChartTypeName) =>
+    page.locator(
+      `${byTestId(`chart-type-button-${CHART_TYPE_SLUGS[type]}`)}:not([data-locked="true"]):not([aria-disabled="true"])`
+    ),
+  chartTypeProBadge: (page: Page, type: ChartTypeName) =>
+    chartTypeButton(page, type).locator('[data-chart-type-pro-badge]'),
+  xAxisFields: (page: Page) => chartSettingsPanel(page).locator(byTestIdPrefix('chart-x-axis-field-')),
+  xAxisField: (page: Page, name: string) => chartSettingsFieldRow(page, 'chart-x-axis-field-', name),
+  /** The toggle row (`menuitemcheckbox` with `aria-checked`). */
+  omitZeroValues: (page: Page) => page.getByTestId('chart-omit-zero-values'),
+  /** The visual-only switch inside the toggle row. */
+  omitZeroValuesSwitch: (page: Page) => page.getByTestId('chart-omit-zero-values').locator('button[role="switch"]'),
+  aggregationItems: (page: Page) => chartSettingsPanel(page).locator(byTestIdPrefix('chart-aggregation-')),
+  aggregationItem: (page: Page, aggregation: ChartAggregationName) =>
+    page.getByTestId(`chart-aggregation-${CHART_AGGREGATION_SLUGS[aggregation]}`),
+  yAxisFields: (page: Page) => chartSettingsPanel(page).locator(byTestIdPrefix('chart-y-axis-field-')),
+  yAxisField: (page: Page, name: string) => chartSettingsFieldRow(page, 'chart-y-axis-field-', name),
+  /** Date grouping submenu of a date X-Axis row (a separate portal, not inside the panel). */
+  dateGroupingMenu: (page: Page) => page.getByTestId('chart-date-condition-menu'),
+  dateGroupingItems: (page: Page) =>
+    page.getByTestId('chart-date-condition-menu').locator(byTestIdPrefix('chart-date-condition-')),
+  dateGroupingItem: (page: Page, grouping: ChartDateGroupingName) =>
+    page.getByTestId(`chart-date-condition-${CHART_DATE_GROUPING_SLUGS[grouping]}`),
+  /** The trailing tick of a selected field, aggregation or date grouping row. */
+  selectedTick: (row: Locator) => row.locator('[data-slot="dropdown-menu-tick"]'),
 };
 
+const drilldownDialog = (page: Page) => page.getByRole('dialog');
+
 /**
- * Drill-down popup selectors (rendered when the user clicks a chart element).
+ * Drill-down popup (`ChartRowListPopup`), opened by clicking the chart element
+ * of a category that has rows.
  */
 export const ChartDrilldownSelectors = {
-  dialog: (page: Page) => page.getByRole('dialog'),
-  closeButton: (page: Page) => page.getByRole('dialog').getByRole('button').first(),
+  dialog: drilldownDialog,
+  /** The category label and its row count, e.g. "Option A" and "(1 rows)". */
+  title: (page: Page) => drilldownDialog(page).locator('.MuiDialogTitle-root'),
+  closeButton: (page: Page) => drilldownDialog(page).locator('.MuiDialogTitle-root').getByRole('button'),
+  /** One button per row of the category, named by the row's primary field. */
+  rows: (page: Page) => drilldownDialog(page).locator('.MuiDialogContent-root').getByRole('button'),
 };
 
 /**

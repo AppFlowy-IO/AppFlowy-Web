@@ -29,6 +29,7 @@ jest.mock('axios', () => ({
   __esModule: true,
   default: {
     create: mockAxiosCreate,
+    getUri: jest.requireActual<typeof import('axios')>('axios').default.getUri,
     isAxiosError: (error: unknown) => Boolean((error as { isAxiosError?: boolean })?.isAxiosError),
   },
   create: mockAxiosCreate,
@@ -793,6 +794,24 @@ describe('http_api client (unit)', () => {
     warnSpy.mockRestore();
   });
 
+  it('returns bootstrap data without acting on a server restore identifier', async () => {
+    const module = await import('../http_api');
+
+    module.initAPIService(baseConfig);
+    const id = '11111111-1111-4111-8111-111111111111';
+    const storageKey = 'af_server_restore:v1:https://test.appflowy.cloud';
+    const previousId = '00000000-0000-0000-0000-000000000000';
+
+    localStorage.setItem(storageKey, previousId);
+    mockAxiosInstance.get.mockResolvedValue({ data: {
+      code: 0, data: { version: '0.19.0', server_restore_id: id, enable_page_history: true },
+    } });
+
+    await expect(module.getServerInfo()).resolves.toMatchObject({ version: '0.19.0', enable_page_history: true });
+    expect(localStorage.getItem(storageKey)).toBe(previousId);
+    expect(mockAxiosInstance.get).toHaveBeenCalledTimes(1);
+  });
+
   it('bounds and cancels server-info requests while identifying the web platform and bundle version', async () => {
     const module = await import('../http_api');
     module.initAPIService(baseConfig);
@@ -1177,15 +1196,13 @@ describe('http_api client (unit)', () => {
       message: 'ok',
     };
 
+    const sentConfig = requestInterceptor({ method: 'get', url, params, headers: { set: jest.fn() } });
+
     responseSuccess({
       headers: {
         etag: 'W/"access-details-v2:test"',
       },
-      config: {
-        method: 'get',
-        url,
-        params,
-      },
+      config: sentConfig,
       data: cachedData,
     });
 
@@ -1204,11 +1221,7 @@ describe('http_api client (unit)', () => {
 
     const cachedResponse = await responseError({
       isAxiosError: true,
-      config: {
-        method: 'get',
-        url,
-        params,
-      },
+      config: sentConfig,
       response: {
         status: 304,
         data: undefined,

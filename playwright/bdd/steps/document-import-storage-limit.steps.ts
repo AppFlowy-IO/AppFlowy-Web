@@ -24,7 +24,7 @@ Given('the document import {string} reports exhausted workspace storage', async 
   const error = { code: 1028, message: 'Workspace storage is full' };
 
   stateByPage.set(page, state);
-  await page.route(/\/api\/import\/[^/]+\/document(?:\/[^/]+)?$/, async (route) => {
+  await page.route(/\/api\/import\/[^/?]+\/document(?:\/[^/?]+)?(?:\?|$)/, async (route) => {
     if (route.request().method() === 'POST') {
       state.creates++;
       await route.fulfill({
@@ -43,7 +43,7 @@ Given('the document import {string} reports exhausted workspace storage', async 
     state.uploads++;
     await route.fulfill({ status: 200, body: '' });
   });
-  await page.route(`**/api/import/tasks/${taskId}/cancel`, (route) => route.fulfill({ json: { code: 0 } }));
+  await page.route(`**/api/import/tasks/${taskId}/cancel{,?**}`, (route) => route.fulfill({ json: { code: 0 } }));
 });
 
 When('I select two generated {string} files for the storage limit check', async ({ page }, format: string) => {

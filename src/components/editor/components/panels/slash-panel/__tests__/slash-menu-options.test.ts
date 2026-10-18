@@ -46,6 +46,7 @@ describe('slash-menu-options', () => {
       option({ key: 'linkedChart' }),
       option({ key: 'outline' }),
       option({ key: 'askAIAnything' }),
+      option({ key: 'aiTranscript', label: 'AI transcript', keywords: ['transcription', 'meeting', 'audio', 'video'] }),
       option({ key: 'video' }),
       option({ key: 'pdf' }),
       option({ key: 'dateOrReminder', keywords: ['date', 'reminder'] }),
@@ -55,6 +56,12 @@ describe('slash-menu-options', () => {
       const result = filterSlashMenuOptions(options, { isInsideSimpleTableCell: true });
 
       expect(result.map((item) => item.key)).toEqual(['text', 'video', 'pdf', 'dateOrReminder']);
+    });
+
+    it('finds AI transcript from its media and meeting keywords outside nested blocks', () => {
+      ['transcript', 'transcription', 'meeting', 'audio'].forEach((searchText) => {
+        expect(filterSlashMenuOptions(options, { searchText }).map((item) => item.key)).toEqual(['aiTranscript']);
+      });
     });
 
     it('hides desktop-excluded commands inside AI meeting blocks', () => {

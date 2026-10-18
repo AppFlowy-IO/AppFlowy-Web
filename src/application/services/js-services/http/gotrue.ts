@@ -1,7 +1,7 @@
 import axios, { AxiosInstance } from 'axios';
 
 import { readErrorIdentity, userFriendlyErrorMessage } from '@/application/errors/error-message';
-import { getTokenParsed, invalidToken, saveGoTrueAuth, type GoTrueAuthUser } from '@/application/session/token';
+import { captureTokenSession, getTokenParsed, invalidToken, saveGoTrueAuth, type GoTrueAuthUser } from '@/application/session/token';
 import { CUSTOM_PROVIDER_PREFIX } from '@/application/types';
 import { Log } from '@/utils/log';
 
@@ -75,6 +75,13 @@ export async function refreshToken(refresh_token: string) {
     return inFlight;
   }
 
+  const refreshingSession = captureTokenSession();
+  const current = getTokenParsed();
+
+  if (current && current.refresh_token !== refresh_token) {
+    throw new Error('Refresh token no longer belongs to the current session');
+  }
+
   Log.info('[Auth] refreshToken: requesting new token');
 
   const promise = (async (): Promise<RefreshedToken> => {
@@ -86,7 +93,7 @@ export async function refreshToken(refresh_token: string) {
 
     if (newToken) {
       Log.info('[Auth] refreshToken: success, saving token');
-      if (!saveGoTrueAuth(JSON.stringify(newToken))) {
+      if (!saveGoTrueAuth(JSON.stringify(newToken), refreshingSession)) {
         throw new Error('Failed to persist refreshed token');
       }
     } else {

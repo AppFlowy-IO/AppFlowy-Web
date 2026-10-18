@@ -226,6 +226,8 @@ test('Turn into is shared by paragraphs, headings, lists, quotes, code and callo
 
 test('Flutter: insert a callout from the slash menu', async ({ page }) => {
   await page.getByText('Following paragraph', { exact: true }).click();
+  // Allow Slate's throttled native selectionchange handler to observe the clicked paragraph.
+  await page.waitForTimeout(150);
   await page.keyboard.press('End');
   await page.keyboard.press('Enter');
   await page.keyboard.type('/callout');

@@ -1,4 +1,4 @@
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { measureElement, useVirtualizer } from '@tanstack/react-virtual';
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { PADDING_END, useDatabaseContext } from '@/application/database-yjs';
@@ -56,10 +56,7 @@ export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[];
       cancelAnimationFrame(rafIdRef.current);
     }
 
-    // For embedded databases, measure offset more carefully
-    const first = measureParentOffset();
-
-    if (first === null) {
+    if (!parentRef.current || !getScrollElement()) {
       logDebug('[GridVirtualizer] skip parent offset update; missing refs', {
         hasParent: !!parentRef.current,
         hasScrollElement: !!getScrollElement(),
@@ -80,8 +77,11 @@ export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[];
         return;
       }
 
-      const measured = measureParentOffset();
-      const nextOffset = measured ?? first;
+      // Read after the pending render instead of forcing layout both in the
+      // layout effect and again here. Detached grids no longer need an offset.
+      const nextOffset = measureParentOffset();
+
+      if (nextOffset === null) return;
 
       // If this is the first measurement, always accept it without threshold check
       // This prevents rejecting valid initial offsets (e.g., 955px) that would fail
@@ -154,6 +154,14 @@ export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[];
     scrollMargin: parentOffset,
     getScrollElement,
     getItemKey: (index) => getRenderRowKey(data[index]),
+    measureElement: (element, entry, instance) => {
+      // The ref runs while React is mutating the grid. Reading offsetHeight
+      // here forces layout for each mounted row. Keep the cached size (or its
+      // estimate) until ResizeObserver supplies the border box before paint.
+      if (!entry) return instance.measurementsCache[instance.indexFromElement(element)]?.size ?? MIN_HEIGHT;
+
+      return measureElement(element, entry, instance);
+    },
     paddingStart: 0,
     paddingEnd: isDocumentBlock ? 0 : PADDING_END,
   });

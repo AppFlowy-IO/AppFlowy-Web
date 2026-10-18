@@ -57,6 +57,15 @@ describe('useDatabaseOperations row document permission errors', () => {
     await expect(result.current.createRowDocument('document-id')).resolves.toBeNull();
   });
 
+  it('preserves record-not-found from the direct read for row-page initialization', async () => {
+    const missing = { code: ERROR_CODE.RECORD_NOT_FOUND, message: 'Collab not found' };
+
+    mockOpenRowSubDocument.mockRejectedValue(missing);
+    const { result } = renderHook(() => useDatabaseOperations());
+
+    await expect(result.current.loadRowDocument('document-id')).rejects.toBe(missing);
+  });
+
   it('does not misclassify quota errors as object permission denials', async () => {
     const quotaError = { code: ERROR_CODE.STORAGE_SPACE_NOT_ENOUGH, message: 'storage quota exceeded' };
 

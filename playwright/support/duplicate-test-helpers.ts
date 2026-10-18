@@ -466,24 +466,47 @@ async function openSlashMenuInEditor(page: Page, editor: Locator, line: number =
   };
 
   if (line > 0 && blockCount > 0) {
-    // Position cursor after the last database block by clicking below it,
-    // pressing End to go to the end of the line, then Enter to create a
-    // new empty paragraph.
+    // A database can fill a clipped dialog. Clicking below its bounding box
+    // can hit the backdrop, so use its own Slate caret and the normal Enter
+    // behavior to create a paragraph after the block.
     const lastBlock = blocks.nth(Math.min(line - 1, blockCount - 1));
+    const editorId = await editor.getAttribute('id');
+
     await lastBlock.scrollIntoViewIfNeeded();
-    const box = await lastBlock.boundingBox();
+    await lastBlock.evaluate((block, expectedEditorId) => {
+      const owner = block.closest<HTMLElement>('[data-slate-editor="true"]');
+      const leaf = Array.from(block.querySelectorAll('[data-slate-string], [data-slate-zero-width]')).find(
+        (candidate) => candidate.closest('[data-slate-editor="true"]') === owner
+      );
 
-    if (box) {
-      // Click just below the last database block
-      await page.mouse.click(box.x + box.width / 2, box.y + box.height + 10);
-    } else {
-      await focusEditorForSlash(page, editor);
-    }
+      if (!owner || !expectedEditorId || owner.id !== expectedEditorId || !leaf) {
+        throw new Error('The database block has no caret in the expected editor');
+      }
 
-    await page.waitForTimeout(300);
-    await page.keyboard.press('End');
+      owner.focus();
+      const range = owner.ownerDocument.createRange();
+
+      range.selectNodeContents(leaf);
+      range.collapse(false);
+      const selection = owner.ownerDocument.getSelection();
+
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    }, editorId);
+    await expect.poll(() => lastBlock.evaluate((block) => {
+      const owner = block.closest('[data-slate-editor="true"]');
+      const anchor = block.ownerDocument.getSelection()?.anchorNode?.parentElement;
+
+      return block.ownerDocument.activeElement === owner && anchor?.closest('[data-block-type]') === block;
+    }), { message: 'Waiting for the database block caret in the target editor' }).toBe(true);
     await page.keyboard.press('Enter');
-    await page.waitForTimeout(300);
+    await expect.poll(() => editor.evaluate((owner) => {
+      const anchor = owner.ownerDocument.getSelection()?.anchorNode?.parentElement;
+
+      return owner.ownerDocument.activeElement === owner &&
+        anchor?.closest('[data-slate-editor="true"]') === owner &&
+        anchor?.closest('[data-block-type]')?.getAttribute('data-block-type') === 'paragraph';
+    }), { message: 'Waiting for an editable paragraph after the database block' }).toBe(true);
   } else {
     await focusEditorForSlash(page, editor);
     await page.waitForTimeout(300);
@@ -587,11 +610,25 @@ export async function insertLinkedGridViaSlash(
         const databaseOption = popover.getByText(databaseName, { exact: false }).first();
 
         await databaseOption.scrollIntoViewIfNeeded();
+        const atomicCommands: string[] = [];
         const [response] = await Promise.all([
           page.waitForResponse(
-            (candidate) =>
-              candidate.request().method() === 'POST' &&
-              new URL(candidate.url()).pathname.endsWith(`/page-view/${docViewId}/database-view`),
+            async (candidate) => {
+              const request = candidate.request();
+
+              if (request.method() !== 'POST') return false;
+              const path = new URL(candidate.url()).pathname;
+
+              if (path.endsWith(`/page-view/${docViewId}/database-view`)) return true;
+              if (!path.endsWith('/v2/page-view/database-view/default')) return false;
+              const command = request.postDataJSON();
+
+              if (command.view?.parent_view_id !== docViewId) return false;
+              atomicCommands.push(request.postData()!);
+              // RetryLater keeps the original command pending; it is not a
+              // successful insert or an invitation to click the picker again.
+              return !candidate.ok() || (await candidate.json()).code !== -5;
+            },
             { timeout: 30000 }
           ),
           databaseOption.click(),
@@ -600,11 +637,23 @@ export async function insertLinkedGridViaSlash(
         if (!response.ok()) {
           throw new Error(`Linked database view creation failed with HTTP ${response.status()}`);
         }
+        const body = await response.json();
+
+        expect(body.code, 'Linked database view application result').toBe(0);
 
         // The POST succeeded, so the linked view now exists server-side and the
         // block will follow. Everything below only *verifies* that; a failure
         // there is not a failed insert and retrying would create a second view.
         viewCreated = true;
+        if (atomicCommands.length) {
+          const command = response.request().postDataJSON();
+
+          expect(new Set(atomicCommands).size, 'Atomic retries preserve the exact linked-view command').toBe(1);
+          expect(command.view).toMatchObject({ parent_view_id: docViewId, layout: 0, embedded: true });
+          expect(command.view.source_view_id).toBeTruthy();
+          expect(body.data).toMatchObject({ request_id: command.request_id,
+            result: { view_id: command.view.view_id, database_id: command.view.database_id } });
+        }
 
         const expectedBlockCount = initialBlockCount + 1;
         const apiOrigin = new URL(response.url()).origin;

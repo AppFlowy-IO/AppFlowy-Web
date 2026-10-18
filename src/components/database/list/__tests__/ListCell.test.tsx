@@ -16,6 +16,8 @@ import { formatListTime, ListCell } from '../ListCell';
 
 jest.mock('@/application/database-yjs', () => ({
   FieldType: {
+    CreatedBy: 17,
+    LastEditedBy: 18,
     RichText: 0,
     Number: 1,
     DateTime: 2,
@@ -229,17 +231,15 @@ describe('database_list_field_display.dart: list view displays multiple field ty
   });
 
   it.each([
+    ['Person', FieldType.Person, ['[&_.person-cell-name]:sr-only']],
+    ['Relation', FieldType.Relation, ['[&_.relation-cell]:!gap-0', '[&_.relation-cell>div]:!text-text-primary']],
     [
-      'Person',
-      FieldType.Person,
-      [
-        '[&_.select-option-cell]:!gap-0',
-        '[&_.select-option-cell>div>div]:!gap-1.5',
-        '[&_.select-option-cell>div>div>span]:!text-xs',
-      ],
+      'Rollup',
+      FieldType.Rollup,
+      ['[&_.rollup-cell>div>div]:!bg-fill-secondary', '[&_.rollup-person-name]:text-xs', '[&_.rollup-person-name]:leading-[18px]'],
     ],
-    ['Relation', FieldType.Relation, ['[&_.relation-cell]:!gap-0', '[&_.relation-cell>div]:!text-text-secondary']],
-    ['Rollup', FieldType.Rollup, ['[&_.rollup-cell>div>div]:!bg-fill-secondary']],
+    ['CreatedBy', FieldType.CreatedBy, ['[&_.attribution-name]:text-xs', '[&_.attribution-name]:leading-[18px]']],
+    ['LastEditedBy', FieldType.LastEditedBy, ['[&_.attribution-name]:text-xs', '[&_.attribution-name]:leading-[18px]']],
   ] as const)('scopes Flutter compact %s styling without changing Grid', (_name, fieldType, classes) => {
     const fieldId = `field-${fieldType}`;
 
@@ -250,6 +250,109 @@ describe('database_list_field_display.dart: list view displays multiple field ty
     const wrapper = screen.getByTestId(`list-shared-cell-row-1-${fieldId}`);
 
     classes.forEach((className) => expect(wrapper.className).toContain(className));
+  });
+});
+
+describe('desktop_list_card_cell_style.dart: desktop PR #1475 style map parity', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockUseFieldSelector.mockReturnValue({ clock: 0, field: {} } as ReturnType<typeof useFieldSelector>);
+    mockUseReadOnly.mockReturnValue(false);
+    mockUseUpdateCellDispatch.mockReturnValue(jest.fn());
+  });
+
+  it('hides Person names (hideName: true) and leaves the 4px avatar spacing to PersonCell', () => {
+    render(
+      <ListCell
+        cell={makeCell(FieldType.Person, '["person-1"]')}
+        field={makeField('assignee', FieldType.Person)}
+        rowId='row-1'
+        style={{}}
+      />
+    );
+
+    const wrapper = screen.getByTestId('list-shared-cell-row-1-assignee');
+
+    // sr-only keeps the names for screen readers; avatar img alt only covers users with an image.
+    expect(wrapper.className).toContain('[&_.person-cell-name]:sr-only');
+    expect(wrapper.className).not.toContain('!gap-0');
+    expect(wrapper.className).not.toContain('!gap-1.5');
+    expect(wrapper.className).not.toContain('!text-xs');
+    expect(wrapper.className).not.toContain('select-option-cell');
+  });
+
+  it('renders Relation names in the primary text color', () => {
+    render(
+      <ListCell
+        cell={makeCell(FieldType.Relation, 'Value')}
+        field={makeField('linked', FieldType.Relation)}
+        rowId='row-1'
+        style={{}}
+      />
+    );
+
+    const wrapper = screen.getByTestId('list-shared-cell-row-1-linked');
+
+    expect(wrapper.className).toContain('[&_.relation-cell>div]:!text-text-primary');
+    expect(wrapper.className).not.toContain('text-text-secondary');
+  });
+
+  it('renders Time durations in the primary text color', () => {
+    render(
+      <ListCell
+        cell={makeCell(FieldType.Time, '90')}
+        field={makeField('duration', FieldType.Time)}
+        rowId='row-1'
+        style={{}}
+      />
+    );
+
+    const time = screen.getByTestId('list-time-cell-row-1-duration');
+
+    expect(time.textContent).toBe('1h 30m');
+    expect(time.className).toContain('text-xs');
+    expect(time.className).toContain('text-text-primary');
+    expect(time.className).not.toContain('text-text-secondary');
+  });
+
+  it('renders the checklist percentage in the primary text color', () => {
+    mockParseChecklistFlexible.mockReturnValue({
+      options: [{ color: SelectOptionColor.OptionColor1, id: 'one', name: 'One' }],
+      percentage: 1,
+      selectedOptionIds: ['one'],
+    } as ReturnType<typeof parseChecklistFlexible>);
+
+    render(
+      <ListCell
+        cell={makeCell(FieldType.Checklist, '[x] One')}
+        field={makeField('tasks', FieldType.Checklist)}
+        rowId='row-1'
+        style={{}}
+      />
+    );
+
+    const percentage = screen.getByTestId('list-checklist-cell-row-1-tasks').lastElementChild;
+
+    expect(percentage?.textContent).toBe('100%');
+    expect(percentage?.className).toContain('text-text-primary');
+    expect(percentage?.className).not.toContain('text-text-secondary');
+  });
+
+  it('keeps Media metadata in the secondary text color (MediaCardCell ignores textStyle)', () => {
+    render(
+      <ListCell
+        cell={makeCell(FieldType.Media, [{ id: 'one' }])}
+        field={makeField('media', FieldType.Media)}
+        rowId='row-1'
+        style={{}}
+      />
+    );
+
+    const media = screen.getByTestId('list-media-cell-row-1-media');
+
+    expect(media.className).toContain('text-text-secondary');
+    expect(media.className).not.toContain('text-text-primary');
+    expect(media.querySelector('svg')?.getAttribute('class')).toContain('text-icon-secondary');
   });
 });
 

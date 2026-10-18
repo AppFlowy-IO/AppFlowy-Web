@@ -58,6 +58,9 @@ import {
 import { DatabaseHistoryScope } from '@/components/database/DatabaseHistoryScope';
 import { AFConfigContext } from '@/components/main/app.hooks';
 
+import { createCloudRow, type CloudRowCreationIntent } from '../creation/create-row';
+import { recordCommittedRowCreation } from '../creation/row-creation-history';
+
 import { createRowDoc } from './test-helpers';
 
 import type { ReactNode } from 'react';
@@ -75,6 +78,26 @@ jest.mock('@/application/db', () => ({
 jest.mock('@/application/sync-outbox', () => ({
   deleteOutboxByObjectId: jest.fn().mockResolvedValue(undefined),
 }));
+
+jest.mock('../creation/create-row', () => ({ createCloudRow: jest.fn() }));
+beforeEach(() => {
+  jest.mocked(createCloudRow).mockImplementation(async (intent: CloudRowCreationIntent) => {
+    intent.assertCurrent();
+    const row = await intent.registerRow();
+
+    Y.applyUpdate(row, Y.encodeStateAsUpdate(intent.rowDoc));
+    const database = intent.databaseDoc.getMap('data').get('database') as YDatabase;
+
+    // Only model the remote commit here; keep production grouping and undo/redo real.
+    intent.databaseDoc.transact(() => {
+      database.get(YjsDatabaseKey.views).forEach((view) => {
+        view.get(YjsDatabaseKey.row_orders).push([{ id: intent.rowId, height: 36 }]);
+      });
+    }, 'remote');
+    recordCommittedRowCreation(intent.databaseDoc, intent.rowId, intent.historyGroup);
+    return intent.rowId;
+  });
+});
 
 const databaseId = 'database-id';
 const viewId = 'view-id';
@@ -707,7 +730,9 @@ describe('database history production dispatch policies', () => {
     'repairs a %s calendar date field without resetting shared view settings',
     async (fieldState) => {
       const invalidFieldId = 'invalid-date';
-      const fixture = createFixture(fieldState === 'missing' ? [] : [[invalidFieldId, createField(invalidFieldId, FieldType.RichText)]]);
+      const fixture = createFixture(
+        fieldState === 'missing' ? [] : [[invalidFieldId, createField(invalidFieldId, FieldType.RichText)]]
+      );
       const createdRowDoc = new Y.Doc() as YDoc;
       const createRow = jest.fn().mockResolvedValue(createdRowDoc);
 

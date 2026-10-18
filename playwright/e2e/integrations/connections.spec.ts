@@ -19,15 +19,16 @@ for (const provider of ['google-drive', 'google-calendar'] as const) {
 
     expect(confirmations).toHaveLength(1);
     expect(confirmations[0].postDataJSON().connection_id).toBe(authorization.id);
+    expect(new URL(confirmations[0].url()).searchParams.has('server_restore_id')).toBe(false);
     await expect
-      .poll(() => connectionApp.requests.filter((request) => request.url().endsWith('/api/integrations/proxy')).length)
+      .poll(() => connectionApp.requests.filter((request) => new URL(request.url()).pathname.endsWith('/api/integrations/proxy')).length)
       .toBe(1);
 
     await page.reload();
     await expect(page.getByTestId(`connection-${authorization.id}`)).toContainText(`${provider}-1@example.test`);
     expect(connectionApp.authorizations).toHaveLength(1);
     await expect
-      .poll(() => connectionApp.requests.filter((request) => request.url().endsWith('/api/integrations/proxy')).length)
+      .poll(() => connectionApp.requests.filter((request) => new URL(request.url()).pathname.endsWith('/api/integrations/proxy')).length)
       .toBe(2);
   });
 }
@@ -40,7 +41,7 @@ test('declined consent shows an error and a fresh authorization can succeed', as
   await denied.getByRole('button', { name: 'Deny access' }).click();
   await closed;
   await expect(page.getByRole('alert')).toHaveText('Authorization was declined. Please try again and allow access.');
-  expect(connectionApp.requests.filter((request) => request.url().endsWith(CALLBACK_PATH))).toHaveLength(0);
+  expect(connectionApp.requests.filter((request) => new URL(request.url()).pathname.endsWith(CALLBACK_PATH))).toHaveLength(0);
   expect(connectionApp.connections).toHaveLength(0);
 
   await allowConnection(await startConnection(page, 'google-drive'));
@@ -62,7 +63,7 @@ for (const action of ['close popup', 'cancel', 'close settings'] as const) {
     if (action === 'close settings') await page.getByRole('button', { name: 'Open settings', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Add connection', exact: true })).toBeEnabled();
     await expect(page.getByRole('alert')).toBeHidden();
-    expect(connectionApp.requests.filter((request) => request.url().endsWith(CALLBACK_PATH))).toHaveLength(0);
+    expect(connectionApp.requests.filter((request) => new URL(request.url()).pathname.endsWith(CALLBACK_PATH))).toHaveLength(0);
 
     await allowConnection(await startConnection(page, 'google-calendar'));
     await expect(page.getByText('google-calendar-1@example.test', { exact: true })).toBeVisible();
@@ -77,7 +78,7 @@ test('OAuth timeout closes the popup and offers a fresh attempt', async ({ page,
   await page.clock.fastForward('02:01');
   await expect(page.getByRole('alert')).toHaveText('The connection timed out. Please try again.');
   expect(popup.isClosed()).toBe(true);
-  expect(connectionApp.requests.filter((request) => request.url().endsWith(CALLBACK_PATH))).toHaveLength(0);
+  expect(connectionApp.requests.filter((request) => new URL(request.url()).pathname.endsWith(CALLBACK_PATH))).toHaveLength(0);
   await allowConnection(await startConnection(page, 'google-drive'));
   await expect(page.getByText('google-drive-1@example.test', { exact: true })).toBeVisible();
 });
@@ -142,13 +143,13 @@ for (const attack of ['wrong origin', 'wrong window', 'wrong state'] as const) {
       new URLSearchParams({ code, state: attack === 'wrong state' ? 'stale-state' : state }).toString()
     );
     await expect(page.getByText('Complete authorization in the browser window.')).toBeVisible();
-    expect(connectionApp.requests.filter((request) => request.url().endsWith(CALLBACK_PATH))).toHaveLength(0);
+    expect(connectionApp.requests.filter((request) => new URL(request.url()).pathname.endsWith(CALLBACK_PATH))).toHaveLength(0);
     expect(connectionApp.connections).toHaveLength(0);
     if (sender !== popup) await sender.close();
     if (attack === 'wrong state') await popup.goto(providerURL);
     await allowConnection(popup);
     await expect(page.getByText('google-drive-1@example.test', { exact: true })).toBeVisible();
-    expect(connectionApp.requests.filter((request) => request.url().endsWith(CALLBACK_PATH))).toHaveLength(1);
+    expect(connectionApp.requests.filter((request) => new URL(request.url()).pathname.endsWith(CALLBACK_PATH))).toHaveLength(1);
   });
 }
 
@@ -168,7 +169,7 @@ test('duplicate callback messages confirm the connection only once', async ({ pa
     { query: new URLSearchParams({ code, state }).toString(), targetOrigin: new URL(page.url()).origin }
   );
   await expect(page.getByText('google-drive-1@example.test', { exact: true })).toBeVisible();
-  expect(connectionApp.requests.filter((request) => request.url().endsWith(CALLBACK_PATH))).toHaveLength(1);
+  expect(connectionApp.requests.filter((request) => new URL(request.url()).pathname.endsWith(CALLBACK_PATH))).toHaveLength(1);
   expect(connectionApp.connections).toHaveLength(1);
 });
 
@@ -217,7 +218,7 @@ test('failed confirmation does not display a connected account and a fresh attem
   connectionApp,
 }) => {
   await context.route(
-    `**${CALLBACK_PATH}`,
+    `**${CALLBACK_PATH}{,?**}`,
     (route) =>
       route.fulfill({
         status: 503,
@@ -239,7 +240,7 @@ test('failed confirmation does not display a connected account and a fresh attem
 });
 
 test('failed connection startup closes the blank popup and allows retry', async ({ page, context, connectionApp }) => {
-  await context.route('**/api/integrations/connect/google-drive', (route) => route.abort('failed'), { times: 1 });
+  await context.route('**/api/integrations/connect/google-drive{,?**}', (route) => route.abort('failed'), { times: 1 });
   await connectionApp.open();
   const opened = page.waitForEvent('popup');
 
@@ -285,7 +286,7 @@ test('disconnect requires confirmation, preserves accounts on failure and remove
   await manage.click();
   await page.getByRole('menuitem', { name: 'Disconnect account', exact: true }).click();
   await context.route(
-    `**/api/integrations/connections/${drive.id}`,
+    `**/api/integrations/connections/${drive.id}{,?**}`,
     (route) =>
       route.fulfill({
         status: 503,

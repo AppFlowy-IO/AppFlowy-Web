@@ -1,83 +1,10 @@
-import { ChartDataItem } from '@/application/database-yjs/chart.type';
-
-/**
- * Shared tooltip state interface for all chart types
- */
-export interface TooltipState {
-  active: boolean;
-  item: ChartDataItem | null;
-  x: number;
-  y: number;
-}
-
-/**
- * Extended tooltip state for DonutChart with percentage
- */
-export interface DonutTooltipState {
-  active: boolean;
-  item: (ChartDataItem & { percent?: number }) | null;
-  x: number;
-  y: number;
-}
-
-/**
- * Initial tooltip state
- */
-export const INITIAL_TOOLTIP_STATE: TooltipState = {
-  active: false,
-  item: null,
-  x: 0,
-  y: 0,
-};
+import { CHART_COLORS, ChartDataItem } from '@/application/database-yjs/chart.type';
 
 /**
  * Format value for display (integer if whole number, otherwise 1 decimal)
  */
 export function formatValue(value: number): string {
   return value === Math.round(value) ? value.toString() : value.toFixed(1);
-}
-
-/**
- * Generate a small set of "nice" tick values for an axis covering [min, max].
- *
- * Replaces the previous `0..ceil(max)` enumeration which could produce
- * thousands of ticks (one per integer) for Sum/Count aggregations on large
- * datasets, hanging Recharts. Caps at ~`targetCount` ticks with rounded step
- * sizes (1 / 2 / 5 × 10^n).
- *
- * Supports negative `min`, so Sum/Avg/Min on Number fields with negative
- * values doesn't get clipped at zero.
- */
-export function generateNiceTicks(min: number, max: number, targetCount = 8): number[] {
-  if (!Number.isFinite(min) || !Number.isFinite(max)) return [0];
-  if (min === max) {
-    if (min === 0) return [0];
-    // Single non-zero value — show 0 and the value as ticks.
-    return min < 0 ? [min, 0] : [0, min];
-  }
-
-  const range = max - min;
-  const exp = Math.floor(Math.log10(range / targetCount));
-  const fraction = (range / targetCount) / Math.pow(10, exp);
-  let niceFraction: number;
-
-  if (fraction < 1.5) niceFraction = 1;
-  else if (fraction < 3) niceFraction = 2;
-  else if (fraction < 7) niceFraction = 5;
-  else niceFraction = 10;
-
-  const step = niceFraction * Math.pow(10, exp);
-  const niceMin = Math.floor(min / step) * step;
-  const niceMax = Math.ceil(max / step) * step;
-  const ticks: number[] = [];
-  const epsilon = step * 1e-9;
-
-  for (let v = niceMin; v <= niceMax + epsilon; v += step) {
-    // Avoid float drift accumulated by repeated addition.
-    ticks.push(Math.round(v / step) * step);
-  }
-
-  return ticks;
 }
 
 /**
@@ -91,60 +18,125 @@ export function calculateBarWidth(dataCount: number): number {
 }
 
 /**
- * Calculate bar height based on data count for horizontal bar chart
+ * Desktop's `_validateData` on the bar, line and horizontal bar charts: only
+ * finite, non-negative values are plotted (the donut also drops zeros).
  */
-export function calculateBarHeight(dataCount: number): number {
-  if (dataCount <= 5) return 48;
-  if (dataCount <= 10) return 40;
-  if (dataCount <= 20) return 32;
-  return 28;
+export function isPlottableValue(item: ChartDataItem): boolean {
+  return Number.isFinite(item.value) && item.value >= 0;
 }
 
 /**
- * Compute the axis domain and tick values for a chart's value axis.
- * Always anchors zero in the domain so bars/columns have a meaningful
- * baseline. Supports negative values from Sum / Average / Min on Number
- * fields. Single-pass min/max scan avoids the spread-overflow risk of
- * `Math.min(...arr)` for very large arrays.
+ * Fill color for the item at `index` of the list a widget renders (desktop's
+ * `ChartColorUtils.resolveColor`): its fixed option / checkbox color, else the
+ * palette color for that index.
  */
-export function computeValueAxis(data: ChartDataItem[]): {
-  domain: [number, number];
-  ticks: number[];
-} {
-  let dataMin = 0;
-  let dataMax = 0;
+export function resolveChartItemColor(item: ChartDataItem, index: number): string {
+  return item.color ?? CHART_COLORS[index % CHART_COLORS.length];
+}
 
-  for (const item of data) {
-    if (item.value < dataMin) dataMin = item.value;
-    if (item.value > dataMax) dataMax = item.value;
+/** Text color for labels tinted with the item's color (`toAFTextColor: true` on desktop). */
+export function resolveChartItemTextColor(item: ChartDataItem, index: number): string {
+  return item.textColor ?? resolveChartItemColor(item, index);
+}
+
+/**
+ * Desktop's decade of `value`, `(math.log(value) / math.ln10).floor()`: the
+ * `_magnitude` helper of the bar and line charts and the inline expression in
+ * the horizontal bar chart's `_computeAxisMax`. Unlike `Math.log10` it lands
+ * one decade low at some exact powers of ten (`Math.log(1000) / Math.LN10`
+ * is 2.9999999999999996; likewise 1e6, 1e9, 1e12, 1e13 and 1e15), so a
+ * horizontal-bar max of 800 gets axis 1000, not 1500. Kept on purpose for
+ * desktop parity: an epsilon around `Math.log10` would not drop the same set
+ * of decades.
+ */
+function desktopMagnitude(value: number): number {
+  if (value <= 0) return 1;
+
+  return Math.pow(10, Math.floor(Math.log(value) / Math.LN10));
+}
+
+/**
+ * Desktop's `_calculateYAxisInterval` (bar + line charts): a 1 / 2 / 5 / 10
+ * × 10^n step that splits `maxY` into roughly five intervals.
+ */
+export function calculateAxisInterval(maxY: number): number {
+  if (maxY <= 0) return 1;
+  const rawInterval = maxY / 5;
+  const magnitude = desktopMagnitude(rawInterval);
+  const normalized = rawInterval / magnitude;
+  let niceInterval: number;
+
+  if (normalized <= 1) niceInterval = 1;
+  else if (normalized <= 2) niceInterval = 2;
+  else if (normalized <= 5) niceInterval = 5;
+  else niceInterval = 10;
+
+  return niceInterval * magnitude;
+}
+
+/**
+ * Tick values from 0 up to and including `axisMax` in `interval` steps,
+ * like fl_chart's side titles. Multiples are rebuilt from the index so float
+ * drift never hides an integer tick.
+ */
+export function axisTicks(axisMax: number, interval: number): number[] {
+  if (!(axisMax > 0) || !(interval > 0)) return [0];
+  const ticks: number[] = [];
+  const count = Math.floor(axisMax / interval + 1e-9);
+
+  for (let i = 0; i <= count; i++) {
+    ticks.push(Number((i * interval).toPrecision(12)));
   }
 
-  const ticks = generateNiceTicks(dataMin, dataMax);
-
-  // `generateNiceTicks` always returns at least one tick (`[0]` for the
-  // all-zero case), so direct indexing is safe.
-  return { domain: [ticks[0], ticks[ticks.length - 1]], ticks };
+  return ticks;
 }
 
-/**
- * Compute axis max - extend to ~2x max value for breathing room (matching Flutter)
- */
-export function computeAxisMax(maxValue: number): number {
+/** Desktop bar chart's `_computeAxisMaxY`: 30% headroom over the tallest bar. */
+export function computeBarAxisMax(maxValue: number): number {
+  return maxValue <= 0 ? 1 : maxValue * 1.3;
+}
+
+/** Desktop line chart's `_computeAxisMaxY`: ~20% headroom rounded to a nice number. */
+export function computeLineAxisMax(maxValue: number): number {
+  if (maxValue <= 0) return 5;
+  const targetMax = maxValue * 1.2;
+
+  for (const nice of [5, 10, 20, 25, 50, 100, 200, 500, 1000]) {
+    if (targetMax <= nice) return nice;
+  }
+
+  return Math.ceil(targetMax / 500) * 500;
+}
+
+/** Desktop horizontal bar chart's `_computeAxisMax`: ~25% headroom rounded to a nice number. */
+export function computeHorizontalAxisMax(maxValue: number): number {
   if (maxValue <= 0) return 4;
+  const targetMax = maxValue * 1.25;
 
-  const targetMax = maxValue * 2;
+  for (const nice of [4, 5, 6, 8, 10]) {
+    if (targetMax <= nice) return nice;
+  }
 
-  if (targetMax <= 4) return 4;
-  if (targetMax <= 5) return 5;
-  if (targetMax <= 10) return 10;
-
-  // For larger values, round up to nearest nice number
-  const magnitude = Math.pow(10, Math.floor(Math.log10(targetMax)));
+  const magnitude = desktopMagnitude(targetMax);
   const normalized = targetMax / magnitude;
 
+  if (normalized <= 1.5) return 1.5 * magnitude;
   if (normalized <= 2) return 2 * magnitude;
+  if (normalized <= 3) return 3 * magnitude;
   if (normalized <= 5) return 5 * magnitude;
   return 10 * magnitude;
+}
+
+/** Desktop horizontal bar chart's `_computeLabelCount` / `_computeGridCount`. */
+export function computeHorizontalLabelCount(axisMax: number): number {
+  if (axisMax <= 5) return Math.trunc(axisMax);
+  if (axisMax <= 10) return 5;
+  return 4;
+}
+
+/** Desktop axis and row labels cut anything longer than 15 characters. */
+export function truncateChartLabel(label: string): string {
+  return label.length > 15 ? `${label.substring(0, 15)}...` : label;
 }
 
 /**
@@ -170,6 +162,7 @@ export function chartDataEqual(a: ChartDataItem[], b: ChartDataItem[]): boolean 
       x.label !== y.label ||
       x.value !== y.value ||
       x.color !== y.color ||
+      x.textColor !== y.textColor ||
       x.isEmptyCategory !== y.isEmptyCategory ||
       x.rowIds.length !== y.rowIds.length
     ) {
