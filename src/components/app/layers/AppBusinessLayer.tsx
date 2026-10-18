@@ -604,7 +604,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
 
         if (permission && !cancelled) {
           // A re-probe that confirms the stored capabilities keeps that object,
-          // so a background focus check re-renders no navigation consumer.
+          // so a background re-check re-renders no navigation consumer.
           setObjectPermissions((current) =>
             isSameObjectPermission(current[activeViewId], permission)
               ? current
@@ -672,31 +672,38 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       bumpPermissionProbeRevision(permissionProbeRevisionRef.current, cacheKey);
     };
 
-    const revalidateActiveViews = (excludedViewId?: string) => {
-      // A targeted share notification does not name affected descendants, and
-      // a broad permission notification may name a group instead of a view.
-      // Conservatively re-probe the few currently rendered targets.
-      const activeViewIds = activePermissionViewIds.filter((activeViewId) => activeViewId !== excludedViewId);
-
-      if (activeViewIds.length === 0) return;
-      activeViewsRevalidatedAtRef.current = Date.now();
-      // Existing capabilities may have been downgraded. Remove them before the
-      // asynchronous re-probe so editors, comments, and share controls fall back
-      // to the safe read-only state instead of retaining stale authority.
+    const dropObjectPermissions = (droppedViewIds: string[]) => {
       setObjectPermissions((current) => {
         const next = { ...current };
         let changed = false;
 
-        activeViewIds.forEach((activeViewId) => {
-          if (activeViewId in next) {
-            delete next[activeViewId];
+        droppedViewIds.forEach((droppedViewId) => {
+          if (droppedViewId in next) {
+            delete next[droppedViewId];
             changed = true;
           }
         });
 
         return changed ? next : current;
       });
-      activeViewIds.forEach(invalidatePermissionProbe);
+    };
+
+    // A targeted share notification does not name affected descendants, and a
+    // broad permission notification may name a group instead of a view, so
+    // re-probe the few currently rendered targets in the background. Reads that
+    // started before the change are superseded, but each view keeps its last
+    // confirmed capabilities until its fresh answer replaces them; a denial
+    // still closes it at once. Dropping them first would make the open page,
+    // its modal and their editors read-only for a round trip on every tab
+    // return, reconnect and permission change anywhere in the workspace. A
+    // revoked user's edits made during that round trip are not lost: the sync
+    // outbox's upload gate re-checks queued objects on the same events
+    // (AppSyncLayer) and quarantines them as edits waiting for access, and the
+    // server enforces access regardless.
+    const revalidateActiveViews = () => {
+      if (activePermissionViewIds.length === 0) return;
+      activeViewsRevalidatedAtRef.current = Date.now();
+      activePermissionViewIds.forEach(invalidatePermissionProbe);
       setPermissionProbeRefreshRevision((revision) => revision + 1);
     };
 
@@ -710,14 +717,15 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       if (!revokedViewId) return;
       invalidatePermissionProbe(revokedViewId);
       setNoAccessViewId(revokedViewId);
-      setObjectPermissions((current) => {
-        if (!(revokedViewId in current)) return current;
-        const next = { ...current };
-
-        delete next[revokedViewId];
-        return next;
-      });
-
+      // The revoked view loses its capabilities at once, and so does the child
+      // a page modal mounts for a revoked database container: the modal hides
+      // both until that child's next answer, which it recognizes as a new
+      // object. The other active views are re-checked in the background.
+      dropObjectPermissions(
+        revokedViewId === openModalViewId && openModalEffectiveViewId
+          ? [revokedViewId, openModalEffectiveViewId]
+          : [revokedViewId]
+      );
       revalidateActiveViews();
     };
 
@@ -727,9 +735,11 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       if (!restoredViewId) return;
       invalidatePermissionProbe(restoredViewId);
       setNoAccessViewId((prev) => (prev === restoredViewId ? null : prev));
-      // Unlike revocation, restoration must include the restored active view
-      // itself so its safe read-only state can be replaced by fresh
-      // capabilities from the object-permission API.
+      // Restoration still re-checks eagerly: every active view, the restored
+      // one included, drops its capabilities (a denial too) and falls back to
+      // the safe read-only state until fresh capabilities from the
+      // object-permission API replace it.
+      dropObjectPermissions(activePermissionViewIds);
       revalidateActiveViews();
     };
 
@@ -765,11 +775,11 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     };
 
     // Focus also fires on every alt-tab back and closed file picker, so it is
-    // only a hint: dropping the capabilities would make the open page read-only
-    // for a round trip and lose what the user types. Re-probe the active views
-    // while keeping them, without superseding reads in flight (the upload gate
-    // shares them); each result replaces its entry and a denial still closes
-    // the view. The interval also absorbs the visibilitychange of a tab switch.
+    // only a hint: re-probe the active views while keeping their capabilities,
+    // like the events above, but without superseding reads in flight (the
+    // upload gate shares them); each result replaces its entry and a denial
+    // still closes the view. The interval also absorbs the visibilitychange of
+    // a tab switch.
     const handleFocus = () => {
       if (!currentWorkspaceId || !requesterId || activePermissionViewIds.length === 0) return;
       if (Date.now() - activeViewsRevalidatedAtRef.current < PERMISSION_FOCUS_RECHECK_MIN_INTERVAL_MS) return;

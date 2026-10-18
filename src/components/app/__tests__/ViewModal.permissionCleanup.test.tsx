@@ -164,8 +164,8 @@ describe('ViewModal permission cleanup', () => {
     mockObjectPermissions = { [modalViewId]: createMockPermission(modalViewId) };
   });
 
-  // AppBusinessLayer drops the open page's permission while it re-checks it after any permission
-  // notification, workspace revision, focus, reconnect or return online.
+  // AppBusinessLayer keeps the open page's permission through its background re-checks, but drops
+  // it while it re-checks access restored to a page.
   it('keeps the open page on screen, read-only, while its access is re-checked', async () => {
     mockLoadView.mockResolvedValue(new Y.Doc({ guid: 'open-page' }));
     const { rerender } = render(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
@@ -206,6 +206,54 @@ describe('ViewModal permission cleanup', () => {
     mockObjectPermissions[modalViewId] = createMockPermission(modalViewId);
     rerender(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
     await screen.findByText('granted-again');
+    expect(mockLoadView).toHaveBeenCalledTimes(2);
+  });
+
+  it('hides a database container whose access is revoked until its child has a fresh answer', async () => {
+    const childViewId = '00000000-0000-4000-8000-000000000010';
+    const databaseId = '00000000-0000-4000-8000-000000000011';
+    const childView: View = {
+      ...mockView,
+      view_id: childViewId,
+      name: 'Database child',
+      layout: ViewLayout.Grid,
+      extra: { database_id: databaseId, is_space: false },
+      parent_view_id: modalViewId,
+    };
+    const containerView: View = {
+      ...mockView,
+      layout: ViewLayout.Grid,
+      extra: { database_id: databaseId, is_database_container: true, is_space: false },
+      children: [childView],
+    };
+    const childPermission = () =>
+      createMockPermission(databaseId, { collab_type: Types.Database, governing_view_id: childViewId });
+
+    mockOutlineViews = [containerView];
+    mockObjectPermissions = { [modalViewId]: createMockPermission(modalViewId), [childViewId]: childPermission() };
+    mockLoadView.mockResolvedValueOnce(new Y.Doc({ guid: 'child-before-revoke' }))
+      .mockResolvedValueOnce(new Y.Doc({ guid: 'child-after-answer' }));
+    const { rerender } = render(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+
+    await screen.findByText('child-before-revoke');
+    // AppBusinessLayer drops the revoked container's entry and its child's, then re-checks both.
+    mockObjectPermissions = {};
+    act(() => {
+      mockEventEmitter.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: modalViewId });
+    });
+    rerender(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+    expect(screen.queryByText('child-before-revoke')).toBeNull();
+    expect(screen.getByRole('status').textContent).toBe('publish.noAccessToVisit');
+
+    // The container's answer alone does not show the child again.
+    mockObjectPermissions = { [modalViewId]: createMockPermission(modalViewId) };
+    rerender(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+    expect(screen.getByRole('status').textContent).toBe('publish.noAccessToVisit');
+
+    // The child's fresh answer is a new object even when its capabilities did not change.
+    mockObjectPermissions = { ...mockObjectPermissions, [childViewId]: childPermission() };
+    rerender(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+    await screen.findByText('child-after-answer');
     expect(mockLoadView).toHaveBeenCalledTimes(2);
   });
 

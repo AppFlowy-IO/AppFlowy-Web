@@ -14,6 +14,7 @@ import {
   resolveWorkspaceViewMetadata,
 } from '@/application/services/js-services/workspace-view-metadata';
 import { getTokenParsed } from '@/application/session/token';
+import { blockPermissionSync } from '@/application/sync-outbox';
 import { AccessLevel, type CollabObjectPermission, Types, type View, ViewLayout } from '@/application/types';
 import type { AppEventEmitter } from '@/components/app/contexts/AppEventEmitterContext';
 import { AppNavigationContext } from '@/components/app/contexts/AppNavigationContext';
@@ -167,6 +168,98 @@ function NavigationProbe({ modalTargetId, effectiveTargetId }: { modalTargetId: 
     </>
   );
 }
+
+type PermissionRenders = Array<Record<string, CollabObjectPermission | undefined>>;
+
+// Records the capabilities of every render, so a test can tell that none fell back to the
+// read-only initial state while a re-check was pending.
+function PermissionRecorder({
+  renders,
+  viewIds,
+  effectiveTargetId,
+}: {
+  renders: PermissionRenders;
+  viewIds: string[];
+  effectiveTargetId?: string;
+}) {
+  const navigation = useContext(AppNavigationContext);
+
+  if (!navigation) throw new Error('Missing navigation context');
+  renders.push(Object.fromEntries(viewIds.map((viewId) => [viewId, navigation.objectPermissions?.[viewId]])));
+
+  return (
+    <>
+      <button type={'button'} onClick={() => navigation.openPageModal?.(modalViewId)}>
+        open modal
+      </button>
+      {effectiveTargetId && (
+        <button
+          type={'button'}
+          onClick={() => navigation.setOpenPageModalEffectiveViewId?.(modalViewId, effectiveTargetId)}
+        >
+          report effective modal
+        </button>
+      )}
+      <span data-testid={'no-access'}>{String(navigation.viewNoAccess)}</span>
+    </>
+  );
+}
+
+// Every probe is answered at once until `hold()`; later probes wait for their `resolve`.
+function controlObjectPermissionProbes() {
+  const pending: Array<{ objectId: string; resolve: (overrides?: Partial<CollabObjectPermission>) => void }> = [];
+  let holding = false;
+
+  (AccessService.getObjectPermission as jest.Mock).mockImplementation(
+    (_workspaceId: string, objectId: string, collabType: Types = Types.Document) => {
+      if (!holding) return Promise.resolve(createObjectPermission(objectId, collabType));
+      return new Promise<CollabObjectPermission>((resolve) => {
+        pending.push({
+          objectId,
+          resolve: (overrides = {}) => resolve(createObjectPermission(objectId, collabType, overrides)),
+        });
+      });
+    }
+  );
+
+  return {
+    pending,
+    hold: () => {
+      holding = true;
+    },
+  };
+}
+
+// Events after which AppBusinessLayer re-checks the active views in the background.
+const backgroundRecheckTriggers: Array<[string, (eventEmitter: AppEventEmitter) => void]> = [
+  [
+    'a permission change',
+    (eventEmitter) => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'workspace-group-id' });
+    },
+  ],
+  [
+    'a tab return',
+    () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    },
+  ],
+  [
+    'coming back online',
+    () => {
+      window.dispatchEvent(new Event('online'));
+    },
+  ],
+  [
+    'a socket reconnect',
+    (eventEmitter) => {
+      eventEmitter.webSocketReadyState = WebSocket.CONNECTING;
+      eventEmitter.emit(APP_EVENTS.WEBSOCKET_STATUS, WebSocket.CONNECTING);
+      eventEmitter.webSocketReadyState = WebSocket.OPEN;
+      eventEmitter.emit(APP_EVENTS.WEBSOCKET_STATUS, WebSocket.OPEN);
+    },
+  ],
+];
 
 function OperationsProbe({
   targetViewId,
@@ -751,7 +844,7 @@ describe('AppBusinessLayer permission gates', () => {
     expect(deleteCollabDB).toHaveBeenCalledWith(routeViewId, { destroyDoc: true });
   });
 
-  it('drops stale capabilities while a broad permission revalidation is pending', async () => {
+  it('keeps the confirmed capabilities while a broad permission revalidation is pending', async () => {
     const eventEmitter = new EventEmitter();
     let resolveRevalidation!: (permission: CollabObjectPermission) => void;
     const pendingRevalidation = new Promise<CollabObjectPermission>((resolve) => {
@@ -770,7 +863,11 @@ describe('AppBusinessLayer permission gates', () => {
     });
 
     await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(2));
-    expect(screen.getByTestId('object-permission').textContent).toBe('null');
+    // The page stays editable for the round trip; only reads that started before the change are dropped.
+    expect(JSON.parse(screen.getByTestId('object-permission').textContent || 'null')).toEqual(
+      createObjectPermission(routeViewId)
+    );
+    expect(AccessService.invalidateObjectPermissionRequests).toHaveBeenCalledWith(workspaceId);
 
     await act(async () => {
       resolveRevalidation(createObjectPermission(routeViewId, Types.Document, { can_write: false }));
@@ -780,6 +877,226 @@ describe('AppBusinessLayer permission gates', () => {
     expect(JSON.parse(screen.getByTestId('object-permission').textContent || 'null')).toEqual(
       createObjectPermission(routeViewId, Types.Document, { can_write: false })
     );
+  });
+
+  it.each(backgroundRecheckTriggers)(
+    'keeps the route and modal capabilities while %s re-checks them, then takes the fresh answers',
+    async (_trigger, trigger) => {
+      const eventEmitter = new EventEmitter() as AppEventEmitter;
+      const renders: PermissionRenders = [];
+      const probes = controlObjectPermissionProbes();
+
+      eventEmitter.webSocketReadyState = WebSocket.OPEN;
+      renderBusinessLayer(
+        eventEmitter,
+        [createView(routeViewId), createView(modalViewId)],
+        modalViewId,
+        <PermissionRecorder renders={renders} viewIds={[routeViewId, modalViewId]} />
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'open modal' }));
+      await waitFor(() => {
+        expect(renders.at(-1)).toEqual({
+          [routeViewId]: createObjectPermission(routeViewId),
+          [modalViewId]: createObjectPermission(modalViewId),
+        });
+      });
+      const confirmed = renders.at(-1);
+      const rendersBeforeRecheck = renders.length;
+      const keptBothCapabilities = () =>
+        renders.slice(rendersBeforeRecheck).every((permissions) => permissions[routeViewId] && permissions[modalViewId]);
+
+      probes.hold();
+      act(() => {
+        trigger(eventEmitter);
+      });
+
+      await waitFor(() =>
+        expect(probes.pending.map(({ objectId }) => objectId).sort()).toEqual([routeViewId, modalViewId])
+      );
+      expect(AccessService.invalidateObjectPermissionRequests).toHaveBeenCalledWith(workspaceId);
+      // No render fell back to the read-only initial capabilities.
+      expect(keptBothCapabilities()).toBe(true);
+      expect(renders.at(-1)).toEqual(confirmed);
+
+      await act(async () => {
+        probes.pending.forEach(({ resolve }) => resolve({ can_write: false }));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(renders.at(-1)).toEqual({
+        [routeViewId]: createObjectPermission(routeViewId, Types.Document, { can_write: false }),
+        [modalViewId]: createObjectPermission(modalViewId, Types.Document, { can_write: false }),
+      });
+      expect(keptBothCapabilities()).toBe(true);
+    }
+  );
+
+  it.each(backgroundRecheckTriggers)(
+    'closes the route at once when %s re-checks it as denied',
+    async (_trigger, trigger) => {
+      const eventEmitter = new EventEmitter() as AppEventEmitter;
+
+      eventEmitter.webSocketReadyState = WebSocket.OPEN;
+      (AccessService.getObjectPermission as jest.Mock)
+        .mockResolvedValueOnce(createObjectPermission(routeViewId))
+        .mockResolvedValueOnce(createObjectPermission(routeViewId, Types.Document, { can_read: false }));
+      renderBusinessLayer(eventEmitter, [createView(routeViewId)]);
+
+      await waitFor(() => expect(screen.getByTestId('object-permission').textContent).not.toBe('null'));
+      act(() => {
+        trigger(eventEmitter);
+      });
+
+      await waitFor(() => expect(screen.getByTestId('no-access').textContent).toBe('true'));
+      expect(JSON.parse(screen.getByTestId('object-permission').textContent || 'null')?.can_read).toBe(false);
+      expect(blockPermissionSync).toHaveBeenCalledWith(routeViewId, workspaceId);
+      expect(ViewService.invalidateCache).toHaveBeenCalledWith(workspaceId, routeViewId);
+      expect(deleteCollabDB).toHaveBeenCalledWith(routeViewId, { destroyDoc: true });
+    }
+  );
+
+  it('ignores a re-check that a newer permission change superseded', async () => {
+    const eventEmitter = new EventEmitter();
+    let resolveOlder!: (permission: CollabObjectPermission) => void;
+    let resolveNewer!: (permission: CollabObjectPermission) => void;
+    const olderRecheck = new Promise<CollabObjectPermission>((resolve) => {
+      resolveOlder = resolve;
+    });
+    const newerRecheck = new Promise<CollabObjectPermission>((resolve) => {
+      resolveNewer = resolve;
+    });
+
+    (AccessService.getObjectPermission as jest.Mock)
+      .mockResolvedValueOnce(createObjectPermission(routeViewId))
+      .mockReturnValueOnce(olderRecheck)
+      .mockReturnValueOnce(newerRecheck);
+    renderBusinessLayer(eventEmitter, [createView(routeViewId)]);
+
+    await waitFor(() => expect(screen.getByTestId('object-permission').textContent).not.toBe('null'));
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'workspace-group-id' });
+    });
+    await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(2));
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'workspace-group-id' });
+    });
+    await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(3));
+
+    // The older answer predates the newer change: it neither replaces the kept capabilities nor closes the page.
+    await act(async () => {
+      resolveOlder(createObjectPermission(routeViewId, Types.Document, { can_read: false }));
+      await olderRecheck;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(screen.getByTestId('no-access').textContent).toBe('false');
+    expect(JSON.parse(screen.getByTestId('object-permission').textContent || 'null')).toEqual(
+      createObjectPermission(routeViewId)
+    );
+    expect(blockPermissionSync).not.toHaveBeenCalled();
+    expect(deleteCollabDB).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveNewer(createObjectPermission(routeViewId, Types.Document, { can_write: false }));
+      await newerRecheck;
+    });
+    expect(JSON.parse(screen.getByTestId('object-permission').textContent || 'null')).toEqual(
+      createObjectPermission(routeViewId, Types.Document, { can_write: false })
+    );
+  });
+
+  it('drops a revoked route at once while the open modal keeps its capabilities through the re-check', async () => {
+    const eventEmitter = new EventEmitter();
+    const renders: PermissionRenders = [];
+    const probes = controlObjectPermissionProbes();
+
+    renderBusinessLayer(
+      eventEmitter,
+      [createView(routeViewId), createView(modalViewId)],
+      modalViewId,
+      <PermissionRecorder renders={renders} viewIds={[routeViewId, modalViewId]} />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'open modal' }));
+    await waitFor(() => expect(renders.at(-1)?.[modalViewId]).toEqual(createObjectPermission(modalViewId)));
+    const confirmedModal = renders.at(-1)?.[modalViewId];
+
+    probes.hold();
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: routeViewId });
+    });
+
+    // The named view is blocked before any answer arrives.
+    expect(screen.getByTestId('no-access').textContent).toBe('true');
+    expect(renders.at(-1)?.[routeViewId]).toBeUndefined();
+    expect(renders.at(-1)?.[modalViewId]).toBe(confirmedModal);
+    await waitFor(() => expect(probes.pending).toHaveLength(2));
+
+    await act(async () => {
+      probes.pending.forEach(({ objectId, resolve }) => resolve(objectId === routeViewId ? { can_read: false } : {}));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(screen.getByTestId('no-access').textContent).toBe('true');
+    expect(deleteCollabDB).toHaveBeenCalledWith(routeViewId, { destroyDoc: true });
+    // An unchanged answer keeps the modal's capability object.
+    expect(renders.at(-1)?.[modalViewId]).toBe(confirmedModal);
+  });
+
+  it('drops the child a revoked container modal mounts and stores its next answer as a new object', async () => {
+    const eventEmitter = new EventEmitter();
+    const renders: PermissionRenders = [];
+    const probes = controlObjectPermissionProbes();
+    const databaseChild: View = {
+      ...createView(effectiveModalViewId),
+      layout: ViewLayout.Grid,
+      extra: { database_id: modalDatabaseId, is_space: false },
+      parent_view_id: modalViewId,
+    };
+    const modalContainer: View = {
+      ...createView(modalViewId, [databaseChild]),
+      layout: ViewLayout.Grid,
+      extra: { database_id: modalDatabaseId, is_database_container: true, is_space: false },
+    };
+
+    renderBusinessLayer(
+      eventEmitter,
+      [createView(routeViewId), modalContainer],
+      modalViewId,
+      <PermissionRecorder
+        renders={renders}
+        viewIds={[routeViewId, modalViewId, effectiveModalViewId]}
+        effectiveTargetId={effectiveModalViewId}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'open modal' }));
+    await waitFor(() => expect(renders.at(-1)?.[modalViewId]).toEqual(createObjectPermission(modalViewId)));
+    fireEvent.click(screen.getByRole('button', { name: 'report effective modal' }));
+    await waitFor(() => {
+      expect(renders.at(-1)?.[effectiveModalViewId]).toEqual(createObjectPermission(modalDatabaseId, Types.Database));
+    });
+    const confirmed = renders.at(-1) ?? {};
+
+    probes.hold();
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: modalViewId });
+    });
+
+    // The page modal hides the revoked container and its child until the child's next answer.
+    expect(renders.at(-1)).toEqual({
+      [routeViewId]: confirmed[routeViewId],
+      [modalViewId]: undefined,
+      [effectiveModalViewId]: undefined,
+    });
+    await waitFor(() => expect(probes.pending).toHaveLength(3));
+
+    await act(async () => {
+      probes.pending.forEach(({ resolve }) => resolve());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    // ViewModal tells that answer apart by identity, even when the capabilities are unchanged.
+    expect(renders.at(-1)?.[effectiveModalViewId]).toEqual(confirmed[effectiveModalViewId]);
+    expect(renders.at(-1)?.[effectiveModalViewId]).not.toBe(confirmed[effectiveModalViewId]);
+    expect(renders.at(-1)?.[routeViewId]).toBe(confirmed[routeViewId]);
   });
 
   it('re-probes active permissions after reconnect, visibility recovery, and coming online', async () => {

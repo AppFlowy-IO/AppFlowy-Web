@@ -152,7 +152,8 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
 
   probedObjectPermissionRef.current = probedObjectPermission;
   // A definitive revocation of this page hides it at once instead of waiting for the next probe.
-  // It lasts until a newer answer allows reading again.
+  // It lasts until a newer answer allows reading again. AppBusinessLayer drops the revoked page's
+  // entry, with the child a revoked database container mounts, so that answer is a new object.
   const [revokedAccess, setRevokedAccess] = useState<{
     viewId: string;
     permission: typeof probedObjectPermission;
@@ -162,9 +163,10 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     (revokedAccess.viewId === viewId || revokedAccess.viewId === effectiveViewId) &&
     !(canReadEffectiveView && probedObjectPermission !== revokedAccess.permission);
   const accessDenied = probedObjectPermission?.can_read === false || accessRevoked;
-  // AppBusinessLayer drops the permission while it re-checks it after every permission
-  // notification, tab return or reconnect. A page already loaded under a confirmed read stays on screen,
-  // read-only, until the answer arrives; only a confirmed denial hides it.
+  // AppBusinessLayer keeps the permission while it re-checks it in the background after a permission
+  // notification, tab return or reconnect; it drops it only to re-check a revoked or restored page.
+  // A page already loaded under a confirmed read stays on screen, read-only, while it is missing,
+  // until the answer arrives; only a confirmed denial or a revocation hides it.
   const canShowEffectiveView = !accessDenied && (canReadEffectiveView || (!!doc && doc.id === effectiveViewId));
 
   useEffect(() => {
