@@ -2,8 +2,8 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { AudioTranscriptionSource } from '@/application/integrations/audio-file-transcription';
-import { AudioTranscriptionError, isDirectMediaUrl } from '@/application/integrations/transcription-media';
-import { getYoutubeCaptions, getYoutubeAudioMetadata, readTranscriptionClipboard } from '@/application/integrations/youtube-audio';
+import { AudioTranscriptionError, isDirectMediaUrl, isServiceImportError, isTransientImportError } from '@/application/integrations/transcription-media';
+import { getYoutubeCaptions, getYoutubeAudioMetadata, importErrorDetails, readTranscriptionClipboard } from '@/application/integrations/youtube-audio';
 import { detectYoutubeExtension, isYoutubeExtensionAvailable } from '@/application/integrations/youtube-extension';
 import { isHttpUrl, YoutubeAudioMetadata, YoutubeCaptionTranscript, youtubeVideoId } from '@/application/integrations/youtube-url';
 import { Button } from '@/components/ui/button';
@@ -77,7 +77,9 @@ function AIMeetingUrlDialogContent({
   const loading = Boolean(videoId && !current);
   const captionsUnavailable = metadata?.captionLanguages?.length === 0;
   const importing = importStage !== undefined;
-  const showMediaFallback = Boolean(videoId && (captionsUnavailable || captionError || current?.error || downloadError || importStage === 'audio'));
+  // AppFlowy-side failures hide the YouTube media fallback: downloading audio would hit the same outage.
+  const youtubeFailure = (error?: AudioTranscriptionError) => Boolean(error && !isServiceImportError(error.code));
+  const showMediaFallback = Boolean(videoId && (captionsUnavailable || youtubeFailure(captionError) || youtubeFailure(current?.error) || downloadError || importStage === 'audio'));
   const canImportCaptions = Boolean(metadata && !captionsUnavailable);
   const availableLanguages = metadata?.captionLanguages;
   const preferredLanguage = availableLanguages?.find((track) => track.code.toLowerCase() === language?.toLowerCase())?.code
@@ -89,6 +91,9 @@ function AIMeetingUrlDialogContent({
   const valid = supported && (videoId ? canImportCaptions : !mediaDisabled) && !importing;
   const errorCode = downloadError?.code || captionError?.code || current?.error?.code || (captionsUnavailable ? 'youtubeCaptionsUnavailable' : undefined) ||
     (touched && target && !supported ? 'unsupportedUrl' : undefined);
+  const activeError = downloadError ?? captionError ?? current?.error;
+  const errorDetails = activeError && (isTransientImportError(activeError.code) || isServiceImportError(activeError.code))
+    ? importErrorDetails(activeError) : undefined;
 
   useEffect(() => {
     let cancelled = false;
@@ -304,12 +309,18 @@ function AIMeetingUrlDialogContent({
             {errorCode && (
               <p id={errorId} role='alert' className='text-xs leading-[18px] text-text-error'>
                 {t(`document.aiMeeting.import.errors.${errorCode}`)}
-                {!importing && (current?.error || captionError || downloadError) && downloadError?.code !== 'youtubeExtensionRequired' && <>{' '}<button type='button' className='font-medium underline disabled:opacity-50' disabled={Boolean(downloadError && (mediaDisabled || checkingExtension || !extensionAvailable))} onClick={() => {
+                {!importing && activeError && isTransientImportError(errorCode) && <>{' '}<button type='button' className='font-medium underline disabled:opacity-50' disabled={Boolean(downloadError && (mediaDisabled || checkingExtension || !extensionAvailable))} onClick={() => {
                   if (downloadError) void downloadAudio();
                   else if (captionError) void confirm();
                   else setMetadataAttempt((previous) => previous + 1);
                 }}>{t('document.aiMeeting.import.retry')}</button></>}
               </p>
+            )}
+            {errorDetails && (
+              <details className='text-xs leading-[18px] text-text-tertiary'>
+                <summary className='cursor-pointer'>{t('document.aiMeeting.import.showDetails')}</summary>
+                <code className='break-all'>{errorDetails}</code>
+              </details>
             )}
             {showMediaFallback && (
               <div className='flex flex-col gap-3 border-t border-border-primary pt-3'>

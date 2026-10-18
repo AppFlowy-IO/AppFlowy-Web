@@ -2,7 +2,8 @@ import MockAdapter from 'axios-mock-adapter';
 
 import { getAxios, initAPIService } from '@/application/services/js-services/http/core';
 
-import { getYoutubeAudioMetadata, getYoutubeCaptions } from '../youtube-audio';
+import { AudioTranscriptionError } from '../transcription-media';
+import { getYoutubeAudioMetadata, getYoutubeCaptions, importErrorDetails } from '../youtube-audio';
 import { YoutubeAudioMetadata, YoutubeCaptionTranscript } from '../youtube-url';
 
 jest.mock('@/application/session/token', () => ({
@@ -74,6 +75,43 @@ describe('YouTube browser captions bridge contract', () => {
 
     await jest.advanceTimersByTimeAsync(8_000);
     await result;
+  });
+
+  it.each(['usageUnavailable', 'youtubeBlocked'])('preserves the %s error from the bridge after transient retries', async (code) => {
+    jest.useFakeTimers();
+    http.onGet('/api/youtube-audio').reply(503, { code: 503, message: code });
+    const result = expect(getYoutubeAudioMetadata('workspace', url, new AbortController().signal)).rejects.toMatchObject({ code });
+
+    await jest.advanceTimersByTimeAsync(8_000);
+    await result;
+  });
+
+  it('reports an unavailable video without retrying', async () => {
+    http.onGet('/api/youtube-audio').reply(404, { code: 404, message: 'youtubeVideoUnavailable' });
+    await expect(getYoutubeAudioMetadata('workspace', url, new AbortController().signal)).rejects.toMatchObject({ code: 'youtubeVideoUnavailable' });
+    expect(http.history.get).toHaveLength(1);
+  });
+
+  it('reports an unreachable AppFlowy origin as a network error instead of blaming the link', async () => {
+    jest.useFakeTimers();
+    http.onGet('/api/youtube-audio').networkError();
+    const result = expect(getYoutubeAudioMetadata('workspace', url, new AbortController().signal)).rejects.toMatchObject({ code: 'networkError' });
+
+    await jest.advanceTimersByTimeAsync(8_000);
+    await result;
+  });
+
+  it('summarizes a failure as codes and ids for the details line', async () => {
+    jest.useFakeTimers();
+    http.onGet('/api/youtube-audio').reply(502, { code: 502, message: 'youtubeMetadataFailed' }, { 'x-request-id': 'req-1234' });
+    const pending = getYoutubeAudioMetadata('workspace', url, new AbortController().signal).catch((error: unknown) => error);
+
+    await jest.advanceTimersByTimeAsync(8_000);
+    const error = await pending;
+
+    expect(error).toBeInstanceOf(AudioTranscriptionError);
+    expect(importErrorDetails(error as AudioTranscriptionError)).toBe('youtubeMetadataFailed · HTTP 502 · request req-1234');
+    expect(importErrorDetails(new AudioTranscriptionError('youtubeCaptionsUnavailable'))).toBeUndefined();
   });
 
   it('rejects HTML from a server without the bridge', async () => {

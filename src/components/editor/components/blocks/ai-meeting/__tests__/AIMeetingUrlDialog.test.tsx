@@ -128,6 +128,42 @@ describe('YouTube caption import dialog', () => {
     expect(mockMetadata).toHaveBeenCalledTimes(2);
   });
 
+  it('reports an AppFlowy usage outage as transient and hides the YouTube media fallback', async () => {
+    mockMetadata.mockRejectedValueOnce(new AudioTranscriptionError('usageUnavailable', { httpStatus: 503, requestId: 'req-42' }));
+    renderDialog({ onUpload: jest.fn() });
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: youtubeUrl } });
+    expect((await screen.findByRole('alert')).textContent).toContain("couldn't check your transcription allowance");
+    expect(screen.queryByRole('button', { name: 'Download audio and transcribe' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Upload audio/video' })).toBeNull();
+    expect(screen.getByText('Details').parentElement?.textContent).toContain('usageUnavailable · HTTP 503 · request req-42');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await screen.findByText('Meeting Recording');
+    expect(mockMetadata).toHaveBeenCalledTimes(2);
+  });
+
+  it('explains an unavailable video without offering Retry while keeping upload available', async () => {
+    mockMetadata.mockRejectedValueOnce(new AudioTranscriptionError('youtubeVideoUnavailable', { httpStatus: 404 }));
+    const onUpload = jest.fn();
+
+    renderDialog({ onUpload });
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: youtubeUrl } });
+    expect((await screen.findByRole('alert')).textContent).toContain("This video can't be imported");
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+    expect(screen.queryByText('Details')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Upload audio/video' }));
+    expect(onUpload).toHaveBeenCalledTimes(1);
+    expect(mockMetadata).toHaveBeenCalledTimes(1);
+  });
+
+  it('names YouTube blocking at the metadata stage and shows details for bug reports', async () => {
+    mockMetadata.mockRejectedValueOnce(new AudioTranscriptionError('youtubeBlocked', { httpStatus: 502, requestId: 'req-7' }));
+    renderDialog();
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: youtubeUrl } });
+    expect((await screen.findByRole('alert')).textContent).toContain('YouTube is blocking requests');
+    expect(screen.getByText('Details').parentElement?.textContent).toContain('youtubeBlocked · HTTP 502 · request req-7');
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+  });
+
   it('ignores an old preview after the user changes the link and preserves direct media transcription', async () => {
     let complete!: (value: YoutubeAudioMetadata) => void;
 
@@ -224,6 +260,7 @@ describe('YouTube caption import dialog', () => {
     await pasteYoutube();
     fireEvent.click(screen.getByRole('button', { name: 'Import captions' }));
     expect((await screen.findByRole('alert')).textContent).toContain('No captions are available');
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
     expect(onConfirm).not.toHaveBeenCalled();
     expect(onConfirmCaptions).not.toHaveBeenCalled();
   });
