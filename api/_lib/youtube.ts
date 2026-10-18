@@ -89,12 +89,12 @@ async function readText(response: Response, maximum: number, failure: string, si
   }
 }
 
-function parseWatchPlayer(html: string): PlayerResponse {
+function parseWatchPlayer(html: string, blocked: string): PlayerResponse {
   // Nested objects and quoted braces require JSON boundary scanning rather than a non-greedy regex.
   const start = /(?:var\s+)?ytInitialPlayerResponse\s*=\s*/.exec(html);
 
   if (!start) throw new YoutubeImportError(/g-recaptcha|\/sorry\/|confirm you.re not a bot/i.test(html)
-    ? 'youtubeCaptionsBlocked' : 'youtubeMetadataFailed');
+    ? blocked : 'youtubeMetadataFailed');
   const from = start.index + start[0].length;
   let depth = 0;
   let quoted = false;
@@ -121,9 +121,14 @@ function parseWatchPlayer(html: string): PlayerResponse {
   throw new YoutubeImportError('youtubeMetadataFailed');
 }
 
-function isBlocked(response: PlayerResponse) {
-  return response.playabilityStatus?.status === 'LOGIN_REQUIRED' ||
-    /confirm you.re not a bot/i.test(response.playabilityStatus?.reason ?? '');
+/** Separate YouTube's bot gate (retry later or from another network) from a video this viewer cannot play at all. */
+function playabilityProblem(response: PlayerResponse): 'blocked' | 'unavailable' | undefined {
+  const status = response.playabilityStatus?.status;
+  const reason = response.playabilityStatus?.reason ?? '';
+
+  if (/confirm you.re not a bot/i.test(reason)) return 'blocked';
+  if (status === 'LOGIN_REQUIRED') return /\b(age|private)\b/i.test(reason) ? 'unavailable' : 'blocked';
+  return status && status !== 'OK' ? 'unavailable' : undefined;
 }
 
 function captionUrl(value: unknown, videoId: string, language: string): string | undefined {
@@ -222,12 +227,14 @@ export class YoutubeCaptionRepository {
     this.videoId = id;
   }
 
-  private async request(url: string, signal: AbortSignal, maximum: number, failure: string, init: RequestInit = {}) {
+  private async request(
+    url: string, signal: AbortSignal, maximum: number, failure: string, init: RequestInit = {}, blocked = 'youtubeCaptionsBlocked'
+  ) {
     const response = await this.fetcher(url, { ...init, headers: { ...HEADERS, ...init.headers }, signal, redirect: 'error' });
 
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
-      throw new YoutubeImportError([403, 429].includes(response.status) ? 'youtubeCaptionsBlocked' : failure);
+      throw new YoutubeImportError([403, 429].includes(response.status) ? blocked : failure);
     }
 
     return readText(response, maximum, failure, signal);
@@ -236,11 +243,13 @@ export class YoutubeCaptionRepository {
   async metadata(signal: AbortSignal): Promise<YoutubeAudioMetadata> {
     if (this.loadedMetadata) return this.loadedMetadata;
     const timeout = combineAbortSignals([signal, AbortSignal.timeout(30_000)]);
-    const html = await this.request(`https://www.youtube.com/watch?v=${this.videoId}&hl=en`, timeout, 8 * 1024 * 1024, 'youtubeMetadataFailed');
-    const watch = parseWatchPlayer(html);
+    const html = await this.request(`https://www.youtube.com/watch?v=${this.videoId}&hl=en`, timeout, 8 * 1024 * 1024, 'youtubeMetadataFailed', {}, 'youtubeBlocked');
+    const watch = parseWatchPlayer(html, 'youtubeBlocked');
     const video = watch?.videoDetails;
+    const problem = playabilityProblem(watch);
 
-    if (isBlocked(watch)) throw new YoutubeImportError('youtubeCaptionsBlocked');
+    if (problem === 'blocked') throw new YoutubeImportError('youtubeBlocked');
+    if (problem === 'unavailable') throw new YoutubeImportError('youtubeVideoUnavailable');
     if (watch?.playabilityStatus?.status !== 'OK' || video?.videoId !== this.videoId || typeof video.title !== 'string' || !video.title)
       throw new YoutubeImportError('youtubeMetadataFailed');
     // Like youtube-transcript-api, use the Android player for caption URLs: watch-page URLs can return an empty response.
@@ -248,7 +257,7 @@ export class YoutubeCaptionRepository {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ context: { client: { clientName: 'ANDROID', clientVersion: '20.10.38' } }, videoId: this.videoId }),
-    });
+    }, 'youtubeBlocked');
     let player: PlayerResponse;
 
     try {
@@ -258,7 +267,7 @@ export class YoutubeCaptionRepository {
     }
 
     if (!player) throw new YoutubeImportError('youtubeCaptionsFailed');
-    if (isBlocked(player)) throw new YoutubeImportError('youtubeCaptionsBlocked');
+    if (playabilityProblem(player) === 'blocked') throw new YoutubeImportError('youtubeBlocked');
     if (player.videoDetails?.videoId && player.videoDetails.videoId !== this.videoId) throw new YoutubeImportError('youtubeCaptionsFailed');
     this.tracks = tracksFromPlayer(player, this.videoId);
     if (!this.tracks.length) this.tracks = tracksFromPlayer(watch, this.videoId);

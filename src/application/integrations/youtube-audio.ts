@@ -6,21 +6,47 @@ import { YoutubeAudioMetadata, YoutubeCaptionTranscript, youtubeVideoId } from '
 
 const API_PATH = '/api/youtube-audio';
 const KNOWN_ERRORS: TranscriptionErrorCode[] = [
-  'usageFailed', 'unsupportedUrl', 'quotaExceeded',
-  'youtubeMetadataFailed', 'youtubeCaptionsUnavailable', 'youtubeCaptionsBlocked', 'youtubeCaptionsFailed',
+  'usageFailed', 'usageUnavailable', 'unsupportedUrl', 'quotaExceeded',
+  'youtubeMetadataFailed', 'youtubeVideoUnavailable', 'youtubeBlocked',
+  'youtubeCaptionsUnavailable', 'youtubeCaptionsBlocked', 'youtubeCaptionsFailed',
 ];
+
+/** The normalized APIError fields the import flow reads; see http/core.ts. */
+interface ImportFailureDetail {
+  code?: number;
+  message?: string;
+  diagnosticMessage?: string;
+  sourceDomain?: string;
+  transportFailure?: string;
+  httpStatus?: number;
+  requestId?: string;
+}
 
 function checkCancelled(signal: AbortSignal) {
   if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
 }
 
 function importError(error: unknown, fallback: 'youtubeMetadataFailed' | 'youtubeCaptionsFailed') {
-  const detail = error as { code?: number; message?: string; diagnosticMessage?: string };
+  const detail = error as ImportFailureDetail | undefined;
 
   if (isTranscriptionLimitError(detail)) return new AudioTranscriptionError('quotaExceeded', detail);
+  // No HTTP response at all: the browser could not reach the AppFlowy origin, so the link is not at fault.
+  if (detail?.sourceDomain === 'transport' && detail.transportFailure !== 'cancelled') return new AudioTranscriptionError('networkError', detail);
   const code = KNOWN_ERRORS.find((candidate) => candidate === (detail?.diagnosticMessage ?? detail?.message)) ?? fallback;
 
   return new AudioTranscriptionError(code, detail);
+}
+
+/** Compact diagnostics for the dialog's Details toggle and bug reports: codes and ids only, never raw server text. */
+export function importErrorDetails(error: AudioTranscriptionError): string | undefined {
+  const detail = (error.detail ?? {}) as ImportFailureDetail;
+  const parts: string[] = [error.code];
+
+  if (typeof detail.httpStatus === 'number') parts.push(`HTTP ${detail.httpStatus}`);
+  if (typeof detail.code === 'number' && detail.code > 0 && detail.code !== detail.httpStatus) parts.push(`code ${detail.code}`);
+  if (typeof detail.transportFailure === 'string' && detail.transportFailure) parts.push(detail.transportFailure);
+  if (typeof detail.requestId === 'string' && detail.requestId) parts.push(`request ${detail.requestId}`);
+  return parts.length > 1 ? parts.join(' · ') : undefined;
 }
 
 export async function getYoutubeAudioMetadata(workspaceId: string, url: string, signal: AbortSignal) {

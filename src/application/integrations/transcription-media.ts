@@ -18,6 +18,8 @@ export const TRANSCRIPTION_FILE_ACCEPT = TRANSCRIPTION_EXTENSIONS.map((extension
 
 export type TranscriptionErrorCode =
   | 'usageFailed'
+  | 'usageUnavailable'
+  | 'networkError'
   | 'unsupportedFormat'
   | 'fileTooLarge'
   | 'unableReadDuration'
@@ -27,6 +29,8 @@ export type TranscriptionErrorCode =
   | 'serviceError'
   | 'unsupportedUrl'
   | 'youtubeMetadataFailed'
+  | 'youtubeVideoUnavailable'
+  | 'youtubeBlocked'
   | 'youtubeCaptionsUnavailable'
   | 'youtubeCaptionsBlocked'
   | 'youtubeCaptionsFailed'
@@ -46,6 +50,23 @@ export class AudioTranscriptionError extends Error {
     super(code);
     this.name = 'AudioTranscriptionError';
   }
+}
+
+const TRANSIENT_IMPORT_ERRORS = new Set<TranscriptionErrorCode>([
+  'usageFailed', 'usageUnavailable', 'networkError', 'uploadFailed', 'submissionFailed', 'resultFailed',
+  'youtubeMetadataFailed', 'youtubeBlocked', 'youtubeCaptionsBlocked', 'youtubeCaptionsFailed',
+  'youtubeDownloadFailed', 'youtubeDownloadBlocked',
+]);
+const SERVICE_IMPORT_ERRORS = new Set<TranscriptionErrorCode>(['usageFailed', 'usageUnavailable', 'networkError']);
+
+/** Retry is offered only when a later attempt can plausibly succeed; input, policy and availability errors are permanent. */
+export function isTransientImportError(code: TranscriptionErrorCode | undefined) {
+  return code !== undefined && TRANSIENT_IMPORT_ERRORS.has(code);
+}
+
+/** The failure is on AppFlowy's side or the user's connection, so a YouTube media fallback would fail the same way. */
+export function isServiceImportError(code: TranscriptionErrorCode | undefined) {
+  return code !== undefined && SERVICE_IMPORT_ERRORS.has(code);
 }
 
 export function isSupportedTranscriptionFile(name: string) {

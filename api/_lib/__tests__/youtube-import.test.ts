@@ -29,16 +29,21 @@ function request(action = 'metadata', options: { authenticated?: boolean; header
 function fakeUpstreams(options: {
   tracks?: ReturnType<typeof track>[]; defaultCaptionIndex?: number; captionBody?: string; captionStatus?: number;
   watchStatus?: number; playability?: string; usageStatus?: number; usageCode?: number; duration?: string;
+  watchPlayability?: string; watchReason?: string; usageUnreachable?: boolean;
 } = {}) {
   return jest.fn(async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
     init?.signal?.throwIfAborted();
     const url = new URL(String(input));
 
-    if (url.origin === cloud) return Response.json({ code: options.usageCode ?? 0, data: {
-      ai_transcription_seconds: 1800, ai_transcription_seconds_limit: 1800, single_upload_limit: 0,
-    } }, { status: options.usageStatus ?? 200 });
+    if (url.origin === cloud) {
+      if (options.usageUnreachable) throw new TypeError('fetch failed');
+      return Response.json({ code: options.usageCode ?? 0, data: {
+        ai_transcription_seconds: 1800, ai_transcription_seconds_limit: 1800, single_upload_limit: 0,
+      } }, { status: options.usageStatus ?? 200 });
+    }
+
     if (url.pathname === '/watch') return new Response(`<script>var ytInitialPlayerResponse = ${JSON.stringify({
-      playabilityStatus: { status: 'OK' },
+      playabilityStatus: { status: options.watchPlayability ?? 'OK', ...(options.watchReason ? { reason: options.watchReason } : {}) },
       videoDetails: { videoId, title: 'Team {meeting} "recording"', author: 'AppFlowy', lengthSeconds: options.duration ?? '120' },
     })};</script>`, { status: options.watchStatus ?? 200 });
     if (url.pathname === '/youtubei/v1/player') return Response.json({
@@ -138,6 +143,51 @@ describe('authenticated YouTube caption import', () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
+  it.each([{ usageUnreachable: true }, { usageStatus: 500 }, { usageStatus: 503 }])('reports a usage service that is down as an AppFlowy outage, not a link problem: %p', async (options) => {
+    const fetcher = fakeUpstreams(options);
+    const response = await bridge(fetcher);
+
+    expect(response.status).toBe(503);
+    expect((await response.json()).message).toBe('usageUnavailable');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('tags every response with a request id for the dialog details line', async () => {
+    const ok = await bridge(fakeUpstreams());
+    const failed = await bridge(fakeUpstreams({ usageStatus: 403 }));
+
+    expect(ok.headers.get('x-request-id')).toMatch(/^[0-9a-f]{8,12}$/);
+    expect(failed.headers.get('x-request-id')).toMatch(/^[0-9a-f]{8,12}$/);
+    expect(ok.headers.get('x-request-id')).not.toBe(failed.headers.get('x-request-id'));
+  });
+
+  it.each([
+    { watchPlayability: 'ERROR', watchReason: 'Video unavailable' },
+    { watchPlayability: 'UNPLAYABLE', watchReason: 'The uploader has not made this video available in your country' },
+    { watchPlayability: 'LOGIN_REQUIRED', watchReason: 'Sign in to confirm your age' },
+    { watchPlayability: 'LOGIN_REQUIRED', watchReason: 'Private video' },
+  ])('reports a video the viewer cannot play as unavailable instead of a metadata failure: %p', async (options) => {
+    const fetcher = fakeUpstreams(options);
+    const response = await bridge(fetcher);
+
+    expect(response.status).toBe(404);
+    expect((await response.json()).message).toBe('youtubeVideoUnavailable');
+    expect(fetcher.mock.calls.map(([input]) => new URL(String(input)).pathname)).toEqual(['/api/workspace/workspace/usage-and-limit', '/watch']);
+  });
+
+  it.each([
+    { watchPlayability: 'LOGIN_REQUIRED', watchReason: 'Sign in to confirm you’re not a bot' },
+    { watchPlayability: 'LOGIN_REQUIRED' },
+    { watchStatus: 429 },
+    { watchStatus: 403 },
+  ])('reports YouTube bot gating or rate limiting at the metadata stage as blocked: %p', async (options) => {
+    const fetcher = fakeUpstreams(options);
+    const response = await bridge(fetcher);
+
+    expect(response.status).toBe(502);
+    expect((await response.json()).message).toBe('youtubeBlocked');
+  });
+
   it('prioritizes the default audio language and manual captions within that language, deduplicating metadata languages', async () => {
     const fetcher = fakeUpstreams({ tracks: [track('fr'), track('en', true), track('en')], defaultCaptionIndex: 1 });
     const metadata = await (await bridge(fetcher)).json();
@@ -203,7 +253,7 @@ describe('authenticated YouTube caption import', () => {
   it('reports a bot-gated player as blocked without requesting caption URLs', async () => {
     const fetcher = fakeUpstreams({ playability: 'LOGIN_REQUIRED' });
 
-    expect((await (await bridge(fetcher, 'captions')).json()).message).toBe('youtubeCaptionsBlocked');
+    expect((await (await bridge(fetcher, 'captions')).json()).message).toBe('youtubeBlocked');
     expect(captionRequests(fetcher)).toHaveLength(0);
   });
 

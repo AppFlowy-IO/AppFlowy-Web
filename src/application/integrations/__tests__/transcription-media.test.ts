@@ -1,4 +1,4 @@
-import { isDirectMediaUrl, isSupportedTranscriptionFile, isYoutubeUrl, readMediaDuration, titleFromAudioFile, TRANSCRIPTION_EXTENSIONS } from '../transcription-media';
+import { isDirectMediaUrl, isServiceImportError, isSupportedTranscriptionFile, isTransientImportError, isYoutubeUrl, readMediaDuration, titleFromAudioFile, TRANSCRIPTION_EXTENSIONS } from '../transcription-media';
 
 describe('Flutter transcript sources', () => {
   it.each(TRANSCRIPTION_EXTENSIONS)('accepts %s recordings and signed direct links', (extension) => {
@@ -97,5 +97,22 @@ describe('reading media duration', () => {
     controller.abort();
     await expect(readMediaDuration(new File(['a'], 'a.mp4'), controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
     expect(URL.createObjectURL).not.toHaveBeenCalled();
+  });
+});
+
+describe('import error classes', () => {
+  it('offers Retry only for failures that can change on a later attempt', () => {
+    for (const code of ['usageUnavailable', 'networkError', 'youtubeBlocked', 'youtubeMetadataFailed', 'youtubeCaptionsFailed', 'youtubeDownloadBlocked'] as const) {
+      expect(isTransientImportError(code)).toBe(true);
+    }
+
+    for (const code of ['unsupportedUrl', 'youtubeVideoUnavailable', 'youtubeCaptionsUnavailable', 'youtubeExtensionRequired', 'youtubeDurationOutOfRange', 'quotaExceeded', undefined] as const) {
+      expect(isTransientImportError(code)).toBe(false);
+    }
+  });
+
+  it('hides the YouTube media fallback only for AppFlowy-side failures', () => {
+    for (const code of ['usageFailed', 'usageUnavailable', 'networkError'] as const) expect(isServiceImportError(code)).toBe(true);
+    for (const code of ['youtubeBlocked', 'youtubeVideoUnavailable', 'youtubeMetadataFailed', undefined] as const) expect(isServiceImportError(code)).toBe(false);
   });
 });
