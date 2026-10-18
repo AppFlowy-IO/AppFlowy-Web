@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Editor, Node, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
@@ -8,8 +8,10 @@ import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
 import { ReactComponent as AIIcon } from '@/assets/icons/block-menu-ai.svg';
 import { ReactComponent as ChevronRightIcon } from '@/assets/icons/block-menu-chevron-right.svg';
 import { ReactComponent as CommentIcon } from '@/assets/icons/toolbar_add_comment.svg';
+import { Popover } from '@/components/_shared/popover';
 import { useAIEnabled } from '@/components/app/app.hooks';
-import { AIAssistantType, AIWriterMenu } from '@/components/chat';
+import { AiWriterMenuContent } from '@/components/chat/components/ai-writer/ai-writer-menu-content';
+import { AIAssistantType } from '@/components/chat/types/writer';
 import { CalloutNode } from '@/components/editor/editor.type';
 import { useEditorContext, useEditorLocalState } from '@/components/editor/EditorContext';
 import { useInlineCommentComposeOptional } from '@/components/inline-comment/InlineCommentContext';
@@ -23,6 +25,7 @@ export function CalloutWritingActions({ node, onClose }: { node: CalloutNode; on
   const comments = useInlineCommentComposeOptional();
   const aiEnabled = useAIEnabled();
   const [open, setOpen] = useState(false);
+  const aiButtonRef = useRef<HTMLButtonElement>(null);
   const commentEnabled = canComment && comments?.active && comments.isEditorRegistered(editor);
   const hasCommentText = !!node.children[0] && !!Node.string(node.children[0]).trim();
   const input = node.children.map(Node.string).join('\n');
@@ -56,35 +59,14 @@ export function CalloutWritingActions({ node, onClose }: { node: CalloutNode; on
         </Button>
       )}
       {aiEnabled && (
-        <AIWriterMenu
-          open={open}
-          onOpenChange={setOpen}
-          input={input}
-          isFilterOut={(type) => type === AIAssistantType.ContinueWriting}
-          onItemClicked={(type) => {
-            if (editor.selection) {
-              const replace = [
-                AIAssistantType.ImproveWriting,
-                AIAssistantType.FixSpelling,
-                AIAssistantType.MakeLonger,
-                AIAssistantType.MakeShorter,
-              ].includes(type);
-
-              addDecorate?.(
-                editor.selection,
-                replace ? 'line-through text-text-secondary' : 'bg-fill-theme-select',
-                'ai-writer'
-              );
-            }
-
-            ReactEditor.blur(editor);
-            onClose();
-          }}
-        >
+        <>
           <Button
+            ref={aiButtonRef}
             variant='ghost'
             className='justify-start'
             disabled={!input.trim()}
+            aria-haspopup='dialog'
+            aria-expanded={open}
             onClick={() => {
               if (selectContent(true)) setOpen(true);
             }}
@@ -93,7 +75,46 @@ export function CalloutWritingActions({ node, onClose }: { node: CalloutNode; on
             {t('document.plugins.optionAction.askAI', { defaultValue: 'Ask AI' })}
             <ChevronRightIcon className='ml-auto h-5 w-5 shrink-0 text-icon-tertiary [&_path]:stroke-current' />
           </Button>
-        </AIWriterMenu>
+          <Popover
+            open={open}
+            anchorEl={aiButtonRef.current}
+            onClose={() => setOpen(false)}
+            anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+            transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+            PaperProps={{
+              className: 'callout-menu-paper',
+              role: 'dialog',
+              'aria-label': t('document.plugins.optionAction.askAI', { defaultValue: 'Ask AI' }),
+            }}
+          >
+            <div className='w-[240px] p-2'>
+              <AiWriterMenuContent
+                input={input}
+                isFilterOut={(type) => type === AIAssistantType.ContinueWriting}
+                onClicked={(type) => {
+                  if (editor.selection) {
+                    const replace = [
+                      AIAssistantType.ImproveWriting,
+                      AIAssistantType.FixSpelling,
+                      AIAssistantType.MakeLonger,
+                      AIAssistantType.MakeShorter,
+                    ].includes(type);
+
+                    addDecorate?.(
+                      editor.selection,
+                      replace ? 'line-through text-text-secondary' : 'bg-fill-theme-select',
+                      'ai-writer'
+                    );
+                  }
+
+                  ReactEditor.blur(editor);
+                  setOpen(false);
+                  onClose();
+                }}
+              />
+            </div>
+          </Popover>
+        </>
       )}
     </>
   );

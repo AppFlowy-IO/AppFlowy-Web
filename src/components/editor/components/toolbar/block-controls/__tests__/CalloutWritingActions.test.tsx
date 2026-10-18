@@ -7,8 +7,6 @@ import { CalloutNode } from '@/components/editor/editor.type';
 
 import { CalloutWritingActions } from '../CalloutBlockActions';
 
-import type { ReactNode } from 'react';
-
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 jest.mock('@/components/app/app.hooks', () => ({ useAIEnabled: () => true }));
 jest.mock('@/components/editor/EditorContext', () => ({
@@ -18,13 +16,8 @@ jest.mock('@/components/editor/EditorContext', () => ({
 jest.mock('@/components/inline-comment/InlineCommentContext', () => ({
   useInlineCommentComposeOptional: () => ({ active: true, isEditorRegistered: () => true }),
 }));
-jest.mock('@/components/chat', () => ({
-  AIAssistantType: {},
-  AIWriterMenu: ({ children, input, open }: { children: ReactNode; input: string; open: boolean }) => (
-    <div data-testid='writer' data-input={input} data-open={String(open)}>
-      {children}
-    </div>
-  ),
+jest.mock('@/components/chat/components/ai-writer/ai-writer-menu-content', () => ({
+  AiWriterMenuContent: ({ input }: { input: string }) => <div data-testid='writer' data-input={input} />,
 }));
 
 function setup(title: string, body: string) {
@@ -59,12 +52,15 @@ it('enables AI for body-only callouts and selects the whole block', async () => 
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'document.plugins.optionAction.askAI' }));
   });
-  expect(screen.getByTestId('writer').getAttribute('data-open')).toBe('true');
+  expect(screen.getByRole('dialog', { name: 'document.plugins.optionAction.askAI' })).not.toBeNull();
   expect(editor.selection?.focus).toEqual({ path: [0, 1, 0, 0], offset: 9 });
 });
 
-it('preserves a line break between title and body in AI input', () => {
+it('preserves a line break between title and body in AI input', async () => {
   setup('Title', 'Body');
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'document.plugins.optionAction.askAI' }));
+  });
   expect(screen.getByTestId('writer').getAttribute('data-input')).toBe('Title\nBody');
 });
 
@@ -82,5 +78,5 @@ it('does not select an old node after it was deleted', async () => {
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'document.plugins.optionAction.askAI' }));
   });
-  expect(screen.getByTestId('writer').getAttribute('data-open')).toBe('false');
+  expect(screen.queryByTestId('writer')).toBeNull();
 });
