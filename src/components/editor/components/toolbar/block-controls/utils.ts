@@ -11,9 +11,11 @@ function getCalloutBodyText(blockElement: HTMLElement) {
     !blockElement.closest('.callout-content')
   ) return null;
 
-  return Array.from(blockElement.querySelectorAll<HTMLElement>('.text-content')).find(
-    (element) => element.closest('[data-block-type]') === blockElement
-  ) ?? null;
+  // A block renders its own text before any nested blocks, so the first match is
+  // either this block's text or proof that it has none of its own.
+  const text = blockElement.querySelector<HTMLElement>('.text-content');
+
+  return text && text.closest('[data-block-type]') === blockElement ? text : null;
 }
 
 export function getBlockActionsPosition(editor: ReactEditor, blockElement: HTMLElement) {
@@ -28,10 +30,9 @@ export function getBlockActionsPosition(editor: ReactEditor, blockElement: HTMLE
   if (blockElement.getAttribute('data-block-type') === BlockType.CalloutBlock) {
     // Anchor the outer handle to the title icon, including headings and toggles.
     // Ignore icons belonging to callouts nested in the body.
-    const icon = Array.from(blockElement.querySelectorAll('[data-testid="callout-icon-button"]')).find(
-      (element) => element.closest('[data-block-type="callout"]') === blockElement
-    );
-    const iconRect = icon?.getBoundingClientRect();
+    const icon = blockElement.querySelector('[data-testid="callout-icon-button"]');
+    const iconRect =
+      icon && icon.closest('[data-block-type="callout"]') === blockElement ? icon.getBoundingClientRect() : undefined;
     const title = blockElement.querySelector<HTMLElement>('.text-content');
     const content = blockElement.querySelector<HTMLElement>('.callout-content');
 

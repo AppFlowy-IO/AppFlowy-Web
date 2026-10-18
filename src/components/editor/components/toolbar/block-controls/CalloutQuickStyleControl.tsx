@@ -41,6 +41,30 @@ const nestedOrigins: Origins = {
   },
 };
 
+const optionButtonClassName =
+  'flex h-8 w-full items-center justify-start rounded-[8px] border border-transparent px-2 py-1.5 text-left hover:border-[var(--dynamic-border-color)] focus-visible:border-[var(--dynamic-border-color)]';
+
+// The presets are constants, so their swatch colors are resolved once per module load.
+function toStyleEntry<T extends QuickStyleOption>(option: T) {
+  const { bg, border, text, icon } = toBlockColor(option.color);
+
+  return {
+    option,
+    iconId: `${option.iconGroup}/${option.iconName}`,
+    iconColor: icon,
+    style: {
+      background: renderColor(bg),
+      color: renderColor(text),
+      '--dynamic-border-color': renderColor(border),
+    } as React.CSSProperties,
+  };
+}
+
+const quickStyles = QUICK_STYLE_OPTIONS.map(toStyleEntry);
+const moreStyles = MORE_STYLE_OPTIONS.map(toStyleEntry);
+
+type StyleEntry = (typeof quickStyles)[number] | (typeof moreStyles)[number];
+
 function CalloutQuickStyleControl({ node, onSelectStyle }: { node: CalloutNode; onSelectStyle: () => void }) {
   const { t } = useTranslation();
   const editor = useSlateStatic() as YjsEditor;
@@ -57,6 +81,15 @@ function CalloutQuickStyleControl({ node, onSelectStyle }: { node: CalloutNode; 
       onSelectStyle();
     },
     [editor, node.blockId, onSelectStyle]
+  );
+
+  const renderOption = ({ option, iconId, iconColor, style }: StyleEntry) => (
+    <Button key={option.key} size='sm' onClick={() => applyStyle(option)} className={optionButtonClassName} style={style}>
+      <div className='flex h-5 w-5 items-center justify-center'>
+        <CalloutGlyph id={iconId} color={iconColor} />
+      </div>
+      <span className='text-sm font-normal'>{t(option.labelKey)}</span>
+    </Button>
   );
 
   return (
@@ -84,32 +117,7 @@ function CalloutQuickStyleControl({ node, onSelectStyle }: { node: CalloutNode; 
         {...popoverOrigins}
       >
         <div className='flex w-[200px] flex-col'>
-          <div className='flex flex-col gap-1 p-2'>
-            {QUICK_STYLE_OPTIONS.map((option) => {
-              const { bg, border, text, icon } = toBlockColor(option.color);
-
-              return (
-                <Button
-                  key={option.key}
-                  size='sm'
-                  onClick={() => applyStyle(option)}
-                  className='flex h-8 w-full items-center justify-start rounded-[8px] border border-transparent px-2 py-1.5 text-left hover:border-[var(--dynamic-border-color)] focus-visible:border-[var(--dynamic-border-color)]'
-                  style={
-                    {
-                      background: renderColor(bg),
-                      color: renderColor(text),
-                      '--dynamic-border-color': renderColor(border),
-                    } as React.CSSProperties
-                  }
-                >
-                  <div className='flex h-5 w-5 items-center justify-center'>
-                    <CalloutGlyph id={`${option.iconGroup}/${option.iconName}`} color={icon} />
-                  </div>
-                  <span className='text-sm font-normal'>{t(option.labelKey)}</span>
-                </Button>
-              );
-            })}
-          </div>
+          <div className='flex flex-col gap-1 p-2'>{quickStyles.map(renderOption)}</div>
           <Separator className='mt-2' />
           <Button
             ref={moreAnchorRef}
@@ -131,32 +139,7 @@ function CalloutQuickStyleControl({ node, onSelectStyle }: { node: CalloutNode; 
         onClose={() => setMoreOpen(false)}
         {...nestedOrigins}
       >
-        <div className='flex w-[200px] flex-col gap-1 p-2'>
-          {MORE_STYLE_OPTIONS.map((option) => {
-            const { bg, border, text, icon } = toBlockColor(option.color);
-
-            return (
-              <Button
-                key={option.key}
-                onClick={() => applyStyle(option)}
-                size='sm'
-                className='flex h-8 w-full items-center justify-start rounded-[8px] border border-transparent px-2 py-1.5 text-left hover:border-[var(--dynamic-border-color)] focus-visible:border-[var(--dynamic-border-color)]'
-                style={
-                  {
-                    background: renderColor(bg),
-                    color: renderColor(text),
-                    '--dynamic-border-color': renderColor(border),
-                  } as React.CSSProperties
-                }
-              >
-                <div className='flex h-5 w-5 items-center justify-center'>
-                  <CalloutGlyph id={`${option.iconGroup}/${option.iconName}`} color={icon} />
-                </div>
-                <span className='text-sm font-normal'>{t(option.labelKey)}</span>
-              </Button>
-            );
-          })}
-        </div>
+        <div className='flex w-[200px] flex-col gap-1 p-2'>{moreStyles.map(renderOption)}</div>
       </Popover>
     </>
   );

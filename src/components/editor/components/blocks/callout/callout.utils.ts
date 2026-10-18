@@ -3,6 +3,9 @@ import emojiRegex from 'emoji-regex';
 import { CalloutBlockData, ViewIconType } from '@/application/types';
 import { ColorEnum, toBlockColor } from '@/utils/color';
 
+// Built once: the pattern is ~12KB, and String#match resets lastIndex on the global regex.
+const EMOJI_REGEX = emojiRegex();
+
 export type QuickStyleOption = {
   key: string;
   labelKey: string;
@@ -107,7 +110,7 @@ export function getCalloutIcon(data: Partial<CalloutBlockData>): CalloutIconData
 
   if (data.icon_type === 'emoji') return { type: 'emoji', value: data.icon };
   if (!data.icon_type) {
-    const emoji = data.icon.match(emojiRegex())?.[0];
+    const emoji = data.icon.match(EMOJI_REGEX)?.[0];
 
     return emoji === data.icon ? { type: 'emoji', value: data.icon } : null;
   }

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Editor, Node, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
@@ -17,6 +17,9 @@ import { useEditorContext, useEditorLocalState } from '@/components/editor/Edito
 import { useInlineCommentComposeOptional } from '@/components/inline-comment/InlineCommentContext';
 import { Button } from '@/components/ui/button';
 
+const anchorOrigin = { vertical: 'top', horizontal: 'right' } as const;
+const transformOrigin = { vertical: 'top', horizontal: 'left' } as const;
+
 export function CalloutWritingActions({ node, onClose }: { node: CalloutNode; onClose: () => void }) {
   const { t } = useTranslation();
   const editor = useSlateStatic() as YjsEditor;
@@ -28,7 +31,7 @@ export function CalloutWritingActions({ node, onClose }: { node: CalloutNode; on
   const aiButtonRef = useRef<HTMLButtonElement>(null);
   const commentEnabled = canComment && comments?.active && comments.isEditorRegistered(editor);
   const hasCommentText = !!node.children[0] && !!Node.string(node.children[0]).trim();
-  const input = node.children.map(Node.string).join('\n');
+  const input = useMemo(() => node.children.map(Node.string).join('\n'), [node]);
   const selectContent = (includeChildren = false) => {
     const entry = findSlateEntryByBlockId(editor, node.blockId);
 
@@ -79,8 +82,8 @@ export function CalloutWritingActions({ node, onClose }: { node: CalloutNode; on
             open={open}
             anchorEl={aiButtonRef.current}
             onClose={() => setOpen(false)}
-            anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-            transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+            anchorOrigin={anchorOrigin}
+            transformOrigin={transformOrigin}
             PaperProps={{
               className: 'callout-menu-paper',
               role: 'dialog',

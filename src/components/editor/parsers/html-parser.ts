@@ -170,6 +170,9 @@ export function extractImageURLs(html: string): string[] {
   return urls;
 }
 
+const EMOJI_REGEX = emojiRegex();
+const NOTION_IMAGE_MARKER = /^<img\s[^>]*\/?>(?:\s*)$/;
+
 /** Notion's clipboard encodes aside tags as text, even across list boundaries. */
 function restoreNotionCallouts(blocks: ParsedBlock[]): ParsedBlock[] {
   const result: ParsedBlock[] = [];
@@ -178,10 +181,10 @@ function restoreNotionCallouts(blocks: ParsedBlock[]): ParsedBlock[] {
     const opening = blocks[index];
     const header = opening.text.trim();
     const iconText = header.startsWith('<aside>') ? header.slice('<aside>'.length).trim() : undefined;
-    const emoji = iconText?.match(emojiRegex())?.[0];
+    const emoji = iconText?.match(EMOJI_REGEX)?.[0];
     // Only consume a standalone marker plus an optional icon, never ordinary prose.
     const isMarker = opening.type === BlockType.Paragraph && iconText !== undefined &&
-      (!iconText || emoji === iconText || /^<img\s[^>]*\/?>(?:\s*)$/.test(iconText));
+      (!iconText || emoji === iconText || NOTION_IMAGE_MARKER.test(iconText));
     const closingOffset = isMarker ? blocks.slice(index + 1).findIndex(block => block.text.trimEnd().endsWith('</aside>')) : -1;
 
     if (!isMarker || closingOffset < 0) {

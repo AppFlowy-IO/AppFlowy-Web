@@ -1,21 +1,19 @@
 import { forwardRef, memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Editor, Element } from 'slate';
-import { ReactEditor, useReadOnly, useSlateStatic } from 'slate-react';
+import { Element } from 'slate';
+import { useReadOnly, useSlateStatic } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { BlockType } from '@/application/types';
+import { useInsideCallout } from '@/components/editor/components/blocks/callout/Callout.hooks';
 import { EditorElementProps, ToggleListNode } from '@/components/editor/editor.type';
 
 export const ToggleList = memo(
   forwardRef<HTMLDivElement, EditorElementProps<ToggleListNode>>(({ node, children, ...attributes }, ref) => {
     const blockId = node.blockId;
     const editor = useSlateStatic() as YjsEditor;
-    const inCallout = !!Editor.above(editor, {
-      at: ReactEditor.findPath(editor, node),
-      match: (ancestor) => Element.isElement(ancestor) && ancestor.type === BlockType.CalloutBlock,
-    });
+    const inCallout = useInsideCallout(node);
     const { collapsed, level = 0 } = useMemo(() => node.data || {}, [node.data]);
     const { t } = useTranslation();
     const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
