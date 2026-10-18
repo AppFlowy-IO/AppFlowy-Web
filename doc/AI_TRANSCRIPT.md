@@ -108,6 +108,19 @@ redirects are disabled, responses are bounded, and signed caption URLs are never
 returned to the browser. YouTube may block caption requests or change its
 undocumented APIs, so unavailable and blocked captions have explicit errors.
 
+Failures are reported by cause instead of one generic message. The bridge
+returns `usageUnavailable` when the AppFlowy usage service cannot be reached or
+answers 5xx, `usageFailed` when it refuses the workspace, `youtubeBlocked` for
+YouTube's bot gate or rate limiting (typical for datacenter egress),
+`youtubeVideoUnavailable` for private, removed, age-restricted or region-locked
+videos, `youtubeCaptionsUnavailable` when no track exists, and
+`youtubeMetadataFailed`/`youtubeCaptionsFailed` for anything else; the browser
+adds `networkError` when the AppFlowy origin itself is unreachable. Every bridge
+response carries an `X-Request-Id` header, and the dialog's Details toggle shows
+the error code, HTTP status and request id for bug reports. Retry is offered
+only for transient causes, and the YouTube media fallback is hidden for
+AppFlowy-side failures because downloading audio would hit the same outage.
+
 The Node API entry point is `api/youtube-audio.ts`; the SSR Docker image includes
 the shared handler. Static nginx deployments must route this endpoint to a
 Node/Bun instance. Existing file and direct-media URL transcription continue to
