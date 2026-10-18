@@ -1,6 +1,13 @@
 import * as Y from 'yjs';
+import { act, renderHook, waitFor } from '@testing-library/react';
 
 import { Types } from '@/application/types';
+import { readPersistedRepairUpdate } from '@/application/collab-repair/indexeddb';
+import type { RepairUpdate } from '@/application/collab-repair/types';
+import type { AppflowyWebSocketType } from '@/components/ws/useAppflowyWebSocket';
+import type { collab } from '@/proto/messages';
+
+jest.mock('@/application/collab-repair/indexeddb', () => ({ readPersistedRepairUpdate: jest.fn() }));
 
 interface MockSyncOutboxRecord {
   id?: number;
@@ -124,6 +131,7 @@ import {
   startDrainAll,
   type SlowSyncOutboxItem,
 } from '@/application/sync-outbox';
+import { useBackgroundCollabRepair } from '@/components/ws/useBackgroundCollabRepair';
 
 const userId = 'user-1';
 const workspaceId = 'workspace-1';
@@ -180,6 +188,44 @@ describe('sync outbox live send', () => {
     await purgeAllOutbox();
     clearDrainConfig();
     setCurrentSession(null);
+  });
+
+  it('a delayed background donation leaves newer foreground edits and manifest snapshots untouched', async () => {
+    const loaded = createDeferred<RepairUpdate>();
+    const sendRepair = jest.fn(() => true);
+    const ordinarySend = jest.fn();
+    let deliver!: (message: collab.ICollabMessage) => void;
+    const socket: AppflowyWebSocketType = {
+      options: { workspaceId }, readyState: 1, lastMessage: null, reconnectAttempt: 0,
+      sendMessage: ordinarySend, reconnect: jest.fn(),
+      captureRepairSender: () => sendRepair,
+      subscribeRepairRequests: (listener) => { deliver = listener; return () => undefined; },
+    };
+
+    jest.mocked(readPersistedRepairUpdate).mockReturnValue(loaded.promise);
+    const { unmount } = renderHook(() => useBackgroundCollabRepair(socket, true, userId, workspaceId));
+
+    act(() => deliver({ objectId, collabType: 0, repairRequest: {
+      requestId: '22222222-2222-2222-2222-222222222222', stateVector: new Uint8Array([0]), maxUpdateBytes: 4096,
+    } }));
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('newer foreground edit') });
+    await enqueueOutboxUpdate(
+      { objectId, collabType: Types.Document, payload: makeUpdate('newer manifest snapshot') },
+      { source: 'manifest', broadcast: false }
+    );
+    const beforeDonation = mockRecords.slice();
+    const addsBeforeDonation = mockSyncOutboxTable.add.mock.calls.length;
+
+    await act(async () => loaded.resolve({
+      objectId, collabType: 0, payload: makeUpdate('older persisted donor'),
+      version: undefined, databaseRestoreId: undefined, beforeStateVector: new Uint8Array([0]),
+    }));
+    await waitFor(() => expect(sendRepair).toHaveBeenCalledTimes(1));
+    expect(mockRecords).toEqual(beforeDonation);
+    expect(mockRecords).toHaveLength(2);
+    expect(mockSyncOutboxTable.add).toHaveBeenCalledTimes(addsBeforeDonation);
+    expect(ordinarySend).not.toHaveBeenCalled();
+    unmount();
   });
 
   it('keeps immediate sibling fan-out and sends for non-database collabs behind the restore barrier', async () => {
