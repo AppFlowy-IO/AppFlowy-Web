@@ -9,6 +9,9 @@ for (const level of [0, 1, 2, 3]) {
     const arrow = toggle.getByTestId('toggle-icon').first();
     const hint = toggle.getByTestId('toggle-list-empty');
 
+    // A fresh CI server compiles the full editor on its first story request.
+    await expect(callout).toBeVisible({ timeout: 30000 });
+    await page.evaluate(() => document.fonts.ready);
     await expect(title).toBeVisible();
     await expect(arrow).toHaveCSS('width', '24px');
     await expect(arrow).toHaveCSS('height', '24px');
@@ -64,7 +67,8 @@ for (const level of [0, 1, 2, 3]) {
       const textRect = (await body.boundingBox())!;
 
       expect(controlsRect.x + controlsRect.width).toBeGreaterThan(calloutRect.x + 32);
-      expect(handleRect.y + handleRect.height / 2).toBeCloseTo(textRect.y + textRect.height / 2, 0);
+      // Inline text boxes carry the font's half-leading rounding, so allow a pixel either way.
+      expect(Math.abs(handleRect.y + handleRect.height / 2 - (textRect.y + textRect.height / 2))).toBeLessThanOrEqual(1);
     }).toPass({ timeout: 5000 });
     await page.getByTestId('drag-block').click();
     await expect(
