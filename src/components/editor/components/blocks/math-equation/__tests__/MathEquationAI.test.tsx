@@ -46,6 +46,7 @@ function respond(answer: string) {
     return { streamPromise: Promise.resolve(), cancel: jest.fn() };
   });
 }
+
 function setup(action: MathEquationAISession['action'], draft?: string) {
   const onClose = jest.fn();
   const session = { action, blockId: 'equation', draft };
@@ -66,7 +67,7 @@ describe('equation AI lifecycle', () => {
     const { onClose } = setup('generate', 'Solve for x');
 
     expect(mockFetch).not.toHaveBeenCalled();
-    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('Solve for x');
+    expect((screen.getByRole('textbox')).value).toBe('Solve for x');
     fireEvent.click(screen.getByRole('button', { name: 'document.plugins.mathEquation.send' }));
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'document.plugins.mathEquation.insert' })).toBeTruthy()
@@ -112,7 +113,7 @@ describe('equation AI lifecycle', () => {
     mockNode = { ...mockNode, data: { formula: 'changed' } };
     rerender(<MathEquationAI node={mockNode} session={session} onClose={onClose} />);
     expect(
-      (screen.getByRole('button', { name: 'document.plugins.mathEquation.insert' }) as HTMLButtonElement).disabled
+      (screen.getByRole('button', { name: 'document.plugins.mathEquation.insert' })).disabled
     ).toBe(true);
     expect(screen.getByRole('alert').textContent).toContain('changedDuringAI');
     expect(CustomEditor.setBlockData).not.toHaveBeenCalled();
@@ -130,7 +131,7 @@ describe('equation AI lifecycle', () => {
     const { unmount } = setup('check');
 
     await waitFor(() => expect(mockFetch).toHaveBeenCalled());
-    const signal = mockFetch.mock.calls[0][2] as AbortSignal;
+    const signal = mockFetch.mock.calls[0][0].signal as AbortSignal;
 
     unmount();
     expect(signal.aborted).toBe(true);
@@ -142,8 +143,18 @@ describe('equation AI lifecycle', () => {
     mockFetch.mockRejectedValueOnce(new Error('Offline'));
     setup('check');
     await screen.findByText('Offline');
+    expect(screen.getAllByRole('button', { name: 'button.close' })).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'button.tryAgain' }));
     await screen.findByText('$$x=2$$');
+  });
+
+  it('shows an empty generation result without enabling Insert', async () => {
+    respond('');
+    setup('generate', 'Write a formula');
+    fireEvent.click(screen.getByRole('button', { name: 'document.plugins.mathEquation.send' }));
+    await screen.findByText('document.plugins.mathEquation.noEquation');
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'document.plugins.mathEquation.insert' }).disabled).toBe(true);
+    expect(screen.getAllByRole('button', { name: 'button.close' })).toHaveLength(1);
   });
 
   it('stops a partial result without allowing insertion and can retry', async () => {
@@ -154,9 +165,9 @@ describe('equation AI lifecycle', () => {
     setup('check');
     await screen.findByText('$$partial$$');
     fireEvent.click(screen.getByRole('button', { name: 'document.plugins.mathEquation.stop' }));
-    expect(mockFetch.mock.calls[0][2].aborted).toBe(true);
+    expect(mockFetch.mock.calls[0][0].signal.aborted).toBe(true);
     expect(
-      (screen.getByRole('button', { name: 'document.plugins.mathEquation.insert' }) as HTMLButtonElement).disabled
+      (screen.getByRole('button', { name: 'document.plugins.mathEquation.insert' })).disabled
     ).toBe(true);
     respond('$$x=2$$');
     fireEvent.click(screen.getByRole('button', { name: 'button.tryAgain' }));

@@ -48,8 +48,11 @@ export function MathEquationMenu({
   const { openMathEquationAI } = usePopoverContext();
   const { t } = useTranslation();
   const [submenu, setSubmenu] = useState<{ type: 'ai' | 'turn'; anchor: HTMLElement }>();
+  const submenuRow = submenu?.anchor.getBoundingClientRect();
+  const menuBounds = submenu?.anchor.closest('[role="menu"]')?.getBoundingClientRect();
+  const submenuAtRight = !menuBounds || menuBounds.right + 244 <= window.innerWidth - 16;
   const empty = !node.data.formula?.trim();
-  const rowClass = 'h-8 w-full justify-start rounded-md px-2 py-1.5 text-sm [&_svg]:shrink-0';
+  const rowClass = 'h-8 w-full justify-start rounded-md px-2 py-1.5 text-sm [&_svg]:shrink-0 disabled:[&_svg]:opacity-40';
   const liveEntry = () => findSlateEntryByBlockId(editor, node.blockId);
   const run = (action: () => void | Promise<void>) => {
     const entry = liveEntry();
@@ -88,7 +91,7 @@ export function MathEquationMenu({
   return (
     <Popover
       open
-      PaperProps={{ className: '!rounded-xl !border !border-border-primary !bg-surface-primary !shadow-menu' }}
+      PaperProps={{ className: '!w-60 !rounded-xl !border-0 !bg-surface-layer-04 !shadow-menu ring-1 ring-border-primary' }}
       anchorEl={anchorEl}
       onClose={onClose}
       disableRestoreFocus
@@ -100,9 +103,9 @@ export function MathEquationMenu({
         role='menu'
         aria-label={t('document.plugins.mathEquation.name')}
         data-testid='math-equation-menu'
-        className='w-60 p-2'
+        className='w-full p-2'
       >
-        <div className='px-2 py-1.5 text-xs text-text-tertiary'>{t('document.plugins.mathEquation.name')}</div>
+        <div className='px-2 py-1.5 text-xs font-medium leading-[18px] tracking-[0.1px] text-text-tertiary'>{t('document.plugins.mathEquation.name')}</div>
         <Button
           role='menuitem'
           variant='ghost'
@@ -149,6 +152,7 @@ export function MathEquationMenu({
         <Button
           role='menuitem'
           aria-haspopup='menu'
+          aria-expanded={submenu?.type === 'turn'}
           variant='ghost'
           className={rowClass}
           onClick={(event) => setSubmenu({ type: 'turn', anchor: event.currentTarget })}
@@ -172,6 +176,7 @@ export function MathEquationMenu({
           <Button
             role='menuitem'
             aria-haspopup='menu'
+            aria-expanded={submenu?.type === 'ai'}
             variant='ghost'
             className={rowClass}
             onClick={(event) => setSubmenu({ type: 'ai', anchor: event.currentTarget })}
@@ -184,14 +189,17 @@ export function MathEquationMenu({
       </div>
       <MuiPopover
         open={!!submenu}
-        anchorEl={submenu?.anchor}
+        anchorReference='anchorPosition'
+        anchorPosition={submenuRow && menuBounds ? {
+          top: submenuRow.top,
+          left: submenuAtRight ? menuBounds.right + 4 : menuBounds.left - 4,
+        } : undefined}
         onClose={() => setSubmenu(undefined)}
         disableRestoreFocus
-        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
-        PaperProps={{ className: '!rounded-xl !border !border-border-primary !bg-surface-primary !shadow-menu' }}
+        transformOrigin={{ vertical: 'top', horizontal: submenuAtRight ? 'left' : 'right' }}
+        PaperProps={{ className: '!w-60 !rounded-xl !border-0 !bg-surface-layer-04 !shadow-menu ring-1 ring-border-primary' }}
       >
-        <div role='menu' className='w-60 p-2'>
+        <div role='menu' data-testid='math-equation-submenu' className='w-full p-2'>
           {submenu?.type === 'ai' ? (
             <>
               <Button role='menuitem' variant='ghost' className={rowClass} onClick={() => ask('generate')}>

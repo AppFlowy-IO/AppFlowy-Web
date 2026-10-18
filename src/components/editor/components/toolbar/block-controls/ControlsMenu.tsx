@@ -628,8 +628,8 @@ function ControlsMenu({
     }[];
   }, [t, duplicateSelectedBlocks, selectedBlockIds, onlySingleBlockSelected, editor, isSimpleTable]);
 
-  if (onlySingleBlockSelected && node?.[0].type === BlockType.EquationBlock && anchorEl && open) {
-    return <MathEquationMenu node={node[0] as MathEquationNode} anchorEl={anchorEl} onClose={onClose} />;
+  if (onlySingleBlockSelected && node?.type === BlockType.EquationBlock && anchorEl && open) {
+    return <MathEquationMenu node={node as MathEquationNode} anchorEl={anchorEl} onClose={onClose} />;
   }
 
   return (

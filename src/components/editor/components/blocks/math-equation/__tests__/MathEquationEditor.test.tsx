@@ -14,6 +14,16 @@ function setup(initialValue = 'E=mc^2') {
 }
 
 describe('Flutter equation editor parity', () => {
+  it('pastes a wrapped Markdown equation into the selected TeX range', () => {
+    const { onSave } = setup('old formula');
+    const input = screen.getByRole('textbox');
+
+    input.select();
+    fireEvent.paste(input, { clipboardData: { getData: () => '$$\nx^2 + y^2\n$$' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onSave).toHaveBeenCalledWith('x^2 + y^2');
+  });
+
   it.each(['button', 'Enter'])('inserts the latest formula with %s', (method) => {
     const { onSave } = setup('');
 
@@ -31,10 +41,10 @@ describe('Flutter equation editor parity', () => {
     fireEvent.click(screen.getByRole('button', { name: 'document.imageBlock.openFullScreen' }));
     const dialog = screen.getByRole('dialog');
 
-    expect((within(dialog).getByRole('textbox') as HTMLTextAreaElement).value).toBe('x^2');
+    expect((within(dialog).getByRole('textbox')).value).toBe('x^2');
     fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'y^2' } });
     fireEvent.keyDown(within(dialog).getByRole('textbox'), { key: 'Escape' });
-    await waitFor(() => expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('y^2'));
+    await waitFor(() => expect((screen.getByRole('textbox')).value).toBe('y^2'));
     expect(onSave).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'document.imageBlock.openFullScreen' }));
     fireEvent.keyDown(within(screen.getByRole('dialog')).getByRole('textbox'), { key: 'Enter' });

@@ -4,6 +4,7 @@ import remarkParse from 'remark-parse';
 import { unified } from 'unified';
 
 import { BlockData, BlockType, MathEquationBlockData } from '@/application/types';
+import { normalizeMathMarkdown } from '@/components/editor/utils/math-markdown';
 
 import { extractInlineFormatsFromMDAST, extractTextFromMDAST } from './mdast-utils';
 import { parseMarkdownTable } from './table-parser';
@@ -57,12 +58,14 @@ export function parseMarkdown(markdown: string, options: MarkdownParseOptions = 
       processor = processor.use(remarkGfm) as typeof processor;
     }
 
-    const tree = processor.parse(normalizedMarkdown);
+    const initialTree = processor.parse(normalizedMarkdown);
+    const mathMarkdown = normalizeMathMarkdown(normalizedMarkdown, initialTree);
+    const tree = mathMarkdown === normalizedMarkdown ? initialTree : processor.parse(mathMarkdown);
     const ast = processor.runSync(tree) as MdastRoot;
 
     // Desktop treats same-line $$...$$ as display math too. Split paragraphs
     // using parser positions so escaped dollars and code remain untouched.
-    expandDisplayMath(ast, normalizedMarkdown);
+    expandDisplayMath(ast, mathMarkdown);
 
     // Step 2: Convert MDAST to ParsedBlocks
     const blocks = convertMarkdownASTToAppFlowyBlocks(ast.children as BlockContent[]);
@@ -243,7 +246,11 @@ function expandDisplayMath(node: { children?: unknown[] }, source: string) {
 
       if (inline.type === 'inlineMath' && offset !== undefined && source.slice(offset, offset + 2) === '$$') {
         flush();
-        result.push({ type: 'math', value: inline.value });
+        // remark's inline math normalizes newlines to spaces. A same-paragraph
+        // display equation must retain them for Flutter's multiline syntax.
+        const raw = source.slice(offset, inline.position?.end.offset);
+
+        result.push({ type: 'math', value: raw.replace(/^\$+|\$+$/g, '').trim() });
       } else pending.push(inline);
     }
 

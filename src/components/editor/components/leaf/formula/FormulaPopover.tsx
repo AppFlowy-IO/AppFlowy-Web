@@ -28,14 +28,14 @@ function FormulaPopover({
     <Popover
       onClose={onClose}
       open={open}
-      PaperProps={{ className: '!rounded-xl !border !border-border-primary !bg-surface-primary !shadow-menu' }}
+      PaperProps={{ className: '!w-[331px] !max-w-[calc(100vw-32px)] !rounded-xl !border !border-border-primary !bg-surface-primary !shadow-menu' }}
       disableRestoreFocus
       anchorPosition={anchorPosition}
       anchorReference='anchorPosition'
       transformOrigin={{ vertical: 'top', horizontal: 'left' }}
     >
       <div
-        className='flex w-[331px] max-w-[calc(100vw-32px)] items-center gap-2 p-2'
+        className='flex w-full items-center gap-2 p-[7px]'
         data-testid='inline-equation-editor'
       >
         <Input

@@ -51,7 +51,7 @@ function Fixture() {
       <AFConfigContext.Provider
         value={{ isAuthenticated: false, openLoginModal: () => undefined, updateCurrentUser: async () => undefined }}
       >
-        <div style={{ maxWidth: 900, margin: '0 auto', padding: 40 }}>
+        <div className='min-h-screen bg-surface-primary text-text-primary' style={{ maxWidth: 900, margin: '0 auto', padding: 40 }}>
           <div className='mb-10 flex gap-3 text-sm'>
             <label>
               <input type='checkbox' checked={readOnly} onChange={(event) => setReadOnly(event.target.checked)} />
@@ -95,7 +95,9 @@ i18nInstance.addResourceBundle('en', 'translation', en, true, true);
 void i18nInstance.changeLanguage('en').then(() =>
   createRoot(document.getElementById('root')!).render(
     <AppTheme>
-      <Fixture />
+      <div className='min-h-screen bg-surface-primary text-text-primary'>
+        <Fixture />
+      </div>
     </AppTheme>
   )
 );

@@ -9,6 +9,20 @@ import { BlockType, MathEquationBlockData } from '@/application/types';
 
 export const OPEN_MATH_EQUATION_EVENT = 'appflowy:open-math-equation';
 
+/** Ignore adjacent leaves touched only by a selection's zero-width boundary. */
+export function getSelectedEquationTexts(editor: Editor): Text[] {
+  const { selection } = editor;
+
+  if (!selection || Range.isCollapsed(selection)) return [];
+  return Array.from(Editor.nodes<Text>(editor, { at: selection, match: Text.isText }))
+    .filter(([, path]) => {
+      const intersection = Range.intersection(selection, Editor.range(editor, path));
+
+      return intersection && Range.isExpanded(intersection);
+    })
+    .map(([node]) => node);
+}
+
 export function insertInlineEquation(editor: Editor, formula: string, at = editor.selection): boolean {
   if (!at || !formula.trim() || !Editor.hasPath(editor, at.anchor.path) || !Editor.hasPath(editor, at.focus.path))
     return false;
@@ -37,14 +51,14 @@ export function toggleInlineEquation(editor: ReactEditor): boolean {
   )
     return false;
   if (!Path.equals(Path.parent(selection.anchor.path), Path.parent(selection.focus.path))) return false;
-  const texts = Array.from(Editor.nodes(editor, { at: selection, match: Text.isText }));
+  const texts = getSelectedEquationTexts(editor);
 
-  if (texts.some(([node]) => node.mention || node.code)) return false;
-  const formulas = texts.filter(([node]) => node.formula !== undefined);
+  if (texts.some((node) => node.mention || node.code)) return false;
+  const formulas = texts.filter((node) => node.formula !== undefined);
 
   if (formulas.length) {
     if (formulas.length !== texts.length) return false;
-    const source = formulas.map(([node]) => node.formula).join('');
+    const source = formulas.map((node) => node.formula).join('');
 
     Editor.withoutNormalizing(editor, () => {
       Transforms.delete(editor);

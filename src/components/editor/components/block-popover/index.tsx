@@ -136,7 +136,7 @@ function BlockPopover() {
       slotProps={{
         paper: {
           ref: paperRef,
-          className: `w-[400px] max-h-[366px] ${type === BlockType.EquationBlock ? 'math-equation-popover !rounded-xl !bg-surface-primary !shadow-menu' : ''}`,
+          className: `w-[400px] max-h-[366px] ${type === BlockType.EquationBlock ? 'math-equation-popover !rounded-xl !bg-surface-layer-04' : ''}`,
         },
       }}
       {...origins}

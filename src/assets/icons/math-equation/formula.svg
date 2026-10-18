@@ -1,5 +1,5 @@
 <svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
 <g id="Icon / S / Formula">
-<path id="Vector" d="M16 5.625C16 4.17525 14.7688 3 13.25 3C11.7312 3 10.5 4.17525 10.5 5.625V14.375C10.5 15.8247 9.26878 17 7.75 17C6.23122 17 5 15.8247 5 14.375M14.5104 10H7.40625" stroke="#989EB7" stroke-linecap="round"/>
+<path id="Vector" d="M16 5.625C16 4.17525 14.7688 3 13.25 3C11.7312 3 10.5 4.17525 10.5 5.625V14.375C10.5 15.8247 9.26878 17 7.75 17C6.23122 17 5 15.8247 5 14.375M14.5104 10H7.40625" stroke="var(--text-tertiary)" stroke-linecap="round"/>
 </g>
 </svg>

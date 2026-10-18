@@ -11,7 +11,7 @@ import { slateContentInsertToYData, yDocToSlateContent } from '@/application/sla
 import { BlockType, CollabOrigin, YjsEditorKey } from '@/application/types';
 import { withPlugins } from '@/components/editor/plugins';
 
-import { insertInlineEquation, OPEN_MATH_EQUATION_EVENT, toggleInlineEquation } from '../math-equation';
+import { getSelectedEquationTexts, insertInlineEquation, OPEN_MATH_EQUATION_EVENT, toggleInlineEquation } from '../math-equation';
 
 function block(text = '', type = BlockType.Paragraph, marks = {}): Element {
   return { type, data: {}, children: [{ type: YjsEditorKey.text, children: [{ text, ...marks }] }] } as Element;
@@ -149,6 +149,19 @@ describe('Flutter math character and selection shortcuts with Yjs', () => {
     expect(toggleInlineEquation(editor)).toBe(true);
     expect(formulas(editor)).toEqual([]);
     expect(Node.string(editor)).toBe('E = MC ^ 3');
+    persisted(editor);
+  });
+
+  it('removes inline math selected from the start of the following text leaf', () => {
+    const editor = setup('Before ');
+
+    insertInlineEquation(editor, 'x^2');
+    type(editor, ' after');
+    editor.select({ anchor: { path: [0, 0, 2], offset: 0 }, focus: { path: [0, 0, 1], offset: 0 } });
+    expect(getSelectedEquationTexts(editor)).toEqual([{ text: '$', formula: 'x^2' }]);
+    expect(toggleInlineEquation(editor)).toBe(true);
+    expect(Node.string(editor)).toBe('Before x^2 after');
+    expect(formulas(editor)).toEqual([]);
     persisted(editor);
   });
 

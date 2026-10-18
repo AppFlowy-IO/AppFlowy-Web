@@ -2694,7 +2694,7 @@
         "alertDialogConfirmation": "Are you sure, you want to continue?"
       },
       "mathEquation": {
-        "name": "Math Equation",
+        "name": "Math equation",
         "addMathEquation": "Add a TeX equation",
         "editMathEquation": "Edit Math Equation",
         "inline": "Inline equation",

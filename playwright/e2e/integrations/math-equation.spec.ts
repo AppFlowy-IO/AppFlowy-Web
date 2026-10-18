@@ -106,6 +106,134 @@ test('read-only equations render without editing controls', async ({ page }) => 
   await expect(block(page).locator('.katex')).toBeVisible();
 });
 
+test('hover clears on mouseleave, including after closing the editor and menu', async ({ page }) => {
+  await insertEquation(page);
+  const surface = block(page).locator('.math-equation-surface');
+  const hoverColor = await surface.evaluate((element) => getComputedStyle(element).getPropertyValue('--block-bg-color-20').trim());
+
+  await surface.hover();
+  const background = await surface.evaluate((element) => getComputedStyle(element).backgroundColor);
+
+  expect(background).not.toBe('rgba(0, 0, 0, 0)');
+  expect(hoverColor).toBeTruthy();
+  await page.mouse.move(5, 5);
+  await expect(surface).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await surface.getByRole('button', { name: 'Edit Math Equation', exact: true }).click();
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.mouse.move(5, 5);
+  await expect(surface).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await openMenu(page);
+  await page.keyboard.press('Escape');
+  await page.mouse.move(5, 5);
+  await expect(surface).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await expect(surface.locator('.math-equation-toolbar')).toHaveCSS('opacity', '0');
+});
+
+test('compact and expanded sizes stay bounded with long input and short viewports', async ({ page }) => {
+  await insertEquation(page);
+  await block(page).getByRole('button', { name: 'Edit Math Equation', exact: true }).click();
+  const compact = page.getByTestId('math-equation-editor');
+
+  await expect(compact).toHaveCSS('height', '180px');
+  await expect(input(page)).toHaveCSS('height', '112px');
+  await input(page).fill(Array.from({ length: 60 }, (_, i) => `x_${i} = ${i}`).join('\n'));
+  await expect(compact).toHaveCSS('height', '180px');
+  expect(await input(page).evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+  await page.getByRole('button', { name: /full screen/i }).click();
+  await expect(page.getByRole('dialog')).toHaveCSS('height', '360px');
+  await expect(page.getByRole('dialog')).toHaveCSS('width', '560px');
+  await expect(input(page)).toHaveCSS('height', '244px');
+  await page.setViewportSize({ width: 375, height: 280 });
+  const dialog = page.getByRole('dialog');
+
+  await expect(dialog).toHaveCSS('height', '248px');
+  await expect(dialog).toHaveCSS('width', '343px');
+  await expect(dialog.getByRole('button', { name: 'Insert', exact: true })).toBeInViewport();
+  await input(page).press('Escape');
+  await expect(compact).toHaveCSS('height', '180px');
+  await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toBeInViewport();
+  await page.setViewportSize({ width: 375, height: 180 });
+  await expect(compact).toHaveCSS('height', '148px');
+  await expect(page.getByRole('button', { name: 'Insert', exact: true })).toBeInViewport();
+});
+
+test('six-dot menu matches equation actions and places second-level menus beside it', async ({ page }, testInfo) => {
+  await insertEquation(page);
+  await block(page).hover();
+  await page.getByTestId('drag-block').click();
+  const menu = page.getByTestId('math-equation-menu');
+
+  await expect(menu.getByRole('menuitem')).toHaveText(['Delete', 'Duplicate', 'Copy link to block', 'Turn into', 'Comment', 'Ask AI']);
+  await expect(menu).toHaveCSS('width', '240px');
+  await expect(menu).toHaveCSS('height', '255px');
+  for (const label of ['Ask AI', 'Turn into']) {
+    // MUI marks the parent menu aria-hidden while its submenu has focus.
+    const row = menu.getByRole('menuitem', { name: label, exact: true, includeHidden: true });
+
+    await row.click();
+    await expect(row).toHaveAttribute('aria-expanded', 'true');
+    const submenu = page.getByTestId('math-equation-submenu');
+
+    await expect(submenu.locator('..')).toHaveCSS('opacity', '1');
+    if (label === 'Ask AI') await expect(submenu).toHaveCSS('height', '112px');
+    const parentRect = (await menu.boundingBox())!;
+    const childRect = (await submenu.boundingBox())!;
+
+    expect(childRect.x >= parentRect.x + parentRect.width || childRect.x + childRect.width <= parentRect.x).toBe(true);
+    expect(Math.abs(childRect.y - (await row.boundingBox())!.y)).toBeLessThan(2);
+    await page.screenshot({ animations: 'disabled', path: testInfo.outputPath(`six-dot-${label}.png`) });
+    await page.keyboard.press('Escape');
+  }
+});
+
+test('long equations scroll horizontally inside the block at the Figma font size', async ({ page }) => {
+  await insertEquation(page, Array.from({ length: 80 }, (_, i) => `x_{${i}}`).join(' + '));
+  const render = block(page).locator('.math-equation-render');
+
+  await expect(render.locator('.katex')).toHaveCSS('font-size', '20px');
+  const dimensions = await render.evaluate((element) => ({
+    width: element.clientWidth,
+    scroll: element.scrollWidth,
+    pageWidth: document.documentElement.clientWidth,
+    pageScroll: document.documentElement.scrollWidth,
+  }));
+
+  expect(dimensions.scroll).toBeGreaterThan(dimensions.width);
+  expect(dimensions.pageScroll).toBe(dimensions.pageWidth);
+});
+
+test('paste converts multiline Markdown equations and keeps their TeX after reload', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  const formula = '\\begin{bmatrix}\n1 & 2\\\\\n3 & 4\n\\end{bmatrix}';
+  const markdown = `Before $a+b$\n\n$$\n${formula}\n$$\n\n\\[x^2+y^2\\]\n\nAfter`;
+
+  await page.evaluate((text) => navigator.clipboard.writeText(text), markdown);
+  await editor(page).click();
+  await page.keyboard.press('ControlOrMeta+v');
+  await expect(block(page)).toHaveCount(2);
+  await expect(block(page).first().locator('.katex')).toBeVisible();
+  await expect(page.locator('.formula-inline')).toHaveCount(1);
+  await expect(editor(page)).toContainText('Before');
+  await expect(editor(page)).toContainText('After');
+  await page.reload();
+  await expect(block(page)).toHaveCount(2);
+  const snapshot = JSON.parse((await page.getByTestId('math-document-snapshot').textContent()) || '[]');
+
+  expect(snapshot.find((node: { type: string }) => node.type === 'math_equation').data.formula).toBe(formula);
+});
+
+test('paste strips Markdown wrappers in the equation editor without losing the formula', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await insertEquation(page);
+  await block(page).getByRole('button', { name: 'Edit Math Equation', exact: true }).click();
+  await page.evaluate(() => navigator.clipboard.writeText('$$\n\\frac{a}{b}\n$$'));
+  await input(page).press('ControlOrMeta+a');
+  await input(page).press('ControlOrMeta+v');
+  await expect(input(page)).toHaveValue('\\frac{a}{b}');
+  await input(page).press('Enter');
+  await expect(block(page).locator('.katex')).toBeVisible();
+});
+
 for (const action of ['generate', 'explain', 'check'] as const) {
   test(`AI ${action}: streams, retries, and inserts the response`, async ({ page }, testInfo) => {
     const requests: Record<string, unknown>[] = [];
@@ -172,6 +300,31 @@ test('keyboard toggling converts selected text to inline math and back', async (
   await page.keyboard.press(`${modifier}+Shift+e`);
   await expect(page.locator('.formula-inline')).toHaveCount(0);
   await expect(editor(page)).toContainText('x^2');
+});
+
+test('Flutter selection toolbar inserts and removes inline math without changing adjacent text', async ({ page }) => {
+  await editor(page).click();
+  await page.keyboard.type('Before x^2', { delay: 20 });
+  await expect(page.getByTestId('math-document-snapshot')).toContainText('Before x^2');
+  for (let i = 0; i < 3; i++) await page.keyboard.press('Shift+ArrowLeft');
+  const formulaButton = page.getByTestId('toolbar-formula-button');
+
+  await expect(page.getByTestId('selection-toolbar')).toHaveCSS('pointer-events', 'auto');
+  await formulaButton.click();
+  await expect(page.locator('.formula-inline')).toHaveCount(1);
+  await expect(editor(page)).toContainText('Before ');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.type(' after');
+  await expect(page.locator('.formula-inline')).toHaveCount(1);
+  await expect(editor(page)).toContainText(' after');
+  for (let i = 0; i < 6; i++) await page.keyboard.press('ArrowLeft');
+  // Chrome first selects the zero-width boundary after the non-editable formula.
+  await page.keyboard.press('Shift+ArrowLeft');
+  await page.keyboard.press('Shift+ArrowLeft');
+  await expect(formulaButton).toHaveAttribute('aria-pressed', 'true');
+  await formulaButton.click();
+  await expect(page.locator('.formula-inline')).toHaveCount(0);
+  await expect(editor(page)).toContainText('Before x^2 after');
 });
 
 test('a whole-string display shortcut preserves text, and editing supports undo/redo', async ({ page }) => {

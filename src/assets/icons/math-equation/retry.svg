@@ -1,5 +1,5 @@
 <svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
 <g id="Icon / S / Undo">
-<path id="Vector" d="M2.61539 6.76923H12.7692C15.3182 6.76923 17.3846 8.83558 17.3846 11.3846C17.3846 13.9336 15.3182 16 12.7692 16H6.30769M5.38462 9.53846L2.61539 6.76923L5.38462 4" stroke="#6F748C" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector" d="M2.61539 6.76923H12.7692C15.3182 6.76923 17.3846 8.83558 17.3846 11.3846C17.3846 13.9336 15.3182 16 12.7692 16H6.30769M5.38462 9.53846L2.61539 6.76923L5.38462 4" stroke="var(--icon-secondary)" stroke-linecap="round" stroke-linejoin="round"/>
 </g>
 </svg>

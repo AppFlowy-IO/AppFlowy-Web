@@ -1,5 +1,5 @@
 <svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
 <g id="Icon / S / Close">
-<path id="Vector" d="M15.5 4.5L4.5 15.5M4.5 4.5L15.5 15.5" stroke="#E71D32" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector" d="M15.5 4.5L4.5 15.5M4.5 4.5L15.5 15.5" stroke="var(--icon-error-thick)" stroke-linecap="round" stroke-linejoin="round"/>
 </g>
 </svg>

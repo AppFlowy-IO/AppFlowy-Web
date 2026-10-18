@@ -1,3 +1,5 @@
+import { hasMathMarkdown } from './math-markdown';
+
 /**
  * Detects if plain text contains Markdown formatting
  * Uses heuristics to identify common Markdown patterns
@@ -6,11 +8,10 @@
  */
 export function detectMarkdown(text: string): boolean {
   if (!text || text.trim().length === 0) return false;
+  if (hasMathMarkdown(text)) return true;
 
   // Patterns that indicate Markdown formatting
   const patterns = [
-    /(^|[^\\$])\${1,2}[^$\n]+\${1,2}/m, // Math equations
-
     /^#{1,6}\s+/m, // Headings: # Heading
     /\*\*[^*]+\*\*/, // Bold: **text**
     /__[^_]+__/, // Bold alternative: __text__

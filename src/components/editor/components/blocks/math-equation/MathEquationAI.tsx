@@ -7,6 +7,7 @@ import { getAxios } from '@/application/services/js-services/http/core';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
+import { ReactComponent as AcceptIcon } from '@/assets/icons/math-equation/accept.svg';
 import { ReactComponent as AIIcon } from '@/assets/icons/math-equation/ai-group.svg';
 import { ReactComponent as ArrowDownIcon } from '@/assets/icons/math-equation/arrow-down.svg';
 import { ReactComponent as DismissIcon } from '@/assets/icons/math-equation/dismiss.svg';
@@ -158,11 +159,11 @@ export default function MathEquationAI({
       data-testid='math-equation-ai'
       contentEditable={false}
       onClick={(event) => event.stopPropagation()}
-      className='mt-1 overflow-hidden rounded-xl border border-border-primary bg-surface-primary text-sm shadow-menu'
+      className='mt-1 overflow-hidden rounded-xl border border-border-primary bg-surface-layer-02 text-sm shadow-menu'
     >
-      {(answer || loading || error) && (
-        <div className='flex flex-col gap-2 border-b border-border-primary bg-surface-container-layer-01 p-3'>
-          <div className='text-xs text-text-secondary'>{title}</div>
+      {(answer || loading || error || complete) && (
+        <div className='flex flex-col gap-1 border-b border-border-primary bg-surface-container-layer-01 px-3 pb-4 pt-3'>
+          <div className='text-xs font-medium leading-[18px] tracking-[0.1px] text-text-secondary'>{title}</div>
           {answer && (
             <div className='max-h-[440px] overflow-y-auto'>
               <EditorProvider>
@@ -191,7 +192,7 @@ export default function MathEquationAI({
                 disabled={!complete || !answer || !!error || changed || (session.action === 'generate' && !formula)}
                 onClick={insert}
               >
-                <InsertIcon width={20} height={20} />
+                {session.action === 'explain' ? <InsertIcon width={20} height={20} /> : <AcceptIcon width={20} height={20} />}
                 {t(session.action === 'explain' ? 'button.insertBelow' : 'document.plugins.mathEquation.insert')}
               </Button>
               <Button
@@ -257,7 +258,7 @@ export default function MathEquationAI({
             />
           </ModelSelectorContext.Provider>
           <div className='flex gap-2'>
-            {!answer && !loading && (
+            {!answer && !loading && !error && !complete && (
               <Button variant='ghost' type='button' onClick={onClose}>
                 {t('button.close')}
               </Button>
