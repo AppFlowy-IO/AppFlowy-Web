@@ -2189,6 +2189,17 @@ export function useWorkspaceData() {
 
       if (!view?.children?.length) return;
 
+      // Branches are refetched concurrently, so a dropped descendant may
+      // already be marked loaded by its own list. Unmark it, as if this
+      // refetch had ended first.
+      let unmarked = false;
+
+      collectOutlineViewIds(view.children).forEach((droppedViewId) => {
+        if (loadedViewIdsRef.current.delete(droppedViewId)) unmarked = true;
+      });
+
+      if (unmarked) setLoadedViewIdsRevision((revision) => revision + 1);
+
       const nextOutline = mergeChildrenIntoOutline(stableOutlineRef.current, viewId, [], view.has_children ?? true);
 
       stableOutlineRef.current = nextOutline;

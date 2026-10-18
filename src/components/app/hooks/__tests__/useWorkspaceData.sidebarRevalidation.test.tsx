@@ -1880,6 +1880,80 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     expect(result.current.loadedViewIds?.has('sub')).toBe(kept);
   });
 
+  it.each(['denied', 'omitted', 'still failing'])(
+    "unmarks a nested branch whose list arrived first when its parent's refetch is %s",
+    async (outcome) => {
+      const sub = createView('sub', { children: [createView('old-leaf')], has_children: true });
+      const page = createView('page', { children: [sub], has_children: true });
+      const space = createView('space', { children: [page], extra: { is_space: true }, has_children: true });
+      const { result, answer, eventEmitter, reads, readOf, rootRefresh, shallowRoot } = await renderExpandedOutline(
+        [space],
+        [['space'], ['page'], ['sub']]
+      );
+      const pageReads = () => reads.filter(({ viewId }) => viewId === 'page').map(({ read }) => read);
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      act(() => {
+        eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+      });
+      expect(reads.map(({ viewId }) => viewId)).toEqual(['space', 'page', 'sub']);
+
+      await act(async () => {
+        readOf('sub')?.resolve([{ ...sub, children: [createView('fresh-leaf')] }]);
+      });
+      await waitFor(() => expect(result.current.loadedViewIds?.has('sub')).toBe(true));
+
+      // The parent's refetch then ends without a list, which drops its kept children.
+      if (outcome === 'omitted') {
+        await act(async () => {
+          pageReads()[0].resolve([]);
+        });
+      } else {
+        const error =
+          outcome === 'denied'
+            ? { code: ERROR_CODE.NOT_HAS_PERMISSION, message: 'revoked' }
+            : { code: ERROR_CODE.REQUEST_TIMEOUT, message: 'try again' };
+
+        await act(async () => {
+          pageReads()[0].reject(error);
+        });
+        if (outcome === 'still failing') {
+          await waitFor(() => expect(pageReads()).toHaveLength(2));
+          await act(async () => {
+            pageReads()[1].reject(error);
+          });
+        }
+      }
+
+      // Dropping the branch also clears the loaded mark its own list set, as if
+      // the parent's refetch had ended first.
+      await waitFor(() => expect(findView(result.current.outline ?? [], 'sub')).toBeNull());
+      expect(result.current.loadedViewIds?.has('sub')).toBe(false);
+
+      // An unchanged root reload does not recompute the marks, so none may be left.
+      await act(async () => {
+        readOf('space')?.resolve(answer('space'));
+        rootRefresh.resolve({ outline: shallowRoot, folderRid: '1-2' });
+        await rootRefresh.promise;
+      });
+      await waitFor(() => expect(result.current.loadedViewIds?.has('space')).toBe(true));
+      expect(result.current.outline).toEqual([{ ...space, children: [{ ...page, children: [] }] }]);
+      expect(result.current.loadedViewIds?.has('sub')).toBe(false);
+
+      // Listed again, the branch comes back without children and unloaded, so
+      // the sidebar fetches them when it is expanded.
+      (ViewService.getMultiple as jest.Mock)
+        .mockClear()
+        .mockImplementation(async (_workspaceId: string, viewIds: string[]) => viewIds.flatMap(answer));
+      await act(async () => {
+        await result.current.loadViewChildrenBatch?.(['page']);
+      });
+      expect(findView(result.current.outline ?? [], 'sub')?.children).toEqual([]);
+      expect(result.current.loadedViewIds?.has('sub')).toBe(false);
+      consoleErrorSpy.mockRestore();
+    }
+  );
+
   it.each([
     ['list', false],
     ['denial', true],
