@@ -390,7 +390,7 @@ function insertFragmentAsSiblings(editor: YjsEditor, fragment: Node[]): boolean 
       Array.isArray(children) &&
       children.length > 0 &&
       Element.isElement(children[0]) &&
-      children[0].type === YjsEditorKey.text
+      (children[0].type === YjsEditorKey.text || n.type === BlockType.CalloutBlock)
     );
   });
 

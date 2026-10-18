@@ -22,15 +22,26 @@ function CalloutPlayground({
   readOnly = false,
   presets = false,
   bodyBlocks = false,
+  toggles = false,
 }: {
   readOnly?: boolean;
   presets?: boolean;
   bodyBlocks?: boolean;
+  toggles?: boolean;
 }) {
   const [doc] = useState(() => {
     const document = createEmptyDocument();
     const pageId = getPageId(document.getMap(YjsEditorKey.data_section) as YSharedRoot);
-    const blocks = bodyBlocks
+    const blocks = toggles
+      ? [0, 1, 2, 3].map((level) => ({
+          type: BlockType.CalloutBlock,
+          data: DEFAULT_CALLOUT_DATA,
+          children: [
+            textBlock(BlockType.ToggleListBlock, level ? `Toggle heading ${level}` : 'Toggle List', { level, collapsed: false }),
+            textBlock(BlockType.Paragraph, 'Callout body'),
+          ],
+        } as Element))
+      : bodyBlocks
       ? [0, 1, 2, 3].map((level) =>
           textBlock(BlockType.CalloutBlock, `Normal text title ${level}`, DEFAULT_CALLOUT_DATA, [
             textBlock(BlockType.ToggleListBlock, level ? `Toggle heading ${level}` : 'Toggle List', {
@@ -116,3 +127,5 @@ export const Editing: Story = { args: {} };
 export const Presets: Story = { args: { presets: true } };
 export const ReadOnly: Story = { args: { readOnly: true, presets: true } };
 export const BodyBlocks: Story = { args: { bodyBlocks: true } };
+
+export const Toggles: Story = { args: { toggles: true } };

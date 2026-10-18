@@ -23,7 +23,7 @@ export function Paragraph() {
 
     if (!node) return;
 
-    CustomEditor.turnToBlock(editor, node.blockId as string, BlockType.Paragraph, {});
+    CustomEditor.formatBlock(editor, node.blockId as string, BlockType.Paragraph, {});
   }, [editor]);
 
   const isActive = CustomEditor.isBlockActive(editor, BlockType.Paragraph);

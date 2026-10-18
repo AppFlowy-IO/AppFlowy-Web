@@ -1,11 +1,12 @@
 import { BaseRange, Descendant, Editor, Operation, Transforms } from 'slate';
-import Y, { Transaction, YEvent } from 'yjs';
+import Y, { Transaction, YEvent, YMapEvent } from 'yjs';
 
 import type { FirstBodyOwner } from '@/application/row-document/first-body-owner';
 import { translateYEvents } from '@/application/slate-yjs/utils/applyToSlate';
 import { applyToYjs } from '@/application/slate-yjs/utils/applyToYjs';
 import { yDocToSlateContent } from '@/application/slate-yjs/utils/convert';
 import { findNearestValidSelection, isValidSelection } from '@/application/slate-yjs/utils/transformSelection';
+import { repairTextlessCallouts } from '@/application/slate-yjs/utils/yjs';
 import { CollabOrigin, YjsEditorKey, YSharedRoot } from '@/application/types';
 
 type LocalChange = {
@@ -203,6 +204,8 @@ export function withYjs<T extends Editor>(
     console.timeEnd('applyRemoteEvents');
   };
 
+  const pendingCalloutRepairs = new Set<string>();
+  let calloutRepairScheduled = false;
   const handleYEvents = (events: Array<YEvent>, transaction: Transaction) => {
     if (
       transaction.origin === CollabOrigin.Local ||
@@ -213,6 +216,28 @@ export function withYjs<T extends Editor>(
     }
 
     YjsEditor.applyRemoteEvents(e, events, transaction);
+    if (!e.readOnly) {
+      const blockIds = events.flatMap((event) => {
+        if (event.path[0] !== 'document' || event.path[1] !== 'blocks') return [];
+        return event.path.length === 2
+          ? Array.from((event as YMapEvent<unknown>).keysChanged)
+          : [event.path[2] as string];
+      });
+
+      blockIds.forEach((id) => pendingCalloutRepairs.add(id));
+      if (pendingCalloutRepairs.size && !calloutRepairScheduled) {
+        calloutRepairScheduled = true;
+        // Write after the observed transaction finishes, so the repair has its
+        // own events and origin and cannot be folded into the caller's undo.
+        queueMicrotask(() => {
+          calloutRepairScheduled = false;
+          const ids = [...pendingCalloutRepairs];
+
+          pendingCalloutRepairs.clear();
+          if (YjsEditor.connected(e) && !e.readOnly) repairTextlessCallouts(e.sharedRoot, ids);
+        });
+      }
+    }
   };
 
   // When the sync layer is about to destroy this doc (version-reset or revert),
@@ -241,6 +266,7 @@ export function withYjs<T extends Editor>(
       throw new Error('Already connected');
     }
 
+    if (!e.readOnly) repairTextlessCallouts(e.sharedRoot);
     initializeDocumentContent();
     e.sharedRoot.observeDeep(handleYEvents);
     connectSet.add(e);

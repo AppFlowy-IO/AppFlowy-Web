@@ -28,11 +28,11 @@ export function Quote() {
       if (!node) return;
 
       if (node.type === BlockType.QuoteBlock) {
-        CustomEditor.turnToBlock(editor, node.blockId as string, BlockType.Paragraph, {});
+        CustomEditor.formatBlock(editor, node.blockId as string, BlockType.Paragraph, {});
         return;
       }
 
-      CustomEditor.turnToBlock(editor, node.blockId as string, BlockType.QuoteBlock, {});
+      CustomEditor.formatBlock(editor, node.blockId as string, BlockType.QuoteBlock, {});
     } catch (e) {
       return;
     }

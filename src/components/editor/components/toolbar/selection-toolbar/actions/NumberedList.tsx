@@ -28,11 +28,11 @@ export function NumberedList() {
       if (!node) return;
 
       if (node.type === BlockType.NumberedListBlock) {
-        CustomEditor.turnToBlock(editor, node.blockId as string, BlockType.Paragraph, {});
+        CustomEditor.formatBlock(editor, node.blockId as string, BlockType.Paragraph, {});
         return;
       }
 
-      CustomEditor.turnToBlock(editor, node.blockId as string, BlockType.NumberedListBlock, {});
+      CustomEditor.formatBlock(editor, node.blockId as string, BlockType.NumberedListBlock, {});
     } catch (e) {
       return;
     }

@@ -3,7 +3,7 @@ import { ReactEditor } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { isEmbedBlockTypes, TEXT_BLOCK_TYPES } from '@/application/slate-yjs/command/const';
-import { getBlockEntry } from '@/application/slate-yjs/utils/editor';
+import { findSlateEntryByBlockId, getBlockEntry } from '@/application/slate-yjs/utils/editor';
 import { BlockType, YjsEditorKey } from '@/application/types';
 import { stripInlineCommentIds } from '@/components/editor/clipboard/inline-comment-metadata';
 import { markSubpageClipboard } from '@/components/editor/subpage/subpage-operations';
@@ -27,14 +27,21 @@ function setCopiedFragmentData(
   }
 }
 
-function unwrapUnselectedTextBlockAncestors(nodes: Node[]): Node[] {
+function unwrapUnselectedTextBlockAncestors(editor: YjsEditor, nodes: Node[]): Node[] {
   return nodes.flatMap((node) => {
     if (!Element.isElement(node)) return [node];
 
-    const children = unwrapUnselectedTextBlockAncestors(node.children);
+    const children = unwrapUnselectedTextBlockAncestors(editor, node.children);
     const hasOwnText = node.children.some(
       (child) => Text.isText(child) || (Element.isElement(child) && child.type === YjsEditorKey.text)
     );
+
+    const original =
+      node.type === BlockType.CalloutBlock && node.blockId
+        ? findSlateEntryByBlockId(editor, node.blockId)?.[0]
+        : undefined;
+    const isCalloutContainer =
+      original && Element.isElement(original.children[0]) && original.children[0].type !== YjsEditorKey.text;
 
     // Slate keeps ancestors of selected descendants, but removes their unselected
     // text wrappers. Unwrap those ancestors before paste can turn them into empty
@@ -43,7 +50,8 @@ function unwrapUnselectedTextBlockAncestors(nodes: Node[]): Node[] {
     if (
       TEXT_BLOCK_TYPES.includes(node.type as BlockType) &&
       node.type !== BlockType.SimpleTableCellBlock &&
-      !hasOwnText
+      !hasOwnText &&
+      !isCalloutContainer
     ) {
       return children;
     }
@@ -81,7 +89,7 @@ export const withCopy = (editor: ReactEditor) => {
     }
 
     const fragment = markSubpageClipboard(
-      stripInlineCommentIds(unwrapUnselectedTextBlockAncestors(editor.getFragment())),
+      stripInlineCommentIds(unwrapUnselectedTextBlockAncestors(editor as YjsEditor, editor.getFragment())),
       origin === 'cut'
     );
     const tsvText = fragmentToTSV(fragment);

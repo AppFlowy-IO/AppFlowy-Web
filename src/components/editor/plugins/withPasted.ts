@@ -562,7 +562,10 @@ function handleMultiLinePlainText(editor: ReactEditor, lines: string[]): boolean
 function parsedBlockToSlateElement(block: ParsedBlock): Element {
   const { type, data, children } = block;
 
-  if (SIMPLE_TABLE_CONTAINER_BLOCK_TYPES.includes(type)) {
+  if (
+    SIMPLE_TABLE_CONTAINER_BLOCK_TYPES.includes(type) ||
+    (type === BlockType.CalloutBlock && !block.text && children.length > 0)
+  ) {
     return {
       type,
       data,

@@ -240,6 +240,99 @@ test('Flutter: insert a callout from the slash menu', async ({ page }) => {
   await expect(inserted).toContainText('New callout');
 });
 
+for (const [name, type] of [
+  ['Heading 1', 'heading'],
+  ['Toggle heading 1', 'toggle_list'],
+] as const) {
+  test(`a callout can start directly with ${name}`, async ({ page }, info) => {
+    const callout = page.getByTestId('callout').nth(2);
+
+    await callout.locator('.text-content').click();
+    await page.keyboard.type('/heading');
+    await page.getByTestId('slash-panel').getByText(name, { exact: true }).click();
+    await expect(callout).toHaveAttribute('data-callout-layout', 'blocks');
+    await expect(callout.locator(':scope > .text-element')).toHaveCount(0);
+    await expect(callout.locator(':scope > .block-element').first()).toHaveAttribute('data-block-type', type);
+    await page.keyboard.type('First block heading');
+    await expect(callout).toContainText('First block heading');
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('Callout body');
+    await expect(callout).toContainText('Callout body');
+    if (type === 'toggle_list') {
+      await callout.getByTestId('toggle-icon').click();
+      await expect(callout.getByText('Callout body')).not.toBeVisible();
+      await callout.getByTestId('toggle-icon').click();
+      await expect(callout.getByText('Callout body')).toBeVisible();
+    }
+    await page.screenshot({ path: `test-results/callout-first-${type}-${info.project.name}.png` });
+  });
+}
+
+for (const [prefix, type] of [['# ', 'heading'], ['> ', 'toggle_list']] as const) {
+  test(`Markdown can change a legacy callout's first line to ${type}`, async ({ page }) => {
+    const callout = page.getByTestId('callout').nth(2);
+
+    await callout.locator('.text-content').click();
+    await page.keyboard.type(prefix);
+    await page.keyboard.type('First block');
+    await expect(page.getByTestId('callout')).toHaveCount(3);
+    await expect(callout.locator(':scope > .block-element').first()).toHaveAttribute('data-block-type', type);
+    await expect(callout).toContainText('First block');
+  });
+}
+
+test('the text toolbar changes a legacy title into a heading inside the callout', async ({ page }) => {
+  const callout = block(page);
+
+  await callout.getByText('Hello World', { exact: true }).dblclick();
+  await page.getByTestId('heading-button').click();
+  await page.getByTestId('heading-1-button').click();
+  await expect(page.getByTestId('callout')).toHaveCount(3);
+  await expect(callout.locator(':scope > .block-element').first()).toHaveAttribute('data-block-type', 'heading');
+  await expect(callout).toContainText('Hello World');
+});
+
+test('pasted HTML can begin with a heading inside a callout', async ({ page }) => {
+  await page.getByText('Following paragraph', { exact: true }).click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await page.locator('[data-slate-editor]').evaluate((editor) => {
+    const data = new DataTransfer();
+
+    data.setData('text/html', '<aside><h2>Imported heading</h2><p>Imported body</p></aside>');
+    editor.dispatchEvent(
+      new InputEvent('beforeinput', {
+        inputType: 'insertFromPaste',
+        dataTransfer: data,
+        bubbles: true,
+        cancelable: true,
+      })
+    );
+  });
+  const pasted = page.getByTestId('callout').last();
+
+  await expect(pasted).toHaveAttribute('data-callout-layout', 'blocks');
+  await expect(pasted.locator(':scope > .block-element').first()).toHaveAttribute('data-block-type', 'heading');
+  await expect(pasted).toContainText('Imported heading');
+  await expect(pasted).toContainText('Imported body');
+});
+
+for (const [query, name, type] of [
+  ['code', 'Code', 'code'],
+  ['divider', 'Divider', 'divider'],
+] as const) {
+  test(`a callout can start with a ${type} block`, async ({ page }) => {
+    const callout = page.getByTestId('callout').nth(2);
+
+    await callout.locator('.text-content').click();
+    await page.keyboard.type(`/${query}`);
+    await page.getByTestId('slash-panel').getByText(name, { exact: true }).click();
+    await expect(callout).toHaveAttribute('data-callout-layout', 'blocks');
+    await expect(callout.locator(':scope > .block-element').first()).toHaveAttribute('data-block-type', type);
+    await expect(callout.getByTestId('callout-icon-button')).toBeVisible();
+  });
+}
+
 test('Figma: icon and first text line align without extra paragraph margins', async ({ page }) => {
   const callout = block(page);
 

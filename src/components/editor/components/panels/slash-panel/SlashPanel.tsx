@@ -394,9 +394,15 @@ export function SlashPanel({
       // Decide before removing slash text or flushing changes, including keyboard selection.
       if (!checkCreationRef.current(option.creationLayout, closePanel)) return;
       handleSelectOption(option.key);
+      const block = getBlockEntry(editor);
+
+      if (block?.[0].type === BlockType.CalloutBlock && block[0].blockId) {
+        CustomEditor.calloutToContainer(editor, block[0].blockId);
+      }
+
       option.onClick?.();
     },
-    [closePanel, handleSelectOption]
+    [closePanel, handleSelectOption, editor]
   );
 
   const turnInto = useCallback(
@@ -413,6 +419,10 @@ export function SlashPanel({
         newBlockId = CustomEditor.turnToBlock(editor, blockId, type, data);
       } else {
         newBlockId = CustomEditor.addBelowBlock(editor, blockId, type, data);
+      }
+
+      if (newBlockId && type === BlockType.CalloutBlock) {
+        newBlockId = CustomEditor.calloutToContainer(editor, newBlockId);
       }
 
       if (newBlockId && type === BlockType.AIMeetingBlock) {

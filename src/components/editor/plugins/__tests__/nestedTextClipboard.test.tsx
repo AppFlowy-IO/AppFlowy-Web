@@ -123,6 +123,26 @@ describe('nested text clipboard selections (AppFlowy #9016)', () => {
     });
   }
 
+  it('copies and pastes a heading-first callout without adding a title or losing its wrapper', async () => {
+    const container = {
+      type: BlockType.CalloutBlock,
+      data: { icon: '📌' },
+      children: [block(BlockType.HeadingBlock, 'Title', [], { level: 1 }), block(BlockType.Paragraph, 'Body')],
+    } as Element;
+    const { editor, doc, editable } = setup([container, block(BlockType.Paragraph, '')]);
+
+    await select(editor, { anchor: editor.start([0]), focus: editor.end([0]) });
+    const clipboard = clipboardData();
+
+    fireEvent.copy(editable, { clipboardData: clipboard });
+    expect(readFragment(clipboard)[0]).toMatchObject(container);
+    await select(editor, { anchor: editor.start([1]), focus: editor.start([1]) });
+    fireEvent.paste(editable, { clipboardData: clipboard });
+    await act(async () => editor.flushLocalChanges());
+    expect(editor.children[1]).toMatchObject(container);
+    expect(yDocToSlateContent(doc)?.children).toEqual(editor.children);
+  });
+
   it.each([
     { operation: 'copy', backward: false, htmlOnly: false, partial: false },
     { operation: 'copy', backward: true, htmlOnly: true, partial: true },
