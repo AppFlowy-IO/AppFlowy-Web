@@ -6,6 +6,7 @@ import { ReactEditor, useSlateStatic } from 'slate-react';
 import { YjsEditor } from '@/application/slate-yjs';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
 import { ReactComponent as AIIcon } from '@/assets/icons/block-menu-ai.svg';
+import { ReactComponent as ChevronRightIcon } from '@/assets/icons/block-menu-chevron-right.svg';
 import { ReactComponent as CommentIcon } from '@/assets/icons/toolbar_add_comment.svg';
 import { useAIEnabled } from '@/components/app/app.hooks';
 import { AIAssistantType, AIWriterMenu } from '@/components/chat';
@@ -90,6 +91,7 @@ export function CalloutWritingActions({ node, onClose }: { node: CalloutNode; on
           >
             <AIIcon className='h-5 w-5 [&_path[fill]]:fill-current [&_path[stroke]]:stroke-current' />
             {t('document.plugins.optionAction.askAI', { defaultValue: 'Ask AI' })}
+            <ChevronRightIcon className='ml-auto h-5 w-5 shrink-0 text-icon-tertiary [&_path]:stroke-current' />
           </Button>
         </AIWriterMenu>
       )}
