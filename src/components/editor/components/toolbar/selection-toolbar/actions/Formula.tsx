@@ -1,15 +1,14 @@
 import { useTranslation } from 'react-i18next';
 import { useSlate } from 'slate-react';
 
-import { YjsEditor } from '@/application/slate-yjs';
 import { ReactComponent as MathSvg } from '@/assets/icons/formula.svg';
 import ActionButton from '@/components/editor/components/toolbar/selection-toolbar/actions/ActionButton';
 import { useSelectionToolbarContext } from '@/components/editor/components/toolbar/selection-toolbar/SelectionToolbar.hooks';
 import { getSelectedEquationTexts, toggleInlineEquation } from '@/components/editor/utils/math-equation';
 
-function Formula() {
+function Formula({ onToggle }: { onToggle?: () => void }) {
   const { t } = useTranslation();
-  const editor = useSlate() as YjsEditor;
+  const editor = useSlate();
   const { visible } = useSelectionToolbarContext();
   const texts = visible ? getSelectedEquationTexts(editor) : [];
   const isActivated = texts.length > 0 && texts.every((node) => node.formula !== undefined);
@@ -18,7 +17,7 @@ function Formula() {
 
   return (
     <ActionButton
-      onClick={() => toggleInlineEquation(editor)}
+      onClick={onToggle ?? (() => toggleInlineEquation(editor))}
       active={isActivated}
       disabled={!texts.length || hasUnsupportedMark || (!isActivated && hasFormulaActivated)}
       data-testid="toolbar-formula-button"
