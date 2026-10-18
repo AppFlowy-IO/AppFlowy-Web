@@ -110,12 +110,21 @@ export function useViewActionPermissions(
       revalidate(true);
     };
 
+    let pendingRevalidation: ReturnType<typeof setTimeout> | undefined;
+
     const revalidateNow = () => {
-      if (revalidate(false)) return;
-      // A first read still in flight started before the change: fence it and read again. An
-      // answer taken from the active page is kept and follows AppBusinessLayer's re-probe.
+      // Fence older reads at once, but read again only once the event's other listeners
+      // (AppBusinessLayer, workspace data) have superseded the reads in flight; a read started before
+      // them would spend its one superseded retry on this change and could keep the old answer.
       requestSeq.current += 1;
-      setPermissionRefreshRevision((revision) => revision + 1);
+      if (pendingRevalidation !== undefined) return;
+      pendingRevalidation = setTimeout(() => {
+        pendingRevalidation = undefined;
+        if (revalidate(false)) return;
+        // A first read was in flight: restart it. An answer taken from the active page is kept
+        // and follows AppBusinessLayer's re-probe.
+        setPermissionRefreshRevision((revision) => revision + 1);
+      }, 0);
     };
 
     eventEmitter.on(APP_EVENTS.PERMISSION_CHANGED, revalidateNow);
@@ -123,6 +132,7 @@ export function useViewActionPermissions(
     window.addEventListener('focus', revalidateOnFocus);
     return () => {
       cancelled = true;
+      clearTimeout(pendingRevalidation);
       eventEmitter.off(APP_EVENTS.PERMISSION_CHANGED, revalidateNow);
       window.removeEventListener('online', revalidateNow);
       window.removeEventListener('focus', revalidateOnFocus);

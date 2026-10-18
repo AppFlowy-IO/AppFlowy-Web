@@ -142,7 +142,7 @@ describe('useViewActionPermissions', () => {
     await waitFor(() => expect(result.current.canWrite).toBe(true));
     act(() => { trigger(); });
     // Unlike focus, even a recent answer is re-read, and it stays on screen meanwhile.
-    expect(mockGetObjectPermission).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(mockGetObjectPermission).toHaveBeenCalledTimes(2));
     expect(result.current.hasLoadedViewActionPermissions).toBe(true);
     expect(result.current.isLoadingViewActionPermissions).toBe(false);
     expect(result.current.canWrite).toBe(true);
@@ -187,14 +187,30 @@ describe('useViewActionPermissions', () => {
 
     await waitFor(() => expect(result.current.canWrite).toBe(true));
     act(() => { mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {}); });
+    await waitFor(() => expect(mockGetObjectPermission).toHaveBeenCalledTimes(2));
     act(() => { mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {}); });
-    expect(mockGetObjectPermission).toHaveBeenCalledTimes(3);
+    await waitFor(() => expect(mockGetObjectPermission).toHaveBeenCalledTimes(3));
 
     await act(async () => { resolveNewer(createPermission({ can_write: false })); });
     expect(result.current.canWrite).toBe(false);
     // A read that started before the newer change is never applied.
     await act(async () => { resolveOlder(createPermission()); });
     expect(result.current.canWrite).toBe(false);
+  });
+
+  it('shares one re-read among the events dispatched before it starts', async () => {
+    mockGetObjectPermission.mockResolvedValueOnce(createPermission()).mockResolvedValue(createPermission({ can_write: false }));
+    const { result } = renderHook(() => useViewActionPermissions(createView(), true));
+
+    await waitFor(() => expect(result.current.canWrite).toBe(true));
+    act(() => {
+      mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+      mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+      window.dispatchEvent(new Event('online'));
+    });
+
+    await waitFor(() => expect(result.current.canWrite).toBe(false));
+    expect(mockGetObjectPermission).toHaveBeenCalledTimes(2);
   });
 
   it('follows the active page answer through a permission change without reading it again', async () => {
@@ -207,7 +223,10 @@ describe('useViewActionPermissions', () => {
     const { result, rerender } = renderHook(() => useViewActionPermissions(createView(), true), { wrapper });
 
     await waitFor(() => expect(result.current.canShare).toBe(true));
-    act(() => { mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {}); });
+    await act(async () => {
+      mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
     // AppBusinessLayer re-probes the page in the background and keeps its answer meanwhile.
     expect(mockGetObjectPermission).not.toHaveBeenCalled();
     expect(result.current.hasLoadedViewActionPermissions).toBe(true);
@@ -236,7 +255,7 @@ describe('useViewActionPermissions', () => {
 
     await waitFor(() => expect(result.current.canWrite).toBe(true));
     act(() => { mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {}); });
-    expect(mockGetObjectPermission).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(mockGetObjectPermission).toHaveBeenCalledTimes(2));
     expect(result.current.canWrite).toBe(true);
 
     await act(async () => { resolveFresh(createPermission({ can_write: false })); });
@@ -265,6 +284,7 @@ describe('useViewActionPermissions', () => {
     const rendersBeforeChange = readOnlyStates.length;
 
     act(() => { mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {}); });
+    await waitFor(() => expect(mockGetObjectPermission).toHaveBeenCalledTimes(2));
     expect(mockGetObjectPermission).toHaveBeenLastCalledWith('workspace-id', 'database-id', Types.Database);
     await act(async () => { resolveFresh(databasePermission()); });
 
