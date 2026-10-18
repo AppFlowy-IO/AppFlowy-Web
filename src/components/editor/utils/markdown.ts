@@ -141,7 +141,7 @@ const rules: Rule[] = [
         return;
       }
 
-      CustomEditor.turnToBlock<HeadingBlockData>(editor, node.blockId as string, BlockType.HeadingBlock, { level });
+      CustomEditor.formatBlock<HeadingBlockData>(editor, node.blockId as string, BlockType.HeadingBlock, { level });
       deletePrefix(editor, level);
     },
   },
@@ -168,7 +168,7 @@ const rules: Rule[] = [
       const [node] = entry;
 
       if (!node) return;
-      CustomEditor.turnToBlock<ToggleListBlockData>(editor, node.blockId as string, BlockType.ToggleListBlock, {
+      CustomEditor.formatBlock<ToggleListBlockData>(editor, node.blockId as string, BlockType.ToggleListBlock, {
         collapsed: false,
         level,
       });
@@ -190,7 +190,7 @@ const rules: Rule[] = [
       const [node] = entry;
 
       if (!node) return;
-      CustomEditor.turnToBlock(editor, node.blockId as string, BlockType.QuoteBlock, {});
+      CustomEditor.formatBlock(editor, node.blockId as string, BlockType.QuoteBlock, {});
       deletePrefix(editor, 1);
     },
   },
@@ -215,7 +215,7 @@ const rules: Rule[] = [
       const [node] = entry;
 
       if (!node) return;
-      CustomEditor.turnToBlock<TodoListBlockData>(editor, node.blockId as string, BlockType.TodoListBlock, { checked });
+      CustomEditor.formatBlock<TodoListBlockData>(editor, node.blockId as string, BlockType.TodoListBlock, { checked });
       deletePrefix(editor, match[0].length - 1);
     },
   },
@@ -237,7 +237,7 @@ const rules: Rule[] = [
       const [node] = entry;
 
       if (!node) return;
-      CustomEditor.turnToBlock(editor, node.blockId as string, BlockType.CodeBlock, {});
+      CustomEditor.formatBlock(editor, node.blockId as string, BlockType.CodeBlock, {});
       deletePrefix(editor, 2);
     },
   },
@@ -256,7 +256,7 @@ const rules: Rule[] = [
       const [node] = entry;
 
       if (!node) return;
-      CustomEditor.turnToBlock(editor, node.blockId as string, BlockType.BulletedListBlock, {});
+      CustomEditor.formatBlock(editor, node.blockId as string, BlockType.BulletedListBlock, {});
       deletePrefix(editor, 1);
     },
   },
@@ -284,7 +284,7 @@ const rules: Rule[] = [
       const [node] = entry;
 
       if (!node) return;
-      CustomEditor.turnToBlock<NumberedListBlockData>(editor, node.blockId as string, BlockType.NumberedListBlock, {
+      CustomEditor.formatBlock<NumberedListBlockData>(editor, node.blockId as string, BlockType.NumberedListBlock, {
         number: start,
       });
       deletePrefix(editor, String(start).length + 1);
@@ -308,7 +308,7 @@ const rules: Rule[] = [
       const [node] = entry;
 
       if (!node) return;
-      const newBlockId = CustomEditor.turnToBlock(editor, node.blockId as string, BlockType.DividerBlock, {});
+      const newBlockId = CustomEditor.formatBlock(editor, node.blockId as string, BlockType.DividerBlock, {});
 
       if (!newBlockId) {
         Transforms.move(editor, { distance: 1, reverse: true });

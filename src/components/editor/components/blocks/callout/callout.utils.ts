@@ -1,6 +1,6 @@
 import emojiRegex from 'emoji-regex';
 
-import { CalloutBlockData, ViewIconType } from '@/application/types';
+import { BlockType, CalloutBlockData, ViewIconType } from '@/application/types';
 import { ColorEnum, toBlockColor } from '@/utils/color';
 
 export type QuickStyleOption = {
@@ -10,6 +10,16 @@ export type QuickStyleOption = {
   iconName: string;
   color: ColorEnum;
 };
+
+export const CALLOUT_FIRST_CHILD_TEXT_TYPES = new Set<BlockType>([
+  BlockType.Paragraph,
+  BlockType.HeadingBlock,
+  BlockType.ToggleListBlock,
+  BlockType.TodoListBlock,
+  BlockType.BulletedListBlock,
+  BlockType.NumberedListBlock,
+  BlockType.QuoteBlock,
+]);
 
 export const QUICK_STYLE_OPTIONS = [
   {

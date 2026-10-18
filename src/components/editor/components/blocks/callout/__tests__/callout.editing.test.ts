@@ -1,5 +1,5 @@
 import { createEditor, Element, Node } from 'slate';
-import { withReact } from 'slate-react';
+import { ReactEditor, withReact } from 'slate-react';
 
 import { withYjs, YjsEditor } from '@/application/slate-yjs';
 import { withTestingYDoc } from '@/application/slate-yjs/__tests__/withTestingYjsEditor';
@@ -175,5 +175,120 @@ describe('Flutter callout editing parity', () => {
       expect((node as Element).children.map(Node.string)).toEqual([`List ${index}`, `Nested ${index}`]);
       expect((node as Element).children[1]).toMatchObject({ type: types[index] });
     });
+  });
+
+  it.each([
+    [BlockType.HeadingBlock, { level: 1 }],
+    [BlockType.ToggleListBlock, { level: 2, collapsed: false }],
+    [BlockType.CodeBlock, { language: 'plaintext' }],
+    [BlockType.DividerBlock, {}],
+  ] as const)('allows %s as the first child without a text-only title', (type, data) => {
+    const editor = create([
+      block(BlockType.CalloutBlock, 'Title', [block(BlockType.Paragraph, 'Body')], DEFAULT_CALLOUT_DATA),
+    ]);
+    const containerId = CustomEditor.calloutToContainer(editor, (editor.children[0] as Element).blockId!)!;
+    const container = editor.children[0] as Element;
+
+    expect(container).toMatchObject({ blockId: containerId, type: BlockType.CalloutBlock, data: DEFAULT_CALLOUT_DATA });
+    expect(container.children.map(Node.string)).toEqual(['Title', 'Body']);
+    const first = container.children[0] as Element;
+
+    CustomEditor.turnToBlock(editor, first.blockId!, type, data);
+    expect((editor.children[0] as Element).children[0]).toMatchObject({ type, data });
+    editor.flushLocalChanges();
+    expect(yDocToSlateContent(editor.sharedRoot.doc!)?.children).toEqual(editor.children);
+  });
+
+  it('keeps formatted title selection and restores the legacy block with undo', async () => {
+    const legacy = block(BlockType.CalloutBlock, '', [], DEFAULT_CALLOUT_DATA);
+
+    (legacy.children[0] as Element).children = [{ text: 'Bold', bold: true }, { text: ' title' }];
+    const editor = create([legacy]);
+
+    editor.select({ path: [0, 0, 1], offset: 3 });
+    await Promise.resolve();
+    const original = editor.children;
+
+    CustomEditor.calloutToContainer(editor, (editor.children[0] as Element).blockId!);
+    expect(editor.selection?.anchor).toEqual({ path: [0, 0, 0, 1], offset: 3 });
+    expect(((editor.children[0] as Element).children[0] as Element).children[0]).toMatchObject(legacy.children[0]);
+    await Promise.resolve();
+    const updated = editor.children;
+
+    editor.undo();
+    expect(editor.children).toEqual(original);
+    editor.redo();
+    expect(editor.children).toEqual(updated);
+  });
+
+  it('keeps a backwards selection across styled title text and existing body blocks', () => {
+    const legacy = block(BlockType.CalloutBlock, '', [block(BlockType.Paragraph, 'Body')], DEFAULT_CALLOUT_DATA);
+
+    (legacy.children[0] as Element).children = [{ text: 'Bold', bold: true }, { text: ' title' }];
+    const editor = create([legacy]);
+
+    editor.select({ anchor: { path: [0, 1, 0, 0], offset: 2 }, focus: { path: [0, 0, 1], offset: 3 } });
+    CustomEditor.calloutToContainer(editor, (editor.children[0] as Element).blockId!);
+    expect(editor.selection).toEqual({
+      anchor: { path: [0, 1, 0, 0], offset: 2 },
+      focus: { path: [0, 0, 0, 1], offset: 3 },
+    });
+  });
+
+  it.each([BlockType.HeadingBlock, BlockType.ToggleListBlock, BlockType.BulletedListBlock, BlockType.QuoteBlock])(
+    'formats a selected legacy title as %s inside its callout', (type) => {
+      const editor = create([
+        block(BlockType.CalloutBlock, 'Title', [block(BlockType.Paragraph, 'Body')], DEFAULT_CALLOUT_DATA),
+      ]);
+
+      editor.select({ anchor: { path: [0, 0, 0], offset: 4 }, focus: { path: [0, 0, 0], offset: 1 } });
+      CustomEditor.formatBlock(editor, (editor.children[0] as Element).blockId!, type, {});
+      const callout = editor.children[0] as Element;
+
+      expect(editor.children).toHaveLength(1);
+      expect(callout).toMatchObject({ type: BlockType.CalloutBlock, data: DEFAULT_CALLOUT_DATA });
+      expect(callout.children[0]).toMatchObject({ type });
+      expect(callout.children.map(Node.string)).toEqual(['Title', 'Body']);
+      expect(editor.selection).toEqual({
+        anchor: { path: [0, 0, 0, 0], offset: 4 },
+        focus: { path: [0, 0, 0, 0], offset: 1 },
+      });
+    }
+  );
+
+  it('keeps an editable child after deleting the last block in a container callout', () => {
+    const editor = create([block(BlockType.CalloutBlock, 'Title', [], DEFAULT_CALLOUT_DATA)]);
+
+    CustomEditor.calloutToContainer(editor, (editor.children[0] as Element).blockId!);
+    const first = (editor.children[0] as Element).children[0] as Element;
+    const focus = jest.spyOn(ReactEditor, 'focus').mockImplementation(() => undefined);
+
+    CustomEditor.deleteBlock(editor, first.blockId!);
+    focus.mockRestore();
+    expect((editor.children[0] as Element).children).toHaveLength(1);
+    expect((editor.children[0] as Element).children[0]).toMatchObject({ type: BlockType.Paragraph });
+    expect(editor.selection?.anchor).toEqual({ path: [0, 0, 0, 0], offset: 0 });
+    editor.flushLocalChanges();
+    expect(yDocToSlateContent(editor.sharedRoot.doc!)?.children).toEqual(editor.children);
+    editor.insertText('Still editable');
+    expect(Node.string(editor.children[0])).toBe('Still editable');
+  });
+
+  it('duplicates and converts a container callout without losing its first child', () => {
+    const editor = create([
+      block(BlockType.CalloutBlock, 'Title', [block(BlockType.Paragraph, 'Body')], DEFAULT_CALLOUT_DATA),
+    ]);
+    const containerId = CustomEditor.calloutToContainer(editor, (editor.children[0] as Element).blockId!)!;
+
+    CustomEditor.duplicateBlock(editor, containerId);
+    expect(editor.children).toHaveLength(2);
+    for (const container of editor.children as Element[]) {
+      expect(container.children.map(Node.string)).toEqual(['Title', 'Body']);
+      expect((container.children[0] as Element).type).toBe(BlockType.Paragraph);
+    }
+    CustomEditor.turnToBlock(editor, containerId, BlockType.HeadingBlock, { level: 1 });
+    expect(editor.children[0]).toMatchObject({ type: BlockType.HeadingBlock });
+    expect(Node.string(editor.children[0])).toBe('Title');
+    expect(Node.string(editor.children[1])).toBe('Body');
   });
 });

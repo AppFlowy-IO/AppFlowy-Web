@@ -109,6 +109,8 @@ export interface CodeBlockData extends BlockData {
 }
 
 export interface CalloutBlockData extends BlockData {
+  /** Web presentation only. The callout still owns a text field for native clients. */
+  title_mode?: 'block';
   icon?: string | null;
   icon_type?: 'emoji' | 'icon' | 'custom';
   version?: number;

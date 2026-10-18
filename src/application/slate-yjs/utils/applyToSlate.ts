@@ -6,9 +6,10 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { hasDirectBlockText } from '@/application/slate-yjs/command/const';
 import { BlockJson } from '@/application/slate-yjs/types';
 import { applyTextYEvent } from '@/application/slate-yjs/utils/applyTextToSlate';
+import { syncCalloutTitle } from '@/application/slate-yjs/utils/callout';
 import { blockToSlateNode, deltaInsertToSlateNode } from '@/application/slate-yjs/utils/convert';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
-import { dataStringTOJson, getBlock, getChildrenArray, getPageId, getText } from '@/application/slate-yjs/utils/yjs';
+import { dataStringTOJson, getBlock, getChildrenArray, getPageId, getText, isCalloutContainer } from '@/application/slate-yjs/utils/yjs';
 import { BlockType, YBlock, YjsEditorKey } from '@/application/types';
 import { Log } from '@/utils/log';
 
@@ -28,6 +29,8 @@ interface YBlockChange {
  * @param events - Array of Yjs events to process
  */
 export function translateYEvents(editor: YjsEditor, events: Array<YEvent>) {
+  const reconciledTitles = new Set<string>();
+
   Log.debug('=== Translating Yjs events to Slate operations ===', {
     eventCount: events.length,
     eventTypes: events.map((e) => e.path.join('.')),
@@ -53,7 +56,7 @@ export function translateYEvents(editor: YjsEditor, events: Array<YEvent>) {
       const blockId = path[2] as string;
 
       Log.debug(`→ Applying block update for blockId: ${blockId}`);
-      applyUpdateBlockYEvent(editor, blockId, event as YMapEvent<unknown>);
+      applyUpdateBlockYEvent(editor, blockId, event as YMapEvent<unknown>, reconciledTitles);
     }
 
     // Handle text content changes (document.meta.text_map[textId])
@@ -61,7 +64,7 @@ export function translateYEvents(editor: YjsEditor, events: Array<YEvent>) {
       const textId = path[3] as string;
 
       Log.debug(`→ Applying text content changes for textId: ${textId}`);
-      applyTextYEvent(editor, textId, event as YTextEvent);
+      if (!reconciledTitles.has(textId)) applyTextYEvent(editor, textId, event as YTextEvent);
     }
   });
 
@@ -76,7 +79,12 @@ export function translateYEvents(editor: YjsEditor, events: Array<YEvent>) {
  * @param blockId - The ID of the block to update
  * @param event - The Yjs map event containing the changes
  */
-function applyUpdateBlockYEvent(editor: YjsEditor, blockId: string, event: YMapEvent<unknown>) {
+function applyUpdateBlockYEvent(
+  editor: YjsEditor,
+  blockId: string,
+  event: YMapEvent<unknown>,
+  reconciledTitles: Set<string>
+) {
   const { target } = event;
   const block = target as YBlock;
   const newType = block.get(YjsEditorKey.block_type);
@@ -97,6 +105,13 @@ function applyUpdateBlockYEvent(editor: YjsEditor, blockId: string, event: YMapE
   const oldData = (node.data ?? {}) as Record<string, unknown>;
   const newProperties: Partial<Element> = {};
   const oldProperties: Partial<Element> = {};
+  const syncTitle = () => {
+    if (syncCalloutTitle(editor, blockId)) {
+      // The inserted title already contains the transaction's final text.
+      // Do not apply that same transaction's incremental text event again.
+      reconciledTitles.add(block.get(YjsEditorKey.block_external_id));
+    }
+  };
 
   if (oldType !== newType) {
     newProperties.type = newType;
@@ -109,6 +124,7 @@ function applyUpdateBlockYEvent(editor: YjsEditor, blockId: string, event: YMapE
   }
 
   if (Object.keys(newProperties).length === 0) {
+    syncTitle();
     return [];
   }
 
@@ -126,6 +142,7 @@ function applyUpdateBlockYEvent(editor: YjsEditor, blockId: string, event: YMapE
     newProperties,
     properties: oldProperties,
   });
+  syncTitle();
 }
 
 /**
@@ -276,7 +293,7 @@ function handleNewBlock(editor: YjsEditor, key: string, keyPath: Record<string, 
     slateNodeType: slateNode.type,
   });
 
-  if (yText) {
+  if (yText && !isCalloutContainer(editor.sharedRoot, block)) {
     const delta = yText?.toDelta();
     const slateDelta = delta.flatMap(deltaInsertToSlateNode);
 

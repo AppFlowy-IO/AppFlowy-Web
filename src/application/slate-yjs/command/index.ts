@@ -28,6 +28,10 @@ import {
   removeRangeWithTxn,
 } from '@/application/slate-yjs/utils/editor';
 import {
+  calculateOffsetRelativeToParent,
+  calculatePointFromParentOffset,
+} from '@/application/slate-yjs/utils/positions';
+import {
   addColumnToTable,
   addRowAndColumnToTable,
   addRowToTable,
@@ -51,6 +55,9 @@ import {
 } from '@/application/slate-yjs/utils/transformSelection';
 import {
   dataStringTOJson,
+  copyBlockText,
+  createBlock,
+  isCalloutContainer,
   deepCopyBlock,
   deleteBlock,
   executeOperations,
@@ -61,6 +68,7 @@ import {
   indentBlock,
   liftBlock,
   turnToBlock,
+  transferChildren,
   updateBlockParent,
 } from '@/application/slate-yjs/utils/yjs';
 import {
@@ -648,6 +656,88 @@ export const CustomEditor = {
     editor.removeMark(key);
   },
 
+  /** Move a legacy callout's title into an ordinary first child, preserving its content and style. */
+  calloutToContainer(editor: YjsEditor, blockId: string) {
+    editor.flushLocalChanges();
+    const root = getSharedRoot(editor);
+    const source = getBlock(blockId, root);
+
+    if (!source || source.get(YjsEditorKey.block_type) !== BlockType.CalloutBlock) return;
+    if (isCalloutContainer(root, source)) return blockId;
+
+    const parent = getParent(blockId, root);
+
+    if (!parent) return;
+    const sourceEntry = findSlateEntryByBlockId(editor, blockId);
+    const title = sourceEntry?.[0].children[0] as Element | undefined;
+    const selection = editor.selection;
+    const titlePath = sourceEntry && [...sourceEntry[1], 0];
+    const titleOffset = (point: BasePoint) =>
+      title && titlePath && Path.isAncestor(titlePath, point.path)
+        ? calculateOffsetRelativeToParent(title, point)
+        : undefined;
+    const anchorOffset = selection && titleOffset(selection.anchor);
+    const focusOffset = selection && titleOffset(selection.focus);
+    let containerId: string | undefined;
+    let childId: string | undefined;
+
+    executeOperations(
+      root,
+      [
+        () => {
+          const data = { ...dataStringTOJson(source.get(YjsEditorKey.block_data)) } as BlockData;
+
+          delete data.delta;
+          const container = createBlock(root, { ty: BlockType.CalloutBlock, data, withText: false });
+          const child = createBlock(root, { ty: BlockType.Paragraph, data: {} });
+
+          containerId = container.get(YjsEditorKey.block_id);
+          childId = child.get(YjsEditorKey.block_id);
+          copyBlockText(root, source, child);
+          updateBlockParent(root, container, parent, getBlockIndex(blockId, root));
+          updateBlockParent(root, child, container, 0);
+          transferChildren(root, source, container, 1);
+          deleteBlock(root, blockId);
+        },
+      ],
+      'calloutToContainer'
+    );
+
+    const entry = childId && findSlateEntryByBlockId(editor, childId);
+
+    if (entry && selection) {
+      const text = entry[0].children[0] as Element;
+      const restorePoint = (point: BasePoint, offset: number | null | undefined) =>
+        offset === null || offset === undefined ? point : calculatePointFromParentOffset(text, [...entry[1], 0], offset);
+
+      // Existing body blocks keep their paths; only the title gains a paragraph parent.
+      Transforms.select(editor, {
+        anchor: restorePoint(selection.anchor, anchorOffset),
+        focus: restorePoint(selection.focus, focusOffset),
+      });
+    }
+
+    return containerId;
+  },
+
+  /** Text formatting applies to a callout's first child, preserving its wrapper. */
+  formatBlock<T extends BlockData>(editor: YjsEditor, blockId: string, type: BlockType, data: T) {
+    const source = getBlock(blockId, getSharedRoot(editor));
+    let targetBlockId = blockId;
+
+    if (!source) return;
+    if (source.get(YjsEditorKey.block_type) === BlockType.CalloutBlock) {
+      const containerId = CustomEditor.calloutToContainer(editor, blockId);
+      const entry = containerId && findSlateEntryByBlockId(editor, containerId);
+      const firstChild = entry && entry[0].children[0];
+
+      if (!firstChild || !Element.isElement(firstChild) || !firstChild.blockId) return;
+      targetBlockId = firstChild.blockId;
+    }
+
+    return CustomEditor.turnToBlock(editor, targetBlockId, type, data);
+  },
+
   turnToBlock<T extends BlockData>(editor: YjsEditor, blockId: string, type: BlockType, data: T) {
     const operations: (() => void)[] = [];
     const sharedRoot = getSharedRoot(editor);
@@ -931,6 +1021,14 @@ export const CustomEditor = {
       ],
       'deleteBlock'
     );
+    // Deleting the last child replaces it with an empty paragraph. The manual
+    // transaction removes the old caret, so place it in that editable child.
+    if (!editor.selection && isCalloutContainer(sharedRoot, parent)) {
+      const entry = findSlateEntryByBlockId(editor, parent.get(YjsEditorKey.block_id));
+
+      if (entry) Transforms.select(editor, Editor.start(editor, entry[1]));
+    }
+
     const children = editor.children;
 
     if (children.length === 0) {

@@ -11,6 +11,7 @@ import {
   getPageId,
   getText,
   getTextMap,
+  isCalloutContainer,
   updateBlockParent,
 } from '@/application/slate-yjs/utils/yjs';
 import { BlockData, BlockType, YDoc, YjsEditorKey, YSharedRoot } from '@/application/types';
@@ -52,6 +53,10 @@ export function traverseBlock(id: string, sharedRoot: YSharedRoot): Element | un
   }
 
   if (slateNode.type === BlockType.Page) {
+    return slateNode;
+  }
+
+  if (isCalloutContainer(sharedRoot, blocks.get(id))) {
     return slateNode;
   }
 
@@ -204,6 +209,7 @@ export function slateContentInsertToYData(
     const block = createBlock(sharedRoot, {
       ty: node.type as BlockType,
       data: node.data || {},
+      withText: node.type !== BlockType.CalloutBlock || (node.children[0] as Element)?.type === YjsEditorKey.text,
     });
 
     const [textNode, ...children] =

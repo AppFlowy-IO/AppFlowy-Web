@@ -28,11 +28,11 @@ export function BulletedList() {
       if (!node) return;
 
       if (node.type === BlockType.BulletedListBlock) {
-        CustomEditor.turnToBlock(editor, node.blockId as string, BlockType.Paragraph, {});
+        CustomEditor.formatBlock(editor, node.blockId as string, BlockType.Paragraph, {});
         return;
       }
 
-      CustomEditor.turnToBlock(editor, node.blockId as string, BlockType.BulletedListBlock, {});
+      CustomEditor.formatBlock(editor, node.blockId as string, BlockType.BulletedListBlock, {});
     } catch (e) {
       return;
     }

@@ -128,6 +128,18 @@ export function useHoverControls({ disabled }: { disabled: boolean }) {
         return;
       }
 
+      // The first block is the callout's title row. Its handle belongs to the
+      // callout wrapper; subsequent body blocks keep their own controls.
+      const nodePath = ReactEditor.findPath(editor, node);
+
+      if (nodePath.length > 1 && nodePath[nodePath.length - 1] === 0) {
+        const [parent] = Editor.parent(editor, nodePath);
+
+        if (Element.isElement(parent) && parent.type === BlockType.CalloutBlock) {
+          node = parent;
+        }
+      }
+
       let blockElement = ReactEditor.toDOMNode(editor, node);
 
       if (!blockElement) return;

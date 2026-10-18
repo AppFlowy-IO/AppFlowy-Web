@@ -547,25 +547,24 @@ export function convertSlateFragmentTo(fragment: SlateNode[]) {
       type = BlockType.Paragraph;
     }
 
-    const mappedChildren = node.children
-      .map(traverse)
-      .filter(Boolean) as SlateNode[];
+    const mappedChildren = node.children.map(traverse).filter(Boolean) as SlateNode[];
 
     const hasTextWrapper =
       mappedChildren.length > 0 &&
       SlateElement.isElement(mappedChildren[0]) &&
       mappedChildren[0].type === YjsEditorKey.text;
 
-    const blockChildren = hasTextWrapper
-      ? mappedChildren
-      : [
-          {
-            textId: blockId,
-            type: YjsEditorKey.text,
-            children: [{ text: '' }],
-          },
-          ...mappedChildren,
-        ];
+    const blockChildren =
+      hasTextWrapper || type === BlockType.CalloutBlock
+        ? mappedChildren
+        : [
+            {
+              textId: blockId,
+              type: YjsEditorKey.text,
+              children: [{ text: '' }],
+            },
+            ...mappedChildren,
+          ];
 
     return {
       blockId,

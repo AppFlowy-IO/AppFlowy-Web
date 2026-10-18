@@ -49,11 +49,11 @@ export function Heading() {
           if (!node) return;
 
           if (node.type === BlockType.HeadingBlock && (node.data as HeadingBlockData).level === level) {
-            CustomEditor.turnToBlock(editor, node.blockId as string, BlockType.Paragraph, {});
+            CustomEditor.formatBlock(editor, node.blockId as string, BlockType.Paragraph, {});
             return;
           }
 
-          CustomEditor.turnToBlock<HeadingBlockData>(editor, node.blockId as string, BlockType.HeadingBlock, { level });
+          CustomEditor.formatBlock<HeadingBlockData>(editor, node.blockId as string, BlockType.HeadingBlock, { level });
         } catch (e) {
           return;
         }

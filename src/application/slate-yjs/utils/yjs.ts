@@ -13,6 +13,7 @@ import { INLINE_COMMENT_IDS_KEY } from '@/application/slate-yjs/types';
 import {
   BlockData,
   BlockType,
+  CalloutBlockData,
   CollabOrigin,
   ToggleListBlockData,
   YBlock,
@@ -208,9 +209,11 @@ export function createBlock(
   {
     ty,
     data,
+    withText = true,
   }: {
     ty: BlockType;
     data: object;
+    withText?: boolean;
   }
 ): YBlock {
   const block = new Y.Map();
@@ -219,7 +222,12 @@ export function createBlock(
   block.set(YjsEditorKey.block_id, id);
   block.set(YjsEditorKey.block_type, ty);
   block.set(YjsEditorKey.block_children, id);
-  block.set(YjsEditorKey.block_data, JSON.stringify(data));
+  // Native callout builders require a delta, even when web presents a child as
+  // the title. Keep the normal external text and mark only the web presentation.
+  block.set(
+    YjsEditorKey.block_data,
+    JSON.stringify(ty === BlockType.CalloutBlock && !withText ? { ...data, title_mode: 'block' } : data)
+  );
 
   const document = getDocument(sharedRoot);
   const blocks = document.get(YjsEditorKey.blocks) as YBlocks;
@@ -231,7 +239,7 @@ export function createBlock(
 
   childrenMap.set(id, new Y.Array());
 
-  if (!isEmbedBlockTypes(ty)) {
+  if ((withText || ty === BlockType.CalloutBlock) && !isEmbedBlockTypes(ty)) {
     block.set(YjsEditorKey.block_external_id, id);
     block.set(YjsEditorKey.block_external_type, 'text');
     const textMap = meta.get(YjsEditorKey.text_map) as YTextMap;
@@ -458,7 +466,7 @@ export function compatibleDataDeltaToYText(sharedRoot: YSharedRoot, ops: Op[], b
   return yText;
 }
 
-export function deleteBlock(sharedRoot: YSharedRoot, blockId: string) {
+export function deleteBlock(sharedRoot: YSharedRoot, blockId: string, preserveParent = true) {
   const block = getBlock(blockId, sharedRoot);
 
   if (!block) return;
@@ -470,7 +478,7 @@ export function deleteBlock(sharedRoot: YSharedRoot, blockId: string) {
   const blockChildren = getChildrenArray(block.get(YjsEditorKey.block_children), sharedRoot).toArray();
 
   blockChildren.forEach((id) => {
-    deleteBlock(sharedRoot, id);
+    deleteBlock(sharedRoot, id, false);
   });
 
   const meta = document.get(YjsEditorKey.meta) as YMeta;
@@ -497,6 +505,17 @@ export function deleteBlock(sharedRoot: YSharedRoot, blockId: string) {
   blocks.delete(blockId);
   childrenMap.delete(blockChildrenId);
   textMap.delete(blockExternalId);
+
+  // A callout without its own text still needs an editable child after deletion or a move.
+  if (
+    preserveParent &&
+    isCalloutContainer(sharedRoot, parent) &&
+    parentChildren.length === 0
+  ) {
+    const paragraph = createBlock(sharedRoot, { ty: BlockType.Paragraph, data: {} });
+
+    updateBlockParent(sharedRoot, paragraph, parent, 0);
+  }
 
   // delete parent if it's empty column block
   if (parentType === BlockType.ColumnBlock && afterDeletedLength === 0) {
@@ -600,6 +619,49 @@ function ensureTextForBlock(sharedRoot: YSharedRoot, block: YBlock) {
   if (!textMap.has(textId)) {
     textMap.set(textId, new Y.Text());
   }
+}
+
+/** Omit only an empty compatibility title; text written by a native client stays visible. */
+export function isCalloutContainer(sharedRoot: YSharedRoot, block: YBlock): boolean {
+  if (block.get(YjsEditorKey.block_type) !== BlockType.CalloutBlock) return false;
+  const data = dataStringTOJson(block.get(YjsEditorKey.block_data)) as CalloutBlockData;
+  const textId = block.get(YjsEditorKey.block_external_id);
+  const text = textId ? getText(textId, sharedRoot) : undefined;
+
+  if (text && text.length > 0) return false;
+  if (Array.isArray(data.delta) && data.delta.some((op: Op) => op.insert && op.insert !== '')) return false;
+
+  return data.title_mode === 'block' || (!textId && !('delta' in data));
+}
+
+const calloutCompatibilityOrigin = Symbol('callout-compatibility');
+
+/** Repair containers saved by earlier web builds without changing their IDs or children. */
+export function repairTextlessCallouts(sharedRoot: YSharedRoot, blockIds?: Iterable<string>) {
+  const blocks = getBlocks(sharedRoot);
+  const candidates = Array.from(blockIds ?? blocks.keys()).flatMap((id) => {
+    const block = blocks.get(id);
+
+    if (!block || block.get(YjsEditorKey.block_type) !== BlockType.CalloutBlock) return [];
+    const textId = block.get(YjsEditorKey.block_external_id);
+    const data = dataStringTOJson(block.get(YjsEditorKey.block_data)) as CalloutBlockData;
+
+    if ((textId && getText(textId, sharedRoot)) || Array.isArray(data.delta)) return [];
+    return [block];
+  });
+
+  if (!candidates.length) return;
+  sharedRoot.doc?.transact(() => {
+    candidates.forEach((block) => {
+      ensureTextForBlock(sharedRoot, block);
+      if (getChildrenArray(block.get(YjsEditorKey.block_children), sharedRoot)?.length) {
+        block.set(
+          YjsEditorKey.block_data,
+          JSON.stringify({ ...dataStringTOJson(block.get(YjsEditorKey.block_data)), title_mode: 'block' })
+        );
+      }
+    });
+  }, calloutCompatibilityOrigin);
 }
 
 function canTurnToBlockInPlace(type: BlockType, sourceChildren?: Y.Array<string>) {
@@ -738,8 +800,27 @@ export function turnToBlock<T extends BlockData>(
   sourceBlock: YBlock,
   type: BlockType,
   data: T
-) {
+): string {
   const sourceChildren = getChildrenArray(sourceBlock.get(YjsEditorKey.block_children), sharedRoot);
+
+  // A callout without its own text is a wrapper. Converting it must unwrap
+  // its content rather than leave an empty replacement before that content.
+  if (
+    isCalloutContainer(sharedRoot, sourceBlock) &&
+    sourceChildren.length
+  ) {
+    const parent = getBlock(sourceBlock.get(YjsEditorKey.block_parent), sharedRoot);
+    const index = getBlockIndex(sourceBlock.get(YjsEditorKey.block_id), sharedRoot);
+    const copiedIds = sourceChildren.toArray().map((id, offset) => {
+      const copiedId = deepCopyBlock(sharedRoot, getBlock(id, sharedRoot))!;
+
+      updateBlockParent(sharedRoot, getBlock(copiedId, sharedRoot), parent, index + offset);
+      return copiedId;
+    });
+
+    deleteBlock(sharedRoot, sourceBlock.get(YjsEditorKey.block_id));
+    return turnToBlock(sharedRoot, getBlock(copiedIds[0], sharedRoot), type, data);
+  }
 
   if (canTurnToBlockInPlace(type, sourceChildren)) {
     ensureTextForBlock(sharedRoot, sourceBlock);
@@ -833,6 +914,7 @@ export function deepCopyBlock(
     const newBlock = createBlock(sharedRoot, {
       ty: sourceBlock.get(YjsEditorKey.block_type),
       data: dataOverride ?? dataStringTOJson(sourceBlock.get(YjsEditorKey.block_data)),
+      withText: !isCalloutContainer(sharedRoot, sourceBlock),
     });
     const copiedIds = new Map([[sourceBlock.get(YjsEditorKey.block_id), newBlock.get(YjsEditorKey.block_id)]]);
 

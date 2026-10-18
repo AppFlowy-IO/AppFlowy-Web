@@ -2,6 +2,9 @@ import { Editor, Element, Operation, Path, Text } from 'slate';
 import * as Y from 'yjs';
 
 import { YjsEditor } from '@/application/slate-yjs';
+import { syncCalloutTitle } from '@/application/slate-yjs/utils/callout';
+import { getBlocks, isCalloutContainer } from '@/application/slate-yjs/utils/yjs';
+import { BlockType, YjsEditorKey } from '@/application/types';
 import { Log } from '@/utils/log';
 
 interface Delta {
@@ -23,11 +26,27 @@ function applyTextYEvent(editor: YjsEditor, textId: string, event: Y.YTextEvent)
   });
 
   if (!entry) {
+    // The native-compatible empty title of a block-title callout is not shown
+    // on web. A native edit must materialize that title before applying deltas.
+    const callout = Array.from(getBlocks(editor.sharedRoot).values()).find(
+      (block) => block.get(YjsEditorKey.block_type) === BlockType.CalloutBlock &&
+        block.get(YjsEditorKey.block_external_id) === textId
+    );
+
+    if (callout) {
+      if (syncCalloutTitle(editor, callout.get(YjsEditorKey.block_id)) || isCalloutContainer(editor.sharedRoot, callout)) {
+        return;
+      }
+    }
+
     console.error(`❌ Text node not found in Slate editor: ${textId}`);
     return;
   }
 
   const [targetElement, textPath] = entry as [Element, number[]];
+  const [parent] = Editor.parent(editor, textPath);
+
+  if (Element.isElement(parent) && parent.blockId && syncCalloutTitle(editor, parent.blockId)) return;
   const delta = event.delta as Delta[];
 
   Log.debug('📝 Applying YText event', {
