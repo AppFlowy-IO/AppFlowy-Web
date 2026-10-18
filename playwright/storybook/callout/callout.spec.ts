@@ -313,7 +313,7 @@ test('body text aligns beneath the title before and after removing the icon', as
   await page.screenshot({ path: `test-results/callout-body-no-icon-${info.project.name}.png` });
 });
 
-test('six-dot menu removes the icon and places Background Color after Text Color', async ({ page }) => {
+test('six-dot menu removes the icon and opens AI and color submenus beside their rows', async ({ page }) => {
   const actions = await menu(page);
   const labels = await actions.getByRole('button').allTextContents();
 
@@ -323,6 +323,21 @@ test('six-dot menu removes the icon and places Background Color after Text Color
   await page.getByRole('button', { name: 'Remove', exact: true }).click();
   await expect(block(page).getByTestId('callout-icon-button')).toHaveCount(0);
   const colors = await menu(page);
+  const askAI = colors.getByRole('button', { name: 'Ask AI', exact: true, includeHidden: true });
+
+  await askAI.click();
+  const aiMenu = page.getByRole('dialog', { name: 'Ask AI', exact: true });
+
+  await expect(aiMenu.getByRole('button', { name: 'Improve writing', exact: true })).toBeVisible();
+  await expect.poll(async () => {
+    const row = (await askAI.boundingBox())!;
+
+    return Math.abs((await aiMenu.boundingBox())!.x - (row.x + row.width));
+  }).toBeLessThan(1);
+  await expect.poll(async () => Math.abs((await aiMenu.boundingBox())!.y - (await askAI.boundingBox())!.y)).toBeLessThan(1);
+  await page.keyboard.press('Escape');
+  await expect(aiMenu).toBeHidden();
+  await expect(colors).toBeVisible();
 
   await colors.getByRole('button', { name: 'Background Color', exact: true }).click();
   await page.getByRole('button', { name: 'Jade', exact: true }).click();
