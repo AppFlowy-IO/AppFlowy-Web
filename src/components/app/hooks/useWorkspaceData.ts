@@ -426,6 +426,7 @@ const ACCESS_REVOKED_PROBE_ERROR_CODES = new Set<number>([
 ]);
 
 const PERMISSION_SUBTREE_REHYDRATE_MAX_ATTEMPTS = 2;
+const MAX_CONCURRENT_PERMISSION_SUBTREE_READS = 8;
 const DATABASE_RESTORE_NAVIGATION_RETRY_MS = 1_000;
 const DATABASE_RESTORE_NAVIGATION_MAX_RETRY_MS = 30_000;
 const MAX_RETAINED_RESTORE_NAVIGATION_PARENTS = 4_096;
@@ -770,13 +771,28 @@ export function useWorkspaceData() {
       const verifiedChildren = (fallbackView?.children ?? []).filter(
         (child) => permissionFallbackViewIdsRef.current.has(child.view_id) || loadedViewIdsRef.current.has(child.view_id)
       );
-
-      return mergeShallowChildrenIntoOutline(
+      const mergedOutline = mergeShallowChildrenIntoOutline(
         mergeChildrenIntoOutline(outline, viewId, verifiedChildren, fallbackView?.has_children),
         viewId,
         children,
         hasChildren
       );
+
+      // Branches are refetched concurrently, so a descendant this list drops
+      // may already be marked loaded by its own list. Unmark it, as if this
+      // list had arrived first.
+      if (fallbackView?.children?.length) {
+        const keptViewIds = collectOutlineViewIds(findView(mergedOutline, viewId)?.children ?? []);
+        let unmarked = false;
+
+        collectOutlineViewIds(fallbackView.children).forEach((droppedViewId) => {
+          if (!keptViewIds.has(droppedViewId) && loadedViewIdsRef.current.delete(droppedViewId)) unmarked = true;
+        });
+
+        if (unmarked) setLoadedViewIdsRevision((revision) => revision + 1);
+      }
+
+      return mergedOutline;
     },
     []
   );
@@ -2333,8 +2349,9 @@ export function useWorkspaceData() {
       }
 
       // Resume both invalidated expanded branches and sibling loads that the
-      // global permission revision superseded. Parent depths run first so a
-      // nested request always has an outline node to merge into.
+      // global permission revision superseded, grouped by depth. An evicting
+      // refresh runs parents first so a nested request has an outline node to
+      // merge into.
       const rehydrateViewIds = new Set([...staleSubtreeIds, ...supersededLoadingViewIds]);
 
       if (parentView && !parentView.extra?.is_hidden_space) {
@@ -2363,8 +2380,7 @@ export function useWorkspaceData() {
       refreshPermissionDerivedState();
 
       // Restore still-authorized expanded branches from the server. Fetch each
-      // root independently so one revoked branch cannot suppress its siblings,
-      // and process parents before descendants so nested expansions can merge.
+      // branch independently so one revoked branch cannot suppress its siblings.
       void (async () => {
         const isCurrentPermissionRefresh = () =>
           currentWorkspaceIdRef.current === workspaceId && permissionRefreshRevisionRef.current === permissionRevision;
@@ -2388,15 +2404,29 @@ export function useWorkspaceData() {
           if (isCurrentPermissionRefresh()) dropPermissionFallbackChildren(viewId);
         };
 
-        const waves = Array.from(staleSubtreeWaves.entries()).sort(
-          ([leftDepth], [rightDepth]) => leftDepth - rightDepth
+        // Kept children give every nested branch a node to merge into, so
+        // request every branch now (a bounded number at a time, parents first)
+        // instead of one depth level per round trip: a revoked page deep below
+        // the root depth leaves with its own parent's answer.
+        const queuedViewIds = Array.from(staleSubtreeWaves.entries())
+          .sort(([leftDepth], [rightDepth]) => leftDepth - rightDepth)
+          .flatMap(([, viewIds]) => viewIds);
+        let nextViewIndex = 0;
+        const rehydrateQueuedViews = async () => {
+          while (nextViewIndex < queuedViewIds.length && isCurrentPermissionRefresh()) {
+            const viewId = queuedViewIds[nextViewIndex];
+
+            nextViewIndex += 1;
+            await rehydrateView(viewId);
+          }
+        };
+
+        await Promise.all(
+          Array.from(
+            { length: Math.min(MAX_CONCURRENT_PERMISSION_SUBTREE_READS, queuedViewIds.length) },
+            rehydrateQueuedViews
+          )
         );
-
-        for (const [, viewIds] of waves) {
-          if (!isCurrentPermissionRefresh()) return;
-
-          await Promise.all(viewIds.map(rehydrateView));
-        }
       })();
     };
 

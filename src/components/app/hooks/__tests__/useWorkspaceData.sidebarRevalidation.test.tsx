@@ -191,6 +191,62 @@ function createDeferred<T>() {
   };
 }
 
+interface PendingSubtreeRead {
+  viewId: string;
+  read: ReturnType<typeof createDeferred<View[]>>;
+}
+
+/**
+ * Renders the hook over `loadedTree`, whose root outline lists only its
+ * top-level views, and expands `loadOrder` one batch at a time. Afterwards
+ * every subtree read and every root reload stay pending; `reads` lists the
+ * subtree reads in request order and `answer` builds a view's server reply.
+ */
+async function renderExpandedOutline(loadedTree: View[], loadOrder: string[][]) {
+  const eventEmitter = new EventEmitter();
+  const shallowRoot = loadedTree.map((view) => ({ ...view, children: [] }));
+  const rootRefresh = createDeferred<{ outline: View[]; folderRid: string }>();
+  const reads: PendingSubtreeRead[] = [];
+  const answer = (viewId: string): View[] => {
+    const view = findView(loadedTree, viewId);
+
+    return view ? [{ ...view, children: view.children.map((child) => ({ ...child, children: [] })) }] : [];
+  };
+
+  (ViewService.getOutline as jest.Mock)
+    .mockResolvedValueOnce({ outline: shallowRoot, folderRid: '1-1' })
+    .mockReturnValue(rootRefresh.promise);
+  (ViewService.getMultiple as jest.Mock).mockImplementation(async (_workspaceId: string, viewIds: string[]) =>
+    viewIds.flatMap(answer)
+  );
+  const rendered = renderHook(() => useWorkspaceData(), { wrapper: createWrapper(eventEmitter) });
+
+  await waitFor(() => expect(rendered.result.current.outline).toEqual(shallowRoot));
+  for (const viewIds of loadOrder) {
+    await act(async () => {
+      await rendered.result.current.loadViewChildrenBatch?.(viewIds);
+    });
+  }
+
+  expect(rendered.result.current.outline).toEqual(loadedTree);
+  (ViewService.getMultiple as jest.Mock).mockClear().mockImplementation((_workspaceId: string, [viewId]: string[]) => {
+    const read = createDeferred<View[]>();
+
+    reads.push({ viewId, read });
+    return read.promise;
+  });
+
+  return {
+    ...rendered,
+    answer,
+    eventEmitter,
+    reads,
+    readOf: (viewId: string) => reads.find((entry) => entry.viewId === viewId)?.read,
+    rootRefresh,
+    shallowRoot,
+  };
+}
+
 describe('useWorkspaceData sidebar outline revalidation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -1327,10 +1383,15 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
         eventEmitter.emit(event, payload);
       });
 
-      // Nothing is emptied up front; the event only starts the refetches.
+      // Nothing is emptied up front; the event only starts the refetches, of
+      // every affected branch at once, parents first.
       expect(published).toEqual([]);
       expect(result.current.outline).toBe(outlineBeforeEvent);
-      expect(Array.from(subtreeRefreshes.keys())).toEqual(targeted ? ['other-space'] : ['general-space', 'other-space']);
+      expect(Array.from(subtreeRefreshes.keys())).toEqual(
+        targeted
+          ? ['other-space', 'other-page', 'deep-page']
+          : ['general-space', 'other-space', 'general-page', 'other-page', 'deep-page']
+      );
 
       await act(async () => {
         rootRefresh.resolve({ outline: shallowRoot, folderRid: '1-2' });
@@ -1346,7 +1407,6 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
       });
       // The revoked page leaves with its parent's authoritative child list.
       await waitFor(() => expect(findView(result.current.outline ?? [], 'revoked-page')).toBeNull());
-      await waitFor(() => expect(subtreeRefreshes.has('other-page')).toBe(true));
       const beforePages = { published: published.length, rendered: rendered.length };
 
       await act(async () => {
@@ -1354,7 +1414,6 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
         subtreeRefreshes.get('general-page')?.resolve([generalPage]);
       });
       await waitFor(() => expect(findView(result.current.outline ?? [], newPage.view_id)).not.toBeNull());
-      await waitFor(() => expect(subtreeRefreshes.has('deep-page')).toBe(true));
       const beforeDeepPage = { published: published.length, rendered: rendered.length };
 
       await act(async () => {
@@ -1584,8 +1643,14 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     const sub = createView('sub', { children: [leaf], has_children: true });
     const page = createView('page', { children: [sub, createView('revoked-page')], has_children: true });
     const space = createView('space', { children: [page], extra: { is_space: true }, has_children: true });
-    const loadedTree = [space];
-    // The root lists only the space, so page and sub are settled by refetches alone.
+    // Loaded leaf spaces take the other read slots, so the page waits in the
+    // refresh queue until the space's read finishes.
+    const fillers = Array.from({ length: 7 }, (_, index) =>
+      createView(`filler-${index}`, { extra: { is_space: true }, has_children: false })
+    );
+    const fillerIds = fillers.map((filler) => filler.view_id);
+    const loadedTree = [space, ...fillers];
+    // The root lists only the spaces, so page and sub are settled by refetches alone.
     const shallowRoot = loadedTree.map(withoutChildren);
     const serverPage = { ...page, children: [withoutChildren(sub)] };
     const rootRefresh = createDeferred<{ outline: View[]; folderRid: string }>();
@@ -1620,7 +1685,7 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     );
 
     await waitFor(() => expect(result.current.outline).toEqual(shallowRoot));
-    for (const viewIds of [['space'], ['page'], ['sub']]) {
+    for (const viewIds of [['space', ...fillerIds], ['page'], ['sub']]) {
       await act(async () => {
         await result.current.loadViewChildrenBatch?.(viewIds);
       });
@@ -1637,8 +1702,9 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     act(() => {
       eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
     });
+    expect(subtreeRequests.map(({ viewIds }) => viewIds)).toEqual([['space'], ...fillerIds.map((id) => [id])]);
 
-    // Another load claims the pending page before its permission wave runs.
+    // Another load claims the queued page before a read slot frees up for it.
     let concurrentLoad: Promise<unknown> | undefined;
 
     act(() => {
@@ -1656,17 +1722,17 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
       });
     }
 
-    await waitFor(() => expect(subtreeRequests).toHaveLength(2));
+    await waitFor(() => expect(subtreeRequests).toHaveLength(9));
     await act(async () => {
       subtreeRequests[0].resolve([{ ...space, children: [withoutChildren(page)] }]);
-      // Let the page wave run to completion against the still-pending load.
+      // Let the freed slot reach the page while the other load is still pending.
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
 
     const childIds = (outline: View[], viewId: string) =>
       findView(outline, viewId)?.children.map((child) => child.view_id);
 
-    // The wave asks for the page itself instead of taking the other load's
+    // The refresh asks for the page itself instead of taking the other load's
     // pending request as its answer, so nothing is dropped meanwhile.
     for (const outline of [...published, ...rendered]) {
       expect(childIds(outline, 'page')).toEqual(['sub', 'revoked-page']);
@@ -1674,35 +1740,276 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
 
     expect(subtreeRequests.map(({ viewIds }) => viewIds)).toEqual([
       ['space'],
+      ...fillerIds.map((id) => [id]),
       revalidate ? ['page', 'sub'] : ['page'],
       ['page'],
     ]);
 
     await act(async () => {
-      subtreeRequests[1].resolve(revalidate ? [serverPage, sub] : [serverPage]);
+      subtreeRequests[8].resolve(revalidate ? [serverPage, sub] : [serverPage]);
       await concurrentLoad;
     });
     // The first authoritative child list removes the revoked page.
     expect(findView(result.current.outline ?? [], 'revoked-page')).toBeNull();
 
     await act(async () => {
-      subtreeRequests[2].resolve([serverPage]);
+      subtreeRequests[9].resolve([serverPage]);
     });
-    await waitFor(() => expect(subtreeRequests).toHaveLength(4));
-    expect(subtreeRequests[3].viewIds).toEqual(['sub']);
+    await waitFor(() => expect(subtreeRequests).toHaveLength(11));
+    expect(subtreeRequests[10].viewIds).toEqual(['sub']);
     await act(async () => {
-      subtreeRequests[3].resolve([sub]);
+      subtreeRequests[10].resolve([sub]);
+      fillers.forEach((filler, index) => subtreeRequests[index + 1].resolve([filler]));
       rootRefresh.resolve({ outline: shallowRoot, folderRid: '1-2' });
       await rootRefresh.promise;
     });
     await waitFor(() => expect(result.current.loadedViewIds?.has('sub')).toBe(true));
 
-    expect(result.current.outline).toEqual([{ ...space, children: [{ ...page, children: [sub] }] }]);
+    expect(result.current.outline).toEqual([{ ...space, children: [{ ...page, children: [sub] }] }, ...fillers]);
     expect(result.current.loadedViewIds?.has('page')).toBe(true);
     // No published or rendered outline ever emptied the page or its loaded child.
     for (const outline of [...published, ...rendered]) {
       expect(childIds(outline, 'sub')).toEqual(['leaf']);
     }
+  });
+
+  it("removes a revoked page deep below the root depth with its parent's list while ancestors are pending", async () => {
+    const keptPage = createView('kept-page');
+    const levelThree = createView('level-three', { children: [keptPage, createView('revoked-page')], has_children: true });
+    const levelTwo = createView('level-two', { children: [levelThree], has_children: true });
+    const levelOne = createView('level-one', { children: [levelTwo], has_children: true });
+    const space = createView('space', { children: [levelOne], extra: { is_space: true }, has_children: true });
+    const branchIds = ['space', 'level-one', 'level-two', 'level-three'];
+    // The root lists only the space, so the revoked page sits four levels below it.
+    const { result, answer, eventEmitter, reads, readOf, rootRefresh, shallowRoot } = await renderExpandedOutline(
+      [space],
+      branchIds.map((viewId) => [viewId])
+    );
+    const settledOutline = [
+      {
+        ...space,
+        children: [{ ...levelOne, children: [{ ...levelTwo, children: [{ ...levelThree, children: [keptPage] }] }] }],
+      },
+    ];
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+    });
+    // Every branch is requested at once, parents first.
+    expect(reads.map(({ viewId }) => viewId)).toEqual(branchIds);
+
+    await act(async () => {
+      readOf('level-three')?.resolve([{ ...levelThree, children: [keptPage] }]);
+    });
+
+    // The page leaves with its own parent's list while every ancestor read and
+    // the root reload are still pending; the ancestors keep their children.
+    await waitFor(() => expect(findView(result.current.outline ?? [], 'revoked-page')).toBeNull());
+    expect(result.current.outline).toEqual(settledOutline);
+    expect(result.current.loadedViewIds?.has('level-three')).toBe(true);
+    expect(result.current.loadedViewIds?.has('level-two')).toBe(false);
+
+    await act(async () => {
+      ['level-two', 'level-one', 'space'].forEach((viewId) => readOf(viewId)?.resolve(answer(viewId)));
+      rootRefresh.resolve({ outline: shallowRoot, folderRid: '1-2' });
+      await rootRefresh.promise;
+    });
+
+    await waitFor(() => expect(result.current.loadedViewIds?.has('space')).toBe(true));
+    expect(result.current.outline).toEqual(settledOutline);
+    branchIds.forEach((viewId) => expect(result.current.loadedViewIds?.has(viewId)).toBe(true));
+  });
+
+  it.each([
+    ['keeps', true],
+    ['drops', false],
+  ])("applies a nested branch's list that arrives before its parent's list, which %s the branch", async (_label, kept) => {
+    const freshLeaf = createView('fresh-leaf');
+    const otherChild = createView('other-child');
+    const sub = createView('sub', { children: [createView('old-leaf')], has_children: true });
+    const page = createView('page', { children: [sub], has_children: true });
+    const space = createView('space', { children: [page], extra: { is_space: true }, has_children: true });
+    const { result, answer, eventEmitter, reads, readOf, rootRefresh, shallowRoot } = await renderExpandedOutline(
+      [space],
+      [['space'], ['page'], ['sub']]
+    );
+    const published: View[][] = [];
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+    });
+    expect(reads.map(({ viewId }) => viewId)).toEqual(['space', 'page', 'sub']);
+
+    // The nested list replaces the branch's kept children while its parent's
+    // read is still pending.
+    await act(async () => {
+      readOf('sub')?.resolve([{ ...sub, children: [freshLeaf] }]);
+    });
+    await waitFor(() => expect(findView(result.current.outline ?? [], 'sub')?.children).toEqual([freshLeaf]));
+    expect(result.current.loadedViewIds?.has('sub')).toBe(true);
+
+    eventEmitter.on(APP_EVENTS.OUTLINE_LOADED, (outline: View[]) => published.push(outline));
+    await act(async () => {
+      readOf('page')?.resolve([{ ...page, children: [kept ? { ...sub, children: [] } : otherChild] }]);
+    });
+    await waitFor(() => expect(result.current.loadedViewIds?.has('page')).toBe(true));
+
+    if (kept) {
+      // The re-verified branch keeps its fresh children through its parent's list.
+      expect(findView(result.current.outline ?? [], 'sub')?.children).toEqual([freshLeaf]);
+      for (const outline of published) {
+        expect(findView(outline, 'sub')?.children).toEqual([freshLeaf]);
+      }
+    } else {
+      // Dropping the branch also clears the loaded mark its own list set, as
+      // if the parent's list had arrived first.
+      expect(findView(result.current.outline ?? [], 'sub')).toBeNull();
+    }
+
+    expect(result.current.loadedViewIds?.has('sub')).toBe(kept);
+
+    await act(async () => {
+      readOf('space')?.resolve(answer('space'));
+      rootRefresh.resolve({ outline: shallowRoot, folderRid: '1-2' });
+      await rootRefresh.promise;
+    });
+    await waitFor(() => expect(result.current.loadedViewIds?.has('space')).toBe(true));
+    expect(result.current.outline).toEqual([
+      { ...space, children: [{ ...page, children: [kept ? { ...sub, children: [freshLeaf] } : otherChild] }] },
+    ]);
+    expect(result.current.loadedViewIds?.has('sub')).toBe(kept);
+  });
+
+  it.each([
+    ['list', false],
+    ['denial', true],
+  ])('ignores a late %s for a branch its parent already removed', async (_label, denied) => {
+    const otherChild = createView('other-child');
+    const sub = createView('sub', { children: [createView('leaf')], has_children: true });
+    const page = createView('page', { children: [sub], has_children: true });
+    const space = createView('space', { children: [page], extra: { is_space: true }, has_children: true });
+    const { result, answer, eventEmitter, reads, readOf, rootRefresh, shallowRoot } = await renderExpandedOutline(
+      [space],
+      [['space'], ['page'], ['sub']]
+    );
+    const published: View[][] = [];
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+    });
+    expect(reads.map(({ viewId }) => viewId)).toEqual(['space', 'page', 'sub']);
+
+    // The parent's list removes the branch while the branch's own read is pending.
+    await act(async () => {
+      readOf('page')?.resolve([{ ...page, children: [otherChild] }]);
+    });
+    await waitFor(() => expect(findView(result.current.outline ?? [], 'sub')).toBeNull());
+    const outlineWithoutBranch = result.current.outline;
+
+    eventEmitter.on(APP_EVENTS.OUTLINE_LOADED, (outline: View[]) => published.push(outline));
+    await act(async () => {
+      if (denied) readOf('sub')?.reject({ code: ERROR_CODE.NOT_HAS_PERMISSION, message: 'revoked' });
+      else readOf('sub')?.resolve([{ ...sub, children: [createView('late-leaf')] }]);
+      // Let the late read settle completely before asserting that nothing changed.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    // The late read neither restores nor marks the removed branch.
+    expect(result.current.outline).toBe(outlineWithoutBranch);
+    expect(published).toEqual([]);
+    expect(result.current.loadedViewIds?.has('sub')).toBe(false);
+
+    await act(async () => {
+      readOf('space')?.resolve(answer('space'));
+      rootRefresh.resolve({ outline: shallowRoot, folderRid: '1-2' });
+      await rootRefresh.promise;
+    });
+    await waitFor(() => expect(result.current.loadedViewIds?.has('space')).toBe(true));
+    expect(result.current.outline).toEqual([{ ...space, children: [{ ...page, children: [otherChild] }] }]);
+    expect(result.current.loadedViewIds?.has('sub')).toBe(false);
+
+    // The late read released its loading marker too.
+    (ViewService.getMultiple as jest.Mock).mockClear().mockResolvedValue([]);
+    await act(async () => {
+      await result.current.loadViewChildrenBatch?.(['sub']);
+    });
+    expect(ViewService.getMultiple).toHaveBeenCalledWith(workspaceId, ['sub'], 1);
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('reads at most eight permission subtrees at once and starts parents first', async () => {
+    const page = createView('page', { children: [createView('page-leaf')], has_children: true });
+    const spaces = Array.from({ length: 9 }, (_, index) =>
+      createView(`space-${index}`, {
+        children: [index === 0 ? page : createView(`leaf-${index}`)],
+        extra: { is_space: true },
+        has_children: true,
+      })
+    );
+    const spaceIds = spaces.map((space) => space.view_id);
+    const { result, answer, eventEmitter, reads } = await renderExpandedOutline(spaces, [spaceIds, ['page']]);
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+    });
+    expect(reads.map(({ viewId }) => viewId)).toEqual(spaceIds.slice(0, 8));
+
+    // Each finished read frees one slot for the next queued branch: the last
+    // space, then the nested page.
+    for (let settled = 0; settled < reads.length; settled += 1) {
+      const { viewId, read } = reads[settled];
+
+      await act(async () => {
+        read.resolve(answer(viewId));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(reads.length - (settled + 1)).toBeLessThanOrEqual(8);
+    }
+
+    expect(reads.map(({ viewId }) => viewId)).toEqual([...spaceIds, 'page']);
+    expect(result.current.outline).toEqual(spaces);
+    [...spaceIds, 'page'].forEach((viewId) => expect(result.current.loadedViewIds?.has(viewId)).toBe(true));
+  });
+
+  it('starts no queued subtree reads once a newer permission change supersedes the refresh', async () => {
+    const spaces = Array.from({ length: 10 }, (_, index) =>
+      createView(`space-${index}`, {
+        children: [createView(`leaf-${index}`)],
+        extra: { is_space: true },
+        has_children: true,
+      })
+    );
+    const spaceIds = spaces.map((space) => space.view_id);
+    const { result, answer, eventEmitter, reads } = await renderExpandedOutline(spaces, [spaceIds]);
+    const settle = async (entries: PendingSubtreeRead[]) => {
+      await act(async () => {
+        entries.forEach(({ viewId, read }) => read.resolve(answer(viewId)));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    };
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+    });
+    const supersededReads = reads.slice();
+
+    expect(supersededReads.map(({ viewId }) => viewId)).toEqual(spaceIds.slice(0, 8));
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+    });
+    // The newer refresh requests the pending branches again under its own cap.
+    expect(reads.slice(8).map(({ viewId }) => viewId)).toEqual(spaceIds.slice(0, 8));
+
+    // The superseded reads free their slots, but their refresh starts nothing
+    // more: the queued spaces wait for the newer refresh.
+    await settle(supersededReads);
+    expect(reads).toHaveLength(16);
+
+    await settle(reads.slice(8));
+    expect(reads.slice(16).map(({ viewId }) => viewId)).toEqual(spaceIds.slice(8));
+    await settle(reads.slice(16));
+    expect(result.current.outline).toEqual(spaces);
   });
 
   it('refreshes an already-loaded favorites list after a permission change', async () => {
