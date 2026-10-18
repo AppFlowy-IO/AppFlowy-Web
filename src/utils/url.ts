@@ -133,6 +133,80 @@ export function processUrl(input: string) {
   return;
 }
 
+const UNSAFE_HREF_SCHEME = /^(?:javascript|data|vbscript|file|blob):/i;
+const SAFE_CONTACT_SCHEME = /^(?:mailto|tel|callto|sms):/i;
+
+/**
+ * True only when the input normalizes to an `http(s)` URL.
+ *
+ * `processUrl` already rejects `javascript:`/`data:` by returning
+ * `undefined`, but most call sites resurrect the attacker input via
+ * `processUrl(url) || url`. Use this instead of that pattern wherever the
+ * result becomes a link href, iframe src, or fetched URL.
+ */
+export function isSafeHttpUrl(input: unknown): boolean {
+  if (typeof input !== 'string') return false;
+
+  const trimmed = input.trim();
+
+  if (!trimmed || UNSAFE_HREF_SCHEME.test(trimmed)) return false;
+
+  const normalized = processUrl(trimmed);
+
+  if (!normalized) return false;
+
+  try {
+    const protocol = new URL(normalized).protocol;
+
+    return protocol === 'http:' || protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Normalize embed/preview URLs. Returns the `http(s)` URL or `undefined`
+ * when the input is unsafe or unparseable. Never returns the raw input.
+ */
+export function requireHttpUrl(input: string): string | undefined {
+  if (!isSafeHttpUrl(input)) return undefined;
+
+  return processUrl(input.trim());
+}
+
+/**
+ * Normalize link hrefs. Allows `http(s)`, `mailto:`/`tel:`-style contact
+ * links, and same-app relative links (`/path`, `#anchor`). Returns
+ * `undefined` for `javascript:`/`data:`/`vbscript:` and anything else that
+ * cannot become a safe href. Callers should fall back to plain text.
+ */
+export function sanitizeHref(input: string): string | undefined {
+  if (typeof input !== 'string') return undefined;
+
+  const trimmed = input.trim();
+
+  if (!trimmed) return undefined;
+  if (UNSAFE_HREF_SCHEME.test(trimmed)) return undefined;
+
+  if (SAFE_CONTACT_SCHEME.test(trimmed)) {
+    const scheme = trimmed.split(':')[0].toLowerCase();
+
+    if ((scheme === 'mailto' || scheme === 'tel' || scheme === 'callto' || scheme === 'sms') && trimmed.length > scheme.length + 1) {
+      return trimmed;
+    }
+
+    return undefined;
+  }
+
+  if (trimmed.startsWith('/') || trimmed.startsWith('#')) {
+    if (/\s/.test(trimmed)) return undefined;
+
+    return trimmed;
+  }
+
+  return requireHttpUrl(trimmed);
+}
+
 export async function openUrl(url: string, target: string = '_current', features?: string) {
   const newUrl = processUrl(url);
 
