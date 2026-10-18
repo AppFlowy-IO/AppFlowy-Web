@@ -1,5 +1,5 @@
 import { CircularProgress, IconButton, Tooltip } from '@mui/material';
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as CheckIcon } from '@/assets/icons/check_circle.svg';
@@ -8,12 +8,42 @@ import { ReactComponent as LinkIcon } from '@/assets/icons/link.svg';
 import FileDropzone from '@/components/_shared/file-dropzone/FileDropzone';
 import { TemplateService } from '@/application/services/domains';
 
+/**
+ * Preview URL for the selected avatar file.
+ *
+ * `URL.createObjectURL` allocates a blob URL per call; creating one inline
+ * during render leaks a URL on every render and never releases it. This hook
+ * creates at most one live URL per file and revokes it when the file changes
+ * or the component unmounts.
+ */
+export function usePreviewObjectUrl(file: File | null): string | null {
+  const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
+
+  useEffect(() => {
+    if (!file) {
+      setPreviewUrl(null);
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+
+    setPreviewUrl(objectUrl);
+
+    return () => {
+      URL.revokeObjectURL(objectUrl);
+    };
+  }, [file]);
+
+  return previewUrl;
+}
+
 function UploadAvatar({ onChange }: { onChange: (url: string) => void }) {
   const { t } = useTranslation();
 
   const [file, setFile] = React.useState<File | null>(null);
   const [uploadStatus, setUploadStatus] = React.useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [hovered, setHovered] = React.useState(false);
+  const previewUrl = usePreviewObjectUrl(file);
 
   const uploadStatusText = useMemo(() => {
     switch (uploadStatus) {
@@ -53,10 +83,10 @@ function UploadAvatar({ onChange }: { onChange: (url: string) => void }) {
         }}
         loading={uploadStatus === 'loading'}
       />
-      {file && (
+      {file && previewUrl && (
         <div className={'flex items-center gap-2'}>
           <div className={'aspect-square w-[80px] rounded-xl border border-border-primary'}>
-            <img src={URL.createObjectURL(file)} alt={file.name} className={'h-full w-full'} />
+            <img src={previewUrl} alt={file.name} className={'h-full w-full'} />
           </div>
 
           <div
