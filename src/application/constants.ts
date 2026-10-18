@@ -75,6 +75,7 @@ export const APP_EVENTS = {
   // Workspace notification events
   USER_PROFILE_CHANGED: 'user-profile-changed',           // User name/email updated
   PERMISSION_CHANGED: 'permission-changed',               // Object access permissions changed  
+  WORKSPACE_PERMISSIONS_CHANGED: 'workspace-permissions-changed', // Reload workspace authority at this revision
   SECTION_CHANGED: 'section-changed',                     // Workspace sections updated (recent views, etc.)
   SHARE_VIEWS_CHANGED: 'share-views-changed',             // View sharing settings changed
   VIEW_ACCESS_REVOKED: 'view-access-revoked',             // Current user lost access to a view; local cache evicted

@@ -7,6 +7,8 @@ const mockInvalidToken = jest.fn();
 jest.mock('../gotrue', () => ({
   initGrantService: jest.fn(),
   refreshToken: (...args: unknown[]) => mockRefreshToken(...args),
+  isDefinitiveRefreshFailure: (error: unknown) =>
+    jest.requireActual<typeof import('../gotrue')>('../gotrue').isDefinitiveRefreshFailure(error),
 }));
 
 jest.mock('@/application/session/token', () => ({
@@ -293,5 +295,49 @@ describe('public form HTTP client', () => {
     );
     expect(mockInvalidToken).not.toHaveBeenCalled();
     expect(JSON.parse(window.localStorage.getItem(TOKEN_STORAGE_KEY) ?? '{}')).toEqual(nextToken);
+  });
+
+  const expiredToken = () => ({
+    access_token: 'access-a',
+    expires_at: Math.floor(Date.now() / 1000) - 1,
+    refresh_token: 'refresh-a',
+  });
+
+  it.each([
+    ['GoTrue cannot be reached', Object.assign(new Error('Network Error'), { isAxiosError: true })],
+    [
+      'GoTrue answers with a server error',
+      Object.assign(new Error('Request failed with status code 503'), {
+        isAxiosError: true,
+        response: { status: 503, data: { msg: 'unavailable' } },
+      }),
+    ],
+  ])('keeps the session when an expired-token refresh fails because %s', async (_label, refreshError) => {
+    const stored = expiredToken();
+
+    window.localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(stored));
+    mockRefreshToken.mockRejectedValue(refreshError);
+    global.fetch = jest.fn().mockResolvedValue(successfulResponse()) as unknown as typeof fetch;
+
+    await expect(client.get('/api/workspace/public-form/test')).resolves.toEqual({ data: {} });
+
+    expect(mockRefreshToken).toHaveBeenCalledWith('refresh-a');
+    expect(mockInvalidToken).not.toHaveBeenCalled();
+    expect(JSON.parse(window.localStorage.getItem(TOKEN_STORAGE_KEY) ?? '{}')).toEqual(stored);
+  });
+
+  it('signs out when GoTrue rejects the stored refresh token', async () => {
+    window.localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(expiredToken()));
+    mockRefreshToken.mockRejectedValue(
+      Object.assign(new Error('Request failed with status code 400'), {
+        isAxiosError: true,
+        response: { status: 400, data: { error: 'invalid_grant', error_description: 'Invalid Refresh Token' } },
+      })
+    );
+    global.fetch = jest.fn().mockResolvedValue(successfulResponse()) as unknown as typeof fetch;
+
+    await expect(client.get('/api/workspace/public-form/test')).resolves.toEqual({ data: {} });
+
+    expect(mockInvalidToken).toHaveBeenCalledTimes(1);
   });
 });

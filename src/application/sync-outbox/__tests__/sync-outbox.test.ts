@@ -14,11 +14,25 @@ interface MockSyncOutboxRecord {
   createdAt: number;
   beforeStateVector?: Uint8Array;
   source?: 'manifest';
+  permissionBlocked?: boolean;
+  serverUrl?: string;
 }
+
+interface MockPermissionBlock {
+  serverUrl: string;
+  userId: string;
+  workspaceId: string;
+  objectId: string;
+  revision: string;
+}
+
+const mockPermissionBlocks = new Map<string, MockPermissionBlock>();
 
 let mockRecords: MockSyncOutboxRecord[] = [];
 let mockNextId = 1;
 let mockTransactionQueue: Promise<unknown> = Promise.resolve();
+// Filtered counts read every matching row, so tests count them.
+let mockCountCalls = 0;
 
 function mockMatchesIndex(index: string, key: unknown[], record: MockSyncOutboxRecord) {
   if (index === '[userId+workspaceId]') {
@@ -36,12 +50,32 @@ function mockMatchesIndex(index: string, key: unknown[], record: MockSyncOutboxR
   throw new Error(`Unsupported mock index: ${index}`);
 }
 
+function mockCollection(predicate: (record: MockSyncOutboxRecord) => boolean) {
+  return {
+    count: async () => {
+      mockCountCalls += 1;
+      return mockRecords.filter(predicate).length;
+    },
+    first: async () => mockRecords.find(predicate),
+    modify: async (patch: Partial<MockSyncOutboxRecord>) => { mockRecords.filter(predicate).forEach((row) => Object.assign(row, patch)); },
+    delete: async () => { mockRecords = mockRecords.filter((record) => !predicate(record)); },
+    filter: (next: (record: MockSyncOutboxRecord) => boolean) => mockCollection((record) => predicate(record) && next(record)),
+    each: async (callback: (record: MockSyncOutboxRecord) => void) => { mockRecords.filter(predicate).forEach(callback); },
+    sortBy: async (field: keyof MockSyncOutboxRecord) => mockRecords.filter(predicate).slice().sort((a,b) => Number(a[field] ?? 0) - Number(b[field] ?? 0)),
+    limit: (count: number) => ({toArray: async () => mockRecords.filter(predicate).slice().sort((a,b) => Number(a.id ?? 0) - Number(b.id ?? 0)).slice(0,count)}),
+  };
+}
+
 const mockSyncOutboxTable = {
   add: jest.fn(async (row: Omit<MockSyncOutboxRecord, 'id'>) => {
     const id = mockNextId++;
 
     mockRecords.push({ ...row, id });
     return id;
+  }),
+  update: jest.fn(async (id: number, patch: Partial<MockSyncOutboxRecord>) => {
+    const row = mockRecords.find((record) => record.id === id);
+    if (row) Object.assign(row, patch);
   }),
   bulkDelete: jest.fn(async (ids: number[]) => {
     const idsToDelete = new Set(ids);
@@ -52,34 +86,24 @@ const mockSyncOutboxTable = {
     mockRecords = [];
   }),
   where: jest.fn((index: string) => ({
-    equals: (key: unknown[]) => ({
-      count: async () => mockRecords.filter((record) => mockMatchesIndex(index, key, record)).length,
-      delete: async () => {
-        mockRecords = mockRecords.filter((record) => !mockMatchesIndex(index, key, record));
+    equals: (key: unknown[]) => mockCollection((record) => mockMatchesIndex(index, key, record)),
+    between: (lower: unknown[]) => mockCollection((record) => mockMatchesIndex(index, lower, record)),
+  })),
+};
+
+const mockPermissionBlockTable = {
+  get: jest.fn(async (key: string[]) => mockPermissionBlocks.get(JSON.stringify(key))),
+  put: jest.fn(async (row: MockPermissionBlock) => {
+    mockPermissionBlocks.set(JSON.stringify([row.serverUrl, row.userId, row.workspaceId, row.objectId]), row);
+  }),
+  delete: jest.fn(async (key: string[]) => { mockPermissionBlocks.delete(JSON.stringify(key)); }),
+  where: jest.fn((index: string) => ({
+    equals: (key: string[]) => ({
+      toArray: async () => {
+        if (index !== '[serverUrl+userId+workspaceId]') throw new Error(`Unsupported mock index: ${index}`);
+        return Array.from(mockPermissionBlocks.values())
+          .filter((row) => row.serverUrl === key[0] && row.userId === key[1] && row.workspaceId === key[2]);
       },
-      filter: (predicate: (record: MockSyncOutboxRecord) => boolean) => ({
-        delete: async () => {
-          mockRecords = mockRecords.filter((record) => !mockMatchesIndex(index, key, record) || !predicate(record));
-        },
-      }),
-      each: async (callback: (record: MockSyncOutboxRecord) => void) => {
-        mockRecords.filter((record) => mockMatchesIndex(index, key, record)).forEach(callback);
-      },
-      sortBy: async (field: keyof MockSyncOutboxRecord) =>
-        mockRecords
-          .filter((record) => mockMatchesIndex(index, key, record))
-          .slice()
-          .sort((a, b) => Number(a[field] ?? 0) - Number(b[field] ?? 0)),
-    }),
-    between: (lower: unknown[]) => ({
-      limit: (count: number) => ({
-        toArray: async () =>
-          mockRecords
-            .filter((record) => mockMatchesIndex(index, lower, record))
-            .slice()
-            .sort((a, b) => Number(a.id ?? 0) - Number(b.id ?? 0))
-            .slice(0, count),
-      }),
     }),
   })),
 };
@@ -97,6 +121,7 @@ jest.mock('@/application/db', () => ({
   matchesDatabaseStorageFence: jest.fn(async () => true),
   db: {
     sync_outbox: mockSyncOutboxTable,
+    sync_permission_blocks: mockPermissionBlockTable,
     collab_custom: {},
     transaction: mockTransaction,
   },
@@ -112,18 +137,31 @@ jest.mock('@/utils/log', () => ({
 
 import { matchesDatabaseStorageFence } from '@/application/db';
 import {
+  blockPermissionSync,
+  captureUploadGate,
   clearDrainConfig,
   configureDrain,
   deleteOutboxByObjectId,
+  discardPermissionBlockedEdits,
   enqueueOutboxUpdate,
+  expireOutboxAdmissions,
   getCurrentOutboxSession,
+  invalidateOutboxPermissions,
   purgeAllOutbox,
   resumePermissionBlockedSync,
+  retryPermissionBlockedSync,
+  mayUploadCollab,
   setCurrentSession,
+  settleDiscardedEdits,
   shouldRouteUpdateThroughOutbox,
   startDrainAll,
+  startDrainObject,
+  subscribeDiscardedEdits,
+  waitForDrain,
   type SlowSyncOutboxItem,
+  type SlowSyncOutboxResult,
 } from '@/application/sync-outbox';
+import { Log } from '@/utils/log';
 
 const userId = 'user-1';
 const workspaceId = 'workspace-1';
@@ -137,7 +175,7 @@ function makeUpdate(value: string) {
 }
 
 async function flushPromises() {
-  for (let i = 0; i < 12; i += 1) {
+  for (let i = 0; i < 40; i += 1) {
     await Promise.resolve();
   }
 }
@@ -154,8 +192,11 @@ function createDeferred<T>() {
 describe('sync outbox live send', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
+    // Discard records are shared by tabs through localStorage.
+    localStorage.clear();
     jest.mocked(matchesDatabaseStorageFence).mockResolvedValue(true);
     mockRecords = [];
+    mockPermissionBlocks.clear();
     mockNextId = 1;
     mockTransactionQueue = Promise.resolve();
     clearDrainConfig();
@@ -619,7 +660,6 @@ describe('sync outbox live send', () => {
     });
 
     expect(send).toHaveBeenCalledTimes(1);
-    expect(mockRecords).toHaveLength(1);
 
     await flushPromises();
 
@@ -901,7 +941,6 @@ describe('sync outbox live send', () => {
     });
 
     expect(send).not.toHaveBeenCalled();
-    expect(mockRecords).toHaveLength(1);
 
     await flushPromises();
 
@@ -1508,15 +1547,18 @@ describe('sync outbox live send', () => {
       maxUpdateBytes: 0,
     });
 
+    const writes: Promise<boolean>[] = [];
+
     for (let index = 0; index < 65; index += 1) {
-      enqueueOutboxUpdate({
+      writes.push(enqueueOutboxUpdate({
         objectId,
         collabType: Types.Document,
         version: null,
         payload: makeUpdate(`queued-${index}`),
-      });
+      }));
     }
 
+    await Promise.all(writes);
     await flushPromises();
     ready = true;
     startDrainAll();
@@ -1560,7 +1602,111 @@ describe('sync outbox live send', () => {
     expect(mockRecords).toHaveLength(1);
   });
 
-  it('retries a permission-blocked oversized update after access changes', async () => {
+  it('keeps denied small updates through transport rebuild and broad regrant until explicit retry', async () => {
+    const send = jest.fn();
+    const broadcast = jest.fn();
+    const checkPermission = jest.fn(async () => 'denied' as 'denied' | 'allowed');
+    const config = { userId, workspaceId, send, broadcast, isReady: () => true, checkPermission };
+
+    configureDrain(config);
+    const payload = makeUpdate('retain this draft');
+
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload });
+    await flushPromises();
+    expect(send).not.toHaveBeenCalled();
+    expect(broadcast).not.toHaveBeenCalled();
+    expect(mockRecords).toHaveLength(1);
+    expect(mockRecords[0]).toMatchObject({ payload, permissionBlocked: true });
+    clearDrainConfig();
+    configureDrain(config);
+    checkPermission.mockResolvedValue('allowed');
+    await resumePermissionBlockedSync();
+    startDrainAll();
+    await flushPromises();
+    expect(send).not.toHaveBeenCalled();
+    expect(await mayUploadCollab(objectId, Types.Document, workspaceId)).toBe(false);
+    await retryPermissionBlockedSync();
+    await flushPromises();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(mockRecords).toHaveLength(0);
+  });
+
+  it('never replays rows owned by another API origin with matching user and workspace IDs', async () => {
+    const payload = makeUpdate('server A draft');
+    const send = jest.fn();
+    const checkPermission = jest.fn(async () => 'allowed' as const);
+
+    setCurrentSession({ userId, workspaceId, serverUrl: 'https://a.example' });
+    configureDrain({ userId, workspaceId, serverUrl: 'https://a.example', send, checkPermission, isReady: () => false });
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload });
+    await flushPromises();
+    setCurrentSession({ userId, workspaceId, serverUrl: 'https://b.example' });
+    configureDrain({ userId, workspaceId, serverUrl: 'https://b.example', send, checkPermission, isReady: () => true });
+    startDrainAll();
+    await flushPromises();
+    expect(send).not.toHaveBeenCalled();
+    expect(mockRecords).toEqual([expect.objectContaining({ serverUrl: 'https://a.example' })]);
+    setCurrentSession({ userId, workspaceId, serverUrl: 'https://a.example' });
+    configureDrain({ userId, workspaceId, serverUrl: 'https://a.example', send, checkPermission, isReady: () => true });
+    startDrainAll();
+    await flushPromises();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(mockRecords).toHaveLength(0);
+  });
+
+  it('adopts pre-upgrade rows of the signed-in account and workspace and sends them after a fresh check', async () => {
+    const payload = makeUpdate('offline edit from the previous release');
+    const send = jest.fn();
+    const checkPermission = jest.fn(async () => 'allowed' as const);
+    const legacy = { objectId, collabType: Types.Document, payload, createdAt: 0 };
+
+    mockRecords.push({ ...legacy, id: mockNextId++, userId, workspaceId });
+    mockRecords.push({ ...legacy, id: mockNextId++, userId: 'another-account', workspaceId });
+    mockRecords.push({ ...legacy, id: mockNextId++, userId, workspaceId: 'another-workspace' });
+    setCurrentSession({ userId, workspaceId, serverUrl: 'https://a.example' });
+    configureDrain({ userId, workspaceId, serverUrl: 'https://a.example', send, checkPermission, isReady: () => true });
+    startDrainAll();
+    await flushPromises();
+
+    expect(checkPermission).toHaveBeenCalledWith(objectId, Types.Document);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(mockRecords.map((record) => [record.userId, record.workspaceId, record.serverUrl])).toEqual([
+      ['another-account', workspaceId, undefined],
+      [userId, 'another-workspace', undefined],
+    ]);
+  });
+
+  it('quarantines adopted pre-upgrade rows when the current server denies edit access', async () => {
+    const send = jest.fn();
+
+    mockRecords.push({ id: mockNextId++, userId, workspaceId, objectId, collabType: Types.Document,
+      payload: makeUpdate('stale offline edit'), createdAt: 0 });
+    setCurrentSession({ userId, workspaceId, serverUrl: 'https://a.example' });
+    configureDrain({ userId, workspaceId, serverUrl: 'https://a.example', send,
+      checkPermission: jest.fn(async () => 'denied' as const), isReady: () => true });
+    startDrainAll();
+    await flushPromises();
+
+    expect(send).not.toHaveBeenCalled();
+    expect(mockRecords).toEqual([expect.objectContaining({ serverUrl: 'https://a.example', permissionBlocked: true })]);
+  });
+
+  it('a manifest cannot replace quarantined recovery bytes', async () => {
+    const checkPermission = jest.fn(async () => 'denied' as const);
+
+    configureDrain({ userId, workspaceId, send: jest.fn(), checkPermission, isReady: () => true });
+    const original = makeUpdate('recoverable manifest');
+
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: original }, { source: 'manifest' });
+    await flushPromises();
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('new manifest') }, { source: 'manifest' });
+    await flushPromises();
+    expect(mockRecords).toHaveLength(2);
+    expect(mockRecords[0].payload).toEqual(original);
+    expect(mockRecords.every((record) => record.permissionBlocked)).toBe(true);
+  });
+
+  it('retries a permission-blocked oversized update only after fresh authority and explicit user retry', async () => {
     const payload = makeUpdate('permission restored');
     const slowSync = jest
       .fn()
@@ -1575,6 +1721,7 @@ describe('sync outbox live send', () => {
       maxUpdateBytes: payload.byteLength - 1,
       maxSlowSyncUpdateBytes: payload.byteLength + 1_024,
       slowSync,
+      checkPermission: jest.fn(async () => 'allowed' as const),
     });
 
     await enqueueOutboxUpdate({
@@ -1588,7 +1735,11 @@ describe('sync outbox live send', () => {
     expect(slowSync).toHaveBeenCalledTimes(1);
     expect(mockRecords).toHaveLength(1);
 
-    resumePermissionBlockedSync(objectId);
+    await resumePermissionBlockedSync(objectId);
+    await flushPromises();
+    expect(slowSync).toHaveBeenCalledTimes(1);
+    expect(mockRecords[0].permissionBlocked).toBe(true);
+    await retryPermissionBlockedSync();
     await flushPromises();
 
     expect(slowSync).toHaveBeenCalledTimes(2);
@@ -1793,5 +1944,471 @@ describe('sync outbox live send', () => {
 
     expect(mockSyncOutboxTable.bulkDelete).toHaveBeenCalledWith([1]);
     expect(mockRecords).toHaveLength(0);
+  });
+  it('sends a keystroke immediately once the object holds a fresh write admission', async () => {
+    const send = jest.fn();
+    const broadcast = jest.fn();
+    let cached: 'allowed' | undefined;
+    const checkPermission = jest.fn(async () => {
+      cached = 'allowed';
+      return 'allowed' as const;
+    });
+
+    configureDrain({ userId, workspaceId, send, broadcast, isReady: () => true, checkPermission,
+      peekPermission: () => cached });
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('H') });
+    await flushPromises();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(broadcast).toHaveBeenCalledTimes(1);
+    expect(mockRecords).toHaveLength(0);
+
+    const second = enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('He') });
+
+    // Admitted keystrokes reach sibling tabs and the server before IndexedDB commits.
+    expect(broadcast).toHaveBeenCalledTimes(2);
+    expect(send).toHaveBeenCalledTimes(2);
+    await second;
+    await flushPromises();
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(mockRecords).toHaveLength(0);
+  });
+
+  it('never puts a server message id on sibling fan-out, sends or manifest replies', async () => {
+    // sync-protocol takes an Update with a message id as the server's own: it records what the
+    // bytes prove the server holds and deletes queued manifest replies they show to be redundant.
+    const send = jest.fn();
+    const broadcast = jest.fn();
+    let cached: 'allowed' | undefined;
+    const checkPermission = jest.fn(async () => {
+      cached = 'allowed';
+      return 'allowed' as const;
+    });
+
+    configureDrain({ userId, workspaceId, send, broadcast, isReady: () => true, checkPermission,
+      peekPermission: () => cached });
+    // Checked first, then fanned out and drained; then admitted and sent at once; then a manifest reply.
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('H') });
+    await flushPromises();
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('He') });
+    await flushPromises();
+    await enqueueOutboxUpdate(
+      { objectId, collabType: Types.Document, payload: makeUpdate('Hel') },
+      { broadcast: false, source: 'manifest' }
+    );
+    await flushPromises();
+
+    expect(broadcast).toHaveBeenCalledTimes(2);
+    expect(send).toHaveBeenCalledTimes(3);
+    for (const [message] of [...broadcast.mock.calls, ...send.mock.calls]) {
+      expect(message.collabMessage.update.payload).toBeInstanceOf(Uint8Array);
+      expect(message.collabMessage.update.messageId).toBeUndefined();
+    }
+  });
+
+  it('checks access again before sending after a permission change or a re-check', async () => {
+    const send = jest.fn();
+    let cached: 'allowed' | undefined;
+    const checkPermission = jest.fn(async () => {
+      cached = 'allowed';
+      return 'allowed' as const;
+    });
+
+    configureDrain({ userId, workspaceId, send, isReady: () => true, checkPermission, peekPermission: () => cached });
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('first') });
+    await flushPromises();
+
+    for (const reset of [invalidateOutboxPermissions, expireOutboxAdmissions]) {
+      reset();
+      const sentBefore = send.mock.calls.length;
+      const pending = enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate(reset.name) });
+
+      expect(send).toHaveBeenCalledTimes(sentBefore);
+      await pending;
+      await flushPromises();
+      expect(send).toHaveBeenCalledTimes(sentBefore + 1);
+    }
+  });
+
+  it('never uses the fast path for an object whose earlier edits are quarantined', async () => {
+    const send = jest.fn();
+    let permission: 'allowed' | 'denied' = 'denied';
+
+    configureDrain({ userId, workspaceId, send, broadcast: jest.fn(), isReady: () => true,
+      checkPermission: jest.fn(async () => permission), peekPermission: () => permission });
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('before the downgrade') });
+    await flushPromises();
+    permission = 'allowed';
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('after the regrant') });
+    await flushPromises();
+
+    expect(send).not.toHaveBeenCalled();
+    expect(mockRecords).toHaveLength(2);
+    expect(mockRecords.every((record) => record.permissionBlocked)).toBe(true);
+  });
+
+  it('retries a queued edit and wakes the socket owner when the access check is unavailable', async () => {
+    jest.useFakeTimers();
+
+    try {
+      const send = jest.fn();
+      const onPersisted = jest.fn();
+      const checkPermission = jest.fn().mockResolvedValueOnce('unknown').mockResolvedValue('allowed');
+
+      configureDrain({ userId, workspaceId, send, isReady: () => true, checkPermission, onPersisted });
+      await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('final sentence') });
+      await flushPromises();
+      expect(send).not.toHaveBeenCalled();
+      expect(onPersisted).toHaveBeenCalledWith(workspaceId, objectId);
+
+      await jest.advanceTimersByTimeAsync(5_000);
+      await flushPromises();
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(mockRecords).toHaveLength(0);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('reports the retry outcome and wakes the socket owner after a retry in a follower tab', async () => {
+    const onPersisted = jest.fn();
+    let permission: 'allowed' | 'denied' | 'unknown' = 'denied';
+
+    configureDrain({ userId, workspaceId, send: jest.fn(), isReady: () => false,
+      checkPermission: jest.fn(async () => permission), onPersisted });
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('follower draft') });
+    await flushPromises();
+    onPersisted.mockClear();
+
+    expect(await retryPermissionBlockedSync()).toEqual({ released: [], denied: [objectId], unknown: [] });
+    permission = 'unknown';
+    expect(await retryPermissionBlockedSync()).toEqual({ released: [], denied: [], unknown: [objectId] });
+    expect(onPersisted).not.toHaveBeenCalled();
+    permission = 'allowed';
+    expect(await retryPermissionBlockedSync()).toEqual({ released: [objectId], denied: [], unknown: [] });
+    expect(onPersisted).toHaveBeenCalledWith(workspaceId, objectId);
+    expect(mockRecords).toEqual([expect.objectContaining({ permissionBlocked: false })]);
+  });
+
+  it('drains edits that an explicit retry in another tab released', async () => {
+    const send = jest.fn();
+    let permission: 'allowed' | 'denied' = 'denied';
+
+    configureDrain({ userId, workspaceId, send, isReady: () => true, checkPermission: jest.fn(async () => permission) });
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('quarantined here') });
+    await flushPromises();
+    expect(mockRecords[0].permissionBlocked).toBe(true);
+
+    // Another tab's explicit retry releases the durable quarantine and wakes this owner.
+    mockPermissionBlocks.clear();
+    mockRecords.forEach((record) => { record.permissionBlocked = false; });
+    permission = 'allowed';
+    startDrainObject(objectId);
+    await flushPromises();
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(mockRecords).toHaveLength(0);
+  });
+
+  it('keeps an in-flight upload running when access is only re-checked', async () => {
+    const payload = makeUpdate('large pasted document');
+    const upload = createDeferred<SlowSyncOutboxResult>();
+    let uploadSignal: AbortSignal | undefined;
+    const slowSync = jest.fn((_item: SlowSyncOutboxItem, signal: AbortSignal) => {
+      uploadSignal = signal;
+      return upload.promise;
+    });
+
+    configureDrain({ userId, workspaceId, send: jest.fn(), isReady: () => true, slowSync,
+      maxUpdateBytes: payload.byteLength - 1, maxSlowSyncUpdateBytes: payload.byteLength + 1_024,
+      checkPermission: jest.fn(async () => 'allowed' as const) });
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, version: null, payload });
+    await flushPromises();
+    expect(slowSync).toHaveBeenCalledTimes(1);
+
+    // Focus, visibility, online and socket-open events only re-check access.
+    expireOutboxAdmissions();
+    invalidateOutboxPermissions();
+    await resumePermissionBlockedSync();
+    await flushPromises();
+    expect(uploadSignal?.aborted).toBe(false);
+
+    upload.resolve({ outcome: 'confirmed', messageId: { timestamp: 1, counter: 0 } });
+    await flushPromises();
+    expect(slowSync).toHaveBeenCalledTimes(1);
+    expect(mockRecords).toHaveLength(0);
+  });
+
+  it('aborts an in-flight upload after a permission change only when a fresh check denies it', async () => {
+    const payload = makeUpdate('large pasted document');
+    let uploadSignal: AbortSignal | undefined;
+    let permission: 'allowed' | 'denied' = 'allowed';
+    // Like the axios request behind it, the upload rejects once its signal aborts.
+    const slowSync = jest.fn((_item: SlowSyncOutboxItem, signal: AbortSignal) => {
+      uploadSignal = signal;
+      return new Promise<SlowSyncOutboxResult>((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(Object.assign(new Error('canceled'), { name: 'AbortError' })));
+      });
+    });
+
+    configureDrain({ userId, workspaceId, send: jest.fn(), isReady: () => true, slowSync,
+      maxUpdateBytes: payload.byteLength - 1, maxSlowSyncUpdateBytes: payload.byteLength + 1_024,
+      checkPermission: jest.fn(async () => permission) });
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, version: null, payload });
+    await flushPromises();
+
+    invalidateOutboxPermissions();
+    await resumePermissionBlockedSync(undefined, { abortDenied: true });
+    await flushPromises();
+    expect(uploadSignal?.aborted).toBe(false);
+
+    permission = 'denied';
+    invalidateOutboxPermissions();
+    await resumePermissionBlockedSync(undefined, { abortDenied: true });
+    await flushPromises();
+    expect(uploadSignal?.aborted).toBe(true);
+    expect(mockRecords).toEqual([expect.objectContaining({ permissionBlocked: true })]);
+  });
+
+  it('gates full-sync uploads on the durable quarantine without a probe per item', async () => {
+    const checkPermission = jest.fn(async () => 'denied' as const);
+
+    configureDrain({ userId, workspaceId, send: jest.fn(), isReady: () => false, checkPermission });
+    expect(await mayUploadCollab(objectId, Types.Document, workspaceId)).toBe(true);
+    expect(checkPermission).not.toHaveBeenCalled();
+    await blockPermissionSync(objectId, workspaceId);
+    expect(await mayUploadCollab(objectId, Types.Document, workspaceId)).toBe(false);
+    expect(await mayUploadCollab(objectId, Types.Document, 'another-workspace')).toBe(false);
+  });
+
+  it('discards only quarantined edits and their durable block for the requested session', async () => {
+    const otherObjectId = '22222222-2222-4222-8222-222222222222';
+    let permission: 'allowed' | 'denied' = 'denied';
+
+    configureDrain({ userId, workspaceId, send: jest.fn(), isReady: () => false,
+      checkPermission: jest.fn(async () => permission) });
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('discard me') });
+    await flushPromises();
+    permission = 'allowed';
+    await enqueueOutboxUpdate({ objectId: otherObjectId, collabType: Types.Document, payload: makeUpdate('keep me') });
+    await flushPromises();
+
+    expect(await discardPermissionBlockedEdits({ userId, workspaceId: 'another-workspace' })).toEqual([]);
+    expect(mockRecords).toHaveLength(2);
+    expect(await discardPermissionBlockedEdits({ userId, workspaceId })).toEqual([objectId]);
+    expect(mockRecords).toEqual([expect.objectContaining({ objectId: otherObjectId })]);
+    expect(mockPermissionBlocks.size).toBe(0);
+
+    // Until this tab reloads the page or confirms it holds no copy of it, nothing
+    // rebuilt from memory is accepted for the discarded object.
+    expect(await enqueueOutboxUpdate(
+      { objectId, collabType: Types.Document, payload: makeUpdate('discard me') }, { broadcast: false, source: 'manifest' }
+    )).toBe(false);
+    expect(await mayUploadCollab(objectId, Types.Document, workspaceId)).toBe(false);
+    expect(mockRecords).toHaveLength(1);
+    settleDiscardedEdits({ userId, workspaceId }, [objectId]);
+    expect(await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('new edit') })).toBe(true);
+  });
+
+  it('does not re-check quarantined objects, which only an explicit retry can release', async () => {
+    const checkPermission = jest.fn(async () => 'denied' as const);
+
+    configureDrain({ userId, workspaceId, send: jest.fn(), isReady: () => true, checkPermission });
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('quarantined') });
+    await flushPromises();
+    checkPermission.mockClear();
+
+    await resumePermissionBlockedSync();
+    await resumePermissionBlockedSync(undefined, { abortDenied: true });
+
+    expect(checkPermission).not.toHaveBeenCalled();
+    expect(mockRecords).toEqual([expect.objectContaining({ permissionBlocked: true })]);
+  });
+
+  it('gates a full-sync batch with the verdicts of mayUploadCollab, reading the outbox and the denials once', async () => {
+    const ids = {
+      clean: '20000000-0000-4000-8000-000000000001',
+      queued: '20000000-0000-4000-8000-000000000002',
+      quarantined: '20000000-0000-4000-8000-000000000003',
+      discarded: '20000000-0000-4000-8000-000000000004',
+      discardedToo: '20000000-0000-4000-8000-000000000005',
+      tooLarge: '20000000-0000-4000-8000-000000000006',
+      durableOnly: '20000000-0000-4000-8000-000000000007',
+      unpersisted: '20000000-0000-4000-8000-000000000008',
+      releasedElsewhere: '20000000-0000-4000-8000-000000000009',
+    };
+    const oversized = makeUpdate('x'.repeat(4_096));
+    const slowSync = jest.fn(async (): Promise<SlowSyncOutboxResult> => ({ outcome: 'blocked', reason: 'update_too_large' }));
+    let permission: 'allowed' | 'denied' = 'denied';
+    const enqueue = async (id: string, payload = makeUpdate(id)) => {
+      await enqueueOutboxUpdate({ objectId: id, collabType: Types.Document, version: null, payload });
+      await flushPromises();
+    };
+
+    configureDrain({ userId, workspaceId, send: jest.fn(), isReady: () => false, slowSync,
+      maxUpdateBytes: oversized.byteLength - 1, maxSlowSyncUpdateBytes: oversized.byteLength + 1_024,
+      checkPermission: jest.fn(async () => permission) });
+    await enqueue(ids.discarded);
+    await enqueue(ids.discardedToo);
+    expect(await discardPermissionBlockedEdits({ userId, workspaceId })).toEqual([ids.discarded, ids.discardedToo]);
+    await enqueue(ids.quarantined);
+    permission = 'allowed';
+    await enqueue(ids.tooLarge, oversized);
+    expect(slowSync).toHaveBeenCalledTimes(1);
+    await enqueue(ids.queued);
+    // Another tab's denial of an object without edits here.
+    await mockPermissionBlockTable.put({ serverUrl: '', userId, workspaceId, objectId: ids.durableOnly, revision: 'r' });
+    // A denial whose durable write failed is kept in this tab's memory.
+    mockPermissionBlockTable.put.mockRejectedValueOnce(new Error('quota exceeded'));
+    await blockPermissionSync(ids.unpersisted, workspaceId);
+    // A denial that another tab's Try again released.
+    await blockPermissionSync(ids.releasedElsewhere, workspaceId);
+    mockPermissionBlocks.delete(JSON.stringify(['', userId, workspaceId, ids.releasedElsewhere]));
+
+    const onDiscarded = jest.fn();
+    const unsubscribe = subscribeDiscardedEdits({ userId, workspaceId }, onDiscarded);
+    const batch = [...Object.values(ids), ...Array.from({ length: 40 }, (_, index) => `clean-${index}`)];
+
+    onDiscarded.mockClear();
+    mockSyncOutboxTable.where.mockClear();
+    mockPermissionBlockTable.where.mockClear();
+    mockPermissionBlockTable.get.mockClear();
+    const mayUpload = await captureUploadGate(workspaceId, batch);
+
+    await flushPromises();
+    // One scan of the session's rows, one read of its denials, and the rows of
+    // the object whose oversized prefix the server rejected.
+    expect(mockSyncOutboxTable.where).toHaveBeenCalledTimes(2);
+    expect(mockPermissionBlockTable.where).toHaveBeenCalledTimes(1);
+    expect(mockPermissionBlockTable.get).not.toHaveBeenCalled();
+    // The pages holding discarded edits are asked to reload once for the batch.
+    expect(onDiscarded).toHaveBeenCalledTimes(1);
+    unsubscribe();
+    expect(Object.fromEntries(Object.entries(ids).map(([name, id]) => [name, mayUpload(id)]))).toEqual({
+      clean: true,
+      queued: true,
+      quarantined: false,
+      discarded: false,
+      discardedToo: false,
+      tooLarge: false,
+      durableOnly: false,
+      unpersisted: false,
+      releasedElsewhere: true,
+    });
+    expect(mayUpload('not-in-the-batch')).toBe(false);
+    const verdicts: boolean[] = [];
+
+    for (const id of batch) verdicts.push(await mayUploadCollab(id, Types.Document, workspaceId));
+    expect(batch.map(mayUpload)).toEqual(verdicts);
+  });
+
+  it('refuses a whole batch for another workspace, without a drain, or after the session changed during the reads', async () => {
+    configureDrain({ userId, workspaceId, send: jest.fn(), isReady: () => false, checkPermission: jest.fn(async () => 'allowed' as const) });
+    expect((await captureUploadGate(workspaceId, [objectId]))(objectId)).toBe(true);
+    expect((await captureUploadGate('another-workspace', [objectId]))(objectId)).toBe(false);
+
+    const gate = captureUploadGate(workspaceId, [objectId]);
+
+    setCurrentSession({ userId, workspaceId: 'workspace-2' });
+    expect((await gate)(objectId)).toBe(false);
+    clearDrainConfig();
+    expect((await captureUploadGate(workspaceId, [objectId]))(objectId)).toBe(false);
+  });
+
+  /** Quarantines an edit of each object; the checks of a later Try again wait for `answer`. */
+  async function quarantineForRetry(ids: string[]) {
+    const checks = new Map<string, { resolve: (verdict: 'allowed' | 'denied' | 'unknown') => void; reject: (error: Error) => void }>();
+    let retrying = false;
+    const checkPermission = jest.fn((id: string) => retrying
+      ? new Promise<'allowed' | 'denied' | 'unknown'>((resolve, reject) => checks.set(id, { resolve, reject }))
+      : Promise.resolve('denied' as const));
+
+    configureDrain({ userId, workspaceId, send: jest.fn(), isReady: () => false, checkPermission });
+    for (const id of ids) await enqueueOutboxUpdate({ objectId: id, collabType: Types.Document, payload: makeUpdate(id) });
+    await flushPromises();
+    expect(mockRecords.map((record) => [record.objectId, record.permissionBlocked])).toEqual(ids.map((id) => [id, true]));
+    retrying = true;
+    return {
+      checked: () => Array.from(checks.keys()),
+      answer: (id: string, verdict: 'allowed' | 'denied' | 'unknown' | Error) => {
+        const check = checks.get(id)!;
+
+        if (verdict instanceof Error) check.reject(verdict);
+        else check.resolve(verdict);
+      },
+    };
+  }
+
+  const retryIds = Array.from({ length: 10 }, (_, index) => `30000000-0000-4000-8000-00000000000${index}`);
+
+  it('checks quarantined objects for Try again concurrently, as many at once as the permission gate runs', async () => {
+    const { checked, answer } = await quarantineForRetry(retryIds);
+    const retry = retryPermissionBlockedSync();
+
+    await flushPromises();
+    expect(checked()).toEqual(retryIds.slice(0, 8));
+    answer(retryIds[0], 'denied');
+    await flushPromises();
+    // A finished check makes room for the next object.
+    expect(checked()).toEqual(retryIds.slice(0, 9));
+    answer(retryIds[1], 'unknown');
+    await flushPromises();
+    retryIds.slice(2).forEach((id) => answer(id, 'allowed'));
+    const result = await retry;
+
+    expect(result.denied).toEqual([retryIds[0]]);
+    expect(result.unknown).toEqual([retryIds[1]]);
+    expect(result.released.sort()).toEqual(retryIds.slice(2));
+    expect(mockRecords.filter((record) => record.permissionBlocked).map((record) => record.objectId))
+      .toEqual(retryIds.slice(0, 2));
+  });
+
+  it('reports each object of a Try again superseded by a permission change as unknown, once', async () => {
+    const { checked, answer } = await quarantineForRetry(retryIds);
+    const retry = retryPermissionBlockedSync();
+
+    await flushPromises();
+    invalidateOutboxPermissions();
+    checked().forEach((id) => answer(id, 'allowed'));
+    const result = await retry;
+
+    expect(result.released).toEqual([]);
+    expect(result.denied).toEqual([]);
+    expect(result.unknown.sort()).toEqual(retryIds);
+    expect(mockRecords.every((record) => record.permissionBlocked)).toBe(true);
+  });
+
+  it('starts no further object after a Try again check fails, and rejects once the running checks end', async () => {
+    const { checked, answer } = await quarantineForRetry(retryIds);
+    const retry = retryPermissionBlockedSync();
+    const settled = jest.fn();
+
+    retry.then(settled, settled);
+    await flushPromises();
+    answer(retryIds[0], new Error('check failed'));
+    await flushPromises();
+    expect(checked()).toEqual(retryIds.slice(0, 8));
+    expect(settled).not.toHaveBeenCalled();
+    retryIds.slice(1, 8).forEach((id) => answer(id, 'allowed'));
+    await expect(retry).rejects.toThrow('check failed');
+    expect(checked()).toEqual(retryIds.slice(0, 8));
+  });
+
+  it('waits for queued rows by checking whether one remains, and counts them only to report a timeout', async () => {
+    configureDrain({ userId, workspaceId, send: jest.fn(), isReady: () => false });
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('offline 1') });
+    await enqueueOutboxUpdate({ objectId, collabType: Types.Document, payload: makeUpdate('offline 2') });
+    await flushPromises();
+    mockCountCalls = 0;
+
+    expect(await waitForDrain([objectId], { timeoutMs: 40, pollIntervalMs: 1 })).toBe(false);
+    expect(mockCountCalls).toBe(1);
+    expect(Log.warn).toHaveBeenCalledWith('[outbox] waitForDrain timed out with pending records', {
+      totalPending: 2,
+      timeoutMs: 40,
+    });
+
+    mockRecords = [];
+    expect(await waitForDrain([objectId], { timeoutMs: 40, pollIntervalMs: 1 })).toBe(true);
+    expect(mockCountCalls).toBe(1);
   });
 });

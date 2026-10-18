@@ -2,11 +2,11 @@ import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
+import { BillingService } from '@/application/services/domains';
 import { SubscriptionInterval, SubscriptionPlan } from '@/application/types';
 import { isSameUserUid } from '@/application/user-uid';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as InfoIcon } from '@/assets/icons/vector.svg';
-import { BillingService } from '@/application/services/domains';
 import { useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { useIsOfficialHosted } from '@/components/app/hooks/useServerInfo';
 import { useCurrentUser } from '@/components/main/app.hooks';
@@ -19,8 +19,8 @@ export function UpgradeBanner({ activeSubscriptionPlan }: { activeSubscriptionPl
 
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const currentUser = useCurrentUser();
-  const currentWorkspaceId = userWorkspaceInfo?.selectedWorkspace.id;
-  const isOwner = isSameUserUid(userWorkspaceInfo?.selectedWorkspace.owner?.uid, currentUser?.uid);
+  const currentWorkspaceId = userWorkspaceInfo?.selectedWorkspace?.id;
+  const isOwner = isSameUserUid(userWorkspaceInfo?.selectedWorkspace?.owner?.uid, currentUser?.uid);
   const storageKey = CLOSE_UPGRADE_LOCAL_STORAGE_KEY + currentWorkspaceId;
   const [isClosed, setClosed] = useState(() => localStorage.getItem(storageKey) === 'true');
 

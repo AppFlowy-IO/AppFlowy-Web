@@ -3,6 +3,7 @@ import * as Y from 'yjs';
 
 import { clearDatabaseRowDocSeedCache, prefetchDatabaseBlobDiff } from '@/application/database-blob';
 import { db, openRowCollabDBWithProvider } from '@/application/db';
+import { collabStorageKey } from '@/application/db/collab-storage-scope';
 import { getCachedRowDoc } from '@/application/services/js-services/cache';
 import { databaseBlobDiff } from '@/application/services/js-services/http/http_api';
 import { database_blob } from '@/proto/database_blob';
@@ -52,7 +53,7 @@ test.each(['none', 'provider', 'seed'])('a required reload rejects a failed row 
       forceFullSync: true, requirePersistence: true,
     })).rejects.toThrow('could not be saved locally');
     expect(db.collab_updates.add).toHaveBeenCalled();
-    expect(localStorage.getItem(`af_database_blob_rid:${databaseId}`)).toBeNull();
+    expect(localStorage.getItem(`af_database_blob_rid:${collabStorageKey(databaseId)}`)).toBeNull();
   } finally {
     await row?.provider.destroy();
     row?.doc.destroy();
@@ -64,7 +65,7 @@ test('ordinary prefetch with a failed write keeps its checkpoint and cannot sati
   await prefetchDatabaseBlobDiff('workspace', databaseId, { reuseSettled: true });
 
   expect(db.collab_updates.add).toHaveBeenCalled();
-  expect(localStorage.getItem(`af_database_blob_rid:${databaseId}`)).toBeNull();
+  expect(localStorage.getItem(`af_database_blob_rid:${collabStorageKey(databaseId)}`)).toBeNull();
   await expect(prefetchDatabaseBlobDiff('workspace', databaseId, {
     forceFullSync: true, requirePersistence: true,
   })).rejects.toThrow('could not be saved locally');

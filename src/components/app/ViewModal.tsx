@@ -5,6 +5,8 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
+import { ViewService, WorkspaceService } from '@/application/services/domains';
+import { getAxiosInstance } from '@/application/services/js-services/http';
 import {
   MentionSearchRequest,
   UIVariant,
@@ -36,14 +38,14 @@ import {
 import DatabaseView from '@/components/app/DatabaseView';
 import MoreActions from '@/components/app/header/MoreActions';
 import {
+  INITIAL_VIEW_OBJECT_CAPABILITIES,
+  useViewObjectPermission,
+} from '@/components/app/hooks/useViewObjectPermission';
+import {
   getViewCanCommentStatus,
   getViewCanWriteStatus,
   useViewOperations,
 } from '@/components/app/hooks/useViewOperations';
-import {
-  INITIAL_VIEW_OBJECT_CAPABILITIES,
-  useViewObjectPermission,
-} from '@/components/app/hooks/useViewObjectPermission';
 import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
@@ -53,8 +55,6 @@ import {
 } from '@/components/inline-comment/InlineCommentContext';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { cn } from '@/lib/utils';
-import { ViewService, WorkspaceService } from '@/application/services/domains';
-import { getAxiosInstance } from '@/application/services/js-services/http';
 
 import ShareButton from 'src/components/app/share/ShareButton';
 
@@ -148,6 +148,48 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   const probedObjectPermission = useViewObjectPermission(effectiveViewId);
   const objectPermission = probedObjectPermission ?? INITIAL_VIEW_OBJECT_CAPABILITIES;
   const canReadEffectiveView = probedObjectPermission?.can_read === true;
+  const probedObjectPermissionRef = useRef(probedObjectPermission);
+
+  probedObjectPermissionRef.current = probedObjectPermission;
+  // A definitive revocation of this page hides it at once instead of waiting for the next probe.
+  // It lasts until a newer answer allows reading again. AppBusinessLayer drops the revoked page's
+  // entry, with the child a revoked database container mounts, so that answer is a new object.
+  const [revokedAccess, setRevokedAccess] = useState<{
+    viewId: string;
+    permission: typeof probedObjectPermission;
+  } | null>(null);
+  const accessRevoked =
+    revokedAccess !== null &&
+    (revokedAccess.viewId === viewId || revokedAccess.viewId === effectiveViewId) &&
+    !(canReadEffectiveView && probedObjectPermission !== revokedAccess.permission);
+  const accessDenied = probedObjectPermission?.can_read === false || accessRevoked;
+  // AppBusinessLayer keeps the permission while it re-checks it in the background after a permission
+  // notification, tab return or reconnect; it drops it only to re-check a revoked or restored page.
+  // A page already loaded under a confirmed read stays on screen, read-only, while it is missing,
+  // until the answer arrives; only a confirmed denial or a revocation hides it.
+  const canShowEffectiveView = !accessDenied && (canReadEffectiveView || (!!doc && doc.id === effectiveViewId));
+
+  useEffect(() => {
+    if (!eventEmitter) return;
+    const handleViewAccessRevoked = (payload?: { viewId?: string | null }) => {
+      const revokedViewId = payload?.viewId;
+
+      if (!revokedViewId || (revokedViewId !== viewId && revokedViewId !== effectiveViewId)) return;
+      setRevokedAccess({ viewId: revokedViewId, permission: probedObjectPermissionRef.current });
+    };
+
+    eventEmitter.on(APP_EVENTS.VIEW_ACCESS_REVOKED, handleViewAccessRevoked);
+    return () => {
+      eventEmitter.off(APP_EVENTS.VIEW_ACCESS_REVOKED, handleViewAccessRevoked);
+    };
+  }, [effectiveViewId, eventEmitter, viewId]);
+
+  useLayoutEffect(() => {
+    if (!accessDenied) return;
+    loadRequestRevisionRef.current += 1;
+    setDoc(undefined);
+    setSyncBound(false);
+  }, [accessDenied]);
 
   useEffect(() => {
     if (!open || !viewId || !effectiveViewId) return;
@@ -226,10 +268,17 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   const hasResolvedView = !!resolvedView;
 
   useEffect(() => {
-    if (open && effectiveViewId && hasResolvedView && canReadEffectiveView && doc?.id !== effectiveViewId) {
+    if (
+      open &&
+      effectiveViewId &&
+      hasResolvedView &&
+      canReadEffectiveView &&
+      !accessRevoked &&
+      doc?.id !== effectiveViewId
+    ) {
       void loadPageDoc(effectiveViewId);
     }
-  }, [canReadEffectiveView, doc?.id, effectiveViewId, hasResolvedView, loadPageDoc, open]);
+  }, [accessRevoked, canReadEffectiveView, doc?.id, effectiveViewId, hasResolvedView, loadPageDoc, open]);
 
   const layout = resolvedView?.layout ?? ViewLayout.Document;
 
@@ -284,6 +333,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     setSyncBound(false);
     setFallbackMeta(null);
     setNotFound(false);
+    setRevokedAccess(null);
   }, [open]);
 
   useEffect(
@@ -443,7 +493,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   }, [layout]) as React.FC<ViewComponentProps>;
 
   const viewDom = useMemo(() => {
-    if (!open || !canReadEffectiveView || !doc || !viewMeta || doc.id !== viewMeta.viewId) return null;
+    if (!open || !canShowEffectiveView || !doc || !viewMeta || doc.id !== viewMeta.viewId) return null;
     return (
       <View
         requestInstance={requestInstance}
@@ -493,7 +543,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   }, [
     doc,
     open,
-    canReadEffectiveView,
+    canShowEffectiveView,
     viewMeta,
     View,
     requestInstance,
@@ -566,8 +616,9 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         ),
       }}
     >
-      {renderModalTitle()}
-      {notFound ? <RecordNotFound viewId={effectiveViewId} /> : <div className={'h-full w-full'}>{viewDom}</div>}
+      {canShowEffectiveView ? renderModalTitle() : <IconButton aria-label={t('button.close')} onClick={handleClose} className='self-end'><CloseIcon /></IconButton>}
+      {accessDenied ? <div role='status' className='p-6'>{t('publish.noAccessToVisit')}</div> :
+        notFound ? <RecordNotFound viewId={effectiveViewId} /> : <div className={'h-full w-full'}>{viewDom}</div>}
     </Dialog>
   );
 }

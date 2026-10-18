@@ -8,7 +8,7 @@ import { messages } from '@/proto/messages';
 import { Log } from '@/utils/log';
 import { getConfigValue } from '@/utils/runtime-config';
 
-const wsURL = getConfigValue('APPFLOWY_WS_BASE_URL', 'ws://localhost:8000/ws/v2');
+import { realtimeSessionKey } from './realtime-session';
 
 // WebSocket close code enum
 enum CloseCode {
@@ -188,7 +188,8 @@ export interface Options {
 }
 
 export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType => {
-  const wsUrl = options.url || wsURL;
+  const wsUrl = options.url || getConfigValue('APPFLOWY_WS_BASE_URL', 'ws://localhost:8000/ws/v2');
+  const sessionKey = realtimeSessionKey(options.workspaceId);
   const shouldConnect = options.connect ?? true;
   const shouldConnectRef = useRef(shouldConnect);
   // Stable across re-renders: generate once via lazy initializer, not on every render.
@@ -509,7 +510,7 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
   }, [shouldConnect, setAutomaticRetryScheduled, clearSlowPollRecovery]);
 
   // Mark unmounted so async callbacks (triggerNonceReconnect) can bail out.
-  useEffect(() => {
+  useLayoutEffect(() => {
     isMountedRef.current = true;
 
     return () => {
@@ -519,6 +520,7 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
 
   const sendProtobufMessage = useCallback(
     (message: messages.IMessage, keep = true): void => {
+      if (!isMountedRef.current || realtimeSessionKey(options.workspaceId) !== sessionKey) return;
       Log.debug('sending sync message:', message);
 
       const protobufMessage = messages.Message.encode(message).finish();
@@ -530,7 +532,7 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
       // soon as this tab owns the replacement socket.
       sendMessage(protobufMessage, shouldConnectRef.current ? keep : false);
     },
-    [sendMessage]
+    [sendMessage, sessionKey, options.workspaceId]
   );
 
   const manualReconnect = useCallback(() => {

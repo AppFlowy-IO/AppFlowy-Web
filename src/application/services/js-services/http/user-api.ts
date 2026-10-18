@@ -139,24 +139,28 @@ export function afWorkspace2Workspace(workspace: AFWorkspace): Workspace {
 
 export async function getUserWorkspaceInfo(): Promise<{
   user_id: string;
-  selected_workspace: Workspace;
+  selected_workspace: Workspace | null;
   workspaces: Workspace[];
 }> {
   const url = '/api/user/workspace';
 
   return executeAPIRequest<{
     user_profile: { uuid: string };
-    visiting_workspace: AFWorkspace;
+    visiting_workspace: AFWorkspace | null;
     workspaces: AFWorkspace[];
   }>(() =>
     getAxios()?.get<APIResponse<{
       user_profile: { uuid: string };
-      visiting_workspace: AFWorkspace;
+      visiting_workspace: AFWorkspace | null;
       workspaces: AFWorkspace[];
-    }>>(url)
+    }>>(url, {
+      // An account without a workspace gets `visiting_workspace: null` only when the caller says
+      // it can read that; otherwise the server answers with an error. Older servers ignore this.
+      params: { allow_empty: true },
+    })
   ).then((payload) => ({
     user_id: payload.user_profile.uuid,
-    selected_workspace: afWorkspace2Workspace(payload.visiting_workspace),
+    selected_workspace: payload.visiting_workspace ? afWorkspace2Workspace(payload.visiting_workspace) : null,
     workspaces: payload.workspaces.map(afWorkspace2Workspace),
   }));
 }

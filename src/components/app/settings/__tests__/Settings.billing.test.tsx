@@ -1,3 +1,6 @@
+jest.mock('@/components/app/hooks/useWorkspaceCreationCapability', () => ({
+  useWorkspaceCreationCapability: () => ({ status: 'ready', canCreate: true, refresh: jest.fn(), isCurrent: () => true, scopeKey: 'server:user' }),
+}));
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -27,10 +30,12 @@ jest.mock('@/components/app/app.hooks', () => ({
   useGetSubscriptions: () => mockGetSubscriptions,
 }));
 jest.mock('@/components/main/app.hooks', () => ({
+  useAuthenticatedUserIdOptional: () => 'user',
   useCurrentUserOptional: () => ({ uid: '7' }),
   useCurrentUser: () => ({ uid: '7' }),
 }));
 jest.mock('@/application/services/domains', () => ({
+  WorkspaceService: { create: jest.fn() },
   BillingService: {
     getWorkspaceSubscriptionStatus: jest.fn(),
     getWorkspaceUsage: jest.fn(),

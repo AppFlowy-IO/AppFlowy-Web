@@ -1,11 +1,13 @@
 import * as Y from 'yjs';
 
-import { __dbTestUtils, db, deleteCollabDB, openCollabDBWithProvider } from '@/application/db';
+import { __dbTestUtils, db, closeCollabDB, getCachedProviderDoc, deleteCollabDB, openCollabDBWithProvider } from '@/application/db';
+import { collabStorageKey } from '@/application/db/collab-storage-scope';
 import { publishDatabaseCacheEpoch, readDatabaseCacheEpoch } from '@/application/db/database-storage-fence';
 import { DatabaseRestoreTracker } from '@/components/ws/sync/databaseRestoreState';
 
 const mockStores = new Map<string, Uint8Array>();
 const mockNames: string[] = [];
+const mockGets: Array<() => Promise<undefined>> = [];
 
 jest.mock('y-indexeddb', () => ({
   IndexeddbPersistence: class {
@@ -22,14 +24,14 @@ jest.mock('y-indexeddb', () => ({
     }
 
     async get() {
-      return undefined;
+      return mockGets.shift()?.();
     }
-    async set() {}
+    async set() { return undefined; }
     async destroy() {
       this.doc.off('update', this.persist);
     }
-    on() {}
-    off() {}
+    on() { return undefined; }
+    off() { return undefined; }
   },
 }));
 
@@ -39,7 +41,7 @@ describe('database root storage generations', () => {
       .spyOn(db, 'transaction')
       .mockImplementation((async (...args: unknown[]) => (args[args.length - 1] as () => Promise<unknown>)()) as never);
     jest.spyOn(db.collab_custom, 'get').mockImplementation(async () => {
-      const value = localStorage.getItem('af_database_blob_epoch:database');
+      const value = localStorage.getItem(`af_database_blob_epoch:${collabStorageKey('database')}`);
 
       return value ? { objectId: 'database-blob-epoch:database', key: '__storage_epoch', value } : undefined;
     });
@@ -50,6 +52,7 @@ describe('database root storage generations', () => {
     localStorage.clear();
     mockStores.clear();
     mockNames.length = 0;
+    mockGets.length = 0;
   });
 
   it('isolates the restored root from old providers and preserves it across a second tab reload', async () => {
@@ -68,7 +71,7 @@ describe('database root storage generations', () => {
 
     expect(sibling.doc.getMap('database').get('title')).toBe('current edit');
     expect([old.doc.guid, fresh.doc.guid, sibling.doc.guid]).toEqual(['database', 'database', 'database']);
-    expect(mockNames).toEqual(['database', 'database:database-restore:R', 'database:database-restore:R']);
+    expect(mockNames).toEqual([collabStorageKey('database'), `${collabStorageKey('database')}:database-restore:R`, `${collabStorageKey('database')}:database-restore:R`]);
     publishDatabaseCacheEpoch('database', 'R2');
     await expect(openCollabDBWithProvider('database', { databaseRestoreId: 'R' })).rejects.toMatchObject({
       name: 'DatabaseStorageGenerationChangedError',
@@ -77,6 +80,28 @@ describe('database root storage generations', () => {
     old.doc.destroy();
     fresh.doc.destroy();
     sibling.doc.destroy();
+  });
+
+  it('closing an old pending provider never destroys the replacement opened during disposal', async () => {
+    let release!: (value: undefined) => void;
+    let started!: () => void;
+    const entered = new Promise<void>((resolve) => { started = resolve; });
+
+    mockGets.push(() => { started(); return new Promise((resolve) => { release = resolve; }); });
+    const old = openCollabDBWithProvider('dispose-race');
+    const rejected = expect(old).rejects.toThrow('disposed');
+
+    await entered;
+    const closing = closeCollabDB('dispose-race');
+    const fresh = await openCollabDBWithProvider('dispose-race');
+
+    release(undefined);
+    await closing;
+    await rejected;
+    expect(getCachedProviderDoc('dispose-race')).toBe(fresh.doc);
+    fresh.doc.getMap('draft').set('value', 'still persists');
+    expect(mockStores.has(collabStorageKey('dispose-race'))).toBe(true);
+    await closeCollabDB('dispose-race');
   });
 
   it('refuses the legacy namespace when the durable generation and shadow disagree', async () => {
@@ -143,7 +168,7 @@ describe('database root storage generations', () => {
     ]);
 
     // Exactly one provider each: neither caller deletes/reopens the new store.
-    expect(mockNames).toEqual(['database:database-restore:R', 'database:database-restore:R']);
+    expect(mockNames).toEqual([`${collabStorageKey('database')}:database-restore:R`, `${collabStorageKey('database')}:database-restore:R`]);
     expect(first.doc.version).toBe('version');
     expect(second.doc.version).toBe('version');
     await Promise.all([first.provider.destroy(), second.provider.destroy()]);

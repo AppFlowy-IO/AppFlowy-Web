@@ -7,6 +7,7 @@ import * as random from 'lib0/random';
 import * as Y from 'yjs';
 
 import { db, openCollabDB } from '@/application/db';
+import { serverScopedAccountKey } from '@/application/db/collab-storage-scope';
 import {
   createRow,
   deleteRow,
@@ -31,11 +32,6 @@ import {
   getView,
   signInWithUrl,
   uploadFileMultipart,
-  cancelImportTask,
-  CreateImportTaskType,
-  createImportTask,
-  uploadImportFile,
-  uploadImportFileMultipart,
   publishView as publishViewAPI,
   unpublishView as unpublishViewAPI,
   updatePublishConfig as updatePublishConfigAPI,
@@ -165,7 +161,9 @@ export function getDeviceId() {
  * getAppView for the same view during renders/re-renders.
  */
 function getCurrentAppViewCacheUserId() {
-  return getTokenParsed()?.user?.id;
+  const userId = getTokenParsed()?.user?.id;
+
+  return userId ? serverScopedAccountKey(userId) : undefined;
 }
 
 function getAppViewCacheKey(userId: string | undefined, workspaceId: string, viewId: string) {
@@ -231,7 +229,9 @@ function requestAppView(workspaceId: string, viewId: string, userId = getCurrent
   return request;
 }
 
-export async function getAppViewCached(workspaceId: string, viewId: string) {
+export async function getAppViewCached(workspaceId: string, viewId: string, signal?: AbortSignal) {
+  // A caller-owned cancellable read must not abort or publish into the shared cache request.
+  if (signal) return getView(workspaceId, viewId, 1, signal);
   const userId = getCurrentAppViewCacheUserId();
   const key = getAppViewCacheKey(userId, workspaceId, viewId);
 
@@ -267,7 +267,7 @@ export async function getCachedAppViewFromDisk(workspaceId: string, viewId: stri
 
   const record = await db.app_view_cache.get([userId, workspaceId, viewId]);
 
-  if (!record) return undefined;
+  if (!record || getCurrentAppViewCacheUserId() !== userId) return undefined;
 
   if (Date.now() - record.updated_at > VIEW_DISK_CACHE_MAX_AGE_MS) {
     void db.app_view_cache.delete([userId, workspaceId, viewId]).catch(() => undefined);
@@ -725,28 +725,7 @@ export async function uploadFileWithTracking(
   }
 }
 
-export interface ImportFileWithUploadOptions {
-  taskType: CreateImportTaskType;
-  onProgress: (progress: number) => void;
-}
-
-export async function importFileWithUpload(file: File, { taskType, onProgress }: ImportFileWithUploadOptions) {
-  const task = await createImportTask(file, taskType);
-
-  try {
-    if (task.multipart) {
-      await uploadImportFileMultipart(file, task.multipart, onProgress);
-    } else {
-      await uploadImportFile(task.presignedUrl, file, onProgress);
-    }
-  } catch (err) {
-    // Cancel the task so the worker doesn't try to process a partial upload
-    void cancelImportTask(task.taskId).catch((cancelError) => {
-      Log.warn('[Import] Failed to cancel import task after upload error', cancelError);
-    });
-    throw err;
-  }
-}
+export { importFileWithUpload, type ImportFileWithUploadOptions } from './workspace-import';
 
 export async function publishViewClearingCache(workspaceId: string, viewId: string, payload?: PublishViewPayload) {
   if (publishViewInfo.has(viewId)) {

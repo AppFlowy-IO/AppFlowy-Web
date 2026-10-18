@@ -5,7 +5,8 @@ import { Awareness } from 'y-protocols/awareness';
 
 import { APP_EVENTS } from '@/application/constants';
 import { db } from '@/application/db';
-import { CollabService, UserService } from '@/application/services/domains';
+import { setCollabStorageWorkspace } from '@/application/db/collab-storage-scope';
+import { AccessService, CollabService, UserService } from '@/application/services/domains';
 import {
   collabFullSyncBatch,
   getSlowSyncUploadTimeoutMs,
@@ -16,25 +17,33 @@ import { getTokenParsed } from '@/application/session/token';
 import {
   clearDrainConfig,
   configureDrain,
+  expireOutboxAdmissions,
+  invalidateOutboxPermissions,
   resumePermissionBlockedSync,
   setCurrentSession,
   type SlowSyncBlockedReason,
   type SlowSyncOutboxItem,
   startDrainAll,
 } from '@/application/sync-outbox';
+import { createUploadPermissionGate } from '@/application/sync-outbox/permission-gate';
+import { isPermissionDeniedError } from '@/application/utils/error-utils';
 import type { AppEventEmitter } from '@/components/app/contexts/AppEventEmitterContext';
 import { useSync, useWorkspaceRealtimeTransport } from '@/components/ws';
 import { notification } from '@/proto/messages';
-import { isDevelopmentOrTestEnvironment } from '@/utils/runtime-config';
+import { isDevelopmentOrTestEnvironment, getConfigValue } from '@/utils/runtime-config';
 
 import { useAuthInternal } from '../contexts/AuthInternalContext';
 import { SyncInternalContext, SyncInternalContextType } from '../contexts/SyncInternalContext';
+import { PendingPermissionEdits } from '../PendingPermissionEdits';
 
 interface AppSyncLayerProps {
   children: ReactNode;
 }
 
 const WS_READY_STATE_OPEN = 1;
+// A tab switch fires focus and visibilitychange back to back, often next to an
+// online event or a socket reopen; one access re-check covers them all.
+const LIFECYCLE_PERMISSION_RECHECK_COALESCE_MS = 1_000;
 
 function exactSlowSyncResult(item: SlowSyncOutboxItem, results: CollabFullSyncBatchResult[]): CollabFullSyncBatchResult {
   if (results.length !== 1 || results[0].objectId !== item.objectId || results[0].collabType !== item.collabType) {
@@ -209,6 +218,32 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
   // burns a localStorage read + JSON.parse. Token-refresh still flows in
   // because `isAuthenticated` gates AppSyncLayer's mount via the auth layer.
   const currentUserId = useMemo(() => (isAuthenticated ? getTokenParsed()?.user?.id ?? null : null), [isAuthenticated]);
+  const serverUrl = getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud');
+  const permissionScope = useMemo(() => ({ serverUrl, currentUserId, currentWorkspaceId }),
+    [serverUrl, currentUserId, currentWorkspaceId]);
+  const livePermissionScope = useRef<typeof permissionScope | null>(permissionScope);
+
+  livePermissionScope.current = permissionScope;
+  const uploadPermission = useMemo(() => createUploadPermissionGate(async (objectId, collabType) => {
+    if (!currentWorkspaceId || !currentUserId || !navigator.onLine) return 'unknown';
+    try {
+      const permission = await AccessService.getObjectPermission(currentWorkspaceId, objectId, collabType);
+
+      if (permission.object_id !== objectId || permission.collab_type !== collabType ||
+        typeof permission.can_read !== 'boolean' || typeof permission.can_write !== 'boolean') return 'unknown';
+      return permission.can_read && permission.can_write ? 'allowed' : 'denied';
+    } catch (error) {
+      return isPermissionDeniedError(error) ? 'denied' : 'unknown';
+    }
+  }, () => livePermissionScope.current === permissionScope), [permissionScope, currentWorkspaceId, currentUserId]);
+
+  useLayoutEffect(() => {
+    livePermissionScope.current = permissionScope;
+    return () => {
+      livePermissionScope.current = null;
+      uploadPermission.invalidate();
+    };
+  }, [permissionScope, uploadPermission]);
   const slowSync = useCallback(
     async (item: SlowSyncOutboxItem, signal: AbortSignal) => {
       if (!currentWorkspaceId) {
@@ -321,8 +356,9 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
   );
 
   useLayoutEffect(() => {
+    setCollabStorageWorkspace(currentUserId && currentWorkspaceId ? { userId: currentUserId, workspaceId: currentWorkspaceId, serverUrl } : null);
     if (currentUserId && currentWorkspaceId) {
-      setCurrentSession({ userId: currentUserId, workspaceId: currentWorkspaceId });
+      setCurrentSession({ userId: currentUserId, workspaceId: currentWorkspaceId, serverUrl });
     } else {
       setCurrentSession(null);
     }
@@ -331,8 +367,9 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
       // Unmount path (e.g., sign-out); clear so no stale session is stamped
       // onto subsequent enqueues before a new AppSyncLayer mounts.
       setCurrentSession(null);
+      setCollabStorageWorkspace(null);
     };
-  }, [currentUserId, currentWorkspaceId]);
+  }, [currentUserId, currentWorkspaceId, serverUrl]);
 
   useEffect(() => {
     if (!currentWorkspaceId || !currentUserId) return;
@@ -340,7 +377,10 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
     configureDrain({
       userId: currentUserId,
       workspaceId: currentWorkspaceId,
+      serverUrl,
       beforeSend: ensureDatabaseRestoreCurrent,
+      checkPermission: uploadPermission.check,
+      peekPermission: uploadPermission.peek,
       databaseHistoryEnabled: enableDatabaseHistory,
       // Server send — gated on WS being OPEN via isReady(). `keep=false` so
       // a transient close does not silently buffer the message into
@@ -392,6 +432,8 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
     stableSlowSync,
     ensureDatabaseRestoreCurrent,
     enableDatabaseHistory,
+    uploadPermission,
+    serverUrl,
   ]);
 
   // Transport readiness only wakes the already-configured drain. Keeping it
@@ -419,22 +461,57 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
     }
   }, [canSendToServer, drainWakeKey]);
 
-  // Access changes do not rebuild the transport configuration. Wake only a
-  // permission-blocked object so a restored grant can retry immediately,
-  // while update-too-large blocks remain terminal until limits change.
+  // A real permission change (an object notification or a broad workspace/group
+  // hint that may not identify any collab) discards in-flight positives, fences
+  // admission decisions made before it and re-checks every queued object. Only
+  // uploads whose fresh check is denied are cancelled; quarantined edits still
+  // wait for the user's explicit retry.
   useEffect(() => {
-    const handlePermissionChange = (permissionChange: notification.IPermissionChanged) => {
-      if (permissionChange.objectId) {
-        resumePermissionBlockedSync(permissionChange.objectId);
-      }
+    let lastRecheckAt = Number.NEGATIVE_INFINITY;
+
+    const handlePermissionChange = () => {
+      uploadPermission.invalidate();
+      invalidateOutboxPermissions();
+      void resumePermissionBlockedSync(undefined, { abortDenied: true });
+    };
+
+    // Focus, visibility, connectivity and socket-open events can follow a missed
+    // notification. Re-check before the next immediate send and re-probe queued
+    // objects without cancelling checks or uploads in progress, so a large
+    // upload survives alt-tabbing and socket reconnects. Only these hints are
+    // coalesced; a permission change above always runs at once.
+    const recheckPermissions = () => {
+      const now = Date.now();
+
+      if (now - lastRecheckAt < LIFECYCLE_PERMISSION_RECHECK_COALESCE_MS) return;
+      lastRecheckAt = now;
+      uploadPermission.expire();
+      expireOutboxAdmissions();
+      void resumePermissionBlockedSync();
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') recheckPermissions();
+    };
+
+    const onSocket = (state: number) => {
+      if (state === WS_READY_STATE_OPEN) recheckPermissions();
     };
 
     eventEmitter.on(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChange);
+    eventEmitter.on(APP_EVENTS.WEBSOCKET_STATUS, onSocket);
+    window.addEventListener('focus', recheckPermissions);
+    window.addEventListener('online', recheckPermissions);
+    document.addEventListener('visibilitychange', onVisibility);
 
     return () => {
       eventEmitter.off(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChange);
+      eventEmitter.off(APP_EVENTS.WEBSOCKET_STATUS, onSocket);
+      window.removeEventListener('focus', recheckPermissions);
+      window.removeEventListener('online', recheckPermissions);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [eventEmitter]);
+  }, [eventEmitter, uploadPermission]);
 
   // Handle user profile change notifications
   // This provides automatic UI updates when user profile changes occur via WebSocket.
@@ -677,5 +754,11 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
     ]
   );
 
-  return <SyncInternalContext.Provider value={syncContextValue}>{children}</SyncInternalContext.Provider>;
+  return <SyncInternalContext.Provider value={syncContextValue}>
+    {children}
+    {currentUserId && currentWorkspaceId && <PendingPermissionEdits
+      key={`${serverUrl}:${currentUserId}:${currentWorkspaceId}`}
+      userId={currentUserId} workspaceId={currentWorkspaceId} serverUrl={serverUrl} beforeRetry={uploadPermission.invalidate}
+    />}
+  </SyncInternalContext.Provider>;
 };

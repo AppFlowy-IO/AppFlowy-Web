@@ -1,5 +1,6 @@
 import { Avatar } from '@mui/material';
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
@@ -26,6 +27,7 @@ function SpaceIconButton({
   container: HTMLDivElement;
   disabled?: boolean;
 }) {
+  const { t } = useTranslation();
   const [spaceIconEditing, setSpaceIconEditing] = React.useState<boolean>(false);
 
   return (
@@ -45,11 +47,18 @@ function SpaceIconButton({
       }}
       defaultActiveTab={'icon'}
       tabs={['icon']}
-      popoverContentProps={{ container }}
+      // In the space dialog, closing the picker gives focus back to this button (the shared
+      // popover keeps it where it was by default).
+      popoverContentProps={{ container, onCloseAutoFocus: undefined }}
     >
+      {/* A real button, so the icon picker can be reached and opened with the keyboard. */}
       <Avatar
+        component={'button'}
+        type={'button'}
+        aria-label={t('space.changeIcon')}
+        disabled={disabled}
         variant={'rounded'}
-        className={`aspect-square h-10 w-10 rounded-[30%] bg-transparent`}
+        className={`aspect-square h-10 w-10 rounded-[30%] bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-theme-thick`}
         onMouseEnter={() => {
           if (!disabled) setSpaceIconEditing(true);
         }}

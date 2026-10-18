@@ -13,6 +13,8 @@ playwright/
 playwright.config.ts
 playwright.integrations.config.ts
 playwright.bdd.config.ts
+playwright.permissions.config.ts
+playwright.permission-gallery.config.ts
 playwright-snapshot.config.ts
 deploy/*.test.ts
 deploy/*.integration.test.ts

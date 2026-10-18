@@ -1,0 +1,17 @@
+{
+  "extends": "../tsconfig.json",
+  "include": [
+    "../playwright.permissions.config.ts",
+    "../src/vite-env.d.ts",
+    "../src/@types/**/*.d.ts",
+    "support/space-group-permission-lifecycle.ts",
+    "e2e/app/space-group-permission-*.spec.ts",
+    "bdd/steps/space-group-permission-resolution.steps.ts",
+    "../playwright.permission-gallery.config.ts",
+    "support/permission-gallery-seed.ts",
+    "support/permission-gallery-browser.ts",
+    "e2e/app/permission-gallery.capture.spec.ts",
+    "e2e/app/permission-videos.capture.spec.ts"
+  ],
+  "references": []
+}

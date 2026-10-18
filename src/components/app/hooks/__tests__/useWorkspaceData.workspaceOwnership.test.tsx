@@ -58,6 +58,7 @@ jest.mock('@/application/services/domains', () => ({
 
 jest.mock('@/application/db', () => ({
   deleteCollabDB: jest.fn(),
+  deleteDatabaseLocalCopies: jest.fn(async () => true),
 }));
 
 jest.mock('@/application/services/js-services/workspace-view-metadata', () => ({
@@ -185,7 +186,7 @@ describe('useWorkspaceData workspace ownership', () => {
     (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: [], folderRid: '1-1' });
     (ViewService.getTrashCached as jest.Mock).mockResolvedValue([]);
     (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
-    (deleteCollabDB as jest.Mock).mockResolvedValue(undefined);
+    (deleteCollabDB as jest.Mock).mockResolvedValue(true);
   });
 
   it('keeps workspace B relations when workspace A resolves later', async () => {

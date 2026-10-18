@@ -88,8 +88,8 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
 
   // Calculate current workspace ID from URL params or user info
   const currentWorkspaceId = useMemo(
-    () => params.workspaceId || userWorkspaceInfo?.selectedWorkspace.id,
-    [params.workspaceId, userWorkspaceInfo?.selectedWorkspace.id]
+    () => params.workspaceId || userWorkspaceInfo?.selectedWorkspace?.id,
+    [params.workspaceId, userWorkspaceInfo?.selectedWorkspace?.id]
   );
 
   // Handle user logout
@@ -165,7 +165,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
 
         // A failed or inconsistent refresh should fall back to the URL-driven
         // auto-switch path instead of leaving it suppressed indefinitely.
-        if (workspaceInfo?.selectedWorkspace.id !== workspaceId && pendingWorkspaceChangeRef.current === workspaceId) {
+        if (workspaceInfo?.selectedWorkspace?.id !== workspaceId && pendingWorkspaceChangeRef.current === workspaceId) {
           pendingWorkspaceChangeRef.current = null;
         }
       } catch (error) {
@@ -279,7 +279,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
 
     if (!isAuthenticated || !urlWorkspaceId || !userWorkspaceInfo) return;
 
-    const selectedId = userWorkspaceInfo.selectedWorkspace.id;
+    const selectedId = userWorkspaceInfo.selectedWorkspace?.id;
     const pendingWorkspaceId = pendingWorkspaceChangeRef.current;
 
     if (pendingWorkspaceId) {
@@ -304,7 +304,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
       .then(() => loadUserWorkspaceInfo({ force: true }))
       .catch((e) => Log.warn('[AppAuthLayer] failed to open URL workspace', e));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, params.workspaceId, userWorkspaceInfo?.selectedWorkspace.id, loadUserWorkspaceInfo]);
+  }, [isAuthenticated, params.workspaceId, userWorkspaceInfo?.selectedWorkspace?.id, loadUserWorkspaceInfo]);
 
   // Context value for authentication layer
   const authContextValue: AuthInternalContextType = useMemo(

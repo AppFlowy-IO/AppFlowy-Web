@@ -8,6 +8,11 @@ import OutlineIcon from '@/components/_shared/outline/OutlineIcon';
 import { filterOutByCondition } from '@/components/_shared/outline/utils';
 import { useAppOperations, useAppOutline } from '@/components/app/app.hooks';
 import SpaceItem from '@/components/app/outline/SpaceItem';
+import {
+  acceptsPageDestination,
+  pageDestinationReasonKey,
+  usePageDestinationAccess,
+} from '@/components/app/view-actions/usePageDestinationAccess';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { SearchInput } from '@/components/ui/search-input';
@@ -18,6 +23,7 @@ function MovePagePopover({
   onMoved,
   children,
   popoverContentProps,
+  onOpenChange,
   ...props
 }: React.ComponentProps<typeof Popover> & {
   viewId: string;
@@ -49,9 +55,19 @@ function MovePagePopover({
   }, []);
 
   const [selectedViewId, setSelectedViewId] = React.useState<string | null>(null);
+  // The destination must accept a new child: Write, plus sidebar authority for a space root. If
+  // that could not be checked, Move stays available and the server decides.
+  const destination = usePageDestinationAccess(selectedViewId ?? undefined, Boolean(selectedViewId));
+  const canMoveToDestination = acceptsPageDestination(destination);
+  const destinationStatus =
+    destination.state === 'checking'
+      ? t('spaceCreation.pageDestination.checking')
+      : destination.state === 'denied'
+      ? t(pageDestinationReasonKey(destination.reason))
+      : null;
 
   const handleMoveTo = React.useCallback(async () => {
-    if (selectedViewId) {
+    if (selectedViewId && canMoveToDestination) {
       try {
         await movePage?.(viewId, selectedViewId);
         onMoved?.();
@@ -61,7 +77,17 @@ function MovePagePopover({
         toast.error(e.message);
       }
     }
-  }, [movePage, onMoved, selectedViewId, viewId]);
+  }, [canMoveToDestination, movePage, onMoved, selectedViewId, viewId]);
+
+  const handleOpenChange = React.useCallback(
+    (open: boolean) => {
+      // ViewModal keeps this popover mounted after it is dismissed, and a kept selection would keep
+      // checking (and re-checking) a destination nobody is looking at.
+      if (!open) setSelectedViewId(null);
+      onOpenChange?.(open);
+    },
+    [onOpenChange]
+  );
 
   const renderExtra = React.useCallback(
     ({ view }: { view: View }) => {
@@ -72,7 +98,7 @@ function MovePagePopover({
   );
 
   return (
-    <Popover modal {...props}>
+    <Popover modal {...props} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>{children}</PopoverTrigger>
       <PopoverContent
         onCloseAutoFocus={(e) => {
@@ -124,8 +150,19 @@ function MovePagePopover({
           </div>
 
           <Separator className={'mb-1'} />
-          <div className={'flex items-center justify-end'}>
-            <Button onClick={handleMoveTo}>{t('disclosureAction.move')}</Button>
+          <div className={'flex items-center justify-end gap-3'}>
+            {destinationStatus && (
+              <span
+                role={'status'}
+                className={'min-w-0 flex-1 text-xs text-text-tertiary'}
+                data-testid={'move-page-destination-status'}
+              >
+                {destinationStatus}
+              </span>
+            )}
+            <Button onClick={handleMoveTo} disabled={!canMoveToDestination}>
+              {t('disclosureAction.move')}
+            </Button>
           </div>
         </div>
       </PopoverContent>

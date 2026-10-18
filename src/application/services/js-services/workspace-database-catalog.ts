@@ -1,4 +1,5 @@
 import { db } from '@/application/db';
+import { serverScopedAccountKey } from '@/application/db/collab-storage-scope';
 import { WorkspaceDatabaseCatalogRecord } from '@/application/db/tables/workspace_database_catalog';
 import { WorkspaceDatabaseViewItem, WorkspaceDatabaseWithViews } from '@/application/services/services.type';
 import { EventType, on } from '@/application/session/event';
@@ -28,7 +29,9 @@ on(EventType.SESSION_INVALID, () => {
 });
 
 function currentUserId(): string | undefined {
-  return getTokenParsed()?.user?.id;
+  const userId = getTokenParsed()?.user?.id;
+
+  return userId ? serverScopedAccountKey(userId) : undefined;
 }
 
 function requestKey(userId: string | undefined, workspaceId: string): string {

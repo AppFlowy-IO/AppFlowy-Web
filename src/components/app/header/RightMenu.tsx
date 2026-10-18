@@ -9,7 +9,13 @@ import { useActiveRowPage } from '@/application/row-document/row-page-state';
 import { isDatabaseContainer, isDatabaseLayout, resolveActiveDatabaseViewId } from '@/application/view-utils';
 import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
 import { findView } from '@/components/_shared/outline/utils';
-import { useAppOutline, useAppView, useAppViewId, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import {
+  useAppOutline,
+  useAppView,
+  useAppViewId,
+  useCurrentWorkspaceId,
+  useViewErrorStatus,
+} from '@/components/app/app.hooks';
 import { DATABASE_TAB_VIEW_ID_QUERY_PARAM } from '@/components/app/hooks/resolveSidebarSelectedViewId';
 import { useContainerVisibleViewIds } from '@/components/database/hooks/visibleViewIds/useContainerVisibleViewIds';
 import { InlineCommentToggleButton } from '@/components/inline-comment/InlineCommentToggleButton';
@@ -27,6 +33,10 @@ function RightMenu() {
   const outline = useAppOutline();
   const routeView = useAppView(routeViewId);
   const workspaceId = useCurrentWorkspaceId();
+  // A page that is not shown (no access, not found) has nothing to share, favorite, comment on or
+  // act on; only the app link stays.
+  const { noAccess, notFound } = useViewErrorStatus();
+  const pageShown = !noAccess && !notFound;
   const [searchParams] = useSearchParams();
   const hasRowPageRoute = searchParams.has('r');
   const rowPageRowId = searchParams.get('r');
@@ -82,16 +92,23 @@ function RightMenu() {
 
   return (
     <div className={'flex items-center gap-2'}>
-      <Users viewId={routeViewId} />
-      {/* Access control belongs to the database container, but Desktop publishes the active child view. */}
-      {actionViewId ? (
-        <ShareButton viewId={actionViewId} publishViewId={routeViewId} hidePublish={hasRowPageRoute} />
-      ) : null}
-      <InlineCommentToggleButton />
-      {favoriteViewId && (
-        <FavoriteButton viewId={favoriteViewId} beforeToggle={rowPage ? prepareRowDocumentForFavorite : undefined} />
+      {pageShown && (
+        <>
+          <Users viewId={routeViewId} />
+          {/* Access control belongs to the database container, but Desktop publishes the active child view. */}
+          {actionViewId ? (
+            <ShareButton viewId={actionViewId} publishViewId={routeViewId} hidePublish={hasRowPageRoute} />
+          ) : null}
+          <InlineCommentToggleButton />
+          {favoriteViewId && (
+            <FavoriteButton
+              viewId={favoriteViewId}
+              beforeToggle={rowPage ? prepareRowDocumentForFavorite : undefined}
+            />
+          )}
+          {actionViewId && <MoreActions viewId={actionViewId} activeViewId={activeViewId} rowId={rowPageRowId} />}
+        </>
       )}
-      {actionViewId && <MoreActions viewId={actionViewId} activeViewId={activeViewId} rowId={rowPageRowId} />}
 
       <Divider orientation={'vertical'} className={'mx-2'} flexItem />
       <Tooltip title={t('publish.downloadApp')}>

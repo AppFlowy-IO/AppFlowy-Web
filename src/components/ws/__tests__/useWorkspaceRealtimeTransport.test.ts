@@ -12,6 +12,10 @@ import {
 import { useWorkspaceRealtimeTransport } from '../useWorkspaceRealtimeTransport';
 import { useWorkspaceWebSocketLeader } from '../useWorkspaceWebSocketLeader';
 
+let mockScope = 'server-A:actor-A:workspace-1';
+
+jest.mock('../realtime-session', () => ({ realtimeSessionKey: () => mockScope }));
+
 jest.mock('@/application/sync-outbox', () => ({
   startDrainObject: jest.fn(),
 }));
@@ -75,6 +79,7 @@ const renderTransport = () =>
 describe('useWorkspaceRealtimeTransport', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockScope = 'server-A:actor-A:workspace-1';
     subscribeProtocolMessages.mockReturnValue(jest.fn());
     subscribeOutboxReady.mockReturnValue(jest.fn());
     subscribeTransportSignals.mockReturnValue(jest.fn());
@@ -202,6 +207,25 @@ describe('useWorkspaceRealtimeTransport', () => {
     });
     expect(sendWebSocketMessage).not.toHaveBeenCalled();
     expect(reconnect).not.toHaveBeenCalled();
+  });
+
+  it('isolates coordination and follower readiness across server/account switches', () => {
+    let signal: ((value: WorkspaceTransportSignal) => void) | undefined;
+
+    mockUseWorkspaceWebSocketLeader.mockReturnValue({ isLeader: false, isCoordinated: true });
+    subscribeTransportSignals.mockImplementation((listener) => { signal = listener; return jest.fn(); });
+    const { result, rerender } = renderTransport();
+
+    act(() => signal?.({ type: 'transport-status', workspaceId: 'workspace-1', readyState: WebSocket.OPEN }));
+    expect(result.current.webSocket.readyState).toBe(WebSocket.OPEN);
+    expect(mockUseWorkspaceWebSocketLeader).toHaveBeenLastCalledWith(mockScope);
+    expect(mockUseBroadcastChannel).toHaveBeenLastCalledWith(`workspace:${mockScope}`);
+
+    mockScope = 'server-B:actor-B:workspace-1';
+    rerender();
+    expect(result.current.webSocket.readyState).toBe(WebSocket.CONNECTING);
+    expect(mockUseWorkspaceWebSocketLeader).toHaveBeenLastCalledWith(mockScope);
+    expect(mockUseBroadcastChannel).toHaveBeenLastCalledWith(`workspace:${mockScope}`);
   });
 
   it('uses an independent socket when browser lock coordination is unavailable', () => {

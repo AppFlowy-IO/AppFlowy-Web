@@ -26,7 +26,7 @@ import { UserWorkspaceInfo } from '@/application/types';
 export interface AuthInternalContextType {
   /** All workspace info for the current user, including workspace list and selected workspace. */
   userWorkspaceInfo?: UserWorkspaceInfo;
-  /** The ID of the currently active workspace. Derived from `userWorkspaceInfo.selectedWorkspace.id`. */
+  /** The ID of the currently active workspace: the routed workspace, else `userWorkspaceInfo.selectedWorkspace.id`. */
   currentWorkspaceId?: string;
   /** Whether the user is currently authenticated. */
   isAuthenticated: boolean;

@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { validate as uuidValidate } from 'uuid';
 
 import { APP_EVENTS } from '@/application/constants';
-import { deleteCollabDB } from '@/application/db';
+import { deleteCollabDB, deleteDatabaseLocalCopies } from '@/application/db';
 import { AccessService, ViewService } from '@/application/services/domains';
 import {
   getCachedWorkspaceViewMetadata,
@@ -11,6 +11,7 @@ import {
   resolveWorkspaceViewMetadata,
 } from '@/application/services/js-services/workspace-view-metadata';
 import { getTokenParsed } from '@/application/session/token';
+import { blockPermissionSync } from '@/application/sync-outbox';
 import {
   type CollabObjectPermission,
   LoadViewMetaOptions,
@@ -68,6 +69,9 @@ const ROUTE_VIEW_EXISTS_REVALIDATE_MS = 10000;
 const PERMISSION_PROBE_TTL_MS = 10000;
 const PERMISSION_PROBE_CACHE_MAX = 200;
 const PERMISSION_PROBE_RETRY_DELAYS_MS = [250, 1000, 3000] as const;
+// A window focus re-probes the active views at most this often, counted from
+// their last revalidation, whichever event caused it.
+const PERMISSION_FOCUS_RECHECK_MIN_INTERVAL_MS = 30000;
 const WS_READY_STATE_OPEN = 1;
 
 // Stable "not resolvable" result for breadcrumb ancestors. Identity matters:
@@ -110,6 +114,20 @@ function isRouteNotFoundError(error: unknown): boolean {
   return ROUTE_NOT_FOUND_MESSAGE_PATTERN.test(getErrorDiagnostic(error));
 }
 
+function isSameObjectPermission(previous: CollabObjectPermission | undefined, next: CollabObjectPermission) {
+  return (
+    previous !== undefined &&
+    previous.object_id === next.object_id &&
+    previous.collab_type === next.collab_type &&
+    previous.governing_view_id === next.governing_view_id &&
+    previous.access_level === next.access_level &&
+    previous.can_read === next.can_read &&
+    previous.can_write === next.can_write &&
+    previous.can_comment === next.can_comment &&
+    previous.can_share === next.can_share
+  );
+}
+
 async function resolvePermissionProbeTargetFromMetadata(
   workspaceId: string,
   viewId: string,
@@ -146,15 +164,21 @@ async function resolvePermissionProbeTargetFromMetadata(
   return databaseId ? { collabObjectId: databaseId, collabType: Types.Database } : target;
 }
 
-function purgePermissionProbeTarget(workspaceId: string, routeViewId: string, target: PermissionProbeTarget) {
+function closePermissionProbeTarget(workspaceId: string, routeViewId: string, target: PermissionProbeTarget) {
   ViewService.invalidateCache(workspaceId, routeViewId);
   invalidateWorkspaceViewMetadata(workspaceId, routeViewId);
 
   // Current database caches use the canonical database id, while older web
   // releases may also have persisted a database under the folder view id.
-  // Remove both identities so neither copy can keep revoked content readable.
+  // Remove both synced copies (a database with its rows and row pages) so
+  // revoked content is no longer readable; unsent edits stay quarantined in the
+  // outbox for Try again or Discard.
   for (const collabObjectId of getPermissionProbePurgeObjectIds(routeViewId, target)) {
-    void deleteCollabDB(collabObjectId, { destroyDoc: true });
+    if (target.collabType === Types.Database && collabObjectId === target.collabObjectId) {
+      void deleteDatabaseLocalCopies(collabObjectId, { destroyDoc: true });
+    } else {
+      void deleteCollabDB(collabObjectId, { destroyDoc: true });
+    }
   }
 }
 
@@ -168,6 +192,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
   const currentRequesterIdRef = useRef(requesterId);
   const permissionProbeSessionRevisionRef = useRef(0);
   const permissionProbeRevisionRef = useRef<Map<string, number>>(new Map());
+  const activeViewsRevalidatedAtRef = useRef(Number.NEGATIVE_INFINITY);
   const [permissionProbeRefreshRevision, setPermissionProbeRefreshRevision] = useState(0);
 
   currentRequesterIdRef.current = requesterId;
@@ -418,7 +443,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
   // without consulting the server, so a user whose access was revoked could
   // otherwise keep reading a page from IndexedDB indefinitely. Probe the
   // object-permission API in the background on navigation; on a definitive
-  // denial show the no-access page and purge the local copies.
+  // denial show the no-access page and close the in-memory copies.
   //
   // The denied view id (not a boolean) is stored so `viewNoAccess` derives
   // during render — navigating away never flashes the no-access screen on
@@ -467,15 +492,11 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
   useEffect(() => {
     if (!currentWorkspaceId || !requesterId) return;
 
-    // A page modal owns a separate collab from the route underneath it. A
-    // database-container modal also mounts its first child, so probe both the
-    // requested container and the effective child before cached content is
-    // allowed to render.
-    if (activePermissionViewIds.length === 0) return;
-
     // Only active routes need to participate in render permissions. Pruning
     // old entries bounds the context and prevents a prior navigation from
-    // accidentally becoming a fallback permission source.
+    // accidentally becoming a fallback permission source. Prune even when no
+    // view is active (trash, a trashed route): nothing re-checks an entry left
+    // behind, and action menus would follow it instead of reading the view.
     setObjectPermissions((current) => {
       const activeViewIdSet = new Set(activePermissionViewIds);
       const retained = Object.fromEntries(
@@ -484,6 +505,12 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
 
       return Object.keys(retained).length === Object.keys(current).length ? current : retained;
     });
+
+    // A page modal owns a separate collab from the route underneath it. A
+    // database-container modal also mounts its first child, so probe both the
+    // requested container and the effective child before cached content is
+    // allowed to render.
+    if (activePermissionViewIds.length === 0) return;
 
     let cancelled = false;
     const workspaceId = currentWorkspaceId;
@@ -568,25 +595,35 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
         // In that case only the newest promise is allowed to mutate access state.
         if (latestProbe && latestProbe.promise !== probe) return;
 
-        const permission = result.permission;
+        const permission = result.permission ?? (result.verdict === 'denied' ? {
+          object_id: result.collabObjectId, collab_type: result.collabType, governing_view_id: activeViewId,
+          access_level: null, can_read: false, can_write: false, can_comment: false, can_share: false,
+        } : undefined);
+
+        if (result.verdict === 'denied' || (permission && !permission.can_write)) {
+          void blockPermissionSync(result.collabObjectId, workspaceId);
+        }
 
         if (permission && !cancelled) {
+          // A re-probe that confirms the stored capabilities keeps that object,
+          // so a background re-check re-renders no navigation consumer.
           setObjectPermissions((current) =>
-            current[activeViewId] === permission ? current : { ...current, [activeViewId]: permission }
+            isSameObjectPermission(current[activeViewId], permission)
+              ? current
+              : { ...current, [activeViewId]: permission }
           );
         }
 
         if (result.verdict === 'denied') {
-          // Evict even if this navigation was superseded — revoked content must
-          // not stay readable from the local caches.
-          purgePermissionProbeTarget(workspaceId, activeViewId, result);
+          // Close even if navigation was superseded. The synced copy is deleted
+          // so the revoked content is no longer readable on this device; only
+          // unsent edits remain, quarantined in the outbox (blockPermissionSync
+          // above). A later grant reloads the content from the server.
+          closePermissionProbeTarget(workspaceId, activeViewId, result);
           if (!cancelled) {
             if (activeViewId === viewId) setNoAccessViewId(activeViewId);
-            // ViewModal owns its loaded Y.Doc and does not consume the route's
-            // no-access state, so close it to stop rendering revoked content.
-            if (activeViewId === openModalViewId || activeViewId === openModalEffectiveViewId) {
-              setOpenModalViewId(undefined);
-            }
+            // Keep the modal target so a later broad grant can recover it.
+            // Its own permission gate hides and unloads the protected content.
           }
         } else if (result.verdict === 'allowed' && !cancelled && activeViewId === viewId) {
           setNoAccessViewId((prev) => (prev === activeViewId ? null : prev));
@@ -637,30 +674,38 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       bumpPermissionProbeRevision(permissionProbeRevisionRef.current, cacheKey);
     };
 
-    const revalidateActiveViews = (excludedViewId?: string) => {
-      // A targeted share notification does not name affected descendants, and
-      // a broad permission notification may name a group instead of a view.
-      // Conservatively re-probe the few currently rendered targets.
-      const activeViewIds = activePermissionViewIds.filter((activeViewId) => activeViewId !== excludedViewId);
-
-      if (activeViewIds.length === 0) return;
-      // Existing capabilities may have been downgraded. Remove them before the
-      // asynchronous re-probe so editors, comments, and share controls fall back
-      // to the safe read-only state instead of retaining stale authority.
+    const dropObjectPermissions = (droppedViewIds: string[]) => {
       setObjectPermissions((current) => {
         const next = { ...current };
         let changed = false;
 
-        activeViewIds.forEach((activeViewId) => {
-          if (activeViewId in next) {
-            delete next[activeViewId];
+        droppedViewIds.forEach((droppedViewId) => {
+          if (droppedViewId in next) {
+            delete next[droppedViewId];
             changed = true;
           }
         });
 
         return changed ? next : current;
       });
-      activeViewIds.forEach(invalidatePermissionProbe);
+    };
+
+    // A targeted share notification does not name affected descendants, and a
+    // broad permission notification may name a group instead of a view, so
+    // re-probe the few currently rendered targets in the background. Reads that
+    // started before the change are superseded, but each view keeps its last
+    // confirmed capabilities until its fresh answer replaces them; a denial
+    // still closes it at once. Dropping them first would make the open page,
+    // its modal and their editors read-only for a round trip on every tab
+    // return, reconnect and permission change anywhere in the workspace. A
+    // revoked user's edits made during that round trip are not lost: the sync
+    // outbox's upload gate re-checks queued objects on the same events
+    // (AppSyncLayer) and quarantines them as edits waiting for access, and the
+    // server enforces access regardless.
+    const revalidateActiveViews = () => {
+      if (activePermissionViewIds.length === 0) return;
+      activeViewsRevalidatedAtRef.current = Date.now();
+      activePermissionViewIds.forEach(invalidatePermissionProbe);
       setPermissionProbeRefreshRevision((revision) => revision + 1);
     };
 
@@ -674,19 +719,16 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       if (!revokedViewId) return;
       invalidatePermissionProbe(revokedViewId);
       setNoAccessViewId(revokedViewId);
-      setObjectPermissions((current) => {
-        if (!(revokedViewId in current)) return current;
-        const next = { ...current };
-
-        delete next[revokedViewId];
-        return next;
-      });
-
-      if (revokedViewId === openModalViewId || revokedViewId === openModalEffectiveViewId) {
-        setOpenModalViewId(undefined);
-      }
-
-      revalidateActiveViews(revokedViewId);
+      // The revoked view loses its capabilities at once, and so does the child
+      // a page modal mounts for a revoked database container: the modal hides
+      // both until that child's next answer, which it recognizes as a new
+      // object. The other active views are re-checked in the background.
+      dropObjectPermissions(
+        revokedViewId === openModalViewId && openModalEffectiveViewId
+          ? [revokedViewId, openModalEffectiveViewId]
+          : [revokedViewId]
+      );
+      revalidateActiveViews();
     };
 
     const handleViewAccessRestored = (payload?: { viewId?: string | null }) => {
@@ -695,9 +737,11 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       if (!restoredViewId) return;
       invalidatePermissionProbe(restoredViewId);
       setNoAccessViewId((prev) => (prev === restoredViewId ? null : prev));
-      // Unlike revocation, restoration must include the restored active view
-      // itself so its safe read-only state can be replaced by fresh
-      // capabilities from the object-permission API.
+      // Restoration still re-checks eagerly: every active view, the restored
+      // one included, drops its capabilities (a denial too) and falls back to
+      // the safe read-only state until fresh capabilities from the
+      // object-permission API replace it.
+      dropObjectPermissions(activePermissionViewIds);
       revalidateActiveViews();
     };
 
@@ -732,12 +776,32 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       revalidateActiveViews();
     };
 
+    // Focus also fires on every alt-tab back and closed file picker, so it is
+    // only a hint: re-probe the active views while keeping their capabilities,
+    // like the events above, but without superseding reads in flight (the
+    // upload gate shares them); each result replaces its entry and a denial
+    // still closes the view. The interval also absorbs the visibilitychange of
+    // a tab switch.
+    const handleFocus = () => {
+      if (!currentWorkspaceId || !requesterId || activePermissionViewIds.length === 0) return;
+      if (Date.now() - activeViewsRevalidatedAtRef.current < PERMISSION_FOCUS_RECHECK_MIN_INTERVAL_MS) return;
+
+      activeViewsRevalidatedAtRef.current = Date.now();
+      // Dropping only the cached probe makes the probe effect ask the server
+      // again; the unchanged per-key revision lets that newer probe apply.
+      activePermissionViewIds.forEach((activeViewId) => {
+        permissionProbeCache.delete(createPermissionProbeCacheKey(requesterId, currentWorkspaceId, activeViewId));
+      });
+      setPermissionProbeRefreshRevision((revision) => revision + 1);
+    };
+
     syncContext.eventEmitter?.on(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChanged);
     syncContext.eventEmitter?.on(APP_EVENTS.VIEW_ACCESS_REVOKED, handleViewAccessRevoked);
     syncContext.eventEmitter?.on(APP_EVENTS.VIEW_ACCESS_RESTORED, handleViewAccessRestored);
     syncContext.eventEmitter?.on(APP_EVENTS.WEBSOCKET_STATUS, handleWebSocketStatus);
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('online', handleOnline);
+    window.addEventListener('focus', handleFocus);
 
     return () => {
       syncContext.eventEmitter?.off(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChanged);
@@ -746,6 +810,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       syncContext.eventEmitter?.off(APP_EVENTS.WEBSOCKET_STATUS, handleWebSocketStatus);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('online', handleOnline);
+      window.removeEventListener('focus', handleFocus);
     };
   }, [
     activePermissionViewIds,

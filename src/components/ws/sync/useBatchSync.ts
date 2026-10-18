@@ -8,6 +8,7 @@ import {
   openCollabDBWithProvider,
   openRowCollabDBWithProvider,
 } from '@/application/db';
+import { assertCollabStorageCurrent } from '@/application/db/collab-storage-scope';
 import {
   getCachedRowSubDoc,
   getCachedRowSubDocIds,
@@ -16,7 +17,7 @@ import {
 } from '@/application/services/js-services/cache';
 import { handleAPIError, withRetry } from '@/application/services/js-services/http/core';
 import { collabFullSyncBatch, createOrphanedView, checkIfCollabExists } from '@/application/services/js-services/http/http_api';
-import { waitForDrain } from '@/application/sync-outbox';
+import { blockPermissionSync, captureSyncAuthorization, captureUploadGate, waitForDrain } from '@/application/sync-outbox';
 import { Types, YDatabase, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { Log } from '@/utils/log';
@@ -98,13 +99,27 @@ export function useBatchSync(
   const databaseHistoryEnabledRef = useRef(options?.databaseHistoryEnabled);
 
   databaseHistoryEnabledRef.current = options?.databaseHistoryEnabled;
-  const guardedBatchSync = useCallback(async (workspaceId: string, items: Parameters<typeof collabFullSyncBatch>[1]) => {
+  const guardedBatchSync = useCallback(async (
+    workspaceId: string,
+    items: Parameters<typeof collabFullSyncBatch>[1],
+    quarantined?: Set<string>
+  ) => {
+    const isCurrent = captureSyncAuthorization(workspaceId);
     const beforeSend = beforeSendRef.current;
     const historyEnabled = databaseHistoryEnabledRef.current;
 
+    // Edits waiting for edit access are never uploaded by a full sync. That
+    // check is local and read once for the batch; the server still authorizes
+    // every other item.
+    const mayUpload = await captureUploadGate(workspaceId, items.map((item) => item.objectId));
     // Concurrent guards share the tracker's in-flight check for each database,
     // while every row still verifies the generation captured with its bytes.
     const checkedItems = await Promise.all(items.map(async (item) => {
+      if (!mayUpload(item.objectId)) {
+        quarantined?.add(item.objectId);
+        return null;
+      }
+
       const marker = item.databaseRestoreId ??
         (item.collabType === Types.Database || item.collabType === Types.DatabaseRow
           ? '00000000-0000-0000-0000-000000000000' : undefined);
@@ -114,7 +129,17 @@ export function useBatchSync(
     }));
     const admitted = checkedItems.filter((item): item is typeof items[number] => item !== null);
 
-    return admitted.length ? collabFullSyncBatch(workspaceId, admitted) : [];
+    if (!admitted.length || !isCurrent()) return [];
+    const results = await collabFullSyncBatch(workspaceId, admitted);
+
+    if (!isCurrent()) return [];
+    for (const result of results) {
+      if (result.error?.toLowerCase().includes('permission_denied')) {
+        await blockPermissionSync(result.objectId, workspaceId);
+      }
+    }
+
+    return isCurrent() ? results : [];
   }, []);
   const batchSyncAbortRef = useRef<AbortController | null>(null);
   const backgroundHttpSyncAbortRef = useRef<AbortController | null>(null);
@@ -196,6 +221,7 @@ export function useBatchSync(
       if (!doc || collabType === undefined || !ids.has(doc.guid)) return;
       if (!BACKGROUND_HTTP_SYNC_TYPES.has(collabType)) return;
 
+      assertCollabStorageCurrent(doc);
       items.push({
         objectId: doc.guid,
         collabType,
@@ -494,6 +520,7 @@ export function useBatchSync(
         registeredObjectIds.add(doc.guid);
 
         // Encode the document state and state vector
+        assertCollabStorageCurrent(doc);
         const docState = Y.encodeStateAsUpdate(doc);
         const stateVector = Y.encodeStateVector(doc);
 
@@ -580,6 +607,7 @@ export function useBatchSync(
                   unregisteredRowDocumentIds.add(rowDocumentId);
                 }
 
+                assertCollabStorageCurrent(rowDoc);
                 const docState = Y.encodeStateAsUpdate(rowDoc);
                 const stateVector = Y.encodeStateVector(rowDoc);
 
@@ -638,6 +666,7 @@ export function useBatchSync(
             continue;
           }
 
+          assertCollabStorageCurrent(rowDocument);
           const docState = Y.encodeStateAsUpdate(rowDocument);
           const stateVector = Y.encodeStateVector(rowDocument);
 
@@ -715,9 +744,10 @@ export function useBatchSync(
       const dirtySeqBeforeSync = new Map(
         items.map((item) => [item.objectId, backgroundDirtyEditsRef.current.get(item.objectId)?.seq])
       );
+      const quarantined = new Set<string>();
 
       try {
-        const results = await withRetry(() => guardedBatchSync(workspaceId, items), {
+        const results = await withRetry(() => guardedBatchSync(workspaceId, items, quarantined), {
           delays: BATCH_SYNC_DELAYS,
           signal: controller.signal,
         });
@@ -735,6 +765,15 @@ export function useBatchSync(
       } catch (error) {
         Log.warn('Failed to batch sync collabs to server', { error });
         // Don't throw - we still want to attempt the duplicate
+      }
+
+      // Quarantined objects are shown to the user as paused edits; record which
+      // ones a full sync (for example before Duplicate) left out.
+      if (quarantined.size > 0) {
+        Log.warn('[sync] full sync left out changes waiting for edit access', {
+          workspaceId,
+          objectIds: Array.from(quarantined).sort(),
+        });
       }
     },
     [refs, flushAllSync, applyFullSyncResults, guardedBatchSync]

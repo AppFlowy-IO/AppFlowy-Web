@@ -16,6 +16,7 @@ import {
   openCollabDBWithProvider,
   openRowCollabDBWithProvider,
 } from '@/application/db';
+import { assertCollabStorageCurrent, captureCollabStorageScope, collabStorageKey, ScopedCollabMap } from '@/application/db/collab-storage-scope';
 import { isDatabaseStorageFenceCurrent, withDatabaseStorageFence } from '@/application/db/database-storage-fence';
 import { Fetcher, StrategyType } from '@/application/services/js-services/cache/types';
 import {
@@ -315,6 +316,8 @@ export async function getPageDoc<
 }
 
 async function updateRows(collab: YDoc, rows: Record<RowId, number[]>, databaseId?: string) {
+  assertCollabStorageCurrent(collab);
+  const scope = captureCollabStorageScope();
   const rowKeyPrefix = databaseId || collab.guid;
   const bulkData = [];
 
@@ -324,15 +327,19 @@ async function updateRows(collab: YDoc, rows: Record<RowId, number[]>, databaseI
 
     applyYDoc(doc, new Uint8Array(value));
 
-    const dbRow = await db.rows.get(key);
+    const storageKey = scope.storageKey(rowKey);
+    const dbRow = await db.rows.get(storageKey);
+
+    scope.assertCurrent();
 
     bulkData.push({
       row_id: key,
       version: (dbRow?.version || 0) + 1,
-      row_key: rowKey,
+      row_key: storageKey,
     });
   }
 
+  scope.assertCurrent();
   await db.rows.bulkPut(bulkData);
 }
 
@@ -473,10 +480,10 @@ const ROW_FAST_LOG_LIMIT = 50;
 let rowSyncLogCount = 0;
 let rowFastLogCount = 0;
 
-const rowDocs = new Map<string, RowDocEntry>();
-const pendingRowDocEntries = new Map<string, Promise<RowDocEntry>>();
-const rowDatabaseIds = new Map<string, string>();
-const rowRestoreGenerations = new Map<string, number>();
+const rowDocs = new ScopedCollabMap<RowDocEntry>();
+const pendingRowDocEntries = new ScopedCollabMap<Promise<RowDocEntry>>();
+const rowDatabaseIds = new ScopedCollabMap<string>();
+const rowRestoreGenerations = new ScopedCollabMap<number>();
 
 export function getCachedRowDatabaseId(rowId: string): string | undefined {
   return rowDatabaseIds.get(rowId);
@@ -653,7 +660,7 @@ function getLegacyRowBackfillMarkerKey(rowKey: string) {
 
 async function hasLegacyRowBackfillCompleted(rowObjectId: string, rowKey: string) {
   try {
-    return Boolean(await db.collab_custom.get([rowObjectId, getLegacyRowBackfillMarkerKey(rowKey)]));
+    return Boolean(await db.collab_custom.get([collabStorageKey(rowObjectId), getLegacyRowBackfillMarkerKey(rowKey)]));
   } catch (error) {
     Log.warn('[Database] failed to read legacy row backfill marker', { rowKey, rowObjectId, error });
     return false;
@@ -663,7 +670,7 @@ async function hasLegacyRowBackfillCompleted(rowObjectId: string, rowKey: string
 async function markLegacyRowBackfillCompleted(rowObjectId: string, rowKey: string) {
   try {
     await db.collab_custom.put({
-      objectId: rowObjectId,
+      objectId: collabStorageKey(rowObjectId),
       key: getLegacyRowBackfillMarkerKey(rowKey),
       value: {
         rowKey,
@@ -805,6 +812,7 @@ async function getOrCreateRowDocEntry(rowKey: string): Promise<RowDocEntry> {
   const separator = rowKey.lastIndexOf(ROW_KEY_SEPARATOR);
 
   if (separator > 0) rowDatabaseIds.set(rowObjectId, rowKey.slice(0, separator));
+  const scope = captureCollabStorageScope();
   const generation = rowRestoreGenerations.get(rowObjectId) || 0;
   const existing = rowDocs.get(rowObjectId);
 
@@ -823,6 +831,8 @@ async function getOrCreateRowDocEntry(rowKey: string): Promise<RowDocEntry> {
     // this map prevents duplicate row doc entry creation while the first open
     // is still awaiting IndexedDB/provider setup.
     const entry = await _createRowDocEntry(rowKey, rowObjectId, generation);
+
+    scope.assertCurrent();
 
     if (generation !== (rowRestoreGenerations.get(rowObjectId) || 0)) {
       entry.doc.destroy();
@@ -891,6 +901,7 @@ async function _createRowDocEntry(rowKey: string, rowObjectId: string, generatio
       });
   const whenSynced = syncedPromise
     .then(async () => {
+      assertCollabStorageCurrent(doc);
       if (generation !== (rowRestoreGenerations.get(rowObjectId) || 0)) return;
       await mergeLegacyRowDocIfExists(rowKey, rowObjectId, doc);
     })
@@ -906,6 +917,7 @@ export async function createRow(rowKey: string) {
 
   await entry.whenSynced;
 
+  assertCollabStorageCurrent(entry.doc);
   return entry.doc;
 }
 
@@ -950,6 +962,7 @@ export async function openRowDoc(rowKey: string, seed?: DatabaseRowDocSeed) {
     });
   }
 
+  assertCollabStorageCurrent(entry.doc);
   return entry.doc;
 }
 
@@ -979,7 +992,7 @@ type RowSubDocEntry = {
   whenSynced: Promise<void>;
 };
 
-const rowSubDocs = new Map<string, RowSubDocEntry>();
+const rowSubDocs = new ScopedCollabMap<RowSubDocEntry>();
 
 /**
  * Helper to get text content summary from a Y.Doc for debugging.
@@ -1021,6 +1034,7 @@ function getDocTextSummary(doc: YDoc): { hasText: boolean; textCount: number; sa
  * preserving the sync state and preventing content loss.
  */
 export async function getOrCreateRowSubDoc(documentId: string): Promise<YDoc> {
+  const scope = captureCollabStorageScope();
   const existing = rowSubDocs.get(documentId);
 
   if (existing) {
@@ -1033,6 +1047,7 @@ export async function getOrCreateRowSubDoc(documentId: string): Promise<YDoc> {
     });
 
     await existing.whenSynced;
+    scope.assertCurrent();
     return existing.doc;
   }
 
@@ -1077,11 +1092,13 @@ export async function getOrCreateRowSubDoc(documentId: string): Promise<YDoc> {
 
   const entry = { doc, whenSynced };
 
+  scope.assertCurrent();
   // Post-await race check: another caller may have populated rowSubDocs
   const raceWinner = rowSubDocs.get(documentId);
 
   if (raceWinner) {
     await raceWinner.whenSynced;
+    scope.assertCurrent();
     return raceWinner.doc;
   }
 
@@ -1097,6 +1114,7 @@ export async function getOrCreateRowSubDoc(documentId: string): Promise<YDoc> {
   });
 
   await whenSynced;
+  scope.assertCurrent();
 
   // Log final state after sync
   const finalTextSummary = getDocTextSummary(doc);
@@ -1124,7 +1142,7 @@ export function getCachedRowSubDocIds(): string[] {
 // Tracks in-flight `ensureRowDocumentExists` promises per documentId.
 // `syncAllToServer` awaits these before batch-syncing so the server-side
 // collab is guaranteed to exist when `collabFullSyncBatch` runs.
-const pendingRowDocEnsures = new Map<string, Promise<boolean>>();
+const pendingRowDocEnsures = new ScopedCollabMap<Promise<boolean>>();
 
 /**
  * Register an in-flight `ensureRowDocumentExists` promise so that

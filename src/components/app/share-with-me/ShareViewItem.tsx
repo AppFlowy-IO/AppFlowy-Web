@@ -102,7 +102,8 @@ function SharedViewActions({
   const currentWorkspaceId = useCurrentWorkspaceId();
   const { updatePage, uploadFile } = useAppOperations();
   const { openRenameModal, openDeleteModal } = useAppOverlayContext();
-  const role = useUserWorkspaceInfo()?.selectedWorkspace.role;
+  // An account without a workspace has no selected workspace (and no role) yet.
+  const role = useUserWorkspaceInfo()?.selectedWorkspace?.role;
   const isWorkspaceMember = role === Role.Member || role === Role.Owner;
   const canCreateChildren =
     isWorkspaceMember && view.layout === ViewLayout.Document && !isSpaceView(view) && !isDatabaseContainer(view);

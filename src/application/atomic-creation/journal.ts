@@ -131,6 +131,26 @@ export async function listPendingAtomicCreationsForCurrentUser(workspaceId: stri
   return records;
 }
 
+/**
+ * The server definitively refused a command it never committed: forget it, so no retry is offered
+ * for something that cannot be created. A committed receipt is never released. Resolves whether
+ * the command was released.
+ */
+export async function releaseRefusedAtomicCreation(owner: AtomicCreationOwner, recordId: string): Promise<boolean> {
+  owner.assertCurrent();
+  const released = await db.transaction('rw', db.atomic_creation, async () => {
+    const current = await db.atomic_creation.get(recordId);
+
+    if (!current || current.state === 'committed') return false;
+    checkRecord(owner, current);
+    await db.atomic_creation.delete(recordId);
+    return true;
+  });
+
+  if (released) publishActivity();
+  return released;
+}
+
 interface RecoveryOptions<K extends AtomicCreationKind, T> {
   owner: AtomicCreationOwner;
   record: AtomicCreationRecord<K>;

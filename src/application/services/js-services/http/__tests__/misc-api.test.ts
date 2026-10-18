@@ -71,3 +71,37 @@ describe('searchWorkspaceDocumentPage', () => {
     );
   });
 });
+
+
+describe('search HTTP cancellation', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it.each(['keyword', 'summary'] as const)('forwards the caller signal to %s transport', async (kind) => {
+    const controller = new AbortController();
+    const canceled = new Error('canceled');
+    const transport = jest.fn((_url: string, configOrPayload: unknown, postConfig?: { signal?: AbortSignal }) => {
+      const config = postConfig ?? configOrPayload as { signal?: AbortSignal };
+
+      return new Promise((_resolve, reject) => {
+        config.signal?.addEventListener('abort', () => reject(canceled), { once: true });
+      });
+    });
+
+    jest.mocked(getAxios).mockReturnValue({ get: transport, post: transport } as never);
+    if (kind === 'keyword') {
+      await searchWorkspaceDocumentPage('workspace-id', 'private notes', 20, 'keyword-stream', controller.signal);
+    } else {
+      await generateSearchSummary('workspace-id', 'private notes', controller.signal);
+    }
+
+    const request = jest.mocked(executeAPIRequest).mock.calls[0][0];
+    const pending = request();
+    const rejection = expect(pending).rejects.toBe(canceled);
+    const config = kind === 'keyword' ? transport.mock.calls[0][1] : transport.mock.calls[0][2];
+
+    expect(config).toEqual(expect.objectContaining({ signal: controller.signal }));
+    controller.abort();
+    await rejection;
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
+});

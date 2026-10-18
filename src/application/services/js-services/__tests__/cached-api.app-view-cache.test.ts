@@ -1,4 +1,5 @@
 import { db } from '@/application/db';
+import { serverScopedAccountKey } from '@/application/db/collab-storage-scope';
 import { getView, signInWithPassword } from '@/application/services/js-services/http';
 import { emit, EventType } from '@/application/session';
 import { getTokenParsed, isTokenValid } from '@/application/session/token';
@@ -12,6 +13,20 @@ import {
   invalidateWorkspaceViewMemoryCache,
   signInWithPasswordWithRedirect,
 } from '../cached-api';
+
+let mockServer = 'https://server-a';
+
+// Main's server restore boundary reads the base URL while modules load, before this file's
+// variables are initialized: fall back to the caller's default until then.
+jest.mock('@/utils/runtime-config', () => ({
+  getConfigValue: (_key: string, fallback?: string) => {
+    try {
+      return mockServer;
+    } catch {
+      return fallback;
+    }
+  },
+}));
 
 jest.mock('@/application/db', () => ({
   db: {
@@ -164,6 +179,7 @@ function createDeferred<T>() {
 describe('cached app view cache user scoping', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockServer = 'https://server-a';
     appViewCacheTable.delete.mockResolvedValue(undefined);
     appViewCacheTable.get.mockResolvedValue(undefined);
     appViewCacheTable.put.mockResolvedValue(undefined);
@@ -174,7 +190,7 @@ describe('cached app view cache user scoping', () => {
 
     setCurrentUser('user-a');
     appViewCacheTable.get.mockResolvedValue({
-      user_id: 'user-a',
+      user_id: serverScopedAccountKey('user-a'),
       workspace_id: 'workspace-a',
       view_id: view.view_id,
       data: view,
@@ -183,7 +199,24 @@ describe('cached app view cache user scoping', () => {
 
     await expect(getCachedAppViewFromDisk('workspace-a', view.view_id)).resolves.toBe(view);
 
-    expect(appViewCacheTable.get).toHaveBeenCalledWith(['user-a', 'workspace-a', view.view_id]);
+    expect(appViewCacheTable.get).toHaveBeenCalledWith([serverScopedAccountKey('user-a'), 'workspace-a', view.view_id]);
+  });
+
+  it.each(['account', 'server'])('does not reveal a durable response after a pending %s switch', async (dimension) => {
+    setCurrentUser('user-a');
+    const view = createView('pending-private-view', 'private title');
+    const deferred = createDeferred<unknown>();
+
+    appViewCacheTable.get.mockReturnValue(deferred.promise);
+    const pending = getCachedAppViewFromDisk('workspace-a', view.view_id);
+    const originalUserKey = serverScopedAccountKey('user-a');
+
+    if (dimension === 'account') setCurrentUser('user-b');
+    else mockServer = 'https://server-b';
+    deferred.resolve({ user_id: originalUserKey, workspace_id: 'workspace-a', view_id: view.view_id,
+      data: view, updated_at: Date.now() });
+    await expect(pending).resolves.toBeUndefined();
+    expect(appViewCacheTable.delete).not.toHaveBeenCalled();
   });
 
   it('drops and deletes over-age durable view cache records', async () => {
@@ -192,7 +225,7 @@ describe('cached app view cache user scoping', () => {
 
     setCurrentUser('user-a');
     appViewCacheTable.get.mockResolvedValue({
-      user_id: 'user-a',
+      user_id: serverScopedAccountKey('user-a'),
       workspace_id: 'workspace-a',
       view_id: view.view_id,
       data: view,
@@ -201,7 +234,7 @@ describe('cached app view cache user scoping', () => {
 
     await expect(getCachedAppViewFromDisk('workspace-a', view.view_id)).resolves.toBeUndefined();
 
-    expect(appViewCacheTable.delete).toHaveBeenCalledWith(['user-a', 'workspace-a', view.view_id]);
+    expect(appViewCacheTable.delete).toHaveBeenCalledWith([serverScopedAccountKey('user-a'), 'workspace-a', view.view_id]);
   });
 
   it('does not promote durable fallback data into the fresh in-memory cache', async () => {
@@ -212,7 +245,7 @@ describe('cached app view cache user scoping', () => {
 
     setCurrentUser('user-a');
     appViewCacheTable.get.mockResolvedValue({
-      user_id: 'user-a',
+      user_id: serverScopedAccountKey('user-a'),
       workspace_id: workspaceId,
       view_id: viewId,
       data: diskView,
@@ -248,7 +281,7 @@ describe('cached app view cache user scoping', () => {
     expect(appViewCacheTable.put).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
-        user_id: 'user-a',
+        user_id: serverScopedAccountKey('user-a'),
         workspace_id: workspaceId,
         view_id: viewId,
         data: userAView,
@@ -257,7 +290,7 @@ describe('cached app view cache user scoping', () => {
     expect(appViewCacheTable.put).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
-        user_id: 'user-b',
+        user_id: serverScopedAccountKey('user-b'),
         workspace_id: workspaceId,
         view_id: viewId,
         data: userBView,
@@ -270,7 +303,7 @@ describe('cached app view cache user scoping', () => {
 
     invalidateViewCache('workspace-a', 'view-a');
 
-    expect(appViewCacheTable.delete).toHaveBeenCalledWith(['user-a', 'workspace-a', 'view-a']);
+    expect(appViewCacheTable.delete).toHaveBeenCalledWith([serverScopedAccountKey('user-a'), 'workspace-a', 'view-a']);
   });
 
   it('fences an invalidated request from overwriting or detaching its replacement', async () => {
@@ -319,13 +352,123 @@ describe('cached app view cache user scoping', () => {
     staleRequest.resolve(staleView);
     await expect(stale).resolves.toBe(staleView);
     expect(getCachedAppView('workspace-a', 'pending-a')).toBeUndefined();
-    expect(appViewCacheTable.delete).not.toHaveBeenCalledWith(['user-a', 'workspace-a', 'pending-a']);
+    expect(appViewCacheTable.delete).not.toHaveBeenCalledWith([serverScopedAccountKey('user-a'), 'workspace-a', 'pending-a']);
+  });
+});
+
+describe('caller-owned app view cancellation', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    getViewMock.mockReset();
+    mockServer = 'https://server-a';
+    setCurrentUser('cancellation-user');
+    appViewCacheTable.put.mockResolvedValue(undefined);
+  });
+
+  it('does not join or cancel a shared in-flight read when its caller aborts', async () => {
+    const workspace = 'workspace-cancel-shared';
+    const viewId = 'view-cancel-shared';
+    const sharedReply = createDeferred<View>();
+    const sharedView = createView(viewId, 'shared result');
+    const controller = new AbortController();
+    const canceled = new Error('canceled');
+
+    getViewMock.mockReturnValueOnce(sharedReply.promise).mockImplementationOnce(
+      (_workspace: string, _view: string, _depth: number, signal: AbortSignal) => new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(canceled), { once: true });
+      })
+    );
+    const shared = getAppViewCached(workspace, viewId);
+    const isolated = getAppViewCached(workspace, viewId, controller.signal);
+    const rejection = expect(isolated).rejects.toBe(canceled);
+
+    expect(getViewMock).toHaveBeenNthCalledWith(1, workspace, viewId);
+    expect(getViewMock).toHaveBeenNthCalledWith(2, workspace, viewId, 1, controller.signal);
+    controller.abort();
+    await rejection;
+    const sharedFollower = getAppViewCached(workspace, viewId);
+
+    expect(getViewMock).toHaveBeenCalledTimes(2);
+    sharedReply.resolve(sharedView);
+    await expect(Promise.all([shared, sharedFollower])).resolves.toEqual([sharedView, sharedView]);
+    expect(getCachedAppView(workspace, viewId)).toBe(sharedView);
+    expect(appViewCacheTable.put).toHaveBeenCalledTimes(1);
+    expect(appViewCacheTable.delete).not.toHaveBeenCalled();
+  });
+
+  it('bypasses a warm shared cache and does not replace memory or disk on success', async () => {
+    const workspace = 'workspace-cancel-warm';
+    const viewId = 'view-cancel-warm';
+    const sharedView = createView(viewId, 'cached shared result');
+    const isolatedView = createView(viewId, 'private caller result');
+    const controller = new AbortController();
+
+    getViewMock.mockResolvedValueOnce(sharedView).mockResolvedValueOnce(isolatedView);
+    await expect(getAppViewCached(workspace, viewId)).resolves.toBe(sharedView);
+    appViewCacheTable.put.mockClear();
+    await expect(getAppViewCached(workspace, viewId, controller.signal)).resolves.toBe(isolatedView);
+    expect(getViewMock).toHaveBeenCalledTimes(2);
+    expect(getCachedAppView(workspace, viewId)).toBe(sharedView);
+    expect(appViewCacheTable.get).not.toHaveBeenCalled();
+    expect(appViewCacheTable.put).not.toHaveBeenCalled();
+    await expect(getAppViewCached(workspace, viewId)).resolves.toBe(sharedView);
+    expect(getViewMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('isolates two cancellable callers and never populates the shared cache', async () => {
+    const workspace = 'workspace-cancel-two';
+    const viewId = 'view-cancel-two';
+    const first = new AbortController();
+    const second = new AbortController();
+    const canceled = new Error('first canceled');
+    const secondReply = createDeferred<View>();
+    const secondView = createView(viewId, 'second result');
+
+    getViewMock.mockImplementationOnce(
+      (_workspace: string, _view: string, _depth: number, signal: AbortSignal) => new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(canceled), { once: true });
+      })
+    ).mockReturnValueOnce(secondReply.promise);
+    const firstRead = getAppViewCached(workspace, viewId, first.signal);
+    const secondRead = getAppViewCached(workspace, viewId, second.signal);
+    const rejection = expect(firstRead).rejects.toBe(canceled);
+
+    first.abort();
+    await rejection;
+    expect(second.signal.aborted).toBe(false);
+    secondReply.resolve(secondView);
+    await expect(secondRead).resolves.toBe(secondView);
+    expect(getViewMock).toHaveBeenNthCalledWith(2, workspace, viewId, 1, second.signal);
+    expect(getCachedAppView(workspace, viewId)).toBeUndefined();
+    expect(appViewCacheTable.put).not.toHaveBeenCalled();
+  });
+
+  it('a late canceled transport response cannot overwrite a newer shared result', async () => {
+    const workspace = 'workspace-cancel-late';
+    const viewId = 'view-cancel-late';
+    const controller = new AbortController();
+    const lateReply = createDeferred<View>();
+    const stale = createView(viewId, 'stale canceled result');
+    const current = createView(viewId, 'current shared result');
+
+    // Even a transport that races cancellation and resolves must stay outside cache authority.
+    getViewMock.mockReturnValueOnce(lateReply.promise).mockResolvedValueOnce(current);
+    const pending = getAppViewCached(workspace, viewId, controller.signal);
+
+    controller.abort();
+    await expect(getAppViewCached(workspace, viewId)).resolves.toBe(current);
+    lateReply.resolve(stale);
+    await expect(pending).resolves.toBe(stale);
+    expect(getCachedAppView(workspace, viewId)).toBe(current);
+    expect(appViewCacheTable.put).toHaveBeenCalledTimes(1);
+    expect(appViewCacheTable.put).toHaveBeenCalledWith(expect.objectContaining({ data: current }));
   });
 });
 
 describe('cached authentication state consistency', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockServer = 'https://server-a';
   });
 
   it('preserves the current session when an account-switch login fails', async () => {

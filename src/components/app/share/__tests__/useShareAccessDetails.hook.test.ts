@@ -961,6 +961,32 @@ describe('useShareAccessDetails', () => {
     expect(mockGetSharedGroups).toHaveBeenCalledTimes(2);
   });
 
+  it('keeps the people list on screen while a permission notification is rechecked', async () => {
+    let resolveRefresh!: (value: unknown) => void;
+    const keptPerson = { ...removedPerson, email: 'kept@appflowy.io', name: 'Kept user' };
+
+    mockGetShareDetail
+      .mockResolvedValueOnce({ shared_with: [keptPerson] })
+      .mockReturnValueOnce(new Promise((resolve) => { resolveRefresh = resolve; }));
+
+    const { result } = renderHook(() => useShareAccessDetails('view-1', true));
+
+    await waitFor(() => expect(result.current.people).toEqual([keptPerson]));
+    act(() => {
+      mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+    });
+    await waitFor(() => expect(mockGetShareDetail).toHaveBeenCalledTimes(2));
+    // Revalidating, not blank: the confirmed rows stay until the new answer replaces them.
+    expect(result.current.isLoadingPeople).toBe(true);
+    expect(result.current.people).toEqual([keptPerson]);
+
+    await act(async () => {
+      resolveRefresh({ shared_with: [keptPerson, removedPerson] });
+    });
+    await waitFor(() => expect(result.current.people).toEqual([keptPerson, removedPerson]));
+    expect(result.current.isLoadingPeople).toBe(false);
+  });
+
   it('removes a successfully revoked person from local state immediately', async () => {
     mockGetShareDetail.mockResolvedValueOnce({ shared_with: [removedPerson] });
 

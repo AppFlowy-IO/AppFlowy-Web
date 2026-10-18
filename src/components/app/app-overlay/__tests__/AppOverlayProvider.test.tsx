@@ -9,6 +9,7 @@ let mockManageSpaceModuleError: Error | null = null;
 const mockNotifyError = jest.fn();
 
 jest.mock('@/components/app/app.hooks', () => ({
+  useCurrentWorkspaceId: () => 'workspace-1',
   useAppOperations: () => ({ updatePage: jest.fn() }),
   useAppOutline: () => [],
 }));

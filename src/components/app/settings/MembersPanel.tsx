@@ -1,9 +1,9 @@
 import dayjs from 'dayjs';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import { ERROR_CODE } from '@/application/constants';
+import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import { WorkspaceService } from '@/application/services/domains';
 import { Role, WorkspaceGroup, WorkspaceGroupMember, WorkspaceMember } from '@/application/types';
 import { isSameUserUid } from '@/application/user-uid';
@@ -13,6 +13,12 @@ import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
 import { useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { AppEventEmitterContext } from '@/components/app/contexts/AppEventEmitterContext';
+import {
+  GroupListRead,
+  GroupSpaceCoverageCard,
+  joinsGroupListRead,
+} from '@/components/app/settings/GroupSpaceCoverageControl';
 import { PersonAvatar } from '@/components/app/share/PersonAvatar';
 import { WorkspaceGroupIcon } from '@/components/app/share/WorkspaceGroupIcon';
 import {
@@ -47,11 +53,12 @@ import { Progress } from '@/components/ui/progress';
 import { SearchInput } from '@/components/ui/search-input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
+import { createCoalescedRefresh } from '@/utils/coalesced-refresh';
 import { getErrorMessage, isAPIErrorCode } from '@/utils/errors';
 
 import type { TFunction } from 'i18next';
 
-type PeopleTab = 'members' | 'groups';
+export type PeopleTab = 'members' | 'groups';
 type GroupDetailTab = 'general' | 'members';
 const GROUP_EXCLUDED_WORKSPACE_ROLES = [Role.Guest];
 const PEOPLE_GUIDE_URL = 'https://appflowy.com/guide/getting-started-with-appflowy';
@@ -126,7 +133,7 @@ function fallbackInitial(value: string): string {
 
 type CurrentWorkspaceId = ReturnType<typeof useCurrentWorkspaceId>;
 
-export function MembersPanel() {
+export function MembersPanel({ initialTab }: { initialTab?: PeopleTab } = {}) {
   const currentWorkspaceId = useCurrentWorkspaceId();
   const activeWorkspaceScopeRef = useRef({
     generation: 0,
@@ -153,6 +160,7 @@ export function MembersPanel() {
       currentWorkspaceId={currentWorkspaceId}
       workspaceGeneration={workspaceGeneration}
       isCurrentWorkspaceRequest={isCurrentWorkspaceRequest}
+      initialTab={initialTab}
     />
   );
 }
@@ -161,15 +169,18 @@ function MembersPanelForWorkspace({
   currentWorkspaceId,
   workspaceGeneration,
   isCurrentWorkspaceRequest,
+  initialTab = 'members',
 }: {
   currentWorkspaceId: CurrentWorkspaceId;
   workspaceGeneration: number;
   isCurrentWorkspaceRequest: (workspaceId: CurrentWorkspaceId, generation: number) => boolean;
+  initialTab?: PeopleTab;
 }) {
   const { t } = useTranslation();
+  const emitter = useContext(AppEventEmitterContext);
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const currentUser = useCurrentUser();
-  const [tab, setTab] = useState<PeopleTab>('members');
+  const [tab, setTab] = useState<PeopleTab>(initialTab);
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [groups, setGroups] = useState<WorkspaceGroup[]>([]);
   const [groupSearch, setGroupSearch] = useState('');
@@ -190,6 +201,13 @@ function MembersPanelForWorkspace({
   const [showGroupSearch, setShowGroupSearch] = useState(false);
   const groupSearchInputRef = useRef<HTMLInputElement | null>(null);
   const removingRef = useRef(false);
+  // All group reads share one queue (one read at a time plus the latest follow-up), and only the
+  // latest request may publish, so a slow older read can't bring back a value that has changed.
+  const [queueGroupsRead] = useState(() => createCoalescedRefresh<void>());
+  const groupsRead = useRef<{ request: number; reportFailure: boolean; latest?: GroupListRead }>({
+    request: 0,
+    reportFailure: false,
+  });
 
   const currentWorkspace = useMemo(
     () => userWorkspaceInfo?.workspaces.find((workspace) => workspace.id === currentWorkspaceId),
@@ -236,32 +254,113 @@ function MembersPanelForWorkspace({
     }
   }, []);
 
+  /**
+   * Reads the group list. The first load and refreshes after a change report failures; background
+   * revalidation keeps the last list quietly. A read replaced before it started hands its
+   * reporting on to the read that replaced it. Every call drops reads already in flight.
+   */
+  const readGroups = useCallback(
+    (reportFailure: boolean) => {
+      if (!currentWorkspaceId) return Promise.resolve();
+      const requestedWorkspaceId = currentWorkspaceId;
+      const requestGeneration = workspaceGeneration;
+      const reads = groupsRead.current;
+      const request = ++reads.request;
+      const read: GroupListRead = { request, settled: false };
+      const isCurrent = () =>
+        reads.request === request && isCurrentWorkspaceRequest(requestedWorkspaceId, requestGeneration);
+
+      reads.latest = read;
+      if (reportFailure) reads.reportFailure = true;
+      return queueGroupsRead(async () => {
+        try {
+          if (!isCurrent()) return;
+          const sentAt = Date.now();
+          const result = await WorkspaceService.getWorkspaceGroups(requestedWorkspaceId);
+
+          if (!isCurrent()) return;
+          reads.reportFailure = false;
+          read.freshAsOf = sentAt;
+          applyGroups(result.groups || []);
+        } catch (e) {
+          if (!isCurrent()) return;
+          const report = reads.reportFailure;
+
+          reads.reportFailure = false;
+          if (report) toast.error(getErrorMessage(e, t('settings.appearance.people.loadGroupsFailed')));
+        } finally {
+          read.settled = true;
+        }
+      });
+    },
+    [applyGroups, currentWorkspaceId, isCurrentWorkspaceRequest, queueGroupsRead, t, workspaceGeneration]
+  );
+
   useEffect(() => {
+    const reads = groupsRead.current;
+
     if (!currentWorkspaceId || !canViewGroups) {
+      reads.request += 1;
+      reads.reportFailure = false;
       applyGroups([]);
       setLoadingGroups(false);
       return;
     }
 
-    let cancelled = false;
+    let active = true;
 
     setLoadingGroups(true);
-    void (async () => {
-      try {
-        const result = await WorkspaceService.getWorkspaceGroups(currentWorkspaceId);
-
-        if (!cancelled) applyGroups(result.groups || []);
-      } catch (e) {
-        if (!cancelled) toast.error(getErrorMessage(e, t('settings.appearance.people.loadGroupsFailed')));
-      } finally {
-        if (!cancelled) setLoadingGroups(false);
-      }
-    })();
+    void readGroups(true).finally(() => {
+      if (active) setLoadingGroups(false);
+    });
 
     return () => {
-      cancelled = true;
+      active = false;
+      // Nothing from an abandoned read may land or toast after the panel closes or access changes.
+      reads.request += 1;
     };
-  }, [applyGroups, canViewGroups, currentWorkspaceId, t]);
+  }, [applyGroups, canViewGroups, currentWorkspaceId, readGroups]);
+
+  // While groups are on screen, follow changes made elsewhere (another owner, hints missed while
+  // disconnected). The last list stays visible until the new one arrives.
+  const followGroupChanges = canViewGroups && (tab === 'groups' || selectedGroup !== null);
+
+  useEffect(() => {
+    if (!followGroupChanges) return;
+    const revalidate = () => {
+      void readGroups(false);
+    };
+
+    // Joining leaves the read as it is, including a failure report it carries for the first load.
+    const revalidateInBackground = () => {
+      const reads = groupsRead.current;
+
+      if (!joinsGroupListRead(reads.latest, reads.request)) revalidate();
+    };
+
+    const visible = () => {
+      if (document.visibilityState === 'visible') revalidateInBackground();
+    };
+
+    const socket = (readyState: unknown) => {
+      if (readyState === WebSocket.OPEN) revalidateInBackground();
+    };
+
+    // The notification adapter follows every workspace permission hint with PERMISSION_CHANGED,
+    // so this one event covers both.
+    emitter?.on(APP_EVENTS.PERMISSION_CHANGED, revalidate);
+    emitter?.on(APP_EVENTS.WEBSOCKET_STATUS, socket);
+    window.addEventListener('focus', revalidateInBackground);
+    window.addEventListener('online', revalidateInBackground);
+    document.addEventListener('visibilitychange', visible);
+    return () => {
+      emitter?.off(APP_EVENTS.PERMISSION_CHANGED, revalidate);
+      emitter?.off(APP_EVENTS.WEBSOCKET_STATUS, socket);
+      window.removeEventListener('focus', revalidateInBackground);
+      window.removeEventListener('online', revalidateInBackground);
+      document.removeEventListener('visibilitychange', visible);
+    };
+  }, [emitter, followGroupChanges, readGroups]);
 
   useEffect(() => {
     if (!currentWorkspaceId || !isOwner) {
@@ -322,21 +421,15 @@ function MembersPanelForWorkspace({
   }, [currentWorkspaceId]);
 
   const refreshGroups = useCallback(async () => {
-    if (!currentWorkspaceId || !isOwner) return;
-    const requestedWorkspaceId = currentWorkspaceId;
-    const requestGeneration = workspaceGeneration;
-    const isCurrentRequest = () => isCurrentWorkspaceRequest(requestedWorkspaceId, requestGeneration);
+    if (!isOwner) return;
+    await readGroups(true);
+  }, [isOwner, readGroups]);
 
-    try {
-      const result = await WorkspaceService.getWorkspaceGroups(requestedWorkspaceId);
-
-      if (isCurrentRequest()) applyGroups(result.groups || []);
-    } catch (e) {
-      if (isCurrentRequest()) {
-        toast.error(getErrorMessage(e, t('settings.appearance.people.loadGroupsFailed')));
-      }
-    }
-  }, [applyGroups, currentWorkspaceId, isCurrentWorkspaceRequest, isOwner, t, workspaceGeneration]);
+  // Group dialog writes outlive a closed dialog, but never a workspace switch.
+  const isCurrentGroupScope = useCallback(
+    () => isCurrentWorkspaceRequest(currentWorkspaceId, workspaceGeneration),
+    [currentWorkspaceId, isCurrentWorkspaceRequest, workspaceGeneration]
+  );
 
   const visibleGroups = useMemo(() => {
     const normalizedGroupSearch = groupSearch.trim().toLowerCase();
@@ -849,6 +942,7 @@ function MembersPanelForWorkspace({
           onGroupChanged={refreshGroups}
           onDeleteRequested={() => requestDeleteGroup(selectedGroupForPanel)}
           workspaceMembers={members}
+          isCurrent={isCurrentGroupScope}
         />
       )}
       {isOwner && showCreateGroup && currentWorkspaceId && (
@@ -991,6 +1085,8 @@ interface GroupDetailModalProps {
   onClose: () => void;
   onGroupChanged: () => Promise<void>;
   onDeleteRequested: () => void;
+  /** False once the workspace that opened the dialog is no longer current. */
+  isCurrent?: () => boolean;
 }
 
 interface CreateGroupModalProps {
@@ -1357,10 +1453,15 @@ function GroupDetailModal({
   onClose,
   onGroupChanged,
   onDeleteRequested,
+  isCurrent,
 }: GroupDetailModalProps) {
   const { t } = useTranslation();
   const readOnly = isScimManagedGroup(group);
-  const [tab, setTab] = useState<GroupDetailTab>('general');
+  // Access to all spaces is an AppFlowy setting, so directory-managed groups can still change it.
+  const coverageSupported = group.space_coverage_supported === true;
+  const showGeneralTab = !readOnly || coverageSupported;
+  const initialTab: GroupDetailTab = showGeneralTab ? 'general' : 'members';
+  const [tab, setTab] = useState<GroupDetailTab>(initialTab);
   const [groupMembers, setGroupMembers] = useState<WorkspaceGroupMember[]>([]);
   const [memberSearch, setMemberSearch] = useState('');
   const [loadingGroupMembers, setLoadingGroupMembers] = useState(false);
@@ -1372,7 +1473,7 @@ function GroupDetailModal({
 
     let cancelled = false;
 
-    setTab(readOnly ? 'members' : 'general');
+    setTab(initialTab);
     setMemberSearch('');
     setLoadingGroupMembers(true);
 
@@ -1394,7 +1495,7 @@ function GroupDetailModal({
     return () => {
       cancelled = true;
     };
-  }, [group.group_id, open, readOnly, t, workspaceId]);
+  }, [group.group_id, initialTab, open, t, workspaceId]);
 
   const groupMemberUidSet = useMemo(() => new Set(groupMembers.map((member) => member.uid)), [groupMembers]);
   const groupMemberEmailSet = useMemo(
@@ -1528,7 +1629,7 @@ function GroupDetailModal({
             className='mt-5 min-h-0 flex-1 gap-4'
           >
             <TabsList className='gap-1'>
-              {!readOnly && (
+              {showGeneralTab && (
                 <TabsTrigger
                   value='general'
                   className='h-8 min-w-0 items-center rounded-300 px-3 py-1.5 text-sm font-medium text-text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick data-[state=active]:bg-fill-content-hover data-[state=active]:text-text-primary data-[state=active]:after:hidden'
@@ -1544,27 +1645,39 @@ function GroupDetailModal({
               </TabsTrigger>
             </TabsList>
 
-            {!readOnly && (
-              <TabsContent value='general' className='outline-none'>
-                <div className='flex items-center justify-between gap-4 rounded-400 border border-border-primary p-4'>
-                  <div className='min-w-0'>
-                    <div className='text-sm font-semibold text-text-primary'>
-                      {t('settings.appearance.people.deleteGroup')}
+            {showGeneralTab && (
+              <TabsContent value='general' className='min-h-0 flex-1 outline-none'>
+                <div className='appflowy-scroller flex h-full min-h-0 flex-col gap-4 overflow-y-auto overscroll-contain'>
+                  {coverageSupported && (
+                    <GroupSpaceCoverageCard
+                      workspaceId={workspaceId}
+                      group={group}
+                      isCurrent={isCurrent}
+                      onChanged={onGroupChanged}
+                    />
+                  )}
+                  {!readOnly && (
+                    <div className='flex items-center justify-between gap-4 rounded-400 border border-border-primary p-4'>
+                      <div className='min-w-0'>
+                        <div className='text-sm font-semibold text-text-primary'>
+                          {t('settings.appearance.people.deleteGroup')}
+                        </div>
+                        <div className='mt-1 text-sm leading-5 text-text-secondary'>
+                          {t('settings.appearance.people.deleteGroupDescription')}
+                        </div>
+                      </div>
+                      <Button
+                        type='button'
+                        variant='destructive-outline'
+                        data-testid='group-detail-delete-button'
+                        onClick={onDeleteRequested}
+                        className='px-4 focus-visible:ring-1 focus-visible:ring-border-error-thick'
+                      >
+                        <DeleteIcon aria-hidden='true' className='h-4 w-4' />
+                        {t('settings.appearance.people.deleteGroup')}
+                      </Button>
                     </div>
-                    <div className='mt-1 text-sm leading-5 text-text-secondary'>
-                      {t('settings.appearance.people.deleteGroupDescription')}
-                    </div>
-                  </div>
-                  <Button
-                    type='button'
-                    variant='destructive-outline'
-                    data-testid='group-detail-delete-button'
-                    onClick={onDeleteRequested}
-                    className='px-4 focus-visible:ring-1 focus-visible:ring-border-error-thick'
-                  >
-                    <DeleteIcon aria-hidden='true' className='h-4 w-4' />
-                    {t('settings.appearance.people.deleteGroup')}
-                  </Button>
+                  )}
                 </div>
               </TabsContent>
             )}

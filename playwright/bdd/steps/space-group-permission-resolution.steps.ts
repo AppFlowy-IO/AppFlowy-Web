@@ -16,8 +16,8 @@ const SPACE_VISIBILITY_CUSTOM = 'custom';
 // Seeded space-level grant for group One: an ordinary Member with Can view access.
 const SEEDED_GROUP_ONE_ROLE = SPACE_MEMBER_ROLE_MEMBER;
 const SEEDED_GROUP_ONE_ACCESS = ACCESS_LEVEL_READ_ONLY;
-// Every Member principal in a Custom space resolves through this one collective
-// access level; an individual Member group cannot carry a different level.
+// The baseline assignment inherits this collective default. Explicit overrides
+// remain independent of the default and are restored exactly after each scenario.
 const SEEDED_CUSTOM_MEMBER_ACCESS = ACCESS_LEVEL_READ_ONLY;
 // Seeded page-level share for group Two on Group Page A.
 const SEEDED_GROUP_TWO_PAGE_ACCESS = ACCESS_LEVEL_READ_AND_WRITE;
@@ -121,6 +121,8 @@ type SpaceGroupPermission = {
   name: string;
   role: string;
   access_level: number;
+  access_level_override: number | null;
+  effective_access_level: number | null;
   member_count: number;
   source: string;
 };
@@ -185,15 +187,11 @@ type LiveMarkerWindow = Window & { __stg0822LiveMarker?: string };
 type ScenarioState = {
   fixture?: FixtureContext;
   currentSeededPage?: SeededStgPage;
-  // Set before the owner-role mutation starts so the After hook restores the
-  // canonical group One grant even when a later assertion fails.
-  restoreGroupOneGrant?: boolean;
-  // Set before a group membership mutation starts so the After hook re-adds
-  // every seeded membership even when a later live assertion fails.
-  restoreGroupMemberships?: boolean;
-  // Set before mutating the Custom collective Member access so teardown can
-  // restore the canonical Can view baseline even after a failed assertion.
-  restoreCustomMemberAccess?: boolean;
+  original?: {
+    groupOne: SpaceGroupPermission | null;
+    memberDefault: number | null;
+    memberships: { groupId: string; uid: string; present: boolean }[];
+  };
   liveSession?: LiveSession;
 };
 
@@ -208,38 +206,80 @@ Before(async ({ page }) => {
 After(async ({ page, request }) => {
   const state = stateByPage.get(page);
 
-  if (!state?.restoreGroupOneGrant && !state?.restoreGroupMemberships && !state?.restoreCustomMemberAccess) return;
+  if (!state?.original) return;
 
-  // Re-authenticate the owner through the API: the browser session may now belong
-  // to another seeded account (or be gone entirely) when the scenario ends.
+  // Restore independently: one failed request must not suppress the other repairs.
   const fixture = await resolveFixtureContext(request);
+  const original = state.original;
+  const path = spaceGroupApiPath(fixture.workspaceId, STG_SPACES['group space A'].viewId, fixture.groupIds['group one']);
+  const repairs = [
+    async () => {
+      if (original.groupOne) {
+        const { role, access_level, access_level_override } = original.groupOne;
 
-  if (state.restoreGroupMemberships) {
-    await ensureSeededGroupMemberships(request, fixture);
+        await postApi(request, fixture.ownerToken, path, { role, access_level, access_level_override });
+      } else if (await findSpaceGroupGrant(request, fixture, fixture.groupIds['group one'])) {
+        await deleteApi(request, fixture.ownerToken, path);
+      }
+
+      const restored = await findSpaceGroupGrant(request, fixture, fixture.groupIds['group one']);
+
+      expect(restored ? { role: restored.role, override: restored.access_level_override } : null).toEqual(
+        original.groupOne ? { role: original.groupOne.role, override: original.groupOne.access_level_override } : null
+      );
+    },
+    () => updateCustomMemberAccess(request, fixture, STG_SPACES['group space A'].viewId, original.memberDefault),
+    ...original.memberships.map(({ groupId, uid, present }) => async () => {
+      const roster = await getApiPreservingUid<WorkspaceGroupMembersPayload>(request, fixture.ownerToken, groupMembersApiPath(fixture, groupId));
+      const current = roster.members.some(member => String(member.uid) === uid);
+
+      if (present && !current) await addGroupMember(request, fixture, groupId, uid);
+      if (!present && current) await deleteApi(request, fixture.ownerToken, `${groupMembersApiPath(fixture, groupId)}/${uid}`);
+
+      const restored = await getApiPreservingUid<WorkspaceGroupMembersPayload>(request, fixture.ownerToken, groupMembersApiPath(fixture, groupId));
+
+      expect(restored.members.some(member => String(member.uid) === uid)).toBe(present);
+    }),
+  ];
+  const failures: unknown[] = [];
+
+  for (const repair of repairs) {
+    try { await repair(); } catch (error) { failures.push(error); }
   }
 
-  if (state.restoreCustomMemberAccess) {
-    await ensureSeededCustomMemberAccess(request, fixture);
-  }
-
-  if (state.restoreGroupOneGrant) {
-    await ensureSeededGroupOneGrant(request, fixture);
-  }
+  expect(failures, 'Exact seeded fixture restoration must succeed').toEqual([]);
 });
 
 Given('the seeded stg0822 space group permission fixture exists', async ({ page, request }) => {
-  // Seed with (server repo):
-  // cargo test --test space_group_permission_seed seed_space_group_permission_suite -- --ignored --nocapture
-  //
-  // Resolving the context here also re-asserts the seeded group rosters and the
-  // Custom Member audience and group One grant, so an interrupted mutating
-  // scenario cannot leak into the read-only scenarios.
+  // Seed with the server space_group_permission_seed ignored test. Snapshot
+  // before baseline adjustments so even a failed Given can restore its input.
   const fixture = await resolveFixtureContext(request);
+  const groupOne = await findSpaceGroupGrant(request, fixture, fixture.groupIds['group one']);
+  const settings = await getSpacePermission(request, fixture, STG_SPACES['group space A'].viewId);
+  const memberships = [];
 
+  if (groupOne && groupOne.access_level_override === undefined) {
+    throw new Error('Tri-state group assignment DTO is required; refusing a lossy fixture restore');
+  }
+
+  for (const alias of Object.keys(SEEDED_GROUP_MEMBERSHIPS) as StgGroupAlias[]) {
+    const groupId = fixture.groupIds[alias];
+    const emails = await listGroupMemberEmails(request, fixture, groupId);
+
+    for (const account of SEEDED_GROUP_MEMBERSHIPS[alias]) {
+      const uid = await findSeededWorkspaceMemberUid(request, fixture, STG_ACCOUNTS[account]);
+
+      memberships.push({ groupId, uid, present: emails.includes(STG_ACCOUNTS[account]) });
+    }
+  }
+
+  const state = requireState(page);
+
+  state.fixture = fixture;
+  state.original = { groupOne: groupOne ?? null, memberDefault: settings.permission.member_default_access_level, memberships };
   await ensureSeededGroupMemberships(request, fixture);
   await ensureSeededCustomMemberAccess(request, fixture);
   await ensureSeededGroupOneGrant(request, fixture);
-  requireState(page).fixture = fixture;
 });
 
 Given('I sign in as seeded stg0822 {string}', async ({ page }, accountAliasValue: string) => {
@@ -354,7 +394,6 @@ When(
 
     // Register the restore before the mutation so a failed live assertion
     // cannot leave the seeded roster short of a member.
-    state.restoreGroupMemberships = true;
     await markLiveSession(page, state, `removing ${accountAliasValue} from ${groupAliasValue}`);
     await deleteApi(request, fixture.ownerToken, `${groupMembersApiPath(fixture, groupId)}/${uid}`);
     await expect
@@ -394,9 +433,6 @@ When(
     const seededSpace = stgSpace(spaceAliasValue);
     const groupId = stgGroupId(fixture, groupAliasValue);
 
-    if (groupAliasValue === 'group one') {
-      state.restoreGroupOneGrant = true;
-    }
 
     await markLiveSession(page, state, `revoking ${groupAliasValue} from ${spaceAliasValue}`);
     await deleteApi(request, fixture.ownerToken, spaceGroupApiPath(fixture.workspaceId, seededSpace.viewId, groupId));
@@ -416,11 +452,9 @@ When(
     const fixture = requireFixture(page);
     const seededSpace = stgSpace(spaceAliasValue);
     const groupId = stgGroupId(fixture, groupAliasValue);
-    const payload = { role: spaceRoleFromLabel(role), access_level: accessLevelFromLabel(accessLabel) };
+    const payload = { role: spaceRoleFromLabel(role), access_level: accessLevelFromLabel(accessLabel),
+      access_level_override: role.toLowerCase() === 'owner' ? null : accessLevelFromLabel(accessLabel) };
 
-    if (groupAliasValue === 'group one') {
-      state.restoreGroupOneGrant = true;
-    }
 
     await markLiveSession(page, state, `granting ${groupAliasValue} ${role} / ${accessLabel} on ${spaceAliasValue}`);
     await postApi<SpaceGroupPermission>(
@@ -450,7 +484,6 @@ When(
     const seededSpace = stgSpace(spaceAliasValue);
     const accessLevel = accessLevelFromLabel(accessLabel);
 
-    state.restoreCustomMemberAccess = true;
     await markLiveSession(page, state, `changing ${spaceAliasValue} Custom member access to ${accessLabel}`);
     await updateCustomMemberAccess(request, fixture, seededSpace.viewId, accessLevel);
   }
@@ -470,14 +503,22 @@ Then(
     const groupId = stgGroupId(fixture, groupAliasValue);
     const row = spaceGroupRow(page, groupId);
 
-    // The Manage Space members tab renders a group's role (Space owner / Space
-    // member) and its "Group · N members" line; the access level has no UI
-    // affordance there, so it is verified through the space group permission
-    // API instead.
+    // Member assignments expose their override selector as well as the role.
+    // The canonical DTO verifies the effective level independently.
     await expect(row).toBeVisible({ timeout: 15000 });
     await expect(row.getByText(stgGroupName(groupAliasValue), { exact: true }).first()).toBeVisible();
     await expect(row.getByTestId('space-group-subtitle')).toContainText(/^Group · \d+ members?$/);
     await expect(row.getByText(spaceRoleLabel(role), { exact: true }).first()).toBeVisible();
+
+    if (role.toLowerCase() === 'member') {
+      const grant = await findSpaceGroupGrant(request, fixture, groupId);
+
+      expect(grant?.access_level_override).not.toBeUndefined();
+      await expect(row.getByTestId('space-member-access-control')).toHaveAttribute(
+        'data-value',
+        grant?.access_level_override === null ? 'inherit' : String(grant?.access_level_override)
+      );
+    }
 
     await expect
       .poll(
@@ -495,7 +536,6 @@ Then(
 When(
   'I change the Manage Space role of seeded stg0822 {string} to {string}',
   async ({ page, request }, groupAliasValue: string, role: string) => {
-    const state = requireState(page);
     const fixture = requireFixture(page);
     const groupId = stgGroupId(fixture, groupAliasValue);
     const row = spaceGroupRow(page, groupId);
@@ -506,9 +546,6 @@ When(
 
     // Register the restore before starting the mutation so a post-commit UI
     // failure cannot leave the canonical fixture grant promoted.
-    if (groupAliasValue === 'group one') {
-      state.restoreGroupOneGrant = true;
-    }
 
     await roleButton.click();
     await page.getByRole('menuitem', { name: new RegExp(`^${escapeRegExp(spaceRoleLabel(role))}\\b`) }).click();
@@ -825,7 +862,7 @@ async function updateCustomMemberAccess(
   request: APIRequestContext,
   fixture: FixtureContext,
   spaceId: string,
-  accessLevel: number
+  accessLevel: number | null
 ) {
   const current = await getSpacePermission(request, fixture, spaceId);
 
@@ -866,7 +903,7 @@ async function ensureSeededGroupOneGrant(request: APIRequestContext, fixture: Fi
   const groupId = fixture.groupIds['group one'];
   const spaceId = STG_SPACES['group space A'].viewId;
   const current = await findSpaceGroupGrant(request, fixture, groupId);
-  const payload = { role: SEEDED_GROUP_ONE_ROLE, access_level: SEEDED_GROUP_ONE_ACCESS };
+  const payload = { role: SEEDED_GROUP_ONE_ROLE, access_level: SEEDED_GROUP_ONE_ACCESS, access_level_override: null };
 
   if (!current) {
     await postApi<SpaceGroupPermission>(
@@ -875,7 +912,7 @@ async function ensureSeededGroupOneGrant(request: APIRequestContext, fixture: Fi
       spaceGroupApiPath(fixture.workspaceId, spaceId, groupId),
       payload
     );
-  } else if (current.role !== SEEDED_GROUP_ONE_ROLE || current.access_level !== SEEDED_GROUP_ONE_ACCESS) {
+  } else if (current.role !== SEEDED_GROUP_ONE_ROLE || current.access_level !== SEEDED_GROUP_ONE_ACCESS || current.access_level_override !== null) {
     await patchApi<SpaceGroupPermission>(
       request,
       fixture.ownerToken,
@@ -886,7 +923,7 @@ async function ensureSeededGroupOneGrant(request: APIRequestContext, fixture: Fi
 
   const restored = await findSpaceGroupGrant(request, fixture, groupId);
 
-  if (!restored || restored.role !== SEEDED_GROUP_ONE_ROLE || restored.access_level !== SEEDED_GROUP_ONE_ACCESS) {
+  if (!restored || restored.role !== SEEDED_GROUP_ONE_ROLE || restored.access_level !== SEEDED_GROUP_ONE_ACCESS || restored.access_level_override !== null) {
     throw new Error(
       `Seeded stg0822 group One grant is not Member / Can view after restore: ${JSON.stringify(restored)}`
     );
@@ -1182,6 +1219,7 @@ async function resetBrowserSession(page: Page) {
     if (!indexedDatabase.databases) return;
 
     const databases = await indexedDatabase.databases();
+
     await Promise.all(
       databases
         .map((database) => database.name)

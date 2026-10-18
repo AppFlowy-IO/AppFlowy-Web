@@ -11,6 +11,7 @@ import {
 } from '@/application/integrations/google-calendar';
 import { calendarMeetingPage, createCalendarMeetingPage } from '@/application/integrations/meeting-page';
 import { requestMeetingStart } from '@/application/integrations/meeting-start';
+import { readSpaceCreationAdmission } from '@/application/services/js-services/space-creation-recovery';
 import { Role } from '@/application/types';
 import {
   useAIEnabled,
@@ -26,7 +27,7 @@ export function GoogleCalendarIntegration() {
   const workspaceId = useCurrentWorkspaceId();
   const aiEnabled = useAIEnabled();
   const workspace = useUserWorkspaceInfo();
-  const enabled = aiEnabled && workspace?.selectedWorkspace.role !== Role.Guest;
+  const enabled = aiEnabled && workspace?.selectedWorkspace?.role !== Role.Guest;
 
   return enabled && workspaceId ? <WorkspaceCalendar key={workspaceId} workspaceId={workspaceId} /> : null;
 }
@@ -119,9 +120,16 @@ function WorkspaceCalendar({ workspaceId }: { workspaceId: string }) {
     setLaunching(true);
     // Reserve the window during the click so browser popup blockers do not eat the Meet link.
     const meetWindow = window.open('about:blank', '_blank');
+    // Once the meeting is known, a failed notes page must never cost the user the meeting.
+    let meetUrl: string | undefined;
 
     if (meetWindow) meetWindow.opener = null;
     try {
+      const privateSpace = outline?.find((view) => view.is_private && (view.is_space || view.extra?.is_space));
+      // Without a private space the notes page needs a new one, which is space creation (B). The
+      // check needs only the workspace, so it runs while the event is read. It never rejects, and
+      // its answer is ignored when the launch stops first.
+      const admissionCheck = privateSpace ? undefined : readSpaceCreationAdmission(workspaceId);
       const latest = await fetchCalendarEvent(event, lifetime.current?.signal);
 
       if (lifetime.current?.signal.aborted) {
@@ -135,10 +143,29 @@ function WorkspaceCalendar({ workspaceId }: { workspaceId: string }) {
         return;
       }
 
+      meetUrl = latest.meetUrl;
       const title = `${latest.summary || t('document.aiMeeting.titleDefault')} - ${new Date(
         latest.start
       ).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-      const privateSpace = outline?.find((view) => view.is_private && (view.is_space || view.extra?.is_space));
+
+      if (admissionCheck) {
+        // A denied member still joins the meeting, just without a notes page. A server without
+        // the capability route, or a failed check, lets the server decide.
+        const admission = await admissionCheck;
+
+        if (lifetime.current?.signal.aborted) {
+          meetWindow?.close();
+          return;
+        }
+
+        if (admission === 'denied') {
+          reminders.current?.dismiss(event);
+          if (meetWindow) meetWindow.location.replace(latest.meetUrl);
+          toast.error(t('spaceCreation.meetingNotesDenied'));
+          return;
+        }
+      }
+
       const page = await createCalendarMeetingPage(
         operations,
         privateSpace?.view_id,
@@ -156,8 +183,16 @@ function WorkspaceCalendar({ workspaceId }: { workspaceId: string }) {
       requestMeetingStart(page.view_id);
       await operations.toView(page.view_id);
     } catch (error) {
-      meetWindow?.close();
-      if (!lifetime.current?.signal.aborted) toast.error(getErrorMessage(error, t('document.aiMeeting.launchFailed')));
+      if (lifetime.current?.signal.aborted) {
+        meetWindow?.close();
+      } else if (meetUrl) {
+        // The reminder stays so transcription can be retried; the meeting itself opens now.
+        if (meetWindow) meetWindow.location.replace(meetUrl);
+        toast.error(t('spaceCreation.meetingNotesFailed'), { description: getErrorMessage(error, '') || undefined });
+      } else {
+        meetWindow?.close();
+        toast.error(getErrorMessage(error, t('document.aiMeeting.launchFailed')));
+      }
     } finally {
       launchInFlight.current = false;
       if (!lifetime.current?.signal.aborted) setLaunching(false);

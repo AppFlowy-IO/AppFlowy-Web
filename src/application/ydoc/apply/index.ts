@@ -1,5 +1,6 @@
 import * as Y from 'yjs';
 
+import { assertCollabStorageCurrent } from '@/application/db/collab-storage-scope';
 import { CollabOrigin } from '@/application/types';
 
 /**
@@ -9,6 +10,7 @@ import { CollabOrigin } from '@/application/types';
  * @param state state from server
  */
 export function applyYDoc(doc: Y.Doc, state: Uint8Array, encoderVersion = 1) {
+  assertCollabStorageCurrent(doc);
   Y.transact(
     doc,
     () => {

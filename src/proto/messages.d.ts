@@ -1458,6 +1458,9 @@ export namespace notification {
 
         /** WorkspaceNotification storageLimitExceeded */
         storageLimitExceeded?: (notification.IStorageLimitExceeded|null);
+
+        /** WorkspaceNotification workspacePermissionsChanged */
+        workspacePermissionsChanged?: (notification.IWorkspacePermissionsChanged|null);
     }
 
     /** Represents a WorkspaceNotification. */
@@ -1508,8 +1511,11 @@ export namespace notification {
         /** WorkspaceNotification storageLimitExceeded. */
         public storageLimitExceeded?: (notification.IStorageLimitExceeded|null);
 
+        /** WorkspaceNotification workspacePermissionsChanged. */
+        public workspacePermissionsChanged?: (notification.IWorkspacePermissionsChanged|null);
+
         /** WorkspaceNotification payload. */
-        public payload?: ("profileChange"|"permissionChanged"|"sectionChanged"|"shareViewsChanged"|"mentionablePersonListChanged"|"serverLimit"|"workspaceMemberProfileChanged"|"folderChanged"|"folderViewChanged"|"inboxNotification"|"commentChanged"|"databaseRestored"|"storageLimitExceeded");
+        public payload?: ("profileChange"|"permissionChanged"|"sectionChanged"|"shareViewsChanged"|"mentionablePersonListChanged"|"serverLimit"|"workspaceMemberProfileChanged"|"folderChanged"|"folderViewChanged"|"inboxNotification"|"commentChanged"|"databaseRestored"|"storageLimitExceeded"|"workspacePermissionsChanged");
 
         /**
          * Creates a new WorkspaceNotification instance using the specified properties.
@@ -1583,6 +1589,115 @@ export namespace notification {
 
         /**
          * Gets the default type url for WorkspaceNotification
+         * @param [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns The default type url
+         */
+        public static getTypeUrl(typeUrlPrefix?: string): string;
+    }
+
+    /** Properties of a WorkspacePermissionsChanged. */
+    interface IWorkspacePermissionsChanged {
+
+        /** WorkspacePermissionsChanged workspaceId */
+        workspaceId?: (string|null);
+
+        /** WorkspacePermissionsChanged epoch */
+        epoch?: (string|null);
+
+        /** WorkspacePermissionsChanged counter */
+        counter?: (string|null);
+    }
+
+    /** Represents a WorkspacePermissionsChanged. */
+    class WorkspacePermissionsChanged implements IWorkspacePermissionsChanged {
+
+        /**
+         * Constructs a new WorkspacePermissionsChanged.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: notification.IWorkspacePermissionsChanged);
+
+        /** WorkspacePermissionsChanged workspaceId. */
+        public workspaceId: string;
+
+        /** WorkspacePermissionsChanged epoch. */
+        public epoch: string;
+
+        /** WorkspacePermissionsChanged counter. */
+        public counter: string;
+
+        /**
+         * Creates a new WorkspacePermissionsChanged instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns WorkspacePermissionsChanged instance
+         */
+        public static create(properties?: notification.IWorkspacePermissionsChanged): notification.WorkspacePermissionsChanged;
+
+        /**
+         * Encodes the specified WorkspacePermissionsChanged message. Does not implicitly {@link notification.WorkspacePermissionsChanged.verify|verify} messages.
+         * @param message WorkspacePermissionsChanged message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: notification.IWorkspacePermissionsChanged, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified WorkspacePermissionsChanged message, length delimited. Does not implicitly {@link notification.WorkspacePermissionsChanged.verify|verify} messages.
+         * @param message WorkspacePermissionsChanged message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: notification.IWorkspacePermissionsChanged, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a WorkspacePermissionsChanged message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns WorkspacePermissionsChanged
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): notification.WorkspacePermissionsChanged;
+
+        /**
+         * Decodes a WorkspacePermissionsChanged message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns WorkspacePermissionsChanged
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): notification.WorkspacePermissionsChanged;
+
+        /**
+         * Verifies a WorkspacePermissionsChanged message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a WorkspacePermissionsChanged message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns WorkspacePermissionsChanged
+         */
+        public static fromObject(object: { [k: string]: any }): notification.WorkspacePermissionsChanged;
+
+        /**
+         * Creates a plain object from a WorkspacePermissionsChanged message. Also converts values to other types if specified.
+         * @param message WorkspacePermissionsChanged
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: notification.WorkspacePermissionsChanged, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this WorkspacePermissionsChanged to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+
+        /**
+         * Gets the default type url for WorkspacePermissionsChanged
          * @param [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
          * @returns The default type url
          */

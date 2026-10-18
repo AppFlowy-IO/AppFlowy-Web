@@ -1,21 +1,41 @@
-import { Button } from '@mui/material';
+import { Button as MuiButton } from '@mui/material';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { ViewLayout } from '@/application/types';
+import { AtomicCreationPendingError } from '@/application/atomic-creation';
+import { View, ViewLayout } from '@/application/types';
 import { ReactComponent as Add } from '@/assets/icons/add_new_page.svg';
+import { ReactComponent as LockSvg } from '@/assets/icons/lock.svg';
+import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
 import LoadingDots from '@/components/_shared/LoadingDots';
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
+import SpaceIcon from '@/components/_shared/view-icon/SpaceIcon';
 import {
   useAppOperations,
   useAppOutline,
+  useCurrentWorkspaceId,
   useEnsureViewVisibleInOutline,
   useOpenPageModal,
 } from '@/components/app/app.hooks';
-import SpaceList from '@/components/publish/header/duplicate/SpaceList';
+import { useSpaceCreationCapability } from '@/components/app/hooks/useSpaceCreationCapability';
+import {
+  canStartSpaceCreation,
+  spaceCreationUnavailableKey,
+  spaceCreationUnavailableReason,
+} from '@/components/app/view-actions/SpaceCreationNotice';
+import {
+  pageDestinationReasonKey,
+  type SpaceDestinationAccess,
+  useSpaceDestinationAccess,
+} from '@/components/app/view-actions/usePageDestinationAccess';
+import { isPermissionDeniedError } from '@/components/app/view-actions/viewActionPermission';
+import { Button } from '@/components/ui/button';
 import { dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
+import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
+import { getBillingErrorMessage } from '@/utils/billing-error';
+import { publicErrorMessage } from '@/utils/change-failure';
 import { Log } from '@/utils/log';
 
 const CREATE_SPACE_INITIAL_PAGE = { layout: ViewLayout.Document };
@@ -45,39 +65,105 @@ function CreateSpaceLoading({
         <span aria-live='polite' className='text-sm text-text-secondary'>
           {loadingLabel}
         </span>
-        <Button
+        <MuiButton
           data-testid='new-page-create-space-loading-cancel'
           onClick={onClose}
           size='small'
           variant='outlined'
         >
           {cancelLabel}
-        </Button>
+        </MuiButton>
       </div>
     </div>
+  );
+}
+
+/** Pages can be added to a destination that is confirmed, or that could not be checked (the server decides). */
+function acceptsNewPage(access: SpaceDestinationAccess | undefined) {
+  return access?.state === 'allowed' || access?.state === 'unverified';
+}
+
+function NewPageDestination({
+  space,
+  access,
+  selected,
+  onSelect,
+}: {
+  space: View;
+  access: SpaceDestinationAccess;
+  selected: boolean;
+  onSelect: (spaceId: string) => void;
+}) {
+  const { t } = useTranslation();
+  const denied = access.state === 'denied';
+
+  return (
+    <Button
+      type='button'
+      variant='ghost'
+      data-testid='space-item'
+      aria-pressed={selected}
+      disabled={denied}
+      className='h-auto min-h-8 w-full justify-start gap-[10px] p-1 text-left font-normal'
+      onClick={() => onSelect(space.view_id)}
+    >
+      <SpaceIcon
+        value={space.extra?.space_icon || ''}
+        char={space.extra?.space_icon ? undefined : space.name.slice(0, 1)}
+        bgColor={space.extra?.space_icon_color}
+        className='icon h-5 w-5'
+      />
+      <span className='flex min-w-0 flex-1 flex-col'>
+        <span className='flex items-center gap-2 truncate text-sm'>
+          <span className='truncate'>{space.name}</span>
+          {space.is_private && <LockSvg className='text-icon-primary' />}
+        </span>
+        {access.state === 'denied' && (
+          <span className='truncate text-xs text-text-tertiary'>{t(pageDestinationReasonKey(access.reason))}</span>
+        )}
+      </span>
+      <span className='flex h-5 w-5 items-center justify-center'>
+        {access.state === 'checking' ? (
+          <Progress variant='primary' aria-label={t('spaceCreation.pageDestination.checking')} />
+        ) : selected ? (
+          <CheckIcon className='h-5 w-5 text-text-action' />
+        ) : null}
+      </span>
+    </Button>
   );
 }
 
 function NewPage() {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
+  const workspaceId = useCurrentWorkspaceId();
   const [loading, setLoading] = useState(false);
   const [createSpaceOpen, setCreateSpaceOpen] = useState(false);
+  // Create Space asks for itself while it is open, starting from the answer read here.
+  const creationPermission = useSpaceCreationCapability(workspaceId, open && !createSpaceOpen);
   const [CreateSpaceModal, setCreateSpaceModal] = useState<CreateSpaceModalType | null>(null);
-  const [selectedSpaceId, setSelectedSpaceId] = useState('');
+  const [chosenSpaceId, setChosenSpaceId] = useState('');
   const addingPageRef = useRef(false);
   const pageOpenSequenceRef = useRef(0);
   const outline = useAppOutline();
-  const spaceList = useMemo(() => {
-    if (!outline) return [];
-
-    return outline.map((view) => ({
-      id: view.view_id,
-      extra: JSON.stringify(view.extra),
-      name: view.name,
-      isPrivate: view.is_private,
-    }));
-  }, [outline]);
+  const spaces = useMemo(() => outline ?? [], [outline]);
+  const spaceIds = useMemo(() => spaces.map((space) => space.view_id), [spaces]);
+  // A remembered choice counts only while that space is listed: it may have been removed, or the
+  // workspace changed, since it was chosen.
+  const selectedSpaceId = spaceIds.includes(chosenSpaceId) ? chosenSpaceId : '';
+  // New pages go directly under a space: each destination needs Write plus sidebar authority.
+  const destinationAccess = useSpaceDestinationAccess(spaceIds, open && !createSpaceOpen);
+  const selectedAccess = selectedSpaceId ? destinationAccess[selectedSpaceId] : undefined;
+  const canAddToSelected = Boolean(selectedSpaceId) && acceptsNewPage(selectedAccess);
+  const noDestinationAvailable =
+    spaces.length > 0 && spaces.every((space) => destinationAccess[space.view_id]?.state === 'denied');
+  const destinationStatus =
+    selectedSpaceId && (!selectedAccess || selectedAccess.state === 'checking')
+      ? t('spaceCreation.pageDestination.checking')
+      : noDestinationAvailable
+      ? t('spaceCreation.pageDestination.noneAvailable')
+      : null;
+  const createSpaceReason = spaceCreationUnavailableReason(creationPermission);
 
   const { addPage } = useAppOperations();
   const openPageModal = useOpenPageModal();
@@ -103,7 +189,7 @@ function NewPage() {
 
   const handleAddPage = useCallback(
     async (parentId: string) => {
-      if (addingPageRef.current || !addPage || !openPageModal) return;
+      if (addingPageRef.current || !addPage || !openPageModal || !acceptsNewPage(destinationAccess[parentId])) return;
       const pageOpenSequence = ++pageOpenSequenceRef.current;
 
       addingPageRef.current = true;
@@ -124,7 +210,17 @@ function NewPage() {
         setOpen(false);
       } catch (error) {
         if (pageOpenSequence !== pageOpenSequenceRef.current) return;
-        notify.error(error instanceof Error ? error.message : String(error));
+        // Server errors are plain objects whose text is not written for people. A denial usually
+        // means access changed after the destination was checked; an atomic creation keeps the
+        // server's answer as the cause of its pending command. Precedence: our words for a denial,
+        // billing, then a public message (such as "creation is pending"), then our own fallback.
+        const cause = error instanceof AtomicCreationPendingError ? error.cause : error;
+
+        notify.error(
+          isPermissionDeniedError(cause)
+            ? t('spaceCreation.pageDestination.addDenied')
+            : getBillingErrorMessage(cause) || publicErrorMessage(error) || t('spaceCreation.pageDestination.addFailed')
+        );
       } finally {
         if (pageOpenSequence === pageOpenSequenceRef.current) {
           addingPageRef.current = false;
@@ -132,14 +228,15 @@ function NewPage() {
         }
       }
     },
-    [addPage, openPageModal, outline]
+    [addPage, destinationAccess, openPageModal, outline, t]
   );
 
+  const canOpenCreateSpace = canStartSpaceCreation(creationPermission);
   const openCreateSpace = useCallback(() => {
-    if (addingPageRef.current) return;
+    if (addingPageRef.current || !canOpenCreateSpace) return;
     invalidatePendingPageOpen();
     setCreateSpaceOpen(true);
-  }, [invalidatePendingPageOpen]);
+  }, [canOpenCreateSpace, invalidatePendingPageOpen]);
 
   useEffect(() => {
     if (!open || !createSpaceOpen || CreateSpaceModal) return;
@@ -164,8 +261,6 @@ function NewPage() {
     async (_spaceId: string, initialPageId?: string) => {
       const pageOpenSequence = ++pageOpenSequenceRef.current;
 
-      setCreateSpaceOpen(false);
-      setOpen(false);
       if (!initialPageId) return;
 
       // The creation response can arrive before the folder projection reaches
@@ -214,35 +309,77 @@ function NewPage() {
           void handleAddPage(selectedSpaceId);
         }}
         okButtonProps={{
-          disabled: !selectedSpaceId || loading,
+          disabled: !canAddToSelected || loading,
         }}
         okLoading={loading}
       >
-        <SpaceList
-          loading={false}
-          spaceList={spaceList}
-          value={selectedSpaceId}
-          onChange={setSelectedSpaceId}
-          title={
+        <div className='flex max-h-[320px] w-[360px] flex-col gap-2 overflow-hidden max-sm:w-full'>
+          <div className='flex flex-col gap-1'>
             <div className='flex items-center text-sm text-text-secondary'>
               {t('publish.addTo')}
               {` ${t('web.or')} `}
               <Button
+                type='button'
+                variant='link'
+                size='sm'
                 data-testid='new-page-create-space-button'
-                disabled={loading}
+                disabled={loading || !canOpenCreateSpace}
                 onClick={openCreateSpace}
-                size='small'
-                className='mx-1 text-sm'
+                className='mx-1 px-0 text-sm disabled:text-text-tertiary'
               >
                 {t('space.createNewSpace')}
               </Button>
             </div>
-          }
-        />
+            {createSpaceReason && (
+              <div
+                className='flex items-center gap-2 text-xs text-text-tertiary'
+                data-testid='new-page-create-space-reason'
+              >
+                <span>{t(spaceCreationUnavailableKey(createSpaceReason))}</span>
+                {createSpaceReason === 'loadError' && (
+                  <Button
+                    type='button'
+                    variant='link'
+                    size='sm'
+                    className='px-0 text-xs'
+                    onClick={() => {
+                      void creationPermission.refresh();
+                    }}
+                  >
+                    {t('spaceCreation.tryAgain')}
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+          {spaces.length === 0 ? (
+            <div className='flex min-h-12 w-full items-center text-sm text-text-secondary'>
+              {t('publish.noSpacesAvailable')}
+            </div>
+          ) : (
+            <div className='appflowy-scroller flex w-full flex-1 flex-col gap-1 overflow-y-auto overflow-x-hidden'>
+              {spaces.map((space) => (
+                <NewPageDestination
+                  key={space.view_id}
+                  space={space}
+                  access={destinationAccess[space.view_id] ?? { state: 'checking' }}
+                  selected={selectedSpaceId === space.view_id}
+                  onSelect={setChosenSpaceId}
+                />
+              ))}
+            </div>
+          )}
+          {destinationStatus && (
+            <p role='status' className='text-xs text-text-tertiary' data-testid='new-page-destination-status'>
+              {destinationStatus}
+            </p>
+          )}
+        </div>
       </NormalModal>
       {open && createSpaceOpen ? (
         CreateSpaceModal ? (
           <CreateSpaceModal
+            key={creationPermission.scopeKey}
             open
             initialPage={CREATE_SPACE_INITIAL_PAGE}
             onClose={closeFlow}

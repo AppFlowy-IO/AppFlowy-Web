@@ -6,11 +6,13 @@ import { FullScreenLoading } from '@/components/_shared/FullScreenLoading';
 import { AFConfigContext } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { realtimeSessionKey } from '@/components/ws/realtime-session';
 
 import { AuthInternalContext } from './contexts/AuthInternalContext';
 import { AppAuthLayer } from './layers/AppAuthLayer';
 import { AppBusinessLayer } from './layers/AppBusinessLayer';
 import { AppSyncLayer } from './layers/AppSyncLayer';
+import { NoWorkspace } from './workspaces/NoWorkspace';
 
 function WorkspaceBootstrapError({ error, onRetry }: { error: Error; onRetry?: () => void | Promise<unknown> }) {
   const [retrying, setRetrying] = useState(false);
@@ -63,7 +65,8 @@ function WorkspaceBootstrapError({ error, onRetry }: { error: Error; onRetry?: (
 // Internal component to conditionally render sync and business layers only when workspace ID exists
 const ConditionalWorkspaceLayers = ({ children }: { children: ReactNode }) => {
   const authContext = useContext(AuthInternalContext);
-  const { isAuthenticated, userWorkspaceInfo, workspaceInfoError, retryLoadWorkspaceInfo } = authContext || {};
+  const { isAuthenticated, userWorkspaceInfo, currentWorkspaceId, workspaceInfoError, retryLoadWorkspaceInfo } =
+    authContext || {};
 
   // Unmount user/workspace-scoped providers in the same render that auth is
   // invalidated. AppAuthLayer will redirect to login after this commit.
@@ -80,8 +83,13 @@ const ConditionalWorkspaceLayers = ({ children }: { children: ReactNode }) => {
     return <FullScreenLoading label='Loading workspace' />;
   }
 
+  if (!userWorkspaceInfo.selectedWorkspace) return <NoWorkspace />;
+
+  // Key on the routed workspace the layer runs on, not the server's account-wide
+  // visiting workspace. A deep link, or another tab opening a workspace, moves
+  // that without changing this tab's route, and must not remount the whole tree.
   return (
-    <AppSyncLayer>
+    <AppSyncLayer key={realtimeSessionKey(currentWorkspaceId ?? userWorkspaceInfo.selectedWorkspace.id)}>
       <AppBusinessLayer>{children}</AppBusinessLayer>
     </AppSyncLayer>
   );
@@ -93,7 +101,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const rootConfig = useContext(AFConfigContext);
 
   return (
-    <AppAuthLayer key={rootConfig?.authenticatedUserId ?? 'anonymous'}>
+    <AppAuthLayer key={`${realtimeSessionKey()}:${rootConfig?.authenticatedUserId ?? 'anonymous'}`}>
       <ConditionalWorkspaceLayers>{children}</ConditionalWorkspaceLayers>
     </AppAuthLayer>
   );

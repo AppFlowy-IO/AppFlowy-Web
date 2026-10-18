@@ -10,8 +10,11 @@ type ModalButtonProps = React.ComponentProps<typeof Button>;
 
 // `AFButtonSize.m`, which every desktop dialog footer uses: spacing.xl of
 // horizontal padding and a `body.enhanced` (w500) label. The shared `Button`
-// defaults to the tighter px-3/w400 pairing.
-const FOOTER_BUTTON_CLASS = 'px-4 font-medium';
+// defaults to the tighter px-3/w400 pairing and has no keyboard focus style; a
+// confirmation opened over another dialog is outside that dialog's own rules.
+// The gap keeps the ring visible around the filled OK button, which has its color.
+const FOOTER_BUTTON_CLASS =
+  'px-4 font-medium focus-visible:ring-2 focus-visible:ring-border-theme-thick focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary';
 
 const ENTER_HANDLED_BY_CONTROL_SELECTOR = [
   'button',
@@ -41,6 +44,13 @@ export interface NormalModalProps extends DialogProps {
   closable?: boolean;
   overflowHidden?: boolean;
   showActions?: boolean;
+  /**
+   * Let the body shrink to the dialog's height limit instead of growing past it, so a scroll area
+   * inside it (`min-h-0` and `overflow-y-auto`) gets exactly the height that is left.
+   */
+  fillAvailableHeight?: boolean;
+  /** Extra classes for the footer row, e.g. to line its buttons up with a scroll area above it. */
+  footerClassName?: string;
 }
 
 export function NormalModal({
@@ -58,6 +68,8 @@ export function NormalModal({
   closable = true,
   overflowHidden = false,
   showActions = true,
+  fillAvailableHeight = false,
+  footerClassName,
   ...dialogProps
 }: NormalModalProps) {
   const { t } = useTranslation();
@@ -71,7 +83,9 @@ export function NormalModal({
     <Dialog
       aria-labelledby={labelledBy}
       onKeyDown={(e) => {
-        if (e.key === 'Escape' && closable) {
+        // A menu, picker or confirmation inside the dialog that closes on Escape marks the key
+        // press as handled; only an unhandled Escape closes the dialog itself.
+        if (e.key === 'Escape' && closable && !e.defaultPrevented) {
           onClose?.();
         }
 
@@ -88,7 +102,7 @@ export function NormalModal({
         style={{
           overflow: overflowHidden ? 'hidden' : 'auto',
         }}
-        className={'relative flex flex-col gap-4 p-5'}
+        className={cn('relative flex flex-col gap-4 p-5', fillAvailableHeight && 'min-h-0')}
       >
         <div className={'flex w-full items-center justify-between text-base font-medium'}>
           <div id={internalTitleId} className={'flex-1 truncate text-center font-medium'}>
@@ -113,13 +127,13 @@ export function NormalModal({
           style={{
             overflow: overflowHidden ? 'hidden' : 'auto',
           }}
-          className={'w-full flex-1'}
+          className={cn('w-full flex-1', fillAvailableHeight && 'flex min-h-0 flex-col')}
         >
           {children}
         </div>
         {showActions && (
           // Desktop footers are right-aligned with a spacing.l gap, cancel first.
-          <div className={'flex w-full justify-end gap-3'}>
+          <div className={cn('flex w-full justify-end gap-3', footerClassName)}>
             <Button
               // MUI's Button defaulted to type="button"; the design-system one
               // does not, and a bare button inside a <form> would submit it.

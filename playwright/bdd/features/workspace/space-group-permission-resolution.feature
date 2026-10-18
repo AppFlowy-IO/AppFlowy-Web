@@ -38,7 +38,7 @@ Feature: Seeded space group permission resolution
     When I directly open the seeded stg0822 "group page B"
     Then the directly opened seeded stg0822 page is "denied"
 
-  # The Manage Space members tab renders the group's role; its access level is verified via API.
+  # The Manage Space members tab renders the group's role and tri-state override selector.
   Scenario: Owner sees the group as a space member and the page-level group share
     Given I sign in as seeded stg0822 "owner"
     When I open the seeded stg0822 "group space A" manage space members tab
@@ -47,7 +47,7 @@ Feature: Seeded space group permission resolution
     And I open the share panel
     Then the share panel shows seeded stg0822 "group two" with "Can edit"
 
-  # Mutating: the After hook always restores group One to Member / Can view via API.
+  # Mutating: the After hook restores the exact prior role and override, including inherited null.
   Scenario: Owner-role group makes its members space owners
     Given I sign in as seeded stg0822 "owner"
     When I open the seeded stg0822 "group space A" manage space members tab
@@ -61,7 +61,7 @@ Feature: Seeded space group permission resolution
   # Live refresh: the owner mutates group membership over the API while nathan's browser
   # session stays on Page A. The server pushes a permission-changed notification and the
   # open page downgrades, then upgrades again, without any reload or navigation.
-  # Mutating: the After hook re-adds every seeded group membership via API.
+  # Mutating: the After hook restores the exact prior seeded memberships via API.
   @live-refresh
   Scenario: Removing a member from the page-share group downgrades the open page live
     Given I sign in as seeded stg0822 "nathan"
@@ -74,7 +74,7 @@ Feature: Seeded space group permission resolution
 
   # Live refresh: revoking group One's space grant must deny the open page and drop the
   # restricted Custom space from the sidebar in place; re-granting it restores both.
-  # Mutating: the After hook always restores group One to Member / Can view via API.
+  # Mutating: the After hook restores the exact prior role and override, including inherited null.
   @live-refresh
   Scenario: Removing the group from the space hides it live and restores it
     Given I sign in as seeded stg0822 "reader"
@@ -89,11 +89,11 @@ Feature: Seeded space group permission resolution
     Then the seeded stg0822 "group space A" space navigation becomes "visible" without reload
     And the open seeded stg0822 page becomes "read-only" without reload
 
-  # Custom Member principals share one collective access level; an individual group cannot carry
-  # a different level. Changing that collective level re-probes the open page in place.
-  # Mutating: the After hook restores the Custom member level to Can view via API.
+  # The baseline group explicitly inherits (access_level_override: null). Changing the
+  # collective default updates inherited assignments; explicit overrides remain independent.
+  # Mutating: the After hook restores the exact prior default and assignment via API.
   @live-refresh
-  Scenario: Changing Custom space member access updates an open page live
+  Scenario: An inherited group assignment follows Custom space member access live
     Given I sign in as seeded stg0822 "reader"
     When I directly open the seeded stg0822 "group page B"
     Then the directly opened seeded stg0822 page is "read-only"

@@ -143,7 +143,7 @@ export function useDatabaseViewCreation({
   const currentUser = useCurrentUserOptional();
   const workspace = auth?.userWorkspaceInfo?.selectedWorkspace;
   const isOwner =
-    workspace?.id === workspaceId && canManageWorkspaceBilling(workspace, currentUser?.uid, hostingMode === 'cloud');
+    workspace?.id === workspaceId && canManageWorkspaceBilling(workspace ?? undefined, currentUser?.uid, hostingMode === 'cloud');
   const subscribeConnection = useCallback(
     (onChange: () => void) => {
       eventEmitter?.on(APP_EVENTS.WEBSOCKET_STATUS, onChange);

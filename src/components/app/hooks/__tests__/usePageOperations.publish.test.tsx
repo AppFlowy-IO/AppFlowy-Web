@@ -699,7 +699,31 @@ describe('structured space atomic initial Document activation', () => {
     const { result, loadOutline } = renderUsePageOperations();
 
     await result.current.createSpaceWithInitialPage(authored);
-    expect(PageService.createSpaceWithInitialPage).toHaveBeenCalledWith('workspace-id', authored, undefined);
+    // Authored content has no atomic activation; only the workspace check travels with it.
+    expect(PageService.createSpaceWithInitialPage).toHaveBeenCalledWith(
+      'workspace-id', authored, expect.objectContaining({ assertCurrent: expect.any(Function) })
+    );
+    expect(jest.mocked(PageService.createSpaceWithInitialPage).mock.calls[0][2]?.activate).toBeUndefined();
     expect(loadOutline).toHaveBeenCalledWith('workspace-id', false);
+  });
+
+  it('stops an authored space once its workspace is left while the request is pending', async () => {
+    const held = deferredPublish();
+    const auth: AuthInternalContextType = { currentWorkspaceId: 'workspace-id', isAuthenticated: true,
+      onChangeWorkspace: jest.fn().mockResolvedValue(undefined) };
+    const authored = { ...payload, initial_page: { ...payload.initial_page, page_data: { children: [] } } };
+
+    jest.mocked(PageService.createSpaceWithInitialPage).mockImplementationOnce(async (_workspace, _payload, activation) => {
+      await held.promise;
+      activation?.assertCurrent?.();
+      return { space: { view_id: 'space' }, page: { view_id: 'created' } };
+    });
+    const { result, rerender, loadOutline } = renderUsePageOperations({ auth });
+    const rejected = expect(result.current.createSpaceWithInitialPage(authored)).rejects.toThrow('Space creation context changed');
+
+    auth.currentWorkspaceId = 'replacement-workspace';
+    rerender();
+    await act(async () => { held.resolve(); await rejected; });
+    expect(loadOutline).not.toHaveBeenCalled();
   });
 });

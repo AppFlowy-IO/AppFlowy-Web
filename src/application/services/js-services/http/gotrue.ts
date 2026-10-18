@@ -1,7 +1,15 @@
 import axios, { AxiosInstance } from 'axios';
 
 import { readErrorIdentity, userFriendlyErrorMessage } from '@/application/errors/error-message';
-import { captureTokenSession, getTokenParsed, invalidToken, saveGoTrueAuth, type GoTrueAuthUser } from '@/application/session/token';
+import {
+  captureTokenSession,
+  getTokenParsed,
+  invalidToken,
+  saveGoTrueAuth,
+  type GoTrueAuthToken,
+  type GoTrueAuthUser,
+} from '@/application/session/token';
+import { parseAuthToken } from '@/application/session/token-storage';
 import { CUSTOM_PROVIDER_PREFIX } from '@/application/types';
 import { Log } from '@/utils/log';
 
@@ -11,6 +19,7 @@ import { GoTrueErrorCode, parseGoTrueError, parseGoTrueFailure } from './gotrue-
 export * from './gotrue-error';
 
 let axiosInstance: AxiosInstance | null = null;
+let grantBaseUrl: string | undefined;
 
 interface VerifyAndRefreshGoTrueTokenParams {
   accessToken: string;
@@ -22,13 +31,14 @@ interface VerifyAndRefreshGoTrueTokenParams {
 }
 
 export function initGrantService(baseURL: string) {
-  if (axiosInstance) {
+  if (axiosInstance && grantBaseUrl === baseURL) {
     return;
   }
 
   axiosInstance = axios.create({
     baseURL,
   });
+  grantBaseUrl = baseURL;
 
   axiosInstance.interceptors.request.use((config) => {
     const headers: Record<string, string> = {
@@ -60,57 +70,174 @@ interface RefreshedToken {
   user: GoTrueAuthUser;
 }
 
-// In-flight refreshes shared by concurrent callers with the same refresh token
+/**
+ * A refresh finished after this tab's session was replaced: sign-out, sign-in as
+ * another account, or a server switch. The caller must neither apply the result
+ * nor invalidate the replacement session.
+ */
+export class AuthSessionChangedError extends Error {
+  constructor() {
+    super('The authentication context changed during token refresh');
+    this.name = 'AuthSessionChangedError';
+  }
+}
+
+export function isAuthSessionChangedError(error: unknown): boolean {
+  return error instanceof AuthSessionChangedError || (error as { name?: unknown })?.name === 'AuthSessionChangedError';
+}
+
+const DEFINITIVE_REFRESH_STATUS_CODES = new Set([400, 401, 403]);
+const DEFINITIVE_REFRESH_MARKERS = [
+  'invalid_grant',
+  'invalid refresh token',
+  'refresh token is invalid',
+  'refresh token has expired',
+  'session_not_found',
+  'session not found',
+];
+
+/**
+ * True only when GoTrue rejected the refresh token itself. Network failures,
+ * timeouts, rate limits and 5xx responses are transient: the stored session is
+ * kept so the next request can refresh it again.
+ */
+export function isDefinitiveRefreshFailure(error: unknown): boolean {
+  if (isAuthSessionChangedError(error)) return false;
+  if (typeof error !== 'object' || error === null || !(error as { isAxiosError?: unknown }).isAxiosError) {
+    // A missing body or a token that cannot be stored leaves no usable session.
+    return true;
+  }
+
+  const response = (error as { response?: { status?: unknown; data?: unknown } }).response;
+
+  if (typeof response?.status === 'number' && DEFINITIVE_REFRESH_STATUS_CODES.has(response.status)) return true;
+  const data = response?.data;
+  const text = (typeof data === 'string' ? data : JSON.stringify(data ?? '')).toLowerCase();
+
+  return DEFINITIVE_REFRESH_MARKERS.some((marker) => text.includes(marker));
+}
+
+function isExpiredSession(session: GoTrueAuthToken): boolean {
+  return session.expires_at * 1000 <= Date.now();
+}
+
+function sameStoredSession(left: GoTrueAuthToken, right: GoTrueAuthToken): boolean {
+  return left.access_token === right.access_token && left.refresh_token === right.refresh_token &&
+    left.user.id === right.user.id;
+}
+
+function asRefreshedToken(session: GoTrueAuthToken): RefreshedToken {
+  return {
+    access_token: session.access_token,
+    expires_at: session.expires_at,
+    refresh_token: session.refresh_token,
+    user: session.user,
+  };
+}
+
+// In-flight refreshes shared by concurrent callers with the same server and refresh token
 // (axios request interceptor, 401 retry handler, WebSocket reconnect). This
-// must be keyed by token: different sessions/tokens may refresh concurrently,
+// must be keyed by server and token: different sessions may refresh concurrently,
 // but duplicate requests for one rotating refresh token must join the same
 // promise or the later request can consume an already-used token.
+//
+// Sibling tabs share the stored token but not this map. When another tab has
+// already exchanged the same refresh token, the stored rotation for the same
+// account is adopted instead of being overwritten or treated as a sign-out.
 const refreshInFlightByToken = new Map<string, Promise<RefreshedToken>>();
 
 export async function refreshToken(refresh_token: string) {
-  const inFlight = refreshInFlightByToken.get(refresh_token);
+  const requestKey = JSON.stringify([grantBaseUrl, refresh_token]);
+  const inFlight = refreshInFlightByToken.get(requestKey);
 
   if (inFlight) {
     Log.debug('[Auth] refreshToken: joining in-flight refresh');
     return inFlight;
   }
 
+  // The login this refresh belongs to: a refreshed token is stored only while it is current.
   const refreshingSession = captureTokenSession();
-  const current = getTokenParsed();
+  const originalSession = getTokenParsed();
 
-  if (current && current.refresh_token !== refresh_token) {
-    throw new Error('Refresh token no longer belongs to the current session');
-  }
+  // A newer token was already stored for this tab's session, so this one belongs to
+  // a replaced session: never refresh it, and never sign the current session out for it.
+  if (originalSession && originalSession.refresh_token !== refresh_token) throw new AuthSessionChangedError();
 
   Log.info('[Auth] refreshToken: requesting new token');
+  const client = axiosInstance;
+  // The account owning this refresh token is known only when it is the stored one.
+  const ownerUserId = originalSession?.refresh_token === refresh_token ? originalSession.user.id : undefined;
 
   const promise = (async (): Promise<RefreshedToken> => {
-    const response = await axiosInstance?.post<RefreshedToken>('/token?grant_type=refresh_token', {
-      refresh_token,
-    });
+    let response: { data?: RefreshedToken } | undefined;
 
+    try {
+      response = await client?.post<RefreshedToken>('/token?grant_type=refresh_token', {
+        refresh_token,
+      });
+    } catch (error) {
+      if (axiosInstance !== client) throw new AuthSessionChangedError();
+      const current = getTokenParsed();
+
+      if (originalSession && (!current || current.user.id !== originalSession.user.id)) {
+        throw new AuthSessionChangedError();
+      }
+
+      // Rotating refresh tokens are single-use: a sibling tab may have exchanged
+      // this one first. Its stored rotation for the same account is still valid.
+      if (ownerUserId && current && current.user.id === ownerUserId && current.refresh_token !== refresh_token &&
+        !isExpiredSession(current)) {
+        Log.info('[Auth] refreshToken: adopting a token already rotated by another tab');
+        return asRefreshedToken(current);
+      }
+
+      throw error;
+    }
+
+    // Logout, a new sign-in, or a server switch must not be undone by a late refresh.
+    if (axiosInstance !== client) throw new AuthSessionChangedError();
     const newToken = response?.data;
 
-    if (newToken) {
-      Log.info('[Auth] refreshToken: success, saving token');
-      if (!saveGoTrueAuth(JSON.stringify(newToken), refreshingSession)) {
-        throw new Error('Failed to persist refreshed token');
-      }
-    } else {
+    if (!newToken) {
       Log.error('[Auth] refreshToken: no token data in response');
       return Promise.reject('Failed to refresh token');
+    }
+
+    const refreshed = parseAuthToken(JSON.stringify(newToken));
+    const current = getTokenParsed();
+
+    if (!current) {
+      if (originalSession) throw new AuthSessionChangedError();
+    } else if (!originalSession || !sameStoredSession(current, originalSession)) {
+      // The stored session changed while this request was in flight. A
+      // background refresh never switches the signed-in account.
+      if (!refreshed || current.user.id !== refreshed.user.id) throw new AuthSessionChangedError();
+
+      // Another tab or path stored a newer token for this account. Keep it:
+      // both are valid, and overwriting would make tabs ping-pong.
+      if (!isExpiredSession(current)) {
+        Log.info('[Auth] refreshToken: keeping the token another tab already stored');
+        return asRefreshedToken(current);
+      }
+    } else if (refreshed && current.user.id !== refreshed.user.id) {
+      throw new AuthSessionChangedError();
+    }
+
+    Log.info('[Auth] refreshToken: success, saving token');
+    if (!saveGoTrueAuth(JSON.stringify(newToken), refreshingSession)) {
+      throw new Error('Failed to persist refreshed token');
     }
 
     return newToken;
   })();
 
-  refreshInFlightByToken.set(refresh_token, promise);
+  refreshInFlightByToken.set(requestKey, promise);
 
   try {
     return await promise;
   } finally {
-    if (refreshInFlightByToken.get(refresh_token) === promise) {
-      refreshInFlightByToken.delete(refresh_token);
+    if (refreshInFlightByToken.get(requestKey) === promise) {
+      refreshInFlightByToken.delete(requestKey);
     }
   }
 }

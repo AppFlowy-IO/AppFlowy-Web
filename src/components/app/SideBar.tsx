@@ -3,6 +3,7 @@ import React, { lazy, Suspense } from 'react';
 import { Role, UIVariant } from '@/application/types';
 import { OutlineDrawer } from '@/components/_shared/outline';
 import { useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { PendingSpaceCreation } from '@/components/app/PendingSpaceCreation';
 import NewPage from '@/components/app/view-actions/NewPage';
 import { Workspaces } from '@/components/app/workspaces';
 import { NotificationBell } from '@/components/notifications';
@@ -29,7 +30,7 @@ function SideBar({ drawerWidth, drawerOpened, toggleOpenDrawer, onResizeDrawerWi
 
   const userWorkspaceInfo = useUserWorkspaceInfo();
 
-  const role = userWorkspaceInfo?.selectedWorkspace.role;
+  const role = userWorkspaceInfo?.selectedWorkspace?.role;
 
   return (
     <OutlineDrawer
@@ -63,6 +64,7 @@ function SideBar({ drawerWidth, drawerOpened, toggleOpenDrawer, onResizeDrawerWi
           )}
         </div>
 
+        <PendingSpaceCreation />
         <Outline width={drawerWidth} />
 
         {/* Local boundary: without it the first mount of this lazy chunk suspends

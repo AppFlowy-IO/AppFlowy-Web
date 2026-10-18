@@ -5,12 +5,13 @@ import { type ReactNode } from 'react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 
 import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
-import { deleteCollabDB } from '@/application/db';
+import { deleteCollabDB, deleteDatabaseLocalCopies } from '@/application/db';
 import { AccessService, ViewService } from '@/application/services/domains';
 import {
   invalidateWorkspaceViewMetadata,
   markWorkspaceViewMetadataOutlineUntrusted,
 } from '@/application/services/js-services/workspace-view-metadata';
+import { blockPermissionSync } from '@/application/sync-outbox';
 import { Role, User, View, ViewLayout } from '@/application/types';
 import { findView } from '@/components/_shared/outline/utils';
 import { AuthInternalContext, AuthInternalContextType } from '@/components/app/contexts/AuthInternalContext';
@@ -64,6 +65,11 @@ jest.mock('@/application/services/domains', () => ({
 
 jest.mock('@/application/db', () => ({
   deleteCollabDB: jest.fn(),
+  deleteDatabaseLocalCopies: jest.fn(),
+}));
+
+jest.mock('@/application/sync-outbox', () => ({
+  blockPermissionSync: jest.fn(async () => undefined),
 }));
 
 jest.mock('@/application/services/js-services/workspace-view-metadata', () => ({
@@ -185,6 +191,62 @@ function createDeferred<T>() {
   };
 }
 
+interface PendingSubtreeRead {
+  viewId: string;
+  read: ReturnType<typeof createDeferred<View[]>>;
+}
+
+/**
+ * Renders the hook over `loadedTree`, whose root outline lists only its
+ * top-level views, and expands `loadOrder` one batch at a time. Afterwards
+ * every subtree read and every root reload stay pending; `reads` lists the
+ * subtree reads in request order and `answer` builds a view's server reply.
+ */
+async function renderExpandedOutline(loadedTree: View[], loadOrder: string[][]) {
+  const eventEmitter = new EventEmitter();
+  const shallowRoot = loadedTree.map((view) => ({ ...view, children: [] }));
+  const rootRefresh = createDeferred<{ outline: View[]; folderRid: string }>();
+  const reads: PendingSubtreeRead[] = [];
+  const answer = (viewId: string): View[] => {
+    const view = findView(loadedTree, viewId);
+
+    return view ? [{ ...view, children: view.children.map((child) => ({ ...child, children: [] })) }] : [];
+  };
+
+  (ViewService.getOutline as jest.Mock)
+    .mockResolvedValueOnce({ outline: shallowRoot, folderRid: '1-1' })
+    .mockReturnValue(rootRefresh.promise);
+  (ViewService.getMultiple as jest.Mock).mockImplementation(async (_workspaceId: string, viewIds: string[]) =>
+    viewIds.flatMap(answer)
+  );
+  const rendered = renderHook(() => useWorkspaceData(), { wrapper: createWrapper(eventEmitter) });
+
+  await waitFor(() => expect(rendered.result.current.outline).toEqual(shallowRoot));
+  for (const viewIds of loadOrder) {
+    await act(async () => {
+      await rendered.result.current.loadViewChildrenBatch?.(viewIds);
+    });
+  }
+
+  expect(rendered.result.current.outline).toEqual(loadedTree);
+  (ViewService.getMultiple as jest.Mock).mockClear().mockImplementation((_workspaceId: string, [viewId]: string[]) => {
+    const read = createDeferred<View[]>();
+
+    reads.push({ viewId, read });
+    return read.promise;
+  });
+
+  return {
+    ...rendered,
+    answer,
+    eventEmitter,
+    reads,
+    readOf: (viewId: string) => reads.find((entry) => entry.viewId === viewId)?.read,
+    rootRefresh,
+    shallowRoot,
+  };
+}
+
 describe('useWorkspaceData sidebar outline revalidation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -202,7 +264,8 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     );
     (ViewService.getTrashCached as jest.Mock).mockResolvedValue([]);
     (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
-    (deleteCollabDB as jest.Mock).mockResolvedValue(undefined);
+    (deleteCollabDB as jest.Mock).mockResolvedValue(true);
+    (deleteDatabaseLocalCopies as jest.Mock).mockResolvedValue(true);
   });
 
   it('invalidates cached access details for every remote share change', async () => {
@@ -391,8 +454,9 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     });
 
     // Assert while both root and parent requests are pending, so a transient
-    // sidebar collapse cannot be hidden by a fast successful response.
-    expect(findView(result.current.outline ?? [], 'old-child')).toBeNull();
+    // sidebar collapse cannot be hidden by a fast successful response. The
+    // changed page keeps its children until its own child list arrives.
+    expect(findView(result.current.outline ?? [], 'old-child')).not.toBeNull();
     expect(findView(result.current.outline ?? [], sibling.view_id)).toBe(originalSibling);
     expect(findView(result.current.outline ?? [], otherSpace.view_id)).toBe(originalOtherSpace);
     expect(result.current.loadedViewIds?.has(sibling.view_id)).toBe(true);
@@ -1231,6 +1295,797 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     consoleErrorSpy.mockRestore();
   });
 
+  it.each([
+    ['a broad permission change', APP_EVENTS.PERMISSION_CHANGED, {}, false],
+    ['a space permission change', APP_EVENTS.PERMISSION_CHANGED, { objectId: 'other-space' }, true],
+    ['a broad share change', APP_EVENTS.SHARE_VIEWS_CHANGED, { emails: ['current-user@appflowy.io'] }, false],
+    [
+      'a space share change',
+      APP_EVENTS.SHARE_VIEWS_CHANGED,
+      { viewId: 'other-space', emails: ['current-user@appflowy.io'] },
+      true,
+    ],
+  ])(
+    'keeps loaded branches visible until their own child lists arrive after %s',
+    async (_label, event, payload, targeted) => {
+      const eventEmitter = new EventEmitter();
+      const withoutChildren = (view: View): View => ({ ...view, children: [] });
+      const generalPage = createView('general-page', { children: [createView('general-leaf')], has_children: true });
+      const generalSpace = createView('general-space', {
+        children: [generalPage],
+        extra: { is_space: true },
+        has_children: true,
+      });
+      const deepPage = createView('deep-page', { children: [createView('deep-leaf')], has_children: true });
+      const otherPage = createView('other-page', { children: [deepPage], has_children: true });
+      const newPage = createView('new-page');
+      const otherSpace = createView('other-space', {
+        children: [otherPage, createView('revoked-page')],
+        extra: { is_space: true },
+        has_children: true,
+      });
+      const loadedTree = [generalSpace, otherSpace];
+      // The depth-limited root lists only spaces, so every expanded branch sits
+      // below its boundary and can only be settled by its own refetch.
+      const shallowRoot = loadedTree.map(withoutChildren);
+      const rootRefresh = createDeferred<{ outline: View[]; folderRid: string }>();
+      const subtreeRefreshes = new Map<string, { resolve: (views: View[]) => void; reject: (error: unknown) => void }>();
+      const published: View[][] = [];
+      const rendered: View[][] = [];
+      let recording = false;
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      (ViewService.getOutline as jest.Mock)
+        .mockResolvedValueOnce({ outline: shallowRoot, folderRid: '1-1' })
+        .mockReturnValueOnce(rootRefresh.promise);
+      (ViewService.getMultiple as jest.Mock).mockImplementation(async (_workspaceId: string, viewIds: string[]) =>
+        viewIds.map((viewId) => {
+          const view = findView(loadedTree, viewId);
+
+          return view ? { ...view, children: view.children.map(withoutChildren) } : undefined;
+        })
+      );
+      eventEmitter.on(APP_EVENTS.OUTLINE_LOADED, (outline: View[]) => {
+        if (recording) published.push(outline);
+      });
+
+      const { result } = renderHook(
+        () => {
+          const workspaceData = useWorkspaceData();
+
+          if (recording && workspaceData.outline) rendered.push(workspaceData.outline);
+          return workspaceData;
+        },
+        { wrapper: createWrapper(eventEmitter) }
+      );
+
+      await waitFor(() => expect(result.current.outline).toEqual(shallowRoot));
+      for (const viewIds of [['general-space', 'other-space'], ['general-page', 'other-page'], ['deep-page']]) {
+        await act(async () => {
+          await result.current.loadViewChildrenBatch?.(viewIds);
+        });
+      }
+
+      expect(result.current.outline).toEqual(loadedTree);
+      const outlineBeforeEvent = result.current.outline;
+      const originalGeneralPage = findView(outlineBeforeEvent ?? [], 'general-page');
+
+      (ViewService.getMultiple as jest.Mock)
+        .mockClear()
+        .mockImplementation((_workspaceId: string, [viewId]: string[]) => {
+          const refresh = createDeferred<View[]>();
+
+          subtreeRefreshes.set(viewId, refresh);
+          return refresh.promise;
+        });
+      recording = true;
+      act(() => {
+        eventEmitter.emit(event, payload);
+      });
+
+      // Nothing is emptied up front; the event only starts the refetches, of
+      // every affected branch at once, parents first.
+      expect(published).toEqual([]);
+      expect(result.current.outline).toBe(outlineBeforeEvent);
+      expect(Array.from(subtreeRefreshes.keys())).toEqual(
+        targeted
+          ? ['other-space', 'other-page', 'deep-page']
+          : ['general-space', 'other-space', 'general-page', 'other-page', 'deep-page']
+      );
+
+      await act(async () => {
+        rootRefresh.resolve({ outline: shallowRoot, folderRid: '1-2' });
+        await rootRefresh.promise;
+      });
+      expect(result.current.outline).toEqual(loadedTree);
+      expect(published.length).toBeGreaterThan(0);
+      const beforeSpaces = { published: published.length, rendered: rendered.length };
+
+      await act(async () => {
+        subtreeRefreshes.get('other-space')?.resolve([{ ...otherSpace, children: [withoutChildren(otherPage)] }]);
+        subtreeRefreshes.get('general-space')?.resolve([{ ...generalSpace, children: [withoutChildren(generalPage)] }]);
+      });
+      // The revoked page leaves with its parent's authoritative child list.
+      await waitFor(() => expect(findView(result.current.outline ?? [], 'revoked-page')).toBeNull());
+      const beforePages = { published: published.length, rendered: rendered.length };
+
+      await act(async () => {
+        subtreeRefreshes.get('other-page')?.resolve([{ ...otherPage, children: [withoutChildren(deepPage), newPage] }]);
+        subtreeRefreshes.get('general-page')?.resolve([generalPage]);
+      });
+      await waitFor(() => expect(findView(result.current.outline ?? [], newPage.view_id)).not.toBeNull());
+      const beforeDeepPage = { published: published.length, rendered: rendered.length };
+
+      await act(async () => {
+        subtreeRefreshes.get('deep-page')?.reject({ code: ERROR_CODE.NOT_HAS_PERMISSION, message: 'revoked' });
+      });
+      // An authoritative subtree error removes that subtree.
+      await waitFor(() => expect(findView(result.current.outline ?? [], 'deep-leaf')).toBeNull());
+
+      expect(result.current.outline).toEqual([
+        generalSpace,
+        { ...otherSpace, children: [{ ...otherPage, children: [{ ...deepPage, children: [] }, newPage] }] },
+      ]);
+      expect(subtreeRefreshes.has('general-page')).toBe(!targeted);
+      expect(result.current.loadedViewIds?.has('other-space')).toBe(true);
+      expect(result.current.loadedViewIds?.has('other-page')).toBe(true);
+      expect(result.current.loadedViewIds?.has('deep-page')).toBe(false);
+      expect(result.current.loadedViewIds?.has('general-page')).toBe(true);
+
+      // No published or rendered outline drops a branch before its own response.
+      const childIds = (outline: View[], viewId: string) =>
+        findView(outline, viewId)?.children.map((child) => child.view_id);
+      const expectChildIds = (outlines: View[][], expected: Record<string, string[]>) => {
+        for (const outline of outlines) {
+          for (const [viewId, ids] of Object.entries(expected)) {
+            expect(childIds(outline, viewId)).toEqual(ids);
+          }
+        }
+      };
+
+      const segment = (from: typeof beforeSpaces | null, to: typeof beforeSpaces | null) => [
+        ...published.slice(from?.published ?? 0, to?.published),
+        ...rendered.slice(from?.rendered ?? 0, to?.rendered),
+      ];
+
+      expectChildIds(segment(null, beforeSpaces), {
+        'general-space': ['general-page'],
+        'general-page': ['general-leaf'],
+        'other-space': ['other-page', 'revoked-page'],
+        'other-page': ['deep-page'],
+        'deep-page': ['deep-leaf'],
+      });
+      expectChildIds(segment(beforeSpaces, beforePages), {
+        'general-page': ['general-leaf'],
+        'other-page': ['deep-page'],
+        'deep-page': ['deep-leaf'],
+      });
+      expectChildIds(segment(beforePages, beforeDeepPage), { 'deep-page': ['deep-leaf'] });
+      expectChildIds(segment(null, null), { 'general-space': ['general-page'], 'general-page': ['general-leaf'] });
+      if (targeted) {
+        // An unrelated space is neither refetched nor rebuilt.
+        for (const outline of segment(null, null)) {
+          expect(findView(outline, 'general-page')).toBe(originalGeneralPage);
+        }
+      }
+
+      // Every refetched view released its loading marker.
+      (ViewService.getMultiple as jest.Mock).mockClear().mockResolvedValue([]);
+      await act(async () => {
+        await result.current.loadViewChildrenBatch?.(['other-space', 'other-page', 'deep-page']);
+      });
+      expect(ViewService.getMultiple).toHaveBeenCalledWith(workspaceId, ['other-space', 'other-page', 'deep-page'], 1);
+      consoleErrorSpy.mockRestore();
+    }
+  );
+
+  it('does not let a superseded permission refresh reintroduce removed children', async () => {
+    const eventEmitter = new EventEmitter();
+    const keptPage = createView('kept-page');
+    const revokedPage = createView('revoked-page');
+    const space = createView('space-id', {
+      children: [keptPage, revokedPage],
+      extra: { is_space: true },
+      has_children: true,
+    });
+    const shallowRoot = [{ ...space, children: [] }];
+    const olderRoot = createDeferred<{ outline: View[]; folderRid: string }>();
+    const newerRoot = createDeferred<{ outline: View[]; folderRid: string }>();
+    const olderSubtree = createDeferred<View[]>();
+    const newerSubtree = createDeferred<View[]>();
+    const published: View[][] = [];
+
+    (ViewService.getOutline as jest.Mock)
+      .mockResolvedValueOnce({ outline: shallowRoot, folderRid: '1-1' })
+      .mockReturnValueOnce(olderRoot.promise)
+      .mockReturnValueOnce(newerRoot.promise);
+    (ViewService.getMultiple as jest.Mock).mockResolvedValue([space]);
+    const { result } = renderHook(() => useWorkspaceData(), { wrapper: createWrapper(eventEmitter) });
+
+    await waitFor(() => expect(result.current.outline).toEqual(shallowRoot));
+    await act(async () => {
+      await result.current.loadViewChildrenBatch?.([space.view_id]);
+    });
+    expect(findView(result.current.outline ?? [], revokedPage.view_id)).not.toBeNull();
+
+    (ViewService.getMultiple as jest.Mock)
+      .mockClear()
+      .mockReturnValueOnce(olderSubtree.promise)
+      .mockReturnValueOnce(newerSubtree.promise);
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+    });
+    await waitFor(() => expect(ViewService.getMultiple).toHaveBeenCalledTimes(1));
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+    });
+
+    // The newer event restarts the superseded refetch and keeps the branch.
+    await waitFor(() => expect(ViewService.getMultiple).toHaveBeenCalledTimes(2));
+    expect(ViewService.getMultiple).toHaveBeenLastCalledWith(workspaceId, [space.view_id], 1);
+    expect(findView(result.current.outline ?? [], revokedPage.view_id)).not.toBeNull();
+
+    await act(async () => {
+      newerSubtree.resolve([{ ...space, children: [keptPage] }]);
+      await newerSubtree.promise;
+    });
+    await waitFor(() => expect(findView(result.current.outline ?? [], revokedPage.view_id)).toBeNull());
+    await act(async () => {
+      newerRoot.resolve({ outline: shallowRoot, folderRid: '1-3' });
+      await newerRoot.promise;
+    });
+
+    eventEmitter.on(APP_EVENTS.OUTLINE_LOADED, (outline: View[]) => published.push(outline));
+    await act(async () => {
+      olderSubtree.resolve([space]);
+      olderRoot.resolve({ outline: [space], folderRid: '1-2' });
+      await Promise.all([olderSubtree.promise, olderRoot.promise]);
+    });
+
+    expect(findView(result.current.outline ?? [], revokedPage.view_id)).toBeNull();
+    expect(findView(result.current.outline ?? [], keptPage.view_id)).not.toBeNull();
+    expect(published.every((outline) => findView(outline, revokedPage.view_id) === null)).toBe(true);
+  });
+
+  it('keeps a root snapshot child list when the branch refetch later fails', async () => {
+    const eventEmitter = new EventEmitter();
+    const keptPage = createView('kept-page');
+    const revokedPage = createView('revoked-page');
+    const space = createView('space-id', {
+      children: [keptPage, revokedPage],
+      extra: { is_space: true },
+      has_children: true,
+    });
+    const subtreeRefresh = createDeferred<View[]>();
+
+    (ViewService.getOutline as jest.Mock)
+      .mockResolvedValueOnce({ outline: [{ ...space, children: [] }], folderRid: '1-1' })
+      .mockResolvedValueOnce({ outline: [{ ...space, children: [keptPage] }], folderRid: '1-2' });
+    (ViewService.getMultiple as jest.Mock).mockResolvedValue([space]);
+    const { result } = renderHook(() => useWorkspaceData(), { wrapper: createWrapper(eventEmitter) });
+
+    await waitFor(() => expect(result.current.outline?.[0]?.children).toEqual([]));
+    await act(async () => {
+      await result.current.loadViewChildrenBatch?.([space.view_id]);
+    });
+    (ViewService.getMultiple as jest.Mock).mockClear().mockReturnValueOnce(subtreeRefresh.promise);
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+    });
+
+    // A root snapshot that lists the branch's children settles them.
+    await waitFor(() => expect(findView(result.current.outline ?? [], revokedPage.view_id)).toBeNull());
+    await act(async () => {
+      subtreeRefresh.reject({ code: ERROR_CODE.NOT_HAS_PERMISSION, message: 'revoked' });
+      await subtreeRefresh.promise.catch(() => undefined);
+    });
+
+    expect(findView(result.current.outline ?? [], space.view_id)?.children).toEqual([keptPage]);
+  });
+
+  it('drops kept children once a permission refetch keeps failing', async () => {
+    const eventEmitter = new EventEmitter();
+    const child = createView('child-id');
+    const space = createView('space-id', { children: [child], extra: { is_space: true }, has_children: true });
+    const shallowRoot = [{ ...space, children: [] }];
+    const firstAttempt = createDeferred<View[]>();
+    const secondAttempt = createDeferred<View[]>();
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: shallowRoot, folderRid: '1-1' });
+    (ViewService.getMultiple as jest.Mock).mockResolvedValue([space]);
+    const { result } = renderHook(() => useWorkspaceData(), { wrapper: createWrapper(eventEmitter) });
+
+    await waitFor(() => expect(result.current.outline).toEqual(shallowRoot));
+    await act(async () => {
+      await result.current.loadViewChildrenBatch?.([space.view_id]);
+    });
+    (ViewService.getMultiple as jest.Mock)
+      .mockClear()
+      .mockReturnValueOnce(firstAttempt.promise)
+      .mockReturnValueOnce(secondAttempt.promise);
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+    });
+
+    await act(async () => {
+      firstAttempt.reject({ code: ERROR_CODE.REQUEST_TIMEOUT, message: 'try again' });
+      await firstAttempt.promise.catch(() => undefined);
+    });
+    await waitFor(() => expect(ViewService.getMultiple).toHaveBeenCalledTimes(2));
+    expect(findView(result.current.outline ?? [], child.view_id)).not.toBeNull();
+
+    await act(async () => {
+      secondAttempt.reject({ code: ERROR_CODE.REQUEST_TIMEOUT, message: 'try again' });
+      await secondAttempt.promise.catch(() => undefined);
+    });
+
+    // Giving up ends where the old eviction did: no stale children, still expandable.
+    await waitFor(() => expect(findView(result.current.outline ?? [], child.view_id)).toBeNull());
+    expect(findView(result.current.outline ?? [], space.view_id)?.has_children).toBe(true);
+    expect(result.current.loadedViewIds?.has(space.view_id)).toBe(false);
+
+    // The view was not left marked as loading, so a later expansion refetches it.
+    await act(async () => {
+      await result.current.loadViewChildrenBatch?.([space.view_id]);
+    });
+    expect(findView(result.current.outline ?? [], child.view_id)).not.toBeNull();
+    consoleErrorSpy.mockRestore();
+  });
+
+  it.each([
+    ['a concurrent subtree load', false],
+    ['a sidebar revalidation', true],
+  ])('keeps a pending branch visible while %s is already fetching it', async (_label, revalidate) => {
+    const eventEmitter = new EventEmitter();
+    const withoutChildren = (view: View): View => ({ ...view, children: [] });
+    const leaf = createView('leaf');
+    const sub = createView('sub', { children: [leaf], has_children: true });
+    const page = createView('page', { children: [sub, createView('revoked-page')], has_children: true });
+    const space = createView('space', { children: [page], extra: { is_space: true }, has_children: true });
+    // Loaded leaf spaces take the other read slots, so the page waits in the
+    // refresh queue until the space's read finishes.
+    const fillers = Array.from({ length: 7 }, (_, index) =>
+      createView(`filler-${index}`, { extra: { is_space: true }, has_children: false })
+    );
+    const fillerIds = fillers.map((filler) => filler.view_id);
+    const loadedTree = [space, ...fillers];
+    // The root lists only the spaces, so page and sub are settled by refetches alone.
+    const shallowRoot = loadedTree.map(withoutChildren);
+    const serverPage = { ...page, children: [withoutChildren(sub)] };
+    const rootRefresh = createDeferred<{ outline: View[]; folderRid: string }>();
+    const revalidationRoot = createDeferred<{ outline: View[]; folderRid: string }>();
+    const subtreeRequests: { viewIds: string[]; resolve: (views: View[]) => void }[] = [];
+    const published: View[][] = [];
+    const rendered: View[][] = [];
+    let recording = false;
+
+    (ViewService.getOutline as jest.Mock)
+      .mockResolvedValueOnce({ outline: shallowRoot, folderRid: '1-1' })
+      .mockReturnValueOnce(rootRefresh.promise);
+    (ViewService.getMultiple as jest.Mock).mockImplementation(async (_workspaceId: string, viewIds: string[]) =>
+      viewIds.map((viewId) => {
+        const view = findView(loadedTree, viewId);
+
+        return view ? { ...view, children: view.children.map(withoutChildren) } : undefined;
+      })
+    );
+    eventEmitter.on(APP_EVENTS.OUTLINE_LOADED, (outline: View[]) => {
+      if (recording) published.push(outline);
+    });
+
+    const { result } = renderHook(
+      () => {
+        const workspaceData = useWorkspaceData();
+
+        if (recording && workspaceData.outline) rendered.push(workspaceData.outline);
+        return workspaceData;
+      },
+      { wrapper: createWrapper(eventEmitter) }
+    );
+
+    await waitFor(() => expect(result.current.outline).toEqual(shallowRoot));
+    for (const viewIds of [['space', ...fillerIds], ['page'], ['sub']]) {
+      await act(async () => {
+        await result.current.loadViewChildrenBatch?.(viewIds);
+      });
+    }
+
+    expect(result.current.outline).toEqual(loadedTree);
+    (ViewService.getMultiple as jest.Mock).mockClear().mockImplementation((_workspaceId: string, viewIds: string[]) => {
+      const response = createDeferred<View[]>();
+
+      subtreeRequests.push({ viewIds, resolve: response.resolve });
+      return response.promise;
+    });
+    recording = true;
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+    });
+    expect(subtreeRequests.map(({ viewIds }) => viewIds)).toEqual([['space'], ...fillerIds.map((id) => [id])]);
+
+    // Another load claims the queued page before a read slot frees up for it.
+    let concurrentLoad: Promise<unknown> | undefined;
+
+    act(() => {
+      if (revalidate) {
+        (ViewService.getOutline as jest.Mock).mockReturnValueOnce(revalidationRoot.promise);
+        concurrentLoad = result.current.revalidateSidebarOutline?.(['space', 'page', 'sub']);
+      } else {
+        concurrentLoad = result.current.loadViewChildrenBatch?.(['page']);
+      }
+    });
+    if (revalidate) {
+      await act(async () => {
+        revalidationRoot.resolve({ outline: shallowRoot, folderRid: '1-3' });
+        await revalidationRoot.promise;
+      });
+    }
+
+    await waitFor(() => expect(subtreeRequests).toHaveLength(9));
+    await act(async () => {
+      subtreeRequests[0].resolve([{ ...space, children: [withoutChildren(page)] }]);
+      // Let the freed slot reach the page while the other load is still pending.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    const childIds = (outline: View[], viewId: string) =>
+      findView(outline, viewId)?.children.map((child) => child.view_id);
+
+    // The refresh asks for the page itself instead of taking the other load's
+    // pending request as its answer, so nothing is dropped meanwhile.
+    for (const outline of [...published, ...rendered]) {
+      expect(childIds(outline, 'page')).toEqual(['sub', 'revoked-page']);
+    }
+
+    expect(subtreeRequests.map(({ viewIds }) => viewIds)).toEqual([
+      ['space'],
+      ...fillerIds.map((id) => [id]),
+      revalidate ? ['page', 'sub'] : ['page'],
+      ['page'],
+    ]);
+
+    await act(async () => {
+      subtreeRequests[8].resolve(revalidate ? [serverPage, sub] : [serverPage]);
+      await concurrentLoad;
+    });
+    // The first authoritative child list removes the revoked page.
+    expect(findView(result.current.outline ?? [], 'revoked-page')).toBeNull();
+
+    await act(async () => {
+      subtreeRequests[9].resolve([serverPage]);
+    });
+    await waitFor(() => expect(subtreeRequests).toHaveLength(11));
+    expect(subtreeRequests[10].viewIds).toEqual(['sub']);
+    await act(async () => {
+      subtreeRequests[10].resolve([sub]);
+      fillers.forEach((filler, index) => subtreeRequests[index + 1].resolve([filler]));
+      rootRefresh.resolve({ outline: shallowRoot, folderRid: '1-2' });
+      await rootRefresh.promise;
+    });
+    await waitFor(() => expect(result.current.loadedViewIds?.has('sub')).toBe(true));
+
+    expect(result.current.outline).toEqual([{ ...space, children: [{ ...page, children: [sub] }] }, ...fillers]);
+    expect(result.current.loadedViewIds?.has('page')).toBe(true);
+    // No published or rendered outline ever emptied the page or its loaded child.
+    for (const outline of [...published, ...rendered]) {
+      expect(childIds(outline, 'sub')).toEqual(['leaf']);
+    }
+  });
+
+  it("removes a revoked page deep below the root depth with its parent's list while ancestors are pending", async () => {
+    const keptPage = createView('kept-page');
+    const levelThree = createView('level-three', { children: [keptPage, createView('revoked-page')], has_children: true });
+    const levelTwo = createView('level-two', { children: [levelThree], has_children: true });
+    const levelOne = createView('level-one', { children: [levelTwo], has_children: true });
+    const space = createView('space', { children: [levelOne], extra: { is_space: true }, has_children: true });
+    const branchIds = ['space', 'level-one', 'level-two', 'level-three'];
+    // The root lists only the space, so the revoked page sits four levels below it.
+    const { result, answer, eventEmitter, reads, readOf, rootRefresh, shallowRoot } = await renderExpandedOutline(
+      [space],
+      branchIds.map((viewId) => [viewId])
+    );
+    const settledOutline = [
+      {
+        ...space,
+        children: [{ ...levelOne, children: [{ ...levelTwo, children: [{ ...levelThree, children: [keptPage] }] }] }],
+      },
+    ];
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+    });
+    // Every branch is requested at once, parents first.
+    expect(reads.map(({ viewId }) => viewId)).toEqual(branchIds);
+
+    await act(async () => {
+      readOf('level-three')?.resolve([{ ...levelThree, children: [keptPage] }]);
+    });
+
+    // The page leaves with its own parent's list while every ancestor read and
+    // the root reload are still pending; the ancestors keep their children.
+    await waitFor(() => expect(findView(result.current.outline ?? [], 'revoked-page')).toBeNull());
+    expect(result.current.outline).toEqual(settledOutline);
+    expect(result.current.loadedViewIds?.has('level-three')).toBe(true);
+    expect(result.current.loadedViewIds?.has('level-two')).toBe(false);
+
+    await act(async () => {
+      ['level-two', 'level-one', 'space'].forEach((viewId) => readOf(viewId)?.resolve(answer(viewId)));
+      rootRefresh.resolve({ outline: shallowRoot, folderRid: '1-2' });
+      await rootRefresh.promise;
+    });
+
+    await waitFor(() => expect(result.current.loadedViewIds?.has('space')).toBe(true));
+    expect(result.current.outline).toEqual(settledOutline);
+    branchIds.forEach((viewId) => expect(result.current.loadedViewIds?.has(viewId)).toBe(true));
+  });
+
+  it.each([
+    ['keeps', true],
+    ['drops', false],
+  ])("applies a nested branch's list that arrives before its parent's list, which %s the branch", async (_label, kept) => {
+    const freshLeaf = createView('fresh-leaf');
+    const otherChild = createView('other-child');
+    const sub = createView('sub', { children: [createView('old-leaf')], has_children: true });
+    const page = createView('page', { children: [sub], has_children: true });
+    const space = createView('space', { children: [page], extra: { is_space: true }, has_children: true });
+    const { result, answer, eventEmitter, reads, readOf, rootRefresh, shallowRoot } = await renderExpandedOutline(
+      [space],
+      [['space'], ['page'], ['sub']]
+    );
+    const published: View[][] = [];
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+    });
+    expect(reads.map(({ viewId }) => viewId)).toEqual(['space', 'page', 'sub']);
+
+    // The nested list replaces the branch's kept children while its parent's
+    // read is still pending.
+    await act(async () => {
+      readOf('sub')?.resolve([{ ...sub, children: [freshLeaf] }]);
+    });
+    await waitFor(() => expect(findView(result.current.outline ?? [], 'sub')?.children).toEqual([freshLeaf]));
+    expect(result.current.loadedViewIds?.has('sub')).toBe(true);
+
+    eventEmitter.on(APP_EVENTS.OUTLINE_LOADED, (outline: View[]) => published.push(outline));
+    await act(async () => {
+      readOf('page')?.resolve([{ ...page, children: [kept ? { ...sub, children: [] } : otherChild] }]);
+    });
+    await waitFor(() => expect(result.current.loadedViewIds?.has('page')).toBe(true));
+
+    if (kept) {
+      // The re-verified branch keeps its fresh children through its parent's list.
+      expect(findView(result.current.outline ?? [], 'sub')?.children).toEqual([freshLeaf]);
+      for (const outline of published) {
+        expect(findView(outline, 'sub')?.children).toEqual([freshLeaf]);
+      }
+    } else {
+      // Dropping the branch also clears the loaded mark its own list set, as
+      // if the parent's list had arrived first.
+      expect(findView(result.current.outline ?? [], 'sub')).toBeNull();
+    }
+
+    expect(result.current.loadedViewIds?.has('sub')).toBe(kept);
+
+    await act(async () => {
+      readOf('space')?.resolve(answer('space'));
+      rootRefresh.resolve({ outline: shallowRoot, folderRid: '1-2' });
+      await rootRefresh.promise;
+    });
+    await waitFor(() => expect(result.current.loadedViewIds?.has('space')).toBe(true));
+    expect(result.current.outline).toEqual([
+      { ...space, children: [{ ...page, children: [kept ? { ...sub, children: [freshLeaf] } : otherChild] }] },
+    ]);
+    expect(result.current.loadedViewIds?.has('sub')).toBe(kept);
+  });
+
+  it.each(['denied', 'omitted', 'still failing'])(
+    "unmarks a nested branch whose list arrived first when its parent's refetch is %s",
+    async (outcome) => {
+      const sub = createView('sub', { children: [createView('old-leaf')], has_children: true });
+      const page = createView('page', { children: [sub], has_children: true });
+      const space = createView('space', { children: [page], extra: { is_space: true }, has_children: true });
+      const { result, answer, eventEmitter, reads, readOf, rootRefresh, shallowRoot } = await renderExpandedOutline(
+        [space],
+        [['space'], ['page'], ['sub']]
+      );
+      const pageReads = () => reads.filter(({ viewId }) => viewId === 'page').map(({ read }) => read);
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      act(() => {
+        eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+      });
+      expect(reads.map(({ viewId }) => viewId)).toEqual(['space', 'page', 'sub']);
+
+      await act(async () => {
+        readOf('sub')?.resolve([{ ...sub, children: [createView('fresh-leaf')] }]);
+      });
+      await waitFor(() => expect(result.current.loadedViewIds?.has('sub')).toBe(true));
+
+      // The parent's refetch then ends without a list, which drops its kept children.
+      if (outcome === 'omitted') {
+        await act(async () => {
+          pageReads()[0].resolve([]);
+        });
+      } else {
+        const error =
+          outcome === 'denied'
+            ? { code: ERROR_CODE.NOT_HAS_PERMISSION, message: 'revoked' }
+            : { code: ERROR_CODE.REQUEST_TIMEOUT, message: 'try again' };
+
+        await act(async () => {
+          pageReads()[0].reject(error);
+        });
+        if (outcome === 'still failing') {
+          await waitFor(() => expect(pageReads()).toHaveLength(2));
+          await act(async () => {
+            pageReads()[1].reject(error);
+          });
+        }
+      }
+
+      // Dropping the branch also clears the loaded mark its own list set, as if
+      // the parent's refetch had ended first.
+      await waitFor(() => expect(findView(result.current.outline ?? [], 'sub')).toBeNull());
+      expect(result.current.loadedViewIds?.has('sub')).toBe(false);
+
+      // An unchanged root reload does not recompute the marks, so none may be left.
+      await act(async () => {
+        readOf('space')?.resolve(answer('space'));
+        rootRefresh.resolve({ outline: shallowRoot, folderRid: '1-2' });
+        await rootRefresh.promise;
+      });
+      await waitFor(() => expect(result.current.loadedViewIds?.has('space')).toBe(true));
+      expect(result.current.outline).toEqual([{ ...space, children: [{ ...page, children: [] }] }]);
+      expect(result.current.loadedViewIds?.has('sub')).toBe(false);
+
+      // Listed again, the branch comes back without children and unloaded, so
+      // the sidebar fetches them when it is expanded.
+      (ViewService.getMultiple as jest.Mock)
+        .mockClear()
+        .mockImplementation(async (_workspaceId: string, viewIds: string[]) => viewIds.flatMap(answer));
+      await act(async () => {
+        await result.current.loadViewChildrenBatch?.(['page']);
+      });
+      expect(findView(result.current.outline ?? [], 'sub')?.children).toEqual([]);
+      expect(result.current.loadedViewIds?.has('sub')).toBe(false);
+      consoleErrorSpy.mockRestore();
+    }
+  );
+
+  it.each([
+    ['list', false],
+    ['denial', true],
+  ])('ignores a late %s for a branch its parent already removed', async (_label, denied) => {
+    const otherChild = createView('other-child');
+    const sub = createView('sub', { children: [createView('leaf')], has_children: true });
+    const page = createView('page', { children: [sub], has_children: true });
+    const space = createView('space', { children: [page], extra: { is_space: true }, has_children: true });
+    const { result, answer, eventEmitter, reads, readOf, rootRefresh, shallowRoot } = await renderExpandedOutline(
+      [space],
+      [['space'], ['page'], ['sub']]
+    );
+    const published: View[][] = [];
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+    });
+    expect(reads.map(({ viewId }) => viewId)).toEqual(['space', 'page', 'sub']);
+
+    // The parent's list removes the branch while the branch's own read is pending.
+    await act(async () => {
+      readOf('page')?.resolve([{ ...page, children: [otherChild] }]);
+    });
+    await waitFor(() => expect(findView(result.current.outline ?? [], 'sub')).toBeNull());
+    const outlineWithoutBranch = result.current.outline;
+
+    eventEmitter.on(APP_EVENTS.OUTLINE_LOADED, (outline: View[]) => published.push(outline));
+    await act(async () => {
+      if (denied) readOf('sub')?.reject({ code: ERROR_CODE.NOT_HAS_PERMISSION, message: 'revoked' });
+      else readOf('sub')?.resolve([{ ...sub, children: [createView('late-leaf')] }]);
+      // Let the late read settle completely before asserting that nothing changed.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    // The late read neither restores nor marks the removed branch.
+    expect(result.current.outline).toBe(outlineWithoutBranch);
+    expect(published).toEqual([]);
+    expect(result.current.loadedViewIds?.has('sub')).toBe(false);
+
+    await act(async () => {
+      readOf('space')?.resolve(answer('space'));
+      rootRefresh.resolve({ outline: shallowRoot, folderRid: '1-2' });
+      await rootRefresh.promise;
+    });
+    await waitFor(() => expect(result.current.loadedViewIds?.has('space')).toBe(true));
+    expect(result.current.outline).toEqual([{ ...space, children: [{ ...page, children: [otherChild] }] }]);
+    expect(result.current.loadedViewIds?.has('sub')).toBe(false);
+
+    // The late read released its loading marker too.
+    (ViewService.getMultiple as jest.Mock).mockClear().mockResolvedValue([]);
+    await act(async () => {
+      await result.current.loadViewChildrenBatch?.(['sub']);
+    });
+    expect(ViewService.getMultiple).toHaveBeenCalledWith(workspaceId, ['sub'], 1);
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('reads at most eight permission subtrees at once and starts parents first', async () => {
+    const page = createView('page', { children: [createView('page-leaf')], has_children: true });
+    const spaces = Array.from({ length: 9 }, (_, index) =>
+      createView(`space-${index}`, {
+        children: [index === 0 ? page : createView(`leaf-${index}`)],
+        extra: { is_space: true },
+        has_children: true,
+      })
+    );
+    const spaceIds = spaces.map((space) => space.view_id);
+    const { result, answer, eventEmitter, reads } = await renderExpandedOutline(spaces, [spaceIds, ['page']]);
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+    });
+    expect(reads.map(({ viewId }) => viewId)).toEqual(spaceIds.slice(0, 8));
+
+    // Each finished read frees one slot for the next queued branch: the last
+    // space, then the nested page.
+    for (let settled = 0; settled < reads.length; settled += 1) {
+      const { viewId, read } = reads[settled];
+
+      await act(async () => {
+        read.resolve(answer(viewId));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(reads.length - (settled + 1)).toBeLessThanOrEqual(8);
+    }
+
+    expect(reads.map(({ viewId }) => viewId)).toEqual([...spaceIds, 'page']);
+    expect(result.current.outline).toEqual(spaces);
+    [...spaceIds, 'page'].forEach((viewId) => expect(result.current.loadedViewIds?.has(viewId)).toBe(true));
+  });
+
+  it('starts no queued subtree reads once a newer permission change supersedes the refresh', async () => {
+    const spaces = Array.from({ length: 10 }, (_, index) =>
+      createView(`space-${index}`, {
+        children: [createView(`leaf-${index}`)],
+        extra: { is_space: true },
+        has_children: true,
+      })
+    );
+    const spaceIds = spaces.map((space) => space.view_id);
+    const { result, answer, eventEmitter, reads } = await renderExpandedOutline(spaces, [spaceIds]);
+    const settle = async (entries: PendingSubtreeRead[]) => {
+      await act(async () => {
+        entries.forEach(({ viewId, read }) => read.resolve(answer(viewId)));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    };
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+    });
+    const supersededReads = reads.slice();
+
+    expect(supersededReads.map(({ viewId }) => viewId)).toEqual(spaceIds.slice(0, 8));
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, {});
+    });
+    // The newer refresh requests the pending branches again under its own cap.
+    expect(reads.slice(8).map(({ viewId }) => viewId)).toEqual(spaceIds.slice(0, 8));
+
+    // The superseded reads free their slots, but their refresh starts nothing
+    // more: the queued spaces wait for the newer refresh.
+    await settle(supersededReads);
+    expect(reads).toHaveLength(16);
+
+    await settle(reads.slice(8));
+    expect(reads.slice(16).map(({ viewId }) => viewId)).toEqual(spaceIds.slice(8));
+    await settle(reads.slice(16));
+    expect(result.current.outline).toEqual(spaces);
+  });
+
   it('refreshes an already-loaded favorites list after a permission change', async () => {
     const eventEmitter = new EventEmitter();
     const revokedFavorite = createView('revoked-favorite-id', { is_favorite: true });
@@ -1496,7 +2351,7 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     expect(findView(result.current.outline ?? [], freshChild.view_id)).not.toBeNull();
   });
 
-  it('evicts a disk-only canonical database collab when the current user loses access', async () => {
+  it('removes the synced copy of a disk-only database collab and quarantines its unsent edits on access loss', async () => {
     const eventEmitter = new EventEmitter();
     const databaseView = createView('database-view-id', {
       layout: ViewLayout.Grid,
@@ -1532,8 +2387,12 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
 
     await waitFor(() => {
       expect(deleteCollabDB).toHaveBeenCalledWith(databaseView.view_id, { destroyDoc: true });
-      expect(deleteCollabDB).toHaveBeenCalledWith('database-collab-id', { destroyDoc: true });
+      // The database goes with its rows and row pages.
+      expect(deleteDatabaseLocalCopies).toHaveBeenCalledWith('database-collab-id', { destroyDoc: true });
+      expect(deleteCollabDB).not.toHaveBeenCalledWith('database-collab-id', expect.anything());
     });
+    expect(blockPermissionSync).toHaveBeenCalledWith(databaseView.view_id, workspaceId);
+    expect(blockPermissionSync).toHaveBeenCalledWith('database-collab-id', workspaceId);
     expect(ViewService.getCachedFromDisk).toHaveBeenCalledWith(workspaceId, databaseView.view_id);
     expect(ViewService.invalidateCache).toHaveBeenCalledWith(workspaceId, databaseView.view_id);
     expect(revokedListener).toHaveBeenCalledWith({ viewId: databaseView.view_id });
@@ -1580,7 +2439,9 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
 
     await waitFor(() => {
       expect(deleteCollabDB).toHaveBeenCalledWith(databaseView.view_id, { destroyDoc: true });
-      expect(deleteCollabDB).toHaveBeenCalledWith('memory-only-database-collab-id', { destroyDoc: true });
+      // The database goes with its rows and row pages.
+      expect(deleteDatabaseLocalCopies).toHaveBeenCalledWith('memory-only-database-collab-id', { destroyDoc: true });
+      expect(deleteCollabDB).not.toHaveBeenCalledWith('memory-only-database-collab-id', expect.anything());
     });
     expect(ViewService.invalidateWorkspaceMemoryCache).toHaveBeenCalledWith(workspaceId);
     expect(ViewService.getCachedFromDisk).not.toHaveBeenCalled();

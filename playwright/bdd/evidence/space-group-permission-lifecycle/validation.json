@@ -1,0 +1,63 @@
+{
+  "date": "2026-10-12",
+  "scope": "Web workspace permission implementation draft PR",
+  "checks": {
+    "affected_jest_suites": {
+      "status": "passed; 1021 tests, 70 suites",
+      "local_log": "pr1367-web-pr-tests.log",
+      "log_sha256": "abe44d7c28e058861a5d7f393ef4645e6fb3a2e78e1ea22a454f6b3eadc4611c"
+    },
+    "lint_only_followup": {
+      "status": "passed; 38 tests, 3 suites",
+      "local_log": "pr1367-web-pr-lintfix-tests.log",
+      "log_sha256": "ba80f1ca7025cc8ec1ae4a454d9cf39df139a295f70fcd2918bca3a5380ca37c"
+    },
+    "production_types": {
+      "status": "passed",
+      "local_log": "pr1367-web-pr-typecheck.log",
+      "log_sha256": "1314ed95803fcc4bbe81fb7906f3f2aa87b0c2e6d713dbf2c113bf2aefa372fa"
+    },
+    "permission_harness_types": {
+      "status": "passed",
+      "local_log": "pr1367-web-pr-playwright-tsc.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "python_guards": {
+      "status": "passed; 10 tests",
+      "local_log": "pr1367-web-pr-python-guards.log",
+      "log_sha256": "45629e08d8c41ba474e149425cf4477b6ed2d14afbd48b41a5dea35ddb36ae32"
+    },
+    "offline_browser_guards": {
+      "status": "passed; 4 tests",
+      "local_log": "pr1367-web-pr-boundaries.log",
+      "log_sha256": "9e0fd43a777d43163ab3d03363181185817910f4e13224d8ee0fbd7da1ace814"
+    },
+    "indexeddb_browser": {
+      "status": "passed; real Chromium and IndexedDB",
+      "local_log": "pr1367-web-pr-indexeddb.log",
+      "log_sha256": "b8f897e6c1689479af8c4f0637ab163f31fb07e9d520e127c59ff9b2ba3faefc"
+    },
+    "bdd_generation": {
+      "status": "passed; generation only",
+      "local_log": "pr1367-web-pr-bddgen.log",
+      "log_sha256": "bff5996bd1af4ba577930723a705fb379013de8d3e4cc41b63c619375717dfca"
+    },
+    "fresh_captures": {
+      "status": "passed; 5 screenshots",
+      "local_log": "pr1367-web-pr-capture-final2.log",
+      "log_sha256": "703404bf95e72f174671f244e687d1dd49b94986d7d0904eeeaeb5b8e09ff4f7"
+    },
+    "full_application_lint": {
+      "status": "passed; pnpm lint (production TypeScript and complete application ESLint)",
+      "local_log": "pr1367-web-pr-full-lint-final.log",
+      "log_sha256": "c483c36c55a8dff072344ae418f3ffff7d78f6b37eb386082770be0f95f5b49e"
+    }
+  },
+  "limits": [
+    "Affected Jest suites only, not the entire repository Jest suite.",
+    "Full connected lifecycle was not rerun against final four Rust review fixes; previous 44-check result stays separately qualified.",
+    "Fresh captures are read-only and unsaved coverage drafts.",
+    "No cross-browser, packaged Desktop, external provider, AI search or deployment acceptance claim."
+  ],
+  "followup": "Three test files received type/lint-only cleanup after the 1021-test run; all 38 tests in those suites were rerun and passed. Production code did not change. The standalone Playwright config uses the same application-lint exclusion as its sibling configs and passes its separate TypeScript project. One extra EOF blank line in a new file was removed."
+}

@@ -145,6 +145,9 @@ export const useBroadcastChannel = (channelName: string): BroadcastChannelType =
   // stale "closed" flag into the replacement channel and silently drop sends.
   const channelRef = useRef<BroadcastChannel | null>(null);
   const activeChannelNameRef = useRef<string | null>(null);
+  const renderedChannelNameRef = useRef(channelName);
+
+  renderedChannelNameRef.current = channelName;
   // Protocol messages can be emitted by child layout effects before this hook's
   // passive channel-creation effect runs. Queue only during that initial gap;
   // sends after cleanup remain intentionally dropped.
@@ -172,6 +175,9 @@ export const useBroadcastChannel = (channelName: string): BroadcastChannelType =
     });
 
     const handleMessage = (event: MessageEvent) => {
+      // A queued event may run after the next render, before passive cleanup.
+      if (renderedChannelNameRef.current !== channelName || channelRef.current !== channel) return;
+
       if (isOutboxReadySignal(event.data)) {
         outboxReadyListenersRef.current.forEach((listener) => listener(event.data.workspaceId, event.data.objectId));
         return;
@@ -229,10 +235,11 @@ export const useBroadcastChannel = (channelName: string): BroadcastChannelType =
   }, [channelName]);
 
   const sendMessage = useCallback((msg: messages.IMessage) => {
+    if (renderedChannelNameRef.current !== channelName) return;
     const channel = channelRef.current;
     const payload = messages.Message.encode(msg).finish();
 
-    if (!channel) {
+    if (!channel || activeChannelNameRef.current !== channelName) {
       if (pendingInitialPostsRef.current) {
         pendingInitialPostsRef.current.push(payload);
         return;
@@ -256,9 +263,10 @@ export const useBroadcastChannel = (channelName: string): BroadcastChannelType =
         console.error('Failed to send message to BroadcastChannel:', error);
       }
     }
-  }, []);
+  }, [channelName]);
 
   const postDurableMessage = useCallback((msg: messages.IMessage) => {
+    if (renderedChannelNameRef.current !== channelName) return;
     const channel = channelRef.current;
 
     const signal: DurableMessageSignal = {
@@ -266,7 +274,7 @@ export const useBroadcastChannel = (channelName: string): BroadcastChannelType =
       payload: messages.Message.encode(msg).finish(),
     };
 
-    if (!channel) {
+    if (!channel || activeChannelNameRef.current !== channelName) {
       pendingInitialPostsRef.current?.push(signal);
       return;
     }
@@ -276,7 +284,7 @@ export const useBroadcastChannel = (channelName: string): BroadcastChannelType =
     } catch (error) {
       Log.warn('Failed to broadcast a durable collab update', error);
     }
-  }, []);
+  }, [channelName]);
 
   const subscribeProtocolMessages = useCallback((listener: (message: messages.Message) => void) => {
     protocolMessageListenersRef.current.add(listener);
@@ -354,9 +362,10 @@ export const useBroadcastChannel = (channelName: string): BroadcastChannelType =
   }, []);
 
   const postTransportSignal = useCallback((signal: WorkspaceTransportSignal) => {
+    if (renderedChannelNameRef.current !== channelName) return;
     const channel = channelRef.current;
 
-    if (!channel) {
+    if (!channel || activeChannelNameRef.current !== channelName) {
       pendingInitialPostsRef.current?.push(signal);
       return;
     }
@@ -369,7 +378,7 @@ export const useBroadcastChannel = (channelName: string): BroadcastChannelType =
         error,
       });
     }
-  }, []);
+  }, [channelName]);
 
   const subscribeTransportSignals = useCallback((listener: (signal: WorkspaceTransportSignal) => void) => {
     transportSignalListenersRef.current.add(listener);

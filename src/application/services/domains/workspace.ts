@@ -18,6 +18,9 @@ export {
   addSpaceMember,
   updateSpaceMember,
   removeSpaceMember,
+  addSpaceMemberByUuid,
+  updateSpaceMemberByUuid,
+  removeSpaceMemberByUuid,
   addSpaceGroupPermission,
   updateSpaceGroupPermission,
   removeSpaceGroupPermission,
@@ -44,3 +47,10 @@ export {
   updatePublishNamespace,
   reorderWorkspaces as reorder,
 } from '../js-services/http/workspace-api';
+
+export {
+  getWorkspaceSpaceCreationCapabilities,
+  setWorkspaceSpaceCreationPolicy,
+  listWorkspaceSpaceCreators,
+  setWorkspaceSpaceCreator,
+} from '../js-services/http/space-creators-api';
