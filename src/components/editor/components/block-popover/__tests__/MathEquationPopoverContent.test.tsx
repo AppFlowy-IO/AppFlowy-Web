@@ -7,8 +7,6 @@ import MathEquationPopoverContent from '../MathEquationPopoverContent';
 const mockEditor = { isElementReadOnly: () => false, flushLocalChanges: jest.fn() };
 
 jest.mock('slate-react', () => ({ useSlateStatic: () => mockEditor, useReadOnly: () => false }));
-jest.mock('../BlockPopoverContext', () => ({ usePopoverContext: () => ({ openMathEquationAI: jest.fn() }) }));
-jest.mock('@/components/app/app.hooks', () => ({ useAIEnabled: () => true }));
 jest.mock('@/application/slate-yjs/command', () => ({ CustomEditor: { setBlockData: jest.fn() } }));
 jest.mock('@/application/slate-yjs/utils/editor', () => ({
   findSlateEntryByBlockId: () => [{ data: { formula: 'x' } }, [0]],

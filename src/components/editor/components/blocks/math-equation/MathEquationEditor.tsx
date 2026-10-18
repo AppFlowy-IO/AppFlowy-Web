@@ -7,19 +7,15 @@ import { ReactComponent as ExpandIcon } from '@/assets/icons/math-equation/expan
 import { unwrapMathMarkdown } from '@/components/editor/utils/math-markdown';
 import { Button } from '@/components/ui/button';
 
-import { MathEquationAIIcon } from './MathEquationAIIcon';
-
 /** Both editor sizes share one draft; only Insert commits it. */
 export function MathEquationEditor({
   initialValue,
   onSave,
   onCancel,
-  onAskAI,
 }: {
   initialValue: string;
   onSave: (formula: string) => void;
   onCancel: () => void;
-  onAskAI?: (draft: string) => void;
 }) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState(initialValue);
@@ -73,17 +69,6 @@ export function MathEquationEditor({
             onClick={() => setExpanded(true)}
           >
             <ExpandIcon width={20} height={20} />
-          </Button>
-        )}
-        {onAskAI && (
-          <Button
-            variant='outline'
-            size='icon-lg'
-            className='p-1.5'
-            aria-label={t('document.plugins.mathEquation.askAI')}
-            onClick={() => onAskAI(draft)}
-          >
-            <MathEquationAIIcon />
           </Button>
         )}
       </div>

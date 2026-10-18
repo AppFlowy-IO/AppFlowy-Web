@@ -10,6 +10,10 @@
   &.is-empty:hover {
     background: var(--block-bg-hover-color-20);
   }
+  // Whole-block selection is independent of pointer hover and editor focus.
+  &.is-selected {
+    background: var(--fill-theme-select);
+  }
   .math-equation-toolbar {
     opacity: 0;
   }

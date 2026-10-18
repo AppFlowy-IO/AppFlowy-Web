@@ -8,6 +8,7 @@ import { ReactComponent as MathSvg } from '@/assets/icons/math-equation/formula.
 import { KatexMath } from '@/components/_shared/katex-math';
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
 import { EditorElementProps, MathEquationNode } from '@/components/editor/editor.type';
+import { useBlockSelected } from '@/components/editor/EditorContext';
 
 import MathEquationToolbar from './MathEquationToolbar';
 import './math-equation.scss';
@@ -19,6 +20,7 @@ export const MathEquation = memo(
     ({ node, children, className, ...attributes }, ref) => {
       const formula = node.data.formula || '';
       const editor = useSlateStatic();
+      const selected = useBlockSelected(node.blockId);
       const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
       const { t } = useTranslation();
       const { openPopover, blockId, mathEquationAI, closeMathEquationAI } = usePopoverContext();
@@ -32,7 +34,7 @@ export const MathEquation = memo(
           <div
             className={`math-equation-surface relative min-h-[44px] rounded-lg ${!formula.trim() ? 'is-empty' : ''} ${
               blockId === node.blockId || aiSession ? 'is-active' : ''
-            }`}
+            } ${selected ? 'is-selected' : ''}`}
           >
             <div
               contentEditable={false}

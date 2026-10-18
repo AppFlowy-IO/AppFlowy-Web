@@ -11,11 +11,11 @@ import { BlockType } from '@/application/types';
 import { ReactComponent as ArrowIcon } from '@/assets/icons/math-equation/arrow-right.svg';
 import { ReactComponent as AskIcon } from '@/assets/icons/math-equation/ask.svg';
 import { ReactComponent as CheckIcon } from '@/assets/icons/math-equation/check.svg';
-import { ReactComponent as CommentIcon } from '@/assets/icons/math-equation/comment.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/math-equation/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/math-equation/duplicate.svg';
 import { ReactComponent as ExplainIcon } from '@/assets/icons/math-equation/explain.svg';
 import { ReactComponent as LinkIcon } from '@/assets/icons/math-equation/link.svg';
+import { ReactComponent as AIIcon } from '@/assets/icons/math-equation/menu-ai.svg';
 import { ReactComponent as TurnIcon } from '@/assets/icons/math-equation/turn-into.svg';
 import { notify } from '@/components/_shared/notify';
 import { Popover } from '@/components/_shared/popover';
@@ -29,8 +29,6 @@ import { useEditorContext } from '@/components/editor/EditorContext';
 import { createSubpage } from '@/components/editor/subpage/create-subpage';
 import { Button } from '@/components/ui/button';
 import { copyTextToClipboard } from '@/utils/copy';
-
-import { MathEquationAIIcon } from './MathEquationAIIcon';
 
 export function MathEquationMenu({
   node,
@@ -109,7 +107,8 @@ export function MathEquationMenu({
         <Button
           role='menuitem'
           variant='ghost'
-          className={rowClass}
+          danger
+          className={`${rowClass} hover:bg-fill-error-select focus-visible:bg-fill-error-select focus-visible:text-text-error [&_path]:stroke-current`}
           onClick={() =>
             run(() => {
               CustomEditor.deleteBlock(editor, node.blockId);
@@ -154,37 +153,35 @@ export function MathEquationMenu({
           aria-haspopup='menu'
           aria-expanded={submenu?.type === 'turn'}
           variant='ghost'
-          className={rowClass}
+          className={`${rowClass} ${submenu?.type === 'turn' ? 'bg-fill-content-hover' : ''}`}
           onClick={(event) => setSubmenu({ type: 'turn', anchor: event.currentTarget })}
         >
           <TurnIcon width={20} height={20} />
           {t('document.plugins.optionAction.turnInto')}
           <ArrowIcon width={20} height={20} className='ml-auto h-5 w-5' />
         </Button>
-        <div className='-mx-2 my-2 border-t border-border-primary' />
-        <Button
-          role='menuitem'
-          variant='ghost'
-          className={rowClass}
-          disabled
-          title={t('inlineComment.unsupportedSelection')}
-        >
-          <CommentIcon width={20} height={20} />
-          {t('document.plugins.mathEquation.comment')}
-        </Button>
         {aiEnabled && (
-          <Button
-            role='menuitem'
-            aria-haspopup='menu'
-            aria-expanded={submenu?.type === 'ai'}
-            variant='ghost'
-            className={rowClass}
-            onClick={(event) => setSubmenu({ type: 'ai', anchor: event.currentTarget })}
-          >
-            <MathEquationAIIcon />
-            {t('document.plugins.mathEquation.askAI')}
-            <ArrowIcon width={20} height={20} className='ml-auto h-5 w-5' />
-          </Button>
+          <>
+            <div className='-mx-2 my-2 border-t border-border-primary' />
+            <Button
+              role='menuitem'
+              aria-haspopup='menu'
+              aria-expanded={submenu?.type === 'ai'}
+              variant='ghost'
+              className={`${rowClass} ${submenu?.type === 'ai' ? 'bg-fill-content-hover' : ''}`}
+              onClick={(event) => setSubmenu({ type: 'ai', anchor: event.currentTarget })}
+            >
+              <span className='relative h-5 w-5 shrink-0' data-testid='math-equation-menu-ai-icon' aria-hidden>
+                <AIIcon
+                  width={15.0013}
+                  height={16}
+                  className='absolute left-[3px] top-0.5 [&_path[fill]]:fill-current [&_path[stroke]]:stroke-current'
+                />
+              </span>
+              {t('document.plugins.mathEquation.askAI')}
+              <ArrowIcon width={20} height={20} className='ml-auto h-5 w-5' />
+            </Button>
+          </>
         )}
       </div>
       <MuiPopover
@@ -271,7 +268,7 @@ export function MathEquationMenu({
                     })
                   }
                 >
-                  {t('document.slashMenu.name.doc')}
+                  {t('editor.page')}
                 </Button>
               )}
             </>

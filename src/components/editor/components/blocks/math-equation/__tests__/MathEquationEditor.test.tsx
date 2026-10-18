@@ -6,11 +6,10 @@ jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) =>
 
 function setup(initialValue = 'E=mc^2') {
   const onSave = jest.fn(),
-    onCancel = jest.fn(),
-    onAskAI = jest.fn();
+    onCancel = jest.fn();
 
-  render(<MathEquationEditor initialValue={initialValue} onSave={onSave} onCancel={onCancel} onAskAI={onAskAI} />);
-  return { onSave, onCancel, onAskAI };
+  render(<MathEquationEditor initialValue={initialValue} onSave={onSave} onCancel={onCancel} />);
+  return { onSave, onCancel };
 }
 
 describe('Flutter equation editor parity', () => {
@@ -69,13 +68,10 @@ describe('Flutter equation editor parity', () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
-  it.each([false, true])('hands the unsaved draft to AI (expanded=%s)', (expanded) => {
-    const { onSave, onAskAI } = setup();
+  it.each([false, true])('does not show an AI entry in the editor (expanded=%s)', (expanded) => {
+    setup();
 
     if (expanded) fireEvent.click(screen.getByRole('button', { name: 'document.imageBlock.openFullScreen' }));
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: '\\begin{align*}\nx &= y\n\\end{align*}' } });
-    fireEvent.click(screen.getByRole('button', { name: 'document.plugins.mathEquation.askAI' }));
-    expect(onAskAI).toHaveBeenCalledWith('\\begin{align*}\nx &= y\n\\end{align*}');
-    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'document.plugins.mathEquation.askAI' })).toBeNull();
   });
 });
