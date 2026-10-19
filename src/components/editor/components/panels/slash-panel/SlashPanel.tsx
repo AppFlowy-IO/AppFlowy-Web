@@ -1623,7 +1623,7 @@ export function SlashPanel({
         icon: <FormulaIcon />,
         group: SlashMenuGroupKey.AdvancedBlocks,
         keywords: ['math', 'equation', 'formula', 'tex', 'latex', 'katex'],
-        aliases: ['math equation', 'me'],
+        aliases: ['math equation', 'me', 'blk', 'be', 'eqn'],
         shortcut: '$$',
         onClick: () => {
           turnInto(BlockType.EquationBlock, {});
