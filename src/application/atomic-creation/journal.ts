@@ -13,6 +13,12 @@ import type { AtomicCreationKind, AtomicCreationReceipt, AtomicCreationRecord, A
 const inFlight = new Set<string>();
 const activityListeners = new Set<() => void>();
 let activityRevision = 0;
+// Every record this tab writes is stamped after this; older ones were left by an earlier page load.
+const pageLoadedAt = Date.now();
+
+export function isFromEarlierPageLoad(record: AtomicCreationRecord): boolean {
+  return record.createdAt < pageLoadedAt;
+}
 
 export function isAtomicCreationInFlight(recordId: string): boolean {
   return inFlight.has(recordId);
@@ -129,6 +135,27 @@ export async function listPendingAtomicCreationsForCurrentUser(workspaceId: stri
 
   records.forEach(parseAtomicCreationRequest);
   return records;
+}
+
+/**
+ * A reload abandons unfinished page creations instead of offering them for retry. If the server
+ * applied one, the page already reaches the outline through folder sync. Row-page records stay:
+ * they can hold staged edits, and opening the row recovers them.
+ */
+export async function discardPageCreationsFromEarlierLoads(workspaceId: string): Promise<void> {
+  const session = captureTokenSession();
+  const userId = session.userId;
+  const serverUrl = getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud');
+
+  if (!userId) return;
+  await db.transaction('rw', db.atomic_creation, async () => {
+    if (!isTokenSessionCurrent(session)) return;
+    await db.atomic_creation
+      .where('[serverUrl+userId+workspaceId]')
+      .equals([serverUrl, userId, workspaceId])
+      .filter((record) => (record.kind === 'document' || record.kind === 'database') && isFromEarlierPageLoad(record))
+      .delete();
+  });
 }
 
 interface RecoveryOptions<K extends AtomicCreationKind, T> {

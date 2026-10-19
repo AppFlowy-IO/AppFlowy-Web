@@ -7,8 +7,10 @@ import {
   AtomicCreationPendingError,
   AtomicCreationRecord,
   captureAtomicCreationOwner,
+  discardPageCreationsFromEarlierLoads,
   getAtomicCreationActivityRevision,
   isAtomicCreationInFlight,
+  isFromEarlierPageLoad,
   listPendingAtomicCreationsForCurrentUser,
   subscribeAtomicCreationActivity,
 } from '@/application/atomic-creation';
@@ -38,12 +40,24 @@ export function PendingPageCreations() {
     },
     []
   );
+  useEffect(() => {
+    if (!workspaceId) return;
+    discardPageCreationsFromEarlierLoads(workspaceId).catch((error) => {
+      Log.warn('[AtomicCreation] Could not discard page creations from an earlier load', {
+        message: getErrorMessage(error),
+      });
+    });
+  }, [workspaceId]);
   const records = useLiveQuery(
     async () => {
       if (!workspaceId) return [];
       try {
+        // Hide earlier-load records even before the discard above commits.
         return (await listPendingAtomicCreationsForCurrentUser(workspaceId)).filter(
-          (record) => (record.kind === 'document' || record.kind === 'database') && !isAtomicCreationInFlight(record.id)
+          (record) =>
+            (record.kind === 'document' || record.kind === 'database') &&
+            !isFromEarlierPageLoad(record) &&
+            !isAtomicCreationInFlight(record.id)
         );
       } catch {
         // Auth/sync composition can still be starting. Its activity/session remount owns retry.

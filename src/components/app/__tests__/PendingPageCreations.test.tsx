@@ -2,7 +2,12 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useLiveQuery } from 'dexie-react-hooks';
 import { toast } from 'sonner';
 
-import { captureAtomicCreationOwner, listPendingAtomicCreationsForCurrentUser } from '@/application/atomic-creation';
+import {
+  captureAtomicCreationOwner,
+  discardPageCreationsFromEarlierLoads,
+  isFromEarlierPageLoad,
+  listPendingAtomicCreationsForCurrentUser,
+} from '@/application/atomic-creation';
 import { recoverDefaultPage } from '@/application/services/js-services/http/page-default-creation';
 
 import { PendingPageCreations } from '../PendingPageCreations';
@@ -31,6 +36,8 @@ jest.mock('@/components/app/app.hooks', () => ({
 jest.mock('@/application/atomic-creation', () => ({
   AtomicCreationPendingError: class AtomicCreationPendingError extends Error {},
   captureAtomicCreationOwner: jest.fn(),
+  discardPageCreationsFromEarlierLoads: jest.fn(),
+  isFromEarlierPageLoad: jest.fn(),
   listPendingAtomicCreationsForCurrentUser: jest.fn(),
   getAtomicCreationActivityRevision: () => 0,
   subscribeAtomicCreationActivity: () => () => undefined,
@@ -41,6 +48,8 @@ jest.mock('@/application/services/js-services/http/page-default-creation', () =>
 beforeEach(() => {
   jest.clearAllMocks();
   jest.mocked(useLiveQuery).mockReturnValue([record]);
+  jest.mocked(discardPageCreationsFromEarlierLoads).mockResolvedValue();
+  jest.mocked(isFromEarlierPageLoad).mockReturnValue(false);
   jest.mocked(captureAtomicCreationOwner).mockImplementation((_workspace, check) => ({
     workspaceId: 'workspace',
     serverUrl: 'server',
@@ -65,6 +74,18 @@ it('discovers saved commands before the sync owner starts, without trying to sub
   expect(listPendingAtomicCreationsForCurrentUser).toHaveBeenCalledWith('workspace');
   expect(captureAtomicCreationOwner).not.toHaveBeenCalled();
   expect(recoverDefaultPage).not.toHaveBeenCalled();
+});
+
+it('discards and hides page creations left by an earlier page load', async () => {
+  const earlier = { ...record, id: 'earlier-command', requestId: 'earlier-request' };
+
+  jest.mocked(isFromEarlierPageLoad).mockImplementation((saved) => saved === earlier);
+  jest.mocked(listPendingAtomicCreationsForCurrentUser).mockResolvedValue([earlier, record] as never);
+  render(<PendingPageCreations />);
+  const query = jest.mocked(useLiveQuery).mock.calls[0][0];
+
+  await expect(query()).resolves.toEqual([record]);
+  expect(discardPageCreationsFromEarlierLoads).toHaveBeenCalledWith('workspace');
 });
 
 it('finishes the saved command and waits for current navigation before selection', async () => {

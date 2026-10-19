@@ -466,6 +466,40 @@ it('keeps pending discovery read-only before the workspace sync owner mounts', a
   expect(await listPendingAtomicCreationsForCurrentUser('workspace')).toEqual([]);
 });
 
+it('discards only page creations from an earlier page load on reload', async () => {
+  const { discardPageCreationsFromEarlierLoads } = await import('..');
+  const saved = (kind: string, logicalTarget: string, createdAt: number, workspaceId = 'workspace') => ({
+    id: JSON.stringify([server, 'user', workspaceId, kind, logicalTarget]),
+    serverUrl: server,
+    userId: 'user',
+    workspaceId,
+    kind,
+    logicalTarget,
+    requestId: `request-${kind}-${logicalTarget}-${workspaceId}`,
+    requestJson: '{}',
+    state: 'pending' as const,
+    createdAt,
+  });
+
+  await db.atomic_creation.bulkAdd([
+    saved('document', 'old-page', 0),
+    saved('database', 'old-database', 0),
+    saved('row-document', 'old-row-page', 0),
+    saved('database-view', 'old-view', 0),
+    saved('document', 'other-workspace-page', 0, 'other-workspace'),
+    saved('document', 'current-page', Date.now()),
+  ] as never);
+
+  await discardPageCreationsFromEarlierLoads('workspace');
+
+  expect((await db.atomic_creation.toArray()).map((record) => record.logicalTarget).sort()).toEqual([
+    'current-page',
+    'old-row-page',
+    'old-view',
+    'other-workspace-page',
+  ]);
+});
+
 it('notifies retry UI on failure and prevents a concurrent explicit recovery from sending', async () => {
   const { isAtomicCreationInFlight, subscribeAtomicCreationActivity, getAtomicCreationActivityRevision } = await import(
     '..'
