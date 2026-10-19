@@ -318,7 +318,48 @@ export async function forgotPassword(params: { email: string }) {
   }
 }
 
-export async function changePassword(params: { password: string }) {
+export interface GoTrueUserAuthInfo {
+  has_password: boolean;
+  is_sso_user: boolean;
+  // True once the user has chosen their own password. GoTrue then requires
+  // `current_password` on change-password; magic-link/OTP sign-ups only have
+  // a generated placeholder password and can set one without it.
+  is_non_default_password: boolean;
+}
+
+export async function getUserAuthInfo(): Promise<GoTrueUserAuthInfo> {
+  const access_token = getTokenParsed()?.access_token;
+
+  if (!access_token) {
+    return Promise.reject({
+      code: -1,
+      message: 'You have not logged in yet. Can not read account password state.',
+    });
+  }
+
+  try {
+    const response = await axiosInstance?.get<GoTrueUserAuthInfo>('/user/auth-info', {
+      headers: {
+        Authorization: `Bearer ${access_token}`,
+      },
+    });
+
+    if (!response?.data) {
+      return Promise.reject({
+        code: -1,
+        message: 'Failed to read account password state',
+      });
+    }
+
+    return response.data;
+    // eslint-disable-next-line
+  } catch (e: any) {
+    Log.warn('[Auth] getUserAuthInfo: failed', { status: e.response?.status, message: e.message });
+    return Promise.reject(parseGoTrueFailure(e));
+  }
+}
+
+export async function changePassword(params: { password: string; currentPassword?: string }) {
   Log.info('[Auth] changePassword: starting');
   try {
     const token = getTokenParsed();
@@ -339,7 +380,8 @@ export async function changePassword(params: { password: string }) {
       '/user/change-password',
       {
         password: params.password,
-        current_password: params.password,
+        // GoTrue ignores this until the user has set their own password.
+        ...(params.currentPassword === undefined ? {} : { current_password: params.currentPassword }),
       },
       {
         headers: {

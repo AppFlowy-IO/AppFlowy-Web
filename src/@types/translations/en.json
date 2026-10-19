@@ -975,7 +975,12 @@
       "password": {
         "title": "Password",
         "description": "Your account password for signing in.",
-        "setupButton": "Setup password"
+        "setupButton": "Setup password",
+        "changeButton": "Change password",
+        "currentPassword": "Current password",
+        "currentPasswordPlaceholder": "Enter your current password",
+        "currentPasswordRequired": "Enter your current password to change it.",
+        "success": "Password updated"
       },
       "general": {
         "title": "Account name & profile image",

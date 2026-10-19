@@ -1,4 +1,5 @@
 export { signInWithUrl, verifyToken, getServerInfo, getAuthProviders } from '../js-services/http/auth-api';
+export { getUserAuthInfo, type GoTrueUserAuthInfo } from '../js-services/http/gotrue';
 export {
   loginAuth as login,
   signInGoogleWithRedirect as signInGoogle,
