@@ -48,7 +48,7 @@ function GridNewRow({ groupFieldId, groupId }: { groupFieldId?: string; groupId?
         void run(createRow);
       }}
       className={
-        'flex h-[36px] flex-1 cursor-pointer items-center gap-1.5 border-b border-t border-border-primary bg-fill-content px-3 py-2 text-sm font-medium text-text-secondary hover:bg-fill-content-hover'
+        'flex h-[36px] w-full cursor-pointer items-center gap-1.5 border-b border-t border-border-primary bg-fill-content px-3 py-2 text-sm font-medium text-text-secondary hover:bg-fill-content-hover'
       }
       data-group-id={groupId}
     >
