@@ -89,7 +89,6 @@ for (const failure of ['offline', 'unsupported server'] as const) {
           `view-tab-${command.database.view_id}`
         );
         await expect(DatabaseGridSelectors.dataRows(page)).toHaveCount(3);
-        await expect(page.getByRole('button', { name: 'Finish creating your page' })).toHaveCount(0);
         expect(mutations).toEqual([]);
       } finally {
         await page.context().setOffline(false);

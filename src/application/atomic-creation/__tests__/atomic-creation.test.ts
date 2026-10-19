@@ -447,25 +447,6 @@ it('does not activate a late read or invalidate a replacement account on old 401
   expect(send).toHaveBeenCalledTimes(1);
 });
 
-it('keeps pending discovery read-only before the workspace sync owner mounts', async () => {
-  const { listPendingAtomicCreationsForCurrentUser } = await import('..');
-  const owner = captureAtomicCreationOwner('workspace');
-
-  send.mockRejectedValueOnce(new Error('lost reply'));
-  await expect(
-    runAtomicCreation({ owner, kind: 'document', request: command, logicalTarget: command.view_id, hydrate: jest.fn() })
-  ).rejects.toBeDefined();
-  mockWorkspace = '';
-  mockSessionGeneration += 1;
-  expect((await listPendingAtomicCreationsForCurrentUser('workspace')).map((record) => record.requestId)).toEqual([
-    command.request_id,
-  ]);
-  expect(() => captureAtomicCreationOwner('workspace')).toThrow();
-  expect(send).toHaveBeenCalledTimes(1);
-  saveGoTrueAuth(JSON.stringify(token('other')));
-  expect(await listPendingAtomicCreationsForCurrentUser('workspace')).toEqual([]);
-});
-
 it('discards only page creations from an earlier page load on reload', async () => {
   const { discardPageCreationsFromEarlierLoads } = await import('..');
   const saved = (kind: string, logicalTarget: string, createdAt: number, workspaceId = 'workspace') => ({
@@ -500,16 +481,10 @@ it('discards only page creations from an earlier page load on reload', async () 
   ]);
 });
 
-it('notifies retry UI on failure and prevents a concurrent explicit recovery from sending', async () => {
-  const { isAtomicCreationInFlight, subscribeAtomicCreationActivity, getAtomicCreationActivityRevision } = await import(
-    '..'
-  );
+it('prevents a concurrent explicit recovery from sending', async () => {
   const owner = captureAtomicCreationOwner('workspace');
   const entered = deferred<void>();
   const release = deferred<void>();
-  const listener = jest.fn();
-  const revision = getAtomicCreationActivityRevision();
-  const unsubscribe = subscribeAtomicCreationActivity(listener);
   const create = runAtomicCreation({
     owner,
     kind: 'document',
@@ -527,15 +502,13 @@ it('notifies retry UI on failure and prevents a concurrent explicit recovery fro
   await entered.promise;
   const record = (await findPendingAtomicCreation(owner, 'document', command.view_id))!;
 
-  expect(isAtomicCreationInFlight(record.id)).toBe(true);
-  await expect(recoverAtomicCreation({ owner, record, hydrate: jest.fn() })).rejects.toBeDefined();
+  await expect(recoverAtomicCreation({ owner, record, hydrate: jest.fn() })).rejects.toHaveProperty(
+    'cause.message',
+    'Creation is already in progress'
+  );
   release.resolve();
   await failed;
-  expect(isAtomicCreationInFlight(record.id)).toBe(false);
-  expect(getAtomicCreationActivityRevision()).toBe(revision + 2);
-  expect(listener).toHaveBeenCalledTimes(2);
   expect(send).not.toHaveBeenCalled();
-  unsubscribe();
 });
 
 it('applies the same actual-send owner fence to a protobuf full-sync source read', async () => {
