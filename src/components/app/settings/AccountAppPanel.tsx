@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 
 import { clearRedirectTo } from '@/application/session/sign_in';
 import { invalidToken } from '@/application/session/token';
-import { UserService } from '@/application/services/domains';
+import { AuthService, UserService } from '@/application/services/domains';
 import { DateFormat, TimeFormat } from '@/application/types';
 import { MetadataKey } from '@/application/user-metadata';
 import { ReactComponent as ChevronDownIcon } from '@/assets/icons/alt_arrow_down.svg';
@@ -111,6 +111,7 @@ export function AccountAppPanel() {
     () => (currentUser?.metadata?.[MetadataKey.Language] as string) || i18nInstance.language || 'en'
   );
   const [openSetupPassword, setOpenSetupPassword] = useState(false);
+  const [requiresCurrentPassword, setRequiresCurrentPassword] = useState(false);
   const [openLogoutConfirm, setOpenLogoutConfirm] = useState(false);
   const [openDeleteAccount, setOpenDeleteAccount] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
@@ -125,6 +126,26 @@ export function AccountAppPanel() {
     currentUserRef.current = currentUser;
     updateCurrentUserRef.current = updateCurrentUser;
   }, [currentUser, updateCurrentUser]);
+
+  const passwordStateRequestRef = useRef(0);
+  const refreshPasswordState = useCallback(async () => {
+    const request = ++passwordStateRequestRef.current;
+
+    try {
+      const authInfo = await AuthService.getUserAuthInfo();
+
+      // A slow earlier read must not overwrite the one made after a password change.
+      if (request === passwordStateRequestRef.current) {
+        setRequiresCurrentPassword(authInfo.is_non_default_password);
+      }
+    } catch {
+      // Keep the setup flow; the dialog asks for the current password if GoTrue requires it.
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshPasswordState();
+  }, [refreshPasswordState]);
 
   const debouncedUpdateProfile = useMemo(() => {
     return debounce(async () => {
@@ -304,7 +325,9 @@ export function AccountAppPanel() {
               onClick={() => setOpenSetupPassword(true)}
               data-testid='setup-password-button'
             >
-              {t('settings.accountPage.password.setupButton')}
+              {requiresCurrentPassword
+                ? t('settings.accountPage.password.changeButton')
+                : t('settings.accountPage.password.setupButton')}
             </Button>
           </Row>
 
@@ -353,7 +376,12 @@ export function AccountAppPanel() {
         </div>
       </div>
 
-      <SetupPasswordDialog open={openSetupPassword} onClose={() => setOpenSetupPassword(false)} />
+      <SetupPasswordDialog
+        open={openSetupPassword}
+        requireCurrentPassword={requiresCurrentPassword}
+        onClose={() => setOpenSetupPassword(false)}
+        onSuccess={refreshPasswordState}
+      />
       <LogoutConfirm
         open={openLogoutConfirm}
         onClose={() => setOpenLogoutConfirm(false)}

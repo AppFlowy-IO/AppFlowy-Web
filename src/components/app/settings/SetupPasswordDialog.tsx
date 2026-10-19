@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
+import { readErrorIdentity } from '@/application/errors/error-message';
 import { AuthService } from '@/application/services/domains';
 import { NormalModal } from '@/components/_shared/modal';
 import { HIDDEN_BUTTON_PROPS, MODAL_CLASSES } from '@/components/app/workspaces/modal-props';
@@ -16,27 +17,43 @@ import { getErrorMessage } from '@/utils/errors';
 
 const PAPER_PROPS = { sx: { width: 420 } } as const;
 
+// AppFlowy's GoTrue rejects a missing or wrong `current_password` with this
+// reason once the user has chosen their own password.
+const INCORRECT_CURRENT_PASSWORD = 'incorrect_current_password';
+
 interface Props {
   open: boolean;
   onClose: () => void;
+  // The user already chose a password, so GoTrue verifies the current one.
+  requireCurrentPassword?: boolean;
+  onSuccess?: () => void;
 }
 
-export function SetupPasswordDialog({ open, onClose }: Props) {
+export function SetupPasswordDialog({ open, onClose, requireCurrentPassword = false, onSuccess }: Props) {
   const { t } = useTranslation();
+  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [currentPasswordError, setCurrentPasswordError] = useState('');
   const [passwordErrors, setPasswordErrors] = useState<string[]>([]);
   const [confirmError, setConfirmError] = useState('');
   const [submitError, setSubmitError] = useState('');
   const [loading, setLoading] = useState(false);
+  // Set when GoTrue asks for the current password although the panel's
+  // auth-info said otherwise (stale or unavailable).
+  const [serverRequiresCurrentPassword, setServerRequiresCurrentPassword] = useState(false);
+  const needsCurrentPassword = requireCurrentPassword || serverRequiresCurrentPassword;
 
   const reset = useCallback(() => {
+    setCurrentPassword('');
     setNewPassword('');
     setConfirmPassword('');
+    setCurrentPasswordError('');
     setPasswordErrors([]);
     setConfirmError('');
     setSubmitError('');
     setLoading(false);
+    setServerRequiresCurrentPassword(false);
   }, []);
 
   useEffect(() => {
@@ -48,6 +65,11 @@ export function SetupPasswordDialog({ open, onClose }: Props) {
   }, [onClose]);
 
   const handleSubmit = useCallback(async () => {
+    if (needsCurrentPassword && !currentPassword) {
+      setCurrentPasswordError(t('settings.accountPage.password.currentPasswordRequired'));
+      return;
+    }
+
     const errors = getPasswordErrors(newPassword, t);
 
     if (errors.length > 0) {
@@ -62,30 +84,52 @@ export function SetupPasswordDialog({ open, onClose }: Props) {
 
     setLoading(true);
     setSubmitError('');
+    setCurrentPasswordError('');
     setConfirmError('');
     setPasswordErrors([]);
 
     try {
-      await AuthService.changePassword({ password: newPassword });
-      toast.success(t('changePassword.success'));
+      await AuthService.changePassword({
+        password: newPassword,
+        currentPassword: needsCurrentPassword ? currentPassword : undefined,
+      });
+      toast.success(t('settings.accountPage.password.success'));
+      onSuccess?.();
       handleClose();
     } catch (e) {
-      setSubmitError(getErrorMessage(e, 'Failed to update password'));
+      if (readErrorIdentity(e).errorCode === INCORRECT_CURRENT_PASSWORD) {
+        setCurrentPasswordError(
+          needsCurrentPassword
+            ? t('userError.CURRENT_PASSWORD_INCORRECT')
+            : t('settings.accountPage.password.currentPasswordRequired')
+        );
+        setServerRequiresCurrentPassword(true);
+      } else {
+        setSubmitError(getErrorMessage(e, 'Failed to update password'));
+      }
     } finally {
       setLoading(false);
     }
-  }, [newPassword, confirmPassword, t, handleClose]);
+  }, [needsCurrentPassword, currentPassword, newPassword, confirmPassword, t, onSuccess, handleClose]);
 
+  const hasCurrentPasswordError = Boolean(currentPasswordError);
   const hasPasswordErrors = passwordErrors.length > 0;
   const hasConfirmError = Boolean(confirmError);
   const isFormValid =
-    newPassword && confirmPassword && !hasPasswordErrors && newPassword === confirmPassword;
+    (!needsCurrentPassword || currentPassword) &&
+    newPassword &&
+    confirmPassword &&
+    !hasPasswordErrors &&
+    newPassword === confirmPassword;
+  const title = needsCurrentPassword
+    ? t('settings.accountPage.password.changeButton')
+    : t('settings.accountPage.password.setupButton');
 
   return (
     <NormalModal
       open={open}
       onClose={handleClose}
-      title={<div style={{ textAlign: 'left' }}>{t('settings.accountPage.password.setupButton')}</div>}
+      title={<div style={{ textAlign: 'left' }}>{title}</div>}
       classes={MODAL_CLASSES}
       PaperProps={PAPER_PROPS}
       okButtonProps={HIDDEN_BUTTON_PROPS}
@@ -95,13 +139,43 @@ export function SetupPasswordDialog({ open, onClose }: Props) {
         data-testid='setup-password-dialog'
         className='flex w-full flex-col gap-4'
       >
+        {needsCurrentPassword && (
+          <div className='flex flex-col gap-1'>
+            <Label htmlFor='setup-password-current'>{t('settings.accountPage.password.currentPassword')}</Label>
+            <PasswordInput
+              id='setup-password-current'
+              autoFocus
+              size='md'
+              className='w-full'
+              autoComplete='current-password'
+              value={currentPassword}
+              placeholder={t('settings.accountPage.password.currentPasswordPlaceholder')}
+              variant={hasCurrentPasswordError ? 'destructive' : 'default'}
+              onChange={(e) => {
+                setCurrentPassword(e.target.value);
+                setCurrentPasswordError('');
+                setSubmitError('');
+              }}
+              onKeyDown={(e) => {
+                if (createHotkey(HOT_KEY_NAME.ENTER)(e.nativeEvent)) {
+                  void handleSubmit();
+                }
+              }}
+            />
+            {hasCurrentPasswordError && (
+              <div className={cn('help-text text-xs text-text-error')}>{currentPasswordError}</div>
+            )}
+          </div>
+        )}
+
         <div className='flex flex-col gap-1'>
           <Label htmlFor='setup-password-new'>{t('changePassword.newPassword')}</Label>
           <PasswordInput
             id='setup-password-new'
-            autoFocus
+            autoFocus={!needsCurrentPassword}
             size='md'
             className='w-full'
+            autoComplete='new-password'
             value={newPassword}
             placeholder={t('changePassword.placeholder')}
             variant={hasPasswordErrors ? 'destructive' : 'default'}
@@ -136,6 +210,7 @@ export function SetupPasswordDialog({ open, onClose }: Props) {
             id='setup-password-confirm'
             size='md'
             className='w-full'
+            autoComplete='new-password'
             value={confirmPassword}
             placeholder={t('changePassword.confirmPassword')}
             variant={hasConfirmError ? 'destructive' : 'default'}
@@ -170,7 +245,7 @@ export function SetupPasswordDialog({ open, onClose }: Props) {
               {t('verifying')}
             </>
           ) : (
-            t('changePassword.submit')
+            title
           )}
         </Button>
       </div>
