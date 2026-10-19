@@ -1,4 +1,4 @@
-import { Popper } from '@mui/material';
+import { PopoverOrigin, Popper } from '@mui/material';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Transforms } from 'slate';
@@ -34,10 +34,14 @@ export function MathEquationMenu({
   node,
   anchorEl,
   onClose,
+  anchorOrigin = { vertical: 'bottom', horizontal: 'right' },
+  transformOrigin = { vertical: 'top', horizontal: 'left' },
 }: {
   node: MathEquationNode;
   anchorEl: HTMLElement;
   onClose: () => void;
+  anchorOrigin?: PopoverOrigin;
+  transformOrigin?: PopoverOrigin;
 }) {
   const editor = useSlateStatic() as YjsEditor;
   const context = useEditorContext();
@@ -117,8 +121,8 @@ export function MathEquationMenu({
       }}
       disableRestoreFocus
       disableEnforceFocus
-      anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-      transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+      anchorOrigin={anchorOrigin}
+      transformOrigin={transformOrigin}
     >
       <div
         role='menu'

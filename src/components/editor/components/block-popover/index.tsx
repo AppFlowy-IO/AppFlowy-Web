@@ -89,8 +89,12 @@ function BlockPopover() {
 
   useEffect(() => {
     if (!open) return;
+    // Keyboard conversion can focus the TeX input while Slate is updating its
+    // selection. Slate ignores blur events during that update, so explicitly
+    // release its focus state when handing editing over to the popover.
+    if (type === BlockType.EquationBlock) ReactEditor.blur(editor);
     editor.deselect();
-  }, [open, editor]);
+  }, [open, editor, type]);
 
   useEffect(() => {
     const panelPosition = anchorEl?.getBoundingClientRect();

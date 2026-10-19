@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { ReactEditor } from 'slate-react';
 
@@ -53,6 +53,7 @@ export const BlockPopoverProvider = ({ children, editor }: { children: React.Rea
   const [type, setType] = useState<BlockType | undefined>();
   const [blockId, setBlockId] = useState<string | undefined>();
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+  const [pendingMathId, setPendingMathId] = useState<string>();
   const pendingRef = useRef<{ blockId: string; type: BlockType } | null>(null);
   const open = Boolean(anchorEl);
 
@@ -60,6 +61,7 @@ export const BlockPopoverProvider = ({ children, editor }: { children: React.Rea
     setAnchorEl(null);
     setBlockId(undefined);
     setType(undefined);
+    setPendingMathId(undefined);
     pendingRef.current = null;
   }, []);
 
@@ -84,6 +86,7 @@ export const BlockPopoverProvider = ({ children, editor }: { children: React.Rea
 
       if (dom) {
         pendingRef.current = null;
+        setPendingMathId(undefined);
         setBlockId(targetBlockId);
         setType(targetType);
         setAnchorEl(dom);
@@ -95,6 +98,13 @@ export const BlockPopoverProvider = ({ children, editor }: { children: React.Rea
     [resolveAnchor]
   );
 
+  // Resolve keyboard requests after the converted block's DOM has committed.
+  // Retry on later commits too: Slate can replace its DOM mapping without
+  // changing the block ID (and thus without another mount notification).
+  useLayoutEffect(() => {
+    if (pendingMathId) openPopover(pendingMathId, BlockType.EquationBlock);
+  });
+
   useEffect(() => {
     let mounted = true;
     const handleOpen = (event: Event) => {
@@ -104,7 +114,7 @@ export const BlockPopoverProvider = ({ children, editor }: { children: React.Rea
       // Let Slate finish the shortcut's model update, then mount and focus the
       // popover before the next keystroke can land in the old document input.
       queueMicrotask(() => {
-        if (mounted) flushSync(() => openPopover(detail.blockId, BlockType.EquationBlock));
+        if (mounted) flushSync(() => setPendingMathId(detail.blockId));
       });
     };
 
@@ -113,7 +123,7 @@ export const BlockPopoverProvider = ({ children, editor }: { children: React.Rea
       mounted = false;
       window.removeEventListener(OPEN_MATH_EQUATION_EVENT, handleOpen);
     };
-  }, [editor, openPopover]);
+  }, [editor]);
 
   const notifyMount = useCallback(
     (mountedBlockId: string) => {
@@ -121,16 +131,9 @@ export const BlockPopoverProvider = ({ children, editor }: { children: React.Rea
 
       if (!pending || pending.blockId !== mountedBlockId) return;
 
-      const dom = resolveAnchor(pending.blockId);
-
-      if (!dom) return;
-
-      pendingRef.current = null;
-      setBlockId(pending.blockId);
-      setType(pending.type);
-      setAnchorEl(dom);
+      openPopover(pending.blockId, pending.type);
     },
-    [resolveAnchor]
+    [openPopover]
   );
 
   const isOpen = useCallback(

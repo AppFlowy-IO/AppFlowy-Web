@@ -118,6 +118,25 @@ test('$$ focuses the TeX input so typing continues directly into the equation', 
   await expect(page.getByTestId('math-document-snapshot')).toContainText('E=mc^2');
 });
 
+test('$$ opens the editor on new lines after existing equations using the physical keyboard', async ({ page }) => {
+  await insertEquation(page);
+  for (let i = 0; i < 3; i++) {
+    await expect(editor(page)).toBeFocused();
+    await page.keyboard.press('Enter');
+    await page.keyboard.down('Shift');
+    await page.keyboard.press('Digit4');
+    await page.keyboard.press('Digit4');
+    await page.keyboard.up('Shift');
+    await expect(input(page)).toBeVisible();
+    await expect(input(page)).toBeFocused();
+    await page.keyboard.type(`x_${i}`);
+    await expect(input(page)).toHaveValue(`x_${i}`);
+    await page.keyboard.press('Enter');
+    await expect(input(page)).toHaveCount(0);
+  }
+  await expect(block(page)).toHaveCount(4);
+});
+
 test('read-only equations render without editing controls', async ({ page }) => {
   await insertEquation(page);
   await page.getByRole('checkbox', { name: 'Read only' }).check();
@@ -196,6 +215,19 @@ test('six-dot menu matches equation actions and places second-level menus beside
   await expect(menu.getByRole('menuitem')).toHaveText(['Delete', 'Duplicate', 'Copy link to block', 'Turn into', 'Ask AI']);
   await expect(menu).toHaveCSS('width', '240px');
   await expect(menu).toHaveCSS('height', '223px');
+  const handle = (await page.getByTestId('drag-block').boundingBox())!;
+
+  await expect.poll(async () => {
+    const bounds = (await menu.boundingBox())!;
+
+    return Math.abs(bounds.x + bounds.width - handle.x);
+  }).toBeLessThan(2);
+  await expect.poll(async () => {
+    const bounds = (await menu.boundingBox())!;
+    const expectedTop = Math.max(16, handle.y + handle.height / 2 - bounds.height / 2);
+
+    return Math.abs(bounds.y - expectedTop);
+  }).toBeLessThan(2);
   const deleteRow = menu.getByRole('menuitem', { name: 'Delete', exact: true });
   const normalColor = await deleteRow.evaluate((row) => getComputedStyle(row).color);
 

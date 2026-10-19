@@ -629,7 +629,15 @@ function ControlsMenu({
   }, [t, duplicateSelectedBlocks, selectedBlockIds, onlySingleBlockSelected, editor, isSimpleTable]);
 
   if (onlySingleBlockSelected && node?.type === BlockType.EquationBlock && anchorEl && open) {
-    return <MathEquationMenu node={node as MathEquationNode} anchorEl={anchorEl} onClose={onClose} />;
+    return (
+      <MathEquationMenu
+        node={node as MathEquationNode}
+        anchorEl={anchorEl}
+        onClose={onClose}
+        anchorOrigin={popoverProps.anchorOrigin}
+        transformOrigin={popoverProps.transformOrigin}
+      />
+    );
   }
 
   return (
