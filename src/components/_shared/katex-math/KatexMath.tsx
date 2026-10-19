@@ -1,4 +1,5 @@
 import 'katex/dist/katex.min.css';
+import { memo } from 'react';
 import { BlockMath, InlineMath } from 'react-katex';
 
 import './index.css';
@@ -32,4 +33,5 @@ function KatexMath({ latex, isInline = false }: { latex: string; isInline?: bool
   );
 }
 
-export default KatexMath;
+// Editor selection and popover updates should not reparse unchanged TeX.
+export default memo(KatexMath);

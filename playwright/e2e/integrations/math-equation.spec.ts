@@ -106,6 +106,19 @@ test('$$ opens an empty block; menus disable empty AI actions and duplicate/dele
   await expect(editor(page)).toContainText('E=mc^2');
 });
 
+test('canceling inline slash editing restores typing at the original position', async ({ page }) => {
+  await editor(page).click();
+  await page.keyboard.type('before /inline equation');
+  await page.getByTestId('slash-menu-inlineMath').click();
+  await page.getByRole('textbox', { name: 'Inline equation', exact: true }).fill('discard me');
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('inline-equation-editor')).toHaveCount(0);
+  await expect(editor(page)).toBeFocused();
+  await page.keyboard.type('after');
+  await expect(editor(page)).toHaveText('before after');
+  await expect(page.locator('.formula-inline')).toHaveCount(0);
+});
+
 test('$$ focuses the TeX input so typing continues directly into the equation', async ({ page }) => {
   await editor(page).click();
   await page.keyboard.type('$$E=mc^2');

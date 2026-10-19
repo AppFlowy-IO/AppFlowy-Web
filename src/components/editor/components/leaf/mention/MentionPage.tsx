@@ -9,6 +9,7 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { traverseBlock } from '@/application/slate-yjs/utils/convert';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
+import { getBlocks } from '@/application/slate-yjs/utils/yjs';
 import { MentionType, View, ViewLayout, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { ReactComponent as LinkArrowOverlay } from '@/assets/icons/link_arrow.svg';
 import { ReactComponent as ParagraphIcon } from '@/assets/icons/paragraph.svg';
@@ -30,7 +31,6 @@ function MentionPage({
 }) {
   const context = useEditorContext();
   const editor = useSlate();
-  const selection = editor.selection;
   const currentViewId = context.viewId;
   const eventEmitter = context.eventEmitter;
 
@@ -40,7 +40,7 @@ function MentionPage({
   // previous page's metadata when this component receives a new reference.
   const meta = metadata?.pageId === pageId ? metadata.view : null;
   const noAccess = metadata?.pageId === pageId && metadata.noAccess;
-  const [content, setContent] = useState<string>('');
+  const [externalBlock, setExternalBlock] = useState<{ pageId: string; blockId: string; text: string }>();
 
   useEffect(() => {
     let current = true;
@@ -83,59 +83,54 @@ function MentionPage({
     };
   }, [eventEmitter, loadViewMeta, onPageMentionNameResolved, pageId]);
 
-  const icon = useMemo(() => {
-    return meta?.icon;
-  }, [meta?.icon]);
-
+  const icon = meta?.icon;
   const { t } = useTranslation();
   const currentBlock = blockId && currentViewId === pageId
     ? findSlateEntryByBlockId(editor as YjsEditor, blockId)
     : undefined;
   const currentBlockText = currentBlock ? CustomEditor.getBlockTextContent(currentBlock[0], 2) : undefined;
+  const pageName = meta?.name || t('menuAppHeader.defaultNewPageName');
+  const externalBlockText = externalBlock?.pageId === pageId && externalBlock.blockId === blockId
+    ? externalBlock.text
+    : '';
+  const content = currentViewId === pageId
+    ? currentBlockText || pageName
+    : `${pageName}${externalBlockText ? ` - ${externalBlockText}` : ''}`;
 
   useEffect(() => {
+    if (!blockId || currentViewId === pageId) return;
+    let current = true;
+    let unsubscribe: (() => void) | undefined;
+
     void (async () => {
-      const pageName = meta?.name || t('menuAppHeader.defaultNewPageName');
+      try {
+        const otherDoc = await loadView?.(pageId);
 
-      if (blockId) {
-        if (currentViewId === pageId) {
-          if (currentBlockText !== undefined) {
-            setContent(currentBlockText || pageName);
-            return;
-          }
-        } else {
-          try {
-            const otherDoc = await loadView?.(pageId);
+        if (!current || !otherDoc) return;
+        const sharedRoot = otherDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
+        const handleBlockChange = () => {
+          if (!current) return;
+          const node = getBlocks(sharedRoot).has(blockId) ? traverseBlock(blockId, sharedRoot) : undefined;
+          const text = node ? CustomEditor.getBlockTextContent(node, 2) : '';
 
-            if (!otherDoc) return;
+          setExternalBlock((previous) => previous?.pageId === pageId && previous.blockId === blockId && previous.text === text
+            ? previous
+            : { pageId, blockId, text });
+        };
 
-            const sharedRoot = otherDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
-
-            const handleBlockChange = () => {
-              const node = traverseBlock(blockId, sharedRoot);
-
-              if (!node) {
-                setContent(pageName);
-                return;
-              }
-
-              const text = CustomEditor.getBlockTextContent(node, 2);
-
-              setContent(`${pageName}${text ? ` - ${text}` : ''}`);
-            };
-
-            handleBlockChange();
-
-            return;
-          } catch (e) {
-            // do nothing
-          }
-        }
+        sharedRoot.observeDeep(handleBlockChange);
+        unsubscribe = () => sharedRoot.unobserveDeep(handleBlockChange);
+        handleBlockChange();
+      } catch {
+        // The page title remains available if the referenced document cannot load.
       }
-
-      setContent(pageName);
     })();
-  }, [selection, blockId, currentViewId, currentBlockText, loadView, meta?.name, pageId, t]);
+
+    return () => {
+      current = false;
+      unsubscribe?.();
+    };
+  }, [blockId, currentViewId, loadView, pageId]);
 
   const mentionIcon = useMemo(() => {
     if (pageId === currentViewId && blockId) {

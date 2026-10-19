@@ -1,6 +1,7 @@
 import { Button } from '@mui/material';
 import { PopoverOrigin } from '@mui/material/Popover/Popover';
 import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { Editor, Element, RangeRef, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
@@ -297,14 +298,12 @@ export function SlashPanel({
   const { openPopover } = usePopoverContext();
   const [inlineEquation, setInlineEquation] = useState<{ range: RangeRef; position: { top: number; left: number } }>();
   const closeInlineEquation = useCallback(() => {
-    setInlineEquation((current) => {
-      const range = current?.range.unref();
+    const range = inlineEquation?.range.unref();
 
-      if (range) { editor.select(range); ReactEditor.focus(editor); }
-
-      return undefined;
-    });
-  }, [editor]);
+    // Remove the popover's focus trap before returning focus to Slate.
+    flushSync(() => setInlineEquation(undefined));
+    if (range) { editor.select(range); ReactEditor.focus(editor); }
+  }, [editor, inlineEquation]);
 
   useEffect(() => () => { inlineEquation?.range.unref(); }, [inlineEquation]);
 
@@ -1613,6 +1612,9 @@ export function SlashPanel({
           const rect = ReactEditor.toDOMRange(editor, editor.selection).getBoundingClientRect();
 
           setInlineEquation({ range: Editor.rangeRef(editor, editor.selection), position: { top: rect.bottom, left: rect.left } });
+          // Slate can ignore the native blur while removing the slash command.
+          // Hand focus to the popover explicitly so cancellation can restore it.
+          ReactEditor.blur(editor);
         },
       },
       {
