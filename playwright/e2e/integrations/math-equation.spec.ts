@@ -34,13 +34,13 @@ test.beforeEach(async ({ page, integrationsURL }) => {
 
 test('slash insertion, compact and expanded editing, cancel, and persistence', async ({ page }, testInfo) => {
   await insertEquation(page);
-  await block(page).getByRole('button', { name: 'Edit Math Equation', exact: true }).click();
+  await block(page).getByRole('button', { name: 'Edit block equation', exact: true }).click();
   await input(page).fill('x^2');
   await expect(page.getByTestId('math-equation-editor').getByRole('button', { name: 'Ask AI', exact: true })).toHaveCount(0);
   await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('compact.png') });
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(page.getByTestId('math-document-snapshot')).toContainText('E=mc^2');
-  await block(page).getByRole('button', { name: 'Edit Math Equation', exact: true }).click();
+  await block(page).getByRole('button', { name: 'Edit block equation', exact: true }).click();
   await input(page).fill(String.raw`\int_a^b f(x)dx = F(b) - F(a)`);
   await page.getByRole('button', { name: /full screen/i }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
@@ -171,7 +171,7 @@ test('hover clears on mouseleave, including after closing the editor and menu', 
   expect(hoverColor).toBeTruthy();
   await page.mouse.move(5, 5);
   await expect(surface).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
-  await surface.getByRole('button', { name: 'Edit Math Equation', exact: true }).click();
+  await surface.getByRole('button', { name: 'Edit block equation', exact: true }).click();
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   await page.mouse.move(5, 5);
   await expect(surface).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
@@ -184,7 +184,7 @@ test('hover clears on mouseleave, including after closing the editor and menu', 
 
 test('compact and expanded sizes stay bounded with long input and short viewports', async ({ page }) => {
   await insertEquation(page);
-  await block(page).getByRole('button', { name: 'Edit Math Equation', exact: true }).click();
+  await block(page).getByRole('button', { name: 'Edit block equation', exact: true }).click();
   const compact = page.getByTestId('math-equation-editor');
 
   await expect(compact).toHaveCSS('height', '180px');
@@ -365,7 +365,7 @@ test('paste converts multiline Markdown equations and keeps their TeX after relo
 test('paste strips Markdown wrappers in the equation editor without losing the formula', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await insertEquation(page);
-  await block(page).getByRole('button', { name: 'Edit Math Equation', exact: true }).click();
+  await block(page).getByRole('button', { name: 'Edit block equation', exact: true }).click();
   await page.evaluate(() => navigator.clipboard.writeText('$$\n\\frac{a}{b}\n$$'));
   await input(page).press('ControlOrMeta+a');
   await input(page).press('ControlOrMeta+v');
@@ -527,7 +527,7 @@ test('the reported multiline equation renders without an exception (AppFlowy #64
 
   await insertEquation(page, source);
   await expect(block(page).getByRole('status')).toHaveCount(0);
-  await block(page).getByRole('button', { name: 'Edit Math Equation', exact: true }).click();
+  await block(page).getByRole('button', { name: 'Edit block equation', exact: true }).click();
   await expect(input(page)).toHaveValue(source);
   expect(errors).toEqual([]);
 });
@@ -563,7 +563,7 @@ test('a whole-string display shortcut preserves text, and editing supports undo/
   await expect(block(page)).toHaveCount(1);
   await expect(editor(page)).toContainText('before ');
   await expect(editor(page)).toContainText(' after');
-  await block(page).getByRole('button', { name: 'Edit Math Equation', exact: true }).click();
+  await block(page).getByRole('button', { name: 'Edit block equation', exact: true }).click();
   await input(page).fill('y^2');
   await input(page).press('Enter');
   await expect(page.getByTestId('math-document-snapshot')).toContainText('y^2');
