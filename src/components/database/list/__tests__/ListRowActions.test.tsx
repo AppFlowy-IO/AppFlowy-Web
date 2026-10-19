@@ -140,10 +140,27 @@ describe('ListRowActions', () => {
     await openMenu();
     fireEvent.click(screen.getByTestId('row-menu-duplicate'));
     await waitFor(() => expect(duplicateRow).toHaveBeenCalledWith('row-a'));
+    await waitFor(() => expect(screen.queryByTestId('list-row-action-menu')).toBeNull());
 
     await openMenu();
     fireEvent.click(screen.getByTestId('row-menu-delete'));
     expect((await screen.findByTestId('mock-delete-row-confirm')).getAttribute('data-row-ids')).toBe('row-a');
+  });
+
+  it('keeps the menu open on the duplicate spinner until the copy commits', async () => {
+    let commit!: (rowId: string) => void;
+
+    duplicateRow.mockReturnValueOnce(new Promise<string>((resolve) => (commit = resolve)));
+    renderActions();
+
+    await openMenu();
+    fireEvent.click(screen.getByTestId('row-menu-duplicate'));
+
+    await waitFor(() => expect(screen.getByTestId('row-menu-duplicate').querySelector('circle')).not.toBeNull());
+    expect(screen.getByTestId('list-row-action-menu')).toBeTruthy();
+
+    commit('duplicate-row');
+    await waitFor(() => expect(screen.queryByTestId('list-row-action-menu')).toBeNull());
   });
 
   it('uses the current numeric range when adding a row after settings change', async () => {

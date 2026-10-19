@@ -11,6 +11,15 @@ import { useHoverControlsContext } from '@/components/database/components/grid/c
 import { DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 
+interface RowMenuAction {
+  testId: string;
+  label: string;
+  icon: typeof UpIcon;
+  loading?: boolean;
+  /** A returned promise keeps the menu open until it settles. */
+  onSelect: () => void | Promise<void>;
+}
+
 function RowMenu({
   rowId,
   groupFieldId,
@@ -31,7 +40,7 @@ function RowMenu({
   const [openDeleteConfirmed, setOpenDeleteConfirmed] = React.useState(false);
 
   const actions = useMemo(
-    () => [
+    (): RowMenuAction[] => [
       {
         testId: 'row-menu-insert-above',
         label: t('grid.row.insertRecordAbove'),
@@ -94,7 +103,9 @@ function RowMenu({
               data-testid={item.testId}
               onSelect={async (e) => {
                 e.preventDefault();
-                item.onSelect();
+                if (item.loading) return;
+                // Duplicate resolves after the copy commits, so its spinner stays visible.
+                await item.onSelect();
                 onClose();
               }}
             >
