@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { ReactEditor } from 'slate-react';
 
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
@@ -95,14 +96,23 @@ export const BlockPopoverProvider = ({ children, editor }: { children: React.Rea
   );
 
   useEffect(() => {
+    let mounted = true;
     const handleOpen = (event: Event) => {
       const detail = (event as CustomEvent<{ editor: ReactEditor; blockId: string }>).detail;
 
-      if (detail.editor === editor) openPopover(detail.blockId, BlockType.EquationBlock);
+      if (detail.editor !== editor) return;
+      // Let Slate finish the shortcut's model update, then mount and focus the
+      // popover before the next keystroke can land in the old document input.
+      queueMicrotask(() => {
+        if (mounted) flushSync(() => openPopover(detail.blockId, BlockType.EquationBlock));
+      });
     };
 
     window.addEventListener(OPEN_MATH_EQUATION_EVENT, handleOpen);
-    return () => window.removeEventListener(OPEN_MATH_EQUATION_EVENT, handleOpen);
+    return () => {
+      mounted = false;
+      window.removeEventListener(OPEN_MATH_EQUATION_EVENT, handleOpen);
+    };
   }, [editor, openPopover]);
 
   const notifyMount = useCallback(

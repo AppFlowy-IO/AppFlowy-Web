@@ -77,6 +77,10 @@ test('$$ opens an empty block; menus disable empty AI actions and duplicate/dele
   await editor(page).click();
   await page.keyboard.type('$$');
   await expect(input(page)).toBeVisible();
+  await expect(input(page)).toHaveAttribute('placeholder', String.raw`|x| = \begin{cases}
+ x, &\quad x \geq 0 \\
+-x, &\quad x < 0
+\end{cases}`);
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   const menu = await openMenu(page);
 
@@ -100,6 +104,18 @@ test('$$ opens an empty block; menus disable empty AI actions and duplicate/dele
   await page.getByRole('menuitem', { name: 'Text', exact: true }).click();
   await expect(block(page)).toHaveCount(0);
   await expect(editor(page)).toContainText('E=mc^2');
+});
+
+test('$$ focuses the TeX input so typing continues directly into the equation', async ({ page }) => {
+  await editor(page).click();
+  await page.keyboard.type('$$E=mc^2');
+  await expect(input(page)).toBeVisible();
+  await expect(input(page)).toBeFocused();
+  await expect(input(page)).toHaveValue('E=mc^2');
+  await page.keyboard.press('Enter');
+  await expect(input(page)).toHaveCount(0);
+  await expect(block(page).locator('.katex')).toBeVisible();
+  await expect(page.getByTestId('math-document-snapshot')).toContainText('E=mc^2');
 });
 
 test('read-only equations render without editing controls', async ({ page }) => {
@@ -160,6 +176,15 @@ test('compact and expanded sizes stay bounded with long input and short viewport
   await page.setViewportSize({ width: 375, height: 180 });
   await expect(compact).toHaveCSS('height', '148px');
   await expect(page.getByRole('button', { name: 'Insert', exact: true })).toBeInViewport();
+  // AppFlowy #8312: neither the editor nor its input may extend past the viewport.
+  for (const element of [compact, input(page)]) {
+    await expect.poll(async () => (await element.boundingBox())!.x).toBeGreaterThanOrEqual(16);
+    await expect.poll(async () => {
+      const bounds = (await element.boundingBox())!;
+
+      return bounds.x + bounds.width;
+    }).toBeLessThanOrEqual(359);
+  }
 });
 
 test('six-dot menu matches equation actions and places second-level menus beside it', async ({ page }, testInfo) => {
@@ -380,6 +405,12 @@ test('pasting a copied equation block link uses its formula and the standard men
   await expect(mention).toHaveCSS('text-decoration-line', 'underline');
   await expect(mention.locator('.mention-content')).toHaveCSS('max-width', '330px');
   await expect(mention.locator('.mention-content')).toHaveCSS('text-overflow', 'ellipsis');
+  // AppFlowy #6986: a selected mention cannot become a link or inline equation.
+  await page.keyboard.press('Shift+ArrowLeft');
+  await expect(page.getByTestId('selection-toolbar')).toHaveCSS('pointer-events', 'auto');
+  await expect(page.getByTestId('toolbar-formula-button')).toBeDisabled();
+  await expect(page.getByTestId('link-button')).toBeDisabled();
+  await page.keyboard.press('ArrowRight');
   await mention.click();
   await expect(block(page)).toHaveClass(/highlight-block/);
   await page.getByRole('button', { name: 'Remote edit', exact: true }).click();
@@ -415,6 +446,45 @@ test('keyboard toggling converts selected text to inline math and back', async (
   await page.keyboard.press(`${modifier}+Shift+e`);
   await expect(page.locator('.formula-inline')).toHaveCount(0);
   await expect(editor(page)).toContainText('x^2');
+});
+
+test('inline math scales with H3 text (AppFlowy #6053)', async ({ page }, testInfo) => {
+  await editor(page).click();
+  await page.keyboard.type('Body $x^2$');
+  await expect(page.locator('.formula-inline .katex')).toBeVisible();
+  const bodySize = await page.locator('.formula-inline').evaluate((element) => ({
+    text: parseFloat(getComputedStyle(element).fontSize),
+    math: parseFloat(getComputedStyle(element.querySelector('.katex')!).fontSize),
+  }));
+
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('/heading 3');
+  await page.getByTestId('slash-menu-heading3').click();
+  await page.keyboard.type('Heading $x^2$');
+  const heading = page.locator('.heading.level-3');
+
+  await expect(heading.locator('.formula-inline .katex')).toBeVisible();
+  const headingSize = await heading.locator('.formula-inline').evaluate((element) => ({
+    text: parseFloat(getComputedStyle(element).fontSize),
+    math: parseFloat(getComputedStyle(element.querySelector('.katex')!).fontSize),
+  }));
+
+  expect(headingSize.text).toBeGreaterThan(bodySize.text);
+  expect(headingSize.math / bodySize.math).toBeCloseTo(headingSize.text / bodySize.text, 2);
+  await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('heading-math.png') });
+});
+
+test('the reported multiline equation renders without an exception (AppFlowy #6411)', async ({ page }) => {
+  const errors: string[] = [];
+
+  page.on('pageerror', (error) => errors.push(error.message));
+  const source = String.raw`M \times X = Y \\ M \times M^{-1} \times X = Y`;
+
+  await insertEquation(page, source);
+  await expect(block(page).getByRole('status')).toHaveCount(0);
+  await block(page).getByRole('button', { name: 'Edit Math Equation', exact: true }).click();
+  await expect(input(page)).toHaveValue(source);
+  expect(errors).toEqual([]);
 });
 
 test('Flutter selection toolbar inserts and removes inline math without changing adjacent text', async ({ page }) => {

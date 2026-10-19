@@ -7,6 +7,11 @@ import { ReactComponent as ExpandIcon } from '@/assets/icons/math-equation/expan
 import { unwrapMathMarkdown } from '@/components/editor/utils/math-markdown';
 import { Button } from '@/components/ui/button';
 
+const formulaHintText = String.raw`|x| = \begin{cases}
+ x, &\quad x \geq 0 \\
+-x, &\quad x < 0
+\end{cases}`;
+
 /** Both editor sizes share one draft; only Insert commits it. */
 export function MathEquationEditor({
   initialValue,
@@ -39,10 +44,10 @@ export function MathEquationEditor({
 
         setDraft(draft.slice(0, selectionStart) + formula + draft.slice(selectionEnd));
       }}
-      placeholder='E = MC^2'
+      placeholder={formulaHintText}
       autoComplete='off'
       spellCheck={false}
-      className='min-h-0 w-full flex-1 resize-none overflow-auto rounded-lg border border-border-primary bg-transparent px-2 py-1.5 text-sm leading-5 text-text-primary outline-none placeholder:text-text-tertiary focus:border-border-theme-thick'
+      className='min-h-0 w-full flex-1 resize-none overflow-auto rounded-lg border border-border-primary bg-transparent px-2 py-1.5 font-mono text-sm leading-5 text-text-primary outline-none placeholder:text-text-tertiary focus:border-border-theme-thick'
       onKeyDown={(event) => {
         event.stopPropagation();
         if (event.nativeEvent.isComposing) return;

@@ -1,22 +1,23 @@
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef } from 'react';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
 import { BlockType } from '@/application/types';
 import { calculateOptimalOrigins, Origins, Popover } from '@/components/_shared/popover';
-import AudioBlockPopoverContent from '@/components/editor/components/block-popover/AudioBlockPopoverContent';
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
-import FileBlockPopoverContent from '@/components/editor/components/block-popover/FileBlockPopoverContent';
-import GalleryBlockPopoverContent from '@/components/editor/components/block-popover/GalleryBlockPopoverContent';
-import GoogleDriveBlockPopoverContent from '@/components/editor/components/block-popover/GoogleDriveBlockPopoverContent';
-import ImageBlockPopoverContent from '@/components/editor/components/block-popover/ImageBlockPopoverContent';
-import LinkPreviewPopoverContent from '@/components/editor/components/block-popover/LinkPreviewPopoverContent';
-import PDFBlockPopoverContent from '@/components/editor/components/block-popover/PDFBlockPopoverContent';
 import { useEditorLocalState } from '@/components/editor/EditorContext';
 
 import MathEquationPopoverContent from './MathEquationPopoverContent';
-import VideoBlockPopoverContent from './VideoBlockPopoverContent';
+
+const AudioBlockPopoverContent = lazy(() => import('./AudioBlockPopoverContent'));
+const FileBlockPopoverContent = lazy(() => import('./FileBlockPopoverContent'));
+const GalleryBlockPopoverContent = lazy(() => import('./GalleryBlockPopoverContent'));
+const GoogleDriveBlockPopoverContent = lazy(() => import('./GoogleDriveBlockPopoverContent'));
+const ImageBlockPopoverContent = lazy(() => import('./ImageBlockPopoverContent'));
+const LinkPreviewPopoverContent = lazy(() => import('./LinkPreviewPopoverContent'));
+const PDFBlockPopoverContent = lazy(() => import('./PDFBlockPopoverContent'));
+const VideoBlockPopoverContent = lazy(() => import('./VideoBlockPopoverContent'));
 
 const defaultOrigins: Origins = {
   anchorOrigin: {
@@ -142,7 +143,7 @@ function BlockPopover() {
       {...origins}
       disableRestoreFocus={true}
     >
-      {content}
+      <Suspense fallback={null}>{content}</Suspense>
     </Popover>
   );
 }
