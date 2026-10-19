@@ -49,39 +49,79 @@ test('atomic creation keeps document/sidebar, database tabs and row-page content
 
   // Drop only the acknowledgement, after the real server has committed. The explicit
   // retry must publish the exact saved command and then read current authorized state.
-  const previousUrl = page.url();
-  let committedDocumentId = '';
+  const finishButton = page.getByRole('button', { name: 'Finish creating your page' });
+  const documentRequests = () =>
+    atomicRequests.filter((entry) => new URL(entry.url).pathname.endsWith('/document/default'));
+  const createDocumentWithLostAck = async () => {
+    const previousUrl = page.url();
+    let committedId = '';
 
-  await page.route(
-    documentRoute,
-    async (route) => {
-      const response = await route.fetch();
-      const body = await response.json();
+    await page.route(
+      documentRoute,
+      async (route) => {
+        const response = await route.fetch();
+        const body = await response.json();
 
-      expect(body.code).toBe(0);
-      committedDocumentId = body.data.result.view_id;
-      await route.abort('failed');
-    },
-    { times: 1 }
-  );
-  await chooseDocument(page);
-  await expect(page.getByRole('button', { name: 'Finish creating your page' })).toBeVisible({ timeout: 30_000 });
-  expect(page.url()).toBe(previousUrl);
-  await page.reload();
-  await expect(page.getByRole('button', { name: 'Finish creating your page' })).toBeVisible();
-  expect(atomicRequests.filter((entry) => new URL(entry.url).pathname.endsWith('/document/default'))).toHaveLength(1);
+        expect(body.code).toBe(0);
+        committedId = body.data.result.view_id;
+        await route.abort('failed');
+      },
+      { times: 1 }
+    );
+    await chooseDocument(page);
+    await expect(finishButton).toBeVisible({ timeout: 30_000 });
+    expect(page.url()).toBe(previousUrl);
+    return committedId;
+  };
+
+  const committedDocumentId = await createDocumentWithLostAck();
+
+  expect(documentRequests()).toHaveLength(1);
   const started = Date.now();
 
-  await page.getByRole('button', { name: 'Finish creating your page' }).click();
+  await finishButton.click();
   await expect(page).toHaveURL(new RegExp(committedDocumentId));
   await expect(page.getByTestId('editor-content').first()).toBeVisible();
   await expect(page.getByTestId(`page-${committedDocumentId}`)).toHaveAttribute('data-selected', 'true');
   timings.push({ operation: 'document explicit recovery to editor', elapsedMs: Date.now() - started });
-  const documentRequests = atomicRequests.filter((entry) => new URL(entry.url).pathname.endsWith('/document/default'));
 
-  expect(documentRequests).toHaveLength(2);
-  expect(documentRequests[1].body).toBe(documentRequests[0].body);
-  expect(documentRequests[0].body).not.toMatch(/page_data|encoded_collab|doc_state/);
+  expect(documentRequests()).toHaveLength(2);
+  expect(documentRequests()[1].body).toBe(documentRequests()[0].body);
+  expect(documentRequests()[0].body).not.toMatch(/page_data|encoded_collab|doc_state/);
+
+  // A reload abandons an unfinished creation: the committed page arrives through folder
+  // sync, the saved command is deleted without being resent, and no retry is offered.
+  const abandonedDocumentId = await createDocumentWithLostAck();
+
+  await page.reload();
+  await expect(page.getByTestId(`page-${abandonedDocumentId}`)).toBeVisible({ timeout: 30_000 });
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          new Promise<number>((resolve, reject) => {
+            const openRequest = indexedDB.open('af_database_cache');
+
+            openRequest.onerror = () => reject(openRequest.error);
+            openRequest.onsuccess = () => {
+              const db = openRequest.result;
+              const request = db.transaction('atomic_creation').objectStore('atomic_creation').count();
+
+              request.onsuccess = () => {
+                db.close();
+                resolve(request.result);
+              };
+              request.onerror = () => {
+                db.close();
+                reject(request.error);
+              };
+            };
+          })
+      )
+    )
+    .toBe(0);
+  await expect(finishButton).toHaveCount(0);
+  expect(documentRequests()).toHaveLength(3);
 
   const databaseStarted = Date.now();
   const databaseResponse = page.waitForResponse(
