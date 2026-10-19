@@ -248,7 +248,10 @@ export function getAuthCallbackUrl(redirectTo: string): string {
   return callbackUrl.toString();
 }
 
-export function isAuthPath(pathname: string): boolean {
+// Login-page action that shows the new-password form after a recovery code.
+export const PASSWORD_RESET_LOGIN_ACTION = 'changePassword';
+
+function normalizeRoutePathname(pathname: string): string | null {
   let decodedPathname: string;
 
   try {
@@ -259,12 +262,24 @@ export function isAuthPath(pathname: string): boolean {
       .map((segment) => decodeURIComponent(segment).replace(/\//g, '%2F'))
       .join('/');
   } catch {
-    return false;
+    return null;
   }
 
-  const normalizedPathname = decodedPathname.replace(/\/+$/, '').toLowerCase();
+  return decodedPathname.replace(/\/+$/, '').toLowerCase();
+}
+
+export function isAuthPath(pathname: string): boolean {
+  const normalizedPathname = normalizeRoutePathname(pathname);
 
   return normalizedPathname === '/login' || normalizedPathname === AUTH_CALLBACK_PATH;
+}
+
+// A recovery session must still reach the new-password form on the login page.
+function isPasswordResetForm(url: URL): boolean {
+  return (
+    normalizeRoutePathname(url.pathname) === '/login' &&
+    url.searchParams.get('action') === PASSWORD_RESET_LOGIN_ACTION
+  );
 }
 
 const MAX_REDIRECT_VALIDATION_DECODES = 5;
@@ -415,7 +430,7 @@ export function afterAuth() {
     // Pattern matches /app/{uuid}/{uuid} or /app/{uuid}
     const hasUserSpecificIds = /\/app\/[a-f0-9-]{36}/i.test(pathname);
 
-    if (isAuthPath(pathname)) {
+    if (isAuthPath(pathname) && !isPasswordResetForm(url)) {
       // Authentication pages are transitional destinations. Sending a newly
       // authenticated user back to one can strand them on the login screen and
       // require a second sign-in attempt.

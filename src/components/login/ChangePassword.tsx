@@ -102,7 +102,7 @@ export function ChangePassword({ email, redirectTo }: { email: string; redirectT
     setPasswordErrors([]);
 
     try {
-      await AuthService.changePassword({ password: newPassword });
+      await AuthService.resetPassword({ password: newPassword });
       toast.success(t('changePassword.success'));
 
       invalidToken();
