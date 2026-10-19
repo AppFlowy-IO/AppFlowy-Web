@@ -1607,6 +1607,7 @@ export function SlashPanel({
         label: t('document.plugins.mathEquation.inline'),
         key: 'inlineMath', icon: <FormulaIcon />, group: SlashMenuGroupKey.Inline,
         keywords: ['inline', 'math', 'equation', 'formula', 'tex', 'latex'], shortcut: '$...$',
+        aliases: ['eqn'],
         onClick: () => {
           if (!editor.selection) return;
           const rect = ReactEditor.toDOMRange(editor, editor.selection).getBoundingClientRect();
