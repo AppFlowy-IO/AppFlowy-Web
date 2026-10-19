@@ -72,8 +72,8 @@ function Fixture() {
           </div>
           <Editor
             doc={doc}
-            workspaceId='math-workspace'
-            viewId='math-document'
+            workspaceId='00000000-0000-4000-8000-000000000001'
+            viewId='00000000-0000-4000-8000-000000000002'
             readOnly={readOnly}
             eventEmitter={events}
             addPage={async () => ({ view_id: 'equation-child-page' })}

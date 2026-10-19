@@ -2,6 +2,7 @@ import { expect, Page } from '@playwright/test';
 
 import { fixtureHTML, test } from '../../support/integrations-server';
 
+const fixturePath = '/app/00000000-0000-4000-8000-000000000001/00000000-0000-4000-8000-000000000002';
 const block = (page: Page) => page.locator('[data-block-type="math_equation"]');
 const editor = (page: Page) => page.getByTestId('editor-content');
 const input = (page: Page) => page.getByTestId('math-equation-input');
@@ -24,10 +25,10 @@ test.beforeEach(async ({ page, integrationsURL }) => {
   await page.route('**/api/ai/*/model/list', (route) =>
     route.fulfill({ json: { code: 0, data: { models: [{ name: 'Auto', metadata: { is_default: true } }] } } })
   );
-  await page.route('**/math-equation-fixture', (route) =>
+  await page.route(`**${fixturePath}`, (route) =>
     route.fulfill({ contentType: 'text/html', body: fixtureHTML('math-equation') })
   );
-  await page.goto(new URL('/math-equation-fixture', integrationsURL).href);
+  await page.goto(new URL(fixturePath, integrationsURL).href);
   await expect(page.getByTestId('math-document-snapshot')).toHaveAttribute('data-ready', 'true');
 });
 
@@ -80,6 +81,8 @@ test('$$ opens an empty block; menus disable empty AI actions and duplicate/dele
   const menu = await openMenu(page);
 
   await menu.getByRole('menuitem', { name: 'Ask AI', exact: true }).click();
+  await menu.getByRole('menuitem', { name: 'Ask AI', exact: true }).click();
+  await expect(page.getByTestId('math-equation-submenu').getByRole('menuitem', { name: 'Ask AI', exact: true })).toBeEnabled();
   await expect(page.getByRole('menuitem', { name: 'Explain equation', exact: true })).toBeDisabled();
   await expect(page.getByRole('menuitem', { name: 'Check equation', exact: true })).toBeDisabled();
   await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('menu.png') });
@@ -176,13 +179,14 @@ test('six-dot menu matches equation actions and places second-level menus beside
   const deleteColor = await deleteRow.evaluate((row) => getComputedStyle(row).color);
 
   await expect(deleteRow.locator('path')).toHaveCSS('stroke', deleteColor);
+  const deleteBackground = await deleteRow.evaluate((row) => getComputedStyle(row).backgroundColor);
   await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('delete-hover.png') });
   await menu.getByRole('menuitem', { name: 'Duplicate', exact: true }).hover();
+  await expect(menu.getByRole('menuitem', { name: 'Duplicate', exact: true })).toHaveCSS('background-color', deleteBackground);
   await expect(deleteRow).toHaveCSS('color', normalColor);
   await expect(menu.getByRole('menuitem', { name: 'Comment', exact: true })).toHaveCount(0);
   for (const label of ['Ask AI', 'Turn into']) {
-    // MUI marks the parent menu aria-hidden while its submenu has focus.
-    const row = menu.getByRole('menuitem', { name: label, exact: true, includeHidden: true });
+    const row = menu.getByRole('menuitem', { name: label, exact: true });
 
     await row.click();
     await expect(row).toHaveAttribute('aria-expanded', 'true');
@@ -197,7 +201,13 @@ test('six-dot menu matches equation actions and places second-level menus beside
     }
     const submenu = page.getByTestId('math-equation-submenu');
 
-    await expect(submenu.locator('..')).toHaveCSS('opacity', '1');
+    for (let i = 0; i < 2; i++) {
+      await row.click();
+      await expect(row).toHaveAttribute('aria-expanded', 'true');
+      if (label === 'Ask AI') {
+        await expect(submenu.getByRole('menuitem')).toHaveText(['Ask AI', 'Explain equation', 'Check equation']);
+      } else await expect(submenu.getByRole('menuitem', { name: 'Page', exact: true })).toBeVisible();
+    }
     if (label === 'Ask AI') await expect(submenu).toHaveCSS('height', '112px');
     const parentRect = (await menu.boundingBox())!;
     const childRect = (await submenu.boundingBox())!;
@@ -229,7 +239,15 @@ for (const empty of [false, true]) {
     await page.getByRole('menuitem', { name: 'Duplicate', exact: true }).hover();
     await expect(surface).not.toHaveCSS('background-color', idleBackground);
     await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('block-selected.png') });
-    if (empty) await page.mouse.click(1100, 600);
+    if (empty) {
+      const askAI = page.getByTestId('math-equation-menu').getByRole('menuitem', { name: 'Ask AI', exact: true });
+
+      await askAI.click();
+      await askAI.click();
+      await expect(page.getByRole('menuitem', { name: 'Explain equation', exact: true })).toBeDisabled();
+      await expect(page.getByRole('menuitem', { name: 'Check equation', exact: true })).toBeDisabled();
+      await page.mouse.click(1100, 600);
+    }
     else await page.keyboard.press('Escape');
     await expect(page.getByTestId('math-equation-menu')).toHaveCount(0);
     await page.getByRole('checkbox', { name: 'Read only' }).hover();
@@ -323,6 +341,52 @@ for (const action of ['generate', 'explain', 'check'] as const) {
     );
   });
 }
+
+test('submenus switch directly, stay open on repeated clicks, and dismiss from outside', async ({ page }) => {
+  await insertEquation(page);
+  const menu = await openMenu(page);
+  const submenu = page.getByTestId('math-equation-submenu');
+
+  for (const label of ['Ask AI', 'Turn into', 'Ask AI', 'Ask AI']) {
+    await menu.getByRole('menuitem', { name: label, exact: true }).click();
+    await expect(submenu.getByRole('menuitem', { name: label === 'Ask AI' ? 'Explain equation' : 'Page', exact: true })).toBeEnabled();
+    await expect(submenu.getByRole('menuitem', { name: label === 'Ask AI' ? 'Page' : 'Explain equation', exact: true })).toHaveCount(0);
+  }
+  await page.keyboard.press('Escape');
+  await expect(submenu).toHaveCount(0);
+  await expect(menu.getByRole('menuitem', { name: 'Ask AI', exact: true })).toBeFocused();
+  await menu.getByRole('menuitem', { name: 'Ask AI', exact: true }).press('Enter');
+  await expect(submenu).toBeVisible();
+  await page.mouse.click(1100, 600);
+  await expect(submenu).toHaveCount(0);
+  await expect(menu).toHaveCount(0);
+});
+
+test('pasting a copied equation block link uses its formula and the standard mention style', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  const formula = String.raw`\frac{-b \pm \sqrt{b^2 - 4ac}}{2a}`;
+
+  await insertEquation(page, formula);
+  await (await openMenu(page)).getByRole('menuitem', { name: 'Copy link to block', exact: true }).click();
+  // Click the document's blank area below the equation to add a paragraph.
+  const bounds = (await editor(page).boundingBox())!;
+
+  await editor(page).click({ position: { x: 20, y: bounds.height - 200 } });
+  await editor(page).locator('[data-block-type="paragraph"]').last().click();
+  await page.keyboard.press('ControlOrMeta+v');
+  const mention = editor(page).locator('.mention-inline');
+
+  await expect(mention.locator('.mention-content')).toHaveText(formula);
+  await expect(mention).toHaveCSS('text-decoration-line', 'underline');
+  await expect(mention.locator('.mention-content')).toHaveCSS('max-width', '330px');
+  await expect(mention.locator('.mention-content')).toHaveCSS('text-overflow', 'ellipsis');
+  await mention.click();
+  await expect(block(page)).toHaveClass(/highlight-block/);
+  await page.getByRole('button', { name: 'Remote edit', exact: true }).click();
+  await expect(mention.locator('.mention-content')).toHaveText('collaborator');
+  await page.reload();
+  await expect(mention.locator('.mention-content')).toHaveText('collaborator');
+});
 
 test('copies a block link and turns the equation into a child page', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);

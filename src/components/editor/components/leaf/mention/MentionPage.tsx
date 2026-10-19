@@ -88,6 +88,10 @@ function MentionPage({
   }, [meta?.icon]);
 
   const { t } = useTranslation();
+  const currentBlock = blockId && currentViewId === pageId
+    ? findSlateEntryByBlockId(editor as YjsEditor, blockId)
+    : undefined;
+  const currentBlockText = currentBlock ? CustomEditor.getBlockTextContent(currentBlock[0], 2) : undefined;
 
   useEffect(() => {
     void (async () => {
@@ -95,13 +99,8 @@ function MentionPage({
 
       if (blockId) {
         if (currentViewId === pageId) {
-          const entry = findSlateEntryByBlockId(editor as YjsEditor, blockId);
-
-          if (entry) {
-            const [node] = entry;
-            const text = CustomEditor.getBlockTextContent(node, 2);
-
-            setContent(text || pageName);
+          if (currentBlockText !== undefined) {
+            setContent(currentBlockText || pageName);
             return;
           }
         } else {
@@ -136,7 +135,7 @@ function MentionPage({
 
       setContent(pageName);
     })();
-  }, [selection, blockId, currentViewId, editor, loadView, meta?.name, pageId, t]);
+  }, [selection, blockId, currentViewId, currentBlockText, loadView, meta?.name, pageId, t]);
 
   const mentionIcon = useMemo(() => {
     if (pageId === currentViewId && blockId) {

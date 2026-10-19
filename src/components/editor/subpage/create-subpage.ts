@@ -48,7 +48,7 @@ export async function createSubpage(editor: YjsEditor, context: EditorContextSta
     editor.flushLocalChanges();
     if (YHistoryEditor.isYHistoryEditor(editor)) editor.undoManager.stopCapturing();
     const data: SubpageNodeData = { view_id };
-    const inserted = CustomEditor.getBlockTextContent(entry[0], 2)
+    const inserted = equation === undefined && CustomEditor.getBlockTextContent(entry[0], 2)
       ? CustomEditor.addBelowBlock(editor, blockId, BlockType.SubpageBlock, data)
       : CustomEditor.turnToBlock(editor, blockId, BlockType.SubpageBlock, data);
 

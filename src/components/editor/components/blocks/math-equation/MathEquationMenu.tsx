@@ -1,8 +1,8 @@
-import { Popover as MuiPopover } from '@mui/material';
-import { useState } from 'react';
+import { Popper } from '@mui/material';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Transforms } from 'slate';
-import { useReadOnly, useSlateStatic } from 'slate-react';
+import { useReadOnly, useSlateSelector, useSlateStatic } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
@@ -46,10 +46,20 @@ export function MathEquationMenu({
   const { openMathEquationAI } = usePopoverContext();
   const { t } = useTranslation();
   const [submenu, setSubmenu] = useState<{ type: 'ai' | 'turn'; anchor: HTMLElement }>();
-  const submenuRow = submenu?.anchor.getBoundingClientRect();
-  const menuBounds = submenu?.anchor.closest('[role="menu"]')?.getBoundingClientRect();
-  const submenuAtRight = !menuBounds || menuBounds.right + 244 <= window.innerWidth - 16;
-  const empty = !node.data.formula?.trim();
+  const submenuAnchor = useMemo(() => submenu && ({
+    contextElement: submenu.anchor,
+    getBoundingClientRect: () => {
+      const row = submenu.anchor.getBoundingClientRect();
+      const menu = submenu.anchor.closest('[role="menu"]')?.getBoundingClientRect() ?? row;
+
+      return new DOMRect(menu.x, row.y, menu.width, row.height);
+    },
+  }), [submenu]);
+  const empty = useSlateSelector((value) => {
+    const entry = findSlateEntryByBlockId(value as YjsEditor, node.blockId);
+
+    return !entry || !(entry[0] as MathEquationNode).data.formula?.trim();
+  });
   const rowClass = 'h-8 w-full justify-start rounded-md px-2 py-1.5 text-sm [&_svg]:shrink-0 disabled:[&_svg]:opacity-40';
   const liveEntry = () => findSlateEntryByBlockId(editor, node.blockId);
   const run = (action: () => void | Promise<void>) => {
@@ -69,7 +79,13 @@ export function MathEquationMenu({
       .catch((error) => notify.error(error.message));
   };
 
-  const ask = (action: MathEquationAIAction) => run(() => openMathEquationAI?.({ blockId: node.blockId, action }));
+  const ask = (action: MathEquationAIAction) => {
+    const current = liveEntry();
+
+    if (action !== 'generate' && !(current?.[0] as MathEquationNode | undefined)?.data.formula?.trim()) return;
+    run(() => openMathEquationAI?.({ blockId: node.blockId, action }));
+  };
+
   const turn = (type: BlockType, data = {}) =>
     run(() => {
       const current = liveEntry();
@@ -92,6 +108,13 @@ export function MathEquationMenu({
       PaperProps={{ className: '!w-60 !rounded-xl !border-0 !bg-surface-layer-04 !shadow-menu ring-1 ring-border-primary' }}
       anchorEl={anchorEl}
       onClose={onClose}
+      onKeyDownCapture={(event) => {
+        if (event.key === 'Escape' && submenu) {
+          event.stopPropagation();
+          submenu.anchor.focus();
+          setSubmenu(undefined);
+        }
+      }}
       disableRestoreFocus
       disableEnforceFocus
       anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
@@ -108,7 +131,7 @@ export function MathEquationMenu({
           role='menuitem'
           variant='ghost'
           danger
-          className={`${rowClass} hover:bg-fill-error-select focus-visible:bg-fill-error-select focus-visible:text-text-error [&_path]:stroke-current`}
+          className={`${rowClass} focus-visible:bg-fill-content-hover focus-visible:text-text-error [&_path]:stroke-current`}
           onClick={() =>
             run(() => {
               CustomEditor.deleteBlock(editor, node.blockId);
@@ -184,17 +207,17 @@ export function MathEquationMenu({
           </>
         )}
       </div>
-      <MuiPopover
+      <Popper
         open={!!submenu}
-        anchorReference='anchorPosition'
-        anchorPosition={submenuRow && menuBounds ? {
-          top: submenuRow.top,
-          left: submenuAtRight ? menuBounds.right + 4 : menuBounds.left - 4,
-        } : undefined}
-        onClose={() => setSubmenu(undefined)}
-        disableRestoreFocus
-        transformOrigin={{ vertical: 'top', horizontal: submenuAtRight ? 'left' : 'right' }}
-        PaperProps={{ className: '!w-60 !rounded-xl !border-0 !bg-surface-layer-04 !shadow-menu ring-1 ring-border-primary' }}
+        anchorEl={submenuAnchor}
+        placement='right-start'
+        modifiers={[
+          { name: 'offset', options: { offset: [0, 4] } },
+          { name: 'flip', options: { fallbackPlacements: ['left-start'], padding: 16 } },
+          { name: 'preventOverflow', options: { padding: 16 } },
+        ]}
+        sx={{ zIndex: (theme) => theme.zIndex.modal + 1 }}
+        className='w-60 rounded-xl bg-surface-layer-04 shadow-menu ring-1 ring-border-primary'
       >
         <div role='menu' data-testid='math-equation-submenu' className='w-full p-2'>
           {submenu?.type === 'ai' ? (
@@ -226,7 +249,7 @@ export function MathEquationMenu({
                 {t('document.plugins.mathEquation.check')}
               </Button>
             </>
-          ) : (
+          ) : submenu?.type === 'turn' ? (
             <>
               {(
                 [
@@ -272,9 +295,9 @@ export function MathEquationMenu({
                 </Button>
               )}
             </>
-          )}
+          ) : null}
         </div>
-      </MuiPopover>
+      </Popper>
     </Popover>
   );
 }
