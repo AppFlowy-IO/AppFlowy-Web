@@ -10,7 +10,7 @@ jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key === 'changePassword.passwordErrorMatch' ? 'Passwords differ' : key }),
   Trans: () => null,
 }));
-jest.mock('@/application/services/domains', () => ({ AuthService: { signUpWithPassword: jest.fn(), changePassword: jest.fn() } }));
+jest.mock('@/application/services/domains', () => ({ AuthService: { signUpWithPassword: jest.fn(), resetPassword: jest.fn() } }));
 jest.mock('@/components/main/app.hooks', () => ({ useIsAuthenticatedOptional: () => true }));
 jest.mock('sonner', () => ({ toast: { error: jest.fn(), success: jest.fn() } }));
 
@@ -42,7 +42,7 @@ it.each(['signup', 'change'])('keeps server wording separate from %s password-co
     user_error: { schema_version: 1, reason: 'AUTH_REQUEST_PROBLEM', message: publicMessage, locale: 'en' } });
 
   jest.mocked(AuthService.signUpWithPassword).mockRejectedValueOnce(error);
-  jest.mocked(AuthService.changePassword).mockRejectedValueOnce(error);
+  jest.mocked(AuthService.resetPassword).mockRejectedValueOnce(error);
   render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
     {form === 'signup' ? <SignUpPassword redirectTo='/app' /> : <ChangePassword email='user@example.com' redirectTo='/app' />}
   </MemoryRouter>);

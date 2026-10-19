@@ -471,6 +471,29 @@ describe('afterAuth', () => {
     expect(localStorage.getItem('redirectTo')).toBeNull();
   });
 
+  it.each([
+    '/login?action=changePassword&email=user%40example.com',
+    'http://localhost/login/?action=changePassword&email=user%40example.com&redirectTo=%2Fapp',
+  ])('lets a password-recovery session reach the new-password form: %s', (redirectTo) => {
+    localStorage.setItem('redirectTo', redirectTo);
+
+    afterAuth();
+
+    expect(window.location.href).toBe(redirectTo);
+    expect(localStorage.getItem('redirectTo')).toBeNull();
+  });
+
+  it.each(['/auth/callback?action=changePassword', '/login?action=checkEmailResetPassword'])(
+    'keeps other authentication routes out of reach: %s',
+    (redirectTo) => {
+      localStorage.setItem('redirectTo', redirectTo);
+
+      afterAuth();
+
+      expect(window.location.href).toBe('/app');
+    }
+  );
+
   it.each(['/login/foo', '/loginish', '/auth/callback-other'])(
     'preserves a safe non-authentication destination: %s',
     (redirectTo) => {

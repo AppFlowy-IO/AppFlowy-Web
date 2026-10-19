@@ -5,6 +5,7 @@ const mockGrantClient = {
   },
   get: jest.fn(),
   post: jest.fn(),
+  put: jest.fn(),
 };
 
 const mockAxiosCreate = jest.fn(() => mockGrantClient);
@@ -28,7 +29,8 @@ jest.mock('@/utils/log', () => ({
   Log: { debug: jest.fn(), error: jest.fn(), info: jest.fn(), warn: jest.fn() },
 }));
 
-const { changePassword, getUserAuthInfo, initGrantService } = require('../gotrue') as typeof import('../gotrue');
+const { changePassword, getUserAuthInfo, initGrantService, resetPassword } = require('../gotrue') as typeof import('../gotrue');
+const { invalidToken } = require('@/application/session/token') as { invalidToken: jest.Mock };
 
 const authHeaders = expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer access-token' }) });
 
@@ -36,6 +38,8 @@ describe('GoTrue password requests', () => {
   beforeEach(() => {
     mockGrantClient.get.mockReset();
     mockGrantClient.post.mockReset().mockResolvedValue({ data: {} });
+    mockGrantClient.put.mockReset().mockResolvedValue({ data: {} });
+    invalidToken.mockClear();
     initGrantService('http://localhost/gotrue');
   });
 
@@ -76,5 +80,25 @@ describe('GoTrue password requests', () => {
     });
 
     await expect(getUserAuthInfo()).rejects.toMatchObject({ sourceDomain: 'gotrue', httpStatus: 404 });
+  });
+
+  it('resets a forgotten password through the user update without the current password', async () => {
+    await resetPassword({ password: 'Reset-password123!' });
+
+    expect(mockGrantClient.put).toHaveBeenCalledWith('/user', { password: 'Reset-password123!' }, authHeaders);
+    expect(mockGrantClient.post).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [503, 0],
+    [401, 1],
+  ])('keeps the session unless the reset is unauthorized (HTTP %i)', async (status, invalidations) => {
+    mockGrantClient.put.mockRejectedValueOnce({ message: 'Failed', response: { status, data: { msg: 'Failed' } } });
+
+    await expect(resetPassword({ password: 'Reset-password123!' })).rejects.toMatchObject({
+      sourceDomain: 'gotrue',
+      httpStatus: status,
+    });
+    expect(invalidToken).toHaveBeenCalledTimes(invalidations);
   });
 });

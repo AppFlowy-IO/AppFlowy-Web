@@ -359,6 +359,47 @@ export async function getUserAuthInfo(): Promise<GoTrueUserAuthInfo> {
   }
 }
 
+// Sets a new password from a password-recovery session. Unlike change-password,
+// GoTrue's user update does not require the current password for sessions
+// opened with an emailed code, which is all a user who forgot it can provide.
+export async function resetPassword(params: { password: string }) {
+  Log.info('[Auth] resetPassword: starting');
+  const access_token = getTokenParsed()?.access_token;
+
+  if (!access_token) {
+    Log.warn('[Auth] resetPassword: no access token found');
+    return Promise.reject({
+      code: -1,
+      message: 'You have not logged in yet. Can not reset password.',
+    });
+  }
+
+  try {
+    await axiosInstance?.put(
+      '/user',
+      { password: params.password },
+      {
+        headers: {
+          Authorization: `Bearer ${access_token}`,
+        },
+      }
+    );
+
+    Log.info('[Auth] resetPassword: success');
+    // eslint-disable-next-line
+  } catch (e: any) {
+    Log.error('[Auth] resetPassword: failed', {
+      status: e.response?.status,
+      message: e.response?.data?.msg || e.message,
+    });
+    if (e.response?.status === 401) {
+      invalidToken();
+    }
+
+    return Promise.reject(parseGoTrueFailure(e));
+  }
+}
+
 export async function changePassword(params: { password: string; currentPassword?: string }) {
   Log.info('[Auth] changePassword: starting');
   try {
