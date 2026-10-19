@@ -27,6 +27,16 @@ import { useListHasSorts } from './ListSortState';
 
 export const getListGroupCellsData = getGroupRowCellsData;
 
+interface RowMenuAction {
+  testId: string;
+  label: string;
+  icon: typeof UpIcon;
+  loading: boolean;
+  /** A returned promise keeps the menu open until it settles. */
+  run: () => void | Promise<void>;
+  destructive?: boolean;
+}
+
 /** The row-creation callbacks a gutter menu needs; how they are produced is the caller's business. */
 export interface RowActionCallbacks {
   addAbove: () => Promise<unknown>;
@@ -88,7 +98,7 @@ export function RowActionsMenu({
   );
 
   const actions = useMemo(
-    () => [
+    (): RowMenuAction[] => [
       {
         testId: 'row-menu-insert-above',
         label: t('grid.row.insertRecordAbove'),
@@ -108,7 +118,7 @@ export function RowActionsMenu({
         label: t('grid.row.duplicate'),
         icon: DuplicateIcon,
         loading: loadingAction === 'duplicate',
-        run: () => void run('duplicate', duplicate),
+        run: () => run('duplicate', duplicate),
       },
       {
         testId: 'row-menu-delete',
@@ -188,9 +198,10 @@ export function RowActionsMenu({
                     data-testid={action.testId}
                     disabled={pending}
                     key={action.testId}
-                    onSelect={(event) => {
+                    onSelect={async (event) => {
                       event.preventDefault();
-                      action.run();
+                      // Duplicate resolves after the copy commits, so its spinner stays visible.
+                      await action.run();
                       setMenuOpen(false);
                     }}
                     variant={action.destructive ? 'destructive' : 'default'}
