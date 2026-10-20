@@ -5,6 +5,7 @@ export interface MockServerInfo {
   version?: string;
   min_web_client_version?: string;
   enable_page_history: boolean;
+  enable_database_history?: boolean;
   ai_enabled: boolean;
 }
 

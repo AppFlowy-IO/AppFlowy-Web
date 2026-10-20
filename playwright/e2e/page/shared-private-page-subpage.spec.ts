@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
-import { setTimeout as delay } from 'node:timers/promises';
 
 import { expect, test, type APIRequestContext, type APIResponse } from '@playwright/test';
 
@@ -111,41 +110,17 @@ for (const scenario of [
     );
     const createDocument = async (token: string, parentId: string, name: string) => {
       const viewId = randomUUID();
-      const requestId = randomUUID();
-      // Use the same atomic default-document endpoint as current PageService.add.
-      const data = {
-        schema_version: 'v1',
-        request_id: requestId,
-        view_id: viewId,
-        parent_view_id: parentId,
-        position: { kind: 'start' },
-        name,
-      };
-
-      for (let attempt = 0; attempt < 16; attempt++) {
-        const response = await request.post(`${workspaceUrl}/v2/page-view/document/default`, {
+      // Use the same page-view endpoint as current PageService.add.
+      const created = await successful<{ view_id: string }>(
+        await request.post(`${workspaceUrl}/page-view`, {
           headers: { Authorization: `Bearer ${token}` },
-          data,
-        });
+          data: { parent_view_id: parentId, layout: 0, name, view_id: viewId, collab_id: viewId },
+        }),
+        `Create ${name}`
+      );
 
-        // Current Web retries explicit RetryLater with the exact same request.
-        // Permission failures and other errors must fail the fixture immediately.
-        if (response.ok() && (await response.json()).code === -5 && attempt < 15) {
-          await delay(500);
-          continue;
-        }
-
-        const receipt = await successful<{ request_id: string; result: { view_id: string } }>(
-          response,
-          `Create ${name}`
-        );
-
-        expect(receipt.request_id).toBe(requestId);
-        expect(receipt.result.view_id).toBe(viewId);
-        return receipt.result;
-      }
-
-      throw new Error('Document creation exhausted its retry budget');
+      expect(created.view_id).toBe(viewId);
+      return created;
     };
 
     const parent = await createDocument(ownerToken, privateSpace.view_id, 'C12 shared document');
@@ -276,15 +251,14 @@ for (const scenario of [
       await expect(sharedRow.getByTestId('inline-add-page')).toHaveCount(0);
       await saveScreenshot('read-only-shared-document-without-add-action');
       const deniedViewId = randomUUID();
-      const response = await request.post(`${workspaceUrl}/v2/page-view/document/default`, {
+      const response = await request.post(`${workspaceUrl}/page-view`, {
         headers: memberHeaders,
         data: {
-          schema_version: 'v1',
-          request_id: randomUUID(),
-          view_id: deniedViewId,
           parent_view_id: parent.view_id,
-          position: { kind: 'start' },
+          layout: 0,
           name: 'Must not be created by read-only member',
+          view_id: deniedViewId,
+          collab_id: deniedViewId,
         },
       });
 
@@ -323,29 +297,23 @@ for (const scenario of [
         await targetRow.getByTestId('inline-add-page').click({ timeout: 2_000 });
         await expect(addDocumentButton).toBeVisible({ timeout: 2_000 });
       }).toPass({ timeout: 15_000 });
-      const created = page.waitForResponse(async (response) => {
-        if (
-          response.request().method() !== 'POST' ||
-          !new URL(response.url()).pathname.endsWith('/v2/page-view/document/default') ||
-          response.request().postDataJSON().parent_view_id !== parentId
-        )
-          return false;
-        // The current client can retry RetryLater; wait for its committed receipt.
-        return response.ok() && (await response.json()).code === 0;
-      });
+      const created = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          new URL(response.url()).pathname.endsWith(`/api/workspace/${workspaceId}/page-view`) &&
+          response.request().postDataJSON().parent_view_id === parentId
+      );
 
       await addDocumentButton.click();
       const createResponse = await created;
       const createCommand = createResponse.request().postDataJSON();
-      const receipt = await successful<{ request_id: string; result: { view_id: string } }>(
+      const receipt = await successful<{ view_id: string }>(
         createResponse,
         'Create subpage through the Shared with me menu'
       );
-      const viewId = receipt.result.view_id;
+      const viewId = receipt.view_id;
 
-      expect(receipt.request_id).toBe(createCommand.request_id);
-      expect(viewId).toBe(createCommand.view_id);
-      expect(createCommand.parent_view_id).toBe(parentId);
+      expect(createCommand.layout).toBe(0);
       const viewModal = page.getByRole('dialog').filter({ has: page.getByTestId('view-modal-close') });
       const titleInput = viewModal.locator(`[id="editor-title-${viewId}"]`);
 

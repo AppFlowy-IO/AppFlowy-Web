@@ -64,10 +64,6 @@ function renderWithPage(
   });
   const outlineRef: MutableRefObject<View[] | undefined> = { current: [root] };
   const loadOutline = jest.fn(async () => undefined);
-  const ensureViewVisibleInOutline = jest.fn(async (viewId: string) => {
-    parent.children = [createView({ view_id: viewId, name: 'Member-created subpage' })];
-    return [root.view_id, parent.view_id, viewId];
-  });
   const auth: AuthInternalContextType = {
     currentWorkspaceId: WORKSPACE_ID,
     isAuthenticated: true,
@@ -84,22 +80,17 @@ function renderWithPage(
   const wrapper = ({ children }: { children: ReactNode }) => (
     <AuthInternalContext.Provider value={auth}>{children}</AuthInternalContext.Provider>
   );
-  const rendered = renderHook(() => usePageOperations({ outlineRef, ensureViewVisibleInOutline, loadOutline }), {
+  const rendered = renderHook(() => usePageOperations({ outlineRef, loadOutline }), {
     wrapper,
   });
 
-  return { ...rendered, outlineRef, ensureViewVisibleInOutline, loadOutline, parent };
+  return { ...rendered, outlineRef, loadOutline, parent };
 }
 
 describe('workspace member creating a subpage under a shared page', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    jest.mocked(PageService.add).mockImplementation(async (_workspaceId, _parentId, _payload, activation) => {
-      const response = { view_id: CHILD_PAGE_ID };
-
-      await activation?.activate?.(response);
-      return response;
-    });
+    jest.mocked(PageService.add).mockResolvedValue({ view_id: CHILD_PAGE_ID });
   });
 
   it.each([
@@ -119,7 +110,7 @@ describe('workspace member creating a subpage under a shared page', () => {
       accessLevel: AccessLevel.ReadAndWrite,
     },
   ])('allows creation $description', async ({ sharedWithMe, accessLevel }) => {
-    const { result, outlineRef, ensureViewVisibleInOutline, parent } = renderWithPage(sharedWithMe, { accessLevel });
+    const { result, outlineRef, loadOutline, parent } = renderWithPage(sharedWithMe, { accessLevel });
     const payload = { layout: ViewLayout.Document, name: 'Member-created subpage' };
 
     expect(parent.access_level).toBe(accessLevel);
@@ -131,22 +122,22 @@ describe('workspace member creating a subpage under a shared page', () => {
     await expect(result.current.addPage(parent.view_id, payload)).resolves.toEqual({ view_id: CHILD_PAGE_ID });
 
     expect(PageService.add).toHaveBeenCalledTimes(1);
-    expect(PageService.add).toHaveBeenCalledWith(WORKSPACE_ID, parent.view_id, payload, expect.any(Object));
-    expect(ensureViewVisibleInOutline).toHaveBeenCalledWith(CHILD_PAGE_ID);
-    expect(findView(outlineRef.current ?? [], CHILD_PAGE_ID)?.name).toBe('Member-created subpage');
+    expect(PageService.add).toHaveBeenCalledWith(WORKSPACE_ID, parent.view_id, payload);
+    // The sidebar picks up the new child from the outline refresh.
+    expect(loadOutline).toHaveBeenCalledWith(WORKSPACE_ID, false);
     expect(ViewService.invalidateCache).toHaveBeenCalledWith(WORKSPACE_ID, parent.view_id);
     expect(toast.error).not.toHaveBeenCalled();
   });
 
   it('keeps the guest creation restriction even when the shared page has FullAccess', async () => {
-    const { result, ensureViewVisibleInOutline, parent } = renderWithPage(true, { role: Role.Guest });
+    const { result, loadOutline, parent } = renderWithPage(true, { role: Role.Guest });
 
     await expect(result.current.addPage(parent.view_id, { layout: ViewLayout.Document })).rejects.toThrow(
       'No permission to create pages'
     );
 
     expect(PageService.add).not.toHaveBeenCalled();
-    expect(ensureViewVisibleInOutline).not.toHaveBeenCalled();
+    expect(loadOutline).not.toHaveBeenCalled();
     expect(ViewService.invalidateCache).not.toHaveBeenCalled();
   });
 
@@ -157,26 +148,26 @@ describe('workspace member creating a subpage under a shared page', () => {
     const serverDenial = Object.assign(new Error('Not enough permissions to create a child page'), { code: 1012 });
 
     jest.mocked(PageService.add).mockRejectedValueOnce(serverDenial);
-    const { result, ensureViewVisibleInOutline, parent } = renderWithPage(true, { accessLevel });
+    const { result, loadOutline, parent } = renderWithPage(true, { accessLevel });
 
     await expect(result.current.addPage(parent.view_id, { layout: ViewLayout.Document })).rejects.toBe(serverDenial);
 
     expect(PageService.add).toHaveBeenCalledTimes(1);
-    expect(ensureViewVisibleInOutline).not.toHaveBeenCalled();
+    expect(loadOutline).not.toHaveBeenCalled();
     expect(ViewService.invalidateCache).not.toHaveBeenCalled();
     expect(parent.children).toEqual([]);
   });
 
-  it('preserves a service failure without activating a child or invalidating the parent', async () => {
+  it('preserves a service failure without refreshing the outline or invalidating the parent', async () => {
     const serviceFailure = new Error('Service unavailable');
 
     jest.mocked(PageService.add).mockRejectedValueOnce(serviceFailure);
-    const { result, ensureViewVisibleInOutline, parent } = renderWithPage(true);
+    const { result, loadOutline, parent } = renderWithPage(true);
 
     await expect(result.current.addPage(parent.view_id, { layout: ViewLayout.Document })).rejects.toBe(serviceFailure);
 
     expect(PageService.add).toHaveBeenCalledTimes(1);
-    expect(ensureViewVisibleInOutline).not.toHaveBeenCalled();
+    expect(loadOutline).not.toHaveBeenCalled();
     expect(ViewService.invalidateCache).not.toHaveBeenCalled();
     expect(parent.children).toEqual([]);
   });

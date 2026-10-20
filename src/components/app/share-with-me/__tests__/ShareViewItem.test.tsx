@@ -45,6 +45,7 @@ jest.mock('@/components/app/app.hooks', () => ({
   useUserWorkspaceInfo: () => ({ selectedWorkspace: { role: mockRole } }),
   useAIEnabled: () => false,
   useOpenPageModal: () => mockOpenPageModal,
+  useScheduleDeferredCleanup: () => undefined,
   useToView: () => mockNavigate,
 }));
 jest.mock('@/components/app/hooks/useDatabaseViewCreation', () => ({

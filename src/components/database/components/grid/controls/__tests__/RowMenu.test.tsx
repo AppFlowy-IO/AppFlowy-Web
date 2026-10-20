@@ -13,19 +13,29 @@ jest.mock('react-i18next', () => ({
 }));
 
 jest.mock('../HoverControls.hooks', () => {
-  const { useRowCreationAction } = jest.requireActual('@/components/database/hooks/useRowCreationAction');
+  const { useState: useMockState } = jest.requireActual('react');
 
   return {
+    // Mirrors useHoverControlsActions: duplicate failures are logged, never rethrown.
     useHoverControlsActions: () => {
-      const { pending, run } = useRowCreationAction();
+      const [duplicateLoading, setDuplicateLoading] = useMockState(false);
 
       return {
         addAboveLoading: false,
         addBelowLoading: false,
-        duplicateLoading: pending,
+        duplicateLoading,
         onAddRowAbove: jest.fn(),
         onAddRowBelow: jest.fn(),
-        onDuplicateRow: () => run(mockDuplicateRow),
+        onDuplicateRow: async () => {
+          setDuplicateLoading(true);
+          try {
+            await mockDuplicateRow();
+          } catch {
+            // Logged by the real hook.
+          } finally {
+            setDuplicateLoading(false);
+          }
+        },
       };
     },
   };
