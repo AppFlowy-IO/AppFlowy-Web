@@ -1,3 +1,4 @@
+import { autoScrollForElements } from '@atlaskit/pragmatic-drag-and-drop-auto-scroll/element';
 import { Skeleton } from '@mui/material';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
@@ -6,10 +7,7 @@ import { Editable, ReactEditor, RenderElementProps, useSlate } from 'slate-react
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
-import { YHistoryEditor } from '@/application/slate-yjs/plugins/withHistory';
-import { getBlockEntry } from '@/application/slate-yjs/utils/editor';
 import { BlockType } from '@/application/types';
-import { registerSharedAutoScroll } from '@/components/_shared/reorder/sharedAutoScroll';
 import { BlockPopoverProvider } from '@/components/editor/components/block-popover/BlockPopoverContext';
 import { useDecorate } from '@/components/editor/components/blocks/code/useDecorate';
 import { useFindReplaceDecorations } from '@/components/editor/components/find-replace/FindReplaceContext';
@@ -20,6 +18,8 @@ import { PanelProvider } from '@/components/editor/components/panels/PanelsConte
 import { RemoteSelectionsLayer } from '@/components/editor/components/remote-selections';
 import { useEditorContext, useEditorLocalState } from '@/components/editor/EditorContext';
 import { useEditorPreviewId } from '@/components/editor/EditorPreviewContext';
+import { getBlockEntry } from '@/application/slate-yjs/utils/editor';
+import { YHistoryEditor } from '@/application/slate-yjs/plugins/withHistory';
 import { useShortcuts } from '@/components/editor/shortcut.hooks';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
 import { getScrollParent } from '@/components/global-comment/utils';
@@ -196,7 +196,8 @@ const EditorEditable = () => {
   );
 
   useEffect(() => {
-    // Previews use the host editor's scroll registration.
+    // Previews can share the host editor's scroll container. Atlaskit keeps one
+    // registration per element, so preview cleanup would remove the host's.
     if (previewId) return;
 
     try {
@@ -205,7 +206,7 @@ const EditorEditable = () => {
 
       if (!scrollContainer) return;
 
-      return registerSharedAutoScroll({
+      return autoScrollForElements({
         element: scrollContainer,
       });
     } catch (e) {

@@ -11,7 +11,7 @@ import { isSameUserUid } from '@/application/user-uid';
 import { notify } from '@/components/_shared/notify';
 import { useLoadMentionableUsers, useGetSubscriptions, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { useIsOfficialHosted } from '@/components/app/hooks/useServerInfo';
-import { useWorkspaceSubscriptionPlan } from '@/components/app/hooks/useWorkspaceSubscriptionPlan';
+import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
 import { CopyLink } from '@/components/app/share/CopyLink';
 import { GeneralAccess } from '@/components/app/share/GeneralAccess';
 import { InviteGuest } from '@/components/app/share/InviteGuest';
@@ -114,9 +114,7 @@ function SharePanel({
   const getSubscriptions = useGetSubscriptions();
 
   const isHosted = useIsOfficialHosted();
-  const { activeSubscriptionPlan } = useWorkspaceSubscriptionPlan({
-    getSubscriptions,
-    workspaceId: selectedWorkspace?.id,
+  const { activeSubscriptionPlan } = useSubscriptionPlan(getSubscriptions, {
     enabled: showInviteControls && (isOwner || isMember),
   });
 

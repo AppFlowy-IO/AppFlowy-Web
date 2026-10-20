@@ -4,7 +4,6 @@ import * as Y from 'yjs';
 
 import { assertAtomicCreationAvailable } from '@/application/atomic-creation';
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs/context';
-import { createCloudRow, type CloudRowCreationIntent } from '@/application/database-yjs/creation/create-row';
 import { FieldType, RowMetaKey } from '@/application/database-yjs/database.type';
 import { getMetaIdMap, getRowKey } from '@/application/database-yjs/row_meta';
 import { DatabaseRowTemplateStore } from '@/application/database-yjs/template';
@@ -26,17 +25,12 @@ import {
   YjsEditorKey,
 } from '@/application/types';
 import { AFConfigContext } from '@/components/main/app.hooks';
-import { getErrorMessage } from '@/utils/errors';
 
 import { DatabaseTemplateButton } from '../DatabaseTemplateButton';
 
 import type { ReactNode } from 'react';
 
 jest.unmock('lodash-es/isEqual');
-jest.mock('@/application/database-yjs/creation/create-row', () => ({
-  ...jest.requireActual('@/application/database-yjs/creation/create-row'),
-  createCloudRow: jest.fn(),
-}));
 jest.mock('@/application/atomic-creation', () => ({
   captureAtomicCreationOwner: jest.fn((_workspace: string, assertCurrent?: () => void) => ({ assertCurrent: () => assertCurrent?.() })),
   assertAtomicCreationAvailable: jest.fn(),
@@ -164,27 +158,6 @@ function setup() {
     updatePage,
     navigateToRow,
   };
-  const commitRow = async (intent: CloudRowCreationIntent) => {
-    intent.assertCurrent();
-    const rowDoc = await intent.registerRow();
-
-    Y.applyUpdate(rowDoc, Y.encodeStateAsUpdate(intent.rowDoc));
-    databaseDoc.transact(() => {
-      const orders = view.get(YjsDatabaseKey.row_orders);
-      const position = intent.position;
-      const index =
-        position.kind === 'after'
-          ? orders.toArray().findIndex((order) => order.id === position.row_id) + 1
-          : position.kind === 'end'
-          ? orders.length
-          : 0;
-
-      orders.insert(index, [{ id: intent.rowId, height: 36 }]);
-    }, 'remote');
-    return intent.rowId;
-  };
-
-  jest.mocked(createCloudRow).mockImplementation(commitRow);
 
   const Wrapper = ({ children }: { children: ReactNode }) => (
     <AFConfigContext.Provider
@@ -194,13 +167,12 @@ function setup() {
     </AFConfigContext.Provider>
   );
 
-  return { Wrapper, context, database, view, rows, createRow, createRowDocument, updatePage, navigateToRow, commitRow };
+  return { Wrapper, context, database, view, rows, createRow, createRowDocument, updatePage, navigateToRow };
 }
 
 describe('DatabaseTemplateButton', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    jest.mocked(createCloudRow).mockReset();
     jest.mocked(getCachedProviderDoc).mockReset();
     mockPendingDocumentMetaFlush = undefined;
   });
@@ -507,10 +479,6 @@ describe('DatabaseTemplateButton', () => {
     const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
 
     expect(row.get(YjsDatabaseKey.cells).get(nameFieldId)?.get(YjsDatabaseKey.data)).toBe('From default');
-    expect(createCloudRow).toHaveBeenCalledTimes(1);
-    expect(createCloudRow).toHaveBeenCalledWith(
-      expect.objectContaining({ template: expect.objectContaining({ templateId: template.templateId }) })
-    );
     expect(navigateToRow).toHaveBeenCalledWith(rowId);
   });
 
@@ -604,10 +572,6 @@ describe('DatabaseTemplateButton', () => {
       .get(YjsEditorKey.database_row) as YDatabaseRow;
 
     expect(row.get(YjsDatabaseKey.cells).get(nameFieldId)?.get(YjsDatabaseKey.data)).toBe('From selected template');
-    expect(createCloudRow).toHaveBeenCalledTimes(1);
-    expect(createCloudRow).toHaveBeenCalledWith(
-      expect.objectContaining({ template: expect.objectContaining({ templateId: template.templateId }) })
-    );
     expect(navigateToRow).toHaveBeenCalledWith(rowId);
   });
 
@@ -878,56 +842,42 @@ describe('DatabaseTemplateButton', () => {
   });
 
   it('disables row creation and ignores repeated clicks while an action is pending', async () => {
-    const { Wrapper, commitRow, createRow, view, navigateToRow } = setup();
+    const { Wrapper, context, createRow, view } = setup();
     let resolveCreate!: () => void;
     const createGate = new Promise<void>((resolve) => {
       resolveCreate = resolve;
     });
-
-    jest.mocked(createCloudRow).mockImplementationOnce(async (intent) => {
+    const pendingCreateRow = jest.fn(async (key: string) => {
       await createGate;
-      return commitRow(intent);
+      return createRow(key);
     });
 
+    context.createRow = pendingCreateRow;
     render(<DatabaseTemplateButton />, { wrapper: Wrapper });
     const newRowButton = screen.getByTestId('database-new-row-button');
 
     fireEvent.click(newRowButton);
     fireEvent.click(newRowButton);
 
-    await waitFor(() => expect(createCloudRow).toHaveBeenCalledTimes(1));
-    expect(createRow).not.toHaveBeenCalled();
-    expect(view.get(YjsDatabaseKey.row_orders)).toHaveLength(0);
-    expect(navigateToRow).not.toHaveBeenCalled();
+    expect(pendingCreateRow).toHaveBeenCalledTimes(1);
     expect(newRowButton.hasAttribute('disabled')).toBe(true);
     expect(screen.getByTestId('database-template-split-button').getAttribute('aria-busy')).toBe('true');
 
-    await act(async () => resolveCreate());
+    resolveCreate();
     await waitFor(() => expect(view.get(YjsDatabaseKey.row_orders)).toHaveLength(1));
     await waitFor(() => expect(newRowButton.hasAttribute('disabled')).toBe(false));
-    expect(createCloudRow).toHaveBeenCalledTimes(1);
-    expect(navigateToRow).toHaveBeenCalledTimes(1);
   });
 
   it('reports row creation failures and resets its pending state', async () => {
-    const { Wrapper, createRow, view, navigateToRow } = setup();
-    const failure = new Error('create failed');
+    const { Wrapper, context } = setup();
 
-    jest.mocked(createCloudRow).mockRejectedValueOnce(failure);
+    context.createRow = jest.fn(async () => Promise.reject(new Error('create failed')));
     render(<DatabaseTemplateButton />, { wrapper: Wrapper });
     const newRowButton = screen.getByTestId('database-new-row-button');
 
     fireEvent.click(newRowButton);
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(getErrorMessage(failure)));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('create failed'));
     expect(newRowButton.hasAttribute('disabled')).toBe(false);
-    expect(createCloudRow).toHaveBeenCalledTimes(1);
-    expect(createRow).not.toHaveBeenCalled();
-    expect(view.get(YjsDatabaseKey.row_orders)).toHaveLength(0);
-    expect(navigateToRow).not.toHaveBeenCalled();
-
-    fireEvent.click(newRowButton);
-    await waitFor(() => expect(view.get(YjsDatabaseKey.row_orders)).toHaveLength(1));
-    expect(createCloudRow).toHaveBeenCalledTimes(2);
   });
 });

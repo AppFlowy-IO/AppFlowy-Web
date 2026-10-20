@@ -1423,8 +1423,6 @@ export type LoadView = (
 
 export interface LoadRowDocumentOptions {
   maxAttempts?: number;
-  /** Require a successful server fetch instead of falling back to local cached content. */
-  requireServerFetch?: boolean;
   rowDocumentSource?: RowDocumentSourcePayload;
 }
 

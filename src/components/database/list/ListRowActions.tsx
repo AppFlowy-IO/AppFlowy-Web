@@ -12,7 +12,6 @@ import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { DeleteRowConfirm } from '@/components/database/components/database-row/DeleteRowConfirm';
 import { ClearSortingConfirm } from '@/components/database/components/sorts/ClearSortingConfirm';
-import { useRowCreationAction } from '@/components/database/hooks/useRowCreationAction';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -64,20 +63,14 @@ export function RowActionsMenu({
 }) {
   const { t } = useTranslation();
   const [loadingAction, setLoadingAction] = useState<'above' | 'below' | 'duplicate' | null>(null);
-  const { pending, run: runCreation } = useRowCreationAction();
-  const run = useCallback(
-    async (kind: 'above' | 'below' | 'duplicate', action: () => Promise<unknown>) => {
-      await runCreation(async () => {
-        setLoadingAction(kind);
-        try {
-          return await action();
-        } finally {
-          setLoadingAction(null);
-        }
-      });
-    },
-    [runCreation]
-  );
+  const run = useCallback(async (kind: 'above' | 'below' | 'duplicate', action: () => Promise<unknown>) => {
+    setLoadingAction(kind);
+    try {
+      await action();
+    } finally {
+      setLoadingAction(null);
+    }
+  }, []);
   const hasSorts = useListHasSorts();
   const [menuOpen, setMenuOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -142,8 +135,6 @@ export function RowActionsMenu({
           aria-label={t('tooltip.addNewRow')}
           className='h-[30px] w-5 rounded-[4px] p-[3px] text-icon-secondary'
           data-testid={`list-row-add-below-${rowId}`}
-          disabled={pending}
-          aria-busy={pending}
           loading={loadingAction === 'above' || loadingAction === 'below'}
           onClick={(event) => {
             event.stopPropagation();
@@ -196,7 +187,6 @@ export function RowActionsMenu({
                 {actions.map((action) => (
                   <DropdownMenuItem
                     data-testid={action.testId}
-                    disabled={pending}
                     key={action.testId}
                     onSelect={async (event) => {
                       event.preventDefault();

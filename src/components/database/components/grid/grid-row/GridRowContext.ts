@@ -2,11 +2,12 @@ import { createContext, useContext } from 'react';
 
 type GridRowContextType = {
   isSticky?: boolean;
+  resizeRow: () => void;
 };
 
 export const GridRowContext = createContext<GridRowContextType | undefined>(undefined);
 
-export function useGridRowContext() {
+export function useGridRowContext () {
   const context = useContext(GridRowContext);
 
   if (!context) {

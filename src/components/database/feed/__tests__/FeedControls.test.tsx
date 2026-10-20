@@ -2,7 +2,6 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { toast } from 'sonner';
 
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch';
-import { getErrorMessage } from '@/utils/errors';
 import { Log } from '@/utils/log';
 
 import { FeedEmptyState, FeedLoadMore, FeedNewRow } from '../FeedControls';
@@ -42,7 +41,7 @@ describe('Feed controls', () => {
       fireEvent.click(screen.getByTestId('feed-new-row'));
     });
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(getErrorMessage(new Error('boom'))));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('boom'));
     expect(Log.error).toHaveBeenCalled();
     expect(screen.getByTestId<HTMLButtonElement>('feed-new-row').disabled).toBe(false);
   });

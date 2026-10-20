@@ -9,43 +9,15 @@ import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 import { ReactComponent as ColorSvg } from '@/assets/icons/text_color.svg';
 import { ColorTile } from '@/components/_shared/color-picker';
 import { CustomColorPicker } from '@/components/_shared/color-picker/CustomColorPicker';
+import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
 import { useSelectionToolbarContext } from '@/components/editor/components/toolbar/selection-toolbar/SelectionToolbar.hooks';
-import { useEditorSubscriptionPlan } from '@/components/editor/useEditorSubscriptionPlan';
+import { useEditorContext } from '@/components/editor/EditorContext';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { renderColor } from '@/utils/color';
 
 import ActionButton from './ActionButton';
-
-/** Keep saved Pro colors intact while a deferred plan read is still unknown. */
-export function appendCustomColor(
-  storageKey: string,
-  visibleColors: string[],
-  color: string,
-  maxCustomColors: number,
-  planUnknown: boolean
-) {
-  let storedColors = visibleColors;
-
-  if (planUnknown) {
-    try {
-      const parsed: unknown = JSON.parse(localStorage.getItem(storageKey) ?? '[]');
-
-      if (Array.isArray(parsed)) storedColors = parsed.filter((value): value is string => typeof value === 'string');
-    } catch (error) {
-      console.error('Failed to parse custom colors:', error);
-    }
-  }
-
-  const previousColors = [...new Set([...storedColors, ...visibleColors])].filter((value) => value !== color);
-  // Storage can preserve the largest palette without exposing paid slots while
-  // billing is unavailable. Known plans keep their normal four/nine color cap.
-  const updatedColors = [...previousColors, color].slice(-(planUnknown ? 9 : maxCustomColors));
-
-  localStorage.setItem(storageKey, JSON.stringify(updatedColors));
-  return updatedColors.slice(-maxCustomColors);
-}
 
 function TextColor({
   focusEditor,
@@ -55,6 +27,7 @@ function TextColor({
   toggleDisableEditorFocus: () => void;
 }) {
   const { t } = useTranslation();
+  const { getSubscriptions } = useEditorContext();
   const { visible, forceShow } = useSelectionToolbarContext();
   const editor = useSlateStatic() as YjsEditor;
   const marks = CustomEditor.getAllMarks(editor).map(
@@ -70,7 +43,7 @@ function TextColor({
   const recentColorToSave = useRef<string | null>(null);
   const initialColor = useRef<string | null>(null);
 
-  const { isPro, activeSubscriptionPlan } = useEditorSubscriptionPlan(isOpen);
+  const { isPro } = useSubscriptionPlan(getSubscriptions);
   const maxCustomColors = isPro ? 9 : 4;
 
   const isCustomColor = useCallback((color: string) => {
@@ -91,7 +64,7 @@ function TextColor({
 
     try {
       const customParsed: string[] = custom ? JSON.parse(custom) : [];
-      let updatedCustomColors = customParsed.slice(-maxCustomColors);
+      let updatedCustomColors = customParsed.slice(0, maxCustomColors);
 
       if (singleColor !== undefined && isCustomColor(singleColor) && !updatedCustomColors.includes(singleColor)) {
         updatedCustomColors = [singleColor, ...updatedCustomColors].slice(0, maxCustomColors);
@@ -102,10 +75,6 @@ function TextColor({
       console.error('Failed to parse recent colors:', e);
     }
   }, [isCustomColor, maxCustomColors, singleColor]);
-
-  useEffect(() => {
-    if (isOpen) loadRecentAndCustomColors();
-  }, [isOpen, loadRecentAndCustomColors]);
 
   useEffect(() => {
     if (!visible && isOpen) {
@@ -168,17 +137,12 @@ function TextColor({
         return;
       }
 
-      const updatedCustomColors = appendCustomColor(
-        'custom-text-colors',
-        customColors,
-        color,
-        maxCustomColors,
-        activeSubscriptionPlan === null
-      );
+      const updatedCustomColors = [...customColors, color].slice(-maxCustomColors);
 
       setCustomColors(updatedCustomColors);
+      localStorage.setItem('custom-text-colors', JSON.stringify(updatedCustomColors));
     },
-    [activeSubscriptionPlan, customColors, maxCustomColors]
+    [customColors, maxCustomColors]
   );
 
   const saveRecentColors = useCallback(() => {

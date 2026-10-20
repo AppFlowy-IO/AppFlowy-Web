@@ -8,8 +8,9 @@ import { BlockType } from '@/application/types';
 import { ReactComponent as ChevronRightIcon } from '@/assets/icons/block-menu-chevron-right.svg';
 import { ColorTile, ColorTileIcon } from '@/components/_shared/color-picker';
 import { Origins, Popover } from '@/components/_shared/popover';
+import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
 import { BlockNode } from '@/components/editor/editor.type';
-import { useEditorSubscriptionPlan } from '@/components/editor/useEditorSubscriptionPlan';
+import { useEditorContext } from '@/components/editor/EditorContext';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ColorEnum, renderColor } from '@/utils/color';
@@ -26,6 +27,7 @@ const origins: Origins = {
 };
 
 function Color({ node, onSelectColor }: { node: BlockNode; onSelectColor: () => void }) {
+  const { getSubscriptions } = useEditorContext();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
   const { t } = useTranslation();
@@ -34,7 +36,7 @@ function Color({ node, onSelectColor }: { node: BlockNode; onSelectColor: () => 
   const hasNonTransparentBg = [BlockType.CalloutBlock, BlockType.OutlineBlock].includes(node.type);
   const selectedColor = node.data?.bgColor || (hasNonTransparentBg ? ColorEnum.Tint10 : '');
 
-  const { isPro } = useEditorSubscriptionPlan(open);
+  const { isPro } = useSubscriptionPlan(getSubscriptions);
 
   const builtinColors = useMemo(() => {
     const proPalette = [

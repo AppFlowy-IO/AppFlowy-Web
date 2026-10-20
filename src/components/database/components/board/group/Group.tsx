@@ -1,3 +1,4 @@
+import { autoScrollForElements } from '@atlaskit/pragmatic-drag-and-drop-auto-scroll/element';
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -9,7 +10,7 @@ import {
   useReadOnly,
   useRowsByGroup,
 } from '@/application/database-yjs';
-import { registerSharedAutoScroll } from '@/components/_shared/reorder/sharedAutoScroll';
+import { useNewRowDispatch } from '@/application/database-yjs/dispatch';
 import KanbanSkeleton from '@/components/_shared/skeleton/KanbanSkeleton';
 import { useBoardActions } from '@/components/database/board/BoardProvider';
 import { BoardDragContext } from '@/components/database/components/board/drag-and-drop/board-context';
@@ -76,7 +77,8 @@ const HydratedGroup = ({ groupId, columns, groupResult, fieldId, groupRowsReady 
     },
     [groupResult]
   );
-  const { createCard, setSelectedCardIds } = useBoardActions();
+  const onNewCard = useNewRowDispatch();
+  const { setEditingCardId, setSelectedCardIds } = useBoardActions();
   const [element, setElement] = useState<HTMLElement | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const deleteRowIdsRef = useRef<string[]>([]);
@@ -103,10 +105,19 @@ const HydratedGroup = ({ groupId, columns, groupResult, fieldId, groupRowsReady 
   });
 
   const addCardBefore = useCallback(
-    (columnId: string) => {
-      void createCard(columnId);
+    async (columnId: string) => {
+      if (!fieldId) return;
+      const cellsData = {
+        [fieldId]: columnId,
+      };
+
+      const rowId = await onNewCard({ cellsData });
+
+      if (!rowId) return;
+
+      setEditingCardId(`${columnId}/${rowId}`);
     },
-    [createCard]
+    [fieldId, onNewCard, setEditingCardId]
   );
 
   const { contextValue, scrollableRef: ref } = useColumnsDrag(groupId, columns, getCards, fieldId);
@@ -177,7 +188,7 @@ const HydratedGroup = ({ groupId, columns, groupResult, fieldId, groupRowsReady 
   useEffect(() => {
     if (!verticalScrollContainer || readOnly) return;
 
-    const cleanup = registerSharedAutoScroll({
+    const cleanup = autoScrollForElements({
       element: verticalScrollContainer,
       canScroll: ({ source }) => source.data.instanceId === contextValue.instanceId && source.data.type === 'card',
     });

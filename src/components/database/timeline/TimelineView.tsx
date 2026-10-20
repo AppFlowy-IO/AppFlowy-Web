@@ -43,7 +43,6 @@ import { useAIEnabled } from '@/components/app/app.hooks';
 import { type Edge } from '@/components/database/components/drag-and-drop/useRowDnd';
 import { FieldDisplay } from '@/components/database/components/field';
 import { useTimeFormat } from '@/components/database/fullcalendar/hooks/useTimeFormat';
-import { RowCreationSpinner, useRowCreationAction } from '@/components/database/hooks/useRowCreationAction';
 import { shouldUseFixedDatabaseViewport } from '@/components/database/layout';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -638,10 +637,9 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
       updateSetting({ showTable: !showSidebar });
     }
   }, [permissions.readOnly, showSidebar, updateSetting, viewId]);
-  const { pending: creatingRow, run: runRowCreation } = useRowCreationAction();
   const handleNewRow = useCallback(() => {
-    void runRowCreation(() => newRow({ tailing: true, openAfterCreate: true }));
-  }, [newRow, runRowCreation]);
+    void newRow({ tailing: true, openAfterCreate: true }).catch(() => undefined);
+  }, [newRow]);
 
   // Grouped views create rows from their group footers instead of one global footer.
   const showNewRowFooter = !permissions.readOnly && !grouping.isGrouped;
@@ -909,8 +907,6 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                     )}
                     style={{ width: sidebarWidth }}
                     data-testid='timeline-new-row'
-                    aria-disabled={creatingRow}
-                    aria-busy={creatingRow}
                     aria-label={t('grid.row.newRow', { defaultValue: 'New row' })}
                     onClick={handleNewRow}
                     onKeyDown={(event) => {
@@ -920,11 +916,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                       }
                     }}
                   >
-                    {creatingRow ? (
-                      <RowCreationSpinner className='h-5 w-5' />
-                    ) : (
-                      <PlusIcon aria-hidden className='h-5 w-5' />
-                    )}
+                    <PlusIcon aria-hidden className='h-5 w-5' />
                     {showSidebar ? t('grid.row.newRow', { defaultValue: 'New row' }) : null}
                   </div>
                 </div>

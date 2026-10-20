@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
-import { RowCreationSpinner, useRowCreationAction } from '@/components/database/hooks/useRowCreationAction';
 import { cn } from '@/lib/utils';
+import { Log } from '@/utils/log';
 
 export function FeedLoadingIndicator({ fillAvailable = false }: { fillAvailable?: boolean }) {
   const { t } = useTranslation();
@@ -55,7 +57,19 @@ export function FeedLoadMore({ onLoadMore, remainingCount }: { onLoadMore: () =>
 export function FeedNewRow() {
   const { t } = useTranslation();
   const createRow = useNewRowDispatch();
-  const { pending: creating, run } = useRowCreationAction();
+  const [creating, setCreating] = useState(false);
+
+  const handleCreateRow = async () => {
+    setCreating(true);
+    try {
+      await createRow({ openAfterCreate: true, tailing: true });
+    } catch (error) {
+      Log.error('[FeedNewRow] failed to create row', error);
+      toast.error(error instanceof Error ? error.message : t('error.generalError'));
+    } finally {
+      setCreating(false);
+    }
+  };
 
   return (
     <button
@@ -66,10 +80,10 @@ export function FeedNewRow() {
       )}
       data-testid='feed-new-row'
       disabled={creating}
-      onClick={() => void run(() => createRow({ openAfterCreate: true, tailing: true }))}
+      onClick={() => void handleCreateRow()}
       type='button'
     >
-      {creating ? <RowCreationSpinner /> : <PlusIcon aria-hidden='true' className={'h-[18px] w-[18px]'} />}
+      <PlusIcon aria-hidden='true' className={cn('h-[18px] w-[18px]', creating && 'animate-spin motion-reduce:animate-none')} />
       {t('grid.row.newRow')}
     </button>
   );

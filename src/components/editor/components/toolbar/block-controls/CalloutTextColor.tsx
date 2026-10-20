@@ -7,9 +7,10 @@ import { CustomEditor } from '@/application/slate-yjs/command';
 import { ReactComponent as ChevronRightIcon } from '@/assets/icons/block-menu-chevron-right.svg';
 import { ColorTile } from '@/components/_shared/color-picker';
 import { Origins, Popover } from '@/components/_shared/popover';
+import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
 import { calloutPaletteTextColor, toCalloutColor } from '@/components/editor/components/blocks/callout/callout.utils';
 import { CalloutNode } from '@/components/editor/editor.type';
-import { useEditorSubscriptionPlan } from '@/components/editor/useEditorSubscriptionPlan';
+import { useEditorContext } from '@/components/editor/EditorContext';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ColorEnum, renderColor, toTint } from '@/utils/color';
@@ -39,6 +40,7 @@ function TextColorPreview({ color }: { color: string }) {
 }
 
 function CalloutTextColor({ node, onSelectColor }: { node: CalloutNode; onSelectColor: () => void }) {
+  const { getSubscriptions } = useEditorContext();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
   const { t } = useTranslation();
@@ -46,7 +48,7 @@ function CalloutTextColor({ node, onSelectColor }: { node: CalloutNode; onSelect
   const blockId = node.blockId;
   const selectedColor = (node.data?.textColor || node.data?.bgColor || ColorEnum.Tint10) as ColorEnum;
 
-  const { isPro } = useEditorSubscriptionPlan(open);
+  const { isPro } = useSubscriptionPlan(getSubscriptions);
 
   const builtinColors = useMemo(() => {
     const proPalette = [

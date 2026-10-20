@@ -16,7 +16,6 @@ import { Tag } from '@/components/_shared/tag';
 import { SelectOptionColorMap, SelectOptionFgColorMap } from '@/components/database/components/cell/cell.const';
 import type { RenderRow } from '@/components/database/components/grid/grid-row';
 import { useCreateGridGroupRow } from '@/components/database/components/grid/grid-row/GridNewRow';
-import { RowCreationSpinner, useRowCreationAction } from '@/components/database/hooks/useRowCreationAction';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -46,7 +45,6 @@ function GridGroupHeader({ data }: { data: RenderRow }) {
   const setVisibility = useSetGridGroupVisibilityDispatch(data.groupConfigId, data.groupFieldId);
   const clearGrouping = useClearGroupByFieldDispatch();
   const createRow = useCreateGridGroupRow(data.groupFieldId, data.groupId);
-  const { pending, run } = useRowCreationAction();
   const isCheckbox = data.groupFieldType === FieldType.Checkbox;
   const isChecked = data.groupId === 'Yes';
   const optionBackgroundToken = data.groupOption ? SelectOptionColorMap[data.groupOption.color] : undefined;
@@ -140,12 +138,10 @@ function GridGroupHeader({ data }: { data: RenderRow }) {
                 aria-label={t('grid.row.newRow', 'New row in group')}
                 className='flex h-7 w-7 items-center justify-center rounded-300 opacity-0 hover:bg-fill-content-hover focus-visible:opacity-100 group-focus-within/grid-group-header:opacity-100 group-hover/grid-group-header:opacity-100'
                 data-testid='grid-group-new-row'
-                disabled={pending}
-                aria-busy={pending}
-                onClick={() => void run(createRow)}
+                onClick={() => void createRow()}
                 type='button'
               >
-                {pending ? <RowCreationSpinner /> : <PlusIcon className='h-4 w-4' />}
+                <PlusIcon className='h-4 w-4' />
               </button>
             </TooltipTrigger>
             <TooltipContent>{t('grid.selectOption.createNew', 'Create a new')}</TooltipContent>

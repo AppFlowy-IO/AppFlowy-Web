@@ -8,15 +8,16 @@ import { EditorMarkFormat } from '@/application/slate-yjs/types';
 import { ReactComponent as ColorSvg } from '@/assets/icons/text_highlight.svg';
 import { ColorTile } from '@/components/_shared/color-picker';
 import { CustomColorPicker } from '@/components/_shared/color-picker/CustomColorPicker';
+import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
 import { useSelectionToolbarContext } from '@/components/editor/components/toolbar/selection-toolbar/SelectionToolbar.hooks';
-import { useEditorSubscriptionPlan } from '@/components/editor/useEditorSubscriptionPlan';
+import { useEditorContext } from '@/components/editor/EditorContext';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { renderColor } from '@/utils/color';
 
 import ActionButton from './ActionButton';
-import { appendCustomColor, CreateCustomColorTile } from './TextColor';
+import { CreateCustomColorTile } from './TextColor';
 
 function BgColor({
   focusEditor: focusEditor,
@@ -26,6 +27,7 @@ function BgColor({
   toggleDisableEditorFocus: () => void;
 }) {
   const { t } = useTranslation();
+  const { getSubscriptions } = useEditorContext();
   const { visible, forceShow } = useSelectionToolbarContext();
   const editor = useSlateStatic() as YjsEditor;
   const marks = CustomEditor.getAllMarks(editor).map(
@@ -41,7 +43,7 @@ function BgColor({
   const recentColorToSave = useRef<string | null>(null);
   const initialColor = useRef<string | null>(null);
 
-  const { isPro, activeSubscriptionPlan } = useEditorSubscriptionPlan(isOpen);
+  const { isPro } = useSubscriptionPlan(getSubscriptions);
   const maxCustomColors = isPro ? 9 : 4;
 
   const isCustomColor = useCallback((color: string) => {
@@ -62,7 +64,7 @@ function BgColor({
 
     try {
       const customParsed: string[] = custom ? JSON.parse(custom) : [];
-      let updatedCustomColors = customParsed.slice(-maxCustomColors);
+      let updatedCustomColors = customParsed.slice(0, maxCustomColors);
 
       if (singleColor !== undefined && isCustomColor(singleColor) && !updatedCustomColors.includes(singleColor)) {
         updatedCustomColors = [singleColor, ...updatedCustomColors].slice(0, maxCustomColors);
@@ -73,10 +75,6 @@ function BgColor({
       console.error('Failed to parse recent colors:', e);
     }
   }, [isCustomColor, maxCustomColors, singleColor]);
-
-  useEffect(() => {
-    if (isOpen) loadRecentAndCustomColors();
-  }, [isOpen, loadRecentAndCustomColors]);
 
   useEffect(() => {
     if (!visible && isOpen) {
@@ -139,17 +137,12 @@ function BgColor({
         return;
       }
 
-      const updatedCustomColors = appendCustomColor(
-        'custom-bg-colors',
-        customColors,
-        color,
-        maxCustomColors,
-        activeSubscriptionPlan === null
-      );
+      const updatedCustomColors = [...customColors, color].slice(-maxCustomColors);
 
       setCustomColors(updatedCustomColors);
+      localStorage.setItem('custom-bg-colors', JSON.stringify(updatedCustomColors));
     },
-    [activeSubscriptionPlan, customColors, maxCustomColors]
+    [customColors, maxCustomColors]
   );
 
   const saveRecentColors = useCallback(() => {

@@ -6,7 +6,6 @@ import { useNewRowDispatch } from '@/application/database-yjs/dispatch';
 import { getGroupRowCellsData } from '@/application/database-yjs/group-row';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { useGridContext } from '@/components/database/grid/useGridContext';
-import { RowCreationSpinner, useRowCreationAction } from '@/components/database/hooks/useRowCreationAction';
 
 export const getGridGroupCellsData = getGroupRowCellsData;
 
@@ -36,25 +35,21 @@ export function useCreateGridGroupRow(groupFieldId?: string, groupId?: string) {
 function GridNewRow({ groupFieldId, groupId }: { groupFieldId?: string; groupId?: string }) {
   const { t } = useTranslation();
   const createRow = useCreateGridGroupRow(groupFieldId, groupId);
-  const { pending, run } = useRowCreationAction();
 
   return (
-    <button
-      type='button'
-      disabled={pending}
-      aria-busy={pending}
+    <div
       data-testid='grid-new-row'
       onClick={() => {
-        void run(createRow);
+        void createRow();
       }}
       className={
         'flex h-[36px] w-full cursor-pointer items-center gap-1.5 border-b border-t border-border-primary bg-fill-content px-3 py-2 text-sm font-medium text-text-secondary hover:bg-fill-content-hover'
       }
       data-group-id={groupId}
     >
-      {pending ? <RowCreationSpinner className='h-5 w-5' /> : <PlusIcon className={'h-5 w-5'} />}
+      <PlusIcon className={'h-5 w-5'} />
       {t('grid.row.newRow')}
-    </button>
+    </div>
   );
 }
 

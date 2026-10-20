@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useDatabaseFields, useDatabaseView } from '@/application/database-yjs';
 import { useDuplicateRowDispatch, useNewRowDispatch } from '@/application/database-yjs/dispatch';
 import { getGridGroupCellsData } from '@/components/database/components/grid/grid-row/GridNewRow';
 import { useGridContext, useIsGridRowHovered } from '@/components/database/grid/useGridContext';
-import { useRowCreationAction } from '@/components/database/hooks/useRowCreationAction';
 
 export function useHoverControlsDisplay(rowKey: string) {
   const ref = useRef<HTMLDivElement>(null);
@@ -47,9 +46,9 @@ export function useHoverControlsDisplay(rowKey: string) {
 }
 
 export function useHoverControlsActions(rowId: string, groupFieldId?: string, groupId?: string) {
-  const { pending: addBelowLoading, run: runBelow } = useRowCreationAction();
-  const { pending: addAboveLoading, run: runAbove } = useRowCreationAction();
-  const { pending: duplicateLoading, run: runDuplicate } = useRowCreationAction();
+  const [addBelowLoading, setAddBelowLoading] = useState<boolean>(false);
+  const [addAboveLoading, setAddAboveLoading] = useState<boolean>(false);
+  const [duplicateLoading, setDuplicateLoading] = useState<boolean>(false);
   const { rowOrders } = useGridContext();
   const onNewRow = useNewRowDispatch();
   const duplicateRow = useDuplicateRowDispatch();
@@ -61,20 +60,50 @@ export function useHoverControlsActions(rowId: string, groupFieldId?: string, gr
   );
 
   const onAddRowBelow = useCallback(async () => {
-    await runBelow(() => onNewRow({ beforeRowId: rowId, cellsData: getCellsData() }));
-  }, [getCellsData, onNewRow, rowId, runBelow]);
+    if (!rowOrders) {
+      throw new Error('No rows');
+    }
+
+    setAddBelowLoading(true);
+
+    try {
+      await onNewRow({ beforeRowId: rowId, cellsData: getCellsData() });
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setAddBelowLoading(false);
+    }
+  }, [getCellsData, onNewRow, rowId, rowOrders]);
 
   const onAddRowAbove = useCallback(async () => {
-    if (!rowOrders) return;
+    if (!rowOrders) {
+      throw new Error('No rows');
+    }
+
+    setAddAboveLoading(true);
     const index = rowOrders.findIndex((row) => row.id === rowId);
     const beforeRowId = index > 0 ? rowOrders[index - 1].id : undefined;
 
-    await runAbove(() => onNewRow({ beforeRowId, cellsData: getCellsData() }));
-  }, [getCellsData, onNewRow, rowId, rowOrders, runAbove]);
+    try {
+      await onNewRow({ beforeRowId, cellsData: getCellsData() });
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setAddAboveLoading(false);
+    }
+  }, [getCellsData, onNewRow, rowId, rowOrders]);
 
   const onDuplicateRow = useCallback(async () => {
-    await runDuplicate(() => duplicateRow(rowId));
-  }, [duplicateRow, rowId, runDuplicate]);
+    setDuplicateLoading(true);
+
+    try {
+      await duplicateRow(rowId);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setDuplicateLoading(false);
+    }
+  }, [duplicateRow, rowId]);
 
   return {
     onAddRowBelow,

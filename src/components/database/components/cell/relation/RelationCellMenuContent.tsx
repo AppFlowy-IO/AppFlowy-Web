@@ -17,7 +17,6 @@ import {
   getRelationRowOrders,
 } from '@/components/database/components/cell/relation/relationRowOrders';
 import { useNavigationKey } from '@/components/database/components/cell/relation/useNavigationKey';
-import { RowCreationSpinner, useRowCreationAction } from '@/components/database/hooks/useRowCreationAction';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import { dropdownMenuItemVariants, DropdownMenuLabel } from '@/components/ui/dropdown-menu';
@@ -81,19 +80,7 @@ function RelationCellMenuContentForTarget({
   const { t } = useTranslation();
   const currentUser = useCurrentUserOptional();
   const actorUid = resolveUserAttributionUid(currentUser);
-  const {
-    navigateToView,
-    loadView,
-    loadViewMeta,
-    navigateToRow,
-    createRow,
-    bindViewSync,
-    templateEditingRowId,
-    workspaceId,
-    databaseDoc,
-    readOnly,
-    canWrite,
-  } = useDatabaseContext();
+  const { navigateToView, loadView, navigateToRow, createRow, bindViewSync, templateEditingRowId } = useDatabaseContext();
   const [element, setElement] = useState<HTMLElement | null>(null);
   const selectedViewId = selectedView?.view_id;
   const openRelatedRow = useCallback(
@@ -132,10 +119,12 @@ function RelationCellMenuContentForTarget({
   const [rowContents, setRowContents] = useState<Map<string, string>>(() => new Map());
   const rowDocsRef = useRef<Map<string, YDoc>>(new Map());
   const targetDocRef = useRef<YDoc | null>(null);
-  const { pending: isCreatingAndLinking, run: runCreation } = useRowCreationAction();
-  const creationOwnerRef = useRef({ workspaceId, databaseDoc, selectedViewId, readOnly, canWrite });
-
-  creationOwnerRef.current = { workspaceId, databaseDoc, selectedViewId, readOnly, canWrite };
+  const [isCreatingAndLinking, setIsCreatingAndLinking] = useState(false);
+  // Synchronous double-tap guard — `isCreatingAndLinking` state is async and a
+  // user clicking the footer twice in the same frame can both see the stale
+  // `false` closure value. The ref is updated before React commits the
+  // disabled state, so the second click bails out unconditionally.
+  const isCreatingRef = useRef(false);
 
   const { selectedId, setSelectedId } = useNavigationKey({
     element,
@@ -190,7 +179,6 @@ function RelationCellMenuContentForTarget({
 
     return () => {
       cancelled = true;
-      targetDocRef.current = null;
       rowDocs.clear();
     };
   }, [loadView, relatedDatabaseId, selectedViewId]);
@@ -352,7 +340,9 @@ function RelationCellMenuContentForTarget({
           const rowDoc = rowDocsRef.current.get(rowId);
 
           if (rowDoc) {
-            cleanups.push(subscribeSharedYjsDeep(rowDoc.getMap(YjsEditorKey.data_section), () => recordContent(rowId)));
+            cleanups.push(
+              subscribeSharedYjsDeep(rowDoc.getMap(YjsEditorKey.data_section), () => recordContent(rowId))
+            );
           }
         }
       };
@@ -499,71 +489,42 @@ function RelationCellMenuContentForTarget({
   // to create a new row that happens to share a substring.
   // Isolated editors may select existing rows, but cannot publish new related
   // rows before the owning draft or template is committed.
-  const showCreateAndLink =
-    !templateEditingRowId &&
-    !readOnly &&
-    canWrite !== false &&
-    trimmedSearch.length > 0 &&
-    !isLoadingRows &&
-    !noAccess &&
-    primaryFieldId !== null;
+  const showCreateAndLink = !templateEditingRowId && trimmedSearch.length > 0 && !isLoadingRows && !noAccess && primaryFieldId !== null;
 
   const handleCreateAndLink = useCallback(async () => {
     const targetDoc = targetDocRef.current;
 
-    if (templateEditingRowId || !targetDoc || !primaryFieldId || !trimmedSearch || !selectedViewId) return;
-    const assertCurrent = () => {
-      const current = creationOwnerRef.current;
-
-      if (
-        targetDocRef.current !== targetDoc ||
-        current.workspaceId !== workspaceId ||
-        current.databaseDoc !== databaseDoc ||
-        current.selectedViewId !== selectedViewId ||
-        current.readOnly ||
-        current.canWrite === false
-      ) {
-        throw new Error('This related database is no longer writable.');
-      }
-    };
-
-    const result = await runCreation(() =>
-      createRowInRelatedDatabase({
-        workspaceId,
-        sourceViewId: selectedViewId,
-        loadViewMeta,
-        assertCurrent,
+    if (templateEditingRowId || !targetDoc || !primaryFieldId || !trimmedSearch) return;
+    if (isCreatingRef.current) return;
+    isCreatingRef.current = true;
+    setIsCreatingAndLinking(true);
+    try {
+      const newRowId = await createRowInRelatedDatabase({
         relatedDatabaseDoc: targetDoc,
         primaryFieldId,
         primaryText: trimmedSearch,
         createRow,
         bindViewSync,
         actorUid,
-      })
-    );
-    const newRowId = result.ok ? result.value : null;
+      });
 
-    if (!newRowId) return;
+      if (!newRowId) return;
 
-    // Activate the committed row in this picker before the existing relation-link flow runs.
-    setSearchInput('');
-    setRowIds((prev) => (prev.includes(newRowId) ? prev : [...prev, newRowId]));
-    rememberRecentRelationRow(selectedViewId, newRowId);
-    onAddRelationRowId(newRowId);
-  }, [
-    actorUid,
-    bindViewSync,
-    createRow,
-    loadViewMeta,
-    onAddRelationRowId,
-    primaryFieldId,
-    selectedViewId,
-    templateEditingRowId,
-    trimmedSearch,
-    workspaceId,
-    databaseDoc,
-    runCreation,
-  ]);
+      // Clear the search so the freshly-created row is visible in the linked
+      // section once the picker re-reads `relationRowIds`.
+      setSearchInput('');
+      // Locally append the new row id so the existing row-doc loader effect
+      // picks it up and `rowContents` resolves the typed text for display.
+      // Without this the picker captured `rowIds` once on open and would
+      // render the new linked row as "Deleted page" until the dialog reopens.
+      setRowIds((prev) => (prev.includes(newRowId) ? prev : [...prev, newRowId]));
+      rememberRecentRelationRow(selectedViewId, newRowId);
+      onAddRelationRowId(newRowId);
+    } finally {
+      isCreatingRef.current = false;
+      setIsCreatingAndLinking(false);
+    }
+  }, [actorUid, bindViewSync, createRow, onAddRelationRowId, primaryFieldId, selectedViewId, templateEditingRowId, trimmedSearch]);
 
   const renderCreateAndLink = useMemo(() => {
     if (!showCreateAndLink) return null;
@@ -575,7 +536,6 @@ function RelationCellMenuContentForTarget({
         type='button'
         data-testid='relation-create-and-link'
         disabled={isCreatingAndLinking}
-        aria-busy={isCreatingAndLinking}
         onClick={() => {
           void handleCreateAndLink();
         }}
@@ -585,7 +545,7 @@ function RelationCellMenuContentForTarget({
           'disabled:cursor-not-allowed disabled:opacity-60'
         )}
       >
-        {isCreatingAndLinking ? <RowCreationSpinner /> : <AddIcon className='h-4 w-4 shrink-0 text-icon-primary' />}
+        <AddIcon className='h-4 w-4 shrink-0 text-icon-primary' />
         <span className='min-w-0 flex-1 truncate'>
           {t('grid.relation.createAndLinkRow', {
             defaultValue: 'Create {{name}}',

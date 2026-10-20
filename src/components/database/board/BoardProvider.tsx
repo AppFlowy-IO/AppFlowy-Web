@@ -2,7 +2,6 @@ import { createContext, useCallback, useContext, useMemo, useState } from 'react
 
 import { useBoardLayoutSettings, useGroupsSelector, useReadOnly } from '@/application/database-yjs';
 import { useMoveCardDispatch, useNewRowDispatch } from '@/application/database-yjs/dispatch';
-import { useRowCreationAction } from '@/components/database/hooks/useRowCreationAction';
 
 // --- Actions context (stable — callbacks only) ---
 
@@ -33,7 +32,6 @@ type BoardSelectionContextType = {
   selectedCardIds: string[];
   editingCardId: string | null;
   creatingColumnId: string | null;
-  pendingColumnId: string | null;
 };
 
 const BoardSelectionContext = createContext<BoardSelectionContextType | undefined>(undefined);
@@ -89,8 +87,6 @@ export const BoardProvider = ({ children }: { children: React.ReactNode }) => {
   const [selectedCardIds, setSelectedCardIds] = useState<string[]>([]);
   const [editingCardId, setEditingCardId] = useState<string | null>(null);
   const [creatingColumnId, setCreatingColumnId] = useState<string | null>(null);
-  const [requestedColumnId, setRequestedColumnId] = useState<string | null>(null);
-  const { pending, run } = useRowCreationAction();
   const onNewCard = useNewRowDispatch();
 
   const createCard = useCallback(
@@ -101,11 +97,7 @@ export const BoardProvider = ({ children }: { children: React.ReactNode }) => {
       };
 
       const beforeRowId = beforeCardId ? beforeCardId.split('/')[1] : undefined;
-      const result = await run(() => {
-        setRequestedColumnId(columnId);
-        return onNewCard({ cellsData, beforeRowId });
-      });
-      const cardId = result.ok ? result.value : null;
+      const cardId = await onNewCard({cellsData, beforeRowId});
 
       if (!cardId) return null;
       setSelectedCardIds([]);
@@ -113,7 +105,7 @@ export const BoardProvider = ({ children }: { children: React.ReactNode }) => {
       setEditingCardId(`${columnId}/${cardId}`);
       return cardId;
     },
-    [fieldId, onNewCard, readOnly, run]
+    [fieldId, onNewCard, readOnly]
   );
 
   const moveCard = useCallback(
@@ -152,14 +144,15 @@ export const BoardProvider = ({ children }: { children: React.ReactNode }) => {
       selectedCardIds,
       editingCardId,
       creatingColumnId,
-      pendingColumnId: pending ? requestedColumnId : null,
     }),
-    [selectedCardIds, editingCardId, creatingColumnId, pending, requestedColumnId]
+    [selectedCardIds, editingCardId, creatingColumnId]
   );
 
   return (
     <BoardActionsContext.Provider value={actionsValue}>
-      <BoardSelectionContext.Provider value={selectionValue}>{children}</BoardSelectionContext.Provider>
+      <BoardSelectionContext.Provider value={selectionValue}>
+        {children}
+      </BoardSelectionContext.Provider>
     </BoardActionsContext.Provider>
   );
 };
