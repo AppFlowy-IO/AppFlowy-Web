@@ -20,7 +20,6 @@ import {
 import { generateRandomEmail } from '../../support/test-config';
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
 import { waitForGridReady } from '../../support/database-ui-helpers';
-import { editFirstGridCell } from '../../support/duplicate-test-helpers';
 import { getActiveDatabaseViewId, withPublishedDatabaseView } from '../../support/publish-database-helpers';
 import { testLog } from '../../support/test-helpers';
 
@@ -108,9 +107,11 @@ test.describe('Published Database Rows Visibility (issue #8464)', () => {
     // When: typing text into the first cell (primary field / title)
     const testText = `Row1-${Date.now()}`;
 
-    // Grid wrappers can render before their editable row content is ready.
-    // Wait for the actual cell editor and its committed display value.
-    await editFirstGridCell(page, DatabaseGridSelectors.grid(page), testText);
+    await DatabaseGridSelectors.firstCell(page).click({ force: true });
+    await page.waitForTimeout(500);
+    await page.keyboard.type(testText);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(2000);
     testLog.info(`Entered row data: "${testText}"`);
 
     // Then: verify the data is visible in the grid before publishing

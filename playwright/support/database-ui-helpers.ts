@@ -10,7 +10,7 @@ import {
 import { signInAndWaitForApp } from './auth-flow-helpers';
 import { expectViewCreationAvailable } from './view-creation-availability';
 
-export type DatabaseViewType = 'Grid' | 'Board' | 'Calendar' | 'Chart' | 'Form' | 'List' | 'Gallery' | 'Feed' | 'Timeline';
+export type DatabaseViewType = 'Grid' | 'Board' | 'Calendar' | 'Chart' | 'List' | 'Gallery' | 'Feed';
 
 interface CreateDatabaseViewOptions {
   appReadyWaitMs?: number;
@@ -99,15 +99,9 @@ export async function createDatabaseView(
     await page.locator('[role="menuitem"]').filter({ hasText: 'Board' }).click({ force: true });
   } else if (viewType === 'Calendar') {
     await page.locator('[role="menuitem"]').filter({ hasText: 'Calendar' }).click({ force: true });
-  } else if (viewType === 'Timeline') {
-    await expectViewCreationAvailable(page.getByTestId('add-timeline-page-button'));
-    await page.getByTestId('add-timeline-page-button').click();
   } else if (viewType === 'Chart') {
     await expectViewCreationAvailable(AddPageSelectors.addChartButton(page));
     await AddPageSelectors.addChartButton(page).click({ force: true });
-  } else if (viewType === 'Form') {
-    await expectViewCreationAvailable(page.getByTestId('add-form-button'));
-    await page.getByTestId('add-form-button').click();
   } else if (viewType === 'List') {
     await AddPageSelectors.addListButton(page).click({ force: true });
   } else if (viewType === 'Gallery') {

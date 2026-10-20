@@ -4,7 +4,6 @@ import * as Y from 'yjs';
 
 import { databasePrefix } from '@/application/constants';
 import { appViewCacheSchema, type AppViewCacheTable } from '@/application/db/tables/app_view_cache';
-import { atomicCreationSchema, type AtomicCreationTable } from '@/application/db/tables/atomic_creation';
 import {
   collabStorageSchema,
   type CollabSnapshotRecord,
@@ -39,8 +38,7 @@ import {
   readDatabaseCacheEpoch,
 } from './database-storage-fence';
 
-type DexieTables = AtomicCreationTable &
-  ViewMetasTable &
+type DexieTables = ViewMetasTable &
   UserTable &
   rowTable &
   WorkspaceMemberProfileTable &
@@ -56,7 +54,6 @@ export const db = new BaseDexie(`${databasePrefix}_cache`) as Dexie;
 const _schema = Object.assign(
   {},
   {
-    ...atomicCreationSchema,
     ...viewMetasSchema,
     ...userSchema,
     ...rowSchema,
@@ -264,21 +261,6 @@ db.version(12).stores({
   ...collabStorageSchema,
   ...appViewCacheSchema,
   ...workspaceDatabaseCatalogSchema,
-});
-
-// Version 13: immutable atomic commands are scoped to their original account,
-// server and workspace. They are never drained automatically after reconnect.
-db.version(13).stores({
-  ...viewMetasSchema,
-  ...userSchema,
-  ...rowSchema,
-  ...workspaceMemberProfileSchema,
-  ...versionSchema,
-  ...syncOutboxSchema,
-  ...collabStorageSchema,
-  ...appViewCacheSchema,
-  ...workspaceDatabaseCatalogSchema,
-  ...atomicCreationSchema,
 });
 
 const openedSet = new Set<string>();
@@ -810,10 +792,7 @@ class SharedIndexeddbPersistence {
       else this._databaseStorageFence = databaseStorageFence;
     }
 
-    // Synchronous fenced publication can run inside a collab_custom-only
-    // transaction. Observer work outlives that transaction and must own its
-    // storage scope; its own transaction below still rechecks both epochs.
-    this._pendingWrite = BaseDexie.ignoreTransaction(() => this._pendingWrite
+    this._pendingWrite = this._pendingWrite
       .then(async () => {
         await this.whenSynced;
         const persisted = await db.transaction('rw', db.collab_updates, db.collab_custom, async () => {
@@ -838,7 +817,7 @@ class SharedIndexeddbPersistence {
       .catch((error) => {
         this._persistenceError ??= { error };
         Log.warn('[DB] failed to persist shared collab update', { name: this.name, error });
-      }));
+      });
   };
 
   /** The epoch check and write share a transaction with authoritative cache deletion. */
@@ -854,12 +833,12 @@ class SharedIndexeddbPersistence {
   }
 
   private queueCompact() {
-    this._pendingWrite = BaseDexie.ignoreTransaction(() => this._pendingWrite
+    this._pendingWrite = this._pendingWrite
       .then(() => this.compact())
       .catch((error) => {
         this._persistenceError ??= { error };
         Log.warn('[DB] failed to compact shared collab updates', { name: this.name, error });
-      }));
+      });
   }
 
   private async compact() {

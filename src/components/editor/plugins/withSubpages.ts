@@ -47,13 +47,6 @@ export function withSubpages<T extends ReactEditor>(editor: T, getContext: () =>
 
     if (!fragment || !containsSubpage(fragment)) return insertData(data);
     if (e.readOnly || !e.selection) return;
-    if (e.firstBody) {
-      // Copy/move preparation writes Folder objects before inserting the block.
-      // A detached first body cannot own those objects in its atomic request.
-      notify.error(t('atomicCreation.finishRowPageFirst'));
-      return;
-    }
-
     if (block?.blockId && isInsideSimpleTableCell(e, block.blockId)) {
       // Preserve the existing table-to-TSV paste path before creating any pages.
       if (containsSimpleTableBlocks(fragment)) return insertData(data);
@@ -78,9 +71,7 @@ export function withSubpages<T extends ReactEditor>(editor: T, getContext: () =>
         });
         const nodes = convertSlateFragmentTo(stripInlineCommentIds(prepared.fragment)).filter(Element.isElement);
 
-        inserted = insertBlocksAtCaret(e, nodes, {
-          mergeFirstBlockInline: shouldMergeFirstFragmentNodeInline(nodes[0]),
-        });
+        inserted = insertBlocksAtCaret(e, nodes, { mergeFirstBlockInline: shouldMergeFirstFragmentNodeInline(nodes[0]) });
         e.flushLocalChanges();
         if (YHistoryEditor.isYHistoryEditor(e)) e.undoManager.stopCapturing();
       } finally {

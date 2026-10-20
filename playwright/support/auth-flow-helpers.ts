@@ -88,19 +88,6 @@ async function waitForAppReady(page: Page, waitMs: number): Promise<void> {
 }
 
 async function enableTestMode(page: Page): Promise<void> {
-  // Bind only this disposable browser context to explicitly supplied test services.
-  // The app's saved configuration and the developer's .env remain untouched.
-  const { APPFLOWY_BASE_URL, APPFLOWY_GOTRUE_BASE_URL, APPFLOWY_WS_BASE_URL } = process.env;
-
-  if (APPFLOWY_BASE_URL && APPFLOWY_GOTRUE_BASE_URL && APPFLOWY_WS_BASE_URL) {
-    await page.context().addInitScript(
-      (config) => {
-        window.__APP_CONFIG__ = config;
-      },
-      { APPFLOWY_BASE_URL, APPFLOWY_GOTRUE_BASE_URL, APPFLOWY_WS_BASE_URL }
-    );
-  }
-
   // Context-level init scripts also run in popups and newly opened tabs.
   await page.context().addInitScript(() => {
     (window as Window & { Cypress?: boolean }).Cypress = true;

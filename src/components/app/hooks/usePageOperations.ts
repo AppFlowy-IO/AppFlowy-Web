@@ -1,13 +1,13 @@
-import { MutableRefObject, useCallback, useEffect, useRef } from 'react';
+import { MutableRefObject, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 
 import { BillingService, FileService, PageService, PublishService, ViewService } from '@/application/services/domains';
 import { deleteView as clearViewCache } from '@/application/services/js-services/cache';
 import { clearPublishViewInfoCache } from '@/application/services/js-services/cached-api';
-import { PageCreationActivation, usesDefaultPageCreation } from '@/application/services/js-services/http/page-default-creation';
 import { publishCollabs, PublishCollabMetadata } from '@/application/services/js-services/http/publish-api';
 import { gatherDatabasePublishData } from '@/application/services/js-services/publish-database-data';
 import {
+  CreateDatabaseViewPayload,
   CreateOrphanedViewPayload,
   DuplicatePageOperationOptions,
   CreatePagePayload,
@@ -90,7 +90,6 @@ export function usePageOperations({
   loadViewChildren,
   getDatabaseIdForViewId,
   loadTrash,
-  ensureViewVisibleInOutline,
 }: {
   outlineRef: MutableRefObject<View[] | undefined>;
   loadOutline?: (workspaceId: string, force?: boolean) => Promise<void>;
@@ -99,41 +98,10 @@ export function usePageOperations({
   loadViewChildren?: (viewId: string) => Promise<View[]>;
   getDatabaseIdForViewId?: (viewId: string) => Promise<string | null | undefined>;
   loadTrash?: (workspaceId: string, options?: { ensureFreshAfterInFlight?: boolean }) => Promise<void>;
-  ensureViewVisibleInOutline?: (viewId: string) => Promise<string[]>;
 }) {
   const { currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
   const role = userWorkspaceInfo?.selectedWorkspace.role;
   const pendingPublishesRef = useRef(new Map<string, Promise<void>>());
-  const creationOwnerRef = useRef({ workspaceId: currentWorkspaceId, userId: userWorkspaceInfo?.userId, epoch: 0 });
-
-  if (creationOwnerRef.current.workspaceId !== currentWorkspaceId || creationOwnerRef.current.userId !== userWorkspaceInfo?.userId) {
-    creationOwnerRef.current = { workspaceId: currentWorkspaceId, userId: userWorkspaceInfo?.userId, epoch: creationOwnerRef.current.epoch + 1 };
-  }
-
-  useEffect(() => () => { creationOwnerRef.current.epoch += 1; }, []);
-
-  const capturePageActivation = useCallback((payload: CreatePagePayload): PageCreationActivation => {
-    if (usesDefaultPageCreation(payload) && !ensureViewVisibleInOutline) {
-      throw new Error('Page creation navigation is not available');
-    }
-
-    const capturedEpoch = creationOwnerRef.current.epoch;
-    const assertCurrent = () => {
-      if (creationOwnerRef.current.epoch !== capturedEpoch || creationOwnerRef.current.workspaceId !== currentWorkspaceId) {
-        throw new Error('The page creation workspace changed');
-      }
-    };
-
-    return {
-      assertCurrent,
-      activate: ensureViewVisibleInOutline ? async (page) => {
-        assertCurrent();
-        await ensureViewVisibleInOutline(page.view_id);
-        assertCurrent();
-        if (!findView(outlineRef.current ?? [], page.view_id)) throw new Error('Created page navigation is not ready');
-      } : undefined,
-    };
-  }, [currentWorkspaceId, ensureViewVisibleInOutline, outlineRef]);
 
   // Add a new page
   const addPage = useCallback(
@@ -150,10 +118,7 @@ export function usePageOperations({
       }
 
       try {
-        const activation = capturePageActivation(payload);
-        const response = await PageService.add(currentWorkspaceId, parentViewId, payload, activation);
-
-        activation.assertCurrent?.();
+        const response = await PageService.add(currentWorkspaceId, parentViewId, payload);
 
         ViewService.invalidateCache(currentWorkspaceId, parentViewId);
         if (isDatabaseLayout(payload.layout)) {
@@ -162,13 +127,13 @@ export function usePageOperations({
 
         // Keep a resilient fallback when realtime delivery is unavailable.
         // This guarantees sidebar eventual consistency after creation.
-        if (!usesDefaultPageCreation(payload)) void loadOutline?.(currentWorkspaceId, false);
+        void loadOutline?.(currentWorkspaceId, false);
         return response;
       } catch (e) {
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, role, loadOutline, capturePageActivation]
+    [currentWorkspaceId, role, loadOutline]
   );
 
   // Delete a page (move to trash)
@@ -456,17 +421,16 @@ export function usePageOperations({
         throw new Error('No workspace or service found');
       }
 
-      // Structured spaces compose their initial default page through the same
-      // creation boundary as Add Page, including current sidebar publication.
-      const activation = payload.permission && usesDefaultPageCreation(payload.initial_page)
-        ? capturePageActivation(payload.initial_page) : undefined;
-      const res = await PageService.createSpaceWithInitialPage(currentWorkspaceId, payload, activation);
+      try {
+        const res = await PageService.createSpaceWithInitialPage(currentWorkspaceId, payload);
 
-      activation?.assertCurrent?.();
-      if (!activation) void loadOutline?.(currentWorkspaceId, false);
-      return res;
+        void loadOutline?.(currentWorkspaceId, false);
+        return res;
+      } catch (e) {
+        return Promise.reject(e);
+      }
     },
-    [currentWorkspaceId, loadOutline, capturePageActivation]
+    [currentWorkspaceId, loadOutline]
   );
 
   // Update space
@@ -480,6 +444,32 @@ export function usePageOperations({
         const res = await PageService.updateSpace(currentWorkspaceId, payload);
 
         void loadOutline?.(currentWorkspaceId, false);
+        return res;
+      } catch (e) {
+        return Promise.reject(e);
+      }
+    },
+    [currentWorkspaceId, loadOutline]
+  );
+
+  // Create database view (linked view using new endpoint)
+  const createDatabaseView = useCallback(
+    async (viewId: string, payload: CreateDatabaseViewPayload) => {
+      if (!currentWorkspaceId) {
+        throw new Error('No workspace or service found');
+      }
+
+      try {
+        const res = await PageService.createDatabaseView(currentWorkspaceId, viewId, payload);
+
+        refreshDatabaseCatalogAfterMutation(currentWorkspaceId);
+        // The database response already contains the new view and its Yjs
+        // update. Do not hold tab creation and navigation behind a separate
+        // workspace-wide outline refresh: either outline request can remain
+        // pending while the linked view itself was created successfully.
+        void loadOutline?.(currentWorkspaceId, false).catch((error) => {
+          Log.warn('[createDatabaseView] failed to refresh outline after creating a linked view', error);
+        });
         return res;
       } catch (e) {
         return Promise.reject(e);
@@ -704,6 +694,7 @@ export function usePageOperations({
     createSpace,
     createSpaceWithInitialPage,
     updateSpace,
+    createDatabaseView,
     uploadFile,
     getSubscriptions,
     getPricingCatalog,

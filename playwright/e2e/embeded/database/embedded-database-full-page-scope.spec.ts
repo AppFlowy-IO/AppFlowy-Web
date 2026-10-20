@@ -89,21 +89,15 @@ test.describe('Embedded database opened as a full page', () => {
     const createdGrid = page.waitForResponse(
       (response) =>
         response.request().method() === 'POST' &&
-        new URL(response.url()).pathname.endsWith('/v2/page-view/database/default') &&
+        response.url().endsWith('/page-view') &&
         response.request().postDataJSON()?.parent_view_id === documentId
     );
 
     await insertInlineGridViaSlash(page, documentId);
-    const gridCreation = await createdGrid;
-    const gridResponse = await gridCreation.json();
-    const gridCommand = gridCreation.request().postDataJSON();
+    const gridResponse = await (await createdGrid).json();
 
-    expect(gridCreation.ok()).toBe(true);
     expect(gridResponse.code).toBe(0);
-    expect(gridCommand.database.embedded).toBe(true);
-    expect(gridResponse.data.result.view_id).toBe(gridCommand.container_id);
-    expect(gridResponse.data.result.database_id).toBe(gridCommand.database.database_id);
-    const gridId = gridCommand.database.view_id as string;
+    const gridId = gridResponse.data.view_id as string;
 
     await page.goto(`/app/${workspaceId(page)}/${gridId}`);
     await expect(DatabaseViewSelectors.viewTab(page, gridId)).toBeVisible();
@@ -111,28 +105,18 @@ test.describe('Embedded database opened as a full page', () => {
 
     await DatabaseViewSelectors.addViewButton(page).click();
     const calendarRequest = page.waitForResponse(
-      (response) =>
-        response.request().method() === 'POST' &&
-        new URL(response.url()).pathname.endsWith('/v2/page-view/database-view/default') &&
-        response.request().postDataJSON()?.view.parent_view_id === gridCommand.container_id
+      (response) => response.request().method() === 'POST' && response.url().endsWith('/database-view')
     );
 
     await DatabaseViewSelectors.viewTypeOption(page, 'Calendar').click();
     const calendarResponse = await calendarRequest;
 
-    expect(calendarResponse.request().postDataJSON().view).toMatchObject({
-      embedded: true,
-      database_id: gridCommand.database.database_id,
-      parent_view_id: gridCommand.container_id,
-      layout: 2,
-    });
+    expect(calendarResponse.request().postDataJSON().embedded).toBe(true);
     expect(calendarResponse.ok()).toBe(true);
     const calendarBody = await calendarResponse.json();
 
     expect(calendarBody.code).toBe(0);
-    const calendarId = calendarBody.data.result.view_id as string;
-
-    expect(calendarId).toBe(calendarResponse.request().postDataJSON().view.view_id);
+    const calendarId = calendarBody.data.view_id as string;
 
     await expect(DatabaseViewSelectors.viewTab(page, calendarId)).toBeVisible();
     await expect(DatabaseViewSelectors.viewTab(page, gridId)).toBeVisible();
@@ -141,7 +125,6 @@ test.describe('Embedded database opened as a full page', () => {
     await page.reload();
     await expect(DatabaseViewSelectors.viewTab(page, calendarId)).toBeVisible();
     await expect(DatabaseViewSelectors.viewTab(page, gridId)).toBeVisible();
-    await expectPersistedEmbeddedScope(page, calendarId, documentId);
   });
 
   for (const layout of ['List', 'Gallery', 'Feed']) {

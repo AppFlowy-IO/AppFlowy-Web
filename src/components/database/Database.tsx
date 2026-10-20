@@ -27,6 +27,8 @@ import { getCachedRowDoc, openRowDoc } from '@/application/services/js-services/
 import {
   AppendBreadcrumb,
   BindViewSync,
+  CreateDatabaseViewPayload,
+  CreateDatabaseViewResponse,
   DuplicatePageOperationOptions,
   CreatePagePayload,
   CreatePageResponse,
@@ -214,6 +216,7 @@ export interface Database2Props {
   paddingStart?: number;
   paddingEnd?: number;
   showActions?: boolean;
+  createDatabaseView?: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
   loadDatabaseRelations?: (options?: { refresh?: boolean }) => Promise<DatabaseRelations | undefined>;
   getSubscriptions?: () => Promise<Subscription[]>;
@@ -884,9 +887,7 @@ function Database(props: Database2Props) {
             Object.entries(newEntries).forEach(([rowId, rowDoc]) => {
               registerRowDocWithHistory(rowId, rowDoc);
             });
-            // Interactive sync may have queued a canonical row in this React batch
-            // before rowMapRef's layout effect runs. Seeds only fill missing entries.
-            setRowMap((prev) => ({ ...newEntries, ...prev }));
+            setRowMap((prev) => ({ ...prev, ...newEntries }));
           }
 
           // Open the gate — ensureRow calls can now proceed
@@ -1092,7 +1093,7 @@ function Database(props: Database2Props) {
   }, [readOnly, workspaceId, databaseLifecycleIdentity, getDatabaseId, getPriorityRowIds]);
 
   const ensureRow = useCallback(
-    async (rowId: string, priority: 'background' | 'interactive' = 'background') => {
+    async (rowId: string) => {
       if (!createRow || !rowId) return;
 
       const ensureLifecycleIdentity = databaseLifecycleIdentity;
@@ -1145,10 +1146,9 @@ function Database(props: Database2Props) {
         return finishEnsure(canonicalRowDoc);
       }
 
-      // Background rows share the batched seed load. An explicitly opened row
-      // must not wait for a Pending blob diff's retry timer: acquire its normal
-      // canonical sync owner now, without publishing any provisional seed.
-      if (priority !== 'interactive') await gate.promise;
+      // Wait for batch preload to finish — it loads visible rows from seeds
+      // in parallel. After it completes, the row may now be in rowMap.
+      await gate.promise;
 
       if (!isCurrentEnsure()) return;
 
@@ -1562,7 +1562,7 @@ function Database(props: Database2Props) {
     async (rowId: string) => {
       const targetDoc = modalState.databaseDoc;
 
-      if (!targetDoc) return ensureRow(rowId, rowId === modalState.rowId ? 'interactive' : 'background');
+      if (!targetDoc) return ensureRow(rowId);
       // Related peeks have their own row map. Loading through the source view's
       // seed/ensure functions would mix databases and use the wrong filter data.
       const rowDoc = await createNewRow(getRowKey(targetDoc.guid, rowId));
@@ -1573,12 +1573,7 @@ function Database(props: Database2Props) {
       });
       return rowDoc;
     },
-    [createNewRow, ensureRow, modalState.databaseDoc, modalState.rowId]
-  );
-
-  const ensurePageRow = useCallback(
-    (targetRowId: string) => ensureRow(targetRowId, targetRowId === rowId ? 'interactive' : 'background'),
-    [ensureRow, rowId]
+    [createNewRow, ensureRow, modalState.databaseDoc]
   );
 
   const handleCloseRowModal = useCallback(() => {
@@ -1656,6 +1651,7 @@ function Database(props: Database2Props) {
       workspaceId,
       addPage,
       openPageModal,
+      createDatabaseView: props.createDatabaseView,
       updatePage: props.updatePage,
       deletePage: props.deletePage,
       restorePage: props.restorePage,
@@ -1709,6 +1705,7 @@ function Database(props: Database2Props) {
       workspaceId,
       addPage,
       openPageModal,
+      props.createDatabaseView,
       props.updatePage,
       props.deletePage,
       props.restorePage,
@@ -1737,10 +1734,9 @@ function Database(props: Database2Props) {
       databasePageId,
       activeViewId,
       rowMap,
-      ensureRow: rowId ? ensurePageRow : ensureRow,
       isDatabaseRowPage: !!rowId,
     };
-  }, [sharedContextProps, doc, databasePageId, activeViewId, rowMap, rowId, ensurePageRow, ensureRow]);
+  }, [sharedContextProps, doc, databasePageId, activeViewId, rowMap, rowId]);
 
   // Memoize modal context value separately - only compute when modal is open
   const modalContextValue = useMemo(

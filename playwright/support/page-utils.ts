@@ -6,8 +6,6 @@
  * URL utilities, and page management.
  */
 import { Page, expect } from '@playwright/test';
-
-import { getSlashMenuItemName } from './i18n-constants';
 import {
   AddPageSelectors,
   BlockSelectors,
@@ -17,6 +15,7 @@ import {
   SlashCommandSelectors,
   ViewActionSelectors,
 } from './selectors';
+import { getSlashMenuItemName } from './i18n-constants';
 import { expectViewCreationAvailable } from './view-creation-availability';
 
 /**
@@ -25,7 +24,6 @@ import { expectViewCreationAvailable } from './view-creation-availability';
  */
 export async function expandSpaceByName(page: Page, spaceName: string): Promise<void> {
   const spaceItem = SpaceSelectors.itemByName(page, spaceName);
-
   await expect(spaceItem).toBeVisible({ timeout: 30000 });
 
   const expandedIndicator = spaceItem.locator('[data-testid="space-expanded"]');
@@ -42,7 +40,6 @@ export async function expandSpaceByName(page: Page, spaceName: string): Promise<
  */
 export async function expandPageByName(page: Page, pageName: string): Promise<void> {
   const pageItem = PageSelectors.itemByName(page, pageName);
-
   await pageItem.locator('[data-testid="outline-toggle-expand"]').first().click({ force: true });
   await page.waitForTimeout(1000);
 }
@@ -52,12 +49,10 @@ export async function expandPageByName(page: Page, pageName: string): Promise<vo
  */
 export async function expandDatabaseInSidebar(page: Page, dbName: string = 'New Database'): Promise<void> {
   const dbItem = PageSelectors.itemByName(page, dbName);
-
   await expect(dbItem).toBeVisible({ timeout: 10000 });
 
   const expandToggle = dbItem.locator('[data-testid="outline-toggle-expand"]');
   const count = await expandToggle.count();
-
   if (count > 0) {
     await expandToggle.first().click({ force: true });
     await page.waitForTimeout(500);
@@ -69,7 +64,6 @@ export async function expandDatabaseInSidebar(page: Page, dbName: string = 'New 
  */
 export async function renamePageByName(page: Page, currentName: string, newName: string): Promise<void> {
   const pageItem = PageSelectors.itemByName(page, currentName);
-
   await expect(pageItem).toBeVisible({ timeout: 30000 });
 
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -80,7 +74,6 @@ export async function renamePageByName(page: Page, currentName: string, newName:
     await ViewActionSelectors.renameButton(page).click({ force: true });
 
     const renameInput = ModalSelectors.renameInput(page);
-
     await expect(renameInput).toBeVisible({ timeout: 10000 });
     await renameInput.clear();
     await renameInput.fill(newName);
@@ -110,7 +103,6 @@ export async function renamePageByName(page: Page, currentName: string, newName:
 export function currentViewIdFromUrl(page: Page): string {
   const url = new URL(page.url());
   const segments = url.pathname.split('/').filter(Boolean);
-
   return segments.pop() || '';
 }
 
@@ -119,7 +111,6 @@ export function currentViewIdFromUrl(page: Page): string {
  */
 export async function closeModalsIfOpen(page: Page): Promise<void> {
   const dialogCount = await page.locator('[role="dialog"]').count();
-
   if (dialogCount > 0) {
     await page.keyboard.press('Escape');
     await page.waitForTimeout(500);
@@ -139,14 +130,12 @@ export async function navigateAwayToNewPage(page: Page): Promise<void> {
 
   // Handle new page modal if it appears
   const modalCount = await page.getByTestId('new-page-modal').count();
-
   if (modalCount > 0) {
     await expect(ModalSelectors.newPageModal(page)).toBeVisible();
     await ModalSelectors.spaceItemInModal(page).first().click({ force: true });
     await page.waitForTimeout(500);
     await page.locator('button').filter({ hasText: 'Add' }).click({ force: true });
   }
-
   await page.waitForTimeout(2000);
 }
 
@@ -155,7 +144,6 @@ export async function navigateAwayToNewPage(page: Page): Promise<void> {
  */
 export async function ensurePageExpandedByViewId(page: Page, viewId: string): Promise<void> {
   const pageEl = page.locator(`[data-testid="page-item"]:has(> [data-testid="page-${viewId}"])`).first();
-
   await expect(pageEl).toBeVisible({ timeout: 10000 });
 
   // Scope toggles to this page's row. Descendant rows stay mounted inside the
@@ -180,23 +168,19 @@ export async function ensurePageExpandedByViewId(page: Page, viewId: string): Pr
  * to full-page view, and returns the document's view ID.
  */
 export async function createDocumentPageAndNavigate(page: Page): Promise<string> {
-  await AddPageSelectors.inlineAddButton(page).filter({ visible: true }).first().click();
-  await AddPageSelectors.addDocumentButton(page).click();
+  await AddPageSelectors.inlineAddButton(page).first().click({ force: true });
+  await page.waitForTimeout(1000);
+  await AddPageSelectors.addDocumentButton(page).click({ force: true });
+  await page.waitForTimeout(1000);
 
-  const dialog = page.getByRole('dialog');
+  // Expand the ViewModal to full page view
+  await expect(page.locator('[role="dialog"]')).toBeVisible({ timeout: 10000 });
+  await page.locator('[role="dialog"]').last().locator('button').first().click({ force: true });
+  await page.waitForTimeout(1000);
 
-  await expect(dialog).toBeVisible({ timeout: 10000 });
-  const modalEditor = dialog.getByTestId('editor-content');
-
-  await expect(modalEditor).toHaveAttribute('id', /^editor-.+/);
-  const viewId = (await modalEditor.getAttribute('id'))!.slice('editor-'.length);
-
-  // The previous page remains visible while expansion awaits navigation. Bind
-  // readiness to the created modal's identity, never the still-current URL.
-  await dialog.getByRole('button', { name: 'Open as a Page', exact: true }).click();
-  await page.waitForURL((url) => url.pathname.split('/').filter(Boolean).pop() === viewId);
-  await expect(dialog).toBeHidden();
-  await expect(page.locator(`#root #editor-${viewId}`)).toBeVisible({ timeout: 15000 });
+  const viewId = currentViewIdFromUrl(page);
+  expect(viewId).not.toBe('');
+  await expect(page.locator(`#editor-${viewId}`)).toBeVisible({ timeout: 15000 });
   return viewId;
 }
 
@@ -210,7 +194,6 @@ export async function insertLinkedDatabaseViaSlash(
   layout: 'Feed' | 'Gallery' | 'Grid' | 'List' | 'Timeline' = 'Grid'
 ): Promise<void> {
   const editor = page.locator(`#editor-${docViewId}`);
-
   await expect(editor).toBeVisible({ timeout: 15000 });
   const blockType =
     layout === 'List'
@@ -232,7 +215,6 @@ export async function insertLinkedDatabaseViaSlash(
       await page.waitForTimeout(500);
 
       const slashPanel = SlashCommandSelectors.slashPanel(page);
-
       await expect(slashPanel).toBeVisible({ timeout: 10000 });
       const slashMenuKey =
         layout === 'List'
@@ -254,16 +236,13 @@ export async function insertLinkedDatabaseViaSlash(
       await expect(page.getByText('Link to an existing database')).toBeVisible({ timeout: 10000 });
 
       const loadingText = page.getByText('Loading...');
-
       if ((await loadingText.count()) > 0) {
         await expect(loadingText).not.toBeVisible({ timeout: 15000 });
       }
 
       const popover = page.locator('.MuiPopover-paper').last();
-
       await expect(popover).toBeVisible({ timeout: 10000 });
       const searchInput = popover.locator('input[placeholder*="Search"]');
-
       if ((await searchInput.count()) > 0) {
         await searchInput.clear();
         await searchInput.fill(dbName);
@@ -271,7 +250,6 @@ export async function insertLinkedDatabaseViaSlash(
       }
 
       const databaseOption = popover.getByText(dbName, { exact: false }).first();
-
       if ((await databaseOption.count()) > 0) {
         await databaseOption.click({ force: true });
         await page.waitForTimeout(2000);
@@ -321,14 +299,12 @@ export async function createPageAndInsertImage(page: Page, pngBuffer: Buffer): P
 
   // Wait for editor to be visible
   const viewId = currentViewIdFromUrl(page);
-
   if (viewId) {
     await expect(page.locator(`#editor-${viewId}`)).toBeVisible({ timeout: 15000 });
   }
 
   // Focus editor and insert image via slash command
   const editor = page.locator('[data-slate-editor="true"]').first();
-
   await expect(editor).toBeVisible();
   await editor.click({ force: true });
   await page.waitForTimeout(500);
@@ -337,7 +313,6 @@ export async function createPageAndInsertImage(page: Page, pngBuffer: Buffer): P
   await page.waitForTimeout(1000);
 
   const slashPanel = page.getByTestId('slash-panel');
-
   await expect(slashPanel).toBeVisible({ timeout: 10000 });
   await page.keyboard.type('image', { delay: 50 });
   await page.waitForTimeout(1000);
@@ -350,7 +325,6 @@ export async function createPageAndInsertImage(page: Page, pngBuffer: Buffer): P
 
   // Upload image
   const fileInput = page.locator('input[type="file"]');
-
   await expect(fileInput).toBeAttached({ timeout: 10000 });
   await fileInput.setInputFiles({
     name: 'test-image.png',

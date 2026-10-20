@@ -3,6 +3,8 @@ import { createContext } from 'react';
 import { CollabVersionRecord } from '@/application/collab-version.type';
 import {
   BindViewSync,
+  CreateDatabaseViewPayload,
+  CreateDatabaseViewResponse,
   CreateOrphanedViewPayload,
   DuplicatePageOperationOptions,
   CreatePagePayload,
@@ -99,6 +101,8 @@ export interface AppOperationsContextType {
   ) => Promise<CreateSpaceWithInitialPageResponse>;
   /** Update space properties. */
   updateSpace?: (payload: UpdateSpacePayload) => Promise<void>;
+  /** Create a new database view (Grid/Board/Calendar tab) within an existing database. */
+  createDatabaseView?: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
 
   // ── File operations ────────────────────────────────────────────────
   /** Upload a file attachment and return its URL. */

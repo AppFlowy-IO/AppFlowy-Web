@@ -431,28 +431,8 @@ When('I set the share panel invitation access to {string}', async ({ page }, acc
 });
 
 When('I send the share panel invites', async ({ page }) => {
-  const state = requireState(page);
-  const inviteButton = ShareSelectors.inviteButton(page);
-
-  await expect(inviteButton).toBeEnabled({ timeout: 15000 });
-  if (state.group && state.viewId) {
-    // A legacy seeded page may need the server's bounded Folder projection
-    // fallback. Assert the actual commit before checking its rendered grant.
-    const [response] = await Promise.all([
-      page.waitForResponse(
-        (response) =>
-          response.request().method() === 'POST' &&
-          new URL(response.url()).pathname.endsWith(`/views/${state.viewId}/group/${state.group?.group_id}`),
-        { timeout: 30000 }
-      ),
-      inviteButton.click(),
-    ]);
-
-    expect(response.ok()).toBe(true);
-    expect((await response.json()).code).toBe(0);
-  } else {
-    await inviteButton.click();
-  }
+  await expect(ShareSelectors.inviteButton(page)).toBeEnabled({ timeout: 15000 });
+  await ShareSelectors.inviteButton(page).click();
 });
 
 Then(
@@ -523,12 +503,7 @@ When('I remove the seeded workspace group access from the share panel', async ({
   const row = shareGroupRow(page, group.name);
 
   await expect(row).toBeVisible({ timeout: 15000 });
-  // The effective roster renders first. Editing waits for confirmation that
-  // this grant belongs to the current page rather than an ancestor.
-  const accessButton = row.getByRole('button', { name: /Can view|Can edit|Full access/ });
-
-  await expect(accessButton).toBeEnabled({ timeout: 30000 });
-  await accessButton.click();
+  await row.getByRole('button', { name: /Can view|Can edit|Full access/ }).click();
   await page.getByRole('menuitem', { name: 'Remove access' }).click();
 });
 

@@ -7,6 +7,8 @@ import { retainDatabaseHistoryRow } from '@/application/database-yjs/history-row
 import type { RowOrdersSource, RowOrdersStore } from '@/application/database-yjs/row-orders-store';
 import {
   BindViewSync,
+  CreateDatabaseViewPayload,
+  CreateDatabaseViewResponse,
   CreateRow,
   DatabaseRelations,
   DateFormat,
@@ -130,6 +132,7 @@ export interface DatabaseContextState {
   onRendered?: () => void;
   showActions?: boolean;
   workspaceId: string;
+  createDatabaseView?: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
   updatePage?: (viewId: string, payload: UpdatePagePayload) => Promise<void>;
   addPage?: (
     parentId: string,

@@ -2,6 +2,9 @@ import { ReactNode, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
+import { createDatabaseFeedPageViaGrid } from '@/application/database-yjs/feed-layout';
+import { createDatabaseGalleryPageViaGrid } from '@/application/database-yjs/gallery-layout';
+import { createDatabaseListPageViaGrid } from '@/application/database-yjs/list-layout';
 import { View, ViewLayout } from '@/application/types';
 import { ReactComponent as UploadIcon } from '@/assets/icons/upload.svg';
 import { DatabaseViewCreationItem } from '@/components/_shared/DatabaseViewCreationItem';
@@ -13,24 +16,32 @@ import {
   useAppOperations,
   useCurrentWorkspaceId,
   useOpenPageModal,
+  useScheduleDeferredCleanup,
   useToView,
 } from '@/components/app/app.hooks';
 import { useDatabaseViewCreation } from '@/components/app/hooks/useDatabaseViewCreation';
 import { DropdownMenuGroup } from '@/components/ui/dropdown-menu';
 import { getErrorMessage } from '@/utils/errors';
 
-function AddPageActions({
-  view,
-  onImportClick,
-  onClose,
-}: {
+function AddPageActions({ view, onImportClick, onClose }: {
   view: View;
   onImportClick?: (view: View) => void;
   onClose?: () => void;
 }) {
   const { t } = useTranslation();
-  const { addPage, getSubscriptions } = useAppOperations();
+  const {
+    addPage,
+    bindViewSync,
+    createDatabaseView,
+    deletePage,
+    deleteTrash,
+    getSubscriptions,
+    loadView,
+    loadViewMeta,
+    updatePage,
+  } = useAppOperations();
   const openPageModal = useOpenPageModal();
+  const scheduleDeferredCleanup = useScheduleDeferredCleanup();
   const toView = useToView();
   const aiEnabled = useAIEnabled();
   const currentWorkspaceId = useCurrentWorkspaceId();
@@ -49,7 +60,74 @@ function AddPageActions({
       try {
         // Append after the last child so the new page appears at the bottom.
         // When prev_view_id is omitted the backend prepends (inserts at index 0).
-        const response = await addPage(view.view_id, { layout, name, prev_view_id: lastChildViewId });
+        const response =
+          layout === ViewLayout.List
+            ? await (() => {
+                if (!bindViewSync || !createDatabaseView || !deletePage || !deleteTrash || !scheduleDeferredCleanup) {
+                  throw new Error('List creation is not available right now');
+                }
+
+                return createDatabaseListPageViaGrid({
+                  parentViewId: view.view_id,
+                  name,
+                  prevViewId: lastChildViewId,
+                  standalone: true,
+                  addPage,
+                  createDatabaseView,
+                  deletePage,
+                  deleteTrash,
+                  loadViewMeta,
+                  loadView,
+                  bindViewSync,
+                  scheduleDeferredCleanup,
+                  updatePage,
+                });
+              })()
+            : layout === ViewLayout.Gallery
+            ? await (() => {
+                if (!bindViewSync || !createDatabaseView || !deletePage || !deleteTrash || !scheduleDeferredCleanup) {
+                  throw new Error('Gallery creation is not available right now');
+                }
+
+                return createDatabaseGalleryPageViaGrid({
+                  parentViewId: view.view_id,
+                  name,
+                  prevViewId: lastChildViewId,
+                  standalone: true,
+                  addPage,
+                  createDatabaseView,
+                  deletePage,
+                  deleteTrash,
+                  loadViewMeta,
+                  loadView,
+                  bindViewSync,
+                  scheduleDeferredCleanup,
+                  updatePage,
+                });
+              })()
+            : layout === ViewLayout.Feed
+            ? await (() => {
+                if (!bindViewSync || !createDatabaseView || !deletePage || !deleteTrash || !scheduleDeferredCleanup) {
+                  throw new Error('Feed creation is not available right now');
+                }
+
+                return createDatabaseFeedPageViaGrid({
+                  parentViewId: view.view_id,
+                  name,
+                  prevViewId: lastChildViewId,
+                  standalone: true,
+                  addPage,
+                  createDatabaseView,
+                  deletePage,
+                  deleteTrash,
+                  loadViewMeta,
+                  loadView,
+                  bindViewSync,
+                  scheduleDeferredCleanup,
+                  updatePage,
+                });
+              })()
+            : await addPage(view.view_id, { layout, name, prev_view_id: lastChildViewId });
 
         if (layout === ViewLayout.AIChat && currentWorkspaceId) {
           try {
@@ -91,7 +169,26 @@ function AddPageActions({
         toast.error(getErrorMessage(e, 'Failed to create page'));
       }
     },
-    [addPage, aiEnabled, currentWorkspaceId, lastChildViewId, openPageModal, t, checkCreation, onClose, toView, view]
+    [
+      addPage,
+      aiEnabled,
+      bindViewSync,
+      createDatabaseView,
+      currentWorkspaceId,
+      deletePage,
+      deleteTrash,
+      lastChildViewId,
+      loadView,
+      loadViewMeta,
+      openPageModal,
+      scheduleDeferredCleanup,
+      t,
+      checkCreation,
+      onClose,
+      toView,
+      updatePage,
+      view,
+    ]
   );
 
   const actions: {

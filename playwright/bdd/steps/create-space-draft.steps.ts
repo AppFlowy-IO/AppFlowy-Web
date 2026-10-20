@@ -276,9 +276,7 @@ Then('one renamed Custom space and initial page are created before the queued me
   expect(typeof createBody.view_id).toBe('string');
   expect(initialPageBody.parent_view_id).toBe(createBody.view_id);
   expect(initialPageBody.view_id).toBeTruthy();
-  expect(initialPageBody.schema_version).toBe('v1');
-  expect(initialPageBody).not.toHaveProperty('body');
-  expect(initialPageBody).not.toHaveProperty('collab_id');
+  expect(initialPageBody.collab_id).toBe(initialPageBody.view_id);
   expect(memberBody.role).toBe(SpaceMemberRoleValue.Member);
   expect(memberBody.access_level).toBe(ACCESS_LEVEL_READ_AND_WRITE);
   expect(state.expectedMemberUid).toBeTruthy();
@@ -311,9 +309,7 @@ Then('one default Public space and initial page are created through structured A
   expect(typeof createBody.view_id).toBe('string');
   expect(initialPageBody.parent_view_id).toBe(createBody.view_id);
   expect(initialPageBody.view_id).toBeTruthy();
-  expect(initialPageBody.schema_version).toBe('v1');
-  expect(initialPageBody).not.toHaveProperty('body');
-  expect(initialPageBody).not.toHaveProperty('collab_id');
+  expect(initialPageBody.collab_id).toBe(initialPageBody.view_id);
 
   state.createdSpaceId = String(createBody.view_id);
   state.createdInitialPageId = String(initialPageBody.view_id);
@@ -406,7 +402,7 @@ function classifyDraftMutation(request: Request): DraftMutationKind | null {
   const pathname = new URL(request.url()).pathname;
 
   if (/\/api\/workspace\/[^/]+\/(?:spaces|v2\/space|space)$/.test(pathname)) return 'create-space';
-  if (/\/api\/workspace\/[^/]+\/v2\/page-view\/document\/default$/.test(pathname)) return 'initial-page';
+  if (/\/api\/workspace\/[^/]+\/page-view$/.test(pathname)) return 'initial-page';
   if (/\/api\/workspace\/[^/]+\/spaces\/[^/]+\/members(?:\/[^/]+)?$/.test(pathname)) return 'member';
   if (/\/api\/workspace\/[^/]+\/spaces\/[^/]+\/(?:group|groups)(?:\/[^/]+)?$/.test(pathname)) return 'group';
   if (/\/api\/workspace\/[^/]+\/spaces\/[^/]+(?:\/permission)?$/.test(pathname)) return 'space-update';

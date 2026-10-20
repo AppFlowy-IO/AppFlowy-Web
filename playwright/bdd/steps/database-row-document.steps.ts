@@ -13,7 +13,6 @@ import {
 } from '../../support/duplicate-test-helpers';
 import { createDocumentPageAndNavigate } from '../../support/page-utils';
 import { closeRowDetailWithEscape, openRowDetail } from '../../support/row-detail-helpers';
-import { mockServerInfo } from '../../support/server-info-helpers';
 import {
   BlockSelectors,
   BoardSelectors,
@@ -54,8 +53,6 @@ interface RowInlineGridState {
 }
 
 Given('a board database with a card is open', async ({ page, request }) => {
-  // Exercise the nil restore marker used by history-enabled cloud deployments.
-  await mockServerInfo(page, { enable_database_history: true });
   const currentCardName = `ImageLink-${uuidv4().slice(0, 6)}`;
 
   cardNamesByPage.set(page, currentCardName);

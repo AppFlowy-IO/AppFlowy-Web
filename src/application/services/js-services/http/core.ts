@@ -4,22 +4,13 @@ import i18next from 'i18next';
 
 import { errorCodeNumber, ErrorSource, readErrorIdentity, TransportFailure } from '@/application/errors/error-message';
 import { AFCloudConfig } from '@/application/services/services.type';
-import { captureTokenSession, getTokenParsed, invalidToken, invalidTokenForSession, isTokenSessionCurrent, type TokenSessionWitness } from '@/application/session/token';
+import { getTokenParsed, invalidToken } from '@/application/session/token';
 import { getErrorMessage } from '@/utils/errors';
 import { Log } from '@/utils/log';
 
 import { applyErrorCapability } from './error-capability';
 import { initGrantService, refreshToken } from './gotrue';
 import { resolveLocalApiBaseURL } from './local-dev-origins';
-
-declare module 'axios' {
-  interface AxiosRequestConfig {
-    /** Captured command ownership, checked again by its adapter immediately before sending. */
-    atomicCreationOwner?: { assertCurrent(): void };
-    authSessionWitness?: TokenSessionWitness;
-    skipResponseCache?: boolean;
-  }
-}
 
 let axiosInstance: AxiosInstance | null = null;
 
@@ -47,7 +38,7 @@ export function getAxiosInstance() {
   return axiosInstance;
 }
 
-type EtagCacheConfig = Pick<InternalAxiosRequestConfig, 'data' | 'headers' | 'method' | 'params' | 'url' | 'skipResponseCache'>;
+type EtagCacheConfig = Pick<InternalAxiosRequestConfig, 'data' | 'headers' | 'method' | 'params' | 'url'>;
 
 function stableSerialize(value: unknown): string {
   if (value === undefined || value === null) return '';
@@ -87,7 +78,6 @@ function sortJsonKeys(value: unknown): unknown {
 }
 
 function getEtagCacheKey(config: EtagCacheConfig): string | undefined {
-  if (config.skipResponseCache) return undefined;
   const method = config.method?.toLowerCase() ?? 'get';
   const url = config.url;
 
@@ -494,16 +484,9 @@ export function initAPIService(config: AFCloudConfig) {
 
   axiosInstance.interceptors.request.use(
     async (config) => {
-      config.atomicCreationOwner?.assertCurrent();
-      // Ordinary requests can join the same refresh as an atomic command. Every
-      // waiter must retain its original login lifetime before that shared await.
-      const session = captureTokenSession();
-
-      config.authSessionWitness = session;
       const token = getTokenParsed();
 
       if (!token) {
-        if (config.atomicCreationOwner) throw new Error('Atomic creation requires a current signed-in session');
         Log.debug('[initAPIService][request] no token found, sending request without auth header', {
           url: requestUrlForLog(config.url),
         });
@@ -525,13 +508,10 @@ export function initAPIService(config: AFCloudConfig) {
             url: requestUrlForLog(config.url),
             message: (e as Error)?.message,
           });
-          invalidTokenForSession(session);
-          throw e;
+          invalidToken();
+          return config;
         }
       }
-
-      config.atomicCreationOwner?.assertCurrent();
-      if (!isTokenSessionCurrent(session)) throw new Error('Request session changed');
 
       if (access_token) {
         Object.assign(config.headers, {
@@ -551,15 +531,11 @@ export function initAPIService(config: AFCloudConfig) {
     const status = axiosError.response?.status;
 
     if (status === 401) {
-      const session = axiosError.config?.authSessionWitness;
-
-      if (session && !isTokenSessionCurrent(session)) return Promise.reject(error);
       const token = getTokenParsed();
 
       if (!token) {
         console.warn('[initAPIService][response] 401 without token, emitting invalid token');
-        if (session) invalidTokenForSession(session);
-        else invalidToken();
+        invalidToken();
         return Promise.reject(error);
       }
 
@@ -572,8 +548,7 @@ export function initAPIService(config: AFCloudConfig) {
           message: (e as Error)?.message,
           url: requestUrlForLog(axiosError.config?.url),
         });
-        if (session) invalidTokenForSession(session);
-        else invalidToken();
+        invalidToken();
       }
     }
 
@@ -668,8 +643,6 @@ export function initAPIService(config: AFCloudConfig) {
     const config = error.config as RetryableAxiosConfig | undefined;
 
     if (!config) return Promise.reject(error);
-    // Creation activation must surface its first failed current-state read.
-    if (config.atomicCreationOwner) return Promise.reject(error);
 
     // Only retry idempotent GET requests
     if (config.method?.toLowerCase() !== 'get') return Promise.reject(error);

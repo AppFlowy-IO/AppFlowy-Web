@@ -129,8 +129,7 @@ describe('DatabaseTabs', () => {
     });
     (useDuplicateDatabaseView as jest.Mock).mockReturnValue(duplicateView);
     (useDatabaseContext as jest.Mock).mockReturnValue({
-      workspaceId: 'workspace',
-      canWrite: true,
+      createDatabaseView: jest.fn(),
       isDocumentBlock: true,
       loadViewMeta: jest.fn(async () => galleryContainer),
       readOnly: false,
@@ -186,8 +185,7 @@ describe('DatabaseTabs', () => {
     };
     const views = new Map([[databaseView.view_id, sourceYjsView]]);
     const context = {
-      workspaceId: 'workspace',
-      canWrite: true,
+      createDatabaseView: jest.fn(),
       isDocumentBlock: true,
       loadViewMeta: jest.fn(async () => databaseContainer),
       readOnly: false,
@@ -228,8 +226,7 @@ describe('DatabaseTabs', () => {
     };
     const views = new Map([[databaseView.view_id, sourceYjsView]]);
     const context = {
-      workspaceId: 'workspace',
-      canWrite: true,
+      createDatabaseView: jest.fn(),
       isDocumentBlock: true,
       loadViewMeta: jest.fn(async () => databaseContainer),
       readOnly: false,

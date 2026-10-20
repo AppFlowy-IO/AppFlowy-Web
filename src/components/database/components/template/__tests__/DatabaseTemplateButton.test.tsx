@@ -2,16 +2,12 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { toast } from 'sonner';
 import * as Y from 'yjs';
 
-import { assertAtomicCreationAvailable } from '@/application/atomic-creation';
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs/context';
 import { FieldType, RowMetaKey } from '@/application/database-yjs/database.type';
 import { getMetaIdMap, getRowKey } from '@/application/database-yjs/row_meta';
 import { DatabaseRowTemplateStore } from '@/application/database-yjs/template';
 import templateInterop from '@/application/database-yjs/template/__tests__/fixtures/row_template_interop.json';
-import { getCachedProviderDoc } from '@/application/db';
-import { createFirstBodyDraft } from '@/application/row-document/first-body-actions';
 import { rowDocumentIdFromRowId } from '@/application/row-document/lifecycle';
-import { ensureAtomicTemplateDocument } from '@/application/row-document/template-document';
 import {
   DatabaseViewLayout,
   ViewIconType,
@@ -31,13 +27,6 @@ import { DatabaseTemplateButton } from '../DatabaseTemplateButton';
 import type { ReactNode } from 'react';
 
 jest.unmock('lodash-es/isEqual');
-jest.mock('@/application/atomic-creation', () => ({
-  captureAtomicCreationOwner: jest.fn((_workspace: string, assertCurrent?: () => void) => ({ assertCurrent: () => assertCurrent?.() })),
-  assertAtomicCreationAvailable: jest.fn(),
-}));
-jest.mock('@/application/row-document/template-document', () => ({
-  ensureAtomicTemplateDocument: jest.fn(async () => undefined),
-}));
 
 const documentSnapshot = Array.from(Buffer.from(templateInterop.document_snapshot, 'base64'));
 
@@ -154,7 +143,6 @@ function setup() {
     workspaceId: 'workspace-id',
     createRow,
     createRowDocument,
-    checkIfRowDocumentExists: jest.fn(async () => false),
     updatePage,
     navigateToRow,
   };
@@ -173,7 +161,6 @@ function setup() {
 describe('DatabaseTemplateButton', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    jest.mocked(getCachedProviderDoc).mockReset();
     mockPendingDocumentMetaFlush = undefined;
   });
 
@@ -201,7 +188,7 @@ describe('DatabaseTemplateButton', () => {
     expect(screen.getByTestId('database-template-menu-trigger').className).toContain('w-6');
   });
 
-  it('creates a hidden template and opens its editor after atomic document initialization', async () => {
+  it('shows the empty menu, creates a hidden template row, and opens its editor without server registration', async () => {
     const { Wrapper, context, database, view, rows, createRowDocument } = setup();
     const loadViewMeta = jest.fn().mockRejectedValue(new Error('new templates must not need a view lookup'));
 
@@ -241,57 +228,7 @@ describe('DatabaseTemplateButton', () => {
     expect(rows.has(getRowKey(databaseDocId, state.templates[0].templateId))).toBe(true);
     expect(view.get(YjsDatabaseKey.row_orders)).toHaveLength(0);
     expect(createRowDocument).not.toHaveBeenCalled();
-    expect(ensureAtomicTemplateDocument).toHaveBeenCalledWith(expect.objectContaining({
-      documentId: state.templates[0].docViewId,
-      source: { database_id: databaseId, database_view_id: viewId, row_id: state.templates[0].templateId },
-    }));
     expect(loadViewMeta).not.toHaveBeenCalled();
-  });
-
-  it('rejects offline template creation before creating registry or hidden Row state', async () => {
-    const { Wrapper, database, createRow } = setup();
-
-    jest.mocked(assertAtomicCreationAvailable).mockImplementationOnce(() => { throw new Error('offline'); });
-    render(<DatabaseTemplateButton />, { wrapper: Wrapper });
-    await openMenu();
-    fireEvent.click(screen.getByTestId('database-template-create'));
-    await waitFor(() => expect(toast.error).toHaveBeenCalled());
-    expect(new DatabaseRowTemplateStore(database).read().templates).toHaveLength(0);
-    expect(createRow).not.toHaveBeenCalled();
-    expect(ensureAtomicTemplateDocument).not.toHaveBeenCalled();
-  });
-
-  it('keeps block tools unavailable until the template document is initialized', async () => {
-    const { Wrapper } = setup();
-    let ready!: () => void;
-
-    jest.mocked(ensureAtomicTemplateDocument).mockImplementationOnce(() => new Promise<void>((resolve) => { ready = resolve; }));
-    render(<DatabaseTemplateButton />, { wrapper: Wrapper });
-    await openMenu();
-    fireEvent.click(screen.getByTestId('database-template-create'));
-    await waitFor(() => expect(ensureAtomicTemplateDocument).toHaveBeenCalled());
-    expect(screen.queryByTestId('database-template-editor')).toBeNull();
-    await act(async () => ready());
-    expect(await screen.findByTestId('database-template-editor')).not.toBeNull();
-  });
-
-  it('does not initialize a template body after the creating component unmounts', async () => {
-    const { Wrapper, createRow } = setup();
-    let ready!: (doc: YDoc) => void;
-
-    createRow.mockImplementationOnce(() => new Promise<YDoc>((resolve) => { ready = resolve; }));
-    const mounted = render(<DatabaseTemplateButton />, { wrapper: Wrapper });
-
-    await openMenu();
-    fireEvent.click(screen.getByTestId('database-template-create'));
-    await waitFor(() => expect(createRow).toHaveBeenCalled());
-    mounted.unmount();
-    const row = new Y.Doc() as YDoc;
-
-    await act(async () => ready(row));
-    expect(ensureAtomicTemplateDocument).not.toHaveBeenCalled();
-    expect(row.getMap('data').size).toBe(0);
-    row.destroy();
   });
 
   it('subscribes to template schema changes only while template UI is active', async () => {
@@ -373,44 +310,6 @@ describe('DatabaseTemplateButton', () => {
     fireEvent.keyDown(screen.getByRole('dialog', { name: 'Edit database template' }), { key: 'Escape' });
 
     expect(store.read().templates[0].isDocumentEmpty).toBe(false);
-  });
-
-  it.each([
-    ['paragraph', '', true],
-    ['paragraph', 'authored content', false],
-    ['paragraph', ' ', false],
-    ['heading', '', false],
-    ['todo_list', '', false],
-    ['callout', '', false],
-  ] as const)('saves template content emptiness for %s with text %j', async (type, text, empty) => {
-    const { Wrapper, database, rows } = setup();
-    const store = new DatabaseRowTemplateStore(database);
-    const templateId = '11111111-1111-4111-8111-111111111111';
-    const docViewId = rowDocumentIdFromRowId(templateId);
-    const body = createFirstBodyDraft(docViewId);
-    const document = body.getMap(YjsEditorKey.data_section).get('document');
-    const texts = document.get('meta').get('text_map') as Y.Map<Y.Text>;
-    const blocks = document.get('blocks') as Y.Map<Y.Map<unknown>>;
-
-    Array.from(texts.values())[0].insert(0, text);
-    for (const [id, block] of blocks) {
-      if (id !== document.get('page_id')) block.set('ty', type);
-    }
-
-    jest.mocked(getCachedProviderDoc).mockReturnValue(body);
-    store.upsert({ templateId, name: 'Properties only', docViewId, isDocumentEmpty: true,
-      embeddedDatabases: [], defaultCells: {}, createdAtMs: 1, updatedAtMs: 1 });
-    render(<DatabaseTemplateButton />, { wrapper: Wrapper });
-    await openTemplateActions(templateId);
-    fireEvent.click(await screen.findByText('Edit'));
-    await screen.findByTestId('database-template-editor');
-    const row = rows.get(getRowKey(databaseDocId, templateId))!;
-    const meta = row.getMap(YjsEditorKey.data_section).get(YjsEditorKey.meta) as Y.Map<unknown>;
-
-    act(() => { meta.set(getMetaIdMap(templateId).get(RowMetaKey.IsDocumentEmpty)!, false); });
-    fireEvent.keyDown(screen.getByRole('dialog', { name: 'Edit database template' }), { key: 'Escape' });
-    expect(store.read().templates[0].isDocumentEmpty).toBe(empty);
-    body.destroy();
   });
 
   it('does not rewrite database template metadata for document-body changes', async () => {
@@ -656,13 +555,6 @@ describe('DatabaseTemplateButton', () => {
 
   it('duplicates a non-empty template through the row-document deep-copy pipeline', async () => {
     const { Wrapper, context, database, rows, createRowDocument } = setup();
-    const secondaryFieldId = 'secondary-title';
-    const secondaryField = new Y.Map() as YDatabaseField;
-
-    secondaryField.set(YjsDatabaseKey.id, secondaryFieldId);
-    secondaryField.set(YjsDatabaseKey.name, 'Name');
-    secondaryField.set(YjsDatabaseKey.type, FieldType.RichText);
-    database.get(YjsDatabaseKey.fields).set(secondaryFieldId, secondaryField);
     const store = new DatabaseRowTemplateStore(database);
     const source = store.upsert({
       templateId: 'non-empty-template',
@@ -680,10 +572,7 @@ describe('DatabaseTemplateButton', () => {
           isLinked: false,
         },
       ],
-      defaultCells: {
-        [nameFieldId]: { type: 'text', value: 'Database template' },
-        [secondaryFieldId]: { type: 'text', value: 'Preserved secondary title' },
-      },
+      defaultCells: { [nameFieldId]: { type: 'text', value: 'Database template' } },
       createdAtMs: 1,
       updatedAtMs: 1,
     });
@@ -699,8 +588,7 @@ describe('DatabaseTemplateButton', () => {
       await prepareSource?.();
     });
 
-    const rendered = render(<DatabaseTemplateButton />, { wrapper: Wrapper });
-
+    render(<DatabaseTemplateButton />, { wrapper: Wrapper });
     await openTemplateActions(source.templateId);
     fireEvent.click(await screen.findByText('Duplicate'));
 
@@ -723,28 +611,6 @@ describe('DatabaseTemplateButton', () => {
     );
     expect(rows.has(getRowKey(databaseDocId, source.templateId))).toBe(true);
     expect(rows.has(getRowKey(databaseDocId, duplicate.templateId))).toBe(true);
-
-    await openTemplateActions(duplicate.templateId);
-    fireEvent.click(await screen.findByText('Edit'));
-    await screen.findByTestId('database-template-editor');
-    const copiedRowDoc = rows.get(getRowKey(databaseDocId, duplicate.templateId)) as YDoc;
-    const iconId = getMetaIdMap(duplicate.templateId).get(RowMetaKey.IconId) as string;
-
-    act(() => {
-      copiedRowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.meta).set(iconId, '🐛');
-    });
-    rendered.unmount();
-
-    const savedCopy = store.read().templates.find((template) => template.templateId === duplicate.templateId);
-    const savedSource = store.read().templates.find((template) => template.templateId === source.templateId);
-
-    expect(savedCopy?.name).toBe('Database template (Copy)');
-    expect(savedCopy?.defaultCells[nameFieldId]).toEqual({ type: 'text', value: 'Database template (Copy)' });
-    expect(savedCopy?.icon).toBe('🐛');
-    expect(savedSource?.name).toBe('Database template');
-    expect(savedSource?.defaultCells[nameFieldId]).toEqual({ type: 'text', value: 'Database template' });
-    expect(savedCopy?.defaultCells[secondaryFieldId]).toEqual({ type: 'text', value: 'Preserved secondary title' });
-    expect(savedSource?.defaultCells[secondaryFieldId]).toEqual({ type: 'text', value: 'Preserved secondary title' });
   });
 
   it('migrates Desktop snapshot metadata through a temporary hidden source', async () => {

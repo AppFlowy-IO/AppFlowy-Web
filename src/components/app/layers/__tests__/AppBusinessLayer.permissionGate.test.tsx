@@ -62,7 +62,6 @@ jest.mock('@/components/app/components/AppContextConsumer', () => ({
 }));
 
 jest.mock('@/components/app/contexts/AuthInternalContext', () => ({
-  ...jest.requireActual('@/components/app/contexts/AuthInternalContext'),
   useAuthInternal: jest.fn(),
 }));
 

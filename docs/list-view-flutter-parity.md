@@ -236,17 +236,22 @@ not used as a substitute.
 
 ## Creation and persistence
 
-New standalone and embedded Lists use the atomic default-Database endpoint. The
-server creates the List schema, rows, container and mounted view together. Adding
-or linking a List uses the atomic default-DatabaseView endpoint against the current
-Database. Web no longer creates a temporary Grid, converts it locally, or deletes
-it afterward.
+The current Cloud API rejects native standalone `ViewLayout.List` page
+creation. Web therefore uses a transactional compatibility path:
 
-Selection follows current authorized content hydration and current Folder navigation.
-Lost acknowledgements retain the original request for explicit retry. This requires
-both atomic-creation capability flags and connectivity, including self-hosted mode.
-Ordinary Add Row and editing an existing body retain their existing sync behavior.
-See [atomic creation](atomic-object-creation.md) for ownership, recovery and tests.
+1. create the database container through the supported Grid endpoint;
+2. create a real List folder/database child;
+3. normalize Desktop List field/layout settings and select its inline ID;
+4. confirm that state through the sync outbox;
+5. delete the exact temporary Grid folder and Yjs view and confirm cleanup.
+
+Any post-create core failure compensates only the container created by that
+operation. Embedded List creation similarly requires a live sync binding and
+soft-deletes only its newly created child if conversion fails. The live test
+hard-reloads and requires one child named `List`, a persisted List layout icon,
+the same child ID, and no Grid tab. Navigation persistence is exercised by
+leaving the database, reloading, and clicking its normal sidebar container;
+that route must resolve the same sole List child without a direct URL shortcut.
 
 ## Desktop PR #1475 revamp
 

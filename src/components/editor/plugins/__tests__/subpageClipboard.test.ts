@@ -1,7 +1,6 @@
 import { createEditor, Element, Node } from 'slate';
 import { withReact } from 'slate-react';
 
-import type { FirstBodyOwner } from '@/application/row-document/first-body-owner';
 import { withYjs } from '@/application/slate-yjs';
 import { withTestingYDoc } from '@/application/slate-yjs/__tests__/withTestingYjsEditor';
 import { CustomEditor } from '@/application/slate-yjs/command';
@@ -73,48 +72,6 @@ function setup() {
 beforeEach(() => {
   jest.clearAllMocks();
 });
-
-it.each([false, true])('refuses first-body subpage paste before copy/move side effects (cut=%s)', async (wasCut) => {
-  const f = setup();
-  const before = JSON.stringify(f.editor.children);
-
-  // The host provides this owner only for its detached, unpublished row draft.
-  f.editor.firstBody = {} as FirstBodyOwner;
-  try {
-    f.editor.insertData(clipboardData([block(BlockType.SubpageBlock, '', { view_id: 'child', was_cut: wasCut })]));
-    await settle();
-    expect(f.context.duplicatePage).not.toHaveBeenCalled();
-    expect(f.context.restorePage).not.toHaveBeenCalled();
-    expect(f.context.movePage).not.toHaveBeenCalled();
-    expect(f.context.deletePage).not.toHaveBeenCalled();
-    expect(f.context.loadTrashViews).not.toHaveBeenCalled();
-    expect(JSON.stringify(f.editor.children)).toBe(before);
-    expect(notify.error).toHaveBeenCalledTimes(1);
-  } finally {
-    f.dispose();
-  }
-});
-
-it.each([BlockType.GridBlock, BlockType.FeedBlock, BlockType.DatabaseGalleryBlock])(
-  'refuses an owned %s clipboard fragment before changing a first-body draft',
-  async (type) => {
-    const f = setup();
-    const before = JSON.stringify(f.editor.children);
-    const beforeYjs = JSON.stringify(f.editor.sharedRoot.toJSON());
-
-    f.editor.firstBody = { allowSlateMutation: () => true } as FirstBodyOwner;
-    try {
-      f.editor.insertData(clipboardData([block(type, '', { view_id: 'owned' })]));
-      await settle();
-      expect(JSON.stringify(f.editor.children)).toBe(before);
-      expect(JSON.stringify(f.editor.sharedRoot.toJSON())).toBe(beforeYjs);
-      expect(f.context.duplicatePage).not.toHaveBeenCalled();
-      expect(notify.error).toHaveBeenCalledTimes(1);
-    } finally {
-      f.dispose();
-    }
-  }
-);
 
 it.each([BlockType.Paragraph, BlockType.HeadingBlock])(
   'merges leading %s text at the caret before a subpage',

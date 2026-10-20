@@ -96,13 +96,12 @@ Feature: Form Authoring
     # This scenario exercises the public web flow (sign in → fresh
     # Grid → add Form via tab-bar) and asserts the tab bar order from
     # left to right matches the insertion order — Grid first (seeded),
-    # Form second (added via +), followed by its Responses Grid. Atomic
-    # creation publishes the Form and Responses companion together.
+    # Form second (added via +). Pre-fix this would fail with the
+    # tabs in reverse order.
     Given a Grid is open as a starter database
     When I add a Form view via the tab bar without dismissing modals
     And I click start from scratch in the auto-create form questions dialog
     Then the auto-create form questions dialog is hidden
-    And the database view tab bar has 3 tabs
+    And the database view tab bar has 2 tabs
     And database view tab 1 is a "Grid" layout
     And database view tab 2 is a "Form" layout
-    And the Form and Responses tabs follow the original Grid after reload

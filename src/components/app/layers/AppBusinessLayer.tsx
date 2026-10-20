@@ -38,7 +38,6 @@ import { getErrorDiagnostic } from '@/utils/errors';
 import { AppContextConsumer } from '../components/AppContextConsumer';
 import { useAuthInternal } from '../contexts/AuthInternalContext';
 import { DatabaseRestoreNoticeProvider } from '../DatabaseRestoreNotice';
-import { PendingPageCreations } from '../PendingPageCreations';
 import { useDatabaseOperations } from '../hooks/useDatabaseOperations';
 import { usePageOperations } from '../hooks/usePageOperations';
 import { useRowOperations } from '../hooks/useRowOperations';
@@ -272,6 +271,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     createSpace,
     createSpaceWithInitialPage,
     updateSpace,
+    createDatabaseView,
     uploadFile,
     getSubscriptions,
     getPricingCatalog,
@@ -281,7 +281,6 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
   } = usePageOperations({
     outlineRef: stableOutlineRef,
     loadOutline,
-    ensureViewVisibleInOutline,
     flushAllSync: syncContext.flushAllSync,
     syncAllToServer: syncContext.syncAllToServer,
     loadViewChildren,
@@ -1074,6 +1073,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       createSpace,
       createSpaceWithInitialPage,
       updateSpace,
+      createDatabaseView,
       uploadFile,
       getSubscriptions,
       getPricingCatalog,
@@ -1116,6 +1116,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       createSpace,
       createSpaceWithInitialPage,
       updateSpace,
+      createDatabaseView,
       uploadFile,
       getSubscriptions,
       getPricingCatalog,
@@ -1167,7 +1168,6 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
                   setOpenModalViewId={setOpenModalViewId}
                 >
                   {children}
-                  <PendingPageCreations key={`${requesterId}:${currentWorkspaceId}`} />
                 </AppContextConsumer>
               </DatabaseRestoreNoticeProvider>
             </AppSyncContext.Provider>

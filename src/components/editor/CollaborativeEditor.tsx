@@ -4,7 +4,6 @@ import { createEditor, Descendant, Editor, Element as SlateElement, Node, Operat
 import { ReactEditor, Slate, withReact } from 'slate-react';
 import * as Y from 'yjs';
 
-import type { FirstBodyOwner } from '@/application/row-document/first-body-owner';
 import { isDatabaseBlockType } from '@/application/database-block';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { withYHistory } from '@/application/slate-yjs/plugins/withHistory';
@@ -82,13 +81,11 @@ function isDatabaseBlockLifecycleOperation(editor: YjsEditor, op: Operation): bo
 
 function CollaborativeEditor({
   doc,
-  firstBody,
   dockableOutline = false,
   onEditorConnected,
   onSelectionChange,
 }: {
   doc: YDoc;
-  firstBody?: FirstBodyOwner;
   dockableOutline?: boolean;
   onEditorConnected?: (editor: YjsEditor) => void;
   onSelectionChange?: (editor: YjsEditor) => void;
@@ -172,17 +169,13 @@ function CollaborativeEditor({
     [onSelectionChange, debounceCalculateWordCount]
   );
 
-  const retainedEditor = useRef<YjsEditor>();
   const editor = useMemo(
-    () => {
-      // The detached row-page owner already rebound this mounted editor after
-      // replaying staged input. Preserve its DOM and selection across handoff.
-      if (retainedEditor.current?.sharedRoot.doc === doc) return retainedEditor.current;
-      const next = withPlugins(
+    () =>
+      doc &&
+      (withPlugins(
         withReact(
           withYHistory(
             withYjs(createEditor(), doc, {
-              firstBody,
               readOnly,
               localOrigin: CollabOrigin.Local,
               readSummary,
@@ -195,11 +188,7 @@ function CollaborativeEditor({
           clipboardFormatKey
         ),
         () => contextRef.current
-      ) as YjsEditor;
-
-      retainedEditor.current = next;
-      return next;
-    },
+      ) as YjsEditor),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [viewId, doc]
   );
@@ -393,10 +382,7 @@ function CollaborativeEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor]);
 
-  // A first-body handoff changes the backing document, not the mounted Slate
-  // editor. A genuinely new editor (including a restore) still remounts Slate.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const key = useMemo(() => `${viewId}:${doc.clientID}`, [editor, viewId]);
+  const key = `${viewId}:${doc.version}`;
 
   return (
     <Slate key={key} editor={editor} initialValue={defaultInitialValue} onChange={handleSlateChange}>

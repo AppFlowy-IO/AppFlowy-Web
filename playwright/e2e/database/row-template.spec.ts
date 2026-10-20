@@ -67,7 +67,7 @@ async function createTemplate(page: Page, name: string): Promise<Locator> {
 
 async function openTemplateActions(page: Page, name: string): Promise<void> {
   await openTemplateMenu(page);
-  await page.getByLabel(`Actions for ${name}`, { exact: true }).click();
+  await page.getByLabel(`Actions for ${name}`).click();
 }
 
 async function editTemplate(page: Page, name: string): Promise<Locator> {
@@ -656,9 +656,6 @@ test.describe('Database row templates (Desktop parity)', () => {
     const rowCheckbox = DatabaseGridSelectors.cellByIds(page, rowId, checkboxFieldId);
 
     await expect(rowCheckbox.getByTestId('checkbox-checked-icon')).toBeVisible({ timeout: 15000 });
-    // Editing properties alone must not turn a blank template into authored
-    // row-page content merely because its server document was initialized.
-    await expect(page.getByTestId(`row-document-icon-${rowId}`)).toHaveCount(0);
     editor = await editTemplate(page, templateName);
     await expect(editor.getByText(addedFieldName, { exact: true })).toHaveCount(0);
     await expect(
@@ -710,6 +707,10 @@ test.describe('Database row templates (Desktop parity)', () => {
 
     await expect(DatabaseGallerySelectors.gallery(page)).toBeVisible({ timeout: 30_000 });
 
+    await switchDatabaseView(page, gridTabTestId as string);
+    const feedTabTestId = await addRootDatabaseView(page, 'Feed');
+
+    await expect(page.getByTestId('database-feed')).toBeVisible({ timeout: 30_000 });
     const createdRows: string[] = [];
 
     for (const { indicatorLayout, tabTestId } of [
@@ -719,28 +720,13 @@ test.describe('Database row templates (Desktop parity)', () => {
       { tabTestId: chartTabTestId },
       { indicatorLayout: 'List' as const, tabTestId: listTabTestId },
       { indicatorLayout: 'Gallery' as const, tabTestId: galleryTabTestId },
+      { tabTestId: feedTabTestId },
     ]) {
       createdRows.push(
         await createDefaultTemplateRowFromView(page, gridTabTestId as string, tabTestId, indicatorLayout)
       );
     }
 
-    // The server permits six views per database. Release the already-checked
-    // Board slot before exercising Feed on the same database and template.
-    await switchDatabaseView(page, boardTabTestId);
-    await expect(page.locator('.database-board')).toBeVisible();
-    await page.getByTestId(boardTabTestId).getByText('Board', { exact: true }).click({ button: 'right' });
-    await expect(DatabaseViewSelectors.tabActionDelete(page)).toBeVisible();
-    await DatabaseViewSelectors.tabActionDelete(page).click();
-    await expect(DatabaseViewSelectors.deleteViewConfirmButton(page)).toBeVisible();
-    await DatabaseViewSelectors.deleteViewConfirmButton(page).click();
-    await expect(page.getByTestId(boardTabTestId)).toHaveCount(0);
-    await expect(DatabaseViewSelectors.viewTab(page)).toHaveCount(5);
-    await switchDatabaseView(page, gridTabTestId as string);
-    const feedTabTestId = await addRootDatabaseView(page, 'Feed');
-
-    await expect(page.getByTestId('database-feed')).toBeVisible({ timeout: 30_000 });
-    createdRows.push(await createDefaultTemplateRowFromView(page, gridTabTestId as string, feedTabTestId));
     expect(new Set(createdRows).size).toBe(7);
   });
 
@@ -1048,36 +1034,6 @@ test.describe('Database row templates (Desktop parity)', () => {
 
     await expect(duplicatedMenu.getByText(copyName, { exact: true })).toBeVisible();
     await page.keyboard.press('Escape');
-
-    // Prove that template duplication preserves both linked views, then free the
-    // checked Board slots. Three row copies plus both templates and the source
-    // Grid must stay within the server's six-view limit on this shared database.
-    for (const editableName of [copyName, templateName]) {
-      const linkedEditor = await editTemplate(page, editableName);
-      const linkedBlock = databaseBlocks(linkedEditor.getByTestId('editor-content').first()).first();
-
-      await expectDatabaseBlockViews(linkedBlock, 2);
-      const boardTab = linkedBlock.locator('[data-testid^="view-tab-"]').filter({ hasText: /^Board(?:-copy)?$/ });
-      const boardLabel = boardTab.getByText(/^Board(?:-copy)?$/);
-
-      await boardLabel.click();
-      await expect(linkedBlock.locator('.database-board')).toBeVisible();
-      await boardLabel.click({ button: 'right' });
-      await expect(DatabaseViewSelectors.tabActionDelete(page)).toBeVisible();
-      await DatabaseViewSelectors.tabActionDelete(page).click();
-      await expect(DatabaseViewSelectors.deleteViewConfirmButton(page)).toBeVisible();
-      await DatabaseViewSelectors.deleteViewConfirmButton(page).click();
-      await expect(boardTab).toHaveCount(0);
-      await expectDatabaseBlockViews(linkedBlock, 1);
-      await expect(linkedBlock.getByTestId('database-grid')).toBeVisible();
-      await closeTemplateEditor(page);
-    }
-
-    const renamedMenu = await openTemplateMenu(page);
-
-    await expect(renamedMenu.getByText(templateName, { exact: true })).toBeVisible();
-    await expect(renamedMenu.getByText(copyName, { exact: true })).toBeVisible();
-    await page.keyboard.press('Escape');
     const rowIds: string[] = [];
 
     for (let index = 0; index < 3; index++) {
@@ -1086,7 +1042,7 @@ test.describe('Database row templates (Desktop parity)', () => {
 
     const first = await openRowWithDatabaseBlock(page, rowIds[0]);
 
-    await expectDatabaseBlockViews(first.block, 1);
+    await expectDatabaseBlockViews(first.block, 2);
     await expect(first.editor).toContainText(sourceName);
     await expect.poll(() => firstGridCellText(first.block), { timeout: 30000 }).toBe('Edited linked template value');
     await editFirstGridCell(page, first.block, 'shared linked value');
@@ -1102,7 +1058,7 @@ test.describe('Database row templates (Desktop parity)', () => {
 
     const second = await openRowWithDatabaseBlock(page, rowIds[1]);
 
-    await expectDatabaseBlockViews(second.block, 1);
+    await expectDatabaseBlockViews(second.block, 2);
     await expect(second.editor).toContainText(sourceName);
     await expect.poll(() => firstGridCellText(second.block), { timeout: 30000 }).toBe('shared linked value');
     await expect(second.block.getByTestId('checkbox-checked-icon')).toHaveCount(1);
@@ -1110,7 +1066,7 @@ test.describe('Database row templates (Desktop parity)', () => {
 
     const third = await openRowWithDatabaseBlock(page, rowIds[2]);
 
-    await expectDatabaseBlockViews(third.block, 1);
+    await expectDatabaseBlockViews(third.block, 2);
     await expect(third.editor).toContainText(sourceName);
     await expect.poll(() => firstGridCellText(third.block), { timeout: 30000 }).toBe('shared linked value');
     await closeRowDetailWithEscape(page);
@@ -1120,7 +1076,7 @@ test.describe('Database row templates (Desktop parity)', () => {
     await page.getByTestId('database-template-delete-confirm').click();
     const surviving = await openRowWithDatabaseBlock(page, rowIds[1]);
 
-    await expectDatabaseBlockViews(surviving.block, 1);
+    await expectDatabaseBlockViews(surviving.block, 2);
     await expect(surviving.editor).toContainText(sourceName);
     await expect.poll(() => firstGridCellText(surviving.block), { timeout: 30000 }).toBe('shared linked value');
     await expect(surviving.block.getByTestId('checkbox-checked-icon')).toHaveCount(1);
