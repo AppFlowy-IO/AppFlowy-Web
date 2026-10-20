@@ -17,6 +17,7 @@ import { SelectionToolbarContext } from '@/components/editor/components/toolbar/
 import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
 
 import { RICH_TEXT_CELL_OVERLAY_ATTR } from './editor-ui';
+import { toggleEquation } from './rich-text-slate';
 
 export { RICH_TEXT_CELL_OVERLAY_ATTR } from './editor-ui';
 
@@ -148,7 +149,7 @@ export function RichTextCellToolbar() {
             <Italic />
             <StrikeThrough />
             <InlineCode />
-            <Formula />
+            <Formula onToggle={() => toggleEquation(editor)} />
             <Divider className={'my-1.5 bg-line-on-toolbar'} orientation={'vertical'} flexItem={true} />
             <Href />
             <TextColor focusEditor={focusEditor} toggleDisableEditorFocus={toggleDisableEditorFocus} />

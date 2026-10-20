@@ -2558,7 +2558,7 @@
         "table": "Table",
         "callout": "Callout",
         "outline": "Table of contents",
-        "mathEquation": "Math Equation",
+        "mathEquation": "Block equation",
         "code": "Code",
         "toggleList": "Toggle list",
         "toggleHeading1": "Toggle heading 1",
@@ -2689,9 +2689,23 @@
         "alertDialogConfirmation": "Are you sure, you want to continue?"
       },
       "mathEquation": {
-        "name": "Math Equation",
+        "name": "Block equation",
         "addMathEquation": "Add a TeX equation",
-        "editMathEquation": "Edit Math Equation"
+        "editMathEquation": "Edit block equation",
+        "inline": "Inline equation",
+        "options": "Block equation options",
+        "insert": "Insert",
+        "comment": "Comment",
+        "generating": "Generating…",
+        "send": "Send",
+        "stop": "Stop",
+        "askAI": "Ask AI",
+        "explain": "Explain equation",
+        "check": "Check equation",
+        "theEquationIsEmpty": "The equation is empty",
+        "changedDuringAI": "This equation changed while AI was working. Review it and try again.",
+        "noEquation": "The response does not contain an equation. Try again with a more specific request.",
+        "aiUnavailable": "AI is unavailable in this document"
       },
       "optionAction": {
         "askAI": "Ask AI",
@@ -2738,7 +2752,7 @@
         "deleteBlockTooltip": "Delete whole gallery"
       },
       "math": {
-        "copiedToPasteBoard": "The math equation has been copied to the clipboard"
+        "copiedToPasteBoard": "The block equation has been copied to the clipboard"
       },
       "urlPreview": {
         "copiedToPasteBoard": "The link has been copied to the clipboard",
@@ -3746,7 +3760,7 @@
     "copy": {
       "codeBlock": "The content of code block has been copied to the clipboard",
       "imageBlock": "The image link has been copied to the clipboard",
-      "mathBlock": "The math equation has been copied to the clipboard",
+      "mathBlock": "The block equation has been copied to the clipboard",
       "fileBlock": "The file link has been copied to the clipboard"
     },
     "containsPublishedPage": "This page contains one or more published pages. If you continue, they will be unpublished. Do you want to proceed with deletion?",

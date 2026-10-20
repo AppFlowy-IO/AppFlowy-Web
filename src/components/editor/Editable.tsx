@@ -10,6 +10,7 @@ import { YHistoryEditor } from '@/application/slate-yjs/plugins/withHistory';
 import { getBlockEntry } from '@/application/slate-yjs/utils/editor';
 import { BlockType } from '@/application/types';
 import { registerSharedAutoScroll } from '@/components/_shared/reorder/sharedAutoScroll';
+import BlockPopover from '@/components/editor/components/block-popover';
 import { BlockPopoverProvider } from '@/components/editor/components/block-popover/BlockPopoverContext';
 import { useDecorate } from '@/components/editor/components/blocks/code/useDecorate';
 import { useFindReplaceDecorations } from '@/components/editor/components/find-replace/FindReplaceContext';
@@ -241,6 +242,13 @@ const EditorEditable = () => {
               onClick={readOnly ? undefined : handleClick}
             />
           </ErrorBoundary>
+
+          {/* Keyboard-created blocks need their input before the lazy toolbar bundle finishes loading. */}
+          {!readOnly && (
+            <ErrorBoundary fallbackRender={() => null}>
+              <BlockPopover />
+            </ErrorBoundary>
+          )}
 
           {!readOnly && (
             <Suspense>

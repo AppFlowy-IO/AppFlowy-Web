@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BaseRange, Editor, Element, Point } from 'slate';
+import { BaseRange, Editor, Element, Point, Text } from 'slate';
 import { TextInsertTextOptions } from 'slate/dist/interfaces/transforms/text';
 import { ReactEditor } from 'slate-react';
 
@@ -159,6 +159,14 @@ export const PanelProvider = ({
 
       if (!selection) return;
       if (!isTriggerEnabled(panelType)) return;
+      // A plus sign or slash inside a pending $...$ equation is TeX input.
+      // Opening a mention panel here steals focus before the closing dollar.
+      if (Editor.hasPath(editor, selection.anchor.path)) {
+        const [leaf] = Editor.node(editor, selection.anchor.path);
+
+        if (Text.isText(leaf) && (leaf.formula !== undefined || /(?:^|[^\\$])\${1,2}[^$\n]*$/.test(leaf.text.slice(0, selection.anchor.offset)))) return;
+      }
+
       if (triggerAtWordStart && triggerLength === 1) {
         // The character before the trigger, which may sit in the previous
         // text run (e.g. right after bold text).
