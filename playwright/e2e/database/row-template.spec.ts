@@ -67,7 +67,7 @@ async function createTemplate(page: Page, name: string): Promise<Locator> {
 
 async function openTemplateActions(page: Page, name: string): Promise<void> {
   await openTemplateMenu(page);
-  await page.getByLabel(`Actions for ${name}`).click();
+  await page.getByLabel(`Actions for ${name}`, { exact: true }).click();
 }
 
 async function editTemplate(page: Page, name: string): Promise<Locator> {
