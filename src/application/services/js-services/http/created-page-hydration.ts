@@ -8,7 +8,7 @@ import { CreatePageResponse, Types, View, ViewLayout, YDoc, YjsEditorKey } from 
 import { rememberCreatedDocument } from '@/application/view-loader/created-document';
 import { applyYDoc } from '@/application/ydoc/apply';
 
-import { collabFullSyncBatch, CollabFullSyncBatchResult } from './collab-api';
+import { readCollabStates, CollabFullSyncBatchResult } from './collab-api';
 
 import type { prepareDefaultPage } from './page-default-creation';
 
@@ -173,9 +173,7 @@ export async function verifyCreatedPage(owner: AtomicCreationOwner, prepared: Pr
     `/api/workspace/${owner.workspaceId}/database/${objectId}/restore-state`, undefined, controller.signal);
   const read = async (ids: string[], collabType: Types) => {
     if (!ids.length) return [];
-    const results = await collabFullSyncBatch(owner.workspaceId, ids.map((id) => ({ objectId: id, collabType,
-      stateVector: new Uint8Array([0]), docState: new Uint8Array(),
-      ...(restore ? { databaseRestoreId: restore.database_restore_id ?? ORIGINAL_RESTORE } : {}),
+    const results = await readCollabStates(owner.workspaceId, ids.map((id) => ({ objectId: id, collabType,
     })), { atomicCreationOwner: owner, signal: controller.signal, timeoutMs: Math.max(1, deadline - Date.now()) });
 
     assertCurrent();

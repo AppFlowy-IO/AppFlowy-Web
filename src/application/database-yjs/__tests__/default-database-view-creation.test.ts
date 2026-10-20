@@ -3,7 +3,7 @@ import * as Y from 'yjs';
 import { createDefaultDatabaseView } from '@/application/database-yjs/creation/create-default-view';
 import { DatabaseViewLayout, Types, ViewLayout, YDatabase, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { atomicRead, findPendingAtomicCreation, recoverAtomicCreation, runAtomicCreation } from '@/application/atomic-creation';
-import { collabFullSyncBatch } from '@/application/services/js-services/http/collab-api';
+import { readCollabStates } from '@/application/services/js-services/http/collab-api';
 import { readPersistedDatabaseSource } from '@/application/database-yjs/creation/source-readiness';
 
 const mockCurrent = jest.fn();
@@ -23,7 +23,7 @@ jest.mock('@/application/db/database-storage-fence', () => ({
   isDatabaseStorageFenceCurrent: () => true,
   withDatabaseStorageFence: (_doc: unknown, _fence: unknown, publish: () => void) => publish(),
 }));
-jest.mock('@/application/services/js-services/http/collab-api', () => ({ collabFullSyncBatch: jest.fn() }));
+jest.mock('@/application/services/js-services/http/collab-api', () => ({ readCollabStates: jest.fn() }));
 jest.mock('@/application/database-yjs/creation/source-readiness', () => ({
   ...jest.requireActual('@/application/database-yjs/creation/source-readiness'), readPersistedDatabaseSource: jest.fn(),
 }));
@@ -45,7 +45,7 @@ function fixture() {
 
   Y.applyUpdate(remote, Y.encodeStateAsUpdate(doc));
   jest.mocked(readPersistedDatabaseSource).mockImplementation(async () => Y.encodeStateAsUpdate(doc));
-  jest.mocked(collabFullSyncBatch).mockImplementation(async () => [{ objectId: 'db', collabType: Types.Database,
+  jest.mocked(readCollabStates).mockImplementation(async () => [{ objectId: 'db', collabType: Types.Database,
     missingUpdate: Y.encodeStateAsUpdate(remote), serverStateVector: Y.encodeStateVector(remote) }]);
   const folder = new Map<string, { view_id: string; parent_view_id: string; layout: ViewLayout; extra: { database_id: string } }>();
 
@@ -110,10 +110,10 @@ it('loads committed Folder metadata while the independent current-content read i
   let release!: () => void;
   const sourceEntered = new Promise<void>((resolve) => { entered = resolve; });
   const sourceReleased = new Promise<void>((resolve) => { release = resolve; });
-  const read = jest.mocked(collabFullSyncBatch).getMockImplementation()!;
+  const read = jest.mocked(readCollabStates).getMockImplementation()!;
   let reads = 0;
 
-  jest.mocked(collabFullSyncBatch).mockImplementation(async (...args) => {
+  jest.mocked(readCollabStates).mockImplementation(async (...args) => {
     if (++reads === 2) { entered(); await sourceReleased; }
     return read(...args);
   });
@@ -158,7 +158,7 @@ it('creates a compact Form/Responses graph and selects only after current Folder
     epoch: null,
     cacheEpoch: null,
   });
-  expect(collabFullSyncBatch).toHaveBeenCalledWith('workspace', expect.any(Array),
+  expect(readCollabStates).toHaveBeenCalledWith('workspace', expect.any(Array),
     expect.objectContaining({ atomicCreationOwner: expect.objectContaining({ assertCurrent: expect.any(Function) }) }));
   expect(f.activate).toHaveBeenCalledWith(id);
   const database = f.doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
@@ -202,7 +202,7 @@ it('refuses a current Folder mismatch without canonical mutation or compensating
 it('fails before compact submission when a source response has another version', async () => {
   const f = fixture();
 
-  jest.mocked(collabFullSyncBatch).mockResolvedValue([{ objectId: 'db', collabType: Types.Database,
+  jest.mocked(readCollabStates).mockResolvedValue([{ objectId: 'db', collabType: Types.Database,
     missingUpdate: Y.encodeStateAsUpdate(f.remote), serverStateVector: Y.encodeStateVector(f.remote), collabVersion: 'new' }]);
   const post = jest.fn();
 
@@ -251,7 +251,7 @@ it('refuses unavailable atomic capability before allocating a command or reading
   await expect(createDefaultDatabaseView(f.intent)).rejects.toThrow('upgrade server');
   expect(runAtomicCreation).not.toHaveBeenCalled();
   expect(readPersistedDatabaseSource).not.toHaveBeenCalled();
-  expect(collabFullSyncBatch).not.toHaveBeenCalled();
+  expect(readCollabStates).not.toHaveBeenCalled();
 });
 
 

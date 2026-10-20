@@ -59,7 +59,7 @@ function fixture() {
   const contexts = new Map([['database', rootContext], ['row', rowContext], ['row-document', documentContext]]);
   const refs = {
     latestUserRef: { current: { uid: '42', uuid: 'user' } }, isDisposedRef: { current: false },
-    registeredContexts: { current: contexts }, contextRefCounts: { current: new Map() },
+    registeredContexts: { current: contexts }, contextRefCounts: { current: new Map([['database', 1], ['row', 1], ['row-document', 1]]) },
     pendingCleanups: { current: new Map() }, resettingObjectIds: { current: new Set() },
     queuedMessagesDuringReset: { current: new Map([['row', [{}]]]) },
   } as unknown as SyncRefs;
@@ -135,6 +135,110 @@ beforeEach(() => {
 });
 
 afterEach(() => jest.useRealTimers());
+
+test('all views and rows share a database check on open and every five minutes, stopping when closed', async () => {
+  jest.useFakeTimers();
+  const f = fixture();
+  const rootContext = f.contexts.get('database')!;
+
+  f.contexts.clear();
+  f.refs.contextRefCounts.current.clear();
+  jest.mocked(getDatabaseRestoreState).mockResolvedValue({ database_restore_id: null, version: null });
+  const { result, unmount } = renderHook(() => useDatabaseHistoryRestoreSync({
+    refs: f.refs, workspaceId: 'workspace', userId: 'user', enabled: true, capabilityLoaded: true,
+    eventEmitter: new EventEmitter(), register: f.register, unregister: f.unregister,
+    scheduleDeferredCleanup: jest.fn(),
+  }));
+
+  await act(async () => {
+    result.current.prepareDatabaseContext(rootContext);
+    f.contexts.set('database', rootContext);
+    // Three database views retain one root, identified by its database ID.
+    f.refs.contextRefCounts.current.set('database', 3);
+  });
+  expect(getDatabaseRestoreState).toHaveBeenCalledTimes(1);
+  expect(getDatabaseRestoreState).toHaveBeenCalledWith('workspace', 'database');
+  await act(async () => {
+    for (let i = 0; i < 20; i++) {
+      result.current.prepareDatabaseContext(rootContext);
+      await result.current.ensureDatabaseRestoreCurrent('row', Types.DatabaseRow);
+    }
+
+    window.dispatchEvent(new Event('focus'));
+    jest.advanceTimersByTime(299_999);
+  });
+  expect(getDatabaseRestoreState).toHaveBeenCalledTimes(1);
+  await act(async () => { jest.advanceTimersByTime(1); });
+  expect(getDatabaseRestoreState).toHaveBeenCalledTimes(2);
+
+  // Coming back online may follow a missed restore notification, so it ignores the recent check.
+  await act(async () => { window.dispatchEvent(new Event('online')); });
+  expect(getDatabaseRestoreState).toHaveBeenCalledTimes(3);
+
+  // Deferred cleanup may retain the Y.Doc after the last view closes.
+  f.refs.contextRefCounts.current.clear();
+  await act(async () => { jest.advanceTimersByTime(300_000); });
+  expect(getDatabaseRestoreState).toHaveBeenCalledTimes(3);
+  await act(async () => {
+    result.current.prepareDatabaseContext(rootContext);
+    f.refs.contextRefCounts.current.set('database', 1);
+  });
+  expect(getDatabaseRestoreState).toHaveBeenCalledTimes(4);
+  unmount();
+  await act(async () => { jest.advanceTimersByTime(600_000); });
+  expect(getDatabaseRestoreState).toHaveBeenCalledTimes(4);
+});
+
+test('separate databases have independent routine checks', async () => {
+  jest.useFakeTimers();
+  const f = fixture();
+  const other: YDoc = new Y.Doc({ guid: 'other-database' });
+
+  f.contexts.set(other.guid, { doc: other, collabType: Types.Database, emit: jest.fn() });
+  f.refs.contextRefCounts.current.set(other.guid, 1);
+  jest.mocked(getDatabaseRestoreState).mockResolvedValue({ database_restore_id: null, version: null });
+  const { result, unmount } = renderHook(() => useDatabaseHistoryRestoreSync({
+    refs: f.refs, workspaceId: 'workspace', userId: 'user', enabled: true, capabilityLoaded: true,
+    eventEmitter: new EventEmitter(), register: f.register, unregister: f.unregister,
+    scheduleDeferredCleanup: jest.fn(),
+  }));
+
+  await act(async () => {
+    await Promise.all([
+      result.current.ensureDatabaseRestoreCurrent('database', Types.Database),
+      result.current.ensureDatabaseRestoreCurrent('other-database', Types.Database),
+      result.current.ensureDatabaseRestoreCurrent('row', Types.DatabaseRow),
+    ]);
+  });
+  expect(jest.mocked(getDatabaseRestoreState).mock.calls).toEqual([
+    ['workspace', 'database'], ['workspace', 'other-database'],
+  ]);
+  await act(async () => { jest.advanceTimersByTime(300_000); });
+  expect(getDatabaseRestoreState).toHaveBeenCalledTimes(4);
+  unmount();
+  other.destroy();
+});
+
+test('a permission denial cancels the routine timer established by an earlier successful check', async () => {
+  jest.useFakeTimers();
+  const f = fixture();
+
+  jest.mocked(getDatabaseRestoreState).mockResolvedValueOnce({ database_restore_id: null, version: null })
+    .mockRejectedValue({ httpStatus: 403 });
+  const { result, unmount } = renderHook(() => useDatabaseHistoryRestoreSync({
+    refs: f.refs, workspaceId: 'workspace', userId: 'user', enabled: true, capabilityLoaded: true,
+    eventEmitter: new EventEmitter(), register: f.register, unregister: f.unregister,
+    scheduleDeferredCleanup: jest.fn(),
+  }));
+
+  await act(async () => {
+    expect(await result.current.ensureDatabaseRestoreCurrent('database', Types.Database)).toBe(true);
+    expect(await result.current.ensureDatabaseRestoreCurrent('database', Types.Database, undefined, true)).toBe(false);
+  });
+  await act(async () => { jest.advanceTimersByTime(600_000); });
+  expect(getDatabaseRestoreState).toHaveBeenCalledTimes(2);
+  unmount();
+});
 
 test.each([null, 'restore-current'])('verifies an unopened follower row in generation %s using its durable parent', async (marker) => {
   const f = fixture();
@@ -226,7 +330,7 @@ test('a restore after verifying the original generation announces a live transit
   expect(restored).not.toHaveBeenCalled();
   expect(screen.queryByRole('dialog', { name: 'Database restored' })).toBeNull();
   await act(async () => {
-    expect(await result.current.ensureDatabaseRestoreCurrent('database', Types.Database)).toBe(false);
+    expect(await result.current.ensureDatabaseRestoreCurrent('database', Types.Database, 'restore-new')).toBe(false);
   });
   expect(restored).toHaveBeenCalledTimes(1);
   expect(restored).toHaveBeenCalledWith({
@@ -735,10 +839,13 @@ test.each(['timer', 'incoming guard'])('resumes deferred sync after an unchanged
   expect(startDrainAll).not.toHaveBeenCalled();
   await act(async () => {
     if (recovery === 'timer') jest.advanceTimersByTime(5000);
-    else await Promise.all([
-      result.current.ensureDatabaseRestoreCurrent('database', Types.Database),
-      result.current.ensureDatabaseRestoreCurrent('row', Types.DatabaseRow),
-    ]);
+    else {
+      jest.setSystemTime(Date.now() + 5000);
+      await Promise.all([
+        result.current.ensureDatabaseRestoreCurrent('database', Types.Database),
+        result.current.ensureDatabaseRestoreCurrent('row', Types.DatabaseRow),
+      ]);
+    }
   });
 
   for (const objectId of ['database', 'row']) {
@@ -997,6 +1104,7 @@ test('independent tabs resetting the same committed restore use one stable stora
 
 
 test.each([false, true])('retry after a partial rebuild replaces the displayed new root and preserves its latest owners (known generation: %s)', async (knownGeneration) => {
+  jest.useFakeTimers();
   const f = fixture();
 
   if (knownGeneration) localStorage.setItem('af_database_restore:v1:server:user:workspace:database', 'restore-old');
@@ -1021,6 +1129,7 @@ test.each([false, true])('retry after a partial rebuild replaces the displayed n
   expect(screen.queryByRole('dialog', { name: 'Database restored' })).toBeNull();
   // Another mounted view acquired the replacement root while row recovery waited.
   f.refs.contextRefCounts.current.set('database', 3);
+  jest.setSystemTime(Date.now() + 5000);
   await act(async () => { await result.current.ensureDatabaseRestoreCurrent('database', Types.Database); });
   expect(f.contexts.get('database')?.doc).toBe(secondRoot);
   expect(f.contexts.get('row')?.doc).toBe(f.nextRow);

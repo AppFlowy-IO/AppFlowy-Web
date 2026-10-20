@@ -117,6 +117,8 @@ export async function prepareAtomicRowFirstBody(input: {
   rowDoc: YDoc;
   name: string;
   assertWritable: () => void;
+  /** Hidden template rows still originate in local Yjs state rather than atomic row creation. */
+  requiresInitialRowSnapshot?: boolean;
 }) {
   const { workspaceId, documentId, source, databaseDoc, rowDoc } = input;
   const databaseVersion = databaseDoc.version;
@@ -416,22 +418,24 @@ export async function prepareAtomicRowFirstBody(input: {
           databaseVersion,
           rowVersion,
         };
-        const row = await waitForRowDocumentSource(
-          identity,
-          {
-            read: readSource,
-            assertCurrent: currentOwner.assertCurrent,
-            signal: controller.signal,
-            deadline,
-          }
-        );
 
-        await ensureDurableRowSource(identity, row, {
-          owner: currentOwner,
-          restoreId,
+        // Atomic row creation already commits the Row and its database membership.
+        // Legacy rows still awaiting durability use the atomic API's bounded RetryLater handling.
+        const row = await waitForRowDocumentSource(identity, {
+          read: readSource,
+          assertCurrent: currentOwner.assertCurrent,
           signal: controller.signal,
           deadline,
         });
+
+        if (input.requiresInitialRowSnapshot) {
+          await ensureDurableRowSource(identity, row, {
+            owner: currentOwner,
+            restoreId,
+            signal: controller.signal,
+            deadline,
+          });
+        }
       };
 
       try {

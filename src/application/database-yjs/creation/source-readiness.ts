@@ -122,6 +122,8 @@ export async function waitForDatabaseViewSource(
     deadline: number;
   }
 ): Promise<CollabFullSyncBatchResult> {
+  let pollDelayMs = 250;
+
   while (!options.signal.aborted) {
     assertNotAborted(options.signal);
     options.assertCurrent();
@@ -137,12 +139,14 @@ export async function waitForDatabaseViewSource(
     await new Promise<void>((resolve, reject) => {
       const done = () => { options.signal.removeEventListener('abort', abort); resolve(); };
 
-      const timer = setTimeout(done, Math.min(100, options.deadline - Date.now()));
+      const timer = setTimeout(done, Math.min(pollDelayMs, options.deadline - Date.now()));
       const abort = () => { clearTimeout(timer); reject(options.signal.reason); };
 
       options.signal.addEventListener('abort', abort, { once: true });
       if (options.signal.aborted) abort();
     });
+    // A slow sync must not turn each creation into ten authority reads/second.
+    pollDelayMs = Math.min(pollDelayMs * 2, 2000);
   }
 
   assertNotAborted(options.signal);

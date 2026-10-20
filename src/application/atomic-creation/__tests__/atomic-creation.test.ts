@@ -19,6 +19,7 @@ import {
   runAtomicCreation,
   type AtomicCreationReceipt,
   type CreateDefaultDocumentPageRequest,
+  type PublishRowDocumentRequest,
 } from '..';
 
 let mockWorkspace = 'workspace';
@@ -581,6 +582,45 @@ describe('explicit server RetryLater during atomic creation', () => {
     await expect(post).resolves.toEqual(receipt);
     expect(send.mock.calls.map(([config]) => config.data)).toEqual([requestJson, requestJson]);
     expect(send.mock.calls[1][0].timeout).toBeLessThan(send.mock.calls[0][0].timeout);
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('retries row-page creation with the same request while its durable Row source settles', async () => {
+    const request: PublishRowDocumentRequest = {
+      request_id: command.request_id,
+      database_id: '00000000-0000-4000-8000-000000000004',
+      database_restore_id: '00000000-0000-0000-0000-000000000000',
+      row_id: '00000000-0000-4000-8000-000000000005',
+      source_view_id: command.parent_view_id,
+      name: 'Row page',
+      contribution: { kind: 'default_schema', schema_version: 'v1' },
+    };
+    const rowReceipt: AtomicCreationReceipt<'row-document'> = {
+      request_id: request.request_id,
+      outcome: 'applied',
+      result: {
+        document_id: command.view_id,
+        row_id: request.row_id,
+        database_id: request.database_id,
+        database_restore_id: request.database_restore_id,
+        row_version: null,
+        document_version: null,
+        update_batch_id: '00000000-0000-4000-8000-000000000006',
+      },
+    };
+
+    send.mockImplementationOnce(async (config) => retryLater(config));
+    send.mockImplementation(async (config) => reply(config, rowReceipt));
+    jest.useFakeTimers();
+    const requestJson = JSON.stringify(request);
+    const post = postAtomicCreation(captureAtomicCreationOwner('workspace'), 'row-document', requestJson);
+
+    await jest.advanceTimersByTimeAsync(100);
+    await expect(post).resolves.toEqual(rowReceipt);
+    expect(send.mock.calls.map(([config]) => [config.url, config.data])).toEqual([
+      ['/api/workspace/workspace/v2/page-view/row-document', requestJson],
+      ['/api/workspace/workspace/v2/page-view/row-document', requestJson],
+    ]);
     expect(jest.getTimerCount()).toBe(0);
   });
 

@@ -98,7 +98,10 @@ export function useBatchSync(
   const databaseHistoryEnabledRef = useRef(options?.databaseHistoryEnabled);
 
   databaseHistoryEnabledRef.current = options?.databaseHistoryEnabled;
-  const guardedBatchSync = useCallback(async (workspaceId: string, items: Parameters<typeof collabFullSyncBatch>[1]) => {
+  const guardedBatchSync = useCallback(async (
+    workspaceId: string, items: Parameters<typeof collabFullSyncBatch>[1], signal: AbortSignal
+  ) => {
+    if (signal.aborted) throw signal.reason;
     const beforeSend = beforeSendRef.current;
     const historyEnabled = databaseHistoryEnabledRef.current;
 
@@ -114,9 +117,11 @@ export function useBatchSync(
     }));
     const admitted = checkedItems.filter((item): item is typeof items[number] => item !== null);
 
-    return admitted.length ? collabFullSyncBatch(workspaceId, admitted) : [];
+    if (signal.aborted) throw signal.reason;
+    return admitted.length ? collabFullSyncBatch(workspaceId, admitted, { signal }) : [];
   }, []);
   const batchSyncAbortRef = useRef<AbortController | null>(null);
+  const explicitSyncsRef = useRef(new Map<string, { seq: number; promise: Promise<void> }>());
   const backgroundHttpSyncAbortRef = useRef<AbortController | null>(null);
   const backgroundHttpSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const backgroundHttpSyncInFlightRef = useRef(false);
@@ -356,7 +361,7 @@ export function useBatchSync(
         workspaceId,
         items: items.length,
       });
-      const results = await withRetry(() => guardedBatchSync(workspaceId, items), {
+      const results = await withRetry(() => guardedBatchSync(workspaceId, items, controller.signal), {
         delays: BATCH_SYNC_DELAYS,
         signal: controller.signal,
       });
@@ -465,7 +470,7 @@ export function useBatchSync(
    * IndexedDB and includes them in the batch. This ensures that all rows are
    * synced before operations like duplicate, not just the ones currently visible.
    */
-  const syncAllToServer = useCallback(
+  const uploadAllToServer = useCallback(
     async (workspaceId: string) => {
       // Kick the WS outbox drain in the background but do NOT block on it —
       // the HTTP batch below encodes the current doc state (which already
@@ -717,7 +722,7 @@ export function useBatchSync(
       );
 
       try {
-        const results = await withRetry(() => guardedBatchSync(workspaceId, items), {
+        const results = await withRetry(() => guardedBatchSync(workspaceId, items, controller.signal), {
           delays: BATCH_SYNC_DELAYS,
           signal: controller.signal,
         });
@@ -739,6 +744,35 @@ export function useBatchSync(
     },
     [refs, flushAllSync, applyFullSyncResults, guardedBatchSync]
   );
+
+  // Duplicate/publish callers can overlap. Join the same captured upload rather
+  // than cancelling it and starting another full-state request for the workspace.
+  const syncAllToServer = useCallback((workspaceId: string): Promise<void> => {
+    if (refs.isDisposedRef.current) return Promise.resolve();
+    if (workspaceIdRef.current && workspaceIdRef.current !== workspaceId) {
+      Log.warn('[sync] skipped full upload for a workspace this session does not own', {
+        workspaceId, sessionWorkspaceId: workspaceIdRef.current,
+      });
+      return Promise.resolve();
+    }
+
+    const pending = explicitSyncsRef.current.get(workspaceId);
+
+    if (pending) {
+      // A second operation must include edits made after the first captured its
+      // state. Coalesce only callers that require the same local edit boundary.
+      return pending.seq === backgroundDirtySeqRef.current
+        ? pending.promise : pending.promise.then(() => syncAllToServer(workspaceId));
+    }
+
+    const seq = backgroundDirtySeqRef.current;
+    const task = uploadAllToServer(workspaceId).finally(() => {
+      if (explicitSyncsRef.current.get(workspaceId)?.promise === task) explicitSyncsRef.current.delete(workspaceId);
+    });
+
+    explicitSyncsRef.current.set(workspaceId, { seq, promise: task });
+    return task;
+  }, [refs, uploadAllToServer]);
 
   // Cancel all pending deferred cleanup timers and in-flight batch sync on unmount
   useEffect(() => {

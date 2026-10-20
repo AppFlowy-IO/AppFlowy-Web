@@ -71,7 +71,7 @@ export function hasCurrentRowDocumentSource(database: Y.Map<unknown>, viewId: st
   });
 }
 
-/** Existing Add Row sync remains the producer; this boundary only observes its result. */
+/** Observe the current Row and membership without uploading either source. */
 export async function waitForRowDocumentSource(
   identity: RowDocumentSourceIdentity,
   options: {
@@ -81,6 +81,8 @@ export async function waitForRowDocumentSource(
     deadline: number;
   }
 ): Promise<CollabState> {
+  let pollDelayMs = 250;
+
   while (!options.signal.aborted) {
     assertNotAborted(options.signal);
     options.assertCurrent();
@@ -131,7 +133,7 @@ export async function waitForRowDocumentSource(
         resolve();
       };
 
-      const timer = setTimeout(done, Math.min(100, Math.max(0, options.deadline - Date.now())));
+      const timer = setTimeout(done, Math.min(pollDelayMs, Math.max(0, options.deadline - Date.now())));
       const abort = () => {
         clearTimeout(timer);
         reject(options.signal.reason);
@@ -140,6 +142,7 @@ export async function waitForRowDocumentSource(
       options.signal.addEventListener('abort', abort, { once: true });
       if (options.signal.aborted) abort();
     });
+    pollDelayMs = Math.min(pollDelayMs * 2, 2000);
   }
 
   assertNotAborted(options.signal);
