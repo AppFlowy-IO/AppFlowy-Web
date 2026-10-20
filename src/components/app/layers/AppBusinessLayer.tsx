@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FC, type ReactN
 import { useParams, useSearchParams } from 'react-router-dom';
 import { validate as uuidValidate } from 'uuid';
 
+import { discardPageCreationsFromEarlierLoads } from '@/application/atomic-creation';
 import { APP_EVENTS } from '@/application/constants';
 import { deleteCollabDB } from '@/application/db';
 import { AccessService, ViewService } from '@/application/services/domains';
@@ -33,12 +34,12 @@ import {
   DATABASE_TAB_VIEW_ID_QUERY_PARAM,
   resolveSidebarSelectedViewId,
 } from '@/components/app/hooks/resolveSidebarSelectedViewId';
-import { getErrorDiagnostic } from '@/utils/errors';
+import { getErrorDiagnostic, getErrorMessage } from '@/utils/errors';
+import { Log } from '@/utils/log';
 
 import { AppContextConsumer } from '../components/AppContextConsumer';
 import { useAuthInternal } from '../contexts/AuthInternalContext';
 import { DatabaseRestoreNoticeProvider } from '../DatabaseRestoreNotice';
-import { PendingPageCreations } from '../PendingPageCreations';
 import { useDatabaseOperations } from '../hooks/useDatabaseOperations';
 import { usePageOperations } from '../hooks/usePageOperations';
 import { useRowOperations } from '../hooks/useRowOperations';
@@ -462,6 +463,17 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     // then runs under the new requester-scoped cache key.
     setNoAccessViewId(null);
     setObjectPermissions({});
+  }, [currentWorkspaceId, requesterId]);
+
+  useEffect(() => {
+    if (!currentWorkspaceId || !requesterId) return;
+
+    // Nothing offers to finish a page creation that a reload interrupted.
+    discardPageCreationsFromEarlierLoads(currentWorkspaceId).catch((error) => {
+      Log.warn('[AtomicCreation] Could not discard page creations from an earlier load', {
+        message: getErrorMessage(error),
+      });
+    });
   }, [currentWorkspaceId, requesterId]);
 
   useEffect(() => {
@@ -1167,7 +1179,6 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
                   setOpenModalViewId={setOpenModalViewId}
                 >
                   {children}
-                  <PendingPageCreations key={`${requesterId}:${currentWorkspaceId}`} />
                 </AppContextConsumer>
               </DatabaseRestoreNoticeProvider>
             </AppSyncContext.Provider>

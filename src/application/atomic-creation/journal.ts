@@ -4,34 +4,17 @@ import { postAtomicCreation } from '@/application/services/js-services/http/atom
 import { captureTokenSession, isTokenSessionCurrent } from '@/application/session/token';
 import { getConfigValue } from '@/utils/runtime-config';
 
-import { atomicCreationMessage } from './errors';
 import { assertAtomicCreationAvailable, type AtomicCreationOwner } from './owner';
 import { validateAtomicCreationReceipt } from './receipt';
 
 import type { AtomicCreationKind, AtomicCreationReceipt, AtomicCreationRecord, AtomicCreationRequests } from './types';
 
 const inFlight = new Set<string>();
-const activityListeners = new Set<() => void>();
-let activityRevision = 0;
+// Every record this tab writes is stamped after this; older ones were left by an earlier page load.
+const pageLoadedAt = Date.now();
 
-export function isAtomicCreationInFlight(recordId: string): boolean {
-  return inFlight.has(recordId);
-}
-
-export function getAtomicCreationActivityRevision(): number {
-  return activityRevision;
-}
-
-export function subscribeAtomicCreationActivity(listener: () => void): () => void {
-  activityListeners.add(listener);
-  return () => {
-    activityListeners.delete(listener);
-  };
-}
-
-function publishActivity(): void {
-  activityRevision += 1;
-  activityListeners.forEach((listener) => listener());
+function isFromEarlierPageLoad(record: AtomicCreationRecord): boolean {
+  return record.createdAt < pageLoadedAt;
 }
 
 export class AtomicCreationPendingError extends ClientValidationError {
@@ -109,26 +92,25 @@ export async function listPendingAtomicCreations(owner: AtomicCreationOwner): Pr
   return records;
 }
 
-/** Discovery can render before the workspace sync owner mounts; it never submits or hydrates. */
-export async function listPendingAtomicCreationsForCurrentUser(workspaceId: string): Promise<AtomicCreationRecord[]> {
+/**
+ * A reload abandons unfinished page creations instead of offering them for retry. If the server
+ * applied one, the page already reaches the outline through folder sync. Row-page records stay:
+ * they can hold staged edits, and opening the row recovers them.
+ */
+export async function discardPageCreationsFromEarlierLoads(workspaceId: string): Promise<void> {
   const session = captureTokenSession();
+  const userId = session.userId;
   const serverUrl = getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud');
 
-  if (!session.userId) return [];
-  const records = await db.atomic_creation
-    .where('[serverUrl+userId+workspaceId]')
-    .equals([serverUrl, session.userId, workspaceId])
-    .toArray();
-
-  if (
-    !isTokenSessionCurrent(session) ||
-    serverUrl !== getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud')
-  ) {
-    throw new Error(atomicCreationMessage('ownerChanged'));
-  }
-
-  records.forEach(parseAtomicCreationRequest);
-  return records;
+  if (!userId) return;
+  await db.transaction('rw', db.atomic_creation, async () => {
+    if (!isTokenSessionCurrent(session)) return;
+    await db.atomic_creation
+      .where('[serverUrl+userId+workspaceId]')
+      .equals([serverUrl, userId, workspaceId])
+      .filter((record) => (record.kind === 'document' || record.kind === 'database') && isFromEarlierPageLoad(record))
+      .delete();
+  });
 }
 
 interface RecoveryOptions<K extends AtomicCreationKind, T> {
@@ -153,11 +135,9 @@ export async function recoverAtomicCreation<K extends AtomicCreationKind, T>(
     throw new AtomicCreationPendingError(options.record, new Error('Creation is already in progress'));
   inFlight.add(id);
   try {
-    publishActivity();
     return await recover(options);
   } finally {
     inFlight.delete(id);
-    publishActivity();
   }
 }
 
