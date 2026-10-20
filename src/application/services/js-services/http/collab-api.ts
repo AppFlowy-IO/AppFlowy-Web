@@ -50,8 +50,13 @@ export async function readCollabStates(
   const owner = options.atomicCreationOwner;
 
   if (owner && owner.workspaceId !== workspaceId) throw new Error('Current collab read owner changed');
+  throwIfAborted(options.signal);
   const deadline = Date.now() + (options.timeoutMs ?? 30_000);
-  const results: CollabFullSyncBatchResult[] = [];
+  const results = new Array<CollabFullSyncBatchResult>(items.length);
+  // The first failed read cancels its siblings instead of leaving them in flight.
+  const controller = new AbortController();
+  const signal = controller.signal;
+  const cancel = () => controller.abort(options.signal?.reason);
   const bytes = (value: unknown): Uint8Array => {
     if (!Array.isArray(value) || !value.length || value.some((byte) => !Number.isInteger(byte) || byte < 0 || byte > 255)) {
       throw new Error('Invalid current collab encoding');
@@ -60,55 +65,70 @@ export async function readCollabStates(
     return new Uint8Array(value);
   };
 
-  for (let start = 0; start < items.length; start += 4) {
-    const chunk = await Promise.all(items.slice(start, start + 4).map(async ({ objectId, collabType }) => {
-      throwIfAborted(options.signal);
-      owner?.assertCurrent();
-      const timeout = deadline - Date.now();
+  const read = async ({ objectId, collabType }: { objectId: string; collabType: Types }) => {
+    throwIfAborted(signal);
+    owner?.assertCurrent();
+    const timeout = deadline - Date.now();
 
-      if (timeout <= 0) throw new Error('Current collab read expired');
-      const state = await awaitAtomicRequest(executeAPIRequest<{
-        object_id: string; doc_state: number[]; state_vector: number[]; version: number; collab_version?: string | null;
-      }>(() => getAxios()?.get(`/api/workspace/v1/${workspaceId}/collab/${objectId}`, {
-        ...(owner ? ownedRequestConfig(owner, options.signal) : { signal: options.signal }),
-        skipResponseCache: true,
-        timeout,
-        params: { collab_type: collabType },
-        headers: { 'Cache-Control': 'no-cache' },
-      }), { suppressResponseDataLogging: true }), options.signal);
+    if (timeout <= 0) throw new Error('Current collab read expired');
+    const state = await awaitAtomicRequest(executeAPIRequest<{
+      object_id: string; doc_state: number[]; state_vector: number[]; version: number; collab_version?: string | null;
+    }>(() => getAxios()?.get(`/api/workspace/v1/${workspaceId}/collab/${objectId}`, {
+      ...(owner ? ownedRequestConfig(owner, signal) : { signal }),
+      skipResponseCache: true,
+      timeout,
+      params: { collab_type: collabType },
+      headers: { 'Cache-Control': 'no-cache' },
+    }), { suppressResponseDataLogging: true }), signal);
 
-      throwIfAborted(options.signal);
-      owner?.assertCurrent();
-      if (state.object_id !== objectId || (state.version !== 0 && state.version !== 1)) {
-        throw new Error('Current collab identity or encoding changed');
+    throwIfAborted(signal);
+    owner?.assertCurrent();
+    if (state.object_id !== objectId || (state.version !== 0 && state.version !== 1)) {
+      throw new Error('Current collab identity or encoding changed');
+    }
+
+    let docState = bytes(state.doc_state);
+
+    if (state.version === 1) {
+      const decoded = new Y.Doc();
+
+      try {
+        Y.applyUpdateV2(decoded, docState);
+        if (decoded.store.pendingStructs || decoded.store.pendingDs) throw new Error('Current collab history is incomplete');
+        docState = Y.encodeStateAsUpdate(decoded);
+      } finally {
+        decoded.destroy();
       }
+    }
 
-      let docState = bytes(state.doc_state);
+    return {
+      objectId, collabType,
+      missingUpdate: docState,
+      serverStateVector: bytes(state.state_vector),
+      collabVersion: state.collab_version ?? undefined,
+    };
+  };
 
-      if (state.version === 1) {
-        const decoded = new Y.Doc();
+  let next = 0;
+  // Keep four reads in flight; one slow object must not hold the other slots idle.
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next++;
 
-        try {
-          Y.applyUpdateV2(decoded, docState);
-          if (decoded.store.pendingStructs || decoded.store.pendingDs) throw new Error('Current collab history is incomplete');
-          docState = Y.encodeStateAsUpdate(decoded);
-        } finally {
-          decoded.destroy();
-        }
-      }
+      results[index] = await read(items[index]);
+    }
+  };
 
-      return {
-        objectId, collabType,
-        missingUpdate: docState,
-        serverStateVector: bytes(state.state_vector),
-        collabVersion: state.collab_version ?? undefined,
-      };
-    }));
-
-    results.push(...chunk);
+  options.signal?.addEventListener('abort', cancel, { once: true });
+  try {
+    await Promise.all(Array.from({ length: Math.min(4, items.length) }, worker));
+    return results;
+  } catch (error) {
+    controller.abort();
+    throw error;
+  } finally {
+    options.signal?.removeEventListener('abort', cancel);
   }
-
-  return results;
 }
 
 export const SLOW_SYNC_PROBE_TIMEOUT_MS = 120_000;

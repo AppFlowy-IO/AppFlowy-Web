@@ -748,7 +748,11 @@ export function useBatchSync(
   // Duplicate/publish callers can overlap. Join the same captured upload rather
   // than cancelling it and starting another full-state request for the workspace.
   const syncAllToServer = useCallback((workspaceId: string): Promise<void> => {
-    if (refs.isDisposedRef.current || (workspaceIdRef.current && workspaceIdRef.current !== workspaceId)) {
+    if (refs.isDisposedRef.current) return Promise.resolve();
+    if (workspaceIdRef.current && workspaceIdRef.current !== workspaceId) {
+      Log.warn('[sync] skipped full upload for a workspace this session does not own', {
+        workspaceId, sessionWorkspaceId: workspaceIdRef.current,
+      });
       return Promise.resolve();
     }
 

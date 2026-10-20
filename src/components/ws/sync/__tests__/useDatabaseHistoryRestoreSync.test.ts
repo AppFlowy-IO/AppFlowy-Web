@@ -165,25 +165,28 @@ test('all views and rows share a database check on open and every five minutes, 
     }
 
     window.dispatchEvent(new Event('focus'));
-    window.dispatchEvent(new Event('online'));
     jest.advanceTimersByTime(299_999);
   });
   expect(getDatabaseRestoreState).toHaveBeenCalledTimes(1);
   await act(async () => { jest.advanceTimersByTime(1); });
   expect(getDatabaseRestoreState).toHaveBeenCalledTimes(2);
 
+  // Coming back online may follow a missed restore notification, so it ignores the recent check.
+  await act(async () => { window.dispatchEvent(new Event('online')); });
+  expect(getDatabaseRestoreState).toHaveBeenCalledTimes(3);
+
   // Deferred cleanup may retain the Y.Doc after the last view closes.
   f.refs.contextRefCounts.current.clear();
   await act(async () => { jest.advanceTimersByTime(300_000); });
-  expect(getDatabaseRestoreState).toHaveBeenCalledTimes(2);
+  expect(getDatabaseRestoreState).toHaveBeenCalledTimes(3);
   await act(async () => {
     result.current.prepareDatabaseContext(rootContext);
     f.refs.contextRefCounts.current.set('database', 1);
   });
-  expect(getDatabaseRestoreState).toHaveBeenCalledTimes(3);
+  expect(getDatabaseRestoreState).toHaveBeenCalledTimes(4);
   unmount();
   await act(async () => { jest.advanceTimersByTime(600_000); });
-  expect(getDatabaseRestoreState).toHaveBeenCalledTimes(3);
+  expect(getDatabaseRestoreState).toHaveBeenCalledTimes(4);
 });
 
 test('separate databases have independent routine checks', async () => {

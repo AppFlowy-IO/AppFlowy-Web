@@ -36,6 +36,14 @@ export function databaseRowIds(doc: YDoc): string[] {
   return [...ids];
 }
 
+/** Database that owns a root or row context, trying the cheapest known row mapping first. */
+function contextDatabaseId(context: RegisterSyncContext, rowDatabases: Map<string, string>): string | undefined {
+  if (context.collabType === Types.Database) return context.doc.guid;
+  if (context.collabType !== Types.DatabaseRow) return undefined;
+  return rowDatabases.get(context.doc.guid) || getCachedRowDatabaseId(context.doc.guid) ||
+    context.doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row)?.get(YjsDatabaseKey.database_id);
+}
+
 type Dependencies = {
   refs: SyncRefs;
   workspaceId: string;
@@ -149,10 +157,7 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
 
         if (objectId !== databaseId) {
           if (context.collabType !== Types.DatabaseRow) continue;
-          const parentId = rowDatabases.current.get(objectId) || getCachedRowDatabaseId(objectId) ||
-            context.doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row)?.get(YjsDatabaseKey.database_id);
-
-          if (!knownObjectIds.has(objectId) && parentId !== databaseId) continue;
+          if (!knownObjectIds.has(objectId) && contextDatabaseId(context, rowDatabases.current) !== databaseId) continue;
         }
 
         knownObjectIds.add(objectId);
@@ -322,14 +327,14 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
   const hasOpenDatabase = useCallback((databaseId: string) => {
     const { refs } = latest.current;
 
-    return [...refs.registeredContexts.current.values()].some((context) => {
-      if (!(refs.contextRefCounts.current.get(context.doc.guid) ?? 0) ||
-          refs.pendingCleanups.current.has(context.doc.guid)) return false;
-      if (context.collabType === Types.Database) return context.doc.guid === databaseId;
-      return context.collabType === Types.DatabaseRow &&
-        (rowDatabases.current.get(context.doc.guid) || getCachedRowDatabaseId(context.doc.guid) ||
-          context.doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row)?.get(YjsDatabaseKey.database_id)) === databaseId;
-    });
+    for (const context of refs.registeredContexts.current.values()) {
+      const objectId = context.doc.guid;
+
+      if (refs.contextRefCounts.current.get(objectId) && !refs.pendingCleanups.current.has(objectId) &&
+          contextDatabaseId(context, rowDatabases.current) === databaseId) return true;
+    }
+
+    return false;
   }, []);
 
   const scheduleDatabaseCheck = useCallback((databaseId: string) => {
@@ -408,11 +413,7 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
 
       if (!unchanged || resumeDeferredSync) {
         for (const context of current.refs.registeredContexts.current.values()) {
-          if (context.doc.guid === databaseId || (context.collabType === Types.DatabaseRow &&
-              (rowDatabases.current.get(context.doc.guid) || getCachedRowDatabaseId(context.doc.guid) ||
-                context.doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row)?.get(YjsDatabaseKey.database_id)) === databaseId)) {
-            bindSyncContext(context);
-          }
+          if (contextDatabaseId(context, rowDatabases.current) === databaseId) bindSyncContext(context);
         }
 
         startDrainAll();
@@ -479,9 +480,7 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
       }
 
       const hasActiveContext = [...current.refs.registeredContexts.current.values()].some((context) =>
-        context.doc.guid === databaseId || (context.collabType === Types.DatabaseRow &&
-          (rowDatabases.current.get(context.doc.guid) || getCachedRowDatabaseId(context.doc.guid) ||
-            context.doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row)?.get(YjsDatabaseKey.database_id)) === databaseId));
+        contextDatabaseId(context, rowDatabases.current) === databaseId);
       // Pre-send checks can block an outbox owned by another tab, with no local
       // context or restore hint. Its deferred sync still needs a retry to drain.
       const needsRetry = deferredSync.current.has(retryKey) || hasActiveContext ||
@@ -551,7 +550,7 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
   }, [ensureDatabaseRestoreCurrent, tracker]);
 
   useEffect(() => {
-    const verifyOpenDatabases = () => {
+    const verifyOpenDatabases = (force: boolean) => {
       const databaseIds = new Set<string>();
       const prefix = `${deps.userId}:${deps.workspaceId}:`;
 
@@ -565,21 +564,27 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
         }
       }
 
-      for (const databaseId of databaseIds) void ensureDatabaseRestoreCurrent(databaseId, Types.Database);
+      for (const databaseId of databaseIds) {
+        if (force) tracker.invalidateVerification(databaseId);
+        void ensureDatabaseRestoreCurrent(databaseId, Types.Database);
+      }
     };
 
-    window.addEventListener('online', verifyOpenDatabases);
-    window.addEventListener('focus', verifyOpenDatabases);
+    // An offline tab may have missed a restore notification, so recent authority
+    // no longer counts. Focus alone reuses it; the socket stayed connected.
+    const verifyAfterReconnect = () => verifyOpenDatabases(true);
+    const verifyOnFocus = () => verifyOpenDatabases(false);
+
+    window.addEventListener('online', verifyAfterReconnect);
+    window.addEventListener('focus', verifyOnFocus);
     return () => {
-      window.removeEventListener('online', verifyOpenDatabases);
-      window.removeEventListener('focus', verifyOpenDatabases);
+      window.removeEventListener('online', verifyAfterReconnect);
+      window.removeEventListener('focus', verifyOnFocus);
     };
-  }, [deps.refs, deps.workspaceId, deps.userId, ensureDatabaseRestoreCurrent]);
+  }, [deps.refs, deps.workspaceId, deps.userId, ensureDatabaseRestoreCurrent, tracker]);
 
   const prepareDatabaseContext = useCallback((context: RegisterSyncContext) => {
-    const databaseId = context.collabType === Types.Database ? context.doc.guid :
-      context.collabType === Types.DatabaseRow ? getCachedRowDatabaseId(context.doc.guid) ||
-        context.doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row)?.get(YjsDatabaseKey.database_id) : undefined;
+    const databaseId = contextDatabaseId(context, rowDatabases.current);
 
     // A view switch reuses the root context. Only opening the first root/row of
     // a database expires its previous session's check; view IDs are never keys.

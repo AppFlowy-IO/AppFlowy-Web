@@ -45,7 +45,7 @@ test.each([0, 1])('reads encoding %s through GET without a sync upload and prese
 
   expect(f.post).not.toHaveBeenCalled();
   expect(f.get).toHaveBeenCalledWith('/api/workspace/v1/workspace/collab/object', expect.objectContaining({
-    params: { collab_type: Types.Database }, signal: controller.signal, skipResponseCache: true,
+    params: { collab_type: Types.Database }, signal: expect.any(AbortSignal), skipResponseCache: true,
     atomicCreationOwner: owner, headers: { 'Cache-Control': 'no-cache' },
   }));
   const decoded = new Y.Doc();
@@ -83,6 +83,45 @@ test('bounds concurrent reads and does not start the next chunk after cancellati
   controller.abort();
   await rejected;
   expect(f.get).toHaveBeenCalledTimes(4);
+  f.doc.destroy();
+});
+
+test('keeps every read slot busy while one object is slow and preserves request order', async () => {
+  const f = fixture();
+  let releaseSlow!: () => void;
+
+  f.get.mockImplementation(async (url: string) => {
+    const objectId = url.split('/').pop()!;
+
+    if (objectId === '0') await new Promise<void>((resolve) => { releaseSlow = resolve; });
+    return { data: { data: { ...f.state, object_id: objectId } } };
+  });
+  const pending = readCollabStates('workspace', Array.from({ length: 7 }, (_, i) => ({
+    objectId: String(i), collabType: Types.DatabaseRow,
+  })));
+
+  for (let i = 0; i < 20 && f.get.mock.calls.length < 7; i++) await Promise.resolve();
+  // Lockstep groups of four would wait for object 0 before starting objects 4-6.
+  expect(f.get).toHaveBeenCalledTimes(7);
+  releaseSlow();
+  expect((await pending).map((result) => result.objectId)).toEqual(['0', '1', '2', '3', '4', '5', '6']);
+  f.doc.destroy();
+});
+
+test('cancels sibling reads after one read fails', async () => {
+  const f = fixture();
+  const signals: AbortSignal[] = [];
+
+  f.get.mockImplementation((url: string, config: { signal: AbortSignal }) => {
+    signals.push(config.signal);
+    if (url.endsWith('/1')) return Promise.reject(new Error('read failed'));
+    return new Promise(() => undefined);
+  });
+  await expect(readCollabStates('workspace', Array.from({ length: 3 }, (_, i) => ({
+    objectId: String(i), collabType: Types.DatabaseRow,
+  })), { atomicCreationOwner: owner })).rejects.toThrow('read failed');
+  expect(signals).toHaveLength(3);
+  expect(signals.every((signal) => signal.aborted)).toBe(true);
   f.doc.destroy();
 });
 
