@@ -1,3 +1,4 @@
+import { isHotkey } from 'is-hotkey';
 import { KeyboardEvent, useCallback } from 'react';
 import { BasePoint, Editor, Element, NodeEntry, Path, Range, Text, Transforms } from 'slate';
 import { ReactEditor, useReadOnly } from 'slate-react';
@@ -10,6 +11,7 @@ import { EditorMarkFormat } from '@/application/slate-yjs/types';
 import { getBlockEntry } from '@/application/slate-yjs/utils/editor';
 import { AlignType, BlockType } from '@/application/types';
 import { useEditorContext } from '@/components/editor/EditorContext';
+import { toggleInlineEquation } from '@/components/editor/utils/math-equation';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 import { openUrl } from '@/utils/url';
 
@@ -45,6 +47,22 @@ export function useShortcuts(editor: ReactEditor) {
   const onKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>) => {
       const e = event.nativeEvent;
+
+      if (!readOnly && isHotkey('mod+shift+e', e)) {
+        // Keyboard selection can reach the DOM before Slate's selectionchange
+        // handler. Use the current browser range for this formatting command.
+        const domSelection = window.getSelection();
+        const range = domSelection?.rangeCount
+          ? ReactEditor.toSlateRange(editor, domSelection, { exactMatch: false, suppressThrow: true })
+          : null;
+
+        if (range) editor.select(range);
+        if (toggleInlineEquation(editor)) {
+          event.preventDefault();
+          return;
+        }
+      }
+
       const { selection } = editor;
 
       // Add more cases here for general shortcuts

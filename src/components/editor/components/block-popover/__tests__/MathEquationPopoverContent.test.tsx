@@ -4,9 +4,9 @@ import { CustomEditor } from '@/application/slate-yjs/command';
 
 import MathEquationPopoverContent from '../MathEquationPopoverContent';
 
-const mockEditor = {};
+const mockEditor = { isElementReadOnly: () => false, flushLocalChanges: jest.fn() };
 
-jest.mock('slate-react', () => ({ useSlateStatic: () => mockEditor }));
+jest.mock('slate-react', () => ({ useSlateStatic: () => mockEditor, useReadOnly: () => false }));
 jest.mock('@/application/slate-yjs/command', () => ({ CustomEditor: { setBlockData: jest.fn() } }));
 jest.mock('@/application/slate-yjs/utils/editor', () => ({
   findSlateEntryByBlockId: () => [{ data: { formula: 'x' } }, [0]],
@@ -40,7 +40,7 @@ describe('equation drafts', () => {
 
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'x^2' } });
     if (action === 'Save') {
-      fireEvent.click(screen.getByRole('button', { name: 'button.save' }));
+      fireEvent.click(screen.getByRole('button', { name: 'document.plugins.mathEquation.insert' }));
     } else {
       fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
     }

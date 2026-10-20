@@ -1,0 +1,5 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Icon / Open Window / S">
+<path id="Vector" d="M8 16H5C3.89543 16 3 15.1046 3 14V6C3 4.89543 3.89543 4 5 4H15C16.1046 4 17 4.89543 17 6V8M13.1819 14.8181L11 17M11 15.1743V17H12.8257M14.8181 13.1819L17 11M17 12.8257V11H15.1743M6.5 8.5H13.5M6.5 11H10" stroke="var(--icon-primary)" stroke-linecap="round"/>
+</g>
+</svg>

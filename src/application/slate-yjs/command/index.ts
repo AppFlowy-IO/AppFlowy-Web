@@ -66,6 +66,7 @@ import {
 import {
   BlockData,
   BlockType,
+  MathEquationBlockData,
   Mention,
   MentionType,
   TodoListBlockData,
@@ -149,6 +150,12 @@ export const CustomEditor = {
 
     if (depth <= 0) {
       return ''; // Prevent infinite recursion
+    }
+
+    if (Element.isElement(node) && node.type === BlockType.EquationBlock) {
+      const formula = (node.data as MathEquationBlockData).formula;
+
+      return formula?.trim() ? formula : '';
     }
 
     return node.children.map((n) => CustomEditor.getBlockTextContent(n, depth - 1)).join('');

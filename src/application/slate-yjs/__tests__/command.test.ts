@@ -1,5 +1,5 @@
 import { CustomEditor } from '@/application/slate-yjs/command';
-import { MentionType } from '@/application/types';
+import { BlockType, MentionType } from '@/application/types';
 import type { Node, Text } from 'slate';
 
 describe('CustomEditor.getBlockTextContent', () => {
@@ -15,6 +15,18 @@ describe('CustomEditor.getBlockTextContent', () => {
 
     return CustomEditor.getBlockTextContent(node);
   }
+
+  it('extracts display-equation TeX for block references and plain-text consumers', () => {
+    const node = {
+      type: BlockType.EquationBlock,
+      data: { formula: String.raw`\frac{a}{b}` },
+      children: [{ text: '' }],
+    } as Node;
+
+    expect(CustomEditor.getBlockTextContent(node, 2)).toBe(String.raw`\frac{a}{b}`);
+    expect(CustomEditor.getBlockTextContent(node, 0)).toBe('');
+    expect(CustomEditor.getBlockTextContent({ ...node, data: {} } as Node)).toBe('');
+  });
 
   it('uses display titles for database row page mentions', () => {
     expect(
