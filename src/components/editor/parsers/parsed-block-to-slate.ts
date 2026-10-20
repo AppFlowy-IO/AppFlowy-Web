@@ -76,6 +76,9 @@ export function parsedBlockToTextNodes(block: ParsedBlock): Text[] {
 
     activeFormats.forEach((format) => {
       switch (format.type) {
+        case 'formula':
+          attributes.formula = format.data?.formula;
+          break;
         case 'bold':
           attributes.bold = true;
           break;

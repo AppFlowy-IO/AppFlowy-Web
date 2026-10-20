@@ -1,8 +1,14 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { ReactEditor } from 'slate-react';
 
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
 import { BlockType } from '@/application/types';
+import { OPEN_MATH_EQUATION_EVENT } from '@/components/editor/utils/math-equation';
+
+
+export type MathEquationAIAction = 'generate' | 'explain' | 'check';
+export interface MathEquationAISession { blockId: string; action: MathEquationAIAction; draft?: string; id?: number }
 
 export type CodeAIAction = 'generate' | 'explain' | 'check' | 'comments';
 export interface CodeBlockAction {
@@ -15,6 +21,9 @@ export interface BlockPopoverContextType {
   codeBlockAction?: CodeBlockAction;
   openCodeBlockAction?: (blockId: string, action: CodeBlockAction['action']) => void;
   closeCodeBlockAction?: () => void;
+  mathEquationAI?: MathEquationAISession;
+  openMathEquationAI?: (session: MathEquationAISession) => void;
+  closeMathEquationAI?: () => void;
   type?: BlockType;
   blockId?: string;
   anchorEl?: HTMLElement | null;
@@ -53,9 +62,14 @@ export const BlockPopoverProvider = ({ children, editor }: { children: React.Rea
     setCodeBlockAction({ blockId, action, requestId: ++actionSequence.current });
   }, []);
   const closeCodeBlockAction = useCallback(() => setCodeBlockAction(undefined), []);
+  const [mathEquationAI, setMathEquationAI] = useState<MathEquationAISession>();
+  const sessionId = useRef(0);
+  const openMathEquationAI = useCallback((session: MathEquationAISession) => setMathEquationAI({ ...session, id: ++sessionId.current }), []);
+  const closeMathEquationAI = useCallback(() => setMathEquationAI(undefined), []);
   const [type, setType] = useState<BlockType | undefined>();
   const [blockId, setBlockId] = useState<string | undefined>();
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+  const [pendingMathId, setPendingMathId] = useState<string>();
   const pendingRef = useRef<{ blockId: string; type: BlockType } | null>(null);
   const open = Boolean(anchorEl);
 
@@ -63,6 +77,7 @@ export const BlockPopoverProvider = ({ children, editor }: { children: React.Rea
     setAnchorEl(null);
     setBlockId(undefined);
     setType(undefined);
+    setPendingMathId(undefined);
     pendingRef.current = null;
   }, []);
 
@@ -87,6 +102,7 @@ export const BlockPopoverProvider = ({ children, editor }: { children: React.Rea
 
       if (dom) {
         pendingRef.current = null;
+        setPendingMathId(undefined);
         setBlockId(targetBlockId);
         setType(targetType);
         setAnchorEl(dom);
@@ -98,22 +114,42 @@ export const BlockPopoverProvider = ({ children, editor }: { children: React.Rea
     [resolveAnchor]
   );
 
+  // Resolve keyboard requests after the converted block's DOM has committed.
+  // Retry on later commits too: Slate can replace its DOM mapping without
+  // changing the block ID (and thus without another mount notification).
+  useLayoutEffect(() => {
+    if (pendingMathId) openPopover(pendingMathId, BlockType.EquationBlock);
+  });
+
+  useEffect(() => {
+    let mounted = true;
+    const handleOpen = (event: Event) => {
+      const detail = (event as CustomEvent<{ editor: ReactEditor; blockId: string }>).detail;
+
+      if (detail.editor !== editor) return;
+      // Let Slate finish the shortcut's model update, then mount and focus the
+      // popover before the next keystroke can land in the old document input.
+      queueMicrotask(() => {
+        if (mounted) flushSync(() => setPendingMathId(detail.blockId));
+      });
+    };
+
+    window.addEventListener(OPEN_MATH_EQUATION_EVENT, handleOpen);
+    return () => {
+      mounted = false;
+      window.removeEventListener(OPEN_MATH_EQUATION_EVENT, handleOpen);
+    };
+  }, [editor]);
+
   const notifyMount = useCallback(
     (mountedBlockId: string) => {
       const pending = pendingRef.current;
 
       if (!pending || pending.blockId !== mountedBlockId) return;
 
-      const dom = resolveAnchor(pending.blockId);
-
-      if (!dom) return;
-
-      pendingRef.current = null;
-      setBlockId(pending.blockId);
-      setType(pending.type);
-      setAnchorEl(dom);
+      openPopover(pending.blockId, pending.type);
     },
-    [resolveAnchor]
+    [openPopover]
   );
 
   const isOpen = useCallback(
@@ -136,6 +172,9 @@ export const BlockPopoverProvider = ({ children, editor }: { children: React.Rea
       codeBlockAction,
       openCodeBlockAction,
       closeCodeBlockAction,
+      mathEquationAI,
+      openMathEquationAI,
+      closeMathEquationAI,
     }),
     [
       blockId,
@@ -149,6 +188,9 @@ export const BlockPopoverProvider = ({ children, editor }: { children: React.Rea
       codeBlockAction,
       openCodeBlockAction,
       closeCodeBlockAction,
+      mathEquationAI,
+      openMathEquationAI,
+      closeMathEquationAI,
     ]
   );
 

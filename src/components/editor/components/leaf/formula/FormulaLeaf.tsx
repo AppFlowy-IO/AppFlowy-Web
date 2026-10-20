@@ -9,16 +9,13 @@ import { KatexMath } from '@/components/_shared/katex-math';
 import FormulaPopover from '@/components/editor/components/leaf/formula/FormulaPopover';
 import { useLeafSelected } from '@/components/editor/components/leaf/leaf.hooks';
 
-function FormulaLeaf({ formula, text, children }: {
-  formula: string;
-  text: Text;
-  children: React.ReactNode;
-}) {
+function FormulaLeaf({ formula, text, children }: { formula: string; text: Text; children: React.ReactNode }) {
   const ref = useRef<HTMLSpanElement>(null);
   const editor = useSlateStatic();
   const { isSelected, isCursorBefore } = useLeafSelected(text);
   const [anchorPosition, setAnchorPosition] = useState<PopoverPosition | undefined>(undefined);
   const open = Boolean(anchorPosition);
+  const [preview, setPreview] = useState<string>();
   const readonly = useReadOnly() || editor.isElementReadOnly(text as unknown as Element);
   const className = useMemo(() => {
     const classList = ['formula-inline', 'relative', 'rounded', 'p-0.5'];
@@ -35,12 +32,16 @@ function FormulaLeaf({ formula, text, children }: {
 
   const handleClose = useCallback(() => {
     window.getSelection()?.removeAllRanges();
-    const path = ReactEditor.findPath(editor, text);
-
-    editor.select(editor.end(path));
-    ReactEditor.focus(editor);
-
     setAnchorPosition(undefined);
+    setPreview(undefined);
+    try {
+      const path = ReactEditor.findPath(editor, text);
+
+      editor.select(editor.end(path));
+      ReactEditor.focus(editor);
+    } catch {
+      /* The formula may have been deleted by a collaborator. */
+    }
   }, [editor, text]);
 
   const openPopover = useCallback(() => {
@@ -56,29 +57,31 @@ function FormulaLeaf({ formula, text, children }: {
     });
   }, [readonly]);
 
-  const handleDone = useCallback((newFormula: string) => {
-    handleClose();
-    const path = ReactEditor.findPath(editor, text);
+  const handleDone = useCallback(
+    (newFormula: string) => {
+      if (readonly) return;
+      try {
+        const path = ReactEditor.findPath(editor, text);
 
-    editor.select(path);
-    CustomEditor.addMark(editor, {
-      key: EditorMarkFormat.Formula,
-      value: newFormula,
-    });
-  }, [handleClose, editor, text]);
+        editor.select(path);
+        if (newFormula.trim()) {
+          CustomEditor.addMark(editor, { key: EditorMarkFormat.Formula, value: newFormula });
+          editor.collapse({ edge: 'end' });
+        } else {
+          editor.delete();
+        }
 
-  const handleClear = useCallback(() => {
-    handleClose();
-    ReactEditor.focus(editor);
-    const path = ReactEditor.findPath(editor, text);
+        editor.removeMark(EditorMarkFormat.Formula);
+        ReactEditor.focus(editor);
+      } catch {
+        /* Do not recreate a formula deleted while the popover was open. */
+      }
 
-    editor.select(path);
-
-    CustomEditor.removeMark(editor, EditorMarkFormat.Formula);
-
-    editor.delete();
-    editor.insertText(formula);
-  }, [editor, formula, handleClose, text]);
+      setAnchorPosition(undefined);
+      setPreview(undefined);
+    },
+    [editor, readonly, text]
+  );
 
   return (
     <>
@@ -89,14 +92,15 @@ function FormulaLeaf({ formula, text, children }: {
           top: isCursorBefore ? 0 : 'auto',
           bottom: isCursorBefore ? 'auto' : 0,
         }}
-        className={'absolute right-0 bottom-0 !text-transparent overflow-hidden'}
+        className={'absolute bottom-0 right-0 overflow-hidden !text-transparent'}
       >
-      {children}
-    </span>
+        {children}
+      </span>
 
       <span
         ref={ref}
         onClick={() => {
+          if (readonly) return;
           editor.deselect();
           openPopover();
         }}
@@ -104,25 +108,20 @@ function FormulaLeaf({ formula, text, children }: {
         className={className}
       >
         <Suspense fallback={formula}>
-
-        <KatexMath
-          latex={formula || ''}
-          isInline
-        />
+          <KatexMath latex={preview ?? formula ?? ''} isInline />
         </Suspense>
       </span>
-      {
-        open && <FormulaPopover
+      {open && (
+        <FormulaPopover
           open={open}
           anchorPosition={anchorPosition}
           onClose={handleClose}
           defaultValue={formula}
           onDone={handleDone}
-          onClear={handleClear}
+          onPreview={setPreview}
         />
-      }
+      )}
     </>
-
   );
 }
 

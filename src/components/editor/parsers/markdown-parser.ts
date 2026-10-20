@@ -1,8 +1,10 @@
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
 import remarkParse from 'remark-parse';
 import { unified } from 'unified';
 
-import { BlockData, BlockType } from '@/application/types';
+import { BlockData, BlockType, MathEquationBlockData } from '@/application/types';
+import { normalizeMathMarkdown } from '@/components/editor/utils/math-markdown';
 
 import { extractInlineFormatsFromMDAST, extractTextFromMDAST } from './mdast-utils';
 import { parseMarkdownTable } from './table-parser';
@@ -50,14 +52,20 @@ export function parseMarkdown(markdown: string, options: MarkdownParseOptions = 
 
   try {
     // Step 1: Parse Markdown to MDAST
-    let processor = unified().use(remarkParse);
+    let processor = unified().use(remarkParse).use(remarkMath);
 
     if (gfm) {
       processor = processor.use(remarkGfm) as typeof processor;
     }
 
-    const tree = processor.parse(normalizedMarkdown);
+    const initialTree = processor.parse(normalizedMarkdown);
+    const mathMarkdown = normalizeMathMarkdown(normalizedMarkdown, initialTree);
+    const tree = mathMarkdown === normalizedMarkdown ? initialTree : processor.parse(mathMarkdown);
     const ast = processor.runSync(tree) as MdastRoot;
+
+    // Desktop treats same-line $$...$$ as display math too. Split paragraphs
+    // using parser positions so escaped dollars and code remain untouched.
+    expandDisplayMath(ast, mathMarkdown);
 
     // Step 2: Convert MDAST to ParsedBlocks
     const blocks = convertMarkdownASTToAppFlowyBlocks(ast.children as BlockContent[]);
@@ -95,6 +103,8 @@ function convertMarkdownASTToAppFlowyBlocks(nodes: Array<BlockContent | Definiti
  */
 function convertMarkdownNode(node: BlockContent | DefinitionContent): ParsedBlock | ParsedBlock[] | null {
   switch (node.type) {
+    case 'math':
+      return { type: BlockType.EquationBlock, data: { formula: node.value.trim() } as MathEquationBlockData, text: '', formats: [], children: [] };
     case 'heading':
       return buildHeadingBlock(node);
 
@@ -212,4 +222,39 @@ function buildCodeBlock(node: Code): ParsedBlock {
     formats: [], // No inline formatting in code blocks
     children: [],
   };
+}
+
+function expandDisplayMath(node: { children?: unknown[] }, source: string) {
+  if (!node.children) return;
+  node.children = node.children.flatMap((child) => {
+    const item = child as Paragraph;
+
+    if (item.type !== 'paragraph') {
+      expandDisplayMath(item, source);
+      return [item];
+    }
+
+    const result: BlockContent[] = [];
+    let pending: Paragraph['children'] = [];
+    const flush = () => {
+      if (pending.length && extractTextFromMDAST({ children: pending }).trim()) result.push({ type: 'paragraph', children: pending });
+      pending = [];
+    };
+
+    for (const inline of item.children) {
+      const offset = inline.position?.start.offset;
+
+      if (inline.type === 'inlineMath' && offset !== undefined && source.slice(offset, offset + 2) === '$$') {
+        flush();
+        // remark's inline math normalizes newlines to spaces. A same-paragraph
+        // display equation must retain them for Flutter's multiline syntax.
+        const raw = source.slice(offset, inline.position?.end.offset);
+
+        result.push({ type: 'math', value: raw.replace(/^\$+|\$+$/g, '').trim() });
+      } else pending.push(inline);
+    }
+
+    flush();
+    return result;
+  });
 }

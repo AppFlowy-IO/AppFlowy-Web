@@ -8,6 +8,7 @@
     "support/connections.fixture.tsx",
     "support/integrations-server.ts",
     "support/integrations.fixture.tsx",
+    "support/math-equation.fixture.tsx",
     "../playwright.code-block.config.ts",
     "support/code-block.fixture.tsx"
   ],

@@ -26,6 +26,7 @@ import {
   createDatabaseDuplicatePlaceholderData,
   createDatabaseNodeData,
 } from '@/components/editor/components/blocks/database/utils/databaseBlockUtils';
+import { MathEquationMenu } from '@/components/editor/components/blocks/math-equation/MathEquationMenu';
 import { deleteBlocksWithSimpleTable } from '@/components/editor/components/blocks/simple-table/SimpleTable.convert';
 import { scrollSimpleTableFromMenu } from '@/components/editor/components/blocks/simple-table/SimpleTable.scroll';
 import { SimpleTableBlockControls } from '@/components/editor/components/blocks/simple-table/SimpleTableBlockControls';
@@ -35,7 +36,7 @@ import {
   OutlineCollapseControl,
   OutlineDepthControl,
 } from '@/components/editor/components/toolbar/block-controls/OutlineControls';
-import { CalloutNode, CodeNode, DatabaseNode, OutlineNode } from '@/components/editor/editor.type';
+import { CalloutNode, CodeNode, DatabaseNode, MathEquationNode, OutlineNode } from '@/components/editor/editor.type';
 import { useEditorContext, useEditorLocalState } from '@/components/editor/EditorContext';
 import { captureBlockCreationTarget, captureExistingDatabaseBlock } from '@/components/editor/utils/block-creation-target';
 import { copyTextToClipboard } from '@/utils/copy';
@@ -636,6 +637,18 @@ function ControlsMenu({
         onClose={onClose}
         anchorOrigin={{ vertical: 'center', horizontal: 'left' }}
         transformOrigin={{ vertical: 'center', horizontal: 'right' }}
+      />
+    );
+  }
+
+  if (onlySingleBlockSelected && node?.type === BlockType.EquationBlock && anchorEl && open) {
+    return (
+      <MathEquationMenu
+        node={node as MathEquationNode}
+        anchorEl={anchorEl}
+        onClose={onClose}
+        anchorOrigin={popoverProps.anchorOrigin}
+        transformOrigin={popoverProps.transformOrigin}
       />
     );
   }

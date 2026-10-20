@@ -15,6 +15,7 @@ export default defineConfig(base, {
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'chromium-math-dark', use: { ...devices['Desktop Chrome'], colorScheme: 'dark' }, testMatch: '**/math-equation.spec.ts' },
     { name: 'firefox', use: { ...devices['Desktop Firefox'] }, testMatch: '**/connections.spec.ts' },
     { name: 'webkit', use: { ...devices['Desktop Safari'] }, testMatch: '**/connections.spec.ts' },
   ],

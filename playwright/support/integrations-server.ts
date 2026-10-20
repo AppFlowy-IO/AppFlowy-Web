@@ -12,6 +12,7 @@ export const test = base.extend<object, { integrationsURL: string }>({
           entries: [
             'playwright/support/connections.fixture.tsx',
             'playwright/support/integrations.fixture.tsx',
+            'playwright/support/math-equation.fixture.tsx',
             'playwright/support/code-block.fixture.tsx',
           ],
         },
@@ -29,7 +30,7 @@ export const test = base.extend<object, { integrationsURL: string }>({
   ],
 });
 
-export function fixtureHTML(entry: 'connections' | 'integrations' | 'code-block') {
+export function fixtureHTML(entry: 'connections' | 'integrations' | 'math-equation' | 'code-block') {
   return `<!doctype html><html lang="en"><head><title>AppFlowy integration tests</title></head>
   <body id="body"><div id="root"></div><script type="module">
     import RefreshRuntime from '/@react-refresh'; RefreshRuntime.injectIntoGlobalHook(window);
