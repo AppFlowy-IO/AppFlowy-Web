@@ -83,6 +83,20 @@ function collectCreationCommands(page: Page): string[] {
   return commands;
 }
 
+function collectCreationReplyCodes(page: Page): Promise<number>[] {
+  const replyCodes: Promise<number>[] = [];
+
+  page.on('response', (response) => {
+    if (
+      response.request().method() === 'POST' &&
+      new URL(response.url()).pathname.endsWith('/v2/page-view/row-document')
+    ) {
+      replyCodes.push(response.json().then((body) => body.code));
+    }
+  });
+  return replyCodes;
+}
+
 function expectDefaultSchema(command: string) {
   expect(JSON.parse(command).contribution).toEqual({ kind: 'default_schema', schema_version: 'v1' });
 }
@@ -252,7 +266,7 @@ test('opening an untouched row waits for the server document; body content alone
   expect(commands).toHaveLength(1);
 });
 
-test('a fresh row waits for its normal full-sync acknowledgment before creating its atomic page', async ({ page, request }) => {
+test('a fresh atomic row opens its page without a preliminary Row full-sync', async ({ page, request }) => {
   await createGrid(page, request);
   const before = new Set(await DatabaseGridSelectors.dataRows(page).evaluateAll((rows) =>
     rows.map((row) => row.getAttribute('data-testid'))
@@ -265,16 +279,7 @@ test('a fresh row waits for its normal full-sync acknowledgment before creating 
   )).find((id) => !before.has(id));
   const rowId = created!.replace('grid-row-', '');
   const commands = collectCreationCommands(page);
-  const replyCodes: Promise<number>[] = [];
-
-  page.on('response', (response) => {
-    if (
-      response.request().method() === 'POST' &&
-      new URL(response.url()).pathname.endsWith('/v2/page-view/row-document')
-    ) {
-      replyCodes.push(response.json().then((body) => body.code));
-    }
-  });
+  const replyCodes = collectCreationReplyCodes(page);
 
   let release!: () => void;
   const held = new Promise<void>((resolve) => {
@@ -283,41 +288,52 @@ test('a fresh row waits for its normal full-sync acknowledgment before creating 
   const { loadSync } = createRequire(import.meta.url)('protobufjs') as typeof import('protobufjs');
   const protocol = loadSync(new URL('../../../src/proto/collab.proto', import.meta.url).pathname);
   const requestType = protocol.lookupType('collab.CollabBatchSyncRequest');
-  const responseType = protocol.lookupType('collab.CollabBatchSyncResponse');
-  let acknowledged = false;
+  let rowSyncRequests = 0;
+  let documentId = '';
 
   await page.route('**/collab/full-sync/batch{,?**}', async (route) => {
     const body = route.request().postDataBuffer();
     const batch = body ? requestType.decode(body) as unknown as collab.CollabBatchSyncRequest : undefined;
 
-    if (batch?.items.length !== 1 || batch.items[0].objectId !== rowId || !batch.items[0].docState?.length) {
-      await route.continue();
+    if (batch?.items.some((item) => item.objectId === rowId)) {
+      rowSyncRequests++;
+      // Atomic row creation already committed the source. Opening its page must
+      // succeed even if a redundant preliminary Row upload cannot complete.
+      await route.abort('failed');
       return;
     }
 
+    await route.continue();
+  });
+  await page.route(rowDocumentRoute, async (route) => {
     const response = await route.fetch();
-    const result = responseType.decode(await response.body()) as unknown as collab.CollabBatchSyncResponse;
+    const body = await response.json();
 
-    expect(response.ok()).toBe(true);
-    expect(result.results).toHaveLength(1);
-    expect(result.results[0].objectId).toBe(rowId);
-    expect(result.results[0].error).toBeFalsy();
-    acknowledged = true;
+    if (body.code === -5) {
+      await route.fulfill({ response });
+      return;
+    }
+
+    expect(body.code, JSON.stringify(body)).toBe(0);
+    documentId = body.data.result.document_id;
     await held;
     await route.fulfill({ response });
   });
   try {
     await openRowDetailByRowId(page, rowId);
-    await expect.poll(() => acknowledged).toBe(true);
-    expect(commands).toHaveLength(0);
+    await expect.poll(() => documentId).not.toBe('');
+    expect(rowSyncRequests).toBe(0);
+    await expect(page.getByTestId('row-document-loading')).toBeVisible();
     await expect(editorForRow(page)).toHaveCount(0);
+    expect(await readDocumentText(page, documentId)).toBe('');
     const completion = waitForRowBodyCompletion(page);
 
     release();
     await completion;
     await expect(editorForRow(page)).toBeVisible();
     await expect(rowIcon(page, rowId)).toHaveCount(0);
-    // Durable source settlement can request a retry after full-sync acknowledges.
+    expect(rowSyncRequests).toBe(0);
+    // Legacy source settlement may still ask the atomic API to retry.
     // Require one journaled command and only explicit retry-later replies before success.
     expect(new Set(commands).size).toBe(1);
     expect(await Promise.all(replyCodes)).toEqual([...Array(commands.length - 1).fill(-5), 0]);
@@ -377,6 +393,7 @@ test('a new row page opened offline shows an inline error without an editor and 
 }) => {
   const rowId = await createGrid(page, request);
   const commands = collectCreationCommands(page);
+  const replyCodes = collectCreationReplyCodes(page);
 
   await page.context().setOffline(true);
   try {
@@ -399,6 +416,12 @@ test('a new row page opened offline shows an inline error without an editor and 
     await page.context().setOffline(false);
   }
 
+  // Exercise source-settlement retry without depending on backend timing.
+  await page.route(
+    rowDocumentRoute,
+    (route) => route.fulfill({ status: 200, json: { code: -5, message: 'Row source is not ready' } }),
+    { times: 1 }
+  );
   const completion = waitForRowBodyCompletion(page);
 
   await openRowDetailByRowId(page, rowId);
@@ -412,8 +435,12 @@ test('a new row page opened offline shows an inline error without an editor and 
   await expect(rowIcon(page, rowId)).toBeVisible();
   await openRowDetailByRowId(page, rowId);
   await expect(editor).toContainText('Created only after reconnect');
-  expect(commands).toHaveLength(1);
-  expectDefaultSchema(commands[0]);
+  // Reconnecting may reach the atomic API before its source is ready. A
+  // RetryLater response must replay the same command, not create a new intent.
+  expect(commands.length).toBeGreaterThanOrEqual(2);
+  expect(new Set(commands).size).toBe(1);
+  expect(await Promise.all(replyCodes)).toEqual([...Array(commands.length - 1).fill(-5), 0]);
+  commands.forEach(expectDefaultSchema);
 });
 
 test('lost creation acknowledgement retries the identical command before enabling editing', async ({
