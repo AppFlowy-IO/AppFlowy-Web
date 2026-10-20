@@ -8,10 +8,10 @@ import { Types, YjsEditorKey } from '@/application/types';
 import { CollabState, decodeCurrentRowPageCollab, RowDocumentSourceIdentity } from './row-source-readiness';
 
 /**
- * A normal Row can be readable from Redis before its first PostgreSQL snapshot exists.
+ * A locally created template Row can be readable from Redis before its PostgreSQL snapshot exists.
  * Full-sync commits that initial base before acknowledging; an existing base is never replaced.
- * Send only the already accepted Row state, leaving ordinary row creation and local cell edits
- * with their existing sync owner. Atomic document creation can then fence this durable source.
+ * Send only the already accepted Row state, leaving local cell edits with their existing sync owner.
+ * Ordinary atomic Row creation already supplies this durable source and does not need this upload.
  */
 export async function ensureDurableRowSource(
   identity: RowDocumentSourceIdentity,

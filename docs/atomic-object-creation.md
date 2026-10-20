@@ -1,8 +1,8 @@
 # Atomic object creation in Web
 
-Default Document and Database pages, Database views, and the page of an existing
-Database Row use the server atomic APIs. Ordinary Add Row keeps the existing
-client-side Yjs/sync implementation. Opening row detail, side peek, or a full row
+Default Document and Database pages, Database views, Database Rows, and the page
+of an existing Row use the server atomic APIs. Row creation commits the Row and
+database membership before returning. Opening row detail, side peek, or a full row
 page initializes a missing Document on the server before exposing its editor.
 
 Web requires connectivity and the server-info flags `enable_atomic_creation` and
@@ -71,7 +71,7 @@ there are dirty documents. Reconnection cancels the actual HTTP request as well
 as its retry loop. Explicit duplicate/publish synchronization coalesces overlapping
 callers with the same edit boundary, but retains an upload when newer edits need
 delivery. WebSocket outbox drain currently proves a send, not server acceptance.
-Oversized updates and the first durable Row source remain HTTP exceptions.
+Oversized updates and locally created hidden template rows also retain HTTP sync.
 
 All nine Database layouts use compact server recipes for new, added, duplicated,
 and linked views. The server persists their fields and settings, including Board
@@ -110,13 +110,18 @@ retains its immutable journal command and shows Retry without an editor; permiss
 denial shows no access. Reopening a row recovers a pending command before testing
 whether its document exists. Concurrent opens share the same active initialization.
 
-A newly added ordinary row may still be syncing. Initialization waits for the
-server to read that Row and its source-view membership within the same 30-second
-attempt budget. Once readable, the accepted Row receives a targeted full-sync to
-establish its first durable source snapshot before creating the Document. This
-does not upload the database or change ordinary Add Row behavior.
-An explicit server `RetryLater` response retries the same immutable request within
-that budget; ambiguous transport failures retain the command for recovery.
+Row-page initialization verifies the current Row and its source-view membership
+within the same 30-second attempt budget, then calls the atomic row-document API
+without a preliminary full-sync. Atomic row creation already commits the durable
+Row and membership. A legacy row can still be readable before its durable source
+exists; an explicit server `RetryLater` response retries the same immutable request
+within that budget. Ambiguous transport failures retain the command for recovery.
+
+Hidden template source rows still originate in local Yjs state. Their template
+initialization explicitly requests a targeted Row full-sync after source validation
+and before atomic document creation. This establishes the first durable source
+without waiting for periodic server snapshots. Ordinary row-page opening does not
+request this upload.
 
 Document existence does not mean authored content. A blank schema preserves the
 Row's empty content state (an absent flag also means empty). Database views render

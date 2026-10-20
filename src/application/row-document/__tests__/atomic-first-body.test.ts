@@ -107,14 +107,6 @@ function setup() {
     assertCurrent: () => check?.(),
   }));
   (atomic.findPendingAtomicCreation as jest.Mock).mockResolvedValue(undefined);
-  jest.mocked(collabFullSyncBatch).mockResolvedValue([
-    {
-      objectId: ids.row,
-      collabType: Types.DatabaseRow,
-      missingUpdate: new Uint8Array([0, 0]),
-      serverStateVector: new Uint8Array([0]),
-    },
-  ]);
   (atomic.atomicRead as jest.Mock).mockImplementation((_owner, path: string) => {
     if (path.endsWith('restore-state')) return Promise.resolve({ database_restore_id: null, version: null });
     const target = path.split('/').pop();
@@ -384,6 +376,7 @@ describe('atomic row-page activation', () => {
       await jest.advanceTimersToNextTimerAsync();
       await expect(publication).resolves.toBe(f.cached);
       expect(submit).toHaveBeenCalledTimes(1);
+      expect(collabFullSyncBatch).not.toHaveBeenCalled();
     } finally {
       session.dispose();
       localDatabase.destroy();
@@ -391,18 +384,47 @@ describe('atomic row-page activation', () => {
     }
   });
 
-  it.each(['ready', 'item-error', 'retired-row', 'restore-changed'])(
-    'waits for the durable Row acknowledgment before atomic publication (%s)',
+  it.each(['blank schema', 'authored content'])(
+    'creates a row page with %s without a preliminary full-sync',
+    async (content) => {
+      const f = setup();
+      const submit = jest.fn();
+
+      (atomic.runAtomicCreation as jest.Mock).mockImplementation(async ({ beforeSubmit, hydrate, owner }) => {
+        await beforeSubmit(owner);
+        submit();
+        return hydrate(f.receipt, owner);
+      });
+      const session = await prepareAtomicRowFirstBody(f.input);
+
+      try {
+        const opening = content === 'blank schema'
+          ? session.createEmpty()
+          : session.publish(compileFirstBodyActions(f.remoteDocument));
+
+        await expect(opening).resolves.toBe(f.cached);
+        expect(submit).toHaveBeenCalledTimes(1);
+        expect(collabFullSyncBatch).not.toHaveBeenCalled();
+      } finally {
+        session.dispose();
+      }
+    }
+  );
+
+  it.each(['retired-row', 'restore-changed'])(
+    'rejects a source change while current Row reads are pending (%s)',
     async (outcome) => {
       jest.useFakeTimers();
       const f = setup();
       const submit = jest.fn();
-      let finish!: (results: Awaited<ReturnType<typeof collabFullSyncBatch>>) => void;
+      let finish!: (row: ReturnType<typeof state>) => void;
+      const pendingRow = new Promise<ReturnType<typeof state>>((resolve) => {
+        finish = resolve;
+      });
+      const originalRead = (atomic.atomicRead as jest.Mock).getMockImplementation()!;
 
-      jest.mocked(collabFullSyncBatch).mockImplementation(
-        () => new Promise((resolve) => {
-          finish = resolve;
-        })
+      (atomic.atomicRead as jest.Mock).mockImplementation((owner, path) =>
+        path.endsWith(`/${ids.row}`) ? pendingRow : originalRead(owner, path)
       );
       (atomic.runAtomicCreation as jest.Mock).mockImplementation(async ({ beforeSubmit, hydrate, owner }) => {
         await beforeSubmit(owner);
@@ -415,29 +437,15 @@ describe('atomic row-page activation', () => {
       void opening.catch(() => undefined);
       try {
         await jest.advanceTimersByTimeAsync(0);
-        // Cache GETs already returned a complete Row, but no document may be published yet.
-        expect(collabFullSyncBatch).toHaveBeenCalledTimes(1);
         expect(submit).not.toHaveBeenCalled();
         expect(getOrCreateRowSubDoc).not.toHaveBeenCalled();
         if (outcome === 'retired-row') f.input.rowDoc.destroy();
         if (outcome === 'restore-changed') jest.mocked(isDatabaseStorageFenceCurrent).mockReturnValue(false);
-        finish([
-          {
-            objectId: ids.row,
-            collabType: Types.DatabaseRow,
-            missingUpdate: new Uint8Array([0, 0]),
-            serverStateVector: new Uint8Array([0]),
-            ...(outcome === 'item-error' ? { error: 'Not enough permissions' } : {}),
-          },
-        ]);
-        if (outcome === 'ready') {
-          await expect(opening).resolves.toBe(f.cached);
-          expect(submit).toHaveBeenCalledTimes(1);
-        } else {
-          await expect(opening).rejects.toThrow();
-          expect(submit).not.toHaveBeenCalled();
-          expect(getOrCreateRowSubDoc).not.toHaveBeenCalled();
-        }
+        finish(state(f.remoteRow));
+        await expect(opening).rejects.toThrow();
+        expect(submit).not.toHaveBeenCalled();
+        expect(getOrCreateRowSubDoc).not.toHaveBeenCalled();
+        expect(collabFullSyncBatch).not.toHaveBeenCalled();
       } finally {
         session.dispose();
         jest.useRealTimers();
@@ -462,7 +470,8 @@ describe('atomic row-page activation', () => {
     session.dispose();
   });
 
-  it('publishes a hidden template body only through its current exact database registry', async () => {
+  it('waits for a locally created hidden template Row snapshot before publishing its body', async () => {
+    jest.useFakeTimers();
     const f = setup();
 
     f.rows.delete(0, f.rows.length);
@@ -472,20 +481,37 @@ describe('atomic row-page activation', () => {
       { template_id: ids.row, name: 'Template', doc_view_id: ids.document },
     ])]]));
     const submitted = jest.fn();
+    let acknowledge!: (results: Awaited<ReturnType<typeof collabFullSyncBatch>>) => void;
 
+    jest.mocked(collabFullSyncBatch).mockImplementation(() => new Promise((resolve) => {
+      acknowledge = resolve;
+    }));
     (atomic.runAtomicCreation as jest.Mock).mockImplementation(async ({ beforeSubmit, hydrate, owner }) => {
       await beforeSubmit(owner);
       submitted();
       return hydrate(f.receipt, owner);
     });
-    const session = await prepareAtomicRowFirstBody(f.input);
+    const session = await prepareAtomicRowFirstBody({ ...f.input, requiresInitialRowSnapshot: true });
+    const publication = session.publish(compileFirstBodyActions(f.remoteDocument));
+
+    void publication.catch(() => undefined);
 
     try {
-      await expect(session.publish(compileFirstBodyActions(f.remoteDocument))).resolves.toBe(f.cached);
+      await jest.advanceTimersByTimeAsync(0);
+      expect(collabFullSyncBatch).toHaveBeenCalledTimes(1);
+      expect(submitted).not.toHaveBeenCalled();
+      acknowledge([{
+        objectId: ids.row,
+        collabType: Types.DatabaseRow,
+        missingUpdate: new Uint8Array([0, 0]),
+        serverStateVector: new Uint8Array([0]),
+      }]);
+      await expect(publication).resolves.toBe(f.cached);
       expect(submitted).toHaveBeenCalledTimes(1);
       expect(f.rows.length).toBe(0);
     } finally {
       session.dispose();
+      jest.useRealTimers();
     }
   });
 

@@ -71,7 +71,7 @@ export function hasCurrentRowDocumentSource(database: Y.Map<unknown>, viewId: st
   });
 }
 
-/** Existing Add Row sync remains the producer; this boundary only observes its result. */
+/** Observe the current Row and membership without uploading either source. */
 export async function waitForRowDocumentSource(
   identity: RowDocumentSourceIdentity,
   options: {

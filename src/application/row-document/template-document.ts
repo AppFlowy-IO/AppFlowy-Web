@@ -20,7 +20,7 @@ export async function ensureAtomicTemplateDocument(
     assertAtomicCreationAvailable(owner);
   }
 
-  const session = await prepareAtomicRowFirstBody(input);
+  const session = await prepareAtomicRowFirstBody({ ...input, requiresInitialRowSnapshot: true });
 
   try {
     owner.assertCurrent();
