@@ -244,15 +244,6 @@ export function isPermissionDeniedError(error: unknown): boolean {
     : appError.sourceDomain === 'http' && (appError.statusCode ?? appError.code) === 403;
 }
 
-/** A missing object can be initialized; a missing workspace or invalid view cannot. */
-export function isRecordNotFoundError(error: unknown): boolean {
-  const identity = readErrorIdentity(error);
-
-  return identity.sourceDomain === 'appflowy.server'
-    ? identity.code === ERROR_CODE.RECORD_NOT_FOUND
-    : identity.sourceDomain === 'http' && (identity.httpStatus ?? identity.code) === 404;
-}
-
 /**
  * Type guard to check if error is an AppError
  */

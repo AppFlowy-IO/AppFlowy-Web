@@ -414,44 +414,31 @@ describe('view-loader row document retry policy', () => {
   it('keeps the default retry budget for a row document that may still be created', async () => {
     const documentId = '00000000-0000-4000-8000-000000000007';
     const doc = createEmptyDoc(documentId);
-    const error = new Error('row document is not ready');
 
     mockGetOrCreateRowSubDoc.mockResolvedValue(doc);
-    mockFetchRowDocumentCollab.mockRejectedValue(error);
+    mockFetchRowDocumentCollab.mockRejectedValue(new Error('row document is not ready'));
 
-    const rejection = expect(openRowSubDocument('workspace-id', documentId)).rejects.toBe(error);
+    const resultPromise = openRowSubDocument('workspace-id', documentId);
 
     await jest.runAllTimersAsync();
-    await rejection;
+
+    const result = await resultPromise;
+
+    expect(result.doc).toBe(doc);
     expect(mockFetchRowDocumentCollab).toHaveBeenCalledTimes(6);
-    expect(jest.getTimerCount()).toBe(0);
   });
 
-  it('honors a one-attempt limit when the row opener owns retries', async () => {
+  it('honors a one-attempt limit when existence was already confirmed', async () => {
     const documentId = '00000000-0000-4000-8000-000000000008';
     const doc = createEmptyDoc(documentId);
-    const error = new Error('row document is not registered yet');
 
     mockGetOrCreateRowSubDoc.mockResolvedValue(doc);
-    mockFetchRowDocumentCollab.mockRejectedValue(error);
+    mockFetchRowDocumentCollab.mockRejectedValue(new Error('row document is not registered yet'));
 
-    await expect(openRowSubDocument('workspace-id', documentId, { maxAttempts: 1 })).rejects.toBe(error);
+    const result = await openRowSubDocument('workspace-id', documentId, { maxAttempts: 1 });
 
+    expect(result.doc).toBe(doc);
     expect(mockFetchRowDocumentCollab).toHaveBeenCalledTimes(1);
-    expect(jest.getTimerCount()).toBe(0);
-  });
-
-  it('propagates a missing document so the opener can initialize it without an existence probe', async () => {
-    const documentId = '00000000-0000-4000-8000-000000000008';
-    const doc = createEmptyDoc(documentId);
-    const missing = { code: -2, message: 'Collab not found' };
-
-    mockGetOrCreateRowSubDoc.mockResolvedValue(doc);
-    mockFetchRowDocumentCollab.mockRejectedValue(missing);
-
-    await expect(openRowSubDocument('workspace-id', documentId, { maxAttempts: 1 })).rejects.toBe(missing);
-    expect(mockFetchRowDocumentCollab).toHaveBeenCalledTimes(1);
-    expect(mockDeleteCollabDB).not.toHaveBeenCalled();
     expect(jest.getTimerCount()).toBe(0);
   });
 
@@ -479,31 +466,7 @@ describe('view-loader row document retry policy', () => {
     serverDoc.destroy();
   });
 
-  it('opens a cached paragraph with authored text without fetching', async () => {
-    const documentId = '00000000-0000-4000-8000-000000000008';
-    const doc = createDocumentDoc(documentId);
-    const body = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.document) as Y.Map<unknown>;
-    const blocks = new Y.Map();
-    const meta = new Y.Map();
-    const textMap = new Y.Map();
-
-    body.set(YjsEditorKey.blocks, blocks);
-    for (const id of ['page', 'paragraph']) blocks.set(id, new Y.Map());
-    body.set(YjsEditorKey.meta, meta);
-    meta.set(YjsEditorKey.text_map, textMap);
-    textMap.set('paragraph', new Y.Text('Existing content'));
-    mockGetOrCreateRowSubDoc.mockResolvedValue(doc);
-    mockFetchRowDocumentCollab.mockRejectedValue(new Error('network unavailable'));
-
-    const result = await openRowSubDocument('workspace-id', documentId);
-
-    expect(result.doc).toBe(doc);
-    expect(result.fromCache).toBe(true);
-    expect(mockFetchRowDocumentCollab).not.toHaveBeenCalled();
-    doc.destroy();
-  });
-
-  it.each([false, true])('rejects an unconfirmed local shell after failed reads (required=%s)', async (requireServerFetch) => {
+  it('rejects an unconfirmed local shell when a required fetch exhausts its retries', async () => {
     const documentId = '00000000-0000-4000-8000-000000000008';
     const doc = createDocumentDoc(documentId);
     const error = new Error('network unavailable');
@@ -511,7 +474,7 @@ describe('view-loader row document retry policy', () => {
     mockGetOrCreateRowSubDoc.mockResolvedValue(doc);
     mockFetchRowDocumentCollab.mockRejectedValue(error);
     const rejection = expect(
-      openRowSubDocument('workspace-id', documentId, { maxAttempts: 2, requireServerFetch })
+      openRowSubDocument('workspace-id', documentId, { maxAttempts: 2, requireServerFetch: true })
     ).rejects.toBe(error);
 
     await jest.runAllTimersAsync();

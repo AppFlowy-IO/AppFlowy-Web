@@ -34,7 +34,7 @@ import {
   YjsDatabaseKey,
   YjsEditorKey,
 } from '@/application/types';
-import { isPermissionDeniedError, isRecordNotFoundError } from '@/application/utils/error-utils';
+import { isPermissionDeniedError } from '@/application/utils/error-utils';
 import { EditorSkeleton } from '@/components/_shared/skeleton/EditorSkeleton';
 import { useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
 import { Editor } from '@/components/editor';
@@ -43,10 +43,10 @@ import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Log } from '@/utils/log';
 
 type IsCurrentRowDocumentRequest = () => boolean;
-type RowDocumentAttempt = 'ready' | 'missing' | 'retryable' | 'forbidden';
+type RowDocumentAttempt = 'ready' | 'retryable' | 'forbidden';
 
 const ALWAYS_CURRENT_ROW_DOCUMENT_REQUEST = () => true;
-const ROW_DOCUMENT_LOAD_OPTIONS: LoadRowDocumentOptions = { maxAttempts: 1 };
+const CONFIRMED_ROW_DOCUMENT_LOAD_OPTIONS: LoadRowDocumentOptions = { maxAttempts: 1 };
 
 /**
  * DatabaseRowSubDocument - Full-featured component for row documents in app mode.
@@ -104,6 +104,7 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
 
   // Row document operations from context (mode-specific implementations)
   const loadRowDocument = context?.loadRowDocument;
+  const checkIfRowDocumentExists = context?.checkIfRowDocumentExists;
   const bindViewSync = context?.bindViewSync;
   const rowDocumentSource = useMemo<RowDocumentSourcePayload | undefined>(() => {
     const databaseId = (database?.get(YjsDatabaseKey.id) as string | undefined) || context?.databaseDoc?.guid;
@@ -352,8 +353,6 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
           return 'forbidden';
         }
 
-        if (isRecordNotFoundError(e)) return 'missing';
-
         Log.debug('[DatabaseRowSubDocument] loadRowDocument failed', {
           message: e instanceof Error ? e.message : String(e),
         });
@@ -479,8 +478,8 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
         if (!isCurrentRequest() || deniedDocumentIdRef.current === documentId) return;
 
         retryCount++;
-        // Retry the read itself. Only an authoritative missing-body response
-        // permits initialization; transient failures never become create requests.
+        // Re-evaluate server existence on every attempt. An empty-content flag or an exhausted
+        // read retry budget must never turn a temporary failure into a repair/create request.
         void openRowDocument();
       }, 2000);
     };
@@ -512,6 +511,16 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
         return;
       }
 
+      // Empty content does not imply a missing server document. Check existence for both
+      // states so reopening an empty document can read it without taking the repair write path.
+      // Without an existence check, creation still confirms server readiness before binding.
+      if (!checkIfRowDocumentExists) {
+        const attempt = await handleOpenDocument(documentId, CONFIRMED_ROW_DOCUMENT_LOAD_OPTIONS, isCurrentRequest);
+
+        if (attempt === 'retryable' && isCurrentRequest()) scheduleRetry();
+        return;
+      }
+
       let creating = false;
 
       try {
@@ -521,14 +530,41 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
           return;
         }
 
-        // Match Desktop: open cached/remote content first and initialize only
-        // after a record-not-found result for a row without known authored content.
-        const attempt = await handleOpenDocument(documentId, ROW_DOCUMENT_LOAD_OPTIONS, isCurrentRequest);
+        const exists = await checkIfRowDocumentExists(documentId);
 
         if (!isCurrentRequest()) return;
-        if (attempt === 'ready' || attempt === 'forbidden') return;
 
-        if (attempt === 'missing' && isDocumentEmptyResolved && writableRef.current) {
+        Log.debug('[DatabaseRowSubDocument] checkIfRowDocumentExists', {
+          rowId,
+          documentId,
+          exists,
+        });
+        if (exists) {
+          // Skip loading if doc is already ready
+          if (docReadyRef.current && loadedDocumentIdRef.current === documentId) {
+            Log.debug('[DatabaseRowSubDocument] doc exists and already loaded, skipping', {
+              rowId,
+              documentId,
+            });
+            return;
+          }
+
+          // The server handles legacy recovery during reads. Temporary failures stay within
+          // the read retry budget instead of sending an explicit create/repair request.
+          const loadAttempt = await handleOpenDocument(
+            documentId,
+            CONFIRMED_ROW_DOCUMENT_LOAD_OPTIONS,
+            isCurrentRequest
+          );
+
+          if (loadAttempt === 'retryable' && isCurrentRequest()) {
+            scheduleRetry();
+          }
+
+          return;
+        }
+
+        if (isDocumentEmptyResolved) {
           // A legacy local body must not be silently replaced by a blank draft.
           const localHasContent = await hasLocalDocContent(documentId);
 
@@ -539,7 +575,11 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
           return;
         }
 
-        scheduleRetry();
+        // Eligible legacy content is repaired by the authorized read path. A
+        // missing nonempty body is never converted into a blank create request.
+        const attempt = await handleOpenDocument(documentId, CONFIRMED_ROW_DOCUMENT_LOAD_OPTIONS, isCurrentRequest);
+
+        if (attempt === 'retryable' && isCurrentRequest()) scheduleRetry();
       } catch (e) {
         if (!isCurrentRequest()) return;
 
@@ -548,7 +588,7 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
           return;
         }
 
-        Log.debug('[DatabaseRowSubDocument] row document open failed', {
+        Log.debug('[DatabaseRowSubDocument] checkIfRowDocumentExists failed; will retry', {
           rowId,
           documentId,
         });
@@ -570,6 +610,7 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
     documentId,
     openCanonicalRowDocument,
     workspaceId,
+    checkIfRowDocumentExists,
     isDocumentEmptyResolved,
     hasLocalDocContent,
     markPermissionDenied,
