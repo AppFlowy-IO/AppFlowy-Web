@@ -21,9 +21,11 @@ export class AtomicCreationPendingError extends ClientValidationError {
   readonly requestId: string;
   readonly recordId: string;
   readonly cause: unknown;
+  readonly committed: boolean;
 
   constructor(record: AtomicCreationRecord, cause: unknown) {
-    super('ATOMIC_CREATION_PENDING');
+    super(record.state === 'committed' ? 'ATOMIC_CREATION_COMMITTED' : 'ATOMIC_CREATION_PENDING');
+    this.committed = record.state === 'committed';
     this.name = 'AtomicCreationPendingError';
     this.requestId = record.requestId;
     this.recordId = record.id;
@@ -188,6 +190,7 @@ async function recover<K extends AtomicCreationKind, T>(options: RecoveryOptions
           await db.atomic_creation.put({ ...current, state: 'committed', receiptJson });
         }
       });
+      record = { ...record, state: 'committed', receiptJson: JSON.stringify(receipt) };
     }
 
     owner.assertCurrent();

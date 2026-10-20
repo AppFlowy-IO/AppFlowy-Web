@@ -21,6 +21,7 @@ import { readCollabStates } from '@/application/services/js-services/http/collab
 import { DatabaseViewLayout, Types, View, ViewLayout, YDatabase, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
 
+import { waitForCreatedDatabaseView } from './created-view-readiness';
 import {
   assertNotAborted,
   DatabaseViewSourceRequirements,
@@ -101,15 +102,17 @@ async function createDefaultDatabaseViewOwned(intent: DefaultDatabaseViewIntent)
   }
 
   const controller = new AbortController();
-  const deadline = Date.now() + 30_000;
-  const timeout = setTimeout(() => controller.abort(new Error('Database creation readiness expired')), 30_000);
+  let deadline = Date.now() + 30_000;
+  let timeout = setTimeout(() => controller.abort(new Error('Database creation readiness expired')), 30_000);
   let requirements: DatabaseViewSourceRequirements | undefined;
   const assertCurrent = () => { assertNotAborted(controller.signal); owner.assertCurrent(); };
 
-  const checkRestore = async () => {
+  const checkRestore = async (signal = controller.signal) => {
+    assertNotAborted(signal);
     const state = await atomicRead<{ database_restore_id: string | null; version: string | null }>(owner,
-      `/api/workspace/${workspaceId}/database/${databaseId}/restore-state`, undefined, controller.signal);
+      `/api/workspace/${workspaceId}/database/${databaseId}/restore-state`, undefined, signal);
 
+    assertNotAborted(signal);
     assertCurrent();
     if ((state.database_restore_id ?? ORIGINAL_DATABASE_RESTORE_ID) !== restoreId ||
       (state.version ?? undefined) !== version || !(await matchesDatabaseStorageFence(capturedFence))) {
@@ -118,13 +121,14 @@ async function createDefaultDatabaseViewOwned(intent: DefaultDatabaseViewIntent)
   };
 
   const read = async (signal: AbortSignal, remainingMs: number) => {
-    await checkRestore();
+    await checkRestore(signal);
     const results = await readCollabStates(workspaceId, [{
       objectId: databaseId, collabType: Types.Database,
     }], { atomicCreationOwner: owner, signal, timeoutMs: Math.max(1, Math.min(remainingMs, deadline - Date.now())) });
 
+    assertNotAborted(signal);
     assertCurrent();
-    await checkRestore();
+    await checkRestore(signal);
     if (results.length !== 1) throw new Error('Database source response is ambiguous');
     return results[0];
   };
@@ -145,49 +149,80 @@ async function createDefaultDatabaseViewOwned(intent: DefaultDatabaseViewIntent)
   };
 
   const hydrate = async () => {
+    // The journal calls this only after validating and retaining the commit receipt.
+    // Do not spend the remaining write budget on visibility reads or submit again:
+    // a slow successful commit gets one separately bounded, read-only opening phase.
+    assertCurrent();
+    if (Date.now() >= deadline) throw new Error('Database creation readiness expired');
+    clearTimeout(timeout);
+    deadline = Date.now() + 10_000;
+    timeout = setTimeout(() => controller.abort(new Error('Created Database view hydration expired')), 10_000);
     // A receipt's old delta is never replayed over current settings or rows.
     const captured = requirements ?? await capture();
     const ids = [request.view.view_id, ...(request.view.responses_view_id ? [request.view.responses_view_id] : [])];
     // Both reads describe the committed graph. Share their deadline, then verify
     // their identities and the restore/storage fences together before activation.
-    const [current, views] = await Promise.all([
-      waitForDatabaseViewSource(captured, { read, assertCurrent, signal: controller.signal, deadline }),
-      Promise.all(ids.map((id) => atomicRead<View>(owner,
-        `/api/workspace/${workspaceId}/view/${id}`, { depth: 0 }, controller.signal))),
-    ]);
-    const remote = new Y.Doc();
+    const current = await waitForCreatedDatabaseView({
+      assertCurrent, signal: controller.signal, deadline,
+      read: async () => {
+        // A rejected Folder read must cancel its paired source polling before retry.
+        // Otherwise each retry leaves another source-read loop running until expiry.
+        const attempt = new AbortController();
+        const cancel = () => attempt.abort(controller.signal.reason);
 
-    try {
-      Y.applyUpdate(remote, current.missingUpdate);
-      const database = remote.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase | undefined;
+        controller.signal.addEventListener('abort', cancel, { once: true });
+        if (controller.signal.aborted) cancel();
+        const sourceRead = waitForDatabaseViewSource(captured, { read, assertCurrent, signal: attempt.signal, deadline });
+        const folderReads = ids.map((id) => atomicRead<View>(owner,
+          `/api/workspace/${workspaceId}/view/${id}`, { depth: 0 }, attempt.signal));
+        const remote = new Y.Doc();
 
-      ids.forEach((id, index) => {
-        const internal = database?.get(YjsDatabaseKey.views)?.get(id);
-        const folder = views[index];
+        try {
+          const [current, views] = await Promise.all([sourceRead, Promise.all(folderReads)]);
 
-        if (!internal || (internal as Y.Map<unknown>).get(YjsDatabaseKey.id) !== id ||
-          internal.get(YjsDatabaseKey.database_id) !== databaseId || folder.extra?.database_id !== databaseId || folder.view_id !== id ||
-          folder.parent_view_id !== request.view.parent_view_id ||
-          folder.layout !== LAYOUTS[Number(internal.get(YjsDatabaseKey.layout))]) {
-          throw new Error('Created Database view is not currently readable in Folder and content');
+          Y.applyUpdate(remote, current.missingUpdate);
+          const database = remote.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase | undefined;
+          let missing = false;
+
+          ids.forEach((id, index) => {
+            const internal = database?.get(YjsDatabaseKey.views)?.get(id);
+            const folder = views[index];
+
+            if (!internal || !folder) { missing = true; return; }
+
+            if ((internal as Y.Map<unknown>).get(YjsDatabaseKey.id) !== id ||
+              internal.get(YjsDatabaseKey.database_id) !== databaseId || folder.extra?.database_id !== databaseId || folder.view_id !== id ||
+              folder.parent_view_id !== request.view.parent_view_id ||
+              folder.layout !== LAYOUTS[Number(internal.get(YjsDatabaseKey.layout))]) {
+              throw new Error('Created Database view is not currently readable in Folder and content');
+            }
+          });
+          return missing ? undefined : current;
+        } catch (error) {
+          attempt.abort(error);
+          await Promise.allSettled([sourceRead, ...folderReads]);
+          throw error;
+        } finally {
+          controller.signal.removeEventListener('abort', cancel);
+          attempt.abort();
+          remote.destroy();
         }
-      });
-      assertCurrent();
-      await checkRestore();
-      if (!remoteDatabaseCoversSource(captured, current)) throw new Error('Current Database does not cover its source');
-      const published = await publishWithDatabaseStorageFence(capturedFence, () => {
-        assertCurrent();
-        withDatabaseStorageFence(databaseDoc, capturedFence, () => applyYDoc(databaseDoc, current.missingUpdate));
-      });
+      },
+    });
 
-      if (!published) throw new Error('Database storage changed before activation');
+    assertCurrent();
+    await checkRestore();
+    if (!remoteDatabaseCoversSource(captured, current)) throw new Error('Current Database does not cover its source');
+    const published = await publishWithDatabaseStorageFence(capturedFence, () => {
       assertCurrent();
-      await intent.activate?.(request.view.view_id);
-      assertCurrent();
-      return request.view.view_id;
-    } finally {
-      remote.destroy();
-    }
+      withDatabaseStorageFence(databaseDoc, capturedFence, () => applyYDoc(databaseDoc, current.missingUpdate));
+    });
+
+    if (!published) throw new Error('Database storage changed before activation');
+    assertCurrent();
+    await intent.activate?.(request.view.view_id);
+    assertCurrent();
+    return request.view.view_id;
   };
 
   try {

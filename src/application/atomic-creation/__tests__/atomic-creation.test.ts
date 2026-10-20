@@ -207,7 +207,8 @@ it('retains Committed after a failed current read, then hydrates without capabil
         throw new Error('current permission denied');
       },
     })
-  ).rejects.toMatchObject({ cause: { message: 'current permission denied' } });
+  ).rejects.toMatchObject({ committed: true, user_error: { reason: 'ATOMIC_CREATION_COMMITTED' },
+    cause: { message: 'current permission denied' } });
   updateServerInfo(server, { status: 'unsupported' });
   const record = (await findPendingAtomicCreation(owner, 'document', command.view_id))!;
 
