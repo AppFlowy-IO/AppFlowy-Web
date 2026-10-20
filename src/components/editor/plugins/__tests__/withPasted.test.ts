@@ -139,4 +139,31 @@ describe('withPasted', () => {
     expect(leaves.some((leaf) => 'mention' in leaf)).toBe(false);
     expect(leaves).toContainEqual({ text: url, href: url });
   });
+  it('replaces selected text when pasting plain text over an expanded selection', () => {
+    const editor = createEditorWithParagraph('Hello world');
+    // Select "world" (offset 6 to 11)
+    editor.selection = {
+      anchor: { path: [0, 0], offset: 6 },
+      focus: { path: [0, 0], offset: 11 },
+    };
+
+    const handled = editor.insertTextData(createPasteData('everyone'));
+
+    expect(handled).toBe(true);
+    expect(paragraphLeaves(editor)).toEqual([{ text: 'Hello everyone' }]);
+  });
+
+  it('replaces all text when pasting after Cmd+A / Ctrl+A selection', () => {
+    const editor = createEditorWithParagraph('Original content to replace');
+    // Select all text (offset 0 to 27)
+    editor.selection = {
+      anchor: { path: [0, 0], offset: 0 },
+      focus: { path: [0, 0], offset: 27 },
+    };
+
+    const handled = editor.insertTextData(createPasteData('New pasted content'));
+
+    expect(handled).toBe(true);
+    expect(paragraphLeaves(editor)).toEqual([{ text: 'New pasted content' }]);
+  });
 });
