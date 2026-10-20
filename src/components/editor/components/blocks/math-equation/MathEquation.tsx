@@ -45,7 +45,7 @@ export const MathEquation = memo(
                   ? 'document.plugins.mathEquation.editMathEquation'
                   : 'document.plugins.mathEquation.addMathEquation'
               )}
-              className={`min-h-[44px] rounded-lg pl-3 pr-10 outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick ${formula.trim() ? '' : 'py-2'} ${
+              className={`min-h-[44px] rounded-lg pl-3 pr-11 outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick ${formula.trim() ? '' : 'py-2'} ${
                 readOnly ? '' : 'cursor-pointer'
               }`}
               onClick={(event) => {
