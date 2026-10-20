@@ -1,7 +1,6 @@
 import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
 import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
 import { reorder } from '@atlaskit/pragmatic-drag-and-drop/reorder';
-import { autoScrollForElements } from '@atlaskit/pragmatic-drag-and-drop-auto-scroll/element';
 import { extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { getReorderDestinationIndex } from '@atlaskit/pragmatic-drag-and-drop-hitbox/util/get-reorder-destination-index';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -12,6 +11,7 @@ import {
   useReorderGroupColumnDispatch,
   useReorderRowDispatch,
 } from '@/application/database-yjs/dispatch';
+import { registerSharedAutoScroll } from '@/components/_shared/reorder/sharedAutoScroll';
 import { BoardDragContextValue } from '@/components/database/components/board/drag-and-drop/board-context';
 import { createRegistry } from '@/components/database/components/board/drag-and-drop/registry';
 
@@ -302,7 +302,7 @@ export function useColumnsDrag(
           }
         },
       }),
-      autoScrollForElements({
+      registerSharedAutoScroll({
         element: scrollableRef.current,
         canScroll: canRespond,
       })
