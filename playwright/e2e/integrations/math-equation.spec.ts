@@ -342,6 +342,29 @@ test('long equations scroll horizontally inside the block at the Figma font size
   expect(dimensions.pageScroll).toBe(dimensions.pageWidth);
 });
 
+test('tall equations grow and shrink with the formula without vertical scrolling inside the block', async ({ page }) => {
+  const formula = String.raw`\begin{aligned}
+${Array.from({ length: 24 }, (_, i) => String.raw`F_${i}(x) &= \int_0^x \frac{t^${i} e^{-t^2}}{1+t^2}\,dt`).join(' \\\\\n')}
+\end{aligned}`;
+
+  await insertEquation(page, formula);
+  await page.evaluate(() => document.fonts.ready);
+  const render = block(page).locator('.math-equation-render');
+  const tallHeight = await block(page).evaluate((element) => element.clientHeight);
+
+  expect(tallHeight).toBeGreaterThan(page.viewportSize()!.height);
+  await expect.poll(() => render.evaluate((element) => element.scrollHeight - element.clientHeight)).toBe(0);
+  const renderedBounds = await render.locator('.katex').boundingBox();
+  const blockBounds = await block(page).boundingBox();
+
+  expect(renderedBounds!.y + renderedBounds!.height).toBeLessThanOrEqual(blockBounds!.y + blockBounds!.height);
+  await block(page).getByRole('button', { name: 'Edit block equation', exact: true }).click({ position: { x: 20, y: 20 } });
+  await input(page).fill('x^2');
+  await input(page).press('Enter');
+  await expect.poll(() => block(page).evaluate((element) => element.clientHeight)).toBeLessThan(tallHeight / 2);
+  await expect.poll(() => render.evaluate((element) => element.scrollHeight - element.clientHeight)).toBe(0);
+});
+
 test('paste converts multiline Markdown equations and keeps their TeX after reload', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   const formula = '\\begin{bmatrix}\n1 & 2\\\\\n3 & 4\n\\end{bmatrix}';

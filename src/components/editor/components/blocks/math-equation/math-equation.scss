@@ -33,6 +33,10 @@
   }
   .math-equation-render > div {
     max-width: 100%;
+    // Put the block's vertical spacing inside the scroll container. KaTeX's
+    // positioned glyphs can extend past its line box and otherwise create a
+    // vertical scrollbar even though the block has no height limit.
+    padding-block: 8px;
   }
 }
 @media (hover: none) {

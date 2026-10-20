@@ -45,7 +45,7 @@ export const MathEquation = memo(
                   ? 'document.plugins.mathEquation.editMathEquation'
                   : 'document.plugins.mathEquation.addMathEquation'
               )}
-              className={`min-h-[44px] rounded-lg py-2 pl-3 pr-10 outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick ${
+              className={`min-h-[44px] rounded-lg pl-3 pr-10 outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick ${formula.trim() ? '' : 'py-2'} ${
                 readOnly ? '' : 'cursor-pointer'
               }`}
               onClick={(event) => {
@@ -62,7 +62,7 @@ export const MathEquation = memo(
               }}
             >
               {formula.trim() ? (
-                <div className='math-equation-render flex min-h-[28px] w-full items-center justify-center overflow-x-auto'>
+                <div className='math-equation-render flex min-h-[44px] w-full items-center justify-center overflow-x-auto'>
                   <Suspense fallback={formula}>
                     <KatexMath latex={formula} />
                   </Suspense>
