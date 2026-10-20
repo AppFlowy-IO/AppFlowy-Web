@@ -4,7 +4,17 @@ import { ReactEditor } from 'slate-react';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
 import { BlockType } from '@/application/types';
 
+export type CodeAIAction = 'generate' | 'explain' | 'check' | 'comments';
+export interface CodeBlockAction {
+  blockId: string;
+  action: CodeAIAction | 'caption' | 'expand';
+  requestId: number;
+}
+
 export interface BlockPopoverContextType {
+  codeBlockAction?: CodeBlockAction;
+  openCodeBlockAction?: (blockId: string, action: CodeBlockAction['action']) => void;
+  closeCodeBlockAction?: () => void;
   type?: BlockType;
   blockId?: string;
   anchorEl?: HTMLElement | null;
@@ -37,6 +47,12 @@ export function usePopoverMountSignal(blockId: string | undefined) {
 }
 
 export const BlockPopoverProvider = ({ children, editor }: { children: React.ReactNode; editor: ReactEditor }) => {
+  const [codeBlockAction, setCodeBlockAction] = useState<CodeBlockAction>();
+  const actionSequence = useRef(0);
+  const openCodeBlockAction = useCallback((blockId: string, action: CodeBlockAction['action']) => {
+    setCodeBlockAction({ blockId, action, requestId: ++actionSequence.current });
+  }, []);
+  const closeCodeBlockAction = useCallback(() => setCodeBlockAction(undefined), []);
   const [type, setType] = useState<BlockType | undefined>();
   const [blockId, setBlockId] = useState<string | undefined>();
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
@@ -108,8 +124,32 @@ export const BlockPopoverProvider = ({ children, editor }: { children: React.Rea
   );
 
   const contextValue = useMemo(
-    () => ({ blockId, type, anchorEl, open, close, openPopover, notifyMount, isOpen }),
-    [blockId, type, anchorEl, open, close, openPopover, notifyMount, isOpen]
+    () => ({
+      blockId,
+      type,
+      anchorEl,
+      open,
+      close,
+      openPopover,
+      notifyMount,
+      isOpen,
+      codeBlockAction,
+      openCodeBlockAction,
+      closeCodeBlockAction,
+    }),
+    [
+      blockId,
+      type,
+      anchorEl,
+      open,
+      close,
+      openPopover,
+      notifyMount,
+      isOpen,
+      codeBlockAction,
+      openCodeBlockAction,
+      closeCodeBlockAction,
+    ]
   );
 
   return <BlockPopoverContext.Provider value={contextValue}>{children}</BlockPopoverContext.Provider>;

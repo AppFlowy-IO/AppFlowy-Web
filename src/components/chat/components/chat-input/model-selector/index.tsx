@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { Check } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 
 import { ReactComponent as AISparksIcon } from '@/assets/icons/ai.svg';
 import { useModelSelectorContext } from '@/components/chat/contexts/model-selector-context';
@@ -15,9 +15,10 @@ import { cn } from '@/lib/utils';
 interface ModelSelectorProps {
   className?: string;
   disabled?: boolean;
+  triggerContent?: ReactNode;
 }
 
-export function ModelSelector({ className, disabled }: ModelSelectorProps) {
+export function ModelSelector({ className, disabled, triggerContent }: ModelSelectorProps) {
   const [open, setOpen] = useState(false);
   const [selectedModel, setSelectedModel] = useState<string>('Auto'); // Start with Auto as default
   const [models, setModels] = useState<AvailableModel[]>([]);
@@ -219,9 +220,14 @@ export function ModelSelector({ className, disabled }: ModelSelectorProps) {
               onMouseDown={(e) => e.preventDefault()}
               disabled={disabled}
               data-testid='model-selector-button'
+              aria-label='Select AI Model'
             >
-              <AISparksIcon className='h-5 w-5 text-icon-secondary' />
-              <span className='max-w-[120px] truncate'>{displayText}</span>
+              {triggerContent ?? (
+                <>
+                  <AISparksIcon className='h-5 w-5 text-icon-secondary' />
+                  <span className='max-w-[120px] truncate'>{displayText}</span>
+                </>
+              )}
             </Button>
           </PopoverTrigger>
         </TooltipTrigger>

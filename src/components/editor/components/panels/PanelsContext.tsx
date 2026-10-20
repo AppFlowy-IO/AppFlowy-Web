@@ -5,6 +5,7 @@ import { ReactEditor } from 'slate-react';
 
 import { SOFT_BREAK_TYPES } from '@/application/slate-yjs/command/const';
 import { BlockType } from '@/application/types';
+import { isCodeSelection } from '@/components/editor/components/blocks/code/code-keyboard';
 import { PASTE_AS_MENU_EVENT } from '@/components/editor/components/panels/paste-as-panel/constants';
 import type { PasteAsMenuPayload } from '@/components/editor/components/panels/paste-as-panel/constants';
 import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
@@ -148,7 +149,7 @@ export const PanelProvider = ({
             n.type === BlockType.AIMeetingSpeakerBlock),
       });
 
-      return Boolean(inNonPanelBlock);
+      return Boolean(inNonPanelBlock) || isCodeSelection(editor);
     },
     [editor]
   );
@@ -157,7 +158,7 @@ export const PanelProvider = ({
     (panelType: PanelType, triggerLength = 1) => {
       const { selection } = editor;
 
-      if (!selection) return;
+      if (!selection || isCodeSelection(editor)) return;
       if (!isTriggerEnabled(panelType)) return;
       if (triggerAtWordStart && triggerLength === 1) {
         // The character before the trigger, which may sit in the previous

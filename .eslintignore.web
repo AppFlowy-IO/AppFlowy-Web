@@ -12,6 +12,7 @@ cypress/support/
 playwright/
 playwright.config.ts
 playwright.callout.config.ts
+playwright.code-block.config.ts
 playwright.integrations.config.ts
 playwright.bdd.config.ts
 playwright-snapshot.config.ts

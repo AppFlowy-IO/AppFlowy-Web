@@ -106,6 +106,10 @@ export interface ToggleListBlockData extends BlockData {
 
 export interface CodeBlockData extends BlockData {
   language: string;
+  pin_language?: boolean;
+  caption?: string | null;
+  mermaid_display_mode?: 'code' | 'preview' | 'split' | null;
+  wrap_code?: boolean;
 }
 
 export interface CalloutBlockData extends BlockData {

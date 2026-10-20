@@ -9,6 +9,7 @@ import { SOFT_BREAK_TYPES } from '@/application/slate-yjs/command/const';
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
 import { getBlockEntry } from '@/application/slate-yjs/utils/editor';
 import { AlignType, BlockType } from '@/application/types';
+import { handleCodeKeyDown } from '@/components/editor/components/blocks/code/code-keyboard';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 import { openUrl } from '@/utils/url';
@@ -46,6 +47,19 @@ export function useShortcuts(editor: ReactEditor) {
     (event: KeyboardEvent<HTMLDivElement>) => {
       const e = event.nativeEvent;
       const { selection } = editor;
+
+      if ((event.target as HTMLElement).closest('[contenteditable="false"]')) return;
+      if (
+        !readOnly &&
+        handleCodeKeyDown(
+          yjsEditor,
+          e,
+          /Mac|iPhone|iPad/.test(navigator.platform) ? 'mac' : /Win/.test(navigator.platform) ? 'windows' : 'linux'
+        )
+      ) {
+        if (e.defaultPrevented) event.preventDefault();
+        return;
+      }
 
       // Add more cases here for general shortcuts
       switch (true) {
