@@ -434,6 +434,21 @@ for (const action of ['generate', 'explain', 'check'] as const) {
       await expect(panel.getByTestId('math-equation-ai-loading')).toBeVisible();
       await expect(panel.getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
       await expect(panel.getByRole('button', { name: 'Stop', exact: true })).toBeFocused();
+      const stop = panel.getByRole('button', { name: 'Stop', exact: true });
+
+      await expect(stop).toHaveCSS('width', '32px');
+      await expect(stop).toHaveCSS('height', '32px');
+      await expect(stop).toHaveCSS('padding', '4px');
+      await expect(stop.locator('svg')).toHaveCSS('width', '24px');
+      await expect(stop.locator('svg')).toHaveCSS('height', '24px');
+      // Flutter's 16-unit asset has a 14.7-unit circle, rendered at 24 px.
+      const visibleDiameter = await stop.locator('svg path').evaluate((path) => {
+        const shape = path as SVGGraphicsElement;
+
+        return shape.getBBox().width * (shape.ownerSVGElement!.getBoundingClientRect().width / 16);
+      });
+
+      expect(visibleDiameter).toBeCloseTo(22.05, 1);
       await expect(panel.getByRole('textbox')).toHaveCount(0);
       await expect(apply).toHaveCount(0);
       const dots = panel.locator('.math-equation-ai-dots > span');

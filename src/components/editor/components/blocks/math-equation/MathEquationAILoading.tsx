@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 
-import { ReactComponent as StopIcon } from '@/assets/icons/ai_stop_answering.svg';
+import { ReactComponent as StopIcon } from '@/assets/icons/math-equation/stop.svg';
 import { Button } from '@/components/ui/button';
 
 import './math-equation-ai.scss';
@@ -22,7 +22,7 @@ export function MathEquationAILoading({ onStop }: { onStop: () => void }) {
         autoFocus
         variant='ghost'
         size='icon-lg'
-        className='text-fill-theme-thick'
+        className='p-1 text-fill-theme-thick hover:bg-transparent'
         aria-label={t('document.plugins.mathEquation.stop')}
         onClick={onStop}
         onKeyDown={(event) => {
@@ -33,7 +33,7 @@ export function MathEquationAILoading({ onStop }: { onStop: () => void }) {
           }
         }}
       >
-        <StopIcon width={20} height={20} />
+        <StopIcon width={24} height={24} />
       </Button>
     </div>
   );
