@@ -15,7 +15,7 @@ import { ClientValidationError } from '@/application/errors/client-validation-er
 import { createRow as openCachedRow } from '@/application/services/js-services/cache';
 import { atomicRead } from '@/application/services/js-services/http/atomic-creation-api';
 import { postDefaultRowCreation } from '@/application/services/js-services/http/atomic-row-creation-api';
-import { collabFullSyncBatch } from '@/application/services/js-services/http/collab-api';
+import { readCollabStates } from '@/application/services/js-services/http/collab-api';
 import { Types, YDatabase, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
 
@@ -279,15 +279,9 @@ export async function createCloudRow(intent: CloudRowCreationIntent): Promise<st
     };
 
     const read = async (ids: { objectId: string; collabType: Types }[]) => {
-      const result = await collabFullSyncBatch(
+      const result = await readCollabStates(
         workspaceId,
-        ids.map((identity) => ({
-          ...identity,
-          stateVector: new Uint8Array([0]),
-          docState: new Uint8Array(),
-          collabVersion: identity.collabType === Types.Database ? version : undefined,
-          databaseRestoreId: restoreId,
-        })),
+        ids,
         { atomicCreationOwner: owner, signal: controller.signal, timeoutMs: Math.max(1, deadline - Date.now()) }
       );
 

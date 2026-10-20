@@ -17,7 +17,7 @@ import {
   publishWithDatabaseStorageFence,
 } from '@/application/db';
 import { isDatabaseStorageFenceCurrent, withDatabaseStorageFence } from '@/application/db/database-storage-fence';
-import { collabFullSyncBatch } from '@/application/services/js-services/http/collab-api';
+import { readCollabStates } from '@/application/services/js-services/http/collab-api';
 import { DatabaseViewLayout, Types, View, ViewLayout, YDatabase, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
 
@@ -119,9 +119,8 @@ async function createDefaultDatabaseViewOwned(intent: DefaultDatabaseViewIntent)
 
   const read = async (signal: AbortSignal, remainingMs: number) => {
     await checkRestore();
-    const results = await collabFullSyncBatch(workspaceId, [{
-      objectId: databaseId, collabType: Types.Database, stateVector: new Uint8Array([0]),
-      docState: new Uint8Array(), collabVersion: version, databaseRestoreId: restoreId,
+    const results = await readCollabStates(workspaceId, [{
+      objectId: databaseId, collabType: Types.Database,
     }], { atomicCreationOwner: owner, signal, timeoutMs: Math.max(1, Math.min(remainingMs, deadline - Date.now())) });
 
     assertCurrent();

@@ -59,6 +59,20 @@ deletions, against the server. It does not force a whole-workspace upload. New
 List/Gallery/Feed creation requests the final layout directly, removing temporary
 Grid creation, conversion and compensation calls.
 
+Creation source probes and hydration use current-collab GETs, with at most four
+requests in flight. They preserve server state vectors, collab versions, deletion
+coverage and the surrounding restore checks; they do not call full-sync to read
+data. Readiness polling backs off from 250 ms to two seconds within the existing
+30-second deadline. Routine database sync separately shares a five-minute
+restore-state check per database ID across its views and rows.
+
+The automatic HTTP full-sync loop runs only while WebSocket is disconnected and
+there are dirty documents. Reconnection cancels the actual HTTP request as well
+as its retry loop. Explicit duplicate/publish synchronization coalesces overlapping
+callers with the same edit boundary, but retains an upload when newer edits need
+delivery. WebSocket outbox drain currently proves a send, not server acceptance.
+Oversized updates and the first durable Row source remain HTTP exceptions.
+
 All nine Database layouts use compact server recipes for new, added, duplicated,
 and linked views. The server persists their fields and settings, including Board
 group columns; the client does not finish the schema after creation. A read-only
@@ -98,7 +112,9 @@ whether its document exists. Concurrent opens share the same active initializati
 
 A newly added ordinary row may still be syncing. Initialization waits for the
 server to read that Row and its source-view membership within the same 30-second
-attempt budget. It never forces an upload or changes ordinary Add Row behavior.
+attempt budget. Once readable, the accepted Row receives a targeted full-sync to
+establish its first durable source snapshot before creating the Document. This
+does not upload the database or change ordinary Add Row behavior.
 An explicit server `RetryLater` response retries the same immutable request within
 that budget; ambiguous transport failures retain the command for recovery.
 

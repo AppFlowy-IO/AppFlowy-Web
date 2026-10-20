@@ -2,7 +2,7 @@ import { v5 as uuidv5 } from 'uuid';
 import * as Y from 'yjs';
 
 import { atomicRead } from '@/application/atomic-creation';
-import { collabFullSyncBatch } from '@/application/services/js-services/http/collab-api';
+import { readCollabStates } from '@/application/services/js-services/http/collab-api';
 import { Types, View } from '@/application/types';
 import { isEmbeddedDatabaseViewWithoutChildren } from '@/application/view-utils';
 
@@ -119,9 +119,15 @@ export class TemplateSources {
     const rowIds = [...new Set(canonical.row_orders.map((order) => uuid(order.id, 'row')))];
 
     if (rowIds.length > 4096) throw new Error('Template graph exceeds its object limit');
-    const rows = await this.documents(rowIds, Types.DatabaseRow, source.restoreId);
+    const rows = await this.documents(rowIds, Types.DatabaseRow);
 
     try {
+      const after = await this.restore(id);
+
+      if ((after.database_restore_id ?? ORIGINAL_DATABASE_RESTORE_ID) !== source.restoreId) {
+        throw new Error('Template database restore generation changed');
+      }
+
       const rowMetas: Record<string, TemplateRecord> = {};
       const values = rows.map((doc) => {
         const root = doc.getMap('data').get('data');
@@ -146,7 +152,7 @@ export class TemplateSources {
     }
   }
 
-  async documents(ids: string[], type: Types, restoreId?: string, version?: string | null): Promise<Y.Doc[]> {
+  async documents(ids: string[], type: Types, version?: string | null): Promise<Y.Doc[]> {
     const docs: Y.Doc[] = [];
 
     try {
@@ -154,15 +160,11 @@ export class TemplateSources {
       for (let start = 0; start < ids.length; start += 32) {
         this.check();
         const chunk = ids.slice(start, start + 32);
-        const responses = await collabFullSyncBatch(
+        const responses = await readCollabStates(
           this.input.owner.workspaceId,
           chunk.map((objectId) => ({
             objectId,
             collabType: type,
-            stateVector: new Uint8Array([0]),
-            docState: new Uint8Array(),
-            databaseRestoreId: restoreId,
-            ...(version ? { collabVersion: version } : {}),
           })),
           {
             atomicCreationOwner: this.input.owner,
@@ -212,7 +214,6 @@ export class TemplateSources {
     const [doc] = await this.documents(
       [id],
       Types.Database,
-      state.database_restore_id ?? ORIGINAL_DATABASE_RESTORE_ID,
       state.version
     );
 

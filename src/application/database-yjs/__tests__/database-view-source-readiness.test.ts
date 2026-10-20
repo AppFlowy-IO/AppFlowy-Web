@@ -47,6 +47,29 @@ function copy(doc: Y.Doc) {
 }
 
 describe('Database view source readiness', () => {
+  it('backs off source reads when sync stalls and still respects the creation deadline', async () => {
+    jest.useFakeTimers();
+    const live = database();
+    const remote = copy(live);
+
+    rows(live).push(['not-synced']);
+    const read = jest.fn(async () => response(remote));
+    const pending = waitForDatabaseViewSource(requirements(live), {
+      read, assertCurrent: () => undefined, signal: new AbortController().signal, deadline: Date.now() + 5000,
+    });
+    const expired = expect(pending).rejects.toThrow('not reached');
+
+    try {
+      await jest.advanceTimersByTimeAsync(5000);
+      await expired;
+      expect(read).toHaveBeenCalledTimes(5);
+    } finally {
+      jest.useRealTimers();
+      live.destroy();
+      remote.destroy();
+    }
+  });
+
   it('waits for normal row sync without uploading, then accepts the first complete remote proof', async () => {
     const live = database();
     const remote = copy(live);

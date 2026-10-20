@@ -6,7 +6,7 @@ import { v5 as uuidv5 } from 'uuid';
 import * as Y from 'yjs';
 
 import { atomicRead } from '@/application/atomic-creation';
-import { collabFullSyncBatch } from '@/application/services/js-services/http/collab-api';
+import { readCollabStates } from '@/application/services/js-services/http/collab-api';
 import { Types, YDatabase, YDatabaseCell, YDoc, YjsDatabaseKey } from '@/application/types';
 import { parseYDatabaseFileMediaCellToCell, parseYDatabaseRelationCellToCell } from '../cell.parse';
 import { readChartLayoutSetting, writeChartLayoutSetting } from '../chart-layout-setting';
@@ -25,6 +25,7 @@ import { readTimelineLayoutSetting } from '../timeline-layout';
 import { decodeCreatedRowCollab } from './encoded-collab';
 import { prepareTemplateRowGraph } from './row-template-graph';
 import { archivedRowDocument, databaseDocument, documentBlocks } from './row-template-graph-data';
+import { TemplateSources } from './row-template-graph-sources';
 import type {
   PreparedTemplateRowGraph,
   TemplateDatabaseArchive,
@@ -33,12 +34,12 @@ import type {
 } from './row-template-graph-types';
 
 jest.mock('@/application/atomic-creation', () => ({ atomicRead: jest.fn() }));
-jest.mock('@/application/services/js-services/http/collab-api', () => ({ collabFullSyncBatch: jest.fn() }));
+jest.mock('@/application/services/js-services/http/collab-api', () => ({ readCollabStates: jest.fn() }));
 
 const id = (name: string) => uuidv5(name, 'bccb879f-059f-4930-9a9a-b445e21d2dba');
 const zero = '00000000-0000-0000-0000-000000000000';
 const read = atomicRead as jest.Mock;
-const sync = collabFullSyncBatch as jest.Mock;
+const sync = readCollabStates as jest.Mock;
 const docs: Y.Doc[] = [];
 const keep = (doc: Y.Doc) => {
   docs.push(doc);
@@ -544,7 +545,7 @@ test.each([false, true])(
     expect(result.manifest.objects.map((object) => object.kind).sort()).toEqual(['database_row', 'document']);
     expect(Y.encodeStateAsUpdate(live)).toEqual(before);
     expect(sync).toHaveBeenCalledTimes(1);
-    expect(sync.mock.calls[0][1][0]).toMatchObject({ collabVersion: id('version') });
+    expect(sync.mock.calls[0][1][0]).toEqual({ objectId: source.database_id, collabType: Types.Database });
     const [primary, secondary] = result.manifest.views.filter((view) => view.content.kind === 'database_view');
 
     expect(secondary.parent_view_id).toBe(primary.view_id);
@@ -615,6 +616,24 @@ test('ownership cancellation and source restore changes cannot publish a graph',
   params.signal = controller.signal;
   controller.abort(new Error('cancelled'));
   await expect(prepareTemplateRowGraph(params)).rejects.toThrow('cancelled');
+});
+
+test('a restore during current Row reads rejects an owned template backing', async () => {
+  const source = archive();
+  const live = provideSource(source);
+  const rows = new Map(source.rows.map((row) => [String(row.id), keep(
+    archivedRowDocument(row, undefined, String(row.id), source.database_id, new Map(), source.fields)
+  )]));
+
+  sync.mockImplementation(async (_workspace, items) => items.map((item: { objectId: string; collabType: Types }) => {
+    if (item.collabType === Types.Database) return sourceResponse(live, item.objectId, item.collabType);
+    // Same history version, different restore generation while fetching rows.
+    read.mockResolvedValue({ database_restore_id: id('new-restore'), version: null });
+    return sourceResponse(rows.get(item.objectId)!, item.objectId, item.collabType);
+  }));
+  const sources = new TemplateSources(input(), () => undefined);
+
+  await expect(sources.completeDatabase(source.database_id)).rejects.toThrow('restore generation changed');
 });
 
 test('nested template v2 edits and tombstones survive a copied backing without stale projection', async () => {

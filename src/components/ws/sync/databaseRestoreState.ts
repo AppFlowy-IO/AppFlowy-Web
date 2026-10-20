@@ -1,5 +1,7 @@
 import { DatabaseStorageGenerationChangedError } from '@/application/db/database-storage-fence';
 
+export const DATABASE_RESTORE_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+
 export interface DatabaseRestoreState {
   database_restore_id: string | null;
   version: string | null;
@@ -14,6 +16,10 @@ export class DatabaseRestoreTracker {
   private readonly revisions = new Map<string, number>();
   private readonly hints = new Map<string, { restoreId?: string }>();
   private readonly verifiedHints = new Map<string, { restoreId?: string } | undefined>();
+  private readonly verifiedAt = new Map<string, number>();
+  private readonly failures = new Map<string, {
+    error: unknown; retryAt: number; hint: { restoreId?: string } | undefined;
+  }>();
   private observedRestore = false;
 
   constructor(
@@ -65,11 +71,51 @@ export class DatabaseRestoreTracker {
     return this.verifiedHints.has(databaseId) && this.verifiedHints.get(databaseId) === this.hints.get(databaseId);
   }
 
+  /** A newly opened database must verify even if its previous editor closed recently. */
+  invalidateVerification(databaseId: string): void {
+    this.verifiedAt.delete(databaseId);
+  }
+
+  /** Time until the next routine check, shared by every view and row of this database. */
+  nextCheckDelay(databaseId: string): number {
+    const verifiedAt = this.verifiedAt.get(databaseId);
+
+    if (verifiedAt === undefined || !this.verificationIsCurrent(databaseId)) return 0;
+    const age = Date.now() - verifiedAt;
+
+    return age < 0 ? 0 : Math.max(0, DATABASE_RESTORE_CHECK_INTERVAL_MS - age);
+  }
+
+  /** Reuse recent authority for ordinary sync; restore hints always require a fresh read. */
+  checkIfStale(databaseId: string): Promise<boolean> {
+    const pending = this.checks.get(databaseId);
+
+    if (pending) return pending;
+    if (this.nextCheckDelay(databaseId) > 0) return Promise.resolve(true);
+    const failure = this.failures.get(databaseId);
+
+    // Message traffic must honor the same cooldown as the hook's recovery timer.
+    // New restore evidence may supersede the failed read and bypass that cooldown.
+    if (failure && failure.hint === this.hints.get(databaseId) && Date.now() < failure.retryAt) {
+      return Promise.reject(failure.error);
+    }
+
+    return this.check(databaseId);
+  }
+
   check(databaseId: string): Promise<boolean> {
     const pending = this.checks.get(databaseId);
 
     if (pending) return pending;
-    const task = this.checkCurrent(databaseId).finally(() => {
+    this.verifiedAt.delete(databaseId);
+    const task = this.checkCurrent(databaseId).catch((error: unknown) => {
+      const retryAfter = (error as { retryAfterSecs?: number } | null)?.retryAfterSecs;
+      const delay = typeof retryAfter === 'number' && Number.isFinite(retryAfter)
+        ? Math.max(5000, retryAfter * 1000) : 5000;
+
+      this.failures.set(databaseId, { error, retryAt: Date.now() + delay, hint: this.hints.get(databaseId) });
+      throw error;
+    }).finally(() => {
       if (this.checks.get(databaseId) === task) this.checks.delete(databaseId);
     });
 
@@ -98,6 +144,8 @@ export class DatabaseRestoreTracker {
       if (previous === state.database_restore_id) {
         this.markers.set(databaseId, state.database_restore_id);
         this.verifiedHints.set(databaseId, hint);
+        this.verifiedAt.set(databaseId, Date.now());
+        this.failures.delete(databaseId);
         return unchanged;
       }
 

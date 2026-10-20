@@ -47,6 +47,16 @@ reconciliation fences old asynchronous responses, retires obsolete providers and
 outbox updates, and reloads the aggregate. Repeated notifications for the same generation preserve
 current providers and queued edits. Row-page documents retain their independent state.
 
+Ordinary sync shares restore authority by `(server, user, workspace, database ID)`
+within the tab. Opening the first database view or row checks authority; subsequent
+messages and additional views reuse that result for five minutes. One timer per
+database verifies idle open editors, and stops when no root/row owners remain.
+Reopening checks again. Restore notifications and generation/version mismatches
+bypass freshness, and checks after a reset still verify that no newer restore won
+during reload. Failed checks defer sync and share the recovery cooldown, including
+`Retry-After`. Atomic creation boundaries retain their explicit fresh generation
+checks before publishing data.
+
 Once an open database finishes reloading after a restore, web and desktop show **Database
 restored**: “This database was restored to a previous version. You can continue editing the
 restored version.” The user dismisses it with **Got it**. This applies to both the initiating

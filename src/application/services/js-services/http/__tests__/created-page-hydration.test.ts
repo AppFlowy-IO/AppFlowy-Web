@@ -5,12 +5,12 @@ import { atomicRead, AtomicCreationOwner } from '@/application/atomic-creation';
 import { captureDatabaseStorageFence, getCachedProviderDoc, openCollabDBWithProvider, openRowCollabDBWithProvider, publishWithDatabaseStorageFence } from '@/application/db';
 import { Types, View, ViewLayout, YDoc, YjsEditorKey } from '@/application/types';
 
-import { collabFullSyncBatch, CollabFullSyncBatchResult } from '../collab-api';
+import { readCollabStates, CollabFullSyncBatchResult } from '../collab-api';
 import { verifyCreatedPage } from '../created-page-hydration';
 import { prepareDefaultPage } from '../page-default-creation';
 
 jest.mock('@/application/atomic-creation', () => ({ atomicRead: jest.fn() }));
-jest.mock('../collab-api', () => ({ collabFullSyncBatch: jest.fn() }));
+jest.mock('../collab-api', () => ({ readCollabStates: jest.fn() }));
 jest.mock('@/application/db', () => ({ captureDatabaseStorageFence: jest.fn(), getCachedProviderDoc: jest.fn(), openCollabDBWithProvider: jest.fn(),
   openRowCollabDBWithProvider: jest.fn(), publishWithDatabaseStorageFence: jest.fn() }));
 jest.mock('@/application/services/js-services/cache', () => ({ getCachedRowDoc: jest.fn() }));
@@ -87,7 +87,7 @@ let providers: Map<string, { doc: YDoc; provider: { set: jest.Mock } }>;
 function serve(fixture: ReturnType<typeof databasePage> | ReturnType<typeof documentPage>) {
   jest.mocked(atomicRead).mockImplementation(async (_owner, url) =>
     url.endsWith('restore-state') ? { database_restore_id: null, version: null } as never : fixture.folder as never);
-  jest.mocked(collabFullSyncBatch).mockImplementation(async (_workspace, items) => items.map((item) => {
+  jest.mocked(readCollabStates).mockImplementation(async (_workspace, items) => items.map((item) => {
     const current = item.collabType === Types.DatabaseRow ? fixture.rows.find((row) => row.guid === item.objectId) : fixture.remote;
 
     if (!current) throw new Error('Current row missing');
@@ -117,9 +117,9 @@ it('hydrates the canonical Document whose server block root differs from the col
   serve(fixture);
   await expect(verifyCreatedPage(owner, fixture.prepared)).resolves.toEqual({ view_id: fixture.remote.guid });
   expect(providers.get(fixture.remote.guid)!.doc.getMap(YjsEditorKey.data_section).toJSON()).toEqual(fixture.remote.getMap(YjsEditorKey.data_section).toJSON());
-  expect(collabFullSyncBatch).toHaveBeenCalledTimes(1);
-  expect(collabFullSyncBatch).toHaveBeenCalledWith('workspace', [expect.objectContaining({
-    docState: new Uint8Array(), stateVector: new Uint8Array([0]),
+  expect(readCollabStates).toHaveBeenCalledTimes(1);
+  expect(readCollabStates).toHaveBeenCalledWith('workspace', [expect.objectContaining({
+    objectId: fixture.remote.guid, collabType: Types.Document,
   })], expect.objectContaining({ atomicCreationOwner: owner }));
 });
 
@@ -151,9 +151,9 @@ it('reads active canonical rows in one batch, excluding deleted original seeds a
   fixture.addRow('another-current-row');
   serve(fixture);
   await expect(verifyCreatedPage(owner, fixture.prepared)).resolves.toMatchObject({ database_id: fixture.remote.guid });
-  expect(collabFullSyncBatch).toHaveBeenCalledTimes(2);
+  expect(readCollabStates).toHaveBeenCalledTimes(2);
   expect(providers.get(fixture.remote.guid)!.doc.databaseRestoreId).toBeUndefined();
-  expect(jest.mocked(collabFullSyncBatch).mock.calls[1][1].map((item) => item.objectId)).toEqual(['new-current-row', 'another-current-row']);
+  expect(jest.mocked(readCollabStates).mock.calls[1][1].map((item) => item.objectId)).toEqual(['new-current-row', 'another-current-row']);
   expect(openRowCollabDBWithProvider).toHaveBeenCalledTimes(2);
   expect(providers.get('new-current-row')!.doc.getMap(YjsEditorKey.data_section).toJSON()).toEqual(fixture.rows[0].getMap(YjsEditorKey.data_section).toJSON());
 });

@@ -7,7 +7,7 @@ import {
   postDefaultRowCreation,
   postRowCreation,
 } from '@/application/services/js-services/http/atomic-row-creation-api';
-import { collabFullSyncBatch } from '@/application/services/js-services/http/collab-api';
+import { readCollabStates } from '@/application/services/js-services/http/collab-api';
 import { createRow as openCachedRow } from '@/application/services/js-services/cache';
 import { RowCoverType, Types, YDatabaseCell, YDoc } from '@/application/types';
 
@@ -53,7 +53,7 @@ jest.mock('@/application/services/js-services/http/atomic-row-creation-api', () 
   postDefaultRowCreation: jest.fn(),
   postRowCreation: jest.fn(),
 }));
-jest.mock('@/application/services/js-services/http/collab-api', () => ({ collabFullSyncBatch: jest.fn() }));
+jest.mock('@/application/services/js-services/http/collab-api', () => ({ readCollabStates: jest.fn() }));
 jest.mock('@/application/services/js-services/cache', () => ({ createRow: jest.fn() }));
 jest.mock('../creation/source-readiness', () => ({
   ...jest.requireActual('../creation/source-readiness'),
@@ -108,7 +108,7 @@ function fixture() {
   jest.mocked(readPersistedDatabaseSource).mockImplementation(async () => Y.encodeStateAsUpdate(databaseDoc));
   jest.mocked(atomicRead).mockResolvedValue({ database_restore_id: null, version: null });
   jest
-    .mocked(collabFullSyncBatch)
+    .mocked(readCollabStates)
     .mockImplementation(async (_workspace, items) =>
       items.map((item) =>
         item.collabType === Types.Database
@@ -266,7 +266,7 @@ it('keeps row storage, membership, and binding untouched until the server commit
     expect(f.orders()).toEqual([{ id: f.intent.rowId }]);
     expect(f.local.getMap('data').get('data')).toBeInstanceOf(Y.Map);
     expect(f.registerRow).toHaveBeenCalledTimes(1);
-    expect(collabFullSyncBatch).toHaveBeenCalledTimes(1); // Source coverage only; inline Row avoids another fetch.
+    expect(readCollabStates).toHaveBeenCalledTimes(1); // Source coverage only; inline Row avoids another fetch.
   } finally {
     release();
     f.cleanup();
@@ -304,7 +304,7 @@ it.each(['already_applied', 'missing', 'malformed'])('hydrates current authority
   });
   try {
     await createCloudRow(f.intent);
-    expect(collabFullSyncBatch).toHaveBeenCalledTimes(2);
+    expect(readCollabStates).toHaveBeenCalledTimes(2);
     expect(f.orders()).toHaveLength(1);
     expect(f.registerRow).toHaveBeenCalledTimes(1);
   } finally {

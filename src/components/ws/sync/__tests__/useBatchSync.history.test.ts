@@ -29,6 +29,83 @@ beforeEach(() => {
   jest.mocked(collabFullSyncBatch).mockResolvedValue([]);
   jest.mocked(withRetry).mockImplementation((fn) => fn());
 });
+afterEach(() => jest.useRealTimers());
+
+test.each([false, true])('overlapping explicit syncs share an upload unless newer edits require another: %s', async (edit) => {
+  const doc: YDoc = new Y.Doc({ guid: 'document' });
+  let finish!: () => void;
+
+  jest.mocked(collabFullSyncBatch).mockImplementationOnce(() => new Promise((resolve) => {
+    finish = () => resolve([]);
+  }));
+  const { result, unmount } = renderHook(() => {
+    const refs = useSyncRefs();
+
+    refs.registeredContexts.current.set(doc.guid, { doc, collabType: Types.Document, emit: jest.fn() });
+    return useBatchSync(refs, { workspaceId: 'workspace', wsReadyState: 1 });
+  });
+  let first!: Promise<void>;
+  let second!: Promise<void>;
+
+  await act(async () => { first = result.current.syncAllToServer('workspace'); });
+  expect(collabFullSyncBatch).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    if (edit) {
+      doc.getMap('data').set('latest', 'edit');
+      result.current.notifyLocalEdit(doc.guid);
+    }
+
+    second = result.current.syncAllToServer('workspace');
+  });
+  expect(collabFullSyncBatch).toHaveBeenCalledTimes(1);
+  if (!edit) expect(second).toBe(first);
+  await act(async () => { finish(); await Promise.all([first, second]); });
+  expect(collabFullSyncBatch).toHaveBeenCalledTimes(edit ? 2 : 1);
+  if (edit) {
+    const sent = new Y.Doc();
+
+    Y.applyUpdate(sent, jest.mocked(collabFullSyncBatch).mock.calls[1][1][0].docState);
+    expect(sent.getMap('data').get('latest')).toBe('edit');
+    sent.destroy();
+  }
+
+  unmount();
+  doc.destroy();
+});
+
+test.each(['request', 'restore guard'])('reconnecting cancels fallback at the %s boundary', async (boundary) => {
+  jest.useFakeTimers();
+  const doc: YDoc = new Y.Doc({ guid: 'database' });
+  let releaseGuard!: (allowed: boolean) => void;
+  const beforeSend = boundary === 'restore guard'
+    ? jest.fn(() => new Promise<boolean>((resolve) => { releaseGuard = resolve; })) : undefined;
+  let signal: AbortSignal | undefined;
+
+  jest.mocked(collabFullSyncBatch).mockImplementation((_workspace, _items, options) => {
+    signal = options?.signal;
+    return new Promise((resolve) => signal?.addEventListener('abort', () => resolve([]), { once: true }));
+  });
+  const { result, rerender, unmount } = renderHook(({ readyState }) => {
+    const refs = useSyncRefs();
+
+    refs.registeredContexts.current.set(doc.guid, { doc, collabType: Types.Database, emit: jest.fn() });
+    return useBatchSync(refs, { workspaceId: 'workspace', wsReadyState: readyState, beforeSend });
+  }, { initialProps: { readyState: 1 } });
+
+  result.current.notifyLocalEdit(doc.guid);
+  await act(async () => { jest.advanceTimersByTime(10_000); });
+  expect(collabFullSyncBatch).not.toHaveBeenCalled();
+  rerender({ readyState: 3 });
+  await act(async () => { jest.advanceTimersByTime(5000); });
+  if (boundary === 'request') expect(signal?.aborted).toBe(false);
+  else expect(beforeSend).toHaveBeenCalledTimes(1);
+  rerender({ readyState: 1 });
+  await act(async () => { releaseGuard?.(true); });
+  if (boundary === 'request') expect(signal?.aborted).toBe(true);
+  else expect(collabFullSyncBatch).not.toHaveBeenCalled();
+  unmount();
+  doc.destroy();
+});
 
 test.each([true, false])('HTTP batch emits explicit baseline only when database history is enabled: %s', async (enabled) => {
   const doc: YDoc = new Y.Doc({ guid: 'row' });
@@ -90,7 +167,7 @@ test('coalesces restore checks per database before sending and applying a multi-
   const docs = ['a:1', 'a:2', 'a:3', 'b:1', 'b:2'].map((guid) => new Y.Doc({ guid }));
   const readState = jest.fn(async () => ({ database_restore_id: null, version: null }));
   const tracker = new DatabaseRestoreTracker('batch-test:', readState, jest.fn(), localStorage);
-  const beforeSend = jest.fn((objectId: string) => tracker.check(objectId.split(':')[0]));
+  const beforeSend = jest.fn((objectId: string) => tracker.checkIfStale(objectId.split(':')[0]));
   const serverDocs = docs.map((doc) => {
     const server = new Y.Doc({ guid: doc.guid });
 
@@ -118,7 +195,7 @@ test('coalesces restore checks per database before sending and applying a multi-
 
   await act(async () => { await result.current.syncAllToServer('workspace'); });
   expect(collabFullSyncBatch).toHaveBeenCalledTimes(1);
-  expect(readState).toHaveBeenCalledTimes(4);
+  expect(readState).toHaveBeenCalledTimes(2);
   expect(beforeSend).toHaveBeenCalledTimes(docs.length * 2);
   docs.forEach((doc) => expect(doc.getMap(YjsEditorKey.data_section).get('title')).toBe(doc.guid));
   unmount();

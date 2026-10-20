@@ -377,11 +377,11 @@ describe('atomic row-page activation', () => {
       await jest.advanceTimersByTimeAsync(0);
       expect(submit).not.toHaveBeenCalled();
       rowSynced = true;
-      await jest.advanceTimersByTimeAsync(100);
+      await jest.advanceTimersToNextTimerAsync();
       expect(submit).not.toHaveBeenCalled();
       // Deliver the normal database sync update independently of the Row body.
       Y.applyUpdate(f.remoteDatabase, Y.encodeStateAsUpdate(localDatabase));
-      await jest.advanceTimersByTimeAsync(100);
+      await jest.advanceTimersToNextTimerAsync();
       await expect(publication).resolves.toBe(f.cached);
       expect(submit).toHaveBeenCalledTimes(1);
     } finally {

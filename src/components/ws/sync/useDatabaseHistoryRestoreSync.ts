@@ -61,6 +61,7 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
     root?: SyncContext;
   }>());
   const retryTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const checkTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const deferredSync = useRef(new Set<string>());
   const restoreHints = useRef(new Set<string>());
   // A restore observed in this session must keep fencing later traffic even
@@ -318,6 +319,31 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
     return databaseId;
   }, []);
 
+  const hasOpenDatabase = useCallback((databaseId: string) => {
+    const { refs } = latest.current;
+
+    return [...refs.registeredContexts.current.values()].some((context) => {
+      if (!(refs.contextRefCounts.current.get(context.doc.guid) ?? 0) ||
+          refs.pendingCleanups.current.has(context.doc.guid)) return false;
+      if (context.collabType === Types.Database) return context.doc.guid === databaseId;
+      return context.collabType === Types.DatabaseRow &&
+        (rowDatabases.current.get(context.doc.guid) || getCachedRowDatabaseId(context.doc.guid) ||
+          context.doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row)?.get(YjsDatabaseKey.database_id)) === databaseId;
+    });
+  }, []);
+
+  const scheduleDatabaseCheck = useCallback((databaseId: string) => {
+    if (checkTimers.current.has(databaseId) || !hasOpenDatabase(databaseId)) return;
+    const workspaceId = latest.current.workspaceId;
+    const userId = latest.current.userId;
+
+    checkTimers.current.set(databaseId, setTimeout(() => {
+      checkTimers.current.delete(databaseId);
+      if (sessionActive.current && latest.current.workspaceId === workspaceId && latest.current.userId === userId &&
+          hasOpenDatabase(databaseId)) void retryReset.current?.(databaseId);
+    }, tracker.nextCheckDelay(databaseId)));
+  }, [hasOpenDatabase, tracker]);
+
   const ensureDatabaseRestoreCurrent = useCallback(async (
     objectId: string, type: Types, expectedMarker?: string, rootVersionChanged = false
   ): Promise<boolean> => {
@@ -362,11 +388,12 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
       let unchanged = true;
 
       do {
-        unchanged = await tracker.check(databaseId) && unchanged;
+        unchanged = await tracker.checkIfStale(databaseId) && unchanged;
       } while (!tracker.verificationIsCurrent(databaseId));
 
       if (!sessionActive.current || current.refs.isDisposedRef.current ||
           latest.current.workspaceId !== current.workspaceId || latest.current.userId !== current.userId) return false;
+      scheduleDatabaseCheck(databaseId);
       const retryKey = `${current.userId}:${current.workspaceId}:${databaseId}`;
       const retryTimer = retryTimers.current.get(retryKey);
 
@@ -422,6 +449,13 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
       if (!databaseId) return false;
       const retryKey = `${current.userId}:${current.workspaceId}:${databaseId}`;
 
+      if (latest.current.workspaceId === current.workspaceId && latest.current.userId === current.userId) {
+        const timer = checkTimers.current.get(databaseId);
+
+        if (timer !== undefined) clearTimeout(timer);
+        checkTimers.current.delete(databaseId);
+      }
+
       const detail = error as { code?: number; httpStatus?: number; retryAfterSecs?: number } | null;
       const permanentCodes: number[] = [401, 403, 404, ERROR_CODE.NOT_LOGGED_IN, ERROR_CODE.NOT_HAS_PERMISSION,
         ERROR_CODE.USER_UNAUTHORIZED, ERROR_CODE.RECORD_NOT_FOUND, ERROR_CODE.RECORD_DELETED,
@@ -469,12 +503,13 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
 
       return false;
     }
-  }, [resolveDatabase, tracker]);
+  }, [resolveDatabase, tracker, scheduleDatabaseCheck]);
 
   retryReset.current = (databaseId) => ensureDatabaseRestoreCurrent(databaseId, Types.Database);
 
   useEffect(() => {
     const timers = retryTimers.current;
+    const periodicChecks = checkTimers.current;
     const hints = restoreHints.current;
     const deferred = deferredSync.current;
     const observed = observedRestores.current;
@@ -484,6 +519,8 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
       sessionActive.current = false;
       for (const timer of timers.values()) clearTimeout(timer);
       timers.clear();
+      for (const timer of periodicChecks.values()) clearTimeout(timer);
+      periodicChecks.clear();
       hints.clear();
       deferred.clear();
       observed.clear();
@@ -499,7 +536,7 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
     await ensureDatabaseRestoreCurrent(databaseId, Types.Database);
     // A failed check is deliberately swallowed for background drains; the UI
     // needs an error so it never reports completion before reload succeeds.
-    await tracker.check(databaseId);
+    await tracker.checkIfStale(databaseId);
   }, [tracker, ensureDatabaseRestoreCurrent]);
 
   const handleRestoreNotification = useCallback((value?: notification.IDatabaseRestored | null) => {
@@ -540,10 +577,25 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
   }, [deps.refs, deps.workspaceId, deps.userId, ensureDatabaseRestoreCurrent]);
 
   const prepareDatabaseContext = useCallback((context: RegisterSyncContext) => {
-    if (context.doc.databaseRestoreId !== undefined) return;
     const databaseId = context.collabType === Types.Database ? context.doc.guid :
       context.collabType === Types.DatabaseRow ? getCachedRowDatabaseId(context.doc.guid) ||
         context.doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row)?.get(YjsDatabaseKey.database_id) : undefined;
+
+    // A view switch reuses the root context. Only opening the first root/row of
+    // a database expires its previous session's check; view IDs are never keys.
+    if (databaseId && !hasOpenDatabase(databaseId) && !resetting.current.has(databaseId)) {
+      tracker.invalidateVerification(databaseId);
+      const { workspaceId, userId } = latest.current;
+
+      // Registration is synchronous. Check after it installs the first owner,
+      // including reopening a context kept alive by deferred cleanup.
+      void Promise.resolve().then(() => {
+        if (sessionActive.current && latest.current.workspaceId === workspaceId && latest.current.userId === userId &&
+            hasOpenDatabase(databaseId)) return retryReset.current?.(databaseId);
+      });
+    }
+
+    if (context.doc.databaseRestoreId !== undefined) return;
     const hasRestoreEvidence = databaseId && (tracker.marker(databaseId) !== null ||
       observedRestores.current.has(`${latest.current.userId}:${latest.current.workspaceId}:${databaseId}`));
 
@@ -552,7 +604,7 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
     if (context.collabType === Types.Database || context.collabType === Types.DatabaseRow) {
       context.doc.databaseRestoreId = databaseId ? tracker.marker(databaseId) ?? nilMarker : nilMarker;
     }
-  }, [tracker]);
+  }, [tracker, hasOpenDatabase]);
 
   return { ensureDatabaseRestoreCurrent, reloadDatabaseAfterRestore, handleRestoreNotification, prepareDatabaseContext };
 }
