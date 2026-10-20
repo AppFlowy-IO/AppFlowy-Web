@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { BlockType } from '@/application/types';
@@ -6,8 +6,8 @@ import { MathEquationAISession } from '@/components/editor/components/block-popo
 import { MathEquationNode } from '@/components/editor/editor.type';
 import { insertBlocksAtCaret } from '@/components/editor/utils/insert-blocks-at-caret';
 
-import MathEquationAI from '../MathEquationAI';
 import { extractGeneratedEquation } from '../math-equation-ai';
+import MathEquationAI from '../MathEquationAI';
 
 const mockT = (key: string) => key;
 const mockFetch = jest.fn();
@@ -34,9 +34,8 @@ jest.mock('@/application/slate-yjs/utils/editor', () => ({
 }));
 jest.mock('@/components/editor/utils/insert-blocks-at-caret', () => ({ insertBlocksAtCaret: jest.fn(() => true) }));
 jest.mock('@/components/editor/parsers/html-parser', () => ({ parseHTML: jest.fn() }));
-jest.mock('@appflowyinc/editor', () => ({ EditorProvider: ({ children }: { children: React.ReactNode }) => children }));
-jest.mock('@/components/chat/components/ai-writer/render-editor', () => ({
-  RenderEditor: ({ content }: { content: string }) => <div>{content}</div>,
+jest.mock('../MathEquationResponse', () => ({
+  MathEquationResponse: ({ content }: { content: string }) => <div>{content}</div>,
 }));
 jest.mock('@/components/chat/components/chat-input/model-selector', () => ({ ModelSelector: () => null }));
 
@@ -67,7 +66,7 @@ describe('equation AI lifecycle', () => {
     const { onClose } = setup('generate', 'Solve for x');
 
     expect(mockFetch).not.toHaveBeenCalled();
-    expect((screen.getByRole('textbox')).value).toBe('Solve for x');
+    expect(screen.getByRole('textbox').value).toBe('Solve for x');
     fireEvent.click(screen.getByRole('button', { name: 'document.plugins.mathEquation.send' }));
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'document.plugins.mathEquation.insert' })).toBeTruthy()
@@ -112,9 +111,7 @@ describe('equation AI lifecycle', () => {
     await screen.findByRole('button', { name: 'document.plugins.mathEquation.insert' });
     mockNode = { ...mockNode, data: { formula: 'changed' } };
     rerender(<MathEquationAI node={mockNode} session={session} onClose={onClose} />);
-    expect(
-      (screen.getByRole('button', { name: 'document.plugins.mathEquation.insert' })).disabled
-    ).toBe(true);
+    expect(screen.getByRole('button', { name: 'document.plugins.mathEquation.insert' }).disabled).toBe(true);
     expect(screen.getByRole('alert').textContent).toContain('changedDuringAI');
     expect(CustomEditor.setBlockData).not.toHaveBeenCalled();
   });
@@ -153,7 +150,9 @@ describe('equation AI lifecycle', () => {
     setup('generate', 'Write a formula');
     fireEvent.click(screen.getByRole('button', { name: 'document.plugins.mathEquation.send' }));
     await screen.findByText('document.plugins.mathEquation.noEquation');
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'document.plugins.mathEquation.insert' }).disabled).toBe(true);
+    expect(
+      screen.getByRole<HTMLButtonElement>('button', { name: 'document.plugins.mathEquation.insert' }).disabled
+    ).toBe(true);
     expect(screen.getAllByRole('button', { name: 'button.close' })).toHaveLength(1);
   });
 
@@ -164,14 +163,70 @@ describe('equation AI lifecycle', () => {
     });
     setup('check');
     await screen.findByText('$$partial$$');
+    expect(screen.getByTestId('math-equation-ai-loading')).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'document.plugins.mathEquation.stop' }));
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'document.plugins.mathEquation.insert' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'document.plugins.mathEquation.stop' }));
+    expect(screen.queryByTestId('math-equation-ai-loading')).toBeNull();
+    expect(screen.getByRole('textbox')).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByRole('textbox'));
     expect(mockFetch.mock.calls[0][0].signal.aborted).toBe(true);
-    expect(
-      (screen.getByRole('button', { name: 'document.plugins.mathEquation.insert' })).disabled
-    ).toBe(true);
+    expect(screen.getByRole('button', { name: 'document.plugins.mathEquation.insert' }).disabled).toBe(true);
     respond('$$x=2$$');
     fireEvent.click(screen.getByRole('button', { name: 'button.tryAgain' }));
+    await act(async () => mockFetch.mock.calls[0][1]('$$late response$$', '', true));
     await screen.findByText('$$x=2$$');
+    expect(screen.queryByText('$$late response$$')).toBeNull();
+  });
+
+  it('shows the compact loading row before the first chunk, then restores the prompt on completion', async () => {
+    let finish!: () => void;
+
+    mockFetch.mockImplementation(async () => ({
+      streamPromise: new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+    }));
+    setup('explain');
+    expect(screen.getByRole('status').textContent).toContain('document.plugins.mathEquation.generating');
+    expect(
+      screen.getByTestId('math-equation-ai-loading').querySelectorAll('.math-equation-ai-dots > span')
+    ).toHaveLength(3);
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'button.insertBelow' })).toBeNull();
+    await act(async () => mockFetch.mock.calls[0][1]('The answer is **two**.', '', false));
+    expect(screen.getByText('The answer is **two**.')).toBeTruthy();
+    expect(screen.getByTestId('math-equation-ai-loading')).toBeTruthy();
+    await act(async () => {
+      finish();
+    });
+    expect(screen.queryByTestId('math-equation-ai-loading')).toBeNull();
+    expect(screen.getByRole('textbox')).toBeTruthy();
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'button.insertBelow' }).disabled).toBe(false);
+  });
+
+  it('inserts TeX code fences as equation blocks, matching the response preview', async () => {
+    respond('## Solution\n\n```tex\nx=2\n```');
+    setup('explain');
+    fireEvent.click(await screen.findByRole('button', { name: 'button.insertBelow' }));
+    expect(jest.mocked(insertBlocksAtCaret).mock.calls[0][1]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: BlockType.HeadingBlock }),
+        expect.objectContaining({ type: BlockType.EquationBlock, data: { formula: 'x=2' } }),
+      ])
+    );
+  });
+
+  it('lets Escape stop generation before any response arrives', async () => {
+    mockFetch.mockImplementation(async () => ({ streamPromise: new Promise(() => undefined) }));
+    setup('check');
+    fireEvent.keyDown(screen.getByRole('button', { name: 'document.plugins.mathEquation.stop' }), { key: 'Escape' });
+    expect(mockFetch.mock.calls[0][0].signal.aborted).toBe(true);
+    expect(screen.queryByTestId('math-equation-ai-loading')).toBeNull();
+    expect(screen.getByRole('textbox')).toBeTruthy();
+    await act(async () => mockFetch.mock.calls[0][1]('$$late response$$', '', true));
+    expect(screen.queryByText('$$late response$$')).toBeNull();
   });
 });
 
@@ -179,6 +234,8 @@ describe('extractGeneratedEquation', () => {
   it.each([
     ['$$x=2$$', 'x=2'],
     ['```latex\nx=2\n```', 'x=2'],
+    ['```latex\n$$x=2$$\n```', 'x=2'],
+    ['```latex\n\n```', undefined],
     ['The result is $x=2$.', undefined],
     ['$x=2$', 'x=2'],
     ['No change is required', undefined],

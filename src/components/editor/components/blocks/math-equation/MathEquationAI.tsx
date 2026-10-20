@@ -1,4 +1,3 @@
-import { EditorProvider } from '@appflowyinc/editor';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useReadOnly, useSlateStatic } from 'slate-react';
@@ -15,20 +14,20 @@ import { ReactComponent as InsertIcon } from '@/assets/icons/math-equation/inser
 import { ReactComponent as RetryIcon } from '@/assets/icons/math-equation/retry.svg';
 import { ReactComponent as SendDisabledIcon } from '@/assets/icons/math-equation/send-disabled.svg';
 import { ReactComponent as SendIcon } from '@/assets/icons/math-equation/send.svg';
-import { RenderEditor } from '@/components/chat/components/ai-writer/render-editor';
 import { ModelSelector } from '@/components/chat/components/chat-input/model-selector';
 import { ModelSelectorContext } from '@/components/chat/contexts/model-selector-context';
 import { WriterRequest } from '@/components/chat/request/writer-request';
-import { AIAssistantType, CompletionResult, CompletionRole } from '@/components/chat/types';
+import { AIAssistantType, CompletionResult, CompletionRole } from '@/components/chat/types/writer';
 import { MathEquationAISession } from '@/components/editor/components/block-popover/BlockPopoverContext';
 import { MathEquationNode } from '@/components/editor/editor.type';
 import { useEditorContext } from '@/components/editor/EditorContext';
-import { parseMarkdown } from '@/components/editor/parsers/markdown-parser';
 import { parsedBlockToSlateElement } from '@/components/editor/parsers/parsed-block-to-slate';
 import { insertBlocksAtCaret } from '@/components/editor/utils/insert-blocks-at-caret';
 import { Button } from '@/components/ui/button';
 
-import { equationPrompts, extractGeneratedEquation } from './math-equation-ai';
+import { equationPrompts, extractGeneratedEquation, parseEquationResponse } from './math-equation-ai';
+import { MathEquationAILoading } from './MathEquationAILoading';
+import { MathEquationResponse } from './MathEquationResponse';
 
 export default function MathEquationAI({
   node,
@@ -70,6 +69,10 @@ export default function MathEquationAI({
     ++generation.current;
     pending.current?.abort();
   }, []);
+  const stop = () => {
+    cancel();
+    setLoading(false);
+  };
 
   const submit = useCallback(
     async (question: string, retry = false) => {
@@ -140,7 +143,7 @@ export default function MathEquationAI({
     }
 
     if (session.action === 'explain' || (session.action === 'check' && !formula)) {
-      const blocks = parseMarkdown(answer).map(parsedBlockToSlateElement);
+      const blocks = parseEquationResponse(answer).map(parsedBlockToSlateElement);
 
       editor.select(editor.end(entry[1]));
       if (!insertBlocksAtCaret(editor, blocks, { mergeFirstBlockInline: false })) return;
@@ -161,19 +164,17 @@ export default function MathEquationAI({
       onClick={(event) => event.stopPropagation()}
       className='mt-1 overflow-hidden rounded-xl border border-border-primary bg-surface-layer-02 text-sm shadow-menu'
     >
-      {(answer || loading || error || complete) && (
+      {(answer || error || complete) && (
         <div className='flex flex-col gap-1 border-b border-border-primary bg-surface-container-layer-01 px-3 pb-4 pt-3'>
           <div className='text-xs font-medium leading-[18px] tracking-[0.1px] text-text-secondary'>{title}</div>
           {answer && (
-            <div className='max-h-[440px] overflow-y-auto'>
-              <EditorProvider>
-                <RenderEditor content={answer} />
-              </EditorProvider>
+            <div className='max-h-[440px] overflow-y-auto' aria-busy={loading}>
+              <MathEquationResponse content={answer} />
             </div>
           )}
-          {loading && <div role='status'>{t('document.plugins.mathEquation.generating')}</div>}
-          {complete && session.action === 'generate' && !formula && !error &&
-            <div role='status'>{t('document.plugins.mathEquation.noEquation')}</div>}
+          {complete && session.action === 'generate' && !formula && !error && (
+            <div role='status'>{t('document.plugins.mathEquation.noEquation')}</div>
+          )}
           {error && (
             <div role='alert' className='text-text-error'>
               {error}
@@ -192,7 +193,11 @@ export default function MathEquationAI({
                 disabled={!complete || !answer || !!error || changed || (session.action === 'generate' && !formula)}
                 onClick={insert}
               >
-                {session.action === 'explain' ? <InsertIcon width={20} height={20} /> : <AcceptIcon width={20} height={20} />}
+                {session.action === 'explain' ? (
+                  <InsertIcon width={20} height={20} />
+                ) : (
+                  <AcceptIcon width={20} height={20} />
+                )}
                 {t(session.action === 'explain' ? 'button.insertBelow' : 'document.plugins.mathEquation.insert')}
               </Button>
               <Button
@@ -213,69 +218,58 @@ export default function MathEquationAI({
           )}
         </div>
       )}
-      <form
-        className='flex flex-col gap-2 p-3'
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (prompt.trim() && !loading) {
-            void submit(prompt);
-            setPrompt('');
-          }
-        }}
-      >
-        <textarea
-          autoFocus
-          aria-label={t('document.plugins.mathEquation.askAI')}
-          placeholder={t('chat.input.placeholder')}
-          className='min-h-[40px] w-full resize-none bg-transparent text-sm outline-none placeholder:text-text-tertiary'
-          value={prompt}
-          onChange={(event) => setPrompt(event.target.value)}
-          onKeyDown={(event) => {
-            event.stopPropagation();
-            if (event.nativeEvent.isComposing) return;
-            if (event.key === 'Escape') onClose();
-            if (event.key === 'Enter' && !event.shiftKey) {
-              event.preventDefault();
-              event.currentTarget.form?.requestSubmit();
+      {loading ? (
+        <MathEquationAILoading onStop={stop} />
+      ) : (
+        <form
+          className='flex flex-col gap-2 p-3'
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (prompt.trim()) {
+              void submit(prompt);
+              setPrompt('');
             }
           }}
-        />
-        <div className='flex items-center justify-between'>
-          <ModelSelectorContext.Provider value={modelContext}>
-            <ModelSelector
-              disabled={loading}
-              className='gap-0 p-1'
-              triggerContent={
-                <>
-                  <span className='relative h-5 w-5'>
-                    <span className='absolute left-[3px] top-0.5'>
-                      <AIIcon width={15.0013} height={16} />
-                    </span>
-                  </span>
-                  <ArrowDownIcon width={12} height={20} />
-                </>
+        >
+          <textarea
+            autoFocus
+            aria-label={t('document.plugins.mathEquation.askAI')}
+            placeholder={t('chat.input.placeholder')}
+            className='min-h-[40px] w-full resize-none bg-transparent text-sm outline-none placeholder:text-text-tertiary'
+            value={prompt}
+            onChange={(event) => setPrompt(event.target.value)}
+            onKeyDown={(event) => {
+              event.stopPropagation();
+              if (event.nativeEvent.isComposing) return;
+              if (event.key === 'Escape') onClose();
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                event.currentTarget.form?.requestSubmit();
               }
-            />
-          </ModelSelectorContext.Provider>
-          <div className='flex gap-2'>
-            {!answer && !loading && !error && !complete && (
-              <Button variant='ghost' type='button' onClick={onClose}>
-                {t('button.close')}
-              </Button>
-            )}
-            {loading ? (
-              <Button
-                type='button'
-                variant='outline'
-                onClick={() => {
-                  ++generation.current;
-                  pending.current?.abort();
-                  setLoading(false);
-                }}
-              >
-                {t('document.plugins.mathEquation.stop')}
-              </Button>
-            ) : (
+            }}
+          />
+          <div className='flex items-center justify-between'>
+            <ModelSelectorContext.Provider value={modelContext}>
+              <ModelSelector
+                className='gap-0 p-1'
+                triggerContent={
+                  <>
+                    <span className='relative h-5 w-5'>
+                      <span className='absolute left-[3px] top-0.5'>
+                        <AIIcon width={15.0013} height={16} />
+                      </span>
+                    </span>
+                    <ArrowDownIcon width={12} height={20} />
+                  </>
+                }
+              />
+            </ModelSelectorContext.Provider>
+            <div className='flex gap-2'>
+              {!answer && !error && !complete && (
+                <Button variant='ghost' type='button' onClick={onClose}>
+                  {t('button.close')}
+                </Button>
+              )}
               <Button
                 type='submit'
                 variant='ghost'
@@ -286,10 +280,10 @@ export default function MathEquationAI({
               >
                 {prompt.trim() ? <SendIcon width={32} height={32} /> : <SendDisabledIcon width={32} height={32} />}
               </Button>
-            )}
+            </div>
           </div>
-        </div>
-      </form>
+        </form>
+      )}
     </section>
   );
 }

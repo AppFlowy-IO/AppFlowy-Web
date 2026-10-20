@@ -43,7 +43,7 @@ const SIMPLE_TABLE_CONTAINER_BLOCK_TYPES = [
 /**
  * Converts ParsedBlock text to Slate text nodes with formats
  */
-function parsedBlockToTextNodes(block: ParsedBlock): Text[] {
+export function parsedBlockToTextNodes(block: ParsedBlock): Text[] {
   const { text, formats } = block;
 
   if (formats.length === 0) {

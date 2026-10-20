@@ -400,10 +400,19 @@ test('paste strips Markdown wrappers in the equation editor without losing the f
 for (const action of ['generate', 'explain', 'check'] as const) {
   test(`AI ${action}: streams, retries, and inserts the response`, async ({ page }, testInfo) => {
     const requests: Record<string, unknown>[] = [];
-    const response = action === 'explain' ? 'The variable $x$ is the unknown.' : '$$x = 2$$';
+    const response = [
+      '## Solution',
+      'The variable $x$ is the **unknown**.',
+      '1. Subtract *one*.\n2. Simplify.',
+      action === 'generate' ? '```latex\n$$x = 2$$\n```' : '$$x = 2$$',
+      '| Symbol | Meaning |\n| --- | --- |\n| x | Unknown |',
+    ].join('\n\n');
+    let deliverResponse!: () => void;
+    const responseReady = new Promise<void>((resolve) => { deliverResponse = resolve; });
 
     await page.route('**/api/ai/*/v2/complete/stream', async (route) => {
       requests.push(route.request().postDataJSON());
+      await responseReady;
       await route.fulfill({ contentType: 'text/event-stream', body: JSON.stringify({ '1': response }) });
     });
     await insertEquation(page, 'x+1=3');
@@ -421,7 +430,43 @@ for (const action of ['generate', 'explain', 'check'] as const) {
     const panel = page.getByTestId('math-equation-ai');
     const apply = panel.getByRole('button', { name: action === 'explain' ? 'Insert below' : 'Insert', exact: true });
 
+    try {
+      await expect(panel.getByTestId('math-equation-ai-loading')).toBeVisible();
+      await expect(panel.getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
+      await expect(panel.getByRole('button', { name: 'Stop', exact: true })).toBeFocused();
+      await expect(panel.getByRole('textbox')).toHaveCount(0);
+      await expect(apply).toHaveCount(0);
+      const dots = panel.locator('.math-equation-ai-dots > span');
+
+      await expect(dots).toHaveCount(3);
+      await expect(dots.first()).toHaveCSS('width', '4px');
+      await expect(dots.first()).toHaveCSS('height', '4px');
+      await expect(dots.first()).toHaveCSS('background-color', 'rgb(147, 39, 255)');
+      await expect(dots.nth(1)).toHaveCSS('background-color', 'rgb(251, 0, 109)');
+      await expect(dots.nth(2)).toHaveCSS('background-color', 'rgb(255, 206, 0)');
+      await expect(dots.first()).toHaveCSS('animation-duration', '1s');
+      await expect(dots.nth(1)).toHaveCSS('animation-delay', '0.2s');
+      await expect(dots.nth(2)).toHaveCSS('animation-delay', '0.4s');
+      await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('ai-loading.png') });
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await expect(dots.first()).toHaveCSS('animation-name', 'none');
+    } finally {
+      deliverResponse();
+    }
     await expect(apply).toBeEnabled();
+    await expect(panel.getByTestId('math-equation-ai-loading')).toHaveCount(0);
+    await expect(panel.getByRole('textbox')).toBeVisible();
+    await expect(panel.getByRole('textbox')).toBeFocused();
+    const preview = panel.getByTestId('math-equation-response');
+
+    await expect(preview.getByRole('heading', { name: 'Solution' })).toBeVisible();
+    await expect(preview.locator('strong')).toHaveText('unknown');
+    await expect(preview.locator('em')).toHaveText('one');
+    await expect(preview.locator('ol > li')).toHaveCount(2);
+    await expect(preview.locator('.katex')).toHaveCount(2);
+    await expect(preview.locator('.katex-display')).toHaveCount(1);
+    await expect(preview.getByRole('table')).toBeVisible();
+    await expect(preview).not.toContainText('$$');
     await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('ai.png') });
     await panel.getByRole('button', { name: 'Try again', exact: true }).click();
     await expect.poll(() => requests.length).toBe(2);
