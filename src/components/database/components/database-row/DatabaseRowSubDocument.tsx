@@ -442,8 +442,7 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
     const requestGeneration = ++loadRequestGenerationRef.current;
     const isCurrentRequest = () => !cancelled && loadRequestGenerationRef.current === requestGeneration;
     let retryCount = 0;
-    const MAX_RETRIES = 2;
-    const RETRY_DELAY_MS = 5000;
+    const MAX_RETRIES = 3;
 
     const clearRetryTimer = () => {
       if (retryLoadTimerRef.current) {
@@ -483,7 +482,7 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
         // Retry the read itself. Only an authoritative missing-body response
         // permits initialization; transient failures never become create requests.
         void openRowDocument();
-      }, RETRY_DELAY_MS);
+      }, 2000);
     };
 
     const openRowDocument = async () => {

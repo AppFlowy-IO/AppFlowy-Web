@@ -304,11 +304,11 @@ describe('DatabaseRowSubDocument', () => {
     expect(bindViewSync).not.toHaveBeenCalled();
 
     await act(async () => {
-      await jest.advanceTimersByTimeAsync(15000);
+      await jest.advanceTimersByTimeAsync(10000);
       await flushAsyncWork();
     });
 
-    expect(fetchRowDocumentCollab).toHaveBeenCalledTimes(3);
+    expect(fetchRowDocumentCollab).toHaveBeenCalledTimes(4);
     expect(screen.getByRole('alert').textContent).toContain('chat.openPagePreviewFailedToast');
     expect(screen.queryByTestId('row-document-editor')).toBeNull();
     expect(bindViewSync).not.toHaveBeenCalled();
@@ -319,7 +319,7 @@ describe('DatabaseRowSubDocument', () => {
     fireEvent.click(screen.getByRole('button', { name: 'atomicCreation.retry' }));
     await act(flushAsyncWork);
 
-    expect(fetchRowDocumentCollab).toHaveBeenCalledTimes(4);
+    expect(fetchRowDocumentCollab).toHaveBeenCalledTimes(5);
     expect(screen.getByTestId('row-document-editor').getAttribute('data-read-only')).toBe('false');
     expect(screen.queryByRole('alert')).toBeNull();
     expect(bindViewSync).toHaveBeenCalledWith(cachedDoc);
@@ -365,7 +365,7 @@ describe('DatabaseRowSubDocument', () => {
       expect(createRowDocument).not.toHaveBeenCalled();
       expect(prepareAtomicRowFirstBody).not.toHaveBeenCalled();
       await act(async () => {
-        await jest.advanceTimersByTimeAsync(15000);
+        await jest.advanceTimersByTimeAsync(10000);
         await flushAsyncWork();
       });
 
@@ -407,13 +407,7 @@ describe('DatabaseRowSubDocument', () => {
 
       expect(createRowDocument).not.toHaveBeenCalled();
       await act(async () => {
-        await jest.advanceTimersByTimeAsync(4999);
-        await flushAsyncWork();
-      });
-      expect(loadRowDocument).toHaveBeenCalledTimes(1);
-
-      await act(async () => {
-        await jest.advanceTimersByTimeAsync(1);
+        await jest.advanceTimersByTimeAsync(2000);
         await flushAsyncWork();
       });
 
@@ -458,7 +452,7 @@ describe('DatabaseRowSubDocument', () => {
 
     await act(flushAsyncWork);
     await act(async () => {
-      await jest.advanceTimersByTimeAsync(15000);
+      await jest.advanceTimersByTimeAsync(10000);
       await flushAsyncWork();
     });
     expect(screen.getByRole('alert').textContent).toContain('chat.openPagePreviewFailedToast');
@@ -522,19 +516,19 @@ describe('DatabaseRowSubDocument', () => {
     expect(createRowDocument).not.toHaveBeenCalled();
 
     await act(async () => {
-      await jest.advanceTimersByTimeAsync(5000);
+      await jest.advanceTimersByTimeAsync(2000);
       await flushAsyncWork();
     });
     expect(createRowDocument).not.toHaveBeenCalled();
 
     await act(async () => {
-      await jest.advanceTimersByTimeAsync(15000);
+      await jest.advanceTimersByTimeAsync(10000);
       await flushAsyncWork();
     });
 
     expect(screen.getByTestId('row-document-load-error')).not.toBeNull();
     expect(createRowDocument).not.toHaveBeenCalled();
-    expect(loadRowDocument).toHaveBeenCalledTimes(3);
+    expect(loadRowDocument).toHaveBeenCalledTimes(4);
     expect(prepareAtomicRowFirstBody).not.toHaveBeenCalled();
     expect(jest.getTimerCount()).toBe(0);
   });
@@ -601,7 +595,7 @@ describe('DatabaseRowSubDocument', () => {
     render(<DatabaseRowSubDocument rowId='row' />);
     await act(flushAsyncWork);
     await act(async () => {
-      await jest.advanceTimersByTimeAsync(15000);
+      await jest.advanceTimersByTimeAsync(10000);
     });
     expect(screen.getByTestId('row-document-load-error')).toBeTruthy();
     expect(screen.queryByTestId('row-document-editor')).toBeNull();
@@ -662,7 +656,7 @@ describe('DatabaseRowSubDocument', () => {
     render(<DatabaseRowSubDocument rowId='row' />);
     await act(flushAsyncWork);
     await act(async () => {
-      await jest.advanceTimersByTimeAsync(15000);
+      await jest.advanceTimersByTimeAsync(10000);
     });
     expect(prepareAtomicRowFirstBody).not.toHaveBeenCalled();
     expect(screen.queryByTestId('row-document-editor')).toBeNull();
@@ -868,7 +862,7 @@ describe('DatabaseRowSubDocument', () => {
       expect(jest.getTimerCount()).toBe(0);
 
       await act(async () => {
-        await jest.advanceTimersByTimeAsync(15000);
+        await jest.advanceTimersByTimeAsync(10000);
         await flushAsyncWork();
       });
 
@@ -910,7 +904,7 @@ describe('DatabaseRowSubDocument', () => {
     expect(jest.getTimerCount()).toBe(0);
 
     await act(async () => {
-      await jest.advanceTimersByTimeAsync(15000);
+      await jest.advanceTimersByTimeAsync(10000);
       await flushAsyncWork();
     });
 

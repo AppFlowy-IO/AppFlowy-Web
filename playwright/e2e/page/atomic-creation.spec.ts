@@ -47,16 +47,10 @@ test('atomic creation keeps document/sidebar, database tabs and row-page content
   );
   await signInAndWaitForApp(page, request, generateRandomEmail(), 0);
 
-  // Drop only the acknowledgement, after the real server has committed. Nothing offers to
-  // finish it: the page arrives through folder sync, and a reload deletes the saved command
-  // without resending it.
+  // Drop only the acknowledgement, after the real server has committed. The explicit
+  // retry must publish the exact saved command and then read current authorized state.
   const previousUrl = page.url();
-  const documentRequests = () =>
-    atomicRequests.filter((entry) => new URL(entry.url).pathname.endsWith('/document/default'));
-  let resolveCommitted!: (viewId: string) => void;
-  const committed = new Promise<string>((resolve) => {
-    resolveCommitted = resolve;
-  });
+  let committedDocumentId = '';
 
   await page.route(
     documentRoute,
@@ -65,45 +59,29 @@ test('atomic creation keeps document/sidebar, database tabs and row-page content
       const body = await response.json();
 
       expect(body.code).toBe(0);
+      committedDocumentId = body.data.result.view_id;
       await route.abort('failed');
-      resolveCommitted(body.data.result.view_id);
     },
     { times: 1 }
   );
   await chooseDocument(page);
-  const committedDocumentId = await committed;
-
-  await expect(page.getByTestId(`page-${committedDocumentId}`)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('button', { name: 'Finish creating your page' })).toBeVisible({ timeout: 30_000 });
   expect(page.url()).toBe(previousUrl);
   await page.reload();
-  await expect(page.getByTestId(`page-${committedDocumentId}`)).toBeVisible({ timeout: 30_000 });
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          new Promise<number>((resolve, reject) => {
-            const openRequest = indexedDB.open('af_database_cache');
+  await expect(page.getByRole('button', { name: 'Finish creating your page' })).toBeVisible();
+  expect(atomicRequests.filter((entry) => new URL(entry.url).pathname.endsWith('/document/default'))).toHaveLength(1);
+  const started = Date.now();
 
-            openRequest.onerror = () => reject(openRequest.error);
-            openRequest.onsuccess = () => {
-              const db = openRequest.result;
-              const request = db.transaction('atomic_creation').objectStore('atomic_creation').count();
+  await page.getByRole('button', { name: 'Finish creating your page' }).click();
+  await expect(page).toHaveURL(new RegExp(committedDocumentId));
+  await expect(page.getByTestId('editor-content').first()).toBeVisible();
+  await expect(page.getByTestId(`page-${committedDocumentId}`)).toHaveAttribute('data-selected', 'true');
+  timings.push({ operation: 'document explicit recovery to editor', elapsedMs: Date.now() - started });
+  const documentRequests = atomicRequests.filter((entry) => new URL(entry.url).pathname.endsWith('/document/default'));
 
-              request.onsuccess = () => {
-                db.close();
-                resolve(request.result);
-              };
-              request.onerror = () => {
-                db.close();
-                reject(request.error);
-              };
-            };
-          })
-      )
-    )
-    .toBe(0);
-  expect(documentRequests()).toHaveLength(1);
-  expect(documentRequests()[0].body).not.toMatch(/page_data|encoded_collab|doc_state/);
+  expect(documentRequests).toHaveLength(2);
+  expect(documentRequests[1].body).toBe(documentRequests[0].body);
+  expect(documentRequests[0].body).not.toMatch(/page_data|encoded_collab|doc_state/);
 
   const databaseStarted = Date.now();
   const databaseResponse = page.waitForResponse(
