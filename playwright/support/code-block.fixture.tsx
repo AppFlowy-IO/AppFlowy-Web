@@ -11,6 +11,7 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { YHistoryEditor } from '@/application/slate-yjs/plugins/withHistory';
 import { slateContentInsertToYData, yDocToSlateContent } from '@/application/slate-yjs/utils/convert';
+import { getBlockEntry } from '@/application/slate-yjs/utils/editor';
 import { initializeDocumentStructure, getDocument } from '@/application/slate-yjs/utils/yjs';
 import { BlockType, CreatePagePayload, View, ViewLayout, YDoc, YjsEditorKey } from '@/application/types';
 import { Editor } from '@/components/editor';
@@ -49,6 +50,7 @@ function Fixture() {
   const [ready, setReady] = useState(false);
   const [createdPage, setCreatedPage] = useState<CreatePagePayload>();
   const [openedPage, setOpenedPage] = useState('');
+  const [selectionInCode, setSelectionInCode] = useState(false);
 
   useEffect(() => {
     const update = () => {
@@ -106,8 +108,11 @@ function Fixture() {
               editor = value;
               setReady(true);
             }}
+            onSelectionChange={(value) =>
+              setSelectionInCode(!!value.selection && getBlockEntry(value)?.[0].type === BlockType.CodeBlock)
+            }
           />
-          <output hidden data-testid='code-document-snapshot' data-ready={ready}>
+          <output hidden data-testid='code-document-snapshot' data-ready={ready} data-selection-in-code={selectionInCode}>
             {snapshot}
           </output>
           <output hidden data-testid='code-created-page'>
@@ -126,7 +131,7 @@ i18nInstance.addResourceBundle('en', 'translation', en, true, true);
 void i18nInstance.changeLanguage('en').then(() =>
   createRoot(document.getElementById('root')!).render(
     <AppTheme>
-      <div className='min-h-screen bg-surface-primary text-text-primary' style={{ minHeight: '100vh' }}>
+      <div data-testid='code-page-scroll' className='h-screen overflow-y-auto bg-surface-primary text-text-primary'>
         <Fixture />
         <Toaster />
       </div>

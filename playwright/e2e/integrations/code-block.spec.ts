@@ -597,9 +597,17 @@ for (const entry of ['floating', 'six-dot', 'expanded'] as const) {
 }
 
 async function replaceCode(page: Page, text: string) {
-  await source(page).first().click();
+  // The center of a multiline pre can be blank space outside a text leaf.
+  await source(page).first().click({ position: { x: 4, y: 10 } });
+  // Slate throttles native selectionchange; wait until the click's selection
+  // reaches the model so Select All targets code instead of the whole document.
+  await expect(snapshot(page)).toHaveAttribute('data-selection-in-code', 'true');
   await page.keyboard.press(`${mod}+a`);
-  await page.keyboard.insertText(text);
+  if (text) await page.keyboard.insertText(text);
+  else {
+    await page.keyboard.press('Backspace');
+    await expect(source(page).first()).toHaveText('');
+  }
 }
 
 for (const mode of ['split', 'preview', 'expanded'] as const) {
@@ -826,12 +834,13 @@ test('long code supports upward mouse drag and Shift-click selection (#4614)', a
   await expect(block(page)).toHaveAttribute('data-language', 'plaintext');
   await source(page).click();
   await page.keyboard.press(`${mod}+ArrowUp`);
-  // Keyboard caret scrolling can leave the first line at the viewport edge.
-  // Finish scrolling before measuring coordinates for the upward pointer drag.
+  // The app shell disables body scrolling. Wait for the document container,
+  // rather than window.scrollY, before measuring the upward pointer drag.
   await page.mouse.wheel(0, -5000);
-  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  await expect.poll(() => page.getByTestId('code-page-scroll').evaluate((node) => node.scrollTop)).toBe(0);
   const rect = await source(page).boundingBox();
 
+  expect(rect!.y).toBeGreaterThan(40);
   await page.mouse.move(rect!.x + 2, rect!.y + 210);
   await page.mouse.down();
   await page.mouse.move(rect!.x + 2, rect!.y + 10, { steps: 20 });
@@ -840,8 +849,10 @@ test('long code supports upward mouse drag and Shift-click selection (#4614)', a
     text.split('\n').slice(0, 10).join('\n') + '\n'
   );
   await page.keyboard.press(`${mod}+ArrowDown`);
+  await page.mouse.wheel(0, 5000);
+  await expect.poll(() => page.getByTestId('code-page-scroll').evaluate((node) => node.scrollTop)).toBeGreaterThan(500);
   await page.mouse.wheel(0, -5000);
-  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  await expect.poll(() => page.getByTestId('code-page-scroll').evaluate((node) => node.scrollTop)).toBe(0);
   const firstLine = await source(page).boundingBox();
 
   await page.keyboard.down('Shift');

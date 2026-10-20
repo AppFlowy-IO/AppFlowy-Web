@@ -1,6 +1,6 @@
 # Code block and Mermaid parity report
 
-Web branch: `feat/code-block-revamp`, based on `201cfcca0c091d9cf3df2e6e19cf3d99aca8b573`.
+Web branch: `feat/code-block-revamp`, integrated with main at `c646104a7a7d00b14342213d1a7695d1f29eb8cb` (including the math-equation revamp).
 Flutter source inspected: AppFlowy Premium `338ec2b1e9fe88a05f9a0de4df723b0862ed723b`, `frontend/appflowy_flutter`. No Flutter files were changed.
 
 ## What changed
@@ -19,6 +19,17 @@ Flutter source inspected: AppFlowy Premium `338ec2b1e9fe88a05f9a0de4df723b0862ed
 - Code/Mermaid **Turn into → Page** creates the child with the complete code block, including literal text, language, caption, pin/wrap and Mermaid display settings. After creation succeeds, the original block becomes the subpage link in one undoable operation. Failed requests leave the source intact; edits, removal or permission changes while creation is pending prevent replacement and clean up the newly created child. Ordinary empty-subpage insertion keeps its existing behavior.
 
 ## Validation
+
+### PR submission verification
+
+Verified on 2026-10-20 after integrating main:
+
+- **495 unit tests passed across 33 suites**, covering code, math, shared popovers, slash insertion, page conversion, parsers, clipboard/paste and AI streams.
+- Exercised **164 browser cases** in light/dark Chromium: 108 code/Mermaid checks and 56 math-equation compatibility checks. The combined two-worker run passed 161; the remaining cases were code clearing, math paste and fixture startup. The repository's CI configurations use one worker.
+- Fixed a reproduced caret race: delayed Auto highlighting could replace a clicked text leaf before Slate processed native selectionchange, restoring the previous paragraph selection. Grammar updates now capture a pending selection within the same code block before replacing its decorations. Three new unit cases verify preservation, selection in another block and unmapped DOM ranges.
+- Corrected the isolated fixture's missing scroll container and made text replacement target the first code line, wait for Slate's selection, and explicitly clear with Backspace. Long-code selection now waits for the actual document scroll position and checks movement across the viewport.
+- **24/24 final browser regressions passed** using one worker: three repeats of code editing/deletion, long-code mouse/Shift-click selection, math Markdown paste and math submenu behavior, in each theme. These cover all failures from the combined run. The entire 164-case run was not repeated after the final caret fix.
+- Application and browser-fixture TypeScript passed. Repository-wide lint passed before the final caret fix; the changed production files passed focused lint afterward. Production build passed in 31.77s with existing bundle-size, Browserslist and Tailwind warnings. `git diff --check` passed.
 
 <!-- validation-results -->
 Validated locally on 2026-10-20:
