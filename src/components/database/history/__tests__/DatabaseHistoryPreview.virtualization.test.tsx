@@ -1,6 +1,6 @@
 // eslint-disable-next-line import/no-unresolved
 import '@testing-library/jest-dom';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
 import { createCell, createRowDoc } from '@/application/database-yjs/__tests__/test-helpers';
@@ -79,6 +79,8 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  // Drive deferred grid measurements and dialog transitions with the test clock.
+  jest.useFakeTimers();
   rowCount = 4;
   const layout = {
     getBoundingClientRect(this: HTMLElement) {
@@ -95,7 +97,11 @@ beforeEach(() => {
   jest.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(layout.getBoundingClientRect);
 });
 
-afterEach(() => jest.restoreAllMocks());
+afterEach(async () => {
+  await act(() => jest.runOnlyPendingTimers());
+  jest.useRealTimers();
+  jest.restoreAllMocks();
+});
 
 afterAll(() => {
   global.ResizeObserver = originalResizeObserver;

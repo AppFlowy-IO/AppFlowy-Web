@@ -237,6 +237,8 @@ When('the rollup targets {string} using {string}', async ({ page }, name: string
   await propertyEditor(page);
   const property = page.getByTestId('rollup-property-trigger').last();
 
+  // The selected property's label is unavailable until related metadata loads.
+  await expect(property).toBeEnabled();
   // Keeping the target preserves its selected options when only Calculate changes.
   if (!(await property.getByText(name, { exact: true }).count())) {
     await openSubmenu(page, 'rollup-property-trigger');
