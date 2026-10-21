@@ -85,6 +85,12 @@ export class DatabaseRestoreTracker {
     return this.verifiedHints.has(databaseId) && this.verifiedHints.get(databaseId) === this.hints.get(databaseId);
   }
 
+  /** Rows join recovery already in progress, but do not start routine authority reads. */
+  needsRestoreRecovery(databaseId: string): boolean {
+    return this.checks.has(databaseId) || this.failures.has(databaseId) ||
+      (this.hints.has(databaseId) && !this.verificationIsCurrent(databaseId));
+  }
+
   /** A newly opened database must verify even if its previous editor closed recently. */
   invalidateVerification(databaseId: string): void {
     this.verifiedAt.delete(databaseId);

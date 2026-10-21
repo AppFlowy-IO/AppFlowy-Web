@@ -13,7 +13,6 @@ import {
 import { isDatabaseStorageFenceCurrent, withDatabaseStorageFence } from '@/application/db/database-storage-fence';
 import { ClientValidationError } from '@/application/errors/client-validation-error';
 import { createRow as openCachedRow } from '@/application/services/js-services/cache';
-import { atomicRead } from '@/application/services/js-services/http/atomic-creation-api';
 import { postDefaultRowCreation } from '@/application/services/js-services/http/atomic-row-creation-api';
 import { readCollabStates } from '@/application/services/js-services/http/collab-api';
 import { Types, YDatabase, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
@@ -258,18 +257,10 @@ export async function createCloudRow(intent: CloudRowCreationIntent): Promise<st
     fence = await captureDatabaseStorageFence(databaseId, { required: true });
     const capturedFence = fence;
     const assertCurrent = () => owner.assertCurrent();
-    const checkRestore = async () => {
-      const restore = await atomicRead<{ database_restore_id: string | null; version: string | null }>(
-        owner,
-        `/api/workspace/${workspaceId}/database/${databaseId}/restore-state`,
-        undefined,
-        controller.signal
-      );
-
+    const assertStorageCurrent = async () => {
       assertCurrent();
       if (
-        (restore.database_restore_id ?? ORIGINAL_DATABASE_RESTORE_ID) !== restoreId ||
-        (restore.version ?? undefined) !== version ||
+        (capturedFence.epoch !== null && capturedFence.epoch !== restoreId) ||
         !(await matchesDatabaseStorageFence(capturedFence))
       ) {
         throw new Error('Row creation source was restored');
@@ -298,7 +289,7 @@ export async function createCloudRow(intent: CloudRowCreationIntent): Promise<st
       persisted: await readPersistedDatabaseSource(databaseDoc, controller.signal, capturedFence),
     };
 
-    await checkRestore();
+    await assertStorageCurrent();
     await waitForDatabaseViewSource(requirements, {
       read: async () => {
         const result = await read([{ objectId: databaseId, collabType: Types.Database }]);
@@ -318,8 +309,8 @@ export async function createCloudRow(intent: CloudRowCreationIntent): Promise<st
     assertCurrent();
     validateReceipt(receipt, request, databaseId, version);
     committed = true;
-    // Validate the restore boundary once immediately before publication below.
-    // An extra read here adds a network round trip without protecting a later boundary.
+    // The server admits the command using its restore generation. Keep local
+    // activation fenced without adding restore-state requests to row creation.
     let rowState: Uint8Array | undefined;
     let databaseUpdate: Uint8Array | undefined;
 
@@ -381,7 +372,7 @@ export async function createCloudRow(intent: CloudRowCreationIntent): Promise<st
       }
     }
 
-    await checkRestore();
+    await assertStorageCurrent();
     const localRow = await openCachedRow(intent.rowKey);
 
     assertCurrent();
