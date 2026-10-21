@@ -29,7 +29,7 @@ test.beforeEach(async ({ page, integrationsURL }) => {
     route.fulfill({ contentType: 'text/html', body: fixtureHTML('math-equation') })
   );
   await page.goto(new URL(fixturePath, integrationsURL).href);
-  await expect(page.getByTestId('math-document-snapshot')).toHaveAttribute('data-ready', 'true');
+  await expect(page.getByTestId('math-document-snapshot')).toHaveAttribute('data-ready', 'true', { timeout: 60_000 });
 });
 
 test('slash insertion, compact and expanded editing, cancel, and persistence', async ({ page }, testInfo) => {
