@@ -3,6 +3,7 @@ import { Element } from 'slate';
 import { useSlateStatic } from 'slate-react';
 
 import { CalloutNode, EditorElementProps } from '@/components/editor/editor.type';
+import { useBlockSelected } from '@/components/editor/EditorContext';
 import { cn } from '@/lib/utils';
 import { renderColor } from '@/utils/color';
 
@@ -12,6 +13,7 @@ export const Callout = memo(
   forwardRef<HTMLDivElement, EditorElementProps<CalloutNode>>(({ node, children, ...attributes }, ref) => {
     const { className, style, ...restAttributes } = attributes;
     const editor = useSlateStatic();
+    const selected = useBlockSelected(node.blockId);
     const firstLine = node.children[0];
     const isEmpty = !Element.isElement(firstLine) || editor.isEmpty(firstLine);
     const colors = getCalloutColors(node.data);
@@ -22,6 +24,7 @@ export const Callout = memo(
         {...restAttributes}
         ref={ref}
         data-testid='callout'
+        data-selected={selected ? 'true' : 'false'}
         data-callout-icon={hasIcon ? 'visible' : 'removed'}
         className={cn(
           className,
@@ -31,7 +34,7 @@ export const Callout = memo(
         style={
           {
             ...style,
-            backgroundColor: renderColor(colors.bg),
+            backgroundColor: selected ? 'var(--fill-theme-select)' : renderColor(colors.bg),
             color: renderColor(colors.text),
             '--callout-content-indent': hasIcon ? '36px' : '4px',
           } as CSSProperties

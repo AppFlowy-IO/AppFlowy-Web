@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
 import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
+import { isCodeSelection } from '@/components/editor/components/blocks/code/code-keyboard';
 import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 
@@ -19,6 +20,7 @@ function Panels () {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isCodeSelection(editor) || (e.target as HTMLElement).closest('[contenteditable="false"]')) return;
       if (createHotkey(HOT_KEY_NAME.POP_EMOJI_PICKER)(e)) {
         e.preventDefault();
         const rect = getRangeRect();

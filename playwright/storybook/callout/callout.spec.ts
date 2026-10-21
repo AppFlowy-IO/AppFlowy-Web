@@ -1,4 +1,4 @@
-import { expect, Page, test } from '@playwright/test';
+import { expect, Locator, Page, test } from '@playwright/test';
 
 async function tokenColor(page: Page, token: string) {
   return page.evaluate((name) => {
@@ -14,11 +14,13 @@ async function tokenColor(page: Page, token: string) {
 }
 
 const block = (page: Page) => page.getByTestId('callout').first();
-async function menu(page: Page, text = 'Hello World') {
+async function menu(page: Page, target: string | Locator = 'Hello World') {
+  const trigger = typeof target === 'string' ? page.getByText(target, { exact: true }) : target;
+
   // Initial editor layout can reset the hover controls; move again after that settles.
   await expect(async () => {
     await page.mouse.move(0, 0);
-    await page.getByText(text, { exact: true }).hover();
+    await trigger.hover();
     await expect(page.getByTestId('hover-controls')).toHaveCSS('opacity', '1', { timeout: 500 });
   }).toPass({ timeout: 5000 });
   await page.getByTestId('drag-block').click();
@@ -195,6 +197,68 @@ test('Flutter: the options menu converts a callout and keeps its text', async ({
   await page.getByRole('button', { name: 'Heading 1', exact: true }).click();
   await expect(page.locator('[data-block-type="heading"]').getByText('Hello World', { exact: true })).toBeVisible();
   await expect(page.getByTestId('callout')).toHaveCount(2);
+});
+
+test('six-dot selection covers title and body until the menu is dismissed', async ({ page }, info) => {
+  const callout = page.getByTestId('callout').nth(1);
+  const background = await callout.evaluate((el) => getComputedStyle(el).backgroundColor);
+  const actions = await menu(page, 'A callout without an icon.');
+
+  await expect(callout).toHaveAttribute('data-selected', 'true');
+  await expect(callout).toHaveCSS('background-color', await tokenColor(page, '--fill-theme-select'));
+  await actions.getByRole('button', { name: 'Turn into', exact: true }).click();
+  await expect(page.getByTestId('turn-into-menu').getByRole('button', { name: 'Page', exact: true })).toBeVisible();
+  await expect(callout).toHaveAttribute('data-selected', 'true');
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('turn-into-menu')).toBeHidden();
+  await expect(actions).toBeVisible();
+  await expect(callout).toHaveAttribute('data-selected', 'true');
+  await page.screenshot({ path: `test-results/callout-selected-${info.project.name}.png` });
+  await page.keyboard.press('Escape');
+  await expect(actions).toBeHidden();
+  await expect(callout).toHaveAttribute('data-selected', 'false');
+  await expect(callout).toHaveCSS('background-color', background);
+
+  await menu(page, 'A callout without an icon.');
+  await page.mouse.click(1080, 820);
+  await expect(actions).toBeHidden();
+  await expect(callout).toHaveAttribute('data-selected', 'false');
+});
+
+test('Page conversion copies the callout title, icon and nested body and closes both menus', async ({ page }) => {
+  const actions = await menu(page, 'A callout without an icon.');
+
+  await actions.getByRole('button', { name: 'Turn into', exact: true }).click();
+  await page.getByTestId('turn-into-menu').getByRole('button', { name: 'Page', exact: true }).click();
+  await expect(actions).toBeHidden();
+  await expect(page.getByTestId('turn-into-menu')).toBeHidden();
+  await expect(page.getByTestId('callout')).toHaveCount(2);
+  await expect(page.locator('[data-block-type="sub_page"]')).toBeVisible();
+  await expect(page.getByText('Nested text stays aligned.', { exact: true })).toHaveCount(0);
+  const created = page.getByTestId('created-callout-page');
+
+  await expect(created).toHaveAttribute('data-opened-page', 'callout-child-page');
+  expect(JSON.parse((await created.textContent())!)).toMatchObject({
+    name: 'A callout without an icon.',
+    page_data: { type: 'page', children: [{
+      type: 'callout', data: { icon: '', delta: [{ insert: 'A callout without an icon.' }] },
+      children: [{ type: 'paragraph', data: { delta: [{ insert: 'Nested text stays aligned.' }] } }],
+    }] },
+  });
+  await expect(page.getByText('Following paragraph', { exact: true })).toBeVisible();
+  await expect(page.locator('[data-testid="callout"][data-selected="true"]')).toHaveCount(0);
+});
+
+test('empty callouts also show whole-block selection and offer Page conversion', async ({ page }) => {
+  const callout = page.getByTestId('callout').nth(2);
+
+  await menu(page, callout);
+  await expect(callout).toHaveAttribute('data-selected', 'true');
+  await expect(callout).toHaveCSS('background-color', await tokenColor(page, '--fill-theme-select'));
+  await page.getByTestId('controls-menu').getByRole('button', { name: 'Turn into', exact: true }).click();
+  await page.getByTestId('turn-into-menu').getByRole('button', { name: 'Page', exact: true }).click();
+  await expect(page.getByTestId('callout')).toHaveCount(2);
+  await expect(page.locator('[data-block-type="sub_page"]')).toBeVisible();
 });
 
 test('Turn into is shared by paragraphs, headings, lists, quotes, code and callouts', async ({ page }, info) => {

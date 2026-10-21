@@ -40,7 +40,7 @@ export const StaticEditor = memo(({
 }: StaticEditorProps) => {
   const [codeGrammars, setCodeGrammars] = useState<Record<string, string>>({});
   const handleAddCodeGrammars = useCallback((blockId: string, grammar: string) => {
-    setCodeGrammars((prev) => ({ ...prev, [blockId]: grammar }));
+    setCodeGrammars((prev) => (prev[blockId] === grammar ? prev : { ...prev, [blockId]: grammar }));
   }, []);
   const editor = useMemo(() => {
     const nextEditor = withPlugins(withReact(createEditor()));
