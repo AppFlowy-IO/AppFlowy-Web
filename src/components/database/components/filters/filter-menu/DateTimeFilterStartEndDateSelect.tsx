@@ -14,9 +14,11 @@ import {
 function DateTimeFilterStartEndDateSelect ({
   onSelect,
   isStart,
+  disabled,
 }: {
   onSelect: (isStart: boolean) => void,
   isStart: boolean,
+  disabled?: boolean,
 }) {
   const { t } = useTranslation();
   const readOnly = useReadOnly();
@@ -33,7 +35,7 @@ function DateTimeFilterStartEndDateSelect ({
     <DropdownMenu>
       <DropdownMenuTrigger
         asChild
-        disabled={readOnly}
+        disabled={readOnly || disabled}
       >
         <Button
           variant={'ghost'}

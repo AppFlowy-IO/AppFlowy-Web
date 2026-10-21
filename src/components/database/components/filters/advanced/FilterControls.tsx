@@ -6,7 +6,7 @@ import { toggleFilterId } from '@/application/database-yjs/dispatch/filter-updat
 import { CheckboxFilter, CheckboxFilterCondition } from '@/application/database-yjs/fields/checkbox/checkbox.type';
 import { ChecklistFilterCondition } from '@/application/database-yjs/fields/checklist/checklist.type';
 import { DateFilter, DateFilterCondition } from '@/application/database-yjs/fields/date/date.type';
-import { isRelativeDateCondition } from '@/application/database-yjs/fields/date/relativeDate';
+import { isRelativeDateComparison, isRelativeDateCondition } from '@/application/database-yjs/fields/date/relativeDate';
 import { NumberFilter, NumberFilterCondition } from '@/application/database-yjs/fields/number/number.type';
 import { PersonFilter, PersonFilterCondition } from '@/application/database-yjs/fields/person/person.type';
 import { RelationFilterCondition } from '@/application/database-yjs/fields/relation/relation.type';
@@ -30,6 +30,7 @@ import RelationCellMenuContent from '@/components/database/components/cell/relat
 import { FilterSearchInput } from '@/components/database/components/filters/filter-menu/FilterSearchInput';
 import { SelectOptionList } from '@/components/database/components/filters/filter-menu/SelectOptionList';
 import { useDebouncedFilterInput } from '@/components/database/components/filters/hooks/useDebouncedFilterInput';
+import { useRelativeDateFilterWrites } from '@/components/database/components/filters/hooks/useRelativeDateFilterWrites';
 import { useRelationData } from '@/components/database/components/property/relation/useRelationData';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -76,6 +77,12 @@ export function ConditionSelector({
   variant = 'box',
 }: ConditionSelectorProps) {
   const { t } = useTranslation();
+  const allowRelativeComparisons = useRelativeDateFilterWrites();
+  const compatibilityReadOnly =
+    fieldType !== null &&
+    [FieldType.DateTime, FieldType.CreatedTime, FieldType.LastEditedTime].includes(fieldType) &&
+    !allowRelativeComparisons &&
+    isRelativeDateComparison(filter.condition, filter.content);
   const baseConditions = useConditionsForFieldType(fieldType, t, field);
   const isEnd = fieldType === FieldType.DateTime && isEndDateCondition(filter.condition);
   const conditions = isEnd
@@ -106,7 +113,7 @@ export function ConditionSelector({
 
   const menu = (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild disabled={disabled}>
+      <DropdownMenuTrigger asChild disabled={disabled || compatibilityReadOnly}>
         <button
           className={inline ? inlineSelectTriggerClass : cn(selectBoxClass, 'w-full')}
           title={selectedCondition?.text}

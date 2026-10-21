@@ -114,16 +114,24 @@ export function isRelativeDateFilter(condition: DateFilterCondition, content: un
   return isRelativeDateCondition(condition) || relativeDateFromContent(condition, content) !== undefined;
 }
 
+export function isRelativeDateComparison(condition: DateFilterCondition, content: unknown): boolean {
+  return isDateComparisonCondition(condition) && relativeDateFromContent(condition, content) !== undefined;
+}
+
 // Preserve the selected day when editing the operator, including legacy Today rules.
 // Conditions without a single date operand must not retain a hidden relative value.
 export function dateFilterContentForCondition(
   previous: DateFilterCondition,
   next: DateFilterCondition,
-  content: string
+  content: string,
+  allowRelativeComparisons: boolean
 ) {
   const relative = relativeDateFromContent(previous, content);
 
-  if (relative && isDateComparisonCondition(next)) return JSON.stringify({ relative_date: relative });
+  if (allowRelativeComparisons && relative && isDateComparisonCondition(next)) {
+    return JSON.stringify({ relative_date: relative });
+  }
+
   if (relative || isRelativeDateCondition(previous) || isRelativeDateCondition(next)) return '';
   return content;
 }

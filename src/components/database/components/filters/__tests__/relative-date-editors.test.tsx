@@ -14,6 +14,7 @@ import {
   YDatabaseFilters,
   YjsDatabaseKey as K,
 } from '@/application/types';
+import { updateServerInfo, SERVER_INFO_LOADING } from '@/utils/server-info';
 
 import { ConditionSelector, ValueInput } from '../advanced/FilterControls';
 import DateTimeFilterMenu from '../filter-menu/DateTimeFilterMenu';
@@ -123,9 +124,14 @@ beforeAll(() => {
   } as unknown as typeof ResizeObserver;
 });
 beforeEach(() => {
+  updateServerInfo('https://test.appflowy.cloud', {
+    status: 'available',
+    info: { enable_page_history: false, enable_relative_date_comparisons: true },
+  });
   mockReadOnly = false;
   mockUpdate.mockClear();
 });
+afterEach(() => updateServerInfo('https://test.appflowy.cloud', SERVER_INFO_LOADING));
 
 describe.each([false, true])('relative date editor (advanced=%s)', (advanced) => {
   const pickerId = advanced ? 'advanced-filter-date-input' : 'date-filter-date-picker';
@@ -135,6 +141,45 @@ describe.each([false, true])('relative date editor (advanced=%s)', (advanced) =>
     await waitFor(() => expect(screen.getByTestId(`filter-condition-${condition}`)).toBeTruthy());
     fireEvent.click(screen.getByTestId(`filter-condition-${condition}`));
   };
+
+  it('hides new values without rollout authorization while preserving legacy Today', async () => {
+    updateServerInfo('https://test.appflowy.cloud', SERVER_INFO_LOADING);
+    const node = setup();
+
+    render(<Harness advanced={advanced} />);
+    fireEvent.click(screen.getByTestId(pickerId));
+    expect(screen.queryByTestId('date-filter-relative-today')).toBeNull();
+    fireEvent.keyDown(screen.getByTestId('datetime-date-input'), { key: 'Escape' });
+    await changeCondition(C.DateStartsToday);
+    expect(node.get(K.condition)).toBe(C.DateStartsToday);
+    expect(node.get(K.content)).toBe('');
+    await changeCondition(C.DateStartsBefore);
+    expect(node.get(K.content)).toBe('');
+    expect(screen.getByTestId(pickerId).textContent).toBe('grid.dateFilter.chooseDate');
+  });
+
+  it('reacts to capability revocation with an editor open and keeps received filters readable', () => {
+    const node = setup(C.DateStartsBefore, '{"relative_date":"Today"}');
+
+    render(<Harness advanced={advanced} />);
+    fireEvent.click(screen.getByTestId(pickerId));
+    act(() => updateServerInfo('https://test.appflowy.cloud', { status: 'unavailable' }));
+    expect(screen.queryByTestId('date-filter-relative-today')).toBeNull();
+    expect(screen.getByTestId(pickerId).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByTestId(conditionId).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByTestId('summary').textContent).toContain('before relativeDates.today');
+    fireEvent.click(screen.getByRole('gridcell', { name: '15', exact: true }));
+    expect(node.get(K.content)).toBe('{"relative_date":"Today"}');
+    act(() =>
+      updateServerInfo('https://test.appflowy.cloud', {
+        status: 'available',
+        info: { enable_page_history: false, enable_relative_date_comparisons: true },
+      })
+    );
+    expect(screen.getByTestId('date-filter-relative-tomorrow')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('date-filter-relative-tomorrow'));
+    expect(node.get(K.content)).toBe('{"relative_date":"Tomorrow"}');
+  });
 
   it('chooses each relative day, retains it on operator edits, and switches back to a calendar date', async () => {
     const node = setup();

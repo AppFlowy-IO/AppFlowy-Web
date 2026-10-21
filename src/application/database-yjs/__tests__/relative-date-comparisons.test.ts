@@ -1,6 +1,8 @@
 import dayjs from 'dayjs';
 import * as Y from 'yjs';
 
+import { updateServerInfo, SERVER_INFO_LOADING, ServerInfoState } from '@/utils/server-info';
+
 import { DateTimeCell } from '../cell.type';
 import { FieldType, FilterType } from '../database.type';
 import { applyFilterUpdate } from '../dispatch/filter-update';
@@ -49,15 +51,91 @@ const comparisons: [C, C, (difference: number) => boolean][] = [
 
 describe('relative date comparison operands (desktop #9069)', () => {
   beforeEach(() => {
+    updateServerInfo('https://test.appflowy.cloud', {
+      status: 'available',
+      info: { enable_page_history: false, enable_relative_date_comparisons: true },
+    });
     jest.useFakeTimers();
     // Local spring DST boundary in America/New_York; also run this suite in UTC.
     jest.setSystemTime(new Date(2026, 2, 8, 12));
   });
-  afterEach(() => jest.useRealTimers());
+  afterEach(() => {
+    jest.useRealTimers();
+    updateServerInfo('https://test.appflowy.cloud', SERVER_INFO_LOADING);
+  });
 
   it.each(comparisons)('keeps operator %s when switching to end %s', (start, end) => {
     expect(toEndDateCondition(start)).toBe(end);
     expect(toStartDateCondition(end)).toBe(start);
+  });
+
+  it.each<ServerInfoState>([
+    { status: 'loading' },
+    { status: 'unsupported' },
+    { status: 'unavailable' },
+    { status: 'available', info: { enable_page_history: false } },
+    { status: 'available', info: { enable_page_history: false, enable_relative_date_comparisons: false } },
+  ])('does not write unsupported comparisons when discovery is $status', (state) => {
+    updateServerInfo('https://test.appflowy.cloud', state);
+    const { fields, filters, node } = fixture(C.DateStartsBefore, '{"timestamp":1700000000}');
+    const saved = node.toJSON();
+
+    applyFilterUpdate(filters, fields, { filterId: 'rule', content: '{"relative_date":"Today"}' });
+    expect(node.toJSON()).toEqual(saved);
+    applyFilterUpdate(filters, fields, { filterId: 'rule', transformContent: () => '{"relative_date":"Tomorrow"}' });
+    expect(node.toJSON()).toEqual(saved);
+    applyFilterUpdate(filters, fields, { filterId: 'rule', content: '{"timestamp":1700086400}' });
+    expect(node.get(K.content)).toBe('{"timestamp":1700086400}');
+  });
+
+  it.each([FieldType.DateTime, FieldType.CreatedTime, FieldType.LastEditedTime, FieldType.Rollup])(
+    'keeps legacy relative conditions usable for type %s without upgrading their wire format',
+    (type) => {
+      updateServerInfo('https://test.appflowy.cloud', SERVER_INFO_LOADING);
+      const { fields, filters, node } = fixture(C.DateStartsOn, '{"timestamp":1700000000}', type);
+
+      if (type === FieldType.Rollup) {
+        node.set(K.rollup_target_type, FieldType.DateTime);
+        node.set(K.rollup_meta, { target_field_type: FieldType.DateTime, rollup_filter_mode: 0, rollup_show_as: 1 });
+      }
+      applyFilterUpdate(filters, fields, { filterId: 'rule', condition: C.DateStartsToday });
+      expect(node.get(K.condition)).toBe(C.DateStartsToday);
+      expect(node.get(K.content)).toBe('');
+      applyFilterUpdate(filters, fields, { filterId: 'rule', condition: C.DateStartsBefore });
+      expect(node.get(K.condition)).toBe(C.DateStartsBefore);
+      expect(node.get(K.content)).toBe('');
+      applyFilterUpdate(filters, fields, { filterId: 'rule', content: '{"relative_date":"Today"}' });
+      expect(node.get(K.content)).toBe('');
+    }
+  );
+
+  it('preserves synced relative comparisons without rewriting them when rollout authorization is absent', () => {
+    updateServerInfo('https://test.appflowy.cloud', SERVER_INFO_LOADING);
+    const { fields, filters, node } = fixture(C.DateStartsBefore, '{"relative_date":"Today"}');
+    const saved = node.toJSON();
+    const parsed = parseFilter(FieldType.DateTime, node) as DateFilter;
+
+    expect(dateFilterCheck({ data: dayjs().subtract(1, 'day').unix().toString() } as DateTimeCell, parsed)).toBe(true);
+    applyFilterUpdate(filters, fields, { filterId: 'rule', condition: C.DateStartsAfter });
+    expect(node.toJSON()).toEqual(saved);
+    applyFilterUpdate(filters, fields, { filterId: 'rule', content: '{"timestamp":1700000000}' });
+    expect(node.toJSON()).toEqual(saved);
+  });
+
+  it('checks the resulting rollup predicate type when metadata and content change together', () => {
+    updateServerInfo('https://test.appflowy.cloud', SERVER_INFO_LOADING);
+    const { fields, filters, node } = fixture(C.DateStartsBefore, '', FieldType.Rollup);
+
+    node.set(K.rollup_target_type, FieldType.RichText);
+    const saved = node.toJSON();
+
+    applyFilterUpdate(filters, fields, {
+      filterId: 'rule',
+      rollupTargetFieldType: FieldType.DateTime,
+      rollupMetadata: { target_field_type: FieldType.DateTime, rollup_filter_mode: 0, rollup_show_as: 1 },
+      content: '{"relative_date":"Today"}',
+    });
+    expect(node.toJSON()).toEqual(saved);
   });
 
   describe.each([

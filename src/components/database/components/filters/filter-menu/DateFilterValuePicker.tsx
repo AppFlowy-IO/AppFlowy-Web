@@ -9,6 +9,7 @@ import {
 } from '@/application/database-yjs/fields/date/date.type';
 import {
   isDateComparisonCondition,
+  isRelativeDateComparison,
   relativeDateForFilter,
   resolveRelativeDates,
 } from '@/application/database-yjs/fields/date/relativeDate';
@@ -20,6 +21,8 @@ import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { getDateFormat, getTimeFormat, renderDate } from '@/utils/time';
+
+import { useRelativeDateFilterWrites } from '../hooks/useRelativeDateFilterWrites';
 
 interface DateFilterValuePickerProps {
   filter: DateFilter;
@@ -36,6 +39,8 @@ export default function DateFilterValuePicker({
   onChange,
 }: DateFilterValuePickerProps) {
   const { t } = useTranslation();
+  const allowRelativeComparisons = useRelativeDateFilterWrites();
+  const readOnly = disabled || (!allowRelativeComparisons && isRelativeDateComparison(filter.condition, filter.content));
   const relativeLabels = {
     [DateFilterRelativeDate.Today]: t('relativeDates.today'),
     [DateFilterRelativeDate.Yesterday]: t('relativeDates.yesterday'),
@@ -56,7 +61,7 @@ export default function DateFilterValuePicker({
   }, [isRange, start, end, timestamp]);
   const [month, setMonth] = useState<Date>();
   const selectDate = (range: { from: Date | undefined; to?: Date } | undefined) => {
-    if (disabled) return;
+    if (readOnly) return;
     // Desktop deserializes Option<i64>; an unselected date must be null, not "".
     const from = range?.from ? dayjs(range.from).startOf('day').unix() : null;
     const to = range?.to ? dayjs(range.to).startOf('day').unix() : null;
@@ -83,7 +88,7 @@ export default function DateFilterValuePicker({
         <Button
           variant='outline'
           size='sm'
-          disabled={disabled}
+          disabled={readOnly}
           className={
             variant === 'advanced'
               ? 'h-8 w-full justify-start overflow-hidden rounded-md px-2 text-left'
@@ -95,8 +100,8 @@ export default function DateFilterValuePicker({
         </Button>
       </PopoverTrigger>
       <PopoverContent onCloseAutoFocus={(e) => e.preventDefault()} className='w-[260px]'>
-        <fieldset disabled={disabled}>
-          {isDateComparisonCondition(filter.condition) && (
+        <fieldset disabled={readOnly}>
+          {allowRelativeComparisons && isDateComparisonCondition(filter.condition) && (
             <div className='flex flex-col gap-1 border-b border-border-primary p-2'>
               {Object.values(DateFilterRelativeDate).map((day) => (
                 <Button
@@ -107,7 +112,7 @@ export default function DateFilterValuePicker({
                   aria-pressed={relative === day}
                   data-testid={`date-filter-relative-${day.toLowerCase()}`}
                   onClick={() => {
-                    if (disabled) return;
+                    if (readOnly) return;
                     onChange(JSON.stringify({ relative_date: day }));
                     const resolved = resolveRelativeDates({ ...filter, relative_date: day });
 

@@ -57,6 +57,7 @@ import {
 } from '@/components/database/components/cell/person/useMentionableUsers';
 import { FormulaEditorDialog } from '@/components/database/components/property/formula/FormulaEditorDialog';
 import { AFConfigContext } from '@/components/main/app.hooks';
+import { updateServerInfo, SERVER_INFO_LOADING } from '@/utils/server-info';
 
 import { flushFormulaEditor, formulaSource, setFormulaSource } from './formula-editor-input';
 
@@ -1375,12 +1376,29 @@ describe('formula property insertions', () => {
 });
 
 describe('date formula filter selectors', () => {
+  afterEach(() => updateServerInfo('https://test.appflowy.cloud', SERVER_INFO_LOADING));
+
   it('preserves the relative day when editing a date formula comparison', () => {
+    updateServerInfo('https://test.appflowy.cloud', {
+      status: 'available',
+      info: { enable_page_history: false, enable_relative_date_comparisons: true },
+    });
     const f = fixture('today()');
 
     f.filters.push([dataFilter(DateFilterCondition.DateStartsToday)]);
     applyFilterUpdate(f.filters, f.fields, { filterId: 'filter', condition: DateFilterCondition.DateStartsBefore });
     expect(JSON.parse(f.filters.get(0).get(YjsDatabaseKey.content))).toEqual({ relative_date: 'Today' });
+  });
+
+  it('keeps date formula edits in the legacy format without rollout authorization', () => {
+    updateServerInfo('https://test.appflowy.cloud', SERVER_INFO_LOADING);
+    const f = fixture('today()');
+
+    f.filters.push([dataFilter(DateFilterCondition.DateStartsToday)]);
+    applyFilterUpdate(f.filters, f.fields, { filterId: 'filter', condition: DateFilterCondition.DateStartsBefore });
+    expect(f.filters.get(0).get(YjsDatabaseKey.content)).toBe('');
+    applyFilterUpdate(f.filters, f.fields, { filterId: 'filter', content: '{"relative_date":"Today"}' });
+    expect(f.filters.get(0).get(YjsDatabaseKey.content)).toBe('');
   });
 
   it.each([

@@ -16,6 +16,7 @@ function FilterConditionsSelect ({
   conditions,
   filter,
   onSelect,
+  disabled,
 }: {
   filter: Filter;
   conditions: {
@@ -23,6 +24,7 @@ function FilterConditionsSelect ({
     text: string;
   }[];
   onSelect?: (condition: number) => void;
+  disabled?: boolean;
 }) {
   const updateFilter = useUpdateFilter();
   const readOnly = useReadOnly();
@@ -34,7 +36,7 @@ function FilterConditionsSelect ({
     <DropdownMenu>
       <DropdownMenuTrigger
         asChild
-        disabled={readOnly}
+        disabled={readOnly || disabled}
         className={'w-full'}
       >
         <Button
