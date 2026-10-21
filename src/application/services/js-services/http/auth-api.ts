@@ -24,6 +24,8 @@ export interface ServerInfo {
   /** Web uses a separate release line from the native min_client_version field. */
   min_web_client_version?: string;
   enable_page_history: boolean;
+  /** Batch permission reads preserve singleton repair and typed per-item errors. */
+  enable_object_permission_batch?: boolean;
   /** Both flags must be literal true before a compact atomic command is submitted. */
   enable_atomic_creation?: boolean;
   enable_atomic_creation_defaults?: boolean;
