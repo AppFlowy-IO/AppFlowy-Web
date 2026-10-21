@@ -330,8 +330,8 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
     for (const context of refs.registeredContexts.current.values()) {
       const objectId = context.doc.guid;
 
-      if (refs.contextRefCounts.current.get(objectId) && !refs.pendingCleanups.current.has(objectId) &&
-          contextDatabaseId(context, rowDatabases.current) === databaseId) return true;
+      if (context.collabType === Types.Database && objectId === databaseId &&
+          refs.contextRefCounts.current.get(objectId) && !refs.pendingCleanups.current.has(objectId)) return true;
     }
 
     return false;
@@ -350,13 +350,13 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
   }, [hasOpenDatabase, tracker]);
 
   const ensureDatabaseRestoreCurrent = useCallback(async (
-    objectId: string, type: Types, expectedMarker?: string, rootVersionChanged = false
+    objectId: string, type: Types, expectedMarker?: string, rootVersionHint?: string
   ): Promise<boolean> => {
     if (type !== Types.Database && type !== Types.DatabaseRow) return true;
     const current = latest.current;
 
     if (current.refs.isDisposedRef.current) return false;
-    if (!current.enabled && !rootVersionChanged &&
+    if (!current.enabled && !rootVersionHint &&
         (expectedMarker === undefined || expectedMarker === nilMarker) &&
         !tracker.hasRestoreEvidence() && observedRestores.current.size === 0) {
       return current.capabilityLoaded !== false;
@@ -368,10 +368,10 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
       databaseId = await resolveDatabase(objectId, type);
       const scopeKey = `${current.userId}:${current.workspaceId}:${databaseId}`;
 
-      if (databaseId && type === Types.Database && rootVersionChanged) {
+      if (databaseId && type === Types.Database && rootVersionHint) {
         observedRestores.current.add(scopeKey);
         // A collab version is only evidence to reread authority, never a database restore ID.
-        tracker.observeRestoreHint(databaseId);
+        tracker.observeRestoreHint(databaseId, undefined, rootVersionHint);
       }
 
       if (databaseId && expectedMarker !== undefined && expectedMarker !== nilMarker) {
@@ -392,13 +392,20 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
       if (!databaseId || resetting.current.has(databaseId)) return false;
       let unchanged = true;
 
-      do {
-        unchanged = await tracker.checkIfStale(databaseId) && unchanged;
-      } while (!tracker.verificationIsCurrent(databaseId));
+      // Row-page registration and ordinary row traffic reuse the known generation.
+      // Only roots perform routine checks; rows still join pending recovery or
+      // verify a new restore marker observed above.
+      const needsVerification = type === Types.Database || tracker.needsRestoreRecovery(databaseId);
+
+      if (needsVerification) {
+        do {
+          unchanged = await tracker.checkIfStale(databaseId) && unchanged;
+        } while (!tracker.verificationIsCurrent(databaseId));
+      }
 
       if (!sessionActive.current || current.refs.isDisposedRef.current ||
           latest.current.workspaceId !== current.workspaceId || latest.current.userId !== current.userId) return false;
-      scheduleDatabaseCheck(databaseId);
+      if (needsVerification) scheduleDatabaseCheck(databaseId);
       const retryKey = `${current.userId}:${current.workspaceId}:${databaseId}`;
       const retryTimer = retryTimers.current.get(retryKey);
 
@@ -559,7 +566,7 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
       }
 
       for (const context of deps.refs.registeredContexts.current.values()) {
-        if (context.collabType === Types.Database) {
+        if (context.collabType === Types.Database && hasOpenDatabase(context.doc.guid)) {
           databaseIds.add(context.doc.guid);
         }
       }
@@ -581,14 +588,15 @@ export function useDatabaseHistoryRestoreSync(deps: Dependencies) {
       window.removeEventListener('online', verifyAfterReconnect);
       window.removeEventListener('focus', verifyOnFocus);
     };
-  }, [deps.refs, deps.workspaceId, deps.userId, ensureDatabaseRestoreCurrent, tracker]);
+  }, [deps.refs, deps.workspaceId, deps.userId, ensureDatabaseRestoreCurrent, tracker, hasOpenDatabase]);
 
   const prepareDatabaseContext = useCallback((context: RegisterSyncContext) => {
     const databaseId = contextDatabaseId(context, rowDatabases.current);
 
-    // A view switch reuses the root context. Only opening the first root/row of
-    // a database expires its previous session's check; view IDs are never keys.
-    if (databaseId && !hasOpenDatabase(databaseId) && !resetting.current.has(databaseId)) {
+    // A view switch reuses the root context. Opening rows never expires the
+    // database check or starts a periodic timer of its own.
+    if (context.collabType === Types.Database && databaseId &&
+        !hasOpenDatabase(databaseId) && !resetting.current.has(databaseId)) {
       tracker.invalidateVerification(databaseId);
       const { workspaceId, userId } = latest.current;
 

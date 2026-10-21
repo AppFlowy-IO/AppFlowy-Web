@@ -47,10 +47,6 @@ const NIL = '00000000-0000-0000-0000-000000000000';
 // their active initialization; durable retries remain owned by the journal.
 const openingRowDocuments = new Map<string, Promise<YDoc>>();
 
-interface RestoreState {
-  database_restore_id: string | null;
-  version: string | null;
-}
 function requireMap(value: unknown): Y.Map<unknown> {
   if (!(value instanceof Y.Map)) throw new Error('The current row-page state is incomplete.');
   return value;
@@ -122,7 +118,7 @@ export async function prepareAtomicRowFirstBody(input: {
 }) {
   const { workspaceId, documentId, source, databaseDoc, rowDoc } = input;
   const databaseVersion = databaseDoc.version;
-  const localRestore = databaseDoc.databaseRestoreId ?? NIL;
+  const restoreId = databaseDoc.databaseRestoreId ?? NIL;
   const rowVersion = rowDoc.version;
   let retired = false;
   const onDestroy = () => {
@@ -145,26 +141,18 @@ export async function prepareAtomicRowFirstBody(input: {
         retired ||
         databaseDoc.version !== databaseVersion ||
         rowDoc.version !== rowVersion ||
-        (databaseDoc.databaseRestoreId ?? NIL) !== localRestore ||
+        (databaseDoc.databaseRestoreId ?? NIL) !== restoreId ||
         (fence && !isDatabaseStorageFenceCurrent(fence))
       ) {
         throw new Error('The row-page source or restore generation changed.');
       }
     });
-    const restorePath = `/api/workspace/${workspaceId}/database/${source.database_id}/restore-state`;
-    const readRestore = (currentOwner = owner, signal?: AbortSignal) =>
-      atomicRead<RestoreState>(currentOwner, restorePath, undefined, signal);
 
+    // The atomic command carries the live generation for server-side admission.
+    // Opening a row page only needs the local fence, not a restore-state request.
     fence = await captureDatabaseStorageFence(source.database_id, { required: true });
     owner.assertCurrent();
-    const before = await readRestore();
-    const restoreId = before.database_restore_id ?? NIL;
-
-    if (
-      restoreId !== localRestore ||
-      (before.version ?? undefined) !== databaseVersion ||
-      (fence.epoch !== null && fence.epoch !== restoreId)
-    )
+    if (fence.epoch !== null && fence.epoch !== restoreId)
       throw new Error('Reopen the database after its restore completes.');
 
     let preparedRecord: AtomicCreationRecord<'row-document'> | undefined;
@@ -198,10 +186,8 @@ export async function prepareAtomicRowFirstBody(input: {
     ): Promise<YDoc> => {
       if (receipt.result.database_restore_id !== restoreId)
         throw new Error('The row-page receipt belongs to another restore generation.');
-      const start = await readRestore(currentOwner, signal);
-
-      if ((start.database_restore_id ?? NIL) !== restoreId || (start.version ?? undefined) !== databaseVersion)
-        throw new Error('The database was restored before row-page activation.');
+      // The receipt identifies the committed generation. Validate the versioned
+      // snapshots and local fence before opening or changing caches.
       const readCollab = (objectId: string, collabType: Types) =>
         atomicRead<CollabState>(
           currentOwner,
@@ -261,13 +247,7 @@ export async function prepareAtomicRowFirstBody(input: {
             : contentFlag !== false)
         )
           throw new Error('The current row has not activated this body.');
-        const end = await readRestore(currentOwner, signal);
-
-        if (
-          (end.database_restore_id ?? NIL) !== restoreId ||
-          (end.version ?? undefined) !== databaseVersion ||
-          !(await matchesDatabaseStorageFence(fence!))
-        )
+        if (!(await matchesDatabaseStorageFence(fence!)))
           throw new Error('The database changed during row-page activation.');
         currentOwner.assertCurrent();
         // Opening the normal cache happens only after the durable ACK and independent
@@ -322,13 +302,6 @@ export async function prepareAtomicRowFirstBody(input: {
             }
           })
         );
-        const afterMetadata = await readRestore(currentOwner, signal);
-
-        if (
-          (afterMetadata.database_restore_id ?? NIL) !== restoreId ||
-          (afterMetadata.version ?? undefined) !== databaseVersion
-        )
-          throw new Error('The database changed while persisting row-page metadata.');
         await assertProviders();
         withDatabaseStorageFence(canonical, fence, () =>
           Y.applyUpdate(canonical, Y.encodeStateAsUpdate(document), CollabOrigin.Remote)
@@ -388,21 +361,16 @@ export async function prepareAtomicRowFirstBody(input: {
             { collab_type: type },
             signal
           );
-        const [database, row, restore] = await Promise.all([
+        const [database, row] = await Promise.all([
           read(source.database_id, Types.Database),
           read(source.row_id, Types.DatabaseRow).catch((error) => {
             if (determineErrorType(error).type === ErrorType.PageNotFound) return undefined;
             throw error;
           }),
-          readRestore(currentOwner, signal),
         ]);
 
         currentOwner.assertCurrent();
-        if (
-          (restore.database_restore_id ?? NIL) !== restoreId ||
-          (restore.version ?? undefined) !== databaseVersion ||
-          !(await matchesDatabaseStorageFence(fence!))
-        ) {
+        if (!(await matchesDatabaseStorageFence(fence!))) {
           throw new Error('The row source changed while normal sync was completing.');
         }
 
@@ -421,6 +389,8 @@ export async function prepareAtomicRowFirstBody(input: {
 
         // Atomic row creation already commits the Row and its database membership.
         // Legacy rows still awaiting durability use the atomic API's bounded RetryLater handling.
+        // Source reads validate collab versions, and publication validates the requested
+        // restore ID on the server. Polling readiness needs no additional restore-state GET.
         const row = await waitForRowDocumentSource(identity, {
           read: readSource,
           assertCurrent: currentOwner.assertCurrent,

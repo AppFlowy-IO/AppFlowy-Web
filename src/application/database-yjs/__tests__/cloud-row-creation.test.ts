@@ -2,6 +2,7 @@ import { toBase64 } from 'lib0/buffer';
 import { v4 as uuidv4 } from 'uuid';
 import * as Y from 'yjs';
 
+import { matchesDatabaseStorageFence } from '@/application/db';
 import { atomicRead } from '@/application/services/js-services/http/atomic-creation-api';
 import {
   postDefaultRowCreation,
@@ -160,6 +161,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockAvailable.mockReset();
   mockOwner.mockReset();
+  jest.mocked(matchesDatabaseStorageFence).mockResolvedValue(true);
 });
 
 it.each([
@@ -237,6 +239,19 @@ it.each([
     }
   }
 );
+
+it('creates and registers a row without restore-state checks', async () => {
+  const f = fixture();
+
+  try {
+    await expect(createCloudRow(f.intent)).resolves.toBe(f.intent.rowId);
+    expect(f.orders()).toEqual([{ id: f.intent.rowId }]);
+    expect(f.registerRow).toHaveBeenCalledTimes(1);
+    expect(atomicRead).not.toHaveBeenCalled();
+  } finally {
+    f.cleanup();
+  }
+});
 
 it('keeps row storage, membership, and binding untouched until the server commits', async () => {
   const f = fixture();
@@ -401,19 +416,16 @@ it('reports a confirmed commit separately when local activation cannot finish, w
   }
 });
 
-it('checks the remote restore boundary after commit before publishing the activation', async () => {
+it('checks the local storage fence after commit before publishing the activation', async () => {
   const f = fixture();
 
-  jest
-    .mocked(atomicRead)
-    .mockResolvedValueOnce({ database_restore_id: null, version: null })
-    .mockResolvedValueOnce({ database_restore_id: uuidv4(), version: null });
+  jest.mocked(matchesDatabaseStorageFence).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
   try {
     await expect(createCloudRow(f.intent)).rejects.toMatchObject({
       rowId: f.intent.rowId,
       user_error: { reason: 'ATOMIC_ROW_CREATED_RELOAD' },
     });
-    expect(atomicRead).toHaveBeenCalledTimes(2);
+    expect(atomicRead).not.toHaveBeenCalled();
     expect(f.orders()).toEqual([]);
     expect(openCachedRow).not.toHaveBeenCalled();
     expect(f.registerRow).not.toHaveBeenCalled();

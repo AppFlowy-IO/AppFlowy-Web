@@ -368,15 +368,18 @@ describe('atomic row-page activation', () => {
     try {
       await jest.advanceTimersByTimeAsync(0);
       expect(submit).not.toHaveBeenCalled();
+      expect((atomic.atomicRead as jest.Mock).mock.calls.filter((call) => call[1].endsWith('/restore-state'))).toHaveLength(0);
       rowSynced = true;
       await jest.advanceTimersToNextTimerAsync();
       expect(submit).not.toHaveBeenCalled();
+      expect((atomic.atomicRead as jest.Mock).mock.calls.filter((call) => call[1].endsWith('/restore-state'))).toHaveLength(0);
       // Deliver the normal database sync update independently of the Row body.
       Y.applyUpdate(f.remoteDatabase, Y.encodeStateAsUpdate(localDatabase));
       await jest.advanceTimersToNextTimerAsync();
       await expect(publication).resolves.toBe(f.cached);
       expect(submit).toHaveBeenCalledTimes(1);
       expect(collabFullSyncBatch).not.toHaveBeenCalled();
+      expect((atomic.atomicRead as jest.Mock).mock.calls.filter((call) => call[1].endsWith('/restore-state'))).toHaveLength(0);
     } finally {
       session.dispose();
       localDatabase.destroy();
@@ -385,7 +388,7 @@ describe('atomic row-page activation', () => {
   });
 
   it.each(['blank schema', 'authored content'])(
-    'creates a row page with %s without a preliminary full-sync',
+    'creates a row page with %s without restore-state checks or preliminary full-sync',
     async (content) => {
       const f = setup();
       const submit = jest.fn();
@@ -405,6 +408,7 @@ describe('atomic row-page activation', () => {
         await expect(opening).resolves.toBe(f.cached);
         expect(submit).toHaveBeenCalledTimes(1);
         expect(collabFullSyncBatch).not.toHaveBeenCalled();
+        expect((atomic.atomicRead as jest.Mock).mock.calls.filter((call) => call[1].endsWith('/restore-state'))).toHaveLength(0);
       } finally {
         session.dispose();
       }
@@ -469,6 +473,37 @@ describe('atomic row-page activation', () => {
     );
     session.dispose();
   });
+
+  it.each(['snapshot reads', 'cache metadata reads'])(
+    'refuses a local restore during %s before applying canonical content',
+    async (stage) => {
+      const f = setup();
+      const session = await prepareAtomicRowFirstBody(f.input);
+      const originalRead = (atomic.atomicRead as jest.Mock).getMockImplementation()!;
+
+      (atomic.atomicRead as jest.Mock).mockImplementation((owner, path) => {
+        if (stage === 'snapshot reads' && path.endsWith(`/${ids.document}`))
+          jest.mocked(matchesDatabaseStorageFence).mockResolvedValue(false);
+        return originalRead(owner, path);
+      });
+      if (stage === 'cache metadata reads') {
+        f.documentProvider.get.mockImplementation(async () => {
+          jest.mocked(matchesDatabaseStorageFence).mockResolvedValue(false);
+          return undefined;
+        });
+      }
+
+      try {
+        await expect(session.createEmpty()).rejects.toThrow('changed');
+        expect(f.cached.getMap('data').size).toBe(0);
+        expect(f.input.rowDoc.getMap('data').size).toBe(0);
+        if (stage === 'snapshot reads') expect(getOrCreateRowSubDoc).not.toHaveBeenCalled();
+        expect(f.rowProvider.whenPersisted).not.toHaveBeenCalled();
+      } finally {
+        session.dispose();
+      }
+    }
+  );
 
   it('waits for a locally created hidden template Row snapshot before publishing its body', async () => {
     jest.useFakeTimers();
@@ -560,8 +595,8 @@ describe('atomic row-page activation', () => {
       (atomic.atomicRead as jest.Mock).mockImplementation((owner, path) => {
         if (failure === 'permission' && path.endsWith(`/${ids.row}`))
           return Promise.reject(new Error('permission denied'));
-        if (failure === 'restore' && path.endsWith('restore-state'))
-          return Promise.resolve({ database_restore_id: 'new-restore', version: null });
+        if (failure === 'restore' && path.endsWith(`/${ids.database}`))
+          return Promise.resolve({ ...state(f.remoteDatabase), collab_version: 'restored-database-version' });
         return originalRead(owner, path);
       });
       if (failure === 'identity')
@@ -610,10 +645,12 @@ describe('atomic row-page activation', () => {
     session.dispose();
   });
 
-  it('rejects a changed Database version before exposing the detached draft', async () => {
+  it('rejects a changed local database generation before exposing the detached draft', async () => {
     const { input } = setup();
 
-    input.databaseDoc.version = 'old-database-version';
+    jest.mocked(captureDatabaseStorageFence).mockResolvedValue({
+      databaseId: ids.database, epoch: 'new-restore', cacheEpoch: 'new-restore',
+    });
     await expect(prepareAtomicRowFirstBody(input)).rejects.toThrow('restore');
     expect(getOrCreateRowSubDoc).not.toHaveBeenCalled();
     expect(atomic.runAtomicCreation).not.toHaveBeenCalled();
