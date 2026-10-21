@@ -317,7 +317,6 @@ export function AIMeetingImportActions({ state, showWelcome }: { state: AIMeetin
           workspaceId={state.workspaceId}
           language={state.language}
           mediaDisabled={!state.available || state.busy || state.quotaExceeded}
-          maxBytes={state.usage?.single_upload_unlimited ? undefined : state.usage?.single_upload_limit}
           clipboardText={clipboardText}
           onFailure={state.reportError}
           onClose={() => setUrlOpen(false)}
