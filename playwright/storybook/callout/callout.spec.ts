@@ -1,4 +1,4 @@
-import { expect, Page, test } from '@playwright/test';
+import { expect, Locator, Page, test } from '@playwright/test';
 
 async function tokenColor(page: Page, token: string) {
   return page.evaluate((name) => {
@@ -14,11 +14,13 @@ async function tokenColor(page: Page, token: string) {
 }
 
 const block = (page: Page) => page.getByTestId('callout').first();
-async function menu(page: Page, text = 'Hello World') {
+async function menu(page: Page, target: string | Locator = 'Hello World') {
+  const trigger = typeof target === 'string' ? page.getByText(target, { exact: true }) : target;
+
   // Initial editor layout can reset the hover controls; move again after that settles.
   await expect(async () => {
     await page.mouse.move(0, 0);
-    await page.getByText(text, { exact: true }).hover();
+    await trigger.hover();
     await expect(page.getByTestId('hover-controls')).toHaveCSS('opacity', '1', { timeout: 500 });
   }).toPass({ timeout: 5000 });
   await page.getByTestId('drag-block').click();
@@ -250,8 +252,7 @@ test('Page conversion copies the callout title, icon and nested body and closes 
 test('empty callouts also show whole-block selection and offer Page conversion', async ({ page }) => {
   const callout = page.getByTestId('callout').nth(2);
 
-  await callout.hover();
-  await page.getByTestId('drag-block').click();
+  await menu(page, callout);
   await expect(callout).toHaveAttribute('data-selected', 'true');
   await expect(callout).toHaveCSS('background-color', await tokenColor(page, '--fill-theme-select'));
   await page.getByTestId('controls-menu').getByRole('button', { name: 'Turn into', exact: true }).click();
