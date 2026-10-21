@@ -466,6 +466,7 @@ test.describe('Database row templates (Desktop parity)', () => {
     const initialMenu = await openTemplateMenu(page);
 
     await expect(initialMenu.getByText('No templates yet')).toBeVisible();
+    await expect(initialMenu.getByRole('menuitem', { name: 'Empty row', exact: true })).toBeVisible();
     const splitButtonBox = await page.getByTestId('database-template-split-button').boundingBox();
     const initialMenuSize = await initialMenu.evaluate((element) => {
       const style = getComputedStyle(element);
@@ -486,8 +487,9 @@ test.describe('Database row templates (Desktop parity)', () => {
 
     expect(splitButtonBox?.height).toBe(28);
     expect(initialMenuSize.width).toBe(300);
-    expect(initialMenuSize.height).toBeGreaterThanOrEqual(126);
-    expect(initialMenuSize.height).toBeLessThanOrEqual(130);
+    // The Empty row action and its separator add 33px to the empty template menu.
+    expect(initialMenuSize.height).toBeGreaterThanOrEqual(159);
+    expect(initialMenuSize.height).toBeLessThanOrEqual(163);
     expect(headerStyle).toEqual({ fontSize: '12px', fontWeight: '500', lineHeight: '14px' });
     expect(emptyLineHeight).toBe('16px');
     expect(footerLineHeight).toBe('16px');

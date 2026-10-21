@@ -15,6 +15,7 @@ import { initialDatabaseRow } from '@/application/database-yjs/row';
 import { getMetaIdMap, getRowKey } from '@/application/database-yjs/row_meta';
 import { DatabaseRowTemplateStore } from '@/application/database-yjs/template';
 import templateInterop from '@/application/database-yjs/template/__tests__/fixtures/row_template_interop.json';
+import { getCachedProviderDoc } from '@/application/db';
 import {
   CoverType,
   DatabaseViewLayout,
@@ -753,6 +754,90 @@ describe('useNewRowDispatch database templates', () => {
     database.get(YjsDatabaseKey.views)?.forEach((view) => {
       expect(view.get(YjsDatabaseKey.row_orders)?.toArray()).toEqual([]);
     });
+  });
+
+  it('reports a missing default template after one source read without submitting or changing the default', async () => {
+    const { doc, database } = createDatabaseDoc();
+    const template = addTemplate(database, { empty: false, makeDefault: true });
+    const before = new DatabaseRowTemplateStore(database).read();
+    const missing = { code: -2, message: 'Collab not found' };
+    const loadRowDocument = jest.fn().mockRejectedValue(missing);
+    const createRow = jest.fn();
+    const navigateToRow = jest.fn();
+    const context: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc: doc,
+      databasePageId: viewId,
+      activeViewId: viewId,
+      rowMap: {},
+      workspaceId: 'workspace-id',
+      createRow,
+      loadRowDocument,
+      navigateToRow,
+    };
+    const { result } = renderHook(() => useNewRowDispatch(), { wrapper: createWrapper(context) });
+
+    await act(async () => {
+      await expect(result.current({ openAfterCreate: true })).rejects.toMatchObject({
+        sourceDomain: 'client',
+        user_error: { reason: 'ROW_TEMPLATE_CONTENT_UNAVAILABLE' },
+      });
+    });
+
+    expect(loadRowDocument).toHaveBeenCalledTimes(1);
+    expect(loadRowDocument).toHaveBeenCalledWith(template.docViewId, { maxAttempts: 1 });
+    expect(mockCreateCloudRow).not.toHaveBeenCalled();
+    expect(createRow).not.toHaveBeenCalled();
+    expect(navigateToRow).not.toHaveBeenCalled();
+    expect(new DatabaseRowTemplateStore(database).read()).toEqual(before);
+    database.get(YjsDatabaseKey.views).forEach((view) => {
+      expect(view.get(YjsDatabaseKey.row_orders).toArray()).toEqual([]);
+    });
+
+    // The first failed read can leave an IndexedDB-backed empty shell cached.
+    // Retrying must not use that shell as the source document.
+    const shell = new Y.Doc({ guid: template.docViewId }) as YDoc;
+
+    jest.mocked(getCachedProviderDoc).mockReturnValueOnce(shell);
+    await act(async () => {
+      await expect(result.current({ openAfterCreate: true })).rejects.toMatchObject({
+        user_error: { reason: 'ROW_TEMPLATE_CONTENT_UNAVAILABLE' },
+      });
+    });
+    expect(loadRowDocument).toHaveBeenCalledTimes(2);
+    expect(loadRowDocument).toHaveBeenLastCalledWith(template.docViewId, { maxAttempts: 1 });
+    expect(mockCreateCloudRow).not.toHaveBeenCalled();
+    expect(new DatabaseRowTemplateStore(database).read()).toEqual(before);
+    shell.destroy();
+  });
+
+  it.each([
+    { code: 1012, message: 'Permission denied' },
+    { code: -5, message: 'Source is temporarily unavailable' },
+    new Error('Network unavailable'),
+  ])('preserves a non-missing template source error: %j', async (error) => {
+    const { doc, database } = createDatabaseDoc();
+    const template = addTemplate(database, { empty: false, makeDefault: true });
+    const loadRowDocument = jest.fn().mockRejectedValue(error);
+    const context: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc: doc,
+      databasePageId: viewId,
+      activeViewId: viewId,
+      rowMap: {},
+      workspaceId: 'workspace-id',
+      createRow: jest.fn(),
+      loadRowDocument,
+    };
+    const { result } = renderHook(() => useNewRowDispatch(), { wrapper: createWrapper(context) });
+
+    await act(async () => {
+      await expect(result.current({})).rejects.toBe(error);
+    });
+
+    expect(loadRowDocument).toHaveBeenCalledWith(template.docViewId, { maxAttempts: 1 });
+    expect(mockCreateCloudRow).not.toHaveBeenCalled();
+    expect(new DatabaseRowTemplateStore(database).read().defaultTemplateId).toBe(template.templateId);
   });
 
   it.each([

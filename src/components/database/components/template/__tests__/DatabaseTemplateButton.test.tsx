@@ -514,6 +514,53 @@ describe('DatabaseTemplateButton', () => {
     expect(navigateToRow).toHaveBeenCalledWith(rowId);
   });
 
+  it('offers an explicit empty row after a missing default template without changing that default', async () => {
+    const { Wrapper, context, database, view, rows, navigateToRow } = setup();
+    const store = new DatabaseRowTemplateStore(database);
+    const template = store.upsert({
+      templateId: '50000000-0000-4000-8000-000000000005',
+      name: 'Unavailable default',
+      docViewId: '60000000-0000-4000-8000-000000000006',
+      isDocumentEmpty: false,
+      embeddedDatabases: [],
+      defaultCells: { [nameFieldId]: { type: 'text', value: 'From default' } },
+      createdAtMs: 1,
+      updatedAtMs: 1,
+    });
+
+    store.setDefault(template.templateId);
+    const before = store.read();
+    const loadRowDocument = jest.fn().mockRejectedValue({ code: -2, message: 'Collab not found' });
+
+    context.loadRowDocument = loadRowDocument;
+    render(<DatabaseTemplateButton />, { wrapper: Wrapper });
+    fireEvent.click(screen.getByTestId('database-new-row-button'));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(
+      'The selected row template content is unavailable. Choose Empty row to create without a template.'
+    ));
+    expect(createCloudRow).not.toHaveBeenCalled();
+    expect(view.get(YjsDatabaseKey.row_orders)).toHaveLength(0);
+    expect(navigateToRow).not.toHaveBeenCalled();
+    expect(store.read()).toEqual(before);
+
+    await openMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Empty row' }));
+    await waitFor(() => expect(view.get(YjsDatabaseKey.row_orders)).toHaveLength(1));
+
+    const rowId = view.get(YjsDatabaseKey.row_orders).get(0).id;
+    const rowDoc = rows.get(getRowKey(databaseDocId, rowId)) as YDoc;
+    const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+
+    expect(row.get(YjsDatabaseKey.cells).get(nameFieldId)).toBeUndefined();
+    expect(createCloudRow).toHaveBeenCalledTimes(1);
+    expect(jest.mocked(createCloudRow).mock.calls[0][0].template).toBeUndefined();
+    expect(loadRowDocument).toHaveBeenCalledTimes(1);
+    expect(loadRowDocument).toHaveBeenCalledWith(template.docViewId, { maxAttempts: 1 });
+    expect(store.read()).toEqual(before);
+    expect(navigateToRow).toHaveBeenCalledWith(rowId);
+  });
+
   it('syncs the template name and emoji to its orphan view when the editor closes', async () => {
     const { Wrapper, context, database, rows, updatePage } = setup();
 

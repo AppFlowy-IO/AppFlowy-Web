@@ -2094,6 +2094,8 @@
     },
     "rowTemplate": {
       "templatesFor": "Templates for {{databaseName}}",
+      "emptyRow": "Empty row",
+      "contentUnavailable": "The selected row template content is unavailable. Choose Empty row to create without a template.",
       "noTemplatesYet": "No templates yet",
       "newTemplate": "New template",
       "deleteTemplate": "Delete template?",
