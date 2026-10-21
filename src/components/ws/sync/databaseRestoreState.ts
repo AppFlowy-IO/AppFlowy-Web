@@ -9,16 +9,21 @@ export interface DatabaseRestoreState {
   storageEpoch?: string | null;
 }
 
+interface DatabaseRestoreHint {
+  restoreId?: string;
+  rootVersion?: string;
+}
+
 /** Per-tab authority: another tab updating durable caches never updates live documents here. */
 export class DatabaseRestoreTracker {
   private readonly markers = new Map<string, string | null>();
   private readonly checks = new Map<string, Promise<boolean>>();
   private readonly revisions = new Map<string, number>();
-  private readonly hints = new Map<string, { restoreId?: string }>();
-  private readonly verifiedHints = new Map<string, { restoreId?: string } | undefined>();
+  private readonly hints = new Map<string, DatabaseRestoreHint>();
+  private readonly verifiedHints = new Map<string, DatabaseRestoreHint | undefined>();
   private readonly verifiedAt = new Map<string, number>();
   private readonly failures = new Map<string, {
-    error: unknown; retryAt: number; hint: { restoreId?: string } | undefined;
+    error: unknown; retryAt: number; hint: DatabaseRestoreHint | undefined;
   }>();
   private observedRestore = false;
 
@@ -58,11 +63,20 @@ export class DatabaseRestoreTracker {
     return this.observedRestore;
   }
 
-  /** A root version boundary has no restore ID but still invalidates earlier authority reads. */
-  observeRestoreHint(databaseId: string, restoreId?: string): void {
+  /** Repeated evidence shares verification; a different version or restore invalidates it. */
+  observeRestoreHint(databaseId: string, restoreId?: string, rootVersion?: string): void {
     this.observedRestore = true;
-    if (restoreId === undefined || this.hints.get(databaseId)?.restoreId !== restoreId) {
-      this.hints.set(databaseId, { restoreId });
+    const previous = this.hints.get(databaseId);
+
+    if ((restoreId === undefined && rootVersion === undefined) || !previous ||
+        (restoreId !== undefined && previous.restoreId !== restoreId) ||
+        (rootVersion !== undefined && previous.rootVersion !== rootVersion)) {
+      // Root frames and restore notifications carry different parts of the same
+      // evidence. Keep both so alternating sources do not expire each other.
+      this.hints.set(databaseId, {
+        restoreId: restoreId ?? previous?.restoreId,
+        rootVersion: rootVersion ?? previous?.rootVersion,
+      });
     }
   }
 

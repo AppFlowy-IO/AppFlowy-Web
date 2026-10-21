@@ -233,7 +233,7 @@ test('a permission denial cancels the routine timer established by an earlier su
 
   await act(async () => {
     expect(await result.current.ensureDatabaseRestoreCurrent('database', Types.Database)).toBe(true);
-    expect(await result.current.ensureDatabaseRestoreCurrent('database', Types.Database, undefined, true)).toBe(false);
+    expect(await result.current.ensureDatabaseRestoreCurrent('database', Types.Database, undefined, 'new-version')).toBe(false);
   });
   await act(async () => { jest.advanceTimersByTime(600_000); });
   expect(getDatabaseRestoreState).toHaveBeenCalledTimes(2);
@@ -593,7 +593,7 @@ test('a first version-mismatch probe does not turn historical hydration into a l
   }), { wrapper: databaseNoticeWrapper(events) });
 
   await act(async () => {
-    await result.current.ensureDatabaseRestoreCurrent('database', Types.Database, undefined, true);
+    await result.current.ensureDatabaseRestoreCurrent('database', Types.Database, undefined, 'new-version');
   });
   expect(restored).toHaveBeenCalledWith({
     workspaceId: 'workspace', databaseId: 'database', restoreId: 'restore-new', isInitialHydration: true,
@@ -689,6 +689,61 @@ test.each([['update', false], ['manifest', false], ['update', true], ['manifest'
   unmount();
 });
 
+test.each([
+  ['update', undefined, null],
+  ['manifest', '11111111-1111-4111-8111-111111111111', null],
+  ['update', '11111111-1111-4111-8111-111111111111', 'restore-current'],
+  ['manifest', undefined, 'restore-current'],
+] as const)('reuses verification for repeated root %s hints (local version: %s, restore: %s)', async (kind, version, marker) => {
+  jest.useFakeTimers();
+  const f = fixture();
+  const events = new EventEmitter();
+  const partialRoot = new Y.Doc();
+
+  f.root.version = version;
+  partialRoot.getMap('data').set('partial-frame', true);
+  if (marker) localStorage.setItem('af_database_restore:v1:server:user:workspace:database', marker);
+  jest.mocked(getDatabaseRestoreState).mockResolvedValue({ database_restore_id: marker, version: version ?? null });
+  const { result, unmount } = renderHook(() => {
+    const refs = useSyncRefs();
+
+    Object.assign(refs, f.refs);
+    const restore = useDatabaseHistoryRestoreSync({
+      refs, workspaceId: 'workspace', userId: 'user', enabled: true, capabilityLoaded: true,
+      eventEmitter: events, register: f.register, unregister: f.unregister, scheduleDeferredCleanup: jest.fn(),
+    });
+
+    return useCollabMessageHandler(refs, undefined, undefined, events, f.register, jest.fn(), restore.ensureDatabaseRestoreCurrent);
+  });
+  const deliver = async (incomingVersion: string) => {
+    await act(async () => {
+      expect(await result.current.enqueueIncomingCollabMessage({
+        objectId: 'database', collabType: Types.Database,
+        ...(kind === 'update'
+          ? { update: { version: incomingVersion, databaseRestoreId: marker ?? undefined,
+            flags: 0, payload: Y.encodeStateAsUpdate(partialRoot) } }
+          : { syncRequest: { version: incomingVersion, stateVector: Y.encodeStateVector(partialRoot) } }),
+      })).toBe(false);
+    });
+  };
+
+  try {
+    for (let i = 0; i < 10; i++) await deliver('22222222-2222-4222-8222-222222222222');
+    expect(getDatabaseRestoreState).toHaveBeenCalledTimes(1);
+    expect(f.root.version).toBe(version);
+    expect(f.root.getMap('data').has('partial-frame')).toBe(false);
+
+    // Different evidence must still bypass the recent check immediately.
+    await deliver('33333333-3333-4333-8333-333333333333');
+    expect(getDatabaseRestoreState).toHaveBeenCalledTimes(2);
+    await act(async () => { jest.advanceTimersByTime(300_000); });
+    expect(getDatabaseRestoreState).toHaveBeenCalledTimes(3);
+  } finally {
+    unmount();
+    partialRoot.destroy();
+  }
+});
+
 test('a root version hint cannot reset only the root when aggregate authority is denied', async () => {
   const f = fixture();
   const events = new EventEmitter();
@@ -752,7 +807,7 @@ test.each(['notification', 'stamped response', 'root version'])('a %s arriving d
     } else if (evidence === 'stamped response') {
       void result.current.ensureDatabaseRestoreCurrent('database', Types.Database, 'restore-new');
     } else {
-      void result.current.ensureDatabaseRestoreCurrent('database', Types.Database, undefined, true);
+      void result.current.ensureDatabaseRestoreCurrent('database', Types.Database, undefined, 'new-version');
     }
 
     finishStaleRead({ database_restore_id: 'restore-old', version: 'same-version' });

@@ -46,7 +46,7 @@ export function useCollabMessageHandler(
   eventEmitter: EventEmitter,
   registerSyncContext: (context: RegisterSyncContext) => SyncContext,
   scheduleDeferredCleanup: (objectId: string, delayMs?: number) => void,
-  beforeApply?: (objectId: string, type: Types, marker?: string, rootVersionChanged?: boolean) => Promise<boolean>,
+  beforeApply?: (objectId: string, type: Types, marker?: string, rootVersionHint?: string) => Promise<boolean>,
   subscribeBcCollabMessages?: BroadcastChannelType['subscribeCollabMessages']
 ) {
   const lastHandledWsMessageRef = useRef<ICollabMessage | null>(null);
@@ -81,7 +81,7 @@ export function useCollabMessageHandler(
         const rootVersionChanged = message.collabType === Types.Database && contextBeforeCheck &&
           isCollabVersionId(rootVersion) && rootVersion !== contextBeforeCheck.doc.version;
         const allowed = rootVersionChanged
-          ? await beforeApply(objectId, message.collabType, marker, true)
+          ? await beforeApply(objectId, message.collabType, marker, rootVersion)
           : await beforeApply(objectId, message.collabType, marker);
 
         // A root branch switch belongs to aggregate recovery. Its partial frame must never
