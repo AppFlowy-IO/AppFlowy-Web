@@ -12,6 +12,7 @@ import {
   SortCondition,
 } from '@/application/database-yjs/database.type';
 import { useSwitchPropertyType } from '@/application/database-yjs/dispatch';
+import { applyFilterUpdate } from '@/application/database-yjs/dispatch/filter-update';
 import {
   CheckboxFilterCondition,
   DateFilterCondition,
@@ -1374,8 +1375,18 @@ describe('formula property insertions', () => {
 });
 
 describe('date formula filter selectors', () => {
+  it('preserves the relative day when editing a date formula comparison', () => {
+    const f = fixture('today()');
+
+    f.filters.push([dataFilter(DateFilterCondition.DateStartsToday)]);
+    applyFilterUpdate(f.filters, f.fields, { filterId: 'filter', condition: DateFilterCondition.DateStartsBefore });
+    expect(JSON.parse(f.filters.get(0).get(YjsDatabaseKey.content))).toEqual({ relative_date: 'Today' });
+  });
+
   it.each([
     [DateFilterCondition.DateStartsOn, { timestamp: 1700000000 }],
+    [DateFilterCondition.DateStartsBefore, { relative_date: 'Today' }],
+    [DateFilterCondition.DateEndsOnOrAfter, { relative_date: 'Yesterday' }],
     [DateFilterCondition.DateStartsBetween, { start: 1700000000, end: 1700086400 }],
   ])('preserves saved date selections for condition %s', (condition, selection) => {
     const f = fixture('today()');
@@ -1409,6 +1420,19 @@ describe('time-dependent formulas', () => {
   });
   afterEach(() => {
     jest.useRealTimers();
+  });
+
+  it('re-evaluates Before Today against a cached fixed formula date after midnight', () => {
+    jest.setSystemTime(new Date('2026-01-02T23:59:59'));
+    const f = fixture('parseDate("2026-01-02")');
+
+    f.filters.push([dataFilter(DateFilterCondition.DateStartsBefore, '{"relative_date":"Today"}')]);
+    const { result, unmount } = renderHook(useRowOrdersSelector, { wrapper: f.wrapper });
+
+    expect(result.current).toEqual([]);
+    act(() => { jest.advanceTimersByTime(1100); });
+    expect(result.current?.map((row) => row.id)).toEqual([f.rowId]);
+    unmount();
   });
 
   it('refreshes indirect now() cells and footers and releases the shared timer', () => {

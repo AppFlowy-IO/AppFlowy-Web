@@ -1,8 +1,15 @@
 import { YDatabaseFields, YDatabaseFilter, YDatabaseFilters, YjsDatabaseKey as K } from '@/application/types';
 
 import { FieldType } from '../database.type';
+import { dateFilterContentForCondition } from '../fields/date/relativeDate';
 import { RollupFilterMetadata } from '../fields/rollup/rollup.type';
-import { newRollupFilterMetadata, parseRollupFilterMetadata, rollupConfigurationMatches } from '../rollup/filter';
+import { formulaPredicateFieldType } from '../formula/filter';
+import {
+  newRollupFilterMetadata,
+  parseRollupFilterMetadata,
+  rollupConfigurationMatches,
+  rollupPredicateType,
+} from '../rollup/filter';
 
 export interface UpdateFilterParams {
   filterId: string;
@@ -39,7 +46,27 @@ export function applyFilterUpdate(filters: YDatabaseFilters, fields: YDatabaseFi
         return node;
       const updates: Record<string, unknown> = {};
 
-      if (params.condition !== undefined) updates[K.condition] = params.condition;
+      if (params.condition !== undefined) {
+        updates[K.condition] = params.condition;
+        const type = field ? Number(field.get(K.type)) : Number(get(K.type));
+        const predicateType =
+          type === FieldType.Formula && field
+            ? formulaPredicateFieldType(field, fields)
+            : type === FieldType.Rollup
+            ? rollupPredicateType(
+                { rollupMetadata: metadata, rollupTargetFieldType: get(K.rollup_target_type) as FieldType },
+                field
+              )
+            : type;
+
+        if ([FieldType.DateTime, FieldType.CreatedTime, FieldType.LastEditedTime].includes(predicateType)) {
+          const content = String(get(K.content) ?? '');
+          const nextContent = dateFilterContentForCondition(Number(get(K.condition)), params.condition, content);
+
+          if (nextContent !== content) updates[K.content] = nextContent;
+        }
+      }
+
       if (params.content !== undefined) updates[K.content] = params.content;
       if (params.transformContent) updates[K.content] = params.transformContent(String(get(K.content) ?? ''));
       if (params.rollupMetadata !== undefined) updates[K.rollup_meta] = { ...metadata, ...params.rollupMetadata };

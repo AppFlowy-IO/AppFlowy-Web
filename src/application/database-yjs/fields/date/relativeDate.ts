@@ -1,10 +1,6 @@
 import dayjs, { Dayjs } from 'dayjs';
 
-import {
-  DateFilter,
-  DateFilterCondition,
-  DateFilterRelativeCondition,
-} from './date.type';
+import { DateFilter, DateFilterCondition, DateFilterRelativeCondition, DateFilterRelativeDate } from './date.type';
 
 export function relativeConditionFor(condition: DateFilterCondition): DateFilterRelativeCondition | null {
   switch (condition) {
@@ -37,10 +33,10 @@ export function isRelativeDateCondition(condition: DateFilterCondition): boolean
 
 const START_END_PAIRS: ReadonlyArray<readonly [DateFilterCondition, DateFilterCondition]> = [
   [DateFilterCondition.DateStartsOn, DateFilterCondition.DateEndsOn],
-  [DateFilterCondition.DateStartsBefore, DateFilterCondition.DateEndsAfter],
-  [DateFilterCondition.DateStartsAfter, DateFilterCondition.DateEndsBefore],
-  [DateFilterCondition.DateStartsOnOrBefore, DateFilterCondition.DateEndsOnOrAfter],
-  [DateFilterCondition.DateStartsOnOrAfter, DateFilterCondition.DateEndsOnOrBefore],
+  [DateFilterCondition.DateStartsBefore, DateFilterCondition.DateEndsBefore],
+  [DateFilterCondition.DateStartsAfter, DateFilterCondition.DateEndsAfter],
+  [DateFilterCondition.DateStartsOnOrBefore, DateFilterCondition.DateEndsOnOrBefore],
+  [DateFilterCondition.DateStartsOnOrAfter, DateFilterCondition.DateEndsOnOrAfter],
   [DateFilterCondition.DateStartsBetween, DateFilterCondition.DateEndsBetween],
   [DateFilterCondition.DateStartIsEmpty, DateFilterCondition.DateEndIsEmpty],
   [DateFilterCondition.DateStartIsNotEmpty, DateFilterCondition.DateEndIsNotEmpty],
@@ -72,10 +68,70 @@ export function toEndDateCondition(condition: DateFilterCondition): DateFilterCo
   return condition;
 }
 
+export function isDateComparisonCondition(condition: DateFilterCondition): boolean {
+  return [
+    DateFilterCondition.DateStartsOn,
+    DateFilterCondition.DateStartsBefore,
+    DateFilterCondition.DateStartsAfter,
+    DateFilterCondition.DateStartsOnOrBefore,
+    DateFilterCondition.DateStartsOnOrAfter,
+  ].includes(toStartDateCondition(condition));
+}
+
+export function relativeDateForFilter(
+  filter: Pick<DateFilter, 'condition' | 'relative_date'>
+): DateFilterRelativeDate | undefined {
+  switch (relativeConditionFor(filter.condition)) {
+    case DateFilterRelativeCondition.Today:
+      return DateFilterRelativeDate.Today;
+    case DateFilterRelativeCondition.Yesterday:
+      return DateFilterRelativeDate.Yesterday;
+    case DateFilterRelativeCondition.Tomorrow:
+      return DateFilterRelativeDate.Tomorrow;
+  }
+
+  if (filter.relative_date && isDateComparisonCondition(filter.condition)) {
+    switch (filter.relative_date) {
+      case DateFilterRelativeDate.Today:
+      case DateFilterRelativeDate.Yesterday:
+      case DateFilterRelativeDate.Tomorrow:
+        return filter.relative_date;
+    }
+  }
+}
+
+function relativeDateFromContent(condition: DateFilterCondition, content: unknown) {
+  try {
+    const data = typeof content === 'string' && content ? JSON.parse(content) : {};
+
+    return relativeDateForFilter({ ...data, condition });
+  } catch {
+    return relativeDateForFilter({ condition });
+  }
+}
+
+export function isRelativeDateFilter(condition: DateFilterCondition, content: unknown): boolean {
+  return isRelativeDateCondition(condition) || relativeDateFromContent(condition, content) !== undefined;
+}
+
+// Preserve the selected day when editing the operator, including legacy Today rules.
+// Conditions without a single date operand must not retain a hidden relative value.
+export function dateFilterContentForCondition(
+  previous: DateFilterCondition,
+  next: DateFilterCondition,
+  content: string
+) {
+  const relative = relativeDateFromContent(previous, content);
+
+  if (relative && isDateComparisonCondition(next)) return JSON.stringify({ relative_date: relative });
+  if (relative || isRelativeDateCondition(previous) || isRelativeDateCondition(next)) return '';
+  return content;
+}
+
 // Mirrors desktop: week starts on Monday (ISO 8601). Returns inclusive [start, end] dates.
 export function dateRangeForRelative(
   relative: DateFilterRelativeCondition,
-  today: Dayjs = dayjs(),
+  today: Dayjs = dayjs()
 ): { start: Dayjs; end: Dayjs } {
   const startOfToday = today.startOf('day');
 
@@ -114,7 +170,21 @@ function weekRange(today: Dayjs, offsetDays: number): { start: Dayjs; end: Dayjs
 
 // Returns a filter copy with relative-date conditions resolved into start/end timestamps
 // anchored at today's local date. For non-relative conditions this returns the filter as-is.
-export function resolveRelativeDates(filter: DateFilter, today: Dayjs = dayjs()): DateFilter {
+export function resolveRelativeDates(filter: DateFilter, today?: Dayjs): DateFilter {
+  const operand = relativeDateForFilter(filter);
+
+  if (operand) {
+    const offset =
+      operand === DateFilterRelativeDate.Yesterday ? -1 : operand === DateFilterRelativeDate.Tomorrow ? 1 : 0;
+
+    return {
+      ...filter,
+      timestamp: (today ?? dayjs()).startOf('day').add(offset, 'day').unix(),
+      start: undefined,
+      end: undefined,
+    };
+  }
+
   const relative = relativeConditionFor(filter.condition);
 
   if (!relative) return filter;
