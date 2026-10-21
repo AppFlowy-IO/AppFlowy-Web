@@ -1,5 +1,5 @@
 import { useReadOnly } from '@/application/database-yjs/context';
-import { useUpdateFilter } from '@/application/database-yjs/dispatch';
+import { useUpdateFilter } from '@/application/database-yjs/dispatch/sort-filter';
 import { DateFilter } from '@/application/database-yjs/fields/date/date.type';
 
 import DateFilterValuePicker from './DateFilterValuePicker';

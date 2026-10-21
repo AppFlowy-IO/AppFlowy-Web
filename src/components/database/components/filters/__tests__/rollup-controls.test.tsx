@@ -74,6 +74,7 @@ jest.mock('@/application/database-yjs/dispatch', () => ({
 }));
 jest.mock('@/application/database-yjs/dispatch/sort-filter', () => ({
   ...jest.requireActual('@/application/database-yjs/dispatch/sort-filter'),
+  useUpdateFilter: () => mockUpdate,
   useUpdateAdvancedFilter: () => mockUpdate,
 }));
 jest.mock('@/components/database/components/property/rollup/useRollupData', () => ({
