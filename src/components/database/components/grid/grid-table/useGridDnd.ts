@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useDatabaseViewId, useReadOnly } from '@/application/database-yjs';
 import { useReorderColumnDispatch, useReorderRowDispatch } from '@/application/database-yjs/dispatch';
-import { autoScrollForSharedElement } from '@/components/database/components/drag-and-drop/autoScrollForSharedElement';
+import { registerSharedAutoScroll } from '@/components/_shared/reorder/sharedAutoScroll';
 import {
   getColumnRegistry,
   getRowRegistry,
@@ -48,7 +48,6 @@ export function useGridDndRow(virtualizer: Virtualizer<Element, Element>) {
     currentIndex: number;
   } | null>(null);
   const stableData = useRef<RenderRow[]>(data);
-  const cleanupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     stableData.current = data;
@@ -121,12 +120,6 @@ export function useGridDndRow(virtualizer: Virtualizer<Element, Element>) {
 
     if (!scrollContainer || readOnly || isGrouped) return;
 
-    // Clean up previous registration to prevent duplicate autoScroll warnings
-    if (cleanupRef.current) {
-      cleanupRef.current();
-      cleanupRef.current = null;
-    }
-
     // eslint-disable-next-line
     function canRespond({ source }: Record<string, any>) {
       return source.data && source.data.instanceId === instanceId;
@@ -161,10 +154,11 @@ export function useGridDndRow(virtualizer: Virtualizer<Element, Element>) {
           });
         },
       }),
-      autoScrollForSharedElement(scrollContainer, canRespond)
+      registerSharedAutoScroll({
+        canScroll: canRespond,
+        element: scrollContainer,
+      })
     );
-
-    cleanupRef.current = cleanup;
 
     return cleanup;
   }, [readOnly, isGrouped, instanceId, data, reorderRow, virtualizer.scrollElement]);
@@ -192,7 +186,6 @@ export function useGridDndColumn(data: RenderColumn[], virtualizer: Virtualizer<
   const viewId = useDatabaseViewId();
   const reorderColumnDispatch = useReorderColumnDispatch();
   const stableData = useRef<RenderColumn[]>(data);
-  const cleanupRef = useRef<(() => void) | null>(null);
 
   const [registry] = useState(getColumnRegistry);
   const [instanceId] = useState(() => Symbol(`grid-column-dnd-${viewId}`));
@@ -267,12 +260,6 @@ export function useGridDndColumn(data: RenderColumn[], virtualizer: Virtualizer<
 
     if (readOnly || !scrollContainer) return;
 
-    // Clean up previous registration to prevent duplicate autoScroll warnings
-    if (cleanupRef.current) {
-      cleanupRef.current();
-      cleanupRef.current = null;
-    }
-
     // eslint-disable-next-line
     function canRespond({ source }: Record<string, any>) {
       return source.data && source.data.instanceId === instanceId;
@@ -307,10 +294,11 @@ export function useGridDndColumn(data: RenderColumn[], virtualizer: Virtualizer<
           });
         },
       }),
-      autoScrollForSharedElement(scrollContainer, canRespond)
+      registerSharedAutoScroll({
+        canScroll: canRespond,
+        element: scrollContainer,
+      })
     );
-
-    cleanupRef.current = cleanup;
 
     return cleanup;
   }, [readOnly, instanceId, data, reorderColumn, virtualizer.scrollElement]);

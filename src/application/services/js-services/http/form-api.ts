@@ -1,3 +1,4 @@
+import { readErrorIdentity, userFriendlyErrorMessage } from '@/application/errors/error-message';
 import { validate as isUuid } from 'uuid';
 
 import {
@@ -450,9 +451,10 @@ function normalizePublicFormTransportError(error: unknown): PublicFormAPIError {
     const retryAfter = readRetryAfterSeconds(error.response.headers);
 
     return {
+      ...readErrorIdentity(error),
       code: typeof body?.code === 'number' ? body.code : error.response.status,
       httpStatus: error.response.status,
-      message: typeof body?.message === 'string' && body.message ? body.message : error.message || 'Request failed',
+      message: userFriendlyErrorMessage(error),
       retryAfterSecs: retryAfter,
     };
   }
@@ -460,8 +462,9 @@ function normalizePublicFormTransportError(error: unknown): PublicFormAPIError {
   if (isPublicFormAPIError(error)) return error;
 
   return {
+    ...readErrorIdentity(error),
     code: -1,
-    message: error instanceof Error ? error.message : 'Unknown error occurred',
+    message: userFriendlyErrorMessage(error),
   };
 }
 

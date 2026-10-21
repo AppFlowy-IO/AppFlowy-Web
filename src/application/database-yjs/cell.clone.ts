@@ -10,7 +10,7 @@ import { YDatabaseCell, YjsDatabaseKey } from '@/application/types';
  *
  * Every shared Yjs value is deep-copied: an integrated type cannot be
  * inserted again. A Text-written cell (rich text spec section 0) keeps its
- * stored types verbatim, so the copy stays Text-written exactly when the
+ * stored type identities, so the copy stays Text-written exactly when the
  * original is, and its `rich_text` is copied byte for byte (R47).
  */
 export function cloneDatabaseCell(fieldType: FieldType, referenceCell?: YDatabaseCell): YDatabaseCell {
@@ -19,7 +19,14 @@ export function cloneDatabaseCell(fieldType: FieldType, referenceCell?: YDatabas
   referenceCell?.forEach((value, key) => {
     let newValue = value;
 
-    if (typeof value === 'bigint') {
+    if (
+      (key === YjsDatabaseKey.field_type || key === YjsDatabaseKey.source_field_type) &&
+      (typeof value === 'bigint' || (typeof value === 'string' && /^-?[0-9]+$/.test(value))) &&
+      Number.isSafeInteger(Number(value))
+    ) {
+      // Desktop's i64 and older Web strings must remain integer type IDs on the wire.
+      newValue = Number(value);
+    } else if (typeof value === 'bigint') {
       newValue = value.toString();
     } else if (value instanceof Y.AbstractType) {
       newValue = value.clone();

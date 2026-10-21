@@ -151,7 +151,7 @@ export function handleCollapsedBreakWithTxn(editor: YjsEditor, sharedRoot: YShar
     yText = compatibleDataDeltaToYText(sharedRoot, delta.ops, blockId);
   }
 
-  if (yText.length === 0) {
+  if (yText.length === 0 && blockType !== BlockType.CalloutBlock) {
     const point = Editor.start(editor, at);
 
     const parent = getParent(blockId, sharedRoot);

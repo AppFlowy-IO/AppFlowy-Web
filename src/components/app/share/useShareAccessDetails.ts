@@ -94,25 +94,25 @@ function normalizeEmail(email: string) {
 }
 
 function resolveFullAccessAuthorityContext({
-  ancestry,
+  hasAncestry,
+  spaceId,
+  hasPrivateAncestor,
   workspaceRole,
 }: {
-  ancestry: ReturnType<typeof findAncestors>;
+  hasAncestry: boolean;
+  spaceId?: string;
+  hasPrivateAncestor: boolean;
   workspaceRole?: Role;
 }): FullAccessAuthorityContext {
-  if (!ancestry || ancestry.length === 0) return { kind: 'unknown' };
+  if (!hasAncestry) return { kind: 'unknown' };
 
-  const realSpace = ancestry.find(
-    (view) => (view.is_space === true || view.extra?.is_space === true) && !view.extra?.is_hidden_space
-  );
-
-  if (realSpace) {
+  if (spaceId) {
     return {
       kind: 'space',
-      spaceId: realSpace.view_id,
+      spaceId,
       publicCanManage: workspaceRole === Role.Owner,
     };
-  } else if (ancestry.some((view) => view.is_private)) {
+  } else if (hasPrivateAncestor) {
     // Legacy private sections do not expose an owner capability through the
     // structured-space endpoint. Fail closed rather than inferring ownership.
     return { kind: 'private' };
@@ -206,14 +206,24 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
     updates: new Map(),
   });
   const viewAncestry = useMemo(() => findAncestors(outline || [], viewId), [outline, viewId]);
-  const ancestorViewIds = useMemo(() => viewAncestry?.map((item) => item.view_id) || [], [viewAncestry]);
+  // Outline snapshots replace objects after unrelated navigation updates.
+  // Only ancestry and authority changes should restart these permission reads.
+  const ancestorViewIdsKey = JSON.stringify(viewAncestry?.map((item) => item.view_id) || []);
+  const ancestorViewIds = useMemo(() => JSON.parse(ancestorViewIdsKey) as string[], [ancestorViewIdsKey]);
+  const hasAncestry = Boolean(viewAncestry?.length);
+  const spaceId = viewAncestry?.find(
+    (view) => (view.is_space === true || view.extra?.is_space === true) && !view.extra?.is_hidden_space
+  )?.view_id;
+  const hasPrivateAncestor = viewAncestry?.some((view) => view.is_private) ?? false;
   const fullAccessAuthorityContext = useMemo(
     () =>
       resolveFullAccessAuthorityContext({
-        ancestry: viewAncestry,
+        hasAncestry,
+        spaceId,
+        hasPrivateAncestor,
         workspaceRole: userWorkspaceInfo?.selectedWorkspace?.role,
       }),
-    [userWorkspaceInfo?.selectedWorkspace?.role, viewAncestry]
+    [hasAncestry, hasPrivateAncestor, spaceId, userWorkspaceInfo?.selectedWorkspace?.role]
   );
 
   if (directGroupSnapshotRef.current.viewId !== viewId) {
@@ -231,8 +241,12 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
       // displayed, direct grants control which rows may be edited here, and a
       // governing-space policy identifies the owner tier protected by Full
       // Access mutations even if the outline projection is stale.
+      let settledDirectGroups: PromiseSettledResult<WorkspaceGroupViewPermission[]> | undefined;
       const directGroupsPromise = Promise.allSettled([AccessService.getSharedGroups(currentWorkspaceId, viewId)]).then(
-        ([result]) => result
+        ([result]) => {
+          settledDirectGroups = result;
+          return result;
+        }
       );
       const fullAccessAuthorityPromise: Promise<FullAccessAuthorityResolution> =
         fullAccessAuthorityContext.kind === 'space'
@@ -269,108 +283,124 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
         for (let retryIndex = 0; retryIndex <= ACCESS_DETAILS_MAX_TRANSIENT_RETRIES; retryIndex += 1) {
           try {
             const detail = await AccessService.getShareDetail(currentWorkspaceId, viewId, ancestorViewIds, signal);
-            const [directGroupResult, resolvedFullAccessAuthority] = await Promise.all([
-              directGroupsPromise,
-              fullAccessAuthorityPromise,
-            ]);
+            const resolvedFullAccessAuthority = await fullAccessAuthorityPromise;
+            const publishAccessDetails = (
+              directGroupResult: PromiseSettledResult<WorkspaceGroupViewPermission[]> | undefined
+            ) => {
+              if (signal?.aborted || requestSeq !== loadPeopleRequestSeq.current) return;
 
-            if (signal?.aborted || requestSeq !== loadPeopleRequestSeq.current) return;
+              const previousDirectGroupSnapshot = directGroupSnapshotRef.current;
+              const canReuseDirectGroupSnapshot =
+                previousDirectGroupSnapshot.viewId === viewId && previousDirectGroupSnapshot.loaded;
+              const directGroupSnapshot =
+                directGroupResult?.status === 'fulfilled'
+                  ? directGroupResult.value
+                  : canReuseDirectGroupSnapshot
+                  ? previousDirectGroupSnapshot.groups
+                  : [];
+              const hasLoadedDirectGroups = directGroupResult?.status === 'fulfilled';
 
-            const previousDirectGroupSnapshot = directGroupSnapshotRef.current;
-            const canReuseDirectGroupSnapshot =
-              previousDirectGroupSnapshot.viewId === viewId && previousDirectGroupSnapshot.loaded;
-            const directGroupSnapshot =
-              directGroupResult.status === 'fulfilled'
-                ? directGroupResult.value
-                : canReuseDirectGroupSnapshot
-                ? previousDirectGroupSnapshot.groups
-                : [];
-            const hasLoadedDirectGroups = directGroupResult.status === 'fulfilled';
+              if (pendingRevocations.current.viewId !== viewId) {
+                pendingRevocations.current = { viewId, emails: new Map() };
+              }
 
-            if (pendingRevocations.current.viewId !== viewId) {
-              pendingRevocations.current = { viewId, emails: new Map() };
-            }
+              if (pendingGroupUpdates.current.viewId !== viewId) {
+                pendingGroupUpdates.current = { viewId, updates: new Map() };
+              }
 
-            if (pendingGroupUpdates.current.viewId !== viewId) {
-              pendingGroupUpdates.current = { viewId, updates: new Map() };
-            }
+              const revokedEmails = pendingRevocations.current.emails;
+              const groupUpdates = pendingGroupUpdates.current.updates;
+              const currentUserRevokedAt = revokedEmails.get(normalizeEmail(currentUserEmail));
+              const currentUserWasRevoked = currentUserRevokedAt !== undefined && requestSeq <= currentUserRevokedAt;
 
-            const revokedEmails = pendingRevocations.current.emails;
-            const groupUpdates = pendingGroupUpdates.current.updates;
+              // Filter only requests that were already in flight when the revoke
+              // completed. A later request starts after cache invalidation and is
+              // authoritative, so it can also surface a legitimate re-share.
+              const visiblePeople = detail.shared_with.filter((person) => {
+                const revokedAtRequestSeq = revokedEmails.get(normalizeEmail(person.email));
 
-            // Filter only requests that were already in flight when the revoke
-            // completed. A later request starts after cache invalidation and is
-            // authoritative, so it can also surface a legitimate re-share.
-            const visiblePeople = detail.shared_with.filter((person) => {
-              const revokedAtRequestSeq = revokedEmails.get(normalizeEmail(person.email));
+                return revokedAtRequestSeq === undefined || requestSeq > revokedAtRequestSeq;
+              });
 
-              return revokedAtRequestSeq === undefined || requestSeq > revokedAtRequestSeq;
-            });
+              for (const [email, revokedAtRequestSeq] of revokedEmails) {
+                if (requestSeq > revokedAtRequestSeq) revokedEmails.delete(email);
+              }
 
-            for (const [email, revokedAtRequestSeq] of revokedEmails) {
-              if (requestSeq > revokedAtRequestSeq) revokedEmails.delete(email);
-            }
+              // Some deployments can omit direct rows from effective details. Keep
+              // them visible, then let the effective response win for duplicate
+              // group IDs, matching Desktop's direct/effective merge semantics.
+              const effectiveGroupsById = new Map(directGroupSnapshot.map((group) => [group.group_id, group] as const));
 
-            // Some deployments can omit direct rows from effective details. Keep
-            // them visible, then let the effective response win for duplicate
-            // group IDs, matching Desktop's direct/effective merge semantics.
-            const effectiveGroupsById = new Map(directGroupSnapshot.map((group) => [group.group_id, group] as const));
+              for (const group of detail.groups ?? []) {
+                effectiveGroupsById.set(group.group_id, group);
+              }
 
-            for (const group of detail.groups ?? []) {
-              effectiveGroupsById.set(group.group_id, group);
-            }
+              const visibleGroups = Array.from(effectiveGroupsById.values()).reduce<WorkspaceGroupViewPermission[]>(
+                (current, group) => {
+                  const pendingUpdate = groupUpdates.get(group.group_id);
 
-            const visibleGroups = Array.from(effectiveGroupsById.values()).reduce<WorkspaceGroupViewPermission[]>(
-              (current, group) => {
-                const pendingUpdate = groupUpdates.get(group.group_id);
+                  if (!pendingUpdate || requestSeq > pendingUpdate.requestSeq) {
+                    current.push(group);
+                  } else if (pendingUpdate.accessLevel !== null) {
+                    current.push({ ...group, access_level: pendingUpdate.accessLevel });
+                  }
 
-                if (!pendingUpdate || requestSeq > pendingUpdate.requestSeq) {
-                  current.push(group);
-                } else if (pendingUpdate.accessLevel !== null) {
-                  current.push({ ...group, access_level: pendingUpdate.accessLevel });
-                }
+                  return current;
+                },
+                []
+              );
 
-                return current;
-              },
-              []
-            );
+              for (const [groupId, pendingUpdate] of groupUpdates) {
+                if (requestSeq > pendingUpdate.requestSeq) groupUpdates.delete(groupId);
+              }
 
-            for (const [groupId, pendingUpdate] of groupUpdates) {
-              if (requestSeq > pendingUpdate.requestSeq) groupUpdates.delete(groupId);
-            }
+              setPeople(visiblePeople);
+              setGroups(visibleGroups);
+              if (hasLoadedDirectGroups) {
+                directGroupSnapshotRef.current = { viewId, groups: directGroupSnapshot, loaded: true };
+                setDirectGroups(directGroupSnapshot);
+                setDirectGroupsLoaded(true);
+              } else if (!canReuseDirectGroupSnapshot) {
+                directGroupSnapshotRef.current = { viewId, groups: [], loaded: false };
+                setDirectGroups([]);
+                setDirectGroupsLoaded(false);
+              } else {
+                // A refresh may revoke a direct grant while inherited access
+                // stays unchanged. Hide edit controls until it settles, then
+                // retain the last confirmed snapshot on a failed lookup.
+                setDirectGroupsLoaded(directGroupResult !== undefined);
+              }
 
-            setPeople(visiblePeople);
-            setGroups(visibleGroups);
-            if (hasLoadedDirectGroups) {
-              directGroupSnapshotRef.current = { viewId, groups: directGroupSnapshot, loaded: true };
-              setDirectGroups(directGroupSnapshot);
-              setDirectGroupsLoaded(true);
-            } else if (!canReuseDirectGroupSnapshot) {
-              directGroupSnapshotRef.current = { viewId, groups: [], loaded: false };
-              setDirectGroups([]);
-              setDirectGroupsLoaded(false);
-            }
+              setCurrentUserPermission(currentUserWasRevoked ? null : detail.current_user_permission ?? null);
+              setFullAccessAuthority({
+                viewId,
+                canManage:
+                  resolvedFullAccessAuthority.canManage ||
+                  (resolvedFullAccessAuthority.acceptsLegacyCreatorSignals &&
+                    (detail.current_user_permission?.object_creator === true ||
+                      detail.current_user_permission?.ancestor_creator === true)),
+                generalAccessLevel: resolvedFullAccessAuthority.generalAccessLevel,
+              });
+              setDeniedViewId(currentUserWasRevoked ? viewId : null);
+              setHasLoadedPeople(!currentUserWasRevoked);
+              setLoadedPeopleViewId(viewId);
+              setIsLoadingPeople(false);
+              return {
+                effectiveGroups: visibleGroups,
+                directGroups: directGroupSnapshot,
+                effectiveGroupsLoaded: true,
+                directGroupsLoaded:
+                  hasLoadedDirectGroups ||
+                  (directGroupResult !== undefined && canReuseDirectGroupSnapshot && previousDirectGroupSnapshot.loaded),
+              } satisfies ShareAccessRefreshResult;
+            };
 
-            setCurrentUserPermission(detail.current_user_permission ?? null);
-            setFullAccessAuthority({
-              viewId,
-              canManage:
-                resolvedFullAccessAuthority.canManage ||
-                (resolvedFullAccessAuthority.acceptsLegacyCreatorSignals &&
-                  (detail.current_user_permission?.object_creator === true ||
-                    detail.current_user_permission?.ancestor_creator === true)),
-              generalAccessLevel: resolvedFullAccessAuthority.generalAccessLevel,
-            });
-            setDeniedViewId(null);
-            setHasLoadedPeople(true);
-            setLoadedPeopleViewId(viewId);
-            return {
-              effectiveGroups: visibleGroups,
-              directGroups: directGroupSnapshot,
-              effectiveGroupsLoaded: true,
-              directGroupsLoaded:
-                hasLoadedDirectGroups || (canReuseDirectGroupSnapshot && previousDirectGroupSnapshot.loaded),
-            } satisfies ShareAccessRefreshResult;
+            // Effective access is sufficient to show the roster. Direct grants
+            // can use a slower legacy Folder lookup; only their edit controls
+            // depend on that lookup. Keep the final refresh result complete for
+            // callers confirming a mutation, without hiding the ready roster.
+            if (!settledDirectGroups) publishAccessDetails(undefined);
+            return publishAccessDetails(await directGroupsPromise);
           } catch (error) {
             if (signal?.aborted || requestSeq !== loadPeopleRequestSeq.current) return;
 

@@ -540,14 +540,16 @@ describe('database blob seeds for filter and sort', () => {
   });
 
   describe('released seed cache', () => {
-    it('reuses the settled seeds of a database released within the grace period', async () => {
+    it('revalidates and reuses settled seeds within the grace period', async () => {
       jest.useFakeTimers();
       const databaseId = 'database-grace';
       const firstRowKey = `${databaseId}_rows_${FIRST_ROW_ID}`;
       const onSeedsReady = jest.fn();
 
       databaseIds.add(databaseId);
-      mockedDatabaseBlobDiff.mockResolvedValueOnce(rowPage([{ rowId: FIRST_ROW_ID, department: 'HR' }]));
+      mockedDatabaseBlobDiff
+        .mockResolvedValueOnce(rowPage([{ rowId: FIRST_ROW_ID, department: 'HR' }]))
+        .mockResolvedValueOnce(rowPage([]));
 
       // The source grid: an unfiltered view walks the cold delta, which covers the full snapshot.
       retain(databaseId);
@@ -565,7 +567,8 @@ describe('database blob seeds for filter and sort', () => {
       await jest.advanceTimersByTimeAsync(0);
       await reuse;
 
-      expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(1);
+      expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(2);
+      expect(mockedDatabaseBlobDiff.mock.calls[1][2].maxKnownRid).toMatchObject({ timestamp: 100, seqNo: 1 });
       expect(onSeedsReady).toHaveBeenCalledTimes(1);
       expect(readDepartment(firstRowKey)).toBe('HR');
       expect(getDatabaseRowDocFromSeed(firstRowKey)).toBe(borrowed);

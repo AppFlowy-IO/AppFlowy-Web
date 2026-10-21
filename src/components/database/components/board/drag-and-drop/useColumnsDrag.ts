@@ -11,9 +11,9 @@ import {
   useReorderGroupColumnDispatch,
   useReorderRowDispatch,
 } from '@/application/database-yjs/dispatch';
+import { registerSharedAutoScroll } from '@/components/_shared/reorder/sharedAutoScroll';
 import { BoardDragContextValue } from '@/components/database/components/board/drag-and-drop/board-context';
 import { createRegistry } from '@/components/database/components/board/drag-and-drop/registry';
-import { autoScrollForSharedElement } from '@/components/database/components/drag-and-drop/autoScrollForSharedElement';
 
 import type { Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/types';
 
@@ -308,7 +308,10 @@ export function useColumnsDrag(
           }
         },
       }),
-      autoScrollForSharedElement(scrollableRef.current, canRespond)
+      registerSharedAutoScroll({
+        element: scrollableRef.current,
+        canScroll: canRespond,
+      })
     );
   }, [columns, getCards, instanceId, moveCard, readOnly, reorderCard, reorderColumn, sorted]);
 

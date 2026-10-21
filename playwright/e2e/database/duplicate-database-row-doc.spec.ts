@@ -14,6 +14,7 @@ import {
   renamePageByExactText,
 } from '../../support/duplicate-test-helpers';
 import { createDatabaseView, waitForGridReady } from '../../support/database-ui-helpers';
+import { RowDetailSelectors } from '../../support/selectors';
 
 /**
  * Open row 0 in full-page mode and poll for the expected text.
@@ -21,10 +22,9 @@ import { createDatabaseView, waitForGridReady } from '../../support/database-ui-
  * fresh content from the server (the duplication worker is async).
  */
 async function expectRowDocumentTextEventually(page: import('@playwright/test').Page, text: string) {
-  // Open row 0 via dialog, then expand to full page
+  // Open row 0 via the row peek, then expand to full page
   await openRowDetail(page, 0);
-  const dt = page.locator('.MuiDialogTitle-root');
-  await dt.locator('button').first().click({ force: true });
+  await RowDetailSelectors.openFullPageButton(page).click();
   await page.waitForTimeout(2000);
 
   for (let attempt = 0; attempt < 20; attempt++) {
@@ -46,13 +46,7 @@ test.describe('Duplicate Database Row Document', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
   });
 
-  // Skip: Server-side PageService.duplicate creates new rows with new documentIds
-  // but does NOT copy the row sub-document content from the original documentIds.
-  // The duplicated row's sub-document is always empty regardless of client-side
-  // sync. This requires a server-side fix to copy row sub-document collabs during
-  // page duplication. Row-level duplicate (duplicate-row-doc-content.spec.ts) works
-  // because it sends clientDocStateB64 directly in the API request.
-  test.skip('Duplicating a database preserves row document content in the copy', async ({ page, request }) => {
+  test('Duplicating a database preserves row document content in the copy', async ({ page, request }) => {
     const testEmail = generateRandomEmail();
     const baseName = `GridWithRowDoc-${Date.now()}`;
     const rowDocText = `row-doc-content-${Date.now()}`;
@@ -81,7 +75,7 @@ test.describe('Duplicate Database Row Document', () => {
     // The createOrphaned call is fire-and-forget in DatabaseRowSubDocument.tsx,
     // so we must wait long enough for both the API call and server processing.
     await page.waitForTimeout(8000);
-    await expect(page.locator('[role="dialog"]')).toContainText(rowDocText, { timeout: 10000 });
+    await expect(RowDetailSelectors.modal(page)).toContainText(rowDocText, { timeout: 10000 });
     await closeRowDetailWithEscape(page);
     await page.waitForTimeout(5000);
 

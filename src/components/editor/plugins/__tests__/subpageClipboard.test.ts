@@ -1,13 +1,19 @@
 import { createEditor, Element, Node } from 'slate';
 import { withReact } from 'slate-react';
 
+import type { FirstBodyOwner } from '@/application/row-document/first-body-owner';
 import { withYjs } from '@/application/slate-yjs';
 import { withTestingYDoc } from '@/application/slate-yjs/__tests__/withTestingYjsEditor';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { withYHistory } from '@/application/slate-yjs/plugins/withHistory';
 import { slateContentInsertToYData, yDocToSlateContent } from '@/application/slate-yjs/utils/convert';
-import { BlockType, CollabOrigin, YjsEditorKey } from '@/application/types';
+import { BlockType, CollabOrigin, View, ViewLayout, YjsEditorKey } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
+import {
+  assertGenericDeepDuplicateIsSafe,
+  FORM_DEEP_DUPLICATE_CHECK_FAILED_MESSAGE,
+  FORM_DEEP_DUPLICATE_UNAVAILABLE_MESSAGE,
+} from '@/components/app/view-actions/formDuplicateSafety';
 import { EditorContextState } from '@/components/editor/EditorContext';
 
 import { withInsertData } from '../withInsertData';
@@ -68,6 +74,48 @@ beforeEach(() => {
   jest.clearAllMocks();
 });
 
+it.each([false, true])('refuses first-body subpage paste before copy/move side effects (cut=%s)', async (wasCut) => {
+  const f = setup();
+  const before = JSON.stringify(f.editor.children);
+
+  // The host provides this owner only for its detached, unpublished row draft.
+  f.editor.firstBody = {} as FirstBodyOwner;
+  try {
+    f.editor.insertData(clipboardData([block(BlockType.SubpageBlock, '', { view_id: 'child', was_cut: wasCut })]));
+    await settle();
+    expect(f.context.duplicatePage).not.toHaveBeenCalled();
+    expect(f.context.restorePage).not.toHaveBeenCalled();
+    expect(f.context.movePage).not.toHaveBeenCalled();
+    expect(f.context.deletePage).not.toHaveBeenCalled();
+    expect(f.context.loadTrashViews).not.toHaveBeenCalled();
+    expect(JSON.stringify(f.editor.children)).toBe(before);
+    expect(notify.error).toHaveBeenCalledTimes(1);
+  } finally {
+    f.dispose();
+  }
+});
+
+it.each([BlockType.GridBlock, BlockType.FeedBlock, BlockType.DatabaseGalleryBlock])(
+  'refuses an owned %s clipboard fragment before changing a first-body draft',
+  async (type) => {
+    const f = setup();
+    const before = JSON.stringify(f.editor.children);
+    const beforeYjs = JSON.stringify(f.editor.sharedRoot.toJSON());
+
+    f.editor.firstBody = { allowSlateMutation: () => true } as FirstBodyOwner;
+    try {
+      f.editor.insertData(clipboardData([block(type, '', { view_id: 'owned' })]));
+      await settle();
+      expect(JSON.stringify(f.editor.children)).toBe(before);
+      expect(JSON.stringify(f.editor.sharedRoot.toJSON())).toBe(beforeYjs);
+      expect(f.context.duplicatePage).not.toHaveBeenCalled();
+      expect(notify.error).toHaveBeenCalledTimes(1);
+    } finally {
+      f.dispose();
+    }
+  }
+);
+
 it.each([BlockType.Paragraph, BlockType.HeadingBlock])(
   'merges leading %s text at the caret before a subpage',
   async (type) => {
@@ -100,6 +148,60 @@ it('preserves a leading code block when a mixed fragment includes a subpage', as
     await settle();
     expect(f.editor.children.map(Node.string)).toEqual(['AB', 'X', '']);
     expect(f.editor.children[1].type).toBe(BlockType.CodeBlock);
+  } finally {
+    f.dispose();
+  }
+});
+
+it.each(['known Form', 'fresh Form', 'failed preflight', 'empty container'] as const)(
+  'shows reviewed duplication guidance when pasting a subpage with a %s', async (failure) => {
+    const f = setup();
+    const form: View = {
+      view_id: 'form', name: 'Form', layout: ViewLayout.Form, children: [],
+      icon: null, extra: null, is_published: false, is_private: false,
+    };
+    const source: View = { ...form, view_id: 'child', layout: ViewLayout.Document, children: [form] };
+    const loadFreshView = jest.fn().mockResolvedValue(source);
+    const unavailable = failure === 'known Form' || failure === 'fresh Form';
+
+    if (failure === 'failed preflight') loadFreshView.mockRejectedValue(new Error('SQLSTATE: private diagnostic'));
+    if (failure === 'empty container') {
+      loadFreshView.mockResolvedValue({
+        ...source, layout: ViewLayout.Grid, extra: { is_database_container: true, is_space: false }, children: [],
+      });
+    }
+
+    (f.context.duplicatePage as jest.Mock).mockImplementation((viewId: string) => assertGenericDeepDuplicateIsSafe({
+      workspaceId: f.context.workspaceId,
+      viewId,
+      knownView: failure === 'known Form' ? source : undefined,
+      loadFreshView,
+    }));
+
+    try {
+      f.editor.insertData(clipboardData([block(BlockType.SubpageBlock, '', { view_id: 'child' })]));
+      await settle();
+      expect(notify.error).toHaveBeenCalledTimes(1);
+      expect(notify.error).toHaveBeenCalledWith(
+        unavailable ? FORM_DEEP_DUPLICATE_UNAVAILABLE_MESSAGE : FORM_DEEP_DUPLICATE_CHECK_FAILED_MESSAGE
+      );
+      expect(f.editor.children.map(Node.string)).toEqual(['AB']);
+      expect(f.context.deletePage).not.toHaveBeenCalled();
+    } finally {
+      f.dispose();
+    }
+  }
+);
+
+it('keeps unreviewed errors hidden when subpage duplication fails', async () => {
+  const f = setup();
+
+  (f.context.duplicatePage as jest.Mock).mockRejectedValue(new Error('SQLSTATE: private duplication diagnostic'));
+  try {
+    f.editor.insertData(clipboardData([block(BlockType.SubpageBlock, '', { view_id: 'child' })]));
+    await settle();
+    expect(notify.error).toHaveBeenCalledWith('Something went wrong. Contact support if this keeps happening.');
+    expect(f.editor.children.map(Node.string)).toEqual(['AB']);
   } finally {
     f.dispose();
   }

@@ -12,6 +12,7 @@ import {
   writeChartLayoutValue,
 } from '@/application/database-yjs/chart.type';
 import { DateGroupCondition } from '@/application/database-yjs/database.type';
+import { setYMapBigInt } from '@/application/database-yjs/yjs-bigint';
 import { useUpdateChartSetting } from '@/application/database-yjs/dispatch';
 import { type YDatabase, type YDatabaseView, type YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
@@ -29,12 +30,15 @@ function createFixture(chartEntries: Record<string, unknown>) {
   const layoutSettings = new Y.Map();
   const chart = new Y.Map<unknown>();
 
-  Object.entries(chartEntries).forEach(([key, value]) => chart.set(key, value));
   layoutSettings.set('3', chart);
   view.set(YjsDatabaseKey.layout_settings, layoutSettings);
   views.set(viewId, view);
   database.set(YjsDatabaseKey.views, views);
   databaseDoc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.database, database);
+  Object.entries(chartEntries).forEach(([key, value]) => {
+    if (typeof value === 'bigint') setYMapBigInt(chart, key, value);
+    else chart.set(key, value);
+  });
 
   const context: DatabaseContextState = {
     activeViewId: viewId,
@@ -55,6 +59,7 @@ describe('chart layout keys', () => {
       xFieldId: 'x_field_id',
       showEmptyValues: 'show_empty_values',
       aggregationType: 'aggregation_type',
+      aggregationTypePb: 'aggregation_type_pb',
       yFieldId: 'y_field_id',
       cumulative: 'cumulative',
       dateCondition: 'date_condition',
@@ -213,9 +218,9 @@ describe('chart layout keys', () => {
 
     act(() => result.current.update({ chartType: ChartType.Number, dateCondition: DateGroupCondition.Relative }));
 
-    expect(chart.get('chart_type')).toBe(ChartType.Number);
+    expect(chart.get('chart_type')).toBe(BigInt(ChartType.Number));
     expect(chart.get('chartType')).toBe(ChartType.Number);
-    expect(chart.get('date_condition')).toBe(DateGroupCondition.Relative);
+    expect(chart.get('date_condition')).toBe(BigInt(DateGroupCondition.Relative));
     expect(chart.get('dateCondition')).toBe(DateGroupCondition.Relative);
     expect(result.current.setting).toMatchObject({
       chartType: ChartType.Number,
@@ -226,9 +231,14 @@ describe('chart layout keys', () => {
 
   it('writes nothing when the stored value is selected again', () => {
     const { chart, context } = createFixture({
-      chart_type: ChartType.Donut,
+      chart_type: BigInt(ChartType.Donut),
+      x_field_id: '',
+      y_field_id: '',
+      show_empty_values: false,
+      date_condition: BigInt(DateGroupCondition.Month),
+      aggregation_type_pb: BigInt(ChartAggregationType.Sum),
       chartType: ChartType.Donut,
-      aggregation_type: ChartAggregationType.Sum,
+      aggregation_type: BigInt(ChartAggregationType.Sum),
       aggregationType: ChartAggregationType.Sum,
       titleText: 'Revenue',
     });

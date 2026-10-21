@@ -6,6 +6,7 @@ import { isEmbedBlockTypes, TEXT_BLOCK_TYPES } from '@/application/slate-yjs/com
 import { getBlockEntry } from '@/application/slate-yjs/utils/editor';
 import { BlockType, YjsEditorKey } from '@/application/types';
 import { stripInlineCommentIds } from '@/components/editor/clipboard/inline-comment-metadata';
+import { mathFragmentText } from '@/components/editor/clipboard/math-equation';
 import { markSubpageClipboard } from '@/components/editor/subpage/subpage-operations';
 
 export const clipboardFormatKey = 'x-appflowy-fragment';
@@ -75,6 +76,9 @@ export const withCopy = (editor: ReactEditor) => {
         const encoded = window.btoa(encodeURIComponent(string));
 
         data.setData(`application/${clipboardFormatKey}`, encoded);
+        const mathText = mathFragmentText(fragment);
+
+        if (mathText !== null) data.setData('text/plain', mathText);
       }
 
       return;
@@ -91,6 +95,10 @@ export const withCopy = (editor: ReactEditor) => {
     if (tsvText !== null) {
       // Override the plain text with tab-separated values
       data.setData('text/plain', tsvText);
+    } else {
+      const mathText = mathFragmentText(fragment);
+
+      if (mathText !== null) data.setData('text/plain', mathText);
     }
   };
 

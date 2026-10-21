@@ -3,10 +3,9 @@ import { dropTargetForElements } from '@atlaskit/pragmatic-drag-and-drop/element
 import { attachClosestEdge, extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { VirtualItem } from '@tanstack/react-virtual';
 import { uniqBy } from 'lodash-es';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 
-import { useReadOnly, useRowData, useSortsSelector } from '@/application/database-yjs';
-import { YjsDatabaseKey } from '@/application/types';
+import { useReadOnly, useSortsSelector } from '@/application/database-yjs';
 import { DropRowIndicator } from '@/components/database/components/drag-and-drop/DropRowIndicator';
 import { HOVER_CONTROLS_WIDTH, HoverControls } from '@/components/database/components/grid/controls/HoverControls';
 import {
@@ -23,7 +22,6 @@ import { ClearSortingConfirm } from '@/components/database/components/sorts/Clea
 import {
   useGridContext,
   useGridInteractionActions,
-  useGridOptions,
   useIsGridRowActive,
 } from '@/components/database/grid/useGridContext';
 import { cn } from '@/lib/utils';
@@ -56,15 +54,9 @@ function GridVirtualRow({
   const rowId = rowData.rowId as string;
   const rowKey = getRenderRowKey(rowData);
   const rowType = rowData.type;
-  const { isGrouped, rowResizeStore } = useGridContext();
-  const { rowMeasure } = useGridOptions();
+  const { isGrouped } = useGridContext();
   const { setHoverRowKey } = useGridInteractionActions();
   const hasActiveCell = useIsGridRowActive(rowKey);
-  const databaseRow = useRowData(rowId);
-  const cells = databaseRow?.get(YjsDatabaseKey.cells);
-  const cellsCount = cells?.size;
-
-  const rowRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   const dragHandleRef = useRef<HTMLDivElement | null>(null);
   const [state, setState] = useState<ItemState>(idleState);
@@ -161,62 +153,12 @@ function GridVirtualRow({
     });
   }, [columnItems, columns, rowIndex, rowData, onResizeColumnStart]);
 
-  const measureRow = useCallback(() => {
-    const row = rowRef.current;
-    // `row`: the reported size includes the row's 1px divider, so the pitch is
-    // the 37px the row draws (addendum A5.2) and rows never overlap.
-    const cells = row?.querySelectorAll(rowMeasure === 'row' ? '.grid-row-cell' : '.grid-cell');
-
-    if (!cells || !rowId) return undefined;
-    return Array.from(cells).reduce((acc, cell) => {
-      const cellHeight = cell.getBoundingClientRect().height;
-
-      return Math.max(acc, cellHeight, 35); // Ensure minimum height
-    }, 0);
-  }, [rowMeasure, rowId]);
-
-  // Inside a ResizeObserver callback the layout is clean, so the row reads it at once.
-  const onResize = useCallback(() => {
-    const maxCellHeight = measureRow();
-
-    if (maxCellHeight !== undefined) rowResizeStore.report(rowKey, maxCellHeight);
-  }, [measureRow, rowKey, rowResizeStore]);
-
-  // Anywhere else a read would force a layout per row: the grid measures every
-  // row that asked in one pass at the next frame (W18).
-  const scheduleResize = useCallback(
-    () => rowResizeStore.schedule(rowKey, measureRow),
-    [measureRow, rowKey, rowResizeStore]
-  );
-
-  // The grid's one ResizeObserver, not one per row (W15).
-  useEffect(() => {
-    const el = innerRef.current;
-
-    if (!el) return;
-
-    return rowResizeStore.observe(el, onResize);
-  }, [onResize, rowResizeStore]);
-
-  useEffect(() => {
-    if (!cells || !cellsCount) return;
-
-    if (isRegularRow && cells) {
-      scheduleResize();
-    }
-
-    cells.observeDeep(scheduleResize);
-
-    return () => {
-      cells.unobserveDeep(scheduleResize);
-    };
-  }, [isRegularRow, scheduleResize, cells, cellsCount]);
-
-  // Every cell of the row reads it: a new object would re-render them all.
-  const rowContextValue = useMemo(() => ({ isSticky, resizeRow: scheduleResize }), [isSticky, scheduleResize]);
-
   return (
-    <GridRowProvider value={rowContextValue}>
+    <GridRowProvider
+      value={{
+        isSticky,
+      }}
+    >
       <div
         onMouseMove={() => setHoverRowKey(rowKey)}
         onMouseLeave={() => setHoverRowKey(undefined)}
@@ -240,7 +182,6 @@ function GridVirtualRow({
           )}
         </div>
         <div
-          ref={rowRef}
           data-testid={`grid-row-${rowId}`}
           data-row-key={rowKey}
           data-parity-id={

@@ -334,7 +334,7 @@
       }
     },
     {
-      "name": "Percent unchecked round-trips as aggregation_type 12",
+      "name": "Percent unchecked round-trips through aggregation_type_pb 12",
       "stored": {
         "chart_type": {"$bigint": "0"},
         "x_field_id": "f:stage",
@@ -344,12 +344,13 @@
         "date_condition": {"$bigint": "3"}
       },
       "write": {"aggregation_type": 12},
-      "writtenKeys": ["aggregation_type"],
+      "writtenKeys": ["aggregation_type_pb"],
       "expected": {
         "chart_type": 0,
         "x_field_id": "f:stage",
         "show_empty_values": true,
-        "aggregation_type": 12,
+        "aggregation_type": 0,
+        "aggregation_type_pb": 12,
         "y_field_id": "f:urgent",
         "date_condition": 3
       },
@@ -431,8 +432,8 @@
       }
     },
     {
-      "name": "web-written JS numbers read the same",
-      "stored": {"aggregation_type": 16, "x_number_bucket_size": 2.5, "x_number_bucket_min": -10},
+      "name": "web-written numeric bucket settings and the aggregation sidecar read the same",
+      "stored": {"aggregation_type": 0, "aggregation_type_pb": {"$bigint": "16"}, "x_number_bucket_size": 2.5, "x_number_bucket_min": -10},
       "parsed": {
         "aggregation_type": 16,
         "x_number_bucket_size": 2.5,

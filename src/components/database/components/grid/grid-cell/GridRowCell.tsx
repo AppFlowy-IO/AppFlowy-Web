@@ -6,7 +6,6 @@ import { useFieldSelector } from '@/application/database-yjs/selector';
 import { FieldId, YjsDatabaseKey } from '@/application/types';
 import { Cell, CellValue } from '@/components/database/components/cell';
 import { PrimaryCell } from '@/components/database/components/cell/primary';
-import { useGridRowContext } from '@/components/database/components/grid/grid-row/GridRowContext';
 import { useGridInteractionActions, useIsGridCellActive } from '@/components/database/grid/useGridContext';
 import { isFieldEditingDisabled } from '@/components/database/utils/field-editing';
 import { cn } from '@/lib/utils';
@@ -29,7 +28,6 @@ export function GridRowCell({ rowId, rowKey, fieldId }: GridCellProps) {
   const isReadOnlyCell = readOnly || disableRelationRollupEdit;
   const isRowLoaded = useIsRowLoaded(rowId);
 
-  const { resizeRow } = useGridRowContext();
   const { setActiveCell } = useGridInteractionActions();
 
   const [hovered, setHovered] = useState(false);
@@ -99,21 +97,6 @@ export function GridRowCell({ rowId, rowKey, fieldId }: GridCellProps) {
         return 'py-2';
     }
   }, [fieldType]);
-
-  const wrapRef = useRef(wrap);
-  const isActiveRef = useRef(isActive);
-
-  useEffect(() => {
-    // Check if the wrap or isActive has changed
-    if (wrapRef.current !== wrap || isActiveRef.current !== isActive) {
-      if (!wrap || !isActive) {
-        resizeRow();
-      }
-
-      wrapRef.current = wrap;
-      isActiveRef.current = isActive;
-    }
-  }, [wrap, isActive, resizeRow]);
 
   // Stable while the cell's props are: a re-render of this component alone
   // (the row and field hooks re-render it on mount) does not render the cell again.

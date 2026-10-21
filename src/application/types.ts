@@ -110,8 +110,9 @@ export interface CodeBlockData extends BlockData {
 }
 
 export interface CalloutBlockData extends BlockData {
-  icon: string;
-  icon_type?: 'emoji' | 'icon';
+  icon?: string | null;
+  icon_type?: 'emoji' | 'icon' | 'custom';
+  version?: number;
   textColor?: string;
 }
 
@@ -222,7 +223,9 @@ export interface AIMeetingBlockData extends BlockData {
   summary_detail?: string;
   summary_language?: string;
   transcript_id?: string;
+  transcript_language?: string;
   transcription_type?: string;
+  youtube_caption_source?: { video_id: string; language: string; is_auto_generated: boolean };
   created_at?: string | number;
   last_modified?: string | number;
   selected_tab_index?: number | string;
@@ -1521,6 +1524,8 @@ export interface LoadViewOptions {
   databaseId?: string | null;
   /** Load only the canonical database collab, without page-view row_data. */
   databaseMetadataOnly?: boolean;
+  /** Embedded views share the database doc without taking over its page identity or sync binding. */
+  preserveViewMetadata?: boolean;
   forceFetch?: boolean;
 }
 
@@ -1533,6 +1538,8 @@ export type LoadView = (
 
 export interface LoadRowDocumentOptions {
   maxAttempts?: number;
+  /** Require a successful server fetch instead of falling back to local cached content. */
+  requireServerFetch?: boolean;
   rowDocumentSource?: RowDocumentSourcePayload;
 }
 
@@ -2634,6 +2641,8 @@ export interface DocumentFileImportStatusResponse {
   error?: string;
   /** Stable application error code; older workers report only the message. */
   error_code?: number;
+  /** Optional public error metadata from newer workers. */
+  user_error?: unknown;
   diagnostics?: ImportDiagnostics;
 }
 

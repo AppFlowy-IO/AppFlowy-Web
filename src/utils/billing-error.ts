@@ -1,4 +1,5 @@
 import { ERROR_CODE } from '@/application/constants';
+import { hasServerErrorPresentation, readErrorIdentity } from '@/application/errors/error-message';
 import { getWorkspacePlanPolicy } from '@/application/workspace-plan-policy';
 
 // Only include errors whose remedy is a Pro workspace. AI Max, paid-plan
@@ -32,12 +33,16 @@ export function isInvalidSubscriptionPlanError(error: unknown): boolean {
 
 /** A rejected limit cannot be resolved by retrying, including on self-hosted servers. */
 export function isWorkspaceLimitError(error: unknown): boolean {
-  return getWorkspaceLimitError(error) !== undefined;
+  const identity = readErrorIdentity(error);
+
+  return identity.sourceDomain === 'appflowy.server' && identity.code !== undefined && PRO_WORKSPACE_ERROR_CODES.has(identity.code);
 }
 
 /** Add actionable upgrade guidance without replacing more specific server guidance. */
 export function getBillingErrorMessage(error: unknown): string | undefined {
-  const payload = getWorkspaceLimitError(error);
-
-  return payload ? getWorkspacePlanPolicy().getUpgradeMessage(payload.message) : undefined;
+  // Preserve explicit public guidance. Legacy diagnostics containing "Pro" are
+  // not reviewed copy and must not bypass the shared presentation boundary.
+  return isWorkspaceLimitError(error) && !hasServerErrorPresentation(error)
+    ? getWorkspacePlanPolicy().getUpgradeMessage(undefined)
+    : undefined;
 }

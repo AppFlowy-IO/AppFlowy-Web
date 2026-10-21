@@ -6,32 +6,27 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { ViewIconType } from '@/application/types';
 import { ReactComponent as AddEmojiIcon } from '@/assets/icons/add_emoji.svg';
-import { ReactComponent as ChevronRightIcon } from '@/assets/icons/alt_arrow_right.svg';
+import { ReactComponent as ChevronRightIcon } from '@/assets/icons/block-menu-chevron-right.svg';
 import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
+import {
+  CALLOUT_ICON_VERSION,
+  calloutIconUpdate,
+  getCalloutIcon,
+} from '@/components/editor/components/blocks/callout/callout.utils';
 import { CalloutNode } from '@/components/editor/editor.type';
+import { useEditorContext } from '@/components/editor/EditorContext';
 import { Button } from '@/components/ui/button';
 
 function CalloutIconControl({ node, onSelectIcon }: { node: CalloutNode; onSelectIcon: () => void }) {
   const { t } = useTranslation();
   const editor = useSlateStatic() as YjsEditor;
+  const { uploadFile } = useEditorContext();
+  const currentIcon = getCalloutIcon(node.data);
   const [open, setOpen] = useState(false);
 
   const handleChangeIcon = useCallback(
     (icon: { ty: ViewIconType; value: string; color?: string; content?: string }) => {
-      const iconType = icon.ty === ViewIconType.Icon ? 'icon' : 'emoji';
-      let value: string | null = null;
-
-      if (icon.ty === ViewIconType.Icon) {
-        value = JSON.stringify({
-          color: icon.color,
-          groupName: icon.value.split('/')[0],
-          iconName: icon.value.split('/')[1],
-        });
-      } else {
-        value = icon.value;
-      }
-
-      CustomEditor.setBlockData(editor, node.blockId, { icon: value, icon_type: iconType });
+      CustomEditor.setBlockData(editor, node.blockId, calloutIconUpdate(icon));
       setOpen(false);
       onSelectIcon();
     },
@@ -39,7 +34,7 @@ function CalloutIconControl({ node, onSelectIcon }: { node: CalloutNode; onSelec
   );
 
   const handleRemoveIcon = useCallback(() => {
-    CustomEditor.setBlockData(editor, node.blockId, { icon: null });
+    CustomEditor.setBlockData(editor, node.blockId, { icon: '', icon_type: 'icon', version: CALLOUT_ICON_VERSION });
     setOpen(false);
     onSelectIcon();
   }, [editor, node.blockId, onSelectIcon]);
@@ -50,8 +45,9 @@ function CalloutIconControl({ node, onSelectIcon }: { node: CalloutNode; onSelec
       onOpenChange={setOpen}
       onSelectIcon={handleChangeIcon}
       removeIcon={handleRemoveIcon}
-      defaultActiveTab='emoji'
-      tabs={['emoji', 'icon']}
+      defaultActiveTab={currentIcon?.type === 'custom' ? 'upload' : currentIcon?.type || 'emoji'}
+      tabs={['emoji', 'icon', 'upload']}
+      onUploadFile={uploadFile}
       hideRemove={false}
       popoverContentProps={{ side: 'right', align: 'start' }}
     >
@@ -67,7 +63,7 @@ function CalloutIconControl({ node, onSelectIcon }: { node: CalloutNode; onSelec
       >
         <AddEmojiIcon className='h-5 w-5' />
         {t('document.callout.changeIcon')}
-        <ChevronRightIcon className='ml-auto h-5 w-5 text-icon-tertiary' />
+        <ChevronRightIcon className='ml-auto h-5 w-5 shrink-0 text-icon-tertiary [&_path]:stroke-current' />
       </Button>
     </CustomIconPopover>
   );

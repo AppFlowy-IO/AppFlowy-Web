@@ -3,7 +3,13 @@ import { createBdd } from 'playwright-bdd';
 
 import { waitForGridReady } from '../../support/database-ui-helpers';
 import { createNamedGridPage, editFirstGridCell } from '../../support/duplicate-test-helpers';
-import { DatabaseGridSelectors, DatabaseViewSelectors, RowControlsSelectors, TrashSelectors } from '../../support/selectors';
+import {
+  DatabaseGridSelectors,
+  DatabaseViewSelectors,
+  RowControlsSelectors,
+  RowDetailSelectors,
+  TrashSelectors,
+} from '../../support/selectors';
 import { setupPageErrorHandling } from '../../support/test-config';
 
 // Reused steps defined elsewhere:
@@ -194,10 +200,10 @@ When('I open the grid row named {string} as a full row page', async ({ page }, n
   await expect(expandButton).toBeVisible({ timeout: 5000 });
   await expandButton.click({ force: true });
 
-  // The row opens in a modal first; the dialog-title expand button promotes it
-  // to a full row page (?r= URL).
-  await expect(page.locator('.MuiDialog-paper')).toBeVisible({ timeout: 10000 });
-  await page.locator('.MuiDialogTitle-root').locator('button').first().click({ force: true });
+  // The row opens in a peek first; the header's open-full-page button promotes
+  // it to a full row page (?r= URL).
+  await expect(RowDetailSelectors.modal(page)).toBeVisible({ timeout: 10000 });
+  await RowDetailSelectors.openFullPageButton(page).click();
 
   await expect(page).toHaveURL(/[?&]r=/, { timeout: 15000 });
   await expect(page.locator('[data-testid="editor-content"]').first()).toBeVisible({ timeout: 15000 });

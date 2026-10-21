@@ -4,18 +4,18 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useTranslation } from 'react-i18next';
 
 import {
-  FieldVisibility,
   Row,
   useDatabaseContext,
-  useDatabaseGroupFieldIdSelector,
-  useFieldsSelector,
   useGalleryLayoutSettings,
   useReadOnly,
   useRowOrdersSelector,
 } from '@/application/database-yjs';
 import { useReorderRowDispatch } from '@/application/database-yjs/dispatch';
+import { usePublishRowOrders } from '@/application/database-yjs/row-orders-store';
+import type { YDoc } from '@/application/types';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { useDatabaseSearch } from '@/components/database/components/conditions/DatabaseSearchContext';
+import { useFeedSearch } from '@/components/database/feed/useFeedSearch';
 import { cn } from '@/lib/utils';
 
 import {
@@ -30,14 +30,12 @@ import {
 import GalleryCard from './GalleryCard';
 import GalleryNewRow from './GalleryNewRow';
 import { GallerySortSubscription } from './GallerySortState';
+import { useGalleryFields } from './useGalleryFields';
 
 import type { Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 
-const GALLERY_FIELD_VISIBILITIES = [
-  FieldVisibility.AlwaysShown,
-  FieldVisibility.HideWhenEmpty,
-  FieldVisibility.AlwaysHidden,
-];
+/** The search index loads candidate rows independently of the mounted cards. */
+const NO_CACHED_ROW_DOCS: Record<string, YDoc> = {};
 
 function GalleryLoading() {
   const { t } = useTranslation();
@@ -108,20 +106,23 @@ function useGalleryColumnCount(gridRef: React.RefObject<HTMLDivElement>, cardWid
 
 export function Gallery() {
   const { t } = useTranslation();
-  const allFields = useFieldsSelector(GALLERY_FIELD_VISIBILITIES);
-  const groupFieldId = useDatabaseGroupFieldIdSelector();
-  const fields = useMemo(
-    () =>
-      allFields.filter(
-        (field) =>
-          field.fieldId !== groupFieldId && (field.isPrimary || field.visibility !== FieldVisibility.AlwaysHidden)
-      ),
-    [allFields, groupFieldId]
-  );
-  const rowOrders = useRowOrdersSelector();
+  const fields = useGalleryFields();
+  const rowOrders = useRowOrdersSelector({ publish: false });
   const readOnly = useReadOnly();
   const settings = useGalleryLayoutSettings();
   const { query } = useDatabaseSearch();
+  const primaryFieldId = useMemo(() => fields.find((field) => field.isPrimary)?.fieldId, [fields]);
+  // Cards and peek navigation share the same search result, including metadata
+  // properties such as Created By and Last Edited By.
+  const matchingRows = useFeedSearch({
+    rows: rowOrders,
+    fields,
+    primaryFieldId,
+    cachedRowDocs: NO_CACHED_ROW_DOCS,
+    query,
+  });
+
+  usePublishRowOrders(matchingRows, true, { layout: 'gallery', query });
   const { activeViewId, isDocumentBlock, onRendered, paddingEnd, paddingStart } = useDatabaseContext();
   const reorderRow = useReorderRowDispatch();
   const [visibleRowLimit, setVisibleRowLimit] = useState(GALLERY_INITIAL_ROW_LIMIT);
@@ -144,8 +145,8 @@ export function Gallery() {
 
   const searchActive = query.trim().length > 0;
   const visibleRows = useMemo(
-    () => (searchActive ? rowOrders : rowOrders?.slice(0, visibleRowLimit)),
-    [rowOrders, searchActive, visibleRowLimit]
+    () => (searchActive ? matchingRows : rowOrders?.slice(0, visibleRowLimit)),
+    [matchingRows, rowOrders, searchActive, visibleRowLimit]
   );
   const remainingRowCount = rowOrders && !searchActive ? Math.max(rowOrders.length - visibleRowLimit, 0) : 0;
   const loadMoreRows = useCallback(() => {

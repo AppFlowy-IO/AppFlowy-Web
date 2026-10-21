@@ -78,14 +78,22 @@ export function getEmbeddedGridViewportStyle({
   contentHeight,
   embeddedHeight,
   isDocumentBlock,
+  isLoading = false,
 }: {
   contentHeight: number;
   embeddedHeight?: number;
   isDocumentBlock?: boolean;
+  isLoading?: boolean;
 }) {
   if (!isDocumentBlock || embeddedHeight === undefined) return undefined;
 
   const maxHeight = `${embeddedHeight}px`;
+
+  // Placeholder rows are not the final content size. Keep the loading viewport
+  // stable, then let empty and small databases shrink once their rows are known.
+  if (isLoading) {
+    return { height: embeddedHeight, maxHeight };
+  }
 
   if (contentHeight <= 0) {
     return { maxHeight };

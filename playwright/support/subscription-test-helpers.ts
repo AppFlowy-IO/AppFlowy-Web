@@ -11,6 +11,11 @@ import type { Page } from '@playwright/test';
  */
 export async function mockProSubscription(page: Page): Promise<void> {
   await mockServerInfoPreservingCapabilities(page, { self_hosted: false });
+  await mockProBillingResponses(page);
+}
+
+/** Isolate the external billing service while keeping real server capabilities. */
+export async function mockProBillingResponses(page: Page): Promise<void> {
   await page.route('**/billing/api/v1/active-subscription/**', async (route) => {
     await route.fulfill({
       status: 200,
@@ -39,14 +44,25 @@ export async function mockProSubscription(page: Page): Promise<void> {
 }
 
 /**
- * Hosted release servers check the database before allowing Timeline and
- * Dashboard creation. Browser billing mocks only enable their menus, so give
- * this fixture workspace the same active Pro entitlement used by the backend's
- * Timeline tests. CI supplies its disposable Postgres container ID; local
- * debug/self-hosted servers do not enforce this plan and need no database setup.
+ * Hosted release servers check the database before allowing Timeline creation.
+ * Browser billing mocks only enable its menu, so give this fixture workspace
+ * the same active Pro entitlement used by the backend's Timeline tests.
+ * Supply only the disposable Postgres container used by these tests. The optional
+ * database name selects a test database when it differs from the container default.
+ * Self-hosted servers need no entitlement fixture; hosted debug builds enforce it too.
  */
 export function grantTestProSubscription(page: Page): void {
-  const workspaceId = new URL(page.url()).pathname.split('/')[2];
+  grantTestWorkspaceProSubscription(new URL(page.url()).pathname.split('/')[2]);
+}
+
+/** Grants only the fresh workspace owned by the calling test. */
+export function grantTestWorkspaceProSubscription(workspaceId: string): void {
+  const container = process.env.APPFLOWY_TEST_POSTGRES_CONTAINER;
+
+  if (!container) {
+    if (process.env.CI) throw new Error('CI must provide APPFLOWY_TEST_POSTGRES_CONTAINER for Timeline fixtures');
+    return;
+  }
 
   if (!workspaceId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(workspaceId)) {
     throw new Error('Open a test workspace before granting its Pro subscription');
@@ -72,9 +88,10 @@ export function grantWorkspaceProSubscription(workspaceId: string): void {
       container,
       'sh',
       '-c',
-      'exec psql -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}" -v ON_ERROR_STOP=1 -v "workspace_id=$1"',
+      'exec psql -U "${POSTGRES_USER:-postgres}" -d "${2:-${POSTGRES_DB:-postgres}}" -v ON_ERROR_STOP=1 -v "workspace_id=$1"',
       'psql',
       workspaceId,
+      process.env.APPFLOWY_TEST_POSTGRES_DATABASE ?? '',
     ],
     {
       // Pro = 1 in the server's SubscriptionPlan enum. The fixture-specific

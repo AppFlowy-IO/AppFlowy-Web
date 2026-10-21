@@ -1,21 +1,21 @@
 import { Button } from '@mui/material';
 import { PopoverOrigin } from '@mui/material/Popover/Popover';
-import { type FC, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type FC, type ReactNode, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { Editor, Element, Transforms } from 'slate';
+import { Editor, Element, RangeRef, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
 import { isDatabaseBlockType } from '@/application/database-block';
 import { createDatabaseDashboardPageViaGrid } from '@/application/database-yjs/dashboard-page';
-import { createDatabaseFeedPageViaGrid } from '@/application/database-yjs/feed-layout';
-import { createDatabaseGalleryPageViaGrid } from '@/application/database-yjs/gallery-layout';
 import { createLinkedDatabaseViewForLayout } from '@/application/database-yjs/linked-view-creation';
-import { createDatabaseListPageViaGrid } from '@/application/database-yjs/list-layout';
+import { createLinkedDefaultDatabaseView } from '@/application/database-yjs/creation/create-linked-default-view';
 import {
   databaseCatalogViewToView,
   getDatabaseContainerEntries,
   getWorkspaceDatabaseCatalog,
 } from '@/application/services/domains/view';
+import { applyYDoc } from '@/application/ydoc/apply';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { isEmbedBlockTypes } from '@/application/slate-yjs/command/const';
@@ -27,11 +27,11 @@ import {
 import { getBlockIndex, getParent } from '@/application/slate-yjs/utils/yjs';
 import {
   AlignType,
+  AIMeetingBlockData,
   AudioBlockData,
   AudioUrlType,
   BlockData,
   BlockType,
-  CalloutBlockData,
   CodeBlockData,
   GalleryBlockData,
   GalleryLayout,
@@ -44,13 +44,14 @@ import {
   VideoBlockData,
   View,
   ViewLayout,
+  DatabaseViewLayout,
   YjsEditorKey,
 } from '@/application/types';
-import { applyYDoc } from '@/application/ydoc/apply';
 // import { ReactComponent as AIWriterIcon } from '@/assets/slash_menu_icon_ai_writer.svg';
 import { ReactComponent as EmojiIcon } from '@/assets/icons/add_emoji.svg';
 import { ReactComponent as AddPageIcon } from '@/assets/icons/add_to_page.svg';
 import { ReactComponent as AskAIIcon } from '@/assets/icons/ai.svg';
+import { ReactComponent as TranscriptIcon } from '@/assets/icons/ai_meeting_transcript_tab.svg';
 import { ReactComponent as AudioIcon } from '@/assets/icons/audio.svg';
 import { ReactComponent as BoardIcon } from '@/assets/icons/board.svg';
 import { ReactComponent as BulletedListIcon } from '@/assets/icons/bulleted_list.svg';
@@ -96,15 +97,21 @@ import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { useAIEnabled } from '@/components/app/app.hooks';
 import { useDashboardCreationGate } from '@/components/app/hooks/useDashboardCreationGate';
 import { DatabaseViewCreationAction, useDatabaseViewCreation } from '@/components/app/hooks/useDatabaseViewCreation';
+import { AppOutlineContext } from '@/components/app/contexts/AppOutlineContext';
 import { useAIWriter } from '@/components/chat';
 import { SearchInput } from '@/components/chat/components/ui/search-input';
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
+import { DEFAULT_CALLOUT_DATA } from '@/components/editor/components/blocks/callout/callout.utils';
 import { createDatabaseNodeData } from '@/components/editor/components/blocks/database/utils/databaseBlockUtils';
+import { initializeMeetingSections } from '@/components/editor/components/blocks/ai-meeting/ai-meeting.import';
+import FormulaPopover from '@/components/editor/components/leaf/formula/FormulaPopover';
 import { usePanelContext } from '@/components/editor/components/panels/Panels.hooks';
 import { PanelType } from '@/components/editor/components/panels/PanelsContext';
 import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { createSubpage } from '@/components/editor/subpage/create-subpage';
+import { captureBlockCreationTarget, captureExistingDatabaseBlock } from '@/components/editor/utils/block-creation-target';
+import { insertInlineEquation } from '@/components/editor/utils/math-equation';
 import { Button as OutlineButton } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
@@ -269,13 +276,16 @@ export function SlashPanel({
     loadView,
     bindViewSync,
     scheduleDeferredCleanup,
-    deletePage,
-    updatePage,
     getMoreAIContext,
     createDatabaseView,
+    deletePage,
     getSubscriptions,
   } = useEditorContext();
   const editorContext = useEditorContext();
+  const outline = useContext(AppOutlineContext);
+  const creationOwnerRef = useRef({ documentId, workspaceId, outline });
+
+  creationOwnerRef.current = { documentId, workspaceId, outline };
   const [viewName, setViewName] = useState('');
   const [linkedPicker, setLinkedPicker] = useState<{
     position: { top: number; left: number };
@@ -296,6 +306,17 @@ export function SlashPanel({
   const [transformOrigin, setTransformOrigin] = useState<PopoverOrigin | undefined>(undefined);
   const selectedOptionRef = useRef<string | null>(null);
   const { openPopover } = usePopoverContext();
+  const [inlineEquation, setInlineEquation] = useState<{ range: RangeRef; position: { top: number; left: number } }>();
+  const closeInlineEquation = useCallback(() => {
+    const range = inlineEquation?.range.unref();
+
+    // Remove the popover's focus trap before returning focus to Slate.
+    flushSync(() => setInlineEquation(undefined));
+    if (range) { editor.select(range); ReactEditor.focus(editor); }
+  }, [editor, inlineEquation]);
+
+  useEffect(() => () => { inlineEquation?.range.unref(); }, [inlineEquation]);
+
 
   const open = useMemo(() => {
     return isPanelOpen(PanelType.Slash);
@@ -407,8 +428,8 @@ export function SlashPanel({
   );
 
   const turnInto = useCallback(
-    (type: BlockType, data: BlockData) => {
-      const block = getBlockEntry(editor);
+    (type: BlockType, data: BlockData, targetBlockId?: string) => {
+      const block = targetBlockId ? findSlateEntryByBlockId(editor, targetBlockId) : getBlockEntry(editor);
 
       if (!block) return;
 
@@ -420,6 +441,12 @@ export function SlashPanel({
         newBlockId = CustomEditor.turnToBlock(editor, blockId, type, data);
       } else {
         newBlockId = CustomEditor.addBelowBlock(editor, blockId, type, data);
+      }
+
+      if (newBlockId && type === BlockType.AIMeetingBlock) {
+        initializeMeetingSections(editor, newBlockId);
+        Transforms.deselect(editor);
+        return;
       }
 
       if (newBlockId && isEmbedBlockTypes(type)) {
@@ -454,6 +481,8 @@ export function SlashPanel({
       ) {
         openPopover(newBlockId, type);
       }
+
+      return newBlockId;
     },
     [editor, openPopover]
   );
@@ -484,44 +513,7 @@ export function SlashPanel({
 
       try {
         const name = t('document.plugins.database.newDatabase');
-        const response =
-          layout === ViewLayout.List
-            ? await (() => {
-                if (!loadView || !bindViewSync || !deletePage || !scheduleDeferredCleanup) {
-                  throw new Error('List creation is not available right now');
-                }
-
-                return createDatabaseListPageViaGrid({
-                  parentViewId: documentId,
-                  name,
-                  addPage,
-                  loadViewMeta,
-                  loadView,
-                  bindViewSync,
-                  scheduleDeferredCleanup,
-                  deletePage,
-                  updatePage,
-                });
-              })()
-            : layout === ViewLayout.Gallery
-            ? await (() => {
-                if (!loadView || !bindViewSync || !deletePage || !scheduleDeferredCleanup) {
-                  throw new Error('Gallery creation is not available right now');
-                }
-
-                return createDatabaseGalleryPageViaGrid({
-                  parentViewId: documentId,
-                  name,
-                  addPage,
-                  loadViewMeta,
-                  loadView,
-                  bindViewSync,
-                  deletePage,
-                  scheduleDeferredCleanup,
-                  updatePage,
-                });
-              })()
-            : layout === ViewLayout.Dashboard
+        const response = layout === ViewLayout.Dashboard
             ? await (() => {
                 if (!loadView || !bindViewSync || !deletePage || !createDatabaseView) {
                   throw new Error('Dashboard creation is not available right now');
@@ -536,24 +528,6 @@ export function SlashPanel({
                   createDatabaseView,
                   deletePage,
                   scheduleDeferredCleanup,
-                });
-              })()
-            : layout === ViewLayout.Feed
-            ? await (() => {
-                if (!loadView || !bindViewSync || !deletePage || !scheduleDeferredCleanup) {
-                  throw new Error('Feed creation is not available right now');
-                }
-
-                return createDatabaseFeedPageViaGrid({
-                  parentViewId: documentId,
-                  name,
-                  addPage,
-                  loadViewMeta,
-                  loadView,
-                  bindViewSync,
-                  deletePage,
-                  scheduleDeferredCleanup,
-                  updatePage,
                 });
               })()
             : await addPage(documentId, { layout, name });
@@ -615,13 +589,11 @@ export function SlashPanel({
       deletePage,
       documentId,
       editor,
-      loadView,
-      loadViewMeta,
       openPageModal,
+      loadView,
       scheduleDeferredCleanup,
       t,
       turnInto,
-      updatePage,
     ]
   );
 
@@ -673,7 +645,7 @@ export function SlashPanel({
 
   const handleOpenLinkedDatabasePicker = useCallback(
     async (layout: ViewLayout) => {
-      if (!documentId || !createDatabaseView) return;
+      if (!documentId || !workspaceId || editor.firstBody || editorContext.readOnly || editorContext.canWrite === false) return;
       const rect = getRangeRect();
 
       if (!rect) return;
@@ -691,14 +663,14 @@ export function SlashPanel({
         setLinkedPicker(null);
       }
     },
-    [createDatabaseView, loadDatabasesForPicker, t, documentId]
+    [loadDatabasesForPicker, t, documentId, workspaceId, editor.firstBody, editorContext.readOnly, editorContext.canWrite]
   );
 
   const handleSelectDatabase = useCallback(
     async (targetViewId: string) => {
       if (!linkedPicker || !checkCreationRef.current(linkedPicker.layout, () => setLinkedPicker(null))) return;
 
-      if (!createDatabaseView || !documentId) {
+      if (!documentId || !loadView || !bindViewSync || !scheduleDeferredCleanup || editorContext.readOnly || editorContext.canWrite === false) {
         notify.error(
           t('document.slashMenu.linkedDatabase.actionUnavailable', {
             defaultValue: 'Linking databases is not available right now',
@@ -776,6 +748,8 @@ export function SlashPanel({
         const referencedName = prefix ? `${prefix} ${baseName}` : baseName;
         const sourceViewId = option.sourceViewId;
 
+        if (linkedPicker.layout === ViewLayout.Dashboard) {
+          if (!createDatabaseView) throw new Error('Dashboard creation is unavailable');
         // A new linked dashboard starts empty; List, Gallery and Feed start from the picked view.
         const { response, databaseUpdatePending } = await createLinkedDatabaseViewForLayout(linkedPicker.layout, {
           requestViewId: documentId,
@@ -794,37 +768,63 @@ export function SlashPanel({
           scheduleDeferredCleanup,
         });
 
-        Log.debug('[SlashPanel] {} created linked database', {
-          documentId,
-          databaseViewId,
-          newViewId: response.view_id,
-          referencedName,
-        });
-
-        if (databaseUpdatePending && response.database_update?.length && loadView) {
-          try {
-            const databaseDoc = await loadView(response.view_id, false, false, {
-              databaseId: response.database_id || databaseId,
-            });
+          if (databaseUpdatePending && response.database_update?.length && loadView) {
+            const databaseDoc = await loadView(response.view_id, false, false, { databaseId });
 
             applyYDoc(databaseDoc, new Uint8Array(response.database_update));
-          } catch (error) {
-            Log.warn('[SlashPanel] failed to apply linked database update', {
-              viewId: response.view_id,
-              databaseId: response.database_id || databaseId,
-              error,
-            });
           }
+
+          turnInto(blockType, createDatabaseNodeData({ parentId: documentId, viewIds: [response.view_id], databaseId }));
+          return;
         }
 
-        turnInto(
-          blockType,
-          createDatabaseNodeData({
-            parentId: documentId,
-            viewIds: [response.view_id],
-            databaseId: response.database_id,
-          })
-        );
+        if (!workspaceId || editor.firstBody) throw new Error('Linked Database creation is unavailable');
+        const targetBlockId = getBlockEntry(editor)?.[0].blockId;
+
+        if (!targetBlockId) throw new Error('The linked Database insertion block is unavailable');
+        const target = captureBlockCreationTarget(editor, targetBlockId);
+        const layouts: Partial<Record<ViewLayout, DatabaseViewLayout>> = {
+          [ViewLayout.Grid]: DatabaseViewLayout.Grid, [ViewLayout.Board]: DatabaseViewLayout.Board,
+          [ViewLayout.Calendar]: DatabaseViewLayout.Calendar, [ViewLayout.Chart]: DatabaseViewLayout.Chart,
+          [ViewLayout.List]: DatabaseViewLayout.List, [ViewLayout.Gallery]: DatabaseViewLayout.Gallery,
+          [ViewLayout.Feed]: DatabaseViewLayout.Feed, [ViewLayout.Form]: DatabaseViewLayout.Form,
+          [ViewLayout.Timeline]: DatabaseViewLayout.Timeline,
+        };
+        const layout = layouts[linkedPicker.layout];
+
+        if (layout === undefined) throw new Error('Unsupported linked Database layout');
+        const assertCurrent = () => {
+          const current = creationOwnerRef.current;
+
+          target.assertCurrent();
+          if (current.documentId !== documentId || current.workspaceId !== workspaceId) {
+            throw new Error('Linked Database creation owner changed');
+          }
+        };
+
+        await createLinkedDefaultDatabaseView({
+          workspaceId, requestViewId: documentId, sourceViewId, layout,
+          payload: { parent_view_id: documentId, database_id: databaseId, name: referencedName, embedded: true },
+          loadView, bindViewSync, scheduleDeferredCleanup, assertCurrent,
+          findExistingActivation: (id) => captureExistingDatabaseBlock(editor, documentId, databaseId, id),
+          activate: async (id) => {
+            const ensure = creationOwnerRef.current.outline?.ensureViewVisibleInOutline;
+
+            if (!ensure) throw new Error('The sidebar creation owner is unavailable');
+            assertCurrent();
+            const ancestors = await ensure(id);
+
+            assertCurrent();
+            if (ancestors.length === 0) {
+              throw new Error('Created linked Database view is missing from the sidebar');
+            }
+
+            target.replace((blockId) => turnInto(blockType, createDatabaseNodeData({
+              parentId: documentId, viewIds: [id], databaseId,
+            }), blockId));
+          },
+        });
+
       } catch (e) {
         const error = e as Error;
 
@@ -836,12 +836,16 @@ export function SlashPanel({
     [
       linkedPicker,
       createDatabaseView,
+      deletePage,
+      editorContext.readOnly,
+      editorContext.canWrite,
+      editor,
+      workspaceId,
       documentId,
       databaseOptions,
       turnInto,
       t,
       bindViewSync,
-      deletePage,
       loadView,
       scheduleDeferredCleanup,
     ]
@@ -868,6 +872,19 @@ export function SlashPanel({
     const allOptions: SlashMenuOption[] = [
       ...(aiEnabled
         ? [
+            {
+              label: t('document.aiMeeting.import.title'),
+              key: 'aiTranscript',
+              icon: <TranscriptIcon />,
+              group: SlashMenuGroupKey.AppFlowyAI,
+              keywords: ['ai', 'transcript', 'transcription', 'meeting', 'audio', 'video'],
+              onClick: () => turnInto(BlockType.AIMeetingBlock, {
+                title: '',
+                recording_state: 'idle',
+                transcription_type: 'none',
+                created_at: new Date().toISOString(),
+              } as AIMeetingBlockData),
+            },
             {
               label: t('document.slashMenu.name.askAIAnything'),
               key: 'askAIAnything',
@@ -1668,12 +1685,10 @@ export function SlashPanel({
         label: t('document.slashMenu.name.callout'),
         key: 'callout',
         icon: <CalloutIcon />,
-        group: SlashMenuGroupKey.AdvancedBlocks,
+        group: SlashMenuGroupKey.BasicBlocks,
         keywords: ['callout', 'note', 'tip'],
         onClick: () => {
-          turnInto(BlockType.CalloutBlock, {
-            icon: '📌',
-          } as CalloutBlockData);
+          turnInto(BlockType.CalloutBlock, DEFAULT_CALLOUT_DATA);
         },
       },
       {
@@ -1687,11 +1702,27 @@ export function SlashPanel({
         },
       },
       {
+        label: t('document.plugins.mathEquation.inline'),
+        key: 'inlineMath', icon: <FormulaIcon />, group: SlashMenuGroupKey.Inline,
+        keywords: ['inline', 'math', 'equation', 'formula', 'tex', 'latex'], shortcut: '$...$',
+        aliases: ['eqn'],
+        onClick: () => {
+          if (!editor.selection) return;
+          const rect = ReactEditor.toDOMRange(editor, editor.selection).getBoundingClientRect();
+
+          setInlineEquation({ range: Editor.rangeRef(editor, editor.selection), position: { top: rect.bottom, left: rect.left } });
+          // Slate can ignore the native blur while removing the slash command.
+          // Hand focus to the popover explicitly so cancellation can restore it.
+          ReactEditor.blur(editor);
+        },
+      },
+      {
         label: t('document.slashMenu.name.mathEquation'),
         key: 'math',
         icon: <FormulaIcon />,
         group: SlashMenuGroupKey.AdvancedBlocks,
         keywords: ['math', 'equation', 'formula', 'tex', 'latex', 'katex'],
+        aliases: ['math equation', 'me', 'blk', 'be', 'eqn'],
         shortcut: '$$',
         onClick: () => {
           turnInto(BlockType.EquationBlock, {});
@@ -1998,6 +2029,14 @@ export function SlashPanel({
 
   return (
     <>
+      {inlineEquation && <FormulaPopover open defaultValue='' anchorPosition={inlineEquation.position} onClose={closeInlineEquation}
+        onDone={(formula) => {
+          const range = inlineEquation.range.unref();
+
+          setInlineEquation(undefined);
+          if (range) insertInlineEquation(editor, formula, range);
+          ReactEditor.focus(editor);
+        }} />}
       <Popover
         adjustOrigins={false}
         data-testid={'slash-panel'}

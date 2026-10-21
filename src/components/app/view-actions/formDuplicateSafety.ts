@@ -1,13 +1,14 @@
+import { ClientValidationError, clientValidationMessages } from '@/application/errors/client-validation-error';
 import { getView } from '@/application/services/js-services/http/view-api';
 import { View, ViewLayout } from '@/application/types';
 import { assertDashboardViewCreationOnline } from '@/application/view-online-policy';
 import { getDashboardOwner, isDatabaseContainer } from '@/application/view-utils';
 
 export const FORM_DEEP_DUPLICATE_UNAVAILABLE_MESSAGE =
-  'This page contains a Form and cannot be duplicated yet because its Form settings would not be preserved.';
+  clientValidationMessages.FORM_DEEP_DUPLICATE_UNAVAILABLE;
 
 export const FORM_DEEP_DUPLICATE_CHECK_FAILED_MESSAGE =
-  'Could not verify that this database can be duplicated safely. Refresh the page and try again.';
+  clientValidationMessages.FORM_DEEP_DUPLICATE_CHECK_FAILED;
 
 const FORM_DEEP_DUPLICATE_PREFLIGHT_DEPTH = 50;
 
@@ -63,7 +64,7 @@ export async function assertGenericDeepDuplicateIsSafe({
 }): Promise<void> {
   assertOwnedDescendantsOnline(knownView);
   if (isUnsafeFormDeepDuplicate(knownView)) {
-    throw new Error(FORM_DEEP_DUPLICATE_UNAVAILABLE_MESSAGE);
+    throw new ClientValidationError('FORM_DEEP_DUPLICATE_UNAVAILABLE');
   }
 
   let freshView: View;
@@ -74,11 +75,11 @@ export async function assertGenericDeepDuplicateIsSafe({
     // may contain a Form that the generic server duplicate rejects.
     freshView = await loadFreshView(workspaceId, viewId, FORM_DEEP_DUPLICATE_PREFLIGHT_DEPTH);
   } catch {
-    throw new Error(FORM_DEEP_DUPLICATE_CHECK_FAILED_MESSAGE);
+    throw new ClientValidationError('FORM_DEEP_DUPLICATE_CHECK_FAILED');
   }
 
   if (isUnsafeFormDeepDuplicate(freshView)) {
-    throw new Error(FORM_DEEP_DUPLICATE_UNAVAILABLE_MESSAGE);
+    throw new ClientValidationError('FORM_DEEP_DUPLICATE_UNAVAILABLE');
   }
 
   assertOwnedDescendantsOnline(freshView);
@@ -86,6 +87,6 @@ export async function assertGenericDeepDuplicateIsSafe({
   // Every database has at least one view. An empty container response means the
   // safety check did not receive the child metadata it needs, so fail closed.
   if (isDatabaseContainer(freshView) && freshView.children.length === 0) {
-    throw new Error(FORM_DEEP_DUPLICATE_CHECK_FAILED_MESSAGE);
+    throw new ClientValidationError('FORM_DEEP_DUPLICATE_CHECK_FAILED');
   }
 }

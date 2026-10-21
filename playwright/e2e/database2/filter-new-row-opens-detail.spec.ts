@@ -12,7 +12,7 @@ import {
   loginAndCreateGrid,
   setupFilterTest,
 } from '../../support/filter-test-helpers';
-import { DatabaseGridSelectors } from '../../support/selectors';
+import { DatabaseGridSelectors, RowDetailSelectors } from '../../support/selectors';
 
 test.describe('New row opens detail when filter is active', () => {
   test('clicking new row with filter opens row detail modal', async ({ page, request }) => {
@@ -34,8 +34,10 @@ test.describe('New row opens detail when filter is active', () => {
     // Click "+ New row".
     await DatabaseGridSelectors.newRowButton(page).click();
 
-    // The row detail modal should appear (MUI Dialog renders [role="dialog"]).
-    await expect(page.locator('[role="dialog"]').last()).toBeVisible({ timeout: 8000 });
+    // A fresh row opens in side peek on a wide viewport. The center shell
+    // remains mounted but hidden so switching modes preserves the editor.
+    await expect(RowDetailSelectors.modal(page)).toBeVisible({ timeout: 8000 });
+    await expect(RowDetailSelectors.modal(page)).toHaveAttribute('data-peek-mode', 'side');
   });
 
   test('clicking new row without filter does NOT open detail modal', async ({ page, request }) => {
@@ -43,11 +45,9 @@ test.describe('New row opens detail when filter is active', () => {
     const email = generateRandomEmail();
     await loginAndCreateGrid(page, request, email);
 
-    const dialogsBefore = await page.locator('[role="dialog"]').count();
+    await expect(RowDetailSelectors.modal(page)).toHaveCount(0);
     await addRows(page, 1);
     await page.waitForTimeout(1500);
-    const dialogsAfter = await page.locator('[role="dialog"]').count();
-
-    expect(dialogsAfter).toBe(dialogsBefore);
+    await expect(RowDetailSelectors.modal(page)).toHaveCount(0);
   });
 });

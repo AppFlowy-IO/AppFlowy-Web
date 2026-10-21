@@ -1,12 +1,16 @@
 import { toBase64 } from 'lib0/buffer';
+import * as Y from 'yjs';
 
+import type { AtomicCreationOwner } from '@/application/atomic-creation/owner';
 import { ERROR_CODE } from '@/application/constants';
 import { getOrCreateDeviceId } from '@/application/services/js-services/device-id';
 import { RowDocumentSourcePayload, RowId, Types, User, View } from '@/application/types';
 import { database_blob } from '@/proto/database_blob';
 import { collab } from '@/proto/messages';
+import { getErrorDiagnostic } from '@/utils/errors';
 import { Log } from '@/utils/log';
 
+import { awaitAtomicRequest, ownedRequestConfig } from './atomic-creation-api';
 import { APIResponse, APIError, executeAPIRequest, executeAPIVoidRequest, getAxios, parseRetryAfterSecs } from './core';
 
 export interface CollabFullSyncBatchResult {
@@ -20,6 +24,8 @@ export interface CollabFullSyncBatchResult {
 }
 
 export interface CollabFullSyncBatchOptions {
+  /** Fence requests to the workspace/session that owns the creation operation. */
+  atomicCreationOwner?: AtomicCreationOwner;
   /**
    * Marks a single oversized item for the server's bounded slow-sync lane.
    * Ordinary batch requests intentionally omit this header.
@@ -29,6 +35,100 @@ export interface CollabFullSyncBatchOptions {
   signal?: AbortSignal;
   /** Bounds ordinary requests that participate in a serialized workflow. */
   timeoutMs?: number;
+}
+
+/**
+ * Read complete current states without entering the full-sync write/admission path.
+ * Creation callers still validate source coverage and bracket these reads with
+ * restore-generation checks. Keep fan-out bounded for template and row graphs.
+ */
+export async function readCollabStates(
+  workspaceId: string,
+  items: { objectId: string; collabType: Types }[],
+  options: Pick<CollabFullSyncBatchOptions, 'atomicCreationOwner' | 'signal' | 'timeoutMs'> = {}
+): Promise<CollabFullSyncBatchResult[]> {
+  const owner = options.atomicCreationOwner;
+
+  if (owner && owner.workspaceId !== workspaceId) throw new Error('Current collab read owner changed');
+  throwIfAborted(options.signal);
+  const deadline = Date.now() + (options.timeoutMs ?? 30_000);
+  const results = new Array<CollabFullSyncBatchResult>(items.length);
+  // The first failed read cancels its siblings instead of leaving them in flight.
+  const controller = new AbortController();
+  const signal = controller.signal;
+  const cancel = () => controller.abort(options.signal?.reason);
+  const bytes = (value: unknown): Uint8Array => {
+    if (!Array.isArray(value) || !value.length || value.some((byte) => !Number.isInteger(byte) || byte < 0 || byte > 255)) {
+      throw new Error('Invalid current collab encoding');
+    }
+
+    return new Uint8Array(value);
+  };
+
+  const read = async ({ objectId, collabType }: { objectId: string; collabType: Types }) => {
+    throwIfAborted(signal);
+    owner?.assertCurrent();
+    const timeout = deadline - Date.now();
+
+    if (timeout <= 0) throw new Error('Current collab read expired');
+    const state = await awaitAtomicRequest(executeAPIRequest<{
+      object_id: string; doc_state: number[]; state_vector: number[]; version: number; collab_version?: string | null;
+    }>(() => getAxios()?.get(`/api/workspace/v1/${workspaceId}/collab/${objectId}`, {
+      ...(owner ? ownedRequestConfig(owner, signal) : { signal }),
+      skipResponseCache: true,
+      timeout,
+      params: { collab_type: collabType },
+      headers: { 'Cache-Control': 'no-cache' },
+    }), { suppressResponseDataLogging: true }), signal);
+
+    throwIfAborted(signal);
+    owner?.assertCurrent();
+    if (state.object_id !== objectId || (state.version !== 0 && state.version !== 1)) {
+      throw new Error('Current collab identity or encoding changed');
+    }
+
+    let docState = bytes(state.doc_state);
+
+    if (state.version === 1) {
+      const decoded = new Y.Doc();
+
+      try {
+        Y.applyUpdateV2(decoded, docState);
+        if (decoded.store.pendingStructs || decoded.store.pendingDs) throw new Error('Current collab history is incomplete');
+        docState = Y.encodeStateAsUpdate(decoded);
+      } finally {
+        decoded.destroy();
+      }
+    }
+
+    return {
+      objectId, collabType,
+      missingUpdate: docState,
+      serverStateVector: bytes(state.state_vector),
+      collabVersion: state.collab_version ?? undefined,
+    };
+  };
+
+  let next = 0;
+  // Keep four reads in flight; one slow object must not hold the other slots idle.
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next++;
+
+      results[index] = await read(items[index]);
+    }
+  };
+
+  options.signal?.addEventListener('abort', cancel, { once: true });
+  try {
+    await Promise.all(Array.from({ length: Math.min(4, items.length) }, worker));
+    return results;
+  } catch (error) {
+    controller.abort();
+    throw error;
+  } finally {
+    options.signal?.removeEventListener('abort', cancel);
+  }
 }
 
 export const SLOW_SYNC_PROBE_TIMEOUT_MS = 120_000;
@@ -194,6 +294,10 @@ export async function collabFullSyncBatch(
   }>,
   options?: CollabFullSyncBatchOptions
 ): Promise<CollabFullSyncBatchResult[]> {
+  const owner = options?.atomicCreationOwner;
+
+  owner?.assertCurrent();
+  if (owner && owner.workspaceId !== workspaceId) throw new Error('Atomic source read workspace changed');
   const url = `/api/workspace/v1/${workspaceId}/collab/full-sync/batch`;
   const streamingGzipAvailable = canUseStreamingGzip();
   const slowSyncPayloadBytes = items.reduce(
@@ -248,12 +352,13 @@ export async function collabFullSyncBatch(
   const deviceId = getOrCreateDeviceId();
   const axiosInstance = getAxios();
   const timeoutMs =
-    options?.timeoutMs ?? (options?.syncLane === 'slow' ? getSlowSyncUploadTimeoutMs(slowSyncPayloadBytes) : undefined);
+    options?.timeoutMs ?? (options?.syncLane === 'slow' ? getSlowSyncUploadTimeoutMs(slowSyncPayloadBytes) : owner ? 30_000 : undefined);
 
   // Send the request with protobuf content type.
   // Use validateStatus to prevent axios from throwing on 429/503 so we can
   // extract the Retry-After header and surface it to callers.
-  const response = await axiosInstance?.post(url, encoded, {
+  const response = await awaitAtomicRequest(Promise.resolve(axiosInstance?.post(url, encoded, {
+    ...(owner ? ownedRequestConfig(owner, options?.signal) : {}),
     headers: {
       'Content-Type': 'application/octet-stream',
       'client-version': 'web',
@@ -269,8 +374,9 @@ export async function collabFullSyncBatch(
     // protobufjs' pooled zero padding beyond this Uint8Array view.
     transformRequest: [(data: Uint8Array) => data],
     validateStatus: (status) => status === 200 || status === 429 || status === 503,
-  });
+  })), owner ? options?.signal : undefined);
 
+  owner?.assertCurrent();
   if (!response) {
     const err = new Error('No response received from server');
 
@@ -323,6 +429,7 @@ export async function collabFullSyncBatch(
     });
   }
 
+  owner?.assertCurrent();
   return results;
 }
 
@@ -478,7 +585,7 @@ export async function duplicateRowDocument(
       if (
         delay === undefined ||
         apiError?.code !== ERROR_CODE.INVALID_REQUEST ||
-        !apiError.message?.includes(`new_row_id ${newRowId} does not belong to database ${databaseId}`)
+        !getErrorDiagnostic(apiError).includes(`new_row_id ${newRowId} does not belong to database ${databaseId}`)
       ) {
         throw error;
       }

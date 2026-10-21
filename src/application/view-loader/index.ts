@@ -40,6 +40,8 @@ import { isDatabaseLayout } from '@/application/view-utils';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { Log } from '@/utils/log';
 
+import { consumeCreatedDocument } from './created-document';
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -382,7 +384,7 @@ async function fetchRowDocumentAndApply(
 /**
  * Whether the local doc already serves this view without a server fetch.
  */
-function canUseLocalDoc(doc: YDoc, viewId: string, options: OpenViewOptions): boolean {
+function canUseLocalDoc(doc: YDoc, viewId: string, options: OpenViewOptions, workspaceId?: string): boolean {
   if (options.forceFetch || !hasCollabCache(doc)) return false;
 
   // Detect empty-shell documents that were cached during a previous load when
@@ -394,7 +396,7 @@ function canUseLocalDoc(doc: YDoc, viewId: string, options: OpenViewOptions): bo
 
   // If the cached document is an empty shell (≤2 blocks = page + empty paragraph),
   // treat it as uncached so we re-fetch from the server.
-  if (document && blockCount <= 2) {
+  if (document && blockCount <= 2 && !(workspaceId && consumeCreatedDocument(doc, workspaceId, viewId))) {
     const meta = document.get(YjsEditorKey.meta) as Y.Map<unknown> | undefined;
     const textMap = meta?.get(YjsEditorKey.text_map) as Y.Map<Y.Text> | undefined;
     const hasTextContent = textMap
@@ -605,7 +607,7 @@ export async function openView(
   let doc = await openCollabDocForView(viewId, layout, options);
 
   // Step 2: Check cache
-  const fromCache = canUseLocalDoc(doc, viewId, options);
+  const fromCache = canUseLocalDoc(doc, viewId, options, workspaceId);
 
   Log.debug('[ViewLoader] cache check', {
     viewId,
@@ -683,7 +685,7 @@ export async function openRowSubDocument(
   // During row duplication the local doc may be created as an empty shell
   // (by openLocalDocument → initializeDocumentStructure). In that case
   // we must fetch from the server to get the worker-created content.
-  let fromCache = hasCollabCache(doc);
+  let fromCache = !options.requireServerFetch && hasCollabCache(doc);
 
   if (fromCache) {
     const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot | undefined;
@@ -727,12 +729,10 @@ export async function openRowSubDocument(
   // the document after a row duplication.
   if (!fromCache) {
     const maxAttempts = Math.max(1, Math.floor(options.maxAttempts ?? DEFAULT_ROW_DOCUMENT_MAX_ATTEMPTS));
-    let fetched = false;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         await fetchRowDocumentAndApply(workspaceId, documentId, doc, options);
-        fetched = true;
         break;
       } catch (e) {
         // A permission denial cannot be repaired by retrying or by creating the
@@ -753,14 +753,11 @@ export async function openRowSubDocument(
           error: e instanceof Error ? e.message : String(e),
         });
 
-        if (attempt < maxAttempts) {
-          await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
-        }
+        // Without an accepted cache, only a successful fetch can make this
+        // document editable. Preserve the failure for the opener's retry/create decision.
+        if (attempt === maxAttempts) throw e;
+        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
       }
-    }
-
-    if (!fetched) {
-      Log.warn('[ViewLoader] rowSubDoc fetch exhausted retries, using local doc', { documentId });
     }
   }
 

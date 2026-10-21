@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@/utils/errors';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
@@ -101,14 +102,14 @@ export function ChangePassword({ email, redirectTo }: { email: string; redirectT
     setPasswordErrors([]);
 
     try {
-      await AuthService.changePassword({ password: newPassword });
+      await AuthService.resetPassword({ password: newPassword });
       toast.success(t('changePassword.success'));
 
       invalidToken();
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
-      setError(error.message);
+      setError(getErrorMessage(error));
     } finally {
       submittingRef.current = false;
       setLoading(false);
@@ -116,7 +117,7 @@ export function ChangePassword({ email, redirectTo }: { email: string; redirectT
   };
 
   const hasPasswordErrors = passwordErrors.length > 0;
-  const hasConfirmError = error?.includes('match');
+  const hasConfirmError = Boolean(error) && newPassword !== confirmPassword;
   const isFormValid = newPassword && confirmPassword && !hasPasswordErrors && newPassword === confirmPassword;
 
   return (

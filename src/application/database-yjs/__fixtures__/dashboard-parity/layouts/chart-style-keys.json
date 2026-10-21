@@ -9,8 +9,9 @@
                   "zz_parity_probe": { "from": "newer-app" } },
       "parsed": { "decimal_places": 2, "color_theme": "blue", "show_data_labels": false, "legend_position": "bottom" },
       "write": { "x_field_id": "f:stage" },
-      "writtenKeys": ["x_field_id"],
-      "expected": { "chart_type": 0, "x_field_id": "f:stage", "decimal_places": 2, "color_theme": "blue",
+      "writtenKeys": ["x_field_id", "aggregation_type", "aggregation_type_pb", "date_condition", "show_empty_values", "y_field_id"],
+      "expected": { "aggregation_type": 0, "aggregation_type_pb": 0, "date_condition": 3, "show_empty_values": false, "y_field_id": "",
+                    "chart_type": 0, "x_field_id": "f:stage", "decimal_places": 2, "color_theme": "blue",
                     "show_data_labels": false, "legend_position": "bottom", "zz_parity_probe": { "from": "newer-app" } }
     },
     {

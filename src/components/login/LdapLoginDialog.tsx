@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@/utils/errors';
 import { useCallback, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -80,7 +81,7 @@ function LdapLoginDialog({ open, onOpenChange, onSubmit }: LdapLoginDialogProps)
     } catch (e: unknown) {
       const err = e as { message?: string };
 
-      setError(err?.message || t('web.signInError'));
+      setError(getErrorMessage(err, t('web.signInError')));
       // Only the password is cleared: a failed attempt is usually a typo, and
       // retyping the username every time is pure friction.
       setPassword('');

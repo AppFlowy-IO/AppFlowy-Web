@@ -1,29 +1,32 @@
 import { Button, Divider } from '@mui/material';
 import { PopoverProps } from '@mui/material/Popover';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useContext, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Path, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
 import { prefetchDatabaseBlobDiff } from '@/application/database-blob';
 import { createLinkedDatabaseViewForLayout } from '@/application/database-yjs/linked-view-creation';
+import { createLinkedDefaultDatabaseView } from '@/application/database-yjs/creation/create-linked-default-view';
 import { ViewService } from '@/application/services/domains';
 import { getAxios, executeAPIRequest, APIResponse } from '@/application/services/js-services/http/core';
 import { getView } from '@/application/services/js-services/http/view-api';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
-import { BlockType, View } from '@/application/types';
+import { BlockType, DatabaseViewLayout, View, ViewLayout } from '@/application/types';
 import { getDatabaseIdFromExtra } from '@/application/view-utils';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as CopyLinkIcon } from '@/assets/icons/link.svg';
 import { notify } from '@/components/_shared/notify';
 import { Popover } from '@/components/_shared/popover';
+import { AppOutlineContext } from '@/components/app/contexts/AppOutlineContext';
 import {
   createDatabaseDuplicatePlaceholderData,
   createDatabaseNodeData,
 } from '@/components/editor/components/blocks/database/utils/databaseBlockUtils';
+import { MathEquationMenu } from '@/components/editor/components/blocks/math-equation/MathEquationMenu';
 import { deleteBlocksWithSimpleTable } from '@/components/editor/components/blocks/simple-table/SimpleTable.convert';
 import { scrollSimpleTableFromMenu } from '@/components/editor/components/blocks/simple-table/SimpleTable.scroll';
 import { SimpleTableBlockControls } from '@/components/editor/components/blocks/simple-table/SimpleTableBlockControls';
@@ -33,11 +36,14 @@ import {
   OutlineCollapseControl,
   OutlineDepthControl,
 } from '@/components/editor/components/toolbar/block-controls/OutlineControls';
-import { BlockNode, CalloutNode, DatabaseNode, OutlineNode } from '@/components/editor/editor.type';
+import { CalloutNode, DatabaseNode, OutlineNode, MathEquationNode } from '@/components/editor/editor.type';
 import { useEditorContext, useEditorLocalState } from '@/components/editor/EditorContext';
+import { captureBlockCreationTarget, captureExistingDatabaseBlock } from '@/components/editor/utils/block-creation-target';
 import { copyTextToClipboard } from '@/utils/copy';
 import { getErrorMessage } from '@/utils/errors';
 
+import { BlockTurnInto } from './BlockTurnInto';
+import { CalloutWritingActions } from './CalloutBlockActions';
 import CalloutIconControl from './CalloutIconControl';
 import CalloutQuickStyleControl from './CalloutQuickStyleControl';
 import Color from './Color';
@@ -49,6 +55,7 @@ import {
   loadDatabaseDuplicateSourceViews,
 } from './databaseDuplicateUtils';
 import { duplicateBlockSelection, finalizeDuplicatedBlockData } from './duplicateBlockSelection';
+import { useBlockMenuNode } from './useBlockMenuNode';
 
 function getViewNoCache(workspaceId: string, viewId: string, depth: number = 1): Promise<View> {
   const url = `/api/workspace/${workspaceId}/view/${viewId}?depth=${depth}&_t=${Date.now()}`;
@@ -194,6 +201,16 @@ function waitForDatabaseBlobSeeds(workspaceId: string, databaseId: string): Prom
   });
 }
 
+const simpleTextBlockTypes = new Set<BlockType>([
+  BlockType.Paragraph,
+  BlockType.HeadingBlock,
+  BlockType.BulletedListBlock,
+  BlockType.NumberedListBlock,
+  BlockType.QuoteBlock,
+  BlockType.TodoListBlock,
+  BlockType.ToggleListBlock,
+]);
+
 const popoverProps: Partial<PopoverProps> = {
   transformOrigin: {
     vertical: 'center',
@@ -242,26 +259,29 @@ function ControlsMenu({
 }) {
   const { selectedBlockIds } = useEditorLocalState();
   const editorContext = useEditorContext();
+  const outline = useContext(AppOutlineContext);
+  const creationRef = useRef({ context: editorContext, outline });
+
+  creationRef.current = { context: editorContext, outline };
   const {
     workspaceId,
     loadViewMeta,
     loadView,
     bindViewSync,
     scheduleDeferredCleanup,
+    duplicatePage,
     createDatabaseView,
     deletePage,
-    duplicatePage,
     updatePage,
   } = useEditorContext();
   const editor = useSlateStatic() as YjsEditor;
   const onlySingleBlockSelected = selectedBlockIds?.length === 1;
   const selectedBlockId = selectedBlockIds?.[0];
-  const node = useMemo(() => {
-    if (!selectedBlockId) return null;
-
-    return findSlateEntryByBlockId(editor, selectedBlockId);
-  }, [selectedBlockId, editor]);
-  const isSimpleTable = onlySingleBlockSelected && node?.[0].type === BlockType.SimpleTableBlock;
+  const node = useBlockMenuNode(selectedBlockId);
+  const isSimpleTable = onlySingleBlockSelected && node?.type === BlockType.SimpleTableBlock;
+  const isSimpleTextBlock = !!node && simpleTextBlockTypes.has(node.type);
+  const isCallout = node?.type === BlockType.CalloutBlock;
+  const hasTextBlockMenu = isSimpleTextBlock || isCallout;
 
   const { t } = useTranslation();
   const duplicateCopySuffix = useMemo(() => ` (${t('menuAppHeader.pageNameSuffix')})`, [t]);
@@ -276,7 +296,8 @@ function ControlsMenu({
   );
 
   const resolveDuplicatedDatabaseBlockData = useCallback(
-    async (sourceNode: DatabaseNode): Promise<DatabaseNode['data']> => {
+    async (sourceNode: DatabaseNode, targetBlockId: string): Promise<DatabaseNode['data']> => {
+      const target = captureBlockCreationTarget(editor, targetBlockId);
       const parentId = sourceNode.data.parent_id;
       const sourceViewIds = sourceNode.data.view_ids?.length
         ? sourceNode.data.view_ids
@@ -289,12 +310,13 @@ function ControlsMenu({
         throw new Error(t('document.plugins.subPage.errors.failedDuplicateFindView'));
       }
 
-      if (!loadViewMeta || !createDatabaseView) {
+      if (!loadViewMeta || editor.firstBody || editorContext.readOnly || editorContext.canWrite === false) {
         throw new Error(t('document.plugins.subPage.errors.failedDuplicatePage'));
       }
 
       const firstSourceView = await loadViewMeta(sourceViewIds[0]);
 
+      target.assertCurrent();
       if (!firstSourceView) {
         throw new Error(t('document.plugins.subPage.errors.failedDuplicateFindView'));
       }
@@ -308,6 +330,7 @@ function ControlsMenu({
           loadViewMeta,
         });
 
+        target.assertCurrent();
         // The generic linked-view path below does not copy Form's per-view
         // settings. Reject the entire block before creating any children so a
         // mixed Grid/Form block cannot be partially duplicated or silently
@@ -323,6 +346,8 @@ function ControlsMenu({
               throw new Error(t('document.plugins.subPage.errors.failedDuplicateFindView'));
             }
 
+            if (layout === ViewLayout.Dashboard) {
+              if (!createDatabaseView) throw new Error('Dashboard duplication is unavailable');
             // The copy of a dashboard keeps the source's widgets, with its own copies of the views they own.
             const { response } = await createLinkedDatabaseViewForLayout(layout, {
               requestViewId: parentId,
@@ -341,6 +366,48 @@ function ControlsMenu({
               deletePage,
               bindViewSync,
               scheduleDeferredCleanup,
+              });
+
+              target.assertCurrent();
+              return response.view_id;
+            }
+
+            if (!workspaceId || editor.firstBody) throw new Error('Linked Database creation is unavailable');
+            const layouts: Partial<Record<ViewLayout, DatabaseViewLayout>> = {
+              [ViewLayout.Grid]: DatabaseViewLayout.Grid, [ViewLayout.Board]: DatabaseViewLayout.Board,
+              [ViewLayout.Calendar]: DatabaseViewLayout.Calendar, [ViewLayout.Chart]: DatabaseViewLayout.Chart,
+              [ViewLayout.List]: DatabaseViewLayout.List, [ViewLayout.Gallery]: DatabaseViewLayout.Gallery,
+              [ViewLayout.Feed]: DatabaseViewLayout.Feed, [ViewLayout.Form]: DatabaseViewLayout.Form,
+              [ViewLayout.Timeline]: DatabaseViewLayout.Timeline,
+            };
+            const requestedLayout = layouts[layout];
+            const assertCurrent = () => {
+              const current = creationRef.current;
+
+              target.assertCurrent();
+              if (current.context.workspaceId !== workspaceId ||
+                current.context.viewId !== editorContext.viewId || editor.firstBody) {
+                throw new Error('Linked Database creation owner changed');
+              }
+            };
+
+            if (requestedLayout === undefined) throw new Error('Unsupported Database view layout');
+            const response = await createLinkedDefaultDatabaseView({
+              workspaceId, requestViewId: parentId, sourceViewId: sourceView?.view_id ?? sourceViewIds[i],
+              layout: requestedLayout,
+              payload: { parent_view_id: parentId, database_id: databaseId, name: sourceView?.name, embedded: true },
+              loadView, bindViewSync, scheduleDeferredCleanup, assertCurrent,
+              findExistingActivation: (id) => captureExistingDatabaseBlock(editor, parentId, databaseId, id),
+              activate: async (id) => {
+                const ensure = creationRef.current.outline?.ensureViewVisibleInOutline;
+
+                if (!ensure) throw new Error('The sidebar creation owner is unavailable');
+                assertCurrent();
+                const ancestors = await ensure(id);
+
+                assertCurrent();
+                if (ancestors.length === 0) throw new Error('Created view is absent from the sidebar');
+              },
             });
 
             return response.view_id;
@@ -389,6 +456,7 @@ function ControlsMenu({
         throw sourceContainerResult.reason;
       }
 
+      target.assertCurrent();
       const sourceContainerView = sourceContainerResult.value;
       const beforeParentView: View | null = parentResult.status === 'fulfilled' ? parentResult.value : null;
 
@@ -419,6 +487,7 @@ function ControlsMenu({
 
         await waitForDatabaseBlobSeeds(workspaceId, rowPageDuplicate.databaseId);
 
+        target.assertCurrent();
         return createDatabaseNodeData({
           parentId,
           viewIds: [rowPageDuplicate.viewId],
@@ -456,6 +525,7 @@ function ControlsMenu({
 
       await waitForDatabaseBlobSeeds(workspaceId, duplicatedContainer.databaseId);
 
+      target.assertCurrent();
       // Map source view IDs to their index positions within the source container,
       // then select the same positions from the duplicated container. This preserves
       // the block's tab subset (e.g., if the block only shows tabs B and C out of
@@ -481,10 +551,14 @@ function ControlsMenu({
       });
     },
     [
+      editor,
+      editorContext.viewId,
+      editorContext.readOnly,
+      editorContext.canWrite,
       bindViewSync,
+      duplicateCopySuffix,
       createDatabaseView,
       deletePage,
-      duplicateCopySuffix,
       duplicatePage,
       loadView,
       loadViewMeta,
@@ -511,12 +585,14 @@ function ControlsMenu({
         hasDatabaseBlock = true;
 
         try {
-          const nextDatabaseBlockData = await resolveDuplicatedDatabaseBlockData(selectedNode as DatabaseNode);
+          const nextDatabaseBlockData = await resolveDuplicatedDatabaseBlockData(selectedNode as DatabaseNode, newBlockId);
 
           setDatabaseBlockData(newBlockId, nextDatabaseBlockData);
         } catch (error) {
-          for (const id of newBlockIds) {
-            CustomEditor.deleteBlock(editor, id);
+          if (YjsEditor.connected(editor) && !editor.readOnly) {
+            for (const id of newBlockIds) {
+              CustomEditor.deleteBlock(editor, id);
+            }
           }
 
           throw error;
@@ -585,11 +661,23 @@ function ControlsMenu({
     }[];
   }, [t, duplicateSelectedBlocks, selectedBlockIds, onlySingleBlockSelected, editor, isSimpleTable]);
 
+  if (onlySingleBlockSelected && node?.type === BlockType.EquationBlock && anchorEl && open) {
+    return (
+      <MathEquationMenu
+        node={node as MathEquationNode}
+        anchorEl={anchorEl}
+        onClose={onClose}
+        anchorOrigin={popoverProps.anchorOrigin}
+        transformOrigin={popoverProps.transformOrigin}
+      />
+    );
+  }
+
   return (
     <Popover
       anchorEl={anchorEl}
       onClose={() => {
-        const path = node?.[1];
+        const path = selectedBlockId ? findSlateEntryByBlockId(editor, selectedBlockId)?.[1] : undefined;
 
         if (path) {
           window.getSelection()?.removeAllRanges();
@@ -605,8 +693,21 @@ function ControlsMenu({
         if (entry) scrollSimpleTableFromMenu(event, ReactEditor.toDOMNode(editor, entry[0]));
       } : undefined}
       {...popoverProps}
+      PaperProps={
+        hasTextBlockMenu
+          ? { ...popoverProps?.PaperProps, className: 'text-block-menu-paper' }
+          : popoverProps?.PaperProps
+      }
     >
-      <div data-testid={'controls-menu'} className={`flex w-[240px] flex-col p-2 ${isSimpleTable ? 'simple-table-block-menu' : ''}`}>
+      <div
+        data-testid='controls-menu'
+        className={`flex flex-col p-2 ${hasTextBlockMenu ? 'text-block-menu w-[238px]' : 'w-[240px]'} ${isSimpleTable ? 'simple-table-block-menu' : ''} ${isCallout ? 'callout-block-menu' : ''}`}
+      >
+        {isCallout && (
+          <div className='px-2 py-1.5 text-xs font-medium leading-[18px] text-text-tertiary'>
+            {t('document.slashMenu.name.callout')}
+          </div>
+        )}
         {options.map((option) => {
           return (
             <Button
@@ -630,40 +731,34 @@ function ControlsMenu({
           );
         })}
 
+        {onlySingleBlockSelected && node && <BlockTurnInto key={node.blockId} node={node} onClose={onClose} />}
+
         {isSimpleTable && selectedBlockId ? <SimpleTableBlockControls key={selectedBlockId} blockId={selectedBlockId} onClose={onClose} /> : null}
 
-        {node?.[0]?.type &&
-          [
-            BlockType.Paragraph,
-            BlockType.HeadingBlock,
-            BlockType.BulletedListBlock,
-            BlockType.NumberedListBlock,
-            BlockType.QuoteBlock,
-            BlockType.TodoListBlock,
-            BlockType.ToggleListBlock,
-          ].includes(node?.[0]?.type as BlockType) && (
-            <>
-              <Divider className='my-2' />
-              <Color node={node[0] as BlockNode} onSelectColor={onClose} />
-            </>
-          )}
-
-        {node?.[0]?.type === BlockType.OutlineBlock && onlySingleBlockSelected && (
+        {isSimpleTextBlock && node && (
           <>
             <Divider className='my-2' />
-            <OutlineCollapseControl node={node[0] as OutlineNode} onToggle={onClose} />
-            <OutlineDepthControl node={node[0] as OutlineNode} onClose={onClose} />
-            <Color node={node[0] as BlockNode} onSelectColor={onClose} />
+            <Color node={node} onSelectColor={onClose} />
           </>
         )}
 
-        {node?.[0]?.type === BlockType.CalloutBlock && (
+        {node?.type === BlockType.OutlineBlock && onlySingleBlockSelected && (
           <>
             <Divider className='my-2' />
-            <CalloutQuickStyleControl node={node[0] as CalloutNode} onSelectStyle={onClose} />
-            <CalloutIconControl node={node[0] as CalloutNode} onSelectIcon={onClose} />
-            <Color node={node[0] as BlockNode} onSelectColor={onClose} />
-            <CalloutTextColor node={node[0] as CalloutNode} onSelectColor={onClose} />
+            <OutlineCollapseControl node={node as OutlineNode} onToggle={onClose} />
+            <OutlineDepthControl node={node as OutlineNode} onClose={onClose} />
+            <Color node={node} onSelectColor={onClose} />
+          </>
+        )}
+
+        {node?.type === BlockType.CalloutBlock && onlySingleBlockSelected && (
+          <>
+            <Divider className='my-2' />
+            <CalloutQuickStyleControl node={node as CalloutNode} onSelectStyle={onClose} />
+            <CalloutIconControl node={node as CalloutNode} onSelectIcon={onClose} />
+            <CalloutTextColor node={node as CalloutNode} onSelectColor={onClose} />
+            <Color node={node} onSelectColor={onClose} />
+            <CalloutWritingActions node={node as CalloutNode} onClose={onClose} />
           </>
         )}
       </div>

@@ -22,6 +22,7 @@ import Database, { Database2Props } from '@/components/database/Database';
 const mockSeedLoadPromises: Array<Promise<YDoc | undefined>> = [];
 const mockEnsureRowPromises: Array<Promise<YDoc | undefined> | void> = [];
 let mockDatabaseContext: DatabaseContextState | undefined;
+let mockPeekContext: DatabaseContextState | undefined;
 let mockLoadSeedOnLifecycleChange = false;
 /** Databases whose rows the tab holds (`isDatabaseSourceResident`). */
 const mockResidentSources = new Set<string>();
@@ -31,6 +32,12 @@ const mockResidencyListeners = new Set<() => void>();
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
+}));
+
+let mockSourceCanWrite = false;
+
+jest.mock('@/components/app/view-actions/useViewActionPermissions', () => ({
+  useViewActionPermissions: () => ({ canWrite: mockSourceCanWrite, canShare: mockSourceCanWrite }),
 }));
 
 jest.mock('sonner', () => ({ toast: { error: jest.fn() } }));
@@ -57,16 +64,45 @@ jest.mock('@/application/services/js-services/cache', () => ({
   openRowDoc: jest.fn(),
 }));
 
-jest.mock('@/components/database/DatabaseRow', () => ({
-  DatabaseRow: () => null,
-}));
+jest.mock('@/components/database/DatabaseRow', () => {
+  const { useDatabaseContext } = jest.requireActual<typeof import('@/application/database-yjs/context')>(
+    '@/application/database-yjs/context'
+  );
 
-jest.mock(
-  '@/components/database/DatabaseRowModal',
-  () =>
-    ({ open }: { open: boolean }) =>
-      open ? <div data-testid='database-row-modal' /> : null
-);
+  return {
+    DatabaseRow: () => {
+      mockDatabaseContext = useDatabaseContext();
+      return null;
+    },
+  };
+});
+
+jest.mock('@/components/database/DatabaseRowModal', () => {
+  const React = jest.requireActual<typeof import('react')>('react');
+  const { useDatabaseContext } = jest.requireActual<typeof import('@/application/database-yjs/context')>(
+    '@/application/database-yjs/context'
+  );
+
+  return function MockRowModal({
+    open,
+    rowId,
+    onOpenChange,
+  }: {
+    open: boolean;
+    rowId: string;
+    onOpenChange: (open: boolean) => void;
+  }) {
+    const [mode, setMode] = React.useState('side');
+
+    mockPeekContext = useDatabaseContext();
+    return open ? (
+      <div data-testid='database-row-modal' data-peek-mode={mode} data-row-id={rowId}>
+        <button onClick={() => setMode('center')}>Center peek</button>
+        <button onClick={() => onOpenChange(false)}>Close peek</button>
+      </div>
+    ) : null;
+  };
+});
 jest.mock('@/components/database/DatabaseContext', () => {
   const React = jest.requireActual<typeof import('react')>('react');
   const { DatabaseContext } = jest.requireActual<typeof import('@/application/database-yjs/context')>(
@@ -232,7 +268,7 @@ function createDatabaseDoc(guid: string, databaseId = 'database-id') {
 }
 
 function insertRemoteRowOrder(doc: YDoc, rowId: string) {
-  const remoteDoc = new Y.Doc();
+  const remoteDoc = new Y.Doc() as YDoc;
 
   Y.applyUpdate(remoteDoc, Y.encodeStateAsUpdate(doc));
   const beforeInsert = Y.encodeStateVector(remoteDoc);
@@ -246,7 +282,7 @@ function insertRemoteRowOrder(doc: YDoc, rowId: string) {
 }
 
 function hydrateDatabaseIdWithRemoteRowOrders(doc: YDoc, databaseId: string, rowIds: string[]) {
-  const remoteDoc = new Y.Doc();
+  const remoteDoc = new Y.Doc() as YDoc;
 
   Y.applyUpdate(remoteDoc, Y.encodeStateAsUpdate(doc));
   const beforeHydration = Y.encodeStateVector(remoteDoc);
@@ -380,6 +416,7 @@ describe('Database blob prefetch lifecycle', () => {
     mockSeedLoadPromises.length = 0;
     mockEnsureRowPromises.length = 0;
     mockDatabaseContext = undefined;
+    mockPeekContext = undefined;
     mockLoadSeedOnLifecycleChange = false;
     mockedPeekSeed.mockReset();
     mockedSeedDoc.mockReset();
@@ -504,6 +541,154 @@ describe('Database blob prefetch lifecycle', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  it.each(['peek', 'page'] as const)(
+    'keeps the opened %s canonical row when bulk seeds finish in the same React batch',
+    async (surface) => {
+      const doc = createDatabaseDoc('database-id');
+
+      insertRemoteRowOrder(doc, 'remote-row-id');
+      const seed = createHydratedRowDoc('seed-row');
+      const canonical = createHydratedRowDoc('canonical-row');
+      const backgroundDoc = createHydratedRowDoc('background-row');
+      const pendingBackground = createDeferred<YDoc>();
+      const createRow = jest.fn(async () => canonical);
+
+      mockedPeekSeed.mockReturnValue({ bytes: new Uint8Array([1]), encoderVersion: 1 });
+      mockedOpenRowDoc.mockImplementation((key) =>
+        key.endsWith('_rows_row-id') ? Promise.resolve(seed) : pendingBackground.promise
+      );
+      const { unmount } = render(
+        <Database
+          {...databaseProps(doc)}
+          {...(surface === 'peek' ? { modalRowId: 'row-id' } : { rowId: 'row-id' })}
+          createRow={createRow}
+        />
+      );
+
+      try {
+        await act(async () => {
+          mockedPrefetch.mock.calls[0][2]?.onSeedsReady?.();
+          await Promise.resolve();
+        });
+        expect(mockedOpenRowDoc).toHaveBeenCalledWith('database-id_rows_remote-row-id', expect.anything());
+        const context = surface === 'peek' ? mockPeekContext : mockDatabaseContext;
+
+        await act(async () => {
+          expect(await context?.ensureRow?.('row-id')).toBe(canonical);
+          // The canonical state update is queued while another row keeps the bulk
+          // load pending. Finish both before React commits and updates rowMapRef.
+          pendingBackground.resolve(backgroundDoc);
+          for (let turn = 0; turn < 8; turn++) await Promise.resolve();
+        });
+        expect(mockDatabaseContext?.rowMap?.['row-id']).toBe(canonical);
+        expect(mockDatabaseContext?.rowMap?.['remote-row-id']).toBe(backgroundDoc);
+        expect(createRow).toHaveBeenCalledTimes(1);
+        expect(mockDatabaseContext?.hasCellLocalMutation?.('row-id', 'field-id')).toBe(false);
+      } finally {
+        unmount();
+        [doc, seed, canonical, backgroundDoc].forEach((document) => document.destroy());
+      }
+    }
+  );
+
+  it.each(['peek', 'page'] as const)(
+    'loads only the opened %s row before pending bulk seeds and shares its canonical sync owner',
+    async (surface) => {
+      const doc = createDatabaseDoc('database-id');
+      const rowDoc = createHydratedRowDoc('row-id');
+      const backgroundDoc = createHydratedRowDoc('remote-row-id');
+      const open = createDeferred<YDoc>();
+      const createRow = jest.fn(async (key: string) => key.endsWith('_rows_row-id') ? rowDoc : backgroundDoc);
+      const scheduleDeferredCleanup = jest.fn();
+
+      mockedOpenRowDoc.mockImplementation((key) =>
+        key.endsWith('_rows_row-id') ? open.promise : Promise.resolve(backgroundDoc)
+      );
+      const { unmount } = render(
+        <Database
+          {...databaseProps(doc)}
+          {...(surface === 'peek' ? { modalRowId: 'row-id' } : { rowId: 'row-id' })}
+          createRow={createRow}
+          scheduleDeferredCleanup={scheduleDeferredCleanup}
+        />
+      );
+
+      try {
+        const context = surface === 'peek' ? mockPeekContext : mockDatabaseContext;
+
+        if (!context?.ensureRow) throw new Error('Row detail did not expose its loader');
+        let backgroundSettled = false;
+        const background = context.ensureRow('remote-row-id')?.then(() => { backgroundSettled = true; });
+        const first = context.ensureRow('row-id');
+        const second = context.ensureRow('row-id');
+
+        // No timer advancement or blob response: direct user intent starts
+        // only this row's canonical load, while the bulk path stays batched.
+        expect(mockedOpenRowDoc).toHaveBeenCalledTimes(1);
+        expect(mockedOpenRowDoc).toHaveBeenCalledWith('database-id_rows_row-id', undefined);
+        await act(async () => {
+          open.resolve(rowDoc);
+          expect(await Promise.all([first, second])).toEqual([rowDoc, rowDoc]);
+        });
+        expect(createRow).toHaveBeenCalledTimes(1);
+        expect(createRow).toHaveBeenCalledWith('database-id_rows_row-id');
+        expect(backgroundSettled).toBe(false);
+        expect(mockDatabaseContext?.rowMap?.['row-id']).toBe(rowDoc);
+        expect(mockDatabaseContext?.hasCellLocalMutation?.('row-id', 'field-id')).toBe(false);
+
+        // A later bulk response must keep the interactive canonical document,
+        // not replace it with a seed shell or acquire a second owner.
+        mockedPeekSeed.mockReturnValue({ bytes: new Uint8Array([1]), encoderVersion: 1 });
+        await act(async () => {
+          mockedPrefetch.mock.calls[0][2]?.onSeedsReady?.();
+          await background;
+        });
+        expect(backgroundSettled).toBe(true);
+        expect(mockDatabaseContext?.rowMap?.['row-id']).toBe(rowDoc);
+        expect(mockedOpenRowDoc.mock.calls.filter(([key]) => key === 'database-id_rows_row-id')).toHaveLength(1);
+        expect(createRow.mock.calls.filter(([key]) => key === 'database-id_rows_row-id')).toHaveLength(1);
+      } finally {
+        unmount();
+        expect(scheduleDeferredCleanup.mock.calls.filter(([id]) => id === 'row-id')).toHaveLength(1);
+        doc.destroy();
+        rowDoc.destroy();
+        backgroundDoc.destroy();
+      }
+    }
+  );
+
+  it('drops an interactive row that finishes after the workspace lifecycle changes', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const rowDoc = createHydratedRowDoc('row-id');
+    const open = createDeferred<YDoc>();
+    const createRow = jest.fn(async () => rowDoc);
+
+    mockedOpenRowDoc.mockReturnValue(open.promise);
+    const { rerender, unmount } = render(
+      <Database {...databaseProps(doc)} modalRowId='row-id' createRow={createRow} />
+    );
+
+    try {
+      if (!mockPeekContext?.ensureRow) throw new Error('Peek did not expose its loader');
+      const pending = mockPeekContext.ensureRow('row-id');
+
+      expect(mockedOpenRowDoc).toHaveBeenCalledTimes(1);
+      rerender(
+        <Database {...databaseProps(doc)} workspaceId='replacement-workspace' modalRowId='row-id' createRow={createRow} />
+      );
+      await act(async () => {
+        open.resolve(rowDoc);
+        expect(await pending).toBeUndefined();
+      });
+      expect(createRow).not.toHaveBeenCalled();
+      expect(mockDatabaseContext?.rowMap?.['row-id']).toBeUndefined();
+    } finally {
+      unmount();
+      doc.destroy();
+      rowDoc.destroy();
+    }
   });
 
   it.each([
@@ -1318,7 +1503,7 @@ describe('Database blob prefetch lifecycle', () => {
     const seed = { bytes: new Uint8Array([1, 2, 3]), encoderVersion: 1 };
     const createRow = jest.fn(async () => canonicalRowDoc);
 
-    mockedPeekSeed.mockImplementation((rowKey) => (rowKey === 'database-id_rows_remote-row-id' ? seed : undefined));
+    mockedPeekSeed.mockImplementation((rowKey) => (rowKey === 'database-id_rows_remote-row-id' ? seed : null));
     mockedOpenRowDoc.mockImplementation((rowKey) => {
       if (rowKey === 'database-id_rows_remote-row-id') return seedLoad.promise;
       throw new Error(`unexpected row key: ${rowKey}`);
@@ -1387,7 +1572,7 @@ describe('Database blob prefetch lifecycle', () => {
       expect(createRow).toHaveBeenCalledTimes(1);
 
       act(() => {
-        const index = rowOrders?.toArray().findIndex((row) => row.id === 'remote-row-id') ?? -1;
+        const index = rowOrders?.toArray().findIndex((row: { id: string }) => row.id === 'remote-row-id') ?? -1;
 
         if (index >= 0) rowOrders?.delete(index, 1);
       });
@@ -2157,17 +2342,49 @@ describe('Database blob prefetch lifecycle', () => {
     transportRowDoc.destroy();
   });
 
-  it('keeps a readonly embedded App row in a modal that inherits the document permission', () => {
+  it.each([true, false])('keeps a readonly App row in its permission context (embedded=%s)', (isDocumentBlock) => {
     const doc = createDatabaseDoc('database-id');
     const onOpenRowPage = jest.fn();
     const { unmount } = render(
-      <Database {...databaseProps(doc)} isDocumentBlock onOpenRowPage={onOpenRowPage} readOnly variant={UIVariant.App} />
+      <Database
+        {...databaseProps(doc)}
+        isDocumentBlock={isDocumentBlock}
+        onOpenRowPage={onOpenRowPage}
+        readOnly
+        variant={UIVariant.App}
+      />
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Open row' }));
 
     expect(screen.getByTestId('database-row-modal')).not.toBeNull();
     expect(onOpenRowPage).not.toHaveBeenCalled();
+
+    unmount();
+    doc.destroy();
+  });
+
+  it('starts each newly opened row in side peek after a temporary center choice', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const { unmount } = render(<Database {...databaseProps(doc)} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open row' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Center peek' }));
+    expect(screen.getByTestId('database-row-modal').getAttribute('data-peek-mode')).toBe('center');
+
+    await act(async () => {
+      await Promise.resolve(mockPeekContext?.navigateToRow?.('next-row'));
+    });
+    expect(screen.getByTestId('database-row-modal').getAttribute('data-row-id')).toBe('next-row');
+    expect(screen.getByTestId('database-row-modal').getAttribute('data-peek-mode')).toBe('side');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Center peek' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close peek' }));
+    expect(screen.queryByTestId('database-row-modal')).toBeNull();
+    await act(async () => {
+      await Promise.resolve(mockDatabaseContext?.navigateToRow?.('next-row'));
+    });
+    expect(screen.getByTestId('database-row-modal').getAttribute('data-peek-mode')).toBe('side');
 
     unmount();
     doc.destroy();
@@ -2193,6 +2410,193 @@ describe('Database blob prefetch lifecycle', () => {
 
     unmount();
     doc.destroy();
+  });
+
+  it.each(['feed', 'gallery'] as const)(
+    'retains %s presentation across background tab switches and row remounts',
+    async (layout) => {
+      const doc = createDatabaseDoc('database-id');
+      const host = render(<Database {...databaseProps(doc)} />);
+      const source = mockDatabaseContext!.rowOrdersStore!.get(doc, 'view-id');
+      const owner = Symbol();
+      const presentation = { layout, query: layout === 'gallery' ? 'match' : '' };
+      const rows = [
+        { id: 'row-id', height: 44 },
+        { id: 'next-row', height: 44 },
+      ];
+
+      act(() => source.publish(owner, rows, presentation));
+      await act(async () => {
+        await Promise.resolve(mockDatabaseContext?.navigateToRow?.('row-id'));
+      });
+      host.rerender(<Database {...databaseProps(doc)} activeViewId='other-view' />);
+      act(() => source.remove(owner));
+      fireEvent.click(screen.getByRole('button', { name: 'Center peek' }));
+      await act(async () => {
+        await Promise.resolve(mockPeekContext?.navigateToRow?.('next-row'));
+      });
+      expect(screen.getByTestId('database-row-modal').getAttribute('data-peek-mode')).toBe('side');
+      expect(mockPeekContext?.rowOrdersSource?.getSnapshot()).toEqual({ rows, presentation, published: false });
+      fireEvent.click(screen.getByRole('button', { name: 'Close peek' }));
+      expect(source.getSnapshot()).toBeUndefined();
+      host.unmount();
+      doc.destroy();
+    }
+  );
+
+  it.each(['feed', 'gallery'] as const)(
+    'hands off embedded %s orders and resolves permissions after loading',
+    async (layout) => {
+      const doc = createDatabaseDoc('database-id');
+      const nestedDoc = createDatabaseDoc('nested-database-id');
+      const rowDoc = createHydratedRowDoc('nested-row');
+      const loaded = createDeferred<YDoc>();
+
+      mockSourceCanWrite = false;
+      const host = render(
+        <Database
+          {...databaseProps(doc)}
+          modalRowId='row-id'
+          loadView={jest.fn(() => loaded.promise)}
+          createRow={jest.fn().mockResolvedValue(rowDoc)}
+        />
+      );
+      const openRowInHostPeek = mockPeekContext?.openRowInHostPeek;
+      const nested = render(
+        <Database
+          {...databaseProps(nestedDoc)}
+          activeViewId='nested-view'
+          readOnly
+          canWrite={false}
+          openRowInHostPeek={openRowInHostPeek}
+          embeddedPermissionSource={{
+            sourceViewId: 'nested-view',
+            sourceDatabaseId: nestedDoc.guid,
+            inheritedReadOnly: false,
+          }}
+        />
+      );
+      const source = mockDatabaseContext!.rowOrdersStore!.get(nestedDoc, 'nested-view');
+      const owner = Symbol();
+      const presentation = { layout, query: layout === 'gallery' ? 'match' : '' };
+      const rows = [
+        { id: 'nested-row', height: 44 },
+        { id: 'neighbor', height: 44 },
+      ];
+
+      act(() => source.publish(owner, rows, presentation));
+      await act(async () => {
+        mockDatabaseContext?.navigateToRow?.('nested-row');
+      });
+      // Permission resolution and publisher removal both happen while loadView is pending.
+      mockSourceCanWrite = true;
+      nested.unmount();
+      act(() => source.remove(owner));
+      await act(async () => {
+        loaded.resolve(nestedDoc);
+      });
+      await waitFor(() => expect(mockPeekContext?.databaseDoc).toBe(nestedDoc));
+      expect(mockPeekContext).toMatchObject({ readOnly: false, canWrite: true });
+      expect(mockPeekContext?.rowOrdersSource?.getSnapshot()).toEqual({ rows, presentation, published: false });
+      mockSourceCanWrite = false;
+      await act(async () => {
+        await Promise.resolve(mockPeekContext?.navigateToRow?.('neighbor'));
+      });
+      expect(mockPeekContext).toMatchObject({ readOnly: true, canWrite: false });
+      expect(mockPeekContext?.rowOrdersSource?.getSnapshot()?.presentation).toEqual(presentation);
+      host.unmount();
+      expect(source.getSnapshot()).toBeUndefined();
+      [doc, nestedDoc, rowDoc].forEach((item) => item.destroy());
+    }
+  );
+
+  it('preserves embedded database permissions in the host peek and while navigating its rows', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const nestedDoc = createDatabaseDoc('nested-database-id', 'nested-database-id');
+    const nestedRowDoc = createHydratedRowDoc('nested-row');
+    const permissions = { readOnly: true, canWrite: false, canComment: true, canShare: false };
+    const host = render(
+      <Database
+        {...databaseProps(doc)}
+        canWrite
+        canShare
+        modalRowId='row-id'
+        loadView={jest.fn().mockResolvedValue(nestedDoc)}
+        createRow={jest.fn().mockResolvedValue(nestedRowDoc)}
+      />
+    );
+    const hostContext = mockDatabaseContext;
+    const openRowInHostPeek = mockPeekContext?.openRowInHostPeek;
+
+    expect(openRowInHostPeek).toEqual(expect.any(Function));
+    const nested = render(
+      <Database
+        {...databaseProps(nestedDoc)}
+        {...permissions}
+        activeViewId='nested-view'
+        isDocumentBlock
+        openRowInHostPeek={openRowInHostPeek}
+      />
+    );
+
+    await act(async () => {
+      await Promise.resolve(mockDatabaseContext?.navigateToRow?.('nested-row'));
+    });
+    await waitFor(() => expect(mockPeekContext?.databaseDoc).toBe(nestedDoc));
+    expect(mockPeekContext).toMatchObject(permissions);
+    expect(screen.getAllByTestId('database-row-modal')).toHaveLength(1);
+
+    // The originating embedded database unmounts when its row replaces the host row.
+    nested.unmount();
+    await act(async () => {
+      await Promise.resolve(mockPeekContext?.navigateToRow?.('nested-neighbor'));
+    });
+    expect(mockPeekContext).toMatchObject({ ...permissions, activeViewId: 'nested-view' });
+
+    await act(async () => {
+      await Promise.resolve(hostContext?.navigateToRow?.('row-id'));
+    });
+    expect(mockPeekContext).toMatchObject({ readOnly: false, canWrite: true, canComment: false, canShare: true });
+    expect(mockPeekContext?.databaseDoc).toBe(doc);
+
+    host.unmount();
+    [doc, nestedDoc, nestedRowDoc].forEach((document) => document.destroy());
+  });
+
+  it('loads and navigates related rows in their database, then restores the source context for a grid row', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const relatedDoc = createDatabaseDoc('related-database-id', 'related-database-id');
+    const rowDoc = createHydratedRowDoc('source-row');
+    const relatedRowDoc = createHydratedRowDoc('related-row');
+    const loadView = jest.fn().mockResolvedValue(relatedDoc);
+    const createRow = jest.fn().mockResolvedValue(relatedRowDoc);
+    const { unmount } = render(
+      <Database {...databaseProps(doc)} createRow={createRow} loadView={loadView} initialRowMap={{ 'row-id': rowDoc }} />
+    );
+
+    await act(async () => {
+      await Promise.resolve(mockDatabaseContext?.navigateToRow?.('related-row', 'related-view'));
+    });
+    expect(mockPeekContext?.databaseDoc).toBe(relatedDoc);
+    await act(async () => {
+      await mockPeekContext?.ensureRow?.('related-neighbor');
+    });
+    expect(createRow).toHaveBeenCalledWith('related-database-id_rows_related-neighbor');
+    await act(async () => {
+      await Promise.resolve(mockPeekContext?.navigateToRow?.('related-neighbor'));
+    });
+    expect(loadView).toHaveBeenLastCalledWith('related-view');
+
+    await act(async () => {
+      await Promise.resolve(mockDatabaseContext?.navigateToRow?.('row-id'));
+    });
+    expect(mockPeekContext?.databaseDoc).toBe(doc);
+    expect(mockPeekContext?.activeViewId).toBe('view-id');
+    expect(mockPeekContext?.rowMap?.['row-id']).toBe(rowDoc);
+    expect(mockDatabaseContext?.rowMap?.['related-neighbor']).toBeUndefined();
+
+    unmount();
+    [doc, relatedDoc, rowDoc, relatedRowDoc].forEach((document) => document.destroy());
   });
 
   it.each(['unavailable', 'rejected'] as const)('shows an error when row navigation is %s', async (failure) => {
@@ -2266,9 +2670,7 @@ describe('Database blob prefetch lifecycle', () => {
     const doc = createDatabaseDoc('database-id');
     const loadView = jest.fn().mockResolvedValue(undefined);
     const navigateToView = jest.fn().mockResolvedValue(undefined);
-    const { unmount } = render(
-      <Database {...databaseProps(doc)} loadView={loadView} navigateToView={navigateToView} />
-    );
+    const { unmount } = render(<Database {...databaseProps(doc)} loadView={loadView} navigateToView={navigateToView} />);
 
     await act(async () => {
       await Promise.resolve(mockDatabaseContext?.navigateToRow?.('related-row-id', 'related-view-id'));

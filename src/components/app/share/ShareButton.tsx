@@ -8,15 +8,22 @@ import { PublishManage } from '@/components/app/publish-manage';
 import ShareTabs from '@/components/app/share/ShareTabs';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
 
 export function ShareButton({
   viewId,
   publishViewId = viewId,
   hidePublish = false,
+  hideExport = false,
+  shareUrl,
+  className,
 }: {
   viewId: string;
   publishViewId?: string;
   hidePublish?: boolean;
+  hideExport?: boolean;
+  shareUrl?: string;
+  className?: string;
 }) {
   const { t } = useTranslation();
 
@@ -32,7 +39,7 @@ export function ShareButton({
     <>
       <Popover modal open={opened} onOpenChange={setOpened}>
         <PopoverTrigger asChild>
-          <Button className={'mx-2'} data-testid={'share-button'} size={'sm'} variant={'default'}>
+          <Button className={cn('mx-2', className)} data-testid={'share-button'} size={'sm'} variant={'default'}>
             {t('shareAction.buttonText')}
           </Button>
         </PopoverTrigger>
@@ -49,6 +56,8 @@ export function ShareButton({
             viewId={viewId}
             publishViewId={publishViewId}
             hidePublish={hidePublish}
+            hideExport={hideExport}
+            shareUrl={shareUrl}
             onClose={() => setOpened(false)}
             onOpenPublishManage={() => {
               setOpened(false);

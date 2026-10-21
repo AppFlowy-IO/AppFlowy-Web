@@ -19,15 +19,17 @@ export function useDatabaseHistoryScopeContext() {
 export function DatabaseHistoryScope({
   children,
   className,
+  rowId,
   style,
 }: {
   children: ReactNode;
   className?: string;
+  rowId?: string;
   style?: CSSProperties;
 }) {
   const { readOnly } = useDatabaseContext();
   const scopeRef = useRef<HTMLDivElement | null>(null);
-  const { activateHistoryScope, clearHistoryScope, historyScopeId } = useDatabaseHistoryScope({ enabled: !readOnly });
+  const { activateHistoryScope, clearHistoryScope, historyScopeId } = useDatabaseHistoryScope({ enabled: !readOnly, rowId });
   const contextValue = useMemo(() => ({ activateHistoryScope, historyScopeId }), [activateHistoryScope, historyScopeId]);
 
   return (

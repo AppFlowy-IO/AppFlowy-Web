@@ -1,0 +1,24 @@
+[
+  {
+    "id": 1,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        { "header": "Origin", "operation": "set", "value": "https://www.youtube.com" },
+        { "header": "Referer", "operation": "set", "value": "https://www.youtube.com/" }
+      ],
+      "responseHeaders": [
+        { "header": "Access-Control-Allow-Origin", "operation": "set", "value": "*" },
+        { "header": "Access-Control-Allow-Methods", "operation": "set", "value": "GET, POST, OPTIONS" },
+        { "header": "Access-Control-Allow-Headers", "operation": "set", "value": "*" },
+        { "header": "Access-Control-Expose-Headers", "operation": "set", "value": "Content-Length, Content-Range, Accept-Ranges" }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://[a-zA-Z0-9-]+\\.googlevideo\\.com/videoplayback(\\?|$)",
+      "initiatorDomains": ["beta.appflowy.cloud", "test.appflowy.cloud", "localhost", "127.0.0.1"],
+      "resourceTypes": ["xmlhttprequest"]
+    }
+  }
+]

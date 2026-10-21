@@ -6,6 +6,7 @@ import { useAppAwareness } from '@/components/app/app.hooks';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 import { Log } from '@/utils/log';
 
 const isImageSource = (value?: string) => {
@@ -14,7 +15,15 @@ const isImageSource = (value?: string) => {
   return /^https?:\/\//i.test(value) || value.startsWith('data:') || value.startsWith('blob:');
 };
 
-export function Users({ viewId }: { viewId?: string }) {
+export function Users({
+  viewId,
+  maxVisibleUsers = 4,
+  className,
+}: {
+  viewId?: string;
+  maxVisibleUsers?: number;
+  className?: string;
+}) {
   const { t } = useTranslation();
   const awareness = useAppAwareness(viewId);
 
@@ -26,13 +35,17 @@ export function Users({ viewId }: { viewId?: string }) {
 
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
 
-  const MAX_VISIBLE_USERS = 4;
-  const visibleUsers = users.slice(0, MAX_VISIBLE_USERS);
-  const remainingUsers = users.slice(MAX_VISIBLE_USERS);
-  const hasMoreUsers = users.length > MAX_VISIBLE_USERS;
+  const visibleUsers = users.slice(0, maxVisibleUsers);
+  const remainingUsers = users.slice(maxVisibleUsers);
+  const hasMoreUsers = users.length > maxVisibleUsers;
 
   return (
-    <div className='*:data-[slot=avatar]:ring-background flex -space-x-2 *:data-[slot=avatar]:ring-2 *:data-[slot=avatar]:grayscale'>
+    <div
+      className={cn(
+        'flex -space-x-2 *:data-[slot=avatar]:ring-2 *:data-[slot=avatar]:ring-background *:data-[slot=avatar]:grayscale',
+        className
+      )}
+    >
       {visibleUsers.map((user, index) => (
         <TooltipProvider key={`${user.uid}/${user.device_id}`}>
           <Tooltip delayDuration={800}>
@@ -40,7 +53,6 @@ export function Users({ viewId }: { viewId?: string }) {
               <Avatar style={{ zIndex: visibleUsers.length - index, border: '1px solid var(--border-primary)' }}>
                 <AvatarImage src={user.avatar} alt={''} />
                 <AvatarFallback name={user.name}>
-                  
                   {user.avatar && !isImageSource(user.avatar) ? (
                     <span className='text-lg'>{user.avatar}</span>
                   ) : (
@@ -59,7 +71,7 @@ export function Users({ viewId }: { viewId?: string }) {
       {hasMoreUsers && (
         <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
           <PopoverTrigger asChild>
-            <div className='cursor-pointer'>
+            <div className='collaborators-overflow cursor-pointer'>
               <TooltipProvider>
                 <Tooltip delayDuration={800}>
                   <TooltipTrigger>

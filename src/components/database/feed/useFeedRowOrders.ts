@@ -22,7 +22,9 @@ export function readRowCreatedAt(rowDoc: YDoc | undefined): number | undefined {
  * doc, so the shared background loader hydrates them while the sort is absent.
  */
 export function useFeedRowData(searchActive = false) {
-  const rowOrders = useRowOrdersSelector();
+  // The Feed publishes its on-screen order (newest-first, search-narrowed)
+  // for the row peek itself, so the raw view order must not be published here.
+  const rowOrders = useRowOrdersSelector({ publish: false });
   const sorts = useSortsSelector();
   const rowMap = useRowMap();
   const hasSorts = sorts.length > 0;

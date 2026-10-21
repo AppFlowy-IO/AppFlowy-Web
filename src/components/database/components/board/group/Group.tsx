@@ -12,8 +12,8 @@ import {
   useRowsByGroup,
   useSortsSelector,
 } from '@/application/database-yjs';
-import { useNewRowDispatch } from '@/application/database-yjs/dispatch';
 import { RowId, YDoc } from '@/application/types';
+import { registerSharedAutoScroll } from '@/components/_shared/reorder/sharedAutoScroll';
 import KanbanSkeleton from '@/components/_shared/skeleton/KanbanSkeleton';
 import { useBoardActions } from '@/components/database/board/BoardProvider';
 import { useBoardGroupCalculations } from '@/components/database/board/useBoardGroupCalculations';
@@ -27,7 +27,6 @@ import Columns from '@/components/database/components/board/group/Columns';
 import GroupStickyHeader from '@/components/database/components/board/group/GroupStickyHeader';
 import { DatabaseSearchEmptyState } from '@/components/database/components/conditions/DatabaseSearchEmptyState';
 import { DeleteRowConfirm } from '@/components/database/components/database-row/DeleteRowConfirm';
-import { autoScrollForSharedElement } from '@/components/database/components/drag-and-drop/autoScrollForSharedElement';
 import DatabaseStickyBottomOverlay from '@/components/database/components/sticky-overlay/DatabaseStickyBottomOverlay';
 import DatabaseStickyHorizontalScrollbar from '@/components/database/components/sticky-overlay/DatabaseStickyHorizontalScrollbar';
 import DatabaseStickyTopOverlay from '@/components/database/components/sticky-overlay/DatabaseStickyTopOverlay';
@@ -110,8 +109,7 @@ const HydratedGroup = ({ groupId, columns, groupResult, groupingRows, fieldId, g
     },
     [groupResult]
   );
-  const onNewCard = useNewRowDispatch();
-  const { setEditingCardId, setSelectedCardIds } = useBoardActions();
+  const { createCard, setSelectedCardIds } = useBoardActions();
   const [element, setElement] = useState<HTMLElement | null>(null);
   // The board's horizontal scroller: its viewport decides which columns mount cards (W5).
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
@@ -140,19 +138,10 @@ const HydratedGroup = ({ groupId, columns, groupResult, groupingRows, fieldId, g
   });
 
   const addCardBefore = useCallback(
-    async (columnId: string) => {
-      if (!fieldId) return;
-      const cellsData = {
-        [fieldId]: columnId,
-      };
-
-      const rowId = await onNewCard({ cellsData });
-
-      if (!rowId) return;
-
-      setEditingCardId(`${columnId}/${rowId}`);
+    (columnId: string) => {
+      void createCard(columnId);
     },
-    [fieldId, onNewCard, setEditingCardId]
+    [createCard]
   );
 
   const { contextValue, scrollableRef: ref } = useColumnsDrag(groupId, columns, getCards, fieldId, sorted);
@@ -224,11 +213,12 @@ const HydratedGroup = ({ groupId, columns, groupResult, groupingRows, fieldId, g
   useEffect(() => {
     if (!verticalScrollContainer || readOnly) return;
 
-    // In a dashboard widget this is the columns' own scroller, which `useColumnsDrag` scrolls too.
-    return autoScrollForSharedElement(
-      verticalScrollContainer,
-      ({ source }) => source.data.instanceId === contextValue.instanceId && source.data.type === 'card'
-    );
+    const cleanup = registerSharedAutoScroll({
+      element: verticalScrollContainer,
+      canScroll: ({ source }) => source.data.instanceId === contextValue.instanceId && source.data.type === 'card',
+    });
+
+    return cleanup;
   }, [verticalScrollContainer, readOnly, contextValue.instanceId]);
 
   // Compute initial sticky-header visibility before first paint to prevent

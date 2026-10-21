@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
 import { DatabaseViewLayout } from '../../../src/application/types';
@@ -44,6 +44,10 @@ import {
 } from '../../support/timeline-test-helpers';
 
 const { Given, When, Then } = createBdd();
+
+// The database test bridge exposes raw Yjs maps; steps walk them structurally.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type TestBridgeValue = any;
 
 const ZOOM_BY_NAME: Record<string, TimelineLayout> = {
   Hours: TimelineLayout.Hours,
@@ -488,7 +492,7 @@ Given('a relation field is bound as the dependency field', async ({ page }) => {
 
 Given('the timeline dependency field is renamed to {string}', async ({ page }, name) => {
   await page.evaluate((name) => {
-    const ctx = (window as unknown as { __TEST_DATABASE_CONTEXT__: any }).__TEST_DATABASE_CONTEXT__;
+    const ctx = (window as unknown as { __TEST_DATABASE_CONTEXT__: TestBridgeValue }).__TEST_DATABASE_CONTEXT__;
 
     ctx.databaseDoc.transact(() => {
       ctx.databaseDoc.getMap('data').get('database').get('fields').get('rel-deps').set('name', name);
@@ -617,7 +621,7 @@ Then('{string} depends on {string}', async ({ page }, dependent, dependency) => 
       () =>
         page.evaluate(
           async ({ dependentId }) => {
-            const ctx = (window as unknown as { __TEST_DATABASE_CONTEXT__: any }).__TEST_DATABASE_CONTEXT__;
+            const ctx = (window as unknown as { __TEST_DATABASE_CONTEXT__: TestBridgeValue }).__TEST_DATABASE_CONTEXT__;
             const rowDoc = ctx.rowMap?.[dependentId] ?? (await ctx.ensureRow(dependentId));
             const cell = rowDoc.getMap('data').get('data').get('cells').get('rel-deps');
             const data = cell?.get('data');
@@ -668,7 +672,7 @@ Then('the {string} due date is {int} days from today', async ({ page }, title, d
   const id = rowId(page, title);
   const seconds = await page.evaluate(
     async ({ id }) => {
-      const ctx = (window as unknown as { __TEST_DATABASE_CONTEXT__: any }).__TEST_DATABASE_CONTEXT__;
+      const ctx = (window as unknown as { __TEST_DATABASE_CONTEXT__: TestBridgeValue }).__TEST_DATABASE_CONTEXT__;
       const rowDoc = ctx.rowMap?.[id] ?? (await ctx.ensureRow(id));
 
       return Number(rowDoc.getMap('data').get('data').get('cells').get('due')?.get('data'));
@@ -769,6 +773,7 @@ async function resizeTableColumn(page: Page, fieldId: string, width: number, opt
     // Movement after cancellation must not revive the discarded preview.
     await page.mouse.move(x + width - headerBox.width + 20, y);
   }
+
   await page.mouse.up();
 }
 
@@ -779,7 +784,7 @@ async function expectTableColumnWidth(page: Page, fieldId: string, width: number
   await expect
     .poll(() =>
       page.evaluate((id) => {
-        const ctx = (window as unknown as { __TEST_DATABASE_CONTEXT__: any }).__TEST_DATABASE_CONTEXT__;
+        const ctx = (window as unknown as { __TEST_DATABASE_CONTEXT__: TestBridgeValue }).__TEST_DATABASE_CONTEXT__;
 
         return Number(
           ctx.databaseDoc
@@ -869,13 +874,141 @@ Given(
   }
 );
 
+const timelineGroupSettingsMenu = (page: Page) => page.getByTestId('timeline-group-settings-menu');
+const timelineGroupByMenu = (page: Page) => page.getByTestId('timeline-group-by-menu');
+// Field rows only: the FieldDisplay name and the tick reuse the same test-id prefix.
+const timelineGroupByFieldRows = (scope: Locator) =>
+  scope.locator('[role="menuitem"][data-testid^="timeline-group-by-field-"]');
+
+async function openTimelineGroupSettings(page: Page) {
+  const menu = timelineGroupSettingsMenu(page);
+
+  if (await menu.isVisible()) return menu;
+
+  const trigger = page.getByTestId('timeline-group-settings-trigger');
+
+  if (!(await trigger.isVisible())) {
+    await page.getByTestId('database-actions-settings').click();
+  }
+
+  await expect(trigger).toBeVisible();
+  await trigger.click();
+  await expect(menu).toBeVisible();
+
+  return menu;
+}
+
+async function closeTimelineSettingsMenus(page: Page) {
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await expect(
+    page.locator('[data-slot="dropdown-menu-content"]:visible, [data-slot="dropdown-menu-sub-content"]:visible')
+  ).toHaveCount(0);
+}
+
+/** Asserts the elements appear in document order, which is their visual order inside one menu. */
+async function expectDomOrder(page: Page, testIds: string[]) {
+  const order = await page.evaluate((ids) => {
+    const nodes = ids.map((id) => document.querySelector(`[data-testid="${id}"]`));
+
+    if (nodes.some((node) => node === null)) {
+      return ids.map((id, index) => (nodes[index] ? id : `missing:${id}`));
+    }
+
+    return (nodes as Element[])
+      .slice()
+      .sort((left, right) => (left.compareDocumentPosition(right) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1))
+      .map((node) => node.getAttribute('data-testid'));
+  }, testIds);
+
+  expect(order).toEqual(testIds);
+}
+
 When('I group the timeline by {string}', async ({ page }, name) => {
-  await page.getByTestId('database-actions-settings').click();
-  await page.getByTestId('timeline-group-settings-trigger').click();
-  await page.locator('[data-testid^="timeline-group-by-field-"]').filter({ hasText: name }).click();
-  await page.keyboard.press('Escape');
-  await page.keyboard.press('Escape');
+  const menu = await openTimelineGroupSettings(page);
+  // Desktop lists the fields inline while ungrouped and inside the nested
+  // "Group by ▸" submenu once grouped.
+  const grouped = await page.getByTestId('timeline-group-by-trigger').isVisible();
+  let fieldList = menu;
+
+  if (grouped) {
+    await page.getByTestId('timeline-group-by-trigger').click();
+    fieldList = timelineGroupByMenu(page);
+    await expect(fieldList).toBeVisible();
+  }
+
+  const fieldRow = timelineGroupByFieldRows(fieldList).filter({ hasText: name });
+
+  await expect(fieldRow).toHaveCount(1);
+  await fieldRow.click();
+  await closeTimelineSettingsMenus(page);
   await expect(page.locator('[data-testid^="list-group-header-"]').first()).toBeVisible({ timeout: 15_000 });
+});
+
+Then('the settings menu lists Group before Timeline settings', async ({ page }) => {
+  await page.getByTestId('database-actions-settings').click();
+  await expect(page.getByTestId('timeline-group-settings-trigger')).toBeVisible();
+  // Desktop database_settings_list.dart: Properties, Layout, Group, Timeline settings.
+  await expectDomOrder(page, [
+    'database-properties-settings-trigger',
+    'database-layout-settings-trigger',
+    'timeline-group-settings-trigger',
+    'timeline-settings-trigger',
+  ]);
+  await closeTimelineSettingsMenus(page);
+});
+
+Then('the timeline Group entry shows {string} as the current field', async ({ page }, fieldName) => {
+  const trigger = page.getByTestId('timeline-group-settings-trigger');
+
+  if (!(await trigger.isVisible())) {
+    await page.getByTestId('database-actions-settings').click();
+  }
+
+  await expect(trigger).toBeVisible();
+  await expect(trigger.getByTestId('timeline-group-settings-field')).toHaveText(fieldName);
+});
+
+Then('the timeline Group by submenu ticks {string}', async ({ page }, fieldName) => {
+  const menu = await openTimelineGroupSettings(page);
+
+  await expect(page.getByTestId('timeline-group-by-current-field')).toHaveText(fieldName);
+  // Grouped menus no longer list fields inline.
+  await expect(timelineGroupByFieldRows(menu)).toHaveCount(0);
+  await page.getByTestId('timeline-group-by-trigger').click();
+
+  const groupByMenu = timelineGroupByMenu(page);
+
+  await expect(groupByMenu).toBeVisible();
+  const selectedRow = timelineGroupByFieldRows(groupByMenu).filter({
+    has: page.getByTestId('timeline-group-by-field-selected'),
+  });
+
+  await expect(selectedRow).toHaveCount(1);
+  await expect(selectedRow).toContainText(fieldName);
+  await expect(groupByMenu.getByTestId('timeline-group-by-none')).toHaveCount(1);
+  await expect(
+    groupByMenu.getByTestId('timeline-group-by-none').locator('[data-slot="dropdown-menu-tick"]')
+  ).toHaveCount(0);
+  await closeTimelineSettingsMenus(page);
+});
+
+Then('the timeline Group menu offers Delete grouping', async ({ page }) => {
+  const menu = await openTimelineGroupSettings(page);
+  const action = menu.getByTestId('timeline-remove-grouping');
+
+  await expect(action).toBeVisible();
+  await expect(action).toHaveText('Delete grouping');
+  await expect(menu.getByTestId('timeline-group-by-none')).toHaveCount(0);
+  await closeTimelineSettingsMenus(page);
+});
+
+When('I delete the timeline grouping from the Group menu', async ({ page }) => {
+  const menu = await openTimelineGroupSettings(page);
+
+  await menu.getByTestId('timeline-remove-grouping').click();
+  // Desktop dismisses the menu once the grouping is deleted.
+  await expect(menu).toBeHidden();
 });
 
 Then('the timeline shows groups {string} with {int} row each', async ({ page }, list, count) => {
@@ -1318,7 +1451,7 @@ Then('the calendar view is shown', async ({ page }) => {
 
 When("the timeline's date field is deleted from the database", async ({ page }) => {
   await page.evaluate(() => {
-    const ctx = (window as unknown as { __TEST_DATABASE_CONTEXT__: any }).__TEST_DATABASE_CONTEXT__;
+    const ctx = (window as unknown as { __TEST_DATABASE_CONTEXT__: TestBridgeValue }).__TEST_DATABASE_CONTEXT__;
     const doc = ctx.databaseDoc;
     const database = doc.getMap('data').get('database');
     const view = database.get('views').get(ctx.activeViewId);
@@ -1326,7 +1459,7 @@ When("the timeline's date field is deleted from the database", async ({ page }) 
 
     doc.transact(() => {
       database.get('fields').delete(fieldId);
-      database.get('views').forEach((candidate: any) => {
+      database.get('views').forEach((candidate: TestBridgeValue) => {
         const orders = candidate.get('field_orders');
         const index = orders.toArray().findIndex((order: { id: string }) => order.id === fieldId);
 

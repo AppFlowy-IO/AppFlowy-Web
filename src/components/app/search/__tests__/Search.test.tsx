@@ -57,6 +57,11 @@ jest.mock('@/components/app/search/RecentViews', () => ({
   default: () => null,
 }));
 
+jest.mock('@/components/app/search/ViewList', () => ({
+  __esModule: true,
+  default: () => <div>Loading results</div>,
+}));
+
 jest.mock('@/components/chat/request', () => ({
   ChatRequest: function MockChatRequest(...args: unknown[]) {
     return mockChatRequest(...args);
@@ -169,7 +174,7 @@ describe('Search AI chat creation', () => {
 
     fireEvent.click(screen.getByText('button.search'));
     fireEvent.change(screen.getByLabelText('search-input'), { target: { value: 'launch' } });
-    fireEvent.click(screen.getByText('Ask AI'));
+    fireEvent.click(await screen.findByText('Ask AI'));
 
     await waitFor(() => expect(mockToView).toHaveBeenCalledWith('chat-id'));
 

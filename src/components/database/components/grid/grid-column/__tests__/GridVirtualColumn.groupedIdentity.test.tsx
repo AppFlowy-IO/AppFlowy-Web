@@ -10,7 +10,6 @@ import type { RenderColumn } from '@/components/database/components/grid/grid-co
 import { RenderRow, RenderRowType } from '@/components/database/components/grid/grid-row';
 import {
   createGridInteractionStore,
-  createGridRowResizeStore,
   GridContext,
   GridInteractionContext,
 } from '@/components/database/grid/useGridContext';
@@ -106,7 +105,6 @@ function renderColumns({
     const [interactionStore] = useState(() =>
       createGridInteractionStore({ activeCell: initialActiveCell, hoverRowKey })
     );
-    const [rowResizeStore] = useState(createGridRowResizeStore);
     const gridContextValue = {
       activePropertyId: undefined,
       isGrouped: true,
@@ -114,7 +112,6 @@ function renderColumns({
       loadMoreRows: jest.fn(),
       remainingRowCount: 0,
       revealCreatedRow: jest.fn(),
-      rowResizeStore,
       rowOrders: [],
       rows,
       setActivePropertyId: jest.fn(),

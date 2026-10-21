@@ -3,8 +3,11 @@ import * as Y from 'yjs';
 
 import { FieldType } from '@/application/database-yjs';
 import { createRowDoc } from '@/application/database-yjs/__tests__/test-helpers';
+import { createCloudRow, CloudRowCreationIntent } from '@/application/database-yjs/creation/create-row';
 import { View, YDatabase, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import RelationCellMenuContent from '@/components/database/components/cell/relation/RelationCellMenuContent';
+
+jest.mock('@/application/database-yjs/creation/create-row', () => ({ createCloudRow: jest.fn() }));
 
 jest.mock('@/utils/runtime-config', () => ({
   getConfigValue: (_key: string, fallback: string) => fallback,
@@ -15,7 +18,10 @@ const mockDatabaseContext = {
   navigateToRow: jest.fn(),
   bindViewSync: jest.fn(),
   loadView: jest.fn(),
+  loadViewMeta: jest.fn(),
   createRow: jest.fn(),
+  workspaceId: 'workspace-1',
+  databaseDoc: new Y.Doc(),
   templateEditingRowId: undefined as string | undefined,
 };
 
@@ -174,7 +180,8 @@ describe('RelationCellMenuContent loading states', () => {
     expect(screen.queryByTestId('relation-create-and-link')).toBeNull();
     fireEvent.keyDown(search, { key: 'Enter', code: 'Enter' });
     expect(mockDatabaseContext.createRow.mock.calls.map(([key]) => key).sort()).toEqual([
-      `${VIEW_ID}_rows_row-1`, `${VIEW_ID}_rows_row-2`,
+      `${VIEW_ID}_rows_row-1`,
+      `${VIEW_ID}_rows_row-2`,
     ]);
     expect(onAddRelationRowId).toHaveBeenCalledTimes(1);
     expect(Y.encodeStateAsUpdate(target)).toEqual(originalTarget);
@@ -397,6 +404,84 @@ describe('RelationCellMenuContent loading states', () => {
     );
 
     await waitFor(() => expect(screen.getByText('TSK-001')).toBeTruthy());
+  });
+
+  it('creates through the container child, shows progress, and links only after atomic publication', async () => {
+    const target = createTargetDoc([]);
+    const commit = deferred<string>();
+    const onAddRelationRowId = jest.fn();
+    let intent!: CloudRowCreationIntent;
+
+    mockDatabaseContext.loadView.mockResolvedValue(target);
+    mockDatabaseContext.loadViewMeta.mockResolvedValue({
+      view_id: 'container-view',
+      extra: { is_database_container: true, database_id: DATABASE_ID },
+      children: [{ view_id: VIEW_ID }],
+    });
+    mockDatabaseContext.createRow.mockImplementation(async (key: string) =>
+      createTitledRowDoc(rowIdFromKey(key), 'Mango')
+    );
+    jest.mocked(createCloudRow).mockImplementation(async (request) => {
+      intent = request;
+      await commit.promise;
+      return request.rowId;
+    });
+    render(
+      <RelationCellMenuContent
+        relationRowIds={[]}
+        selectedView={{ view_id: 'container-view', name: 'Tasks' } as View}
+        relatedDatabaseId={DATABASE_ID}
+        onAddRelationRowId={onAddRelationRowId}
+        onRemoveRelationRowId={jest.fn()}
+      />
+    );
+    await screen.findByText(NO_RESULT);
+    const search = screen.getByPlaceholderText('searchLabel');
+
+    fireEvent.change(search, { target: { value: 'Mango' } });
+    const create = await screen.findByTestId('relation-create-and-link');
+
+    fireEvent.click(create);
+    fireEvent.click(create);
+    await waitFor(() => expect(createCloudRow).toHaveBeenCalledTimes(1));
+    expect(create.getAttribute('aria-busy')).toBe('true');
+    expect(create.hasAttribute('disabled')).toBe(true);
+    expect(onAddRelationRowId).not.toHaveBeenCalled();
+    expect(mockDatabaseContext.createRow).not.toHaveBeenCalled();
+    expect(intent.sourceViewId).toBe(VIEW_ID);
+    await act(async () => {
+      commit.resolve(intent.rowId);
+    });
+    await waitFor(() => expect(onAddRelationRowId).toHaveBeenCalledWith(intent.rowId));
+    expect((search as HTMLInputElement).value).toBe('');
+  });
+
+  it('keeps the relation search text after an atomic creation refusal and permits retry', async () => {
+    mockDatabaseContext.loadView.mockResolvedValue(createTargetDoc([]));
+    jest.mocked(createCloudRow).mockRejectedValueOnce(new Error('offline'));
+    const onAddRelationRowId = jest.fn();
+
+    render(
+      <RelationCellMenuContent
+        relationRowIds={[]}
+        selectedView={{ view_id: VIEW_ID, name: 'Tasks' } as View}
+        relatedDatabaseId={DATABASE_ID}
+        onAddRelationRowId={onAddRelationRowId}
+        onRemoveRelationRowId={jest.fn()}
+      />
+    );
+    await screen.findByText(NO_RESULT);
+    const search = screen.getByPlaceholderText('searchLabel');
+
+    fireEvent.change(search, { target: { value: 'Mango' } });
+    const create = await screen.findByTestId('relation-create-and-link');
+
+    fireEvent.click(create);
+    await waitFor(() => expect(create.getAttribute('aria-busy')).toBe('false'));
+    expect(create.hasAttribute('disabled')).toBe(false);
+    expect((search as HTMLInputElement).value).toBe('Mango');
+    expect(onAddRelationRowId).not.toHaveBeenCalled();
+    expect(createCloudRow).toHaveBeenCalledTimes(1);
   });
 
   it('does not claim "no result" while the row list is still in flight', async () => {

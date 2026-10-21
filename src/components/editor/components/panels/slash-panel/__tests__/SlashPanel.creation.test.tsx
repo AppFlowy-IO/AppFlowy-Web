@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { ReactNode } from 'react';
+import { ReactNode, StrictMode } from 'react';
+import { createEditor, Editor } from 'slate';
 
 import { ViewLayout } from '@/application/types';
 import { DatabaseViewCreationAction } from '@/components/app/hooks/useDatabaseViewCreation';
@@ -20,7 +21,9 @@ const mockCreationOptions = jest.fn();
 const mockTranslate = (key: string) => key;
 const mockIsPanelOpen = () => true;
 const mockEditorDom = document.createElement('div');
-const mockEditor = { selection: null, flushLocalChanges: jest.fn() };
+const mockEditor = Object.assign(createEditor(), { flushLocalChanges: jest.fn() });
+const mockFocus = jest.fn();
+const mockBlur = jest.fn();
 const mockEditorContext = {
   workspaceId: 'workspace',
   viewId: 'document',
@@ -32,7 +35,12 @@ jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: mockTranslate })
 jest.mock('slate-react', () => ({
   ...jest.requireActual('slate-react'),
   useSlateStatic: () => mockEditor,
-  ReactEditor: { toDOMNode: () => mockEditorDom },
+  ReactEditor: {
+    toDOMNode: () => mockEditorDom,
+    toDOMRange: () => ({ getBoundingClientRect: () => ({ bottom: 20, left: 10 }) }),
+    focus: () => mockFocus(),
+    blur: () => mockBlur(),
+  },
 }));
 jest.mock('@/components/app/app.hooks', () => ({ useAIEnabled: () => false }));
 jest.mock('@/components/chat', () => ({ useAIWriter: () => ({}) }));
@@ -94,6 +102,7 @@ describe('slash database view admission', () => {
     jest.clearAllMocks();
     mockSearch = '';
     mockDashboardReason = undefined;
+    mockEditor.selection = null;
     mockAction = { type: 'upgrade', requiresPro: true, reason: 'Requires Pro' };
     mockAddPage.mockResolvedValue({ view_id: 'created', database_id: 'database' });
     mockLoadCatalog.mockResolvedValue([]);
@@ -220,5 +229,41 @@ describe('slash database view admission', () => {
     expect(mockCheckout).toHaveBeenCalledTimes(1);
     expect(mockCreateDatabaseView).not.toHaveBeenCalled();
     expect(mockRemoveContent).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('inline equation slash lifecycle in Strict Mode', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockSearch = 'inline';
+    mockAction = { type: 'create' };
+    mockEditor.children = [{ type: 'paragraph', children: [{ text: 'Before' }] }];
+    mockEditor.select({ path: [0, 0], offset: 6 });
+  });
+
+  it('cancels without changing text and restores the tracked selection once', () => {
+    const originalSelection = mockEditor.selection;
+
+    render(<StrictMode><SlashPanel setEmojiPosition={jest.fn()} /></StrictMode>);
+    fireEvent.click(screen.getByTestId('slash-menu-inlineMath'));
+    expect(Editor.rangeRefs(mockEditor).size).toBe(1);
+    expect(mockBlur).toHaveBeenCalledTimes(1);
+    fireEvent.change(screen.getByRole('textbox', { name: 'document.plugins.mathEquation.inline' }), { target: { value: 'x^2' } });
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'document.plugins.mathEquation.inline' }), { key: 'Escape' });
+    expect(screen.queryByTestId('inline-equation-editor')).toBeNull();
+    expect(Editor.rangeRefs(mockEditor).size).toBe(0);
+    expect(mockEditor.selection).toEqual(originalSelection);
+    expect(mockEditor.string([0])).toBe('Before');
+    expect(mockFocus).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases the tracked selection if the slash panel unmounts while editing', () => {
+    const { unmount } = render(<StrictMode><SlashPanel setEmojiPosition={jest.fn()} /></StrictMode>);
+
+    fireEvent.click(screen.getByTestId('slash-menu-inlineMath'));
+    expect(Editor.rangeRefs(mockEditor).size).toBe(1);
+    unmount();
+    expect(Editor.rangeRefs(mockEditor).size).toBe(0);
+    expect(mockFocus).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 
 import { useDatabaseContext, usePrimaryFieldId, useReadOnly } from '@/application/database-yjs';
+import { usePublishRowOrders } from '@/application/database-yjs/row-orders-store';
 import { useDatabaseSearch } from '@/components/database/components/conditions/DatabaseSearchContext';
 
 import { Feed } from '../Feed';
@@ -13,6 +14,7 @@ jest.mock('@/application/database-yjs', () => ({
   useReadOnly: jest.fn(),
   useFieldsSelector: jest.fn(() => []),
 }));
+jest.mock('@/application/database-yjs/row-orders-store', () => ({ usePublishRowOrders: jest.fn() }));
 jest.mock('@/components/database/components/conditions/DatabaseSearchContext', () => ({
   useDatabaseSearch: jest.fn(),
 }));
@@ -48,6 +50,7 @@ const mockUsePrimaryFieldId = usePrimaryFieldId as jest.MockedFunction<typeof us
 const mockUseReadOnly = useReadOnly as jest.MockedFunction<typeof useReadOnly>;
 const mockUseDatabaseSearch = useDatabaseSearch as jest.MockedFunction<typeof useDatabaseSearch>;
 const mockUseFeedRowData = useFeedRowData as jest.MockedFunction<typeof useFeedRowData>;
+const mockUsePublishRowOrders = usePublishRowOrders as jest.MockedFunction<typeof usePublishRowOrders>;
 
 const rows = Array.from({ length: 35 }, (_, index) => ({ height: 36, id: `row-${index}` }));
 
@@ -101,6 +104,17 @@ describe('Feed', () => {
     expect(screen.getAllByTestId(/^mock-feed-card-/)).toHaveLength(35);
     expect(screen.queryByTestId('feed-load-more')).toBeNull();
     expect(screen.getByTestId('feed-new-row')).toBeTruthy();
+  });
+
+  it('publishes the search-narrowed on-screen order for the row peek', () => {
+    const matching = [rows[3], rows[1]];
+
+    mockUseDatabaseSearch.mockReturnValue({ query: 'row', setQuery: jest.fn() });
+    mockUseFeedSearch.mockReturnValue(matching);
+
+    render(<Feed />);
+
+    expect(mockUsePublishRowOrders).toHaveBeenLastCalledWith(matching, true, { layout: 'feed', query: 'row' });
   });
 
   it('hides the new-row action in readonly mode', () => {

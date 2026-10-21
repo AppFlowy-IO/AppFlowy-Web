@@ -1,4 +1,6 @@
 import EventEmitter from 'events';
+import type { CreateDatabaseViewPayload, CreateDatabaseViewResponse } from '@/application/types';
+
 
 import { AxiosInstance } from 'axios';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
@@ -6,10 +8,9 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, u
 import type { DashboardExtraFilter } from '@/application/database-yjs/dashboard.type';
 import { retainDatabaseHistoryRow } from '@/application/database-yjs/history-row-store';
 import { getOverlayTarget } from '@/application/database-yjs/view-conditions-overlay';
+import type { RowOrdersSource, RowOrdersStore } from '@/application/database-yjs/row-orders-store';
 import {
   BindViewSync,
-  CreateDatabaseViewPayload,
-  CreateDatabaseViewResponse,
   CreateRow,
   DatabaseRelations,
   DateFormat,
@@ -74,6 +75,9 @@ export interface DatabaseContextState {
    */
   activeViewId: string;
   rowMap: Record<RowId, YDoc> | null;
+  /** Mounted view orders shared with row peeks in this database component. */
+  rowOrdersStore?: RowOrdersStore;
+  rowOrdersSource?: RowOrdersSource;
   /**
    * Set while the row-template editor edits its hidden source row. That row
    * never joins `row_orders`, so relation edits on it must not write
@@ -135,6 +139,13 @@ export interface DatabaseContextState {
   isDashboardWidget?: boolean;
   // use different view id to navigate to row
   navigateToRow?: (rowId: string, viewId?: string, options?: NavigateToRowOptions) => void;
+  /** Reuse this peek for an embedded database without inheriting the host's permissions. */
+  openRowInHostPeek?: (
+    rowId: string,
+    viewId: string,
+    permissions: DatabaseRowPermissions,
+    source?: DatabaseRowPeekSource
+  ) => void;
   loadView?: LoadView;
   bindViewSync?: BindViewSync;
   scheduleDeferredCleanup?: (objectId: string, delayMs?: number) => void;
@@ -189,6 +200,18 @@ export interface DatabaseContextState {
   // Close row detail modal (when in modal context)
   closeRowDetailModal?: () => void;
 }
+
+export interface DatabaseRowPeekSource {
+  rowOrdersSource?: RowOrdersSource;
+  permissionSource?: {
+    sourceViewId: string;
+    sourceDatabaseId?: string;
+    inheritedReadOnly: boolean;
+    variant?: UIVariant;
+  };
+}
+
+export type DatabaseRowPermissions = Pick<DatabaseContextState, 'readOnly' | 'canWrite' | 'canComment' | 'canShare'>;
 
 export const DatabaseContext = createContext<DatabaseContextState | null>(null);
 

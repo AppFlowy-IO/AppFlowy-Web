@@ -7,6 +7,7 @@ import {
   DatabaseContextState,
   DateGroupCondition,
   FieldType,
+  CheckboxFilterCondition,
   FilterType,
   SortCondition,
   TextFilterCondition,
@@ -569,7 +570,7 @@ describe('useGridGroupingSelector refresh behavior', () => {
     fixture.databaseDoc.destroy();
   });
 
-  it('rebuilds Date metadata when the grouping condition changes', async () => {
+  it('rewrites Date metadata in place when the grouping condition changes', async () => {
     const localTimestamp = (year: number, month: number, day: number) =>
       String(Math.floor(new Date(year, month - 1, day, 12).getTime() / 1000));
     const fixture = createGridGroupingFixture({
@@ -587,35 +588,94 @@ describe('useGridGroupingSelector refresh behavior', () => {
       { wrapper: fixture.wrapper }
     );
 
-    act(() => result.current.updateDateCondition(DateGroupCondition.Day));
-
-    await waitFor(() => {
-      expect(result.current.grouping.activeGroupIds).toEqual(['name', '2024/01/15', '2024/01/20']);
-      expect(
-        fixture.groups
-          .get(0)
-          ?.get(YjsDatabaseKey.groups)
-          .toJSON()
-          .map(({ id }: { id: string }) => id)
-      ).toEqual(['name', '2024/01/15', '2024/01/20']);
-    });
-
-    const dayGroupId = fixture.groups.get(0)?.get(YjsDatabaseKey.id);
-
-    act(() => result.current.updateDateCondition(DateGroupCondition.Month));
-
-    await waitFor(() => {
-      const monthGroup = fixture.groups.get(0);
-      const monthColumnIds = monthGroup
+    const columnIds = () =>
+      fixture.groups
+        .get(0)
         ?.get(YjsDatabaseKey.groups)
         .toJSON()
         .map(({ id }: { id: string }) => id);
 
-      expect(monthGroup?.get(YjsDatabaseKey.id)).not.toBe(dayGroupId);
+    await waitFor(() => expect(columnIds()).toEqual(['name', '2024/01/01']));
+
+    act(() => result.current.updateDateCondition(DateGroupCondition.Day));
+
+    await waitFor(() => {
+      // The Relative month bucket persisted before the switch is still a valid
+      // Day id, so it survives (desktop keeps every persisted id); it stays
+      // automatically hidden because no row maps onto it.
+      expect(result.current.grouping.activeGroupIds).toEqual(['name', '2024/01/01', '2024/01/15', '2024/01/20']);
+      expect(columnIds()).toEqual(['name', '2024/01/01', '2024/01/15', '2024/01/20']);
+      expect(result.current.grouping.visibleGroups.map(({ id }) => id)).toEqual(['2024/01/15', '2024/01/20']);
+    });
+
+    const dayGroup = fixture.groups.get(0);
+    const dayGroupId = dayGroup?.get(YjsDatabaseKey.id);
+
+    // Desktop keeps the same group setting and only rewrites its content, so
+    // the setting id, per-group visibility and still-valid collapsed ids all
+    // survive while IDs invalid under the new condition are pruned.
+    act(() => {
+      dayGroup?.get(YjsDatabaseKey.groups).get(0).set(YjsDatabaseKey.visible, false);
+      dayGroup?.set(YjsDatabaseKey.collapsed_group_ids, Y.Array.from(['name', '2024/01/15']));
+    });
+    act(() => result.current.updateDateCondition(DateGroupCondition.Month));
+
+    await waitFor(() => {
+      const monthGroup = fixture.groups.get(0);
+      const monthColumns = monthGroup?.get(YjsDatabaseKey.groups).toJSON() as Array<{ id: string; visible: boolean }>;
+      const monthColumnIds = monthColumns.map(({ id }) => id);
+      const collapsed = monthGroup?.get(YjsDatabaseKey.collapsed_group_ids);
+
+      expect(monthGroup).toBe(dayGroup);
+      expect(monthGroup?.get(YjsDatabaseKey.id)).toBe(dayGroupId);
       expect(result.current.grouping.activeGroupIds).toEqual(['name', '2024/01/01']);
       expect(monthColumnIds).toEqual(['name', '2024/01/01']);
-      expect(monthColumnIds).not.toContain('2024/01/15');
-      expect(monthColumnIds).not.toContain('2024/01/20');
+      expect(monthColumns[0].visible).toBe(false);
+      expect(collapsed instanceof Y.Array ? collapsed.toArray() : collapsed).toEqual(['name']);
+    });
+
+    unmount();
+    fixture.rowA.destroy();
+    fixture.rowB.destroy();
+    fixture.databaseDoc.destroy();
+  });
+
+  it('prunes a plain-array collapsed_group_ids (as desktop writes it) in place on a date condition change', async () => {
+    const localTimestamp = (year: number, month: number, day: number) =>
+      String(Math.floor(new Date(year, month - 1, day, 12).getTime() / 1000));
+    const fixture = createGridGroupingFixture({
+      fieldType: FieldType.DateTime,
+      rowAValue: localTimestamp(2024, 1, 15),
+      rowBValue: localTimestamp(2024, 1, 20),
+    });
+    const { result, unmount } = renderHook(
+      () => {
+        const grouping = useGroupingWithMetadataSync();
+        const updateDateCondition = useUpdateDateGroupConditionDispatch();
+
+        return { grouping, updateDateCondition };
+      },
+      { wrapper: fixture.wrapper }
+    );
+
+    await waitFor(() => expect(result.current.grouping.activeGroupIds).toEqual(['name', '2024/01/01']));
+    act(() => result.current.updateDateCondition(DateGroupCondition.Day));
+    await waitFor(() => {
+      expect(result.current.grouping.activeGroupIds).toEqual(['name', '2024/01/01', '2024/01/15', '2024/01/20']);
+    });
+
+    const dayGroup = fixture.groups.get(0);
+
+    act(() => {
+      (dayGroup as unknown as Y.Map<unknown>).set(YjsDatabaseKey.collapsed_group_ids, ['name', '2024/01/15']);
+    });
+    act(() => result.current.updateDateCondition(DateGroupCondition.Month));
+
+    await waitFor(() => {
+      const collapsed = fixture.groups.get(0)?.get(YjsDatabaseKey.collapsed_group_ids);
+
+      expect(fixture.groups.get(0)).toBe(dayGroup);
+      expect(collapsed instanceof Y.Array ? collapsed.toArray() : collapsed).toEqual(['name']);
     });
 
     unmount();
@@ -1045,6 +1105,39 @@ describe('useGridGroupingSelector refresh behavior', () => {
     unobserveRowA.mockRestore();
     unobserveRowB.mockRestore();
     rowC.destroy();
+    fixture.rowA.destroy();
+    fixture.rowB.destroy();
+    fixture.databaseDoc.destroy();
+  });
+
+  it('keeps a filter on the field a Timeline starts grouping by (desktop set_group_by_field never touches filters)', async () => {
+    const fixture = createGridGroupingFixture();
+    const database = fixture.databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+    const doneField = new Y.Map() as YDatabaseField;
+
+    doneField.set(YjsDatabaseKey.id, 'done');
+    doneField.set(YjsDatabaseKey.name, 'Done');
+    doneField.set(YjsDatabaseKey.type, FieldType.Checkbox);
+    database.get(YjsDatabaseKey.fields).set('done', doneField);
+    fixture.view.set(YjsDatabaseKey.layout, DatabaseViewLayout.Timeline);
+    const filter = new Y.Map() as YDatabaseFilter;
+
+    filter.set(YjsDatabaseKey.id, 'done-filter');
+    filter.set(YjsDatabaseKey.field_id, 'done');
+    filter.set(YjsDatabaseKey.filter_type, FilterType.Data);
+    filter.set(YjsDatabaseKey.condition, CheckboxFilterCondition.IsChecked);
+    filter.set(YjsDatabaseKey.content, '');
+    fixture.filters.push([filter]);
+    const { result, unmount } = renderHook(() => useGroupByFieldDispatch(), { wrapper: fixture.wrapper });
+
+    act(() => result.current('done'));
+
+    expect(fixture.filters.toArray().map((entry) => entry.get(YjsDatabaseKey.field_id))).toEqual(['done']);
+    expect(fixture.groups.get(0).get(YjsDatabaseKey.field_id)).toBe('done');
+    // Timeline takes the Grid/List path, which also seeds its hide-empty default.
+    expect(fixture.view.get(YjsDatabaseKey.layout_settings).get('8')?.get(YjsDatabaseKey.hide_empty_groups)).toBe(true);
+
+    unmount();
     fixture.rowA.destroy();
     fixture.rowB.destroy();
     fixture.databaseDoc.destroy();

@@ -1,8 +1,63 @@
 import { DatabaseStorageGenerationChangedError } from '@/application/db/database-storage-fence';
 
-import { DatabaseRestoreTracker } from '../databaseRestoreState';
+import { DATABASE_RESTORE_CHECK_INTERVAL_MS, DatabaseRestoreTracker } from '../databaseRestoreState';
 
 beforeEach(() => localStorage.clear());
+afterEach(() => jest.useRealTimers());
+
+test('routine traffic shares database authority for five minutes without extending its lifetime', async () => {
+  jest.useFakeTimers();
+  const read = jest.fn(async () => ({ database_restore_id: null, version: null }));
+  const tracker = new DatabaseRestoreTracker('marker:', read, jest.fn(), localStorage);
+
+  await Promise.all([tracker.checkIfStale('a'), tracker.checkIfStale('a'), tracker.checkIfStale('b')]);
+  expect(read).toHaveBeenCalledTimes(2);
+  jest.advanceTimersByTime(DATABASE_RESTORE_CHECK_INTERVAL_MS - 1);
+  await tracker.checkIfStale('a');
+  await tracker.checkIfStale('b');
+  expect(read).toHaveBeenCalledTimes(2);
+  jest.advanceTimersByTime(1);
+  await tracker.checkIfStale('a');
+  expect(read).toHaveBeenCalledTimes(3);
+  expect(read).toHaveBeenLastCalledWith('a');
+});
+
+test('new restore evidence and reopening bypass freshness, but persisted markers never establish freshness', async () => {
+  localStorage.setItem('marker:db', 'current');
+  const read = jest.fn(async () => ({ database_restore_id: 'current', version: 'v' }));
+  const tracker = new DatabaseRestoreTracker('marker:', read, jest.fn(), localStorage);
+
+  await tracker.checkIfStale('db');
+  tracker.observeRestoreHint('db', 'next');
+  await tracker.checkIfStale('db');
+  tracker.observeRestoreHint('db', 'next');
+  await tracker.checkIfStale('db');
+  expect(read).toHaveBeenCalledTimes(2);
+  tracker.observeRestoreHint('db');
+  await tracker.checkIfStale('db');
+  tracker.invalidateVerification('db');
+  await tracker.checkIfStale('db');
+  expect(read).toHaveBeenCalledTimes(4);
+});
+
+test('sequential messages honor Retry-After while new restore evidence can retry immediately', async () => {
+  jest.useFakeTimers();
+  const busy = Object.assign(new Error('busy'), { retryAfterSecs: 7 });
+  const read = jest.fn().mockRejectedValue(busy);
+  const tracker = new DatabaseRestoreTracker('marker:', read, jest.fn(), localStorage);
+
+  await expect(tracker.checkIfStale('db')).rejects.toThrow('busy');
+  jest.advanceTimersByTime(6999);
+  await expect(tracker.checkIfStale('db')).rejects.toThrow('busy');
+  expect(read).toHaveBeenCalledTimes(1);
+  jest.advanceTimersByTime(1);
+  await expect(tracker.checkIfStale('db')).rejects.toThrow('busy');
+  expect(read).toHaveBeenCalledTimes(2);
+  read.mockResolvedValue({ database_restore_id: null, version: null });
+  tracker.observeRestoreHint('db', 'restore');
+  await tracker.checkIfStale('db');
+  expect(read).toHaveBeenCalledTimes(3);
+});
 
 test('a new restore identity resets even when the history version is unchanged', async () => {
   localStorage.setItem('marker:db', 'restore-1');

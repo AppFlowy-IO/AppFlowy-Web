@@ -31,7 +31,7 @@ interface ChartCase {
 const fixture = loadParityFixture<{ chartCases: ChartCase[]; encoding: { ignoreOnCompare: string[] } }>(
   'layouts/unknown-keys.json'
 );
-const IGNORED = new Set(fixture.encoding.ignoreOnCompare);
+const IGNORED = new Set([...fixture.encoding.ignoreOnCompare, 'aggregation_type_pb']);
 const FIELD_BY_KEY = new Map(
   (Object.entries(ChartLayoutKeys) as [ChartLayoutField, string][]).map(([field, key]) => [key, field])
 );
@@ -104,6 +104,8 @@ describe('chart layout writes', () => {
       aggregationType: 1,
       titleText: 'Revenue',
       numberFormat: 'compact',
+      x_field_id: '', y_field_id: '', show_empty_values: false,
+      date_condition: { $bigint: '3' }, aggregation_type_pb: { $bigint: '1' },
     });
 
     expect(
@@ -124,17 +126,17 @@ describe('chart layout writes', () => {
     const { chart } = createChart({ chartType: ChartType.Bar, xFieldId: 'status' });
 
     expect(applyAndCollect(chart, () => applyChartLayoutUpdate(chart, { chartType: ChartType.Bar }))).toEqual([
-      'chart_type',
+      'aggregation_type', 'aggregation_type_pb', 'chart_type', 'date_condition', 'show_empty_values', 'x_field_id', 'y_field_id',
     ]);
-    expect(chart.get('chart_type')).toBe(ChartType.Bar);
+    expect(chart.get('chart_type')).toBe(BigInt(ChartType.Bar));
     expect(chart.get('chartType')).toBe(ChartType.Bar);
-    // A field the write does not name stays on its legacy key only.
-    expect(chart.get('x_field_id')).toBeUndefined();
+    // Migrating a legacy chart preserves every existing field under its native key.
+    expect(chart.get('x_field_id')).toBe('status');
     expect(chart.get('xFieldId')).toBe('status');
   });
 
   it('rewrites a legacy spelling that disagrees with the collab key', () => {
-    const { chart } = createChart({ chart_type: ChartType.Line, chartType: ChartType.Bar });
+    const { chart } = createChart({ chart_type: { $bigint: '1' }, chartType: ChartType.Bar, aggregation_type: { $bigint: '0' }, aggregation_type_pb: { $bigint: '0' }, date_condition: { $bigint: '3' }, x_field_id: '', y_field_id: '', show_empty_values: false });
 
     expect(applyAndCollect(chart, () => applyChartLayoutUpdate(chart, { chartType: ChartType.Line }))).toEqual([
       'chartType',

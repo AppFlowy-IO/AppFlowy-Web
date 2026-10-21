@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test';
+import { expect, type Locator, type Page, test } from '@playwright/test';
 
 import { DatabaseViewLayout } from '../../../src/application/types';
 import { addPropertyColumn, signInAndCreateDatabaseView } from '../../support/database-ui-helpers';
@@ -10,8 +10,9 @@ import {
   typeTextIntoCell,
 } from '../../support/filter-test-helpers';
 import { addRows } from '../../support/field-type-helpers';
+import { createFieldDirect, setCellDirect } from '../../support/gallery-test-helpers';
 import { createDocumentPageAndNavigate } from '../../support/page-utils';
-import { waitForDatabaseTestContext } from '../../support/relation-test-helpers';
+import { setPrimaryCellTextDirect, waitForDatabaseTestContext } from '../../support/relation-test-helpers';
 import { closeRowDetailWithEscape } from '../../support/row-detail-helpers';
 import {
   DatabaseGridSelectors,
@@ -20,9 +21,11 @@ import {
   FieldType,
   itemDirectChildPageItems,
   PageSelectors,
+  PersonSelectors,
   RowDetailSelectors,
   viewIdFromPageTestId,
 } from '../../support/selectors';
+import { expectPeekOpen, setSelectCellDirect } from '../../support/side-peek-helpers';
 
 type FieldInfo = {
   id: string;
@@ -696,5 +699,498 @@ test.describe('Standalone List navigation parity', () => {
     await expectStandaloneListRoute(page, standaloneRoute);
     await expect(DatabaseViewSelectors.viewTab(page).filter({ hasText: 'Grid' })).toHaveCount(0);
     await expect(page.getByTestId(`list-primary-cell-${rowId}`)).toContainText(emoji, { timeout: 30_000 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Desktop PR #1475 "revamp: database list view" (list_row.dart,
+// desktop_list_card_cell_style.dart, group_header.dart, list_group_widgets.dart)
+// ---------------------------------------------------------------------------
+
+const REVAMP_ROW_TITLES = ['Revamp Amber', 'Revamp Birch', 'Revamp Cedar'];
+
+/** Desktop content box: spacing.m padding, borderRadius.m, a 20px title row (62px with a property line). */
+const LIST_ROW_PADDING = 8;
+const LIST_ROW_RADIUS = '8px';
+const LIST_WIDE_ROW_HEIGHT = 36;
+const LIST_NARROW_ROW_HEIGHT = 62;
+
+/** Ids introduced by the revamp. `selectors.ts` is shared with in-flight work, so they stay local. */
+const ListRevampLocators = {
+  content: (page: Page, rowId: string) => page.getByTestId(`list-row-content-${rowId}`),
+  title: (page: Page, rowId: string) => page.getByTestId(`list-row-title-${rowId}`),
+  trailing: (page: Page, rowId: string) => page.getByTestId(`list-row-trailing-${rowId}`),
+  trailingCells: (page: Page, rowId: string) =>
+    page.getByTestId(`list-row-trailing-${rowId}`).locator('.list-property-cell'),
+  peekButton: (page: Page, rowId: string) => page.getByTestId(`list-row-peek-${rowId}`),
+  groupHeaders: (page: Page) => page.locator('[data-testid^="list-group-header-"]'),
+  groupRows: (page: Page, groupId: string) =>
+    page.locator(`section[data-group-id="${groupId}"] [data-testid^="list-row-"][data-row-id]`),
+  collapseToggle: (header: Locator) => header.getByTestId('list-group-collapse-toggle'),
+  collapseIcon: (header: Locator) => header.getByTestId('list-group-collapse-icon'),
+};
+
+type Box = { height: number; width: number; x: number; y: number };
+
+async function boxOf(locator: Locator): Promise<Box> {
+  const box = await locator.boundingBox();
+
+  if (!box) throw new Error(`${locator} has no layout box`);
+  return box;
+}
+
+function rightOf(box: Box): number {
+  return box.x + box.width;
+}
+
+function bottomOf(box: Box): number {
+  return box.y + box.height;
+}
+
+/** Resolves a semantic token through a probe element, so the assertion holds in every theme. */
+async function resolvedToken(page: Page, property: 'backgroundColor' | 'color', token: string): Promise<string> {
+  return page.evaluate(
+    ([cssProperty, cssToken]) => {
+      const probe = document.createElement('span');
+
+      probe.style[cssProperty] = `var(${cssToken})`;
+      document.body.appendChild(probe);
+      const value = getComputedStyle(probe)[cssProperty];
+
+      probe.remove();
+      return value;
+    },
+    [property, token] as const
+  );
+}
+
+async function seedRevampTitles(page: Page): Promise<void> {
+  const rowCount = await activeRowOrderCount(page);
+  const titles = Array.from({ length: rowCount }, (_, index) => REVAMP_ROW_TITLES[index] ?? `Revamp row ${index + 1}`);
+
+  await seedPrimaryTitles(page, titles);
+  await expect(DatabaseGridSelectors.grid(page)).toContainText(titles[0], { timeout: 20_000 });
+}
+
+async function listRowIdByTitle(page: Page, title: string): Promise<string> {
+  const row = DatabaseListSelectors.rows(page).filter({ hasText: title }).first();
+
+  await expect(row).toBeVisible({ timeout: 15_000 });
+  const rowId = await row.getAttribute('data-row-id');
+
+  if (!rowId) throw new Error(`The List row "${title}" did not expose a row ID`);
+  return rowId;
+}
+
+async function fieldIdByName(page: Page, name: string): Promise<string> {
+  const field = (await activeViewFields(page)).find((candidate) => candidate.name === name);
+
+  if (!field) throw new Error(`The active view has no property named "${name}"`);
+  return field.id;
+}
+
+/** Parks the pointer on the active view tab: outside every row, its gutter and the peek button. */
+async function leaveListRows(page: Page): Promise<void> {
+  await DatabaseViewSelectors.activeViewTab(page).hover();
+}
+
+async function groupListByField(page: Page, fieldId: string): Promise<void> {
+  await page.getByTestId('database-actions-settings').click();
+  const trigger = page.getByTestId('list-group-settings-trigger');
+
+  await expect(trigger).toBeVisible({ timeout: 10_000 });
+  await trigger.click();
+  await expect(page.getByTestId('list-group-settings-menu')).toBeVisible();
+  await page.getByTestId(`list-group-by-field-${fieldId}`).click();
+  await closeDatabaseSettings(page);
+  await expect(ListRevampLocators.groupHeaders(page).first()).toBeVisible({ timeout: 15_000 });
+}
+
+/** Picks the first workspace member through the grid's Person menu; the member list loads from the server. */
+async function assignFirstMemberInGrid(page: Page, rowId: string, fieldId: string): Promise<void> {
+  const gridCell = DatabaseGridSelectors.cellByIds(page, rowId, fieldId);
+
+  await gridCell.scrollIntoViewIfNeeded();
+  await gridCell.click();
+  await expect(PersonSelectors.personCellMenu(page)).toBeVisible({ timeout: 10_000 });
+  const option = page.locator('[data-testid^="person-option-"]').first();
+
+  await expect(option).toBeVisible({ timeout: 15_000 });
+  await option.click();
+  await expect(gridCell.locator('[data-slot="avatar"]').first()).toBeVisible({ timeout: 15_000 });
+  await page.keyboard.press('Escape');
+  await expect(PersonSelectors.personCellMenu(page)).toBeHidden();
+}
+
+/**
+ * Desktop flips to the narrow layout once `maxWidth - leadingWidth < 480`. The
+ * web measures the List box once and tells every row, so the viewport shrinks
+ * step by step until the rows report it; the width at which the outline drawer
+ * closes is not hard-coded.
+ */
+async function shrinkViewportUntilNarrow(page: Page, row: Locator): Promise<number> {
+  for (const width of [900, 760, 640, 560, 480]) {
+    await page.setViewportSize({ height: 800, width });
+
+    // Closing the responsive sidebar animates the content width. A row can
+    // briefly become narrow and then wide again, so wait for stable geometry
+    // before deciding whether this viewport is narrow enough.
+    let previous = '';
+    let stableSamples = 0;
+
+    await expect
+      .poll(
+        async () => {
+          const current = await row.evaluate((element) => {
+            const { x, y, width, height } = element.getBoundingClientRect();
+
+            return JSON.stringify([element.getAttribute('data-layout'), x, y, width, height]);
+          });
+
+          stableSamples = current === previous ? stableSamples + 1 : 0;
+          previous = current;
+          return stableSamples;
+        },
+        { intervals: [100], message: 'List row geometry settles after resizing the viewport' }
+      )
+      .toBeGreaterThanOrEqual(5);
+
+    if ((await row.getAttribute('data-layout')) === 'narrow') return width;
+  }
+
+  throw new Error('No viewport width switched the List rows to the narrow layout');
+}
+
+test.describe('List revamp (desktop PR #1475)', () => {
+  test.beforeEach(async ({ page, request }) => {
+    setupPageErrorHandling(page);
+    await page.setViewportSize({ height: 800, width: 1440 });
+    await loginAndCreateGrid(page, request, generateRandomEmail());
+    await seedRevampTitles(page);
+  });
+
+  test('list_row.dart: wide rows keep the 8px/8px content box with right-anchored, primary-colored properties', async ({
+    page,
+  }) => {
+    await addListView(page);
+    const rowId = await listRowIdByTitle(page, 'Revamp Amber');
+    // Created directly after the List exists, so the List shows them without a Properties round trip.
+    const numberFieldId = await createFieldDirect(page, { fieldType: FieldType.Number, name: 'Estimate' });
+    const dateFieldId = await createFieldDirect(page, { fieldType: FieldType.DateTime, name: 'Due' });
+
+    await setCellDirect(page, rowId, numberFieldId, FieldType.Number, '42');
+    await setCellDirect(page, rowId, dateFieldId, FieldType.DateTime, '1735689600', { include_time: false });
+
+    const row = DatabaseListSelectors.rowById(page, rowId);
+    const content = ListRevampLocators.content(page, rowId);
+    const trailingCells = ListRevampLocators.trailingCells(page, rowId);
+    const numberCell = page.getByTestId(`list-field-${numberFieldId}-${rowId}`);
+
+    await expect(numberCell).toContainText('42');
+    // Type and Done (default positions 1-2) plus the two properties created above.
+    await expect(trailingCells).toHaveCount(4);
+    await expect(trailingCells.last()).toHaveAttribute('data-field-id', dateFieldId);
+    await expect(row).toHaveAttribute('data-layout', 'wide');
+
+    expect(
+      await content.evaluate((element) => {
+        const style = getComputedStyle(element);
+
+        return { borderRadius: style.borderRadius, flexDirection: style.flexDirection, padding: style.padding };
+      })
+    ).toEqual({ borderRadius: LIST_ROW_RADIUS, flexDirection: 'row', padding: `${LIST_ROW_PADDING}px` });
+
+    const rowBox = await boxOf(row);
+    const contentBox = await boxOf(content);
+    const lastCellBox = await boxOf(trailingCells.last());
+
+    expect(Math.abs(rowBox.height - LIST_WIDE_ROW_HEIGHT)).toBeLessThanOrEqual(1);
+    expect(Math.abs(contentBox.height - LIST_WIDE_ROW_HEIGHT)).toBeLessThanOrEqual(1);
+    // SingleChildScrollView(reverse: true): cells that fit sit flush against the padding edge.
+    expect(Math.abs(rightOf(lastCellBox) - (rightOf(contentBox) - LIST_ROW_PADDING))).toBeLessThanOrEqual(1);
+    // Padding(left: spacing.l) before every trailing cell, the first one included.
+    expect(await trailingCells.evaluateAll((cells) => cells.map((cell) => getComputedStyle(cell).paddingLeft))).toEqual([
+      '12px',
+      '12px',
+      '12px',
+      '12px',
+    ]);
+
+    // desktopListCardCellStyleMap: caption.standard (12/18) in textColorScheme.primary, no longer the hint color.
+    const numberStyle = await numberCell
+      .locator(':scope > *')
+      .first()
+      .evaluate((element) => {
+        const style = getComputedStyle(element);
+
+        return { color: style.color, fontSize: style.fontSize, lineHeight: style.lineHeight };
+      });
+    const [primary, secondary] = await Promise.all([
+      resolvedToken(page, 'color', '--text-primary'),
+      resolvedToken(page, 'color', '--text-secondary'),
+    ]);
+
+    expect(numberStyle).toEqual({ color: primary, fontSize: '12px', lineHeight: '18px' });
+    expect(primary).not.toBe(secondary);
+
+    // The hover fill (fillColorScheme.contentHover) follows the whole row, like desktop's MouseRegion.
+    const idleFill = await content.evaluate((element) => getComputedStyle(element).backgroundColor);
+    const hoverFill = await resolvedToken(page, 'backgroundColor', '--fill-content-hover');
+
+    expect(hoverFill).not.toBe(idleFill);
+    await row.hover();
+    await expect.poll(() => content.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(hoverFill);
+  });
+
+  test('list_row.dart: the hover peek button is a 20px ghost button after the title that opens the side peek', async ({
+    page,
+  }) => {
+    await addListView(page);
+    const rowId = await listRowIdByTitle(page, 'Revamp Birch');
+    const row = DatabaseListSelectors.rowById(page, rowId);
+    const peekButton = ListRevampLocators.peekButton(page, rowId);
+    const primary = page.getByTestId(`list-primary-cell-${rowId}`);
+
+    // Desktop inserts _PeekButton only while hovering; the web keeps it in the DOM but hidden.
+    await expect(peekButton).toBeAttached();
+    await expect(peekButton).toBeHidden();
+
+    await row.hover();
+    await expect(peekButton).toBeVisible();
+    await expect(peekButton).toHaveAttribute('aria-label', 'Open as side peek');
+    const peekBox = await boxOf(peekButton);
+    const primaryBox = await boxOf(primary);
+
+    // FlowySvg side_peek_s at 20px with EdgeInsets.zero, HSpace(spacing.s) after the title.
+    expect(Math.abs(peekBox.width - 20)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(peekBox.height - 20)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(peekBox.x - rightOf(primaryBox) - 6)).toBeLessThanOrEqual(2);
+    expect(await peekButton.evaluate((element) => getComputedStyle(element).borderRadius)).toBe(LIST_ROW_RADIUS);
+
+    await leaveListRows(page);
+    await expect(peekButton).toBeHidden();
+
+    await row.hover();
+    await expect(peekButton).toBeVisible();
+    await peekButton.click();
+    await expectPeekOpen(page, 'side', 'Revamp Birch');
+    // The side peek is nonmodal: the List stays on screen next to it.
+    await expect(DatabaseListSelectors.list(page)).toBeVisible();
+    await closeRowDetailWithEscape(page);
+    await expect(RowDetailSelectors.modal(page)).toHaveCount(0, { timeout: 15_000 });
+  });
+
+  test('list_row.dart: below kListRowNarrowBreakpoint the properties stack under the title with a 12px indent', async ({
+    page,
+  }) => {
+    await addListView(page);
+    const rowId = await listRowIdByTitle(page, 'Revamp Amber');
+    const numberFieldId = await createFieldDirect(page, { fieldType: FieldType.Number, name: 'Estimate' });
+
+    await setCellDirect(page, rowId, numberFieldId, FieldType.Number, '42');
+    // Leave one property line so the first trailing cell has text to measure.
+    await openDatabaseProperties(page);
+    await ensurePropertyHidden(page, await fieldIdByName(page, 'Type'));
+    await ensurePropertyHidden(page, await fieldIdByName(page, 'Done'));
+    await closeDatabaseSettings(page);
+
+    const row = DatabaseListSelectors.rowById(page, rowId);
+    const content = ListRevampLocators.content(page, rowId);
+    const title = ListRevampLocators.title(page, rowId);
+    const trailing = ListRevampLocators.trailing(page, rowId);
+    const numberCell = page.getByTestId(`list-field-${numberFieldId}-${rowId}`);
+
+    await expect(numberCell).toContainText('42');
+    await expect(ListRevampLocators.trailingCells(page, rowId)).toHaveCount(1);
+    await expect(row).toHaveAttribute('data-layout', 'wide');
+
+    await shrinkViewportUntilNarrow(page, row);
+    // One List-level measurement reaches every mounted row.
+    await expect
+      .poll(() =>
+        DatabaseListSelectors.rows(page).evaluateAll((rows) =>
+          rows.every((element) => element.getAttribute('data-layout') === 'narrow')
+        )
+      )
+      .toBe(true);
+    expect(await content.evaluate((element) => getComputedStyle(element).flexDirection)).toBe('column');
+    // Left-anchored (reverse: false) on the second line.
+    expect(await trailing.evaluate((element) => getComputedStyle(element).flexDirection)).toBe('row');
+
+    const rowBox = await boxOf(row);
+    const contentBox = await boxOf(content);
+    const titleBox = await boxOf(title);
+    const trailingBox = await boxOf(trailing);
+    const cellBox = await boxOf(numberCell);
+    const cellTextBox = await boxOf(numberCell.locator(':scope > *').first());
+
+    // Column(title row, SizedBox(height: spacing.s), properties): 8 + 20 + 6 + 20 + 8.
+    expect(Math.abs(rowBox.height - LIST_NARROW_ROW_HEIGHT)).toBeLessThanOrEqual(1);
+    expect(Math.abs(titleBox.width - (contentBox.width - 2 * LIST_ROW_PADDING))).toBeLessThanOrEqual(1);
+    expect(trailingBox.y).toBeGreaterThanOrEqual(bottomOf(titleBox) + 5);
+    // The first cell's 12px left padding indents the property line relative to the title.
+    expect(Math.abs(cellBox.x - titleBox.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(cellTextBox.x - (titleBox.x + 12))).toBeLessThanOrEqual(1);
+
+    await page.setViewportSize({ height: 800, width: 1440 });
+    await expect(row).toHaveAttribute('data-layout', 'wide');
+    await expect.poll(async () => (await boxOf(row)).height).toBeLessThanOrEqual(LIST_WIDE_ROW_HEIGHT + 1);
+  });
+
+  test('list_row.dart: an overflowing trailing strip keeps its right end visible and scrolls with the wheel', async ({
+    page,
+  }) => {
+    await addListView(page);
+    const rowId = await listRowIdByTitle(page, 'Revamp Amber');
+
+    await setPrimaryCellTextDirect(page, rowId, 'Revamp Amber with a deliberately long title that takes real room');
+    // A long text property before a short one: the strip overflows while its last cell stays short.
+    const notesFieldId = await createFieldDirect(page, { fieldType: FieldType.RichText, name: 'Notes' });
+    const numberFieldId = await createFieldDirect(page, { fieldType: FieldType.Number, name: 'Estimate' });
+
+    await setSelectCellDirect(page, rowId, 'Type', 'Design');
+    await setCellDirect(page, rowId, notesFieldId, FieldType.RichText, 'overflow '.repeat(60).trim());
+    await setCellDirect(page, rowId, numberFieldId, FieldType.Number, '42');
+
+    const row = DatabaseListSelectors.rowById(page, rowId);
+    const trailing = ListRevampLocators.trailing(page, rowId);
+    const cells = ListRevampLocators.trailingCells(page, rowId);
+    const metrics = () =>
+      trailing.evaluate((element: HTMLElement) => ({
+        clientWidth: element.clientWidth,
+        scrollLeft: element.scrollLeft,
+        scrollWidth: element.scrollWidth,
+        scrollbarHeight: element.offsetHeight - element.clientHeight,
+      }));
+
+    await expect(page.getByTestId(`list-field-${numberFieldId}-${rowId}`)).toContainText('42');
+    await expect(cells).toHaveCount(4);
+    await expect(cells.last()).toHaveAttribute('data-field-id', numberFieldId);
+    await expect(row).toHaveAttribute('data-layout', 'wide');
+
+    const before = await metrics();
+
+    expect(before.scrollWidth).toBeGreaterThan(before.clientWidth);
+    // reverse: true. Offset 0 is the right end, and no classic scrollbar eats the 20px strip.
+    expect(before.scrollLeft).toBe(0);
+    expect(before.scrollbarHeight).toBe(0);
+
+    const stripBox = await boxOf(trailing);
+    const lastBox = await boxOf(cells.last());
+    const firstBox = await boxOf(cells.first());
+
+    expect(lastBox.x).toBeGreaterThanOrEqual(stripBox.x - 0.5);
+    expect(Math.abs(rightOf(lastBox) - rightOf(stripBox))).toBeLessThanOrEqual(1);
+    expect(firstBox.x).toBeLessThan(stripBox.x);
+    expect(Math.abs((await boxOf(row)).height - LIST_WIDE_ROW_HEIGHT)).toBeLessThanOrEqual(1);
+
+    // Hovering adds the peek button to the title row; measure the clipped cell after that.
+    await trailing.hover();
+    const firstHoveredBox = await boxOf(cells.first());
+
+    // A horizontal wheel delta (trackpad, or Shift+wheel on a mouse) scrolls the hidden overflow back in.
+    await page.mouse.wheel(-240, 0);
+    await expect.poll(async () => (await metrics()).scrollLeft, { timeout: 5_000 }).not.toBe(0);
+    await expect.poll(async () => (await boxOf(cells.first())).x, { timeout: 5_000 }).toBeGreaterThan(firstHoveredBox.x);
+  });
+
+  test('desktop_list_card_cell_style.dart: Person cells show 20px avatars only and keep the name for screen readers', async ({
+    page,
+  }) => {
+    const gridViewId = await activeViewId(page);
+    const listViewId = await addListView(page);
+    const rowId = await listRowIdByTitle(page, 'Revamp Amber');
+    const personFieldId = await createFieldDirect(page, { fieldType: FieldType.Person, name: 'Owner' });
+
+    await switchToView(page, gridViewId, 'Grid');
+    await assignFirstMemberInGrid(page, rowId, personFieldId);
+    await switchToView(page, listViewId, 'List');
+
+    const listCell = page.getByTestId(`list-field-${personFieldId}-${rowId}`);
+    const avatar = listCell.locator('[data-slot="avatar"]').first();
+    const name = listCell.locator('.person-cell-name').first();
+
+    await expect(avatar).toBeVisible({ timeout: 15_000 });
+    const avatarBox = await boxOf(avatar);
+    const cellBox = await boxOf(listCell);
+
+    // PersonCardCellStyle(hideName: true): a 20px AFAvatar and nothing else after the 12px cell padding.
+    expect(Math.abs(avatarBox.width - 20)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(avatarBox.height - 20)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(cellBox.width - 12 - avatarBox.width)).toBeLessThanOrEqual(1);
+    // The name stays in the DOM for screen readers (Tailwind sr-only), not as visible text.
+    await expect(name).toBeAttached();
+    await expect(name).not.toBeEmpty();
+    expect(
+      await name.evaluate((element) => {
+        const style = getComputedStyle(element);
+
+        return { clip: style.clip, height: style.height, position: style.position, width: style.width };
+      })
+    ).toEqual({ clip: 'rect(0px, 0px, 0px, 0px)', height: '1px', position: 'absolute', width: '1px' });
+  });
+
+  test('group_header.dart and list_group_widgets.dart: a 24px filled-arrow collapse toggle and a borderless footer', async ({
+    page,
+  }) => {
+    const typeFieldId = await fieldIdByName(page, 'Type');
+
+    await addListView(page);
+    const amberRowId = await listRowIdByTitle(page, 'Revamp Amber');
+    const birchRowId = await listRowIdByTitle(page, 'Revamp Birch');
+
+    await setSelectCellDirect(page, amberRowId, 'Type', 'Design');
+    await setSelectCellDirect(page, birchRowId, 'Type', 'Build');
+    await groupListByField(page, typeFieldId);
+
+    const header = ListRevampLocators.groupHeaders(page).filter({ hasText: 'Design' }).first();
+
+    await expect(header).toBeVisible({ timeout: 15_000 });
+    const groupId = await header.getAttribute('data-group-id');
+
+    if (!groupId) throw new Error('The Design group header did not expose a group ID');
+
+    const toggle = ListRevampLocators.collapseToggle(header);
+    const icon = ListRevampLocators.collapseIcon(header);
+    const groupRows = ListRevampLocators.groupRows(page, groupId);
+    const footer = DatabaseListSelectors.groupFooterById(page, groupId);
+
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(icon).toHaveAttribute('data-collapsed', 'false');
+    await expect(groupRows).toHaveCount(1);
+
+    // AFGhostButton.normal(size m, padding 2) around a 20px FlowySvg arrow_down_filled_s.
+    const toggleBox = await boxOf(toggle);
+    const iconBox = await boxOf(icon);
+    const labelBox = await boxOf(header.getByTestId('list-group-option-tag'));
+
+    expect(Math.abs(toggleBox.width - 24)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(toggleBox.height - 24)).toBeLessThanOrEqual(0.5);
+    expect(await toggle.evaluate((element) => getComputedStyle(element).borderRadius)).toBe(LIST_ROW_RADIUS);
+    expect(Math.abs(iconBox.width - 20)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(iconBox.height - 20)).toBeLessThanOrEqual(0.5);
+    // 24px button + HSpace(spacing.m): the name still starts 32px into the header.
+    expect(Math.abs(labelBox.x - (toggleBox.x + 32))).toBeLessThanOrEqual(1);
+
+    // ListGroupFooter lost its bottom border and keeps its 36px "New row" button.
+    expect(
+      await footer.evaluate((element) => {
+        const style = getComputedStyle(element);
+
+        return { borderBottomWidth: style.borderBottomWidth, height: style.height };
+      })
+    ).toEqual({ borderBottomWidth: '0px', height: '36px' });
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(icon).toHaveAttribute('data-collapsed', 'true');
+    await expect(groupRows).toHaveCount(0);
+    await expect(footer).toHaveCount(0);
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(icon).toHaveAttribute('data-collapsed', 'false');
+    await expect(groupRows).toHaveCount(1);
+    await expect(footer).toBeVisible();
   });
 });

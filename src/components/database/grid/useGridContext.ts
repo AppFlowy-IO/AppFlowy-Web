@@ -127,106 +127,12 @@ export function useIsGridCellActive(rowKey: string, fieldId: string) {
   return useSyncExternalStore(store.subscribeActiveCell, getSnapshot, getSnapshot);
 }
 
-type GridRowResizeListener = (rowKey: string, maxCellHeight: number) => void;
-
-/** Reads a row's height from the DOM; `undefined` when the row has nothing to measure. */
-export type GridRowMeasure = () => number | undefined;
-
-export type GridRowResizeStore = {
-  report: (rowKey: string, maxCellHeight: number) => void;
-  /**
-   * Measures the row at the next animation frame and reports the height. The
-   * rows scheduled for one frame are read in one pass and reported after it,
-   * so a frame forces at most one layout however many rows changed (W18).
-   * A row scheduled twice in a frame is measured once, with its last measure.
-   */
-  schedule: (rowKey: string, measure: GridRowMeasure) => void;
-  /**
-   * Calls `onResize` when the element's size changes, and once when it starts
-   * being observed, as a ResizeObserver of its own would. Every row of the grid
-   * shares one observer (W15). Returns the function that stops observing.
-   */
-  observe: (element: Element, onResize: () => void) => () => void;
-  subscribe: (listener: GridRowResizeListener) => () => void;
-};
-
-function requestFrame(callback: () => void) {
-  if (typeof requestAnimationFrame === 'function') {
-    requestAnimationFrame(callback);
-  } else {
-    setTimeout(callback, 0);
-  }
-}
-
-export function createGridRowResizeStore(): GridRowResizeStore {
-  const listeners = new Set<GridRowResizeListener>();
-  const pending = new Map<string, number>();
-  const scheduled = new Map<string, GridRowMeasure>();
-  let frameRequested = false;
-  const resizeCallbacks = new Map<Element, () => void>();
-  let resizeObserver: ResizeObserver | null = null;
-
-  const report = (rowKey: string, maxCellHeight: number) => {
-    if (listeners.size === 0) {
-      pending.set(rowKey, maxCellHeight);
-      return;
-    }
-
-    listeners.forEach((listener) => listener(rowKey, maxCellHeight));
-  };
-
-  const measureScheduled = () => {
-    frameRequested = false;
-    const measures = Array.from(scheduled);
-
-    scheduled.clear();
-    // Every read first: reporting only notifies, but the reads stay together.
-    const heights = measures.map(([rowKey, measure]) => [rowKey, measure()] as const);
-
-    heights.forEach(([rowKey, height]) => {
-      if (height !== undefined) report(rowKey, height);
-    });
-  };
-
-  return {
-    report,
-    schedule: (rowKey, measure) => {
-      scheduled.set(rowKey, measure);
-      if (frameRequested) return;
-      frameRequested = true;
-      requestFrame(measureScheduled);
-    },
-    observe: (element, onResize) => {
-      if (typeof ResizeObserver === 'undefined') return () => undefined;
-      resizeObserver ??= new ResizeObserver((entries) => {
-        entries.forEach((entry) => resizeCallbacks.get(entry.target)?.());
-      });
-      resizeCallbacks.set(element, onResize);
-      resizeObserver.observe(element);
-      return () => {
-        if (resizeCallbacks.get(element) !== onResize) return;
-        resizeCallbacks.delete(element);
-        resizeObserver?.unobserve(element);
-      };
-    },
-    subscribe: (listener) => {
-      listeners.add(listener);
-      pending.forEach((maxCellHeight, rowKey) => listener(rowKey, maxCellHeight));
-      pending.clear();
-      return () => {
-        listeners.delete(listener);
-      };
-    },
-  };
-}
-
 export type GridContextType = {
   rowOrders?: Row[];
   rows: RenderRow[];
   setRows: (rows: RenderRow[]) => void;
   activePropertyId?: string;
   setActivePropertyId: (activePropertyId?: string) => void;
-  rowResizeStore: GridRowResizeStore;
   remainingRowCount: number;
   lastVisibleRowId?: string;
   loadMoreRows: () => void;

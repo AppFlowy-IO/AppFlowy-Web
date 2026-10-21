@@ -4,11 +4,14 @@ import { Dialog as MuiDialog } from '@mui/material';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import translations from '@/@types/translations/en.json';
+import { mockResizeObserver } from '@/__mocks__/resizeObserver';
 import { APP_EVENTS } from '@/application/constants';
 import { Types, YDocWithMeta } from '@/application/types';
 import { DatabaseRestoreNoticeProvider, useDatabaseRestoreNotice } from '@/components/app/DatabaseRestoreNotice';
 import { RevertedDialog } from '@/components/app/RevertedDialog';
 import DatabaseRowModal from '@/components/database/DatabaseRowModal';
+
+mockResizeObserver();
 
 jest.mock('@/application/database-yjs', () => ({
   useDatabaseContextOptional: () => ({
@@ -16,6 +19,10 @@ jest.mock('@/application/database-yjs', () => ({
     databaseDoc: { guid: 'related-database' },
   }),
   useReadOnly: () => false,
+  useDatabase: () => undefined,
+  useDatabaseView: () => undefined,
+  useRowOrdersSelector: () => [],
+  useNavigateToRow: () => undefined,
 }));
 
 jest.mock('@/application/database-yjs/dispatch', () => ({

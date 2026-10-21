@@ -6,18 +6,20 @@ import { useReadOnly, useSlateStatic } from 'slate-react';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { BlockType } from '@/application/types';
+import { useInsideCallout } from '@/components/editor/components/blocks/callout/Callout.hooks';
 import { EditorElementProps, ToggleListNode } from '@/components/editor/editor.type';
 
 export const ToggleList = memo(
   forwardRef<HTMLDivElement, EditorElementProps<ToggleListNode>>(({ node, children, ...attributes }, ref) => {
     const blockId = node.blockId;
     const editor = useSlateStatic() as YjsEditor;
+    const inCallout = useInsideCallout(node);
     const { collapsed, level = 0 } = useMemo(() => node.data || {}, [node.data]);
     const { t } = useTranslation();
     const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
 
     const className = useMemo(() => {
-      const classList = ['flex w-full flex-col'];
+      const classList = ['toggle-list flex w-full flex-col'];
 
       if (attributes.className) {
         classList.push(attributes.className);
@@ -50,7 +52,9 @@ export const ToggleList = memo(
                 'ml-[1.45em] flex h-[36px] cursor-pointer select-none items-center rounded-[6px] px-[0.5em] text-sm text-text-secondary hover:bg-fill-content-hover'
               }
             >
-              {level === 0
+              {inCallout
+                ? t('document.plugins.emptyToggle')
+                : level === 0
                 ? t('document.plugins.emptyToggleList')
                 : t('document.plugins.emptyToggleHeadingWeb', { level })}
             </div>

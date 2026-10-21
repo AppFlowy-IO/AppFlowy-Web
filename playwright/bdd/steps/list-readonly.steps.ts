@@ -99,7 +99,7 @@ Then('the List row detail remains open and readonly', async ({ page }) => {
   await expect(modal.getByTestId('row-detail-open-full-page')).toBeVisible();
   await expect(modal.getByTestId('row-detail-more-actions')).toHaveCount(0);
   await expect(modal.getByTestId('add-icon-button')).toHaveCount(0);
-  await expect(modal.getByRole('button', { name: 'Add Cover', exact: true })).toHaveCount(0);
+  await expect(modal.getByRole('button', { name: 'Add cover', exact: true })).toHaveCount(0);
   await expect(modal.getByRole('button', { name: 'New property', exact: true })).toHaveCount(0);
   await expect(editor).toBeVisible({ timeout: 15_000 });
   await expect(editor).toHaveAttribute('contenteditable', 'false');

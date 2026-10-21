@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 
-import { AccessLevel, Role } from '@/application/types';
+import { AccessLevel, Role, Subscription, SubscriptionInterval, SubscriptionPlan } from '@/application/types';
 
+import ExportPanel from '../ExportPanel';
 import SharePanel from '../SharePanel';
 import { ShareSectionType } from '../shareSectionType';
 
-const mockGetSubscriptions = jest.fn(async () => []);
+const mockGetSubscriptions = jest.fn<() => Promise<Subscription[]>>(async () => []);
 const mockLoadMentionableUsers = jest.fn(async () => []);
 const mockInviteGuestProps = jest.fn();
 const mockPeopleWithAccessProps = jest.fn();
@@ -15,6 +16,19 @@ let mockIsHosted = false;
 let mockWorkspaceRole: Role | undefined = Role.Member;
 let mockWorkspaceOwnerUid: string | number = '101';
 let mockCurrentUserUid: string | number = '202';
+let mockAuthenticatedUserId: string | undefined;
+
+jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+
+jest.mock('@/application/services/domains', () => ({
+  BillingService: { getSubscriptionLink: jest.fn() },
+}));
+
+jest.mock('@/application/services/js-services/http/export-api', () => ({ getViewPdfBlob: jest.fn() }));
+
+jest.mock('@/components/app/app-overlay/AppOverlayContext', () => ({
+  useAppOverlayContext: () => ({ showBlockingLoader: jest.fn(), hideBlockingLoader: jest.fn() }),
+}));
 
 jest.mock('@/components/app/hooks/useServerInfo', () => ({
   useIsOfficialHosted: () => mockIsHosted,
@@ -23,10 +37,13 @@ jest.mock('@/components/app/hooks/useServerInfo', () => ({
 }));
 
 jest.mock('@/components/app/app.hooks', () => ({
+  useAppView: () => ({ view_id: 'view-1' }),
+  useCurrentWorkspaceId: () => 'share-export-workspace',
   useGetSubscriptions: () => mockGetSubscriptions,
   useLoadMentionableUsers: () => mockLoadMentionableUsers,
   useUserWorkspaceInfo: () => ({
     selectedWorkspace: {
+      id: 'share-export-workspace',
       role: mockWorkspaceRole,
       owner: { uid: mockWorkspaceOwnerUid },
     },
@@ -35,6 +52,7 @@ jest.mock('@/components/app/app.hooks', () => ({
 
 jest.mock('@/components/main/app.hooks', () => ({
   useCurrentUser: () => ({ uid: mockCurrentUserUid }),
+  useAuthenticatedUserIdOptional: () => mockAuthenticatedUserId,
 }));
 
 jest.mock('@/components/_shared/notify', () => ({
@@ -68,6 +86,8 @@ jest.mock('../CopyLink', () => ({
   CopyLink: () => <div data-testid='copy-link' />,
 }));
 
+jest.mock('../UpgradeBanner', () => ({ UpgradeBanner: () => null }));
+
 function renderSharePanel(
   currentUserAccessLevel: AccessLevel | undefined,
   updateGroupInAccessList = jest.fn(),
@@ -98,7 +118,7 @@ function renderSharePanel(
 
 describe('SharePanel', () => {
   beforeEach(() => {
-    mockGetSubscriptions.mockClear();
+    mockGetSubscriptions.mockReset().mockResolvedValue([]);
     mockLoadMentionableUsers.mockClear();
     mockInviteGuestProps.mockClear();
     mockPeopleWithAccessProps.mockClear();
@@ -107,6 +127,7 @@ describe('SharePanel', () => {
     mockWorkspaceRole = Role.Member;
     mockWorkspaceOwnerUid = '101';
     mockCurrentUserUid = '202';
+    mockAuthenticatedUserId = undefined;
   });
 
   it('hides invite controls for read-only users while keeping the access list visible', () => {
@@ -142,6 +163,32 @@ describe('SharePanel', () => {
 
     expect(screen.queryByTestId('invite-guest')).toBeNull();
     expect(mockGetSubscriptions).not.toHaveBeenCalled();
+  });
+
+  it('shares a pending billing read when switching from Share to Export and applies the resolved Pro plan', async () => {
+    mockIsHosted = true;
+    mockAuthenticatedUserId = 'share-export-account';
+    let resolveSubscriptions!: (subscriptions: Subscription[]) => void;
+
+    mockGetSubscriptions.mockReturnValue(new Promise((resolve) => { resolveSubscriptions = resolve; }));
+    const { rerender } = renderSharePanel(AccessLevel.FullAccess);
+
+    expect(mockGetSubscriptions).toHaveBeenCalledTimes(1);
+    rerender(<ExportPanel viewId='view-1' />);
+    expect(mockGetSubscriptions).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('switch').hasAttribute('disabled')).toBe(true);
+    expect(screen.queryByText('shareAction.exportPdfIncludeLinkedPagesPro')).toBeNull();
+
+    await act(async () => resolveSubscriptions([{
+      currency: 'USD',
+      plan: SubscriptionPlan.Pro,
+      price_cents: 1000,
+      recurring_interval: SubscriptionInterval.Month,
+    }]));
+
+    expect(mockGetSubscriptions).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('switch').hasAttribute('disabled')).toBe(false);
+    expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true');
   });
 
   it('forwards group mutation state to the access list', () => {

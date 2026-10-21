@@ -290,6 +290,18 @@ Feature: Timeline view interactions
     Then the timeline has no group headers
     And the table lists "Design, Build, Untitled" in that order
 
+  Scenario: The settings menu lists Group before Timeline settings and the Group menu follows Desktop
+    Given a "Status" select field where "Design" is "Doing" and "Build" is "Done"
+    Then the settings menu lists Group before Timeline settings
+    When I group the timeline by "Status"
+    Then the timeline shows groups "Doing, Done" with 1 row each
+    And the timeline Group entry shows "Status" as the current field
+    And the timeline Group by submenu ticks "Status"
+    And the timeline Group menu offers Delete grouping
+    When I delete the timeline grouping from the Group menu
+    Then the timeline has no group headers
+    And the table lists "Design, Build" in that order
+
   Scenario: Setting up dependencies creates the Blocked by and Blocking properties
     When I set up dependencies from the timeline settings
     Then the table has "Blocked by" and "Blocking" columns

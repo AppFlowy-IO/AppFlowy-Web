@@ -7,7 +7,8 @@
     "support/connections.ts",
     "support/connections.fixture.tsx",
     "support/integrations-server.ts",
-    "support/integrations.fixture.tsx"
+    "support/integrations.fixture.tsx",
+    "support/math-equation.fixture.tsx"
   ],
   "references": []
 }

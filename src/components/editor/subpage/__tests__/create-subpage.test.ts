@@ -6,7 +6,7 @@ import { withYHistory } from '@/application/slate-yjs/plugins/withHistory';
 import { withYjs } from '@/application/slate-yjs/plugins/withYjs';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
 import { initializeDocumentStructure } from '@/application/slate-yjs/utils/yjs';
-import { BlockType, CollabOrigin, CreatePageResponse, YDoc } from '@/application/types';
+import { BlockType, CollabOrigin, CreatePageResponse, MathEquationBlockData, YDoc } from '@/application/types';
 import { EditorContextState } from '@/components/editor/EditorContext';
 
 import { createSubpage } from '../create-subpage';
@@ -101,6 +101,47 @@ it('creates the child even when the host does not offer a modal', async () => {
     f.complete({ view_id: 'child' });
     await pending;
     expect(f.editor.children[0]).toMatchObject({ type: 'sub_page', data: { view_id: 'child' } });
+  } finally {
+    f.dispose();
+  }
+});
+
+it('moves the equation into the new page body and uses its formula as the title', async () => {
+  const f = setup();
+  try {
+    const id = f.editor.children[0].blockId!;
+    CustomEditor.turnToBlock(f.editor, id, BlockType.EquationBlock, { formula: 'E=mc^2' } as MathEquationBlockData);
+    f.editor.select(f.editor.start([0]));
+    const pending = createSubpage(f.editor, f.context);
+    expect(f.context.addPage).toHaveBeenCalledWith('parent', {
+      layout: 0,
+      name: 'E=mc^2',
+      page_data: {
+        type: 'page',
+        children: [{ type: BlockType.EquationBlock, data: { formula: 'E=mc^2' }, children: [] }],
+      },
+    });
+    f.complete({ view_id: 'child' });
+    await pending;
+    expect(f.editor.children[0]).toMatchObject({ type: 'sub_page', data: { view_id: 'child' } });
+  } finally {
+    f.dispose();
+  }
+});
+
+it('keeps a formula edited during page creation instead of replacing it with an outdated copy', async () => {
+  const f = setup();
+  try {
+    const id = CustomEditor.turnToBlock(f.editor, f.editor.children[0].blockId!, BlockType.EquationBlock, {
+      formula: 'original',
+    } as MathEquationBlockData)!;
+    f.editor.select(f.editor.start([0]));
+    const pending = createSubpage(f.editor, f.context);
+    CustomEditor.setBlockData(f.editor, id, { formula: 'newer' });
+    f.complete({ view_id: 'child' });
+    await pending;
+    expect(f.context.deletePage).toHaveBeenCalledWith('child');
+    expect(f.editor.children[0]).toMatchObject({ type: BlockType.EquationBlock, data: { formula: 'newer' } });
   } finally {
     f.dispose();
   }

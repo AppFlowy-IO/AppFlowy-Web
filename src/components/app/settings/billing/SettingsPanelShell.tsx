@@ -2,6 +2,7 @@ import { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as InfoIcon } from '@/assets/icons/info.svg';
+import { useErrorCatalogRevision } from '@/components/main/hooks/useServerErrorCatalog';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -62,12 +63,14 @@ export function SettingsPanelLoading({ label }: { label: string }) {
   );
 }
 
-export function SettingsPanelError({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+export function SettingsPanelError({ error, message, onRetry }: { error?: unknown; message?: string; onRetry: () => void }) {
   const { t } = useTranslation();
+
+  useErrorCatalogRevision();
 
   return (
     <div className='flex flex-col items-start gap-3' data-testid='billing-error'>
-      <div className='text-sm text-text-secondary'>{getErrorMessage(error)}</div>
+      <div className='text-sm text-text-secondary'>{message ?? getErrorMessage(error)}</div>
       <Button variant='outline' size='default' onClick={onRetry}>
         {t('button.retry')}
       </Button>

@@ -32,6 +32,7 @@ export enum ChartAggregationType {
   Median = 5,
   /** "Count unique values": the distinct values of the Y property. */
   CountUnique = 6,
+  /** Legacy desktop name for the distinct-values aggregation. */
   /** "Count values": rows whose Y cell is not empty. */
   CountNotEmpty = 7,
   CountEmpty = 8,

@@ -17,6 +17,7 @@ jest.mock('@/application/database-yjs', () => ({
   ...jest.requireActual('@/application/database-yjs/database.type'),
   DEFAULT_ROW_HEIGHT: jest.requireActual('@/application/database-yjs/const').DEFAULT_ROW_HEIGHT,
   useRowMetaSelector: () => undefined,
+  useFieldSelector: () => ({ clock: 0, field: undefined }),
 }));
 jest.mock('@/components/database/components/drag-and-drop/useRowDnd', () => ({
   useRowDnd: () => ({ dragging: false, ignoreClickRef: { current: false } }),
@@ -57,6 +58,7 @@ const rows = Array.from({ length: 10 }, (_, index) => ({
 const rect = { left: 20, width: 300 };
 const properties = [{ fieldId: 'done', width: 100, visibility: FieldVisibility.AlwaysShown, isPrimary: false }];
 const tableFieldIds = ['owner'];
+const tableFieldTypes = new Map<string, never>();
 const rowActions = { addAbove: jest.fn(), addBelow: jest.fn(), duplicate: jest.fn() };
 const formatTime = () => '';
 
@@ -99,6 +101,7 @@ function ResizeHarness({ onCommit }: { onCommit: (fieldId: string, width: number
             showSidebar
             propertyFields={properties}
             tableFieldIds={tableFieldIds}
+            tableFieldTypes={tableFieldTypes}
             editable
             dateEditable
             offscreenLeft

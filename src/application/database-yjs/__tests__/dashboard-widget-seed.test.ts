@@ -64,16 +64,17 @@ describe('seedNumberWidgetChart', () => {
 
     // The required keys, by value; show_title is stored although it reads true when absent.
     Object.entries(FIXTURE.required).forEach(([key, value]) => {
-      expect([key, chart.get(key)]).toEqual([key, value]);
+      const stored = chart.get(key);
+
+      expect([key, typeof stored === 'bigint' ? Number(stored) : stored]).toEqual([key, value]);
     });
-    // The legacy camelCase mirrors the web writes beside the collab keys.
     expect(chart.get('chartType')).toBe(4);
-    expect(chart.get('aggregationType')).toBe(0);
-    expect(chart.get('showEmptyValues')).toBe(true);
-    expect(chart.get('dateCondition')).toBe(3);
+    expect(chart.get('aggregation_type_pb')).toBe(BigInt(0));
     if (withChartMap) expect(chart.get('probe_unknown')).toBe('kept');
 
     const parsed = parseChartLayoutSettings(chart);
+
+    expect(parsed.showEmptyValues).toBe(true);
 
     expect({
       chart_type: parsed.chartType,

@@ -2,16 +2,16 @@ import { Collapse } from '@mui/material';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { View, ViewLayout } from '@/application/types';
 import { ReactComponent as DownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as FillUsersIcon } from '@/assets/icons/fill_users.svg';
-import { ViewLayout } from '@/application/types';
 import { findShareWithMeSpace } from '@/components/_shared/outline/utils';
 import { useAIEnabled, useToView, useRefreshOutline, useAppOutline } from '@/components/app/app.hooks';
 import { ShareViewItem } from '@/components/app/share-with-me/ShareViewItem';
 
 const LOCAL_STORAGE_KEY = 'share_with_me_expanded';
 
-export function ShareWithMe({ width }: { width: number }) {
+export function ShareWithMe({ width, onImportClick }: { width: number; onImportClick?: (view: View) => void }) {
   const { t } = useTranslation();
   const navigateToView = useToView();
   const refreshOutline = useRefreshOutline();
@@ -26,7 +26,7 @@ export function ShareWithMe({ width }: { width: number }) {
   const toggleExpand = (id: string, isExpand: boolean) => {
     setExpandIds((prev) => {
       if (isExpand) {
-        return [...prev, id];
+        return prev.includes(id) ? prev : [...prev, id];
       }
 
       return prev.filter((expandId) => expandId !== id);
@@ -83,6 +83,7 @@ export function ShareWithMe({ width }: { width: number }) {
             toggleExpand={toggleExpand}
             navigateToView={navigateToView}
             onDataRefresh={handleDataRefresh}
+            onImportClick={onImportClick}
           />
         ))}
       </Collapse>

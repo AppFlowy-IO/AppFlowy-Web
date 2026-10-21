@@ -6,7 +6,6 @@ import { YDoc } from '@/application/types';
 import { RenderRowType, useRenderRows } from '@/components/database/components/grid/grid-row';
 import type { RenderRow } from '@/components/database/components/grid/grid-row';
 import {
-  createGridRowResizeStore,
   GridContext,
   GridContextType,
   GridHydrationContext,
@@ -95,7 +94,6 @@ function GridHarness({ rowOrders, hydrating }: { rowOrders?: Row[]; hydrating?: 
     rows,
     setRows: noop,
     setActivePropertyId: noop,
-    rowResizeStore: createGridRowResizeStore(),
     remainingRowCount: 0,
     loadMoreRows: noop,
     revealCreatedRow: noop,

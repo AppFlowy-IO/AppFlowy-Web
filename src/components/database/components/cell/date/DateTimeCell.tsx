@@ -1,12 +1,14 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { useDateTimeCellString } from '@/application/database-yjs';
 import { CellProps, DateTimeCell as DateTimeCellType } from '@/application/database-yjs/cell.type';
+import { useUpdateCellDispatch } from '@/application/database-yjs/dispatch';
 import { ReactComponent as ReminderSvg } from '@/assets/icons/clock_alarm.svg';
 import { ReactComponent as CopyIcon } from '@/assets/icons/copy.svg';
 import DateTimeCellPicker from '@/components/database/components/cell/date/DateTimeCellPicker';
+import { useRowPeekNavigationGuard } from '@/components/database/row-peek/RowPeekNavigation';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -23,10 +25,35 @@ export function DateTimeCell({
   readOnly,
   wrap,
   isHovering,
-  onCellUpdated
+  onCellUpdated,
 }: CellProps<DateTimeCellType>) {
   const { t } = useTranslation();
   const dateStr = useDateTimeCellString(cell, fieldId);
+  const updateCell = useUpdateCellDispatch(rowId, fieldId);
+  const pendingWrite = useRef<ReturnType<typeof updateCell>>();
+
+  // The cell outlives its popup, so dismissing the picker must not discard the
+  // barrier for an edit that is still being saved (or was refused).
+  useRowPeekNavigationGuard(async () => {
+    for (;;) {
+      const pending = pendingWrite.current;
+
+      if (!pending) return true;
+      const status = await pending;
+
+      if (pending === pendingWrite.current) return status === 'written' || status === 'noop';
+    }
+  });
+
+  const saveCell = useCallback(
+    (...args: Parameters<typeof updateCell>) => {
+      const write = updateCell(...args);
+
+      pendingWrite.current = write;
+      return write;
+    },
+    [updateCell]
+  );
 
   const hasReminder = !!cell?.reminderId;
 
@@ -57,7 +84,15 @@ export function DateTimeCell({
       {cell?.data ? dateStr : placeholder || null}
       {hasReminder && <ReminderSvg className={'h-5 w-5'} />}
       {editing ? (
-        <DateTimeCellPicker onCellUpdated={onCellUpdated} cell={cell} fieldId={fieldId} rowId={rowId} open={editing} onOpenChange={handleOpenChange} />
+        <DateTimeCellPicker
+          onCellUpdated={onCellUpdated}
+          cell={cell}
+          fieldId={fieldId}
+          rowId={rowId}
+          open={editing}
+          onOpenChange={handleOpenChange}
+          updateCell={saveCell}
+        />
       ) : null}
       {isHovering && dateStr && (
         <div className={'absolute right-1 top-1'}>

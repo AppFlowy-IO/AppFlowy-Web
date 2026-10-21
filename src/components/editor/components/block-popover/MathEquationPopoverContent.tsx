@@ -1,95 +1,38 @@
-import { Button, TextField } from '@mui/material';
-import React, { useCallback, useEffect, useRef } from 'react';
-import { useTranslation } from 'react-i18next';
-import { NodeEntry } from 'slate';
-import { useSlateStatic } from 'slate-react';
+import { useReadOnly, useSlateStatic } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
+import { YHistoryEditor } from '@/application/slate-yjs/plugins/withHistory';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
-import { MathEquationBlockData } from '@/application/types';
+import { MathEquationEditor } from '@/components/editor/components/blocks/math-equation/MathEquationEditor';
 import { MathEquationNode } from '@/components/editor/editor.type';
 
-function MathEquationPopoverContent({
-  blockId,
-  onClose,
-}: {
-  blockId: string;
-  onClose: () => void;
-}) {
+function MathEquationPopoverContent({ blockId, onClose }: { blockId: string; onClose: () => void }) {
   const editor = useSlateStatic() as YjsEditor;
-  const [formula, setFormula] = React.useState('');
-  const { t } = useTranslation();
+  const readOnly = useReadOnly();
+  const entry = findSlateEntryByBlockId(editor, blockId);
 
-  const handleClose = useCallback(() => {
-    onClose();
-  }, [onClose]);
-
-  const handleSave = useCallback((formula: string) => {
-    CustomEditor.setBlockData(editor, blockId, {
-      formula,
-    } as MathEquationBlockData);
-    handleClose();
-  }, [blockId, handleClose, editor]);
-
-  useEffect(() => {
-    const entry = findSlateEntryByBlockId(editor, blockId) as NodeEntry<MathEquationNode>;
-
-    if (!entry) {
-      console.error('Block not found');
-      return;
-    }
-
-    const [node] = entry;
-
-    setFormula(node.data?.formula || '');
-  }, [blockId, editor]);
-
-  const inputRef = useRef<HTMLTextAreaElement | null>(null);
-
-  useEffect(() => {
-    const timeoutId = setTimeout(() => inputRef.current?.select(), 50);
-
-    return () => clearTimeout(timeoutId);
-  }, [blockId, editor]);
+  if (!entry || readOnly || editor.isElementReadOnly(entry[0])) return null;
 
   return (
-    <div className={'flex flex-col p-4 gap-3 w-[400px]'}>
-      <TextField
-        inputRef={inputRef}
-        rows={4}
-        multiline
-        fullWidth
-        autoFocus={true}
-        value={formula}
-        onChange={(e) => {
-          setFormula(e.target.value);
-        }}
-        placeholder={`E.g. x^2 + y^2 = z^2`}
-        autoComplete={'off'}
-        spellCheck={false}
-        onKeyDown={e => {
-          if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            handleSave(formula);
-          }
-        }}
-      />
-      <div className={'flex justify-end gap-2'}>
-        <Button
-          size={'small'}
-          variant={'outlined'}
-          color={'inherit'}
-          onClick={handleClose}
-        >{t('button.cancel')}</Button>
-        <Button
-          size={'small'}
-          variant={'contained'}
-          color={'primary'}
-          onClick={() => handleSave(formula)}
-        >{t('button.save')}</Button>
-      </div>
-    </div>
+    <MathEquationEditor
+      key={blockId}
+      initialValue={(entry[0] as MathEquationNode).data.formula || ''}
+      onCancel={onClose}
+      onSave={(formula) => {
+        const current = findSlateEntryByBlockId(editor, blockId);
+
+        if (current && !editor.readOnly && !editor.isElementReadOnly(current[0])) {
+          editor.flushLocalChanges();
+          if (YHistoryEditor.isYHistoryEditor(editor)) editor.undoManager.stopCapturing();
+          CustomEditor.setBlockData(editor, blockId, { formula });
+          editor.flushLocalChanges();
+          if (YHistoryEditor.isYHistoryEditor(editor)) editor.undoManager.stopCapturing();
+        }
+
+        onClose();
+      }}
+    />
   );
 }
 

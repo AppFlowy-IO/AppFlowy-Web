@@ -459,7 +459,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
 
     const duplicateDatabaseView = useCallback(
       async (viewId: string) => {
-        if (!context.createDatabaseView || !views || duplicatingViewId) return;
+        if (readOnly || context.canWrite === false || !context.workspaceId || !views || duplicatingViewId) return;
         try {
           assertDatabaseViewCapacity(context.databaseDoc);
         } catch (error) {
@@ -500,8 +500,10 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
         }
       },
       [
-        context.createDatabaseView,
         context.databaseDoc,
+        readOnly,
+        context.canWrite,
+        context.workspaceId,
         duplicateView,
         duplicatingViewId,
         handleViewAdded,
@@ -628,7 +630,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
               setMenuViewId={setMenuViewId}
               setDeleteConfirmOpen={setDeleteConfirmOpen}
               setRenameView={openRenameModal}
-              onDuplicateView={context.createDatabaseView ? duplicateDatabaseView : undefined}
+              onDuplicateView={!readOnly && context.canWrite !== false && context.workspaceId ? duplicateDatabaseView : undefined}
               duplicateDisabled={Boolean(duplicatingViewId) || Boolean(capacityDisabledReason)}
               duplicateDisabledReason={capacityDisabledReason}
               pendingScrollToViewId={pendingScrollToViewId}

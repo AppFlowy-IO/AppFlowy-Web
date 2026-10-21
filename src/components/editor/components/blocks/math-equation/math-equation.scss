@@ -1,0 +1,69 @@
+.math-equation-surface {
+  &.is-empty {
+    background: var(--block-bg-color-20);
+  }
+  // Pointer hover must end on mouseleave, even if clicking left focus behind.
+  // Keyboard focus has its own visible ring on the edit button.
+  &:hover {
+    background: var(--block-bg-color-20);
+  }
+  &.is-empty:hover {
+    background: var(--block-bg-hover-color-20);
+  }
+  // Whole-block selection is independent of pointer hover and editor focus.
+  &.is-selected {
+    background: var(--fill-theme-select);
+  }
+  .math-equation-toolbar {
+    opacity: 0;
+  }
+  &:hover .math-equation-toolbar,
+  &:focus-within .math-equation-toolbar,
+  &.is-active .math-equation-toolbar {
+    opacity: 1;
+  }
+  .katex-display {
+    margin: 0;
+  }
+  .katex {
+    font-size: 20px;
+  }
+  .katex-html {
+    white-space: nowrap;
+  }
+  .math-equation-render > div {
+    max-width: 100%;
+    // Put the block's vertical spacing inside the scroll container. KaTeX's
+    // positioned glyphs can extend past its line box and otherwise create a
+    // vertical scrollbar even though the block has no height limit.
+    padding-block: 8px;
+  }
+}
+@media (hover: none) {
+  .math-equation-surface .math-equation-toolbar {
+    opacity: 1;
+  }
+}
+
+.math-equation-popover:has([data-expanded='true']) {
+  visibility: hidden;
+}
+
+.math-equation-editor {
+  // Match Figma at both sizes, independent of the formula's length. On short
+  // viewports the input scrolls; the action row stays available.
+  height: 180px;
+  max-height: calc(100dvh - 32px);
+  min-height: min(120px, calc(100dvh - 32px));
+}
+
+.math-equation-dialog {
+  height: 360px;
+  max-height: calc(100dvh - 32px) !important;
+  min-height: min(200px, calc(100dvh - 32px));
+  box-shadow: var(--shadows-md) !important;
+}
+
+.math-equation-popover {
+  box-shadow: var(--shadows-md) !important;
+}

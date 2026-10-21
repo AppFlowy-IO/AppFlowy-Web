@@ -2,10 +2,12 @@ import { expect, type Locator, type Page } from '@playwright/test';
 import { v5 as uuidv5 } from 'uuid';
 
 import { FieldType, RowMetaKey, SortCondition } from '../../src/application/database-yjs/database.type';
-import { GalleryCardPreview, GalleryCardSize, RowCoverType } from '../../src/application/types';
+import { GalleryCardPreview, GalleryCardSize, RowCoverType, YjsDatabaseKey, YjsEditorKey } from '../../src/application/types';
 import { waitForDatabaseTestContext } from './relation-test-helpers';
 import { closeRowDetailWithEscape } from './row-detail-helpers';
 import { DatabaseGallerySelectors, DatabaseViewSelectors, RowDetailSelectors } from './selectors';
+
+import type { DatabaseTestWindow } from '../../src/components/database/database-test-context';
 
 export type GalleryFieldInfo = {
   id: string;
@@ -121,6 +123,34 @@ export async function getActiveRowIds(page: Page): Promise<string[]> {
 
 export async function seedPrimaryTitlesDirect(page: Page, titles: string[]): Promise<string[]> {
   await waitForDatabaseTestContext(page);
+  const rowIds = (await getActiveRowIds(page)).slice(0, titles.length);
+
+  // ensureRow can return a transport document before its row payload arrives.
+  // Wait for the live row map to contain cells before writing any fixture data.
+  await page.evaluate(async (ids) => {
+    const ctx = (window as DatabaseTestWindow).__TEST_DATABASE_CONTEXT__;
+
+    await Promise.all(ids.map((id) => ctx?.ensureRow?.(id)));
+  }, rowIds);
+  await expect
+    .poll(
+      () =>
+        page.evaluate(
+          ({ ids, dataSection, rowKey, cellsKey }) => {
+            const ctx = (window as DatabaseTestWindow).__TEST_DATABASE_CONTEXT__;
+
+            return ids.every((id) => Boolean(ctx?.rowMap?.[id]?.getMap(dataSection).get(rowKey)?.get(cellsKey)));
+          },
+          {
+            ids: rowIds,
+            dataSection: YjsEditorKey.data_section as const,
+            rowKey: YjsEditorKey.database_row as const,
+            cellsKey: YjsDatabaseKey.cells as const,
+          }
+        ),
+      { timeout: 20_000, message: 'Waiting for Gallery title seed rows to finish loading' }
+    )
+    .toBe(true);
   return page.evaluate(async (rowTitles) => {
     const win = window as any;
     const ctx = win.__TEST_DATABASE_CONTEXT__;

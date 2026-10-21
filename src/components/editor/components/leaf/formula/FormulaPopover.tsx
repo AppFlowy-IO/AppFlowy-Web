@@ -1,10 +1,10 @@
-import { IconButton, PopoverPosition, TextField, Tooltip } from '@mui/material';
-import React from 'react';
+import { PopoverPosition } from '@mui/material';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { ReactComponent as Clear } from '@/assets/icons/delete.svg';
-import { ReactComponent as SelectCheck } from '@/assets/icons/tick.svg';
 import { Popover } from '@/components/_shared/popover';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 function FormulaPopover({
   open,
@@ -12,72 +12,59 @@ function FormulaPopover({
   defaultValue,
   anchorPosition,
   onDone,
-  onClear,
+  onPreview,
 }: {
   open: boolean;
   onClose: () => void;
   defaultValue: string;
   anchorPosition?: PopoverPosition;
   onDone: (value: string) => void;
-  onClear: () => void;
+  onPreview?: (value: string) => void;
 }) {
   const { t } = useTranslation();
-  const [value, setValue] = React.useState(defaultValue);
+  const [value, setValue] = useState(defaultValue);
 
   return (
     <Popover
       onClose={onClose}
       open={open}
-      disableRestoreFocus={true}
+      PaperProps={{ className: '!w-[331px] !max-w-[calc(100vw-32px)] !rounded-xl !border !border-border-primary !bg-surface-primary !shadow-menu' }}
+      disableRestoreFocus
       anchorPosition={anchorPosition}
-      anchorReference={'anchorPosition'}
-      transformOrigin={{
-        vertical: 'top',
-        horizontal: 'left',
-      }}
+      anchorReference='anchorPosition'
+      transformOrigin={{ vertical: 'top', horizontal: 'left' }}
     >
-      <div className={'flex items-center gap-2 p-4'}>
-        <TextField
-          variant={'standard'}
-          size={'small'}
-          autoFocus={true}
+      <div
+        className='flex w-full items-center gap-2 p-[7px]'
+        data-testid='inline-equation-editor'
+      >
+        <Input
+          aria-label={t('document.plugins.mathEquation.inline')}
+          autoFocus
           value={value}
           spellCheck={false}
-          placeholder={'E = mc^2'}
-          onClick={(e) => {
-            if (e.detail > 2) {
-              e.preventDefault();
-              const target = e.target as HTMLInputElement;
-
-              // select all text on triple click
-              target.setSelectionRange(0, target.value.length);
-            }
+          placeholder='E = mc^2'
+          className='h-8 min-w-0 flex-1 px-2 py-1.5'
+          onFocus={(event) => event.currentTarget.select()}
+          onChange={(event) => {
+            setValue(event.target.value);
+            onPreview?.(event.target.value);
           }}
-          onChange={(e) => setValue(e.target.value)}
-          fullWidth={true}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
+          onKeyDown={(event) => {
+            event.stopPropagation();
+            if (event.nativeEvent.isComposing) return;
+            if (event.key === 'Enter') {
+              event.preventDefault();
               onDone(value);
+            }
+
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              onClose();
             }
           }}
         />
-        <div className={'flex items-center justify-end gap-2'}>
-          <Tooltip placement={'top'} title={t('button.done')}>
-            <IconButton
-              size={'small'}
-              onClick={() => {
-                onDone(value);
-              }}
-            >
-              <SelectCheck className={'text-text-action'} />
-            </IconButton>
-          </Tooltip>
-          <Tooltip placement={'top'} title={t('button.clear')}>
-            <IconButton size={'small'} color={'error'} onClick={onClear}>
-              <Clear />
-            </IconButton>
-          </Tooltip>
-        </div>
+        <Button onClick={() => onDone(value)}>{t('button.done')}</Button>
       </div>
     </Popover>
   );

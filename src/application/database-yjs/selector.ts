@@ -13,10 +13,11 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
-import { AbstractType, type Transaction, type YEvent } from 'yjs';
+import { AbstractType, Map as YMap, type Transaction, type YEvent } from 'yjs';
 
 import { subscribeRowDocRelease } from '@/application/database-blob/row-doc-retention';
 import { readBoardGroupCalculation } from '@/application/database-yjs/board-group-calculation';
+import { resolveDefaultBoardGroup } from '@/application/database-yjs/board-default-group';
 import { isUngroupedColumnHidden, resolveBoardColumnVisibility } from '@/application/database-yjs/board-visibility';
 import { createCalendarLayoutStore } from '@/application/database-yjs/calendar-layout';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
@@ -133,6 +134,7 @@ import { observeRollupCell } from '@/application/database-yjs/rollup/observe';
 import { retainRollupSource } from '@/application/database-yjs/rollup/source-sync';
 import { captureRowDocRevision, hasRowDocRevision, RowDocRevision } from '@/application/database-yjs/row-doc-revision';
 import { getInlineViewRowOrders, materializeVisibleRowOrders } from '@/application/database-yjs/row-order-visibility';
+import { usePublishRowOrders } from '@/application/database-yjs/row-orders-store';
 import { getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
 import { subscribeSharedYjsDeep } from '@/application/database-yjs/shared-yjs-observer';
 import { sortBy } from '@/application/database-yjs/sort';
@@ -148,7 +150,6 @@ import {
   SortId,
   TimeFormat,
   YDatabase,
-  YDatabaseChartLayoutSetting,
   YDatabaseField,
   YDatabaseFields,
   YDatabaseFilter,
@@ -1479,77 +1480,20 @@ export function useGroupsSelector() {
   const [groups, setGroups] = useState<string[]>([]);
 
   useEffect(() => {
-    if (!viewId || !database) {
-      return;
-    }
-
-    let retryIntervalId: ReturnType<typeof setInterval> | null = null;
-
     const updateGroups = () => {
-      const view = database.get(YjsDatabaseKey.views)?.get(viewId);
+      const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+      const persisted = view?.get(YjsDatabaseKey.groups)?.toArray().map((item) => item.get(YjsDatabaseKey.id)) ?? [];
+      const fallback = resolveDefaultBoardGroup(view, database?.get(YjsDatabaseKey.fields));
+      const next = fallback ? [fallback.id] : persisted;
 
-      if (!view) {
-        setGroups([]);
-        return false;
-      }
-
-      const groupOrders = view.get(YjsDatabaseKey.groups);
-
-      if (!groupOrders) {
-        setGroups([]);
-        return false;
-      }
-
-      const newGroups = groupOrders.toArray().map((item) => item.get(YjsDatabaseKey.id));
-
-      setGroups(newGroups);
-
-      // Clear retry interval once we have groups
-      if (retryIntervalId && newGroups.length > 0) {
-        clearInterval(retryIntervalId);
-        retryIntervalId = null;
-      }
-
-      return newGroups.length > 0;
+      setGroups((current) =>
+        current.length === next.length && current.every((id, index) => id === next[index]) ? current : next
+      );
     };
 
-    // Attach observer FIRST to avoid missing updates that arrive during setup
-    database.observeDeep(updateGroups);
-
-    // Then check current state
-    const hasGroups = updateGroups();
-
-    // If groups not found initially, poll briefly to catch race conditions
-    if (!hasGroups) {
-      retryIntervalId = setInterval(() => {
-        const found = updateGroups();
-
-        if (found && retryIntervalId) {
-          clearInterval(retryIntervalId);
-          retryIntervalId = null;
-        }
-      }, 100);
-
-      // Stop polling after 3 seconds max
-      setTimeout(() => {
-        if (retryIntervalId) {
-          clearInterval(retryIntervalId);
-          retryIntervalId = null;
-        }
-      }, 3000);
-    }
-
-    return () => {
-      if (retryIntervalId) {
-        clearInterval(retryIntervalId);
-      }
-
-      try {
-        database.unobserveDeep(updateGroups);
-      } catch {
-        // Ignore errors from unobserving destroyed Yjs objects
-      }
-    };
+    database?.observeDeep(updateGroups);
+    updateGroups();
+    return () => database?.unobserveDeep(updateGroups);
   }, [database, viewId]);
 
   return groups;
@@ -1572,39 +1516,42 @@ export function useGroup(groupId: string) {
   const viewId = useDatabaseViewId();
   const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
   const fields = database?.get(YjsDatabaseKey.fields);
-  const group = view
-    ?.get(YjsDatabaseKey.groups)
-    ?.toArray()
-    .find((group) => group.get(YjsDatabaseKey.id) === groupId);
   const [fieldId, setFieldId] = useState<string | null>(null);
   const [columns, setColumns] = useState<GroupColumn[]>([]);
 
   useEffect(() => {
-    if (!viewId || !group) {
-      setFieldId(null);
-      setColumns([]);
-      return;
-    }
-
     const observerEvent = () => {
-      const groupFieldId = group.get(YjsDatabaseKey.field_id);
+      const group = view?.get(YjsDatabaseKey.groups)?.toArray().find((item) => item.get(YjsDatabaseKey.id) === groupId);
+      const fallback = resolveDefaultBoardGroup(view, fields);
+      const groupFieldId = group?.get(YjsDatabaseKey.field_id) ?? (fallback?.id === groupId ? fallback.fieldId : null);
 
       setFieldId(groupFieldId);
-      const groupColumnsVisible = group.get(YjsDatabaseKey.groups);
-      const persistedColumns = normalizeUniqueDatabaseGroupColumns(groupColumnsVisible?.toArray() ?? []);
+      const persistedColumns = normalizeUniqueDatabaseGroupColumns(group?.get(YjsDatabaseKey.groups)?.toArray() ?? []);
+      const nextColumns = !groupFieldId
+        ? []
+        : persistedColumns.length > 0 ? persistedColumns : getFallbackGroupColumns(fields?.get(groupFieldId));
 
-      setColumns(persistedColumns.length > 0 ? persistedColumns : getFallbackGroupColumns(fields?.get(groupFieldId)));
+      // The view observer also receives names, row orders and layout changes.
+      // Preserve the snapshot when those updates do not change its columns.
+      setColumns((current) =>
+        current.length === nextColumns.length && current.every((column, index) => {
+          const next = nextColumns[index];
+
+          return column.id === next.id && column.visible === next.visible &&
+            column.visibleExplicit === next.visibleExplicit && column.groupColor === next.groupColor;
+        }) ? current : nextColumns
+      );
     };
 
-    observerEvent();
-    group?.observeDeep(observerEvent);
+    view?.observeDeep(observerEvent);
     fields?.observeDeep(observerEvent);
+    observerEvent();
 
     return () => {
-      group?.unobserveDeep(observerEvent);
+      view?.unobserveDeep(observerEvent);
       fields?.unobserveDeep(observerEvent);
     };
-  }, [viewId, groupId, group, fields]);
+  }, [view, groupId, fields]);
 
   return {
     columns,
@@ -1639,7 +1586,6 @@ export function useBoardLayoutSettings() {
     value: undefined,
   });
   const [shownEmptyGroupIds, setShownEmptyGroupIds] = useState<ReadonlySet<string>>(() => new Set());
-  const groups = view?.get(YjsDatabaseKey.groups);
   const [fieldId, setFieldId] = useState<string | null>(null);
   const [ungroupedColumn, setUngroupedColumn] = useState<GroupColumn | null>(null);
 
@@ -1688,10 +1634,10 @@ export function useBoardLayoutSettings() {
 
   useEffect(() => {
     const observerEvent = () => {
-      const group = groups?.toArray()?.[0];
+      const group = view?.get(YjsDatabaseKey.groups)?.toArray()?.[0];
 
       if (!group) {
-        setFieldId(null);
+        setFieldId(resolveDefaultBoardGroup(view, fields)?.fieldId ?? null);
         setUngroupedColumn(null);
         return;
       }
@@ -1722,12 +1668,14 @@ export function useBoardLayoutSettings() {
     };
 
     observerEvent();
-    groups?.observeDeep(observerEvent);
+    view?.observeDeep(observerEvent);
+    fields?.observeDeep(observerEvent);
 
     return () => {
-      groups?.unobserveDeep(observerEvent);
+      view?.unobserveDeep(observerEvent);
+      fields?.unobserveDeep(observerEvent);
     };
-  }, [groups]);
+  }, [view, fields]);
 
   const ungroupedColumnHidden = isUngroupedColumnHidden({
     column: ungroupedColumn,
@@ -1997,6 +1945,8 @@ export function useRowsByGroup(groupId: string) {
     fieldId,
     groupResult,
     columns: visibleColumns,
+    /** Every persisted column, hidden ones included (the Board group menu lists them all). */
+    allColumns: columns,
     groupRowsReady: groupVisibilityReady,
     hideEmptyGroups,
     notFound,
@@ -2860,6 +2810,7 @@ export interface RowOrdersSnapshot {
 }
 
 export interface RowOrdersSelectorOptions {
+  publish?: boolean;
   /**
    * Publish the matches found so far and the progress while rows still load.
    * Only a consumer that shows them (the ungrouped grid) asks for it. Any other
@@ -3061,8 +3012,8 @@ const PARTIAL_ROW_ORDERS: RowOrdersSelectorOptions = { partial: true };
  * `useProgressiveRowOrdersSelector`; charts, calculations, groups and other
  * whole-view consumers keep waiting for the complete result.
  */
-export function useRowOrdersSelector() {
-  const { rows, hydrating } = useProgressiveRowOrdersSelector(WHOLE_VIEW_ROW_ORDERS);
+export function useRowOrdersSelector({ publish = true }: { publish?: boolean } = {}) {
+  const { rows, hydrating } = useProgressiveRowOrdersSelector(publish ? WHOLE_VIEW_ROW_ORDERS : { partial: false, publish: false });
 
   return hydrating ? undefined : rows;
 }
@@ -4113,6 +4064,8 @@ export function useProgressiveRowOrdersSelector(options?: RowOrdersSelectorOptio
       (rowOrdersState.viewId === viewId &&
         (rowOrdersState.filters !== filters || (rowOrdersState.query ?? '') !== searchQuery)));
   const { rows: publishedRows, hydrating: publishedHydration } = rowOrdersState;
+
+  usePublishRowOrders(showsPublishedResult && !publishedHydration ? publishedRows : undefined, options?.publish ?? true);
 
   return useMemo(
     () => (showsPublishedResult ? { rows: publishedRows, hydrating: publishedHydration } : EMPTY_ROW_ORDERS_SNAPSHOT),
@@ -5642,43 +5595,42 @@ function chartSettingsEqual(a: ChartLayoutSettings | null, b: ChartLayoutSetting
 
 /**
  * Subscribe to the chart layout setting persisted at
- * `view.layout_settings['3']`.
+ * `view.layout_settings['3']`, or null when the view has none.
  *
  * Uses `observeDeep` on the view to robustly catch initial Yjs sync (which
  * may deliver layout_settings + its '3' key via nested deltas that wouldn't
  * fire a direct `observe` on the view). The expensive part — re-rendering
- * downstream consumers — is gated by `chartSettingsEqual`, so the wider
- * observer only costs a handful of equality checks per Yjs event.
+ * downstream consumers — is gated by `chartLayoutSettingsEqual`, so the wider
+ * observer only costs a handful of equality checks per Yjs event. The first
+ * render already reads the stored setting, so charts never flash defaults.
  *
  * Returns the strongly-typed `ChartLayoutSettings` (see
  * `parseChartLayoutSettings` for the key fallback and defaults).
  */
+function readViewChartLayoutSetting(view: YDatabaseView | undefined): ChartLayoutSettings | null {
+  const map = view?.get(YjsDatabaseKey.layout_settings)?.get('3');
+
+  return map instanceof YMap ? parseChartLayoutSettings(map) : null;
+}
+
 export function useChartLayoutSetting(): ChartLayoutSettings | null {
   const database = useDatabase();
   const viewId = useDatabaseViewId();
-  const [setting, setSetting] = useState<ChartLayoutSettings | null>(null);
+  const [setting, setSetting] = useState<ChartLayoutSettings | null>(() =>
+    readViewChartLayoutSetting(database.get(YjsDatabaseKey.views)?.get(viewId))
+  );
 
   useEffect(() => {
     const view = database.get(YjsDatabaseKey.views)?.get(viewId);
-
-    if (!view) return;
-
     const observerHandler = () => {
-      const chartSettingMap = view.get(YjsDatabaseKey.layout_settings)?.get('3') as
-        | YDatabaseChartLayoutSetting
-        | undefined;
-
-      if (!chartSettingMap) {
-        setSetting((prev) => (prev === null ? prev : null));
-        return;
-      }
-
-      const next = parseChartLayoutSettings(chartSettingMap);
+      const next = readViewChartLayoutSetting(view);
 
       setSetting((prev) => (chartSettingsEqual(prev, next) ? prev : next));
     };
 
     observerHandler();
+    if (!view) return;
+
     view.observeDeep(observerHandler);
 
     return () => {

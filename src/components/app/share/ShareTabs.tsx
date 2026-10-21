@@ -28,6 +28,8 @@ function ShareTabs({
   viewId,
   publishViewId = viewId,
   hidePublish = false,
+  hideExport = false,
+  shareUrl,
   onClose,
   onOpenPublishManage,
 }: {
@@ -35,6 +37,8 @@ function ShareTabs({
   viewId: string;
   publishViewId?: string;
   hidePublish?: boolean;
+  hideExport?: boolean;
+  shareUrl?: string;
   onClose: () => void;
   onOpenPublishManage?: () => void;
 }) {
@@ -81,12 +85,12 @@ function ShareTabs({
             icon: view?.is_published ? <SuccessIcon className={'mb-0 h-5 w-5 text-text-action'} /> : undefined,
             Panel: PublishPanel,
           },
-      {
+      !hideExport && {
         value: TabKey.EXPORT_AS,
         label: t('shareAction.exportAsTab'),
         Panel: ExportPanel,
       },
-      currentUser?.email?.endsWith('appflowy.io') &&
+      !hidePublish && currentUser?.email?.endsWith('appflowy.io') &&
         view?.is_published && {
           value: TabKey.TEMPLATE,
           label: t('template.asTemplate'),
@@ -104,7 +108,7 @@ function ShareTabs({
         onOpenPublishManage?: () => void;
       }>;
     }>;
-  }, [currentUser?.email, hidePublish, t, view?.is_published]);
+  }, [currentUser?.email, hideExport, hidePublish, t, view?.is_published]);
 
   useEffect(() => {
     if (opened) {
@@ -135,6 +139,7 @@ function ShareTabs({
             {option.value === TabKey.SHARE ? (
               <SharePanel
                 viewId={viewId}
+                shareUrl={shareUrl}
                 people={people}
                 groups={groups}
                 editableGroupIds={editableGroupIds}

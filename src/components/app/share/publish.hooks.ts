@@ -71,6 +71,11 @@ export function useLoadPublishInfo(viewId: string, fallbackViewId?: string) {
   const publishInfoMutationSeqRef = React.useRef(0);
   const publishInfoMutationPendingRef = React.useRef(0);
   const publishInfoMutationQueueRef = React.useRef<Promise<void>>(Promise.resolve());
+  const pendingPublishInfoRef = React.useRef<{
+    requestKey: string;
+    mutationSeq: number;
+    promise: Promise<void>;
+  }>();
   const [loading, setLoading] = React.useState<boolean>(false);
 
   const currentPublishState = publishState?.requestKey === requestKey ? publishState : undefined;
@@ -82,7 +87,7 @@ export function useLoadPublishInfo(viewId: string, fallbackViewId?: string) {
   const isOwner = isSameUserUid(userWorkspaceInfo?.selectedWorkspace?.owner?.uid, currentUser?.uid);
   const isPublisher = publishInfo?.publisherEmail === currentUser?.email;
 
-  const loadPublishInfo = useCallback(async () => {
+  const fetchPublishInfo = useCallback(async () => {
     if (!workspaceId) return;
 
     const requestSeq = publishInfoRequestSeqRef.current + 1;
@@ -140,6 +145,26 @@ export function useLoadPublishInfo(viewId: string, fallbackViewId?: string) {
       }
     }
   }, [candidateViewIds, requestKey, workspaceId]);
+
+  const loadPublishInfo = useCallback((options?: { force?: boolean }) => {
+    const mutationSeq = publishInfoMutationSeqRef.current;
+    const pending = pendingPublishInfoRef.current;
+
+    if (!options?.force && pending?.requestKey === requestKey && pending.mutationSeq === mutationSeq) {
+      return pending.promise;
+    }
+
+    const entry = {
+      requestKey,
+      mutationSeq,
+      promise: fetchPublishInfo().finally(() => {
+        if (pendingPublishInfoRef.current === entry) pendingPublishInfoRef.current = undefined;
+      }),
+    };
+
+    pendingPublishInfoRef.current = entry;
+    return entry.promise;
+  }, [fetchPublishInfo, requestKey]);
 
   useEffect(() => {
     void loadPublishInfo();

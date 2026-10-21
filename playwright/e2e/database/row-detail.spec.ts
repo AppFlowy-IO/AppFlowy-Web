@@ -83,7 +83,7 @@ test.describe('Database Row Detail Tests (Desktop Parity)', () => {
     await expect(RowDetailSelectors.modal(page)).toContainText('Persistence Test');
 
     // When: modifying the title in the modal
-    const titleInput = page.locator('.MuiDialog-paper [data-testid="row-title-input"]');
+    const titleInput = RowDetailSelectors.modal(page).getByTestId('row-title-input');
     await expect(titleInput).toBeVisible({ timeout: 5000 });
     await titleInput.focus();
     await titleInput.pressSequentially(' Updated', { delay: 20 });
@@ -225,16 +225,16 @@ test.describe('Database Row Detail Tests (Desktop Parity)', () => {
 
     await openRowDetail(page, 0);
     await page.waitForTimeout(1000);
-    await expect(page.locator('.MuiDialog-paper .row-properties')).toBeVisible({ timeout: 10000 });
+    await expect(RowDetailSelectors.modal(page).locator('.row-properties')).toBeVisible({ timeout: 10000 });
     await page.waitForTimeout(500);
 
     // When: clicking the "New Property" button
-    await page.locator('.MuiDialog-paper').getByText(/new property/i).scrollIntoViewIfNeeded();
-    await page.locator('.MuiDialog-paper').getByText(/new property/i).click({ force: true });
+    await RowDetailSelectors.modal(page).getByText(/new property/i).scrollIntoViewIfNeeded();
+    await RowDetailSelectors.modal(page).getByText(/new property/i).click({ force: true });
     await page.waitForTimeout(1000);
 
     // Then: the properties section should still be visible (field was added)
-    await expect(page.locator('.MuiDialog-paper .row-properties')).toBeVisible();
+    await expect(RowDetailSelectors.modal(page).locator('.row-properties')).toBeVisible();
   });
 
   test('navigate between rows in detail view', async ({ page, request }) => {

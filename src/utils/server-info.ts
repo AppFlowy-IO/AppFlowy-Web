@@ -50,8 +50,14 @@ export function getServerHostingMode(
   serverInfo: { status: ServerInfoState['status']; info?: { self_hosted?: boolean } } = getServerInfoSnapshot(),
   serverUrl = configuredServerUrl()
 ): ServerHostingMode {
-  if (typeof window !== 'undefined' && window.localStorage?.getItem('__test_force_self_hosted') === 'true')
-    return 'self-hosted';
+  try {
+    if (typeof window !== 'undefined' && window.localStorage?.getItem('__test_force_self_hosted') === 'true')
+      return 'self-hosted';
+  } catch {
+    // Browser privacy settings can deny the storage getter or the read itself.
+    // Ignore the test override and keep using the server's hosting policy.
+  }
+
   if (serverInfo.status !== 'available') return 'unknown';
   if (typeof serverInfo.info?.self_hosted === 'boolean') return serverInfo.info.self_hosted ? 'self-hosted' : 'cloud';
 

@@ -43,6 +43,8 @@ import type { DatabaseContextState } from './context';
  * Options of a new database view (a tab of the database).
  */
 export interface AddDatabaseViewOptions {
+  /** Clone the authoritative source settings for ordinary database tabs. */
+  sourceViewId?: string;
   /** Place the new folder child immediately before this existing database view. */
   insertBeforeViewId?: string;
   /** Validate the returned child in an isolated Y.Doc before applying its update. */

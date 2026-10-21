@@ -96,6 +96,42 @@ test.describe('Share Page Test', () => {
     userBEmail = generateRandomEmail();
   });
 
+  test('shows the confirmed access roster before a slow direct-group lookup completes', async ({ page, request }) => {
+    await signInAndWaitForApp(page, request, testEmail);
+    await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 30000 });
+
+    let releaseDirectGroups!: () => void;
+    const directGroupsGate = new Promise<void>((resolve) => {
+      releaseDirectGroups = resolve;
+    });
+    const directGroupsUrl = /\/api\/workspace\/[^/]+\/views\/[^/]+\/group(?:\?|$)/;
+
+    await page.route(directGroupsUrl, async (route) => {
+      await directGroupsGate;
+      // This new account's initial page has no direct group grants. Holding
+      // only this response reproduces a slow legacy Folder read without
+      // delaying the real effective-permission response or weakening it.
+      await route.fulfill({ json: { code: 0, data: { groups: [] } } });
+    });
+
+    try {
+      const directGroupsRequested = page.waitForRequest(directGroupsUrl);
+
+      await openSharePopover(page);
+      await ensureShareTab(page);
+      await directGroupsRequested;
+      const popover = ShareSelectors.sharePopover(page);
+
+      await expect(popover.getByTestId('share-access-list').getByText(testEmail, { exact: true }).first()).toBeVisible({
+        timeout: 5000,
+      });
+      await expect(ShareSelectors.emailTagInput(page).locator('input[type="text"]')).toBeEnabled();
+    } finally {
+      releaseDirectGroups();
+      await page.unrouteAll({ behavior: 'wait' });
+    }
+  });
+
   test('should invite user B to page via email and then remove their access', async ({ page, request }) => {
     page.on('pageerror', (err) => {
       if (err.message.includes('No workspace or service found')) {

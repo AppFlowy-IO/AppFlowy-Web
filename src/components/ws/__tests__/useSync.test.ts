@@ -1849,13 +1849,13 @@ describe('useSync public API', () => {
     });
 
     await act(async () => {
-      await result.current.syncAllToServer('workspace-sync');
+      await result.current.syncAllToServer(defaultWorkspaceId);
     });
 
     expect(mockedCollabFullSyncBatch).toHaveBeenCalledTimes(1);
     const [workspaceId, items] = mockedCollabFullSyncBatch.mock.calls[0]!;
 
-    expect(workspaceId).toBe('workspace-sync');
+    expect(workspaceId).toBe(defaultWorkspaceId);
     expect(items).toHaveLength(2);
     expect(items.map((item) => item.objectId).sort()).toEqual([docA.guid, docB.guid].sort());
     expect(items.every((item) => item.stateVector instanceof Uint8Array)).toBe(true);
@@ -1886,7 +1886,7 @@ describe('useSync public API', () => {
     });
 
     await act(async () => {
-      await result.current.syncAllToServer('workspace-sync');
+      await result.current.syncAllToServer(defaultWorkspaceId);
     });
 
     expect(localDoc.getMap('root').get('server')).toBe('value');
@@ -1963,7 +1963,7 @@ describe('useSync public API', () => {
     sendMessage.mockClear();
 
     await act(async () => {
-      await result.current.syncAllToServer('workspace-sync');
+      await result.current.syncAllToServer(defaultWorkspaceId);
     });
 
     const syncRequestCalls = sendMessage.mock.calls.filter((call) => call[0]?.collabMessage?.syncRequest);
@@ -2091,7 +2091,7 @@ describe('useSync public API', () => {
     });
 
     await act(async () => {
-      await result.current.syncAllToServer('workspace-sync');
+      await result.current.syncAllToServer(defaultWorkspaceId);
     });
 
     const [, items] = mockedCollabFullSyncBatch.mock.calls[0]!;
@@ -2140,7 +2140,7 @@ describe('useSync public API', () => {
     });
 
     await act(async () => {
-      await result.current.syncAllToServer('workspace-sync');
+      await result.current.syncAllToServer(defaultWorkspaceId);
     });
 
     const [, items] = mockedCollabFullSyncBatch.mock.calls[0]!;
@@ -2168,8 +2168,27 @@ describe('useSync public API', () => {
       result.current.registerSyncContext({ doc, collabType: Types.Document });
     });
 
-    await expect(result.current.syncAllToServer('workspace-sync')).resolves.toBeUndefined();
+    await expect(result.current.syncAllToServer(defaultWorkspaceId)).resolves.toBeUndefined();
     expect(mockedCollabFullSyncBatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('syncAllToServer never uploads this session\'s documents under another workspace', async () => {
+    const warnSpy = jest.spyOn(Log, 'warn').mockImplementation(() => undefined);
+    const ws = createWs();
+    const bc = createBroadcastChannel();
+    const doc = createDoc('ffffffff-ffff-4fff-8fff-ffffffffffff');
+    const { result } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
+
+    act(() => {
+      result.current.registerSyncContext({ doc, collabType: Types.Document });
+    });
+
+    await expect(result.current.syncAllToServer('other-workspace')).resolves.toBeUndefined();
+    expect(mockedCollabFullSyncBatch).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('skipped full upload'), expect.objectContaining({
+      workspaceId: 'other-workspace', sessionWorkspaceId: defaultWorkspaceId,
+    }));
+    warnSpy.mockRestore();
   });
 });
 

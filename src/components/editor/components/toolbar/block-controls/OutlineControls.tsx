@@ -4,7 +4,7 @@ import { useSlateStatic } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
-import { ReactComponent as ChevronRightIcon } from '@/assets/icons/alt_arrow_right.svg';
+import { ReactComponent as ChevronRightIcon } from '@/assets/icons/block-menu-chevron-right.svg';
 import { ReactComponent as CollapseIcon } from '@/assets/icons/collapse.svg';
 import { ReactComponent as ExpandIcon } from '@/assets/icons/expand.svg';
 import { ReactComponent as HashtagIcon } from '@/assets/icons/hashtag.svg';
@@ -57,7 +57,7 @@ export function OutlineDepthControl({ node, onClose }: { node: OutlineNode; onCl
       >
         <HashtagIcon className='h-5 w-5' />
         {t('document.plugins.outline.depthCustomization')}
-        <ChevronRightIcon className='ml-auto h-5 w-5 text-icon-tertiary' />
+        <ChevronRightIcon className='ml-auto h-5 w-5 shrink-0 text-icon-tertiary [&_path]:stroke-current' />
       </Button>
       <Popover
         open={open}

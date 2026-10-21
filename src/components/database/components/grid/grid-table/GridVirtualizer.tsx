@@ -1,4 +1,4 @@
-import { memo, type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, type UIEvent, useCallback, useEffect, useRef, useState } from 'react';
 
 import { PADDING_END, useDatabaseContext } from '@/application/database-yjs';
 import { GridDragContext } from '@/components/database/components/grid/drag-and-drop/GridDragContext';
@@ -40,7 +40,7 @@ function GridLoadingRow() {
 }
 
 function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
-  const { rows: data, rowResizeStore } = useGridContext();
+  const { rows: data, rowOrders } = useGridContext();
   const { handleResizeStart, isResizing } = useColumnResize(columns);
   const { dataSource, embeddedHeight, isDocumentBlock, paddingEnd } = useDatabaseContext();
   const isHistoryPreview = dataSource?.type === 'history';
@@ -58,6 +58,7 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
     contentHeight: gridContentHeight,
     embeddedHeight,
     isDocumentBlock,
+    isLoading: rowOrders === undefined,
   });
 
   const contextValue = useGridDnd(columns, virtualizer, columnVirtualizer);
@@ -66,31 +67,8 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
   const handleMouseEnter = useCallback(() => setIsHover(true), []);
   const handleMouseLeave = useCallback(() => setIsHover(false), []);
   const stickyHeaderRef = useRef<HTMLDivElement>(null);
-  const rowsHeightRef = useRef<Map<string, number>>(new Map());
-  const [isScrolling, setIsScrolling] = useState(false);
   const { setShowStickyHeader } = useGridContext();
   const stickyHeaderVisibleRef = useRef<boolean | null>(null);
-  const rowIndexByKey = useMemo(
-    () => new Map(data.map((rowData, index) => [getRenderRowKey(rowData), index] as const)),
-    [data]
-  );
-
-  const onResizeRow = useCallback(
-    (rowKey: string, maxCellHeight: number) => {
-      const index = rowIndexByKey.get(rowKey);
-
-      if (index === undefined) return;
-
-      if (rowsHeightRef.current.has(rowKey) && rowsHeightRef.current.get(rowKey) === maxCellHeight) {
-        return; // No change in height, no need to resize
-      }
-
-      rowsHeightRef.current.set(rowKey, maxCellHeight);
-
-      virtualizer.resizeItem(index, maxCellHeight);
-    },
-    [rowIndexByKey, virtualizer]
-  );
 
   useEffect(() => {
     if (!isResizing) {
@@ -98,27 +76,12 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
     }
   }, [columnVirtualizer, isResizing, columns]);
 
-  const isScrollingRef = useRef(false);
-
-  useEffect(() => {
-    isScrollingRef.current = isScrolling;
-  }, [isScrolling]);
-
-  useEffect(
-    () =>
-      rowResizeStore.subscribe((rowKey, maxCellHeight) => {
-        if (!isScrollingRef.current) onResizeRow(rowKey, maxCellHeight);
-      }),
-    [onResizeRow, rowResizeStore]
-  );
-
   useEffect(() => {
     const scrollElement = virtualizer.scrollElement;
     const gridElement = parentRef.current;
 
-    if (!scrollElement || !gridElement) return;
-
-    let timeout: NodeJS.Timeout;
+    // Embedded grids have no external sticky header to position.
+    if (!scrollElement || !gridElement || !stickyHeaderRef.current) return;
 
     const onScroll = () => {
       const gridRect = gridElement.getBoundingClientRect();
@@ -138,17 +101,6 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
         stickyHeader.style.pointerEvents = shouldShowStickyHeader ? 'auto' : 'none';
         setShowStickyHeader(shouldShowStickyHeader);
       }
-
-      if (!isScrollingRef.current) {
-        isScrollingRef.current = true;
-        setIsScrolling(true);
-      }
-
-      clearTimeout(timeout);
-      timeout = setTimeout(() => {
-        isScrollingRef.current = false;
-        setIsScrolling(false);
-      }, 1000);
     };
 
     onScroll();
@@ -156,7 +108,6 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
 
     scrollElement.addEventListener('scroll', onScroll, scrollListenerOptions);
     return () => {
-      clearTimeout(timeout);
       scrollElement.removeEventListener('scroll', onScroll, scrollListenerOptions);
     };
   }, [isHistoryPreview, parentRef, scrollMarginTop, virtualizer.scrollElement, setShowStickyHeader]);

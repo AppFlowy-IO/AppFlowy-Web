@@ -6,7 +6,6 @@ import GridVirtualRow from '@/components/database/components/grid/grid-row/GridV
 import { RenderRowType } from '@/components/database/components/grid/grid-row/useRenderRows';
 import {
   createGridInteractionStore,
-  createGridRowResizeStore,
   GridContext,
   GridContextType,
   GridInteractionContext,
@@ -99,7 +98,6 @@ function Providers({ children }: { children: ReactNode }) {
     rows: [],
     setRows: () => undefined,
     setActivePropertyId: () => undefined,
-    rowResizeStore: createGridRowResizeStore(),
     remainingRowCount: 0,
     loadMoreRows: () => undefined,
     revealCreatedRow: () => undefined,

@@ -2,7 +2,7 @@ import { act, renderHook } from '@testing-library/react';
 import * as Y from 'yjs';
 
 import { DatabaseContext, type DatabaseContextState } from '@/application/database-yjs/context';
-import { FieldType, TimelineDependencyType } from '@/application/database-yjs/database.type';
+import { FieldType, RowMetaKey, TimelineDependencyType } from '@/application/database-yjs/database.type';
 import {
   useDeleteRowDispatch,
   useDuplicateRowDispatch,
@@ -10,7 +10,7 @@ import {
   useReorderRowDispatch,
 } from '@/application/database-yjs/dispatch';
 import { useDatabaseHistory } from '@/application/database-yjs/history';
-import { getRowKey } from '@/application/database-yjs/row_meta';
+import { generateRowMeta, getRowKey } from '@/application/database-yjs/row_meta';
 import { readTimelineLayoutSetting, updateTimelineLayoutSetting } from '@/application/database-yjs/timeline-layout';
 import {
   DatabaseViewLayout,
@@ -28,6 +28,9 @@ import {
 } from '@/application/types';
 import { AFConfigContext } from '@/components/main/app.hooks';
 
+import { createCloudRow, type CloudRowCreationIntent } from '../creation/create-row';
+import { recordCommittedRowCreation } from '../creation/row-creation-history';
+
 import { createCell, createRowDoc } from './test-helpers';
 
 import type { ReactNode } from 'react';
@@ -41,6 +44,35 @@ jest.mock('@/application/db', () => ({
 jest.mock('@/application/sync-outbox', () => ({
   deleteOutboxByObjectId: jest.fn(),
 }));
+
+jest.mock('../creation/create-row', () => ({ createCloudRow: jest.fn() }));
+beforeEach(() => {
+  jest.mocked(createCloudRow).mockImplementation(async (intent: CloudRowCreationIntent) => {
+    intent.assertCurrent();
+    const row = await intent.registerRow();
+
+    Y.applyUpdate(row, Y.encodeStateAsUpdate(intent.rowDoc));
+    const database = intent.databaseDoc.getMap('data').get('database') as YDatabase;
+
+    // Model the committed remote activation, using the real creation history component.
+    intent.databaseDoc.transact(() => {
+      database.get(YjsDatabaseKey.views).forEach((view) => {
+        const orders = view.get(YjsDatabaseKey.row_orders);
+        const position = intent.position;
+        const index =
+          position.kind === 'after'
+            ? orders.toArray().findIndex((order) => order.id === position.row_id) + 1
+            : position.kind === 'end'
+            ? orders.length
+            : 0;
+
+        orders.insert(index, [{ id: intent.rowId, height: 36 }]);
+      });
+    }, 'remote');
+    recordCommittedRowCreation(intent.databaseDoc, intent.rowId, intent.historyGroup);
+    return intent.rowId;
+  });
+});
 
 const databaseId = 'database-id';
 const databaseDocId = '00000000-0000-4000-8000-000000000001';
@@ -94,7 +126,9 @@ function createFixture(rowIds: string[] = [firstRowId, secondRowId, thirdRowId])
       [fieldId]: createCell(FieldType.RichText, `Name for ${rowId}`),
     });
 
-    rowDoc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.meta, new Y.Map());
+    rowDoc
+      .getMap(YjsEditorKey.data_section)
+      .set(YjsEditorKey.meta, new Y.Map(Object.entries(generateRowMeta(rowId, { [RowMetaKey.IsDocumentEmpty]: true }))));
     rowMap[rowId] = rowDoc;
   });
 
@@ -171,6 +205,35 @@ describe('row lifecycle production hooks use database history', () => {
     expect(getRowOrderIds(fixture)).toEqual([createdRowId, firstRowId, secondRowId]);
   });
 
+  it('replays creation and later reorders without duplicating membership', async () => {
+    const fixture = createFixture([firstRowId, secondRowId]);
+    const { result } = renderHook(useRowLifecycleHistory, { wrapper: createWrapper(fixture) });
+    let rowId = '';
+
+    await act(async () => {
+      rowId = (await result.current.createRow({}))!;
+    });
+    act(() => result.current.reorderRow(rowId, secondRowId));
+    act(() => result.current.reorderRow(rowId, firstRowId));
+
+    for (let cycle = 0; cycle < 3; cycle++) {
+      expect(getRowOrderIds(fixture)).toEqual([firstRowId, rowId, secondRowId]);
+      act(() => result.current.history.undo());
+      expect(getRowOrderIds(fixture)).toEqual([firstRowId, secondRowId, rowId]);
+      act(() => result.current.history.undo());
+      expect(getRowOrderIds(fixture)).toEqual([rowId, firstRowId, secondRowId]);
+      act(() => result.current.history.undo());
+      expect(getRowOrderIds(fixture)).toEqual([firstRowId, secondRowId]);
+      act(() => result.current.history.redo());
+      expect(getRowOrderIds(fixture)).toEqual([rowId, firstRowId, secondRowId]);
+      act(() => result.current.history.redo());
+      expect(getRowOrderIds(fixture)).toEqual([firstRowId, secondRowId, rowId]);
+      act(() => result.current.history.redo());
+    }
+
+    expect(getRowOrderIds(fixture)).toEqual([firstRowId, rowId, secondRowId]);
+  });
+
   it('duplicates a row and undoes and redoes its insertion', async () => {
     const fixture = createFixture([firstRowId, secondRowId]);
     const database = fixture.databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
@@ -183,6 +246,11 @@ describe('row lifecycle production hooks use database history', () => {
     relation.set(YjsDatabaseKey.data, [secondRowId]);
     relation.set(YjsDatabaseKey.field_type, FieldType.Relation);
     source.get(YjsDatabaseKey.cells).set('relation', relation);
+    const relationField = new Y.Map() as YDatabaseField;
+
+    relationField.set(YjsDatabaseKey.id, 'relation');
+    relationField.set(YjsDatabaseKey.type, FieldType.Relation);
+    database.get(YjsDatabaseKey.fields).set('relation', relationField);
     const metadata = { type: TimelineDependencyType.StartToStart, lag: 3 };
     const originalLinks = { [`${secondRowId}:${firstRowId}`]: metadata };
 

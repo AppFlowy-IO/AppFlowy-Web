@@ -1213,42 +1213,51 @@ describe('formula relation title retention', () => {
       setRelatedMembership(f, ids);
       f.row.get(YjsDatabaseKey.cells).get('relation').set(YjsDatabaseKey.data, Y.Array.from(ids));
       let readValue: () => number | string | undefined;
-      let unmount: () => void;
+      let unmount: (() => void) | undefined;
 
-      if (consumer === 'filter') {
-        f.filters.push([dataFilter(NumberFilterCondition.GreaterThan, '500')]);
-        const rendered = renderHook(useRowOrdersSelector, { wrapper: f.wrapper });
+      // Loading 501 titles and waiting for the filter debounce must not depend
+      // on the CI runner finishing both within waitFor's wall-clock timeout.
+      jest.useFakeTimers();
+      try {
+        if (consumer === 'filter') {
+          f.filters.push([dataFilter(NumberFilterCondition.GreaterThan, '500')]);
+          const rendered = renderHook(useRowOrdersSelector, { wrapper: f.wrapper });
 
-        readValue = () => rendered.result.current?.length;
-        unmount = rendered.unmount;
-      } else if (consumer === 'footer') {
-        const rendered = renderHook(() => useFieldCellsByRowsSelector('formula', f.orders), { wrapper: f.wrapper });
+          readValue = () => rendered.result.current?.length;
+          unmount = rendered.unmount;
+        } else if (consumer === 'footer') {
+          const rendered = renderHook(() => useFieldCellsByRowsSelector('formula', f.orders), { wrapper: f.wrapper });
 
-        readValue = () => rendered.result.current.cells?.get(f.rowId) as number | undefined;
-        unmount = rendered.unmount;
-      } else {
-        // Timeline footers can evaluate rows absent from the mounted row map.
-        f.context.rowMap = {};
-        const source = { rows: {}, getCachedRowDocs: () => ({ [f.rowId]: f.rowDoc }) };
-        const rendered = renderHook(() => useFormulaColumnEvaluator('formula', source), { wrapper: f.wrapper });
+          readValue = () => rendered.result.current.cells?.get(f.rowId) as number | undefined;
+          unmount = rendered.unmount;
+        } else {
+          // Timeline footers can evaluate rows absent from the mounted row map.
+          f.context.rowMap = {};
+          const source = { rows: {}, getCachedRowDocs: () => ({ [f.rowId]: f.rowDoc }) };
+          const rendered = renderHook(() => useFormulaColumnEvaluator('formula', source), { wrapper: f.wrapper });
 
-        readValue = () => rendered.result.current?.(f.rowId, f.row);
-        unmount = rendered.unmount;
-      }
+          readValue = () => rendered.result.current?.(f.rowId, f.row);
+          unmount = rendered.unmount;
+        }
 
-      await waitFor(() => {
+        await waitFor(() => {
+          expect(readValue()).toBe(consumer === 'filter' ? 1 : 501);
+          expect(keys.every((key) => relationCache.readRelationGroupLabel(key) === 'Related title')).toBe(true);
+        });
+
+        // A later pass must see the complete set without starting another cache-eviction cycle.
+        const loads = jest.mocked(f.context.createRow!).mock.calls.length;
+
         expect(readValue()).toBe(consumer === 'filter' ? 1 : 501);
         expect(keys.every((key) => relationCache.readRelationGroupLabel(key) === 'Related title')).toBe(true);
-      });
-
-      // A later pass must see the complete set without starting another cache-eviction cycle.
-      const loads = jest.mocked(f.context.createRow!).mock.calls.length;
-
-      expect(readValue()).toBe(consumer === 'filter' ? 1 : 501);
-      expect(keys.every((key) => relationCache.readRelationGroupLabel(key) === 'Related title')).toBe(true);
-      expect(f.context.createRow).toHaveBeenCalledTimes(loads);
-      unmount();
-      expect(keys.filter((key) => relationCache.readRelationGroupLabel(key) !== '')).toHaveLength(500);
+        expect(f.context.createRow).toHaveBeenCalledTimes(loads);
+        unmount();
+        unmount = undefined;
+        expect(keys.filter((key) => relationCache.readRelationGroupLabel(key) !== '')).toHaveLength(500);
+      } finally {
+        unmount?.();
+        jest.useRealTimers();
+      }
     }
   );
 });

@@ -15,6 +15,8 @@ import {
   YjsEditorKey,
 } from '@/application/types';
 
+import { applyMathShortcut } from './math-equation';
+
 enum SpecialSymbol {
   EM_DASH = '—',
   RIGHTWARDS_DOUBLE_ARROW = '⇒',
@@ -384,27 +386,6 @@ const rules: Rule[] = [
     },
   },
   {
-    type: 'mark',
-    match: /\$(.*?)\$/,
-    format: EditorMarkFormat.Formula,
-    transform: (editor, match) => {
-      const formula = match[1];
-      const { selection } = editor;
-
-      if (!selection) return;
-      const path = selection.anchor.path;
-      const start = match.index!;
-
-      editor.insertText('$');
-      Transforms.select(editor, {
-        anchor: { path, offset: start },
-        focus: { path, offset: start + 1 },
-      });
-
-      CustomEditor.addMark(editor, { key: EditorMarkFormat.Formula, value: formula });
-    },
-  },
-  {
     type: 'symbol',
     match: /--/,
     format: SpecialSymbol.EM_DASH,
@@ -443,6 +424,7 @@ const rules: Rule[] = [
 ];
 
 export const applyMarkdown = (editor: YjsEditor, insertText: string): boolean => {
+  if (insertText === '$') return applyMathShortcut(editor);
   const { selection } = editor;
 
   if (!selection || !Range.isCollapsed(selection)) return false;

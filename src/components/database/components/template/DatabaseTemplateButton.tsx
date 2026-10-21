@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { v4 as uuidv4 } from 'uuid';
 import * as Y from 'yjs';
 
+import { assertAtomicCreationAvailable, captureAtomicCreationOwner } from '@/application/atomic-creation';
 import {
   DatabaseContext,
   useCreateRow,
@@ -26,10 +27,15 @@ import {
   templateCoverToViewCover,
   updateTemplateFromSourceRow,
 } from '@/application/database-yjs/template';
-import { decodeTemplateDocumentSnapshot, encodeTemplateDocument } from '@/application/database-yjs/template/document';
+import {
+  decodeTemplateDocumentSnapshot,
+  encodeTemplateDocument,
+  readTemplateDocumentEmptiness,
+} from '@/application/database-yjs/template/document';
 import { useDatabaseRowTemplates } from '@/application/database-yjs/template/hooks';
 import { getCachedProviderDoc } from '@/application/db';
 import { rowDocumentIdFromRowId } from '@/application/row-document/lifecycle';
+import { ensureAtomicTemplateDocument } from '@/application/row-document/template-document';
 import { getCachedRowSubDoc } from '@/application/services/js-services/cache';
 import { ViewIconType, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { ReactComponent as ChevronDownIcon } from '@/assets/icons/alt_arrow_down.svg';
@@ -59,6 +65,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { getErrorMessage } from '@/utils/errors';
 import { Log } from '@/utils/log';
 
 type EditingTemplate = {
@@ -102,7 +109,11 @@ function DatabaseTemplateEditor({
     window.clearTimeout(saveTimer.current);
     saveTimer.current = undefined;
     hasPendingSave.current = false;
-    const savedTemplate = onSaveRef.current(updateTemplateFromSourceRow(templateRef.current, editing.rowDoc, database));
+    const template = templateRef.current;
+    const updated = updateTemplateFromSourceRow(template, editing.rowDoc, database);
+    const document = getCachedRowSubDoc(template.docViewId) ?? getCachedProviderDoc(template.docViewId);
+    const isDocumentEmpty = document ? readTemplateDocumentEmptiness(document) : undefined;
+    const savedTemplate = onSaveRef.current(isDocumentEmpty === undefined ? updated : { ...updated, isDocumentEmpty });
 
     templateRef.current = savedTemplate;
     return savedTemplate;
@@ -234,8 +245,39 @@ export function DatabaseTemplateButton({
   const readOnly = useReadOnly();
   const database = useDatabase();
   const currentView = useDatabaseView();
-  const { activeViewId, createRowDocument, duplicateRowDocument, loadRowDocument, loadViewMeta, updatePage } =
-    useDatabaseContext();
+  const {
+    activeViewId,
+    createRowDocument,
+    duplicateRowDocument,
+    loadRowDocument,
+    loadViewMeta,
+    updatePage,
+    workspaceId,
+    databaseDoc,
+    checkIfRowDocumentExists,
+  } = useDatabaseContext();
+  const writableRef = useRef(!readOnly);
+  const mountedRef = useRef(true);
+  const sourceRef = useRef({ workspaceId, databaseDoc, activeViewId });
+
+  writableRef.current = !readOnly;
+  sourceRef.current = { workspaceId, databaseDoc, activeViewId };
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  const assertWritable = useCallback(() => {
+    if (
+      !mountedRef.current ||
+      !writableRef.current ||
+      sourceRef.current.workspaceId !== workspaceId ||
+      sourceRef.current.databaseDoc !== databaseDoc ||
+      sourceRef.current.activeViewId !== activeViewId
+    )
+      throw new Error('The template is no longer writable.');
+  }, [workspaceId, databaseDoc, activeViewId]);
   const createRow = useCreateRow();
   const guid = useDocGuid();
   const createNewRow = useNewRowDispatch();
@@ -284,7 +326,7 @@ export function DatabaseTemplateButton({
       await action();
     } catch (error) {
       Log.error('[DatabaseTemplateButton] action failed', { fallbackMessage, error });
-      toast.error(error instanceof Error ? error.message : fallbackMessage);
+      toast.error(getErrorMessage(error));
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -303,10 +345,13 @@ export function DatabaseTemplateButton({
   );
 
   const ensureTemplateRow = useCallback(
-    async (template: DatabaseRowTemplate) => {
+    async (template: DatabaseRowTemplate, assertCurrent = assertWritable) => {
+      assertCurrent();
       if (!createRow) throw new Error('No createRow function');
 
       const rowDoc = await createRow(getRowKey(guid, template.templateId));
+
+      assertCurrent();
       const root = rowDoc.getMap(YjsEditorKey.data_section);
 
       if (!root.has(YjsEditorKey.database_row)) {
@@ -315,7 +360,7 @@ export function DatabaseTemplateButton({
 
       return rowDoc;
     },
-    [createRow, database, guid]
+    [createRow, database, guid, assertWritable]
   );
 
   const loadTemplateDocument = useCallback(
@@ -363,7 +408,8 @@ export function DatabaseTemplateButton({
       }
 
       const sourceDocument = snapshot ? null : await loadTemplateDocument(sourceTemplate);
-      const encodedState = snapshot?.encodedState ?? (sourceDocument ? encodeTemplateDocument(sourceDocument) : undefined);
+      const encodedState =
+        snapshot?.encodedState ?? (sourceDocument ? encodeTemplateDocument(sourceDocument) : undefined);
 
       if (!encodedState) {
         throw new Error('Template document is unavailable for live editing');
@@ -405,6 +451,7 @@ export function DatabaseTemplateButton({
 
   const editTemplate = useCallback(
     async (template: DatabaseRowTemplate) => {
+      const owner = captureAtomicCreationOwner(workspaceId, assertWritable);
       let editableTemplate = template;
 
       if (templateDecorationsNeedResolution(template) && template.docViewId && loadViewMeta) {
@@ -418,20 +465,47 @@ export function DatabaseTemplateButton({
         }
       }
 
-      const rowDoc = await ensureTemplateRow(editableTemplate);
+      owner.assertCurrent();
+      const rowDoc = await ensureTemplateRow(editableTemplate, owner.assertCurrent);
 
+      owner.assertCurrent();
       const migrated = await migrateSnapshotBackedTemplate(editableTemplate, rowDoc);
 
+      owner.assertCurrent();
       if (migrated !== template && (migrated.icon !== template.icon || migrated.cover !== template.cover)) {
         store.upsert(migrated);
       }
 
+      if (!checkIfRowDocumentExists) throw new Error('Template document creation is unavailable.');
+      await ensureAtomicTemplateDocument({
+        workspaceId,
+        documentId: migrated.docViewId,
+        databaseDoc,
+        rowDoc,
+        name: '',
+        source: { database_id: databaseId, database_view_id: activeViewId, row_id: migrated.templateId },
+        assertWritable: owner.assertCurrent,
+        exists: checkIfRowDocumentExists,
+      });
+      owner.assertCurrent();
       setEditing({ templateId: template.templateId, rowDoc });
     },
-    [ensureTemplateRow, loadViewMeta, migrateSnapshotBackedTemplate, store]
+    [
+      ensureTemplateRow,
+      loadViewMeta,
+      migrateSnapshotBackedTemplate,
+      store,
+      workspaceId,
+      databaseDoc,
+      databaseId,
+      activeViewId,
+      assertWritable,
+      checkIfRowDocumentExists,
+    ]
   );
 
   const createTemplate = useCallback(async () => {
+    assertAtomicCreationAvailable(captureAtomicCreationOwner(workspaceId, assertWritable));
     const templateId = uuidv4();
     const now = Date.now();
     const primaryFieldId = getPrimaryFieldId(database);
@@ -456,7 +530,7 @@ export function DatabaseTemplateButton({
     });
 
     await editTemplate(template);
-  }, [database, editTemplate, store, t]);
+  }, [database, editTemplate, store, t, workspaceId, assertWritable]);
 
   const syncTemplateViewMetadata = useCallback(
     async (template: DatabaseRowTemplate) => {
@@ -498,19 +572,26 @@ export function DatabaseTemplateButton({
 
       const templateId = uuidv4();
       const now = Date.now();
+      const name = `${source.name} ${t('grid.rowTemplate.copySuffix', { defaultValue: '(Copy)' })}`;
+      const primaryFieldId = getPrimaryFieldId(database);
       const duplicate: DatabaseRowTemplate = {
         ...sourceTemplate,
         templateId,
-        name: `${source.name} ${t('grid.rowTemplate.copySuffix', { defaultValue: '(Copy)' })}`,
+        name,
+        // The editor saves its primary cell as the template name. Keep the
+        // copied row title consistent so an unrelated edit cannot rename it.
+        defaultCells: {
+          ...sourceTemplate.defaultCells,
+          ...(primaryFieldId ? { [primaryFieldId]: { type: 'text' as const, value: name } } : {}),
+        },
         docViewId: rowDocumentIdFromRowId(templateId),
         documentData: undefined,
         embeddedDatabases: [],
         createdAtMs: now,
         updatedAtMs: now,
       };
-      const sourceDocumentPromise = snapshot || sourceTemplate.isDocumentEmpty
-        ? Promise.resolve(null)
-        : loadTemplateDocument(sourceTemplate);
+      const sourceDocumentPromise =
+        snapshot || sourceTemplate.isDocumentEmpty ? Promise.resolve(null) : loadTemplateDocument(sourceTemplate);
       const [sourceRowDoc, targetRowDoc, sourceDocument] = await Promise.all([
         ensureTemplateRow(sourceTemplate),
         ensureTemplateRow(duplicate),

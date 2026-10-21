@@ -82,15 +82,14 @@ test.describe('Row Document Test', () => {
     await page.waitForTimeout(3000);
 
     // Scroll down to make sure editor is visible
-    const scrollContainer = page.locator('[role="dialog"]').locator('.appflowy-scroll-container');
+    const scrollContainer = RowDetailSelectors.modal(page).locator('.appflowy-scroll-container');
     if ((await scrollContainer.count()) > 0) {
       await scrollContainer.evaluate(el => el.scrollTo(0, 9999));
       await page.waitForTimeout(1000);
     }
 
     // Wait for editor to be ready and click into it
-    const editor = page
-      .locator('[role="dialog"]')
+    const editor = RowDetailSelectors.modal(page)
       .locator('[data-testid="editor-content"]')
       .first();
     await expect(editor).toBeVisible({ timeout: 15000 });
@@ -123,16 +122,13 @@ test.describe('Row Document Test', () => {
     await page.waitForTimeout(2000);
 
     // Then: all lines should be visible in the dialog
-    const dialog = page.locator('[role="dialog"]');
+    const dialog = RowDetailSelectors.modal(page);
     await expect(dialog).toContainText(line1);
     await expect(dialog).toContainText(line2);
     await expect(dialog).toContainText(line3);
 
     // When: closing the modal
-    await dialog
-      .locator('.MuiDialogTitle-root, [data-testid="row-detail-header"]')
-      .first()
-      .click({ force: true });
+    await RowDetailSelectors.modalTitle(page).click({ force: true, position: { x: 5, y: 5 } });
     await page.waitForTimeout(500);
     await closeRowDetailWithEscape(page);
     await expect(dialog).toHaveCount(0);
@@ -142,16 +138,16 @@ test.describe('Row Document Test', () => {
     await openCard(page, cardName);
     await page.waitForTimeout(3000);
 
-    const scrollContainer = page.locator('[role="dialog"]').locator('.appflowy-scroll-container');
+    const scrollContainer = RowDetailSelectors.modal(page).locator('.appflowy-scroll-container');
     if ((await scrollContainer.count()) > 0) {
       await scrollContainer.evaluate(el => el.scrollTo(0, 9999));
       await page.waitForTimeout(1000);
     }
 
     // Then: the document content should have persisted
-    await expect(page.locator('[role="dialog"]')).toContainText(`Line1-${docText}`);
-    await expect(page.locator('[role="dialog"]')).toContainText(`Line2-${docText}`);
-    await expect(page.locator('[role="dialog"]')).toContainText(`Line3-${docText}`);
+    await expect(RowDetailSelectors.modal(page)).toContainText(`Line1-${docText}`);
+    await expect(RowDetailSelectors.modal(page)).toContainText(`Line2-${docText}`);
+    await expect(RowDetailSelectors.modal(page)).toContainText(`Line3-${docText}`);
   });
 
   test('should maintain focus while typing continuously', async ({ page, request }) => {
@@ -171,7 +167,7 @@ test.describe('Row Document Test', () => {
     await page.waitForTimeout(5000); // Wait for Yjs sync before closing
 
     // Then: the full text should appear in the dialog (focus was maintained)
-    await expect(page.locator('[role="dialog"]')).toContainText(longText);
+    await expect(RowDetailSelectors.modal(page)).toContainText(longText);
 
     // When: closing and reopening the modal
     // (closeRowDetailWithEscape defocuses the editor before pressing Escape)
@@ -183,14 +179,14 @@ test.describe('Row Document Test', () => {
     await page.waitForTimeout(3000);
 
     // Scroll down to ensure the editor content area is visible
-    const scrollContainer = page.locator('[role="dialog"]').locator('.appflowy-scroll-container');
+    const scrollContainer = RowDetailSelectors.modal(page).locator('.appflowy-scroll-container');
     if ((await scrollContainer.count()) > 0) {
       await scrollContainer.evaluate(el => el.scrollTo(0, 9999));
       await page.waitForTimeout(1000);
     }
 
     // Then: the content should have persisted
-    await expect(page.locator('[role="dialog"]')).toContainText(longText);
+    await expect(RowDetailSelectors.modal(page)).toContainText(longText);
   });
 
   /**
@@ -233,7 +229,7 @@ test.describe('Row Document Test', () => {
       target.dispatchEvent(event);
     }, bookmarkUrl);
 
-    const dialog = page.locator('[role="dialog"]');
+    const dialog = RowDetailSelectors.modal(page);
 
     await expect(page.getByTestId('paste-as-panel')).toBeVisible({ timeout: 5000 });
     await page.getByTestId('paste-as-bookmark').click({ force: true });
@@ -277,11 +273,8 @@ test.describe('Row Document Test', () => {
     await page.keyboard.type(docText, { delay: 30 });
     await page.waitForTimeout(2000); // Wait for Yjs sync and meta update
 
-    // And: closing the modal — defocus editor first so Escape reaches MUI Dialog
-    const dialog = page.locator('[role="dialog"]');
-    await dialog
-      .locator('.MuiDialogTitle-root')
-      .click({ force: true });
+    // And: closing the modal — defocus editor first so Escape reaches the row peek
+    await RowDetailSelectors.modalTitle(page).click({ force: true, position: { x: 5, y: 5 } });
     await page.waitForTimeout(500);
     await closeRowDetailWithEscape(page);
     await page.waitForTimeout(2000);

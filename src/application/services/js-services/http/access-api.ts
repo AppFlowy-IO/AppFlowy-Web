@@ -1,4 +1,4 @@
-import { getTokenParsed } from '@/application/session/token';
+import { captureTokenSession, getTokenParsed, isTokenSessionCurrent, type TokenSessionWitness } from '@/application/session/token';
 import {
   AccessLevel,
   AFWebUser,
@@ -141,6 +141,7 @@ function pruneExpiredShareDetailCacheEntries(now: number) {
 }
 
 export function invalidateShareDetailCache(workspaceId: string) {
+  invalidateObjectPermissionRequests(workspaceId);
   // Sharing changes on one view can alter effective permissions of its
   // descendants, so drop every cached view in the workspace.
   for (const key of shareDetailCache.keys()) {
@@ -238,14 +239,91 @@ export async function getShareDetail(
   return promise;
 }
 
-export async function getObjectPermission(workspaceId: string, objectId: string, collabType: Types = Types.Document) {
-  const url = `/api/workspace/${workspaceId}/collab/${objectId}/permission`;
+interface ObjectPermissionRequest {
+  workspaceId: string;
+  invalidated: boolean;
+  promise: Promise<CollabObjectPermission>;
+}
 
-  return executeAPIRequest<CollabObjectPermission>(() =>
-    getAxios()?.get<APIResponse<CollabObjectPermission>>(url, {
-      params: { collab_type: collabType },
-    })
-  );
+// Only unresolved reads are shared. A later open always rechecks the server;
+// unlike view metadata, authorization must not acquire an extra cache TTL.
+const objectPermissionRequests = new Map<string, ObjectPermissionRequest>();
+
+class ObjectPermissionRequestSupersededError extends Error {
+  constructor() {
+    super('Object permission request was superseded');
+  }
+}
+
+export function invalidateObjectPermissionRequests(workspaceId: string) {
+  for (const [key, request] of objectPermissionRequests) {
+    if (request.workspaceId !== workspaceId) continue;
+    request.invalidated = true;
+    objectPermissionRequests.delete(key);
+  }
+}
+
+function requestObjectPermission(
+  workspaceId: string,
+  objectId: string,
+  collabType: Types,
+  session: TokenSessionWitness
+) {
+  const key = JSON.stringify([session.generation, session.userId, workspaceId, objectId, collabType]);
+  const pending = objectPermissionRequests.get(key);
+
+  if (pending) return pending.promise;
+
+  const url = `/api/workspace/${workspaceId}/collab/${objectId}/permission`;
+  const request: ObjectPermissionRequest = {
+    workspaceId,
+    invalidated: false,
+    promise: executeAPIRequest<CollabObjectPermission>(() =>
+      getAxios()?.get<APIResponse<CollabObjectPermission>>(url, {
+        params: { collab_type: collabType },
+      })
+    )
+      .then((permission) => {
+        // Reconnect/share notifications and A -> logout -> A must not allow a
+        // pre-change request to grant capabilities to a new consumer.
+        if (request.invalidated || !isTokenSessionCurrent(session)) {
+          throw new ObjectPermissionRequestSupersededError();
+        }
+
+        return permission;
+      })
+      .catch((error: unknown) => {
+        // A pre-invalidation 403 is stale too: callers must not interpret it
+        // as a current denial and purge data after access was restored.
+        if (request.invalidated || !isTokenSessionCurrent(session)) {
+          throw new ObjectPermissionRequestSupersededError();
+        }
+
+        throw error;
+      })
+      .finally(() => {
+        if (objectPermissionRequests.get(key) === request) objectPermissionRequests.delete(key);
+      }),
+  };
+
+  objectPermissionRequests.set(key, request);
+  return request.promise;
+}
+
+export async function getObjectPermission(workspaceId: string, objectId: string, collabType: Types = Types.Document) {
+  const session = captureTokenSession();
+
+  try {
+    return await requestObjectPermission(workspaceId, objectId, collabType, session);
+  } catch (error) {
+    if (!(error instanceof ObjectPermissionRequestSupersededError) || !isTokenSessionCurrent(session)) throw error;
+
+    // Embeds keep their permission consumer mounted, so merely rejecting an
+    // invalidated read leaves them read-only indefinitely. Join one fresh read
+    // in the same login session. Keep this retry bounded under repeated push
+    // notifications and let ordinary network failures retain their own policy.
+    return requestObjectPermission(workspaceId, objectId, collabType, session);
+  }
 }
 
 export async function sharePageTo(workspaceId: string, viewId: string, emails: string[], accessLevel?: AccessLevel) {

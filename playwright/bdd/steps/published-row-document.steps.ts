@@ -46,7 +46,7 @@ Given('a public database snapshot contains a row document', async ({ page }) => 
     'content-type': 'application/json',
   };
 
-  await page.route(`**/api/workspace/v2/published/${ISSUE_NAMESPACE}/${ISSUE_PUBLISH_NAME}/snapshot`, async (route) => {
+  await page.route(`**/api/workspace/v2/published/${ISSUE_NAMESPACE}/${ISSUE_PUBLISH_NAME}/snapshot{,?**}`, async (route) => {
     await route.fulfill({
       status: 200,
       headers: corsHeaders,
@@ -74,7 +74,7 @@ Given('a public database snapshot contains a row document', async ({ page }) => 
     });
   });
 
-  await page.route(`**/api/workspace/published-outline/${ISSUE_NAMESPACE}`, async (route) => {
+  await page.route(`**/api/workspace/published-outline/${ISSUE_NAMESPACE}{,?**}`, async (route) => {
     await route.fulfill({
       status: 200,
       headers: corsHeaders,

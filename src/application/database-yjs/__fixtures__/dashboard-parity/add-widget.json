@@ -15,7 +15,7 @@
       "aggregation_type": 0,
       "numberFormat": "compact",
       "show_title": true,
-      "show_empty_values": true,
+      "show_empty_values": false,
       "date_condition": 3
     },
     "parsed": {

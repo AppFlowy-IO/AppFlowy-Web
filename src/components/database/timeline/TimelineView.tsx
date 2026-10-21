@@ -43,6 +43,7 @@ import { useAIEnabled } from '@/components/app/app.hooks';
 import { type Edge } from '@/components/database/components/drag-and-drop/useRowDnd';
 import { FieldDisplay } from '@/components/database/components/field';
 import { useTimeFormat } from '@/components/database/fullcalendar/hooks/useTimeFormat';
+import { RowCreationSpinner, useRowCreationAction } from '@/components/database/hooks/useRowCreationAction';
 import { shouldUseFixedDatabaseViewport } from '@/components/database/layout';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -76,7 +77,7 @@ import { useTimelineRange } from './hooks/useTimelineRange';
 import { useTimelineRects } from './hooks/useTimelineRects';
 import { TimelineRowModel, useTimelineRows } from './hooks/useTimelineRows';
 import { useTimelineSavedColumnWidths } from './hooks/useTimelineSavedColumnWidths';
-import { useTimelineTableFieldIds } from './hooks/useTimelineTableFieldIds';
+import { useTimelineTableFieldIds, useTimelineTableFieldTypes } from './hooks/useTimelineTableFieldIds';
 import { useTimelineVirtualizer } from './hooks/useTimelineVirtualizer';
 import { buildDependencyGraph, collectDependents, linkOf } from './scale/dependencies';
 import {
@@ -173,6 +174,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
   const databaseFields = useDatabaseFields();
   const savedColumnWidths = useTimelineSavedColumnWidths();
   const tableFieldIds = useTimelineTableFieldIds(setting.tableFieldIds, primaryFieldId);
+  const tableFieldTypes = useTimelineTableFieldTypes(tableFieldIds);
   const [columnResize, setColumnResize] = useState<(TimelineColumnResize & { viewId: string }) | null>(null);
   const activeColumnResize =
     showSidebar &&
@@ -637,9 +639,10 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
       updateSetting({ showTable: !showSidebar });
     }
   }, [permissions.readOnly, showSidebar, updateSetting, viewId]);
+  const { pending: creatingRow, run: runRowCreation } = useRowCreationAction();
   const handleNewRow = useCallback(() => {
-    void newRow({ tailing: true, openAfterCreate: true }).catch(() => undefined);
-  }, [newRow]);
+    void runRowCreation(() => newRow({ tailing: true, openAfterCreate: true }));
+  }, [newRow, runRowCreation]);
 
   // Grouped views create rows from their group footers instead of one global footer.
   const showNewRowFooter = !permissions.readOnly && !grouping.isGrouped;
@@ -883,6 +886,7 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                       formatTime={formatTimeDisplay}
                       rowActions={rowActions}
                       tableFieldIds={tableFieldIds}
+                      tableFieldTypes={tableFieldTypes}
                       onOpen={handleOpen}
                       onSelect={setSelectedRowId}
                       onScrollTo={handleScrollToX}
@@ -915,6 +919,8 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                     )}
                     style={{ width: sidebarWidth }}
                     data-testid='timeline-new-row'
+                    aria-disabled={creatingRow}
+                    aria-busy={creatingRow}
                     aria-label={t('grid.row.newRow', { defaultValue: 'New page' })}
                     onClick={handleNewRow}
                     onKeyDown={(event) => {
@@ -924,7 +930,11 @@ export function TimelineView({ setting }: { setting: TimelineLayoutSetting }) {
                       }
                     }}
                   >
-                    <PlusIcon aria-hidden className='h-5 w-5' />
+                    {creatingRow ? (
+                      <RowCreationSpinner className='h-5 w-5' />
+                    ) : (
+                      <PlusIcon aria-hidden className='h-5 w-5' />
+                    )}
                     {showSidebar ? t('grid.row.newRow', { defaultValue: 'New page' }) : null}
                   </div>
                 </div>

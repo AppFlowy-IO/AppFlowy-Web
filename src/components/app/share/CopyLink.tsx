@@ -5,10 +5,10 @@ import { notify } from '@/components/_shared/notify';
 import { Button } from '@/components/ui/button';
 import { copyTextToClipboard } from '@/utils/copy';
 
-export function CopyLink() {
+export function CopyLink({ url }: { url?: string }) {
   const { t } = useTranslation();
   const handleCopy = () => {
-    void copyTextToClipboard(window.location.href);
+    void copyTextToClipboard(url ?? window.location.href);
     notify.success(t('shareAction.copyLinkSuccess'));
   };
 

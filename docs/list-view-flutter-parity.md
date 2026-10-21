@@ -236,22 +236,61 @@ not used as a substitute.
 
 ## Creation and persistence
 
-The current Cloud API rejects native standalone `ViewLayout.List` page
-creation. Web therefore uses a transactional compatibility path:
+New standalone and embedded Lists use the atomic default-Database endpoint. The
+server creates the List schema, rows, container and mounted view together. Adding
+or linking a List uses the atomic default-DatabaseView endpoint against the current
+Database. Web no longer creates a temporary Grid, converts it locally, or deletes
+it afterward.
 
-1. create the database container through the supported Grid endpoint;
-2. create a real List folder/database child;
-3. normalize Desktop List field/layout settings and select its inline ID;
-4. confirm that state through the sync outbox;
-5. delete the exact temporary Grid folder and Yjs view and confirm cleanup.
+Selection follows current authorized content hydration and current Folder navigation.
+Lost acknowledgements retain the original request for explicit retry. This requires
+both atomic-creation capability flags and connectivity, including self-hosted mode.
+Ordinary Add Row and editing an existing body retain their existing sync behavior.
+See [atomic creation](atomic-object-creation.md) for ownership, recovery and tests.
 
-Any post-create core failure compensates only the container created by that
-operation. Embedded List creation similarly requires a live sync binding and
-soft-deletes only its newly created child if conversion fails. The live test
-hard-reloads and requires one child named `List`, a persisted List layout icon,
-the same child ID, and no Grid tab. Navigation persistence is exercised by
-leaving the database, reloading, and clicking its normal sidebar container;
-that route must resolve the same sole List child without a direct URL shortcut.
+## Desktop PR #1475 revamp
+
+Desktop PR #1475 ("revamp: database list view", branch `revamp/database/list`)
+restyles the Desktop List row, its card cell style map and the shared group
+header. Its bulk row selection commit was reverted inside the PR, so
+`list_bloc.dart`, `list_row_actions.dart` and `desktop_list_page.dart` did not
+change. The Web port keeps the existing row ids and classes
+(`list-row-<rowId>` with `data-row-id`, `list-field-*`, `list-primary-cell-*`,
+`list-row-open-*`, `list-row-actions-*`, `list-checkbox-cell-*`,
+`.list-property-cell`, `.list-primary-field`, `data-field-id`) and adds
+`list-row-content-*`, `list-row-title-*`, `list-row-trailing-*`,
+`list-row-peek-*`, `data-layout="wide|narrow"` on the row, and
+`list-group-collapse-icon[data-collapsed]` / `grid-group-collapse-icon[data-collapsed]`.
+
+| Desktop change (PR #1475)                                                                                                                                             | Web implementation                                                                                                                                                                                                                                                                                                                                                             | Tests                                                                                                                                       |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_row.dart`: content box `EdgeInsets.all(spacing.m)`, `borderRadius.m`, `fillColorScheme.contentHover` while the whole row is hovered, no fixed 24px inner height | `ListRow.tsx` content box `p-2 rounded-300` with `group-hover/list-row:bg-fill-content-hover`; height comes from the 20px title row (36px wide rows)                                                                                                                                                                                                                           | `ListRow.test.tsx`; `list-view-live-flutter-parity.spec.ts` "List revamp" wide geometry case                                                |
+| `list_layout_constants.dart` `kListRowNarrowBreakpoint = 480`: `LayoutBuilder` stacks the properties under the title when `maxWidth - leadingWidth < 480`             | `list.constants.ts` `LIST_ROW_NARROW_BREAKPOINT` / `LIST_ROW_NARROW_HEIGHT`; `ListRowLayout.tsx` measures the List content box once (layout effect + one `ResizeObserver`) and provides `wide`/`narrow` to every row; narrow rows are `flex-col` with the strip `mt-1.5` (62px)                                                                                                | `ListRowLayout.test.tsx`, `List.test.tsx`; live narrow case (viewport shrunk until `data-layout="narrow"`, then back)                       |
+| Trailing cells in a horizontal `SingleChildScrollView(reverse: rightAlign)` with `Padding(left: spacing.l)` before every cell                                         | `list-row-trailing-*`: `overflow-x-auto` strip with hidden scrollbars (`appflowy-hidden-scroller` + `[scrollbar-width:none]`), `flex-row-reverse` around one child in the wide layout (flush right, initial offset at the right end, left overflow scrollable), left-anchored in the narrow layout; every trailing cell is `pl-3`                                              | `ListRow.test.tsx`; live overflow case (`scrollWidth > clientWidth`, last cell visible, first clipped, horizontal wheel)                    |
+| `_PeekButton`: 20px `side_peek_s` ghost button with `EdgeInsets.zero`, `HSpace(spacing.s)` after the title, inserted only while hovering, tooltip above               | `ListRowPeekButton.tsx`: `list-row-peek-<rowId>`, `ml-1.5 h-5 w-5 rounded-300`, `hidden` until `group-hover`/`group-focus-within`, Radix tooltip `side='top'`, calls the same `navigateToRow` as the row click (side or center peek by the row page's rule)                                                                                                                    | `ListRowPeekButton.test.tsx`; live hover peek case; `side-peek-entry-points.feature` "The list row's hover peek button opens the side peek" |
+| Document indicator `doc_s` 20px in `iconColorScheme.secondary` with 4px end padding                                                                                   | `ListPrimaryField` `DocumentIcon` `mr-1 h-5 w-5 text-icon-secondary`                                                                                                                                                                                                                                                                                                           | `ListRow.test.tsx`                                                                                                                          |
+| `desktop_list_card_cell_style.dart`: `caption.standard` in `textColorScheme.primary`; Person `hideName: true, spacing: 4.0`; Media keeps `secondaryTextColor`         | `listCellStyle` 12px/18px `var(--text-primary)`; `ListCell.tsx` Person wrapper `[&_.person-cell-name]:sr-only` over `PersonCell`'s `gap-1`, Relation/Time/Checklist text primary, Media secondary; `PersonCell.tsx` only gained the `person-cell-name` class hook; `GalleryCard.tsx` property color follows (the style map is shared by Gallery, Feed and Timeline on Desktop) | `ListCell.test.tsx`, `PersonCell.test.tsx`; live Person case (20px avatar, name kept as `sr-only`)                                          |
+| `group_header.dart`: `AFGhostButton.normal(size m, padding 2)` around a 20px `arrow_right_filled_s` / `arrow_down_filled_s`                                           | `ListGroup.tsx` toggle `size='icon-sm'` (24px, radius 8) with the copied `arrow_right_filled.svg` / `arrow_down_filled.svg` (`list-group-collapse-icon[data-collapsed]`), `mr-2` so the name stays 32px in; `GridGroupHeader.tsx` gets the same toggle; the Timeline sidebar inherits it through `ListGroupHeader`                                                             | `ListGroup.test.tsx`, `GridGroupHeader.test.tsx`; live group case (24px toggle, `data-collapsed` flip)                                      |
+| `list_group_widgets.dart`: `ListGroupFooter` loses its bottom border                                                                                                  | `ListGroupFooter` `ml-10 h-9 px-1` without `border-b`                                                                                                                                                                                                                                                                                                                          | `ListGroup.test.tsx`; live group case (`border-bottom-width: 0px`)                                                                          |
+| `database_timeline.dart` `_tableCell` / `_barContent` render their cells through the same `desktopListCardCellStyleMap`                                              | `timeline/card-cell-style.ts` (`timelineCardCellClassName`) applied by `TimelineSidebarRow.tsx` (`timeline-table-cell-*`) and `TimelineBar.tsx` (`timeline-bar-chip-*`): caption 12/18 primary, Person avatars with `sr-only` names, Media secondary                                                                                                                      | `card-cell-style.test.ts`, `TimelineSidebarRow.test.tsx`, `TimelineBar.test.tsx`                                                            |
+| `list_setting_bar.dart` 24px to 28px                                                                                                                                  | No-op: the Web List toolbar already uses the Grid's 28px buttons                                                                                                                                                                                                                                                                                                               |                                                                                                                                             |
+| `list_cell_builder.dart` `IntrinsicWidth`, mobile list row/page/tab bar, `AFGhostTabButton`, Rust `util.rs` logging                                                   | Not applicable: Flutter layout detail, mobile app only, logging only                                                                                                                                                                                                                                                                                                           |                                                                                                                                             |
+
+Known divergences, kept on purpose:
+
+- Desktop opens the full row page on a row tap and the side peek from the
+  hover button. The Web row click keeps opening the peek, so the button is a
+  second entry point to the same `navigateToRow`.
+- Desktop lays the title out unbounded and clips it; the Web title keeps its
+  ellipsis.
+- Desktop reads the breakpoint per row from `LayoutBuilder`; the Web measures
+  the List content box once, which is the same width for every row.
+- Desktop hides the Person name entirely; the Web keeps it in the DOM as
+  `sr-only` so screen readers still announce it.
+- The Web Timeline renders its cells through `CardField`, not `ListCell`, so
+  the shared style is applied as class hooks around the card cell
+  (`timelineCardCellClassName`) rather than through `ListCell`; the Timeline
+  keeps its checkbox field name, cell wrapping and media glyph size.
 
 ## Known shared data-contract limitation
 
@@ -270,4 +309,8 @@ Flutter field-display scenario does not assert that color-only branch.
 - live basic, row lifecycle, icon, linked/native-block serialization,
   duplicate/delete/reload, view-state, property-order, all-field, 100-row, and
   row-template Playwright flows;
+- the PR #1475 revamp: row layout, narrow measurement, peek button, cell
+  style and group header Jest suites, the live "List revamp (desktop PR
+  #1475)" geometry/hover/narrow/overflow/Person/group flows, and the hover
+  peek scenario of `side-peek-entry-points.feature`;
 - TypeScript, ESLint, Prettier, production build, and `git diff --check`.

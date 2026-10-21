@@ -12,7 +12,7 @@ import {
   useFieldSelector,
 } from '@/application/database-yjs';
 import { DateTimeCell } from '@/application/database-yjs/cell.type';
-import { useUpdateCellDispatch } from '@/application/database-yjs/dispatch';
+import type { useUpdateCellDispatch } from '@/application/database-yjs/dispatch';
 import { DatabaseViewLayout } from '@/application/types';
 import { MetadataKey } from '@/application/user-metadata';
 import { ReactComponent as ChevronRight } from '@/assets/icons/alt_arrow_right.svg';
@@ -36,6 +36,7 @@ function DateTimeCellPicker({
   fieldId,
   rowId,
   onCellUpdated,
+  updateCell,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -43,6 +44,7 @@ function DateTimeCellPicker({
   fieldId: string;
   rowId: string;
   onCellUpdated?: (cell: DateTimeCell) => void;
+  updateCell: ReturnType<typeof useUpdateCellDispatch>;
 }) {
   const currentUser = useCurrentUser();
   const { t } = useTranslation();
@@ -83,7 +85,20 @@ function DateTimeCellPicker({
     return value >= 0 && value <= 6 ? (value as 0 | 1 | 2 | 3 | 4 | 5 | 6) : 0;
   }, [currentUser?.metadata]);
 
-  const updateCell = useUpdateCellDispatch(rowId, fieldId);
+  const dateInputsRef = useRef<HTMLDivElement>(null);
+  const handleOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      if (!nextOpen) {
+        const focused = document.activeElement;
+
+        // Radix dismisses on pointer-down/Escape before the input would blur.
+        if (focused instanceof HTMLElement && dateInputsRef.current?.contains(focused)) focused.blur();
+      }
+
+      onOpenChange(nextOpen);
+    },
+    [onOpenChange]
+  );
 
   const setCurrentTime = useCallback(
     (date: Date, time?: Date) => {
@@ -174,18 +189,18 @@ function DateTimeCellPicker({
   const layout = useDatabaseViewLayout();
 
   return (
-    <Popover open={open} onOpenChange={onOpenChange}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger
         style={{
           zIndex: open ? 1 : -1,
         }}
         onPointerDown={() => {
-          onOpenChange(false);
+          handleOpenChange(false);
         }}
         className={'absolute left-0 top-0 z-[-1] h-full w-full bg-transparent'}
       />
       <PopoverContent
-        data-testid="datetime-picker-popover"
+        data-testid='datetime-picker-popover'
         avoidCollisions={true}
         {...(layout === DatabaseViewLayout.Calendar
           ? {
@@ -200,7 +215,7 @@ function DateTimeCellPicker({
         onCloseAutoFocus={(e) => e.preventDefault()}
         className={'w-[260px] overflow-y-auto'}
       >
-        <div className={'flex w-full flex-col gap-2 p-2'}>
+        <div ref={dateInputsRef} className={'flex w-full flex-col gap-2 p-2'}>
           <DateTimeInput
             autoFocus
             timeFormat={typeOptionValue.timeFormat}
@@ -353,7 +368,7 @@ function DateTimeCellPicker({
         )}
         <div className={'px-2 pb-2'}>
           <div
-            data-testid="clear-date-button"
+            data-testid='clear-date-button'
             onClick={(e) => {
               e.stopPropagation();
               setIsRange(false);

@@ -1,10 +1,13 @@
 import { act, renderHook } from '@testing-library/react';
 import * as Y from 'yjs';
 
+import { readChartLayoutSetting } from '@/application/database-yjs/chart-layout-setting';
+import { ChartAggregationType, ChartType } from '@/application/database-yjs/chart.type';
 import { DatabaseContext, type DatabaseContextState } from '@/application/database-yjs/context';
 import {
   CalculationType,
   CalendarLayout,
+  DateGroupCondition,
   FieldType,
   FieldVisibility,
   FilterType,
@@ -789,38 +792,47 @@ describe('configuration production hooks use database history', () => {
     act(() => result.current.history.clear());
     act(() =>
       result.current.updateChartSetting({
-        aggregationType: 4,
-        chartType: 2,
-        cumulative: true,
-        showEmptyValues: true,
+        aggregationType: ChartAggregationType.Median,
+        chartType: ChartType.HorizontalBar,
+        omitEmptyValues: true,
         xFieldId: textFieldId,
         yFieldId: numberFieldId,
       })
     );
-    const getChartSetting = () => fixture.layoutSettings.get('3') as unknown as Y.Map<unknown> | undefined;
+    const getChartSetting = () => fixture.layoutSettings.get('3') as Y.Map<unknown> | undefined;
+    const expectedChartSetting = {
+      aggregationType: ChartAggregationType.Median,
+      chartType: ChartType.HorizontalBar,
+      dateCondition: DateGroupCondition.Month,
+      omitEmptyValues: true,
+      xFieldId: textFieldId,
+      yFieldId: numberFieldId,
+    };
 
-    expect(getChartSetting()?.get('chart_type')).toBe(2);
+    // Desktop's keys and value types: integers as BigInt, Median downgraded
+    // to Count in `aggregation_type` and kept in the `aggregation_type_pb` sidecar.
+    expect(getChartSetting()?.get('chart_type')).toBe(BigInt(ChartType.HorizontalBar));
     expect(getChartSetting()?.get('x_field_id')).toBe(textFieldId);
     expect(getChartSetting()?.get('y_field_id')).toBe(numberFieldId);
-    expect(getChartSetting()?.get('cumulative')).toBe(true);
-    // The legacy camelCase keys are kept in sync for older web builds.
-    expect(getChartSetting()?.get('chartType')).toBe(2);
-    expect(getChartSetting()?.get('xFieldId')).toBe(textFieldId);
+    expect(getChartSetting()?.get('show_empty_values')).toBe(true);
+    expect(readChartLayoutSetting(getChartSetting())).toEqual(expectedChartSetting);
 
     act(() => result.current.history.undo());
     expect(getChartSetting()).toBeUndefined();
 
     act(() => result.current.history.redo());
-    expect(getChartSetting()?.get('chart_type')).toBe(2);
-    expect(getChartSetting()?.get('aggregation_type')).toBe(4);
-    expect(getChartSetting()?.get('show_empty_values')).toBe(true);
+    expect(getChartSetting()?.get('chart_type')).toBe(BigInt(ChartType.HorizontalBar));
+    expect(getChartSetting()?.get('aggregation_type')).toBe(BigInt(ChartAggregationType.Count));
+    expect(getChartSetting()?.get('aggregation_type_pb')).toBe(BigInt(ChartAggregationType.Median));
+    expect(getChartSetting()?.get('date_condition')).toBe(BigInt(DateGroupCondition.Month));
+    expect(readChartLayoutSetting(getChartSetting())).toEqual(expectedChartSetting);
     expect(fixture.layoutSettings.get('2').get(YjsDatabaseKey.field_id)).toBe(numberFieldId);
 
     // Re-selecting the stored values writes nothing, so it records no undo step.
     act(() => result.current.history.clear());
-    act(() => result.current.updateChartSetting({ chartType: 2, aggregationType: 4, cumulative: true }));
+    act(() => result.current.updateChartSetting(expectedChartSetting));
     expect(result.current.history.canUndo).toBe(false);
-    expect(getChartSetting()?.get('chart_type')).toBe(2);
+    expect(getChartSetting()?.get('chart_type')).toBe(BigInt(ChartType.HorizontalBar));
   });
 
   it('updates visibility, wrapping, and width with an undo/redo round trip for each field-display setting', () => {

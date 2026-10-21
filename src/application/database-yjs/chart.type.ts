@@ -3,6 +3,7 @@ import * as Y from 'yjs';
 import { RowId } from '@/application/types';
 
 import { ChartAggregationType, ChartType } from './chart-enums';
+import { readChartLayoutSetting, writeChartLayoutSetting } from './chart-layout-setting';
 import {
   CHART_GROUP_STYLES,
   ChartColorTheme,
@@ -85,6 +86,7 @@ export interface ChartLayoutSetting {
   chartType?: number;
   xFieldId?: string;
   showEmptyValues?: boolean;
+  omitEmptyValues?: boolean;
   aggregationType?: number;
   yFieldId?: string;
   cumulative?: boolean;
@@ -300,6 +302,7 @@ export const ChartLayoutKeys = {
   xFieldId: 'x_field_id',
   showEmptyValues: 'show_empty_values',
   aggregationType: 'aggregation_type',
+  aggregationTypePb: 'aggregation_type_pb',
   yFieldId: 'y_field_id',
   cumulative: 'cumulative',
   dateCondition: 'date_condition',
@@ -307,7 +310,7 @@ export const ChartLayoutKeys = {
   titleText: 'titleText',
 } as const;
 
-export type ChartLayoutField = keyof typeof ChartLayoutKeys;
+export type ChartLayoutField = Exclude<keyof typeof ChartLayoutKeys, 'aggregationTypePb'>;
 
 /**
  * camelCase keys earlier web builds wrote instead of the collab names.
@@ -353,6 +356,11 @@ export function writeChartLayoutValue(
   field: ChartLayoutField,
   value: unknown
 ) {
+  if (map instanceof Y.Map && map.doc) {
+    applyChartLayoutUpdate(map, { [field]: value });
+    return;
+  }
+
   const legacyKey = LEGACY_CHART_LAYOUT_KEYS[field];
 
   setLayoutKeyIfChanged(map, ChartLayoutKeys[field], value);
@@ -370,10 +378,32 @@ export function applyChartLayoutUpdate(
   settings: Partial<ChartLayoutSetting>,
   extended?: ChartExtendedSettingsUpdate
 ) {
-  for (const field of Object.keys(ChartLayoutKeys) as ChartLayoutField[]) {
+  const previous = parseChartLayoutSettings(map);
+  const base: Parameters<typeof writeChartLayoutSetting>[1] = {};
+
+  if (settings.chartType !== undefined) base.chartType = settings.chartType;
+  if (settings.xFieldId !== undefined) base.xFieldId = settings.xFieldId;
+  if (settings.aggregationType !== undefined) base.aggregationType = settings.aggregationType;
+  if (Object.prototype.hasOwnProperty.call(settings, 'yFieldId')) base.yFieldId = settings.yFieldId;
+  if (settings.dateCondition !== undefined) base.dateCondition = settings.dateCondition;
+  if (settings.omitEmptyValues !== undefined) base.omitEmptyValues = settings.omitEmptyValues;
+  else if (settings.showEmptyValues !== undefined) base.omitEmptyValues = !settings.showEmptyValues;
+  if (Object.keys(base).length > 0) writeChartLayoutSetting(map, base);
+
+  // Preserve the fields only dashboard charts use, and the legacy web spelling.
+  for (const field of Object.keys(settings) as (keyof ChartLayoutSetting)[]) {
     const value = settings[field];
 
-    if (value !== undefined) writeChartLayoutValue(map, field, value);
+    if (value === undefined || field === 'omitEmptyValues') continue;
+    if (field === 'cumulative' || field === 'numberFormat' || field === 'titleText') {
+      setLayoutKeyIfChanged(map, ChartLayoutKeys[field], value);
+    }
+
+    const legacyKey = LEGACY_CHART_LAYOUT_KEYS[field];
+
+    if (legacyKey && (map.has(legacyKey) || previous[field] !== value)) {
+      setLayoutKeyIfChanged(map, legacyKey, value);
+    }
   }
 
   if (extended) writeChartExtendedUpdate(map, extended);
@@ -385,6 +415,23 @@ export function applyChartLayoutUpdate(
  * types here so consumers don't have to project again.
  */
 export function parseChartLayoutSettings(map: { get(key: string): unknown }): ChartLayoutSettings {
+  if (map instanceof Y.Map) {
+    const setting = readChartLayoutSetting(map)!;
+
+    return {
+      chartType: setting.chartType,
+      xFieldId: setting.xFieldId,
+      showEmptyValues: !setting.omitEmptyValues,
+      aggregationType: setting.aggregationType,
+      yFieldId: setting.yFieldId,
+      dateCondition: setting.dateCondition,
+      cumulative: Boolean(map.get('cumulative')),
+      numberFormat: parseChartNumberFormat(map.get('numberFormat')),
+      titleText: String(map.get('titleText') ?? ''),
+      extended: parseChartExtendedSettings(map),
+    };
+  }
+
   const read = (field: ChartLayoutField) => readChartLayoutValue(map, field);
   // Persisted Yjs cells may be missing for fields that haven't been
   // explicitly written yet (e.g. only the aggregation was changed).
@@ -506,3 +553,62 @@ export const DATE_GROUPABLE_FIELD_TYPES: readonly FieldType[] = [
 export function isDateGroupableFieldType(fieldType: number): boolean {
   return (DATE_GROUPABLE_FIELD_TYPES as readonly number[]).includes(fieldType);
 }
+
+export function parseChartAggregationTypePb(value: number): ChartAggregationType | null {
+  if (!Number.isInteger(value) || value < ChartAggregationType.Count || value > ChartAggregationType.Range) {
+    return null;
+  }
+
+  return value as ChartAggregationType;
+}
+
+/**
+ * The collab-side `ChartAggregationType` only knows Count/Sum/Average/Min/Max.
+ * Desktop downgrades Median and CountValues to Count before writing
+ * `aggregation_type`; an out-of-range value there makes desktop's serde
+ * decode fail and reset the whole chart setting to defaults.
+ */
+export function toCollabChartAggregationType(type: ChartAggregationType): ChartAggregationType {
+  return type > ChartAggregationType.Max
+    ? ChartAggregationType.Count
+    : type;
+}
+
+
+export type ChartClickItem = ChartDataItem & { color: string };
+export const LegacyChartLayoutKeys = {
+  chartType: 'chartType', xFieldId: 'xFieldId', showEmptyValues: 'showEmptyValues',
+  aggregationType: 'aggregationType', yFieldId: 'yFieldId', dateCondition: 'dateCondition', cumulative: 'cumulative',
+} as const;
+export const GROUPABLE_FIELD_TYPES = CHART_X_FIELD_TYPES;
+export const Y_AXIS_FIELD_TYPES: readonly FieldType[] = [FieldType.Number, FieldType.Checkbox, FieldType.DateTime];
+export const isGroupableFieldType = isChartXFieldType;
+export function isYAxisFieldType(type: number): boolean { return Y_AXIS_FIELD_TYPES.includes(type); }
+
+export const CHART_COLORS = [
+  '#5B8FF9', // Blue
+  '#5AD8A6', // Green
+  '#5D7092', // Gray-blue
+  '#F6BD16', // Yellow
+  '#E86452', // Red
+  '#6DC8EC', // Cyan
+  '#945FB9', // Purple
+  '#FF9845', // Orange
+  '#1E9493', // Teal
+  '#FF99C3', // Pink
+];
+
+export const CHECKBOX_CHECKED_COLOR = '#5AD8A6';
+
+export const CHECKBOX_UNCHECKED_COLOR = '#8F959E';
+
+/** The base keys understood by native chart persistence, excluding dashboard presentation fields. */
+export const NATIVE_CHART_LAYOUT_KEYS = {
+  chartType: ChartLayoutKeys.chartType,
+  xFieldId: ChartLayoutKeys.xFieldId,
+  showEmptyValues: ChartLayoutKeys.showEmptyValues,
+  aggregationType: ChartLayoutKeys.aggregationType,
+  aggregationTypePb: ChartLayoutKeys.aggregationTypePb,
+  yFieldId: ChartLayoutKeys.yFieldId,
+  dateCondition: ChartLayoutKeys.dateCondition,
+} as const;

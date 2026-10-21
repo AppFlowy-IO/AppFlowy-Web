@@ -1,6 +1,7 @@
 import { BaseRange, Descendant, Editor, Operation, Transforms } from 'slate';
 import Y, { Transaction, YEvent } from 'yjs';
 
+import type { FirstBodyOwner } from '@/application/row-document/first-body-owner';
 import { translateYEvents } from '@/application/slate-yjs/utils/applyToSlate';
 import { applyToYjs } from '@/application/slate-yjs/utils/applyToYjs';
 import { yDocToSlateContent } from '@/application/slate-yjs/utils/convert';
@@ -14,9 +15,11 @@ type LocalChange = {
 
 export interface YjsEditor extends Editor {
   readOnly: boolean;
+  firstBody?: FirstBodyOwner;
   isYjsEditor: (value: unknown) => value is YjsEditor;
   connect: () => void;
   disconnect: () => void;
+  activateFirstBody: (doc: Y.Doc) => void;
   sharedRoot: YSharedRoot;
   applyRemoteEvents: (events: Array<YEvent>, transaction: Transaction) => void;
   flushLocalChanges: (origin?: unknown) => void;
@@ -73,9 +76,10 @@ export const YjsEditor = {
 
 export function withYjs<T extends Editor>(
   editor: T,
-  doc: Y.Doc,
+  initialDoc: Y.Doc,
   opts?: {
     id?: string;
+    firstBody?: FirstBodyOwner;
     readOnly: boolean;
     localOrigin: CollabOrigin;
     readSummary?: boolean;
@@ -84,6 +88,7 @@ export function withYjs<T extends Editor>(
     onSelectionChange?: (editor: YjsEditor) => void;
   }
 ): T & YjsEditor {
+  let doc = initialDoc;
   const {
     uploadFile,
     localOrigin = CollabOrigin.Local,
@@ -95,6 +100,8 @@ export function withYjs<T extends Editor>(
   const e = editor as T & YjsEditor;
   const { apply, onChange, select } = e;
 
+  e.firstBody = opts?.firstBody;
+  e.firstBody?.attachEditor(e);
   e.interceptLocalChange = false;
   e.readOnly = readOnly;
   e.uploadFile = uploadFile;
@@ -135,6 +142,7 @@ export function withYjs<T extends Editor>(
   };
 
   const applyIntercept = (op: Operation) => {
+    if (op.type !== 'set_selection' && !e.interceptLocalChange && e.firstBody && !e.firstBody.allowSlateMutation()) return;
     if (YjsEditor.connected(e) && !e.interceptLocalChange) {
       YjsEditor.storeLocalChange(e, op);
     }
@@ -248,6 +256,24 @@ export function withYjs<T extends Editor>(
     connectSet.delete(e);
   };
 
+  e.activateFirstBody = (canonical) => {
+    if (!e.firstBody) throw new Error('This editor does not own a detached row-page body.');
+    const connected = YjsEditor.connected(e);
+
+    doc.off('reset', handleDocReset);
+    if (connected) e.sharedRoot.unobserveDeep(handleYEvents);
+    doc = canonical;
+    e.sharedRoot = canonical.getMap(YjsEditorKey.data_section) as YSharedRoot;
+    e.firstBody = undefined;
+    doc.on('reset', handleDocReset);
+    if (connected) e.sharedRoot.observeDeep(handleYEvents);
+    const content = yDocToSlateContent(canonical);
+
+    // Keeping the same Slate nodes preserves DOM identity, focus and caret for
+    // the common first-writer case. Current peer blocks may require a refresh.
+    if (content && JSON.stringify(content.children) !== JSON.stringify(e.children)) initializeDocumentContent();
+  };
+
   e.storeLocalChange = (op) => {
     const changes = localChanges.get(e) ?? [];
 
@@ -257,6 +283,9 @@ export function withYjs<T extends Editor>(
   e.flushLocalChanges = (origin = localOrigin) => {
     const changes = YjsEditor.localChanges(e);
 
+    // Check before removing the queue: the sealing owner permits its final
+    // authorized flush and refuses all later imperative writes.
+    if (changes.some(({ op }) => op.type !== 'set_selection')) e.firstBody?.assertMutable();
     localChanges.delete(e);
     // parse changes and apply to ydoc
     doc.transact(() => {

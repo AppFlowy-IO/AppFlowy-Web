@@ -12,6 +12,7 @@ import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { DeleteRowConfirm } from '@/components/database/components/database-row/DeleteRowConfirm';
 import { ClearSortingConfirm } from '@/components/database/components/sorts/ClearSortingConfirm';
+import { useRowCreationAction } from '@/components/database/hooks/useRowCreationAction';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -25,6 +26,16 @@ import { Progress } from '@/components/ui/progress';
 import { useListHasSorts } from './ListSortState';
 
 export const getListGroupCellsData = getGroupRowCellsData;
+
+interface RowMenuAction {
+  testId: string;
+  label: string;
+  icon: typeof UpIcon;
+  loading: boolean;
+  /** A returned promise keeps the menu open until it settles. */
+  run: () => void | Promise<void>;
+  destructive?: boolean;
+}
 
 /** The row-creation callbacks a gutter menu needs; how they are produced is the caller's business. */
 export interface RowActionCallbacks {
@@ -53,14 +64,20 @@ export function RowActionsMenu({
 }) {
   const { t } = useTranslation();
   const [loadingAction, setLoadingAction] = useState<'above' | 'below' | 'duplicate' | null>(null);
-  const run = useCallback(async (kind: 'above' | 'below' | 'duplicate', action: () => Promise<unknown>) => {
-    setLoadingAction(kind);
-    try {
-      await action();
-    } finally {
-      setLoadingAction(null);
-    }
-  }, []);
+  const { pending, run: runCreation } = useRowCreationAction();
+  const run = useCallback(
+    async (kind: 'above' | 'below' | 'duplicate', action: () => Promise<unknown>) => {
+      await runCreation(async () => {
+        setLoadingAction(kind);
+        try {
+          return await action();
+        } finally {
+          setLoadingAction(null);
+        }
+      });
+    },
+    [runCreation]
+  );
   const hasSorts = useListHasSorts();
   const [menuOpen, setMenuOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -81,7 +98,7 @@ export function RowActionsMenu({
   );
 
   const actions = useMemo(
-    () => [
+    (): RowMenuAction[] => [
       {
         testId: 'row-menu-insert-above',
         label: t('grid.row.insertRecordAbove'),
@@ -101,7 +118,7 @@ export function RowActionsMenu({
         label: t('grid.row.duplicate'),
         icon: DuplicateIcon,
         loading: loadingAction === 'duplicate',
-        run: () => void run('duplicate', duplicate),
+        run: () => run('duplicate', duplicate),
       },
       {
         testId: 'row-menu-delete',
@@ -125,6 +142,8 @@ export function RowActionsMenu({
           aria-label={t('tooltip.addNewRow')}
           className='h-[30px] w-5 rounded-[4px] p-[3px] text-icon-secondary'
           data-testid={`list-row-add-below-${rowId}`}
+          disabled={pending}
+          aria-busy={pending}
           loading={loadingAction === 'above' || loadingAction === 'below'}
           onClick={(event) => {
             event.stopPropagation();
@@ -177,10 +196,12 @@ export function RowActionsMenu({
                 {actions.map((action) => (
                   <DropdownMenuItem
                     data-testid={action.testId}
+                    disabled={pending}
                     key={action.testId}
-                    onSelect={(event) => {
+                    onSelect={async (event) => {
                       event.preventDefault();
-                      action.run();
+                      // Duplicate resolves after the copy commits, so its spinner stays visible.
+                      await action.run();
                       setMenuOpen(false);
                     }}
                     variant={action.destructive ? 'destructive' : 'default'}

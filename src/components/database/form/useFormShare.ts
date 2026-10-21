@@ -13,6 +13,7 @@ import {
 import { YjsDatabaseKey } from '@/application/types';
 import { useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
 import { useAuthenticatedUserIdOptional } from '@/components/main/app.hooks';
+import { getErrorDiagnostic } from '@/utils/errors';
 
 /**
  * Errors that warrant a retry rather than a final-state UI commit.
@@ -293,7 +294,7 @@ function validatedShareUrl(info: FormShareInfo | null): string {
 }
 
 function isBootstrapRetryableError(err: unknown): boolean {
-  const e = err as { code?: number; message?: string } | null | undefined;
+  const e = err as { code?: number } | null | undefined;
 
   // The server asks us to retry when a permission generation changes during
   // its checks. Start again with GET so every attempt rechecks authorization.
@@ -306,12 +307,9 @@ function isBootstrapRetryableError(err: unknown): boolean {
   if (e?.code === ERROR_CODE.RECORD_NOT_FOUND) return true;
 
   // Older cloud builds did not consistently attach the canonical code. Keep a
-  // narrow message fallback that requires the error to identify the view.
-  if (e?.message && /view.*(?:not found|does not exist)|(?:not found|does not exist).*view/i.test(e.message)) {
-    return true;
-  }
-
-  return false;
+  // narrow diagnostic fallback that requires the error to identify the view.
+  // Display messages may be localized or replaced by public server metadata.
+  return /view.*(?:not found|does not exist)|(?:not found|does not exist).*view/i.test(getErrorDiagnostic(err));
 }
 
 function coerceSubmissionAccess(

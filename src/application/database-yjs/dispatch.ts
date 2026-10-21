@@ -1,16 +1,18 @@
 import dayjs from 'dayjs';
 import { t } from 'i18next';
 import { nanoid } from 'nanoid';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef } from 'react';
 import * as Y from 'yjs';
 
+import { assertDatabaseViewCapacity } from '@/application/database-yjs/database-view-capacity';
+import { atomicRead, captureAtomicCreationOwner } from '@/application/atomic-creation';
 import { resolveUserAttributionUid, touchRowAttribution } from '@/application/database-yjs/attribution';
 import { CalendarLayoutUpdate, updateCalendarLayoutSetting } from '@/application/database-yjs/calendar-layout';
 import { cloneDatabaseCell } from '@/application/database-yjs/cell.clone';
 import { normalizeLegacyCellFieldType } from '@/application/database-yjs/cell.field-type';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import type { ChartExtendedSettingsUpdate } from '@/application/database-yjs/chart-extended-settings';
-import { applyChartLayoutUpdate, type ChartLayoutSetting } from '@/application/database-yjs/chart.type';
+import { applyChartLayoutUpdate, CHART_LAYOUT_SETTINGS_KEY, type ChartLayoutSetting } from '@/application/database-yjs/chart.type';
 import { DEFAULT_FIELD_WRAP } from '@/application/database-yjs/const';
 import {
   useDatabase,
@@ -36,6 +38,7 @@ import {
   DatabaseViewDocDeps,
   deleteDatabaseViewInDoc,
 } from '@/application/database-yjs/database-view-doc-ops';
+import { createDefaultDatabaseView } from '@/application/database-yjs/creation/create-default-view';
 import {
   AITranslateLanguage,
   CalculationType,
@@ -80,6 +83,8 @@ import {
   initializeGalleryLayoutSetting,
 } from '@/application/database-yjs/gallery-layout';
 import {
+  getDateGroupId,
+  getGroupCellData,
   getGroupColumns,
   isDatabaseGroupableFieldType,
   parseDateGroupConfiguration,
@@ -133,12 +138,12 @@ import {
   RowId,
   TimeFormat,
   UpdatePagePayload,
+  View,
   YDatabase,
   YDatabaseBoardLayoutSetting,
   YDatabaseCalendarLayoutSetting,
   YDatabaseCell,
   YDatabaseCells,
-  YDatabaseChartLayoutSetting,
   YDatabaseField,
   YDatabaseFieldOrders,
   YDatabaseFields,
@@ -164,7 +169,9 @@ import {
   YSharedRoot,
 } from '@/application/types';
 import { MetadataKey } from '@/application/user-metadata';
+import { isDatabaseContainer, isEmbeddedDatabaseViewWithoutChildren, isEmbeddedView } from '@/application/view-utils';
 import { getWorkspacePlanPolicy } from '@/application/workspace-plan-policy';
+import { AppOutlineContext } from '@/components/app/contexts/AppOutlineContext';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Log } from '@/utils/log';
 
@@ -328,7 +335,7 @@ function generateGroupByField(field: YDatabaseField) {
   return group;
 }
 
-export function useGroupByFieldDispatch() {
+export function useGroupByFieldDispatch({ preserveFilters = false }: { preserveFilters?: boolean } = {}) {
   const view = useDatabaseView();
   // Grouping writes the shared view; in a View-mode dashboard widget `view`
   // is the viewer's overlay for filters, so the filter cleanup reads the real one.
@@ -366,9 +373,12 @@ export function useGroupByFieldDispatch() {
         [
           () => {
             const layout = Number(view.get(YjsDatabaseKey.layout)) as DatabaseViewLayout;
-            const supportsOptionalGrouping = layout === DatabaseViewLayout.Grid || layout === DatabaseViewLayout.List;
+            const supportsOptionalGrouping =
+              layout === DatabaseViewLayout.Grid ||
+              layout === DatabaseViewLayout.List ||
+              layout === DatabaseViewLayout.Timeline;
 
-            if (!supportsOptionalGrouping) {
+            if (!supportsOptionalGrouping && !preserveFilters) {
               // Board keeps its existing behavior: a field cannot simultaneously
               // act as the grouping source and as a filter.
               const filters = (sharedView ?? view).get(YjsDatabaseKey.filters);
@@ -408,7 +418,7 @@ export function useGroupByFieldDispatch() {
         'groupByField'
       );
     },
-    [database, sharedRoot, sharedView, view]
+    [database, sharedRoot, sharedView, view, preserveFilters]
   );
 }
 
@@ -541,35 +551,59 @@ export function useUpdateDateGroupConditionDispatch() {
         sharedRoot,
         [
           () => {
-            const groups = view?.get(YjsDatabaseKey.groups);
-            const currentGroup = groups?.get(0);
-            const fieldId = currentGroup?.get(YjsDatabaseKey.field_id);
+            const group = view?.get(YjsDatabaseKey.groups)?.toArray()[0];
+            const fieldId = group?.get(YjsDatabaseKey.field_id);
             const field = fieldId ? database.get(YjsDatabaseKey.fields)?.get(fieldId) : undefined;
 
-            if (!groups || !currentGroup || !field) throw new Error('Date group not found');
+            if (!group || !field) throw new Error('Date group not found');
             if (Number(field.get(YjsDatabaseKey.type)) !== FieldType.DateTime) {
               throw new Error('Grouping field is not a date field');
             }
 
-            const configuration = parseDateGroupConfiguration(currentGroup.get(YjsDatabaseKey.content));
+            const configuration = parseDateGroupConfiguration(group.get(YjsDatabaseKey.content));
 
             if (configuration.condition === condition) return;
 
-            // Desktop rebuilds the group setting when its date condition
-            // changes. Old day/week/month/year IDs are categorically invalid
-            // under the new condition, so replacing this map is safe even when
-            // some offscreen row documents are only seed snapshots.
-            const replacement = generateGroupByField(field);
+            // Desktop (database_editor_group.rs set_group_by_field) keeps the
+            // setting for the same field and only rewrites its content, so the
+            // setting id, per-group visibility/colour and collapsed ids survive
+            // a condition change. Old day/week/month/year IDs are categorically
+            // invalid under the new condition, so prune them the way the Number
+            // path does: an ID is still valid only when the date it encodes maps
+            // back onto itself under the new condition.
+            group.set(YjsDatabaseKey.content, JSON.stringify({ ...configuration, condition }));
 
-            replacement.set(YjsDatabaseKey.content, JSON.stringify({ ...configuration, condition }));
+            const isValid = (id: string) => {
+              if (id === fieldId) return true;
+
+              const value = getGroupCellData(id, field);
+
+              return value !== undefined && getDateGroupId(value, condition) === id;
+            };
+
+            const columns = group.get(YjsDatabaseKey.groups);
+
+            if (columns) {
+              for (let index = columns.length - 1; index >= 0; index--) {
+                if (!isValid(getDatabaseGroupColumnId(columns.get(index)) ?? '')) columns.delete(index);
+              }
+            }
+
+            const collapsed = group.get(YjsDatabaseKey.collapsed_group_ids);
+
+            if (collapsed instanceof Y.Array) {
+              for (let index = collapsed.length - 1; index >= 0; index--) {
+                if (!isValid(collapsed.get(index))) collapsed.delete(index);
+              }
+            } else if (Array.isArray(collapsed)) {
+              group.set(YjsDatabaseKey.collapsed_group_ids, Y.Array.from(collapsed.filter(isValid)));
+            }
+
             const layout = Number(view?.get(YjsDatabaseKey.layout)) as DatabaseViewLayout;
 
             if (layout === DatabaseViewLayout.Grid || layout === DatabaseViewLayout.List) {
-              markLocalDatabaseGroupInitialization(replacement);
+              markLocalDatabaseGroupInitialization(group);
             }
-
-            groups.delete(0, groups.length);
-            groups.insert(0, [replacement]);
           },
         ],
         'updateDateGroupCondition'
@@ -2684,34 +2718,106 @@ function useDatabaseViewDocDeps(): DatabaseViewDocDeps {
   );
 }
 
-/**
- * Hook to add a new database view (Grid, Board, or Calendar tab).
- * Creates a new view tab as a child of the main database page.
- */
+export const FORM_VIEW_CREATION_REQUIRES_WRITE_PERMISSION =
+  'Edit access is required to create or duplicate a Form view.';
+
 export function useAddDatabaseView() {
-  const deps = useDatabaseViewDocDeps();
+  const docDeps = useDatabaseViewDocDeps();
+  const { databasePageId, activeViewId, databaseDoc, workspaceId, isDocumentBlock, readOnly, canWrite } = useDatabaseContext();
+  const outline = useContext(AppOutlineContext);
+  const outlineRef = useRef(outline);
+  const canCreate = !readOnly && canWrite !== false;
+  const canCreateRef = useRef(canCreate);
 
-  return useCallback(
-    async (layout: DatabaseViewLayout, nameOverride?: string, options?: AddDatabaseViewOptions) => {
-      const viewId = await createDatabaseViewInDoc(deps, layout, nameOverride, options);
+  outlineRef.current = outline;
+  canCreateRef.current = canCreate;
+  const lifetime = useMemo(() => ({ current: true, databaseDoc, workspaceId, databasePageId }), [databaseDoc, workspaceId, databasePageId]);
 
-      // R-MODE: a dashboard created here opens in Edit mode on its first load.
-      if (layout === DatabaseViewLayout.Dashboard) markDashboardCreatedThisSession(viewId);
-      return viewId;
-    },
-    [deps]
-  );
+  useEffect(() => {
+    lifetime.current = true;
+    const retire = () => { lifetime.current = false; };
+
+    databaseDoc.on('destroy', retire);
+    return () => { retire(); databaseDoc.off('destroy', retire); };
+  }, [lifetime, databaseDoc]);
+
+  return useCallback(async (layout: DatabaseViewLayout, nameOverride?: string, options?: AddDatabaseViewOptions) => {
+    if (!canCreateRef.current) throw new Error(FORM_VIEW_CREATION_REQUIRES_WRITE_PERMISSION);
+    assertDatabaseViewCapacity(databaseDoc);
+    if (layout === DatabaseViewLayout.Dashboard || options?.dashboardOwner) {
+      const id = await createDatabaseViewInDoc(docDeps, layout, nameOverride, options);
+
+      if (layout === DatabaseViewLayout.Dashboard) markDashboardCreatedThisSession(id);
+      return id;
+    }
+
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase | undefined;
+    const databaseId = database?.get(YjsDatabaseKey.id);
+
+    if (!databaseId || !databasePageId) throw new Error('Database creation source is unavailable');
+    const owner = captureAtomicCreationOwner(workspaceId, () => {
+      if (!lifetime.current) throw new Error('Database creation owner changed');
+      if (!canCreateRef.current) throw new Error(FORM_VIEW_CREATION_REQUIRES_WRITE_PERMISSION);
+    });
+    const requestViewId = activeViewId || databasePageId;
+    const load = (id: string) => atomicRead<View>(owner, `/api/workspace/${workspaceId}/view/${id}`, { depth: 1 });
+    const current = await load(requestViewId);
+    let container: View;
+
+    if (isDatabaseContainer(current) && !isEmbeddedDatabaseViewWithoutChildren(current)) container = current;
+    else {
+      const parent = current.parent_view_id ? await load(current.parent_view_id) : undefined;
+
+      if (isDatabaseContainer(parent)) container = parent as View;
+      else if ((isEmbeddedView(current) || isDocumentBlock) && parent) container = parent;
+      else container = current.view_id === databasePageId ? current : await load(databasePageId);
+    }
+
+    owner.assertCurrent();
+    const index = options?.insertBeforeViewId
+      ? (container.children ?? []).findIndex((child) => child.view_id === options.insertBeforeViewId) : -1;
+
+    if (options?.insertBeforeViewId && index < 0) throw new Error('The source view is no longer in its Folder parent');
+    const names = ['Grid', 'Board', 'Calendar', 'Chart', 'List', 'Gallery', 'Feed', 'Form builder', 'Timeline'];
+
+    return createDefaultDatabaseView({
+      workspaceId, databaseDoc, databaseId, parentViewId: container.view_id,
+      sourceViewId: options?.sourceViewId, layout, name: nameOverride ?? names[layout],
+      embedded: isDatabaseContainer(container) ? isEmbeddedView(container) : isEmbeddedView(current) || Boolean(isDocumentBlock),
+      position: index >= 0 ? { kind: 'index', index } : { kind: 'end' },
+      assertCurrent: () => owner.assertCurrent(),
+      activate: async (id) => {
+        const ensure = outlineRef.current?.ensureViewVisibleInOutline;
+
+        if (!ensure) throw new Error('The sidebar creation owner is unavailable');
+        owner.assertCurrent();
+        const ancestors = await ensure(id);
+
+        owner.assertCurrent();
+        if (ancestors.length === 0) throw new Error('Created view is missing from the sidebar');
+      },
+    });
+  }, [databasePageId, activeViewId, databaseDoc, workspaceId, isDocumentBlock, lifetime, docDeps]);
 }
 
-/** Duplicate a database tab (see `duplicateDatabaseViewWithOwnedWidgets`). */
+/** Clone current authoritative view settings in the same graph transaction as its Folder child. */
 export function useDuplicateDatabaseView() {
   const deps = useDatabaseViewDocDeps();
+  const database = useDatabase();
+  const addDatabaseView = useAddDatabaseView();
 
-  return useCallback(
-    (sourceViewId: string, duplicatedName?: string) =>
-      duplicateDatabaseViewWithOwnedWidgets(deps, sourceViewId, duplicatedName),
-    [deps]
-  );
+  return useCallback(async (sourceViewId: string, duplicatedName?: string) => {
+    const source = database.get(YjsDatabaseKey.views)?.get(sourceViewId);
+
+    if (!source) throw new Error('Database view not found');
+    if (Number(source.get(YjsDatabaseKey.layout)) === DatabaseViewLayout.Dashboard) {
+      return duplicateDatabaseViewWithOwnedWidgets(deps, sourceViewId, duplicatedName);
+    }
+
+    return addDatabaseView(Number(source.get(YjsDatabaseKey.layout)) as DatabaseViewLayout,
+      duplicatedName?.trim() || `${source.get(YjsDatabaseKey.name) || 'View'} (Copy)`,
+      { insertBeforeViewId: sourceViewId, sourceViewId });
+  }, [addDatabaseView, database, deps]);
 }
 
 /**
@@ -3225,6 +3331,7 @@ export function useSwitchPropertyType() {
               // Check if the field type is supported for type options
               if (
                 [
+                  FieldType.RichText,
                   FieldType.Number,
                   FieldType.SingleSelect,
                   FieldType.MultiSelect,
@@ -4910,11 +5017,12 @@ export function useUpdateChartSetting() {
               view.set(YjsDatabaseKey.layout_settings, layoutSettings);
             }
 
-            let layoutSetting = layoutSettings.get('3') as Y.Map<unknown> | undefined;
+            const storedSetting: unknown = layoutSettings.get(CHART_LAYOUT_SETTINGS_KEY);
+            // Like desktop's `get_or_init`, an entry that is not a map is replaced.
+            const layoutSetting = storedSetting instanceof Y.Map ? storedSetting : new Y.Map<unknown>();
 
-            if (!layoutSetting) {
-              layoutSetting = new Y.Map();
-              layoutSettings.set('3', layoutSetting as unknown as YDatabaseChartLayoutSetting);
+            if (layoutSetting !== storedSetting) {
+              layoutSettings.set(CHART_LAYOUT_SETTINGS_KEY, layoutSetting);
             }
 
             applyChartLayoutUpdate(layoutSetting, settings, extended);

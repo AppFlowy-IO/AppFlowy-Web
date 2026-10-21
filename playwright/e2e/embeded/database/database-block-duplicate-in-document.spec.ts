@@ -73,6 +73,8 @@ async function getDatabaseBlockState(page: Page, docViewId: string) {
 }
 
 async function waitForInlineDuplicateRewrite(page: Page, docViewId: string): Promise<void> {
+  // Deep copying waits for the server copy and then the new database's row
+  // snapshot. The placeholder appears before either operation has finished.
   await expect
     .poll(
       async () => {
@@ -96,7 +98,7 @@ async function waitForInlineDuplicateRewrite(page: Page, docViewId: string): Pro
           firstDatabaseId !== secondDatabaseId
         );
       },
-      { timeout: 15000 }
+      { timeout: 30000, message: 'Inline duplicate resolves to its own view and database' }
     )
     .toBe(true);
 }

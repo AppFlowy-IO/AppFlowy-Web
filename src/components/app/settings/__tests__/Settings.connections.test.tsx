@@ -33,6 +33,12 @@ const renderSettings = (open = true) => (
 );
 
 describe('Connections settings lifecycle', () => {
+  beforeAll(async () => {
+    // Keep cold module transformation outside RTL's short query timeout under coverage.
+    // The real lazy panel still mounts only when Connections is selected.
+    await import('../ConnectionsPanel');
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockWorkspaceId = 'workspace-1';

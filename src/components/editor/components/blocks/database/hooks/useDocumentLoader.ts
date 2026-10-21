@@ -1,4 +1,5 @@
 import EventEmitter from 'events';
+
 import { useCallback, useEffect, useState } from 'react';
 
 import { deleteCollabDB } from '@/application/db';
@@ -92,7 +93,11 @@ export function useDocumentLoader({
 
         try {
           Log.debug('[useDocumentLoader] attempt', { viewIdToLoad, attempt, retries });
-          const result = await loadView(viewIdToLoad, false, false, { databaseId });
+          const result = await loadView(viewIdToLoad, false, false, {
+            databaseId,
+            databaseMetadataOnly: true,
+            preserveViewMetadata: true,
+          });
 
           if (result) {
             Log.debug('[useDocumentLoader] loadView returned doc', { viewIdToLoad, attempt });
@@ -195,21 +200,20 @@ export function useDocumentLoader({
     if (!doc || !bindViewSync || scheduleDeferredCleanup || syncBound) return;
 
     const docWithMeta = doc as YDocWithMeta;
-    const docViewId = docWithMeta.view_id ?? docWithMeta.object_id;
+    const docViewId = docWithMeta.view_id ?? docWithMeta.object_id ?? doc.guid;
+    // A linked view can share a canonical doc whose metadata belongs to the
+    // full-page view. Sync is keyed by the database, not by its individual views.
+    const matchesDatabase = databaseId && (docWithMeta.object_id ?? doc.guid) === databaseId;
 
-    if (docViewId !== viewId) return;
+    if (docViewId !== viewId && !matchesDatabase) return;
 
-    if (docWithMeta._syncBound) {
-      setSyncBound(true);
-      return;
-    }
-
+    if (docWithMeta._syncBound) return;
     const syncContext = bindViewSync(doc);
 
     if (syncContext) {
       setSyncBound(true);
     }
-  }, [doc, bindViewSync, scheduleDeferredCleanup, syncBound, viewId]);
+  }, [doc, bindViewSync, scheduleDeferredCleanup, syncBound, viewId, databaseId]);
 
   // Otherwise the loader owns one binding of the doc, next to those of every
   // other view of the database, and releases it when it unmounts or its doc

@@ -28,6 +28,7 @@ import { ListLoadMore, ListLoadMoreIndicator, ListLoadingIndicator, ListNewRow }
 import { ListGroupFooter, ListGroupHeader, ListGroupSeparator } from './ListGroup';
 import { useListGrouping } from './ListGroupingContext';
 import { ListRow } from './ListRow';
+import { ListRowLayoutScope } from './ListRowLayout';
 import { ListSortSubscription } from './ListSortState';
 
 import type { Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
@@ -254,9 +255,9 @@ function ListContent() {
 
   return (
     <div className={containerClassName} data-testid='database-list' ref={scrollContainerRef}>
-      <div className='w-full py-2' style={contentStyle}>
+      <ListRowLayoutScope className='w-full py-2' style={contentStyle}>
         {readOnly ? rowsContent : <ListSortSubscription>{rowsContent}</ListSortSubscription>}
-      </div>
+      </ListRowLayoutScope>
     </div>
   );
 }

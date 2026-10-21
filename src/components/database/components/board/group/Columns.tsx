@@ -28,6 +28,7 @@ import {
 import { YjsDatabaseKey } from '@/application/types';
 import { useAIEnabled } from '@/components/app/app.hooks';
 import { BoardCardFieldsContext, CardFieldInfo } from '@/components/database/components/board/card/CardPrimitive';
+import { getRenderedBoardColumns } from '@/application/database-yjs/board-grouping';
 import { Column } from '@/components/database/components/board/column';
 import {
   CardListSizingContext,
@@ -262,18 +263,10 @@ const Columns = forwardRef<
   const columnsWithRows = useMemo(() => {
     if (!groupResult) return [];
 
-    return columns
-      .map((data) => {
-        if (!groupResult.has(data.id)) {
-          return null;
-        }
-
-        return {
-          ...data,
-          rows: groupResult.get(data.id) || [],
-        };
-      })
-      .filter(Boolean) as (GroupColumn & { rows: Row[] })[];
+    return getRenderedBoardColumns(columns, groupResult).map((data) => ({
+      ...data,
+      rows: groupResult.get(data.id) || [],
+    }));
   }, [columns, groupResult]);
   const shownColumnIds = useMemo(() => new Set(columnsWithRows.map((column) => column.id)), [columnsWithRows]);
 

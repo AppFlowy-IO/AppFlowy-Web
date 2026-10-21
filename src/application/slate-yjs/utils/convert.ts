@@ -1,5 +1,6 @@
 import { Element, Node, Text } from 'slate';
 
+import { hasDirectBlockText } from '@/application/slate-yjs/command/const';
 import { BlockJson } from '@/application/slate-yjs/types';
 import { sortTableCells } from '@/application/slate-yjs/utils/table';
 import {
@@ -57,16 +58,7 @@ export function traverseBlock(id: string, sharedRoot: YSharedRoot): Element | un
   let textId = block.external_id as string;
 
   // SimpleTable and SimpleTableRow are containers but should not have text content directly
-  if (
-    slateNode.type === BlockType.SimpleTableBlock ||
-    slateNode.type === BlockType.SimpleTableRowBlock ||
-    slateNode.type === BlockType.SimpleTableCellBlock ||
-    slateNode.type === BlockType.AIMeetingBlock ||
-    slateNode.type === BlockType.AIMeetingSummaryBlock ||
-    slateNode.type === BlockType.AIMeetingNotesBlock ||
-    slateNode.type === BlockType.AIMeetingTranscriptionBlock ||
-    slateNode.type === BlockType.AIMeetingSpeakerBlock
-  ) {
+  if (!hasDirectBlockText(slateNode.type as BlockType)) {
     textId = '';
   }
 

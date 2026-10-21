@@ -3,12 +3,13 @@ import { Editor, Element, Path } from 'slate';
 import { YEvent, YMapEvent, YTextEvent } from 'yjs';
 
 import { YjsEditor } from '@/application/slate-yjs';
+import { hasDirectBlockText } from '@/application/slate-yjs/command/const';
 import { BlockJson } from '@/application/slate-yjs/types';
 import { applyTextYEvent } from '@/application/slate-yjs/utils/applyTextToSlate';
 import { blockToSlateNode, deltaInsertToSlateNode } from '@/application/slate-yjs/utils/convert';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
 import { dataStringTOJson, getBlock, getChildrenArray, getPageId, getText } from '@/application/slate-yjs/utils/yjs';
-import { YBlock, YjsEditorKey } from '@/application/types';
+import { BlockType, YBlock, YjsEditorKey } from '@/application/types';
 import { Log } from '@/utils/log';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -261,7 +262,9 @@ function handleNewBlock(editor: YjsEditor, key: string, keyPath: Record<string, 
 
   const slateNode = blockToSlateNode(block.toJSON() as BlockJson);
   const textId = block.get(YjsEditorKey.block_external_id);
-  const yText = getText(textId, editor.sharedRoot);
+  // Match traverseBlock when inserting into an already connected editor.
+  // Legacy containers can have an unused YText; rendering it adds a blank row.
+  const yText = hasDirectBlockText(slateNode.type as BlockType) ? getText(textId, editor.sharedRoot) : undefined;
   let textNode: Element | undefined;
 
   Log.debug(`📊 Block creation details:`, {

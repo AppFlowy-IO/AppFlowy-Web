@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, jest } from '@jest/globals';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { ViewLayout } from '@/application/types';
 import type { View } from '@/application/types';
@@ -13,7 +13,8 @@ const mockSearchWorkspaceDocumentPage = jest.fn();
 const mockGenerateSearchSummary = jest.fn();
 const mockGetView = jest.fn();
 const mockGetMultipleViews = jest.fn();
-let mockAppOutline: View[] = [];
+let mockAppOutline: View[] | undefined = [];
+let mockWorkspaceId = 'workspace-id';
 let mockOverviewSources: Array<{
   ragId: string;
   ownerViewId?: string;
@@ -31,7 +32,7 @@ jest.mock('react-i18next', () => ({
 jest.mock('@/components/app/app.hooks', () => ({
   useAIEnabled: () => mockUseAIEnabled(),
   useAppOutline: () => mockAppOutline,
-  useCurrentWorkspaceId: () => 'workspace-id',
+  useCurrentWorkspaceId: () => mockWorkspaceId,
 }));
 
 jest.mock('@/application/services/domains', () => ({
@@ -55,12 +56,23 @@ jest.mock('@/components/app/search/SearchAIOverview', () => ({
 
 jest.mock('@/components/app/search/ViewList', () => ({
   __esModule: true,
-  default: ({ header, items }: { header?: ReactNode; items?: Array<{ id: string; view: { name: string } }> }) => (
+  default: ({
+    header,
+    items,
+    hasMore,
+    onLoadMore,
+  }: {
+    header?: ReactNode;
+    items?: Array<{ id: string; view: { name: string } }>;
+    hasMore?: boolean;
+    onLoadMore?: () => void;
+  }) => (
     <div data-testid='view-list'>
       {header ? <div data-testid='search-header'>{header}</div> : null}
       {items?.map((item) => (
         <div key={item.id}>{item.view.name}</div>
       ))}
+      {hasMore && <button onClick={onLoadMore}>Load more</button>}
     </div>
   ),
 }));
@@ -87,6 +99,7 @@ describe('BestMatch', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockAppOutline = [];
+    mockWorkspaceId = 'workspace-id';
     mockOverviewSources = [];
     mockCanAskFollowUp = false;
     mockUseAIEnabled.mockReturnValue(true);
@@ -109,11 +122,79 @@ describe('BestMatch', () => {
     expect(screen.queryByTestId('ai-overview')).toBeNull();
   });
 
-  it('mounts the AI overview header when AI is enabled', () => {
+  it('mounts the AI overview header when AI is enabled', async () => {
     renderBestMatch();
 
     expect(screen.getByTestId('search-header')).toBeTruthy();
-    expect(screen.getByTestId('ai-overview')).toBeTruthy();
+    expect(await screen.findByTestId('ai-overview')).toBeTruthy();
+  });
+
+  it('updates renamed results without repeating the query or losing loaded pages', async () => {
+    mockAppOutline = [
+      createView({ view_id: 'first', name: 'First page' }),
+      createView({ view_id: 'second', name: 'Second page' }),
+    ];
+    mockSearchWorkspaceDocumentPage
+      .mockResolvedValueOnce({ has_more: true, items: [{ object_id: 'first' }], next_offset: 10 })
+      .mockResolvedValueOnce({ has_more: false, items: [{ object_id: 'second' }], next_offset: null });
+    const { rerender } = renderBestMatch('page');
+
+    await screen.findByText('First page');
+    fireEvent.click(screen.getByText('Load more'));
+    await screen.findByText('Second page');
+    mockAppOutline = [createView({ view_id: 'first', name: 'Renamed page' }), mockAppOutline[1]];
+    rerender(<BestMatch askingAI={false} searchValue='page' onAskAI={jest.fn()} onClose={jest.fn()} />);
+    await screen.findByText('Renamed page');
+    expect(screen.getByText('Second page')).toBeTruthy();
+    expect(mockSearchWorkspaceDocumentPage).toHaveBeenCalledTimes(2);
+    expect(mockGenerateSearchSummary).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores an old workspace response after switching workspaces with the same query', async () => {
+    let resolveOld!: (value: unknown) => void;
+
+    mockSearchWorkspaceDocumentPage.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveOld = resolve;
+      })
+    );
+    mockAppOutline = [createView({ view_id: 'old', name: 'Old workspace page' })];
+    const { rerender } = renderBestMatch('page');
+
+    await waitFor(() => expect(mockSearchWorkspaceDocumentPage).toHaveBeenCalledTimes(1));
+    mockWorkspaceId = 'next-workspace';
+    mockAppOutline = [createView({ view_id: 'new', name: 'New workspace page' })];
+    mockSearchWorkspaceDocumentPage.mockResolvedValue({
+      has_more: false,
+      items: [{ object_id: 'new' }],
+      next_offset: null,
+    });
+    rerender(<BestMatch askingAI={false} searchValue='page' onAskAI={jest.fn()} onClose={jest.fn()} />);
+    await screen.findByText('New workspace page');
+    await act(async () => {
+      resolveOld({ has_more: false, items: [{ object_id: 'old' }], next_offset: null });
+    });
+    expect(screen.queryByText('Old workspace page')).toBeNull();
+    expect(screen.getByText('New workspace page')).toBeTruthy();
+    expect(mockGenerateSearchSummary).toHaveBeenLastCalledWith('next-workspace', 'page');
+  });
+
+  it('searches before the outline loads and uses the outline when it arrives', async () => {
+    mockAppOutline = undefined;
+    mockSearchWorkspaceDocumentPage.mockResolvedValue({
+      has_more: false,
+      items: [{ object_id: 'view-id' }],
+      next_offset: null,
+    });
+    mockGetView.mockResolvedValue(createView({ name: 'Fetched page' }));
+    const { rerender } = renderBestMatch('page');
+
+    await screen.findByText('Fetched page');
+    mockAppOutline = [createView({ name: 'Updated page' })];
+    rerender(<BestMatch askingAI={false} searchValue='page' onAskAI={jest.fn()} onClose={jest.fn()} />);
+    await screen.findByText('Updated page');
+    expect(mockSearchWorkspaceDocumentPage).toHaveBeenCalledTimes(1);
+    expect(mockGenerateSearchSummary).toHaveBeenCalledTimes(1);
   });
 
   it('loads view metadata for search results missing from the current outline', async () => {

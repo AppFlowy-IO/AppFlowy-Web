@@ -42,6 +42,8 @@ const ALLOWED: Record<string, string> = {
   // New-cell builders.
   'application/database-yjs/dispatch/new-row-cells.ts:populateNewRowCells': 'new row',
   'application/database-yjs/dispatch/relation.ts:createRowInRelatedDatabase': 'new related row',
+  'application/database-yjs/creation/row-template-graph-data.ts:archivedRowDocument':
+    'new detached row copied from an archive',
   'application/database-yjs/template/cell.ts:createTemplateCell': 'new cell',
   'application/database-yjs/template/cell.ts:applyTemplateCellsToRow': 'new row from a template',
   'application/database-yjs/fields/checkbox/utils.ts:createCheckboxCell': 'new cell',

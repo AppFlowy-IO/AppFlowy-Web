@@ -9,9 +9,6 @@ import {
 } from '@/application/types';
 
 import { createLinkedDatabaseDashboardView, duplicateLinkedDatabaseDashboardView } from './dashboard-page';
-import { createLinkedDatabaseFeedView } from './feed-layout';
-import { createLinkedDatabaseGalleryView } from './gallery-layout';
-import { createLinkedDatabaseListView } from './list-layout';
 
 /**
  * A linked view of an existing database, as a document block shows it: the
@@ -69,9 +66,6 @@ async function createLinkedDashboardView(params: CreateLinkedDatabaseViewParams)
 
 /** The layouts whose linked view needs more than the server's create call. */
 const LINKED_DATABASE_VIEW_CREATORS: Partial<Record<ViewLayout, LinkedDatabaseViewCreator>> = {
-  [ViewLayout.List]: createLinkedDatabaseListView,
-  [ViewLayout.Gallery]: createLinkedDatabaseGalleryView,
-  [ViewLayout.Feed]: createLinkedDatabaseFeedView,
   [ViewLayout.Dashboard]: createLinkedDashboardView,
 };
 

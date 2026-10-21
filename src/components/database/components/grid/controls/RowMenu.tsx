@@ -15,6 +15,15 @@ import { Progress } from '@/components/ui/progress';
  * costs nothing; the delete confirm it opens lives with the row's controls,
  * which outlive the menu (W8).
  */
+interface RowMenuAction {
+  testId: string;
+  label: string;
+  icon: typeof UpIcon;
+  loading?: boolean;
+  /** A returned promise keeps the menu open until it settles. */
+  onSelect: () => void | Promise<void>;
+}
+
 function RowMenu({
   rowId,
   groupFieldId,
@@ -36,7 +45,7 @@ function RowMenu({
   const { showPreventDialog } = useHoverControlsContext();
 
   const actions = useMemo(
-    () => [
+    (): RowMenuAction[] => [
       {
         testId: 'row-menu-insert-above',
         label: t('grid.row.insertRecordAbove'),
@@ -99,7 +108,8 @@ function RowMenu({
             data-testid={item.testId}
             onSelect={async (e) => {
               e.preventDefault();
-              item.onSelect();
+              if (item.loading) return;
+              await item.onSelect();
               onClose();
             }}
           >
