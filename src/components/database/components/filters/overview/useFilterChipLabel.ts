@@ -6,7 +6,7 @@ import { FieldType, Filter } from '@/application/database-yjs/database.type';
 import { CheckboxFilterCondition } from '@/application/database-yjs/fields/checkbox/checkbox.type';
 import { ChecklistFilterCondition } from '@/application/database-yjs/fields/checklist/checklist.type';
 import { DateFilter, DateFilterCondition } from '@/application/database-yjs/fields/date/date.type';
-import { toStartDateCondition } from '@/application/database-yjs/fields/date/relativeDate';
+import { relativeDateForFilter, toStartDateCondition } from '@/application/database-yjs/fields/date/relativeDate';
 import { NumberFilterCondition } from '@/application/database-yjs/fields/number/number.type';
 import { PersonFilter, PersonFilterCondition } from '@/application/database-yjs/fields/person/person.type';
 import { RelationFilterCondition } from '@/application/database-yjs/fields/relation/relation.type';
@@ -168,6 +168,10 @@ function selectChipLabel(filter: SelectOptionFilter, field: YDatabaseField, t: T
 function dateChipLabel(filter: DateFilter, dateFormat: string, t: Translate): FilterChipLabel {
   const base = toStartDateCondition(filter.condition);
   const format = (unix: number) => dayjs.unix(unix).format(dateFormat);
+  const relative = relativeDateForFilter(filter);
+  const operand = relative
+    ? t(`relativeDates.${relative.toLowerCase()}`)
+    : typeof filter.timestamp === 'number' ? format(filter.timestamp) : '';
 
   let description: string;
 
@@ -207,7 +211,7 @@ function dateChipLabel(filter: DateFilter, dateFormat: string, t: Translate): Fi
     }
 
     case DateFilterCondition.DateStartsOn:
-      description = typeof filter.timestamp === 'number' ? format(filter.timestamp) : '';
+      description = operand;
       break;
     default: {
       // before / after / onOrBefore / onOrAfter
@@ -220,7 +224,7 @@ function dateChipLabel(filter: DateFilter, dateFormat: string, t: Translate): Fi
           ? t('grid.dateFilter.choicechipPrefix.onOrBefore')
           : t('grid.dateFilter.choicechipPrefix.onOrAfter');
 
-      description = typeof filter.timestamp === 'number' ? `${prefix} ${format(filter.timestamp)}` : prefix;
+      description = operand ? `${prefix} ${operand}` : prefix;
       break;
     }
   }

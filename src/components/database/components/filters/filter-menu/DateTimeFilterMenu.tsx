@@ -1,27 +1,30 @@
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { FieldType } from '@/application/database-yjs/database.type';
+import { useUpdateFilter } from '@/application/database-yjs/dispatch/sort-filter';
+import { DateFilter, DateFilterCondition } from '@/application/database-yjs/fields/date/date.type';
 import {
-  DateFilter,
-  DateFilterCondition,
-  FieldType,
+  isRelativeDateComparison,
   isRelativeDateCondition,
   isStartDateCondition,
   toEndDateCondition,
   toStartDateCondition,
-  useFieldType,
-} from '@/application/database-yjs';
-import { useUpdateFilter } from '@/application/database-yjs/dispatch';
+} from '@/application/database-yjs/fields/date/relativeDate';
+import { useFieldType } from '@/application/database-yjs/selector';
 import DateTimeFilterDatePicker from '@/components/database/components/filters/filter-menu/DateTimeFilterDatePicker';
 import DateTimeFilterStartEndDateSelect
   from '@/components/database/components/filters/filter-menu/DateTimeFilterStartEndDateSelect';
 import FieldMenuTitle from '@/components/database/components/filters/filter-menu/FieldMenuTitle';
 import FilterConditionsSelect from '@/components/database/components/filters/filter-menu/FilterConditionsSelect';
+import { useRelativeDateFilterWrites } from '@/components/database/components/filters/hooks/useRelativeDateFilterWrites';
 
 function DateTimeFilterMenu ({ filter }: { filter: DateFilter }) {
   const { t } = useTranslation();
   const updateFilter = useUpdateFilter();
   const fieldType = useFieldType(filter.fieldId);
+  const allowRelativeComparisons = useRelativeDateFilterWrites();
+  const compatibilityReadOnly = !allowRelativeComparisons && isRelativeDateComparison(filter.condition, filter.content);
 
   // Derived from filter.condition so it stays in sync if the condition is changed
   // by Yjs sync (e.g., a collaborator editing the same filter).
@@ -63,7 +66,7 @@ function DateTimeFilterMenu ({ filter }: { filter: DateFilter }) {
 
   const handleSelectStartOrEnd = useCallback(
     (isStart: boolean) => {
-      if (isStart === isStartDateCondition(filter.condition)) return;
+      if (compatibilityReadOnly || isStart === isStartDateCondition(filter.condition)) return;
 
       const newCondition = isStart
         ? toStartDateCondition(filter.condition)
@@ -77,7 +80,7 @@ function DateTimeFilterMenu ({ filter }: { filter: DateFilter }) {
         });
       }
     },
-    [filter.condition, filter.id, filter.fieldId, updateFilter],
+    [compatibilityReadOnly, filter.condition, filter.id, filter.fieldId, updateFilter],
   );
 
   return (
@@ -92,10 +95,12 @@ function DateTimeFilterMenu ({ filter }: { filter: DateFilter }) {
         renderConditionSelect={
           <>
             <DateTimeFilterStartEndDateSelect
+              disabled={compatibilityReadOnly}
               isStart={selectedStart}
               onSelect={handleSelectStartOrEnd}
             />
             <FilterConditionsSelect
+              disabled={compatibilityReadOnly}
               filter={filter}
               conditions={conditions}
             />

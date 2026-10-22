@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
-import { defineBddConfig } from 'playwright-bdd';
 import * as dotenv from 'dotenv';
+import { defineBddConfig } from 'playwright-bdd';
 
 dotenv.config();
 
@@ -38,7 +38,9 @@ export default defineConfig({
     viewport: { width: 1440, height: 900 },
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
-    video: 'off',
+    video: process.env.PLAYWRIGHT_VIDEO === 'on'
+      ? { mode: 'on', size: { width: 1440, height: 900 } }
+      : 'off',
     actionTimeout: 15000,
     navigationTimeout: 15000,
     bypassCSP: true,

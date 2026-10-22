@@ -31,6 +31,13 @@ export interface ServerInfo {
   enable_atomic_creation_defaults?: boolean;
   /** Database aggregate snapshots and the complete web history contract. Absent means disabled. */
   enable_database_history?: boolean;
+  /**
+   * Rollout authorization for the relative_date filter format. Only advertise
+   * this after incompatible clients are excluded from the shared data; server
+   * support or an advisory desktop upgrade alone does not make writes safe.
+   * Missing on existing servers, so new-format writes stay disabled.
+   */
+  enable_relative_date_comparisons?: boolean;
   ai_enabled?: boolean;
   /**
    * Whether this deployment is self-hosted. Only the official AppFlowy cloud

@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 
-import { Filter, useReadOnly } from '@/application/database-yjs';
-import { useUpdateFilter } from '@/application/database-yjs/dispatch';
+import { useReadOnly } from '@/application/database-yjs/context';
+import { Filter } from '@/application/database-yjs/database.type';
+import { useUpdateFilter } from '@/application/database-yjs/dispatch/sort-filter';
 import { ReactComponent as ArrowDownSvg } from '@/assets/icons/alt_arrow_down.svg';
 import { Button } from '@/components/ui/button';
 import {
@@ -16,6 +17,7 @@ function FilterConditionsSelect ({
   conditions,
   filter,
   onSelect,
+  disabled,
 }: {
   filter: Filter;
   conditions: {
@@ -23,6 +25,7 @@ function FilterConditionsSelect ({
     text: string;
   }[];
   onSelect?: (condition: number) => void;
+  disabled?: boolean;
 }) {
   const updateFilter = useUpdateFilter();
   const readOnly = useReadOnly();
@@ -34,7 +37,7 @@ function FilterConditionsSelect ({
     <DropdownMenu>
       <DropdownMenuTrigger
         asChild
-        disabled={readOnly}
+        disabled={readOnly || disabled}
         className={'w-full'}
       >
         <Button
