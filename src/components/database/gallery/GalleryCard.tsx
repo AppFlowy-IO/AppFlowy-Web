@@ -19,6 +19,7 @@ import { useUpdateRowMetaDispatch } from '@/application/database-yjs/dispatch';
 import { GalleryCardPreview, GalleryCardSize, RowCoverType } from '@/application/types';
 import { ReactComponent as DocumentIcon } from '@/assets/icons/doc.svg';
 import { ReactComponent as CommentIcon } from '@/assets/icons/titlebar_comment.svg';
+import { useLatest } from '@/components/_shared/hooks/useLatest';
 import { Cell } from '@/components/database/components/cell/Cell';
 import { ClearSortingConfirm } from '@/components/database/components/sorts/ClearSortingConfirm';
 import { ListCell } from '@/components/database/list/ListCell';
@@ -272,7 +273,7 @@ function GalleryTitle({
       ) : indicator === 'document' ? (
         <DocumentIcon
           aria-hidden='true'
-          className='mr-1.5 h-4 w-4 shrink-0 p-px text-[var(--gallery-card-hint)]'
+          className='mr-1.5 h-5 w-5 shrink-0 text-text-secondary'
           data-testid={`gallery-row-document-icon-${rowId}`}
         />
       ) : null}
@@ -327,6 +328,128 @@ function GalleryProperty({ field, rowId }: { field: Column; rowId: string }) {
   );
 }
 
+export interface GalleryCoverRepositionSession {
+  /** The cover being repositioned; a remote cover change ends the session. */
+  data: string;
+  initialOffset: number;
+}
+
+/**
+ * The card's cover, with the drag-to-reposition preview kept local so pointer
+ * moves re-render only this subtree. The live offset is mirrored into
+ * `liveOffsetRef` for the parent to persist on save.
+ */
+function GalleryCardCover({
+  cardPreview,
+  coverFieldId,
+  coverHeight,
+  fitImage,
+  liveOffsetRef,
+  meta,
+  previewNearViewport,
+  rowId,
+  session,
+}: {
+  cardPreview: GalleryCardPreview;
+  coverFieldId?: string;
+  coverHeight: number;
+  fitImage: boolean;
+  liveOffsetRef: React.MutableRefObject<number>;
+  meta: RowMeta | null | undefined;
+  previewNearViewport: boolean;
+  rowId: string;
+  /** Set while this card repositions its cover. */
+  session: GalleryCoverRepositionSession | null;
+}) {
+  const { t } = useTranslation();
+  const coverRef = useRef<HTMLDivElement>(null);
+  const pointerY = useRef<number | null>(null);
+  const [draft, setDraft] = useState<{ session: GalleryCoverRepositionSession; offset: number } | null>(null);
+  const repositioning = session !== null;
+  const offset = session ? (draft?.session === session ? draft.offset : session.initialOffset) : undefined;
+  const moveBy = (delta: number) => {
+    if (!session) return;
+    const next = clampCoverOffset(liveOffsetRef.current + delta);
+
+    liveOffsetRef.current = next;
+    setDraft({ session, offset: next });
+  };
+
+  useEffect(() => {
+    if (session) coverRef.current?.focus();
+  }, [session]);
+
+  return (
+    <div
+      ref={coverRef}
+      className={cn(
+        'relative w-full shrink-0 overflow-hidden',
+        repositioning ? 'z-20 cursor-grab touch-none select-none active:cursor-grabbing' : 'pointer-events-none'
+      )}
+      style={{ height: coverHeight }}
+      data-testid={`gallery-cover-${rowId}`}
+      role={repositioning ? 'slider' : undefined}
+      tabIndex={repositioning ? 0 : undefined}
+      aria-label={repositioning ? t('document.plugins.cover.repositionCover') : undefined}
+      aria-orientation={repositioning ? 'vertical' : undefined}
+      aria-valuemin={repositioning ? -1 : undefined}
+      aria-valuemax={repositioning ? 1 : undefined}
+      aria-valuenow={repositioning ? offset : undefined}
+      onPointerDown={(event) => {
+        if (!repositioning || event.button !== 0) return;
+        event.stopPropagation();
+        pointerY.current = event.clientY;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        event.currentTarget.focus();
+      }}
+      onPointerMove={(event) => {
+        if (!repositioning || pointerY.current === null) return;
+        const delta = -(event.clientY - pointerY.current) / (coverHeight / 2);
+
+        pointerY.current = event.clientY;
+        moveBy(delta);
+      }}
+      onPointerUp={() => {
+        pointerY.current = null;
+      }}
+      onPointerCancel={() => {
+        pointerY.current = null;
+      }}
+      onKeyDown={(event) => {
+        if (!repositioning || !['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+        event.preventDefault();
+        moveBy(event.key === 'ArrowUp' ? 0.1 : -0.1);
+      }}
+    >
+      {previewNearViewport ? (
+        <GalleryPreview
+          coverFieldId={coverFieldId}
+          fitImage={fitImage}
+          meta={meta}
+          preview={cardPreview}
+          offset={offset}
+          rowId={rowId}
+        />
+      ) : (
+        <div
+          aria-hidden='true'
+          className={cn(
+            'gallery-card-cover-placeholder h-full w-full overflow-hidden',
+            GALLERY_COVER_PLACEHOLDER_BACKGROUND_CLASS_NAME
+          )}
+          data-gallery-preview={cardPreview}
+          data-testid={`gallery-card-preview-${rowId}`}
+        />
+      )}
+      {repositioning ? (
+        <span className='pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-md bg-black/60 px-3 py-1.5 text-sm font-medium text-white opacity-40 backdrop-blur-sm'>
+          {t('document.plugins.cover.dragImageToReposition')}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 export interface GalleryCardProps {
   cardPreview: GalleryCardPreview;
   cardSize: GalleryCardSize;
@@ -362,34 +485,32 @@ export const GalleryCard = memo(function GalleryCard({
   const { bindRowSync, navigateToRow } = useDatabaseContext();
   const meta = useRowMetaSelector(rowId);
   const updateMeta = useUpdateRowMetaDispatch(rowId);
-  const coverRef = useRef<HTMLDivElement>(null);
-  const pointerY = useRef<number | null>(null);
   const repositionController = useGalleryReposition();
   const repositionId = useRef(Symbol('gallery-cover')).current;
-  const [coverDraft, setCoverDraft] = useState<{ data: string; offset: number } | null>(null);
+  const [repositionSession, setRepositionSession] = useState<GalleryCoverRepositionSession | null>(null);
+  // GalleryCardCover keeps the drag preview; the parent only reads the final offset on save.
+  const liveOffset = useRef(0);
   const canReposition =
     !readOnly &&
     cardPreview === GalleryCardPreview.PageCover &&
     meta?.cover?.cover_type === RowCoverType.FileCover &&
     Boolean(meta.cover.data);
-  const repositioning = canReposition && coverDraft?.data === meta?.cover?.data;
+  const repositioning = canReposition && repositionSession?.data === meta?.cover?.data;
   const cancelReposition = () => {
     repositionController?.end(repositionId);
-    setCoverDraft(null);
-    pointerY.current = null;
+    setRepositionSession(null);
   };
 
   const saveReposition = () => {
-    if (repositioning && coverDraft && meta?.cover) {
-      updateMeta(RowMetaKey.CoverId, JSON.stringify({ ...meta.cover, offset: coverDraft.offset }));
+    if (repositioning && meta?.cover) {
+      updateMeta(RowMetaKey.CoverId, JSON.stringify({ ...meta.cover, offset: liveOffset.current }));
     }
 
     cancelReposition();
   };
 
-  const saveRepositionRef = useRef(saveReposition);
+  const saveRepositionRef = useLatest(saveReposition);
 
-  saveRepositionRef.current = saveReposition;
   useEffect(() => () => repositionController?.end(repositionId), [repositionController, repositionId]);
   const primaryField = useMemo(() => fields.find((field) => field.isPrimary) ?? fields[0], [fields]);
   const propertyFields = useMemo(() => fields.filter((field) => !field.isPrimary), [fields]);
@@ -479,79 +600,17 @@ export const GalleryCard = memo(function GalleryCard({
             </span>
           </button>
 
-          <div
-            ref={coverRef}
-            className={cn(
-              'relative w-full shrink-0 overflow-hidden',
-              repositioning ? 'z-20 cursor-grab touch-none select-none active:cursor-grabbing' : 'pointer-events-none'
-            )}
-            style={{ height: coverHeight }}
-            data-testid={`gallery-cover-${rowId}`}
-            role={repositioning ? 'slider' : undefined}
-            tabIndex={repositioning ? 0 : undefined}
-            aria-label={repositioning ? t('document.plugins.cover.repositionCover') : undefined}
-            aria-orientation={repositioning ? 'vertical' : undefined}
-            aria-valuemin={repositioning ? -1 : undefined}
-            aria-valuemax={repositioning ? 1 : undefined}
-            aria-valuenow={repositioning ? coverDraft?.offset : undefined}
-            onPointerDown={(event) => {
-              if (!repositioning || event.button !== 0) return;
-              event.stopPropagation();
-              pointerY.current = event.clientY;
-              event.currentTarget.setPointerCapture(event.pointerId);
-              event.currentTarget.focus();
-            }}
-            onPointerMove={(event) => {
-              if (!repositioning || pointerY.current === null) return;
-              const delta = -(event.clientY - pointerY.current) / (coverHeight / 2);
-
-              pointerY.current = event.clientY;
-              setCoverDraft((current) =>
-                current ? { ...current, offset: clampCoverOffset(current.offset + delta) } : null
-              );
-            }}
-            onPointerUp={() => {
-              pointerY.current = null;
-            }}
-            onPointerCancel={() => {
-              pointerY.current = null;
-            }}
-            onKeyDown={(event) => {
-              if (!repositioning || !['ArrowUp', 'ArrowDown'].includes(event.key)) return;
-              event.preventDefault();
-              const delta = event.key === 'ArrowUp' ? 0.1 : -0.1;
-
-              setCoverDraft((current) =>
-                current ? { ...current, offset: clampCoverOffset(current.offset + delta) } : null
-              );
-            }}
-          >
-            {previewNearViewport ? (
-              <GalleryPreview
-                coverFieldId={coverFieldId}
-                fitImage={fitImage}
-                meta={meta}
-                preview={cardPreview}
-                offset={repositioning ? coverDraft?.offset : undefined}
-                rowId={rowId}
-              />
-            ) : (
-              <div
-                aria-hidden='true'
-                className={cn(
-                  'gallery-card-cover-placeholder h-full w-full overflow-hidden',
-                  GALLERY_COVER_PLACEHOLDER_BACKGROUND_CLASS_NAME
-                )}
-                data-gallery-preview={cardPreview}
-                data-testid={`gallery-card-preview-${rowId}`}
-              />
-            )}
-            {repositioning ? (
-              <span className='pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-md bg-black/40 px-3 py-1.5 text-sm text-white'>
-                {t('document.plugins.cover.dragImageToReposition')}
-              </span>
-            ) : null}
-          </div>
+          <GalleryCardCover
+            cardPreview={cardPreview}
+            coverFieldId={coverFieldId}
+            coverHeight={coverHeight}
+            fitImage={fitImage}
+            liveOffsetRef={liveOffset}
+            meta={meta}
+            previewNearViewport={previewNearViewport}
+            rowId={rowId}
+            session={repositioning ? repositionSession : null}
+          />
 
           <div
             className={cn(
@@ -595,9 +654,11 @@ export const GalleryCard = memo(function GalleryCard({
             onReposition={
               canReposition
                 ? () => {
+                    const initialOffset = clampCoverOffset(meta.cover!.offset);
+
+                    liveOffset.current = initialOffset;
                     repositionController?.begin({ id: repositionId, save: () => saveRepositionRef.current() });
-                    setCoverDraft({ data: meta.cover!.data, offset: clampCoverOffset(meta.cover!.offset) });
-                    requestAnimationFrame(() => coverRef.current?.focus());
+                    setRepositionSession({ data: meta.cover!.data, initialOffset });
                   }
                 : undefined
             }

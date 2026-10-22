@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
@@ -21,11 +21,13 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { getErrorMessage } from '@/utils/errors';
 
+import { useSubmenuPointerGuard } from './useSubmenuPointerGuard';
+
 function Layout({ currentLayout, children }: { currentLayout: DatabaseViewLayout; children?: ReactNode }) {
   const { t } = useTranslation();
 
   const [open, setOpen] = useState(false);
-  const contentRef = useRef<HTMLDivElement>(null);
+  const { contentRef, onTriggerPointerLeave } = useSubmenuPointerGuard();
   const { workspaceId, getSubscriptions } = useDatabaseContext();
   const isSelfHosted = useServerHostingMode() === 'self-hosted';
   const { getAction } = useDatabaseViewCreation({
@@ -100,12 +102,7 @@ function Layout({ currentLayout, children }: { currentLayout: DatabaseViewLayout
       <DropdownMenuSubTrigger
         aria-label={t('grid.settings.layout')}
         data-testid='database-layout-settings-trigger'
-        onPointerLeave={(event) => {
-          // Keep focus in the portaled submenu when it opens to the left.
-          if (event.relatedTarget instanceof Node && contentRef.current?.contains(event.relatedTarget)) {
-            event.preventDefault();
-          }
-        }}
+        onPointerLeave={onTriggerPointerLeave}
       >
         <LayoutIcon aria-hidden='true' />
         <span>{t('grid.settings.layout')}</span>

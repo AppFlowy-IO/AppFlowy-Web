@@ -21,6 +21,14 @@ const GalleryRepositionContext = createContext<{
 
 export const useGalleryReposition = () => useContext(GalleryRepositionContext);
 
+function readCompactPreference(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === 'true';
+  } catch {
+    return false;
+  }
+}
+
 export function useGalleryView() {
   const value = useContext(GalleryViewContext);
 
@@ -49,19 +57,17 @@ export function GalleryViewProvider({ children }: { children: ReactNode }) {
     []
   );
   const preferenceKey = `appflowy:gallery-compact:v1:${workspaceId}:${activeViewId}`;
-  const [compactMode, setCompact] = useState(() => {
-    try {
-      return localStorage.getItem(preferenceKey) === 'true';
-    } catch {
-      return false;
-    }
-  });
+  // Read per key so switching to another Gallery view shows that view's own
+  // preference without the provider having to be remounted.
+  const storedCompactMode = useMemo(() => readCompactPreference(preferenceKey), [preferenceKey]);
+  const [compactOverride, setCompactOverride] = useState<{ key: string; compact: boolean } | null>(null);
+  const compactMode = compactOverride?.key === preferenceKey ? compactOverride.compact : storedCompactMode;
 
   useSyncListGroupingMetadata(grouping);
 
   const setCompactMode = useCallback(
     (compact: boolean) => {
-      setCompact(compact);
+      setCompactOverride({ key: preferenceKey, compact });
       try {
         localStorage.setItem(preferenceKey, String(compact));
       } catch {

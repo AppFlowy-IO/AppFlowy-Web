@@ -64,6 +64,7 @@ describe('GalleryLayoutSettings', () => {
 
   it('shows the four Gallery options inline in the Layout submenu', () => {
     render(<GalleryLayoutMenu />);
+    expect(screen.getByText('Gallery').className).toContain('text-text-tertiary');
     expect(screen.getByTestId('gallery-card-preview-trigger').textContent).toBe('Card previewPage cover');
     expect(screen.getByTestId('gallery-card-size-trigger').textContent).toBe('Card sizeMedium');
     expect(screen.getByRole('menuitemcheckbox', { name: 'Fit image' }).getAttribute('aria-checked')).toBe('false');

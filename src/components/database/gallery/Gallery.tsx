@@ -7,7 +7,9 @@ import { Row, useDatabaseContext, useGalleryLayoutSettings, useReadOnly } from '
 import { useReorderRowDispatch } from '@/application/database-yjs/dispatch';
 import { usePublishRowOrders } from '@/application/database-yjs/row-orders-store';
 import type { YDoc } from '@/application/types';
+import { ReactComponent as GalleryIcon } from '@/assets/icons/gallery.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
+import { useLatest } from '@/components/_shared/hooks/useLatest';
 import { useDatabaseSearch } from '@/components/database/components/conditions/DatabaseSearchContext';
 import { useFeedSearch } from '@/components/database/feed/useFeedSearch';
 import { ListGroupHeader } from '@/components/database/list/ListGroup';
@@ -45,6 +47,29 @@ function GalleryLoading() {
       role='status'
     >
       <span className='h-9 w-9 animate-spin rounded-full border-[3px] border-border-primary border-t-fill-theme-thick motion-reduce:animate-none' />
+    </div>
+  );
+}
+
+/** Desktop shows this when a grouping field is set but no group is visible. */
+function GalleryNoGroups({ fieldName }: { fieldName?: string }) {
+  const { t } = useTranslation();
+
+  return (
+    <div
+      className='flex w-full justify-center bg-surface-primary px-3 py-10'
+      data-testid='gallery-no-groups'
+      role='status'
+    >
+      <div className='flex max-w-[480px] flex-col items-center text-center'>
+        <span className='flex h-24 w-24 items-center justify-center rounded-600 bg-surface-layer-01'>
+          <GalleryIcon aria-hidden='true' className='h-12 w-12 text-icon-primary' />
+        </span>
+        <p className='mt-3 text-base font-semibold text-text-primary'>
+          {t('gallery.noGroupsForField', { field: fieldName ?? t('board.groupBy') })}
+        </p>
+        <p className='mt-1.5 text-sm text-text-secondary'>{t('gallery.noGroupsHint')}</p>
+      </div>
     </div>
   );
 }
@@ -151,7 +176,7 @@ export function Gallery() {
   const [visibleRowLimit, setVisibleRowLimit] = useState(GALLERY_INITIAL_ROW_LIMIT);
   const [groupLimits, setGroupLimits] = useState<Record<string, number>>({});
   const [reorderAnnouncement, setReorderAnnouncement] = useState('');
-  const rowOrdersRef = useRef(rowOrders);
+  const rowOrdersRef = useLatest(rowOrders);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const cardWidth = getGalleryCardWidth(settings.cardSize);
@@ -160,8 +185,6 @@ export function Gallery() {
     cardWidth,
     rowOrders !== undefined && (!grouping.isGrouped || grouping.ready)
   );
-
-  rowOrdersRef.current = rowOrders;
 
   useEffect(() => {
     setVisibleRowLimit(GALLERY_INITIAL_ROW_LIMIT);
@@ -180,6 +203,12 @@ export function Gallery() {
   const remainingRowCount = rowOrders && !searchActive ? Math.max(rowOrders.length - visibleRowLimit, 0) : 0;
   const loadMoreRows = useCallback(() => {
     setVisibleRowLimit((current) => current + GALLERY_LOAD_MORE_INCREMENT);
+  }, []);
+  const loadMoreGroupRows = useCallback((groupId: string) => {
+    setGroupLimits((current) => ({
+      ...current,
+      [groupId]: (current[groupId] ?? GALLERY_INITIAL_ROW_LIMIT) + GALLERY_LOAD_MORE_INCREMENT,
+    }));
   }, []);
 
   useEffect(() => {
@@ -252,7 +281,7 @@ export function Gallery() {
 
       reorderRow(sourceRowId, previousRowId);
     },
-    [reorderRow]
+    [reorderRow, rowOrdersRef]
   );
 
   const handleKeyboardMoveRow = useCallback(
@@ -274,7 +303,7 @@ export function Gallery() {
         })
       );
     },
-    [handleDropRow, t]
+    [handleDropRow, rowOrdersRef, t]
   );
 
   const effectivePaddingStart = paddingStart ?? GALLERY_DESKTOP_INLINE_PADDING;
@@ -326,13 +355,11 @@ export function Gallery() {
     </div>
   );
 
-  let remainingBudget = visibleRowLimit;
+  // Each group pages on its own, so "Load more" always grows the group it was clicked in.
   const groupedGrid = grouping.isGrouped
     ? visibleGroups.map((group) => {
         const limit = groupLimits[group.id] ?? GALLERY_INITIAL_ROW_LIMIT;
-        const rows = group.collapsed ? [] : group.rows.slice(0, Math.min(limit, remainingBudget));
-
-        remainingBudget -= rows.length;
+        const rows = group.collapsed ? [] : group.rows.slice(0, limit);
         const remaining = group.rows.length - rows.length;
 
         return (
@@ -367,13 +394,7 @@ export function Gallery() {
                     />
                   ))}
                   {remaining > 0 ? (
-                    <GalleryLoadMore
-                      remainingCount={remaining}
-                      onLoadMore={() => {
-                        setVisibleRowLimit((current) => current + GALLERY_LOAD_MORE_INCREMENT);
-                        setGroupLimits((current) => ({ ...current, [group.id]: limit + GALLERY_LOAD_MORE_INCREMENT }));
-                      }}
-                    />
+                    <GalleryLoadMore onLoadMore={() => loadMoreGroupRows(group.id)} remainingCount={remaining} />
                   ) : null}
                 </div>
                 {!readOnly ? (
@@ -391,6 +412,13 @@ export function Gallery() {
       })
     : null;
 
+  const showNoGroups = grouping.isGrouped && !searchActive && visibleGroups.length === 0;
+  const content = grouping.isGrouped
+    ? showNoGroups
+      ? <GalleryNoGroups fieldName={grouping.fieldName} />
+      : groupedGrid
+    : galleryGrid;
+
   return (
     <div className={containerClassName} data-testid='database-gallery' ref={scrollContainerRef}>
       <div
@@ -398,15 +426,7 @@ export function Gallery() {
         style={{ paddingInlineEnd: effectivePaddingEnd, paddingInlineStart: effectivePaddingStart }}
       >
         <div ref={gridRef} data-testid='gallery-content'>
-          {readOnly ? (
-            grouping.isGrouped ? (
-              groupedGrid
-            ) : (
-              galleryGrid
-            )
-          ) : (
-            <GallerySortSubscription>{grouping.isGrouped ? groupedGrid : galleryGrid}</GallerySortSubscription>
-          )}
+          {readOnly ? content : <GallerySortSubscription>{content}</GallerySortSubscription>}
         </div>
       </div>
       <span aria-live='polite' className='sr-only'>

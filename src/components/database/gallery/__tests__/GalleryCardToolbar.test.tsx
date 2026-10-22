@@ -90,17 +90,17 @@ describe('GalleryCardToolbar Flutter desktop parity', () => {
     render(<GalleryCardToolbar onEdit={onEdit} onReposition={jest.fn()} rowId='row-1' readOnly />);
     expect(screen.queryByTestId('gallery-card-toolbar-row-1')).toBeNull();
     expect(screen.queryByRole('button', { name: 'button.edit' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'tooltip.openMenu' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'button.more' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'document.plugins.cover.repositionCover' })).toBeNull();
   });
 
-  it('aligns the 180px menu below the right edge with the Flutter offset', () => {
+  it('aligns the 200px menu below the right edge with the Flutter offset', () => {
     render(<GalleryCardToolbar onEdit={onEdit} rowId='row-1' />);
 
     const menu = screen.getByTestId('gallery-row-action-menu');
 
-    expect(menu.className).toContain('w-[180px]');
-    expect(menu.className).toContain('!min-w-[180px]');
+    expect(menu.className).toContain('w-[200px]');
+    expect(menu.className).toContain('!min-w-[200px]');
     expect(menu.getAttribute('data-side')).toBe('bottom');
     expect(menu.getAttribute('data-align')).toBe('end');
     expect(menu.getAttribute('data-side-offset')).toBe('8');
@@ -110,7 +110,7 @@ describe('GalleryCardToolbar Flutter desktop parity', () => {
     render(<GalleryCardToolbar onEdit={onEdit} rowId='row-1' />);
 
     const edit = screen.getByRole('button', { name: 'button.edit' });
-    const more = screen.getByRole('button', { name: 'tooltip.openMenu' });
+    const more = screen.getByRole('button', { name: 'button.more' });
 
     fireEvent.click(edit);
     expect(onEdit).toHaveBeenCalledTimes(1);

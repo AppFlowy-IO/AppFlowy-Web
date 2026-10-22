@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { FieldType, FieldVisibility, useFieldsSelector, useGalleryLayoutSettings } from '@/application/database-yjs';
@@ -8,6 +8,7 @@ import { useGalleryView } from '@/components/database/gallery/GalleryViewContext
 import {
   DropdownMenuItem,
   DropdownMenuItemTick,
+  DropdownMenuLabel,
   DropdownMenuPortal,
   DropdownMenuSeparator,
   DropdownMenuSub,
@@ -15,6 +16,8 @@ import {
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Switch } from '@/components/ui/switch';
+
+import { useSubmenuPointerGuard } from './useSubmenuPointerGuard';
 
 const FIELD_VISIBILITIES = [FieldVisibility.AlwaysShown, FieldVisibility.HideWhenEmpty, FieldVisibility.AlwaysHidden];
 
@@ -34,18 +37,14 @@ function GalleryChoice<T extends number>({
   onChange: (value: T) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const contentRef = useRef<HTMLDivElement>(null);
+  const { contentRef, onTriggerPointerLeave } = useSubmenuPointerGuard();
 
   return (
     <DropdownMenuSub open={open} onOpenChange={setOpen}>
       <DropdownMenuSubTrigger
         className='h-8 gap-2 px-2 py-1.5'
         data-testid={`${testId}-trigger`}
-        onPointerLeave={(event) => {
-          if (event.relatedTarget instanceof Node && contentRef.current?.contains(event.relatedTarget)) {
-            event.preventDefault();
-          }
-        }}
+        onPointerLeave={onTriggerPointerLeave}
       >
         <span>{label}</span>
         <span className='ml-auto truncate text-xs text-text-secondary'>
@@ -130,6 +129,9 @@ export function GalleryLayoutSettings() {
   return (
     <div data-testid='gallery-layout-settings-menu'>
       <DropdownMenuSeparator className='my-2' />
+      <DropdownMenuLabel className='min-h-0 px-2 py-1.5 text-xs font-semibold text-text-tertiary'>
+        {t('gallery.menuName', 'Gallery')}
+      </DropdownMenuLabel>
       <GalleryChoice
         label={t('gallery.cardPreview', 'Card preview')}
         value={settings.cardPreview}

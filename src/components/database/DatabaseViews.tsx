@@ -504,7 +504,7 @@ function DatabaseViews({
       groupedContent = <ListGroupingProvider>{content}</ListGroupingProvider>;
       break;
     case DatabaseViewLayout.Gallery:
-      groupedContent = <GalleryViewProvider key={activeViewId}>{content}</GalleryViewProvider>;
+      groupedContent = <GalleryViewProvider>{content}</GalleryViewProvider>;
       break;
     case DatabaseViewLayout.Timeline:
       groupedContent = <TimelineGroupingProvider>{content}</TimelineGroupingProvider>;

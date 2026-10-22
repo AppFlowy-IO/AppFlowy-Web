@@ -22,8 +22,9 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
+// Desktop BlockMenuButton: 20px onFill icon, 4px padding, white at 16% on hover.
 const actionClassName =
-  'h-7 w-7 rounded p-1 text-white hover:bg-white/20 hover:text-white focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-white [&_svg]:h-5 [&_svg]:w-5';
+  'h-7 w-7 rounded p-1 text-white hover:bg-white/[0.16] hover:text-white focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-white [&_svg]:h-5 [&_svg]:w-5';
 
 function GalleryAction({
   label,
@@ -100,7 +101,7 @@ export function GalleryCardToolbar({
         {repositioning ? (
           <>
             <Button
-              className='h-7 px-1.5 text-sm text-white hover:bg-white/20 hover:text-white'
+              className='h-7 px-1.5 text-sm text-white hover:bg-white/[0.16] hover:text-white'
               data-testid='gallery-cover-cancel'
               onClick={onCancelReposition}
               variant='ghost'
@@ -145,7 +146,7 @@ export function GalleryCardToolbar({
                   <TooltipTrigger asChild>
                     <DropdownMenuTrigger asChild>
                       <Button
-                        aria-label={t('tooltip.openMenu')}
+                        aria-label={t('button.more')}
                         className={actionClassName}
                         data-testid={`gallery-card-more-${rowId}`}
                         onClick={(event) => event.stopPropagation()}
@@ -156,11 +157,11 @@ export function GalleryCardToolbar({
                       </Button>
                     </DropdownMenuTrigger>
                   </TooltipTrigger>
-                  <TooltipContent>{t('tooltip.openMenu')}</TooltipContent>
+                  <TooltipContent>{t('button.more')}</TooltipContent>
                 </Tooltip>
                 <DropdownMenuContent
                   align='end'
-                  className='w-[180px] !min-w-[180px]'
+                  className='w-[200px] !min-w-[200px]'
                   data-testid='gallery-row-action-menu'
                   side='bottom'
                   sideOffset={8}

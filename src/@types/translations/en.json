@@ -4028,6 +4028,8 @@
   },
   "gallery": {
     "menuName": "Gallery",
+    "noGroupsForField": "No groups for {{field}}",
+    "noGroupsHint": "Try selecting a different field to group by.",
     "settings": "Gallery settings",
     "cardSize": "Card size",
     "small": "Small",

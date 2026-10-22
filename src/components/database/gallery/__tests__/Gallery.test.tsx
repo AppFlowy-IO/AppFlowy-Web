@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import {
   useDatabaseContext,
@@ -51,11 +51,12 @@ jest.mock('../GalleryCard', () => ({
     <div data-field-ids={fields.map((field) => field.fieldId).join(',')} data-testid={`mock-gallery-card-${rowId}`} />
   ),
 }));
-jest.mock('../GalleryViewContext', () => ({
-  useGalleryView: () => ({
-    grouping: { rowOrders: useRowOrdersSelector(), visibleGroups: [], isGrouped: false, ready: true },
-    compactMode: false,
-  }),
+const mockUseGalleryView = jest.fn();
+
+jest.mock('../GalleryViewContext', () => ({ useGalleryView: () => mockUseGalleryView() }));
+jest.mock('../GalleryGroupFooter', () => ({ GalleryGroupFooter: () => null }));
+jest.mock('@/components/database/list/ListGroup', () => ({
+  ListGroupHeader: ({ group }: { group: { id: string } }) => <div data-testid={`mock-group-header-${group.id}`} />,
 }));
 jest.mock('../GalleryNewRow', () => ({
   __esModule: true,
@@ -135,6 +136,12 @@ describe('Gallery pagination lifecycle', () => {
     });
     mockUseReadOnly.mockReturnValue(false);
     mockUseRowOrdersSelector.mockReturnValue(rows);
+    // Earlier tests pin a return value; restore the pass-through for each test.
+    mockUseFeedSearch.mockImplementation(({ rows: candidates }: { rows: unknown }) => candidates as typeof rows);
+    mockUseGalleryView.mockImplementation(() => ({
+      grouping: { rowOrders: useRowOrdersSelector(), visibleGroups: [], isGrouped: false, ready: true },
+      compactMode: false,
+    }));
     mockUseDatabaseSearch.mockReturnValue({ query: '', setQuery: jest.fn() });
   });
 
@@ -238,5 +245,53 @@ describe('Gallery pagination lifecycle', () => {
     expect(container.style.paddingInlineStart).toBe('0');
     expect(container.style.paddingInlineEnd).toBe('0');
     expect(screen.getByTestId('mock-gallery-card-row-0').getAttribute('data-field-ids')).toBe('name,owner');
+  });
+
+  const groupRows = (prefix: string, count: number) =>
+    Array.from({ length: count }, (_, index) => ({ height: 36, id: `${prefix}-${index}` }));
+
+  function mockGroupedView(groups: Array<{ id: string; rows: ReturnType<typeof groupRows> }>, fieldName = 'Status') {
+    mockUseGalleryView.mockReturnValue({
+      compactMode: false,
+      grouping: {
+        fieldId: 'status',
+        fieldName,
+        groupId: 'group-config',
+        isGrouped: true,
+        ready: true,
+        rowOrders: groups.flatMap((group) => group.rows),
+        visibleGroups: groups.map((group) => ({ ...group, collapsed: false, label: group.id })),
+      },
+    });
+  }
+
+  it('pages each group on its own so Load more grows the group it was clicked in', () => {
+    mockGroupedView([
+      { id: 'a', rows: groupRows('a', 40) },
+      { id: 'b', rows: groupRows('b', 40) },
+      { id: 'c', rows: groupRows('c', 60) },
+    ]);
+
+    render(<Gallery />);
+
+    expect(screen.getAllByTestId(/^mock-gallery-card-a-/)).toHaveLength(40);
+    expect(screen.getAllByTestId(/^mock-gallery-card-b-/)).toHaveLength(40);
+    expect(screen.getAllByTestId(/^mock-gallery-card-c-/)).toHaveLength(50);
+    expect(screen.getAllByTestId('gallery-load-more')).toHaveLength(1);
+
+    fireEvent.click(screen.getByTestId('gallery-load-more'));
+
+    expect(screen.getAllByTestId(/^mock-gallery-card-c-/)).toHaveLength(60);
+    expect(screen.queryByTestId('gallery-load-more')).toBeNull();
+    expect(screen.getAllByTestId(/^mock-gallery-card-/)).toHaveLength(140);
+  });
+
+  it('shows the desktop empty state when grouping leaves no visible group', () => {
+    mockGroupedView([], 'Category');
+
+    render(<Gallery />);
+
+    expect(screen.getByTestId('gallery-no-groups').textContent).toContain('gallery.noGroupsForField');
+    expect(screen.queryByTestId('gallery-grid')).toBeNull();
   });
 });
