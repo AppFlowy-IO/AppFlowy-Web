@@ -188,6 +188,7 @@ jobs:
               playwright/.features-gen/playwright/bdd/features/database/row-document.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/row-subpage-breadcrumb.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/row-undo-redo.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/relative-date-comparisons.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/embedded-grid-bottom-rows.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/grid-row-handle.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/rollup-formula-select.feature.spec.js
