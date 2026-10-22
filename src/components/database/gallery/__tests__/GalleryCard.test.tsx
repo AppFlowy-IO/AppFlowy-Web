@@ -149,7 +149,7 @@ describe('GalleryCard rendering lifecycle', () => {
     expect(opener.getAttribute('aria-labelledby')).toBe('gallery-card-open-label-row-1 gallery-card-title-label-row-1');
     expect(title.id).toBe('gallery-card-title-label-row-1');
     expect(tile.style.contentVisibility).toBe('auto');
-    expect(tile.style.containIntrinsicSize).toContain('182px');
+    expect(tile.style.containIntrinsicSize).toContain('178px');
     opener.focus();
     expect(document.activeElement).toBe(opener);
     fireEvent.click(opener);

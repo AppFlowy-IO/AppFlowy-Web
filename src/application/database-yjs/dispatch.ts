@@ -54,6 +54,7 @@ import {
   SelectTypeOption,
 } from '@/application/database-yjs/fields';
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
+import { generateOptionId, getColorByOption } from '@/application/database-yjs/fields/select-option/utils';
 import { createRelationField } from '@/application/database-yjs/fields/relation/utils';
 import { parseRollupTypeOption } from '@/application/database-yjs/fields/rollup/parse';
 import { RollupShowAsType } from '@/application/database-yjs/fields/rollup/rollup.type';
@@ -998,14 +999,14 @@ export function useSyncListGroupColumnsDispatch(groupId?: string) {
   return useSyncDatabaseGroupColumnsDispatch(groupId);
 }
 
-function readShownEmptyGroupIds(layoutSetting: YDatabaseBoardLayoutSetting) {
-  const storedIds = layoutSetting.get(YjsDatabaseKey.shown_empty_group_ids) as unknown;
+function readShownEmptyGroupIds(layoutSetting: Y.Map<unknown>) {
+  const storedIds = layoutSetting.get(YjsDatabaseKey.shown_empty_group_ids);
   const ids = storedIds instanceof Y.Array ? storedIds.toArray() : Array.isArray(storedIds) ? storedIds : [];
 
   return new Set(ids.filter((id): id is string => typeof id === 'string'));
 }
 
-function setEmptyGroupOverride(layoutSetting: YDatabaseBoardLayoutSetting, columnId: string, shown: boolean) {
+function setEmptyGroupOverride(layoutSetting: Y.Map<unknown>, columnId: string, shown: boolean) {
   const shownIds = readShownEmptyGroupIds(layoutSetting);
 
   if (shownIds.has(columnId) === shown) return;
@@ -1137,13 +1138,64 @@ export function useToggleDatabaseHideEmptyGroups(layout: GroupableDatabaseLayout
         [
           () => {
             if (!view) throw new Error('Unable to toggle database empty groups');
-            getOrCreateDatabaseGroupingLayoutSetting(view, layout).set(YjsDatabaseKey.hide_empty_groups, hide);
+            const layoutSetting = getOrCreateDatabaseGroupingLayoutSetting(view, layout);
+
+            layoutSetting.set(YjsDatabaseKey.hide_empty_groups, hide);
+            // Like the Board, showing every empty group retires the per-group exceptions.
+            if (!hide && layoutSetting.has(YjsDatabaseKey.shown_empty_group_ids)) {
+              layoutSetting.set(YjsDatabaseKey.shown_empty_group_ids, []);
+            }
           },
         ],
         'toggleDatabaseHideEmptyGroups'
       );
     },
     [layout, sharedRoot, view]
+  );
+}
+
+/**
+ * Adds a select option as a new group of a non-Board layout and keeps it
+ * visible while it is still empty, so "Hide empty groups" does not hide the
+ * group the user just created. An existing option with the same name is shown
+ * instead of duplicated. Returns the group id, or undefined when the field is
+ * not a select field.
+ */
+export function useCreateDatabaseSelectGroupDispatch(layout: GroupableDatabaseLayout) {
+  const database = useDatabase();
+  const view = useDatabaseView();
+  const sharedRoot = useSharedRoot();
+  const addSelectOption = useAddSelectOptionDispatch();
+
+  return useCallback(
+    (fieldId: string, name: string) => {
+      const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+      const fieldType = Number(field?.get(YjsDatabaseKey.type));
+
+      if (!field || !view || ![FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType)) return undefined;
+
+      const options = parseSelectOptionTypeOptions(field)?.options ?? [];
+      const existing = options.find((option) => option.name === name);
+      const optionId = existing?.id ?? generateOptionId();
+      const historyGroup = createDatabaseHistoryGroup();
+
+      if (!existing) {
+        addSelectOption(fieldId, { id: optionId, name, color: getColorByOption(options) }, historyGroup);
+      }
+
+      executeOperations(
+        sharedRoot,
+        [
+          () => {
+            setEmptyGroupOverride(getOrCreateDatabaseGroupingLayoutSetting(view, layout), optionId, true);
+          },
+        ],
+        'showCreatedDatabaseGroup',
+        { type: 'database.show-created-group', fieldId, historyGroup }
+      );
+      return optionId;
+    },
+    [addSelectOption, database, layout, sharedRoot, view]
   );
 }
 

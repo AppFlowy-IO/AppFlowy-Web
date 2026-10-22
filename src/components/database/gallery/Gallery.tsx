@@ -3,10 +3,10 @@ import { getReorderDestinationIndex } from '@atlaskit/pragmatic-drag-and-drop-hi
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Row, useDatabaseContext, useGalleryLayoutSettings, useReadOnly } from '@/application/database-yjs';
+import { FieldType, Row, useDatabaseContext, useGalleryLayoutSettings, useReadOnly } from '@/application/database-yjs';
 import { useReorderRowDispatch } from '@/application/database-yjs/dispatch';
 import { usePublishRowOrders } from '@/application/database-yjs/row-orders-store';
-import type { YDoc } from '@/application/types';
+import type { GalleryCardSize, YDoc } from '@/application/types';
 import { ReactComponent as GalleryIcon } from '@/assets/icons/gallery.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { useLatest } from '@/components/_shared/hooks/useLatest';
@@ -21,11 +21,12 @@ import {
   GALLERY_INITIAL_ROW_LIMIT,
   GALLERY_LOAD_MORE_INCREMENT,
   GALLERY_LOAD_MORE_THRESHOLD,
-  GALLERY_MAX_COLUMNS,
-  getGalleryCardWidth,
+  getGalleryColumnCount,
 } from './gallery.constants';
 import GalleryCard from './GalleryCard';
-import { GalleryGroupFooter } from './GalleryGroupFooter';
+import { GalleryDeleteGroupConfirm } from './GalleryDeleteGroupConfirm';
+import { GalleryGroupFooter, GalleryGroupNewPageTile } from './GalleryGroupFooter';
+import { GalleryNewGroup } from './GalleryNewGroup';
 import GalleryNewRow from './GalleryNewRow';
 import { GallerySortSubscription } from './GallerySortState';
 import { useGalleryFields } from './useGalleryFields';
@@ -91,7 +92,11 @@ function GalleryLoadMore({ onLoadMore, remainingCount }: { onLoadMore: () => voi
   );
 }
 
-function useGalleryColumnCount(gridRef: React.RefObject<HTMLDivElement>, cardWidth: number, ready: boolean): number {
+function useGalleryColumnCount(
+  gridRef: React.RefObject<HTMLDivElement>,
+  cardSize: GalleryCardSize,
+  ready: boolean
+): number {
   const [columns, setColumns] = useState(1);
 
   useLayoutEffect(() => {
@@ -102,11 +107,7 @@ function useGalleryColumnCount(gridRef: React.RefObject<HTMLDivElement>, cardWid
     if (!element) return;
 
     const update = () => {
-      const availableWidth = element.clientWidth;
-      const next = Math.max(
-        1,
-        Math.min(GALLERY_MAX_COLUMNS, Math.floor(availableWidth / (cardWidth + GALLERY_GRID_GAP)))
-      );
+      const next = getGalleryColumnCount(element.clientWidth, cardSize);
 
       setColumns((current) => (current === next ? current : next));
     };
@@ -121,7 +122,7 @@ function useGalleryColumnCount(gridRef: React.RefObject<HTMLDivElement>, cardWid
 
     observer.observe(element);
     return () => observer.disconnect();
-  }, [cardWidth, gridRef, ready]);
+  }, [cardSize, gridRef, ready]);
 
   return columns;
 }
@@ -176,13 +177,13 @@ export function Gallery() {
   const [visibleRowLimit, setVisibleRowLimit] = useState(GALLERY_INITIAL_ROW_LIMIT);
   const [groupLimits, setGroupLimits] = useState<Record<string, number>>({});
   const [reorderAnnouncement, setReorderAnnouncement] = useState('');
+  const [deleteGroupId, setDeleteGroupId] = useState<string | null>(null);
   const rowOrdersRef = useLatest(rowOrders);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
-  const cardWidth = getGalleryCardWidth(settings.cardSize);
   const columnCount = useGalleryColumnCount(
     gridRef,
-    cardWidth,
+    settings.cardSize,
     rowOrders !== undefined && (!grouping.isGrouped || grouping.ready)
   );
 
@@ -355,12 +356,20 @@ export function Gallery() {
     </div>
   );
 
+  const isSelectGrouping =
+    grouping.fieldType === FieldType.SingleSelect || grouping.fieldType === FieldType.MultiSelect;
+  // Desktop `delete_group` skips the default group and attribution fields, whose groups are derived.
+  const canDeleteGroups =
+    !readOnly && grouping.fieldType !== FieldType.CreatedBy && grouping.fieldType !== FieldType.LastEditedBy;
+
   // Each group pages on its own, so "Load more" always grows the group it was clicked in.
   const groupedGrid = grouping.isGrouped
     ? visibleGroups.map((group) => {
         const limit = groupLimits[group.id] ?? GALLERY_INITIAL_ROW_LIMIT;
         const rows = group.collapsed ? [] : group.rows.slice(0, limit);
         const remaining = group.rows.length - rows.length;
+        // Figma puts "New page" in the last row's free slot and falls back to the footer when the row is full.
+        const showNewPageTile = !readOnly && remaining === 0 && rows.length % columnCount !== 0;
 
         return (
           <section key={group.id} className='mb-5' data-testid={`gallery-group-${group.id}`}>
@@ -371,7 +380,9 @@ export function Gallery() {
               fieldType={grouping.fieldType}
               group={group}
               groupConfigId={grouping.groupId}
+              onDeleteGroup={canDeleteGroups && !group.isDefault ? () => setDeleteGroupId(group.id) : undefined}
               openAfterCreate
+              variant='gallery'
             />
             {!group.collapsed ? (
               <>
@@ -393,11 +404,14 @@ export function Gallery() {
                       reorderable={false}
                     />
                   ))}
+                  {showNewPageTile ? (
+                    <GalleryGroupNewPageTile cardSize={settings.cardSize} fieldId={grouping.fieldId} groupId={group.id} />
+                  ) : null}
                   {remaining > 0 ? (
                     <GalleryLoadMore onLoadMore={() => loadMoreGroupRows(group.id)} remainingCount={remaining} />
                   ) : null}
                 </div>
-                {!readOnly ? (
+                {!readOnly && !showNewPageTile ? (
                   <div
                     className='mt-4 grid'
                     style={{ gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))`, gap: GALLERY_GRID_GAP }}
@@ -413,11 +427,26 @@ export function Gallery() {
     : null;
 
   const showNoGroups = grouping.isGrouped && !searchActive && visibleGroups.length === 0;
-  const content = grouping.isGrouped
-    ? showNoGroups
-      ? <GalleryNoGroups fieldName={grouping.fieldName} />
-      : groupedGrid
-    : galleryGrid;
+  const deletingGroup = deleteGroupId ? grouping.groups?.find((group) => group.id === deleteGroupId) : undefined;
+  const content = grouping.isGrouped ? (
+    <>
+      {showNoGroups ? <GalleryNoGroups fieldName={grouping.fieldName} /> : groupedGrid}
+      {!readOnly && isSelectGrouping && grouping.fieldId && !searchActive ? (
+        <GalleryNewGroup fieldId={grouping.fieldId} />
+      ) : null}
+      {deletingGroup && grouping.fieldId && grouping.groupId ? (
+        <GalleryDeleteGroupConfirm
+          fieldId={grouping.fieldId}
+          groupConfigId={grouping.groupId}
+          groupId={deletingGroup.id}
+          onClose={() => setDeleteGroupId(null)}
+          rows={deletingGroup.rows}
+        />
+      ) : null}
+    </>
+  ) : (
+    galleryGrid
+  );
 
   return (
     <div className={containerClassName} data-testid='database-gallery' ref={scrollContainerRef}>

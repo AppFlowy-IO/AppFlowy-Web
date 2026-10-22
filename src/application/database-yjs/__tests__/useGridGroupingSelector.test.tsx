@@ -11,11 +11,13 @@ import {
   FilterType,
   SortCondition,
   TextFilterCondition,
+  useCreateDatabaseSelectGroupDispatch,
   useDatabaseGroupingSelector,
   useGroupByFieldDispatch,
   useGridGroupingSelector,
   useListGroupingSelector,
   useTimelineGroupingSelector,
+  useToggleDatabaseHideEmptyGroups,
   useUpdateCellDispatch,
   useUpdateDateGroupConditionDispatch,
   useUpdateGroupContentDispatch,
@@ -442,6 +444,70 @@ describe('useGridGroupingSelector refresh behavior', () => {
     act(() => {
       fixture.gridLayoutSetting.set(YjsDatabaseKey.hide_empty_groups, false);
     });
+
+    unmount();
+    fixture.rowA.destroy();
+    fixture.rowB.destroy();
+    fixture.databaseDoc.destroy();
+  });
+
+  it('keeps a Gallery select group created through New group visible while it is empty', async () => {
+    const fixture = createGridGroupingFixture({
+      fieldType: FieldType.SingleSelect,
+      rowAValue: 'opt-a',
+      rowBValue: 'opt-a',
+    });
+    const database = fixture.databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+    const field = database.get(YjsDatabaseKey.fields).get(fixture.fieldId);
+    const typeOptions = new Y.Map();
+    const selectTypeOption = new Y.Map();
+
+    selectTypeOption.set(
+      YjsDatabaseKey.content,
+      JSON.stringify({ disable_color: false, options: [{ color: 'Purple', id: 'opt-a', name: 'Alpha' }] })
+    );
+    typeOptions.set(String(FieldType.SingleSelect), selectTypeOption);
+    field.set(YjsDatabaseKey.type_option, typeOptions as never);
+    fixture.columns.push([createYDatabaseGroupColumn({ id: 'opt-a' })]);
+    fixture.view.set(YjsDatabaseKey.layout, DatabaseViewLayout.Gallery);
+
+    const { result, unmount } = renderHook(
+      () => ({
+        createGroup: useCreateDatabaseSelectGroupDispatch(DatabaseViewLayout.Gallery),
+        grouping: useDatabaseGroupingSelector(DatabaseViewLayout.Gallery),
+        toggleHideEmpty: useToggleDatabaseHideEmptyGroups(DatabaseViewLayout.Gallery),
+      }),
+      { wrapper: fixture.wrapper }
+    );
+    const visibleIds = () => result.current.grouping.visibleGroups.map(({ id }) => id);
+
+    await waitFor(() => expect(visibleIds()).toEqual(['opt-a']));
+
+    let createdId: string | undefined;
+
+    act(() => {
+      createdId = result.current.createGroup(fixture.fieldId, 'Fresh');
+    });
+
+    expect(createdId).toBeTruthy();
+    await waitFor(() => expect(visibleIds()).toEqual(['opt-a', createdId]));
+    expect(result.current.grouping.visibleGroups[1].option?.name).toBe('Fresh');
+
+    // A repeated name reveals the existing option instead of adding a duplicate.
+    act(() => {
+      expect(result.current.createGroup(fixture.fieldId, 'Fresh')).toBe(createdId);
+    });
+    expect(JSON.parse(selectTypeOption.get(YjsDatabaseKey.content) as string).options).toHaveLength(2);
+
+    // Showing every empty group retires the exception, so hiding them again hides the new group too.
+    act(() => {
+      result.current.toggleHideEmpty(false);
+    });
+    await waitFor(() => expect(visibleIds()).toEqual([fixture.fieldId, 'opt-a', createdId]));
+    act(() => {
+      result.current.toggleHideEmpty(true);
+    });
+    await waitFor(() => expect(visibleIds()).toEqual(['opt-a']));
 
     unmount();
     fixture.rowA.destroy();

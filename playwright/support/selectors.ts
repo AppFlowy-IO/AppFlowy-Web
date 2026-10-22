@@ -327,7 +327,8 @@ export const DatabaseGallerySelectors = {
   moreButtonByRowId: (page: Page, rowId: string) => page.getByTestId(`gallery-card-more-${rowId}`),
   newRowButton: (page: Page) => page.getByTestId('gallery-new-row'),
   loadMoreButton: (page: Page) => page.getByTestId('gallery-load-more'),
-  settingsTrigger: (page: Page) => page.getByTestId('gallery-layout-settings-trigger'),
+  // The Gallery options sit at the bottom of the Layout submenu, as in Figma.
+  settingsTrigger: (page: Page) => page.getByTestId('database-layout-settings-trigger'),
   settingsMenu: (page: Page) => page.getByTestId('gallery-layout-settings-menu'),
 };
 

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { useDuplicateRowDispatch } from '@/application/database-yjs/dispatch';
 
@@ -7,6 +7,13 @@ import { GalleryCardToolbar } from '../GalleryCardToolbar';
 jest.mock('@/application/database-yjs/dispatch', () => ({
   useDuplicateRowDispatch: jest.fn(),
 }));
+jest.mock('@/application/database-yjs', () => ({
+  useDatabaseContext: () => ({ activeViewId: 'view-1', databasePageId: 'page-1', variant: 'app', workspaceId: 'ws-1' }),
+}));
+const mockCopyTextToClipboard = jest.fn(() => Promise.resolve());
+
+jest.mock('@/utils/copy', () => ({ copyTextToClipboard: (text: string) => mockCopyTextToClipboard(text) }));
+jest.mock('sonner', () => ({ toast: { success: jest.fn() } }));
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -60,7 +67,7 @@ jest.mock('@/components/database/components/database-row/DeleteRowConfirm', () =
 
 const mockUseDuplicateRowDispatch = useDuplicateRowDispatch as jest.MockedFunction<typeof useDuplicateRowDispatch>;
 
-describe('GalleryCardToolbar Flutter desktop parity', () => {
+describe('GalleryCardToolbar Figma parity', () => {
   const duplicateRow = jest.fn();
   const onEdit = jest.fn();
 
@@ -76,10 +83,10 @@ describe('GalleryCardToolbar Flutter desktop parity', () => {
     const props = { onEdit, onReposition, onSaveReposition, onCancelReposition, rowId: 'row-1' };
     const { rerender } = render(<GalleryCardToolbar {...props} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'document.plugins.cover.repositionCover' }));
+    fireEvent.click(screen.getByRole('button', { name: 'gallery.reposition' }));
     expect(onReposition).toHaveBeenCalledTimes(1);
     rerender(<GalleryCardToolbar {...props} repositioning />);
-    expect(screen.queryByRole('button', { name: 'button.edit' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'button.rename' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'button.save' }));
     fireEvent.click(screen.getByRole('button', { name: 'button.cancel' }));
     expect(onSaveReposition).toHaveBeenCalledTimes(1);
@@ -89,27 +96,58 @@ describe('GalleryCardToolbar Flutter desktop parity', () => {
   it('exposes no editing actions in read-only mode', () => {
     render(<GalleryCardToolbar onEdit={onEdit} onReposition={jest.fn()} rowId='row-1' readOnly />);
     expect(screen.queryByTestId('gallery-card-toolbar-row-1')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'button.edit' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'button.rename' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'button.more' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'document.plugins.cover.repositionCover' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'gallery.reposition' })).toBeNull();
   });
 
-  it('aligns the 200px menu below the right edge with the Flutter offset', () => {
+  it('aligns the 240px Figma menu below the right edge', () => {
     render(<GalleryCardToolbar onEdit={onEdit} rowId='row-1' />);
 
     const menu = screen.getByTestId('gallery-row-action-menu');
 
-    expect(menu.className).toContain('w-[200px]');
-    expect(menu.className).toContain('!min-w-[200px]');
+    expect(menu.className).toContain('w-[240px]');
+    expect(menu.className).toContain('!min-w-[240px]');
     expect(menu.getAttribute('data-side')).toBe('bottom');
     expect(menu.getAttribute('data-align')).toBe('end');
     expect(menu.getAttribute('data-side-offset')).toBe('8');
   });
 
-  it('keeps edit, duplicate, and delete actions operable with accessible names', () => {
+  it('shows Reposition, Rename and More in the Figma order', () => {
+    render(<GalleryCardToolbar onEdit={onEdit} onReposition={jest.fn()} rowId='row-1' />);
+
+    const labels = screen
+      .getAllByRole('button')
+      .map((button) => button.getAttribute('aria-label'))
+      .filter(Boolean);
+
+    expect(labels.slice(0, 3)).toEqual(['gallery.reposition', 'button.rename', 'button.more']);
+    expect(screen.queryByTestId('gallery-card-peek-row-1')).toBeNull();
+  });
+
+  it('copies the row page link from the More menu', async () => {
     render(<GalleryCardToolbar onEdit={onEdit} rowId='row-1' />);
 
-    const edit = screen.getByRole('button', { name: 'button.edit' });
+    const items = Array.from(screen.getByTestId('gallery-row-action-menu').querySelectorAll('button'));
+
+    expect(items.map((item) => item.dataset.testid)).toEqual([
+      'gallery-row-copy-link',
+      'gallery-row-duplicate',
+      'gallery-row-delete',
+    ]);
+    fireEvent.click(screen.getByTestId('gallery-row-copy-link'));
+    await waitFor(() =>
+      expect(mockCopyTextToClipboard).toHaveBeenCalledWith(`${window.location.origin}/app/ws-1/page-1?v=view-1&r=row-1`)
+    );
+    // Delete keeps the primary color at rest and turns red only while highlighted.
+    expect(screen.getByTestId('gallery-row-delete').className).toContain('hover:text-text-error');
+    expect(screen.getByTestId('gallery-row-delete').className).not.toMatch(/(^|\s)text-text-error/);
+  });
+
+  it('keeps rename, duplicate, and delete actions operable with accessible names', () => {
+    render(<GalleryCardToolbar onEdit={onEdit} rowId='row-1' />);
+
+    const edit = screen.getByRole('button', { name: 'button.rename' });
     const more = screen.getByRole('button', { name: 'button.more' });
 
     fireEvent.click(edit);

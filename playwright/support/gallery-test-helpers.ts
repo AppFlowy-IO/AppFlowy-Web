@@ -209,23 +209,26 @@ export async function addRowsFromGallery(page: Page, count: number): Promise<voi
 
   for (let index = 0; index < count; index += 1) {
     await DatabaseGallerySelectors.newRowButton(page).scrollIntoViewIfNeeded();
+    // Like Desktop's "New page" card, the ungrouped tile adds the row without opening it.
     await DatabaseGallerySelectors.newRowButton(page).click();
-    await expect(RowDetailSelectors.modal(page)).toHaveCount(1, { timeout: 15_000 });
-    await closeRowDetailWithEscape(page);
     await expect.poll(() => getActiveRowIds(page), { timeout: 15_000 }).toHaveLength(initialCount + index + 1);
   }
 }
 
 export async function openGallerySettings(page: Page): Promise<void> {
-  const galleryTrigger = DatabaseGallerySelectors.settingsTrigger(page);
+  const galleryOptions = DatabaseGallerySelectors.settingsMenu(page);
 
-  if (!(await galleryTrigger.isVisible().catch(() => false))) {
+  if (await galleryOptions.isVisible().catch(() => false)) return;
+
+  const layoutTrigger = DatabaseGallerySelectors.settingsTrigger(page);
+
+  if (!(await layoutTrigger.isVisible().catch(() => false))) {
     await page.getByTestId('database-actions-settings').click();
   }
 
-  await expect(galleryTrigger).toBeVisible({ timeout: 10_000 });
-  await galleryTrigger.click();
-  await expect(DatabaseGallerySelectors.settingsMenu(page)).toBeVisible({ timeout: 10_000 });
+  await expect(layoutTrigger).toBeVisible({ timeout: 10_000 });
+  await movePointerIntoSubmenu(page, layoutTrigger);
+  await expect(galleryOptions).toBeVisible({ timeout: 10_000 });
 }
 
 async function movePointerIntoSubmenu(page: Page, target: Locator): Promise<void> {
@@ -259,11 +262,11 @@ export async function chooseGalleryCardPreview(page: Page, preview: GalleryCardP
 }
 
 export async function toggleGalleryFitImage(page: Page): Promise<boolean> {
-  const toggle = page.getByTestId('gallery-fit-image-switch');
-  const before = (await toggle.getAttribute('data-state')) === 'checked';
+  const toggle = page.getByTestId('gallery-fit-image-toggle');
+  const before = (await toggle.getAttribute('aria-checked')) === 'true';
 
-  await page.getByTestId('gallery-fit-image-toggle').click();
-  await expect(toggle).toHaveAttribute('data-state', before ? 'unchecked' : 'checked');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-checked', before ? 'false' : 'true');
   return !before;
 }
 

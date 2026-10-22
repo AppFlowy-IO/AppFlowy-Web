@@ -121,6 +121,36 @@ describe('ListGroupHeader', () => {
     expect(clearGrouping).toHaveBeenCalled();
   });
 
+  it('uses the Figma gallery header: Hide group and Delete instead of Remove grouping', async () => {
+    const onDeleteGroup = jest.fn();
+
+    render(
+      <ListGroupHeader
+        fieldId='status'
+        fieldName='Status'
+        fieldType={0}
+        group={{ ...group, option: { color: 'Purple', id: 'todo', name: 'To do' } } as never}
+        groupConfigId='group-config'
+        onDeleteGroup={onDeleteGroup}
+        variant='gallery'
+      />
+    );
+
+    expect(screen.getByTestId('list-group-collapse-toggle').className).toContain('mr-1');
+    expect(screen.getByTestId('list-group-row-count').className).toContain('font-medium');
+    expect(screen.getByTestId('list-group-option-tag').textContent).toBe('To do');
+
+    const actionsTrigger = screen.getByTestId('list-group-actions');
+
+    expect(actionsTrigger.className).toContain('h-6');
+    actionsTrigger.focus();
+    fireEvent.keyDown(actionsTrigger, { code: 'Enter', key: 'Enter' });
+    expect(await screen.findByTestId('list-hide-group')).toBeTruthy();
+    expect(screen.queryByTestId('list-remove-grouping')).toBeNull();
+    fireEvent.click(screen.getByTestId('gallery-delete-group'));
+    expect(onDeleteGroup).toHaveBeenCalledTimes(1);
+  });
+
   it('hides mutating group actions in readonly mode', () => {
     mockUseReadOnly.mockReturnValue(true);
     renderHeader();

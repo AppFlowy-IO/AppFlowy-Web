@@ -104,7 +104,11 @@ function Layout({ currentLayout, children }: { currentLayout: DatabaseViewLayout
         data-testid='database-layout-settings-trigger'
         onPointerLeave={onTriggerPointerLeave}
       >
-        <LayoutIcon aria-hidden='true' />
+        {currentLayout === DatabaseViewLayout.Gallery ? (
+          <ViewIcon layout={ViewLayout.Gallery} size='small' />
+        ) : (
+          <LayoutIcon aria-hidden='true' />
+        )}
         <span>{t('grid.settings.layout')}</span>
         <span className='ml-auto text-xs text-text-tertiary'>
           {options.find((option) => option.value === currentLayout)?.label}

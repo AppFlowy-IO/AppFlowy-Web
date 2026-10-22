@@ -21,6 +21,7 @@ jest.mock('@atlaskit/pragmatic-drag-and-drop-hitbox/util/get-reorder-destination
 }));
 
 jest.mock('@/application/database-yjs', () => ({
+  FieldType: { CreatedBy: 13, LastEditedBy: 14, MultiSelect: 4, SingleSelect: 3 },
   FieldVisibility: {
     AlwaysHidden: 2,
     AlwaysShown: 0,
@@ -54,9 +55,36 @@ jest.mock('../GalleryCard', () => ({
 const mockUseGalleryView = jest.fn();
 
 jest.mock('../GalleryViewContext', () => ({ useGalleryView: () => mockUseGalleryView() }));
-jest.mock('../GalleryGroupFooter', () => ({ GalleryGroupFooter: () => null }));
+jest.mock('../GalleryGroupFooter', () => ({
+  GalleryGroupFooter: ({ groupId }: { groupId: string }) => <div data-testid={`mock-group-footer-${groupId}`} />,
+  GalleryGroupNewPageTile: ({ groupId }: { groupId: string }) => <div data-testid={`mock-group-tile-${groupId}`} />,
+}));
+jest.mock('../GalleryNewGroup', () => ({
+  GalleryNewGroup: ({ fieldId }: { fieldId: string }) => <div data-testid={`mock-new-group-${fieldId}`} />,
+}));
+jest.mock('../GalleryDeleteGroupConfirm', () => ({
+  GalleryDeleteGroupConfirm: ({ groupId, rows }: { groupId: string; rows: Array<{ id: string }> }) => (
+    <div data-row-count={rows.length} data-testid={`mock-delete-group-${groupId}`} />
+  ),
+}));
 jest.mock('@/components/database/list/ListGroup', () => ({
-  ListGroupHeader: ({ group }: { group: { id: string } }) => <div data-testid={`mock-group-header-${group.id}`} />,
+  ListGroupHeader: ({
+    group,
+    onDeleteGroup,
+    variant,
+  }: {
+    group: { id: string };
+    onDeleteGroup?: () => void;
+    variant?: string;
+  }) => (
+    <div data-testid={`mock-group-header-${group.id}`} data-variant={variant}>
+      {onDeleteGroup ? (
+        <button data-testid={`mock-delete-${group.id}`} onClick={onDeleteGroup} type='button'>
+          delete
+        </button>
+      ) : null}
+    </div>
+  ),
 }));
 jest.mock('../GalleryNewRow', () => ({
   __esModule: true,
@@ -250,17 +278,25 @@ describe('Gallery pagination lifecycle', () => {
   const groupRows = (prefix: string, count: number) =>
     Array.from({ length: count }, (_, index) => ({ height: 36, id: `${prefix}-${index}` }));
 
-  function mockGroupedView(groups: Array<{ id: string; rows: ReturnType<typeof groupRows> }>, fieldName = 'Status') {
+  function mockGroupedView(
+    groups: Array<{ id: string; rows: ReturnType<typeof groupRows>; isDefault?: boolean }>,
+    fieldName = 'Status',
+    fieldType = 3
+  ) {
+    const gridGroups = groups.map((group) => ({ ...group, collapsed: false, isDefault: !!group.isDefault, label: group.id }));
+
     mockUseGalleryView.mockReturnValue({
       compactMode: false,
       grouping: {
         fieldId: 'status',
         fieldName,
+        fieldType,
         groupId: 'group-config',
+        groups: gridGroups,
         isGrouped: true,
         ready: true,
         rowOrders: groups.flatMap((group) => group.rows),
-        visibleGroups: groups.map((group) => ({ ...group, collapsed: false, label: group.id })),
+        visibleGroups: gridGroups,
       },
     });
   }
@@ -284,6 +320,55 @@ describe('Gallery pagination lifecycle', () => {
     expect(screen.getAllByTestId(/^mock-gallery-card-c-/)).toHaveLength(60);
     expect(screen.queryByTestId('gallery-load-more')).toBeNull();
     expect(screen.getAllByTestId(/^mock-gallery-card-/)).toHaveLength(140);
+  });
+
+  it('puts New page in a free slot of the last row and uses the footer when the row is full', () => {
+    // 1000px fits three Medium cards (260px minimum each, 16px gaps).
+    mockGroupedView([
+      { id: 'partial', rows: groupRows('partial', 2) },
+      { id: 'full', rows: groupRows('full', 3) },
+      { id: 'empty', rows: groupRows('empty', 0) },
+    ]);
+
+    render(<Gallery />);
+
+    expect(screen.getByTestId('mock-group-tile-partial')).toBeTruthy();
+    expect(screen.queryByTestId('mock-group-footer-partial')).toBeNull();
+    expect(screen.getByTestId('mock-group-footer-full')).toBeTruthy();
+    expect(screen.queryByTestId('mock-group-tile-full')).toBeNull();
+    expect(screen.getByTestId('mock-group-footer-empty')).toBeTruthy();
+    expect(screen.getByTestId('mock-group-header-partial').dataset.variant).toBe('gallery');
+  });
+
+  it('offers New group for select grouping and deletes a group with every page in it', () => {
+    mockGroupedView([
+      { id: 'status', rows: groupRows('none', 1), isDefault: true },
+      { id: 'todo', rows: groupRows('todo', 4) },
+    ]);
+
+    render(<Gallery />);
+
+    expect(screen.getByTestId('mock-new-group-status')).toBeTruthy();
+    // The default "No status" group is derived, so desktop delete_group leaves it alone.
+    expect(screen.queryByTestId('mock-delete-status')).toBeNull();
+    fireEvent.click(screen.getByTestId('mock-delete-todo'));
+    expect(screen.getByTestId('mock-delete-group-todo').dataset.rowCount).toBe('4');
+  });
+
+  it('keeps New group and Delete away from read-only and non-select groupings', () => {
+    mockGroupedView([{ id: 'Yes', rows: groupRows('yes', 1) }], 'Done', 5);
+    const { unmount } = render(<Gallery />);
+
+    expect(screen.queryByTestId('mock-new-group-status')).toBeNull();
+    expect(screen.getByTestId('mock-delete-Yes')).toBeTruthy();
+    unmount();
+
+    mockUseReadOnly.mockReturnValue(true);
+    mockGroupedView([{ id: 'todo', rows: groupRows('todo', 1) }]);
+    render(<Gallery />);
+    expect(screen.queryByTestId('mock-new-group-status')).toBeNull();
+    expect(screen.queryByTestId('mock-delete-todo')).toBeNull();
+    expect(screen.queryByTestId('mock-group-tile-todo')).toBeNull();
   });
 
   it('shows the desktop empty state when grouping leaves no visible group', () => {

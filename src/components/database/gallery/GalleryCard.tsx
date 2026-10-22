@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 
 import {
   Column,
+  FieldType,
   RowMetaKey,
   RowMeta,
   useCellSelector,
@@ -28,10 +29,10 @@ import { clampCoverOffset } from '@/utils/cover';
 
 import {
   GALLERY_CARD_THEME_CLASS_NAME,
+  GALLERY_COVER_ASPECT_RATIO,
   GALLERY_COVER_PLACEHOLDER_BACKGROUND_CLASS_NAME,
   GALLERY_TILE_PADDING,
   GALLERY_TITLE_SURFACE_BACKGROUND_CLASS_NAME,
-  getGalleryCoverHeight,
   getGalleryMinimumCardHeight,
 } from './gallery.constants';
 import GalleryCardToolbar from './GalleryCardToolbar';
@@ -40,18 +41,16 @@ import GalleryRowIcon from './GalleryRowIcon';
 import { useGalleryHasSorts } from './GallerySortState';
 import { useGalleryReposition } from './GalleryViewContext';
 
+// Figma card title: Body_S/Enhanced (14px, weight 500), wrapping onto more lines instead of truncating.
 const primaryCellStyle: CSSProperties = {
-  alignItems: 'center',
-  display: 'flex',
+  display: 'block',
   fontSize: 14,
-  fontWeight: 600,
+  fontWeight: 500,
   lineHeight: '20px',
   maxWidth: '100%',
   minHeight: 20,
-  overflow: 'hidden',
+  overflowWrap: 'anywhere',
   textAlign: 'left',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
 };
 
 const propertyCellStyle: CSSProperties = {
@@ -68,11 +67,13 @@ const propertyCellStyle: CSSProperties = {
 };
 
 const GALLERY_PREVIEW_ROOT_MARGIN = '400px 0px';
+// Figma card (node 7422:203740): 12px radius, primary border with the card
+// shadow at rest; hover swaps in the primary-hover border and tints the content.
 const galleryCardClassName = cn(
   GALLERY_CARD_THEME_CLASS_NAME,
-  'group/gallery-card relative flex h-full w-full flex-col overflow-hidden rounded-[10px] border bg-[var(--gallery-card-surface)]',
-  'border-border-primary transition-[box-shadow,transform] ease-out [transition-duration:120ms] motion-reduce:transition-none',
-  'focus-within:shadow-dialog hover:shadow-dialog'
+  'group/gallery-card relative flex h-full w-full flex-col overflow-hidden rounded-400 border bg-[var(--gallery-card-surface)]',
+  'border-border-primary shadow-card transition-[border-color,transform] ease-out [transition-duration:120ms] motion-reduce:transition-none',
+  'focus-within:border-border-primary-hover hover:border-border-primary-hover'
 );
 
 function useGalleryPreviewNearViewport(tileRef: React.MutableRefObject<HTMLDivElement | null>): boolean {
@@ -263,7 +264,7 @@ function GalleryTitle({
 
   return (
     <div
-      className='gallery-card-title flex h-5 min-w-0 items-center text-sm font-semibold text-[var(--gallery-card-title)]'
+      className='gallery-card-title flex min-h-5 min-w-0 items-start text-sm font-medium text-[var(--gallery-card-title)]'
       data-primary-indicator={indicator}
       data-testid={`gallery-card-title-${rowId}`}
       id={id}
@@ -289,7 +290,7 @@ function GalleryTitle({
             rowId={rowId}
             setEditing={setEditing}
             style={cellStyle}
-            wrap={false}
+            wrap
           />
         ) : (
           <span
@@ -314,8 +315,21 @@ function GalleryTitle({
   );
 }
 
+function countPersons(data: unknown): number {
+  if (typeof data !== 'string' || !data) return 0;
+  try {
+    const parsed: unknown = JSON.parse(data);
+
+    return Array.isArray(parsed) ? parsed.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
 function GalleryProperty({ field, rowId }: { field: Column; rowId: string }) {
   const cell = useCellSelector({ fieldId: field.fieldId, rowId });
+  // Figma (node 7451:52975): a single person shows avatar and name; several people show avatars only.
+  const showPersonNames = field.fieldType !== FieldType.Person || countPersons(cell?.data) <= 1;
 
   return (
     <div
@@ -323,7 +337,7 @@ function GalleryProperty({ field, rowId }: { field: Column; rowId: string }) {
       data-field-id={field.fieldId}
       data-testid={`gallery-field-${field.fieldId}-${rowId}`}
     >
-      <ListCell cell={cell} field={field} rowId={rowId} style={propertyCellStyle} wrap showPersonNames />
+      <ListCell cell={cell} field={field} rowId={rowId} style={propertyCellStyle} wrap showPersonNames={showPersonNames} />
     </div>
   );
 }
@@ -342,7 +356,6 @@ export interface GalleryCoverRepositionSession {
 function GalleryCardCover({
   cardPreview,
   coverFieldId,
-  coverHeight,
   fitImage,
   liveOffsetRef,
   meta,
@@ -352,7 +365,6 @@ function GalleryCardCover({
 }: {
   cardPreview: GalleryCardPreview;
   coverFieldId?: string;
-  coverHeight: number;
   fitImage: boolean;
   liveOffsetRef: React.MutableRefObject<number>;
   meta: RowMeta | null | undefined;
@@ -386,7 +398,7 @@ function GalleryCardCover({
         'relative w-full shrink-0 overflow-hidden',
         repositioning ? 'z-20 cursor-grab touch-none select-none active:cursor-grabbing' : 'pointer-events-none'
       )}
-      style={{ height: coverHeight }}
+      style={{ aspectRatio: GALLERY_COVER_ASPECT_RATIO }}
       data-testid={`gallery-cover-${rowId}`}
       role={repositioning ? 'slider' : undefined}
       tabIndex={repositioning ? 0 : undefined}
@@ -404,7 +416,8 @@ function GalleryCardCover({
       }}
       onPointerMove={(event) => {
         if (!repositioning || pointerY.current === null) return;
-        const delta = -(event.clientY - pointerY.current) / (coverHeight / 2);
+        // A full sweep over half the cover maps to the whole -1..1 range.
+        const delta = -(event.clientY - pointerY.current) / (event.currentTarget.clientHeight / 2);
 
         pointerY.current = event.clientY;
         moveBy(delta);
@@ -532,7 +545,6 @@ export const GalleryCard = memo(function GalleryCard({
     navigateToRow?.(rowId);
   }, [navigateToRow, rowId]);
 
-  const coverHeight = getGalleryCoverHeight(cardSize);
   const minimumHeight = getGalleryMinimumCardHeight(cardSize);
   const tileMinimumHeight = minimumHeight + GALLERY_TILE_PADDING * 2;
   const openLabelId = `gallery-card-open-label-${occurrenceId ?? rowId}`;
@@ -578,7 +590,7 @@ export const GalleryCard = memo(function GalleryCard({
             }
             aria-keyshortcuts={reorderable ? 'Alt+ArrowLeft Alt+ArrowRight' : undefined}
             aria-labelledby={`${openLabelId} ${titleLabelId}`}
-            className='absolute inset-0 z-10 cursor-pointer rounded-[10px] bg-transparent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-border-theme-thick'
+            className='absolute inset-0 z-10 cursor-pointer rounded-400 bg-transparent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-border-theme-thick'
             data-testid={`gallery-card-open-${rowId}`}
             onClick={(event) => {
               event.stopPropagation();
@@ -603,7 +615,6 @@ export const GalleryCard = memo(function GalleryCard({
           <GalleryCardCover
             cardPreview={cardPreview}
             coverFieldId={coverFieldId}
-            coverHeight={coverHeight}
             fitImage={fitImage}
             liveOffsetRef={liveOffset}
             meta={meta}
@@ -635,8 +646,8 @@ export const GalleryCard = memo(function GalleryCard({
             {propertyFields.length > 0 ? (
               <div
                 className={cn(
-                  'mt-1 flex min-w-0 gap-y-2 text-xs',
-                  compactMode ? 'flex-wrap items-center gap-x-1' : 'flex-col items-start'
+                  'mt-2 flex min-w-0 gap-y-2 text-xs',
+                  compactMode ? 'flex-wrap items-center gap-x-3' : 'flex-col items-start'
                 )}
                 data-compact={compactMode}
                 data-testid={`gallery-card-properties-${rowId}`}
@@ -650,7 +661,6 @@ export const GalleryCard = memo(function GalleryCard({
 
           <GalleryCardToolbar
             onEdit={() => setEditing(true)}
-            onPeek={navigateToRow ? navigateToRowDetail : undefined}
             onReposition={
               canReposition
                 ? () => {
