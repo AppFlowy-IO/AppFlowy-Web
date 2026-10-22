@@ -15,14 +15,13 @@ import { ClientValidationError } from '@/application/errors/client-validation-er
 import { createRow as openCachedRow } from '@/application/services/js-services/cache';
 import { postDefaultRowCreation } from '@/application/services/js-services/http/atomic-row-creation-api';
 import { readCollabStates } from '@/application/services/js-services/http/collab-api';
-import { Types, YDatabase, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { CollabOrigin, Types, YDatabase, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
 
 import { decodeBase64Bytes, decodeCreatedRowCollab, encodeCreationCollab } from './encoded-collab';
 import { recordCommittedRowCreation } from './row-creation-history';
 import { CreatedRowReceipt, DefaultRowRequest, PreparedRowIntent } from './row-creation-types';
 import { prepareTemplateRowGraph } from './row-template-graph';
-import type { PreparedTemplateRowGraph } from './row-template-graph-types';
 import {
   assertNotAborted,
   ORIGINAL_DATABASE_RESTORE_ID,
@@ -30,6 +29,8 @@ import {
   waitForDatabaseViewSource,
 } from './source-readiness';
 import { submitTemplateRow } from './submit-template-row';
+
+import type { PreparedTemplateRowGraph } from './row-template-graph-types';
 
 export interface CloudRowCreationIntent extends PreparedRowIntent {
   workspaceId: string;
@@ -218,7 +219,10 @@ export async function createCloudRow(intent: CloudRowCreationIntent): Promise<st
       if (
         id === sourceViewId ||
         !anchor ||
-        view.get(YjsDatabaseKey.row_orders).toArray().some((row) => row.id === anchor && !row.is_deleted)
+        view
+          .get(YjsDatabaseKey.row_orders)
+          .toArray()
+          .some((row) => row.id === anchor && !row.is_deleted)
       )
         positionViewIds.push(id);
     });
@@ -270,11 +274,11 @@ export async function createCloudRow(intent: CloudRowCreationIntent): Promise<st
     };
 
     const read = async (ids: { objectId: string; collabType: Types }[]) => {
-      const result = await readCollabStates(
-        workspaceId,
-        ids,
-        { atomicCreationOwner: owner, signal: controller.signal, timeoutMs: Math.max(1, deadline - Date.now()) }
-      );
+      const result = await readCollabStates(workspaceId, ids, {
+        atomicCreationOwner: owner,
+        signal: controller.signal,
+        timeoutMs: Math.max(1, deadline - Date.now()),
+      });
 
       assertCurrent();
       return result;
@@ -379,7 +383,11 @@ export async function createCloudRow(intent: CloudRowCreationIntent): Promise<st
     const published = await publishWithDatabaseStorageFence(capturedFence, () => {
       assertCurrent();
       withDatabaseStorageFence(localRow, capturedFence, () => applyYDoc(localRow, rowState!));
-      withDatabaseStorageFence(databaseDoc, capturedFence, () => applyYDoc(databaseDoc, databaseUpdate!));
+      // Row creation commits this delta but leaves realtime delivery to the creating client.
+      // A local origin queues it ahead of subsequent edits through the normal durable outbox.
+      withDatabaseStorageFence(databaseDoc, capturedFence, () =>
+        Y.applyUpdate(databaseDoc, databaseUpdate!, CollabOrigin.Local)
+      );
     });
 
     if (!published) throw new Error('Database storage changed before Row activation');
