@@ -129,7 +129,7 @@ export function GalleryLayoutSettings() {
   return (
     <div data-testid='gallery-layout-settings-menu'>
       <DropdownMenuSeparator className='my-2' />
-      <DropdownMenuLabel className='min-h-0 px-2 py-1.5 text-xs font-semibold text-text-tertiary'>
+      <DropdownMenuLabel className='min-h-0 px-2 py-1.5 text-xs font-medium text-text-tertiary'>
         {t('gallery.menuName', 'Gallery')}
       </DropdownMenuLabel>
       <GalleryChoice

@@ -442,7 +442,7 @@ function GalleryCardCover({
         />
       )}
       {repositioning ? (
-        <span className='pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-md bg-black/60 px-3 py-1.5 text-sm font-medium text-white opacity-40 backdrop-blur-sm'>
+        <span className='pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-md bg-black/40 px-3 py-1.5 text-sm font-medium text-white backdrop-blur-sm'>
           {t('document.plugins.cover.dragImageToReposition')}
         </span>
       ) : null}

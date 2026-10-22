@@ -101,7 +101,7 @@ export function GalleryCardToolbar({
         {repositioning ? (
           <>
             <Button
-              className='h-7 px-1.5 text-sm text-white hover:bg-white/[0.16] hover:text-white'
+              className='h-7 min-w-[64px] px-1.5 text-sm font-medium text-white hover:bg-white/[0.16] hover:text-white'
               data-testid='gallery-cover-cancel'
               onClick={onCancelReposition}
               variant='ghost'
@@ -109,7 +109,11 @@ export function GalleryCardToolbar({
               {t('button.cancel')}
             </Button>
             <span aria-hidden className='mx-1 h-4 w-px bg-white/20' />
-            <Button className='h-7 px-1.5 text-sm' data-testid='gallery-cover-save' onClick={onSaveReposition}>
+            <Button
+              className='h-7 min-w-[64px] rounded-100 px-2 text-sm font-medium'
+              data-testid='gallery-cover-save'
+              onClick={onSaveReposition}
+            >
               {t('button.save')}
             </Button>
           </>
