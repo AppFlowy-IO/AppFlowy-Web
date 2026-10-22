@@ -361,7 +361,8 @@ export function useGroupByFieldDispatch({ preserveFilters = false }: { preserveF
             const supportsOptionalGrouping =
               layout === DatabaseViewLayout.Grid ||
               layout === DatabaseViewLayout.List ||
-              layout === DatabaseViewLayout.Timeline;
+              layout === DatabaseViewLayout.Timeline ||
+              layout === DatabaseViewLayout.Gallery;
 
             if (!supportsOptionalGrouping && !preserveFilters) {
               // Board keeps its existing behavior: a field cannot simultaneously
@@ -441,7 +442,11 @@ export function useUpdateGroupContentDispatch() {
             if (!group) throw new Error('Group not found');
             const layout = Number(view?.get(YjsDatabaseKey.layout)) as DatabaseViewLayout;
 
-            if (layout === DatabaseViewLayout.Grid || layout === DatabaseViewLayout.List) {
+            if (
+              layout === DatabaseViewLayout.Grid ||
+              layout === DatabaseViewLayout.List ||
+              layout === DatabaseViewLayout.Gallery
+            ) {
               markLocalDatabaseGroupInitialization(group);
             }
 
@@ -517,7 +522,11 @@ export function useUpdateNumberGroupConfigurationDispatch() {
         if (columns && additions.length) columns.push(additions);
         const layout = Number(view?.get(YjsDatabaseKey.layout)) as DatabaseViewLayout;
 
-        if (layout === DatabaseViewLayout.Grid || layout === DatabaseViewLayout.List) {
+        if (
+          layout === DatabaseViewLayout.Grid ||
+          layout === DatabaseViewLayout.List ||
+          layout === DatabaseViewLayout.Gallery
+        ) {
           markLocalDatabaseGroupInitialization(group);
         }
       }
@@ -586,7 +595,11 @@ export function useUpdateDateGroupConditionDispatch() {
 
             const layout = Number(view?.get(YjsDatabaseKey.layout)) as DatabaseViewLayout;
 
-            if (layout === DatabaseViewLayout.Grid || layout === DatabaseViewLayout.List) {
+            if (
+              layout === DatabaseViewLayout.Grid ||
+              layout === DatabaseViewLayout.List ||
+              layout === DatabaseViewLayout.Gallery
+            ) {
               markLocalDatabaseGroupInitialization(group);
             }
           },
@@ -1079,7 +1092,11 @@ function getOrCreateBoardLayoutSetting(view: YDatabaseView) {
 }
 
 /** Layouts whose grouping options live under `layout_settings[String(layout)]`. */
-export type GroupableDatabaseLayout = DatabaseViewLayout.Grid | DatabaseViewLayout.List | DatabaseViewLayout.Timeline;
+export type GroupableDatabaseLayout =
+  | DatabaseViewLayout.Grid
+  | DatabaseViewLayout.List
+  | DatabaseViewLayout.Timeline
+  | DatabaseViewLayout.Gallery;
 
 function getOrCreateDatabaseGroupingLayoutSetting(
   view: YDatabaseView,
@@ -1097,6 +1114,8 @@ function getOrCreateDatabaseGroupingLayoutSetting(
       ? layoutSettings.get('4')
       : layout === DatabaseViewLayout.Timeline
       ? layoutSettings.get('8')
+      : layout === DatabaseViewLayout.Gallery
+      ? layoutSettings.get('5')
       : layoutSettings.get('0');
 
   if (!layoutSetting) {

@@ -63,6 +63,7 @@ export function ListGroupHeader({
   group,
   groupConfigId,
   className,
+  openAfterCreate = false,
 }: {
   fieldId?: string;
   fieldName?: string;
@@ -71,13 +72,14 @@ export function ListGroupHeader({
   groupConfigId?: string;
   /** Overrides the List's height and gutter, e.g. for the timeline's 36px rows. */
   className?: string;
+  openAfterCreate?: boolean;
 }) {
   const { t } = useTranslation();
   const readOnly = useReadOnly();
   const toggleCollapsed = useToggleListGroupCollapsedDispatch(groupConfigId);
   const setVisibility = useSetListGroupVisibilityDispatch(groupConfigId, fieldId);
   const clearGrouping = useClearGroupByFieldDispatch();
-  const createRow = useCreateListGroupRow(fieldId, group.id);
+  const createRow = useCreateListGroupRow(fieldId, group.id, openAfterCreate);
   const { pending, run } = useRowCreationAction();
   const isCheckbox = fieldType === FieldType.Checkbox;
   const isChecked = group.id === 'Yes';

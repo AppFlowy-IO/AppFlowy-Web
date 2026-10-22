@@ -51,6 +51,12 @@ jest.mock('../GalleryCard', () => ({
     <div data-field-ids={fields.map((field) => field.fieldId).join(',')} data-testid={`mock-gallery-card-${rowId}`} />
   ),
 }));
+jest.mock('../GalleryViewContext', () => ({
+  useGalleryView: () => ({
+    grouping: { rowOrders: useRowOrdersSelector(), visibleGroups: [], isGrouped: false, ready: true },
+    compactMode: false,
+  }),
+}));
 jest.mock('../GalleryNewRow', () => ({
   __esModule: true,
   default: () => <button type='button'>New row</button>,
@@ -168,7 +174,7 @@ describe('Gallery pagination lifecycle', () => {
 
     expect(screen.getAllByTestId(/^mock-gallery-card-/)).toHaveLength(50);
 
-    const grid = screen.getByTestId('gallery-grid');
+    const grid = screen.getByTestId('gallery-content');
 
     scrollHeight = 500;
     act(() => {
@@ -202,7 +208,6 @@ describe('Gallery pagination lifecycle', () => {
 
     render(<Gallery />);
 
-    expect(mockUseRowOrdersSelector).toHaveBeenCalledWith({ publish: false });
     expect(mockUseFeedSearch).toHaveBeenLastCalledWith(expect.objectContaining({ rows, query: 'row' }));
     expect(mockUsePublishRowOrders).toHaveBeenLastCalledWith(matching, true, { layout: 'gallery', query: 'row' });
     expect(screen.getAllByTestId(/^mock-gallery-card-/).map((card) => card.dataset.testid)).toEqual([

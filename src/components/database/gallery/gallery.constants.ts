@@ -4,19 +4,13 @@ export const GALLERY_INITIAL_ROW_LIMIT = 50;
 export const GALLERY_LOAD_MORE_INCREMENT = 30;
 export const GALLERY_LOAD_MORE_THRESHOLD = 200;
 export const GALLERY_MAX_COLUMNS = 10;
-export const GALLERY_GRID_GAP = 1;
-export const GALLERY_TILE_PADDING = 8;
+export const GALLERY_GRID_GAP = 8;
+export const GALLERY_TILE_PADDING = 0;
 export const GALLERY_DESKTOP_INLINE_PADDING = 80;
 
-// Gallery cards use the desktop theme's card-local palette. These values are
-// intentionally scoped to Gallery instead of changing Web's global semantic
-// tokens, whose dark surface and text colors differ from Flutter's desktop
-// theme.
+// Reuse the same semantic palette as the revamped desktop cards and menus.
 export const GALLERY_CARD_THEME_CLASS_NAME =
-  '[--gallery-card-surface:#FFFFFF] [--gallery-card-title:#333333] [--gallery-card-hint:#828282] ' +
-  '[[data-dark-mode=true]_&]:[--gallery-card-surface:#1A202C] ' +
-  '[[data-dark-mode=true]_&]:[--gallery-card-title:#BBC3CD] ' +
-  '[[data-dark-mode=true]_&]:[--gallery-card-hint:#59647A]';
+  '[--gallery-card-surface:var(--surface-primary)] [--gallery-card-title:var(--text-primary)] [--gallery-card-hint:var(--text-tertiary)]';
 
 // Keep these translucent layers aligned with Flutter's GalleryRowCard. They
 // intentionally composite over the card's surface color rather than using an
@@ -24,7 +18,7 @@ export const GALLERY_CARD_THEME_CLASS_NAME =
 export const GALLERY_COVER_PLACEHOLDER_BACKGROUND_CLASS_NAME =
   'bg-[rgba(31,35,41,0.08)] [[data-dark-mode=true]_&]:bg-[rgba(89,100,122,0.25)]';
 export const GALLERY_TITLE_SURFACE_BACKGROUND_CLASS_NAME =
-  'bg-[rgba(31,35,41,0.06)] [[data-dark-mode=true]_&]:bg-[rgba(0,0,0,0.12)]';
+  'bg-transparent group-hover/gallery-card:bg-fill-content-hover';
 
 export const GALLERY_CARD_WIDTH: Record<GalleryCardSize, number> = {
   [GalleryCardSize.Small]: 220,

@@ -1828,6 +1828,8 @@
       "sort": "Sort",
       "sortBy": "Sort by",
       "properties": "Properties",
+      "propertyVisibility": "Property visibility",
+      "compactMode": "Compact mode",
       "addView": "Add view",
       "reorderPropertiesTooltip": "Drag to reorder properties",
       "group": "Group",
@@ -2659,6 +2661,8 @@
       },
       "cover": {
         "changeCover": "Change Cover",
+        "repositionCover": "Reposition cover",
+        "dragImageToReposition": "Drag image to reposition",
         "colors": "Colors",
         "images": "Images",
         "clearAll": "Clear All",

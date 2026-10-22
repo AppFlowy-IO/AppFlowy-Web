@@ -1,12 +1,16 @@
-import { useMemo, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useDuplicateRowDispatch } from '@/application/database-yjs/dispatch';
+import { ReactComponent as CenterPeekIcon } from '@/assets/icons/center_peek.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
+import { ReactComponent as RepositionIcon } from '@/assets/icons/reposition.svg';
+import { ReactComponent as SidePeekIcon } from '@/assets/icons/side_peek.svg';
 import { DeleteRowConfirm } from '@/components/database/components/database-row/DeleteRowConfirm';
+import { useRowPeekCanShow } from '@/components/database/row-peek/RowPeekLayout';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -16,87 +20,170 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 
-export function GalleryCardToolbar({ onEdit, rowId }: { onEdit: () => void; rowId: string }) {
+const actionClassName =
+  'h-7 w-7 rounded p-1 text-white hover:bg-white/20 hover:text-white focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-white [&_svg]:h-5 [&_svg]:w-5';
+
+function GalleryAction({
+  label,
+  testId,
+  onClick,
+  preserveFocus = false,
+  children,
+}: {
+  label: string;
+  testId: string;
+  onClick: () => void;
+  preserveFocus?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          aria-label={label}
+          className={actionClassName}
+          data-testid={testId}
+          onClick={onClick}
+          onMouseDown={preserveFocus ? (event) => event.preventDefault() : undefined}
+          type='button'
+          variant='ghost'
+        >
+          {children}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+export function GalleryCardToolbar({
+  onEdit,
+  onPeek,
+  onReposition,
+  onCancelReposition,
+  onSaveReposition,
+  repositioning = false,
+  readOnly = false,
+  rowId,
+}: {
+  onEdit: () => void;
+  onPeek?: () => void;
+  onReposition?: () => void;
+  onCancelReposition?: () => void;
+  onSaveReposition?: () => void;
+  repositioning?: boolean;
+  readOnly?: boolean;
+  rowId: string;
+}) {
   const { t } = useTranslation();
   const duplicateRow = useDuplicateRowDispatch();
+  const canShowSidePeek = useRowPeekCanShow();
+  const [menuOpen, setMenuOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const rowIds = useMemo(() => [rowId], [rowId]);
+
+  if (readOnly && !onPeek) return null;
 
   return (
     <>
       <div
-        className='pointer-events-none absolute right-[7px] top-[7px] z-20 flex items-center overflow-hidden rounded-[4px] border border-[rgba(31,35,41,0.12)] bg-white opacity-0 shadow-[0_0_4px_rgba(31,35,41,0.02),0_0_4px_-2px_rgba(31,35,41,0.02)] transition-opacity duration-200 group-focus-within/gallery-card:pointer-events-auto group-focus-within/gallery-card:opacity-100 group-hover/gallery-card:pointer-events-auto group-hover/gallery-card:opacity-100 motion-reduce:transition-none [[data-dark-mode=true]_&]:border-[#59647A] [[data-dark-mode=true]_&]:bg-[#1A202C]'
+        className={cn(
+          'pointer-events-none absolute right-[7px] top-[7px] z-30 flex items-center rounded-md bg-black/60 p-1 opacity-0 shadow-toolbar backdrop-blur-sm transition-opacity duration-200 group-focus-within/gallery-card:pointer-events-auto group-focus-within/gallery-card:opacity-100 group-hover/gallery-card:pointer-events-auto group-hover/gallery-card:opacity-100 motion-reduce:transition-none',
+          (menuOpen || repositioning) && 'pointer-events-auto opacity-100'
+        )}
         data-gallery-interactive='true'
         data-testid={`gallery-card-toolbar-${rowId}`}
         onClick={(event) => event.stopPropagation()}
       >
-        <Tooltip>
-          <TooltipTrigger asChild>
+        {repositioning ? (
+          <>
             <Button
-              aria-label={t('button.edit')}
-              className='h-[22px] w-6 rounded-none p-[3px] text-[#828282] hover:bg-white focus-visible:relative focus-visible:z-10 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-fill-theme-thick [[data-dark-mode=true]_&]:text-[#59647A] [[data-dark-mode=true]_&]:hover:bg-[#1A202C]'
-              data-testid={`gallery-card-edit-${rowId}`}
-              onClick={(event) => {
-                event.stopPropagation();
-                onEdit();
-              }}
-              type='button'
+              className='h-7 px-1.5 text-sm text-white hover:bg-white/20 hover:text-white'
+              data-testid='gallery-cover-cancel'
+              onClick={onCancelReposition}
               variant='ghost'
             >
-              <EditIcon aria-hidden='true' className='h-4 w-4' />
+              {t('button.cancel')}
             </Button>
-          </TooltipTrigger>
-          <TooltipContent>{t('button.edit')}</TooltipContent>
-        </Tooltip>
-
-        <span
-          aria-hidden='true'
-          className='h-[22px] w-px shrink-0 bg-[rgba(31,35,41,0.12)] [[data-dark-mode=true]_&]:bg-[#59647A]'
-          data-testid='gallery-card-toolbar-divider'
-        />
-
-        <DropdownMenu>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  aria-label={t('tooltip.openMenu')}
-                  className='h-[22px] w-6 rounded-none p-[3px] text-[#828282] hover:bg-white focus-visible:relative focus-visible:z-10 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-fill-theme-thick [[data-dark-mode=true]_&]:text-[#59647A] [[data-dark-mode=true]_&]:hover:bg-[#1A202C]'
-                  data-testid={`gallery-card-more-${rowId}`}
-                  onClick={(event) => event.stopPropagation()}
-                  type='button'
-                  variant='ghost'
-                >
-                  <MoreIcon aria-hidden='true' className='h-4 w-4' />
-                </Button>
-              </DropdownMenuTrigger>
-            </TooltipTrigger>
-            <TooltipContent>{t('tooltip.openMenu')}</TooltipContent>
-          </Tooltip>
-          <DropdownMenuContent
-            align='end'
-            className='w-[180px] !min-w-[180px]'
-            data-testid='gallery-row-action-menu'
-            side='bottom'
-            sideOffset={8}
-          >
-            <DropdownMenuGroup>
-              <DropdownMenuItem data-testid='gallery-row-duplicate' onSelect={() => void duplicateRow(rowId)}>
-                <DuplicateIcon aria-hidden='true' />
-                {t('button.duplicate')}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                data-testid='gallery-row-delete'
-                onSelect={() => setDeleteOpen(true)}
-                variant='destructive'
+            <span aria-hidden className='mx-1 h-4 w-px bg-white/20' />
+            <Button className='h-7 px-1.5 text-sm' data-testid='gallery-cover-save' onClick={onSaveReposition}>
+              {t('button.save')}
+            </Button>
+          </>
+        ) : (
+          <>
+            {onPeek ? (
+              <GalleryAction
+                label={t(canShowSidePeek ? 'grid.rowPage.openAsSidePeekPanel' : 'grid.rowPage.openAsCenterPeekPanel')}
+                testId={`gallery-card-peek-${rowId}`}
+                onClick={onPeek}
               >
-                <DeleteIcon aria-hidden='true' />
-                {t('button.delete')}
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
+                {canShowSidePeek ? <SidePeekIcon aria-hidden /> : <CenterPeekIcon aria-hidden />}
+              </GalleryAction>
+            ) : null}
+            {!readOnly && onReposition ? (
+              <GalleryAction
+                label={t('document.plugins.cover.repositionCover')}
+                testId={`gallery-card-reposition-${rowId}`}
+                onClick={onReposition}
+                preserveFocus
+              >
+                <RepositionIcon aria-hidden />
+              </GalleryAction>
+            ) : null}
+            {!readOnly ? (
+              <GalleryAction label={t('button.edit')} testId={`gallery-card-edit-${rowId}`} onClick={onEdit}>
+                <EditIcon aria-hidden />
+              </GalleryAction>
+            ) : null}
+
+            {!readOnly ? (
+              <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        aria-label={t('tooltip.openMenu')}
+                        className={actionClassName}
+                        data-testid={`gallery-card-more-${rowId}`}
+                        onClick={(event) => event.stopPropagation()}
+                        type='button'
+                        variant='ghost'
+                      >
+                        <MoreIcon aria-hidden='true' className='h-4 w-4' />
+                      </Button>
+                    </DropdownMenuTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent>{t('tooltip.openMenu')}</TooltipContent>
+                </Tooltip>
+                <DropdownMenuContent
+                  align='end'
+                  className='w-[180px] !min-w-[180px]'
+                  data-testid='gallery-row-action-menu'
+                  side='bottom'
+                  sideOffset={8}
+                >
+                  <DropdownMenuGroup>
+                    <DropdownMenuItem data-testid='gallery-row-duplicate' onSelect={() => void duplicateRow(rowId)}>
+                      <DuplicateIcon aria-hidden='true' />
+                      {t('button.duplicate')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      data-testid='gallery-row-delete'
+                      onSelect={() => setDeleteOpen(true)}
+                      variant='destructive'
+                    >
+                      <DeleteIcon aria-hidden='true' />
+                      {t('button.delete')}
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
+          </>
+        )}
       </div>
 
       {deleteOpen ? <DeleteRowConfirm onClose={() => setDeleteOpen(false)} open rowIds={rowIds} /> : null}

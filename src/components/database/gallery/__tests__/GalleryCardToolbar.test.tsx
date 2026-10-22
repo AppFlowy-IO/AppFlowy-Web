@@ -69,41 +69,29 @@ describe('GalleryCardToolbar Flutter desktop parity', () => {
     mockUseDuplicateRowDispatch.mockReturnValue(duplicateRow);
   });
 
-  it('uses the exact accessory geometry, colors, shadow, motion, and focus treatment', () => {
-    render(<GalleryCardToolbar onEdit={onEdit} rowId='row-1' />);
+  it('offers cover controls and replaces them with Save and Cancel during repositioning', () => {
+    const onReposition = jest.fn();
+    const onSaveReposition = jest.fn();
+    const onCancelReposition = jest.fn();
+    const props = { onEdit, onReposition, onSaveReposition, onCancelReposition, rowId: 'row-1' };
+    const { rerender } = render(<GalleryCardToolbar {...props} />);
 
-    const toolbar = screen.getByTestId('gallery-card-toolbar-row-1');
-    const edit = screen.getByTestId('gallery-card-edit-row-1');
-    const more = screen.getByTestId('gallery-card-more-row-1');
-    const divider = screen.getByTestId('gallery-card-toolbar-divider');
+    fireEvent.click(screen.getByRole('button', { name: 'document.plugins.cover.repositionCover' }));
+    expect(onReposition).toHaveBeenCalledTimes(1);
+    rerender(<GalleryCardToolbar {...props} repositioning />);
+    expect(screen.queryByRole('button', { name: 'button.edit' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'button.save' }));
+    fireEvent.click(screen.getByRole('button', { name: 'button.cancel' }));
+    expect(onSaveReposition).toHaveBeenCalledTimes(1);
+    expect(onCancelReposition).toHaveBeenCalledTimes(1);
+  });
 
-    expect(toolbar.className).toContain('right-[7px]');
-    expect(toolbar.className).toContain('top-[7px]');
-    expect(toolbar.className).toContain('rounded-[4px]');
-    expect(toolbar.className).toContain('border-[rgba(31,35,41,0.12)]');
-    expect(toolbar.className).toContain('[[data-dark-mode=true]_&]:border-[#59647A]');
-    expect(toolbar.className).toContain('bg-white');
-    expect(toolbar.className).toContain('[[data-dark-mode=true]_&]:bg-[#1A202C]');
-    expect(toolbar.className).toContain('shadow-[0_0_4px_rgba(31,35,41,0.02),0_0_4px_-2px_rgba(31,35,41,0.02)]');
-    expect(toolbar.className).toContain('duration-200');
-    expect(toolbar.className).toContain('motion-reduce:transition-none');
-
-    for (const action of [edit, more]) {
-      expect(action.className).toContain('h-[22px]');
-      expect(action.className).toContain('w-6');
-      expect(action.className).toContain('p-[3px]');
-      expect(action.className).toContain('text-[#828282]');
-      expect(action.className).toContain('[[data-dark-mode=true]_&]:text-[#59647A]');
-      expect(action.className).toContain('hover:bg-white');
-      expect(action.className).toContain('[[data-dark-mode=true]_&]:hover:bg-[#1A202C]');
-      expect(action.className).toContain('focus-visible:ring-1');
-      expect(action.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
-    }
-
-    expect(divider.className).toContain('h-[22px]');
-    expect(divider.className).toContain('w-px');
-    expect(divider.className).toContain('bg-[rgba(31,35,41,0.12)]');
-    expect(divider.className).toContain('[[data-dark-mode=true]_&]:bg-[#59647A]');
+  it('exposes no editing actions in read-only mode', () => {
+    render(<GalleryCardToolbar onEdit={onEdit} onReposition={jest.fn()} rowId='row-1' readOnly />);
+    expect(screen.queryByTestId('gallery-card-toolbar-row-1')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'button.edit' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'tooltip.openMenu' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'document.plugins.cover.repositionCover' })).toBeNull();
   });
 
   it('aligns the 180px menu below the right edge with the Flutter offset', () => {

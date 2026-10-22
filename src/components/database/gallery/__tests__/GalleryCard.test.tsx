@@ -26,6 +26,7 @@ jest.mock('@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge', () => ({
 }));
 
 jest.mock('@/application/database-yjs', () => ({
+  RowMetaKey: { CoverId: 'cover' },
   FieldType: {
     Person: 15,
     Relation: 10,
@@ -59,6 +60,9 @@ jest.mock('@/components/database/list/ListCell', () => ({
 jest.mock('@/components/database/components/sorts/ClearSortingConfirm', () => ({
   ClearSortingConfirm: () => null,
 }));
+const mockUpdateMeta = jest.fn();
+
+jest.mock('@/application/database-yjs/dispatch', () => ({ useUpdateRowMetaDispatch: () => mockUpdateMeta }));
 jest.mock('../GalleryCardToolbar', () => () => null);
 jest.mock('../GalleryPreview', () => ({
   __esModule: true,
@@ -131,8 +135,6 @@ describe('GalleryCard rendering lifecycle', () => {
   it('desktop_list_card_cell_style.dart: properties take the primary text color', () => {
     renderCard();
 
-    // GalleryProperty remaps --text-primary to the card title color, so this
-    // is the web equivalent of desktop's textColorScheme.primary on cards.
     expect(screen.getByText('Property action').getAttribute('data-property-color')).toBe('var(--text-primary)');
   });
 
@@ -141,26 +143,13 @@ describe('GalleryCard rendering lifecycle', () => {
 
     const opener = screen.getByRole('button', { name: 'Open row Title' });
     const tile = screen.getByTestId('gallery-tile-row-1');
-    const card = screen.getByTestId('gallery-card-row-1');
     const title = screen.getByTestId('gallery-card-title-row-1');
-    const titleSurface = screen.getByTestId('gallery-card-title-surface-row-1');
 
     expect(opener.querySelector('button')).toBeNull();
     expect(opener.getAttribute('aria-labelledby')).toBe('gallery-card-open-label-row-1 gallery-card-title-label-row-1');
     expect(title.id).toBe('gallery-card-title-label-row-1');
     expect(tile.style.contentVisibility).toBe('auto');
-    expect(tile.style.containIntrinsicSize).toContain('198px');
-    expect(card.className).toContain('border-[rgba(31,35,41,0.14)]');
-    expect(card.className).toContain('[[data-dark-mode=true]_&]:border-[#59647A]');
-    expect(card.className).toContain('[--gallery-card-surface:#FFFFFF]');
-    expect(card.className).toContain('[[data-dark-mode=true]_&]:[--gallery-card-surface:#1A202C]');
-    expect(card.className).toContain('hover:border-[rgba(0,188,240,0.65)]');
-    expect(card.className).toContain('[transition-duration:120ms]');
-    expect(title.className).toContain('font-semibold');
-    expect(title.className).toContain('text-[var(--gallery-card-title)]');
-    expect(titleSurface.className).toContain('bg-[rgba(31,35,41,0.06)]');
-    expect(titleSurface.className).toContain('[[data-dark-mode=true]_&]:bg-[rgba(0,0,0,0.12)]');
-
+    expect(tile.style.containIntrinsicSize).toContain('182px');
     opener.focus();
     expect(document.activeElement).toBe(opener);
     fireEvent.click(opener);

@@ -8,6 +8,8 @@ import {
   useToggleListGroupCollapsedDispatch,
 } from '@/application/database-yjs/dispatch';
 
+import { GalleryGroupFooter } from '../../gallery/GalleryGroupFooter';
+
 import { ListGroupFooter, ListGroupHeader } from '../ListGroup';
 import { getListGroupCellsData } from '../ListRowActions';
 
@@ -140,6 +142,14 @@ describe('ListGroupHeader', () => {
         tailing: true,
       })
     );
+  });
+
+  it('opens rows created through the Gallery group footer with the group value', async () => {
+    render(<GalleryGroupFooter fieldId='status' groupId='todo' />);
+    fireEvent.click(screen.getByTestId('gallery-group-new-row-todo'));
+    await waitFor(() => expect(createRow).toHaveBeenCalledWith({
+      cellsData: { status: 'todo' }, openAfterCreate: true, tailing: true,
+    }));
   });
 
   it('labels the add button with the desktop "Create a new" tooltip', async () => {
