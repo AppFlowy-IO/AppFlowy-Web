@@ -25,7 +25,7 @@ Feature: Feed
     And the user clicks the first feed card to open the row detail page
     And the Feed user inserts paragraphs and a linked grid "TestGrid" in the row document
     And the user closes the feed row detail page
-    Then the first feed card contains a linked grid with bounded expandable height
+    Then the first feed card contains a linked grid within the card height cap
 
   Scenario: View database button closes row detail dialog for linked grid in row document
     Given the Feed test app is initialized

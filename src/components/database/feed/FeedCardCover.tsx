@@ -3,7 +3,6 @@ import { useState } from 'react';
 import type { RowMeta } from '@/application/database-yjs';
 import { useAuthenticatedImage } from '@/components/_shared/hooks/useAuthenticatedImage';
 import { getPageCover } from '@/components/database/gallery/GalleryPreview';
-import { cn } from '@/lib/utils';
 
 import { FEED_COVER_HEIGHT } from './feed.constants';
 
@@ -25,7 +24,7 @@ function FeedCoverImage({ rowId, src }: { rowId: string; src: string }) {
   );
 }
 
-/** Desktop `FeedCard._buildCover`: a 160px strip above the card body when the row has a cover. */
+/** Desktop `FeedCard._buildCover`: a 160px strip above the card body; the card's 16px corners clip it. */
 export function FeedCardCover({ cover, rowId }: { cover: RowMeta['cover']; rowId: string }) {
   const value = getPageCover(cover);
 
@@ -33,7 +32,7 @@ export function FeedCardCover({ cover, rowId }: { cover: RowMeta['cover']; rowId
 
   return (
     <div
-      className={cn('w-full shrink-0 overflow-hidden rounded-t-lg')}
+      className='w-full shrink-0 overflow-hidden'
       data-testid={`feed-card-cover-${rowId}`}
       style={{ background: value.background, height: FEED_COVER_HEIGHT }}
     >

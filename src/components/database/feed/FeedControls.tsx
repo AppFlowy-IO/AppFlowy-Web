@@ -40,7 +40,7 @@ export function FeedLoadMore({ onLoadMore, remainingCount }: { onLoadMore: () =>
 
   return (
     <button
-      className='mt-1.5 flex h-8 w-full items-center gap-2 rounded-[6px] px-2 text-left text-sm font-medium text-text-tertiary hover:bg-fill-content-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-fill-theme-thick'
+      className='flex h-8 w-full items-center gap-2 rounded-[6px] px-2 text-left text-sm font-medium text-text-tertiary hover:bg-fill-content-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-fill-theme-thick'
       data-testid='feed-load-more'
       onClick={onLoadMore}
       type='button'
@@ -51,7 +51,7 @@ export function FeedLoadMore({ onLoadMore, remainingCount }: { onLoadMore: () =>
   );
 }
 
-/** Desktop `_AddRowButton` (`feedAddRowButtonKey`): creates a row and opens its detail page. */
+/** The Figma feed's trailing "New page" card (`feedAddRowButtonKey`): creates a row and opens its detail page. */
 export function FeedNewRow() {
   const { t } = useTranslation();
   const createRow = useNewRowDispatch();
@@ -61,7 +61,7 @@ export function FeedNewRow() {
     <button
       aria-busy={creating}
       className={cn(
-        'my-1.5 flex w-full items-center justify-center gap-1 rounded-lg border border-border-primary py-3 text-sm font-medium text-text-tertiary',
+        'flex w-full items-center justify-center gap-1.5 rounded-300 border border-border-primary py-2.5 text-sm font-medium leading-5 text-text-secondary',
         'transition-colors hover:bg-fill-content-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-fill-theme-thick disabled:cursor-wait'
       )}
       data-testid='feed-new-row'
@@ -69,8 +69,8 @@ export function FeedNewRow() {
       onClick={() => void run(() => createRow({ openAfterCreate: true, tailing: true }))}
       type='button'
     >
-      {creating ? <RowCreationSpinner /> : <PlusIcon aria-hidden='true' className={'h-[18px] w-[18px]'} />}
-      {t('grid.row.newRow')}
+      {creating ? <RowCreationSpinner /> : <PlusIcon aria-hidden='true' className='h-5 w-5 text-icon-tertiary' />}
+      {t('newPageText')}
     </button>
   );
 }

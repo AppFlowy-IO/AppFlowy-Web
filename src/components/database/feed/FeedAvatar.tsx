@@ -4,16 +4,16 @@ import { cn } from '@/lib/utils';
 
 import type { FeedMember } from './FeedMembersContext';
 
-/** 24px avatar matching Desktop `UserAvatar(size: AFAvatarSize.s)` in feed cards. */
+/** 20px avatar of the Figma feed card (Desktop `AFAvatarSize.xxs`). */
 export function FeedAvatar({ className, member, testId }: { className?: string; member?: FeedMember; testId?: string }) {
   if (!member) {
     return (
       <span
         aria-hidden='true'
-        className={cn('flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-fill-tertiary', className)}
+        className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-fill-tertiary', className)}
         data-testid={testId}
       >
-        <UserIcon className='h-3.5 w-3.5 text-icon-secondary' />
+        <UserIcon className='h-3 w-3 text-icon-secondary' />
       </span>
     );
   }
@@ -22,7 +22,7 @@ export function FeedAvatar({ className, member, testId }: { className?: string; 
   const initial = displayName.charAt(0).toUpperCase();
 
   return (
-    <Avatar className={cn('shrink-0', className)} data-testid={testId} size='sm'>
+    <Avatar className={cn('shrink-0 text-[10px]', className)} data-testid={testId} size='xs'>
       {member.avatarUrl ? <AvatarImage alt={displayName} src={member.avatarUrl} /> : null}
       <AvatarFallback name={displayName}>{initial}</AvatarFallback>
     </Avatar>

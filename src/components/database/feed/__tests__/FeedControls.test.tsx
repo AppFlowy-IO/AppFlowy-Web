@@ -23,7 +23,7 @@ describe('Feed controls', () => {
     mockUseNewRowDispatch.mockReturnValue(createRow);
   });
 
-  it('creates a trailing row and opens its detail page like Desktop feedAddRowButtonKey', async () => {
+  it('creates a trailing row from the Figma New page card and opens its detail page', async () => {
     render(<FeedNewRow />);
 
     await act(async () => {
@@ -31,7 +31,7 @@ describe('Feed controls', () => {
     });
 
     expect(createRow).toHaveBeenCalledWith({ openAfterCreate: true, tailing: true });
-    expect(screen.getByTestId('feed-new-row').textContent).toContain('grid.row.newRow');
+    expect(screen.getByTestId('feed-new-row').textContent).toContain('newPageText');
   });
 
   it('reports creation failures', async () => {
