@@ -9,6 +9,7 @@ import { RowComment } from '@/application/row-comment.type';
 import { YjsEditorKey } from '@/application/types';
 import { Popover } from '@/components/_shared/popover';
 import { CommentComposer } from '@/components/database/components/database-row/comment/CommentComposer';
+import { cn } from '@/lib/utils';
 
 import { formatFeedRelativeTime } from './feed.utils';
 import { FeedAvatar } from './FeedAvatar';
@@ -22,6 +23,18 @@ interface FeedRowCommentsState {
 }
 
 const EMPTY_COMMENTS: FeedRowCommentsState = { count: 0, latest: null };
+
+// The Figma `Comment card` floats 8px above the reply summary that opens it.
+const DISCUSSION_ANCHOR_ORIGIN = { vertical: 'top', horizontal: 'left' } as const;
+const DISCUSSION_TRANSFORM_ORIGIN = { vertical: 'bottom', horizontal: 'left' } as const;
+const DISCUSSION_PAPER_PROPS = {
+  sx: {
+    marginTop: '-8px',
+    borderRadius: '16px',
+    border: '1px solid var(--border-primary)',
+    backgroundColor: 'var(--surface-layer-03)',
+  },
+};
 
 function summarizeComments(comments: RowComment[]): FeedRowCommentsState {
   let latest: RowComment | null = null;
@@ -108,16 +121,22 @@ function FeedCommentSummary({
       aria-controls={panelId}
       aria-expanded={expanded}
       aria-haspopup='dialog'
-      className='mt-3 flex items-center gap-2 rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-fill-theme-thick'
+      className={cn(
+        'flex w-full min-w-0 items-center gap-2 rounded-300 px-1 py-1.5 text-left transition-colors hover:bg-fill-content-hover',
+        'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-fill-theme-thick',
+        expanded && 'bg-fill-content-hover'
+      )}
       data-testid={`feed-comment-summary-${rowId}`}
       onClick={onToggle}
       type='button'
     >
       {latest ? <FeedAvatar member={commenter} /> : null}
-      <span className='text-[13px] text-text-secondary' data-testid={`feed-comment-count-${rowId}`}>
+      <span className='shrink-0 text-sm leading-5 text-text-primary' data-testid={`feed-comment-count-${rowId}`}>
         {t('globalComment.replies', { count })}
       </span>
-      <span className='text-[13px] text-text-tertiary'>{relativeTime}</span>
+      <span className='min-w-0 truncate text-xs leading-[18px] tracking-[0.1px] text-text-secondary'>
+        {relativeTime}
+      </span>
     </button>
   );
 }
@@ -135,16 +154,17 @@ function FeedAddCommentInput({ rowId, hasComments }: { rowId: string; hasComment
 
   return (
     <div
-      className='mt-3 flex items-start gap-2'
+      className='flex items-start gap-2 rounded-300 px-1.5 py-1'
       data-feed-interactive='true'
       data-testid={`feed-add-comment-${rowId}`}
       style={{ display: hasComments && !active ? 'none' : undefined }}
       onClick={(event) => event.stopPropagation()}
     >
-      <FeedAvatar member={author} />
+      <FeedAvatar className='mt-1' member={author} />
       <CommentComposer
+        variant='inline'
         onActiveChange={setActive}
-        placeholder={t('rowComment.addComment')}
+        placeholder={t('rowComment.commentPlaceholder')}
         members={mentionableUsers}
         testIds={{
           collapsed: `feed-add-comment-collapsed-${rowId}`,
@@ -213,15 +233,17 @@ export const FeedCommentSection = memo(function FeedCommentSection({
           disableRestoreFocus={!visible}
           disableEnforceFocus
           disableEscapeKeyDown
-          anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-          transformOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+          anchorOrigin={DISCUSSION_ANCHOR_ORIGIN}
+          transformOrigin={DISCUSSION_TRANSFORM_ORIGIN}
+          PaperProps={DISCUSSION_PAPER_PROPS}
           onKeyDownCapture={(event) => {
             if (
               event.defaultPrevented ||
               event.nativeEvent.isComposing ||
               event.nativeEvent.keyCode === 229 ||
               !event.currentTarget.contains(event.target as Node)
-            ) return;
+            )
+              return;
 
             // Nested menus handle their own Escape. Within a composer, first
             // dismiss mention suggestions; otherwise preserve the whole draft.
@@ -236,7 +258,7 @@ export const FeedCommentSection = memo(function FeedCommentSection({
         >
           <div
             aria-label={t('rowComment.comments')}
-            className='max-h-[min(480px,70vh)] w-[400px] max-w-[calc(100vw-32px)] overflow-y-auto p-4'
+            className='max-h-[min(480px,70vh)] w-[480px] max-w-[calc(100vw-32px)] overflow-y-auto px-4 py-2'
             data-testid={`feed-discussion-${rowId}`}
             id={panelId}
             role='dialog'
