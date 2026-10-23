@@ -9,18 +9,14 @@ on:
 
 env:
   # Keep the migration owner (Cloud) and its workers on one source revision.
-  # Update version and revision together after all three Rust images publish.
-  # 0.19.31 supplies atomic row creation (PR1375); retain the List field-order
-  # repair (PR1372) already required by the browser suite.
-  # https://github.com/AppFlowy-IO/AppFlowy-Cloud-Premium/actions/runs/38755659237
-  CLOUD_VERSION: ci-web-row-list-9563cf767ef1-amd64
-  CLOUD_REVISION: 9563cf767ef1ae97995a9e51e6ac0898faf54774
-  # Cloud 0.20.1 absorbed the AI service (Cloud-Premium #1441) and now owns its
-  # schema, so AI images from 0.20.1 on exit unless Cloud is at least as new.
-  # Until CLOUD_REVISION includes #1441, keep the last standalone AI release,
-  # which applies its own migrations; afterwards, use the AI image built from
-  # CLOUD_REVISION. Never float this tag: latest-amd64 now follows Cloud main.
-  AI_VERSION: 0.13.5-amd64
+  # Since 0.20.1 (Cloud-Premium #1441) the AI service is built from Cloud and
+  # needs Cloud's migrations, so it uses CLOUD_VERSION too. Update version and
+  # revision together after all four Rust images publish.
+  # 0.20.2 supplies atomic row creation (PR1375); the List field-order repair
+  # (PR1372) is not released yet.
+  # https://github.com/AppFlowy-IO/AppFlowy-Cloud-Premium/actions/runs/39876988132
+  CLOUD_VERSION: 0.20.2-amd64
+  CLOUD_REVISION: 54fe4d0a42c5409bce25914d1d838434cc7cad25
   # Public Form APIs and uploads reject plaintext requests at the backend proxy.
   APPFLOWY_BASE_URL: https://localhost
   APPFLOWY_ENABLE_RELATION_ROLLUP_EDIT: 'true'
@@ -324,7 +320,7 @@ jobs:
       - name: Install deps and pull Docker images (parallel)
         env:
           APPFLOWY_CLOUD_VERSION: ${{ env.CLOUD_VERSION }}
-          APPFLOWY_AI_VERSION: ${{ env.AI_VERSION }}
+          APPFLOWY_AI_VERSION: ${{ env.CLOUD_VERSION }}
           APPFLOWY_WORKER_VERSION: ${{ env.CLOUD_VERSION }}
           APPFLOWY_SEARCH_VERSION: ${{ env.CLOUD_VERSION }}
         run: |
@@ -340,7 +336,7 @@ jobs:
 
       - name: Verify backend image revisions
         run: |
-          for service in appflowy_cloud appflowy_worker appflowy_search; do
+          for service in appflowy_cloud appflowy_worker appflowy_search appflowy_ai; do
             image="appflowyinc/${service}_premium:${CLOUD_VERSION}"
             revision=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")
             if [ "$revision" != "$CLOUD_REVISION" ]; then
@@ -377,7 +373,7 @@ jobs:
         working-directory: AppFlowy-Cloud-Premium
         env:
           APPFLOWY_CLOUD_VERSION: ${{ env.CLOUD_VERSION }}
-          APPFLOWY_AI_VERSION: ${{ env.AI_VERSION }}
+          APPFLOWY_AI_VERSION: ${{ env.CLOUD_VERSION }}
           APPFLOWY_WORKER_VERSION: ${{ env.CLOUD_VERSION }}
           APPFLOWY_SEARCH_VERSION: ${{ env.CLOUD_VERSION }}
           RUST_LOG: appflowy_cloud=info
