@@ -101,10 +101,11 @@ describe('BoardNoGroup', () => {
     expect(screen.getByTestId('board-no-group-description').textContent).toBe('board.noGroupUnsupported(Due date)');
     const menu = openGroupByMenu();
 
-    expect(within(menu).getAllByRole('menuitem').map((item) => item.getAttribute('data-testid'))).toEqual([
-      'board-no-group-field-type',
-      'board-no-group-field-done',
-    ]);
+    expect(
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((item) => item.getAttribute('data-testid'))
+    ).toEqual(['board-no-group-field-type', 'board-no-group-field-done']);
     fireEvent.click(within(menu).getByRole('menuitem', { name: 'Type' }));
     expect(mockGroupBy).toHaveBeenCalledWith('type');
     expect(mockCreateGroupingField).not.toHaveBeenCalled();

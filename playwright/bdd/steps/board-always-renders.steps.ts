@@ -72,7 +72,9 @@ async function waitForDatabaseUpdatesSent(page: Page) {
 
               records.onsuccess = () => {
                 db.close();
-                resolve((records.result as { objectId: string }[]).filter((record) => record.objectId === objectId).length);
+                resolve(
+                  (records.result as { objectId: string }[]).filter((record) => record.objectId === objectId).length
+                );
               };
               records.onerror = () => {
                 db.close();
@@ -102,9 +104,11 @@ Given('the database lists a row whose data does not exist on the server', async 
   await page.evaluate(() => {
     type YArrayLike = { push: (items: unknown[]) => void };
     type YMapLike = { get: (key: string) => unknown; forEach: (fn: (value: YMapLike) => void) => void };
-    const doc = (window as unknown as {
-      __TEST_DATABASE_DOC__: { getMap: (name: string) => YMapLike; transact: (fn: () => void) => void };
-    }).__TEST_DATABASE_DOC__;
+    const doc = (
+      window as unknown as {
+        __TEST_DATABASE_DOC__: { getMap: (name: string) => YMapLike; transact: (fn: () => void) => void };
+      }
+    ).__TEST_DATABASE_DOC__;
     const database = doc.getMap('data').get('database') as YMapLike;
     const rowId = crypto.randomUUID();
 
@@ -117,58 +121,61 @@ Given('the database lists a row whose data does not exist on the server', async 
   await waitForDatabaseUpdatesSent(page);
 });
 
-Given(
-  'the Board has no grouping and the database has no Select or Checkbox property',
-  async ({ page }) => {
-    const boardViewId = new URL(requireState(page).boardUrl ?? '').searchParams.get('v');
+Given('the Board has no grouping and the database has no Select or Checkbox property', async ({ page }) => {
+  const boardViewId = new URL(requireState(page).boardUrl ?? '').searchParams.get('v');
 
-    if (!boardViewId) throw new Error('The Board view id is unknown');
+  if (!boardViewId) throw new Error('The Board view id is unknown');
 
-    // Edit the schema while the Board is not mounted, as an older client would
-    // have left it: no persisted grouping and nothing a Board can group by.
-    await switchToViewTab(page, 'Grid');
-    await waitForDatabaseDocReady(page);
-    await page.evaluate((viewId) => {
-      type YArrayLike = { length: number; get: (index: number) => { id: string }; delete: (index: number, length: number) => void };
-      type YMapLike = {
-        get: (key: string) => unknown;
-        delete: (key: string) => void;
-        forEach: (fn: (value: YMapLike, key: string) => void) => void;
-      };
-      const doc = (window as unknown as {
+  // Edit the schema while the Board is not mounted, as an older client would
+  // have left it: no persisted grouping and nothing a Board can group by.
+  await switchToViewTab(page, 'Grid');
+  await waitForDatabaseDocReady(page);
+  await page.evaluate((viewId) => {
+    type YArrayLike = {
+      length: number;
+      get: (index: number) => { id: string };
+      delete: (index: number, length: number) => void;
+    };
+    type YMapLike = {
+      get: (key: string) => unknown;
+      delete: (key: string) => void;
+      forEach: (fn: (value: YMapLike, key: string) => void) => void;
+    };
+    const doc = (
+      window as unknown as {
         __TEST_DATABASE_DOC__: { getMap: (name: string) => YMapLike; transact: (fn: () => void) => void };
-      }).__TEST_DATABASE_DOC__;
-      const database = doc.getMap('data').get('database') as YMapLike;
-      const fields = database.get('fields') as YMapLike;
-      // SingleSelect, MultiSelect and Checkbox.
-      const groupableTypes = [3, 4, 5];
-      const removedFieldIds: string[] = [];
+      }
+    ).__TEST_DATABASE_DOC__;
+    const database = doc.getMap('data').get('database') as YMapLike;
+    const fields = database.get('fields') as YMapLike;
+    // SingleSelect, MultiSelect and Checkbox.
+    const groupableTypes = [3, 4, 5];
+    const removedFieldIds: string[] = [];
 
-      fields.forEach((field, fieldId) => {
-        if (groupableTypes.includes(Number(field.get('ty')))) removedFieldIds.push(fieldId);
+    fields.forEach((field, fieldId) => {
+      if (groupableTypes.includes(Number(field.get('ty')))) removedFieldIds.push(fieldId);
+    });
+
+    doc.transact(() => {
+      (database.get('views') as YMapLike).forEach((view, id) => {
+        const fieldOrders = view.get('field_orders') as YArrayLike;
+
+        for (let index = fieldOrders.length - 1; index >= 0; index -= 1) {
+          if (removedFieldIds.includes(fieldOrders.get(index).id)) fieldOrders.delete(index, 1);
+        }
+
+        removedFieldIds.forEach((fieldId) => (view.get('field_settings') as YMapLike | undefined)?.delete(fieldId));
+        if (id === viewId) {
+          const groups = view.get('groups') as YArrayLike;
+
+          groups.delete(0, groups.length);
+        }
       });
-
-      doc.transact(() => {
-        (database.get('views') as YMapLike).forEach((view, id) => {
-          const fieldOrders = view.get('field_orders') as YArrayLike;
-
-          for (let index = fieldOrders.length - 1; index >= 0; index -= 1) {
-            if (removedFieldIds.includes(fieldOrders.get(index).id)) fieldOrders.delete(index, 1);
-          }
-
-          removedFieldIds.forEach((fieldId) => (view.get('field_settings') as YMapLike | undefined)?.delete(fieldId));
-          if (id === viewId) {
-            const groups = view.get('groups') as YArrayLike;
-
-            groups.delete(0, groups.length);
-          }
-        });
-        removedFieldIds.forEach((fieldId) => fields.delete(fieldId));
-      });
-    }, boardViewId);
-    await waitForDatabaseUpdatesSent(page);
-  }
-);
+      removedFieldIds.forEach((fieldId) => fields.delete(fieldId));
+    });
+  }, boardViewId);
+  await waitForDatabaseUpdatesSent(page);
+});
 
 Given('a Grid database grouped by a new Date property is open for Board rendering', async ({ page, request }) => {
   setupPageErrorHandling(page);

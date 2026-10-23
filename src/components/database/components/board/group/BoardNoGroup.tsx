@@ -7,12 +7,7 @@ import { useCreateBoardGroupingFieldDispatch, useGroupByFieldDispatch } from '@/
 import { YjsDatabaseKey } from '@/application/types';
 import { FieldDisplay } from '@/components/database/components/field';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 /**
  * Shown instead of a Board that has nothing it can draw: no grouping, a deleted
@@ -24,9 +19,8 @@ export function BoardNoGroup({ fieldId }: { fieldId?: string | null }) {
   const readOnly = useReadOnly();
   const { field } = useFieldSelector(fieldId ?? '');
   const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
-  const unsupportedFieldName = field && !BOARD_GROUPABLE_FIELD_TYPES.includes(fieldType)
-    ? String(field.get(YjsDatabaseKey.name) ?? '')
-    : undefined;
+  const unsupportedFieldName =
+    field && !BOARD_GROUPABLE_FIELD_TYPES.includes(fieldType) ? String(field.get(YjsDatabaseKey.name) ?? '') : undefined;
   const groupBy = useGroupByFieldDispatch();
   const createGroupingField = useCreateBoardGroupingFieldDispatch();
   // Desktop offers every groupable field, hidden ones included.
