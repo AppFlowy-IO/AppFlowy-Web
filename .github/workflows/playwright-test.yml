@@ -8,15 +8,11 @@ on:
   workflow_dispatch:
 
 env:
-  # Keep the migration owner (Cloud) and its workers on one source revision.
-  # Since 0.20.1 (Cloud-Premium #1441) the AI service is built from Cloud and
-  # needs Cloud's migrations, so it uses CLOUD_VERSION too. Update version and
-  # revision together after all four Rust images publish.
-  # 0.20.2 supplies atomic row creation (PR1375); the List field-order repair
-  # (PR1372) is not released yet.
-  # https://github.com/AppFlowy-IO/AppFlowy-Cloud-Premium/actions/runs/39876988132
-  CLOUD_VERSION: 0.20.2-amd64
-  CLOUD_REVISION: 54fe4d0a42c5409bce25914d1d838434cc7cad25
+  # Follow the latest Cloud release. Cloud, its workers and the AI service
+  # (built from Cloud since Cloud-Premium #1441) must share one source revision,
+  # so each test job resolves the revision behind this tag and checks out the
+  # matching compose files and seed snapshot.
+  CLOUD_VERSION: latest-amd64
   # Public Form APIs and uploads reject plaintext requests at the backend proxy.
   APPFLOWY_BASE_URL: https://localhost
   APPFLOWY_ENABLE_RELATION_ROLLUP_EDIT: 'true'
@@ -275,6 +271,24 @@ jobs:
         with:
           version: ${{ env.PNPM_VERSION }}
 
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+
+      - name: Resolve latest Cloud release
+        run: |
+          labels=$(docker buildx imagetools inspect "appflowyinc/appflowy_cloud_premium:${CLOUD_VERSION}" \
+            --format '{{ json .Image }}' | jq -c '.config.Labels')
+          revision=$(jq -r '."org.opencontainers.image.revision" // empty' <<< "$labels")
+          if [ -z "$revision" ]; then
+            echo "::error::appflowy_cloud_premium:${CLOUD_VERSION} has no source revision label"
+            exit 1
+          fi
+          echo "Testing AppFlowy Cloud $(jq -r '."org.opencontainers.image.version" // "unknown"' <<< "$labels") ($revision)"
+          echo "CLOUD_REVISION=$revision" >> "$GITHUB_ENV"
+
       - name: Checkout AppFlowy-Cloud-Premium
         uses: actions/checkout@v4
         with:
@@ -310,12 +324,6 @@ jobs:
             openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | openssl base64 -A)
           echo "APPFLOWY_TEST_TLS_SPKI=$test_tls_spki" >> "$GITHUB_ENV"
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_HUB_USERNAME }}
-          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
-
       # Overlap Docker pull (network I/O) with pnpm install + Playwright browser install
       - name: Install deps and pull Docker images (parallel)
         env:
@@ -340,7 +348,7 @@ jobs:
             image="appflowyinc/${service}_premium:${CLOUD_VERSION}"
             revision=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")
             if [ "$revision" != "$CLOUD_REVISION" ]; then
-              echo "::error::$image was built from $revision; expected $CLOUD_REVISION"
+              echo "::error::$image was built from $revision; expected $CLOUD_REVISION (a Cloud release may still be publishing; re-run once it finishes)"
               exit 1
             fi
           done
