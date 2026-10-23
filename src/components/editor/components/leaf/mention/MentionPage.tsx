@@ -44,7 +44,7 @@ function MentionPage({
   const eventEmitter = context.eventEmitter;
 
   const { navigateToView, loadViewMeta, loadView, onPageMentionNameResolved } = context;
-  const { view: meta, error, loading, retry } = usePageReferenceMetadata({
+  const { view: meta, error: metadataError, loading, retry } = usePageReferenceMetadata({
     pageId,
     loadViewMeta,
     eventEmitter,
@@ -58,6 +58,10 @@ function MentionPage({
     ? findSlateEntryByBlockId(editor as YjsEditor, blockId)
     : undefined;
   const currentBlockText = currentBlock ? CustomEditor.getBlockTextContent(currentBlock[0], 2) : undefined;
+  // The open editor already owns this block's readable content. A separate
+  // metadata failure must not hide it (including in detached editor surfaces).
+  const hasCurrentBlockContent = Boolean(currentBlockText);
+  const error = hasCurrentBlockContent ? null : metadataError;
   const pageName = meta?.name || t('menuAppHeader.defaultNewPageName');
   const externalBlockText = externalBlock?.pageId === pageId && externalBlock.blockId === blockId
     ? externalBlock.text
@@ -150,9 +154,14 @@ function MentionPage({
     <span
       onClick={(e) => {
         e.stopPropagation();
-        if (error || !meta) return;
 
         // Same-page block reference: scroll to the target block
+        if (hasCurrentBlockContent) {
+          void handleScrollToBlock();
+          return;
+        }
+
+        if (error || !meta) return;
         if (pageId === currentViewId) {
           void handleScrollToBlock();
           return;
@@ -167,7 +176,7 @@ function MentionPage({
         }, 0);
       }}
       style={{
-        cursor: error || !meta ? 'default' : undefined,
+        cursor: error || (!meta && !hasCurrentBlockContent) ? 'default' : undefined,
       }}
       className={`mention-inline cursor-pointer pr-1 underline select-none`}
       contentEditable={false}

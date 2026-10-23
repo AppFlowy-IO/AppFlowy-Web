@@ -43,6 +43,17 @@ it('uses the equation content for a same-page mention and refreshes without a se
   expect(mockLoadView).not.toHaveBeenCalled();
 });
 
+it('keeps an open block reference readable when its optional metadata lookup fails', async () => {
+  mockLoadViewMeta.mockRejectedValue(new Error('Metadata is unavailable in this editor'));
+  await act(async () => {
+    render(<MentionPage {...props} />);
+  });
+
+  expect(screen.getByText(formula)).toBeTruthy();
+  expect(screen.queryByText('landingPage.unknown.title')).toBeNull();
+  expect(mockLoadView).not.toHaveBeenCalled();
+});
+
 function equationDoc(pageId: string, equation = formula) {
   const doc = withTestingYDoc(pageId);
 
