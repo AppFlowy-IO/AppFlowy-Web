@@ -1764,7 +1764,7 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
   const viewId = useDatabaseViewId();
   const database = useDatabase();
   const fields = useDatabaseFields();
-  const rowOrders = useRowOrdersSelector();
+  const rowOrders = useRowOrdersSelector({ publish: layout !== DatabaseViewLayout.Gallery });
   const rows = useRowMap();
   const persistedGroups = view?.get(YjsDatabaseKey.groups);
   const persistedGroup = persistedGroups?.toArray()?.[0];
@@ -2035,9 +2035,23 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
         ? view?.get(YjsDatabaseKey.layout_settings)?.get('4')
         : layout === DatabaseViewLayout.Timeline
         ? view?.get(YjsDatabaseKey.layout_settings)?.get('8')
+        : layout === DatabaseViewLayout.Gallery
+        ? view?.get(YjsDatabaseKey.layout_settings)?.get('5')
         : view?.get(YjsDatabaseKey.layout_settings)?.get('0');
     const storedHideEmpty = layoutSetting?.get(YjsDatabaseKey.hide_empty_groups);
     const hideEmptyGroups = storedHideEmpty === undefined ? true : Boolean(storedHideEmpty);
+    // Empty groups the user asked to keep, e.g. a Gallery group created moments ago.
+    const shownEmptyValue = (layoutSetting as { get(key: string): unknown } | undefined)?.get(
+      YjsDatabaseKey.shown_empty_group_ids
+    );
+    const shownEmptyGroupIds = new Set(
+      (shownEmptyValue && typeof shownEmptyValue === 'object' && 'toArray' in shownEmptyValue
+        ? (shownEmptyValue as { toArray: () => unknown[] }).toArray()
+        : Array.isArray(shownEmptyValue)
+        ? shownEmptyValue
+        : []
+      ).filter((id): id is string => typeof id === 'string')
+    );
     const optionById = new Map(
       (parseSelectOptionTypeOptions(field)?.options ?? []).map((option) => [option.id, option] as const)
     );
@@ -2096,7 +2110,7 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
       const automaticallyHidden =
         ready &&
         groupRows.length === 0 &&
-        (hideEmptyGroups ||
+        ((hideEmptyGroups && !shownEmptyGroupIds.has(id)) ||
           (id !== currentFieldId && isDynamicDatabaseGroupFieldType(fieldType) && !numberPolicy?.retainsEmptyGroups));
 
       return {

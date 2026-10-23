@@ -52,7 +52,7 @@ function ListCheckboxCell({ cell, fieldId, fieldName, rowId }: ListSpecialCellPr
   );
 }
 
-function ListSelectOptionCell({ cell, fieldId, rowId }: ListSpecialCellProps) {
+function ListSelectOptionCell({ cell, fieldId, rowId, wrap = false }: ListSpecialCellProps & { wrap?: boolean }) {
   const { clock, field } = useFieldSelector(fieldId);
   const typeOption = useMemo(() => {
     void clock;
@@ -72,7 +72,7 @@ function ListSelectOptionCell({ cell, fieldId, rowId }: ListSpecialCellProps) {
 
   return (
     <div
-      className='flex h-5 min-w-0 max-w-full items-center gap-1 overflow-hidden'
+      className={cn('flex min-w-0 max-w-full items-center gap-1 overflow-hidden', wrap ? 'min-h-5 flex-wrap' : 'h-5')}
       data-testid={`list-select-option-cell-${rowId}-${fieldId}`}
     >
       {selectedOptionIds.map((optionId) => {
@@ -219,19 +219,23 @@ export function ListCell({
   onTextChange,
   rowId,
   style,
+  wrap = false,
+  showPersonNames = false,
 }: {
   cell?: DatabaseCell;
   field: Column;
   onTextChange?: (text: string) => void;
   rowId: string;
   style: CSSProperties;
+  wrap?: boolean;
+  showPersonNames?: boolean;
 }) {
   switch (field.fieldType) {
     case FieldType.Checkbox:
       return <ListCheckboxCell cell={cell} fieldId={field.fieldId} fieldName={field.fieldName} rowId={rowId} />;
     case FieldType.SingleSelect:
     case FieldType.MultiSelect:
-      return <ListSelectOptionCell cell={cell} fieldId={field.fieldId} rowId={rowId} />;
+      return <ListSelectOptionCell cell={cell} fieldId={field.fieldId} rowId={rowId} wrap={wrap} />;
     case FieldType.Media:
       return <ListMediaCell cell={cell} fieldId={field.fieldId} rowId={rowId} />;
     case FieldType.Time:
@@ -248,7 +252,10 @@ export function ListCell({
             'min-w-0 max-w-full',
             // Flutter desktopListCardCellStyleMap: Person is `hideName: true, spacing: 4.0`.
             // Names stay in the DOM for screen readers; PersonCell's own `gap-1` is the 4px.
-            field.fieldType === FieldType.Person && '[&_.person-cell-name]:sr-only',
+            field.fieldType === FieldType.Person &&
+              (showPersonNames
+                ? '[&_.person-cell-name]:text-xs [&_.person-cell-name]:leading-[18px]'
+                : '[&_.person-cell-name]:sr-only'),
             field.fieldType === FieldType.Relation &&
               '[&_.relation-cell>div]:!text-text-primary [&_.relation-cell]:!gap-0',
             field.fieldType === FieldType.Rollup &&
@@ -264,7 +271,7 @@ export function ListCell({
             readOnly
             rowId={rowId}
             style={style}
-            wrap={false}
+            wrap={wrap}
           />
         </div>
       );
@@ -277,10 +284,10 @@ export function ListCell({
           data-field-type={field.fieldType}
           data-testid={`list-shared-cell-${rowId}-${field.fieldId}`}
         >
-          <Cell cell={cell} fieldId={field.fieldId} readOnly rowId={rowId} style={style} wrap={false} />
+          <Cell cell={cell} fieldId={field.fieldId} readOnly rowId={rowId} style={style} wrap={wrap} />
         </div>
       );
     default:
-      return <Cell cell={cell} fieldId={field.fieldId} readOnly rowId={rowId} style={style} wrap={false} />;
+      return <Cell cell={cell} fieldId={field.fieldId} readOnly rowId={rowId} style={style} wrap={wrap} />;
   }
 }

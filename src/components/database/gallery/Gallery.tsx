@@ -3,19 +3,16 @@ import { getReorderDestinationIndex } from '@atlaskit/pragmatic-drag-and-drop-hi
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import {
-  Row,
-  useDatabaseContext,
-  useGalleryLayoutSettings,
-  useReadOnly,
-  useRowOrdersSelector,
-} from '@/application/database-yjs';
+import { FieldType, Row, useDatabaseContext, useGalleryLayoutSettings, useReadOnly } from '@/application/database-yjs';
 import { useReorderRowDispatch } from '@/application/database-yjs/dispatch';
 import { usePublishRowOrders } from '@/application/database-yjs/row-orders-store';
-import type { YDoc } from '@/application/types';
+import type { GalleryCardSize, YDoc } from '@/application/types';
+import { ReactComponent as GalleryIcon } from '@/assets/icons/gallery.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
+import { useLatest } from '@/components/_shared/hooks/useLatest';
 import { useDatabaseSearch } from '@/components/database/components/conditions/DatabaseSearchContext';
 import { useFeedSearch } from '@/components/database/feed/useFeedSearch';
+import { ListGroupHeader } from '@/components/database/list/ListGroup';
 import { cn } from '@/lib/utils';
 
 import {
@@ -24,13 +21,16 @@ import {
   GALLERY_INITIAL_ROW_LIMIT,
   GALLERY_LOAD_MORE_INCREMENT,
   GALLERY_LOAD_MORE_THRESHOLD,
-  GALLERY_MAX_COLUMNS,
-  getGalleryCardWidth,
+  getGalleryColumnCount,
 } from './gallery.constants';
 import GalleryCard from './GalleryCard';
+import { GalleryDeleteGroupConfirm } from './GalleryDeleteGroupConfirm';
+import { GalleryGroupFooter, GalleryGroupNewPageTile } from './GalleryGroupFooter';
+import { GalleryNewGroup } from './GalleryNewGroup';
 import GalleryNewRow from './GalleryNewRow';
 import { GallerySortSubscription } from './GallerySortState';
 import { useGalleryFields } from './useGalleryFields';
+import { useGalleryView } from './GalleryViewContext';
 
 import type { Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 
@@ -52,6 +52,29 @@ function GalleryLoading() {
   );
 }
 
+/** Desktop shows this when a grouping field is set but no group is visible. */
+function GalleryNoGroups({ fieldName }: { fieldName?: string }) {
+  const { t } = useTranslation();
+
+  return (
+    <div
+      className='flex w-full justify-center bg-surface-primary px-3 py-10'
+      data-testid='gallery-no-groups'
+      role='status'
+    >
+      <div className='flex max-w-[480px] flex-col items-center text-center'>
+        <span className='flex h-24 w-24 items-center justify-center rounded-600 bg-surface-layer-01'>
+          <GalleryIcon aria-hidden='true' className='h-12 w-12 text-icon-primary' />
+        </span>
+        <p className='mt-3 text-base font-semibold text-text-primary'>
+          {t('gallery.noGroupsForField', { field: fieldName ?? t('board.groupBy') })}
+        </p>
+        <p className='mt-1.5 text-sm text-text-secondary'>{t('gallery.noGroupsHint')}</p>
+      </div>
+    </div>
+  );
+}
+
 function GalleryLoadMore({ onLoadMore, remainingCount }: { onLoadMore: () => void; remainingCount: number }) {
   const { t } = useTranslation();
 
@@ -69,7 +92,11 @@ function GalleryLoadMore({ onLoadMore, remainingCount }: { onLoadMore: () => voi
   );
 }
 
-function useGalleryColumnCount(gridRef: React.RefObject<HTMLDivElement>, cardWidth: number, ready: boolean): number {
+function useGalleryColumnCount(
+  gridRef: React.RefObject<HTMLDivElement>,
+  cardSize: GalleryCardSize,
+  ready: boolean
+): number {
   const [columns, setColumns] = useState(1);
 
   useLayoutEffect(() => {
@@ -80,11 +107,7 @@ function useGalleryColumnCount(gridRef: React.RefObject<HTMLDivElement>, cardWid
     if (!element) return;
 
     const update = () => {
-      const availableWidth = element.clientWidth;
-      const next = Math.max(
-        1,
-        Math.min(GALLERY_MAX_COLUMNS, Math.floor(availableWidth / (cardWidth + GALLERY_GRID_GAP)))
-      );
+      const next = getGalleryColumnCount(element.clientWidth, cardSize);
 
       setColumns((current) => (current === next ? current : next));
     };
@@ -99,7 +122,7 @@ function useGalleryColumnCount(gridRef: React.RefObject<HTMLDivElement>, cardWid
 
     observer.observe(element);
     return () => observer.disconnect();
-  }, [cardWidth, gridRef, ready]);
+  }, [cardSize, gridRef, ready]);
 
   return columns;
 }
@@ -107,7 +130,8 @@ function useGalleryColumnCount(gridRef: React.RefObject<HTMLDivElement>, cardWid
 export function Gallery() {
   const { t } = useTranslation();
   const fields = useGalleryFields();
-  const rowOrders = useRowOrdersSelector({ publish: false });
+  const { grouping, compactMode } = useGalleryView();
+  const rowOrders = grouping.rowOrders;
   const readOnly = useReadOnly();
   const settings = useGalleryLayoutSettings();
   const { query } = useDatabaseSearch();
@@ -122,26 +146,55 @@ export function Gallery() {
     query,
   });
 
-  usePublishRowOrders(matchingRows, true, { layout: 'gallery', query });
+  const matchingRowIds = useMemo(() => new Set(matchingRows?.map((row) => row.id)), [matchingRows]);
+  const visibleGroups = useMemo(
+    () =>
+      grouping.visibleGroups
+        .map((group) => ({
+          ...group,
+          rows: group.rows.filter((row) => matchingRowIds.has(row.id)),
+        }))
+        .filter((group) => !query.trim() || group.rows.length > 0),
+    [grouping.visibleGroups, matchingRowIds, query]
+  );
+  const navigationRows = useMemo(() => {
+    if (!grouping.isGrouped) return matchingRows;
+    if (!grouping.ready || !matchingRows) return undefined;
+    const seen = new Set<string>();
+
+    return visibleGroups
+      .flatMap((group) => (group.collapsed ? [] : group.rows))
+      .filter((row) => {
+        if (seen.has(row.id)) return false;
+        seen.add(row.id);
+        return true;
+      });
+  }, [grouping.isGrouped, grouping.ready, matchingRows, visibleGroups]);
+
+  usePublishRowOrders(navigationRows, true, { layout: 'gallery', query });
   const { activeViewId, isDocumentBlock, onRendered, paddingEnd, paddingStart } = useDatabaseContext();
   const reorderRow = useReorderRowDispatch();
   const [visibleRowLimit, setVisibleRowLimit] = useState(GALLERY_INITIAL_ROW_LIMIT);
+  const [groupLimits, setGroupLimits] = useState<Record<string, number>>({});
   const [reorderAnnouncement, setReorderAnnouncement] = useState('');
-  const rowOrdersRef = useRef(rowOrders);
+  const [deleteGroupId, setDeleteGroupId] = useState<string | null>(null);
+  const rowOrdersRef = useLatest(rowOrders);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
-  const cardWidth = getGalleryCardWidth(settings.cardSize);
-  const columnCount = useGalleryColumnCount(gridRef, cardWidth, rowOrders !== undefined);
-
-  rowOrdersRef.current = rowOrders;
+  const columnCount = useGalleryColumnCount(
+    gridRef,
+    settings.cardSize,
+    rowOrders !== undefined && (!grouping.isGrouped || grouping.ready)
+  );
 
   useEffect(() => {
     setVisibleRowLimit(GALLERY_INITIAL_ROW_LIMIT);
-  }, [activeViewId, isDocumentBlock]);
+    setGroupLimits({});
+  }, [activeViewId, grouping.groupId, isDocumentBlock]);
 
   useEffect(() => {
-    if (rowOrders !== undefined) onRendered?.();
-  }, [onRendered, rowOrders]);
+    if (rowOrders !== undefined && grouping.ready) onRendered?.();
+  }, [onRendered, rowOrders, grouping.ready]);
 
   const searchActive = query.trim().length > 0;
   const visibleRows = useMemo(
@@ -152,12 +205,18 @@ export function Gallery() {
   const loadMoreRows = useCallback(() => {
     setVisibleRowLimit((current) => current + GALLERY_LOAD_MORE_INCREMENT);
   }, []);
+  const loadMoreGroupRows = useCallback((groupId: string) => {
+    setGroupLimits((current) => ({
+      ...current,
+      [groupId]: (current[groupId] ?? GALLERY_INITIAL_ROW_LIMIT) + GALLERY_LOAD_MORE_INCREMENT,
+    }));
+  }, []);
 
   useEffect(() => {
     const galleryElement = scrollContainerRef.current;
     const gridElement = gridRef.current;
 
-    if (!galleryElement || !gridElement || isDocumentBlock || remainingRowCount === 0) return;
+    if (!galleryElement || !gridElement || isDocumentBlock || grouping.isGrouped || remainingRowCount === 0) return;
 
     const nearestPageScroller = galleryElement.closest('.appflowy-scroll-container');
     const scrollElement =
@@ -196,7 +255,7 @@ export function Gallery() {
       scrollElement.removeEventListener('scroll', handleScroll, listenerOptions);
       resizeObserver?.disconnect();
     };
-  }, [isDocumentBlock, loadMoreRows, remainingRowCount]);
+  }, [isDocumentBlock, loadMoreRows, remainingRowCount, grouping.isGrouped]);
 
   const handleDropRow = useCallback(
     (sourceRowId: string, targetRowId: string, closestEdgeOfTarget: Edge) => {
@@ -223,7 +282,7 @@ export function Gallery() {
 
       reorderRow(sourceRowId, previousRowId);
     },
-    [reorderRow]
+    [reorderRow, rowOrdersRef]
   );
 
   const handleKeyboardMoveRow = useCallback(
@@ -245,7 +304,7 @@ export function Gallery() {
         })
       );
     },
-    [handleDropRow, t]
+    [handleDropRow, rowOrdersRef, t]
   );
 
   const effectivePaddingStart = paddingStart ?? GALLERY_DESKTOP_INLINE_PADDING;
@@ -255,7 +314,7 @@ export function Gallery() {
     isDocumentBlock ? 'overflow-visible' : 'h-full flex-1 overflow-y-auto overflow-x-hidden'
   );
 
-  if (rowOrders === undefined) {
+  if (rowOrders === undefined || (grouping.isGrouped && !grouping.ready)) {
     return (
       <div className={containerClassName} data-testid='database-gallery' ref={scrollContainerRef}>
         <GalleryLoading />
@@ -269,7 +328,6 @@ export function Gallery() {
       data-card-size={settings.cardSize}
       data-column-count={columnCount}
       data-testid='gallery-grid'
-      ref={gridRef}
       style={{
         gap: GALLERY_GRID_GAP,
         gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))`,
@@ -279,6 +337,7 @@ export function Gallery() {
         <GalleryCard
           cardPreview={settings.cardPreview}
           cardSize={settings.cardSize}
+          compactMode={compactMode}
           coverFieldId={settings.coverFieldId}
           fields={fields}
           fitImage={settings.fitImage}
@@ -297,13 +356,107 @@ export function Gallery() {
     </div>
   );
 
+  const isSelectGrouping =
+    grouping.fieldType === FieldType.SingleSelect || grouping.fieldType === FieldType.MultiSelect;
+  // Desktop `delete_group` skips the default group and attribution fields, whose groups are derived.
+  const canDeleteGroups =
+    !readOnly && grouping.fieldType !== FieldType.CreatedBy && grouping.fieldType !== FieldType.LastEditedBy;
+
+  // Each group pages on its own, so "Load more" always grows the group it was clicked in.
+  const groupedGrid = grouping.isGrouped
+    ? visibleGroups.map((group) => {
+        const limit = groupLimits[group.id] ?? GALLERY_INITIAL_ROW_LIMIT;
+        const rows = group.collapsed ? [] : group.rows.slice(0, limit);
+        const remaining = group.rows.length - rows.length;
+        // Figma puts "New page" in the last row's free slot and falls back to the footer when the row is full.
+        const showNewPageTile = !readOnly && remaining === 0 && rows.length % columnCount !== 0;
+
+        return (
+          <section key={group.id} className='mb-5' data-testid={`gallery-group-${group.id}`}>
+            <ListGroupHeader
+              className='h-10'
+              fieldId={grouping.fieldId}
+              fieldName={grouping.fieldName}
+              fieldType={grouping.fieldType}
+              group={group}
+              groupConfigId={grouping.groupId}
+              onDeleteGroup={canDeleteGroups && !group.isDefault ? () => setDeleteGroupId(group.id) : undefined}
+              openAfterCreate
+              variant='gallery'
+            />
+            {!group.collapsed ? (
+              <>
+                <div
+                  className='mt-2 grid items-stretch'
+                  style={{ gap: GALLERY_GRID_GAP, gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))` }}
+                >
+                  {rows.map((row) => (
+                    <GalleryCard
+                      key={row.id}
+                      rowId={row.id}
+                      occurrenceId={`${group.id}-${row.id}`}
+                      fields={fields}
+                      cardSize={settings.cardSize}
+                      compactMode={compactMode}
+                      cardPreview={settings.cardPreview}
+                      coverFieldId={settings.coverFieldId}
+                      fitImage={settings.fitImage}
+                      reorderable={false}
+                    />
+                  ))}
+                  {showNewPageTile ? (
+                    <GalleryGroupNewPageTile cardSize={settings.cardSize} fieldId={grouping.fieldId} groupId={group.id} />
+                  ) : null}
+                  {remaining > 0 ? (
+                    <GalleryLoadMore onLoadMore={() => loadMoreGroupRows(group.id)} remainingCount={remaining} />
+                  ) : null}
+                </div>
+                {!readOnly && !showNewPageTile ? (
+                  <div
+                    className='mt-4 grid'
+                    style={{ gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))`, gap: GALLERY_GRID_GAP }}
+                  >
+                    <GalleryGroupFooter fieldId={grouping.fieldId} groupId={group.id} />
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+          </section>
+        );
+      })
+    : null;
+
+  const showNoGroups = grouping.isGrouped && !searchActive && visibleGroups.length === 0;
+  const deletingGroup = deleteGroupId ? grouping.groups?.find((group) => group.id === deleteGroupId) : undefined;
+  const content = grouping.isGrouped ? (
+    <>
+      {showNoGroups ? <GalleryNoGroups fieldName={grouping.fieldName} /> : groupedGrid}
+      {!readOnly && isSelectGrouping && grouping.fieldId && !searchActive ? (
+        <GalleryNewGroup fieldId={grouping.fieldId} />
+      ) : null}
+      {deletingGroup && grouping.fieldId && grouping.groupId ? (
+        <GalleryDeleteGroupConfirm
+          fieldId={grouping.fieldId}
+          groupConfigId={grouping.groupId}
+          groupId={deletingGroup.id}
+          onClose={() => setDeleteGroupId(null)}
+          rows={deletingGroup.rows}
+        />
+      ) : null}
+    </>
+  ) : (
+    galleryGrid
+  );
+
   return (
     <div className={containerClassName} data-testid='database-gallery' ref={scrollContainerRef}>
       <div
-        className='w-full'
+        className='w-full py-2'
         style={{ paddingInlineEnd: effectivePaddingEnd, paddingInlineStart: effectivePaddingStart }}
       >
-        {readOnly ? galleryGrid : <GallerySortSubscription>{galleryGrid}</GallerySortSubscription>}
+        <div ref={gridRef} data-testid='gallery-content'>
+          {readOnly ? content : <GallerySortSubscription>{content}</GallerySortSubscription>}
+        </div>
       </div>
       <span aria-live='polite' className='sr-only'>
         {reorderAnnouncement}
