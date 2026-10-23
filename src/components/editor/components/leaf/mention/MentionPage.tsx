@@ -4,20 +4,29 @@ import { Element, Text } from 'slate';
 import { ReactEditor, useSlate } from 'slate-react';
 import smoothScrollIntoViewIfNeeded from 'smooth-scroll-into-view-if-needed';
 
-import { APP_EVENTS } from '@/application/constants';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { traverseBlock } from '@/application/slate-yjs/utils/convert';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
 import { getBlocks } from '@/application/slate-yjs/utils/yjs';
-import { MentionType, View, ViewLayout, YjsEditorKey, YSharedRoot } from '@/application/types';
+import { MentionType, ViewLayout, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { ReactComponent as LinkArrowOverlay } from '@/assets/icons/link_arrow.svg';
 import { ReactComponent as ParagraphIcon } from '@/assets/icons/paragraph.svg';
-import { findView } from '@/components/_shared/outline/utils';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { useEditorContext } from '@/components/editor/EditorContext';
 
+import { usePageReferenceMetadata } from './usePageReferenceMetadata';
+
 import './style.css';
+
+const referenceErrorLabels = {
+  not_found: 'landingPage.pageNotFound.title',
+  in_trash: 'deletePagePrompt.text',
+  deleted: 'document.mention.deletedPage',
+  denied: 'document.mention.noAccess',
+  unauthorized: 'landingPage.unauthorized.title',
+  load_failed: 'landingPage.unknown.title',
+} as const;
 
 function MentionPage({
   pageId,
@@ -35,53 +44,13 @@ function MentionPage({
   const eventEmitter = context.eventEmitter;
 
   const { navigateToView, loadViewMeta, loadView, onPageMentionNameResolved } = context;
-  const [metadata, setMetadata] = useState<{ pageId: string; view: View | null; noAccess: boolean } | null>(null);
-  // Keep the current page visible while revalidating, without showing the
-  // previous page's metadata when this component receives a new reference.
-  const meta = metadata?.pageId === pageId ? metadata.view : null;
-  const noAccess = metadata?.pageId === pageId && metadata.noAccess;
+  const { view: meta, error, loading, retry } = usePageReferenceMetadata({
+    pageId,
+    loadViewMeta,
+    eventEmitter,
+    onPageMentionNameResolved,
+  });
   const [externalBlock, setExternalBlock] = useState<{ pageId: string; blockId: string; text: string }>();
-
-  useEffect(() => {
-    let current = true;
-    let receivedUpdate = false;
-
-    const acceptView = (view: View | null) => {
-      setMetadata({ pageId, view, noAccess: false });
-      onPageMentionNameResolved?.(pageId, view?.name);
-    };
-
-    const handleView = (view: View) => {
-      if (view.view_id !== pageId) return;
-      receivedUpdate = true;
-      acceptView(view);
-    };
-
-    const handleOutlineLoaded = (outline: View[]) => {
-      const view = findView(outline, pageId);
-
-      if (view) handleView(view);
-    };
-
-    eventEmitter?.on(APP_EVENTS.OUTLINE_LOADED, handleOutlineLoaded);
-    eventEmitter?.on(APP_EVENTS.VIEW_META_CHANGED, handleView);
-    void loadViewMeta?.(pageId).then((view) => {
-      if (current && !receivedUpdate) acceptView(view);
-    }).catch(() => {
-      if (current && !receivedUpdate) {
-        setMetadata((previous) => ({
-          pageId,
-          view: previous?.pageId === pageId ? previous.view : null,
-          noAccess: true,
-        }));
-      }
-    });
-    return () => {
-      current = false;
-      eventEmitter?.off(APP_EVENTS.OUTLINE_LOADED, handleOutlineLoaded);
-      eventEmitter?.off(APP_EVENTS.VIEW_META_CHANGED, handleView);
-    };
-  }, [eventEmitter, loadViewMeta, onPageMentionNameResolved, pageId]);
 
   const icon = meta?.icon;
   const { t } = useTranslation();
@@ -181,7 +150,7 @@ function MentionPage({
     <span
       onClick={(e) => {
         e.stopPropagation();
-        if (noAccess) return;
+        if (error || !meta) return;
 
         // Same-page block reference: scroll to the target block
         if (pageId === currentViewId) {
@@ -198,14 +167,36 @@ function MentionPage({
         }, 0);
       }}
       style={{
-        cursor: noAccess ? 'default' : undefined,
+        cursor: error || !meta ? 'default' : undefined,
       }}
       className={`mention-inline cursor-pointer pr-1 underline select-none`}
       contentEditable={false}
       data-mention-id={pageId}
     >
-      {noAccess ? (
-        <span className={'mention-unpublished font-semibold text-text-secondary'}>{t('document.mention.noAccess')}</span>
+      {error ? (
+        <>
+          <span className={'mention-unpublished min-w-0 truncate font-semibold text-text-secondary'}>
+            {t(referenceErrorLabels[error])}
+          </span>
+          {error === 'load_failed' && (
+            <button
+              type={'button'}
+              className={'ml-2 shrink-0 cursor-pointer text-text-action underline disabled:cursor-wait disabled:opacity-50'}
+              disabled={loading}
+              aria-busy={loading}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+              onClick={(event) => {
+                event.stopPropagation();
+                retry();
+              }}
+            >
+              {t('button.retry')}
+            </button>
+          )}
+        </>
       ) : (
         <>
           <span className={`mention-icon`}>{mentionIcon}</span>
