@@ -18,6 +18,7 @@ import { useAuthenticatedImage } from '@/components/_shared/hooks/useAuthenticat
 import { HistoricalRowDocumentNotice } from '@/components/database/history/HistoricalRowDocumentNotice';
 import { cn } from '@/lib/utils';
 import { renderColor } from '@/utils/color';
+import { coverOffsetToObjectPosition } from '@/utils/cover';
 import { resolveFileUrl } from '@/utils/file-storage-url';
 
 import { GALLERY_COVER_PLACEHOLDER_BACKGROUND_CLASS_NAME } from './gallery.constants';
@@ -180,7 +181,17 @@ interface GalleryPreviewValue {
   src?: string;
 }
 
-function GalleryPreviewResolvedImage({ fitImage, rowId, src }: { fitImage: boolean; rowId: string; src: string }) {
+function GalleryPreviewResolvedImage({
+  fitImage,
+  rowId,
+  src,
+  offset,
+}: {
+  fitImage: boolean;
+  rowId: string;
+  src: string;
+  offset?: number;
+}) {
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
 
@@ -195,16 +206,35 @@ function GalleryPreviewResolvedImage({ fitImage, rowId, src }: { fitImage: boole
       onError={() => setFailed(true)}
       onLoad={() => setLoaded(true)}
       src={src}
+      style={{ objectPosition: coverOffsetToObjectPosition(offset) }}
     />
   );
 }
 
-function GalleryPreviewImage({ fitImage, rowId, src }: { fitImage: boolean; rowId: string; src: string }) {
+function GalleryPreviewImage({
+  fitImage,
+  rowId,
+  src,
+  offset,
+}: {
+  fitImage: boolean;
+  rowId: string;
+  src: string;
+  offset?: number;
+}) {
   const authenticatedSrc = useAuthenticatedImage(src);
 
   if (!authenticatedSrc) return null;
 
-  return <GalleryPreviewResolvedImage fitImage={fitImage} key={authenticatedSrc} rowId={rowId} src={authenticatedSrc} />;
+  return (
+    <GalleryPreviewResolvedImage
+      fitImage={fitImage}
+      key={authenticatedSrc}
+      rowId={rowId}
+      src={authenticatedSrc}
+      offset={offset}
+    />
+  );
 }
 
 function GalleryPreviewFrame({
@@ -212,11 +242,13 @@ function GalleryPreviewFrame({
   preview,
   rowId,
   value,
+  offset,
 }: {
   fitImage: boolean;
   preview: GalleryCardPreview;
   rowId: string;
   value: GalleryPreviewValue;
+  offset?: number;
 }) {
   return (
     <div
@@ -232,7 +264,7 @@ function GalleryPreviewFrame({
       data-testid={`gallery-card-preview-${rowId}`}
       style={value.background ? { background: value.background } : undefined}
     >
-      {value.src ? <GalleryPreviewImage fitImage={fitImage} rowId={rowId} src={value.src} /> : null}
+      {value.src ? <GalleryPreviewImage fitImage={fitImage} rowId={rowId} src={value.src} offset={offset} /> : null}
     </div>
   );
 }
@@ -241,10 +273,12 @@ function PageCoverPreview({
   fitImage,
   meta,
   rowId,
+  offset,
 }: {
   fitImage: boolean;
   meta: RowMeta | null | undefined;
   rowId: string;
+  offset?: number;
 }) {
   return (
     <GalleryPreviewFrame
@@ -252,6 +286,7 @@ function PageCoverPreview({
       preview={GalleryCardPreview.PageCover}
       rowId={rowId}
       value={getPageCover(meta?.cover ?? null)}
+      offset={offset ?? meta?.cover?.offset}
     />
   );
 }
@@ -300,6 +335,7 @@ function PageContentPreview({
 }
 
 export function GalleryPreview({
+  offset,
   coverFieldId,
   fitImage,
   meta,
@@ -311,9 +347,10 @@ export function GalleryPreview({
   meta: RowMeta | null | undefined;
   preview: GalleryCardPreview;
   rowId: string;
+  offset?: number;
 }) {
   if (preview === GalleryCardPreview.PageCover) {
-    return <PageCoverPreview fitImage={fitImage} meta={meta} rowId={rowId} />;
+    return <PageCoverPreview fitImage={fitImage} meta={meta} rowId={rowId} offset={offset} />;
   }
 
   if (preview === GalleryCardPreview.FilesAndMedia) {

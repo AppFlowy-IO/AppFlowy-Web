@@ -188,7 +188,8 @@ jobs:
               playwright/.features-gen/playwright/bdd/features/database/grid-row-handle.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/rollup-formula-select.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/rollup-formula-workflows.feature.spec.js
-            description: 'Database row, undo/redo, Formula, and Rollup BDD workflows'
+              playwright/.features-gen/playwright/bdd/features/database/board-always-renders.feature.spec.js
+            description: 'Database row, undo/redo, Formula, Rollup and Board rendering BDD workflows'
             bdd: 'true'
             shard: ''
           - name: 'rich-text-bdd'

@@ -1,3 +1,4 @@
+import { GalleryViewProvider } from '../GalleryViewContext';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
@@ -86,7 +87,10 @@ function fixture(fieldType: FieldType) {
     rows.map(({ id }) => {
       const doc = createRowDoc(id, 'database', { title: { fieldType: FieldType.RichText, data: 'Post' } });
 
-      doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row)!.set(actorKey, id === 'matching' ? '42' : '13');
+      doc
+        .getMap(YjsEditorKey.data_section)
+        .get(YjsEditorKey.database_row)!
+        .set(actorKey, id === 'matching' ? '42' : '13');
       return [id, doc];
     })
   );
@@ -106,10 +110,12 @@ function fixture(fieldType: FieldType) {
   };
   const rendered = render(
     <DatabaseContext.Provider value={context}>
-      <DatabaseSearchProvider activeViewId='gallery'>
-        <Search />
-        <Gallery />
-      </DatabaseSearchProvider>
+      <GalleryViewProvider>
+        <DatabaseSearchProvider activeViewId='gallery'>
+          <Search />
+          <Gallery />
+        </DatabaseSearchProvider>
+      </GalleryViewProvider>
     </DatabaseContext.Provider>
   );
 
@@ -121,7 +127,10 @@ it.each([FieldType.CreatedBy, FieldType.LastEditedBy])(
   async (fieldType) => {
     const { actorKey, databaseDoc, rowMap, source, unmount } = fixture(fieldType);
     const visibleRowIds = () =>
-      screen.queryAllByTestId(/^gallery-tile-/).filter((tile) => !tile.hidden).map((tile) => tile.dataset.rowId);
+      screen
+        .queryAllByTestId(/^gallery-tile-/)
+        .filter((tile) => !tile.hidden)
+        .map((tile) => tile.dataset.rowId);
     const expectMatchingRows = async (ids: string[]) => {
       await waitFor(() => expect(visibleRowIds()).toEqual(ids));
       expect(source.getSnapshot()?.rows?.map(({ id }) => id)).toEqual(ids);

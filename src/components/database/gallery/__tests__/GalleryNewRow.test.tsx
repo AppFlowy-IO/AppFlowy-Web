@@ -30,7 +30,7 @@ jest.mock('@/utils/log', () => ({
 
 const mockUseNewRowDispatch = useNewRowDispatch as jest.MockedFunction<typeof useNewRowDispatch>;
 
-describe('GalleryNewRow Flutter desktop parity', () => {
+describe('GalleryNewRow Figma New page tile', () => {
   const createRow = jest.fn();
 
   beforeEach(() => {
@@ -40,40 +40,14 @@ describe('GalleryNewRow Flutter desktop parity', () => {
   });
 
   it.each([
-    [GalleryCardSize.Small, '152px', '168px'],
-    [GalleryCardSize.Medium, '182px', '198px'],
-    [GalleryCardSize.Large, '212px', '228px'],
-  ])('matches the %s Gallery card and padded tile heights', (cardSize, cardHeight, tileHeight) => {
+    [GalleryCardSize.Small, '145px', '145px'],
+    [GalleryCardSize.Medium, '178px', '178px'],
+    [GalleryCardSize.Large, '235px', '235px'],
+  ])('matches the %s Gallery card and tile heights', (cardSize, cardHeight, tileHeight) => {
     render(<GalleryNewRow cardSize={cardSize} />);
 
     expect(screen.getByTestId('gallery-new-row').style.minHeight).toBe(cardHeight);
     expect(screen.getByTestId('gallery-new-row-tile').style.minHeight).toBe(tileHeight);
-  });
-
-  it('uses the Flutter surface, border, interaction, motion, and plus-icon tokens', () => {
-    render(<GalleryNewRow cardSize={GalleryCardSize.Medium} />);
-
-    const button = screen.getByTestId('gallery-new-row');
-    const icon = button.querySelector('svg');
-
-    expect(button.className).toContain('rounded-[10px]');
-    expect(button.className).toContain('bg-white');
-    expect(button.className).toContain('[[data-dark-mode=true]_&]:bg-[#1A202C]');
-    expect(button.className).toContain('border-[rgba(31,35,41,0.14)]');
-    expect(button.className).toContain('[[data-dark-mode=true]_&]:border-[#59647A]');
-    expect(button.className).toContain('hover:border-[rgba(0,188,240,0.65)]');
-    expect(button.className).toContain('focus-visible:border-[rgba(0,188,240,0.65)]');
-    expect(button.className).toContain('hover:shadow-[0_6px_12px_rgba(31,35,41,0.10)]');
-    expect(button.className).toContain('focus-visible:shadow-[0_6px_12px_rgba(31,35,41,0.10)]');
-    expect(button.className).toContain('[[data-dark-mode=true]_&]:hover:shadow-[0_6px_12px_rgba(0,0,0,0.22)]');
-    expect(button.className).toContain('[[data-dark-mode=true]_&]:focus-visible:shadow-[0_6px_12px_rgba(0,0,0,0.22)]');
-    expect(button.className).toContain('[transition-duration:120ms]');
-    expect(button.className).toContain('ease-out');
-    expect(button.className).toContain('motion-reduce:transition-none');
-    expect(button.className).toContain('text-[rgba(23,23,23,0.4)]');
-    expect(button.className).toContain('[[data-dark-mode=true]_&]:text-[rgba(255,255,255,0.4)]');
-    expect(icon?.classList.contains('h-4')).toBe(true);
-    expect(icon?.classList.contains('w-4')).toBe(true);
   });
 
   it('disables repeated activation and exposes its busy state until creation settles', async () => {
@@ -85,7 +59,7 @@ describe('GalleryNewRow Flutter desktop parity', () => {
     createRow.mockReturnValue(pendingCreate);
     render(<GalleryNewRow cardSize={GalleryCardSize.Medium} />);
 
-    const button = screen.getByRole('button', { name: 'grid.row.newRow' });
+    const button = screen.getByRole('button', { name: 'gallery.newPage' });
 
     expect(button.getAttribute('aria-busy')).toBe('false');
     expect((button as HTMLButtonElement).disabled).toBe(false);
@@ -94,7 +68,7 @@ describe('GalleryNewRow Flutter desktop parity', () => {
     fireEvent.click(button);
 
     expect(createRow).toHaveBeenCalledTimes(1);
-    expect(createRow).toHaveBeenCalledWith({ openAfterCreate: true, tailing: true });
+    expect(createRow).toHaveBeenCalledWith({ openAfterCreate: false, tailing: true });
     expect((button as HTMLButtonElement).disabled).toBe(true);
     expect(button.getAttribute('aria-busy')).toBe('true');
     expect(!!button.querySelector('.animate-spin')).toBe(true);
@@ -115,7 +89,7 @@ describe('GalleryNewRow Flutter desktop parity', () => {
     createRow.mockRejectedValue(error);
     render(<GalleryNewRow cardSize={GalleryCardSize.Medium} />);
 
-    const button = screen.getByRole('button', { name: 'grid.row.newRow' });
+    const button = screen.getByRole('button', { name: 'gallery.newPage' });
 
     fireEvent.click(button);
 
@@ -131,7 +105,7 @@ describe('GalleryNewRow Flutter desktop parity', () => {
     createRow.mockRejectedValue(rejection);
     render(<GalleryNewRow cardSize={GalleryCardSize.Medium} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'grid.row.newRow' }));
+    fireEvent.click(screen.getByRole('button', { name: 'gallery.newPage' }));
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(getErrorMessage(rejection)));
     expect(Log.error).toHaveBeenCalledWith('[Row creation] action failed', rejection);

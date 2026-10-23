@@ -5,6 +5,7 @@ import { DatabaseViewLayout } from '@/application/types';
 import GalleryLayoutSettings, {
   GALLERY_POPOVER_SHELL_CLASS_NAME,
 } from '@/components/database/components/settings/GalleryLayoutSettings';
+import GallerySettingGroup from '@/components/database/components/settings/GallerySettingGroup';
 import Layout from '@/components/database/components/settings/Layout';
 import Properties from '@/components/database/components/settings/Properties';
 import {
@@ -35,13 +36,15 @@ export function GallerySettings({ children }: { children: ReactNode }) {
       </Tooltip>
       <DropdownMenuContent
         align='end'
-        className={cn(GALLERY_POPOVER_SHELL_CLASS_NAME, 'w-[240px] !min-w-[240px] p-1.5')}
+        className={cn(GALLERY_POPOVER_SHELL_CLASS_NAME, 'w-[240px] !min-w-[240px] p-2')}
         side='bottom'
       >
         <DropdownMenuGroup>
-          <Properties />
-          <Layout currentLayout={DatabaseViewLayout.Gallery} />
-          <GalleryLayoutSettings />
+          <Properties gallery />
+          <Layout currentLayout={DatabaseViewLayout.Gallery}>
+            <GalleryLayoutSettings />
+          </Layout>
+          <GallerySettingGroup />
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>

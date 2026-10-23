@@ -388,9 +388,12 @@ describe('BoardSettingGroup', () => {
   });
 
   it('falls back to the persisted visibility flags until the Board rows hydrate', async () => {
-    // The background loader falls back to IndexedDB for the missing row doc, which jsdom lacks.
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     const fixture = createBoardFixture({ missingRowDocs: ['row-b'] });
+
+    // The missing row is still syncing. A row whose load fails would instead
+    // settle as unavailable and let the Board report its rendered columns.
+    fixture.contextValue.ensureRow = () => new Promise(() => undefined);
     const { unmount } = renderBoardSettingGroup(fixture.contextValue);
 
     await waitFor(() => expect(lastMenuProps().grouping.groups).toHaveLength(4));

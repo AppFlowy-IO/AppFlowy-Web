@@ -1818,8 +1818,10 @@ function Database(props: Database2Props) {
       </DatabaseContextProvider>
       {modalState.rowId && modalContextValue && (
         <PeekContextProvider value={modalContextValue} source={modalState.source}>
+          {/* Previous/next swaps the row in place: remounting per row would replay
+              the side-peek entrance and reset the user's side/center choice. */}
           <DatabaseRowModal
-            key={`${modalContextValue.databaseDoc.guid}:${modalState.rowId}`}
+            key={modalContextValue.databaseDoc.guid}
             rowId={modalState.rowId}
             open={Boolean(modalState.rowId)}
             openPage={onOpenRowPage || (modalState.databaseDoc && navigateToView) ? handleOpenPeekAsPage : undefined}
