@@ -15,8 +15,12 @@ env:
   # https://github.com/AppFlowy-IO/AppFlowy-Cloud-Premium/actions/runs/38755659237
   CLOUD_VERSION: ci-web-row-list-9563cf767ef1-amd64
   CLOUD_REVISION: 9563cf767ef1ae97995a9e51e6ac0898faf54774
-  # AI is published independently from the Rust services.
-  AI_VERSION: latest-amd64
+  # Cloud 0.20.1 absorbed the AI service (Cloud-Premium #1441) and now owns its
+  # schema, so AI images from 0.20.1 on exit unless Cloud is at least as new.
+  # Until CLOUD_REVISION includes #1441, keep the last standalone AI release,
+  # which applies its own migrations; afterwards, use the AI image built from
+  # CLOUD_REVISION. Never float this tag: latest-amd64 now follows Cloud main.
+  AI_VERSION: 0.13.5-amd64
   # Public Form APIs and uploads reject plaintext requests at the backend proxy.
   APPFLOWY_BASE_URL: https://localhost
   APPFLOWY_ENABLE_RELATION_ROLLUP_EDIT: 'true'
