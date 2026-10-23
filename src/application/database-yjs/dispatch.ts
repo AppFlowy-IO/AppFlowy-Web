@@ -6,6 +6,11 @@ import * as Y from 'yjs';
 
 import { atomicRead, captureAtomicCreationOwner } from '@/application/atomic-creation';
 import { resolveUserAttributionUid, touchRowAttribution } from '@/application/database-yjs/attribution';
+import { boardNeedsGroupingField } from '@/application/database-yjs/board-default-group';
+import {
+  insertBoardInitializationValue,
+  setBoardInitializationValue,
+} from '@/application/database-yjs/board-initialization';
 import { calculateFieldValue } from '@/application/database-yjs/calculation';
 import { CalendarLayoutUpdate, updateCalendarLayoutSetting } from '@/application/database-yjs/calendar-layout';
 import { cloneDatabaseCell } from '@/application/database-yjs/cell.clone';
@@ -245,7 +250,7 @@ export function useReorderColumnDispatch() {
   );
 }
 
-function generateGroupByField(field: YDatabaseField) {
+function generateGroupByField(field: YDatabaseField, groupId = `g:${nanoid(6)}`) {
   const group = new Y.Map() as YDatabaseGroup;
 
   const fieldId = field.get(YjsDatabaseKey.id);
@@ -254,7 +259,7 @@ function generateGroupByField(field: YDatabaseField) {
   const columns = new Y.Array() as YDatabaseGroupColumns;
 
   group.set(YjsDatabaseKey.field_id, fieldId);
-  group.set(YjsDatabaseKey.id, `g:${nanoid(6)}`);
+  group.set(YjsDatabaseKey.id, groupId);
   group.set(YjsDatabaseKey.type, fieldType);
   group.set(YjsDatabaseKey.collapsed_group_ids, new Y.Array<string>());
 
@@ -426,17 +431,47 @@ export function useCreateBoardGroupingFieldDispatch() {
         throw new Error('View not found');
       }
 
-      const fieldId = nanoid(6);
+      const fields = database.get(YjsDatabaseKey.fields);
+
+      if (automatic && !boardNeedsGroupingField(view, fields)) {
+        return view.get(YjsDatabaseKey.groups)?.get(0)?.get(YjsDatabaseKey.field_id);
+      }
+
+      let fieldId = nanoid(6);
+
+      if (automatic) {
+        let index = 0;
+
+        // Database-scoped defaults also converge when different Boards open.
+        // Retain tombstones in this check so deleting Status permits a fresh
+        // initialization without resurrecting its old cells or Yjs objects.
+        while (fields._map.has(`board_status_${index}`)) index++;
+        fieldId = `board_status_${index}`;
+      }
 
       executeOperations(
         sharedRoot,
         [
           () => {
-            const field = createField(FieldType.SingleSelect, fieldId, BOARD_GROUPING_FIELD_NAME);
+            const field = createField(
+              FieldType.SingleSelect,
+              fieldId,
+              BOARD_GROUPING_FIELD_NAME,
+              // Automatic defaults cannot depend on either editor's clock.
+              automatic ? '0' : undefined
+            );
 
-            database.get(YjsDatabaseKey.fields).set(fieldId, field);
+            if (automatic) setBoardInitializationValue(fields, fieldId, field);
+            else fields.set(fieldId, field);
+
             database.get(YjsDatabaseKey.views).forEach((databaseView) => {
-              databaseView.get(YjsDatabaseKey.field_orders)?.push([{ id: fieldId }]);
+              const orders = databaseView.get(YjsDatabaseKey.field_orders);
+
+              if (orders) {
+                if (automatic) insertBoardInitializationValue(orders, { id: fieldId });
+                else orders.push([{ id: fieldId }]);
+              }
+
               const fieldSettings = databaseView.get(YjsDatabaseKey.field_settings);
 
               if (!fieldSettings) return;
@@ -444,8 +479,17 @@ export function useCreateBoardGroupingFieldDispatch() {
 
               setting.set(YjsDatabaseKey.visibility, FieldVisibility.AlwaysShown);
               setting.set(YjsDatabaseKey.wrap, DEFAULT_FIELD_WRAP);
-              fieldSettings.set(fieldId, setting);
+              if (automatic) setBoardInitializationValue(fieldSettings, fieldId, setting);
+              else fieldSettings.set(fieldId, setting);
             });
+
+            if (automatic) {
+              const groups = new Y.Array() as YDatabaseGroups;
+
+              groups.push([generateGroupByField(fields.get(fieldId), `default-board:${fieldId}`)]);
+              setBoardInitializationValue(view, YjsDatabaseKey.groups, groups);
+              return;
+            }
 
             let groups = view.get(YjsDatabaseKey.groups);
 
@@ -1701,12 +1745,12 @@ export function useUpdatePropertyNameDispatch(fieldId: string) {
   );
 }
 
-function createField(type: FieldType, fieldId: string, fieldName?: string) {
+function createField(type: FieldType, fieldId: string, fieldName?: string, createdAt?: string) {
   const createSimpleField = (fieldType: FieldType, initTypeOption?: (typeOption: YMapFieldTypeOption) => void) => {
     const field = new Y.Map() as YDatabaseField;
     const typeOptionMap = new Y.Map() as YDatabaseFieldTypeOption;
     const typeOption = new Y.Map() as YMapFieldTypeOption;
-    const timestamp = String(dayjs().unix());
+    const timestamp = createdAt ?? String(dayjs().unix());
 
     field.set(YjsDatabaseKey.name, fieldName ?? getFieldName(fieldType));
     field.set(YjsDatabaseKey.id, fieldId);

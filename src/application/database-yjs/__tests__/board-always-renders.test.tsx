@@ -1,9 +1,11 @@
-import { render, renderHook, waitFor } from '@testing-library/react';
+import { act, render, renderHook, waitFor } from '@testing-library/react';
 import type React from 'react';
 import * as Y from 'yjs';
 
 import { DatabaseContext, DatabaseContextState, FieldType, useRowsByGroup } from '@/application/database-yjs';
 import { useCreateBoardGroupingFieldDispatch } from '@/application/database-yjs/dispatch';
+import { parseSelectOptionTypeOptions } from '@/application/database-yjs/fields';
+import { groupByField } from '@/application/database-yjs/group';
 import { getOrCreateDatabaseHistoryManager } from '@/application/database-yjs/history';
 import {
   DatabaseViewLayout,
@@ -233,6 +235,141 @@ describe('Board grouping readiness', () => {
 });
 
 describe('Board without anything to group by', () => {
+  it.each([
+    { missingGroups: false, concurrentField: false },
+    { missingGroups: true, concurrentField: false },
+    { missingGroups: false, concurrentField: true },
+  ])(
+    'converges before sync (missing groups: $missingGroups, concurrent field: $concurrentField)',
+    async ({ missingGroups, concurrentField }) => {
+      const first = createFixture({ withGrouping: false, withStatusField: false, inlineRowOrders: [] });
+
+      if (missingGroups) first.view.delete(YjsDatabaseKey.groups);
+      const secondDoc = new Y.Doc({ guid: first.databaseDoc.guid }) as YDoc;
+
+      Y.applyUpdate(secondDoc, Y.encodeStateAsUpdate(first.databaseDoc));
+      const firstUpdates: Uint8Array[] = [];
+      const secondUpdates: Uint8Array[] = [];
+
+      first.databaseDoc.on('update', (update: Uint8Array) => firstUpdates.push(update));
+      secondDoc.on('update', (update: Uint8Array) => secondUpdates.push(update));
+      const secondDatabase = secondDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+      const secondView = secondDatabase.get(YjsDatabaseKey.views).get(viewId);
+
+      if (concurrentField) {
+        const notes = new Y.Map() as YDatabaseField;
+
+        notes.set(YjsDatabaseKey.id, 'notes');
+        notes.set(YjsDatabaseKey.name, 'Notes');
+        notes.set(YjsDatabaseKey.type, FieldType.RichText);
+        secondDatabase.get(YjsDatabaseKey.fields).set('notes', notes);
+        secondDatabase.get(YjsDatabaseKey.views).forEach((view) => {
+          view.get(YjsDatabaseKey.field_orders).push([{ id: 'notes' }]);
+        });
+      }
+
+      const secondContext = { ...first.contextValue, databaseDoc: secondDoc };
+      const secondWrapper = ({ children }: { children: React.ReactNode }) => (
+        <DatabaseContext.Provider value={secondContext}>{children}</DatabaseContext.Provider>
+      );
+      const firstBoard = render(<Board />, { wrapper: first.wrapper });
+      const secondBoard = render(<Board />, { wrapper: secondWrapper });
+      const firstGroup = first.view.get(YjsDatabaseKey.groups).get(0);
+      const secondGroup = secondView.get(YjsDatabaseKey.groups).get(0);
+      const fieldId = firstGroup.get(YjsDatabaseKey.field_id);
+
+      // The editor whose initialization would lose a map conflict still gets to
+      // add an option and assign a card before it receives the other editor.
+      const editingDatabase = first.databaseDoc.clientID < secondDoc.clientID ? first.database : secondDatabase;
+      const editingView = editingDatabase.get(YjsDatabaseKey.views).get(viewId);
+      const editingFieldId = editingView.get(YjsDatabaseKey.groups).get(0).get(YjsDatabaseKey.field_id);
+      const editingField = editingDatabase.get(YjsDatabaseKey.fields).get(editingFieldId);
+      const option = { id: 'new-status', name: 'In progress', color: 'Blue' };
+      const row = createRowDoc('edited-row', first.databaseDoc.guid, {
+        [editingFieldId]: createCell(FieldType.SingleSelect, option.id),
+      });
+
+      act(() => {
+        editingField
+          .get(YjsDatabaseKey.type_option)
+          .get(String(FieldType.SingleSelect))
+          .set(YjsDatabaseKey.content, JSON.stringify({ disable_color: false, options: [option] }));
+      });
+
+      // Capture both independent updates before delivering either. Replaying the
+      // updates must not create more fields, orders, or grouping entries.
+      const firstUpdate = Y.mergeUpdates(firstUpdates);
+      const secondUpdate = Y.mergeUpdates(secondUpdates);
+
+      act(() => {
+        Y.applyUpdate(first.databaseDoc, secondUpdate);
+        Y.applyUpdate(secondDoc, firstUpdate);
+        Y.applyUpdate(first.databaseDoc, secondUpdate);
+        Y.applyUpdate(secondDoc, firstUpdate);
+      });
+
+      for (const database of [first.database, secondDatabase]) {
+        const fields = database.get(YjsDatabaseKey.fields);
+        const view = database.get(YjsDatabaseKey.views).get(viewId);
+        const groups = view.get(YjsDatabaseKey.groups);
+
+        expect(fields.size).toBe(concurrentField ? 3 : 2);
+        expect(groups.length).toBe(1);
+        expect(groups.get(0).get(YjsDatabaseKey.field_id)).toBe(fieldId);
+        expect(parseSelectOptionTypeOptions(fields.get(fieldId)).options).toEqual([option]);
+        const rows = [{ id: 'edited-row', height: 36 }];
+        const groupedRows = groupByField(rows, { 'edited-row': row }, fields.get(fieldId));
+
+        expect(groupedRows.get(option.id)).toEqual(rows);
+        expect(groupedRows.get(fieldId)).toEqual([]);
+        database.get(YjsDatabaseKey.views).forEach((databaseView) => {
+          expect(databaseView.get(YjsDatabaseKey.field_orders).toJSON()).toEqual([
+            { id: nameFieldId },
+            ...(concurrentField ? [{ id: 'notes' }] : []),
+            { id: fieldId },
+          ]);
+        });
+      }
+
+      expect(secondGroup.get(YjsDatabaseKey.field_id)).toBe(fieldId);
+      await waitFor(() => {
+        expect(firstBoard.container.querySelector('[data-testid="board-group"]')?.textContent).toBe(
+          firstGroup.get(YjsDatabaseKey.id)
+        );
+        expect(secondBoard.container.querySelector('[data-testid="board-group"]')?.textContent).toBe(
+          firstGroup.get(YjsDatabaseKey.id)
+        );
+      });
+      expect(first.database.toJSON()).toEqual(secondDatabase.toJSON());
+      firstBoard.unmount();
+      secondBoard.unmount();
+    }
+  );
+
+  it('ignores automatic retries and creates a fresh field after the previous default is deleted', () => {
+    const fixture = createFixture({ withGrouping: false, withStatusField: false });
+    const { result } = renderHook(() => useCreateBoardGroupingFieldDispatch(), { wrapper: fixture.wrapper });
+    const fieldId = result.current({ automatic: true });
+    const updates = jest.fn();
+
+    fixture.databaseDoc.on('update', updates);
+    expect(result.current({ automatic: true })).toBe(fieldId);
+    expect(updates).not.toHaveBeenCalled();
+
+    fixture.databaseDoc.transact(() => {
+      fixture.fields.delete(fieldId);
+      fixture.view.get(YjsDatabaseKey.field_orders).delete(1);
+      fixture.view.get(YjsDatabaseKey.groups).delete(0);
+    });
+    const replacementId = result.current({ automatic: true });
+
+    expect(replacementId).not.toBe(fieldId);
+    expect(fixture.fields.size).toBe(2);
+    expect(fixture.view.get(YjsDatabaseKey.groups).length).toBe(1);
+    expect(fixture.view.get(YjsDatabaseKey.groups).get(0).get(YjsDatabaseKey.field_id)).toBe(replacementId);
+    expect(fixture.view.get(YjsDatabaseKey.field_orders).toJSON()).toEqual([{ id: nameFieldId }, { id: replacementId }]);
+  });
+
   it('groups an editable Board by a new Status property, like Desktop, without an undo step', async () => {
     const fixture = createFixture({ withGrouping: false, withStatusField: false });
     const history = getOrCreateDatabaseHistoryManager(fixture.databaseDoc);
