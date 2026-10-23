@@ -317,6 +317,8 @@ describe('useGridGroupingSelector refresh behavior', () => {
       createYDatabaseGroupColumn({ id: 'number_range_0_100' }),
     ]);
     fixture.rowOrders.push([{ id: 'not-hydrated', height: 36 }]);
+    // The row is still syncing; a row whose load fails would settle instead.
+    fixture.contextValue.ensureRow = () => new Promise(() => undefined);
     const { result, unmount } = renderHook(useGroupingWithMetadataSync, { wrapper: fixture.wrapper });
 
     await waitFor(() => expect(result.current.activeGroupIds).toEqual(['name', 'number_value_9007199254740993', 'number_value_10', 'number_value_2']));
@@ -813,6 +815,9 @@ describe('useGridGroupingSelector refresh behavior', () => {
   it('does not prune persisted groups while a newly ordered row is still hydrating', async () => {
     const consoleWarn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     const fixture = createGridGroupingFixture();
+
+    // row-c is still syncing; a row whose load fails would settle instead.
+    fixture.contextValue.ensureRow = () => new Promise(() => undefined);
     const { result, unmount } = renderHook(useGroupingWithMetadataSync, { wrapper: fixture.wrapper });
 
     await waitFor(() => {

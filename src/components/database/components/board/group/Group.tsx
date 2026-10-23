@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 
 import {
   GroupColumn,
@@ -14,6 +13,7 @@ import KanbanSkeleton from '@/components/_shared/skeleton/KanbanSkeleton';
 import { useBoardActions } from '@/components/database/board/BoardProvider';
 import { BoardDragContext } from '@/components/database/components/board/drag-and-drop/board-context';
 import { useColumnsDrag } from '@/components/database/components/board/drag-and-drop/useColumnsDrag';
+import { BoardNoGroup } from '@/components/database/components/board/group/BoardNoGroup';
 import Columns from '@/components/database/components/board/group/Columns';
 import GroupStickyHeader from '@/components/database/components/board/group/GroupStickyHeader';
 import { DeleteRowConfirm } from '@/components/database/components/database-row/DeleteRowConfirm';
@@ -30,16 +30,8 @@ export interface GroupProps {
 
 export const Group = ({ groupId }: GroupProps) => {
   const { columns, groupResult, fieldId, groupRowsReady, notFound } = useRowsByGroup(groupId);
-  const { t } = useTranslation();
 
-  if (notFound) {
-    return (
-      <div className={'mt-[10%] flex h-full w-full flex-col items-center gap-2 text-text-secondary'}>
-        <div className={'text-sm font-medium'}>{t('board.noGroup')}</div>
-        <div className={'text-xs'}>{t('board.noGroupDesc')}</div>
-      </div>
-    );
-  }
+  if (notFound) return <BoardNoGroup fieldId={fieldId} />;
 
   if (!fieldId) return null;
 

@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react';
 
-import { FieldType, usePropertiesSelector } from '@/application/database-yjs';
+import { usePropertiesSelector } from '@/application/database-yjs';
+import { BOARD_GROUPABLE_FIELD_TYPES } from '@/application/database-yjs/board-default-group';
 import { useBoardGroupingSummary } from '@/application/database-yjs/board-grouping';
 import {
   useClearGroupByFieldDispatch,
@@ -10,14 +11,6 @@ import {
 } from '@/application/database-yjs/dispatch';
 import { DatabaseViewLayout } from '@/application/types';
 import { DatabaseSettingGroup } from '@/components/database/components/settings/GridSettingGroup';
-
-// Desktop lets a Board group by every groupable type, but the web Board only
-// renders select and checkbox columns, so the picker stays limited to them.
-const BOARD_GROUPABLE_FIELD_TYPES: readonly FieldType[] = [
-  FieldType.SingleSelect,
-  FieldType.MultiSelect,
-  FieldType.Checkbox,
-];
 
 // Board BDD steps locate every field row through this one constant id.
 const BOARD_GROUP_BY_FIELD_TEST_ID = 'board-group-by-field';

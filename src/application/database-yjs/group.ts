@@ -82,8 +82,17 @@ export function parseDateGroupConfiguration(content?: string): DateGroupConfigur
   }
 }
 
-export function areGroupRowsHydrated(rows: Row[], rowMetas: Record<RowId, YDoc>) {
-  return rows.every((row) => hasRowConditionData(rowMetas[row.id]));
+/**
+ * Whether every row can be grouped. Rows the background loader could not load
+ * count as settled, so one missing DatabaseRow cannot keep a grouped view in
+ * its loading state forever.
+ */
+export function areGroupRowsHydrated(
+  rows: Row[],
+  rowMetas: Record<RowId, YDoc>,
+  settledRowIds?: ReadonlySet<RowId>
+) {
+  return rows.every((row) => hasRowConditionData(rowMetas[row.id]) || Boolean(settledRowIds?.has(row.id)));
 }
 
 export function groupByField(

@@ -407,6 +407,72 @@ export function useGroupByFieldDispatch({ preserveFilters = false }: { preserveF
   );
 }
 
+/** Desktop and the server name the property they create for an ungroupable Board "Status". */
+export const BOARD_GROUPING_FIELD_NAME = 'Status';
+
+/**
+ * Create a "Status" Single select property and group the current Board by it,
+ * as Desktop does for a Board with nothing to group by. `automatic` marks that
+ * lazy initialization, which is not a user edit and so is not undoable.
+ */
+export function useCreateBoardGroupingFieldDispatch() {
+  const view = useDatabaseView();
+  const database = useDatabase();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback(
+    ({ automatic = false }: { automatic?: boolean } = {}) => {
+      if (!view) {
+        throw new Error('View not found');
+      }
+
+      const fieldId = nanoid(6);
+
+      executeOperations(
+        sharedRoot,
+        [
+          () => {
+            const field = createField(FieldType.SingleSelect, fieldId, BOARD_GROUPING_FIELD_NAME);
+
+            database.get(YjsDatabaseKey.fields).set(fieldId, field);
+            database.get(YjsDatabaseKey.views).forEach((databaseView) => {
+              databaseView.get(YjsDatabaseKey.field_orders)?.push([{ id: fieldId }]);
+              const fieldSettings = databaseView.get(YjsDatabaseKey.field_settings);
+
+              if (!fieldSettings) return;
+              const setting = new Y.Map() as YDatabaseFieldSetting;
+
+              setting.set(YjsDatabaseKey.visibility, FieldVisibility.AlwaysShown);
+              setting.set(YjsDatabaseKey.wrap, DEFAULT_FIELD_WRAP);
+              fieldSettings.set(fieldId, setting);
+            });
+
+            let groups = view.get(YjsDatabaseKey.groups);
+
+            if (!groups) {
+              groups = new Y.Array() as YDatabaseGroups;
+              view.set(YjsDatabaseKey.groups, groups);
+            }
+
+            groups.delete(0, groups.length);
+            groups.insert(0, [generateGroupByField(field)]);
+          },
+        ],
+        'createBoardGroupingField',
+        {
+          type: 'database.create-board-grouping-field',
+          fieldId,
+          fieldType: FieldType.SingleSelect,
+          policy: automatic ? 'skip' : 'capture',
+        }
+      );
+
+      return fieldId;
+    },
+    [database, sharedRoot, view]
+  );
+}
+
 export function useClearGroupByFieldDispatch() {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();

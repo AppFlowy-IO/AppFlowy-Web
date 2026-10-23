@@ -3068,6 +3068,8 @@
     },
     "noGroup": "No group by property",
     "noGroupDesc": "Board views require a property to group by in order to display",
+    "noGroupUnsupported": "This Board is grouped by {{name}}, which the web Board can't show yet. Group it by a Select or Checkbox property instead.",
+    "newStatusProperty": "New Status property",
     "media": {
       "cardText": "{} {}",
       "fallbackName": "files"
