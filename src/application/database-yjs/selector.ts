@@ -12,7 +12,7 @@ import {
 } from 'react';
 import { AbstractType, type Transaction, type YEvent } from 'yjs';
 
-import { resolveDefaultBoardGroup } from '@/application/database-yjs/board-default-group';
+import { BOARD_GROUPABLE_FIELD_TYPES, resolveDefaultBoardGroup } from '@/application/database-yjs/board-default-group';
 import { isUngroupedColumnHidden, resolveBoardColumnVisibility } from '@/application/database-yjs/board-visibility';
 import { createCalendarLayoutStore } from '@/application/database-yjs/calendar-layout';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
@@ -1072,29 +1072,23 @@ export function useSortSelector(sortId: SortId) {
   return sortValue;
 }
 
+function readGroupIds(database: YDatabase | undefined, viewId: string) {
+  const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+  const persisted = view?.get(YjsDatabaseKey.groups)?.toArray().map((item) => item.get(YjsDatabaseKey.id)) ?? [];
+  const fallback = resolveDefaultBoardGroup(view, database?.get(YjsDatabaseKey.fields));
+
+  return fallback ? [fallback.id] : persisted;
+}
+
 export function useGroupsSelector() {
   const database = useDatabase();
   const viewId = useDatabaseViewId();
-  const [groups, setGroups] = useState<string[]>([]);
+  // useDatabase re-renders on every database change, so read the grouping while
+  // rendering. A copy kept in state trails Yjs by one render and briefly reported
+  // a Board whose grouping had just been written as ungrouped.
+  const groupsKey = JSON.stringify(readGroupIds(database, viewId));
 
-  useEffect(() => {
-    const updateGroups = () => {
-      const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
-      const persisted = view?.get(YjsDatabaseKey.groups)?.toArray().map((item) => item.get(YjsDatabaseKey.id)) ?? [];
-      const fallback = resolveDefaultBoardGroup(view, database?.get(YjsDatabaseKey.fields));
-      const next = fallback ? [fallback.id] : persisted;
-
-      setGroups((current) =>
-        current.length === next.length && current.every((id, index) => id === next[index]) ? current : next
-      );
-    };
-
-    database?.observeDeep(updateGroups);
-    updateGroups();
-    return () => database?.unobserveDeep(updateGroups);
-  }, [database, viewId]);
-
-  return groups;
+  return useMemo(() => JSON.parse(groupsKey) as string[], [groupsKey]);
 }
 
 export type GroupColumn = DatabaseGroupColumn;
@@ -1295,7 +1289,7 @@ export function useRowsByGroup(groupId: string) {
   const viewId = useDatabaseViewId();
   const { databaseDoc, dataSource } = useDatabaseContext();
   const isHistory = dataSource?.type === 'history';
-  const { cachedRowDocs } = useBackgroundRowDocLoader(Boolean(fieldId), 'board-grouping');
+  const { cachedRowDocs, unavailableRowIds } = useBackgroundRowDocLoader(Boolean(fieldId), 'board-grouping');
   const groupingRows = useMemo(() => {
     if (isHistory) return rows ?? {};
     const next = { ...cachedRowDocs };
@@ -1342,7 +1336,7 @@ export function useRowsByGroup(groupId: string) {
 
       const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
 
-      if (![FieldType.SingleSelect, FieldType.MultiSelect, FieldType.Checkbox].includes(fieldType)) {
+      if (!BOARD_GROUPABLE_FIELD_TYPES.includes(fieldType)) {
         setNotFound(true);
         setGroupResult(newResult);
         return;
@@ -1358,7 +1352,7 @@ export function useRowsByGroup(groupId: string) {
       }
 
       setGroupResult(groupResult);
-      const rowsHydrated = areGroupRowsHydrated(rowOrders, groupingRows);
+      const rowsHydrated = areGroupRowsHydrated(rowOrders, groupingRows, unavailableRowIds);
 
       if (rowsHydrated && groupingKey) {
         setHydratedGroupingIdentity((current) =>
@@ -1393,7 +1387,7 @@ export function useRowsByGroup(groupId: string) {
         row.getMap(YjsEditorKey.data_section).unobserveDeep(observerRowsEvent);
       });
     };
-  }, [databaseDoc, fieldId, fields, rowOrders, groupingRows, filters, groupingKey, isHistory]);
+  }, [databaseDoc, fieldId, fields, rowOrders, groupingRows, filters, groupingKey, isHistory, unavailableRowIds]);
 
   // Cold Boards must wait for their first complete grouping before empty
   // columns can be classified safely. Once that baseline exists, a later
@@ -1777,7 +1771,7 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
   const { users: mentionableUsers } = useMentionableUsersWithAutoFetch(isPersonGroupingField);
   const rawRowOrders = view?.get(YjsDatabaseKey.row_orders);
   const inlineRowOrders = getInlineViewRowOrders(database);
-  const { cachedRowDocs, getCachedRowDocs, subscribeToCachedRowDocChanges } = useBackgroundRowDocLoader(
+  const { cachedRowDocs, getCachedRowDocs, subscribeToCachedRowDocChanges, unavailableRowIds } = useBackgroundRowDocLoader(
     Boolean(fieldId),
     `${layout === DatabaseViewLayout.List ? 'list' : layout === DatabaseViewLayout.Timeline ? 'timeline' : 'grid'}-grouping`
   );
@@ -1909,7 +1903,7 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
     getRelationGroupLabelSnapshot
   );
 
-  const rowsHydrated = Boolean(allRowOrders && areGroupRowsHydrated(allRowOrders, groupingRows));
+  const rowsHydrated = Boolean(allRowOrders && areGroupRowsHydrated(allRowOrders, groupingRows, unavailableRowIds));
   const metadataSyncKey = useMemo(() => {
     void groupingViewRevision;
     const groupingField = fieldId ? fields?.get(fieldId) : undefined;
