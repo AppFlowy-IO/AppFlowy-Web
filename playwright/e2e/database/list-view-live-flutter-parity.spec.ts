@@ -563,13 +563,19 @@ test.describe('List live Flutter parity', () => {
     await openDatabaseProperties(page);
     await expect(propertyItems(page)).toHaveCount(FLUTTER_DATABASE_VIEW_DISPLAY_FIELD_TYPES.length);
 
-    for (const [index, field] of listFields.entries()) {
+    for (const field of listFields) {
       await expect(page.getByTestId(`database-property-${field.id}`)).toBeAttached();
-      await expect(page.getByTestId(`database-property-visibility-${field.id}`)).toHaveAttribute(
-        'aria-label',
-        field.isPrimary || index < 3 ? /^Hide / : /^Show /
-      );
-      if (!field.isPrimary) await ensurePropertyVisible(page, field.id);
+      if (field.isPrimary) {
+        await expect(page.getByTestId(`database-property-visibility-${field.id}`)).toHaveAttribute(
+          'aria-label',
+          /^Hide /
+        );
+      } else {
+        // Exercise Show for every property, including Type, regardless of its initial visibility.
+        await ensurePropertyHidden(page, field.id);
+        await expect(DatabaseListSelectors.fieldsForField(page, field.id)).toHaveCount(0);
+        await ensurePropertyVisible(page, field.id);
+      }
     }
 
     for (const field of listFields.filter((field) => !field.isPrimary)) {
