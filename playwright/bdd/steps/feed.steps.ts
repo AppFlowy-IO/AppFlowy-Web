@@ -45,23 +45,19 @@ When(
   }
 );
 
-Then('the first feed card contains a linked grid with bounded expandable height', async ({ page }) => {
+Then('the first feed card contains a linked grid within the card height cap', async ({ page }) => {
   const [rowId] = await getFeedCardRowIds(page);
   const preview = DatabaseFeedSelectors.documentPreviewByRowId(page, rowId);
-  const content = page.getByTestId(`feed-document-preview-content-${rowId}`);
+  const card = DatabaseFeedSelectors.cardByRowId(page, rowId);
 
   await expect(preview.getByTestId('database-grid')).toBeAttached({ timeout: 30_000 });
-  await expect(preview).toHaveAttribute('data-overflows', 'true');
-  expect((await content.boundingBox())!.height).toBeLessThanOrEqual(120);
-  await DatabaseFeedSelectors.cardByRowId(page, rowId).hover();
-  await DatabaseFeedSelectors.documentPreviewToggleByRowId(page, rowId).click();
-  await expect(preview).toHaveAttribute('data-expanded', 'true');
-  const height = (await content.boundingBox())!.height;
-
-  expect(height).toBeGreaterThan(120);
-  expect(height).toBeLessThan(1500);
-  await expect(preview.getByTestId('database-grid')).toBeVisible();
   await expect(preview.locator('[data-testid^="grid-row-"]:not([data-testid="grid-row-undefined"])')).toHaveCount(3);
+  expect((await card.boundingBox())!.height).toBeLessThanOrEqual(600);
+
+  // A document taller than the cap is clipped behind "Open as full page".
+  if ((await DatabaseFeedSelectors.bodyByRowId(page, rowId).getAttribute('data-clipped')) === 'true') {
+    await expect(DatabaseFeedSelectors.openFullPageByRowId(page, rowId)).toBeVisible();
+  }
 });
 
 When('the Feed user inserts a linked grid {string} in the normal document', async ({ page }, name: string) => {

@@ -3,27 +3,31 @@ import { v4 as uuidv4 } from 'uuid';
 import * as Y from 'yjs';
 
 import { matchesDatabaseStorageFence } from '@/application/db';
+import { createRow as openCachedRow } from '@/application/services/js-services/cache';
 import { atomicRead } from '@/application/services/js-services/http/atomic-creation-api';
 import {
   postDefaultRowCreation,
   postRowCreation,
 } from '@/application/services/js-services/http/atomic-row-creation-api';
 import { readCollabStates } from '@/application/services/js-services/http/collab-api';
-import { createRow as openCachedRow } from '@/application/services/js-services/cache';
+import { initSync } from '@/application/services/js-services/sync-protocol';
+import { enqueueOutboxUpdate } from '@/application/sync-outbox';
 import { RowCoverType, Types, YDatabaseCell, YDoc } from '@/application/types';
 
 import { cloneDatabaseCell } from '../cell.clone';
-import { FieldType, RowMetaKey } from '../database.type';
 import { CloudRowCreationIntent, createCloudRow, prepareDefaultRowRequest } from '../creation/create-row';
 import { decodeCreatedRowCollab, encodeCreationCollab } from '../creation/encoded-collab';
-import type { CreateDatabaseRowRequest } from '../creation/row-template-graph-types';
 import { CreatedRowReceipt, DefaultRowRequest } from '../creation/row-creation-types';
 import { readPersistedDatabaseSource } from '../creation/source-readiness';
+import { FieldType, RowMetaKey } from '../database.type';
 import { initialDatabaseRow } from '../row';
 import { getMetaIdMap } from '../row_meta';
 
+import type { CreateDatabaseRowRequest } from '../creation/row-template-graph-types';
+
 const mockAvailable = jest.fn();
 const mockOwner = jest.fn();
+
 jest.mock('@/application/atomic-creation/owner', () => ({
   captureAtomicCreationOwner: (workspaceId: string, guard: () => void) => ({
     workspaceId,
@@ -56,6 +60,12 @@ jest.mock('@/application/services/js-services/http/atomic-row-creation-api', () 
 }));
 jest.mock('@/application/services/js-services/http/collab-api', () => ({ readCollabStates: jest.fn() }));
 jest.mock('@/application/services/js-services/cache', () => ({ createRow: jest.fn() }));
+jest.mock('@/application/sync-outbox', () => ({
+  enqueueOutboxUpdate: jest.fn(async () => true),
+  deleteOutboxByObjectId: jest.fn(async () => undefined),
+  waitForDrain: jest.fn(async () => true),
+  shouldRouteUpdateThroughOutbox: jest.fn(() => false),
+}));
 jest.mock('../creation/source-readiness', () => ({
   ...jest.requireActual('../creation/source-readiness'),
   readPersistedDatabaseSource: jest.fn(),
@@ -183,6 +193,7 @@ it.each([
         // A Desktop i64 is decoded by Yjs, but cannot be inserted with Map.set.
         (sourceCell._map.get('field_type')!.content as unknown as { arr: unknown[] }).arr[0] = type;
       }
+
       if (sourceType !== undefined) sourceCell.set('source_field_type', sourceType);
       sourceCell.set('data', 'Raw source value');
       sourceCell.set('rich_text', '{"v":2,"future":"preserved"}');
@@ -249,6 +260,45 @@ it('creates and registers a row without restore-state checks', async () => {
     expect(f.registerRow).toHaveBeenCalledTimes(1);
     expect(atomicRead).not.toHaveBeenCalled();
   } finally {
+    f.cleanup();
+  }
+});
+
+it('relays the returned Database delta through normal sync before a dependent edit', async () => {
+  const f = fixture();
+  const peer = new Y.Doc();
+
+  Y.applyUpdate(peer, Y.encodeStateAsUpdate(f.databaseDoc));
+  const before = Y.encodeStateVector(f.databaseDoc);
+  const sync = initSync({ doc: f.databaseDoc, collabType: Types.Database, emit: jest.fn() });
+
+  try {
+    await expect(createCloudRow(f.intent)).resolves.toBe(f.intent.rowId);
+    const enqueue = jest.mocked(enqueueOutboxUpdate);
+
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    const creation = enqueue.mock.calls[0][0];
+
+    expect(creation.objectId).toBe(f.intent.databaseId);
+    expect(creation.collabType).toBe(Types.Database);
+    expect(creation.beforeStateVector).toEqual(before);
+    Y.applyUpdate(peer, creation.payload);
+    const views = (peer.getMap('data').get('database') as Y.Map<Y.Map<Y.Map<Y.Array<{ id: string }>>>>).get('views')!;
+
+    expect(views.get(f.intent.sourceViewId)!.get('row_orders')!.toArray()).toEqual([{ id: f.intent.rowId }]);
+    const localViews = (
+      f.databaseDoc.getMap('data').get('database') as Y.Map<Y.Map<Y.Map<Y.Array<{ id: string }>>>>
+    ).get('views')!;
+
+    localViews.get(f.intent.sourceViewId)!.get('row_orders')!.delete(0, 1);
+    expect(enqueue).toHaveBeenCalledTimes(2);
+    Y.applyUpdate(peer, enqueue.mock.calls[1][0].payload);
+    expect(views.get(f.intent.sourceViewId)!.get('row_orders')!.toArray()).toEqual([]);
+    expect(peer.store.pendingStructs).toBeNull();
+    expect(peer.store.pendingDs).toBeNull();
+  } finally {
+    sync.cleanup();
+    peer.destroy();
     f.cleanup();
   }
 });
@@ -373,14 +423,21 @@ it('freezes only resolved cells and presentation, leaving schema and actor metad
 
 it.each([
   { data: 1, expectedData: '1', coverType: RowCoverType.AssetCover },
-  { data: 'https://example.com/cover.png', expectedData: 'https://example.com/cover.png', coverType: RowCoverType.FileCover },
+  {
+    data: 'https://example.com/cover.png',
+    expectedData: 'https://example.com/cover.png',
+    coverType: RowCoverType.FileCover,
+  },
 ])('serializes cover data as a string for the default row API: $data', ({ data, expectedData, coverType }) => {
   const f = fixture();
 
   try {
     const meta = f.rowDoc.getMap('data').get('meta') as Y.Map<unknown>;
 
-    meta.set(getMetaIdMap(f.intent.rowId).get(RowMetaKey.CoverId)!, JSON.stringify({ data, cover_type: coverType, offset: 0.25 }));
+    meta.set(
+      getMetaIdMap(f.intent.rowId).get(RowMetaKey.CoverId)!,
+      JSON.stringify({ data, cover_type: coverType, offset: 0.25 })
+    );
     expect(prepareDefaultRowRequest(f.intent, uuidv4()).presentation.cover).toEqual({
       cover_type: coverType,
       data: expectedData,

@@ -1,6 +1,6 @@
 import EventEmitter from 'events';
 
-import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, renderHook, screen, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
 import { APP_EVENTS } from '@/application/constants';
@@ -54,8 +54,6 @@ function createDocumentDoc(guid?: string): YDoc {
 }
 
 describe('FeedDocumentPreview', () => {
-  let scrollHeight = 80;
-  let scrollHeightDescriptor: PropertyDescriptor | undefined;
   const loadRowDocument = jest.fn();
   const registerSyncContext = jest.fn();
   const scheduleDeferredCleanup = jest.fn();
@@ -65,9 +63,6 @@ describe('FeedDocumentPreview', () => {
     jest.clearAllMocks();
     eventEmitter = new EventEmitter();
     renderedDocs.length = 0;
-    scrollHeight = 80;
-    scrollHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollHeight');
-    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', { configurable: true, get: () => scrollHeight });
     loadRowDocument.mockResolvedValue(createDocumentDoc());
     const databaseDoc = new Y.Doc({ guid: 'database-guid' }) as YDoc;
 
@@ -90,15 +85,7 @@ describe('FeedDocumentPreview', () => {
     } as unknown as ReturnType<typeof useSyncInternalOptional>);
   });
 
-  afterEach(() => {
-    if (scrollHeightDescriptor) {
-      Object.defineProperty(HTMLElement.prototype, 'scrollHeight', scrollHeightDescriptor);
-    } else {
-      Reflect.deleteProperty(HTMLElement.prototype, 'scrollHeight');
-    }
-  });
-
-  it('loads the row document and renders a read-only editor capped at 120px', async () => {
+  it('loads the row document and renders a read-only editor the card clips, not the preview', async () => {
     render(<FeedDocumentPreview documentId='doc-1' rowId='row-1' />);
 
     const editor = await screen.findByTestId('mock-editor');
@@ -109,28 +96,8 @@ describe('FeedDocumentPreview', () => {
     expect(editor.getAttribute('data-preview')).toBe('true');
     expect(editor.getAttribute('data-read-only')).toBe('true');
     expect(editor.getAttribute('data-view-id')).toBe('doc-1');
-    expect(screen.getByTestId('feed-document-preview-content-row-1').style.maxHeight).toBe('120px');
-    expect(screen.queryByTestId('feed-document-preview-toggle-row-1')).toBeNull();
-  });
-
-  it('offers See more when the content overflows and See less once expanded', async () => {
-    scrollHeight = 400;
-    render(<FeedDocumentPreview documentId='doc-1' rowId='row-1' />);
-
-    const toggle = await screen.findByTestId('feed-document-preview-toggle-row-1');
-
-    expect(toggle.textContent).toContain('button.seeMore');
-    expect(screen.getByTestId('feed-document-preview-row-1').getAttribute('data-overflows')).toBe('true');
-
-    act(() => {
-      fireEvent.click(toggle);
-    });
-
-    await waitFor(() =>
-      expect(screen.getByTestId('feed-document-preview-toggle-row-1').textContent).toContain('button.seeLess')
-    );
+    // The card's 600px cap and "Open as full page" replace the old 120px See more.
     expect(screen.getByTestId('feed-document-preview-content-row-1').style.maxHeight).toBe('');
-    expect(screen.getByTestId('feed-document-preview-row-1').getAttribute('data-expanded')).toBe('true');
   });
 
   it('renders a detached mirror of the row document rather than the shared live doc', async () => {
@@ -194,34 +161,29 @@ describe('FeedDocumentPreview', () => {
     expect(scheduleDeferredCleanup).toHaveBeenCalledWith('doc-1');
   });
 
-  it.each(['initial load', 'reset'])(
-    'renders and measures an empty document after %s when it hydrates later',
-    async (stage) => {
-      const source = new Y.Doc({ guid: 'doc-1' }) as YDoc;
+  it.each(['initial load', 'reset'])('renders an empty document after %s when it hydrates later', async (stage) => {
+    const source = new Y.Doc({ guid: 'doc-1' }) as YDoc;
 
-      loadRowDocument.mockResolvedValue(stage === 'reset' ? createDocumentDoc('doc-1') : source);
-      const { container, unmount } = render(<FeedDocumentPreview documentId='doc-1' rowId='row-1' />);
+    loadRowDocument.mockResolvedValue(stage === 'reset' ? createDocumentDoc('doc-1') : source);
+    const { container, unmount } = render(<FeedDocumentPreview documentId='doc-1' rowId='row-1' />);
 
-      await waitFor(() => expect(registerSyncContext).toHaveBeenCalledTimes(1));
-      if (stage === 'reset') {
-        act(() => {
-          eventEmitter.emit(APP_EVENTS.COLLAB_DOC_RESET, { objectId: 'doc-1', doc: source });
-        });
-      }
-
-      expect(container.firstChild).toBeNull();
-      scrollHeight = 400;
+    await waitFor(() => expect(registerSyncContext).toHaveBeenCalledTimes(1));
+    if (stage === 'reset') {
       act(() => {
-        source.getMap(YjsEditorKey.data_section).set(YjsEditorKey.document, new Y.Map());
+        eventEmitter.emit(APP_EVENTS.COLLAB_DOC_RESET, { objectId: 'doc-1', doc: source });
       });
-
-      await screen.findByTestId('mock-editor');
-      expect(screen.getByTestId('feed-document-preview-toggle-row-1').textContent).toContain('button.seeMore');
-      expect(loadRowDocument).toHaveBeenCalledTimes(1);
-      unmount();
-      expect(scheduleDeferredCleanup).toHaveBeenCalledTimes(1);
     }
-  );
+
+    expect(container.firstChild).toBeNull();
+    act(() => {
+      source.getMap(YjsEditorKey.data_section).set(YjsEditorKey.document, new Y.Map());
+    });
+
+    await screen.findByTestId('mock-editor');
+    expect(loadRowDocument).toHaveBeenCalledTimes(1);
+    unmount();
+    expect(scheduleDeferredCleanup).toHaveBeenCalledTimes(1);
+  });
 
   it('uses a reset received during loading instead of the stale load result', async () => {
     const stale = createDocumentDoc('doc-1');

@@ -9,13 +9,11 @@ import { renameCurrentDatabasePage } from '../../support/relation-test-helpers';
 import { closeRowDetailWithEscape, typeInRowDocument } from '../../support/row-detail-helpers';
 import { BlockSelectors, DatabaseFeedSelectors, RowDetailSelectors } from '../../support/selectors';
 
-const LONG_LINES = [
-  'Line 1: Add content to exceed 120px height threshold for testing.',
-  'Line 2: More text to increase the document height sufficiently.',
-  'Line 3: Continue adding lines to trigger overflow state correctly.',
-  'Line 4: Even more lines so the preview must clip.',
-  'Line 5: The last line sits well below the collapsed preview.',
-];
+// Enough paragraphs to push the card past its 600px cap.
+const LONG_LINES = Array.from(
+  { length: 24 },
+  (_, index) => `Line ${index + 1}: Add content so the Feed card must clip its document preview.`
+);
 
 test.describe('Feed document preview (Flutter desktop parity)', () => {
   test.beforeEach(async ({ page, request }) => {
@@ -43,42 +41,40 @@ test.describe('Feed document preview (Flutter desktop parity)', () => {
 
     await expect(preview).toBeVisible({ timeout: 30_000 });
     await expect(preview).toContainText('Feed row document', { timeout: 30_000 });
-    await expect(DatabaseFeedSelectors.documentPreviewToggleByRowId(page, rowId)).toHaveCount(0);
+    await expect(DatabaseFeedSelectors.bodyByRowId(page, rowId)).toHaveAttribute('data-clipped', 'false');
+    await expect(DatabaseFeedSelectors.openFullPageByRowId(page, rowId)).toHaveCount(0);
   });
 
-  test('feed.feature: long documents collapse to 120px with See more / See less', async ({ page }) => {
+  test('Figma feed card: long documents clip at 600px and open as a full page', async ({ page }) => {
+    test.setTimeout(120_000);
     const [rowId] = await getFeedCardRowIds(page);
 
     await openFeedCard(page, rowId);
-    for (const line of LONG_LINES) {
-      await typeInRowDocument(page, line);
+    // Focus the editor once; typeInRowDocument re-scrolls and waits per call.
+    await typeInRowDocument(page, LONG_LINES[0]);
+    for (const line of LONG_LINES.slice(1)) {
       await page.keyboard.press('Enter');
+      await page.keyboard.type(line);
     }
+
     await closeRowDetailWithEscape(page);
 
     const preview = DatabaseFeedSelectors.documentPreviewByRowId(page, rowId);
 
-    await expect(preview).toBeVisible({ timeout: 30_000 });
-    await expect(preview).toHaveAttribute('data-overflows', 'true', { timeout: 30_000 });
+    await expect(preview).toContainText('Line 1:', { timeout: 30_000 });
 
     const card = DatabaseFeedSelectors.cardByRowId(page, rowId);
 
-    await card.hover();
-    const toggle = DatabaseFeedSelectors.documentPreviewToggleByRowId(page, rowId);
+    await expect(DatabaseFeedSelectors.bodyByRowId(page, rowId)).toHaveAttribute('data-clipped', 'true', {
+      timeout: 30_000,
+    });
+    expect((await card.boundingBox())?.height ?? 0).toBeLessThanOrEqual(600);
 
-    await expect(toggle).toContainText('See more');
-    await toggle.click();
-    await expect(preview).toHaveAttribute('data-expanded', 'true');
-    await expect(preview).toContainText('Line 5');
-    await expect(toggle).toContainText('See less');
-
-    const cardHeight = (await card.boundingBox())?.height ?? 0;
-
-    expect(cardHeight).toBeGreaterThan(0);
-    expect(cardHeight).toBeLessThan(5_000);
-
-    await toggle.click();
-    await expect(preview).toHaveAttribute('data-expanded', 'false');
+    // The button stays visible without hover and opens the row page, not the peek.
+    await DatabaseFeedSelectors.openFullPageByRowId(page, rowId).click();
+    await expect(page).toHaveURL(new RegExp(`[?&]r=${rowId}`));
+    await expect(RowDetailSelectors.modal(page)).toHaveCount(0);
+    await expect(page.getByTestId('editor-content').first()).toContainText('Line 24:', { timeout: 30_000 });
   });
 
   test('a row linking back to its own Feed renders nested cards without recursively loading documents', async ({
@@ -104,10 +100,6 @@ test.describe('Feed document preview (Flutter desktop parity)', () => {
     await expect(nestedFeed.locator('[data-testid^="feed-card-"][data-row-id]')).toHaveCount(3);
     await expect(nestedFeed.locator('[data-testid^="feed-document-preview-"]')).toHaveCount(0);
     await expect(page.locator(`[data-testid="feed-document-preview-${rowId}"]`)).toHaveCount(1);
-    await DatabaseFeedSelectors.cardByRowId(page, rowId).first().hover();
-    await DatabaseFeedSelectors.documentPreviewToggleByRowId(page, rowId).click();
-    await expect(preview).toHaveAttribute('data-expanded', 'true');
-    await expect(nestedFeed.locator('[data-testid^="feed-document-preview-"]')).toHaveCount(0);
   });
 });
 

@@ -78,7 +78,7 @@ export function Feed() {
   return (
     <div className={containerClassName} data-testid='database-feed'>
       <FeedMembersProvider>
-        <div className='w-full py-2' data-testid='feed-list' style={contentStyle}>
+        <div className='flex w-full flex-col gap-4 py-4' data-testid='feed-list' style={contentStyle}>
           <FeedCards
             fields={fields}
             key={`${activeViewId}:${isDocumentBlock}`}

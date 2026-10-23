@@ -6,7 +6,7 @@ import { resolveGalleryRowIcon } from '@/components/database/gallery/GalleryRowI
 import { cn } from '@/lib/utils';
 import { isFlagEmoji } from '@/utils/emoji';
 
-/** 20px row icon shown before the feed card title (`FeedCard._buildHeader`). */
+/** 24px row icon set inline with the card's H3 title (Figma feed card header). */
 export function FeedRowIcon({ className, icon }: { className?: string; icon: string }) {
   const resolvedIcon = useMemo(() => resolveGalleryRowIcon(icon), [icon]);
 
@@ -15,16 +15,16 @@ export function FeedRowIcon({ className, icon }: { className?: string; icon: str
   return (
     <span
       aria-hidden='true'
-      className={cn('flex h-5 w-5 shrink-0 items-center justify-center', className)}
+      className={cn('flex h-6 w-6 shrink-0 items-center justify-center', className)}
       data-testid='feed-card-icon'
     >
       <PageIcon
         className={cn(
-          'h-5 w-5 text-xl leading-5 text-icon-primary',
+          'h-6 w-6 text-2xl leading-6 text-icon-primary',
           resolvedIcon.ty === ViewIconType.Emoji && isFlagEmoji(resolvedIcon.value) && 'icon'
         )}
         hideLayoutFallback
-        iconSize={20}
+        iconSize={24}
         view={{ icon: resolvedIcon, layout: ViewLayout.Document }}
       />
     </span>
