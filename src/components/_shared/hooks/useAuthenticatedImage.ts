@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { getImageUrl, revokeBlobUrl } from '@/utils/authenticated-image';
 import { isAppFlowyPublicFormUploadUrl } from '@/utils/file-storage-url';
@@ -12,41 +12,45 @@ import { Log } from '@/utils/log';
  * @returns The authenticated image URL (blob URL) or original URL
  */
 export function useAuthenticatedImage(src: string | undefined): string {
-  const [authenticatedSrc, setAuthenticatedSrc] = useState<string>('');
-  const blobUrlRef = useRef<string>('');
+  const [resolved, setResolved] = useState({ source: '', url: '' });
 
   useEffect(() => {
     if (!src) {
-      setAuthenticatedSrc('');
+      setResolved({ source: '', url: '' });
       return;
     }
 
     let isMounted = true;
+    let blobUrl = '';
+
+    setResolved({ source: src, url: '' });
 
     Log.debug('[useAuthenticatedImage] src', isAppFlowyPublicFormUploadUrl(src) ? '[public-form-attachment]' : src);
     getImageUrl(src)
       .then((url) => {
         if (isMounted) {
-          setAuthenticatedSrc(url);
-          blobUrlRef.current = url;
+          blobUrl = url;
+          setResolved({ source: src, url });
+        } else {
+          revokeBlobUrl(url);
         }
       })
       .catch((error) => {
         console.error('Failed to load authenticated image:', error);
         if (isMounted) {
-          setAuthenticatedSrc('');
+          setResolved({ source: src, url: '' });
         }
       });
 
     return () => {
       isMounted = false;
       // Clean up blob URL if it was created
-      if (blobUrlRef.current && blobUrlRef.current.startsWith('blob:')) {
-        revokeBlobUrl(blobUrlRef.current);
-        blobUrlRef.current = '';
-      }
+      revokeBlobUrl(blobUrl);
     };
   }, [src]);
+
+  // A resolved URL belongs to the source that requested it, including during render.
+  const authenticatedSrc = resolved.source === src ? resolved.url : '';
 
   // Accepted form attachments are never anonymously readable. Keep their
   // protected route out of `<img src>` while the bearer fetch is pending (or
