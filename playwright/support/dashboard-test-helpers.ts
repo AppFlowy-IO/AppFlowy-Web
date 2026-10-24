@@ -1536,21 +1536,31 @@ export async function readViewConditions(
   page: Page,
   viewId: string
 ): Promise<{ filters: Record<string, unknown>[]; sorts: Record<string, unknown>[] }> {
-  const conditions = await page.evaluate((id) => {
-    const bridge = (window as any).__DASHBOARD_TEST__;
-    const ctx = bridge?.byView(id);
+  // A reloaded dashboard can render before its foreign source views register.
+  const conditionsHandle = await page.waitForFunction(
+    (id) => {
+      const bridge = (window as any).__DASHBOARD_TEST__;
+      const ctx = bridge?.byView(id);
+      const view = ctx?.databaseDoc.getMap('data').get('database')?.get('views')?.get(id);
 
-    if (!ctx) return null;
-    const view = ctx.databaseDoc.getMap('data').get('database').get('views').get(id);
+      if (!view) return null;
+      return {
+        filters: bridge.plain(view.get('filters')) ?? [],
+        sorts: bridge.plain(view.get('sorts')) ?? [],
+      };
+    },
+    viewId,
+    { timeout: WIDGET_TIMEOUT_MS }
+  );
 
-    return {
-      filters: bridge.plain(view?.get('filters')) ?? [],
-      sorts: bridge.plain(view?.get('sorts')) ?? [],
-    };
-  }, viewId);
+  try {
+    const conditions = await conditionsHandle.jsonValue();
 
-  if (!conditions) throw new Error(`view ${viewId} is not open in the browser`);
-  return conditions;
+    if (!conditions) throw new Error(`view ${viewId} is not open in the browser`);
+    return conditions;
+  } finally {
+    await conditionsHandle.dispose();
+  }
 }
 
 /** The dashboard setting as the browser's host database doc holds it. */
