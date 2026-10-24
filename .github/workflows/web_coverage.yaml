@@ -48,9 +48,13 @@ jobs:
 
       - name: Jest run
         run: |
-          pnpm run test:unit
+          pnpm run test:unit --maxWorkers=2
         env:
           COVERAGE: "true"
+          # V8 coverage aggregation exceeded Node's default ~4 GiB heap after
+          # the suites passed. Bound workers and give the coordinator room on
+          # this public repository's 16 GiB Ubuntu runner.
+          NODE_OPTIONS: "--max-old-space-size=8192"
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5.5.5
