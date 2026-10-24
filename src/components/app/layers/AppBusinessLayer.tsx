@@ -945,6 +945,11 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     setOpenModalViewId(viewId);
   }, []);
 
+  const closePageModal = useCallback(() => {
+    setOpenModalEffectiveViewId(undefined);
+    setOpenModalViewId(undefined);
+  }, []);
+
   // Refresh outline
   const refreshOutline = useCallback(async () => {
     if (!currentWorkspaceId) return;
@@ -1002,6 +1007,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       openPageModalViewId: openModalViewId,
       setOpenPageModalEffectiveViewId,
       openPageModal,
+      closePageModal,
     }),
     [
       viewId,
@@ -1016,6 +1022,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       openModalViewId,
       setOpenPageModalEffectiveViewId,
       openPageModal,
+      closePageModal,
     ]
   );
 

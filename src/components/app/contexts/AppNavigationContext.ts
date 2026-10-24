@@ -52,6 +52,8 @@ export interface AppNavigationContextType {
   setOpenPageModalEffectiveViewId?: (modalViewId: string, effectiveViewId?: string) => void;
   /** Open a view in the page modal overlay. */
   openPageModal?: (viewId: string) => void;
+  /** Close the page modal before navigating to a workspace-level destination. */
+  closePageModal?: () => void;
 }
 
 export const AppNavigationContext = createContext<AppNavigationContextType | null>(null);

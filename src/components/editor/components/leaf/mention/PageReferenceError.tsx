@@ -1,8 +1,9 @@
 import { debounce } from 'lodash-es';
-import { type MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type MouseEvent, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useInRouterContext, useNavigate } from 'react-router-dom';
 
+import { AppNavigationContext } from '@/components/app/contexts/AppNavigationContext';
 import type { EditorContextState } from '@/components/editor/EditorContext';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -29,9 +30,16 @@ const descriptions = {
 
 function OpenTrashButton() {
   const navigate = useNavigate();
+  const navigation = useContext(AppNavigationContext);
   const { t } = useTranslation();
 
-  return <Button size='sm' onClick={() => navigate('/app/trash')}>{t('document.mention.openTrash')}</Button>;
+  const openTrash = () => {
+    // The app provider (and its page modal) survives workspace navigation.
+    navigation?.closePageModal?.();
+    navigate('/app/trash');
+  };
+
+  return <Button size='sm' onClick={openTrash}>{t('document.mention.openTrash')}</Button>;
 }
 
 export function PageReferenceError({

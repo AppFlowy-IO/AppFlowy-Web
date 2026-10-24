@@ -1,9 +1,12 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { useState, type ReactNode } from 'react';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import * as Y from 'yjs';
 
 import { ViewService } from '@/application/services/domains';
 import { AccessLevel, Types, ViewLayout, type View } from '@/application/types';
+import { AppNavigationContext } from '@/components/app/contexts/AppNavigationContext';
+import { PageReferenceError } from '@/components/editor/components/leaf/mention/PageReferenceError';
 
 const modalViewId = '00000000-0000-4000-8000-000000000001';
 const mockView: View = {
@@ -23,6 +26,8 @@ const mockNoop = jest.fn();
 const mockSetOpenPageModalEffectiveViewId = jest.fn();
 const mockRenderedViewProps = jest.fn();
 const mockMoreActionsProps = jest.fn();
+const mockLoadTrashViews = jest.fn();
+let mockShowTrashReference = false;
 let mockObjectPermissions: Record<string, ReturnType<typeof createMockPermission>> = {};
 
 function createMockPermission(viewId: string, overrides: Record<string, unknown> = {}) {
@@ -107,7 +112,16 @@ jest.mock('@/components/main/app.hooks', () => ({
 jest.mock('@/components/document', () => ({
   Document: (props: { doc: Y.Doc; canShare?: boolean }) => {
     mockRenderedViewProps(props);
-    return <div data-testid='modal-doc'>{props.doc.guid}</div>;
+    return <div data-testid='modal-doc'>
+      {props.doc.guid}
+      {mockShowTrashReference && <PageReferenceError
+        pageId='trashed-target'
+        error='in_trash'
+        loading={false}
+        retry={mockNoop}
+        loadTrashViews={mockLoadTrashViews}
+      />}
+    </div>;
   },
 }));
 
@@ -155,6 +169,41 @@ describe('ViewModal permission cleanup', () => {
     jest.clearAllMocks();
     mockOutlineViews = [mockView];
     mockObjectPermissions = { [modalViewId]: createMockPermission(modalViewId) };
+    mockShowTrashReference = false;
+  });
+
+  it('dismisses the containing page modal when a reference opens Trash', async () => {
+    mockShowTrashReference = true;
+    mockLoadView.mockResolvedValue(new Y.Doc({ guid: 'modal-document' }));
+    mockLoadTrashViews.mockResolvedValue([{ view_id: 'trashed-target' }]);
+
+    function ModalRoute() {
+      const [open, setOpen] = useState(true);
+      const location = useLocation();
+      const navigation = { closePageModal: () => setOpen(false) };
+
+      return <AppNavigationContext.Provider value={navigation}>
+        <output data-testid='location'>{location.pathname}</output>
+        {location.pathname === '/app/trash' && <button onClick={mockNoop}>Restore from Trash</button>}
+        <ViewModal viewId={modalViewId} open={open} onClose={() => setOpen(false)} />
+      </AppNavigationContext.Provider>;
+    }
+
+    render(<MemoryRouter initialEntries={['/app/workspace/page']}
+      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <ModalRoute />
+    </MemoryRouter>);
+    const label = await screen.findByRole('button', { name: 'document.mention.pageInTrash' });
+
+    fireEvent.mouseEnter(label);
+    const details = await screen.findByRole('dialog', { name: 'document.mention.pageInTrash' });
+
+    fireEvent.click(await within(details).findByRole('button', { name: 'document.mention.openTrash' }));
+    await waitFor(() => expect(screen.getByTestId('location').textContent).toBe('/app/trash'));
+    await waitFor(() => expect(screen.queryByTestId('view-modal-close')).toBeNull());
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Restore from Trash' }));
+    expect(mockNoop).toHaveBeenCalledTimes(1);
   });
 
   it('passes fetched off-outline database metadata to its own history menu', async () => {
