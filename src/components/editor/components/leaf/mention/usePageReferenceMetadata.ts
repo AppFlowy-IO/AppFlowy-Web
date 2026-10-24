@@ -30,13 +30,16 @@ function referenceError(error: unknown): ReferenceError {
 /** Keep reference failures recoverable without allowing stale lookups to replace live metadata. */
 export function usePageReferenceMetadata({ pageId, loadViewMeta, eventEmitter, onPageMentionNameResolved }: Options) {
   const [metadata, setMetadata] = useState<Metadata | null>(null);
+  const [accessRevision, setAccessRevision] = useState(0);
   const requestVersion = useRef(0);
+  const accessFencedPageId = useRef<string | null>(null);
   const acceptView = useCallback((view: View | null) => {
     setMetadata({ pageId, view, error: view ? null : 'not_found', loading: false });
     onPageMentionNameResolved?.(pageId, view?.name);
   }, [onPageMentionNameResolved, pageId]);
   const load = useCallback(async (authoritative = false) => {
     const version = ++requestVersion.current;
+    const requireAuthoritative = authoritative || accessFencedPageId.current === pageId;
 
     setMetadata((previous) => ({
       pageId,
@@ -46,21 +49,25 @@ export function usePageReferenceMetadata({ pageId, loadViewMeta, eventEmitter, o
     }));
     try {
       if (!loadViewMeta) throw new Error('Page metadata lookup is unavailable');
-      const view = authoritative
+      const view = requireAuthoritative
         ? await loadViewMeta(pageId, undefined, { authoritative: true })
         : await loadViewMeta(pageId);
 
-      if (requestVersion.current === version) acceptView(view);
+      if (requestVersion.current === version) {
+        if (requireAuthoritative && view) accessFencedPageId.current = null;
+        acceptView(view);
+      }
     } catch (error) {
       if (requestVersion.current === version) {
         setMetadata({ pageId, view: null, error: referenceError(error), loading: false });
+        onPageMentionNameResolved?.(pageId, undefined);
       }
     }
-  }, [acceptView, loadViewMeta, pageId]);
+  }, [acceptView, loadViewMeta, onPageMentionNameResolved, pageId]);
 
   useEffect(() => {
     const handleView = (view: View) => {
-      if (view.view_id !== pageId) return;
+      if (view.view_id !== pageId || accessFencedPageId.current === pageId) return;
       requestVersion.current += 1;
       acceptView(view);
     };
@@ -71,18 +78,41 @@ export function usePageReferenceMetadata({ pageId, loadViewMeta, eventEmitter, o
       if (view) handleView(view);
     };
 
+    const handleAccessRevoked = (payload?: { viewId?: string | null }) => {
+      if (payload?.viewId !== pageId) return;
+      accessFencedPageId.current = pageId;
+      requestVersion.current += 1;
+      // React can batch revocation and recovery into one available render, but
+      // any document loaded before the revocation must still be discarded.
+      setAccessRevision((revision) => revision + 1);
+      setMetadata({ pageId, view: null, error: 'denied', loading: false });
+      onPageMentionNameResolved?.(pageId, undefined);
+    };
+
+    const handleAccessRestored = (payload?: { viewId?: string | null }) => {
+      if (payload?.viewId !== pageId) return;
+      // A cached outline or view notification cannot establish restored access.
+      // Keep it fenced until this authoritative lookup actually succeeds.
+      accessFencedPageId.current = pageId;
+      void load(true);
+    };
+
     eventEmitter?.on(APP_EVENTS.OUTLINE_LOADED, handleOutlineLoaded);
     eventEmitter?.on(APP_EVENTS.VIEW_META_CHANGED, handleView);
+    eventEmitter?.on(APP_EVENTS.VIEW_ACCESS_REVOKED, handleAccessRevoked);
+    eventEmitter?.on(APP_EVENTS.VIEW_ACCESS_RESTORED, handleAccessRestored);
     void load();
     return () => {
       requestVersion.current += 1;
       eventEmitter?.off(APP_EVENTS.OUTLINE_LOADED, handleOutlineLoaded);
       eventEmitter?.off(APP_EVENTS.VIEW_META_CHANGED, handleView);
+      eventEmitter?.off(APP_EVENTS.VIEW_ACCESS_REVOKED, handleAccessRevoked);
+      eventEmitter?.off(APP_EVENTS.VIEW_ACCESS_RESTORED, handleAccessRestored);
     };
-  }, [acceptView, eventEmitter, load, pageId]);
+  }, [acceptView, eventEmitter, load, onPageMentionNameResolved, pageId]);
 
   const retry = useCallback(() => { void load(true); }, [load]);
   const current = metadata?.pageId === pageId ? metadata : null;
 
-  return { view: current?.view ?? null, error: current?.error ?? null, loading: current?.loading ?? true, retry };
+  return { view: current?.view ?? null, error: current?.error ?? null, loading: current?.loading ?? true, accessRevision, retry };
 }

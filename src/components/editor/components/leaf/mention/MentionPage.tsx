@@ -36,13 +36,14 @@ function MentionPage({
   const eventEmitter = context.eventEmitter;
 
   const { navigateToView, loadViewMeta, loadView, onPageMentionNameResolved } = context;
-  const { view: meta, error: metadataError, loading, retry } = usePageReferenceMetadata({
+  const { view: meta, error: metadataError, loading, accessRevision, retry } = usePageReferenceMetadata({
     pageId,
     loadViewMeta,
     eventEmitter,
     onPageMentionNameResolved,
   });
   const [externalBlock, setExternalBlock] = useState<{ pageId: string; blockId: string; text: string }>();
+  const metadataAvailable = Boolean(meta) && metadataError === null;
 
   const icon = meta?.icon;
   const { t } = useTranslation();
@@ -62,12 +63,16 @@ function MentionPage({
     ? currentBlockText || pageName
     : `${pageName}${externalBlockText ? ` - ${externalBlockText}` : ''}`;
 
+  // Recovery reloads the document; renames and unrelated outline updates keep
+  // the same availability/revision and retain the existing subscription.
   useEffect(() => {
     if (!blockId || currentViewId === pageId) return;
+    setExternalBlock(undefined);
+    if (!metadataAvailable) return;
     let current = true;
     let unsubscribe: (() => void) | undefined;
 
-    void (async () => {
+    const loadBlock = async () => {
       try {
         const otherDoc = await loadView?.(pageId);
 
@@ -88,14 +93,18 @@ function MentionPage({
         handleBlockChange();
       } catch {
         // The page title remains available if the referenced document cannot load.
+        unsubscribe?.();
+        unsubscribe = undefined;
       }
-    })();
+    };
+
+    void loadBlock();
 
     return () => {
       current = false;
       unsubscribe?.();
     };
-  }, [blockId, currentViewId, loadView, pageId]);
+  }, [accessRevision, blockId, currentViewId, loadView, metadataAvailable, pageId]);
 
   const mentionIcon = useMemo(() => {
     if (pageId === currentViewId && blockId) {
