@@ -7,7 +7,7 @@ import { determineErrorType, ErrorType, isPermissionDeniedError } from '@/applic
 import { findView } from '@/components/_shared/outline/utils';
 import type { EditorContextState } from '@/components/editor/EditorContext';
 
-type ReferenceError = 'not_found' | 'in_trash' | 'deleted' | 'denied' | 'unauthorized' | 'load_failed';
+export type ReferenceError = 'not_found' | 'in_trash' | 'deleted' | 'denied' | 'unauthorized' | 'load_failed';
 type Metadata = { pageId: string; view: View | null; error: ReferenceError | null; loading: boolean };
 type Options = Pick<EditorContextState, 'loadViewMeta' | 'eventEmitter' | 'onPageMentionNameResolved'> & { pageId: string };
 

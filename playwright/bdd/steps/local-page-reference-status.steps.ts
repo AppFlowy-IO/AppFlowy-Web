@@ -6,10 +6,10 @@ const { Given, When, Then, After } = createBdd();
 // Stable IDs from the user-requested localhost fixture. This suite never seeds,
 // repairs, or cleans up fixture data; a changed fixture must fail the assertions.
 const workspaceId = '997c87ed-1667-4a62-8c0a-a74ee1aadb4b';
-const sharedPath = `/app/${workspaceId}/a6fd6820-6466-404b-8f49-38860ce478a3`;
+const sharedPath = `/app/${workspaceId}/ca6b24a4-3e7b-4310-984c-e8e0bc412868`;
 const referenceIds = {
-  restricted: 'bbec36a4-fc0f-43cf-8ca6-4c6ab6688b64',
-  trashed: 'c7fa2bb3-3c84-465f-9c15-78a7b3ad8d36',
+  restricted: '534e2829-2c89-4360-a61c-aac3e6f9d93b',
+  trashed: '8e43b398-a623-4f83-95e0-a2bcfa8b593c',
 } as const;
 const accounts = { Nathan: 'nathan@appflowy.io', Annie: 'annie@appflowy.io' } as const;
 
@@ -146,7 +146,7 @@ Then('Nathan opens the restricted target while Annie stays on the shared referen
   await expect(viewers.Nathan.getByTestId('page-title-input')).toHaveText('Restricted ref target');
   await expect(viewers.Nathan.getByTestId('editor-content')).toContainText('Test-only target. Nathan owns this page.');
   await expectSharedPage(viewers.Annie);
-  await expect(referenceElement(viewers.Annie, 'restricted')).toHaveText('No Access');
+  await expect(referenceElement(viewers.Annie, 'restricted')).toHaveText('No access');
   const screenshotPath = $testInfo.outputPath('Nathan-opened-restricted-target.png');
 
   await viewers.Nathan.getByRole('main').screenshot({ path: screenshotPath });
@@ -161,4 +161,36 @@ After({ tags: '@local-ref-pages' }, async ({ page }) => {
 
   await state?.memberContext.close();
   states.delete(page);
+});
+
+Then('Annie sees an explanation of the restricted reference', async ({ page }) => {
+  const memberPage = stateFor(page).viewers.Annie;
+  const dialog = memberPage.getByRole('dialog', { name: 'No access', exact: true });
+
+  await expect(dialog).toContainText('Ask the page owner to share it with you.');
+  await expectSharedPage(memberPage);
+  await memberPage.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+});
+
+When('both viewers open Trash from the existing trashed reference', async ({ page }) => {
+  for (const viewerPage of Object.values(stateFor(page).viewers)) {
+    await viewerPage.goto(sharedPath, { waitUntil: 'domcontentloaded' });
+    await expectSharedPage(viewerPage);
+    await referenceElement(viewerPage, 'trashed').getByRole('button', { name: 'Page in Trash', exact: true }).click();
+    const details = viewerPage.getByRole('dialog', { name: 'Page in Trash', exact: true });
+
+    await expect(details).toContainText('This page is in Trash.');
+    await details.getByRole('button', { name: 'Open Trash', exact: true }).click();
+  }
+});
+
+Then('both viewers see the recoverable target in Trash', async ({ page }) => {
+  for (const viewerPage of Object.values(stateFor(page).viewers)) {
+    await expect(viewerPage).toHaveURL(new URL('/app/trash', viewerPage.url()).href);
+    const target = viewerPage.getByRole('checkbox').filter({ hasText: 'Trash ref target' });
+
+    await expect(target).toHaveCount(1);
+    await expect(target.getByRole('button', { name: 'Restore', exact: true })).toBeVisible();
+  }
 });

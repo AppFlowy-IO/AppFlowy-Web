@@ -145,18 +145,18 @@ describe('desktop page-link blocks', () => {
   });
 
   it.each([
-    [{ code: ERROR_CODE.RECORD_NOT_FOUND, httpStatus: 200, sourceDomain: 'appflowy.server' }, 'landingPage.pageNotFound.title'],
-    [{ code: 404 }, 'landingPage.pageNotFound.title'],
-    [{ code: ERROR_CODE.RECORD_DELETED }, 'document.mention.deletedPage'],
-    [new ViewMetadataError('in_trash'), 'deletePagePrompt.text'],
-    [new ViewMetadataError('not_found'), 'landingPage.pageNotFound.title'],
+    [{ code: ERROR_CODE.RECORD_NOT_FOUND, httpStatus: 200, sourceDomain: 'appflowy.server' }, 'document.mention.pageNotFound'],
+    [{ code: 404 }, 'document.mention.pageNotFound'],
+    [{ code: ERROR_CODE.RECORD_DELETED }, 'document.mention.pageNotFound'],
+    [new ViewMetadataError('in_trash'), 'document.mention.pageInTrash'],
+    [new ViewMetadataError('not_found'), 'document.mention.pageNotFound'],
     [{ code: ERROR_CODE.NOT_HAS_PERMISSION }, 'document.mention.noAccess'],
     [{ code: 403 }, 'document.mention.noAccess'],
     [{ code: ERROR_CODE.USER_UNAUTHORIZED }, 'landingPage.unauthorized.title'],
-    [{ code: ERROR_CODE.SERVICE_TEMPORARY_UNAVAILABLE }, 'landingPage.unknown.title'],
-    [{ code: -1, sourceDomain: 'transport', transportFailure: 'network' }, 'landingPage.unknown.title'],
-    [{ code: ERROR_CODE.FEATURE_NOT_AVAILABLE, httpStatus: 403, sourceDomain: 'appflowy.server' }, 'landingPage.unknown.title'],
-    [new Error('Lookup failed'), 'landingPage.unknown.title'],
+    [{ code: ERROR_CODE.SERVICE_TEMPORARY_UNAVAILABLE }, 'document.mention.loadFailed'],
+    [{ code: -1, sourceDomain: 'transport', transportFailure: 'network' }, 'document.mention.loadFailed'],
+    [{ code: ERROR_CODE.FEATURE_NOT_AVAILABLE, httpStatus: 403, sourceDomain: 'appflowy.server' }, 'document.mention.loadFailed'],
+    [new Error('Lookup failed'), 'document.mention.loadFailed'],
   ])('keeps the error identity when a page reference fails: %j', async (error, label) => {
     mockLoadViewMeta.mockRejectedValue(error);
     renderPageLink();
@@ -173,7 +173,7 @@ describe('desktop page-link blocks', () => {
     mockLoadViewMeta.mockResolvedValue(null);
     renderPageLink();
 
-    await screen.findByText('landingPage.pageNotFound.title');
+    await screen.findByText('document.mention.pageNotFound');
     expect(screen.queryByText('menuAppHeader.defaultNewPageName')).toBeNull();
   });
 
@@ -204,7 +204,7 @@ describe('desktop page-link blocks', () => {
   it('recovers after missing metadata and keeps following rename notifications', async () => {
     mockLoadViewMeta.mockRejectedValue({ code: ERROR_CODE.RECORD_NOT_FOUND });
     renderPageLink('sub_page');
-    await screen.findByText('landingPage.pageNotFound.title');
+    await screen.findByText('document.mention.pageNotFound');
 
     act(() => {
       mockEvents.emit(APP_EVENTS.VIEW_META_CHANGED, { view_id: 'linked-view', name: 'Recovered child' });
@@ -231,7 +231,7 @@ describe('desktop page-link blocks', () => {
     await screen.findByText('Restored by sync');
     await act(async () => { rejectRetry({ code: ERROR_CODE.RECORD_NOT_FOUND }); });
     expect(screen.getByText('Restored by sync')).toBeTruthy();
-    expect(screen.queryByText('landingPage.pageNotFound.title')).toBeNull();
+    expect(screen.queryByText('document.mention.pageNotFound')).toBeNull();
   });
 
   it('releases reference listeners while an unresolved lookup is still pending', () => {

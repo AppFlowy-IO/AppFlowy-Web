@@ -15,18 +15,10 @@ import { ReactComponent as ParagraphIcon } from '@/assets/icons/paragraph.svg';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { useEditorContext } from '@/components/editor/EditorContext';
 
+import { PageReferenceError } from './PageReferenceError';
 import { usePageReferenceMetadata } from './usePageReferenceMetadata';
 
 import './style.css';
-
-const referenceErrorLabels = {
-  not_found: 'landingPage.pageNotFound.title',
-  in_trash: 'deletePagePrompt.text',
-  deleted: 'document.mention.deletedPage',
-  denied: 'document.mention.noAccess',
-  unauthorized: 'landingPage.unauthorized.title',
-  load_failed: 'landingPage.unknown.title',
-} as const;
 
 function MentionPage({
   pageId,
@@ -183,29 +175,14 @@ function MentionPage({
       data-mention-id={pageId}
     >
       {error ? (
-        <>
-          <span className={'mention-unpublished min-w-0 truncate font-semibold text-text-secondary'}>
-            {t(referenceErrorLabels[error])}
-          </span>
-          {error === 'load_failed' && (
-            <button
-              type={'button'}
-              className={'ml-2 shrink-0 cursor-pointer text-text-action underline disabled:cursor-wait disabled:opacity-50'}
-              disabled={loading}
-              aria-busy={loading}
-              onMouseDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-              }}
-              onClick={(event) => {
-                event.stopPropagation();
-                retry();
-              }}
-            >
-              {t('button.retry')}
-            </button>
-          )}
-        </>
+        <PageReferenceError
+          key={`${pageId}:${error}`}
+          pageId={pageId}
+          error={error}
+          loading={loading}
+          retry={retry}
+          loadTrashViews={context.loadTrashViews}
+        />
       ) : (
         <>
           <span className={`mention-icon`}>{mentionIcon}</span>

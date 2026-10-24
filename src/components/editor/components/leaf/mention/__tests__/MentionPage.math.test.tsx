@@ -50,7 +50,7 @@ it('keeps an open block reference readable when its optional metadata lookup fai
   });
 
   expect(screen.getByText(formula)).toBeTruthy();
-  expect(screen.queryByText('landingPage.unknown.title')).toBeNull();
+  expect(screen.queryByText('document.mention.loadFailed')).toBeNull();
   expect(mockLoadView).not.toHaveBeenCalled();
 });
 

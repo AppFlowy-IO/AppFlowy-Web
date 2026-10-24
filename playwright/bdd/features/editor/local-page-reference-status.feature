@@ -14,10 +14,13 @@ Feature: Page reference labels in Nathan's existing local workspace
     Then the existing reference elements show these labels
       | viewer | reference  | label                 |
       | Nathan | restricted | Restricted ref target |
-      | Annie  | restricted | No Access             |
-      | Nathan | trashed    | This page is in Trash |
-      | Annie  | trashed    | This page is in Trash |
+      | Annie  | restricted | No access             |
+      | Nathan | trashed    | Page in Trash         |
+      | Annie  | trashed    | Page in Trash         |
     When both viewers reload the existing reference page
     Then the same reference labels are still visible
     When Nathan and Annie click their restricted page references
     Then Nathan opens the restricted target while Annie stays on the shared reference page
+    And Annie sees an explanation of the restricted reference
+    When both viewers open Trash from the existing trashed reference
+    Then both viewers see the recoverable target in Trash
