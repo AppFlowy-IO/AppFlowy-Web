@@ -7,7 +7,7 @@ import { RowMetaKey } from '../../../src/application/database-yjs/database.type'
 
 import { getPrimaryFieldId, loginAndCreateGrid, typeTextIntoCell } from '../../support/filter-test-helpers';
 import { activeDatabaseViewId, setGalleryRowMetaDirect } from '../../support/gallery-test-helpers';
-import { getVisibleDataRowIds, openRowDetail } from '../../support/row-detail-helpers';
+import { closeRowDetailWithEscape, getVisibleDataRowIds, openRowDetail } from '../../support/row-detail-helpers';
 import { DatabaseGridSelectors, RowDetailSelectors } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
 import { setViewOpenPagesIn } from '../../support/yjs-inject-helpers';
@@ -257,9 +257,7 @@ test('matches Figma peek typography, icon placement and toolbar reveal across mo
 
   await page.keyboard.press('Escape');
   await expect(page.getByRole('menu')).toHaveCount(0);
-  await title.click();
-  await page.keyboard.press('Escape');
-  await expect(detail).toHaveCount(0);
+  await closeRowDetailWithEscape(page);
   const databaseUrl = page.url();
 
   await DatabaseGridSelectors.rowById(page, rowId).hover();
