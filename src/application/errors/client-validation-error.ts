@@ -11,6 +11,7 @@ export const clientValidationMessages = {
   ATOMIC_CREATION_SERVER_UPGRADE: 'Update the server to use this creation feature.',
   ATOMIC_CREATION_OWNER_CHANGED: 'The account or workspace changed. Retry in the original workspace.',
   ATOMIC_CREATION_PENDING: 'Creation is pending. Retry the original request to finish.',
+  ATOMIC_CREATION_COMMITTED: 'Created, but it could not be opened. Retry to open it.',
   ATOMIC_ROW_CREATED_RELOAD: 'The row was created. Reload this database to open it.',
   ROW_TEMPLATE_CONTENT_UNAVAILABLE:
     'The selected row template content is unavailable. Choose Empty row to create without a template.',
@@ -22,6 +23,7 @@ const translationKeys: Partial<Record<keyof typeof clientValidationMessages, str
   ATOMIC_CREATION_SERVER_UPGRADE: 'atomicCreation.serverUpgrade',
   ATOMIC_CREATION_OWNER_CHANGED: 'atomicCreation.ownerChanged',
   ATOMIC_CREATION_PENDING: 'atomicCreation.pending',
+  ATOMIC_CREATION_COMMITTED: 'atomicCreation.committed',
   ATOMIC_ROW_CREATED_RELOAD: 'atomicCreation.rowCreatedReload',
   ROW_TEMPLATE_CONTENT_UNAVAILABLE: 'grid.rowTemplate.contentUnavailable',
 };

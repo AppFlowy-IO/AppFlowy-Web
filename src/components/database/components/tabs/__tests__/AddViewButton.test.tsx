@@ -3,6 +3,8 @@ import { MemoryRouter } from 'react-router-dom';
 import { toast } from 'sonner';
 import * as Y from 'yjs';
 
+import { AtomicCreationPendingError } from '@/application/atomic-creation/journal';
+import { AtomicCreationRecord } from '@/application/atomic-creation/types';
 import { DatabaseViewLayout, YDatabase, YDatabaseView, YDatabaseViews, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { AddViewButton } from '@/components/database/components/tabs/AddViewButton';
 import { getConfigValue } from '@/utils/runtime-config';
@@ -29,7 +31,7 @@ jest.mock('@/application/database-yjs/context', () => ({
 }));
 
 jest.mock('sonner', () => ({
-  toast: { error: jest.fn() },
+  toast: { error: jest.fn(), info: jest.fn() },
 }));
 
 jest.mock('react-i18next', () => ({
@@ -106,6 +108,25 @@ describe('AddViewButton', () => {
     fireEvent.click(grid);
     await waitFor(() => expect(mockAddView).toHaveBeenCalledTimes(1));
     expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it.each(['pending', 'committed'] as const)('distinguishes %s creation without weakening unknown-outcome errors', async (state) => {
+    const onViewAdded = jest.fn();
+    const error = new AtomicCreationPendingError({ id: 'journal', requestId: 'request', state } as AtomicCreationRecord,
+      { code: 1004, message: 'permission denied' });
+
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockAddView.mockRejectedValueOnce(error);
+    render(<MemoryRouter><AddViewButton databasePageId='database-page-id' onViewAdded={onViewAdded} /></MemoryRouter>);
+    fireEvent.click(screen.getByTestId('add-list-view-button'));
+
+    const notify = state === 'committed' ? toast.info : toast.error;
+
+    await waitFor(() => expect(notify).toHaveBeenCalledWith(state === 'committed'
+      ? 'Created, but it could not be opened. Retry to open it.'
+      : 'Creation is pending. Retry the original request to finish.'));
+    expect(state === 'committed' ? toast.error : toast.info).not.toHaveBeenCalled();
+    expect(onViewAdded).not.toHaveBeenCalled();
   });
 
   it.each(['form', 'chart'])('shows one Pro upgrade message when %s creation is rejected', async (layout) => {

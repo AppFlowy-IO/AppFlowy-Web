@@ -63,8 +63,13 @@ Creation source probes and hydration use current-collab GETs, with at most four
 requests in flight. They preserve server state vectors, collab versions, deletion
 coverage and the surrounding restore checks; they do not call full-sync to read
 data. Readiness polling backs off from 250 ms to two seconds within the existing
-30-second deadline. Routine database sync separately shares a five-minute
-restore-state check per database ID across its views and rows.
+30-second preparation/submission deadline. After a Database-view receipt is validated
+and retained in the journal, current-content and Folder hydration receive a separate
+10-second read budget. A near-deadline successful write therefore does not immediately
+fail its opening reads. This never extends the write/retry budget or resubmits an
+acknowledged command. Sidebar activation still uses its existing navigation lifecycle;
+the read budget is not a strict upper bound on the full button action. Routine database
+sync separately shares a five-minute restore-state check per database ID across its views and rows.
 
 The automatic HTTP full-sync loop runs only while WebSocket is disconnected and
 there are dirty documents. Reconnection cancels the actual HTTP request as well
@@ -79,8 +84,24 @@ group columns; the client does not finish the schema after creation. A read-only
 Board fallback remains for legacy schemas and older receipts. After commit,
 current Database content and Folder metadata load concurrently under the same
 deadline. Both must pass the final identity, ownership, restore and storage checks
-before the new view is selected. A barrier-based component test verifies the
-overlap without asserting machine-dependent latency.
+before the new view is selected. Missing created identities and transient current-read
+failures retry within that read budget, without another creation POST. Read retries
+honor the server's retry delay; a delay beyond the remaining budget expires without
+another read. Identity,
+permission, owner, restore and storage-fence mismatches remain final. A failed parallel
+read cancels and settles its siblings before retrying, so transient Folder failures
+cannot accumulate source-read loops. Barrier-based component tests verify both healthy
+overlap and cancellation without asserting machine-dependent latency.
+
+The Web journal distinguishes an unknown commit outcome from a retained successful
+receipt whose opening failed. Add-view notifications use informational created/opening
+guidance only for the latter; unacknowledged failures retain their existing error handling. Repeating the original action
+recovers the exact command: unknown outcomes replay its original bytes, while retained
+receipts only repeat current reads. Realtime may independently display the committed
+tab before either recovery finishes. `default-database-view-recovery.test.ts` exercises
+the production creation and journal flow with a controlled clock, including a 28-second
+ACK followed by a 3-second read, bounded read failure, exact recovery and cancellation.
+These are correctness timings, not server latency benchmarks.
 
 Page appends use the server's `end` position. Middle insertions retain the previous sibling as an
 `after` anchor, which requires server support for that position variant. Navigation children omit

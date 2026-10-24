@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
+import { AtomicCreationPendingError } from '@/application/atomic-creation/journal';
 import { useDatabaseContext } from '@/application/database-yjs/context';
 import { DATABASE_VIEW_LAYOUT_TO_VIEW_LAYOUT } from '@/application/database-yjs/database-view-doc-ops';
 import { useAddDatabaseView } from '@/application/database-yjs/dispatch';
@@ -122,7 +123,10 @@ export function useAddDatabaseViewMenu({
     } catch (e: unknown) {
       if (isCurrentActionScope()) {
         console.error('[AddViewButton] Error adding view:', e);
-        toast.error(getErrorMessage(e, 'Failed to add view'));
+        const message = getErrorMessage(e, 'Failed to add view');
+
+        if (e instanceof AtomicCreationPendingError && e.committed) toast.info(message);
+        else toast.error(message);
       }
     } finally {
       if (isCurrentActionScope()) {
