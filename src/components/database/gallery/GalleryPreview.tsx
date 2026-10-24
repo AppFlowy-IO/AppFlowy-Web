@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { RefObject, useEffect, useRef, useState } from 'react';
 
 import { RowMeta, useCellSelector, useDatabaseContext } from '@/application/database-yjs';
 import { FileMediaCellDataItem, FileMediaType } from '@/application/database-yjs/cell.type';
@@ -216,13 +216,16 @@ function GalleryPreviewImage({
   rowId,
   src,
   offset,
+  boxRef,
 }: {
   fitImage: boolean;
   rowId: string;
   src: string;
   offset?: number;
+  boxRef: RefObject<HTMLElement | null>;
 }) {
-  const authenticatedSrc = useAuthenticatedImage(src);
+  // The frame sizes the cover (card width × 16:9), so decode to it rather than at full resolution.
+  const authenticatedSrc = useAuthenticatedImage(src, { fit: fitImage ? 'contain' : 'cover', boxRef });
 
   if (!authenticatedSrc) return null;
 
@@ -250,8 +253,11 @@ function GalleryPreviewFrame({
   value: GalleryPreviewValue;
   offset?: number;
 }) {
+  const boxRef = useRef<HTMLDivElement>(null);
+
   return (
     <div
+      ref={boxRef}
       className={cn(
         'gallery-card-cover-placeholder h-full w-full overflow-hidden',
         value.src
@@ -264,7 +270,9 @@ function GalleryPreviewFrame({
       data-testid={`gallery-card-preview-${rowId}`}
       style={value.background ? { background: value.background } : undefined}
     >
-      {value.src ? <GalleryPreviewImage fitImage={fitImage} rowId={rowId} src={value.src} offset={offset} /> : null}
+      {value.src ? (
+        <GalleryPreviewImage fitImage={fitImage} rowId={rowId} src={value.src} offset={offset} boxRef={boxRef} />
+      ) : null}
     </div>
   );
 }
