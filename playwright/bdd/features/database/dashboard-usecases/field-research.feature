@@ -3,12 +3,10 @@ Feature: Field research dashboard with twelve initial widgets
   Based on a French mycology researcher's biodiversity dashboard: three rows
   of four widgets (observation, collection and sequencing counts, trophic
   mode and station donuts, observations over time, conservation status,
-  taxonomy bars), starting with twelve widgets, which its author
-  complained about. The researcher reads it after every field trip and
-  records a new find from the log. A full dashboard disables Duplicate and
-  every add button with the "Dashboard is full" tooltip until a widget is
-  deleted. For a poster she hides the widget titles and makes the first row
-  compact with the keyboard.
+  taxonomy bars), starting with twelve widgets. The researcher reads it
+  after every field trip, records a new find from the log, and adds or
+  duplicates widgets beyond the initial twelve. For a poster she hides
+  the widget titles and makes the first row compact with the keyboard.
 
   # Observation dates are today, today - 400 and today - 800: more than a
   # year apart, so each falls in its own calendar year on any run date. A

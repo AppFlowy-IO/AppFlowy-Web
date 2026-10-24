@@ -7,7 +7,7 @@ Feature: Editorial content calendar dashboard
   weekly bar. The content marketer plans on the calendar widget: she opens
   posts from it, drags them to another day, schedules ideas, keeps a list of
   one platform's posts, plans a campaign privately, and adds new views
-  straight from the widget picker until the dashboard is full.
+  straight from the widget picker beyond the initial twelve widgets.
 
   # Publish dates sit exactly 7 days apart, so each is its own week on any
   # run date. "week of today + 7" is resolved to the label the chart prints

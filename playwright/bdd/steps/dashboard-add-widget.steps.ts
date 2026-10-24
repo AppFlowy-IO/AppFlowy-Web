@@ -194,9 +194,8 @@ When('the user tries to add a widget from the add button under the last row', as
   viewsBefore.set(page, await hostViewIds(page));
   const button = DashboardSelectors.addWidgetButton(page).filter({ visible: true }).first();
 
-  await expect(button).toHaveAttribute('aria-disabled', 'true');
-  // aria-disabled, not disabled: the click still reaches the button, which explains the refusal.
-  await button.click({ force: true });
+  await expect(button).toBeEnabled();
+  await button.click();
 });
 
 // ---------------------------------------------------------------------------
