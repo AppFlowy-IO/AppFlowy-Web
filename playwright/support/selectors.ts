@@ -327,7 +327,8 @@ export const DatabaseGallerySelectors = {
   moreButtonByRowId: (page: Page, rowId: string) => page.getByTestId(`gallery-card-more-${rowId}`),
   newRowButton: (page: Page) => page.getByTestId('gallery-new-row'),
   loadMoreButton: (page: Page) => page.getByTestId('gallery-load-more'),
-  settingsTrigger: (page: Page) => page.getByTestId('gallery-layout-settings-trigger'),
+  // The Gallery options sit at the bottom of the Layout submenu, as in Figma.
+  settingsTrigger: (page: Page) => page.getByTestId('database-layout-settings-trigger'),
   settingsMenu: (page: Page) => page.getByTestId('gallery-layout-settings-menu'),
 };
 
@@ -347,7 +348,8 @@ export const DatabaseFeedSelectors = {
   creatorByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-card-creator-${rowId}`),
   coverByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-card-cover-${rowId}`),
   documentPreviewByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-document-preview-${rowId}`),
-  documentPreviewToggleByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-document-preview-toggle-${rowId}`),
+  bodyByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-card-body-${rowId}`),
+  openFullPageByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-card-open-full-page-${rowId}`),
   actionsByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-card-actions-${rowId}`),
   moreButtonByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-card-more-${rowId}`),
   reactionButtonByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-card-reaction-button-${rowId}`),
@@ -358,6 +360,7 @@ export const DatabaseFeedSelectors = {
   addCommentByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-add-comment-collapsed-${rowId}`),
   addCommentInputByRowId: (page: Page, rowId: string) => page.getByTestId(`feed-add-comment-input-${rowId}`),
   rowActionMenu: (page: Page) => page.getByTestId('feed-row-action-menu'),
+  rowCopyLink: (page: Page) => page.getByTestId('feed-row-copy-link'),
   rowDuplicate: (page: Page) => page.getByTestId('feed-row-duplicate'),
   rowDelete: (page: Page) => page.getByTestId('feed-row-delete'),
   newRowButton: (page: Page) => page.getByTestId('feed-new-row'),

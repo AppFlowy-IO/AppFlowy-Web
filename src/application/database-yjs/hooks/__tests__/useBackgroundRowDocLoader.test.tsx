@@ -819,7 +819,7 @@ describe('useBackgroundRowDocLoader', () => {
 
     rowOrders.delete(0, rowOrders.length);
     rowOrders.push(rowIds.map((id) => ({ id, height: 44 })));
-    const readRowOrders = jest.spyOn(rowOrders, 'toArray');
+    const readRowOrders = jest.spyOn(rowOrders, 'toJSON');
     const wrapper = ({ children }: { children: ReactNode }) => (
       <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
     );

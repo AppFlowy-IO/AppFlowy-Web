@@ -19,7 +19,9 @@ import {
   DateFilterCondition,
   isEndDateCondition,
   isParameterizedRelativeCondition,
+  isDateComparisonCondition,
   isRelativeDateCondition,
+  isRelativeDateFilter,
   NumberFilter,
   NumberFilterCondition,
   parseChecklistFlexible,
@@ -144,7 +146,7 @@ export function parseFilter(storedFieldType: FieldType, filter: YDatabaseFilter,
       }
 
       try {
-        const data = JSON.parse(fieldType === FieldType.Rollup ? content || '{}' : content) as DateFilter;
+        const data = JSON.parse(content || '{}') as DateFilter;
 
         return {
           ...value,
@@ -421,7 +423,7 @@ function isDataFilterEffective(filter: YDatabaseFilter, field: YDatabaseField, f
           DateFilterCondition.DateEndIsEmpty,
           DateFilterCondition.DateEndIsNotEmpty,
         ].includes(condition) ||
-        isRelativeDateCondition(condition)
+        isRelativeDateFilter(condition, content)
       )
         return true;
       if (actualType !== FieldType.Rollup && !hasTextFilterContent(content)) return false;
@@ -1236,7 +1238,10 @@ export function rowTimeFilterCheck(data: string, filter: DateFilter) {
   }
 
   const { condition } = filter;
-  const { end, start, timestamp } = dateFilterValues(filter);
+  const { end, start, timestamp } = dateFilterValues(resolveRelativeDates(filter));
+
+  if (isDateComparisonCondition(condition) && timestamp === '') return false;
+  if (condition === DateFilterCondition.DateStartsBetween && (start === '' || end === '')) return false;
 
   switch (condition) {
     case DateFilterCondition.DateStartIsEmpty:
@@ -1292,14 +1297,20 @@ function relativeDateRangeMatches(data: string, filter: DateFilter, endTimestamp
 }
 
 export function dateFilterCheck(cell: DateTimeCell | null, filter: DateFilter) {
-  const { condition } = filter;
-  const { end, start, timestamp } = dateFilterValues(filter);
-
   const { data = '', endTimestamp = '' } = cell || {};
 
-  if (isRelativeDateCondition(condition)) {
+  if (isRelativeDateCondition(filter.condition)) {
     return relativeDateRangeMatches(data, filter, endTimestamp);
   }
+
+  const { condition } = filter;
+  const { end, start, timestamp } = dateFilterValues(resolveRelativeDates(filter));
+
+  if (isDateComparisonCondition(condition) && timestamp === '') return false;
+  if (
+    [DateFilterCondition.DateStartsBetween, DateFilterCondition.DateEndsBetween].includes(condition) &&
+    (start === '' || end === '')
+  ) return false;
 
   switch (condition) {
     case DateFilterCondition.DateEndIsEmpty:
@@ -1491,30 +1502,27 @@ export function dateFilterFillData(filter: YDatabaseFilter): {
   }
 
   try {
-    const parsed =
-      (JSON.parse(content) as {
-        timestamp?: string | null;
-        start?: string | null;
-        end?: string | null;
-      } | null) || {};
-    // A cleared picker stores `null`, which destructuring defaults would keep.
+    const parsed = resolveRelativeDates({ ...JSON.parse(content || '{}'), condition });
+    // A cleared picker stores null, which destructuring defaults would keep.
     const timestamp = parsed.timestamp ?? today;
     const start = parsed.start ?? '';
     const end = parsed.end ?? '';
 
-    const beforeTimestamp = dayjs.unix(Number(timestamp)).subtract(1, 'day').startOf('day').unix().toString();
-    const afterTimestamp = dayjs.unix(Number(timestamp)).add(1, 'day').startOf('day').unix().toString();
+    const fillTimestamp = String(timestamp ?? today);
+
+    const beforeTimestamp = dayjs.unix(Number(fillTimestamp)).subtract(1, 'day').startOf('day').unix().toString();
+    const afterTimestamp = dayjs.unix(Number(fillTimestamp)).add(1, 'day').startOf('day').unix().toString();
 
     switch (condition) {
       case DateFilterCondition.DateStartsOn:
         return {
-          data: timestamp,
+          data: fillTimestamp,
           isRange: false,
         };
       case DateFilterCondition.DateEndsOn:
         return {
-          data: timestamp,
-          endTimestamp: timestamp,
+          data: fillTimestamp,
+          endTimestamp: fillTimestamp,
           isRange: true,
         };
       case DateFilterCondition.DateStartsBefore:
@@ -1541,13 +1549,13 @@ export function dateFilterFillData(filter: YDatabaseFilter): {
         };
       case DateFilterCondition.DateStartsOnOrBefore:
         return {
-          data: timestamp,
+          data: fillTimestamp,
           isRange: false,
         };
       case DateFilterCondition.DateEndsOnOrBefore:
         return {
-          data: timestamp,
-          endTimestamp: timestamp,
+          data: fillTimestamp,
+          endTimestamp: fillTimestamp,
           isRange: true,
         };
       case DateFilterCondition.DateStartsOnOrAfter:
@@ -1563,13 +1571,13 @@ export function dateFilterFillData(filter: YDatabaseFilter): {
         };
       case DateFilterCondition.DateStartsBetween:
         return {
-          data: start || today,
+          data: String(start || today),
           isRange: false,
         };
       case DateFilterCondition.DateEndsBetween:
         return {
-          data: start || today,
-          endTimestamp: end || today,
+          data: String(start || today),
+          endTimestamp: String(end || today),
           isRange: true,
         };
       case DateFilterCondition.DateStartIsEmpty:

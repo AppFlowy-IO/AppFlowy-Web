@@ -46,50 +46,9 @@ caption response cannot replace live transcript edits or another saved job.
 After import, the existing summary flow uses the saved transcript. Summary
 requests still use the normal AI-response allowance. Missing captions or a
 YouTube restriction keep the dialog open with an explanation. Users can explicitly
-choose **Download audio and transcribe** or **Upload audio/video**. Downloading
-does not start automatically when captions are missing.
+choose **Upload audio/video** to transcribe a file from their device. YouTube
+media downloads and browser extensions are not supported.
 Stop, Retry, workspace changes and closing the dialog cancel pending requests.
-
-## Browser audio fallback
-
-### Why an extension is needed
-
-A normal React page cannot read arbitrary YouTube playback resources or change
-the browser's cross-origin response rules. React libraries still operate under
-the browser's [same-origin restrictions](https://developer.chrome.com/docs/extensions/develop/concepts/network-requests).
-The download also needs current playback metadata from YouTube's native player.
-The helper prepares that playback in a YouTube tab, then uses narrowly scoped
-[network-header rules](https://developer.chrome.com/docs/extensions/reference/api/declarativeNetRequest)
-to let AppFlowy fetch the audio directly on the user's device. This satisfies
-the requirement that AppFlowy servers do not download or proxy YouTube media.
-
-Only the audio track is needed for transcription. Existing captions already
-contain the words and timestamps, so importing them needs neither a media
-download nor the extension. Manual audio/video upload also needs no extension.
-
-### Installation and download flow
-
-The optional Chrome/Edge helper lives in `extensions/youtube-transcript`. Build
-its downloadable ZIP with `node extensions/youtube-transcript/package.mjs`.
-The URL dialog explains how to unzip it, enable Developer mode, choose **Load
-unpacked**, and reload AppFlowy. This is a development distribution, not a
-published extension-store listing. Self-hosted installations need a package
-configured for their exact origin; see the helper's README.
-
-After an explicit download click, the helper opens a temporary YouTube tab to
-prepare native playback for the requested video. It rejects advertisement
-sessions and returns bounded playback metadata to AppFlowy. YouTube's player and
-verification code execute on YouTube, outside the signed-in AppFlowy page.
-AppFlowy downloads the audio stream directly from Googlevideo using the helper's
-scoped network rules. It does not download the video track. Media never passes
-through an AppFlowy download server.
-
-The resulting playable file goes through the existing upload/transcription flow,
-including its duration and quota checks. Streaming enforces the workspace file
-limit and a 256 MiB browser download cap. Stop, navigation, workspace changes and
-loss of editing/transcription availability cancel preparation and download.
-Errors keep the file-upload alternative available. Captions remain usable without
-the extension and without transcription minutes.
 
 ## Server bridge
 
@@ -118,8 +77,8 @@ videos, `youtubeCaptionsUnavailable` when no track exists, and
 adds `networkError` when the AppFlowy origin itself is unreachable. Every bridge
 response carries an `X-Request-Id` header, and the dialog's Details toggle shows
 the error code, HTTP status and request id for bug reports. Retry is offered
-only for transient causes, and the YouTube media fallback is hidden for
-AppFlowy-side failures because downloading audio would hit the same outage.
+only for transient causes, and the upload fallback is hidden for
+AppFlowy-side failures because transcription would hit the same outage.
 
 The Node API entry point is `api/youtube-audio.ts`; the SSR Docker image includes
 the shared handler. Static nginx deployments must route this endpoint to a
@@ -230,26 +189,9 @@ RUN_YOUTUBE_CAPTION_LIVE_TEST=1 pnpm exec jest --runInBand --no-coverage --runTe
 This test retrieves caption text only. It does not download media, submit a
 transcription job or modify a document. Default tests use mocked HTTP responses.
 
-Browser-download unit tests cover extension detection, ad/session isolation,
-media host restrictions, cancellation, size limits, error redaction, playable
-file validation and the upload fallback. Run the opt-in real browser test with:
-
-```sh
-RUN_YOUTUBE_DOWNLOAD_LIVE_TEST=1 node scripts/test-youtube-browser-download.mjs
-```
-
-This opens a disposable Chromium profile, loads the local helper, downloads the
-test video's audio on the device, and verifies its complete byte count, playable
-duration, network destinations and helper-tab cleanup. It does not sign in,
-submit a paid transcription job or modify a document. It requires Playwright's
-Chromium (`pnpm exec playwright install chromium`). Set `VIDEO_ID` to
-test another video.
-
-A real download must be tested in a regular browser session: YouTube may reject playback in automated
-headless/`navigator.webdriver` sessions even when the same video plays normally.
-Verifying only metadata or an initial audio buffer is insufficient; check the
-complete file and its playable duration. The helper uses YouTube's changing
-playback protocol, so restricted videos can still require file upload.
+Dialog tests cover the manual audio/video upload fallback when captions cannot
+be imported, including opening the existing file picker and respecting the
+transcription allowance.
 
 Summary tests cover Flutter's reference parsing and numbering cases, rich-text
 and Yjs persistence, loading through the completion stream, source edits/deletion,

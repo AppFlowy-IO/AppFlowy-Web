@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
@@ -9,6 +9,7 @@ import { DatabaseViewLayout, ViewLayout } from '@/application/types';
 import { ReactComponent as LayoutIcon } from '@/assets/icons/layout.svg';
 import { DatabaseViewCreationHint } from '@/components/_shared/DatabaseViewCreationItem';
 import { useDashboardCreationGate } from '@/components/app/hooks/useDashboardCreationGate';
+import { ViewIcon } from '@/components/_shared/view-icon/ViewIcon';
 import { useDatabaseViewCreation } from '@/components/app/hooks/useDatabaseViewCreation';
 import { useServerHostingMode } from '@/components/app/hooks/useServerInfo';
 import {
@@ -21,16 +22,20 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { getErrorMessage } from '@/utils/errors';
 
+import { useSubmenuPointerGuard } from './useSubmenuPointerGuard';
+
 interface LayoutOption {
   value: DatabaseViewLayout;
+  icon: ViewLayout;
   label: string;
   disabledReason?: string;
 }
 
-function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
+function Layout({ currentLayout, children }: { currentLayout: DatabaseViewLayout; children?: ReactNode }) {
   const { t } = useTranslation();
 
   const [open, setOpen] = useState(false);
+  const { contentRef, onTriggerPointerLeave } = useSubmenuPointerGuard();
   const { workspaceId, getSubscriptions, isDashboardWidget } = useDatabaseContext();
   const isSelfHosted = useServerHostingMode() === 'self-hosted';
   const { getAction } = useDatabaseViewCreation({
@@ -55,18 +60,22 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
     () => [
       {
         value: DatabaseViewLayout.Grid,
+        icon: ViewLayout.Grid,
         label: t('grid.menuName'),
       },
       {
         value: DatabaseViewLayout.Board,
+        icon: ViewLayout.Board,
         label: t('board.menuName'),
       },
       {
         value: DatabaseViewLayout.Calendar,
+        icon: ViewLayout.Calendar,
         label: t('calendar.menuName'),
       },
       {
         value: DatabaseViewLayout.Timeline,
+        icon: ViewLayout.Timeline,
         label: t('timeline.menuName', { defaultValue: 'Timeline' }),
         disabledReason: currentLayout === DatabaseViewLayout.Timeline ? undefined : timelineDisabledReason,
       },
@@ -74,6 +83,7 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
         ? [
             {
               value: DatabaseViewLayout.Chart,
+              icon: ViewLayout.Chart,
               label: t('chart.menuName'),
             },
           ]
@@ -82,26 +92,31 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
         ? [
             {
               value: DatabaseViewLayout.Form,
+              icon: ViewLayout.Form,
               label: t('form.menuName'),
             },
           ]
         : []),
       {
         value: DatabaseViewLayout.List,
+        icon: ViewLayout.List,
         label: t('list.menuName'),
       },
       {
         value: DatabaseViewLayout.Gallery,
+        icon: ViewLayout.Gallery,
         label: t('gallery.menuName'),
       },
       {
         value: DatabaseViewLayout.Feed,
+        icon: ViewLayout.Feed,
         label: t('feed.menuName'),
       },
       ...(showDashboard
         ? [
             {
               value: DatabaseViewLayout.Dashboard,
+              icon: ViewLayout.Dashboard,
               label: t('dashboard.menuName', { defaultValue: 'Dashboard' }),
               disabledReason: currentLayout === DatabaseViewLayout.Dashboard ? undefined : dashboardDisabledReason,
             },
@@ -113,15 +128,23 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
 
   return (
     <DropdownMenuSub open={open} onOpenChange={setOpen}>
-      <DropdownMenuSubTrigger aria-label={t('grid.settings.layout')} data-testid='database-layout-settings-trigger'>
-        <LayoutIcon aria-hidden='true' />
+      <DropdownMenuSubTrigger
+        aria-label={t('grid.settings.layout')}
+        data-testid='database-layout-settings-trigger'
+        onPointerLeave={onTriggerPointerLeave}
+      >
+        {currentLayout === DatabaseViewLayout.Gallery ? (
+          <ViewIcon layout={ViewLayout.Gallery} size='small' />
+        ) : (
+          <LayoutIcon aria-hidden='true' />
+        )}
         <span>{t('grid.settings.layout')}</span>
         <span className='ml-auto text-xs text-text-tertiary'>
           {options.find((option) => option.value === currentLayout)?.label}
         </span>
       </DropdownMenuSubTrigger>
       <DropdownMenuPortal>
-        <DropdownMenuSubContent className={'appflowy-scroller max-w-[240px] overflow-y-auto'}>
+        <DropdownMenuSubContent ref={contentRef} className={'appflowy-scroller w-[240px] overflow-y-auto'}>
           {options.map((option) => {
             const item = (
               <DropdownMenuItem
@@ -150,7 +173,8 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
                   })();
                 }}
               >
-                <div className={'flex items-center gap-2'}>{option.label}</div>
+                {currentLayout === DatabaseViewLayout.Gallery ? <ViewIcon layout={option.icon} size='small' /> : null}
+                <span>{option.label}</span>
                 {currentLayout === option.value && <DropdownMenuItemTick />}
               </DropdownMenuItem>
             );
@@ -165,6 +189,7 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
               </DatabaseViewCreationHint>
             );
           })}
+          {children}
         </DropdownMenuSubContent>
       </DropdownMenuPortal>
     </DropdownMenuSub>

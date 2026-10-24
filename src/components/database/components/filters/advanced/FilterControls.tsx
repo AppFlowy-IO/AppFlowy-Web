@@ -9,6 +9,7 @@ import { DateFilter, DateFilterCondition } from '@/application/database-yjs/fiel
 import {
   isParameterizedRelativeCondition,
   isRelativeDateCondition,
+  isRelativeDateComparison,
   toEndDateCondition,
 } from '@/application/database-yjs/fields/date/relativeDate';
 import { NumberFilter, NumberFilterCondition } from '@/application/database-yjs/fields/number/number.type';
@@ -34,6 +35,7 @@ import { SelectOptionList } from '@/components/database/components/filters/filte
 import { useDebouncedFilterInput } from '@/components/database/components/filters/hooks/useDebouncedFilterInput';
 import { PersonFilterMoreHint } from '@/components/database/components/filters/value-controls/PersonFilterList';
 import { usePersonFilterOptions } from '@/components/database/components/filters/value-controls/usePersonFilterOptions';
+import { useRelativeDateFilterWrites } from '@/components/database/components/filters/hooks/useRelativeDateFilterWrites';
 import { useRelationData } from '@/components/database/components/property/relation/useRelationData';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -80,6 +82,12 @@ export function ConditionSelector({
   variant = 'box',
 }: ConditionSelectorProps) {
   const { t } = useTranslation();
+  const allowRelativeComparisons = useRelativeDateFilterWrites();
+  const compatibilityReadOnly =
+    fieldType !== null &&
+    [FieldType.DateTime, FieldType.CreatedTime, FieldType.LastEditedTime].includes(fieldType) &&
+    !allowRelativeComparisons &&
+    isRelativeDateComparison(filter.condition, filter.content);
   const baseConditions = useConditionsForFieldType(fieldType, t, field);
   const isEnd = fieldType === FieldType.DateTime && isEndDateCondition(filter.condition);
   const conditions = isEnd
@@ -110,7 +118,7 @@ export function ConditionSelector({
 
   const menu = (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild disabled={disabled}>
+      <DropdownMenuTrigger asChild disabled={disabled || compatibilityReadOnly}>
         <button
           className={inline ? inlineSelectTriggerClass : cn(selectBoxClass, 'w-full')}
           title={selectedCondition?.text}

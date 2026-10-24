@@ -36,7 +36,8 @@ jest.mock('@/components/database/DatabaseRowModal', () => {
   const { useState } = jest.requireActual<typeof import('react')>('react');
 
   return ({ rowId, initialMode }: { rowId: string; initialMode?: string }) => {
-    const [mode, setMode] = useState(initialMode);
+    const [selectedMode, setMode] = useState<string>();
+    const mode = selectedMode ?? initialMode;
 
     mockRowDetailContext = useDatabaseContext();
     return <button data-row-id={rowId} data-testid={mode === 'side' ? 'side-peek' : 'center-peek'} onClick={() => setMode('center')} />;

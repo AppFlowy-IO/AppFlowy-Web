@@ -10,6 +10,7 @@ import {
   isParameterizedRelativeCondition,
   parseRelativeDateSpec,
   relativeDateSummary,
+  relativeDateForFilter,
   toStartDateCondition,
 } from '@/application/database-yjs/fields/date/relativeDate';
 import { NumberFilterCondition } from '@/application/database-yjs/fields/number/number.type';
@@ -178,13 +179,17 @@ function selectChipLabel(filter: SelectOptionFilter, field: YDatabaseField, t: T
  */
 export function dateChipDescription(
   condition: DateFilterCondition,
-  value: { timestamp?: unknown; start?: unknown; end?: unknown },
+  value: { timestamp?: unknown; start?: unknown; end?: unknown; relative_date?: DateFilter['relative_date'] },
   dateFormat: string,
   t: Translate
 ): string {
   const base = toStartDateCondition(condition);
   const format = (unix: number) => dayjs.unix(unix).format(dateFormat);
   const { timestamp, start, end } = value;
+  const relative = relativeDateForFilter({ condition, relative_date: value.relative_date });
+  const operand = relative
+    ? t(`relativeDates.${relative.toLowerCase()}`)
+    : typeof timestamp === 'number' ? format(timestamp) : '';
 
   switch (base) {
     case DateFilterCondition.DateStartsToday:
@@ -210,7 +215,7 @@ export function dateChipDescription(
     }
 
     case DateFilterCondition.DateStartsOn:
-      return typeof timestamp === 'number' ? format(timestamp) : '';
+      return operand;
     default: {
       // before / after / onOrBefore / onOrAfter
       const prefix =
@@ -222,7 +227,7 @@ export function dateChipDescription(
           ? t('grid.dateFilter.choicechipPrefix.onOrBefore')
           : t('grid.dateFilter.choicechipPrefix.onOrAfter');
 
-      return typeof timestamp === 'number' ? `${prefix} ${format(timestamp)}` : prefix;
+      return operand ? `${prefix} ${operand}` : prefix;
     }
   }
 }

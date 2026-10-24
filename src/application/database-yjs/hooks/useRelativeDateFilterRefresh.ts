@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 
 import { YDatabaseFields } from '@/application/types';
 
-import { isRelativeDateCondition } from '../fields/date/relativeDate';
+import { isRelativeDateFilter } from '../fields/date/relativeDate';
 import { type FilterList, getEffectiveFiltersSnapshot } from '../filter';
 
 export function useRelativeDateFilterRefresh(
@@ -18,7 +18,8 @@ export function useRelativeDateFilterRefresh(
     const hasRelative = (nodes: ReturnType<typeof getEffectiveFiltersSnapshot>): boolean =>
       nodes.some(
         (node) =>
-          (node.condition !== undefined && isRelativeDateCondition(node.condition)) || hasRelative(node.children ?? [])
+          (node.condition !== undefined && isRelativeDateFilter(node.condition, node.content)) ||
+          hasRelative(node.children ?? [])
       );
     const schedule = () => {
       clearTimeout(timer);

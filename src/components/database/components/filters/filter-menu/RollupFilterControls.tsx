@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useConditionsReadOnly } from '@/application/database-yjs/context';
 import { FieldType, Filter } from '@/application/database-yjs/database.type';
 import { useUpdateAdvancedFilter, UpdateFilterParams } from '@/application/database-yjs/dispatch/sort-filter';
+import { isRelativeDateComparison } from '@/application/database-yjs/fields/date/relativeDate';
 import { RollupFilterMode } from '@/application/database-yjs/fields/rollup/rollup.type';
 import {
   isEndDateCondition,
@@ -20,6 +21,7 @@ import {
   ValueInput,
 } from '@/components/database/components/filters/advanced/FilterControls';
 import FieldMenuTitle from '@/components/database/components/filters/filter-menu/FieldMenuTitle';
+import { useRelativeDateFilterWrites } from '@/components/database/components/filters/hooks/useRelativeDateFilterWrites';
 import { useRollupData } from '@/components/database/components/property/rollup/useRollupData';
 import {
   DropdownMenu,
@@ -50,7 +52,8 @@ export default function RollupFilterControls({
   layout?: 'row' | 'menu';
 }) {
   const { t } = useTranslation();
-  const readOnly = useConditionsReadOnly();
+  const workspaceReadOnly = useConditionsReadOnly();
+  const allowRelativeComparisons = useRelativeDateFilterWrites();
   const { field, clock } = useFieldSelector(filter.fieldId);
   const { targetField } = useRollupData(filter.fieldId);
   const updateFilter = useUpdateAdvancedFilter();
@@ -66,6 +69,9 @@ export default function RollupFilterControls({
     };
   }, [clock, field, metadata, targetField?.type]);
   const type = rollupPredicateType(filter, field);
+  const readOnly =
+    workspaceReadOnly ||
+    (type === FieldType.DateTime && !allowRelativeComparisons && isRelativeDateComparison(filter.condition, filter.content));
   const mode = rollupListMode(filter);
 
   const update = useCallback(

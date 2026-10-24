@@ -13,8 +13,10 @@ import {
   Workspace,
   WorkspaceGroupViewPermission,
 } from '@/application/types';
+import { getServerInfoSnapshot } from '@/utils/server-info';
 
 import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios, withRetry } from './core';
+import { enqueueObjectPermission } from './object-permission-batch';
 
 interface AFWorkspace {
   workspace_id: string;
@@ -275,14 +277,24 @@ function requestObjectPermission(
   if (pending) return pending.promise;
 
   const url = `/api/workspace/${workspaceId}/collab/${objectId}/permission`;
+  const serverInfo = getServerInfoSnapshot();
+  const supportsBatch = serverInfo.status === 'available' && serverInfo.info.enable_object_permission_batch === true;
   const request: ObjectPermissionRequest = {
     workspaceId,
     invalidated: false,
-    promise: executeAPIRequest<CollabObjectPermission>(() =>
-      getAxios()?.get<APIResponse<CollabObjectPermission>>(url, {
-        params: { collab_type: collabType },
-      })
-    )
+    promise: (supportsBatch
+      ? enqueueObjectPermission({
+          workspaceId,
+          objectId,
+          collabType,
+          session,
+          isCurrent: () => !request.invalidated && isTokenSessionCurrent(session),
+        })
+      : executeAPIRequest<CollabObjectPermission>(() =>
+          getAxios()?.get<APIResponse<CollabObjectPermission>>(url, {
+            params: { collab_type: collabType },
+          })
+        ))
       .then((permission) => {
         // Reconnect/share notifications and A -> logout -> A must not allow a
         // pre-change request to grant capabilities to a new consumer.

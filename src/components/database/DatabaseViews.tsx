@@ -26,6 +26,7 @@ import { useWidgetContextOptional } from '@/components/database/dashboard/Widget
 import { WidgetPlaceholder } from '@/components/database/dashboard/WidgetPlaceholder';
 import { DatabaseHistoryScope } from '@/components/database/DatabaseHistoryScope';
 import { Calendar } from '@/components/database/fullcalendar';
+import { GalleryViewProvider } from '@/components/database/gallery/GalleryViewContext';
 import { Grid } from '@/components/database/grid';
 import { GridGroupingProvider } from '@/components/database/grid/GridGroupingContext';
 import {
@@ -180,6 +181,8 @@ function ViewGroupingProvider({ layout, children }: { layout: DatabaseViewLayout
       return <GridGroupingProvider>{children}</GridGroupingProvider>;
     case DatabaseViewLayout.List:
       return <ListGroupingProvider>{children}</ListGroupingProvider>;
+    case DatabaseViewLayout.Gallery:
+      return <GalleryViewProvider>{children}</GalleryViewProvider>;
     case DatabaseViewLayout.Timeline:
       return <TimelineGroupingProvider>{children}</TimelineGroupingProvider>;
     default:

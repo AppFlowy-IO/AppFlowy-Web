@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 
 import {
   GroupColumn,
@@ -23,6 +22,7 @@ import {
   BoardColumnCalculationsContext,
   BoardColumnDisplayContext,
 } from '@/components/database/components/board/group/board-display-context';
+import { BoardNoGroup } from '@/components/database/components/board/group/BoardNoGroup';
 import Columns from '@/components/database/components/board/group/Columns';
 import GroupStickyHeader from '@/components/database/components/board/group/GroupStickyHeader';
 import { DatabaseSearchEmptyState } from '@/components/database/components/conditions/DatabaseSearchEmptyState';
@@ -41,17 +41,9 @@ export interface GroupProps {
 
 export const Group = ({ groupId }: GroupProps) => {
   const { columns, groupResult, fieldId, groupRowsReady, notFound, groupingRows } = useRowsByGroup(groupId);
-  const { t } = useTranslation();
   const searchQuery = useDatabaseSearchQuery();
 
-  if (notFound) {
-    return (
-      <div className={'mt-[10%] flex h-full w-full flex-col items-center gap-2 text-text-secondary'}>
-        <div className={'text-sm font-medium'}>{t('board.noGroup')}</div>
-        <div className={'text-xs'}>{t('board.noGroupDesc')}</div>
-      </div>
-    );
-  }
+  if (notFound) return <BoardNoGroup fieldId={fieldId} />;
 
   if (!fieldId) return null;
 

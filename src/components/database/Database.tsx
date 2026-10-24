@@ -2500,7 +2500,7 @@ function Database(props: Database2Props) {
             {modalState.rowId && modalContextValue && (
               <PeekContextProvider value={modalContextValue} source={modalState.source}>
                 <DatabaseRowModal
-                  key={`${modalContextValue.databaseDoc.guid}:${modalState.rowId}`}
+                  key={modalContextValue.databaseDoc.guid}
                   rowId={modalState.rowId}
                   open={Boolean(modalState.rowId)}
                   initialMode={modalState.mode === 'side_peek' ? 'side' : 'center'}

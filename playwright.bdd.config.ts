@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
-import { defineBddConfig } from 'playwright-bdd';
 import * as dotenv from 'dotenv';
+import { defineBddConfig } from 'playwright-bdd';
 
 dotenv.config();
 
@@ -41,7 +41,9 @@ export default defineConfig({
     // The saved dashboard suite signs in with owner credentials. Never record its login or token headers.
     trace: process.env.RUN_DASHBOARD_PUBLISH_FIXTURE === '1' ? 'off' : 'on-first-retry',
     screenshot: 'only-on-failure',
-    video: 'off',
+    video: process.env.PLAYWRIGHT_VIDEO === 'on'
+      ? { mode: 'on', size: { width: 1440, height: 900 } }
+      : 'off',
     actionTimeout: 15000,
     navigationTimeout: 15000,
     bypassCSP: true,

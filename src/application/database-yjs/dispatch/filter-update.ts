@@ -1,8 +1,16 @@
 import { YDatabaseFields, YDatabaseFilter, YDatabaseFilters, YjsDatabaseKey as K } from '@/application/types';
 
 import { FieldType } from '../database.type';
+import { dateFilterContentForCondition, isRelativeDateComparison } from '../fields/date/relativeDate';
+import { canWriteRelativeDateComparisons } from '../fields/date/relativeDateCompatibility';
 import { RollupFilterMetadata } from '../fields/rollup/rollup.type';
-import { newRollupFilterMetadata, parseRollupFilterMetadata, rollupConfigurationMatches } from '../rollup/filter';
+import { formulaPredicateFieldType } from '../formula/filter';
+import {
+  newRollupFilterMetadata,
+  parseRollupFilterMetadata,
+  rollupConfigurationMatches,
+  rollupPredicateType,
+} from '../rollup/filter';
 
 export interface UpdateFilterParams {
   filterId: string;
@@ -38,12 +46,64 @@ export function applyFilterUpdate(filters: YDatabaseFilters, fields: YDatabaseFi
       )
         return node;
       const updates: Record<string, unknown> = {};
+      const type = field ? Number(field.get(K.type)) : Number(get(K.type));
+      const predicateType =
+        type === FieldType.Formula && field
+          ? formulaPredicateFieldType(field, fields)
+          : type === FieldType.Rollup
+          ? rollupPredicateType(
+              { rollupMetadata: metadata, rollupTargetFieldType: get(K.rollup_target_type) as FieldType },
+              field
+            )
+          : type;
+      const isDate = [FieldType.DateTime, FieldType.CreatedTime, FieldType.LastEditedTime].includes(predicateType);
+      const allowRelativeComparisons = canWriteRelativeDateComparisons();
+      const previousCondition = Number(get(K.condition));
+      const previousContent = String(get(K.content) ?? '');
 
-      if (params.condition !== undefined) updates[K.condition] = params.condition;
+      // Preserve new-format filters received from another client while rollout
+      // authorization is absent, including during a transient discovery failure.
+      if (isDate && !allowRelativeComparisons && isRelativeDateComparison(previousCondition, previousContent)) return node;
+
+      if (params.condition !== undefined) {
+        updates[K.condition] = params.condition;
+
+        if (isDate) {
+          const nextContent = dateFilterContentForCondition(
+            previousCondition,
+            params.condition,
+            previousContent,
+            allowRelativeComparisons
+          );
+
+          if (nextContent !== previousContent) updates[K.content] = nextContent;
+        }
+      }
+
       if (params.content !== undefined) updates[K.content] = params.content;
       if (params.transformContent) updates[K.content] = params.transformContent(String(get(K.content) ?? ''));
       if (params.rollupMetadata !== undefined) updates[K.rollup_meta] = { ...metadata, ...params.rollupMetadata };
       if (params.rollupTargetFieldType !== undefined) updates[K.rollup_target_type] = params.rollupTargetFieldType;
+      const nextPredicateType =
+        type === FieldType.Rollup
+          ? rollupPredicateType(
+              {
+                rollupMetadata: params.rollupMetadata === undefined ? metadata : { ...metadata, ...params.rollupMetadata },
+                rollupTargetFieldType: params.rollupTargetFieldType ?? (get(K.rollup_target_type) as FieldType),
+              },
+              field
+            )
+          : predicateType;
+
+      // Recheck at the mutation boundary: an already-open editor can outlive a
+      // capability refresh. Never synthesize a fixed timestamp as a fallback.
+      if (
+        !allowRelativeComparisons &&
+        [FieldType.DateTime, FieldType.CreatedTime, FieldType.LastEditedTime].includes(nextPredicateType) &&
+        isRelativeDateComparison(params.condition ?? previousCondition, updates[K.content] ?? previousContent)
+      )
+        return node;
+
       if (!map) return { ...obj, ...updates };
       Object.entries(updates).forEach(([key, value]) => map.set(key, value));
       return node;

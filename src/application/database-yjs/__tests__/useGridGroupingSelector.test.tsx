@@ -11,11 +11,13 @@ import {
   FilterType,
   SortCondition,
   TextFilterCondition,
+  useCreateDatabaseSelectGroupDispatch,
   useDatabaseGroupingSelector,
   useGroupByFieldDispatch,
   useGridGroupingSelector,
   useListGroupingSelector,
   useTimelineGroupingSelector,
+  useToggleDatabaseHideEmptyGroups,
   useUpdateCellDispatch,
   useUpdateDateGroupConditionDispatch,
   useUpdateGroupContentDispatch,
@@ -317,6 +319,8 @@ describe('useGridGroupingSelector refresh behavior', () => {
       createYDatabaseGroupColumn({ id: 'number_range_0_100' }),
     ]);
     fixture.rowOrders.push([{ id: 'not-hydrated', height: 36 }]);
+    // The row is still syncing; a row whose load fails would settle instead.
+    fixture.contextValue.ensureRow = () => new Promise(() => undefined);
     const { result, unmount } = renderHook(useGroupingWithMetadataSync, { wrapper: fixture.wrapper });
 
     await waitFor(() => expect(result.current.activeGroupIds).toEqual(['name', 'number_value_9007199254740993', 'number_value_10', 'number_value_2']));
@@ -404,6 +408,108 @@ describe('useGridGroupingSelector refresh behavior', () => {
       fixture.gridLayoutSetting.set(YjsDatabaseKey.hide_empty_groups, false);
     });
     expect(result.current.list.hideEmptyGroups).toBe(true);
+
+    unmount();
+    fixture.rowA.destroy();
+    fixture.rowB.destroy();
+    fixture.databaseDoc.destroy();
+  });
+
+  it('uses Gallery slot 5 for hide-empty settings independently of Grid', async () => {
+    const fixture = createGridGroupingFixture();
+    const galleryLayoutSetting = new Y.Map<unknown>();
+
+    galleryLayoutSetting.set(YjsDatabaseKey.hide_empty_groups, false);
+    fixture.view.get(YjsDatabaseKey.layout_settings).set('5', galleryLayoutSetting);
+    fixture.view.set(YjsDatabaseKey.layout, DatabaseViewLayout.Gallery);
+    const { result, unmount } = renderHook(
+      () => ({
+        generic: useDatabaseGroupingSelector(DatabaseViewLayout.Gallery),
+      }),
+      { wrapper: fixture.wrapper }
+    );
+
+    await waitFor(() => {
+      expect(result.current.generic.hideEmptyGroups).toBe(false);
+      expect(result.current.generic.visibleGroups.map(({ id }) => id)).toEqual(['name', 'A', 'B']);
+    });
+
+    act(() => {
+      galleryLayoutSetting.set(YjsDatabaseKey.hide_empty_groups, true);
+    });
+
+    await waitFor(() => {
+      expect(result.current.generic.hideEmptyGroups).toBe(true);
+      expect(result.current.generic.visibleGroups.map(({ id }) => id)).toEqual(['A', 'B']);
+    });
+
+    act(() => {
+      fixture.gridLayoutSetting.set(YjsDatabaseKey.hide_empty_groups, false);
+    });
+
+    unmount();
+    fixture.rowA.destroy();
+    fixture.rowB.destroy();
+    fixture.databaseDoc.destroy();
+  });
+
+  it('keeps a Gallery select group created through New group visible while it is empty', async () => {
+    const fixture = createGridGroupingFixture({
+      fieldType: FieldType.SingleSelect,
+      rowAValue: 'opt-a',
+      rowBValue: 'opt-a',
+    });
+    const database = fixture.databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+    const field = database.get(YjsDatabaseKey.fields).get(fixture.fieldId);
+    const typeOptions = new Y.Map();
+    const selectTypeOption = new Y.Map();
+
+    selectTypeOption.set(
+      YjsDatabaseKey.content,
+      JSON.stringify({ disable_color: false, options: [{ color: 'Purple', id: 'opt-a', name: 'Alpha' }] })
+    );
+    typeOptions.set(String(FieldType.SingleSelect), selectTypeOption);
+    field.set(YjsDatabaseKey.type_option, typeOptions as never);
+    fixture.columns.push([createYDatabaseGroupColumn({ id: 'opt-a' })]);
+    fixture.view.set(YjsDatabaseKey.layout, DatabaseViewLayout.Gallery);
+
+    const { result, unmount } = renderHook(
+      () => ({
+        createGroup: useCreateDatabaseSelectGroupDispatch(DatabaseViewLayout.Gallery),
+        grouping: useDatabaseGroupingSelector(DatabaseViewLayout.Gallery),
+        toggleHideEmpty: useToggleDatabaseHideEmptyGroups(DatabaseViewLayout.Gallery),
+      }),
+      { wrapper: fixture.wrapper }
+    );
+    const visibleIds = () => result.current.grouping.visibleGroups.map(({ id }) => id);
+
+    await waitFor(() => expect(visibleIds()).toEqual(['opt-a']));
+
+    let createdId: string | undefined;
+
+    act(() => {
+      createdId = result.current.createGroup(fixture.fieldId, 'Fresh');
+    });
+
+    expect(createdId).toBeTruthy();
+    await waitFor(() => expect(visibleIds()).toEqual(['opt-a', createdId]));
+    expect(result.current.grouping.visibleGroups[1].option?.name).toBe('Fresh');
+
+    // A repeated name reveals the existing option instead of adding a duplicate.
+    act(() => {
+      expect(result.current.createGroup(fixture.fieldId, 'Fresh')).toBe(createdId);
+    });
+    expect(JSON.parse(selectTypeOption.get(YjsDatabaseKey.content) as string).options).toHaveLength(2);
+
+    // Showing every empty group retires the exception, so hiding them again hides the new group too.
+    act(() => {
+      result.current.toggleHideEmpty(false);
+    });
+    await waitFor(() => expect(visibleIds()).toEqual([fixture.fieldId, 'opt-a', createdId]));
+    act(() => {
+      result.current.toggleHideEmpty(true);
+    });
+    await waitFor(() => expect(visibleIds()).toEqual(['opt-a']));
 
     unmount();
     fixture.rowA.destroy();
@@ -848,6 +954,9 @@ describe('useGridGroupingSelector refresh behavior', () => {
   it('does not prune persisted groups while a newly ordered row is still hydrating', async () => {
     const consoleWarn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     const fixture = createGridGroupingFixture();
+
+    // row-c is still syncing; a row whose load fails would settle instead.
+    fixture.contextValue.ensureRow = () => new Promise(() => undefined);
     const { result, unmount } = renderHook(useGroupingWithMetadataSync, { wrapper: fixture.wrapper });
 
     await waitFor(() => {
@@ -1110,7 +1219,7 @@ describe('useGridGroupingSelector refresh behavior', () => {
     fixture.databaseDoc.destroy();
   });
 
-  it('keeps a filter on the field a Timeline starts grouping by (desktop set_group_by_field never touches filters)', async () => {
+  it.each([DatabaseViewLayout.Timeline, DatabaseViewLayout.Gallery])('preserves filters when grouping optional layout %s', async (layout) => {
     const fixture = createGridGroupingFixture();
     const database = fixture.databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
     const doneField = new Y.Map() as YDatabaseField;
@@ -1119,7 +1228,7 @@ describe('useGridGroupingSelector refresh behavior', () => {
     doneField.set(YjsDatabaseKey.name, 'Done');
     doneField.set(YjsDatabaseKey.type, FieldType.Checkbox);
     database.get(YjsDatabaseKey.fields).set('done', doneField);
-    fixture.view.set(YjsDatabaseKey.layout, DatabaseViewLayout.Timeline);
+    fixture.view.set(YjsDatabaseKey.layout, layout);
     const filter = new Y.Map() as YDatabaseFilter;
 
     filter.set(YjsDatabaseKey.id, 'done-filter');
@@ -1134,8 +1243,8 @@ describe('useGridGroupingSelector refresh behavior', () => {
 
     expect(fixture.filters.toArray().map((entry) => entry.get(YjsDatabaseKey.field_id))).toEqual(['done']);
     expect(fixture.groups.get(0).get(YjsDatabaseKey.field_id)).toBe('done');
-    // Timeline takes the Grid/List path, which also seeds its hide-empty default.
-    expect(fixture.view.get(YjsDatabaseKey.layout_settings).get('8')?.get(YjsDatabaseKey.hide_empty_groups)).toBe(true);
+    // Optional grouping preserves filters and initializes its own hide-empty setting.
+    expect(fixture.view.get(YjsDatabaseKey.layout_settings).get(String(layout) as '8' | '5')?.get(YjsDatabaseKey.hide_empty_groups)).toBe(true);
 
     unmount();
     fixture.rowA.destroy();
@@ -1309,7 +1418,7 @@ describe('useGridGroupingSelector refresh behavior', () => {
 });
 
 
-test.each([DatabaseViewLayout.Grid, DatabaseViewLayout.List])('groups the complete historical layout %s with bounded row documents', async (layout) => {
+test.each([DatabaseViewLayout.Grid, DatabaseViewLayout.List, DatabaseViewLayout.Gallery])('groups the complete historical layout %s with bounded row documents', async (layout) => {
   const fixture = createGridGroupingFixture({ fieldType: FieldType.Checkbox, rowAValue: 'No', rowBValue: 'Yes' });
   const store = new DatabaseHistoryRowStore('history:groups');
   const rows = Array.from({ length: 400 }, (_, i) => ({ id: String(i), height: 36 }));

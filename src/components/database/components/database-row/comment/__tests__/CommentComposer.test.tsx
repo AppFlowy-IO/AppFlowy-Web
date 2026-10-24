@@ -79,3 +79,43 @@ describe('CommentComposer draft retention signal', () => {
     expect(notifyDraft).toHaveBeenLastCalledWith(expect.any(String), false);
   });
 });
+
+describe('CommentComposer inline variant', () => {
+  const testIds = { collapsed: 'collapsed', input: 'input', submit: 'submit', attachment: 'attachment' };
+
+  beforeEach(() => {
+    mockUseDatabaseContext.mockReturnValue({ uploadFile: jest.fn() } as unknown as ReturnType<
+      typeof useDatabaseContext
+    >);
+  });
+
+  it('renders the Feed field borderless with its actions on the input line', () => {
+    const onSubmit = jest.fn(() => 'comment-id');
+
+    render(<CommentComposer onSubmit={onSubmit} placeholder='Comment' testIds={testIds} variant='inline' />);
+
+    expect(screen.getByTestId('collapsed').className).not.toContain('border');
+    fireEvent.click(screen.getByTestId('collapsed'));
+
+    const input = screen.getByTestId('input');
+    const submit = screen.getByTestId('submit');
+
+    const inputLine = submit.parentElement?.parentElement;
+
+    expect(inputLine?.className).toContain('items-end');
+    expect(inputLine?.contains(input)).toBe(true);
+    expect(input.closest('.border')).toBeNull();
+    expect(submit.className).toContain('text-icon-tertiary');
+
+    fireEvent.change(input, { target: { value: 'Ship it' } });
+    expect(submit.className).toContain('text-fill-theme-thick');
+    fireEvent.click(submit);
+    expect(onSubmit).toHaveBeenCalledWith('Ship it', []);
+  });
+
+  it('keeps the boxed row-detail field by default', () => {
+    render(<CommentComposer initiallyExpanded onSubmit={() => undefined} placeholder='Comment' testIds={testIds} />);
+
+    expect(screen.getByTestId('input').closest('.border')).not.toBeNull();
+  });
+});

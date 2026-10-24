@@ -12,6 +12,7 @@ import * as Y from 'yjs';
 
 import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
 import {
+  useDatabase,
   useDatabaseContext,
   useDatabaseView,
   useDatabaseViewId,
@@ -19,6 +20,11 @@ import {
   useRowPassState,
 } from '@/application/database-yjs/context';
 import { shareEquivalentRowDocRevision } from '@/application/database-yjs/row-doc-revision';
+import {
+  getInlineViewRowOrders,
+  materializeVisibleRowOrders,
+  RowOrderVisibilityEntry,
+} from '@/application/database-yjs/row-order-visibility';
 import { ROW_SYNC_RETRY_DELAYS_MS } from '@/application/database-yjs/row-sync';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { openRowCollabDBWithProvider } from '@/application/db';
@@ -185,6 +191,7 @@ function releaseOwnedRowDoc(doc: YDoc) {
 /** What the seed pass of a store was last asked to hydrate; see `SeedHydrator.sync`. */
 type SeedHydrationRequest = {
   rowOrders: YDatabaseRowOrders;
+  inlineRowOrders: YDatabaseRowOrders | undefined;
   /** The walk has not reached its terminal page: its seeds are provisional. */
   walkInFlight: boolean;
   /**
@@ -244,7 +251,12 @@ type LoaderStore = {
   consumerRows: Map<symbol, RowDocMap>;
   /** The distinct row maps in `consumerRows`. */
   rowMaps: RowDocMap[];
+  /** Rows still without row data after a retry; replaced, never mutated, on change. */
+  unavailableRowIds: ReadonlySet<string>;
+  pendingUnavailableRowIds: Set<string>;
+  unavailableFlushHandle: number | null;
   rowOrders: YDatabaseRowOrders | undefined;
+  inlineRowOrders: YDatabaseRowOrders | undefined;
   ensureRow: EnsureRow | undefined;
   loadRowFromSeed: LoadRowFromSeed | undefined;
   peekRowDocFromSeed: PeekRowDocFromSeed | undefined;
@@ -327,7 +339,11 @@ function createLoaderStore(key: string): LoaderStore {
     seedHydrator: { sync: () => undefined, cancel: () => undefined, promise: () => null },
     consumerRows: new Map(),
     rowMaps: [],
+    unavailableRowIds: new Set(),
+    pendingUnavailableRowIds: new Set(),
+    unavailableFlushHandle: null,
     rowOrders: undefined,
+    inlineRowOrders: undefined,
     ensureRow: undefined,
     loadRowFromSeed: undefined,
     peekRowDocFromSeed: undefined,
@@ -369,6 +385,41 @@ function removeConsumerRows(store: LoaderStore, consumer: symbol) {
  */
 function everyConsumerHasRow(store: LoaderStore, rowId: string) {
   return store.rowMaps.length > 0 && store.rowMaps.every((rows) => hasRowConditionData(rows[rowId]));
+}
+
+/**
+ * Record a row whose loads keep finding no row data, e.g. a row order whose
+ * DatabaseRow collab is missing on the server. Consumers that wait for every
+ * row (Board grouping) count it as settled instead of loading forever; the row
+ * still joins them if a retry or realtime sync delivers its data later. Rows
+ * settle once per frame, so many missing rows publish one change, not one each.
+ */
+function markRowUnavailable(store: LoaderStore, rowId: string) {
+  if (store.unavailableRowIds.has(rowId)) return;
+  store.pendingUnavailableRowIds.add(rowId);
+  if (store.unavailableFlushHandle !== null) return;
+
+  store.unavailableFlushHandle = requestAnimationFrame(() => {
+    store.unavailableFlushHandle = null;
+    store.unavailableRowIds = new Set([...store.unavailableRowIds, ...store.pendingUnavailableRowIds]);
+    store.pendingUnavailableRowIds.clear();
+    notifyStore(store);
+  });
+}
+
+function cancelUnavailableFlush(store: LoaderStore) {
+  if (store.unavailableFlushHandle !== null) cancelAnimationFrame(store.unavailableFlushHandle);
+  store.unavailableFlushHandle = null;
+  store.pendingUnavailableRowIds.clear();
+}
+
+/** The rows a view renders; the inline view's tombstones decide visibility. */
+function readVisibleRowOrders(rowOrders?: YDatabaseRowOrders, inlineRowOrders?: YDatabaseRowOrders) {
+  const rawRowOrders = rowOrders?.toJSON() as RowOrderVisibilityEntry[] | undefined;
+  const canonicalRowOrders =
+    inlineRowOrders === rowOrders ? rawRowOrders : (inlineRowOrders?.toJSON() as RowOrderVisibilityEntry[] | undefined);
+
+  return materializeVisibleRowOrders(rawRowOrders, canonicalRowOrders);
 }
 
 function disposeStoreDoc(store: LoaderStore, rowId: string, doc: YDoc) {
@@ -625,6 +676,7 @@ function createSeedHydrator(store: LoaderStore): SeedHydrator {
       if (
         previous &&
         previous.rowOrders === next.rowOrders &&
+        previous.inlineRowOrders === next.inlineRowOrders &&
         previous.walkInFlight === next.walkInFlight &&
         previous.publishOnce === next.publishOnce &&
         previous.seedsRevision === next.seedsRevision &&
@@ -648,8 +700,8 @@ function createSeedHydrator(store: LoaderStore): SeedHydrator {
       // Rebuilt in row order: a pass drops the rows a walk in flight has not
       // delivered yet, and re-adding them at the end would hydrate later rows first.
       queue.clear();
-      (next.rowOrders.toArray() as { id: string; is_deleted?: boolean }[]).forEach(({ id, is_deleted }) => {
-        if (!is_deleted && needsDoc(id) && !hasRowConditionData(pending[id])) queue.add(id);
+      readVisibleRowOrders(next.rowOrders, next.inlineRowOrders)?.forEach(({ id }) => {
+        if (needsDoc(id) && !hasRowConditionData(pending[id])) queue.add(id);
       });
       if (passActive || queue.size === 0) return;
 
@@ -682,8 +734,10 @@ function destroyStore(store: LoaderStore) {
     disposeStoreDoc(store, rowId, doc);
   });
 
+  cancelUnavailableFlush(store);
   store.cachedRowDocs = {};
   store.syncedRowDocs = {};
+  store.unavailableRowIds = new Set();
   store.rowDocChangeSubscribers.clear();
   store.sharedDocDestroyListeners.forEach((unwatch) => unwatch());
   store.sharedDocDestroyListeners.clear();
@@ -708,13 +762,15 @@ function destroyStore(store: LoaderStore) {
  * @param requestedActive - Whether this consumer needs complete row data
  * @param scope - Isolates independently activated consumers sharing a view
  * @param mode - Live consumers also connect seed-backed rows to realtime
- * @returns Cached read-only row docs that are not already in the main row map
+ * @returns Cached read-only row docs that are not already in the main row map,
+ * and the visible rows still without row data after a retry
  */
 export function useBackgroundRowDocLoader(requestedActive: boolean, scope = 'conditions', mode: 'cached' | 'live' = 'cached') {
   const rows = useRowMap();
   const view = useDatabaseView();
   const viewId = useDatabaseViewId();
   const rowOrders = view?.get(YjsDatabaseKey.row_orders);
+  const inlineRowOrders = getInlineViewRowOrders(useDatabase());
   const databaseContext = useDatabaseContext();
   const {
     databaseDoc,
@@ -759,10 +815,11 @@ export function useBackgroundRowDocLoader(requestedActive: boolean, scope = 'con
   useLayoutEffect(() => {
     setConsumerRows(store, consumer, rows);
     store.rowOrders = rowOrders;
+    store.inlineRowOrders = inlineRowOrders;
     store.ensureRow = ensureRow;
     store.loadRowFromSeed = loadRowFromSeed;
     store.peekRowDocFromSeed = peekRowDocFromSeed;
-  }, [consumer, ensureRow, loadRowFromSeed, peekRowDocFromSeed, rowOrders, rows, store]);
+  }, [consumer, ensureRow, inlineRowOrders, loadRowFromSeed, peekRowDocFromSeed, rowOrders, rows, store]);
 
   useLayoutEffect(() => () => removeConsumerRows(store, consumer), [consumer, store]);
 
@@ -786,10 +843,12 @@ export function useBackgroundRowDocLoader(requestedActive: boolean, scope = 'con
     [store]
   );
   const cachedRowDocs = useSyncExternalStore(subscribeToCachedRowDocs, getCachedRowDocs, getCachedRowDocs);
+  const getUnavailableRowIds = useCallback(() => store.unavailableRowIds, [store]);
+  const unavailableRowIds = useSyncExternalStore(subscribeToCachedRowDocs, getUnavailableRowIds, getUnavailableRowIds);
 
   // Y.Array identity is stable when collaborative edits insert rows. Track a
   // primitive revision so the loading effects also process rows added after
-  // the initial Board hydration pass.
+  // the initial Board hydration pass. Inline tombstones change visibility too.
   useEffect(() => {
     if (!active || !rowOrders) return;
 
@@ -797,11 +856,16 @@ export function useBackgroundRowDocLoader(requestedActive: boolean, scope = 'con
       setRowOrderRevision((revision) => revision + 1);
     };
 
+    const observesInlineRowOrders = inlineRowOrders !== undefined && inlineRowOrders !== rowOrders;
+
     rowOrders.observeDeep(handleRowOrdersChange);
+    if (observesInlineRowOrders) inlineRowOrders.observeDeep(handleRowOrdersChange);
+
     return () => {
       rowOrders.unobserveDeep(handleRowOrdersChange);
+      if (observesInlineRowOrders) inlineRowOrders.unobserveDeep(handleRowOrdersChange);
     };
-  }, [active, rowOrders]);
+  }, [active, inlineRowOrders, rowOrders]);
 
   const scheduleFlush = useCallback(() => {
     if (store.flushHandle !== null) return;
@@ -918,6 +982,7 @@ export function useBackgroundRowDocLoader(requestedActive: boolean, scope = 'con
 
     store.seedHydrator.sync({
       rowOrders,
+      inlineRowOrders,
       walkInFlight: !seedsReady,
       publishOnce: shownInactiveRef.current,
       seedsRevision,
@@ -925,16 +990,14 @@ export function useBackgroundRowDocLoader(requestedActive: boolean, scope = 'con
       peekRowDocFromSeed,
       rowMaps: store.rowMaps,
     });
-  }, [active, seedsReady, seedsRevision, peekRowDocFromSeed, store, rowOrders, rowOrderRevision]);
+  }, [active, seedsReady, seedsRevision, peekRowDocFromSeed, store, rowOrders, inlineRowOrders, rowOrderRevision]);
 
   // After detached hydration, recover rows absent from the blob through the
   // main row loader, realtime, or a read-only IndexedDB document.
   useEffect(() => {
     if (!active || !blobPrefetchComplete) return;
 
-    const rowOrdersData = (rowOrders?.toJSON() as { id: string; is_deleted?: boolean }[] | undefined)?.filter(
-      (row) => !row.is_deleted
-    );
+    const rowOrdersData = readVisibleRowOrders(rowOrders, inlineRowOrders);
 
     if (!rowOrdersData) return;
 
@@ -963,13 +1026,15 @@ export function useBackgroundRowDocLoader(requestedActive: boolean, scope = 'con
     const isRunActive = () => store.backgroundRun === runId && !store.backgroundCancelled;
     const retryAttempts = new Map<string, number>();
     const isRowStillOrdered = (rowId: string) =>
-      (store.rowOrders?.toJSON() as { id: string; is_deleted?: boolean }[] | undefined)?.some(
-        (row) => row.id === rowId && !row.is_deleted
-      ) ?? false;
+      readVisibleRowOrders(store.rowOrders, store.inlineRowOrders)?.some((row) => row.id === rowId) ?? false;
+    // Every failed load ends here. A row still missing after its first retry,
+    // or one that cannot be retried, settles for consumers that wait for every
+    // row (Board grouping); later retries can still hydrate it.
     const retryMissingRow = async (rowId: string) => {
-      if (!store.ensureRow) return;
-
       const attempt = retryAttempts.get(rowId) ?? 0;
+
+      if (attempt > 0 || !store.ensureRow) markRowUnavailable(store, rowId);
+      if (!store.ensureRow) return;
 
       if (attempt >= ROW_SYNC_RETRY_DELAYS_MS.length) {
         retryAttempts.delete(rowId);
@@ -1186,6 +1251,7 @@ export function useBackgroundRowDocLoader(requestedActive: boolean, scope = 'con
     blobPrefetchComplete,
     rows,
     rowOrders,
+    inlineRowOrders,
     rowOrderRevision,
     loadRowFromSeed,
     ensureRow,
@@ -1197,5 +1263,6 @@ export function useBackgroundRowDocLoader(requestedActive: boolean, scope = 'con
     cachedRowDocs,
     getCachedRowDocs,
     subscribeToCachedRowDocChanges,
+    unavailableRowIds,
   };
 }

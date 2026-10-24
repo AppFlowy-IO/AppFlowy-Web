@@ -13,13 +13,15 @@ import {
 import { YDatabaseRow, YjsDatabaseKey } from '@/application/types';
 import { canonicalizeUserUid } from '@/application/user-uid';
 import { CommentDraftContext } from '@/components/database/components/database-row/comment/CommentDraftContext';
+import { notify } from '@/components/_shared/notify';
 import { useEditorPreviewId } from '@/components/editor/EditorPreviewContext';
 import { cn } from '@/lib/utils';
 
-import { FEED_CARD_INTRINSIC_HEIGHT, FEED_EDITED_THRESHOLD_SECONDS } from './feed.constants';
+import { FEED_CARD_INTRINSIC_HEIGHT, FEED_CARD_MAX_HEIGHT, FEED_EDITED_THRESHOLD_SECONDS } from './feed.constants';
 import { formatFeedCreatorDate, isFeedInteractiveTarget, isFeedRowEdited, toUnixSeconds } from './feed.utils';
 import { FeedAvatar } from './FeedAvatar';
 import { FeedCardActions } from './FeedCardActions';
+import { FeedCardBody } from './FeedCardBody';
 import { FeedCardCover } from './FeedCardCover';
 import { FeedCardProperties } from './FeedCardProperties';
 import { FeedCommentSection } from './FeedCommentSection';
@@ -41,6 +43,7 @@ const EMPTY_ATTRIBUTION: FeedRowAttribution = { createdBy: null };
 const feedCardStyle: React.CSSProperties = {
   contentVisibility: 'auto',
   containIntrinsicSize: `auto ${FEED_CARD_INTRINSIC_HEIGHT}px`,
+  maxHeight: FEED_CARD_MAX_HEIGHT,
 };
 
 function usePreviewNearViewport(cardRef: React.RefObject<HTMLElement>, enabled: boolean): boolean {
@@ -124,16 +127,27 @@ function FeedCreatorInfo({ attribution, rowId }: { attribution: FeedRowAttributi
   const dateText = createdText && edited ? `${createdText} ${t('globalComment.edited')}` : createdText;
 
   return (
-    <div className='flex items-center gap-2' data-testid={`feed-card-creator-${rowId}`}>
+    <div
+      className='flex shrink-0 items-center gap-1.5 px-8 pb-3 pt-6 max-sm:px-4'
+      data-testid={`feed-card-creator-${rowId}`}
+    >
       <FeedAvatar member={creator} testId={`feed-card-creator-avatar-${rowId}`} />
-      <span className='text-[13px] font-medium text-text-primary' data-testid={`feed-card-creator-name-${rowId}`}>
-        {creator?.name || creator?.email || t('feed.unknownCreator')}
-      </span>
-      {dateText ? (
-        <span className='text-[13px] text-text-tertiary' data-testid={`feed-card-created-at-${rowId}`}>
-          {dateText}
+      <div className='flex min-w-0 items-end gap-2'>
+        <span
+          className='truncate text-sm font-medium leading-5 text-text-primary'
+          data-testid={`feed-card-creator-name-${rowId}`}
+        >
+          {creator?.name || creator?.email || t('feed.unknownCreator')}
         </span>
-      ) : null}
+        {dateText ? (
+          <span
+            className='shrink-0 whitespace-nowrap text-xs leading-[18px] tracking-[0.1px] text-text-secondary'
+            data-testid={`feed-card-created-at-${rowId}`}
+          >
+            {dateText}
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -147,9 +161,9 @@ export interface FeedCardProps {
 }
 
 /**
- * One feed post (Desktop `FeedCard`): cover, creator, title, document preview,
- * reactions and comments. Clicking the card opens the row detail page unless
- * the click landed on an interactive control.
+ * One feed post (the Figma feed card): cover, creator, title, properties and
+ * document preview capped at 600px, then reactions and comments. Clicking the
+ * card opens the row detail page unless the click landed on a control.
  */
 export const FeedCard = memo(function FeedCard({
   fields,
@@ -160,7 +174,7 @@ export const FeedCard = memo(function FeedCard({
 }: FeedCardProps) {
   const { t } = useTranslation();
   const readOnly = useReadOnly();
-  const { bindRowSync, navigateToRow } = useDatabaseContext();
+  const { activeViewId, bindRowSync, databasePageId, navigateToRow, navigateToView } = useDatabaseContext();
   const { resolveMember } = useFeedMembers();
   const meta = useRowMetaSelector(rowId);
   const cell = useCellSelector({ fieldId: primaryFieldId, rowId });
@@ -189,6 +203,7 @@ export const FeedCard = memo(function FeedCard({
   const title = typeof cell?.data === 'string' ? cell.data.trim() : '';
   const hasCreator = Boolean(resolveMember(attribution.createdBy));
   const hasDocument = meta?.isEmptyDocument === false && Boolean(meta.documentId);
+  const hasCover = !hidden && Boolean(meta?.cover?.data);
   // Linked databases still render inside a preview, but their Feed cards must
   // not load another row document (which can link straight back to this Feed).
   const showPreview = usePreviewNearViewport(cardRef, !previewId && !hidden && hasDocument);
@@ -196,6 +211,13 @@ export const FeedCard = memo(function FeedCard({
   const openRow = useCallback(() => {
     navigateToRow?.(rowId);
   }, [navigateToRow, rowId]);
+
+  // Same route the row peek's "Open as full page" takes for a database view.
+  const openRowPage = useCallback(() => {
+    navigateToView?.(activeViewId || databasePageId, rowId).catch(() => {
+      notify.error(t('chat.openPagePreviewFailedToast'));
+    });
+  }, [activeViewId, databasePageId, navigateToView, rowId, t]);
 
   const handleClick = useCallback(
     (event: React.MouseEvent<HTMLElement>) => {
@@ -211,8 +233,11 @@ export const FeedCard = memo(function FeedCard({
   return (
     <article
       className={cn(
-        'group/feed-card relative my-1.5 w-full cursor-pointer rounded-lg border border-border-primary bg-background-primary',
-        'shadow-[0_2px_4px_rgba(0,0,0,0.05)] transition-colors hover:border-border-primary-hover'
+        'group/feed-card relative w-full cursor-pointer flex-col overflow-hidden rounded-500 border border-border-primary bg-surface-layer-02',
+        'shadow-[0_2px_12px_1px_rgba(0,0,0,0.02)] transition-colors hover:border-border-primary-hover',
+        // A display utility outranks the `hidden` attribute, so a retained
+        // draft card must drop it while a search hides the card.
+        hidden ? 'hidden' : 'flex'
       )}
       data-row-id={rowId}
       data-testid={`feed-card-${rowId}`}
@@ -223,7 +248,7 @@ export const FeedCard = memo(function FeedCard({
     >
       <button
         aria-label={`${t('feed.openRow')}: ${title || t('feed.untitled')}`}
-        className='pointer-events-none absolute inset-0 z-10 rounded-lg bg-transparent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-fill-theme-thick'
+        className='pointer-events-none absolute inset-0 z-10 rounded-500 bg-transparent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-fill-theme-thick'
         data-testid={`feed-card-open-${rowId}`}
         onClick={(event) => {
           event.stopPropagation();
@@ -232,17 +257,21 @@ export const FeedCard = memo(function FeedCard({
         type='button'
       />
 
-      {!hidden && meta?.cover ? <FeedCardCover cover={meta.cover} rowId={rowId} /> : null}
+      {hasCover && meta ? <FeedCardCover cover={meta.cover} rowId={rowId} /> : null}
 
-      <div className='p-4'>
-        {hasCreator ? <FeedCreatorInfo attribution={attribution} rowId={rowId} /> : null}
+      {hasCreator ? <FeedCreatorInfo attribution={attribution} rowId={rowId} /> : null}
 
-        <div className={cn('flex min-w-0 flex-col', hasCreator && 'mt-2 pl-8')}>
+      <FeedCardBody
+        className={hasCreator ? undefined : 'pt-6'}
+        onOpenFullPage={navigateToView ? openRowPage : undefined}
+        rowId={rowId}
+      >
+        <div className='flex min-w-0 flex-col'>
           <div className='flex items-center gap-2' data-testid={`feed-card-header-${rowId}`}>
             {meta?.icon ? <FeedRowIcon icon={meta.icon} /> : null}
             <h3
               className={cn(
-                'line-clamp-2 min-w-0 flex-1 text-base font-semibold leading-6',
+                'line-clamp-2 min-w-0 flex-1 text-2xl font-semibold leading-9',
                 title ? 'text-text-primary' : 'text-text-tertiary'
               )}
               data-testid={`feed-card-title-${rowId}`}
@@ -253,17 +282,22 @@ export const FeedCard = memo(function FeedCard({
           </div>
 
           {fields ? <FeedCardProperties fields={fields} primaryFieldId={primaryFieldId} rowId={rowId} /> : null}
-
-          {showPreview && meta ? <FeedDocumentPreview documentId={meta.documentId} rowId={rowId} /> : null}
-
-          <FeedRowReactions rowId={rowId} />
-          <CommentDraftContext.Provider value={handleDraftChange}>
-            <FeedCommentSection rowId={rowId} visible={!hidden} />
-          </CommentDraftContext.Provider>
         </div>
+
+        {showPreview && meta ? <FeedDocumentPreview documentId={meta.documentId} rowId={rowId} /> : null}
+      </FeedCardBody>
+
+      <div
+        className='flex shrink-0 flex-col gap-1.5 px-[26px] pb-4 max-sm:px-2.5'
+        data-testid={`feed-card-footer-${rowId}`}
+      >
+        <FeedRowReactions rowId={rowId} />
+        <CommentDraftContext.Provider value={handleDraftChange}>
+          <FeedCommentSection rowId={rowId} visible={!hidden} />
+        </CommentDraftContext.Provider>
       </div>
 
-      <FeedCardActions editable={!readOnly} onOpenChange={handleActionsOpenChange} rowId={rowId} />
+      <FeedCardActions editable={!readOnly} hasCover={hasCover} onOpenChange={handleActionsOpenChange} rowId={rowId} />
     </article>
   );
 });

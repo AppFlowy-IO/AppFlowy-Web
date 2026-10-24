@@ -22,9 +22,10 @@ jest.mock('@/application/database-yjs/selector', () => ({
   useFieldType: () => FieldType.DateTime,
   useFormulaResultType: () => 'any',
 }));
-jest.mock('@/application/database-yjs/dispatch', () => ({
-  ...jest.requireActual('@/application/database-yjs/dispatch'),
+jest.mock('@/application/database-yjs/dispatch/sort-filter', () => ({
+  ...jest.requireActual('@/application/database-yjs/dispatch/sort-filter'),
   useUpdateFilter: () => mockUpdate,
+  useUpdateAdvancedFilter: () => mockUpdate,
 }));
 jest.mock('@/components/database/components/filters/filter-menu/FieldMenuTitle', () => ({
   __esModule: true,

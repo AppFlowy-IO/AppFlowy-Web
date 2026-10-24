@@ -41,6 +41,7 @@ jest.mock('@/utils/runtime-config', () => ({
 }));
 
 jest.mock('@/components/database/components/board', () => ({
+  BoardNoGroup: () => <div data-testid='board-no-group' />,
   Group: ({ groupId }: { groupId: string }) => <div data-testid='board-group'>{groupId}</div>,
 }));
 jest.mock('@/components/database/board/BoardProvider', () => ({

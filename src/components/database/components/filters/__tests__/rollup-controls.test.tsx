@@ -4,6 +4,7 @@ import * as Y from 'yjs';
 
 import { CalculationType, FieldType, FilterType, RollupDisplayMode } from '@/application/database-yjs/database.type';
 import { applyFilterUpdate, UpdateFilterParams } from '@/application/database-yjs/dispatch/filter-update';
+import { DateFilterCondition } from '@/application/database-yjs/fields/date/date.type';
 import { PersonFilter } from '@/application/database-yjs/fields/person/person.type';
 import { parseRollupTypeOption } from '@/application/database-yjs/fields/rollup/parse';
 import { createRollupField } from '@/application/database-yjs/fields/rollup/utils';
@@ -27,6 +28,7 @@ import {
   YjsEditorKey as E,
 } from '@/application/types';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { updateServerInfo, SERVER_INFO_LOADING } from '@/utils/server-info';
 
 import { FilterPanelRow } from '../advanced/FilterPanelRow';
 import PersonFilterMenu from '../filter-menu/PersonFilterMenu';
@@ -72,6 +74,7 @@ jest.mock('@/application/database-yjs/dispatch', () => ({
 }));
 jest.mock('@/application/database-yjs/dispatch/sort-filter', () => ({
   ...jest.requireActual('@/application/database-yjs/dispatch/sort-filter'),
+  useUpdateFilter: () => mockUpdate,
   useUpdateAdvancedFilter: () => mockUpdate,
 }));
 jest.mock('@/components/database/components/property/rollup/useRollupData', () => ({
@@ -227,7 +230,40 @@ beforeEach(() => {
   mockUpdate.mockClear();
   mockRelationData.mockClear();
 });
-afterEach(() => jest.useRealTimers());
+afterEach(() => {
+  jest.useRealTimers();
+  updateServerInfo('https://test.appflowy.cloud', SERVER_INFO_LOADING);
+});
+
+test.each([false, true])('preserves received relative rollup filters until rollout is authorized (advanced=%s)', (advanced) => {
+  const node = setup(FieldType.DateTime);
+
+  node.set(K.condition, DateFilterCondition.DateStartsBefore);
+  node.set(K.content, '{"relative_date":"Today"}');
+  const saved = node.toJSON();
+
+  render(<Harness advanced={advanced} />);
+  const controls = [
+    'rollup-filter-mode',
+    'rollup-filter-date-endpoint',
+    'filter-condition-selector',
+    'advanced-filter-date-input',
+  ];
+
+  controls.forEach((id) => expect(screen.getByTestId(id).hasAttribute('disabled')).toBe(true));
+  expect(screen.getByTestId('advanced-filter-date-input').textContent).toBe('relativeDates.today');
+  expect(node.toJSON()).toEqual(saved);
+  act(() =>
+    updateServerInfo('https://test.appflowy.cloud', {
+      status: 'available',
+      info: { enable_page_history: false, enable_relative_date_comparisons: true },
+    })
+  );
+  controls.forEach((id) => expect(screen.getByTestId(id).hasAttribute('disabled')).toBe(false));
+  fireEvent.click(screen.getByTestId('advanced-filter-date-input'));
+  fireEvent.click(screen.getByTestId('date-filter-relative-tomorrow'));
+  expect(node.get(K.content)).toBe('{"relative_date":"Tomorrow"}');
+});
 
 test.each<[boolean, FieldType]>([
   [false, FieldType.RichText],

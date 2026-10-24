@@ -3,8 +3,6 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import translations from '@/@types/translations/en.json';
 import { AudioTranscriptionError } from '@/application/integrations/transcription-media';
 import { getYoutubeCaptions, getYoutubeAudioMetadata } from '@/application/integrations/youtube-audio';
-import { downloadYoutubeAudioInBrowser } from '@/application/integrations/youtube-browser-download';
-import { detectYoutubeExtension, isYoutubeExtensionAvailable } from '@/application/integrations/youtube-extension';
 import { YoutubeAudioMetadata, YoutubeCaptionTranscript } from '@/application/integrations/youtube-url';
 
 import { AIMeetingImportActions } from '../AIMeetingImport';
@@ -22,10 +20,6 @@ jest.mock('@/application/integrations/youtube-audio', () => ({
   ...jest.requireActual('@/application/integrations/youtube-audio'),
   getYoutubeAudioMetadata: jest.fn(), getYoutubeCaptions: jest.fn(),
 }));
-jest.mock('@/application/integrations/youtube-browser-download', () => ({ downloadYoutubeAudioInBrowser: jest.fn() }));
-jest.mock('@/application/integrations/youtube-extension', () => ({
-  detectYoutubeExtension: jest.fn(), isYoutubeExtensionAvailable: jest.fn(),
-}));
 
 const metadata: YoutubeAudioMetadata = { videoId: 'lr3hNhA0IfQ', title: 'Meeting Recording', author: 'AppFlowy', duration: 754, thumbnailUrl: 'https://i.ytimg.com/vi/lr3hNhA0IfQ/hqdefault.jpg' };
 const captions: YoutubeCaptionTranscript = {
@@ -35,19 +29,12 @@ const captions: YoutubeCaptionTranscript = {
 const youtubeUrl = 'https://youtu.be/lr3hNhA0IfQ?si=share';
 const mockMetadata = jest.mocked(getYoutubeAudioMetadata);
 const mockCaptions = jest.mocked(getYoutubeCaptions);
-const mockDownload = jest.mocked(downloadYoutubeAudioInBrowser);
-const mockExtension = jest.mocked(detectYoutubeExtension);
-const mockExtensionAvailable = jest.mocked(isYoutubeExtensionAvailable);
-const audioFile = new File(['audio'], 'Meeting Recording.webm', { type: 'audio/webm' });
 
 beforeEach(() => {
   jest.resetAllMocks();
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { readText: jest.fn().mockResolvedValue('') } });
   mockMetadata.mockResolvedValue(metadata);
   mockCaptions.mockResolvedValue(captions);
-  mockDownload.mockResolvedValue(audioFile);
-  mockExtension.mockResolvedValue(true);
-  mockExtensionAvailable.mockReturnValue(true);
 });
 afterEach(cleanup);
 
@@ -128,7 +115,7 @@ describe('YouTube caption import dialog', () => {
     expect(mockMetadata).toHaveBeenCalledTimes(2);
   });
 
-  it('reports an AppFlowy usage outage as transient and hides the YouTube media fallback', async () => {
+  it('reports an AppFlowy usage outage as transient and hides the upload fallback', async () => {
     mockMetadata.mockRejectedValueOnce(new AudioTranscriptionError('usageUnavailable', { httpStatus: 503, requestId: 'req-42' }));
     renderDialog({ onUpload: jest.fn() });
     fireEvent.change(screen.getByRole('textbox'), { target: { value: youtubeUrl } });
@@ -197,8 +184,6 @@ describe('YouTube caption import dialog', () => {
     expect(onConfirmCaptions).toHaveBeenCalledTimes(1);
     expect(onConfirmCaptions).toHaveBeenCalledWith(captions);
     expect(onConfirm).not.toHaveBeenCalled();
-    expect(mockDownload).not.toHaveBeenCalled();
-    expect(mockExtension).not.toHaveBeenCalled();
   });
 
   it('stops an import, ignores its late completion, and permits a new request', async () => {
@@ -241,7 +226,7 @@ describe('YouTube caption import dialog', () => {
     expect(mockCaptions).toHaveBeenCalledTimes(2);
   });
 
-  it('explains missing captions in the preview without starting a media fallback', async () => {
+  it('explains missing captions in the preview without starting transcription', async () => {
     mockMetadata.mockResolvedValue({ ...metadata, captionLanguages: [] });
     const { onConfirm } = renderDialog();
 
@@ -336,42 +321,35 @@ describe('YouTube caption import dialog', () => {
   });
 });
 
-describe('YouTube audio fallback', () => {
-  async function renderWithoutCaptions(props: Partial<React.ComponentProps<typeof AIMeetingUrlDialog>> = {}) {
+describe('YouTube manual upload fallback', () => {
+  it('offers manual upload when captions are missing without download or extension actions', async () => {
     mockMetadata.mockResolvedValue({ ...metadata, captionLanguages: [] });
-    const result = renderDialog(props);
+    const onUpload = jest.fn();
+    const { onConfirm, onConfirmCaptions } = renderDialog({ onUpload });
 
     await pasteYoutube();
-    await waitFor(() => expect(mockExtension).toHaveBeenCalled());
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Checking extension...' })).toBeNull());
-    return result;
-  }
-
-  it('downloads only after an explicit click and forwards the audio file through the existing transcription callback', async () => {
-    const { onConfirm, onConfirmCaptions } = await renderWithoutCaptions({ maxBytes: 123456 });
-    const download = screen.getByRole('button', { name: 'Download audio and transcribe' });
-
-    await waitFor(() => expect(download.disabled).toBe(false));
-    expect(mockDownload).not.toHaveBeenCalled();
-    fireEvent.click(download);
-    await waitFor(() => expect(onConfirm).toHaveBeenCalledWith(audioFile));
-    expect(mockDownload).toHaveBeenCalledWith({
-      url: youtubeUrl, signal: expect.any(AbortSignal), maxBytes: 123456, onProgress: expect.any(Function),
-    });
+    expect(screen.getByText('Upload an audio or video file from your device to transcribe it.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Upload audio/video' }).disabled).toBe(false);
+    expect(screen.queryByRole('button', { name: /download|extension/i })).toBeNull();
+    expect(screen.queryByRole('link', { name: /download|extension/i })).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(onUpload).not.toHaveBeenCalled();
+    expect(onConfirm).not.toHaveBeenCalled();
     expect(onConfirmCaptions).not.toHaveBeenCalled();
     expect(mockCaptions).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Upload audio/video' }));
+    expect(onUpload).toHaveBeenCalledTimes(1);
   });
 
-  it('offers download and upload even when YouTube metadata cannot be fetched', async () => {
-    mockMetadata.mockRejectedValueOnce(new AudioTranscriptionError('youtubeCaptionsBlocked'));
+  it('offers upload even when YouTube metadata cannot be fetched', async () => {
+    mockMetadata.mockRejectedValueOnce(new AudioTranscriptionError('youtubeBlocked'));
     const onUpload = jest.fn();
 
     renderDialog({ onUpload });
     fireEvent.change(screen.getByRole('textbox'), { target: { value: youtubeUrl } });
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Download audio and transcribe' }).disabled).toBe(false));
+    await screen.findByRole('button', { name: 'Upload audio/video' });
     fireEvent.click(screen.getByRole('button', { name: 'Upload audio/video' }));
     expect(onUpload).toHaveBeenCalledTimes(1);
-    expect(mockDownload).not.toHaveBeenCalled();
   });
 
   it('opens the existing file picker from the fallback and transcribes the selected video', async () => {
@@ -394,141 +372,23 @@ describe('YouTube audio fallback', () => {
 
     fireEvent.change(input, { target: { files: [video] } });
     expect(state.importSource).toHaveBeenCalledWith(video);
-    expect(mockDownload).not.toHaveBeenCalled();
     click.mockRestore();
   });
 
-  it('explains extension installation, keeps upload available, and checks again after installation', async () => {
-    mockExtension.mockResolvedValue(false);
-    mockExtensionAvailable.mockReturnValue(false);
-    const onUpload = jest.fn();
-
-    await renderWithoutCaptions({ onUpload });
-    expect(screen.getByRole('button', { name: 'Download audio and transcribe' }).disabled).toBe(true);
-    expect(screen.getByRole('button', { name: 'Upload audio/video' }).disabled).toBe(false);
-    const setup = screen.getByText('Set up the browser extension');
-
-    setup.closest('details')!.open = true;
-    expect(screen.getByRole('link', { name: 'Download the extension ZIP.' }).getAttribute('href')).toBe('/downloads/appflowy-youtube-transcript.zip');
-    expect(screen.getByText(/Open chrome:\/\/extensions/).textContent).toContain('Load unpacked');
-    mockExtension.mockResolvedValue(true);
-    fireEvent.click(screen.getByRole('button', { name: 'Check extension' }));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Download audio and transcribe' }).disabled).toBe(false));
-    expect(mockDownload).not.toHaveBeenCalled();
-  });
-
-  it('keeps upload available while extension detection is pending and shows setup after detection times out', async () => {
-    let complete!: (available: boolean) => void;
-
-    mockMetadata.mockResolvedValue({ ...metadata, captionLanguages: [] });
-    mockExtensionAvailable.mockReturnValue(false);
-    mockExtension.mockReturnValue(new Promise((resolve) => { complete = resolve; }));
-    renderDialog({ onUpload: jest.fn() });
-    await pasteYoutube();
-    expect(screen.getByRole('status').textContent).toBe('Checking extension...');
-    expect(screen.getByRole('button', { name: 'Download audio and transcribe' }).disabled).toBe(true);
-    expect(screen.getByRole('button', { name: 'Upload audio/video' }).disabled).toBe(false);
-    await act(async () => complete(false));
-    expect(screen.queryByRole('status')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Check extension' }).disabled).toBe(false);
-    expect(screen.getByRole('link', { name: 'Download the extension ZIP.' })).toBeTruthy();
-    expect(mockDownload).not.toHaveBeenCalled();
-  });
-
-  it('shows real download progress and aborts Stop without importing a late result', async () => {
-    let complete!: (file: File) => void;
-    let signal!: AbortSignal;
-    let progress!: (progress: number) => void;
-
-    mockDownload.mockImplementationOnce((options) => {
-      signal = options.signal;
-      progress = options.onProgress!;
-      return new Promise((resolve) => { complete = resolve; });
-    });
-    const { onConfirm } = await renderWithoutCaptions();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Download audio and transcribe' }));
-    await waitFor(() => expect(mockDownload).toHaveBeenCalledTimes(1));
-    act(() => progress(0.42));
-    expect(screen.getByRole('status').textContent).toBe('Downloading audio (42%)...');
-    expect(screen.getByRole('button', { name: 'Cancel' }).disabled).toBe(true);
-    fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
-    expect(signal.aborted).toBe(true);
-    await act(async () => complete(audioFile));
-    expect(onConfirm).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Download audio and transcribe' }));
-    await waitFor(() => expect(onConfirm).toHaveBeenCalledWith(audioFile));
-  });
-
-  it('aborts a download when its dialog is unmounted', async () => {
-    let signal!: AbortSignal;
-
-    mockDownload.mockImplementationOnce((options) => {
-      signal = options.signal;
-      return new Promise(() => undefined);
-    });
-    const { unmount } = await renderWithoutCaptions();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Download audio and transcribe' }));
-    await waitFor(() => expect(mockDownload).toHaveBeenCalled());
-    unmount();
-    expect(signal.aborted).toBe(true);
-  });
-
-  it.each(['workspace', 'allowance'])('ignores a late download when %s changes', async (change) => {
-    let signal!: AbortSignal;
-    let complete!: (file: File) => void;
-
-    mockDownload.mockImplementationOnce((options) => {
-      signal = options.signal;
-      return new Promise((resolve) => { complete = resolve; });
-    });
-    const { rerender, onClose, onConfirm, onConfirmCaptions } = await renderWithoutCaptions();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Download audio and transcribe' }));
-    await waitFor(() => expect(mockDownload).toHaveBeenCalled());
-    rerender(<AIMeetingUrlDialog workspaceId={change === 'workspace' ? 'another-workspace' : 'workspace'} mediaDisabled={change === 'allowance'} onClose={onClose} onConfirm={onConfirm} onConfirmCaptions={onConfirmCaptions} />);
-    expect(signal.aborted).toBe(true);
-    await act(async () => complete(audioFile));
-    expect(onConfirm).not.toHaveBeenCalled();
-  });
-
-  it('disables media fallback when transcription allowance is exhausted while keeping caption retry available', async () => {
+  it('disables upload when transcription allowance is exhausted while keeping caption retry available', async () => {
     mockCaptions.mockRejectedValueOnce(new AudioTranscriptionError('youtubeCaptionsBlocked'));
     const onUpload = jest.fn();
+    const { onConfirmCaptions } = renderDialog({ mediaDisabled: true, onUpload });
 
-    renderDialog({ mediaDisabled: true, onUpload });
     await pasteYoutube();
     fireEvent.click(screen.getByRole('button', { name: 'Import captions' }));
-    await screen.findByRole('button', { name: 'Download audio and transcribe' });
-    expect(screen.getByRole('button', { name: 'Download audio and transcribe' }).disabled).toBe(true);
+    await screen.findByRole('button', { name: 'Upload audio/video' });
     expect(screen.getByRole('button', { name: 'Upload audio/video' }).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Upload audio/video' }));
+    expect(onUpload).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Import captions' }).disabled).toBe(false);
-    expect(mockDownload).not.toHaveBeenCalled();
-  });
-
-  it('retries a failed audio download without switching back to captions', async () => {
-    mockDownload.mockRejectedValueOnce(new AudioTranscriptionError('youtubeDownloadBlocked'));
-    const { onConfirm } = await renderWithoutCaptions();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Download audio and transcribe' }));
-    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('YouTube blocked the audio download'));
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-    await waitFor(() => expect(onConfirm).toHaveBeenCalledWith(audioFile));
-    expect(mockDownload).toHaveBeenCalledTimes(2);
-    expect(mockCaptions).not.toHaveBeenCalled();
-  });
-
-  it('uses the existing size-limit flow if a download exceeds the workspace upload limit', async () => {
-    const error = new AudioTranscriptionError('fileTooLarge', undefined, 123456);
-
-    mockDownload.mockRejectedValueOnce(error);
-    const onFailure = jest.fn();
-    const { onClose, onConfirm } = await renderWithoutCaptions({ onFailure });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Download audio and transcribe' }));
-    await waitFor(() => expect(onFailure).toHaveBeenCalledWith(error));
-    expect(onClose).toHaveBeenCalled();
-    expect(onConfirm).not.toHaveBeenCalled();
+    await waitFor(() => expect(onConfirmCaptions).toHaveBeenCalledWith(captions));
+    expect(mockCaptions).toHaveBeenCalledTimes(2);
   });
 });

@@ -740,6 +740,19 @@ export function DatabaseTemplateButton({
               })}
             </DropdownMenuLabel>
             <DropdownMenuSeparator className='mx-0 my-0 shrink-0' />
+            <DropdownMenuItem
+              className='shrink-0 gap-2 text-sm'
+              onSelect={() =>
+                void runBusyAction('Failed to create empty database row', () =>
+                  createNewRow({ skipDefaultTemplate: true, tailing: true, openAfterCreate: true })
+                )
+              }
+              data-testid='database-template-empty-row'
+            >
+              <DocumentIcon className='h-4 w-4 text-icon-secondary' />
+              {t('grid.rowTemplate.emptyRow', { defaultValue: 'Empty row' })}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator className='mx-0 my-0 shrink-0' />
             {templates.length === 0 ? (
               <div className='shrink-0 p-4 text-center text-[13px] leading-4 text-text-tertiary'>
                 {t('grid.rowTemplate.noTemplatesYet', { defaultValue: 'No templates yet' })}

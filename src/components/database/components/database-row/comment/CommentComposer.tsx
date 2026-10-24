@@ -9,6 +9,7 @@ import { ReactComponent as ArrowUpIcon } from '@/assets/icons/arrow_up.svg';
 import { ReactComponent as AtIcon } from '@/assets/icons/at.svg';
 import { ReactComponent as AttachmentIcon } from '@/assets/icons/attachment.svg';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
+import { ReactComponent as SendCommentIcon } from '@/assets/icons/send_comment.svg';
 import { TextareaAutosize } from '@/components/ui/textarea-autosize';
 import { cn } from '@/lib/utils';
 
@@ -25,6 +26,11 @@ interface CommentComposerProps {
   /** Retained reply drafts only take focus while their thread is selected. */
   active?: boolean;
   onActiveChange?: (active: boolean) => void;
+  /**
+   * `boxed` is the row detail field. `inline` is the Figma Feed `Comment
+   * Textfield`: borderless, one line tall, with its actions on the same line.
+   */
+  variant?: 'boxed' | 'inline';
 }
 
 /** Shared by Feed cards and row detail so drafts, attachments and IME behave alike. */
@@ -37,7 +43,9 @@ export function CommentComposer({
   initiallyExpanded = false,
   active = true,
   onActiveChange,
+  variant = 'boxed',
 }: CommentComposerProps) {
+  const inline = variant === 'inline';
   const { t } = useTranslation();
   const { uploadFile } = useDatabaseContext();
   const composerId = useId();
@@ -172,6 +180,184 @@ export function CommentComposer({
     setUploading(false);
   };
 
+  const input = (
+    <TextareaAutosize
+      ref={inputRef}
+      autoFocus
+      variant='ghost'
+      minRows={1}
+      maxRows={6}
+      className={cn('w-full bg-transparent', inline && 'min-h-7 px-0 py-1 leading-5')}
+      placeholder={placeholder}
+      data-testid={testIds.input}
+      value={content}
+      onFocus={() => setFocused(true)}
+      onChange={(event) => changeContent(event.target.value, event.target.selectionStart)}
+      onKeyDown={(event) => {
+        if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+        if (suggestions.length && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+          event.preventDefault();
+          setSelectedMember(
+            (current) => (current + (event.key === 'ArrowDown' ? 1 : suggestions.length - 1)) % suggestions.length
+          );
+          return;
+        }
+
+        if (event.key === 'Enter' && !event.shiftKey && !event.ctrlKey) {
+          event.preventDefault();
+          if (suggestions.length) selectMention(suggestions[selectedMember] ?? suggestions[0]);
+          else submit();
+        }
+
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopPropagation();
+          event.nativeEvent.stopImmediatePropagation();
+          if (mentionQuery) setMentionQuery(null);
+          else if (!uploadingRef.current) {
+            reset();
+            onCancel?.();
+          }
+        }
+      }}
+    />
+  );
+
+  // Mention suggestions, pending attachments and upload errors.
+  const draftDetails = (
+    <>
+      {suggestions.length > 0 && (
+        <div
+          role='listbox'
+          aria-label={t('rowComment.mention')}
+          className='max-h-48 overflow-y-auto rounded border border-border-primary bg-background-primary p-1'
+        >
+          {suggestions.map((member, index) => (
+            <button
+              key={member.person_id}
+              type='button'
+              role='option'
+              aria-selected={index === selectedMember}
+              className={cn(
+                'block w-full truncate rounded px-2 py-1 text-left text-sm',
+                index === selectedMember && 'bg-fill-content-hover'
+              )}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => selectMention(member)}
+            >
+              {member.name || member.email}
+            </button>
+          ))}
+        </div>
+      )}
+      {attachments.map((attachment) => (
+        <div key={attachment.id} className='flex items-center gap-1 text-sm' data-testid='comment-pending-attachment'>
+          <AttachmentIcon className='h-4 w-4 shrink-0' />
+          <span className='truncate'>{attachment.name}</span>
+          <button
+            type='button'
+            aria-label={`${t('button.remove')} ${attachment.name}`}
+            className='ml-auto p-1'
+            onClick={() => setAttachments((current) => current.filter((item) => item.id !== attachment.id))}
+          >
+            <CloseIcon className='h-3 w-3' />
+          </button>
+        </div>
+      ))}
+      {uploadError && (
+        <span role='alert' className='text-sm text-text-error'>
+          {t('grid.media.uploadError')}
+        </span>
+      )}
+    </>
+  );
+
+  const iconButtonClassName = inline
+    ? 'rounded-300 p-1 text-icon-secondary hover:bg-fill-content-hover disabled:opacity-40'
+    : 'rounded p-1 text-text-tertiary disabled:opacity-40';
+  // Inline keeps the send glyph in the theme color while it can be submitted.
+  const sendButtonClassName = inline
+    ? cn(
+        'rounded-300 p-1 transition-colors',
+        canSend ? 'text-fill-theme-thick hover:bg-fill-content-hover' : 'text-icon-tertiary'
+      )
+    : cn(
+        'ml-auto flex h-7 w-7 items-center justify-center rounded-full',
+        canSend ? 'bg-fill-theme-thick text-text-on-fill' : 'bg-fill-content-hover text-text-tertiary'
+      );
+
+  const actions = (
+    <div className={cn('flex items-center', inline ? 'shrink-0 gap-0.5' : 'gap-1')}>
+      <input
+        ref={fileRef}
+        type='file'
+        multiple
+        hidden
+        data-testid={testIds.attachment}
+        onChange={(event) => {
+          void attachFiles(Array.from(event.target.files ?? []));
+          event.target.value = '';
+        }}
+      />
+      <button
+        type='button'
+        aria-label={t('rowComment.attachFile')}
+        title={t('rowComment.attachFile')}
+        disabled={!uploadFile || uploading}
+        onClick={() => fileRef.current?.click()}
+        className={iconButtonClassName}
+      >
+        <AttachmentIcon className='h-5 w-5' />
+      </button>
+      <button
+        type='button'
+        aria-label={t('rowComment.mention')}
+        title={t('rowComment.mention')}
+        className={iconButtonClassName}
+        onClick={() => {
+          const caret = inputRef.current?.selectionStart ?? content.length;
+
+          caretAfterRender.current = caret + 1;
+          changeContent(`${content.slice(0, caret)}@${content.slice(caret)}`, caret + 1);
+        }}
+      >
+        <AtIcon className='h-5 w-5' />
+      </button>
+      {uploading && (
+        <span role='status' className='text-xs text-text-tertiary'>
+          {t('fileDropzone.uploading')}
+        </span>
+      )}
+      {onCancel && (
+        <button
+          type='button'
+          disabled={uploading}
+          onClick={() => {
+            reset();
+            onCancel();
+          }}
+          className='ml-auto text-sm'
+        >
+          {t('button.cancel')}
+        </button>
+      )}
+      <button
+        type='button'
+        aria-label={t('rowComment.reply')}
+        disabled={!canSend}
+        data-testid={testIds.submit}
+        onClick={submit}
+        className={sendButtonClassName}
+      >
+        {inline ? (
+          <SendCommentIcon aria-hidden='true' className='h-5 w-5' />
+        ) : (
+          <ArrowUpIcon aria-hidden='true' className='h-4 w-4' />
+        )}
+      </button>
+    </div>
+  );
+
   return (
     <div
       className='min-w-0 flex-1'
@@ -189,169 +375,28 @@ export function CommentComposer({
       {collapsed ? (
         <button
           type='button'
-          className='comment-composer-placeholder h-8 w-full cursor-text rounded-lg border border-border-primary px-3 text-left text-sm text-text-tertiary'
+          className={cn(
+            'comment-composer-placeholder w-full cursor-text text-left text-sm text-text-tertiary',
+            inline ? 'h-7 leading-5' : 'h-8 rounded-lg border border-border-primary px-3'
+          )}
           data-testid={testIds.collapsed}
           onClick={() => setFocused(true)}
         >
           {placeholder}
         </button>
+      ) : inline ? (
+        <div className='relative flex flex-col gap-1'>
+          <div className='flex items-end gap-2'>
+            <div className='min-w-0 flex-1'>{input}</div>
+            {actions}
+          </div>
+          {draftDetails}
+        </div>
       ) : (
         <div className='relative flex flex-col gap-1 rounded-lg border border-border-primary px-3 py-1.5 focus-within:border-border-theme-thick'>
-          <TextareaAutosize
-            ref={inputRef}
-            autoFocus
-            variant='ghost'
-            minRows={1}
-            maxRows={6}
-            className='w-full bg-transparent'
-            placeholder={placeholder}
-            data-testid={testIds.input}
-            value={content}
-            onFocus={() => setFocused(true)}
-            onChange={(event) => changeContent(event.target.value, event.target.selectionStart)}
-            onKeyDown={(event) => {
-              if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
-              if (suggestions.length && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
-                event.preventDefault();
-                setSelectedMember(
-                  (current) => (current + (event.key === 'ArrowDown' ? 1 : suggestions.length - 1)) % suggestions.length
-                );
-                return;
-              }
-
-              if (event.key === 'Enter' && !event.shiftKey && !event.ctrlKey) {
-                event.preventDefault();
-                if (suggestions.length) selectMention(suggestions[selectedMember] ?? suggestions[0]);
-                else submit();
-              }
-
-              if (event.key === 'Escape') {
-                event.preventDefault();
-                event.stopPropagation();
-                event.nativeEvent.stopImmediatePropagation();
-                if (mentionQuery) setMentionQuery(null);
-                else if (!uploadingRef.current) {
-                  reset();
-                  onCancel?.();
-                }
-              }
-            }}
-          />
-          {suggestions.length > 0 && (
-            <div
-              role='listbox'
-              aria-label={t('rowComment.mention')}
-              className='max-h-48 overflow-y-auto rounded border border-border-primary bg-background-primary p-1'
-            >
-              {suggestions.map((member, index) => (
-                <button
-                  key={member.person_id}
-                  type='button'
-                  role='option'
-                  aria-selected={index === selectedMember}
-                  className={cn(
-                    'block w-full truncate rounded px-2 py-1 text-left text-sm',
-                    index === selectedMember && 'bg-fill-content-hover'
-                  )}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => selectMention(member)}
-                >
-                  {member.name || member.email}
-                </button>
-              ))}
-            </div>
-          )}
-          {attachments.map((attachment) => (
-            <div
-              key={attachment.id}
-              className='flex items-center gap-1 text-sm'
-              data-testid='comment-pending-attachment'
-            >
-              <AttachmentIcon className='h-4 w-4 shrink-0' />
-              <span className='truncate'>{attachment.name}</span>
-              <button
-                type='button'
-                aria-label={`${t('button.remove')} ${attachment.name}`}
-                className='ml-auto p-1'
-                onClick={() => setAttachments((current) => current.filter((item) => item.id !== attachment.id))}
-              >
-                <CloseIcon className='h-3 w-3' />
-              </button>
-            </div>
-          ))}
-          {uploadError && (
-            <span role='alert' className='text-sm text-text-error'>
-              {t('grid.media.uploadError')}
-            </span>
-          )}
-          <div className='flex items-center gap-1'>
-            <input
-              ref={fileRef}
-              type='file'
-              multiple
-              hidden
-              data-testid={testIds.attachment}
-              onChange={(event) => {
-                void attachFiles(Array.from(event.target.files ?? []));
-                event.target.value = '';
-              }}
-            />
-            <button
-              type='button'
-              aria-label={t('rowComment.attachFile')}
-              title={t('rowComment.attachFile')}
-              disabled={!uploadFile || uploading}
-              onClick={() => fileRef.current?.click()}
-              className='rounded p-1 text-text-tertiary disabled:opacity-40'
-            >
-              <AttachmentIcon className='h-5 w-5' />
-            </button>
-            <button
-              type='button'
-              aria-label={t('rowComment.mention')}
-              title={t('rowComment.mention')}
-              className='rounded p-1 text-text-tertiary'
-              onClick={() => {
-                const caret = inputRef.current?.selectionStart ?? content.length;
-
-                caretAfterRender.current = caret + 1;
-                changeContent(`${content.slice(0, caret)}@${content.slice(caret)}`, caret + 1);
-              }}
-            >
-              <AtIcon className='h-5 w-5' />
-            </button>
-            {uploading && (
-              <span role='status' className='text-xs text-text-tertiary'>
-                {t('fileDropzone.uploading')}
-              </span>
-            )}
-            {onCancel && (
-              <button
-                type='button'
-                disabled={uploading}
-                onClick={() => {
-                  reset();
-                  onCancel();
-                }}
-                className='ml-auto text-sm'
-              >
-                {t('button.cancel')}
-              </button>
-            )}
-            <button
-              type='button'
-              aria-label={t('rowComment.reply')}
-              disabled={!canSend}
-              data-testid={testIds.submit}
-              onClick={submit}
-              className={cn(
-                'ml-auto flex h-7 w-7 items-center justify-center rounded-full',
-                canSend ? 'bg-fill-theme-thick text-text-on-fill' : 'bg-fill-content-hover text-text-tertiary'
-              )}
-            >
-              <ArrowUpIcon aria-hidden='true' className='h-4 w-4' />
-            </button>
-          </div>
+          {input}
+          {draftDetails}
+          {actions}
         </div>
       )}
     </div>

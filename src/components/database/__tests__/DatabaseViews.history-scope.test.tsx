@@ -77,6 +77,7 @@ jest.mock('@/components/database/list/List', () => ({
 
 jest.mock('@/components/database/list/ListGroupingContext', () => ({
   ListGroupingProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+  useSyncListGroupingMetadata: () => undefined,
 }));
 
 jest.mock('src/components/database/components/conditions/DatabaseConditions', () => () => (
