@@ -17,10 +17,15 @@ Feature: Page reference labels in Nathan's existing local workspace
       | Annie  | restricted | No access             |
       | Nathan | trashed    | Page in Trash         |
       | Annie  | trashed    | Page in Trash         |
+      | Nathan | missing    | Page not found        |
+      | Annie  | missing    | Page not found        |
     When both viewers reload the existing reference page
     Then the same reference labels are still visible
+    And both viewers can inspect the existing missing reference
     When Nathan and Annie click their restricted page references
     Then Nathan opens the restricted target while Annie stays on the shared reference page
     And Annie sees an explanation of the restricted reference
     When both viewers open Trash from the existing trashed reference
     Then both viewers see the recoverable target in Trash
+    When Nathan opens the shared page with a temporary reference request failure
+    Then Retry loads the real target metadata and restores navigation

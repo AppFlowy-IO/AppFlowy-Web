@@ -1,6 +1,8 @@
 import { expect, type BrowserContext, type Page, type TestInfo } from '@playwright/test';
 import { createBdd, type DataTable } from 'playwright-bdd';
 
+import { installPageReferenceNetworkFault } from '../../support/page-reference-network-fault';
+
 const { Given, When, Then, After } = createBdd();
 
 // Stable IDs from the user-requested localhost fixture. This suite never seeds,
@@ -10,6 +12,7 @@ const sharedPath = `/app/${workspaceId}/ca6b24a4-3e7b-4310-984c-e8e0bc412868`;
 const referenceIds = {
   restricted: '534e2829-2c89-4360-a61c-aac3e6f9d93b',
   trashed: '8e43b398-a623-4f83-95e0-a2bcfa8b593c',
+  missing: '7623c910-9e53-4a64-b3ae-279829f9a04a',
 } as const;
 const accounts = { Nathan: 'nathan@appflowy.io', Annie: 'annie@appflowy.io' } as const;
 
@@ -20,6 +23,9 @@ type State = {
   viewers: Record<Viewer, Page>;
   memberContext: BrowserContext;
   labels: LabelExpectation[];
+  failureContext?: BrowserContext;
+  failurePage?: Page;
+  failure?: Awaited<ReturnType<typeof installPageReferenceNetworkFault>>;
 };
 
 const states = new WeakMap<Page, State>();
@@ -117,7 +123,7 @@ Then('the existing reference elements show these labels', async ({ page, $testIn
 
     return { viewer: viewer as Viewer, reference: reference as Reference, label };
   });
-  expect(state.labels).toHaveLength(4);
+  expect(state.labels).toHaveLength(6);
   await expectLabels(state, $testInfo, 'initial');
 });
 
@@ -160,7 +166,58 @@ After({ tags: '@local-ref-pages' }, async ({ page }) => {
   const state = states.get(page);
 
   await state?.memberContext.close();
+  await state?.failureContext?.close();
   states.delete(page);
+});
+
+Then('both viewers can inspect the existing missing reference', async ({ page }) => {
+  for (const viewerPage of Object.values(stateFor(page).viewers)) {
+    await referenceElement(viewerPage, 'missing').getByRole('button', { name: 'Page not found', exact: true }).click();
+    const details = viewerPage.getByRole('dialog', { name: 'Page not found', exact: true });
+
+    await expect(details).toContainText('Ask the page owner for an updated link.');
+    await expectSharedPage(viewerPage);
+    await viewerPage.keyboard.press('Escape');
+    await expect(details).toHaveCount(0);
+  }
+});
+
+When('Nathan opens the shared page with a temporary reference request failure', async ({ page, browser, baseURL, $testInfo }) => {
+  const state = stateFor(page);
+  const password = process.env.REF_PAGES_TEST_PASSWORD;
+
+  if (!password) throw new Error('Set REF_PAGES_TEST_PASSWORD');
+  state.failureContext = await browser.newContext({ baseURL, locale: 'en-US', viewport: { width: 1440, height: 1000 } });
+  state.failurePage = await state.failureContext.newPage();
+  state.failure = await installPageReferenceNetworkFault(state.failurePage, workspaceId, referenceIds.restricted);
+  await signIn(state.failurePage, accounts.Nathan, password);
+  const reference = referenceElement(state.failurePage, 'restricted');
+
+  await expect(reference.getByRole('button', { name: 'Couldn’t load page', exact: true })).toBeVisible();
+  await expect(reference.getByRole('button', { name: 'Retry', exact: true })).toBeEnabled();
+  await expect(referenceElement(state.failurePage, 'missing')).toHaveText('Page not found');
+  expect(state.failure.blockedReads).toBeGreaterThan(0);
+  const screenshotPath = $testInfo.outputPath('Nathan-temporary-reference-failure.png');
+
+  await state.failurePage.getByRole('main').screenshot({ path: screenshotPath });
+  await $testInfo.attach('Nathan-temporary-reference-failure', { path: screenshotPath, contentType: 'image/png' });
+});
+
+Then('Retry loads the real target metadata and restores navigation', async ({ page }) => {
+  const { failurePage, failure } = stateFor(page);
+
+  if (!failurePage || !failure) throw new Error('Open the controlled failure session first');
+  failure.recover();
+  const response = failurePage.waitForResponse((value) =>
+    new URL(value.url()).pathname === `/api/workspace/${workspaceId}/view/${referenceIds.restricted}` && value.status() === 200);
+
+  await referenceElement(failurePage, 'restricted').getByRole('button', { name: 'Retry', exact: true }).click();
+  await response;
+  await expect(referenceElement(failurePage, 'restricted')).toHaveText('Restricted ref target');
+  await expect(referenceElement(failurePage, 'restricted').getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0);
+  await referenceElement(failurePage, 'restricted').click();
+  await expect(failurePage).toHaveURL(new URL(`/app/${workspaceId}/${referenceIds.restricted}`, failurePage.url()).href);
+  await expect(failurePage.getByTestId('editor-content')).toContainText('Test-only target. Nathan owns this page.');
 });
 
 Then('Annie sees an explanation of the restricted reference', async ({ page }) => {
