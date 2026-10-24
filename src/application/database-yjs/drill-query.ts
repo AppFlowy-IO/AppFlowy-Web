@@ -18,7 +18,6 @@ import { NumberFilterCondition } from './fields/number/number.type';
 import { PersonFilterCondition } from './fields/person/person.type';
 import { RelationFilterCondition } from './fields/relation/relation.type';
 import { SelectOptionFilterCondition } from './fields/select-option/select_option.type';
-import { TextFilterCondition } from './fields/text/text.type';
 
 /** What a chart click drills into (WP13 §3.1). */
 export interface ChartDrillTarget {
@@ -222,6 +221,9 @@ const NUMERIC = /^-?(\d+(\.\d*)?|\.\d+)(e[-+]?\d+)?$/i;
 
 /** The field types whose empty category cannot be expressed as a filter. */
 const NO_EMPTY_FILTER_TYPES: ReadonlySet<FieldType> = new Set([
+  // Chart text groups trim whitespace; ordinary text filters do not.
+  FieldType.RichText,
+  FieldType.URL,
   FieldType.Checkbox,
   FieldType.CreatedTime,
   FieldType.LastEditedTime,
@@ -238,9 +240,6 @@ function emptyCondition(type: FieldType): number | null {
       return DateFilterCondition.DateStartIsEmpty;
     case FieldType.Person:
       return PersonFilterCondition.PersonIsEmpty;
-    case FieldType.RichText:
-    case FieldType.URL:
-      return TextFilterCondition.TextIsEmpty;
     case FieldType.Number:
       return NumberFilterCondition.NumberIsEmpty;
     case FieldType.Relation:
@@ -309,9 +308,9 @@ export function drillFiltersForGroupKey(
       return filters(node(PersonFilterCondition.PersonContains, JSON.stringify([key])));
     case FieldType.RichText:
     case FieldType.URL:
-      if (key.startsWith('t:')) return filters(node(TextFilterCondition.TextIs, key.slice(2)));
-      if (key === 'l:#' || !key.startsWith('l:') || key.length === 2) return ROWS;
-      return filters(node(TextFilterCondition.TextStartsWith, key.slice(2)));
+      // Grouping trims text and normalizes first-letter graphemes to NFC.
+      // TextIs/TextStartsWith cannot express those categories faithfully.
+      return ROWS;
     case FieldType.Number: {
       if (key.startsWith('n:lt:')) {
         const min = key.slice('n:lt:'.length);
