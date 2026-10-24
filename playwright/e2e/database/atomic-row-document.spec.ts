@@ -227,7 +227,8 @@ test('opening an untouched row waits for the server document; body content alone
   await openRowDetailByRowId(page, rowId);
   await expect(editor).toContainText(text);
   // Use real editor keyboard actions so Slate owns the selection and deletion.
-  await editor.click();
+  await editor.getByText(text, { exact: true }).click();
+  await expect(editor).toBeFocused();
   await page.keyboard.press('ControlOrMeta+A');
   await page.keyboard.press('Backspace');
   await expect(editor).not.toContainText(text);

@@ -661,6 +661,8 @@ export async function insertLinkedGridViaSlash(
 
         await expect(databaseBlocks(editor)).toHaveCount(expectedBlockCount, { timeout: 30000 });
         await waitForDocumentDatabaseBlocksOnServer(page, apiOrigin, docViewId, expectedBlockCount);
+        // Its backdrop can outlive the inserted block while the picker fades out.
+        await expect(page.getByText('Link to an existing database', { exact: true })).toBeHidden({ timeout: 10000 });
         return;
       }
     } catch (e) {
