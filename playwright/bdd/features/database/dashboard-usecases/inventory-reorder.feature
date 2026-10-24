@@ -10,8 +10,8 @@ Feature: Shop inventory and reorder dashboard
 
   # Both databases have a "Supplier site" URL property, so one filter maps
   # both. A duplicated tab is named "<name> (Copy)" and opens; it keeps
-  # showing the same shared views. A duplicated widget goes next to its
-  # source, or on a new row right below when that row is full.
+  # showing the same shared views. A duplicated widget stays next to its
+  # source in the same logical row, with no per-row widget limit.
 
   Background:
     Given a workspace for the "Inventory" use case
@@ -123,11 +123,11 @@ Feature: Shop inventory and reorder dashboard
   Scenario: A second dashboard tab for the receiving desk, with its own saved filter
     When I open the "Stock" dashboard
     And I switch the dashboard to Edit mode
-    # Row 1 is full, so the copy starts a new row right below it.
+    # The fifth widget stays in row 1 and all five widths are balanced.
     And I choose "duplicate" in the "Price points" widget menu
     Then the dashboard shows 9 widgets
-    And the dashboard has 4 rows
-    And dashboard row 2 has widths "12"
+    And the dashboard has 3 rows
+    And dashboard row 1 has widths "3,3,2,2,2"
     When I press the dashboard undo shortcut
     Then the dashboard shows 8 widgets
     And the dashboard has 3 rows
