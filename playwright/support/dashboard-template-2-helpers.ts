@@ -77,6 +77,7 @@ import {
   chooseFilterCondition,
   configureView,
   editWidgetCell,
+  expectRowPage,
   finishGlobalFilter,
   namedDashboard,
   namedView,
@@ -1107,13 +1108,7 @@ export async function openCalendarEvent(page: Page, viewName: string, title: str
   expect(count, 'the event popover offers Open event and Close').toBeGreaterThanOrEqual(2);
   await buttons.nth(count - 2).click();
   await expect(rowPage(page)).toBeVisible(WAIT);
-  await expect
-    .poll(() =>
-      rowPage(page)
-        .getByTestId('row-title-input')
-        .evaluate((input) => (input as HTMLTextAreaElement).value)
-    )
-    .toBe(title);
+  await expectRowPage(page, title);
 }
 
 // ---------------------------------------------------------------------------
@@ -1577,7 +1572,7 @@ export async function addListRowAsTeammate(page: Page, viewName: string, title: 
   await expect(titleInput).toBeVisible(WAIT);
   await titleInput.click();
   await member.keyboard.type(title);
-  await expect(titleInput).toHaveValue(title);
+  await expect(titleInput).toHaveText(title);
   await closeRowDetailWithEscape(member);
   await expect(rowPage(member)).toHaveCount(0, WAIT);
   await expect.poll(() => widgetTitles(widget, database.fieldIds.Name), WAIT).toContain(title);
