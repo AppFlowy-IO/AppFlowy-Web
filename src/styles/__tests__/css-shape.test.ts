@@ -21,7 +21,7 @@
  * The input is what the repo's PostCSS config produces from
  * src/styles/tailwind.css (Tailwind with the real config), every SCSS file
  * of src/styles and the editor (compiled with sass), and the
- * `@appflowyinc/editor` stylesheet the app loads. Set CSS_SHAPE_BUILD_DIR to
+ * row-peek CSS and the `@appflowyinc/editor` stylesheet the app loads. Set CSS_SHAPE_BUILD_DIR to
  * a production build (`pnpm build`, then the folder holding its CSS) to run
  * the same budget over the built CSS.
  */
@@ -274,9 +274,11 @@ async function processWith(plugins: postcss.AcceptedPlugin[], css: string, from:
 /** The CSS sources the app loads, through `plugins`. */
 async function appCss(plugins: postcss.AcceptedPlugin[]): Promise<{ name: string; css: string }[]> {
   const tailwind = path.join(ROOT, 'src/styles/tailwind.css');
+  const rowPeek = path.join(ROOT, 'src/components/database/row-peek/row-peek.css');
   const editorPackage = require.resolve('@appflowyinc/editor/style');
   const sources = [
     { name: 'src/styles/tailwind.css', css: readFileSync(tailwind, 'utf8'), from: tailwind },
+    { name: 'src/components/database/row-peek/row-peek.css', css: readFileSync(rowPeek, 'utf8'), from: rowPeek },
     ...scssFiles().map((file) => ({ name: path.relative(ROOT, file), css: compileScss(file), from: file })),
     { name: '@appflowyinc/editor/style', css: readFileSync(editorPackage, 'utf8'), from: editorPackage },
   ];
@@ -360,9 +362,9 @@ describe('CSS shape budget (PERFORMANCE-REPORT 4.3 A, budget 13)', () => {
     const tailwindOnly = postcssConfig.plugins.slice(0, 1);
     const raw = measure(await appCss(tailwindOnly));
 
-    // The 9 space-* and divide-* rules and the 2 alert rules of the app, the 2 alert rules of the
+    // The 10 space-* and divide-* rules and the 2 alert rules of the app, the 2 alert rules of the
     // editor package; and the editor package's `.appflowy-scrollbar:hover *::-webkit-scrollbar-thumb`.
-    expect(raw.featurelessSiblings).toHaveLength(13);
+    expect(raw.featurelessSiblings).toHaveLength(14);
     expect(raw.universalUnderUserAction).toEqual([
       '@appflowyinc/editor/style: .appflowy-scrollbar:hover *::-webkit-scrollbar-thumb',
     ]);
