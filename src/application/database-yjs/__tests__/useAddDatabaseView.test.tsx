@@ -12,8 +12,8 @@ import {
   useDuplicateDatabaseView,
   useUpdateDatabaseLayout,
 } from '@/application/database-yjs';
-import { readDashboardLayoutSetting } from '@/application/database-yjs/dashboard-layout';
 import { createDefaultDatabaseView } from '@/application/database-yjs/creation/create-default-view';
+import { readDashboardLayoutSetting } from '@/application/database-yjs/dashboard-layout';
 import {
   resetDashboardSessionForTests,
   wasDashboardCreatedThisSession,
@@ -500,6 +500,7 @@ describe('compact Database view callers', () => {
         database_id: databaseId,
         database_update: createAddViewUpdate(databaseDoc, newViewId),
       });
+
       jest.mocked(atomicRead).mockResolvedValue(folder('base-view-id') as never);
       jest.mocked(createDefaultDatabaseView).mockImplementation(async () => {
         Y.applyUpdate(databaseDoc, new Uint8Array(createAddViewUpdate(databaseDoc, newViewId)));
@@ -639,8 +640,9 @@ describe('dashboard-owned views and creation marks (WP05)', () => {
         database_update: Array.from(Y.encodeStateAsUpdate(serverDoc, Y.encodeStateVector(databaseDoc))),
       };
     });
+
     jest.mocked(atomicRead).mockImplementation(async (_owner, url) =>
-      loadViewMeta(url.split('/').at(-1)!) as never);
+      loadViewMeta(url.split('/').at(-1)) as never);
     jest.mocked(createDefaultDatabaseView).mockImplementation(async (intent) => {
       const response = await createDatabaseView('base-view-id', {
         database_id: intent.databaseId,

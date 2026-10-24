@@ -7,6 +7,7 @@ export const clientValidationMessages = {
   FORM_DEEP_DUPLICATE_CHECK_FAILED:
     'Could not verify that this database can be duplicated safely. Refresh the page and try again.',
   ATOMIC_CREATION_OFFLINE: 'Connect to the internet to create this item.',
+  DASHBOARD_VIEW_CREATION_OFFLINE: 'Connect to the internet to create dashboard widget views.',
   ATOMIC_CREATION_SERVER_UPGRADE: 'Update the server to use this creation feature.',
   ATOMIC_CREATION_OWNER_CHANGED: 'The account or workspace changed. Retry in the original workspace.',
   ATOMIC_CREATION_PENDING: 'Creation is pending. Retry the original request to finish.',
@@ -17,6 +18,7 @@ export const clientValidationMessages = {
 
 const translationKeys: Partial<Record<keyof typeof clientValidationMessages, string>> = {
   ATOMIC_CREATION_OFFLINE: 'atomicCreation.offline',
+  DASHBOARD_VIEW_CREATION_OFFLINE: 'databaseViewCreation.dashboardOnlineRequired',
   ATOMIC_CREATION_SERVER_UPGRADE: 'atomicCreation.serverUpgrade',
   ATOMIC_CREATION_OWNER_CHANGED: 'atomicCreation.ownerChanged',
   ATOMIC_CREATION_PENDING: 'atomicCreation.pending',

@@ -1226,7 +1226,8 @@
       "thisDatabase": "ይህ የመረጃ ቋት",
       "viewName": "የእይታ ስም",
       "viewsOn": "የ{{database}} እይታዎች",
-      "viewsOnThisDatabase": "የዚህ የመረጃ ቋት እይታዎች"
+      "viewsOnThisDatabase": "የዚህ የመረጃ ቋት እይታዎች",
+      "chooseExisting": "ነባር እይታ ይምረጡ"
     },
     "private": {
       "reset": "ዳግም አስጀምር",

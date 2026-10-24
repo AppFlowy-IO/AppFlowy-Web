@@ -3433,7 +3433,8 @@
       "thisDatabase": "이 데이터베이스",
       "viewName": "보기 이름",
       "viewsOn": "{{database}}의 보기",
-      "viewsOnThisDatabase": "이 데이터베이스의 보기"
+      "viewsOnThisDatabase": "이 데이터베이스의 보기",
+      "chooseExisting": "기존 보기 선택"
     },
     "private": {
       "reset": "재설정",

@@ -1,8 +1,6 @@
 import { Element } from 'slate';
-import { v5 as uuidv5 } from 'uuid';
-import * as Y from 'yjs';
 
-import { BlockType, ViewLayout, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { BlockType, ViewLayout } from '@/application/types';
 import { EditorContextState } from '@/components/editor/EditorContext';
 import { prepareSubpageFragment } from '@/components/editor/subpage/subpage-operations';
 import { getConfigValue } from '@/utils/runtime-config';
@@ -38,56 +36,20 @@ afterEach(() => {
   updateServerInfo(serverUrl, { status: 'available', info: { enable_page_history: true } });
 });
 
-it.each([
-  [6, undefined, true],
-  [7, undefined, false],
-  [3, 3, true],
-  [3, 2, false],
-  [1, 0, false],
-] as const)('preflights whole-database copy with %i usable views and limit %s before queueing', async (count, limit, allowed) => {
-  const databaseId = '550e8400-e29b-41d4-a716-446655440000';
-  const databaseView = { ...source, layout: ViewLayout.Grid, extra: { database_id: databaseId }, children: [] };
-  const document = new Y.Doc({ guid: databaseId });
-  const database = new Y.Map();
-  const views = new Y.Map();
-
-  document.getMap(YjsEditorKey.data_section).set(YjsEditorKey.database, database);
-  database.set(YjsDatabaseKey.views, views);
-  views.set(uuidv5('inline_view_id', databaseId), new Y.Map());
-  for (let index = 0; index < count; index += 1) views.set(`view-${index}`, new Y.Map());
-  jest.mocked(getCollab).mockResolvedValue({ data: Y.encodeStateAsUpdate(document) });
-  document.destroy();
-  updateServerInfo(serverUrl, { status: 'available', info: { enable_page_history: true, max_dashboard_widgets: limit } });
+it.each([undefined, 0, 2, 6])('queues database duplication without reading collabs for legacy hint %s', async (hint) => {
+  const databaseView = {
+    ...source, layout: ViewLayout.Grid, extra: { database_id: 'database' }, children: [],
+  };
   const get = jest.fn().mockResolvedValue(response(databaseView));
   const post = jest.fn().mockResolvedValue({ headers: {} });
 
-  jest.mocked(getAxios).mockReturnValue({ get, post } as never);
-  const operation = duplicatePage('workspace', 'source');
-
-  if (allowed) {
-    await expect(operation).resolves.toBeUndefined();
-    expect(post).toHaveBeenCalledTimes(1);
-  } else {
-    await expect(operation).rejects.toThrow(`limit of ${limit ?? 6} views`);
-    expect(post).not.toHaveBeenCalled();
-  }
-});
-
-it('checks a nested database only once and refuses to queue when its source cannot be read', async () => {
-  const databaseId = '550e8400-e29b-41d4-a716-446655440000';
-  const databaseView = { ...source, layout: ViewLayout.Grid, extra: { database_id: databaseId }, children: [] };
-  const get = jest.fn().mockResolvedValue(response({
-    ...source,
-    children: [databaseView, { ...databaseView, view_id: 'second-view' }],
-  }));
-  const post = jest.fn();
-
-  jest.mocked(getCollab).mockRejectedValue(new Error('Database is unavailable'));
+  updateServerInfo(serverUrl, { status: 'available', info: { enable_page_history: true, max_dashboard_widgets: hint } });
+  jest.mocked(getCollab).mockRejectedValue(new Error('Client collab is unavailable'));
   jest.mocked(getAxios).mockReturnValue({ get, post } as never);
 
-  await expect(duplicatePage('workspace', 'source')).rejects.toThrow('Database is unavailable');
-  expect(getCollab).toHaveBeenCalledTimes(1);
-  expect(post).not.toHaveBeenCalled();
+  await expect(duplicatePage('workspace', 'source')).resolves.toBeUndefined();
+  expect(getCollab).not.toHaveBeenCalled();
+  expect(post).toHaveBeenCalledTimes(1);
 });
 
 it('uses the server task result to bind the new block to the exact duplicate', async () => {

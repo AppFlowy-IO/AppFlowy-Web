@@ -9,6 +9,7 @@ import {
   DatabaseViewOverlayContext,
 } from '@/application/database-yjs/context';
 import { DashboardExtraFilter } from '@/application/database-yjs/dashboard.type';
+import { createCloudRow } from '@/application/database-yjs/creation/create-row';
 import { FieldType, FilterType } from '@/application/database-yjs/database.type';
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch/row';
 import { getOrCreateDatabaseHistoryManager } from '@/application/database-yjs/history';
@@ -27,6 +28,22 @@ import {
 jest.mock('@/utils/runtime-config', () => ({
   getConfigValue: (_key: string, fallback: string) => fallback,
 }));
+
+jest.mock('@/application/database-yjs/creation/create-row', () => ({
+  ...jest.requireActual('@/application/database-yjs/creation/create-row'),
+  createCloudRow: jest.fn(),
+}));
+
+beforeEach(() => {
+  jest.mocked(createCloudRow).mockImplementation(async (intent) => {
+    intent.assertCurrent();
+    const row = await intent.registerRow();
+
+    // Activate the prepared cells as the server creation boundary would.
+    Y.applyUpdate(row, Y.encodeStateAsUpdate(intent.rowDoc));
+    return intent.rowId;
+  });
+});
 
 jest.mock('@/components/main/app.hooks', () => ({
   ...jest.requireActual('@/components/main/app.hooks'),

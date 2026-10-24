@@ -1906,7 +1906,8 @@
       "thisDatabase": "此資料庫",
       "viewName": "檢視名稱",
       "viewsOn": "{{database}} 的檢視",
-      "viewsOnThisDatabase": "此資料庫的檢視"
+      "viewsOnThisDatabase": "此資料庫的檢視",
+      "chooseExisting": "選擇現有檢視"
     },
     "private": {
       "reset": "重設",

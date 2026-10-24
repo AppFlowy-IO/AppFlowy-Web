@@ -305,6 +305,7 @@
   "dashboard.menuName": "Dasbor",
   "dashboard.picker.back": "Kembali",
   "dashboard.picker.changeViewTitle": "Ganti tampilan",
+  "dashboard.picker.chooseExisting": "Pilih tampilan yang sudah ada",
   "dashboard.picker.close": "Tutup",
   "dashboard.picker.createFailed": "Tidak dapat membuat tampilan",
   "dashboard.picker.editChart": "Sunting bagan",

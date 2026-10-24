@@ -305,6 +305,7 @@
   "dashboard.menuName": "ダッシュボード",
   "dashboard.picker.back": "戻る",
   "dashboard.picker.changeViewTitle": "ビューを変更",
+  "dashboard.picker.chooseExisting": "既存のビューを選択",
   "dashboard.picker.close": "閉じる",
   "dashboard.picker.createFailed": "ビューを作成できませんでした",
   "dashboard.picker.editChart": "グラフを編集",

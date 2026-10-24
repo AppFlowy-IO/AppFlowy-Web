@@ -315,6 +315,7 @@
   "dashboard.menuName": "Irányítópult",
   "dashboard.picker.back": "Vissza",
   "dashboard.picker.changeViewTitle": "Nézet módosítása",
+  "dashboard.picker.chooseExisting": "Meglévő nézet kiválasztása",
   "dashboard.picker.close": "Bezárás",
   "dashboard.picker.createFailed": "Nem sikerült létrehozni a nézetet",
   "dashboard.picker.editChart": "Diagram szerkesztése",

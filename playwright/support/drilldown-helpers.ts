@@ -4,8 +4,6 @@
  */
 import { APIRequestContext, expect, Locator, Page } from '@playwright/test';
 
-import { DASHBOARD_GEOMETRY } from '../../src/application/database-yjs/dashboard-geometry';
-
 import { closeDrilldown } from './chart-test-helpers';
 import { pressEscapeUntilHidden } from './dashboard-shared-helpers';
 import {
@@ -264,32 +262,28 @@ export async function expectSidePeekFor(page: Page, title: string) {
 
   await expect(peek).toBeVisible(DRILL_TIMEOUT);
   await expect.poll(() => titleOf(peek), DRILL_TIMEOUT).toBe(title);
-  await expect(peek).toHaveAttribute('aria-label', title);
+  await expect(page.getByRole('dialog', { name: 'Side peek', exact: true })).toBeVisible(DRILL_TIMEOUT);
 }
 
-/** `min(640, 45% of the viewport)`, clamped to `[420, min(1000, viewport − 240)]` (WP13 decision 8). */
+/** The shared record peek starts at 560px on the desktop test viewport. */
 export async function expectSidePeekDefaultWidth(page: Page) {
-  const { defaultWidth, defaultFraction, minWidth, maxWidth, viewportReserve } = DASHBOARD_GEOMETRY.sidePeek;
-  const viewport = await page.evaluate(() => window.innerWidth);
-  const expected = Math.round(
-    Math.min(
-      Math.max(Math.min(defaultWidth, defaultFraction * viewport), minWidth),
-      Math.max(minWidth, Math.min(maxWidth, viewport - viewportReserve))
-    )
-  );
-
   await expect
     .poll(async () => Math.round((await sidePeek(page).boundingBox())?.width ?? 0), DRILL_TIMEOUT)
-    .toBe(expected);
+    .toBe(560);
 }
 
 const SIDE_PEEK_BUTTONS: Record<string, string> = {
-  'Open as full page': 'row-side-peek-full-page',
-  'Open in center peek': 'row-side-peek-center',
-  Close: 'row-side-peek-close',
+  'Open as full page': 'row-detail-open-full-page',
+  Close: 'row-detail-close',
 };
 
 export async function clickSidePeekButton(page: Page, label: string) {
+  if (label === 'Open in center peek') {
+    await sidePeek(page).getByTestId('row-peek-mode-menu').click();
+    await page.getByTestId('row-peek-mode-center').click();
+    return;
+  }
+
   const testId = SIDE_PEEK_BUTTONS[label];
 
   if (!testId) throw new Error(`The side peek has no "${label}" button`);
@@ -303,17 +297,12 @@ export async function expectFullRowPage(page: Page, title: string) {
   const input = page.getByTestId('row-title-input').first();
 
   await expect(input).toBeVisible(DRILL_TIMEOUT);
-  await expect(page.locator('.MuiDialog-paper').getByTestId('row-title-input')).toHaveCount(0);
-  await expect
-    .poll(() => input.evaluate((element) => (element as HTMLTextAreaElement).value), DRILL_TIMEOUT)
-    .toBe(title);
+  await expect(rowPage(page)).toHaveCount(0);
+  await expect(input).toHaveText(title, DRILL_TIMEOUT);
 }
 
 export async function expectCenterPeekFor(page: Page, title: string) {
-  const modal = page
-    .locator('.MuiDialog-paper')
-    .filter({ has: page.getByTestId('row-title-input') })
-    .last();
+  const modal = page.locator('[data-testid="row-detail"][data-peek-mode="center"]');
 
   await expect(modal).toBeVisible(DRILL_TIMEOUT);
   await expect(sidePeek(page)).toHaveCount(0);

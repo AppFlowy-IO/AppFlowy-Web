@@ -320,7 +320,7 @@ describe('WidgetAddPicker creation gate', () => {
     mockTimelineReason = 'Creating a Timeline view requires a Pro workspace.';
     rerender(
       <TooltipProvider>
-        <WidgetAddPicker state={OPEN as Extract<AddWidgetFlowState, { kind: 'open' }>} />
+        <WidgetAddPicker state={OPEN} />
       </TooltipProvider>
     );
     act(() => {

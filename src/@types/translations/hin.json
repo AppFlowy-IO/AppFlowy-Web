@@ -1108,7 +1108,8 @@
       "thisDatabase": "यह डेटाबेस",
       "viewName": "दृश्य का नाम",
       "viewsOn": "{{database}} के दृश्य",
-      "viewsOnThisDatabase": "इस डेटाबेस के दृश्य"
+      "viewsOnThisDatabase": "इस डेटाबेस के दृश्य",
+      "chooseExisting": "मौजूदा दृश्य चुनें"
     },
     "private": {
       "reset": "रीसेट करें",

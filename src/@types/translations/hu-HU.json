@@ -979,7 +979,8 @@
       "thisDatabase": "Ez az adatbázis",
       "viewName": "Nézet neve",
       "viewsOn": "Nézetek itt: {{database}}",
-      "viewsOnThisDatabase": "Az adatbázis nézetei"
+      "viewsOnThisDatabase": "Az adatbázis nézetei",
+      "chooseExisting": "Meglévő nézet kiválasztása"
     },
     "private": {
       "reset": "Visszaállítás",

@@ -981,7 +981,8 @@
       "thisDatabase": "Datu-base hau",
       "viewName": "Ikuspegiaren izena",
       "viewsOn": "{{database}} datu-baseko ikuspegiak",
-      "viewsOnThisDatabase": "Datu-base honetako ikuspegiak"
+      "viewsOnThisDatabase": "Datu-base honetako ikuspegiak",
+      "chooseExisting": "Aukeratu lehendik dagoen ikuspegi bat"
     },
     "private": {
       "reset": "Berrezarri",

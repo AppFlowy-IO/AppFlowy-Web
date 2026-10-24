@@ -1246,7 +1246,8 @@
       "thisDatabase": "Esta base de dados",
       "viewName": "Nome da vista",
       "viewsOn": "Vistas de {{database}}",
-      "viewsOnThisDatabase": "Vistas desta base de dados"
+      "viewsOnThisDatabase": "Vistas desta base de dados",
+      "chooseExisting": "Escolher uma vista existente"
     },
     "private": {
       "reset": "Repor",

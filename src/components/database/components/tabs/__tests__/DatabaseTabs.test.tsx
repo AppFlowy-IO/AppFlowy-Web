@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { toast } from 'sonner';
 import * as Y from 'yjs';
 
@@ -138,7 +138,7 @@ describe('DatabaseTabs', () => {
     });
   });
 
-  it('disables duplication at the raw view cap while preserving rename and re-enables after deletion', async () => {
+  it('allows duplication beyond the legacy dashboard presentation hint', async () => {
     const databaseDoc = new Y.Doc() as YDoc;
     const database = new Y.Map() as YDatabase;
     const views = new Y.Map() as YDatabaseViews;
@@ -155,7 +155,7 @@ describe('DatabaseTabs', () => {
     (useDuplicateDatabaseView as jest.Mock).mockReturnValue(duplicateView);
     (useDatabaseContext as jest.Mock).mockReturnValue({
       databaseDoc, createDatabaseView: jest.fn(), loadViewMeta: jest.fn(async () => databaseContainer),
-      readOnly: false, showActions: true,
+      readOnly: false, showActions: true, workspaceId: 'workspace',
     } as unknown as DatabaseContextState);
     updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), {
       status: 'available', info: { enable_page_history: true, max_dashboard_widgets: 2 },
@@ -163,13 +163,8 @@ describe('DatabaseTabs', () => {
     render(<DatabaseTabs databasePageId={databaseView.view_id} viewIds={[databaseView.view_id]} />);
     const duplicate = screen.getByRole('button', { name: 'Duplicate view' });
 
-    expect(duplicate.hasAttribute('disabled')).toBe(true);
-    expect(duplicate.getAttribute('title')).toContain('limit of 2 views');
-    expect(screen.getByRole('button', { name: 'Rename live view' }).hasAttribute('disabled')).toBe(false);
-    fireEvent.click(duplicate);
-    expect(duplicateView).not.toHaveBeenCalled();
-    act(() => views.delete('hidden-owned-view'));
     expect(duplicate.hasAttribute('disabled')).toBe(false);
+    expect(screen.getByRole('button', { name: 'Rename live view' }).hasAttribute('disabled')).toBe(false);
     fireEvent.click(duplicate);
     await waitFor(() => expect(duplicateView).toHaveBeenCalledTimes(1));
   });

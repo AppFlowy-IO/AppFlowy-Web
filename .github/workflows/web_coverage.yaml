@@ -48,7 +48,7 @@ jobs:
 
       - name: Jest run
         run: |
-          pnpm run test:unit
+          pnpm run test:unit --maxWorkers=2
         env:
           COVERAGE: "true"
 

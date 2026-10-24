@@ -315,6 +315,7 @@
   "dashboard.menuName": "ዳሽቦርድ",
   "dashboard.picker.back": "ተመለስ",
   "dashboard.picker.changeViewTitle": "እይታ ቀይር",
+  "dashboard.picker.chooseExisting": "ነባር እይታ ይምረጡ",
   "dashboard.picker.close": "ዝጋ",
   "dashboard.picker.createFailed": "እይታውን መፍጠር አልተቻለም",
   "dashboard.picker.editChart": "ገበታ አርትዕ",

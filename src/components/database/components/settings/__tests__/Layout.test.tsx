@@ -149,7 +149,7 @@ describe('database Layout', () => {
     expect(mockUpdateLayout).toHaveBeenCalledWith(DatabaseViewLayout.Dashboard);
     expect(toast.error).not.toHaveBeenCalled();
     rejectConversion(new Error('Upgrade to Pro'));
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Upgrade to Pro'));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Failed to change view layout'));
     expect(mockUpdateLayout).toHaveBeenCalledTimes(1);
   });
 

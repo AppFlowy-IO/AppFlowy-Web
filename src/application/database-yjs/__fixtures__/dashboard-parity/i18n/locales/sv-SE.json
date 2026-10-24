@@ -315,6 +315,7 @@
   "dashboard.menuName": "Instrumentpanel",
   "dashboard.picker.back": "Tillbaka",
   "dashboard.picker.changeViewTitle": "Byt vy",
+  "dashboard.picker.chooseExisting": "Välj en befintlig vy",
   "dashboard.picker.close": "Stäng",
   "dashboard.picker.createFailed": "Det gick inte att skapa vyn",
   "dashboard.picker.editChart": "Redigera diagram",

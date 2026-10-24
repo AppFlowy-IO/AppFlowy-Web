@@ -3238,7 +3238,8 @@
       "thisDatabase": "Diese Datenbank",
       "viewName": "Name der Ansicht",
       "viewsOn": "Ansichten von {{database}}",
-      "viewsOnThisDatabase": "Ansichten dieser Datenbank"
+      "viewsOnThisDatabase": "Ansichten dieser Datenbank",
+      "chooseExisting": "Vorhandene Ansicht auswählen"
     },
     "private": {
       "reset": "Zurücksetzen",

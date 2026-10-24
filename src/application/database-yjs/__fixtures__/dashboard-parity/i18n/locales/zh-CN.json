@@ -305,6 +305,7 @@
   "dashboard.menuName": "仪表板",
   "dashboard.picker.back": "返回",
   "dashboard.picker.changeViewTitle": "更换视图",
+  "dashboard.picker.chooseExisting": "选择现有视图",
   "dashboard.picker.close": "关闭",
   "dashboard.picker.createFailed": "无法创建视图",
   "dashboard.picker.editChart": "编辑图表",

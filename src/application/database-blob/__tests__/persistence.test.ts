@@ -101,7 +101,8 @@ test.each([false, true])('a required reload waits until a row write commits with
   row?.doc.destroy();
 });
 
-test('keeps the seeds of every source of the dashboard just left', async () => {
+test('keeps persisted seeds of every dashboard source and revalidates them on return', async () => {
+  jest.mocked(db.collab_updates.add).mockResolvedValue(1);
   // A full dashboard: one source database per widget, plus the database that hosts it.
   const sources = Array.from({ length: DASHBOARD_MAX_WIDGETS + 1 }, (_, index) => `database-dashboard-source-${index}`);
   const hasSeeds = (source: string) => peekDatabaseRowDocSeed(`${source}_rows_${rowId}`) !== null;
@@ -120,9 +121,17 @@ test('keeps the seeds of every source of the dashboard just left', async () => {
     sources.forEach(releaseDatabaseRowDocSeedCache);
     expect(sources.filter((source) => !hasSeeds(source))).toEqual([]);
 
-    // Coming back within the idle time: every widget reuses its settled walk.
+    // Coming back keeps each complete snapshot and checks for changes since its RID.
+    jest.mocked(databaseBlobDiff).mockResolvedValue(database_blob.DatabaseBlobDiffResponse.create({
+      status: database_blob.DiffStatus.READY,
+      page: { hasMore: false },
+    }));
     await open();
-    expect(jest.mocked(databaseBlobDiff)).toHaveBeenCalledTimes(walks);
+    expect(sources.filter((source) => !hasSeeds(source))).toEqual([]);
+    expect(jest.mocked(databaseBlobDiff)).toHaveBeenCalledTimes(walks + sources.length);
+    for (const [, , request] of jest.mocked(databaseBlobDiff).mock.calls.slice(walks)) {
+      expect(request.maxKnownRid).toMatchObject({ timestamp: 500, seqNo: 1 });
+    }
   } finally {
     sources.forEach(releaseDatabaseRowDocSeedCache);
     sources.forEach(clearDatabaseRowDocSeedCache);

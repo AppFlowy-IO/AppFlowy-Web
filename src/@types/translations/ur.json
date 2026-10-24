@@ -1100,7 +1100,8 @@
             "thisDatabase": "یہ ڈیٹابیس",
             "viewName": "ویو کا نام",
             "viewsOn": "{{database}} کے ویوز",
-            "viewsOnThisDatabase": "اس ڈیٹابیس کے ویوز"
+            "viewsOnThisDatabase": "اس ڈیٹابیس کے ویوز",
+            "chooseExisting": "موجودہ منظر منتخب کریں"
         },
         "private": {
             "reset": "ری سیٹ کریں",

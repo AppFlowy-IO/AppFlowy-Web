@@ -315,6 +315,7 @@
   "dashboard.menuName": "Gösterge paneli",
   "dashboard.picker.back": "Geri",
   "dashboard.picker.changeViewTitle": "Görünümü değiştir",
+  "dashboard.picker.chooseExisting": "Mevcut bir görünüm seçin",
   "dashboard.picker.close": "Kapat",
   "dashboard.picker.createFailed": "Görünüm oluşturulamadı",
   "dashboard.picker.editChart": "Grafiği düzenle",

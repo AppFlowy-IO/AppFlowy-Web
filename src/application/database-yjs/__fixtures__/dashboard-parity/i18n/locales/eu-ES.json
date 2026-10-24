@@ -315,6 +315,7 @@
   "dashboard.menuName": "Aginte-panela",
   "dashboard.picker.back": "Atzera",
   "dashboard.picker.changeViewTitle": "Aldatu ikuspegia",
+  "dashboard.picker.chooseExisting": "Aukeratu lehendik dagoen ikuspegi bat",
   "dashboard.picker.close": "Itxi",
   "dashboard.picker.createFailed": "Ezin izan da ikuspegia sortu",
   "dashboard.picker.editChart": "Editatu grafikoa",

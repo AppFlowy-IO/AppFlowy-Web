@@ -2248,7 +2248,8 @@
       "thisDatabase": "قاعدة البيانات هذه",
       "viewName": "اسم العرض",
       "viewsOn": "العروض في {{database}}",
-      "viewsOnThisDatabase": "العروض في قاعدة البيانات هذه"
+      "viewsOnThisDatabase": "العروض في قاعدة البيانات هذه",
+      "chooseExisting": "اختر عرضًا موجودًا"
     },
     "private": {
       "reset": "إعادة ضبط",

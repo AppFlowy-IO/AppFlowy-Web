@@ -2375,7 +2375,8 @@
       "thisDatabase": "此数据库",
       "viewName": "视图名称",
       "viewsOn": "{{database}} 的视图",
-      "viewsOnThisDatabase": "此数据库的视图"
+      "viewsOnThisDatabase": "此数据库的视图",
+      "chooseExisting": "选择现有视图"
     },
     "private": {
       "reset": "重置",

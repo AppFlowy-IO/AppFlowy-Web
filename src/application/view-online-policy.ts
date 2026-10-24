@@ -1,20 +1,17 @@
 import i18next from 'i18next';
 
+import { ClientValidationError, clientValidationMessages } from '@/application/errors/client-validation-error';
 import { ViewLayout } from '@/application/types';
 import { getWorkspacePlanPolicy } from '@/application/workspace-plan-policy';
 
 const ONLINE_VIEW_CREATION_REQUIRED = 'Connect to the internet to create Form or Chart views.';
 
-export const ONLINE_DASHBOARD_VIEW_CREATION_REQUIRED = 'Connect to the internet to create dashboard widget views.';
+export const ONLINE_DASHBOARD_VIEW_CREATION_REQUIRED = clientValidationMessages.DASHBOARD_VIEW_CREATION_OFFLINE;
 
 /** Owned views must be admitted by the server in every hosting mode. */
 export function assertDashboardViewCreationOnline(): void {
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    throw new Error(
-      i18next.t('databaseViewCreation.dashboardOnlineRequired', {
-        defaultValue: ONLINE_DASHBOARD_VIEW_CREATION_REQUIRED,
-      }) || ONLINE_DASHBOARD_VIEW_CREATION_REQUIRED
-    );
+    throw new ClientValidationError('DASHBOARD_VIEW_CREATION_OFFLINE');
   }
 }
 

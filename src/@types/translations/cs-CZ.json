@@ -1495,7 +1495,8 @@
       "thisDatabase": "Tato databáze",
       "viewName": "Název pohledu",
       "viewsOn": "Pohledy databáze {{database}}",
-      "viewsOnThisDatabase": "Pohledy této databáze"
+      "viewsOnThisDatabase": "Pohledy této databáze",
+      "chooseExisting": "Vybrat existující zobrazení"
     },
     "private": {
       "reset": "Obnovit",

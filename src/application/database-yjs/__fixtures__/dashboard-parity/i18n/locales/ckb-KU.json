@@ -315,6 +315,7 @@
   "dashboard.menuName": "داشبۆرد",
   "dashboard.picker.back": "گەڕانەوە",
   "dashboard.picker.changeViewTitle": "گۆڕینی دیمەن",
+  "dashboard.picker.chooseExisting": "دیمەنێکی هەبوو هەڵبژێرە",
   "dashboard.picker.close": "داخستن",
   "dashboard.picker.createFailed": "نەتوانرا دیمەنەکە دروست بکرێت",
   "dashboard.picker.editChart": "دەستکاریکردنی چارت",

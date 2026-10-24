@@ -1929,7 +1929,8 @@
       "thisDatabase": "Este banco de dados",
       "viewName": "Nome da visualização",
       "viewsOn": "Visualizações de {{database}}",
-      "viewsOnThisDatabase": "Visualizações deste banco de dados"
+      "viewsOnThisDatabase": "Visualizações deste banco de dados",
+      "chooseExisting": "Escolher uma visualização existente"
     },
     "private": {
       "reset": "Redefinir",

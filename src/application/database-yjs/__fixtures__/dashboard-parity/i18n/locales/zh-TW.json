@@ -305,6 +305,7 @@
   "dashboard.menuName": "儀表板",
   "dashboard.picker.back": "返回",
   "dashboard.picker.changeViewTitle": "變更檢視",
+  "dashboard.picker.chooseExisting": "選擇現有檢視",
   "dashboard.picker.close": "關閉",
   "dashboard.picker.createFailed": "無法建立檢視",
   "dashboard.picker.editChart": "編輯圖表",

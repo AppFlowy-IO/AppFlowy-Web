@@ -1768,7 +1768,8 @@
       "thisDatabase": "Αυτή η βάση δεδομένων",
       "viewName": "Όνομα προβολής",
       "viewsOn": "Προβολές της βάσης {{database}}",
-      "viewsOnThisDatabase": "Προβολές αυτής της βάσης δεδομένων"
+      "viewsOnThisDatabase": "Προβολές αυτής της βάσης δεδομένων",
+      "chooseExisting": "Επιλέξτε μια υπάρχουσα προβολή"
     },
     "private": {
       "reset": "Επαναφορά",

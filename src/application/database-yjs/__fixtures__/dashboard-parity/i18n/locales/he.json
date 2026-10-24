@@ -325,6 +325,7 @@
   "dashboard.menuName": "לוח בקרה",
   "dashboard.picker.back": "חזרה",
   "dashboard.picker.changeViewTitle": "החלפת תצוגה",
+  "dashboard.picker.chooseExisting": "בחירת תצוגה קיימת",
   "dashboard.picker.close": "סגירה",
   "dashboard.picker.createFailed": "לא ניתן ליצור את התצוגה",
   "dashboard.picker.editChart": "עריכת תרשים",

@@ -355,6 +355,7 @@
   "dashboard.menuName": "لوحة المعلومات",
   "dashboard.picker.back": "رجوع",
   "dashboard.picker.changeViewTitle": "تغيير العرض",
+  "dashboard.picker.chooseExisting": "اختر عرضًا موجودًا",
   "dashboard.picker.close": "إغلاق",
   "dashboard.picker.createFailed": "تعذر إنشاء العرض",
   "dashboard.picker.editChart": "تعديل المخطط",

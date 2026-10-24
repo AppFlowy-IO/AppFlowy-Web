@@ -85,11 +85,10 @@ export function HoverControls({
 }) {
   const { ref } = useHoverControlsDisplay(rowKey);
 
-  const { onAddRowBelow, onAddRowAbove, addAboveLoading, addBelowLoading } = useHoverControlsActions(
-    rowId,
-    groupFieldId,
-    groupId
-  );
+  // The controls outlive the menu and its sorting confirmation. Atomic row
+  // creation must keep its owner mounted until the server commits.
+  const actions = useHoverControlsActions(rowId, groupFieldId, groupId);
+  const { onAddRowBelow, onAddRowAbove, addAboveLoading, addBelowLoading } = actions;
   const { t } = useTranslation();
 
   const [menuOpen, setMenuOpen] = useState<boolean>(false);
@@ -207,11 +206,9 @@ export function HoverControls({
             {/* Mounted only while open: the menu has no exit animation (W8). */}
             {menuOpen && (
               <RowMenu
-                groupFieldId={groupFieldId}
-                groupId={groupId}
+                actions={actions}
                 onClose={closeMenu}
                 onDelete={openDeleteConfirm}
-                rowId={rowId}
               />
             )}
           </DropdownMenu>

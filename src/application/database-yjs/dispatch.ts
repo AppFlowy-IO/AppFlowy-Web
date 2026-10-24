@@ -4,7 +4,6 @@ import { nanoid } from 'nanoid';
 import { useCallback, useContext, useEffect, useMemo, useRef } from 'react';
 import * as Y from 'yjs';
 
-import { assertDatabaseViewCapacity } from '@/application/database-yjs/database-view-capacity';
 import { atomicRead, captureAtomicCreationOwner } from '@/application/atomic-creation';
 import { resolveUserAttributionUid, touchRowAttribution } from '@/application/database-yjs/attribution';
 import { boardNeedsGroupingField } from '@/application/database-yjs/board-default-group';
@@ -2924,7 +2923,6 @@ export function useAddDatabaseView() {
 
   return useCallback(async (layout: DatabaseViewLayout, nameOverride?: string, options?: AddDatabaseViewOptions) => {
     if (!canCreateRef.current) throw new Error(FORM_VIEW_CREATION_REQUIRES_WRITE_PERMISSION);
-    assertDatabaseViewCapacity(databaseDoc);
     if (layout === DatabaseViewLayout.Dashboard || options?.dashboardOwner) {
       const id = await createDatabaseViewInDoc(docDeps, layout, nameOverride, options);
 

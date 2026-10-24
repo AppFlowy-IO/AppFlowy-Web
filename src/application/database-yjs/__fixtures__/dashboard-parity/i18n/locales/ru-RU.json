@@ -335,6 +335,7 @@
   "dashboard.menuName": "Дашборд",
   "dashboard.picker.back": "Назад",
   "dashboard.picker.changeViewTitle": "Сменить вид",
+  "dashboard.picker.chooseExisting": "Выбрать существующее представление",
   "dashboard.picker.close": "Закрыть",
   "dashboard.picker.createFailed": "Не удалось создать вид",
   "dashboard.picker.editChart": "Редактировать диаграмму",

@@ -305,6 +305,7 @@
   "dashboard.menuName": "대시보드",
   "dashboard.picker.back": "뒤로",
   "dashboard.picker.changeViewTitle": "보기 변경",
+  "dashboard.picker.chooseExisting": "기존 보기 선택",
   "dashboard.picker.close": "닫기",
   "dashboard.picker.createFailed": "보기를 만들 수 없습니다",
   "dashboard.picker.editChart": "차트 편집",

@@ -315,6 +315,7 @@
   "dashboard.menuName": "Dashboard",
   "dashboard.picker.back": "Zurück",
   "dashboard.picker.changeViewTitle": "Ansicht ändern",
+  "dashboard.picker.chooseExisting": "Vorhandene Ansicht auswählen",
   "dashboard.picker.close": "Schließen",
   "dashboard.picker.createFailed": "Die Ansicht konnte nicht erstellt werden",
   "dashboard.picker.editChart": "Diagramm bearbeiten",

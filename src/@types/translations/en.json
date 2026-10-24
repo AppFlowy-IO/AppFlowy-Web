@@ -4567,7 +4567,7 @@
     "showEmptyValues": "Show empty values",
     "cumulative": "Cumulative",
     "dateCondition": "Date grouping",
-    "noGroupableFields": "Add a Single Select, Multi Select, or Checkbox field to create a chart",
+    "noGroupableFields": "No groupable fields available",
     "emptyValue": "Empty",
     "noFieldValue": "No {}",
     "checked": "Checked",
@@ -4778,11 +4778,7 @@
       "unknownPerson": "Unknown person",
       "unknownUser": "Unknown user",
       "untitled": "Untitled"
-    },
-    "selectedXAxisField": "Selected X-axis field",
-    "omitZeroValues": "Omit zero values",
-    "noYAxisFields": "No suitable fields for Y-axis",
-    "noValidData": "No valid data to display"
+    }
   },
   "list": {
     "menuName": "List"

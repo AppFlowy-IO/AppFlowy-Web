@@ -1930,7 +1930,8 @@
       "thisDatabase": "Esta base de datos",
       "viewName": "Nombre de la vista",
       "viewsOn": "Vistas de {{database}}",
-      "viewsOnThisDatabase": "Vistas de esta base de datos"
+      "viewsOnThisDatabase": "Vistas de esta base de datos",
+      "chooseExisting": "Elegir una vista existente"
     },
     "private": {
       "reset": "Restablecer",

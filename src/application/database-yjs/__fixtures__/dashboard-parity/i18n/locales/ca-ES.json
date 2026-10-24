@@ -325,6 +325,7 @@
   "dashboard.menuName": "Tauler",
   "dashboard.picker.back": "Enrere",
   "dashboard.picker.changeViewTitle": "Canvia la vista",
+  "dashboard.picker.chooseExisting": "Tria una vista existent",
   "dashboard.picker.close": "Tanca",
   "dashboard.picker.createFailed": "No s'ha pogut crear la vista",
   "dashboard.picker.editChart": "Edita el gràfic",

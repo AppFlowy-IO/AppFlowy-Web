@@ -2667,7 +2667,8 @@
       "thisDatabase": "Bu veritabanı",
       "viewName": "Görünüm adı",
       "viewsOn": "{{database}} görünümleri",
-      "viewsOnThisDatabase": "Bu veritabanının görünümleri"
+      "viewsOnThisDatabase": "Bu veritabanının görünümleri",
+      "chooseExisting": "Mevcut bir görünüm seçin"
     },
     "private": {
       "reset": "Sıfırla",

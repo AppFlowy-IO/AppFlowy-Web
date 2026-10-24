@@ -1315,7 +1315,8 @@
       "thisDatabase": "ئەم بنکەدراوەیە",
       "viewName": "ناوی دیمەن",
       "viewsOn": "دیمەنەکانی {{database}}",
-      "viewsOnThisDatabase": "دیمەنەکانی ئەم بنکەدراوەیە"
+      "viewsOnThisDatabase": "دیمەنەکانی ئەم بنکەدراوەیە",
+      "chooseExisting": "دیمەنێکی هەبوو هەڵبژێرە"
     },
     "private": {
       "reset": "ڕێکخستنەوە",

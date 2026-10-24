@@ -5,7 +5,7 @@ import { ReactComponent as UpIcon } from '@/assets/icons/arrow_up.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
-import { useHoverControlsActions } from '@/components/database/components/grid/controls/HoverControls.hooks';
+import type { useHoverControlsActions } from '@/components/database/components/grid/controls/HoverControls.hooks';
 import { useHoverControlsContext } from '@/components/database/components/grid/controls/HoverControlsContext';
 import { DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
@@ -25,22 +25,18 @@ interface RowMenuAction {
 }
 
 function RowMenu({
-  rowId,
-  groupFieldId,
-  groupId,
+  actions: rowActions,
   onClose,
   onDelete,
 }: {
-  rowId: string;
-  groupFieldId?: string;
-  groupId?: string;
+  actions: ReturnType<typeof useHoverControlsActions>;
   onClose: () => void;
   /** Asks to delete the row: the row's controls show the confirm. */
   onDelete: () => void;
 }) {
   const { t } = useTranslation();
   const { onAddRowBelow, onDuplicateRow, onAddRowAbove, addAboveLoading, addBelowLoading, duplicateLoading } =
-    useHoverControlsActions(rowId, groupFieldId, groupId);
+    rowActions;
 
   const { showPreventDialog } = useHoverControlsContext();
 

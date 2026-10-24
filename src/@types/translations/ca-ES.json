@@ -1199,7 +1199,8 @@
       "thisDatabase": "Aquesta base de dades",
       "viewName": "Nom de la vista",
       "viewsOn": "Vistes de {{database}}",
-      "viewsOnThisDatabase": "Vistes d'aquesta base de dades"
+      "viewsOnThisDatabase": "Vistes d'aquesta base de dades",
+      "chooseExisting": "Tria una vista existent"
     },
     "private": {
       "reset": "Restableix",

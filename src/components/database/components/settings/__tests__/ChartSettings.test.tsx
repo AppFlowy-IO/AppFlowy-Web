@@ -1,17 +1,13 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 
 import { DatabaseViewLayout } from '@/application/types';
-import ChartSettings from '@/components/database/components/settings/ChartSettings';
+import ChartSettings, { ChartSettingsItems } from '@/components/database/components/settings/ChartSettings';
 
-const mockGetSubscriptions = jest.fn();
-const mockUseWorkspaceSubscriptionPlan = jest.fn();
+const mockRenderPanel = jest.fn();
+let mockReadOnly = false;
 
-jest.mock('@/application/database-yjs/context', () => ({
-  useDatabaseContext: () => ({ workspaceId: 'workspace', getSubscriptions: mockGetSubscriptions, readOnly: false }),
-}));
-
-jest.mock('@/components/app/hooks/useWorkspaceSubscriptionPlan', () => ({
-  useWorkspaceSubscriptionPlan: (...args: unknown[]) => mockUseWorkspaceSubscriptionPlan(...args),
+jest.mock('@/application/database-yjs', () => ({
+  useReadOnly: () => mockReadOnly,
 }));
 
 jest.mock('@/components/database/components/settings/Properties', () => ({
@@ -28,9 +24,11 @@ jest.mock('@/components/database/components/settings/Layout', () => ({
   ),
 }));
 
-jest.mock('@/components/database/components/settings/ChartLayoutSettings', () => ({
-  __esModule: true,
-  default: () => <div data-testid='chart-layout-settings'>chart</div>,
+jest.mock('@/components/database/chart/settings/ChartSettingsPanel', () => ({
+  ChartSettingsPanel: () => {
+    mockRenderPanel();
+    return <div data-testid='chart-settings-panel'>chart</div>;
+  },
 }));
 
 function renderChartSettings() {
@@ -41,51 +39,53 @@ function renderChartSettings() {
   );
 }
 
-async function openChartSettings() {
+async function openSettingsMenu() {
   renderChartSettings();
 
-  const trigger = screen.getByText('Settings').parentElement as HTMLElement;
-
-  fireEvent.keyDown(trigger, { key: 'ArrowDown' });
-  return screen.findByTestId('chart-settings-panel');
+  fireEvent.keyDown(screen.getByText('Settings').parentElement as HTMLElement, { key: 'ArrowDown' });
+  return screen.findByRole('menu');
 }
 
-describe('ChartSettings', () => {
+describe('ChartSettings hosts', () => {
   beforeEach(() => {
-    mockUseWorkspaceSubscriptionPlan.mockReset();
-    mockUseWorkspaceSubscriptionPlan.mockReturnValue({ isPro: true, isLoading: false, hasError: false });
+    mockRenderPanel.mockClear();
+    mockReadOnly = false;
   });
 
-  it('opens the desktop 240x550 scrollable chart popover with 8px top padding', async () => {
-    const panel = await openChartSettings();
+  it('lists Properties and Layout and mounts the chart panel only when its submenu opens', async () => {
+    await openSettingsMenu();
 
-    expect(panel.getAttribute('role')).toBe('menu');
-    expect(panel.className).toContain('w-[240px]');
-    expect(panel.className).toContain('min-w-[240px]');
-    expect(panel.className).toContain('max-h-[min(550px,var(--radix-dropdown-menu-content-available-height))]');
-    expect(panel.className).toContain('overflow-y-auto');
-    expect(panel.className).toContain('pt-2');
-    expect(panel.className).toContain('pb-0');
-    expect(panel.className).toContain('px-2');
-    expect(panel.className).not.toContain('min-w-[120px]');
-  });
-
-  it('lists Properties and Layout without separators, then the inline chart settings', async () => {
-    const panel = await openChartSettings();
-
-    expect(panel.textContent).toBe('propertieslayoutchart');
-    expect(panel.querySelectorAll('[data-slot="dropdown-menu-separator"]')).toHaveLength(0);
+    expect(screen.getByTestId('properties-action')).toBeTruthy();
     expect(screen.getByTestId('layout-action').getAttribute('data-layout')).toBe(String(DatabaseViewLayout.Chart));
-    expect(screen.getByTestId('chart-layout-settings').closest('[role="group"]')).toBeNull();
+    expect(mockRenderPanel).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(screen.getByTestId('chart-settings-trigger'), { key: 'ArrowRight' });
+    const panel = await screen.findByTestId('chart-settings-panel');
+
+    expect(panel.closest('[role="menu"]')?.className).toContain('w-[300px]');
+    expect(mockRenderPanel).toHaveBeenCalled();
   });
 
-  it('does not read the workspace plan while the popover is closed', () => {
+  it('does not mount the panel or its subscription hook while the gear menu is closed', () => {
     renderChartSettings();
 
     expect(screen.queryByTestId('chart-settings-panel')).toBeNull();
-    // The plan that gates the premium chart types is read by the popover's
-    // own chart type grid (see ChartLayoutSettings.test.tsx), not by the
-    // always-mounted trigger, so a chart view issues no billing reads on its own.
-    expect(mockUseWorkspaceSubscriptionPlan).not.toHaveBeenCalled();
+    expect(mockRenderPanel).not.toHaveBeenCalled();
+  });
+
+  it('hides the chart settings submenu for readers', async () => {
+    mockReadOnly = true;
+    await openSettingsMenu();
+
+    expect(screen.queryByTestId('chart-settings-trigger')).toBeNull();
+    expect(mockRenderPanel).not.toHaveBeenCalled();
+  });
+
+  it('embeds the same panel after Properties and Layout in a dashboard widget', () => {
+    const { container } = render(<ChartSettingsItems />);
+
+    expect(container.textContent).toBe('propertieslayoutchart');
+    expect(screen.getByTestId('chart-settings-panel')).toBeTruthy();
+    expect(screen.getByTestId('layout-action').getAttribute('data-layout')).toBe(String(DatabaseViewLayout.Chart));
   });
 });

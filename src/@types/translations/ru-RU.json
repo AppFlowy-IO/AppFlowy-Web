@@ -2578,7 +2578,8 @@
       "thisDatabase": "Эта база данных",
       "viewName": "Название вида",
       "viewsOn": "Виды базы {{database}}",
-      "viewsOnThisDatabase": "Виды этой базы данных"
+      "viewsOnThisDatabase": "Виды этой базы данных",
+      "chooseExisting": "Выбрать существующее представление"
     },
     "private": {
       "reset": "Сбросить",

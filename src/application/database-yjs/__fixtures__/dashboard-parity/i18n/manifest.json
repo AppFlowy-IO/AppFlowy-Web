@@ -2661,6 +2661,15 @@
       "source": "en"
     },
     {
+      "id": "dashboard.picker.chooseExisting",
+      "web": "dashboard.picker.chooseExisting",
+      "desktop": null,
+      "en": "Choose an existing view",
+      "placeholders": [],
+      "plural": false,
+      "source": "en"
+    },
+    {
       "id": "dashboard.picker.close",
       "web": "dashboard.picker.close",
       "desktop": "dashboard.picker.close",
@@ -4010,6 +4019,10 @@
       "chart.drilldown.noRows",
       "chart.drilldown.showMore",
       "chart.drilldown.title",
+      "chart.noValidData",
+      "chart.noYAxisFields",
+      "chart.omitZeroValues",
+      "chart.selectedXAxisField",
       "dashboard.addRow",
       "dashboard.emptyHint",
       "dashboard.emptyTitle",

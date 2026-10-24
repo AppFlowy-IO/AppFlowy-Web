@@ -335,6 +335,7 @@
   "dashboard.menuName": "Pulpit",
   "dashboard.picker.back": "Wstecz",
   "dashboard.picker.changeViewTitle": "Zmień widok",
+  "dashboard.picker.chooseExisting": "Wybierz istniejący widok",
   "dashboard.picker.close": "Zamknij",
   "dashboard.picker.createFailed": "Nie udało się utworzyć widoku",
   "dashboard.picker.editChart": "Edytuj wykres",

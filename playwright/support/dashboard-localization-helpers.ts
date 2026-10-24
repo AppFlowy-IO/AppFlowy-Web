@@ -273,7 +273,7 @@ function chartLayoutMap(view: ChartViewSpec, fieldIds: Record<string, string>): 
     x_field_id: fieldId(view.x),
     aggregation_type: view.aggregationType,
     ...(view.y ? { y_field_id: fieldId(view.y) } : {}),
-    show_empty_values: false,
+    show_empty_values: true,
     cumulative: false,
     date_condition: view.dateCondition ?? DateGroupCondition.Month,
     ...(view.numberFormat ? { numberFormat: view.numberFormat } : {}),

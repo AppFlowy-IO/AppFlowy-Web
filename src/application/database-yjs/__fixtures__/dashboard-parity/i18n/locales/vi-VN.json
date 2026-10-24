@@ -305,6 +305,7 @@
   "dashboard.menuName": "Bảng điều khiển",
   "dashboard.picker.back": "Quay lại",
   "dashboard.picker.changeViewTitle": "Đổi chế độ xem",
+  "dashboard.picker.chooseExisting": "Chọn một chế độ xem hiện có",
   "dashboard.picker.close": "Đóng",
   "dashboard.picker.createFailed": "Không thể tạo chế độ xem",
   "dashboard.picker.editChart": "Chỉnh sửa biểu đồ",

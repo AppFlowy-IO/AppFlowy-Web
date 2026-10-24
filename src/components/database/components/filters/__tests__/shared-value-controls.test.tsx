@@ -56,6 +56,10 @@ jest.mock('@/application/database-yjs/dispatch', () => ({
   ...jest.requireActual('@/application/database-yjs/dispatch'),
   useUpdateFilter: () => mockUpdate,
 }));
+jest.mock('@/application/database-yjs/dispatch/sort-filter', () => ({
+  ...jest.requireActual('@/application/database-yjs/dispatch/sort-filter'),
+  useUpdateFilter: () => mockUpdate,
+}));
 jest.mock('@/components/database/components/cell/person/useMentionableUsers', () => ({
   useMentionableUsersWithAutoFetch: () => ({ users: mockUsers, loading: false }),
 }));

@@ -2927,7 +2927,8 @@
       "thisDatabase": "Cơ sở dữ liệu này",
       "viewName": "Tên chế độ xem",
       "viewsOn": "Chế độ xem của {{database}}",
-      "viewsOnThisDatabase": "Chế độ xem của cơ sở dữ liệu này"
+      "viewsOnThisDatabase": "Chế độ xem của cơ sở dữ liệu này",
+      "chooseExisting": "Chọn một chế độ xem hiện có"
     },
     "private": {
       "reset": "Đặt lại",

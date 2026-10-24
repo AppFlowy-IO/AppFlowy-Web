@@ -12,6 +12,10 @@ const mockUpdateOption = jest.fn();
 let mockGroupCalculation: { type: number; fieldId: string } | undefined;
 let mockReadOnly = false;
 
+jest.mock('@/components/database/board/BoardProvider', () => ({
+  useBoardSelection: () => ({ pendingColumnId: null }),
+}));
+
 jest.mock('@/application/database-yjs', () => {
   const actual = jest.requireActual('@/application/database-yjs/database.type');
   const select = { id: 'status', name: 'Status', type: 3 };

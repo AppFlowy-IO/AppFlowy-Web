@@ -232,7 +232,7 @@ async function setChartLayout(
           chart_type: chart.chartType,
           x_field_id: chart.xFieldId,
           aggregation_type: 0,
-          show_empty_values: chart.showEmptyValues ?? true,
+          show_empty_values: !(chart.showEmptyValues ?? true),
         });
         return false;
       },
@@ -1661,10 +1661,10 @@ async function openSceneDrill(
     .locator(`[data-testid="chart-bar-segment"][data-category="${drill.category}"]`)
     .first();
   const dialog = target.getByTestId('chart-drilldown');
-  const peek = target.getByTestId('row-side-peek');
+  const peek = target.locator('[data-testid="row-detail"][data-peek-mode="side"]');
   const close = async () => {
     if (await peek.isVisible().catch(() => false)) {
-      await peek.getByTestId('row-side-peek-close').click().catch(() => undefined);
+      await peek.getByTestId('row-detail-close').click().catch(() => undefined);
       await expect(peek).toHaveCount(0).catch(() => undefined);
     }
 

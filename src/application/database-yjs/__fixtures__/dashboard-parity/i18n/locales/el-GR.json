@@ -315,6 +315,7 @@
   "dashboard.menuName": "Πίνακας εργαλείων",
   "dashboard.picker.back": "Πίσω",
   "dashboard.picker.changeViewTitle": "Αλλαγή προβολής",
+  "dashboard.picker.chooseExisting": "Επιλέξτε μια υπάρχουσα προβολή",
   "dashboard.picker.close": "Κλείσιμο",
   "dashboard.picker.createFailed": "Δεν ήταν δυνατή η δημιουργία της προβολής",
   "dashboard.picker.editChart": "Επεξεργασία γραφήματος",

@@ -192,11 +192,17 @@ export async function addFilterByFieldName(page: Page, fieldName: string): Promi
 }
 
 /**
- * Click on the active filter chip to open its menu
+ * Open the active filter chip's menu, including when adding it already opened the editor.
  */
-export async function clickFilterChip(page: Page): Promise<void> {
-  await DatabaseFilterSelectors.filterCondition(page).first().click({ force: true });
-  await page.waitForTimeout(500);
+export async function clickFilterChip(
+  page: Page,
+  chip: Locator = DatabaseFilterSelectors.filterCondition(page).first()
+): Promise<void> {
+  await expect(chip).toBeVisible();
+  if ((await chip.getAttribute('aria-expanded')) !== 'true') {
+    await chip.click({ force: true });
+  }
+  await expect(chip).toHaveAttribute('aria-expanded', 'true');
 }
 
 /**

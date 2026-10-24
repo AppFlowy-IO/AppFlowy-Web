@@ -18,8 +18,8 @@ export function TimelineSettingsItems() {
     <>
       <Properties />
       <Layout currentLayout={DatabaseViewLayout.Timeline} />
-      <TimelineLayoutSettings />
       <TimelineSettingGroup />
+      <TimelineLayoutSettings />
     </>
   );
 }

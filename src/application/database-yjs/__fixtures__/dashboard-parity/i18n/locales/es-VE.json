@@ -325,6 +325,7 @@
   "dashboard.menuName": "Panel",
   "dashboard.picker.back": "Atrás",
   "dashboard.picker.changeViewTitle": "Cambiar vista",
+  "dashboard.picker.chooseExisting": "Elegir una vista existente",
   "dashboard.picker.close": "Cerrar",
   "dashboard.picker.createFailed": "No se pudo crear la vista",
   "dashboard.picker.editChart": "Editar gráfico",

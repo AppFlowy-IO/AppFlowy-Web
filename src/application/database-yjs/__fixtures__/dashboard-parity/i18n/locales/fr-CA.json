@@ -325,6 +325,7 @@
   "dashboard.menuName": "Tableau de bord",
   "dashboard.picker.back": "Retour",
   "dashboard.picker.changeViewTitle": "Changer de vue",
+  "dashboard.picker.chooseExisting": "Choisir une vue existante",
   "dashboard.picker.close": "Fermer",
   "dashboard.picker.createFailed": "Impossible de créer la vue",
   "dashboard.picker.editChart": "Modifier le graphique",

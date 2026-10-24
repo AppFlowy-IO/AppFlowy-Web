@@ -1055,7 +1055,8 @@
       "thisDatabase": "این پایگاه داده",
       "viewName": "نام نما",
       "viewsOn": "نماهای {{database}}",
-      "viewsOnThisDatabase": "نماهای این پایگاه داده"
+      "viewsOnThisDatabase": "نماهای این پایگاه داده",
+      "chooseExisting": "انتخاب نمای موجود"
     },
     "private": {
       "reset": "بازنشانی",

@@ -2464,7 +2464,8 @@
       "thisDatabase": "מסד נתונים זה",
       "viewName": "שם התצוגה",
       "viewsOn": "תצוגות של {{database}}",
-      "viewsOnThisDatabase": "תצוגות של מסד נתונים זה"
+      "viewsOnThisDatabase": "תצוגות של מסד נתונים זה",
+      "chooseExisting": "בחירת תצוגה קיימת"
     },
     "private": {
       "reset": "איפוס",

@@ -1639,7 +1639,8 @@
       "thisDatabase": "Cette base de données",
       "viewName": "Nom de la vue",
       "viewsOn": "Vues de {{database}}",
-      "viewsOnThisDatabase": "Vues de cette base de données"
+      "viewsOnThisDatabase": "Vues de cette base de données",
+      "chooseExisting": "Choisir une vue existante"
     },
     "private": {
       "reset": "Réinitialiser",

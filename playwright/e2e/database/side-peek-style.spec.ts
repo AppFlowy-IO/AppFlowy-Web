@@ -10,6 +10,7 @@ import { activeDatabaseViewId, setGalleryRowMetaDirect } from '../../support/gal
 import { getVisibleDataRowIds, openRowDetail } from '../../support/row-detail-helpers';
 import { DatabaseGridSelectors, RowDetailSelectors } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
+import { setViewOpenPagesIn } from '../../support/yjs-inject-helpers';
 
 // Assert the actual artwork, not just its box: SVG mocks and size-only checks
 // cannot distinguish the fullscreen icon from the side-peek icon.
@@ -55,6 +56,7 @@ test('matches Figma peek typography, icon placement and toolbar reveal across mo
   request,
 }, testInfo) => {
   await loginAndCreateGrid(page, request, generateRandomEmail());
+  await setViewOpenPagesIn(page, 'side_peek');
   const fieldId = await getPrimaryFieldId(page);
 
   await typeTextIntoCell(page, fieldId, 0, 'Plan the next release');
@@ -263,6 +265,7 @@ test('shares and favorites the row from side peek without navigating the underly
   request,
 }) => {
   await loginAndCreateGrid(page, request, generateRandomEmail());
+  await setViewOpenPagesIn(page, 'side_peek');
   const parentUrl = page.url();
   const viewId = await activeDatabaseViewId(page);
   const [rowId] = await getVisibleDataRowIds(page);

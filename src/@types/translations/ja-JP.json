@@ -2907,7 +2907,8 @@
       "thisDatabase": "このデータベース",
       "viewName": "ビュー名",
       "viewsOn": "{{database}}のビュー",
-      "viewsOnThisDatabase": "このデータベースのビュー"
+      "viewsOnThisDatabase": "このデータベースのビュー",
+      "chooseExisting": "既存のビューを選択"
     },
     "private": {
       "reset": "リセット",

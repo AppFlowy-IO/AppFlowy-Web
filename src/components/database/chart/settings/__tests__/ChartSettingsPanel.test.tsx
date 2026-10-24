@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import { ChartAggregationType, ChartLayoutSettings, ChartType } from '@/application/database-yjs/chart.type';
-import { FieldType } from '@/application/database-yjs/database.type';
+import { DateGroupCondition, FieldType } from '@/application/database-yjs/database.type';
 import { SubscriptionPlan } from '@/application/types';
 import { clearChartGroups, setChartGroups } from '@/components/database/chart/chartGroupsRegistry';
 import { ChartSettingsPanel } from '@/components/database/chart/settings/ChartSettingsPanel';
@@ -17,6 +17,7 @@ let mockPlanLoading = false;
 let mockWorkspaceId = 'workspace-1';
 let mockViewId = 'chart-view';
 let mockSettings: ChartLayoutSettings = chartSettings();
+let mockProperties = PANEL_PROPERTIES;
 const mockSetSearch = jest.fn();
 const mockLoadSubscription = jest.fn();
 const mockUseSubscriptionPlan = jest.fn(() => ({
@@ -43,7 +44,9 @@ jest.mock('react-router-dom', () => ({
 
 jest.mock('@/application/database-yjs', () => ({
   useChartLayoutSetting: () => mockSettings,
-  usePropertiesSelector: () => ({ properties: jest.requireActual('./panelTestUtils').PANEL_PROPERTIES }),
+  usePropertiesSelector: (filterHidden: boolean) => ({
+    properties: filterHidden ? mockProperties.filter((property) => property.visible) : mockProperties,
+  }),
   useReadOnly: () => mockReadOnly,
   useDatabaseViewId: () => mockViewId,
   useDatabaseFields: () => ({ get: (id: string) => ({ get: (key: string) => key === 'is_primary' && id === 'name' }) }),
@@ -98,6 +101,7 @@ beforeEach(() => {
   mockLoadSubscription.mockReset();
   mockUseSubscriptionPlan.mockClear();
   mockSettings = chartSettings();
+  mockProperties = PANEL_PROPERTIES;
   clearChartGroups('chart-view');
 });
 
@@ -198,10 +202,54 @@ describe('ChartSettingsPanel sections', () => {
     const { container } = render(<ChartSettingsPanel />);
 
     expect(container.firstChild).toBeNull();
+    expect(mockUseSubscriptionPlan).toHaveBeenCalledWith(undefined, { cacheKey: 'dashboard-plan:workspace-1' });
   });
 });
 
 describe('ChartSettingsPanel writes', () => {
+  it('keeps hidden properties available and exposes the selected X and Y fields', () => {
+    mockProperties = PANEL_PROPERTIES.map((property) => ({ ...property, visible: property.id !== 'due' }));
+    mockSettings = chartSettings({ xFieldId: 'due', yFieldId: 'estimate', aggregationType: ChartAggregationType.Sum });
+    render(<ChartSettingsPanel />);
+
+    fireEvent.click(screen.getByTestId('chart-settings-row-x-what'));
+    expect(screen.getByTestId('chart-field-due').getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByTestId('chart-field-status').getAttribute('aria-checked')).toBe('false');
+    fireEvent.click(screen.getByTestId('chart-settings-back'));
+    fireEvent.click(screen.getByTestId('chart-settings-row-y-what'));
+    expect(screen.getByTestId('chart-field-due')).toBeTruthy();
+    expect(screen.getByTestId('chart-field-estimate').getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('selects a date grouping and returns focus to its settings row on Escape', () => {
+    mockSettings = chartSettings({ xFieldId: 'due', dateCondition: DateGroupCondition.Month });
+    render(<ChartSettingsPanel />);
+    fireEvent.click(screen.getByTestId('chart-settings-row-x-date-grouping'));
+
+    expect(screen.getAllByRole('menuitemradio').map((item) => item.textContent)).toEqual([
+      'Relative', 'Day', 'Week', 'Month', 'Year',
+    ]);
+    expect(screen.getByTestId(`chart-option-x-date-grouping-${DateGroupCondition.Month}`).getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(screen.getByTestId(`chart-option-x-date-grouping-${DateGroupCondition.Week}`));
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
+    expect(mockUpdate).toHaveBeenCalledWith(
+      { dateCondition: DateGroupCondition.Week },
+      { hiddenGroups: [], xManualOrder: [] }
+    );
+    fireEvent.keyDown(panel(), { key: 'Escape' });
+    expect(panel().getAttribute('data-page')).toBe('root');
+    expect(document.activeElement).toBe(screen.getByTestId('chart-settings-row-x-date-grouping'));
+  });
+
+  it.each([undefined, 'missing'])('shows the default X field for %s without rewriting it on a chart type change', (xFieldId) => {
+    mockSettings = chartSettings({ xFieldId });
+    render(<ChartSettingsPanel />);
+
+    expect(screen.getByTestId('chart-settings-row-x-what').textContent).toContain('Status');
+    fireEvent.click(screen.getByTestId('chart-type-donut'));
+    expect(mockUpdate).toHaveBeenCalledWith({ chartType: ChartType.Donut }, undefined);
+  });
+
   it('picks a chart type with one write', () => {
     render(<ChartSettingsPanel />);
     fireEvent.click(screen.getByTestId('chart-type-donut'));

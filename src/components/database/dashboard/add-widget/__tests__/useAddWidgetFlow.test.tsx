@@ -253,11 +253,11 @@ describe('useAddWidgetFlow', () => {
   });
 
   it.each([
-    { code: 1012, message: 'Permission denied' },
-    { code: 1028, message: 'Storage limit exceeded' },
-    { code: 400, message: 'Dashboard is full' },
-    { code: -1, message: 'Network unavailable' },
-  ])('does not retry a rejected Chart as Table for $message', async (error) => {
+    { code: 1012, message: 'Permission denied', guidance: "You don't have permission to do this." },
+    { code: 1028, message: 'Storage limit exceeded', guidance: 'This workspace has reached its storage limit.' },
+    { code: 400, message: 'Dashboard is full', guidance: 'Error 400: Could not create the view' },
+    { code: -1, message: 'Network unavailable', guidance: 'Error -1: Could not create the view' },
+  ])('does not retry a rejected Chart as Table for $message', async ({ guidance, ...error }) => {
     const { doc, database } = createDoc([]);
     const { result } = renderFlow(doc, database);
 
@@ -268,7 +268,7 @@ describe('useAddWidgetFlow', () => {
     expect(createMock).toHaveBeenCalledTimes(1);
     expect(stored(database)).toEqual([]);
     expect(result.current.api.flow.getState()).toEqual({ kind: 'idle' });
-    expect(toastError).toHaveBeenCalledWith(error.message);
+    expect(toastError).toHaveBeenCalledWith(guidance);
   });
 
   it('refuses a full dashboard before creating anything (#16)', async () => {
@@ -350,7 +350,7 @@ describe('useAddWidgetFlow', () => {
     const chart = () =>
       (views.get('chart-1')?.get(YjsDatabaseKey.layout_settings) as unknown as Y.Map<Y.Map<unknown>>).get('3');
 
-    expect(chart()?.get('chart_type')).toBe(4);
+    expect(chart()?.get('chart_type')).toBe(4n);
     act(() => {
       history.undo();
     });
@@ -453,7 +453,7 @@ describe('useAddWidgetFlow', () => {
     await settle();
 
     expect(result.current.api.flow.getState()).toEqual({ kind: 'idle' });
-    expect(toastError).toHaveBeenCalledWith('offline');
+    expect(toastError).toHaveBeenCalledWith('Could not create the view');
     expect(stored(database)).toEqual([]);
   });
 

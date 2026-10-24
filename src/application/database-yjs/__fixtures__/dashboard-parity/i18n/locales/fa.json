@@ -315,6 +315,7 @@
   "dashboard.menuName": "داشبورد",
   "dashboard.picker.back": "بازگشت",
   "dashboard.picker.changeViewTitle": "تغییر نما",
+  "dashboard.picker.chooseExisting": "انتخاب نمای موجود",
   "dashboard.picker.close": "بستن",
   "dashboard.picker.createFailed": "ساخت نما ممکن نشد",
   "dashboard.picker.editChart": "ویرایش نمودار",

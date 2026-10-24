@@ -729,7 +729,8 @@ export async function configureView(page: Page, databaseId: string, viewId: stri
           chart.set('x_field_id', config.chart.xFieldId);
           chart.set('aggregation_type', config.chart.aggregationType);
           if (config.chart.yFieldId) chart.set('y_field_id', config.chart.yFieldId);
-          chart.set('show_empty_values', true);
+          // Desktop's persisted show_empty_values flag means omit empty values.
+          chart.set('show_empty_values', false);
           chart.set('cumulative', false);
           chart.set('date_condition', 3);
           if (config.chart.groupByFieldId) chart.set('group_by_field_id', config.chart.groupByFieldId);
@@ -1575,7 +1576,7 @@ export async function addRowInWidget(page: Page, viewName: string, title: string
 }
 
 /** An open record: the side peek (WP13 §3.9, the default from a dashboard) or a centre modal. */
-const ROW_PAGE_SELECTOR = '[data-testid="row-side-peek"], .MuiDialog-paper';
+const ROW_PAGE_SELECTOR = '[data-testid="row-detail"]';
 
 export function rowPage(scope: Page): Locator {
   return scope.locator(ROW_PAGE_SELECTOR).filter({ has: scope.getByTestId('row-title-input') }).last();
@@ -1583,7 +1584,7 @@ export function rowPage(scope: Page): Locator {
 
 /** The record side peek. */
 export function sidePeek(page: Page): Locator {
-  return page.getByTestId('row-side-peek');
+  return page.locator('[data-testid="row-detail"][data-peek-mode="side"]');
 }
 
 /** Close the side peek from its Close button; a drill-down under it stays open. */
@@ -1591,18 +1592,13 @@ export async function closeSidePeek(page: Page) {
   const peek = sidePeek(page);
 
   await expect(peek).toBeVisible({ timeout: USE_CASE_TIMEOUT });
-  await peek.getByTestId('row-side-peek-close').click();
+  await peek.getByTestId('row-detail-close').click();
   await expect(peek).toHaveCount(0, { timeout: USE_CASE_TIMEOUT });
 }
 
-/** Wait for a row page showing `title` (its title is a textarea, so compare values). */
+/** Wait for the current record's editable title. */
 export async function expectRowPage(scope: Page, title: string) {
-  const titleInputs = scope.locator(ROW_PAGE_SELECTOR).getByTestId('row-title-input');
-
-  await expect(titleInputs.last()).toBeVisible({ timeout: USE_CASE_TIMEOUT });
-  await expect
-    .poll(() => titleInputs.evaluateAll((inputs) => inputs.map((input) => (input as HTMLTextAreaElement).value)))
-    .toContain(title);
+  await expect(rowPage(scope).getByTestId('row-title-input')).toHaveText(title, { timeout: USE_CASE_TIMEOUT });
 }
 
 /** Set a property on the open row page (select option, number, text or a date picked in its calendar). */

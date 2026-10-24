@@ -1043,7 +1043,8 @@
       "thisDatabase": "Den här databasen",
       "viewName": "Vynamn",
       "viewsOn": "Vyer i {{database}}",
-      "viewsOnThisDatabase": "Vyer i den här databasen"
+      "viewsOnThisDatabase": "Vyer i den här databasen",
+      "chooseExisting": "Välj en befintlig vy"
     },
     "private": {
       "reset": "Återställ",

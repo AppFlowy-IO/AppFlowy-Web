@@ -3273,7 +3273,8 @@
       "thisDatabase": "ฐานข้อมูลนี้",
       "viewName": "ชื่อมุมมอง",
       "viewsOn": "มุมมองของ {{database}}",
-      "viewsOnThisDatabase": "มุมมองของฐานข้อมูลนี้"
+      "viewsOnThisDatabase": "มุมมองของฐานข้อมูลนี้",
+      "chooseExisting": "เลือกมุมมองที่มีอยู่"
     },
     "private": {
       "reset": "รีเซ็ต",

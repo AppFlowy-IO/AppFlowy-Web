@@ -335,6 +335,7 @@
   "dashboard.menuName": "Řídicí panel",
   "dashboard.picker.back": "Zpět",
   "dashboard.picker.changeViewTitle": "Změnit pohled",
+  "dashboard.picker.chooseExisting": "Vybrat existující zobrazení",
   "dashboard.picker.close": "Zavřít",
   "dashboard.picker.createFailed": "Pohled se nepodařilo vytvořit",
   "dashboard.picker.editChart": "Upravit graf",

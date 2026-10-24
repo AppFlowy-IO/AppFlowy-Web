@@ -1,11 +1,14 @@
 import { act, render, renderHook, screen } from '@testing-library/react';
-import type React from 'react';
+import { type ReactNode, useLayoutEffect } from 'react';
 import * as Y from 'yjs';
 
 import { DatabaseContext, DatabaseContextState, FieldType } from '@/application/database-yjs';
 import { createRowDoc } from '@/application/database-yjs/__tests__/test-helpers';
+import type { TextCell } from '@/application/database-yjs/cell.type';
+import { serializeRichTextCellValue } from '@/application/database-yjs/fields/text/rich-text';
 import { useCellSelector } from '@/application/database-yjs/selector';
 import {
+  MentionType,
   YDatabase,
   YDatabaseCell,
   YDatabaseField,
@@ -28,6 +31,9 @@ const mockCellRenders: (string | undefined)[] = [];
 jest.mock('@/utils/runtime-config', () => ({
   getConfigValue: (_key: string, fallback: string) => fallback,
 }));
+
+// The shared lodash mock always reports equality, hiding missed cell updates.
+jest.mock('lodash-es', () => jest.requireActual('lodash'));
 
 // `useCellSelector` is the only caller of the rollup and formula hooks: spying on it spies on them.
 jest.mock('@/application/database-yjs/selector', () => {
@@ -106,7 +112,7 @@ function createFixture({ seedOnly = false, history = false } = {}) {
     dataSource: history ? { type: 'history', id: 'historical-version' } : undefined,
     workspaceId: 'workspace-id',
   } as DatabaseContextState;
-  const wrapper = ({ children }: { children: React.ReactNode }) => (
+  const wrapper = ({ children }: { children: ReactNode }) => (
     <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
   );
   const cells = (rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as Y.Map<unknown>).get(
@@ -206,6 +212,53 @@ describe('Cell values are read with the hooks their field type needs (W17)', () 
     const { result } = renderHook(() => useStoredCellValue({ rowId, fieldId: FIELDS.text.id }), { wrapper });
 
     expect(result.current).toBeUndefined();
+  });
+
+  it.each([false, true])('preserves formatting and mentions in stored text (seed only: %s)', (seedOnly) => {
+    const { wrapper, cells } = createFixture({ seedOnly });
+    const delta = [
+      { insert: 'See ', attributes: { bold: true } },
+      { insert: '$', attributes: { mention: { type: MentionType.PageRef, page_id: 'p1', data: { title: 'Engineering' } } } },
+    ];
+    const cell = cells.get(FIELDS.text.id)!;
+
+    cell.set(YjsDatabaseKey.data, 'See Engineering');
+    cell.set(YjsDatabaseKey.rich_text, serializeRichTextCellValue('See Engineering', delta));
+    const { result } = renderHook(() => useStoredCellValue({ rowId, fieldId: FIELDS.text.id }) as TextCell, { wrapper });
+
+    expect(result.current.data).toBe('See Engineering');
+    expect(result.current.richText).toEqual(delta);
+
+    const edited = [{ insert: 'See Engineering', attributes: { italic: true } }];
+
+    act(() => { cell.set(YjsDatabaseKey.rich_text, serializeRichTextCellValue('See Engineering', edited)); });
+    expect(result.current.richText).toEqual(edited);
+  });
+
+  it('catches a formatting-only change between render and subscription', () => {
+    const { wrapper, cells } = createFixture();
+    const delta = [{ insert: 'Engineering', attributes: { bold: true } }];
+    const { result } = renderHook(() => {
+      const cell = useStoredCellValue({ rowId, fieldId: FIELDS.text.id }) as TextCell;
+
+      useLayoutEffect(() => {
+        cells.get(FIELDS.text.id)!.set(YjsDatabaseKey.rich_text, serializeRichTextCellValue('Engineering', delta));
+      }, []);
+      return cell;
+    }, { wrapper });
+
+    expect(result.current.richText).toEqual(delta);
+  });
+
+  it('protects stored text that requires a newer rich-text reader', () => {
+    const { wrapper, cells } = createFixture();
+
+    cells.get(FIELDS.text.id)!.set(YjsDatabaseKey.rich_text, JSON.stringify({
+      v: 99, min_v: 99, text: 'Engineering', delta: [{ insert: 'Engineering', attributes: { bold: true } }],
+    }));
+    const { result } = renderHook(() => useStoredCellValue({ rowId, fieldId: FIELDS.text.id }) as TextCell, { wrapper });
+
+    expect(result.current.richTextReadOnly).toBe(true);
   });
 
   it('accepts native integer cell values during its mount consistency check', () => {

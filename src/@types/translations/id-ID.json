@@ -1412,7 +1412,8 @@
       "thisDatabase": "Basis data ini",
       "viewName": "Nama tampilan",
       "viewsOn": "Tampilan di {{database}}",
-      "viewsOnThisDatabase": "Tampilan di basis data ini"
+      "viewsOnThisDatabase": "Tampilan di basis data ini",
+      "chooseExisting": "Pilih tampilan yang sudah ada"
     },
     "private": {
       "reset": "Atur ulang",

@@ -429,7 +429,7 @@ function parseTemplateChart(
 
   while (found) {
     if (found[1] === 'cumulative') extras.cumulative = true;
-    else if (found[1] === 'hiding empty values') extras.show_empty_values = false;
+    else if (found[1] === 'hiding empty values') extras.show_empty_values = true;
     else if (found[2] !== undefined) extras.titleText = found[2];
     else if (found[3]) extras.numberFormat = found[3];
     measure = measure.slice(0, found.index).trim();

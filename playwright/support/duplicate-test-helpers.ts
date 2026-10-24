@@ -17,6 +17,7 @@ import { createDocumentPageAndNavigate, currentViewIdFromUrl, ensurePageExpanded
 import {
   changeCheckboxFilterCondition,
   changeFilterCondition,
+  clickFilterChip,
   CheckboxFilterCondition,
   TextFilterCondition,
 } from './filter-test-helpers';
@@ -866,8 +867,7 @@ export async function addNameIsNotEmptyFilterToBlock(page: Page, gridBlock: Loca
   await page.waitForTimeout(1000);
 
   await expect(gridBlock.getByTestId('database-filter-condition').first()).toBeVisible({ timeout: 10000 });
-  await gridBlock.getByTestId('database-filter-condition').first().click({ force: true });
-  await page.waitForTimeout(500);
+  await clickFilterChip(page, gridBlock.getByTestId('database-filter-condition').first());
   await changeFilterCondition(page, TextFilterCondition.TextIsNotEmpty);
   await page.waitForTimeout(1000);
 }
@@ -877,8 +877,7 @@ export async function addDoneCheckedFilterToBlock(page: Page, gridBlock: Locator
   await page.waitForTimeout(1000);
 
   await expect(gridBlock.getByTestId('database-filter-condition').first()).toBeVisible({ timeout: 10000 });
-  await gridBlock.getByTestId('database-filter-condition').first().click({ force: true });
-  await page.waitForTimeout(500);
+  await clickFilterChip(page, gridBlock.getByTestId('database-filter-condition').first());
   await changeCheckboxFilterCondition(page, CheckboxFilterCondition.IsChecked);
   await page.waitForTimeout(1000);
 }

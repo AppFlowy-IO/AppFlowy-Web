@@ -305,6 +305,7 @@
   "dashboard.menuName": "แดชบอร์ด",
   "dashboard.picker.back": "กลับ",
   "dashboard.picker.changeViewTitle": "เปลี่ยนมุมมอง",
+  "dashboard.picker.chooseExisting": "เลือกมุมมองที่มีอยู่",
   "dashboard.picker.close": "ปิด",
   "dashboard.picker.createFailed": "ไม่สามารถสร้างมุมมองได้",
   "dashboard.picker.editChart": "แก้ไขแผนภูมิ",

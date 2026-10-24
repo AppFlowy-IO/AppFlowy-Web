@@ -437,7 +437,7 @@ function PageDatabaseViews({
   const [orderedViewIds, setOrderedViewIds] = useState<string[]>([]);
   const orderedViewIdsRef = useRef<string[]>([]);
   const orderedDatabaseIdRef = useRef<string | undefined>();
-  const pendingViewCreationRef = useRef(false);
+  const [pendingViewCreation, setPendingViewCreation] = useState(false);
   const pendingExpectedViewIdsRef = useRef<string[] | null>(null);
   const pendingViewAppendBaseRef = useRef<string[] | null>(null);
   const tabReorderRequestSeqRef = useRef(0);
@@ -493,7 +493,7 @@ function PageDatabaseViews({
 
     const pendingExpectedViewIds = pendingExpectedViewIdsRef.current;
 
-    if (pendingViewCreationRef.current) {
+    if (pendingViewCreation) {
       return;
     }
 
@@ -523,7 +523,7 @@ function PageDatabaseViews({
     orderedViewIdsRef.current = nextViewIds;
     if (persistViewOrder) writeStoredViewOrder(databaseId, nextViewIds);
     setOrderedViewIds(nextViewIds);
-  }, [databaseId, fallbackViewIds, hasAuthoritativeVisibleOrder, persistViewOrder, viewIds]);
+  }, [databaseId, fallbackViewIds, hasAuthoritativeVisibleOrder, pendingViewCreation, persistViewOrder, viewIds]);
 
   // Get active view from selector state, or directly from Yjs if not yet in state
   // This handles the race condition when a new view is created but selector hasn't updated yet
@@ -562,12 +562,14 @@ function PageDatabaseViews({
         ? storedViewIds
         : fallbackViewIds;
 
-    pendingViewCreationRef.current = true;
+    setPendingViewCreation(true);
     pendingViewAppendBaseRef.current = baseViewIds;
   }, [databaseId, fallbackViewIds, hasAuthoritativeVisibleOrder, readOnly]);
 
   const handleAfterViewAddedToDatabase = useCallback(() => {
-    pendingViewCreationRef.current = false;
+    // Resume reconciliation even if all companion views arrived while creation
+    // was pending and the selector has no further changes to publish.
+    setPendingViewCreation(false);
     pendingViewAppendBaseRef.current = null;
   }, []);
 

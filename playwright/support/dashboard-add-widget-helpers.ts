@@ -28,6 +28,7 @@ import {
   readDatabaseViews,
   seedDashboardWidgets,
 } from './dashboard-test-helpers';
+import { TestConfig } from './test-config';
 
 /** The English picker label of each New view layout (WP06 §1.4: Grid reads "Table"). */
 export const PICKER_LAYOUT_LABELS: Record<string, DatabaseViewLayout> = {
@@ -269,7 +270,7 @@ export async function pressDashboardUndo(page: Page) {
 /** The folder name of a view as the server stores it. */
 export async function readFolderViewName(page: Page, request: APIRequestContext, viewId: string): Promise<string> {
   const world = dashboardWorld(page);
-  const response = await request.get(`/api/workspace/${world.workspaceId}/view/${viewId}?depth=0`, {
+  const response = await request.get(`${TestConfig.apiUrl}/api/workspace/${world.workspaceId}/view/${viewId}?depth=0`, {
     headers: { Authorization: `Bearer ${world.owner.accessToken}` },
   });
   const json = (await response.json()) as { data?: { name?: string } };
@@ -280,7 +281,7 @@ export async function readFolderViewName(page: Page, request: APIRequestContext,
 /** Whether the folder still lists a view (a deleted view is gone or in the trash). */
 export async function folderViewExists(page: Page, request: APIRequestContext, viewId: string): Promise<boolean> {
   const world = dashboardWorld(page);
-  const response = await request.get(`/api/workspace/${world.workspaceId}/view/${viewId}?depth=0`, {
+  const response = await request.get(`${TestConfig.apiUrl}/api/workspace/${world.workspaceId}/view/${viewId}?depth=0`, {
     headers: { Authorization: `Bearer ${world.owner.accessToken}` },
   });
 

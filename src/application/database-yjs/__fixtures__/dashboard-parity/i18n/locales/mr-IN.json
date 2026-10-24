@@ -315,6 +315,7 @@
   "dashboard.menuName": "डॅशबोर्ड",
   "dashboard.picker.back": "मागे",
   "dashboard.picker.changeViewTitle": "दृश्य बदला",
+  "dashboard.picker.chooseExisting": "विद्यमान दृश्य निवडा",
   "dashboard.picker.close": "बंद करा",
   "dashboard.picker.createFailed": "दृश्य तयार करता आले नाही",
   "dashboard.picker.editChart": "चार्ट संपादित करा",

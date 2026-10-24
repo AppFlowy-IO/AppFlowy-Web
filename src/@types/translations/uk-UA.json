@@ -2981,7 +2981,8 @@
       "thisDatabase": "Ця база даних",
       "viewName": "Назва вигляду",
       "viewsOn": "Вигляди бази {{database}}",
-      "viewsOnThisDatabase": "Вигляди цієї бази даних"
+      "viewsOnThisDatabase": "Вигляди цієї бази даних",
+      "chooseExisting": "Вибрати наявне подання"
     },
     "private": {
       "reset": "Скинути",

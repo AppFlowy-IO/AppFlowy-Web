@@ -345,6 +345,7 @@
   "dashboard.menuName": "Deais",
   "dashboard.picker.back": "Siar",
   "dashboard.picker.changeViewTitle": "Athraigh an t-amharc",
+  "dashboard.picker.chooseExisting": "Roghnaigh amharc atá ann cheana",
   "dashboard.picker.close": "Dún",
   "dashboard.picker.createFailed": "Níorbh fhéidir an t-amharc a chruthú",
   "dashboard.picker.editChart": "Cuir an chairt in eagar",

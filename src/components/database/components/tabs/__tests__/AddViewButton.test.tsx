@@ -86,7 +86,7 @@ describe('AddViewButton', () => {
     jest.restoreAllMocks();
   });
 
-  it('disables all new-view layouts at the advertised cap and enables them after a removal', async () => {
+  it('allows view creation beyond the legacy dashboard presentation hint', async () => {
     mockDatabaseDoc = new Y.Doc() as YDoc;
     const database = new Y.Map() as YDatabase;
     const views = new Y.Map() as YDatabaseViews;
@@ -101,11 +101,7 @@ describe('AddViewButton', () => {
     render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><AddViewButton databasePageId='database' onViewAdded={jest.fn()} /></MemoryRouter>);
     const grid = screen.getByRole('button', { name: 'grid.menuName' });
 
-    expect(grid.hasAttribute('disabled')).toBe(true);
-    expect(screen.getByRole('button', { name: 'board.menuName' }).hasAttribute('disabled')).toBe(true);
-    fireEvent.click(grid);
-    expect(mockAddView).not.toHaveBeenCalled();
-    act(() => views.delete('owned-hidden'));
+    expect(screen.getByRole('button', { name: 'board.menuName' }).hasAttribute('disabled')).toBe(false);
     expect(grid.hasAttribute('disabled')).toBe(false);
     fireEvent.click(grid);
     await waitFor(() => expect(mockAddView).toHaveBeenCalledTimes(1));

@@ -63,7 +63,7 @@ export function useStoredCellValue({ rowId, fieldId }: { rowId: string; fieldId:
   const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
 
   const cellValue = useMemo(() => {
-    return cell ? parseYDatabaseCellToCell(cell, field) : undefined;
+    return cell ? parseYDatabaseCellToCell(cell, field, { richText: true }) : undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cell, field, fieldType, fieldClock, clock]);
 
@@ -88,7 +88,7 @@ export function useStoredCellValue({ rowId, fieldId }: { rowId: string; fieldId:
     // A mutation between render and this effect is reported by nothing:
     // render once more when the value the UI rendered is already stale.
     const current = cells.get(fieldId);
-    const fresh = current ? parseYDatabaseCellToCell(current, field) : undefined;
+    const fresh = current ? parseYDatabaseCellToCell(current, field, { richText: true }) : undefined;
 
     if (!isEqual(fresh, cellValueRef.current)) {
       bump();
