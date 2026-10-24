@@ -1,7 +1,9 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { writeFile } from 'fs/promises';
+
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import * as Y from 'yjs';
 
+import { waitForAtomicCreationCompletion } from '../../support/atomic-creation-helpers';
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
 import { createDatabaseView, waitForGridReady } from '../../support/database-ui-helpers';
 import { ensurePageExpandedByViewId } from '../../support/page-utils';
@@ -18,8 +20,8 @@ import {
   FormSelectors,
   TimelineSelectors,
 } from '../../support/selectors';
-import { generateRandomEmail } from '../../support/test-config';
 import { grantTestProSubscription, mockProBillingResponses } from '../../support/subscription-test-helpers';
+import { generateRandomEmail } from '../../support/test-config';
 import { expectViewCreationAvailable } from '../../support/view-creation-availability';
 
 const viewRoute = '**/v2/page-view/database-view/default{,?**}';
@@ -34,8 +36,7 @@ function barrier() {
 
 async function createSource(page: Page, request: APIRequestContext) {
   await signInAndWaitForApp(page, request, generateRandomEmail(), 0);
-  const response = page.waitForResponse((item) => item.request().method() === 'POST' &&
-    new URL(item.url()).pathname.endsWith('/v2/page-view/database/default'));
+  const response = waitForAtomicCreationCompletion(page, '/v2/page-view/database/default');
 
   await createDatabaseView(page, 'Grid', 0);
   const created = await response;
@@ -58,6 +59,7 @@ async function addList(page: Page) {
 function observeCreations(page: Page) {
   const compact: string[] = [];
   const legacy: string[] = [];
+  const replyCodes: Array<Promise<number>> = [];
 
   page.on('request', (request) => {
     if (request.method() !== 'POST') return;
@@ -66,7 +68,21 @@ function observeCreations(page: Page) {
     if (pathname.endsWith(viewPath)) compact.push(request.postData() ?? '');
     if (/\/page-view\/[^/]+\/database-view$/.test(pathname)) legacy.push(pathname);
   });
-  return { compact, legacy };
+  page.on('response', (response) => {
+    if (response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith(viewPath)) {
+      replyCodes.push(response.json().then((body) => body.code));
+    }
+  });
+  return { compact, legacy, replyCodes };
+}
+
+async function expectOneCommittedView(requests: ReturnType<typeof observeCreations>, lostReplies = 0) {
+  expect(requests.compact.length).toBeGreaterThan(lostReplies);
+  expect(new Set(requests.compact).size, 'All retries must use the same serialized command').toBe(1);
+  // Extra attempts are valid only after explicit RetryLater replies (or the deliberately lost ACK).
+  expect(await Promise.all(requests.replyCodes)).toEqual([
+    ...Array(requests.compact.length - lostReplies - 1).fill(-5), 0,
+  ]);
 }
 
 // List/Feed and linked Gallery have separate recovery/placement cases below.
@@ -75,20 +91,40 @@ for (const layout of [
   { name: 'Grid', value: 0 }, { name: 'Board', value: 1 }, { name: 'Calendar', value: 2 },
   { name: 'Chart', value: 3 }, { name: 'Gallery', value: 5 },
   { name: 'Form builder', value: 7 }, { name: 'Timeline', value: 8 },
+  { name: 'Chart', value: 3, retryLater: true },
 ]) {
-  test(`server-created ${layout.name} view is complete before activation and matches the sidebar after reload`, async ({ page, request }, info) => {
+  test(`server-created ${layout.name} view${layout.retryLater ? ' after RetryLater' : ''} is complete before activation and matches the sidebar after reload`, async ({ page, request }, info) => {
     if (layout.value === 8) await mockProBillingResponses(page);
+    if (layout.retryLater) {
+      // Reproduce CI's admission refusal; the following attempt reaches real Cloud.
+      await page.route('**/v2/page-view/database/default{,?**}', (route) => route.fulfill({
+        json: { code: -5, message: 'atomic creation is busy; retry the same request' },
+      }), { times: 1 });
+    }
+
     const source = await createSource(page, request);
 
     if (layout.value === 8) grantTestProSubscription(page);
     const requests = observeCreations(page);
     let serverSchemaChecked = false;
+    let injectRetryLater = layout.retryLater;
 
     await page.route(viewRoute, async (route) => {
+      if (injectRetryLater) {
+        injectRetryLater = false;
+        await route.fulfill({ json: { code: -5, message: 'atomic creation is busy; retry the same request' } });
+        return;
+      }
+
       const response = await route.fetch();
       const result = await response.json();
 
-      expect(result.code).toBe(0);
+      if (result.code === -5) {
+        await route.fulfill({ response });
+        return;
+      }
+
+      expect(result.code, JSON.stringify(result)).toBe(0);
       const url = new URL(route.request().url());
 
       url.pathname = url.pathname.replace('/v2/page-view/database-view/default', `/page-view/${result.data.result.view_id}`);
@@ -118,11 +154,13 @@ for (const layout of [
           expect((database.get('fields') as Y.Map<unknown>).has(groups.get(0).get('field_id') as string)).toBe(true);
           expect((groups.get(0).get('groups') as Y.Array<unknown>).length).toBeGreaterThan(0);
         }
+
         serverSchemaChecked = true;
       } finally { doc.destroy(); }
+
       await route.fulfill({ response });
-    }, { times: 1 });
-    const response = page.waitForResponse((item) => item.request().method() === 'POST' && new URL(item.url()).pathname.endsWith(viewPath));
+    });
+    const response = waitForAtomicCreationCompletion(page, viewPath);
 
     await DatabaseViewSelectors.addViewButton(page).click();
     const option = page.getByRole('menuitem', { name: layout.name, exact: true });
@@ -137,7 +175,8 @@ for (const layout of [
     expect(serverSchemaChecked).toBe(true);
     expect(command.view).toMatchObject({ database_id: source.databaseId, parent_view_id: source.containerId,
       source_view_id: null, layout: layout.value });
-    expect(requests.compact).toHaveLength(1);
+    await expectOneCommittedView(requests);
+    if (layout.retryLater) expect(requests.compact.length).toBeGreaterThan(1);
     expect(requests.compact[0]).not.toMatch(/encoded_collab|doc_state|field_settings|layout_settings|filters|group_settings/);
     expect(requests.legacy).toEqual([]);
     const assertContent = async () => {
@@ -149,6 +188,7 @@ for (const layout of [
         if (await FormSelectors.autoCreateDialog(page).isVisible()) await FormSelectors.autoCreateStartFromScratch(page).click();
         await expect(FormSelectors.autoCreateDialog(page)).toBeHidden();
       }
+
       await ensurePageExpandedByViewId(page, source.containerId);
       await expect(page.getByTestId(`page-${viewId}`)).toHaveAttribute('data-selected', 'true');
       if (layout.value === 0) await expect(DatabaseGridSelectors.dataRows(page)).toHaveCount(3);
@@ -156,19 +196,23 @@ for (const layout of [
         await expect(BoardSelectors.cards(page)).toHaveCount(3);
         for (const rowId of source.rowIds) await expect(BoardSelectors.cardByRowId(page, rowId)).toBeVisible();
       }
+
       if (layout.value === 2) await expect(CalendarSelectors.calendarContainer(page).locator('.fc-daygrid-day').first()).toBeVisible();
       if (layout.value === 3) {
         await expect(ChartSelectors.chart(page).locator('svg.recharts-surface').or(ChartSelectors.emptyStateNoData(page))).toBeVisible();
         await expect(ChartSelectors.emptyStateNoField(page)).toBeHidden();
       }
+
       if (layout.value === 5) {
         await expect(DatabaseGallerySelectors.cards(page)).toHaveCount(3);
         for (const rowId of source.rowIds) await expect(DatabaseGallerySelectors.cardByRowId(page, rowId)).toBeVisible();
       }
+
       if (layout.value === 7) {
         await expect(FormSelectors.addQuestionButton(page)).toBeVisible();
         await expect(FormSelectors.previewButton(page)).toBeEnabled();
       }
+
       if (layout.value === 8) {
         await expect(TimelineSelectors.view(page)).toBeVisible();
         await expect(TimelineSelectors.sidebarRows(page)).toHaveCount(3);
@@ -183,7 +227,7 @@ for (const layout of [
     await page.reload();
     await assertContent();
     await expect(DatabaseViewSelectors.viewTab(page)).toHaveCount(layout.value === 7 ? 3 : 2);
-    expect(requests.compact).toHaveLength(1);
+    await expectOneCommittedView(requests);
   });
 }
 
@@ -205,11 +249,17 @@ test('a held source read and lost view ACK preserve selection until exact retry 
     const response = await route.fetch();
     const body = await response.json();
 
-    expect(body.code).toBe(0);
+    if (body.code === -5) {
+      await route.fulfill({ response });
+      return;
+    }
+
+    expect(body.code, JSON.stringify(body)).toBe(0);
     createdId = body.data.result.view_id;
     await route.abort('failed');
+    await page.unroute(viewRoute);
     committed.release();
-  }, { times: 1 });
+  });
 
   try {
     await addList(page);
@@ -236,8 +286,7 @@ test('a held source read and lost view ACK preserve selection until exact retry 
   await expect(DatabaseViewSelectors.viewTab(page)).toHaveCount(2);
   await ensurePageExpandedByViewId(page, source.containerId);
   await expect(page.getByTestId(`page-${createdId}`)).toHaveAttribute('data-selected', 'true');
-  expect(requests.compact).toHaveLength(2);
-  expect(requests.compact[1]).toBe(requests.compact[0]);
+  await expectOneCommittedView(requests, 1);
   expect(requests.compact[0]).not.toMatch(/encoded_collab|doc_state|field_settings|filters/);
   expect(requests.legacy).toEqual([]);
 
@@ -251,7 +300,7 @@ test('a held source read and lost view ACK preserve selection until exact retry 
 test('adding Feed to an existing Grid preserves the database and publishes matching cards, tab and sidebar across reload', async ({ page, request }, info) => {
   const source = await createSource(page, request);
   const requests = observeCreations(page);
-  const response = page.waitForResponse((item) => item.request().method() === 'POST' && new URL(item.url()).pathname.endsWith(viewPath));
+  const response = waitForAtomicCreationCompletion(page, viewPath);
 
   await DatabaseViewSelectors.addViewButton(page).click();
   await page.getByTestId('add-feed-view-button').click();
@@ -271,7 +320,7 @@ test('adding Feed to an existing Grid preserves the database and publishes match
   // source_view_id is reserved for an explicit copy/linked source recipe.
   expect(command.view).toMatchObject({ database_id: source.databaseId, source_view_id: null,
     parent_view_id: source.containerId, layout: 6, embedded: false });
-  expect(requests.compact).toHaveLength(1);
+  await expectOneCommittedView(requests);
   expect(requests.compact[0]).not.toMatch(/encoded_collab|doc_state|field_settings|filters/);
   expect(requests.legacy).toEqual([]);
   const feedId = body.data.result.view_id as string;
@@ -293,7 +342,7 @@ test('adding Feed to an existing Grid preserves the database and publishes match
   await expect(DatabaseFeedSelectors.cards(page)).toHaveCount(3);
   for (const rowId of source.rowIds) await expect(DatabaseFeedSelectors.cardByRowId(page, rowId)).toBeVisible();
   await expect(page.getByTestId(`page-${feedId}`)).toHaveAttribute('data-selected', 'true');
-  expect(requests.compact).toHaveLength(1);
+  await expectOneCommittedView(requests);
 });
 
 for (const failure of ['offline', 'unavailable capability'] as const) {
@@ -335,6 +384,7 @@ for (const failure of ['offline', 'unavailable capability'] as const) {
       if (failure === 'unavailable capability') {
         await expect(page.getByText('Update the server to use this creation feature.', { exact: true })).toBeVisible();
       }
+
       await expect(DatabaseViewSelectors.activeViewTab(page)).toHaveAttribute('data-testid', `view-tab-${source.primaryId}`);
       await expect(DatabaseViewSelectors.viewTab(page)).toHaveCount(1);
       await expect(DatabaseGridSelectors.grid(page)).toBeVisible();
@@ -348,8 +398,7 @@ for (const failure of ['offline', 'unavailable capability'] as const) {
 test('linked Gallery publishes the source database view under the document with matching sidebar and cards', async ({ page, request }) => {
   const source = await createSource(page, request);
   const requests = observeCreations(page);
-  const documentResponse = page.waitForResponse((response) => response.request().method() === 'POST' &&
-    new URL(response.url()).pathname.endsWith('/v2/page-view/document/default'));
+  const documentResponse = waitForAtomicCreationCompletion(page, '/v2/page-view/document/default');
 
   await page.locator('[data-testid="inline-add-page"]:visible').first().click();
   await AddPageSelectors.addDocumentButton(page).click();
@@ -357,6 +406,7 @@ test('linked Gallery publishes the source database view under the document with 
 
   expect(documentBody.code).toBe(0);
   const documentId = documentBody.data.result.view_id as string;
+
   // Sidebar creation first opens the normal ViewModal. Expand that owned document
   // before asserting its sidebar selection or reloading its full-page URL.
   await page.getByRole('dialog').getByRole('button', { name: 'Open as a Page', exact: true }).click();
@@ -371,7 +421,7 @@ test('linked Gallery publishes the source database view under the document with 
 
   await expect(picker).toBeVisible();
   await picker.locator('input').fill(source.name);
-  const response = page.waitForResponse((item) => item.request().method() === 'POST' && new URL(item.url()).pathname.endsWith(viewPath));
+  const response = waitForAtomicCreationCompletion(page, viewPath);
 
   await picker.getByText(source.name, { exact: true }).click();
   const created = await response;
@@ -392,7 +442,7 @@ test('linked Gallery publishes the source database view under the document with 
 
   await expect(documentItem.getByTestId(`page-${linkedId}`)).toBeVisible();
   await expect(page.getByTestId(`page-${documentId}`)).toHaveAttribute('data-selected', 'true');
-  expect(requests.compact).toHaveLength(1);
+  await expectOneCommittedView(requests);
   expect(requests.legacy).toEqual([]);
 
   await page.reload();

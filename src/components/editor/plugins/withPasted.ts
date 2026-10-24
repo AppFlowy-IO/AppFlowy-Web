@@ -1,4 +1,4 @@
-import { BasePoint, Editor, Element, Range, Text, Transforms } from 'slate';
+import { BasePoint, Editor, Range, Transforms } from 'slate';
 import { ReactEditor } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
@@ -18,6 +18,7 @@ import type { PasteAsMenuPayload } from '@/components/editor/components/panels/p
 import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
 import { parseHTML } from '@/components/editor/parsers/html-parser';
 import { parseMarkdown } from '@/components/editor/parsers/markdown-parser';
+import { parsedBlockToSlateElement } from '@/components/editor/parsers/parsed-block-to-slate';
 import { parsePlainTextFragments } from '@/components/editor/parsers/paste-fragment-detectors';
 import { parseTSVTable } from '@/components/editor/parsers/table-parser';
 import { ParsedBlock } from '@/components/editor/parsers/types';
@@ -554,111 +555,6 @@ function handleMultiLinePlainText(editor: ReactEditor, lines: string[]): boolean
     }));
 
   return insertParsedBlocks(editor, blocks);
-}
-
-/**
- * Converts ParsedBlock to Slate Element with proper text wrapper
- */
-function parsedBlockToSlateElement(block: ParsedBlock): Element {
-  const { type, data, children } = block;
-
-  if (SIMPLE_TABLE_CONTAINER_BLOCK_TYPES.includes(type)) {
-    return {
-      type,
-      data,
-      children: children.map(parsedBlockToSlateElement),
-    } as Element;
-  }
-
-  // Convert text + formats to Slate text nodes
-  const textNodes = parsedBlockToTextNodes(block);
-
-  // Create children - text wrapper + any nested blocks
-  const slateChildren: (Element | Text)[] = [
-    { type: YjsEditorKey.text, children: textNodes } as Element,
-    ...children.map(parsedBlockToSlateElement),
-  ];
-
-  return {
-    type,
-    data,
-    children: slateChildren,
-  } as Element;
-}
-
-const SIMPLE_TABLE_CONTAINER_BLOCK_TYPES = [
-  BlockType.SimpleTableBlock,
-  BlockType.SimpleTableRowBlock,
-  BlockType.SimpleTableCellBlock,
-];
-
-/**
- * Converts ParsedBlock text to Slate text nodes with formats
- */
-function parsedBlockToTextNodes(block: ParsedBlock): Text[] {
-  const { text, formats } = block;
-
-  if (formats.length === 0) {
-    return [{ text }];
-  }
-
-  // Create segments based on format boundaries
-  const boundaries = new Set<number>([0, text.length]);
-
-  formats.forEach((format) => {
-    boundaries.add(format.start);
-    boundaries.add(format.end);
-  });
-
-  const positions = Array.from(boundaries).sort((a, b) => a - b);
-  const nodes: Text[] = [];
-
-  for (let i = 0; i < positions.length - 1; i++) {
-    const start = positions[i];
-    const end = positions[i + 1];
-    const segment = text.slice(start, end);
-
-    if (segment.length === 0) continue;
-
-    // Find all formats that apply to this segment
-    const activeFormats = formats.filter((format) => format.start <= start && format.end >= end);
-
-    // Build attributes object
-    const attributes: Record<string, unknown> = {};
-
-    activeFormats.forEach((format) => {
-      switch (format.type) {
-        case 'bold':
-          attributes.bold = true;
-          break;
-        case 'italic':
-          attributes.italic = true;
-          break;
-        case 'underline':
-          attributes.underline = true;
-          break;
-        case 'strikethrough':
-          attributes.strikethrough = true;
-          break;
-        case 'code':
-          attributes.code = true;
-          break;
-        case 'link':
-          attributes.href = format.data?.href;
-          break;
-        case 'color':
-          attributes.font_color = format.data?.color;
-          break;
-        case 'bgColor':
-          attributes.bg_color = format.data?.bgColor;
-          break;
-      }
-    });
-
-    nodes.push({ text: segment, ...attributes } as Text);
-  }
-
-  return nodes;
 }
 
 /**

@@ -2,7 +2,7 @@ import { lazy, memo, Suspense, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useRowReactions, useToggleRowReactionDispatch } from '@/application/database-yjs';
-import { ReactComponent as AddEmojiIcon } from '@/assets/icons/add_emoji.svg';
+import { ReactComponent as AddReactionIcon } from '@/assets/icons/add_comment_reaction.svg';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -13,7 +13,11 @@ const EmojiPicker = lazy(() =>
   import('@/components/_shared/emoji-picker').then((module) => ({ default: module.EmojiPicker }))
 );
 
-/** Desktop `FeedRowReactions`: reaction chips plus an add-reaction chip when commenting is allowed. */
+/**
+ * The Figma `Reaction` row: one `Reaction Button` per emoji (filled when the
+ * current user reacted) plus an add-reaction ghost button when commenting is
+ * allowed.
+ */
 export const FeedRowReactions = memo(function FeedRowReactions({
   rowId,
   testIdPrefix = 'feed',
@@ -35,7 +39,7 @@ export const FeedRowReactions = memo(function FeedRowReactions({
 
   return (
     <div
-      className='mt-1.5 flex flex-wrap items-center gap-1'
+      className='flex flex-wrap items-center gap-1'
       data-feed-interactive='true'
       data-testid={`${testIdPrefix}-row-reactions-${rowId}`}
     >
@@ -47,11 +51,10 @@ export const FeedRowReactions = memo(function FeedRowReactions({
             aria-label={t('feed.toggleReaction', { emoji })}
             aria-pressed={hasReacted}
             className={cn(
-              'flex h-7 items-center gap-1 rounded-full border px-2 text-xs transition-colors',
-              hasReacted
-                ? 'bg-fill-theme-light text-text-theme border-border-theme-thick'
-                : 'border-border-primary bg-transparent text-text-secondary',
-              canReact ? 'hover:bg-fill-content-hover' : 'cursor-default'
+              'flex h-7 items-center gap-0.5 rounded-300 px-1.5 py-1 transition-colors',
+              'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-fill-theme-thick',
+              hasReacted ? 'bg-fill-button-active text-text-info-on-fill' : 'text-text-secondary',
+              canReact ? !hasReacted && 'hover:bg-surface-layer-02-hover' : 'cursor-default'
             )}
             data-reacted={hasReacted}
             data-testid={`${testIdPrefix}-row-reaction-${rowId}-${emoji}`}
@@ -63,8 +66,15 @@ export const FeedRowReactions = memo(function FeedRowReactions({
             }}
             type='button'
           >
-            <span>{emoji}</span>
-            <span data-testid={`${testIdPrefix}-row-reaction-count-${rowId}-${emoji}`}>{users.length}</span>
+            <span aria-hidden='true' className='flex h-5 w-5 items-center justify-center text-sm leading-5'>
+              {emoji}
+            </span>
+            <span
+              className='text-xs leading-[18px] tracking-[0.1px]'
+              data-testid={`${testIdPrefix}-row-reaction-count-${rowId}-${emoji}`}
+            >
+              {users.length}
+            </span>
           </button>
         );
       })}
@@ -76,12 +86,12 @@ export const FeedRowReactions = memo(function FeedRowReactions({
               <PopoverTrigger asChild>
                 <button
                   aria-label={t('feed.addReaction')}
-                  className='flex h-7 items-center rounded-full border border-dashed border-border-primary px-2 text-icon-secondary hover:bg-fill-content-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-fill-theme-thick'
+                  className='flex h-7 w-7 items-center justify-center rounded-300 p-1 text-icon-secondary hover:bg-fill-content-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-fill-theme-thick'
                   data-testid={`${testIdPrefix}-row-add-reaction-${rowId}`}
                   onClick={(event) => event.stopPropagation()}
                   type='button'
                 >
-                  <AddEmojiIcon aria-hidden='true' className='h-4 w-4' />
+                  <AddReactionIcon aria-hidden='true' className='h-5 w-5' />
                 </button>
               </PopoverTrigger>
             </TooltipTrigger>

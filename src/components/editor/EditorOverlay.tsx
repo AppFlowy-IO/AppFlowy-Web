@@ -20,7 +20,6 @@ import { useEditorContext, useEditorLocalState } from '@/components/editor/Edito
 import { getScrollParent } from '@/components/global-comment/utils';
 
 
-import BlockPopover from './components/block-popover';
 import Panels from './components/panels';
 import Toolbars from './components/toolbar';
 
@@ -200,7 +199,6 @@ function EditorOverlay({ viewId, workspaceId }: { viewId: string; workspaceId: s
         >
           <Toolbars />
           <Panels />
-          <BlockPopover />
           <Portal container={container}>
             {absoluteHeight ? (
               <div

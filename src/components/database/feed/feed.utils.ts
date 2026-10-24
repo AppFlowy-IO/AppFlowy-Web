@@ -76,6 +76,31 @@ export function formatFeedRelativeTime(seconds: number, t: FeedTranslate, now = 
   return time.format('MMM D, YYYY');
 }
 
+/**
+ * The link "Copy link" puts on the clipboard: the same row URL the row peek's
+ * share panel copies — the database page, the active tab and the row.
+ */
+export function buildFeedRowUrl({
+  databasePageId,
+  origin,
+  rowId,
+  viewId,
+  workspaceId,
+}: {
+  databasePageId: string;
+  origin: string;
+  rowId: string;
+  viewId?: string;
+  workspaceId: string;
+}): string {
+  const url = new URL(`/app/${workspaceId}/${databasePageId}`, origin);
+
+  if (viewId) url.searchParams.set('v', viewId);
+  url.searchParams.set('r', rowId);
+
+  return url.toString();
+}
+
 export function isFeedRowEdited(
   createdAtSeconds: number | undefined,
   modifiedAtSeconds: number | undefined,

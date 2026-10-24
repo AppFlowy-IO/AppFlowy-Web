@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
-import { defineBddConfig } from 'playwright-bdd';
 import * as dotenv from 'dotenv';
+import { defineBddConfig } from 'playwright-bdd';
 
 dotenv.config();
 
@@ -14,6 +14,7 @@ function optInSuites(): RegExp | undefined {
   const skipped = [
     ...(process.env.RUN_LARGE_DATABASE ? [] : ['@large-database']),
     ...(process.env.RUN_NATHAN_EMPLOYEES ? [] : ['@nathan-employees']),
+    ...(process.env.RUN_REF_PAGES_TEST ? [] : ['@local-ref-pages']),
   ];
 
   return skipped.length > 0 ? new RegExp(skipped.join('|')) : undefined;
@@ -26,6 +27,7 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   // Opt-in suites: the 5000-row database takes minutes to seed (RUN_LARGE_DATABASE=1), and the
   // nathan@appflowy.io employees database only exists on a local server (RUN_NATHAN_EMPLOYEES=1).
+  // The existing Nathan/Annie reference fixture is also local-only (RUN_REF_PAGES_TEST=1).
   grepInvert: optInSuites(),
   retries: process.env.CI ? 1 : 0,
   workers: process.env.CI ? 1 : undefined,
@@ -38,7 +40,9 @@ export default defineConfig({
     viewport: { width: 1440, height: 900 },
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
-    video: 'off',
+    video: process.env.PLAYWRIGHT_VIDEO === 'on'
+      ? { mode: 'on', size: { width: 1440, height: 900 } }
+      : 'off',
     actionTimeout: 15000,
     navigationTimeout: 15000,
     bypassCSP: true,

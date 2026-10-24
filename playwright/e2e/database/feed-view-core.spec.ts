@@ -119,7 +119,11 @@ test.describe('Feed view basics (Flutter desktop parity)', () => {
     await openFeedCardMenu(page, firstRowId);
     await expect(DatabaseFeedSelectors.rowDuplicate(page)).toBeVisible();
     await expect(DatabaseFeedSelectors.rowDelete(page)).toBeVisible();
-    await expect(DatabaseFeedSelectors.rowActionMenu(page).getByRole('menuitem')).toHaveText(['Duplicate', 'Delete']);
+    await expect(DatabaseFeedSelectors.rowActionMenu(page).getByRole('menuitem')).toHaveText([
+      'Copy link',
+      'Duplicate',
+      'Delete',
+    ]);
     await expect(page.getByTestId(`feed-card-actions-${firstRowId}`)).toHaveCSS('opacity', '1');
     await expect(RowDetailSelectors.modal(page)).toHaveCount(0);
 

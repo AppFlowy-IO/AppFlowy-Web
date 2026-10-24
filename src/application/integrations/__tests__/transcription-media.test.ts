@@ -102,16 +102,16 @@ describe('reading media duration', () => {
 
 describe('import error classes', () => {
   it('offers Retry only for failures that can change on a later attempt', () => {
-    for (const code of ['usageUnavailable', 'networkError', 'youtubeBlocked', 'youtubeMetadataFailed', 'youtubeCaptionsFailed', 'youtubeDownloadBlocked'] as const) {
+    for (const code of ['usageUnavailable', 'networkError', 'youtubeBlocked', 'youtubeMetadataFailed', 'youtubeCaptionsFailed', 'youtubeCaptionsBlocked'] as const) {
       expect(isTransientImportError(code)).toBe(true);
     }
 
-    for (const code of ['unsupportedUrl', 'youtubeVideoUnavailable', 'youtubeCaptionsUnavailable', 'youtubeExtensionRequired', 'youtubeDurationOutOfRange', 'quotaExceeded', undefined] as const) {
+    for (const code of ['unsupportedUrl', 'youtubeVideoUnavailable', 'youtubeCaptionsUnavailable', 'quotaExceeded', undefined] as const) {
       expect(isTransientImportError(code)).toBe(false);
     }
   });
 
-  it('hides the YouTube media fallback only for AppFlowy-side failures', () => {
+  it('hides the upload fallback only for AppFlowy-side failures', () => {
     for (const code of ['usageFailed', 'usageUnavailable', 'networkError'] as const) expect(isServiceImportError(code)).toBe(true);
     for (const code of ['youtubeBlocked', 'youtubeVideoUnavailable', 'youtubeMetadataFailed', undefined] as const) expect(isServiceImportError(code)).toBe(false);
   });

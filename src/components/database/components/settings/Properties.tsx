@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import { usePropertiesSelector } from '@/application/database-yjs';
 import { ReactComponent as Checklist } from '@/assets/icons/database/checklist.svg';
+import { ReactComponent as ShowIcon } from '@/assets/icons/show.svg';
 import Property from '@/components/database/components/settings/Property';
 import {
   PropertyDragContext,
@@ -15,7 +16,7 @@ import {
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
 
-function Properties({ excludeFieldId }: { excludeFieldId?: string }) {
+function Properties({ excludeFieldId, gallery = false }: { excludeFieldId?: string; gallery?: boolean }) {
   const { t } = useTranslation();
   const { properties: allProperties } = usePropertiesSelector();
   const properties = React.useMemo(
@@ -29,8 +30,8 @@ function Properties({ excludeFieldId }: { excludeFieldId?: string }) {
   return (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger data-testid='database-properties-settings-trigger'>
-        <Checklist aria-hidden='true' />
-        <span>{t('grid.settings.properties')}</span>
+        {gallery ? <ShowIcon aria-hidden='true' /> : <Checklist aria-hidden='true' />}
+        <span>{gallery ? t('grid.settings.propertyVisibility', 'Property visibility') : t('grid.settings.properties')}</span>
         <span className='ml-auto text-xs text-text-tertiary'>{properties.length}</span>
       </DropdownMenuSubTrigger>
       <DropdownMenuPortal>

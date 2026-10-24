@@ -6,6 +6,8 @@ import { useTranslation } from 'react-i18next';
 
 import {
   Column,
+  FieldType,
+  RowMetaKey,
   RowMeta,
   useCellSelector,
   useDatabaseContext,
@@ -14,68 +16,64 @@ import {
   useRowCommentCount,
   useRowMetaSelector,
 } from '@/application/database-yjs';
-import { GalleryCardPreview, GalleryCardSize } from '@/application/types';
+import { useUpdateRowMetaDispatch } from '@/application/database-yjs/dispatch';
+import { GalleryCardPreview, GalleryCardSize, RowCoverType } from '@/application/types';
 import { ReactComponent as DocumentIcon } from '@/assets/icons/doc.svg';
 import { ReactComponent as CommentIcon } from '@/assets/icons/titlebar_comment.svg';
+import { useLatest } from '@/components/_shared/hooks/useLatest';
 import { Cell } from '@/components/database/components/cell/Cell';
 import { ClearSortingConfirm } from '@/components/database/components/sorts/ClearSortingConfirm';
 import { ListCell } from '@/components/database/list/ListCell';
 import { cn } from '@/lib/utils';
+import { clampCoverOffset } from '@/utils/cover';
 
 import {
   GALLERY_CARD_THEME_CLASS_NAME,
+  GALLERY_COVER_ASPECT_RATIO,
   GALLERY_COVER_PLACEHOLDER_BACKGROUND_CLASS_NAME,
   GALLERY_TILE_PADDING,
   GALLERY_TITLE_SURFACE_BACKGROUND_CLASS_NAME,
-  getGalleryCoverHeight,
   getGalleryMinimumCardHeight,
 } from './gallery.constants';
 import GalleryCardToolbar from './GalleryCardToolbar';
 import GalleryPreview from './GalleryPreview';
 import GalleryRowIcon from './GalleryRowIcon';
 import { useGalleryHasSorts } from './GallerySortState';
+import { useGalleryReposition } from './GalleryViewContext';
 
+// Figma card title: Body_S/Enhanced (14px, weight 500), wrapping onto more lines instead of truncating.
 const primaryCellStyle: CSSProperties = {
-  alignItems: 'center',
-  display: 'flex',
+  display: 'block',
   fontSize: 14,
-  fontWeight: 600,
+  fontWeight: 500,
   lineHeight: '20px',
   maxWidth: '100%',
   minHeight: 20,
-  overflow: 'hidden',
+  overflowWrap: 'anywhere',
   textAlign: 'left',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
 };
 
 const propertyCellStyle: CSSProperties = {
   alignItems: 'center',
-  // Flutter desktopListCardCellStyleMap renders property text in textColorScheme.primary;
-  // GalleryProperty remaps --text-primary to --gallery-card-title.
   color: 'var(--text-primary)',
   display: 'flex',
   fontSize: 12,
-  lineHeight: '20px',
+  lineHeight: '18px',
   maxWidth: '100%',
   minHeight: 20,
   overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
+  overflowWrap: 'anywhere',
+  whiteSpace: 'normal',
 };
 
 const GALLERY_PREVIEW_ROOT_MARGIN = '400px 0px';
+// Figma card (node 7422:203740): 12px radius, primary border with the card
+// shadow at rest; hover swaps in the primary-hover border and tints the content.
 const galleryCardClassName = cn(
   GALLERY_CARD_THEME_CLASS_NAME,
-  'group/gallery-card relative flex h-full w-full flex-col overflow-hidden rounded-[10px] border bg-[var(--gallery-card-surface)]',
-  'border-[rgba(31,35,41,0.14)] transition-[border-color,box-shadow,transform] ease-out [transition-duration:120ms] motion-reduce:transition-none',
-  'focus-within:border-[rgba(0,188,240,0.65)] focus-within:shadow-[0_6px_12px_rgba(31,35,41,0.10)]',
-  'hover:border-[rgba(0,188,240,0.65)] hover:shadow-[0_6px_12px_rgba(31,35,41,0.10)]',
-  '[[data-dark-mode=true]_&]:border-[#59647A]',
-  '[[data-dark-mode=true]_&]:focus-within:border-[rgba(0,188,240,0.65)]',
-  '[[data-dark-mode=true]_&]:focus-within:shadow-[0_6px_12px_rgba(0,0,0,0.22)]',
-  '[[data-dark-mode=true]_&]:hover:border-[rgba(0,188,240,0.65)]',
-  '[[data-dark-mode=true]_&]:hover:shadow-[0_6px_12px_rgba(0,0,0,0.22)]'
+  'group/gallery-card relative flex h-full w-full flex-col overflow-hidden rounded-400 border bg-[var(--gallery-card-surface)]',
+  'border-border-primary shadow-card transition-[border-color,transform] ease-out [transition-duration:120ms] motion-reduce:transition-none',
+  'focus-within:border-border-primary-hover hover:border-border-primary-hover'
 );
 
 function useGalleryPreviewNearViewport(tileRef: React.MutableRefObject<HTMLDivElement | null>): boolean {
@@ -266,7 +264,7 @@ function GalleryTitle({
 
   return (
     <div
-      className='gallery-card-title flex h-5 min-w-0 items-center text-sm font-semibold text-[var(--gallery-card-title)]'
+      className='gallery-card-title flex min-h-5 min-w-0 items-start text-sm font-medium text-[var(--gallery-card-title)]'
       data-primary-indicator={indicator}
       data-testid={`gallery-card-title-${rowId}`}
       id={id}
@@ -276,7 +274,7 @@ function GalleryTitle({
       ) : indicator === 'document' ? (
         <DocumentIcon
           aria-hidden='true'
-          className='mr-1.5 h-4 w-4 shrink-0 p-px text-[var(--gallery-card-hint)]'
+          className='mr-1.5 h-5 w-5 shrink-0 text-text-secondary'
           data-testid={`gallery-row-document-icon-${rowId}`}
         />
       ) : null}
@@ -292,7 +290,7 @@ function GalleryTitle({
             rowId={rowId}
             setEditing={setEditing}
             style={cellStyle}
-            wrap={false}
+            wrap
           />
         ) : (
           <span
@@ -317,16 +315,150 @@ function GalleryTitle({
   );
 }
 
+function countPersons(data: unknown): number {
+  if (typeof data !== 'string' || !data) return 0;
+  try {
+    const parsed: unknown = JSON.parse(data);
+
+    return Array.isArray(parsed) ? parsed.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
 function GalleryProperty({ field, rowId }: { field: Column; rowId: string }) {
   const cell = useCellSelector({ fieldId: field.fieldId, rowId });
+  // Figma (node 7451:52975): a single person shows avatar and name; several people show avatars only.
+  const showPersonNames = field.fieldType !== FieldType.Person || countPersons(cell?.data) <= 1;
 
   return (
     <div
-      className='min-w-0 max-w-full shrink-0 overflow-hidden [--icon-secondary:var(--gallery-card-hint)] [--text-primary:var(--gallery-card-title)] [--text-secondary:var(--gallery-card-hint)]'
+      className='min-w-0 max-w-full overflow-hidden text-text-primary'
       data-field-id={field.fieldId}
       data-testid={`gallery-field-${field.fieldId}-${rowId}`}
     >
-      <ListCell cell={cell} field={field} rowId={rowId} style={propertyCellStyle} />
+      <ListCell cell={cell} field={field} rowId={rowId} style={propertyCellStyle} wrap showPersonNames={showPersonNames} />
+    </div>
+  );
+}
+
+export interface GalleryCoverRepositionSession {
+  /** The cover being repositioned; a remote cover change ends the session. */
+  data: string;
+  initialOffset: number;
+}
+
+/**
+ * The card's cover, with the drag-to-reposition preview kept local so pointer
+ * moves re-render only this subtree. The live offset is mirrored into
+ * `liveOffsetRef` for the parent to persist on save.
+ */
+function GalleryCardCover({
+  cardPreview,
+  coverFieldId,
+  fitImage,
+  liveOffsetRef,
+  meta,
+  previewNearViewport,
+  rowId,
+  session,
+}: {
+  cardPreview: GalleryCardPreview;
+  coverFieldId?: string;
+  fitImage: boolean;
+  liveOffsetRef: React.MutableRefObject<number>;
+  meta: RowMeta | null | undefined;
+  previewNearViewport: boolean;
+  rowId: string;
+  /** Set while this card repositions its cover. */
+  session: GalleryCoverRepositionSession | null;
+}) {
+  const { t } = useTranslation();
+  const coverRef = useRef<HTMLDivElement>(null);
+  const pointerY = useRef<number | null>(null);
+  const [draft, setDraft] = useState<{ session: GalleryCoverRepositionSession; offset: number } | null>(null);
+  const repositioning = session !== null;
+  const offset = session ? (draft?.session === session ? draft.offset : session.initialOffset) : undefined;
+  const moveBy = (delta: number) => {
+    if (!session) return;
+    const next = clampCoverOffset(liveOffsetRef.current + delta);
+
+    liveOffsetRef.current = next;
+    setDraft({ session, offset: next });
+  };
+
+  useEffect(() => {
+    if (session) coverRef.current?.focus();
+  }, [session]);
+
+  return (
+    <div
+      ref={coverRef}
+      className={cn(
+        'relative w-full shrink-0 overflow-hidden',
+        repositioning ? 'z-20 cursor-grab touch-none select-none active:cursor-grabbing' : 'pointer-events-none'
+      )}
+      style={{ aspectRatio: GALLERY_COVER_ASPECT_RATIO }}
+      data-testid={`gallery-cover-${rowId}`}
+      role={repositioning ? 'slider' : undefined}
+      tabIndex={repositioning ? 0 : undefined}
+      aria-label={repositioning ? t('document.plugins.cover.repositionCover') : undefined}
+      aria-orientation={repositioning ? 'vertical' : undefined}
+      aria-valuemin={repositioning ? -1 : undefined}
+      aria-valuemax={repositioning ? 1 : undefined}
+      aria-valuenow={repositioning ? offset : undefined}
+      onPointerDown={(event) => {
+        if (!repositioning || event.button !== 0) return;
+        event.stopPropagation();
+        pointerY.current = event.clientY;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        event.currentTarget.focus();
+      }}
+      onPointerMove={(event) => {
+        if (!repositioning || pointerY.current === null) return;
+        // A full sweep over half the cover maps to the whole -1..1 range.
+        const delta = -(event.clientY - pointerY.current) / (event.currentTarget.clientHeight / 2);
+
+        pointerY.current = event.clientY;
+        moveBy(delta);
+      }}
+      onPointerUp={() => {
+        pointerY.current = null;
+      }}
+      onPointerCancel={() => {
+        pointerY.current = null;
+      }}
+      onKeyDown={(event) => {
+        if (!repositioning || !['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+        event.preventDefault();
+        moveBy(event.key === 'ArrowUp' ? 0.1 : -0.1);
+      }}
+    >
+      {previewNearViewport ? (
+        <GalleryPreview
+          coverFieldId={coverFieldId}
+          fitImage={fitImage}
+          meta={meta}
+          preview={cardPreview}
+          offset={offset}
+          rowId={rowId}
+        />
+      ) : (
+        <div
+          aria-hidden='true'
+          className={cn(
+            'gallery-card-cover-placeholder h-full w-full overflow-hidden',
+            GALLERY_COVER_PLACEHOLDER_BACKGROUND_CLASS_NAME
+          )}
+          data-gallery-preview={cardPreview}
+          data-testid={`gallery-card-preview-${rowId}`}
+        />
+      )}
+      {repositioning ? (
+        <span className='pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-md bg-black/40 px-3 py-1.5 text-sm font-medium text-white backdrop-blur-sm'>
+          {t('document.plugins.cover.dragImageToReposition')}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -334,6 +466,8 @@ function GalleryProperty({ field, rowId }: { field: Column; rowId: string }) {
 export interface GalleryCardProps {
   cardPreview: GalleryCardPreview;
   cardSize: GalleryCardSize;
+  compactMode?: boolean;
+  occurrenceId?: string;
   coverFieldId?: string;
   fields: Column[];
   fitImage: boolean;
@@ -346,6 +480,8 @@ export interface GalleryCardProps {
 export const GalleryCard = memo(function GalleryCard({
   cardPreview,
   cardSize,
+  compactMode = false,
+  occurrenceId,
   coverFieldId,
   fields,
   fitImage,
@@ -361,11 +497,39 @@ export const GalleryCard = memo(function GalleryCard({
   const readOnly = useReadOnly();
   const { bindRowSync, navigateToRow } = useDatabaseContext();
   const meta = useRowMetaSelector(rowId);
+  const updateMeta = useUpdateRowMetaDispatch(rowId);
+  const repositionController = useGalleryReposition();
+  const repositionId = useRef(Symbol('gallery-cover')).current;
+  const [repositionSession, setRepositionSession] = useState<GalleryCoverRepositionSession | null>(null);
+  // GalleryCardCover keeps the drag preview; the parent only reads the final offset on save.
+  const liveOffset = useRef(0);
+  const canReposition =
+    !readOnly &&
+    cardPreview === GalleryCardPreview.PageCover &&
+    meta?.cover?.cover_type === RowCoverType.FileCover &&
+    Boolean(meta.cover.data);
+  const repositioning = canReposition && repositionSession?.data === meta?.cover?.data;
+  const cancelReposition = () => {
+    repositionController?.end(repositionId);
+    setRepositionSession(null);
+  };
+
+  const saveReposition = () => {
+    if (repositioning && meta?.cover) {
+      updateMeta(RowMetaKey.CoverId, JSON.stringify({ ...meta.cover, offset: liveOffset.current }));
+    }
+
+    cancelReposition();
+  };
+
+  const saveRepositionRef = useLatest(saveReposition);
+
+  useEffect(() => () => repositionController?.end(repositionId), [repositionController, repositionId]);
   const primaryField = useMemo(() => fields.find((field) => field.isPrimary) ?? fields[0], [fields]);
   const propertyFields = useMemo(() => fields.filter((field) => !field.isPrimary), [fields]);
   const dnd = useGalleryCardDnd({
     dragRef,
-    enabled: reorderable && !readOnly,
+    enabled: reorderable && !readOnly && !repositioning,
     onDropRow,
     rowId,
     tileRef,
@@ -381,17 +545,16 @@ export const GalleryCard = memo(function GalleryCard({
     navigateToRow?.(rowId);
   }, [navigateToRow, rowId]);
 
-  const coverHeight = getGalleryCoverHeight(cardSize);
   const minimumHeight = getGalleryMinimumCardHeight(cardSize);
   const tileMinimumHeight = minimumHeight + GALLERY_TILE_PADDING * 2;
-  const openLabelId = `gallery-card-open-label-${rowId}`;
-  const titleLabelId = `gallery-card-title-label-${rowId}`;
+  const openLabelId = `gallery-card-open-label-${occurrenceId ?? rowId}`;
+  const titleLabelId = `gallery-card-title-label-${occurrenceId ?? rowId}`;
 
   return (
     <>
       <div
         className={cn(
-          'relative h-full p-2 transition-transform ease-out [transition-duration:120ms] motion-reduce:transition-none',
+          'relative h-full transition-transform ease-out [transition-duration:120ms] motion-reduce:transition-none',
           dnd.dragging && 'select-none opacity-25'
         )}
         data-row-id={rowId}
@@ -407,6 +570,15 @@ export const GalleryCard = memo(function GalleryCard({
           className={cn(galleryCardClassName, dnd.closestEdge && 'scale-[0.98]')}
           data-testid={`gallery-card-${rowId}`}
           style={{ minHeight: minimumHeight }}
+          onBlur={(event) => {
+            if (repositioning && !event.currentTarget.contains(event.relatedTarget)) cancelReposition();
+          }}
+          onKeyDown={(event) => {
+            if (repositioning && event.key === 'Escape') {
+              event.stopPropagation();
+              cancelReposition();
+            }
+          }}
         >
           <button
             aria-description={
@@ -418,11 +590,11 @@ export const GalleryCard = memo(function GalleryCard({
             }
             aria-keyshortcuts={reorderable ? 'Alt+ArrowLeft Alt+ArrowRight' : undefined}
             aria-labelledby={`${openLabelId} ${titleLabelId}`}
-            className='absolute inset-0 z-10 cursor-pointer rounded-[10px] bg-transparent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[rgba(0,188,240,0.65)]'
+            className='absolute inset-0 z-10 cursor-pointer rounded-400 bg-transparent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-border-theme-thick'
             data-testid={`gallery-card-open-${rowId}`}
             onClick={(event) => {
               event.stopPropagation();
-              if (dnd.ignoreClickRef.current) return;
+              if (dnd.ignoreClickRef.current || repositioning) return;
               navigateToRowDetail();
             }}
             onKeyDown={(event) => {
@@ -440,31 +612,20 @@ export const GalleryCard = memo(function GalleryCard({
             </span>
           </button>
 
-          <div className='pointer-events-none w-full shrink-0 overflow-hidden' style={{ height: coverHeight }}>
-            {previewNearViewport ? (
-              <GalleryPreview
-                coverFieldId={coverFieldId}
-                fitImage={fitImage}
-                meta={meta}
-                preview={cardPreview}
-                rowId={rowId}
-              />
-            ) : (
-              <div
-                aria-hidden='true'
-                className={cn(
-                  'gallery-card-cover-placeholder h-full w-full overflow-hidden',
-                  GALLERY_COVER_PLACEHOLDER_BACKGROUND_CLASS_NAME
-                )}
-                data-gallery-preview={cardPreview}
-                data-testid={`gallery-card-preview-${rowId}`}
-              />
-            )}
-          </div>
+          <GalleryCardCover
+            cardPreview={cardPreview}
+            coverFieldId={coverFieldId}
+            fitImage={fitImage}
+            liveOffsetRef={liveOffset}
+            meta={meta}
+            previewNearViewport={previewNearViewport}
+            rowId={rowId}
+            session={repositioning ? repositionSession : null}
+          />
 
           <div
             className={cn(
-              'gallery-card-title-surface pointer-events-none relative z-20 flex min-h-8 flex-1 flex-col px-3 py-1.5',
+              'gallery-card-title-surface pointer-events-none relative z-20 flex min-h-8 flex-1 flex-col p-3',
               editing && 'pointer-events-auto',
               '[&_[contenteditable=true]]:pointer-events-auto [&_[role=button]]:pointer-events-auto [&_a]:pointer-events-auto [&_button]:pointer-events-auto [&_input]:pointer-events-auto [&_label]:pointer-events-auto [&_select]:pointer-events-auto [&_textarea]:pointer-events-auto',
               GALLERY_TITLE_SURFACE_BACKGROUND_CLASS_NAME
@@ -484,7 +645,11 @@ export const GalleryCard = memo(function GalleryCard({
 
             {propertyFields.length > 0 ? (
               <div
-                className='mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-[var(--gallery-card-hint)]'
+                className={cn(
+                  'mt-2 flex min-w-0 gap-y-2 text-xs',
+                  compactMode ? 'flex-wrap items-center gap-x-3' : 'flex-col items-start'
+                )}
+                data-compact={compactMode}
                 data-testid={`gallery-card-properties-${rowId}`}
               >
                 {propertyFields.map((field) => (
@@ -494,7 +659,25 @@ export const GalleryCard = memo(function GalleryCard({
             ) : null}
           </div>
 
-          {!readOnly ? <GalleryCardToolbar onEdit={() => setEditing(true)} rowId={rowId} /> : null}
+          <GalleryCardToolbar
+            onEdit={() => setEditing(true)}
+            onReposition={
+              canReposition
+                ? () => {
+                    const initialOffset = clampCoverOffset(meta.cover!.offset);
+
+                    liveOffset.current = initialOffset;
+                    repositionController?.begin({ id: repositionId, save: () => saveRepositionRef.current() });
+                    setRepositionSession({ data: meta.cover!.data, initialOffset });
+                  }
+                : undefined
+            }
+            repositioning={repositioning}
+            onCancelReposition={cancelReposition}
+            onSaveReposition={saveReposition}
+            readOnly={readOnly}
+            rowId={rowId}
+          />
         </div>
 
         {dnd.closestEdge ? (

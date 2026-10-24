@@ -141,7 +141,7 @@ describe('FeedCard', () => {
     expect(screen.getByTestId('mock-actions-row-1').getAttribute('data-editable')).toBe('false');
   });
 
-  it('renders creator info with an edited marker and indents the content like Desktop', () => {
+  it('renders creator info with an edited marker above the body like the Figma card', () => {
     const createdAt = Math.floor(Date.now() / 1000) - 3600;
 
     resolveMember.mockImplementation((id: string | null | undefined) =>
@@ -158,7 +158,45 @@ describe('FeedCard', () => {
 
     expect(screen.getByTestId('feed-card-creator-name-row-1').textContent).toBe('Alice');
     expect(screen.getByTestId('feed-card-created-at-row-1').textContent).toContain('globalComment.edited');
-    expect(screen.getByTestId('feed-card-title-row-1').closest('.pl-8')).not.toBeNull();
+    const body = screen.getByTestId('feed-card-body-row-1');
+
+    expect(screen.getByTestId('feed-card-creator-row-1').nextElementSibling).toBe(body);
+    expect(body.contains(screen.getByTestId('feed-card-title-row-1'))).toBe(true);
+    expect(body.className).not.toContain('pt-6');
+  });
+
+  it('keeps the header inset for the body when the creator is unknown', () => {
+    render(<FeedCard primaryFieldId='primary' rowId='row-1' />);
+
+    expect(screen.queryByTestId('feed-card-creator-row-1')).toBeNull();
+    expect(screen.getByTestId('feed-card-body-row-1').className).toContain('pt-6');
+  });
+
+  it('caps the card at 600px and opens the row as a full page from clipped content', () => {
+    const navigateToView = jest.fn().mockResolvedValue(undefined);
+    const offsetHeight = jest.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(900);
+    const clientHeight = jest.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(400);
+
+    mockUseDatabaseContext.mockReturnValue({
+      activeViewId: 'view-feed',
+      bindRowSync,
+      navigateToRow,
+      navigateToView,
+    } as unknown as ReturnType<typeof useDatabaseContext>);
+
+    try {
+      render(<FeedCard primaryFieldId='primary' rowId='row-1' />);
+
+      expect(screen.getByTestId('feed-card-row-1').style.maxHeight).toBe('600px');
+      expect(screen.getByTestId('feed-card-body-row-1').getAttribute('data-clipped')).toBe('true');
+
+      fireEvent.click(screen.getByTestId('feed-card-open-full-page-row-1'));
+      expect(navigateToView).toHaveBeenCalledWith('view-feed', 'row-1');
+      expect(navigateToRow).not.toHaveBeenCalled();
+    } finally {
+      offsetHeight.mockRestore();
+      clientHeight.mockRestore();
+    }
   });
 
   it('renders the cover, icon, and document preview from row meta', () => {
@@ -190,6 +228,19 @@ describe('FeedCard', () => {
 
     expect(screen.getByTestId('feed-card-title-row-1').textContent).toBe('Post title');
     expect(screen.queryByTestId('mock-preview-row-1')).toBeNull();
+  });
+
+  it('drops its flex display while a search hides a retained card', () => {
+    const { rerender } = render(<FeedCard hidden primaryFieldId='primary' rowId='row-1' />);
+    const card = screen.getByTestId('feed-card-row-1');
+
+    // `.flex` would override the `hidden` attribute and leave the card on screen.
+    expect(card.hidden).toBe(true);
+    expect(card.classList.contains('flex')).toBe(false);
+    expect(card.classList.contains('hidden')).toBe(true);
+
+    rerender(<FeedCard primaryFieldId='primary' rowId='row-1' />);
+    expect(card.classList.contains('flex')).toBe(true);
   });
 
   it('mounts previews only for matching cards near the viewport and releases them when they leave', () => {

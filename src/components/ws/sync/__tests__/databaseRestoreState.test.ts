@@ -59,6 +59,41 @@ test('sequential messages honor Retry-After while new restore evidence can retry
   expect(read).toHaveBeenCalledTimes(3);
 });
 
+test.each([false, true])('root hints arriving during a read only repeat it for a new version: %s', async (changed) => {
+  let finish!: (state: { database_restore_id: null; version: null }) => void;
+  const read = jest.fn()
+    .mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }))
+    .mockResolvedValue({ database_restore_id: null, version: null });
+  const tracker = new DatabaseRestoreTracker('marker:', read, jest.fn(), localStorage);
+
+  tracker.observeRestoreHint('db', undefined, 'version-a');
+  const pending = tracker.checkIfStale('db');
+
+  tracker.observeRestoreHint('db', undefined, changed ? 'version-b' : 'version-a');
+  finish({ database_restore_id: null, version: null });
+  await expect(pending).resolves.toBe(true);
+  expect(read).toHaveBeenCalledTimes(changed ? 2 : 1);
+});
+
+test('alternating version and restore hints preserve the same failed-read cooldown', async () => {
+  jest.useFakeTimers();
+  const read = jest.fn().mockRejectedValue(new Error('offline'));
+  const tracker = new DatabaseRestoreTracker('marker:', read, jest.fn(), localStorage);
+
+  tracker.observeRestoreHint('db', 'restore-a', 'version-a');
+  await expect(tracker.checkIfStale('db')).rejects.toThrow('offline');
+  for (let i = 0; i < 10; i++) {
+    tracker.observeRestoreHint('db', undefined, 'version-a');
+    tracker.observeRestoreHint('db', 'restore-a');
+    await expect(tracker.checkIfStale('db')).rejects.toThrow('offline');
+  }
+
+  expect(read).toHaveBeenCalledTimes(1);
+  tracker.observeRestoreHint('db', undefined, 'version-b');
+  await expect(tracker.checkIfStale('db')).rejects.toThrow('offline');
+  expect(read).toHaveBeenCalledTimes(2);
+});
+
 test('a new restore identity resets even when the history version is unchanged', async () => {
   localStorage.setItem('marker:db', 'restore-1');
   const read = jest.fn().mockResolvedValue({ database_restore_id: 'restore-2', version: 'same-version' });

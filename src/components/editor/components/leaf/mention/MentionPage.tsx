@@ -4,17 +4,19 @@ import { Element, Text } from 'slate';
 import { ReactEditor, useSlate } from 'slate-react';
 import smoothScrollIntoViewIfNeeded from 'smooth-scroll-into-view-if-needed';
 
-import { APP_EVENTS } from '@/application/constants';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { traverseBlock } from '@/application/slate-yjs/utils/convert';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
-import { MentionType, View, ViewLayout, YjsEditorKey, YSharedRoot } from '@/application/types';
+import { getBlocks } from '@/application/slate-yjs/utils/yjs';
+import { MentionType, ViewLayout, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { ReactComponent as LinkArrowOverlay } from '@/assets/icons/link_arrow.svg';
 import { ReactComponent as ParagraphIcon } from '@/assets/icons/paragraph.svg';
-import { findView } from '@/components/_shared/outline/utils';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { useEditorContext } from '@/components/editor/EditorContext';
+
+import { PageReferenceError } from './PageReferenceError';
+import { usePageReferenceMetadata } from './usePageReferenceMetadata';
 
 import './style.css';
 
@@ -30,113 +32,79 @@ function MentionPage({
 }) {
   const context = useEditorContext();
   const editor = useSlate();
-  const selection = editor.selection;
   const currentViewId = context.viewId;
   const eventEmitter = context.eventEmitter;
 
   const { navigateToView, loadViewMeta, loadView, onPageMentionNameResolved } = context;
-  const [metadata, setMetadata] = useState<{ pageId: string; view: View | null; noAccess: boolean } | null>(null);
-  // Keep the current page visible while revalidating, without showing the
-  // previous page's metadata when this component receives a new reference.
-  const meta = metadata?.pageId === pageId ? metadata.view : null;
-  const noAccess = metadata?.pageId === pageId && metadata.noAccess;
-  const [content, setContent] = useState<string>('');
+  const { view: meta, error: metadataError, loading, accessRevision, retry } = usePageReferenceMetadata({
+    pageId,
+    loadViewMeta,
+    eventEmitter,
+    onPageMentionNameResolved,
+  });
+  const [externalBlock, setExternalBlock] = useState<{ pageId: string; blockId: string; text: string }>();
+  const metadataAvailable = Boolean(meta) && metadataError === null;
 
+  const icon = meta?.icon;
+  const { t } = useTranslation();
+  const currentBlock = blockId && currentViewId === pageId
+    ? findSlateEntryByBlockId(editor as YjsEditor, blockId)
+    : undefined;
+  const currentBlockText = currentBlock ? CustomEditor.getBlockTextContent(currentBlock[0], 2) : undefined;
+  // The open editor already owns this block's readable content. A separate
+  // metadata failure must not hide it (including in detached editor surfaces).
+  const hasCurrentBlockContent = Boolean(currentBlockText);
+  const error = hasCurrentBlockContent ? null : metadataError;
+  const pageName = meta?.name || t('menuAppHeader.defaultNewPageName');
+  const externalBlockText = externalBlock?.pageId === pageId && externalBlock.blockId === blockId
+    ? externalBlock.text
+    : '';
+  const content = currentViewId === pageId
+    ? currentBlockText || pageName
+    : `${pageName}${externalBlockText ? ` - ${externalBlockText}` : ''}`;
+
+  // Recovery reloads the document; renames and unrelated outline updates keep
+  // the same availability/revision and retain the existing subscription.
   useEffect(() => {
+    if (!blockId || currentViewId === pageId) return;
+    setExternalBlock(undefined);
+    if (!metadataAvailable) return;
     let current = true;
-    let receivedUpdate = false;
+    let unsubscribe: (() => void) | undefined;
 
-    const acceptView = (view: View | null) => {
-      setMetadata({ pageId, view, noAccess: false });
-      onPageMentionNameResolved?.(pageId, view?.name);
-    };
+    const loadBlock = async () => {
+      try {
+        const otherDoc = await loadView?.(pageId);
 
-    const handleView = (view: View) => {
-      if (view.view_id !== pageId) return;
-      receivedUpdate = true;
-      acceptView(view);
-    };
+        if (!current || !otherDoc) return;
+        const sharedRoot = otherDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
+        const handleBlockChange = () => {
+          if (!current) return;
+          const node = getBlocks(sharedRoot).has(blockId) ? traverseBlock(blockId, sharedRoot) : undefined;
+          const text = node ? CustomEditor.getBlockTextContent(node, 2) : '';
 
-    const handleOutlineLoaded = (outline: View[]) => {
-      const view = findView(outline, pageId);
+          setExternalBlock((previous) => previous?.pageId === pageId && previous.blockId === blockId && previous.text === text
+            ? previous
+            : { pageId, blockId, text });
+        };
 
-      if (view) handleView(view);
-    };
-
-    eventEmitter?.on(APP_EVENTS.OUTLINE_LOADED, handleOutlineLoaded);
-    eventEmitter?.on(APP_EVENTS.VIEW_META_CHANGED, handleView);
-    void loadViewMeta?.(pageId).then((view) => {
-      if (current && !receivedUpdate) acceptView(view);
-    }).catch(() => {
-      if (current && !receivedUpdate) {
-        setMetadata((previous) => ({
-          pageId,
-          view: previous?.pageId === pageId ? previous.view : null,
-          noAccess: true,
-        }));
+        sharedRoot.observeDeep(handleBlockChange);
+        unsubscribe = () => sharedRoot.unobserveDeep(handleBlockChange);
+        handleBlockChange();
+      } catch {
+        // The page title remains available if the referenced document cannot load.
+        unsubscribe?.();
+        unsubscribe = undefined;
       }
-    });
+    };
+
+    void loadBlock();
+
     return () => {
       current = false;
-      eventEmitter?.off(APP_EVENTS.OUTLINE_LOADED, handleOutlineLoaded);
-      eventEmitter?.off(APP_EVENTS.VIEW_META_CHANGED, handleView);
+      unsubscribe?.();
     };
-  }, [eventEmitter, loadViewMeta, onPageMentionNameResolved, pageId]);
-
-  const icon = useMemo(() => {
-    return meta?.icon;
-  }, [meta?.icon]);
-
-  const { t } = useTranslation();
-
-  useEffect(() => {
-    void (async () => {
-      const pageName = meta?.name || t('menuAppHeader.defaultNewPageName');
-
-      if (blockId) {
-        if (currentViewId === pageId) {
-          const entry = findSlateEntryByBlockId(editor as YjsEditor, blockId);
-
-          if (entry) {
-            const [node] = entry;
-            const text = CustomEditor.getBlockTextContent(node, 2);
-
-            setContent(text || pageName);
-            return;
-          }
-        } else {
-          try {
-            const otherDoc = await loadView?.(pageId);
-
-            if (!otherDoc) return;
-
-            const sharedRoot = otherDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
-
-            const handleBlockChange = () => {
-              const node = traverseBlock(blockId, sharedRoot);
-
-              if (!node) {
-                setContent(pageName);
-                return;
-              }
-
-              const text = CustomEditor.getBlockTextContent(node, 2);
-
-              setContent(`${pageName}${text ? ` - ${text}` : ''}`);
-            };
-
-            handleBlockChange();
-
-            return;
-          } catch (e) {
-            // do nothing
-          }
-        }
-      }
-
-      setContent(pageName);
-    })();
-  }, [selection, blockId, currentViewId, editor, loadView, meta?.name, pageId, t]);
+  }, [accessRevision, blockId, currentViewId, loadView, metadataAvailable, pageId]);
 
   const mentionIcon = useMemo(() => {
     if (pageId === currentViewId && blockId) {
@@ -187,9 +155,14 @@ function MentionPage({
     <span
       onClick={(e) => {
         e.stopPropagation();
-        if (noAccess) return;
 
         // Same-page block reference: scroll to the target block
+        if (hasCurrentBlockContent) {
+          void handleScrollToBlock();
+          return;
+        }
+
+        if (error || !meta) return;
         if (pageId === currentViewId) {
           void handleScrollToBlock();
           return;
@@ -204,14 +177,21 @@ function MentionPage({
         }, 0);
       }}
       style={{
-        cursor: noAccess ? 'default' : undefined,
+        cursor: error || (!meta && !hasCurrentBlockContent) ? 'default' : undefined,
       }}
       className={`mention-inline cursor-pointer pr-1 underline select-none`}
       contentEditable={false}
       data-mention-id={pageId}
     >
-      {noAccess ? (
-        <span className={'mention-unpublished font-semibold text-text-secondary'}>{t('document.mention.noAccess')}</span>
+      {error ? (
+        <PageReferenceError
+          key={`${pageId}:${error}`}
+          pageId={pageId}
+          error={error}
+          loading={loading}
+          retry={retry}
+          loadTrashViews={context.loadTrashViews}
+        />
       ) : (
         <>
           <span className={`mention-icon`}>{mentionIcon}</span>

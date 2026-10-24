@@ -1,21 +1,27 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-import { useToggleRowReactionDispatch } from '@/application/database-yjs';
+import { useDatabaseContext, useToggleRowReactionDispatch } from '@/application/database-yjs';
 import { useDuplicateRowDispatch } from '@/application/database-yjs/dispatch';
+import { UIVariant } from '@/application/types';
+import { notify } from '@/components/_shared/notify';
+import { copyTextToClipboard } from '@/utils/copy';
 
 import { FeedCardActions } from '../FeedCardActions';
 import { useFeedMembers } from '../FeedMembersContext';
 
 import type { ReactNode } from 'react';
 
-jest.mock('@/application/database-yjs', () => ({ useToggleRowReactionDispatch: jest.fn() }));
+jest.mock('@/application/database-yjs', () => ({
+  useDatabaseContext: jest.fn(),
+  useToggleRowReactionDispatch: jest.fn(),
+}));
+jest.mock('@/components/_shared/notify', () => ({ notify: { success: jest.fn() } }));
+jest.mock('@/utils/copy', () => ({ copyTextToClipboard: jest.fn() }));
 jest.mock('@/application/database-yjs/dispatch', () => ({ useDuplicateRowDispatch: jest.fn() }));
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 jest.mock('../FeedMembersContext', () => ({ useFeedMembers: jest.fn() }));
 jest.mock('@/components/database/components/database-row/DeleteRowConfirm', () => ({
-  DeleteRowConfirm: ({ rowIds }: { rowIds: string[] }) => (
-    <div data-testid='delete-row-confirm'>{rowIds.join(',')}</div>
-  ),
+  DeleteRowConfirm: ({ rowIds }: { rowIds: string[] }) => <div data-testid='delete-row-confirm'>{rowIds.join(',')}</div>,
 }));
 jest.mock('@/components/_shared/emoji-picker', () => ({
   EmojiPicker: ({ onEmojiSelect }: { onEmojiSelect: (emoji: string) => void }) => (
@@ -33,6 +39,13 @@ const mockUseToggleRowReactionDispatch = useToggleRowReactionDispatch as jest.Mo
 >;
 const mockUseDuplicateRowDispatch = useDuplicateRowDispatch as jest.MockedFunction<typeof useDuplicateRowDispatch>;
 const mockUseFeedMembers = useFeedMembers as jest.MockedFunction<typeof useFeedMembers>;
+const mockUseDatabaseContext = useDatabaseContext as jest.MockedFunction<typeof useDatabaseContext>;
+const databaseContext = {
+  activeViewId: 'view-feed',
+  databasePageId: 'page-1',
+  variant: UIVariant.App,
+  workspaceId: 'ws-1',
+} as unknown as ReturnType<typeof useDatabaseContext>;
 
 describe('FeedCardActions', () => {
   const duplicateRow = jest.fn();
@@ -52,6 +65,7 @@ describe('FeedCardActions', () => {
     duplicateRow.mockResolvedValue(undefined);
     mockUseDuplicateRowDispatch.mockReturnValue(duplicateRow);
     mockUseToggleRowReactionDispatch.mockReturnValue(toggleReaction);
+    mockUseDatabaseContext.mockReturnValue(databaseContext);
     mockUseFeedMembers.mockReturnValue({
       resolveMember: () => undefined,
       currentUser: undefined,
@@ -96,6 +110,48 @@ describe('FeedCardActions', () => {
     fireEvent.keyDown(screen.getByTestId('feed-card-more-row-1'), { key: 'ArrowDown' });
     fireEvent.click(await screen.findByTestId('feed-row-delete'));
     expect(screen.getByTestId('delete-row-confirm').textContent).toBe('row-1');
+  });
+
+  it('lists Copy link, Duplicate and Delete like the Figma more menu', async () => {
+    render(<FeedCardActions editable rowId='row-1' />);
+
+    fireEvent.keyDown(screen.getByTestId('feed-card-more-row-1'), { key: 'ArrowDown' });
+    const menu = await screen.findByTestId('feed-row-action-menu');
+
+    expect(Array.from(menu.querySelectorAll('[role="menuitem"]')).map((item) => item.textContent)).toEqual([
+      'shareAction.copyLink',
+      'grid.row.duplicate',
+      'grid.row.delete',
+    ]);
+  });
+
+  it('copies the row link the row peek shares and confirms it', async () => {
+    render(<FeedCardActions editable rowId='row-1' />);
+
+    fireEvent.keyDown(screen.getByTestId('feed-card-more-row-1'), { key: 'ArrowDown' });
+    fireEvent.click(await screen.findByTestId('feed-row-copy-link'));
+
+    expect(copyTextToClipboard).toHaveBeenCalledWith(`${window.location.origin}/app/ws-1/page-1?v=view-feed&r=row-1`);
+    expect(notify.success).toHaveBeenCalledWith('shareAction.copyLinkSuccess');
+  });
+
+  it('omits Copy link where a row has no shareable address', async () => {
+    mockUseDatabaseContext.mockReturnValue({ ...databaseContext, variant: UIVariant.Publish });
+    render(<FeedCardActions editable rowId='row-1' />);
+
+    fireEvent.keyDown(screen.getByTestId('feed-card-more-row-1'), { key: 'ArrowDown' });
+    await screen.findByTestId('feed-row-action-menu');
+
+    expect(screen.queryByTestId('feed-row-copy-link')).toBeNull();
+    expect(screen.getByTestId('feed-row-duplicate')).toBeTruthy();
+  });
+
+  it('gives the bar its own surface only over a cover', () => {
+    const { rerender } = render(<FeedCardActions editable rowId='row-1' />);
+
+    expect(screen.getByTestId('feed-card-actions-row-1').className).not.toContain('bg-surface-layer-04');
+    rerender(<FeedCardActions editable hasCover rowId='row-1' />);
+    expect(screen.getByTestId('feed-card-actions-row-1').className).toContain('bg-surface-layer-04');
   });
 
   it('releases the card click guard when the menu closes or unmounts', async () => {

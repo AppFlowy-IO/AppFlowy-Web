@@ -20,6 +20,7 @@ import {
   PageSelectors,
   ViewActionSelectors,
 } from '../../support/selectors';
+import { openCopiedPage } from '../../support/duplicate-test-helpers';
 import { expandSpaceByName } from '../../support/page-utils';
 import { testLog } from '../../support/test-helpers';
 
@@ -191,7 +192,9 @@ test.describe('Cloud Database Duplication', () => {
 
     // And: the duplicate has the same row count as the original
     testLog.info('[STEP 16] Opening the duplicated database');
-    await PageSelectors.nameContaining(page, duplicatePrefix).first().click({ force: true });
+    // The copy is appended to a long sidebar where a forced click can land on
+    // the footer; this helper falls back to the copy's own route.
+    await openCopiedPage(page, _testDatabaseName);
     await page.waitForTimeout(3000);
 
     testLog.info('[STEP 17] Waiting for duplicated database grid to load');

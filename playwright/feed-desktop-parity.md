@@ -20,7 +20,7 @@ proposed controls that are absent from this runtime; they are not the parity con
   row (avatar, name, date, `(edited)`), title with icon, document preview,
   reactions, comment summary / add-comment input, hover actions.
 - `plugins/database/feed/presentation/widgets/feed_document_preview.dart` —
-  read-only document capped at 120px with See more / See less.
+  read-only document; the card around it caps at 600px (desktop PR #1510).
 - `plugins/database/feed/presentation/widgets/feed_setting_bar.dart` — filter,
   sort, search, settings, new row.
 - `rust-lib/flowy-database2/src/services/database_view/layout_deps.rs` — a new
@@ -50,10 +50,11 @@ proposed controls that are absent from this runtime; they are not the parity con
 | `LocaleKeys.feed_noItemsInFeed` | `FeedEmptyState` (`feed-empty`) |
 | `FeedCard` | `FeedCard` (`feed-card-<rowId>`), click opens the row detail page |
 | `_buildCreatorInfo` | `FeedCreatorInfo` (`feed-card-creator-<rowId>`), `(edited)` after 60s |
-| `FeedDocumentPreview` (120px, See more) | `FeedDocumentPreview` rendering a detached mirror of the row document |
+| `FeedDocumentPreview` inside the 600px card | `FeedDocumentPreview` rendering a detached mirror of the row document, clipped by `FeedCardBody` |
+| `_OpenAsFullPageButton` | `FeedCardBody` (`feed-card-open-full-page-<rowId>`), shown while the body is clipped |
 | `FeedRowReactions` / `AddReactionChip` | `FeedRowReactions` (`feed-row-reaction-<rowId>-<emoji>`) |
 | `_buildCommentSummary` / `AddCommentInput` | `FeedCommentSection` (`feed-comment-summary-<rowId>` / `feed-add-comment-*`) |
-| hover emoji + more buttons | `FeedCardActions` (`feed-card-reaction-button-*`, `feed-card-more-*`) |
+| `FeedCardActionBar` (add reaction + more) | `FeedCardActions` (`feed-card-reaction-button-*`, `feed-card-more-*`) |
 | `FeedSettingBar` | `DatabaseActions` shows filter, sort, search, settings and New for Feed |
 | `DatabaseSettingAction.showLayout` only | `FeedSettings` |
 | `LinkedViewLayoutDependencies` for Feed | `normalizeCreatedDatabaseFeedView` in `feed-layout.ts` |
@@ -69,9 +70,9 @@ detached read-only doc under a distinct origin instead.
 | Control | Desktop runtime | Web |
 | --- | --- | --- |
 | Feed settings menu | Layout only (`actionsForDatabaseLayout(Feed)`) | `FeedSettings` exposes Layout only; browser checks switching into and out of Feed |
-| Card menu | Duplicate and Delete, with deletion confirmation | Same actions in `FeedCardActions`; menu clicks do not open row detail |
+| Card menu | Copy link, Duplicate and Delete, with deletion confirmation | Same actions in `FeedCardActions`; Copy link copies the row peek's share URL and is hidden on published pages; menu clicks do not open row detail |
 | Card cover and icon | `showCover: true`, `showIcon: true` | Always follows row metadata, including edits/removals; no separate card-settings dialog |
-| Preview | 120px collapsed, See more/less, linked databases | Same; embedded databases have finite height and nested Feed cards cannot load another preview |
+| Preview | Card capped at 600px with a fade and "Open as full page", linked databases | Same; embedded databases have finite height and nested Feed cards cannot load another preview |
 | Comments | Text, attachments, mentions and reply summary | Shared `CommentComposer` on Feed and row detail; preserves unsaved drafts and IME composition |
 | Row reactions | Add in Feed, display/toggle in row detail; no add chip under Comments | Same numeric-user-ID row metadata on both surfaces |
 | New row | Trailing button and toolbar New/template dropdown | Both create/open rows, including while filtered or sorted; default templates apply in Feed |
@@ -220,3 +221,18 @@ shared input in row detail.
 Run the browser cases with `pnpm exec playwright test 'playwright/e2e/database/feed-view-.*'`
 and BDD with `pnpm test:e2e:bdd:feed`. The database CI shards include the Feed browser specs;
 the BDD matrix includes both Feed feature files. Validation results belong in the PR.
+
+## Figma revamp (desktop PR #1510)
+
+The card follows the Figma Feed page (`a3iCZh32MlkFqc178phnIM`, node `7948:170956`):
+16px radius card with a 600px cap, a 32px inset header/body, a 24px title, 20px avatars, borderless
+reaction chips (filled when the current user reacted), an inline "Comment or mention with @ …"
+field with attachment/mention/send on one line, a 240px Copy link / Duplicate / Delete menu and a
+"New page" trailing card. Where web and desktop still differ:
+
+| Behaviour | Desktop | Web |
+| --- | --- | --- |
+| Reply summary | Opens the row; avatar is the current user | Opens the Figma comment card popover (480px) in place; avatar is the latest commenter |
+| Side peek button in the action bar | Shown when the card tap opens a full page | Not shown; the card tap already opens the peek |
+| Mobile footer (reaction/comment sheets) | `FeedCardMobileFooter` | Not ported; narrow widths only tighten the card insets |
+

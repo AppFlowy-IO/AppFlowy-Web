@@ -9,9 +9,10 @@ export interface InlineFormat {
   /** End offset in the text */
   end: number;
   /** Format type */
-  type: 'bold' | 'italic' | 'underline' | 'strikethrough' | 'code' | 'link' | 'color' | 'bgColor';
+  type: 'bold' | 'italic' | 'underline' | 'strikethrough' | 'code' | 'link' | 'color' | 'bgColor' | 'formula';
   /** Additional data for specific formats */
   data?: {
+    formula?: string;
     /** For links: the URL */
     href?: string;
     /** For colors: hex color value */

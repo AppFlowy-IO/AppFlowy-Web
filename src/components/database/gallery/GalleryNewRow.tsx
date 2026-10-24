@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch';
@@ -8,46 +9,51 @@ import { cn } from '@/lib/utils';
 
 import { GALLERY_TILE_PADDING, getGalleryMinimumCardHeight } from './gallery.constants';
 
-export function GalleryNewRow({ cardSize }: { cardSize: GalleryCardSize }) {
+/**
+ * Figma "New page" tile (node 7422:204489): an outlined, transparent slot that
+ * takes the next card position and stretches to the height of its row.
+ */
+export function GalleryNewPageTile({
+  cardSize,
+  onCreate,
+  testId = 'gallery-new-row',
+}: {
+  cardSize: GalleryCardSize;
+  onCreate: () => Promise<unknown>;
+  testId?: string;
+}) {
   const { t } = useTranslation();
-  const createRow = useNewRowDispatch();
   const { pending: creating, run } = useRowCreationAction();
   const minimumHeight = getGalleryMinimumCardHeight(cardSize);
 
   return (
-    <div
-      className='h-full p-2'
-      data-testid='gallery-new-row-tile'
-      style={{ minHeight: minimumHeight + GALLERY_TILE_PADDING * 2 }}
-    >
+    <div className='h-full' data-testid={`${testId}-tile`} style={{ minHeight: minimumHeight + GALLERY_TILE_PADDING * 2 }}>
       <button
         aria-busy={creating}
-        aria-label={t('grid.row.newRow')}
+        aria-label={t('gallery.newPage')}
         className={cn(
-          'flex h-full w-full items-center justify-center rounded-[10px] border bg-white',
-          'border-[rgba(31,35,41,0.14)] text-[rgba(23,23,23,0.4)]',
-          'transition-[border-color,box-shadow] ease-out [transition-duration:120ms] motion-reduce:transition-none',
-          'hover:border-[rgba(0,188,240,0.65)] hover:shadow-[0_6px_12px_rgba(31,35,41,0.10)]',
-          'focus-visible:border-[rgba(0,188,240,0.65)] focus-visible:outline-none',
-          'focus-visible:shadow-[0_6px_12px_rgba(31,35,41,0.10)]',
-          'disabled:cursor-wait',
-          '[[data-dark-mode=true]_&]:border-[#59647A] [[data-dark-mode=true]_&]:bg-[#1A202C]',
-          '[[data-dark-mode=true]_&]:text-[rgba(255,255,255,0.4)]',
-          '[[data-dark-mode=true]_&]:hover:border-[rgba(0,188,240,0.65)]',
-          '[[data-dark-mode=true]_&]:hover:shadow-[0_6px_12px_rgba(0,0,0,0.22)]',
-          '[[data-dark-mode=true]_&]:focus-visible:border-[rgba(0,188,240,0.65)]',
-          '[[data-dark-mode=true]_&]:focus-visible:shadow-[0_6px_12px_rgba(0,0,0,0.22)]'
+          'flex h-full w-full items-center justify-center gap-1.5 rounded-400 border border-border-primary bg-transparent text-sm font-medium text-text-secondary',
+          'transition-[border-color,background-color] ease-out [transition-duration:120ms] motion-reduce:transition-none',
+          'hover:border-border-primary-hover hover:bg-fill-content-hover focus-visible:border-border-theme-thick focus-visible:outline-none disabled:cursor-wait'
         )}
-        data-testid='gallery-new-row'
+        data-testid={testId}
         disabled={creating}
-        onClick={() => void run(() => createRow({ openAfterCreate: true, tailing: true }))}
+        onClick={() => void run(onCreate)}
         style={{ minHeight: minimumHeight }}
         type='button'
       >
-        {creating ? <RowCreationSpinner /> : <PlusIcon aria-hidden='true' className={'h-4 w-4'} />}
+        {creating ? <RowCreationSpinner /> : <PlusIcon aria-hidden='true' className='h-5 w-5 text-icon-tertiary' />}
+        {t('gallery.newPage')}
       </button>
     </div>
   );
+}
+
+export function GalleryNewRow({ cardSize }: { cardSize: GalleryCardSize }) {
+  const createRow = useNewRowDispatch();
+  const create = useCallback(() => createRow({ openAfterCreate: false, tailing: true }), [createRow]);
+
+  return <GalleryNewPageTile cardSize={cardSize} onCreate={create} />;
 }
 
 export default GalleryNewRow;

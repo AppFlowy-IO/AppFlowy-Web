@@ -40,9 +40,17 @@ export enum DateFilterRelativeCondition {
   NextWeek = 'nextWeek',
 }
 
+// These values are shared with desktop's DateFilterContent JSON.
+export enum DateFilterRelativeDate {
+  Today = 'Today',
+  Yesterday = 'Yesterday',
+  Tomorrow = 'Tomorrow',
+}
+
 export interface DateFilter extends Filter {
   condition: DateFilterCondition;
   start?: number;
   end?: number;
   timestamp?: number;
+  relative_date?: DateFilterRelativeDate;
 }

@@ -1,7 +1,7 @@
 import { Button, Divider } from '@mui/material';
 import { PopoverOrigin } from '@mui/material/Popover/Popover';
 import dayjs from 'dayjs';
-import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Editor as SlateEditor, Element as SlateElement, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
@@ -11,8 +11,6 @@ import { CustomEditor } from '@/application/slate-yjs/command';
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
 import {
   Mention,
-  MentionSearchRequest,
-  MentionSearchResponse,
   MentionSearchResultItem,
   MentionSearchSection,
   MentionSearchSectionKind,
@@ -47,12 +45,12 @@ import {
   setCachedMentionSections,
   startMentionSearchRefresh,
 } from './mentionSearchCache';
+import { fetchMentionSearchSections, MentionSectionsFetchResult } from './mentionSearchFetch';
 import {
   buildMentionSearchRequests,
   buildMentionSearchRequestsCacheKey,
   flattenMentionSearchSections,
   getMentionSearchResultDisplayTitle,
-  mergeMentionSearchResponses,
   MentionPanelSearchResult,
   normalizeMentionSearchSectionsForPicker,
   shouldCacheMentionSearchSections,
@@ -65,10 +63,10 @@ enum MentionTag {
 
 interface Option {
   index: number;
+  optionKey: string;
 }
 
 const MENTION_SEARCH_LIMIT = 20;
-const DATABASE_ROW_SEARCH_RETRY_DELAY_MS = 500;
 const PAGE_RESULT_COLLAPSE_LIMIT = 4;
 
 type MentionPanelOption =
@@ -94,11 +92,6 @@ type MentionPanelCreatePageOption = Extract<MentionPanelOption, { kind: 'createP
 interface MentionPanelResultSection {
   section: MentionSearchSection;
   options: MentionPanelResultOption[];
-}
-
-interface MentionSectionsFetchResult {
-  sections: MentionSearchSection[];
-  databaseRowResponse?: MentionSearchResponse;
 }
 
 const DEFAULT_MENTION_INCLUDE = [
@@ -183,24 +176,12 @@ function getDateMentionItems(t: (key: string) => string, query: string): Mention
   return items.filter((item) => !query || item.title.toLowerCase().includes(query));
 }
 
-function isDatabaseRowOnlyRequest(request: MentionSearchRequest) {
-  const include = request.include ?? [];
-
-  return include.length === 1 && include[0] === MentionTargetKind.DatabaseRow;
-}
-
 function getSelectedBlockId(editor: YjsEditor): string | undefined {
   const entry = SlateEditor.above(editor, {
     match: (value) => SlateElement.isElement(value) && typeof (value as { blockId?: unknown }).blockId === 'string',
   });
 
   return (entry?.[0] as { blockId?: string } | undefined)?.blockId;
-}
-
-function delay(ms: number) {
-  return new Promise<void>((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
 }
 
 function isImageSource(value?: string) {
@@ -579,85 +560,15 @@ export function MentionPanel({
       }
     }
 
-    async function fetchMentionSections() {
-      const settledResponses = await Promise.allSettled(
-        mentionSearchRequests.map(async (request) => ({
-          request,
-          response: await searchMentionsFn(request),
-        }))
-      );
-      const fulfilledResponses: Array<{ request: MentionSearchRequest; response: MentionSearchResponse }> = [];
-      let databaseRowResponse: MentionSearchResponse | undefined;
-      let blockingError: unknown;
-
-      settledResponses.forEach((result, index) => {
-        if (result.status === 'fulfilled') {
-          fulfilledResponses.push(result.value);
-
-          if (isDatabaseRowOnlyRequest(result.value.request)) {
-            databaseRowResponse = result.value.response;
-          }
-
-          return;
-        }
-
-        const request = mentionSearchRequests[index];
-
-        if (request && isDatabaseRowOnlyRequest(request)) {
-          if (isMentionSearchRetryLater(result.reason)) {
-            markMentionSearchRetryLater(mentionSearchCacheKey, result.reason);
-          } else {
-            console.error(result.reason);
-          }
-
-          return;
-        }
-
-        blockingError = blockingError ?? result.reason;
+    function fetchMentionSections(onSections?: (sections: MentionSearchSection[]) => void) {
+      return fetchMentionSearchSections({
+        searchMentions: searchMentionsFn,
+        requests: mentionSearchRequests,
+        cacheKey: mentionSearchCacheKey,
+        hasQuery: hasMentionSearchQuery,
+        isCurrent: isCurrentRequest,
+        onSections,
       });
-
-      if (blockingError) {
-        throw blockingError;
-      }
-
-      const initialSections =
-        mergeMentionSearchResponses(fulfilledResponses.map(({ response }) => response)).sections ?? [];
-      let sections = initialSections;
-      const shouldCacheInitialSections = shouldCacheMentionSearchSections(
-        mentionSearchRequests,
-        databaseRowResponse,
-        hasMentionSearchQuery
-      );
-
-      if (!shouldCacheInitialSections) {
-        const rowRequest = mentionSearchRequests.find(isDatabaseRowOnlyRequest);
-
-        if (rowRequest) {
-          await delay(DATABASE_ROW_SEARCH_RETRY_DELAY_MS);
-
-          if (!isCurrentRequest()) {
-            return { sections, databaseRowResponse } satisfies MentionSectionsFetchResult;
-          }
-
-          try {
-            const rowRetryResponse = await searchMentionsFn(rowRequest);
-            const nonRowResponses = fulfilledResponses
-              .filter(({ request }) => request !== rowRequest)
-              .map(({ response }) => response);
-
-            databaseRowResponse = rowRetryResponse;
-            sections = mergeMentionSearchResponses([...nonRowResponses, rowRetryResponse]).sections ?? [];
-          } catch (error) {
-            if (isMentionSearchRetryLater(error)) {
-              markMentionSearchRetryLater(mentionSearchCacheKey, error);
-            } else {
-              console.error(error);
-            }
-          }
-        }
-      }
-
-      return { sections, databaseRowResponse } satisfies MentionSectionsFetchResult;
     }
 
     function scheduleSearch(delayMs: number) {
@@ -666,7 +577,7 @@ export function MentionPanel({
     }
 
     function runSearch() {
-      void fetchMentionSections()
+      void fetchMentionSections(setMentionSections)
         .then((result) => {
           if (!isCurrentRequest()) return;
 
@@ -858,6 +769,17 @@ export function MentionPanel({
   const mentionOptionIndexByKey = useMemo(() => {
     return new Map(mentionPanelOptions.map((option, index) => [option.key, index]));
   }, [mentionPanelOptions]);
+
+  // Database rows can merge in after the user started navigating. Re-point the index before paint
+  // so the highlight stays on the same option instead of whatever shifted into its position.
+  useLayoutEffect(() => {
+    setSelectedOption((current) => {
+      const index = current ? mentionOptionIndexByKey.get(current.optionKey) : undefined;
+
+      return current && index !== undefined && index !== current.index ? { ...current, index } : current;
+    });
+  }, [mentionOptionIndexByKey]);
+
   const showMentionSearchLoadingState =
     hasMentionPanelSource && (mentionSearchLoading || mentionSearchDeferred) && rawMentionSearchResults.length === 0;
 
@@ -1006,14 +928,16 @@ export function MentionPanel({
           const current = selectedOptionRef.current;
 
           if (!current || current.index < 0 || current.index >= optionCount) {
-            setSelectedOption({ index: key === 'ArrowDown' ? 0 : optionCount - 1 });
+            const index = key === 'ArrowDown' ? 0 : optionCount - 1;
+
+            setSelectedOption({ index, optionKey: mentionPanelOptions[index].key });
             break;
           }
 
           const nextIndex =
             key === 'ArrowDown' ? (current.index + 1) % optionCount : (current.index - 1 + optionCount) % optionCount;
 
-          setSelectedOption({ index: nextIndex });
+          setSelectedOption({ index: nextIndex, optionKey: mentionPanelOptions[nextIndex].key });
 
           break;
         }

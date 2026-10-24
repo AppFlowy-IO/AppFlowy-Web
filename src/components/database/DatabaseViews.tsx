@@ -18,6 +18,7 @@ import { DatabaseSearchProvider } from '@/components/database/components/conditi
 import { DatabaseTabs } from '@/components/database/components/tabs';
 import { DatabaseHistoryScope } from '@/components/database/DatabaseHistoryScope';
 import { Calendar } from '@/components/database/fullcalendar';
+import { GalleryViewProvider } from '@/components/database/gallery/GalleryViewContext';
 import { Grid } from '@/components/database/grid';
 import { GridGroupingProvider } from '@/components/database/grid/GridGroupingContext';
 import {
@@ -501,6 +502,9 @@ function DatabaseViews({
       break;
     case DatabaseViewLayout.List:
       groupedContent = <ListGroupingProvider>{content}</ListGroupingProvider>;
+      break;
+    case DatabaseViewLayout.Gallery:
+      groupedContent = <GalleryViewProvider>{content}</GalleryViewProvider>;
       break;
     case DatabaseViewLayout.Timeline:
       groupedContent = <TimelineGroupingProvider>{content}</TimelineGroupingProvider>;

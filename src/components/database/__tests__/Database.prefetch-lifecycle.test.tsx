@@ -1305,7 +1305,7 @@ describe('Database blob prefetch lifecycle', () => {
     doc.destroy();
   });
 
-  it('starts each newly opened row in side peek after a temporary center choice', async () => {
+  it('keeps a temporary center choice across row navigation until the peek closes', async () => {
     const doc = createDatabaseDoc('database-id');
     const { unmount } = render(<Database {...databaseProps(doc)} />);
 
@@ -1313,13 +1313,13 @@ describe('Database blob prefetch lifecycle', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Center peek' }));
     expect(screen.getByTestId('database-row-modal').getAttribute('data-peek-mode')).toBe('center');
 
+    // Matches Desktop: previous/next must not demote center peek to side peek.
     await act(async () => {
       await Promise.resolve(mockPeekContext?.navigateToRow?.('next-row'));
     });
     expect(screen.getByTestId('database-row-modal').getAttribute('data-row-id')).toBe('next-row');
-    expect(screen.getByTestId('database-row-modal').getAttribute('data-peek-mode')).toBe('side');
+    expect(screen.getByTestId('database-row-modal').getAttribute('data-peek-mode')).toBe('center');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Center peek' }));
     fireEvent.click(screen.getByRole('button', { name: 'Close peek' }));
     expect(screen.queryByTestId('database-row-modal')).toBeNull();
     await act(async () => {
@@ -1354,7 +1354,7 @@ describe('Database blob prefetch lifecycle', () => {
   });
 
   it.each(['feed', 'gallery'] as const)(
-    'retains %s presentation across background tab switches and row remounts',
+    'retains %s presentation across background tab switches and row navigation',
     async (layout) => {
       const doc = createDatabaseDoc('database-id');
       const host = render(<Database {...databaseProps(doc)} />);
@@ -1376,7 +1376,7 @@ describe('Database blob prefetch lifecycle', () => {
       await act(async () => {
         await Promise.resolve(mockPeekContext?.navigateToRow?.('next-row'));
       });
-      expect(screen.getByTestId('database-row-modal').getAttribute('data-peek-mode')).toBe('side');
+      expect(screen.getByTestId('database-row-modal').getAttribute('data-peek-mode')).toBe('center');
       expect(mockPeekContext?.rowOrdersSource?.getSnapshot()).toEqual({ rows, presentation, published: false });
       fireEvent.click(screen.getByRole('button', { name: 'Close peek' }));
       expect(source.getSnapshot()).toBeUndefined();

@@ -8,15 +8,10 @@ on:
   workflow_dispatch:
 
 env:
-  # Keep the migration owner (Cloud) and its workers on one source revision.
-  # Update version and revision together after all three Rust images publish.
-  # 0.19.31 supplies atomic row creation (PR1375); retain the List field-order
-  # repair (PR1372) already required by the browser suite.
-  # https://github.com/AppFlowy-IO/AppFlowy-Cloud-Premium/actions/runs/38755659237
-  CLOUD_VERSION: ci-web-row-list-9563cf767ef1-amd64
-  CLOUD_REVISION: 9563cf767ef1ae97995a9e51e6ac0898faf54774
-  # AI is published independently from the Rust services.
-  AI_VERSION: latest-amd64
+  # Follow the latest image for each service. Resolve Cloud once by digest so its
+  # compose files and seed snapshot match the image used throughout the job;
+  # independently published Worker, Search and AI may have different revisions.
+  CLOUD_VERSION: latest-amd64
   # Public Form APIs and uploads reject plaintext requests at the backend proxy.
   APPFLOWY_BASE_URL: https://localhost
   APPFLOWY_ENABLE_RELATION_ROLLUP_EDIT: 'true'
@@ -188,11 +183,13 @@ jobs:
               playwright/.features-gen/playwright/bdd/features/database/row-document.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/row-subpage-breadcrumb.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/row-undo-redo.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/relative-date-comparisons.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/embedded-grid-bottom-rows.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/grid-row-handle.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/rollup-formula-select.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/rollup-formula-workflows.feature.spec.js
-            description: 'Database row, undo/redo, Formula, and Rollup BDD workflows'
+              playwright/.features-gen/playwright/bdd/features/database/board-always-renders.feature.spec.js
+            description: 'Database row, undo/redo, Formula, Rollup and Board rendering BDD workflows'
             bdd: 'true'
             shard: ''
           - name: 'rich-text-bdd'
@@ -274,6 +271,28 @@ jobs:
         with:
           version: ${{ env.PNPM_VERSION }}
 
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+
+      - name: Resolve latest Cloud release
+        run: |
+          digest=$(docker buildx imagetools inspect "appflowyinc/appflowy_cloud_premium:${CLOUD_VERSION}" \
+            --format '{{json .Manifest.Digest}}' | jq -er 'select(test("^sha256:[0-9a-f]{64}$"))')
+          cloud_image_version="${CLOUD_VERSION}@${digest}"
+          labels=$(docker buildx imagetools inspect "appflowyinc/appflowy_cloud_premium:${cloud_image_version}" \
+            --format '{{ json .Image }}' | jq -c '.config.Labels')
+          revision=$(jq -r '."org.opencontainers.image.revision" // empty' <<< "$labels")
+          if [ -z "$revision" ]; then
+            echo "::error::appflowy_cloud_premium:${CLOUD_VERSION} has no source revision label"
+            exit 1
+          fi
+          echo "Testing AppFlowy Cloud $(jq -r '."org.opencontainers.image.version" // "unknown"' <<< "$labels") ($revision)"
+          echo "CLOUD_REVISION=$revision" >> "$GITHUB_ENV"
+          echo "CLOUD_IMAGE_VERSION=$cloud_image_version" >> "$GITHUB_ENV"
+
       - name: Checkout AppFlowy-Cloud-Premium
         uses: actions/checkout@v4
         with:
@@ -309,17 +328,11 @@ jobs:
             openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | openssl base64 -A)
           echo "APPFLOWY_TEST_TLS_SPKI=$test_tls_spki" >> "$GITHUB_ENV"
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_HUB_USERNAME }}
-          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
-
       # Overlap Docker pull (network I/O) with pnpm install + Playwright browser install
       - name: Install deps and pull Docker images (parallel)
         env:
-          APPFLOWY_CLOUD_VERSION: ${{ env.CLOUD_VERSION }}
-          APPFLOWY_AI_VERSION: ${{ env.AI_VERSION }}
+          APPFLOWY_CLOUD_VERSION: ${{ env.CLOUD_IMAGE_VERSION }}
+          APPFLOWY_AI_VERSION: ${{ env.CLOUD_VERSION }}
           APPFLOWY_WORKER_VERSION: ${{ env.CLOUD_VERSION }}
           APPFLOWY_SEARCH_VERSION: ${{ env.CLOUD_VERSION }}
         run: |
@@ -333,15 +346,21 @@ jobs:
           # Wait for Docker pull to complete
           wait $DOCKER_PID
 
-      - name: Verify backend image revisions
+      - name: Verify Cloud revision and report backend image versions
         run: |
-          for service in appflowy_cloud appflowy_worker appflowy_search; do
+          cloud_image="appflowyinc/appflowy_cloud_premium:${CLOUD_IMAGE_VERSION}"
+          actual_revision=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$cloud_image")
+          if [ "$actual_revision" != "$CLOUD_REVISION" ]; then
+            echo "::error::$cloud_image revision $actual_revision does not match checked-out Cloud revision $CLOUD_REVISION"
+            exit 1
+          fi
+          for service in appflowy_cloud appflowy_worker appflowy_search appflowy_ai; do
             image="appflowyinc/${service}_premium:${CLOUD_VERSION}"
-            revision=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")
-            if [ "$revision" != "$CLOUD_REVISION" ]; then
-              echo "::error::$image was built from $revision; expected $CLOUD_REVISION"
-              exit 1
+            if [ "$service" = appflowy_cloud ]; then
+              image="$cloud_image"
             fi
+            echo "$image"
+            docker image inspect --format 'id={{.Id}} version={{ index .Config.Labels "org.opencontainers.image.version" }} revision={{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image"
           done
 
       - name: Cache Playwright browsers
@@ -371,8 +390,8 @@ jobs:
       - name: Start Docker services
         working-directory: AppFlowy-Cloud-Premium
         env:
-          APPFLOWY_CLOUD_VERSION: ${{ env.CLOUD_VERSION }}
-          APPFLOWY_AI_VERSION: ${{ env.AI_VERSION }}
+          APPFLOWY_CLOUD_VERSION: ${{ env.CLOUD_IMAGE_VERSION }}
+          APPFLOWY_AI_VERSION: ${{ env.CLOUD_VERSION }}
           APPFLOWY_WORKER_VERSION: ${{ env.CLOUD_VERSION }}
           APPFLOWY_SEARCH_VERSION: ${{ env.CLOUD_VERSION }}
           RUST_LOG: appflowy_cloud=info
@@ -451,8 +470,13 @@ jobs:
         working-directory: AppFlowy-Cloud-Premium
         run: |
           mkdir -p ../test-results
-          docker compose -f docker-compose-web-ci.yml -f ../.github/docker-compose-web-ci.override.yml \
-            logs --no-color --timestamps appflowy_cloud appflowy_worker postgres > ../test-results/backend-services.log 2>&1
+          compose="docker compose -f docker-compose-web-ci.yml -f ../.github/docker-compose-web-ci.override.yml"
+          $compose logs --no-color --timestamps appflowy_cloud appflowy_worker postgres > ../test-results/backend-services.log 2>&1
+          # Cloud reports only "AI service is temporarily unavailable"; keep the
+          # AI container's own exit reason, which the job tears down with the stack.
+          $compose ps -a
+          $compose logs --no-color --timestamps ai > ../test-results/ai-service.log 2>&1
+          tail -n 80 ../test-results/ai-service.log
 
       - name: Report failed backend duplication tasks
         if: failure()

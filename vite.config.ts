@@ -140,7 +140,7 @@ function linkPreviewApiPlugin() {
             server.config.logger.error(`[local-api] ${error instanceof Error ? error.message : String(error)}`);
             res.statusCode = 502;
             res.setHeader('Content-Type', 'application/json; charset=utf-8');
-            res.end(JSON.stringify(youtube ? { code: 502, message: 'youtubeDownloadFailed' } : { error: 'Failed to fetch link preview' }));
+            res.end(JSON.stringify(youtube ? { code: 502, message: 'Failed to load YouTube import handler' } : { error: 'Failed to fetch link preview' }));
           });
       });
     },
