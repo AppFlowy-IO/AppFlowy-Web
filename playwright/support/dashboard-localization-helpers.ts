@@ -302,10 +302,14 @@ async function writeChartLayouts(page: Page, databaseId: string, layouts: ChartL
 
           const integerKeys = ['chart_type', 'aggregation_type', 'aggregation_type_pb', 'date_condition'];
 
-          Object.entries(map).forEach(([key, value]) => {
-            chart.set(key, integerKeys.includes(key) ? BigInt(value as number) : value);
-          });
           settings.set(layoutKey, chart);
+          Object.entries(map).forEach(([key, value]) => {
+            if (integerKeys.includes(key)) {
+              win.__TEST_DATABASE_SET_BIGINT__(chart, key, BigInt(value as number));
+            } else {
+              chart.set(key, value);
+            }
+          });
         });
       });
     },

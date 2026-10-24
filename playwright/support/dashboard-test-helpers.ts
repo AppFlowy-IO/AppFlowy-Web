@@ -2160,6 +2160,9 @@ export async function enterEditMode(page: Page) {
 }
 
 export async function leaveEditMode(page: Page) {
+  await expect.poll(async () =>
+    await DashboardSelectors.editButton(page).isVisible() || await DashboardSelectors.doneButton(page).isVisible()
+  ).toBe(true);
   if (await DashboardSelectors.editButton(page).isVisible()) return;
   await DashboardSelectors.doneButton(page).click();
   await expect(DashboardSelectors.editButton(page)).toBeVisible();

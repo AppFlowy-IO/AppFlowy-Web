@@ -200,7 +200,15 @@ export async function clickFilterChip(
 ): Promise<void> {
   await expect(chip).toBeVisible();
   if ((await chip.getAttribute('aria-expanded')) !== 'true') {
-    await chip.click({ force: true });
+    // Another filter's backdrop consumes the first outside click. Close it
+    // before opening this chip so the click reaches the intended trigger.
+    const openChip = page.locator('[data-testid="database-filter-condition"][aria-expanded="true"]');
+
+    if (await openChip.count()) {
+      await page.keyboard.press('Escape');
+      await expect(openChip).toHaveCount(0);
+    }
+    await chip.click();
   }
   await expect(chip).toHaveAttribute('aria-expanded', 'true');
 }

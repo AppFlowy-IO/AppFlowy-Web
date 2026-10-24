@@ -503,7 +503,11 @@ async function writeChartExtras(page: Page, databaseId: string, viewId: string, 
       const chart = doc.getMap('data').get('database').get('views').get(viewId).get('layout_settings').get('3');
 
       doc.transact(() => Object.entries(extras).forEach(([key, value]) => {
-        chart.set(key, key === 'date_condition' ? BigInt(value as number) : value);
+        if (key === 'date_condition') {
+          (window as any).__TEST_DATABASE_SET_BIGINT__(chart, key, BigInt(value as number));
+        } else {
+          chart.set(key, value);
+        }
       }));
     },
     { databaseId, viewId, extras }

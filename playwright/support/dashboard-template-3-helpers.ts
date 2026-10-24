@@ -364,10 +364,10 @@ async function writeViewPatches(page: Page, databaseId: string, patches: ViewPat
           const chart = view.get('layout_settings')?.get('3');
 
           if (!chart) return;
-          if (patch.dateCondition !== undefined) chart.set('date_condition', BigInt(patch.dateCondition));
+          if (patch.dateCondition !== undefined) win.__TEST_DATABASE_SET_BIGINT__(chart, 'date_condition', BigInt(patch.dateCondition));
           if (patch.aggregationType !== undefined) {
-            chart.set('aggregation_type', BigInt(patch.aggregationType > 4 ? 0 : patch.aggregationType));
-            chart.set('aggregation_type_pb', BigInt(patch.aggregationType));
+            win.__TEST_DATABASE_SET_BIGINT__(chart, 'aggregation_type', BigInt(patch.aggregationType > 4 ? 0 : patch.aggregationType));
+            win.__TEST_DATABASE_SET_BIGINT__(chart, 'aggregation_type_pb', BigInt(patch.aggregationType));
           }
           if (patch.titleText !== undefined) chart.set('titleText', patch.titleText);
         });

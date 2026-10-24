@@ -843,7 +843,7 @@ async function applyTemplateView(page: Page, databaseId: string, viewId: string,
       const doc = (window as any).__DASHBOARD_TEST__.byDatabase(databaseId).databaseDoc;
       const chart = doc.getMap('data').get('database').get('views').get(viewId).get('layout_settings').get('3');
 
-      doc.transact(() => chart.set('date_condition', BigInt(dateCondition)));
+      (window as any).__TEST_DATABASE_SET_BIGINT__(chart, 'date_condition', BigInt(dateCondition));
     },
     { databaseId, viewId, dateCondition: settings.dateCondition }
   );
