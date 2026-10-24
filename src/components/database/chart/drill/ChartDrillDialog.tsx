@@ -1,10 +1,11 @@
 import { Dialog } from '@mui/material';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { DASHBOARD_MOTION } from '@/application/database-yjs/dashboard-geometry';
 import type { ChartDrillTarget } from '@/application/database-yjs/drill-query';
 import { MobileSheet } from '@/components/_shared/mobile-drawer/MobileSheet';
+import { useRowPeekLayout } from '@/components/database/row-peek/RowPeekLayout';
 
 import { ChartDrillContent, useDrillMobileContext } from './ChartDrillContent';
 import { DRILL } from './drillStyles';
@@ -16,7 +17,7 @@ export interface ChartDrillDialogProps {
 }
 
 /** The record side peek (WP13 §3.9) stacks above the drill-down and owns Esc while open. */
-const SIDE_PEEK_SELECTOR = '[data-testid="row-side-peek"]';
+const ROW_PEEK_SELECTOR = '[data-testid="row-detail"]';
 
 /**
  * Esc closes the innermost layer (WP13 §3.12): chip editors, menus and the
@@ -24,7 +25,7 @@ const SIDE_PEEK_SELECTOR = '[data-testid="row-side-peek"]';
  * (it handles its own Esc), the side peek, then the dialog. MUI's own Esc is
  * off so a popover's Esc never closes the dialog under it.
  */
-function useDialogEscape(paperRef: React.RefObject<HTMLElement>, onClose: () => void) {
+function useDialogEscape(paper: HTMLElement | null, onClose: () => void) {
   const onCloseRef = useRef(onClose);
 
   useEffect(() => {
@@ -35,22 +36,30 @@ function useDialogEscape(paperRef: React.RefObject<HTMLElement>, onClose: () => 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return;
       const active = document.activeElement;
-      const focusElsewhere = active && active !== document.body && !paperRef.current?.contains(active);
+      const focusElsewhere = active && active !== document.body && !paper?.contains(active);
 
-      if (focusElsewhere || document.querySelector(SIDE_PEEK_SELECTOR)) return;
+      if (focusElsewhere || document.querySelector(ROW_PEEK_SELECTOR)) return;
       onCloseRef.current();
     };
 
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [paperRef]);
+  }, [paper]);
 }
 
 function DesktopDrillDialog({ target, title, onClose }: ChartDrillDialogProps) {
   const { t } = useTranslation();
-  const paperRef = useRef<HTMLDivElement>(null);
+  const [paper, setPaper] = useState<HTMLDivElement | null>(null);
+  const mountOverlayContainer = useRowPeekLayout()?.mountOverlayContainer;
 
-  useDialogEscape(paperRef, onClose);
+  useDialogEscape(paper, onClose);
+
+  useEffect(() => {
+    if (!paper || !mountOverlayContainer) return;
+    // Keep the page's side peek inside the active modal's accessible subtree
+    // and above its backdrop. Its persistent editor portal retains row drafts.
+    return mountOverlayContainer(paper);
+  }, [mountOverlayContainer, paper]);
 
   return (
     <Dialog
@@ -67,7 +76,7 @@ function DesktopDrillDialog({ target, title, onClose }: ChartDrillDialogProps) {
       open
       PaperProps={
         {
-          ref: paperRef,
+          ref: setPaper,
           elevation: 0,
           role: 'dialog',
           'aria-modal': true,
