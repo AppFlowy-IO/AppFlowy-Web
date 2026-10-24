@@ -245,12 +245,8 @@ test('matches Figma peek typography, icon placement and toolbar reveal across mo
   await expect(detail.getByTestId('share-button')).toBeInViewport();
   await expect(detail.getByTestId('row-detail-more-actions')).toBeInViewport();
   await expect.poll(() => detail.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
-  await page.keyboard.press('Escape');
-  await expect(detail).toHaveCount(0);
-  await DatabaseGridSelectors.rowById(page, rowId).hover();
-  await expectIcon(opener, 'center_peek.svg');
-  await expect(opener).toHaveAccessibleName('Open as center peek');
-  await opener.click();
+  // An existing peek falls back to center when the viewport shrinks. A new
+  // record opened on a phone follows the separate full-screen navigation policy.
   await expect(detail).toHaveAttribute('data-peek-mode', 'center');
   await detail.getByTestId('row-peek-mode-menu').click();
   await expect(page.getByRole('menu')).toHaveCSS('width', '360px');
@@ -258,6 +254,21 @@ test('matches Figma peek typography, icon placement and toolbar reveal across mo
   await page.setViewportSize({ width: 320, height: 844 });
   await expect(page.getByRole('menu')).toHaveCSS('width', '304px');
   await expect(page.getByRole('menu')).toBeInViewport();
+
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await title.click();
+  await page.keyboard.press('Escape');
+  await expect(detail).toHaveCount(0);
+  const databaseUrl = page.url();
+
+  await DatabaseGridSelectors.rowById(page, rowId).hover();
+  await expectIcon(opener, 'center_peek.svg');
+  await expect(opener).toHaveAccessibleName('Open as center peek');
+  await opener.click();
+  await expect(page).not.toHaveURL(databaseUrl);
+  await expect(page.getByTestId('row-title-input')).toHaveText('Plan the next release');
+  await expect(detail).toHaveCount(0);
 });
 
 test('shares and favorites the row from side peek without navigating the underlying database', async ({
