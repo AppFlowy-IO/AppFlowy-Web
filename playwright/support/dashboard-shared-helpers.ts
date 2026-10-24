@@ -100,13 +100,10 @@ const API_BUSY_ATTEMPTS = 6;
 
 /** The server's storage write queue is full: the same request succeeds shortly. */
 const API_QUEUE_FULL = /write queue is full\. Retry shortly/;
-// The admission compare-and-set refused these bytes before append; a fresh
-// attempt can use the newly committed database state without duplicating work.
-const API_ADMISSION_CHANGED = /Database dashboard admission .* changed; retry later/;
-
 function isBusy(body: ApiEnvelope<unknown> | null | undefined) {
-  return body?.code === API_BUSY_CODE || API_QUEUE_FULL.test(body?.message ?? '') ||
-    (body?.code === -5 && API_ADMISSION_CHANGED.test(body.message ?? ''));
+  // Legacy view creation can commit its folder mapping before publication
+  // returns RetryLater. Repeating that request would create another view.
+  return body?.code === API_BUSY_CODE || API_QUEUE_FULL.test(body?.message ?? '');
 }
 
 /** Send a request, again after a short pause while the server answers "busy". */

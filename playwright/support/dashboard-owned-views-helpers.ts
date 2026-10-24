@@ -61,7 +61,15 @@ export async function duplicateDatabaseDashboardFromSidebar(
   const widgets = allWidgets(await readDashboardSetting(page));
   const originals = await Promise.all(
     widgets.map(async (widget) => {
-      const view = (await readDatabaseViews(page, widget.database_id)).find((entry) => entry.id === widget.view_id);
+      let view: OwnedDatabaseViewSummary | undefined;
+
+      // A newly added foreign widget can appear before its source document
+      // finishes loading into the dashboard's database context.
+      await expect.poll(async () => {
+        view = (await readDatabaseViews(page, widget.database_id)).find((entry) => entry.id === widget.view_id);
+        return view?.id;
+      }, { timeout: OWNED_VIEWS_TIMEOUT_MS, message: `waiting for original widget view ${widget.view_id}` })
+        .toBe(widget.view_id);
 
       if (!view) throw new Error(`Missing original widget view ${widget.view_id}`);
       return { name: view.name, widget };
