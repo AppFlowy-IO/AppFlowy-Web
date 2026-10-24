@@ -2268,7 +2268,7 @@ export async function readChartSetting(page: Page, viewId: string): Promise<Char
       if (!setting) return null;
       return {
         chartType: Number(setting.get('chart_type') ?? 0),
-        aggregationType: Number(setting.get('aggregation_type') ?? 0),
+        aggregationType: Number(setting.get('aggregation_type_pb') ?? setting.get('aggregation_type') ?? 0),
         yFieldId: setting.get('y_field_id') ? String(setting.get('y_field_id')) : undefined,
       };
     },
@@ -2276,7 +2276,7 @@ export async function readChartSetting(page: Page, viewId: string): Promise<Char
   );
 }
 
-/** Calculation labels → `aggregation_type` (WP11: every value 0–16; "Count" is Count all). */
+/** Calculation labels → the PB aggregation (every value 0–16; "Count" is Count all). */
 export const AGGREGATION_BY_NAME: Record<string, number> = CHART_AGGREGATION_BY_NAME;
 
 /**

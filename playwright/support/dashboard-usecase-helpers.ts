@@ -725,14 +725,16 @@ export async function configureView(page: Page, databaseId: string, viewId: stri
         if (config.chart) {
           const chart = new Yjs.Map();
 
-          chart.set('chart_type', config.chart.chartType);
+          chart.set('chart_type', BigInt(config.chart.chartType));
           chart.set('x_field_id', config.chart.xFieldId);
-          chart.set('aggregation_type', config.chart.aggregationType);
+          // The collab enum stops at Max (4); advanced calculations use the PB sidecar.
+          chart.set('aggregation_type', BigInt(config.chart.aggregationType > 4 ? 0 : config.chart.aggregationType));
+          chart.set('aggregation_type_pb', BigInt(config.chart.aggregationType));
           if (config.chart.yFieldId) chart.set('y_field_id', config.chart.yFieldId);
           // Desktop's persisted show_empty_values flag means omit empty values.
           chart.set('show_empty_values', false);
           chart.set('cumulative', false);
-          chart.set('date_condition', 3);
+          chart.set('date_condition', 3n);
           if (config.chart.groupByFieldId) chart.set('group_by_field_id', config.chart.groupByFieldId);
           if (config.chart.groupStyle) chart.set('group_style', config.chart.groupStyle);
           layoutSettings().set('3', chart);

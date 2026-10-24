@@ -502,7 +502,9 @@ async function writeChartExtras(page: Page, databaseId: string, viewId: string, 
       const doc = (window as any).__DASHBOARD_TEST__.byDatabase(databaseId).databaseDoc;
       const chart = doc.getMap('data').get('database').get('views').get(viewId).get('layout_settings').get('3');
 
-      doc.transact(() => Object.entries(extras).forEach(([key, value]) => chart.set(key, value)));
+      doc.transact(() => Object.entries(extras).forEach(([key, value]) => {
+        chart.set(key, key === 'date_condition' ? BigInt(value as number) : value);
+      }));
     },
     { databaseId, viewId, extras }
   );

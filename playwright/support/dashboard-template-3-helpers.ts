@@ -364,8 +364,11 @@ async function writeViewPatches(page: Page, databaseId: string, patches: ViewPat
           const chart = view.get('layout_settings')?.get('3');
 
           if (!chart) return;
-          if (patch.dateCondition !== undefined) chart.set('date_condition', patch.dateCondition);
-          if (patch.aggregationType !== undefined) chart.set('aggregation_type', patch.aggregationType);
+          if (patch.dateCondition !== undefined) chart.set('date_condition', BigInt(patch.dateCondition));
+          if (patch.aggregationType !== undefined) {
+            chart.set('aggregation_type', BigInt(patch.aggregationType > 4 ? 0 : patch.aggregationType));
+            chart.set('aggregation_type_pb', BigInt(patch.aggregationType));
+          }
           if (patch.titleText !== undefined) chart.set('titleText', patch.titleText);
         });
       });
@@ -971,11 +974,13 @@ export async function expectSlashOptionDisabled(page: Page, command: string, rea
 
   await expect(option).toBeVisible(TEMPLATE_WAIT);
   await expect(option).toBeDisabled();
-  // Start from no tooltip, so the one shown belongs to this option.
-  await page.mouse.move(0, 0);
-  await expect(page.getByRole('tooltip')).toHaveCount(0, TEMPLATE_WAIT);
-  await option.locator('xpath=..').hover();
+  const trigger = option.locator('xpath=..');
+
+  await trigger.hover();
+  await expect(trigger).toHaveAttribute('aria-describedby', /\S+/, TEMPLATE_WAIT);
   await expect(tooltip).toBeVisible(TEMPLATE_WAIT);
+  // Both Dashboard commands share a reason; verify this trigger owns the tooltip.
+  await expect(tooltip).toHaveAttribute('id', await trigger.getAttribute('aria-describedby') as string, TEMPLATE_WAIT);
 }
 
 // ---------------------------------------------------------------------------

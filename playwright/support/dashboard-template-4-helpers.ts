@@ -381,7 +381,7 @@ async function writeChartExtras(page: Page, databaseId: string, viewId: string, 
       const chart = doc.getMap('data').get('database').get('views').get(viewId).get('layout_settings').get('3');
 
       doc.transact(() => {
-        if (extras.dateCondition !== undefined) chart.set('date_condition', extras.dateCondition);
+        if (extras.dateCondition !== undefined) chart.set('date_condition', BigInt(extras.dateCondition));
         if (extras.numberFormat) chart.set('numberFormat', extras.numberFormat);
         if (extras.titleText !== undefined) chart.set('titleText', extras.titleText);
       });

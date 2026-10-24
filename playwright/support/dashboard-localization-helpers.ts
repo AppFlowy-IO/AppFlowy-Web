@@ -271,7 +271,8 @@ function chartLayoutMap(view: ChartViewSpec, fieldIds: Record<string, string>): 
   return {
     chart_type: view.chartType,
     x_field_id: fieldId(view.x),
-    aggregation_type: view.aggregationType,
+    aggregation_type: view.aggregationType > 4 ? 0 : view.aggregationType,
+    aggregation_type_pb: view.aggregationType,
     ...(view.y ? { y_field_id: fieldId(view.y) } : {}),
     show_empty_values: true,
     cumulative: false,
@@ -299,7 +300,11 @@ async function writeChartLayouts(page: Page, databaseId: string, layouts: ChartL
 
           const chart = new win.Y.Map();
 
-          Object.entries(map).forEach(([key, value]) => chart.set(key, value));
+          const integerKeys = ['chart_type', 'aggregation_type', 'aggregation_type_pb', 'date_condition'];
+
+          Object.entries(map).forEach(([key, value]) => {
+            chart.set(key, integerKeys.includes(key) ? BigInt(value as number) : value);
+          });
           settings.set(layoutKey, chart);
         });
       });
