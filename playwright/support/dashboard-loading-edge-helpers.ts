@@ -1257,16 +1257,20 @@ export async function openOnPhoneWhileSlow(page: Page) {
 /** Every widget spans the width of the dashboard, one per line. */
 export async function expectStackedOnePerLine(page: Page) {
   const viewer = viewerOf(page);
-  const boxes = await DashboardSelectors.widgets(viewer).evaluateAll((widgets) =>
-    widgets.map((widget) => {
-      const rect = widget.getBoundingClientRect();
 
-      return { top: Math.round(rect.top), left: Math.round(rect.left), width: Math.round(rect.width) };
-    })
-  );
+  // Widget nodes can mount before the ResizeObserver updates the responsive layout.
+  await expect(async () => {
+    const boxes = await DashboardSelectors.widgets(viewer).evaluateAll((widgets) =>
+      widgets.map((widget) => {
+        const rect = widget.getBoundingClientRect();
 
-  expect(boxes.length, 'widgets').toBe(loadingWidgets(page).length);
-  expect(new Set(boxes.map((box) => box.top)).size, 'widgets sharing a line').toBe(boxes.length);
-  expect(new Set(boxes.map((box) => box.left)).size, 'widget columns').toBe(1);
-  expect(await widgetsInViewport(viewer), 'widgets in view at the open').not.toHaveLength(boxes.length);
+        return { top: Math.round(rect.top), left: Math.round(rect.left), width: Math.round(rect.width) };
+      })
+    );
+
+    expect(boxes.length, 'widgets').toBe(loadingWidgets(page).length);
+    expect(new Set(boxes.map((box) => box.top)).size, 'widgets sharing a line').toBe(boxes.length);
+    expect(new Set(boxes.map((box) => box.left)).size, 'widget columns').toBe(1);
+    expect(await widgetsInViewport(viewer), 'widgets in view at the open').not.toHaveLength(boxes.length);
+  }).toPass(WIDGET_TIMEOUT);
 }
