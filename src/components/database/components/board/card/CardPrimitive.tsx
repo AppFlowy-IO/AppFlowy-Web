@@ -127,6 +127,7 @@ export const CardPrimitive = forwardRef<HTMLDivElement, CardProps>(
             draggable={false}
             src={url}
             alt={''}
+            decodeAtDisplaySize='cover'
             className={'h-full w-full object-cover'}
             style={{
               objectPosition,
