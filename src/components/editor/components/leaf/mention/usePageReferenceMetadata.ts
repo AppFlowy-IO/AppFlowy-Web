@@ -66,13 +66,44 @@ export function usePageReferenceMetadata({ pageId, loadViewMeta, eventEmitter, o
   }, [acceptView, loadViewMeta, onPageMentionNameResolved, pageId]);
 
   useEffect(() => {
+    let scheduledRecheck: object | undefined;
+    const recheckAccess = () => {
+      if (scheduledRecheck) return;
+      const scheduled = {};
+
+      scheduledRecheck = scheduled;
+      // Retire an older result immediately, before the queued check starts.
+      requestVersion.current += 1;
+      // One permission refresh can emit several outline and metadata events.
+      // Combine a synchronous burst, but let later signals supersede a read
+      // that may have started before access was restored.
+      queueMicrotask(() => {
+        if (scheduledRecheck !== scheduled) return;
+        scheduledRecheck = undefined;
+        void load(true);
+      });
+    };
+
     const handleView = (view: View) => {
-      if (view.view_id !== pageId || accessFencedPageId.current === pageId) return;
+      if (view.view_id !== pageId) return;
+      if (accessFencedPageId.current === pageId) {
+        recheckAccess();
+        return;
+      }
+
       requestVersion.current += 1;
       acceptView(view);
     };
 
     const handleOutlineLoaded = (outline: View[]) => {
+      if (accessFencedPageId.current === pageId) {
+        // Group/parent permission recovery need not emit a targeted restored
+        // event, and a shallow outline may still omit this reference. Treat
+        // the refresh as a signal to check access, never as proof of access.
+        recheckAccess();
+        return;
+      }
+
       const view = findView(outline, pageId);
 
       if (view) handleView(view);
@@ -80,6 +111,7 @@ export function usePageReferenceMetadata({ pageId, loadViewMeta, eventEmitter, o
 
     const handleAccessRevoked = (payload?: { viewId?: string | null }) => {
       if (payload?.viewId !== pageId) return;
+      scheduledRecheck = undefined;
       accessFencedPageId.current = pageId;
       requestVersion.current += 1;
       // React can batch revocation and recovery into one available render, but
@@ -94,7 +126,7 @@ export function usePageReferenceMetadata({ pageId, loadViewMeta, eventEmitter, o
       // A cached outline or view notification cannot establish restored access.
       // Keep it fenced until this authoritative lookup actually succeeds.
       accessFencedPageId.current = pageId;
-      void load(true);
+      recheckAccess();
     };
 
     eventEmitter?.on(APP_EVENTS.OUTLINE_LOADED, handleOutlineLoaded);
@@ -103,6 +135,7 @@ export function usePageReferenceMetadata({ pageId, loadViewMeta, eventEmitter, o
     eventEmitter?.on(APP_EVENTS.VIEW_ACCESS_RESTORED, handleAccessRestored);
     void load();
     return () => {
+      scheduledRecheck = undefined;
       requestVersion.current += 1;
       eventEmitter?.off(APP_EVENTS.OUTLINE_LOADED, handleOutlineLoaded);
       eventEmitter?.off(APP_EVENTS.VIEW_META_CHANGED, handleView);

@@ -262,7 +262,8 @@ describe('desktop page-link blocks', () => {
     expect(screen.getByText('Linked page title')).toBeTruthy();
     expect(mockLoadViewMeta).toHaveBeenCalledTimes(1);
 
-    act(() => {
+    mockLoadViewMeta.mockRejectedValue({ code: 403 });
+    await act(async () => {
       mockEvents.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: 'linked-view' });
       mockEvents.emit(APP_EVENTS.OUTLINE_LOADED, [{ view_id: 'linked-view', name: 'Stale outline title' }]);
       mockEvents.emit(APP_EVENTS.VIEW_META_CHANGED, { view_id: 'linked-view', name: 'Stale metadata title' });
@@ -271,7 +272,8 @@ describe('desktop page-link blocks', () => {
     expect(screen.queryByText('Linked page title')).toBeNull();
     expect(screen.queryByTestId('page-icon')).toBeNull();
     expect(mockNameResolved).toHaveBeenLastCalledWith('linked-view', undefined);
-    expect(mockLoadViewMeta).toHaveBeenCalledTimes(1);
+    expect(mockLoadViewMeta).toHaveBeenCalledTimes(2);
+    expect(mockLoadViewMeta).toHaveBeenLastCalledWith('linked-view', undefined, { authoritative: true });
     expect(mockNavigateToView).not.toHaveBeenCalled();
   });
 
@@ -294,6 +296,115 @@ describe('desktop page-link blocks', () => {
     expect(mockNameResolved).toHaveBeenLastCalledWith('linked-view', undefined);
   });
 
+  it.each(['outline', 'shallow outline', 'view metadata'])('rechecks revoked references after broader recovery through %s', async (signal) => {
+    renderPageLink();
+    await screen.findByText('Linked page title');
+    act(() => { mockEvents.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: 'linked-view' }); });
+    let resolveRecovery!: (view: Partial<View>) => void;
+
+    mockLoadViewMeta.mockImplementationOnce(() => new Promise((resolve) => { resolveRecovery = resolve; }));
+    await act(async () => {
+      if (signal === 'view metadata') {
+        mockEvents.emit(APP_EVENTS.VIEW_META_CHANGED, { view_id: 'linked-view', name: 'Unverified title' });
+      } else {
+        // Group and parent grants refresh the outline without emitting a
+        // VIEW_ACCESS_RESTORED event for each referenced descendant.
+        mockEvents.emit(APP_EVENTS.OUTLINE_LOADED, signal === 'outline'
+          ? [{ view_id: 'linked-view', name: 'Unverified title' }]
+          : [{ view_id: 'parent', name: 'Parent', children: [] }]);
+      }
+    });
+    expect(mockLoadViewMeta).toHaveBeenCalledTimes(2);
+    expect(mockLoadViewMeta).toHaveBeenLastCalledWith('linked-view', undefined, { authoritative: true });
+    expect(screen.getByText('document.mention.noAccess')).toBeTruthy();
+    expect(screen.queryByText('Unverified title')).toBeNull();
+    expect(mockNameResolved).toHaveBeenLastCalledWith('linked-view', undefined);
+
+    await act(async () => { resolveRecovery({ view_id: 'linked-view', name: 'Verified title' }); });
+    fireEvent.click(await screen.findByText('Verified title'));
+    await waitFor(() => expect(mockNavigateToView).toHaveBeenCalledWith('linked-view', undefined));
+    expect(mockNameResolved).toHaveBeenLastCalledWith('linked-view', 'Verified title');
+  });
+
+  it('recovers on a later outline refresh after an earlier authoritative denial', async () => {
+    renderPageLink();
+    await screen.findByText('Linked page title');
+    mockLoadViewMeta.mockRejectedValueOnce({ code: 403 });
+    await act(async () => {
+      mockEvents.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: 'linked-view' });
+      mockEvents.emit(APP_EVENTS.OUTLINE_LOADED, []);
+    });
+    expect(screen.getByText('document.mention.noAccess')).toBeTruthy();
+    expect(mockLoadViewMeta).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      mockEvents.emit(APP_EVENTS.OUTLINE_LOADED, []);
+      mockEvents.emit(APP_EVENTS.VIEW_META_CHANGED, { view_id: 'linked-view', name: 'Unverified title' });
+      mockEvents.emit(APP_EVENTS.OUTLINE_LOADED, []);
+    });
+    expect(screen.getByText('Linked page title')).toBeTruthy();
+    expect(screen.queryByText('Unverified title')).toBeNull();
+    expect(mockLoadViewMeta).toHaveBeenCalledTimes(3);
+    expect(mockLoadViewMeta).toHaveBeenLastCalledWith('linked-view', undefined, { authoritative: true });
+  });
+
+  it('lets a later recovery signal supersede a pending authoritative denial', async () => {
+    renderPageLink();
+    await screen.findByText('Linked page title');
+    let rejectEarlier!: (error: unknown) => void;
+
+    mockLoadViewMeta.mockImplementationOnce(() => new Promise((_, reject) => { rejectEarlier = reject; }));
+    await act(async () => {
+      mockEvents.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: 'linked-view' });
+      mockEvents.emit(APP_EVENTS.OUTLINE_LOADED, []);
+    });
+    expect(screen.getByText('document.mention.noAccess')).toBeTruthy();
+    await act(async () => { mockEvents.emit(APP_EVENTS.OUTLINE_LOADED, []); });
+    expect(screen.getByText('Linked page title')).toBeTruthy();
+    await act(async () => { rejectEarlier({ code: 403 }); });
+    expect(screen.getByText('Linked page title')).toBeTruthy();
+    expect(mockLoadViewMeta).toHaveBeenCalledTimes(3);
+  });
+
+  it('rejects an older success as soon as a new recheck is queued', async () => {
+    renderPageLink();
+    await screen.findByText('Linked page title');
+    let resolveEarlier!: (view: Partial<View>) => void;
+    let resolveLatest!: (view: Partial<View>) => void;
+
+    mockLoadViewMeta.mockImplementationOnce(() => new Promise((resolve) => { resolveEarlier = resolve; }));
+    mockLoadViewMeta.mockImplementationOnce(() => new Promise((resolve) => { resolveLatest = resolve; }));
+    await act(async () => {
+      mockEvents.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: 'linked-view' });
+      mockEvents.emit(APP_EVENTS.OUTLINE_LOADED, []);
+    });
+    await act(async () => {
+      // The older promise continuation runs before the queued recheck. It
+      // must already be stale, even though the newer request has not started.
+      resolveEarlier({ view_id: 'linked-view', name: 'Stale success' });
+      mockEvents.emit(APP_EVENTS.OUTLINE_LOADED, []);
+    });
+    expect(screen.getByText('document.mention.noAccess')).toBeTruthy();
+    expect(mockNameResolved).not.toHaveBeenCalledWith('linked-view', 'Stale success');
+    await act(async () => { resolveLatest({ view_id: 'linked-view', name: 'Verified title' }); });
+    expect(screen.getByText('Verified title')).toBeTruthy();
+  });
+
+  it.each(['revocation', 'unmount'])('cancels queued recovery on %s', async (cancellation) => {
+    const { unmount } = renderPageLink();
+
+    await screen.findByText('Linked page title');
+    await act(async () => {
+      mockEvents.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: 'linked-view' });
+      mockEvents.emit(APP_EVENTS.OUTLINE_LOADED, []);
+      if (cancellation === 'unmount') unmount();
+      else mockEvents.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: 'linked-view' });
+    });
+    expect(mockLoadViewMeta).toHaveBeenCalledTimes(1);
+    expect(mockNameResolved).toHaveBeenLastCalledWith('linked-view', undefined);
+    if (cancellation === 'revocation') expect(screen.getByText('document.mention.noAccess')).toBeTruthy();
+  });
+
   it('authoritatively restores an off-outline reference before accepting live metadata again', async () => {
     let resolveRestoration!: (view: Partial<View>) => void;
 
@@ -301,7 +412,7 @@ describe('desktop page-link blocks', () => {
     mockLoadViewMeta.mockImplementationOnce(() => new Promise((resolve) => { resolveRestoration = resolve; }));
     renderPageLink();
     await screen.findByText('document.mention.noAccess');
-    act(() => {
+    await act(async () => {
       mockEvents.emit(APP_EVENTS.VIEW_ACCESS_RESTORED, { viewId: 'linked-view' });
       mockEvents.emit(APP_EVENTS.OUTLINE_LOADED, [{ view_id: 'linked-view', name: 'Stale outline title' }]);
       mockEvents.emit(APP_EVENTS.VIEW_META_CHANGED, { view_id: 'linked-view', name: 'Stale metadata title' });
@@ -325,16 +436,17 @@ describe('desktop page-link blocks', () => {
   ])('keeps stale metadata fenced when the restoration lookup fails: %j', async (error, label) => {
     mockLoadViewMeta.mockRejectedValueOnce({ code: 403 });
     mockLoadViewMeta.mockRejectedValueOnce(error);
+    mockLoadViewMeta.mockRejectedValueOnce(error);
     renderPageLink();
     await screen.findByText('document.mention.noAccess');
     await act(async () => { mockEvents.emit(APP_EVENTS.VIEW_ACCESS_RESTORED, { viewId: 'linked-view' }); });
     await screen.findByText(label);
-    act(() => {
+    await act(async () => {
       mockEvents.emit(APP_EVENTS.OUTLINE_LOADED, [{ view_id: 'linked-view', name: 'Stale outline title' }]);
       mockEvents.emit(APP_EVENTS.VIEW_META_CHANGED, { view_id: 'linked-view', name: 'Stale metadata title' });
     });
     expect(screen.getByText(label)).toBeTruthy();
-    expect(mockLoadViewMeta).toHaveBeenCalledTimes(2);
+    expect(mockLoadViewMeta).toHaveBeenCalledTimes(3);
     expect(mockNameResolved).toHaveBeenLastCalledWith('linked-view', undefined);
 
     if (label === 'document.mention.loadFailed') {
@@ -344,7 +456,7 @@ describe('desktop page-link blocks', () => {
     }
 
     await screen.findByText('Linked page title');
-    expect(mockLoadViewMeta).toHaveBeenCalledTimes(3);
+    expect(mockLoadViewMeta).toHaveBeenCalledTimes(4);
     expect(mockLoadViewMeta).toHaveBeenLastCalledWith('linked-view', undefined, { authoritative: true });
   });
 
@@ -359,8 +471,10 @@ describe('desktop page-link blocks', () => {
     }));
     renderPageLink();
     await screen.findByText('document.mention.noAccess');
-    act(() => {
+    await act(async () => {
       mockEvents.emit(APP_EVENTS.VIEW_ACCESS_RESTORED, { viewId: 'linked-view' });
+    });
+    act(() => {
       mockEvents.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: 'linked-view' });
     });
     await act(async () => {
@@ -381,7 +495,7 @@ describe('desktop page-link blocks', () => {
     await waitFor(() => expect(mockCurrentLoadViewMeta).toHaveBeenCalledTimes(1));
     expect(mockCurrentLoadViewMeta).toHaveBeenCalledWith('linked-view', undefined, { authoritative: true });
     expect(screen.getByText('document.mention.noAccess')).toBeTruthy();
-    act(() => {
+    await act(async () => {
       mockEvents.emit(APP_EVENTS.OUTLINE_LOADED, [{ view_id: 'linked-view', name: 'Stale outline title' }]);
     });
     expect(screen.getByText('document.mention.noAccess')).toBeTruthy();

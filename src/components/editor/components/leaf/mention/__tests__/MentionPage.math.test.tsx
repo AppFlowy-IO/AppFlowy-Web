@@ -222,7 +222,7 @@ it('releases a document subscription when initial block traversal fails before r
   getBlockTextContent.mockRestore();
 });
 
-it.each(['separate', 'batched'])('reloads an evicted block document after %s access updates', async (updates) => {
+it.each(['separate', 'batched', 'outline'])('reloads an evicted block document after %s access updates', async (updates) => {
   const doc = equationDoc('other-page');
 
   mockLoadView.mockResolvedValueOnce(doc);
@@ -241,11 +241,15 @@ it.each(['separate', 'batched'])('reloads an evicted block document after %s acc
       mockEvents.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: 'other-page' });
     });
     await screen.findByText('document.mention.noAccess');
-    act(() => { mockEvents.emit(APP_EVENTS.VIEW_ACCESS_RESTORED, { viewId: 'other-page' }); });
+    act(() => {
+      if (updates === 'outline') mockEvents.emit(APP_EVENTS.OUTLINE_LOADED, []);
+      else mockEvents.emit(APP_EVENTS.VIEW_ACCESS_RESTORED, { viewId: 'other-page' });
+    });
   }
 
   await screen.findByText('Math notes - Restored equation');
   expect(mockLoadView).toHaveBeenCalledTimes(2);
+  expect(mockLoadViewMeta).toHaveBeenLastCalledWith('other-page', undefined, { authoritative: true });
 });
 
 it.each(['', ' \n\t '])('falls back to the page title for an empty equation (%j)', async (empty) => {
