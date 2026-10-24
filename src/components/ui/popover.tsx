@@ -233,7 +233,7 @@ function useBackdropFocusTrap(content: HTMLElement | null, backdropRef: MutableR
   }, [backdropRef, content]);
 }
 
-function BackdropPopoverContent({
+const BackdropPopoverContent = forwardRef<HTMLDivElement, PopoverContentProps & { state: PopoverBackdropState }>(function BackdropPopoverContent({
   state,
   container,
   className,
@@ -243,10 +243,11 @@ function BackdropPopoverContent({
   onFocusOutside,
   onPointerDownOutside,
   ...props
-}: PopoverContentProps & { state: PopoverBackdropState }) {
+}, forwardedRef) {
   const { open, triggerRef } = state;
   const backdropRef = useRef<HTMLDivElement | null>(null);
   const [content, setContent] = useState<HTMLDivElement | null>(null);
+  const contentRef = useMergedRef<HTMLDivElement>(forwardedRef, setContent);
   const rightClickOutsideRef = useRef(false);
 
   useBackdropFocusTrap(content, backdropRef);
@@ -291,19 +292,23 @@ function BackdropPopoverContent({
 
             rightClickOutsideRef.current = original.button === 2 || (original.button === 0 && original.ctrlKey);
           }}
-          ref={setContent}
+          ref={contentRef}
         />
       </PopoverPrimitive.Portal>
     </>
   );
-}
+});
 
-function PopoverContent({ className, align = 'center', sideOffset = 4, container, ...props }: PopoverContentProps) {
+const PopoverContent = forwardRef<HTMLDivElement, PopoverContentProps>(function PopoverContent(
+  { className, align = 'center', sideOffset = 4, container, ...props },
+  ref
+) {
   const backdrop = useContext(PopoverBackdropContext);
 
   if (backdrop) {
     return (
       <BackdropPopoverContent
+        ref={ref}
         align={align}
         className={className}
         container={container}
@@ -317,6 +322,7 @@ function PopoverContent({ className, align = 'center', sideOffset = 4, container
   return (
     <PopoverPrimitive.Portal container={container}>
       <PopoverPrimitive.Content
+        ref={ref}
         data-slot='popover-content'
         align={align}
         sideOffset={sideOffset}
@@ -325,7 +331,7 @@ function PopoverContent({ className, align = 'center', sideOffset = 4, container
       />
     </PopoverPrimitive.Portal>
   );
-}
+});
 
 function PopoverAnchor({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Anchor>) {
   return <PopoverPrimitive.Anchor data-slot='popover-anchor' {...props} />;

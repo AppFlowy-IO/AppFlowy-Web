@@ -11,10 +11,9 @@ on:
     - cron: '0 3 * * *'
 
 env:
-  # Follow the latest Cloud release. Cloud, its workers and the AI service
-  # (built from Cloud since Cloud-Premium #1441) must share one source revision,
-  # so each test job resolves the revision behind this tag and checks out the
-  # matching compose files and seed snapshot.
+  # Follow the latest image for each service. Resolve Cloud once by digest so its
+  # compose files and seed snapshot match the image used throughout the job;
+  # independently published Worker, Search and AI may have different revisions.
   CLOUD_VERSION: latest-amd64
   # Public Form APIs and uploads reject plaintext requests at the backend proxy.
   APPFLOWY_BASE_URL: https://localhost
@@ -365,7 +364,10 @@ jobs:
 
       - name: Resolve latest Cloud release
         run: |
-          labels=$(docker buildx imagetools inspect "appflowyinc/appflowy_cloud_premium:${CLOUD_VERSION}" \
+          digest=$(docker buildx imagetools inspect "appflowyinc/appflowy_cloud_premium:${CLOUD_VERSION}" \
+            --format '{{json .Manifest.Digest}}' | jq -er 'select(test("^sha256:[0-9a-f]{64}$"))')
+          cloud_image_version="${CLOUD_VERSION}@${digest}"
+          labels=$(docker buildx imagetools inspect "appflowyinc/appflowy_cloud_premium:${cloud_image_version}" \
             --format '{{ json .Image }}' | jq -c '.config.Labels')
           revision=$(jq -r '."org.opencontainers.image.revision" // empty' <<< "$labels")
           if [ -z "$revision" ]; then
@@ -374,6 +376,7 @@ jobs:
           fi
           echo "Testing AppFlowy Cloud $(jq -r '."org.opencontainers.image.version" // "unknown"' <<< "$labels") ($revision)"
           echo "CLOUD_REVISION=$revision" >> "$GITHUB_ENV"
+          echo "CLOUD_IMAGE_VERSION=$cloud_image_version" >> "$GITHUB_ENV"
 
       - name: Checkout AppFlowy-Cloud-Premium
         uses: actions/checkout@v4
@@ -413,7 +416,7 @@ jobs:
       # Overlap Docker pull (network I/O) with pnpm install + Playwright browser install
       - name: Install deps and pull Docker images (parallel)
         env:
-          APPFLOWY_CLOUD_VERSION: ${{ env.CLOUD_VERSION }}
+          APPFLOWY_CLOUD_VERSION: ${{ env.CLOUD_IMAGE_VERSION }}
           APPFLOWY_AI_VERSION: ${{ env.CLOUD_VERSION }}
           APPFLOWY_WORKER_VERSION: ${{ env.CLOUD_VERSION }}
           APPFLOWY_SEARCH_VERSION: ${{ env.CLOUD_VERSION }}
@@ -428,15 +431,21 @@ jobs:
           # Wait for Docker pull to complete
           wait $DOCKER_PID
 
-      - name: Verify backend image revisions
+      - name: Verify Cloud revision and report backend image versions
         run: |
+          cloud_image="appflowyinc/appflowy_cloud_premium:${CLOUD_IMAGE_VERSION}"
+          actual_revision=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$cloud_image")
+          if [ "$actual_revision" != "$CLOUD_REVISION" ]; then
+            echo "::error::$cloud_image revision $actual_revision does not match checked-out Cloud revision $CLOUD_REVISION"
+            exit 1
+          fi
           for service in appflowy_cloud appflowy_worker appflowy_search appflowy_ai; do
             image="appflowyinc/${service}_premium:${CLOUD_VERSION}"
-            revision=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")
-            if [ "$revision" != "$CLOUD_REVISION" ]; then
-              echo "::error::$image was built from $revision; expected $CLOUD_REVISION (a Cloud release may still be publishing; re-run once it finishes)"
-              exit 1
+            if [ "$service" = appflowy_cloud ]; then
+              image="$cloud_image"
             fi
+            echo "$image"
+            docker image inspect --format 'id={{.Id}} version={{ index .Config.Labels "org.opencontainers.image.version" }} revision={{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image"
           done
 
       - name: Cache Playwright browsers
@@ -466,7 +475,7 @@ jobs:
       - name: Start Docker services
         working-directory: AppFlowy-Cloud-Premium
         env:
-          APPFLOWY_CLOUD_VERSION: ${{ env.CLOUD_VERSION }}
+          APPFLOWY_CLOUD_VERSION: ${{ env.CLOUD_IMAGE_VERSION }}
           APPFLOWY_AI_VERSION: ${{ env.CLOUD_VERSION }}
           APPFLOWY_WORKER_VERSION: ${{ env.CLOUD_VERSION }}
           APPFLOWY_SEARCH_VERSION: ${{ env.CLOUD_VERSION }}

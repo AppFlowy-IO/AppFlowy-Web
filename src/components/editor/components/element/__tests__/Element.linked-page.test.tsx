@@ -2,7 +2,8 @@ import EventEmitter from 'events';
 
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-import { APP_EVENTS } from '@/application/constants';
+import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
+import { ViewMetadataError } from '@/application/errors/view-metadata-error';
 import { BlockType, View, ViewLayout } from '@/application/types';
 import { BlockNode } from '@/components/editor/editor.type';
 
@@ -11,6 +12,7 @@ import { Element } from '../Element';
 const mockLoadViewMeta = jest.fn();
 let mockCurrentLoadViewMeta = mockLoadViewMeta;
 const mockNavigateToView = jest.fn();
+const mockNameResolved = jest.fn();
 const mockEditor = { selection: null };
 const mockEvents = new EventEmitter();
 let mockReadOnly = false;
@@ -33,6 +35,7 @@ jest.mock('@/components/editor/EditorContext', () => ({
     loadViewMeta: mockCurrentLoadViewMeta,
     navigateToView: mockNavigateToView,
     eventEmitter: mockEvents,
+    onPageMentionNameResolved: mockNameResolved,
   }),
   useEditorLocalState: () => ({ selectedBlockIds: [] }),
 }));
@@ -108,8 +111,10 @@ function renderPageLink(type = 'linked_page', data: Record<string, unknown> = { 
 describe('desktop page-link blocks', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockLoadViewMeta.mockReset();
     mockCurrentLoadViewMeta = mockLoadViewMeta;
     mockReadOnly = false;
+    mockEvents.removeAllListeners();
     mockLoadViewMeta.mockResolvedValue({
       view_id: 'linked-view',
       name: 'Linked page title',
@@ -142,20 +147,67 @@ describe('desktop page-link blocks', () => {
     await waitFor(() => expect(mockNavigateToView).toHaveBeenCalledWith('linked-view', undefined));
   });
 
-  it('uses the existing no-access fallback when the linked page cannot be resolved', async () => {
-    mockLoadViewMeta.mockRejectedValue(new Error('View not found'));
+  it.each([
+    [{ code: ERROR_CODE.RECORD_NOT_FOUND, httpStatus: 200, sourceDomain: 'appflowy.server' }, 'document.mention.pageNotFound'],
+    [{ code: 404 }, 'document.mention.pageNotFound'],
+    [{ code: ERROR_CODE.RECORD_DELETED }, 'document.mention.pageNotFound'],
+    [new ViewMetadataError('in_trash'), 'document.mention.pageInTrash'],
+    [new ViewMetadataError('not_found'), 'document.mention.pageNotFound'],
+    [{ code: ERROR_CODE.NOT_HAS_PERMISSION }, 'document.mention.noAccess'],
+    [{ code: 403 }, 'document.mention.noAccess'],
+    [{ code: ERROR_CODE.USER_UNAUTHORIZED }, 'landingPage.unauthorized.title'],
+    [{ code: ERROR_CODE.SERVICE_TEMPORARY_UNAVAILABLE }, 'document.mention.loadFailed'],
+    [{ code: -1, sourceDomain: 'transport', transportFailure: 'network' }, 'document.mention.loadFailed'],
+    [{ code: ERROR_CODE.FEATURE_NOT_AVAILABLE, httpStatus: 403, sourceDomain: 'appflowy.server' }, 'document.mention.loadFailed'],
+    [new Error('Lookup failed'), 'document.mention.loadFailed'],
+  ])('keeps the error identity when a page reference fails: %j', async (error, label) => {
+    mockLoadViewMeta.mockRejectedValue(error);
     renderPageLink();
 
-    fireEvent.click(await screen.findByText('document.mention.noAccess'));
+    fireEvent.click(await screen.findByText(label));
 
     expect(screen.queryByTestId('unsupported-block')).toBeNull();
     expect(mockNavigateToView).not.toHaveBeenCalled();
+    expect(mockLoadViewMeta).toHaveBeenCalledTimes(1);
+    if (label !== 'document.mention.noAccess') expect(screen.queryByText('document.mention.noAccess')).toBeNull();
+  });
+
+  it('shows a missing page when the loader resolves without metadata', async () => {
+    mockLoadViewMeta.mockResolvedValue(null);
+    renderPageLink();
+
+    await screen.findByText('document.mention.pageNotFound');
+    expect(screen.queryByText('menuAppHeader.defaultNewPageName')).toBeNull();
+  });
+
+  it('retries a temporary failure through an authoritative lookup and restores navigation', async () => {
+    let resolveRetry!: (view: Partial<View>) => void;
+
+    mockLoadViewMeta.mockRejectedValueOnce({ code: ERROR_CODE.SERVICE_TEMPORARY_UNAVAILABLE });
+    mockLoadViewMeta.mockImplementationOnce(() => new Promise((resolve) => { resolveRetry = resolve; }));
+    renderPageLink();
+
+    const retry = await screen.findByRole('button', { name: 'button.retry' });
+
+    fireEvent.mouseDown(retry);
+    fireEvent.click(retry);
+    await waitFor(() => expect(mockLoadViewMeta).toHaveBeenCalledTimes(2));
+    expect(mockLoadViewMeta).toHaveBeenLastCalledWith('linked-view', undefined, { authoritative: true });
+    expect((retry as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(retry);
+    expect(mockLoadViewMeta).toHaveBeenCalledTimes(2);
+    expect(mockNavigateToView).not.toHaveBeenCalled();
+
+    await act(async () => { resolveRetry({ view_id: 'linked-view', name: 'Recovered page' }); });
+    fireEvent.click(await screen.findByText('Recovered page'));
+    await waitFor(() => expect(mockNavigateToView).toHaveBeenCalledWith('linked-view', undefined));
+    expect(screen.queryByRole('button', { name: 'button.retry' })).toBeNull();
   });
 
   it('recovers after missing metadata and keeps following rename notifications', async () => {
-    mockLoadViewMeta.mockRejectedValue(new Error('View not found'));
+    mockLoadViewMeta.mockRejectedValue({ code: ERROR_CODE.RECORD_NOT_FOUND });
     renderPageLink('sub_page');
-    await screen.findByText('document.mention.noAccess');
+    await screen.findByText('document.mention.pageNotFound');
 
     act(() => {
       mockEvents.emit(APP_EVENTS.VIEW_META_CHANGED, { view_id: 'linked-view', name: 'Recovered child' });
@@ -166,6 +218,287 @@ describe('desktop page-link blocks', () => {
       mockEvents.emit(APP_EVENTS.VIEW_META_CHANGED, { view_id: 'linked-view', name: 'Renamed child' });
     });
     await screen.findByText('Renamed child');
+  });
+
+  it('keeps a live recovery when an older retry subsequently fails', async () => {
+    let rejectRetry!: (error: unknown) => void;
+
+    mockLoadViewMeta.mockRejectedValueOnce(new Error('Offline'));
+    mockLoadViewMeta.mockImplementationOnce(() => new Promise((_, reject) => { rejectRetry = reject; }));
+    renderPageLink();
+    fireEvent.click(await screen.findByRole('button', { name: 'button.retry' }));
+    await waitFor(() => expect(mockLoadViewMeta).toHaveBeenCalledTimes(2));
+    act(() => {
+      mockEvents.emit(APP_EVENTS.OUTLINE_LOADED, [{ view_id: 'linked-view', name: 'Restored by sync' }]);
+    });
+    await screen.findByText('Restored by sync');
+    await act(async () => { rejectRetry({ code: ERROR_CODE.RECORD_NOT_FOUND }); });
+    expect(screen.getByText('Restored by sync')).toBeTruthy();
+    expect(screen.queryByText('document.mention.pageNotFound')).toBeNull();
+  });
+
+  it('releases reference listeners while an unresolved lookup is still pending', () => {
+    mockLoadViewMeta.mockReturnValue(new Promise(() => undefined));
+    const { unmount } = renderPageLink();
+
+    expect(mockEvents.listenerCount(APP_EVENTS.OUTLINE_LOADED)).toBe(1);
+    expect(mockEvents.listenerCount(APP_EVENTS.VIEW_META_CHANGED)).toBe(1);
+    expect(mockEvents.listenerCount(APP_EVENTS.VIEW_ACCESS_REVOKED)).toBe(1);
+    expect(mockEvents.listenerCount(APP_EVENTS.VIEW_ACCESS_RESTORED)).toBe(1);
+    unmount();
+    expect(mockEvents.listenerCount(APP_EVENTS.OUTLINE_LOADED)).toBe(0);
+    expect(mockEvents.listenerCount(APP_EVENTS.VIEW_META_CHANGED)).toBe(0);
+    expect(mockEvents.listenerCount(APP_EVENTS.VIEW_ACCESS_REVOKED)).toBe(0);
+    expect(mockEvents.listenerCount(APP_EVENTS.VIEW_ACCESS_RESTORED)).toBe(0);
+  });
+
+  it('clears revoked reference metadata and ignores stale snapshots and unrelated access events', async () => {
+    renderPageLink();
+    await screen.findByText('Linked page title');
+    act(() => {
+      mockEvents.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: 'other-view' });
+      mockEvents.emit(APP_EVENTS.VIEW_ACCESS_RESTORED, { viewId: 'other-view' });
+    });
+    expect(screen.getByText('Linked page title')).toBeTruthy();
+    expect(mockLoadViewMeta).toHaveBeenCalledTimes(1);
+
+    mockLoadViewMeta.mockRejectedValue({ code: 403 });
+    await act(async () => {
+      mockEvents.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: 'linked-view' });
+      mockEvents.emit(APP_EVENTS.OUTLINE_LOADED, [{ view_id: 'linked-view', name: 'Stale outline title' }]);
+      mockEvents.emit(APP_EVENTS.VIEW_META_CHANGED, { view_id: 'linked-view', name: 'Stale metadata title' });
+    });
+    fireEvent.click(await screen.findByText('document.mention.noAccess'));
+    expect(screen.queryByText('Linked page title')).toBeNull();
+    expect(screen.queryByTestId('page-icon')).toBeNull();
+    expect(mockNameResolved).toHaveBeenLastCalledWith('linked-view', undefined);
+    expect(mockLoadViewMeta).toHaveBeenCalledTimes(2);
+    expect(mockLoadViewMeta).toHaveBeenLastCalledWith('linked-view', undefined, { authoritative: true });
+    expect(mockNavigateToView).not.toHaveBeenCalled();
+  });
+
+  it.each(['resolves', 'rejects'])('ignores an old metadata lookup that %s after access is revoked', async (outcome) => {
+    let resolveLookup!: (view: Partial<View>) => void;
+    let rejectLookup!: (error: Error) => void;
+
+    mockLoadViewMeta.mockImplementationOnce(() => new Promise((resolve, reject) => {
+      resolveLookup = resolve;
+      rejectLookup = reject;
+    }));
+    renderPageLink();
+    act(() => { mockEvents.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: 'linked-view' }); });
+    await screen.findByText('document.mention.noAccess');
+    await act(async () => {
+      if (outcome === 'resolves') resolveLookup({ view_id: 'linked-view', name: 'Stale title' });
+      else rejectLookup(new Error('Old request failed'));
+    });
+    expect(screen.getByText('document.mention.noAccess')).toBeTruthy();
+    expect(mockNameResolved).toHaveBeenLastCalledWith('linked-view', undefined);
+  });
+
+  it.each(['outline', 'shallow outline', 'view metadata'])('rechecks revoked references after broader recovery through %s', async (signal) => {
+    renderPageLink();
+    await screen.findByText('Linked page title');
+    act(() => { mockEvents.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: 'linked-view' }); });
+    let resolveRecovery!: (view: Partial<View>) => void;
+
+    mockLoadViewMeta.mockImplementationOnce(() => new Promise((resolve) => { resolveRecovery = resolve; }));
+    await act(async () => {
+      if (signal === 'view metadata') {
+        mockEvents.emit(APP_EVENTS.VIEW_META_CHANGED, { view_id: 'linked-view', name: 'Unverified title' });
+      } else {
+        // Group and parent grants refresh the outline without emitting a
+        // VIEW_ACCESS_RESTORED event for each referenced descendant.
+        mockEvents.emit(APP_EVENTS.OUTLINE_LOADED, signal === 'outline'
+          ? [{ view_id: 'linked-view', name: 'Unverified title' }]
+          : [{ view_id: 'parent', name: 'Parent', children: [] }]);
+      }
+    });
+    expect(mockLoadViewMeta).toHaveBeenCalledTimes(2);
+    expect(mockLoadViewMeta).toHaveBeenLastCalledWith('linked-view', undefined, { authoritative: true });
+    expect(screen.getByText('document.mention.noAccess')).toBeTruthy();
+    expect(screen.queryByText('Unverified title')).toBeNull();
+    expect(mockNameResolved).toHaveBeenLastCalledWith('linked-view', undefined);
+
+    await act(async () => { resolveRecovery({ view_id: 'linked-view', name: 'Verified title' }); });
+    fireEvent.click(await screen.findByText('Verified title'));
+    await waitFor(() => expect(mockNavigateToView).toHaveBeenCalledWith('linked-view', undefined));
+    expect(mockNameResolved).toHaveBeenLastCalledWith('linked-view', 'Verified title');
+  });
+
+  it('recovers on a later outline refresh after an earlier authoritative denial', async () => {
+    renderPageLink();
+    await screen.findByText('Linked page title');
+    mockLoadViewMeta.mockRejectedValueOnce({ code: 403 });
+    await act(async () => {
+      mockEvents.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: 'linked-view' });
+      mockEvents.emit(APP_EVENTS.OUTLINE_LOADED, []);
+    });
+    expect(screen.getByText('document.mention.noAccess')).toBeTruthy();
+    expect(mockLoadViewMeta).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      mockEvents.emit(APP_EVENTS.OUTLINE_LOADED, []);
+      mockEvents.emit(APP_EVENTS.VIEW_META_CHANGED, { view_id: 'linked-view', name: 'Unverified title' });
+      mockEvents.emit(APP_EVENTS.OUTLINE_LOADED, []);
+    });
+    expect(screen.getByText('Linked page title')).toBeTruthy();
+    expect(screen.queryByText('Unverified title')).toBeNull();
+    expect(mockLoadViewMeta).toHaveBeenCalledTimes(3);
+    expect(mockLoadViewMeta).toHaveBeenLastCalledWith('linked-view', undefined, { authoritative: true });
+  });
+
+  it('lets a later recovery signal supersede a pending authoritative denial', async () => {
+    renderPageLink();
+    await screen.findByText('Linked page title');
+    let rejectEarlier!: (error: unknown) => void;
+
+    mockLoadViewMeta.mockImplementationOnce(() => new Promise((_, reject) => { rejectEarlier = reject; }));
+    await act(async () => {
+      mockEvents.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: 'linked-view' });
+      mockEvents.emit(APP_EVENTS.OUTLINE_LOADED, []);
+    });
+    expect(screen.getByText('document.mention.noAccess')).toBeTruthy();
+    await act(async () => { mockEvents.emit(APP_EVENTS.OUTLINE_LOADED, []); });
+    expect(screen.getByText('Linked page title')).toBeTruthy();
+    await act(async () => { rejectEarlier({ code: 403 }); });
+    expect(screen.getByText('Linked page title')).toBeTruthy();
+    expect(mockLoadViewMeta).toHaveBeenCalledTimes(3);
+  });
+
+  it('rejects an older success as soon as a new recheck is queued', async () => {
+    renderPageLink();
+    await screen.findByText('Linked page title');
+    let resolveEarlier!: (view: Partial<View>) => void;
+    let resolveLatest!: (view: Partial<View>) => void;
+
+    mockLoadViewMeta.mockImplementationOnce(() => new Promise((resolve) => { resolveEarlier = resolve; }));
+    mockLoadViewMeta.mockImplementationOnce(() => new Promise((resolve) => { resolveLatest = resolve; }));
+    await act(async () => {
+      mockEvents.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: 'linked-view' });
+      mockEvents.emit(APP_EVENTS.OUTLINE_LOADED, []);
+    });
+    await act(async () => {
+      // The older promise continuation runs before the queued recheck. It
+      // must already be stale, even though the newer request has not started.
+      resolveEarlier({ view_id: 'linked-view', name: 'Stale success' });
+      mockEvents.emit(APP_EVENTS.OUTLINE_LOADED, []);
+    });
+    expect(screen.getByText('document.mention.noAccess')).toBeTruthy();
+    expect(mockNameResolved).not.toHaveBeenCalledWith('linked-view', 'Stale success');
+    await act(async () => { resolveLatest({ view_id: 'linked-view', name: 'Verified title' }); });
+    expect(screen.getByText('Verified title')).toBeTruthy();
+  });
+
+  it.each(['revocation', 'unmount'])('cancels queued recovery on %s', async (cancellation) => {
+    const { unmount } = renderPageLink();
+
+    await screen.findByText('Linked page title');
+    await act(async () => {
+      mockEvents.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: 'linked-view' });
+      mockEvents.emit(APP_EVENTS.OUTLINE_LOADED, []);
+      if (cancellation === 'unmount') unmount();
+      else mockEvents.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: 'linked-view' });
+    });
+    expect(mockLoadViewMeta).toHaveBeenCalledTimes(1);
+    expect(mockNameResolved).toHaveBeenLastCalledWith('linked-view', undefined);
+    if (cancellation === 'revocation') expect(screen.getByText('document.mention.noAccess')).toBeTruthy();
+  });
+
+  it('authoritatively restores an off-outline reference before accepting live metadata again', async () => {
+    let resolveRestoration!: (view: Partial<View>) => void;
+
+    mockLoadViewMeta.mockRejectedValueOnce({ code: 403 });
+    mockLoadViewMeta.mockImplementationOnce(() => new Promise((resolve) => { resolveRestoration = resolve; }));
+    renderPageLink();
+    await screen.findByText('document.mention.noAccess');
+    await act(async () => {
+      mockEvents.emit(APP_EVENTS.VIEW_ACCESS_RESTORED, { viewId: 'linked-view' });
+      mockEvents.emit(APP_EVENTS.OUTLINE_LOADED, [{ view_id: 'linked-view', name: 'Stale outline title' }]);
+      mockEvents.emit(APP_EVENTS.VIEW_META_CHANGED, { view_id: 'linked-view', name: 'Stale metadata title' });
+    });
+    expect(screen.getByText('document.mention.noAccess')).toBeTruthy();
+    expect(mockLoadViewMeta).toHaveBeenCalledTimes(2);
+    expect(mockLoadViewMeta).toHaveBeenLastCalledWith('linked-view', undefined, { authoritative: true });
+    await act(async () => { resolveRestoration({ view_id: 'linked-view', name: 'Restored title' }); });
+    fireEvent.click(await screen.findByText('Restored title'));
+    await waitFor(() => expect(mockNavigateToView).toHaveBeenCalledWith('linked-view', undefined));
+    act(() => {
+      mockEvents.emit(APP_EVENTS.VIEW_META_CHANGED, { view_id: 'linked-view', name: 'Renamed restored page' });
+    });
+    expect(screen.getByText('Renamed restored page')).toBeTruthy();
+    expect(mockLoadViewMeta).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    [{ code: 403 }, 'document.mention.noAccess'],
+    [new Error('Offline'), 'document.mention.loadFailed'],
+  ])('keeps stale metadata fenced when the restoration lookup fails: %j', async (error, label) => {
+    mockLoadViewMeta.mockRejectedValueOnce({ code: 403 });
+    mockLoadViewMeta.mockRejectedValueOnce(error);
+    mockLoadViewMeta.mockRejectedValueOnce(error);
+    renderPageLink();
+    await screen.findByText('document.mention.noAccess');
+    await act(async () => { mockEvents.emit(APP_EVENTS.VIEW_ACCESS_RESTORED, { viewId: 'linked-view' }); });
+    await screen.findByText(label);
+    await act(async () => {
+      mockEvents.emit(APP_EVENTS.OUTLINE_LOADED, [{ view_id: 'linked-view', name: 'Stale outline title' }]);
+      mockEvents.emit(APP_EVENTS.VIEW_META_CHANGED, { view_id: 'linked-view', name: 'Stale metadata title' });
+    });
+    expect(screen.getByText(label)).toBeTruthy();
+    expect(mockLoadViewMeta).toHaveBeenCalledTimes(3);
+    expect(mockNameResolved).toHaveBeenLastCalledWith('linked-view', undefined);
+
+    if (label === 'document.mention.loadFailed') {
+      fireEvent.click(screen.getByRole('button', { name: 'button.retry' }));
+    } else {
+      act(() => { mockEvents.emit(APP_EVENTS.VIEW_ACCESS_RESTORED, { viewId: 'linked-view' }); });
+    }
+
+    await screen.findByText('Linked page title');
+    expect(mockLoadViewMeta).toHaveBeenCalledTimes(4);
+    expect(mockLoadViewMeta).toHaveBeenLastCalledWith('linked-view', undefined, { authoritative: true });
+  });
+
+  it.each(['resolves', 'rejects'])('ignores a restoration lookup that %s after another revocation', async (outcome) => {
+    let resolveRestoration!: (view: Partial<View>) => void;
+    let rejectRestoration!: (error: Error) => void;
+
+    mockLoadViewMeta.mockRejectedValueOnce({ code: 403 });
+    mockLoadViewMeta.mockImplementationOnce(() => new Promise((resolve, reject) => {
+      resolveRestoration = resolve;
+      rejectRestoration = reject;
+    }));
+    renderPageLink();
+    await screen.findByText('document.mention.noAccess');
+    await act(async () => {
+      mockEvents.emit(APP_EVENTS.VIEW_ACCESS_RESTORED, { viewId: 'linked-view' });
+    });
+    act(() => {
+      mockEvents.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: 'linked-view' });
+    });
+    await act(async () => {
+      if (outcome === 'resolves') resolveRestoration({ view_id: 'linked-view', name: 'Stale restored title' });
+      else rejectRestoration(new Error('Old request failed'));
+    });
+    expect(screen.getByText('document.mention.noAccess')).toBeTruthy();
+    expect(mockNameResolved).toHaveBeenLastCalledWith('linked-view', undefined);
+  });
+
+  it('keeps the access fence when the metadata loader changes', async () => {
+    const { rerender } = renderPageLink();
+
+    await screen.findByText('Linked page title');
+    act(() => { mockEvents.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: 'linked-view' }); });
+    mockCurrentLoadViewMeta = jest.fn().mockRejectedValue({ code: 403 });
+    rerender(pageLink());
+    await waitFor(() => expect(mockCurrentLoadViewMeta).toHaveBeenCalledTimes(1));
+    expect(mockCurrentLoadViewMeta).toHaveBeenCalledWith('linked-view', undefined, { authoritative: true });
+    expect(screen.getByText('document.mention.noAccess')).toBeTruthy();
+    await act(async () => {
+      mockEvents.emit(APP_EVENTS.OUTLINE_LOADED, [{ view_id: 'linked-view', name: 'Stale outline title' }]);
+    });
+    expect(screen.getByText('document.mention.noAccess')).toBeTruthy();
   });
 
   it('does not let a delayed lookup overwrite newer metadata', async () => {

@@ -51,6 +51,9 @@ jobs:
           pnpm run test:unit --maxWorkers=2
         env:
           COVERAGE: "true"
+          # Bound workers and leave room for coverage aggregation on this
+          # public repository's 16 GiB Ubuntu runner.
+          NODE_OPTIONS: "--max-old-space-size=8192"
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5.5.5

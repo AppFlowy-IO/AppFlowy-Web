@@ -16,6 +16,7 @@ function optInSuites(): RegExp | undefined {
     ...(process.env.RUN_DASHBOARD_PERF ? [] : ['@dashboard-perf']),
     ...(process.env.RUN_NATHAN_EMPLOYEES ? [] : ['@nathan-employees']),
     ...(process.env.RUN_DASHBOARD_PUBLISH_FIXTURE === '1' ? [] : ['@dashboard-publish-fixture']),
+    ...(process.env.RUN_REF_PAGES_TEST ? [] : ['@local-ref-pages']),
   ];
 
   return skipped.length > 0 ? new RegExp(skipped.join('|')) : undefined;
@@ -28,6 +29,7 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   // Opt-in suites: the 5000-row database takes minutes to seed (RUN_LARGE_DATABASE=1), and the
   // nathan@appflowy.io employees database only exists on a local server (RUN_NATHAN_EMPLOYEES=1).
+  // The existing Nathan/Annie reference fixture is also local-only (RUN_REF_PAGES_TEST=1).
   grepInvert: optInSuites(),
   retries: process.env.CI ? 1 : 0,
   workers: process.env.CI ? 1 : undefined,

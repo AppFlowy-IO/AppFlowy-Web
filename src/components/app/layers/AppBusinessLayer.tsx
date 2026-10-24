@@ -5,6 +5,7 @@ import { validate as uuidValidate } from 'uuid';
 import { discardPageCreationsFromEarlierLoads } from '@/application/atomic-creation';
 import { APP_EVENTS } from '@/application/constants';
 import { deleteCollabDB } from '@/application/db';
+import { ViewMetadataError } from '@/application/errors/view-metadata-error';
 import { AccessService, ViewService } from '@/application/services/domains';
 import {
   getCachedWorkspaceViewMetadata,
@@ -869,7 +870,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       // Authoritative callers reconcile mutations that may have completed
       // before the rendered trash list catches up.
       if (deletedView && !options?.authoritative) {
-        return Promise.reject(deletedView);
+        throw new ViewMetadataError('in_trash');
       }
 
       let view: View | null | undefined =
@@ -881,37 +882,34 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       // Default navigation callers still retain the original outline-first,
       // depth-preserving contract.
       if (!view && currentWorkspaceId) {
-        try {
-          if (options?.metadataOnly) {
-            view = options.authoritative ? undefined : getCachedWorkspaceViewMetadata(currentWorkspaceId, viewId);
+        if (options?.metadataOnly) {
+          view = options.authoritative ? undefined : getCachedWorkspaceViewMetadata(currentWorkspaceId, viewId);
 
-            if (!view) {
-              const loader = () =>
-                options.authoritative
-                  ? ViewService.refresh(currentWorkspaceId, viewId)
-                  : ViewService.get(currentWorkspaceId, viewId);
+          if (!view) {
+            const loader = () =>
+              options.authoritative
+                ? ViewService.refresh(currentWorkspaceId, viewId)
+                : ViewService.get(currentWorkspaceId, viewId);
 
-              view = options.authoritative
-                ? await resolveWorkspaceViewMetadata(currentWorkspaceId, viewId, loader, { refresh: true })
-                : await resolveWorkspaceViewMetadata(currentWorkspaceId, viewId, loader);
-            }
-          } else {
-            // Preserve the original contract for navigation, database tabs,
-            // and editor callers: a direct folder lookup retains its
-            // immediate children instead of returning flattened metadata. An
-            // authoritative recovery must also bypass ViewService's short
-            // positive cache without flattening away those children.
-            view = options?.authoritative
-              ? await ViewService.refresh(currentWorkspaceId, viewId)
-              : await ViewService.get(currentWorkspaceId, viewId);
+            view = options.authoritative
+              ? await resolveWorkspaceViewMetadata(currentWorkspaceId, viewId, loader, { refresh: true })
+              : await resolveWorkspaceViewMetadata(currentWorkspaceId, viewId, loader);
           }
-        } catch {
-          // fall through to rejection
+        } else {
+          // Preserve the original contract for navigation, database tabs,
+          // and editor callers: a direct folder lookup retains its
+          // immediate children instead of returning flattened metadata. An
+          // authoritative recovery must also bypass ViewService's short
+          // positive cache without flattening away those children.
+          view = options?.authoritative
+            ? await ViewService.refresh(currentWorkspaceId, viewId)
+            : await ViewService.get(currentWorkspaceId, viewId);
         }
       }
 
       if (!view) {
-        return Promise.reject('View not found');
+        if (!currentWorkspaceId) throw new Error('Workspace is unavailable while loading view metadata');
+        throw new ViewMetadataError('not_found');
       }
 
       const viewWithDatabaseRelations = {
@@ -950,6 +948,11 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
   const openPageModal = useCallback((viewId: string) => {
     setOpenModalEffectiveViewId(undefined);
     setOpenModalViewId(viewId);
+  }, []);
+
+  const closePageModal = useCallback(() => {
+    setOpenModalEffectiveViewId(undefined);
+    setOpenModalViewId(undefined);
   }, []);
 
   // Refresh outline
@@ -1009,6 +1012,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       openPageModalViewId: openModalViewId,
       setOpenPageModalEffectiveViewId,
       openPageModal,
+      closePageModal,
     }),
     [
       viewId,
@@ -1023,6 +1027,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       openModalViewId,
       setOpenPageModalEffectiveViewId,
       openPageModal,
+      closePageModal,
     ]
   );
 
