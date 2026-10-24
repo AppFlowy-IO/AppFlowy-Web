@@ -27,7 +27,8 @@ try {
       const element = event.target instanceof Element ? event.target : null;
       const button = element?.closest('button');
 
-      if (button?.textContent?.trim() === 'Retry' && button.closest(`[data-mention-id="${target}"]`)) {
+      if (button?.textContent?.trim() === 'Retry' &&
+        button.closest(`[data-mention-id="${target}"], [data-reference-page-id="${target}"]`)) {
         window.__referenceDemoRecovered = true;
       }
     }, true);
@@ -45,10 +46,16 @@ try {
   const reference = page.getByTestId('editor-content').locator(`[data-mention-id="${targetId}"]`);
 
   await expect(reference.getByRole('button', { name: 'Couldn’t load page', exact: true })).toBeVisible({ timeout: 30000 });
-  await reference.getByRole('button', { name: 'Retry', exact: true }).click();
+  await reference.getByRole('button', { name: 'Couldn’t load page', exact: true }).hover();
+  const popup = page.getByRole('dialog', { name: 'Couldn’t load page', exact: true });
+
+  await expect(popup).toContainText('Check your connection and try again.');
+  await popup.getByRole('button', { name: 'Retry', exact: true }).click();
   await expect(reference).toHaveText('Restricted ref target', { timeout: 30000 });
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(reference.getByRole('button', { name: 'Couldn’t load page', exact: true })).toBeVisible({ timeout: 30000 });
+  await reference.getByRole('button', { name: 'Couldn’t load page', exact: true }).hover();
+  await expect(popup.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
   await page.bringToFront();
   console.log('Reference demo ready. Retry restores the real page title; reload reproduces the temporary request failure.');
   await page.waitForEvent('close', { timeout: 0 });

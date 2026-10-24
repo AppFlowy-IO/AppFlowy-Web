@@ -21,11 +21,13 @@ Feature: Page reference labels in Nathan's existing local workspace
       | Annie  | missing    | Page not found        |
     When both viewers reload the existing reference page
     Then the same reference labels are still visible
-    And both viewers can inspect the existing missing reference
+    And both viewers can inspect the existing missing reference by hovering
+    And Annie can inspect No access by hovering and by keyboard
     When Nathan and Annie click their restricted page references
     Then Nathan opens the restricted target while Annie stays on the shared reference page
     And Annie sees an explanation of the restricted reference
-    When both viewers open Trash from the existing trashed reference
+    When both viewers hover over the trashed reference and open Trash from its popup
     Then both viewers see the recoverable target in Trash
     When Nathan opens the shared page with a temporary reference request failure
+    Then Retry remains available when the request still fails
     Then Retry loads the real target metadata and restores navigation

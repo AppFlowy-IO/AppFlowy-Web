@@ -42,6 +42,26 @@ function referenceElement(page: Page, reference: Reference) {
   return page.getByTestId('editor-content').locator(`[data-mention-id="${referenceIds[reference]}"]`);
 }
 
+async function hoverReferencePopup(page: Page, reference: Reference, label: string) {
+  await referenceElement(page, reference).getByRole('button', { name: label, exact: true }).hover();
+  const popup = page.getByRole('dialog', { name: label, exact: true });
+
+  await expect(popup).toBeVisible();
+  await expectSharedPage(page);
+  // Moving from the inline label into the portaled popup must keep its actions
+  // reachable; a click-only popup cannot satisfy this interaction.
+  await popup.hover();
+  await expect(popup).toBeVisible();
+  return popup;
+}
+
+async function capturePopup(page: Page, testInfo: TestInfo, name: string) {
+  const screenshotPath = testInfo.outputPath(`${name}.png`);
+
+  await page.screenshot({ path: screenshotPath });
+  await testInfo.attach(name, { path: screenshotPath, contentType: 'image/png' });
+}
+
 async function expectSharedPage(page: Page) {
   await expect(page).toHaveURL(new URL(sharedPath, page.url()).href, { timeout: 30000 });
   await expect(page.getByTestId('current-workspace-name')).toHaveText('nathan workspace');
@@ -170,15 +190,39 @@ After({ tags: '@local-ref-pages' }, async ({ page }) => {
   states.delete(page);
 });
 
-Then('both viewers can inspect the existing missing reference', async ({ page }) => {
-  for (const viewerPage of Object.values(stateFor(page).viewers)) {
-    await referenceElement(viewerPage, 'missing').getByRole('button', { name: 'Page not found', exact: true }).click();
-    const details = viewerPage.getByRole('dialog', { name: 'Page not found', exact: true });
+Then('both viewers can inspect the existing missing reference by hovering', async ({ page, $testInfo }) => {
+  for (const [viewer, viewerPage] of Object.entries(stateFor(page).viewers)) {
+    const details = await hoverReferencePopup(viewerPage, 'missing', 'Page not found');
 
     await expect(details).toContainText('Ask the page owner for an updated link.');
-    await expectSharedPage(viewerPage);
+    await expect(details.getByRole('button', { name: 'Open Trash', exact: true })).toHaveCount(0);
+    await expect(details.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0);
+    await capturePopup(viewerPage, $testInfo, `${viewer}-Page-not-found-popup`);
     await viewerPage.keyboard.press('Escape');
     await expect(details).toHaveCount(0);
+  }
+});
+
+Then('Annie can inspect No access by hovering and by keyboard', async ({ page, $testInfo }) => {
+  const memberPage = stateFor(page).viewers.Annie;
+  const details = await hoverReferencePopup(memberPage, 'restricted', 'No access');
+
+  await expect(details).toContainText('Ask the page owner to share it with you.');
+  await expect(details.getByRole('button', { name: 'Open Trash', exact: true })).toHaveCount(0);
+  await expect(details.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0);
+  await capturePopup(memberPage, $testInfo, 'Annie-No-access-popup');
+  await memberPage.mouse.move(0, 0);
+  await expect(details).toHaveCount(0);
+
+  const label = referenceElement(memberPage, 'restricted').getByRole('button', { name: 'No access', exact: true });
+
+  for (const key of ['Enter', 'Space']) {
+    await label.focus();
+    await label.press(key);
+    await expect(details).toBeVisible();
+    await memberPage.keyboard.press('Escape');
+    await expect(details).toHaveCount(0);
+    await expect(label).toBeFocused();
   }
 });
 
@@ -197,10 +241,34 @@ When('Nathan opens the shared page with a temporary reference request failure', 
   await expect(reference.getByRole('button', { name: 'Retry', exact: true })).toBeEnabled();
   await expect(referenceElement(state.failurePage, 'missing')).toHaveText('Page not found');
   expect(state.failure.blockedReads).toBeGreaterThan(0);
+  const popup = await hoverReferencePopup(state.failurePage, 'restricted', 'Couldn’t load page');
+
+  await expect(popup).toContainText('Check your connection and try again.');
+  await expect(popup.getByRole('button', { name: 'Retry', exact: true })).toBeEnabled();
+  await expect(popup.getByRole('button', { name: 'Open Trash', exact: true })).toHaveCount(0);
   const screenshotPath = $testInfo.outputPath('Nathan-temporary-reference-failure.png');
 
   await state.failurePage.getByRole('main').screenshot({ path: screenshotPath });
   await $testInfo.attach('Nathan-temporary-reference-failure', { path: screenshotPath, contentType: 'image/png' });
+});
+
+Then('Retry remains available when the request still fails', async ({ page }) => {
+  const { failurePage, failure } = stateFor(page);
+
+  if (!failurePage || !failure) throw new Error('Open the controlled failure session first');
+  const blockedBeforeRetry = failure.blockedReads;
+  const response = failurePage.waitForResponse((value) =>
+    new URL(value.url()).pathname === `/api/workspace/${workspaceId}/view/${referenceIds.restricted}` && value.status() === 503);
+
+  await failurePage.getByRole('dialog', { name: 'Couldn’t load page', exact: true })
+    .getByRole('button', { name: 'Retry', exact: true }).click();
+  await response;
+  await expect(referenceElement(failurePage, 'restricted')
+    .getByRole('button', { name: 'Couldn’t load page', exact: true })).toBeVisible();
+  expect(failure.blockedReads).toBeGreaterThan(blockedBeforeRetry);
+  const popup = await hoverReferencePopup(failurePage, 'restricted', 'Couldn’t load page');
+
+  await expect(popup.getByRole('button', { name: 'Retry', exact: true })).toBeEnabled();
 });
 
 Then('Retry loads the real target metadata and restores navigation', async ({ page }) => {
@@ -211,10 +279,12 @@ Then('Retry loads the real target metadata and restores navigation', async ({ pa
   const response = failurePage.waitForResponse((value) =>
     new URL(value.url()).pathname === `/api/workspace/${workspaceId}/view/${referenceIds.restricted}` && value.status() === 200);
 
-  await referenceElement(failurePage, 'restricted').getByRole('button', { name: 'Retry', exact: true }).click();
+  await failurePage.getByRole('dialog', { name: 'Couldn’t load page', exact: true })
+    .getByRole('button', { name: 'Retry', exact: true }).click();
   await response;
   await expect(referenceElement(failurePage, 'restricted')).toHaveText('Restricted ref target');
   await expect(referenceElement(failurePage, 'restricted').getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0);
+  await expect(failurePage.getByRole('dialog', { name: 'Couldn’t load page', exact: true })).toHaveCount(0);
   await referenceElement(failurePage, 'restricted').click();
   await expect(failurePage).toHaveURL(new URL(`/app/${workspaceId}/${referenceIds.restricted}`, failurePage.url()).href);
   await expect(failurePage.getByTestId('editor-content')).toContainText('Test-only target. Nathan owns this page.');
@@ -230,14 +300,16 @@ Then('Annie sees an explanation of the restricted reference', async ({ page }) =
   await expect(dialog).toHaveCount(0);
 });
 
-When('both viewers open Trash from the existing trashed reference', async ({ page }) => {
-  for (const viewerPage of Object.values(stateFor(page).viewers)) {
+When('both viewers hover over the trashed reference and open Trash from its popup', async ({ page, $testInfo }) => {
+  for (const [viewer, viewerPage] of Object.entries(stateFor(page).viewers)) {
     await viewerPage.goto(sharedPath, { waitUntil: 'domcontentloaded' });
     await expectSharedPage(viewerPage);
-    await referenceElement(viewerPage, 'trashed').getByRole('button', { name: 'Page in Trash', exact: true }).click();
-    const details = viewerPage.getByRole('dialog', { name: 'Page in Trash', exact: true });
+    const details = await hoverReferencePopup(viewerPage, 'trashed', 'Page in Trash');
 
     await expect(details).toContainText('This page is in Trash.');
+    await expect(details.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0);
+    await expect(details.getByRole('button', { name: 'Open Trash', exact: true })).toBeEnabled();
+    await capturePopup(viewerPage, $testInfo, `${viewer}-Page-in-Trash-popup`);
     await details.getByRole('button', { name: 'Open Trash', exact: true }).click();
   }
 });

@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { debounce } from 'lodash-es';
+import { type MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useInRouterContext, useNavigate } from 'react-router-dom';
 
@@ -50,6 +51,41 @@ export function PageReferenceError({
   const inRouter = useInRouterContext();
   const [open, setOpen] = useState(false);
   const [canOpenTrash, setCanOpenTrash] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const openedByHover = useRef(false);
+  const showOnHover = useMemo(() => debounce(() => {
+    openedByHover.current = true;
+    setCanOpenTrash(false);
+    setOpen(true);
+  }, 120), []);
+  const hideAfterHover = useMemo(() => debounce(() => {
+    // A keyboard user may still be interacting with a popup action after the
+    // pointer leaves. Blur or an explicit dismissal closes that popup instead.
+    if (!contentRef.current?.contains(document.activeElement)) setOpen(false);
+  }, 240), []);
+
+  useEffect(() => () => {
+    showOnHover.cancel();
+    hideAfterHover.cancel();
+  }, [hideAfterHover, showOnHover]);
+
+  const enterReference = (event: MouseEvent) => {
+    if (event.buttons > 0) return;
+    hideAfterHover.cancel();
+    if (!open) showOnHover();
+  };
+
+  const leaveReference = () => {
+    showOnHover.cancel();
+    hideAfterHover();
+  };
+
+  const retryPage = () => {
+    showOnHover.cancel();
+    hideAfterHover.cancel();
+    setOpen(false);
+    retry();
+  };
 
   useEffect(() => {
     if (!open || error !== 'in_trash' || !inRouter || !loadTrashViews) return;
@@ -68,6 +104,8 @@ export function PageReferenceError({
   return (
     <>
       <Popover open={open} onOpenChange={(nextOpen) => {
+        showOnHover.cancel();
+        hideAfterHover.cancel();
         setCanOpenTrash(false);
         setOpen(nextOpen);
       }}>
@@ -76,19 +114,36 @@ export function PageReferenceError({
             type='button'
             className='mention-unpublished min-w-0 cursor-pointer truncate font-semibold text-text-secondary underline'
             onMouseDown={(event) => event.preventDefault()}
+            onMouseEnter={enterReference}
+            onMouseLeave={leaveReference}
+            onClick={() => { openedByHover.current = false; }}
           >
             {t(labels[error])}
           </button>
         </PopoverTrigger>
         <PopoverContent
+          ref={contentRef}
           role='dialog'
           aria-label={t(labels[error])}
+          data-reference-page-id={pageId}
           align='start'
           className='max-w-[min(320px,90vw)] space-y-3 p-4 text-sm text-text-primary'
+          onOpenAutoFocus={(event) => { if (openedByHover.current) event.preventDefault(); }}
+          onCloseAutoFocus={(event) => { if (openedByHover.current) event.preventDefault(); }}
           onClick={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
+          onMouseEnter={() => hideAfterHover.cancel()}
+          onMouseLeave={leaveReference}
+          onFocusCapture={() => hideAfterHover.cancel()}
+          onBlurCapture={leaveReference}
         >
           <p>{t(descriptions[error])}</p>
           {error === 'in_trash' && canOpenTrash && <OpenTrashButton />}
+          {error === 'load_failed' && (
+            <Button size='sm' disabled={loading} aria-busy={loading} onClick={retryPage}>
+              {t('button.retry')}
+            </Button>
+          )}
         </PopoverContent>
       </Popover>
       {error === 'load_failed' && (
@@ -98,7 +153,7 @@ export function PageReferenceError({
           disabled={loading}
           aria-busy={loading}
           onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); }}
-          onClick={(event) => { event.stopPropagation(); retry(); }}
+          onClick={(event) => { event.stopPropagation(); retryPage(); }}
         >
           {t('button.retry')}
         </button>
