@@ -50,7 +50,8 @@ test.describe('Database View Deletion', () => {
     await DatabaseViewSelectors.addViewButton(page).click({ force: true });
     await page.waitForTimeout(300);
 
-    const menuItem = page.getByRole('menuitem', { name: viewType });
+    // Exact match: the "Dashboard" entry also matches "Board".
+    const menuItem = page.getByRole('menuitem', { name: viewType, exact: true });
     await expect(menuItem).toBeVisible({ timeout: 5000 });
     await menuItem.click({ force: true });
   }

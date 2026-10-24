@@ -9,7 +9,7 @@ import { calendarEventCompletionTime } from './event/eventAppearance';
 
 export function useFullCalendarSetup(newEventRowIds: Set<string>, openEventRowId: string | null, updateEventRowIds: Set<string>, currentView: CalendarViewType) {
   const layoutSetting = useCalendarLayoutSetting();
-  const { events, emptyEvents } = useCalendarEventsSelector();
+  const { events, emptyEvents, loading } = useCalendarEventsSelector();
 
   // Convert events to FullCalendar format
   const fullCalendarEvents = useMemo(() => {
@@ -63,6 +63,8 @@ export function useFullCalendarSetup(newEventRowIds: Set<string>, openEventRowId
   return {
     events: fullCalendarEvents,
     emptyEvents,
+    /** Rows are still being read: the month is not the result yet. */
+    loading,
     firstDayOfWeek: layoutSetting?.firstDayOfWeek || 0,
   };
 }

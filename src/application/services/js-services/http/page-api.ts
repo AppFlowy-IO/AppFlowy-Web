@@ -234,7 +234,8 @@ export async function duplicatePage(
 
   // Older servers return no duplicate ID. Snapshot both possible parents before
   // the request so the compatibility path never picks an existing sibling.
-  const source = onDuplicated ? await getView(workspaceId, viewId) : undefined;
+  const source = await getView(workspaceId, viewId, options.includeChildren === false ? 0 : 50);
+
   const parentIds = [...new Set([source?.parent_view_id, options.parentViewId].filter((id): id is string => !!id))];
   const before = onDuplicated ? await Promise.all(parentIds.map((id) => getView(workspaceId, id, 1))) : [];
   const existingIds = new Set(before.flatMap((view) => view.children?.map((child) => child.view_id) ?? []));

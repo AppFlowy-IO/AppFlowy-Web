@@ -4,6 +4,7 @@ import { DatabaseViewLayout } from '@/application/types';
 import BoardSettings from '@/components/database/components/settings/BoardSettings';
 import CalendarSettings from '@/components/database/components/settings/CalendarSettings';
 import ChartSettings from '@/components/database/components/settings/ChartSettings';
+import DashboardSettings from '@/components/database/components/settings/DashboardSettings';
 import FeedSettings from '@/components/database/components/settings/FeedSettings';
 import ListSettings from '@/components/database/components/settings/ListSettings';
 import TimelineSettings from '@/components/database/components/settings/TimelineSettings';
@@ -22,6 +23,7 @@ const SETTINGS_BY_LAYOUT: Partial<Record<DatabaseViewLayout, ComponentType<{ chi
   [DatabaseViewLayout.List]: ListSettings,
   [DatabaseViewLayout.Feed]: FeedSettings,
   [DatabaseViewLayout.Timeline]: TimelineSettings,
+  [DatabaseViewLayout.Dashboard]: DashboardSettings,
 };
 
 function Settings({ children, layout }: { children: ReactNode; layout: DatabaseViewLayout }) {

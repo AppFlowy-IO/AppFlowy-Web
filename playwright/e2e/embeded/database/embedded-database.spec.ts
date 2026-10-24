@@ -57,7 +57,7 @@ test.describe('Embedded Database', () => {
 
     // Step 4: Verify database grid is interactive
     const dbGrid = editor.locator('[data-testid="database-grid"]');
-    await expect(dbGrid.getByText('New row')).toBeVisible();
+    await expect(dbGrid.getByTestId('grid-new-row')).toBeVisible();
     await expect(dbGrid).toContainText('Name');
     await expect(dbGrid).toContainText('Type');
   });

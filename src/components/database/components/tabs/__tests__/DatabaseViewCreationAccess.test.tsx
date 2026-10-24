@@ -332,6 +332,12 @@ describe.each(['page', 'view'] as const)('Database %s creation menu', (surface) 
     expect(item('form')).toBe(form);
     expect(within(form).getByLabelText('Pro')).toBeTruthy();
     expect(within(chart).queryByLabelText('Pro')).toBeNull();
+    // The view menu also checks Dashboard's exact-Pro policy independently of
+    // the common Form/Chart/Timeline policy. Inventory refresh must refetch
+    // neither subscription lookup.
+    const initialSubscriptionReads = mockGetSubscriptions.mock.calls.length;
+
+    expect(initialSubscriptionReads).toBe(surface === 'view' ? 2 : 1);
     mockQuota.mockResolvedValue({ can_create_form: true, can_create_chart: false });
     act(() => {
       emitter.emit(APP_EVENTS.FOLDER_OUTLINE_CHANGED);
@@ -341,7 +347,7 @@ describe.each(['page', 'view'] as const)('Database %s creation menu', (surface) 
     expect(chart.hasAttribute('data-disabled')).toBe(false);
     await waitFor(() => expect(within(chart).getByLabelText('Pro')).toBeTruthy());
     expect(within(form).queryByLabelText('Pro')).toBeNull();
-    expect(mockGetSubscriptions).toHaveBeenCalledTimes(1);
+    expect(mockGetSubscriptions).toHaveBeenCalledTimes(initialSubscriptionReads);
     expect(mockAddPage).not.toHaveBeenCalled();
     expect(mockAddView).not.toHaveBeenCalled();
   });

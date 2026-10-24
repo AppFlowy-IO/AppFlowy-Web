@@ -23,7 +23,7 @@ const idle: State = { type: StateType.IDLE };
 const isCardOver: State = { type: StateType.IS_CARD_OVER };
 
 export function useCardsDrag(columnId: string, rows: Row[]) {
-  const { instanceId, registerColumn } = useBoardDragContext();
+  const { instanceId, registerColumn, sorted } = useBoardDragContext();
   const columnInnerRef = useRef<HTMLDivElement | null>(null);
   const [state, setState] = useState<State>(idle);
   const stableItems = useRef(rows);
@@ -45,7 +45,9 @@ export function useCardsDrag(columnId: string, rows: Row[]) {
       element: columnInnerRef.current,
       getData: () => ({ columnId }),
       canDrop: ({ source }) => {
-        return source.data.instanceId === instanceId && source.data.type === 'card';
+        if (source.data.instanceId !== instanceId || source.data.type !== 'card') return false;
+        // A sorted board places a card by its sort: its own column cannot take it back.
+        return !(sorted && source.data.columnId === columnId);
       },
       getIsSticky: () => true,
       onDragEnter: () => setState(isCardOver),
@@ -60,7 +62,7 @@ export function useCardsDrag(columnId: string, rows: Row[]) {
       teardown();
       cleanupRef.current = null;
     };
-  }, [readOnly, columnId, instanceId, registerColumn]);
+  }, [readOnly, columnId, instanceId, registerColumn, sorted]);
 
   const getCardIndex = useCallback((rowId: string) => {
     return stableItems.current.findIndex((item) => item.id === rowId);

@@ -72,12 +72,9 @@ body {
     background-color: transparent;
   }
 
-  &:hover {
-
-    &::-webkit-scrollbar-thumb, & *::-webkit-scrollbar-thumb {
-      border-radius: 0px;
-      background-color: transparent;
-    }
+  @include mixin.hover-thumb {
+    border-radius: 0px;
+    background-color: transparent;
   }
 }
 
@@ -198,12 +195,9 @@ body {
     height: 8px;
   }
 
-  &:hover {
-
-    &::-webkit-scrollbar-thumb, & *::-webkit-scrollbar-thumb {
-      border-radius: 4px;
-      background-color: var(--scrollbar-thumb);
-    }
+  @include mixin.hover-thumb {
+    border-radius: 4px;
+    background-color: var(--scrollbar-thumb);
   }
 }
 

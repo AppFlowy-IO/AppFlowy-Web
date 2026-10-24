@@ -1,0 +1,41 @@
+{
+  "locale": "mr-IN",
+  "terms": {
+    "dashboard": "डॅशबोर्ड",
+    "widget": "विजेट",
+    "chart": "चार्ट",
+    "view": "दृश्य",
+    "row": "पंक्ती",
+    "property": "गुणधर्म",
+    "database": "डेटाबेस",
+    "source": "स्रोत",
+    "page": "पृष्ठ",
+    "group": "गट",
+    "done": "पूर्ण",
+    "edit": "संपादित करा",
+    "delete": "हटवा",
+    "duplicate": "प्रत बनवा",
+    "save": "जतन करा",
+    "cancel": "रद्द करा",
+    "close": "बंद करा",
+    "back": "मागे",
+    "settings": "सेटिंग्ज",
+    "filter": "फिल्टर",
+    "sort": "क्रमवारी",
+    "search": "शोध",
+    "undo": "पूर्ववत करा",
+    "redo": "पुन्हा करा",
+    "remove": "काढा",
+    "hide": "लपवा",
+    "show": "दाखवा",
+    "open": "उघडा",
+    "untitled": "नाव नाही",
+    "day": "दिवस",
+    "week": "आठवडा",
+    "month": "महिना",
+    "year": "वर्ष"
+  },
+  "untranslated_ok": [
+    "chart.legend.page"
+  ]
+}

@@ -4,6 +4,7 @@ import type {
   runDatabaseAction,
   runDatabaseRowAction,
 } from '@/application/database-yjs/history';
+import { setYMapBigInt } from '@/application/database-yjs/yjs-bigint';
 
 export type DatabaseTestHistory = {
   getOrCreateDatabaseHistoryManager: typeof getOrCreateDatabaseHistoryManager;
@@ -16,6 +17,7 @@ export type DatabaseTestWindow = Window & {
   __TEST_DATABASE_VIEW_ID__?: string;
   __TEST_DATABASE_CONTEXT__?: DatabaseContextState;
   __TEST_DATABASE_HISTORY__?: DatabaseTestHistory;
+  __TEST_DATABASE_SET_BIGINT__?: typeof setYMapBigInt;
 };
 
 const activeTestContexts = new WeakMap<DatabaseTestWindow, Map<symbol, DatabaseContextState>>();
@@ -35,6 +37,7 @@ export function exposeDatabaseTestContext(
   testWindow.__TEST_DATABASE_DOC__ = value.databaseDoc;
   testWindow.__TEST_DATABASE_VIEW_ID__ = value.activeViewId;
   testWindow.__TEST_DATABASE_CONTEXT__ = value;
+  testWindow.__TEST_DATABASE_SET_BIGINT__ = setYMapBigInt;
   if (history) testWindow.__TEST_DATABASE_HISTORY__ = history;
 
   return () => {
@@ -56,6 +59,7 @@ export function exposeDatabaseTestContext(
 
     if (contexts.size === 0) {
       delete testWindow.__TEST_DATABASE_HISTORY__;
+      delete testWindow.__TEST_DATABASE_SET_BIGINT__;
       activeTestContexts.delete(testWindow);
     }
   };

@@ -162,3 +162,30 @@ test.each([
   data.root.destroy();
   data.rows['row-1'].destroy();
 });
+
+test('shows a placeholder instead of mounting live dashboard widgets', async () => {
+  const data = snapshot(DatabaseViewLayout.Dashboard);
+  const beforeRoot = Y.encodeStateAsUpdate(data.root);
+  const loadLiveData = jest.fn(async () => { throw new Error('Historical dashboard called a live loader'); });
+  const liveContext: DatabaseContextState = {
+    databaseDoc: data.root, databasePageId: 'live-view', activeViewId: 'live-view', workspaceId: 'workspace',
+    rowMap: data.rows, readOnly: false, loadRowDocument: loadLiveData, loadView: loadLiveData,
+    loadViewMeta: loadLiveData, createRow: loadLiveData, getViewIdFromDatabaseId: loadLiveData,
+  };
+  const rendered = render(
+    <AFConfigContext.Provider value={{ isAuthenticated: true, updateCurrentUser: async () => undefined, openLoginModal: () => undefined }}>
+      <DatabaseContext.Provider value={liveContext}>
+        <DatabaseHistoryPreview {...data} workspaceId='workspace' databaseId='database' databasePageId='saved-view' />
+      </DatabaseContext.Provider>
+    </AFConfigContext.Provider>
+  );
+
+  await waitFor(() => expect(screen.getByTestId('dashboard-history-placeholder')).toBeTruthy());
+  expect(rendered.container.querySelector('[data-testid="dashboard-grid"]')).toBeNull();
+  expect(screen.queryByText('Something went wrong')).toBeNull();
+  expect(loadLiveData).not.toHaveBeenCalled();
+  expect(Y.encodeStateAsUpdate(data.root)).toEqual(beforeRoot);
+  rendered.unmount();
+  data.root.destroy();
+  data.rows['row-1'].destroy();
+});

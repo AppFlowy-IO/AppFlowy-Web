@@ -1,0 +1,26 @@
+{
+  "fixture": "layouts/view-open-pages-in",
+  "version": 1,
+  "encoding": {
+    "view": "The keys of a database view map (database collab views[view_id]) this fixture is about, as a newer client left them. A real view map has more keys (name, layout, layout_settings, filters, sorts, field_orders, ...); neither operation touches them.",
+    "open_pages_in": "\"side_peek\" | \"center_peek\" | \"full_page\" (WP13 §3.8). Absent or unknown reads as absent and is never rewritten by an unrelated write.",
+    "write": "SetViewOpenPagesIn: the value written, the keys the write may touch and the view map after it. Unknown keys are kept.",
+    "duplicate": "The keys of the copy after duplicating the view. Web copies its configuration keys and the unknown key; Rust re-applies the raw open_pages_in key (the typed view drops unknown keys)."
+  },
+  "view": {"open_pages_in": "center_peek", "future_view_key": {"a": 1}},
+  "write": {
+    "value": "full_page",
+    "writtenKeys": ["open_pages_in"],
+    "expected": {"open_pages_in": "full_page", "future_view_key": {"a": 1}}
+  },
+  "duplicate": {
+    "web": {
+      "copiedKeys": ["future_view_key", "open_pages_in"],
+      "expected": {"open_pages_in": "center_peek", "future_view_key": {"a": 1}}
+    },
+    "rust": {
+      "copiedKeys": ["open_pages_in"],
+      "expected": {"open_pages_in": "center_peek"}
+    }
+  }
+}

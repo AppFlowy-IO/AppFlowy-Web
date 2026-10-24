@@ -1,0 +1,37 @@
+{
+  "locale": "eu-ES",
+  "terms": {
+    "dashboard": "Aginte-panela",
+    "widget": "Trepeta",
+    "chart": "Grafikoa",
+    "view": "Ikuspegia",
+    "row": "Errenkada",
+    "property": "Propietatea",
+    "database": "Datu-basea",
+    "workspace": "Lan-eremua",
+    "done": "Eginda",
+    "edit": "Editatu",
+    "delete": "Ezabatu",
+    "duplicate": "Bikoiztu",
+    "save": "Gorde",
+    "cancel": "Utzi",
+    "close": "Itxi",
+    "back": "Atzera",
+    "remove": "Kendu",
+    "filter": "Iragazkia",
+    "sort": "Ordenatu",
+    "search": "Bilatu",
+    "settings": "Ezarpenak",
+    "undo": "Desegin",
+    "redo": "Berregin",
+    "group": "Taldea",
+    "source": "Iturria",
+    "checked": "Markatuta",
+    "unchecked": "Markatu gabe"
+  },
+  "untranslated_ok": [
+    "chart.legend.page",
+    "chart.sort.labelAsc",
+    "chart.sort.labelDesc"
+  ]
+}

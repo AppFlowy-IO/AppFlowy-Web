@@ -1,6 +1,7 @@
 import { Suspense, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
+import { filterOwnedTabViewIds } from '@/application/database-yjs/dashboard-owned-views';
 import { usePublishContext } from '@/application/publish';
 import { UIVariant, ViewLayout, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { resolveActiveDatabaseViewId } from '@/application/view-utils';
@@ -77,10 +78,20 @@ function DatabaseView({ viewMeta, navigateToView, ...props }: DatabaseProps) {
       layout: pageView.layout,
     };
   }, [pageView, viewMeta]);
+  const doc = props.doc;
+  const database = doc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database) as YDatabase;
   const visibleViewIds = useMemo(() => {
-    if (viewMeta.visibleViewIds?.length) return viewMeta.visibleViewIds;
-    return containerView?.children.map((child) => child.view_id) || [];
-  }, [containerView, viewMeta.visibleViewIds]);
+    const ids = viewMeta.visibleViewIds?.length
+      ? viewMeta.visibleViewIds
+      : containerView?.children.map((child) => child.view_id) || [];
+    const views = database?.get(YjsDatabaseKey.views);
+
+    // The snapshot keeps dashboard-owned views for the widgets that show them,
+    // but they are not tabs (WP05 §1.2).
+    return filterOwnedTabViewIds(ids, viewMeta.viewId, (viewId) =>
+      Boolean(views?.get(viewId)?.get(YjsDatabaseKey.dashboard_owner))
+    );
+  }, [containerView, database, viewMeta.viewId, viewMeta.visibleViewIds]);
 
   // Build a loadViewMeta that returns the database container from the outline
   // with correct folder names for all sibling views (used by DatabaseTabs).
@@ -115,9 +126,6 @@ function DatabaseView({ viewMeta, navigateToView, ...props }: DatabaseProps) {
    * This is the main entry point for the database and remains constant.
    */
   const databasePageId = containerView?.view_id || viewMeta.viewId;
-
-  const doc = props.doc;
-  const database = doc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database) as YDatabase;
 
   // View ids that actually exist in the database collab. Published pages may
   // list the folder container id among visibleViewIds even though it is not a
@@ -201,6 +209,7 @@ function DatabaseView({ viewMeta, navigateToView, ...props }: DatabaseProps) {
       case ViewLayout.List:
       case ViewLayout.Gallery:
       case ViewLayout.Feed:
+      case ViewLayout.Dashboard:
         return <GridSkeleton includeTitle={false} />;
       case ViewLayout.Board:
         return <KanbanSkeleton includeTitle={false} />;

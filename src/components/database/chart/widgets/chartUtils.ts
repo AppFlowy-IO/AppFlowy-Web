@@ -1,149 +1,22 @@
-import { CHART_COLORS, ChartDataItem } from '@/application/database-yjs/chart.type';
+import { ChartDataItem } from '@/application/database-yjs/chart.type';
 
 /**
- * Format value for display (integer if whole number, otherwise 1 decimal)
+ * Bar slot height of a standalone horizontal bar chart, which scrolls when it
+ * has many categories (a dashboard widget fills its card instead).
  */
-export function formatValue(value: number): string {
-  return value === Math.round(value) ? value.toString() : value.toFixed(1);
-}
-
-/**
- * Calculate bar width based on data count (matching Flutter implementation)
- */
-export function calculateBarWidth(dataCount: number): number {
-  if (dataCount <= 5) return 40;
-  if (dataCount <= 10) return 30;
-  if (dataCount <= 20) return 20;
-  return 15;
-}
-
-/**
- * Desktop's `_validateData` on the bar, line and horizontal bar charts: only
- * finite, non-negative values are plotted (the donut also drops zeros).
- */
-export function isPlottableValue(item: ChartDataItem): boolean {
-  return Number.isFinite(item.value) && item.value >= 0;
-}
-
-/**
- * Fill color for the item at `index` of the list a widget renders (desktop's
- * `ChartColorUtils.resolveColor`): its fixed option / checkbox color, else the
- * palette color for that index.
- */
-export function resolveChartItemColor(item: ChartDataItem, index: number): string {
-  return item.color ?? CHART_COLORS[index % CHART_COLORS.length];
-}
-
-/** Text color for labels tinted with the item's color (`toAFTextColor: true` on desktop). */
-export function resolveChartItemTextColor(item: ChartDataItem, index: number): string {
-  return item.textColor ?? resolveChartItemColor(item, index);
-}
-
-/**
- * Desktop's decade of `value`, `(math.log(value) / math.ln10).floor()`: the
- * `_magnitude` helper of the bar and line charts and the inline expression in
- * the horizontal bar chart's `_computeAxisMax`. Unlike `Math.log10` it lands
- * one decade low at some exact powers of ten (`Math.log(1000) / Math.LN10`
- * is 2.9999999999999996; likewise 1e6, 1e9, 1e12, 1e13 and 1e15), so a
- * horizontal-bar max of 800 gets axis 1000, not 1500. Kept on purpose for
- * desktop parity: an epsilon around `Math.log10` would not drop the same set
- * of decades.
- */
-function desktopMagnitude(value: number): number {
-  if (value <= 0) return 1;
-
-  return Math.pow(10, Math.floor(Math.log(value) / Math.LN10));
-}
-
-/**
- * Desktop's `_calculateYAxisInterval` (bar + line charts): a 1 / 2 / 5 / 10
- * × 10^n step that splits `maxY` into roughly five intervals.
- */
-export function calculateAxisInterval(maxY: number): number {
-  if (maxY <= 0) return 1;
-  const rawInterval = maxY / 5;
-  const magnitude = desktopMagnitude(rawInterval);
-  const normalized = rawInterval / magnitude;
-  let niceInterval: number;
-
-  if (normalized <= 1) niceInterval = 1;
-  else if (normalized <= 2) niceInterval = 2;
-  else if (normalized <= 5) niceInterval = 5;
-  else niceInterval = 10;
-
-  return niceInterval * magnitude;
-}
-
-/**
- * Tick values from 0 up to and including `axisMax` in `interval` steps,
- * like fl_chart's side titles. Multiples are rebuilt from the index so float
- * drift never hides an integer tick.
- */
-export function axisTicks(axisMax: number, interval: number): number[] {
-  if (!(axisMax > 0) || !(interval > 0)) return [0];
-  const ticks: number[] = [];
-  const count = Math.floor(axisMax / interval + 1e-9);
-
-  for (let i = 0; i <= count; i++) {
-    ticks.push(Number((i * interval).toPrecision(12)));
-  }
-
-  return ticks;
-}
-
-/** Desktop bar chart's `_computeAxisMaxY`: 30% headroom over the tallest bar. */
-export function computeBarAxisMax(maxValue: number): number {
-  return maxValue <= 0 ? 1 : maxValue * 1.3;
-}
-
-/** Desktop line chart's `_computeAxisMaxY`: ~20% headroom rounded to a nice number. */
-export function computeLineAxisMax(maxValue: number): number {
-  if (maxValue <= 0) return 5;
-  const targetMax = maxValue * 1.2;
-
-  for (const nice of [5, 10, 20, 25, 50, 100, 200, 500, 1000]) {
-    if (targetMax <= nice) return nice;
-  }
-
-  return Math.ceil(targetMax / 500) * 500;
-}
-
-/** Desktop horizontal bar chart's `_computeAxisMax`: ~25% headroom rounded to a nice number. */
-export function computeHorizontalAxisMax(maxValue: number): number {
-  if (maxValue <= 0) return 4;
-  const targetMax = maxValue * 1.25;
-
-  for (const nice of [4, 5, 6, 8, 10]) {
-    if (targetMax <= nice) return nice;
-  }
-
-  const magnitude = desktopMagnitude(targetMax);
-  const normalized = targetMax / magnitude;
-
-  if (normalized <= 1.5) return 1.5 * magnitude;
-  if (normalized <= 2) return 2 * magnitude;
-  if (normalized <= 3) return 3 * magnitude;
-  if (normalized <= 5) return 5 * magnitude;
-  return 10 * magnitude;
-}
-
-/** Desktop horizontal bar chart's `_computeLabelCount` / `_computeGridCount`. */
-export function computeHorizontalLabelCount(axisMax: number): number {
-  if (axisMax <= 5) return Math.trunc(axisMax);
-  if (axisMax <= 10) return 5;
-  return 4;
-}
-
-/** Desktop axis and row labels cut anything longer than 15 characters. */
-export function truncateChartLabel(label: string): string {
-  return label.length > 15 ? `${label.substring(0, 15)}...` : label;
+export function calculateBarHeight(dataCount: number): number {
+  if (dataCount <= 5) return 48;
+  if (dataCount <= 10) return 40;
+  if (dataCount <= 20) return 32;
+  return 28;
 }
 
 /**
  * Compare two `ChartDataItem` arrays for the fields that affect the rendered
- * chart AND the drilldown popup. Used by the chart widget `React.memo`
- * comparators so Yjs hydration micro-batches that produce the same final
- * chart don't rebuild the recharts SVG tree.
+ * chart AND the drilldown popup. `useChartData` and `ChartProvider` use it to
+ * keep the previous array when a recomputation produced the same content (Yjs
+ * hydrates rows in batches), so the widgets below them are plain `memo`
+ * components and never see a new array for an unchanged chart.
  *
  * The `rowIds` arrays must be compared by content (not just length) — when
  * filtering swaps which rows belong to a category but the count stays the
@@ -162,7 +35,9 @@ export function chartDataEqual(a: ChartDataItem[], b: ChartDataItem[]): boolean 
       x.label !== y.label ||
       x.value !== y.value ||
       x.color !== y.color ||
-      x.textColor !== y.textColor ||
+      x.key !== y.key ||
+      x.optionColor !== y.optionColor ||
+      x.checkboxState !== y.checkboxState ||
       x.isEmptyCategory !== y.isEmptyCategory ||
       x.rowIds.length !== y.rowIds.length
     ) {
@@ -177,3 +52,11 @@ export function chartDataEqual(a: ChartDataItem[], b: ChartDataItem[]): boolean 
 
   return true;
 }
+
+/** The category key a chart draws an item under (the label for items built without a key). */
+export function chartItemKey(item: ChartDataItem): string {
+  return item.key ?? item.label;
+}
+
+/** Entry animation of lines and donut slices (WP10 §2.5: the Recharts bar timing). */
+export const CHART_ENTRY_ANIMATION_MS = 400;

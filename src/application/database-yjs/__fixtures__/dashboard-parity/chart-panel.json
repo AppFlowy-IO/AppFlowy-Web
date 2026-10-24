@@ -1,0 +1,1825 @@
+{
+  "fixture": "chart-panel",
+  "version": 1,
+  "encoding": {
+    "models": "buildChartPanelModel(input) (WP11 1.1): the root page's sections in order, each with its semantic id, its English title (empty for a section without a header) and its rows in order (semantic id and English label; `disabled` when shown but not actionable). `chartType` is a ChartTypePB name, `xType`/`yType` FieldType names (null: no property; for Y that is Count all), `aggregation` the stored aggregation_type. WP12: `groupBy` (absent: false) is whether the chart has an effective Group by; it shows the Group style row of bar and horizontal bar charts.",
+    "writes": "chartPatchFor(action, current) (WP11 1.13): the persisted keys one panel action writes in one transaction, null meaning clear to default. `current` holds the stored keys the patch reads (x_sort, aggregation_type). `fieldType` is a FieldType name. WP12: `group_by` picks a Group by property (`\"\"` is None), `group_by_date` picks a date grouping of the Group by date property `field`, `group_style` picks a group style; `current.group_by_field_id` is the stored Group by.",
+    "rowIcons": "The logical icon of each row id, the same on both clients."
+  },
+  "rowIcons": {
+    "x_what": "alt_arrow_up",
+    "y_what": "alt_arrow_up",
+    "x_date_grouping": "calendar",
+    "x_text_grouping": "text",
+    "x_buckets": "number",
+    "x_sort": "sort",
+    "x_groups": "show",
+    "x_show_empty": "show",
+    "y_calculate": "number",
+    "y_decimals": "number",
+    "y_group_by": "list",
+    "y_group_style": "chart",
+    "y_cumulative": "chart",
+    "style_color": "palette",
+    "style_data_labels": "number",
+    "style_legend": "list",
+    "number_title": "text",
+    "number_format": "number",
+    "number_color": "palette"
+  },
+  "models": [
+    {
+      "name": "vertical bar counting rows",
+      "input": {
+        "chartType": "Bar",
+        "xType": "SingleSelect",
+        "yType": null,
+        "aggregation": 0,
+        "showTitle": true
+      },
+      "expect": [
+        {
+          "section": "type",
+          "title": "Chart type",
+          "rows": [
+            {
+              "id": "chart_type",
+              "label": "Chart type"
+            }
+          ]
+        },
+        {
+          "section": "x",
+          "title": "X axis",
+          "rows": [
+            {
+              "id": "x_what",
+              "label": "What to show"
+            },
+            {
+              "id": "x_sort",
+              "label": "Sort by"
+            },
+            {
+              "id": "x_groups",
+              "label": "Groups"
+            },
+            {
+              "id": "x_show_empty",
+              "label": "Show empty values"
+            }
+          ]
+        },
+        {
+          "section": "y",
+          "title": "Y axis",
+          "rows": [
+            {
+              "id": "y_what",
+              "label": "What to show"
+            },
+            {
+              "id": "y_group_by",
+              "label": "Group by"
+            },
+            {
+              "id": "y_cumulative",
+              "label": "Cumulative"
+            }
+          ]
+        },
+        {
+          "section": "style",
+          "title": "Style",
+          "rows": [
+            {
+              "id": "style_color",
+              "label": "Color"
+            },
+            {
+              "id": "style_data_labels",
+              "label": "Data labels"
+            },
+            {
+              "id": "style_legend",
+              "label": "Legend"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "vertical bar summing a number",
+      "input": {
+        "chartType": "Bar",
+        "xType": "SingleSelect",
+        "yType": "Number",
+        "aggregation": 1,
+        "showTitle": true
+      },
+      "expect": [
+        {
+          "section": "type",
+          "title": "Chart type",
+          "rows": [
+            {
+              "id": "chart_type",
+              "label": "Chart type"
+            }
+          ]
+        },
+        {
+          "section": "x",
+          "title": "X axis",
+          "rows": [
+            {
+              "id": "x_what",
+              "label": "What to show"
+            },
+            {
+              "id": "x_sort",
+              "label": "Sort by"
+            },
+            {
+              "id": "x_groups",
+              "label": "Groups"
+            },
+            {
+              "id": "x_show_empty",
+              "label": "Show empty values"
+            }
+          ]
+        },
+        {
+          "section": "y",
+          "title": "Y axis",
+          "rows": [
+            {
+              "id": "y_what",
+              "label": "What to show"
+            },
+            {
+              "id": "y_calculate",
+              "label": "Calculate"
+            },
+            {
+              "id": "y_decimals",
+              "label": "Decimal places"
+            },
+            {
+              "id": "y_group_by",
+              "label": "Group by"
+            },
+            {
+              "id": "y_cumulative",
+              "label": "Cumulative"
+            }
+          ]
+        },
+        {
+          "section": "style",
+          "title": "Style",
+          "rows": [
+            {
+              "id": "style_color",
+              "label": "Color"
+            },
+            {
+              "id": "style_data_labels",
+              "label": "Data labels"
+            },
+            {
+              "id": "style_legend",
+              "label": "Legend"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "line by date averaging a number (no cumulative)",
+      "input": {
+        "chartType": "Line",
+        "xType": "DateTime",
+        "yType": "Number",
+        "aggregation": 2,
+        "showTitle": true
+      },
+      "expect": [
+        {
+          "section": "type",
+          "title": "Chart type",
+          "rows": [
+            {
+              "id": "chart_type",
+              "label": "Chart type"
+            }
+          ]
+        },
+        {
+          "section": "x",
+          "title": "X axis",
+          "rows": [
+            {
+              "id": "x_what",
+              "label": "What to show"
+            },
+            {
+              "id": "x_date_grouping",
+              "label": "Date grouping"
+            },
+            {
+              "id": "x_sort",
+              "label": "Sort by"
+            },
+            {
+              "id": "x_groups",
+              "label": "Groups"
+            },
+            {
+              "id": "x_show_empty",
+              "label": "Show empty values"
+            }
+          ]
+        },
+        {
+          "section": "y",
+          "title": "Y axis",
+          "rows": [
+            {
+              "id": "y_what",
+              "label": "What to show"
+            },
+            {
+              "id": "y_calculate",
+              "label": "Calculate"
+            },
+            {
+              "id": "y_decimals",
+              "label": "Decimal places"
+            },
+            {
+              "id": "y_group_by",
+              "label": "Group by"
+            }
+          ]
+        },
+        {
+          "section": "style",
+          "title": "Style",
+          "rows": [
+            {
+              "id": "style_color",
+              "label": "Color"
+            },
+            {
+              "id": "style_data_labels",
+              "label": "Data labels"
+            },
+            {
+              "id": "style_legend",
+              "label": "Legend"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "bar with a legacy Min over a date (Earliest: no decimals, no cumulative)",
+      "input": {
+        "chartType": "Bar",
+        "xType": "Checkbox",
+        "yType": "DateTime",
+        "aggregation": 3,
+        "showTitle": true
+      },
+      "expect": [
+        {
+          "section": "type",
+          "title": "Chart type",
+          "rows": [
+            {
+              "id": "chart_type",
+              "label": "Chart type"
+            }
+          ]
+        },
+        {
+          "section": "x",
+          "title": "X axis",
+          "rows": [
+            {
+              "id": "x_what",
+              "label": "What to show"
+            },
+            {
+              "id": "x_sort",
+              "label": "Sort by"
+            },
+            {
+              "id": "x_groups",
+              "label": "Groups"
+            }
+          ]
+        },
+        {
+          "section": "y",
+          "title": "Y axis",
+          "rows": [
+            {
+              "id": "y_what",
+              "label": "What to show"
+            },
+            {
+              "id": "y_calculate",
+              "label": "Calculate"
+            },
+            {
+              "id": "y_group_by",
+              "label": "Group by"
+            }
+          ]
+        },
+        {
+          "section": "style",
+          "title": "Style",
+          "rows": [
+            {
+              "id": "style_color",
+              "label": "Color"
+            },
+            {
+              "id": "style_data_labels",
+              "label": "Data labels"
+            },
+            {
+              "id": "style_legend",
+              "label": "Legend"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "horizontal bar: the value section first, titled X axis",
+      "input": {
+        "chartType": "HorizontalBar",
+        "xType": "RichText",
+        "yType": null,
+        "aggregation": 0,
+        "showTitle": true
+      },
+      "expect": [
+        {
+          "section": "type",
+          "title": "Chart type",
+          "rows": [
+            {
+              "id": "chart_type",
+              "label": "Chart type"
+            }
+          ]
+        },
+        {
+          "section": "y",
+          "title": "X axis",
+          "rows": [
+            {
+              "id": "y_what",
+              "label": "What to show"
+            },
+            {
+              "id": "y_group_by",
+              "label": "Group by"
+            },
+            {
+              "id": "y_cumulative",
+              "label": "Cumulative"
+            }
+          ]
+        },
+        {
+          "section": "x",
+          "title": "Y axis",
+          "rows": [
+            {
+              "id": "x_what",
+              "label": "What to show"
+            },
+            {
+              "id": "x_text_grouping",
+              "label": "Group by text"
+            },
+            {
+              "id": "x_sort",
+              "label": "Sort by"
+            },
+            {
+              "id": "x_groups",
+              "label": "Groups"
+            },
+            {
+              "id": "x_show_empty",
+              "label": "Show empty values"
+            }
+          ]
+        },
+        {
+          "section": "style",
+          "title": "Style",
+          "rows": [
+            {
+              "id": "style_color",
+              "label": "Color"
+            },
+            {
+              "id": "style_data_labels",
+              "label": "Data labels"
+            },
+            {
+              "id": "style_legend",
+              "label": "Legend"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "horizontal bar counting values of a property",
+      "input": {
+        "chartType": "HorizontalBar",
+        "xType": "URL",
+        "yType": "SingleSelect",
+        "aggregation": 7,
+        "showTitle": true
+      },
+      "expect": [
+        {
+          "section": "type",
+          "title": "Chart type",
+          "rows": [
+            {
+              "id": "chart_type",
+              "label": "Chart type"
+            }
+          ]
+        },
+        {
+          "section": "y",
+          "title": "X axis",
+          "rows": [
+            {
+              "id": "y_what",
+              "label": "What to show"
+            },
+            {
+              "id": "y_calculate",
+              "label": "Calculate"
+            },
+            {
+              "id": "y_group_by",
+              "label": "Group by"
+            },
+            {
+              "id": "y_cumulative",
+              "label": "Cumulative"
+            }
+          ]
+        },
+        {
+          "section": "x",
+          "title": "Y axis",
+          "rows": [
+            {
+              "id": "x_what",
+              "label": "What to show"
+            },
+            {
+              "id": "x_text_grouping",
+              "label": "Group by text"
+            },
+            {
+              "id": "x_sort",
+              "label": "Sort by"
+            },
+            {
+              "id": "x_groups",
+              "label": "Groups"
+            },
+            {
+              "id": "x_show_empty",
+              "label": "Show empty values"
+            }
+          ]
+        },
+        {
+          "section": "style",
+          "title": "Style",
+          "rows": [
+            {
+              "id": "style_color",
+              "label": "Color"
+            },
+            {
+              "id": "style_data_labels",
+              "label": "Data labels"
+            },
+            {
+              "id": "style_legend",
+              "label": "Legend"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "donut counting rows by a checkbox",
+      "input": {
+        "chartType": "Donut",
+        "xType": "Checkbox",
+        "yType": null,
+        "aggregation": 0,
+        "showTitle": true
+      },
+      "expect": [
+        {
+          "section": "type",
+          "title": "Chart type",
+          "rows": [
+            {
+              "id": "chart_type",
+              "label": "Chart type"
+            }
+          ]
+        },
+        {
+          "section": "data",
+          "title": "Data",
+          "rows": [
+            {
+              "id": "x_what",
+              "label": "What to show"
+            },
+            {
+              "id": "y_what",
+              "label": "Each slice represents"
+            },
+            {
+              "id": "x_sort",
+              "label": "Sort by"
+            },
+            {
+              "id": "x_groups",
+              "label": "Groups"
+            }
+          ]
+        },
+        {
+          "section": "style",
+          "title": "Style",
+          "rows": [
+            {
+              "id": "style_color",
+              "label": "Color"
+            },
+            {
+              "id": "style_legend",
+              "label": "Legend"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "donut summing a number by number ranges",
+      "input": {
+        "chartType": "Donut",
+        "xType": "Number",
+        "yType": "Number",
+        "aggregation": 1,
+        "showTitle": true
+      },
+      "expect": [
+        {
+          "section": "type",
+          "title": "Chart type",
+          "rows": [
+            {
+              "id": "chart_type",
+              "label": "Chart type"
+            }
+          ]
+        },
+        {
+          "section": "data",
+          "title": "Data",
+          "rows": [
+            {
+              "id": "x_what",
+              "label": "What to show"
+            },
+            {
+              "id": "x_buckets",
+              "label": "Ranges"
+            },
+            {
+              "id": "y_what",
+              "label": "Each slice represents"
+            },
+            {
+              "id": "y_calculate",
+              "label": "Calculate"
+            },
+            {
+              "id": "y_decimals",
+              "label": "Decimal places"
+            },
+            {
+              "id": "x_sort",
+              "label": "Sort by"
+            },
+            {
+              "id": "x_groups",
+              "label": "Groups"
+            },
+            {
+              "id": "x_show_empty",
+              "label": "Show empty values"
+            }
+          ]
+        },
+        {
+          "section": "style",
+          "title": "Style",
+          "rows": [
+            {
+              "id": "style_color",
+              "label": "Color"
+            },
+            {
+              "id": "style_legend",
+              "label": "Legend"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "donut ignores a stored cumulative (no row)",
+      "input": {
+        "chartType": "Donut",
+        "xType": "Person",
+        "yType": null,
+        "aggregation": 0,
+        "showTitle": true
+      },
+      "expect": [
+        {
+          "section": "type",
+          "title": "Chart type",
+          "rows": [
+            {
+              "id": "chart_type",
+              "label": "Chart type"
+            }
+          ]
+        },
+        {
+          "section": "data",
+          "title": "Data",
+          "rows": [
+            {
+              "id": "x_what",
+              "label": "What to show"
+            },
+            {
+              "id": "y_what",
+              "label": "Each slice represents"
+            },
+            {
+              "id": "x_sort",
+              "label": "Sort by"
+            },
+            {
+              "id": "x_groups",
+              "label": "Groups"
+            },
+            {
+              "id": "x_show_empty",
+              "label": "Show empty values"
+            }
+          ]
+        },
+        {
+          "section": "style",
+          "title": "Style",
+          "rows": [
+            {
+              "id": "style_color",
+              "label": "Color"
+            },
+            {
+              "id": "style_legend",
+              "label": "Legend"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "vertical bar grouped by a second property: Group style follows Group by",
+      "input": {
+        "chartType": "Bar",
+        "xType": "SingleSelect",
+        "yType": null,
+        "aggregation": 0,
+        "showTitle": true,
+        "groupBy": true
+      },
+      "expect": [
+        {
+          "section": "type",
+          "title": "Chart type",
+          "rows": [
+            {
+              "id": "chart_type",
+              "label": "Chart type"
+            }
+          ]
+        },
+        {
+          "section": "x",
+          "title": "X axis",
+          "rows": [
+            {
+              "id": "x_what",
+              "label": "What to show"
+            },
+            {
+              "id": "x_sort",
+              "label": "Sort by"
+            },
+            {
+              "id": "x_groups",
+              "label": "Groups"
+            },
+            {
+              "id": "x_show_empty",
+              "label": "Show empty values"
+            }
+          ]
+        },
+        {
+          "section": "y",
+          "title": "Y axis",
+          "rows": [
+            {
+              "id": "y_what",
+              "label": "What to show"
+            },
+            {
+              "id": "y_group_by",
+              "label": "Group by"
+            },
+            {
+              "id": "y_group_style",
+              "label": "Group style"
+            },
+            {
+              "id": "y_cumulative",
+              "label": "Cumulative"
+            }
+          ]
+        },
+        {
+          "section": "style",
+          "title": "Style",
+          "rows": [
+            {
+              "id": "style_color",
+              "label": "Color"
+            },
+            {
+              "id": "style_data_labels",
+              "label": "Data labels"
+            },
+            {
+              "id": "style_legend",
+              "label": "Legend"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "horizontal bar grouped by a second property: both rows in the value section",
+      "input": {
+        "chartType": "HorizontalBar",
+        "xType": "URL",
+        "yType": "SingleSelect",
+        "aggregation": 7,
+        "showTitle": true,
+        "groupBy": true
+      },
+      "expect": [
+        {
+          "section": "type",
+          "title": "Chart type",
+          "rows": [
+            {
+              "id": "chart_type",
+              "label": "Chart type"
+            }
+          ]
+        },
+        {
+          "section": "y",
+          "title": "X axis",
+          "rows": [
+            {
+              "id": "y_what",
+              "label": "What to show"
+            },
+            {
+              "id": "y_calculate",
+              "label": "Calculate"
+            },
+            {
+              "id": "y_group_by",
+              "label": "Group by"
+            },
+            {
+              "id": "y_group_style",
+              "label": "Group style"
+            },
+            {
+              "id": "y_cumulative",
+              "label": "Cumulative"
+            }
+          ]
+        },
+        {
+          "section": "x",
+          "title": "Y axis",
+          "rows": [
+            {
+              "id": "x_what",
+              "label": "What to show"
+            },
+            {
+              "id": "x_text_grouping",
+              "label": "Group by text"
+            },
+            {
+              "id": "x_sort",
+              "label": "Sort by"
+            },
+            {
+              "id": "x_groups",
+              "label": "Groups"
+            },
+            {
+              "id": "x_show_empty",
+              "label": "Show empty values"
+            }
+          ]
+        },
+        {
+          "section": "style",
+          "title": "Style",
+          "rows": [
+            {
+              "id": "style_color",
+              "label": "Color"
+            },
+            {
+              "id": "style_data_labels",
+              "label": "Data labels"
+            },
+            {
+              "id": "style_legend",
+              "label": "Legend"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "line grouped by a second property: no Group style",
+      "input": {
+        "chartType": "Line",
+        "xType": "DateTime",
+        "yType": "Number",
+        "aggregation": 2,
+        "showTitle": true,
+        "groupBy": true
+      },
+      "expect": [
+        {
+          "section": "type",
+          "title": "Chart type",
+          "rows": [
+            {
+              "id": "chart_type",
+              "label": "Chart type"
+            }
+          ]
+        },
+        {
+          "section": "x",
+          "title": "X axis",
+          "rows": [
+            {
+              "id": "x_what",
+              "label": "What to show"
+            },
+            {
+              "id": "x_date_grouping",
+              "label": "Date grouping"
+            },
+            {
+              "id": "x_sort",
+              "label": "Sort by"
+            },
+            {
+              "id": "x_groups",
+              "label": "Groups"
+            },
+            {
+              "id": "x_show_empty",
+              "label": "Show empty values"
+            }
+          ]
+        },
+        {
+          "section": "y",
+          "title": "Y axis",
+          "rows": [
+            {
+              "id": "y_what",
+              "label": "What to show"
+            },
+            {
+              "id": "y_calculate",
+              "label": "Calculate"
+            },
+            {
+              "id": "y_decimals",
+              "label": "Decimal places"
+            },
+            {
+              "id": "y_group_by",
+              "label": "Group by"
+            }
+          ]
+        },
+        {
+          "section": "style",
+          "title": "Style",
+          "rows": [
+            {
+              "id": "style_color",
+              "label": "Color"
+            },
+            {
+              "id": "style_data_labels",
+              "label": "Data labels"
+            },
+            {
+              "id": "style_legend",
+              "label": "Legend"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "donut with a stored Group by shows neither row",
+      "input": {
+        "chartType": "Donut",
+        "xType": "Checkbox",
+        "yType": null,
+        "aggregation": 0,
+        "showTitle": true,
+        "groupBy": true
+      },
+      "expect": [
+        {
+          "section": "type",
+          "title": "Chart type",
+          "rows": [
+            {
+              "id": "chart_type",
+              "label": "Chart type"
+            }
+          ]
+        },
+        {
+          "section": "data",
+          "title": "Data",
+          "rows": [
+            {
+              "id": "x_what",
+              "label": "What to show"
+            },
+            {
+              "id": "y_what",
+              "label": "Each slice represents"
+            },
+            {
+              "id": "x_sort",
+              "label": "Sort by"
+            },
+            {
+              "id": "x_groups",
+              "label": "Groups"
+            }
+          ]
+        },
+        {
+          "section": "style",
+          "title": "Style",
+          "rows": [
+            {
+              "id": "style_color",
+              "label": "Color"
+            },
+            {
+              "id": "style_legend",
+              "label": "Legend"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "number with its title on",
+      "input": {
+        "chartType": "NumberChart",
+        "xType": null,
+        "yType": "Number",
+        "aggregation": 1,
+        "showTitle": true
+      },
+      "expect": [
+        {
+          "section": "type",
+          "title": "Chart type",
+          "rows": [
+            {
+              "id": "chart_type",
+              "label": "Chart type"
+            }
+          ]
+        },
+        {
+          "section": "title",
+          "title": "",
+          "rows": [
+            {
+              "id": "number_title",
+              "label": "Chart title"
+            },
+            {
+              "id": "number_title_input",
+              "label": "Chart title"
+            }
+          ]
+        },
+        {
+          "section": "data",
+          "title": "Data",
+          "rows": [
+            {
+              "id": "y_what",
+              "label": "What to show"
+            },
+            {
+              "id": "y_calculate",
+              "label": "Calculate"
+            },
+            {
+              "id": "number_format",
+              "label": "Format"
+            },
+            {
+              "id": "y_decimals",
+              "label": "Decimal places"
+            }
+          ]
+        },
+        {
+          "section": "style",
+          "title": "Style",
+          "rows": [
+            {
+              "id": "number_color",
+              "label": "Color"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "number with its title off",
+      "input": {
+        "chartType": "NumberChart",
+        "xType": null,
+        "yType": "Checkbox",
+        "aggregation": 11,
+        "showTitle": false
+      },
+      "expect": [
+        {
+          "section": "type",
+          "title": "Chart type",
+          "rows": [
+            {
+              "id": "chart_type",
+              "label": "Chart type"
+            }
+          ]
+        },
+        {
+          "section": "title",
+          "title": "",
+          "rows": [
+            {
+              "id": "number_title",
+              "label": "Chart title"
+            }
+          ]
+        },
+        {
+          "section": "data",
+          "title": "Data",
+          "rows": [
+            {
+              "id": "y_what",
+              "label": "What to show"
+            },
+            {
+              "id": "y_calculate",
+              "label": "Calculate"
+            },
+            {
+              "id": "number_format",
+              "label": "Format"
+            },
+            {
+              "id": "y_decimals",
+              "label": "Decimal places"
+            }
+          ]
+        },
+        {
+          "section": "style",
+          "title": "Style",
+          "rows": [
+            {
+              "id": "number_color",
+              "label": "Color"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "number counting all rows: Calculate is disabled",
+      "input": {
+        "chartType": "NumberChart",
+        "xType": null,
+        "yType": null,
+        "aggregation": 0,
+        "showTitle": true
+      },
+      "expect": [
+        {
+          "section": "type",
+          "title": "Chart type",
+          "rows": [
+            {
+              "id": "chart_type",
+              "label": "Chart type"
+            }
+          ]
+        },
+        {
+          "section": "title",
+          "title": "",
+          "rows": [
+            {
+              "id": "number_title",
+              "label": "Chart title"
+            },
+            {
+              "id": "number_title_input",
+              "label": "Chart title"
+            }
+          ]
+        },
+        {
+          "section": "data",
+          "title": "Data",
+          "rows": [
+            {
+              "id": "y_what",
+              "label": "What to show"
+            },
+            {
+              "id": "y_calculate",
+              "label": "Calculate",
+              "disabled": true
+            },
+            {
+              "id": "number_format",
+              "label": "Format"
+            }
+          ]
+        },
+        {
+          "section": "style",
+          "title": "Style",
+          "rows": [
+            {
+              "id": "number_color",
+              "label": "Color"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "number with a deleted value property counts rows",
+      "input": {
+        "chartType": "NumberChart",
+        "xType": null,
+        "yType": null,
+        "aggregation": 1,
+        "showTitle": true
+      },
+      "expect": [
+        {
+          "section": "type",
+          "title": "Chart type",
+          "rows": [
+            {
+              "id": "chart_type",
+              "label": "Chart type"
+            }
+          ]
+        },
+        {
+          "section": "title",
+          "title": "",
+          "rows": [
+            {
+              "id": "number_title",
+              "label": "Chart title"
+            },
+            {
+              "id": "number_title_input",
+              "label": "Chart title"
+            }
+          ]
+        },
+        {
+          "section": "data",
+          "title": "Data",
+          "rows": [
+            {
+              "id": "y_what",
+              "label": "What to show"
+            },
+            {
+              "id": "y_calculate",
+              "label": "Calculate",
+              "disabled": true
+            },
+            {
+              "id": "number_format",
+              "label": "Format"
+            }
+          ]
+        },
+        {
+          "section": "style",
+          "title": "Style",
+          "rows": [
+            {
+              "id": "number_color",
+              "label": "Color"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "writes": [
+    {
+      "name": "pick a chart type",
+      "action": {
+        "kind": "chart_type",
+        "value": 3
+      },
+      "current": {},
+      "expect": {
+        "chart_type": 3
+      }
+    },
+    {
+      "name": "pick an X property: the groups reset and a manual sort goes back to default",
+      "action": {
+        "kind": "x_field",
+        "value": "f:owner"
+      },
+      "current": {
+        "x_sort": "manual"
+      },
+      "expect": {
+        "x_field_id": "f:owner",
+        "hidden_groups": [],
+        "x_manual_order": [],
+        "x_sort": "auto"
+      }
+    },
+    {
+      "name": "pick an X property keeps a non-manual sort",
+      "action": {
+        "kind": "x_field",
+        "value": "f:owner"
+      },
+      "current": {
+        "x_sort": "label_desc"
+      },
+      "expect": {
+        "x_field_id": "f:owner",
+        "hidden_groups": [],
+        "x_manual_order": []
+      }
+    },
+    {
+      "name": "pick the Group by property as X clears the Group by in the same write",
+      "action": {
+        "kind": "x_field",
+        "value": "f:audience"
+      },
+      "current": {
+        "x_sort": "auto",
+        "group_by_field_id": "f:audience"
+      },
+      "expect": {
+        "x_field_id": "f:audience",
+        "hidden_groups": [],
+        "x_manual_order": [],
+        "group_by_field_id": ""
+      }
+    },
+    {
+      "name": "pick a date grouping",
+      "action": {
+        "kind": "date_grouping",
+        "value": 1
+      },
+      "current": {
+        "x_sort": "manual"
+      },
+      "expect": {
+        "date_condition": 1,
+        "hidden_groups": [],
+        "x_manual_order": [],
+        "x_sort": "auto"
+      }
+    },
+    {
+      "name": "pick a text grouping",
+      "action": {
+        "kind": "text_grouping",
+        "value": "first_letter"
+      },
+      "current": {
+        "x_sort": "auto"
+      },
+      "expect": {
+        "x_text_grouping": "first_letter",
+        "hidden_groups": [],
+        "x_manual_order": []
+      }
+    },
+    {
+      "name": "set the ranges: all three keys, Auto as null",
+      "action": {
+        "kind": "buckets",
+        "size": 5,
+        "min": null,
+        "max": null
+      },
+      "current": {},
+      "expect": {
+        "x_number_bucket_size": 5,
+        "x_number_bucket_min": null,
+        "x_number_bucket_max": null,
+        "hidden_groups": [],
+        "x_manual_order": []
+      }
+    },
+    {
+      "name": "pick a sort",
+      "action": {
+        "kind": "sort",
+        "value": "value_desc"
+      },
+      "current": {
+        "x_sort": "manual"
+      },
+      "expect": {
+        "x_sort": "value_desc"
+      }
+    },
+    {
+      "name": "hide a group",
+      "action": {
+        "kind": "hidden_groups",
+        "value": [
+          "o-doing"
+        ]
+      },
+      "current": {},
+      "expect": {
+        "hidden_groups": [
+          "o-doing"
+        ]
+      }
+    },
+    {
+      "name": "show all groups",
+      "action": {
+        "kind": "hidden_groups",
+        "value": []
+      },
+      "current": {},
+      "expect": {
+        "hidden_groups": []
+      }
+    },
+    {
+      "name": "drop a group: manual sort and the new order together",
+      "action": {
+        "kind": "drop_groups",
+        "value": [
+          "o-done",
+          "o-todo",
+          "o-doing"
+        ]
+      },
+      "current": {
+        "x_sort": "auto"
+      },
+      "expect": {
+        "x_sort": "manual",
+        "x_manual_order": [
+          "o-done",
+          "o-todo",
+          "o-doing"
+        ]
+      }
+    },
+    {
+      "name": "pick Count all as what to show",
+      "action": {
+        "kind": "y_count_all"
+      },
+      "current": {
+        "aggregation_type": 1
+      },
+      "expect": {
+        "aggregation_type": 0,
+        "y_field_id": ""
+      }
+    },
+    {
+      "name": "pick a number property: Sum",
+      "action": {
+        "kind": "y_field",
+        "value": "f:estimate",
+        "fieldType": "Number"
+      },
+      "current": {
+        "aggregation_type": 0
+      },
+      "expect": {
+        "y_field_id": "f:estimate",
+        "aggregation_type": 1
+      }
+    },
+    {
+      "name": "pick a number property keeps a valid calculation",
+      "action": {
+        "kind": "y_field",
+        "value": "f:estimate",
+        "fieldType": "Number"
+      },
+      "current": {
+        "aggregation_type": 2
+      },
+      "expect": {
+        "y_field_id": "f:estimate",
+        "aggregation_type": 2
+      }
+    },
+    {
+      "name": "pick a checkbox: Percent checked",
+      "action": {
+        "kind": "y_field",
+        "value": "f:urgent",
+        "fieldType": "Checkbox"
+      },
+      "current": {
+        "aggregation_type": 1
+      },
+      "expect": {
+        "y_field_id": "f:urgent",
+        "aggregation_type": 11
+      }
+    },
+    {
+      "name": "pick a date: Latest",
+      "action": {
+        "kind": "y_field",
+        "value": "f:due",
+        "fieldType": "DateTime"
+      },
+      "current": {
+        "aggregation_type": 0
+      },
+      "expect": {
+        "y_field_id": "f:due",
+        "aggregation_type": 14
+      }
+    },
+    {
+      "name": "pick a date keeps Count empty",
+      "action": {
+        "kind": "y_field",
+        "value": "f:due",
+        "fieldType": "DateTime"
+      },
+      "current": {
+        "aggregation_type": 8
+      },
+      "expect": {
+        "y_field_id": "f:due",
+        "aggregation_type": 8
+      }
+    },
+    {
+      "name": "pick a select: Count values",
+      "action": {
+        "kind": "y_field",
+        "value": "f:status",
+        "fieldType": "SingleSelect"
+      },
+      "current": {
+        "aggregation_type": 1
+      },
+      "expect": {
+        "y_field_id": "f:status",
+        "aggregation_type": 7
+      }
+    },
+    {
+      "name": "pick a calculation",
+      "action": {
+        "kind": "calculate",
+        "value": 7
+      },
+      "current": {
+        "aggregation_type": 0
+      },
+      "expect": {
+        "aggregation_type": 7
+      }
+    },
+    {
+      "name": "pick Count all as the calculation clears the property",
+      "action": {
+        "kind": "calculate",
+        "value": 0
+      },
+      "current": {
+        "aggregation_type": 7
+      },
+      "expect": {
+        "aggregation_type": 0,
+        "y_field_id": ""
+      }
+    },
+    {
+      "name": "toggle cumulative",
+      "action": {
+        "kind": "cumulative",
+        "value": true
+      },
+      "current": {},
+      "expect": {
+        "cumulative": true
+      }
+    },
+    {
+      "name": "toggle show empty values",
+      "action": {
+        "kind": "show_empty",
+        "value": false
+      },
+      "current": {},
+      "expect": {
+        "show_empty_values": false
+      }
+    },
+    {
+      "name": "turn the chart title off",
+      "action": {
+        "kind": "show_title",
+        "value": false
+      },
+      "current": {},
+      "expect": {
+        "show_title": false
+      }
+    },
+    {
+      "name": "type a chart title",
+      "action": {
+        "kind": "title_text",
+        "value": "Revenue"
+      },
+      "current": {},
+      "expect": {
+        "titleText": "Revenue"
+      }
+    },
+    {
+      "name": "pick a number format",
+      "action": {
+        "kind": "number_format",
+        "value": "compact"
+      },
+      "current": {},
+      "expect": {
+        "numberFormat": "compact"
+      }
+    },
+    {
+      "name": "pick a static number color",
+      "action": {
+        "kind": "number_color",
+        "value": "blue"
+      },
+      "current": {},
+      "expect": {
+        "number_color": "blue"
+      }
+    },
+    {
+      "name": "edit the dynamic color: the whole object",
+      "action": {
+        "kind": "conditional_color",
+        "value": {
+          "enabled": true,
+          "rules": [
+            {
+              "id": "ncr:1",
+              "operator": "gt",
+              "value": 5,
+              "color": "green"
+            }
+          ],
+          "else_color": "orange"
+        }
+      },
+      "current": {},
+      "expect": {
+        "number_conditional_color": {
+          "enabled": true,
+          "rules": [
+            {
+              "id": "ncr:1",
+              "operator": "gt",
+              "value": 5,
+              "color": "green"
+            }
+          ],
+          "else_color": "orange"
+        }
+      }
+    },
+    {
+      "name": "pick a color theme",
+      "action": {
+        "kind": "color_theme",
+        "value": "teal"
+      },
+      "current": {},
+      "expect": {
+        "color_theme": "teal"
+      }
+    },
+    {
+      "name": "turn the data labels off",
+      "action": {
+        "kind": "show_data_labels",
+        "value": false
+      },
+      "current": {},
+      "expect": {
+        "show_data_labels": false
+      }
+    },
+    {
+      "name": "pick a legend position",
+      "action": {
+        "kind": "legend_position",
+        "value": "off"
+      },
+      "current": {},
+      "expect": {
+        "legend_position": "off"
+      }
+    },
+    {
+      "name": "decimal places back to default writes null",
+      "action": {
+        "kind": "decimal_places",
+        "value": null
+      },
+      "current": {},
+      "expect": {
+        "decimal_places": null
+      }
+    },
+    {
+      "name": "pick a Group by property",
+      "action": {
+        "kind": "group_by",
+        "value": "f:audience"
+      },
+      "current": {},
+      "expect": {
+        "group_by_field_id": "f:audience"
+      }
+    },
+    {
+      "name": "pick None as the Group by writes the documented default",
+      "action": {
+        "kind": "group_by",
+        "value": ""
+      },
+      "current": {
+        "group_by_field_id": "f:audience"
+      },
+      "expect": {
+        "group_by_field_id": ""
+      }
+    },
+    {
+      "name": "pick a date grouping of another date property: the property and the grouping together",
+      "action": {
+        "kind": "group_by_date",
+        "field": "f:due",
+        "value": 1
+      },
+      "current": {
+        "group_by_field_id": "f:audience"
+      },
+      "expect": {
+        "group_by_field_id": "f:due",
+        "group_by_date_condition": 1
+      }
+    },
+    {
+      "name": "pick a date grouping of the Group by property writes only the grouping",
+      "action": {
+        "kind": "group_by_date",
+        "field": "f:due",
+        "value": 4
+      },
+      "current": {
+        "group_by_field_id": "f:due"
+      },
+      "expect": {
+        "group_by_date_condition": 4
+      }
+    },
+    {
+      "name": "pick a group style",
+      "action": {
+        "kind": "group_style",
+        "value": "grouped"
+      },
+      "current": {},
+      "expect": {
+        "group_style": "grouped"
+      }
+    }
+  ]
+}

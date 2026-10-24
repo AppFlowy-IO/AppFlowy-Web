@@ -1,0 +1,39 @@
+{
+  "locale": "ar-SA",
+  "terms": {
+    "dashboard": "لوحة المعلومات",
+    "widget": "أداة",
+    "chart": "مخطط",
+    "view": "عرض",
+    "row": "صف",
+    "property": "خاصية",
+    "field": "حقل",
+    "database": "قاعدة البيانات",
+    "source": "مصدر",
+    "page": "صفحة",
+    "workspace": "مساحة العمل",
+    "done": "تم",
+    "edit": "تعديل",
+    "delete": "حذف",
+    "duplicate": "تكرار",
+    "save": "حفظ",
+    "cancel": "إلغاء",
+    "close": "إغلاق",
+    "back": "رجوع",
+    "settings": "الإعدادات",
+    "filter": "تصفية",
+    "sort": "ترتيب",
+    "search": "بحث",
+    "undo": "تراجع",
+    "redo": "إعادة",
+    "reset": "إعادة ضبط",
+    "untitled": "بدون عنوان",
+    "day": "يوم",
+    "week": "أسبوع",
+    "month": "شهر",
+    "year": "سنة"
+  },
+  "untranslated_ok": [
+    "chart.legend.page"
+  ]
+}

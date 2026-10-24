@@ -25,7 +25,7 @@ export type ChartTypeOption = (typeof CHART_TYPE_OPTIONS)[number];
 export const AGGREGATION_OPTIONS = [
   { type: ChartAggregationType.Count, slug: 'count', labelKey: 'chart.tooltip.count', fallback: 'Count' },
   {
-    type: ChartAggregationType.CountValues,
+    type: ChartAggregationType.CountUnique,
     slug: 'count-values',
     labelKey: 'chart.tooltip.countValues',
     fallback: 'Count values',

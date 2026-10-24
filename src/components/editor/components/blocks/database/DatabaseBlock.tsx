@@ -71,6 +71,7 @@ function DatabaseBlockBody({ node, children, editor, forwardedRef, readOnly, ...
   const loadView = context?.loadView;
   const createRow = context?.createRow;
   const bindViewSync = context?.bindViewSync;
+  const scheduleDeferredCleanup = context?.scheduleDeferredCleanup;
 
   const [hasDatabase, setHasDatabase] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -82,8 +83,8 @@ function DatabaseBlockBody({ node, children, editor, forwardedRef, readOnly, ...
     databaseId,
     loadView,
     bindViewSync,
+    scheduleDeferredCleanup,
     eventEmitter: context.eventEmitter,
-    scheduleDeferredCleanup: context.scheduleDeferredCleanup,
   });
 
   // 2. Visible view IDs from block data

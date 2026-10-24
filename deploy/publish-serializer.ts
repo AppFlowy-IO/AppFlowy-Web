@@ -112,6 +112,7 @@ const DATABASE_BLOCK_TYPES = new Set([
   'chart',
   'gallery',
   'feed',
+  'dashboard',
 ]);
 
 /**

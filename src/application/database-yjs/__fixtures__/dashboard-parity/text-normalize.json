@@ -1,0 +1,45 @@
+{
+  "description": "normalizeDashboardText: lowercase (root locale), then NFKD, then strip combining marks (\\p{M}), then trim. Used for chart label sorting (WP11) and dashboard option search (WP08). Never locale collation: NFKD does not fold ß.",
+  "cases": [
+    {
+      "in": "Café",
+      "out": "cafe"
+    },
+    {
+      "in": "  ÉTÉ ",
+      "out": "ete"
+    },
+    {
+      "in": "ﬁle",
+      "out": "file"
+    },
+    {
+      "in": "Ｆｕｌｌ",
+      "out": "full"
+    },
+    {
+      "in": "İstanbul",
+      "out": "istanbul"
+    },
+    {
+      "in": "Straße",
+      "out": "straße"
+    },
+    {
+      "in": "",
+      "out": ""
+    },
+    {
+      "in": "éclair",
+      "out": "eclair"
+    },
+    {
+      "in": "Doing",
+      "out": "doing"
+    },
+    {
+      "in": "\t Mixed Case \n",
+      "out": "mixed case"
+    }
+  ]
+}

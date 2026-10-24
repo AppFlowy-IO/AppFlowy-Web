@@ -9,6 +9,7 @@
  * - useReorderSorts: Reorder sorts
  * - useAddFilter: Add a new filter
  * - useRemoveFilter: Remove a filter
+ * - useMoveFilter: Move a top-level filter to another position
  * - useUpdateFilter: Update filter settings
  */
 
@@ -26,6 +27,7 @@ import {
   resolveRollupFilterTargetFieldType,
 } from '@/application/database-yjs/filter';
 import { executeDatabaseOperations as executeOperations } from '@/application/database-yjs/history';
+import { cloneYValue } from '@/application/database-yjs/layout-codec';
 import { newRollupFilterMetadata, rollupConfigurationMatches } from '@/application/database-yjs/rollup/filter';
 import { YDatabaseFilter, YDatabaseFilters, YDatabaseSort, YDatabaseSorts, YjsDatabaseKey } from '@/application/types';
 import { Log } from '@/utils/log';
@@ -355,6 +357,44 @@ export function useRemoveFilter() {
           },
         ],
         'removeFilter'
+      );
+    },
+    [view, sharedRoot]
+  );
+}
+
+/**
+ * Moves a top-level filter to `toIndex` (its index after the move), as one
+ * write: a delete and the insert of a copy. Works on the view it is given,
+ * so a dashboard widget in View mode reorders its private copy (WP07 R7). A
+ * pure reorder changes no rows, so it never makes a widget's filters dirty.
+ */
+export function useMoveFilter() {
+  const view = useDatabaseView();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback(
+    (filterId: string, toIndex: number) => {
+      if (!view) return;
+      const filters = view.get(YjsDatabaseKey.filters);
+
+      if (!filters) return;
+      const from = filters.toArray().findIndex((filter) => filter.get(YjsDatabaseKey.id) === filterId);
+      const to = Math.max(0, Math.min(filters.length - 1, toIndex));
+
+      if (from === -1 || from === to) return;
+      executeOperations(
+        sharedRoot,
+        [
+          () => {
+            // A copy Yjs can insert (native clients store enums as bigints).
+            const copy = cloneYValue(filters.get(from)) as YDatabaseFilter;
+
+            filters.delete(from, 1);
+            filters.insert(to, [copy]);
+          },
+        ],
+        'moveFilter'
       );
     },
     [view, sharedRoot]

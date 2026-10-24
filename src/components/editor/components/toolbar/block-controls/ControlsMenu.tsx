@@ -6,6 +6,7 @@ import { Path, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
 import { prefetchDatabaseBlobDiff } from '@/application/database-blob';
+import { createLinkedDatabaseViewForLayout } from '@/application/database-yjs/linked-view-creation';
 import { createLinkedDefaultDatabaseView } from '@/application/database-yjs/creation/create-linked-default-view';
 import { ViewService } from '@/application/services/domains';
 import { getAxios, executeAPIRequest, APIResponse } from '@/application/services/js-services/http/core';
@@ -269,6 +270,9 @@ function ControlsMenu({
     bindViewSync,
     scheduleDeferredCleanup,
     duplicatePage,
+    createDatabaseView,
+    deletePage,
+    updatePage,
   } = useEditorContext();
   const editor = useSlateStatic() as YjsEditor;
   const onlySingleBlockSelected = selectedBlockIds?.length === 1;
@@ -340,6 +344,32 @@ function ControlsMenu({
 
             if (layout === undefined) {
               throw new Error(t('document.plugins.subPage.errors.failedDuplicateFindView'));
+            }
+
+            if (layout === ViewLayout.Dashboard) {
+              if (!createDatabaseView) throw new Error('Dashboard duplication is unavailable');
+            // The copy of a dashboard keeps the source's widgets, with its own copies of the views they own.
+            const { response } = await createLinkedDatabaseViewForLayout(layout, {
+              requestViewId: parentId,
+              sourceViewId: sourceView?.view_id ?? sourceViewIds[i],
+              duplicate: true,
+              payload: {
+                parent_view_id: parentId,
+                database_id: databaseId,
+                name: sourceView?.name,
+                embedded: true,
+              },
+              createDatabaseView,
+              loadView,
+              loadViewMeta,
+              updatePage,
+              deletePage,
+              bindViewSync,
+              scheduleDeferredCleanup,
+              });
+
+              target.assertCurrent();
+              return response.view_id;
             }
 
             if (!workspaceId || editor.firstBody) throw new Error('Linked Database creation is unavailable');
@@ -527,11 +557,14 @@ function ControlsMenu({
       editorContext.canWrite,
       bindViewSync,
       duplicateCopySuffix,
+      createDatabaseView,
+      deletePage,
       duplicatePage,
       loadView,
       loadViewMeta,
       scheduleDeferredCleanup,
       t,
+      updatePage,
       workspaceId,
     ]
   );

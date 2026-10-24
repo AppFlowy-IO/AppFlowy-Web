@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { HoverControlsProvider } from '@/components/database/components/grid/controls/HoverControlsContext';
 import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
+import { useHoverControlsActions } from '../HoverControls.hooks';
 import RowMenu from '../RowMenu';
 
 const mockDuplicateRow = jest.fn<Promise<void>, []>();
@@ -38,12 +39,13 @@ jest.mock('@/components/database/components/database-row/DeleteRowConfirm', () =
 
 function OpenRowMenu() {
   const [open, setOpen] = useState(true);
+  const actions = useHoverControlsActions('row-a');
 
   return (
     <HoverControlsProvider value={{ showPreventDialog: (continueFn) => continueFn() }}>
       <DropdownMenu open={open} onOpenChange={setOpen}>
         <DropdownMenuTrigger>row menu</DropdownMenuTrigger>
-        <RowMenu onClose={() => setOpen(false)} rowId='row-a' />
+        {open && <RowMenu actions={actions} onClose={() => setOpen(false)} onDelete={jest.fn()} />}
       </DropdownMenu>
     </HoverControlsProvider>
   );

@@ -1,17 +1,24 @@
 import * as Y from 'yjs';
 
+import { ChartAggregationType, ChartType } from './chart-enums';
 import {
   CHART_LAYOUT_SETTINGS_KEY,
-  ChartAggregationType,
   ChartLayoutKeys,
-  ChartLayoutSettings,
-  ChartType,
   LegacyChartLayoutKeys,
   parseChartAggregationTypePb,
   toCollabChartAggregationType,
 } from './chart.type';
 import { DateGroupCondition } from './database.type';
 import { setYMapBigInt } from './yjs-bigint';
+
+export interface ChartLayoutSettings {
+  chartType: ChartType;
+  xFieldId: string;
+  omitEmptyValues: boolean;
+  aggregationType: ChartAggregationType;
+  yFieldId?: string;
+  dateCondition: DateGroupCondition;
+}
 
 /** Desktop defaults: collab `ChartLayoutSetting::default()` plus a Month date sidecar. */
 export const DEFAULT_CHART_LAYOUT_SETTINGS: ChartLayoutSettings = {
@@ -23,8 +30,6 @@ export const DEFAULT_CHART_LAYOUT_SETTINGS: ChartLayoutSettings = {
   dateCondition: DateGroupCondition.Month,
 };
 
-const DESKTOP_KEYS: readonly string[] = Object.values(ChartLayoutKeys);
-const LEGACY_KEYS: readonly string[] = Object.values(LegacyChartLayoutKeys);
 
 /** The fields of collab's `ChartLayoutSetting` struct (snake_case on disk). */
 interface CollabChartLayoutSetting {
@@ -44,7 +49,7 @@ const COLLAB_DEFAULTS: CollabChartLayoutSetting = {
 };
 
 function isChartType(value: number): value is ChartType {
-  return Number.isInteger(value) && value >= ChartType.Bar && value <= ChartType.Donut;
+  return Number.isInteger(value) && value >= ChartType.Bar && value <= ChartType.Number;
 }
 
 function isDateCondition(value: number): value is DateGroupCondition {
@@ -105,8 +110,9 @@ function decodeCollabFields(map: Y.Map<unknown>): CollabChartLayoutSetting {
   if (map.has(ChartLayoutKeys.aggregationType)) {
     const aggregationType = toInteger(readYrsValue(map, ChartLayoutKeys.aggregationType));
 
-    // The collab enum stops at Max; Median / CountValues only live in the sidecar.
-    if (aggregationType === null || aggregationType < ChartAggregationType.Count || aggregationType > ChartAggregationType.Max) {
+    // Older Dashboard builds wrote the full enum here. Accept those saved
+    // values; current writers use the collab fallback plus the PB sidecar.
+    if (aggregationType === null || aggregationType < ChartAggregationType.Count || aggregationType > ChartAggregationType.Range) {
       return { ...COLLAB_DEFAULTS };
     }
 
@@ -191,6 +197,9 @@ function readLegacyChartSetting(map: Y.Map<unknown>): ChartLayoutSettings {
 export function readChartLayoutSetting(map: unknown): ChartLayoutSettings | null {
   if (!(map instanceof Y.Map)) return null;
 
+  const DESKTOP_KEYS = [ChartLayoutKeys.chartType, ChartLayoutKeys.xFieldId, ChartLayoutKeys.showEmptyValues, ChartLayoutKeys.aggregationType, ChartLayoutKeys.yFieldId, ChartLayoutKeys.dateCondition, ChartLayoutKeys.aggregationTypePb];
+  const LEGACY_KEYS = Object.values(LegacyChartLayoutKeys);
+
   if (DESKTOP_KEYS.some((key) => map.has(key))) {
     return readDesktopChartSetting(map);
   }
@@ -271,12 +280,7 @@ export function writeChartLayoutSetting(map: Y.Map<unknown>, patch: Partial<Char
 }
 
 /** The chart integers desktop's `v_set_layout_settings` writes as `Any::BigInt`. */
-const CHART_INTEGER_KEYS: readonly string[] = [
-  ChartLayoutKeys.chartType,
-  ChartLayoutKeys.aggregationType,
-  ChartLayoutKeys.dateCondition,
-  ChartLayoutKeys.aggregationTypePb,
-];
+
 
 /**
  * Put the BigInt tag back on the chart integers of `layoutSettings['3']`
@@ -289,6 +293,13 @@ const CHART_INTEGER_KEYS: readonly string[] = [
  * numbers. `layoutSettings` must already be integrated into a document.
  */
 export function restoreChartLayoutSettingIntegers(layoutSettings: unknown): void {
+  const CHART_INTEGER_KEYS: readonly string[] = [
+    ChartLayoutKeys.chartType,
+    ChartLayoutKeys.aggregationType,
+    ChartLayoutKeys.dateCondition,
+    ChartLayoutKeys.aggregationTypePb,
+  ];
+
   if (!(layoutSettings instanceof Y.Map)) return;
   const chart = layoutSettings.get(CHART_LAYOUT_SETTINGS_KEY);
 

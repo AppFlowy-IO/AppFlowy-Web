@@ -38,11 +38,13 @@ function DatabaseRowModal({
   rowId,
   openPage,
   onRegisterPrepare,
+  initialMode,
 }: {
   open: boolean;
   rowId: string;
   onOpenChange: (open: boolean) => void;
   openPage?: (rowId: string) => void | Promise<void>;
+  initialMode?: RowPeekMode;
   onRegisterPrepare?: (prepare: (() => Promise<boolean>) | null) => void;
 }) {
   const context = useDatabaseContextOptional();
@@ -60,7 +62,7 @@ function DatabaseRowModal({
   const sourceLayout = Number(view?.get(YjsDatabaseKey.layout));
   const defaultMode =
     sourceLayout === DatabaseViewLayout.Calendar || sourceLayout === DatabaseViewLayout.Timeline ? 'center' : 'side';
-  const mode = selectedMode ?? defaultMode;
+  const mode = selectedMode ?? initialMode ?? defaultMode;
   const canShowSide = layout?.canShow === true && !openPageModalViewId;
   const side = mode === 'side' && canShowSide;
   const contentRef = useRef<HTMLDivElement>(null);

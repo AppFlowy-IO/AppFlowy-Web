@@ -36,7 +36,8 @@ jest.mock('@/components/database/components/grid/drag-and-drop/GridDragContext',
   useGridDragContext: () => ({ registerRow: jest.fn(), rowInstanceId: Symbol.for('test-grid') }),
 }));
 jest.mock('@/components/database/grid/useGridContext', () => ({
-  useGridContext: () => ({ isGrouped: false, rowResizeStore: { report: jest.fn() } }),
+  useGridContext: () => ({ isGrouped: false }),
+  useGridOptions: () => ({}),
   useGridInteractionActions: () => ({ setHoverRowKey: jest.fn() }),
   useIsGridRowActive: () => false,
 }));
@@ -92,8 +93,8 @@ function Harness({ rows }: { rows: RenderRow[] }) {
           data-testid={String(row.key)}
         >
           <GridVirtualRow
-            row={row}
-            data={rows}
+            rowIndex={row.index}
+            rowData={rows[row.index]}
             columns={columns}
             columnItems={columnVirtualizer.getVirtualItems()}
             totalSize={columnVirtualizer.getTotalSize()}

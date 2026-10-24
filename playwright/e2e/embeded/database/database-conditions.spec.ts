@@ -12,6 +12,7 @@ import {
 } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
 import { signInAndWaitForApp } from '../../../support/auth-flow-helpers';
+import { clickFilterChip } from '../../../support/filter-test-helpers';
 import {
   createDocumentPageAndNavigate,
   insertLinkedDatabaseViaSlash,
@@ -126,9 +127,8 @@ test.describe('Database Conditions - Filters and Sorts UI', () => {
       page.locator('[class*="appflowy-database"]').last().getByTestId('database-filter-condition')
     ).toBeVisible();
 
-    // Remove filter: click the filter condition chip
-    await page.locator('[class*="appflowy-database"]').last().getByTestId('database-filter-condition').first().click({ force: true });
-    await page.waitForTimeout(500);
+    // Adding the filter can already leave its editor open.
+    await clickFilterChip(page, embeddedDB.getByTestId('database-filter-condition').first());
 
     // Click more options
     await page.locator('[data-slot="popover-content"]').getByTestId('filter-more-options-button').click({ force: true });

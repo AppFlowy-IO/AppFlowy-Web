@@ -67,10 +67,16 @@ describe('useEmbeddedDatabasePermissions', () => {
     );
 
     expect(result.current).toEqual({ readOnly: true, canWrite: false, canShare: false });
-    expect(mockUseViewActionPermissions).toHaveBeenCalledWith(null, true, sourceViewId, {
-      collabObjectId: sourceDatabaseId,
-      collabType: Types.Database,
-    });
+    expect(mockUseViewActionPermissions).toHaveBeenCalledWith(
+      null,
+      true,
+      sourceViewId,
+      {
+        collabObjectId: sourceDatabaseId,
+        collabType: Types.Database,
+      },
+      undefined
+    );
   });
 
   it('uses source sharing permission even when the parent document cannot share', () => {
@@ -113,10 +119,16 @@ describe('useEmbeddedDatabasePermissions', () => {
     );
 
     expect(result.current).toEqual({ readOnly: false, canWrite: true, canShare: false });
-    expect(mockUseViewActionPermissions).toHaveBeenCalledWith(null, true, sourceViewId, {
-      collabObjectId: sourceDatabaseId,
-      collabType: Types.Database,
-    });
+    expect(mockUseViewActionPermissions).toHaveBeenCalledWith(
+      null,
+      true,
+      sourceViewId,
+      {
+        collabObjectId: sourceDatabaseId,
+        collabType: Types.Database,
+      },
+      undefined
+    );
   });
 
   it('fails closed until the database collab identity is available', () => {
@@ -130,7 +142,7 @@ describe('useEmbeddedDatabasePermissions', () => {
     );
 
     expect(result.current).toEqual({ readOnly: true, canWrite: false, canShare: false });
-    expect(mockUseViewActionPermissions).toHaveBeenCalledWith(null, false, sourceViewId, undefined);
+    expect(mockUseViewActionPermissions).toHaveBeenCalledWith(null, false, sourceViewId, undefined, undefined);
   });
 
   it('preserves the static publish permissions without mounting the app permission resolver', () => {
@@ -153,5 +165,56 @@ describe('useEmbeddedDatabasePermissions', () => {
 
     expect(resolvedPermissions).toEqual({ readOnly: true, canWrite: false, canShare: false });
     expect(mockUseViewActionPermissions).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['while the source permission request is in flight', false],
+    ['once it answered', true],
+  ])('tells the renderer whether the source permission settled: %s', (_case, settled) => {
+    mockUseViewActionPermissions.mockReturnValue({
+      canRead: settled,
+      canWrite: settled,
+      canShare: false,
+      canCreateViewActions: settled,
+      canManageViewActions: false,
+      canUsePageHistory: settled,
+      hasLoadedViewActionPermissions: settled,
+      isLoadingViewActionPermissions: !settled,
+    });
+    const renders: [EmbeddedDatabasePermissions, { settled: boolean }][] = [];
+
+    render(
+      <EmbeddedDatabasePermissionsResolver
+        sourceViewId={sourceViewId}
+        sourceDatabaseId={sourceDatabaseId}
+        inheritedReadOnly={false}
+      >
+        {(permissions, status) => {
+          renders.push([permissions, status]);
+          return null;
+        }}
+      </EmbeddedDatabasePermissionsResolver>
+    );
+
+    // Until it settles the permissions fail closed, and a dashboard widget waits instead of mounting read-only.
+    expect(renders.at(-1)).toEqual([
+      { readOnly: !settled, canWrite: settled, canShare: false },
+      { settled, canRead: settled },
+    ]);
+  });
+
+  it('reports publish permissions as settled', () => {
+    let resolvedStatus: { settled: boolean } | undefined;
+
+    render(
+      <EmbeddedDatabasePermissionsResolver sourceViewId={sourceViewId} variant={UIVariant.Publish} inheritedReadOnly>
+        {(_permissions, status) => {
+          resolvedStatus = status;
+          return null;
+        }}
+      </EmbeddedDatabasePermissionsResolver>
+    );
+
+    expect(resolvedStatus).toEqual({ settled: true });
   });
 });

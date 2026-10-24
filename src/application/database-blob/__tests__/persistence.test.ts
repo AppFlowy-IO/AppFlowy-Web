@@ -1,7 +1,14 @@
 import { parse as uuidParse } from 'uuid';
 import * as Y from 'yjs';
 
-import { clearDatabaseRowDocSeedCache, prefetchDatabaseBlobDiff } from '@/application/database-blob';
+import {
+  clearDatabaseRowDocSeedCache,
+  MAX_RELEASED_ROW_DOC_SEED_CACHES,
+  peekDatabaseRowDocSeed,
+  prefetchDatabaseBlobDiff,
+  releaseDatabaseRowDocSeedCache,
+  retainDatabaseRowDocSeedCache,
+} from '@/application/database-blob';
 import { db, openRowCollabDBWithProvider } from '@/application/db';
 import { getCachedRowDoc } from '@/application/services/js-services/cache';
 import { databaseBlobDiff } from '@/application/services/js-services/http/http_api';
@@ -92,4 +99,44 @@ test.each([false, true])('a required reload waits until a row write commits with
   expect(settled).toBe(true);
   await row?.provider.destroy();
   row?.doc.destroy();
+});
+
+test('keeps persisted seeds of every dashboard source and revalidates them on return', async () => {
+  jest.mocked(db.collab_updates.add).mockResolvedValue(1);
+  // A dashboard whose released sources fit in the idle cache retention budget.
+  const sources = Array.from(
+    { length: MAX_RELEASED_ROW_DOC_SEED_CACHES },
+    (_, index) => `database-dashboard-source-${index}`,
+  );
+  const hasSeeds = (source: string) => peekDatabaseRowDocSeed(`${source}_rows_${rowId}`) !== null;
+  const open = async () => {
+    for (const source of sources) {
+      retainDatabaseRowDocSeedCache(source);
+      await prefetchDatabaseBlobDiff('workspace', source, { forceFullSync: true });
+    }
+  };
+
+  try {
+    await open();
+    const walks = jest.mocked(databaseBlobDiff).mock.calls.length;
+
+    // Leaving the dashboard unmounts every widget at once.
+    sources.forEach(releaseDatabaseRowDocSeedCache);
+    expect(sources.filter((source) => !hasSeeds(source))).toEqual([]);
+
+    // Coming back keeps each complete snapshot and checks for changes since its RID.
+    jest.mocked(databaseBlobDiff).mockResolvedValue(database_blob.DatabaseBlobDiffResponse.create({
+      status: database_blob.DiffStatus.READY,
+      page: { hasMore: false },
+    }));
+    await open();
+    expect(sources.filter((source) => !hasSeeds(source))).toEqual([]);
+    expect(jest.mocked(databaseBlobDiff)).toHaveBeenCalledTimes(walks + sources.length);
+    for (const [, , request] of jest.mocked(databaseBlobDiff).mock.calls.slice(walks)) {
+      expect(request.maxKnownRid).toMatchObject({ timestamp: 500, seqNo: 1 });
+    }
+  } finally {
+    sources.forEach(releaseDatabaseRowDocSeedCache);
+    sources.forEach(clearDatabaseRowDocSeedCache);
+  }
 });

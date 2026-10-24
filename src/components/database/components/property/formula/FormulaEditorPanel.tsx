@@ -47,8 +47,9 @@ export function useFormulaEditorHost() {
       onKeyDown: (event: KeyboardEvent) => event.stopPropagation(),
       onEscapeKeyDown: (event: globalThis.KeyboardEvent) => {
         const target = event.target;
+        // The formula input is the editor's only multiline text box (`FormulaSourceInput`).
         const fromFormulaInput =
-          target instanceof Element && target.closest('[data-testid="formula-editor-input"]') !== null;
+          target instanceof Element && target.closest('[role="textbox"][aria-multiline="true"]') !== null;
 
         // Only the formula input closes its suggestion list on Escape; from
         // anywhere else, Escape closes the editor.

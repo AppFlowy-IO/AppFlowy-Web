@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useAdvancedFiltersSelector, useFiltersSelector, useReadOnly } from '@/application/database-yjs';
+import { useAdvancedFiltersSelector, useFiltersSelector, useConditionsReadOnly } from '@/application/database-yjs';
 import { useAddAdvancedFilterAndRebuild, useAddFilter } from '@/application/database-yjs/dispatch';
 import { ReactComponent as AddFilterSvg } from '@/assets/icons/plus.svg';
 import PropertiesMenu from '@/components/database/components/conditions/PropertiesMenu';
@@ -17,7 +17,7 @@ export function Filters() {
   const filters = useFiltersSelector();
   const advancedFilters = useAdvancedFiltersSelector();
   const { t } = useTranslation();
-  const readOnly = useReadOnly();
+  const readOnly = useConditionsReadOnly();
   const [openPropertiesMenu, setOpenPropertiesMenu] = useState(false);
 
   const addFilter = useAddFilter();

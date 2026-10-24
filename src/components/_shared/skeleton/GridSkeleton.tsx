@@ -18,7 +18,10 @@ function GridSkeleton({ includeTitle = true, includeTabs = true }: { includeTitl
   }, []);
 
   return (
-    <div className={`w-full min-w-0  max-w-full overflow-x-auto px-24 max-sm:px-6 ${includeTitle ? 'py-2' : ''}`}>
+    <div
+      className={`w-full min-w-0  max-w-full overflow-x-auto px-24 max-sm:px-6 ${includeTitle ? 'py-2' : ''}`}
+      data-testid='grid-skeleton'
+    >
       {includeTitle && (
         <>
           <div className='my-6 mb-2 flex h-20 w-full items-center'>

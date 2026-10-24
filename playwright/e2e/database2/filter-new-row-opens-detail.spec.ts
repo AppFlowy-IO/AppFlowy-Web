@@ -34,10 +34,9 @@ test.describe('New row opens detail when filter is active', () => {
     // Click "+ New row".
     await DatabaseGridSelectors.newRowButton(page).click();
 
-    // A fresh row opens in side peek on a wide viewport. The center shell
-    // remains mounted but hidden so switching modes preserves the editor.
+    // Ordinary views default to center peek unless Open pages in is configured.
     await expect(RowDetailSelectors.modal(page)).toBeVisible({ timeout: 8000 });
-    await expect(RowDetailSelectors.modal(page)).toHaveAttribute('data-peek-mode', 'side');
+    await expect(RowDetailSelectors.modal(page)).toHaveAttribute('data-peek-mode', 'center');
   });
 
   test('clicking new row without filter does NOT open detail modal', async ({ page, request }) => {

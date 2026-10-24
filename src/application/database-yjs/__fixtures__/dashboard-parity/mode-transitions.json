@@ -1,0 +1,191 @@
+{
+  "fixture": "mode-transitions",
+  "version": 1,
+  "format": {
+    "preference": "The local Edit preference: auto, auto_on, on or off. Never persisted, never synced. Every case starts at auto.",
+    "step": "Apply can_edit and mobile_context first, then reduce the event (if any) with those inputs, then compare expect.",
+    "event": "null changes only the inputs. Otherwise one of: reset; loaded {rows_empty, created_this_session}; remote_rows {was_empty, is_empty}; local_write; pin; set_editing {editing}.",
+    "expect": "preference after the step; editing = can_enter_edit && preference in (on, auto_on); can_enter_edit = can_edit && !mobile_context."
+  },
+  "cases": [
+    {
+      "name": "writer, rows exist at load -> View",
+      "steps": [
+        { "event": { "type": "loaded", "rows_empty": false, "created_this_session": false }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "off", "editing": false, "can_enter_edit": true } }
+      ]
+    },
+    {
+      "name": "writer, empty at load -> automatic Edit",
+      "steps": [
+        { "event": { "type": "loaded", "rows_empty": true, "created_this_session": false }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "auto_on", "editing": true, "can_enter_edit": true } }
+      ]
+    },
+    {
+      "name": "#39 empty at load, write access arrives later -> Edit",
+      "steps": [
+        { "event": { "type": "loaded", "rows_empty": true, "created_this_session": false }, "can_edit": false, "mobile_context": false,
+          "expect": { "preference": "auto_on", "editing": false, "can_enter_edit": false } },
+        { "event": null, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "auto_on", "editing": true, "can_enter_edit": true } }
+      ]
+    },
+    {
+      "name": "created this session with widgets -> automatic Edit",
+      "steps": [
+        { "event": { "type": "loaded", "rows_empty": false, "created_this_session": true }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "auto_on", "editing": true, "can_enter_edit": true } }
+      ]
+    },
+    {
+      "name": "empty, then remote widgets arrive -> View",
+      "steps": [
+        { "event": { "type": "loaded", "rows_empty": true, "created_this_session": false }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "auto_on", "editing": true, "can_enter_edit": true } },
+        { "event": { "type": "remote_rows", "was_empty": true, "is_empty": false }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "off", "editing": false, "can_enter_edit": true } }
+      ]
+    },
+    {
+      "name": "local write, then remote widgets -> Edit kept",
+      "steps": [
+        { "event": { "type": "loaded", "rows_empty": true, "created_this_session": false }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "auto_on", "editing": true, "can_enter_edit": true } },
+        { "event": { "type": "local_write" }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "on", "editing": true, "can_enter_edit": true } },
+        { "event": { "type": "remote_rows", "was_empty": true, "is_empty": false }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "on", "editing": true, "can_enter_edit": true } }
+      ]
+    },
+    {
+      "name": "pin (the add flow started), then remote widgets -> Edit kept",
+      "steps": [
+        { "event": { "type": "loaded", "rows_empty": true, "created_this_session": false }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "auto_on", "editing": true, "can_enter_edit": true } },
+        { "event": { "type": "pin" }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "on", "editing": true, "can_enter_edit": true } },
+        { "event": { "type": "remote_rows", "was_empty": true, "is_empty": false }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "on", "editing": true, "can_enter_edit": true } }
+      ]
+    },
+    {
+      "name": "Edit, then Done, from View",
+      "steps": [
+        { "event": { "type": "loaded", "rows_empty": false, "created_this_session": false }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "off", "editing": false, "can_enter_edit": true } },
+        { "event": { "type": "set_editing", "editing": true }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "on", "editing": true, "can_enter_edit": true } },
+        { "event": { "type": "set_editing", "editing": false }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "off", "editing": false, "can_enter_edit": true } }
+      ]
+    },
+    {
+      "name": "#39 access flicker while editing keeps the preference",
+      "steps": [
+        { "event": { "type": "loaded", "rows_empty": false, "created_this_session": false }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "off", "editing": false, "can_enter_edit": true } },
+        { "event": { "type": "set_editing", "editing": true }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "on", "editing": true, "can_enter_edit": true } },
+        { "event": null, "can_edit": false, "mobile_context": false,
+          "expect": { "preference": "on", "editing": false, "can_enter_edit": false } },
+        { "event": null, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "on", "editing": true, "can_enter_edit": true } }
+      ]
+    },
+    {
+      "name": "access flicker after Done stays in View",
+      "steps": [
+        { "event": { "type": "loaded", "rows_empty": false, "created_this_session": false }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "off", "editing": false, "can_enter_edit": true } },
+        { "event": { "type": "set_editing", "editing": true }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "on", "editing": true, "can_enter_edit": true } },
+        { "event": { "type": "set_editing", "editing": false }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "off", "editing": false, "can_enter_edit": true } },
+        { "event": null, "can_edit": false, "mobile_context": false,
+          "expect": { "preference": "off", "editing": false, "can_enter_edit": false } },
+        { "event": null, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "off", "editing": false, "can_enter_edit": true } }
+      ]
+    },
+    {
+      "name": "mobile context while editing hides Edit; leaving it brings Edit back",
+      "steps": [
+        { "event": { "type": "loaded", "rows_empty": false, "created_this_session": false }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "off", "editing": false, "can_enter_edit": true } },
+        { "event": { "type": "set_editing", "editing": true }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "on", "editing": true, "can_enter_edit": true } },
+        { "event": null, "can_edit": true, "mobile_context": true,
+          "expect": { "preference": "on", "editing": false, "can_enter_edit": false } },
+        { "event": null, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "on", "editing": true, "can_enter_edit": true } }
+      ]
+    },
+    {
+      "name": "mobile context at load, empty -> auto_on but not editing; set_editing true is ignored",
+      "steps": [
+        { "event": { "type": "loaded", "rows_empty": true, "created_this_session": false }, "can_edit": true, "mobile_context": true,
+          "expect": { "preference": "auto_on", "editing": false, "can_enter_edit": false } },
+        { "event": { "type": "set_editing", "editing": true }, "can_edit": true, "mobile_context": true,
+          "expect": { "preference": "auto_on", "editing": false, "can_enter_edit": false } },
+        { "event": null, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "auto_on", "editing": true, "can_enter_edit": true } }
+      ]
+    },
+    {
+      "name": "reset -> auto, then loaded resolves again",
+      "steps": [
+        { "event": { "type": "loaded", "rows_empty": false, "created_this_session": false }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "off", "editing": false, "can_enter_edit": true } },
+        { "event": { "type": "set_editing", "editing": true }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "on", "editing": true, "can_enter_edit": true } },
+        { "event": { "type": "reset" }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "auto", "editing": false, "can_enter_edit": true } },
+        { "event": { "type": "loaded", "rows_empty": true, "created_this_session": false }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "auto_on", "editing": true, "can_enter_edit": true } }
+      ]
+    },
+    {
+      "name": "remote rows while auto_on and already non-empty -> auto_on kept",
+      "steps": [
+        { "event": { "type": "loaded", "rows_empty": false, "created_this_session": true }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "auto_on", "editing": true, "can_enter_edit": true } },
+        { "event": { "type": "remote_rows", "was_empty": false, "is_empty": false }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "auto_on", "editing": true, "can_enter_edit": true } },
+        { "event": { "type": "remote_rows", "was_empty": false, "is_empty": true }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "auto_on", "editing": true, "can_enter_edit": true } }
+      ]
+    },
+    {
+      "name": "events before loaded keep auto and do not edit",
+      "steps": [
+        { "event": { "type": "remote_rows", "was_empty": true, "is_empty": false }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "auto", "editing": false, "can_enter_edit": true } },
+        { "event": { "type": "local_write" }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "auto", "editing": false, "can_enter_edit": true } },
+        { "event": { "type": "pin" }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "auto", "editing": false, "can_enter_edit": true } }
+      ]
+    },
+    {
+      "name": "Done during automatic Edit -> View, and remote widgets keep it",
+      "steps": [
+        { "event": { "type": "loaded", "rows_empty": true, "created_this_session": false }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "auto_on", "editing": true, "can_enter_edit": true } },
+        { "event": { "type": "set_editing", "editing": false }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "off", "editing": false, "can_enter_edit": true } },
+        { "event": { "type": "remote_rows", "was_empty": true, "is_empty": false }, "can_edit": true, "mobile_context": false,
+          "expect": { "preference": "off", "editing": false, "can_enter_edit": true } }
+      ]
+    },
+    {
+      "name": "read-only viewer: set_editing true is ignored",
+      "steps": [
+        { "event": { "type": "loaded", "rows_empty": false, "created_this_session": false }, "can_edit": false, "mobile_context": false,
+          "expect": { "preference": "off", "editing": false, "can_enter_edit": false } },
+        { "event": { "type": "set_editing", "editing": true }, "can_edit": false, "mobile_context": false,
+          "expect": { "preference": "off", "editing": false, "can_enter_edit": false } }
+      ]
+    }
+  ]
+}

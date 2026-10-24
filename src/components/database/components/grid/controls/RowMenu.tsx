@@ -1,16 +1,20 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as UpIcon } from '@/assets/icons/arrow_up.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
-import DeleteRowConfirm from '@/components/database/components/database-row/DeleteRowConfirm';
-import { useHoverControlsActions } from '@/components/database/components/grid/controls/HoverControls.hooks';
+import type { useHoverControlsActions } from '@/components/database/components/grid/controls/HoverControls.hooks';
 import { useHoverControlsContext } from '@/components/database/components/grid/controls/HoverControlsContext';
 import { DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 
+/**
+ * The row's menu. Its row mounts it only while it is open, so a closed menu
+ * costs nothing; the delete confirm it opens lives with the row's controls,
+ * which outlive the menu (W8).
+ */
 interface RowMenuAction {
   testId: string;
   label: string;
@@ -21,23 +25,20 @@ interface RowMenuAction {
 }
 
 function RowMenu({
-  rowId,
-  groupFieldId,
-  groupId,
+  actions: rowActions,
   onClose,
+  onDelete,
 }: {
-  rowId: string;
-  groupFieldId?: string;
-  groupId?: string;
+  actions: ReturnType<typeof useHoverControlsActions>;
   onClose: () => void;
+  /** Asks to delete the row: the row's controls show the confirm. */
+  onDelete: () => void;
 }) {
   const { t } = useTranslation();
   const { onAddRowBelow, onDuplicateRow, onAddRowAbove, addAboveLoading, addBelowLoading, duplicateLoading } =
-    useHoverControlsActions(rowId, groupFieldId, groupId);
+    rowActions;
 
   const { showPreventDialog } = useHoverControlsContext();
-
-  const [openDeleteConfirmed, setOpenDeleteConfirmed] = React.useState(false);
 
   const actions = useMemo(
     (): RowMenuAction[] => [
@@ -75,7 +76,7 @@ function RowMenu({
         label: t('grid.row.delete'),
         icon: DeleteIcon,
         onSelect: () => {
-          setOpenDeleteConfirmed(true);
+          onDelete();
           onClose();
         },
       },
@@ -90,39 +91,30 @@ function RowMenu({
       onAddRowAbove,
       onAddRowBelow,
       onClose,
+      onDelete,
     ]
   );
 
   return (
-    <>
-      <DropdownMenuContent side={'right'} onCloseAutoFocus={(e) => e.preventDefault()}>
-        <DropdownMenuGroup>
-          {actions.map((item) => (
-            <DropdownMenuItem
-              key={item.label}
-              data-testid={item.testId}
-              onSelect={async (e) => {
-                e.preventDefault();
-                if (item.loading) return;
-                // Duplicate resolves after the copy commits, so its spinner stays visible.
-                await item.onSelect();
-                onClose();
-              }}
-            >
-              {item.loading ? <Progress variant={'primary'} /> : <item.icon />}
-              {item.label}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuGroup>
-      </DropdownMenuContent>
-      <DeleteRowConfirm
-        open={openDeleteConfirmed}
-        onClose={() => {
-          setOpenDeleteConfirmed(false);
-        }}
-        rowIds={[rowId]}
-      />
-    </>
+    <DropdownMenuContent side={'right'} onCloseAutoFocus={(e) => e.preventDefault()}>
+      <DropdownMenuGroup>
+        {actions.map((item) => (
+          <DropdownMenuItem
+            key={item.label}
+            data-testid={item.testId}
+            onSelect={async (e) => {
+              e.preventDefault();
+              if (item.loading) return;
+              await item.onSelect();
+              onClose();
+            }}
+          >
+            {item.loading ? <Progress variant={'primary'} /> : <item.icon />}
+            {item.label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuGroup>
+    </DropdownMenuContent>
   );
 }
 

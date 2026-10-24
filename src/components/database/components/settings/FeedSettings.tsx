@@ -11,9 +11,19 @@ import {
 
 import type { ReactNode } from 'react';
 
-function FeedSettings({ children }: { children: ReactNode }) {
+/** The Feed settings rows (the title property is not listed); also rendered by a dashboard widget's settings host. */
+export function FeedSettingsItems() {
   const primaryFieldId = usePrimaryFieldId();
 
+  return (
+    <>
+      <Properties excludeFieldId={primaryFieldId ?? undefined} />
+      <Layout currentLayout={DatabaseViewLayout.Feed} />
+    </>
+  );
+}
+
+function FeedSettings({ children }: { children: ReactNode }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -27,8 +37,7 @@ function FeedSettings({ children }: { children: ReactNode }) {
         side='bottom'
       >
         <DropdownMenuGroup>
-          <Properties excludeFieldId={primaryFieldId ?? undefined} />
-          <Layout currentLayout={DatabaseViewLayout.Feed} />
+          <FeedSettingsItems />
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>

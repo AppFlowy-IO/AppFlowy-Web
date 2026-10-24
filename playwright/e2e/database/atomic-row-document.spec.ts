@@ -11,6 +11,7 @@ import { waitForDocumentTextOnServer } from '../../support/duplicate-test-helper
 import { closeRowDetailWithEscape, openRowDetailByRowId } from '../../support/row-detail-helpers';
 import { DatabaseGridSelectors, RowDetailSelectors } from '../../support/selectors';
 import { generateRandomEmail, TestConfig } from '../../support/test-config';
+import { setViewOpenPagesIn } from '../../support/yjs-inject-helpers';
 
 import type { collab } from '../../../src/proto/messages';
 
@@ -123,6 +124,7 @@ test('side peek opens its row while the database bulk preload is still pending',
     );
 
     await expect.poll(() => bulkRequests).toBeGreaterThan(0);
+    await setViewOpenPagesIn(page, 'side_peek');
     await openRowDetailByRowId(page, rowId);
     await expect(RowDetailSelectors.modal(page)).toHaveAttribute('data-peek-mode', 'side');
     const editor = editorForRow(page);
@@ -225,7 +227,8 @@ test('opening an untouched row waits for the server document; body content alone
   await openRowDetailByRowId(page, rowId);
   await expect(editor).toContainText(text);
   // Use real editor keyboard actions so Slate owns the selection and deletion.
-  await editor.click();
+  await editor.getByText(text, { exact: true }).click();
+  await expect(editor).toBeFocused();
   await page.keyboard.press('ControlOrMeta+A');
   await page.keyboard.press('Backspace');
   await expect(editor).not.toContainText(text);

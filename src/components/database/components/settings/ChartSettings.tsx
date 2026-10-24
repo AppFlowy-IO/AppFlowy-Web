@@ -1,26 +1,59 @@
+import React from 'react';
+import { useTranslation } from 'react-i18next';
+
+import { useReadOnly } from '@/application/database-yjs';
 import { DatabaseViewLayout } from '@/application/types';
-import ChartLayoutSettings from '@/components/database/components/settings/ChartLayoutSettings';
+import { ReactComponent as ChartIcon } from '@/assets/icons/chart.svg';
+import { ChartSettingsPanel } from '@/components/database/chart/settings/ChartSettingsPanel';
 import Layout from '@/components/database/components/settings/Layout';
 import Properties from '@/components/database/components/settings/Properties';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
+  DropdownMenuPortal,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
-import type { ReactNode } from 'react';
-
 /**
- * Desktop's chart settings popover (`SettingButton` in `ChartSettingBar`):
- * 240px wide, at most 550px tall and scrollable, with 8px of top padding and no
- * separators between Properties and Layout. The chart sections that follow
- * draw their own full-width divider and 6px bottom spacer.
+ * The Chart rows of a dashboard widget's settings host ("View settings"):
+ * Properties and Layout, then the chart settings panel itself (WP11 §1.1).
  */
-const CHART_SETTINGS_POPOVER_CLASS_NAME =
-  'appflowy-scroller w-[240px] min-w-[240px] max-h-[min(550px,var(--radix-dropdown-menu-content-available-height))] overflow-y-auto px-2 pb-0 pt-2';
+export function ChartSettingsItems() {
+  return (
+    <>
+      <Properties />
+      <Layout currentLayout={DatabaseViewLayout.Chart} />
+      <ChartSettingsPanel />
+    </>
+  );
+}
 
-function ChartSettings({ children }: { children: ReactNode }) {
+/** "Chart settings ›" of the standalone gear menu: the panel in a 300px submenu. */
+function ChartSettingsSubMenu() {
+  const { t } = useTranslation();
+  const readOnly = useReadOnly();
+
+  if (readOnly) return null;
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger data-testid='chart-settings-trigger'>
+        <ChartIcon className='h-4 w-4' />
+        {t('chart.settings.chartSettings', { defaultValue: 'Chart settings' })}
+      </DropdownMenuSubTrigger>
+      <DropdownMenuPortal>
+        <DropdownMenuSubContent className='w-[300px] p-0'>
+          <ChartSettingsPanel />
+        </DropdownMenuSubContent>
+      </DropdownMenuPortal>
+    </DropdownMenuSub>
+  );
+}
+
+function ChartSettings({ children }: { children: React.ReactNode }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -30,14 +63,13 @@ function ChartSettings({ children }: { children: ReactNode }) {
         onCloseAutoFocus={(e) => e.preventDefault()}
         side={'bottom'}
         align={'end'}
-        className={CHART_SETTINGS_POPOVER_CLASS_NAME}
-        data-testid='chart-settings-panel'
+        className={'!min-w-[120px]'}
       >
         <DropdownMenuGroup>
           <Properties />
           <Layout currentLayout={DatabaseViewLayout.Chart} />
+          <ChartSettingsSubMenu />
         </DropdownMenuGroup>
-        <ChartLayoutSettings />
       </DropdownMenuContent>
     </DropdownMenu>
   );

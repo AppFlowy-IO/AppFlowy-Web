@@ -1,0 +1,388 @@
+{
+  "fixture": "number-color",
+  "version": 1,
+  "encoding": {
+    "cases": "resolveNumberColor(value, numberColor, conditional) (WP11 1.12). `value` is the raw aggregated value (null is No data); `numberColor` is the stored number_color (absent: default); `conditional` the stored number_conditional_color in its persisted shape (absent: none). `expect` is the color name drawn, or null for no color.",
+    "operators": "gt >, gte >=, lt <, lte <=, eq and neq with |a - b| <= 1e-9 x max(1, |a|, |b|). An unknown operator never matches.",
+    "names": "default, gray, brown, orange, yellow, green, blue, purple, pink, red; an unknown name renders as default."
+  },
+  "chipOrder": [
+    "default",
+    "gray",
+    "brown",
+    "yellow",
+    "orange",
+    "green",
+    "blue",
+    "purple",
+    "pink",
+    "red"
+  ],
+  "newRule": {
+    "operator": "gt",
+    "value": 0,
+    "color": "green",
+    "idPrefix": "ncr:"
+  },
+  "cases": [
+    {
+      "name": "a static color",
+      "value": 3,
+      "numberColor": "blue",
+      "expect": "blue"
+    },
+    {
+      "name": "no color is default",
+      "value": 3,
+      "expect": "default"
+    },
+    {
+      "name": "the first matching rule wins (35)",
+      "value": 35,
+      "numberColor": "blue",
+      "conditional": {
+        "enabled": true,
+        "rules": [
+          {
+            "id": "ncr:1",
+            "operator": "gt",
+            "value": 30,
+            "color": "green"
+          },
+          {
+            "id": "ncr:2",
+            "operator": "gte",
+            "value": 10,
+            "color": "yellow"
+          },
+          {
+            "id": "ncr:3",
+            "operator": "lt",
+            "value": 10,
+            "color": "red"
+          }
+        ]
+      },
+      "expect": "green"
+    },
+    {
+      "name": "the first matching rule wins (20)",
+      "value": 20,
+      "numberColor": "blue",
+      "conditional": {
+        "enabled": true,
+        "rules": [
+          {
+            "id": "ncr:1",
+            "operator": "gt",
+            "value": 30,
+            "color": "green"
+          },
+          {
+            "id": "ncr:2",
+            "operator": "gte",
+            "value": 10,
+            "color": "yellow"
+          },
+          {
+            "id": "ncr:3",
+            "operator": "lt",
+            "value": 10,
+            "color": "red"
+          }
+        ]
+      },
+      "expect": "yellow"
+    },
+    {
+      "name": "the first matching rule wins (5)",
+      "value": 5,
+      "numberColor": "blue",
+      "conditional": {
+        "enabled": true,
+        "rules": [
+          {
+            "id": "ncr:1",
+            "operator": "gt",
+            "value": 30,
+            "color": "green"
+          },
+          {
+            "id": "ncr:2",
+            "operator": "gte",
+            "value": 10,
+            "color": "yellow"
+          },
+          {
+            "id": "ncr:3",
+            "operator": "lt",
+            "value": 10,
+            "color": "red"
+          }
+        ]
+      },
+      "expect": "red"
+    },
+    {
+      "name": "rules compare at the boundary (10 is not below 10)",
+      "value": 10,
+      "numberColor": "blue",
+      "conditional": {
+        "enabled": true,
+        "rules": [
+          {
+            "id": "ncr:1",
+            "operator": "gt",
+            "value": 30,
+            "color": "green"
+          },
+          {
+            "id": "ncr:2",
+            "operator": "gte",
+            "value": 10,
+            "color": "yellow"
+          },
+          {
+            "id": "ncr:3",
+            "operator": "lt",
+            "value": 10,
+            "color": "red"
+          }
+        ]
+      },
+      "expect": "yellow"
+    },
+    {
+      "name": "no rule matches: the else color",
+      "value": 15,
+      "numberColor": "blue",
+      "conditional": {
+        "enabled": true,
+        "rules": [
+          {
+            "id": "ncr:1",
+            "operator": "gt",
+            "value": 30,
+            "color": "green"
+          },
+          {
+            "id": "ncr:2",
+            "operator": "lt",
+            "value": 0,
+            "color": "red"
+          }
+        ],
+        "else_color": "orange"
+      },
+      "expect": "orange"
+    },
+    {
+      "name": "no rule matches and no else color: the static color",
+      "value": 15,
+      "numberColor": "purple",
+      "conditional": {
+        "enabled": true,
+        "rules": [
+          {
+            "id": "ncr:1",
+            "operator": "gt",
+            "value": 30,
+            "color": "green"
+          }
+        ]
+      },
+      "expect": "purple"
+    },
+    {
+      "name": "dynamic color off keeps its rules but draws the static color",
+      "value": 35,
+      "numberColor": "pink",
+      "conditional": {
+        "enabled": false,
+        "rules": [
+          {
+            "id": "ncr:1",
+            "operator": "gt",
+            "value": 30,
+            "color": "green"
+          },
+          {
+            "id": "ncr:2",
+            "operator": "gte",
+            "value": 10,
+            "color": "yellow"
+          },
+          {
+            "id": "ncr:3",
+            "operator": "lt",
+            "value": 10,
+            "color": "red"
+          }
+        ],
+        "else_color": "orange"
+      },
+      "expect": "pink"
+    },
+    {
+      "name": "dynamic color on without rules: the else color",
+      "value": 3,
+      "numberColor": "pink",
+      "conditional": {
+        "enabled": true,
+        "rules": [],
+        "else_color": "gray"
+      },
+      "expect": "gray"
+    },
+    {
+      "name": "equal compares with a tolerance",
+      "value": 0.30000000000000004,
+      "conditional": {
+        "enabled": true,
+        "rules": [
+          {
+            "id": "ncr:1",
+            "operator": "eq",
+            "value": 0.3,
+            "color": "green"
+          }
+        ]
+      },
+      "expect": "green"
+    },
+    {
+      "name": "not equal is false within the tolerance",
+      "value": 0.30000000000000004,
+      "numberColor": "brown",
+      "conditional": {
+        "enabled": true,
+        "rules": [
+          {
+            "id": "ncr:1",
+            "operator": "neq",
+            "value": 0.3,
+            "color": "green"
+          }
+        ]
+      },
+      "expect": "brown"
+    },
+    {
+      "name": "not equal",
+      "value": 2,
+      "conditional": {
+        "enabled": true,
+        "rules": [
+          {
+            "id": "ncr:1",
+            "operator": "neq",
+            "value": 0.3,
+            "color": "green"
+          }
+        ]
+      },
+      "expect": "green"
+    },
+    {
+      "name": "less than or equal",
+      "value": 10,
+      "conditional": {
+        "enabled": true,
+        "rules": [
+          {
+            "id": "ncr:1",
+            "operator": "lte",
+            "value": 10,
+            "color": "red"
+          }
+        ]
+      },
+      "expect": "red"
+    },
+    {
+      "name": "an unknown operator never matches and is skipped",
+      "value": 10,
+      "conditional": {
+        "enabled": true,
+        "rules": [
+          {
+            "id": "ncr:1",
+            "operator": "approx",
+            "value": 10,
+            "color": "yellow"
+          },
+          {
+            "id": "ncr:2",
+            "operator": "gt",
+            "value": 0,
+            "color": "blue"
+          }
+        ]
+      },
+      "expect": "blue"
+    },
+    {
+      "name": "an unknown rule color renders as default",
+      "value": 10,
+      "numberColor": "green",
+      "conditional": {
+        "enabled": true,
+        "rules": [
+          {
+            "id": "ncr:1",
+            "operator": "gt",
+            "value": 0,
+            "color": "neon"
+          }
+        ]
+      },
+      "expect": "default"
+    },
+    {
+      "name": "an unknown static color renders as default",
+      "value": 10,
+      "numberColor": "neon",
+      "expect": "default"
+    },
+    {
+      "name": "an unknown else color renders as default",
+      "value": 10,
+      "numberColor": "green",
+      "conditional": {
+        "enabled": true,
+        "rules": [],
+        "else_color": "neon"
+      },
+      "expect": "default"
+    },
+    {
+      "name": "No data has no color",
+      "value": null,
+      "numberColor": "blue",
+      "conditional": {
+        "enabled": true,
+        "rules": [
+          {
+            "id": "ncr:1",
+            "operator": "gt",
+            "value": 30,
+            "color": "green"
+          },
+          {
+            "id": "ncr:2",
+            "operator": "gte",
+            "value": 10,
+            "color": "yellow"
+          },
+          {
+            "id": "ncr:3",
+            "operator": "lt",
+            "value": 10,
+            "color": "red"
+          }
+        ]
+      },
+      "expect": null
+    }
+  ]
+}

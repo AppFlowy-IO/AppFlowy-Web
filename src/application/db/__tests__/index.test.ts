@@ -5,6 +5,7 @@ import {
   __dbTestUtils,
   db,
   captureDatabaseStorageFence,
+  hasSharedCollabData,
   publishWithDatabaseStorageFence,
   readDatabaseIdFromRowCache,
   getCachedRowProvider,
@@ -106,6 +107,58 @@ describe('collab IndexedDB persistence internals', () => {
     expect(between.mock.calls[0][0][0]).toBe('row-1');
     expect(between.mock.calls[0][1][0]).toBe('row-1');
     expect(result).toEqual({ snapshot, updates: [updateRecord], storageEpoch: null });
+  });
+
+  describe('hasSharedCollabData', () => {
+    const runTransactionsInline = () =>
+      jest.spyOn(db, 'transaction').mockImplementation((async (...args: unknown[]) => {
+        const callback = args[args.length - 1] as () => Promise<unknown>;
+
+        return callback();
+      }) as never);
+    const updatesOf = (objectIdsWithUpdates: string[]) =>
+      jest.spyOn(db.collab_updates, 'where').mockImplementation((() => ({
+        equals: (objectId: string) => ({
+          first: async () => (objectIdsWithUpdates.includes(objectId) ? { objectId } : undefined),
+        }),
+      })) as never);
+
+    it('finds an object stored as a snapshot', async () => {
+      runTransactionsInline();
+      jest
+        .spyOn(db.collab_snapshots, 'get')
+        .mockImplementation((async (objectId: string) => (objectId === 'row-2' ? { objectId } : undefined)) as never);
+      updatesOf([]);
+
+      await expect(hasSharedCollabData(['row-1', 'row-2'])).resolves.toBe(true);
+    });
+
+    it('finds an object stored only as updates', async () => {
+      runTransactionsInline();
+      jest.spyOn(db.collab_snapshots, 'get').mockResolvedValue(undefined);
+      const where = updatesOf(['row-3']);
+
+      await expect(hasSharedCollabData(['row-1', 'row-3'])).resolves.toBe(true);
+      expect(where).toHaveBeenCalledWith('objectId');
+    });
+
+    it('holds none of objects it has no record of, or of no object at all', async () => {
+      const transaction = runTransactionsInline();
+
+      jest.spyOn(db.collab_snapshots, 'get').mockResolvedValue(undefined);
+      updatesOf([]);
+
+      await expect(hasSharedCollabData(['row-1', 'row-2'])).resolves.toBe(false);
+      transaction.mockClear();
+      await expect(hasSharedCollabData([])).resolves.toBe(false);
+      expect(transaction).not.toHaveBeenCalled();
+    });
+
+    it('holds none when the storage cannot be read', async () => {
+      jest.spyOn(db, 'transaction').mockRejectedValue(new Error('IndexedDB unavailable') as never);
+
+      await expect(hasSharedCollabData(['row-1'])).resolves.toBe(false);
+    });
   });
 
   it.each(['snapshot', 'tail', 'snapshot and tail', 'empty'])('recovers a row parent from shared %s without a live provider', async (source) => {

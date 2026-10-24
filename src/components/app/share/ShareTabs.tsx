@@ -162,7 +162,9 @@ function ShareTabs({
                 opened={opened}
                 onOpenPublishManage={onOpenPublishManage}
                 canShare={canShare}
-                shareDetailsLoading={isLoadingPeople || isResolvingSharePermission}
+                // Publishing needs the canonical share permission, not the
+                // people/group list, which can still be refreshing separately.
+                shareDetailsLoading={isResolvingSharePermission}
               />
             ) : (
               <option.Panel

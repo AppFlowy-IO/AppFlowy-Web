@@ -8,16 +8,14 @@ import { cn } from '@/lib/utils';
 
 const GridStickyHeader = forwardRef<HTMLDivElement, {
   columns: RenderColumn[];
-  row: VirtualItem;
-  data: RenderRow[];
+  rowData: RenderRow;
   totalSize: number,
   columnItems: VirtualItem[];
   onScrollLeft: (left: number) => void,
   onResizeColumnStart?: (fieldId: string, element: HTMLElement) => void;
 } & React.HTMLAttributes<HTMLDivElement>>(({
   columns,
-  row,
-  data,
+  rowData,
   totalSize,
   columnItems,
   onScrollLeft,
@@ -44,9 +42,9 @@ const GridStickyHeader = forwardRef<HTMLDivElement, {
     >
       <GridVirtualRow
         isSticky
-        row={row}
+        rowIndex={0}
+        rowData={rowData}
         columns={columns}
-        data={data}
         totalSize={totalSize}
         columnItems={columnItems}
         onResizeColumnStart={onResizeColumnStart}

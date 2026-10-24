@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { FieldType, useCellSelector, useFieldWrap, useIsRowLoaded, useReadOnly } from '@/application/database-yjs';
+import { FieldType, useFieldWrap, useIsRowLoaded, useReadOnly } from '@/application/database-yjs';
 import { CellProps, Cell as CellType } from '@/application/database-yjs/cell.type';
 import { useFieldSelector } from '@/application/database-yjs/selector';
 import { FieldId, YjsDatabaseKey } from '@/application/types';
-import { Cell } from '@/components/database/components/cell';
+import { Cell, CellValue } from '@/components/database/components/cell';
 import { PrimaryCell } from '@/components/database/components/cell/primary';
 import { useGridInteractionActions, useIsGridCellActive } from '@/components/database/grid/useGridContext';
 import { isFieldEditingDisabled } from '@/components/database/utils/field-editing';
@@ -27,10 +27,6 @@ export function GridRowCell({ rowId, rowKey, fieldId }: GridCellProps) {
   const disableRelationRollupEdit = isFieldEditingDisabled(fieldType as FieldType);
   const isReadOnlyCell = readOnly || disableRelationRollupEdit;
   const isRowLoaded = useIsRowLoaded(rowId);
-  const cell = useCellSelector({
-    rowId,
-    fieldId,
-  });
 
   const { setActiveCell } = useGridInteractionActions();
 
@@ -102,6 +98,24 @@ export function GridRowCell({ rowId, rowKey, fieldId }: GridCellProps) {
     }
   }, [fieldType]);
 
+  // Stable while the cell's props are: a re-render of this component alone
+  // (the row and field hooks re-render it on mount) does not render the cell again.
+  const renderCell = useCallback(
+    (cell: CellType | undefined) => (
+      <Component
+        cell={cell}
+        rowId={rowId}
+        fieldId={fieldId}
+        readOnly={isReadOnlyCell}
+        editing={isActive}
+        setEditing={setEditing}
+        isHovering={hovered}
+        wrap={wrap}
+      />
+    ),
+    [Component, fieldId, hovered, isActive, isReadOnlyCell, rowId, setEditing, wrap]
+  );
+
   if (!field) return null;
 
   // While the row's collab content is still loading from IndexedDB/network,
@@ -123,16 +137,10 @@ export function GridRowCell({ rowId, rowKey, fieldId }: GridCellProps) {
       data-testid={`grid-cell-${rowId}-${fieldId}`}
       className={cn('grid-cell flex h-full w-full items-start overflow-hidden px-2 text-sm', paddingVertical)}
     >
-      <Component
-        cell={cell}
-        rowId={rowId}
-        fieldId={fieldId}
-        readOnly={isReadOnlyCell}
-        editing={isActive}
-        setEditing={setEditing}
-        isHovering={hovered}
-        wrap={wrap}
-      />
+      {/* Only Rollup and Formula cells run the rollup and formula hooks (W17). */}
+      <CellValue rowId={rowId} fieldId={fieldId} fieldType={fieldType as FieldType}>
+        {renderCell}
+      </CellValue>
     </div>
   );
 }

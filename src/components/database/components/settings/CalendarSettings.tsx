@@ -11,6 +11,17 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
+/** The Calendar settings rows; also rendered by a dashboard widget's settings host. */
+export function CalendarSettingsItems() {
+  return (
+    <>
+      <Properties />
+      <Layout currentLayout={DatabaseViewLayout.Calendar} />
+      <CalendarLayoutSettings />
+    </>
+  );
+}
+
 function CalendarSettings({ children }: { children: React.ReactNode }) {
   return (
     <DropdownMenu>
@@ -24,9 +35,7 @@ function CalendarSettings({ children }: { children: React.ReactNode }) {
         className={'!min-w-[120px]'}
       >
         <DropdownMenuGroup>
-          <Properties />
-          <Layout currentLayout={DatabaseViewLayout.Calendar} />
-          <CalendarLayoutSettings />
+          <CalendarSettingsItems />
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>

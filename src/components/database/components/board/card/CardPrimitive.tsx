@@ -1,6 +1,7 @@
-import { forwardRef, useCallback, useEffect, useMemo, useState } from 'react';
+import { createContext, forwardRef, memo, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 import {
+  Column,
   FieldVisibility,
   isAIFieldType,
   RowMeta,
@@ -40,9 +41,19 @@ export interface CardProps {
   columnId: string;
 }
 
-export const CardPrimitive = forwardRef<HTMLDivElement, CardProps>(
-  ({ groupFieldId, rowId, className, columnId }, ref) => {
-    const fields = useFieldsSelector();
+/** What a card needs of a field to decide whether it shows it. */
+export type CardFieldInfo = Pick<Column, 'fieldId' | 'fieldType' | 'visibility'>;
+
+/**
+ * The fields of the view (shown or hidden when empty, in order), read once by
+ * the board for all its cards. Without it, each card subscribes to the fields
+ * itself and renders no field until its subscription answers, so a column
+ * first measured its cards without their fields and mounted a dozen (W5).
+ */
+export const BoardCardFieldsContext = createContext<CardFieldInfo[] | null>(null);
+
+const CardBody = forwardRef<HTMLDivElement, CardProps & { fields: CardFieldInfo[] }>(
+  ({ groupFieldId, rowId, className, columnId, fields }, ref) => {
     const aiEnabled = useAIEnabled();
     const meta = useRowMetaSelector(rowId);
     const { selectedCardIds, editingCardId } = useBoardSelection();
@@ -54,10 +65,11 @@ export const CardPrimitive = forwardRef<HTMLDivElement, CardProps>(
     const cover = meta?.cover;
     const showFields = useMemo(
       () =>
-        fields.filter((field) =>
-          field.fieldId !== groupFieldId &&
-          field.visibility !== FieldVisibility.AlwaysHidden &&
-          (aiEnabled || !isAIFieldType(field.fieldType))
+        fields.filter(
+          (field) =>
+            field.fieldId !== groupFieldId &&
+            field.visibility !== FieldVisibility.AlwaysHidden &&
+            (aiEnabled || !isAIFieldType(field.fieldType))
         ),
       [aiEnabled, fields, groupFieldId]
     );
@@ -190,6 +202,29 @@ export const CardPrimitive = forwardRef<HTMLDivElement, CardProps>(
       </div>
     );
   }
+);
+
+/** A card outside a board that provides its fields reads them itself. */
+const CardWithOwnFields = forwardRef<HTMLDivElement, CardProps>((props, ref) => {
+  const fields = useFieldsSelector();
+
+  return <CardBody {...props} fields={fields} ref={ref} />;
+});
+
+/**
+ * Memoized: a card re-renders through its parent on every board drag-context
+ * or column change, and its fields only need to when its own props change.
+ */
+export const CardPrimitive = memo(
+  forwardRef<HTMLDivElement, CardProps>((props, ref) => {
+    const boardFields = useContext(BoardCardFieldsContext);
+
+    return boardFields ? (
+      <CardBody {...props} fields={boardFields} ref={ref} />
+    ) : (
+      <CardWithOwnFields {...props} ref={ref} />
+    );
+  })
 );
 
 export default CardPrimitive;

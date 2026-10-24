@@ -14,6 +14,8 @@ import {
   useSortsSelector,
   useSortSelector,
 } from '@/application/database-yjs';
+import { DatabaseViewOverlayContext } from '@/application/database-yjs/context';
+import { createViewConditionsOverlay } from '@/application/database-yjs/view-conditions-overlay';
 import {
   RowId,
   YDatabaseField,
@@ -211,5 +213,140 @@ describe('database condition selectors', () => {
       expect(sortListResult.current).toEqual([{ id: 'sort-id', fieldId: secondFieldId }]);
       expect(sortResult.current?.fieldId).toBe(secondFieldId);
     });
+  });
+
+  it('returns the requested sort id when the id changes to an identical sort', () => {
+    const fixture = createConditionFixture();
+    const sorts = new Y.Array<YDatabaseSort>() as YDatabaseSorts;
+
+    sorts.push([createSort('sort-a', firstFieldId), createSort('sort-b', firstFieldId)]);
+    fixture.view.set(YjsDatabaseKey.sorts, sorts);
+
+    const { result, rerender } = renderHook(({ sortId }) => useSortSelector(sortId), {
+      initialProps: { sortId: 'sort-a' },
+      wrapper: createWrapper(fixture),
+    });
+
+    expect(result.current?.id).toBe('sort-a');
+    rerender({ sortId: 'sort-b' });
+    expect(result.current?.id).toBe('sort-b');
+  });
+});
+
+describe('condition selectors over a viewer overlay', () => {
+  function createOverlayFixture() {
+    const fixture = createConditionFixture();
+    const sorts = new Y.Array<YDatabaseSort>() as YDatabaseSorts;
+    const filters = new Y.Array<YDatabaseFilter>() as YDatabaseFilters;
+
+    sorts.push([createSort('sort-1', firstFieldId), createSort('sort-2', secondFieldId)]);
+    filters.push([createTextFilter('filter-1', firstFieldId), createTextFilter('filter-2', secondFieldId)]);
+    fixture.view.set(YjsDatabaseKey.sorts, sorts);
+    fixture.view.set(YjsDatabaseKey.filters, filters);
+
+    const overlay = createViewConditionsOverlay(fixture.view);
+    const DatabaseWrapper = createWrapper(fixture);
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <DatabaseViewOverlayContext.Provider value={overlay.view}>
+        <DatabaseWrapper>{children}</DatabaseWrapper>
+      </DatabaseViewOverlayContext.Provider>
+    );
+
+    return {
+      overlay,
+      wrapper,
+      localSorts: overlay.view.get(YjsDatabaseKey.sorts),
+      localFilters: overlay.view.get(YjsDatabaseKey.filters),
+    };
+  }
+
+  function replaceAt<T>(array: Y.Array<T>, index: number, value: T) {
+    array.doc?.transact(() => {
+      array.delete(index, 1);
+      array.insert(index, [value]);
+    });
+  }
+
+  it('updates a sort whose map is replaced by a copy with the same id', () => {
+    const { overlay, wrapper, localSorts } = createOverlayFixture();
+    const { result } = renderHook(() => useSortSelector('sort-1'), { wrapper });
+    const replacement = createSort('sort-1', firstFieldId);
+
+    expect(result.current?.condition).toBe(SortCondition.Ascending);
+    replacement.set(YjsDatabaseKey.condition, SortCondition.Descending);
+    act(() => replaceAt(localSorts, 0, replacement));
+    expect(result.current?.condition).toBe(SortCondition.Descending);
+
+    act(() => {
+      replacement.set(YjsDatabaseKey.condition, SortCondition.Ascending);
+    });
+    expect(result.current?.condition).toBe(SortCondition.Ascending);
+    overlay.destroy();
+  });
+
+  it('follows a reset that puts back copies of the shared sorts', () => {
+    const { overlay, wrapper, localSorts } = createOverlayFixture();
+    const { result } = renderHook(() => ({ first: useSortSelector('sort-1'), second: useSortSelector('sort-2') }), {
+      wrapper,
+    });
+    const moved = createSort('sort-1', firstFieldId);
+
+    // The viewer flips sort-1 and moves it last; a reorder copies the map.
+    moved.set(YjsDatabaseKey.condition, SortCondition.Descending);
+    act(() => {
+      localSorts.doc?.transact(() => {
+        localSorts.delete(0, 1);
+        localSorts.push([moved]);
+      });
+    });
+    expect(result.current.first?.condition).toBe(SortCondition.Descending);
+
+    act(() => overlay.reset());
+    expect(localSorts.get(0)).not.toBe(moved);
+    expect(result.current.first?.condition).toBe(SortCondition.Ascending);
+    expect(result.current.second?.fieldId).toBe(secondFieldId);
+    overlay.destroy();
+  });
+
+  it('updates a filter whose map is replaced, and after a reset', () => {
+    const { overlay, wrapper, localFilters } = createOverlayFixture();
+    const { result } = renderHook(() => useFilterSelector('filter-1'), { wrapper });
+    const replacement = createTextFilter('filter-1', firstFieldId);
+
+    expect(result.current?.content).toBe('match');
+    replacement.set(YjsDatabaseKey.content, 'mine');
+    act(() => replaceAt(localFilters, 0, replacement));
+    expect(result.current?.content).toBe('mine');
+
+    const current = result.current;
+
+    // Another filter's edit keeps this value, and its chip, as they are.
+    act(() => {
+      localFilters.get(1).set(YjsDatabaseKey.content, 'other');
+    });
+    expect(result.current).toBe(current);
+
+    act(() => overlay.reset());
+    expect(result.current?.content).toBe('match');
+    overlay.destroy();
+  });
+
+  it('reads a plain filter synced from desktop', () => {
+    const fixture = createConditionFixture();
+    const filters = new Y.Array<YDatabaseFilter>() as YDatabaseFilters;
+
+    fixture.view.set(YjsDatabaseKey.filters, filters);
+    filters.push([
+      {
+        id: 'desktop-filter',
+        field_id: firstFieldId,
+        filter_type: FilterType.Data,
+        condition: TextFilterCondition.TextContains,
+        content: 'desktop',
+      } as unknown as YDatabaseFilter,
+    ]);
+    const { result } = renderHook(() => useFilterSelector('desktop-filter'), { wrapper: createWrapper(fixture) });
+
+    expect(result.current).toMatchObject({ fieldId: firstFieldId, content: 'desktop' });
   });
 });

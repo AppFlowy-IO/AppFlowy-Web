@@ -9,7 +9,31 @@ function TooltipProvider ({ delayDuration = 0, ...props }: React.ComponentProps<
     delayDuration={delayDuration} {...props} />;
 }
 
+/** True under a `TooltipGroupProvider`: its tooltips share that provider. */
+const TooltipGroupContext = React.createContext(false);
+
+/**
+ * One tooltip provider for a whole view (a grid or a board) instead of one per
+ * tooltip: a view mounts a tooltip or two per row and per card (W8). The
+ * delays stay the same: tooltips open after 0 ms, and a tooltip with its own
+ * `delayDuration` keeps its own provider, so another tooltip of the view never
+ * shortens its delay.
+ */
+function TooltipGroupProvider ({ children }: { children: React.ReactNode }) {
+  return (
+    <TooltipProvider>
+      <TooltipGroupContext.Provider value={true}>{children}</TooltipGroupContext.Provider>
+    </TooltipProvider>
+  );
+}
+
 function Tooltip ({ ...props }: React.ComponentProps<typeof TooltipPrimitive.Root>) {
+  const grouped = React.useContext(TooltipGroupContext);
+
+  if (grouped && props.delayDuration === undefined) {
+    return <TooltipPrimitive.Root data-slot="tooltip" {...props} />;
+  }
+
   return (
     <TooltipProvider>
       <TooltipPrimitive.Root data-slot="tooltip" {...props} />
@@ -66,4 +90,22 @@ function TooltipShortcut ({ className, ...props }: React.ComponentProps<'span'>)
     className={cn('text-text-secondary', className)} {...props} />;
 }
 
-export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider, TooltipShortcut };
+/**
+ * `onFocus` of a `TooltipTrigger` whose tooltip is hover-only: Radix skips its
+ * open-on-focus when the focus event is prevented, so the focus a closing
+ * popover hands back to the trigger opens no tooltip over the popover's
+ * neighbours. Pair it with `disableHoverableContent` on the `Tooltip`.
+ */
+function preventTooltipOnFocus (event: React.FocusEvent) {
+  event.preventDefault();
+}
+
+export {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  TooltipProvider,
+  TooltipGroupProvider,
+  TooltipShortcut,
+  preventTooltipOnFocus,
+};

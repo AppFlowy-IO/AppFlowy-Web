@@ -3,7 +3,10 @@ import type { ReactNode } from 'react';
 
 import { AccessLevel, type CollabObjectPermission, Types, type View, ViewLayout } from '@/application/types';
 import { AppNavigationContext } from '@/components/app/contexts/AppNavigationContext';
-import { useViewActionPermissions } from '@/components/app/view-actions/useViewActionPermissions';
+import {
+  clearObjectPermissionCache,
+  useViewActionPermissions,
+} from '@/components/app/view-actions/useViewActionPermissions';
 
 const mockGetObjectPermission = jest.fn();
 const mockGetView = jest.fn();
@@ -53,6 +56,8 @@ describe('useViewActionPermissions', () => {
   beforeEach(() => {
     mockGetObjectPermission.mockReset();
     mockGetView.mockReset();
+    // Answers are shared between hooks for a few seconds: each test asks afresh.
+    clearObjectPermissionCache();
   });
 
   it('resolves action gates from the object-permission endpoint', async () => {

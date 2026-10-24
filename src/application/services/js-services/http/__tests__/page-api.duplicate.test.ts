@@ -3,9 +3,15 @@ import { Element } from 'slate';
 import { BlockType, ViewLayout } from '@/application/types';
 import { EditorContextState } from '@/components/editor/EditorContext';
 import { prepareSubpageFragment } from '@/components/editor/subpage/subpage-operations';
+import { getConfigValue } from '@/utils/runtime-config';
+import { updateServerInfo } from '@/utils/server-info';
 
+import { getCollab } from '../collab-api';
 import { getAxios } from '../core';
 import { duplicatePage } from '../page-api';
+
+jest.mock('../collab-api', () => ({ getCollab: jest.fn() }));
+jest.mock('../../workspace-database-catalog', () => ({ getDatabaseIdFromWorkspaceCatalog: jest.fn() }));
 
 jest.mock('../core', () => ({
   getAxios: jest.fn(),
@@ -18,6 +24,33 @@ jest.mock('../core', () => ({
 const source = { view_id: 'source', parent_view_id: 'parent', name: 'Child', layout: ViewLayout.Document };
 const copy = { ...source, view_id: 'copy', name: 'Child (Copy)' };
 const response = (data: unknown) => ({ data: { data } });
+
+const serverUrl = getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud');
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  updateServerInfo(serverUrl, { status: 'available', info: { enable_page_history: true } });
+});
+
+afterEach(() => {
+  updateServerInfo(serverUrl, { status: 'available', info: { enable_page_history: true } });
+});
+
+it.each([undefined, 0, 2, 6])('queues database duplication without reading collabs for legacy hint %s', async (hint) => {
+  const databaseView = {
+    ...source, layout: ViewLayout.Grid, extra: { database_id: 'database' }, children: [],
+  };
+  const get = jest.fn().mockResolvedValue(response(databaseView));
+  const post = jest.fn().mockResolvedValue({ headers: {} });
+
+  updateServerInfo(serverUrl, { status: 'available', info: { enable_page_history: true, max_dashboard_widgets: hint } });
+  jest.mocked(getCollab).mockRejectedValue(new Error('Client collab is unavailable'));
+  jest.mocked(getAxios).mockReturnValue({ get, post } as never);
+
+  await expect(duplicatePage('workspace', 'source')).resolves.toBeUndefined();
+  expect(getCollab).not.toHaveBeenCalled();
+  expect(post).toHaveBeenCalledTimes(1);
+});
 
 it('uses the server task result to bind the new block to the exact duplicate', async () => {
   const get = jest.fn(async (url: string) => {

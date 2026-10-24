@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useFiltersSelector, useReadOnly } from '@/application/database-yjs';
+import { useFiltersSelector, useConditionsReadOnly } from '@/application/database-yjs';
 import { useAddFilter } from '@/application/database-yjs/dispatch';
 import { ReactComponent as FilterIcon } from '@/assets/icons/filter.svg';
 import PropertiesMenu from '@/components/database/components/conditions/PropertiesMenu';
@@ -11,26 +11,26 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 
 import { useConditionsContext } from './context';
 
-function FiltersButton({
-  compact = false,
-  toggleExpanded,
-  expanded,
-}: {
-  compact?: boolean;
-  toggleExpanded?: () => void;
-  expanded?: boolean;
-}) {
+/**
+ * The toolbar's Filter button. It reveals the conditions bar (the state of
+ * the conditions context), or opens the property picker when there is no
+ * filter yet. A dashboard widget has its own tool (`WidgetFilterTool`).
+ */
+function FiltersButton({ compact = false }: { compact?: boolean }) {
   const filters = useFiltersSelector();
-  const readOnly = useReadOnly();
+  const readOnly = useConditionsReadOnly();
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const addFilter = useAddFilter();
   const conditionsContext = useConditionsContext();
+  const expanded = conditionsContext?.expanded;
+  const toggleExpanded = conditionsContext?.toggleExpanded;
   const setOpenFilterId = conditionsContext?.setOpenFilterId;
   const setExpanded = conditionsContext?.setExpanded;
   const prevFiltersLengthRef = useRef(filters.length);
+  const active = filters.length > 0;
 
-  // Auto-expand conditions panel when first filter is added
+  // Auto-expand conditions panel when first filter is added.
   useEffect(() => {
     const prevLength = prevFiltersLengthRef.current;
     const currentLength = filters.length;
@@ -63,7 +63,6 @@ function FiltersButton({
               aria-label={t('grid.settings.filter')}
               variant={'ghost'}
               size={compact ? 'icon-sm' : 'icon'}
-              className={'relative'}
               data-testid={'database-actions-filter'}
               onClick={(e) => {
                 e.stopPropagation();
@@ -81,7 +80,7 @@ function FiltersButton({
                 }
               }}
               style={{
-                color: filters.length > 0 ? 'var(--icon-info-thick)' : undefined,
+                color: active ? 'var(--icon-info-thick)' : undefined,
               }}
               type='button'
             >

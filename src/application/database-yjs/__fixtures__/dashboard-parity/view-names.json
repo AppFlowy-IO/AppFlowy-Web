@@ -1,0 +1,27 @@
+{
+  "fixture": "view-names",
+  "version": 1,
+  "encoding": {
+    "nextViewName": "nextViewName(base, existing): the trimmed base when no existing name equals it, else the first free \"<base> (n)\" for n = 1, 2, ... Existing names are trimmed and compared case-sensitively. existing is every view name of the target database as the folder names them.",
+    "duplicateBaseName": "duplicateBaseName(name): the trimmed name with one trailing \" (n)\" removed (n is digits only). A duplicate is named nextViewName(duplicateBaseName(source), existing)."
+  },
+  "nextViewName": [
+    { "name": "a free base is used as is", "base": "Board", "existing": [], "expected": "Board" },
+    { "name": "a taken base gets (1)", "base": "Board", "existing": ["Board"], "expected": "Board (1)" },
+    { "name": "numbers count up", "base": "Board", "existing": ["Board", "Board (1)"], "expected": "Board (2)" },
+    { "name": "the first free number fills a gap", "base": "Board", "existing": ["Board", "Board (2)"], "expected": "Board (1)" },
+    { "name": "names compare case-sensitively", "base": "Board", "existing": ["board"], "expected": "Board" },
+    { "name": "the base is trimmed", "base": " Board ", "existing": ["Board"], "expected": "Board (1)" },
+    { "name": "existing names are trimmed", "base": "Board", "existing": [" Board "], "expected": "Board (1)" },
+    { "name": "other names do not count", "base": "Grid", "existing": ["Board", "Board (1)", "Grid view"], "expected": "Grid" },
+    { "name": "a numbered base gets its own number", "base": "Board (1)", "existing": ["Board (1)"], "expected": "Board (1) (1)" }
+  ],
+  "duplicateBaseName": [
+    { "name": "one trailing number is removed", "input": "Board (3)", "expected": "Board" },
+    { "name": "only the last number is removed", "input": "Board (1) (2)", "expected": "Board (1)" },
+    { "name": "parentheses that are not a number stay", "input": "Q3 (plan)", "expected": "Q3 (plan)" },
+    { "name": "a number without the space stays", "input": "Board(2)", "expected": "Board(2)" },
+    { "name": "the name is trimmed first", "input": " Board (2) ", "expected": "Board" },
+    { "name": "an empty name stays empty", "input": "", "expected": "" }
+  ]
+}
