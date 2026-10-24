@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ReactNode, useState } from 'react';
 
-import { DASHBOARD_MAX_WIDGETS, DashboardRow, DashboardWidget } from '@/application/database-yjs/dashboard.type';
+import { DashboardRow, DashboardWidget } from '@/application/database-yjs/dashboard.type';
 
 import { DashboardContext, DashboardLayoutContext, DashboardLayoutContextValue } from '../DashboardContext';
 import { DashboardUiContext, DashboardUiContextValue } from '../DashboardUiContext';
@@ -41,7 +41,7 @@ const MOVABLE_ROWS = [row('r0', ['x']), row('r1', ['a', 'w1', 'b']), row('r2', [
 /** `w1` is the only widget: no move is possible. */
 const LONE_ROWS = [row('r1', ['w1'])];
 /** A full dashboard (`w1` included): duplicating is refused. */
-const FULL_ROWS = Array.from({ length: DASHBOARD_MAX_WIDGETS / 4 }, (_, rowIndex) =>
+const FULL_ROWS = Array.from({ length: 12 / 4 }, (_, rowIndex) =>
   row(
     `r${rowIndex}`,
     Array.from({ length: 4 }, (_, index) => (rowIndex === 0 && index === 0 ? 'w1' : `f${rowIndex}-${index}`))
@@ -290,30 +290,18 @@ describe('WidgetMenu', () => {
     expect(actions.move).not.toHaveBeenCalled();
   });
 
-  it('keeps Duplicate on a full dashboard hoverable with the full tooltip, and announces instead of duplicating', async () => {
+  it('duplicates a widget on a dashboard with twelve widgets', async () => {
     const actions = createActions();
     const ui = createDashboardUiValue();
 
     render(withContext(createContext({ actions }), <ControlledMenu />, FULL_ROWS, ui));
     const item = screen.getByTestId('dashboard-widget-menu-duplicate');
 
-    expect(item.getAttribute('aria-disabled')).toBe('true');
-    expect(item.hasAttribute('data-disabled')).toBe(false);
-    expect(item.getAttribute('data-disabled-reason')).toBe('dashboard-full');
-    expect(item.className).toContain('!text-text-tertiary');
-
-    act(() => item.focus());
-    const tooltip = await screen.findByTestId('dashboard-full-tooltip');
-
-    expect(tooltip.textContent).toContain('Dashboard is full');
-    expect(tooltip.textContent).toContain('Delete a view to add a new one');
-    expect(tooltip.getAttribute('data-parity-id')).toBe('dash-tooltip');
-
+    expect(item.getAttribute('aria-disabled')).not.toBe('true');
     fireEvent.click(item);
-    expect(actions.duplicate).not.toHaveBeenCalled();
-    expect(ui.announce).toHaveBeenCalledWith('Dashboard is full. Delete a view to add a new one.');
-    // The menu stays open.
-    expect(screen.getByTestId('dashboard-widget-menu')).toBeTruthy();
+    expect(actions.duplicate).toHaveBeenCalledTimes(1);
+    expect(ui.announce).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByTestId('dashboard-widget-menu')).toBeNull());
   });
 
   // WP05 §1.4: one duplicate at a time per widget, while its view copy is being created.

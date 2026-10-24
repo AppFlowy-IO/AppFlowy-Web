@@ -196,7 +196,7 @@ describe('DashboardGrid', () => {
     expect(moves('r2')).toEqual(['dashboard-row-move-up', 'dashboard-row-move-down']);
     expect(moves('r3')).toEqual(['dashboard-row-move-up']);
     // The full row has no "Add to row"; the others do.
-    expect(within(row('r1')).queryByTestId('dashboard-add-widget-row-button')).toBeNull();
+    expect(within(row('r1')).queryByTestId('dashboard-add-widget-row-button')).not.toBeNull();
     expect(within(row('r2')).getByTestId('dashboard-add-widget-row-button')).toBeTruthy();
 
     const addToNewRow = screen.getByTestId('dashboard-add-widget-button');

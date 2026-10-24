@@ -114,12 +114,12 @@ describe('addDashboardWidget', () => {
     expect(widths(result)).toEqual([[12], [8, 4]]);
   });
 
-  it('returns the same rows when the limits refuse the add', () => {
+  it('adds beyond former limits and ignores a missing target row', () => {
     const full = fullDashboard();
     const fullRow = [row('r1', [widget('a', 3), widget('b', 3), widget('c', 3), widget('d', 3)])];
 
-    expect(addDashboardWidget(full, widget('x'))).toBe(full);
-    expect(addDashboardWidget(fullRow, widget('x'), { type: 'existing_row', rowId: 'r1' })).toBe(fullRow);
+    expect(addDashboardWidget(full, widget('x')).flatMap((r) => r.widgets)).toHaveLength(13);
+    expect(widths(addDashboardWidget(fullRow, widget('x'), { type: 'existing_row', rowId: 'r1' }))).toEqual([[3, 3, 2, 2, 2]]);
     expect(addDashboardWidget(fullRow, widget('x'), { type: 'existing_row', rowId: 'missing' })).toBe(fullRow);
   });
 });
@@ -188,7 +188,7 @@ describe('moveDashboardWidget', () => {
   it('returns the same rows for refused moves', () => {
     const rows = [row('r1', [widget('a', 3), widget('b', 3), widget('c', 3), widget('d', 3)]), row('r2', [widget('e')])];
 
-    expect(moveDashboardWidget(rows, 'e', { type: 'existing_row', rowId: 'r1' })).toBe(rows);
+    expect(ids(moveDashboardWidget(rows, 'e', { type: 'existing_row', rowId: 'r1' }))).toEqual([['a', 'b', 'c', 'd', 'e']]);
     expect(moveDashboardWidget(rows, 'e', { type: 'existing_row', rowId: 'missing' })).toBe(rows);
     expect(moveDashboardWidget(rows, 'missing', { type: 'existing_row', rowId: 'r2' })).toBe(rows);
   });
@@ -207,21 +207,21 @@ describe('duplicateDashboardWidget', () => {
     expect(widths(result)).toEqual([[4, 4, 4]]);
   });
 
-  it('starts a new full-width row right below a full row, which keeps its widths', () => {
+  it('duplicates within a row of four and balances all five widths', () => {
     const rows = [row('r1', [widget('a', 3), widget('b', 3), widget('c', 3), widget('d', 3)]), row('r2', [widget('e')])];
     const result = duplicateDashboardWidget(rows, 'c');
 
-    expect(result.map((item) => item.widgets.length)).toEqual([4, 1, 1]);
-    expect(widths(result)[0]).toEqual([3, 3, 3, 3]);
-    expect(result[1].widgets[0]).toMatchObject({ viewId: 'view-c', width: 12 });
-    expect(result[2].id).toBe('r2');
+    expect(result.map((item) => item.widgets.length)).toEqual([5, 1]);
+    expect(widths(result)[0]).toEqual([3, 3, 2, 2, 2]);
+    expect(result[0].widgets[3]).toMatchObject({ viewId: 'view-c', width: 2 });
+    expect(result[1].id).toBe('r2');
   });
 
-  it('refuses on a full dashboard or for an unknown widget', () => {
+  it('duplicates past twelve and ignores an unknown widget', () => {
     const full = fullDashboard();
     const rows = [row('r1', [widget('a')])];
 
-    expect(duplicateDashboardWidget(full, 'w0-0')).toBe(full);
+    expect(duplicateDashboardWidget(full, 'w0-0').flatMap((r) => r.widgets)).toHaveLength(13);
     expect(duplicateDashboardWidget(rows, 'missing')).toBe(rows);
   });
 });

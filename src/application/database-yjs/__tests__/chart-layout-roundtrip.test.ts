@@ -31,7 +31,7 @@ interface ChartCase {
 const fixture = loadParityFixture<{ chartCases: ChartCase[]; encoding: { ignoreOnCompare: string[] } }>(
   'layouts/unknown-keys.json'
 );
-const IGNORED = new Set([...fixture.encoding.ignoreOnCompare, 'aggregation_type_pb']);
+const IGNORED = new Set(fixture.encoding.ignoreOnCompare);
 const FIELD_BY_KEY = new Map(
   (Object.entries(ChartLayoutKeys) as [ChartLayoutField, string][]).map(([field, key]) => [key, field])
 );

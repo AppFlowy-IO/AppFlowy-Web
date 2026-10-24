@@ -221,8 +221,8 @@ function decodeMoveTargets(targets: MenuVector['move_targets']): WidgetMoveTarge
 }
 
 describe('wrap-and-split.json split (R-SPLIT)', () => {
-  it('covers S1 to S30', () => {
-    expect(fixture.split.map((vector) => vector.id)).toEqual(Array.from({ length: 30 }, (_, index) => `S${index + 1}`));
+  it('covers S1 to S32', () => {
+    expect(fixture.split.map((vector) => vector.id)).toEqual(Array.from({ length: 32 }, (_, index) => `S${index + 1}`));
   });
 
   it.each(fixture.split.map((vector) => [`${vector.id} ${vector.name}`, vector] as const))('%s', (_name, vector) => {

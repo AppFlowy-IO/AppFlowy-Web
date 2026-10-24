@@ -206,10 +206,10 @@ describe('row move control', () => {
 });
 
 describe('row add control', () => {
-  it('is absent for a row of four widgets', () => {
+  it('is available for a row of four widgets', () => {
     render(<Rows initialRows={makeRows(4, 1)} />);
 
-    expect(within(rowElement('r1')).queryByTestId('dashboard-add-widget-row-button')).toBeNull();
+    expect(within(rowElement('r1')).queryByTestId('dashboard-add-widget-row-button')).not.toBeNull();
     expect(within(rowElement('r2')).getByTestId('dashboard-add-widget-row-button')).toBeTruthy();
   });
 
@@ -223,29 +223,15 @@ describe('row add control', () => {
     expect(mockStartAddWidget.mock.calls).toEqual([[{ type: 'existing_row', rowId: 'r1', index: 2 }]]);
   });
 
-  it('is disabled with the two-line full tooltip on a full dashboard, and announces instead of adding', async () => {
+  it('adds to a row on a dashboard with twelve widgets', async () => {
     render(<Rows initialRows={makeRows(4, 4, 3, 1)} />);
-    const add = within(rowElement('r3')).getByTestId('dashboard-add-widget-row-button');
+    const add = within(rowElement('r1')).getByTestId('dashboard-add-widget-row-button');
 
-    expect(within(rowElement('r1')).queryByTestId('dashboard-add-widget-row-button')).toBeNull();
-    expect(add.getAttribute('aria-disabled')).toBe('true');
-    expect(add.className).toContain('opacity-40');
-    expect(add.className).toContain('cursor-default');
-
-    act(() => add.focus());
-    const tooltip = await screen.findByTestId('dashboard-full-tooltip');
-    const [title, hint] = Array.from(tooltip.children);
-
-    expect(title.textContent).toBe('Dashboard is full');
-    expect(title.className).toContain('font-semibold');
-    expect(hint.textContent).toBe('Delete a view to add a new one');
-    expect(hint.className).toContain('opacity-70');
-    expect(tooltip.getAttribute('data-parity-id')).toBe('dash-tooltip');
-
+    expect(add.getAttribute('aria-disabled')).not.toBe('true');
     fireEvent.click(add);
-    expect(mockStartAddWidget).not.toHaveBeenCalled();
-    expect(mockAnnounce.mock.calls).toEqual([['Dashboard is full. Delete a view to add a new one.']]);
-    expect(screen.getByTestId('add-to-new-row-state').textContent).toBe('disabled');
+    expect(mockStartAddWidget.mock.calls).toEqual([[{ type: 'existing_row', rowId: 'r1', index: 4 }]]);
+    expect(mockAnnounce).not.toHaveBeenCalled();
+    expect(screen.getByTestId('add-to-new-row-state').textContent).toBe('enabled');
   });
 
   it('names the action in a dashboard tooltip', async () => {

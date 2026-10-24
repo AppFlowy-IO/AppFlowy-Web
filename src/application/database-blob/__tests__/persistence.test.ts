@@ -8,7 +8,7 @@ import {
   releaseDatabaseRowDocSeedCache,
   retainDatabaseRowDocSeedCache,
 } from '@/application/database-blob';
-import { DASHBOARD_MAX_WIDGETS } from '@/application/database-yjs/dashboard.type';
+import { 12 } from '@/application/database-yjs/dashboard.type';
 import { db, openRowCollabDBWithProvider } from '@/application/db';
 import { getCachedRowDoc } from '@/application/services/js-services/cache';
 import { databaseBlobDiff } from '@/application/services/js-services/http/http_api';
@@ -104,7 +104,7 @@ test.each([false, true])('a required reload waits until a row write commits with
 test('keeps persisted seeds of every dashboard source and revalidates them on return', async () => {
   jest.mocked(db.collab_updates.add).mockResolvedValue(1);
   // A full dashboard: one source database per widget, plus the database that hosts it.
-  const sources = Array.from({ length: DASHBOARD_MAX_WIDGETS + 1 }, (_, index) => `database-dashboard-source-${index}`);
+  const sources = Array.from({ length: 12 + 1 }, (_, index) => `database-dashboard-source-${index}`);
   const hasSeeds = (source: string) => peekDatabaseRowDocSeed(`${source}_rows_${rowId}`) !== null;
   const open = async () => {
     for (const source of sources) {

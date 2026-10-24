@@ -1,7 +1,5 @@
 import { RefObject, useLayoutEffect, useRef, useState } from 'react';
 
-import { DASHBOARD_MAX_WIDGETS_PER_ROW } from '@/application/database-yjs/dashboard.type';
-
 import { DASHBOARD_WIDGET_BOX_INSET } from '../constants';
 import { dashboardMinWidgetColumns, dashboardWrapColumns } from '../grid-layout';
 
@@ -32,11 +30,11 @@ export interface DashboardGridBreakpoints {
   minColumns: readonly number[];
 }
 
-function breakpointsOf(trackWidth: number): DashboardGridBreakpoints {
+function breakpointsOf(trackWidth: number, maxCount: number): DashboardGridBreakpoints {
   const wrapColumns = [0];
   const minColumns = [0];
 
-  for (let count = 1; count <= DASHBOARD_MAX_WIDGETS_PER_ROW; count += 1) {
+  for (let count = 1; count <= maxCount; count += 1) {
     wrapColumns.push(dashboardWrapColumns(trackWidth, count));
     minColumns.push(dashboardMinWidgetColumns(trackWidth, count));
   }
@@ -47,6 +45,7 @@ function breakpointsOf(trackWidth: number): DashboardGridBreakpoints {
 function sameBreakpoints(a: DashboardGridBreakpoints | null, b: DashboardGridBreakpoints | null) {
   if (a === null || b === null) return a === b;
   return (
+    a.wrapColumns.length === b.wrapColumns.length &&
     a.wrapColumns.every((value, count) => value === b.wrapColumns[count]) &&
     a.minColumns.every((value, count) => value === b.minColumns[count])
   );
@@ -63,7 +62,7 @@ function sameBreakpoints(a: DashboardGridBreakpoints | null, b: DashboardGridBre
  * helpers read it), but only a change of a breakpoint is state: resizing the
  * window re-renders the grid a few times, not once per pixel.
  */
-export function useDashboardGridBreakpoints(ref: RefObject<HTMLElement>) {
+export function useDashboardGridBreakpoints(ref: RefObject<HTMLElement>, maxCount: number) {
   const [breakpoints, setBreakpoints] = useState<DashboardGridBreakpoints | null>(null);
   // What the state holds, to skip the state write (and React's render to
   // bail out of it) while a resize crosses no breakpoint.
@@ -75,7 +74,7 @@ export function useDashboardGridBreakpoints(ref: RefObject<HTMLElement>) {
     if (!element) return;
     const update = (contentWidth: number | null) => {
       const trackWidth = contentWidth === null ? null : contentWidth + 2 * DASHBOARD_WIDGET_BOX_INSET;
-      const next = trackWidth === null ? null : breakpointsOf(trackWidth);
+      const next = trackWidth === null ? null : breakpointsOf(trackWidth, maxCount);
 
       element.dataset.trackWidth = trackWidth === null ? '' : String(trackWidth);
       if (sameBreakpoints(latestRef.current, next)) return;
@@ -101,7 +100,7 @@ export function useDashboardGridBreakpoints(ref: RefObject<HTMLElement>) {
 
     observer.observe(element);
     return () => observer.disconnect();
-  }, [ref]);
+  }, [ref, maxCount]);
 
   return breakpoints;
 }

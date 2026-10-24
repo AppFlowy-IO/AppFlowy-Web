@@ -171,7 +171,7 @@ Feature: Editorial content calendar dashboard
     And dashboard row 2 has widths "3, 3, 3, 3"
     And the "Posts" database has 6 views created by the dashboard
     And the "Posts" tab bar does not show the view of widget 4
-    And adding another widget is refused with the Dashboard is full tooltip
+    And the add to new row button is enabled
     When I finish editing the dashboard
     And I reload the dashboard
     Then the dashboard shows 12 widgets

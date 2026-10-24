@@ -23,8 +23,6 @@ import {
   DASHBOARD_GRID_COLUMNS,
   DASHBOARD_LAYOUT_KEY,
   DASHBOARD_MAX_ROW_HEIGHT,
-  DASHBOARD_MAX_WIDGETS,
-  DASHBOARD_MAX_WIDGETS_PER_ROW,
   DASHBOARD_MIN_ROW_HEIGHT,
   DashboardAddControlState,
   DashboardDropIndicator,
@@ -103,7 +101,7 @@ export function generateDashboardId(prefix: 'w' | 'r' | 'gf') {
 }
 
 /**
- * Distribute `DASHBOARD_GRID_COLUMNS` across the widgets of a row, keeping the
+ * Distribute max(12, widget count) integer width units across a row, keeping the
  * stored proportions and giving any remainder to the last widget. A row with
  * no widths (or invalid ones) becomes an equal split.
  */
@@ -111,12 +109,13 @@ export function balanceRowWidths(widgets: DashboardWidget[]): DashboardWidget[] 
   const count = widgets.length;
 
   if (count === 0) return widgets;
+  const columns = Math.max(DASHBOARD_GRID_COLUMNS, count);
   const raw = widgets.map((widget) => (Number.isFinite(widget.width) && widget.width > 0 ? widget.width : 0));
   const total = raw.reduce((sum, width) => sum + width, 0);
   const shares =
     total === 0
-      ? widgets.map(() => DASHBOARD_GRID_COLUMNS / count)
-      : raw.map((width) => (width / total) * DASHBOARD_GRID_COLUMNS);
+      ? widgets.map(() => columns / count)
+      : raw.map((width) => (width / total) * columns);
   const widths = shares.map((share) => Math.max(1, Math.floor(share)));
   let used = widths.reduce((sum, width) => sum + width, 0);
 
@@ -127,14 +126,14 @@ export function balanceRowWidths(widgets: DashboardWidget[]): DashboardWidget[] 
     .map((entry) => entry.index);
   let cursor = 0;
 
-  while (used < DASHBOARD_GRID_COLUMNS) {
+  while (used < columns) {
     widths[order[cursor % count]] += 1;
     used += 1;
     cursor += 1;
   }
 
   cursor = count - 1;
-  while (used > DASHBOARD_GRID_COLUMNS) {
+  while (used > columns) {
     const index = order[cursor % count];
 
     if (widths[index] > 1) {
@@ -149,46 +148,13 @@ export function balanceRowWidths(widgets: DashboardWidget[]): DashboardWidget[] 
   return widgets.map((widget, index) => (widget.width === widths[index] ? widget : { ...widget, width: widths[index] }));
 }
 
-/**
- * Enforce the dashboard invariants on a row list: no empty rows, at most four
- * widgets per row, widths summing to twelve, valid heights, and at most twelve
- * widgets overall (extra widgets are left out from the end). A stored layout
- * over the limit keeps its extra widgets in storage: see `overflowStoredRows`.
- */
+/** Keep every nonempty logical row; normalize its geometry without dropping widgets. */
 export function normalizeDashboardRows(rows: DashboardRow[]): DashboardRow[] {
-  const result: DashboardRow[] = [];
-  let remaining = DASHBOARD_MAX_WIDGETS;
-
-  rows.forEach((row) => {
-    const widgets: DashboardWidget[] = [];
-
-    row.widgets.forEach((widget) => {
-      if (remaining <= 0) return;
-      widgets.push(widget);
-      remaining -= 1;
-    });
-
-    // Overflowing rows spill into new rows instead of losing widgets. Spill
-    // ids derive from the row id so re-reading the same value yields the same
-    // rows (snapshot stores compare ids).
-    for (let start = 0; start < widgets.length; start += DASHBOARD_MAX_WIDGETS_PER_ROW) {
-      const chunk = widgets.slice(start, start + DASHBOARD_MAX_WIDGETS_PER_ROW);
-      const chunkIndex = start / DASHBOARD_MAX_WIDGETS_PER_ROW;
-
-      result.push({
-        id: chunkIndex === 0 ? row.id : `${row.id}:${chunkIndex}`,
-        height: clampInteger(
-          row.height,
-          DASHBOARD_MIN_ROW_HEIGHT,
-          DASHBOARD_MAX_ROW_HEIGHT,
-          DASHBOARD_DEFAULT_ROW_HEIGHT
-        ),
-        widgets: balanceRowWidths(chunk),
-      });
-    }
-  });
-
-  return result;
+  return rows.filter((row) => row.widgets.length > 0).map((row) => ({
+    id: row.id,
+    height: clampInteger(row.height, DASHBOARD_MIN_ROW_HEIGHT, DASHBOARD_MAX_ROW_HEIGHT, DASHBOARD_DEFAULT_ROW_HEIGHT),
+    widgets: balanceRowWidths(row.widgets),
+  }));
 }
 
 /** The effective id of the stored row at `rowIndex` (positional when it stores none). */
@@ -207,7 +173,7 @@ function isStoredWidget(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Every valid stored row and widget, before the limits apply. Entries without
+ * Every valid stored row and widget. Entries without
  * an id get a positional fallback id, never a random one: a Y.Array value is
  * re-read (and re-parsed) on every snapshot read, and random ids would make
  * every read look like a layout change.
@@ -259,55 +225,7 @@ function parseRows(value: unknown): DashboardRow[] {
   return stable;
 }
 
-/**
- * The stored rows that hold the widgets beyond `DASHBOARD_MAX_WIDGETS`, for a
- * layout another client wrote over the limit. `parseRows` shows the first
- * twelve widgets; a rewrite of `rows` appends these after the shown rows, so
- * the extra widgets stay in storage and show up again once there is room.
- *
- * Each entry is the stored object (unknown keys included) with only its hidden
- * widgets. Ids are written out, because a positional fallback id would change
- * with the row's new position. The hidden rest of a row that is partly shown
- * gets its own id, unique among `shownRowIds`.
- */
-function overflowStoredRows(stored: unknown, shownRowIds: Iterable<string>): Record<string, unknown>[] {
-  const raw = toPlainValue(stored);
-
-  if (!Array.isArray(raw)) return [];
-  const usedRowIds = new Set(shownRowIds);
-  const overflow: Record<string, unknown>[] = [];
-  let remaining = DASHBOARD_MAX_WIDGETS;
-
-  raw.forEach((row, rowIndex) => {
-    if (!isPlainRecord(row) || !Array.isArray(row.widgets)) return;
-    const hidden: Record<string, unknown>[] = [];
-
-    row.widgets.forEach((widget, index) => {
-      if (!isStoredWidget(widget)) return;
-
-      if (remaining > 0) {
-        remaining -= 1;
-        return;
-      }
-
-      hidden.push({ ...widget, id: storedWidgetId(widget, rowIndex, index) });
-    });
-
-    if (hidden.length === 0) return;
-    let id = storedRowId(row, rowIndex);
-
-    while (usedRowIds.has(id)) id = `${id}:rest`;
-    usedRowIds.add(id);
-    overflow.push({ ...row, id, widgets: hidden });
-  });
-  return overflow;
-}
-
-/**
- * Every widget the dashboard stores, shown or not (see `overflowStoredRows`),
- * in stored order. For operations that must reach the views of hidden widgets
- * too, such as copying the views a dashboard owns.
- */
+/** Every stored widget in order, including views needed when copying a dashboard. */
 export function readStoredDashboardWidgets(database: YDatabase | undefined, viewId: string): DashboardWidget[] {
   const raw = toPlainValue(
     database
@@ -444,14 +362,7 @@ export function updateDashboardLayoutSetting(view: YDatabaseView, update: Dashbo
     const rows = normalizeDashboardRows(update.rows);
 
     if (!sameDashboardRows(parseRows(stored), rows)) {
-      setting.set(YjsDatabaseKey.dashboard_rows, [
-        ...serializeDashboardRows(rows, stored),
-        // Widgets beyond the limit are not in `rows`; they stay in storage.
-        ...overflowStoredRows(
-          stored,
-          rows.map((row) => row.id)
-        ),
-      ]);
+      setting.set(YjsDatabaseKey.dashboard_rows, serializeDashboardRows(rows, stored));
     }
   }
 
@@ -646,11 +557,10 @@ export function findDashboardWidget(rows: DashboardRow[], widgetId: string) {
 }
 
 export function canAddDashboardWidget(rows: DashboardRow[], placement?: DashboardWidgetPlacement) {
-  if (countDashboardWidgets(rows) >= DASHBOARD_MAX_WIDGETS) return false;
   if (placement?.type === 'existing_row') {
     const row = rows.find((candidate) => candidate.id === placement.rowId);
 
-    return Boolean(row) && (row?.widgets.length ?? 0) < DASHBOARD_MAX_WIDGETS_PER_ROW;
+    return Boolean(row);
   }
 
   return true;
@@ -675,7 +585,7 @@ export function createDashboardRow(widgets: DashboardWidget[], height = DASHBOAR
 }
 
 /**
- * R-SPLIT: every widget of the row gets an equal share of the twelve columns
+ * R-SPLIT: every widget of the row gets a balanced share of its width budget
  * (12, 6/6, 4/4/4, 3/3/3/3), discarding earlier custom widths as Notion does
  * when a widget joins or leaves a row. Returns `widgets` itself when nothing
  * changes, so memoized rows keep their identity. An equal split is a fixed
@@ -685,7 +595,7 @@ export function splitDashboardRowEqually(widgets: DashboardWidget[]): DashboardW
   const count = widgets.length;
 
   if (count === 0) return widgets;
-  // At most four widgets after normalization, so 12 / n is exact; anything else balances evenly.
+  // Counts that do not divide twelve use integer shares; long rows keep one unit per widget.
   if (DASHBOARD_GRID_COLUMNS % count !== 0) return balanceRowWidths(widgets.map((widget) => ({ ...widget, width: 0 })));
   const width = DASHBOARD_GRID_COLUMNS / count;
 
@@ -695,7 +605,7 @@ export function splitDashboardRowEqually(widgets: DashboardWidget[]): DashboardW
 }
 
 /**
- * Add a widget; returns the unchanged rows when the limits refuse it. A widget
+ * Add a widget; returns unchanged rows for a missing target row. A widget
  * joining a row splits that row equally (R-SPLIT); a new row holds it alone.
  */
 export function addDashboardWidget(
@@ -737,8 +647,7 @@ export function removeDashboardWidget(rows: DashboardRow[], widgetId: string): D
 }
 
 /**
- * Duplicate a widget next to its source. When the row is full the copy starts
- * a new row directly below; when the dashboard is full nothing changes. With
+ * Duplicate a widget next to its source. With
  * `copy`, the new widget shows that view (the source view's owned copy, WP05
  * §1.4) instead of sharing the source's.
  */
@@ -749,23 +658,18 @@ export function duplicateDashboardWidget(
 ): DashboardRow[] {
   const location = findDashboardWidget(rows, widgetId);
 
-  if (!location || countDashboardWidgets(rows) >= DASHBOARD_MAX_WIDGETS) return rows;
+  if (!location) return rows;
   const copy: DashboardWidget = {
     ...location.widget,
     ...(copyView ? { viewId: copyView.viewId, databaseId: copyView.databaseId } : null),
     id: generateDashboardId('w'),
   };
 
-  if (location.row.widgets.length < DASHBOARD_MAX_WIDGETS_PER_ROW) {
-    return addDashboardWidget(rows, copy, { type: 'existing_row', rowId: location.row.id, index: location.index + 1 });
-  }
-
-  return addDashboardWidget(rows, copy, { type: 'new_row', rowIndex: location.rowIndex + 1 });
+  return addDashboardWidget(rows, copy, { type: 'existing_row', rowId: location.row.id, index: location.index + 1 });
 }
 
 /**
- * Move a widget to a new position. Moving into a full row is refused unless
- * the widget already lives in that row (a reorder). A reorder inside a row
+ * Move a widget to a new position. A reorder inside a row
  * keeps every width; a widget that changes rows splits both rows equally
  * (R-SPLIT), and a new row holds it alone at its old row's height. Rows left
  * empty vanish. A widget alone in its row dropped next to that row returns
@@ -792,7 +696,7 @@ export function moveDashboardWidget(
   if (placement.type === 'existing_row') {
     const target = withoutWidget.find((row) => row.id === placement.rowId);
 
-    if (!target || target.widgets.length >= DASHBOARD_MAX_WIDGETS_PER_ROW) return rows;
+    if (!target) return rows;
     const next = withoutWidget.map((row) => {
       if (row.id !== placement.rowId) return row;
       const widgets = [...row.widgets];
@@ -825,8 +729,7 @@ export function moveDashboardWidget(
 }
 
 /**
- * How a move would end: `blocked` when the widget would join a full row,
- * `noop` when the layout would not change (or the widget or row is unknown),
+ * How a move would end: `noop` when the layout would not change (or the widget or row is unknown),
  * else `allowed`.
  */
 export function classifyDashboardMove(
@@ -841,7 +744,6 @@ export function classifyDashboardMove(
     const target = rows.find((row) => row.id === placement.rowId);
 
     if (!target) return 'noop';
-    if (target.widgets.length >= DASHBOARD_MAX_WIDGETS_PER_ROW) return 'blocked';
   }
 
   const next = moveDashboardWidget(rows, widgetId, placement);
@@ -878,8 +780,7 @@ export function resolveDashboardDropPlacement(
 }
 
 /**
- * Dropping `sourceId` on `target`: `blocked` next to a widget of another full
- * row, `noop` where the widget would stay put (beside itself in its row, or a
+ * Dropping `sourceId` on `target`: `noop` where the widget would stay put (beside itself in its row, or a
  * widget alone in its row dropped next to that row), else `allowed`.
  */
 export function getDashboardDropFeedback(
@@ -919,7 +820,7 @@ export function getDashboardDropIndicator(
 
 /**
  * Give `delta` columns to the widget at `index` and take them from its right
- * neighbour (negative deltas do the reverse), so the row still sums to twelve.
+ * neighbour (negative deltas do the reverse), preserving the row's total width.
  * Both widgets keep `minColumns` (the resize minimum of the measured row, see
  * `dashboardMinWidgetColumns`); a widget already narrower than that is never
  * forced to grow and never shrinks further. Stored widths are never rewritten
@@ -982,8 +883,7 @@ export function moveDashboardRow(rows: DashboardRow[], rowId: string, delta: -1 
 
 /**
  * What the controls beside row `rowId` offer: the move arrows (none for a
- * single row) and the "Add to row" control, hidden for a full row and
- * disabled on a full dashboard.
+ * single row) and the "Add to row" control.
  */
 export function getDashboardRowControls(rows: DashboardRow[], rowId: string): DashboardRowControls {
   const index = rows.findIndex((row) => row.id === rowId);
@@ -996,18 +896,13 @@ export function getDashboardRowControls(rows: DashboardRow[], rowId: string): Da
   return {
     moveUp: !single && index > 0,
     moveDown: !single && index < rows.length - 1,
-    addToRow:
-      row.widgets.length >= DASHBOARD_MAX_WIDGETS_PER_ROW
-        ? 'hidden'
-        : countDashboardWidgets(rows) >= DASHBOARD_MAX_WIDGETS
-        ? 'disabled'
-        : 'enabled',
+    addToRow: 'enabled',
   };
 }
 
-/** The "Add to new row" button under the last row: disabled on a full dashboard. */
-export function getDashboardAddToNewRowState(rows: DashboardRow[]): Exclude<DashboardAddControlState, 'hidden'> {
-  return countDashboardWidgets(rows) >= DASHBOARD_MAX_WIDGETS ? 'disabled' : 'enabled';
+/** The "Add to new row" button remains available regardless of widget count. */
+export function getDashboardAddToNewRowState(_rows: DashboardRow[]): Exclude<DashboardAddControlState, 'hidden'> {
+  return 'enabled';
 }
 
 /** Replace the view a widget shows (Settings › Source). */

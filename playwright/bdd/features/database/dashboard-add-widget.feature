@@ -87,12 +87,11 @@ Feature: Adding dashboard widgets
     When the user clicks "Show 2 more"
     Then the picker lists 7 views under "Views on Projects"
 
-  Scenario: A full dashboard refuses the add without creating a view
+  Scenario: A thirteenth widget can be created from the add button
     Given the dashboard has 12 widgets in 3 full rows
     When the user tries to add a widget from the add button under the last row
-    Then the add is refused with "Dashboard is full" and "Delete a view to add a new one"
-    And no "New view" picker is open
-    And the "Projects" database has the same views as before
+    And the user closes the "New view" picker
+    Then the dashboard shows 13 widgets
 
   Scenario: The empty dashboard in View mode invites editors to edit it
     When the user clicks the dashboard Done button

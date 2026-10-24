@@ -65,12 +65,11 @@ Feature: Dashboard-owned widget views
     When the user clicks Done
     Then the copied view no longer exists in "Projects"
 
-  Scenario: Duplicate on a full dashboard creates no view
+  Scenario: Duplicate creates a thirteenth widget
     Given a "Projects" database with a "Grid" view and an empty dashboard in Edit mode
     And the dashboard has 12 widgets in 3 full rows
-    When the user tries to duplicate widget 1
-    Then the dashboard has 12 widgets
-    And the "Projects" database has no new views
+    When the user duplicates widget 1
+    Then the dashboard has 13 widgets
 
   Scenario: Deleting a widget removes the view it owned once editing is done
     Given a "Projects" database with a "Grid" view and an empty dashboard in Edit mode

@@ -286,12 +286,13 @@
         "zz_parity_enum": "neon"
       },
       "write": { "chart_type": 3 },
-      "writtenKeys": ["chart_type"],
+      "writtenKeys": ["chart_type", "aggregation_type_pb"],
       "expected": {
         "chart_type": 3,
         "x_field_id": "f:stage",
         "show_empty_values": true,
         "aggregation_type": 0,
+        "aggregation_type_pb": 0,
         "y_field_id": "",
         "date_condition": 3,
         "cumulative": false,

@@ -5,8 +5,6 @@ export {
   DASHBOARD_DEFAULT_ROW_HEIGHT,
   DASHBOARD_GRID_COLUMNS,
   DASHBOARD_MAX_ROW_HEIGHT,
-  DASHBOARD_MAX_WIDGETS,
-  DASHBOARD_MAX_WIDGETS_PER_ROW,
   DASHBOARD_MIN_ROW_HEIGHT,
 } from './dashboard-geometry';
 // The global-filter model and its per-widget resolution live in `dashboard-global-filters.ts`.

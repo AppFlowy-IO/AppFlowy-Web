@@ -8,7 +8,7 @@ import {
   serializeDashboardRows,
   updateDashboardLayoutSetting,
 } from '../dashboard-layout';
-import { DASHBOARD_LAYOUT_KEY, DASHBOARD_MAX_WIDGETS, DashboardLayoutUpdate } from '../dashboard.type';
+import { DASHBOARD_LAYOUT_KEY, DashboardLayoutUpdate } from '../dashboard.type';
 import { toPlainValue } from '../layout-codec';
 
 import { decodeParityJson, loadParityFixture, normalizeNumbers, seedParityMap } from './dashboard-parity-helpers';
@@ -69,7 +69,7 @@ describe('layouts saved over the limit (dashboard-parity/layouts/over-limit.json
     const fixture = createFixture(entry.stored);
     const read = readDashboardLayoutSetting(fixture.database, VIEW_ID);
 
-    expect(read.rows.flatMap((row) => row.widgets).length).toBeLessThanOrEqual(DASHBOARD_MAX_WIDGETS);
+    expect(read.rows.flatMap((row) => row.widgets).length).toBe(storedWidgetCount(entry.stored.rows));
     if (entry.parsed) {
       expect(normalizeNumbers(serializeDashboardRows(read.rows))).toEqual(
         normalizeNumbers(decodeParityJson(entry.parsed.rows))

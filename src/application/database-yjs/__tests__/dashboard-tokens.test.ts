@@ -21,8 +21,6 @@ import {
   DASHBOARD_GEOMETRY,
   DASHBOARD_GRID_COLUMNS,
   DASHBOARD_MAX_ROW_HEIGHT,
-  DASHBOARD_MAX_WIDGETS,
-  DASHBOARD_MAX_WIDGETS_PER_ROW,
   DASHBOARD_MIN_ROW_HEIGHT,
   DASHBOARD_MIN_WIDGET_WIDTH,
   DASHBOARD_MOTION,
@@ -73,8 +71,6 @@ interface Tokens {
     gridDash: number[];
   };
   layout: {
-    maxWidgets: number;
-    maxWidgetsPerRow: number;
     gridColumns: number;
     rowHeight: { min: number; default: number; max: number; snap: number };
     minWidgetWidth: number;
@@ -381,8 +377,6 @@ describe('dashboard tokens (tokens.json ↔ dashboard-geometry.ts)', () => {
   });
 
   it('matches the layout limits', () => {
-    expect(DASHBOARD_MAX_WIDGETS).toBe(tokens.layout.maxWidgets);
-    expect(DASHBOARD_MAX_WIDGETS_PER_ROW).toBe(tokens.layout.maxWidgetsPerRow);
     expect(DASHBOARD_GRID_COLUMNS).toBe(tokens.layout.gridColumns);
     expect(DASHBOARD_MIN_ROW_HEIGHT).toBe(tokens.layout.rowHeight.min);
     expect(DASHBOARD_DEFAULT_ROW_HEIGHT).toBe(tokens.layout.rowHeight.default);
@@ -390,7 +384,7 @@ describe('dashboard tokens (tokens.json ↔ dashboard-geometry.ts)', () => {
     expect(DASHBOARD_ROW_HEIGHT_SNAP).toBe(tokens.layout.rowHeight.snap);
     expect(DASHBOARD_MIN_WIDGET_WIDTH).toBe(tokens.layout.minWidgetWidth);
     expect(Object.keys(tokens.layout).sort()).toEqual(
-      ['maxWidgets', 'maxWidgetsPerRow', 'gridColumns', 'rowHeight', 'minWidgetWidth'].sort()
+      ['gridColumns', 'rowHeight', 'minWidgetWidth'].sort()
     );
     expect(Object.keys(tokens.layout.rowHeight).sort()).toEqual(['default', 'max', 'min', 'snap']);
   });
@@ -398,8 +392,6 @@ describe('dashboard tokens (tokens.json ↔ dashboard-geometry.ts)', () => {
   it('re-exports the token limits from dashboard.type.ts, where the layout code reads them', () => {
     // Against the token file itself: a literal redefined in dashboard.type.ts would drift unnoticed otherwise.
     expect({
-      maxWidgets: dashboardType.DASHBOARD_MAX_WIDGETS,
-      maxWidgetsPerRow: dashboardType.DASHBOARD_MAX_WIDGETS_PER_ROW,
       gridColumns: dashboardType.DASHBOARD_GRID_COLUMNS,
       rowHeight: {
         min: dashboardType.DASHBOARD_MIN_ROW_HEIGHT,
@@ -407,8 +399,6 @@ describe('dashboard tokens (tokens.json ↔ dashboard-geometry.ts)', () => {
         max: dashboardType.DASHBOARD_MAX_ROW_HEIGHT,
       },
     }).toEqual({
-      maxWidgets: tokens.layout.maxWidgets,
-      maxWidgetsPerRow: tokens.layout.maxWidgetsPerRow,
       gridColumns: tokens.layout.gridColumns,
       rowHeight: {
         min: tokens.layout.rowHeight.min,

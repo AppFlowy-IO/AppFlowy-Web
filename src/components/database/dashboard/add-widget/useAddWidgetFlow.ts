@@ -4,7 +4,6 @@ import { toast } from 'sonner';
 
 import {
   addDashboardWidget,
-  canAddDashboardWidget,
   createDashboardWidget,
   generateDashboardId,
   replaceDashboardWidgetView,
@@ -32,7 +31,6 @@ import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan'
 import { getErrorMessage } from '@/utils/errors';
 import { Log } from '@/utils/log';
 
-import { dashboardFullAnnouncement, dashboardRowLimitAnnouncement } from '../DashboardFullTooltip';
 import { DefaultWidgetPlanError, OwnedWidgetViews } from '../hooks/useOwnedWidgetViews';
 import { resolveAddPlacement } from '../widget-moves';
 
@@ -184,13 +182,6 @@ export function useAddWidgetFlow(options: UseAddWidgetFlowOptions): {
       const handle = handleRef.current;
 
       switch (effect.type) {
-        case 'announce_limit':
-          current.announce(
-            effect.reason === 'dashboard'
-              ? dashboardFullAnnouncement(current.t)
-              : dashboardRowLimitAnnouncement(current.t)
-          );
-          break;
         case 'pin_edit':
           current.pinEditing();
           break;
@@ -211,9 +202,6 @@ export function useAddWidgetFlow(options: UseAddWidgetFlowOptions): {
             DASHBOARD_GRID_COLUMNS,
             effect.widgetId
           );
-          // The updater only runs for a writer outside a mobile context, so a
-          // refusal it records is the dashboard having filled meanwhile.
-          let full = false;
           // One undo step of its own: the view creation and the chart seed are not in the history.
           const written = runDatabaseHistoryGroupForDatabase(
             current.hostDoc,
@@ -221,7 +209,6 @@ export function useAddWidgetFlow(options: UseAddWidgetFlowOptions): {
               current.updateRows((rows) => {
                 const placement = resolveAddPlacement(rows, effect.placement);
 
-                if (!placement) full = true;
                 return placement ? addDashboardWidget(rows, widget, placement) : rows;
               }),
             createDatabaseHistoryGroup()
@@ -231,9 +218,7 @@ export function useAddWidgetFlow(options: UseAddWidgetFlowOptions): {
           // access went or the context turned mobile (nothing to announce).
           if (!written) {
             if (effect.type === 'insert_widget') {
-              handle?.dispatch({ type: 'insert_refused', viewId: effect.viewId, reason: full ? 'full' : 'access' });
-            } else if (full) {
-              current.announce(dashboardFullAnnouncement(current.t));
+              handle?.dispatch({ type: 'insert_refused', viewId: effect.viewId, reason: 'access' });
             }
 
             break;
@@ -403,28 +388,18 @@ export function useAddWidgetFlow(options: UseAddWidgetFlowOptions): {
       const rows = current.getRows();
       const widgetId = generateDashboardId('w');
 
-      // Capacity first: a refused add creates nothing (#16).
-      if (!canAddDashboardWidget(rows, placement)) {
-        handle.dispatch({
-          type: 'start',
-          placement,
-          widgetId,
-          spec: 'grid',
-          refused: canAddDashboardWidget(rows) ? 'row' : 'dashboard',
-        });
-        return;
-      }
+      const resolvedPlacement = resolveAddPlacement(rows, placement) ?? { type: 'new_row' as const };
 
       // The editor started building: Edit mode stays whatever the sync brings (R-MODE).
       current.pinEditing();
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        handle.dispatch({ type: 'start', placement, widgetId, spec: 'grid', refused: null, existingOnly: true });
+        handle.dispatch({ type: 'start', placement: resolvedPlacement, widgetId, spec: 'grid', existingOnly: true });
         return;
       }
 
       startingRef.current = true;
       void resolveSpec()
-        .then((spec) => handle.dispatch({ type: 'start', placement, widgetId, spec, refused: null }))
+        .then((spec) => handle.dispatch({ type: 'start', placement: resolvedPlacement, widgetId, spec }))
         .finally(() => {
           startingRef.current = false;
         });

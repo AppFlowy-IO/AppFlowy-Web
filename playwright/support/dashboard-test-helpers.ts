@@ -18,8 +18,6 @@ import {
   DASHBOARD_COLUMN_GAP_PX,
   DASHBOARD_DEFAULT_ROW_HEIGHT,
   DASHBOARD_GRID_COLUMNS,
-  DASHBOARD_MAX_WIDGETS,
-  DASHBOARD_MAX_WIDGETS_PER_ROW,
   DASHBOARD_WIDGET_BOX_BLEED,
 } from '../../src/application/database-yjs/dashboard-geometry';
 import { DASHBOARD_LAYOUT_KEY } from '../../src/application/database-yjs/dashboard.type';
@@ -62,8 +60,6 @@ export {
   DASHBOARD_DEFAULT_ROW_HEIGHT,
   DASHBOARD_GRID_COLUMNS,
   DASHBOARD_LAYOUT_KEY,
-  DASHBOARD_MAX_WIDGETS,
-  DASHBOARD_MAX_WIDGETS_PER_ROW,
 };
 /** The gap between widget boxes, and the bleed of each row track past the content column (WP02). */
 export const DASHBOARD_COLUMN_GAP = DASHBOARD_COLUMN_GAP_PX;

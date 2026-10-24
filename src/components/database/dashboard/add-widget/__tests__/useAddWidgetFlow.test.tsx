@@ -235,7 +235,7 @@ describe('useAddWidgetFlow', () => {
     expect(deleteMock).not.toHaveBeenCalled();
   });
 
-  it('rechecks capacity after an offline existing-view picker opened, without deleting the shared view', async () => {
+  it('adds after a collaborator grows the layout while an offline picker is open, without deleting the shared view', async () => {
     const { doc, database, view } = createDoc([rowOf('a', 4), rowOf('b', 4), rowOf('c', 3)]);
     const { result, announce } = renderFlow(doc, database);
 
@@ -246,8 +246,8 @@ describe('useAddWidgetFlow', () => {
     }), 'remote'));
     act(() => result.current.api.flow.dispatch({ type: 'pick_existing', viewId: 'shared', databaseId: 'other-db' }));
     await settle();
-    expect(stored(database).flatMap((row) => row.widgets)).toHaveLength(12);
-    expect(announce).toHaveBeenCalledWith(expect.stringContaining('Dashboard is full'));
+    expect(stored(database).flatMap((row) => row.widgets)).toHaveLength(13);
+    expect(announce).not.toHaveBeenCalled();
     expect(createMock).not.toHaveBeenCalled();
     expect(deleteMock).not.toHaveBeenCalled();
   });
@@ -271,27 +271,37 @@ describe('useAddWidgetFlow', () => {
     expect(toastError).toHaveBeenCalledWith(guidance);
   });
 
-  it('refuses a full dashboard before creating anything (#16)', async () => {
-    const { doc, database } = createDoc([rowOf('a', 4), rowOf('b', 4), rowOf('c', 4)]);
+  it('creates a thirteenth widget', async () => {
+    const { doc, database, views } = createDoc([rowOf('a', 4), rowOf('b', 4), rowOf('c', 4)]);
     const { result, announce } = renderFlow(doc, database);
 
+    createMock.mockImplementation(async (_deps: unknown, params: { layout: DatabaseViewLayout; baseName: string }) => {
+      addCreatedView(doc, views, 'extra-view', params.layout, params.baseName);
+      return 'extra-view';
+    });
     act(() => result.current.startAddWidget({ type: 'new_row' }));
     await settle();
+    expect(stored(database).flatMap((row) => row.widgets)).toHaveLength(13);
 
-    expect(createMock).not.toHaveBeenCalled();
-    expect(announce).toHaveBeenCalledWith(expect.stringContaining('Dashboard is full'));
-    expect(result.current.api.flow.getState()).toEqual({ kind: 'idle' });
+    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(announce).not.toHaveBeenCalled();
+    expect(result.current.api.flow.getState().kind).toBe('open');
   });
 
-  it('refuses the add to a full row with the row message, creating nothing', async () => {
-    const { doc, database } = createDoc([rowOf('a', 4)]);
+  it('adds a fifth widget to the same row', async () => {
+    const { doc, database, views } = createDoc([rowOf('a', 4)]);
     const { result, announce } = renderFlow(doc, database);
 
+    createMock.mockImplementation(async (_deps: unknown, params: { layout: DatabaseViewLayout; baseName: string }) => {
+      addCreatedView(doc, views, 'extra-view', params.layout, params.baseName);
+      return 'extra-view';
+    });
     act(() => result.current.startAddWidget({ type: 'existing_row', rowId: 'a', index: 4 }));
     await settle();
+    expect(stored(database).flatMap((row) => row.widgets)).toHaveLength(5);
 
-    expect(createMock).not.toHaveBeenCalled();
-    expect(announce).toHaveBeenCalledWith(expect.stringContaining('A row holds up to'));
+    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(announce).not.toHaveBeenCalled();
   });
 
   it('inserts one selected widget with the id it showed while pending, split 12 / n, as one undo step', async () => {
@@ -457,7 +467,7 @@ describe('useAddWidgetFlow', () => {
     expect(stored(database)).toEqual([]);
   });
 
-  it('deletes the created view when a collaborator filled the dashboard meanwhile', async () => {
+  it('retains the created view after a collaborator adds the twelfth widget', async () => {
     const { doc, database, view } = createDoc([rowOf('a', 4), rowOf('b', 4), rowOf('c', 3)]);
     const { result, announce } = renderFlow(doc, database);
 
@@ -471,12 +481,12 @@ describe('useAddWidgetFlow', () => {
     act(() => result.current.startAddWidget({ type: 'new_row' }));
     await settle();
 
-    expect(deleteMock).toHaveBeenCalledWith(expect.anything(), { viewId: 'late-view', databaseId: DATABASE_ID });
-    expect(stored(database).flatMap((row) => row.widgets.map((widget) => widget.viewId))).not.toContain('late-view');
-    expect(announce).toHaveBeenCalledWith(expect.stringContaining('Dashboard is full'));
+    expect(deleteMock).not.toHaveBeenCalled();
+    expect(stored(database).flatMap((row) => row.widgets.map((widget) => widget.viewId))).toContain('late-view');
+    expect(announce).not.toHaveBeenCalled();
   });
 
-  it('puts the widget in a new row below its row when a collaborator filled that row meanwhile', async () => {
+  it('keeps the requested row after a collaborator adds its fourth widget', async () => {
     const { doc, database, view } = createDoc([rowOf('a', 3), rowOf('b', 1)]);
     const { result, announce } = renderFlow(doc, database);
 
@@ -490,8 +500,7 @@ describe('useAddWidgetFlow', () => {
     const rows = stored(database);
 
     expect(rows.map((row) => row.widgets.map((widget) => widget.viewId))).toEqual([
-      ['a-v0', 'a-v1', 'a-v2', 'a-v3'],
-      ['late-view'],
+      ['a-v0', 'a-v1', 'a-v2', 'late-view', 'a-v3'],
       ['b-v0'],
     ]);
     // A move to a new row is not a refusal: nothing is deleted or announced.

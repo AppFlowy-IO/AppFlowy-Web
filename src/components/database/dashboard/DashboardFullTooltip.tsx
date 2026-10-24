@@ -1,7 +1,6 @@
 import { ComponentProps } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { DASHBOARD_MAX_WIDGETS_PER_ROW } from '@/application/database-yjs/dashboard.type';
 import { TooltipContent } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
@@ -26,16 +25,6 @@ export function dashboardFullAnnouncement(t: TFunction) {
   const { title, hint } = fullTexts(t);
 
   return `${title}. ${hint}.`;
-}
-
-/** "A row holds up to 4 widgets." for assistive technology. */
-export function dashboardRowLimitAnnouncement(t: TFunction) {
-  return String(
-    t('dashboard.rowLimit', {
-      count: DASHBOARD_MAX_WIDGETS_PER_ROW,
-      defaultValue: 'A row holds up to {{count}} widgets.',
-    })
-  );
 }
 
 /**

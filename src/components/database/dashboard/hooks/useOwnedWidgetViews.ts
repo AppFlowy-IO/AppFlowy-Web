@@ -1,4 +1,3 @@
-import * as liveRegion from '@atlaskit/pragmatic-drag-and-drop-live-region';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -31,7 +30,6 @@ import { Log } from '@/utils/log';
 
 import { DEFAULT_WIDGET_LAYOUTS, DefaultWidgetSpecKind } from '../add-widget/add-widget-flow';
 import { DashboardEditOnlyAction, refusesEditOnlyAction } from '../dashboard-mode';
-import { dashboardFullAnnouncement } from '../DashboardFullTooltip';
 import { OwnedViewDeletionQueue } from '../owned-views/OwnedViewDeletionQueue';
 import { canDuplicateWidget } from '../widget-moves';
 
@@ -328,11 +326,7 @@ export function useOwnedWidgetViews({
       const rows = latest.current.getRows();
       const location = findDashboardWidget(rows, widgetId);
 
-      // Refused before anything is created: a full dashboard gets no copy.
-      if (!location || !canDuplicateWidget(rows, widgetId)) {
-        liveRegion.announce(dashboardFullAnnouncement(translate));
-        return;
-      }
+      if (!location || !canDuplicateWidget(rows, widgetId)) return;
 
       const { viewId, databaseId } = location.widget;
       const deps = getDeps();
@@ -356,9 +350,8 @@ export function useOwnedWidgetViews({
         );
 
         if (!written) {
-          // A concurrent edit filled the dashboard or removed the source widget.
+          // A concurrent edit removed the source widget or revoked write access.
           await deleteOwnedViewNow(copyId, databaseId);
-          liveRegion.announce(dashboardFullAnnouncement(translate));
         }
       } catch (error) {
         Log.warn('[Dashboard] could not duplicate a widget', error);

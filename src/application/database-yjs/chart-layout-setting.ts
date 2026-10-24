@@ -1,5 +1,6 @@
 import * as Y from 'yjs';
 
+import { ChartAggregationType, ChartType } from './chart-enums';
 import {
   CHART_LAYOUT_SETTINGS_KEY,
   ChartLayoutKeys,
@@ -7,8 +8,8 @@ import {
   parseChartAggregationTypePb,
   toCollabChartAggregationType,
 } from './chart.type';
-import { ChartAggregationType, ChartType } from './chart-enums';
 import { DateGroupCondition } from './database.type';
+import { setYMapBigInt } from './yjs-bigint';
 
 export interface ChartLayoutSettings {
   chartType: ChartType;
@@ -18,7 +19,6 @@ export interface ChartLayoutSettings {
   yFieldId?: string;
   dateCondition: DateGroupCondition;
 }
-import { setYMapBigInt } from './yjs-bigint';
 
 /** Desktop defaults: collab `ChartLayoutSetting::default()` plus a Month date sidecar. */
 export const DEFAULT_CHART_LAYOUT_SETTINGS: ChartLayoutSettings = {
@@ -110,8 +110,9 @@ function decodeCollabFields(map: Y.Map<unknown>): CollabChartLayoutSetting {
   if (map.has(ChartLayoutKeys.aggregationType)) {
     const aggregationType = toInteger(readYrsValue(map, ChartLayoutKeys.aggregationType));
 
-    // The collab enum stops at Max; Median / CountValues only live in the sidecar.
-    if (aggregationType === null || aggregationType < ChartAggregationType.Count || aggregationType > ChartAggregationType.Max) {
+    // Older Dashboard builds wrote the full enum here. Accept those saved
+    // values; current writers use the collab fallback plus the PB sidecar.
+    if (aggregationType === null || aggregationType < ChartAggregationType.Count || aggregationType > ChartAggregationType.Range) {
       return { ...COLLAB_DEFAULTS };
     }
 

@@ -21,9 +21,9 @@ class MockResizeObserver {
   }
 }
 
-function Probe() {
+function Probe({ count = 4 }: { count?: number }) {
   const ref = useRef<HTMLDivElement>(null);
-  const breakpoints = useDashboardGridBreakpoints(ref);
+  const breakpoints = useDashboardGridBreakpoints(ref, count);
 
   renders += 1;
   return (
@@ -114,6 +114,20 @@ describe('useDashboardGridBreakpoints', () => {
 
     resizeObservedTo(692);
     expect(renders).toBe(rendersAfterMount + 1);
+  });
+
+  it('updates breakpoints when a logical row grows beyond four widgets', () => {
+    window.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
+    const { rerender } = render(<Probe />);
+
+    rerender(<Probe count={13} />);
+    const columns = wrapColumns()?.split(',');
+
+    expect(columns).toHaveLength(13);
+    expect(columns?.[12]).toBe('4');
+    expect(observers[0].disconnect).toHaveBeenCalledTimes(1);
+    resizeObservedTo(692);
+    expect(wrapColumns()?.split(',')[12]).toBe('2');
   });
 
   it('listens to window resizes only in a browser without a ResizeObserver', () => {

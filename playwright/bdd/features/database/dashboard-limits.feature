@@ -1,13 +1,8 @@
 @dashboard @cloud @dashboard-limits
 Feature: Dashboard limits
-  A dashboard holds at most 12 widgets, a row at most 4, and a row is 240 to
-  1200 pixels tall in steps of 20. Every way of adding a widget refuses at the
-  limit: the control explains itself with the Dashboard is full tooltip, the
-  refusal is announced to assistive technology, never shown as a banner, and
-  nothing is created. Moving a widget is never an add. A layout another client
-  saved over the limit shows its first 12 widgets and keeps the rest in
-  storage, so a later edit never drops them. Undo, redo and collaborators
-  never take a dashboard past 12 widgets.
+  Dashboard widget counts and row sizes are unrestricted. Rows retain all
+  widgets while the display wraps to fit the available width. Height bounds,
+  permissions, identity preservation and undo still apply.
 
   # Same scenarios, word for word, as the desktop dashboard_limits.feature
   # (bdd_widget_test brace syntax on both clients). Seeded widgets are w:1..w:n
@@ -15,30 +10,29 @@ Feature: Dashboard limits
   # "Saved" reads the stored layout as every client sees it, unknown and
   # hidden entries included; "shows" reads what is rendered.
 
-  Scenario: A full dashboard refuses every add with an announcement and creates no view
+  Scenario: A dashboard above twelve widgets still offers add and duplicate
     Given a dashboard seeded with rows of {'4, 4, 3, 1'} widgets is open in edit mode
+    Then the add to new row button is enabled
     When the user clicks the add to new row button
-    Then the refusal {'Dashboard is full. Delete a view to add a new one.'} was announced
-    And no {'New view'} picker is open
+    And the user closes the {'New view'} picker
+    Then the dashboard has {13} widgets
     When the user hovers dashboard row {4}
     And the user clicks the add to row button of dashboard row {4}
-    Then the refusal {'Dashboard is full. Delete a view to add a new one.'} was announced
-    And no {'New view'} picker is open
-    When the user opens the menu of dashboard widget {12}
-    And the user clicks the dashboard widget menu item {'duplicate'}
-    Then the refusal {'Dashboard is full. Delete a view to add a new one.'} was announced
-    When the user dismisses the dashboard widget menu
-    Then the dashboard has {12} widgets
-    And the dashboard created no view
-    And the dashboard shows no limit banner
+    And the user closes the {'New view'} picker
+    Then the dashboard has {14} widgets
+    When the user opens the menu of dashboard widget {1}
+    And the user chooses {'duplicate'} in the dashboard widget menu
+    Then the dashboard has {15} widgets
+    And the add to new row button is enabled
+    And no refusal was announced
 
-  Scenario: A widget dropped on a full row is refused and the row limit is announced
+  Scenario: A widget can join a row that already holds four widgets
     Given a dashboard seeded with rows of {'4, 1'} widgets is open in edit mode
     When the user drags dashboard widget {5} onto the left side of dashboard widget {1}
-    Then the refusal {'A row holds up to 4 widgets.'} was announced
-    And the dashboard row {1} has widget ids {'w:1, w:2, w:3, w:4'}
-    And the dashboard row {2} has widget ids {'w:5'}
-    And the dashboard shows no limit banner
+    Then the dashboard has {1} rows
+    And the dashboard row {1} has widget ids {'w:5, w:1, w:2, w:3, w:4'}
+    And the dashboard row {1} has widths {'3, 3, 2, 2, 2'}
+    And no refusal was announced
 
   Scenario: Moving widgets into new rows is allowed on a full dashboard
     Given a dashboard seeded with rows of {'4, 4, 3, 1'} widgets is open in edit mode
@@ -54,40 +48,40 @@ Feature: Dashboard limits
     And the dashboard row {2} has widget ids {'w:2'}
     And no refusal was announced
 
-  Scenario: Duplicating a widget of a full row puts the copy in a new row below
+  Scenario: Duplicating a widget keeps the copy next to its source in a row of four
     Given a dashboard seeded with rows of {'4, 1'} widgets is open in edit mode
     When the user opens the menu of dashboard widget {2}
     And the user chooses {'duplicate'} in the dashboard widget menu
-    Then the dashboard has {3} rows
-    And the dashboard row {1} has widget ids {'w:1, w:2, w:3, w:4'}
-    And the dashboard row {2} holds a copy of dashboard widget {2}
-    And the dashboard row {3} has widget ids {'w:5'}
+    Then the dashboard has {2} rows
+    And the dashboard has {6} widgets
+    And the dashboard row {1} has widths {'3, 3, 2, 2, 2'}
+    And the dashboard row {2} has widget ids {'w:5'}
 
-  Scenario: A dashboard saved with more widgets than the limit shows 12 and keeps the rest when it is edited
+  Scenario: All fourteen saved widgets remain visible and editable
     Given a dashboard whose saved layout holds rows of {'4, 4, 4, 2'} widgets is open in edit mode
-    Then the dashboard shows {12} widgets
+    Then the dashboard shows {14} widgets
     And the saved dashboard layout holds {14} widgets
-    And the add to new row button is disabled
+    And the add to new row button is enabled
     When the user opens the menu of dashboard widget {1}
     And the user chooses {'move-right'} in the dashboard widget menu
     Then the dashboard row {1} has widget ids {'w:2, w:1, w:3, w:4'}
-    And the dashboard shows {12} widgets
+    And the dashboard shows {14} widgets
     And the saved dashboard layout holds {14} widgets
     When the user opens the menu of dashboard widget {12}
     And the user chooses {'delete'} in the dashboard widget menu
-    Then the dashboard shows {12} widgets
-    And dashboard row {4} shows the widget ids {'w:13'}
+    Then the dashboard shows {13} widgets
+    And dashboard row {4} shows the widget ids {'w:13, w:14'}
     And the saved dashboard layout holds {13} widgets
 
-  Scenario: A saved row of more than 4 widgets is shown as rows of at most 4 and keeps every widget when it is edited
+  Scenario: A saved six-widget row retains its identity and every widget when edited
     Given a dashboard whose saved layout holds rows of {'6'} widgets is open in edit mode
-    Then the dashboard shows rows of {'4, 2'} widgets
+    Then the dashboard shows rows of {'6'} widgets
     And the saved dashboard layout holds {6} widgets
     When the user opens the menu of dashboard widget {5}
     And the user chooses {'move-right'} in the dashboard widget menu
-    Then the dashboard shows rows of {'4, 2'} widgets
-    And dashboard row {2} shows the widget ids {'w:6, w:5'}
-    And the saved dashboard layout has rows of {'4, 2'} widgets
+    Then the dashboard shows rows of {'6'} widgets
+    And dashboard row {1} shows the widget ids {'w:1, w:2, w:3, w:4, w:6, w:5'}
+    And the saved dashboard layout has rows of {'6'} widgets
     And the saved dashboard layout holds {6} widgets
 
   Scenario: Row heights stop at the limits and keyboard steps snap to 20 pixels
@@ -110,21 +104,21 @@ Feature: Dashboard limits
     And the user presses the Arrow Down key
     Then the dashboard row {1} is {380} pixels tall
 
-  Scenario: Undo and redo across the limit switch the add controls off and on
+  Scenario: Undo and redo preserve widgets while add controls stay enabled
     Given a dashboard seeded with rows of {'4, 4, 4'} widgets is open in edit mode
-    Then the add to new row button is disabled
+    Then the add to new row button is enabled
     When the user opens the menu of dashboard widget {12}
     And the user chooses {'delete'} in the dashboard widget menu
     Then the dashboard has {11} widgets
     And the add to new row button is enabled
     When the user presses undo on the dashboard
     Then the dashboard has {12} widgets
-    And the add to new row button is disabled
+    And the add to new row button is enabled
     When the user presses redo on the dashboard
     Then the dashboard has {11} widgets
     And the add to new row button is enabled
 
-  Scenario: Undoing a delete after a collaborator filled the dashboard never shows more than 12 widgets
+  Scenario: Undoing a delete after a collaborator edit preserves a complete layout
     Given a dashboard seeded with rows of {'4, 4, 4'} widgets is open in edit mode
     When the user opens the menu of dashboard widget {12}
     And the user chooses {'delete'} in the dashboard widget menu
@@ -133,16 +127,16 @@ Feature: Dashboard limits
     When the user presses undo on the dashboard
     Then the dashboard shows at most {12} widgets
     And the saved dashboard layout holds at most {12} widgets
-    And the add to new row button is disabled
+    And the add to new row button is enabled
 
-  Scenario: Two editors adding a widget at the same time end with one dashboard of at most 12 widgets
-    Given a dashboard seeded with rows of {'4, 4, 3'} widgets is open in edit mode
+  Scenario: Two editors adding beyond twelve converge on a complete layout
+    Given a dashboard seeded with rows of {'4, 4, 4'} widgets is open in edit mode
     When the user and a collaborator each add a widget at the same time
     Then the user and the collaborator see the same dashboard layout
-    And the dashboard shows at most {12} widgets
-    And the saved dashboard layout holds at most {12} widgets
+    And the dashboard shows {13} widgets
+    And the saved dashboard layout holds {13} widgets
     And no widget appears twice in the saved dashboard layout
-    And the add to new row button is disabled
+    And the add to new row button is enabled
 
   Scenario: A read-only member sees a full dashboard without any add control
     Given a dashboard seeded with rows of {'4, 4, 4'} widgets is open in edit mode

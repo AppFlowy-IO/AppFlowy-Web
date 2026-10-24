@@ -309,8 +309,8 @@ describe('readChartLayoutSetting', () => {
       ['show_empty_values', () => 'true'],
       ['show_empty_values', () => null],
       ['show_empty_values', () => big(1)],
-      ['aggregation_type', () => big(5)],
-      ['aggregation_type', () => big(6)],
+      ['aggregation_type', () => big(17)],
+      ['aggregation_type', () => big(18)],
       ['aggregation_type', () => big(-1)],
       ['aggregation_type', () => 2.5],
       ['aggregation_type', () => '1'],
@@ -322,6 +322,18 @@ describe('readChartLayoutSetting', () => {
       const { map } = createChartMap({ ...VALID, [key]: value() });
 
       expect(readChartLayoutSetting(map)).toEqual(RESET);
+    });
+
+    it.each([5, 6, 12, 16])('reads a legacy Dashboard aggregation %s without resetting its fields', (aggregation) => {
+      const { map } = createChartMap({ chart_type: big(1), x_field_id: 'category',
+        y_field_id: 'value', show_empty_values: false, aggregation_type: big(aggregation) });
+
+      expect(readChartLayoutSetting(map)).toEqual(setting({ chartType: ChartType.Line,
+        xFieldId: 'category', yFieldId: 'value', aggregationType: aggregation }));
+      writeChartLayoutSetting(map, { xFieldId: 'updated' });
+      expect(map.get('aggregation_type')).toBe(big(0));
+      expect(map.get('aggregation_type_pb')).toBe(big(aggregation));
+      expect(readChartLayoutSetting(map)?.yFieldId).toBe('value');
     });
 
     it('accepts JS numbers without a fractional part, as yrs accepts Any::Number', () => {

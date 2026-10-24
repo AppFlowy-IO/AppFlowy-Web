@@ -3,8 +3,8 @@ Feature: Dashboard widgets
   Widgets render existing database views from the host database or any other
   database in the workspace. The picker adds existing views or creates a new
   one, the widget menu opens the data source, duplicates and deletes widgets,
-  and a dashboard holds at most 12 widgets with at most 4 per row (refused
-  without a banner). Widgets whose view is gone or not accessible keep their
+  and dashboards retain every widget regardless of row size.
+  Widgets whose view is gone or not accessible keep their
   place and explain why.
 
   Background:
@@ -87,12 +87,13 @@ Feature: Dashboard widgets
     Then dashboard row 1 holds "Projects Grid, Tasks Grid"
     And the widths of dashboard row 1 are "6, 6"
 
-  Scenario: A thirteenth widget is refused
+  Scenario: An existing view can be added as a thirteenth widget
     Given the dashboard has 12 widgets in 3 full rows
-    Then adding another widget is refused with the Dashboard is full tooltip
-    And the dashboard shows 12 widgets
+    When I open the widget picker
+    And I pick the "Projects Grid" view in the widget picker
+    Then the dashboard shows 13 widgets
 
-  Scenario: A fifth widget in a row is refused
+  Scenario: A fifth widget can join a row
     Given the dashboard has these widgets:
       | row | widget           |
       | 1   | Projects Grid    |
@@ -100,14 +101,11 @@ Feature: Dashboard widgets
       | 1   | Notes Grid       |
       | 1   | Projects Grid #2 |
       | 2   | Tasks Grid #2    |
-    Then dashboard row 1 offers no add widget button
+    Then dashboard row 1 offers an add widget button
     And dashboard row 2 offers an add widget button
     When I drag the "Tasks Grid #2" widget onto the right side of the "Notes Grid" widget
-    Then dashboard row 1 holds "Projects Grid, Tasks Grid, Notes Grid, Projects Grid #2"
-    And dashboard row 2 holds "Tasks Grid #2"
-    # The drop happened and was refused (a drag that never started would leave the rows as they are too).
-    And the refusal "A row holds up to 4 widgets." was announced
-    And the dashboard shows no limit banner
+    Then dashboard row 1 holds "Projects Grid, Tasks Grid, Notes Grid, Tasks Grid #2, Projects Grid #2"
+    And the dashboard shows 5 widgets
 
   Scenario: A widget whose view was trashed shows the not-found placeholder
     Given the dashboard has these widgets:

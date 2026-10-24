@@ -2,7 +2,6 @@ import {
   DASHBOARD_GEOMETRY,
   DASHBOARD_GRID_COLUMNS,
   DASHBOARD_MAX_ROW_HEIGHT,
-  DASHBOARD_MAX_WIDGETS_PER_ROW,
   DASHBOARD_MIN_ROW_HEIGHT,
   DASHBOARD_MIN_WIDGET_WIDTH,
   DASHBOARD_ROW_HEIGHT_SNAP,
@@ -57,13 +56,19 @@ export function roundHalfAwayFromZero(value: number) {
  * four goes straight to two by two, never three up.
  */
 export function dashboardWrapColumns(rowWidth: number, count: number) {
-  let cols = Math.max(1, count);
+  const fits = Math.max(1, Math.floor((rowWidth + COLUMN_GAP) / (DASHBOARD_MIN_WIDGET_WIDTH + COLUMN_GAP)));
+  let cols = Math.min(Math.max(1, count), fits);
 
-  while (cols > 1 && (rowWidth - (cols - 1) * COLUMN_GAP) / cols < DASHBOARD_MIN_WIDGET_WIDTH) {
-    cols = count === DASHBOARD_MAX_WIDGETS_PER_ROW && cols === DASHBOARD_MAX_WIDGETS_PER_ROW ? 2 : cols - 1;
+  // Integer width shares can be uneven (five widgets use 3/3/2/2/2).
+  // Keep the narrowest default share readable before unwrapping the row.
+  if (count > 1 && cols === count) {
+    const budget = Math.max(DASHBOARD_GRID_COLUMNS, count);
+    const narrowestWidth = ((rowWidth - (count - 1) * COLUMN_GAP) * Math.floor(budget / count)) / budget;
+
+    if (narrowestWidth < DASHBOARD_MIN_WIDGET_WIDTH) cols -= 1;
   }
 
-  return cols;
+  return count === 4 && cols === 3 ? 2 : cols;
 }
 
 /** Line sizes for `count` widgets at `cols` per line (3 at 2 → [2, 1]). */
@@ -82,17 +87,17 @@ export function dashboardLineSizes(count: number, cols: number) {
 export function dashboardMinWidgetColumns(rowWidth: number, count: number) {
   const available = rowWidth - (count - 1) * COLUMN_GAP;
 
-  if (!(available > 0)) return DASHBOARD_GRID_COLUMNS;
+  if (!(available > 0)) return Math.max(DASHBOARD_GRID_COLUMNS, count);
   // The epsilon keeps an exact quotient (2880 / 480) from rounding up.
   return Math.max(
     MIN_WIDGET_COLUMNS,
-    Math.ceil((DASHBOARD_MIN_WIDGET_WIDTH * DASHBOARD_GRID_COLUMNS) / available - 1e-9)
+    Math.ceil((DASHBOARD_MIN_WIDGET_WIDTH * Math.max(DASHBOARD_GRID_COLUMNS, count)) / available - 1e-9)
   );
 }
 
 /** Whole columns covered by a pointer delta over a row of `count` widgets. */
 export function dashboardPixelsToColumns(deltaPx: number, rowWidth: number, count: number) {
-  const pitch = (rowWidth - (count - 1) * COLUMN_GAP) / DASHBOARD_GRID_COLUMNS;
+  const pitch = (rowWidth - (count - 1) * COLUMN_GAP) / Math.max(DASHBOARD_GRID_COLUMNS, count);
 
   if (!Number.isFinite(deltaPx) || !(pitch > 0)) return 0;
   return roundHalfAwayFromZero(deltaPx / pitch);
@@ -134,8 +139,13 @@ export function dashboardWidgetSlots(widths: number[], cols: number): DashboardW
     for (let index = 0; index < lineSize; index += 1) {
       const width = widths[slots.length];
 
-      // 12 / k is exact for k ≤ 4.
-      slots.push({ line, lineSize, span: unwrapped ? width : DASHBOARD_GRID_COLUMNS / lineSize });
+      slots.push({
+        line,
+        lineSize,
+        span: unwrapped
+          ? (width * DASHBOARD_GRID_COLUMNS) / Math.max(DASHBOARD_GRID_COLUMNS, count)
+          : DASHBOARD_GRID_COLUMNS / lineSize,
+      });
     }
   });
   return slots;
@@ -158,7 +168,7 @@ export function computeDashboardRowLayout(rowWidth: number, widths: number[], he
 
     for (let index = 0; index < lineSize; index += 1) {
       const width = unwrapped
-        ? ((rowWidth - (count - 1) * COLUMN_GAP) * widths[rects.length]) / DASHBOARD_GRID_COLUMNS
+        ? ((rowWidth - (count - 1) * COLUMN_GAP) * widths[rects.length]) / Math.max(DASHBOARD_GRID_COLUMNS, count)
         : (rowWidth - (lineSize - 1) * COLUMN_GAP) / lineSize;
 
       rects.push([x, line * (height + ROW_GAP), width, height]);
@@ -187,7 +197,7 @@ export function getDashboardFlexBasis(span: number, lineSize: number) {
  * the row, so this is `boundaries[index] - 6` of the track.
  */
 export function getWidthHandleCenter(columnsBefore: number, index: number, count: number) {
-  return `calc((100% + ${COLUMN_GAP - (count - 1) * COLUMN_GAP}px) * ${columnsBefore} / ${DASHBOARD_GRID_COLUMNS} + ${
+  return `calc((100% + ${COLUMN_GAP - (count - 1) * COLUMN_GAP}px) * ${columnsBefore} / ${Math.max(DASHBOARD_GRID_COLUMNS, count)} + ${
     index * COLUMN_GAP
   }px)`;
 }

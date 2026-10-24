@@ -168,7 +168,7 @@ Feature: Marketing budget versus actual spend
   Scenario: Tidying the category chart in Edit mode: the median, then no uncategorised spend
     When I open the "Budget" dashboard
     And I switch the dashboard to Edit mode
-    Then adding another widget is refused with the Dashboard is full tooltip
+    Then the add to new row button is enabled
     When I open the settings of the "Average spend by category" widget
     And I set the chart Y axis to "Actual" with "Median"
     Then the "Average spend by category" chart shows these values:

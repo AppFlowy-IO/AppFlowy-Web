@@ -203,7 +203,7 @@ describe('useOwnedWidgetViews: duplicate (WP05 §1.4)', () => {
     ]);
   });
 
-  it('refuses on a full dashboard before creating anything', async () => {
+  it('duplicates a thirteenth widget', async () => {
     const { doc, database } = createDoc([widgetRow('a', 4), widgetRow('b', 4), widgetRow('c', 4)]);
     const { result } = render(doc);
 
@@ -211,12 +211,12 @@ describe('useOwnedWidgetViews: duplicate (WP05 §1.4)', () => {
       await result.current.ownedViews.duplicateWidget('a-w0');
     });
 
-    expect(duplicateMock).not.toHaveBeenCalled();
-    expect(liveRegion.announce).toHaveBeenCalledWith(expect.stringContaining('Dashboard is full'));
-    expect(stored(database).flatMap((row) => row.widgets)).toHaveLength(12);
+    expect(duplicateMock).toHaveBeenCalledTimes(1);
+    expect(liveRegion.announce).not.toHaveBeenCalled();
+    expect(stored(database).flatMap((row) => row.widgets)).toHaveLength(13);
   });
 
-  it('deletes the copy at once when a concurrent edit filled the dashboard meanwhile', async () => {
+  it('keeps the copy when a collaborator adds the twelfth widget', async () => {
     const { doc, database, view } = createDoc([widgetRow('a', 4), widgetRow('b', 4), widgetRow('c', 3)]);
     const { result } = render(doc);
 
@@ -231,11 +231,11 @@ describe('useOwnedWidgetViews: duplicate (WP05 §1.4)', () => {
       await result.current.ownedViews.duplicateWidget('a-w0');
     });
 
-    expect(deleteMock).toHaveBeenCalledWith(expect.anything(), { viewId: 'copy-late', databaseId: DATABASE_ID });
-    expect(stored(database).flatMap((row) => row.widgets.map((widget) => widget.viewId))).not.toContain('copy-late');
+    expect(deleteMock).not.toHaveBeenCalled();
+    expect(stored(database).flatMap((row) => row.widgets.map((widget) => widget.viewId))).toContain('copy-late');
     // The refusal is announced once, and the dashboard keeps the collaborator's 12 widgets.
-    expect(liveRegion.announce.mock.calls).toEqual([[expect.stringContaining('Dashboard is full')]]);
-    expect(stored(database).flatMap((row) => row.widgets)).toHaveLength(12);
+    expect(liveRegion.announce).not.toHaveBeenCalled();
+    expect(stored(database).flatMap((row) => row.widgets)).toHaveLength(13);
   });
 
   it('disables Duplicate for the widget while its copy is being created', async () => {

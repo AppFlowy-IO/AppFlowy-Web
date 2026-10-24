@@ -29,7 +29,6 @@ import { pressEscapeUntilHidden, WIDGET_TIMEOUT } from '../../support/dashboard-
 import {
   addDashboardView,
   allWidgets,
-  DASHBOARD_MAX_WIDGETS,
   DashboardSelectors,
   enterEditMode,
   expectRowWidths,
@@ -262,7 +261,6 @@ Then('the dashboard has \\{{int}\\} rows', async ({ page }, count: number) => {
 });
 
 Then('the dashboard has \\{{int}\\} widgets', async ({ page }, count: number) => {
-  expect(count).toBeLessThanOrEqual(DASHBOARD_MAX_WIDGETS);
   await expectWidgetCount(page, count);
   expect(allWidgets(await readDashboardSetting(page))).toHaveLength(count);
 });

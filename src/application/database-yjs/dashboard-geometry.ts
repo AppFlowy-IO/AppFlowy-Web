@@ -6,10 +6,7 @@
  * DOM, so playwright helpers import it as well.
  */
 
-/** Notion parity: a dashboard holds at most 12 widgets, 4 per row. */
-export const DASHBOARD_MAX_WIDGETS = 12;
-export const DASHBOARD_MAX_WIDGETS_PER_ROW = 4;
-/** Widget widths are shares of a 12-column grid; a row's widths always sum to this. */
+/** Minimum integer width budget; rows with more widgets use one unit per widget. */
 export const DASHBOARD_GRID_COLUMNS = 12;
 export const DASHBOARD_MIN_ROW_HEIGHT = 240;
 export const DASHBOARD_DEFAULT_ROW_HEIGHT = 360;

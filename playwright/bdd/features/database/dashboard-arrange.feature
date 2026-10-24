@@ -112,36 +112,24 @@ Feature: Dashboard arranging
     When the user chooses {'view-data-source'} in the dashboard widget menu
     Then the view {'Grid'} of the database {'Projects'} is open outside the dashboard
 
-  Scenario: A full dashboard disables Duplicate and the add buttons with the Dashboard is full tooltip
+  Scenario: Add controls and Duplicate remain available at twelve widgets
     Given a dashboard seeded with rows of {'4, 4, 3, 1'} widgets is open in edit mode
-    When the user opens the menu of dashboard widget {1}
-    Then the dashboard widget menu item {'duplicate'} is disabled
-    When the user hovers the dashboard widget menu item {'duplicate'}
-    Then the dashboard full tooltip is shown
-    When the user dismisses the dashboard widget menu
-    And the user hovers dashboard row {1}
-    Then dashboard row {1} offers no add to row button
+    When the user hovers dashboard row {1}
+    Then dashboard row {1} offers the add to row button
     When the user hovers dashboard row {3}
-    Then dashboard row {3} offers a disabled add to row button
-    When the user hovers the add to new row button
-    Then the add to new row button is disabled
-    And the dashboard full tooltip is shown
-    When the user clicks the add to new row button
-    Then the dashboard has {12} widgets
-    And the dashboard shows no limit banner
+    Then dashboard row {3} offers the add to row button
+    And the add to new row button is enabled
+    When the user opens the menu of dashboard widget {1}
+    And the user chooses {'duplicate'} in the dashboard widget menu
+    Then the dashboard has {13} widgets
 
-  Scenario: A full row hides its add button and refuses a dragged widget without a banner
+  Scenario: A row of four offers Add to row and accepts a dragged widget
     Given a dashboard seeded with rows of {'4, 1'} widgets is open in edit mode
     When the user hovers dashboard row {1}
-    Then dashboard row {1} offers no add to row button
-    When the user hovers dashboard row {2}
-    Then dashboard row {2} offers the add to row button
-    When the user starts dragging dashboard widget {5} over the left side of dashboard widget {1}
-    Then the dashboard shows no drop indicator
-    When the user drops the dragged widget
-    Then the dashboard row {1} has widget ids {'w:1, w:2, w:3, w:4'}
-    And the dashboard row {2} has widget ids {'w:5'}
-    And the dashboard shows no limit banner
+    Then dashboard row {1} offers the add to row button
+    When the user drags dashboard widget {5} onto the left side of dashboard widget {1}
+    Then the dashboard row {1} has widget ids {'w:5, w:1, w:2, w:3, w:4'}
+    And the dashboard has {1} rows
 
   Scenario: Dropping a lone widget next to its own row changes nothing
     Given a dashboard seeded with rows of {'2, 1'} widgets is open in edit mode

@@ -647,26 +647,15 @@ describe('Dashboard', () => {
       ]);
     });
 
-    it('disables every add control with the full tooltip on a full dashboard', async () => {
+    it('keeps every add control enabled at twelve widgets', async () => {
       renderDashboard(makeRows(['a', 'b', 'c', 'd'], ['e', 'f', 'g', 'h'], ['i', 'j', 'k'], ['l']));
-
       fireEvent.click(screen.getByTestId('dashboard-edit-button'));
-
-      // Full rows have no "+"; the others are refused, like "Add to new row".
-      expect(screen.getAllByTestId('dashboard-add-widget-row-button').map((button) => button.dataset.rowId)).toEqual([
-        'r3',
-        'r4',
-      ]);
+      expect(screen.getAllByTestId('dashboard-add-widget-row-button')).toHaveLength(4);
       for (const button of [...screen.getAllByTestId('dashboard-add-widget-row-button'), visibleAddWidgetButton()]) {
-        expect(button.getAttribute('aria-disabled')).toBe('true');
+        expect(button.getAttribute('aria-disabled')).not.toBe('true');
       }
 
-      act(() => visibleAddWidgetButton().focus());
-      const tooltip = await screen.findByTestId('dashboard-full-tooltip');
-
-      expect(tooltip.textContent).toContain('Dashboard is full');
-      expect(tooltip.textContent).toContain('Delete a view to add a new one');
-      expectNoLimitBanner();
+      expect(screen.queryByTestId('dashboard-full-tooltip')).toBeNull();
     });
 
     it('adds a widget into a row from its "+" and splits the row evenly', async () => {
@@ -719,7 +708,7 @@ describe('Dashboard', () => {
       expect(picker()).toBeNull();
     });
 
-    it('deletes the created view when the dashboard filled up during the creation', async () => {
+    it('keeps the new widget after a collaborator grows the dashboard to twelve', async () => {
       const rendered = renderDashboard(makeRows(['a']));
       const creation = serveDefaultView(rendered, { hold: true });
 
@@ -730,16 +719,13 @@ describe('Dashboard', () => {
       await act(async () => creation.release());
       await settle();
 
-      expect(mockDeleteView).toHaveBeenCalledWith(expect.anything(), {
-        viewId: 'default-view',
-        databaseId: DATABASE_ID,
-      });
-      expect(picker()).toBeNull();
+      expect(mockDeleteView).not.toHaveBeenCalled();
+      expect(picker()).not.toBeNull();
       // Refused once, at the insert: the click itself was allowed.
-      expect(mockAnnounce.mock.calls).toEqual([['Dashboard is full. Delete a view to add a new one.']]);
+      expect(mockAnnounce).not.toHaveBeenCalled();
       expectNoLimitBanner();
-      expect(rendered.persistedRows().flatMap((row) => row.widgets)).toHaveLength(12);
-      expect(rendered.persistedRows().flatMap((row) => row.widgets.map((item) => item.viewId))).not.toContain(
+      expect(rendered.persistedRows().flatMap((row) => row.widgets)).toHaveLength(13);
+      expect(rendered.persistedRows().flatMap((row) => row.widgets.map((item) => item.viewId))).toContain(
         'default-view'
       );
       expect(screen.queryByTestId('dashboard-widget-pending')).toBeNull();
@@ -848,41 +834,30 @@ describe('Dashboard', () => {
       expect(rendered.persistedRows()[0].widgets.map((item) => item.viewId)).toEqual(['view-a', 'default-view']);
     });
 
-    it('hides the add button of a full row', () => {
+    it('offers Add to row for a row of four', () => {
       renderDashboard(makeRows(['a', 'b', 'c', 'd'], ['e']));
       fireEvent.click(screen.getByTestId('dashboard-edit-button'));
 
-      expect(rowAddButton('r1')).toBeUndefined();
+      expect(rowAddButton('r1').hasAttribute('aria-disabled')).toBe(false);
       expect(rowAddButton('r2').hasAttribute('aria-disabled')).toBe(false);
       expectNoLimitBanner();
       // Nothing was refused: the full row offers nothing to press.
       expect(mockAnnounce).not.toHaveBeenCalled();
     });
 
-    it('refuses adds on a full dashboard without banners, creating no view', async () => {
-      const { persistedRows } = renderDashboard(
-        makeRows(['a', 'b', 'c', 'd'], ['e', 'f', 'g', 'h'], ['i', 'j', 'k', 'l'])
-      );
+    it('creates and shows a thirteenth widget', async () => {
+      const rendered = renderDashboard(makeRows(['a', 'b', 'c', 'd'], ['e', 'f', 'g', 'h'], ['i', 'j', 'k', 'l']));
 
       fireEvent.click(screen.getByTestId('dashboard-edit-button'));
-
-      const addButton = visibleAddWidgetButton();
-
-      expect(addButton.getAttribute('aria-disabled')).toBe('true');
-      // Every row is full: no row offers "+".
-      expect(screen.queryByTestId('dashboard-add-widget-row-button')).toBeNull();
-
-      fireEvent.click(addButton);
+      serveDefaultView(rendered);
+      fireEvent.click(visibleAddWidgetButton());
       await settle();
-
-      expect(mockAnnounce.mock.calls).toEqual([['Dashboard is full. Delete a view to add a new one.']]);
-      expect(mockCreateView).not.toHaveBeenCalled();
-      expect(picker()).toBeNull();
-      expectNoLimitBanner();
-      expect(persistedRows().flatMap((row) => row.widgets)).toHaveLength(12);
+      expect(mockCreateView).toHaveBeenCalledTimes(1);
+      expect(rendered.persistedRows().flatMap((row) => row.widgets)).toHaveLength(13);
+      expect(mockAnnounce).not.toHaveBeenCalled();
     });
 
-    it('shows the first 12 widgets of a layout saved over the limit, refuses adds, and keeps the rest on the next write', async () => {
+    it('shows and edits every widget of a large stored layout', async () => {
       const rendered = renderDashboard([], { extra: <MoveProbe /> });
       const ids = 'abcdefghijklmn'.split('');
       const stored = (row: string[], index: number) => ({
@@ -895,19 +870,15 @@ describe('Dashboard', () => {
       rendered.writeRawRows([ids.slice(0, 4), ids.slice(4, 8), ids.slice(8, 12), ids.slice(12)].map(stored));
 
       expect(screen.getAllByTestId('dashboard-widget').map((element) => element.dataset.widgetId)).toEqual(
-        ids.slice(0, 12)
+        ids
       );
       fireEvent.click(screen.getByTestId('dashboard-edit-button'));
-      expect(visibleAddWidgetButton().getAttribute('aria-disabled')).toBe('true');
-      expect(screen.queryByTestId('dashboard-add-widget-row-button')).toBeNull();
-      fireEvent.click(visibleAddWidgetButton());
-      await settle();
-      expect(mockAnnounce.mock.calls).toEqual([['Dashboard is full. Delete a view to add a new one.']]);
-      expect(mockCreateView).not.toHaveBeenCalled();
+      expect(visibleAddWidgetButton().getAttribute('aria-disabled')).not.toBe('true');
+      expect(screen.getAllByTestId('dashboard-add-widget-row-button')).toHaveLength(4);
 
       // A row move rewrites the rows: the two hidden widgets stay stored after the shown ones.
       fireEvent.click(screen.getByTestId('probe-move-row'));
-      expect(rendered.persistedRows().map((row) => row.id)).toEqual(['r2', 'r1', 'r3']);
+      expect(rendered.persistedRows().map((row) => row.id)).toEqual(['r2', 'r1', 'r3', 'r4']);
       expect(rendered.storedWidgetIds()).toEqual([
         ...ids.slice(4, 8),
         ...ids.slice(0, 4),
@@ -915,7 +886,7 @@ describe('Dashboard', () => {
         'm',
         'n',
       ]);
-      expect(screen.getAllByTestId('dashboard-widget')).toHaveLength(12);
+      expect(screen.getAllByTestId('dashboard-widget')).toHaveLength(14);
       expectNoLimitBanner();
     });
 

@@ -5,7 +5,6 @@ import * as Y from 'yjs';
 import { hasRowConditionData, invalidateRowConditionCache } from '@/application/database-yjs/condition-value-cache';
 import { dashboardLoadStats } from '@/application/database-yjs/dashboard-load-stats';
 import { DASHBOARD_LOADING } from '@/application/database-yjs/dashboard-loading';
-import { DASHBOARD_MAX_WIDGETS } from '@/application/database-yjs/dashboard.type';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import {
   captureDatabaseStorageFence,
@@ -160,10 +159,10 @@ const BLOB_DIFF_MAX_RESTARTS = 2;
 export const ROW_DOC_SEED_CACHE_RELEASE_GRACE_MS = DASHBOARD_LOADING.sourceIdleReleaseMs;
 /**
  * Released databases whose seeds are kept at once; the oldest is released
- * first. Sized for the dashboard just left: one source per widget, plus the
- * database that hosts the dashboard.
+ * first. This bounds idle cache retention independently of dashboard size;
+ * active sources are retained for as long as their widgets need them.
  */
-export const MAX_RELEASED_ROW_DOC_SEED_CACHES = DASHBOARD_MAX_WIDGETS + 1;
+export const MAX_RELEASED_ROW_DOC_SEED_CACHES = 13;
 /** Set from a sign-out until the next sign-in: released seeds are cleared at once. */
 let releaseRowDocSeedsWithoutGrace = false;
 

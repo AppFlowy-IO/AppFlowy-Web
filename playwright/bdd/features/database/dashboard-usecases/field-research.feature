@@ -1,9 +1,9 @@
 @dashboard @dashboard-usecase @dashboard-template-3 @cloud
-Feature: Field research dashboard at the twelve-widget limit
+Feature: Field research dashboard with twelve initial widgets
   Based on a French mycology researcher's biodiversity dashboard: three rows
   of four widgets (observation, collection and sequencing counts, trophic
   mode and station donuts, observations over time, conservation status,
-  taxonomy bars), built right up to the twelve-widget limit, which its author
+  taxonomy bars), starting with twelve widgets, which its author
   complained about. The researcher reads it after every field trip and
   records a new find from the log. A full dashboard disables Duplicate and
   every add button with the "Dashboard is full" tooltip until a widget is
@@ -113,31 +113,15 @@ Feature: Field research dashboard at the twelve-widget limit
       | New species | 2     |
       | Rare        | 3     |
 
-  Scenario: A full dashboard disables Duplicate and the add buttons until a widget is deleted
+  Scenario: A thirteenth widget can be duplicated without deleting another widget
     When I open the "Field station" dashboard
     And I switch the dashboard to Edit mode
-    Then the add to new row button is disabled
-    When I click the "Field log" widget title
-    Then the widget menu is open
-    And "duplicate" is disabled in the widget menu
-    When I hover "duplicate" in the widget menu
-    Then the dashboard full tooltip is shown
-    When I close the widget menu
-    And I choose "delete" in the "Sequenced" widget menu
-    Then the dashboard shows 11 widgets
-    # The row that lost a widget splits equally again.
-    And the widths of dashboard row 1 are "4, 4, 4"
-    And dashboard row 1 offers an add widget button
-    # Row 3 is full, so the copy starts row 4.
+    Then the add to new row button is enabled
     When I choose "duplicate" in the "Field log" widget menu
-    Then the dashboard shows 12 widgets
-    And the dashboard has 4 rows
-    And dashboard row 4 holds "Observations Field log (1)"
-    # Row 4 holds one widget and row 1 three: only the twelve-widget limit
-    # disables their add buttons.
-    And dashboard row 4 offers a disabled add widget button
-    And dashboard row 1 offers a disabled add widget button
-    And the add to new row button is disabled
+    Then the dashboard shows 13 widgets
+    And the dashboard has 3 rows
+    And dashboard row 3 offers an add widget button
+    And the add to new row button is enabled
 
   Scenario: A poster version without widget titles and with a compact first row
     When I open the "Field station" dashboard

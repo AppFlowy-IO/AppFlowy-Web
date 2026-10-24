@@ -43,9 +43,6 @@ export const DEFAULT_WIDGET_NAMES: Record<DefaultWidgetSpecKind, string> = {
   grid: 'Table',
 };
 
-/** Why an add was refused (`canAddDashboardWidget`): the dashboard or the target row is full. */
-export type AddWidgetRefusal = 'dashboard' | 'row';
-
 interface FlowViewState {
   widgetId: string;
   /** The widget's own view, created by the flow (owned by the dashboard). */
@@ -83,8 +80,6 @@ export type AddWidgetFlowEvent =
       /** Generated at the click: the pending slot and the persisted widget share it. */
       widgetId: string;
       spec: DefaultWidgetSpecKind;
-      /** `canAddDashboardWidget` refused the placement. */
-      refused: AddWidgetRefusal | null;
       /** Offline adds can reference existing views without creating an owned view. */
       existingOnly?: boolean;
     }
@@ -112,7 +107,6 @@ export type AddWidgetFlowEvent =
   | { type: 'back' };
 
 export type AddWidgetFlowEffect =
-  | { type: 'announce_limit'; reason: AddWidgetRefusal }
   | { type: 'pin_edit' }
   | { type: 'create_default_view'; spec: DefaultWidgetSpecKind }
   | { type: 'select'; widgetId: string }
@@ -173,7 +167,6 @@ export function reduceAddWidgetFlow(state: AddWidgetFlowState, event: AddWidgetF
     case 'start': {
       // One add at a time: the "+" controls wait for the default view in flight.
       if (state.kind === 'creating') return unchanged(state);
-      if (event.refused) return { state, effects: [{ type: 'announce_limit', reason: event.refused }] };
       if (event.existingOnly) {
         return {
           state: { kind: 'choosing_existing', widgetId: event.widgetId, placement: event.placement, spec: 'grid' },
@@ -222,12 +215,9 @@ export function reduceAddWidgetFlow(state: AddWidgetFlowState, event: AddWidgetF
     }
 
     case 'insert_refused': {
-      // The created view never got its widget. A dashboard that filled between
-      // the click and the insert is announced; a lost write access (or a
-      // mobile context) is not: the dashboard is not full.
+      // Access can disappear after view creation. Delete the unattached owned view.
       const effects: AddWidgetFlowEffect[] = [{ type: 'delete_never_referenced_view', viewId: event.viewId }];
 
-      if (event.reason !== 'access') effects.push({ type: 'announce_limit', reason: 'dashboard' });
       return { state: IDLE_ADD_WIDGET_FLOW, effects };
     }
 

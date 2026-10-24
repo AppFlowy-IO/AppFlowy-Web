@@ -12,7 +12,7 @@ import {
   removeDashboardWidget,
   updateDashboardLayoutSetting,
 } from '../dashboard-layout';
-import { DASHBOARD_LAYOUT_KEY, DASHBOARD_MAX_WIDGETS, DashboardRow } from '../dashboard.type';
+import { DASHBOARD_LAYOUT_KEY, DashboardRow } from '../dashboard.type';
 import { getOrCreateDatabaseHistoryManager, runDatabaseAction } from '../history';
 
 /**
@@ -117,33 +117,32 @@ function addInNewRow(widgetId: string) {
     addDashboardWidget(rows, createDashboardWidget(`view-${widgetId}`, DATABASE_ID, 12, widgetId), { type: 'new_row' });
 }
 
-function expectWithinLimit(doc: YDoc) {
+function expectAllWidgetsVisible(doc: YDoc) {
   const ids = storedIds(doc);
 
-  expect(ids.length).toBeLessThanOrEqual(DASHBOARD_MAX_WIDGETS);
   expect(new Set(ids).size).toBe(ids.length);
   expect(shownRows(doc).flatMap((row) => row.widgets)).toHaveLength(ids.length);
 }
 
 describe('the widget limit with two editors', () => {
-  it('converges on one layout of at most 12 widgets when both add the twelfth at the same time', () => {
-    const { user, collaborator } = createEditors(rowsOf(4, 4, 3));
+  it('converges on a complete thirteen-widget layout after concurrent additions', () => {
+    const { user, collaborator } = createEditors(rowsOf(4, 4, 4));
 
     write(user, addInNewRow('mine'), true);
     write(collaborator, addInNewRow('theirs'));
     // Each editor alone is at the limit before it hears of the other.
-    expect(storedIds(user)).toHaveLength(12);
-    expect(storedIds(collaborator)).toHaveLength(12);
+    expect(storedIds(user)).toHaveLength(13);
+    expect(storedIds(collaborator)).toHaveLength(13);
 
     sync(user, collaborator);
 
     expect(storedRows(user)).toBe(storedRows(collaborator));
-    expectWithinLimit(user);
-    expect(storedIds(user)).toHaveLength(12);
+    expectAllWidgetsVisible(user);
+    expect(storedIds(user)).toHaveLength(13);
     // One add wins whole: never both, so never 13.
     expect(['mine', 'theirs'].filter((id) => storedIds(user).includes(id))).toHaveLength(1);
-    expect(canAddDashboardWidget(shownRows(user))).toBe(false);
-    expect(getDashboardAddToNewRowState(shownRows(collaborator))).toBe('disabled');
+    expect(canAddDashboardWidget(shownRows(user))).toBe(true);
+    expect(getDashboardAddToNewRowState(shownRows(collaborator))).toBe('enabled');
   });
 
   it('converges on at most 12 widgets when one editor adds to a row while the other adds a row', () => {
@@ -159,8 +158,8 @@ describe('the widget limit with two editors', () => {
     sync(user, collaborator);
 
     expect(storedRows(user)).toBe(storedRows(collaborator));
-    expectWithinLimit(user);
-    expectWithinLimit(collaborator);
+    expectAllWidgetsVisible(user);
+    expectAllWidgetsVisible(collaborator);
   });
 });
 
@@ -169,14 +168,14 @@ describe('undo and redo across the widget limit', () => {
     const { user } = createEditors(rowsOf(4, 4, 4));
     const history = getOrCreateDatabaseHistoryManager(user);
 
-    expect(getDashboardAddToNewRowState(shownRows(user))).toBe('disabled');
+    expect(getDashboardAddToNewRowState(shownRows(user))).toBe('enabled');
     write(user, (rows) => removeDashboardWidget(rows, 'w:12'), true);
     expect(storedIds(user)).toHaveLength(11);
     expect(getDashboardAddToNewRowState(shownRows(user))).toBe('enabled');
 
     history.undo();
     expect(storedIds(user)).toHaveLength(12);
-    expect(getDashboardAddToNewRowState(shownRows(user))).toBe('disabled');
+    expect(getDashboardAddToNewRowState(shownRows(user))).toBe('enabled');
 
     history.redo();
     expect(storedIds(user)).toHaveLength(11);
@@ -196,14 +195,14 @@ describe('undo and redo across the widget limit', () => {
     history.undo();
     sync(user, collaborator);
 
-    expectWithinLimit(user);
+    expectAllWidgetsVisible(user);
     expect(storedRows(user)).toBe(storedRows(collaborator));
     // The collaborator's newer value stays: Yjs does not restore an overwritten value.
     expect(storedIds(user)).toContain('theirs');
     expect(storedIds(user)).not.toContain('w:12');
 
     history.redo();
-    expectWithinLimit(user);
+    expectAllWidgetsVisible(user);
   });
 
   it('never goes past 12 when an add at the limit is undone and redone around a concurrent add', () => {
@@ -215,12 +214,12 @@ describe('undo and redo across the widget limit', () => {
     sync(user, collaborator);
     history.undo();
     sync(user, collaborator);
-    expectWithinLimit(user);
+    expectAllWidgetsVisible(user);
     expect(storedRows(user)).toBe(storedRows(collaborator));
 
     history.redo();
     sync(user, collaborator);
-    expectWithinLimit(user);
+    expectAllWidgetsVisible(user);
     expect(storedRows(user)).toBe(storedRows(collaborator));
   });
 });

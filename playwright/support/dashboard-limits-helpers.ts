@@ -22,7 +22,6 @@ import {
   DASHBOARD_DEFAULT_ROW_HEIGHT,
   DASHBOARD_GRID_COLUMNS,
   DASHBOARD_LAYOUT_KEY,
-  DASHBOARD_MAX_WIDGETS,
   DashboardSelectors,
   dashboardViewId,
   dashboardWorld,
@@ -290,7 +289,7 @@ export async function openDashboardSavedWithRows(page: Page, request: APIRequest
   await addDashboardView(page, 'Projects');
   const total = await saveRawDashboardRows(page, counts);
 
-  await expect(DashboardSelectors.widgets(page)).toHaveCount(Math.min(total, DASHBOARD_MAX_WIDGETS), WIDGET_TIMEOUT);
+  await expect(DashboardSelectors.widgets(page)).toHaveCount(total, WIDGET_TIMEOUT);
   await enterEditMode(page);
 }
 

@@ -1,5 +1,5 @@
 import { moveDashboardWidget } from '@/application/database-yjs/dashboard-layout';
-import { DASHBOARD_MAX_WIDGETS, DashboardRow } from '@/application/database-yjs/dashboard.type';
+import { DashboardRow } from '@/application/database-yjs/dashboard.type';
 
 import {
   canDuplicateWidget,
@@ -123,14 +123,14 @@ describe('canDuplicateWidget', () => {
     expect(canDuplicateWidget(rows, 'missing')).toBe(false);
   });
 
-  it('is refused on a full dashboard', () => {
+  it('is available past twelve widgets', () => {
     const full = makeRows(
-      ...Array.from({ length: DASHBOARD_MAX_WIDGETS / 4 }, (_, rowIndex) =>
+      ...Array.from({ length: 12 / 4 }, (_, rowIndex) =>
         Array.from({ length: 4 }, (__, index) => `w${rowIndex}-${index}`)
       )
     );
 
-    expect(canDuplicateWidget(full, 'w0-0')).toBe(false);
+    expect(canDuplicateWidget(full, 'w0-0')).toBe(true);
   });
 });
 
@@ -146,10 +146,10 @@ describe('resolveAddPlacement', () => {
     expect(resolveAddPlacement(rows, { type: 'new_row' })).toEqual({ type: 'new_row' });
   });
 
-  it('starts a new row below a row that filled up meanwhile', () => {
+  it('keeps a target row that grew while the picker was open', () => {
     const rows = makeRows(['a'], ['b', 'c', 'd', 'e'], ['f']);
 
-    expect(resolveAddPlacement(rows, { type: 'existing_row', rowId: 'r2' })).toEqual({ type: 'new_row', rowIndex: 2 });
+    expect(resolveAddPlacement(rows, { type: 'existing_row', rowId: 'r2' })).toEqual({ type: 'existing_row', rowId: 'r2' });
   });
 
   it('appends a new row when the target row is gone', () => {
@@ -161,10 +161,10 @@ describe('resolveAddPlacement', () => {
     });
   });
 
-  it('refuses any add on a full dashboard', () => {
+  it('keeps additions available past twelve widgets', () => {
     const full = makeRows(['a', 'b', 'c', 'd'], ['e', 'f', 'g', 'h'], ['i', 'j', 'k', 'l']);
 
-    expect(resolveAddPlacement(full, { type: 'new_row' })).toBeNull();
-    expect(resolveAddPlacement(full, { type: 'existing_row', rowId: 'r1' })).toBeNull();
+    expect(resolveAddPlacement(full, { type: 'new_row' })).toEqual({ type: 'new_row' });
+    expect(resolveAddPlacement(full, { type: 'existing_row', rowId: 'r1' })).toEqual({ type: 'existing_row', rowId: 'r1' });
   });
 });

@@ -68,7 +68,7 @@ export const DashboardGrid = memo(function DashboardGrid() {
   const rows = useMemo(() => withPendingWidget(storedRows, pending), [pending, storedRows]);
   const dragging = useDashboardDraggingWidgetId() !== null;
   const gridRef = useRef<HTMLDivElement>(null);
-  const breakpoints = useDashboardGridBreakpoints(gridRef);
+  const breakpoints = useDashboardGridBreakpoints(gridRef, Math.max(1, ...rows.map((row) => row.widgets.length)));
   const editing = isEditing && canEdit;
   const addNewRow = useCallback(() => startAddWidget({ type: 'new_row' }), [startAddWidget]);
   const refuseAdd = useCallback(() => announce(dashboardFullAnnouncement(t)), [announce, t]);

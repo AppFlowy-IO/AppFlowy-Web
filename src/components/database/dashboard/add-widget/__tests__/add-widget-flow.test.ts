@@ -67,7 +67,6 @@ function eventOf(json: Json): AddWidgetFlowEvent {
         placement: placementOf(json.placement as Json),
         widgetId: String(json.widget_id),
         spec: json.spec as 'chart' | 'grid',
-        refused: (json.refused as 'dashboard' | 'row' | null) ?? null,
       };
     case 'created':
     case 'insert_refused':
@@ -221,16 +220,8 @@ describe('flow helpers', () => {
 describe('insert_refused', () => {
   const deleted = { type: 'delete_never_referenced_view', viewId: 'v1' };
 
-  it('announces a dashboard that filled meanwhile, not a lost write access', () => {
-    // The fixture's bare event is the full dashboard (the default).
-    expect(reduceAddWidgetFlow(IDLE_ADD_WIDGET_FLOW, { type: 'insert_refused', viewId: 'v1' }).effects).toEqual([
-      deleted,
-      { type: 'announce_limit', reason: 'dashboard' },
-    ]);
-    expect(
-      reduceAddWidgetFlow(IDLE_ADD_WIDGET_FLOW, { type: 'insert_refused', viewId: 'v1', reason: 'full' }).effects
-    ).toEqual([deleted, { type: 'announce_limit', reason: 'dashboard' }]);
-    expect(reduceAddWidgetFlow(IDLE_ADD_WIDGET_FLOW, { type: 'insert_refused', viewId: 'v1', reason: 'access' })).toEqual({
+  it('cleans up an unattached view without claiming a widget limit', () => {
+    expect(reduceAddWidgetFlow(IDLE_ADD_WIDGET_FLOW, { type: 'insert_refused', viewId: 'v1' })).toEqual({
       state: IDLE_ADD_WIDGET_FLOW,
       effects: [deleted],
     });

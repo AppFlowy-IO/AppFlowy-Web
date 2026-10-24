@@ -42,7 +42,6 @@ import { expectNoEditingControls } from '../../support/dashboard-mobile-helpers'
 import { WIDGET_TIMEOUT } from '../../support/dashboard-shared-helpers';
 import {
   allWidgets,
-  DASHBOARD_MAX_WIDGETS,
   DashboardSelectors,
   expectRowHeight,
   inviteDashboardMember,
@@ -60,6 +59,10 @@ const HEIGHT_TOLERANCE = 1;
 
 Before({ tags: '@dashboard-limits' }, async ({ page }) => {
   await installAnnouncementRecorder(page.context());
+});
+
+When('the user closes the \\{{string}\\} picker', async ({ page }, _title: string) => {
+  await closeDockedPicker(page);
 });
 
 // ---------------------------------------------------------------------------
@@ -263,7 +266,7 @@ Then('the user and the collaborator see the same dashboard layout', async ({ pag
   );
   const saved = (user as { widgets: { id: string }[] }[]).flatMap((row) => row.widgets.map((widget) => widget.id));
 
-  expect(shown).toEqual(saved.slice(0, DASHBOARD_MAX_WIDGETS));
+  expect(shown).toEqual(saved);
 });
 
 // ---------------------------------------------------------------------------

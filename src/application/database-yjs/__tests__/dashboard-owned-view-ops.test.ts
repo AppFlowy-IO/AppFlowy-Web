@@ -975,7 +975,7 @@ describe('duplicateDashboardOwnedWidgets', () => {
     });
   });
 
-  it('copies the owned views of widgets hidden by the widget limit too', async () => {
+  it('copies every owned view beyond the former widget limit', async () => {
     const { workspace, hostDoc, foreignDoc } = setup();
 
     seedOwnedDashboard(workspace, hostDoc, foreignDoc);
@@ -989,7 +989,7 @@ describe('duplicateDashboardOwnedWidgets', () => {
     ];
 
     setDashboardRows(hostDoc, 'v:dash-copy', rows);
-    expect(readDashboardLayoutSetting(getDatabase(hostDoc), 'v:dash-copy').rows).toHaveLength(3);
+    expect(readDashboardLayoutSetting(getDatabase(hostDoc), 'v:dash-copy').rows).toHaveLength(4);
 
     const viewIdMap = await duplicateDashboardOwnedWidgets(workspace.deps(hostDoc), {
       sourceDashboardViewId: 'v:dash',

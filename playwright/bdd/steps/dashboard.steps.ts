@@ -18,8 +18,6 @@ import {
   configureNumberChart,
   DASHBOARD_FIXTURE_DATABASES,
   DASHBOARD_GRID_COLUMNS,
-  DASHBOARD_MAX_WIDGETS,
-  DASHBOARD_MAX_WIDGETS_PER_ROW,
   DashboardSelectors,
   dashboardSidebarEntry,
   dashboardViewId,
@@ -350,7 +348,7 @@ Given('the dashboard has these widgets:', async ({ page }, table: DataTable) => 
 });
 
 Given('the dashboard has {int} widgets in {int} full rows', async ({ page }, count: number, rows: number) => {
-  expect(count).toBe(DASHBOARD_MAX_WIDGETS);
+  expect(Number.isInteger(count / rows)).toBe(true);
   await ensureDashboardOpen(page);
   // The fixture databases of the scenario (the add-widget scenarios only prepare Projects).
   const databases = ['Projects', 'Tasks', 'Notes'].filter((name) => dashboardWorld(page).databases[name]);
@@ -687,12 +685,12 @@ Then('adding another widget is refused with the Dashboard is full tooltip', asyn
   const { rows } = await readDashboardSetting(page);
 
   for (const row of rows) {
-    expect(row.widgets).toHaveLength(DASHBOARD_MAX_WIDGETS_PER_ROW);
+    expect(row.widgets).toHaveLength(4);
     await DashboardSelectors.row(page, row.id).hover();
     await expect(DashboardSelectors.addWidgetRowButton(page, row.id)).toHaveCount(0);
   }
 
-  expect(allWidgets(await readDashboardSetting(page))).toHaveLength(DASHBOARD_MAX_WIDGETS);
+  expect(allWidgets(await readDashboardSetting(page))).toHaveLength(12);
 });
 
 Then('dashboard row {int} offers no add widget button', async ({ page }, rowIndex: number) => {

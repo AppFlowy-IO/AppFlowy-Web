@@ -4,9 +4,8 @@ import { join } from 'path';
 import i18next, { i18n } from 'i18next';
 
 import en from '@/@types/translations/en.json';
-import { DASHBOARD_MAX_WIDGETS_PER_ROW } from '@/application/database-yjs/dashboard.type';
 
-import { dashboardFullAnnouncement, dashboardRowLimitAnnouncement } from '../DashboardFullTooltip';
+import { dashboardFullAnnouncement } from '../DashboardFullTooltip';
 
 /**
  * The limit refusals against real i18next and the shipped `en.json`. The
@@ -43,16 +42,9 @@ describe('dashboard limit texts with the shipped English translations', () => {
     expect(dashboardFullAnnouncement(t)).toBe('Dashboard is full. Delete a view to add a new one.');
   });
 
-  it('announces a full row with the shared row limit', () => {
-    expect(DASHBOARD_MAX_WIDGETS_PER_ROW).toBe(4);
-    expect(dashboardRowLimitAnnouncement(t)).toBe('A row holds up to 4 widgets.');
-  });
-
   it('reads the keys of the shared translation table, so desktop says the same', () => {
     expect(t('dashboard.limit.fullTitle')).toBe(canonicalEnglish('dashboard.limit.fullTitle'));
     expect(t('dashboard.limit.fullHint')).toBe(canonicalEnglish('dashboard.limit.fullHint'));
-    expect(t('dashboard.rowLimit', { count: DASHBOARD_MAX_WIDGETS_PER_ROW })).toBe(
-      canonicalEnglish('dashboard.rowLimit').replace('{count}', String(DASHBOARD_MAX_WIDGETS_PER_ROW))
-    );
+
   });
 });

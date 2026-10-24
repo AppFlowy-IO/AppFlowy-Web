@@ -42,8 +42,7 @@ import {
   DASHBOARD_DEFAULT_ROW_HEIGHT,
   DASHBOARD_LAYOUT_KEY,
   DASHBOARD_MAX_ROW_HEIGHT,
-  DASHBOARD_MAX_WIDGETS,
-  DASHBOARD_MIN_ROW_HEIGHT,
+    DASHBOARD_MIN_ROW_HEIGHT,
   DashboardGlobalFilter,
   DashboardRow,
   DashboardWidget,
@@ -255,48 +254,24 @@ describe('balanceRowWidths', () => {
 });
 
 describe('normalizeDashboardRows', () => {
-  it('spills rows with more than four widgets into new rows below', () => {
-    const input = [
-      row(
-        'r1',
-        Array.from({ length: 6 }, (_, index) => widget(`w${index}`, 2)),
-        480
-      ),
-    ];
+  it('keeps six widgets in the same logical row', () => {
+    const input = [row('r1', Array.from({ length: 6 }, (_, i) => widget(`w${i}`, 2)), 480)];
     const result = normalizeDashboardRows(input);
-
-    expect(layoutShape(result)).toEqual([
-      ['w0', 'w1', 'w2', 'w3'],
-      ['w4', 'w5'],
-    ]);
-    expect(result[0].id).toBe('r1');
-    // Derived from the source row, so normalizing the same rows twice agrees.
-    expect(result[1].id).toBe('r1:1');
-    expect(normalizeDashboardRows(input).map((item) => item.id)).toEqual(['r1', 'r1:1']);
-    expect(result.map((item) => item.height)).toEqual([480, 480]);
-    expect(widths(result[0])).toEqual([3, 3, 3, 3]);
-    expect(widths(result[1])).toEqual([6, 6]);
+    expect(result).toEqual(input);
+    expect(normalizeDashboardRows(result)).toEqual(result);
   });
 
-  it('caps the dashboard at twelve widgets, dropping extras from the end', () => {
-    const input = [
-      row('r1', [widget('a1'), widget('a2'), widget('a3')]),
-      row(
-        'r2',
-        Array.from({ length: 8 }, (_, index) => widget(`b${index}`))
-      ),
-      row('r3', [widget('c1'), widget('c2')]),
-      row('r4', [widget('d1')]),
-    ];
-    const result = normalizeDashboardRows(input);
-
-    expect(countDashboardWidgets(result)).toBe(DASHBOARD_MAX_WIDGETS);
-    expect(layoutShape(result)).toEqual([
-      ['a1', 'a2', 'a3'],
-      ['b0', 'b1', 'b2', 'b3'],
-      ['b4', 'b5', 'b6', 'b7'],
-      ['c1'],
-    ]);
+  it('keeps every widget even beyond the grid width budget', () => {
+    for (const count of [5, 12, 13, 100]) {
+      const input = [row('long', Array.from({ length: count }, (_, i) => widget(`w${i}`, 0)))];
+      const result = normalizeDashboardRows(input);
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('long');
+      expect(countDashboardWidgets(result)).toBe(count);
+      expect(sum(widths(result[0]))).toBe(Math.max(12, count));
+      expect(result[0].widgets.map((w) => w.id)).toEqual(input[0].widgets.map((w) => w.id));
+      expect(normalizeDashboardRows(result)).toEqual(result);
+    }
   });
 
   it('drops empty rows and clamps heights', () => {
@@ -656,8 +631,8 @@ describe('readDashboardLayoutSetting', () => {
     });
     const { rows } = readDashboardLayoutSetting(database, VIEW_ID);
 
-    expect(rows.map((item) => item.widgets.length)).toEqual([4, 4, 4]);
-    rows.forEach((item) => expect(sum(widths(item))).toBe(12));
+    expect(rows.map((item) => item.widgets.length)).toEqual([14]);
+    expect(widths(rows[0])).toEqual(Array(14).fill(1));
   });
 });
 
@@ -696,10 +671,9 @@ describe('fallback ids of Y-backed settings', () => {
     const first = readDashboardLayoutSetting(database, VIEW_ID);
     const second = readDashboardLayoutSetting(database, VIEW_ID);
 
-    expect(first.rows.map((item) => item.id)).toEqual(['r:0', 'r:0:1', 'r1']);
+    expect(first.rows.map((item) => item.id)).toEqual(['r:0', 'r1']);
     expect(first.rows.map((item) => item.widgets.map((entry) => entry.id))).toEqual([
-      ['w:0:0', 'w:0:1', 'w:0:2', 'w:0:3'],
-      ['w:0:4'],
+      ['w:0:0', 'w:0:1', 'w:0:2', 'w:0:3', 'w:0:4'],
       ['w-kept'],
     ]);
     expect(first.globalFilters.map((filter) => filter.id)).toEqual(['gf:0']);
@@ -902,9 +876,9 @@ describe('updateDashboardLayoutSetting / initializeDashboardLayoutSetting', () =
 
     const { rows } = readDashboardLayoutSetting(database, VIEW_ID);
 
-    expect(layoutShape(rows)).toEqual([['w0', 'w1', 'w2', 'w3'], ['w4']]);
-    expect(rows.map((item) => item.height)).toEqual([DASHBOARD_MIN_ROW_HEIGHT, DASHBOARD_MIN_ROW_HEIGHT]);
-    expect(widths(rows[0])).toEqual([3, 3, 3, 3]);
+    expect(layoutShape(rows)).toEqual([['w0', 'w1', 'w2', 'w3', 'w4']]);
+    expect(rows.map((item) => item.height)).toEqual([DASHBOARD_MIN_ROW_HEIGHT]);
+    expect(widths(rows[0])).toEqual([3, 3, 2, 2, 2]);
   });
 
   it('patches only the keys present in the update', () => {
@@ -974,185 +948,49 @@ describe('updateDashboardLayoutSetting / initializeDashboardLayoutSetting', () =
   });
 });
 
-describe('a stored layout over the widget limit', () => {
-  /** What another client stored: `count` widgets in rows of `perRow`, each with an unknown key. */
-  function storedWidget(index: number, extra: Record<string, unknown> = { zz_probe: index }) {
-    return { id: `w${index}`, view_id: `view-${index}`, database_id: 'db-host', width: 3, ...extra };
-  }
-
-  function storeRows(view: YDatabaseView, rows: unknown[]) {
+describe('large stored layouts', () => {
+  it('reads and edits every widget while keeping unknown fields by identity', () => {
+    const { doc, view, database } = createFixture();
     const layouts = new Y.Map();
     const setting = new Y.Map();
-
-    setting.set(YjsDatabaseKey.dashboard_rows, rows);
-    layouts.set(DASHBOARD_LAYOUT_KEY, setting);
-    view.set(YjsDatabaseKey.layout_settings, layouts as never);
-  }
-
-  function storedRows(view: YDatabaseView) {
-    return view.get(YjsDatabaseKey.layout_settings).get(DASHBOARD_LAYOUT_KEY).get(YjsDatabaseKey.dashboard_rows) as {
-      id: string;
-      widgets: { id: string }[];
-    }[];
-  }
-
-  function storedWidgetIds(view: YDatabaseView) {
-    return storedRows(view).flatMap((item) => item.widgets.map((entry) => entry.id));
-  }
-
-  /** 14 widgets: three full rows and a fourth row with two. */
-  function fourteenWidgets() {
-    return [0, 1, 2, 3].map((rowIndex) => ({
-      id: `r${rowIndex}`,
-      height: 360,
-      zz_row: rowIndex,
-      widgets: [0, 1, 2, 3]
-        .map((index) => rowIndex * 4 + index)
-        .filter((index) => index < 14)
-        .map((index) => storedWidget(index)),
-    }));
-  }
-
-  it('renders the first twelve of fourteen widgets and leaves storage alone', () => {
-    const { doc, view, database } = createFixture();
-
-    doc.transact(() => storeRows(view, fourteenWidgets()));
-    const { rows } = readDashboardLayoutSetting(database, VIEW_ID);
-
-    expect(countDashboardWidgets(rows)).toBe(DASHBOARD_MAX_WIDGETS);
-    expect(layoutShape(rows)).toEqual([
-      ['w0', 'w1', 'w2', 'w3'],
-      ['w4', 'w5', 'w6', 'w7'],
-      ['w8', 'w9', 'w10', 'w11'],
-    ]);
-    // Reading never writes.
-    expect(storedWidgetIds(view)).toHaveLength(14);
-    expect(readStoredDashboardWidgets(database, VIEW_ID).map((item) => item.id)).toEqual(
-      Array.from({ length: 14 }, (_, index) => `w${index}`)
-    );
-  });
-
-  it('keeps all fourteen in storage when the shown rows are rewritten', () => {
-    const { doc, view, database } = createFixture();
-
-    doc.transact(() => storeRows(view, fourteenWidgets()));
-    const shown = readDashboardLayoutSetting(database, VIEW_ID).rows;
-
-    // The user swaps the first two rows; the editor only knows the twelve it shows.
-    doc.transact(() => updateDashboardLayoutSetting(view, { rows: moveDashboardRow(shown, 'r0', 1) }));
-
-    expect(storedRows(view).map((item) => item.id)).toEqual(['r1', 'r0', 'r2', 'r3']);
-    expect(storedWidgetIds(view)).toEqual([
-      ...['w4', 'w5', 'w6', 'w7'],
-      ...['w0', 'w1', 'w2', 'w3'],
-      ...['w8', 'w9', 'w10', 'w11'],
-      ...['w12', 'w13'],
-    ]);
-    // The hidden row is the stored object: its unknown keys and its widgets' survive.
-    expect(storedRows(view)[3]).toEqual({
-      id: 'r3',
-      height: 360,
-      zz_row: 3,
-      widgets: [storedWidget(12), storedWidget(13)],
+    const rawRows = [{ id: 'long', height: 360, futureRow: 'keep', widgets: Array.from({ length: 100 }, (_, i) => ({
+      id: `w${i}`, view_id: `view-${i}`, database_id: 'db', width: 1, futureWidget: i,
+    })) }];
+    doc.transact(() => {
+      view.set(YjsDatabaseKey.layout_settings, layouts as never);
+      layouts.set(DASHBOARD_LAYOUT_KEY, setting);
+      setting.set(YjsDatabaseKey.dashboard_rows, rawRows);
     });
-    // Still twelve on screen, and a second rewrite still keeps fourteen.
-    expect(countDashboardWidgets(readDashboardLayoutSetting(database, VIEW_ID).rows)).toBe(DASHBOARD_MAX_WIDGETS);
-    doc.transact(() =>
-      updateDashboardLayoutSetting(view, {
-        rows: setDashboardRowHeight(readDashboardLayoutSetting(database, VIEW_ID).rows, 'r1', 480),
-      })
-    );
-    expect(storedWidgetIds(view)).toHaveLength(14);
+    const rows = readDashboardLayoutSetting(database, VIEW_ID).rows;
+    expect(rows).toHaveLength(1);
+    expect(countDashboardWidgets(rows)).toBe(100);
+    expect(setting.get('rows')).toEqual(rawRows);
+    doc.transact(() => updateDashboardLayoutSetting(view, { rows: setDashboardRowHeight(rows, 'long', 480) }));
+    expect(setting.get('rows')).toEqual([{ ...rawRows[0], height: 480 }]);
+    doc.transact(() => updateDashboardLayoutSetting(view, { rows: removeDashboardWidget(rows, 'w99') }));
+    expect(readStoredDashboardWidgets(database, VIEW_ID)).toHaveLength(99);
+    expect(readDashboardLayoutSetting(database, VIEW_ID).rows[0].widgets.map((w) => w.id))
+      .toEqual(rawRows[0].widgets.slice(0, -1).map((w) => w.id));
   });
 
-  it('shows a hidden widget again once a shown one is removed', () => {
+  it('materializes positional ids without splitting a long row', () => {
     const { doc, view, database } = createFixture();
-
-    doc.transact(() => storeRows(view, fourteenWidgets()));
-    doc.transact(() =>
-      updateDashboardLayoutSetting(view, {
-        rows: removeDashboardWidget(readDashboardLayoutSetting(database, VIEW_ID).rows, 'w0'),
-      })
-    );
-
-    expect(storedWidgetIds(view)).toHaveLength(13);
-    const { rows } = readDashboardLayoutSetting(database, VIEW_ID);
-
-    expect(countDashboardWidgets(rows)).toBe(DASHBOARD_MAX_WIDGETS);
-    expect(layoutShape(rows)).toEqual([
-      ['w1', 'w2', 'w3'],
-      ['w4', 'w5', 'w6', 'w7'],
-      ['w8', 'w9', 'w10', 'w11'],
-      ['w12'],
-    ]);
-  });
-
-  it('gives the hidden rest of a partly shown row its own row id', () => {
-    const { doc, view, database } = createFixture();
-    // Rows of 4, 4, 3 and 3: the twelfth widget sits in the middle of the last row.
-    const stored = [
-      { id: 'r0', height: 360, widgets: [0, 1, 2, 3].map((index) => storedWidget(index)) },
-      { id: 'r1', height: 360, widgets: [4, 5, 6, 7].map((index) => storedWidget(index)) },
-      { id: 'r2', height: 360, widgets: [8, 9, 10].map((index) => storedWidget(index)) },
-      { id: 'r3', height: 400, zz_row: 'keep', widgets: [11, 12, 13].map((index) => storedWidget(index)) },
-    ];
-
-    doc.transact(() => storeRows(view, stored));
-    const shown = readDashboardLayoutSetting(database, VIEW_ID).rows;
-
-    expect(layoutShape(shown)[3]).toEqual(['w11']);
-    doc.transact(() => updateDashboardLayoutSetting(view, { rows: setDashboardRowHeight(shown, 'r0', 480) }));
-
-    const rows = storedRows(view);
-
-    expect(rows.map((item) => item.id)).toEqual(['r0', 'r1', 'r2', 'r3', 'r3:rest']);
-    expect(new Set(rows.map((item) => item.id)).size).toBe(rows.length);
-    expect(rows[4]).toEqual({
-      id: 'r3:rest',
-      height: 400,
-      zz_row: 'keep',
-      widgets: [storedWidget(12), storedWidget(13)],
+    const layouts = new Y.Map();
+    const setting = new Y.Map();
+    doc.transact(() => {
+      view.set(YjsDatabaseKey.layout_settings, layouts as never);
+      layouts.set(DASHBOARD_LAYOUT_KEY, setting);
+      setting.set('rows', [{ height: 360, futureRow: true, widgets: Array.from({ length: 14 }, (_, i) => ({
+        view_id: `v${i}`, database_id: 'db', width: 1, futureWidget: i,
+      })) }]);
     });
-    expect(storedWidgetIds(view)).toHaveLength(14);
-    // Unchanged on screen.
-    expect(layoutShape(readDashboardLayoutSetting(database, VIEW_ID).rows)).toEqual(layoutShape(shown));
-  });
-
-  it('writes out the positional ids of hidden entries that stored none', () => {
-    const { doc, view, database } = createFixture();
-    const stored = [
-      ...fourteenWidgets().slice(0, 3),
-      { height: 360, widgets: [{ view_id: 'view-12', database_id: 'db-host', width: 6 }, 'not a widget'] },
-    ];
-
-    doc.transact(() => storeRows(view, stored));
-    doc.transact(() =>
-      updateDashboardLayoutSetting(view, {
-        rows: moveDashboardRow(readDashboardLayoutSetting(database, VIEW_ID).rows, 'r0', 1),
-      })
-    );
-
-    // The ids the entries had where they were read, so they cannot change with the new position.
-    expect(storedRows(view)[3]).toEqual({
-      id: 'r:3',
-      height: 360,
-      widgets: [{ id: 'w:3:0', view_id: 'view-12', database_id: 'db-host', width: 6 }],
-    });
-  });
-
-  it('adds nothing to a layout within the limit', () => {
-    const { doc, view, database } = createFixture();
-
-    doc.transact(() => updateDashboardLayoutSetting(view, { rows: fullDashboard() }));
-    doc.transact(() =>
-      updateDashboardLayoutSetting(view, {
-        // Down twice: to the end.
-        rows: moveDashboardRow(moveDashboardRow(readDashboardLayoutSetting(database, VIEW_ID).rows, 'r0', 1), 'r0', 1),
-      })
-    );
-
-    expect(storedRows(view).map((item) => item.id)).toEqual(['r1', 'r2', 'r0']);
-    expect(storedWidgetIds(view)).toHaveLength(DASHBOARD_MAX_WIDGETS);
+    const rows = readDashboardLayoutSetting(database, VIEW_ID).rows;
+    doc.transact(() => updateDashboardLayoutSetting(view, { rows: setDashboardRowHeight(rows, 'r:0', 480) }));
+    const stored = setting.get('rows') as { id: string; futureRow: boolean; widgets: { id: string; futureWidget: number }[] }[];
+    expect(stored).toHaveLength(1);
+    expect(stored[0].id).toBe('r:0');
+    expect(stored[0].futureRow).toBe(true);
+    expect(stored[0].widgets.map((w) => [w.id, w.futureWidget])).toEqual(Array.from({ length: 14 }, (_, i) => [`w:0:${i}`, i]));
   });
 });
 
@@ -1413,7 +1251,7 @@ describe('pure row operations', () => {
       expect(findDashboardWidget(rows, 'missing')).toBeNull();
     });
 
-    it('refuses additions past the dashboard or row limits', () => {
+    it('allows additions beyond the former counts and rejects a missing row', () => {
       const rows = [
         row('r1', [widget('a', 3), widget('b', 3), widget('c', 3), widget('d', 3)]),
         row('r2', [widget('e')]),
@@ -1422,10 +1260,10 @@ describe('pure row operations', () => {
       expect(canAddDashboardWidget(rows)).toBe(true);
       expect(canAddDashboardWidget(rows, { type: 'new_row' })).toBe(true);
       expect(canAddDashboardWidget(rows, { type: 'existing_row', rowId: 'r2' })).toBe(true);
-      expect(canAddDashboardWidget(rows, { type: 'existing_row', rowId: 'r1' })).toBe(false);
+      expect(canAddDashboardWidget(rows, { type: 'existing_row', rowId: 'r1' })).toBe(true);
       expect(canAddDashboardWidget(rows, { type: 'existing_row', rowId: 'missing' })).toBe(false);
-      expect(canAddDashboardWidget(fullDashboard())).toBe(false);
-      expect(canAddDashboardWidget(fullDashboard(), { type: 'new_row' })).toBe(false);
+      expect(canAddDashboardWidget(fullDashboard())).toBe(true);
+      expect(canAddDashboardWidget(fullDashboard(), { type: 'new_row' })).toBe(true);
     });
   });
 
@@ -1503,14 +1341,11 @@ describe('pure row operations', () => {
       expect(widths(addDashboardWidget(rows, widget('b', 3), { type: 'existing_row', rowId: 'r1' })[0])).toEqual([6, 6]);
     });
 
-    it('returns the same rows when the placement is refused', () => {
-      const full = fullDashboard();
-      const fullRow = [row('r1', [widget('a', 3), widget('b', 3), widget('c', 3), widget('d', 3)])];
-
-      expect(addDashboardWidget(full, widget('x'))).toBe(full);
-      expect(addDashboardWidget(full, widget('x'), { type: 'new_row', rowIndex: 0 })).toBe(full);
-      expect(addDashboardWidget(fullRow, widget('x'), { type: 'existing_row', rowId: 'r1' })).toBe(fullRow);
-      expect(addDashboardWidget(fullRow, widget('x'), { type: 'existing_row', rowId: 'missing' })).toBe(fullRow);
+    it('adds beyond former limits and ignores a missing target row', () => {
+      const rows = fullDashboard();
+      expect(countDashboardWidgets(addDashboardWidget(rows, widget('x')))).toBe(13);
+      expect(addDashboardWidget(rows, widget('x'), { type: 'existing_row', rowId: 'r0' })[0].widgets).toHaveLength(5);
+      expect(addDashboardWidget(rows, widget('x'), { type: 'existing_row', rowId: 'missing' })).toBe(rows);
     });
   });
 
@@ -1556,26 +1391,20 @@ describe('pure row operations', () => {
       expect(sum(widths(result[0]))).toBe(12);
     });
 
-    it('starts a new row directly below when the source row is full', () => {
-      const rows = [
-        row('r1', [widget('a', 3), widget('b', 3), widget('c', 3), widget('d', 3)]),
-        row('r2', [widget('e')]),
-      ];
+    it('duplicates next to its source in a row of four', () => {
+      const rows = [row('r1', ['a', 'b', 'c', 'd'].map((id) => widget(id, 3))), row('r2', [widget('e')])];
       const result = duplicateDashboardWidget(rows, 'c');
-
-      expect(result).toHaveLength(3);
-      expect(result[0].id).toBe('r1');
-      expect(result[0].widgets).toHaveLength(4);
-      expect(result[1].widgets).toHaveLength(1);
-      expect(result[1].widgets[0]).toMatchObject({ viewId: 'view-c', databaseId: 'db-host', width: 12 });
-      expect(result[2].id).toBe('r2');
+      expect(result).toHaveLength(2);
+      expect(result[0].widgets).toHaveLength(5);
+      expect(result[0].widgets[3]).toMatchObject({ viewId: 'view-c', databaseId: 'db-host', width: 2 });
+      expect(result[1].id).toBe('r2');
     });
 
-    it('refuses on a full dashboard or an unknown widget', () => {
+    it('duplicates past twelve and ignores an unknown widget', () => {
       const full = fullDashboard();
       const rows = [row('r1', [widget('a')])];
 
-      expect(duplicateDashboardWidget(full, 'w0-0')).toBe(full);
+      expect(countDashboardWidgets(duplicateDashboardWidget(full, 'w0-0'))).toBe(13);
       expect(duplicateDashboardWidget(rows, 'missing')).toBe(rows);
     });
 
@@ -1588,9 +1417,7 @@ describe('pure row operations', () => {
       expect(result[0].widgets[0]).toMatchObject({ id: 'a', viewId: 'view-x' });
       expect(result[0].widgets[1]).toMatchObject({ viewId: 'view-x-copy', databaseId: 'db-other' });
       expect(result[0].widgets[1].id).not.toBe('a');
-      expect(duplicateDashboardWidget(fullDashboard(), 'w0-0', { viewId: 'copy', databaseId: 'db' })).toEqual(
-        fullDashboard()
-      );
+      expect(duplicateDashboardWidget(fullDashboard(), 'w0-0', { viewId: 'copy', databaseId: 'db' })[0].widgets[1]).toMatchObject({ viewId: 'copy', databaseId: 'db' });
     });
   });
 
@@ -1644,13 +1471,13 @@ describe('pure row operations', () => {
       expect(layoutShape(result)).toEqual([['b', 'c', 'd', 'a']]);
     });
 
-    it('refuses moving into a full or missing row and ignores unknown widgets', () => {
+    it('moves into long rows and ignores unknown rows or widgets', () => {
       const rows = [
         row('r1', [widget('a', 3), widget('b', 3), widget('c', 3), widget('d', 3)]),
         row('r2', [widget('e')]),
       ];
 
-      expect(moveDashboardWidget(rows, 'e', { type: 'existing_row', rowId: 'r1' })).toBe(rows);
+      expect(layoutShape(moveDashboardWidget(rows, 'e', { type: 'existing_row', rowId: 'r1' }))).toEqual([['a', 'b', 'c', 'd', 'e']]);
       expect(moveDashboardWidget(rows, 'e', { type: 'existing_row', rowId: 'missing' })).toBe(rows);
       expect(moveDashboardWidget(rows, 'missing', { type: 'new_row' })).toBe(rows);
     });
@@ -1846,8 +1673,8 @@ describe('pure row operations', () => {
       expect(classifyDashboardMove(rows, 'a', { type: 'new_row', rowIndex: 2 })).toBe('allowed');
     });
 
-    it('blocks a widget joining a full row of another', () => {
-      expect(classifyDashboardMove(rows, 'e', { type: 'existing_row', rowId: 'r1', index: 0 })).toBe('blocked');
+    it('allows a widget joining a row of four', () => {
+      expect(classifyDashboardMove(rows, 'e', { type: 'existing_row', rowId: 'r1', index: 0 })).toBe('allowed');
     });
 
     it('calls a move that changes nothing, or an unknown widget or row, a no-op', () => {
@@ -1870,7 +1697,7 @@ describe('pure row operations', () => {
       expect(getDashboardRowControls(rows, 'missing')).toEqual({ moveUp: false, moveDown: false, addToRow: 'hidden' });
     });
 
-    it('hides the add control of a full row and disables the others on a full dashboard', () => {
+    it('keeps every add control available past the former limits', () => {
       const partial = [
         row('r1', [widget('a', 3), widget('b', 3), widget('c', 3), widget('d', 3)]),
         row('r2', [widget('e')]),
@@ -1881,14 +1708,14 @@ describe('pure row operations', () => {
         row('r4', [widget('x4')]),
       ];
 
-      expect(getDashboardRowControls(partial, 'r1').addToRow).toBe('hidden');
+      expect(getDashboardRowControls(partial, 'r1').addToRow).toBe('enabled');
       expect(getDashboardRowControls(partial, 'r2').addToRow).toBe('enabled');
       expect(getDashboardAddToNewRowState(partial)).toBe('enabled');
-      expect(countDashboardWidgets(full)).toBe(DASHBOARD_MAX_WIDGETS);
-      expect(getDashboardRowControls(full, 'r3').addToRow).toBe('disabled');
-      expect(getDashboardRowControls(full, 'r4').addToRow).toBe('disabled');
-      expect(getDashboardAddToNewRowState(full)).toBe('disabled');
-      expect(getDashboardAddToNewRowState(fullDashboard())).toBe('disabled');
+      expect(countDashboardWidgets(full)).toBe(12);
+      expect(getDashboardRowControls(full, 'r3').addToRow).toBe('enabled');
+      expect(getDashboardRowControls(full, 'r4').addToRow).toBe('enabled');
+      expect(getDashboardAddToNewRowState(full)).toBe('enabled');
+      expect(getDashboardAddToNewRowState(fullDashboard())).toBe('enabled');
     });
   });
 

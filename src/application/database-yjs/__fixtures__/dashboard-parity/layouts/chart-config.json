@@ -457,6 +457,51 @@
         "number_color": "default",
         "number_conditional_color": null
       }
+    },
+    {
+      "name": "legacy Dashboard aggregations migrate to the sidecar without resetting other fields",
+      "stored": {
+        "chart_type": {
+          "$bigint": "1"
+        },
+        "x_field_id": "f:stage",
+        "show_empty_values": false,
+        "aggregation_type": {
+          "$bigint": "12"
+        },
+        "y_field_id": "f:checked",
+        "date_condition": {
+          "$bigint": "3"
+        },
+        "zz_parity_probe": {
+          "from": "older-dashboard"
+        }
+      },
+      "parsed": {
+        "aggregation_type": 12
+      },
+      "write": {
+        "aggregation_type": 13
+      },
+      "writtenKeys": [
+        "aggregation_type",
+        "aggregation_type_pb"
+      ],
+      "expected": {
+        "chart_type": 1,
+        "x_field_id": "f:stage",
+        "show_empty_values": false,
+        "aggregation_type": 0,
+        "y_field_id": "f:checked",
+        "date_condition": 3,
+        "zz_parity_probe": {
+          "from": "older-dashboard"
+        },
+        "aggregation_type_pb": 13
+      },
+      "reparsed": {
+        "aggregation_type": 13
+      }
     }
   ]
 }

@@ -4,7 +4,6 @@ import { disableNativeDragPreview } from '@atlaskit/pragmatic-drag-and-drop/elem
 import { autoScrollForElements } from '@atlaskit/pragmatic-drag-and-drop-auto-scroll/element';
 import { attachClosestEdge, extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { RefObject, useEffect, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 
 import {
   getDashboardDropFeedback,
@@ -21,7 +20,6 @@ import {
   DASHBOARD_WIDGET_DROP_TYPE,
   WIDGET_BOX_PADDING,
 } from '../constants';
-import { dashboardRowLimitAnnouncement } from '../DashboardFullTooltip';
 
 import type { DragGhostStore, DropIndicatorStore } from '../arrange-stores';
 
@@ -91,15 +89,13 @@ export function useDashboardDndMonitor({
   getRows,
   onMove,
   scrollContainerRef,
-  announce,
   ghostStore,
   indicatorStore,
 }: UseDashboardDndMonitorOptions) {
-  const { t } = useTranslation();
   const [draggingWidgetId, setDraggingWidgetId] = useState<string | null>(null);
-  const latest = useRef({ getRows, onMove, announce, t });
+  const latest = useRef({ getRows, onMove });
 
-  latest.current = { getRows, onMove, announce, t };
+  latest.current = { getRows, onMove };
 
   useEffect(() => {
     if (!enabled) {
@@ -133,11 +129,6 @@ export function useDashboardDndMonitor({
           const widgetId = String(source.data.widgetId);
           const rows = latest.current.getRows();
           const feedback = getDashboardDropFeedback(rows, widgetId, target);
-
-          if (feedback === 'blocked') {
-            latest.current.announce(dashboardRowLimitAnnouncement(latest.current.t));
-            return;
-          }
 
           const placement = feedback === 'allowed' ? resolveDashboardDropPlacement(rows, widgetId, target) : null;
 

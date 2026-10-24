@@ -130,9 +130,9 @@ describe('getDashboardDropFeedback (drag-and-drop rules)', () => {
     expect(getDashboardDropFeedback(rows, 'e', { type: 'widget', widgetId: 'h', edge: 'right' })).toBe('allowed');
   });
 
-  it('allows moving into another row with room and blocks a full one', () => {
+  it('allows moving into any existing row', () => {
     expect(getDashboardDropFeedback(rows, 'a', { type: 'widget', widgetId: 'd', edge: 'left' })).toBe('allowed');
-    expect(getDashboardDropFeedback(rows, 'd', { type: 'widget', widgetId: 'e', edge: 'left' })).toBe('blocked');
+    expect(getDashboardDropFeedback(rows, 'd', { type: 'widget', widgetId: 'e', edge: 'left' })).toBe('allowed');
   });
 
   it('treats the gaps around a lone widget as no move (#15)', () => {
@@ -149,11 +149,11 @@ describe('getDashboardDropFeedback (drag-and-drop rules)', () => {
 });
 
 describe('resolveDashboardDropPlacement', () => {
-  it('applies nothing for refused or empty drops', () => {
+  it('applies a drop into a row of four and ignores no-op drops', () => {
     const rows = makeRows(['a'], ['b', 'c', 'd', 'e']);
 
-    expect(getDashboardDropFeedback(rows, 'a', { type: 'widget', widgetId: 'b', edge: 'left' })).toBe('blocked');
-    expect(drop(rows, 'a', { type: 'widget', widgetId: 'b', edge: 'left' })).toBe(rows);
+    expect(getDashboardDropFeedback(rows, 'a', { type: 'widget', widgetId: 'b', edge: 'left' })).toBe('allowed');
+    expect(ids(drop(rows, 'a', { type: 'widget', widgetId: 'b', edge: 'left' }))).toEqual([['a', 'b', 'c', 'd', 'e']]);
     expect(getDashboardDropFeedback(rows, 'a', { type: 'row_gap', rowIndex: 1 })).toBe('noop');
     expect(drop(rows, 'a', { type: 'row_gap', rowIndex: 1 })).toBe(rows);
     expect(resolveDashboardDropPlacement(rows, 'a', { type: 'widget', widgetId: 'a', edge: 'left' })).toBeNull();
@@ -288,12 +288,12 @@ describe('useDashboardDndMonitor', () => {
     return { ...hook, monitor, onMove, announce, ghostStore, indicatorStore, dropOn };
   }
 
-  it('announces a blocked drop (a full row) with the row text and moves nothing', () => {
+  it('moves into a row of four without a refusal', () => {
     const { dropOn, onMove, announce } = renderMonitor();
 
     dropOn('e', [widgetTargetData(instanceId, 'a', 'left')]);
-    expect(announce.mock.calls).toEqual([['A row holds up to 4 widgets.']]);
-    expect(onMove).not.toHaveBeenCalled();
+    expect(announce).not.toHaveBeenCalled();
+    expect(onMove).toHaveBeenCalledWith('e', { type: 'existing_row', rowId: 'r1', index: 0 });
   });
 
   it('does nothing for a no-op drop: no move and no announcement', () => {
@@ -441,7 +441,7 @@ describe('useWidgetDropTarget', () => {
     cleanup();
   });
 
-  it('draws nothing for a no-op or a blocked target, and clears the line on leave and on drop', () => {
+  it('allows larger rows, skips no-ops, and clears the line on leave and on drop', () => {
     const { config, indicatorStore, over, cleanup } = renderTarget();
 
     over('a', 'left');
@@ -462,7 +462,7 @@ describe('useWidgetDropTarget', () => {
     const full = renderTarget('e');
 
     full.over('d', 'left');
-    expect(full.indicatorStore.get()).toBeNull();
+    expect(full.indicatorStore.get()).not.toBeNull();
     full.cleanup();
   });
 });

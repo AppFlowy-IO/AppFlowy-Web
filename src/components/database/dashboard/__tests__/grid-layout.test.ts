@@ -49,13 +49,13 @@ const TOLERANCE = 0.01;
 
 /** Evaluates `calc((100% ± Apx) * C / 12 + Bpx)` and `calc((100% - Apx) * S / 12 - 0.5px)` at a width. */
 function evaluateCalc(expression: string, width: number) {
-  const match = /^calc\(\(100% ([+-]) (-?[\d.]+)px\) \* ([\d.]+) \/ 12 ([+-]) ([\d.]+)px\)$/.exec(expression);
+  const match = /^calc\(\(100% ([+-]) (-?[\d.]+)px\) \* ([\d.]+) \/ ([\d.]+) ([+-]) ([\d.]+)px\)$/.exec(expression);
 
   if (!match) throw new Error(`unexpected calc: ${expression}`);
-  const [, sign, inner, factor, outerSign, outer] = match;
+  const [, sign, inner, factor, divisor, outerSign, outer] = match;
   const base = width + (sign === '+' ? 1 : -1) * Number(inner);
 
-  return (base * Number(factor)) / 12 + (outerSign === '+' ? 1 : -1) * Number(outer);
+  return (base * Number(factor)) / Number(divisor) + (outerSign === '+' ? 1 : -1) * Number(outer);
 }
 
 describe('grid layout constants', () => {
