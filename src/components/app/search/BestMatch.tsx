@@ -16,6 +16,7 @@ import { isSpaceView } from '@/components/ai-chat/rag-scope';
 import type { AIChatRagSource } from '@/components/ai-chat/rag-scope';
 import { useAIEnabled, useAppOutline, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import type { SearchOverviewSource } from '@/components/app/search/SearchAIOverview';
+import { describeEvidence, evidenceBlockId, primaryEvidence } from '@/components/app/search/search-evidence';
 import ViewList, { SearchViewListItem } from '@/components/app/search/ViewList';
 
 const SearchAIOverview = lazy(() =>
@@ -111,7 +112,16 @@ function mergeSearchResults(
   for (const item of [...current, ...next]) {
     const key = searchResultKey(item);
 
-    if (seen.has(key)) continue;
+    if (seen.has(key)) {
+      // Keep why a later page of the same result matched, such as one of its images.
+      if (item.evidence?.length) {
+        const index = merged.findIndex((existing) => searchResultKey(existing) === key);
+
+        merged[index] = { ...merged[index], evidence: [...(merged[index].evidence ?? []), ...item.evidence] };
+      }
+
+      continue;
+    }
 
     seen.add(key);
     merged.push(item);
@@ -204,11 +214,14 @@ function BestMatch({
       if (seenTargets.has(targetId)) continue;
       seenTargets.add(targetId);
       const viewName = view.name.trim() || t('menuAppHeader.defaultNewPageName');
+      const evidence = primaryEvidence(item);
 
       items.push({
         id: targetId,
         view,
         rowId,
+        blockId: evidenceBlockId(item, evidence),
+        evidence: evidence ? describeEvidence(evidence) : undefined,
         title: rowId ? `${t('document.grid.referencedGridPrefix', { defaultValue: 'View of' })} ${viewName}` : undefined,
         preview: previewLines(item.content || item.preview),
       });

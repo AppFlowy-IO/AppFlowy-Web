@@ -9,10 +9,13 @@ import { findAncestors } from '@/components/_shared/outline/utils';
 import { RichTooltip } from '@/components/_shared/popover';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { useAppOutline, useToView } from '@/components/app/app.hooks';
+import ResultEvidence from '@/components/app/search/ResultEvidence';
+import type { SearchResultEvidence } from '@/components/app/search/search-evidence';
 
 function ListItem({
   itemId,
   preview,
+  evidence,
   query,
   selected,
   subtitle,
@@ -23,6 +26,7 @@ function ListItem({
 }: {
   itemId: string;
   preview?: string;
+  evidence?: SearchResultEvidence;
   query?: string;
   selected: boolean;
   subtitle?: string;
@@ -148,13 +152,18 @@ function ListItem({
           <div className={'min-w-0 truncate text-base font-medium leading-[22px] text-text-primary'}>
             <HighlightedText text={displayTitle} query={query} />
           </div>
-          {!preview && !displaySubtitle && (
+          {!preview && !evidence && !displaySubtitle && (
             <div className={'flex min-w-0 items-center gap-2 overflow-hidden text-sm text-text-secondary'}>
               {breadcrumbs}
             </div>
           )}
         </div>
-        {preview ? (
+        {evidence ? (
+          <ResultEvidence
+            evidence={evidence}
+            matchedText={evidence.matchedText && <HighlightedText text={evidence.matchedText} query={query} />}
+          />
+        ) : preview ? (
           <div
             className={'mt-1 overflow-hidden whitespace-pre-line text-sm leading-[22px] text-text-secondary'}
             style={{
