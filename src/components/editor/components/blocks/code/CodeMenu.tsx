@@ -2,8 +2,8 @@ import { PopoverOrigin, Popper, Tooltip } from '@mui/material';
 import { Check, Download } from 'lucide-react';
 import { KeyboardEvent, PointerEvent, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Node } from 'slate';
-import { useReadOnly, useSlateSelector, useSlateStatic } from 'slate-react';
+import { Editor, Node, Path, Transforms } from 'slate';
+import { ReactEditor, useReadOnly, useSlateSelector, useSlateStatic } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
@@ -121,6 +121,29 @@ export function CodeMenu({
   const data = current?.data ?? node.data;
   const label = (key: string, fallback: string) => t(`document.plugins.codeBlock.${key}`, { defaultValue: fallback });
   const live = () => findSlateEntryByBlockId(editor, node.blockId);
+  // Like the shared block menu, return focus to the document so shortcuts such as undo apply
+  // to menu actions. Captions, AI and page modals focus themselves after this runs.
+  const closeMenu = () => {
+    const entry = live();
+
+    if (entry && !readOnly && !editor.readOnly) {
+      try {
+        const { selection } = editor;
+        const inBlock =
+          selection &&
+          Path.isAncestor(entry[1], selection.anchor.path) &&
+          Path.isAncestor(entry[1], selection.focus.path);
+
+        if (!inBlock) Transforms.select(editor, Editor.start(editor, entry[1]));
+        if (editor.selection && ReactEditor.hasRange(editor, editor.selection)) ReactEditor.focus(editor);
+      } catch {
+        // A collaborator can remove the block while its menu is open.
+      }
+    }
+
+    onClose();
+  };
+
   const run = (action: () => void | Promise<void>, close = true) => {
     const entry = live();
 
@@ -130,7 +153,7 @@ export function CodeMenu({
     }
 
     editor.flushLocalChanges();
-    if (close) onClose();
+    if (close) closeMenu();
     Promise.resolve()
       .then(action)
       .catch((error: Error) => notify.error(error.message));
@@ -412,7 +435,7 @@ export function CodeMenu({
     <Popover
       open
       anchorEl={anchorEl}
-      onClose={onClose}
+      onClose={closeMenu}
       disableRestoreFocus
       disableEnforceFocus
       anchorOrigin={anchorOrigin}
