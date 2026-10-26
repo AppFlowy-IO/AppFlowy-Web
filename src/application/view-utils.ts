@@ -155,7 +155,8 @@ export function isLinkedDatabaseViewUnderDocument(
   view: View | null | undefined,
   parentView: View | null | undefined
 ): boolean {
-  if (!parentView || !view) {
+  // Spaces use Document layout too; their direct children are sidebar pages.
+  if (!parentView || !view || isSpaceView(parentView)) {
     return false;
   }
 
