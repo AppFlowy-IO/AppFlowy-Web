@@ -5,7 +5,9 @@ import { Slate, withReact } from 'slate-react';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { BlockType, YjsEditorKey } from '@/application/types';
 import { DEFAULT_CALLOUT_DATA } from '@/components/editor/components/blocks/callout/callout.utils';
+import { turnCalloutIntoPage } from '@/components/editor/components/blocks/callout/turn-callout-into-page';
 import { BlockNode } from '@/components/editor/editor.type';
+import { EditorContext, EditorContextState } from '@/components/editor/EditorContext';
 
 import { BlockTurnInto } from '../BlockTurnInto';
 import { useBlockMenuNode } from '../useBlockMenuNode';
@@ -17,6 +19,10 @@ jest.mock('@/application/slate-yjs/command', () => ({ CustomEditor: { turnToBloc
 jest.mock('@/components/_shared/popover', () => ({
   Popover: ({ open, children }: { open: boolean; children: ReactNode }) => (open ? <div>{children}</div> : null),
 }));
+jest.mock('@/components/editor/components/blocks/callout/turn-callout-into-page', () => ({
+  turnCalloutIntoPage: jest.fn(() => Promise.resolve()),
+}));
+jest.mock('@/components/_shared/notify', () => ({ notify: { error: jest.fn() } }));
 
 function block(type = BlockType.Paragraph): BlockNode {
   return {
@@ -27,17 +33,20 @@ function block(type = BlockType.Paragraph): BlockNode {
   } as BlockNode;
 }
 
-function setup(node = block(), locked = false) {
+function setup(node = block(), locked = false, context: Partial<EditorContextState> = {}) {
   const editor = withReact(createEditor());
   const close = jest.fn();
+  const editorContext = { workspaceId: 'workspace', viewId: 'view', readOnly: false, ...context } as EditorContextState;
 
   editor.isElementReadOnly = () => locked;
   render(
-    <Slate editor={editor} initialValue={[node]}>
-      <BlockTurnInto node={node} onClose={close} />
-    </Slate>
+    <EditorContext.Provider value={editorContext}>
+      <Slate editor={editor} initialValue={[node]}>
+        <BlockTurnInto node={node} onClose={close} />
+      </Slate>
+    </EditorContext.Provider>
   );
-  return { editor, close };
+  return { editor, close, editorContext };
 }
 
 beforeEach(() => jest.clearAllMocks());
@@ -73,6 +82,25 @@ it('keeps heading levels distinct and does not reset the current block type', ()
   expect(screen.getByRole('button', { name: 'document.slashMenu.name.heading2' }).disabled).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: 'document.slashMenu.name.heading1' }));
   expect(CustomEditor.turnToBlock).toHaveBeenCalledWith(editor, 'selected', BlockType.HeadingBlock, { level: 1 });
+});
+
+it('offers Page conversion for callouts only when the host can create pages', () => {
+  const addPage = jest.fn();
+  const { editor, close, editorContext } = setup(block(BlockType.CalloutBlock), false, { addPage });
+
+  fireEvent.click(screen.getByRole('button', { name: 'document.plugins.optionAction.turnInto' }));
+  fireEvent.click(screen.getByRole('button', { name: 'editor.page' }));
+  expect(turnCalloutIntoPage).toHaveBeenCalledWith(editor, editorContext, 'selected');
+  expect(close).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+  ['a paragraph with page creation', BlockType.Paragraph, { addPage: jest.fn() }],
+  ['a callout without page creation', BlockType.CalloutBlock, {}],
+])('does not offer Page conversion for %s', (_, type, context) => {
+  setup(block(type), false, context);
+  fireEvent.click(screen.getByRole('button', { name: 'document.plugins.optionAction.turnInto' }));
+  expect(screen.queryByRole('button', { name: 'editor.page' })).toBeNull();
 });
 
 it.each([BlockType.SimpleTableBlock, BlockType.GridBlock, BlockType.ImageBlock, BlockType.OutlineBlock])(

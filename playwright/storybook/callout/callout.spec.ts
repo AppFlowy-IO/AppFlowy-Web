@@ -275,16 +275,24 @@ test('Turn into is shared by paragraphs, headings, lists, quotes, code and callo
     ['Text', 'paragraph'],
   ];
 
-  for (const [label, type] of conversions) {
-    const actions = await menu(page, text);
+  let current = 'paragraph';
 
-    await actions.getByRole('button', { name: 'Turn into', exact: true }).click();
-    if (label === 'Heading 2') {
-      await expect(page.getByTestId('turn-into-menu').locator('..')).toHaveCSS('opacity', '1');
-      await page.screenshot({ path: `test-results/shared-turn-into-${info.project.name}.png` });
+  for (const [label, type] of conversions) {
+    await menu(page, text);
+    // Code blocks own a Flutter-parity menu; every other block uses the shared controls menu.
+    if (current === 'code') {
+      await page.getByTestId('code-block-menu').getByRole('menuitem', { name: 'Turn into', exact: true }).click();
+      await page.getByTestId('code-block-submenu').getByRole('menuitem', { name: label, exact: true }).click();
+    } else {
+      await page.getByTestId('controls-menu').getByRole('button', { name: 'Turn into', exact: true }).click();
+      if (label === 'Heading 2') {
+        await expect(page.getByTestId('turn-into-menu').locator('..')).toHaveCSS('opacity', '1');
+        await page.screenshot({ path: `test-results/shared-turn-into-${info.project.name}.png` });
+      }
+      await page.getByTestId('turn-into-menu').getByRole('button', { name: label, exact: true }).click();
     }
-    await page.getByTestId('turn-into-menu').getByRole('button', { name: label, exact: true }).click();
     await expect(page.locator(`[data-block-type="${type}"]`).getByText(text, { exact: true })).toBeVisible();
+    current = type;
   }
 });
 
