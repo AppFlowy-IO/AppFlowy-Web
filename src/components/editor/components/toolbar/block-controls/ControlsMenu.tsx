@@ -21,6 +21,7 @@ import { ReactComponent as CopyLinkIcon } from '@/assets/icons/link.svg';
 import { notify } from '@/components/_shared/notify';
 import { Popover } from '@/components/_shared/popover';
 import { AppOutlineContext } from '@/components/app/contexts/AppOutlineContext';
+import { CodeMenu } from '@/components/editor/components/blocks/code/CodeMenu';
 import {
   createDatabaseDuplicatePlaceholderData,
   createDatabaseNodeData,
@@ -35,7 +36,7 @@ import {
   OutlineCollapseControl,
   OutlineDepthControl,
 } from '@/components/editor/components/toolbar/block-controls/OutlineControls';
-import { CalloutNode, DatabaseNode, OutlineNode, MathEquationNode } from '@/components/editor/editor.type';
+import { CalloutNode, CodeNode, DatabaseNode, MathEquationNode, OutlineNode } from '@/components/editor/editor.type';
 import { useEditorContext, useEditorLocalState } from '@/components/editor/EditorContext';
 import { captureBlockCreationTarget, captureExistingDatabaseBlock } from '@/components/editor/utils/block-creation-target';
 import { copyTextToClipboard } from '@/utils/copy';
@@ -627,6 +628,18 @@ function ControlsMenu({
       onClick: () => void | Promise<void>;
     }[];
   }, [t, duplicateSelectedBlocks, selectedBlockIds, onlySingleBlockSelected, editor, isSimpleTable]);
+
+  if (open && onlySingleBlockSelected && node?.type === BlockType.CodeBlock && anchorEl) {
+    return (
+      <CodeMenu
+        node={node as CodeNode}
+        anchorEl={anchorEl}
+        onClose={onClose}
+        anchorOrigin={popoverProps.anchorOrigin}
+        transformOrigin={popoverProps.transformOrigin}
+      />
+    );
+  }
 
   if (onlySingleBlockSelected && node?.type === BlockType.EquationBlock && anchorEl && open) {
     return (

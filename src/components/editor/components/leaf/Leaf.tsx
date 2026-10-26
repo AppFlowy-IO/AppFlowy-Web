@@ -1,15 +1,16 @@
-import { CSSProperties } from 'react';
+import { CSSProperties, useContext } from 'react';
 import { RenderLeafProps } from 'slate-react';
 
 import { Mention } from '@/application/types';
+import { CodeLiteralContext } from '@/components/editor/components/blocks/code/CodeLiteralContext';
 import FormulaLeaf from '@/components/editor/components/leaf/formula/FormulaLeaf';
 import { Href } from '@/components/editor/components/leaf/href';
+import { applyRegisteredMarks } from '@/components/editor/components/leaf/mark-style';
 import MentionLeaf from '@/components/editor/components/leaf/mention/MentionLeaf';
 import { InlineReference } from '@/components/editor/components/leaf/reference/InlineReference';
 import { parseInlineReference } from '@/components/editor/components/leaf/reference/utils';
 import { getInlineCommentIds } from '@/components/inline-comment/editor/anchors';
 import { useInlineCommentLeafContextOptional } from '@/components/inline-comment/InlineCommentContext';
-import { applyRegisteredMarks } from '@/components/editor/components/leaf/mark-style';
 import { getFontFamily } from '@/utils/font';
 
 import './inline-leaf.scss';
@@ -44,6 +45,14 @@ function inlineCommentHighlightColor(alpha: number): string {
 
 export function Leaf({ attributes, children, leaf, text }: RenderLeafProps) {
   const inlineComments = useInlineCommentLeafContextOptional();
+  const literalCode = useContext(CodeLiteralContext);
+
+  if (literalCode)
+    return (
+      <span {...attributes} className={leaf.prism_token ? `token ${leaf.prism_token}` : undefined}>
+        {children}
+      </span>
+    );
   // Bold, italic, colors, code, ...: shared with the Text cell's static
   // renderer, so a mark looks the same everywhere.
   const marks = applyRegisteredMarks(leaf, children, {
@@ -51,9 +60,7 @@ export function Leaf({ attributes, children, leaf, text }: RenderLeafProps) {
   });
   let newChildren = marks.children;
 
-  const classList = [leaf.prism_token, leaf.prism_token && 'token', leaf.class_name, ...marks.classList].filter(
-    Boolean
-  );
+  const classList = [leaf.prism_token, leaf.prism_token && 'token', leaf.class_name, ...marks.classList].filter(Boolean);
   const style: CSSProperties = marks.style;
   const inlineCommentIds = inlineComments?.active
     ? getInlineCommentIds(leaf).filter((commentId) => inlineComments.openCommentIds.has(commentId))

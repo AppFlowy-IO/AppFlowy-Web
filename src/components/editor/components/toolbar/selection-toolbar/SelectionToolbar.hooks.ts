@@ -6,6 +6,7 @@ import { ReactEditor, useFocused, useReadOnly, useSlate, useSlateStatic } from '
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
 import { useAIWriter } from '@/components/chat';
+import { isCodeSelection } from '@/components/editor/components/blocks/code/code-keyboard';
 import { getSelectionPosition } from '@/components/editor/components/toolbar/selection-toolbar/utils';
 import { Decorate, useEditorLocalState } from '@/components/editor/EditorContext';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
@@ -57,6 +58,7 @@ export function useVisible() {
   useEffect(() => {
     const handleSelectionChange = () => {
       setVisible(() => {
+        if (isCodeSelection(editor)) return false;
         if(forceShow) return true;
         if(!focus) return false;
 
@@ -73,7 +75,7 @@ export function useVisible() {
     return () => {
       document.removeEventListener('selectionchange', handleSelectionChange);
     };
-  }, [focus, forceShow, isDragging, isExpanded, isSelectionInReadOnly, selectedText]);
+  }, [editor, focus, forceShow, isDragging, isExpanded, isSelectionInReadOnly, selectedText]);
 
   useEffect(() => {
     if(!visible) {
@@ -129,6 +131,22 @@ export function useVisible() {
     if (readOnly) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.target as HTMLElement).closest('[contenteditable="false"]')) return;
+      if (isCodeSelection(editor) && event.key !== 'Escape') {
+        if (
+          [
+            HOT_KEY_NAME.BOLD,
+            HOT_KEY_NAME.ITALIC,
+            HOT_KEY_NAME.UNDERLINE,
+            HOT_KEY_NAME.CODE,
+            HOT_KEY_NAME.STRIKETHROUGH,
+            HOT_KEY_NAME.HIGH_LIGHT,
+          ].some((key) => createHotkey(key)(event))
+        )
+          event.preventDefault();
+        return;
+      }
+
 
       switch(true) {
         case createHotkey(HOT_KEY_NAME.ESCAPE)(event): {

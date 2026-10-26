@@ -3,7 +3,7 @@ import { Element } from 'slate';
 
 import { slateContentInsertToYData } from '@/application/slate-yjs/utils/convert';
 import { createEmptyDocument, getPageId } from '@/application/slate-yjs/utils/yjs';
-import { BlockType, YDoc, YjsEditorKey, YSharedRoot } from '@/application/types';
+import { BlockType, CreatePagePayload, YDoc, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { Editor } from '@/components/editor/Editor';
 import AppTheme from '@/components/main/AppTheme';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -27,6 +27,8 @@ function CalloutPlayground({
   presets?: boolean;
   bodyBlocks?: boolean;
 }) {
+  const [createdPage, setCreatedPage] = useState<CreatePagePayload>();
+  const [openedPage, setOpenedPage] = useState('');
   const [doc] = useState(() => {
     const document = createEmptyDocument();
     const pageId = getPageId(document.getMap(YjsEditorKey.data_section) as YSharedRoot);
@@ -87,6 +89,11 @@ function CalloutPlayground({
             workspaceId='callout-playground'
             readOnly={readOnly}
             fullWidth
+            addPage={async (_parentId, payload) => {
+              setCreatedPage(payload);
+              return { view_id: 'callout-child-page' };
+            }}
+            openPageModal={setOpenedPage}
             uploadFile={async (file) =>
               new Promise<string>((resolve, reject) => {
                 const reader = new FileReader();
@@ -97,6 +104,9 @@ function CalloutPlayground({
               })
             }
           />
+          <output data-testid='created-callout-page' data-opened-page={openedPage} hidden>
+            {JSON.stringify(createdPage)}
+          </output>
         </div>
       </TooltipProvider>
     </AppTheme>
