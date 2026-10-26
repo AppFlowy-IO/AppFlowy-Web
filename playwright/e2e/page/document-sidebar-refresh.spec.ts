@@ -57,8 +57,14 @@ test.describe('Document Sidebar Refresh via WebSocket', () => {
       await page.waitForTimeout(500);
     }
 
+    // Count the pages shown under the first page, where the new document is created. A collapsed
+    // subtree can stay in the DOM hidden, and another subtree (such as the starter To-dos page and
+    // its Board) can load or unload while the sidebar refreshes, so neither may change this count.
+    const firstPageVisibleNames = () =>
+      PageSelectors.items(page).first().getByTestId('page-name').filter({ visible: true });
+
     // Count existing pages (baseline)
-    const initialPageCount = await PageSelectors.names(page).count();
+    const initialPageCount = await firstPageVisibleNames().count();
     console.log(`[INFO] Initial page count: ${initialPageCount}`);
 
     // Step 4: Hover over the first page and click the inline add button
@@ -98,7 +104,7 @@ test.describe('Document Sidebar Refresh via WebSocket', () => {
         }
       }
 
-      const currentCount = await PageSelectors.names(page).count();
+      const currentCount = await firstPageVisibleNames().count();
       console.log(`[INFO] Current page count: ${currentCount}, initial: ${initialPageCount}, attempt: ${attempt + 1}`);
       if (currentCount > initialPageCount) break;
       await page.waitForTimeout(1000);
