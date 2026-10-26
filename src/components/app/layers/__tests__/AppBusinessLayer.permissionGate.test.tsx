@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import { deleteCollabDB } from '@/application/db';
+import { ViewMetadataError } from '@/application/errors/view-metadata-error';
 import { AccessService, ViewService } from '@/application/services/domains';
 import { handleAPIError } from '@/application/services/js-services/http/core';
 import {
@@ -169,10 +170,12 @@ function OperationsProbe({
   targetViewId,
   authoritative = false,
   metadataOnly = false,
+  onError,
 }: {
   targetViewId: string;
   authoritative?: boolean;
   metadataOnly?: boolean;
+  onError?: (error: unknown) => void;
 }) {
   const operations = useContext(AppOperationsContext);
   const [loadedName, setLoadedName] = useState('');
@@ -200,7 +203,10 @@ function OperationsProbe({
               setRelations(JSON.stringify(view?.database_relations));
               setChildIds(JSON.stringify(view?.children.map((child) => child.view_id) ?? []));
             })
-            .catch(() => setLoadedName('View unavailable'));
+            .catch((error) => {
+              onError?.(error);
+              setLoadedName('View unavailable');
+            });
         }}
       >
         load metadata
@@ -378,6 +384,33 @@ describe('AppBusinessLayer permission gates', () => {
     expect(deleteCollabDB).not.toHaveBeenCalled();
   });
 
+  it.each([
+    [false, ERROR_CODE.RECORD_NOT_FOUND],
+    [true, ERROR_CODE.RECORD_NOT_FOUND],
+    [false, ERROR_CODE.NOT_HAS_PERMISSION],
+    [true, ERROR_CODE.NOT_HAS_PERMISSION],
+    [false, ERROR_CODE.SERVICE_TEMPORARY_UNAVAILABLE],
+    [true, ERROR_CODE.SERVICE_TEMPORARY_UNAVAILABLE],
+  ])('preserves lookup failures (metadataOnly=%s, code=%s)', async (metadataOnly, code) => {
+    const error = handleAPIError({ code, message: 'Database metadata lookup failed', httpStatus: 200 });
+    const onError = jest.fn();
+
+    (ViewService.get as jest.Mock).mockImplementation((_workspaceId: string, viewId: string) =>
+      viewId === modalViewId ? Promise.reject(error) : Promise.resolve(undefined)
+    );
+    renderBusinessLayer(
+      new EventEmitter(),
+      [createView(routeViewId)],
+      modalViewId,
+      <OperationsProbe targetViewId={modalViewId} metadataOnly={Boolean(metadataOnly)} onError={onError} />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'load metadata' }));
+
+    await waitFor(() => expect(onError).toHaveBeenCalledWith(error));
+    expect(onError.mock.calls[0][0]).toBe(error);
+  });
+
   it('loads materialized metadata through the recursively primed flat index', async () => {
     const eventEmitter = new EventEmitter();
     const outlineView = { ...createView(modalViewId), name: 'Materialized database view' };
@@ -399,6 +432,23 @@ describe('AppBusinessLayer permission gates', () => {
     expect(getCachedWorkspaceViewMetadata).toHaveBeenCalledWith(workspaceId, modalViewId);
     expect(resolveWorkspaceViewMetadata).not.toHaveBeenCalled();
     expect((ViewService.get as jest.Mock).mock.calls.some(([, viewId]) => viewId === modalViewId)).toBe(false);
+  });
+
+  it('identifies an empty metadata result without inventing a permission denial', async () => {
+    const onError = jest.fn();
+
+    (ViewService.get as jest.Mock).mockResolvedValue(undefined);
+    renderBusinessLayer(
+      new EventEmitter(),
+      [createView(routeViewId)],
+      modalViewId,
+      <OperationsProbe targetViewId={modalViewId} onError={onError} />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'load metadata' }));
+
+    await waitFor(() => expect(onError).toHaveBeenCalledTimes(1));
+    expect(onError.mock.calls[0][0]).toBeInstanceOf(ViewMetadataError);
+    expect(onError.mock.calls[0][0].reason).toBe('not_found');
   });
 
   it('does not promote a stale stable-outline value after the flat permission cache was cleared', async () => {
@@ -484,13 +534,14 @@ describe('AppBusinessLayer permission gates', () => {
 
   it.each([false, true])('only bypasses the rendered trash cache for authoritative lookups (%s)', async (authoritative) => {
     const restoredView = { ...createView(modalViewId), name: 'Restored page' };
+    const onError = jest.fn();
 
     (ViewService.refresh as jest.Mock).mockResolvedValue(restoredView);
     renderBusinessLayer(
       new EventEmitter(),
       [createView(routeViewId)],
       modalViewId,
-      <OperationsProbe targetViewId={modalViewId} authoritative={authoritative} />,
+      <OperationsProbe targetViewId={modalViewId} authoritative={authoritative} onError={onError} />,
       [createView(modalViewId)]
     );
 
@@ -499,8 +550,14 @@ describe('AppBusinessLayer permission gates', () => {
     await waitFor(() => {
       expect(screen.getByTestId('loaded-metadata-name').textContent).toBe(authoritative ? 'Restored page' : 'View unavailable');
     });
-    if (authoritative) expect(ViewService.refresh).toHaveBeenCalledWith(workspaceId, modalViewId);
-    else expect(ViewService.refresh).not.toHaveBeenCalledWith(workspaceId, modalViewId);
+    if (authoritative) {
+      expect(ViewService.refresh).toHaveBeenCalledWith(workspaceId, modalViewId);
+      expect(onError).not.toHaveBeenCalled();
+    } else {
+      expect(ViewService.refresh).not.toHaveBeenCalledWith(workspaceId, modalViewId);
+      expect(onError.mock.calls[0][0]).toBeInstanceOf(ViewMetadataError);
+      expect(onError.mock.calls[0][0].reason).toBe('in_trash');
+    }
   });
 
   it('loads metadata-only off-outline values from the global index before using the network resolver', async () => {

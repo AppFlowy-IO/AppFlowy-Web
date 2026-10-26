@@ -1,3 +1,4 @@
+import dayjs from 'dayjs';
 import * as Y from 'yjs';
 
 import { CalculationType, FieldType, FilterType, RollupDisplayMode } from '../database.type';
@@ -152,6 +153,25 @@ async function visibility(f: ReturnType<typeof fixture>, condition: number, cont
 }
 
 describe('desktop rollup list contract (#1343–#1353)', () => {
+  test.each([FieldType.DateTime, FieldType.CreatedTime, FieldType.LastEditedTime])(
+    'date source %s compares relative operands using cached raw values',
+    async (type) => {
+      const timestamps = [-1, 0, 1].map((offset) => dayjs().startOf('day').add(offset, 'day').unix().toString());
+      const f = fixture(type, timestamps);
+
+      if (type !== FieldType.DateTime) {
+        f.relatedRows.forEach((doc, i) => {
+          const row = doc.getMap(E.data_section).get(E.database_row) as YDatabaseRow;
+
+          row.set(type === FieldType.CreatedTime ? K.created_at : K.last_modified, timestamps[i]);
+        });
+      }
+      expect(await visibility(f, DateFilterCondition.DateStartsBefore, '{"relative_date":"Today"}')).toEqual([true, false, false]);
+      expect(await visibility(f, DateFilterCondition.DateStartsOnOrBefore, '{"relative_date":"Tomorrow"}')).toEqual([true, false, true]);
+      expect(await visibility(f, DateFilterCondition.DateStartsAfter, '{"relative_date":"Tomorrow"}')).toEqual([false, true, false]);
+    }
+  );
+
   test.each([
     [
       ['Alpha', 'Beta'],

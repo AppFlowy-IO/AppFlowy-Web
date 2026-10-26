@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useReadOnly } from '@/application/database-yjs';
+import { useReadOnly } from '@/application/database-yjs/context';
 import { ReactComponent as ArrowDownSvg } from '@/assets/icons/alt_arrow_down.svg';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,9 +14,11 @@ import {
 function DateTimeFilterStartEndDateSelect ({
   onSelect,
   isStart,
+  disabled,
 }: {
   onSelect: (isStart: boolean) => void,
   isStart: boolean,
+  disabled?: boolean,
 }) {
   const { t } = useTranslation();
   const readOnly = useReadOnly();
@@ -33,7 +35,7 @@ function DateTimeFilterStartEndDateSelect ({
     <DropdownMenu>
       <DropdownMenuTrigger
         asChild
-        disabled={readOnly}
+        disabled={readOnly || disabled}
       >
         <Button
           variant={'ghost'}

@@ -77,6 +77,7 @@ jest.mock('@/components/database/list/ListGroupingContext', () => ({
 
     return <div data-testid='list-grouping-provider'>{children}</div>;
   },
+  useSyncListGroupingMetadata: () => undefined,
 }));
 
 jest.mock('@/components/database/grid', () => ({

@@ -174,10 +174,10 @@ export const useSync = (
   const refs = useSyncRefs();
 
   refs.latestUserRef.current = currentUser;
-  const beforeDatabaseSendRef = useRef<(id: string, type: Types, marker?: string, rootVersionChanged?: boolean) => Promise<boolean>>(async () => false);
+  const beforeDatabaseSendRef = useRef<(id: string, type: Types, marker?: string, rootVersionHint?: string) => Promise<boolean>>(async () => false);
   const prepareDatabaseContextRef = useRef<(context: import('./sync/types').RegisterSyncContext) => void>(() => undefined);
-  const beforeDatabaseSend = useCallback((id: string, type: Types, marker?: string, rootVersionChanged?: boolean) =>
-    beforeDatabaseSendRef.current(id, type, marker, rootVersionChanged), []);
+  const beforeDatabaseSend = useCallback((id: string, type: Types, marker?: string, rootVersionHint?: string) =>
+    beforeDatabaseSendRef.current(id, type, marker, rootVersionHint), []);
   const prepareDatabaseContext = useCallback((context: import('./sync/types').RegisterSyncContext) =>
     prepareDatabaseContextRef.current(context), []);
 

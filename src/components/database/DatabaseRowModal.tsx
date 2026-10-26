@@ -240,8 +240,9 @@ function DatabaseRowModal({
                 </DropdownMenu>
               ) : null}
             </RowPeekHeader>
-            <AFScroller overflowXHidden className='appflowy-scroll-container w-full flex-1'>
-              <DatabaseRow key={rowId} rowId={rowId} />
+            {/* Each row starts at the top; the surrounding shell persists across rows. */}
+            <AFScroller key={rowId} overflowXHidden className='appflowy-scroll-container w-full flex-1'>
+              <DatabaseRow rowId={rowId} />
             </AFScroller>
           </div>
         </RowPeekBannerActionsProvider>

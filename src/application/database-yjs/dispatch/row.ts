@@ -62,6 +62,7 @@ import {
 } from '@/application/database-yjs/template/document';
 import { duplicateTimelineRowDependencyLinks } from '@/application/database-yjs/timeline-layout';
 import { deleteCollabDB, getCachedProviderDoc } from '@/application/db';
+import { ClientValidationError } from '@/application/errors/client-validation-error';
 import {
   ensureRowDocumentView,
   rowDocumentExists,
@@ -83,6 +84,7 @@ import {
   YjsEditorKey,
   YSharedRoot,
 } from '@/application/types';
+import { isRecordNotFoundError } from '@/application/utils/error-utils';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Log } from '@/utils/log';
 
@@ -761,11 +763,29 @@ export function useNewRowDispatch() {
           let documentState: Uint8Array | undefined;
 
           if (selectedTemplate && !selectedTemplate.isDocumentEmpty) {
-            const sourceDocument = documentSnapshot
-              ? undefined
-              : getCachedRowSubDoc(selectedTemplate.docViewId) ??
-                getCachedProviderDoc(selectedTemplate.docViewId) ??
-                (await loadRowDocument?.(selectedTemplate.docViewId));
+            let sourceDocument: YDoc | null | undefined;
+
+            try {
+              // An established template is a copy source, not a new row body
+              // awaiting materialization. Let the user retry or choose Empty row.
+              if (!documentSnapshot) {
+                const cachedDocument =
+                  getCachedRowSubDoc(selectedTemplate.docViewId) ?? getCachedProviderDoc(selectedTemplate.docViewId);
+
+                // A failed read leaves a cached shell. Its presence alone does
+                // not establish that the template body can be copied.
+                sourceDocument =
+                  cachedDocument && readTemplateDocumentEmptiness(cachedDocument) !== undefined
+                    ? cachedDocument
+                    : await loadRowDocument?.(selectedTemplate.docViewId, { maxAttempts: 1 });
+              }
+            } catch (error) {
+              if (isRecordNotFoundError(error)) {
+                throw new ClientValidationError('ROW_TEMPLATE_CONTENT_UNAVAILABLE');
+              }
+
+              throw error;
+            }
 
             assertCurrent();
             documentState = documentSnapshot

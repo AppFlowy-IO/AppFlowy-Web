@@ -8,11 +8,14 @@ export const FEED_DESKTOP_INLINE_PADDING = 96;
 /** `FeedCard._buildCover` renders a 160px cover strip. */
 export const FEED_COVER_HEIGHT = 160;
 
-/** `FeedDocumentPreview.maxHeight` before the "See more" toggle appears. */
-export const FEED_DOCUMENT_PREVIEW_MAX_HEIGHT = 120;
+/**
+ * Figma Feed card cap (Desktop `_FeedCard._maxCardHeight`). Taller content is
+ * clipped behind a fade and the "Open as full page" button.
+ */
+export const FEED_CARD_MAX_HEIGHT = 600;
 
 /** `FeedCard._buildCreatorInfo`: a row counts as edited after this many seconds. */
 export const FEED_EDITED_THRESHOLD_SECONDS = 60;
 
-/** Estimated height of a collapsed card used for `contain-intrinsic-size`. */
-export const FEED_CARD_INTRINSIC_HEIGHT = 160;
+/** Estimated height of a card without a document used for `contain-intrinsic-size`. */
+export const FEED_CARD_INTRINSIC_HEIGHT = 200;

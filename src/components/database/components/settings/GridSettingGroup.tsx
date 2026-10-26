@@ -88,7 +88,7 @@ export interface DatabaseSettingGroupProps {
   updateDateCondition?: (condition: DateGroupCondition) => void;
   /** Grid/List/Timeline only: enables the Number panel. */
   updateNumberConfiguration?: (configuration: NumberGroupConfiguration) => void;
-  testIdPrefix: 'grid' | 'list' | 'timeline' | 'board';
+  testIdPrefix: 'grid' | 'list' | 'timeline' | 'board' | 'gallery';
   /** Board BDD steps rely on the constant id 'board-group-by-field'; default `${prefix}-group-by-field-${fieldId}`. */
   groupByFieldTestId?: (fieldId: string) => string;
 }

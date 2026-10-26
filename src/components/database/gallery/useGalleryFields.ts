@@ -17,7 +17,7 @@ export function useGalleryFields() {
     () =>
       allFields.filter(
         (field) =>
-          field.fieldId !== groupFieldId && (field.isPrimary || field.visibility !== FieldVisibility.AlwaysHidden)
+          field.isPrimary || (field.fieldId !== groupFieldId && field.visibility !== FieldVisibility.AlwaysHidden)
       ),
     [allFields, groupFieldId]
   );

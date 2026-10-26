@@ -51,7 +51,12 @@ function FileMediaItem({
     return resolveFileUrl(file.url, workspaceId, databasePageId);
   }, [file.url, workspaceId, databasePageId]);
 
-  const authenticatedFileUrl = useAuthenticatedImage(fileUrl);
+  // The 70 px wrapper below sizes the image; only images are fetched.
+  const imageBoxRef = useRef<HTMLDivElement>(null);
+  const authenticatedFileUrl = useAuthenticatedImage(isImage ? fileUrl : undefined, {
+    fit: 'cover',
+    boxRef: imageBoxRef,
+  });
 
   const [hover, setHover] = useState(false);
 
@@ -90,10 +95,11 @@ function FileMediaItem({
                   }
                 }}
                 className={'h-[70px] cursor-zoom-in overflow-hidden'}
+                ref={imageBoxRef}
               >
                 <img
                   draggable={false}
-                  src={authenticatedFileUrl}
+                  src={authenticatedFileUrl || undefined}
                   alt={file.name}
                   className={'aspect-square h-full w-full overflow-hidden object-cover'}
                 />

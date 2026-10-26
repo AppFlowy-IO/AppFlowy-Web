@@ -6,6 +6,11 @@ import * as Y from 'yjs';
 
 import { atomicRead, captureAtomicCreationOwner } from '@/application/atomic-creation';
 import { resolveUserAttributionUid, touchRowAttribution } from '@/application/database-yjs/attribution';
+import { boardNeedsGroupingField } from '@/application/database-yjs/board-default-group';
+import {
+  insertBoardInitializationValue,
+  setBoardInitializationValue,
+} from '@/application/database-yjs/board-initialization';
 import { calculateFieldValue } from '@/application/database-yjs/calculation';
 import { CalendarLayoutUpdate, updateCalendarLayoutSetting } from '@/application/database-yjs/calendar-layout';
 import { cloneDatabaseCell } from '@/application/database-yjs/cell.clone';
@@ -54,6 +59,7 @@ import {
   SelectTypeOption,
 } from '@/application/database-yjs/fields';
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
+import { generateOptionId, getColorByOption } from '@/application/database-yjs/fields/select-option/utils';
 import { createRelationField } from '@/application/database-yjs/fields/relation/utils';
 import { parseRollupTypeOption } from '@/application/database-yjs/fields/rollup/parse';
 import { RollupShowAsType } from '@/application/database-yjs/fields/rollup/rollup.type';
@@ -245,7 +251,7 @@ export function useReorderColumnDispatch() {
   );
 }
 
-function generateGroupByField(field: YDatabaseField) {
+function generateGroupByField(field: YDatabaseField, groupId = `g:${nanoid(6)}`) {
   const group = new Y.Map() as YDatabaseGroup;
 
   const fieldId = field.get(YjsDatabaseKey.id);
@@ -254,7 +260,7 @@ function generateGroupByField(field: YDatabaseField) {
   const columns = new Y.Array() as YDatabaseGroupColumns;
 
   group.set(YjsDatabaseKey.field_id, fieldId);
-  group.set(YjsDatabaseKey.id, `g:${nanoid(6)}`);
+  group.set(YjsDatabaseKey.id, groupId);
   group.set(YjsDatabaseKey.type, fieldType);
   group.set(YjsDatabaseKey.collapsed_group_ids, new Y.Array<string>());
 
@@ -361,7 +367,8 @@ export function useGroupByFieldDispatch({ preserveFilters = false }: { preserveF
             const supportsOptionalGrouping =
               layout === DatabaseViewLayout.Grid ||
               layout === DatabaseViewLayout.List ||
-              layout === DatabaseViewLayout.Timeline;
+              layout === DatabaseViewLayout.Timeline ||
+              layout === DatabaseViewLayout.Gallery;
 
             if (!supportsOptionalGrouping && !preserveFilters) {
               // Board keeps its existing behavior: a field cannot simultaneously
@@ -407,6 +414,111 @@ export function useGroupByFieldDispatch({ preserveFilters = false }: { preserveF
   );
 }
 
+/** Desktop and the server name the property they create for an ungroupable Board "Status". */
+export const BOARD_GROUPING_FIELD_NAME = 'Status';
+
+/**
+ * Create a "Status" Single select property and group the current Board by it,
+ * as Desktop does for a Board with nothing to group by. `automatic` marks that
+ * lazy initialization, which is not a user edit and so is not undoable.
+ */
+export function useCreateBoardGroupingFieldDispatch() {
+  const view = useDatabaseView();
+  const database = useDatabase();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback(
+    ({ automatic = false }: { automatic?: boolean } = {}) => {
+      if (!view) {
+        throw new Error('View not found');
+      }
+
+      const fields = database.get(YjsDatabaseKey.fields);
+
+      if (automatic && !boardNeedsGroupingField(view, fields)) {
+        return view.get(YjsDatabaseKey.groups)?.get(0)?.get(YjsDatabaseKey.field_id);
+      }
+
+      let fieldId = nanoid(6);
+
+      if (automatic) {
+        let index = 0;
+
+        // Database-scoped defaults also converge when different Boards open.
+        // Retain tombstones in this check so deleting Status permits a fresh
+        // initialization without resurrecting its old cells or Yjs objects.
+        while (fields._map.has(`board_status_${index}`)) index++;
+        fieldId = `board_status_${index}`;
+      }
+
+      executeOperations(
+        sharedRoot,
+        [
+          () => {
+            const field = createField(
+              FieldType.SingleSelect,
+              fieldId,
+              BOARD_GROUPING_FIELD_NAME,
+              // Automatic defaults cannot depend on either editor's clock.
+              automatic ? '0' : undefined
+            );
+
+            if (automatic) setBoardInitializationValue(fields, fieldId, field);
+            else fields.set(fieldId, field);
+
+            database.get(YjsDatabaseKey.views).forEach((databaseView) => {
+              const orders = databaseView.get(YjsDatabaseKey.field_orders);
+
+              if (orders) {
+                if (automatic) insertBoardInitializationValue(orders, { id: fieldId });
+                else orders.push([{ id: fieldId }]);
+              }
+
+              const fieldSettings = databaseView.get(YjsDatabaseKey.field_settings);
+
+              if (!fieldSettings) return;
+              const setting = new Y.Map() as YDatabaseFieldSetting;
+
+              setting.set(YjsDatabaseKey.visibility, FieldVisibility.AlwaysShown);
+              setting.set(YjsDatabaseKey.wrap, DEFAULT_FIELD_WRAP);
+              if (automatic) setBoardInitializationValue(fieldSettings, fieldId, setting);
+              else fieldSettings.set(fieldId, setting);
+            });
+
+            if (automatic) {
+              const groups = new Y.Array() as YDatabaseGroups;
+
+              groups.push([generateGroupByField(fields.get(fieldId), `default-board:${fieldId}`)]);
+              setBoardInitializationValue(view, YjsDatabaseKey.groups, groups);
+              return;
+            }
+
+            let groups = view.get(YjsDatabaseKey.groups);
+
+            if (!groups) {
+              groups = new Y.Array() as YDatabaseGroups;
+              view.set(YjsDatabaseKey.groups, groups);
+            }
+
+            groups.delete(0, groups.length);
+            groups.insert(0, [generateGroupByField(field)]);
+          },
+        ],
+        'createBoardGroupingField',
+        {
+          type: 'database.create-board-grouping-field',
+          fieldId,
+          fieldType: FieldType.SingleSelect,
+          policy: automatic ? 'skip' : 'capture',
+        }
+      );
+
+      return fieldId;
+    },
+    [database, sharedRoot, view]
+  );
+}
+
 export function useClearGroupByFieldDispatch() {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
@@ -441,7 +553,11 @@ export function useUpdateGroupContentDispatch() {
             if (!group) throw new Error('Group not found');
             const layout = Number(view?.get(YjsDatabaseKey.layout)) as DatabaseViewLayout;
 
-            if (layout === DatabaseViewLayout.Grid || layout === DatabaseViewLayout.List) {
+            if (
+              layout === DatabaseViewLayout.Grid ||
+              layout === DatabaseViewLayout.List ||
+              layout === DatabaseViewLayout.Gallery
+            ) {
               markLocalDatabaseGroupInitialization(group);
             }
 
@@ -517,7 +633,11 @@ export function useUpdateNumberGroupConfigurationDispatch() {
         if (columns && additions.length) columns.push(additions);
         const layout = Number(view?.get(YjsDatabaseKey.layout)) as DatabaseViewLayout;
 
-        if (layout === DatabaseViewLayout.Grid || layout === DatabaseViewLayout.List) {
+        if (
+          layout === DatabaseViewLayout.Grid ||
+          layout === DatabaseViewLayout.List ||
+          layout === DatabaseViewLayout.Gallery
+        ) {
           markLocalDatabaseGroupInitialization(group);
         }
       }
@@ -586,7 +706,11 @@ export function useUpdateDateGroupConditionDispatch() {
 
             const layout = Number(view?.get(YjsDatabaseKey.layout)) as DatabaseViewLayout;
 
-            if (layout === DatabaseViewLayout.Grid || layout === DatabaseViewLayout.List) {
+            if (
+              layout === DatabaseViewLayout.Grid ||
+              layout === DatabaseViewLayout.List ||
+              layout === DatabaseViewLayout.Gallery
+            ) {
               markLocalDatabaseGroupInitialization(group);
             }
           },
@@ -985,14 +1109,14 @@ export function useSyncListGroupColumnsDispatch(groupId?: string) {
   return useSyncDatabaseGroupColumnsDispatch(groupId);
 }
 
-function readShownEmptyGroupIds(layoutSetting: YDatabaseBoardLayoutSetting) {
-  const storedIds = layoutSetting.get(YjsDatabaseKey.shown_empty_group_ids) as unknown;
+function readShownEmptyGroupIds(layoutSetting: Y.Map<unknown>) {
+  const storedIds = layoutSetting.get(YjsDatabaseKey.shown_empty_group_ids);
   const ids = storedIds instanceof Y.Array ? storedIds.toArray() : Array.isArray(storedIds) ? storedIds : [];
 
   return new Set(ids.filter((id): id is string => typeof id === 'string'));
 }
 
-function setEmptyGroupOverride(layoutSetting: YDatabaseBoardLayoutSetting, columnId: string, shown: boolean) {
+function setEmptyGroupOverride(layoutSetting: Y.Map<unknown>, columnId: string, shown: boolean) {
   const shownIds = readShownEmptyGroupIds(layoutSetting);
 
   if (shownIds.has(columnId) === shown) return;
@@ -1079,7 +1203,11 @@ function getOrCreateBoardLayoutSetting(view: YDatabaseView) {
 }
 
 /** Layouts whose grouping options live under `layout_settings[String(layout)]`. */
-export type GroupableDatabaseLayout = DatabaseViewLayout.Grid | DatabaseViewLayout.List | DatabaseViewLayout.Timeline;
+export type GroupableDatabaseLayout =
+  | DatabaseViewLayout.Grid
+  | DatabaseViewLayout.List
+  | DatabaseViewLayout.Timeline
+  | DatabaseViewLayout.Gallery;
 
 function getOrCreateDatabaseGroupingLayoutSetting(
   view: YDatabaseView,
@@ -1097,6 +1225,8 @@ function getOrCreateDatabaseGroupingLayoutSetting(
       ? layoutSettings.get('4')
       : layout === DatabaseViewLayout.Timeline
       ? layoutSettings.get('8')
+      : layout === DatabaseViewLayout.Gallery
+      ? layoutSettings.get('5')
       : layoutSettings.get('0');
 
   if (!layoutSetting) {
@@ -1118,13 +1248,64 @@ export function useToggleDatabaseHideEmptyGroups(layout: GroupableDatabaseLayout
         [
           () => {
             if (!view) throw new Error('Unable to toggle database empty groups');
-            getOrCreateDatabaseGroupingLayoutSetting(view, layout).set(YjsDatabaseKey.hide_empty_groups, hide);
+            const layoutSetting = getOrCreateDatabaseGroupingLayoutSetting(view, layout);
+
+            layoutSetting.set(YjsDatabaseKey.hide_empty_groups, hide);
+            // Like the Board, showing every empty group retires the per-group exceptions.
+            if (!hide && layoutSetting.has(YjsDatabaseKey.shown_empty_group_ids)) {
+              layoutSetting.set(YjsDatabaseKey.shown_empty_group_ids, []);
+            }
           },
         ],
         'toggleDatabaseHideEmptyGroups'
       );
     },
     [layout, sharedRoot, view]
+  );
+}
+
+/**
+ * Adds a select option as a new group of a non-Board layout and keeps it
+ * visible while it is still empty, so "Hide empty groups" does not hide the
+ * group the user just created. An existing option with the same name is shown
+ * instead of duplicated. Returns the group id, or undefined when the field is
+ * not a select field.
+ */
+export function useCreateDatabaseSelectGroupDispatch(layout: GroupableDatabaseLayout) {
+  const database = useDatabase();
+  const view = useDatabaseView();
+  const sharedRoot = useSharedRoot();
+  const addSelectOption = useAddSelectOptionDispatch();
+
+  return useCallback(
+    (fieldId: string, name: string) => {
+      const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+      const fieldType = Number(field?.get(YjsDatabaseKey.type));
+
+      if (!field || !view || ![FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType)) return undefined;
+
+      const options = parseSelectOptionTypeOptions(field)?.options ?? [];
+      const existing = options.find((option) => option.name === name);
+      const optionId = existing?.id ?? generateOptionId();
+      const historyGroup = createDatabaseHistoryGroup();
+
+      if (!existing) {
+        addSelectOption(fieldId, { id: optionId, name, color: getColorByOption(options) }, historyGroup);
+      }
+
+      executeOperations(
+        sharedRoot,
+        [
+          () => {
+            setEmptyGroupOverride(getOrCreateDatabaseGroupingLayoutSetting(view, layout), optionId, true);
+          },
+        ],
+        'showCreatedDatabaseGroup',
+        { type: 'database.show-created-group', fieldId, historyGroup }
+      );
+      return optionId;
+    },
+    [addSelectOption, database, layout, sharedRoot, view]
   );
 }
 
@@ -1635,12 +1816,12 @@ export function useUpdatePropertyNameDispatch(fieldId: string) {
   );
 }
 
-function createField(type: FieldType, fieldId: string, fieldName?: string) {
+function createField(type: FieldType, fieldId: string, fieldName?: string, createdAt?: string) {
   const createSimpleField = (fieldType: FieldType, initTypeOption?: (typeOption: YMapFieldTypeOption) => void) => {
     const field = new Y.Map() as YDatabaseField;
     const typeOptionMap = new Y.Map() as YDatabaseFieldTypeOption;
     const typeOption = new Y.Map() as YMapFieldTypeOption;
-    const timestamp = String(dayjs().unix());
+    const timestamp = createdAt ?? String(dayjs().unix());
 
     field.set(YjsDatabaseKey.name, fieldName ?? getFieldName(fieldType));
     field.set(YjsDatabaseKey.id, fieldId);

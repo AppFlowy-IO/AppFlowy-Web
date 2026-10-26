@@ -61,6 +61,17 @@ async function dragGalleryTile(page: Page, sourceRowId: string, targetRowId: str
   await page.mouse.up();
 }
 
+/** Figma covers keep 16:9 of the card width, so the cover height follows the column width. */
+async function expectFigmaCoverRatio(page: Page, rowId: string) {
+  await expect
+    .poll(async () => {
+      const box = await DatabaseGallerySelectors.previewByRowId(page, rowId).boundingBox();
+
+      return box ? box.height / box.width : Number.NaN;
+    })
+    .toBeCloseTo(9 / 16, 2);
+}
+
 test.describe('Standalone Gallery creation (Flutter desktop parity)', () => {
   test.beforeEach(async ({ page }) => {
     setupPageErrorHandling(page);
@@ -135,8 +146,9 @@ test.describe('Database Gallery core interactions (Flutter desktop parity)', () 
       primary!.id,
     ]);
     await expect(DatabaseGallerySelectors.cards(page)).toHaveCount(rowIds.length);
+    // Figma at 1440x900: three Medium cards share the content width.
     await expect(DatabaseGallerySelectors.grid(page)).toHaveAttribute('data-column-count', '3');
-    await expect(DatabaseGallerySelectors.previewByRowId(page, rowIds[0])).toHaveCSS('height', '150px');
+    await expectFigmaCoverRatio(page, rowIds[0]);
     await expect(DatabaseGallerySelectors.titleByRowId(page, rowIds[0])).toBeVisible();
     await expect(DatabaseGallerySelectors.propertiesByRowId(page, rowIds[0])).toHaveCount(0);
   });
@@ -147,9 +159,17 @@ test.describe('Database Gallery core interactions (Flutter desktop parity)', () 
 
     await openGallerySettings(page);
     await chooseGalleryCardSize(page, GalleryCardSize.Small);
-    await expect(DatabaseGallerySelectors.previewByRowId(page, firstRowId)).toHaveCSS('height', '120px');
+    const grid = DatabaseGallerySelectors.grid(page);
+
+    await expect(grid).toHaveAttribute('data-card-size', String(GalleryCardSize.Small));
+    const smallColumns = Number(await grid.getAttribute('data-column-count'));
+
+    await expectFigmaCoverRatio(page, firstRowId);
     await chooseGalleryCardSize(page, GalleryCardSize.Large);
-    await expect(DatabaseGallerySelectors.previewByRowId(page, firstRowId)).toHaveCSS('height', '180px');
+    await expect(grid).toHaveAttribute('data-card-size', String(GalleryCardSize.Large));
+    // Larger cards keep a larger minimum width, so fewer of them fit in a row.
+    await expect.poll(async () => Number(await grid.getAttribute('data-column-count'))).toBeLessThan(smallColumns);
+    await expectFigmaCoverRatio(page, firstRowId);
   });
 
   test('database_gallery_card_size_test.dart: card size setting persists after reopening settings', async ({ page }) => {
@@ -158,7 +178,7 @@ test.describe('Database Gallery core interactions (Flutter desktop parity)', () 
     await chooseGalleryCardSize(page, GalleryCardSize.Large);
     await closeDatabaseMenus(page);
     await openGallerySettings(page);
-    await expect(page.getByTestId('gallery-card-size-trigger')).toHaveText('Large');
+    await expect(page.getByTestId('gallery-card-size-trigger')).toHaveText('Card sizeLarge');
     await closeDatabaseMenus(page);
     await expect(DatabaseGallerySelectors.grid(page)).toHaveAttribute('data-card-size', String(GalleryCardSize.Large));
   });
@@ -182,9 +202,9 @@ test.describe('Database Gallery core interactions (Flutter desktop parity)', () 
       String(GalleryCardPreview.PageContent)
     );
     await openGallerySettings(page);
-    await expect(page.getByTestId('gallery-card-size-trigger')).toHaveText('Large');
-    await expect(page.getByTestId('gallery-card-preview-trigger')).toHaveText('Page content');
-    await expect(page.getByTestId('gallery-fit-image-switch')).toHaveAttribute('data-state', 'checked');
+    await expect(page.getByTestId('gallery-card-size-trigger')).toHaveText('Card sizeLarge');
+    await expect(page.getByTestId('gallery-card-preview-trigger')).toHaveText('Card previewPage content');
+    await expect(page.getByTestId('gallery-fit-image-toggle')).toHaveAttribute('aria-checked', 'true');
     await closeDatabaseMenus(page);
 
     await page.reload({ waitUntil: 'domcontentloaded' });
@@ -195,9 +215,9 @@ test.describe('Database Gallery core interactions (Flutter desktop parity)', () 
       String(GalleryCardPreview.PageContent)
     );
     await openGallerySettings(page);
-    await expect(page.getByTestId('gallery-card-size-trigger')).toHaveText('Large');
-    await expect(page.getByTestId('gallery-card-preview-trigger')).toHaveText('Page content');
-    await expect(page.getByTestId('gallery-fit-image-switch')).toHaveAttribute('data-state', 'checked');
+    await expect(page.getByTestId('gallery-card-size-trigger')).toHaveText('Card sizeLarge');
+    await expect(page.getByTestId('gallery-card-preview-trigger')).toHaveText('Card previewPage content');
+    await expect(page.getByTestId('gallery-fit-image-toggle')).toHaveAttribute('aria-checked', 'true');
   });
 
   test('database_gallery_create_from_new_tile.dart: create row from trailing tile and appears at end', async ({

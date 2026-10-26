@@ -22,7 +22,7 @@ function Attachment({ attachment }: { attachment: CommentAttachment }) {
     >
       {remoteUrl && attachment.file_type?.startsWith('image/') && (
         <div className='h-[120px] w-[200px] max-w-full'>
-          <ImageRender src={remoteUrl} alt={attachment.name} className='object-cover' />
+          <ImageRender src={remoteUrl} alt={attachment.name} className='object-cover' decodeAtDisplaySize='cover' />
         </div>
       )}
       <span className='flex items-center gap-1 px-2 py-1'>

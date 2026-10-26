@@ -1123,7 +1123,7 @@ export interface GalleryLayoutSettings {
 
 export interface YDatabaseGalleryLayoutSetting extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.card_size | YjsDatabaseKey.card_width | YjsDatabaseKey.card_preview): number;
-  get(key: YjsDatabaseKey.show_cover | YjsDatabaseKey.fit_image): boolean;
+  get(key: YjsDatabaseKey.show_cover | YjsDatabaseKey.fit_image | YjsDatabaseKey.hide_empty_groups): boolean;
   get(key: YjsDatabaseKey.cover_field_id): string | undefined;
 }
 

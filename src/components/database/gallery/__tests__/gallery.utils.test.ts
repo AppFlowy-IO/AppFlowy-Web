@@ -1,17 +1,36 @@
 import { GalleryCardSize } from '@/application/types';
 
-import { getGalleryCardWidth, getGalleryCoverHeight, getGalleryMinimumCardHeight } from '../gallery.constants';
+import {
+  getGalleryCardMinWidth,
+  getGalleryColumnCount,
+  getGalleryCoverHeight,
+  getGalleryMinimumCardHeight,
+} from '../gallery.constants';
 import { isGalleryInteractiveTarget } from '../gallery.utils';
 
-describe('Gallery Flutter desktop dimensions', () => {
+describe('Gallery card dimensions', () => {
+  // Figma covers are 16:9 of the card width; these are the lower bounds at each size's minimum width.
   it.each([
-    [GalleryCardSize.Small, 220, 120],
-    [GalleryCardSize.Medium, 300, 150],
-    [GalleryCardSize.Large, 400, 180],
-  ])('uses the persisted size %s for a %spx card and %spx preview', (size, cardWidth, coverHeight) => {
-    expect(getGalleryCardWidth(size)).toBe(cardWidth);
+    [GalleryCardSize.Small, 200, 113],
+    [GalleryCardSize.Medium, 260, 146],
+    [GalleryCardSize.Large, 361, 203],
+  ])('uses the persisted size %s for a %spx minimum card and %spx preview', (size, minWidth, coverHeight) => {
+    expect(getGalleryCardMinWidth(size)).toBe(minWidth);
     expect(getGalleryCoverHeight(size)).toBe(coverHeight);
     expect(getGalleryMinimumCardHeight(size)).toBe(coverHeight + 32);
+  });
+
+  // Content widths and card counts measured from the Figma responsive frames.
+  it.each([
+    [1492, GalleryCardSize.Medium, 5],
+    [1492, GalleryCardSize.Large, 4],
+    [1492, GalleryCardSize.Small, 6],
+    [1012, GalleryCardSize.Medium, 3],
+    [480, GalleryCardSize.Large, 1],
+    [480, GalleryCardSize.Small, 2],
+    [120, GalleryCardSize.Medium, 1],
+  ])('fits %spx of %s cards into %s columns', (width, size, columns) => {
+    expect(getGalleryColumnCount(width, size)).toBe(columns);
   });
 });
 

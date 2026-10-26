@@ -128,7 +128,7 @@ export function MathEquationMenu({
         role='menu'
         aria-label={t('document.plugins.mathEquation.name')}
         data-testid='math-equation-menu'
-        className='w-full p-2'
+        className='flex w-full flex-col p-2'
       >
         <div className='px-2 py-1.5 text-xs font-medium leading-[18px] tracking-[0.1px] text-text-tertiary'>{t('document.plugins.mathEquation.name')}</div>
         <Button
@@ -223,7 +223,7 @@ export function MathEquationMenu({
         sx={{ zIndex: (theme) => theme.zIndex.modal + 1 }}
         className='w-60 rounded-xl bg-surface-layer-04 shadow-menu ring-1 ring-border-primary'
       >
-        <div role='menu' data-testid='math-equation-submenu' className='w-full p-2'>
+        <div role='menu' data-testid='math-equation-submenu' className='flex w-full flex-col p-2'>
           {submenu?.type === 'ai' ? (
             <>
               <Button role='menuitem' variant='ghost' className={rowClass} onClick={() => ask('generate')}>

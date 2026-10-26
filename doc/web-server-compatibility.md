@@ -57,3 +57,23 @@ server, or whether a client upgrade can help resets dismissal; a confirmed
 compatible response clears it. Reloading the tab starts a new session. An old
 web client offers a reload action; contradictory requirements ask the
 administrator to update both components.
+
+Object permission reads use same-turn batching only when the available Web server-info snapshot
+advertises `enable_object_permission_batch: true`. Missing, false or unavailable metadata retains
+the existing individual GET requests. The flag promises batch parity for legacy row-document
+repair and numeric per-item `error_code` values; errors are normalized through the existing API
+error path, including optional `retry_after_secs` guidance. The client does not parse error text.
+
+The batch coordinator groups distinct objects by login lifetime, requester and workspace, with
+at most 200 objects per request, four HTTP requests in flight and 2,000 queued objects. A singleton
+keeps conditional GET. Queued requests invalidated before dispatch are discarded; the owning
+permission-request layer rechecks both successful and failed responses after reconnect, sharing
+changes or account transitions and retains its existing single bounded invalidation retry.
+Batch responses must preserve object/type/order and valid capability fields before any result is
+accepted. No successful permission result receives a new client cache TTL.
+Read-only POST batches retain the GET transport retry count (three retries) through the shared
+retry helper, including HTTP `Retry-After` guidance. Retries keep their scheduler slot and check
+the session and invalidation state before sending. Application-level errors inside successful
+HTTP responses keep their existing caller-owned recovery behavior and normalized retry metadata.
+During rollout, update the server fleet before shipping Web batching so every routed server
+fulfills the capability advertised by server-info.

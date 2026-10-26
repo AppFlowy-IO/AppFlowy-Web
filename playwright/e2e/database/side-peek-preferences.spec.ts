@@ -119,7 +119,7 @@ test('peek choices are temporary across close, reopen, and reload while row edit
   expect(await storedMode(page, first)).toBeUndefined();
 });
 
-test('adjacent-row shortcuts start each row in side peek', async ({ page, request }) => {
+test('adjacent-row shortcuts keep the current peek mode until the peek closes', async ({ page, request }) => {
   await loginAndCreateGrid(page, request, generateRandomEmail());
   await waitForDatabaseDocReady(page);
   const [first, second] = await getVisibleDataRowIds(page);
@@ -130,13 +130,34 @@ test('adjacent-row shortcuts start each row in side peek', async ({ page, reques
   await openRowDetailByRowId(page, first);
   await page.getByTestId('row-title-input').fill('First row');
   await chooseMode(page, 'center');
+  // Matches Desktop: previous/next must not demote center peek to side peek.
   await page.keyboard.press('ControlOrMeta+Shift+J');
   await expect(page.getByTestId('row-title-input')).toHaveText('Second row');
+  await expect(page.getByTestId('row-detail')).toHaveAttribute('data-peek-mode', 'center');
+  await page.keyboard.press('ControlOrMeta+Shift+K');
+  await expect(page.getByTestId('row-title-input')).toHaveText('First row');
+  await expect(page.getByTestId('row-detail')).toHaveAttribute('data-peek-mode', 'center');
+
+  // The choice is temporary: the next opening starts in side peek again.
+  await closeRowDetail(page);
+  await openRowDetailByRowId(page, second);
   await expect(page.getByTestId('row-detail')).toHaveAttribute('data-peek-mode', 'side');
-  await chooseMode(page, 'center');
+
+  // Swapping rows in place must not hide the panel and replay its entrance.
+  await page.getByTestId('database-side-peek').evaluate((panel) => {
+    const flags = window as Window & { __sidePeekHiddenToggles?: number };
+
+    flags.__sidePeekHiddenToggles = 0;
+    new MutationObserver((records) => {
+      flags.__sidePeekHiddenToggles = (flags.__sidePeekHiddenToggles ?? 0) + records.length;
+    }).observe(panel, { attributes: true, attributeFilter: ['hidden'] });
+  });
   await page.keyboard.press('ControlOrMeta+Shift+K');
   await expect(page.getByTestId('row-title-input')).toHaveText('First row');
   await expect(page.getByTestId('row-detail')).toHaveAttribute('data-peek-mode', 'side');
+  expect(
+    await page.evaluate(() => (window as Window & { __sidePeekHiddenToggles?: number }).__sidePeekHiddenToggles)
+  ).toBe(0);
   expect(await storedMode(page, first)).toBeUndefined();
   expect(await storedMode(page, second)).toBeUndefined();
 });
