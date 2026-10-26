@@ -33,6 +33,7 @@ import {
   openChartPanelRow,
 } from './chart-settings-helpers';
 import { mockProSubscription } from './chart-test-helpers';
+import { createFixtureFields, createFixtureView } from './dashboard-fixture-api';
 import {
   apiGet,
   apiHeaders,
@@ -820,20 +821,13 @@ async function createFixtureDatabase(
   const databaseId = created.database_id;
   const base = `/api/workspace/${world.workspaceId}/database/${databaseId}`;
   const defaultRows = await apiGet<{ id: string }[]>(request, token, `${base}/row`);
-  const fieldIds: Record<string, string> = {};
-
-  for (const field of spec.fields) {
-    const typeOptionData =
-      field.type === FieldType.SingleSelect
-        ? { content: JSON.stringify({ options: selectOptionsFor(field), disable_color: false }) }
-        : {};
-
-    fieldIds[field.name] = await apiPost<string>(request, token, `${base}/fields`, {
-      name: field.name,
-      field_type: field.type,
-      type_option_data: typeOptionData,
-    });
-  }
+  const fieldIds = await createFixtureFields(request, token, world.workspaceId, databaseId, spec.fields.map((field) => ({
+    name: field.name,
+    type: field.type,
+    typeOptionData: field.type === FieldType.SingleSelect
+      ? { content: JSON.stringify({ options: selectOptionsFor(field), disable_color: false }) }
+      : {},
+  })));
 
   const rowIds: Record<string, string> = {};
 
@@ -1403,11 +1397,6 @@ export async function addDashboardView(page: Page, name: string) {
   return viewId;
 }
 
-interface CreatedDatabaseView {
-  view_id: string;
-  database_update?: number[];
-}
-
 export interface DatabaseViewRequest {
   /** The fixture database the view belongs to. */
   database: string;
@@ -1429,21 +1418,38 @@ export async function createDatabaseViewThroughApi(page: Page, request: APIReque
   const world = dashboardWorld(page);
   const database = fixtureDatabase(page, view.database);
   const parentViewId = view.parentViewId ?? database.pageId;
-  const created = await apiPost<CreatedDatabaseView>(
+  const layoutName = ViewLayout[view.folderLayout] as keyof typeof DatabaseViewLayout;
+  const layout = DatabaseViewLayout[layoutName];
+
+  if (layout === undefined) throw new Error(`Unsupported fixture view layout ${view.folderLayout}`);
+  const restore = await apiGet<{ database_restore_id: string | null }>(request, world.owner.accessToken,
+    `/api/workspace/${world.workspaceId}/database/${database.databaseId}/restore-state`);
+  const created = await createFixtureView(
     request,
     world.owner.accessToken,
-    `/api/workspace/${world.workspaceId}/page-view/${parentViewId}/database-view`,
+    world.workspaceId,
     {
-      parent_view_id: parentViewId,
-      prev_view_id: view.prevViewId,
-      database_id: database.databaseId,
-      layout: view.folderLayout,
-      name: view.name,
-      embedded: false,
+      schema_version: 'v1',
+      request_id: uuidv4(),
+      database_restore_id: restore.database_restore_id ?? '00000000-0000-0000-0000-000000000000',
+      view: {
+        parent_view_id: parentViewId,
+        view_id: uuidv4(),
+        database_id: database.databaseId,
+        // Fixtures configure each view separately; start with fresh settings.
+        source_view_id: null,
+        layout,
+        name: view.name,
+        embedded: false,
+        responses_view_id: layout === DatabaseViewLayout.Form ? uuidv4() : null,
+        timezone_id: [DatabaseViewLayout.Calendar, DatabaseViewLayout.Timeline].includes(layout)
+          ? Intl.DateTimeFormat().resolvedOptions().timeZone : null,
+      },
+      position: view.prevViewId ? { kind: 'after', view_id: view.prevViewId } : { kind: 'end' },
     }
   );
 
-  if (created.database_update?.length) {
+  if (created.database_update_v1) {
     await page.evaluate(
       ({ databaseId, update }) => {
         const win = window as any;
@@ -1456,7 +1462,7 @@ export async function createDatabaseViewThroughApi(page: Page, request: APIReque
           'remote'
         );
       },
-      { databaseId: database.databaseId, update: created.database_update }
+      { databaseId: database.databaseId, update: Array.from(Buffer.from(created.database_update_v1, 'base64')) }
     );
   }
 
