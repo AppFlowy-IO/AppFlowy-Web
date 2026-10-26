@@ -7,6 +7,7 @@ export {
 export type {
   SearchDocumentPageResponse,
   SearchDocumentResponseItem,
+  SearchEvidence,
   SearchSummary,
   SearchSummaryResult,
 } from '../js-services/http/misc-api';

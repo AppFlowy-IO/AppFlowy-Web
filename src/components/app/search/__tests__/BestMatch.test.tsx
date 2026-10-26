@@ -21,6 +21,7 @@ let mockOverviewSources: Array<{
   ownerDatabaseId?: string;
 }> = [];
 let mockCanAskFollowUp = false;
+let mockListItems: Array<Record<string, unknown>> = [];
 const mockT = (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key;
 
 jest.mock('react-i18next', () => ({
@@ -66,15 +67,18 @@ jest.mock('@/components/app/search/ViewList', () => ({
     items?: Array<{ id: string; view: { name: string } }>;
     hasMore?: boolean;
     onLoadMore?: () => void;
-  }) => (
-    <div data-testid='view-list'>
-      {header ? <div data-testid='search-header'>{header}</div> : null}
-      {items?.map((item) => (
-        <div key={item.id}>{item.view.name}</div>
-      ))}
-      {hasMore && <button onClick={onLoadMore}>Load more</button>}
-    </div>
-  ),
+  }) => {
+    mockListItems = items ?? [];
+    return (
+      <div data-testid='view-list'>
+        {header ? <div data-testid='search-header'>{header}</div> : null}
+        {items?.map((item) => (
+          <div key={item.id}>{item.view.name}</div>
+        ))}
+        {hasMore && <button onClick={onLoadMore}>Load more</button>}
+      </div>
+    );
+  },
 }));
 
 function createView(overrides: Partial<View> = {}): View {
@@ -102,6 +106,7 @@ describe('BestMatch', () => {
     mockWorkspaceId = 'workspace-id';
     mockOverviewSources = [];
     mockCanAskFollowUp = false;
+    mockListItems = [];
     mockUseAIEnabled.mockReturnValue(true);
     mockSearchWorkspaceDocumentPage.mockResolvedValue({
       has_more: false,
@@ -127,6 +132,68 @@ describe('BestMatch', () => {
 
     expect(screen.getByTestId('search-header')).toBeTruthy();
     expect(await screen.findByTestId('ai-overview')).toBeTruthy();
+  });
+
+  it('opens a result that matched through an image at the image block', async () => {
+    mockAppOutline = [createView({ view_id: 'page-id', name: 'Launch plan' })];
+    mockSearchWorkspaceDocumentPage.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          object_id: 'page-id',
+          evidence: [
+            {
+              kind: 'image',
+              processor_id: 'image_understanding',
+              resource_id: 'image-block',
+              locator: { workspace_id: 'workspace-id', parent_dir: 'page-id', file_id: 'chart.png' },
+              matched_text: 'Quarterly revenue chart',
+            },
+          ],
+        },
+      ],
+      next_offset: null,
+    });
+    renderBestMatch('revenue');
+
+    await screen.findByText('Launch plan');
+    expect(mockListItems[0]).toMatchObject({
+      blockId: 'image-block',
+      evidence: { kind: 'image', matchedText: 'Quarterly revenue chart' },
+    });
+  });
+
+  it('keeps the image a later page matched in a result an earlier page listed', async () => {
+    mockAppOutline = [createView({ view_id: 'page-id', name: 'Launch plan' })];
+    mockSearchWorkspaceDocumentPage
+      .mockResolvedValueOnce({ has_more: true, items: [{ object_id: 'page-id' }], next_offset: 10 })
+      .mockResolvedValueOnce({
+        has_more: false,
+        items: [
+          {
+            object_id: 'page-id',
+            evidence: [
+              {
+                kind: 'image',
+                processor_id: 'image_understanding',
+                resource_id: 'image-block',
+                locator: { workspace_id: 'workspace-id', parent_dir: 'page-id', file_id: 'chart.png' },
+                matched_text: 'Quarterly revenue chart',
+              },
+            ],
+          },
+        ],
+        next_offset: null,
+      });
+    renderBestMatch('revenue');
+
+    await screen.findByText('Launch plan');
+    expect(mockListItems[0].evidence).toBeUndefined();
+    fireEvent.click(screen.getByText('Load more'));
+    await waitFor(() =>
+      expect(mockListItems[0]).toMatchObject({ blockId: 'image-block', evidence: { kind: 'image' } })
+    );
+    expect(mockListItems).toHaveLength(1);
   });
 
   it('updates renamed results without repeating the query or losing loaded pages', async () => {

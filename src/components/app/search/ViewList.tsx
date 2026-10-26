@@ -5,15 +5,25 @@ import { useTranslation } from 'react-i18next';
 import { View } from '@/application/types';
 import { useToView } from '@/components/app/app.hooks';
 import ListItem from '@/components/app/search/ListItem';
+import type { SearchResultEvidence } from '@/components/app/search/search-evidence';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 
 export interface SearchViewListItem {
   id: string;
   view: View;
   rowId?: string | null;
+  /** The block to open the page at, such as the image that matched. */
+  blockId?: string;
   title?: string;
   subtitle?: string;
   preview?: string;
+  /** Shown instead of the preview when the result matched through an image or PDF. */
+  evidence?: SearchResultEvidence;
+}
+
+/** Open a result at its row, or at the block that matched. */
+function resultTarget(item: SearchViewListItem): string | undefined {
+  return item.rowId || item.blockId || undefined;
 }
 
 function ViewList({
@@ -65,7 +75,7 @@ function ViewList({
         const selectedItem = listItems.find((item) => item.id === selectedItemId);
 
         if (selectedItem) {
-          void navigateToView(selectedItem.view.view_id, selectedItem.rowId || undefined);
+          void navigateToView(selectedItem.view.view_id, resultTarget(selectedItem));
         }
 
         onClose();
@@ -129,11 +139,12 @@ function ViewList({
             subtitle={item.subtitle}
             title={item.title}
             preview={item.preview}
+            evidence={item.evidence}
             query={query}
             view={item.view}
             onClick={() => {
               setSelectedItemId(item.id);
-              void navigateToView(item.view.view_id, item.rowId || undefined);
+              void navigateToView(item.view.view_id, resultTarget(item));
               onClose();
             }}
             onClose={onClose}
