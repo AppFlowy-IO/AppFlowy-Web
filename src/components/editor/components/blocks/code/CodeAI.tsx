@@ -1,5 +1,5 @@
 import { TextareaAutosize } from '@mui/material';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Editor, Node, Transforms } from 'slate';
 import { useReadOnly, useSlateStatic } from 'slate-react';
@@ -75,7 +75,9 @@ export default function CodeAI({
     { generate: 'askAI', explain: 'explainCode', check: 'checkCode', comments: 'addInlineCodeComments' } as const
   )[action];
   const title = t(`document.plugins.codeBlock.${titleKey}`);
-  const generated = useMemo(() => extractGeneratedCode(answer), [answer]);
+  // Only finished answers are acted on; skip a second Markdown parse for every streamed chunk.
+  const generated = useMemo(() => (loading ? undefined : extractGeneratedCode(answer)), [answer, loading]);
+  const streamedAnswer = useDeferredValue(answer);
   const changed = Node.string(node) !== original || node.data.language !== originalLanguage;
   const cancel = useCallback(() => {
     ++generation.current;
@@ -197,7 +199,7 @@ export default function CodeAI({
           <div className='text-xs font-medium leading-[18px] tracking-[0.1px] text-text-secondary'>{title}</div>
           {answer && (
             <div className='max-h-[440px] overflow-y-auto' aria-busy={loading}>
-              <CodeResponse content={answer} />
+              <CodeResponse content={streamedAnswer} />
             </div>
           )}
           {complete && (action === 'generate' || action === 'comments') && !generated && !error && (

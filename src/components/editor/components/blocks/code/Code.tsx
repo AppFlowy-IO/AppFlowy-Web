@@ -1,3 +1,4 @@
+import { PopoverOrigin } from '@mui/material';
 import TextareaAutosize from '@mui/material/TextareaAutosize';
 import { forwardRef, lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -21,6 +22,17 @@ import './code.scss';
 
 const MermaidPreview = lazy(() => import('./MermaidPreview'));
 const CodeAI = lazy(() => import('./CodeAI'));
+
+const menuOrigins: Partial<Record<CodeMenuView, { anchorOrigin: PopoverOrigin; transformOrigin: PopoverOrigin }>> = {
+  language: {
+    anchorOrigin: { vertical: 'bottom', horizontal: 'left' },
+    transformOrigin: { vertical: -4, horizontal: 'left' },
+  },
+  display: {
+    anchorOrigin: { vertical: 'bottom', horizontal: 'center' },
+    transformOrigin: { vertical: 'top', horizontal: 'center' },
+  },
+};
 
 export const CodeBlock = forwardRef<HTMLDivElement, EditorElementProps<CodeNode>>(
   ({ node, children, className, ...attributes }, ref) => {
@@ -193,20 +205,8 @@ export const CodeBlock = forwardRef<HTMLDivElement, EditorElementProps<CodeNode>
             view={menu.view}
             anchorEl={menu.anchor}
             onClose={closeMenu}
-            anchorOrigin={
-              menu.view === 'language'
-                ? { vertical: 'bottom', horizontal: 'left' }
-                : menu.view === 'display'
-                ? { vertical: 'bottom', horizontal: 'center' }
-                : undefined
-            }
-            transformOrigin={
-              menu.view === 'language'
-                ? { vertical: -4, horizontal: 'left' }
-                : menu.view === 'display'
-                ? { vertical: 'top', horizontal: 'center' }
-                : undefined
-            }
+            anchorOrigin={menuOrigins[menu.view]?.anchorOrigin}
+            transformOrigin={menuOrigins[menu.view]?.transformOrigin}
           />
         )}
         {isAI && !readOnly && (

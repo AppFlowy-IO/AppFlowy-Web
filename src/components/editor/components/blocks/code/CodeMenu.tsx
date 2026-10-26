@@ -28,6 +28,9 @@ import { turnCodeIntoPage } from './turn-code-into-page';
 export type CodeMenuView = 'main' | 'ai' | 'language' | 'display';
 type Submenu = Exclude<CodeMenuView, 'main'> | 'turn' | 'download';
 
+const defaultAnchorOrigin: PopoverOrigin = { vertical: 'bottom', horizontal: 'right' };
+const defaultTransformOrigin: PopoverOrigin = { vertical: 'top', horizontal: 'left' };
+
 function moveMenuFocus(event: KeyboardEvent) {
   if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) || event.target instanceof HTMLInputElement) return;
   const menu = (event.target as HTMLElement).closest('[role="menu"]');
@@ -52,8 +55,8 @@ export function CodeMenu({
   anchorEl,
   onClose,
   view = 'main',
-  anchorOrigin = { vertical: 'bottom', horizontal: 'right' },
-  transformOrigin = { vertical: 'top', horizontal: 'left' },
+  anchorOrigin = defaultAnchorOrigin,
+  transformOrigin = defaultTransformOrigin,
 }: {
   node: CodeNode;
   anchorEl: HTMLElement;

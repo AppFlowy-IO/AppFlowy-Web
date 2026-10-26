@@ -20,8 +20,8 @@ import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as CopyLinkIcon } from '@/assets/icons/link.svg';
 import { notify } from '@/components/_shared/notify';
 import { Popover } from '@/components/_shared/popover';
-import { CodeMenu } from '@/components/editor/components/blocks/code/CodeMenu';
 import { AppOutlineContext } from '@/components/app/contexts/AppOutlineContext';
+import { CodeMenu } from '@/components/editor/components/blocks/code/CodeMenu';
 import {
   createDatabaseDuplicatePlaceholderData,
   createDatabaseNodeData,
@@ -635,8 +635,8 @@ function ControlsMenu({
         node={node as CodeNode}
         anchorEl={anchorEl}
         onClose={onClose}
-        anchorOrigin={{ vertical: 'center', horizontal: 'left' }}
-        transformOrigin={{ vertical: 'center', horizontal: 'right' }}
+        anchorOrigin={popoverProps.anchorOrigin}
+        transformOrigin={popoverProps.transformOrigin}
       />
     );
   }
