@@ -163,6 +163,39 @@ describe('BestMatch', () => {
     });
   });
 
+  it('keeps the image a later page matched in a result an earlier page listed', async () => {
+    mockAppOutline = [createView({ view_id: 'page-id', name: 'Launch plan' })];
+    mockSearchWorkspaceDocumentPage
+      .mockResolvedValueOnce({ has_more: true, items: [{ object_id: 'page-id' }], next_offset: 10 })
+      .mockResolvedValueOnce({
+        has_more: false,
+        items: [
+          {
+            object_id: 'page-id',
+            evidence: [
+              {
+                kind: 'image',
+                processor_id: 'image_understanding',
+                resource_id: 'image-block',
+                locator: { workspace_id: 'workspace-id', parent_dir: 'page-id', file_id: 'chart.png' },
+                matched_text: 'Quarterly revenue chart',
+              },
+            ],
+          },
+        ],
+        next_offset: null,
+      });
+    renderBestMatch('revenue');
+
+    await screen.findByText('Launch plan');
+    expect(mockListItems[0].evidence).toBeUndefined();
+    fireEvent.click(screen.getByText('Load more'));
+    await waitFor(() =>
+      expect(mockListItems[0]).toMatchObject({ blockId: 'image-block', evidence: { kind: 'image' } })
+    );
+    expect(mockListItems).toHaveLength(1);
+  });
+
   it('updates renamed results without repeating the query or losing loaded pages', async () => {
     mockAppOutline = [
       createView({ view_id: 'first', name: 'First page' }),

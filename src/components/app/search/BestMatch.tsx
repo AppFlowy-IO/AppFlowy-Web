@@ -15,8 +15,8 @@ import { findView } from '@/components/_shared/outline/utils';
 import { isSpaceView } from '@/components/ai-chat/rag-scope';
 import type { AIChatRagSource } from '@/components/ai-chat/rag-scope';
 import { useAIEnabled, useAppOutline, useCurrentWorkspaceId } from '@/components/app/app.hooks';
-import type { SearchOverviewSource } from '@/components/app/search/SearchAIOverview';
 import { describeEvidence, evidenceBlockId, primaryEvidence } from '@/components/app/search/search-evidence';
+import type { SearchOverviewSource } from '@/components/app/search/SearchAIOverview';
 import ViewList, { SearchViewListItem } from '@/components/app/search/ViewList';
 
 const SearchAIOverview = lazy(() =>
@@ -106,24 +106,23 @@ function mergeSearchResults(
   current: SearchDocumentResponseItem[],
   next: SearchDocumentResponseItem[]
 ): SearchDocumentResponseItem[] {
-  const seen = new Set<string>();
+  const indexByKey = new Map<string, number>();
   const merged: SearchDocumentResponseItem[] = [];
 
   for (const item of [...current, ...next]) {
     const key = searchResultKey(item);
+    const index = indexByKey.get(key);
 
-    if (seen.has(key)) {
+    if (index !== undefined) {
       // Keep why a later page of the same result matched, such as one of its images.
       if (item.evidence?.length) {
-        const index = merged.findIndex((existing) => searchResultKey(existing) === key);
-
         merged[index] = { ...merged[index], evidence: [...(merged[index].evidence ?? []), ...item.evidence] };
       }
 
       continue;
     }
 
-    seen.add(key);
+    indexByKey.set(key, merged.length);
     merged.push(item);
   }
 

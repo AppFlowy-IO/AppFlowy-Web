@@ -28,7 +28,9 @@ jest.mock('@/components/_shared/view-icon/PageIcon', () => ({
 }));
 
 jest.mock('@/components/_shared/image-render/ImageRender', () => ({
-  ImageRender: ({ src }: { src: string }) => <img data-testid='evidence-thumbnail' src={src} alt='' />,
+  ImageRender: ({ src, onError }: { src: string; onError?: () => void }) => (
+    <img data-testid='evidence-thumbnail' src={src} alt='' onError={onError} />
+  ),
 }));
 
 function view(overrides: Partial<View> = {}): View {
@@ -79,6 +81,22 @@ describe('ViewList', () => {
     expect(evidence.textContent).toContain('Quarterly revenue chart');
     expect(screen.getByTestId('evidence-thumbnail').getAttribute('src')).toBe(imageResult.evidence?.imageUrl);
     expect(screen.queryByText('Page text that is not shown')).toBeNull();
+  });
+
+  it('shows the thumbnail of another matched image in the same page after one failed to load', () => {
+    const list = (items: SearchViewListItem[]) => (
+      <ViewList title='Best matches' items={items} loading={false} query='revenue' onClose={jest.fn()} />
+    );
+    const { rerender } = render(list([imageResult]));
+
+    fireEvent.error(screen.getByTestId('evidence-thumbnail'));
+    expect(screen.queryByTestId('evidence-thumbnail')).toBeNull();
+
+    // A new query keeps the item for the same page mounted, and it matched a different image.
+    const forecast = '/api/file_storage/workspace-id/v1/blob/page-id/forecast.png';
+
+    rerender(list([{ ...imageResult, evidence: { kind: 'image', matchedText: 'Revenue forecast', imageUrl: forecast } }]));
+    expect(screen.getByTestId('evidence-thumbnail').getAttribute('src')).toBe(forecast);
   });
 
   it('opens the page at the matched image when the result is clicked', () => {

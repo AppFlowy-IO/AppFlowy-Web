@@ -9,9 +9,11 @@ import type { SearchResultEvidence } from '@/components/app/search/search-eviden
 /** Why a result matched through an image or PDF: the file, and the text that matched in it. */
 function ResultEvidence({ evidence, matchedText }: { evidence: SearchResultEvidence; matchedText?: ReactNode }) {
   const { t } = useTranslation();
-  const [thumbnailFailed, setThumbnailFailed] = useState(false);
+  // Remember which URL failed: the list keeps this item mounted when a new query matches another
+  // image in the same page, and that image must still get its thumbnail.
+  const [failedUrl, setFailedUrl] = useState<string>();
   const Icon = evidence.kind === 'image' ? ImageIcon : PdfIcon;
-  const showThumbnail = evidence.imageUrl && !thumbnailFailed;
+  const thumbnailUrl = evidence.imageUrl !== failedUrl ? evidence.imageUrl : undefined;
 
   return (
     <div
@@ -24,13 +26,13 @@ function ResultEvidence({ evidence, matchedText }: { evidence: SearchResultEvide
           'flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded border border-border-primary bg-fill-content'
         }
       >
-        {showThumbnail ? (
+        {thumbnailUrl ? (
           <ImageRender
-            src={evidence.imageUrl!}
+            src={thumbnailUrl}
             alt=''
             decodeAtDisplaySize='cover'
             className={'h-full w-full object-cover'}
-            onError={() => setThumbnailFailed(true)}
+            onError={() => setFailedUrl(thumbnailUrl)}
           />
         ) : (
           <Icon className={'h-5 w-5 text-icon-secondary'} />
