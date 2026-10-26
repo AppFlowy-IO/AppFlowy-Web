@@ -58,8 +58,7 @@ function DatabaseRowModal({
   const duplicatePending = useRef(false);
   const [selectedMode, setMode] = useState<RowPeekMode>();
   const sourceLayout = Number(view?.get(YjsDatabaseKey.layout));
-  const defaultMode =
-    sourceLayout === DatabaseViewLayout.Calendar || sourceLayout === DatabaseViewLayout.Timeline ? 'center' : 'side';
+  const defaultMode = sourceLayout === DatabaseViewLayout.Timeline ? 'center' : 'side';
   const mode = selectedMode ?? defaultMode;
   const canShowSide = layout?.canShow === true && !openPageModalViewId;
   const side = mode === 'side' && canShowSide;
