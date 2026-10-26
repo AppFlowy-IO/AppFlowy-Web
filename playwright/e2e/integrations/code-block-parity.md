@@ -65,6 +65,17 @@ pnpm exec tsc --project playwright/tsconfig.integrations.json
 pnpm build
 ```
 
+### Server-backed BDD coverage
+
+The fixture suite does not exercise Cloud persistence, real page creation or the production build's lazy chunks. [`code-block-revamp.feature`](../../bdd/features/editor/code-block-revamp.feature) covers them against a signed-in local stack: language/pin/wrap/caption after reload, on-demand formatting with undo, literal code input, Mermaid insertion and Preview mode after reload, and code/callout **Turn into → Page** with the new page's content (plus undo for callouts). The `code-block-bdd` CI group runs it with the existing [`code-block-clipboard.feature`](../../bdd/features/editor/code-block-clipboard.feature), which was not previously scheduled in CI.
+
+```bash
+pnpm exec bddgen -c playwright.bdd.config.ts
+pnpm exec playwright test -c playwright.bdd.config.ts \
+  playwright/.features-gen/playwright/bdd/features/editor/code-block-revamp.feature.spec.js \
+  playwright/.features-gen/playwright/bdd/features/editor/code-block-clipboard.feature.spec.js
+```
+
 For interactive testing, run `pnpm test:e2e:code-block --project=chromium-light --headed`, or use the `chromium-dark` project. The suite mounts the production Editor and Yjs document in an isolated fixture, without Cloud credentials. A new GitHub Actions job runs both themes and retains screenshots/traces. AI provider responses are controlled fixtures through the actual Web request client; these results do not claim a live model/backend smoke test. Chromium ran locally on macOS; Windows/Linux key mappings have unit coverage, not native OS runs.
 
 ## React best-practices review
@@ -84,6 +95,12 @@ Review validation:
 - Application and browser-fixture TypeScript passed. Changed source and unit-test files have no remaining ESLint errors; 12 import warnings remain. Test lint cleanup was followed by 66 passing checks in the affected suites.
 - Production build passed in 36.29s, with existing bundle-size, Browserslist and ambiguous Tailwind-class warnings. `git diff --check` passed.
 - The local app remains available at `http://localhost:3015/`. These browser checks use controlled AI responses through the production request client, not a live AI provider.
+
+### Follow-up review (2026-10-26)
+
+- **Focus after menu actions:** the code menu closed without returning focus, so Cmd/Ctrl+Z after **Format code** (or any other menu action) went to `<body>` and did nothing. Closing now selects inside the code block and focuses the editor, like the shared six-dot menu. Captions, AI panels and page modals still take focus afterwards. The Format/undo BDD scenario failed before this change and passes after it.
+- **Streaming cost:** each AI chunk parsed the full Markdown answer twice, although the extracted code is only used once streaming ends. It is now parsed once per chunk, and the response renders at deferred priority.
+- **Stable popover props:** static origins for the code menus are module constants, so open menus do not recompute positioning on every render.
 
 ## Flutter test mapping
 

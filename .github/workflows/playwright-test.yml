@@ -189,6 +189,13 @@ jobs:
             description: 'Dockable document outline, scroll tracking, themes, comments, and published display modes'
             bdd: 'true'
             shard: ''
+          - name: 'code-block-bdd'
+            spec: >-
+              playwright/.features-gen/playwright/bdd/features/editor/code-block-revamp.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/editor/code-block-clipboard.feature.spec.js
+            description: 'Code block settings, Mermaid, literal editing, clipboard, and code/callout page conversion'
+            bdd: 'true'
+            shard: ''
           - name: 'database'
             spec: 'playwright/e2e/database/'
             description: 'Database and grid operations (shard 1 of 3)'
