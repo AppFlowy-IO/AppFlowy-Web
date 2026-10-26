@@ -99,6 +99,7 @@ Review validation:
 ### Follow-up review (2026-10-26)
 
 - **Focus after menu actions:** the code menu closed without returning focus, so Cmd/Ctrl+Z after **Format code** (or any other menu action) went to `<body>` and did nothing. Closing now selects inside the code block and focuses the editor, like the shared six-dot menu. Captions, AI panels and page modals still take focus afterwards. The Format/undo BDD scenario failed before this change and passes after it.
+- **Keyboard commands after a click:** Slate throttles native `selectionchange`, so in an already focused editor a click followed quickly by Mod+Arrow, Tab or Enter ran from the previous caret. Code keyboard handling now adopts the browser range first when it lies in one code block, as Mod+Shift+E already did. The focus fix exposed this in the wrap/reverse-selection check, which passes 8/8 with the change.
 - **Streaming cost:** each AI chunk parsed the full Markdown answer twice, although the extracted code is only used once streaming ends. It is now parsed once per chunk, and the response renders at deferred priority.
 - **Stable popover props:** static origins for the code menus are module constants, so open menus do not recompute positioning on every render.
 

@@ -65,6 +65,25 @@ export function useShortcuts(editor: ReactEditor) {
         }
       }
 
+      if (!readOnly && !e.isComposing) {
+        // A click in a focused editor reaches Slate only after its throttled
+        // selectionchange handler. Code commands must start from that caret.
+        const domSelection = window.getSelection();
+        const range = domSelection?.rangeCount
+          ? ReactEditor.toSlateRange(editor, domSelection, { exactMatch: false, suppressThrow: true })
+          : null;
+        const block = range && getBlockEntry(yjsEditor, range.anchor);
+
+        if (
+          range &&
+          block?.[0].type === BlockType.CodeBlock &&
+          block[0] === getBlockEntry(yjsEditor, range.focus)?.[0] &&
+          !(editor.selection && Range.equals(range, editor.selection))
+        ) {
+          editor.select(range);
+        }
+      }
+
       const { selection } = editor;
 
       if (
