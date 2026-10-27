@@ -77,7 +77,12 @@ function RelationCellMenuContentForTarget({
   onRemoveRelationRowId,
   loading,
   onClose,
-}: RelationCellMenuContentProps) {
+  searchInput,
+  setSearchInput,
+}: RelationCellMenuContentProps & {
+  searchInput: string;
+  setSearchInput: (value: string) => void;
+}) {
   const { t } = useTranslation();
   const currentUser = useCurrentUserOptional();
   const actorUid = resolveUserAttributionUid(currentUser);
@@ -117,7 +122,6 @@ function RelationCellMenuContentForTarget({
     [onAddRelationRowId, openRelatedRow, relationRowIds, selectedViewId]
   );
 
-  const [searchInput, setSearchInput] = useState<string>('');
   const [primaryFieldId, setPrimaryFieldId] = useState<string | null>(null);
   const [primaryField, setPrimaryField] = useState<YDatabaseField | null>(null);
   const [primaryFieldClock, setPrimaryFieldClock] = useState(0);
@@ -563,6 +567,7 @@ function RelationCellMenuContentForTarget({
     workspaceId,
     databaseDoc,
     runCreation,
+    setSearchInput,
   ]);
 
   const renderCreateAndLink = useMemo(() => {
@@ -699,13 +704,27 @@ function RelationCellMenuContentForTarget({
   );
 }
 
-function RelationCellMenuContent(props: RelationCellMenuContentProps) {
+function RelationCellMenuContentForDatabase(props: RelationCellMenuContentProps) {
+  // Catalog hydration can replace a child view with its container view without
+  // changing the related database. Keep the user's query across that refresh.
+  const [searchInput, setSearchInput] = useState('');
   // All local docs, observers, and row state belong to one immutable target.
   // Remounting the implementation prevents a passive-effect frame from
   // combining database A's state with database B's identity.
   const targetKey = `${props.relatedDatabaseId}:${props.selectedView?.view_id ?? ''}`;
 
-  return <RelationCellMenuContentForTarget key={targetKey} {...props} />;
+  return (
+    <RelationCellMenuContentForTarget
+      key={targetKey}
+      {...props}
+      searchInput={searchInput}
+      setSearchInput={setSearchInput}
+    />
+  );
+}
+
+function RelationCellMenuContent(props: RelationCellMenuContentProps) {
+  return <RelationCellMenuContentForDatabase key={props.relatedDatabaseId} {...props} />;
 }
 
 export default RelationCellMenuContent;
