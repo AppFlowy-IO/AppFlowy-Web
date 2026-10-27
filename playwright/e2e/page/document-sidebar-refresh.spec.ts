@@ -48,8 +48,7 @@ test.describe('Document Sidebar Refresh via WebSocket', () => {
     await expandSpaceByName(page, SPACE_NAME);
     await page.waitForTimeout(1000);
 
-    // Expand the first page before baseline count so later checks
-    // are not affected by local expansion revealing pre-existing children.
+    // Expand the parent so its new child can appear in the sidebar.
     const firstPageItem = PageSelectors.items(page).first();
     const expandBtn = firstPageItem.getByTestId('outline-toggle-expand');
     if ((await expandBtn.count()) > 0) {
@@ -57,101 +56,38 @@ test.describe('Document Sidebar Refresh via WebSocket', () => {
       await page.waitForTimeout(500);
     }
 
-    // Count existing pages (baseline)
-    const initialPageCount = await PageSelectors.names(page).count();
-    console.log(`[INFO] Initial page count: ${initialPageCount}`);
-
-    // Step 4: Hover over the first page and click the inline add button
-    await PageSelectors.items(page).first().hover();
-    await page.waitForTimeout(500);
-
-    await PageSelectors.items(page).first().getByTestId('inline-add-page').first().click({ force: true });
-    await page.waitForTimeout(500);
-
-    // Step 5: Select "Document" from the dropdown menu
+    // A global page-name count includes mounted, collapsed descendants. Opening
+    // a page can change those mounts, so bind the assertion to the created ID.
+    await firstPageItem.hover();
+    await firstPageItem.getByTestId('inline-add-page').first().click();
     await expect(ViewActionSelectors.popover(page)).toBeVisible();
-    await ViewActionSelectors.popover(page).locator('[role="menuitem"]').first().click();
-    await page.waitForTimeout(3000);
+    const creationResponse = page.waitForResponse((response) =>
+      response.request().method() === 'POST' &&
+      new URL(response.url()).pathname.endsWith('/v2/page-view/document/default')
+    );
 
-    // Step 6: Verify sidebar page count increased (WebSocket notification worked!)
-    await expandSpaceByName(page, SPACE_NAME);
-    await page.waitForTimeout(1000);
+    await page.getByTestId('add-document-button').click();
+    const response = await creationResponse;
+    const result = await response.json();
 
-    // Poll until page count increases (with collapse/re-expand to trigger lazy load)
-    for (let attempt = 0; attempt < 30; attempt++) {
-      // Try to expand parent page if needed
-      const firstItem = PageSelectors.items(page).first();
-      const expandToggle = firstItem.getByTestId('outline-toggle-expand');
-      const collapseToggle = firstItem.getByTestId('outline-toggle-collapse');
+    expect(response.ok()).toBe(true);
+    expect(result.code, result.message).toBe(0);
+    const viewId = result.data.result.view_id;
 
-      if ((await expandToggle.count()) > 0) {
-        await expandToggle.first().click({ force: true });
-        await page.waitForTimeout(500);
-      } else if ((await collapseToggle.count()) > 0 && attempt > 0) {
-        // Collapse and re-expand to trigger fresh lazy load
-        await collapseToggle.first().click({ force: true });
-        await page.waitForTimeout(300);
-        const reExpand = firstItem.getByTestId('outline-toggle-expand');
-        if ((await reExpand.count()) > 0) {
-          await reExpand.first().click({ force: true });
-          await page.waitForTimeout(500);
-        }
-      }
+    expect(viewId).toBeTruthy();
+    const createdPage = page.getByTestId(`page-${viewId}`);
 
-      const currentCount = await PageSelectors.names(page).count();
-      console.log(`[INFO] Current page count: ${currentCount}, initial: ${initialPageCount}, attempt: ${attempt + 1}`);
-      if (currentCount > initialPageCount) break;
-      await page.waitForTimeout(1000);
-      if (attempt === 29) throw new Error('Page count did not increase - WebSocket notification may not be working');
-    }
+    await expect(createdPage).toBeVisible({ timeout: 30000 });
+    await expect(createdPage.getByTestId('page-name')).toHaveText('Untitled');
 
-    console.log('[SUCCESS] New document appeared in sidebar via WebSocket notification!');
+    // The document title handles Escape while focused; use the modal's close
+    // action so the test can interact with the sidebar again.
+    await page.getByTestId('view-modal-close').click();
+    await expect(page.getByRole('dialog')).toBeHidden();
 
-    // Step 7: Close any dialog that may have opened
-    const backToHomeBtn = page.getByRole('button', { name: 'Back to home' });
-    if ((await backToHomeBtn.count()) > 0) {
-      await backToHomeBtn.first().click({ force: true });
-      await page.waitForTimeout(1000);
-    } else {
-      const closeModalBtn = page.getByTestId('close-modal-button');
-      if ((await closeModalBtn.count()) > 0) {
-        await closeModalBtn.first().click({ force: true });
-        await page.waitForTimeout(1000);
-      } else if ((await page.locator('.MuiDialog-root').count()) > 0) {
-        await page.keyboard.press('Escape');
-        await page.waitForTimeout(1000);
-      }
-    }
-
-    // Wait for dialog to be completely gone
-    await page.waitForTimeout(2000);
-
-    // Retry closing if dialog is still there
-    if ((await page.getByRole('button', { name: 'Back to home' }).count()) > 0) {
-      await page.getByRole('button', { name: 'Back to home' }).first().click({ force: true });
-      await page.waitForTimeout(1000);
-    }
-
-    // Wait for MuiDialog to disappear
-    await expect(page.locator('.MuiDialog-root')).toHaveCount(0, { timeout: 30000 });
-
-    // Step 8: Expand the parent page to show the newly created child
-    const parentItem = PageSelectors.items(page).first();
-    const parentExpandBtn = parentItem.getByTestId('outline-toggle-expand');
-    if ((await parentExpandBtn.count()) > 0) {
-      await parentExpandBtn.first().click({ force: true });
-      await page.waitForTimeout(1000);
-    }
-
-    // Find the newly created "Untitled" page
-    await expect(PageSelectors.nameContaining(page, 'Untitled').first()).toBeVisible({ timeout: 30000 });
-
-    // Step 9: Open more actions on Untitled page and rename
-    const untitledItem = PageSelectors.itemByName(page, 'Untitled');
-    await untitledItem.hover({ force: true });
-    await page.waitForTimeout(500);
-    await PageSelectors.moreActionsButton(page, 'Untitled').click({ force: true });
-    await page.waitForTimeout(500);
+    // Rename the same newly created page rather than another Untitled page.
+    await createdPage.hover();
+    await createdPage.getByTestId('page-more-actions').click();
 
     // Click rename
     await expect(ViewActionSelectors.renameButton(page)).toBeVisible();
@@ -171,14 +107,14 @@ test.describe('Document Sidebar Refresh via WebSocket', () => {
     await page.waitForTimeout(2000);
 
     // Step 10: Verify renamed document appears in sidebar via WebSocket
-    await expect(PageSelectors.nameContaining(page, renamedDocumentName).first()).toBeVisible({ timeout: 30000 });
+    await expect(createdPage.getByTestId('page-name')).toHaveText(renamedDocumentName, { timeout: 30000 });
     console.log(`[SUCCESS] Renamed document "${renamedDocumentName}" appeared in sidebar via WebSocket!`);
 
     // Step 11: Clean up - delete the test document
-    const renamedItem = PageSelectors.itemByName(page, renamedDocumentName);
+    const renamedItem = createdPage;
     await renamedItem.hover();
     await page.waitForTimeout(500);
-    await PageSelectors.moreActionsButton(page, renamedDocumentName).click({ force: true });
+    await renamedItem.getByTestId('page-more-actions').click();
     await page.waitForTimeout(500);
 
     await expect(ViewActionSelectors.deleteButton(page)).toBeVisible();
@@ -198,7 +134,7 @@ test.describe('Document Sidebar Refresh via WebSocket', () => {
     await page.waitForTimeout(2000);
 
     // Step 12: Verify document is removed from sidebar
-    await expect(PageSelectors.nameContaining(page, renamedDocumentName)).toHaveCount(0, { timeout: 10000 });
+    await expect(createdPage).toHaveCount(0, { timeout: 10000 });
 
     console.log('[TEST COMPLETE] Sidebar refresh via WebSocket notification verified successfully!');
   });
