@@ -1,0 +1,40 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R /Annots [6 0 R 7 0 R] >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+5 0 obj
+<< /Length 94 >>
+stream
+BT /F1 18 Tf 50 700 Td (Open AppFlowy) Tj 0 -50 Td (Unsafe link should not be clickable) Tj ET
+endstream
+endobj
+6 0 obj
+<< /Type /Annot /Subtype /Link /Rect [50 680 250 710] /Border [0 0 0] /A << /S /URI /URI (https://appflowy.com/) >> >>
+endobj
+7 0 obj
+<< /Type /Annot /Subtype /Link /Rect [50 630 250 660] /Border [0 0 0] /A << /S /URI /URI (javascript:alert\(1\)) >> >>
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000263 00000 n 
+0000000333 00000 n 
+0000000477 00000 n 
+0000000611 00000 n 
+trailer
+<< /Size 8 /Root 1 0 R >>
+startxref
+745
+%%EOF

@@ -6,10 +6,19 @@ import { withYHistory } from '@/application/slate-yjs/plugins/withHistory';
 import { withYjs } from '@/application/slate-yjs/plugins/withYjs';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
 import { initializeDocumentStructure } from '@/application/slate-yjs/utils/yjs';
-import { BlockType, CollabOrigin, CreatePageResponse, MathEquationBlockData, YDoc } from '@/application/types';
+import {
+  BlockType,
+  CollabOrigin,
+  CreatePageResponse,
+  MathEquationBlockData,
+  PDFBlockData,
+  YDoc,
+} from '@/application/types';
 import { EditorContextState } from '@/components/editor/EditorContext';
 
 import { createSubpage } from '../create-subpage';
+
+jest.mock('lodash-es/isEqual', () => jest.requireActual('lodash/isEqual'));
 
 function setup() {
   const doc = new Y.Doc() as YDoc;
@@ -142,6 +151,52 @@ it('keeps a formula edited during page creation instead of replacing it with an 
     await pending;
     expect(f.context.deletePage).toHaveBeenCalledWith('child');
     expect(f.editor.children[0]).toMatchObject({ type: BlockType.EquationBlock, data: { formula: 'newer' } });
+  } finally {
+    f.dispose();
+  }
+});
+
+it('moves the complete PDF into a child page without losing caption or sizing', async () => {
+  const f = setup();
+  try {
+    const data: PDFBlockData = {
+      url: 'https://example.com/report.pdf',
+      url_type: 'network' as const,
+      name: 'Report.pdf',
+      caption: 'Notes',
+      widthFactor: 0.5,
+      heightFactor: 1.5,
+    };
+    CustomEditor.turnToBlock(f.editor, f.editor.children[0].blockId!, BlockType.PDFBlock, data);
+    f.editor.select(f.editor.start([0]));
+    const pending = createSubpage(f.editor, f.context);
+    expect(f.context.addPage).toHaveBeenCalledWith('parent', {
+      layout: 0,
+      name: 'Report.pdf',
+      page_data: { type: 'page', children: [{ type: 'pdf', data, children: [] }] },
+    });
+    f.complete({ view_id: 'child' });
+    await pending;
+    expect(f.editor.children[0]).toMatchObject({ type: 'sub_page', data: { view_id: 'child' } });
+  } finally {
+    f.dispose();
+  }
+});
+
+it('retains a PDF replaced while page creation is in flight', async () => {
+  const f = setup();
+  try {
+    const id = CustomEditor.turnToBlock(f.editor, f.editor.children[0].blockId!, BlockType.PDFBlock, {
+      name: 'old.pdf',
+    } as import('@/application/types').PDFBlockData)!;
+    f.editor.select(f.editor.start([0]));
+    const pending = createSubpage(f.editor, f.context);
+    CustomEditor.setBlockData(f.editor, id, { name: 'new.pdf' });
+    expect(f.editor.children[0]).toMatchObject({ type: 'pdf', data: { name: 'new.pdf' } });
+    f.complete({ view_id: 'child' });
+    await pending;
+    expect(f.context.deletePage).toHaveBeenCalledWith('child');
+    expect(f.editor.children[0]).toMatchObject({ type: 'pdf', data: { name: 'new.pdf' } });
   } finally {
     f.dispose();
   }

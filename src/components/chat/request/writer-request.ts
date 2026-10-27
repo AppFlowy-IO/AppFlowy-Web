@@ -60,6 +60,7 @@ export class WriterRequest {
     promptId?: string;
     customPrompt?: string;
     modelName?: string;
+    webSearchEnabled?: boolean;
     signal?: AbortSignal;
   }, onMessage: (text: string, comment: string, done?: boolean) => void) => {
     const baseUrl = this.axiosInstance.defaults.baseURL;
@@ -99,6 +100,7 @@ export class WriterRequest {
           completion_history: payload.completionHistory,
           prompt_id: payload.promptId,
           custom_prompt: payload.customPrompt ? { system: payload.customPrompt } : undefined,
+          web_search_enabled: payload.webSearchEnabled,
         },
       }),
     });

@@ -233,6 +233,64 @@ describe('ViewModal permission cleanup', () => {
     expect(mockRenderedViewProps).toHaveBeenLastCalledWith(expect.objectContaining({ canShare: false }));
   });
 
+  it('preserves the loaded editor while visibility-triggered permission revalidation is pending', async () => {
+    mockLoadView.mockResolvedValue(new Y.Doc({ guid: 'loaded-document' }));
+    const { rerender } = render(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+    const mountedDocument = await screen.findByTestId('modal-doc');
+
+    // AppBusinessLayer clears capabilities while checking access on visibilitychange.
+    // Recreating this subtree also destroys every loaded PDF worker and scroll position.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      mockObjectPermissions = {};
+      rerender(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+      expect(screen.getByTestId('modal-doc')).toBe(mountedDocument);
+      expect(mockRenderedViewProps).toHaveBeenLastCalledWith(expect.objectContaining({
+        readOnly: true, canWrite: false, canComment: false, canShare: false,
+      }));
+
+      mockObjectPermissions = { [modalViewId]: createMockPermission(modalViewId) };
+      rerender(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+      expect(screen.getByTestId('modal-doc')).toBe(mountedDocument);
+    }
+
+    expect(mockLoadView).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reveal a denied document if its permission is subsequently revalidated', async () => {
+    mockLoadView.mockResolvedValue(new Y.Doc({ guid: 'denied-document' }));
+    const { rerender } = render(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+
+    await screen.findByTestId('modal-doc');
+    mockObjectPermissions = { [modalViewId]: createMockPermission(modalViewId, { can_read: false }) };
+    rerender(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+    expect(screen.queryByTestId('modal-doc')).toBeNull();
+
+    mockObjectPermissions = {};
+    rerender(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+    expect(screen.queryByTestId('modal-doc')).toBeNull();
+    expect(mockLoadView).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a document load that finishes after read access is denied', async () => {
+    let resolveDocument!: (doc: Y.Doc) => void;
+    const pendingDocument = new Promise<Y.Doc>((resolve) => { resolveDocument = resolve; });
+
+    mockLoadView.mockReturnValueOnce(pendingDocument);
+    const { rerender } = render(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+
+    await waitFor(() => expect(mockLoadView).toHaveBeenCalledTimes(1));
+    mockObjectPermissions = { [modalViewId]: createMockPermission(modalViewId, { can_read: false }) };
+    rerender(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+    mockObjectPermissions = {};
+    rerender(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+
+    await act(async () => {
+      resolveDocument(new Y.Doc({ guid: 'late-denied-document' }));
+      await pendingDocument;
+    });
+    expect(screen.queryByTestId('modal-doc')).toBeNull();
+  });
+
   it('waits for the effective database child permission before loading cached content', async () => {
     const childViewId = '00000000-0000-4000-8000-000000000010';
     const databaseId = '00000000-0000-4000-8000-000000000011';
