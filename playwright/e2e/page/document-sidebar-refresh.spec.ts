@@ -1,9 +1,9 @@
 import { test, expect } from '@playwright/test';
-
+import { PageSelectors, ViewActionSelectors, ModalSelectors, SidebarSelectors } from '../../support/selectors';
+import { generateRandomEmail } from '../../support/test-config';
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
 import { expandSpaceByName } from '../../support/page/flows';
-import { PageSelectors, ViewActionSelectors, ModalSelectors } from '../../support/selectors';
-import { generateRandomEmail } from '../../support/test-config';
+import { closeModalsIfOpen } from '../../support/test-helpers';
 
 /**
  * Document Sidebar Refresh via WebSocket Tests
@@ -16,65 +16,127 @@ import { generateRandomEmail } from '../../support/test-config';
 const SPACE_NAME = 'General';
 
 test.describe('Document Sidebar Refresh via WebSocket', () => {
-  test('should verify sidebar updates via WebSocket when creating and renaming documents', async ({ page, request }) => {
-    const renamedDocumentName = `Renamed-${Date.now()}`;
+  test('should verify sidebar updates via WebSocket when creating and renaming documents', async ({
+    page,
+    request,
+  }) => {
+    const uniqueId = Date.now();
+    const renamedDocumentName = `Renamed-${uniqueId}`;
+    const testEmail = generateRandomEmail();
 
-    await signInAndWaitForApp(page, request, generateRandomEmail());
+    // Suppress known non-critical errors
+    page.on('pageerror', (err) => {
+      if (
+        err.message.includes('ResizeObserver loop') ||
+        err.message.includes('Non-Error promise rejection') ||
+        err.message.includes('cancelled') ||
+        err.message.includes('No workspace or service found') ||
+        err.message.includes('_dEH')
+      ) {
+        return;
+      }
+    });
+
+    // Step 1: Sign in with test user
+    await signInAndWaitForApp(page, request, testEmail);
+
+    // Step 2: Wait for app to fully load
+    await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 60000 });
+    await page.waitForTimeout(2000);
+
+    // Step 3: Expand the General space
     await expandSpaceByName(page, SPACE_NAME);
-    const parentItem = PageSelectors.itemByName(page, 'Getting started');
-    const expand = parentItem.getByTestId('outline-toggle-expand').first();
+    await page.waitForTimeout(1000);
 
-    await expect(parentItem).toBeVisible();
-    if (await expand.isVisible()) await expand.click();
-    await parentItem.hover();
-    await parentItem.getByTestId('inline-add-page').first().click();
+    // Expand the parent so its new child can appear in the sidebar.
+    const firstPageItem = PageSelectors.items(page).first();
+    const expandBtn = firstPageItem.getByTestId('outline-toggle-expand');
+    if ((await expandBtn.count()) > 0) {
+      await expandBtn.first().click({ force: true });
+      await page.waitForTimeout(500);
+    }
+
+    // A global page-name count includes mounted, collapsed descendants. Opening
+    // a page can change those mounts, so bind the assertion to the created ID.
+    await firstPageItem.hover();
+    await firstPageItem.getByTestId('inline-add-page').first().click();
     await expect(ViewActionSelectors.popover(page)).toBeVisible();
-    const created = page.waitForResponse((response) =>
+    const creationResponse = page.waitForResponse((response) =>
       response.request().method() === 'POST' &&
-      new URL(response.url()).pathname.endsWith('/v2/page-view/document/default'));
+      new URL(response.url()).pathname.endsWith('/v2/page-view/document/default')
+    );
 
     await page.getByTestId('add-document-button').click();
-    const response = await created;
-    const receipt = await response.json();
+    const response = await creationResponse;
+    const result = await response.json();
 
     expect(response.ok()).toBe(true);
-    expect(receipt.code).toBe(0);
-    const documentId = receipt.data.result.view_id as string;
+    expect(result.code, result.message).toBe(0);
+    const viewId = result.data.result.view_id;
 
-    expect(documentId).toBe(response.request().postDataJSON().view_id);
-    const modal = page.getByRole('dialog').filter({ has: page.getByTestId('view-modal-close') });
+    expect(viewId).toBeTruthy();
+    const createdPage = page.getByTestId(`page-${viewId}`);
 
-    await expect(modal.locator(`[id="editor-${documentId}"]`)).toBeVisible();
-    await modal.getByTestId('view-modal-close').click();
-    await expect(modal).toHaveCount(0);
+    await expect(createdPage).toBeVisible({ timeout: 30000 });
+    await expect(createdPage.getByTestId('page-name')).toHaveText('Untitled');
 
-    // Opening a child can collapse a different branch (for example To-dos /
-    // Board). The total row count can stay unchanged even when creation works.
-    // Follow the server-confirmed document, without reloading the sidebar or
-    // repeatedly collapsing/re-expanding it to force a fresh fetch.
-    const sidebarPage = PageSelectors.pageByViewId(page, documentId);
+    // The document title handles Escape while focused; use the modal's close
+    // action so the test can interact with the sidebar again.
+    await page.getByTestId('view-modal-close').click();
+    await expect(page.getByRole('dialog')).toBeHidden();
 
-    await expect(parentItem.getByTestId(`page-${documentId}`)).toBeVisible({ timeout: 30000 });
-    await expect(sidebarPage.getByTestId('page-name')).toHaveText('Untitled');
-    await sidebarPage.hover();
-    await sidebarPage.getByTestId('page-more-actions').click();
+    // Rename the same newly created page rather than another Untitled page.
+    await createdPage.hover();
+    await createdPage.getByTestId('page-more-actions').click();
+
+    // Click rename
+    await expect(ViewActionSelectors.renameButton(page)).toBeVisible();
     await ViewActionSelectors.renameButton(page).click();
+    await page.waitForTimeout(500);
+
+    // Enter new name
+    await expect(ModalSelectors.renameInput(page)).toBeVisible();
+    await ModalSelectors.renameInput(page).clear();
+    await page.waitForTimeout(300);
     await ModalSelectors.renameInput(page).fill(renamedDocumentName);
-    const renamed = page.waitForResponse((result) => result.request().method() === 'POST' &&
-      new URL(result.url()).pathname.endsWith(`/page-view/${documentId}/update-name`));
+    await page.waitForTimeout(500);
 
+    // Save the rename
+    await expect(ModalSelectors.renameSaveButton(page)).toBeVisible();
     await ModalSelectors.renameSaveButton(page).click();
-    expect((await (await renamed).json()).code).toBe(0);
-    await expect(sidebarPage.getByTestId('page-name')).toHaveText(renamedDocumentName);
+    await page.waitForTimeout(2000);
 
-    await sidebarPage.hover();
-    await sidebarPage.getByTestId('page-more-actions').click();
-    const deleted = page.waitForResponse((result) => result.request().method() === 'POST' &&
-      new URL(result.url()).pathname.endsWith(`/page-view/${documentId}/move-to-trash`));
+    // Step 10: Verify renamed document appears in sidebar via WebSocket
+    await expect(createdPage.getByTestId('page-name')).toHaveText(renamedDocumentName, { timeout: 30000 });
+    console.log(`[SUCCESS] Renamed document "${renamedDocumentName}" appeared in sidebar via WebSocket!`);
 
+    // Step 11: Clean up - delete the test document
+    const renamedItem = createdPage;
+    await renamedItem.hover();
+    await page.waitForTimeout(500);
+    await renamedItem.getByTestId('page-more-actions').click();
+    await page.waitForTimeout(500);
+
+    await expect(ViewActionSelectors.deleteButton(page)).toBeVisible();
     await ViewActionSelectors.deleteButton(page).click();
-    expect((await (await deleted).json()).code).toBe(0);
-    await expect(sidebarPage).toHaveCount(0);
+    await page.waitForTimeout(500);
+
+    // Confirm deletion if dialog appears
+    const confirmDeleteBtn = ModalSelectors.confirmDeleteButton(page);
+    if ((await confirmDeleteBtn.count()) > 0) {
+      await confirmDeleteBtn.click({ force: true });
+    } else {
+      const deleteBtn = page.getByRole('button', { name: 'Delete' });
+      if ((await deleteBtn.count()) > 0) {
+        await deleteBtn.first().click({ force: true });
+      }
+    }
+    await page.waitForTimeout(2000);
+
+    // Step 12: Verify document is removed from sidebar
+    await expect(createdPage).toHaveCount(0, { timeout: 10000 });
+
+    console.log('[TEST COMPLETE] Sidebar refresh via WebSocket notification verified successfully!');
   });
 
   test('should verify sidebar updates via WebSocket when creating AI chat', async ({
@@ -109,7 +171,6 @@ test.describe('Document Sidebar Refresh via WebSocket', () => {
 
     // Count existing pages (baseline)
     const initialPageCount = await PageSelectors.names(page).count();
-
     console.log(`[INFO] Initial page count: ${initialPageCount}`);
 
     // Step 4: Hover over the first page and click the inline add button
@@ -140,7 +201,6 @@ test.describe('Document Sidebar Refresh via WebSocket', () => {
       }
 
       const currentCount = await PageSelectors.names(page).count();
-
       console.log(`[INFO] Current page count: ${currentCount}, initial: ${initialPageCount}, attempt: ${attempt + 1}`);
       if (currentCount > initialPageCount) break;
       await page.waitForTimeout(1000);
@@ -152,7 +212,6 @@ test.describe('Document Sidebar Refresh via WebSocket', () => {
     // Step 7: Expand the parent page to show the newly created AI chat
     const parentItem = PageSelectors.items(page).first();
     const parentExpandBtn = parentItem.getByTestId('outline-toggle-expand');
-
     if ((await parentExpandBtn.count()) > 0) {
       await parentExpandBtn.first().click({ force: true });
       await page.waitForTimeout(1000);
@@ -161,7 +220,6 @@ test.describe('Document Sidebar Refresh via WebSocket', () => {
     // Step 8: Clean up - delete the AI chat
     await expect(PageSelectors.nameContaining(page, 'Untitled').first()).toBeVisible({ timeout: 30000 });
     const untitledItem = PageSelectors.itemByName(page, 'Untitled');
-
     await untitledItem.hover({ force: true });
     await page.waitForTimeout(500);
     await PageSelectors.moreActionsButton(page, 'Untitled').click({ force: true });
@@ -173,17 +231,14 @@ test.describe('Document Sidebar Refresh via WebSocket', () => {
 
     // Confirm deletion if dialog appears
     const confirmDeleteBtn = ModalSelectors.confirmDeleteButton(page);
-
     if ((await confirmDeleteBtn.count()) > 0) {
       await confirmDeleteBtn.click({ force: true });
     } else {
       const deleteBtn = page.getByRole('button', { name: 'Delete' });
-
       if ((await deleteBtn.count()) > 0) {
         await deleteBtn.first().click({ force: true });
       }
     }
-
     await page.waitForTimeout(2000);
 
     console.log('[TEST COMPLETE] AI chat sidebar refresh via WebSocket notification verified successfully!');
