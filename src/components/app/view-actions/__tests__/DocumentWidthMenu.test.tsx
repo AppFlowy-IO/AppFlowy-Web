@@ -18,7 +18,8 @@ const view: View = {
 const latest = {
   ...view,
   name: 'Renamed since opening',
-  extra: { font: 'Arial', future: { nested: true }, document_width: { mode: 'fixed', max_width: 960 } },
+  is_space: false,
+  extra: { is_space: false, font: 'Arial', future: { nested: true }, document_width: { mode: 'fixed', max_width: 960 } },
 };
 
 async function openMenu(disabled = false, onSaved = jest.fn()) {
@@ -38,7 +39,10 @@ async function openMenu(disabled = false, onSaved = jest.fn()) {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  (ViewService.getNavigation as jest.Mock).mockResolvedValue(latest);
+  (ViewService.getNavigation as jest.Mock).mockResolvedValue({
+    ...view, view_id: 'space', name: 'Parent space', is_space: true,
+    extra: { is_space: true, space_permission: 0 }, children: [latest],
+  });
   mockUpdatePage.mockResolvedValue(undefined);
 });
 
@@ -96,4 +100,14 @@ it('does not offer changes to a locked or read-only page', async () => {
   expect(screen.queryByTestId('document-width-menu')).toBeNull();
   expect(ViewService.getNavigation).not.toHaveBeenCalled();
   expect(mockUpdatePage).not.toHaveBeenCalled();
+});
+
+it('does not overwrite the page with ancestor metadata when the target is missing', async () => {
+  (ViewService.getNavigation as jest.Mock).mockResolvedValue({ ...view, view_id: 'other-page' });
+  const onSaved = await openMenu();
+
+  fireEvent.click(await screen.findByTestId('document-width-full'));
+  await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('document.width.saveError'));
+  expect(mockUpdatePage).not.toHaveBeenCalled();
+  expect(onSaved).not.toHaveBeenCalled();
 });

@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { DocumentWidth, MAX_DOCUMENT_WIDTH, MIN_DOCUMENT_WIDTH, parseDocumentWidth } from '@/application/document-width';
 import { ViewService } from '@/application/services/domains';
 import { View } from '@/application/types';
+import { findView } from '@/components/_shared/outline/utils';
 import { useAppOperations } from '@/components/app/app.hooks';
 import { Button } from '@/components/ui/button';
 import {
@@ -43,8 +44,21 @@ export function DocumentWidthMenu({ view, workspaceId, disabled, onSaved }: {
     setError(undefined);
     try {
       // Preserve metadata edited since the menu opened, including unknown keys.
-      const latest = await ViewService.getNavigation(workspaceId, view.view_id, 0);
+      const navigation = await ViewService.getNavigation(workspaceId, view.view_id, 0);
+      // Navigation is an ancestor tree, including spaces and siblings. Merge
+      // only the target page's metadata into the page being updated.
+      const latest = findView([navigation], view.view_id);
+
+      if (!latest) throw new Error('Page missing from navigation');
+
       const extra = { ...latest.extra };
+
+      // Legacy page extras may include is_space:false. The page update API
+      // accepts space metadata only for actual spaces.
+      if (!(latest.is_space ?? extra.is_space)) {
+        delete extra.is_space;
+        delete extra.space_permission;
+      }
 
       if (nextWidth) extra.document_width = nextWidth;
       else delete extra.document_width;
