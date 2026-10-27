@@ -700,7 +700,7 @@ describe('database blob seeds for filter and sort', () => {
       rowPage([{ rowId: SECOND_ROW_ID, department: 'Sales' }], { hasMore: true, nextCursor: new Uint8Array([2]) });
     const lastPage = () => rowPage([], { rid: 500 });
 
-    it('stops the walk between pages when the last retainer leaves', async () => {
+    it('cancels a pending page when the last retainer leaves and discards late data', async () => {
       const databaseId = 'database-leave';
       const firstRowKey = `${databaseId}_rows_${FIRST_ROW_ID}`;
       const second = createDeferred<database_blob.DatabaseBlobDiffResponse>();
@@ -722,7 +722,8 @@ describe('database blob seeds for filter and sort', () => {
       // The dashboard is left while the second page is on its way.
       release(databaseId);
       second.resolve(secondPage());
-      await prefetch;
+      await expect(prefetch).rejects.toMatchObject({ name: 'AbortError' });
+      expect(mockedDatabaseBlobDiff.mock.calls[1][3]?.aborted).toBe(true);
 
       // The third page is never requested and nothing the walk read is kept or stored.
       expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(2);
@@ -748,6 +749,8 @@ describe('database blob seeds for filter and sort', () => {
       retain(databaseId);
       const stopped = prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true });
 
+      const cancelled = expect(stopped).rejects.toMatchObject({ name: 'AbortError' });
+
       await flushPendingWork();
       release(databaseId);
       second.resolve(secondPage());
@@ -762,7 +765,7 @@ describe('database blob seeds for filter and sort', () => {
       expect(mockedDatabaseBlobDiff.mock.calls[2][2].page?.cursor).toEqual(new Uint8Array());
 
       returned.resolve(rowPage([{ rowId: FIRST_ROW_ID, department: 'Finance' }], { rid: 600 }));
-      await Promise.all([stopped, restarted]);
+      await Promise.all([cancelled, restarted]);
 
       expect(onSeedsReady).toHaveBeenCalledTimes(1);
       expect(readDepartment(firstRowKey)).toBe('Finance');

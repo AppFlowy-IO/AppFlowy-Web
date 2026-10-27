@@ -1521,6 +1521,8 @@ export type CreateRow = (rowKey: string, options?: { forceSync?: boolean }) => P
 /** Retained callers own one sync reference and must schedule its cleanup. */
 export type BindViewSync = (doc: YDoc, options?: { retain?: boolean }) => SyncContext | null;
 export interface LoadViewOptions {
+  /** Cancels this consumer; other readers of a shared database keep loading. */
+  signal?: AbortSignal;
   databaseId?: string | null;
   /** Load only the canonical database collab, without page-view row_data. */
   databaseMetadataOnly?: boolean;

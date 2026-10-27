@@ -207,6 +207,16 @@ export interface WidgetDatabaseHostProps {
  * nothing: that doc is already open.
  */
 export function WidgetDatabaseHost({ frame, viewportHeight, onLoadStateChange }: WidgetDatabaseHostProps) {
+  // Let child cleanups and the row cache's microtask for transferring retainers
+  // cancel their requests before releasing this slot. The callback identifies
+  // this mount's generation, so a late cleanup cannot finish a resumed load.
+  useEffect(
+    () => () => {
+      queueMicrotask(() => queueMicrotask(() => onLoadStateChange?.('suspended')));
+    },
+    [onLoadStateChange]
+  );
+
   const { widgetId, viewId, databaseId } = frame;
   const hostContext = useDashboardHost();
   const { effectiveGlobalFilters } = useDashboardFilters();

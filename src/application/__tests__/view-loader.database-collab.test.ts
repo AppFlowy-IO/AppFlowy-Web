@@ -140,6 +140,53 @@ describe('opening a database whose id is known', () => {
     }));
   });
 
+  it('keeps one canonical request alive for a visible sibling when the first widget leaves', async () => {
+    serveLocalDocs([databaseId, viewA, viewB]);
+    const response = deferred<{ data: Uint8Array }>();
+    const first = new AbortController();
+    const second = new AbortController();
+
+    mockFetchDatabaseCollab.mockReturnValue(response.promise);
+    const a = openView(workspaceId, viewA, ViewLayout.Grid, { databaseId, signal: first.signal });
+    const b = openView(workspaceId, viewB, ViewLayout.Grid, { databaseId, signal: second.signal });
+    const cancelled = expect(a).rejects.toMatchObject({ name: 'AbortError' });
+
+    await settle();
+    first.abort();
+    await cancelled;
+    expect(mockFetchDatabaseCollab).toHaveBeenCalledTimes(1);
+    expect(mockFetchDatabaseCollab.mock.calls[0][2]?.aborted).toBe(false);
+    response.resolve(createServer(databaseId, [viewA, viewB]).snapshot());
+    await expect(b).resolves.toMatchObject({ fromCache: false });
+  });
+
+  it('aborts after the last reader leaves and ignores late data after a new load starts', async () => {
+    const docs = serveLocalDocs([databaseId, viewA, viewB]);
+    const oldResponse = deferred<{ data: Uint8Array }>();
+    const newResponse = deferred<{ data: Uint8Array }>();
+    const controller = new AbortController();
+
+    mockFetchDatabaseCollab.mockReturnValueOnce(oldResponse.promise).mockReturnValueOnce(newResponse.promise);
+    const abandoned = openView(workspaceId, viewA, ViewLayout.Grid, { databaseId, signal: controller.signal });
+    const cancelled = expect(abandoned).rejects.toMatchObject({ name: 'AbortError' });
+
+    await settle();
+    controller.abort();
+    await cancelled;
+    expect(mockFetchDatabaseCollab.mock.calls[0][2]?.aborted).toBe(true);
+    const resumed = openView(workspaceId, viewB, ViewLayout.Grid, { databaseId });
+
+    await settle();
+    expect(mockFetchDatabaseCollab).toHaveBeenCalledTimes(2);
+    oldResponse.resolve(createServer(databaseId, [viewA]).snapshot());
+    await settle();
+    expect(docs.get(databaseId)?.getMap(YjsEditorKey.data_section).has(YjsEditorKey.database)).toBe(false);
+    newResponse.resolve(createServer(databaseId, [viewB]).snapshot());
+    await resumed;
+    expect(hasView(docs.get(databaseId)!, viewB)).toBe(true);
+    expect(hasView(docs.get(databaseId)!, viewA)).toBe(false);
+  });
+
   it.each([
     ['Grid', ViewLayout.Grid],
     ['Board', ViewLayout.Board],
@@ -158,7 +205,7 @@ describe('opening a database whose id is known', () => {
     expect(result.doc).toBe(docs.get(databaseId));
     expect(result.fromCache).toBe(false);
     expect(hasView(result.doc, viewA)).toBe(true);
-    expect(mockFetchDatabaseCollab.mock.calls).toEqual([[workspaceId, databaseId]]);
+    expect(mockFetchDatabaseCollab.mock.calls).toEqual([[workspaceId, databaseId, expect.any(AbortSignal)]]);
     expect(mockFetchPageCollab).not.toHaveBeenCalled();
   });
 
@@ -176,7 +223,7 @@ describe('opening a database whose id is known', () => {
 
     expect(result.fromCache).toBe(false);
     expect(hasView(result.doc, viewB)).toBe(true);
-    expect(mockFetchDatabaseCollab.mock.calls).toEqual([[workspaceId, databaseId]]);
+    expect(mockFetchDatabaseCollab.mock.calls).toEqual([[workspaceId, databaseId, expect.any(AbortSignal)]]);
     expect(mockFetchPageCollab).not.toHaveBeenCalled();
   });
 
@@ -205,7 +252,7 @@ describe('opening a database whose id is known', () => {
     const result = await openView(workspaceId, viewA, ViewLayout.Grid);
 
     expect(result.doc).toBe(docs.get(viewA));
-    expect(mockFetchPageCollab.mock.calls).toEqual([[workspaceId, viewA]]);
+    expect(mockFetchPageCollab.mock.calls).toEqual([[workspaceId, viewA, undefined]]);
     expect(mockFetchDatabaseCollab).not.toHaveBeenCalled();
   });
 
@@ -318,9 +365,9 @@ describe('opening a database whose id is known', () => {
         // and a missing view is no reason to drop the database.
         expect(mockFetchDatabaseCollab).toHaveBeenCalledTimes(1);
         expect(mockFetchPageCollab.mock.calls).toEqual([
-          [workspaceId, viewA],
-          [workspaceId, viewA],
-          [workspaceId, viewA],
+          [workspaceId, viewA, expect.any(AbortSignal)],
+          [workspaceId, viewA, undefined],
+          [workspaceId, viewA, undefined],
         ]);
         expect(mockDeleteCollabDB).not.toHaveBeenCalled();
       });
@@ -361,7 +408,7 @@ describe('opening a database whose id is known', () => {
         await refused;
 
         // A refusal is not retried, and it evicts what the load wrote.
-        expect(mockFetchPageCollab.mock.calls).toEqual([[workspaceId, viewA]]);
+        expect(mockFetchPageCollab.mock.calls).toEqual([[workspaceId, viewA, expect.any(AbortSignal)]]);
         expect(mockDeleteCollabDB).toHaveBeenCalledWith(databaseId, { destroyDoc: true });
         expect(mockInvalidateViewCache.mock.calls).toEqual([[workspaceId, viewA]]);
       });

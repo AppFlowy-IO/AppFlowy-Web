@@ -440,7 +440,7 @@ export async function collabFullSyncBatch(
  * where this browser can inflate it). The JSON route sends the same bytes as
  * a number array of about 3.3 bytes per byte, uncompressed.
  */
-async function getDatabaseCollabBinary(workspaceId: string, databaseId: string): Promise<Uint8Array> {
+async function getDatabaseCollabBinary(workspaceId: string, databaseId: string, signal?: AbortSignal): Promise<Uint8Array> {
   const url = `/api/workspace/v1/${workspaceId}/collab/${databaseId}/full-sync`;
   const compression = canUseStreamingGzip()
     ? collab.PayloadCompressionType.COMPRESSION_GZIP
@@ -450,6 +450,7 @@ async function getDatabaseCollabBinary(workspaceId: string, databaseId: string):
     collab.CollabDocStateParams.create({ objectId: databaseId, collabType: Types.Database, compression })
   ).finish();
   const response = await getAxios()?.post<ArrayBuffer>(url, encoded, {
+    signal,
     headers: {
       'Content-Type': 'application/octet-stream',
       'client-version': 'web',
@@ -468,7 +469,7 @@ async function getDatabaseCollabBinary(workspaceId: string, databaseId: string):
 
   const body = new Uint8Array(response.data);
   const update =
-    compression === collab.PayloadCompressionType.COMPRESSION_GZIP ? await transformGzip(body, 'decompress') : body;
+    compression === collab.PayloadCompressionType.COMPRESSION_GZIP ? await transformGzip(body, 'decompress', signal) : body;
 
   // A database the server stores no document for answers with nothing; the JSON route reports it.
   if (update.byteLength === 0) throw new Error('The database document is empty');
@@ -479,12 +480,14 @@ export async function getCollab(
   workspaceId: string,
   objectId: string,
   collabType: Types,
-  rowDocumentSource?: RowDocumentSourcePayload
+  rowDocumentSource?: RowDocumentSourcePayload,
+  signal?: AbortSignal
 ) {
   if (collabType === Types.Database && !rowDocumentSource) {
     try {
-      return { data: await getDatabaseCollabBinary(workspaceId, objectId) };
+      return { data: await getDatabaseCollabBinary(workspaceId, objectId, signal) };
     } catch (error) {
+      throwIfAborted(signal);
       Log.debug('[getCollab] binary database document read failed; reading it as JSON', { objectId, error });
     }
   }
@@ -501,6 +504,7 @@ export async function getCollab(
         object_id: string;
       }>
     >(url, {
+      signal,
       params: {
         collab_type: collabType,
         ...(rowDocumentSource
@@ -519,7 +523,7 @@ export async function getCollab(
   };
 }
 
-export async function getPageCollab(workspaceId: string, viewId: string) {
+export async function getPageCollab(workspaceId: string, viewId: string, signal?: AbortSignal) {
   const url = `/api/workspace/${workspaceId}/page-view/${viewId}`;
 
   const response = await executeAPIRequest<{
@@ -541,7 +545,7 @@ export async function getPageCollab(workspaceId: string, viewId: string) {
           last_editor?: User;
         };
       }>
-    >(url)
+    >(url, { signal })
   );
 
   const { encoded_collab, row_data, owner, last_editor } = response.data;
@@ -598,7 +602,8 @@ export async function duplicateRowDocument(
 export async function databaseBlobDiff(
   workspaceId: string,
   databaseId: string,
-  request: database_blob.IDatabaseBlobDiffRequest
+  request: database_blob.IDatabaseBlobDiffRequest,
+  signal?: AbortSignal
 ) {
   const axiosInstance = getAxios();
 
@@ -613,6 +618,7 @@ export async function databaseBlobDiff(
   const payload = database_blob.DatabaseBlobDiffRequest.encode(request).finish();
 
   const response = await axiosInstance.post<ArrayBuffer>(url, payload, {
+    signal,
     responseType: 'arraybuffer',
     headers: {
       'Content-Type': 'application/octet-stream',

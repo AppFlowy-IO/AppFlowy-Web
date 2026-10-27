@@ -337,17 +337,17 @@ export function useWidgetLoadStart({ widgetId, sourceId, boxRef, resume }: Widge
   }, [boxRef, observe, widgetId]);
 
   const subscribe = scheduler ? scheduler.subscribe : subscribeNothing;
-  const getStarted = useCallback(() => (scheduler ? scheduler.isStarted(widgetId) : true), [scheduler, widgetId]);
+  const getStarted = useCallback(() => (scheduler ? scheduler.loadGeneration(widgetId) : 1), [scheduler, widgetId]);
   const granted = useSyncExternalStore(subscribe, getStarted, getStarted);
   const report = useCallback(
     (next: WidgetLoadReport) => {
-      if (scheduler && registeredRef.current) scheduler.report(widgetId, next);
+      if (scheduler && registeredRef.current) scheduler.report(widgetId, next, granted);
     },
-    [scheduler, widgetId]
+    [granted, scheduler, widgetId]
   );
 
   // Decided while rendering for the widgets that never wait, so they never flash the placeholder.
-  const started = !context || granted || resume;
+  const started = !context || granted > 0 || resume;
 
   return { started, report };
 }

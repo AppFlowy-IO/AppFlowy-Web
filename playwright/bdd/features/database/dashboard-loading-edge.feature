@@ -185,3 +185,17 @@ Feature: A dashboard keeps loading when a source fails, never answers, changes o
     And the dashboard offers no Edit button
     And no more than 2 source databases were loading at the same time
     And every widget that waited for a source was seen waiting with its header and a loading state
+
+  # Web transport regression: both the document and paged row HTTP requests abort.
+  @cloud
+  Scenario Outline: Scrolling cancels unfinished off-screen requests and resumes them on return
+    Given eight small databases each have a grid view for a dashboard widget
+    And a new database has a dashboard with 8 widgets over the 8 databases in 4 rows of 2
+    And dashboard load counters are being recorded
+    When I scroll away and return while the first two widget <stage> requests are held
+    Then no widget has looked empty so far
+
+    Examples:
+      | stage    |
+      | document |
+      | row      |

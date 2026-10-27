@@ -239,7 +239,7 @@ describe('view-loader database cache identity', () => {
     expect(result.fromCache).toBe(false);
     expect(getDatabaseIdFromDoc(canonicalDoc)).toBe(databaseId);
     // The database is known: its collab is fetched on its own, never the page with every row.
-    expect(mockFetchDatabaseCollab).toHaveBeenCalledWith('workspace-id', databaseId);
+    expect(mockFetchDatabaseCollab).toHaveBeenCalledWith('workspace-id', databaseId, expect.any(AbortSignal));
     expect(mockFetchPageCollab).not.toHaveBeenCalled();
   });
 
@@ -272,7 +272,7 @@ describe('view-loader database cache identity', () => {
     expect(result.doc).toBe(canonicalDoc);
     expect(result.fromCache).toBe(false);
     expect(getDatabaseIdFromDoc(canonicalDoc)).toBe(databaseId);
-    expect(mockFetchDatabaseCollab).toHaveBeenCalledWith('workspace-id', databaseId);
+    expect(mockFetchDatabaseCollab).toHaveBeenCalledWith('workspace-id', databaseId, expect.any(AbortSignal));
     expect(mockFetchPageCollab).not.toHaveBeenCalled();
   });
 
@@ -304,7 +304,7 @@ describe('view-loader database cache identity', () => {
 
     expect(result.doc).toBe(canonicalDoc);
     expect(result.fromCache).toBe(false);
-    expect(mockFetchDatabaseCollab).toHaveBeenCalledWith('workspace-id', databaseId);
+    expect(mockFetchDatabaseCollab).toHaveBeenCalledWith('workspace-id', databaseId, expect.any(AbortSignal));
     expect(mockFetchPageCollab).not.toHaveBeenCalled();
   });
 
@@ -414,7 +414,7 @@ describe('view-loader shared database fetches', () => {
     const [resultA, resultB] = await Promise.all([first, second]);
 
     expect(mockFetchDatabaseCollab).toHaveBeenCalledTimes(1);
-    expect(mockFetchDatabaseCollab).toHaveBeenCalledWith(workspaceId, databaseId);
+    expect(mockFetchDatabaseCollab).toHaveBeenCalledWith(workspaceId, databaseId, expect.any(AbortSignal));
     expect(mockFetchPageCollab).not.toHaveBeenCalled();
     expect(resultA.doc).toBe(canonicalDoc);
     expect(resultB.doc).toBe(canonicalDoc);
@@ -444,8 +444,8 @@ describe('view-loader shared database fetches', () => {
     await Promise.all([first, second]);
 
     expect(mockFetchDatabaseCollab.mock.calls).toEqual([
-      [workspaceId, databaseId],
-      [workspaceId, databaseId],
+      [workspaceId, databaseId, expect.any(AbortSignal)],
+      [workspaceId, databaseId, expect.any(AbortSignal)],
     ]);
     expect(mockFetchPageCollab).not.toHaveBeenCalled();
     expect(hasView(canonicalDoc, viewB)).toBe(true);
@@ -484,9 +484,9 @@ describe('view-loader shared database fetches', () => {
       doc: freshDoc,
     });
     expect(mockFetchDatabaseCollab.mock.calls).toEqual([
-      [workspaceId, databaseId],
-      [workspaceId, databaseId],
-      [workspaceId, databaseId],
+      [workspaceId, databaseId, expect.any(AbortSignal)],
+      [workspaceId, databaseId, expect.any(AbortSignal)],
+      [workspaceId, databaseId, expect.any(AbortSignal)],
     ]);
     expect(mockFetchPageCollab).not.toHaveBeenCalled();
   });
@@ -514,8 +514,8 @@ describe('view-loader shared database fetches', () => {
       await jest.advanceTimersByTimeAsync(0);
 
       expect(mockFetchDatabaseCollab.mock.calls).toEqual([
-        [workspaceId, databaseId],
-        [workspaceId, databaseId],
+        [workspaceId, databaseId, expect.any(AbortSignal)],
+        [workspaceId, databaseId, expect.any(AbortSignal)],
       ]);
       await expect(second).resolves.toMatchObject({ doc: canonicalDoc });
       await jest.runAllTimersAsync();
@@ -550,7 +550,7 @@ describe('view-loader shared database fetches', () => {
       doc: canonicalDoc,
       fromCache: true,
     });
-    expect(mockFetchDatabaseCollab.mock.calls).toEqual([[workspaceId, databaseId]]);
+    expect(mockFetchDatabaseCollab.mock.calls).toEqual([[workspaceId, databaseId, expect.any(AbortSignal)]]);
     expect(mockFetchPageCollab).not.toHaveBeenCalled();
     expect(mockDeleteCollabDB).not.toHaveBeenCalled();
   });

@@ -22,6 +22,7 @@ import {
   isDatabaseContainer,
   isDatabaseLayout,
 } from '@/application/view-utils';
+import { throwIfAborted } from '@/application/utils/shared-request';
 import { findSharedAccessLevel, findView } from '@/components/_shared/outline/utils';
 import { CollabDocResetPayload } from '@/components/ws/sync/types';
 import { Log } from '@/utils/log';
@@ -228,6 +229,7 @@ export function useViewOperations({
           throw new Error('Workspace not found');
         }
 
+        throwIfAborted(options?.signal);
         let view = findView(outline || [], viewId);
 
         if (!view && !isSubDocument && !options?.databaseId) {
@@ -268,6 +270,7 @@ export function useViewOperations({
           databaseId: databaseIdHint,
           databaseMetadataOnly: options?.databaseMetadataOnly,
           forceFetch: options?.forceFetch,
+          ...(options?.signal ? { signal: options.signal } : {}),
         });
 
         // Use detected collab type, or override for sub-documents
@@ -291,6 +294,7 @@ export function useViewOperations({
             databaseId: collabObjectId,
             databaseMetadataOnly: options?.databaseMetadataOnly,
             forceFetch: options?.forceFetch,
+            ...(options?.signal ? { signal: options.signal } : {}),
           });
 
           doc = canonical.doc;
@@ -301,6 +305,7 @@ export function useViewOperations({
           });
         }
 
+        throwIfAborted(options?.signal);
         // Store metadata on docs that this load owns so callers can bind sync
         // after render. Metadata reads and embedded views share the canonical
         // database Y.Doc, which may already be owned and bound by the page

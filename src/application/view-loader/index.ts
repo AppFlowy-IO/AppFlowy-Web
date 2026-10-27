@@ -36,6 +36,7 @@ import {
   YSharedRoot,
 } from '@/application/types';
 import { determineErrorType, ErrorType, isPermissionDeniedError } from '@/application/utils/error-utils';
+import { abortableDelay, createSharedRequest, SharedRequest, throwIfAborted } from '@/application/utils/shared-request';
 import { isDatabaseLayout } from '@/application/view-utils';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { Log } from '@/utils/log';
@@ -53,6 +54,7 @@ export interface ViewLoaderResult {
 }
 
 export interface OpenViewOptions {
+  signal?: AbortSignal;
   databaseId?: string | null;
   databaseMetadataOnly?: boolean;
   forceFetch?: boolean;
@@ -66,7 +68,7 @@ const DEFAULT_ROW_DOCUMENT_MAX_ATTEMPTS = 6;
  * each download carries the whole database: later views wait for the running
  * request instead of fetching the same collab again.
  */
-const inflightDatabaseFetches = new Map<string, Promise<void>>();
+const inflightDatabaseFetches = new Map<string, SharedRequest<void>>();
 
 /** Database documents already counted as opened, for the dashboard load counters. */
 const countedDatabaseDocs = new WeakSet<YDoc>();
@@ -340,8 +342,9 @@ async function fetchAndApply(
   };
 
   if (database && !database.viewMissing) {
-    const { data } = await fetchDatabaseCollab(workspaceId, database.databaseId);
+    const { data } = await fetchDatabaseCollab(workspaceId, database.databaseId, options.signal);
 
+    throwIfAborted(options.signal);
     logFetched('database', data);
     applyYDoc(doc, data);
 
@@ -353,8 +356,9 @@ async function fetchAndApply(
     if (!database.viewMissing) return;
   }
 
-  const { data } = await fetchPageCollab(workspaceId, viewId);
+  const { data } = await fetchPageCollab(workspaceId, viewId, options.signal);
 
+  throwIfAborted(options.signal);
   logFetched('page', data);
   applyYDoc(doc, data);
 }
@@ -489,6 +493,7 @@ async function fetchAndApplyWithRetry(
         : fetchAndApplyOrEvict(workspaceId, viewId, doc, options, database));
       return;
     } catch (e) {
+      throwIfAborted(options.signal);
       // Retrying cannot repair a permission denial. (404s must keep retrying:
       // they cover the post-duplication race.)
       if (determineErrorType(e).type === ErrorType.Forbidden || attempt === MAX_RETRIES) {
@@ -506,7 +511,7 @@ async function fetchAndApplyWithRetry(
         maxRetries: MAX_RETRIES,
         error: e instanceof Error ? e.message : String(e),
       });
-      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+      await abortableDelay(1000 * attempt, options.signal);
     }
   }
 }
@@ -544,9 +549,10 @@ async function fetchViewFromServer(
   const inflight = key ? inflightDatabaseFetches.get(key) : undefined;
   let target = doc;
 
-  if (inflight && databaseId) {
+  if (inflight && !inflight.signal.aborted && databaseId) {
     // Its own caller reports a failure; this view then fetches for itself.
-    await inflight.catch(() => undefined);
+    await inflight.join(options.signal).catch(() => undefined);
+    throwIfAborted(options.signal);
     // A refused request evicted the doc it loaded into: continue in a fresh one.
     if (getCachedProviderDoc(databaseId) !== target) target = await openCollabDocForView(viewId, layout, options);
 
@@ -556,6 +562,7 @@ async function fetchViewFromServer(
     }
   }
 
+  throwIfAborted(options.signal);
   if (!key) {
     await fetchAndApplyWithRetry(workspaceId, viewId, target, options, database);
     return target;
@@ -563,15 +570,17 @@ async function fetchViewFromServer(
 
   // Only the request is shared: a view waiting on it never sits out this
   // view's retries (a deleted view's 404, a 5xx), it fetches for itself.
-  const firstAttempt = fetchAndApplyOrEvict(workspaceId, viewId, target, options, database);
+  const firstAttempt = createSharedRequest((signal) =>
+    fetchAndApplyOrEvict(workspaceId, viewId, target, { ...options, signal }, database)
+  );
 
   inflightDatabaseFetches.set(key, firstAttempt);
-  void firstAttempt
+  void firstAttempt.promise
     .catch(() => undefined)
     .finally(() => {
       if (inflightDatabaseFetches.get(key) === firstAttempt) inflightDatabaseFetches.delete(key);
     });
-  await fetchAndApplyWithRetry(workspaceId, viewId, target, options, database, firstAttempt);
+  await fetchAndApplyWithRetry(workspaceId, viewId, target, options, database, firstAttempt.join(options.signal));
   return target;
 }
 
@@ -603,9 +612,11 @@ export async function openView(
 
   Log.debug('[ViewLoader] openView start', { workspaceId, viewId, layout, databaseId: options.databaseId });
 
+  throwIfAborted(options.signal);
   // Step 1: Open from IndexedDB
   let doc = await openCollabDocForView(viewId, layout, options);
 
+  throwIfAborted(options.signal);
   // Step 2: Check cache
   const fromCache = canUseLocalDoc(doc, viewId, options, workspaceId);
 
@@ -621,6 +632,7 @@ export async function openView(
     doc = await fetchViewFromServer(workspaceId, viewId, doc, layout, options);
   }
 
+  throwIfAborted(options.signal);
   // Step 4: Detect collab type
   const collabType = detectCollabType(doc, layout);
 

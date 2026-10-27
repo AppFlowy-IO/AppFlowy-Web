@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { deleteCollabDB } from '@/application/db';
 import { BindViewSync, LoadView, YDoc, YDocWithMeta } from '@/application/types';
 import { determineErrorType, ErrorType } from '@/application/utils/error-utils';
+import { abortableDelay } from '@/application/utils/shared-request';
 import { isDatabaseViewNotFoundError } from '@/application/view-loader';
 import { subscribeCollabDocReset } from '@/components/ws/sync/subscribeCollabDocReset';
 import { CollabDocResetPayload } from '@/components/ws/sync/types';
@@ -81,7 +82,7 @@ export function useDocumentLoader({
   const [syncBound, setSyncBound] = useState(false);
 
   const loadWithRetry = useCallback(
-    async (viewIdToLoad: string, isCancelled: () => boolean, retries = 3): Promise<YDoc | null> => {
+    async (viewIdToLoad: string, signal: AbortSignal, retries = 3): Promise<YDoc | null> => {
       if (!loadView) {
         Log.error('[useDocumentLoader] loadView not available', { viewIdToLoad });
         return null;
@@ -89,12 +90,13 @@ export function useDocumentLoader({
 
       for (let attempt = 1; attempt <= retries; attempt++) {
         // The loader unmounted or moved on to another view: nobody waits for this load.
-        if (isCancelled()) return null;
+        if (signal.aborted) return null;
 
         try {
           Log.debug('[useDocumentLoader] attempt', { viewIdToLoad, attempt, retries });
           const result = await loadView(viewIdToLoad, false, false, {
             databaseId,
+            signal,
             databaseMetadataOnly: true,
             preserveViewMetadata: true,
           });
@@ -106,6 +108,7 @@ export function useDocumentLoader({
 
           Log.debug('[useDocumentLoader] loadView returned null', { viewIdToLoad, attempt });
         } catch (error) {
+          if (signal.aborted) return null;
           Log.error('[useDocumentLoader] loadView error', {
             viewIdToLoad,
             attempt,
@@ -121,13 +124,13 @@ export function useDocumentLoader({
             determineErrorType(error).type === ErrorType.Forbidden ||
             isDatabaseViewNotFoundError(error) ||
             isOfflineError(error) ||
-            isCancelled()
+            signal.aborted
           ) {
             throw error;
           }
 
           // Wait before retry
-          await new Promise((resolve) => setTimeout(resolve, 100 * attempt));
+          await abortableDelay(100 * attempt, signal);
         }
       }
 
@@ -139,14 +142,15 @@ export function useDocumentLoader({
   useEffect(() => {
     if (!viewId) return;
 
-    let cancelled = false;
+    const controller = new AbortController();
+    const { signal } = controller;
 
     const loadDocument = async () => {
       try {
         Log.debug('[useDocumentLoader] loading doc for viewId', { viewId });
-        const loadedDoc = await loadWithRetry(viewId, () => cancelled);
+        const loadedDoc = await loadWithRetry(viewId, signal);
 
-        if (cancelled) return;
+        if (signal.aborted) return;
 
         Log.debug('[useDocumentLoader] loaded doc', { viewId, hasDoc: !!loadedDoc });
         setDoc(loadedDoc);
@@ -157,7 +161,7 @@ export function useDocumentLoader({
         setSyncBound(false);
         setSettledViewId(viewId);
       } catch (error) {
-        if (cancelled) return;
+        if (signal.aborted) return;
 
         Log.error('[useDocumentLoader] failed to load doc', {
           viewId,
@@ -182,7 +186,7 @@ export function useDocumentLoader({
     void loadDocument();
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [viewId, databaseId, loadWithRetry, reloadToken]);
 

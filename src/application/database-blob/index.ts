@@ -31,6 +31,7 @@ import { deleteOutboxByObjectId, getCurrentOutboxSession, type SyncOutboxSession
 import { YDoc, YjsEditorKey } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { database_blob } from '@/proto/database_blob';
+import { abortableDelay, throwIfAborted } from '@/application/utils/shared-request';
 import { Log } from '@/utils/log';
 
 import { createDatabaseBlobDiffPageStage, type DatabaseBlobDiffPageStage } from './page-stage';
@@ -85,6 +86,8 @@ class InvalidatedRows extends Set<string> {
 }
 
 type SharedPrefetchEntry = {
+  abortController: AbortController;
+  downloading: boolean;
   invalidated?: boolean;
   session: TokenSessionWitness;
   /** A released snapshot must catch up before another view consumes it. */
@@ -117,11 +120,11 @@ type SharedPrefetchEntry = {
   rowsPersisted?: boolean;
   /**
    * A caller needs the walk to finish although no view retains the database:
-   * a restore, or a caller outside a mounted view. Any other walk stops at the
-   * next page once the last retainer leaves.
+   * a restore, or a caller outside a mounted view. Other unfinished downloads
+   * abort once the last retainer leaves.
    */
   mustFinish: boolean;
-  /** The walk stopped between pages because the last retainer left. */
+  /** The walk was cancelled because the last retainer left. */
   stopped?: boolean;
   reuseSettled?: boolean;
   settled?: boolean;
@@ -383,10 +386,6 @@ function clearPrefetchCallbacks(entry: SharedPrefetchEntry) {
   entry.onSeedsProgressCallbacks.clear();
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
-
 function retryDelayMs(retryAfterSecs?: number | null): number {
   if (!retryAfterSecs || retryAfterSecs <= 0) return BLOB_DIFF_DEFAULT_RETRY_MS;
   return Math.min(retryAfterSecs * 1000, BLOB_DIFF_MAX_RETRY_MS);
@@ -446,6 +445,7 @@ function notifySeedsReady(entry: SharedPrefetchEntry) {
 }
 
 function assertPrefetchCurrent(entry: SharedPrefetchEntry) {
+  throwIfAborted(entry.abortController.signal);
   if (!isTokenSessionCurrent(entry.session)) throw new Error('Database prefetch superseded by session change');
   if (entry.invalidated || (entry.storageFence && !isDatabaseStorageFenceCurrent(entry.storageFence)))
     throw new Error('Database prefetch superseded by restore');
@@ -1119,8 +1119,8 @@ export function retainDatabaseRowDocSeedCache(databaseId: string) {
 /**
  * Releases one view's hold on a database. After the last release the database
  * keeps its seeds and row docs for `ROW_DOC_SEED_CACHE_RELEASE_GRACE_MS`, so the
- * next view of it reuses the settled walk; a walk still in flight stops at its
- * next page. Only the most recently released databases are kept.
+ * next view of it reuses the settled walk; an unfinished download is cancelled.
+ * Only the most recently released databases are kept.
  */
 export function releaseDatabaseRowDocSeedCache(databaseId: string) {
   synchronizeRowSeedCacheSession();
@@ -1149,6 +1149,19 @@ export function releaseDatabaseRowDocSeedCache(databaseId: string) {
   const pending = Array.from(sharedPrefetchEntries).filter(([key, entry]) =>
     sharedPrefetchEntryMatchesDatabase(key, databaseId) && !entry.settled
   );
+
+  // React releases the old view before retaining its replacement during a
+  // tab switch or StrictMode replay. Let those synchronous transfers finish.
+  queueMicrotask(() => {
+    if (isDatabaseRowDocSeedCacheRetained(databaseId)) return;
+    for (const [, entry] of pending) {
+      if (entry.mustFinish || !entry.downloading || entry.settled) continue;
+      entry.stopped = true;
+      // Detach before aborting: a subsequent return must start a new walk.
+      forgetSharedPrefetchEntry(entry);
+      entry.abortController.abort();
+    }
+  });
 
   if (pending.length) void Promise.allSettled(pending.map(([, entry]) => entry.promise)).then(revalidateAfterRelease);
   if (releaseRowDocSeedsWithoutGrace) {
@@ -1818,6 +1831,7 @@ async function fetchReadyDiff(
   workspaceId: string,
   databaseId: string,
   options: {
+    signal: AbortSignal;
     cachedRid: DatabaseBlobRowRid | null;
     forceFullSync?: boolean;
     /** A non-terminal Ready page passed validation and was staged. */
@@ -1871,7 +1885,7 @@ async function fetchReadyDiff(
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         options.assertCurrent?.();
         const attemptStartedAt = Date.now();
-        const diff = await databaseBlobDiff(workspaceId, databaseId, request);
+        const diff = await databaseBlobDiff(workspaceId, databaseId, request, options.signal);
 
         options.assertCurrent?.();
 
@@ -2013,7 +2027,7 @@ async function fetchReadyDiff(
           message: diff.message ?? null,
         });
 
-        await sleep(delayMs);
+        await abortableDelay(delayMs, options.signal);
       }
     }
   } catch (error) {
@@ -2113,6 +2127,8 @@ export async function prefetchDatabaseBlobDiff(workspaceId: string, databaseId: 
   const session = captureTokenSession();
   const isOwnerCurrent = () => isTokenSessionCurrent(session);
   const entry: SharedPrefetchEntry = {
+    abortController: new AbortController(),
+    downloading: true,
     session,
     seedRowIds: new Set(retainedSnapshot?.seedRowIds),
     priorityRowIds: new Set(),
@@ -2231,6 +2247,7 @@ export async function prefetchDatabaseBlobDiff(workspaceId: string, databaseId: 
     if (capturedRid === null) dashboardLoadStats.recordRowLoadPass(databaseId);
     const sourceLabel = options?.forceFullSync ? 'ready full' : 'ready delta';
     const { diff, ready, stagedPages } = await fetchReadyDiff(workspaceId, databaseId, {
+      signal: entry.abortController.signal,
       cachedRid: capturedRid,
       forceFullSync: options?.forceFullSync && !resumeSnapshot,
       assertCurrent: () => assertPrefetchCurrent(entry),
@@ -2243,7 +2260,7 @@ export async function prefetchDatabaseBlobDiff(workspaceId: string, databaseId: 
         forgetSharedPrefetchEntry(entry);
         return true;
       },
-    });
+    }).finally(() => { entry.downloading = false; });
 
     if (!ready) {
       releaseProvisionalSeeds(entry);

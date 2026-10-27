@@ -49,8 +49,25 @@ describe('useDocumentLoader', () => {
         databaseId: 'database-id',
         databaseMetadataOnly: true,
         preserveViewMetadata: true,
+        signal: expect.any(AbortSignal),
       });
     });
+  });
+
+  it('aborts the document request on unmount without retrying', async () => {
+    let requestSignal: AbortSignal | undefined;
+    const loadView = jest.fn((_viewId, _subDoc, _awareness, options) => {
+      requestSignal = options.signal;
+      return new Promise<YDoc>((_resolve, reject) => {
+        requestSignal?.addEventListener('abort', () => reject(requestSignal?.reason), { once: true });
+      });
+    });
+    const { unmount } = renderHook(() => useDocumentLoader({ viewId: 'offscreen-view', loadView }));
+
+    expect(requestSignal?.aborted).toBe(false);
+    await act(async () => { unmount(); });
+    expect(requestSignal?.aborted).toBe(true);
+    expect(loadView).toHaveBeenCalledTimes(1);
   });
 
   it('reports the load in flight until loadView settles with a doc', async () => {
@@ -327,6 +344,7 @@ describe('useDocumentLoader', () => {
         databaseId: 'old-database-id',
         databaseMetadataOnly: true,
         preserveViewMetadata: true,
+        signal: expect.any(AbortSignal),
       });
     });
 
@@ -340,6 +358,7 @@ describe('useDocumentLoader', () => {
         databaseId: 'new-database-id',
         databaseMetadataOnly: true,
         preserveViewMetadata: true,
+        signal: expect.any(AbortSignal),
       });
     });
 

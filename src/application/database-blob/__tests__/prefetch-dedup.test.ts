@@ -491,7 +491,7 @@ describe('database blob prefetch deduplication', () => {
     }
   );
 
-  it('does not restart the inactive deadline when a pending snapshot finishes', async () => {
+  it('does not restart the inactive deadline when a required persistence snapshot finishes', async () => {
     const databaseId = 'navigation-pending-expiry';
     const rowKey = `${databaseId}_rows_${VALID_ROW_ID}`;
     const response = createDeferred<database_blob.DatabaseBlobDiffResponse>();
@@ -499,7 +499,7 @@ describe('database blob prefetch deduplication', () => {
     databaseIds.add(databaseId);
     retainDatabaseRowDocSeedCache(databaseId);
     mockedDatabaseBlobDiff.mockReturnValueOnce(response.promise);
-    const prefetch = prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true });
+    const prefetch = prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true, requirePersistence: true });
 
     await flushPendingWork();
     jest.useFakeTimers();
@@ -512,7 +512,7 @@ describe('database blob prefetch deduplication', () => {
     expect(peekDatabaseRowDocSeed(rowKey)).toBeNull();
   });
 
-  it('does not resurrect a snapshot whose pending request finishes after idle expiry', async () => {
+  it('does not resurrect a required persistence snapshot whose request finishes after idle expiry', async () => {
     const databaseId = 'navigation-pending-expired';
     const rowKey = `${databaseId}_rows_${VALID_ROW_ID}`;
     const response = createDeferred<database_blob.DatabaseBlobDiffResponse>();
@@ -520,7 +520,7 @@ describe('database blob prefetch deduplication', () => {
     databaseIds.add(databaseId);
     retainDatabaseRowDocSeedCache(databaseId);
     mockedDatabaseBlobDiff.mockReturnValueOnce(response.promise);
-    const prefetch = prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true });
+    const prefetch = prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true, requirePersistence: true });
 
     await flushPendingWork();
     jest.useFakeTimers();

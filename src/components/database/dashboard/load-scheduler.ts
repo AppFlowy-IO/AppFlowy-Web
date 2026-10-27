@@ -17,6 +17,8 @@
  *   or its permission probe never settled) gives the slot up too, so stalled
  *   sources never hold the others back for good; an opened source keeps its
  *   slot however slowly its rows load.
+ * - Off-screen unfinished widgets unmount and acknowledge cancellation before
+ *   their slot is reused. They resume only when visible again; completed views stay mounted.
  * - A closed scheduler (the dashboard was left) starts nothing and keeps no timer.
  *
  * No React and no DOM here: `DashboardLoadScheduler.tsx` feeds it the widget
@@ -40,11 +42,12 @@ import {
  * - `first-data`: it shows something real (its first rows, matches or a value);
  * - `complete`: its rows and its derived result are complete;
  * - `failed`: the row download failed;
+ * - `suspended`: unmount cleanup cancelled an off-screen load; it may resume when visible;
  * - `unavailable`: it shows a placeholder instead of its view (deleted, no access, offline, unsupported).
  *
  * `complete`, `failed` and `unavailable` end the load and free the slot.
  */
-export type WidgetLoadReport = 'opened' | 'first-data' | 'complete' | 'failed' | 'unavailable';
+export type WidgetLoadReport = 'opened' | 'first-data' | 'complete' | 'failed' | 'unavailable' | 'suspended';
 
 export interface WidgetLoadRegistration {
   id: string;
@@ -80,6 +83,8 @@ export interface DashboardLoadScheduler {
   register: (widget: WidgetLoadRegistration) => () => void;
   /** Whether the widget may load its source: started, done or resumed. */
   isStarted: (id: string) => boolean;
+  /** Zero while queued; a unique generation for each mounted load. */
+  loadGeneration: (id: string) => number;
   /** The widgets that started and have not finished loading. */
   loadingWidgetIds: () => string[];
   /** The widget ids in layout order: top to bottom, left to right. */
@@ -90,8 +95,8 @@ export interface DashboardLoadScheduler {
   setSourceRows: (sourceId: string, rows: number) => void;
   /** Which sources are resident changed (`isSourceResident`): plan again. */
   refreshResidency: () => void;
-  report: (id: string, report: WidgetLoadReport) => void;
-  /** Notified whenever a widget starts. */
+  report: (id: string, report: WidgetLoadReport, generation?: number) => void;
+  /** Notified whenever a widget starts or must suspend. */
   subscribe: (listener: () => void) => () => void;
   /** Plans again after `close` (a remount in StrictMode). */
   open: () => void;
@@ -112,6 +117,11 @@ interface WidgetEntry {
   startedAt: number | null;
   /** The widget reported `opened`: its source settled, so the source load timeout no longer applies. */
   opened: boolean;
+  generation: number;
+  /** Keep the slot until the unmounted host has cancelled its requests. */
+  suspending: boolean;
+  /** The queue timed out, but its source request has not actually finished. */
+  timedOut: boolean;
 }
 
 function toPlanWidget({ id, sourceId, visible, state, firstData }: WidgetEntry): DashboardLoadWidget {
@@ -131,6 +141,7 @@ export function createDashboardLoadScheduler({
   const sourceRows = new Map<string, number>();
   let layoutIndex = new Map<string, number>();
   let closed = false;
+  let generation = 0;
   let visibleStartedAt: number | null = null;
   let wakeTimer: ReturnType<typeof setTimeout> | null = null;
   let wakeAt: number | null = null;
@@ -173,6 +184,9 @@ export function createDashboardLoadScheduler({
 
   const markStarted = (entry: WidgetEntry, at: number) => {
     entry.state = 'loading';
+    entry.timedOut = false;
+    entry.generation = ++generation;
+    entry.firstData = false;
     entry.startedAt = at;
     entry.opened = false;
     if (entry.visible && visibleStartedAt === null) visibleStartedAt = at;
@@ -189,7 +203,7 @@ export function createDashboardLoadScheduler({
     const open: Record<string, number> = {};
 
     entries.forEach((entry) => {
-      if (entry.state === 'idle') return;
+      if (entry.state === 'idle' || entry.state === 'suspended') return;
       const rows = sourceRows.get(entry.sourceId);
 
       if (rows !== undefined) open[entry.sourceId] = rows;
@@ -222,7 +236,7 @@ export function createDashboardLoadScheduler({
   const stallingEntries = () =>
     Array.from(entries.values()).filter(
       (entry) =>
-        entry.state === 'loading' && !entry.opened && entry.startedAt !== null && entry.sourceId !== hostSourceId
+        entry.state === 'loading' && !entry.suspending && !entry.opened && entry.startedAt !== null && entry.sourceId !== hostSourceId
     );
 
   /**
@@ -234,6 +248,7 @@ export function createDashboardLoadScheduler({
     stallingEntries().forEach((entry) => {
       if (at - (entry.startedAt as number) < constants.sourceLoadTimeoutMs) return;
       entry.state = 'done';
+      entry.timedOut = true;
     });
   };
 
@@ -290,6 +305,9 @@ export function createDashboardLoadScheduler({
         firstData: false,
         startedAt: null,
         opened: false,
+        generation: ++generation,
+        suspending: false,
+        timedOut: false,
       };
 
       entries.set(id, entry);
@@ -310,9 +328,15 @@ export function createDashboardLoadScheduler({
     },
 
     isStarted(id) {
-      const state = entries.get(id)?.state;
+      const entry = entries.get(id);
 
-      return state !== undefined && state !== 'idle';
+      return Boolean(entry && !entry.suspending && (entry.state === 'loading' || entry.state === 'done'));
+    },
+
+    loadGeneration(id) {
+      const entry = entries.get(id);
+
+      return entry && !entry.suspending && (entry.state === 'loading' || entry.state === 'done') ? entry.generation : 0;
     },
 
     loadingWidgetIds() {
@@ -343,7 +367,21 @@ export function createDashboardLoadScheduler({
         if (visible && entry.state !== 'idle' && visibleStartedAt === null) visibleStartedAt = now();
       }
 
-      if (changed) plan();
+      if (!changed) return;
+      let suspending = false;
+
+      entries.forEach((entry) => {
+        if (entry.visible !== false || entry.suspending || (entry.state !== 'loading' && !entry.timedOut)) return;
+        // A cached source may still be mounting its views or refreshing a delta.
+        // Keep those views: they load no cold rows and consume no slot.
+        if (isSourceResident(entry.sourceId)) return;
+        entry.suspending = true;
+        suspending = true;
+      });
+      // Unmount unfinished off-screen hosts first. Their cleanup acknowledges
+      // cancellation before the next source can take the released slot.
+      if (suspending) notify();
+      plan();
     },
 
     setSourceRows(sourceId, rows) {
@@ -356,10 +394,23 @@ export function createDashboardLoadScheduler({
       plan();
     },
 
-    report(id, report) {
+    report(id, report, generation) {
       const entry = entries.get(id);
 
-      if (!entry || entry.state === 'idle') return;
+      if (!entry || (generation !== undefined && entry.generation !== generation)) return;
+      if (report === 'suspended') {
+        if (!entry.suspending) return;
+        entry.suspending = false;
+        entry.state = 'suspended';
+        entry.timedOut = false;
+        entry.startedAt = null;
+        entry.firstData = false;
+        syncSlots();
+        plan();
+        return;
+      }
+
+      if (entry.suspending || entry.state === 'idle' || entry.state === 'suspended') return;
       if (report === 'opened') {
         if (entry.opened) return;
         entry.opened = true;
@@ -374,7 +425,11 @@ export function createDashboardLoadScheduler({
       }
 
       if (report === 'complete') dashboardLoadStats.recordWidgetComplete(id);
-      if (report !== 'first-data') entry.state = 'done';
+      if (report !== 'first-data') {
+        entry.state = 'done';
+        entry.timedOut = false;
+      }
+
       syncSlots();
       plan();
     },

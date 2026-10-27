@@ -8,6 +8,7 @@
 import { expect } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
+import { checkOffscreenCancellation } from '../../support/dashboard-cancellation-helpers';
 import { DASHBOARD_LOADING } from '../../../src/application/database-yjs/dashboard-loading';
 import {
   changeFirstEmployeeDepartment,
@@ -153,7 +154,7 @@ Given(
 );
 
 /** The dashboards over one widget per small source database: [widgets, databases, rows, per row]. */
-const SOURCE_DASHBOARDS = ['4,4,1,4', '8,8,2,4', '8,8,8,1', '12,12,3,4'];
+const SOURCE_DASHBOARDS = ['4,4,1,4', '8,8,4,2', '8,8,2,4', '8,8,8,1', '12,12,3,4'];
 
 Given(
   'a new database has a dashboard with {int} widgets over the {int} databases in {int} row(s) of {int}',
@@ -472,4 +473,8 @@ Then('each widget asked for per-row data only for the rows it showed', async ({ 
 
 Then('no source database bound more than {int} rows', async ({ page }, maximum: number) => {
   await expectRowsBoundBudget(page, maximum);
+});
+
+When('I scroll away and return while the first two widget {word} requests are held', async ({ page }, stage: string) => {
+  await checkOffscreenCancellation(page, stage);
 });

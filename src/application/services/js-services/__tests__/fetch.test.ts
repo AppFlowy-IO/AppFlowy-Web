@@ -141,3 +141,71 @@ describe('Collab fetch functions with deduplication', () => {
     });
   });
 });
+
+describe('cancellable database reads', () => {
+  it('cancels the transport only after the last widget leaves, then starts a fresh request', async () => {
+    const { fetchDatabaseCollab } = await import('../fetch');
+    const signals: AbortSignal[] = [];
+    const resolvers: ((result: { data: Uint8Array }) => void)[] = [];
+
+    jest.mocked(getCollab).mockImplementation((_workspace, _database, _type, _source, signal) => {
+      signals.push(signal!);
+      return new Promise((resolve) => resolvers.push(resolve));
+    });
+    const first = new AbortController();
+    const second = new AbortController();
+    const a = fetchDatabaseCollab('workspace-cancel', 'database', first.signal);
+    const b = fetchDatabaseCollab('workspace-cancel', 'database', second.signal);
+    const cancelledA = expect(a).rejects.toMatchObject({ name: 'AbortError' });
+    const cancelledB = expect(b).rejects.toMatchObject({ name: 'AbortError' });
+
+    await Promise.resolve();
+    expect(signals).toHaveLength(1);
+    first.abort();
+    await cancelledA;
+    expect(signals[0].aborted).toBe(false);
+    second.abort();
+    await cancelledB;
+    expect(signals[0].aborted).toBe(true);
+
+    const resumed = fetchDatabaseCollab('workspace-cancel', 'database');
+
+    await Promise.resolve();
+    expect(signals).toHaveLength(2);
+    // An old transport that ignores cancellation cannot evict the new request.
+    resolvers[0]({ data: new Uint8Array([0]) });
+    await Promise.resolve();
+    await Promise.resolve();
+    const joined = fetchDatabaseCollab('workspace-cancel', 'database');
+
+    resolvers[1]({ data: new Uint8Array([1]) });
+    await expect(resumed).resolves.toEqual({ data: new Uint8Array([1]) });
+    await expect(joined).resolves.toEqual({ data: new Uint8Array([1]) });
+    expect(signals).toHaveLength(2);
+  });
+
+  it('keeps a shared page request alive for a non-cancellable reader', async () => {
+    const { fetchPageCollab } = await import('../fetch');
+    const { getPageCollab } = await import('@/application/services/js-services/http');
+    let transportSignal: AbortSignal | undefined;
+    let finish!: (result: Awaited<ReturnType<typeof getPageCollab>>) => void;
+
+    jest.mocked(getPageCollab).mockImplementation((_workspace, _view, signal) => {
+      transportSignal = signal;
+      return new Promise((resolve) => { finish = resolve; });
+    });
+    const controller = new AbortController();
+    const widget = fetchPageCollab('workspace-page-cancel', 'view', controller.signal);
+    const page = fetchPageCollab('workspace-page-cancel', 'view');
+    const cancelled = expect(widget).rejects.toMatchObject({ name: 'AbortError' });
+
+    await Promise.resolve();
+    controller.abort();
+    await cancelled;
+    expect(transportSignal?.aborted).toBe(false);
+    const response = { data: new Uint8Array([1]), rows: {}, owner: undefined, lastEditor: undefined };
+
+    finish(response);
+    await expect(page).resolves.toEqual(response);
+  });
+});

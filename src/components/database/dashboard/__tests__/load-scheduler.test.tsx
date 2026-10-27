@@ -88,6 +88,7 @@ function FakeDatabase({
     return () => {
       mountedDatabases.delete(widgetId);
       reporters.delete(widgetId);
+      queueMicrotask(() => queueMicrotask(() => report('suspended')));
     };
   }, [report, sourceId, widgetId]);
   return <div data-testid={`database-${widgetId}`} />;
@@ -343,6 +344,81 @@ describe('the dashboard load queue', () => {
 
     expect(startedWidgetIds()).toEqual(['w1', 'w2', 'w7']);
     expect(screen.getByTestId('placeholder-w3')).toBeTruthy();
+  });
+
+  it('cancels the first two of 100 sources before starting the newly visible sources', async () => {
+    render(<TestDashboard widgets={widgetsOverDistinctSources(100)} />);
+    observer().report((id) => id === 'w1' || id === 'w2');
+    expect([...loadingSources()]).toEqual(['S1', 'S2']);
+    const oldReport = reporters.get('w1')!;
+
+    observer().report((id) => id === 'w99' || id === 'w100');
+    expect(loadingSources().size).toBe(0);
+    expect(startedWidgetIds()).toEqual(['w1', 'w2']);
+    await act(async () => { await Promise.resolve(); });
+    expect([...loadingSources()]).toEqual(['S99', 'S100']);
+    expect(screen.getByTestId('placeholder-w1')).toBeTruthy();
+
+    observer().report((id) => id === 'w1' || id === 'w2');
+    await act(async () => { await Promise.resolve(); });
+    expect([...loadingSources()]).toEqual(['S1', 'S2']);
+    expect(reporters.get('w1')).not.toBe(oldReport);
+    // Late results from the abandoned mount cannot finish the replacement.
+    act(() => { oldReport('complete'); oldReport('suspended'); });
+    expect([...loadingSources()]).toEqual(['S1', 'S2']);
+    expect(startedWidgetIds()).toEqual(['w1', 'w2', 'w99', 'w100', 'w1', 'w2']);
+    expect(dashboardLoadStats.snapshot().maxConcurrentSourceLoads).toBeLessThanOrEqual(2);
+  });
+
+  it('keeps views of an already cached source mounted while they finish rendering off screen', async () => {
+    mockResidentSources.add('S1');
+    mockResidentSources.add('S2');
+    render(<TestDashboard widgets={widgetsOverDistinctSources(2)} />);
+    observer().report(() => true);
+    const cached = screen.getByTestId('database-w2');
+
+    observer().report((id) => id === 'w1');
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByTestId('database-w2')).toBe(cached);
+    expect(dashboardLoadStats.snapshot().sourceLoads).toEqual([]);
+    report('w2', 'complete');
+    expect(startedWidgetIds()).toEqual(['w1', 'w2']);
+  });
+
+  it('keeps a completed widget mounted when it scrolls off screen', async () => {
+    render(<TestDashboard widgets={widgetsOverDistinctSources(2)} />);
+    observer().report(() => true);
+    report('w1', 'complete');
+    const loaded = screen.getByTestId('database-w1');
+
+    observer().report((id) => id === 'w2');
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByTestId('database-w1')).toBe(loaded);
+    expect(startedWidgetIds()).toEqual(['w1', 'w2']);
+  });
+
+  it('resumes a widget scrolled back before cancellation cleanup finishes', async () => {
+    render(<TestDashboard widgets={widgetsOverDistinctSources(3)} />);
+    observer().report((id) => id === 'w1' || id === 'w2');
+    const oldReport = reporters.get('w1')!;
+
+    observer().report((id) => id === 'w3');
+    observer().report((id) => id === 'w1' || id === 'w2');
+    await act(async () => { await Promise.resolve(); });
+    expect([...loadingSources()]).toEqual(['S1', 'S2']);
+    act(() => oldReport('complete'));
+    expect(screen.queryByTestId('database-w3')).toBeNull();
+  });
+
+  it('does not start queued sources when the dashboard closes during cancellation', async () => {
+    const { unmount } = render(<TestDashboard widgets={widgetsOverDistinctSources(3)} />);
+
+    observer().report((id) => id === 'w1' || id === 'w2');
+    observer().report((id) => id === 'w3');
+    unmount();
+    await act(async () => { await Promise.resolve(); });
+    expect(startedWidgetIds()).toEqual(['w1', 'w2']);
+    expect(mountedDatabases.size).toBe(0);
   });
 
   it('starts a visible widget of the host database before the first paint, without a slot', () => {
@@ -603,6 +679,28 @@ describe('createDashboardLoadScheduler', () => {
       },
     };
   }
+
+  it('still cancels an unfinished source scrolled away after its queue timeout', () => {
+    jest.useFakeTimers();
+    const { scheduler, advance } = setup();
+
+    scheduler.register({ id: 'w1', sourceId: 'S1' });
+    scheduler.setVisibility([['w1', true]]);
+    const generation = scheduler.loadGeneration('w1');
+
+    advance(DASHBOARD_LOADING.sourceLoadTimeoutMs);
+    expect(scheduler.isStarted('w1')).toBe(true);
+    expect(scheduler.loadingWidgetIds()).toEqual([]);
+    scheduler.setVisibility([['w1', false]]);
+    expect(scheduler.isStarted('w1')).toBe(false);
+    scheduler.report('w1', 'suspended', generation);
+    // Further observer batches must leave the cancelled host suspended.
+    scheduler.register({ id: 'w2', sourceId: 'S2' });
+    scheduler.setVisibility([['w2', true]]);
+    scheduler.setVisibility([['w1', true]]);
+    expect(scheduler.loadGeneration('w1')).toBeGreaterThan(generation);
+    scheduler.close();
+  });
 
   it('starts deferred widgets when the deferred timeout expires, and plans no timer once closed', () => {
     jest.useFakeTimers();
