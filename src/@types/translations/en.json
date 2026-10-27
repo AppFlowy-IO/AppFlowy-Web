@@ -3041,6 +3041,14 @@
       "choosePhoto": "Choose photo",
       "takePicture": "Take a picture",
       "chooseFile": "Choose file"
+    },
+    "width": {
+      "title": "Document width",
+      "defaultWidth": "Default width",
+      "fullWidth": "Full width",
+      "customWidth": "Custom width (px)",
+      "invalidWidth": "Enter a width between 480 and 1920.",
+      "saveError": "Could not save document width. Please try again."
     }
   },
   "board": {

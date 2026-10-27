@@ -1919,6 +1919,9 @@ export interface RowDocumentSourceExtra {
 }
 
 export interface ViewExtra extends SpaceInfo, DatabaseViewExtra {
+  /** Page width shared with Desktop; absent means the client's default. */
+  document_width?: import('./document-width').DocumentWidth;
+
   /** Whether this view is pinned. */
   is_pinned?: boolean;
 

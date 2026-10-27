@@ -10,10 +10,10 @@ Feature: Eva page action permissions
   Scenario: Eva sees permission-specific sidebar more actions
     Given I sign in as seeded Eva
     When I open Eva's sidebar more menu for "Grante full access for eva"
-    Then Eva's sidebar more menu shows only "Rename, Change icon, Lock page, Duplicate, Move to, Delete, Open in a new tab"
+    Then Eva's sidebar more menu shows only "Rename, Change icon, Lock page, Document width, Duplicate, Move to, Delete, Open in a new tab"
     When I close Eva's sidebar more menu
     And I open Eva's sidebar more menu for "Edit only permission for eva"
-    Then Eva's sidebar more menu shows only "Rename, Change icon, Lock page, Duplicate, Open in a new tab"
+    Then Eva's sidebar more menu shows only "Rename, Change icon, Lock page, Document width, Duplicate, Open in a new tab"
     When I close Eva's sidebar more menu
     And I open Eva's sidebar more menu for "Read only permission for eva"
     Then Eva's sidebar more menu shows only "Open in a new tab"
@@ -22,11 +22,11 @@ Feature: Eva page action permissions
     Given I sign in as seeded Eva
     When I open Eva's page "Grante full access for eva"
     And I open Eva's page more menu
-    Then Eva's page more menu shows only "Lock page, Duplicate, Move to, Find and replace, Delete, Version history"
+    Then Eva's page more menu shows only "Lock page, Document width, Duplicate, Move to, Find and replace, Delete, Version history"
     When I close Eva's page more menu
     And I open Eva's page "Edit only permission for eva"
     And I open Eva's page more menu
-    Then Eva's page more menu shows only "Lock page, Duplicate, Find and replace, Version history"
+    Then Eva's page more menu shows only "Lock page, Document width, Duplicate, Find and replace, Version history"
     When I close Eva's page more menu
     And I open Eva's page "Read only permission for eva"
     And I open Eva's page more menu
