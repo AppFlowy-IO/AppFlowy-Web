@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { usePublishContext } from '@/application/publish';
+import { documentMaxWidth, parseDocumentWidth } from '@/application/document-width';
 import type { PublishedDocumentSnapshot } from '@/application/publish-snapshot/types';
 import { FontLayout, LineHeightLayout, UIVariant } from '@/application/types';
 import StaticEditor from '@/components/editor/StaticEditor';
@@ -17,6 +18,7 @@ const FONT_SIZE_MAP: Record<FontLayout, string | undefined> = {
 const THUMBNAIL_BLOCK_LIMIT = 10;
 
 interface PublishedViewExtra {
+  document_width?: unknown;
   font?: string;
   fontLayout?: FontLayout;
   lineHeightLayout?: LineHeightLayout;
@@ -41,6 +43,8 @@ export function PublishedDocumentRenderer({ snapshot }: { snapshot: PublishedDoc
   const jumpBlockId = search.get('blockId') || undefined;
 
   const extra = useMemo(() => parseViewExtra(snapshot.view.extra), [snapshot.view.extra]);
+  const width = parseDocumentWidth(extra.document_width);
+  const maxWidth = documentMaxWidth(width);
   const font = extra.font || '';
   const fontLayout = extra.fontLayout;
   const lineHeightLayout = extra.lineHeightLayout;
@@ -88,8 +92,9 @@ export function PublishedDocumentRenderer({ snapshot }: { snapshot: PublishedDoc
   return (
     <div className={wrapperClassName} style={wrapperStyle}>
       <PublishedPageMeta view={snapshot.view} />
-      <div className="relative flex w-full justify-center">
+      <div className="relative flex w-full justify-center" style={{ maxWidth: width ? maxWidth : undefined }}>
         <StaticEditor
+          fullWidth={!!width}
           workspaceId="publish"
           viewId={snapshot.view.viewId}
           value={editorValue}

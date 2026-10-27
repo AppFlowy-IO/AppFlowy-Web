@@ -27,6 +27,7 @@ import {
   isUnsafeFormDeepDuplicate,
 } from '@/components/app/view-actions/formDuplicateSafety';
 import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
+import { DocumentWidthMenu } from '@/components/app/view-actions/DocumentWidthMenu';
 import { DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 import { Switch } from '@/components/ui/switch';
@@ -162,6 +163,17 @@ function MoreActionsContent({
       <div ref={containerRef} />
       {canEditActions && isDocument && (
         <>
+          {view && workspaceId && (
+            <DocumentWidthMenu
+              view={view}
+              workspaceId={workspaceId}
+              disabled={isLocked || isLoadingActions}
+              onSaved={() => {
+                void refreshOutline?.();
+                itemClicked?.();
+              }}
+            />
+          )}
           <DropdownMenuItem
             data-testid={'more-page-lock'}
             onSelect={(event) => {
