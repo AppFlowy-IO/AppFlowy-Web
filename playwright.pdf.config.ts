@@ -1,7 +1,8 @@
-import { defineConfig, devices } from '@playwright/test';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
+
+import { defineConfig, devices } from '@playwright/test';
 
 const executable = path.join(
   homedir(),
@@ -14,7 +15,10 @@ if (!process.env.CI && !existsSync(executable))
 export default defineConfig({
   testDir: './playwright/e2e/integrations',
   testMatch: 'pdf.spec.ts',
-  workers: 1,
+  // Each theme owns its browser context and Vite worker. Run the two projects
+  // together so browser installation does not consume the CI test budget.
+  workers: process.env.CI ? 2 : 1,
+  forbidOnly: !!process.env.CI,
   timeout: 90_000,
   expect: { timeout: 15_000 },
   reporter: 'list',

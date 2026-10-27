@@ -78,7 +78,8 @@ jobs:
   pdf:
     name: 'Embedded PDF (light and dark)'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Includes Chromium/system dependencies, two theme suites, and artifacts.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

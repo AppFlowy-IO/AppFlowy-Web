@@ -1,4 +1,35 @@
-# Drive and Calendar browser tests
+# Browser integration tests
+
+## PDF Embed
+
+```sh
+pnpm test:e2e:pdf
+# Exercise the same two-worker scheduling used by CI:
+pnpm test:e2e:pdf --workers=2
+```
+
+The PDF suite runs the production editor and PDF.js worker in isolated browser
+contexts, with a separate Vite server per worker. On macOS the PDF config requires
+the dedicated Chrome for Testing executable; it never attaches to an existing
+browser or personal profile. No Cloud account is required.
+
+Both light and dark projects cover upload and replacement, drag-and-drop ordering,
+captions, resizing, selection, menus and hover colors, filename mentions,
+fullscreen/browser previews, password challenges, AI actions, permission changes,
+upload limits, and persistence. CORS fallback tests verify request counts, retained
+original URLs, password retries without refetching, and invalid-file handling.
+Replacing an in-flight source verifies cancellation before accepting the new PDF.
+
+PDF files, uploads, and AI responses are controlled fixtures. These tests exercise
+the real browser UI and parsing, but do not validate Cloud storage or a live public
+host. Server-side proxy policy and streaming have separate unit tests under
+`api/_lib/__tests__`.
+
+CI runs the two theme projects concurrently and retains screenshots and failure
+traces in `pdf-browser-results`. Its job timeout includes browser installation
+and artifact upload as well as test execution.
+
+## Drive and Calendar
 
 Run from the web repository; no running Cloud, Google credentials, or shared test account is required:
 

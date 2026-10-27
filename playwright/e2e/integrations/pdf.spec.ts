@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { expect, Page } from '@playwright/test';
@@ -960,4 +961,175 @@ test('PDF retry preserves its local file when permissions change and can recover
   } finally {
     release();
   }
+});
+
+test('dropping multiple PDFs uploads each once, preserves order, and ignores drops when read-only', async ({ page, integrationsURL }) => {
+  let uploads = 0;
+
+  await page.route('**/fixtures/upload', (route) => {
+    uploads++;
+    return route.fulfill({ json: { url: new URL(`/fixtures/upload-${uploads}.pdf`, integrationsURL).href } });
+  });
+  await page.goto(new URL(`${fixturePath}?controlled-upload`, integrationsURL).href);
+  await page.getByTestId('editor-content').click();
+  await page.keyboard.type('/pdf');
+  await page.getByTestId('slash-menu-pdf').click();
+  await page.keyboard.press('Escape');
+  const bytes = [...await readFile(path.join(assets, 'sample.pdf'))];
+  const transfer = await page.evaluateHandle((bytes) => {
+    const data = new DataTransfer();
+
+    for (const name of ['First.pdf', 'Second.pdf'])
+      data.items.add(new File([new Uint8Array(bytes)], name, { type: 'application/pdf' }));
+    return data;
+  }, bytes);
+
+  try {
+    await block(page).locator('.pdf-block').dispatchEvent('drop', { dataTransfer: transfer });
+    await expect(block(page)).toHaveCount(2);
+    await expect(block(page).locator('[data-pdf-ready="true"]')).toHaveCount(2);
+    expect(uploads).toBe(2);
+    const snapshot = page.getByTestId('pdf-document-snapshot');
+    const names = () => snapshot.evaluate((element) => JSON.parse(element.textContent!)
+      .filter((node: { type: string }) => node.type === 'pdf')
+      .map((node: { data: { name: string } }) => node.data.name));
+
+    await expect.poll(names).toEqual(['First.pdf', 'Second.pdf']);
+    await page.getByRole('checkbox', { name: 'Read only' }).check();
+    const saved = await snapshot.textContent();
+
+    await block(page).first().locator('.pdf-block').dispatchEvent('drop', { dataTransfer: transfer });
+    await expect(snapshot).toHaveText(saved!);
+    expect(uploads).toBe(2);
+  } finally {
+    await transfer.dispose();
+  }
+
+  await page.reload();
+  await expect(block(page).locator('[data-pdf-ready="true"]')).toHaveCount(2);
+  expect(uploads).toBe(2);
+});
+
+test('PDF menu hover keeps icons readable and Delete uses the shared error color', async ({ page }) => {
+  await embed(page, new URL('/fixtures/sample.pdf', page.url()).href);
+  await expect(block(page).locator('[data-pdf-ready="true"]')).toHaveCount(1);
+  const menu = await more(page);
+  const colors = await menu.evaluate((element) => {
+    const probe = document.createElement('span');
+
+    element.append(probe);
+    const resolve = (token: string) => {
+      probe.style.color = `var(${token})`;
+      return getComputedStyle(probe).color;
+    };
+
+    const colors = { primary: resolve('--text-primary'), error: resolve('--text-error') };
+
+    probe.remove();
+    return colors;
+  });
+
+  for (const label of ['Duplicate', 'Copy link to block', 'Replace', 'Download', 'Open in browser', 'Delete']) {
+    const row = menu.getByRole('button', { name: label, exact: true });
+    const icon = row.locator('.pdf-menu-icon');
+    const expected = label === 'Delete' ? colors.error : colors.primary;
+
+    await row.hover();
+    await expect(row).toHaveCSS('color', expected);
+    await expect(icon).toHaveCSS('background-color', expected);
+    await expect(icon).not.toHaveCSS('mask-image', 'none');
+  }
+
+  await menu.getByRole('button', { name: 'Duplicate', exact: true }).hover();
+  await expect(menu.getByRole('button', { name: 'Delete', exact: true })).toHaveCSS('color', colors.primary);
+  await expect(menu.getByRole('button', { name: 'Comment', exact: true })).toHaveCount(0);
+});
+
+test('replacing a loading PDF ignores the old response and keeps the replacement after reload', async ({ page }) => {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  const original = new URL('/fixtures/old-password.pdf', page.url()).href;
+  const replacement = new URL('/fixtures/replacement.pdf', page.url()).href;
+  const requested = page.waitForRequest(original);
+
+  await page.route(original, async (route) => {
+    await held;
+    await route.fulfill({ contentType: 'application/pdf', path: path.join(assets, 'sample_with_password.pdf') });
+  });
+  try {
+    await embed(page, original);
+    await requested;
+    const cancelled = page.waitForEvent('requestfailed', (request) => request.url() === original);
+
+    await (await more(page)).getByRole('button', { name: 'Replace', exact: true }).click();
+    await page.getByRole('tab', { name: 'Embed Link', exact: true }).click();
+    await page.getByPlaceholder('Paste a link...').fill(replacement);
+    await page.getByRole('button', { name: 'Embed', exact: true }).click();
+    await cancelled;
+    await expect(block(page).locator('[data-pdf-ready="true"]')).toHaveCount(1);
+    release();
+    await expect(block(page).locator('.textLayer').first()).toContainText('Sample PDF');
+    await expect(block(page).getByLabel('PDF password')).toHaveCount(0);
+    await expect(page.getByTestId('pdf-document-snapshot')).toContainText(replacement);
+    await expect(page.getByTestId('pdf-document-snapshot')).not.toContainText(original);
+    await page.reload();
+    await expect(block(page).locator('[data-pdf-ready="true"]')).toHaveCount(1);
+    await expect(block(page).getByLabel('PDF password')).toHaveCount(0);
+  } finally {
+    release();
+  }
+});
+
+test('password challenges after the CORS fallback reuse the loaded file and never persist passwords', async ({ page }) => {
+  const original = 'https://pdf.example.test/protected.pdf';
+  let directRequests = 0;
+  let proxyRequests = 0;
+
+  await page.route(original, (route) => {
+    directRequests++;
+    return route.abort('failed');
+  });
+  await page.route('**/api/pdf-proxy?*', (route) => {
+    proxyRequests++;
+    expect(new URL(route.request().url()).searchParams.get('url')).toBe(original);
+    return route.fulfill({ contentType: 'application/pdf', path: path.join(assets, 'sample_with_password.pdf') });
+  });
+  await embed(page, original);
+  await block(page).getByLabel('PDF password').fill('incorrect-secret');
+  await block(page).getByRole('button', { name: 'Unlock', exact: true }).click();
+  await expect(block(page).getByRole('alert')).toHaveText('Incorrect password');
+  await block(page).getByLabel('PDF password').fill('123');
+  await block(page).getByRole('button', { name: 'Unlock', exact: true }).click();
+  await expect(block(page).locator('[data-pdf-ready="true"]')).toHaveCount(1);
+  expect({ directRequests, proxyRequests }).toEqual({ directRequests: 1, proxyRequests: 1 });
+  const snapshot = page.getByTestId('pdf-document-snapshot');
+
+  await expect(snapshot).toContainText(original);
+  await expect(snapshot).not.toContainText('incorrect-secret');
+  await expect(snapshot).not.toContainText('password');
+  await page.reload();
+  await expect(block(page).getByLabel('PDF password')).toHaveValue('');
+  expect({ directRequests, proxyRequests }).toEqual({ directRequests: 2, proxyRequests: 2 });
+});
+
+test('invalid PDF content does not use the CORS fallback and retries only when requested', async ({ page }) => {
+  const original = 'https://pdf.example.test/invalid.pdf';
+  let directRequests = 0;
+  let proxyRequests = 0;
+
+  await page.route(original, (route) => {
+    directRequests++;
+    return route.fulfill({ contentType: 'application/pdf', body: 'This is not PDF content.' });
+  });
+  await page.route('**/api/pdf-proxy?*', (route) => {
+    proxyRequests++;
+    return route.fulfill({ status: 502, body: 'Unexpected fallback' });
+  });
+  await embed(page, original);
+  await expect(block(page).getByRole('alert')).toContainText('Oops! Something went wrong.');
+  expect({ directRequests, proxyRequests }).toEqual({ directRequests: 1, proxyRequests: 0 });
+  await block(page).getByRole('button', { name: 'Try again', exact: true }).click();
+  await expect.poll(() => directRequests).toBe(2);
+  await expect(block(page).getByRole('alert')).toContainText('Oops! Something went wrong.');
+  expect({ directRequests, proxyRequests }).toEqual({ directRequests: 2, proxyRequests: 0 });
 });
