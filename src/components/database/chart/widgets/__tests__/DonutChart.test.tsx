@@ -71,7 +71,6 @@ const data: ChartDataItem[] = [
     value: 1,
     rowIds: ['row-1'],
     color: 'var(--tag-fill-09-light)',
-    textColor: 'var(--tag-text-09-light)',
   },
   { label: 'Plan B', value: 1, rowIds: ['row-2'] },
   { label: 'Zero', value: 0, rowIds: [] },

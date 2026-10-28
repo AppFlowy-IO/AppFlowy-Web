@@ -1,6 +1,6 @@
 import { SelectOptionColor } from '@/application/database-yjs';
 import { CHECKBOX_CHECKED_COLOR, CHECKBOX_UNCHECKED_COLOR } from '@/application/database-yjs/chart.type';
-import { SelectOptionColorMap, SelectOptionFgColorMap } from '@/components/database/components/cell/cell.const';
+import { SelectOptionColorMap } from '@/components/database/components/cell/cell.const';
 
 /**
  * Fill color of a select-option category: the option's tag fill token, like
@@ -51,15 +51,6 @@ export function getSelectOptionChartFillHex(fill: string): string | undefined {
   return token ? TAG_FILL_LIGHT_HEX[token] : undefined;
 }
 
-/**
- * Text color of a select-option category: the option's tag text token, like
- * desktop's `selectOptionColorToTextAFColor`.
- */
-export function getSelectOptionChartTextColor(color: SelectOptionColor): string {
-  const token: string | undefined = SelectOptionFgColorMap[color];
-
-  return `var(${token ?? SelectOptionFgColorMap[SelectOptionColor.OptionColor1]})`;
-}
 
 /** Desktop's `ChartColorUtils.checkboxCheckedColor` / `checkboxUncheckedColor`. */
 export function getCheckboxChartColor(checked: boolean): string {

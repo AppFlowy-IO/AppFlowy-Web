@@ -305,7 +305,7 @@ describe('queryChartRows', () => {
         D.DateStartsNextWeek,
         D.DateEndsNextWeek,
       ]);
-      // "Between" is covered below: until the end-day fix it compares exact seconds.
+      // "Between" takes a range and is covered below.
       const conditions = (Object.values(D).filter((value) => typeof value === 'number') as D[]).filter(
         (condition) => condition !== D.DateStartsBetween && condition !== D.DateEndsBetween
       );
@@ -326,6 +326,8 @@ describe('queryChartRows', () => {
       expect(passes(between, dateCells(at(26)))).toBe(true);
       expect(passes(between, dateCells(at(27, 12)))).toBe(true);
       expect(passes(between, dateCells(at(28)))).toBe(true);
+      // A chip's range ends at the last day's midnight, like the editors store it.
+      expect(passes(between, dateCells(at(28, 23, 59)))).toBe(true);
       expect(passes(between, dateCells(at(25, 23, 59)))).toBe(false);
       expect(passes(between, dateCells(at(29)))).toBe(false);
     });

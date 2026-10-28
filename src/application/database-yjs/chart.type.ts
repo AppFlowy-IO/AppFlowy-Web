@@ -61,8 +61,6 @@ export interface ChartDataItem {
    * an option fill, snapped onto its own palette.
    */
   color?: string;
-  /** The option's tag text color. */
-  textColor?: string;
   /** True for "No {field}" category */
   isEmptyCategory?: boolean;
   /**

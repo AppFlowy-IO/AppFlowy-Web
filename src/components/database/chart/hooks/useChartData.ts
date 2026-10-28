@@ -33,7 +33,7 @@ import {
   YjsEditorKey,
 } from '@/application/types';
 
-import { getCheckboxChartColor, getSelectOptionChartColor, getSelectOptionChartTextColor } from './chartColors';
+import { getCheckboxChartColor, getSelectOptionChartColor } from './chartColors';
 import { ChartRowsWatch, createChartRowsStore } from './chartRowsStore';
 
 const SECONDS_PER_DAY = 24 * 60 * 60;
@@ -368,7 +368,6 @@ interface Bucket {
   isEmptyCategory: boolean;
   /** Option tag / checkbox color; palette buckets leave it to the widget. */
   color?: string;
-  textColor?: string;
   /** Date bucket key, the chronological sort key. */
   sortKey?: string;
   /** Checkbox bucket. */
@@ -489,7 +488,6 @@ export function computeChartData({
           yValues: [],
           isEmptyCategory: false,
           color: getSelectOptionChartColor(option.color),
-          textColor: getSelectOptionChartTextColor(option.color),
         }));
 
         if (rowBuckets.has(bucket)) return;
@@ -558,7 +556,6 @@ export function computeChartData({
     };
 
     if (bucket.color !== undefined) item.color = bucket.color;
-    if (bucket.textColor !== undefined) item.textColor = bucket.textColor;
     if (bucket.isCheckedCategory !== undefined) item.isCheckedCategory = bucket.isCheckedCategory;
     if (bucket.sortKey !== undefined) item.sortKey = bucket.sortKey;
     return item;

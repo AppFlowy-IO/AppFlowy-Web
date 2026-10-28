@@ -135,9 +135,12 @@ describe('chartCategoryFilter', () => {
 
       const dayBefore = new Date(start.getFullYear(), start.getMonth(), start.getDate() - 1, 12);
       const dayAfter = new Date(end.getFullYear(), end.getMonth(), end.getDate() + 1);
+      // The bar holds the whole last day, so the chip must too.
+      const lastMinute = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 23, 59);
 
       expect(matches(rule!, fields, FieldType.DateTime, seconds(start))).toBe(true);
       expect(matches(rule!, fields, FieldType.DateTime, seconds(end))).toBe(true);
+      expect(matches(rule!, fields, FieldType.DateTime, seconds(lastMinute))).toBe(true);
       expect(matches(rule!, fields, FieldType.DateTime, seconds(dayBefore))).toBe(false);
       expect(matches(rule!, fields, FieldType.DateTime, seconds(dayAfter))).toBe(false);
     }

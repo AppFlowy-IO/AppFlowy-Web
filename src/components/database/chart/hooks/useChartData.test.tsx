@@ -499,7 +499,6 @@ describe('useChartData select / checkbox buckets', () => {
         rowIds: ['r3'],
         isEmptyCategory: false,
         color: 'var(--tag-fill-05-light)',
-        textColor: 'var(--tag-text-05-light)',
       },
       {
         label: 'Done',
@@ -507,7 +506,6 @@ describe('useChartData select / checkbox buckets', () => {
         rowIds: ['r2'],
         isEmptyCategory: false,
         color: 'var(--tag-fill-02-thick)',
-        textColor: 'var(--tag-text-02-thick)',
       },
       {
         label: 'Todo',
@@ -515,17 +513,14 @@ describe('useChartData select / checkbox buckets', () => {
         rowIds: ['r1'],
         isEmptyCategory: false,
         color: 'var(--tag-fill-02-light)',
-        textColor: 'var(--tag-text-02-light)',
       },
       { label: 'No Status', value: 1, rowIds: ['r4'], isEmptyCategory: true },
     ]);
     expect(result.current.chartData[3]).not.toHaveProperty('color');
-    expect(result.current.chartData[3]).not.toHaveProperty('textColor');
 
     const dates = await renderChart({ fields: [DUE_FIELD], rows: [{ id: 'r1', cells: { due: dateCell(2026, 3, 1) } }] });
 
     expect(dates.result.current.chartData[0]).not.toHaveProperty('color');
-    expect(dates.result.current.chartData[0]).not.toHaveProperty('textColor');
   });
 });
 
@@ -999,10 +994,13 @@ describe('useChartData loading state', () => {
 });
 
 describe('chartDataEqual', () => {
-  it('compares text colors', () => {
-    const item: ChartDataItem = { label: 'A', value: 1, rowIds: ['r1'], color: 'var(--a)', textColor: 'var(--b)' };
+  // A memoized widget hands its items to the drill-down, which builds its
+  // filter from the bucket key and the checkbox flag.
+  it('compares the keys the drill-down filter reads', () => {
+    const item: ChartDataItem = { label: 'Mar 2026', value: 1, rowIds: ['r1'], sortKey: '2026-03' };
 
     expect(chartDataEqual([item], [{ ...item }])).toBe(true);
-    expect(chartDataEqual([item], [{ ...item, textColor: 'var(--c)' }])).toBe(false);
+    expect(chartDataEqual([item], [{ ...item, sortKey: 'month_2026-03' }])).toBe(false);
+    expect(chartDataEqual([item], [{ ...item, isCheckedCategory: true }])).toBe(false);
   });
 });

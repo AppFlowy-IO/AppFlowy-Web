@@ -190,8 +190,10 @@ export function chartDataEqual(a: ChartDataItem[], b: ChartDataItem[]): boolean 
       x.label !== y.label ||
       x.value !== y.value ||
       x.color !== y.color ||
-      x.textColor !== y.textColor ||
       x.isEmptyCategory !== y.isEmptyCategory ||
+      // The drill-down builds its filter from these, so a stale item must not survive.
+      x.isCheckedCategory !== y.isCheckedCategory ||
+      x.sortKey !== y.sortKey ||
       x.rowIds.length !== y.rowIds.length
     ) {
       return false;
