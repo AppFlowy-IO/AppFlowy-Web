@@ -46,6 +46,16 @@ const ERROR_MESSAGES: Record<string, string> = {
   PRESENTATION_PROCESSING_BUSY: 'Presentation processing is busy. Please try again shortly.',
   SOURCE_PERMISSION_DENIED: 'You no longer have permission to read one of the sources.',
   IDEMPOTENCY_CONFLICT: 'This operation ID belongs to a different request. Start a new operation.',
+  // Reasons Cloud emits for conflicts, permissions and terminal job failures.
+  IDEMPOTENCY_KEY_REUSED: 'This operation ID belongs to a different request. Start a new operation.',
+  OPERATION_CONFLICT: 'This item changed elsewhere. Reload it before continuing.',
+  SOURCE_ACCESS_DENIED: 'You no longer have permission to read one of the sources.',
+  ARTIFACT_IN_USE: 'Saved presentations still use this item. Delete them before deleting it.',
+  SOURCE_TOO_LARGE: 'The source is too large. Select shorter media, fewer pages or a smaller view.',
+  JOB_ATTEMPTS_EXHAUSTED: 'The presentation could not be generated after several attempts. Try again later.',
+  AI_EXECUTION_TIMEOUT: 'Generation took too long. Try fewer slides or a smaller source.',
+  AI_MODEL_UNAVAILABLE: 'The AI model for this request is no longer available. Start a new generation.',
+  AI_EXECUTION_NOT_LICENSED: 'AI features are not available on this server.',
 };
 
 function errorFromBody(body: unknown, status: number, retryAfter?: unknown): PresentationAPIError {
