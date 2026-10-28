@@ -75,6 +75,33 @@ jobs:
           path: test-results/
           retention-days: 7
 
+  pdf:
+    name: 'Embedded PDF (light and dark)'
+    runs-on: ubuntu-latest
+    # Includes Chromium/system dependencies, two theme suites, and artifacts.
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Test pdf editing and appearance
+        run: pnpm test:e2e:pdf
+      - name: Upload pdf screenshots and traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdf-browser-results
+          path: test-results/
+          retention-days: 7
+
   connections:
     name: 'Connections (Chromium, Firefox, WebKit)'
     runs-on: ubuntu-latest

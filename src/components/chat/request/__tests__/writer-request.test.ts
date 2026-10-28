@@ -15,6 +15,24 @@ describe('speaker preprocessing through the shared completion API', () => {
 
   afterEach(() => { global.fetch = originalFetch; });
 
+  it.each([true, false, undefined])('forwards explicit web-search settings without changing other callers (%s)', async (webSearchEnabled) => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      headers: { get: () => 'application/json' },
+      json: async () => ({ '1': 'Answer' }),
+    });
+    const { streamPromise } = await new WriterRequest('workspace', 'document').fetchAIAssistant({
+      inputText: 'Question', assistantType: AIAssistantType.AskAIAnything,
+      ragIds: [], completionHistory: [], webSearchEnabled,
+    }, jest.fn());
+
+    await streamPromise;
+    const body = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
+
+    if (webSearchEnabled === undefined) expect(body.metadata).not.toHaveProperty('web_search_enabled');
+    else expect(body.metadata.web_search_enabled).toBe(webSearchEnabled);
+  });
+
   it('sends CustomPrompt to Flutter’s completion endpoint with a cancellable request', async () => {
     const controller = new AbortController();
     const fetchMock = jest.fn(async () => ({

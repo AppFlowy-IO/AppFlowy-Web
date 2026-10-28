@@ -10,7 +10,9 @@
     "support/integrations.fixture.tsx",
     "support/math-equation.fixture.tsx",
     "../playwright.code-block.config.ts",
-    "support/code-block.fixture.tsx"
+    "support/code-block.fixture.tsx",
+    "../playwright.pdf.config.ts",
+    "support/pdf.fixture.tsx"
   ],
   "references": []
 }

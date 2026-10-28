@@ -6,6 +6,7 @@ import { defineConfig, loadEnv, type ViteDevServer } from 'vite';
 import istanbul from 'vite-plugin-istanbul';
 import svgr from 'vite-plugin-svgr';
 import { totalBundleSize } from 'vite-plugin-total-bundle-size';
+import { viteStaticCopy } from 'vite-plugin-static-copy';
 import { stripTestIdPlugin } from './vite-plugin-strip-testid';
 import { VITE_DEDUPED_DEPENDENCIES, VITE_OPTIMIZED_DEPENDENCIES } from './vite.dependencies';
 import compatibilityPolicy from './src/application/compatibility/web-server-compatibility.json';
@@ -117,8 +118,9 @@ function linkPreviewApiPlugin() {
       server.middlewares.use((req, res, next) => {
         const pathname = req.url?.split('?')[0];
         const youtube = pathname === '/api/youtube-audio';
+        const pdf = pathname === '/api/pdf-proxy';
 
-        if (!youtube && pathname !== '/api/link-preview') {
+        if (!youtube && !pdf && pathname !== '/api/link-preview') {
           return next();
         }
 
@@ -128,7 +130,7 @@ function linkPreviewApiPlugin() {
         const baseURL = localCloud ? process.env.APPFLOWY_DEV_API_PROXY_TARGET || LOCAL_GATEWAY_TARGET : configuredBaseURL;
 
         server
-          .ssrLoadModule(youtube ? '/api/youtube-audio.ts' : '/api/link-preview.ts')
+          .ssrLoadModule(youtube ? '/api/youtube-audio.ts' : pdf ? '/api/pdf-proxy.ts' : '/api/link-preview.ts')
           .then((mod) =>
             (mod.default as (req: IncomingMessage, res: ServerResponse, options?: { baseURL: string }) => Promise<void>)(
               req as IncomingMessage,
@@ -140,7 +142,7 @@ function linkPreviewApiPlugin() {
             server.config.logger.error(`[local-api] ${error instanceof Error ? error.message : String(error)}`);
             res.statusCode = 502;
             res.setHeader('Content-Type', 'application/json; charset=utf-8');
-            res.end(JSON.stringify(youtube ? { code: 502, message: 'Failed to load YouTube import handler' } : { error: 'Failed to fetch link preview' }));
+            res.end(JSON.stringify(youtube ? { code: 502, message: 'Failed to load YouTube import handler' } : { error: pdf ? 'Failed to load PDF' : 'Failed to fetch link preview' }));
           });
       });
     },
@@ -211,6 +213,9 @@ export default defineConfig(async ({ command, mode }) => {
       __APPFLOWY_WEB_VERSION__: JSON.stringify(webClientVersion),
     },
     plugins: [
+      viteStaticCopy({ targets: ['cmaps', 'standard_fonts', 'wasm'].map((directory) => ({
+        src: path.resolve(__dirname, `node_modules/pdfjs-dist/${directory}`), dest: 'pdfjs',
+      })) }),
       react(),
       isDev ? namespaceRedirectPlugin() : undefined,
       isDev ? linkPreviewApiPlugin() : undefined,
