@@ -592,17 +592,24 @@ it.each([true, false])('reserves a new tab synchronously and waits for save acce
   expect(mockUnmount).not.toHaveBeenCalled();
 });
 
-it.each([DatabaseViewLayout.Calendar, DatabaseViewLayout.Timeline])(
-  'opens layout %s centered and still allows an explicit side choice',
-  async (layout) => {
-    mockView.set(YjsDatabaseKey.layout, layout);
-    render(<Fixture />);
-    await screen.findByRole('textbox', { name: 'Draft first' });
-    expect(screen.getByTestId('row-detail').getAttribute('data-peek-mode')).toBe('center');
-    await chooseMode('side');
-    expect(screen.getByTestId('row-detail').getAttribute('data-peek-mode')).toBe('side');
-  }
-);
+it('opens timeline rows centered and still allows an explicit side choice', async () => {
+  mockView.set(YjsDatabaseKey.layout, DatabaseViewLayout.Timeline);
+  render(<Fixture />);
+  await screen.findByRole('textbox', { name: 'Draft first' });
+  expect(screen.getByTestId('row-detail').getAttribute('data-peek-mode')).toBe('center');
+  await chooseMode('side');
+  expect(screen.getByTestId('row-detail').getAttribute('data-peek-mode')).toBe('side');
+});
+
+// Desktop #1531 opens calendar events with `openCapturedRowAsPeekPanel`.
+it('opens calendar rows in side peek and still allows an explicit center choice', async () => {
+  mockView.set(YjsDatabaseKey.layout, DatabaseViewLayout.Calendar);
+  render(<Fixture />);
+  await screen.findByRole('textbox', { name: 'Draft first' });
+  expect(screen.getByTestId('row-detail').getAttribute('data-peek-mode')).toBe('side');
+  await chooseMode('center');
+  expect(screen.getByTestId('row-detail').getAttribute('data-peek-mode')).toBe('center');
+});
 
 it('keeps an automatic center fallback after widening, with the same editor and draft', async () => {
   const { rerender } = render(<Fixture />);

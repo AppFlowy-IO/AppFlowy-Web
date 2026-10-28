@@ -406,7 +406,7 @@ export async function openRowFromCardLayout(page: Page, layout: SidePeekCardLayo
   return rowId;
 }
 
-/** Click the calendar event, then its popover's "Open event" button (second to last header button). */
+/** Click the calendar event, then its popover's "Open as side peek" button. */
 export async function openRowFromCalendarEvent(page: Page, title: string): Promise<void> {
   await CalendarSelectors.event(page).filter({ hasText: title }).first().click();
   const popover = page
@@ -414,11 +414,7 @@ export async function openRowFromCalendarEvent(page: Page, title: string): Promi
     .filter({ has: page.getByTestId('calendar-event-title-input') });
 
   await expect(popover).toBeVisible({ timeout: 10_000 });
-  const buttons = popover.locator('.sticky button');
-  const count = await buttons.count();
-
-  if (count < 2) throw new Error('The calendar event popover has no open button');
-  await buttons.nth(count - 2).click();
+  await popover.getByTestId('calendar-event-open-peek').click();
   await expectPeekOpen(page, undefined, title);
 }
 
