@@ -19,6 +19,7 @@ import { CollabOrigin, Types, YDatabase, YDoc, YjsDatabaseKey, YjsEditorKey } fr
 import { applyYDoc } from '@/application/ydoc/apply';
 
 import { decodeBase64Bytes, decodeCreatedRowCollab, encodeCreationCollab } from './encoded-collab';
+import { repairLegacyDatabaseViewIds } from './legacy-view-ids';
 import { recordCommittedRowCreation } from './row-creation-history';
 import { CreatedRowReceipt, DefaultRowRequest, PreparedRowIntent } from './row-creation-types';
 import { prepareTemplateRowGraph } from './row-template-graph';
@@ -294,7 +295,7 @@ export async function createCloudRow(intent: CloudRowCreationIntent): Promise<st
     };
 
     await assertStorageCurrent();
-    await waitForDatabaseViewSource(requirements, {
+    const sourceOptions = {
       read: async () => {
         const result = await read([{ objectId: databaseId, collabType: Types.Database }]);
 
@@ -304,7 +305,22 @@ export async function createCloudRow(intent: CloudRowCreationIntent): Promise<st
       assertCurrent,
       signal: controller.signal,
       deadline,
-    });
+    };
+    const source = await waitForDatabaseViewSource(requirements, sourceOptions);
+    const repaired = await repairLegacyDatabaseViewIds(requirements, source, { ...sourceOptions, owner });
+
+    if (repaired) {
+      await assertStorageCurrent();
+      const published = await publishWithDatabaseStorageFence(capturedFence, () => {
+        assertCurrent();
+        withDatabaseStorageFence(databaseDoc, capturedFence, () =>
+          Y.applyUpdate(databaseDoc, repaired.missingUpdate, CollabOrigin.Remote)
+        );
+      });
+
+      if (!published) throw new Error('Database storage changed before view repair activation');
+    }
+
     assertCurrent();
     const receipt = graph
       ? await submitTemplateRow(owner, databaseId, graph, version, controller.signal, deadline)
