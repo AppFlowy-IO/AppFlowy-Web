@@ -198,18 +198,67 @@ function stableJson(value: unknown): string {
     ? Object.fromEntries(Object.keys(entry).sort().map((key) => [key, entry[key]])) : entry);
 }
 
-/** Retain the same operation across uncertain transport failures, including post-success reads. */
+/** A reload within this window resubmits the same operation and replays its durable job. */
+const PENDING_GENERATION_TTL_MS = 15 * 60 * 1000;
+const PENDING_GENERATION_PREFIX = 'appflowy.presentation.pending-generation.';
+
+/** Compact 53-bit string hash; storage keeps only this digest of the request, never its content. */
+function digest(value: string): string {
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+
+    h1 = Math.imul(h1 ^ code, 2654435761);
+    h2 = Math.imul(h2 ^ code, 1597334677);
+  }
+
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+}
+
+function storedRequestId(key: string): string | undefined {
+  try {
+    const value = JSON.parse(sessionStorage.getItem(PENDING_GENERATION_PREFIX + digest(key)) ?? 'null') as { requestId?: unknown; savedAt?: unknown } | null;
+
+    if (typeof value?.requestId !== 'string' || typeof value.savedAt !== 'number' || Date.now() - value.savedAt > PENDING_GENERATION_TTL_MS) return undefined;
+    return value.requestId;
+  } catch {
+    return undefined;
+  }
+}
+
+function storeRequestId(key: string, requestId: string | undefined) {
+  try {
+    if (requestId) sessionStorage.setItem(PENDING_GENERATION_PREFIX + digest(key), JSON.stringify({ requestId, savedAt: Date.now() }));
+    else sessionStorage.removeItem(PENDING_GENERATION_PREFIX + digest(key));
+  } catch {
+    // Storage is a convenience; the in-memory operation still deduplicates retries in this page.
+  }
+}
+
+/**
+ * Retain the same operation across uncertain transport failures, including post-success reads.
+ * The pending identity also survives a reload in this tab, so resubmitting the same request
+ * replays the running job instead of reserving and charging a second one.
+ */
 export function createGenerationRunner() {
   let pending: { key: string; requestId: string; session: ReturnType<typeof captureTokenSession> } | undefined;
 
   return async (input: GenerateInput, signal?: AbortSignal, onJob?: (job: JobStatus) => void): Promise<GenerationResult> => {
     const key = stableJson({ workspaceId: input.scope.workspaceId, request: generationRequest(input, '') });
 
-    if (!pending || pending.key !== key || !isTokenSessionCurrent(pending.session)) pending = { key, requestId: input.requestId ?? crypto.randomUUID(), session: captureTokenSession() };
+    if (!pending || pending.key !== key || !isTokenSessionCurrent(pending.session)) {
+      pending = { key, requestId: input.requestId ?? storedRequestId(key) ?? crypto.randomUUID(), session: captureTokenSession() };
+    }
+
     const operation = pending;
     let failedTerminal = false;
     let succeededTerminal = false;
 
+    storeRequestId(key, operation.requestId);
     try {
       const result = await runGeneration({ ...input, requestId: operation.requestId }, signal, (job) => {
         failedTerminal ||= job.state === 'failed' || job.state === 'canceled';
@@ -218,9 +267,14 @@ export function createGenerationRunner() {
       });
 
       if (pending === operation) pending = undefined;
+      storeRequestId(key, undefined);
       return result;
     } catch (error) {
-      if (pending === operation && (failedTerminal || (!succeededTerminal && error instanceof PresentationAPIError && !error.retryable && error.status >= 400))) pending = undefined;
+      if (pending === operation && (failedTerminal || (!succeededTerminal && error instanceof PresentationAPIError && !error.retryable && error.status >= 400))) {
+        pending = undefined;
+        storeRequestId(key, undefined);
+      }
+
       throw error;
     }
   };

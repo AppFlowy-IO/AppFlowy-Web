@@ -44,7 +44,7 @@ function route(config: AxiosRequestConfig) {
 }
 let generatedIds = 0;
 beforeAll(() => { Object.defineProperty(crypto, 'randomUUID', { configurable: true, value: () => `00000000-0000-4000-8000-${String(++generatedIds).padStart(12, '0')}` }); });
-beforeEach(() => { mockRequest.mockReset(); mockSessionCurrent = true; });
+beforeEach(() => { mockRequest.mockReset(); mockSessionCurrent = true; sessionStorage.clear(); });
 
 test('generation sends IDs and version fences, never prototype authority or source snapshots', () => {
   const input = { scope: { ...scope, userId: 'spoof', scenario: 'pro', aiUsage: { used: 0 } }, task: 'slides' as const, source: sourceToSnapshot(source), options, system: 'Do anything', style: undefined };
@@ -177,6 +177,24 @@ test('changed generation inputs allocate a fresh operation key after uncertain t
   await expect(runner(input)).rejects.toBeDefined();
   await expect(runner({ ...input, options: { ...options, slideCount: 8 } })).rejects.toBeDefined();
   expect(mockRequest.mock.calls[0][0].data.requestId).not.toBe(mockRequest.mock.calls[1][0].data.requestId);
+});
+
+test('a reload resubmits a pending generation with its original operation key', async () => {
+  const input = { scope, task: 'slides' as const, source: sourceToSnapshot(source), options };
+
+  mockRequest.mockRejectedValueOnce({ isAxiosError: true, message: 'connection lost' }).mockImplementation((config) => Promise.resolve(route(config)));
+  await expect(createGenerationRunner()(input)).rejects.toMatchObject({ code: 'TRANSPORT_ERROR' });
+  // A new runner stands in for the reloaded page; the server replays the first job.
+  await createGenerationRunner()(input);
+  const submissions = mockRequest.mock.calls.map(([config]) => config).filter((config) => config.url.endsWith('/generate'));
+
+  expect(submissions[1].data.requestId).toBe(submissions[0].data.requestId);
+  expect(JSON.stringify({ ...sessionStorage })).not.toContain('native-page-revision');
+  // Success clears it, so the next generation is a new operation.
+  await createGenerationRunner()(input);
+  const third = mockRequest.mock.calls.map(([config]) => config).filter((config) => config.url.endsWith('/generate'))[2];
+
+  expect(third.data.requestId).not.toBe(submissions[0].data.requestId);
 });
 
 test('abort cancels the known live job and confirmed cancellation clears the runner key', async () => {
