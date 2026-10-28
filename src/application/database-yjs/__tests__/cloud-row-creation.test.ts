@@ -9,7 +9,7 @@ import {
   postDefaultRowCreation,
   postRowCreation,
 } from '@/application/services/js-services/http/atomic-row-creation-api';
-import { readCollabStates } from '@/application/services/js-services/http/collab-api';
+import { collabFullSyncBatch, readCollabStates } from '@/application/services/js-services/http/collab-api';
 import { initSync } from '@/application/services/js-services/sync-protocol';
 import { enqueueOutboxUpdate } from '@/application/sync-outbox';
 import { RowCoverType, Types, YDatabaseCell, YDoc } from '@/application/types';
@@ -58,7 +58,10 @@ jest.mock('@/application/services/js-services/http/atomic-row-creation-api', () 
   postDefaultRowCreation: jest.fn(),
   postRowCreation: jest.fn(),
 }));
-jest.mock('@/application/services/js-services/http/collab-api', () => ({ readCollabStates: jest.fn() }));
+jest.mock('@/application/services/js-services/http/collab-api', () => ({
+  readCollabStates: jest.fn(),
+  collabFullSyncBatch: jest.fn(),
+}));
 jest.mock('@/application/services/js-services/cache', () => ({ createRow: jest.fn() }));
 jest.mock('@/application/sync-outbox', () => ({
   enqueueOutboxUpdate: jest.fn(async () => true),
@@ -212,6 +215,7 @@ it.each([
       [otherViewId, missingAnchorId].forEach((id) => {
         const view = new Y.Map<unknown>();
 
+        view.set('id', id);
         view.set('row_orders', new Y.Array());
         views.set(id, view);
       });
@@ -259,6 +263,102 @@ it('creates and registers a row without restore-state checks', async () => {
     expect(f.orders()).toEqual([{ id: f.intent.rowId }]);
     expect(f.registerRow).toHaveBeenCalledTimes(1);
     expect(atomicRead).not.toHaveBeenCalled();
+    expect(collabFullSyncBatch).not.toHaveBeenCalled();
+  } finally {
+    f.cleanup();
+  }
+});
+
+it.each([false, true])('repairs a server-only legacy view before row creation (seeded=%s)', async (seeded) => {
+  const f = fixture();
+  const calendarId = uuidv4();
+  const previousRow = { id: uuidv4(), height: 60 };
+  const database = f.remote.getMap('data').get('database') as Y.Map<Y.Map<Y.Map<unknown>>>;
+  const calendar = new Y.Map<unknown>();
+
+  database.get('views')!.set(calendarId, calendar);
+  calendar.set('database_id', f.intent.databaseId);
+  calendar.set('name', 'Calendar');
+  calendar.set('layout', 2);
+  calendar.set('created_at', '1763726501');
+  calendar.set('row_orders', new Y.Array());
+  (calendar.get('row_orders') as Y.Array<unknown>).push([previousRow]);
+  calendar.set('field_orders', new Y.Array());
+  f.intent.preserveCellStorage = seeded;
+  const create = (request: Pick<DefaultRowRequest, 'request_id' | 'database_restore_id'>) => {
+    // Match the server's requirement: every raw view must have a readable identity.
+    database.get('views')!.forEach((view, id) => expect(view.get('id')).toBe(id));
+    const localDatabase = f.databaseDoc.getMap('data').get('database') as Y.Map<Y.Map<Y.Map<unknown>>>;
+
+    expect(localDatabase.get('views')!.get(calendarId)!.get('id')).toBe(calendarId);
+    const before = Y.encodeStateVector(f.remote);
+
+    (calendar.get('row_orders') as Y.Array<unknown>).push([{ id: f.intent.rowId }]);
+    const receipt = f.commit(request);
+
+    receipt.result.database_update_v1 = toBase64(Y.encodeStateAsUpdate(f.remote, before));
+    return receipt;
+  };
+
+  jest.mocked(collabFullSyncBatch).mockImplementation(async (_workspace, [item]) => {
+    expect(postDefaultRowCreation).not.toHaveBeenCalled();
+    expect(postRowCreation).not.toHaveBeenCalled();
+    expect(item.collabType).toBe(Types.Database);
+    expect(item.objectId).toBe(f.intent.databaseId);
+    Y.applyUpdate(f.remote, item.docState);
+    return [{
+      objectId: item.objectId, collabType: Types.Database,
+      missingUpdate: new Uint8Array([0, 0]), serverStateVector: Y.encodeStateVector(f.remote),
+    }];
+  });
+  jest.mocked(postDefaultRowCreation).mockImplementation(async (_owner, _database, request) => create(request));
+  jest.mocked(postRowCreation).mockImplementation(async (_owner, _path, request) =>
+    create(request as CreateDatabaseRowRequest)
+  );
+  try {
+    await expect(createCloudRow(f.intent)).resolves.toBe(f.intent.rowId);
+    expect(collabFullSyncBatch).toHaveBeenCalledTimes(1);
+    expect(readCollabStates).toHaveBeenCalledTimes(2); // Independent reads before and after repair.
+    expect(calendar.get('created_at')).toBe('1763726501');
+    expect((calendar.get('row_orders') as Y.Array<unknown>).toArray()).toEqual([previousRow, { id: f.intent.rowId }]);
+    expect(f.orders()).toEqual([{ id: f.intent.rowId }]);
+  } finally {
+    f.cleanup();
+  }
+});
+
+it('does not create a row or publish the local repair after a restore during full-sync', async () => {
+  const f = fixture();
+  const database = f.remote.getMap('data').get('database') as Y.Map<Y.Map<Y.Map<unknown>>>;
+  const remoteView = database.get('views')!.get(f.intent.sourceViewId)!;
+  let finish!: () => void;
+
+  remoteView.delete('id');
+  remoteView.set('database_id', f.intent.databaseId);
+  remoteView.set('name', 'Legacy');
+  remoteView.set('layout', 2);
+  remoteView.set('field_orders', new Y.Array());
+  jest.mocked(collabFullSyncBatch).mockImplementation(async (_workspace, [item]) => {
+    await new Promise<void>((resolve) => { finish = resolve; });
+    return [{
+      objectId: item.objectId, collabType: Types.Database,
+      missingUpdate: new Uint8Array([0, 0]), serverStateVector: Y.encodeStateVector(f.remote),
+    }];
+  });
+  try {
+    const localBefore = Y.encodeStateAsUpdate(f.databaseDoc);
+    const pending = createCloudRow(f.intent);
+
+    // Let the source read and the local persistence read reach the held full-sync.
+    for (let turn = 0; turn < 20 && !finish; turn++) await Promise.resolve();
+    expect(collabFullSyncBatch).toHaveBeenCalledTimes(1);
+    f.databaseDoc.databaseRestoreId = uuidv4();
+    finish();
+    await expect(pending).rejects.toThrow('owner changed');
+    expect(postDefaultRowCreation).not.toHaveBeenCalled();
+    expect(postRowCreation).not.toHaveBeenCalled();
+    expect(f.orders()).toEqual([]);
+    expect(Y.encodeStateAsUpdate(f.databaseDoc)).toEqual(localBefore);
   } finally {
     f.cleanup();
   }
