@@ -1,8 +1,14 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { ComponentProps } from 'react';
 
-import { CHART_COLORS, ChartAggregationType, ChartDataItem } from '@/application/database-yjs/chart.type';
+import {
+  CHART_COLORS,
+  CHART_EMPTY_VALUE_COLOR,
+  ChartAggregationType,
+  ChartDataItem,
+} from '@/application/database-yjs/chart.type';
 import { BarChartWidget } from '@/components/database/chart/widgets/BarChart';
+import { barCategoryAxisLayout } from '@/components/database/chart/widgets/chartAxis';
 import { getChartTooltipPosition } from '@/components/database/chart/widgets/ChartTooltip';
 
 // Real en.json strings, so the assertions cover the translation keys too.
@@ -16,6 +22,11 @@ jest.mock('react-i18next', () => {
   });
   return { useTranslation: () => ({ t: i18n.t.bind(i18n) }) };
 });
+
+// jsdom has no canvas: 6px per character stands in for the caption font.
+jest.mock('@/components/database/chart/widgets/chartTextMeasure', () => ({
+  measureCategoryLabelWidth: (text: string) => text.length * 6,
+}));
 
 class ResizeObserverMock implements ResizeObserver {
   constructor(private readonly callback: ResizeObserverCallback) {}
@@ -157,10 +168,11 @@ describe('BarChartWidget', () => {
     const valueLabels = Array.from(container.querySelectorAll('.recharts-label-list text'));
 
     expect(valueLabels.map((label) => label.textContent)).toEqual(['3', '2.5', '0']);
+    // The "No {field}" category is grey on every chart.
     expect(valueLabels.map((label) => label.getAttribute('fill'))).toEqual([
       CHART_COLORS[0],
       OPTION_COLOR,
-      CHART_COLORS[2],
+      CHART_EMPTY_VALUE_COLOR,
     ]);
     valueLabels.forEach((label, index) => {
       // Recharts floors the bar offset inside its band, so allow a pixel.
@@ -206,19 +218,51 @@ describe('BarChartWidget', () => {
     expect(texts(container, '.recharts-xAxis .recharts-cartesian-axis-tick text')).toEqual(['Empty']);
   });
 
-  it('tilts the category labels once there are more than six', () => {
+  it('draws square bars, 20px wide up to 20 bars and 15px past that', () => {
     const items = (count: number) =>
-      Array.from({ length: count }, (_, index) => ({ label: `Category ${index}`, value: index, rowIds: [] }));
-    const { container, rerender } = renderBarChart({ data: items(6) });
-    const transforms = () =>
-      Array.from(container.querySelectorAll('.recharts-xAxis .recharts-cartesian-axis-tick text')).map((label) =>
-        label.getAttribute('transform')
-      );
+      Array.from({ length: count }, (_, index) => ({ label: `C${index}`, value: index + 1, rowIds: [] }));
+    const { container, rerender } = renderBarChart({ data: items(20) });
+    const paths = () => Array.from(container.querySelectorAll('.recharts-bar-rectangle path'));
 
-    expect(transforms().every((transform) => transform === null)).toBe(true);
+    expect(paths().every((path) => path.getAttribute('width') === '20')).toBe(true);
+    // A rounded corner would add arcs to the outline.
+    expect(paths().some((path) => /A/.test(path.getAttribute('d') ?? ''))).toBe(false);
 
-    rerender(<BarChartWidget data={items(7)} aggregationType={ChartAggregationType.Count} />);
-    expect(transforms().every((transform) => transform?.startsWith('rotate(-28.64'))).toBe(true);
+    rerender(<BarChartWidget data={items(21)} aggregationType={ChartAggregationType.Count} />);
+    expect(paths().every((path) => path.getAttribute('width') === '15')).toBe(true);
+  });
+
+  it('tilts the category labels once a slot is narrower than 80px, inside a band measured to hold them', () => {
+    const items = (count: number) =>
+      Array.from({ length: count }, (_, index) => ({ label: `A long category ${index}`, value: index, rowIds: [] }));
+    const ticks = () => Array.from(container.querySelectorAll('.recharts-xAxis .recharts-cartesian-axis-tick text'));
+    // 742 / 9 = 82.4px per slot: upright, 8px under the axis in the 40px band.
+    const { container, rerender } = renderBarChart({ data: items(9) });
+
+    expect(ticks().every((tick) => tick.getAttribute('transform') === null)).toBe(true);
+    expect(Number(ticks()[0].getAttribute('y'))).toBe(PLOT_HEIGHT + 17);
+
+    // 742 / 10 = 74.2px per slot: tilted about each label's center.
+    rerender(<BarChartWidget data={items(10)} aggregationType={ChartAggregationType.Count} />);
+    const layout = barCategoryAxisLayout(
+      items(10).map((item) => item.label),
+      PLOT_WIDTH / 10,
+      (text) => text.length * 6
+    );
+    const plotHeight = HEIGHT - layout.height;
+
+    expect(layout.tilted).toBe(true);
+    ticks().forEach((tick) => {
+      const x = tick.getAttribute('x');
+      const y = Number(tick.getAttribute('y'));
+
+      expect(y).toBeCloseTo(plotHeight + layout.labelCenter);
+      expect(tick.getAttribute('transform')).toBe(`rotate(${(-0.5 * 180) / Math.PI} ${x} ${y})`);
+    });
+
+    // The plot gives up the band's height, so the hover column and grid end where the band starts.
+    fireEvent.mouseMove(screen.getByTestId('bar-chart-plot'), { clientX: AXIS_WIDTH + 10, clientY: 100 });
+    expect(parseFloat(screen.getByTestId('bar-chart-hover-background').style.height)).toBeCloseTo(plotHeight);
   });
 
   it('lets the labels paint past the chart surface like desktop', () => {
@@ -298,7 +342,7 @@ describe('BarChartWidget', () => {
     expect(onBarClick).toHaveBeenLastCalledWith({ ...ITEMS[1], color: OPTION_COLOR });
 
     fireEvent.click(plot, { clientX: segmentCenter(2), clientY: 300 });
-    expect(onBarClick).toHaveBeenLastCalledWith({ ...ITEMS[2], color: CHART_COLORS[2] });
+    expect(onBarClick).toHaveBeenLastCalledWith({ ...ITEMS[2], color: CHART_EMPTY_VALUE_COLOR });
 
     fireEvent.click(plot, { clientX: 10, clientY: 300 });
     expect(onBarClick).toHaveBeenCalledTimes(3);

@@ -55,14 +55,13 @@ export interface ChartDataItem {
   rowIds: RowId[];
   /**
    * Fixed fill color: the option's tag fill color or a checkbox color. Left
-   * undefined for every other category, which takes the palette color for its
-   * index in the list a widget renders (`resolveChartItemColor`), like desktop.
+   * undefined for every other category, which takes the empty-value grey or
+   * the palette color for its index in the list a widget renders
+   * (`resolveChartItemColor`), like desktop. The donut only takes the hue of
+   * an option fill, snapped onto its own palette.
    */
   color?: string;
-  /**
-   * Text color for labels drawn in the category's color (donut leader labels):
-   * the option's tag text color. Falls back to the fill color.
-   */
+  /** The option's tag text color. */
   textColor?: string;
   /** True for "No {field}" category */
   isEmptyCategory?: boolean;
@@ -91,10 +90,45 @@ export const CHART_COLORS = [
 ];
 
 /**
+ * The donut's palette (desktop's `ChartColorUtils.donutPalette`): the
+ * design's single hue ramp, in its own order, so slices read as one
+ * progression. The ramp's repeated orange is listed once, and it ends on the
+ * two greys, the second being {@link CHART_EMPTY_VALUE_COLOR}. The other
+ * charts keep {@link CHART_COLORS}.
+ */
+export const DONUT_CHART_COLORS = [
+  '#FFB6B6', // Pink
+  '#FFD39A', // Orange
+  '#FFE2A1', // Apricot
+  '#FFEC8E', // Yellow
+  '#E7EB74', // Lime
+  '#D5E67D', // Yellow green
+  '#C4EC89', // Pistachio
+  '#9BE98F', // Green
+  '#85E2BA', // Mint
+  '#83E7F2', // Cyan
+  '#8BCBFC', // Sky blue
+  '#91B5FB', // Blue
+  '#ACACFF', // Indigo
+  '#C2A5FC', // Violet
+  '#E1AAFC', // Lavender
+  '#F5A8F2', // Magenta
+  '#F6A3C8', // Rose
+  '#B8B8B8', // Grey
+  '#B0B5BF', // Grey
+];
+
+/**
  * Checkbox-specific colors (desktop's `ChartColorUtils`)
  */
 export const CHECKBOX_CHECKED_COLOR = '#5AD8A6'; // Green
 export const CHECKBOX_UNCHECKED_COLOR = '#8F959E'; // Gray
+
+/** Fill of the "No {field}" category on every chart (desktop's `emptyValueColor`). */
+export const CHART_EMPTY_VALUE_COLOR = '#B0B5BF';
+
+/** Stroke of the line chart's single series (desktop's `lineSeriesColor`). */
+export const CHART_LINE_SERIES_COLOR = '#91B5FB';
 
 /**
  * YJS keys for chart layout settings. These are the keys desktop writes: the

@@ -2,6 +2,7 @@ import { memo, useMemo, useRef, useState } from 'react';
 
 import { ChartAggregationType, ChartClickItem, ChartDataItem } from '@/application/database-yjs/chart.type';
 import { cn } from '@/lib/utils';
+import { getPlatform } from '@/utils/platform';
 
 import { ChartNoValidData } from './ChartNoValidData';
 import { ChartTitle, useChartAggregationLabel } from './ChartTitle';
@@ -22,8 +23,13 @@ interface HorizontalBarChartWidgetProps {
   aggregationType?: ChartAggregationType;
 }
 
-/** Category label column left of the bars (desktop's `labelWidth`). */
-const LABEL_WIDTH = 120;
+/**
+ * Category label column left of the bars (desktop's `labelWidth` field). The
+ * grid lines, bars, value axis and tooltip all start after it. Desktop's
+ * `build` shadows the field with a stale 120 for the grid lines, the bar area
+ * width and the tooltip, which leaves its bars 20px left of the grid.
+ */
+const LABEL_WIDTH = getPlatform().isMobile ? 60 : 100;
 /** Room right of the bar area for the value after the longest bar (desktop's `_rightPadding`). */
 const VALUE_WIDTH = 40;
 /** Desktop anchors the tooltip 110px (half its width plus 20) past the end of the bar. */
@@ -121,7 +127,7 @@ function HorizontalBarChartContent({ data, onBarClick, aggregationType }: Horizo
                     >
                       <div
                         data-testid='horizontal-bar-chart-bar'
-                        className='h-6 max-h-full shrink-0 rounded-r-100 transition-[width] duration-200 ease-linear'
+                        className='h-4 max-h-full shrink-0 transition-[width] duration-200 ease-linear'
                         style={{ width: barWidth, backgroundColor: color }}
                       />
                       <span

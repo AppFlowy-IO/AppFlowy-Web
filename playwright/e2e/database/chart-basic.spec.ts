@@ -239,8 +239,8 @@ test.describe('Database Chart View Basic', () => {
     await addChartViewTab(page);
     await waitForChartReady(page);
 
-    // Then: the Recharts SVG does not clip, so labels rotated below the axis
-    // band (more than six categories) and wide labels keep their first letters
+    // Then: the Recharts SVG does not clip, so the ends of labels tilted in
+    // narrow slots and wide value labels keep their first letters
     await expect(page.locator('[data-testid="bar-chart-plot"] .recharts-surface')).toHaveCSS('overflow', 'visible');
   });
 

@@ -1,6 +1,11 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 
-import { CHART_COLORS, ChartAggregationType, ChartDataItem } from '@/application/database-yjs/chart.type';
+import {
+  CHART_COLORS,
+  CHART_EMPTY_VALUE_COLOR,
+  ChartAggregationType,
+  ChartDataItem,
+} from '@/application/database-yjs/chart.type';
 import { HorizontalBarChartWidget } from '@/components/database/chart/widgets/HorizontalBarChart';
 
 jest.mock('react-i18next', () => {
@@ -96,16 +101,21 @@ describe('HorizontalBarChartWidget', () => {
   it('sizes bars against the rounded axis maximum and draws the value axis', () => {
     render(<HorizontalBarChartWidget data={data} />);
 
-    // max 3 → axis max 4; the bar area is 800 - 120 (labels) - 40 (value room) = 640px.
+    // max 3 → axis max 4; the bar area is 800 - 100 (labels) - 40 (value room) = 660px.
     const bars = screen.getAllByTestId('horizontal-bar-chart-bar');
 
-    expect(bars.map((bar) => bar.style.width)).toEqual(['480px', '256px', '0px']);
-    // Fixed option color first, then the palette by position in the rendered list.
+    expect(bars.map((bar) => bar.style.width)).toEqual(['495px', '264px', '0px']);
+    // Fixed option color first, then the palette by position in the rendered list; "No …" is grey.
     expect(bars.map((bar) => bar.style.backgroundColor)).toEqual([
       rgb('#E86452'),
       rgb(CHART_COLORS[1]),
-      rgb(CHART_COLORS[2]),
+      rgb(CHART_EMPTY_VALUE_COLOR),
     ]);
+    // 16px tall with square ends.
+    bars.forEach((bar) => {
+      expect(bar.className).toContain('h-4');
+      expect(bar.className).not.toMatch(/rounded/);
+    });
 
     expect(screen.getAllByTestId('horizontal-bar-chart-x-label').map((label) => label.textContent)).toEqual([
       '0',
@@ -116,7 +126,12 @@ describe('HorizontalBarChartWidget', () => {
     ]);
     expect(
       screen.getAllByTestId('horizontal-bar-chart-grid-line').map((line) => Number(line.getAttribute('x1')))
-    ).toEqual([120, 280, 440, 600, 760]);
+    ).toEqual([100, 265, 430, 595, 760]);
+    // The label column, the grid and the value axis share one 100px offset.
+    rows().forEach((row) => expect((row.firstElementChild as HTMLElement).style.width).toBe('100px'));
+    expect(
+      (screen.getAllByTestId('horizontal-bar-chart-x-label')[0].parentElement as HTMLElement).style.paddingLeft
+    ).toBe('100px');
   });
 
   it('floors the decade like desktop, so a max of exactly 800 gets a 1000 axis', () => {
@@ -137,8 +152,8 @@ describe('HorizontalBarChartWidget', () => {
       '750',
       '1000',
     ]);
-    // 80% and 20% of the 640px bar area.
-    expect(screen.getAllByTestId('horizontal-bar-chart-bar').map((bar) => bar.style.width)).toEqual(['512px', '128px']);
+    // 80% and 20% of the 660px bar area.
+    expect(screen.getAllByTestId('horizontal-bar-chart-bar').map((bar) => bar.style.width)).toEqual(['528px', '132px']);
   });
 
   it('truncates long category labels like desktop', () => {
@@ -168,9 +183,9 @@ describe('HorizontalBarChartWidget', () => {
 
     expect(tooltip.textContent).toContain('Plan B');
     expect(tooltip.textContent).toContain('1');
-    // Anchor x = 120 + 0.4 × 640 + 110 = 486, y = 1.5 / 3 × (400 - 32) = 184,
+    // Anchor x = 100 + 0.4 × 660 + 110 = 474, y = 1.5 / 3 × (400 - 32) = 184,
     // then centered on the 180×80 box and lifted 20px.
-    expect(tooltip.parentElement?.style.left).toBe('396px');
+    expect(tooltip.parentElement?.style.left).toBe('384px');
     expect(tooltip.parentElement?.style.top).toBe('124px');
 
     expect(barAreas()[1].className).toContain('bg-fill-content-hover');
@@ -188,7 +203,7 @@ describe('HorizontalBarChartWidget', () => {
 
     fireEvent.mouseEnter(rows()[0]);
 
-    // Anchor (710, 61.3) would put the box past the right and top edges.
+    // Anchor (705, 61.3) would put the box past the right and top edges.
     const position = screen.getByTestId('chart-tooltip').parentElement;
 
     expect(position?.style.left).toBe(`${CHART_WIDTH - 180 - 8}px`);

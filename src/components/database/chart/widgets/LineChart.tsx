@@ -1,7 +1,6 @@
 import { memo, MouseEvent, useCallback, useMemo, useState } from 'react';
 import {
   CartesianGrid,
-  Dot,
   LabelList,
   LabelProps,
   Line,
@@ -11,14 +10,19 @@ import {
   YAxis,
 } from 'recharts';
 
-import { ChartAggregationType, ChartClickItem, ChartDataItem } from '@/application/database-yjs/chart.type';
+import {
+  CHART_LINE_SERIES_COLOR,
+  ChartAggregationType,
+  ChartClickItem,
+  ChartDataItem,
+} from '@/application/database-yjs/chart.type';
 import { cn } from '@/lib/utils';
 
 import {
   AXIS_LINE_PROPS,
   AxisTickProps,
-  CATEGORY_AXIS_HEIGHT,
   GRID_LINE_PROPS,
+  lineCategoryAxisLayout,
   NO_MARGIN,
   PLOT_SURFACE_OVERFLOW_CLASS,
   renderCategoryAxisTick,
@@ -45,11 +49,8 @@ interface LineChartWidgetProps {
 
 /** fl_chart's `touchSpotThreshold`: a point reacts within 10px of the pointer, measured along x. */
 const TOUCH_SPOT_THRESHOLD = 10;
-/** Dot radius, grown while its point is hovered. */
-const DOT_RADIUS = 4;
-const HOVERED_DOT_RADIUS = 6;
-/** Width of the white ring fl_chart paints just outside each dot. */
-const DOT_RING_WIDTH = 2;
+/** fl_chart's default `barWidth`. */
+const LINE_STROKE_WIDTH = 2;
 /** Gap `SideTitleWidget` leaves between a value-axis label and the plot. */
 const VALUE_AXIS_LABEL_GAP = 8;
 /** Each point's value label box (body 14/20) starts 28px above the point. */
@@ -101,12 +102,13 @@ interface LineChartBodyProps extends LineChartWidgetProps {
 
 /**
  * Desktop's `_LineChartContent`: the vertical aggregation title, then a
- * straight theme-colored line through points centered in equal segments.
- * Hovering within 10px of a point (inside the plot) grows its dot, draws a
- * dashed line through it and shows the tooltip; clicking it opens its rows.
+ * straight line in the series color through points centered in equal
+ * segments, with no per-point markers. Hovering within 10px of a point (inside
+ * the plot) draws a dashed line through it and shows the tooltip; clicking it
+ * opens its rows.
  *
- * Desktop also configures a larger "touched spot" ring and fl_chart value
- * labels, but neither ever paints (`handleBuiltInTouches: false` leaves
+ * Desktop also configures a "touched spot" dot and fl_chart value labels, but
+ * neither ever paints (`handleBuiltInTouches: false` leaves
  * `showingIndicators` empty, and the label spots carry index -1), so they are
  * not drawn here either.
  */
@@ -116,7 +118,7 @@ function LineChartBody({ data, onPointClick, aggregationType, width = 0, height 
 
   const points = useMemo(() => data.map((item, index) => ({ item, color: resolveChartItemColor(item, index) })), [data]);
   const rows = useMemo(() => data.map((item, index) => ({ index, value: item.value })), [data]);
-  const categoryTick = useMemo(() => renderCategoryAxisTick(data.map((item) => item.label)), [data]);
+  const labels = useMemo(() => data.map((item) => item.label), [data]);
   const axis = useMemo(() => {
     const maxValue = data.reduce((max, item) => Math.max(max, item.value), 0);
     // `_computeMaxY` treats an all-zero series as a maximum of 1.
@@ -135,7 +137,13 @@ function LineChartBody({ data, onPointClick, aggregationType, width = 0, height 
   const titleWidth = aggregationLabel ? CHART_TITLE_VERTICAL_WIDTH : 0;
   const chartWidth = Math.max(0, width - titleWidth);
   const plotWidth = Math.max(0, chartWidth - VALUE_AXIS_WIDTH);
-  const plotHeight = Math.max(0, height - CATEGORY_AXIS_HEIGHT);
+  // One label per point across the plot; the band grows to hold the labels once they tilt.
+  const categoryAxis = useMemo(
+    () => lineCategoryAxisLayout(labels, labels.length > 0 ? plotWidth / labels.length : plotWidth),
+    [labels, plotWidth]
+  );
+  const categoryTick = useMemo(() => renderCategoryAxisTick(labels, categoryAxis), [labels, categoryAxis]);
+  const plotHeight = Math.max(0, height - categoryAxis.height);
   const activeIndex = hoveredIndex !== null && hoveredIndex < points.length ? hoveredIndex : null;
   const hovered = activeIndex === null ? null : points[activeIndex];
 
@@ -147,25 +155,6 @@ function LineChartBody({ data, onPointClick, aggregationType, width = 0, height 
   const gridLines = useCallback(
     () => axis.gridValues.map((value) => plotHeight * (1 - value / axis.axisMax)),
     [axis, plotHeight]
-  );
-
-  // fl_chart paints the white ring outside the fill: a circle 1px larger with
-  // a 2px stroke leaves exactly `radius` of fill. The ring is white in both
-  // themes on desktop (`Colors.white`), like `--icon-on-fill`.
-  const renderDot = useCallback(
-    ({ key, cx, cy, index }: { key?: string; cx?: number; cy?: number; index?: number }) => (
-      <Dot
-        key={key}
-        className='recharts-line-dot'
-        cx={cx}
-        cy={cy}
-        r={(index === activeIndex ? HOVERED_DOT_RADIUS : DOT_RADIUS) + DOT_RING_WIDTH / 2}
-        fill={index === undefined ? undefined : points[index]?.color}
-        stroke='var(--icon-on-fill)'
-        strokeWidth={DOT_RING_WIDTH}
-      />
-    ),
-    [activeIndex, points]
   );
 
   // fl_chart only reports pointers over the plot, and picks the point nearest
@@ -236,7 +225,7 @@ function LineChartBody({ data, onPointClick, aggregationType, width = 0, height 
             domain={[-0.5, rows.length - 0.5]}
             ticks={rows.map((row) => row.index)}
             interval={0}
-            height={CATEGORY_AXIS_HEIGHT}
+            height={categoryAxis.height}
             tickLine={false}
             tickSize={0}
             tickMargin={0}
@@ -258,10 +247,10 @@ function LineChartBody({ data, onPointClick, aggregationType, width = 0, height 
           <Line
             type='linear'
             dataKey='value'
-            stroke='var(--fill-theme-thick)'
-            strokeWidth={3}
+            stroke={CHART_LINE_SERIES_COLOR}
+            strokeWidth={LINE_STROKE_WIDTH}
             strokeLinecap='round'
-            dot={renderDot}
+            dot={false}
             activeDot={false}
             isAnimationActive={false}
           >
