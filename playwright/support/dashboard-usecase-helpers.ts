@@ -20,7 +20,13 @@ import { TextFilterCondition } from '../../src/application/database-yjs/fields/t
 import { ViewLayout } from '../../src/application/types';
 
 import { mockProSubscription } from './chart-test-helpers';
-import { canonicalJson, equalRowWidths, readServerDatabaseDoc, readServerRowDoc } from './dashboard-shared-helpers';
+import {
+  canonicalJson,
+  equalRowWidths,
+  readServerDatabaseDoc,
+  readServerRowDoc,
+  waitForDashboardWidgetsLoaded,
+} from './dashboard-shared-helpers';
 import {
   addFixtureDatabase,
   addGlobalFilter,
@@ -988,7 +994,14 @@ async function waitForDashboardWidgets(scope: Page, owner?: Page) {
 
   expect(count, 'the dashboard lost its seeded widgets').toBeGreaterThanOrEqual(seeded);
 
-  await expect(DashboardSelectors.widgets(scope)).toHaveCount(count, { timeout: FIXTURE_TIMEOUT });
+  const widgets = DashboardSelectors.widgets(scope);
+
+  await expect(widgets).toHaveCount(count, { timeout: FIXTURE_TIMEOUT });
+  // A DOM-visible widget can be below the fold, where its content intentionally
+  // has not started. Visit every fixture widget before requiring all of them.
+  await waitForDashboardWidgetsLoaded(widgets, FIXTURE_TIMEOUT);
+  if (count > 0) await widgets.first().scrollIntoViewIfNeeded();
+
   await expect(scope.getByTestId('dashboard-widget-placeholder').and(scope.locator('[data-reason="loading"]'))).toHaveCount(
     0,
     { timeout: FIXTURE_TIMEOUT }

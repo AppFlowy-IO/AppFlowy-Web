@@ -46,6 +46,7 @@ import {
   plainYjs,
   pressEscapeUntilHidden,
   readServerDatabaseDoc,
+  waitForDashboardWidgetsLoaded,
   WIDGET_TIMEOUT_MS,
 } from './dashboard-shared-helpers';
 import { ensurePageExpandedByViewId, expandSpaceByName } from './page-utils';
@@ -2039,9 +2040,7 @@ export async function openWidgetMenu(page: Page, widget: Locator) {
   await expect(widget).toBeVisible({ timeout: WIDGET_TIMEOUT_MS });
   // A loading widget swaps its header for the loaded view's header: a menu
   // opened on the loading header can close in that swap.
-  await expect(widget.locator('[data-testid="dashboard-widget-placeholder"][data-reason="loading"]')).toHaveCount(0, {
-    timeout: WIDGET_TIMEOUT_MS,
-  });
+  await waitForDashboardWidgetsLoaded(widget);
   const title = widget.getByTestId('dashboard-widget-title-button');
 
   if ((await title.count()) > 0) {

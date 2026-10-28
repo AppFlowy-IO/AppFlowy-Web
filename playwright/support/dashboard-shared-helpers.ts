@@ -19,6 +19,16 @@ import { TestConfig } from './test-config';
 export const WIDGET_TIMEOUT_MS = 30_000;
 export const WIDGET_TIMEOUT = { timeout: WIDGET_TIMEOUT_MS };
 
+/** Deferred widget content starts in the viewport; visit each widget before requiring loaded headers. */
+export async function waitForDashboardWidgetsLoaded(widgets: Locator, timeout = WIDGET_TIMEOUT_MS) {
+  for (const widget of await widgets.all()) {
+    await widget.scrollIntoViewIfNeeded({ timeout });
+    await expect(widget.locator('[data-testid="dashboard-widget-placeholder"][data-reason="loading"]')).toHaveCount(0, {
+      timeout,
+    });
+  }
+}
+
 export function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -100,6 +110,7 @@ const API_BUSY_ATTEMPTS = 6;
 
 /** The server's storage write queue is full: the same request succeeds shortly. */
 const API_QUEUE_FULL = /write queue is full\. Retry shortly/;
+
 function isBusy(body: ApiEnvelope<unknown> | null | undefined) {
   // Legacy view creation can commit its folder mapping before publication
   // returns RetryLater. Repeating that request would create another view.
