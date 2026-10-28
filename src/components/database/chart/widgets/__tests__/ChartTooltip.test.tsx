@@ -34,6 +34,12 @@ describe('ChartTooltip', () => {
     expect(tooltip.textContent).not.toContain('12.9');
     expect(tooltip.textContent).toContain('Click to view data');
   });
+
+  it('divides the two rows with the secondary border color, which stays quiet on the inverse surface', () => {
+    render(<ChartTooltip label='Plan A' value={1} color='#5B8FF9' />);
+
+    expect(screen.getByTestId('chart-tooltip-divider').className).toContain('bg-border-secondary');
+  });
 });
 
 describe('getChartTooltipPosition', () => {

@@ -68,10 +68,6 @@ jest.mock('@/components/_shared/modal', () => ({
     open ? <div data-testid='relation-modal'>{children}</div> : null,
 }));
 
-jest.mock('@/components/database/components/property/relation/RelationView', () => ({
-  RelationView: ({ view }: { view: View }) => <span>{view.name}</span>,
-}));
-
 jest.mock('@/components/_shared/view-icon/PageIcon', () => ({
   __esModule: true,
   default: () => <span data-testid='page-icon' />,
@@ -254,6 +250,37 @@ describe('RelationCreationDialog', () => {
 
     expect(getWorkspaceDatabaseCatalog).toHaveBeenCalledWith('workspace-1');
     expect(loadViewMeta).not.toHaveBeenCalled();
+  });
+
+  it('captions each database with where it lives, eliding a deep path', async () => {
+    const space = makeView({ viewId: 'space', name: 'General', databaseId: '' });
+    const projects = makeView({ viewId: 'projects', name: 'Projects', databaseId: '' });
+
+    mockViews(defaultViewsById);
+    mockContext({
+      loadViews: jest.fn(async () => [
+        {
+          ...space,
+          children: [
+            { ...currentContainer, children: [currentGrid] },
+            { ...projects, children: [{ ...relatedContainer, children: [relatedGrid] }] },
+          ],
+        },
+      ]),
+    });
+
+    renderDialog();
+    await openDatabaseDropdown();
+
+    // Desktop's `DatabaseMetaItem` puts `ViewAncestorState.pathString` under
+    // the name, the same text the relation field's own picker shows.
+    expect((await screen.findByTestId('relation-database-path-current-database')).textContent).toBe(
+      'General / To-dos'
+    );
+    expect(screen.getByTestId('relation-database-path-related-database').textContent).toBe(
+      'General / ... / Product roadmap'
+    );
+    expect(screen.getByTestId('relation-candidate-related-database').textContent).toContain('Product roadmap');
   });
 
   it('keeps the candidate list closed until the trigger is used', async () => {

@@ -54,6 +54,11 @@ function indexViews(views: View[]): Map<string, IndexedView> {
   return index;
 }
 
+/** Desktop elides the middle of a deep path: `first / ... / last`. */
+export function formatCandidatePath(path: string[]) {
+  return (path.length > 2 ? [path[0], '...', path[path.length - 1]] : path).join(' / ');
+}
+
 function candidatePath(entry: IndexedView | undefined, primaryViewId: string, container: View): string[] {
   if (entry) {
     const path = entry.view.view_id === primaryViewId ? entry.ancestry.slice(0, -1) : entry.ancestry;

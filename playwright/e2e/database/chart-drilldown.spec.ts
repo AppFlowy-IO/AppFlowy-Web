@@ -3,12 +3,12 @@
  *
  * Verifies the hover tooltip and the `ChartRowListPopup` flow: hovering a bar
  * shows desktop's tooltip (category, value, "Click to view data"); clicking it
- * opens an MUI Dialog whose title shows the category label and its row count,
- * with the X-Axis filter chip and the category's rows; Escape closes the
- * dialog. Like desktop's `_showRowListPopup`, a category without rows (the
+ * opens a dialog titled with the category label, the category as an X-Axis
+ * filter chip, and the category's rows in a grid; Escape closes the dialog.
+ * Like desktop's `_showRowListPopup`, a category without rows (the
  * always-present "No {field}" bucket of a fully tagged select field) opens
  * nothing. Guards `src/components/database/chart/ChartProvider.tsx`
- * (drillDownItem state) and `ChartRowListPopup.tsx` (Dialog layout / rows).
+ * (drillDownItem state) and `ChartRowListPopup.tsx` (layout / rows).
  */
 import { expect, test } from '@playwright/test';
 
@@ -66,13 +66,14 @@ test.describe('Chart drilldown', () => {
     // When: the user clicks that bar
     await clickFirstBar(page);
 
-    // Then: the drilldown dialog shows the category, its row count, the
-    // X-Axis field chip and the category's only row
+    // Then: the drilldown dialog shows the category, the X-Axis field's
+    // filter chip for it and the category's only row
     await waitForDrilldownOpen(page);
-    await expect(ChartDrilldownSelectors.title(page)).toContainText('Option A');
-    await expect(ChartDrilldownSelectors.title(page)).toContainText('(1 rows)');
-    await expect(ChartDrilldownSelectors.dialog(page).getByText('Type', { exact: true })).toBeVisible();
-    await expect(ChartDrilldownSelectors.rows(page)).toHaveText(['Alpha']);
+    await expect(ChartDrilldownSelectors.title(page)).toHaveText('Option A');
+    await expect(ChartDrilldownSelectors.filterChips(page)).toHaveCount(1);
+    await expect(ChartDrilldownSelectors.filterChips(page)).toContainText('Type');
+    await expect(ChartDrilldownSelectors.filterChips(page)).toContainText('Option A');
+    await expect(ChartDrilldownSelectors.rowTitles(page)).toHaveText(['Alpha']);
   });
 
   test('Escape closes the drilldown dialog', async ({ page, request }) => {

@@ -1,7 +1,8 @@
 Feature: Database side peek entry points
 
-  Rows open in a nonmodal side peek, except calendar and timeline rows which
-  start centered. Each shows the row that was picked. Mirrors desktop
+  Rows open in a nonmodal side peek, except timeline rows which start
+  centered. Calendar events open in the side peek too, like desktop PR #1531.
+  Each shows the row that was picked. Mirrors desktop
   SP6 (list, gallery and feed rows) and the list row's hover peek button
   (desktop PR #1475), and covers the entry points desktop has no hover
   control for: board cards and keyboard selection, the calendar event popover
@@ -57,25 +58,29 @@ Feature: Database side peek entry points
     And I select the board card "Birch" with the arrow keys and press Enter
     Then the peek is open in side mode showing "Birch"
 
-  Scenario: A calendar event expands from its popover into the center peek
+  # Desktop PR #1531: the popover's open button is "Open as side peek", and a
+  # temporary center choice does not carry over to the next opening.
+  Scenario: A calendar event expands from its popover into the side peek
     Given I am signed in for side peek testing
     And I have created a calendar named "Peek Calendar" with events "Launch, Review"
     When I open the row "Launch" in the peek from its calendar event
-    Then the peek is open in center mode showing "Launch"
-    When I switch the open row to "Side peek"
     Then the peek is open in side mode showing "Launch"
-    When I close the peek with the close button
-    And I open the row "Launch" in the peek from its calendar event
+    And the peek has no backdrop
+    When I switch the open row to "Center peek"
     Then the peek is open in center mode showing "Launch"
+    When I close the peek by clicking the backdrop
+    And I open the row "Launch" in the peek from its calendar event
+    Then the peek is open in side mode showing "Launch"
 
-  Scenario: A calendar No Date row opens the center peek
+  # Desktop opens undated rows through `showEventDetails`, a side peek.
+  Scenario: A calendar No Date row opens the side peek
     Given I am signed in for side peek testing
     And I have created a calendar named "Peek No Date" with events "Launch"
     And the calendar has an undated row "Backlog"
     When I open the No Date list
     Then the No Date list shows 1 undated row
     When I open the undated row "Backlog" from the No Date list
-    Then the peek is open in center mode showing "Backlog"
+    Then the peek is open in side mode showing "Backlog"
 
   # One category keeps bar 1 unambiguous: a select field always draws its
   # 0-row "No Type" bar (desktop parity), but it sorts last, so bar 1 stays

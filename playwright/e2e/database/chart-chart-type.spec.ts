@@ -8,7 +8,7 @@
  *
  *  - Bar            → Recharts `.recharts-bar-rectangle` per category
  *  - Horizontal Bar → plain `horizontal-bar-chart-row` elements (no Recharts)
- *  - Line           → Recharts `.recharts-line` with a dot per category
+ *  - Line           → Recharts `.recharts-line`, drawn without point markers
  *  - Donut          → `donut-chart-section`s with leader labels, the total in
  *                     the hole and a clickable legend
  *
@@ -182,12 +182,13 @@ test.describe('Chart settings — Chart type', () => {
     await expect(ChartSettingsSelectors.panel(page)).toBeVisible();
     await expect(ChartSettingsSelectors.chartTypeButton(page, 'Bar')).toHaveAttribute('aria-pressed', 'false');
 
-    // And: the bar chart is replaced by a line through one dot per category
+    // And: the bar chart is replaced by a line; like desktop #1519 it draws no
+    // point markers, only a value label per category
     await closeChartSettings(page);
     await expect(ChartSelectors.lineWidget(page)).toBeVisible({ timeout: 10000 });
     await expect(ChartSelectors.barWidget(page)).toHaveCount(0);
     await expect(ChartSelectors.lineChart(page)).toBeVisible();
-    await expect(ChartSelectors.dots(page)).toHaveCount(3);
+    await expect(ChartSelectors.dots(page)).toHaveCount(0);
     await expect(ChartSelectors.categoryLabels(page)).toHaveText(['Option A', 'Option B', 'No Type']);
     await expect(ChartSelectors.valueLabels(page)).toHaveText(['1', '1', '1']);
     await expect(ChartSelectors.title(page)).toHaveText('Count(Type)');

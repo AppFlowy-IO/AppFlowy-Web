@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 
-import { FieldType, useFilterSelector, useReadOnly } from '@/application/database-yjs';
+import { FieldType, Filter as FilterData, useFilterSelector, useReadOnly } from '@/application/database-yjs';
 import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as ArrowDown } from '@/assets/icons/alt_arrow_down.svg';
 import FieldCustomIcon from '@/components/database/components/field/FieldCustomIcon';
@@ -12,8 +12,13 @@ import { useConditionsContext } from '../conditions/context';
 import { FilterMenu } from './filter-menu';
 import { useFilterChipLabel } from './overview/useFilterChipLabel';
 
-function Filter({ filterId }: { filterId: string }) {
-  const filter = useFilterSelector(filterId);
+/**
+ * A filter rule's chip and its editor popover. The rule can come from the
+ * view or from a detached filter store (the chart row popup); the editor
+ * writes back through whichever the dispatch hooks resolve to.
+ */
+export function FilterChip({ filter }: { filter: FilterData }) {
+  const filterId = filter.id;
   const readOnly = useReadOnly();
   const conditionsContext = useConditionsContext();
   const openFilterId = conditionsContext?.openFilterId;
@@ -36,7 +41,7 @@ function Filter({ filterId }: { filterId: string }) {
     fieldType
   );
 
-  if (!filter || !field) return null;
+  if (!field) return null;
 
   const fieldName = field.get(YjsDatabaseKey.name) ?? '';
   const buttonText = hasContent ? `${fieldName}: ${description}` : fieldName;
@@ -85,6 +90,12 @@ function Filter({ filterId }: { filterId: string }) {
       </Popover>
     </div>
   );
+}
+
+function Filter({ filterId }: { filterId: string }) {
+  const filter = useFilterSelector(filterId);
+
+  return filter ? <FilterChip filter={filter} /> : null;
 }
 
 export default Filter;

@@ -323,9 +323,24 @@ describe('useChartData "No {field}" bucket', () => {
     for (const omitEmptyValues of [false, true]) {
       const { result } = await renderChart({ fields: [DONE_FIELD], rows, settings: { omitEmptyValues } });
 
+      // `isCheckedCategory` lets the drill-down filter by value, not by the localized label.
       expect(result.current.chartData).toEqual([
-        { label: 'Checked', value: 3, rowIds: ['r1', 'r4', 'r5'], isEmptyCategory: false, color: CHECKBOX_CHECKED_COLOR },
-        { label: 'Unchecked', value: 2, rowIds: ['r2', 'r3'], isEmptyCategory: false, color: CHECKBOX_UNCHECKED_COLOR },
+        {
+          label: 'Checked',
+          value: 3,
+          rowIds: ['r1', 'r4', 'r5'],
+          isEmptyCategory: false,
+          isCheckedCategory: true,
+          color: CHECKBOX_CHECKED_COLOR,
+        },
+        {
+          label: 'Unchecked',
+          value: 2,
+          rowIds: ['r2', 'r3'],
+          isEmptyCategory: false,
+          isCheckedCategory: false,
+          color: CHECKBOX_UNCHECKED_COLOR,
+        },
       ]);
     }
   });
@@ -346,8 +361,9 @@ describe('useChartData "No {field}" bucket', () => {
     ];
     const shown = await renderChart({ fields: [DUE_FIELD], rows, settings: { dateCondition: DateGroupCondition.Month } });
 
+    // The bucket key travels with the item for the drill-down's date range.
     expect(shown.result.current.chartData).toEqual([
-      { label: 'Mar 2026', value: 1, rowIds: ['r1'], isEmptyCategory: false },
+      { label: 'Mar 2026', value: 1, rowIds: ['r1'], isEmptyCategory: false, sortKey: '2026-03' },
       { label: 'No Due', value: 2, rowIds: ['r2', 'r3'], isEmptyCategory: true },
     ]);
 
@@ -428,6 +444,37 @@ describe('useChartData select / checkbox buckets', () => {
     ]);
   });
 
+  it('counts a row holding two same-named options once in their shared bucket', async () => {
+    // Desktop adds the row once per option: a count of 2, a Y value counted
+    // twice, and the row listed twice in the drill-down.
+    const { result } = await renderChart({
+      fields: [
+        {
+          id: 'kind',
+          name: 'Kind',
+          type: FieldType.MultiSelect,
+          options: [
+            { id: 'dup-1', name: 'Dup', color: SelectOptionColor.OptionColor3 },
+            { id: 'dup-2', name: 'Dup', color: SelectOptionColor.OptionColor5 },
+            { id: 'other', name: 'Other', color: SelectOptionColor.OptionColor7 },
+          ],
+        },
+        AMOUNT_FIELD,
+      ],
+      rows: [
+        { id: 'r1', cells: { kind: tags('dup-1,dup-2,other'), amount: amount(5) } },
+        { id: 'r2', cells: { kind: tags('dup-2'), amount: amount(7) } },
+      ],
+      settings: { xFieldId: 'kind', yFieldId: 'amount', aggregationType: ChartAggregationType.Sum },
+    });
+
+    expect(result.current.chartData).toEqual([
+      expect.objectContaining({ label: 'Dup', value: 12, rowIds: ['r1', 'r2'] }),
+      expect.objectContaining({ label: 'Other', value: 5, rowIds: ['r1'] }),
+      expect.objectContaining({ label: 'No Kind', rowIds: [] }),
+    ]);
+  });
+
   it('colors option buckets with tag tokens and leaves other buckets to the palette, whatever the label', async () => {
     const { result } = await renderChart({
       fields: [
@@ -452,7 +499,6 @@ describe('useChartData select / checkbox buckets', () => {
         rowIds: ['r3'],
         isEmptyCategory: false,
         color: 'var(--tag-fill-05-light)',
-        textColor: 'var(--tag-text-05-light)',
       },
       {
         label: 'Done',
@@ -460,7 +506,6 @@ describe('useChartData select / checkbox buckets', () => {
         rowIds: ['r2'],
         isEmptyCategory: false,
         color: 'var(--tag-fill-02-thick)',
-        textColor: 'var(--tag-text-02-thick)',
       },
       {
         label: 'Todo',
@@ -468,17 +513,14 @@ describe('useChartData select / checkbox buckets', () => {
         rowIds: ['r1'],
         isEmptyCategory: false,
         color: 'var(--tag-fill-02-light)',
-        textColor: 'var(--tag-text-02-light)',
       },
       { label: 'No Status', value: 1, rowIds: ['r4'], isEmptyCategory: true },
     ]);
     expect(result.current.chartData[3]).not.toHaveProperty('color');
-    expect(result.current.chartData[3]).not.toHaveProperty('textColor');
 
     const dates = await renderChart({ fields: [DUE_FIELD], rows: [{ id: 'r1', cells: { due: dateCell(2026, 3, 1) } }] });
 
     expect(dates.result.current.chartData[0]).not.toHaveProperty('color');
-    expect(dates.result.current.chartData[0]).not.toHaveProperty('textColor');
   });
 });
 
@@ -952,10 +994,13 @@ describe('useChartData loading state', () => {
 });
 
 describe('chartDataEqual', () => {
-  it('compares text colors', () => {
-    const item: ChartDataItem = { label: 'A', value: 1, rowIds: ['r1'], color: 'var(--a)', textColor: 'var(--b)' };
+  // A memoized widget hands its items to the drill-down, which builds its
+  // filter from the bucket key and the checkbox flag.
+  it('compares the keys the drill-down filter reads', () => {
+    const item: ChartDataItem = { label: 'Mar 2026', value: 1, rowIds: ['r1'], sortKey: '2026-03' };
 
     expect(chartDataEqual([item], [{ ...item }])).toBe(true);
-    expect(chartDataEqual([item], [{ ...item, textColor: 'var(--c)' }])).toBe(false);
+    expect(chartDataEqual([item], [{ ...item, sortKey: 'month_2026-03' }])).toBe(false);
+    expect(chartDataEqual([item], [{ ...item, isCheckedCategory: true }])).toBe(false);
   });
 });
