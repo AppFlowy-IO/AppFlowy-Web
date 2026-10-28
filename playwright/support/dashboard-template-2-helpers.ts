@@ -1086,13 +1086,18 @@ function calendarDayOf(page: Page, viewName: string, title: string): number {
   return offset;
 }
 
-/** Open an event's page: its popover, then the popover's "Open event" button (the one before Close). */
+/** Open an event's page through its popover. */
 export async function openCalendarEvent(page: Page, viewName: string, title: string) {
   const cell = await showCalendarDay(page, viewName, calendarDayOf(page, viewName, title));
   const event = calendarEvent(cell, title).first();
 
   await expect(event).toBeVisible(WAIT);
   await event.click();
+  await openCalendarPopoverRow(page, title);
+}
+
+/** Open the row from an event popover without depending on the fixture's calendar/date setup. */
+export async function openCalendarPopoverRow(page: Page, title: string) {
   // The event's popover (a hover tooltip renders in a popper wrapper too): its sticky header holds the buttons.
   const header = page
     .locator('[data-radix-popper-content-wrapper]')
@@ -1106,7 +1111,8 @@ export async function openCalendarEvent(page: Page, viewName: string, title: str
   const count = await buttons.count();
 
   expect(count, 'the event popover offers Open event and Close').toBeGreaterThanOrEqual(2);
-  await buttons.nth(count - 2).click();
+  // Writable events also offer Duplicate, so button position does not identify Open.
+  await header.getByTestId('calendar-event-open-peek').click();
   await expect(rowPage(page)).toBeVisible(WAIT);
   await expectRowPage(page, title);
 }
