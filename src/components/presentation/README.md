@@ -1,6 +1,6 @@
 # Presentation features for AppFlowy Web
 
-This feature provides **Present document**, **Present AI mind map**, and **AI Slides** in the signed-in app. `APPFLOWY_PRESENTATION_ENABLED` controls the native entries. Document presentation uses a read-only editor snapshot; AI operations use authenticated AppFlowy Cloud presentation APIs.
+This feature provides **Present document**, **Present AI mind map**, and **AI Slides** in the signed-in app. `APPFLOWY_PRESENTATION_ENABLED` controls the native entries and defaults to `false`: enable it only for a deployment whose Cloud serves the presentation API, or the entries' requests fail. Document presentation uses a read-only editor snapshot; AI operations use authenticated AppFlowy Cloud presentation APIs.
 
 ## Run locally
 

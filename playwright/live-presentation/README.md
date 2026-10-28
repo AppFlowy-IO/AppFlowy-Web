@@ -41,6 +41,7 @@ Set these variables only after confirming the running environment:
 - `PRESENTATION_LIVE_WEB_ORIGIN`: frontend loopback origin.
 - `PRESENTATION_LIVE_GATEWAY_ORIGIN`: Gateway loopback origin.
 - `APPFLOWY_DEV_API_PROXY_TARGET`: the same Gateway origin used to launch Vite.
+- `APPFLOWY_PRESENTATION_ENABLED=true`: also set when launching Vite; the entries default to off.
 - `PRESENTATION_LIVE_WORKSPACE_ID` and `PRESENTATION_LIVE_WORKSPACE_NAME`: exact existing paid workspace.
 - `PRESENTATION_LIVE_EMAIL`: the existing test account email.
 - `PRESENTATION_LIVE_PASSWORD`: the test account password, supplied privately.

@@ -65,8 +65,9 @@ fi
 
 # IMPORTANT: For client-side React app, inject config into HTML
 # Only accept literal booleans before embedding this feature switch in JavaScript.
-case "${APPFLOWY_PRESENTATION_ENABLED:-true}" in
-  true|false) PRESENTATION_ENABLED="${APPFLOWY_PRESENTATION_ENABLED:-true}" ;;
+# Off unless the deployment's Cloud provides the presentation API.
+case "${APPFLOWY_PRESENTATION_ENABLED:-false}" in
+  true|false) PRESENTATION_ENABLED="${APPFLOWY_PRESENTATION_ENABLED:-false}" ;;
   *) echo "ERROR: APPFLOWY_PRESENTATION_ENABLED must be true or false"; exit 1 ;;
 esac
 
