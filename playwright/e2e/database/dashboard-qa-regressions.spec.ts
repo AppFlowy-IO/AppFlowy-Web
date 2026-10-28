@@ -30,6 +30,7 @@ import {
   waitForDashboardSync,
   widgetLocator,
 } from '../../support/dashboard-test-helpers';
+import { rowPage } from '../../support/dashboard-usecase-helpers';
 import { addFormQuestion, dismissAutoCreateDialogIfPresent } from '../../support/form-test-helpers';
 
 test.afterEach(async ({ page, request }) => cleanupDashboardFixture(page, request));
@@ -189,3 +190,57 @@ test('a lazily opened Form widget renders questions and survives tab navigation 
   await expect(widget.getByTestId('form-question-card')).not.toHaveCount(0);
   expect(runtimeErrors).toEqual([]);
 });
+
+for (const layout of ['Grid', 'Calendar'] as const) {
+  test(`creating a record through a ${layout} widget persists without an outbox error`, async ({ page, request }) => {
+    await prepareDashboardFixture(page, request, ['Projects']);
+    await addDashboardView(page, 'Projects');
+    if (layout === 'Calendar') {
+      fixtureDatabase(page, 'Projects').views.Calendar = await createDatabaseViewThroughApi(page, request, {
+        database: 'Projects',
+        name: 'Calendar',
+        folderLayout: ViewLayout.Calendar,
+      });
+    }
+
+    await seedDashboardWidgets(page, [{ row: 1, label: `Projects ${layout}` }]);
+    await leaveEditMode(page);
+    const widget = widgetLocator(page, `Projects ${layout}`);
+    const errors = await startFrameworkErrorRecording(page);
+    const created = page.waitForResponse(
+      (response) => response.request().method() === 'POST' && response.url().endsWith('/row/default')
+    );
+    const title = `Dashboard ${layout} storage regression`;
+
+    if (layout === 'Calendar') {
+      // Calendar widgets add dated records from the day surface, rather than
+      // the New tool offered by Grid widgets.
+      await widget.locator('.fc-day-today .fc-daygrid-day-frame').dblclick({ position: { x: 8, y: 8 } });
+      const input = page.getByTestId('calendar-event-title-input');
+
+      await expect(input).toBeVisible();
+      await input.pressSequentially(title);
+      await input.press('Enter');
+      await expect(input).toBeHidden();
+    } else {
+      await widget.hover();
+      await widget.locator('[data-widget-tool="new"]').getByTestId('database-new-row-button').click();
+      const detail = rowPage(page);
+      const input = detail.getByTestId('row-title-input');
+
+      await expect(input).toBeVisible();
+      await input.click();
+      await page.keyboard.type(title);
+      await expect(input).toHaveText(title);
+      await detail.getByTestId('row-detail-close').click();
+      await expect(detail).toBeHidden();
+    }
+
+    expect((await created).ok()).toBe(true);
+    await waitForDashboardSync(page, request);
+    await errors.expectNone();
+    await reloadDashboard(page);
+    await expect(widget.getByText(title, { exact: true })).toBeVisible();
+    await errors.expectNone();
+  });
+}
