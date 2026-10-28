@@ -123,6 +123,10 @@ jest.mock('@/components/app/view-actions/MorePageActions', () => ({
   default: () => <div data-testid='more-page-actions' />,
 }));
 
+jest.mock('@/components/app/view-actions/DocumentWidthMenu', () => ({
+  DocumentWidthMenu: () => <div data-testid='document-width-action' />,
+}));
+
 jest.mock('@/components/app/view-actions/useViewActionPermissions', () => ({
   useViewActionPermissions: (...args: unknown[]) => mockUseViewActionPermissions(...args),
 }));
@@ -172,6 +176,7 @@ describe('view action permission gates', () => {
     );
 
     expect(screen.getByTestId('more-page-duplicate')).toBeTruthy();
+    expect(screen.getByTestId('document-width-action')).toBeTruthy();
     expect(screen.getByTestId('more-page-lock')).toBeTruthy();
     expect(screen.queryByTestId('more-page-move-to')).toBeNull();
     expect(screen.queryByTestId('view-action-delete')).toBeNull();
@@ -190,6 +195,7 @@ describe('view action permission gates', () => {
     );
 
     expect(screen.queryByTestId('more-page-duplicate')).toBeNull();
+    expect(screen.queryByTestId('document-width-action')).toBeNull();
     expect(screen.queryByTestId('more-page-lock')).toBeNull();
   });
 
