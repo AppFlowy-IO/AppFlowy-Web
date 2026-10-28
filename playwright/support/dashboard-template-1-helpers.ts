@@ -32,7 +32,7 @@ import { ViewLayout } from '../../src/application/types';
 import { categoryPoint, type TypeOptionUpdate, waitForTypeOptionSync, writeTypeOptions } from './chart-render-helpers';
 import { backToChartPanelRoot, CHART_AGGREGATION_BY_NAME, chartPanel } from './chart-settings-helpers';
 import { clickFilterBarControl, filterBarControl, isCheckedCell, readRowCells } from './dashboard-private-helpers';
-import { pressEscapeUntilHidden } from './dashboard-shared-helpers';
+import { pressEscapeUntilHidden, waitForDashboardWidgetsLoaded } from './dashboard-shared-helpers';
 import {
   createDatabaseViewThroughApi,
   DashboardSelectors,
@@ -621,6 +621,7 @@ export async function expectTemplateChartValues(page: Page, viewName: string, ro
     rows.map((row) => [resolveTemplateChartLabel(row.label), chartNumber(row.value)])
   );
 
+  await waitForDashboardWidgetsLoaded(widget);
   // The chart has laid out (a line through one point draws no visible curve, so wait for its frame and data).
   await expect(widget.getByTestId('chart-frame')).toBeVisible(TEMPLATE_TIMEOUT);
   await expect(widget.locator('[data-testid="chart-data-table"] tr[data-label]').first()).toBeAttached(TEMPLATE_TIMEOUT);

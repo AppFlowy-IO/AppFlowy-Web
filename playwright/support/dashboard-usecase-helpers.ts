@@ -1239,6 +1239,7 @@ export async function expectWidgetTitles(
   const primaryId = fixtureDatabase(owner, databaseForLabel(owner, viewName)).fieldIds.Name;
   const normalize = (titles: string[]) => (ordered ? titles : [...titles].sort());
 
+  await waitForDashboardWidgetsLoaded(widget);
   await expect(widget).toBeVisible({ timeout: USE_CASE_TIMEOUT });
   await expect
     .poll(async () => normalize(await widgetTitles(widget, primaryId)), { timeout: USE_CASE_TIMEOUT })

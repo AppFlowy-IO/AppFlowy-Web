@@ -10,6 +10,7 @@ import {
   viewsOwnedBy,
 } from '../../support/dashboard-add-widget-helpers';
 import { startFrameworkErrorRecording } from '../../support/dashboard-error-collector';
+import { waitForDashboardWidgetsLoaded } from '../../support/dashboard-shared-helpers';
 import {
   addDashboardView,
   chooseWidgetMenuAction,
@@ -123,6 +124,7 @@ test('changing a manually named table to Chart preserves its exact name', async 
   await expect
     .poll(async () => {
       const record = await newWidgetRecord(page);
+
       return (await readDatabaseViews(page, hostDatabase(page).databaseId)).find((view) => view.id === record.view_id)
         ?.name;
     })
@@ -132,6 +134,7 @@ test('changing a manually named table to Chart preserves its exact name', async 
   await expect
     .poll(async () => {
       const record = await newWidgetRecord(page);
+
       return (await readDatabaseViews(page, hostDatabase(page).databaseId)).find((view) => view.id === record.view_id)
         ?.layout;
     })
@@ -167,16 +170,17 @@ test('a lazily opened Form widget renders questions and survives tab navigation 
   page.on('console', (message) => {
     if (/Invalid hook call|Cannot read properties of null/.test(message.text())) runtimeErrors.push(message.text());
   });
+  const widget = DashboardSelectors.widgetsForView(page, formId);
+  const builder = widget.getByTestId('form-builder-scroll-container');
+
   await seedDashboardWidgets(page, [
     { row: 1, label: 'Projects Grid' },
     { row: 2, label: 'Projects Form' },
-  ]);
-  const widget = widgetLocator(page, 'Projects Form');
-  const builder = widget.getByTestId('form-builder-scroll-container');
-
-  await widget.scrollIntoViewIfNeeded();
-  await expect(builder).toBeVisible();
-  await dismissAutoCreateDialogIfPresent(page);
+  ], async () => {
+    await widget.scrollIntoViewIfNeeded();
+    await expect(builder).toBeVisible();
+    await dismissAutoCreateDialogIfPresent(page);
+  });
   await addFormQuestion(page, 'RichText');
   await expect(widget.getByTestId('form-question-card')).not.toHaveCount(0);
   await leaveEditMode(page);
@@ -184,8 +188,10 @@ test('a lazily opened Form widget renders questions and survives tab navigation 
   await openDatabasePage(page, 'Projects', fixtureDatabase(page, 'Projects').views.Grid);
   await expect(page.getByTestId('database-grid')).toBeVisible();
   await openDashboard(page);
+  await waitForDashboardWidgetsLoaded(widget);
   await expect(builder).toBeVisible();
   await reloadDashboard(page);
+  await waitForDashboardWidgetsLoaded(widget);
   await expect(builder).toBeVisible();
   await expect(widget.getByTestId('form-question-card')).not.toHaveCount(0);
   expect(runtimeErrors).toEqual([]);

@@ -1682,7 +1682,11 @@ export async function writeDashboardSetting(
 }
 
 /** Row index (0-based) → labels, as a Given table lists them. */
-export async function seedDashboardWidgets(page: Page, layout: { row: number; label: string }[]) {
+export async function seedDashboardWidgets(
+  page: Page,
+  layout: { row: number; label: string }[],
+  onWidgetsMounted?: () => Promise<void>
+) {
   const world = dashboardWorld(page);
   const rowsByIndex = new Map<number, PersistedWidget[]>();
 
@@ -1719,6 +1723,8 @@ export async function seedDashboardWidgets(page: Page, layout: { row: number; la
 
   await writeDashboardSetting(page, { rows });
   await expect(DashboardSelectors.widgets(page)).toHaveCount(layout.length, { timeout: WIDGET_TIMEOUT_MS });
+  // A newly mounted view may need a startup choice before the toolbar accepts clicks.
+  await onWidgetsMounted?.();
   if (wasEditing) {
     await expect(DashboardSelectors.editButton(page).or(DashboardSelectors.doneButton(page))).toBeVisible();
     await enterEditMode(page);
