@@ -31,7 +31,7 @@ function describeCase({ value, ctx }: FormatCase) {
 
 describe('formatChartValue (dashboard-parity/format-vectors.json)', () => {
   it('has a case for every row of WP10 §1.2', () => {
-    expect(fixture.cases.length).toBe(60);
+    expect(fixture.cases.length).toBe(70);
   });
 
   it.each(fixture.cases.map((entry) => [describeCase(entry), entry] as const))('%s', (_name, entry) => {

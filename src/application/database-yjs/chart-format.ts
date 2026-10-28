@@ -421,8 +421,8 @@ export function formatChartValue(value: number, ctx: ChartFormatContext): string
   const decimalPlaces = normalizeDecimalPlaces(ctx.decimalPlaces);
   const { aggregation, yField, locale } = ctx;
 
-  // 2. The Number card's Percent format scales any aggregation and never compacts.
-  if (ctx.mode === 'card' && ctx.numberFormat === 'percent') {
+  // 2. Percent scales fractional values; percentage aggregations already use points.
+  if (ctx.mode === 'card' && ctx.numberFormat === 'percent' && !PERCENT_AGGREGATIONS.has(aggregation)) {
     return `${formatPlainValue(value * 100, ctx, decimalPlaces)}%`;
   }
 
