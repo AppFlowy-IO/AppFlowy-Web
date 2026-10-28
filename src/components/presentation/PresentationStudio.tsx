@@ -367,7 +367,7 @@ export default function PresentationStudio({
     setOutlineError(undefined);
     try {
       const sourceSnapshot = {
-        ...(await loadSourceSnapshot(workspaceId, snapshot.pageId, options, controller.signal)),
+        ...(await loadSourceSnapshot(workspaceId, snapshot.pageId, options, controller.signal, style)),
         kind: snapshot.kind,
       };
 
@@ -636,7 +636,7 @@ export default function PresentationStudio({
                   its original source to edit or regenerate, or{' '}
                   <Action
                     onClick={() => {
-                      void loadSourceSnapshot(workspaceId, snapshot.pageId, options)
+                      void loadSourceSnapshot(workspaceId, snapshot.pageId, options, undefined, style)
                         .then((value) => {
                           setSnapshot({ ...value, kind: snapshot.kind });
                           if (value.revision !== activeDeck.sourceRevision)

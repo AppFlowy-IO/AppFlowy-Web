@@ -4,7 +4,7 @@ import {
   createGenerationRunner, exportDeck, importPresentationTemplate, loadPresentation, loadSourceSnapshot,
   reviewPresentationStyle, waitForJob,
 } from '../presentation-client';
-import { entitlementForStatus, generationRequest, serverOptions, sourceToSnapshot, toServerPlan, uiOptions } from '../server-adapter';
+import { entitlementForStatus, generationRequest, serverOptions, sourceToSnapshot, themeToStyle, toServerPlan, uiOptions } from '../server-adapter';
 import * as client from '../server-client';
 import type { Artifact, JobStatus, PresentationStatus, ReviewedStyle, ServerSlidePlan, SourceEnvelope, Theme } from '../server-contract';
 import type { DeckScene } from '../server-scene';
@@ -246,6 +246,14 @@ test('source resolution sends only selected page IDs and ignores editor snapshot
   expect(mockRequest.mock.calls[0][0].data.sources).toEqual([{ pageId: scope.pageId }]);
   expect(resolved.revision).toBe(source.revision);
   expect(resolved.serverSource?.sources[0].revision).toBe('native-page-revision');
+});
+
+test('theme design mode resolves sources with the selected theme identity', async () => {
+  mockRequest.mockResolvedValue(response(source));
+  await loadSourceSnapshot(scope.workspaceId, scope.pageId, { ...options, designMode: 'theme' }, undefined, themeToStyle(theme));
+
+  // Cloud rejects theme mode without a trusted theme ID before resolving any source.
+  expect(mockRequest.mock.calls[0][0].data.options).toMatchObject({ design: 'theme', themeId: theme.id });
 });
 
 test('select evidence shows option names, not the ids kept for filters', () => {

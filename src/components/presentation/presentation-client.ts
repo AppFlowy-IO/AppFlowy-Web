@@ -21,8 +21,9 @@ export * from './server-client';
 export * from './server-adapter';
 export * from './server-contract';
 
-export async function loadSourceSnapshot(workspaceId: string, pageId: string, options?: Partial<GenerationOptions>, signal?: AbortSignal): Promise<PageSnapshot> {
-  return sourceToSnapshot(await resolveSources(workspaceId, { sources: [{ pageId }], options: serverOptions(options) }, signal), pageId);
+/** The style matters: theme design mode is valid only with the selected theme's identity. */
+export async function loadSourceSnapshot(workspaceId: string, pageId: string, options?: Partial<GenerationOptions>, signal?: AbortSignal, style?: PresentationStyle): Promise<PageSnapshot> {
+  return sourceToSnapshot(await resolveSources(workspaceId, { sources: [{ pageId }], options: serverOptions(options, style) }, signal), pageId);
 }
 
 export function assessPresentation(input: { scope: PresentationScope; source: PageSnapshot; options: GenerationOptions; style?: PresentationStyle }, signal?: AbortSignal): Promise<AssessmentResponse> {
