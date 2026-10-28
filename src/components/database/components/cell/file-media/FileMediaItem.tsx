@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 
 import { FileMediaCellDataItem, FileMediaType } from '@/application/database-yjs/cell.type';
 import { useAuthenticatedImage } from '@/components/_shared/hooks/useAuthenticatedImage';
@@ -20,15 +20,19 @@ function FileMediaItem({
   onUpdateName: (name: string) => void;
   onDelete: () => void;
 }) {
-  const authenticatedUrl = useAuthenticatedImage(file.url);
+  const isImage = file.file_type === FileMediaType.Image;
+  const imageRef = useRef<HTMLImageElement>(null);
+  // The <img> fixes its own box (72 px tall), so it is measured directly.
+  const authenticatedUrl = useAuthenticatedImage(isImage ? file.url : undefined, { fit: 'cover', boxRef: imageRef });
 
   const renderItem = useMemo(() => {
     switch (file.file_type) {
       case FileMediaType.Image:
         return (
           <img
+            ref={imageRef}
             onClick={onPreview}
-            src={authenticatedUrl}
+            src={authenticatedUrl || undefined}
             alt={file.name}
             className={
               'aspect-square h-[72px] flex-1 cursor-zoom-in overflow-hidden rounded-[4px] border border-border-primary object-cover'

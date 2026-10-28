@@ -32,7 +32,7 @@ import type { DashboardExtraFilter } from '@/application/database-yjs/dashboard.
 import { combineFilters, hasEffectiveFilters } from '@/application/database-yjs/filter';
 import { registerDatabaseHistoryRowDoc, registerDatabaseHistoryRowDocs } from '@/application/database-yjs/history';
 import { shareCanonicalRowDoc } from '@/application/database-yjs/hooks/useBackgroundRowDocLoader';
-import { readViewOpenPagesIn, resolveRecordOpening } from '@/application/database-yjs/open-pages-in';
+import { readViewLayout, readViewOpenPagesIn, resolveRecordOpening } from '@/application/database-yjs/open-pages-in';
 import { createRowOrdersStore } from '@/application/database-yjs/row-orders-store';
 import { ROW_SYNC_RETRY_DELAYS_MS } from '@/application/database-yjs/row-sync';
 import { getRowKey } from '@/application/database-yjs/row_meta';
@@ -2083,13 +2083,14 @@ function Database(props: Database2Props) {
       // documents are loaded through the publish navigation/cache path.
       // Then a mobile context opens records full screen, and otherwise the
       // view's "Open pages in" decides (WP13 §3.8): a dashboard widget or a
-      // drill-down opens a side peek by default, any other view the centre peek.
+      // drill-down or Calendar opens a side peek by default, other views the centre peek.
       const opening = resolveRecordOpening({
         readOnly,
         isDocumentBlock: Boolean(_isDocumentBlock),
         publish: props.variant === UIVariant.Publish,
         mobile: mobileContext,
         raw: readViewOpenPagesIn(doc, activeViewId),
+        layout: readViewLayout(doc, activeViewId),
         source: options?.source === 'drilldown' ? 'drilldown' : isDashboardWidget ? 'dashboard_widget' : 'view',
       });
 
@@ -2199,8 +2200,9 @@ function Database(props: Database2Props) {
     ]
   );
 
-  // The main database can change tabs while the nonmodal peek stays open.
-  // Navigation inside the peek continues to use the view that opened it.
+  // Navigation inside the peek continues to use the view that opened it,
+  // which differs from the active tab for a relation link or while a tab
+  // switch waits for the peek's edits to save.
   const handleNavigateInPeek = useCallback(
     (rowId: string, viewId?: string, options?: NavigateToRowOptions) => {
       const permissions = !viewId || viewId === modalState.viewId ? modalState.permissions : undefined;
@@ -2251,6 +2253,28 @@ function Database(props: Database2Props) {
       mode: 'center_peek',
     });
   }, []);
+
+  // Desktop #1531: switching tabs closes the peek opened from the previous
+  // tab, once its pending edits pass the save barrier the close button uses.
+  // A failed save keeps it open, and a row opened from another view (a
+  // relation link) does not belong to the tab.
+  const latestActiveViewId = useRef(activeViewId);
+
+  useEffect(() => {
+    const previousViewId = latestActiveViewId.current;
+
+    latestActiveViewId.current = activeViewId;
+    if (previousViewId === activeViewId || !modalState.rowId || modalState.viewId !== previousViewId) return;
+    const request = rowOpenRequest.current;
+    const prepare = prepareRowNavigation.current;
+
+    void (async () => {
+      if (prepare && !(await prepare())) return;
+      // Another row took the peek, or the user returned to its tab, while saving.
+      if (request !== rowOpenRequest.current || latestActiveViewId.current === previousViewId) return;
+      handleCloseRowModal();
+    })();
+  }, [activeViewId, handleCloseRowModal, modalState.rowId, modalState.viewId]);
 
   const handleOpenPeekAsPage = useCallback(
     async (rowId: string) => {

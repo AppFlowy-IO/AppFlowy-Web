@@ -139,6 +139,7 @@ const CardBody = forwardRef<HTMLDivElement, CardProps & { fields: CardFieldInfo[
             draggable={false}
             src={url}
             alt={''}
+            decodeAtDisplaySize='cover'
             className={'h-full w-full object-cover'}
             style={{
               objectPosition,

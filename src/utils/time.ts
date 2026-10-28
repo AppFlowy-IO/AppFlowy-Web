@@ -21,47 +21,28 @@ export function isTimestampInSameDay(timestampA: string, timestampB: string) {
 }
 
 /**
- * Check if timestampA is before timestampB
- * @param {string} timestampA - The first timestamp (in seconds or milliseconds)
- * @param {string} timestampB - The second timestamp (in seconds or milliseconds)
- * @returns {boolean} - True if timestampA is before timestampB, false otherwise
+ * Compare the local calendar days two timestamps (in seconds or milliseconds)
+ * fall on: negative when timestampA's day comes first, 0 for the same day,
+ * positive when it comes later.
+ *
+ * Date filters compare days, like desktop's `naive_date_from_timestamp`: a
+ * bound is stored at the start of its day, and a row later that day must
+ * still count as on it.
  */
-export function isTimestampBefore(timestampA: string, timestampB: string) {
-  const dateA = timestampA.length > 10 ? dayjs(Number(timestampA)) : dayjs.unix(Number(timestampA));
-  const dateB = timestampB.length > 10 ? dayjs(Number(timestampB)) : dayjs.unix(Number(timestampB));
+export function compareTimestampDays(timestampA: string, timestampB: string) {
+  const dayA = (timestampA.length > 10 ? dayjs(Number(timestampA)) : dayjs.unix(Number(timestampA))).startOf('day');
+  const dayB = (timestampB.length > 10 ? dayjs(Number(timestampB)) : dayjs.unix(Number(timestampB))).startOf('day');
 
-  return dateA.isBefore(dateB);
+  if (dayA.isBefore(dayB)) return -1;
+  return dayA.isAfter(dayB) ? 1 : 0;
 }
 
 /**
- * Check if timestampA is after one day of timestampB
- * @param timestampA - The first timestamp (in seconds or milliseconds)
- * @param timestampB - The second timestamp (in seconds or milliseconds)
- * @returns {boolean} - True if timestampA is after one day of timestampB, false otherwise
+ * Check if a timestamp falls on a day from the start timestamp's day through
+ * the end timestamp's day, inclusive (see {@link compareTimestampDays}).
  */
-export function isAfterOneDay(timestampA: string, timestampB: string) {
-  const dateA = timestampA.length > 10 ? dayjs(Number(timestampA)) : dayjs.unix(Number(timestampA));
-  const dateB = timestampB.length > 10 ? dayjs(Number(timestampB)) : dayjs.unix(Number(timestampB));
-
-  return dateA.isAfter(dateB) && dateA.diff(dateB, 'day') > 0;
-}
-
-/**
- * Check if timestampA is between startTimestamp and endTimestamp
- * @param {string} timestamp - The timestamp to check (in seconds or milliseconds)
- * @param {string} startTimestamp - The start timestamp (in seconds or milliseconds)
- * @param {string} endTimestamp - The end timestamp (in seconds or milliseconds)
- */
-export function isTimestampBetweenRange(timestamp: string, startTimestamp: string, endTimestamp: string) {
-  const date = timestamp.length > 10 ? dayjs(Number(timestamp)) : dayjs.unix(Number(timestamp));
-  const startDate = startTimestamp.length > 10 ? dayjs(Number(startTimestamp)) : dayjs.unix(Number(startTimestamp));
-  const endDate = endTimestamp.length > 10 ? dayjs(Number(endTimestamp)) : dayjs.unix(Number(endTimestamp));
-
-  const dateUnix = date.unix();
-  const startUnix = startDate.unix();
-  const endUnix = endDate.unix();
-
-  return dateUnix >= startUnix && dateUnix <= endUnix;
+export function isTimestampInDayRange(timestamp: string, startTimestamp: string, endTimestamp: string) {
+  return compareTimestampDays(timestamp, startTimestamp) >= 0 && compareTimestampDays(timestamp, endTimestamp) <= 0;
 }
 
 /**

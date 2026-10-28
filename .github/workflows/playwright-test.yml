@@ -52,6 +52,59 @@ jobs:
           path: test-results/
           retention-days: 7
 
+  code-block:
+    name: 'Code blocks and Mermaid (light and dark)'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Test code-block editing and appearance
+        run: pnpm test:e2e:code-block
+      - name: Upload code-block screenshots and traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-block-browser-results
+          path: test-results/
+          retention-days: 7
+
+  pdf:
+    name: 'Embedded PDF (light and dark)'
+    runs-on: ubuntu-latest
+    # Includes Chromium/system dependencies, two theme suites, and artifacts.
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Test pdf editing and appearance
+        run: pnpm test:e2e:pdf
+      - name: Upload pdf screenshots and traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdf-browser-results
+          path: test-results/
+          retention-days: 7
+
   connections:
     name: 'Connections (Chromium, Firefox, WebKit)'
     if: github.event_name != 'schedule'
@@ -166,6 +219,13 @@ jobs:
           - name: 'dockable-outline-bdd'
             spec: 'playwright/.features-gen/playwright/bdd/features/editor/dockable-outline.feature.spec.js'
             description: 'Dockable document outline, scroll tracking, themes, comments, and published display modes'
+            bdd: 'true'
+            shard: ''
+          - name: 'code-block-bdd'
+            spec: >-
+              playwright/.features-gen/playwright/bdd/features/editor/code-block-revamp.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/editor/code-block-clipboard.feature.spec.js
+            description: 'Code block settings, Mermaid, literal editing, clipboard, and code/callout page conversion'
             bdd: 'true'
             shard: ''
           - name: 'database'

@@ -4,6 +4,7 @@ import base from './playwright.config';
 
 export default defineConfig(base, {
   testDir: './playwright/e2e/integrations',
+  testIgnore: ['**/code-block*.spec.ts', '**/pdf.spec.ts'],
   // Each worker starts Vite; keep the local default as small as the CI default.
   workers: 1,
   use: {

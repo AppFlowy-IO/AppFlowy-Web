@@ -102,6 +102,7 @@ import { useAIWriter } from '@/components/chat';
 import { SearchInput } from '@/components/chat/components/ui/search-input';
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
 import { DEFAULT_CALLOUT_DATA } from '@/components/editor/components/blocks/callout/callout.utils';
+import { DEFAULT_MERMAID_CODE } from '@/components/editor/components/blocks/code/constants';
 import { createDatabaseNodeData } from '@/components/editor/components/blocks/database/utils/databaseBlockUtils';
 import { initializeMeetingSections } from '@/components/editor/components/blocks/ai-meeting/ai-meeting.import';
 import FormulaPopover from '@/components/editor/components/leaf/formula/FormulaPopover';
@@ -1014,7 +1015,7 @@ export function SlashPanel({
         },
       },
       {
-        label: t('document.slashMenu.name.pdf', { defaultValue: 'PDF' }),
+        label: t('document.slashMenu.name.pdf', { defaultValue: 'PDF Embed' }),
         key: 'pdf',
         icon: <PDFIcon />,
         group: SlashMenuGroupKey.Media,
@@ -1746,9 +1747,18 @@ export function SlashPanel({
         group: SlashMenuGroupKey.AdvancedBlocks,
         keywords: ['mermaid', 'diagram', 'chart'],
         onClick: () => {
-          turnInto(BlockType.CodeBlock, {
+          const blockId = turnInto(BlockType.CodeBlock, {
             language: 'mermaid',
           } as CodeBlockData);
+
+          if (!blockId) return;
+          const entry = findSlateEntryByBlockId(editor, blockId);
+
+          if (!entry) return;
+          const path = entry[1].concat(0);
+
+          Transforms.insertText(editor, DEFAULT_MERMAID_CODE, { at: Editor.range(editor, path) });
+          Transforms.select(editor, Editor.range(editor, path));
         },
       },
       {

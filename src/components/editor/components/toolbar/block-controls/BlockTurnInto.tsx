@@ -8,10 +8,14 @@ import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
 import { BlockData, BlockType } from '@/application/types';
 import { ReactComponent as ChevronRightIcon } from '@/assets/icons/block-menu-chevron-right.svg';
 import { ReactComponent as TurnIntoIcon } from '@/assets/icons/turn_into.svg';
+import { notify } from '@/components/_shared/notify';
 import { Popover } from '@/components/_shared/popover';
 import { DEFAULT_CALLOUT_DATA } from '@/components/editor/components/blocks/callout/callout.utils';
+import { turnCalloutIntoPage } from '@/components/editor/components/blocks/callout/turn-callout-into-page';
 import { BlockNode, HeadingNode } from '@/components/editor/editor.type';
+import { useEditorContext } from '@/components/editor/EditorContext';
 import { Button } from '@/components/ui/button';
+import { getErrorMessage } from '@/utils/errors';
 
 const choices = [
   { key: 'text', type: BlockType.Paragraph, labelKey: 'editor.text', data: {} },
@@ -51,6 +55,7 @@ export function BlockTurnInto({ node, onClose }: { node: BlockNode; onClose: () 
   const editor = useSlateStatic() as YjsEditor;
   const readOnly = useReadOnly();
   const { t } = useTranslation();
+  const context = useEditorContext();
   const ref = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
 
@@ -67,6 +72,7 @@ export function BlockTurnInto({ node, onClose }: { node: BlockNode; onClose: () 
         PaperProps={{ className: 'block-turn-into-paper' }}
         open={open}
         anchorEl={ref.current}
+        disableRestoreFocus={false}
         onClose={() => setOpen(false)}
         anchorOrigin={anchorOrigin}
         transformOrigin={transformOrigin}
@@ -103,6 +109,21 @@ export function BlockTurnInto({ node, onClose }: { node: BlockNode; onClose: () 
               </Button>
             );
           })}
+          {node.type === BlockType.CalloutBlock && context.addPage && (
+            <Button
+              variant='ghost'
+              className='justify-start'
+              onClick={() => {
+                setOpen(false);
+                onClose();
+                void turnCalloutIntoPage(editor, context, node.blockId).catch((error) => {
+                  notify.error(getErrorMessage(error, t('document.plugins.subPage.errors.failedCreatePage')));
+                });
+              }}
+            >
+              {t('editor.page')}
+            </Button>
+          )}
         </div>
       </Popover>
     </>

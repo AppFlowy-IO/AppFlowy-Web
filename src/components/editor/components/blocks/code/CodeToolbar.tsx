@@ -1,33 +1,86 @@
-import { memo } from 'react';
+import { Tooltip } from '@mui/material';
 import { useTranslation } from 'react-i18next';
-import { ReactEditor, useSlateStatic } from 'slate-react';
+import { Node } from 'slate';
+import { useSlateStatic } from 'slate-react';
 
-import { ReactComponent as CopyIcon } from '@/assets/icons/copy.svg';
+import { YjsEditor } from '@/application/slate-yjs';
+import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
 import { notify } from '@/components/_shared/notify';
-import ActionButton from '@/components/editor/components/toolbar/selection-toolbar/actions/ActionButton';
+import { useAIEnabled } from '@/components/app/app.hooks';
 import { CodeNode } from '@/components/editor/editor.type';
 import { copyTextToClipboard } from '@/utils/copy';
 
-function CodeToolbar({ node }: { node: CodeNode }) {
-  const { t } = useTranslation();
-  const editor = useSlateStatic();
-  const onCopy = async () => {
-    const at = ReactEditor.findPath(editor, node);
-    const text = editor.string(at);
+import { AIIcon, CopyIcon, DisplayIcon, MoreIcon } from './CodeIcons';
+import { CodeMenuView } from './CodeMenu';
 
-    await copyTextToClipboard(text);
-    notify.success(t('publish.copy.codeBlock'));
-  };
+export default function CodeToolbar({
+  node,
+  readOnly,
+  onOpen,
+}: {
+  node: CodeNode;
+  readOnly: boolean;
+  onOpen: (view: CodeMenuView, anchor: HTMLElement) => void;
+}) {
+  const { t } = useTranslation();
+  const editor = useSlateStatic() as YjsEditor;
+  const aiEnabled = useAIEnabled();
+  const hasContent = !!Node.string(node).trim();
 
   return (
-    <div className={'absolute right-1 top-1 z-10'}>
-      <div className={'flex space-x-1 rounded-[8px] border border-border-primary bg-fill-toolbar p-1 shadow '}>
-        <ActionButton onClick={onCopy} tooltip={t('editor.copy')}>
-          <CopyIcon />
-        </ActionButton>
-      </div>
+    <div contentEditable={false} className='code-toolbar' data-testid='code-toolbar'>
+      {!readOnly && aiEnabled && (
+        <Tooltip title={t('document.plugins.codeBlock.askAI', { defaultValue: 'Ask AI' })} disableInteractive>
+          <button
+            type='button'
+            aria-label={t('document.plugins.codeBlock.askAI', { defaultValue: 'Ask AI' })}
+            onClick={(event) => onOpen('ai', event.currentTarget)}
+          >
+            <AIIcon />
+          </button>
+        </Tooltip>
+      )}
+      {!readOnly && node.data.language === 'mermaid' && (
+        <Tooltip title={t('document.plugins.codeBlock.display', { defaultValue: 'Display' })} disableInteractive>
+          <button
+            type='button'
+            aria-label={t('document.plugins.codeBlock.display', { defaultValue: 'Display' })}
+            onClick={(event) => onOpen('display', event.currentTarget)}
+          >
+            <DisplayIcon />
+          </button>
+        </Tooltip>
+      )}
+      {hasContent && (
+        <Tooltip title={t('document.plugins.codeBlock.copyCode', { defaultValue: 'Copy code' })} disableInteractive>
+          <button
+            type='button'
+            aria-label={t('document.plugins.codeBlock.copyCode', { defaultValue: 'Copy code' })}
+            onClick={() => {
+              const entry = findSlateEntryByBlockId(editor, node.blockId);
+
+              if (entry)
+                void copyTextToClipboard(Node.string(entry[0]))
+                  .then(() => notify.success(t('publish.copy.codeBlock')))
+                  .catch((error: Error) => notify.error(error.message));
+            }}
+          >
+            <CopyIcon />
+          </button>
+        </Tooltip>
+      )}
+      {!readOnly && (
+        <Tooltip title={t('button.more', { defaultValue: 'More options' })} disableInteractive>
+          <button
+            type='button'
+            data-testid='code-block-options'
+            aria-label={t('button.more', { defaultValue: 'More options' })}
+            onClick={(event) => onOpen('main', event.currentTarget)}
+          >
+            <MoreIcon />
+          </button>
+        </Tooltip>
+      )}
     </div>
   );
 }
-
-export default memo(CodeToolbar);

@@ -32,6 +32,7 @@ import { newRollupFilterMetadata, rollupConfigurationMatches } from '@/applicati
 import { YDatabaseFilter, YDatabaseFilters, YDatabaseSort, YDatabaseSorts, YjsDatabaseKey } from '@/application/types';
 import { Log } from '@/utils/log';
 
+import { useDetachedFilterStore } from './detached-filters';
 import { applyFilterUpdate, UpdateFilterParams } from './filter-update';
 
 export function useClearSortingDispatch() {
@@ -240,9 +241,12 @@ export function useAddFilter() {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
   const fields = useDatabaseFields();
+  const detachedStore = useDetachedFilterStore();
 
   return useCallback(
     (fieldId: string) => {
+      if (detachedStore) return detachedStore.addFilter(fieldId);
+
       Log.debug('[useAddFilter] Creating filter', { fieldId });
 
       // Guard: Don't create filter if fieldId is missing or empty
@@ -326,16 +330,22 @@ export function useAddFilter() {
 
       return id;
     },
-    [view, sharedRoot, fields]
+    [view, sharedRoot, fields, detachedStore]
   );
 }
 
 export function useRemoveFilter() {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
+  const detachedStore = useDetachedFilterStore();
 
   return useCallback(
     (filterId: string) => {
+      if (detachedStore) {
+        detachedStore.removeFilter(filterId);
+        return;
+      }
+
       if (!view) return;
       executeOperations(
         sharedRoot,
@@ -359,7 +369,7 @@ export function useRemoveFilter() {
         'removeFilter'
       );
     },
-    [view, sharedRoot]
+    [view, sharedRoot, detachedStore]
   );
 }
 
@@ -419,10 +429,12 @@ export function useUpdateFilter() {
 export function useEnterAdvancedMode() {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
+  const detachedStore = useDetachedFilterStore();
 
   return useCallback(
     (rootOperator: FilterType.And | FilterType.Or) => {
-      if (!view) {
+      // Detached rules are a flat AND list, like desktop's session filters.
+      if (!view || detachedStore) {
         return;
       }
 
@@ -530,7 +542,7 @@ export function useEnterAdvancedMode() {
         console.error('[useEnterAdvancedMode] Outer error:', outerError);
       }
     },
-    [view, sharedRoot]
+    [view, sharedRoot, detachedStore]
   );
 }
 
@@ -739,9 +751,15 @@ export function useUpdateAdvancedFilter() {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
   const fields = useDatabaseFields();
+  const detachedStore = useDetachedFilterStore();
 
   return useCallback(
     (params: UpdateFilterParams) => {
+      if (detachedStore) {
+        detachedStore.updateFilter(params);
+        return;
+      }
+
       if (!view) return;
       executeOperations(
         sharedRoot,
@@ -755,7 +773,7 @@ export function useUpdateAdvancedFilter() {
         'updateFilter'
       );
     },
-    [view, sharedRoot, fields]
+    [view, sharedRoot, fields, detachedStore]
   );
 }
 

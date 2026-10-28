@@ -29,6 +29,8 @@ const mockResidentSources = new Set<string>();
 /** Databases whose walk committed every row and still writes them to storage: held, not yet resident. */
 const mockHeldSources = new Set<string>();
 const mockResidencyListeners = new Set<() => void>();
+// The peek's save barrier; left unregistered unless a test sets it.
+let mockPeekPrepare: (() => Promise<boolean>) | undefined;
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -87,14 +89,23 @@ jest.mock('@/components/database/DatabaseRowModal', () => {
     open,
     rowId,
     onOpenChange,
+    onRegisterPrepare,
   }: {
     open: boolean;
     rowId: string;
     onOpenChange: (open: boolean) => void;
+    onRegisterPrepare?: (prepare: (() => Promise<boolean>) | null) => void;
   }) {
     const [mode, setMode] = React.useState('side');
 
     mockPeekContext = useDatabaseContext();
+    React.useLayoutEffect(() => {
+      const prepare = mockPeekPrepare;
+
+      if (!prepare) return;
+      onRegisterPrepare?.(() => prepare());
+      return () => onRegisterPrepare?.(null);
+    }, [onRegisterPrepare]);
     return open ? (
       <div data-testid='database-row-modal' data-peek-mode={mode} data-row-id={rowId}>
         <button onClick={() => setMode('center')}>Center peek</button>
@@ -418,6 +429,7 @@ describe('Database blob prefetch lifecycle', () => {
     mockDatabaseContext = undefined;
     mockPeekContext = undefined;
     mockLoadSeedOnLifecycleChange = false;
+    mockPeekPrepare = undefined;
     mockedPeekSeed.mockReset();
     mockedSeedDoc.mockReset();
     mockedGetCachedRowDoc.mockReset();
@@ -2413,7 +2425,7 @@ describe('Database blob prefetch lifecycle', () => {
   });
 
   it.each(['feed', 'gallery'] as const)(
-    'retains %s presentation across background tab switches and row navigation',
+    'retains %s presentation after its publisher unmounts and across row navigation',
     async (layout) => {
       const doc = createDatabaseDoc('database-id');
       const host = render(<Database {...databaseProps(doc)} />);
@@ -2429,7 +2441,8 @@ describe('Database blob prefetch lifecycle', () => {
       await act(async () => {
         await Promise.resolve(mockDatabaseContext?.navigateToRow?.('row-id'));
       });
-      host.rerender(<Database {...databaseProps(doc)} activeViewId='other-view' />);
+      // A side peek leaves the database usable, so its view can unmount and
+      // withdraw the orders it published, e.g. when its layout changes.
       act(() => source.remove(owner));
       fireEvent.click(screen.getByRole('button', { name: 'Center peek' }));
       await act(async () => {
@@ -2443,6 +2456,95 @@ describe('Database blob prefetch lifecycle', () => {
       doc.destroy();
     }
   );
+
+  it('closes the peek opened from the previous tab once its edits save', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const saved = createDeferred<boolean>();
+
+    mockPeekPrepare = () => saved.promise;
+    const host = render(<Database {...databaseProps(doc)} />);
+
+    await act(async () => {
+      await Promise.resolve(mockDatabaseContext?.navigateToRow?.('row-id'));
+    });
+    expect(screen.getByTestId('database-row-modal')).not.toBeNull();
+
+    // Desktop #1531 waits on the editor's save barrier before closing.
+    host.rerender(<Database {...databaseProps(doc)} activeViewId='other-view' />);
+    expect(screen.getByTestId('database-row-modal')).not.toBeNull();
+    await act(async () => {
+      saved.resolve(true);
+      await saved.promise;
+    });
+    expect(screen.queryByTestId('database-row-modal')).toBeNull();
+
+    host.unmount();
+    doc.destroy();
+  });
+
+  it('keeps the peek open when its edits fail to save during a tab switch', async () => {
+    const doc = createDatabaseDoc('database-id');
+
+    mockPeekPrepare = () => Promise.resolve(false);
+    const host = render(<Database {...databaseProps(doc)} />);
+
+    await act(async () => {
+      await Promise.resolve(mockDatabaseContext?.navigateToRow?.('row-id'));
+    });
+    await act(async () => {
+      host.rerender(<Database {...databaseProps(doc)} activeViewId='other-view' />);
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId('database-row-modal').getAttribute('data-row-id')).toBe('row-id');
+
+    host.unmount();
+    doc.destroy();
+  });
+
+  it('keeps the peek open when the user returns to its tab while the edits save', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const saved = createDeferred<boolean>();
+
+    mockPeekPrepare = () => saved.promise;
+    const host = render(<Database {...databaseProps(doc)} />);
+
+    await act(async () => {
+      await Promise.resolve(mockDatabaseContext?.navigateToRow?.('row-id'));
+    });
+    host.rerender(<Database {...databaseProps(doc)} activeViewId='other-view' />);
+    host.rerender(<Database {...databaseProps(doc)} />);
+    await act(async () => {
+      saved.resolve(true);
+      await saved.promise;
+    });
+    expect(screen.getByTestId('database-row-modal').getAttribute('data-row-id')).toBe('row-id');
+
+    host.unmount();
+    doc.destroy();
+  });
+
+  it('keeps a related row peek open across tab switches', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const relatedDoc = createDatabaseDoc('related-database-id', 'related-database-id');
+    const relatedRowDoc = createHydratedRowDoc('related-row');
+    const loadView = jest.fn().mockResolvedValue(relatedDoc);
+    const createRow = jest.fn().mockResolvedValue(relatedRowDoc);
+    const props = { ...databaseProps(doc), createRow, loadView };
+    const host = render(<Database {...props} />);
+
+    await act(async () => {
+      await Promise.resolve(mockDatabaseContext?.navigateToRow?.('related-row', 'related-view'));
+    });
+    expect(mockPeekContext?.databaseDoc).toBe(relatedDoc);
+    await act(async () => {
+      host.rerender(<Database {...props} activeViewId='other-view' />);
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId('database-row-modal').getAttribute('data-row-id')).toBe('related-row');
+
+    host.unmount();
+    [doc, relatedDoc, relatedRowDoc].forEach((document) => document.destroy());
+  });
 
   it.each(['feed', 'gallery'] as const)(
     'hands off embedded %s orders and resolves permissions after loading',

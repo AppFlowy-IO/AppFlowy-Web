@@ -58,6 +58,8 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
         viewport: { width: 1440, height: 900 },
         launchOptions: {
+          // Optional pause between actions so recorded videos are easy to follow.
+          slowMo: Number(process.env.PLAYWRIGHT_SLOW_MO) || undefined,
           args: [
             '--disable-gpu-sandbox',
             '--no-sandbox',

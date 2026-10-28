@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useFieldSelector, useConditionsReadOnly } from '@/application/database-yjs';
 import { FilterType } from '@/application/database-yjs/database.type';
 import { useEnterAdvancedMode, useRemoveFilter } from '@/application/database-yjs/dispatch';
+import { useDetachedFilterStore } from '@/application/database-yjs/dispatch/detached-filters';
 import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as FilterIcon } from '@/assets/icons/filter.svg';
@@ -38,6 +39,8 @@ function FieldMenuTitle({
 }) {
   const deleteFilter = useRemoveFilter();
   const enterAdvancedMode = useEnterAdvancedMode();
+  // Detached rules stay a flat AND list, so they offer no advanced mode.
+  const supportsAdvancedFilters = !useDetachedFilterStore();
   const readOnly = useConditionsReadOnly();
   const { t } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -90,10 +93,12 @@ function FieldMenuTitle({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align='end' className='min-w-[200px]'>
-            <DropdownMenuItem onSelect={handleSwitchToAdvancedFilter}>
-              <FilterIcon className={'h-5 w-5'} />
-              {t('grid.filter.switchToAdvancedFilter')}
-            </DropdownMenuItem>
+            {supportsAdvancedFilters && (
+              <DropdownMenuItem onSelect={handleSwitchToAdvancedFilter}>
+                <FilterIcon className={'h-5 w-5'} />
+                {t('grid.filter.switchToAdvancedFilter')}
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onSelect={handleDeleteFilter} data-testid='delete-filter-button'>
               <DeleteIcon className={'h-5 w-5'} />
               {t('grid.settings.deleteFilter')}

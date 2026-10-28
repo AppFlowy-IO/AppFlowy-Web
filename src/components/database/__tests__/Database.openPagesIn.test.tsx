@@ -170,6 +170,18 @@ describe('Database record openers (open_pages_in, WP13 §3.8)', () => {
     expect(screen.getByTestId('center-peek')).toBeTruthy();
   });
 
+  it('uses the Calendar side-peek default when no preference is stored', async () => {
+    renderDatabase({ layout: DatabaseViewLayout.Calendar });
+    await openRow('r1');
+    expect(screen.getByTestId('side-peek')).toBeTruthy();
+  });
+
+  it('keeps an explicit center preference on Calendar views', async () => {
+    renderDatabase({ layout: DatabaseViewLayout.Calendar, openPagesIn: 'center_peek' });
+    await openRow('r1');
+    expect(screen.getByTestId('center-peek')).toBeTruthy();
+  });
+
   it('reads an unknown stored value as absent', async () => {
     renderDatabase({ isDashboardWidget: true, isDocumentBlock: true, openPagesIn: 'bogus' });
     await openRow('r1');

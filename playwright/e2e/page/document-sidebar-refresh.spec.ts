@@ -1,9 +1,11 @@
 import { test, expect } from '@playwright/test';
 
+import { ViewLayout } from '../../../src/application/types';
 import { waitForAtomicCreationCompletion } from '../../support/atomic-creation-helpers';
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
 import { expandSpaceByName } from '../../support/page/flows';
 import { PageSelectors, ViewActionSelectors, ModalSelectors } from '../../support/selectors';
+import { mockServerInfo } from '../../support/server-info-helpers';
 import { generateRandomEmail } from '../../support/test-config';
 
 /**
@@ -17,10 +19,7 @@ import { generateRandomEmail } from '../../support/test-config';
 const SPACE_NAME = 'General';
 
 test.describe('Document Sidebar Refresh via WebSocket', () => {
-  test('should verify sidebar updates via WebSocket when creating and renaming documents', async ({
-    page,
-    request,
-  }) => {
+  test('should verify sidebar updates via WebSocket when creating and renaming documents', async ({ page, request }) => {
     const uniqueId = Date.now();
     const renamedDocumentName = `Renamed-${uniqueId}`;
     const testEmail = generateRandomEmail();
@@ -51,7 +50,10 @@ test.describe('Document Sidebar Refresh via WebSocket', () => {
 
     // Keep the parent identity stable while its lazy children change.
     const firstPageItem = PageSelectors.items(page).first();
-    const parentTestId = await firstPageItem.locator(':scope > [data-testid^="page-"]').first().getAttribute('data-testid');
+    const parentTestId = await firstPageItem
+      .locator(':scope > [data-testid^="page-"]')
+      .first()
+      .getAttribute('data-testid');
 
     expect(parentTestId).toBeTruthy();
     const parentRow = page.getByTestId(parentTestId!);
@@ -162,11 +164,12 @@ test.describe('Document Sidebar Refresh via WebSocket', () => {
     console.log('[TEST COMPLETE] Sidebar refresh via WebSocket notification verified successfully!');
   });
 
-  test('should verify sidebar updates via WebSocket when creating AI chat', async ({
-    page,
-    request,
-  }) => {
+  test('should verify sidebar updates via WebSocket when creating AI chat', async ({ page, request }) => {
     const testEmail = generateRandomEmail();
+
+    // This scenario exercises AI-enabled navigation; disabled AI intentionally
+    // hides existing chat pages from the outline.
+    await mockServerInfo(page, { ai_enabled: true });
 
     // Suppress known non-critical errors
     page.on('pageerror', (err) => {
@@ -192,64 +195,37 @@ test.describe('Document Sidebar Refresh via WebSocket', () => {
     await expandSpaceByName(page, SPACE_NAME);
     await page.waitForTimeout(1000);
 
-    // Count existing pages (baseline)
-    const initialPageCount = await PageSelectors.names(page).count();
+    const firstPage = PageSelectors.items(page).first();
+    const parentTestId = await firstPage.locator(':scope > [data-testid^="page-"]').first().getAttribute('data-testid');
 
-    console.log(`[INFO] Initial page count: ${initialPageCount}`);
+    expect(parentTestId).toBeTruthy();
+    const parentRow = page.getByTestId(parentTestId!);
+    const expand = parentRow.getByTestId('outline-toggle-expand');
 
-    // Step 4: Hover over the first page and click the inline add button
-    await PageSelectors.items(page).first().hover();
-    await page.waitForTimeout(500);
-
-    await PageSelectors.items(page).first().getByTestId('inline-add-page').first().click({ force: true });
-    await page.waitForTimeout(500);
-
-    // Step 5: Select "AI Chat" from the dropdown menu
+    if (await expand.count()) await expand.click();
+    await parentRow.hover();
+    await parentRow.getByTestId('inline-add-page').click();
     await expect(ViewActionSelectors.popover(page)).toBeVisible();
-    await page.getByTestId('add-ai-chat-button').click();
-    await page.waitForTimeout(3000);
+    const [response] = await Promise.all([
+      page.waitForResponse(
+        (result) =>
+          result.request().method() === 'POST' &&
+          new URL(result.url()).pathname.endsWith('/page-view') &&
+          result.request().postDataJSON()?.layout === ViewLayout.AIChat
+      ),
+      page.getByTestId('add-ai-chat-button').click(),
+    ]);
+    const body = await response.json();
 
-    // Step 6: Verify sidebar page count increased (WebSocket notification worked!)
-    await expandSpaceByName(page, SPACE_NAME);
-    await page.waitForTimeout(1000);
+    expect(response.ok()).toBe(true);
+    expect(body.code, body.message).toBe(0);
+    expect(body.data.view_id).toBeTruthy();
+    const createdPage = PageSelectors.pageByViewId(page, body.data.view_id);
 
-    // Poll until page count increases
-    for (let attempt = 0; attempt < 30; attempt++) {
-      // Try to expand parent page if needed
-      const firstItem = PageSelectors.items(page).first();
-      const expandToggle = firstItem.getByTestId('outline-toggle-expand');
-
-      if ((await expandToggle.count()) > 0) {
-        await expandToggle.first().click({ force: true });
-        await page.waitForTimeout(500);
-      }
-
-      const currentCount = await PageSelectors.names(page).count();
-
-      console.log(`[INFO] Current page count: ${currentCount}, initial: ${initialPageCount}, attempt: ${attempt + 1}`);
-      if (currentCount > initialPageCount) break;
-      await page.waitForTimeout(1000);
-      if (attempt === 29) throw new Error('Page count did not increase - WebSocket notification may not be working for AI chat');
-    }
-
-    console.log('[SUCCESS] New AI chat appeared in sidebar via WebSocket notification!');
-
-    // Step 7: Expand the parent page to show the newly created AI chat
-    const parentItem = PageSelectors.items(page).first();
-    const parentExpandBtn = parentItem.getByTestId('outline-toggle-expand');
-
-    if ((await parentExpandBtn.count()) > 0) {
-      await parentExpandBtn.first().click({ force: true });
-      await page.waitForTimeout(1000);
-    }
-
-    // Step 8: Clean up - delete the AI chat
-    await expect(PageSelectors.nameContaining(page, 'Untitled').first()).toBeVisible({ timeout: 30000 });
-    const untitledItem = PageSelectors.itemByName(page, 'Untitled');
-
-    await untitledItem.hover({ force: true });
-    await page.waitForTimeout(500);
-    await PageSelectors.moreActionsButton(page, 'Untitled').click({ force: true });
+    await expect(createdPage).toBeVisible({ timeout: 30000 });
+    await expect(createdPage.getByTestId('page-name')).toHaveText('Untitled');
+    await createdPage.hover({ force: true });
+    await createdPage.getByTestId('page-more-actions').click({ force: true });
     await page.waitForTimeout(500);
 
     await expect(ViewActionSelectors.deleteButton(page)).toBeVisible();
@@ -271,6 +247,7 @@ test.describe('Document Sidebar Refresh via WebSocket', () => {
 
     await page.waitForTimeout(2000);
 
+    await expect(createdPage).toHaveCount(0, { timeout: 10000 });
     console.log('[TEST COMPLETE] AI chat sidebar refresh via WebSocket notification verified successfully!');
   });
 });

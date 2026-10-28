@@ -5,7 +5,7 @@
  * has the same rules in `open_pages_in.dart`, both pinned by
  * `dashboard-parity/drill-queries.json#open_pages_in`.
  */
-import { YDatabase, YDoc, YjsDatabaseKey, YjsEditorKey, YSharedRoot } from '@/application/types';
+import { DatabaseViewLayout, YDatabase, YDoc, YjsDatabaseKey, YjsEditorKey, YSharedRoot } from '@/application/types';
 
 export const OPEN_PAGES_IN_KEY = YjsDatabaseKey.open_pages_in;
 
@@ -28,8 +28,23 @@ export function parseOpenPagesIn(raw: unknown): OpenPagesIn | null {
  * or a drill-down open in a side peek, and records of a view in a center peek.
  * A mobile context opens records full screen before this resolver runs.
  */
-export function resolveOpenPagesIn(raw: unknown, source: OpenRecordSource): OpenPagesIn {
-  return parseOpenPagesIn(raw) ?? (source === 'view' ? 'center_peek' : 'side_peek');
+export function resolveOpenPagesIn(raw: unknown, source: OpenRecordSource, layout?: DatabaseViewLayout): OpenPagesIn {
+  // Calendar follows desktop #1531; an explicitly stored preference still wins.
+  return (
+    parseOpenPagesIn(raw) ?? (source === 'view' && layout !== DatabaseViewLayout.Calendar ? 'center_peek' : 'side_peek')
+  );
+}
+
+/** The source view's layout, used for layout-specific defaults without storing a preference. */
+export function readViewLayout(
+  doc: YDoc | null | undefined,
+  viewId: string | null | undefined
+): DatabaseViewLayout | undefined {
+  if (!doc || !viewId) return undefined;
+  const database = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase | undefined;
+  const layout = database?.get(YjsDatabaseKey.views)?.get(viewId)?.get(YjsDatabaseKey.layout);
+
+  return layout === undefined ? undefined : (Number(layout) as DatabaseViewLayout);
 }
 
 /** The stored value of a view, read at call time (`undefined` when absent). */
@@ -57,6 +72,7 @@ export function resolveRecordOpening({
   mobile,
   raw,
   source,
+  layout,
 }: {
   readOnly: boolean;
   isDocumentBlock: boolean;
@@ -64,19 +80,20 @@ export function resolveRecordOpening({
   mobile: boolean;
   raw: unknown;
   source: OpenRecordSource;
+  layout?: DatabaseViewLayout;
 }): RecordOpening {
   // A locked document's embedded database keeps its records in place, so the
   // row editor inherits the document's read-only permission; published
   // databases use the route-based row page.
   if (readOnly && (!isDocumentBlock || publish)) return 'readonly_page';
   if (readOnly && isDocumentBlock) {
-    const opening = resolveOpenPagesIn(raw, source);
+    const opening = resolveOpenPagesIn(raw, source, layout);
 
     return opening === 'full_page' ? 'center_peek' : opening;
   }
 
   if (mobile) return 'mobile_page';
-  return resolveOpenPagesIn(raw, source);
+  return resolveOpenPagesIn(raw, source, layout);
 }
 
 /** Whether a record opening leaves the current page (the drill-down closes first). */

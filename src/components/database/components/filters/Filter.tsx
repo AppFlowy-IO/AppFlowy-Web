@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 
-import { FieldType, useFilterSelector, useConditionsReadOnly } from '@/application/database-yjs';
+import { FieldType, Filter as FilterData, useFilterSelector, useConditionsReadOnly } from '@/application/database-yjs';
 import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as ArrowDown } from '@/assets/icons/alt_arrow_down.svg';
 import FieldCustomIcon from '@/components/database/components/field/FieldCustomIcon';
@@ -14,21 +14,19 @@ import { useFilterChipLabel } from './overview/useFilterChipLabel';
 
 export type FilterChipVariant = 'default' | 'pill';
 
+type FilterChipProps = {
+  filter: FilterData;
+  variant?: FilterChipVariant;
+  /** `data-parity-id` of the chip (the visual parity probe measures it). */
+  parityId?: string;
+};
+
 /**
  * A filter chip and its editor. `pill` is the drill-down's chip (WP13 §3.4):
  * 24px tall, fully rounded, the active pill colours and a 12px chevron.
  */
-function Filter({
-  filterId,
-  variant = 'default',
-  parityId,
-}: {
-  filterId: string;
-  variant?: FilterChipVariant;
-  /** `data-parity-id` of the chip (the visual parity probe measures it). */
-  parityId?: string;
-}) {
-  const filter = useFilterSelector(filterId);
+export function FilterChip({ filter, variant = 'default', parityId }: FilterChipProps) {
+  const filterId = filter.id;
   const readOnly = useConditionsReadOnly();
   const conditionsContext = useConditionsContext();
   const openFilterId = conditionsContext?.openFilterId;
@@ -51,7 +49,7 @@ function Filter({
     fieldType
   );
 
-  if (!filter || !field) return null;
+  if (!field) return null;
 
   const fieldName = field.get(YjsDatabaseKey.name) ?? '';
   const buttonText = hasContent ? `${fieldName}: ${description}` : fieldName;
@@ -120,6 +118,12 @@ function Filter({
       </Popover>
     </div>
   );
+}
+
+function Filter({ filterId, ...props }: Omit<FilterChipProps, 'filter'> & { filterId: string }) {
+  const filter = useFilterSelector(filterId);
+
+  return filter ? <FilterChip filter={filter} {...props} /> : null;
 }
 
 export default Filter;

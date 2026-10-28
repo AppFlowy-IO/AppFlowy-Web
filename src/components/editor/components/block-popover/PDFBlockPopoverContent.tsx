@@ -1,18 +1,20 @@
-import React, { useCallback, useMemo } from 'react';
+import { SyntheticEvent, useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSlateStatic } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
-import { BlockType, FieldURLType, PDFBlockData } from '@/application/types';
+import { BlockType, LinkPreviewBlockData, PDFBlockData } from '@/application/types';
 import FileDropzone from '@/components/_shared/file-dropzone/FileDropzone';
+import { notify } from '@/components/_shared/notify';
 import { TabPanel, ViewTab, ViewTabs } from '@/components/_shared/tabs/ViewTabs';
+import { reportPDFUploadError } from '@/components/editor/components/blocks/pdf/pdf-block-state';
+import { parsePDFLink } from '@/components/editor/components/blocks/pdf/pdf-data';
+import { uploadPDFFiles } from '@/components/editor/components/blocks/pdf/pdf-upload';
 import { useEditorContext } from '@/components/editor/EditorContext';
-import { FileHandler } from '@/utils/file';
-import { createPendingUploadId } from '@/utils/pending-upload';
-
-import EmbedLink from 'src/components/_shared/image-upload/EmbedLink';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 export function getFileName(rawUrl: string) {
   try {
@@ -38,186 +40,146 @@ function PDFBlockPopoverContent({ blockId, onClose }: { blockId: string; onClose
 
   const { t } = useTranslation();
 
-  const [tabValue, setTabValue] = React.useState('upload');
-  const [uploading, setUploading] = React.useState(false);
+  const [tabValue, setTabValue] = useState('upload');
+  const uploadInProgress = useRef(false);
+  const [uploading, setUploading] = useState(false);
+  const [link, setLink] = useState((entry?.[0]?.data as PDFBlockData | undefined)?.url || '');
 
-  const handleTabChange = useCallback((_event: React.SyntheticEvent, newValue: string) => {
+  const handleTabChange = useCallback((_event: SyntheticEvent, newValue: string) => {
     setTabValue(newValue);
   }, []);
 
   const handleInsertEmbedLink = useCallback(
     (url: string) => {
+      const current = findSlateEntryByBlockId(editor, blockId)?.[0];
+
+      if (current?.type !== BlockType.PDFBlock || editor.readOnly || editor.isElementReadOnly(current)) return;
+      const link = parsePDFLink(url);
+
+      if (!link) {
+        notify.error(t('document.plugins.pdf.invalidUrlToast'));
+        return;
+      }
+
+      if (!link.isPDF) {
+        CustomEditor.turnToBlock(editor, blockId, BlockType.LinkPreview, { url: link.url } as LinkPreviewBlockData);
+        notify.warning(t('document.plugins.pdf.unableToEmbed'));
+        onClose();
+        return;
+      }
+
       CustomEditor.setBlockData(editor, blockId, {
-        url,
-        name: getFileName(url),
+        url: link.url,
+        name: link.name,
         uploaded_at: Date.now(),
-        url_type: FieldURLType.Link,
+        url_type: 'network',
+        retry_local_url: '',
+        pending_upload_id: '',
+        needPassword: false,
+        upload_error: false,
       } as PDFBlockData);
       onClose();
     },
-    [blockId, editor, onClose]
-  );
-
-  const uploadFileRemote = useCallback(
-    async (file: File) => {
-      try {
-        if (uploadFile) {
-          return await uploadFile(file);
-        }
-      } catch (e: unknown) {
-        return;
-      }
-    },
-    [uploadFile]
-  );
-
-  const createPendingFileData = useCallback(async (file: File): Promise<PDFBlockData> => {
-    const data: PDFBlockData = {
-      url: undefined,
-      name: file.name,
-      uploaded_at: Date.now(),
-      url_type: FieldURLType.Upload,
-      pending_upload_id: createPendingUploadId(),
-    };
-
-    // Best-effort: a missing local snapshot must not block the remote upload
-    // (IndexedDB may be unavailable in private mode or over quota).
-    try {
-      const fileHandler = new FileHandler();
-      const res = await fileHandler.handleFileUpload(file);
-
-      // The popover never renders the local preview itself — the block
-      // creates its own object URL via `getStoredFile`. Revoke the one
-      // created here so it doesn't leak until the tab unloads.
-      URL.revokeObjectURL(res.url);
-      data.retry_local_url = res.id;
-    } catch {
-      data.retry_local_url = '';
-    }
-
-    return data;
-  }, []);
-
-  const cleanupLocalFile = useCallback(async (retryLocalUrl?: string) => {
-    if (!retryLocalUrl) return;
-
-    const fileHandler = new FileHandler();
-
-    await fileHandler.cleanup(retryLocalUrl).catch(() => undefined);
-  }, []);
-
-  const uploadIntoPdfBlock = useCallback(
-    async (targetBlockId: string, file: File, pendingData: PDFBlockData) => {
-      const url = await uploadFileRemote(file);
-
-      if (!url) {
-        return;
-      }
-
-      await cleanupLocalFile(pendingData.retry_local_url);
-
-      // Popover closes before the upload settles, so the user may have
-      // deleted/edited/replaced the block. Skip the write if the placeholder
-      // we created is no longer there.
-      let currentData: PDFBlockData | undefined;
-
-      try {
-        const entry = findSlateEntryByBlockId(editor, targetBlockId);
-
-        currentData = entry ? (entry[0] as { data?: PDFBlockData }).data ?? undefined : undefined;
-      } catch {
-        return;
-      }
-
-      if (!currentData) return;
-      if (currentData.url) return;
-      if (!pendingData.pending_upload_id || currentData.pending_upload_id !== pendingData.pending_upload_id) return;
-
-      CustomEditor.setBlockData(editor, targetBlockId, {
-        url,
-        name: file.name,
-        uploaded_at: Date.now(),
-        url_type: FieldURLType.Upload,
-        retry_local_url: '',
-        pending_upload_id: '',
-      } as PDFBlockData);
-    },
-    [cleanupLocalFile, editor, uploadFileRemote]
+    [blockId, editor, onClose, t]
   );
 
   const handleChangeUploadFiles = useCallback(
     async (files: File[]) => {
-      if (!files.length) return;
-
+      if (!files.length || uploadInProgress.current) return;
+      uploadInProgress.current = true;
       setUploading(true);
       try {
-        // Run every local snapshot in parallel so the popover doesn't pay
-        // N×IDB-latency before it can close.
-        const [primaryData, ...otherDatas] = await Promise.all(files.map((f) => createPendingFileData(f)));
-        const [file, ...otherFiles] = files;
+        await uploadPDFFiles({
+          editor,
+          blockId,
+          files,
+          uploadFile,
+          onStarted: onClose,
+          onError: (error) => {
+            const live = findSlateEntryByBlockId(editor, blockId)?.[0];
 
-        CustomEditor.setBlockData(editor, blockId, primaryData);
-
-        const pendingUploads: Promise<void>[] = [uploadIntoPdfBlock(blockId, file, primaryData)];
-
-        // Each new block is inserted directly below `blockId`, so iterating
-        // in reverse preserves the user's original file order in the doc.
-        const reversedPairs = otherFiles.map((f, i) => [f, otherDatas[i]] as const).reverse();
-
-        for (const [f, d] of reversedPairs) {
-          const newId = CustomEditor.addBelowBlock(editor, blockId, BlockType.PDFBlock, d);
-
-          if (newId) {
-            pendingUploads.push(uploadIntoPdfBlock(newId, f, d));
-          }
-        }
-
-        onClose();
-        await Promise.all(pendingUploads);
+            if (live?.type === BlockType.PDFBlock) reportPDFUploadError(editor, blockId, error);
+          },
+        });
+      } catch {
+        notify.error(t('button.uploadFailed'));
       } finally {
+        uploadInProgress.current = false;
         setUploading(false);
       }
     },
-    [blockId, createPendingFileData, editor, onClose, uploadIntoPdfBlock]
+    [editor, blockId, uploadFile, onClose, t]
   );
 
-  const defaultLink = useMemo(() => {
-    return (entry?.[0]?.data as PDFBlockData | undefined)?.url;
-  }, [entry]);
-
-  const uploadLabel = t('button.upload');
-  const embedLabel = t('document.plugins.file.networkTab');
   const selectedIndex = tabValue === 'upload' ? 0 : 1;
 
   return (
-    <div className={'flex flex-col gap-2 p-2'}>
+    <div className='flex w-[400px] max-w-[calc(100vw-32px)] flex-col bg-surface-layer-04' data-testid='pdf-uploader'>
       <ViewTabs
         value={tabValue}
         onChange={handleTabChange}
-        className={'min-h-[38px] w-[560px] max-w-[964px] border-b border-border-primary px-2'}
+        className='w-full border-b border-border-primary'
+        sx={{
+          height: 47,
+          minHeight: 47,
+          paddingTop: '12px',
+          paddingLeft: '12px',
+          '& .MuiTabs-scroller': { paddingBottom: 0 },
+          '& .MuiTab-root': {
+            height: 34,
+            minHeight: 34,
+            padding: '4px 10px 10px',
+            margin: 0,
+            fontWeight: 500,
+            lineHeight: '20px',
+            textTransform: 'none',
+            color: 'var(--text-tertiary)',
+          },
+          '& .MuiTab-root.Mui-selected': { color: 'var(--text-primary)' },
+        }}
       >
-        <ViewTab iconPosition='start' color='inherit' label={uploadLabel} value='upload' />
-        <ViewTab iconPosition='start' color='inherit' label={embedLabel} value='embed' />
+        <ViewTab color='inherit' label={t('button.upload')} value='upload' />
+        <ViewTab color='inherit' label={t('document.plugins.pdf.embedTab')} value='embed' />
       </ViewTabs>
-      <div className={'appflowy-scroller max-h-[400px] overflow-y-auto p-2'}>
-        <TabPanel className={'flex h-full w-full flex-col'} index={0} value={selectedIndex}>
+      <TabPanel index={0} value={selectedIndex}>
+        <div className='pdf-upload-dropzone px-5 pb-4 pt-5'>
           <FileDropzone
             accept='application/pdf,.pdf'
-            multiple={true}
-            placeholder={
-              <span>
-                Click to upload or drag and drop PDF files
-                <span className={'text-text-action'}> {t('document.plugins.photoGallery.browserLayout')}</span>
-              </span>
-            }
+            multiple
             onChange={handleChangeUploadFiles}
             loading={uploading}
+            buttonClassName='!h-[min(264px,calc(100dvh-115px))] !min-h-16 !border-2 !border-dashed !outline-none !px-8'
+            placeholder={
+              <span>
+                {t('document.plugins.pdf.uploadHint')}{' '}
+                <span className='text-text-action'>{t('document.plugins.pdf.uploadAction')}</span>
+              </span>
+            }
           />
-        </TabPanel>
-        <TabPanel className={'flex h-full w-full flex-col'} index={1} value={selectedIndex}>
-          <EmbedLink onDone={handleInsertEmbedLink} defaultLink={defaultLink} placeholder={'Embed a PDF link'} />
-        </TabPanel>
-      </div>
+        </div>
+      </TabPanel>
+      <TabPanel index={1} value={selectedIndex}>
+        <form
+          className='flex flex-col gap-4 p-5'
+          onSubmit={(event) => {
+            event.preventDefault();
+            handleInsertEmbedLink(link);
+          }}
+        >
+          <Input
+            size='md'
+            className='h-10 rounded-[10px]'
+            autoFocus
+            placeholder={t('document.plugins.pdf.embedPlaceholder')}
+            value={link}
+            onChange={(event) => setLink(event.target.value)}
+          />
+          <Button className='h-8 w-full rounded-md font-medium' type='submit' disabled={!parsePDFLink(link)}>
+            {t('document.plugins.pdf.embedAction')}
+          </Button>
+          <p className='text-sm leading-5 text-text-tertiary'>{t('document.plugins.pdf.worksWithLinksOfPDF')}</p>
+        </form>
+      </TabPanel>
     </div>
   );
 }
