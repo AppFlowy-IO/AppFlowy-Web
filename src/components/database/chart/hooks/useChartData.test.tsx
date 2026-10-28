@@ -323,9 +323,24 @@ describe('useChartData "No {field}" bucket', () => {
     for (const omitEmptyValues of [false, true]) {
       const { result } = await renderChart({ fields: [DONE_FIELD], rows, settings: { omitEmptyValues } });
 
+      // `isCheckedCategory` lets the drill-down filter by value, not by the localized label.
       expect(result.current.chartData).toEqual([
-        { label: 'Checked', value: 3, rowIds: ['r1', 'r4', 'r5'], isEmptyCategory: false, color: CHECKBOX_CHECKED_COLOR },
-        { label: 'Unchecked', value: 2, rowIds: ['r2', 'r3'], isEmptyCategory: false, color: CHECKBOX_UNCHECKED_COLOR },
+        {
+          label: 'Checked',
+          value: 3,
+          rowIds: ['r1', 'r4', 'r5'],
+          isEmptyCategory: false,
+          isCheckedCategory: true,
+          color: CHECKBOX_CHECKED_COLOR,
+        },
+        {
+          label: 'Unchecked',
+          value: 2,
+          rowIds: ['r2', 'r3'],
+          isEmptyCategory: false,
+          isCheckedCategory: false,
+          color: CHECKBOX_UNCHECKED_COLOR,
+        },
       ]);
     }
   });
@@ -346,8 +361,9 @@ describe('useChartData "No {field}" bucket', () => {
     ];
     const shown = await renderChart({ fields: [DUE_FIELD], rows, settings: { dateCondition: DateGroupCondition.Month } });
 
+    // The bucket key travels with the item for the drill-down's date range.
     expect(shown.result.current.chartData).toEqual([
-      { label: 'Mar 2026', value: 1, rowIds: ['r1'], isEmptyCategory: false },
+      { label: 'Mar 2026', value: 1, rowIds: ['r1'], isEmptyCategory: false, sortKey: '2026-03' },
       { label: 'No Due', value: 2, rowIds: ['r2', 'r3'], isEmptyCategory: true },
     ]);
 
@@ -424,6 +440,37 @@ describe('useChartData select / checkbox buckets', () => {
     expect(result.current.chartData).toEqual([
       expect.objectContaining({ label: 'Dup', rowIds: ['r1', 'r2'], color: 'var(--tag-fill-05-light)' }),
       expect.objectContaining({ label: 'nameless', rowIds: ['r2'], color: 'var(--tag-fill-07-light)' }),
+      expect.objectContaining({ label: 'No Kind', rowIds: [] }),
+    ]);
+  });
+
+  it('counts a row holding two same-named options once in their shared bucket', async () => {
+    // Desktop adds the row once per option: a count of 2, a Y value counted
+    // twice, and the row listed twice in the drill-down.
+    const { result } = await renderChart({
+      fields: [
+        {
+          id: 'kind',
+          name: 'Kind',
+          type: FieldType.MultiSelect,
+          options: [
+            { id: 'dup-1', name: 'Dup', color: SelectOptionColor.OptionColor3 },
+            { id: 'dup-2', name: 'Dup', color: SelectOptionColor.OptionColor5 },
+            { id: 'other', name: 'Other', color: SelectOptionColor.OptionColor7 },
+          ],
+        },
+        AMOUNT_FIELD,
+      ],
+      rows: [
+        { id: 'r1', cells: { kind: tags('dup-1,dup-2,other'), amount: amount(5) } },
+        { id: 'r2', cells: { kind: tags('dup-2'), amount: amount(7) } },
+      ],
+      settings: { xFieldId: 'kind', yFieldId: 'amount', aggregationType: ChartAggregationType.Sum },
+    });
+
+    expect(result.current.chartData).toEqual([
+      expect.objectContaining({ label: 'Dup', value: 12, rowIds: ['r1', 'r2'] }),
+      expect.objectContaining({ label: 'Other', value: 5, rowIds: ['r1'] }),
       expect.objectContaining({ label: 'No Kind', rowIds: [] }),
     ]);
   });

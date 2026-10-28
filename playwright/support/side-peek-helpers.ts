@@ -30,6 +30,7 @@ import { closeRowDetail, closeRowDetailWithEscape, openRowDetailByRowId } from '
 import {
   BoardSelectors,
   CalendarSelectors,
+  ChartDrilldownSelectors,
   ChartSelectors,
   DatabaseFeedSelectors,
   DatabaseGallerySelectors,
@@ -422,13 +423,11 @@ export async function openRowFromCalendarEvent(page: Page, title: string): Promi
 export async function openRowFromChartDrilldown(page: Page, barIndex: number, title: string): Promise<void> {
   await expect(ChartSelectors.anyChart(page).first()).toBeVisible({ timeout: 15_000 });
   await ChartSelectors.bars(page).nth(barIndex - 1).click({ force: true });
-  // The center peek is an MUI dialog too; the drill-down is the one with a DialogTitle.
-  const dialog = page
-    .locator('.MuiDialog-root:not([aria-hidden="true"])')
-    .filter({ has: page.locator('.MuiDialogTitle-root') });
-
-  await expect(dialog).toBeVisible({ timeout: 10_000 });
-  await dialog.getByRole('button', { name: title, exact: true }).click();
+  await expect(ChartDrilldownSelectors.dialog(page)).toBeVisible({ timeout: 10_000 });
+  // The row takes the click; its cells are a read-only preview.
+  await ChartDrilldownSelectors.rows(page)
+    .filter({ has: page.getByText(title, { exact: true }) })
+    .click();
   await expectPeekOpen(page, undefined, title);
 }
 

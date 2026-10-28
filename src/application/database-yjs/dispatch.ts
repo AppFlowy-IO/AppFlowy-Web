@@ -37,7 +37,6 @@ import {
   DateGroupCondition,
   FieldType,
   FieldVisibility,
-  FilterType,
   isAttributionFieldType,
   RollupDisplayMode,
   SortCondition,
@@ -67,7 +66,6 @@ import { createRollupField } from '@/application/database-yjs/fields/rollup/util
 import { checkExistingCellWrite, shouldSkipBulkRewrite } from '@/application/database-yjs/fields/text/rich-text-guard';
 import { notifyRichTextNewer } from '@/application/database-yjs/fields/text/rich-text-notice';
 import { createDateTimeField } from '@/application/database-yjs/fields/text/utils';
-import { getDefaultFilterCondition, resolveRollupFilterTargetFieldType } from '@/application/database-yjs/filter';
 import { isFormQuestionFieldType } from '@/application/database-yjs/form-field-types';
 import { attachNewFormQuestion } from '@/application/database-yjs/form-writer';
 import { observeFormulaRelatedDocuments, resolveFormulaRowContext } from '@/application/database-yjs/formula/materialize';
@@ -109,7 +107,6 @@ import {
   validateNumberGroupConfiguration,
 } from '@/application/database-yjs/number-grouping';
 import {
-  newRollupFilterMetadata,
   migrateRollupFilters, migrateRollupsForRelation,
   rollupResultType,
 } from '@/application/database-yjs/rollup/filter';
@@ -143,8 +140,6 @@ import {
   YDatabaseFields,
   YDatabaseFieldSetting,
   YDatabaseFieldTypeOption,
-  YDatabaseFilter,
-  YDatabaseFilters,
   YDatabaseGroup,
   YDatabaseGroupColumns,
   YDatabaseGroups,
@@ -4937,132 +4932,9 @@ export function useReorderSorts() {
   );
 }
 
-export function useAddFilter() {
-  const view = useDatabaseView();
-  const sharedRoot = useSharedRoot();
-  const fields = useDatabaseFields();
-
-  return useCallback(
-    (fieldId: string) => {
-      Log.debug('[useAddFilter] Creating filter', { fieldId });
-
-      // Guard: Don't create filter if fieldId is missing or empty
-      if (!view || !fieldId || fieldId.trim() === '') {
-        Log.warn('[useAddFilter] Skipping filter creation: view or fieldId is missing', {
-          hasView: !!view,
-          fieldId,
-        });
-        return;
-      }
-
-      const id = `${nanoid(6)}`;
-
-      Log.debug('[useAddFilter] Generated filter id', { filterId: id, fieldId });
-
-      executeOperations(
-        sharedRoot,
-        [
-          () => {
-            const field = fields.get(fieldId);
-
-            if (!field) {
-              Log.warn('[useAddFilter] Field not found for fieldId:', fieldId);
-              return;
-            }
-
-            const fieldType = Number(field.get(YjsDatabaseKey.type));
-
-            Log.debug('[useAddFilter] Field info', { fieldId, fieldType });
-
-            let filters = view.get(YjsDatabaseKey.filters);
-
-            if (!filters) {
-              Log.debug('[useAddFilter] Creating new filters array');
-              filters = new Y.Array() as YDatabaseFilters;
-              view.set(YjsDatabaseKey.filters, filters);
-            }
-
-            const filter = new Y.Map() as YDatabaseFilter;
-
-            filter.set(YjsDatabaseKey.id, id);
-            filter.set(YjsDatabaseKey.field_id, fieldId);
-            const conditionData = getDefaultFilterCondition(fieldType, field);
-
-            if (!conditionData) {
-              Log.warn('[useAddFilter] No default condition for fieldType:', fieldType);
-              return;
-            }
-
-            Log.debug('[useAddFilter] Setting filter data', {
-              filterId: id,
-              fieldId,
-              fieldType,
-              condition: conditionData.condition,
-              content: conditionData.content,
-            });
-
-            filter.set(YjsDatabaseKey.condition, conditionData.condition);
-            if (conditionData.content !== undefined) {
-              filter.set(YjsDatabaseKey.content, conditionData.content);
-            }
-
-            filter.set(YjsDatabaseKey.type, fieldType);
-            filter.set(YjsDatabaseKey.filter_type, FilterType.Data);
-            const rollupTargetFieldType = resolveRollupFilterTargetFieldType(fieldType, field);
-
-            if (rollupTargetFieldType !== undefined) {
-              filter.set(YjsDatabaseKey.rollup_target_type, rollupTargetFieldType);
-              if (field && fieldType === FieldType.Rollup) {
-                filter.set(YjsDatabaseKey.rollup_meta, newRollupFilterMetadata(field));
-              }
-            }
-
-            filters.push([filter]);
-
-            Log.debug('[useAddFilter] Filter created successfully', { filterId: id, filter: filter.toJSON() });
-          },
-        ],
-        'addFilter'
-      );
-
-      return id;
-    },
-    [view, sharedRoot, fields]
-  );
-}
-
-export function useRemoveFilter() {
-  const view = useDatabaseView();
-  const sharedRoot = useSharedRoot();
-
-  return useCallback(
-    (filterId: string) => {
-      if (!view) return;
-      executeOperations(
-        sharedRoot,
-        [
-          () => {
-            const filters = view.get(YjsDatabaseKey.filters);
-
-            if (!filters) {
-              return;
-            }
-
-            const index = filters.toArray().findIndex((filter) => filter.get(YjsDatabaseKey.id) === filterId);
-
-            if (index === -1) {
-              return;
-            }
-
-            filters.delete(index);
-          },
-        ],
-        'removeFilter'
-      );
-    },
-    [view, sharedRoot]
-  );
-}
+// One implementation for both import paths: the filter editors route these
+// through a detached filter store when one is provided.
+export { useAddFilter, useRemoveFilter } from './dispatch/sort-filter';
 
 export type { UpdateFilterParams } from './dispatch/filter-update';
 

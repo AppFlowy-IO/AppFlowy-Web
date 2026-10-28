@@ -37,7 +37,8 @@ import { getCheckboxChartColor, getSelectOptionChartColor, getSelectOptionChartT
 import { ChartRowsWatch, createChartRowsStore } from './chartRowsStore';
 
 const SECONDS_PER_DAY = 24 * 60 * 60;
-const RELATIVE_MONTH_PREFIX = 'month_';
+
+export const RELATIVE_MONTH_PREFIX = 'month_';
 
 /** Dart `String.compareTo`: UTF-16 code unit order, not `localeCompare`. */
 function compareCodeUnits(a: string, b: string): number {
@@ -55,7 +56,7 @@ const BUCKET_DATE_PATTERN = /^(\d{4,})-(\d{2})-(\d{2})$/;
 const INTEGER_TEXT_PATTERN = /^[+-]?\d+$/;
 
 /** Local midnight of a `yyyy-MM-dd` bucket key (Dart `DateTime.tryParse`). */
-function parseBucketDate(key: string): Dayjs | null {
+export function parseBucketDate(key: string): Dayjs | null {
   const match = BUCKET_DATE_PATTERN.exec(key);
 
   if (!match) return null;
@@ -370,6 +371,8 @@ interface Bucket {
   textColor?: string;
   /** Date bucket key, the chronological sort key. */
   sortKey?: string;
+  /** Checkbox bucket. */
+  isCheckedCategory?: boolean;
 }
 
 export interface ComputeChartDataInput {
@@ -473,19 +476,25 @@ export function computeChartData({
         continue;
       }
 
+      // Options sharing a name share a bucket, and a row holding several of
+      // them is still one row there. Desktop adds it once per option, which
+      // double counts it and lists it twice in the drill-down.
+      const rowBuckets = new Set<Bucket>();
+
       options.forEach((option) => {
         const label = option.name || option.id;
+        const bucket = bucketFor(label, () => ({
+          label,
+          rowIds: [],
+          yValues: [],
+          isEmptyCategory: false,
+          color: getSelectOptionChartColor(option.color),
+          textColor: getSelectOptionChartTextColor(option.color),
+        }));
 
-        add(
-          bucketFor(label, () => ({
-            label,
-            rowIds: [],
-            yValues: [],
-            isEmptyCategory: false,
-            color: getSelectOptionChartColor(option.color),
-            textColor: getSelectOptionChartTextColor(option.color),
-          }))
-        );
+        if (rowBuckets.has(bucket)) return;
+        rowBuckets.add(bucket);
+        add(bucket);
       });
       continue;
     }
@@ -502,6 +511,7 @@ export function computeChartData({
           yValues: [],
           isEmptyCategory: false,
           color: getCheckboxChartColor(checked),
+          isCheckedCategory: checked,
         }))
       );
       continue;
@@ -549,6 +559,8 @@ export function computeChartData({
 
     if (bucket.color !== undefined) item.color = bucket.color;
     if (bucket.textColor !== undefined) item.textColor = bucket.textColor;
+    if (bucket.isCheckedCategory !== undefined) item.isCheckedCategory = bucket.isCheckedCategory;
+    if (bucket.sortKey !== undefined) item.sortKey = bucket.sortKey;
     return item;
   });
 }

@@ -65,6 +65,13 @@ export interface ChartDataItem {
   textColor?: string;
   /** True for "No {field}" category */
   isEmptyCategory?: boolean;
+  /**
+   * Checked / Unchecked bucket of a checkbox field. The drill-down's filter
+   * reads this rather than the localized label (desktop's `isCheckedCategory`).
+   */
+  isCheckedCategory?: boolean;
+  /** Bucket key of a date category (`2026-03`, `last_7_days`, …), for the drill-down's filter. */
+  sortKey?: string;
 }
 
 /**
