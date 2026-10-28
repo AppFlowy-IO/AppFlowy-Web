@@ -7,8 +7,8 @@ import {
 } from './server-adapter';
 import {
   cancelJob, createStructuralMap, downloadExport, getArtifactScene, getJob, getPresentationStatus,
-  getSession, listDecks, listStyleRecords, PresentationAPIError, readArtifact, resolveSources,
-  assessSources, reviewStyle, submitExport, submitGeneration, uploadTemplate,
+  getSession, listDecks, listStyleRecords, PresentationAPIError, presentationErrorMessage, readArtifact,
+  resolveSources, assessSources, reviewStyle, submitExport, submitGeneration, uploadTemplate,
 } from './server-client';
 
 import type {
@@ -144,7 +144,13 @@ export async function waitForJob(scope: PresentationScope, initial: JobStatus, s
       if (signal?.aborted || !isTokenSessionCurrent(session)) throw abortError();
       onJob?.(job);
       if (terminal(job)) {
-        if (job.state !== 'succeeded') throw new PresentationAPIError('The presentation job did not complete.', job.errorReason ?? (job.state === 'canceled' ? 'JOB_CANCELED' : 'GENERATION_FAILED'), 409, false, { jobId: job.id, state: job.state });
+        if (job.state !== 'succeeded') {
+          const reason = job.errorReason ?? (job.state === 'canceled' ? 'JOB_CANCELED' : 'GENERATION_FAILED');
+
+          // A failed job reports why through its reason, such as an AI provider without credit.
+          throw new PresentationAPIError(presentationErrorMessage(reason) ?? 'The presentation job did not complete.', reason, 409, false, { jobId: job.id, state: job.state });
+        }
+
         return job;
       }
 

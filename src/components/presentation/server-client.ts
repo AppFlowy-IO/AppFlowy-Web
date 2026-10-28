@@ -56,11 +56,27 @@ const ERROR_MESSAGES: Record<string, string> = {
   AI_EXECUTION_TIMEOUT: 'Generation took too long. Try fewer slides or a smaller source.',
   AI_MODEL_UNAVAILABLE: 'The AI model for this request is no longer available. Start a new generation.',
   AI_EXECUTION_NOT_LICENSED: 'AI features are not available on this server.',
+  // AI execution reasons; Cloud sends the reason itself as the message.
+  AI_PROVIDER_QUOTA_EXHAUSTED: "This server's AI provider account has run out of credit. Ask your administrator to add credit or choose another AI model.",
+  AI_EXECUTION_FAILED: 'The AI service could not complete this request. Try again, or ask your administrator to check the AI provider settings.',
+  AI_EXECUTION_BUSY: 'The AI service is busy. Please try again shortly.',
+  AI_EXECUTION_UNAVAILABLE: 'The AI service is unavailable right now. Please try again shortly.',
+  AI_EXECUTION_INTERRUPTED: 'The connection to the AI service was interrupted. Please try again.',
+  AI_MODEL_INVALID_RESPONSE: 'The AI service returned a response that could not be read. Please try again.',
+  INVALID_MODEL_OUTPUT: 'The AI returned an answer that could not be used. Please try again.',
+  INVALID_MODEL_INPUT: 'The AI service rejected this request. Ask your administrator to check the AI model settings.',
+  MODEL_CONTEXT_EXCEEDED: 'The source is too large for the AI model. Select fewer pages, a smaller view or shorter media.',
+  MODEL_OUTPUT_TOO_LARGE: "The AI's answer was too large to use. Try fewer slides or a smaller source.",
   // Source preparation reasons that otherwise surface as raw codes in the dialog.
   RESOURCE_NOT_FOUND: 'This page or one of its sources is no longer available. Refresh and try again.',
   INCOMPLETE_SOURCE: "This page contains content presentations can't use yet, such as an unsupported database setting.",
   SOURCE_PROCESSING_BUSY: 'Source processing is busy. Please try again shortly.',
 };
+
+/** Readable text for a Cloud reason, or undefined when the reason has none. */
+export function presentationErrorMessage(reason: string): string | undefined {
+  return Object.hasOwn(ERROR_MESSAGES, reason) ? ERROR_MESSAGES[reason] : undefined;
+}
 
 function errorFromBody(body: unknown, status: number, retryAfter?: unknown): PresentationAPIError {
   const value = body && typeof body === 'object' ? body as Record<string, unknown> : {};
@@ -69,7 +85,7 @@ function errorFromBody(body: unknown, status: number, retryAfter?: unknown): Pre
   const delay = typeof retryAfter === 'string' ? Number(retryAfter) : undefined;
 
   return new PresentationAPIError(
-    ERROR_MESSAGES[reason] ?? (typeof value.message === 'string' ? value.message : reason),
+    presentationErrorMessage(reason) ?? (typeof value.message === 'string' ? value.message : reason),
     reason, status, value.retryable === true, value.details,
     typeof value.code === 'number' ? value.code : undefined,
     delay !== undefined && Number.isFinite(delay) && delay >= 0 ? delay : undefined,
