@@ -26,12 +26,9 @@ import { Progress } from '@/components/ui/progress';
 import { SearchInput } from '@/components/ui/search-input';
 import { Switch } from '@/components/ui/switch';
 
-const RECIPROCAL_NAME_DEBOUNCE_MS = 300;
+import { formatCandidatePath } from './relationDatabaseCandidates';
 
-/** Desktop elides the middle of a deep path: `first / ... / last`. */
-function formatCandidatePath(path: string[]) {
-  return (path.length > 2 ? [path[0], '...', path[path.length - 1]] : path).join(' / ');
-}
+const RECIPROCAL_NAME_DEBOUNCE_MS = 300;
 
 function relationLimitLabel(t: TFunction, limit: RelationLimit) {
   return limit === RelationLimit.OneOnly ? t('grid.relation.limitOnePage') : t('grid.relation.limitNoLimit');
