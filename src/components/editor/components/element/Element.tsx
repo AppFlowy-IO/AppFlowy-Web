@@ -45,6 +45,7 @@ import { usePopoverMountSignal } from '@/components/editor/components/block-popo
 import { BlockNotFound } from '@/components/editor/components/element/BlockNotFound';
 import { EditorElementProps, TextNode } from '@/components/editor/editor.type';
 import { useEditorContext, useEditorLocalState } from '@/components/editor/EditorContext';
+import { useEditorPreviewId } from '@/components/editor/EditorPreviewContext';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
 import { renderColor } from '@/utils/color';
 
@@ -59,7 +60,8 @@ export const Element = ({
 }: RenderElementProps & {
   element: EditorElementProps['node'];
 }) => {
-  const { jumpBlockId, onJumpedBlockId, readOnly } = useEditorContext();
+  const { jumpBlockId, onJumpedBlockId, readOnly, viewId } = useEditorContext();
+  const previewId = useEditorPreviewId();
   const { selectedBlockIds } = useEditorLocalState();
 
   const { blockId, type } = node;
@@ -317,7 +319,7 @@ export const Element = ({
 
   if ([BlockType.SimpleTableRowBlock, BlockType.SimpleTableCellBlock].includes(node.type as BlockType)) {
     return (
-      <Component node={node} {...attributes}>
+      <Component node={node} {...attributes} data-block-id={blockId} data-document-id={previewId ? undefined : viewId}>
         {children}
       </Component>
     );
@@ -328,6 +330,8 @@ export const Element = ({
       <div
         {...attributes}
         data-block-type={type}
+        data-block-id={blockId}
+        data-document-id={previewId ? undefined : viewId}
         className={`${className} ${allowBlockDrop && isDraggingOver ? 'block-drop-target' : ''}`}
         style={blockStyle}
       >

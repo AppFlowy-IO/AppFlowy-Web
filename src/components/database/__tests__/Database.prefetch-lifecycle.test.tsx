@@ -379,6 +379,24 @@ describe('Database blob prefetch lifecycle', () => {
     jest.restoreAllMocks();
   });
 
+  it.each([true, false])(
+    'fetches rows for a read-only presentation only when opted in (%s)',
+    async (loadReadOnlyRows) => {
+      const doc = createDatabaseDoc('database-id');
+      const { unmount } = render(
+        <Database {...databaseProps(doc)} readOnly canWrite={false} loadReadOnlyRows={loadReadOnlyRows} />
+      );
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(mockedPrefetch).toHaveBeenCalledTimes(loadReadOnlyRows ? 1 : 0);
+      expect(mockDatabaseContext).toMatchObject({ readOnly: true, canWrite: false });
+      unmount();
+      doc.destroy();
+    }
+  );
+
   it.each(['peek', 'page'] as const)(
     'keeps the opened %s canonical row when bulk seeds finish in the same React batch',
     async (surface) => {

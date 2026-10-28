@@ -64,7 +64,13 @@ if [ -n "${AF_BASE_URL}" ] || [ -n "${AF_GOTRUE_URL}" ] || [ -n "${AF_WS_V2_URL}
 fi
 
 # IMPORTANT: For client-side React app, inject config into HTML
-CONFIG_SCRIPT="<script>window.__APP_CONFIG__={APPFLOWY_BASE_URL:'${APPFLOWY_BASE_URL}',APPFLOWY_GOTRUE_BASE_URL:'${APPFLOWY_GOTRUE_BASE_URL}',APPFLOWY_WS_BASE_URL:'${APPFLOWY_WS_BASE_URL}'};</script>"
+# Only accept literal booleans before embedding this feature switch in JavaScript.
+case "${APPFLOWY_PRESENTATION_ENABLED:-true}" in
+  true|false) PRESENTATION_ENABLED="${APPFLOWY_PRESENTATION_ENABLED:-true}" ;;
+  *) echo "ERROR: APPFLOWY_PRESENTATION_ENABLED must be true or false"; exit 1 ;;
+esac
+
+CONFIG_SCRIPT="<script>window.__APP_CONFIG__={APPFLOWY_PRESENTATION_ENABLED:'${PRESENTATION_ENABLED}',APPFLOWY_BASE_URL:'${APPFLOWY_BASE_URL}',APPFLOWY_GOTRUE_BASE_URL:'${APPFLOWY_GOTRUE_BASE_URL}',APPFLOWY_WS_BASE_URL:'${APPFLOWY_WS_BASE_URL}'};</script>"
 
 # Inject the config script into both nginx and Bun server locations
 sed -i "s|</head>|${CONFIG_SCRIPT}</head>|g" /usr/share/nginx/html/index.html

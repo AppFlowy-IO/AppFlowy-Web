@@ -7,10 +7,20 @@ const mockUpdateGroupInAccessList = jest.fn();
 const mockSharePanelProps = jest.fn();
 const mockPublishPanelProps = jest.fn();
 const mockUseViewActionPermissions = jest.fn();
+const mockAISlidesPanelProps = jest.fn();
 let mockCanShare = true;
 let mockHasLoadedPermission = true;
 let mockIsLoadingPermission = false;
 let mockOutlineViewAvailable = true;
+
+jest.mock('@/components/presentation/feature', () => ({ PRESENTATION_ENABLED: true }));
+jest.mock('@/components/presentation/AISlidesSharePanel', () => ({
+  __esModule: true,
+  default: (props: unknown) => {
+    mockAISlidesPanelProps(props);
+    return <div data-testid='ai-slides-panel' />;
+  },
+}));
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -82,6 +92,30 @@ function renderShareTabs(hidePublish: boolean) {
 }
 
 describe('ShareTabs publish availability', () => {
+  it('opens AI Slides for a row while checking access on its containing database', async () => {
+    render(
+      <ShareTabs
+        opened
+        viewId='database-view'
+        presentationViewId='row-document'
+        presentationIsRow
+        presentationTitle='Project'
+        onPresentationRequest={jest.fn()}
+        hidePublish
+        onClose={() => undefined}
+      />
+    );
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'AI Slides' }), { button: 0, ctrlKey: false });
+    await screen.findByTestId('ai-slides-panel');
+    expect(mockAISlidesPanelProps).toHaveBeenCalledWith(
+      expect.objectContaining({
+        viewId: 'row-document',
+        permissionViewId: 'database-view',
+        isRow: true,
+        title: 'Project',
+      })
+    );
+  });
   beforeEach(() => {
     mockSharePanelProps.mockClear();
     mockUpdateGroupInAccessList.mockClear();
@@ -116,7 +150,16 @@ describe('ShareTabs publish availability', () => {
   it('passes the row URL and omits actions that would publish or export the containing database', () => {
     const shareUrl = 'https://app.test/app/workspace/database?v=board&r=row';
 
-    render(<ShareTabs opened viewId='database-container' hidePublish hideExport shareUrl={shareUrl} onClose={() => undefined} />);
+    render(
+      <ShareTabs
+        opened
+        viewId='database-container'
+        hidePublish
+        hideExport
+        shareUrl={shareUrl}
+        onClose={() => undefined}
+      />
+    );
     expect(screen.queryByTestId('publish-tab')).toBeNull();
     expect(screen.queryByRole('tab', { name: 'shareAction.exportAsTab' })).toBeNull();
     expect(mockSharePanelProps).toHaveBeenCalledWith(expect.objectContaining({ shareUrl }));

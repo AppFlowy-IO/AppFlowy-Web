@@ -2587,6 +2587,7 @@ export interface UpdateWorkspacePayload {
 }
 
 export enum SettingMenuItem {
+  AI_PRESENTATION = 'ai_presentation',
   ACCOUNT = 'ACCOUNT',
   PROFILE = 'PROFILE',
   WORKSPACE = 'WORKSPACE',
