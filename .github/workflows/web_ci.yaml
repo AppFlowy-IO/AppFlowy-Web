@@ -74,13 +74,17 @@ jobs:
   docker-runtime-test:
     if: github.event.pull_request.draft != true
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        dockerfile: [docker/Dockerfile, docker/Dockerfile.ssr]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build Docker image (runtime env injection test)
+      - name: Build Docker image
         run: |
-          docker build -t appflowy-web-test:ci -f docker/Dockerfile .
+          docker build -t appflowy-web-test:ci -f "${{ matrix.dockerfile }}" .
 
       - name: Test container fails without required env vars
         run: |
@@ -101,15 +105,15 @@ jobs:
       - name: Wait for server to be ready
         run: |
           for i in $(seq 1 30); do
-            if curl -fsS http://localhost:8080/ >/dev/null 2>&1; then
+            if curl -fsS --max-time 5 http://localhost:8080/app >/dev/null 2>&1; then
               echo "Server is up"; break; fi; sleep 1; done
-          curl -fsS http://localhost:8080/ >/dev/null
+          curl -fsS --max-time 5 http://localhost:8080/app >/dev/null
 
       - name: Verify injected runtime config in index.html
         run: |
           set -e
           echo "Fetching HTML content..."
-          HTML=$(curl -fsS http://localhost:8080/)
+          HTML=$(curl -fsS http://localhost:8080/app)
           
           echo "Checking for __APP_CONFIG__ injection..."
           echo "$HTML" | grep -q "window.__APP_CONFIG__" || (echo "ERROR: Missing window.__APP_CONFIG__" && exit 1)
@@ -134,7 +138,7 @@ jobs:
           echo "Extracting and verifying configuration structure..."
           
           # Extract the config object from HTML
-          CONFIG=$(curl -fsS http://localhost:8080/ | grep -o "window.__APP_CONFIG__={[^}]*}")
+          CONFIG=$(curl -fsS http://localhost:8080/app | grep -o "window.__APP_CONFIG__={[^}]*}")
           echo "Extracted config: $CONFIG"
           
           # Verify it's a valid JavaScript object format
@@ -142,6 +146,34 @@ jobs:
             (echo "ERROR: Config format is invalid" && exit 1)
           
           echo "✓ Configuration format and structure verified"
+
+      - name: Verify SSR readiness and PDF routes
+        if: matrix.dockerfile == 'docker/Dockerfile.ssr'
+        run: |
+          set -euo pipefail
+          test "$(curl -fsS --max-time 5 http://localhost:8080/health)" = healthy
+          curl -fsS --max-time 5 http://localhost:8080/pdfjs/standard_fonts/FoxitSans.pfb >/dev/null
+
+          PDF_STATUS=$(curl -sS --max-time 5 -o /tmp/appflowy-pdf-proxy-response -w '%{http_code}' \
+            'http://localhost:8080/api/pdf-proxy?url=http%3A%2F%2F127.0.0.1%2Ffile.pdf')
+          test "$PDF_STATUS" = 400
+          grep -q '^Invalid PDF request$' /tmp/appflowy-pdf-proxy-response
+
+      - name: Verify failed SSR startup makes the container unready
+        if: matrix.dockerfile == 'docker/Dockerfile.ssr'
+        run: |
+          set -euo pipefail
+          # Reproduce a missing runtime import while leaving nginx running.
+          docker exec appflowy-web-test mv /app/api/_lib/pdf-proxy-response.ts /app/api/_lib/pdf-proxy-response.ts.disabled
+          docker restart --time 2 appflowy-web-test
+
+          for i in $(seq 1 30); do
+            HEALTH_STATUS=$(curl -s --max-time 3 -o /dev/null -w '%{http_code}' http://localhost:8080/health || true)
+            if [ "$HEALTH_STATUS" = 502 ]; then break; fi
+            sleep 1
+          done
+          test "$HEALTH_STATUS" = 502
+          test "$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://localhost:8080/app)" = 502
 
       - name: Show container logs on failure
         if: failure()
