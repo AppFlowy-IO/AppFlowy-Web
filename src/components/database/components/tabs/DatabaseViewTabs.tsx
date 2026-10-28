@@ -71,6 +71,9 @@ export function DatabaseViewTabs({
   const [tabsWidth, setTabsWidth] = useState<number | null>(null);
   const [tabsContainer, setTabsContainer] = useState<HTMLDivElement | null>(null);
   const tabRefs = useRef<Map<string, HTMLElement>>(new Map());
+  // Radix can report mouse selection and its following focus before the owner
+  // commits the controlled value. Coalesce only that pointer interaction.
+  const pointerSelectionRef = useRef<{ viewId?: string } | null>(null);
 
   // Drag-to-reorder for the tab bar (horizontal). The owning component
   // (DatabaseViews) applies the new order and persists it.
@@ -256,10 +259,22 @@ export function DatabaseViewTabs({
         >
           <Tabs
             value={activeViewId}
-            onValueChange={(viewId) => {
-              if (setSelectedViewId) {
-                setSelectedViewId(viewId);
+            onMouseDownCapture={(event) => {
+              pointerSelectionRef.current = event.button === 0 && !event.ctrlKey ? {} : null;
+            }}
+            onMouseUpCapture={() => { pointerSelectionRef.current = null; }}
+            onKeyDownCapture={() => { pointerSelectionRef.current = null; }}
+            onBlurCapture={(event) => {
+              if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) {
+                pointerSelectionRef.current = null;
               }
+            }}
+            onValueChange={(viewId) => {
+              const pointer = pointerSelectionRef.current;
+
+              if (pointer?.viewId === viewId) return;
+              if (pointer) pointer.viewId = viewId;
+              setSelectedViewId?.(viewId);
             }}
             className='relative flex h-full overflow-hidden'
           >

@@ -1,5 +1,5 @@
 import { expect } from '@jest/globals';
-import { act, render } from '@testing-library/react';
+import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
 import { DatabaseViewLayout, YDatabaseView, YjsDatabaseKey } from '@/application/types';
@@ -80,6 +80,7 @@ function createViews() {
 
 function renderTabs(props: {
   selectedViewId: string;
+  setSelectedViewId?: jest.Mock;
   pendingScrollToViewId?: string | null;
   setPendingScrollToViewId?: jest.Mock;
 }) {
@@ -93,7 +94,7 @@ function renderTabs(props: {
       setDeleteConfirmOpen={jest.fn()}
       setMenuViewId={jest.fn()}
       setRenameView={jest.fn()}
-      setSelectedViewId={jest.fn()}
+      setSelectedViewId={props.setSelectedViewId ?? jest.fn()}
       viewIds={viewIds}
       views={views}
       visibleViewIds={viewIds}
@@ -113,6 +114,35 @@ function renderTabs(props: {
 describe('DatabaseViewTabs active tab reveal', () => {
   const originalResizeObserver = globalThis.ResizeObserver;
   const scrollIntoView = jest.fn();
+
+  it('relays pointer selection and focus only once while the controlled value is deferred', () => {
+    const select = jest.fn();
+    const { getByTestId } = renderTabs({ selectedViewId: viewIds[0], setSelectedViewId: select });
+    const nextTab = getByTestId(`view-tab-${viewIds[1]}`);
+
+    fireEvent.mouseDown(nextTab, { button: 0, ctrlKey: false });
+    fireEvent.focus(nextTab);
+    fireEvent.mouseUp(nextTab, { button: 0 });
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(select).toHaveBeenLastCalledWith(viewIds[1]);
+  });
+
+  it('keeps keyboard activation working after a pointer selection', async () => {
+    const select = jest.fn();
+    const { getByTestId } = renderTabs({ selectedViewId: viewIds[0], setSelectedViewId: select });
+    const currentTab = getByTestId(`view-tab-${viewIds[0]}`);
+    const nextTab = getByTestId(`view-tab-${viewIds[1]}`);
+
+    fireEvent.mouseDown(nextTab, { button: 0, ctrlKey: false });
+    fireEvent.focus(nextTab);
+    fireEvent.mouseUp(nextTab, { button: 0 });
+    expect(select).toHaveBeenCalledTimes(1);
+    select.mockClear();
+    act(() => currentTab.focus());
+    fireEvent.keyDown(currentTab, { key: 'ArrowRight' });
+    await waitFor(() => expect(select).toHaveBeenCalledTimes(1));
+    expect(select).toHaveBeenLastCalledWith(viewIds[1]);
+  });
 
   beforeAll(() => {
     globalThis.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;

@@ -1,6 +1,6 @@
 import { expect } from '@jest/globals';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import * as Y from 'yjs';
 
@@ -140,11 +140,99 @@ function HeaderSelection({ workspaceId, routeId }: { workspaceId: string; routeI
   return <output data-testid='header-selection'>{selected}</output>;
 }
 
+function TabNavigationControls() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const select = (viewId: string) => {
+    const props = global.__databaseViewTestState?.capturedDatabaseProps as { onChangeView: (id: string) => void };
+
+    props.onChangeView(viewId);
+  };
+
+  return <>
+    <output data-testid='tab-navigation-location'>{location.search}</output>
+    <button onClick={() => select('board')}>Select Board</button>
+    <button onClick={() => { select('board'); select('grid'); }}>Select Board then Grid</button>
+    <button onClick={() => navigate(-1)}>Back</button>
+    <button onClick={() => navigate(1)}>Forward</button>
+  </>;
+}
+
+function renderTabNavigation() {
+  const grid = createLegacyDatabaseView('grid');
+  const board = { ...createLegacyDatabaseView('board'), layout: ViewLayout.Board };
+  const container: View = {
+    ...createParentView(grid), view_id: 'container', layout: ViewLayout.Grid,
+    extra: { is_space: false, is_database_container: true }, children: [grid, board],
+  };
+
+  grid.parent_view_id = 'container';
+  board.parent_view_id = 'container';
+  global.__databaseViewTestState = { outline: [container] };
+  const doc = createDatabaseDoc('database', ['grid', 'board']);
+  const viewMeta: ViewMetaProps = {
+    viewId: 'grid', parentViewId: 'container', name: 'Grid', layout: ViewLayout.Grid,
+    workspaceId: 'workspace', visibleViewIds: [],
+  };
+  const rendered = render(<MemoryRouter initialEntries={['/app/workspace/grid?v=grid&keep=1']}>
+    <TabNavigationControls />
+    <DatabaseView doc={doc} workspaceId='workspace' readOnly viewMeta={viewMeta}
+      updatePage={jest.fn()} updatePageIcon={jest.fn()} updatePageName={jest.fn()} />
+  </MemoryRouter>);
+
+  return { ...rendered, doc };
+}
+
 describe('DatabaseView database container', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     localStorage.clear();
     global.__databaseViewTestState = undefined;
+  });
+
+  it('uses the Router query when the browser URL already names the requested tab', () => {
+    const browserUrl = window.location.href;
+    const browserState = window.history.state;
+
+    window.history.replaceState(null, '', '/external?v=board&browserOnly=1');
+    const { unmount, doc } = renderTabNavigation();
+
+    try {
+      expect(screen.getByTestId('tab-navigation-location').textContent).toBe('?v=grid&keep=1');
+      fireEvent.click(screen.getByRole('button', { name: /^Select Board$/ }));
+      expect(screen.getByTestId('tab-navigation-location').textContent).toBe('?v=board&keep=1');
+      fireEvent.click(screen.getByRole('button', { name: /^Back$/ }));
+      expect(screen.getByTestId('tab-navigation-location').textContent).toBe('?v=grid&keep=1');
+      fireEvent.click(screen.getByRole('button', { name: /^Forward$/ }));
+      expect(screen.getByTestId('tab-navigation-location').textContent).toBe('?v=board&keep=1');
+      fireEvent.click(screen.getByRole('button', { name: /^Back$/ }));
+      expect(screen.getByTestId('tab-navigation-location').textContent).toBe('?v=grid&keep=1');
+      expect(window.location.search).toBe('?v=board&browserOnly=1');
+    } finally {
+      unmount();
+      doc.destroy();
+      window.history.replaceState(browserState, '', browserUrl);
+    }
+  });
+
+  it('preserves distinct tab navigation targets before the Router updates', () => {
+    const { unmount, doc } = renderTabNavigation();
+
+    try {
+      fireEvent.click(screen.getByRole('button', { name: /^Select Board then Grid$/ }));
+      expect(screen.getByTestId('tab-navigation-location').textContent).toBe('?v=grid&keep=1');
+      fireEvent.click(screen.getByRole('button', { name: /^Back$/ }));
+      expect(screen.getByTestId('tab-navigation-location').textContent).toBe('?v=board&keep=1');
+      fireEvent.click(screen.getByRole('button', { name: /^Back$/ }));
+      expect(screen.getByTestId('tab-navigation-location').textContent).toBe('?v=grid&keep=1');
+      fireEvent.click(screen.getByRole('button', { name: /^Forward$/ }));
+      expect(screen.getByTestId('tab-navigation-location').textContent).toBe('?v=board&keep=1');
+      fireEvent.click(screen.getByRole('button', { name: /^Forward$/ }));
+      expect(screen.getByTestId('tab-navigation-location').textContent).toBe('?v=grid&keep=1');
+    } finally {
+      unmount();
+      doc.destroy();
+    }
   });
 
   it.each(['container', 'standalone', 'missing folder views', 'surviving selection'])(
@@ -154,7 +242,7 @@ describe('DatabaseView database container', () => {
       const surviving = createLegacyDatabaseView('surviving-view');
       const container: View = {
         ...createParentView(removed), view_id: 'container', layout: ViewLayout.Grid,
-        extra: { is_database_container: true },
+        extra: { is_space: false, is_database_container: true },
         children: scenario === 'missing folder views' ? [removed] : [removed, surviving],
       };
 
@@ -927,7 +1015,7 @@ describe('DatabaseView database container', () => {
           createParentView({
             ...legacyView,
             view_id: 'new-container-id',
-            extra: { is_database_container: true },
+            extra: { is_space: false, is_database_container: true },
             children: [{ ...legacyView, parent_view_id: 'new-container-id' }],
           }),
         ],
