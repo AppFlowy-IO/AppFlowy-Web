@@ -210,6 +210,39 @@ test('polling follows the durable job and stops at its terminal error', async ()
   jest.useRealTimers();
 });
 
+test('polling backs off and keeps following the job through transient status failures', async () => {
+  jest.useFakeTimers();
+  mockRequest
+    .mockImplementationOnce(() => Promise.resolve(response({ ...job, state: 'running' })))
+    .mockImplementationOnce(() => Promise.reject({ isAxiosError: true, response: { status: 503, data: { code: 1032, reason: 'PERSISTENCE_UNAVAILABLE', retryable: true } } }))
+    .mockImplementationOnce(() => Promise.resolve(response(job)));
+  const running = waitForJob(scope, { ...job, state: 'running' });
+
+  await jest.advanceTimersByTimeAsync(1000);
+  expect(mockRequest).toHaveBeenCalledTimes(1);
+  // The second poll waits longer than the first.
+  await jest.advanceTimersByTimeAsync(1000);
+  expect(mockRequest).toHaveBeenCalledTimes(1);
+  await jest.advanceTimersByTimeAsync(500);
+  expect(mockRequest).toHaveBeenCalledTimes(2);
+  // A retryable status failure does not end the wait for a durable job.
+  await jest.advanceTimersByTimeAsync(3000);
+  await expect(running).resolves.toMatchObject({ state: 'succeeded' });
+  expect(mockRequest).toHaveBeenCalledTimes(3);
+  jest.useRealTimers();
+});
+
+test('polling stops on a permanent status failure', async () => {
+  jest.useFakeTimers();
+  mockRequest.mockImplementationOnce(() => Promise.reject({ isAxiosError: true, response: { status: 403, data: { code: 1012, reason: 'SOURCE_ACCESS_DENIED', retryable: false } } }));
+  const running = waitForJob(scope, { ...job, state: 'running' });
+  const failure = expect(running).rejects.toMatchObject({ code: 'SOURCE_ACCESS_DENIED' });
+
+  await jest.advanceTimersByTimeAsync(1000);
+  await failure;
+  jest.useRealTimers();
+});
+
 test('private export delivery reuses its request ID and exposes a Blob instead of a public URL', async () => {
   const bytes = new Blob(['PK native pptx'], { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
 

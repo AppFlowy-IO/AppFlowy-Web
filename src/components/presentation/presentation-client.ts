@@ -127,11 +127,17 @@ function pause(ms: number, signal?: AbortSignal): Promise<void> {
 
 const terminal = (job: JobStatus) => ['succeeded', 'failed', 'canceled'].includes(job.state);
 
+/** First poll delay; later polls back off so long generations do not poll every second. */
+export const JOB_POLL_INITIAL_MS = 1000;
+/** Longest delay between polls of a running job. */
+export const JOB_POLL_MAX_MS = 5000;
+
 /** Polls durable status with bounded duration. Abort attempts cancellation of the known server job. */
 export async function waitForJob(scope: PresentationScope, initial: JobStatus, signal?: AbortSignal, onJob?: (job: JobStatus) => void): Promise<JobStatus> {
   const session = captureTokenSession();
   const deadline = Date.now() + 10 * 60 * 1000;
   let job = initial;
+  let delay = JOB_POLL_INITIAL_MS;
 
   try {
     for (;;) {
@@ -143,8 +149,16 @@ export async function waitForJob(scope: PresentationScope, initial: JobStatus, s
       }
 
       if (Date.now() >= deadline) throw new PresentationAPIError('The job is still processing. Retry to resume this operation.', 'JOB_POLL_TIMEOUT', 0, true, { jobId: job.id });
-      await pause(1000, signal);
-      job = await getJob(scope, job.id, signal);
+      await pause(delay, signal);
+      try {
+        job = await getJob(scope, job.id, signal);
+        delay = Math.min(Math.round(delay * 1.5), JOB_POLL_MAX_MS);
+      } catch (error) {
+        // A failed status read does not end the durable job. Keep polling it until the deadline,
+        // honoring any server-requested delay; permanent errors and aborts still end the wait.
+        if (!(error instanceof PresentationAPIError) || !error.retryable) throw error;
+        delay = Math.min(Math.max(delay * 2, (error.retryAfterSecs ?? 0) * 1000), JOB_POLL_MAX_MS);
+      }
     }
   } catch (error) {
     if (signal?.aborted && !terminal(job) && isTokenSessionCurrent(session)) {
