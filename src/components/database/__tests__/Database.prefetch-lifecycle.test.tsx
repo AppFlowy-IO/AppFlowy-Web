@@ -2786,6 +2786,69 @@ describe('Database blob prefetch lifecycle', () => {
     doc.destroy();
   });
 
+  it('shares row reset delivery across 100 database views and releases closed consumers', () => {
+    const docs = Array.from({ length: 100 }, (_, index) => createDatabaseDoc(`dashboard-view-${index}`));
+    const seed = createHydratedRowDoc('shared-seed');
+    const firstReset = createHydratedRowDoc('first-reset');
+    const secondReset = createHydratedRowDoc('second-reset');
+    const unrelatedReset = createHydratedRowDoc('unrelated-reset');
+    const eventEmitter = new EventEmitter();
+    const contents = (count: number) => (
+      <>
+        {docs.slice(0, count).map((doc) => (
+          <Database
+            key={doc.guid}
+            {...databaseProps(doc)}
+            eventEmitter={eventEmitter}
+            initialRowMap={{ 'row-id': seed }}
+          />
+        ))}
+      </>
+    );
+    const expectRowDocs = (count: number, guid: string) => {
+      const rows = screen.getAllByRole('button', { name: 'Load seeded row' });
+
+      expect(rows).toHaveLength(count);
+      expect(rows.map((row) => row.getAttribute('data-row-guid'))).toEqual(Array(count).fill(guid));
+    };
+
+    const { rerender, unmount } = render(contents(100));
+
+    try {
+      expect(eventEmitter.listenerCount(APP_EVENTS.COLLAB_DOC_RESET)).toBe(1);
+      act(() => {
+        eventEmitter.emit(APP_EVENTS.COLLAB_DOC_RESET, { objectId: 'unrelated-row', doc: unrelatedReset });
+      });
+      expectRowDocs(100, 'shared-seed');
+
+      act(() => {
+        eventEmitter.emit(APP_EVENTS.COLLAB_DOC_RESET, { objectId: 'row-id', doc: firstReset });
+      });
+      expectRowDocs(100, 'first-reset');
+
+      rerender(contents(50));
+      expect(eventEmitter.listenerCount(APP_EVENTS.COLLAB_DOC_RESET)).toBe(1);
+      act(() => {
+        eventEmitter.emit(APP_EVENTS.COLLAB_DOC_RESET, { objectId: 'row-id', doc: secondReset });
+      });
+      expectRowDocs(50, 'second-reset');
+
+      rerender(contents(0));
+      expect(eventEmitter.listenerCount(APP_EVENTS.COLLAB_DOC_RESET)).toBe(0);
+      rerender(contents(100));
+      expect(eventEmitter.listenerCount(APP_EVENTS.COLLAB_DOC_RESET)).toBe(1);
+      act(() => {
+        eventEmitter.emit(APP_EVENTS.COLLAB_DOC_RESET, { objectId: 'row-id', doc: firstReset });
+      });
+      expectRowDocs(100, 'first-reset');
+    } finally {
+      unmount();
+      [...docs, seed, firstReset, secondReset, unrelatedReset].forEach((doc) => doc.destroy());
+    }
+
+    expect(eventEmitter.listenerCount(APP_EVENTS.COLLAB_DOC_RESET)).toBe(0);
+  });
+
   it('adopts a replacement DatabaseRow doc emitted by a version reset', async () => {
     const doc = createDatabaseDoc('database-id');
     const seedShell = createHydratedRowDoc('seed-shell');

@@ -6,7 +6,6 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import { APP_EVENTS } from '@/application/constants';
 import {
   getDatabaseRowDocFromSeed,
   holdsDatabaseSourceRows,
@@ -76,6 +75,7 @@ import DatabaseRowModal from '@/components/database/DatabaseRowModal';
 import DatabaseViews from '@/components/database/DatabaseViews';
 import { shouldUseFixedDatabaseViewport } from '@/components/database/layout';
 import { EmbeddedDatabasePermissionsResolver } from '@/components/editor/components/blocks/database/hooks/useEmbeddedDatabasePermissions';
+import { subscribeCollabDocReset } from '@/components/ws/sync/subscribeCollabDocReset';
 import { cn } from '@/lib/utils';
 import { Log } from '@/utils/log';
 
@@ -1150,10 +1150,7 @@ function Database(props: Database2Props) {
       }
     };
 
-    eventEmitter.on(APP_EVENTS.COLLAB_DOC_RESET, handleCollabDocReset);
-    return () => {
-      eventEmitter.off(APP_EVENTS.COLLAB_DOC_RESET, handleCollabDocReset);
-    };
+    return subscribeCollabDocReset(eventEmitter, handleCollabDocReset);
   }, [getDatabaseId, props.eventEmitter, registerRowDocWithHistory]);
 
   const bindRowSync = useCallback(
