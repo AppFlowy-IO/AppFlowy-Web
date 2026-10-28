@@ -17,7 +17,7 @@ import {
   allWidgets,
   apiGet,
   apiPatch,
-  apiPost,
+  createDatabaseViewThroughApi,
   dashboardViewId,
   dashboardWorld,
   DashboardSelectors,
@@ -239,28 +239,26 @@ export async function seedDatabaseTabs(
   layoutName = 'Grid'
 ): Promise<string[]> {
   if (layoutName !== 'Grid') throw new Error(`Only Grid tabs are seeded, got "${layoutName}"`);
-  const world = dashboardWorld(page);
   const database = fixtureDatabase(page, databaseName);
   const created: string[] = [];
   let prevViewId = database.views.Grid;
 
   for (let index = 1; index <= count; index += 1) {
-    const response = await apiPost<{ view_id: string }>(
+    // Legacy creation can commit before publication fails. Keep each seeded
+    // tab behind the existing journaled command and browser-sync boundary.
+    const viewId = await createDatabaseViewThroughApi(
+      page,
       request,
-      world.owner.accessToken,
-      `/api/workspace/${world.workspaceId}/page-view/${database.views.Grid}/database-view`,
       {
-        parent_view_id: database.pageId,
-        prev_view_id: prevViewId,
-        database_id: database.databaseId,
-        layout: FOLDER_LAYOUT_GRID,
+        database: databaseName,
+        folderLayout: FOLDER_LAYOUT_GRID,
+        prevViewId,
         name: `Grid ${index}`,
-        embedded: false,
       }
     );
 
-    created.push(response.view_id);
-    prevViewId = response.view_id;
+    created.push(viewId);
+    prevViewId = viewId;
   }
 
   return created;
