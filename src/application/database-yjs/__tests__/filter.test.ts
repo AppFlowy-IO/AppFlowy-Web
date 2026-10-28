@@ -372,6 +372,49 @@ describe('date filter tests', () => {
       true
     );
   });
+
+  // The picker stores a range at the start of each chosen day. Desktop compares
+  // the dates themselves (`naive_date_from_timestamp`), so a row later on the
+  // end day is still inside the range.
+  it('keeps a row from later on the end day inside a between range', () => {
+    const afternoon = base.hour(15).unix().toString();
+    const nextMorning = base.add(1, 'day').hour(9).unix().toString();
+    const startsBetween = (data: string) =>
+      dateFilterCheck(
+        { ...cell, data },
+        { condition: DateFilterCondition.DateStartsBetween, start: before, end: timestamp }
+      );
+
+    expect(startsBetween(afternoon)).toBe(true);
+    expect(startsBetween(nextMorning)).toBe(false);
+    expect(
+      dateFilterCheck(
+        { ...cell, endTimestamp: afternoon },
+        { condition: DateFilterCondition.DateEndsBetween, start: before, end: timestamp }
+      )
+    ).toBe(true);
+    expect(
+      rowTimeFilterCheck(afternoon, { condition: DateFilterCondition.DateStartsBetween, start: before, end: timestamp })
+    ).toBe(true);
+  });
+
+  // A bound that is not at midnight, as another client may store it, still
+  // names a whole day.
+  it('compares whole days against a bound stored mid-day', () => {
+    const boundAtNoon = base.hour(12).unix().toString();
+    const morning = base.hour(8).unix().toString();
+    const nextMorning = base.add(1, 'day').hour(8).unix().toString();
+    const check = (data: string, condition: DateFilterCondition) =>
+      dateFilterCheck({ ...cell, data }, { condition, timestamp: boundAtNoon });
+
+    expect(check(morning, DateFilterCondition.DateStartsBefore)).toBe(false);
+    expect(check(morning, DateFilterCondition.DateStartsOnOrAfter)).toBe(true);
+    expect(check(nextMorning, DateFilterCondition.DateStartsAfter)).toBe(true);
+    expect(check(nextMorning, DateFilterCondition.DateStartsOnOrBefore)).toBe(false);
+    expect(
+      rowTimeFilterCheck(nextMorning, { condition: DateFilterCondition.DateStartsAfter, timestamp: boundAtNoon })
+    ).toBe(true);
+  });
 });
 
 describe('row time filter tests', () => {
