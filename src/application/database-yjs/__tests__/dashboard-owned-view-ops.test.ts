@@ -12,6 +12,7 @@ import {
   repairDashboardOwnerMarkers,
   resolveDashboardViewOwner,
 } from '@/application/database-yjs/dashboard-owned-view-ops';
+import { createDefaultDatabaseView } from '@/application/database-yjs/creation/create-default-view';
 import { readDashboardLayoutSetting } from '@/application/database-yjs/dashboard-layout';
 import { DASHBOARD_LAYOUT_KEY } from '@/application/database-yjs/dashboard.type';
 import {
@@ -19,6 +20,7 @@ import {
   DATABASE_VIEW_LAYOUT_TO_VIEW_LAYOUT,
   DatabaseViewDocDeps,
   createDatabaseViewInDoc,
+  copyDatabaseViewConfiguration,
   deleteDatabaseViewInDoc,
   markDashboardOwnedView,
 } from '@/application/database-yjs/database-view-doc-ops';
@@ -44,6 +46,30 @@ import { normalizeNumbers, setParityValue } from './dashboard-parity-helpers';
 jest.mock('@/utils/runtime-config', () => ({
   getConfigValue: (_key: string, fallback: string) => fallback,
 }));
+jest.mock('@/application/database-yjs/creation/create-default-view', () => ({ createDefaultDatabaseView: jest.fn() }));
+
+const workspaces = new WeakMap<YDoc, FakeWorkspace>();
+
+beforeEach(() => {
+  jest.mocked(createDefaultDatabaseView).mockImplementation(async (intent) => {
+    const workspace = workspaces.get(intent.databaseDoc)!;
+    const created = await workspace.createDatabaseView(intent.sourceViewId ?? intent.parentViewId, {
+      parent_view_id: intent.parentViewId, database_id: intent.databaseId,
+      layout: DATABASE_VIEW_LAYOUT_TO_VIEW_LAYOUT[intent.layout], name: intent.name, embedded: intent.embedded,
+    });
+
+    Y.applyUpdate(intent.databaseDoc, Uint8Array.from(created.database_update));
+    const target = getView(intent.databaseDoc, created.view_id);
+
+    if (intent.sourceViewId) copyDatabaseViewConfiguration(getView(intent.databaseDoc, intent.sourceViewId), target);
+    target.set(YjsDatabaseKey.dashboard_owner, intent.dashboardOwner!);
+    const folder = workspace.folder.get(created.view_id)!;
+
+    workspace.folder.set(created.view_id, { ...folder,
+      extra: { ...folder.extra, dashboard_owner: intent.dashboardOwner } as View['extra'] });
+    return created.view_id;
+  });
+});
 
 const HOST_DB = 'db:host';
 const FOREIGN_DB = 'db:tasks';
@@ -180,7 +206,9 @@ class FakeWorkspace {
   scheduleDeferredCleanup = jest.fn();
 
   deps(hostDoc: YDoc, overrides: Partial<DatabaseViewDocDeps> = {}): DatabaseViewDocDeps {
+    this.docs.forEach((doc) => workspaces.set(doc, this));
     return {
+      workspaceId: 'workspace',
       databaseDoc: hostDoc,
       databasePageId: CONTAINER,
       activeViewId: 'v:dash',
@@ -539,10 +567,10 @@ describe('createOwnedDatabaseView', () => {
       owner: 'v:dash',
     });
 
-    expect(workspace.createDatabaseView).toHaveBeenCalledWith(
-      'v:grid',
-      expect.objectContaining({ parent_view_id: CONTAINER, layout: ViewLayout.Board, name: 'Board (1)', embedded: false })
-    );
+    expect(createDefaultDatabaseView).toHaveBeenCalledWith(expect.objectContaining({
+      parentViewId: CONTAINER, layout: DatabaseViewLayout.Board, name: 'Board (1)', embedded: false,
+      dashboardOwner: 'v:dash', sourceViewId: undefined,
+    }));
     expect(getView(hostDoc, viewId).get(YjsDatabaseKey.dashboard_owner)).toBe('v:dash');
     expect(workspace.folder.get(viewId)?.extra).toEqual({
       database_id: HOST_DB,
@@ -563,10 +591,9 @@ describe('createOwnedDatabaseView', () => {
     });
 
     expect(workspace.loadView).toHaveBeenCalledWith('v:tasks', false, false, { databaseId: FOREIGN_DB });
-    expect(workspace.createDatabaseView).toHaveBeenCalledWith(
-      'v:tasks',
-      expect.objectContaining({ parent_view_id: FOREIGN_CONTAINER, database_id: FOREIGN_DB, name: 'Board' })
-    );
+    expect(createDefaultDatabaseView).toHaveBeenCalledWith(expect.objectContaining({
+      parentViewId: FOREIGN_CONTAINER, databaseId: FOREIGN_DB, name: 'Board', dashboardOwner: 'v:dash',
+    }));
     expect(getView(foreignDoc, viewId).get(YjsDatabaseKey.dashboard_owner)).toBe('v:dash');
     expect(getDatabase(hostDoc).get(YjsDatabaseKey.views).has(viewId)).toBe(false);
     expect(workspace.flush).toHaveBeenCalled();
@@ -610,11 +637,10 @@ describe('duplicateOwnedDatabaseView', () => {
     });
     const copy = getView(hostDoc, copyId);
 
-    expect(workspace.createDatabaseView).toHaveBeenCalledWith(
-      'v:dash',
-      // Appended after the last child, not inserted before the source.
-      expect.objectContaining({ name: 'Board', prev_view_id: 'v:dash', layout: ViewLayout.Board })
-    );
+    expect(createDefaultDatabaseView).toHaveBeenCalledWith(expect.objectContaining({
+      parentViewId: CONTAINER, sourceViewId: 'v:board', name: 'Board', layout: DatabaseViewLayout.Board,
+      dashboardOwner: 'v:dash',
+    }));
     expect(toPlainValue(copy.get(YjsDatabaseKey.filters))).toEqual(toPlainValue(filters));
     expect(toPlainValue(copy.get(YjsDatabaseKey.sorts))).toEqual(toPlainValue(sorts));
     expect(toPlainValue(copy.get(YjsDatabaseKey.groups))).toEqual(toPlainValue(groups));
@@ -1080,33 +1106,20 @@ describe('folder owner markers never hold up the user action', () => {
     jest.useRealTimers();
   });
 
-  it('converts after one failed folder attempt and retries in the background', async () => {
+  it('converts with ownership already committed even when later Folder patches are unavailable', async () => {
     const { workspace, hostDoc } = setup();
     const applyLayout = jest.fn();
-    const updatePage = workspace.updatePage.getMockImplementation()!;
-
     workspace.updatePage.mockRejectedValue(new Error('offline'));
-    // No timer runs here: a conversion that waited for the 250 ms retry would never resolve.
+    // No timer runs: ownership is part of the atomic view creation, not a later patch.
     await expect(convertViewToDashboard(workspace.deps(hostDoc), { viewId: 'v:board', applyLayout })).resolves.toBe(true);
     const copyId = (await workspace.createDatabaseView.mock.results[0].value).view_id;
 
     expect(applyLayout).toHaveBeenCalledTimes(1);
-    expect(workspace.updatePage).toHaveBeenCalledTimes(1);
-    // The mirror hides the copy from the tab bar although the folder has no marker yet.
+    expect(workspace.updatePage).not.toHaveBeenCalled();
     expect(getView(hostDoc, copyId).get(YjsDatabaseKey.dashboard_owner)).toBe('v:board');
-    expect(workspace.folder.get(copyId)?.extra?.dashboard_owner).toBeUndefined();
-
-    await jest.advanceTimersByTimeAsync(DASHBOARD_OWNER_RETRY_DELAYS_MS[0]);
-    expect(workspace.updatePage).toHaveBeenCalledTimes(2);
-
-    workspace.updatePage.mockImplementation(updatePage);
-    await jest.advanceTimersByTimeAsync(DASHBOARD_OWNER_RETRY_DELAYS_MS[1]);
-    expect(workspace.updatePage).toHaveBeenCalledTimes(3);
     expect(workspace.folder.get(copyId)?.extra?.dashboard_owner).toBe('v:board');
-
-    // Written: the last retry never runs.
-    await jest.advanceTimersByTimeAsync(DASHBOARD_OWNER_RETRY_DELAYS_MS[2]);
-    expect(workspace.updatePage).toHaveBeenCalledTimes(3);
+    await jest.advanceTimersByTimeAsync(DASHBOARD_OWNER_RETRY_DELAYS_MS.reduce((sum, delay) => sum + delay, 0));
+    expect(workspace.updatePage).not.toHaveBeenCalled();
   });
 
   it('stops the background retries of a conversion that was rolled back', async () => {
@@ -1122,11 +1135,11 @@ describe('folder owner markers never hold up the user action', () => {
     const copyId = (await workspace.createDatabaseView.mock.results[0].value).view_id;
 
     expect(getDatabase(hostDoc).get(YjsDatabaseKey.views).has(copyId)).toBe(false);
-    expect(workspace.updatePage).toHaveBeenCalledTimes(1);
+    expect(workspace.updatePage).not.toHaveBeenCalled();
 
     await jest.advanceTimersByTimeAsync(DASHBOARD_OWNER_RETRY_DELAYS_MS.reduce((sum, ms) => sum + ms, 0));
     // The copy is gone: no further folder request, and no warning about it.
-    expect(workspace.updatePage).toHaveBeenCalledTimes(1);
+    expect(workspace.updatePage).not.toHaveBeenCalled();
     expect(Log.warn).not.toHaveBeenCalledWith(
       '[Dashboard] failed to write the owner marker to the folder',
       expect.anything()

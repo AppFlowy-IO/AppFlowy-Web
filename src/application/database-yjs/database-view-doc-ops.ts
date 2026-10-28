@@ -85,6 +85,7 @@ export type DatabaseViewDocDeps = Pick<DatabaseContextState, 'databaseDoc' | 'da
       | 'readOnly'
       | 'scheduleDeferredCleanup'
       | 'updatePage'
+      | 'workspaceId'
     >
   >;
 

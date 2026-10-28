@@ -199,6 +199,22 @@ it('refuses a current Folder mismatch without canonical mutation or compensating
   expect(f.activate).not.toHaveBeenCalled();
 });
 
+it('requires the atomically committed dashboard owner before publishing a created widget view', async () => {
+  const f = fixture();
+  const before = Y.encodeStateAsUpdate(f.doc);
+
+  jest.mocked(runAtomicCreation).mockImplementation(async (options) => {
+    expect(options.request).toMatchObject({ extra: { dashboard_owner: 'dashboard' } });
+    await options.beforeSubmit?.({} as never);
+    f.publish(options.request as Parameters<typeof f.publish>[0]);
+    f.folder.forEach((folder) => { (folder.extra as Record<string, unknown>).dashboard_owner = 'another-dashboard'; });
+    return options.hydrate({} as never, {} as never);
+  });
+  await expect(createDefaultDatabaseView({ ...f.intent, dashboardOwner: 'dashboard' })).rejects.toThrow('Folder and content');
+  expect(Y.encodeStateAsUpdate(f.doc)).toEqual(before);
+  expect(f.activate).not.toHaveBeenCalled();
+});
+
 it('fails before compact submission when a source response has another version', async () => {
   const f = fixture();
 

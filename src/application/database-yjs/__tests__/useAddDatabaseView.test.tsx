@@ -13,6 +13,7 @@ import {
   useUpdateDatabaseLayout,
 } from '@/application/database-yjs';
 import { createDefaultDatabaseView } from '@/application/database-yjs/creation/create-default-view';
+import { copyDatabaseViewConfiguration } from '@/application/database-yjs/database-view-doc-ops';
 import { readDashboardLayoutSetting } from '@/application/database-yjs/dashboard-layout';
 import {
   resetDashboardSessionForTests,
@@ -653,6 +654,18 @@ describe('dashboard-owned views and creation marks (WP05)', () => {
       });
 
       Y.applyUpdate(databaseDoc, new Uint8Array(response.database_update));
+      const views = (getDatabase(databaseDoc) as unknown as YDatabase).get(YjsDatabaseKey.views);
+      const copy = views.get(response.view_id);
+
+      if (intent.sourceViewId) copyDatabaseViewConfiguration(views.get(intent.sourceViewId), copy);
+      if (intent.dashboardOwner) {
+        copy.set(YjsDatabaseKey.dashboard_owner, intent.dashboardOwner);
+        const metadata = folder.get(response.view_id)!;
+
+        folder.set(response.view_id, { ...metadata,
+          extra: { ...metadata.extra, dashboard_owner: intent.dashboardOwner } as View['extra'] });
+      }
+
       return response.view_id;
     });
     const contextValue: DatabaseContextState = {

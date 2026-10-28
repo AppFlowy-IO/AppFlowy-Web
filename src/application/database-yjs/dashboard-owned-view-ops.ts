@@ -17,6 +17,7 @@ import { assertDashboardViewCreationOnline, assertViewCreationOnline } from '@/a
 import { Log } from '@/utils/log';
 
 import { seedConvertedDashboardLayout, hasDashboardWidgets } from './dashboard-convert';
+import { createOwnedDefaultDatabaseView } from './creation/create-owned-view';
 import { DASHBOARD_LAYOUT_ORIGIN, readStoredDashboardWidgets } from './dashboard-layout';
 import {
   collectDatabaseViewNames,
@@ -215,12 +216,15 @@ export async function createOwnedDatabaseView(
   try {
     const opened = await docs.open(params.databaseId, params.anchorViewId);
     const names = collectDatabaseViewNames(opened.database, await folderNamesAround(deps, params.anchorViewId));
-    const viewId = await createDatabaseViewInDoc(
-      anchoredDeps(deps, opened, params.anchorViewId),
-      params.layout,
-      params.preserveName ? params.baseName : nextViewName(params.baseName, names),
-      { dashboardOwner: params.owner }
-    );
+    const name = params.preserveName ? params.baseName : nextViewName(params.baseName, names);
+    const viewDeps = anchoredDeps(deps, opened, params.anchorViewId);
+    const viewId = params.layout === DatabaseViewLayout.Dashboard
+      ? await createDatabaseViewInDoc(viewDeps, params.layout, name, { dashboardOwner: params.owner })
+      : await createOwnedDefaultDatabaseView(viewDeps, {
+        anchorViewId: params.anchorViewId, databaseId: params.databaseId, owner: params.owner,
+        layout: params.layout, name,
+        recoveryKey: JSON.stringify(['dashboard-create', params.owner, params.layout, params.baseName]),
+      });
 
     await docs.flush();
     return viewId;
@@ -276,10 +280,18 @@ export async function duplicateOwnedDatabaseView(
           )
         )
       : params.name;
-    const viewId = await duplicateDatabaseViewWithOwnedWidgets(viewDeps, params.sourceViewId, name, {
-      dashboardOwner: params.owner,
-      placeBeforeSource: false,
-    });
+    const layout = Number(opened.database?.get(YjsDatabaseKey.views)?.get(params.sourceViewId)?.get(YjsDatabaseKey.layout));
+
+    if (!Number.isInteger(layout)) throw new Error('Database view not found');
+    const viewId = layout === DatabaseViewLayout.Dashboard
+      ? await duplicateDatabaseViewWithOwnedWidgets(viewDeps, params.sourceViewId, name, {
+        dashboardOwner: params.owner, placeBeforeSource: false,
+      })
+      : await createOwnedDefaultDatabaseView(viewDeps, {
+        anchorViewId: params.anchorViewId ?? params.sourceViewId, sourceViewId: params.sourceViewId,
+        databaseId: opened.database?.get(YjsDatabaseKey.id) ?? '', owner: params.owner,
+        layout, name, recoveryKey: JSON.stringify(['dashboard-duplicate', params.owner, params.sourceViewId]),
+      });
 
     await docs.flush();
     return viewId;

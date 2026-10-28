@@ -194,6 +194,7 @@ export function useOwnedWidgetViews({
   const getDeps = useCallback((current = latest.current.context): DashboardOwnedViewDeps => {
     return {
       databaseDoc: current.databaseDoc,
+      workspaceId: current.workspaceId,
       databasePageId: current.databasePageId,
       activeViewId: current.activeViewId,
       createDatabaseView: current.createDatabaseView,

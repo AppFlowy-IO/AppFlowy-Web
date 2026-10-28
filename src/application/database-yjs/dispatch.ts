@@ -2844,6 +2844,7 @@ export type { AddDatabaseViewOptions, DatabaseViewDocDeps } from '@/application/
 
 function useDatabaseViewDocDeps(): DatabaseViewDocDeps {
   const {
+    workspaceId,
     databasePageId,
     activeViewId,
     createDatabaseView,
@@ -2861,6 +2862,7 @@ function useDatabaseViewDocDeps(): DatabaseViewDocDeps {
 
   return useMemo(
     () => ({
+      workspaceId,
       databasePageId,
       activeViewId,
       createDatabaseView,
@@ -2876,6 +2878,7 @@ function useDatabaseViewDocDeps(): DatabaseViewDocDeps {
       canWrite,
     }),
     [
+      workspaceId,
       databasePageId,
       activeViewId,
       createDatabaseView,

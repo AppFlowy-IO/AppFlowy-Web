@@ -12,7 +12,8 @@
     "../playwright.code-block.config.ts",
     "support/code-block.fixture.tsx",
     "../playwright.pdf.config.ts",
-    "support/pdf.fixture.tsx"
+    "support/pdf.fixture.tsx",
+    "support/dashboard-owned-clone.fixture.tsx"
   ],
   "references": []
 }

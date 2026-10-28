@@ -22,6 +22,7 @@ import { DatabaseViewLayout, Types, View, ViewLayout, YDatabase, YDoc, YjsDataba
 import { applyYDoc } from '@/application/ydoc/apply';
 
 import { waitForCreatedDatabaseView } from './created-view-readiness';
+import { writeCollabDashboardOwner } from '../database-view-doc-ops';
 import {
   assertNotAborted,
   DatabaseViewSourceRequirements,
@@ -44,6 +45,10 @@ export interface DefaultDatabaseViewIntent {
   name: string;
   embedded: boolean;
   position?: CreateDefaultDatabaseViewRequest['position'];
+  /** Commit Folder ownership with the view; mirror it locally before exposing the hydrated view. */
+  dashboardOwner?: string;
+  /** A failed numbered copy must recover its command even if realtime already delivered its name. */
+  recoveryKey?: string;
   assertCurrent?: () => void;
   activate?: (viewId: string) => Promise<void>;
 }
@@ -80,8 +85,10 @@ async function createDefaultDatabaseViewOwned(intent: DefaultDatabaseViewIntent)
   const capturedFence = fence.current;
 
   owner.assertCurrent();
-  const logicalTarget = JSON.stringify([databaseId, intent.parentViewId, intent.sourceViewId ?? null,
-    intent.layout, intent.name, intent.embedded]);
+  const logicalTarget = intent.recoveryKey
+    ? JSON.stringify([databaseId, intent.parentViewId, intent.recoveryKey])
+    : JSON.stringify([databaseId, intent.parentViewId, intent.sourceViewId ?? null,
+      intent.layout, intent.name, intent.embedded]);
   const pending = await findPendingAtomicCreation(owner, 'database-view', logicalTarget);
 
   if (pending?.state !== 'committed') assertAtomicCreationAvailable(owner);
@@ -93,11 +100,13 @@ async function createDefaultDatabaseViewOwned(intent: DefaultDatabaseViewIntent)
       embedded: intent.embedded, responses_view_id: intent.layout === DatabaseViewLayout.Form ? uuidv4() : null,
       timezone_id: [DatabaseViewLayout.Calendar, DatabaseViewLayout.Timeline].includes(intent.layout)
         ? Intl.DateTimeFormat().resolvedOptions().timeZone : null,
-    }, position: intent.position ?? { kind: 'end' }, icon: null, extra: null,
+    }, position: intent.position ?? { kind: 'end' }, icon: null,
+    extra: intent.dashboardOwner ? { dashboard_owner: intent.dashboardOwner } : null,
   };
 
   owner.assertCurrent();
-  if (request.database_restore_id !== restoreId || request.view.database_id !== databaseId) {
+  if (request.database_restore_id !== restoreId || request.view.database_id !== databaseId ||
+    request.extra?.dashboard_owner !== intent.dashboardOwner) {
     throw new Error('Pending Database creation belongs to another restore generation');
   }
 
@@ -193,6 +202,7 @@ async function createDefaultDatabaseViewOwned(intent: DefaultDatabaseViewIntent)
             if ((internal as Y.Map<unknown>).get(YjsDatabaseKey.id) !== id ||
               internal.get(YjsDatabaseKey.database_id) !== databaseId || folder.extra?.database_id !== databaseId || folder.view_id !== id ||
               folder.parent_view_id !== request.view.parent_view_id ||
+              (index === 0 && request.extra?.dashboard_owner !== folder.extra?.dashboard_owner) ||
               folder.layout !== LAYOUTS[Number(internal.get(YjsDatabaseKey.layout))]) {
               throw new Error('Created Database view is not currently readable in Folder and content');
             }
@@ -215,7 +225,10 @@ async function createDefaultDatabaseViewOwned(intent: DefaultDatabaseViewIntent)
     if (!remoteDatabaseCoversSource(captured, current)) throw new Error('Current Database does not cover its source');
     const published = await publishWithDatabaseStorageFence(capturedFence, () => {
       assertCurrent();
-      withDatabaseStorageFence(databaseDoc, capturedFence, () => applyYDoc(databaseDoc, current.missingUpdate));
+      withDatabaseStorageFence(databaseDoc, capturedFence, () => {
+        applyYDoc(databaseDoc, current.missingUpdate);
+        if (intent.dashboardOwner) writeCollabDashboardOwner(databaseDoc, request.view.view_id, intent.dashboardOwner);
+      });
     });
 
     if (!published) throw new Error('Database storage changed before activation');
