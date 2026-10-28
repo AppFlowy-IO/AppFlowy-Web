@@ -168,6 +168,8 @@ export default function PresentationStudio({
   const savedMapArtifact = loadedIdentity === identity ? mapArtifact : undefined;
   const currentArtifact = showAIMap ? savedMapArtifact : structuralArtifact;
   const currentMap = currentArtifact?.content;
+  // The full-screen presentation needs a map; until then its states render inside the studio.
+  const presentingMap = mapPresentationOpen && !!currentMap?.nodes.length;
   const mapReferences = useMemo(
     () => (currentMap ? resolveMapReferences(currentMap, snapshot) : new Map<string, string>()),
     [currentMap, snapshot]
@@ -232,6 +234,14 @@ export default function PresentationStudio({
         setDecks(loaded.decks);
         setCompanyStyles(loaded.styles);
         setMapArtifact(loaded.mapArtifact);
+
+        // With no saved AI map there is nothing to present, so show the page structure map in the
+        // studio, where generating an AI map is one click away.
+        if (!loaded.mapArtifact) {
+          setShowAIMap(false);
+          setMapPresentationOpen(false);
+        }
+
         if (!initialDeck && loaded.mapArtifact?.sourceRevision)
           setNarrativeSelection({
             reference: { id: loaded.mapArtifact.id, version: loaded.mapArtifact.version },
@@ -798,9 +808,10 @@ export default function PresentationStudio({
               </DocumentContentProvider>
             </div>
           )}
+          {mapPresentationOpen && !presentingMap && mapViewer}
         </main>
       </div>
-      {mapPresentationOpen && mapViewer}
+      {presentingMap && mapViewer}
       {documentOpen && (
         <DocumentPresenter
           snapshot={snapshot}

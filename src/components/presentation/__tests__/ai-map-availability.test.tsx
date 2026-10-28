@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import * as React from 'react';
 
 import { aiMapUnavailableReason } from '../ai-map-availability';
@@ -151,4 +151,51 @@ test('the mind map tab offers generation when the workspace can use AI', async (
   await screen.findByTestId('server-map');
   expect(mockViewerProps?.canGenerate).toBe(true);
   expect(screen.queryByText(/You can still view saved maps/)).toBeNull();
+});
+
+describe('Present AI mind map', () => {
+  const present = () => ({ ...props(), presentMindMap: true });
+
+  test('shows the page structure map in the studio when no AI map is saved', async () => {
+    jest.mocked(loadPresentation).mockResolvedValue(loaded(notReady));
+    render(<PresentationStudio {...present()} />);
+
+    expect((await screen.findByTestId('server-map')).textContent).toBe('Page structure');
+    // Shown in the studio beside the generate action and the reason, not as a full-screen presentation.
+    expect(mockViewerProps?.onClosePresentation).toBeUndefined();
+    expect(screen.getByText(/AI usage tracking is set up on this server/)).toBeTruthy();
+    expect(screen.queryByText('No saved mind map is selected.')).toBeNull();
+    expect(mockRunGeneration).not.toHaveBeenCalled();
+  });
+
+  test('presents a saved AI map full screen', async () => {
+    jest.mocked(loadPresentation).mockResolvedValue(loaded(available, map('saved', 'Saved AI map', 'ai')));
+    render(<PresentationStudio {...present()} />);
+
+    expect((await screen.findByTestId('server-map')).textContent).toBe('Saved AI map');
+    expect(mockViewerProps?.origin).toBe('ai');
+    expect(mockViewerProps?.onClosePresentation).toBeDefined();
+  });
+
+  test('shows its loading state inside the studio page, not beside it', async () => {
+    let finish!: (value: never) => void;
+
+    jest.mocked(loadPresentation).mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    render(<PresentationStudio {...present()} />);
+
+    expect(screen.getByText('Loading saved mind map…').closest('main')).not.toBeNull();
+    await act(async () => finish(loaded(notReady)));
+    expect(await screen.findByTestId('server-map')).toBeTruthy();
+  });
+
+  test('tells readers without a saved map why no map can be shown', async () => {
+    jest.mocked(loadPresentation).mockResolvedValue(loaded(notReady));
+    render(<PresentationStudio {...present()} canWrite={false} />);
+
+    const message = await screen.findByText(/Editor access is required to create a map from page structure/);
+
+    expect(message.closest('main')).not.toBeNull();
+    expect(screen.getByText(/You need edit access to this page to generate an AI mind map/)).toBeTruthy();
+    expect(loadStructuralMap).not.toHaveBeenCalled();
+  });
 });
