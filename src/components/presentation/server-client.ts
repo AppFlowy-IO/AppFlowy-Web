@@ -56,6 +56,10 @@ const ERROR_MESSAGES: Record<string, string> = {
   AI_EXECUTION_TIMEOUT: 'Generation took too long. Try fewer slides or a smaller source.',
   AI_MODEL_UNAVAILABLE: 'The AI model for this request is no longer available. Start a new generation.',
   AI_EXECUTION_NOT_LICENSED: 'AI features are not available on this server.',
+  // Source preparation reasons that otherwise surface as raw codes in the dialog.
+  RESOURCE_NOT_FOUND: 'This page or one of its sources is no longer available. Refresh and try again.',
+  INCOMPLETE_SOURCE: "This page contains content presentations can't use yet, such as an unsupported database setting.",
+  SOURCE_PROCESSING_BUSY: 'Source processing is busy. Please try again shortly.',
 };
 
 function errorFromBody(body: unknown, status: number, retryAfter?: unknown): PresentationAPIError {

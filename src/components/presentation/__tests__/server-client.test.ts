@@ -119,6 +119,19 @@ test.each([402, 409, 429, 503])('preserves Cloud HTTP %i reason, details and ret
   await expect(client.getPresentationStatus(scope)).rejects.toMatchObject({ code: 'SLIDE_GENERATION_LIMIT', status: httpStatus, retryable: httpStatus >= 429, serverCode: 4001, retryAfterSecs: 4, details: { remaining: 2 } });
 });
 
+test.each([
+  ['RESOURCE_NOT_FOUND', 404, 'no longer available'],
+  ['INCOMPLETE_SOURCE', 400, "can't use yet"],
+  ['SOURCE_PROCESSING_BUSY', 429, 'busy'],
+])('source preparation reason %s reads as a sentence, never the raw code', async (reason, httpStatus, text) => {
+  mockRequest.mockRejectedValue({ isAxiosError: true, response: { status: httpStatus, headers: {}, data: { code: -2, message: reason, reason, retryable: httpStatus === 429 } } });
+  const failure = await client.resolveSources(scope, { sources: [{ pageId: 'page' }], options: serverOptions() }).catch((error: unknown) => error);
+
+  expect(failure).toMatchObject({ code: reason, status: httpStatus });
+  expect((failure as Error).message).toContain(text);
+  expect((failure as Error).message).not.toBe(reason);
+});
+
 test('legacy HTTP-200 error envelopes do not masquerade as successful data', async () => {
   mockRequest.mockResolvedValue({ status: 200, data: { code: 1012, message: 'Not enough permissions' }, headers: {} });
   await expect(client.getPresentationStatus(scope)).rejects.toMatchObject({ status: 200, serverCode: 1012 });
