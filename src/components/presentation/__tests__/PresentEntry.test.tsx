@@ -249,6 +249,26 @@ it('includes the source page cover on the title slide even when permissions come
   expect(screen.getByLabelText('Slide 2 of 2').querySelector('.ps-doc-cover')).toBeNull();
 });
 
+it('keeps an open presentation when an outline refresh rebuilds an unchanged cover', async () => {
+  mockCover = { type: CoverType.BuildInImage, value: '3', offset: 0.6 };
+  const { rerender } = render(<PresentEntry viewId='document' permissionViewId='permission-view' />);
+
+  fireEvent.keyDown(screen.getByRole('button', { name: 'Present', exact: true }), { key: 'Enter' });
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Present document' }));
+  await screen.findByLabelText('Slide 1 of 2');
+  fireEvent.click(screen.getByRole('button', { name: 'Next slide' }));
+  await screen.findByLabelText('Slide 2 of 2');
+  const loads = mockLoadView.mock.calls.length;
+
+  // A refreshed outline carries an equal cover in a new object.
+  mockCover = { ...mockCover };
+  rerender(<PresentEntry viewId='document' permissionViewId='permission-view' />);
+  await act(async () => { await Promise.resolve(); });
+
+  expect(mockLoadView).toHaveBeenCalledTimes(loads);
+  expect(screen.getByLabelText('Slide 2 of 2')).toBeTruthy();
+});
+
 it('resolves an empty row through the server without creating a client document', async () => {
   setActiveRowPage({
     rowId: 'row',

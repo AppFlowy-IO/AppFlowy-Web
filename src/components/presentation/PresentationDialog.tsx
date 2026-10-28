@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { getActiveRowPage } from '@/application/row-document/row-page-state';
 import { yDocToSlateContent } from '@/application/slate-yjs/utils/convert';
@@ -39,7 +39,11 @@ export default function PresentationDialog({
 }: PresentationSourceProps & { mode: Mode; onClose: () => void; anchorEl?: HTMLElement | null }) {
   const view = useAppView(permissionViewId);
   const sourceView = useAppView(viewId);
-  const cover = sourceView?.extra?.cover;
+  const rawCover = sourceView?.extra?.cover;
+  // Outline refreshes rebuild every view object. Depend on the cover's content, not its identity,
+  // or each workspace change would reload an open presentation and re-resolve its sources.
+  const coverJson = rawCover ? JSON.stringify(rawCover) : undefined;
+  const cover = useMemo(() => (coverJson ? (JSON.parse(coverJson) as typeof rawCover) : undefined), [coverJson]);
   const workspaceId = useCurrentWorkspaceId();
   const user = useCurrentUserOptional();
   const { loadView, loadRowDocument, toView } = useAppOperations();
