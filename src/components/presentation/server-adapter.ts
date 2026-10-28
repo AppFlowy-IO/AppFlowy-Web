@@ -3,7 +3,7 @@ import { PresentationAPIError } from './server-client';
 import { SLIDE_COUNT_PRESETS } from './slide-limits';
 
 import type {
-  Artifact, GenerationRequest, PresentationScope, PresentationStatus, ReviewedStyle, ServerGenerationOptions,
+  Artifact, GenerationRequest, Json, PresentationScope, PresentationStatus, ReviewedStyle, ServerGenerationOptions,
   ServerSlidePlan, ServerSourceBlock, SourceEnvelope, SourceSelection, SourceValue, Theme, VersionedId,
 } from './server-contract';
 import type { DeckScene } from './server-scene';
@@ -104,8 +104,19 @@ function cellText(value: SourceValue): string {
     case 'boolean': return String(value.value);
     case 'date': return [value.start, value.end].filter(Boolean).join(' – ');
     case 'labels': return value.values.join(', ');
-    case 'structured': return JSON.stringify(value.value);
+    case 'structured': return structuredText(value.kind, value.value);
   }
+}
+
+/** Select evidence carries option ids for filters; people read only the option names. */
+function structuredText(kind: string, value: Json): string {
+  if (kind === 'select' && Array.isArray(value)) {
+    return value
+      .flatMap((option) => (option && typeof option === 'object' && !Array.isArray(option) && typeof option.name === 'string' ? [option.name] : []))
+      .join(', ');
+  }
+
+  return JSON.stringify(value);
 }
 
 export function sourceToSnapshot(source: SourceEnvelope, pageId?: string): PageSnapshot {

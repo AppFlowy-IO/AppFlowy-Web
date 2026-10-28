@@ -248,6 +248,17 @@ test('source resolution sends only selected page IDs and ignores editor snapshot
   expect(resolved.serverSource?.sources[0].revision).toBe('native-page-revision');
 });
 
+test('select evidence shows option names, not the ids kept for filters', () => {
+  const view = {
+    databaseId: id, viewId: id, name: 'Tasks', viewType: 'grid' as const, selectedTab: null, schema: {}, filters: [], sorts: [], groups: {},
+    rows: [{ rowId: id, revision: 'row-v1', cells: { Status: { sourceId: 'cell:status', value: { type: 'structured' as const, kind: 'select', value: [{ id: 'done', name: 'Done' }, { id: 'later', name: 'Later' }] } } } }],
+    coverage: { sourceId: null, status: 'included', total: 1, matched: 1, included: 1, selection: null, warning: null },
+  };
+  const snapshot = sourceToSnapshot({ ...source, databaseViews: [view] } as unknown as SourceEnvelope);
+
+  expect(snapshot.blocks.find((block) => block.id === 'cell:status')?.text).toBe('Tasks · Status: Done, Later');
+});
+
 test('responses arriving after the login lifetime changes are not exposed to the new actor', async () => {
   mockRequest.mockImplementation(() => { mockSessionCurrent = false; return Promise.resolve(response(status)); });
   await expect(client.getPresentationStatus(scope)).rejects.toMatchObject({ name: 'AbortError' });
