@@ -485,7 +485,7 @@ function DatabaseViews({
               style={viewportStyle}
             >
               <Suspense fallback={null}>
-                <ErrorBoundary fallbackRender={ElementFallbackRender}>{view}</ErrorBoundary>
+                <ErrorBoundary FallbackComponent={ElementFallbackRender}>{view}</ErrorBoundary>
               </Suspense>
             </div>
           </div>
