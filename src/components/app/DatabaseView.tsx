@@ -262,10 +262,13 @@ function DatabaseView(props: DatabaseViewProps) {
 
   const handleChangeView = useCallback(
     (viewId: string) => {
-      setSearch((prev) => {
-        prev.set(DATABASE_TAB_VIEW_ID_QUERY_PARAM, viewId);
-        return prev;
-      });
+      // Pointer selection can focus the same tab before the Router rerenders.
+      // Its synchronous URL already reflects the first navigation notification.
+      const next = new URLSearchParams(window.location.search);
+
+      if (next.get(DATABASE_TAB_VIEW_ID_QUERY_PARAM) === viewId) return;
+      next.set(DATABASE_TAB_VIEW_ID_QUERY_PARAM, viewId);
+      setSearch(next);
     },
     [setSearch]
   );
