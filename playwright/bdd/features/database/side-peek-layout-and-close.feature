@@ -1,10 +1,11 @@
 Feature: Database side peek layout and close
 
   How the row peek closes and fits the page: Escape and the backdrop dismiss
-  it after its edits are saved, Escape with the "Open page in" menu open only
-  closes the menu, a narrow viewport forces center mode and disables "Side
-  peek", the side slot resizes between its 560 px minimum and its two-thirds
-  cap, and the comments panel reclaims width from the side slot.
+  it after its edits are saved, switching view tabs closes the peek opened
+  from the previous tab, Escape with the "Open page in" menu open only closes
+  the menu, a narrow viewport forces center mode and disables "Side peek",
+  the side slot resizes between its 560 px minimum and its two-thirds cap,
+  and the comments panel reclaims width from the side slot.
 
   Scenario: Escape closes the side peek after saving its edits
     Given I am signed in for side peek testing
@@ -17,6 +18,19 @@ Feature: Database side peek layout and close
     Then no peek is open
     When I reload the database page
     Then the visible rows are "Amber via Escape, Birch, Cedar"
+
+  # Desktop PR #1531 closes the side peek of the view being left, through the
+  # same save barrier as the close button.
+  Scenario: Switching view tabs closes the side peek after saving its edits
+    Given I am signed in for side peek testing
+    And I have created a grid named "Peek Tab Switch" with rows "Amber, Birch, Cedar"
+    When I open a new List view of the database
+    And I open the row "Amber" in the peek from the list view
+    Then the peek is open in side mode showing "Amber"
+    When I set the peek title to "Amber via tab switch"
+    And I switch to the database view at index 0
+    Then no peek is open
+    And the visible rows are "Amber via tab switch, Birch, Cedar"
 
   Scenario: Escape with the "Open page in" menu open closes only the menu
     Given I am signed in for side peek testing
