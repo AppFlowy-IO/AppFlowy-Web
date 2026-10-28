@@ -573,6 +573,129 @@ describe('useAddWidgetFlow', () => {
     expect(history.getSnapshot()).toBe(undoState);
   });
 
+  it('creates an admitted Chart before replacing its table and keeps the configuration panel on the new view', async () => {
+    mockPlan = 'free';
+    const { doc, database, views } = createDoc([]);
+    const history = getOrCreateDatabaseHistoryManager(doc);
+    const { result, updatePage } = renderFlow(doc, database);
+    const switchLayout = jest.fn();
+
+    createMock.mockImplementation(async (_deps: unknown, params: { layout: DatabaseViewLayout; baseName: string }) => {
+      const id = params.layout === DatabaseViewLayout.Chart ? 'admitted-chart' : 'table';
+
+      addCreatedView(doc, views, id, params.layout, params.baseName);
+      return id;
+    });
+    act(() => result.current.startAddWidget({ type: 'new_row' }));
+    await settle();
+    act(() => result.current.bindFlowView({ viewId: 'table', switchLayout }));
+    act(() => result.current.api.flow.dispatch({ type: 'pick_layout', layout: DatabaseViewLayout.Chart }));
+    await settle();
+
+    expect(createMock).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        anchorViewId: 'table',
+        layout: DatabaseViewLayout.Chart,
+        owner: DASHBOARD,
+      })
+    );
+    expect(switchLayout).not.toHaveBeenCalled();
+    expect(stored(database)[0].widgets[0].viewId).toBe('admitted-chart');
+    expect(result.current.api.flow.getState()).toMatchObject({ kind: 'configuring', viewId: 'admitted-chart' });
+    expect(views.get('table')?.get(YjsDatabaseKey.name)).toBe('Table');
+    expect(updatePage).not.toHaveBeenCalled();
+    await act(async () => {
+      history.undo();
+    });
+    expect(stored(database)).toEqual([]);
+    await act(async () => {
+      history.redo();
+    });
+    expect(stored(database)[0].widgets[0].viewId).toBe('admitted-chart');
+  });
+
+  it('leaves the table name, layout and reference intact when Chart admission fails', async () => {
+    mockPlan = 'free';
+    const { doc, database, views } = createDoc([]);
+    const { result, updatePage } = renderFlow(doc, database);
+
+    createMock
+      .mockImplementationOnce(async (_deps: unknown, params: { layout: DatabaseViewLayout; baseName: string }) => {
+        addCreatedView(doc, views, 'table', params.layout, params.baseName);
+        return 'table';
+      })
+      .mockRejectedValueOnce(new Error('Chart quota reached'));
+    act(() => result.current.startAddWidget({ type: 'new_row' }));
+    await settle();
+    act(() => result.current.bindFlowView({ viewId: 'table', switchLayout: jest.fn() }));
+    act(() => result.current.api.flow.dispatch({ type: 'pick_layout', layout: DatabaseViewLayout.Chart }));
+    await settle();
+
+    expect(stored(database)[0].widgets[0].viewId).toBe('table');
+    expect(views.get('table')?.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.Grid);
+    expect(views.get('table')?.get(YjsDatabaseKey.name)).toBe('Table');
+    expect(result.current.api.flow.getState()).toMatchObject({ layout: DatabaseViewLayout.Grid });
+    expect(updatePage).not.toHaveBeenCalled();
+    expect(toastError).toHaveBeenCalledTimes(1);
+  });
+
+  it('discards a late Chart creation when the user has already selected Board', async () => {
+    mockPlan = 'free';
+    const { doc, database, views } = createDoc([]);
+    const { result } = renderFlow(doc, database);
+    let resolveChart!: (id: string) => void;
+
+    createMock
+      .mockImplementationOnce(async (_deps: unknown, params: { layout: DatabaseViewLayout; baseName: string }) => {
+        addCreatedView(doc, views, 'table', params.layout, params.baseName);
+        return 'table';
+      })
+      .mockImplementationOnce(
+        () =>
+          new Promise<string>((resolve) => {
+            resolveChart = resolve;
+          })
+      );
+    act(() => result.current.startAddWidget({ type: 'new_row' }));
+    await settle();
+    const switchLayout = jest.fn();
+
+    act(() => result.current.bindFlowView({ viewId: 'table', switchLayout }));
+    act(() => result.current.api.flow.dispatch({ type: 'pick_layout', layout: DatabaseViewLayout.Chart }));
+    await settle();
+    act(() => result.current.api.flow.dispatch({ type: 'pick_tile', layout: DatabaseViewLayout.Board }));
+    await settle();
+    await act(async () => resolveChart('late-chart'));
+    await settle();
+
+    expect(switchLayout).toHaveBeenCalledWith(DatabaseViewLayout.Board);
+    expect(stored(database)[0].widgets[0].viewId).toBe('table');
+    expect(deleteMock).toHaveBeenCalledWith(expect.anything(), { viewId: 'late-chart', databaseId: DATABASE_ID });
+    expect(result.current.api.flow.getState()).toMatchObject({ viewId: 'table', layout: DatabaseViewLayout.Board });
+  });
+
+  it('does not rename the view when an asynchronous in-place layout change fails', async () => {
+    const { doc, database, views } = createDoc([]);
+    const { result, updatePage } = renderFlow(doc, database);
+
+    createMock.mockImplementation(async (_deps: unknown, params: { layout: DatabaseViewLayout; baseName: string }) => {
+      addCreatedView(doc, views, 'chart', params.layout, params.baseName);
+      return 'chart';
+    });
+    act(() => result.current.startAddWidget({ type: 'new_row' }));
+    await settle();
+    act(() =>
+      result.current.bindFlowView({ viewId: 'chart', switchLayout: () => Promise.reject(new Error('No access')) })
+    );
+    act(() => result.current.api.flow.dispatch({ type: 'pick_layout', layout: DatabaseViewLayout.Board }));
+    await settle();
+
+    expect(views.get('chart')?.get(YjsDatabaseKey.name)).toBe('Chart');
+    expect(result.current.api.flow.getState()).toMatchObject({ layout: DatabaseViewLayout.Chart });
+    expect(updatePage).not.toHaveBeenCalled();
+  });
+
   it('deletes the created view without an announcement when write access went during the creation', async () => {
     const { doc, database } = createDoc([]);
     const access = { readOnly: false };

@@ -139,6 +139,7 @@ function historyScopeClass(geometry: DatabaseViewportGeometry) {
 
 /** The box the layout renders in; a layout that throws shows the element fallback. */
 function DatabaseViewport({ geometry, children }: { geometry: DatabaseViewportGeometry; children: ReactNode }) {
+  const { activeViewId } = useDatabaseContext();
   const { fixed, autoShrink, scrollEmbedded, style } = geometry;
 
   return (
@@ -160,7 +161,9 @@ function DatabaseViewport({ geometry, children }: { geometry: DatabaseViewportGe
         style={style}
       >
         <Suspense fallback={null}>
-          <ErrorBoundary fallbackRender={ElementFallbackRender}>{children}</ErrorBoundary>
+          <ErrorBoundary FallbackComponent={ElementFallbackRender} resetKeys={[activeViewId]}>
+            {children}
+          </ErrorBoundary>
         </Suspense>
       </div>
     </div>

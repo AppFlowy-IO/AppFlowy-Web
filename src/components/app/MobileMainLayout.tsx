@@ -51,7 +51,7 @@ function MobileMainLayout() {
         </React.Suspense>
         <ClientCompatibilityBanner />
 
-        <ErrorBoundary FallbackComponent={SomethingError}>
+        <ErrorBoundary FallbackComponent={SomethingError} resetKeys={[viewId]}>
           {main}
         </ErrorBoundary>
 

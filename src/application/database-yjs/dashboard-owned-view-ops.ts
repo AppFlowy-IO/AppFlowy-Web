@@ -194,6 +194,8 @@ export interface CreateOwnedDatabaseViewParams {
   layout: DatabaseViewLayout;
   /** The name before numbering (the layout label): "Board", then "Board (1)". */
   baseName: string;
+  /** A layout replacement keeps an explicitly entered name verbatim. */
+  preserveName?: boolean;
   /** The owning dashboard view id. */
   owner: string;
 }
@@ -216,7 +218,7 @@ export async function createOwnedDatabaseView(
     const viewId = await createDatabaseViewInDoc(
       anchoredDeps(deps, opened, params.anchorViewId),
       params.layout,
-      nextViewName(params.baseName, names),
+      params.preserveName ? params.baseName : nextViewName(params.baseName, names),
       { dashboardOwner: params.owner }
     );
 

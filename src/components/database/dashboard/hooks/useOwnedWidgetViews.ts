@@ -51,6 +51,8 @@ export interface CreateWidgetViewParams {
   layout: DatabaseViewLayout;
   /** The name before numbering (the layout label). */
   baseName: string;
+  /** Keep a user-entered name when replacing the flow's disposable view. */
+  preserveName?: boolean;
 }
 
 /** A tiny external store, so only the widget whose duplicate is in flight re-renders. */

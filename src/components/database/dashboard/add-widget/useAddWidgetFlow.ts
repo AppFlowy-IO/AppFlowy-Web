@@ -124,6 +124,8 @@ export function useAddWidgetFlow(options: UseAddWidgetFlowOptions): {
 
   loadSubscriptionRef.current = loadSubscription;
   const flowViewRef = useRef<AddFlowViewApi | null>(null);
+  const layoutSwitches = useRef(new Map<string, Promise<string | undefined>>());
+  const insertionHistoryGroups = useRef(new Map<string, object>());
   const anchorsByDatabaseRef = useRef(new Map<string, string>());
   const lastErrorRef = useRef<unknown>(null);
   const startingRef = useRef(false);
@@ -203,6 +205,9 @@ export function useAddWidgetFlow(options: UseAddWidgetFlowOptions): {
             effect.widgetId
           );
           // One undo step of its own: the view creation and the chart seed are not in the history.
+          const historyGroup = createDatabaseHistoryGroup();
+
+          insertionHistoryGroups.current.set(effect.widgetId, historyGroup);
           const written = runDatabaseHistoryGroupForDatabase(
             current.hostDoc,
             () =>
@@ -211,7 +216,7 @@ export function useAddWidgetFlow(options: UseAddWidgetFlowOptions): {
 
                 return placement ? addDashboardWidget(rows, widget, placement) : rows;
               }),
-            createDatabaseHistoryGroup()
+            historyGroup
           );
 
           // Not written: the dashboard filled meanwhile (announced), or write
@@ -250,8 +255,15 @@ export function useAddWidgetFlow(options: UseAddWidgetFlowOptions): {
           break;
         case 'switch_view_layout': {
           const api = flowViewRef.current;
-          const previous = handle?.getState();
+          const state = handle?.getState();
+          const view = getDatabaseFromDoc(current.hostDoc)?.get(YjsDatabaseKey.views)?.get(effect.viewId);
+          const previousLayout = Number(view?.get(YjsDatabaseKey.layout)) as DatabaseViewLayout;
+          const sameScope = () =>
+            latest.current.hostDoc === current.hostDoc &&
+            latest.current.hostDatabaseId === current.hostDatabaseId &&
+            latest.current.workspaceId === current.workspaceId;
           const revert = (error: unknown) => {
+            if (!sameScope() || layoutSwitches.current.get(effect.viewId) !== switching) return undefined;
             Log.warn('[Dashboard] could not switch the new widget view', error);
             toast.error(
               getErrorMessage(
@@ -259,35 +271,85 @@ export function useAddWidgetFlow(options: UseAddWidgetFlowOptions): {
                 current.t('dashboard.picker.createFailed', { defaultValue: 'Could not create the view' })
               )
             );
-            const state = handle?.getState();
-
-            // Keep the previous tile: switch back in the flow (the view itself never changed).
-            if (previous && 'layout' in previous && state?.kind === 'configuring') {
-              handle?.dispatch({ type: 'pick_tile', layout: previous.layout });
-            }
+            handle?.dispatch({ type: 'layout_failed', viewId: effect.viewId, layout: previousLayout });
+            return undefined;
           };
 
-          if (!api || api.viewId !== effect.viewId) break;
-          try {
-            const result = api.switchLayout(effect.layout);
+          if (!api || api.viewId !== effect.viewId || !state || !('viewId' in state)) break;
+          // Hosted Charts require server admission. Replace this disposable
+          // default view only after creation succeeds; a rejected write leaves
+          // its layout and name intact. Other layouts still switch in place.
+          const admittedChart =
+            effect.layout === DatabaseViewLayout.Chart && !getWorkspacePlanPolicy().bypassesPlanLimits;
+          const switching: Promise<string | undefined> = Promise.resolve()
+            .then(async () => {
+              if (!sameScope() || layoutSwitches.current.get(effect.viewId) !== switching) return undefined;
+              if (!admittedChart) {
+                await api.switchLayout(effect.layout);
+                return effect.viewId;
+              }
 
-            if (result instanceof Promise) void result.catch(revert);
-          } catch (error) {
-            revert(error);
-          }
+              const viewId = await current.ownedViews.createWidgetView({
+                databaseId: current.hostDatabaseId,
+                anchorViewId: effect.viewId,
+                layout: effect.layout,
+                baseName: state.autoNamed ? label(effect.layout) : String(view?.get(YjsDatabaseKey.name) ?? ''),
+                preserveName: !state.autoNamed,
+              });
+              const written =
+                sameScope() &&
+                layoutSwitches.current.get(effect.viewId) === switching &&
+                runDatabaseHistoryGroupForDatabase(
+                  current.hostDoc,
+                  () =>
+                    latest.current.updateRows((rows) => {
+                      const widget = rows.flatMap((row) => row.widgets).find((item) => item.id === state.widgetId);
+
+                      return widget?.viewId === effect.viewId && widget.databaseId === current.hostDatabaseId
+                        ? replaceDashboardWidgetView(rows, state.widgetId, viewId, current.hostDatabaseId)
+                        : rows;
+                    }),
+                  insertionHistoryGroups.current.get(state.widgetId)
+                );
+
+              if (!written) {
+                void current.ownedViews.deleteOwnedViewNow(viewId, current.hostDatabaseId);
+                return undefined;
+              }
+
+              handle?.dispatch({ type: 'view_replaced', previousViewId: effect.viewId, viewId });
+              current.ownedViews.enqueueOwnedViewDeletion(effect.viewId, current.hostDatabaseId);
+              return viewId;
+            })
+            .catch(revert);
+
+          layoutSwitches.current.set(effect.viewId, switching);
 
           break;
         }
 
-        case 'rename_if_auto':
-          void renameHostView(effect.viewId, nameFor(label(effect.layout), effect.viewId)).catch((error) =>
-            Log.warn('[Dashboard] could not rename the new widget view', error)
-          );
+        case 'rename_if_auto': {
+          const switching = layoutSwitches.current.get(effect.viewId);
+
+          void switching
+            ?.then((viewId) => {
+              if (!viewId || layoutSwitches.current.get(effect.viewId) !== switching) return;
+              if (latest.current.hostDoc !== current.hostDoc) return;
+              // Atomic creation already supplied the new Chart's name.
+              if (viewId === effect.viewId) return renameHostView(viewId, nameFor(label(effect.layout), viewId));
+            })
+            .catch((error) => Log.warn('[Dashboard] could not rename the new widget view', error));
           break;
+        }
+
         case 'rename_view':
-          void renameHostView(effect.viewId, effect.name.trim()).catch((error) =>
-            Log.warn('[Dashboard] could not rename the new widget view', error)
-          );
+          void (layoutSwitches.current.get(effect.viewId) ?? Promise.resolve(effect.viewId))
+            .then((viewId) =>
+              viewId && latest.current.hostDoc === current.hostDoc
+                ? renameHostView(viewId, effect.name.trim())
+                : undefined
+            )
+            .catch((error) => Log.warn('[Dashboard] could not rename the new widget view', error));
           break;
         case 'create_owned_view': {
           const anchorViewId = anchorsByDatabaseRef.current.get(effect.databaseId);

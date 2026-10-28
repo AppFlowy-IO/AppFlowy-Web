@@ -17,7 +17,12 @@ jest.mock('@/components/database/chart', () => ({ Chart: () => null }));
 jest.mock('@/components/database/fullcalendar', () => ({ Calendar: () => null }));
 jest.mock('@/components/database/form/FormBuilderView', () => ({ FormBuilderView: () => null }));
 jest.mock('@/components/database/gallery', () => ({ __esModule: true, default: () => null }));
-jest.mock('@/components/database/grid', () => ({ Grid: () => null }));
+jest.mock('@/components/database/grid', () => ({
+  Grid: () => {
+    if (mockGridFails) throw new Error('A database layout failed');
+    return <div data-testid='grid-layout' />;
+  },
+}));
 jest.mock('@/components/database/list/List', () => ({ __esModule: true, default: () => null }));
 jest.mock('@/components/database/components/conditions/DatabaseSearchContext', () => ({
   DatabaseSearchProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -37,6 +42,7 @@ jest.mock('@/utils/runtime-config', () => ({
 }));
 
 type DashboardChunk = Awaited<ReturnType<typeof loadDashboard>>;
+let mockGridFails = false;
 
 const dashboardChunk = {
   default: function DashboardProbe() {
@@ -78,7 +84,12 @@ function renderDashboardPage() {
 
   return render(
     <DatabaseContext.Provider value={contextValue}>
-      <DatabaseViews activeViewId='view-id' databasePageId='view-id' onChangeView={jest.fn()} visibleViewIds={['view-id']} />
+      <DatabaseViews
+        activeViewId='view-id'
+        databasePageId='view-id'
+        onChangeView={jest.fn()}
+        visibleViewIds={['view-id']}
+      />
     </DatabaseContext.Provider>
   );
 }
@@ -109,4 +120,54 @@ it('keeps the page skeleton until the dashboard chunk is in, then renders the ta
   expect(screen.getByTestId('dashboard-scope').contains(tabs)).toBe(true);
   expect(screen.getByTestId('dashboard-layout')).toBeTruthy();
   expect(screen.queryByTestId('grid-skeleton')).toBeNull();
+});
+
+it('contains a failed layout with the real fallback and recovers when another view is selected', async () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+  const doc = createDatabaseDoc(DatabaseViewLayout.Grid);
+  const database = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database)!;
+  const views = database.get(YjsDatabaseKey.views)!;
+
+  views.set(
+    'healthy-view',
+    new Y.Map<unknown>([
+      [YjsDatabaseKey.id, 'healthy-view'],
+      [YjsDatabaseKey.name, 'Healthy'],
+      [YjsDatabaseKey.layout, DatabaseViewLayout.Grid],
+      [YjsDatabaseKey.created_at, '101'],
+    ]) as never
+  );
+  const content = (activeViewId: string) => (
+    <DatabaseContext.Provider
+      value={{
+        activeViewId,
+        databaseDoc: doc,
+        databasePageId: 'view-id',
+        readOnly: false,
+        rowMap: {},
+        workspaceId: 'ws',
+      }}
+    >
+      <DatabaseViews
+        activeViewId={activeViewId}
+        databasePageId='view-id'
+        onChangeView={jest.fn()}
+        visibleViewIds={['view-id', 'healthy-view']}
+      />
+    </DatabaseContext.Provider>
+  );
+
+  try {
+    mockGridFails = true;
+    const { rerender } = render(content('view-id'));
+
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    mockGridFails = false;
+    rerender(content('healthy-view'));
+    expect(await screen.findByTestId('grid-layout')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+  } finally {
+    mockGridFails = false;
+    consoleError.mockRestore();
+  }
 });

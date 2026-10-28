@@ -101,6 +101,8 @@ export type AddWidgetFlowEvent =
   | { type: 'pick_existing'; viewId: string; databaseId: string }
   | { type: 'pick_layout'; layout: DatabaseViewLayout }
   | { type: 'pick_tile'; layout: DatabaseViewLayout }
+  | { type: 'view_replaced'; previousViewId: string; viewId: string }
+  | { type: 'layout_failed'; viewId: string; layout: DatabaseViewLayout }
   | { type: 'create_in_database'; databaseId: string; layout: DatabaseViewLayout }
   | { type: 'rename'; name: string }
   | { type: 'edit_chart' }
@@ -268,6 +270,16 @@ export function reduceAddWidgetFlow(state: AddWidgetFlowState, event: AddWidgetF
 
     case 'pick_tile':
       return state.kind === 'configuring' ? pickLayout(state, event.layout) : unchanged(state);
+
+    case 'view_replaced':
+      return 'viewId' in state && state.viewId === event.previousViewId
+        ? { state: { ...state, viewId: event.viewId }, effects: [] }
+        : unchanged(state);
+
+    case 'layout_failed':
+      return 'viewId' in state && state.viewId === event.viewId
+        ? { state: { ...state, layout: event.layout }, effects: [] }
+        : unchanged(state);
 
     case 'create_in_database':
       if (state.kind !== 'open') return unchanged(state);
