@@ -2,6 +2,7 @@ import Dialog from '@mui/material/Dialog';
 import { ArrowLeft, FileText, Play, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { aiMapUnavailableReason } from './ai-map-availability';
 import { documentOutline } from './document-outline';
 import DocumentContentProvider from './DocumentContentProvider';
 import { DocumentOutlineContext } from './DocumentOutline';
@@ -177,11 +178,8 @@ export default function PresentationStudio({
   const outlineChanged = !!outlineDraft && hasStoryPlanChanges(outlineDraft.plan, outlineDraft.baseline);
   const canGenerate = !!status && canWrite && !busy && status.remainingSlides > 0;
   const canUseAI = !!status && canWrite && !busy;
-  const canGenerateMap =
-    canUseAI &&
-    (status.aiResponses.metered === false ||
-      (status.aiResponses.accountingReady === true &&
-        (status.aiResponses.limit === null || (status.aiResponses.remaining ?? 0) > 0)));
+  const mapUnavailable = status ? aiMapUnavailableReason(status, canWrite) : undefined;
+  const canGenerateMap = canUseAI && !mapUnavailable;
   const compactSetup = mode === 'slides' && stage === 'setup';
   const plan = activeDeck?.plan;
   const upgrade = onUpgrade ?? (() => setNotice('Open workspace billing to compare plans.'));
@@ -750,7 +748,7 @@ export default function PresentationStudio({
                 <Notice>
                   {!status
                     ? 'Loading AI access…'
-                    : 'AI generation is unavailable. You can still view saved maps that you have access to.'}
+                    : `${mapUnavailable ?? 'AI generation is unavailable.'} You can still view saved maps that you have access to.`}
                 </Notice>
               )}
               {mapViewer}
