@@ -91,6 +91,7 @@ export interface SlidesWorkflowProps {
   initialAction?: DeckAction;
   scope?: { workspaceId: string; pageId: string; userId?: string };
   busy?: boolean;
+  reuse?: { available: boolean; checking: boolean; error?: string; onOpen: () => void; onRetry: () => void };
 }
 
 const LAYOUT_OPTIONS = LAYOUTS.map((layout) => ({

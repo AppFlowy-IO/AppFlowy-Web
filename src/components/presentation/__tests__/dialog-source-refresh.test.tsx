@@ -91,6 +91,7 @@ function mockWire(config: { url: string; method?: string; data?: { sources?: Arr
         ? { workspaceId: 'workspace', actorId: 'user', revision: 1, payload: {}, updatedAt: '2026-10-28T00:00:00Z' }
         : null;
   else if (config.url.endsWith('/decks') || config.url.endsWith('/styles')) data = { items: [], nextCursor: null };
+  else if (config.url.endsWith('/reusable')) data = null;
   else if (config.url.endsWith('/slides/assess'))
     data = {
       sourceRevision: 'server-envelope-document',

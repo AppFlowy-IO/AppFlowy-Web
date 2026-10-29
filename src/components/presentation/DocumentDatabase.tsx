@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 
 import { getDatabaseLayoutFromBlockType } from '@/application/database-block';
+import { DatabaseContext, type DatabaseContextState } from '@/application/database-yjs/context';
+import { createRowOrdersStore } from '@/application/database-yjs/row-orders-store';
 import {
   Types,
   UIVariant,
@@ -21,6 +23,8 @@ import {
 } from '@/components/app/app.hooks';
 import { useViewActionPermissions } from '@/components/app/view-actions/useViewActionPermissions';
 import Database from '@/components/database/Database';
+import DatabaseViews from '@/components/database/DatabaseViews';
+import { useMountedDatabase } from '@/components/database/mounted-database';
 import { useDatabaseDeletionStatus } from '@/components/editor/components/blocks/database/hooks/useDatabaseDeletionStatus';
 import { useDocumentLoader } from '@/components/editor/components/blocks/database/hooks/useDocumentLoader';
 import { useViewMeta } from '@/components/editor/components/blocks/database/hooks/useViewMeta';
@@ -157,13 +161,20 @@ function LinkedDatabase({ block, onSource, workspaceId, viewId }: Props & { work
   const permissions = useViewActionPermissions(
     null,
     true,
-    viewId,
+    activeViewId,
     reference.databaseId ? { collabObjectId: reference.databaseId, collabType: Types.Database } : undefined
   );
   // A database the user cannot read is never fetched, opened from a local copy or synced, so loading
   // waits for read access instead of starting alongside the check as the editor's block does.
-  const { doc, notFound, noAccess, setNotFound } = useDocumentLoader({
-    viewId: permissions.canRead ? viewId : '',
+  const mounted = useMountedDatabase(workspaceId, activeViewId, reference.databaseId);
+  const shared = permissions.canRead ? mounted : undefined;
+  const {
+    doc: loadedDoc,
+    notFound,
+    noAccess,
+    setNotFound,
+  } = useDocumentLoader({
+    viewId: permissions.canRead && !shared ? viewId : '',
     databaseId: reference.databaseId,
     loadView: operations.loadView,
     bindViewSync: operations.bindViewSync,
@@ -171,10 +182,11 @@ function LinkedDatabase({ block, onSource, workspaceId, viewId }: Props & { work
     eventEmitter,
   });
   const { databaseName } = useViewMeta({
-    viewId: permissions.canRead ? viewId : '',
+    viewId: permissions.canRead && !shared ? viewId : '',
     loadViewMeta: operations.loadViewMeta,
     ignoreMetaErrors: true,
   });
+  const doc = shared?.context.databaseDoc ?? loadedDoc;
   const view = useDatabaseView(doc, activeViewId);
   const deletionStatus = useDatabaseDeletionStatus({
     workspaceId,
@@ -196,10 +208,11 @@ function LinkedDatabase({ block, onSource, workspaceId, viewId }: Props & { work
     return unavailable('This linked database is no longer available.');
   if (permissions.permissionError && permissions.permissionError !== ErrorType.Forbidden)
     return unavailable('This database view could not be loaded. Please try again later.');
-  if (noAccess || (permissions.hasLoadedViewActionPermissions && !permissions.canRead))
+  if ((!shared && noAccess) || (permissions.hasLoadedViewActionPermissions && !permissions.canRead))
     return unavailable('You don’t have access to this linked database.');
   if (deletionStatus === 'inTrash') return unavailable('This linked database is in Trash.');
-  if (notFound || deletionStatus === 'deleted') return unavailable('This linked database is no longer available.');
+  if ((!shared && notFound) || deletionStatus === 'deleted')
+    return unavailable('This linked database is no longer available.');
   if (!permissions.canRead || !doc || (eventEmitter && deletionStatus === null))
     return (
       <div className='ps-database-status' role='status'>
@@ -207,6 +220,16 @@ function LinkedDatabase({ block, onSource, workspaceId, viewId }: Props & { work
       </div>
     );
   if (view !== 'ready') return unavailable('The linked database view is no longer available.');
+  if (shared)
+    return (
+      <SharedDatabase
+        context={shared.context}
+        name={shared.name}
+        visibleViewIds={reference.viewIds.length ? reference.viewIds : [viewId]}
+        onChangeView={setActiveViewId}
+        onSource={openRowInHostPeek}
+      />
+    );
 
   return (
     <Database
@@ -220,6 +243,7 @@ function LinkedDatabase({ block, onSource, workspaceId, viewId }: Props & { work
       variant={UIVariant.App}
       readOnly
       loadReadOnlyRows
+      shareResources={false}
       canWrite={false}
       canComment={false}
       canShare={false}
@@ -236,5 +260,56 @@ function LinkedDatabase({ block, onSource, workspaceId, viewId }: Props & { work
       // Opening a record returns to its source instead of editing inside a slide.
       openRowInHostPeek={openRowInHostPeek}
     />
+  );
+}
+
+/** A second view of the page's live data: no second row loader, prefetch or sync owner. */
+function SharedDatabase({
+  context,
+  name,
+  visibleViewIds,
+  onChangeView,
+  onSource,
+}: {
+  context: DatabaseContextState;
+  name: string;
+  visibleViewIds: string[];
+  onChangeView: (id: string) => void;
+  onSource: () => void;
+}) {
+  const [rowOrdersStore] = useState(createRowOrdersStore);
+  const value = useMemo<DatabaseContextState>(
+    () => ({
+      ...context,
+      rowOrdersStore,
+      rowOrdersSource: undefined,
+      readOnly: true,
+      canWrite: false,
+      canComment: false,
+      canShare: false,
+      showActions: false,
+      paddingStart: 0,
+      paddingEnd: 0,
+      isDocumentBlock: false,
+      embeddedHeight: undefined,
+      navigateToRow: onSource,
+      openRowInHostPeek: onSource,
+      onRendered: undefined,
+    }),
+    [context, onSource, rowOrdersStore]
+  );
+
+  return (
+    <DatabaseContext.Provider value={value}>
+      <div className='appflowy-database relative flex w-full select-text flex-col'>
+        <DatabaseViews
+          visibleViewIds={visibleViewIds}
+          databasePageId={context.databasePageId}
+          viewName={name}
+          onChangeView={onChangeView}
+          activeViewId={context.activeViewId}
+        />
+      </div>
+    </DatabaseContext.Provider>
   );
 }

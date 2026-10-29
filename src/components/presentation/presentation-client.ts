@@ -8,7 +8,7 @@ import {
 import {
   cancelJob, createStructuralMap, downloadExport, getArtifactScene, getJob, getPresentationStatus,
   getSession, listDecks, listStyleRecords, PresentationAPIError, presentationErrorMessage, readArtifact,
-  resolveSources, assessSources, reviewStyle, submitExport, submitGeneration, uploadTemplate,
+  resolveSources, assessSources, reviewStyle, submitExport, submitGeneration, uploadTemplate, findReusableResult,
 } from './server-client';
 
 import type {
@@ -194,6 +194,19 @@ export async function runGeneration(input: GenerateInput, signal?: AbortSignal, 
   const body = generationRequest(input, input.requestId ?? crypto.randomUUID());
   const initial = await submitGeneration(input.scope, body, signal);
   const job = await waitForJob(input.scope, initial, signal, onJob);
+
+  return loadGenerationResult(input, job, signal);
+}
+
+/** Reads an authorized saved result without submitting a generation operation. */
+export async function openReusableGeneration(input: GenerateInput, signal?: AbortSignal): Promise<GenerationResult> {
+  const job = await findReusableResult(input.scope, generationRequest(input, crypto.randomUUID()), signal);
+
+  if (!job) throw new PresentationAPIError('The source or settings changed. Generate a new result.', 'SOURCE_REVISION_CONFLICT', 409);
+  return loadGenerationResult(input, job, signal);
+}
+
+async function loadGenerationResult(input: GenerateInput, job: JobStatus, signal?: AbortSignal): Promise<GenerationResult> {
 
   if (!job.artifactId || !job.resultVersion) throw new PresentationAPIError('The job has no saved result.', 'INVALID_JOB_RESULT', 502);
   const deckScene = job.kind === 'slides' ? sceneRead(input.scope, job.artifactId, job.resultVersion, signal) : undefined;

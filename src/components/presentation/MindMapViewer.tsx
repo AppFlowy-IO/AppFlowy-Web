@@ -35,6 +35,7 @@ export default function MindMapViewer({
   onStyleChange,
   canGenerate,
   onGenerate,
+  generateLabel,
   onSlides,
   onSource,
   onClosePresentation,
@@ -48,6 +49,7 @@ export default function MindMapViewer({
   onStyleChange?: (style: { structure: MapStructure; branchLine: MapBranchLine }) => Promise<void>;
   canGenerate: boolean;
   onGenerate: () => void;
+  generateLabel?: string;
   onSlides: () => void;
   onSource: (id: string) => void;
   onClosePresentation?: () => void;
@@ -479,6 +481,12 @@ export default function MindMapViewer({
           </>
         )}
       </TransformWrapper>
+      {onClosePresentation && generateLabel && (
+        <Action className='absolute left-4 top-4 z-10' disabled={!canGenerate} onClick={onGenerate}>
+          <Sparkles size={16} />
+          {generateLabel}
+        </Action>
+      )}
       {expanded && (
         <Action
           className='ps-map-close'
@@ -598,7 +606,7 @@ export default function MindMapViewer({
         </div>
         <Action primary disabled={!canGenerate} onClick={onGenerate}>
           <Sparkles size={16} />
-          {origin === 'ai' ? 'Regenerate with AI' : 'Generate with AI'}
+          {generateLabel ?? (origin === 'ai' ? 'Regenerate with AI' : 'Generate with AI')}
         </Action>
       </div>
       <div className='ps-map-toolbar'>

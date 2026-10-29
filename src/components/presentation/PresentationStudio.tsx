@@ -11,6 +11,7 @@ import { resolveMapReferences } from './mindmap-references';
 import MindMapViewer from './MindMapViewer';
 import {
   createGenerationRunner,
+  openReusableGeneration,
   editMap,
   exportDeck,
   loadPresentation,
@@ -32,6 +33,7 @@ import { flattenBlocks, splitDocument } from './source';
 import { hasStoryPlanChanges, prepareStoryPlan } from './story-plan';
 import StyleSettings from './StyleSettings';
 import { Action, Notice } from './ui';
+import { useReusableGeneration } from './useReusableGeneration';
 import { regenerationReference } from './workflow-state';
 
 import type {
@@ -127,6 +129,9 @@ export default function PresentationStudio({
   const [sourceState, setSourceState] = useState({ input: incoming, snapshot: incoming });
   // A new source prop must hide the previous source's map in this render, before effect cleanup.
   const snapshot = sourceState.input === incoming ? sourceState.snapshot : incoming;
+  const currentSourceRevision = useRef(snapshot.revision);
+
+  currentSourceRevision.current = snapshot.revision;
   const setSnapshot = useCallback(
     (next: PageSnapshot) => setSourceState({ input: incoming, snapshot: next }),
     [incoming]
@@ -137,9 +142,7 @@ export default function PresentationStudio({
   );
   const [runGeneration] = useState(createGenerationRunner);
   const [status, setStatus] = useState<PresentationStatus>();
-  const [mode, setMode] = useState<Mode>(
-    initialMode === 'document' ? 'source' : initialMode
-  );
+  const [mode, setMode] = useState<Mode>(initialMode === 'document' ? 'source' : initialMode);
   const [documentOpen, setDocumentOpen] = useState(initialMode === 'document');
   const [mapPresentationOpen, setMapPresentationOpen] = useState(presentMindMap);
   const [options, setOptions] = useState<GenerationOptions>(DEFAULT_OPTIONS);
@@ -160,8 +163,7 @@ export default function PresentationStudio({
     reference: VersionedId;
     sourceRevision: string;
   }>();
-  const narrative =
-    narrativeSelection?.sourceRevision === snapshot.revision ? narrativeSelection.reference : undefined;
+  const narrative = narrativeSelection?.sourceRevision === snapshot.revision ? narrativeSelection.reference : undefined;
   const [outlineDraft, setOutlineDraft] = useState<{ plan: StoryPlan; baseline: StoryPlan }>();
   const [stage, setStage] = useState<SlidesStage>(initialDeck && initialAction !== 'regenerate' ? 'preview' : 'setup');
   const [notice, setNotice] = useState('');
@@ -202,6 +204,20 @@ export default function PresentationStudio({
   const mapUnavailable = status ? aiMapUnavailableReason(status, canWrite) : undefined;
   const canGenerateMap = canUseAI && !mapUnavailable;
   const compactSetup = mode === 'slides' && stage === 'setup';
+  const reuseInput = {
+    scope,
+    task: mode === 'mindmap' ? ('mindmap' as const) : ('slides' as const),
+    source: snapshot,
+    options,
+    style,
+    ...(mode === 'slides' && narrative && { narrative }),
+    ...(mode === 'slides' && activeDeck && { artifact: { id: activeDeck.id, version: activeDeck.version! } }),
+  };
+  const reuse = useReusableGeneration(
+    reuseInput,
+    loadedIdentity === identity && canWrite && (compactSetup || mode === 'mindmap') && !style.requiresReview,
+    userId
+  );
   const plan = activeDeck?.plan;
   const upgrade = onUpgrade ?? (() => setNotice('Open workspace billing to compare plans.'));
 
@@ -260,7 +276,13 @@ export default function PresentationStudio({
         setMapArtifact(loaded.mapArtifact);
 
         // With no saved AI map, present the page structure map instead.
-        if (!loaded.mapArtifact) setShowAIMap(false);
+        if (
+          !loaded.mapArtifact ||
+          (presentMindMap &&
+            loaded.mapArtifact.origin === 'ai' &&
+            loaded.mapArtifact.sourceRevision !== currentSourceRevision.current)
+        )
+          setShowAIMap(false);
 
         if (!initialDeck && loaded.mapArtifact?.sourceRevision)
           setNarrativeSelection({
@@ -277,7 +299,7 @@ export default function PresentationStudio({
       controller.abort();
       generation.current?.abort();
     };
-  }, [scope, userId, initialDeck, identity]);
+  }, [scope, userId, initialDeck, identity, presentMindMap]);
 
   // The saved AI map view never shows the page structure, so it does not request one.
   const structuralVisible = (mapPresentationOpen || mode === 'mindmap') && !showAIMap;
@@ -392,6 +414,38 @@ export default function PresentationStudio({
     setMode('slides');
   }
 
+  async function openExisting() {
+    if (busy || !reuse.job) return;
+    const controller = new AbortController();
+
+    generation.current = controller;
+    setBusy(true);
+    setNotice('');
+    try {
+      const result = await openReusableGeneration(reuseInput, controller.signal);
+
+      if (controller.signal.aborted) return;
+      setStatus(result.status);
+      if (result.deck) openDeck(result.deck, !!options.reviewOutline);
+      else if (result.map) {
+        setMapArtifact(result.artifact as Artifact<MindMap>);
+        setShowAIMap(true);
+        setMapPresentationOpen(true);
+        persistSelection(
+          { id: result.artifact.id, version: result.artifact.version },
+          { id: result.artifact.id, version: result.artifact.version }
+        );
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        report(error);
+        reuse.refresh();
+      }
+    } finally {
+      if (generation.current === controller) setBusy(false);
+    }
+  }
+
   async function generate(task: 'slides' | 'mindmap', slide?: Slide, editedPlan?: StoryPlan) {
     if (busy || !status) return;
     if (task === 'slides' && activeDeck && !sourceMatches) {
@@ -437,7 +491,7 @@ export default function PresentationStudio({
           options,
           style,
           ...(task === 'slides' && activeDeck && { artifact: regenerationReference(activeDeck, sourceSnapshot) }),
-          ...(currentNarrative && { narrative: currentNarrative }),
+          ...(task === 'slides' && currentNarrative && { narrative: currentNarrative }),
           ...(slide && { targetSlideIds: [slide.id] }),
           ...(editedPlan && { storyPlan: editedPlan, storyPlanSourceRevision: activeDeck!.sourceRevision }),
         },
@@ -447,6 +501,7 @@ export default function PresentationStudio({
 
       if (controller.signal.aborted) return;
       setStatus(result.status);
+      reuse.refresh();
       if (result.deck) {
         openDeck(result.deck, !editedPlan && !slide && !!options.reviewOutline);
       } else if (result.map) {
@@ -500,6 +555,7 @@ export default function PresentationStudio({
     }
 
     if (showAIMap) {
+      reuse.refresh();
       setMapArtifact(updated);
     } else setStructuralState({ key: structuralKey, state: 'ready', artifact: updated });
     persistSelection(
@@ -549,9 +605,11 @@ export default function PresentationStudio({
       map={currentMap}
       origin={showAIMap ? (savedMapArtifact?.origin === 'ai' ? 'ai' : 'imported') : undefined}
       onUpgrade={upgrade}
-      canGenerate={canGenerateMap}
+      canGenerate={!busy && !reuse.checking && !reuse.error && (!!reuse.job || canGenerateMap)}
+      generateLabel={reuse.job ? 'Open mind map' : 'Generate with AI'}
       onGenerate={() => {
-        void generate('mindmap');
+        if (reuse.job) void openExisting();
+        else void generate('mindmap');
       }}
       onMapChange={currentArtifact && canWrite ? saveMap : undefined}
       mapStyle={
@@ -630,7 +688,19 @@ export default function PresentationStudio({
       ) : (
         <p role='status'>Loading page structure…</p>
       )}
-      {canGenerateMap && <Action onClick={() => void generate('mindmap')}>Generate AI mind map</Action>}
+      {reuse.error && (
+        <Notice>
+          {reuse.error} <Action onClick={reuse.refresh}>Try again</Action>
+        </Notice>
+      )}
+      {(reuse.job || canGenerateMap) && (
+        <Action
+          disabled={busy || reuse.checking || !!reuse.error}
+          onClick={() => (reuse.job ? void openExisting() : void generate('mindmap'))}
+        >
+          {reuse.job ? 'Open mind map' : 'Generate AI mind map'}
+        </Action>
+      )}
       {mapPresentationOpen && <Action onClick={closeMapPresentation}>Back to page</Action>}
     </section>
   );
@@ -721,6 +791,13 @@ export default function PresentationStudio({
                 sourceSnapshot={sourceMatches ? snapshot : activeDeck?.source ?? snapshot}
                 activeDeck={activeDeck}
                 busy={busy}
+                reuse={{
+                  available: !!reuse.job,
+                  checking: reuse.checking,
+                  error: reuse.error,
+                  onOpen: () => void openExisting(),
+                  onRetry: reuse.refresh,
+                }}
                 options={options}
                 onOptions={setOptions}
                 onCancel={busy ? () => generation.current?.abort() : onClose}
@@ -802,7 +879,9 @@ export default function PresentationStudio({
                 <Notice>
                   {!status
                     ? 'Loading AI access…'
-                    : `${mapUnavailable ?? 'AI generation is unavailable.'} You can still view saved maps that you have access to.`}
+                    : `${
+                        mapUnavailable ?? 'AI generation is unavailable.'
+                      } You can still view saved maps that you have access to.`}
                 </Notice>
               )}
               {mapViewer}

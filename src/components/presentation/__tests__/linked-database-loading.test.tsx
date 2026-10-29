@@ -1,8 +1,10 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
-import { YjsDatabaseKey, YjsEditorKey, type YDoc } from '@/application/types';
+import type { DatabaseContextState } from '@/application/database-yjs/context';
+import { UIVariant, YjsDatabaseKey, YjsEditorKey, type YDoc } from '@/application/types';
 import { ErrorType } from '@/application/utils/error-utils';
+import { usePublishMountedDatabase } from '@/components/database/mounted-database';
 
 import DocumentDatabase from '../DocumentDatabase';
 
@@ -16,6 +18,7 @@ const mockOperations = {
 let mockPermissions: { canRead: boolean; hasLoadedViewActionPermissions: boolean; permissionError?: ErrorType } = {
   canRead: false, hasLoadedViewActionPermissions: false,
 };
+let mockSharedContext: DatabaseContextState | undefined;
 let mockDatabaseProps: { openRowInHostPeek?: (...args: never[]) => void } = {};
 
 jest.mock('@/components/app/app.hooks', () => ({
@@ -32,6 +35,13 @@ jest.mock('@/components/database/Database', () => ({
   default: (props: typeof mockDatabaseProps) => {
     mockDatabaseProps = props;
     return <div>Database view</div>;
+  },
+}));
+jest.mock('@/application/session/token', () => ({ captureTokenSession: () => 'session', isTokenSessionCurrent: () => true }));
+jest.mock('@/components/database/DatabaseViews', () => ({
+  __esModule: true, default: () => {
+    mockSharedContext = jest.requireActual<typeof import('@/application/database-yjs/context')>('@/application/database-yjs/context').useDatabaseContext();
+    return <div>Shared database view</div>;
   },
 }));
 jest.mock('@/application/db', () => ({ deleteCollabDB: jest.fn().mockResolvedValue(undefined) }));
@@ -148,4 +158,51 @@ test('keeps one row-opening callback for the database context and follows the la
   stable!();
   expect(second).toHaveBeenCalledWith('embed');
   expect(first).not.toHaveBeenCalled();
+});
+
+
+test('Present document borrows the mounted page resources without loading or binding them again', async () => {
+  const doc = databaseDoc(['view']);
+  const context = { workspaceId: 'workspace', databasePageId: 'view', activeViewId: 'view',
+    databaseDoc: doc, rowMap: { row: new Y.Doc() }, readOnly: false, canWrite: true,
+    variant: UIVariant.App, ensureRow: jest.fn(), peekRowDocFromSeed: jest.fn(), seedsReady: true,
+  } as unknown as DatabaseContextState;
+  const PageDatabase = () => { usePublishMountedDatabase(context, 'Tasks'); return null; };
+
+  const source = jest.fn();
+  const renderPage = (mounted: boolean, present = true) => <>{mounted && <PageDatabase />}{present && <DocumentDatabase block={block} onSource={source} />}</>;
+
+  mockPermissions = { canRead: true, hasLoadedViewActionPermissions: true };
+  mockOperations.loadView.mockResolvedValue(doc);
+  const page = render(renderPage(true, false));
+
+  page.rerender(renderPage(true));
+
+  await screen.findByText('Shared database view');
+  expect(mockOperations.loadView).not.toHaveBeenCalled();
+  expect(mockOperations.loadViewMeta).not.toHaveBeenCalled();
+  expect(mockOperations.bindViewSync).not.toHaveBeenCalled();
+  expect(mockSharedContext?.rowMap).toBe(context.rowMap);
+  expect(mockSharedContext?.ensureRow).toBe(context.ensureRow);
+  expect(mockSharedContext?.databaseDoc).toBe(doc);
+  expect(mockSharedContext).toMatchObject({ readOnly: true, canWrite: false, canComment: false, canShare: false, showActions: false });
+  mockSharedContext?.navigateToRow?.('row');
+  expect(source).toHaveBeenCalledWith(block.id);
+  page.rerender(renderPage(false));
+  await screen.findByText('Database view');
+  expect(mockOperations.loadView).toHaveBeenCalledTimes(1);
+});
+
+test('revoked read permission hides even an already mounted database resource', async () => {
+  const context = { workspaceId: 'workspace', databasePageId: 'view', activeViewId: 'view',
+    databaseDoc: databaseDoc(['view']), rowMap: {}, readOnly: false, variant: UIVariant.App,
+  } as DatabaseContextState;
+  const PageDatabase = () => { usePublishMountedDatabase(context, 'Tasks'); return null; };
+
+  mockPermissions = { canRead: false, hasLoadedViewActionPermissions: true };
+  render(<><PageDatabase /><DocumentDatabase block={block} onSource={jest.fn()} /></>);
+  await act(async () => undefined);
+  expect(screen.queryByText('Shared database view')).toBeNull();
+  expect(status()).toContain('don’t have access');
+  expect(mockOperations.loadView).not.toHaveBeenCalled();
 });

@@ -47,3 +47,17 @@ test('enlarging a map shown in the studio still opens it full screen above the p
   fireEvent.click(screen.getByRole('button', { name: /Enlarge mind map/ }));
   expect(screen.getByRole('dialog')).toBeTruthy();
 });
+
+
+test('the full-screen map exposes Open for a match and Generate after a setting changes', () => {
+  const actions = { ...handlers(), canGenerate: true };
+  const close = jest.fn();
+  const view = render(<MindMapViewer map={map} {...actions} generateLabel='Open mind map' onClosePresentation={close} />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Open mind map' }));
+  expect(actions.onGenerate).toHaveBeenCalledTimes(1);
+  view.rerender(<MindMapViewer map={map} {...actions} generateLabel='Generate with AI' onClosePresentation={close} />);
+  expect(screen.queryByRole('button', { name: 'Open mind map' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Generate with AI' }));
+  expect(actions.onGenerate).toHaveBeenCalledTimes(2);
+});

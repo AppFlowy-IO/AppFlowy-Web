@@ -1,7 +1,7 @@
 import type { AxiosRequestConfig } from 'axios';
 
 import {
-  createGenerationRunner, exportDeck, importPresentationTemplate, loadPresentation, loadSourceSnapshot,
+  createGenerationRunner, exportDeck, importPresentationTemplate, loadPresentation, loadSourceSnapshot, openReusableGeneration,
   reviewPresentationStyle, waitForJob,
 } from '../presentation-client';
 import { entitlementForStatus, generationRequest, serverOptions, sourceToSnapshot, themeToStyle, toServerPlan, uiOptions } from '../server-adapter';
@@ -426,4 +426,24 @@ test('native row_properties semantic arrays retain canonical IDs, zero, false an
     { id: 'property:unknown', name: 'Cost', type: 'unknown', value: null },
   ]);
   expect(snapshot.blocks).toEqual([]);
+});
+
+
+test('Open reads the saved artifact without assessment, generation or job polling', async () => {
+  mockRequest.mockImplementation((config: AxiosRequestConfig) => config.url?.endsWith('/reusable') ? response(job) : route(config));
+  const result = await openReusableGeneration({ scope, task: 'slides', source: sourceToSnapshot(source), options });
+
+  expect(result.artifact.id).toBe(id);
+  expect(mockRequest.mock.calls.map(([config]) => config.url)).toEqual(expect.arrayContaining([
+    expect.stringContaining('/reusable'), expect.stringContaining('/artifacts/'), expect.stringContaining('/status'),
+  ]));
+  expect(mockRequest.mock.calls.some(([config]) => /\/(generate|slides\/assess|jobs)(\/|$)/.test(config.url))).toBe(false);
+});
+
+test('a stale Open never silently generates a new paid result', async () => {
+  mockRequest.mockImplementation(() => response(null));
+  await expect(openReusableGeneration({ scope, task: 'mindmap', source: sourceToSnapshot(source), options }))
+    .rejects.toMatchObject({ code: 'SOURCE_REVISION_CONFLICT' });
+  expect(mockRequest).toHaveBeenCalledTimes(1);
+  expect(mockRequest.mock.calls[0][0].url).toContain('/reusable');
 });

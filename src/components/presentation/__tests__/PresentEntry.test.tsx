@@ -3,11 +3,12 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { mockResizeObserver } from '@/__mocks__/resizeObserver';
 import { setActiveRowPage } from '@/application/row-document/row-page-state';
 import { CoverType, type ViewCover } from '@/application/types';
-import ShareButton from '@/components/app/share/ShareButton';
+import AppShareButton from '@/components/app/share/ShareButton';
 
 import PresentEntry from '../PresentEntry';
 import { serverOptions } from '../server-adapter';
 import { APPFLOWY_SLIDE_THEMES } from '../slide-themes';
+
 import type { Artifact, SourceEnvelope, StoredSession, Theme } from '../server-contract';
 import type { MindMap } from '../types';
 
@@ -21,6 +22,7 @@ let mockUserId = 'user';
 let mockSavedMap: Artifact<MindMap> | undefined;
 let mockSession: StoredSession | null = null;
 const mockTheme = APPFLOWY_SLIDE_THEMES[0] as Theme;
+
 function mockSource(pageId = 'document'): SourceEnvelope {
   return {
     schemaVersion: 1, revision: `server-envelope-${pageId}`, title: 'Live document',
@@ -34,6 +36,7 @@ function mockSource(pageId = 'document'): SourceEnvelope {
     }])),
   };
 }
+
 function savedMap(map: MindMap, sourceRevision = 'server-envelope-document') {
   mockSavedMap = { id: 'saved-map', workspaceId: 'workspace', version: 2, content: map, sourceRevision,
     origin: 'imported', resultHash: 'validated-map-hash', generationJobId: null, createdAt: '2026-10-28T00:00:00Z',
@@ -42,18 +45,21 @@ function savedMap(map: MindMap, sourceRevision = 'server-envelope-document') {
     artifact: null, narrative: { id: 'saved-map', version: 2 }, style: null, options: serverOptions(), mapStyle: { structure: 'right-facing', branchLine: 'rounded' },
   } };
 }
-function mockWire(config: { url: string; method?: string; data?: any }) {
+
+function mockWire(config: { url: string; method?: string; data?: { sources?: Array<{ pageId: string }>; session?: StoredSession['payload'] } }) {
   let data: unknown;
-  if (config.url.endsWith('/sources')) data = mockSource(config.data.sources[0].pageId);
+
+  if (config.url.endsWith('/sources')) data = mockSource(config.data?.sources?.[0].pageId ?? 'document');
   else if (config.url.endsWith('/status')) data = { schemaVersion: 1, promptBundleVersion: 'bundle', plan: 'free',
     usage: { freeSlides: 0, reservedSlides: 0, freeExports: 0, reservedExports: 0 }, remainingSlides: 12, themes: [mockTheme], slideSchemas: [1, 2], maxSlides: 100,
     aiResponses: { metered: true, accountingReady: true, committed: 0, reserved: 0, limit: 30, remaining: 30 } };
   else if (config.url.endsWith('/session')) data = config.method === 'PUT'
-    ? { workspaceId: 'workspace', actorId: mockUserId, revision: (mockSession?.revision ?? 0) + 1, payload: config.data.session, updatedAt: '2026-10-28T00:00:00Z' } : mockSession;
+    ? { workspaceId: 'workspace', actorId: mockUserId, revision: (mockSession?.revision ?? 0) + 1, payload: config.data?.session, updatedAt: '2026-10-28T00:00:00Z' } : mockSession;
   else if (config.url.endsWith('/decks') || config.url.endsWith('/styles')) data = { items: [], nextCursor: null };
   else if (config.url.endsWith('/artifacts/saved-map')) data = mockSavedMap;
   else if (config.url.endsWith('/map/structure')) data = { id: 'structural-map', workspaceId: 'workspace', version: 1, sourceRevision: 'server-envelope-document', origin: 'structural',
     content: { schemaVersion: 1, nodes: [{ id: 'root', parentId: null, label: 'Live document', summary: '', sourceIds: ['canonical:page'] }], warnings: [] }, mapStyle: { structure: 'right-facing', branchLine: 'rounded' } };
+  else if (config.url.endsWith('/reusable')) data = null;
   else if (config.url.endsWith('/slides/assess')) data = { sourceRevision: 'server-envelope-document', promptBundleVersion: 'bundle', coverage: [],
     assessment: { condition: 'concise', rationale: 'Source evidence', recommendations: [{ layout: 'summary', reason: 'Summary' }], question: null, recommendedThemeId: mockTheme.id, recommendedSlideCount: 4, similarTemplate: false, templateReason: '' } };
   else throw new Error(`Unexpected presentation request ${config.method ?? 'GET'} ${config.url}`);
@@ -173,7 +179,7 @@ it('opens Present AI mind map directly in the enlarged view and closes back to t
 
   expect(canvas.classList.contains('ps-map-expanded')).toBe(true);
   expect(screen.queryByRole('navigation', { name: 'Page presentation tools' })).toBeNull();
-  expect(screen.queryByRole('button', { name: 'Generate with AI' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Generate with AI' })).toBeTruthy();
   fireEvent.keyDown(canvas, { key: 'Escape' });
   await waitFor(() => expect(screen.queryByRole('region', { name: 'Interactive mind map' })).toBeNull());
   fireEvent.keyDown(screen.getByRole('button', { name: 'Present', exact: true }), { key: 'Enter' });
@@ -305,7 +311,7 @@ it('retains viewer presentation access while disabling source-based generation',
 });
 
 it('opens presentation outside the Share popover and restores accessible page controls on exit', async () => {
-  render(<ShareButton viewId='document' />);
+  render(<AppShareButton viewId='document' />);
   fireEvent.click(screen.getByTestId('share-button'));
   fireEvent.click(await screen.findByRole('button', { name: 'Create shared deck' }));
   await screen.findByRole('region', { name: 'Create presentation settings' });
@@ -341,8 +347,10 @@ it('cancels old-actor source reads and never renders their late content after id
         oldSignal = config.signal;
         return new Promise((resolve) => { finishOld = resolve; });
       }
+
       return Promise.resolve({ status: 200, data: { code: 0, data: { ...mockSource(), title: 'New actor source' } }, headers: {} });
     }
+
     return mockWire(config);
   });
   const rendered = render(<PresentEntry viewId='document' slidesOnly />);
@@ -356,3 +364,5 @@ it('cancels old-actor source reads and never renders their late content after id
   await act(async () => { finishOld?.({ status: 200, data: { code: 0, data: { ...mockSource(), title: 'Old private actor content' } }, headers: {} }); });
   expect(screen.queryByText('Old private actor content')).toBeNull();
 });
+
+beforeAll(() => { Object.defineProperty(crypto, 'randomUUID', { configurable: true, value: () => '00000000-0000-4000-8000-000000000001' }); });

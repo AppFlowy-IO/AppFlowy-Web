@@ -186,6 +186,9 @@ export async function getArtifactAsset(scope: WorkspaceScope, id: string, versio
 
 export const submitExport = (scope: WorkspaceScope, artifact: VersionedId, requestId: string, signal?: AbortSignal) =>
   presentationRequest<JobStatus>({ url: `${base(scope)}/download`, method: 'POST', data: { requestId, artifact }, signal });
+
+export const findReusableResult = (scope: WorkspaceScope, request: GenerationRequest, signal?: AbortSignal) =>
+  presentationRequest<JobStatus | null>({ url: `${base(scope)}/reusable`, method: 'POST', data: request, signal });
 export async function downloadExport(scope: WorkspaceScope, jobId: string, signal?: AbortSignal): Promise<{ blob: Blob; fileName: string }> {
   const response = await presentationRequest<{ data: Blob; headers: Record<string, string> }>({ url: `${base(scope)}/exports/${segment(jobId)}/download`, responseType: 'blob', signal });
   const fileName = /filename="([^"\r\n]+)"/.exec(response.headers['content-disposition'] || '')?.[1] || 'presentation.pptx';

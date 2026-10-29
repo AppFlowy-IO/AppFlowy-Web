@@ -59,6 +59,7 @@ import { cn } from '@/lib/utils';
 import { Log } from '@/utils/log';
 
 import { DatabaseContextProvider } from './DatabaseContext';
+import { usePublishMountedDatabase } from './mounted-database';
 
 const PRIORITY_ROW_SEED_LIMIT = 200;
 
@@ -147,6 +148,8 @@ export interface Database2Props {
   readOnly?: boolean;
   /** Authenticated read-only embeds still need row data for filters and sorts. */
   loadReadOnlyRows?: boolean;
+  /** Mounted app views may lend live loaders to read-only projections while they stay open. */
+  shareResources?: boolean;
   /**
    * Comment permission for the containing view. Independent from [readOnly]:
    * Read-and-comment access renders a read-only database but still allows
@@ -1744,6 +1747,8 @@ function Database(props: Database2Props) {
       isDatabaseRowPage: !!rowId,
     };
   }, [sharedContextProps, doc, databasePageId, activeViewId, rowMap, rowId, ensurePageRow, ensureRow]);
+
+  usePublishMountedDatabase(mainContextValue, databaseName, props.shareResources);
 
   // Memoize modal context value separately - only compute when modal is open
   const modalContextValue = useMemo(

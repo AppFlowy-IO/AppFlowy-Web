@@ -48,7 +48,12 @@ export default function SlideGenerationSetup({
     options.allowWebSearch,
     styleKey,
   ]);
-  const [assessed, setAssessed] = useState<{ key: string; assessment: SlideAssessment }>();
+  const [assessed, setAssessed] = useState<{
+    key: string;
+    purpose?: string;
+    attempt: number;
+    assessment: SlideAssessment;
+  }>();
   const assessment = assessed?.key === assessmentKey ? assessed.assessment : undefined;
   // Once asked for this source, the purpose field stays while the user answers, even if a reassessment stops asking.
   const sourceKey = JSON.stringify([scope?.workspaceId, scope?.pageId, snapshot.revision]);
@@ -69,8 +74,10 @@ export default function SlideGenerationSetup({
     remainingSlides ?? Infinity
   );
   const limitMessage = slideCountLimitMessage(autoCount ? recommendedCount : options.slideCount, props);
-  const showCustomCount = !autoCount &&
-    (options.slideCountSelection === 'custom' || (!options.slideCountSelection && !slideCounts.includes(options.slideCount)));
+  const showCustomCount =
+    !autoCount &&
+    (options.slideCountSelection === 'custom' ||
+      (!options.slideCountSelection && !slideCounts.includes(options.slideCount)));
   const presetOptions = effectiveSlideOptions(options);
 
   useEffect(() => {
@@ -98,8 +105,7 @@ export default function SlideGenerationSetup({
     try {
       await work(controller.signal);
     } catch (error) {
-      if (!controller.signal.aborted)
-        setNotice(error instanceof Error ? error.message : 'Unable to load the template.');
+      if (!controller.signal.aborted) setNotice(error instanceof Error ? error.message : 'Unable to load the template.');
     } finally {
       if (templateRequest.current === controller) {
         templateRequest.current = undefined;
@@ -109,7 +115,17 @@ export default function SlideGenerationSetup({
   }
 
   useEffect(() => {
-    if (!scope || !canGenerate) return;
+    if (!scope || !canGenerate || props.reuse?.checking || props.reuse?.available || props.reuse?.error) {
+      setAssessing(false);
+      return;
+    }
+
+    if (
+      assessed?.key === assessmentKey &&
+      assessed.purpose === options.purpose &&
+      assessed.attempt === assessmentAttempt
+    )
+      return;
     const controller = new AbortController();
 
     setAssessing(true);
@@ -118,7 +134,12 @@ export default function SlideGenerationSetup({
       void assessPresentation({ scope, source: snapshot, options, style }, controller.signal)
         .then((result) => {
           if (!controller.signal.aborted) {
-            setAssessed({ key: assessmentKey, assessment: result.assessment });
+            setAssessed({
+              key: assessmentKey,
+              purpose: options.purpose,
+              attempt: assessmentAttempt,
+              assessment: result.assessment,
+            });
             if (result.assessment.condition === 'ambiguous')
               setAsked({ key: sourceKey, question: result.assessment.question });
             setNotice('');
@@ -142,7 +163,15 @@ export default function SlideGenerationSetup({
     };
     // Counts, palette and panel expansion do not alter source assessment.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assessmentKey, options.purpose, assessmentAttempt, canGenerate]);
+  }, [
+    assessmentKey,
+    options.purpose,
+    assessmentAttempt,
+    canGenerate,
+    props.reuse?.checking,
+    props.reuse?.available,
+    props.reuse?.error,
+  ]);
   const hasSource =
     !!snapshot.serverSource || !!snapshot.blocks.length || (options.includeProperties && !!snapshot.properties.length);
   const question = assessment?.condition === 'ambiguous' && !options.purpose?.trim() && !options.reviewOutline;
@@ -610,7 +639,12 @@ export default function SlideGenerationSetup({
             Include database properties
           </label>
         )}
-        {notice && (
+        {props.reuse?.error && (
+          <Notice>
+            {props.reuse.error} <Action onClick={props.reuse.onRetry}>Try again</Action>
+          </Notice>
+        )}
+        {notice && !props.reuse?.available && (
           <Notice>
             {notice}{' '}
             {!assessing && (
@@ -621,13 +655,17 @@ export default function SlideGenerationSetup({
         {!hasSource && <Notice>Add some document content before generating.</Notice>}
       </div>
       <footer className='ps-ppt-setup-footer'>
-        {(busy || assessing) && (
+        {(busy || (assessing && !props.reuse?.available && !props.reuse?.checking)) && (
           <p className='ps-ppt-setup-progress' role='status'>
             <span
               aria-hidden='true'
               className='h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-border-primary border-t-fill-theme-thick motion-reduce:animate-none'
             />
-            {busy ? 'Generating your presentation…' : 'Analyzing your sources…'}
+            {busy
+              ? props.reuse?.available
+                ? 'Opening your presentation…'
+                : 'Generating your presentation…'
+              : 'Analyzing your sources…'}
           </p>
         )}
         {props.onCancel && (
@@ -639,23 +677,25 @@ export default function SlideGenerationSetup({
           size='lg'
           disabled={
             !hasSource ||
-            !canGenerate ||
-            !assessment ||
-            !!limitMessage ||
+            (!props.reuse?.available && (!canGenerate || !assessment || !!limitMessage)) ||
+            !!props.reuse?.checking ||
+            !!props.reuse?.error ||
             busy ||
-            assessing ||
+            (assessing && !props.reuse?.available) ||
             importing ||
             !!draft ||
             (designMode === 'template' && !style.templateName) ||
-            question
+            (question && !props.reuse?.available)
           }
-          onClick={generate}
+          onClick={props.reuse?.available ? props.reuse.onOpen : generate}
         >
           <AIIcon className='h-4 w-4' />
           {busy
-            ? 'Generating…'
-            : options.reviewOutline
-            ? 'Review outline'
+            ? props.reuse?.available
+              ? 'Opening…'
+              : 'Generating…'
+            : props.reuse?.available
+            ? 'Open presentation'
             : plan
             ? 'Regenerate presentation'
             : 'Generate presentation'}
