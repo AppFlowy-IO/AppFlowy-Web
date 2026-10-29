@@ -2,7 +2,7 @@ import { Check, Palette, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { analyzePresentationTemplate, deleteArtifact, importPresentationTemplate, reviewPresentationStyle } from './presentation-client';
-import { templateUploadSizeMessage } from './presentation-policy';
+import { templateUploadHint, templateUploadSizeMessage } from './presentation-policy';
 import SlideCanvas from './SlideCanvas';
 import { LAYOUTS, type PresentationStyle } from './types';
 import { Action, Notice } from './ui';
@@ -21,7 +21,7 @@ export default function StyleSettings({
   onChange: (styles: PresentationStyle[]) => void | Promise<void>;
   editable?: boolean;
   scope: Pick<PresentationScope, 'workspaceId'>;
-  maxTemplateBytes?: number;
+  maxTemplateBytes?: number | null;
 }) {
   const [draft, setDraft] = useState<PresentationStyle>();
   const [status, setStatus] = useState('');
@@ -126,7 +126,7 @@ export default function StyleSettings({
 
               event.target.value = '';
               if (!file) return;
-              if (file.size > maxTemplateBytes) {
+              if (maxTemplateBytes !== null && file.size > maxTemplateBytes) {
                 setStatus(templateUploadSizeMessage(maxTemplateBytes));
                 return;
               }
@@ -144,7 +144,7 @@ export default function StyleSettings({
           />
         </label>
       </div>
-      <p className='ps-muted'>.pptx or .potx · up to {maxTemplateBytes / (1024 * 1024)} MB</p>
+      <p className='ps-muted'>{templateUploadHint(maxTemplateBytes)}</p>
       {!styles.length && !draft && (
         <div className='ps-empty-style'>
           <Palette size={26} />

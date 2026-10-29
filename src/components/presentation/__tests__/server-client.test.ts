@@ -132,14 +132,24 @@ test.each([
   });
 });
 
-test('prefers server upload allowance, retaining conservative compatibility and the technical cap', () => {
+test('distinguishes an uncapped upload policy from missing or invalid legacy allowance', () => {
   expect(templateUploadLimit({ plan: 'free', maxTemplateBytes: 5 * 1024 * 1024 })).toBe(5 * 1024 * 1024);
   expect(templateUploadLimit({ plan: 'paid', maxTemplateBytes: 5 * 1024 * 1024 })).toBe(5 * 1024 * 1024);
-  expect(templateUploadLimit({ plan: 'paid', maxTemplateBytes: 100 * 1024 * 1024 })).toBe(50 * 1024 * 1024);
+  expect(templateUploadLimit({ plan: 'paid', maxTemplateBytes: null })).toBeNull();
+  expect(templateUploadLimit({ plan: 'free', maxTemplateBytes: null })).toBeNull();
+  expect(templateUploadLimit({ plan: 'paid', maxTemplateBytes: 100 * 1024 * 1024 })).toBe(100 * 1024 * 1024);
   expect(templateUploadLimit({ plan: 'free' })).toBe(5 * 1024 * 1024);
   expect(templateUploadLimit({ plan: 'paid' })).toBe(50 * 1024 * 1024);
   expect(templateUploadLimit()).toBe(5 * 1024 * 1024);
   expect(templateUploadLimit({ plan: 'free', maxTemplateBytes: NaN })).toBe(5 * 1024 * 1024);
+});
+
+test('the shared upload transport does not reintroduce a hardcoded 50 MB cap', async () => {
+  const file = Object.defineProperty(new File(['pptx'], 'large.pptx'), 'size', { value: 51 * 1024 * 1024 });
+
+  mockRequest.mockResolvedValue(response({ style: reviewed, requiresReview: true }));
+  await expect(client.uploadTemplate(scope, file)).resolves.toMatchObject({ requiresReview: true });
+  expect(mockRequest).toHaveBeenCalledWith(expect.objectContaining({ data: file, method: 'POST' }));
 });
 
 test.each([

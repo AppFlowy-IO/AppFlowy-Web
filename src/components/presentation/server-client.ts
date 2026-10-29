@@ -4,7 +4,7 @@ import axios, { type AxiosRequestConfig } from 'axios';
 import { getAxiosInstance } from '@/application/services/js-services/http';
 import { captureTokenSession, isTokenSessionCurrent } from '@/application/session/token';
 
-import { MAX_TEMPLATE_BYTES, templateUploadSizeMessage } from './presentation-policy';
+import { templateUploadSizeMessage } from './presentation-policy';
 
 import type {
   Artifact, ArtifactPage, AssessmentInput, AssessmentResponse, GenerationRequest, JobStatus,
@@ -174,7 +174,6 @@ export const editMap = (scope: WorkspaceScope, input: { id: string; expectedVers
 export const importDeck = (scope: WorkspaceScope, input: AssessmentInput & { id: string; deck: ServerSlidePlan }, signal?: AbortSignal) =>
   presentationRequest<Artifact<ServerSlidePlan>>({ url: `${base(scope)}/decks`, method: 'POST', data: input, signal });
 export async function uploadTemplate(scope: WorkspaceScope, file: File, signal?: AbortSignal): Promise<TemplateCandidate> {
-  if (file.size > MAX_TEMPLATE_BYTES) throw new PresentationAPIError(templateUploadSizeMessage(MAX_TEMPLATE_BYTES), 'TEMPLATE_TOO_LARGE', 413);
   return presentationRequest({ url: `${base(scope)}/template`, method: 'POST', params: { filename: file.name }, data: file,
     headers: { 'Content-Type': file.type || 'application/octet-stream' }, signal });
 }

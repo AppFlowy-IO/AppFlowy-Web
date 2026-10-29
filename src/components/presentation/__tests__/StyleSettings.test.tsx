@@ -75,6 +75,20 @@ it.each([5, 50])('checks the %i MB workspace allowance before uploading a compan
   expect(analyzePresentationTemplate).toHaveBeenCalledTimes(1);
 });
 
+it('allows company templates above 50 MB when self-host reports no upload cap', async () => {
+  const file = Object.defineProperty(new File(['pptx'], 'large.potx'), 'size', { value: 51 * 1024 * 1024 });
+
+  jest.mocked(importPresentationTemplate).mockResolvedValueOnce(original);
+  jest.mocked(analyzePresentationTemplate).mockResolvedValueOnce(original);
+  render(<StyleSettings styles={[]} scope={{ workspaceId: 'workspace' }} onChange={jest.fn()} maxTemplateBytes={null} />);
+  expect(screen.getByText('.pptx or .potx')).toBeTruthy();
+  expect(screen.queryByText(/up to .* MB/)).toBeNull();
+  fireEvent.change(screen.getByLabelText('Import template'), { target: { files: [file] } });
+  await screen.findByText('Theme analyzed. Review its appearance before saving.');
+  expect(importPresentationTemplate).toHaveBeenCalledTimes(1);
+  expect(analyzePresentationTemplate).toHaveBeenCalledTimes(1);
+});
+
 it('reviews the exact saved version and changed server theme while preserving template geometry, assets and mandatory footer', async () => {
   const saved = { ...original, name: 'Updated company', serverVersion: 8 };
 

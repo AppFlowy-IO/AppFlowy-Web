@@ -20,7 +20,7 @@ export default function PresentationSettingsPanel() {
   const user = useCurrentUserOptional();
   const userId = user?.uid;
   const identity = `${workspaceId}:${userId}`;
-  const [result, setResult] = useState<{ identity: string; styles?: PresentationStyle[]; maxTemplateBytes?: number; error?: string }>();
+  const [result, setResult] = useState<{ identity: string; styles?: PresentationStyle[]; maxTemplateBytes?: number | null; error?: string }>();
   const [attempt, setAttempt] = useState(0);
   const [adminOpen, setAdminOpen] = useState(false);
   const [adminIdentity, setAdminIdentity] = useState(identity);

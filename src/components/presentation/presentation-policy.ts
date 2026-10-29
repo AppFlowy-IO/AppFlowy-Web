@@ -2,15 +2,19 @@ import type { PresentationStatus } from './server-contract';
 
 const MIB = 1024 * 1024;
 
-export const MAX_TEMPLATE_BYTES = 50 * MIB;
-
 /** Server allowance is authoritative; the plan fallback supports older Cloud versions. */
-export function templateUploadLimit(status?: Pick<PresentationStatus, 'plan' | 'maxTemplateBytes'>): number {
+export function templateUploadLimit(status?: Pick<PresentationStatus, 'plan' | 'maxTemplateBytes'>): number | null {
   const limit = status?.maxTemplateBytes;
 
+  if (limit === null) return null;
   return typeof limit === 'number' && Number.isFinite(limit) && limit > 0
-    ? Math.min(limit, MAX_TEMPLATE_BYTES)
+    ? limit
     : (status?.plan === 'paid' ? 50 : 5) * MIB;
+}
+
+/** An explicit null means self-host has no upload-size cap; undefined is legacy/unknown. */
+export function templateUploadHint(maxBytes: number | null): string {
+  return maxBytes === null ? '.pptx or .potx' : `.pptx or .potx · up to ${maxBytes / MIB} MB`;
 }
 
 export function templateUploadSizeMessage(maxBytes: number): string {

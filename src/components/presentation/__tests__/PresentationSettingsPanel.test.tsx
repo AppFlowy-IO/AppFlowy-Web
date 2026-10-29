@@ -18,8 +18,8 @@ jest.mock('../usePresentationAccess', () => ({
 }));
 jest.mock('../StyleSettings', () => ({
   __esModule: true,
-  default: ({ styles, maxTemplateBytes }: { styles: PresentationStyle[]; maxTemplateBytes?: number }) => (
-    <div data-testid='styles' data-max-template-bytes={maxTemplateBytes}>{styles.map((style) => style.name).join(', ')}</div>
+  default: ({ styles, maxTemplateBytes }: { styles: PresentationStyle[]; maxTemplateBytes?: number | null }) => (
+    <div data-testid='styles' data-max-template-bytes={maxTemplateBytes === null ? 'unlimited' : maxTemplateBytes}>{styles.map((style) => style.name).join(', ')}</div>
   ),
 }));
 jest.mock('../PromptAdministration', () => ({
@@ -44,6 +44,13 @@ it('passes the paid upload allowance to settings and keeps saved styles readable
   mockWorkspace = 'workspace-two';
   view.rerender(<PresentationSettingsPanel />);
   expect((await screen.findByTestId('styles')).getAttribute('data-max-template-bytes')).toBe(String(5 * 1024 * 1024));
+});
+
+it('passes explicit unlimited self-host allowance without replacing it with the paid cap', async () => {
+  jest.mocked(listStyles).mockResolvedValue([]);
+  jest.mocked(getPresentationStatus).mockResolvedValueOnce({ plan: 'paid', maxTemplateBytes: null } as never);
+  render(<PresentationSettingsPanel />);
+  expect((await screen.findByTestId('styles')).getAttribute('data-max-template-bytes')).toBe('unlimited');
 });
 
 it('loads the authenticated workspace catalog and mounts administration only on explicit request', async () => {

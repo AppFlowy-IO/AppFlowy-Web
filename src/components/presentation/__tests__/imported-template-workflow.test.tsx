@@ -44,7 +44,7 @@ const builtin = themeToStyle(theme);
 const selected = jest.fn();
 
 function Setup({ initialStyle = builtin, styles = [saved, pending, builtin], maxTemplateBytes }: {
-  initialStyle?: PresentationStyle; styles?: PresentationStyle[]; maxTemplateBytes?: number;
+  initialStyle?: PresentationStyle; styles?: PresentationStyle[]; maxTemplateBytes?: number | null;
 }) {
   const [style, setStyle] = React.useState(initialStyle);
   const [options, setOptions] = React.useState({
@@ -96,6 +96,20 @@ test.each([5, 50])('enforces the %i MB upload allowance before upload or analysi
   expect(importPresentationTemplate).toHaveBeenCalledTimes(1);
   expect(analyzePresentationTemplate).toHaveBeenCalledTimes(1);
   expect(screen.getByLabelText('AI theme analysis')).toBeTruthy();
+});
+
+test('self-host uploads above 50 MB reach analysis and show no size cap', async () => {
+  const file = Object.defineProperty(new File(['pptx'], 'large.pptx'), 'size', { value: 51 * 1024 * 1024 });
+
+  jest.mocked(importPresentationTemplate).mockResolvedValueOnce(pending);
+  jest.mocked(analyzePresentationTemplate).mockResolvedValueOnce(pending);
+  render(<Setup maxTemplateBytes={null} />);
+  expect(screen.getByText('.pptx or .potx')).toBeTruthy();
+  expect(screen.queryByText(/up to .* MB/)).toBeNull();
+  fireEvent.change(screen.getByLabelText('Import presentation template'), { target: { files: [file] } });
+  await settle();
+  expect(importPresentationTemplate).toHaveBeenCalledWith(expect.anything(), file, expect.any(AbortSignal));
+  expect(analyzePresentationTemplate).toHaveBeenCalledTimes(1);
 });
 
 test('selects a saved reviewed template without uploading or reviewing it again', async () => {

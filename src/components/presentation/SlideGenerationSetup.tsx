@@ -10,7 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { Tooltip as AppTooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 import { analyzePresentationTemplate, assessPresentation, importPresentationTemplate, reviewPresentationTemplate } from './presentation-client';
-import { slideCountLimitMessage, templateUploadSizeMessage } from './presentation-policy';
+import { slideCountLimitMessage, templateUploadHint, templateUploadSizeMessage } from './presentation-policy';
 import PresentationSettingsDropdown from './PresentationSettingsDropdown';
 import { effectiveSlideOptions } from './slide-guidance';
 import { SLIDE_COUNT_PRESETS } from './slide-limits';
@@ -95,7 +95,7 @@ export default function SlideGenerationSetup({
   const controlsId = useId();
   const autoCount = options.slideCountMode === 'auto';
   const { remainingSlides, maxSlides } = props;
-  const maxTemplateBytes = props.maxTemplateBytes ?? 5 * 1024 * 1024;
+  const maxTemplateBytes = props.maxTemplateBytes === undefined ? 5 * 1024 * 1024 : props.maxTemplateBytes;
   const recommendedCount = Math.min(
     assessment?.recommendedSlideCount ?? options.slideCount,
     maxSlides ?? Infinity,
@@ -483,7 +483,7 @@ export default function SlideGenerationSetup({
                 <strong>
                   {importing ? 'Reading your presentation…' : 'Upload a PowerPoint or Google Slides export'}
                 </strong>
-                <span>.pptx or .potx · up to {maxTemplateBytes / (1024 * 1024)} MB</span>
+                <span>{templateUploadHint(maxTemplateBytes)}</span>
                 <input
                   aria-label='Import presentation template'
                   type='file'
@@ -494,7 +494,7 @@ export default function SlideGenerationSetup({
 
                     e.target.value = '';
                     if (!file || !scope) return;
-                    if (file.size > maxTemplateBytes) {
+                    if (maxTemplateBytes !== null && file.size > maxTemplateBytes) {
                       setNotice(templateUploadSizeMessage(maxTemplateBytes));
                       return;
                     }
