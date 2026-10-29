@@ -67,6 +67,20 @@ function setupProps(): SlidesWorkflowProps {
 
 const generateButton = () => screen.getByRole<HTMLButtonElement>('button', { name: 'Generate presentation' });
 
+test('web search requires an explicit toggle and preserves the other generation settings', () => {
+  const props = setupProps();
+  const view = render(<SlideGenerationSetup props={props} scope={{ workspaceId: 'workspace', pageId: 'page' }} />);
+  const toggle = screen.getByRole('switch', { name: 'Allow web search' });
+
+  expect(toggle.getAttribute('aria-checked')).toBe('false');
+  expect(screen.getByText('Search the web using page titles and headings. External sources include links.')).toBeTruthy();
+  fireEvent.click(toggle);
+  expect(props.onOptions).toHaveBeenLastCalledWith({ ...props.options, allowWebSearch: true });
+  view.rerender(<SlideGenerationSetup props={{ ...props, options: { ...props.options, allowWebSearch: true } }} scope={{ workspaceId: 'workspace', pageId: 'page' }} />);
+  fireEvent.click(toggle);
+  expect(props.onOptions).toHaveBeenLastCalledWith({ ...props.options, allowWebSearch: false });
+});
+
 test('above the disabled Generate button, the footer says the sources are being analyzed', async () => {
   jest.useFakeTimers();
   try {

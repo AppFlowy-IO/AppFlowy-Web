@@ -98,3 +98,13 @@ without generation. Delivery Control Room's two database slides made zero additi
 collab-content reads after the page loaded; current permission/metadata/trash checks still ran.
 Regression coverage includes the full source/settings reuse matrix on Cloud, the Web Open path,
 late probes, quota-independent opening, mounted-resource reuse and live restore/session boundaries.
+
+### Optional web search
+
+The setup toggle sends `allowWebSearch` with the existing source/generation options. Cloud
+retrieves bounded external snippets through appflowy-ai only when it is enabled; the helper
+explains that page titles and headings become search queries. Toggle changes invalidate the
+source/assessment identity, while layout/theme/count changes keep their existing assessment
+reuse behavior. External citation tooltips show the source hostname and snippet; citation
+navigation uses the validated web URL. Saved decks open directly as before. Cloud reuses web
+evidence for one hour while its provider configuration and native dependencies remain current.

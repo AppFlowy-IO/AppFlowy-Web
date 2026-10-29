@@ -1,6 +1,20 @@
 import { describeSlideSources, numberSlideSources, slideSourceIds } from '../slide-sources';
 
 import type { PageSnapshot, Slide, SourceBlock } from '../types';
+import type { SourceEnvelope } from '../server-contract';
+
+it('describes retrieved web citations separately from document passages', () => {
+  const details = describeSlideSources({
+    ...snapshot,
+    serverSource: { references: {
+      'web:captured': { location: { kind: 'web', url: 'https://example.com/article', retrievedAt: '2026-10-29T00:00:00Z', quote: 'Captured external evidence' }, evidenceKind: 'web_research', numeric: null },
+      'web:invalid': { location: { kind: 'web', url: 'javascript:alert(1)', retrievedAt: '', quote: 'Unsafe' }, evidenceKind: 'web_research', numeric: null },
+    } } as unknown as SourceEnvelope,
+  });
+
+  expect(details.get('web:captured')).toEqual({ documentTitle: 'example.com', section: 'External web source', excerpt: 'Captured external evidence' });
+  expect(details.has('web:invalid')).toBe(false);
+});
 
 const block = (id: string, text: string, children: SourceBlock[] = []): SourceBlock => ({
   id, text, type: 'paragraph', children,

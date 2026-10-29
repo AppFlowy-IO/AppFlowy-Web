@@ -62,6 +62,24 @@ export function describeSlideSources(snapshot: PageSnapshot): ReadonlyMap<string
     });
   }
 
+  for (const [id, reference] of Object.entries(snapshot.serverSource?.references ?? {})) {
+    const location = reference.location;
+
+    if (location.kind !== 'web') continue;
+    try {
+      const url = new URL(location.url);
+
+      if (url.protocol !== 'https:' && url.protocol !== 'http:') continue;
+      details.set(id, {
+        documentTitle: url.hostname,
+        section: 'External web source',
+        excerpt: excerpt(location.quote),
+      });
+    } catch {
+      // Invalid saved URLs retain the unavailable-source fallback.
+    }
+  }
+
   return details;
 }
 

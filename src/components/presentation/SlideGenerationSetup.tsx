@@ -339,10 +339,16 @@ export default function SlideGenerationSetup({
           <span>Current page</span>
         </div>
         <div className='ps-ppt-web-search-setting'>
-          <label htmlFor={`${controlsId}-web-search`}>Allow web search</label>
+          <div>
+            <label htmlFor={`${controlsId}-web-search`}>Allow web search</label>
+            <p id={`${controlsId}-web-search-description`} className='mt-1 text-xs text-text-secondary'>
+              Search the web using page titles and headings. External sources include links.
+            </p>
+          </div>
           <Switch
             id={`${controlsId}-web-search`}
             aria-label='Allow web search'
+            aria-describedby={`${controlsId}-web-search-description`}
             checked={options.allowWebSearch}
             onCheckedChange={(checked) => change({ allowWebSearch: checked })}
           />
