@@ -123,7 +123,7 @@ async function admissionServer(page: Page, mode: 'normal' | 'lost' | 'hydration'
 const widgets = (page: Page) => page.getByTestId('clone-fixture-widget');
 const configuration = async (page: Page) => JSON.parse(await widgets(page).last().getByTestId('clone-fixture-configuration').innerText());
 
-for (const choice of ['default', 'refused', 'admitted'] as const) {
+for (const choice of ['default', 'refused', 'admitted', 'named'] as const) {
   test(`an atomic plan refusal preserves a Table for the ${choice} Chart choice`, async ({ page, integrationsURL }, info) => {
     const server = await admissionServer(page);
     const stopRefusing = await refuseChartViewCreation(page);
@@ -136,15 +136,23 @@ for (const choice of ['default', 'refused', 'admitted'] as const) {
       await expect(widgets(page)).toHaveCount(2);
       await expect.poll(() => configuration(page)).toMatchObject({ name: 'Table', layout: 0, dashboard_owner: DASHBOARD });
       const tableId = await widgets(page).last().getAttribute('data-view-id');
+      const chartName = choice === 'named' ? 'Quarterly overview' : 'Chart';
 
       if (choice !== 'default') {
-        if (choice === 'admitted') await stopRefusing();
+        if (choice === 'named') {
+          await page.getByRole('button', { name: 'Configure Table', exact: true }).click();
+          await page.getByRole('textbox', { name: 'New view name', exact: true }).fill(chartName);
+          await page.getByRole('textbox', { name: 'New view name', exact: true }).press('Enter');
+          await expect.poll(() => configuration(page)).toMatchObject({ name: chartName, layout: 0 });
+        }
+
+        if (choice === 'admitted' || choice === 'named') await stopRefusing();
         const response = page.waitForResponse((value) => isChartViewCreationRequest(value.request()));
 
         await page.getByRole('button', { name: 'Choose Chart', exact: true }).click();
         await response;
         await expect.poll(() => configuration(page)).toMatchObject({
-          name: choice === 'admitted' ? 'Chart' : 'Table', layout: choice === 'admitted' ? 3 : 0, dashboard_owner: DASHBOARD,
+          name: choice === 'refused' ? 'Table' : chartName, layout: choice === 'refused' ? 0 : 3, dashboard_owner: DASHBOARD,
         });
         if (choice === 'refused') await expect(widgets(page).last()).toHaveAttribute('data-view-id', tableId!);
         else await expect(widgets(page).last()).not.toHaveAttribute('data-view-id', tableId!);
@@ -156,10 +164,10 @@ for (const choice of ['default', 'refused', 'admitted'] as const) {
       await page.reload();
       await expect(widgets(page)).toHaveCount(2);
       await expect(widgets(page).last()).toHaveAttribute('data-view-id', id!);
-      expect(await configuration(page)).toMatchObject({ name: choice === 'admitted' ? 'Chart' : 'Table',
-        layout: choice === 'admitted' ? 3 : 0, dashboard_owner: DASHBOARD });
+      expect(await configuration(page)).toMatchObject({ name: choice === 'admitted' || choice === 'named' ? chartName : 'Table',
+        layout: choice === 'admitted' || choice === 'named' ? 3 : 0, dashboard_owner: DASHBOARD });
       expect(server.commands.map((command) => (JSON.parse(command) as Command).view.layout)).toEqual(choice === 'default' ? [3, 0] : [3, 0, 3]);
-      expect(server.receipts.size).toBe(choice === 'admitted' ? 2 : 1);
+      expect(server.receipts.size).toBe(choice === 'admitted' || choice === 'named' ? 2 : 1);
       expect(server.legacy).toEqual([]); expect(server.errors).toEqual([]);
     } finally {
       await info.attach('chart-admission-boundary', { contentType: 'application/json', body: JSON.stringify({

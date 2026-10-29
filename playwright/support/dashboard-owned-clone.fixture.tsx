@@ -106,7 +106,7 @@ function Fixture() {
   const [, setRevision] = useState(0);
 
   useEffect(() => {
-    if (flowState.kind !== 'open') return;
+    if (!('viewId' in flowState)) return;
     flow.bindFlowView({ viewId: flowState.viewId, switchLayout: () => {
       throw new Error('The admission fixture must use server-created Charts');
     } });
@@ -122,7 +122,12 @@ function Fixture() {
     <button onClick={() => void receiveRemote()}>Receive remote changes</button>
     <button onClick={() => dashboard.setEditing(true)}>Edit dashboard</button>
     <button onClick={() => flow.startAddWidget({ type: 'new_row' })}>Add widget</button>
-    <button onClick={() => flow.api.flow.dispatch({ type: 'pick_layout', layout: DatabaseViewLayout.Chart })}>Choose Chart</button>
+    <button onClick={() => flow.api.flow.dispatch({ type: flowState.kind === 'configuring' ? 'pick_tile' : 'pick_layout',
+      layout: DatabaseViewLayout.Chart })}>Choose Chart</button>
+    <button onClick={() => flow.api.flow.dispatch({ type: 'pick_layout', layout: DatabaseViewLayout.Grid })}>Configure Table</button>
+    <input aria-label='New view name' onKeyDown={(event) => {
+      if (event.key === 'Enter') flow.api.flow.dispatch({ type: 'rename', name: event.currentTarget.value });
+    }} />
     <button onClick={() => flow.api.flow.dispatch({ type: 'dismiss' })}>Dismiss picker</button>
     <pre data-testid='clone-fixture-add-state'>{JSON.stringify({ ...flowState, canEnterEdit: dashboard.canEnterEdit,
       canEdit: dashboard.canEdit, editing: dashboard.isEditing })}</pre>

@@ -111,7 +111,7 @@ test('a refused Chart choice keeps the table name, layout and data after refresh
 test('changing a manually named table to Chart preserves its exact name', async ({ page, request }) => {
   await prepareDashboardFixture(page, request, ['Projects']);
   await addDashboardView(page, 'Projects');
-  await refuseChartViewCreation(page);
+  const stopRefusingChart = await refuseChartViewCreation(page);
   const widgetId = await openWidgetPicker(page);
 
   await chooseNewViewType(page, 'Table');
@@ -125,7 +125,7 @@ test('changing a manually named table to Chart preserves its exact name', async 
         ?.name;
     })
     .toBe('Quarterly overview');
-  await page.unroute('**/page-view/*/database-view');
+  await stopRefusingChart();
   await DashboardSelectors.newViewTile(page, DatabaseViewLayout.Chart).click();
   await expect
     .poll(async () => {
