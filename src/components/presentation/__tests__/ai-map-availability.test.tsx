@@ -156,16 +156,22 @@ test('the mind map tab offers generation when the workspace can use AI', async (
 describe('Present AI mind map', () => {
   const present = () => ({ ...props(), presentMindMap: true });
 
-  test('shows the page structure map in the studio when no AI map is saved', async () => {
-    jest.mocked(loadPresentation).mockResolvedValue(loaded(notReady));
-    render(<PresentationStudio {...present()} />);
+  test('presents the page structure map full screen when no AI map is saved', async () => {
+    const onClose = jest.fn();
 
-    expect((await screen.findByTestId('server-map')).textContent).toBe('Page structure');
-    // Shown in the studio beside the generate action and the reason, not as a full-screen presentation.
-    expect(mockViewerProps?.onClosePresentation).toBeUndefined();
-    expect(screen.getByText(/AI usage tracking is set up on this server/)).toBeTruthy();
+    jest.mocked(loadPresentation).mockResolvedValue(loaded(notReady));
+    render(<PresentationStudio {...present()} onClose={onClose} />);
+
+    const presented = await screen.findByTestId('server-map');
+
+    expect(presented.textContent).toBe('Page structure');
+    expect(presented.closest('main')).toBeNull();
+    expect(mockViewerProps?.origin).toBeUndefined();
     expect(screen.queryByText('No saved mind map is selected.')).toBeNull();
     expect(mockRunGeneration).not.toHaveBeenCalled();
+    // Closing the presentation returns to the page, as it does for a saved AI map.
+    act(() => mockViewerProps?.onClosePresentation?.());
+    expect(onClose).toHaveBeenCalled();
   });
 
   test('presents a saved AI map full screen', async () => {
@@ -195,7 +201,7 @@ describe('Present AI mind map', () => {
     const message = await screen.findByText(/Editor access is required to create a map from page structure/);
 
     expect(message.closest('main')).not.toBeNull();
-    expect(screen.getByText(/You need edit access to this page to generate an AI mind map/)).toBeTruthy();
+    expect(screen.getByText('Back to page')).toBeTruthy();
     expect(loadStructuralMap).not.toHaveBeenCalled();
   });
 });

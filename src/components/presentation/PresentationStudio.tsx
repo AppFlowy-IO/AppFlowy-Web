@@ -235,12 +235,8 @@ export default function PresentationStudio({
         setCompanyStyles(loaded.styles);
         setMapArtifact(loaded.mapArtifact);
 
-        // With no saved AI map there is nothing to present, so show the page structure map in the
-        // studio, where generating an AI map is one click away.
-        if (!loaded.mapArtifact) {
-          setShowAIMap(false);
-          setMapPresentationOpen(false);
-        }
+        // With no saved AI map, present the page structure map instead.
+        if (!loaded.mapArtifact) setShowAIMap(false);
 
         if (!initialDeck && loaded.mapArtifact?.sourceRevision)
           setNarrativeSelection({
