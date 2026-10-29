@@ -2904,12 +2904,24 @@
 }
 .ps-ppt-setup-footer {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: 16px;
   border-top: 1px solid var(--border-primary);
   padding: 16px 30px;
   flex-shrink: 0;
+}
+/* Analysis or generation in progress, on its own line above the buttons it keeps disabled. */
+.ps-ppt-setup-progress {
+  display: flex;
+  flex-basis: 100%;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 0;
+  color: var(--ps-muted);
+  font-size: 13px;
 }
 .ps-ppt-setup .ps-primary {
   background: var(--fill-theme-thick);

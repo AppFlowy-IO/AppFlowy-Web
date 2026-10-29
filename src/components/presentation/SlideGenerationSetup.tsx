@@ -613,6 +613,15 @@ export default function SlideGenerationSetup({
         {!hasSource && <Notice>Add some document content before generating.</Notice>}
       </div>
       <footer className='ps-ppt-setup-footer'>
+        {(busy || assessing) && (
+          <p className='ps-ppt-setup-progress' role='status'>
+            <span
+              aria-hidden='true'
+              className='h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-border-primary border-t-fill-theme-thick motion-reduce:animate-none'
+            />
+            {busy ? 'Generating your presentation…' : 'Analyzing your sources…'}
+          </p>
+        )}
         {props.onCancel && (
           <Button variant='outline' size='lg' onClick={props.onCancel}>
             Cancel
