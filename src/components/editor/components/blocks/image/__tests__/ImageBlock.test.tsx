@@ -60,12 +60,13 @@ jest.mock('@/utils/file', () => ({
 
 jest.mock('@/components/editor/components/blocks/image/ImageRender', () => ({
   __esModule: true,
-  default: ({ localUrl, node }: { localUrl?: string; node: ImageBlockNode }) => (
+  default: ({ localUrl, node, showToolbar }: { localUrl?: string; node: ImageBlockNode; showToolbar?: boolean }) => (
     <div
       data-testid='image-render'
       data-display-url={localUrl || node.data.url}
       data-local-url={localUrl}
       data-url={node.data.url}
+      data-show-toolbar={showToolbar ? 'true' : 'false'}
     />
   ),
 }));
@@ -93,6 +94,32 @@ beforeEach(() => {
 });
 
 describe('ImageBlock upload status', () => {
+  it.each([true, false])('keeps current hover state when upload finishes (still inside: %s)', async (stillInside) => {
+    const { container, rerender } = render(
+      <ImageBlock node={imageNode({ pending_upload_id: 'pending', retry_local_url: 'local-file', url: '' })}>
+        <span />
+      </ImageBlock>
+    );
+
+    await screen.findByTestId('image-render');
+    fireEvent.mouseEnter(container.firstElementChild!);
+    expect(screen.getByTestId('image-render').getAttribute('data-show-toolbar')).toBe('false');
+    if (!stillInside) fireEvent.mouseLeave(container.firstElementChild!);
+
+    rerender(
+      <ImageBlock node={imageNode({ pending_upload_id: '', retry_local_url: '', url: 'https://example.com/image.png' })}>
+        <span />
+      </ImageBlock>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('image-render').getAttribute('data-show-toolbar')).toBe(String(stillInside));
+    });
+    fireEvent.mouseLeave(container.firstElementChild!);
+    expect(screen.getByTestId('image-render').getAttribute('data-show-toolbar')).toBe('false');
+    expect(mockSetBlockData).not.toHaveBeenCalled();
+  });
+
   it('keeps the rendered local preview when the pending upload succeeds', async () => {
     const retryLocalUrl = 'stored-file-id';
     const { rerender } = render(
