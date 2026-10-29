@@ -1408,6 +1408,8 @@ export interface DatabaseViewRequest {
   parentViewId?: string;
   /** The sibling the new view goes after. */
   prevViewId?: string;
+  /** Commit both authoritative and collab owner markers in the initial view creation. */
+  dashboardOwner?: string;
 }
 
 /**
@@ -1447,6 +1449,7 @@ export async function createDatabaseViewThroughApi(page: Page, request: APIReque
           ? Intl.DateTimeFormat().resolvedOptions().timeZone : null,
       },
       position: view.prevViewId ? { kind: 'after', view_id: view.prevViewId } : { kind: 'end' },
+      ...(view.dashboardOwner ? { extra: { dashboard_owner: view.dashboardOwner } } : {}),
     }
   );
 

@@ -1109,7 +1109,13 @@ export async function visitDashboardAndLeave(page: Page) {
   }
 
   await expect(DashboardSelectors.widgets(viewer)).toHaveCount(widgets.length, WIDGET_TIMEOUT);
-  for (const widget of widgets) await settledResult(widgetLocatorOf(page, widget), `the "${widget.label}" widget`);
+  for (const widget of widgets) {
+    await revealWidgetData(page, [widget]);
+    // Completion counters can outlive a visit; the currently mounted view
+    // must show stable data before it is hidden or the page is left.
+    await settledResult(widgetLocatorOf(page, widget), `the "${widget.label}" widget`);
+  }
+
   await DatabaseViewSelectors.viewTab(viewer, host.views.Grid).click();
   await expect(DashboardSelectors.view(viewer)).toHaveCount(0, WIDGET_TIMEOUT);
 }

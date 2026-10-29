@@ -1,7 +1,9 @@
 import { expect, type Page, type Request, type Route } from '@playwright/test';
 
+import { visitDashboardAndLeave } from '../../support/dashboard-loading-edge-helpers';
 import { loadStats, loadingScenario, revealDashboardWidgets, revealWidgetData } from '../../support/dashboard-loading-helpers';
 import { expectDashboardNumberValue } from '../../support/dashboard-shared-helpers';
+import { registerDashboardWorld } from '../../support/dashboard-test-helpers';
 import { fixtureHTML, test } from '../../support/integrations-server';
 
 async function computationSnapshot(page: Page) {
@@ -133,6 +135,45 @@ test('unrecorded setup still rejects a visited view that never completes', async
       .rejects.toThrow('waiting for the visited "unfinished view" widget to complete');
     await expect(page.getByTestId('row-w1')).toHaveCount(0);
     expect((await loadStats(page)).widgetComplete.w1).toBeUndefined();
+  } finally {
+    work.finishAll();
+  }
+});
+
+test('repeated dashboard visits reveal and settle every deferred view before measuring page holds', async ({ page, integrationsURL }) => {
+  // Each of the 32 results retains the production helper's 1 s stability check.
+  test.setTimeout(60_000);
+  const work = await workRecorder(page);
+  const errors = await openFixture(page, integrationsURL, false, true);
+
+  registerDashboardWorld(page, {
+    runId: 'browser-fixture', owner: { accessToken: '', refreshToken: '', tokenData: {} },
+    workspaceId: 'fixture', spaceId: 'fixture', spaceName: 'Fixture', widgets: {},
+    dashboardHost: 'Host', dashboardViewId: 'fixture-dashboard', databases: {
+      Host: { name: 'Host', spaceId: 'fixture', pageId: 'fixture', databaseId: 'host',
+        fieldIds: {}, rowIds: {}, views: { Grid: 'fixture-grid' } },
+    },
+  });
+  loadingScenario(page).widgets = Array.from({ length: 8 }, (_, index) => ({
+    id: `w${index + 1}`, label: `View ${index + 1}`, database: 'Host', viewId: `v${index + 1}`, row: index + 1,
+  }));
+  try {
+    work.finishAll();
+    await revealDashboardWidgets(page, 5_000);
+    await page.getByTestId('view-tab-fixture-grid').click();
+    // Prior completion counters intentionally remain: each visit must still
+    // reveal and verify the current DOM, including the initially unseen views.
+    for (let visit = 0; visit < 4; visit++) {
+      await visitDashboardAndLeave(page);
+      await expect(page.getByTestId('dashboard-view')).toHaveCount(0);
+      expect((await computationSnapshot(page)).active).toBe(0);
+      for (let index = 1; index <= 8; index++) {
+        expect(work.started.filter((id) => id === `w${index}`)).toHaveLength(visit + 2);
+      }
+    }
+
+    await expectViewWorkLimit(page);
+    expect(errors).toEqual([]);
   } finally {
     work.finishAll();
   }

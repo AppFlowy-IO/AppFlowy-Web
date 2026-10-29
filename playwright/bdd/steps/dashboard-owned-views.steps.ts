@@ -434,25 +434,26 @@ Given(
       database,
       name: layout,
       folderLayout: layout === 'Calendar' ? 3 : 1,
+      dashboardOwner: otherDashboard,
     });
 
-    // The collab mirror of the owner marker: every reader of the picker sees it at once.
-    await page.evaluate(
-      ({ databaseId, viewId, owner }) => {
-        const bridge = (window as any).__DASHBOARD_TEST__;
-        const doc = bridge.byDatabase(databaseId).databaseDoc;
-        const view = doc.getMap('data').get('database').get('views').get(viewId);
+    // A hard navigation follows. A local-only CRDT write can disappear before
+    // synchronization; both persisted markers must already agree instead.
+    const expectOwner = async () => {
+      await expect.poll(async () => (await readFolderViewExtra(page, request, owned)).dashboard_owner,
+        WIDGET_TIMEOUT).toBe(otherDashboard);
+      await expect.poll(async () => (await readDatabaseViews(page, fixtureDatabase(page, database).databaseId))
+        .find((view) => view.id === owned)?.dashboardOwner, WIDGET_TIMEOUT).toBe(otherDashboard);
+    };
 
-        doc.transact(() => view.set('dashboard_owner', owner));
-      },
-      { databaseId: fixtureDatabase(page, database).databaseId, viewId: owned, owner: otherDashboard }
-    );
+    await expectOwner();
     memory(page).otherDashboardViewId = otherDashboard;
     dashboardWorld(page).viewsByName = {
       ...(dashboardWorld(page).viewsByName ?? {}),
       [`other dashboard ${layout}`]: { viewId: owned, database },
     };
     await openDashboard(page);
+    await expectOwner();
     // The reopened dashboard has a widget, so it opens in View mode: the scenario stays in Edit mode.
     await expect(DashboardSelectors.view(page)).toBeVisible(WIDGET_TIMEOUT);
     await enterEditMode(page);

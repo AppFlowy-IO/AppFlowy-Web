@@ -93,7 +93,11 @@ function ViewBody({ id, report }: { id: string; report: (value: WidgetLoadReport
 
   return (
     <div data-testid={`body-${id}`} data-mount={mount}>
-      {row === undefined ? <span>Preparing {id}</span> : <span data-testid={`row-${id}`}>{row}</span>}
+      {row === undefined ? <span>Preparing {id}</span> : (
+        <div data-testid='database-grid' data-row-count='1' data-hydrating='false'>
+          <div data-testid={`grid-row-${id}`}><span data-testid={`row-${id}`}>{row}</span></div>
+        </div>
+      )}
       {row !== undefined && numberWidget === id && (
         <NumberChart item={{ key: id, label: 'Units on order', value: 584, rowIds: [`${id}-row`] }}
           title='Units on order' valueText='584' />
@@ -135,9 +139,11 @@ function Dashboard({ titles }: { titles: boolean }) {
 
   return (
     <DashboardLoadSchedulerProvider hostSourceId='host' order={ids} scrollRef={scrollRef}>
-      <div data-testid='startup-viewport' ref={scrollRef} style={{ height: 300, overflow: 'auto' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-          {ids.map((id) => <Widget key={id} id={id} titles={titles} />)}
+      <div data-testid='dashboard-view'>
+        <div data-testid='startup-viewport' ref={scrollRef} style={{ height: 300, overflow: 'auto' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+            {ids.map((id) => <Widget key={id} id={id} titles={titles} />)}
+          </div>
         </div>
       </div>
     </DashboardLoadSchedulerProvider>
@@ -151,6 +157,8 @@ function Fixture() {
   return (
     <main>
       <button onClick={() => setOpen((value) => !value)}>{open ? 'Leave Dashboard' : 'Reopen Dashboard'}</button>
+      <button data-testid='view-tab-fixture-dashboard' onClick={() => setOpen(true)}>Dashboard tab</button>
+      <button data-testid='view-tab-fixture-grid' onClick={() => setOpen(false)}>Grid tab</button>
       <button onClick={() => setTitles((value) => !value)}>Toggle titles</button>
       {open ? <Dashboard titles={titles} /> : <p>Other page</p>}
     </main>
