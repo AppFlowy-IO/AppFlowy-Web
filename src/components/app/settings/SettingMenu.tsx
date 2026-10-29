@@ -9,7 +9,6 @@ import { ReactComponent as PlanIcon } from '@/assets/icons/settings_plan.svg';
 import { ReactComponent as ProfileIcon } from '@/assets/icons/person.svg';
 import { ReactComponent as PersonIcon } from '@/assets/icons/user.svg';
 import { ReactComponent as MembersIcon } from '@/assets/icons/users.svg';
-import { PRESENTATION_ENABLED } from '@/components/presentation/feature';
 
 interface SettingMenuProps {
   selectedItem: SettingMenuItem;
@@ -48,9 +47,11 @@ function SettingMenu({ selectedItem, onSelectItem, showBilling = false }: Settin
         label: t('settings.connections.menuLabel'),
         IconComponent: ConnectionsIcon,
       },
-      ...(PRESENTATION_ENABLED
-        ? [{ value: SettingMenuItem.AI_PRESENTATION, label: 'AI Settings', IconComponent: ConnectionsIcon }]
-        : []),
+      {
+        value: SettingMenuItem.AI_PRESENTATION,
+        label: 'AI Settings',
+        IconComponent: ConnectionsIcon,
+      },
       ...(showBilling
         ? [
             {

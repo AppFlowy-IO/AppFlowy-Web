@@ -21,13 +21,20 @@ export default function PresentationSettingsPanel() {
   const [result, setResult] = useState<{ identity: string; styles?: PresentationStyle[]; error?: string }>();
   const [attempt, setAttempt] = useState(0);
   const [adminOpen, setAdminOpen] = useState(false);
+  const [adminIdentity, setAdminIdentity] = useState(identity);
   const { canManageStyles, isLoading, hasError } = usePresentationAccess();
+
+  // Close prompt administration for another workspace or user before it renders for them. Retrying
+  // the style request leaves it open, so its unsaved text and test inputs survive.
+  if (adminIdentity !== identity) {
+    setAdminIdentity(identity);
+    setAdminOpen(false);
+  }
 
   useEffect(() => {
     const controller = new AbortController();
 
     setResult(undefined);
-    setAdminOpen(false);
     if (workspaceId && userId !== undefined)
       void listStyles({ workspaceId }, controller.signal)
         .then((styles) => {

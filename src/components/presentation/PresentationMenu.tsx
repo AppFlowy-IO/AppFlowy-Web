@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
+import { preloadPresentation } from './presentation-preload';
 import PresentationMenuPreview, { type PresentationChoice } from './PresentationMenuPreview';
 
 const choices = [
@@ -28,7 +29,13 @@ const PresentationMenu = forwardRef<HTMLButtonElement, { onSelect: (mode: Presen
     const narrow = useMediaQuery('(max-width: 640px)');
 
     return (
-      <DropdownMenu modal={false}>
+      <DropdownMenu
+        modal={false}
+        onOpenChange={(open) => {
+          // Choosing an item takes long enough to fetch the dialog chunk.
+          if (open) preloadPresentation();
+        }}
+      >
         <DropdownMenuTrigger asChild>
           <Button ref={ref} variant='outline' size='sm' data-testid='present-button' aria-label='Present'>
             <PresentIcon className='h-4 w-4' aria-hidden='true' />

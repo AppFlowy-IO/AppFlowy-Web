@@ -74,8 +74,12 @@ export default function PromptAdministration({ workspaceId }: { workspaceId: str
     return () => controller.abort();
   }, [workspaceId]);
 
+  // Load a component's saved versions once access is confirmed. They do not depend on the active
+  // revision, so refreshing that revision keeps the list instead of fetching it again.
+  const loaded = !!active;
+
   useEffect(() => {
-    if (!active || !component) return;
+    if (!loaded || !component) return;
     const controller = new AbortController();
 
     setHistory([]);
@@ -87,7 +91,7 @@ export default function PromptAdministration({ workspaceId }: { workspaceId: str
         if (!controller.signal.aborted) setNotice(error.message);
       });
     return () => controller.abort();
-  }, [active, component]);
+  }, [loaded, component]);
 
   async function perform(action: () => Promise<void>) {
     if (busy) return;

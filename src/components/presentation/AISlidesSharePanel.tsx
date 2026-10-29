@@ -5,7 +5,8 @@ import { useViewActionPermissions } from '@/components/app/view-actions/useViewA
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 
-import { listSavedDecks } from './presentation-client';
+import { preloadPresentation } from './presentation-preload';
+import { cachedSavedDecks, forgetSavedDecks, listCachedSavedDecks } from './saved-deck-cache';
 
 import type { DeckAction, SavedDeck } from './types';
 
@@ -21,19 +22,28 @@ export default function AISlidesSharePanel({
   onOpen: (deck?: SavedDeck, action?: DeckAction) => void;
 }) {
   const user = useCurrentUserOptional();
+  const userId = user?.uid;
   const workspaceId = useCurrentWorkspaceId();
   const view = useAppView(permissionViewId);
   const { canRead, canWrite } = useViewActionPermissions(view, true, permissionViewId);
-  const identity = `${workspaceId}:${user?.uid}:${viewId}`;
+  const identity = `${workspaceId}:${userId}:${viewId}`;
   const [result, setResult] = useState<{ identity: string; decks: SavedDeck[]; error?: string }>();
   const [reload, setReload] = useState(0);
 
   useEffect(() => {
     setResult(undefined);
-    if (!canRead || !workspaceId) return;
+    if (!canRead || !workspaceId || !userId) return;
+    // The panel lists the workspace catalog, not this page's decks, so any page reuses a recent list.
+    const cached = cachedSavedDecks(workspaceId, userId);
+
+    if (cached) {
+      setResult({ identity, decks: cached });
+      return;
+    }
+
     const controller = new AbortController();
 
-    void listSavedDecks({ workspaceId, pageId: viewId }, controller.signal)
+    void listCachedSavedDecks({ workspaceId, pageId: viewId }, userId, controller.signal)
       .then((decks) => {
         if (!controller.signal.aborted) setResult({ identity, decks });
       })
@@ -46,8 +56,13 @@ export default function AISlidesSharePanel({
           });
       });
     return () => controller.abort();
-  }, [canRead, workspaceId, viewId, identity, reload]);
+  }, [canRead, workspaceId, userId, viewId, identity, reload]);
   const current = canRead && result?.identity === identity ? result : undefined;
+  const open = (deck?: SavedDeck, action?: DeckAction) => {
+    // The share button loads the dialog chunk; start the studio chunk alongside it.
+    preloadPresentation('slides');
+    onOpen(deck, action);
+  };
 
   return (
     <div className='flex flex-col items-start gap-3 p-4'>
@@ -55,7 +70,7 @@ export default function AISlidesSharePanel({
       <p className='text-xs text-text-secondary'>
         Turn this page into a presentation. Choose a style, preview your deck, and download editable slides.
       </p>
-      <Button size='sm' disabled={!canWrite || !workspaceId} onClick={() => onOpen()}>
+      <Button size='sm' disabled={!canWrite || !workspaceId} onClick={() => open()}>
         Create AI Slides
       </Button>
       {canRead && (
@@ -75,7 +90,7 @@ export default function AISlidesSharePanel({
                     size='sm'
                     variant='outline'
                     disabled={action === 'download' && !canWrite}
-                    onClick={() => onOpen(deck, action)}
+                    onClick={() => open(deck, action)}
                   >
                     {action === 'preview' ? 'Preview' : action === 'present' ? 'Present' : 'Download'}
                   </Button>
@@ -89,7 +104,14 @@ export default function AISlidesSharePanel({
           {current?.error && (
             <>
               <p role='alert'>{current.error}</p>
-              <Button size='sm' variant='outline' onClick={() => setReload((value) => value + 1)}>
+              <Button
+                size='sm'
+                variant='outline'
+                onClick={() => {
+                  if (workspaceId && userId) forgetSavedDecks(workspaceId, userId);
+                  setReload((value) => value + 1);
+                }}
+              >
                 Retry
               </Button>
             </>

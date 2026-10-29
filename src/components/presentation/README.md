@@ -1,6 +1,6 @@
 # Presentation features for AppFlowy Web
 
-This feature provides **Present document**, **Present AI mind map**, and **AI Slides** in the signed-in app. `APPFLOWY_PRESENTATION_ENABLED` controls the native entries and defaults to `false`: enable it only for a deployment whose Cloud serves the presentation API, or the entries' requests fail. Document presentation uses a read-only editor snapshot; AI operations use authenticated AppFlowy Cloud presentation APIs.
+This feature provides **Present document**, **Present AI mind map**, and **AI Slides** in the signed-in app. Document presentation uses a read-only editor snapshot; AI operations use authenticated AppFlowy Cloud presentation APIs.
 
 ## Run locally
 
@@ -12,7 +12,7 @@ pnpm dev --host 127.0.0.1 --port 5182 --strictPort
 Use the app's normal server configuration and sign in at `/app`. The configured Cloud deployment must provide the presentation endpoints. This worktree does not start a model provider, mock backend, Cloud proxy, or unauthenticated presentation lab.
 
 - **Present** beside Share opens document presentation, mind maps, or AI Slides.
-- **Share → AI Slides** lists up to 30 authorized workspace presentations. This is a workspace catalog, not a current-page list.
+- **Share → AI Slides** lists up to 30 authorized workspace presentations. This is a workspace catalog, not a current-page list. The list is reused for a minute per user; Retry, or closing an AI presentation dialog, lists it again.
 - **Settings → AI Settings → Presentation Styles** manages uploaded templates and their reviewed versions.
 - Prompt maintenance is a separate administrative screen. The server checks administrator access; normal generation never sends a system prompt or provider configuration from the browser.
 
@@ -38,7 +38,7 @@ Generation submits source IDs, native revision fences, options, and immutable ar
 
 The server owns slide/export quotas, AI accounting, source permissions and deployment policy. The UI uses returned maximum and remaining slide counts; it does not reconstruct quotas from a plan label or historical usage. Preset/custom choices retain their explicit request mode. Export, custom-count and map-style admission are decided by the API. Unknown or unavailable AI accounting does not become an unlimited allowance. Error reason, retryability, quota details and retry delay survive transport decoding.
 
-[`ServerSlideCanvas.tsx`](./ServerSlideCanvas.tsx) renders the saved server scene used by native PowerPoint export. All thumbnails share one scene load and deduplicated, bounded private image reads. Images use authenticated Blob requests with workspace, artifact version and asset revision. Object URLs are revoked on replacement/unmount. Source changes or permission failures do not fall back to fixture generation.
+[`ServerSlideCanvas.tsx`](./ServerSlideCanvas.tsx) renders the saved server scene used by native PowerPoint export. All thumbnails share one scene load and deduplicated, bounded private image reads; a deck read with its scene reuses that scene and fetches only its images. Slides render before their images, and an image that cannot be shown is marked unavailable without hiding the deck. Images use authenticated Blob requests with workspace, artifact version and asset revision. Object URLs are revoked on replacement/unmount. Source changes or permission failures do not fall back to fixture generation.
 
 ## Editing and compatibility
 

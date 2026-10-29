@@ -1,9 +1,9 @@
-import Prism from 'prismjs';
 import type { Element } from 'slate';
 
+import highlighter from '@/components/editor/components/blocks/code/code-grammars';
 import { supportLanguages } from '@/components/editor/components/blocks/code/constants';
 
-import { codeLanguage, tokenizeCode } from '../code-languages';
+import { codeGrammar, tokenizeCode } from '../code-languages';
 import { snapshotFromSlate } from '../snapshot-adapter';
 import { parseMarkdown } from '../source';
 
@@ -40,34 +40,37 @@ it('carries Markdown fence language and indentation into a read-only snapshot', 
   });
 });
 
-it('bundles every native editor language and resolves aliases without a network loader', () => {
-  for (const { id } of supportLanguages) expect(Prism.languages[codeLanguage(id)]).toBeDefined();
-  expect(codeLanguage(' TS ')).toBe('typescript');
-  expect(codeLanguage('C#')).toBe('csharp');
-  expect(codeLanguage('HTML')).toBe('markup');
-  expect(codeLanguage('auto')).toBe('plaintext');
-  expect(codeLanguage('objectivec')).toBe('objectivec');
-  expect(codeLanguage('asm')).toBe('nasm');
-  expect(codeLanguage('vbnet')).toBe('vbnet');
-});
+it('uses the editor grammar for every native language, alias and Auto block without a network loader', () => {
+  for (const { id } of supportLanguages.filter(({ id }) => id !== 'auto'))
+    expect(codeGrammar(highlighter, '', id)).toBe(id);
+  expect(codeGrammar(highlighter, '', ' TS ')).toBe('typescript');
+  expect(codeGrammar(highlighter, '', 'C#')).toBe('cs');
+  expect(codeGrammar(highlighter, '', 'HTML')).toBe('html');
+  expect(codeGrammar(highlighter, '', 'objectivec')).toBe('objective-c');
+  expect(codeGrammar(highlighter, '', 'asm')).toBe('assembly');
+  expect(codeGrammar(highlighter, '', 'vbnet')).toBe('visual basic');
+  // Auto detects the language from the source, as in the editor.
+  const rust =
+    'fn main() {\n    let mut items: Vec<i32> = vec![1, 2, 3];\n    for item in &items { println!("{}", item); }\n}';
 
-function textOf(tokens: string | Prism.Token | Array<string | Prism.Token>): string {
-  if (typeof tokens === 'string') return tokens;
-  if (Array.isArray(tokens)) return tokens.map(textOf).join('');
-  return textOf(tokens.content);
-}
+  expect(codeGrammar(highlighter, rust, 'auto')).toBe('rust');
+});
 
 it.each(['typescript', 'python', 'tsx', 'unknown-language', undefined])(
   'preserves all source characters when highlighting %s',
   (language) => {
     const source = 'const html = `<script>${value}</script>`;\n\t// Indentation and blank lines\n\n  return html;';
-    expect(textOf(tokenizeCode(source, language))).toBe(source);
+    const tokens = tokenizeCode(source, codeGrammar(highlighter, source, language));
+
+    expect(tokens.map(({ text }) => text).join('')).toBe(source);
   }
 );
 
-it('highlights keywords while leaving unsupported languages readable', () => {
+it('highlights keywords with the editor token names while leaving unsupported languages readable', () => {
   expect(tokenizeCode('interface Person {}', 'typescript')).toEqual(
-    expect.arrayContaining([expect.objectContaining({ type: 'keyword', content: 'interface' })])
+    expect.arrayContaining([{ text: 'interface', token: 'keyword' }])
   );
-  expect(tokenizeCode('<custom syntax>', 'unknown-language')).toEqual(['<custom syntax>']);
+  expect(tokenizeCode('<custom syntax>', codeGrammar(highlighter, '<custom syntax>', 'unknown-language'))).toEqual([
+    { text: '<custom syntax>', token: '' },
+  ]);
 });

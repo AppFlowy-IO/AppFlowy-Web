@@ -45,13 +45,18 @@ export function tableColumnWidths(block: SourceBlock): number[] {
   return weights.map((width) => (width / total) * 100);
 }
 
-/** Prefer one readable slide, then two. Never clip or discard rows to impose a two-slide limit. */
+/**
+ * Prefer one readable slide, then two. Never clip or discard rows to impose a two-slide limit.
+ * `condensedTables` collects tables whose comfortable layout needs more than one slide: only their
+ * compact and dense measurements can change the result.
+ */
 export function paginateTable(
   block: SourceBlock,
   key: string,
   heights: Record<string, number>,
   available: number,
-  firstPageAvailable = available
+  firstPageAvailable = available,
+  condensedTables?: Set<string>
 ) {
   const hasHeader = block.table?.headerRow === true;
   const firstData = hasHeader ? 1 : 0;
@@ -110,6 +115,9 @@ export function paginateTable(
       fits: groups.every((rows, page) => rows.every((row) => rowHeights[row] <= (page ? capacity : firstCapacity))),
     };
   });
+  const [comfortable] = candidates;
+
+  if (!comfortable.fits || comfortable.groups.length > 1) condensedTables?.add(key);
   const selected =
     candidates.find((candidate) => candidate.fits && candidate.groups.length === 1) ??
     candidates.find((candidate) => candidate.fits && candidate.groups.length === 2) ??

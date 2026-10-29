@@ -1,5 +1,6 @@
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
+import { useTransformComponent, type ReactZoomPanPinchContextState } from 'react-zoom-pan-pinch';
 
 import { ReactComponent as BackIcon } from '@/assets/icons/arrow_left.svg';
 import { ReactComponent as RootIcon } from '@/assets/icons/arrow_left_line.svg';
@@ -71,9 +72,11 @@ function MapTool({
   );
 }
 
+/** Module-level, so the pan/zoom subscription is not recreated on every render. */
+const selectZoom = ({ state }: ReactZoomPanPinchContextState) => Math.round(state.scale * 100);
+
 export default function MindMapToolbar({
   container,
-  zoom,
   minZoom,
   focused,
   canDrill,
@@ -93,7 +96,6 @@ export default function MindMapToolbar({
   onShowAll,
 }: {
   container: HTMLElement | null;
-  zoom: number;
   minZoom: number;
   focused: boolean;
   canDrill: boolean;
@@ -115,6 +117,8 @@ export default function MindMapToolbar({
   const mac = isMac();
   const modifier = mac ? '⌘' : 'Ctrl';
   const keyModifier = mac ? 'Meta' : 'Control';
+  // Only the toolbar shows the zoom; it re-renders when the rounded value changes, not the whole map.
+  const zoom = useTransformComponent(selectZoom);
 
   return (
     <div className='ps-map-controls' role='group' aria-label='Mind map controls'>

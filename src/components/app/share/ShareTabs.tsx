@@ -2,7 +2,6 @@ import React, { lazy, Suspense, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ViewLayout } from '@/application/types';
-import { PRESENTATION_ENABLED } from '@/components/presentation/feature';
 import type { SavedDeck, DeckAction } from '@/components/presentation/types';
 import { ReactComponent as SuccessIcon } from '@/assets/icons/success.svg';
 import { ReactComponent as Templates } from '@/assets/icons/template.svg';
@@ -104,8 +103,7 @@ function ShareTabs({
         label: t('shareAction.exportAsTab'),
         Panel: ExportPanel,
       },
-      PRESENTATION_ENABLED &&
-        onPresentationRequest &&
+      onPresentationRequest &&
         (presentationViewId || (!presentationIsRow && view?.layout === ViewLayout.Document)) && {
           value: TabKey.AI_SLIDES,
           label: 'AI Slides',

@@ -98,9 +98,9 @@ function setupProps(overrides: Partial<SlidesWorkflowProps> = {}): SlidesWorkflo
 }
 
 test.each([
-  { remainingSlides: 19, maxSlides: 7, expected: 7 },
-  { remainingSlides: 3, maxSlides: 17, expected: 3 },
-])('Auto respects server remaining $remainingSlides and maximum $maxSlides', async ({ remainingSlides, maxSlides, expected }) => {
+  { remainingSlides: 19, maxSlides: 7 },
+  { remainingSlides: 3, maxSlides: 17 },
+])('Auto respects server remaining $remainingSlides and maximum $maxSlides', async ({ remainingSlides, maxSlides }) => {
   jest.useFakeTimers();
   try {
     jest.mocked(assessPresentation).mockResolvedValue({ assessment: { recommendedSlideCount: 18, condition: 'clear' } } as never);
@@ -108,7 +108,10 @@ test.each([
 
     render(<SlideGenerationSetup props={props} scope={{ workspaceId: 'workspace', pageId: 'page' }} />);
     await act(async () => { jest.advanceTimersByTime(400); });
-    expect(props.onOptions).toHaveBeenCalledWith(expect.objectContaining({ slideCount: expected }));
+    // The recommendation of 18 exceeds both limits; Auto clamps it during render instead of writing it into options.
+    expect(screen.queryByText(/Choose at most|slides remaining/)).toBeNull();
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Generate presentation' }).disabled).toBe(false);
+    expect(props.onOptions).not.toHaveBeenCalled();
     expect(screen.getByText(`${remainingSlides} slides available for this request. Generating and regenerating use this allowance.`)).toBeTruthy();
     expect(screen.queryByText(/of 12 free/)).toBeNull();
   } finally {
@@ -126,7 +129,7 @@ test('fixed count uses the reported maximum and custom selection retains its own
     render(<SlideGenerationSetup props={props} scope={{ workspaceId: 'workspace', pageId: 'page' }} />);
     await act(async () => { jest.advanceTimersByTime(400); });
     expect(screen.getByText('Choose at most 7 slides per presentation.')).toBeTruthy();
-    expect((screen.getByRole('button', { name: 'Generate presentation' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'Generate presentation' })).disabled).toBe(true);
     fireEvent.click(screen.getByText('Choose custom 6'));
     expect(props.onOptions).toHaveBeenLastCalledWith(expect.objectContaining({ slideCount: 6, slideCountSelection: 'custom' }));
     fireEvent.click(screen.getByRole('button', { name: '6', exact: true }));
@@ -154,6 +157,7 @@ test.each(['design', 'workspace', 'unmount'] as const)(
     jest.useFakeTimers();
     try {
       let finish!: (value: PresentationStyle) => void;
+
       jest.mocked(importPresentationTemplate).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
       const base = setupProps();
       const props = { ...base, options: { ...base.options, designMode: 'template' as const } };
@@ -180,6 +184,7 @@ test('a late template review cannot replace a newly chosen design', async () => 
   try {
     jest.mocked(importPresentationTemplate).mockResolvedValue(template);
     let finish!: (value: PresentationStyle) => void;
+
     jest.mocked(reviewPresentationTemplate).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
     const base = setupProps();
     const props = { ...base, options: { ...base.options, designMode: 'template' as const } };

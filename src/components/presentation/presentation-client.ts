@@ -34,12 +34,21 @@ export function loadStructuralMap(scope: PresentationScope, source: PageSnapshot
   return createStructuralMap(scope, { sources: sourceSelections(source), options: serverOptions(options) }, signal);
 }
 
+/** Starts a scene read beside its artifact read. Its error reaches callers only where they await it, after their artifact checks; an abandoned read never rejects unhandled. */
+function sceneRead(scope: PresentationScope, id: string, version: number, signal?: AbortSignal) {
+  const scene = getArtifactScene(scope, id, version, signal);
+
+  scene.catch(() => undefined);
+  return scene;
+}
+
 /** Only the server scene establishes the captured appearance of a saved deck. */
 export async function loadSavedDeck(scope: PresentationScope, id: string, version?: number, signal?: AbortSignal): Promise<SavedDeck> {
+  const scene = version === undefined ? undefined : sceneRead(scope, id, version, signal);
   const artifact = await readArtifact<ServerSlidePlan>(scope, id, version, signal);
 
   if (!Array.isArray(artifact.content.slides)) throw new PresentationAPIError('This artifact is not a presentation.', 'ARTIFACT_KIND_MISMATCH', 400);
-  return artifactToDeck(artifact, await getArtifactScene(scope, artifact.id, artifact.version, signal));
+  return artifactToDeck(artifact, await (scene ?? getArtifactScene(scope, artifact.id, artifact.version, signal)));
 }
 
 /** First authorized workspace catalog page. The API does not expose a page-ID filter. */
@@ -71,7 +80,7 @@ export async function listStyles(scope: Pick<PresentationScope, 'workspaceId'>, 
 }
 
 export interface LoadedPresentation {
-  status: PresentationStatus; session: StoredSession | null | undefined; warnings: string[]; decks: SavedDeck[]; styles: PresentationStyle[];
+  status: PresentationStatus; session: StoredSession | null | undefined; warnings: string[]; styles: PresentationStyle[];
   map?: MindMap; mapArtifact?: Artifact<MindMap>;
 }
 export async function loadPresentation(scope: PresentationScope, signal?: AbortSignal): Promise<LoadedPresentation> {
@@ -82,18 +91,20 @@ export async function loadPresentation(scope: PresentationScope, signal?: AbortS
     // Do not invent revision zero: an inaccessible existing session cannot safely be overwritten.
     return undefined;
   });
-  const [status, session, decks, styles] = await Promise.all([
-    getPresentationStatus(scope, signal), sessionRead, listSavedDecks(scope, signal), listStyles(scope, signal),
+  const [status, session, styles, mapArtifact] = await Promise.all([
+    getPresentationStatus(scope, signal), sessionRead, listStyles(scope, signal),
+    // The saved narrative needs only the session, so it does not wait for status or styles.
+    sessionRead.then(async (stored) => {
+      const narrative = stored?.payload.narrative;
+
+      if (!narrative) return undefined;
+      const record = await readArtifact(scope, narrative.id, narrative.version, signal);
+
+      return isMapArtifact(record) ? record : undefined;
+    }),
   ]);
-  let mapArtifact: Artifact<MindMap> | undefined;
 
-  if (session?.payload.narrative) {
-    const record = await readArtifact(scope, session.payload.narrative.id, session.payload.narrative.version, signal);
-
-    if (isMapArtifact(record)) mapArtifact = record;
-  }
-
-  return { status, session, decks, styles, warnings, map: mapArtifact?.content, mapArtifact };
+  return { status, session, styles, warnings, map: mapArtifact?.content, mapArtifact };
 }
 
 export async function importPresentationTemplate(scope: Pick<PresentationScope, 'workspaceId'>, file: File, signal?: AbortSignal): Promise<PresentationStyle> {
@@ -185,12 +196,13 @@ export async function runGeneration(input: GenerateInput, signal?: AbortSignal, 
   const job = await waitForJob(input.scope, initial, signal, onJob);
 
   if (!job.artifactId || !job.resultVersion) throw new PresentationAPIError('The job has no saved result.', 'INVALID_JOB_RESULT', 502);
+  const deckScene = job.kind === 'slides' ? sceneRead(input.scope, job.artifactId, job.resultVersion, signal) : undefined;
   const [artifact, status] = await Promise.all([
     readArtifact<ServerSlidePlan | MindMap>(input.scope, job.artifactId, job.resultVersion, signal), getPresentationStatus(input.scope, signal),
   ]);
 
   if ('slides' in artifact.content) {
-    const scene = await getArtifactScene(input.scope, artifact.id, artifact.version, signal);
+    const scene = await (deckScene ?? getArtifactScene(input.scope, artifact.id, artifact.version, signal));
     const deck = artifactToDeck(artifact as Artifact<ServerSlidePlan>, scene, input.source, input.options);
 
     return { job, artifact, result: artifact.content, status, deck };

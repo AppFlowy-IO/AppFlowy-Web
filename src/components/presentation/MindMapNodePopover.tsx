@@ -2,7 +2,7 @@ import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import { X } from 'lucide-react';
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
-import { useTransformEffect } from 'react-zoom-pan-pinch';
+import { useTransformEffect, type ReactZoomPanPinchContextState } from 'react-zoom-pan-pinch';
 
 import { ReactComponent as BackIcon } from '@/assets/icons/arrow_left.svg';
 import { ReactComponent as DrillIcon } from '@/assets/icons/arrow_right.svg';
@@ -10,12 +10,17 @@ import { ReactComponent as DrillIcon } from '@/assets/icons/arrow_right.svg';
 import { overlapArea, positionMapPopover } from './mindmap-popover';
 import { Action } from './ui';
 
+import type { MapPosition } from './mindmap-layout';
 import type { MapRect, MapPopoverSide } from './mindmap-popover';
 import type { MapNode } from './types';
+
+/** Map controls the card must not cover. */
+const mapOverlays = '.ps-map-controls, .ps-map-breadcrumbs, .ps-map-close';
 
 export default function MindMapNodePopover({
   container,
   node,
+  position,
   sourceNumbers,
   canDrill,
   canParent,
@@ -29,6 +34,8 @@ export default function MindMapNodePopover({
 }: {
   container: HTMLElement | null;
   node: MapNode;
+  /** The node's place in the current layout. A new layout can move the node or its neighbours. */
+  position?: MapPosition;
   sourceNumbers: ReadonlyMap<string, number>;
   canDrill: boolean;
   canParent: boolean;
@@ -47,6 +54,7 @@ export default function MindMapNodePopover({
   const [error, setError] = useState('');
   const panel = useRef<HTMLDivElement>(null);
   const anchor = useRef<HTMLElement>();
+  const frame = useRef<number>();
   const heading = useId();
   const update = useCallback(() => {
     if (!container || !panel.current) return;
@@ -99,10 +107,7 @@ export default function MindMapNodePopover({
     }
 
     // Batch reads before positioning; only this overlay changes during pan/zoom.
-    const obstacles = [
-      ...elements.filter((el) => el !== selected),
-      ...container.querySelectorAll('.ps-map-controls, .ps-map-breadcrumbs, .ps-map-close'),
-    ]
+    const obstacles = [...elements.filter((el) => el !== selected), ...container.querySelectorAll(mapOverlays)]
       .map(rect)
       .filter((box) => box.width && box.height && overlapArea(box, bounds));
 
@@ -135,27 +140,46 @@ export default function MindMapNodePopover({
     panel.current.dataset.side = position.side;
     panel.current.style.visibility = 'visible';
   }, [container, node.id]);
+  // Pan, zoom, scroll and window resize events can arrive several times per frame; place once per frame.
+  const schedule = useCallback(() => {
+    if (frame.current !== undefined) return;
+    frame.current = requestAnimationFrame(() => {
+      frame.current = undefined;
+      update();
+    });
+  }, [update]);
+  // The transform library updates CSS directly while panning, without a React render. Its
+  // animations already step once per frame, so follow those steps without a frame's delay.
+  const follow = useCallback(
+    ({ instance }: ReactZoomPanPinchContextState) => (instance.animation ? update() : schedule()),
+    [update, schedule]
+  );
 
-  // The transform library updates CSS directly while panning, without a React render.
-  useTransformEffect(update);
-  useLayoutEffect(update);
+  useTransformEffect(follow);
+  // Place before paint when the card opens and whenever a new layout can move its node.
+  useLayoutEffect(() => update(), [update, position]);
   useLayoutEffect(() => {
     panel.current?.focus({ preventScroll: true });
   }, []);
   useEffect(() => {
     if (!container || !panel.current) return;
+    // Size changes are reported once per frame after layout; placing now avoids a frame at the old position.
     const observer = new ResizeObserver(update);
 
     observer.observe(panel.current);
     observer.observe(container);
-    window.addEventListener('scroll', update, true);
-    window.addEventListener('resize', update);
+    // Fullscreen shows and hides these overlays without a React render.
+    container.querySelectorAll(mapOverlays).forEach((overlay) => observer.observe(overlay));
+    window.addEventListener('scroll', schedule, true);
+    window.addEventListener('resize', schedule);
     return () => {
       observer.disconnect();
-      window.removeEventListener('scroll', update, true);
-      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', schedule, true);
+      window.removeEventListener('resize', schedule);
+      if (frame.current !== undefined) cancelAnimationFrame(frame.current);
+      frame.current = undefined;
     };
-  }, [container, update]);
+  }, [container, update, schedule]);
   useEffect(() => {
     let start: { x: number; y: number } | undefined;
     const down = (event: PointerEvent) => {

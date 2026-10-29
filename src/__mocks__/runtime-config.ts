@@ -5,7 +5,6 @@
 export function getConfigValue(key: string, defaultValue: string): string {
   // Return test defaults for common config keys
   const testDefaults: Record<string, string> = {
-    APPFLOWY_PRESENTATION_ENABLED: 'false',
     APPFLOWY_BASE_URL: 'https://test.appflowy.cloud',
     APPFLOWY_GOTRUE_BASE_URL: 'https://test.appflowy.cloud/gotrue',
   };

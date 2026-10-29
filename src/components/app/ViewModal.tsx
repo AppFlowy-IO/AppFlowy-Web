@@ -55,7 +55,6 @@ import {
 } from '@/components/inline-comment/InlineCommentContext';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import PresentEntry from '@/components/presentation/PresentEntry';
-import { PRESENTATION_ENABLED } from '@/components/presentation/feature';
 import { cn } from '@/lib/utils';
 
 import ShareButton from 'src/components/app/share/ShareButton';
@@ -380,9 +379,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
 
         <div className={'flex items-center gap-4'}>
           <Users viewId={effectiveViewId} />
-          {PRESENTATION_ENABLED && resolvedView?.layout === ViewLayout.Document && (
-            <PresentEntry viewId={effectiveViewId} />
-          )}
+          {resolvedView?.layout === ViewLayout.Document && <PresentEntry viewId={effectiveViewId} />}
           <ShareButton viewId={effectiveViewId} />
           {ref.current && (
             <MoreActions

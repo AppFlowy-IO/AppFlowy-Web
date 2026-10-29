@@ -191,7 +191,6 @@ export interface GenerationOptions {
   allowWebSearch: boolean;
   layoutPreference?: SlidePreference;
   purpose?: string;
-  documentCondition?: DocumentCondition;
   reviewOutline?: boolean;
   templateReuse?: 'auto' | 'style-only';
 }
@@ -210,4 +209,6 @@ export interface SavedDeck {
   source?: PageSnapshot;
   updatedAt?: string;
   options?: GenerationOptions;
+  /** The scene read with this artifact version, so previews reuse it instead of reading it again. */
+  scene?: { workspaceId: string; id: string; version: number; value: import('./server-scene').DeckScene };
 }

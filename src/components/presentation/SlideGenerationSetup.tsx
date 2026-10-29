@@ -34,7 +34,26 @@ export default function SlideGenerationSetup({
   busy?: boolean;
 }) {
   const { snapshot, options, onOptions, style, onStyle, onGenerate, canGenerate, plan, onStage } = props;
-  const [assessment, setAssessment] = useState<SlideAssessment>();
+  const designMode = options.designMode ?? (style.templateName ? 'template' : 'theme');
+  // While selected, a theme applied from a recommendation keeps the key of the style it was recommended
+  // for, so neither applying it nor switching design mode requests another assessment.
+  const [applied, setApplied] = useState<{ themeId: string; styleKey: string }>();
+  const styleKey = applied?.themeId === style.id ? applied.styleKey : JSON.stringify([style.id, style.serverVersion]);
+  // An assessment answers for these inputs; a typed purpose keeps it until the new answer lands.
+  const assessmentKey = JSON.stringify([
+    scope?.workspaceId,
+    scope?.pageId,
+    snapshot.revision,
+    options.includeProperties,
+    options.allowWebSearch,
+    styleKey,
+  ]);
+  const [assessed, setAssessed] = useState<{ key: string; assessment: SlideAssessment }>();
+  const assessment = assessed?.key === assessmentKey ? assessed.assessment : undefined;
+  // Once asked for this source, the purpose field stays while the user answers, even if a reassessment stops asking.
+  const sourceKey = JSON.stringify([scope?.workspaceId, scope?.pageId, snapshot.revision]);
+  const [asked, setAsked] = useState<{ key: string; question?: string }>();
+  const purposeQuestion = asked?.key === sourceKey ? asked : undefined;
   const [assessmentAttempt, setAssessmentAttempt] = useState(0);
   const [assessing, setAssessing] = useState(false);
   const [notice, setNotice] = useState('');
@@ -52,7 +71,6 @@ export default function SlideGenerationSetup({
   const limitMessage = slideCountLimitMessage(autoCount ? recommendedCount : options.slideCount, props);
   const showCustomCount = !autoCount &&
     (options.slideCountSelection === 'custom' || (!options.slideCountSelection && !slideCounts.includes(options.slideCount)));
-  const designMode = options.designMode ?? (style.templateName ? 'template' : 'theme');
   const presetOptions = effectiveSlideOptions(options);
 
   useEffect(() => {
@@ -91,7 +109,6 @@ export default function SlideGenerationSetup({
   }
 
   useEffect(() => {
-    setAssessment(undefined);
     if (!scope || !canGenerate) return;
     const controller = new AbortController();
 
@@ -101,12 +118,18 @@ export default function SlideGenerationSetup({
       void assessPresentation({ scope, source: snapshot, options, style }, controller.signal)
         .then((result) => {
           if (!controller.signal.aborted) {
-            setAssessment(result.assessment);
+            setAssessed({ key: assessmentKey, assessment: result.assessment });
+            if (result.assessment.condition === 'ambiguous')
+              setAsked({ key: sourceKey, question: result.assessment.question });
             setNotice('');
           }
         })
         .catch((error: Error) => {
-          if (!controller.signal.aborted) setNotice(error.message);
+          if (!controller.signal.aborted) {
+            // A failed reassessment must not leave the previous answer enabling generation.
+            setAssessed(undefined);
+            setNotice(error.message);
+          }
         })
         .finally(() => {
           if (!controller.signal.aborted) setAssessing(false);
@@ -119,18 +142,7 @@ export default function SlideGenerationSetup({
     };
     // Counts, palette and panel expansion do not alter source assessment.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    snapshot.revision,
-    style.id,
-    style.serverVersion,
-    scope?.workspaceId,
-    scope?.pageId,
-    options.includeProperties,
-    options.allowWebSearch,
-    options.purpose,
-    assessmentAttempt,
-    canGenerate,
-  ]);
+  }, [assessmentKey, options.purpose, assessmentAttempt, canGenerate]);
   const hasSource =
     !!snapshot.serverSource || !!snapshot.blocks.length || (options.includeProperties && !!snapshot.properties.length);
   const question = assessment?.condition === 'ambiguous' && !options.purpose?.trim() && !options.reviewOutline;
@@ -145,19 +157,14 @@ export default function SlideGenerationSetup({
     });
 
   useEffect(() => {
-    if (assessment && options.documentCondition !== assessment.condition)
-      onOptions({ ...options, documentCondition: assessment?.condition });
-  }, [assessment, options, onOptions]);
-  useEffect(() => {
     if (designMode !== 'auto') return;
     const suggested = props.styles.find((theme) => theme.id === assessment?.recommendedThemeId);
 
-    if (suggested && style.id !== suggested.id) onStyle(suggested);
-  }, [assessment?.recommendedThemeId, designMode, style.id, onStyle, props.styles]);
-  useEffect(() => {
-    if (assessment && autoCount && options.slideCount !== recommendedCount)
-      onOptions({ ...options, slideCount: recommendedCount });
-  }, [assessment, autoCount, recommendedCount, options, onOptions]);
+    if (suggested && style.id !== suggested.id) {
+      setApplied({ themeId: suggested.id, styleKey });
+      onStyle(suggested);
+    }
+  }, [assessment?.recommendedThemeId, designMode, style.id, styleKey, onStyle, props.styles]);
   const chooseDesign = (mode: 'auto' | 'theme' | 'template') => {
     cancelTemplateRequest();
     setDraft(undefined);
@@ -463,7 +470,8 @@ export default function SlideGenerationSetup({
               className='aria-pressed:border-border-theme-thick aria-pressed:bg-fill-theme-select aria-pressed:text-text-action'
               aria-pressed={autoCount}
               onClick={() => {
-                change({ slideCountMode: 'auto', slideCountSelection: undefined, slideCount: recommendedCount });
+                // The Auto count is derived from the assessment; the server receives no count for it.
+                change({ slideCountMode: 'auto', slideCountSelection: undefined });
               }}
             >
               Auto
@@ -496,14 +504,14 @@ export default function SlideGenerationSetup({
           )}
           {limitMessage && <Notice>{limitMessage}</Notice>}
         </div>
-        {assessment?.condition === 'ambiguous' && (
+        {purposeQuestion && (
           <label className='ps-field ps-ppt-question'>
-            {assessment?.question}
+            {purposeQuestion.question}
             <input
               aria-label='Presentation purpose'
               placeholder='e.g. Help the team decide which project to prioritize'
               value={options.purpose ?? ''}
-              onChange={(e) => change({ purpose: e.target.value, documentCondition: assessment?.condition })}
+              onChange={(e) => change({ purpose: e.target.value })}
             />
           </label>
         )}

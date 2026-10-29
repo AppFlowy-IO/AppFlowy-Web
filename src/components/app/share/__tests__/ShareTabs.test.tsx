@@ -13,7 +13,6 @@ let mockHasLoadedPermission = true;
 let mockIsLoadingPermission = false;
 let mockOutlineViewAvailable = true;
 
-jest.mock('@/components/presentation/feature', () => ({ PRESENTATION_ENABLED: true }));
 jest.mock('@/components/presentation/AISlidesSharePanel', () => ({
   __esModule: true,
   default: (props: unknown) => {

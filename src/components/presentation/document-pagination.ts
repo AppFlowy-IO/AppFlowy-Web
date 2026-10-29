@@ -17,11 +17,15 @@ export interface DocumentPage extends DocumentSlide {
 
 export const documentUnitKey = (section: number, block: number) => `${section}:${block}`;
 
-/** Fit blocks to the viewport, keeping table introductions together and body rows unique. */
+/**
+ * Fit blocks to the viewport, keeping table introductions together and body rows unique.
+ * `condensedTables` collects the tables whose compact and dense measurements can change a slide.
+ */
 export function paginateDocument(
   sections: DocumentSlide[],
   heights: Record<string, number>,
-  availableHeight: number
+  availableHeight: number,
+  condensedTables?: Set<string>
 ): DocumentPage[] {
   const pages: DocumentPage[] = [];
 
@@ -132,7 +136,14 @@ export function paginateDocument(
         const prefix = group.slice(0, -1);
         const headingHeight = groupKeys.slice(0, -1).reduce((sum, key) => sum + (heights[key] ?? 0), 0);
         const tableKey = groupKeys[groupKeys.length - 1];
-        let tablePages = paginateTable(last, tableKey, heights, capacity - headingHeight);
+        let tablePages = paginateTable(
+          last,
+          tableKey,
+          heights,
+          capacity - headingHeight,
+          capacity - headingHeight,
+          condensedTables
+        );
         let introduction: DocumentSlide['blocks'] = [];
         let introductionKeys: string[] = [];
         let introductionHeight = 0;
@@ -145,7 +156,8 @@ export function paginateDocument(
             tableKey,
             heights,
             capacity - headingHeight,
-            capacity - used - headingHeight
+            capacity - used - headingHeight,
+            condensedTables
           );
 
           if (combined[0].height <= capacity - used - headingHeight && combined.length <= tablePages.length + 1) {

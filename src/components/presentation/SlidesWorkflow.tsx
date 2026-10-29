@@ -1,6 +1,16 @@
 import Dialog from '@mui/material/Dialog';
 import { ArrowLeft, ArrowRight, Download, X } from 'lucide-react';
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from 'react';
 
 import { ReactComponent as MoveDownIcon } from '@/assets/icons/arrow_down.svg';
 import { ReactComponent as BackIcon } from '@/assets/icons/arrow_left.svg';
@@ -51,7 +61,8 @@ export interface SlidesWorkflowProps {
   onStyle: (style: PresentationStyle) => void;
   plan?: StoryPlan;
   activeDeck?: SavedDeck;
-  onPlan: (plan: StoryPlan) => void;
+  /** Accepts an updater so edits apply to the latest plan through stable callbacks. */
+  onPlan: Dispatch<SetStateAction<StoryPlan>>;
   stage: SlidesStage;
   onStage: (stage: SlidesStage) => void;
   onGenerate: (slide?: Slide) => void;
@@ -60,8 +71,6 @@ export interface SlidesWorkflowProps {
   hasOutlineChanges: boolean;
   outlineError?: { code: string; message: string; upgradeRequired: boolean };
   onDiscardOutline: () => void;
-  decks: SavedDeck[];
-  onOpenDeck: (deck: SavedDeck) => void;
   onStyles: () => void;
   canGenerate: boolean;
   canEdit: boolean;
@@ -83,6 +92,151 @@ export interface SlidesWorkflowProps {
   scope?: { workspaceId: string; pageId: string; userId?: string };
   busy?: boolean;
 }
+
+const LAYOUT_OPTIONS = LAYOUTS.map((layout) => ({
+  value: layout,
+  label: layout === 'kpi' ? 'KPI' : layout.charAt(0).toUpperCase() + layout.slice(1),
+}));
+
+interface StoryCardProps {
+  slide: Slide;
+  index: number;
+  count: number;
+  fieldsId: string;
+  busy?: boolean;
+  onUpdate: (id: string, patch: Partial<Slide>) => void;
+  onMove: (id: string, offset: number) => void;
+  onRemove: (id: string) => void;
+}
+
+/** With stable callbacks, a keystroke renders only the edited card, not every card in the story. */
+const StoryCard = memo(function StoryCard({
+  slide,
+  index,
+  count,
+  fieldsId,
+  busy,
+  onUpdate,
+  onMove,
+  onRemove,
+}: StoryCardProps) {
+  return (
+    <article className='ps-story-card'>
+      <div className='ps-story-number'>{String(index + 1).padStart(2, '0')}</div>
+      <div className='ps-story-content'>
+        <div className='ps-story-field-row'>
+          <div className='ps-story-field'>
+            <Label htmlFor={`${fieldsId}-${slide.id}-title`} className='text-sm font-medium leading-5 text-text-primary'>
+              Slide title
+            </Label>
+            <Input
+              id={`${fieldsId}-${slide.id}-title`}
+              placeholder='Enter a slide title'
+              className='w-full'
+              aria-label={`Slide ${index + 1} title`}
+              disabled={busy}
+              maxLength={160}
+              value={slide.title}
+              onChange={(e) => onUpdate(slide.id, { title: e.target.value })}
+            />
+          </div>
+          <PresentationSettingsDropdown
+            className='ps-story-field'
+            labelClassName='text-sm font-medium leading-5 text-text-primary'
+            label='Layout'
+            ariaLabel={`Slide ${index + 1} layout`}
+            disabled={busy}
+            value={slide.layout}
+            options={LAYOUT_OPTIONS}
+            onValueChange={(layout) => onUpdate(slide.id, { layout: layout as Slide['layout'] })}
+          />
+        </div>
+        <div className='ps-story-field'>
+          <Label htmlFor={`${fieldsId}-${slide.id}-message`} className='text-sm font-medium leading-5 text-text-primary'>
+            Key takeaway
+          </Label>
+          <TextareaAutosize
+            id={`${fieldsId}-${slide.id}-message`}
+            placeholder='Add a key takeaway'
+            aria-label={`Slide ${index + 1} key takeaway`}
+            className='w-full py-2 text-text-primary'
+            disabled={busy}
+            minRows={2}
+            maxLength={400}
+            value={slide.message}
+            onChange={(e) => onUpdate(slide.id, { message: e.target.value })}
+          />
+        </div>
+        <div className='ps-story-field'>
+          <Label htmlFor={`${fieldsId}-${slide.id}-points`} className='text-sm font-medium leading-5 text-text-primary'>
+            Supporting points
+          </Label>
+          <TextareaAutosize
+            id={`${fieldsId}-${slide.id}-points`}
+            placeholder='Add supporting points'
+            aria-label={`Slide ${index + 1} supporting points`}
+            className='w-full py-2 text-text-primary'
+            disabled={busy}
+            minRows={2}
+            value={slide.points.join('\n')}
+            onChange={(e) =>
+              onUpdate(slide.id, {
+                points: e.target.value
+                  .split('\n')
+                  .slice(0, 3)
+                  .map((point) => point.slice(0, 180)),
+              })
+            }
+          />
+        </div>
+      </div>
+      <div className='ps-story-actions'>
+        {[
+          {
+            label: `Move slide ${index + 1} up`,
+            Icon: MoveUpIcon,
+            disabled: !index,
+            onClick: () => onMove(slide.id, -1),
+          },
+          {
+            label: `Move slide ${index + 1} down`,
+            Icon: MoveDownIcon,
+            disabled: index === count - 1,
+            onClick: () => onMove(slide.id, 1),
+          },
+          {
+            label: `Remove slide ${index + 1}`,
+            Icon: DeleteIcon,
+            disabled: count === 1,
+            danger: true,
+            onClick: () => onRemove(slide.id),
+          },
+        ].map(({ label, Icon, disabled, danger, onClick }) => (
+          <Tooltip key={label}>
+            <TooltipTrigger asChild>
+              <span className='inline-flex'>
+                <Button
+                  variant='ghost'
+                  size='icon-lg'
+                  aria-label={label}
+                  disabled={busy || disabled}
+                  danger={danger}
+                  onClick={onClick}
+                >
+                  <Icon className='h-5 w-5' aria-hidden='true' />
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side='left' className='z-[1500] bg-fill-toolbar text-icon-on-toolbar'>
+              {label}
+            </TooltipContent>
+          </Tooltip>
+        ))}
+      </div>
+    </article>
+  );
+});
+
 export default function SlidesWorkflow(props: SlidesWorkflowProps) {
   const {
     snapshot,
@@ -173,11 +327,12 @@ export default function SlidesWorkflow(props: SlidesWorkflowProps) {
     return () => window.removeEventListener('keydown', navigate);
   }, [stage, presenting, downloadOpen, slideCount]);
 
-  const updateSlide = (id: string, patch: Partial<Slide>) => {
-    if (plan)
-      onPlan({
-        ...plan,
-        slides: plan.slides.map((s) =>
+  // Stable story-card callbacks: each applies to the latest plan rather than the one this render read.
+  const updateSlide = useCallback(
+    (id: string, patch: Partial<Slide>) =>
+      onPlan((current) => ({
+        ...current,
+        slides: current.slides.map((s) =>
           s.id === id
             ? {
                 ...s,
@@ -186,19 +341,26 @@ export default function SlidesWorkflow(props: SlidesWorkflowProps) {
               }
             : s
         ),
-      });
-  };
+      })),
+    [onPlan]
+  );
+  const moveSlide = useCallback(
+    (id: string, offset: number) =>
+      onPlan((current) => {
+        const slides = [...current.slides];
+        const from = slides.findIndex((s) => s.id === id);
+        const to = from + offset;
 
-  function move(id: string, offset: number) {
-    if (!plan) return;
-    const slides = [...plan.slides];
-    const from = slides.findIndex((s) => s.id === id);
-    const to = from + offset;
-
-    if (to < 0 || to >= slides.length) return;
-    [slides[from], slides[to]] = [slides[to], slides[from]];
-    onPlan({ ...plan, slides });
-  }
+        if (to < 0 || to >= slides.length) return current;
+        [slides[from], slides[to]] = [slides[to], slides[from]];
+        return { ...current, slides };
+      }),
+    [onPlan]
+  );
+  const removeSlide = useCallback(
+    (id: string) => onPlan((current) => ({ ...current, slides: current.slides.filter((s) => s.id !== id) })),
+    [onPlan]
+  );
 
   function closeDownload() {
     downloadController.current?.abort();
@@ -269,126 +431,17 @@ export default function SlidesWorkflow(props: SlidesWorkflowProps) {
           </div>
           <div className='ps-story-list'>
             {plan.slides.map((s, i) => (
-              <article className='ps-story-card' key={s.id}>
-                <div className='ps-story-number'>{String(i + 1).padStart(2, '0')}</div>
-                <div className='ps-story-content'>
-                  <div className='ps-story-field-row'>
-                    <div className='ps-story-field'>
-                      <Label
-                        htmlFor={`${fieldsId}-${s.id}-title`}
-                        className='text-sm font-medium leading-5 text-text-primary'
-                      >
-                        Slide title
-                      </Label>
-                      <Input
-                        id={`${fieldsId}-${s.id}-title`}
-                        placeholder='Enter a slide title'
-                        className='w-full'
-                        aria-label={`Slide ${i + 1} title`}
-                        disabled={props.busy}
-                        maxLength={160}
-                        value={s.title}
-                        onChange={(e) => updateSlide(s.id, { title: e.target.value })}
-                      />
-                    </div>
-                    <PresentationSettingsDropdown
-                      className='ps-story-field'
-                      labelClassName='text-sm font-medium leading-5 text-text-primary'
-                      label='Layout'
-                      ariaLabel={`Slide ${i + 1} layout`}
-                      disabled={props.busy}
-                      value={s.layout}
-                      options={LAYOUTS.map((layout) => ({
-                        value: layout,
-                        label: layout === 'kpi' ? 'KPI' : layout.charAt(0).toUpperCase() + layout.slice(1),
-                      }))}
-                      onValueChange={(layout) => updateSlide(s.id, { layout: layout as Slide['layout'] })}
-                    />
-                  </div>
-                  <div className='ps-story-field'>
-                    <Label
-                      htmlFor={`${fieldsId}-${s.id}-message`}
-                      className='text-sm font-medium leading-5 text-text-primary'
-                    >
-                      Key takeaway
-                    </Label>
-                    <TextareaAutosize
-                      id={`${fieldsId}-${s.id}-message`}
-                      placeholder='Add a key takeaway'
-                      aria-label={`Slide ${i + 1} key takeaway`}
-                      className='w-full py-2 text-text-primary'
-                      disabled={props.busy}
-                      minRows={2}
-                      maxLength={400}
-                      value={s.message}
-                      onChange={(e) => updateSlide(s.id, { message: e.target.value })}
-                    />
-                  </div>
-                  <div className='ps-story-field'>
-                    <Label
-                      htmlFor={`${fieldsId}-${s.id}-points`}
-                      className='text-sm font-medium leading-5 text-text-primary'
-                    >
-                      Supporting points
-                    </Label>
-                    <TextareaAutosize
-                      id={`${fieldsId}-${s.id}-points`}
-                      placeholder='Add supporting points'
-                      aria-label={`Slide ${i + 1} supporting points`}
-                      className='w-full py-2 text-text-primary'
-                      disabled={props.busy}
-                      minRows={2}
-                      value={s.points.join('\n')}
-                      onChange={(e) =>
-                        updateSlide(s.id, {
-                          points: e.target.value
-                            .split('\n')
-                            .slice(0, 3)
-                            .map((point) => point.slice(0, 180)),
-                        })
-                      }
-                    />
-                  </div>
-                </div>
-                <div className='ps-story-actions'>
-                  {[
-                    { label: `Move slide ${i + 1} up`, Icon: MoveUpIcon, disabled: !i, onClick: () => move(s.id, -1) },
-                    {
-                      label: `Move slide ${i + 1} down`,
-                      Icon: MoveDownIcon,
-                      disabled: i === plan.slides.length - 1,
-                      onClick: () => move(s.id, 1),
-                    },
-                    {
-                      label: `Remove slide ${i + 1}`,
-                      Icon: DeleteIcon,
-                      disabled: plan.slides.length === 1,
-                      danger: true,
-                      onClick: () => onPlan({ ...plan, slides: plan.slides.filter((slide) => slide.id !== s.id) }),
-                    },
-                  ].map(({ label, Icon, disabled, danger, onClick }) => (
-                    <Tooltip key={label}>
-                      <TooltipTrigger asChild>
-                        <span className='inline-flex'>
-                          <Button
-                            variant='ghost'
-                            size='icon-lg'
-                            aria-label={label}
-                            disabled={props.busy || disabled}
-                            danger={danger}
-                            onClick={onClick}
-                          >
-                            <Icon className='h-5 w-5' aria-hidden='true' />
-                          </Button>
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent side='left' className='z-[1500] bg-fill-toolbar text-icon-on-toolbar'>
-                        {label}
-                      </TooltipContent>
-                    </Tooltip>
-                  ))}
-                </div>
-              </article>
+              <StoryCard
+                key={s.id}
+                slide={s}
+                index={i}
+                count={plan.slides.length}
+                fieldsId={fieldsId}
+                busy={props.busy}
+                onUpdate={updateSlide}
+                onMove={moveSlide}
+                onRemove={removeSlide}
+              />
             ))}
           </div>
           <div className='ps-create-footer ps-outline-footer' role='group' aria-label='Outline actions'>

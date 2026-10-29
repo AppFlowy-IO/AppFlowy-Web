@@ -15,7 +15,6 @@ import { DATABASE_TAB_VIEW_ID_QUERY_PARAM } from '@/components/app/hooks/resolve
 import { useContainerVisibleViewIds } from '@/components/database/hooks/visibleViewIds/useContainerVisibleViewIds';
 import { InlineCommentToggleButton } from '@/components/inline-comment/InlineCommentToggleButton';
 import PresentEntry from '@/components/presentation/PresentEntry';
-import { PRESENTATION_ENABLED } from '@/components/presentation/feature';
 import { openOrDownload } from '@/utils/open_schema';
 
 import ShareButton from 'src/components/app/share/ShareButton';
@@ -87,7 +86,7 @@ function RightMenu() {
   return (
     <div className={'flex items-center gap-2'}>
       <Users viewId={routeViewId} />
-      {PRESENTATION_ENABLED && (hasRowPageRoute ? rowPage?.documentId : routeView?.layout === ViewLayout.Document) && (
+      {(hasRowPageRoute ? rowPage?.documentId : routeView?.layout === ViewLayout.Document) && (
         <PresentEntry
           viewId={rowPage?.documentId || routeViewId!}
           permissionViewId={actionViewId}

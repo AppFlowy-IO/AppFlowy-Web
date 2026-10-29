@@ -1,8 +1,8 @@
-import '@testing-library/jest-dom';
 import { act, render, screen, waitFor } from '@testing-library/react';
 
-import ServerSlideCanvas, { ServerSlideSceneProvider } from '../ServerSlideCanvas';
 import { getArtifactAsset, getArtifactScene } from '../presentation-client';
+import ServerSlideCanvas, { ServerSlideSceneProvider } from '../ServerSlideCanvas';
+
 import type { DeckScene } from '../server-scene';
 import type { SavedDeck } from '../types';
 
@@ -60,6 +60,7 @@ const scene: DeckScene = {
     },
   ],
 };
+
 function Preview({ version = 3, workspaceId = 'workspace' }) {
   return (
     <ServerSlideSceneProvider scope={{ ...scope, workspaceId }} deck={{ ...deck, version }}>
@@ -68,6 +69,7 @@ function Preview({ version = 3, workspaceId = 'workspace' }) {
     </ServerSlideSceneProvider>
   );
 }
+
 beforeEach(() => {
   jest.mocked(getArtifactScene).mockReset().mockResolvedValue(scene);
   jest
@@ -85,14 +87,14 @@ test('renders saved geometry and shares one authorized image read across preview
   expect(getArtifactScene).toHaveBeenCalledTimes(1);
   expect(getArtifactAsset).toHaveBeenCalledTimes(1);
   expect(getArtifactAsset).toHaveBeenCalledWith(scope, 'deck', 3, 'private-image', 'rev-1', expect.any(AbortSignal));
-  expect(screen.getAllByText('Server title')[0]).toHaveStyle({
+  expect(screen.getAllByText('Server title')[0].style).toMatchObject({
     left: '10%',
     top: '10%',
     width: '50%',
     height: '20%',
-    color: '#112233',
+    color: 'rgb(17, 34, 51)',
   });
-  expect(screen.getAllByAltText('Evidence image')[0]).toHaveAttribute('src', 'blob:private');
+  expect(screen.getAllByAltText('Evidence image')[0].getAttribute('src')).toBe('blob:private');
   const signal = jest.mocked(getArtifactScene).mock.calls[0][3];
 
   unmount();
@@ -106,14 +108,15 @@ test('does not retain private content when a new workspace read is rejected', as
   await screen.findAllByText('Server title');
   jest.mocked(getArtifactScene).mockRejectedValue(new Error('Access revoked'));
   rerender(<Preview workspaceId='another-workspace' />);
-  expect(screen.queryByText('Server title')).not.toBeInTheDocument();
+  expect(screen.queryByText('Server title')).toBeNull();
   await screen.findAllByText('Access revoked');
-  expect(screen.queryByAltText('Evidence image')).not.toBeInTheDocument();
+  expect(screen.queryByAltText('Evidence image')).toBeNull();
   expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:private');
 });
 
 test('aborts obsolete version requests and never publishes their late scene', async () => {
   let resolveOld!: (value: DeckScene) => void;
+
   jest.mocked(getArtifactScene).mockImplementationOnce(
     () =>
       new Promise((resolve) => {
@@ -131,11 +134,12 @@ test('aborts obsolete version requests and never publishes their late scene', as
   expect(getArtifactAsset).toHaveBeenCalledTimes(1);
 });
 
-test('rejects unsupported image formats without displaying a successful deck', async () => {
+test('rejects unsupported image formats without hiding the rest of the deck', async () => {
   jest.mocked(getArtifactAsset).mockResolvedValue(new Blob(['<svg/>'], { type: 'image/svg+xml' }));
   render(<Preview />);
 
-  await waitFor(() => expect(screen.getAllByRole('alert')[0]).toHaveTextContent('Unsupported presentation image'));
-  expect(screen.queryByText('Server title')).not.toBeInTheDocument();
+  await waitFor(() => expect(screen.getAllByRole('img', { name: 'Image unavailable' })).toHaveLength(2));
+  expect(screen.getAllByText('Server title')).toHaveLength(2);
+  expect(screen.queryByAltText('Evidence image')).toBeNull();
   expect(URL.createObjectURL).not.toHaveBeenCalled();
 });

@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, X } from 'lucide-react';
 import {
   type CSSProperties,
   lazy,
+  memo,
   Suspense,
   useCallback,
   useEffect,
@@ -33,7 +34,7 @@ import DocumentMeeting, { MeetingSlide } from './DocumentMeeting';
 import DocumentOutline, { DocumentOutlineContext } from './DocumentOutline';
 import DocumentTable from './DocumentTable';
 import FullscreenControl from './FullscreenControl';
-import { flattenBlocks } from './source';
+import { flattenBlocks, type DocumentSlide } from './source';
 import SourceText from './SourceText';
 import {
   isSimpleTable,
@@ -51,6 +52,9 @@ import './presentation.css';
 const SAFE_URL = /^(https?:\/\/|blob:)/i;
 const DocumentDatabase = lazy(() => import('./DocumentDatabase'));
 const DocumentCode = lazy(() => import('./DocumentCode'));
+// The measuring copy is hidden and inert, so none of its blocks can open a source.
+const inertSource = () => undefined;
+const COMFORTABLE: readonly TableDensity[] = TABLE_DENSITIES.slice(0, 1);
 
 interface BlockContentProps {
   block: SourceBlock;
@@ -349,6 +353,58 @@ function DocumentTitle({ snapshot, measuring = false }: { snapshot: PageSnapshot
   );
 }
 
+/** The hidden copy measured for pagination. Slide changes and host renders leave it untouched. */
+const DocumentRuler = memo(function DocumentRuler({
+  snapshot,
+  sections,
+  expandedToggles,
+  condensedTables,
+}: {
+  snapshot: PageSnapshot;
+  sections: DocumentSlide[];
+  expandedToggles: ReadonlySet<string>;
+  condensedTables: ReadonlySet<string>;
+}) {
+  return (
+    <>
+      {sections.map((section, sectionIndex) =>
+        section.titleSlide ? (
+          <div className='ps-doc-block' data-document-unit='title' key='title'>
+            <DocumentTitle snapshot={snapshot} measuring />
+          </div>
+        ) : (
+          <MeetingSlide key={sectionIndex} meeting={section.meeting} measureKey={meetingMeasureKey(sectionIndex)}>
+            {section.blocks.map((block, blockIndex) => {
+              const key = documentUnitKey(sectionIndex, blockIndex);
+
+              return (
+                <div className='ps-doc-block' data-document-unit={key} key={key}>
+                  {isSimpleTable(block) ? (
+                    // Smaller densities can only matter for a table that does not fit one slide comfortably.
+                    (condensedTables.has(key) ? TABLE_DENSITIES : COMFORTABLE).map((density) => (
+                      <div key={density} data-table-density={density}>
+                        <BlockContent
+                          block={block}
+                          onSource={inertSource}
+                          expandedToggles={expandedToggles}
+                          tableDensity={density}
+                          measuring
+                        />
+                      </div>
+                    ))
+                  ) : (
+                    <BlockContent block={block} onSource={inertSource} expandedToggles={expandedToggles} measuring />
+                  )}
+                </div>
+              );
+            })}
+          </MeetingSlide>
+        )
+      )}
+    </>
+  );
+});
+
 export default function DocumentPresenter({
   snapshot,
   onClose,
@@ -371,6 +427,12 @@ export default function DocumentPresenter({
       )
   );
   const [measurement, setMeasurement] = useState({ height: 1, width: 0, heights: {} as Record<string, number> });
+  const [condensedTables, setCondensedTables] = useState<ReadonlySet<string>>(() => new Set());
+  // Hosts pass a fresh source handler on every render; slide content keeps one stable callback.
+  const latestSource = useRef(onSource);
+
+  latestSource.current = onSource;
+  const source = useCallback((id: string) => latestSource.current(id), []);
   const host = useRef<HTMLDivElement>(null);
   const fullscreen = usePresentationFullscreen(host);
   const [viewport, setViewport] = useState<HTMLElement | null>(null);
@@ -424,6 +486,17 @@ export default function DocumentPresenter({
         heights[frame.dataset.meetingMeasure!] = frame.getBoundingClientRect().height - bodyHeight;
       });
 
+      const condensed = new Set<string>();
+
+      paginateDocument(sections, heights, height, condensed);
+      setCondensedTables((previous) =>
+        previous.size === condensed.size && [...condensed].every((key) => previous.has(key)) ? previous : condensed
+      );
+      // Only condensed tables render compact and dense copies. Keep the current slides until those copies
+      // are measured, so no slide is paginated from a partial table measurement.
+      if (![...condensed].every((key) => TABLE_DENSITIES.every((density) => tableMeasureKey(key, density) in heights)))
+        return;
+
       setMeasurement((previous) => {
         const next = { height, width: area.clientWidth, heights };
 
@@ -443,7 +516,7 @@ export default function DocumentPresenter({
       observer.disconnect();
       cancelAnimationFrame(frame);
     };
-  }, [sections, expandedToggles, viewport, measure]);
+  }, [sections, expandedToggles, condensedTables, viewport, measure]);
 
   useLayoutEffect(() => {
     if (viewport) viewport.scrollTop = slide.scrollTop;
@@ -594,7 +667,7 @@ export default function DocumentPresenter({
                     <div className='ps-doc-block' key={slide.table && isSimpleTable(block) ? slide.key : block.id}>
                       <BlockContent
                         block={block}
-                        onSource={onSource}
+                        onSource={source}
                         expandedToggles={expandedToggles}
                         onToggle={toggle}
                         tableLayout={slide.table}
@@ -606,43 +679,12 @@ export default function DocumentPresenter({
               )}
             </main>
             <div className='ps-doc-slide ps-doc-measure' ref={setMeasure} aria-hidden='true' {...{ inert: '' }}>
-              {sections.map((section, sectionIndex) =>
-                section.titleSlide ? (
-                  <div className='ps-doc-block' data-document-unit='title' key='title'>
-                    <DocumentTitle snapshot={snapshot} measuring />
-                  </div>
-                ) : (
-                  <MeetingSlide
-                    key={sectionIndex}
-                    meeting={section.meeting}
-                    measureKey={meetingMeasureKey(sectionIndex)}
-                  >
-                    {section.blocks.map((block, blockIndex) => (
-                      <div
-                        className='ps-doc-block'
-                        data-document-unit={documentUnitKey(sectionIndex, blockIndex)}
-                        key={documentUnitKey(sectionIndex, blockIndex)}
-                      >
-                        {isSimpleTable(block) ? (
-                          TABLE_DENSITIES.map((density) => (
-                            <div key={density} data-table-density={density}>
-                              <BlockContent
-                                block={block}
-                                onSource={onSource}
-                                expandedToggles={expandedToggles}
-                                tableDensity={density}
-                                measuring
-                              />
-                            </div>
-                          ))
-                        ) : (
-                          <BlockContent block={block} onSource={onSource} expandedToggles={expandedToggles} measuring />
-                        )}
-                      </div>
-                    ))}
-                  </MeetingSlide>
-                )
-              )}
+              <DocumentRuler
+                snapshot={snapshot}
+                sections={sections}
+                expandedToggles={expandedToggles}
+                condensedTables={condensedTables}
+              />
             </div>
             <footer>
               <span className='ps-muted'>← → to navigate · Esc to exit</span>

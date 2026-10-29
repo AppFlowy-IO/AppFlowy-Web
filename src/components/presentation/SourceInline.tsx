@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { createEditor, type Descendant } from 'slate';
 import { Editable, Slate, withReact, type RenderElementProps } from 'slate-react';
 
@@ -9,7 +9,7 @@ import type { SourceBlock } from './types';
 const renderLine = ({ attributes, children }: RenderElementProps) => <span {...attributes}>{children}</span>;
 
 /** The same leaves as the document editor, backed only by a detached read-only value. */
-export default function SourceInline({ block }: { block: SourceBlock }) {
+function SourceInline({ block }: { block: SourceBlock }) {
   const [editor] = useState(() => withReact(createEditor()));
   const [value] = useState<Descendant[]>(() => [
     {
@@ -31,3 +31,6 @@ export default function SourceInline({ block }: { block: SourceBlock }) {
     </Slate>
   );
 }
+
+// Slide and ruler renders reuse an unchanged block's editor instead of re-rendering its leaves.
+export default memo(SourceInline);

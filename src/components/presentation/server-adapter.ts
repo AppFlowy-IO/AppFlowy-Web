@@ -187,7 +187,9 @@ export function artifactToDeck(artifact: Artifact<ServerSlidePlan>, scene: DeckS
   return { id: artifact.id, version: artifact.version, serverPlan: artifact.content, plan: artifact.content,
     style: { ...themeToStyle(scene.theme), ...(scene.style.id !== '00000000-0000-0000-0000-000000000000' ? { id: scene.style.id, templateName: scene.theme.name, serverStyle: { reference: scene.style, theme: scene.theme, templateSlides: [] }, serverVersion: scene.style.version } : {}) },
     sourceRevision: artifact.sourceRevision ?? '', createdAt: artifact.createdAt,
-    source: source?.revision === artifact.sourceRevision ? source : undefined, options };
+    source: source?.revision === artifact.sourceRevision ? source : undefined, options,
+    // Previews render this scene; the server rebuilds it on every read.
+    scene: { workspaceId: artifact.workspaceId, id: artifact.id, version: artifact.version, value: scene } };
 }
 
 export function isMapArtifact(artifact: Artifact): artifact is Artifact<MindMap> { return 'nodes' in artifact.content; }

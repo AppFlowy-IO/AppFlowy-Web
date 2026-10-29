@@ -18,6 +18,13 @@ import { usePresentationFullscreen } from './usePresentationFullscreen';
 
 import type { MapBranchLine, MapStructure } from './mindmap-layout';
 
+/** Whole-pixel canvas size; keeps the current state when it is unchanged or the canvas is hidden (zero-sized). */
+const resizeTo = (width: number, height: number) => (old: { width: number; height: number }) => {
+  const next = { width: Math.round(width), height: Math.round(height) };
+
+  return !next.width || !next.height || (next.width === old.width && next.height === old.height) ? old : next;
+};
+
 export default function MindMapViewer({
   onUpgrade,
   generationPaywall,
@@ -50,7 +57,6 @@ export default function MindMapViewer({
   const modifierKey = mac ? 'Meta' : 'Control';
   const index = useMemo(() => indexMap(map), [map]);
   const [menu, setMenu] = useState<{ nodeId?: string; x: number; y: number }>();
-  const [navigationVisible, setNavigationVisible] = useState(false);
   const anchor = useRef<{ id: string; x: number; y: number; positionX: number; positionY: number; scale: number }>();
   const [enlarged, setEnlarged] = useState(false);
   const expanded = enlarged || !!onClosePresentation;
@@ -59,19 +65,21 @@ export default function MindMapViewer({
     else setEnlarged(false);
   };
 
-  const [zoom, setZoom] = useState(100);
-  const [controlsVisible, setControlsVisible] = useState(false);
   const transform = useRef<ReactZoomPanPinchRef>(null);
   const [collapsed, setCollapsed] = useState(() => initialCollapsed(index));
   const [structure, setStructure] = useState<MapStructure>(mapStyle?.structure ?? 'right');
   const [branchLine, setBranchLine] = useState<MapBranchLine>(mapStyle?.branchLine ?? 'rounded');
+  const [savedStyle, setSavedStyle] = useState(mapStyle);
   const [styleError, setStyleError] = useState('');
   const styleSaving = useRef(false);
 
-  useEffect(() => {
+  // Adopt a new saved style during render, so the map never paints or fits with the previous style first.
+  if (savedStyle?.structure !== mapStyle?.structure || savedStyle?.branchLine !== mapStyle?.branchLine) {
+    setSavedStyle(mapStyle);
     setStructure(mapStyle?.structure ?? 'right');
     setBranchLine(mapStyle?.branchLine ?? 'rounded');
-  }, [mapStyle?.structure, mapStyle?.branchLine]);
+  }
+
   async function changeStyle(next: { structure: MapStructure; branchLine: MapBranchLine }) {
     if (styleSaving.current) return;
     styleSaving.current = true;
@@ -88,36 +96,41 @@ export default function MindMapViewer({
   }
 
   const renderedStructure = useRef(structure);
-  const [selected, setSelected] = useState<MapNode>();
-  const clearSelection = useCallback(() => setSelected(undefined), []);
+  const [selectedId, setSelectedId] = useState<string>();
+  // Read the node from the current map, so saves and other map updates never leave a stale copy.
+  const selected = selectedId ? index.byId.get(selectedId) : undefined;
+  const clearSelection = useCallback(() => setSelectedId(undefined), []);
   const [focused, setFocused] = useState<string>();
   const host = useRef<HTMLDivElement | null>(null);
   const [canvasElement, setCanvasElement] = useState<HTMLDivElement | null>(null);
+  const [viewport, setViewport] = useState({ width: 1000, height: 600 });
+  const renderedViewport = useRef(viewport);
   const setHost = useCallback((element: HTMLDivElement | null) => {
     host.current = element;
     setCanvasElement(element);
+    // Measure on mount, before the first paint, instead of waiting for the resize observer.
+    if (element) setViewport(resizeTo(element.clientWidth, element.clientHeight));
   }, []);
   const fullscreen = usePresentationFullscreen(host);
-  const [viewport, setViewport] = useState({ width: 1000, height: 600 });
 
   useEffect(() => {
     if (!canvasElement) return;
     const observer = new ResizeObserver(([entry]) =>
-      setViewport({ width: entry.contentRect.width, height: entry.contentRect.height })
+      setViewport(resizeTo(entry.contentRect.width, entry.contentRect.height))
     );
 
     observer.observe(canvasElement);
     return () => observer.disconnect();
   }, [canvasElement]);
   useEffect(() => {
-    setControlsVisible(false);
+    if (host.current) host.current.dataset.controlsVisible = 'false';
     if (fullscreen.active) host.current?.focus();
   }, [fullscreen.active]);
   useEffect(() => {
     host.current?.focus({ preventScroll: true });
   }, [focused]);
   const layout = useMemo(() => layoutMap(index, collapsed, focused, structure), [index, collapsed, focused, structure]);
-  const byId = new Map(layout.positions.map((p) => [p.node.id, p]));
+  const byId = useMemo(() => new Map(layout.positions.map((p) => [p.node.id, p])), [layout]);
   const fitScale = Math.min(1, viewport.width / layout.width, viewport.height / layout.height) * 0.9;
   const minScale = Math.min(0.05, fitScale);
   const fit = () => transform.current?.centerView(fitScale, 200);
@@ -131,11 +144,13 @@ export default function MindMapViewer({
 
   // Retain the clicked node's screen position and the user's zoom when folding.
   useLayoutEffect(() => {
-    if (renderedStructure.current !== structure) {
+    if (renderedStructure.current !== structure || renderedViewport.current !== viewport) {
       renderedStructure.current = structure;
+      renderedViewport.current = viewport;
       anchor.current = undefined;
-      // A new structure resizes the canvas. The pan/zoom resize observer cancels
-      // animations, so apply the complete fit before it observes the new bounds.
+      // A new structure resizes the canvas, and a resized viewport needs a new fit; refit in
+      // place instead of remounting. The pan/zoom resize observer cancels animations, so
+      // apply the complete fit before it observes the new bounds.
       transform.current?.centerView(fitScale, 0);
       return;
     }
@@ -153,7 +168,7 @@ export default function MindMapViewer({
     }
 
     anchor.current = undefined;
-  }, [layout, structure, fitScale]);
+  }, [layout, structure, fitScale, viewport]);
 
   const anchorNode = (id: string) => {
     const node = byId.get(id);
@@ -165,14 +180,14 @@ export default function MindMapViewer({
   const toggleBranch = (id: string) => {
     anchorNode(id);
     setCollapsed((old) => (old.has(id) ? expandBranch(index, old, id) : new Set([...old, id])));
-    if (selected && index.descendants.get(id)?.includes(selected.id)) setSelected(undefined);
+    if (selected && index.descendants.get(id)?.includes(selected.id)) setSelectedId(undefined);
     setMenu(undefined);
   };
 
   const drillDown = (id: string) => {
     anchor.current = undefined;
     setFocused(id === index.root.id ? undefined : id);
-    setSelected(undefined);
+    setSelectedId(undefined);
     setMenu(undefined);
     setCollapsed((old) => {
       const next = new Set(old);
@@ -187,7 +202,7 @@ export default function MindMapViewer({
     setCollapsed((old) =>
       collapse ? collapseBranches(index, old, layout.root.id) : expandBranch(index, old, layout.root.id)
     );
-    setSelected(undefined);
+    setSelectedId(undefined);
     setMenu(undefined);
   };
 
@@ -209,8 +224,6 @@ export default function MindMapViewer({
       role='region'
       aria-label='Interactive mind map'
       tabIndex={0}
-      data-controls-visible={controlsVisible}
-      data-navigation-visible={navigationVisible}
       data-structure={structure}
       data-branch-line={branchLine}
       data-presentation-escape-layer={selected ? '' : undefined}
@@ -221,10 +234,12 @@ export default function MindMapViewer({
         setMenu({ x: event.clientX, y: event.clientY });
       }}
       onPointerMove={(event) => {
+        // Only fullscreen CSS reads these bands. Set them on the element so pointer moves never render the map.
+        const { dataset } = event.currentTarget;
         const rect = event.currentTarget.getBoundingClientRect();
 
-        setControlsVisible(event.clientY > rect.bottom - 100);
-        setNavigationVisible(event.clientY < rect.top + 80);
+        dataset.controlsVisible = String(event.clientY > rect.bottom - 100);
+        dataset.navigationVisible = String(event.clientY < rect.top + 80);
       }}
       onKeyDownCapture={(event) => {
         const target = event.target as HTMLElement;
@@ -290,10 +305,9 @@ export default function MindMapViewer({
         </p>
       )}
       <TransformWrapper
-        key={`${focused ?? 'all'}-${viewport.width}-${viewport.height}`}
+        // Remount only to fit a new drill-down root. A resized canvas refits in place.
+        key={focused ?? 'all'}
         ref={transform}
-        onInit={({ state }) => setZoom(Math.round(state.scale * 100))}
-        onTransformed={(_, state) => setZoom(Math.round(state.scale * 100))}
         initialScale={fitScale}
         minScale={minScale}
         maxScale={4}
@@ -337,7 +351,7 @@ export default function MindMapViewer({
                   >
                     <button
                       title={p.node.label}
-                      onClick={() => setSelected((old) => (old?.id === p.node.id ? undefined : p.node))}
+                      onClick={() => setSelectedId((old) => (old === p.node.id ? undefined : p.node.id))}
                       aria-pressed={selected?.id === p.node.id}
                       aria-haspopup='dialog'
                       aria-expanded={selected?.id === p.node.id}
@@ -417,7 +431,6 @@ export default function MindMapViewer({
             </TransformComponent>
             <MindMapToolbar
               container={canvasElement}
-              zoom={zoom}
               minZoom={Math.round(minScale * 100)}
               focused={!!focused}
               canDrill={!!selected && selected.id !== layout.root.id}
@@ -441,6 +454,7 @@ export default function MindMapViewer({
                 key={selected.id}
                 container={canvasElement}
                 node={selected}
+                position={byId.get(selected.id)}
                 sourceNumbers={index.sourceNumbers}
                 canDrill={selected.id !== layout.root.id}
                 canParent={!!focused}
@@ -457,7 +471,6 @@ export default function MindMapViewer({
                           ...map,
                           nodes: map.nodes.map((node) => (node.id === next.id ? next : node)),
                         });
-                        setSelected(next);
                       }
                     : undefined
                 }
@@ -529,7 +542,7 @@ export default function MindMapViewer({
               <MenuItem
                 key='details'
                 onClick={() => {
-                  setSelected(menuNode);
+                  setSelectedId(menuNode.id);
                   setMenu(undefined);
                 }}
               >

@@ -1,87 +1,47 @@
-import { languages, tokenize, type Token } from 'prismjs';
-
 import { normalizeCodeLanguage } from '@/components/editor/components/blocks/code/constants';
+import { decorateCode } from '@/components/editor/components/blocks/code/utils';
 
-// Bundled with the lazy code renderer, in Prism dependency order. No CDN scripts.
-import 'prismjs/components/prism-bash';
-import 'prismjs/components/prism-basic';
-import 'prismjs/components/prism-c';
-import 'prismjs/components/prism-clojure';
-import 'prismjs/components/prism-cpp';
-import 'prismjs/components/prism-csharp';
-import 'prismjs/components/prism-dart';
-import 'prismjs/components/prism-elixir';
-import 'prismjs/components/prism-elm';
-import 'prismjs/components/prism-erlang';
-import 'prismjs/components/prism-fortran';
-import 'prismjs/components/prism-go';
-import 'prismjs/components/prism-graphql';
-import 'prismjs/components/prism-haskell';
-import 'prismjs/components/prism-java';
-import 'prismjs/components/prism-json';
-import 'prismjs/components/prism-kotlin';
-import 'prismjs/components/prism-lisp';
-import 'prismjs/components/prism-lua';
-import 'prismjs/components/prism-markdown';
-import 'prismjs/components/prism-matlab';
-import 'prismjs/components/prism-ocaml';
-import 'prismjs/components/prism-perl';
-import 'prismjs/components/prism-markup-templating';
-import 'prismjs/components/prism-php';
-import 'prismjs/components/prism-powershell';
-import 'prismjs/components/prism-python';
-import 'prismjs/components/prism-r';
-import 'prismjs/components/prism-ruby';
-import 'prismjs/components/prism-rust';
-import 'prismjs/components/prism-scala';
-import 'prismjs/components/prism-sql';
-import 'prismjs/components/prism-swift';
-import 'prismjs/components/prism-typescript';
-import 'prismjs/components/prism-yaml';
-import 'prismjs/components/prism-mermaid';
-import 'prismjs/components/prism-pascal';
-import 'prismjs/components/prism-jsx';
-import 'prismjs/components/prism-tsx';
-import 'prismjs/components/prism-latex';
-import 'prismjs/components/prism-nasm';
-import 'prismjs/components/prism-docker';
-import 'prismjs/components/prism-objectivec';
-import 'prismjs/components/prism-verilog';
-import 'prismjs/components/prism-vhdl';
-import 'prismjs/components/prism-vbnet';
-import 'prismjs/components/prism-zig';
+import type { HLJSApi } from 'highlight.js';
 
-const ALIASES: Record<string, string> = {
-  auto: 'plaintext',
-  assembly: 'nasm',
-  'objective-c': 'objectivec',
-  'visual basic': 'vbnet',
-  js: 'javascript',
-  ts: 'typescript',
-  html: 'markup',
-  xml: 'markup',
-  shell: 'bash',
-  sh: 'bash',
-  cs: 'csharp',
-  'c#': 'csharp',
-  'c++': 'cpp',
-  delphi: 'pascal',
-  tex: 'latex',
-};
+// The editor detects an Auto block's language from the same leading sample.
+const AUTO_SAMPLE_LENGTH = 5000;
 
-export function codeLanguage(language?: string) {
-  const value = normalizeCodeLanguage(language);
-
-  return ALIASES[value] ?? value;
+export interface CodeToken {
+  text: string;
+  /** The editor's Prism-style token names; empty for text outside a token. */
+  token: string;
 }
 
-export function tokenizeCode(text: string, language?: string): Array<string | Token> {
-  const grammar = languages[codeLanguage(language)];
+/** Plain text, Mermaid and empty Auto blocks never load the editor's grammars. */
+export function highlightsCode(text: string, language?: string) {
+  const value = normalizeCodeLanguage(language);
 
-  if (!grammar) return [text];
-  try {
-    return tokenize(text, grammar);
-  } catch {
-    return [text];
+  if (value === 'plaintext' || value === 'mermaid') return false;
+  return value !== 'auto' || !!text.slice(0, AUTO_SAMPLE_LENGTH).trim();
+}
+
+/** The grammar the editor uses: the block's language, or Auto detection; unknown languages stay plain. */
+export function codeGrammar(highlighter: HLJSApi, text: string, language?: string) {
+  const value = normalizeCodeLanguage(language);
+  const detected =
+    value === 'auto' ? highlighter.highlightAuto(text.slice(0, AUTO_SAMPLE_LENGTH)).language ?? 'plaintext' : value;
+  const grammar = normalizeCodeLanguage(detected);
+
+  return highlighter.getLanguage(grammar) ? grammar : 'plaintext';
+}
+
+/** Split code into the editor's highlight ranges, keeping every source character. */
+export function tokenizeCode(text: string, grammar: string): CodeToken[] {
+  const tokens: CodeToken[] = [];
+  let offset = 0;
+
+  for (const range of decorateCode([{ text }, [0]], grammar)) {
+    // The editor's ranges are contiguous; anything else leaves the source unhighlighted.
+    if (range.anchor.offset !== offset) return [{ text, token: '' }];
+    tokens.push({ text: text.slice(offset, range.focus.offset), token: range.prism_token });
+    offset = range.focus.offset;
   }
+
+  if (offset < text.length) tokens.push({ text: text.slice(offset), token: '' });
+  return tokens;
 }

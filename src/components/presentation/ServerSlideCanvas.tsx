@@ -1,4 +1,4 @@
-import { createContext, CSSProperties, ReactNode, useContext, useEffect, useState } from 'react';
+import { createContext, CSSProperties, memo, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 
 import { getArtifactAsset, getArtifactScene } from './presentation-client';
 
@@ -9,12 +9,14 @@ import type { SavedDeck } from './types';
 type SceneState = {
   key: string;
   scene?: DeckScene;
-  images: Map<string, string>;
+  /** Object URL per asset revision; null marks an image that could not be shown. */
+  images: Map<string, string | null>;
   error?: string;
 };
 const SceneContext = createContext<SceneState | undefined>(undefined);
 const assetKey = (id: string, revision: string) => `${id}:${revision}`;
 const rgb = (color: string) => (/^#?[0-9a-f]{6}$/i.test(color) ? `#${color.replace(/^#/, '')}` : 'transparent');
+const supported = (scene: DeckScene) => scene.schemaVersion === 1 && scene.width === 1280 && scene.height === 720;
 
 /** Fetch one authorized scene and one copy of each private image for all thumbnails and slides. */
 export function ServerSlideSceneProvider({
@@ -27,21 +29,26 @@ export function ServerSlideSceneProvider({
   children: ReactNode;
 }) {
   const key = `${scope.workspaceId}:${deck.id}:${deck.version}`;
+  // A deck read with its scene (loadSavedDeck, runGeneration) only needs its images.
+  const known =
+    deck.scene?.workspaceId === scope.workspaceId && deck.scene.id === deck.id && deck.scene.version === deck.version
+      ? deck.scene.value
+      : undefined;
   const [state, setState] = useState<SceneState>({ key: '', images: new Map() });
 
   useEffect(() => {
     const controller = new AbortController();
-    const images = new Map<string, string>();
-    const revoke = () => images.forEach((url) => URL.revokeObjectURL(url));
+    const images = new Map<string, string | null>();
+    const revoke = () => images.forEach((url) => url && URL.revokeObjectURL(url));
 
     async function load() {
       try {
         if (!deck.version) throw new Error('The saved presentation has no server version. Reopen it to continue.');
-        const scene = await getArtifactScene(scope, deck.id, deck.version, controller.signal);
+        const version = deck.version;
+        const scene = known ?? (await getArtifactScene(scope, deck.id, version, controller.signal));
 
         if (controller.signal.aborted) return;
-        if (scene.schemaVersion !== 1 || scene.width !== 1280 || scene.height !== 720)
-          throw new Error('This presentation scene requires a newer web client.');
+        if (!supported(scene)) throw new Error('This presentation scene requires a newer web client.');
         const assets = new Map<string, Extract<SceneElement, { kind: 'image' }>>();
 
         scene.slides.forEach((slide) =>
@@ -49,28 +56,40 @@ export function ServerSlideSceneProvider({
             if (element.kind === 'image') assets.set(assetKey(element.asset_id, element.revision), element);
           })
         );
-        const pending = [...assets.values()];
+        // Slides render before their images; each finished image publishes a new copy of the map.
+        const publish = () => setState({ key, scene, images: new Map(images) });
+
+        publish();
+        const pending = [...assets.entries()];
         let next = 0;
         const worker = async () => {
           while (!controller.signal.aborted && next < pending.length) {
-            const element = pending[next++];
-            const blob = await getArtifactAsset(
-              scope,
-              deck.id,
-              deck.version!,
-              element.asset_id,
-              element.revision,
-              controller.signal
-            );
+            const [id, element] = pending[next++];
 
-            if (controller.signal.aborted) return;
-            if (!['image/png', 'image/jpeg'].includes(blob.type)) throw new Error('Unsupported presentation image.');
-            images.set(assetKey(element.asset_id, element.revision), URL.createObjectURL(blob));
+            try {
+              const blob = await getArtifactAsset(
+                scope,
+                deck.id,
+                version,
+                element.asset_id,
+                element.revision,
+                controller.signal
+              );
+
+              if (controller.signal.aborted) return;
+              if (!['image/png', 'image/jpeg'].includes(blob.type)) throw new Error('Unsupported presentation image.');
+              images.set(id, URL.createObjectURL(blob));
+            } catch {
+              if (controller.signal.aborted) return;
+              // One unavailable image must not hide the rest of the deck.
+              images.set(id, null);
+            }
+
+            publish();
           }
         };
 
         await Promise.all(Array.from({ length: Math.min(4, pending.length) }, worker));
-        if (!controller.signal.aborted) setState({ key, scene, images });
       } catch (error) {
         if (!controller.signal.aborted) {
           setState({
@@ -91,14 +110,17 @@ export function ServerSlideSceneProvider({
       revoke();
     };
     // pageId is not an authority for artifact reads; the server rechecks its saved source ACLs.
+    // The known scene belongs to this key's artifact version, which never changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, scope.workspaceId, deck.id, deck.version]);
 
-  return (
-    <SceneContext.Provider value={state.key === key ? state : { key, images: new Map() }}>
-      {children}
-    </SceneContext.Provider>
+  // A stable value lets memoized thumbnails skip renders that change nothing in the scene.
+  const value = useMemo<SceneState>(
+    () => (state.key === key ? state : { key, scene: known && supported(known) ? known : undefined, images: new Map() }),
+    [state, key, known]
   );
+
+  return <SceneContext.Provider value={value}>{children}</SceneContext.Provider>;
 }
 
 function NativeChart({ element }: { element: Extract<SceneElement, { kind: 'chart' }> }) {
@@ -143,7 +165,7 @@ function NativeChart({ element }: { element: Extract<SceneElement, { kind: 'char
 }
 
 /** Renders server geometry; local draft layout helpers are never used for saved previews. */
-export default function ServerSlideCanvas({ index = 0, miniature = false }: { index?: number; miniature?: boolean }) {
+function ServerSlideCanvas({ index = 0, miniature = false }: { index?: number; miniature?: boolean }) {
   const state = useContext(SceneContext);
   const scene = state?.scene;
   const slide = scene?.slides[index];
@@ -208,15 +230,33 @@ export default function ServerSlideCanvas({ index = 0, miniature = false }: { in
               }}
             />
           );
-        if (element.kind === 'image')
-          return (
-            <img
+        if (element.kind === 'image') {
+          const src = state.images.get(assetKey(element.asset_id, element.revision));
+
+          return src ? (
+            <img key={element.id} alt={element.attribution} src={src} style={{ ...box, objectFit: 'contain' }} />
+          ) : (
+            // The image frame stays in place while it loads or when it cannot be shown.
+            <div
               key={element.id}
-              alt={element.attribution}
-              src={state.images.get(assetKey(element.asset_id, element.revision))}
-              style={{ ...box, objectFit: 'contain' }}
-            />
+              role='img'
+              aria-label={src === null ? 'Image unavailable' : element.attribution}
+              aria-busy={src === undefined}
+              style={{
+                ...box,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: '#0000000a',
+                color: '#6b7e98',
+                fontSize: '1.25cqw',
+              }}
+            >
+              {src === null && 'Image unavailable'}
+            </div>
           );
+        }
+
         if (element.kind === 'chart')
           return (
             <div key={element.id} style={{ ...box, fontFamily: element.font }}>
@@ -261,3 +301,6 @@ export default function ServerSlideCanvas({ index = 0, miniature = false }: { in
     </div>
   );
 }
+
+// Thumbnails pass only primitive props, so a selected-slide change does not re-render them.
+export default memo(ServerSlideCanvas);

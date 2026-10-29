@@ -9,14 +9,26 @@ import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 
 import { loadSourceSnapshot } from './presentation-client';
+import { loadDocumentPresenter, loadPresentationStudio } from './presentation-preload';
 import PresentationLoading, { MindMapLoading } from './PresentationLoading';
 import PresentationShell from './PresentationShell';
+import { forgetSavedDecks } from './saved-deck-cache';
 import { snapshotFromSlate } from './snapshot-adapter';
-import { DeckAction, Mode, PageSnapshot, SavedDeck } from './types';
+import { DeckAction, Mode, PageSnapshot, SavedDeck, SourceProperty } from './types';
 import { usePresentationAccess } from './usePresentationAccess';
 
-const PresentationStudio = lazy(() => import('./PresentationStudio'));
-const DocumentPresenter = lazy(() => import('./DocumentPresenter'));
+import type { Element as SlateElement } from 'slate';
+
+const PresentationStudio = lazy(loadPresentationStudio);
+const DocumentPresenter = lazy(loadDocumentPresenter);
+
+/**
+ * AI modes present the server's resolved source. Document mode reads its content once; the
+ * title and cover stay live, so a rename never reloads or remounts an open presentation.
+ */
+type SourceRead =
+  | { kind: 'server'; snapshot: PageSnapshot }
+  | { kind: 'document'; content?: SlateElement; rowTitle?: string; properties?: SourceProperty[] };
 
 export interface PresentationSourceProps {
   viewId: string;
@@ -49,36 +61,45 @@ export default function PresentationDialog({
   const user = useCurrentUserOptional();
   const { loadView, loadRowDocument, toView } = useAppOperations();
   const identity = `${workspaceId}:${user?.uid}:${viewId}:${mode}`;
-  const [snapshotResult, setSnapshotResult] = useState<{ identity: string; value: PageSnapshot }>();
-  const snapshot = snapshotResult?.identity === identity ? snapshotResult.value : undefined;
+  const [readResult, setReadResult] = useState<{ identity: string; value: SourceRead }>();
+  const read = readResult?.identity === identity ? readResult.value : undefined;
+  const name = sourceView?.name;
+  const snapshot = useMemo(
+    () =>
+      read?.kind === 'document'
+        ? snapshotFromSlate(
+            viewId,
+            // An empty row takes its title from the row, never from a view name.
+            title || read.rowTitle || (read.content && name) || 'Untitled',
+            read.content,
+            isRow,
+            read.properties,
+            cover
+          )
+        : read?.snapshot,
+    [read, viewId, title, name, isRow, cover]
+  );
   const [error, setError] = useState('');
   const [setupPopover, setSetupPopover] = useState(mode === 'slides' && (!deck || action === 'regenerate'));
   const { canRead, canWrite, hasLoadedViewActionPermissions } = useViewActionPermissions(view, !!mode, permissionViewId);
-  const access = usePresentationAccess(!!mode && mode !== 'document');
+  // Only onUpgrade and canManageStyles are used here; the studio reads presentation status itself.
+  const access = usePresentationAccess(false);
 
-  const readLatestSnapshot = useCallback(
-    async (signal?: AbortSignal) => {
+  const readSource = useCallback(
+    async (signal?: AbortSignal): Promise<SourceRead> => {
       if (!canRead) throw new Error('You no longer have access to this source page.');
       if (mode !== 'document') {
         if (!workspaceId) throw new Error('Select a workspace before opening presentations.');
         const resolved = await loadSourceSnapshot(workspaceId, viewId, undefined, signal);
 
-        return isRow ? { ...resolved, kind: 'row' as const } : resolved;
+        return { kind: 'server', snapshot: isRow ? { ...resolved, kind: 'row' as const } : resolved };
       }
 
       const activeRow = getActiveRowPage();
       const row = isRow && activeRow?.documentId === viewId ? activeRow : undefined;
 
       // An empty row has properties and a title but no document to fetch/create.
-      if (row && !row.hasDocument)
-        return snapshotFromSlate(
-          viewId,
-          title || row.title || 'Untitled',
-          undefined,
-          true,
-          row.getProperties?.(),
-          cover
-        );
+      if (row && !row.hasDocument) return { kind: 'document', rowTitle: row.title, properties: row.getProperties?.() };
       const doc =
         isRow && loadRowDocument
           ? await loadRowDocument(viewId, { requireServerFetch: true, rowDocumentSource: row?.source ?? undefined })
@@ -88,35 +109,38 @@ export default function PresentationDialog({
       const content = yDocToSlateContent(doc);
 
       if (!content) throw new Error('The source is still loading. Close this preview and try again.');
-      return snapshotFromSlate(
-        viewId,
-        title || row?.title || sourceView?.name || 'Untitled',
-        content,
-        isRow,
-        row?.getProperties?.(),
-        cover
-      );
+      return { kind: 'document', content, rowTitle: row?.title, properties: row?.getProperties?.() };
     },
-    [canRead, mode, workspaceId, viewId, title, sourceView?.name, cover, loadView, loadRowDocument, isRow]
+    [canRead, mode, workspaceId, viewId, loadView, loadRowDocument, isRow]
   );
 
   useEffect(() => {
     if (!mode || !canRead) return;
     const controller = new AbortController();
 
-    setSnapshotResult(undefined);
+    // A refresh for the same identity keeps presenting the previous source until the new one arrives.
     setError('');
-    void readLatestSnapshot(controller.signal)
+    void readSource(controller.signal)
       .then((next) => {
-        if (!controller.signal.aborted) setSnapshotResult({ identity, value: next });
+        if (!controller.signal.aborted) setReadResult({ identity, value: next });
       })
       .catch((e: unknown) => {
-        if (!controller.signal.aborted) setError(e instanceof Error ? e.message : 'Unable to load the source.');
+        if (controller.signal.aborted) return;
+        setReadResult(undefined);
+        setError(e instanceof Error ? e.message : 'Unable to load the source.');
       });
     return () => {
       controller.abort();
     };
-  }, [mode, canRead, identity, readLatestSnapshot]);
+  }, [mode, canRead, identity, readSource]);
+
+  useEffect(() => {
+    const userId = user?.uid;
+
+    if (mode === 'document' || !workspaceId || !userId) return;
+    // The studio can generate decks; the Share panel must list them on its next visit.
+    return () => forgetSavedDecks(workspaceId, userId);
+  }, [mode, workspaceId, user?.uid]);
   function close() {
     onClose();
   }

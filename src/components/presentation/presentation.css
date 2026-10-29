@@ -1303,6 +1303,8 @@
   font-size: clamp(15px, 1.65vw, 25px);
   overflow-wrap: anywhere;
   overscroll-behavior: contain;
+  /* A classic scrollbar on an overflowing slide must not narrow it: the ruler copies its width. */
+  scrollbar-gutter: stable;
 }
 .ps-doc-block {
   display: flow-root;
