@@ -133,7 +133,7 @@ test.each([
 });
 
 test.each([
-  ['AI_PROVIDER_QUOTA_EXHAUSTED', 503, 'run out of credit'],
+  ['AI_PROVIDER_QUOTA_EXHAUSTED', 503, 'unavailable'],
   ['AI_EXECUTION_FAILED', 503, 'could not complete'],
   ['AI_EXECUTION_BUSY', 503, 'busy'],
   ['MODEL_CONTEXT_EXCEEDED', 400, 'too large'],
@@ -260,11 +260,12 @@ test('polling follows the durable job and stops at its terminal error', async ()
   jest.useRealTimers();
 });
 
-test('a failed job reads as its reason, such as an AI provider without credit', async () => {
+test('a failed job reads as its reason; an AI provider without credit reads as an outage', async () => {
   const failure = await waitForJob(scope, { ...job, state: 'failed', errorReason: 'AI_PROVIDER_QUOTA_EXHAUSTED' }).catch((error: unknown) => error);
 
   expect(failure).toMatchObject({ code: 'AI_PROVIDER_QUOTA_EXHAUSTED', retryable: false });
-  expect((failure as Error).message).toContain('run out of credit');
+  expect((failure as Error).message).toContain('unavailable');
+  expect((failure as Error).message).not.toContain('credit');
 });
 
 test('a failed job without readable text keeps the generic sentence', async () => {

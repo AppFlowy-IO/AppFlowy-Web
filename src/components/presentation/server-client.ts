@@ -57,7 +57,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   AI_MODEL_UNAVAILABLE: 'The AI model for this request is no longer available. Start a new generation.',
   AI_EXECUTION_NOT_LICENSED: 'AI features are not available on this server.',
   // AI execution reasons; Cloud sends the reason itself as the message.
-  AI_PROVIDER_QUOTA_EXHAUSTED: "This server's AI provider account has run out of credit. Ask your administrator to add credit or choose another AI model.",
+  // Users can't act on the provider's billing, so it reads as an outage; the AI service log names the cause.
+  AI_PROVIDER_QUOTA_EXHAUSTED: 'The AI service is unavailable right now. Please try again later.',
   AI_EXECUTION_FAILED: 'The AI service could not complete this request. Try again, or ask your administrator to check the AI provider settings.',
   AI_EXECUTION_BUSY: 'The AI service is busy. Please try again shortly.',
   AI_EXECUTION_UNAVAILABLE: 'The AI service is unavailable right now. Please try again shortly.',
