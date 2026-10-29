@@ -160,9 +160,11 @@ test('repeated dashboard visits reveal and settle every deferred view before mea
   try {
     work.finishAll();
     await revealDashboardWidgets(page, 5_000);
-    await page.getByTestId('view-tab-fixture-grid').click();
-    // Prior completion counters intentionally remain: each visit must still
-    // reveal and verify the current DOM, including the initially unseen views.
+    // Match the cloud scenario: setup leaves a completed dashboard mounted,
+    // then recording resets its one-shot completion events before the visit.
+    await page.evaluate(() => (window as Window & { __DASHBOARD_LOAD_STATS__?: { reset(): void } })
+      .__DASHBOARD_LOAD_STATS__?.reset());
+    expect((await loadStats(page)).widgetComplete).toEqual({});
     for (let visit = 0; visit < 4; visit++) {
       await visitDashboardAndLeave(page);
       await expect(page.getByTestId('dashboard-view')).toHaveCount(0);

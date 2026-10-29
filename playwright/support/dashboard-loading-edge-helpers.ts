@@ -1104,9 +1104,14 @@ export async function visitDashboardAndLeave(page: Page) {
   const host = hostDatabase(page);
   const widgets = loadingWidgets(page);
 
-  if (!(await DashboardSelectors.view(viewer).isVisible())) {
-    await DatabaseViewSelectors.viewTab(viewer, dashboardViewId(page)).click();
+  // Setup can leave an already completed dashboard mounted, then reset the
+  // one-shot counters. Start a real visit so its new sessions report again.
+  if (await DashboardSelectors.view(viewer).isVisible()) {
+    await DatabaseViewSelectors.viewTab(viewer, host.views.Grid).click();
+    await expect(DashboardSelectors.view(viewer)).toHaveCount(0, WIDGET_TIMEOUT);
   }
+
+  await DatabaseViewSelectors.viewTab(viewer, dashboardViewId(page)).click();
 
   await expect(DashboardSelectors.widgets(viewer)).toHaveCount(widgets.length, WIDGET_TIMEOUT);
   for (const widget of widgets) {

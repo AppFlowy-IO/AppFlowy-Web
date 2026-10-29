@@ -1408,7 +1408,7 @@ export interface DatabaseViewRequest {
   parentViewId?: string;
   /** The sibling the new view goes after. */
   prevViewId?: string;
-  /** Commit both authoritative and collab owner markers in the initial view creation. */
+  /** Commit Folder ownership atomically, then persist the client's collab mirror before returning. */
   dashboardOwner?: string;
 }
 
@@ -1479,6 +1479,24 @@ export async function createDatabaseViewThroughApi(page: Page, request: APIReque
       }
     )
     .toBe(true);
+  if (view.dashboardOwner) {
+    // The compact API commits Folder extra, while production hydration writes
+    // the collab mirror. Wait for its normal sync before a hard navigation can
+    // destroy this fixture's live document; a local-only marker is insufficient.
+    await page.evaluate(({ databaseId, viewId, owner }) => {
+      const doc = (window as any).__DASHBOARD_TEST__.byDatabase(databaseId).databaseDoc;
+      const stored = doc.getMap('data').get('database').get('views').get(viewId);
+
+      doc.transact(() => stored.set('dashboard_owner', owner));
+    }, { databaseId: database.databaseId, viewId: created.view_id, owner: view.dashboardOwner });
+    await expect.poll(() => readServerDatabaseDoc(request,
+      { token: world.owner.accessToken, workspaceId: world.workspaceId }, database.databaseId,
+      (stored) => (stored?.get('views') as Y.Map<Y.Map<unknown>> | undefined)
+        ?.get(created.view_id)?.get('dashboard_owner')),
+    { timeout: FIXTURE_TIMEOUT_MS, message: 'the owned view collab mirror must persist before navigation' })
+      .toBe(view.dashboardOwner);
+  }
+
   return created.view_id;
 }
 
