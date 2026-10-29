@@ -165,7 +165,7 @@ describe('Present AI mind map', () => {
     const presented = await screen.findByTestId('server-map');
 
     expect(presented.textContent).toBe('Page structure');
-    expect(presented.closest('main')).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'Page presentation tools' })).toBeNull();
     expect(mockViewerProps?.origin).toBeUndefined();
     expect(screen.queryByText('No saved mind map is selected.')).toBeNull();
     expect(mockRunGeneration).not.toHaveBeenCalled();

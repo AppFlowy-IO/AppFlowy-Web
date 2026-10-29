@@ -10,12 +10,15 @@ export default function PresentationShell({
   setup,
   preview = false,
   onClose,
+  paperClassName,
   children,
 }: {
   setup: boolean;
   preview?: boolean;
   onClose: () => void;
   anchorEl?: HTMLElement | null;
+  /** Classes for the full-screen paper, such as a presentation that runs edge to edge. */
+  paperClassName?: string;
   children: ReactNode;
 }) {
   return (
@@ -49,7 +52,7 @@ export default function PresentationShell({
                 borderRadius: 12,
               },
             }
-          : { 'aria-label': 'AI presentation' }
+          : { 'aria-label': 'AI presentation', className: paperClassName }
       }
       BackdropProps={setup || preview ? { style: { background: 'rgba(0,0,0,.12)' } } : undefined}
     >

@@ -563,7 +563,9 @@ export default function MindMapViewer({
     </Dialog>
   );
 
-  if (onClosePresentation) return preview;
+  // A presentation fills the caller's full-screen surface, where this canvas replaces the loading state in
+  // place; a dialog of its own would open as a second page.
+  if (onClosePresentation) return canvas;
 
   return (
     <div className='ps-map-page'>

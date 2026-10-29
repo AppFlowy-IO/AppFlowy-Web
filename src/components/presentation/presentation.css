@@ -1693,11 +1693,32 @@
 .ps-map-canvas:focus {
   outline: none;
 }
-/* While a mind map presentation loads, the studio shows nothing but its state, on the dialog's surface. */
+/* Presenting a mind map, the studio shows only the map's surface: its loading state, then the map. */
 .ps-studio.ps-map-presenting,
 .ps-map-presenting .ps-content {
-  background: var(--surface-primary);
+  background: var(--background-primary);
   color: var(--text-primary);
+}
+.ps-map-presenting .ps-map-canvas.ps-map-expanded {
+  width: 100%;
+  height: 100%;
+}
+/* The map's surface and close button before the map arrives, with a spinner where it will be. */
+.ps-map-loading {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: var(--background-primary);
+  color: var(--text-secondary);
+}
+.ps-map-loading p {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
 }
 /* A presented mind map that cannot be shown says why where the map would be. */
 .ps-map-presentation-status {

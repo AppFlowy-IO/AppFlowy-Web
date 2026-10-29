@@ -9,7 +9,7 @@ import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 
 import { loadSourceSnapshot } from './presentation-client';
-import PresentationLoading from './PresentationLoading';
+import PresentationLoading, { MindMapLoading } from './PresentationLoading';
 import PresentationShell from './PresentationShell';
 import { snapshotFromSlate } from './snapshot-adapter';
 import { DeckAction, Mode, PageSnapshot, SavedDeck } from './types';
@@ -159,14 +159,16 @@ export default function PresentationDialog({
       preview={mode === 'slides' && !setupPopover}
       onClose={close}
       anchorEl={anchorEl}
+      paperClassName={mode === 'mindmap' ? 'ps-map-preview-dialog' : undefined}
     >
       {snapshot && canRead ? (
         <Suspense
           fallback={
-            <PresentationLoading
-              message={mode === 'mindmap' ? 'Loading mind map…' : 'Loading presentation studio…'}
-              onClose={close}
-            />
+            mode === 'mindmap' ? (
+              <MindMapLoading onClose={close} />
+            ) : (
+              <PresentationLoading message='Loading presentation studio…' onClose={close} />
+            )
           }
         >
           {mode === 'document' ? (
@@ -195,11 +197,10 @@ export default function PresentationDialog({
           <p role='status'>{error || 'You no longer have access to this source page.'}</p>
           <Button onClick={close}>Back to page</Button>
         </div>
+      ) : mode === 'mindmap' ? (
+        <MindMapLoading onClose={close} />
       ) : (
-        <PresentationLoading
-          message={mode === 'mindmap' ? 'Loading mind map…' : 'Loading authorized page snapshot…'}
-          onClose={close}
-        />
+        <PresentationLoading message='Loading authorized page snapshot…' onClose={close} />
       )}
     </PresentationShell>
   );

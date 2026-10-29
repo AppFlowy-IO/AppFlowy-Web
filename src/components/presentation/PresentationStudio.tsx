@@ -24,7 +24,7 @@ import {
   styleReference,
   PresentationAPIError,
 } from './presentation-client';
-import PresentationLoading from './PresentationLoading';
+import { MindMapLoading } from './PresentationLoading';
 import PresentationPaywall from './PresentationPaywall';
 import { APPFLOWY_SLIDE_THEMES } from './slide-themes';
 import SlidesWorkflow, { type SlidesWorkflowProps } from './SlidesWorkflow';
@@ -169,8 +169,6 @@ export default function PresentationStudio({
   const savedMapArtifact = loadedIdentity === identity ? mapArtifact : undefined;
   const currentArtifact = showAIMap ? savedMapArtifact : structuralArtifact;
   const currentMap = currentArtifact?.content;
-  // The full-screen presentation needs a map. Until then the studio shows only its loading or unavailable state.
-  const presentingMap = mapPresentationOpen && !!currentMap?.nodes.length;
   const mapReferences = useMemo(
     () => (currentMap ? resolveMapReferences(currentMap, snapshot) : new Map<string, string>()),
     [currentMap, snapshot]
@@ -549,7 +547,7 @@ export default function PresentationStudio({
       onClosePresentation={mapPresentationOpen ? closeMapPresentation : undefined}
     />
   ) : mapPresentationOpen && mapLoading ? (
-    <PresentationLoading message='Loading mind map…' onClose={closeMapPresentation} />
+    <MindMapLoading onClose={closeMapPresentation} />
   ) : (
     <section
       className={mapPresentationOpen ? 'ps-map-presentation-status' : 'ps-page'}
@@ -805,10 +803,9 @@ export default function PresentationStudio({
               </DocumentContentProvider>
             </div>
           )}
-          {mapPresentationOpen && !presentingMap && mapViewer}
+          {mapPresentationOpen && mapViewer}
         </main>
       </div>
-      {presentingMap && mapViewer}
       {documentOpen && (
         <DocumentPresenter
           snapshot={snapshot}
