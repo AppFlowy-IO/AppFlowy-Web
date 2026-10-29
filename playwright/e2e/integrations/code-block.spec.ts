@@ -913,17 +913,17 @@ test('triple click selects one code line and four clicks select the whole block'
   await expect.poll(() => textBeforeCaret(source(page))).toBe('');
   await page.keyboard.press('ArrowDown');
   await expect.poll(() => textBeforeCaret(source(page))).toBe('first line\n');
-  await page.keyboard.insertText('X');
+  // Typing runs keydown selection reconciliation before input. insertText skips
+  // keydown and can race Slate's throttled selectionchange after ArrowDown.
+  await page.keyboard.type('X');
   await expect(source(page)).toHaveText('first line\nXsecond line\nthird line');
-  // Native vertical navigation can retain the column from ArrowDown across
-  // insertText. Establish column one explicitly before testing the return up.
-  await page.keyboard.press('ArrowLeft');
-  await page.keyboard.press('ArrowRight');
+  await expect(snapshot(page)).toContainText(JSON.stringify('first line\nXsecond line\nthird line'));
   await expect.poll(() => textBeforeCaret(source(page))).toBe('first line\nX');
   await page.keyboard.press('ArrowUp');
   await expect.poll(() => textBeforeCaret(source(page))).toBe('f');
-  await page.keyboard.insertText('Y');
+  await page.keyboard.type('Y');
   await expect(source(page)).toHaveText('fYirst line\nXsecond line\nthird line');
+  await expect(snapshot(page)).toContainText(JSON.stringify('fYirst line\nXsecond line\nthird line'));
 });
 
 test('code nested in callout, rich marks stay literal, read-only copy and saved data', async ({ page, context }) => {
