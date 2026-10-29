@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
+import { AtomicCreationPendingError } from '@/application/atomic-creation';
 import { useDatabaseContext } from '@/application/database-yjs';
 import {
   duplicateDashboardWidget,
@@ -312,7 +313,10 @@ export function useOwnedWidgetViews({
 
         return viewId;
       } catch (error) {
-        if (spec === 'chart' && isInvalidSubscriptionPlanError(error)) throw new DefaultWidgetPlanError(error);
+        // A known pre-commit plan refusal may fall back; an acknowledged view must recover its hydration.
+        const refusal = error instanceof AtomicCreationPendingError && !error.committed ? error.cause : error;
+
+        if (spec === 'chart' && isInvalidSubscriptionPlanError(refusal)) throw new DefaultWidgetPlanError(error);
         throw error;
       }
     },

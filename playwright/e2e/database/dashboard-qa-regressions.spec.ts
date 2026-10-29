@@ -4,6 +4,7 @@ import { ViewLayout } from '../../../src/application/types';
 import {
   chooseNewViewType,
   closeDockedPicker,
+  isChartViewCreationRequest,
   newWidget,
   newWidgetRecord,
   refuseChartViewCreation,
@@ -44,12 +45,12 @@ test('a table default can become an admitted Chart, persist and be removed witho
   await addDashboardView(page, 'Projects');
   // An unresolved/billing-limited plan falls back to Table in the real add flow.
   // Refuse only its initial Number Chart; the explicit Chart choice is admitted.
-  await refuseChartViewCreation(page);
+  const stopRefusingChart = await refuseChartViewCreation(page);
   const widgetId = await openWidgetPicker(page);
   const table = await newWidgetRecord(page);
 
   await expect(newWidget(page).getByTestId('database-grid')).toBeVisible();
-  await page.unroute('**/page-view/*/database-view');
+  await stopRefusingChart();
   const errors = await startFrameworkErrorRecording(page);
 
   await chooseNewViewType(page, 'Chart');
@@ -86,12 +87,7 @@ test('a refused Chart choice keeps the table name, layout and data after refresh
   const widgetId = await openWidgetPicker(page);
   const table = await newWidgetRecord(page);
 
-  const refused = page.waitForResponse(
-    (response) =>
-      response.request().method() === 'POST' &&
-      response.url().includes('/database-view') &&
-      response.request().postDataJSON()?.layout === ViewLayout.Chart
-  );
+  const refused = page.waitForResponse((response) => isChartViewCreationRequest(response.request()));
 
   await DashboardSelectors.pickerLayoutOption(page, DatabaseViewLayout.Chart).click();
   await refused;

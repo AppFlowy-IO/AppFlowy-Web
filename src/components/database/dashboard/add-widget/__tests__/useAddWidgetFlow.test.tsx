@@ -3,6 +3,8 @@ import { type ReactNode, useMemo } from 'react';
 import { toast } from 'sonner';
 import * as Y from 'yjs';
 
+import { AtomicCreationPendingError, type AtomicCreationRecord } from '@/application/atomic-creation';
+import { ERROR_CODE } from '@/application/constants';
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs';
 import {
   readDashboardLayoutSetting,
@@ -171,6 +173,14 @@ async function settle() {
 
 function stored(database: YDatabase) {
   return readDashboardLayoutSetting(database, DASHBOARD).rows;
+}
+
+function pendingCreationError(cause: unknown, state: AtomicCreationRecord['state'] = 'pending') {
+  return new AtomicCreationPendingError({
+    id: 'pending-chart', serverUrl: 'https://test.appflowy.cloud', userId: 'test-user', workspaceId: 'ws',
+    kind: 'database-view', logicalTarget: 'default-chart', requestId: 'chart-request', requestJson: '{}',
+    state, createdAt: Date.now(),
+  }, cause);
 }
 
 beforeEach(() => {
@@ -391,6 +401,49 @@ describe('useAddWidgetFlow', () => {
     ]);
     expect(stored(database)[0].widgets[0].viewId).toBe('table-1');
     expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it('falls back to one Table when an uncommitted atomic Chart is explicitly refused by the plan', async () => {
+    createMock.mockReset();
+    const { doc, database, views } = createDoc([]);
+    const { result } = renderFlow(doc, database);
+    const refusal = pendingCreationError({ code: ERROR_CODE.INVALID_SUBSCRIPTION_PLAN, message: 'Pro required' });
+
+    createMock.mockRejectedValueOnce(refusal).mockImplementationOnce(async (_deps: unknown, params) => {
+      addCreatedView(doc, views, 'table-1', params.layout, params.baseName);
+      return 'table-1';
+    });
+    act(() => result.current.startAddWidget({ type: 'new_row' }));
+    await settle();
+
+    expect(createMock.mock.calls.map(([, params]) => [params.layout, params.baseName])).toEqual([
+      [DatabaseViewLayout.Chart, 'Chart'], [DatabaseViewLayout.Grid, 'Table'],
+    ]);
+    expect(stored(database).flatMap((row) => row.widgets).map((widget) => widget.viewId)).toEqual(['table-1']);
+    expect(views.get('table-1')?.get(YjsDatabaseKey.name)).toBe('Table');
+    expect(views.get('table-1')?.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.Grid);
+    expect(deleteMock).not.toHaveBeenCalled();
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['committed plan refusal', () => pendingCreationError({ code: ERROR_CODE.INVALID_SUBSCRIPTION_PLAN }, 'committed')],
+    ['lost response', () => pendingCreationError(new Error('Network response lost'))],
+    ['permission refusal', () => pendingCreationError({ code: 1012 })],
+  ])('preserves %s for recovery without creating a fallback Table', async (_name, error) => {
+    createMock.mockReset();
+    const { doc, database } = createDoc([]);
+    const { result } = renderFlow(doc, database);
+
+    createMock.mockRejectedValue(error());
+    act(() => result.current.startAddWidget({ type: 'new_row' }));
+    await settle();
+
+    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(createMock.mock.calls[0][1].layout).toBe(DatabaseViewLayout.Chart);
+    expect(stored(database)).toEqual([]);
+    expect(deleteMock).not.toHaveBeenCalled();
+    expect(toastError).toHaveBeenCalledTimes(1);
   });
 
   it('starts with a table where Number charts are not available', async () => {

@@ -6,7 +6,7 @@
  * Builds on `dashboard-test-helpers.ts` (`openWidgetPicker`,
  * `pickExistingView`, `DashboardSelectors`) without editing its other symbols.
  */
-import { APIRequestContext, expect, Locator, Page } from '@playwright/test';
+import { APIRequestContext, expect, Locator, Page, type Request, type Route } from '@playwright/test';
 
 import { ERROR_CODE } from '../../src/application/constants';
 
@@ -208,12 +208,22 @@ export async function createWidgetViewThroughPicker(page: Page, layoutName: stri
  * Make every Chart view creation fail the way a workspace that may not create
  * charts does (WP06 §1.2): the server's plan refusal.
  */
-export async function refuseChartViewCreation(page: Page) {
-  await page.route('**/page-view/*/database-view', async (route) => {
-    const body = route.request().postDataJSON() as { layout?: number } | null;
+export function isChartViewCreationRequest(request: Request): boolean {
+  if (request.method() !== 'POST') return false;
+  const path = new URL(request.url()).pathname;
+  const atomic = path.endsWith('/v2/page-view/database-view/default');
 
-    // Folder layout 5 is Chart.
-    if (route.request().method() === 'POST' && Number(body?.layout) === 5) {
+  if (!atomic && !/\/page-view\/[^/]+\/database-view$/.test(path)) return false;
+  const body = request.postDataJSON() as { layout?: number; view?: { layout?: number } } | null;
+
+  // Atomic recipes use DatabaseViewLayout; the legacy endpoint uses Folder ViewLayout.
+  return atomic ? body?.view?.layout === DatabaseViewLayout.Chart : body?.layout === 5;
+}
+
+export async function refuseChartViewCreation(page: Page): Promise<() => Promise<void>> {
+  const endpoint = /\/(?:v2\/page-view\/database-view\/default|page-view\/[^/]+\/database-view)(?:\?.*)?$/;
+  const handler = async (route: Route) => {
+    if (isChartViewCreationRequest(route.request())) {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -223,7 +233,10 @@ export async function refuseChartViewCreation(page: Page) {
     }
 
     await route.fallback();
-  });
+  };
+
+  await page.route(endpoint, handler);
+  return () => page.unroute(endpoint, handler);
 }
 
 // ---------------------------------------------------------------------------

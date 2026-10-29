@@ -7,11 +7,14 @@ import * as Y from 'yjs';
 
 import en from '@/@types/translations/en.json';
 import { DatabaseContext, type DatabaseContextState } from '@/application/database-yjs/context';
+import { readDashboardLayoutSetting } from '@/application/database-yjs/dashboard-layout';
 import { initAPIService, getAxios } from '@/application/services/js-services/http/core';
 import { createDatabaseView } from '@/application/services/js-services/http/page-api';
 import { saveGoTrueAuth } from '@/application/session/token';
 import { setCurrentSession } from '@/application/sync-outbox';
-import { type View, type YDatabase, type YDoc, ViewLayout, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { DatabaseViewLayout, SubscriptionInterval, SubscriptionPlan, type View, type YDatabase, type YDoc, ViewLayout, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { useAddWidgetFlowState } from '@/components/database/dashboard/add-widget/add-widget-api';
+import { useAddWidgetFlow } from '@/components/database/dashboard/add-widget/useAddWidgetFlow';
 import { DashboardProvider, useDashboardContext, useDashboardLayout } from '@/components/database/dashboard/DashboardContext';
 import { WidgetContext, type WidgetContextValue } from '@/components/database/dashboard/WidgetContext';
 import { WidgetMenu } from '@/components/database/dashboard/WidgetMenu';
@@ -33,7 +36,7 @@ saveGoTrueAuth(JSON.stringify({ access_token: 'test-owned-token', refresh_token:
   expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: USER } }));
 setCurrentSession({ userId: USER, workspaceId: WORKSPACE });
 updateServerInfo(getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud'), { status: 'available',
-  info: { enable_page_history: true, enable_atomic_creation: true, enable_atomic_creation_defaults: true } });
+  info: { self_hosted: false, enable_page_history: true, enable_atomic_creation: true, enable_atomic_creation_defaults: true } });
 i18nInstance.addResourceBundle('en', 'translation', en, true, true);
 await i18nInstance.changeLanguage('en');
 const persistence = new IndexeddbPersistence(DATABASE, doc);
@@ -80,15 +83,35 @@ function FixtureWidget({ widgetId, viewId }: { widgetId: string; viewId: string 
       <WidgetMenu open={open} onOpenChange={setOpen}>
         <button ref={opener} aria-label={`Widget options ${name}`}>{name}</button>
       </WidgetMenu>
-      <pre data-testid='clone-fixture-configuration'>{JSON.stringify(source?.toJSON())}</pre>
+      <pre data-testid='clone-fixture-configuration'>{JSON.stringify(source?.toJSON(), (_key, value: unknown) =>
+        typeof value === 'bigint' ? Number(value) : value)}</pre>
     </section>
   </WidgetContext.Provider>;
 }
 
 function Fixture() {
   const { rows } = useDashboardLayout();
+  const dashboard = useDashboardContext();
+  const flow = useAddWidgetFlow({
+    hostDoc: doc, hostDatabaseId: DATABASE, canEnterEdit: dashboard.canEnterEdit,
+    editing: dashboard.isEditing && dashboard.canEdit, canEdit: dashboard.canEdit, pinEditing: dashboard.pinEditing,
+    getRows: () => readDashboardLayoutSetting(doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase, DASHBOARD).rows,
+    updateRows: dashboard.updateRows, ownedViews: dashboard.ownedViews, selectWidget: () => undefined,
+    announce: () => undefined, scrollToWidget: () => undefined, openSourcePanel: () => undefined,
+    preloadPicker: () => undefined, workspaceId: WORKSPACE,
+    getSubscriptions: async () => [{ plan: SubscriptionPlan.Pro, currency: 'USD', price_cents: 1000,
+      recurring_interval: SubscriptionInterval.Month }],
+  });
+  const flowState = useAddWidgetFlowState(flow.api.flow, (state) => state);
   const [, setRevision] = useState(0);
 
+  useEffect(() => {
+    if (flowState.kind !== 'open') return;
+    flow.bindFlowView({ viewId: flowState.viewId, switchLayout: () => {
+      throw new Error('The admission fixture must use server-created Charts');
+    } });
+    return () => flow.bindFlowView(null);
+  }, [flow, flowState]);
   useEffect(() => {
     const update = () => setRevision((revision) => revision + 1);
 
@@ -97,6 +120,12 @@ function Fixture() {
   }, []);
   return <>
     <button onClick={() => void receiveRemote()}>Receive remote changes</button>
+    <button onClick={() => dashboard.setEditing(true)}>Edit dashboard</button>
+    <button onClick={() => flow.startAddWidget({ type: 'new_row' })}>Add widget</button>
+    <button onClick={() => flow.api.flow.dispatch({ type: 'pick_layout', layout: DatabaseViewLayout.Chart })}>Choose Chart</button>
+    <button onClick={() => flow.api.flow.dispatch({ type: 'dismiss' })}>Dismiss picker</button>
+    <pre data-testid='clone-fixture-add-state'>{JSON.stringify({ ...flowState, canEnterEdit: dashboard.canEnterEdit,
+      canEdit: dashboard.canEdit, editing: dashboard.isEditing })}</pre>
     {rows.flatMap((row) => row.widgets).map((widget) =>
       <FixtureWidget key={widget.id} widgetId={widget.id} viewId={widget.viewId} />)}
     <Toaster />
