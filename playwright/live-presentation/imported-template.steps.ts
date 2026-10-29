@@ -5,7 +5,7 @@ import { createBdd } from 'playwright-bdd';
 
 import { createDocumentPageAndNavigate } from '../support/page-utils';
 
-import type { Artifact, ReviewedStyle, StoredSession } from '../../src/components/presentation/server-contract';
+import type { Artifact, PresentationStatus, ReviewedStyle, StoredSession } from '../../src/components/presentation/server-contract';
 
 const { When, Then } = createBdd();
 
@@ -57,7 +57,12 @@ When('the test user uploads and reviews the template fixture on a new page', asy
   await newPage(page, 'upload');
   // Reopening after the editor sync prevents a source-revision refresh from aborting the upload.
   await page.reload({ waitUntil: 'domcontentloaded' });
+  const statusResponse = page.waitForResponse((response) => endpoint(response, '/status', 'GET'));
+
   await openSetup(page);
+  const status = await data<PresentationStatus>(await statusResponse);
+
+  expect(status.maxTemplateBytes).toBe((status.plan === 'free' ? 5 : 50) * 1024 * 1024);
   await page.getByRole('button', { name: 'Import template', exact: true }).click();
   // A previous run/user selection is intentionally restored across pages. Start a new upload
   // through the picker rather than assuming an empty workspace preference.
@@ -69,6 +74,7 @@ When('the test user uploads and reviews the template fixture on a new page', asy
   }
 
   await expect(page.getByLabel('Import presentation template', { exact: true })).toBeEnabled();
+  await expect(page.getByText(`.pptx or .potx · up to ${status.maxTemplateBytes! / (1024 * 1024)} MB`, { exact: true })).toBeVisible();
   const upload = page.waitForResponse((response) => endpoint(response, '/template', 'POST'));
   const analysis = page.waitForResponse((response) => /\/styles\/[^/]+\/analyze$/.test(new URL(response.url()).pathname) && response.request().method() === 'POST', { timeout: 100_000 });
 

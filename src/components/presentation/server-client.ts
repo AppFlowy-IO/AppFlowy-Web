@@ -4,6 +4,8 @@ import axios, { type AxiosRequestConfig } from 'axios';
 import { getAxiosInstance } from '@/application/services/js-services/http';
 import { captureTokenSession, isTokenSessionCurrent } from '@/application/session/token';
 
+import { MAX_TEMPLATE_BYTES, templateUploadSizeMessage } from './presentation-policy';
+
 import type {
   Artifact, ArtifactPage, AssessmentInput, AssessmentResponse, GenerationRequest, JobStatus,
   MindMapStyle, PresentationScope, PresentationSession, PresentationStatus, ReviewedStyle,
@@ -72,6 +74,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   RESOURCE_NOT_FOUND: 'This page or one of its sources is no longer available. Refresh and try again.',
   INCOMPLETE_SOURCE: "This page contains content presentations can't use yet, such as an unsupported database setting.",
   SOURCE_PROCESSING_BUSY: 'Source processing is busy. Please try again shortly.',
+  TEMPLATE_TOO_LARGE: 'This PowerPoint template is too large. Choose a smaller file.',
 };
 
 /** Readable text for a Cloud reason, or undefined when the reason has none. */
@@ -84,9 +87,12 @@ function errorFromBody(body: unknown, status: number, retryAfter?: unknown): Pre
   const reason = typeof value.reason === 'string' ? value.reason
     : typeof value.message === 'string' ? value.message : 'PRESENTATION_REQUEST_FAILED';
   const delay = typeof retryAfter === 'string' ? Number(retryAfter) : undefined;
+  const limit = value.details && typeof value.details === 'object' ? (value.details as { maxBytes?: unknown }).maxBytes : undefined;
+  const sizeMessage = reason === 'TEMPLATE_TOO_LARGE' && typeof limit === 'number' && Number.isFinite(limit) && limit > 0
+    ? templateUploadSizeMessage(limit) : undefined;
 
   return new PresentationAPIError(
-    presentationErrorMessage(reason) ?? (typeof value.message === 'string' ? value.message : reason),
+    sizeMessage ?? presentationErrorMessage(reason) ?? (typeof value.message === 'string' ? value.message : reason),
     reason, status, value.retryable === true, value.details,
     typeof value.code === 'number' ? value.code : undefined,
     delay !== undefined && Number.isFinite(delay) && delay >= 0 ? delay : undefined,
@@ -168,7 +174,7 @@ export const editMap = (scope: WorkspaceScope, input: { id: string; expectedVers
 export const importDeck = (scope: WorkspaceScope, input: AssessmentInput & { id: string; deck: ServerSlidePlan }, signal?: AbortSignal) =>
   presentationRequest<Artifact<ServerSlidePlan>>({ url: `${base(scope)}/decks`, method: 'POST', data: input, signal });
 export async function uploadTemplate(scope: WorkspaceScope, file: File, signal?: AbortSignal): Promise<TemplateCandidate> {
-  if (file.size > 50 * 1024 * 1024) throw new PresentationAPIError('Choose a template smaller than 50 MB.', 'TEMPLATE_TOO_LARGE', 413);
+  if (file.size > MAX_TEMPLATE_BYTES) throw new PresentationAPIError(templateUploadSizeMessage(MAX_TEMPLATE_BYTES), 'TEMPLATE_TOO_LARGE', 413);
   return presentationRequest({ url: `${base(scope)}/template`, method: 'POST', params: { filename: file.name }, data: file,
     headers: { 'Content-Type': file.type || 'application/octet-stream' }, signal });
 }

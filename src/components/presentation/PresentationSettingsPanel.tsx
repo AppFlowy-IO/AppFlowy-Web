@@ -4,6 +4,8 @@ import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 
 import { listStyles } from './presentation-client';
+import { templateUploadLimit } from './presentation-policy';
+import { getPresentationStatus } from './server-client';
 import StyleSettings from './StyleSettings';
 import { Action, Notice } from './ui';
 import { usePresentationAccess } from './usePresentationAccess';
@@ -18,7 +20,7 @@ export default function PresentationSettingsPanel() {
   const user = useCurrentUserOptional();
   const userId = user?.uid;
   const identity = `${workspaceId}:${userId}`;
-  const [result, setResult] = useState<{ identity: string; styles?: PresentationStyle[]; error?: string }>();
+  const [result, setResult] = useState<{ identity: string; styles?: PresentationStyle[]; maxTemplateBytes?: number; error?: string }>();
   const [attempt, setAttempt] = useState(0);
   const [adminOpen, setAdminOpen] = useState(false);
   const [adminIdentity, setAdminIdentity] = useState(identity);
@@ -36,9 +38,14 @@ export default function PresentationSettingsPanel() {
 
     setResult(undefined);
     if (workspaceId && userId !== undefined)
-      void listStyles({ workspaceId }, controller.signal)
-        .then((styles) => {
-          if (!controller.signal.aborted) setResult({ identity, styles });
+      void Promise.all([
+        listStyles({ workspaceId }, controller.signal),
+        // Saved styles remain readable if billing is temporarily unavailable. Upload still checks
+        // current policy on the server; the UI uses the conservative Free limit until a refresh.
+        getPresentationStatus({ workspaceId }, controller.signal).catch(() => undefined),
+      ])
+        .then(([styles, status]) => {
+          if (!controller.signal.aborted) setResult({ identity, styles, maxTemplateBytes: templateUploadLimit(status) });
         })
         .catch((error: unknown) => {
           if (!controller.signal.aborted)
@@ -72,8 +79,9 @@ export default function PresentationSettingsPanel() {
           key={identity}
           scope={{ workspaceId }}
           styles={current.styles}
+          maxTemplateBytes={current.maxTemplateBytes}
           editable={canManageStyles}
-          onChange={(styles) => setResult({ identity, styles })}
+          onChange={(styles) => setResult({ ...current, identity, styles })}
         />
       )}
       {workspaceId && user && (

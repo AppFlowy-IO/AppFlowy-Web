@@ -2,13 +2,12 @@ import { Check, Palette, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { analyzePresentationTemplate, deleteArtifact, importPresentationTemplate, reviewPresentationStyle } from './presentation-client';
+import { templateUploadSizeMessage } from './presentation-policy';
 import SlideCanvas from './SlideCanvas';
 import { LAYOUTS, type PresentationStyle } from './types';
 import { Action, Notice } from './ui';
 
 import type { PresentationScope, Theme } from './server-contract';
-
-const MAX_TEMPLATE_BYTES = 50 * 1024 * 1024;
 
 /** Reviews server-owned templates; this screen never creates a local company-style authority. */
 export default function StyleSettings({
@@ -16,11 +15,13 @@ export default function StyleSettings({
   onChange,
   editable = true,
   scope,
+  maxTemplateBytes = 5 * 1024 * 1024,
 }: {
   styles: PresentationStyle[];
   onChange: (styles: PresentationStyle[]) => void | Promise<void>;
   editable?: boolean;
   scope: Pick<PresentationScope, 'workspaceId'>;
+  maxTemplateBytes?: number;
 }) {
   const [draft, setDraft] = useState<PresentationStyle>();
   const [status, setStatus] = useState('');
@@ -125,8 +126,8 @@ export default function StyleSettings({
 
               event.target.value = '';
               if (!file) return;
-              if (file.size > MAX_TEMPLATE_BYTES) {
-                setStatus('Use a PowerPoint template up to 50 MB.');
+              if (file.size > maxTemplateBytes) {
+                setStatus(templateUploadSizeMessage(maxTemplateBytes));
                 return;
               }
 
@@ -143,6 +144,7 @@ export default function StyleSettings({
           />
         </label>
       </div>
+      <p className='ps-muted'>.pptx or .potx · up to {maxTemplateBytes / (1024 * 1024)} MB</p>
       {!styles.length && !draft && (
         <div className='ps-empty-style'>
           <Palette size={26} />

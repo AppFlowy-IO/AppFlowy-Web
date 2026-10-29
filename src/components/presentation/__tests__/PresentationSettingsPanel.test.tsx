@@ -1,21 +1,25 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-import PresentationSettingsPanel from '../PresentationSettingsPanel';
 import { listStyles } from '../presentation-client';
+import PresentationSettingsPanel from '../PresentationSettingsPanel';
+import { getPresentationStatus } from '../server-client';
+
 import type { PresentationStyle } from '../types';
 
 let mockWorkspace = 'workspace-one';
 let mockUser = { uid: 'user-one' };
+
 jest.mock('@/components/app/app.hooks', () => ({ useCurrentWorkspaceId: () => mockWorkspace }));
 jest.mock('@/components/main/app.hooks', () => ({ useCurrentUserOptional: () => mockUser }));
 jest.mock('../presentation-client', () => ({ listStyles: jest.fn() }));
+jest.mock('../server-client', () => ({ getPresentationStatus: jest.fn() }));
 jest.mock('../usePresentationAccess', () => ({
   usePresentationAccess: () => ({ canManageStyles: true, isLoading: false, hasError: false }),
 }));
 jest.mock('../StyleSettings', () => ({
   __esModule: true,
-  default: ({ styles }: { styles: PresentationStyle[] }) => (
-    <div data-testid='styles'>{styles.map((style) => style.name).join(', ')}</div>
+  default: ({ styles, maxTemplateBytes }: { styles: PresentationStyle[]; maxTemplateBytes?: number }) => (
+    <div data-testid='styles' data-max-template-bytes={maxTemplateBytes}>{styles.map((style) => style.name).join(', ')}</div>
   ),
 }));
 jest.mock('../PromptAdministration', () => ({
@@ -25,8 +29,21 @@ jest.mock('../PromptAdministration', () => ({
 
 beforeEach(() => {
   jest.clearAllMocks();
+  jest.mocked(getPresentationStatus).mockResolvedValue({ plan: 'free', maxTemplateBytes: 5 * 1024 * 1024 } as never);
   mockWorkspace = 'workspace-one';
   mockUser = { uid: 'user-one' };
+});
+
+it('passes the paid upload allowance to settings and keeps saved styles readable during a status outage', async () => {
+  jest.mocked(listStyles).mockResolvedValue([]);
+  jest.mocked(getPresentationStatus).mockResolvedValueOnce({ plan: 'paid', maxTemplateBytes: 50 * 1024 * 1024 } as never);
+  const view = render(<PresentationSettingsPanel />);
+
+  expect((await screen.findByTestId('styles')).getAttribute('data-max-template-bytes')).toBe(String(50 * 1024 * 1024));
+  jest.mocked(getPresentationStatus).mockRejectedValueOnce(new Error('Gateway unavailable'));
+  mockWorkspace = 'workspace-two';
+  view.rerender(<PresentationSettingsPanel />);
+  expect((await screen.findByTestId('styles')).getAttribute('data-max-template-bytes')).toBe(String(5 * 1024 * 1024));
 });
 
 it('loads the authenticated workspace catalog and mounts administration only on explicit request', async () => {
@@ -41,10 +58,12 @@ it('loads the authenticated workspace catalog and mounts administration only on 
 
 it('aborts stale workspace reads and prevents the previous account catalog from flashing after identity changes', async () => {
   const pending: Array<{ signal: AbortSignal; finish: (styles: PresentationStyle[]) => void }> = [];
+
   jest
     .mocked(listStyles)
     .mockImplementation((_scope, signal) => new Promise((finish) => pending.push({ signal: signal!, finish })));
   const view = render(<PresentationSettingsPanel />);
+
   expect(pending).toHaveLength(1);
   mockWorkspace = 'workspace-two';
   view.rerender(<PresentationSettingsPanel />);

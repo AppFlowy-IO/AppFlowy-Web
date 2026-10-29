@@ -84,6 +84,7 @@ export interface PresentationStatus {
   schemaVersion: number; promptBundleVersion: string; plan: 'free' | 'paid';
   usage: { freeSlides: number; reservedSlides: number; freeExports: number; reservedExports: number };
   remainingSlides: number; themes: Theme[]; slideSchemas: number[]; maxSlides: number;
+  maxTemplateBytes?: number;
   aiResponses: { metered?: boolean; policy?: string; period?: string; accountingReady?: boolean;
     committed?: number | null; reserved?: number | null; limit?: number | null; remaining?: number | null;
     reason?: string; retryable?: boolean };

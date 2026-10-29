@@ -43,8 +43,8 @@ const pending = reviewedStyleToStyle({ ...saved.serverStyle!, reference: { id: '
 const builtin = themeToStyle(theme);
 const selected = jest.fn();
 
-function Setup({ initialStyle = builtin, styles = [saved, pending, builtin] }: {
-  initialStyle?: PresentationStyle; styles?: PresentationStyle[];
+function Setup({ initialStyle = builtin, styles = [saved, pending, builtin], maxTemplateBytes }: {
+  initialStyle?: PresentationStyle; styles?: PresentationStyle[]; maxTemplateBytes?: number;
 }) {
   const [style, setStyle] = React.useState(initialStyle);
   const [options, setOptions] = React.useState({
@@ -55,7 +55,7 @@ function Setup({ initialStyle = builtin, styles = [saved, pending, builtin] }: {
     snapshot: { pageId: 'page', revision: 'revision', title: 'Source', blocks: [], properties: [], serverSource: {} },
     options, onOptions: setOptions, style, styles,
     onStyle: (next: PresentationStyle) => { selected(next); setStyle(next); },
-    canGenerate: true, remainingSlides: 100, maxSlides: 100, onGenerate: jest.fn(),
+    canGenerate: true, remainingSlides: 100, maxSlides: 100, maxTemplateBytes, onGenerate: jest.fn(),
   } as unknown as SlidesWorkflowProps;
 
   return <SlideGenerationSetup props={props} scope={{ workspaceId: 'workspace', pageId: 'page' }} />;
@@ -75,6 +75,28 @@ beforeEach(() => {
   jest.mocked(assessPresentation).mockResolvedValue({ assessment: { condition: 'clear', recommendedSlideCount: 6 } } as never);
 });
 afterEach(() => jest.useRealTimers());
+
+test.each([5, 50])('enforces the %i MB upload allowance before upload or analysis, allowing the exact boundary', async (megabytes) => {
+  const limit = megabytes * 1024 * 1024;
+  const file = (size: number) => Object.defineProperty(new File(['pptx'], 'brand.pptx'), 'size', { value: size });
+
+  jest.mocked(importPresentationTemplate).mockResolvedValueOnce(pending);
+  jest.mocked(analyzePresentationTemplate).mockResolvedValueOnce(pending);
+  render(<Setup maxTemplateBytes={limit} />);
+  expect(screen.getByText(`.pptx or .potx · up to ${megabytes} MB`)).toBeTruthy();
+  fireEvent.change(screen.getByLabelText('Import presentation template'), { target: { files: [file(limit + 1)] } });
+  await settle();
+  expect(screen.getByText(megabytes === 5
+    ? 'The Free plan allows PowerPoint templates up to 5 MB.'
+    : 'Choose a PowerPoint template up to 50 MB.')).toBeTruthy();
+  expect(importPresentationTemplate).not.toHaveBeenCalled();
+  expect(analyzePresentationTemplate).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText('Import presentation template'), { target: { files: [file(limit)] } });
+  await settle();
+  expect(importPresentationTemplate).toHaveBeenCalledTimes(1);
+  expect(analyzePresentationTemplate).toHaveBeenCalledTimes(1);
+  expect(screen.getByLabelText('AI theme analysis')).toBeTruthy();
+});
 
 test('selects a saved reviewed template without uploading or reviewing it again', async () => {
   render(<Setup />);

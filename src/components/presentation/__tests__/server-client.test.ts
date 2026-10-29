@@ -6,6 +6,7 @@ import {
 } from '../presentation-client';
 import { entitlementForStatus, generationRequest, serverOptions, sourceToSnapshot, themeToStyle, toServerPlan, uiOptions } from '../server-adapter';
 import * as client from '../server-client';
+import { templateUploadLimit } from '../presentation-policy';
 import type { Artifact, JobStatus, PresentationStatus, ReviewedStyle, ServerSlidePlan, SourceEnvelope, Theme } from '../server-contract';
 import type { DeckScene } from '../server-scene';
 import type { GenerationOptions } from '../types';
@@ -117,6 +118,28 @@ test('all 25 business routes use authenticated Cloud paths, CAS queries and priv
 test.each([402, 409, 429, 503])('preserves Cloud HTTP %i reason, details and retry metadata', async (httpStatus) => {
   mockRequest.mockRejectedValue({ isAxiosError: true, response: { status: httpStatus, headers: { 'retry-after': '4' }, data: { code: 4001, message: 'SLIDE_GENERATION_LIMIT', reason: 'SLIDE_GENERATION_LIMIT', retryable: httpStatus >= 429, details: { remaining: 2 } } } });
   await expect(client.getPresentationStatus(scope)).rejects.toMatchObject({ code: 'SLIDE_GENERATION_LIMIT', status: httpStatus, retryable: httpStatus >= 429, serverCode: 4001, retryAfterSecs: 4, details: { remaining: 2 } });
+});
+
+test.each([
+  [5 * 1024 * 1024, 'The Free plan allows PowerPoint templates up to 5 MB.'],
+  [50 * 1024 * 1024, 'Choose a PowerPoint template up to 50 MB.'],
+])('shows the authoritative upload limit %i after a stale plan or direct upload is rejected', async (maxBytes, message) => {
+  mockRequest.mockRejectedValue({ isAxiosError: true, response: { status: 413, headers: {}, data: {
+    code: 1016, reason: 'TEMPLATE_TOO_LARGE', message: 'TEMPLATE_TOO_LARGE', retryable: false, details: { maxBytes },
+  } } });
+  await expect(client.uploadTemplate(scope, new File(['pptx'], 'brand.pptx'))).rejects.toMatchObject({
+    code: 'TEMPLATE_TOO_LARGE', status: 413, message, details: { maxBytes },
+  });
+});
+
+test('prefers server upload allowance, retaining conservative compatibility and the technical cap', () => {
+  expect(templateUploadLimit({ plan: 'free', maxTemplateBytes: 5 * 1024 * 1024 })).toBe(5 * 1024 * 1024);
+  expect(templateUploadLimit({ plan: 'paid', maxTemplateBytes: 5 * 1024 * 1024 })).toBe(5 * 1024 * 1024);
+  expect(templateUploadLimit({ plan: 'paid', maxTemplateBytes: 100 * 1024 * 1024 })).toBe(50 * 1024 * 1024);
+  expect(templateUploadLimit({ plan: 'free' })).toBe(5 * 1024 * 1024);
+  expect(templateUploadLimit({ plan: 'paid' })).toBe(50 * 1024 * 1024);
+  expect(templateUploadLimit()).toBe(5 * 1024 * 1024);
+  expect(templateUploadLimit({ plan: 'free', maxTemplateBytes: NaN })).toBe(5 * 1024 * 1024);
 });
 
 test.each([

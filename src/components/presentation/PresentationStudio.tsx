@@ -24,6 +24,7 @@ import {
   styleReference,
   PresentationAPIError,
 } from './presentation-client';
+import { templateUploadLimit } from './presentation-policy';
 import PresentationLoading, { MindMapLoading } from './PresentationLoading';
 import PresentationPaywall from './PresentationPaywall';
 import { APPFLOWY_SLIDE_THEMES } from './slide-themes';
@@ -930,6 +931,7 @@ export default function PresentationStudio({
                   assessmentCache={assessmentCache.current}
                   canEdit={canWrite && !busy && sourceMatches}
                   maxSlides={status?.maxSlides}
+                  maxTemplateBytes={templateUploadLimit(status)}
                   remainingSlides={status?.remainingSlides}
                   onUpgrade={onUpgrade ?? (() => setNotice('Open workspace billing to compare plans.'))}
                   sourceChanged={!!activeDeck && !!snapshot.serverSource && !sourceMatches}
@@ -975,6 +977,7 @@ export default function PresentationStudio({
               onChange={async (styles) => setCompanyStyles(styles)}
               scope={scope}
               editable={canManageStyles}
+              maxTemplateBytes={templateUploadLimit(status)}
             />
           )}
           {mode === 'source' && (

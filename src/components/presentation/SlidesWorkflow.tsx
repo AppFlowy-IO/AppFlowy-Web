@@ -81,6 +81,7 @@ export interface SlidesWorkflowProps {
   canRegenerate?: boolean;
   remainingSlides?: number | null;
   maxSlides?: number;
+  maxTemplateBytes?: number;
   onUpgrade: () => void;
   lab?: boolean;
   sourceChanged: boolean;
