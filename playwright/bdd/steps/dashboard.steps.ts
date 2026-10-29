@@ -7,7 +7,7 @@ import {
   switchViewToDashboard,
 } from '../../support/dashboard-owned-views-helpers';
 import { dashboardEditOffered, expectDashboardViewMode } from '../../support/dashboard-platform-helpers';
-import { pressEscapeUntilHidden, WIDGET_TIMEOUT } from '../../support/dashboard-shared-helpers';
+import { expectDashboardNumberValue, pressEscapeUntilHidden, WIDGET_TIMEOUT } from '../../support/dashboard-shared-helpers';
 import {
   addDashboardView,
   addFixtureDatabase,
@@ -941,13 +941,13 @@ Given(
 );
 
 Then('the {string} widget shows the number {string}', async ({ page }, label: string, value: string) => {
-  await expect(widgetLocator(page, label).getByTestId('number-chart-value')).toHaveText(value, WIDGET_TIMEOUT);
+  await expectDashboardNumberValue(widgetLocator(page, label), value);
 });
 
 Then('the {string} widget shows a number starting with {string}', async ({ page }, label: string, prefix: string) => {
-  await expect(widgetLocator(page, label).getByTestId('number-chart-value')).toHaveText(
+  await expectDashboardNumberValue(
+    widgetLocator(page, label),
     new RegExp(`^\\s*${prefix.replace('.', '\\.')}`),
-    WIDGET_TIMEOUT
   );
 });
 

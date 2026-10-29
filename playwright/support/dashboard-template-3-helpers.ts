@@ -28,6 +28,7 @@ import { AccessLevel, ViewLayout } from '../../src/application/types';
 import { AIMeetingSelectors, areTestUtilitiesAvailable, injectAIMeetingBlock } from './ai-meeting-helpers';
 import { waitForTypeOptionSync, writeTypeOptions } from './chart-render-helpers';
 import { mockProSubscription } from './chart-test-helpers';
+import { revealDashboardWidgets } from './dashboard-loading-helpers';
 import {
   apiHeaders,
   equalRowWidths,
@@ -90,7 +91,7 @@ import {
   TrashSelectors,
 } from './selectors';
 import { mockServerInfoPreservingCapabilities } from './server-info-helpers';
-import { installRuntimeTestConfig, setupPageErrorHandling, TestConfig } from './test-config';
+import { setupPageErrorHandling, TestConfig } from './test-config';
 
 export const TEMPLATE_WAIT = { timeout: USE_CASE_TIMEOUT };
 const FIXTURE_TIMEOUT = 45_000;
@@ -217,9 +218,7 @@ function nameOfView(page: Page, viewId: string): string {
 /** Wait until `scope` renders `count` widgets and none of them is still loading. */
 async function waitForWidgetsLoaded(scope: Page, count: number) {
   await expect(DashboardSelectors.widgets(scope)).toHaveCount(count, FIXTURE_WAIT);
-  await expect(
-    scope.getByTestId('dashboard-widget-placeholder').and(scope.locator('[data-reason="loading"]'))
-  ).toHaveCount(0, FIXTURE_WAIT);
+  await revealDashboardWidgets(scope, FIXTURE_WAIT.timeout);
 }
 
 // ---------------------------------------------------------------------------
@@ -369,6 +368,7 @@ async function writeViewPatches(page: Page, databaseId: string, patches: ViewPat
             win.__TEST_DATABASE_SET_BIGINT__(chart, 'aggregation_type', BigInt(patch.aggregationType > 4 ? 0 : patch.aggregationType));
             win.__TEST_DATABASE_SET_BIGINT__(chart, 'aggregation_type_pb', BigInt(patch.aggregationType));
           }
+
           if (patch.titleText !== undefined) chart.set('titleText', patch.titleText);
         });
       });
@@ -1154,7 +1154,7 @@ export async function openPublishedPageAsVisitor(page: Page, name: string) {
   if (!browser) throw new Error('The scenario page has no browser');
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
 
-  await installRuntimeTestConfig(context);
+  await installDashboardTestBridge(context);
   const visitor = await context.newPage();
 
   setupPageErrorHandling(visitor);

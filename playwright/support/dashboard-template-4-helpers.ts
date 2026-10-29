@@ -37,7 +37,7 @@ import { SelectOptionFilterCondition } from '../../src/application/database-yjs/
 import { ViewLayout } from '../../src/application/types';
 
 import { closeDockedPicker, newWidgetRecord } from './dashboard-add-widget-helpers';
-import { loadStats, SourceRequestRecorder } from './dashboard-loading-helpers';
+import { loadStats, revealDashboardWidgets, SourceRequestRecorder } from './dashboard-loading-helpers';
 import { tabBarViewIds } from './dashboard-owned-views-helpers';
 import { clearCachedDatabaseStorage, escapeRegExp, readServerDatabaseDoc } from './dashboard-shared-helpers';
 import {
@@ -384,6 +384,7 @@ async function writeChartExtras(page: Page, databaseId: string, viewId: string, 
         if (extras.dateCondition !== undefined) {
           (window as any).__TEST_DATABASE_SET_BIGINT__(chart, 'date_condition', BigInt(extras.dateCondition));
         }
+
         if (extras.numberFormat) chart.set('numberFormat', extras.numberFormat);
         if (extras.titleText !== undefined) chart.set('titleText', extras.titleText);
       });
@@ -1017,9 +1018,7 @@ export async function expectColdOpenSourceCap(page: Page, cap: number) {
 
   if (!open) throw new Error('The dashboard was not opened with nothing cached in this scenario');
   expect(cap, 'tokens.json loading.maxConcurrentSources').toBe(DASHBOARD_LOADING.maxConcurrentSources);
-  await expect(
-    page.getByTestId('dashboard-widget-placeholder').and(page.locator('[data-reason="loading"]'))
-  ).toHaveCount(0, { timeout: LARGE_LOAD_TIMEOUT_MS });
+  await revealDashboardWidgets(page, LARGE_LOAD_TIMEOUT_MS);
   const stats = await loadStats(page);
   const loaded = new Set(stats.sourceLoads.map((load) => load.sourceId));
   const nameOf = (id: string) => open.names[id] ?? id;

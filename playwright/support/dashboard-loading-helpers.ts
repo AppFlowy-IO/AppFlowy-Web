@@ -161,7 +161,7 @@ export function loadingWidgets(page: Page): LoadingWidget[] {
   return widgets;
 }
 
-export function widgetLocatorOf(page: Page, widget: LoadingWidget): Locator {
+export function widgetLocatorOf(page: Page, widget: Pick<LoadingWidget, 'id'>): Locator {
   return DashboardSelectors.widget(viewerOf(page), widget.id);
 }
 
@@ -1560,7 +1560,7 @@ export async function expectWidgetsMatchTheirSourceViews(
 // ---------------------------------------------------------------------------
 
 /** Wait until each of `widgets` shows data (rows, cards or a chart value). */
-export async function waitForWidgetData(page: Page, widgets: LoadingWidget[], timeout = LOAD_TIMEOUT_MS) {
+export async function waitForWidgetData(page: Page, widgets: ReadonlyArray<Pick<LoadingWidget, 'id' | 'label'>>, timeout = LOAD_TIMEOUT_MS) {
   await expect
     .poll(
       async () => {
@@ -1574,7 +1574,11 @@ export async function waitForWidgetData(page: Page, widgets: LoadingWidget[], ti
 }
 
 /** Visit data being compared explicitly; unseen views intentionally do no startup work. */
-export async function revealWidgetData(page: Page, widgets: LoadingWidget[], timeout = LOAD_TIMEOUT_MS) {
+export async function revealWidgetData(
+  page: Page,
+  widgets: ReadonlyArray<Pick<LoadingWidget, 'id' | 'label'>>,
+  timeout = LOAD_TIMEOUT_MS
+) {
   const deadline = Date.now() + timeout;
   const remaining = () => {
     const ms = deadline - Date.now();
@@ -1585,13 +1589,27 @@ export async function revealWidgetData(page: Page, widgets: LoadingWidget[], tim
 
   for (const widget of widgets) {
     await widgetLocatorOf(page, widget).scrollIntoViewIfNeeded({ timeout: remaining() });
-    await waitForWidgetData(page, [widget], remaining());
+    // Setup also warms dashboards before a measured recording begins. Do not
+    // require that later sampler here; recorded flows still check actual data.
+    if (loadingScenario(page).recorder) await waitForWidgetData(page, [widget], remaining());
     // Complete the visited view before scrolling away: otherwise that action
     // intentionally cancels its unfinished source walk and changes read budgets.
     await expect.poll(async () => (await loadStats(page)).widgetComplete[widget.id] !== undefined, {
       timeout: remaining(), message: `waiting for the visited "${widget.label}" widget to complete`,
     }).toBe(true);
   }
+}
+
+/** Reveal every rendered widget before a template asserts their data or source-load budgets. */
+export async function revealDashboardWidgets(page: Page, timeout = LOAD_TIMEOUT_MS) {
+  const widgets = await DashboardSelectors.widgets(viewerOf(page)).evaluateAll((elements) => elements.map((element) => ({
+    id: element.getAttribute('data-widget-id') ?? '',
+    label: element.querySelector('[data-testid="dashboard-widget-title"]')?.textContent ?? element.getAttribute('data-widget-id') ?? '',
+  })));
+
+  expect(widgets.length, 'the dashboard has widgets to reveal').toBeGreaterThan(0);
+  expect(widgets.every((widget) => widget.id), 'every dashboard widget has an id').toBe(true);
+  await revealWidgetData(page, widgets, timeout);
 }
 
 /**

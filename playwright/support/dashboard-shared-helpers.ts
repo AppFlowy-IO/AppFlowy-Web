@@ -19,6 +19,14 @@ import { TestConfig } from './test-config';
 export const WIDGET_TIMEOUT_MS = 30_000;
 export const WIDGET_TIMEOUT = { timeout: WIDGET_TIMEOUT_MS };
 
+/** A number assertion visits its deferred view within the same overall wait budget. */
+export async function expectDashboardNumberValue(widget: Locator, value: string | RegExp, timeout = WIDGET_TIMEOUT_MS) {
+  const deadline = Date.now() + timeout;
+
+  await widget.scrollIntoViewIfNeeded({ timeout });
+  await expect(widget.getByTestId('number-chart-value')).toHaveText(value, { timeout: Math.max(1, deadline - Date.now()) });
+}
+
 /** Deferred widget content starts in the viewport; visit each widget before requiring loaded headers. */
 export async function waitForDashboardWidgetsLoaded(widgets: Locator, timeout = WIDGET_TIMEOUT_MS) {
   for (const widget of await widgets.all()) {

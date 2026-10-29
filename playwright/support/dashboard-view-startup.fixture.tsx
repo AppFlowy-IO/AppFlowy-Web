@@ -1,8 +1,9 @@
+import { createInstance } from 'i18next';
 import { type RefObject, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import i18next from 'i18next';
 import { I18nextProvider, initReactI18next } from 'react-i18next';
 
+import NumberChart from '@/components/database/chart/widgets/NumberChart';
 import {
   DashboardLoadSchedulerProvider,
   useWidgetLoadStart,
@@ -11,15 +12,18 @@ import { type WidgetLoadReport } from '@/components/database/dashboard/load-sche
 import { WidgetPlaceholder } from '@/components/database/dashboard/WidgetPlaceholder';
 import '@/styles/global.css';
 
-const language = i18next.createInstance();
+const language = createInstance();
 
 await language.use(initReactI18next).init({
   lng: 'en', fallbackLng: 'en',
   resources: { en: { translation: { dashboard: { widget: { loading: 'Loading…' } } } } },
 });
 
-const stalledSource = new URLSearchParams(location.search).has('stalled-source');
-const ids = Array.from({ length: 100 }, (_, index) => `w${index + 1}`);
+const parameters = new URLSearchParams(location.search);
+const stalledSource = parameters.has('stalled-source');
+const numberWidget = parameters.get('number');
+const widgetCount = parameters.has('small') ? 8 : 100;
+const ids = Array.from({ length: widgetCount }, (_, index) => `w${index + 1}`);
 const mounts = new Map<string, number>();
 const work = { active: new Set<string>(), maximum: 0, events: [] as { id: string; event: string; at: number }[] };
 
@@ -90,6 +94,10 @@ function ViewBody({ id, report }: { id: string; report: (value: WidgetLoadReport
   return (
     <div data-testid={`body-${id}`} data-mount={mount}>
       {row === undefined ? <span>Preparing {id}</span> : <span data-testid={`row-${id}`}>{row}</span>}
+      {row !== undefined && numberWidget === id && (
+        <NumberChart item={{ key: id, label: 'Units on order', value: 584, rowIds: [`${id}-row`] }}
+          title='Units on order' valueText='584' />
+      )}
       <label>Search {id}<input value={search} onChange={(event) => setSearch(event.target.value)} /></label>
     </div>
   );
@@ -114,8 +122,10 @@ function Widget({ id, titles }: { id: string; titles: boolean }) {
   return (
     <section className='group/widget' data-testid={`frame-${id}`} data-widget-id={id} ref={boxRef}
       style={{ height: 180, border: '1px solid #aaa', boxSizing: 'border-box', overflow: 'hidden' }}>
-      {titles && <h2 style={{ margin: 4 }}>{id}</h2>}
-      <WidgetContent id={id} boxRef={boxRef} />
+      <div data-testid='dashboard-widget' data-widget-id={id} style={{ height: '100%' }}>
+        {titles && <h2 style={{ margin: 4 }}>{id}</h2>}
+        <WidgetContent id={id} boxRef={boxRef} />
+      </div>
     </section>
   );
 }

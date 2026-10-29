@@ -1,5 +1,7 @@
 import { expect, type Page, type Request, type Route } from '@playwright/test';
 
+import { loadStats, loadingScenario, revealDashboardWidgets, revealWidgetData } from '../../support/dashboard-loading-helpers';
+import { expectDashboardNumberValue } from '../../support/dashboard-shared-helpers';
 import { fixtureHTML, test } from '../../support/integrations-server';
 
 async function computationSnapshot(page: Page) {
@@ -83,17 +85,78 @@ async function workRecorder(page: Page) {
   };
 }
 
-async function openFixture(page: Page, base: string, stalled = false) {
+async function openFixture(page: Page, base: string, stalled = false, small = false, number?: string) {
   const errors: string[] = [];
 
   page.on('pageerror', (error) => errors.push(error.message));
   await page.route('**/view-startup-fixture*', (route) => route.fulfill({
     contentType: 'text/html', body: fixtureHTML('dashboard-view-startup'),
   }));
-  await page.goto(new URL(`/view-startup-fixture${stalled ? '?stalled-source' : ''}`, base).href);
-  await expect(page.getByTestId('frame-w100')).toBeAttached({ timeout: 60_000 });
+  const url = new URL('/view-startup-fixture', base);
+
+  if (stalled) url.searchParams.set('stalled-source', '');
+  if (small) url.searchParams.set('small', '');
+  if (number) url.searchParams.set('number', number);
+  await page.goto(url.href);
+  await expect(page.getByTestId(small ? 'frame-w8' : 'frame-w100')).toBeAttached({ timeout: 60_000 });
   return errors;
 }
+
+test('setup reveals deferred data without installing the later measurement recorder', async ({ page, integrationsURL }) => {
+  const work = await workRecorder(page);
+  const errors = await openFixture(page, integrationsURL, false, true);
+
+  try {
+    work.finishAll();
+    expect(loadingScenario(page).recorder).toBeUndefined();
+    await revealDashboardWidgets(page, 15_000);
+    for (let index = 1; index <= 8; index++) {
+      await expect(page.getByTestId(`row-w${index}`)).toHaveText(`Actual row w${index}`);
+    }
+
+    expect(Object.keys((await loadStats(page)).widgetComplete)).toHaveLength(8);
+    expect(await page.evaluate(() => '__DASHBOARD_LOADING_RECORDER__' in window)).toBe(false);
+    await expectViewWorkLimit(page);
+    expect(errors).toEqual([]);
+  } finally {
+    work.finishAll();
+  }
+});
+
+test('unrecorded setup still rejects a visited view that never completes', async ({ page, integrationsURL }) => {
+  const work = await workRecorder(page);
+
+  await openFixture(page, integrationsURL, false, true);
+  try {
+    await expect.poll(() => work.started.length).toBe(2);
+    await expect(revealWidgetData(page, [{ id: 'w1', label: 'unfinished view' }], 350))
+      .rejects.toThrow('waiting for the visited "unfinished view" widget to complete');
+    await expect(page.getByTestId('row-w1')).toHaveCount(0);
+    expect((await loadStats(page)).widgetComplete.w1).toBeUndefined();
+  } finally {
+    work.finishAll();
+  }
+});
+
+test('number assertions reveal the deferred real Number card and keep the exact value check', async ({ page, integrationsURL }) => {
+  const work = await workRecorder(page);
+  const errors = await openFixture(page, integrationsURL, false, true, 'w8');
+
+  try {
+    work.finishAll();
+    await expect(page.getByTestId('queued-w8')).toBeAttached();
+    const widget = page.locator('[data-testid="dashboard-widget"][data-widget-id="w8"]');
+
+    await expectDashboardNumberValue(widget, '584', 2_000);
+    expect(work.started).toContain('w8');
+    await expect(page.getByTestId('row-w8')).toHaveText('Actual row w8');
+    await expect(expectDashboardNumberValue(widget, '999', 350)).rejects.toThrow(/999/);
+    await expectViewWorkLimit(page);
+    expect(errors).toEqual([]);
+  } finally {
+    work.finishAll();
+  }
+});
 
 test('100 host-source views start two at a time only after entering the viewport and preserve completed editors', async ({ page, integrationsURL }) => {
   await page.clock.install();

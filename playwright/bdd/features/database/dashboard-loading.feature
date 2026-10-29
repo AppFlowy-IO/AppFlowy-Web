@@ -192,7 +192,7 @@ Feature: A dashboard loads each source database once, two at a time, visible wid
     When I open that dashboard while the first source database loads with a delay of 20 seconds
     Then no widget below the fold started in the first 10 seconds
     And unseen widgets remain queued after the background deadline
-    When I scroll to the last dashboard row before the visible widgets show data
+    When I scroll to the last dashboard row
     Then the widget in the last row started loading before every widget that was never scrolled into view
     And the widget in the last row was visible when it started
 
