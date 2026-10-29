@@ -81,6 +81,63 @@ test('web search requires an explicit toggle and preserves the other generation 
   expect(props.onOptions).toHaveBeenLastCalledWith({ ...props.options, allowWebSearch: false });
 });
 
+test('web search assessments stay separate, ignore late opted-in replies and reuse each prepared source', async () => {
+  jest.useFakeTimers();
+  try {
+    const props = setupProps();
+    const cache: NonNullable<SlidesWorkflowProps['assessmentCache']> = new Map();
+    let finishResearch!: (value: never) => void;
+    const assess = jest.mocked(assessPresentation).mockReset().mockResolvedValue(clear);
+
+    const ToggleSetup = () => {
+      const [options, setOptions] = React.useState(props.options);
+
+      return <SlideGenerationSetup scope={{ workspaceId: 'workspace', pageId: 'page' }} props={{
+        ...props, options, onOptions: setOptions, assessmentCache: cache,
+        snapshot: { ...props.snapshot, revision: options.allowWebSearch ? 'researched' : 'native' },
+      }} />;
+    };
+
+    render(<ToggleSetup />);
+    const settle = () => act(async () => { jest.advanceTimersByTime(400); });
+    const toggle = () => fireEvent.click(screen.getByRole('switch', { name: 'Allow web search' }));
+
+    await settle();
+    expect(assess).toHaveBeenCalledTimes(1);
+    expect(assess.mock.calls[0][0]).toMatchObject({ options: { allowWebSearch: false }, source: { revision: 'native' } });
+    expect(generateButton().disabled).toBe(false);
+
+    assess.mockReturnValueOnce(new Promise((resolve) => { finishResearch = resolve; }));
+    toggle();
+    await settle();
+    expect(assess.mock.calls[1][0]).toMatchObject({ options: { allowWebSearch: true }, source: { revision: 'researched' } });
+    expect(generateButton().disabled).toBe(true);
+    toggle();
+    await settle();
+    expect(generateButton().disabled).toBe(false);
+    expect(assess).toHaveBeenCalledTimes(2);
+
+    await act(async () => finishResearch({ assessment: { condition: 'ambiguous', question: 'Obsolete web question' } } as never));
+    expect(screen.queryByText('Obsolete web question')).toBeNull();
+    expect(cache.size).toBe(1);
+    toggle();
+    await settle();
+    expect(assess).toHaveBeenCalledTimes(3);
+    expect(cache.size).toBe(2);
+
+    fireEvent.click(screen.getByRole('button', { name: '4', exact: true }));
+    await settle();
+    toggle();
+    await settle();
+    toggle();
+    await settle();
+    expect(assess).toHaveBeenCalledTimes(3);
+    expect(generateButton().disabled).toBe(false);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
 test('above the disabled Generate button, the footer says the sources are being analyzed', async () => {
   jest.useFakeTimers();
   try {

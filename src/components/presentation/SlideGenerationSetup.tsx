@@ -149,8 +149,14 @@ export default function SlideGenerationSetup({
       assessed?.key === assessmentKey &&
       assessed.purpose === options.purpose &&
       assessed.attempt === assessmentAttempt
-    )
+    ) {
+      // Returning to a completed assessment can abort a different pending request. Its
+      // finally handler must not update state, so clear that request's spinner here.
+      setAssessing(false);
+
       return;
+    }
+
     const cached = cachedAssessment;
 
     if (cached && assessmentAttempt === 0) {
