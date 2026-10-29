@@ -2705,6 +2705,29 @@
 .ps-compact-setup .ps-ppt-setup {
   max-height: calc(100dvh - 32px);
 }
+/* Where the presentation UI follows the app theme, notices use AppFlowy's container surface and text. */
+.ps-compact-setup .ps-notice,
+.ps-ppt-setup .ps-notice,
+.ps-slides-window .ps-notice {
+  background: var(--surface-container-layer-01);
+  border-color: var(--border-primary);
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.ps-compact-setup .ps-notice .ps-button:not(.ps-primary),
+.ps-slides-window .ps-notice .ps-button:not(.ps-primary) {
+  background: var(--surface-primary);
+  color: var(--text-secondary);
+  border-color: var(--border-primary);
+}
+.ps-compact-setup .ps-notice .ps-button:not(.ps-primary):hover,
+.ps-slides-window .ps-notice .ps-button:not(.ps-primary):hover {
+  background: var(--fill-content-hover);
+}
+/* Studio notices above the setup dialog's heading: inset like its content and clear of its close button. */
+.ps-compact-setup .ps-content > .ps-notice {
+  margin: 20px 72px 0 32px;
+}
 .ps-ppt-heading {
   display: flex;
   align-items: center;
