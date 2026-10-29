@@ -57,6 +57,7 @@ export function useWorkspaceRealtimeTransport({
   const localReadyState = localWebSocket.readyState;
   const localReconnect = localWebSocket.reconnect;
   const postBroadcastMessage = broadcastChannel.postMessage;
+  const postServerManifest = broadcastChannel.postServerManifest;
   const subscribeProtocolMessages = broadcastChannel.subscribeProtocolMessages;
   const subscribeOutboxReady = broadcastChannel.subscribeOutboxReady;
   const postTransportSignal = broadcastChannel.postTransportSignal;
@@ -197,7 +198,10 @@ export function useWorkspaceRealtimeTransport({
     if (!isCoordinatedLeader || !lastWebSocketMessage) return;
 
     postBroadcastMessage(lastWebSocketMessage);
-  }, [isCoordinatedLeader, lastWebSocketMessage, postBroadcastMessage]);
+    if (lastWebSocketMessage.collabMessage?.syncRequest) {
+      postServerManifest?.(lastWebSocketMessage.collabMessage);
+    }
+  }, [isCoordinatedLeader, lastWebSocketMessage, postBroadcastMessage, postServerManifest]);
 
   return { webSocket, broadcastChannel, canSendToServer, sendBestEffort };
 }

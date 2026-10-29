@@ -6,7 +6,7 @@ import * as Y from 'yjs';
 import { invalidateDatabaseRowDocSeed } from '@/application/database-blob';
 import { deleteCollabDB, openCollabDB, openRowCollabDBWithProvider } from '@/application/db';
 import { cacheCanonicalRowDoc } from '@/application/services/js-services/cache';
-import { handleMessage, SyncContext } from '@/application/services/js-services/sync-protocol';
+import { confirmManifestSync, handleMessage, SyncContext } from '@/application/services/js-services/sync-protocol';
 import { Types, YDoc } from '@/application/types';
 import type { BroadcastChannelType } from '@/components/ws/useBroadcastChannel';
 import { collab } from '@/proto/messages';
@@ -47,10 +47,14 @@ export function useCollabMessageHandler(
   registerSyncContext: (context: RegisterSyncContext) => SyncContext,
   scheduleDeferredCleanup: (objectId: string, delayMs?: number) => void,
   beforeApply?: (objectId: string, type: Types, marker?: string, rootVersionHint?: string) => Promise<boolean>,
-  subscribeBcCollabMessages?: BroadcastChannelType['subscribeCollabMessages']
+  subscribeBcCollabMessages?: BroadcastChannelType['subscribeCollabMessages'],
+  subscribeServerManifests?: BroadcastChannelType['subscribeServerManifests']
 ) {
   const lastHandledWsMessageRef = useRef<ICollabMessage | null>(null);
   const lastHandledBcMessageRef = useRef<ICollabMessage | null>(null);
+  // Weak keys preserve provenance through version-reset replay without keeping
+  // every received frame alive. Ordinary BC frames may come from any peer.
+  const peerMessages = useRef(new WeakSet<ICollabMessage>());
 
   const applyCollabMessage = useCallback(
     async (message: ICollabMessage, options?: ApplyCollabMessageOptions) => {
@@ -58,6 +62,16 @@ export function useCollabMessageHandler(
 
       if (isApplyCancelled(options)) {
         return false;
+      }
+
+      if (options?.confirmManifestOnly) {
+        const context = refs.registeredContexts.current.get(objectId);
+
+        if (context && message.syncRequest && !refs.resettingObjectIds.current.has(objectId)) {
+          confirmManifestSync(context, message.syncRequest);
+        }
+
+        return Boolean(context);
       }
 
       // Revocation is authoritative across every restore generation. Its
@@ -162,7 +176,12 @@ export function useCollabMessageHandler(
           }
 
           context = activeContext;
-          handleMessage(activeContext, message);
+          if (peerMessages.current.has(message)) {
+            handleMessage(activeContext, message, false);
+          } else {
+            handleMessage(activeContext, message);
+          }
+
           return true;
         };
 
@@ -534,6 +553,7 @@ export function useCollabMessageHandler(
     }
 
     lastHandledBcMessageRef.current = message;
+    peerMessages.current.add(message);
     void enqueueIncomingCollabMessage(message).catch((error) => {
       Log.error('Failed to enqueue BroadcastChannel collab message', error);
     });
@@ -546,12 +566,19 @@ export function useCollabMessageHandler(
 
     return subscribeBcCollabMessages((message) => {
       if (!message.collabMessage) return;
+      peerMessages.current.add(message.collabMessage);
 
       void enqueueIncomingCollabMessage(message.collabMessage).catch((error) => {
         Log.error('Failed to enqueue BroadcastChannel collab message', error);
       });
     });
   }, [subscribeBcCollabMessages, enqueueIncomingCollabMessage]);
+
+  useEffect(() => subscribeServerManifests?.((message) => {
+    void enqueueIncomingCollabMessage(message, { confirmManifestOnly: true }).catch((error) => {
+      Log.error('Failed to apply relayed server coverage', error);
+    });
+  }), [subscribeServerManifests, enqueueIncomingCollabMessage]);
 
   return { applyCollabMessage, enqueueIncomingCollabMessage };
 }

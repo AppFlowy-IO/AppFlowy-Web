@@ -102,3 +102,56 @@ test.each([Types.Database, Types.DatabaseRow])(
     unmount();
   }
 );
+
+test.each(['offline', 'read-only', 'reset'] as const)(
+  'a recovery waiting for restore authority rechecks %s before sending', async (transition) => {
+    jest.useFakeTimers();
+    const beforeSend = jest.fn(async () => true);
+    const send = jest.fn();
+    const broadcast = jest.fn();
+    let online = true;
+    const { result, unmount } = renderHook(() => {
+      const refs = useSyncRefs();
+
+      return {
+        refs,
+        ...useSyncContextLifecycle(refs, send, broadcast, undefined, undefined, beforeSend, undefined, () => online),
+      };
+    });
+    const doc: YDoc = new Y.Doc({ guid: objectId });
+
+    doc.databaseRestoreId = '11111111-1111-4111-8111-111111111111';
+    doc.getMap('root').set('title', 'retained upload');
+    let context!: SyncContext;
+    let permit!: (allowed: boolean) => void;
+
+    try {
+      await act(async () => {
+        context = result.current.registerSyncContext({ doc, collabType: Types.DatabaseRow });
+        handleMessage(context, { objectId, syncRequest: { stateVector: Uint8Array.of(0) } });
+      });
+      send.mockClear();
+      broadcast.mockClear();
+      beforeSend.mockClear();
+      beforeSend.mockReturnValue(new Promise((resolve) => { permit = resolve; }));
+      await act(async () => { await jest.advanceTimersByTimeAsync(10 * 60_000); });
+      // A slow authority check must not accumulate one in-flight promise per retry.
+      expect(beforeSend).toHaveBeenCalledTimes(1);
+      expect(beforeSend).toHaveBeenCalledWith(objectId, Types.DatabaseRow, doc.databaseRestoreId);
+      if (transition === 'offline') online = false;
+      if (transition === 'reset') result.current.refs.resettingObjectIds.current.add(objectId);
+      if (transition === 'read-only') {
+        handleMessage(context, { objectId, accessChanged: { canRead: true, canWrite: false } });
+      }
+
+      await act(async () => permit(true));
+      expect(send).not.toHaveBeenCalled();
+      expect(broadcast).not.toHaveBeenCalled();
+    } finally {
+      doc.destroy();
+      unmount();
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    }
+  }
+);
