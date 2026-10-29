@@ -27,7 +27,7 @@ jest.mock('@/components/database/components/settings/Layout', () => ({
 jest.mock('@/components/database/chart/settings/ChartSettingsPanel', () => ({
   ChartSettingsPanel: () => {
     mockRenderPanel();
-    return <div data-testid='chart-settings-panel'>chart</div>;
+    return <div data-testid='chart-settings-panel'>chart<button type='button' aria-label='Chart control' /></div>;
   },
 }));
 
@@ -71,6 +71,14 @@ describe('ChartSettings hosts', () => {
 
     expect(screen.queryByTestId('chart-settings-panel')).toBeNull();
     expect(mockRenderPanel).not.toHaveBeenCalled();
+  });
+
+  it('moves keyboard entry into the panel controls', async () => {
+    await openSettingsMenu();
+    fireEvent.keyDown(screen.getByTestId('chart-settings-trigger'), { key: 'ArrowRight' });
+    const control = await screen.findByRole('button', { name: 'Chart control' });
+
+    expect(document.activeElement).toBe(control);
   });
 
   it('hides the chart settings submenu for readers', async () => {

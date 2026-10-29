@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { DocumentWidth, MAX_DOCUMENT_WIDTH, MIN_DOCUMENT_WIDTH, parseDocumentWidth } from '@/application/document-width';
 import { ViewService } from '@/application/services/domains';
 import { View } from '@/application/types';
+import { useSubmenuPointerGuard } from '@/components/_shared/hooks/useSubmenuPointerGuard';
 import { findView } from '@/components/_shared/outline/utils';
 import { useAppOperations } from '@/components/app/app.hooks';
 import { Button } from '@/components/ui/button';
@@ -31,6 +32,7 @@ export function DocumentWidthMenu({ view, workspaceId, disabled, onSaved }: {
   const [error, setError] = useState<string>();
   const pending = useRef(false);
   const mounted = useRef(true);
+  const { contentRef, onTriggerPointerLeave } = useSubmenuPointerGuard();
 
   useEffect(() => {
     mounted.current = true;
@@ -85,10 +87,10 @@ export function DocumentWidthMenu({ view, workspaceId, disabled, onSaved }: {
 
       setOpen(next);
     }}>
-      <DropdownMenuSubTrigger data-testid='document-width-action' disabled={disabled || !updatePage}>
+      <DropdownMenuSubTrigger data-testid='document-width-action' disabled={disabled || !updatePage} onPointerLeave={onTriggerPointerLeave}>
         {t('document.width.title')}
       </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent data-testid='document-width-menu' className='w-[260px]'>
+      <DropdownMenuSubContent ref={contentRef} data-testid='document-width-menu' className='w-[260px]'>
         <DropdownMenuItem data-testid='document-width-default' disabled={saving} onSelect={(event) => {
           event.preventDefault();
           void save(undefined);

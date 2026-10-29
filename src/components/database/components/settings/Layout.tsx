@@ -8,6 +8,7 @@ import { useUpdateDatabaseLayout } from '@/application/database-yjs/dispatch';
 import { DatabaseViewLayout, ViewLayout } from '@/application/types';
 import { ReactComponent as LayoutIcon } from '@/assets/icons/layout.svg';
 import { DatabaseViewCreationHint } from '@/components/_shared/DatabaseViewCreationItem';
+import { useSubmenuPointerGuard } from '@/components/_shared/hooks/useSubmenuPointerGuard';
 import { useDashboardCreationGate } from '@/components/app/hooks/useDashboardCreationGate';
 import { ViewIcon } from '@/components/_shared/view-icon/ViewIcon';
 import { useDatabaseViewCreation } from '@/components/app/hooks/useDatabaseViewCreation';
@@ -21,8 +22,6 @@ import {
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
 import { getErrorMessage } from '@/utils/errors';
-
-import { useSubmenuPointerGuard } from './useSubmenuPointerGuard';
 
 interface LayoutOption {
   value: DatabaseViewLayout;

@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { FieldType, FieldVisibility, useFieldsSelector, useGalleryLayoutSettings } from '@/application/database-yjs';
 import { useUpdateGalleryLayoutSettings } from '@/application/database-yjs/dispatch';
 import { GalleryCardPreview, GalleryCardSize } from '@/application/types';
+import { useSubmenuPointerGuard } from '@/components/_shared/hooks/useSubmenuPointerGuard';
 import { useGalleryView } from '@/components/database/gallery/GalleryViewContext';
 import {
   DropdownMenuItem,
@@ -16,8 +17,6 @@ import {
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Switch } from '@/components/ui/switch';
-
-import { useSubmenuPointerGuard } from './useSubmenuPointerGuard';
 
 const FIELD_VISIBILITIES = [FieldVisibility.AlwaysShown, FieldVisibility.HideWhenEmpty, FieldVisibility.AlwaysHidden];
 
