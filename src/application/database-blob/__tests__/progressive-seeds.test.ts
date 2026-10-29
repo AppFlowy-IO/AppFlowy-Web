@@ -18,6 +18,7 @@ import { subscribeRowDocRelease } from '@/application/database-blob/row-doc-rete
 import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
 import { dashboardLoadStats } from '@/application/database-yjs/dashboard-load-stats';
 import { DASHBOARD_LOADING } from '@/application/database-yjs/dashboard-loading';
+import { captureRowDocRevision, hasRowDocRevision } from '@/application/database-yjs/row-doc-revision';
 import { openRowCollabDBWithProvider } from '@/application/db';
 import { getCachedRowDoc } from '@/application/services/js-services/cache';
 import { databaseBlobDiff } from '@/application/services/js-services/http/http_api';
@@ -540,6 +541,75 @@ describe('database blob seeds for filter and sort', () => {
   });
 
   describe('released seed cache', () => {
+    it.each([false, true])(
+      'retains the complete snapshot for an identical newer-RID echo after 31 seconds (tombstones: %s)',
+      async (tombstones) => {
+        jest.useFakeTimers();
+        const databaseId = 'database-identical-rid-echo';
+        const firstKey = `${databaseId}_rows_${FIRST_ROW_ID}`;
+        const secondKey = `${databaseId}_rows_${SECOND_ROW_ID}`;
+        const initial = rowPage([
+          { rowId: FIRST_ROW_ID, department: 'HR' },
+          { rowId: SECOND_ROW_ID, department: 'Finance' },
+        ]);
+
+        if (tombstones) {
+          const remote = new Y.Doc();
+          const state = initial.creates[0].docState!;
+
+          Y.applyUpdate(remote, state.docState!);
+          const row = remote.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as Y.Map<unknown>;
+
+          row.set('department', 'temporary');
+          row.set('department', 'HR');
+          state.docState = Y.encodeStateAsUpdate(remote);
+          remote.destroy();
+        }
+
+        const echo = database_blob.DatabaseBlobDiffResponse.create({
+          status: database_blob.DiffStatus.READY,
+          updates: [{ ...initial.creates[0], rid: { timestamp: 900, seqNo: 1 } }],
+          page: { hasMore: false, nextCursor: new Uint8Array(), restartRequired: false },
+        });
+
+        databaseIds.add(databaseId);
+        mockedDatabaseBlobDiff.mockResolvedValueOnce(initial).mockResolvedValueOnce(echo);
+        retain(databaseId);
+        await prefetchDatabaseBlobDiff('workspace', databaseId);
+        const first = getDatabaseRowDocFromSeed(firstKey)!;
+        const second = getDatabaseRowDocFromSeed(secondKey)!;
+        const firstRevision = captureRowDocRevision(first);
+        const secondRevision = captureRowDocRevision(second);
+
+        release(databaseId);
+        await jest.advanceTimersByTimeAsync(31_000);
+        retain(databaseId);
+        // An ordinary delta consumer owns publication of the transport RID.
+        await prefetchDatabaseBlobDiff('workspace', databaseId);
+
+        // A newer transport checkpoint is not a changed row or a missing
+        // complete snapshot. Keep both the echoed and untouched documents.
+        expect(mockedDatabaseBlobDiff.mock.calls[1][2].maxKnownRid).toMatchObject({ timestamp: 101, seqNo: 1 });
+        expect(getDatabaseRowDocFromSeed(firstKey)).toBe(first);
+        expect(getDatabaseRowDocFromSeed(secondKey)).toBe(second);
+        expect(hasRowDocRevision(first, firstRevision)).toBe(true);
+        expect(hasRowDocRevision(second, secondRevision)).toBe(true);
+        expect(readDepartment(firstKey)).toBe('HR');
+        expect(readDepartment(secondKey)).toBe('Finance');
+        expect(isDatabaseSourceResident(databaseId)).toBe(true);
+        expect(dashboardLoadStats.snapshot().rowLoadPasses).toEqual({ [databaseId]: 1 });
+        // The echo was genuinely received over the boundary: two initial
+        // rows plus one echoed row; this counter is not a disk-read count.
+        expect(dashboardLoadStats.snapshot().rowsRead).toEqual({ [databaseId]: 3 });
+        expect(JSON.parse(localStorage.getItem(`af_database_blob_rid:${databaseId}`)!)).toMatchObject({
+          timestamp: 900,
+          seqNo: 1,
+        });
+        await prefetchDatabaseBlobDiff('workspace', databaseId, { forceFullSync: true });
+        expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(2);
+      }
+    );
+
     it('revalidates and reuses settled seeds within the grace period', async () => {
       jest.useFakeTimers();
       const databaseId = 'database-grace';
