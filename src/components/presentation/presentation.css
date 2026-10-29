@@ -2682,6 +2682,22 @@
 .ps-compact-setup .ps-content {
   overflow: hidden;
 }
+/* A studio notice above the setup takes its height from the setup's scrolling body, not its footer. */
+.ps-compact-setup .ps-content,
+.ps-compact-setup .ps-slides-workflow {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.ps-compact-setup .ps-content {
+  max-height: calc(100dvh - 32px);
+}
+.ps-compact-setup .ps-content > .ps-notice {
+  flex-shrink: 0;
+}
+.ps-compact-setup .ps-ppt-setup {
+  min-height: 0;
+}
 .ps-compact-setup,
 .ps-compact-setup .ps-content,
 .ps-ppt-setup {
