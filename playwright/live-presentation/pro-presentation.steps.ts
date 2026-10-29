@@ -4,17 +4,20 @@ import { inflateRawSync } from 'node:zlib';
 import { expect, type Page } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
+import { createDocumentPageAndNavigate } from '../support/page-utils';
+
+import { livePresentationEnvironment, livePresentationPassword } from './environment';
+import { PresentationNetwork, SOURCE_MARKER, type PresentationObservation } from './network';
+
 import type {
   Artifact,
   JobStatus,
   PresentationStatus,
   ServerSlidePlan,
 } from '../../src/components/presentation/server-contract';
-import { createDocumentPageAndNavigate } from '../support/page-utils';
-import { livePresentationEnvironment, livePresentationPassword } from './environment';
-import { PresentationNetwork, SOURCE_MARKER, type PresentationObservation } from './network';
 
 const { Given, When, Then, Before, After } = createBdd();
+
 interface State {
   network: PresentationNetwork;
   sourceUrl?: string;
@@ -31,6 +34,7 @@ interface State {
   editedTitle: string;
 }
 const states = new WeakMap<Page, State>();
+
 function state(page: Page): State {
   const value = states.get(page);
 
@@ -94,11 +98,13 @@ Given('the test user signs in through the UI to the confirmed paid presentation 
   } catch {
     throw new Error('Unable to enter the privately supplied login password.');
   }
+
   try {
     await page.getByTestId('password-submit-button').click();
   } catch {
     throw new Error('The login UI could not submit the password.');
   }
+
   // /app appears before workspace bootstrap finishes. Wait for its actual workspace route,
   // selected name and outline before interacting with the replaceable header subtree.
   await expect(page).toHaveURL(/\/app\/[0-9a-f-]{36}(?:\/|$)/i);
@@ -124,6 +130,7 @@ Given('the test user signs in through the UI to the confirmed paid presentation 
       } else {
         await page.keyboard.press('Escape');
       }
+
       await expect(currentWorkspace).toHaveText(environment.workspaceName, { timeout: 10_000 });
       await expect(page).toHaveURL(targetPath, { timeout: 10_000 });
       await expect(workspaceMenu).toBeHidden({ timeout: 5_000 });
@@ -176,6 +183,7 @@ Given('the test user creates a task-owned presentation source document in the ed
   } catch {
     throw new Error('Unable to type the task-owned source document.');
   }
+
   await expect.poll(async () => (await editor.textContent())?.includes(SOURCE_MARKER)).toBe(true);
   state(page).sourceUrl = page.url();
   state(page).sourcePageId = viewId;
@@ -216,6 +224,7 @@ When('the test user generates a custom {int} slide presentation through the UI',
         if ((await purpose.isVisible()) && !(await purpose.inputValue())) {
           await purpose.fill('Approve a bounded pilot and assign accountable launch owners.');
         }
+
         assessmentFailure = value.network.records.find(
           (r) => r.path.endsWith('/slides/assess') && (r.status >= 400 || (r.code !== undefined && r.code !== 0))
         );
@@ -231,6 +240,7 @@ When('the test user generates a custom {int} slide presentation through the UI',
       }.`
     );
   }
+
   value.actionStart = value.network.records.length;
   await generate.click();
   value.generation = await value.network.job('slides', value.actionStart);
@@ -241,7 +251,11 @@ Then(
   async ({ page }, count: number) => {
     const value = state(page);
     const job = value.generation!;
+    const submit = value.network.records.slice(value.actionStart).find((r) => r.request);
 
+    expect(submit?.request?.count).toBe(count);
+    expect(submit?.request?.countMode).toBe('custom');
+    expect(submit?.request?.artifact ?? null).toBeNull();
     expect(job.artifactId).toBeTruthy();
     expect(job.resultVersion).toBeGreaterThan(0);
     expect(job.committedUnits).toBe(count);
@@ -251,11 +265,6 @@ Then(
     expect(artifact.content.slides.length).toBe(count);
     expect(artifact.generationJobId).toBe(job.id);
     expect(artifact.sourceRevision).toBe(value.sourceRevision);
-    const submit = value.network.records.slice(value.actionStart).find((r) => r.request);
-
-    expect(submit?.request?.count).toBe(count);
-    expect(submit?.request?.countMode).toBe('custom');
-    expect(submit?.request?.artifact == null).toBe(true);
     const scene = await value.network.scene(artifact.id, artifact.version, value.actionStart);
 
     expect(scene.slideCount).toBe(count);
@@ -275,15 +284,15 @@ When('the test user reloads the page and opens that saved presentation from Shar
   await page.getByTestId('share-button').first().click();
   await page.getByRole('tab', { name: 'AI Slides', exact: true }).click();
   const catalog = page.getByRole('region', { name: 'Workspace presentations', exact: true });
-  const row = catalog
-    .locator(':scope > div')
-    .filter({ has: page.getByText(value.initialArtifact!.content.title, { exact: true }) });
+  // Independent runs may produce identical titles; open the exact artifact created by this run.
+  const row = catalog.locator(`[data-artifact-id="${value.initialArtifact!.id}"]`);
 
   try {
     await row.getByRole('button', { name: 'Preview', exact: true }).click();
   } catch {
     throw new Error('Unable to open the task-owned saved presentation from the Share catalog.');
   }
+
   await expect(page.getByRole('button', { name: 'Edit story plan', exact: true })).toBeVisible();
 });
 
@@ -447,5 +456,6 @@ function zipEntries(bytes: Buffer): Map<string, string> {
     } else entries.set(name, '');
     cursor += 46 + nameLength + extraLength + commentLength;
   }
+
   return entries;
 }

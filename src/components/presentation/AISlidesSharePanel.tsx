@@ -78,7 +78,7 @@ export default function AISlidesSharePanel({
           <h4 className='text-sm font-medium'>Workspace presentations</h4>
           {!current && <p role='status'>Loading saved presentations…</p>}
           {current?.decks.map((deck) => (
-            <div key={deck.id} className='flex flex-col gap-2'>
+            <div key={deck.id} data-artifact-id={deck.id} className='flex flex-col gap-2'>
               <p className='truncate text-sm'>{deck.plan.title}</p>
               <p className='text-xs text-text-secondary'>
                 {deck.plan.slides.length} slides · {deck.style.name} · {new Date(deck.createdAt).toLocaleString()}

@@ -9,27 +9,27 @@ return the created page and a known content marker; reload alone could use brows
 The document and saved artifacts remain available for review. It does not invite users or change
 billing state.
 
-## Live status — 2026-10-28
+## Live status — 2026-10-29
 
-**Blocked by external provider quota; the live suite has not passed.** Attempt 4 used an
-existing test account and an existing Pro shared workspace. Actual password login,
-workspace selection, editor document creation and reload, Cloud source resolution, paid status,
-session reads/writes, and custom-count selection succeeded. The source API returned the correct
-page and revision, 15 blocks, and the known content marker.
+**Passed against the real local Web, Gateway, Cloud and AI services.** The UI-created source
+resolved to 15 blocks and the expected marker. Custom 13 generated exactly thirteen slides;
+reloading and reopening from Share preserved the artifact version and scene hash without another
+generation. Editing the first story title regenerated the same artifact as version 2. The saved
+story, fetched scene, rendered preview and downloaded PowerPoint all retained that edit. The
+PowerPoint contained thirteen slides with native editable text. The paid workspace's Free slide
+and export counters and pending reservations remained unchanged.
 
-The verified request chain was **Web `5182` → Gateway `8100` → Cloud `8000` → AI service `5001`**.
-Browser observations were correlated with the configured proxy, Gateway forwarding log and server
-diagnostic. Source assessment reached OpenAI, which returned HTTP `429`, type `insufficient_quota`,
-with the original provider classification `retryable: false`. The browser received HTTP `503`, code
-`1032`, reason `AI_EXECUTION_FAILED`. The read-only ledger check and a further 35-second observation
-found no presentation jobs, presentation usage operations or quota debits.
+The verified chain was **Web `3000` → Gateway `8100` → Cloud `8000` → AI service `5001`**.
+The safe [current result](./result-2026-10-29.json) records completed checks and usage counts,
+without local identities, credentials, provider bodies or source text. This run also reproduced
+and corrected Cloud accepting fewer slides than a custom request; fixed counts now bind the
+compiled schema and are validated before publication. Catalog selection uses the artifact ID
+because independently generated decks can have identical titles. Ensure the running Vite process
+serves current modules after local changes; restarting it cleared stale transformed code in this run.
 
-Generation, saved-deck reopen, story/scene regeneration, editable PPTX download and post-workflow
-Free-allowance assertions are implemented but **were not executed** because assessment failed first.
-The safe, durable [attempt 4 result](./result-2026-10-28.json) records the observed paths, counts,
-and failure classification. Local account, workspace and document identifiers are omitted from the checked-in report.
-It contains no credentials, provider body or source text. Static TypeScript validation and BDD
-generation passed; those checks do not establish live generation success.
+The [2026-10-28 attempt](./result-2026-10-28.json) remains historical evidence of the earlier
+provider-quota block. It is superseded by this passing run. This scenario does not establish all
+source/media combinations, deployment readiness or Office pixel parity.
 
 Start and verify the real Web, Gateway, Cloud, auth, AI provider and storage services separately.
 The test never starts services, seeds records, mocks HTTP, overrides runtime configuration, injects
@@ -45,7 +45,7 @@ Set these variables only after confirming the running environment:
 - `PRESENTATION_LIVE_EMAIL`: the existing test account email.
 - `PRESENTATION_LIVE_PASSWORD`: the test account password, supplied privately.
 
-After the configured provider has available quota and the real services are healthy, confirm the
+With provider quota available and the real services healthy, confirm the
 environment above and rerun from this worktree. Supply the password privately; do not put its value
 in a shell command or report:
 

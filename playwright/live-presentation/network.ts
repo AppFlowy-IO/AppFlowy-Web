@@ -1,4 +1,8 @@
+import { createHash } from 'node:crypto';
+
 import { expect, type Page, type Response } from '@playwright/test';
+
+import { livePresentationEnvironment } from './environment';
 
 import type {
   Artifact,
@@ -9,7 +13,6 @@ import type {
   SourceEnvelope,
 } from '../../src/components/presentation/server-contract';
 import type { DeckScene } from '../../src/components/presentation/server-scene';
-import { livePresentationEnvironment } from './environment';
 
 export const SOURCE_MARKER = 'Expansion requires a separate review of observed outcomes and unresolved risks.';
 interface ObservedScene {
@@ -95,6 +98,7 @@ export class PresentationNetwork {
         containsMarker: blocks.some((block) => block.text.includes(SOURCE_MARKER)),
       };
     }
+
     if (/\/artifacts\/[^/]+\/scene$/.test(record.path)) {
       const scene = body.data as DeckScene;
 
@@ -107,12 +111,14 @@ export class PresentationNetwork {
           scene.slides[0]?.elements.flatMap((element) => (element.kind === 'text' ? [element.text] : [])) ?? [],
       };
     }
+
     if (/\/(generate|download|jobs\/[^/]+)$/.test(record.path)) record.job = body.data as JobStatus;
     if (/\/artifacts\/[^/]+$/.test(record.path)) {
       const artifact = body.data as Artifact<ServerSlidePlan>;
 
       if (Array.isArray(artifact.content?.slides)) record.artifact = artifact;
     }
+
     if (record.path.endsWith('/generate') && record.method === 'POST') {
       const request = response.request().postDataJSON() as GenerationRequest;
 
@@ -124,6 +130,7 @@ export class PresentationNetwork {
         countMode: request.options.slideCountMode,
       };
     }
+
     if (record.path.endsWith('/download') && record.method === 'POST') {
       const request = response.request().postDataJSON() as { artifact: { id: string; version: number } };
 
@@ -173,12 +180,14 @@ export class PresentationNetwork {
         }.`
       );
     }
+
     if (!terminal || terminal.state !== 'succeeded') {
       const reason =
         terminal?.errorReason && /^[A-Z0-9_]+$/.test(terminal.errorReason) ? terminal.errorReason : 'unspecified';
 
       throw new Error(`Presentation ${kind} job ended as ${terminal?.state ?? 'unknown'} (${reason}).`);
     }
+
     return terminal;
   }
 
@@ -268,6 +277,7 @@ export class PresentationNetwork {
         code,
         reason,
         requestId: request?.requestId,
+        request,
         job: job && {
           id: job.id,
           state: job.state,
@@ -289,4 +299,3 @@ export class PresentationNetwork {
     );
   }
 }
-import { createHash } from 'node:crypto';
