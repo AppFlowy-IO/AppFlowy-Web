@@ -577,7 +577,9 @@ export default function DocumentPresenter({
               </Action>
             </header>
             <main
-              className={`ps-doc-slide${slide.table ? ' ps-doc-table-slide' : ''}`}
+              // Embedded databases measure against the page's scroll container. Without it, a grid that
+              // fits the slide finds no scrolling ancestor and never draws its rows.
+              className={`ps-doc-slide appflowy-scroll-container${slide.table ? ' ps-doc-table-slide' : ''}`}
               ref={setViewport}
               tabIndex={0}
               aria-label={`Slide ${index + 1} of ${slides.length}`}
