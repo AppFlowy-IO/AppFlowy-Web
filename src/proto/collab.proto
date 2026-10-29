@@ -18,6 +18,13 @@ message Rid {
   uint32 counter = 2;
 }
 
+/** Deletion coverage is separate from the insertion clocks in a state vector. */
+message DeleteSetMetadata {
+  // Canonical digest from appflowy-proto::canonical_delete_set_digest.
+  bytes digest = 1;
+  bytes delete_set_v1 = 2;
+}
+
 /**
  * SyncRequest message is send by either a server or a client, which informs about the
  * last collab state known to either party.
@@ -38,6 +45,12 @@ message SyncRequest {
 
   // Collab version known to the sender of this message.
   string version = 3;
+
+  // State vectors do not cover deletions. Request and compare this metadata
+  // before retiring a manifest upload that contains a delete set.
+  DeleteSetMetadata delete_set = 4;
+  reserved 5;
+  optional string database_restore_id = 6;
 }
 
 /**

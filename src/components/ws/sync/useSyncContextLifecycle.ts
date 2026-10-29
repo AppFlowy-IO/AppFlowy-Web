@@ -41,9 +41,10 @@ export function useSyncContextLifecycle(
   sendMessage: (message: messages.IMessage) => void,
   postMessage: (message: messages.IMessage) => void,
   onLocalUpdate?: (objectId: string) => void,
-  onManifestSync?: (objectId: string, persisted?: Promise<boolean>) => void,
+  onManifestSync?: (objectId: string) => void,
   beforeSend?: (objectId: string, collabType: Types, marker?: string) => Promise<boolean>,
-  prepareContext?: (context: RegisterSyncContext) => void
+  prepareContext?: (context: RegisterSyncContext) => void,
+  canRetry?: () => boolean
 ) {
   const cancelDeferredCleanup = useCallback((objectId: string) => {
     const timer = refs.pendingCleanups.current.get(objectId);
@@ -177,7 +178,20 @@ export function useSyncContextLifecycle(
 
       Log.debug(`Registering sync context for objectId ${context.doc.guid} with collabType ${context.collabType}`);
       prepareContext?.(context);
-      context.emit = (message) => {
+      let retrySendPending = false;
+
+      context.emit = (message, options) => {
+        const isActive = () => !refs.isDisposedRef.current &&
+          refs.registeredContexts.current.get(context.doc.guid)?.doc === context.doc &&
+          (!message.collabMessage?.update || (context as SyncContext).manifestRecovery?.writeAllowed !== false) &&
+          (!options?.requireReady || (
+            !refs.resettingObjectIds.current.has(context.doc.guid) &&
+            (context as SyncContext).manifestRecovery?.writeAllowed !== false &&
+            (canRetry?.() ?? false)
+          ));
+
+        if (!isActive()) return;
+        if (options?.requireReady && retrySendPending) return;
         if (!beforeSend || (context.collabType !== Types.Database && context.collabType !== Types.DatabaseRow)) {
           sendMessage(message);
           postMessage(message);
@@ -188,11 +202,13 @@ export function useSyncContextLifecycle(
         const marker = message.collabMessage?.update?.databaseRestoreId ?? doc.databaseRestoreId ??
           '00000000-0000-0000-0000-000000000000';
 
+        if (options?.requireReady) retrySendPending = true;
         void beforeSend(doc.guid, context.collabType, marker).then((allowed) => {
-          if (!allowed || refs.registeredContexts.current.get(doc.guid)?.doc !== doc) return;
+          if (!allowed || !isActive()) return;
           sendMessage(message);
           postMessage(message);
-        }).catch((error) => Log.warn('[DatabaseHistory] Sync deferred until restore state is available', error));
+        }).catch((error) => Log.warn('[DatabaseHistory] Sync deferred until restore state is available', error))
+          .finally(() => { if (options?.requireReady) retrySendPending = false; });
       };
 
       // SyncContext extends RegisterSyncContext by attaching the emit function and destroy handler
@@ -200,6 +216,10 @@ export function useSyncContextLifecycle(
 
       syncContext.onLocalUpdate = onLocalUpdate;
       syncContext.onManifestSync = onManifestSync;
+      syncContext.canRetry = () => !refs.isDisposedRef.current &&
+        !refs.resettingObjectIds.current.has(syncContext.doc.guid) &&
+        refs.registeredContexts.current.get(syncContext.doc.guid) === syncContext &&
+        (canRetry?.() ?? false);
       refs.registeredContexts.current.set(syncContext.doc.guid, syncContext);
       const handleDocDestroy = () => {
         const objectId = syncContext.doc.guid;
@@ -244,7 +264,7 @@ export function useSyncContextLifecycle(
 
       return syncContext;
     },
-    [refs, sendMessage, postMessage, onLocalUpdate, onManifestSync, beforeSend, prepareContext, cancelDeferredCleanup, unregisterSyncContext, incrementContextRefCount]
+    [refs, sendMessage, postMessage, onLocalUpdate, onManifestSync, beforeSend, prepareContext, canRetry, cancelDeferredCleanup, unregisterSyncContext, incrementContextRefCount]
   );
 
   return {

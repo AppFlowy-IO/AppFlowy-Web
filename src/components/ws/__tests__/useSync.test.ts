@@ -283,6 +283,155 @@ describe('useSync reconnect binding', () => {
     jest.clearAllMocks();
   });
 
+  it.each([false, true])('recovers a dropped first row upload on an open socket (permission notification: %s)', async (grant) => {
+    jest.useFakeTimers();
+    const protocol = jest.requireActual<typeof import('@/application/services/js-services/sync-protocol')>(
+      '@/application/services/js-services/sync-protocol'
+    );
+    const ws = { ...createWs(), readyState: WebSocket.OPEN } as AppflowyWebSocketType;
+    const row = createDatabaseRowDoc('41414141-4141-4141-8141-414141414141',
+      '42424242-4242-4242-8242-424242424242', { title: 'retained first upload' });
+    const server = createDoc(row.guid);
+    const { result, unmount } = renderHook(() => useSync(ws, createBroadcastChannel(), defaultEventEmitter, defaultWorkspaceId));
+    const send = ws.sendMessage as jest.Mock;
+    let context!: SyncContext;
+    const manifest = () => ({
+      objectId: row.guid,
+      collabType: Types.DatabaseRow,
+      syncRequest: { stateVector: Y.encodeStateVector(server), lastMessageId: { timestamp: 0, counter: 0 } },
+    });
+
+    try {
+      act(() => { context = result.current.registerSyncContext({ doc: row, collabType: Types.DatabaseRow }); });
+      send.mockClear();
+      // The server can read the reserved identity, but silently drops the first
+      // upload while resolving write permission. No ACK, denial or reconnect.
+      act(() => protocol.handleMessage(context, manifest()));
+      const first = send.mock.calls.find(([message]) => message.collabMessage?.update)?.[0];
+
+      expect(first.collabMessage.update.payload.byteLength).toBeGreaterThan(2);
+      expect(getRowCellData(server, 'title')).toBeUndefined();
+      send.mockClear();
+      // Subsequent attempts use the actual Yjs protocol to restore the row.
+      send.mockImplementation((message) => {
+        if (message.collabMessage?.syncRequest) protocol.handleMessage(context, manifest());
+        if (message.collabMessage?.update) Y.applyUpdate(server, message.collabMessage.update.payload);
+      });
+      if (grant) {
+        act(() => protocol.handleMessage(context, {
+          objectId: row.guid, collabType: Types.DatabaseRow,
+          accessChanged: { canRead: true, canWrite: true, reason: 0 },
+        }));
+        expect(getRowCellData(server, 'title')).toBe('retained first upload');
+      }
+
+      await act(async () => { await jest.advanceTimersByTimeAsync(5 * 60_000); });
+      expect(getRowCellData(server, 'title')).toBe('retained first upload');
+      expect(Y.encodeStateAsUpdate(server)).toEqual(Y.encodeStateAsUpdate(row));
+      expect(send.mock.calls.filter(([message]) => message.collabMessage?.update)).toHaveLength(1);
+      expect(mockedCollabFullSyncBatch).not.toHaveBeenCalled();
+      send.mockClear();
+      await act(async () => { await jest.advanceTimersByTimeAsync(15 * 60_000); });
+      expect(send).not.toHaveBeenCalled();
+    } finally {
+      unmount();
+      row.destroy();
+      server.destroy();
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    }
+  });
+
+  it('requires server coverage to stop recovery in a follower tab', async () => {
+    jest.useFakeTimers();
+    const protocol = jest.requireActual<typeof import('@/application/services/js-services/sync-protocol')>(
+      '@/application/services/js-services/sync-protocol'
+    );
+
+    mockedHandleMessage.mockImplementation(protocol.handleMessage);
+    const ws = { ...createWs(), readyState: WebSocket.OPEN } as AppflowyWebSocketType;
+    const bc = createBroadcastChannel();
+    let peer!: Parameters<NonNullable<BroadcastChannelType['subscribeCollabMessages']>>[0];
+    let serverProof!: Parameters<NonNullable<BroadcastChannelType['subscribeServerManifests']>>[0];
+
+    bc.subscribeCollabMessages = (listener) => { peer = listener; return jest.fn(); };
+    bc.subscribeServerManifests = (listener) => { serverProof = listener; return jest.fn(); };
+    const row = createDatabaseRowDoc('41414141-4141-4141-8141-414141414141',
+      '42424242-4242-4242-8242-424242424242', { title: 'retained first upload' });
+    const { result, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
+    const send = ws.sendMessage as jest.Mock;
+
+    try {
+      const context = result.current.registerSyncContext({ doc: row, collabType: Types.DatabaseRow });
+
+      protocol.handleMessage(context, { objectId: row.guid, syncRequest: { stateVector: Uint8Array.of(0) } });
+      send.mockClear();
+      const covered = { objectId: row.guid, collabType: Types.DatabaseRow, syncRequest: { stateVector: Y.encodeStateVector(row) } };
+
+      await act(async () => {
+        peer({ collabMessage: covered } as Parameters<typeof peer>[0]);
+        await flushPromises();
+        await jest.advanceTimersByTimeAsync(60_000);
+      });
+      expect(send.mock.calls.filter(([message]) => message.collabMessage?.syncRequest)).toHaveLength(1);
+      send.mockClear();
+      await act(async () => {
+        serverProof(covered);
+        await flushPromises();
+        await jest.advanceTimersByTimeAsync(15 * 60_000);
+      });
+      expect(send).not.toHaveBeenCalled();
+    } finally {
+      unmount();
+      row.destroy();
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    }
+  });
+
+  it.each(['unmount', 'replace', 'defer', 'workspace', 'user'] as const)(
+    'does not retry a retired first upload after %s', async (action) => {
+      jest.useFakeTimers();
+      const protocol = jest.requireActual<typeof import('@/application/services/js-services/sync-protocol')>(
+        '@/application/services/js-services/sync-protocol'
+      );
+      const ws = { ...createWs(), readyState: WebSocket.OPEN } as AppflowyWebSocketType;
+      const bc = createBroadcastChannel();
+      const row = createDatabaseRowDoc('41414141-4141-4141-8141-414141414141',
+        '42424242-4242-4242-8242-424242424242', { title: 'retired upload' });
+      const replacement = createDoc(row.guid);
+      const { result, rerender, unmount } = renderHook(({ workspaceId }) => useSync(ws, bc, defaultEventEmitter, workspaceId), {
+        initialProps: { workspaceId: defaultWorkspaceId },
+      });
+      const send = ws.sendMessage as jest.Mock;
+
+      try {
+        const context = result.current.registerSyncContext({ doc: row, collabType: Types.DatabaseRow });
+
+        protocol.handleMessage(context, { objectId: row.guid, syncRequest: { stateVector: Uint8Array.of(0) } });
+        act(() => {
+          if (action === 'unmount') unmount();
+          if (action === 'replace') result.current.registerSyncContext({ doc: replacement, collabType: Types.DatabaseRow });
+          if (action === 'defer') result.current.scheduleDeferredCleanup(row.guid);
+          if (action === 'workspace') rerender({ workspaceId: 'another-workspace' });
+          if (action === 'user') {
+            mockedUseCurrentUserOptional.mockReturnValue(createUser(defaultWorkspaceId));
+            rerender({ workspaceId: defaultWorkspaceId });
+          }
+        });
+        send.mockClear();
+        await act(async () => { await jest.advanceTimersByTimeAsync(10 * 60_000); });
+        expect(send).not.toHaveBeenCalled();
+      } finally {
+        unmount();
+        row.destroy();
+        replacement.destroy();
+        jest.clearAllTimers();
+        jest.useRealTimers();
+      }
+    }
+  );
+
   it('does not bind registered documents twice when the websocket opens for the first time', () => {
     const ws = {
       ...createWs(),
@@ -363,6 +512,7 @@ describe('useSync reconnect binding', () => {
           stateVector: Y.encodeStateVector(docA),
           lastMessageId: { timestamp: 42, counter: 7 },
           version: docA.version,
+          deleteSet: { digest: expect.any(Uint8Array) },
         },
       },
     });
@@ -374,6 +524,7 @@ describe('useSync reconnect binding', () => {
           stateVector: Y.encodeStateVector(docB),
           lastMessageId: { timestamp: 0, counter: 0 },
           version: docB.version,
+          deleteSet: { digest: expect.any(Uint8Array) },
         },
       },
     });
@@ -1690,147 +1841,38 @@ describe('useSync public API', () => {
     }
   });
 
-  it('clears the covered dirty edit after a routed manifest becomes durable', async () => {
+  it.each([true, false])('retains HTTP fallback after manifest enqueue resolves %s without server coverage', async (persisted) => {
     jest.useFakeTimers();
     mockedCollabFullSyncBatch.mockResolvedValue([]);
+    const protocol = jest.requireActual<typeof import('@/application/services/js-services/sync-protocol')>(
+      '@/application/services/js-services/sync-protocol'
+    );
+    const outbox = jest.requireMock('@/application/sync-outbox');
+    const ws = { ...createWs(), readyState: WebSocket.OPEN } as AppflowyWebSocketType;
+    const doc = createDoc('cfcfcfcf-4444-4444-8444-cfcfcfcfcfcf');
+    const { result, rerender, unmount } = renderHook(() => useSync(ws, createBroadcastChannel(), defaultEventEmitter, defaultWorkspaceId));
 
     try {
-      const ws = {
-        ...createWs(),
-        readyState: 1,
-      } as AppflowyWebSocketType;
-      const bc = createBroadcastChannel();
-      const doc = createDoc('cfcfcfcf-4444-4444-8444-cfcfcfcfcfcf');
-      const persisted = createDeferred<boolean>();
-      const { result, rerender, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
-      let syncContext: SyncContext | undefined;
+      let context!: SyncContext;
 
-      act(() => {
-        syncContext = result.current.registerSyncContext({ doc, collabType: Types.Document });
-        doc.getMap('root').set('covered-edit', true);
-        syncContext?.onManifestSync?.(doc.guid, persisted.promise);
-      });
-
+      act(() => { context = result.current.registerSyncContext({ doc, collabType: Types.Document }); });
+      doc.getMap('root').set('retained-edit', true);
+      outbox.shouldRouteUpdateThroughOutbox.mockReturnValueOnce(true);
+      outbox.enqueueOutboxUpdate.mockResolvedValueOnce(persisted);
       await act(async () => {
-        persisted.resolve(true);
+        protocol.handleMessage(context, { objectId: doc.guid, syncRequest: { stateVector: Uint8Array.of(0) } });
         await flushPromises();
       });
-
-      act(() => {
-        ws.readyState = 0;
-        rerender();
-      });
-
-      await act(async () => {
-        jest.advanceTimersByTime(5_000);
-        await flushPromises();
-      });
-
-      expect(mockedCollabFullSyncBatch).not.toHaveBeenCalled();
-
-      unmount();
-      doc.destroy();
-    } finally {
-      jest.runOnlyPendingTimers();
-      jest.useRealTimers();
-    }
-  });
-
-  it('keeps the covered dirty edit when a routed manifest cannot be persisted', async () => {
-    jest.useFakeTimers();
-    mockedCollabFullSyncBatch.mockResolvedValue([]);
-
-    try {
-      const ws = {
-        ...createWs(),
-        readyState: 1,
-      } as AppflowyWebSocketType;
-      const bc = createBroadcastChannel();
-      const doc = createDoc('cfcfcfcf-6666-4666-8666-cfcfcfcfcfcf');
-      const persisted = createDeferred<boolean>();
-      const { result, rerender, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
-      let syncContext: SyncContext | undefined;
-
-      act(() => {
-        syncContext = result.current.registerSyncContext({ doc, collabType: Types.Document });
-        doc.getMap('root').set('unpersisted-edit', true);
-        syncContext?.onManifestSync?.(doc.guid, persisted.promise);
-      });
-
-      await act(async () => {
-        persisted.resolve(false);
-        await flushPromises();
-      });
-
-      act(() => {
-        ws.readyState = 0;
-        rerender();
-      });
-
-      await act(async () => {
-        jest.advanceTimersByTime(5_000);
-        await flushPromises();
-      });
-
+      act(() => { ws.readyState = WebSocket.CONNECTING; rerender(); });
+      await act(async () => { await jest.advanceTimersByTimeAsync(5_000); });
       expect(mockedCollabFullSyncBatch).toHaveBeenCalledTimes(1);
-      expect(mockedCollabFullSyncBatch.mock.calls[0]?.[1]).toEqual([
-        expect.objectContaining({ objectId: doc.guid, collabType: Types.Document }),
+      expect(mockedCollabFullSyncBatch.mock.calls[0][1]).toEqual([
+        expect.objectContaining({ objectId: doc.guid, docState: Y.encodeStateAsUpdate(doc) }),
       ]);
-
+    } finally {
       unmount();
       doc.destroy();
-    } finally {
-      jest.runOnlyPendingTimers();
-      jest.useRealTimers();
-    }
-  });
-
-  it('keeps a newer dirty edit when an older routed manifest becomes durable', async () => {
-    jest.useFakeTimers();
-    mockedCollabFullSyncBatch.mockResolvedValue([]);
-
-    try {
-      const ws = {
-        ...createWs(),
-        readyState: 1,
-      } as AppflowyWebSocketType;
-      const bc = createBroadcastChannel();
-      const doc = createDoc('cfcfcfcf-5555-4555-8555-cfcfcfcfcfcf');
-      const persisted = createDeferred<boolean>();
-      const { result, rerender, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
-      let syncContext: SyncContext | undefined;
-
-      act(() => {
-        syncContext = result.current.registerSyncContext({ doc, collabType: Types.Document });
-        doc.getMap('root').set('covered-edit', true);
-        syncContext?.onManifestSync?.(doc.guid, persisted.promise);
-        doc.getMap('root').set('newer-edit', true);
-      });
-
-      await act(async () => {
-        persisted.resolve(true);
-        await flushPromises();
-      });
-
-      act(() => {
-        ws.readyState = 0;
-        rerender();
-      });
-
-      await act(async () => {
-        jest.advanceTimersByTime(5_000);
-        await flushPromises();
-      });
-
-      expect(mockedCollabFullSyncBatch).toHaveBeenCalledTimes(1);
-      expect(mockedCollabFullSyncBatch.mock.calls[0]?.[1]).toEqual([
-        expect.objectContaining({ objectId: doc.guid, collabType: Types.Document }),
-      ]);
-
-      unmount();
-      doc.destroy();
-    } finally {
-      jest.runOnlyPendingTimers();
+      jest.clearAllTimers();
       jest.useRealTimers();
     }
   });
