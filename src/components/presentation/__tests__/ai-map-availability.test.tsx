@@ -183,15 +183,23 @@ describe('Present AI mind map', () => {
     expect(mockViewerProps?.onClosePresentation).toBeDefined();
   });
 
-  test('shows its loading state inside the studio page, not beside it', async () => {
-    let finish!: (value: never) => void;
+  test('shows one loading state, without the studio page, until the map is presented', async () => {
+    let finishLoad!: (value: never) => void;
+    let finishStructure!: (value: Artifact<MindMap>) => void;
 
-    jest.mocked(loadPresentation).mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    jest.mocked(loadPresentation).mockReturnValue(new Promise((resolve) => (finishLoad = resolve)));
+    jest.mocked(loadStructuralMap).mockReturnValue(new Promise((resolve) => (finishStructure = resolve)));
     render(<PresentationStudio {...present()} />);
 
-    expect(screen.getByText('Loading saved mind map…').closest('main')).not.toBeNull();
-    await act(async () => finish(loaded(notReady)));
-    expect(await screen.findByTestId('server-map')).toBeTruthy();
+    expect(screen.getByText('Loading mind map…')).toBeTruthy();
+    expect(screen.queryByRole('navigation', { name: 'Page presentation tools' })).toBeNull();
+    // Finding no saved AI map and loading the page structure instead keeps the same message.
+    await act(async () => finishLoad(loaded(notReady)));
+    expect(screen.getByText('Loading mind map…')).toBeTruthy();
+    expect(screen.queryByText('Loading page structure…')).toBeNull();
+    await act(async () => finishStructure(map('structure', 'Page structure', 'structural')));
+    expect((await screen.findByTestId('server-map')).textContent).toBe('Page structure');
+    expect(screen.queryByText('Loading mind map…')).toBeNull();
   });
 
   test('tells readers without a saved map why no map can be shown', async () => {

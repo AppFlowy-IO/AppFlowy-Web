@@ -9,6 +9,7 @@ import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 
 import { loadSourceSnapshot } from './presentation-client';
+import PresentationLoading from './PresentationLoading';
 import PresentationShell from './PresentationShell';
 import { snapshotFromSlate } from './snapshot-adapter';
 import { DeckAction, Mode, PageSnapshot, SavedDeck } from './types';
@@ -162,9 +163,10 @@ export default function PresentationDialog({
       {snapshot && canRead ? (
         <Suspense
           fallback={
-            <div role='status' className='p-8'>
-              Loading presentation studio…
-            </div>
+            <PresentationLoading
+              message={mode === 'mindmap' ? 'Loading mind map…' : 'Loading presentation studio…'}
+              onClose={close}
+            />
           }
         >
           {mode === 'document' ? (
@@ -188,16 +190,16 @@ export default function PresentationDialog({
             />
           ) : null}
         </Suspense>
-      ) : (
+      ) : error || (hasLoadedViewActionPermissions && !canRead) ? (
         <div className='flex h-full flex-col items-center justify-center gap-4'>
-          <p role='status'>
-            {error ||
-              (hasLoadedViewActionPermissions && !canRead
-                ? 'You no longer have access to this source page.'
-                : 'Loading authorized page snapshot…')}
-          </p>
+          <p role='status'>{error || 'You no longer have access to this source page.'}</p>
           <Button onClick={close}>Back to page</Button>
         </div>
+      ) : (
+        <PresentationLoading
+          message={mode === 'mindmap' ? 'Loading mind map…' : 'Loading authorized page snapshot…'}
+          onClose={close}
+        />
       )}
     </PresentationShell>
   );

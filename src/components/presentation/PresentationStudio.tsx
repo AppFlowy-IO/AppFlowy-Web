@@ -24,6 +24,7 @@ import {
   styleReference,
   PresentationAPIError,
 } from './presentation-client';
+import PresentationLoading from './PresentationLoading';
 import PresentationPaywall from './PresentationPaywall';
 import { APPFLOWY_SLIDE_THEMES } from './slide-themes';
 import SlidesWorkflow, { type SlidesWorkflowProps } from './SlidesWorkflow';
@@ -168,7 +169,7 @@ export default function PresentationStudio({
   const savedMapArtifact = loadedIdentity === identity ? mapArtifact : undefined;
   const currentArtifact = showAIMap ? savedMapArtifact : structuralArtifact;
   const currentMap = currentArtifact?.content;
-  // The full-screen presentation needs a map; until then its states render inside the studio.
+  // The full-screen presentation needs a map. Until then the studio shows only its loading or unavailable state.
   const presentingMap = mapPresentationOpen && !!currentMap?.nodes.length;
   const mapReferences = useMemo(
     () => (currentMap ? resolveMapReferences(currentMap, snapshot) : new Map<string, string>()),
@@ -483,6 +484,15 @@ export default function PresentationStudio({
       ? snapshot.title
       : flattenBlocks(snapshot.blocks).find((block) => block.id === sourceNode)?.text ??
         snapshot.properties.find((property) => property.id === sourceNode)?.value;
+  const closeMapPresentation = () => {
+    setMapPresentationOpen(false);
+    if (presentMindMap) onClose?.();
+  };
+
+  // Loading the saved map and then the page structure reads as one step while presenting.
+  const mapLoading = showAIMap
+    ? loadedIdentity !== identity
+    : canWrite && !!snapshot.serverSource && structuralResult?.state !== 'error' && structuralResult?.state !== 'ready';
   const mapViewer = currentMap?.nodes.length ? (
     <MindMapViewer
       map={currentMap}
@@ -536,17 +546,15 @@ export default function PresentationStudio({
         if (blockId) source(blockId);
         else setUnlinkedSource(id);
       }}
-      onClosePresentation={
-        mapPresentationOpen
-          ? () => {
-              setMapPresentationOpen(false);
-              if (presentMindMap) onClose?.();
-            }
-          : undefined
-      }
+      onClosePresentation={mapPresentationOpen ? closeMapPresentation : undefined}
     />
+  ) : mapPresentationOpen && mapLoading ? (
+    <PresentationLoading message='Loading mind map…' onClose={closeMapPresentation} />
   ) : (
-    <section className='ps-page' aria-label='Mind map availability'>
+    <section
+      className={mapPresentationOpen ? 'ps-map-presentation-status' : 'ps-page'}
+      aria-label='Mind map availability'
+    >
       {showAIMap ? (
         <p role='status'>
           {loadedIdentity !== identity
@@ -572,16 +580,7 @@ export default function PresentationStudio({
         <p role='status'>Loading page structure…</p>
       )}
       {canGenerateMap && <Action onClick={() => void generate('mindmap')}>Generate AI mind map</Action>}
-      {mapPresentationOpen && (
-        <Action
-          onClick={() => {
-            setMapPresentationOpen(false);
-            if (presentMindMap) onClose?.();
-          }}
-        >
-          Back to page
-        </Action>
-      )}
+      {mapPresentationOpen && <Action onClick={closeMapPresentation}>Back to page</Action>}
     </section>
   );
 
@@ -589,10 +588,12 @@ export default function PresentationStudio({
     <div
       className={`ps-root ps-studio ${compactSetup ? 'ps-compact-setup' : ''} ${
         mode === 'slides' && !compactSetup ? 'ps-slides-window' : ''
-      } ${mode === 'slides' && stage === 'preview' ? 'ps-slide-preview-window' : ''}`}
+      } ${mode === 'slides' && stage === 'preview' ? 'ps-slide-preview-window' : ''} ${
+        mapPresentationOpen ? 'ps-map-presenting' : ''
+      }`}
     >
       <div className='ps-main'>
-        {mode !== 'slides' && (
+        {mode !== 'slides' && !mapPresentationOpen && (
           <header className='ps-topbar ps-app-toolbar'>
             <Action onClick={onClose} aria-label='Back to page'>
               <ArrowLeft size={16} />
