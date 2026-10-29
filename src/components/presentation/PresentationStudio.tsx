@@ -227,7 +227,9 @@ export default function PresentationStudio({
       canWrite &&
       !preparingSource &&
       (compactSetup || mode === 'mindmap') &&
-      !style.requiresReview,
+      !style.requiresReview &&
+      style.reviewed !== false &&
+      (mode !== 'slides' || options.designMode !== 'template' || !!style.serverStyle),
     userId
   );
   const plan = activeDeck?.plan;
@@ -439,6 +441,16 @@ export default function PresentationStudio({
   function changeStyle(next: PresentationStyle) {
     preferences.current.style = next;
     setStyle(next);
+    // A reviewed upload is already durable. Make it selectable again without reopening the studio.
+    if (next.serverStyle && !next.requiresReview && next.reviewed !== false) {
+      setCompanyStyles((current) => {
+        const saved = current.find((item) => item.id === next.id);
+
+        if (saved && (saved.serverVersion ?? 0) >= (next.serverVersion ?? 0)) return current;
+        return [...current.filter((item) => item.id !== next.id), next];
+      });
+    }
+
     // Selecting a design mode can change options and style in one event, before React renders.
     schedulePreferences({ style: styleReference(next) ?? null, options: serverOptions(preferences.current.options, next) });
   }

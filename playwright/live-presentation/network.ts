@@ -77,6 +77,9 @@ export class PresentationNetwork {
 
     this.records.push(record);
     if (record.path.endsWith('/exports') || /\/exports\/[^/]+\/download$/.test(record.path)) return;
+    // Chromium cannot reliably retain response bodies for binary file uploads. The template
+    // scenario verifies the upload status, visible candidate and subsequent analysis/review DTOs.
+    if (record.method === 'POST' && record.path.endsWith('/template')) return;
     // Aborted effect requests and non-JSON proxy errors have no DTO to retain.
     if (!(response.headers()['content-type'] ?? '').includes('json')) return;
     const body = (await response.json()) as { code?: number; reason?: string; data?: unknown };

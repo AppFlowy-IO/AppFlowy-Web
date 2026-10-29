@@ -67,3 +67,21 @@ without treating a paid subscription as an unlimited shared AI-response allowanc
 
 These tests are outside the normal BDD globs and have no fixture-server dependency. Use the separate
 `playwright.presentation.config.ts` for the retained component-only presentation browser tests.
+
+
+## Imported template scenario
+
+**Passed on 2026-10-29 against the real local Web → Gateway → Cloud → AI stack (26.4 seconds).**
+
+`imported-template.feature` uploads the synthetic `fixtures/brand-template.pptx`, waits for the
+real AI theme analysis, reviews and names it, then selects it on another UI-created page. Reloading
+that page must restore the same version with its palette and analysis intact. The scenario asserts
+one upload, one AI analysis and one review across the entire flow. Run it independently with
+`--grep 'saved imported template'` using the same verified environment above. No provider response
+is mocked; configured AI availability is required.
+
+The fixture has two explicit layouts, an Arial typeface and a teal `#1F7A8C` accent. Regenerate it
+with `python fixtures/create_brand_template.py` from this directory in an environment containing
+`python-pptx==1.0.2`. The fixture contains only synthetic reference text. The test checks parsed tokens,
+visible AI interpretation, durable review and reuse; it does not assert pixel fidelity for
+arbitrary third-party decks.

@@ -2,7 +2,7 @@ import type { AxiosRequestConfig } from 'axios';
 
 import {
   createGenerationRunner, exportDeck, importPresentationTemplate, loadPresentation, loadSourceSnapshot, openReusableGeneration,
-  reviewPresentationStyle, waitForJob,
+  reviewPresentationStyle, waitForJob, listStyles, analyzePresentationTemplate,
 } from '../presentation-client';
 import { entitlementForStatus, generationRequest, serverOptions, sourceToSnapshot, themeToStyle, toServerPlan, uiOptions } from '../server-adapter';
 import * as client from '../server-client';
@@ -338,6 +338,25 @@ test('template upload remains an unreviewed candidate until the explicit version
   expect(approved).toMatchObject({ requiresReview: false, reviewed: true, serverVersion: 2 });
 });
 
+test('saved template catalog follows every cursor and preserves review state and version', async () => {
+  mockRequest
+    .mockResolvedValueOnce(response({ items: [{ id, version: 2 }], nextCursor: 'next-page' }))
+    .mockResolvedValueOnce(response({ ...artifact, origin: 'reviewed_style', content: { ...reviewed, reference: { id, version: 2 } } }))
+    .mockResolvedValueOnce(response({ items: [{ id: 'unfinished', version: 1 }], nextCursor: null }))
+    .mockResolvedValueOnce(response({ ...artifact, origin: 'template', content: { ...reviewed, reference: { id: 'unfinished', version: 1 } } }));
+  const styles = await listStyles(scope);
+
+  expect(styles.map(({ id, serverVersion, requiresReview }) => ({ id, serverVersion, requiresReview }))).toEqual([
+    { id, serverVersion: 2, requiresReview: false },
+    { id: 'unfinished', serverVersion: 1, requiresReview: true },
+  ]);
+  expect(mockRequest.mock.calls[2][0].params).toMatchObject({ after: 'next-page' });
+  expect(generationRequest({ scope, task: 'slides', source: sourceToSnapshot(source), options, style: styles[0] }, id).style)
+    .toEqual({ id, version: 2 });
+  expect(() => generationRequest({ scope, task: 'slides', source: sourceToSnapshot(source), options, style: styles[1] }, id))
+    .toThrow('Review and save');
+});
+
 test('source resolution sends only selected page IDs and ignores editor snapshot content', async () => {
   mockRequest.mockResolvedValue(response(source));
   const resolved = await loadSourceSnapshot(scope.workspaceId, scope.pageId);
@@ -446,4 +465,18 @@ test('a stale Open never silently generates a new paid result', async () => {
     .rejects.toMatchObject({ code: 'SOURCE_REVISION_CONFLICT' });
   expect(mockRequest).toHaveBeenCalledTimes(1);
   expect(mockRequest.mock.calls[0][0].url).toContain('/reusable');
+});
+
+
+test('template analysis forwards only the stored identity/version and retains the result for review', async () => {
+  const analysis = { name: 'Ocean', description: 'Teal and spacious.', guidelines: 'Use clear headings.' };
+
+  mockRequest.mockResolvedValueOnce(response({ style: reviewed, requiresReview: true, warnings: [] }));
+  const candidate = await importPresentationTemplate(scope, new File(['zip'], 'brand.pptx'));
+
+  mockRequest.mockResolvedValueOnce(response({ ...artifact, origin: 'template', content: { ...reviewed, reference: { id, version: 2 }, analysis } }));
+  const analyzed = await analyzePresentationTemplate(scope, candidate);
+
+  expect(mockRequest.mock.calls[1][0]).toMatchObject({ method: 'POST', url: `/api/presentation/${scope.workspaceId}/styles/${id}/analyze`, data: { expectedVersion: 1 } });
+  expect(analyzed).toMatchObject({ requiresReview: true, serverVersion: 2, serverStyle: { analysis } });
 });

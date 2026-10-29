@@ -1,7 +1,7 @@
 import { Check, Palette, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
-import { deleteArtifact, importPresentationTemplate, reviewPresentationStyle } from './presentation-client';
+import { analyzePresentationTemplate, deleteArtifact, importPresentationTemplate, reviewPresentationStyle } from './presentation-client';
 import SlideCanvas from './SlideCanvas';
 import { LAYOUTS, type PresentationStyle } from './types';
 import { Action, Notice } from './ui';
@@ -90,6 +90,16 @@ export default function StyleSettings({
       setStatus('Company style saved.');
     });
 
+  async function analyze(candidate: PresentationStyle, signal: AbortSignal) {
+    setStatus('Analyzing template theme with AI…');
+    const analyzed = await analyzePresentationTemplate(scope, candidate, signal);
+
+    if (signal.aborted) return;
+    setDraft(analyzed);
+    await onChange([...styles.filter((style) => style.id !== analyzed.id), analyzed]);
+    if (!signal.aborted) setStatus('Theme analyzed. Review its appearance before saving.');
+  }
+
   return (
     <div className='ps-page'>
       <div className='ps-page-heading'>
@@ -127,7 +137,7 @@ export default function StyleSettings({
                 await onChange([...styles.filter((style) => style.id !== candidate.id), candidate]);
                 if (signal.aborted) return;
                 setDraft(candidate);
-                setStatus('Template uploaded. Review its appearance before saving.');
+                await analyze(candidate, signal);
               });
             }}
           />
@@ -178,6 +188,12 @@ export default function StyleSettings({
         <div className='ps-style-editor'>
           <section className='ps-panel'>
             <h2>Review company style</h2>
+            {draft.serverStyle.analysis && <p>{draft.serverStyle.analysis.description}</p>}
+            {draft.requiresReview && !draft.serverStyle.analysis && (
+              <Action disabled={!editable || busy} onClick={() => void run((signal) => analyze(draft, signal))}>
+                Analyze theme with AI
+              </Action>
+            )}
             <fieldset disabled={!editable || busy}>
               <label className='ps-field'>
                 Style name
@@ -244,7 +260,7 @@ export default function StyleSettings({
             ))}
             <p className='ps-muted'>The imported layout, assets, and mandatory footer are preserved.</p>
             <div className='ps-inline'>
-              <Action primary disabled={!editable || busy} onClick={() => void save()}>
+              <Action primary disabled={!editable || busy || (!!draft.requiresReview && !draft.serverStyle.analysis)} onClick={() => void save()}>
                 <Check size={15} />
                 Save style
               </Action>

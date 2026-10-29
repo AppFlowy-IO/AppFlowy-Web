@@ -78,6 +78,7 @@ export interface Theme {
 export interface ReviewedStyle {
   reference: VersionedId; theme: Theme;
   templateSlides: Array<{ id: string; title: string; text: string; textSlots: Record<string, string>; elements: Json }>;
+  analysis?: { name: string; description: string; guidelines: string };
 }
 export interface PresentationStatus {
   schemaVersion: number; promptBundleVersion: string; plan: 'free' | 'paid';

@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Tooltip as AppTooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-import { assessPresentation, importPresentationTemplate, reviewPresentationTemplate } from './presentation-client';
+import { analyzePresentationTemplate, assessPresentation, importPresentationTemplate, reviewPresentationTemplate } from './presentation-client';
 import { slideCountLimitMessage } from './presentation-policy';
 import PresentationSettingsDropdown from './PresentationSettingsDropdown';
 import { effectiveSlideOptions } from './slide-guidance';
@@ -69,7 +69,9 @@ export default function SlideGenerationSetup({
       ? savedDeck.assessment.value
       : undefined;
   const cachedAssessment = props.assessmentCache?.get(cacheKey) ?? savedAssessment;
-  const canAssess = props.canAssess ?? canGenerate;
+  const [draft, setDraft] = useState<PresentationStyle>();
+  const templateApproved = !!style.serverStyle && !style.requiresReview && style.reviewed !== false;
+  const canAssess = (props.canAssess ?? canGenerate) && (designMode !== 'template' || (templateApproved && !draft));
   const [assessed, setAssessed] = useState<{
     key: string;
     purpose?: string;
@@ -88,7 +90,7 @@ export default function SlideGenerationSetup({
   const [assessing, setAssessing] = useState(false);
   const [notice, setNotice] = useState('');
   const [importing, setImporting] = useState(false);
-  const [draft, setDraft] = useState<PresentationStyle>();
+  const [analyzingTemplate, setAnalyzingTemplate] = useState(false);
   const templateRequest = useRef<AbortController>();
   const controlsId = useId();
   const autoCount = options.slideCountMode === 'auto';
@@ -108,6 +110,7 @@ export default function SlideGenerationSetup({
   useEffect(() => {
     setDraft(undefined);
     setImporting(false);
+    setAnalyzingTemplate(false);
     return () => {
       templateRequest.current?.abort();
       templateRequest.current = undefined;
@@ -118,6 +121,7 @@ export default function SlideGenerationSetup({
     templateRequest.current?.abort();
     templateRequest.current = undefined;
     setImporting(false);
+    setAnalyzingTemplate(false);
   }
 
   async function runTemplateRequest(work: (signal: AbortSignal) => Promise<void>) {
@@ -135,8 +139,17 @@ export default function SlideGenerationSetup({
       if (templateRequest.current === controller) {
         templateRequest.current = undefined;
         setImporting(false);
+        setAnalyzingTemplate(false);
       }
     }
+  }
+
+  async function analyzeCandidate(candidate: PresentationStyle, signal: AbortSignal) {
+    if (!scope || signal.aborted) return;
+    setAnalyzingTemplate(true);
+    const analyzed = await analyzePresentationTemplate(scope, candidate, signal);
+
+    if (!signal.aborted) setDraft(analyzed);
   }
 
   useEffect(() => {
@@ -238,7 +251,7 @@ export default function SlideGenerationSetup({
     (!assessing || props.reuse?.available) &&
     !importing &&
     !draft &&
-    (designMode !== 'template' || !!style.templateName) &&
+    (designMode !== 'template' || templateApproved) &&
     (!question || props.reuse?.available);
   const showProgress = submitting || (assessing && !props.reuse?.available && !props.reuse?.checking);
 
@@ -275,11 +288,18 @@ export default function SlideGenerationSetup({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assessment?.recommendedThemeId, designMode, style.id, onStyle, props.styles]);
+  const defaultStyle = props.styles.find((item) => !item.serverStyle);
+  const clearTemplate = () => {
+    cancelTemplateRequest();
+    setDraft(undefined);
+    if (defaultStyle) onStyle(defaultStyle);
+  };
+
   const chooseDesign = (mode: 'auto' | 'theme' | 'template') => {
     cancelTemplateRequest();
     setDraft(undefined);
     change({ designMode: mode, ...(mode === 'auto' && { layoutPreference: 'auto' }) });
-    if (mode !== 'template' && style.templateName) props.styles[0] && onStyle(props.styles[0]);
+    if (mode !== 'template' && style.serverStyle && defaultStyle) onStyle(defaultStyle);
   };
 
   const generate = () => {
@@ -289,6 +309,9 @@ export default function SlideGenerationSetup({
   };
 
   const review = draft ?? (style.templateName ? style : undefined);
+  const needsReview = !!draft || !!review?.requiresReview || review?.reviewed === false;
+  const requiresAnalysis = (!!review?.requiresReview || review?.reviewed === false) && !review?.serverStyle?.analysis;
+  const savedTemplates = props.styles.filter((item) => item.serverStyle);
   const updateReview = (patch: Partial<PresentationStyle>) => {
     if (!review?.serverStyle) return;
     const next = { ...review, ...patch };
@@ -299,6 +322,7 @@ export default function SlideGenerationSetup({
         ...review.serverStyle,
         theme: {
           ...review.serverStyle.theme,
+          name: next.name,
           color: next.color,
           background: next.background,
           textColor: next.textColor ?? review.serverStyle.theme.textColor,
@@ -422,6 +446,36 @@ export default function SlideGenerationSetup({
         )}
         {designMode === 'template' && (
           <div className='ps-ppt-import'>
+            {!!savedTemplates.length && (
+              <PresentationSettingsDropdown
+                label='Saved templates'
+                value={savedTemplates.some((item) => item.id === review?.id) ? review!.id : ''}
+                options={[
+                  { value: '', label: 'Upload a new template' },
+                  ...savedTemplates.map((item) => ({
+                    value: item.id,
+                    label: `${item.name}${item.requiresReview || item.reviewed === false ? ' · Review required' : ''}`,
+                  })),
+                ]}
+                disabled={importing || busy}
+                onValueChange={(id) => {
+                  const selected = savedTemplates.find((item) => item.id === id);
+
+                  if (!selected) {
+                    clearTemplate();
+                    return;
+                  }
+
+                  cancelTemplateRequest();
+                  setNotice('');
+                  if (selected.requiresReview || selected.reviewed === false) setDraft(selected);
+                  else {
+                    setDraft(undefined);
+                    onStyle(selected);
+                  }
+                }}
+              />
+            )}
             {!review && (
               <label className={`ps-ppt-upload ${importing ? 'ps-disabled' : ''}`}>
                 <Upload size={23} />
@@ -443,6 +497,7 @@ export default function SlideGenerationSetup({
                       const candidate = await importPresentationTemplate(scope, file, signal);
 
                       if (!signal.aborted) setDraft(candidate);
+                      await analyzeCandidate(candidate, signal);
                     });
                   }}
                 />
@@ -459,11 +514,7 @@ export default function SlideGenerationSetup({
                   <strong>{review.templateName}</strong>
                   <Action
                     aria-label='Remove template'
-                    onClick={() => {
-                      cancelTemplateRequest();
-                      setDraft(undefined);
-                      props.styles[0] && onStyle(props.styles[0]);
-                    }}
+                    onClick={clearTemplate}
                   >
                     <X size={15} />
                   </Action>
@@ -471,6 +522,33 @@ export default function SlideGenerationSetup({
                 <p className='ps-muted'>
                   {review.serverStyle?.templateSlides.length ?? 0} supported layouts · Review the colors and fonts.
                 </p>
+                {analyzingTemplate && <p role='status' className='ps-muted'>Analyzing template theme with AI…</p>}
+                {review.serverStyle?.analysis && (
+                  <div className='ps-field' aria-label='AI theme analysis'>
+                    <strong>AI theme analysis</strong>
+                    <p>{review.serverStyle.analysis.description}</p>
+                    <details>
+                      <summary>Design guidance</summary>
+                      <p>{review.serverStyle.analysis.guidelines}</p>
+                    </details>
+                    <p className='ps-muted'>Save this template to use its theme in future presentations.</p>
+                  </div>
+                )}
+                {requiresAnalysis && !importing && (
+                  <Action onClick={() => void runTemplateRequest((signal) => analyzeCandidate(review, signal))}>
+                    Analyze theme with AI
+                  </Action>
+                )}
+                <label className='ps-field'>
+                  Template name
+                  <input
+                    aria-label='Template name'
+                    value={review.name}
+                    maxLength={80}
+                    disabled={importing}
+                    onChange={(event) => updateReview({ name: event.target.value, templateName: event.target.value })}
+                  />
+                </label>
                 <div className='ps-ppt-detected-colors'>
                   {review.palette?.map((color, i) => (
                     <span key={`${color}-${i}`} style={{ background: color }} title={color} />
@@ -483,6 +561,7 @@ export default function SlideGenerationSetup({
                       <input
                         aria-label={`Template ${['accent', 'background', 'text'][i]} color`}
                         type='color'
+                        disabled={importing}
                         value={review[key] ?? '#20242B'}
                         onChange={(e) => updateReview({ [key]: e.target.value })}
                       />
@@ -494,6 +573,7 @@ export default function SlideGenerationSetup({
                     Heading font
                     <input
                       aria-label='Template heading font'
+                      disabled={importing}
                       value={review.font}
                       onChange={(e) =>
                         updateReview({
@@ -512,6 +592,7 @@ export default function SlideGenerationSetup({
                     Body font
                     <input
                       aria-label='Template body font'
+                      disabled={importing}
                       value={review.bodyFont ?? review.font}
                       onChange={(e) =>
                         updateReview({
@@ -553,14 +634,14 @@ export default function SlideGenerationSetup({
                     ))}
                   </details>
                 )}
-                {draft && (
+                {needsReview && (
                   <Action
                     primary
-                    disabled={importing}
+                    disabled={importing || !review.name.trim() || requiresAnalysis}
                     onClick={() => {
                       if (!scope) return;
                       void runTemplateRequest(async (signal) => {
-                        const selected = await reviewPresentationTemplate(scope, draft, signal);
+                        const selected = await reviewPresentationTemplate(scope, review, signal);
 
                         if (signal.aborted) return;
                         onStyle(selected);
@@ -572,7 +653,7 @@ export default function SlideGenerationSetup({
                     Use this template
                   </Action>
                 )}
-                {!draft && (
+                {!needsReview && (
                   <p className='ps-muted'>
                     <Check size={12} /> Template selected. {assessment?.templateReason}
                   </p>

@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import * as React from 'react';
 
-import { assessPresentation, importPresentationTemplate, reviewPresentationTemplate } from '../presentation-client';
+import { analyzePresentationTemplate, assessPresentation, importPresentationTemplate, reviewPresentationTemplate } from '../presentation-client';
 import SlideGenerationSetup from '../SlideGenerationSetup';
 
 import type { SlidesWorkflowProps } from '../SlidesWorkflow';
@@ -10,6 +10,7 @@ import type { PresentationStyle, SavedDeck } from '../types';
 jest.mock('../presentation-client', () => ({
   assessPresentation: jest.fn(),
   importPresentationTemplate: jest.fn(),
+  analyzePresentationTemplate: jest.fn(),
   reviewPresentationTemplate: jest.fn(),
 }));
 jest.mock('../SlideThemePicker', () => ({ __esModule: true, default: () => null }));
@@ -254,6 +255,7 @@ test('a late template review cannot replace a newly chosen design', async () => 
   jest.useFakeTimers();
   try {
     jest.mocked(importPresentationTemplate).mockResolvedValue(template);
+    jest.mocked(analyzePresentationTemplate).mockResolvedValue({ ...template, serverStyle: { ...template.serverStyle!, analysis: { name: 'Brand', description: 'Design', guidelines: 'Guidance' } } });
     let finish!: (value: PresentationStyle) => void;
 
     jest.mocked(reviewPresentationTemplate).mockImplementation(

@@ -8,7 +8,7 @@ import {
 import {
   cancelJob, createStructuralMap, downloadExport, getArtifactScene, getJob, getPresentationStatus,
   getSession, listDecks, listStyleRecords, PresentationAPIError, presentationErrorMessage, readArtifact,
-  resolveSources, assessSources, reviewStyle, submitExport, submitGeneration, uploadTemplate, findReusableResult,
+  resolveSources, assessSources, reviewStyle, submitExport, submitGeneration, uploadTemplate, findReusableResult, analyzeTemplate,
 } from './server-client';
 
 import type {
@@ -65,16 +65,22 @@ export async function listSavedDecks(scope: PresentationScope, signal?: AbortSig
 }
 
 export async function listStyles(scope: Pick<PresentationScope, 'workspaceId'>, signal?: AbortSignal): Promise<PresentationStyle[]> {
-  const page = await listStyleRecords(scope, undefined, 30, signal);
   const styles: PresentationStyle[] = [];
+  let after: string | undefined;
 
-  for (let start = 0; start < page.items.length; start += 4) {
-    styles.push(...await Promise.all(page.items.slice(start, start + 4).map(async (item) => {
-      const record = await readArtifact<ReviewedStyle>(scope, item.id, item.version, signal);
+  do {
+    const page = await listStyleRecords(scope, after, 100, signal);
 
-      return reviewedStyleToStyle(record.content, record.origin !== 'reviewed_style');
-    })));
-  }
+    for (let start = 0; start < page.items.length; start += 4) {
+      styles.push(...await Promise.all(page.items.slice(start, start + 4).map(async (item) => {
+        const record = await readArtifact<ReviewedStyle>(scope, item.id, item.version, signal);
+
+        return reviewedStyleToStyle(record.content, record.origin !== 'reviewed_style');
+      })));
+    }
+
+    after = page.nextCursor ?? undefined;
+  } while (after);
 
   return styles;
 }
@@ -139,6 +145,13 @@ export async function reviewPresentationStyle(scope: Pick<PresentationScope, 'wo
   const record = await reviewStyle(scope, style.id, style.serverVersion, style.serverStyle, signal);
 
   return reviewedStyleToStyle(record.content, false, style.compatibilityWarnings);
+}
+
+export async function analyzePresentationTemplate(scope: Pick<PresentationScope, 'workspaceId'>, style: PresentationStyle, signal?: AbortSignal): Promise<PresentationStyle> {
+  if (!style.serverStyle || !style.serverVersion) throw new PresentationAPIError('Upload a template before analyzing it.', 'TEMPLATE_NOT_SAVED', 400);
+  const record = await analyzeTemplate(scope, style.id, style.serverVersion, signal);
+
+  return reviewedStyleToStyle(record.content, record.origin !== 'reviewed_style', style.compatibilityWarnings);
 }
 
 export const reviewPresentationTemplate = reviewPresentationStyle;

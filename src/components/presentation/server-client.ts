@@ -175,6 +175,9 @@ export async function uploadTemplate(scope: WorkspaceScope, file: File, signal?:
 
 export const reviewStyle = (scope: WorkspaceScope, id: string, expectedVersion: number, style: ReviewedStyle, signal?: AbortSignal) =>
   presentationRequest<Artifact<ReviewedStyle>>({ url: `${base(scope)}/styles/${segment(id)}/review`, method: 'PUT', data: { expectedVersion, style }, signal });
+
+export const analyzeTemplate = (scope: WorkspaceScope, id: string, expectedVersion: number, signal?: AbortSignal) =>
+  presentationRequest<Artifact<ReviewedStyle>>({ url: `${base(scope)}/styles/${segment(id)}/analyze`, method: 'POST', data: { expectedVersion }, signal });
 export const getArtifactScene = (scope: WorkspaceScope, id: string, version: number, signal?: AbortSignal) =>
   presentationRequest<DeckScene>({ url: `${base(scope)}/artifacts/${segment(id)}/scene`, params: { version }, signal });
 export async function getArtifactAsset(scope: WorkspaceScope, id: string, version: number, assetId: string, revision: string, signal?: AbortSignal): Promise<Blob> {

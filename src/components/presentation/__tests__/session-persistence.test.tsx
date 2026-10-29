@@ -4,6 +4,7 @@ import * as React from 'react';
 import { createGenerationRunner, loadPresentation, loadSourceSnapshot, saveSession } from '../presentation-client';
 import PresentationStudio from '../PresentationStudio';
 import { serverOptions, themeToStyle } from '../server-adapter';
+import * as reuseClient from '../useReusableGeneration';
 
 import type { PresentationSession, StoredSession, Theme } from '../server-contract';
 import type { SlidesWorkflowProps } from '../SlidesWorkflow';
@@ -29,6 +30,8 @@ jest.mock('../SlidesWorkflow', () => ({
   default: (props: SlidesWorkflowProps) => (
     <div>
       <span data-testid='style'>{props.style.id}</span>
+      <span data-testid='saved-styles'>{props.styles.filter((style) => style.serverStyle).map((style) => style.id).join(',')}</span>
+      <button onClick={() => props.onStyle(mockReviewedTemplate)}>Save reviewed template</button>
       <button disabled={!props.canGenerate} onClick={() => props.onGenerate()}>
         Generate
       </button>
@@ -80,6 +83,10 @@ const theme = (id: string): Theme => ({
   guidelines: '',
 });
 const themes = [theme('first'), theme('chosen')];
+const mockReviewedTemplate = {
+  ...themeToStyle(themes[0]), id: 'saved-template', templateName: 'Brand', serverVersion: 2,
+  serverStyle: { reference: { id: 'saved-template', version: 2 }, theme: themes[0], templateSlides: [] },
+};
 const status = {
   plan: 'paid',
   promptBundleVersion: 'bundle',
@@ -151,6 +158,48 @@ test('reopening restores the saved built-in theme and writes nothing back', asyn
   await advance(2000);
   expect(screen.getByTestId('style').textContent).toBe('chosen');
   expect(saveSession).not.toHaveBeenCalled();
+});
+
+test('reviewing an uploaded template immediately adds it to the studio catalog and saves its version', async () => {
+  jest.mocked(loadPresentation).mockResolvedValue({ status, session: stored('first'), styles: [], warnings: [] } as never);
+  open();
+  await advance(1000);
+  fireEvent.click(screen.getByText('Save reviewed template'));
+  await advance(1000);
+  expect(screen.getByTestId('saved-styles').textContent).toBe('saved-template');
+  expect(jest.mocked(saveSession).mock.calls[0][2].style).toEqual({ id: 'saved-template', version: 2 });
+});
+
+test('another page restores the saved imported template without writing or reviewing it again', async () => {
+  const session = stored('first');
+
+  session.payload.style = mockReviewedTemplate.serverStyle.reference;
+  session.payload.options.design = 'template';
+  jest.mocked(loadPresentation).mockResolvedValue({ status, session, styles: [mockReviewedTemplate], warnings: [] } as never);
+  render(<PresentationStudio workspaceId='workspace' userId='user' snapshot={{ ...source, pageId: 'another-page' }} canWrite />);
+  await advance(1000);
+  expect(screen.getByTestId('style').textContent).toBe('saved-template');
+  expect(saveSession).not.toHaveBeenCalled();
+});
+
+test('template mode waits for a reviewed selection before looking for reusable presentations', async () => {
+  const reuse = jest.spyOn(reuseClient, 'useReusableGeneration').mockReturnValue({ checking: false, refresh: jest.fn() });
+  const session = stored('first');
+
+  session.payload.options.design = 'template';
+  jest.mocked(loadPresentation).mockResolvedValue({ status, session, styles: [], warnings: [] } as never);
+  const view = open();
+
+  try {
+    await advance(1000);
+    expect(reuse.mock.calls.at(-1)?.[1]).toBe(false);
+    fireEvent.click(screen.getByText('Save reviewed template'));
+    await advance(1000);
+    expect(reuse.mock.calls.at(-1)?.[1]).toBe(true);
+  } finally {
+    view.unmount();
+    reuse.mockRestore();
+  }
 });
 
 test('a changed preference is written once', async () => {
